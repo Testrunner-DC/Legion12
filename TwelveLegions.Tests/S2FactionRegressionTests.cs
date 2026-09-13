@@ -2789,7 +2789,9 @@ public sealed class S2FactionRegressionTests
 
         var pick = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-prometheus-pick", pick.Data["action"]);
+        Assert.Equal("required-add", pick.Data["choiceMode"]);
         Assert.Contains(olympus.InstanceId, pick.ValidChoices);
+        Assert.DoesNotContain("skip", pick.ValidChoices);
         Assert.True(game.Handle(playerIndex, new L12Command("resolvePrompt", PromptId: pick.PromptId,
             Choice: olympus.InstanceId)).Accepted);
 
@@ -2811,6 +2813,10 @@ public sealed class S2FactionRegressionTests
         Assert.Equal([second.InstanceId, first.InstanceId], player.Library.Select(card => card.InstanceId));
         Assert.True(player.Morale.Single(card => card.InstanceId == "prometheus-power").Tapped);
         Assert.True(player.Morale.Single(card => card.InstanceId == "prometheus-power").IsGodPower);
+        var resultEvent = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == prometheus.InstanceId));
+        Assert.Equal("resolved", resultEvent.EffectResultStatus);
+        Assert.Equal((1, 1), (resultEvent.EffectSegmentIndex, resultEvent.EffectSegmentCount));
     }
 
     [Fact]

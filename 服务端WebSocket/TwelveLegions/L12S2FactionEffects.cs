@@ -949,8 +949,11 @@ public sealed partial class L12GameEngine
             if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
             if (!L12S2ZoneOps.ConsumeGodPower(player, 1)) return CommandResult.Reject("需要1张活跃的神力");
             player.UsedAbilities.Add(onceKey);
-            PushEffect(playerIndex, source, "active", "主宰效果",
-                data: new Dictionary<string, string> { ["ability"] = ability });
+            var data = new Dictionary<string, string> { ["ability"] = ability };
+            foreach (var pair in CompositeFirstSegmentData("active:S02-05M2:prometheusTopThree",
+                         new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
+                data[pair.Key] = pair.Value;
+            PushEffect(playerIndex, source, "active", "主宰效果", data: data);
             return CommandResult.Ok();
         }
         if (ability == "morriganReadyOnKill" && source.CardId == "S02-06M1")
@@ -1641,18 +1644,24 @@ public sealed partial class L12GameEngine
             var top = player.Library.Take(3).ToArray();
             if (top.Length == 0)
             {
+                item.Data["effectResultStatus"] = "skipped";
+                AddEvent("effect-noop", item.Controller, "普罗米修斯结算时牌库为空，跳过查看与选择", source);
                 FinishStackItem(item);
                 return true;
             }
             item.Data["prometheus-top"] = string.Join('|', top.Select(card => card.InstanceId));
             var choices = top.Where(card => L12StructuredCardRules.HasFaction(player, card, "olympus"))
                 .Select(card => card.InstanceId).ToList();
-            choices.Add("skip");
+            if (choices.Count == 0)
+            {
+                BeginAllTopBottomReorder(item, "prometheus", top.Select(card => card.InstanceId),
+                    "普罗米修斯：未发现可加入手牌的【奥林匹斯】卡牌，排列全部展示牌并返回牌库顶部或底部");
+                return true;
+            }
             var data = new Dictionary<string, string>
             {
                 ["action"] = "s2-prometheus-pick",
-                ["choiceMode"] = "optional-add",
-                ["skip"] = "未找到可加入手牌的【奥林匹斯】卡牌",
+                ["choiceMode"] = "required-add",
             };
             foreach (var card in top) AddPromptCardData(data, card);
             CreatePrompt(item.Controller, "optional-card", "普罗米修斯：查看牌库顶部3张牌，选择1张【奥林匹斯】卡牌加入手牌",
@@ -1939,17 +1948,26 @@ public sealed partial class L12GameEngine
                 var topIds = item.Data.GetValueOrDefault("prometheus-top", string.Empty)
                     .Split('|', StringSplitOptions.RemoveEmptyEntries);
                 var selectedId = chosen[0];
-                if (selectedId != "skip")
+                var selected = player.Library.FirstOrDefault(card => card.InstanceId == selectedId
+                    && topIds.Contains(card.InstanceId)
+                    && L12StructuredCardRules.HasFaction(player, card, "olympus"));
+                if (selected is not null)
                 {
-                    var selected = player.Library.FirstOrDefault(card => card.InstanceId == selectedId
-                        && topIds.Contains(card.InstanceId)
-                        && L12StructuredCardRules.HasFaction(player, card, "olympus"));
-                    if (selected is not null)
+                    player.Library.Remove(selected);
+                    PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
+                        $"普罗米修斯展示〈{selected.Name}〉并加入手牌",
+                        "普罗米修斯将奥林匹斯卡牌加入手牌", "S02-05M2", "search-hit");
+                }
+                else
+                {
+                    var stillHasRequiredChoice = topIds.Any(id => player.Library.Any(card =>
+                        card.InstanceId == id && L12StructuredCardRules.HasFaction(player, card, "olympus")));
+                    // 兼容升级前已经冻结的“无命中时提交 skip”Prompt；若当前仍存在
+                    // 必选对象，则 skip 或失效卡号均不能绕过强制选择语义。
+                    if (selectedId != "skip" || stillHasRequiredChoice)
                     {
-                        player.Library.Remove(selected);
-                        PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
-                            $"普罗米修斯展示〈{selected.Name}〉并加入手牌",
-                            "普罗米修斯将奥林匹斯卡牌加入手牌", "S02-05M2", "search-hit");
+                        item.Data["effectResultStatus"] = "failed";
+                        AddEvent("effect-failed", item.Controller, "普罗米修斯已选择的牌库卡牌在结算步骤中失效");
                     }
                 }
                 var remaining = topIds.Where(id => player.Library.Any(card => card.InstanceId == id)).ToArray();

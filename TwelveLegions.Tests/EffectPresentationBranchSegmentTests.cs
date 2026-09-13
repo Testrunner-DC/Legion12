@@ -10,6 +10,27 @@ public sealed class EffectPresentationBranchSegmentTests
 {
     private static L12Catalog Catalog => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
 
+    [Fact]
+    public void RemainingLegacyActiveEffectScenesAreExplicitlyInventoried()
+    {
+        var expected = new[]
+        {
+            "S01-0215|2", "S01-0310|2", "S01-0317|2", "S01-0409|3", "S01-0415|3",
+            "S01-04D1|3", "S02-01M1|1", "S02-02M1|2", "S02-0404|2", "S02-0505|3",
+            "S02-0520|2", "S02-05M1|2", "S02-0616|3", "S02-DS03|3", "ST01-01|1",
+            "ST02-M1|1", "ST06-04|1", "ST06-M1|2",
+        };
+        var remaining = Catalog.AtomicEffects.All
+            .SelectMany(card => card.Abilities
+                .Where(ability => ability.Trigger == "active"
+                    && ability.Presentations.Any(scene => scene.EventType == "effect" && scene.Flow is null)
+                    && !ability.Presentations.Any(scene => scene.EventType == "effect" && scene.Flow is not null))
+                .Select(ability => $"{card.CardId}|{ability.Sequence}"))
+            .OrderBy(item => item, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(expected, remaining);
+    }
+
     [Theory]
     [InlineData("effect-trigger")]
     [InlineData("effect-activation")]

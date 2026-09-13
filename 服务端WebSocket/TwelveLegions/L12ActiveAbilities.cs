@@ -447,6 +447,8 @@ public sealed partial class L12GameEngine
         var activeCompositePlan = (source.CardId, ability) switch
         {
             ("S01-0105", "searchBrothers") => "active:S01-0105:searchBrothers",
+            ("S01-0117", "artifactDraw") => "active:S01-0117:artifactDraw",
+            ("S01-0117", "artifactSearch") => "active:S01-0117:artifactSearch",
             ("S01-01M1", "drawCycle") => "active:S01-01M1:drawCycle",
             _ => null,
         };
@@ -722,11 +724,25 @@ public sealed partial class L12GameEngine
                 return;
             }
             case "artifactDraw":
-                if (!Draw(player, 1)) SetWinner(1 - item.Controller, "山河社稷图效果抽牌时牌库为空");
+                if (!Draw(player, 1))
+                {
+                    item.Data["effectResultStatus"] = "failed";
+                    AddEvent("effect-failed", item.Controller, "山河社稷图效果抽牌时牌库为空",
+                        source is null ? [] : [source]);
+                    SetWinner(1 - item.Controller, "山河社稷图效果抽牌时牌库为空");
+                }
                 FinishStackItem(item); return;
             case "artifactSearch":
             {
                 var top = player.Library.Take(3).ToArray();
+                if (top.Length == 0)
+                {
+                    item.Data["effectResultStatus"] = "skipped";
+                    AddEvent("effect-noop", item.Controller, "山河社稷图结算时牌库为空，跳过查看与选择",
+                        source is null ? [] : [source]);
+                    FinishStackItem(item);
+                    return;
+                }
                 item.Data["shanhe-top"] = string.Join('|', top.Select(card => card.InstanceId));
                 var choices = top.Where(card => card.Faction == "tianting").Select(card => card.InstanceId).ToArray();
                 if (choices.Length == 0)
@@ -814,11 +830,19 @@ public sealed partial class L12GameEngine
     private void CompleteShanheSearch(L12StackItem item, string cardId)
     {
         var player = State.Players[item.Controller];
-        var card = player.Library.First(candidate => candidate.InstanceId == cardId);
-        player.Library.Remove(card);
-        PubliclyRevealThenAddCardToHandByEffect(player, card, "library",
-            $"山河社稷图展示〈{card.Name}〉并加入手牌", $"山河社稷图将{card.Name}加入手牌",
-            "S01-0117", "search-hit");
+        var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == cardId);
+        if (card is null)
+        {
+            item.Data["effectResultStatus"] = "failed";
+            AddEvent("effect-failed", item.Controller, "山河社稷图已选择的牌库卡牌在结算步骤中失效");
+        }
+        else
+        {
+            player.Library.Remove(card);
+            PubliclyRevealThenAddCardToHandByEffect(player, card, "library",
+                $"山河社稷图展示〈{card.Name}〉并加入手牌", $"山河社稷图将{card.Name}加入手牌",
+                "S01-0117", "search-hit");
+        }
         var remaining = item.Data["shanhe-top"].Split('|').Where(id => id != cardId).ToArray();
         if (remaining.Length == 0) { FinishStackItem(item); return; }
         BeginAllTopBottomReorder(item, "shanhe", remaining,

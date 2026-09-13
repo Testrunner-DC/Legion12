@@ -649,8 +649,9 @@ public sealed class NewSystemsTests
         }
 
         var pickPrompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("optional-add", pickPrompt.Data["choiceMode"]);
+        Assert.Equal("required-add", pickPrompt.Data["choiceMode"]);
         Assert.Contains(eligible.InstanceId, pickPrompt.ValidChoices);
+        Assert.DoesNotContain("skip", pickPrompt.ValidChoices);
         Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: pickPrompt.PromptId,
             Choice: eligible.InstanceId)).Accepted);
 
@@ -691,6 +692,12 @@ public sealed class NewSystemsTests
         AddAllMorale(player);
         game.State.ActivePlayer = owner;
         game.State.Phase = L12Phase.Main;
+        player.Library.Clear();
+        player.Library.AddRange([
+            CreateInstance("S01-0201", "wild-camp-invalid-sun"),
+            CreateInstance("S01-0301", "wild-camp-invalid-asgard"),
+            CreateInstance("S01-0401", "wild-camp-invalid-takamagahara"),
+        ]);
         var revealed = player.Library.Take(3).Select(card => card.InstanceId).ToArray();
 
         Assert.True(game.Handle(owner, new L12Command("playCard", camp.InstanceId)).Accepted);
@@ -705,10 +712,8 @@ public sealed class NewSystemsTests
                 new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
         }
 
-        var pick = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(owner,
-            new L12Command("resolvePrompt", PromptId: pick.PromptId, Choice: "skip")).Accepted);
         var order = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("camp-order", order.Data["action"]);
         Assert.Equal("all-bottom", order.Data["placementMode"]);
         Assert.Equal(revealed, order.ValidChoices);
         var bottom = revealed.Reverse().ToList();
@@ -1124,6 +1129,10 @@ public sealed class NewSystemsTests
         Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: orderPrompt.PromptId,
             TopCardInstanceIds: [], BottomCardInstanceIds: bottom)).Accepted);
         Assert.Equal(bottom, player.Library.TakeLast(2).Select(card => card.InstanceId));
+        var resultEvent = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == shanhe.InstanceId));
+        Assert.Equal("resolved", resultEvent.EffectResultStatus);
+        Assert.Equal((1, 1), (resultEvent.EffectSegmentIndex, resultEvent.EffectSegmentCount));
     }
 
     [Fact]

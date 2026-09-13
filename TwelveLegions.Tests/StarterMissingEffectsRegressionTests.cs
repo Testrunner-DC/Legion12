@@ -296,6 +296,10 @@ public sealed class StarterMissingEffectsRegressionTests
             TopCardInstanceIds: [], BottomCardInstanceIds: [invalid.InstanceId, ranged.InstanceId]));
         Assert.True(result.Accepted, result.Error);
         Assert.Equal([invalid.InstanceId, ranged.InstanceId], player.Library.Select(card => card.InstanceId));
+        var resultEvent = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == telemachus.InstanceId));
+        Assert.Equal("resolved", resultEvent.EffectResultStatus);
+        Assert.Equal((1, 1), (resultEvent.EffectSegmentIndex, resultEvent.EffectSegmentCount));
 
         var snapshot = JsonSerializer.SerializeToElement(game.SnapshotFor(0),
             new JsonSerializerOptions(JsonSerializerDefaults.Web));

@@ -33,6 +33,8 @@ internal static class L12EffectPresentationVariants
         new ReadOnlyDictionary<string, int>(new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
         {
             ["active:S01-0105:searchBrothers"] = 2,
+            ["active:S01-0117:artifactDraw"] = 2,
+            ["active:S01-0117:artifactSearch"] = 2,
             ["active:S01-0116:xishiExchange"] = 2,
             ["active:S01-01D1:palaceReward"] = 1,
             ["active:S01-01D1:palaceExchange"] = 2,
@@ -43,6 +45,8 @@ internal static class L12EffectPresentationVariants
             ["active:S01-04M1:amaterasuKill"] = 1,
             ["active:S01-04M1:amaterasuReady"] = 2,
             ["active:S02-05D1:divinityRecover"] = 2,
+            ["active:S02-05M2:prometheusTopThree"] = 1,
+            ["active:ST05-06:telemachusTopThree"] = 1,
             ["response:S01-0020"] = 1,
             ["response:S01-0120"] = 1,
             ["response:S02-0015"] = 1,

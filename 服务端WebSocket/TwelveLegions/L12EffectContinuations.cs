@@ -473,11 +473,22 @@ public sealed partial class L12GameEngine
         var choices = top.Where(card => card.CardId != "S01-0419"
                 && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan"))
             .Select(card => card.InstanceId).ToList();
-        choices.Add("skip");
+        if (top.Length == 0)
+        {
+            item.Data["effectResultStatus"] = "skipped";
+            AddEvent("effect-noop", item.Controller, "花魁的馈赠结算时牌库为空，跳过查看与选择");
+            FinishStackItem(item);
+            return;
+        }
+        if (choices.Count == 0)
+        {
+            ContinueOiranPick(item, "skip");
+            return;
+        }
         var data = new Dictionary<string, string>
         {
             ["action"] = "oiran-pick",
-            ["choiceMode"] = "optional-add",
+            ["choiceMode"] = "required-add",
             ["displayCardIds"] = string.Join('|', top.Select(card => card.InstanceId))
         };
         foreach (var card in top) AddPromptCardData(data, card);
@@ -490,13 +501,35 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         if (choice != "skip")
         {
-            var card = player.Library.First(candidate => candidate.InstanceId == choice);
-            player.Library.Remove(card);
-            PubliclyRevealThenAddCardToHandByEffect(player, card, "library",
-                $"花魁的馈赠展示〈{card.Name}〉并加入手牌",
-                $"花魁的馈赠将〈{card.Name}〉加入手牌", "S01-0419", "reveal-add");
-            AddPresentationEvent("search", item.Controller,
-                $"花魁的馈赠将〈{card.Name}〉加入手牌", "S01-0419", "search-add", card);
+            var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == choice);
+            if (card is null)
+            {
+                item.Data["effectResultStatus"] = "failed";
+                AddEvent("effect-failed", item.Controller, "花魁的馈赠已选择的牌库卡牌在结算步骤中失效");
+            }
+            else
+            {
+                player.Library.Remove(card);
+                PubliclyRevealThenAddCardToHandByEffect(player, card, "library",
+                    $"花魁的馈赠展示〈{card.Name}〉并加入手牌",
+                    $"花魁的馈赠将〈{card.Name}〉加入手牌", "S01-0419", "reveal-add");
+                AddPresentationEvent("search", item.Controller,
+                    $"花魁的馈赠将〈{card.Name}〉加入手牌", "S01-0419", "search-add", card);
+            }
+        }
+        else
+        {
+            var frozen = item.Data.GetValueOrDefault("oiran-cards", string.Empty)
+                .Split('|', StringSplitOptions.RemoveEmptyEntries);
+            var stillHasRequiredChoice = frozen.Any(id => player.Library.Any(card =>
+                card.InstanceId == id && card.CardId != "S01-0419"
+                    && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")));
+            if (stillHasRequiredChoice)
+            {
+                item.Data["effectResultStatus"] = "failed";
+                AddEvent("effect-failed", item.Controller,
+                    "花魁的馈赠升级前选择不加入手牌，但当前存在必须选择的合法卡牌");
+            }
         }
         var remaining = item.Data["oiran-cards"].Split('|').Where(id => id != choice).ToList();
         if (remaining.Count <= 1)

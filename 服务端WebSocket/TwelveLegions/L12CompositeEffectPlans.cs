@@ -266,6 +266,14 @@ internal static partial class L12CompositeEffectPlans
                 new("liubei-search", "刘备：检索〈关羽〉或〈张飞〉，展示并加入手牌"),
                 new("liubei-shuffle", "刘备：随后重洗牌库"),
             ],
+            ["active:S01-0117:artifactDraw"] =
+            [
+                new("shanhe-draw", "山河社稷图：抽取1张牌"),
+            ],
+            ["active:S01-0117:artifactSearch"] =
+            [
+                new("shanhe-top-three", "山河社稷图：查看牌库顶部3张牌，选择1张【天廷】卡牌加入手牌，并排列其余牌"),
+            ],
             ["active:S01-0116:xishiExchange"] =
             [
                 new("xishi-summon", "西施：将已声明的其他军团活跃登场",
@@ -318,6 +326,14 @@ internal static partial class L12CompositeEffectPlans
                 new("divinity-entry", "奥林匹斯 诸神巅：随后可令已声明的军团活跃登场",
                     PublicTargetKeys: ["entryCard", "entrySlot"], DeclinedMode: "mode:none",
                     DeclinedDeclarationKey: "entryMode"),
+            ],
+            ["active:S02-05M2:prometheusTopThree"] =
+            [
+                new("prometheus-top-three", "普罗米修斯：查看牌库顶部3张牌，选择1张【奥林匹斯】卡牌加入手牌，并排列其余牌"),
+            ],
+            ["active:ST05-06:telemachusTopThree"] =
+            [
+                new("telemachus-top-three", "特勒马科斯：查看牌库顶部3张牌，选择1张【远程】军团或【奥林匹斯】战术卡加入手牌，并排列其余牌"),
             ],
         };
 

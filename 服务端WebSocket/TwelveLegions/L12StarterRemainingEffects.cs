@@ -380,6 +380,12 @@ public sealed partial class L12GameEngine
             data["declared:buffTargets"] = string.Join('|', values.Skip(2));
             publicTargets = values.Skip(1);
         }
+        else if (ability == "telemachusTopThree")
+        {
+            foreach (var pair in CompositeFirstSegmentData("active:ST05-06:telemachusTopThree",
+                         new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
+                data[pair.Key] = pair.Value;
+        }
         PushEffect(controller, source, "active", "主动效果", publicTargets, data);
         return CommandResult.Ok();
     }
@@ -510,6 +516,8 @@ public sealed partial class L12GameEngine
                 var top = player.Library.Take(3).ToArray();
                 if (top.Length == 0)
                 {
+                    item.Data["effectResultStatus"] = "skipped";
+                    AddEvent("effect-noop", item.Controller, "特勒马科斯结算时牌库为空，跳过查看与选择", source is null ? [] : [source]);
                     FinishStackItem(item);
                     return true;
                 }
@@ -1342,6 +1350,9 @@ public sealed partial class L12GameEngine
                 var top = player.Library.Take(3).ToArray();
                 if (top.Length == 0)
                 {
+                    item.Data["effectResultStatus"] = "skipped";
+                    AddEvent("effect-noop", item.Controller, "特勒马科斯结算时牌库为空，跳过查看与选择",
+                        FindSource(item) is { } source ? [source] : []);
                     FinishStackItem(item);
                     return true;
                 }
@@ -1423,6 +1434,11 @@ public sealed partial class L12GameEngine
                         $"特勒马科斯展示〈{selected.Name}〉并将其加入手牌",
                         $"特勒马科斯展示〈{selected.Name}〉并将其加入手牌",
                         "ST05-06", "search-hit");
+                }
+                else
+                {
+                    item.Data["effectResultStatus"] = "failed";
+                    AddEvent("effect-failed", item.Controller, "特勒马科斯已选择的牌库卡牌在结算步骤中失效");
                 }
                 var remaining = topIds.Where(id => !string.Equals(id, chosenId,
                     StringComparison.OrdinalIgnoreCase) && player.Library.Any(card => card.InstanceId == id)).ToArray();

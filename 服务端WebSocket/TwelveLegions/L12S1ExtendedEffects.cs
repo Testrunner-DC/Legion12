@@ -294,10 +294,22 @@ public sealed partial class L12GameEngine
                 item.Data["camp-top"] = string.Join('|', top.Select(candidate => candidate.InstanceId));
                 var choices = top.Where(candidate => candidate.CardType == "legion" && candidate.Faction == player.Faction)
                     .Select(candidate => candidate.InstanceId).ToList();
-                choices.Add("skip");
+                if (top.Length == 0)
+                {
+                    item.Data["effectResultStatus"] = "skipped";
+                    AddEvent("effect-noop", item.Controller, "野外扎营结算时牌库为空，跳过查看与选择");
+                    FinishStackItem(item);
+                    return true;
+                }
+                if (choices.Count == 0)
+                {
+                    CompleteCampPick(item, "skip");
+                    return true;
+                }
                 var data = new Dictionary<string, string>
                 {
                     ["action"] = "camp-pick",
+                    ["choiceMode"] = "required-add",
                     ["displayCardIds"] = string.Join('|', top.Select(card => card.InstanceId))
                 };
                 foreach (var candidate in top) AddPromptCardData(data, candidate);
@@ -820,11 +832,26 @@ public sealed partial class L12GameEngine
         var topIds = item.Data["camp-top"].Split('|', StringSplitOptions.RemoveEmptyEntries);
         if (choice != "skip")
         {
-            var selected = player.Library.First(card => card.InstanceId == choice);
-            player.Library.Remove(selected);
-            PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
-                $"野外扎营展示〈{selected.Name}〉并加入手牌", $"{selected.Name}因效果加入手牌",
-                "S01-0007", "reveal-add");
+            var selected = player.Library.FirstOrDefault(card => card.InstanceId == choice);
+            if (selected is null)
+            {
+                item.Data["effectResultStatus"] = "failed";
+                AddEvent("effect-failed", item.Controller, "野外扎营已选择的牌库卡牌在结算步骤中失效");
+            }
+            else
+            {
+                player.Library.Remove(selected);
+                PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
+                    $"野外扎营展示〈{selected.Name}〉并加入手牌", $"{selected.Name}因效果加入手牌",
+                    "S01-0007", "reveal-add");
+            }
+        }
+        else if (topIds.Any(id => player.Library.Any(card => card.InstanceId == id
+                     && card.CardType == "legion" && card.Faction == player.Faction)))
+        {
+            item.Data["effectResultStatus"] = "failed";
+            AddEvent("effect-failed", item.Controller,
+                "野外扎营升级前选择不加入手牌，但当前存在必须选择的合法军团");
         }
         var remaining = topIds.Where(id => id != choice && player.Library.Any(card => card.InstanceId == id)).ToArray();
         if (remaining.Length <= 1)
