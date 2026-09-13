@@ -854,13 +854,13 @@ public sealed partial class L12GameEngine
         var master = CreateCard("S02-04M1", $"master-{playerIndex}");
         var candidates = new List<L12TriggerCandidate>();
         if (fromRow == 1 && toRow == 0)
-            candidates.Add(CreateTriggerCandidate(playerIndex, master, "active",
+            candidates.Add(CreateTriggerCandidate(playerIndex, master, "friendly-back-to-front",
                 "军团从后排位移至前排时效果", new Dictionary<string, string>
                 {
                     ["ability"] = "tsukuyomiFrontAttackBuff", ["target"] = moved.InstanceId,
                 }));
         if (fromRow == 0 && toRow == 1 && player.Morale.Any(card => card.Tapped))
-            candidates.Add(CreateTriggerCandidate(playerIndex, master, "active", "军团从前排位移至后排时效果",
+            candidates.Add(CreateTriggerCandidate(playerIndex, master, "friendly-front-to-back", "军团从前排位移至后排时效果",
                 new Dictionary<string, string> { ["ability"] = "tsukuyomiReadyMorale", ["moved"] = moved.InstanceId }));
         var key = $"active:master-{playerIndex}:tsukuyomiFollowMove";
         if (!player.UsedAbilities.Contains(key) && ActiveResourceCount(player) > 0
@@ -868,7 +868,7 @@ public sealed partial class L12GameEngine
                 card.InstanceId != moved.InstanceId
                 && FindOnField(targetController, card.InstanceId, out var row, out var slot) is not null
                 && AdjacentEmptySlots(targetController, row, slot).Any())))
-            candidates.Add(CreateTriggerCandidate(playerIndex, master, "active", "军团位移时效果",
+            candidates.Add(CreateTriggerCandidate(playerIndex, master, "friendly-legion-moves", "军团位移时效果",
                 new Dictionary<string, string> { ["ability"] = "tsukuyomiFollowMove", ["moved"] = moved.InstanceId }));
         QueueTriggerCandidates(candidates);
     }
@@ -905,7 +905,7 @@ public sealed partial class L12GameEngine
         if (owner.Morale.Count >= State.Players[1 - owner.PlayerIndex].Morale.Count
             || owner.MoraleDeck.Count == 0) return;
         QueueTriggerCandidates([
-            CreateTriggerCandidate(owner.PlayerIndex, returnedSnapshot, "active",
+            CreateTriggerCandidate(owner.PlayerIndex, returnedSnapshot, "master-legion-returned",
                 "孙悟空返回主宰区后的可选士气效果",
                 new Dictionary<string, string>
                 {

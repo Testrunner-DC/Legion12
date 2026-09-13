@@ -310,7 +310,7 @@ public sealed class ApprovedTriggerBoundaryRegressionTests
     {
         var cases = new (string CardId, string Trigger, Dictionary<string, string> Data)[]
         {
-            ("S02-04M1", "active", new() { ["ability"] = "tsukuyomiFollowMove", ["moved"] = "already-moved" }),
+            ("S02-04M1", "friendly-legion-moves", new() { ["ability"] = "tsukuyomiFollowMove", ["moved"] = "already-moved" }),
             ("S02-0523", "trojan-after-attack", new() { ["attacker"] = "1" }),
             ("S01-02M3", "medjed-master-damage", new()),
             ("S02-02M1", "nephthys-own-death", new()),

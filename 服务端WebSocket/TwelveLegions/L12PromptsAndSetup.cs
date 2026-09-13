@@ -2121,7 +2121,7 @@ public sealed partial class L12GameEngine
             pendingFactionPlayer.UsedAbilities.Add(queuedFactionKey);
             var faction = CreateCard("S01-01C1", $"faction-{pendingFactionPlayer.PlayerIndex}");
             QueueTriggerCandidates([
-                CreateTriggerCandidate(pendingFactionPlayer.PlayerIndex, faction, "active",
+                CreateTriggerCandidate(pendingFactionPlayer.PlayerIndex, faction, "morale-returned-to-zero",
                     "我方士气为0张时的天廷阵营效果",
                     new Dictionary<string, string> { ["ability"] = "factionZeroRecovery" }, faction)
             ]);

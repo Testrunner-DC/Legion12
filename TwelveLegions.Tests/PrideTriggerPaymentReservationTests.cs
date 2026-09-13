@@ -99,7 +99,7 @@ public sealed class PrideTriggerPaymentReservationTests
         player.Field[0][2] = target;
         var master = Card("S02-04M1", "master-0");
         master.OwnerIndex = 0;
-        Invoke(game, "QueueOrPushTriggeredEffect", 0, master, "active", "军团位移时效果", null,
+        Invoke(game, "QueueOrPushTriggeredEffect", 0, master, "friendly-legion-moves", "军团位移时效果", null,
             new Dictionary<string, string>
             {
                 ["ability"] = "tsukuyomiFollowMove",

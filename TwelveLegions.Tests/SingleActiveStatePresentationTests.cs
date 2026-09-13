@@ -89,6 +89,37 @@ public sealed class SingleActiveStatePresentationTests
             && entry.Cards.Any(card => card.CardId == cardId));
 
     [Fact]
+    [Trait("L12Evidence", "ability:factionAddActive")]
+    public void TiantingActiveMoraleUsesTheSingleActiveSettlementScene()
+    {
+        var game = Create(91300);
+        var player = game.State.Players[0];
+        PrepareMain(game);
+        player.Morale.Clear();
+        player.MoraleDeck.Clear();
+        AddReadyMorale(player, 2);
+        player.MoraleDeck.Add(new L12MoraleCard
+        {
+            InstanceId = "single-state-tianting-added",
+            CardId = "S01-01C1",
+        });
+        HoldOpponentResponseWindow(game);
+
+        var activation = game.Handle(0,
+            new L12Command("activateAbility", "faction-0", Ability: "factionAddActive"));
+        Assert.True(activation.Accepted, activation.Error);
+        var declaration = Assert.Single(game.State.Events, entry => entry.Type == "effect-activation"
+            && entry.Cards.Any(card => card.CardId == "S01-01C1"));
+        Assert.NotNull(declaration.EffectSceneId);
+        PassResponses(game);
+
+        Assert.Equal(3, player.Morale.Count);
+        Assert.Equal(2, player.Morale.Count(morale => morale.Tapped));
+        Assert.Equal("resolved", Result(game, "S01-01C1").EffectResultStatus);
+        Assert.Equal(declaration.EffectSceneId, Result(game, "S01-01C1").EffectSceneId);
+    }
+
+    [Fact]
     [Trait("L12Evidence", "ability:thorCharge")]
     public void ThorChargePublishesOneResolvedTargetlessSegment()
     {

@@ -3,7 +3,8 @@ namespace TwelveLegions.Server;
 internal sealed record L12SingleSegmentTriggeredEffectPresentationDefinition(
     string CardId,
     int AbilitySequence,
-    string RuntimeTrigger);
+    string RuntimeTrigger,
+    string? SettlementText = null);
 
 /// <summary>
 /// 已核对为单段、单一结算结果的公开触发效果。印刷时点与运行时触发键在这里显式连接，
@@ -19,6 +20,12 @@ internal static class L12SingleSegmentTriggeredEffectPresentations
         new("S02-0305", 3, "master-damaged"),
         new("S02-05M1", 1, "friendly-ranged-death"),
         new("S02-06S4", 3, "friendly-round-table-enter"),
+        new("S02-04M1", 1, "friendly-legion-moves"),
+        new("S02-04M1", 2, "friendly-back-to-front"),
+        new("S02-04M1", 3, "friendly-front-to-back"),
+        new("S02-01M1", 2, "master-legion-returned",
+            "若我方士气少于对方，可从士气牌库追加1张休整的士气。"),
+        new("S01-01C1", 2, "morale-returned-to-zero"),
     ];
 
     internal static IReadOnlyList<L12SingleSegmentTriggeredEffectPresentationDefinition> All => Definitions;
@@ -46,20 +53,39 @@ internal static class L12SingleSegmentTriggeredEffectPresentations
             var wholeScenes = owner.Presentations.Select((scene, index) => (scene, index))
                 .Where(item => item.scene.EventType == "effect" && item.scene.Flow is null)
                 .ToArray();
-            if (wholeScenes.Length != 1 || owner.Presentations.Any(scene => scene.Flow is not null))
+            if (owner.Presentations.Any(scene => scene.Flow is not null)
+                || wholeScenes.Length > 1
+                || wholeScenes.Length == 0 && string.IsNullOrWhiteSpace(definition.SettlementText))
                 throw new InvalidOperationException(
                     $"单段触发 {cardId}/{definition.RuntimeTrigger} 不是唯一未分段场景，必须改用组合计划");
 
-            var scenes = owner.Presentations.ToArray();
-            var (whole, sceneIndex) = wholeScenes[0];
-            scenes[sceneIndex] = whole with
+            var sceneKey = RuntimeSceneKey(definition.RuntimeTrigger);
+            L12EffectPresentationScene runtimeScene;
+            if (wholeScenes.Length == 1)
             {
-                Trigger = RuntimeSceneKey(definition.RuntimeTrigger),
-                Label = "第1/1段 触发实际结算",
-                Flow = Flow,
-                SegmentIndex = 1,
-                SegmentCount = 1,
-            };
+                var (whole, _) = wholeScenes[0];
+                runtimeScene = whole with
+                {
+                    Trigger = sceneKey,
+                    DefaultText = string.IsNullOrWhiteSpace(definition.SettlementText)
+                        ? whole.DefaultText
+                        : definition.SettlementText,
+                    Label = "第1/1段 触发实际结算",
+                    Flow = Flow,
+                    SegmentIndex = 1,
+                    SegmentCount = 1,
+                };
+            }
+            else
+            {
+                runtimeScene = new L12EffectPresentationScene(
+                    $"{owner.AbilityId}:presentation:{sceneKey.Replace(':', '-')}",
+                    owner.CardId, owner.AbilityId, sceneKey, definition.SettlementText!,
+                    EventType: "effect", Label: "第1/1段 触发实际结算", Flow: Flow,
+                    SegmentIndex: 1, SegmentCount: 1);
+            }
+            var scenes = owner.Presentations.Where(scene => scene.EventType != "effect" || scene.Flow is not null)
+                .Append(runtimeScene).ToArray();
             result[ownerIndex] = owner with { Presentations = scenes };
         }
 

@@ -189,6 +189,8 @@ public sealed class AtomicReviewBatch6JBRegressionTests
 
         Assert.Equal("pending-activation", OnlyPrompt(game).Continuation);
         Assert.Empty(game.State.EffectStack);
+        Assert.Equal("master-legion-returned",
+            Assert.Single(game.State.PendingTriggerStackCandidates).Trigger);
     }
 
     [Fact]
@@ -207,6 +209,8 @@ public sealed class AtomicReviewBatch6JBRegressionTests
         Assert.Contains("pending:factionZeroRecovery", player.UsedAbilities);
         Assert.DoesNotContain("trigger:factionZeroRecovery", player.UsedAbilities);
         Assert.Empty(game.State.EffectStack);
+        Assert.Equal("morale-returned-to-zero",
+            Assert.Single(game.State.PendingTriggerStackCandidates).Trigger);
     }
 
     [Fact]
@@ -432,10 +436,16 @@ public sealed class AtomicReviewBatch6JBRegressionTests
         var declinePlayer = decline.State.Players[0];
         declinePlayer.UsedAbilities.Add("pending:factionZeroRecovery");
         Invoke(decline, "AfterStackSettled");
+        var declinePrompt = OnlyPrompt(decline);
         Resolve(decline, "mode:none");
         Assert.Empty(decline.State.EffectStack);
         Assert.DoesNotContain("pending:factionZeroRecovery", declinePlayer.UsedAbilities);
         Assert.DoesNotContain("trigger:factionZeroRecovery", declinePlayer.UsedAbilities);
+        Assert.Single(decline.State.Events, entry => entry.Type == "effect-declined"
+            && entry.EffectResultStatus == "declined"
+            && entry.Cards.Any(card => card.CardId == "S01-01C1"));
+        Assert.False(decline.Handle(declinePrompt.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: declinePrompt.PromptId, Choice: "mode:use")).Accepted);
 
         var accept = Create(10004);
         var acceptPlayer = accept.State.Players[0];
@@ -446,5 +456,16 @@ public sealed class AtomicReviewBatch6JBRegressionTests
         Assert.Contains("trigger:factionZeroRecovery", acceptPlayer.UsedAbilities);
         Assert.DoesNotContain("pending:factionZeroRecovery", acceptPlayer.UsedAbilities);
         Assert.NotEmpty(accept.State.EffectStack);
+        var declaration = Assert.Single(accept.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.CardId == "S01-01C1"));
+        Assert.NotNull(declaration.EffectSceneId);
+        Assert.Equal(1, declaration.EffectSegmentIndex);
+        Assert.Equal(1, declaration.EffectSegmentCount);
+        PassResponses(accept);
+        Assert.Equal(2, acceptPlayer.Morale.Count);
+        Assert.All(acceptPlayer.Morale, morale => Assert.True(morale.Tapped));
+        Assert.Single(accept.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "resolved"
+            && entry.EffectSceneId == declaration.EffectSceneId);
     }
 }

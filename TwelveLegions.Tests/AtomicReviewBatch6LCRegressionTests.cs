@@ -154,6 +154,7 @@ public sealed class AtomicReviewBatch6LCRegressionTests
 
         Assert.Equal(0, moved.TsukuyomiFrontMoveBonusCount);
         var first = Assert.Single(game.State.EffectStack);
+        Assert.Equal("friendly-back-to-front", first.Trigger);
         Assert.Equal("tsukuyomiFrontAttackBuff", first.Data["ability"]);
         first.Negated = true;
         PassResponses(game);
@@ -167,6 +168,59 @@ public sealed class AtomicReviewBatch6LCRegressionTests
             PassResponses(game);
             Assert.Equal(occurrence, moved.TsukuyomiFrontMoveBonusCount);
         }
+        var declarations = game.State.Events.Where(entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.CardId == "S02-04M1")).ToArray();
+        Assert.Equal(3, declarations.Length);
+        Assert.All(declarations, declaration =>
+        {
+            Assert.NotNull(declaration.EffectSceneId);
+            Assert.Equal(1, declaration.EffectSegmentIndex);
+            Assert.Equal(1, declaration.EffectSegmentCount);
+        });
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "negated"
+            && entry.EffectSceneId == declarations[0].EffectSceneId);
+        Assert.Equal(2, game.State.Events.Count(entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "resolved"
+            && entry.EffectSceneId == declarations[0].EffectSceneId));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-04M1")]
+    [Trait("L12Evidence", "entry:tsukuyomi-front-to-back-semantic-trigger")]
+    public void TsukuyomiFrontToBackReadyUsesTriggeredPresentation()
+    {
+        var game = Create(86021, "S02-04M1");
+        var player = game.State.Players[0];
+        var moved = Card("S02-0401", "batch6lc-tsukuyomi-back-moved");
+        player.Field[1][0] = moved;
+        var morale = new L12MoraleCard
+        {
+            CardId = "S02-04C1", InstanceId = "batch6lc-tsukuyomi-rested-morale", Tapped = true,
+        };
+        player.Morale.Add(morale);
+
+        Invoke(game, "RecordLegionMovement", 0, moved, 0, 1);
+
+        var selection = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(morale.InstanceId, selection.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt",
+            PromptId: selection.PromptId, Choice: morale.InstanceId)).Accepted);
+        var effect = Assert.Single(game.State.EffectStack);
+        Assert.Equal("friendly-front-to-back", effect.Trigger);
+        Assert.Equal("tsukuyomiReadyMorale", effect.Data["ability"]);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.CardId == "S02-04M1"));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-activation"
+            && entry.Cards.Any(card => card.CardId == "S02-04M1"));
+        PassResponses(game);
+        Assert.False(morale.Tapped);
+        var declaration = Assert.Single(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.CardId == "S02-04M1"));
+        Assert.NotNull(declaration.EffectSceneId);
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "resolved"
+            && entry.EffectSceneId == declaration.EffectSceneId);
     }
 
     [Fact]

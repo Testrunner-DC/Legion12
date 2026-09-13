@@ -58,8 +58,8 @@ public sealed partial class L12GameEngine
             ["S01-0311|after-attack|"] = "gustav-ready",
             ["S02-0001|s2-after-opponent-tactic|"] = "exorcist-return",
             ["S02-0012|prayer-private|"] = "prayer-private",
-            ["S02-01M1|active|wukongReturnMorale"] = "wukong-return-morale",
-            ["S01-01C1|active|factionZeroRecovery"] = "faction-zero-recovery",
+            ["S02-01M1|master-legion-returned|wukongReturnMorale"] = "wukong-return-morale",
+            ["S01-01C1|morale-returned-to-zero|factionZeroRecovery"] = "faction-zero-recovery",
         };
 
     private static string? Batch6JBPublicTriggerPlan(string cardId, string trigger,
@@ -236,7 +236,8 @@ public sealed partial class L12GameEngine
             || FifthBatchPublicTriggerPlan(cardId, trigger) is not null
             || (cardId, trigger, data?.GetValueOrDefault("ability"), data?.GetValueOrDefault("mode")) switch
         {
-            ("S02-04M1", "active", "tsukuyomiFollowMove" or "tsukuyomiReadyMorale", _) => true,
+            ("S02-04M1", "friendly-legion-moves", "tsukuyomiFollowMove", _) => true,
+            ("S02-04M1", "friendly-front-to-back", "tsukuyomiReadyMorale", _) => true,
             ("S02-0523", "trojan-after-attack", _, _) => true,
             ("S01-02M3", "medjed-master-damage", _, _) => true,
             ("S02-02M1", "nephthys-own-death", _, _) => true,
@@ -636,7 +637,7 @@ public sealed partial class L12GameEngine
         }
         else switch ((candidate.SourceCardId, candidate.Trigger, candidate.Data.GetValueOrDefault("ability")))
         {
-            case ("S02-04M1", "active", "tsukuyomiFollowMove"):
+            case ("S02-04M1", "friendly-legion-moves", "tsukuyomiFollowMove"):
             {
                 var movedId = candidate.Data.GetValueOrDefault("moved");
                 var targets = State.Players.SelectMany(targetController => PublicLegions(targetController)
@@ -659,7 +660,7 @@ public sealed partial class L12GameEngine
                 ];
                 break;
             }
-            case ("S02-04M1", "active", "tsukuyomiReadyMorale"):
+            case ("S02-04M1", "friendly-front-to-back", "tsukuyomiReadyMorale"):
                 steps =
                 [
                     PublicTriggerStep("target-morale", "morale", "月读：预先选择1张休整士气转为活跃",
@@ -1034,8 +1035,8 @@ public sealed partial class L12GameEngine
         var handled = batch6JBPlan is not null || batch6IBPlan is not null || verifiedAtomicOptional is not null || batch6GAPlan is not null || batch6DPlan is not null
             || fifthBatchPlan is not null || key switch
         {
-            ("S02-04M1", "active", "tsukuyomiFollowMove") => true,
-            ("S02-04M1", "active", "tsukuyomiReadyMorale") => true,
+            ("S02-04M1", "friendly-legion-moves", "tsukuyomiFollowMove") => true,
+            ("S02-04M1", "friendly-front-to-back", "tsukuyomiReadyMorale") => true,
             ("S02-0523", "trojan-after-attack", _) => true,
             ("S01-02M3", "medjed-master-damage", _) => true,
             ("S02-02M1", "nephthys-own-death", _) => true,
@@ -1348,7 +1349,7 @@ public sealed partial class L12GameEngine
                 || moraleTargets.Any(id => !player.Morale.Any(card => card.InstanceId == id && card.Tapped)))
                 error = "桂小五郎声明的休整士气目标已失效；效果未入栈";
         }
-        else if (key == ("S02-04M1", "active", "tsukuyomiFollowMove"))
+        else if (key == ("S02-04M1", "friendly-legion-moves", "tsukuyomiFollowMove"))
         {
             var cost = activation.DeclaredValues.GetValueOrDefault("cost", []);
             var targetId = activation.DeclaredValues.GetValueOrDefault("target", []).SingleOrDefault();
@@ -1373,7 +1374,7 @@ public sealed partial class L12GameEngine
                 candidate.Data["targetPlayerIndex"] = targetController.ToString();
             }
         }
-        else if (key == ("S02-04M1", "active", "tsukuyomiReadyMorale"))
+        else if (key == ("S02-04M1", "friendly-front-to-back", "tsukuyomiReadyMorale"))
         {
             var moraleId = activation.DeclaredValues.GetValueOrDefault("morale", []).SingleOrDefault();
             if (!player.Morale.Any(card => card.InstanceId == moraleId && card.Tapped))

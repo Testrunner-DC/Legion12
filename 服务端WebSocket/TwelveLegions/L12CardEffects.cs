@@ -88,6 +88,11 @@ public sealed partial class L12GameEngine
             case "master-damaged-by-effect": ResolveActiveEffect(item); break;
             case "friendly-ranged-death": ResolveActiveEffect(item); break;
             case "friendly-round-table-enter": ResolveActiveEffect(item); break;
+            case "friendly-legion-moves": ResolveActiveEffect(item); break;
+            case "friendly-back-to-front": ResolveActiveEffect(item); break;
+            case "friendly-front-to-back": ResolveActiveEffect(item); break;
+            case "master-legion-returned": ResolveActiveEffect(item); break;
+            case "morale-returned-to-zero": ResolveActiveEffect(item); break;
             case "reaction": ResolveS1ReactionEffect(item); break;
             case "wisdom-reward": ResolveWisdomCodexReward(item); break;
             case "s2-reaction": ResolveS2CounterEffect(item); break;

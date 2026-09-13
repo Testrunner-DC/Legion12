@@ -171,6 +171,17 @@ public sealed class Batch299WukongTombEvidenceTests
         PassResponses(game);
         var morale = Assert.Single(owner.Morale);
         Assert.True(morale.Tapped);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.CardId == "S02-01M1"));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-activation"
+            && entry.Cards.Any(card => card.CardId == "S02-01M1"));
+        var declaration = Assert.Single(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.CardId == "S02-01M1"));
+        Assert.NotNull(declaration.EffectSceneId);
+        Assert.Contains("士气", declaration.Text, StringComparison.Ordinal);
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "resolved"
+            && entry.EffectSceneId == declaration.EffectSceneId);
     }
 
     [Fact]

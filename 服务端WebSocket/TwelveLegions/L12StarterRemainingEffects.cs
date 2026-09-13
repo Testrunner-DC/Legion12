@@ -1002,7 +1002,7 @@ public sealed partial class L12GameEngine
                 player.UsedAbilities.Remove("pending:factionZeroRecovery");
                 player.UsedAbilities.Add("queued:factionZeroRecovery");
                 var faction = CreateCard("S01-01C1", $"faction-{player.PlayerIndex}");
-                candidates.Add(CreateTriggerCandidate(player.PlayerIndex, faction, "active",
+                candidates.Add(CreateTriggerCandidate(player.PlayerIndex, faction, "morale-returned-to-zero",
                     "返还士气后士气为0张时的天廷阵营效果",
                     new Dictionary<string, string>
                     {

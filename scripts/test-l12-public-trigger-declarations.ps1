@@ -38,6 +38,7 @@ $zones = Read-Source 'L12AuthoritativeCardZones.cs'
 $cardEffects = Read-Source 'L12CardEffects.cs'
 $continuations = Read-Source 'L12EffectContinuations.cs'
 $remaining = Read-Source 'L12S2RemainingEffects.cs'
+$starterRemaining = Read-Source 'L12StarterRemainingEffects.cs'
 $runtimeDirectory = (Get-ChildItem -LiteralPath $ProjectRoot -Filter 'L12PublicTriggerEffectPlans.cs' -Recurse -File |
     Select-Object -First 1).Directory.FullName
 $allRuntime = (@(Get-ChildItem -LiteralPath $runtimeDirectory -Filter '*.cs' -File | ForEach-Object {
@@ -74,7 +75,11 @@ foreach ($semanticTrigger in @(
     '("S02-0305", "master-damaged", "anderstorpRingDraw", _)',
     '("S02-05M1", "friendly-ranged-death", "artemisDeathFlip", _)',
     '("S02-06S4", "friendly-round-table-enter", "grailRoundTableRune", _)',
-    '("S02-06M2", "tactic-effect-resolved", "angusTacticTrial", _)'
+    '("S02-06M2", "tactic-effect-resolved", "angusTacticTrial", _)',
+    '("S02-04M1", "friendly-legion-moves", "tsukuyomiFollowMove", _)',
+    '("S02-04M1", "friendly-front-to-back", "tsukuyomiReadyMorale", _)',
+    'S02-01M1|master-legion-returned|wukongReturnMorale',
+    'S01-01C1|morale-returned-to-zero|factionZeroRecovery'
 )) {
     Assert-Contains ($plans + "`n" + $trialAdvancePlans) $semanticTrigger `
         "An event-triggered effect lost its semantic runtime trigger: $semanticTrigger"
@@ -84,12 +89,24 @@ foreach ($legacyActiveTrigger in @(
     '("S02-0305", "active", "anderstorpRingDraw", _)',
     '("S02-05M1", "active", "artemisDeathFlip", _)',
     '("S02-06S4", "active", "grailRoundTableRune", _)',
-    '("S02-06M2", "active", "angusTacticTrial", _)'
+    '("S02-06M2", "active", "angusTacticTrial", _)',
+    '("S02-04M1", "active", "tsukuyomiFollowMove", _)',
+    '("S02-04M1", "active", "tsukuyomiReadyMorale", _)',
+    'S02-01M1|active|wukongReturnMorale',
+    'S01-01C1|active|factionZeroRecovery'
 )) {
     if (($plans + "`n" + $trialAdvancePlans).IndexOf($legacyActiveTrigger, [StringComparison]::Ordinal) -ge 0) {
         throw "Event-triggered effect regressed to the active-button runtime key: $legacyActiveTrigger"
     }
 }
+Assert-Contains $remaining 'master, "friendly-back-to-front"' `
+    'Tsukuyomi back-to-front listener must retain its semantic trigger.'
+Assert-Contains $remaining 'returnedSnapshot, "master-legion-returned"' `
+    'Wukong return follow-up must retain its semantic trigger.'
+Assert-Contains $starterRemaining 'faction, "morale-returned-to-zero"' `
+    'The immediate Tianting zero-morale path must retain its semantic trigger.'
+Assert-Contains $prompts 'faction, "morale-returned-to-zero"' `
+    'The resumed Tianting zero-morale path must retain its semantic trigger.'
 
 foreach ($cardId in @('S01-0101', 'S01-0108', 'S01-0311', 'S02-0001', 'S02-0012', 'S02-01M1', 'S01-01C1')) {
     Assert-Contains $plans $cardId "Batch 6J-B public trigger declaration plan is missing card $cardId."

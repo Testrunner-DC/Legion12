@@ -564,6 +564,7 @@ public static partial class L12StructuredCardRules
             "S02-05D1" => DivinityAbilities(),
             "S02-DS03" => SleeplessNightAbilities(),
             "S02-01M1" => WukongAbilities(),
+            "S01-01C1" => TiantingMoraleAbilities(),
             "S01-0409" => YoshitsuneAbilities(),
             _ => [],
         };
@@ -919,6 +920,37 @@ public static partial class L12StructuredCardRules
             new(L12AtomKinds.Keyword, "【挑衅】规则引用", "resolution", new() { ["keywordRef"] = "taunt", ["targetRule"] = "opponent-must-attack-taunt-legion" }),
         ]),
     ]);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> TiantingMoraleAbilities() =>
+    [
+        new("active", "activated", "我方 回合1次 可消耗2士气：从士气牌库追加1张活跃的士气。",
+        [
+            new(L12AtomKinds.Condition, "我方回合且本回合未发动", "condition", new()
+            {
+                ["expression"] = "controller.turn;source.once-per-turn-unused=true",
+            }),
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.PayMorale, "消耗2士气", "cost", new() { ["amount"] = "2" }),
+            new(L12AtomKinds.AddMorale, "追加1张活跃士气", "resolution", new()
+            {
+                ["amount"] = "1", ["state"] = "active",
+            }),
+            new(L12AtomKinds.Duration, "回合1次", "duration", new() { ["duration"] = "once-per-turn" }),
+        ], "confirmed", "user-20260913"),
+        new("morale-returned-to-zero", "triggered", "我方 回合1次 我方士气为0张时，可从士气牌库追加2张休整的士气。",
+        [
+            new(L12AtomKinds.Condition, "我方士气为0且本回合未发动", "condition", new()
+            {
+                ["expression"] = "controller.morale-count=0;source.once-per-turn-unused=true",
+            }),
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.AddMorale, "追加2张休整士气", "resolution", new()
+            {
+                ["amount"] = "2", ["state"] = "rested",
+            }),
+            new(L12AtomKinds.Duration, "回合1次", "duration", new() { ["duration"] = "once-per-turn" }),
+        ], "confirmed", "user-20260913"),
+    ];
 
     private static IReadOnlyList<L12StructuredAbilityTemplate> CooperativeSupportAbilities() =>
     [

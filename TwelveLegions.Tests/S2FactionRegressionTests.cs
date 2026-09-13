@@ -4563,8 +4563,9 @@ public sealed class S2FactionRegressionTests
         var order = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("trigger-order", order.Kind);
         Assert.Equal(2, order.ValidChoices.Count);
-        Assert.Contains(order.ValidChoices, id => order.Data[$"trigger:{id}"] == "active");
-        Assert.Contains(order.ValidChoices, id => order.Data[$"sourceInstance:{id}"] == "master-0");
+        Assert.Equal(["friendly-front-to-back", "friendly-legion-moves"], order.ValidChoices
+            .Select(id => order.Data[$"trigger:{id}"]).OrderBy(trigger => trigger, StringComparer.Ordinal));
+        Assert.All(order.ValidChoices, id => Assert.Equal("master-0", order.Data[$"sourceInstance:{id}"]));
     }
 
     [Fact]

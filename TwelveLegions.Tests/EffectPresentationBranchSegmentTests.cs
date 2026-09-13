@@ -54,6 +54,11 @@ public sealed class EffectPresentationBranchSegmentTests
             ("S02-0305", 3, "master-damaged"),
             ("S02-05M1", 1, "friendly-ranged-death"),
             ("S02-06S4", 3, "friendly-round-table-enter"),
+            ("S02-04M1", 1, "friendly-legion-moves"),
+            ("S02-04M1", 2, "friendly-back-to-front"),
+            ("S02-04M1", 3, "friendly-front-to-back"),
+            ("S02-01M1", 2, "master-legion-returned"),
+            ("S01-01C1", 2, "morale-returned-to-zero"),
         };
         Assert.Equal(expected, L12SingleSegmentTriggeredEffectPresentations.All
             .Select(item => (item.CardId, item.AbilitySequence, item.RuntimeTrigger)).ToArray());
@@ -141,6 +146,7 @@ public sealed class EffectPresentationBranchSegmentTests
     {
         var expected = new[]
         {
+            ("S01-01C1", 1, "factionAddActive"),
             ("S01-0109", 2, "addMorale"),
             ("S01-0214", 2, "cleopatraGuard"),
             ("S01-0314", 3, "olgaDebuff"),
