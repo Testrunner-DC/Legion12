@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-09-13 事件触发语义键第一批
+
+- 五项事件候选已移出`active`：安德华拉诺特=`master-damaged`、玛格丽特=`master-damaged-by-effect`、阿尔忒弥斯=`friendly-ranged-death`、圣杯=`friendly-round-table-enter`、安格斯=`tactic-effect-resolved`。
+- 前三项可选单段触发共享`single-trigger`的放弃/成功/无效/失败场景；玛格丽特继续两段复合结算，安格斯继续强制试炼推进。全部发布`effect-trigger`而非`effect-activation`。
+- 专项105/105、Focused/Batch/Release规则3122/3122、平台116、UI321、连接23、卡图与生产构建通过。功能提交`9a8c12be3a7a0556729e9aff87c42e5058d96019`，发布证据位于同哈希产物目录，未部署。下一批为月读三项、孙悟空返回后士气与天廷零士气恢复。
+
 ## 2026-09-13 驱魔道士单段公开触发
 
 - 新增`single-trigger`协议；驱魔道士陆瑛能力1绑定`s2-after-opponent-tactic`第1/1段，选择发动后才进入响应堆叠。

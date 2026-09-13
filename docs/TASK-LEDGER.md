@@ -1,5 +1,11 @@
 # 十二军团任务台账
 
+## EFFECT-20260913-SEMANTIC-TRIGGERS-A：事件触发不再伪装为主动发动
+
+- 安德华拉诺特、阿尔忒弥斯、〈寻找圣杯之旅〉三个单段可选触发已接入`single-trigger`协议，分别使用`master-damaged`、`friendly-ranged-death`、`friendly-round-table-enter`真实时点；声明、放弃、入栈、结算、动效、日志、回放与恢复共享各自印刷能力第1/1段。
+- 玛格丽特一世改用`master-damaged-by-effect`，仍保持“休整Cost→回复→随后禁疗”的两段复合结算；安格斯·麦·奥格改用`tactic-effect-resolved`，仍保持战术成功后的强制试炼推进。五项均不再发布`effect-activation`，而发布`effect-trigger`，也不会误入只针对主动效果的规则。
+- 覆盖正常、明确不发动、无效、对象失效、次数预留、重复提交与V2恢复；静态门禁禁止五项退回`active`。专项105/105、Focused/Batch/Release规则3122/3122、平台116/116、UI321项、连接23/23、卡图324+42与生产构建通过。功能提交`9a8c12be3a7a0556729e9aff87c42e5058d96019`；发布证据`D:\GPT\Legion12\artifacts\deploy\9a8c12be3a7a0556729e9aff87c42e5058d96019\l12-release-9a8c12be3a7a0556729e9aff87c42e5058d96019.json`。本批不部署；下一批处理月读三项、孙悟空返回后士气与天廷零士气恢复。
+
 ## EFFECT-20260913-SINGLE-TRIGGER-EXORCIST：单段公开触发结果同源
 
 - 新增`single-trigger`公开触发呈现协议，显式连接印刷时点与运行时触发键；只接纳经审核的单段、单一结果触发，不把多段、分支或私区流程错误压成一段。首项为驱魔道士陆瑛能力1“对方战术效果结算后”。
