@@ -355,6 +355,25 @@ public sealed class AtomicReviewBatch6IBRegressionTests
         Assert.Same(fixture.Cards["target"], game.State.Players[1].Field[0][0]);
     }
 
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0115")]
+    [Trait("L12Evidence", "entry:batch6ib-jingke-cancel-distinct-from-zero-target")]
+    public void JingKeTargetStepDistinguishesCancellationFromChoosingZeroTargets()
+    {
+        var game = Create(98501);
+        var fixture = QueueReviewedTrigger(game, "S01-0115", "death");
+
+        ResolveChoice(game, "mode:use");
+        ResolveCards(game, fixture.Morale["cost"].InstanceId);
+        var targetPrompt = OnlyPrompt(game);
+        Assert.Contains(fixture.Cards["target"].InstanceId, targetPrompt.ValidChoices);
+        Assert.Contains("skip", targetPrompt.ValidChoices);
+        Assert.Equal("取消整次发动", targetPrompt.ChoiceLabels["skip"]);
+        ResolveCards(game, "skip");
+        Assert.Empty(game.State.EffectStack);
+        Assert.Contains(fixture.Morale["cost"], game.State.Players[0].Morale);
+    }
+
     [Theory]
     [InlineData("S01-0403")]
     [InlineData("S01-0407")]

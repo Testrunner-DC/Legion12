@@ -972,9 +972,11 @@ public sealed partial class L12GameEngine
             ValidChoices = choices.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             MinChoose = min,
             MaxChoose = max,
-            CancellationPolicy = allowCancel
-                ? L12ActivationCancellationPolicy.WhenNoExplicitDecline
-                : L12ActivationCancellationPolicy.NotAllowed,
+            CancellationPolicy = !allowCancel
+                ? L12ActivationCancellationPolicy.NotAllowed
+                : requiredChoice is not null
+                    ? L12ActivationCancellationPolicy.SeparateChoice
+                    : L12ActivationCancellationPolicy.WhenNoExplicitDecline,
             ReferenceDeclarationKey = referenceKey,
             PreviewPresentation = referenceKey is not null
                 && kind is "effect-entry-battlefield" or "effect-entry-slot"

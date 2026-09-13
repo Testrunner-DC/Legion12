@@ -165,6 +165,10 @@ foreach ($cardId in @(
 }
 Assert-Contains $plans 'PrepareBatch6IBPublicTriggerCandidate' 'Batch 6I-B needs one shared pre-batch candidate filter.'
 Assert-Contains $kernel '.Where(PrepareBatch6IBPublicTriggerCandidate)' 'Every TriggerBatch entry must filter Batch 6I-B candidates before ordering.'
+Assert-Contains $plans 'requiredChoice is not null' `
+    'Steps after an explicit activation decision must use the distinct whole-activation cancellation policy.'
+Assert-Contains $plans 'L12ActivationCancellationPolicy.SeparateChoice' `
+    'Public trigger follow-up selection must label cancellation separately from choosing not to activate.'
 Assert-Contains $plans 'candidate.Data["return-morale-prepaid"] = "true"' 'Jing Ke must prepay the exact declared morale before stack entry.'
 Assert-Contains $plans 'candidate.Data["cleanupReservation"] = pendingKey' 'Alice must reserve her once-per-turn use while declaration is pending.'
 Assert-Contains $plans 'player.UsedAbilities.Add(onceKey)' 'Alice must finalize her once-per-turn use before stack entry.'
