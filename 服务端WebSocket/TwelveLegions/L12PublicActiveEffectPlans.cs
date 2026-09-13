@@ -196,7 +196,7 @@ public sealed partial class L12GameEngine
                     PublicActiveStep("active-target", "debuffTarget",
                         "天照大神：预先选择本回合费用-1的敌方军团", targets),
                     PublicActiveStep("public-enemy-after-declared-cost-debuff", "killTarget",
-                        "天照大神：预先声明随后击杀的费用为0军团，或不选择", ["dynamic"],
+                        "天照大神：预先声明随后击杀的费用为0军团；没有合法目标时跳过", ["dynamic"],
                         referenceKey: "debuffTarget"),
                 ]);
             }

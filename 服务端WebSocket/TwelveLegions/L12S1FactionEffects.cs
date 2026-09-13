@@ -1011,7 +1011,11 @@ public sealed partial class L12GameEngine
                     ? DeclaredEnemyTarget(playerIndex, declared[1], card => Math.Max(0, card.CurrentCost
                         - (card.InstanceId == debuff?.InstanceId ? 1 : 0)) == 0)
                     : null;
-                if (debuff is null || declared[1] != "mode:none" && kill is null)
+                var hasRequiredKill = debuff is not null && PublicLegions(State.Players[1 - playerIndex])
+                    .Any(card => Math.Max(0, card.CurrentCost
+                        - (card.InstanceId == debuff.InstanceId ? 1 : 0)) == 0);
+                if (debuff is null || kill is null
+                    && (declared[1] != "mode:none" || hasRequiredKill))
                     return CommandResult.Reject("天照大神声明的费用降低或击杀目标已失效");
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
             }
@@ -1104,6 +1108,21 @@ public sealed partial class L12GameEngine
                 declared["moraleTargets"] = [.. values.Skip(1)];
             }
             foreach (var pair in CompositeFirstSegmentData(plan, declared)) data[pair.Key] = pair.Value;
+        }
+        if (ability == "valhallaKill")
+        {
+            var values = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+            var movedCostIds = values.Where(id => player.Library.Any(card => card.InstanceId == id))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var targets = values.Where(id => !movedCostIds.Contains(id)
+                    && !id.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)).ToArray();
+            var declared = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["lowTarget"] = [targets[0]],
+                ["broadTarget"] = [targets[1]],
+            };
+            foreach (var pair in CompositeFirstSegmentData("active:S01-03D1:valhallaKill", declared))
+                data[pair.Key] = pair.Value;
         }
         if (ability == "isisCanopic")
             DeclarePresentationBranch(data, "isis-reward-choice", "rewardMode",
@@ -1262,6 +1281,25 @@ public sealed partial class L12GameEngine
                 Mill(player, 2, "英灵殿"); FinishStackItem(item); return true;
             case "valhallaKill":
             {
+                var flow = AtomicFlowKey(item);
+                if (flow is "valhalla-kill-low" or "valhalla-kill-broad")
+                {
+                    var low = flow == "valhalla-kill-low";
+                    var key = low ? "lowTarget" : "broadTarget";
+                    var maximum = low ? 1000 : 5000;
+                    var targetId = CompositeDeclared(item, key).SingleOrDefault();
+                    if (targetId == "mode:none")
+                        RecordTargetSettlementFailure(item, null,
+                            $"发动时没有另一张兵力不高于{maximum}的合法军团");
+                    else if (DeclaredEnemyTarget(item.Controller, targetId,
+                                 card => card.Troops <= maximum) is not null)
+                        KillTarget(item, targetId!, "被英灵殿击杀");
+                    else
+                        RecordTargetSettlementFailure(item, targetId,
+                            $"所选军团已离场、不再是军团或当前兵力已高于{maximum}");
+                    FinishStackItem(item);
+                    return true;
+                }
                 var ids = item.Data.GetValueOrDefault("target")?.Split('|', StringSplitOptions.RemoveEmptyEntries) ?? [];
                 var graveIds = ids.Where(id => player.Library.Any(card => card.InstanceId == id)).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 var targets = ids.Where(id => !graveIds.Contains(id)
@@ -1320,10 +1358,12 @@ public sealed partial class L12GameEngine
                     case "yomi-kill3":
                     {
                         var targetId = CompositeDeclared(item, "kill3Target").SingleOrDefault();
-                        if (targetId != "mode:none"
+                        if (targetId == "mode:none")
+                            item.Data["effectResultStatus"] = "declined";
+                        else if (targetId is not null
                             && DeclaredEnemyTarget(item.Controller, targetId, card => L12StructuredCardRules.CurrentCostAtMost(card, 3)) is not null)
                             KillTarget(item, targetId!, "被黄泉之门击杀");
-                        else if (targetId != "mode:none")
+                        else
                             RecordTargetSettlementFailure(item, targetId,
                                 "所选军团已离场或当前费用已高于3");
                         break;
@@ -1331,10 +1371,12 @@ public sealed partial class L12GameEngine
                     case "yomi-kill1":
                     {
                         var targetId = CompositeDeclared(item, "kill1Target").SingleOrDefault();
-                        if (targetId != "mode:none"
+                        if (targetId == "mode:none")
+                            item.Data["effectResultStatus"] = "declined";
+                        else if (targetId is not null
                             && DeclaredEnemyTarget(item.Controller, targetId, card => L12StructuredCardRules.CurrentCostAtMost(card, 1)) is not null)
                             KillTarget(item, targetId!, "被黄泉之门击杀");
-                        else if (targetId != "mode:none")
+                        else
                             RecordTargetSettlementFailure(item, targetId,
                                 "所选军团已离场或当前费用已高于1");
                         break;
@@ -1368,10 +1410,13 @@ public sealed partial class L12GameEngine
                 else if (AtomicFlowKey(item) == "amaterasu-kill")
                 {
                     var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
-                    if (targetId != "mode:none"
+                    if (targetId == "mode:none")
+                        RecordTargetSettlementFailure(item, null,
+                            "费用降低结算后没有费用为0的合法军团");
+                    else if (targetId is not null
                         && DeclaredEnemyTarget(item.Controller, targetId, card => L12StructuredCardRules.CurrentCostEquals(card, 0)) is not null)
                         KillTarget(item, targetId!, "被天照大神击杀");
-                    else if (targetId != "mode:none")
+                    else
                         RecordTargetSettlementFailure(item, targetId,
                             "所选军团已离场或当前费用不再为0");
                 }

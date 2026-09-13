@@ -235,6 +235,10 @@ public sealed class AtomicReviewBatch6KCRegressionTests
         Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
             Ability: "amaterasuKill")).Accepted);
         Resolve(game, target.InstanceId);
+        var killPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.DoesNotContain("mode:none", killPrompt.ValidChoices);
+        Assert.False(game.Handle(0, new L12Command("resolvePrompt", PromptId: killPrompt.PromptId,
+            Choice: "mode:none")).Accepted);
         Resolve(game, target.InstanceId);
 
         Assert.True(Assert.Single(player.Morale).Tapped);
@@ -247,6 +251,36 @@ public sealed class AtomicReviewBatch6KCRegressionTests
         Assert.Equal(target.InstanceId, second.Data["declared:killTarget"]);
         Assert.True(Assert.Single(player.Morale).Tapped);
         Assert.Contains(target, enemy.Field.SelectMany(row => row));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-04M1")]
+    public void AmaterasuMandatoryKillSkipsOnlyWhenNoZeroCostTargetExists()
+    {
+        var game = Create("S01-04M1", 8310);
+        var player = game.State.Players[0];
+        var enemy = game.State.Players[1];
+        AddMorale(player, 1);
+        player.Library.Add(Card("S01-0301", "amaterasu-library"));
+        var target = Card("S01-0302", "amaterasu-cost-two", cost: 2);
+        enemy.Field[0][0] = target;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "amaterasuKill")).Accepted);
+        Resolve(game, target.InstanceId);
+        var killPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(["mode:none"], killPrompt.ValidChoices);
+        Assert.Equal("没有费用为0的合法军团，继续结算", killPrompt.Data["mode:none"]);
+        Resolve(game, "mode:none");
+
+        PassResponses(game);
+
+        Assert.Equal(1, target.CurrentCost);
+        Assert.Same(target, enemy.Field[0][0]);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.CardId == "S01-04M1")
+            && entry.EffectSegmentIndex == 2);
+        Assert.Equal("skipped", result.EffectResultStatus);
     }
 
     [Fact]

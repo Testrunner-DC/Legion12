@@ -328,6 +328,57 @@ public sealed class Batch299EffectRegressionTests
     }
 
     [Fact]
+    public void HijikataRechecksBothCostRolesAfterResponsesAndKeepsTheLegalPartialKill()
+    {
+        var game = Create();
+        var owner = game.State.Players[0];
+        var hijikata = Card(game, "S01-0406", "hijikata-recheck");
+        owner.Hand.Add(hijikata);
+        for (var i = 0; i < hijikata.Cost; i++)
+            owner.Morale.Add(new L12MoraleCard
+            {
+                InstanceId = $"hijikata-recheck-morale-{i}",
+                CardId = "S01-01C1",
+            });
+        var broad = Card(game, "S01-0004", "hijikata-recheck-broad");
+        var low = Card(game, "S01-0116", "hijikata-recheck-low");
+        game.State.Players[1].Field[0][0] = broad;
+        game.State.Players[1].Field[0][1] = low;
+        game.State.Players[1].Library.Add(Card(game, "S01-0003", "hijikata-death-draw"));
+
+        Assert.True(game.Handle(0, new L12Command("playCard", hijikata.InstanceId,
+            Row: 0, Slot: 0)).Accepted);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            CardInstanceIds: [broad.InstanceId, low.InstanceId])).Accepted);
+        Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
+        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        broad = Assert.Single(game.State.Players[1].Field.SelectMany(row => row),
+            card => card?.InstanceId == broad.InstanceId)!;
+        low = Assert.Single(game.State.Players[1].Field.SelectMany(row => row),
+            card => card?.InstanceId == low.InstanceId)!;
+        low.CostModifier++;
+
+        Pass(game);
+
+        Assert.Contains(broad, game.State.Players[1].Graveyard);
+        Assert.Same(low, game.State.Players[1].Field[0][1]);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("土方岁三", StringComparison.Ordinal)
+            && entry.Text.Contains("不再符合条件", StringComparison.Ordinal));
+        var results = game.State.Events.Where(entry => entry.Type == "effect-result"
+                && entry.Cards.Any(card => card.InstanceId == hijikata.InstanceId))
+            .OrderBy(entry => entry.EffectSegmentIndex).ToArray();
+        Assert.True(results.Length == 2, string.Join("\n", game.State.Events.Select(entry =>
+            $"{entry.Type}|{entry.Text}|{entry.EffectSceneId}|{entry.EffectSegmentIndex}|{entry.EffectResultStatus}|{string.Join(',', entry.Cards.Select(card => card.InstanceId))}")));
+        Assert.Equal([1, 2], results.Select(entry => entry.EffectSegmentIndex));
+        Assert.Equal(["resolved", "failed"], results.Select(entry => entry.EffectResultStatus));
+    }
+
+    [Fact]
     public void CostHealthAndTroopsNeverProjectBelowZero()
     {
         var game = Create();

@@ -737,10 +737,10 @@ public sealed partial class L12GameEngine
             var choices = PublicLegions(State.Players[1 - activation.Controller])
                 .Where(card => Math.Max(0, card.CurrentCost - (card.InstanceId == debuffTarget ? 1 : 0)) == 0)
                 .Select(card => card.InstanceId).ToList();
-            choices.Insert(0, "mode:none");
+            if (choices.Count == 0) choices.Add("mode:none");
             step.ValidChoices.Clear();
             step.ValidChoices.AddRange(choices);
-            step.ChoiceLabels["mode:none"] = "不选择可击杀目标";
+            step.ChoiceLabels["mode:none"] = "没有费用为0的合法军团，继续结算";
             promptKind = "active-target";
         }
         // Dynamic declarations can lose candidates after the initial sequence validation.

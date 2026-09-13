@@ -412,7 +412,25 @@ public sealed partial class L12GameEngine
         }
         foreach (var pair in activation.DeclaredValues)
             candidate.Data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
-        if (plan == "zhuge")
+        if (plan == "hijikata")
+        {
+            var selected = activation.DeclaredValues.GetValueOrDefault("targets", []);
+            var broad = selected.FirstOrDefault(id => selected.Count == 1
+                || selected.Any(other => other != id && DeclaredEnemyTarget(candidate.Controller, other,
+                    card => L12StructuredCardRules.CurrentCostAtMost(card, 1)) is not null));
+            var low = selected.FirstOrDefault(id => id != broad && DeclaredEnemyTarget(candidate.Controller, id,
+                card => L12StructuredCardRules.CurrentCostAtMost(card, 1)) is not null);
+            var declared = new Dictionary<string, List<string>>(activation.DeclaredValues,
+                StringComparer.OrdinalIgnoreCase)
+            {
+                ["broadTarget"] = [broad ?? "mode:none"],
+                ["lowTarget"] = [low ?? "mode:none"],
+            };
+            foreach (var pair in CompositeFirstSegmentData("trigger:S01-0406:enter", declared))
+                candidate.Data[pair.Key] = pair.Value;
+            RefreshDeclaredPresentationSceneId(candidate, source);
+        }
+        else if (plan == "zhuge")
             foreach (var pair in CompositeFirstSegmentData("trigger:S01-0111:enter", activation.DeclaredValues)) candidate.Data[pair.Key] = pair.Value;
         else if (plan == "canopic-one")
             foreach (var pair in CompositeFirstSegmentData("trigger:S01-0217:enter", activation.DeclaredValues)) candidate.Data[pair.Key] = pair.Value;
@@ -467,6 +485,24 @@ public sealed partial class L12GameEngine
             if (FindAuthoritativeCard(item.SourceInstanceId) is { } relic) DiscardRelic(player, relic);
             FinishStackItem(item); return true;
         }
+        if (flow is "hijikata-kill-broad" or "hijikata-kill-low")
+        {
+            var broad = flow == "hijikata-kill-broad";
+            var key = broad ? "broadTarget" : "lowTarget";
+            var maximum = broad ? 2 : 1;
+            var targetId = CompositeDeclared(item, key).SingleOrDefault();
+            if (targetId == "mode:none")
+                RecordTargetSettlementFailure(item, null,
+                    $"发动时没有另一张费用不高于{maximum}的合法军团");
+            else if (DeclaredEnemyTarget(item.Controller, targetId,
+                         card => L12StructuredCardRules.CurrentCostAtMost(card, maximum)) is not null)
+                KillTarget(item, targetId!, "被土方岁三击杀");
+            else
+                RecordTargetSettlementFailure(item, targetId,
+                    $"所选军团已离场、不再是军团或当前费用已高于{maximum}");
+            FinishStackItem(item);
+            return true;
+        }
 
         switch (plan)
         {
@@ -501,7 +537,45 @@ public sealed partial class L12GameEngine
             case "egil": if (FindOnField(opponent, One("target"), out _, out _) is { } egil) AddTimedModifier(egil, -2000, 0, State.TurnSerial, source.Name); break;
             case "gram": ReturnEnemyFieldToLibraryBottom(item.Controller, One("target")); break;
             case "uesugi": KillTarget(item, One("target"), "被上杉谦信击杀"); break;
-            case "hijikata": foreach (var id in Many("targets")) KillTarget(item, id, "被土方岁三击杀"); break;
+            // 升级前检查点中的旧整段StackItem继续使用集合匹配；新声明均走上方
+            // hijikata-kill-broad / hijikata-kill-low 两段结构流程。
+            case "hijikata":
+            {
+                var declared = Many("targets");
+                var current = declared.Select(id => DeclaredEnemyTarget(item.Controller, id,
+                        card => L12StructuredCardRules.CurrentCostAtMost(card, 2)))
+                    .Where(card => card is not null).Cast<L12CardInstance>().ToArray();
+                var resolved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                if (declared.Length == 1)
+                {
+                    if (current.FirstOrDefault() is { } only) resolved.Add(only.InstanceId);
+                }
+                else
+                {
+                    // 同一弹框不要求玩家为两项击杀手动分配角色。结算时以声明顺序
+                    // 保留“不高于2”的对象，再从另一对象中寻找“不高于1”的对象；
+                    // 若顺序中的前者已失效，则交换匹配以尽量结算仍合法的部分。
+                    var broad = current.FirstOrDefault(card =>
+                        current.Any(other => other.InstanceId != card.InstanceId
+                            && L12StructuredCardRules.CurrentCostAtMost(other, 1)));
+                    var low = broad is null
+                        ? current.FirstOrDefault(card => L12StructuredCardRules.CurrentCostAtMost(card, 1))
+                        : current.First(card => card.InstanceId != broad.InstanceId
+                            && L12StructuredCardRules.CurrentCostAtMost(card, 1));
+                    broad ??= current.FirstOrDefault();
+                    if (broad is not null) resolved.Add(broad.InstanceId);
+                    if (low is not null && low.InstanceId != broad?.InstanceId) resolved.Add(low.InstanceId);
+                }
+                foreach (var id in declared)
+                {
+                    if (resolved.Contains(id)) KillTarget(item, id, "被土方岁三击杀");
+                    else RecordTargetSettlementFailure(item, id,
+                        "所选军团已离场、当前费用高于2，或另一项要求的当前费用已高于1");
+                }
+                if (resolved.Count > 0 && resolved.Count < declared.Length)
+                    item.Data["effectResultStatus"] = "resolved";
+                break;
+            }
             case "takasugi":
                 if (!Draw(player, 1))
                 {

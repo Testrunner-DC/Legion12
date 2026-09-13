@@ -526,7 +526,11 @@ public sealed partial class L12GameEngine
                     ? DeclaredEnemyTarget(playerIndex, declared[1], card => Math.Max(0, card.CurrentCost
                         - (card.InstanceId == debuff?.InstanceId ? 1 : 0)) == 0)
                     : null;
-                return debuff is not null && (declared[1] == "mode:none" || kill is not null)
+                var hasRequiredKill = debuff is not null && PublicLegions(State.Players[1 - playerIndex])
+                    .Any(card => Math.Max(0, card.CurrentCost
+                        - (card.InstanceId == debuff.InstanceId ? 1 : 0)) == 0);
+                return debuff is not null && (kill is not null
+                        || declared[1] == "mode:none" && !hasRequiredKill)
                     ? null : "天照大神声明的费用降低或击杀目标已失效";
             }
             case ("S01-04M2", "frontBuff"):

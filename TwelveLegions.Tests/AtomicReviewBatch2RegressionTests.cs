@@ -300,6 +300,46 @@ public sealed class AtomicReviewBatch2RegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "ability:yomiSweep")]
+    public void YomiOptionalKillTargetsPublishDeclinedInsteadOfFalseSuccess()
+    {
+        var game = CreateWithFirstMaster("S01-04D1", 6808);
+        var player = game.State.Players[0];
+        var enemy = game.State.Players[1];
+        player.Morale.Clear();
+        player.Library.Clear();
+        AddReadyMorale(player, 2);
+        player.Library.Add(Card("S01-0003", "yomi-draw-card"));
+        var response = Card("S01-0019", "yomi-hidden-response");
+        response.Hidden = true;
+        response.SetRound = 0;
+        enemy.Field[1][2] = response;
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "yomiSweep")).Accepted);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(["mode:none"], prompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: "mode:none")).Accepted);
+        prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(["mode:none"], prompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: "mode:none")).Accepted);
+
+        PassResponses(game);
+
+        var declined = game.State.Events.Where(entry => entry.Type == "effect-result"
+                && entry.Cards.Any(card => card.CardId == "S01-04D1")
+                && entry.EffectSegmentIndex is 3 or 4)
+            .OrderBy(entry => entry.EffectSegmentIndex).ToArray();
+        Assert.Equal([3, 4], declined.Select(entry => entry.EffectSegmentIndex));
+        Assert.All(declined, entry => Assert.Equal("declined", entry.EffectResultStatus));
+    }
+
+    [Fact]
     [Trait("L12Evidence", "ability:yomiRecover")]
     public void YomiRecoverCancellationAndInvalidationAreFreeAndSuccessUsesAuthorityEvent()
     {

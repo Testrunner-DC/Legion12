@@ -36,6 +36,8 @@ internal static partial class L12CompositeEffectPlans
         "trigger:S01-0420:reaction",
         "response:S02-0106",
         "active:S01-04M1:amaterasuReady",
+        "active:S01-03D1:valhallaKill",
+        "trigger:S01-0406:enter",
         "starter-oiran-active",
         "S02-0620",
     };
@@ -252,6 +254,13 @@ internal static partial class L12CompositeEffectPlans
                 new("valhalla-recover", "英灵殿：随后将已声明的墓地阿斯加德卡牌加入手牌",
                     "mode:recover", PublicTargetKeys: ["graveCard"], RequiredDeclarationKey: "recoverMode"),
             ],
+            ["active:S01-03D1:valhallaKill"] =
+            [
+                new("valhalla-kill-broad", "英灵殿：击杀已声明的兵力不高于5000军团",
+                    PublicTargetKeys: ["broadTarget"]),
+                new("valhalla-kill-low", "英灵殿：击杀已声明的另一张兵力不高于1000军团",
+                    PublicTargetKeys: ["lowTarget"]),
+            ],
             ["active:S01-0105:searchBrothers"] =
             [
                 new("liubei-search", "刘备：检索〈关羽〉或〈张飞〉，展示并加入手牌"),
@@ -442,6 +451,13 @@ internal static partial class L12CompositeEffectPlans
                 new("zhuge-reveal", "诸葛亮：查看下一张天灾"),
                 new("zhuge-disaster", "诸葛亮：随后将天灾值增加或减少1",
                     RequiredMode: "mode:use", RequiredDeclarationKey: "disasterMode", DeclareAtSegmentStart: true),
+            ],
+            ["trigger:S01-0406:enter"] =
+            [
+                new("hijikata-kill-broad", "土方岁三：击杀已声明的费用不高于2军团",
+                    PublicTargetKeys: ["broadTarget"]),
+                new("hijikata-kill-low", "土方岁三：击杀已声明的费用不高于1军团",
+                    PublicTargetKeys: ["lowTarget"]),
             ],
             ["trigger:S01-0217:enter"] =
             [
@@ -1959,6 +1975,18 @@ public sealed partial class L12GameEngine
             "oiran-own-buff" => FindOnField(State.Players[controller],
                     CompositeDeclared(item, "ownTarget").SingleOrDefault(), out _, out _) is { } oiranOwn
                 && IsFieldLegion(oiranOwn),
+            "valhalla-kill-low" => CompositeDeclared(item, "lowTarget").SingleOrDefault() is { } valhallaLow
+                && (valhallaLow == "mode:none" || DeclaredEnemyTarget(controller, valhallaLow,
+                    card => card.Troops <= 1000) is not null),
+            "valhalla-kill-broad" => CompositeDeclared(item, "broadTarget").SingleOrDefault() is { } valhallaBroad
+                && (valhallaBroad == "mode:none" || DeclaredEnemyTarget(controller, valhallaBroad,
+                    card => card.Troops <= 5000) is not null),
+            "hijikata-kill-broad" => CompositeDeclared(item, "broadTarget").SingleOrDefault() is { } hijikataBroad
+                && (hijikataBroad == "mode:none" || DeclaredEnemyTarget(controller, hijikataBroad,
+                    card => L12StructuredCardRules.CurrentCostAtMost(card, 2)) is not null),
+            "hijikata-kill-low" => CompositeDeclared(item, "lowTarget").SingleOrDefault() is { } hijikataLow
+                && (hijikataLow == "mode:none" || DeclaredEnemyTarget(controller, hijikataLow,
+                    card => L12StructuredCardRules.CurrentCostAtMost(card, 1)) is not null),
             "cosmos-yin-buff" => CompositeDeclared(item, "buffTarget").SingleOrDefault() is { } cosmosTarget
                 && FindOnField(State.Players[controller], cosmosTarget, out _, out _) is { } cosmosLegion
                 && IsFieldLegion(cosmosLegion),
