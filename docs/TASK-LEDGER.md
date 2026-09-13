@@ -1,5 +1,11 @@
 # 十二军团任务台账
 
+## EFFECT-20260914-SINGLE-DEATH-TRIGGERS：阵亡单段结果与击杀时点同源
+
+- 无情者哈拉尔、神箭奥德尔、哮天犬·稚、阿塔兰忒四个阵亡时单段效果接入`single-trigger`，声明、人工对象选择、响应、结果、动效、日志、回放共用各自印刷能力第1/1段；唯一对象仍必须由玩家点击。
+- 疯狂的爱丽丝不再以普通`after-attack`承载击杀语义，运行时改用`after-kill`；只有权威最原始战斗击杀会建立候选。放弃释放once预留且不入栈，成功转为活跃，被无效或来源失效使用相同场景身份。
+- 定向115/115、Focused/Batch/Release规则3130/3130、平台116/116、UI321项、连接23/23、卡图324+42与生产构建通过。功能提交`323f181e126e4b33d3fb746a2424fa3cfec694c9`，发布证据`D:\GPT\Legion12\artifacts\deploy\323f181e126e4b33d3fb746a2424fa3cfec694c9\l12-release-323f181e126e4b33d3fb746a2424fa3cfec694c9.json`；未部署。
+
 ## EFFECT-20260913-SEMANTIC-TRIGGERS-B：月读、孙悟空与天廷时点及呈现同源
 
 - 月读三个位移触发分别改用`friendly-back-to-front`、`friendly-front-to-back`、`friendly-legion-moves`；同一移动产生多个能力时仍进入一个由控制者排序的TriggerBatch，但每项保持自己的印刷能力、费用、候选和结算场景。
