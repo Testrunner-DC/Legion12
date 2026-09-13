@@ -48,6 +48,7 @@ internal static class L12EffectPresentationVariants
             ["active:S01-04D1:yomiSweep"] = 2,
             ["active:S01-04M1:amaterasuKill"] = 1,
             ["active:S01-04M1:amaterasuReady"] = 2,
+            ["active:S02-01M1:wukongTransform"] = 1,
             ["active:S02-0404:magatamaMove"] = 2,
             ["active:S02-0404:magatamaImmortal"] = 2,
             ["active:S02-0520:forgePromotionDiscount"] = 2,

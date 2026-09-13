@@ -40,6 +40,7 @@ public sealed partial class L12GameEngine
                         ValidChoices = player.Morale.Select(card => card.InstanceId).ToList(),
                         MinChoose = 2,
                         MaxChoose = Math.Min(8, player.Morale.Count),
+                        IsCostSelection = true,
                     },
                     new L12ActivationSelectionStep
                     {
@@ -167,10 +168,16 @@ public sealed partial class L12GameEngine
                 if (!ReturnSelectedMorale(player, cards.Cast<L12MoraleCard>().ToArray()))
                     return CommandResult.Reject("选择的士气已失效");
                 player.UsedAbilities.Add(onceKey);
-                PushEffect(playerIndex, source, "active", "主宰效果", data: new Dictionary<string, string>
+                var compositeDeclared = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
                 {
-                    ["ability"] = ability, ["count"] = ids.Length.ToString(), ["slot"] = slot,
-                });
+                    ["returnCost"] = [.. ids], ["entrySlot"] = [slot],
+                };
+                var data = CompositeFirstSegmentData("active:S02-01M1:wukongTransform", compositeDeclared);
+                data["ability"] = ability;
+                data["count"] = ids.Length.ToString();
+                data["slot"] = slot;
+                PushEffect(playerIndex, source, "active", "主宰效果", data: data);
+                AddEvent("cost", playerIndex, $"孙悟空返还{ids.Length}张士气作为变身效果的发动费用", source);
                 return CommandResult.Ok();
             }
             case "thorCharge" when source.CardId == "S02-03M1":
@@ -334,9 +341,8 @@ public sealed partial class L12GameEngine
                 var (row, slot) = ParseSlot(item.Data["slot"]);
                 if (row != 0 || slot is < 0 or > 2 || player.Field[row][slot] is not null)
                 {
-                    AddEvent("effect-cancelled", item.Controller,
-                        "孙悟空声明的前排登场位置已失效；登场取消，已返还士气及回合次数不恢复",
-                        source);
+                    RecordTargetSettlementFailure(item, item.Data.GetValueOrDefault("slot"),
+                        "所选位置不再是我方前排空位；已返还士气及回合次数不恢复");
                     FinishStackItem(item);
                     return true;
                 }

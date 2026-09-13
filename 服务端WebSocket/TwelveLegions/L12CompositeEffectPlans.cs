@@ -336,6 +336,12 @@ internal static partial class L12CompositeEffectPlans
                     PublicTargetKeys: ["moraleTargets"]),
                 new("amaterasu-front-buff", "天照大神：我方前排所有【高天原】军团本回合兵力+1000"),
             ],
+            ["active:S02-01M1:wukongTransform"] =
+            [
+                new("wukong-transform-entry", "孙悟空：将此主宰作为兵力等于已返还士气数量×1000的【斗士】军团在已声明的我方前排位置活跃登场",
+                    CostKind: "morale-return", CostKey: "returnCost", PublicTargetKeys: ["entrySlot"],
+                    PreStackCost: true, RequiredDeclarationKey: "entrySlot"),
+            ],
             ["active:S02-0404:magatamaMove"] =
             [
                 new("magatama-cavalry-move", "八尺琼勾玉：使已选择的我方活跃军团进行1次骑兵位移",

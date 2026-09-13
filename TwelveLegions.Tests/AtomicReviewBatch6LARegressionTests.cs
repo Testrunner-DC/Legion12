@@ -238,7 +238,7 @@ public sealed class AtomicReviewBatch6LARegressionTests
         Assert.DoesNotContain(player.Field.SelectMany(row => row), card => card?.IsMasterLegion == true);
         Assert.Empty(player.Morale);
         Assert.Contains("active:master-0:wukongTransform", player.UsedAbilities);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
             && entry.Text.Contains("孙悟空", StringComparison.Ordinal));
     }
 
