@@ -14,7 +14,7 @@ public sealed class AtomicReviewBatch6IBRegressionTests
         ("S01-0001", "death"), ("S01-0112", "death"), ("S01-0115", "death"),
         ("S01-0207", "death"), ("S01-0210", "death"), ("S01-0303", "death"),
         ("S01-0304", "death"), ("S01-0306", "death"), ("S01-0313", "death"),
-        ("S01-0403", "death"), ("S01-0407", "death"), ("S02-0002", "after-attack"),
+        ("S01-0403", "death"), ("S01-0407", "death"), ("S02-0002", "after-kill"),
         ("S02-01S1", "death"), ("S02-0301", "death"), ("S02-0508", "death"),
         ("S02-0518", "death"), ("S02-0601", "death"), ("S02-0615", "death"),
     ];
@@ -108,7 +108,7 @@ public sealed class AtomicReviewBatch6IBRegressionTests
         var source = Card(cardId, $"batch6ib-source-{cardId}-{trigger}");
         var cards = new Dictionary<string, L12CardInstance>();
         var morale = new Dictionary<string, L12MoraleCard>();
-        if (trigger == "after-attack")
+        if (trigger is "after-attack" or "after-kill")
             player.Field[0][0] = source;
         else
             player.Resolving.Add(source);
@@ -184,7 +184,7 @@ public sealed class AtomicReviewBatch6IBRegressionTests
             }
         }
 
-        var data = trigger == "after-attack"
+        var data = trigger is "after-attack" or "after-kill"
             ? new Dictionary<string, string>
             {
                 ["killed"] = "true", ["combatKillConfirmed"] = "true",
@@ -199,7 +199,7 @@ public sealed class AtomicReviewBatch6IBRegressionTests
         => ReviewedTriggers.Select(trigger => new object[] { trigger.CardId, trigger.Trigger });
 
     public static IEnumerable<object[]> ModeRows()
-        => ResolutionModeCards.Select(cardId => new object[] { cardId, cardId == "S02-0002" ? "after-attack" : "death" });
+        => ResolutionModeCards.Select(cardId => new object[] { cardId, cardId == "S02-0002" ? "after-kill" : "death" });
 
     public static IEnumerable<object[]> NoLegalChoiceRows()
     {
@@ -257,6 +257,81 @@ public sealed class AtomicReviewBatch6IBRegressionTests
         Assert.Empty(game.State.PendingTriggerStackCandidates);
         Assert.Empty(game.State.PendingPrompts);
         Assert.Empty(game.State.EffectStack);
+    }
+
+    [Theory]
+    [InlineData("S01-0304")]
+    [InlineData("S01-0313")]
+    [InlineData("S02-01S1")]
+    [InlineData("S02-0508")]
+    [Trait("L12Evidence", "entry:batch6ib-single-death-result-scene")]
+    public void AuditedSingleDeathEffectsPublishOneResolvedSettlementSegment(string cardId)
+    {
+        var game = Create(9830 + cardId[^1]);
+        var fixture = QueueReviewedTrigger(game, cardId, "death");
+        switch (cardId)
+        {
+            case "S01-0304":
+                ResolveCards(game, fixture.Cards["target"].InstanceId);
+                break;
+            case "S01-0313":
+                ResolveChoice(game, "mode:use");
+                ResolveCards(game, fixture.Cards["target"].InstanceId);
+                break;
+            case "S02-01S1":
+                ResolveChoice(game, "mode:use");
+                break;
+            case "S02-0508":
+                ResolveCards(game, fixture.Morale["target"].InstanceId);
+                break;
+        }
+
+        var declaration = Assert.Single(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.CardId == cardId));
+        Assert.NotNull(declaration.EffectSceneId);
+        Assert.Equal(1, declaration.EffectSegmentIndex);
+        Assert.Equal(1, declaration.EffectSegmentCount);
+        PassResponses(game);
+
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.CardId == cardId));
+        Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.Equal(declaration.EffectSceneId, result.EffectSceneId);
+        switch (cardId)
+        {
+            case "S01-0304":
+                Assert.DoesNotContain(fixture.Cards["target"], game.State.Players[1].Field.SelectMany(row => row));
+                break;
+            case "S01-0313":
+                Assert.True(fixture.Cards["target"].Tapped);
+                break;
+            case "S02-01S1":
+                Assert.True(Assert.Single(game.State.Players[0].Morale).Tapped);
+                break;
+            case "S02-0508":
+                Assert.True(fixture.Morale["target"].IsGodPower);
+                break;
+        }
+    }
+
+    [Theory]
+    [InlineData("S01-0313")]
+    [InlineData("S02-01S1")]
+    [Trait("L12Evidence", "entry:batch6ib-single-death-decline")]
+    public void AuditedOptionalSingleDeathDeclinesAreDistinctAndRejectDuplicates(string cardId)
+    {
+        var game = Create(9840 + cardId[^1]);
+        QueueReviewedTrigger(game, cardId, "death");
+        var prompt = OnlyPrompt(game);
+
+        ResolveChoice(game, "mode:none");
+
+        Assert.Empty(game.State.EffectStack);
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-declined"
+            && entry.EffectResultStatus == "declined"
+            && entry.Cards.Any(card => card.CardId == cardId));
+        Assert.False(game.Handle(prompt.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "mode:use")).Accepted);
     }
 
     [Fact]
@@ -330,18 +405,34 @@ public sealed class AtomicReviewBatch6IBRegressionTests
     public void AliceDeclineReleasesPendingOnceAndCommitFinalizesItBeforeStack()
     {
         var game = Create(9870);
-        var fixture = QueueReviewedTrigger(game, "S02-0002", "after-attack");
+        var fixture = QueueReviewedTrigger(game, "S02-0002", "after-kill");
         var onceKey = $"alice-ready:{fixture.Source.InstanceId}:{game.State.TurnSerial}";
         Assert.Contains($"{onceKey}:pending", game.State.Players[0].UsedAbilities);
+        var declinePrompt = OnlyPrompt(game);
         ResolveChoice(game, "mode:none");
         Assert.DoesNotContain($"{onceKey}:pending", game.State.Players[0].UsedAbilities);
         Assert.DoesNotContain(onceKey, game.State.Players[0].UsedAbilities);
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-declined"
+            && entry.EffectResultStatus == "declined"
+            && entry.Cards.Any(card => card.CardId == "S02-0002"));
+        Assert.False(game.Handle(declinePrompt.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: declinePrompt.PromptId, Choice: "mode:use")).Accepted);
 
-        QueueReviewedTrigger(game, "S02-0002", "after-attack");
+        var accepted = QueueReviewedTrigger(game, "S02-0002", "after-kill");
+        accepted.Source.Tapped = true;
+        var acceptedOnceKey = $"alice-ready:{accepted.Source.InstanceId}:{game.State.TurnSerial}";
         ResolveChoice(game, "mode:use");
-        Assert.Contains(onceKey, game.State.Players[0].UsedAbilities);
-        Assert.DoesNotContain($"{onceKey}:pending", game.State.Players[0].UsedAbilities);
+        Assert.Contains(acceptedOnceKey, game.State.Players[0].UsedAbilities);
+        Assert.DoesNotContain($"{acceptedOnceKey}:pending", game.State.Players[0].UsedAbilities);
         Assert.Single(game.State.EffectStack);
+        var declaration = Assert.Single(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.InstanceId == accepted.Source.InstanceId));
+        Assert.NotNull(declaration.EffectSceneId);
+        PassResponses(game);
+        Assert.False(accepted.Source.Tapped);
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "resolved"
+            && entry.EffectSceneId == declaration.EffectSceneId);
     }
 
     [Fact]

@@ -100,7 +100,8 @@ public sealed partial class L12GameEngine
             || killEvent.TriggersPrintedKillTiming && source.CardId == "S02-0608"
                 && controller.UsedAbilities.Contains($"crusade-piercing:{source.InstanceId}:{State.TurnSerial}"))
         {
-            candidates.Add(CreateTriggerCandidate(killEvent.SourceController, source, "after-attack", "【击杀时】效果",
+            var trigger = source.CardId == "S02-0002" ? "after-kill" : "after-attack";
+            candidates.Add(CreateTriggerCandidate(killEvent.SourceController, source, trigger, "【击杀时】效果",
                 new Dictionary<string, string>
                 {
                     ["killed"] = "true",

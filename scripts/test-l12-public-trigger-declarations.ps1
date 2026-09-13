@@ -79,12 +79,13 @@ foreach ($semanticTrigger in @(
     '("S02-04M1", "friendly-legion-moves", "tsukuyomiFollowMove", _)',
     '("S02-04M1", "friendly-front-to-back", "tsukuyomiReadyMorale", _)',
     'S02-01M1|master-legion-returned|wukongReturnMorale',
-    'S01-01C1|morale-returned-to-zero|factionZeroRecovery'
+    'S01-01C1|morale-returned-to-zero|factionZeroRecovery',
+    'S02-0002|after-kill'
 )) {
     Assert-Contains ($plans + "`n" + $trialAdvancePlans) $semanticTrigger `
         "An event-triggered effect lost its semantic runtime trigger: $semanticTrigger"
 }
-foreach ($legacyActiveTrigger in @(
+foreach ($legacyRuntimeTrigger in @(
     '("S02-0304", "active", "margaretMasterDamage", _)',
     '("S02-0305", "active", "anderstorpRingDraw", _)',
     '("S02-05M1", "active", "artemisDeathFlip", _)',
@@ -93,10 +94,11 @@ foreach ($legacyActiveTrigger in @(
     '("S02-04M1", "active", "tsukuyomiFollowMove", _)',
     '("S02-04M1", "active", "tsukuyomiReadyMorale", _)',
     'S02-01M1|active|wukongReturnMorale',
-    'S01-01C1|active|factionZeroRecovery'
+    'S01-01C1|active|factionZeroRecovery',
+    'S02-0002|after-attack'
 )) {
-    if (($plans + "`n" + $trialAdvancePlans).IndexOf($legacyActiveTrigger, [StringComparison]::Ordinal) -ge 0) {
-        throw "Event-triggered effect regressed to the active-button runtime key: $legacyActiveTrigger"
+    if (($plans + "`n" + $trialAdvancePlans).IndexOf($legacyRuntimeTrigger, [StringComparison]::Ordinal) -ge 0) {
+        throw "Event-triggered effect regressed to a legacy runtime key: $legacyRuntimeTrigger"
     }
 }
 Assert-Contains $remaining 'master, "friendly-back-to-front"' `

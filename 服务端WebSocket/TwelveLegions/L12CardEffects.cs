@@ -82,6 +82,7 @@ public sealed partial class L12GameEngine
             case "death": ResolveDeathEffect(item); break;
             case "leave": ResolveLeaveEffect(item); break;
             case "after-attack": ResolveAfterAttackEffect(item); break;
+            case "after-kill": ResolveAfterAttackEffect(item); break;
             case "after-damage": ResolveS1FactionAfterDamage(item); break;
             case "active": ResolveActiveEffect(item); break;
             case "master-damaged": ResolveActiveEffect(item); break;

@@ -41,7 +41,7 @@ public sealed partial class L12GameEngine
             ["S01-0313|death"] = "oddr-rest",
             ["S01-0403|death"] = "uesugi-counters",
             ["S01-0407|death"] = "ryoma-summon",
-            ["S02-0002|after-attack"] = "alice-ready",
+            ["S02-0002|after-kill"] = "alice-ready",
             ["S02-01S1|death"] = "xiaotian-morale",
             ["S02-0301|death"] = "thor-draw-cycle",
             ["S02-0508|death"] = "atalanta-flip",
