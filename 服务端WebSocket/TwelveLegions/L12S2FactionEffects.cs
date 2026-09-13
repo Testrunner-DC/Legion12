@@ -1413,13 +1413,21 @@ public sealed partial class L12GameEngine
                 || !EffectCavalryDestinations(player).Contains(declared[1]))
                 return CommandResult.Reject("所选军团或位移位置已不合法");
             source.Tapped = true;
-            PushEffect(playerIndex, source, "active", "主动休整效果", data: new Dictionary<string, string>
+            var moveDeclared = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["moveTarget"] = [legion.InstanceId],
+                ["moveDestination"] = [$"{destination.Row}:{destination.Slot}"],
+            };
+            var moveData = new Dictionary<string, string>
             {
                 ["ability"] = ability,
                 ["target"] = legion.InstanceId,
                 ["destination"] = $"{destination.Row}:{destination.Slot}",
                 ["targetPlayerIndex"] = playerIndex.ToString(),
-            });
+            };
+            foreach (var pair in CompositeFirstSegmentData("active:S02-0404:magatamaMove", moveDeclared))
+                moveData[pair.Key] = pair.Value;
+            PushEffect(playerIndex, source, "active", "主动休整效果", data: moveData);
             return CommandResult.Ok();
         }
         if (ability == "magatamaImmortal" && source.CardId == "S02-0404")
@@ -1428,11 +1436,17 @@ public sealed partial class L12GameEngine
             if (source.Tapped || legion is null || !IsFieldLegion(legion) || legion.LastMovedTurn != State.TurnSerial)
                 return CommandResult.Reject("八尺琼勾玉必须为活跃状态，且目标必须在本回合位移过");
             source.Tapped = true;
-            PushEffect(playerIndex, source, "active", "主动休整效果", data: new Dictionary<string, string>
+            var immortalDeclared = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
             {
-                ["ability"] = ability,
-                ["target"] = legion.InstanceId,
-            });
+                ["immortalTarget"] = [legion.InstanceId],
+            };
+            var immortalData = new Dictionary<string, string>
+            {
+                ["ability"] = ability, ["target"] = legion.InstanceId,
+            };
+            foreach (var pair in CompositeFirstSegmentData("active:S02-0404:magatamaImmortal", immortalDeclared))
+                immortalData[pair.Key] = pair.Value;
+            PushEffect(playerIndex, source, "active", "主动休整效果", data: immortalData);
             return CommandResult.Ok();
         }
         if (ability == "amakineTop" && source.CardId == "S02-0616")
@@ -1782,18 +1796,24 @@ public sealed partial class L12GameEngine
                 AddEvent("move", item.Controller, $"八尺琼勾玉使〈{legion.Name}〉位移", source, legion);
                 RecordLegionMovement(item.Controller, legion, row, targetRow);
             }
+            else RecordTargetSettlementFailure(item,
+                item.Data.GetValueOrDefault("target") ?? destinationText,
+                "所选军团已离场、不再为我方活跃军团，或所选目的地已不再合法");
             FinishStackItem(item);
             return true;
         }
         if (ability == "magatamaImmortal" && source?.CardId == "S02-0404")
         {
             var legion = FindOnField(player, item.Data.GetValueOrDefault("target"), out _, out _);
-            if (legion is not null && legion.LastMovedTurn == State.TurnSerial)
+            if (legion is not null && !legion.Hidden && IsFieldLegion(legion)
+                && legion.LastMovedTurn == State.TurnSerial)
             {
                 legion.ImmortalUses = Math.Max(legion.ImmortalUses, 1);
                 legion.ImmortalUntilTurn = Math.Max(legion.ImmortalUntilTurn, ExpiryAtNextOwnEnd(item.Controller));
                 AddEvent("effect", item.Controller, $"八尺琼勾玉使〈{legion.Name}〉本回合获得免死", source, legion);
             }
+            else RecordTargetSettlementFailure(item, item.Data.GetValueOrDefault("target"),
+                "所选军团已离场、不再是公开军团或不再满足本回合位移条件");
             FinishStackItem(item);
             return true;
         }

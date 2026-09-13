@@ -336,6 +336,16 @@ internal static partial class L12CompositeEffectPlans
                     PublicTargetKeys: ["moraleTargets"]),
                 new("amaterasu-front-buff", "天照大神：我方前排所有【高天原】军团本回合兵力+1000"),
             ],
+            ["active:S02-0404:magatamaMove"] =
+            [
+                new("magatama-cavalry-move", "八尺琼勾玉：使已选择的我方活跃军团进行1次骑兵位移",
+                    PublicTargetKeys: ["moveTarget", "moveDestination"], RequiredDeclarationKey: "moveTarget"),
+            ],
+            ["active:S02-0404:magatamaImmortal"] =
+            [
+                new("magatama-immortal", "八尺琼勾玉：使已选择的本回合位移过的军团本回合获得免死",
+                    PublicTargetKeys: ["immortalTarget"], RequiredDeclarationKey: "immortalTarget"),
+            ],
             ["active:S02-05D1:divinityRecover"] =
             [
                 new("divinity-recover", "奥林匹斯 诸神巅：将已声明的墓地卡牌加入手牌",
