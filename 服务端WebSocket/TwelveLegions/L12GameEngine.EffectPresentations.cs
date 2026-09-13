@@ -217,6 +217,14 @@ public sealed partial class L12GameEngine
         else candidate.Data["presentationSceneId"] = sceneId;
     }
 
+    private void RefreshDeclaredPresentationSceneId(L12StackItem item, L12CardInstance source)
+    {
+        var fallback = source.EffectText ?? item.Text;
+        var sceneId = ResolveEffectPresentationSceneId(source, item.Trigger, item.Data, fallback);
+        if (string.IsNullOrWhiteSpace(sceneId)) item.Data.Remove("presentationSceneId");
+        else item.Data["presentationSceneId"] = sceneId;
+    }
+
     private static void DeclarePresentationBranch(Dictionary<string, string> data,
         string flow, string declarationKey, string? publicChoice)
     {

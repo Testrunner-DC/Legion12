@@ -1440,7 +1440,12 @@ public sealed partial class L12GameEngine
             if (source.Tapped) return CommandResult.Reject("阿麦金必须为活跃状态");
             if (player.Library.Count == 0) return CommandResult.Reject("牌库为空，无法展示牌库顶部的牌");
             source.Tapped = true;
-            PushEffect(playerIndex, source, "active", "主动效果", data: new Dictionary<string, string> { ["ability"] = ability });
+            var data = new Dictionary<string, string> { ["ability"] = ability };
+            foreach (var pair in CompositeFirstSegmentData("active:S02-0616:amakineTop",
+                         new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
+                data[pair.Key] = pair.Value;
+            DeclarePresentationBranch(data, "amakine-top-card", "place", "mode:pending");
+            PushEffect(playerIndex, source, "active", "主动效果", data: data);
             return CommandResult.Ok();
         }
         if (ability == "galahadGrailReward" && source.CardId == "S02-0604")
@@ -1796,6 +1801,10 @@ public sealed partial class L12GameEngine
         {
             if (player.Library.Count == 0)
             {
+                item.Data["effectResultStatus"] = "failed";
+                AddEvent("effect-failed", item.Controller,
+                    "阿麦金发动后牌库顶部的处理对象在逆结算前消失，效果未能完成结算",
+                    source is null ? [] : [source]);
                 FinishStackItem(item);
                 return true;
             }
@@ -2048,21 +2057,47 @@ public sealed partial class L12GameEngine
             case "s2-amakine-top-place":
             {
                 var top = player.Library.FirstOrDefault(card => card.InstanceId == item.Data.GetValueOrDefault("amakine-top"));
-                if (top is not null)
+                var place = chosen.SingleOrDefault();
+                if (place is not null)
                 {
-                    player.Library.Remove(top);
-                    if (chosen[0] == "hand" && item.Data.GetValueOrDefault("amakine-can-take") == "true")
-                        AddCardToHandByEffect(player, top, "library", "阿麦金将牌库顶部的彼界卡牌加入手牌");
-                    else if (chosen[0] == "bottom")
+                    DeclarePresentationBranch(item.Data, "amakine-top-card", "place", place);
+                    if (FindSource(item) is { } presentationSource)
+                        RefreshDeclaredPresentationSceneId(item, presentationSource);
+                }
+                if (top is null)
+                {
+                    item.Data["effectResultStatus"] = "failed";
+                    AddEvent("effect-failed", item.Controller,
+                        "阿麦金已展示的牌库卡牌在选择去向前失效");
+                }
+                else if (place == "hand")
+                {
+                    if (L12StructuredCardRules.HasOnlyEffectiveFactionTrait(player, top, "otherworld"))
                     {
-                        player.Library.Add(top);
-                        AddEvent("return", item.Controller, $"阿麦金将〈{top.Name}〉返回牌库底部", top);
+                        _ = MoveLibraryCardToHandByEffect(player, top.InstanceId,
+                            "阿麦金将牌库顶部的彼界卡牌加入手牌");
                     }
                     else
                     {
-                        player.Library.Insert(0, top);
-                        AddEvent("return", item.Controller, $"阿麦金将〈{top.Name}〉返回牌库顶部", top);
+                        item.Data["effectResultStatus"] = "failed";
+                        AddEvent("effect-failed", item.Controller,
+                            $"阿麦金已展示的〈{top.Name}〉在选择结算时不再只具有【彼界】单一特征", top);
                     }
+                }
+                else if (place == "bottom")
+                {
+                    _ = L12LibraryOps.PutOnBottom(player, [top]);
+                    AddEvent("return", item.Controller, $"阿麦金将〈{top.Name}〉返回牌库底部", top);
+                }
+                else if (place == "top")
+                {
+                    _ = L12LibraryOps.PutOnTop(player, [top]);
+                    AddEvent("return", item.Controller, $"阿麦金将〈{top.Name}〉返回牌库顶部", top);
+                }
+                else
+                {
+                    item.Data["effectResultStatus"] = "failed";
+                    AddEvent("effect-failed", item.Controller, "阿麦金收到无法识别的牌库去向选择");
                 }
                 FinishStackItem(item);
                 return true;

@@ -331,6 +331,10 @@ internal static partial class L12CompositeEffectPlans
             [
                 new("prometheus-top-three", "普罗米修斯：查看牌库顶部3张牌，选择1张【奥林匹斯】卡牌加入手牌，并排列其余牌"),
             ],
+            ["active:S02-0616:amakineTop"] =
+            [
+                new("amakine-top-card", "阿麦金：展示牌库顶部1张牌，并按其有效特征选择去向"),
+            ],
             ["active:ST05-06:telemachusTopThree"] =
             [
                 new("telemachus-top-three", "特勒马科斯：查看牌库顶部3张牌，选择1张【远程】军团或【奥林匹斯】战术卡加入手牌，并排列其余牌"),

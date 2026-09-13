@@ -46,6 +46,7 @@ internal static class L12EffectPresentationVariants
             ["active:S01-04M1:amaterasuReady"] = 2,
             ["active:S02-05D1:divinityRecover"] = 2,
             ["active:S02-05M2:prometheusTopThree"] = 1,
+            ["active:S02-0616:amakineTop"] = 3,
             ["active:ST05-06:telemachusTopThree"] = 1,
             ["response:S01-0020"] = 1,
             ["response:S01-0120"] = 1,
@@ -102,6 +103,10 @@ internal static class L12EffectPresentationVariants
         Branch("desert-transaction", "按1张结算", "不再弃置，按数量1处理", "desertRepeatCount", "count:1"),
         Branch("desert-transaction", "按2张结算", "不再弃置，按数量2处理", "desertRepeatCount", "count:2"),
         Branch("desert-transaction", "按3张结算", "不再弃置，按数量3处理", "desertRepeatCount", "count:3"),
+        Branch("amakine-top-card", "等待展示牌库顶牌", "展示牌库顶部1张牌，并按其有效特征选择去向", "place", "mode:pending"),
+        Branch("amakine-top-card", "加入手牌", "将仅具有【彼界】单一特征的牌加入手牌", "place", "hand"),
+        Branch("amakine-top-card", "返回牌库顶部", "将展示的牌返回牌库顶部", "place", "top"),
+        Branch("amakine-top-card", "返回牌库底部", "将展示的牌返回牌库底部", "place", "bottom"),
     ];
 
     private static readonly L12StandaloneEffectPresentationBranch[] StandalonePublicBranches =
