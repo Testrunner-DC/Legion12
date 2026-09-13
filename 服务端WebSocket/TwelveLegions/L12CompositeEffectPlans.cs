@@ -355,6 +355,11 @@ internal static partial class L12CompositeEffectPlans
                 new("forge-ready-after-kill", "匠神锻造炉：使已选择的军团本回合下一次击杀对方军团后转为活跃",
                     PublicTargetKeys: ["readyTarget"], RequiredDeclarationKey: "readyTarget"),
             ],
+            ["active:S02-05M1:artemisBuff"] =
+            [
+                new("artemis-grant", "阿尔忒弥斯：使已选择的费用3至6【奥林匹斯】军团本回合获得已声明能力",
+                    PublicTargetKeys: ["buffTarget"], RequiredDeclarationKey: "buffTarget"),
+            ],
             ["active:S02-06M1:morriganReadyOnKill"] =
             [
                 new("morrigan-ready-after-kill", "莫瑞甘：使已选择的【彼界】军团本回合下一次击杀对方军团后转为活跃",

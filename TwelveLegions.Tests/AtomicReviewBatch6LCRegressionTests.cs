@@ -260,7 +260,8 @@ public sealed class AtomicReviewBatch6LCRegressionTests
 
         var begin = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "artemisBuff"));
         Assert.True(begin.Accepted, begin.Error);
-        Resolve(game, $"discard:{player.Hand[0].InstanceId}");
+        Resolve(game, "pay:discard");
+        Resolve(game, player.Hand[0].InstanceId);
         var target = Assert.Single(game.State.PendingPrompts);
         Assert.Contains(neutral.InstanceId, target.ValidChoices);
     }

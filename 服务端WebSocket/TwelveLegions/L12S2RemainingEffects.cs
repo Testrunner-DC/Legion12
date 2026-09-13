@@ -71,14 +71,42 @@ public sealed partial class L12GameEngine
                     .Select(card => card.InstanceId).ToList();
                 if (targets.Count == 0) return CommandResult.Reject("没有费用3至6的【奥林匹斯】军团");
                 var payment = new List<string>();
+                var unavailable = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 if (player.Morale.Any(card => card.IsGodPower && !card.Tapped)) payment.Add("pay:god-power");
-                if (player.Hand.Count > 0) payment.AddRange(player.Hand.Select(card => $"discard:{card.InstanceId}"));
+                else unavailable["pay:god-power"] = "没有活跃神力";
+                if (player.Hand.Count > 0) payment.Add("pay:discard");
+                else unavailable["pay:discard"] = "没有可弃置的手牌";
                 if (payment.Count == 0) return CommandResult.Reject("没有可支付的神力或手牌");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
-                    new L12ActivationSelectionStep { Kind = "option", Text = "阿尔忒弥斯：选择消耗1神力或弃置1张手牌", ValidChoices = payment },
-                    new L12ActivationSelectionStep { Kind = "field-legion", Text = "选择我方1张费用3至6的【奥林匹斯】军团", ValidChoices = targets },
-                    new L12ActivationSelectionStep { Kind = "option", Text = "选择获得强攻或震击", ValidChoices = ["buff:strong", "buff:shock"] },
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "option", DeclarationKey = "paymentMode", Text = "阿尔忒弥斯：选择支付方式",
+                        ValidChoices = payment, DisplayChoices = ["pay:god-power", "pay:discard", "skip"],
+                        DisabledChoiceReasons = unavailable, UiPattern = "effect-decision",
+                        ChoiceLabels = new()
+                        {
+                            ["pay:god-power"] = "消耗并翻转1神力",
+                            ["pay:discard"] = "弃置1张手牌",
+                            ["skip"] = "取消发动",
+                        },
+                    },
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "hand-card", DeclarationKey = "discardCost", Text = "阿尔忒弥斯：选择弃置的1张手牌",
+                        ValidChoices = player.Hand.Select(card => card.InstanceId).ToList(), RequiredDeclaredChoice = "pay:discard",
+                    },
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "field-legion", DeclarationKey = "buffTarget", Text = "阿尔忒弥斯：选择我方1张费用3至6的【奥林匹斯】军团",
+                        ValidChoices = targets,
+                    },
+                    new L12ActivationSelectionStep
+                    {
+                        Kind = "option", DeclarationKey = "buffMode", Text = "阿尔忒弥斯：选择获得强攻或震击",
+                        ValidChoices = ["buff:strong", "buff:shock"],
+                        ChoiceLabels = new() { ["buff:strong"] = "本回合获得强攻", ["buff:shock"] = "本回合获得震击" },
+                    },
                 ]);
             }
             case "hippolytaRevive" when source.CardId == "S02-0510":
@@ -226,26 +254,46 @@ public sealed partial class L12GameEngine
             case "artemisBuff" when source.CardId == "S02-05M1":
             {
                 var declared = SplitDeclared(target);
-                if (declared.Length != 3) return CommandResult.Reject("阿尔忒弥斯的支付、目标和效果选择不完整");
-                var legion = FindOnField(player, declared[1], out _, out _);
-                if (legion is null || !L12StructuredCardRules.HasFaction(player, legion, "olympus")
+                if (declared.Length < 3) return CommandResult.Reject("阿尔忒弥斯的支付、目标和效果选择不完整");
+                var index = 0;
+                var paymentMode = declared[index++];
+                var discardId = paymentMode == "pay:discard" && index < declared.Length ? declared[index++] : null;
+                if (index + 2 != declared.Length) return CommandResult.Reject("阿尔忒弥斯的支付、目标和效果选择不完整");
+                var targetId = declared[index++];
+                var buffMode = declared[index];
+                if (buffMode is not ("buff:strong" or "buff:shock")) return CommandResult.Reject("赋予能力选择不合法");
+                var legion = FindOnField(player, targetId, out _, out _);
+                if (legion is null || legion.Hidden || !IsFieldLegion(legion)
+                    || !L12StructuredCardRules.HasFaction(player, legion, "olympus")
                     || legion.CurrentCost is < 3 or > 6) return CommandResult.Reject("目标已不合法");
-                if (declared[0] == "pay:god-power")
+                L12CardInstance? discarded = null;
+                if (paymentMode == "pay:god-power")
                 {
                     if (!L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1)) return CommandResult.Reject("需要1张活跃神力");
                 }
-                else if (declared[0].StartsWith("discard:", StringComparison.Ordinal))
+                else if (paymentMode == "pay:discard")
                 {
-                    var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == declared[0][8..]);
-                    if (card is null) return CommandResult.Reject("弃置的手牌已失效");
-                    player.Hand.Remove(card); player.Graveyard.Add(card);
+                    discarded = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == discardId);
+                    if (discarded is null) return CommandResult.Reject("弃置的手牌已失效");
+                    player.Hand.Remove(discarded); player.Graveyard.Add(discarded);
                 }
                 else return CommandResult.Reject("支付方式不合法");
                 player.UsedAbilities.Add(onceKey);
-                PushEffect(playerIndex, source, "active", "主宰效果", data: new Dictionary<string, string>
+                var compositeDeclared = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
                 {
-                    ["ability"] = ability, ["target"] = legion.InstanceId, ["buff"] = declared[2],
-                });
+                    ["buffTarget"] = [legion.InstanceId], ["buffMode"] = [buffMode],
+                };
+                var data = CompositeFirstSegmentData("active:S02-05M1:artemisBuff", compositeDeclared);
+                data["ability"] = ability;
+                data["target"] = legion.InstanceId;
+                data["buff"] = buffMode;
+                data["paymentMode"] = paymentMode;
+                DeclarePresentationBranch(data, "artemis-grant", "buffMode", buffMode);
+                PushEffect(playerIndex, source, "active", "主宰效果", data: data);
+                AddEvent("cost", playerIndex,
+                    paymentMode == "pay:god-power" ? "阿尔忒弥斯消耗并翻转1神力"
+                        : $"阿尔忒弥斯弃置〈{discarded!.Name}〉支付费用",
+                    discarded ?? source);
                 return CommandResult.Ok();
             }
             case "hippolytaRevive" when source.CardId == "S02-0510":
@@ -384,12 +432,19 @@ public sealed partial class L12GameEngine
             case "artemisBuff" when source?.CardId == "S02-05M1":
             {
                 var legion = FindOnField(player, item.Data["target"], out _, out _);
-                if (legion is not null)
+                if (legion is not null && !legion.Hidden && IsFieldLegion(legion)
+                    && L12StructuredCardRules.HasFaction(player, legion, "olympus")
+                    && legion.CurrentCost is >= 3 and <= 6)
                 {
                     if (item.Data["buff"] == "buff:strong") GrantStrongAttack(legion);
                     else legion.HasShock = true;
                     player.UsedAbilities.Add($"s2-artemis-buff:{legion.InstanceId}:{State.TurnSerial}");
+                    AddEvent("effect", item.Controller,
+                        $"阿尔忒弥斯使〈{legion.Name}〉本回合获得{(item.Data["buff"] == "buff:strong" ? "强攻" : "震击")}",
+                        source, legion);
                 }
+                else RecordTargetSettlementFailure(item, item.Data.GetValueOrDefault("target"),
+                    "所选军团已离场、不再是公开军团、失去有效【奥林匹斯】特征或当前费用不再为3至6");
                 FinishStackItem(item); return true;
             }
             case "artemisDeathFlip" when item.SourceCardId == "S02-05M1":

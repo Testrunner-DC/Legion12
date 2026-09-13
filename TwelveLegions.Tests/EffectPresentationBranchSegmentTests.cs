@@ -17,7 +17,7 @@ public sealed class EffectPresentationBranchSegmentTests
         {
             "S01-0310|2", "S01-0409|3", "S01-0415|3",
             "S02-01M1|1", "S02-02M1|2", "S02-0505|3",
-            "S02-05M1|2", "S02-DS03|3", "ST01-01|1",
+            "S02-DS03|3", "ST01-01|1",
             "ST02-M1|1", "ST06-04|1", "ST06-M1|2",
         };
         var remaining = Catalog.AtomicEffects.All

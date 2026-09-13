@@ -1223,6 +1223,14 @@ public sealed partial class L12GameEngine
     {
         if (choice is "yes" or "no" or "skip" or "top" or "bottom") return true;
         if (choice.StartsWith("mode:", StringComparison.OrdinalIgnoreCase)) return true;
+        // 选项协议值属于产生它的声明步骤，不应依赖固定前缀白名单。否则新增的
+        // pay:/buff: 等稳定值虽然已由权威 Prompt 选中，最终提交仍会被当成卡牌实例查找并误拒绝。
+        if (activation?.SelectionSteps.Any(step => step.Kind == "option"
+                && step.ValidChoices.Contains(choice, StringComparer.OrdinalIgnoreCase)
+                && (string.IsNullOrWhiteSpace(step.DeclarationKey)
+                    || activation.DeclaredValues.GetValueOrDefault(step.DeclarationKey, [])
+                        .Contains(choice, StringComparer.OrdinalIgnoreCase))) == true)
+            return true;
         if (choice.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)) return true;
         if (choice.StartsWith("rune:", StringComparison.OrdinalIgnoreCase)
             && int.TryParse(choice.AsSpan("rune:".Length), out var runeIndex))
