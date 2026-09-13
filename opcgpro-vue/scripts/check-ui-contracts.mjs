@@ -9,6 +9,8 @@ const mainNav = shell.match(/const mainNav = \[[\s\S]*?\n\]/)?.[0] ?? ''
 const battleNav = shell.match(/const battleNav = \[[\s\S]*?\n\]/)?.[0] ?? ''
 const router = read('../src/router/index.ts')
 const board = read('../src/l12/game/GameBoard.vue')
+const mobileViewportStyle = read('../src/l12/mobileViewport.css')
+const mobileViewportCheck = read('./test-mobile-viewport.mjs')
 const phaseTrack = read('../src/l12/game/PhaseTrack.vue')
 const battleLog = read('../src/l12/game/BattleEventLog.vue')
 const battleDock = read('../src/l12/game/BattleUtilityDock.vue')
@@ -1354,6 +1356,16 @@ contracts.push(
     && responsiveTypeCheck.includes('{ width: 390, height: 844 }') && responsiveTypeCheck.includes("page.locator('.inspector-effect').waitFor()")
     && responsiveTypeCheck.includes('selected-card effect prose must wrap without horizontal overflow'),
     '响应式字号专项必须覆盖三档16:9桌面、760与390窄宽，并实际选中卡牌验证正文和标签而非只检查空详情'],
+  [board.includes('Math.min(1, availableWidth / stageSize.value.width, availableHeight / stageSize.value.height)')
+    && !board.includes('Math.max(.7')
+    && mobileViewportStyle.includes('.board-viewport.compact-viewport')
+    && mobileViewportStyle.includes('overflow: hidden !important')
+    && mobileViewportStyle.includes('transform-origin: center')
+    && mobileViewportCheck.includes('{width:375,height:667}')
+    && mobileViewportCheck.includes('{width:740,height:360}')
+    && mobileViewportCheck.includes("assert.equal(result.overflowY,'hidden')")
+    && mobileViewportCheck.includes('result.stage.bottom<=result.board.bottom+1'),
+    '移动端自动横屏与实际横屏必须同时按宽高完整缩放棋盘，禁止恢复最低缩放或双轴滚动，并覆盖短屏边界'],
   [board.includes("filter(id => id !== 'skip' && id !== 'cancel')")
     && board.includes('function cancelResourcePayment()')
     && board.includes('resourceSelectionPrompt.validChoices.includes(\'cancel\')')

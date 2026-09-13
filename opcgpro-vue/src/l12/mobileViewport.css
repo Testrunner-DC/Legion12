@@ -13,18 +13,17 @@ html[data-l12-viewport] body {
 html[data-l12-viewport=landscape] body { transform: rotate(90deg); }
 html[data-l12-viewport] #app { width: 100%; height: 100%; }
 
-/* Short windows use an accessible scroll canvas, never an unreadable fit scale.
-   These rules deliberately do not depend on physical CSS media-query width. */
+/* The battle table always fits the logical landscape viewport in one screen.
+   Text tokens compensate for the stage scale, so compact phones stay readable
+   without turning the complete table into a two-axis scroll canvas. */
 .board-viewport.compact-viewport {
-  display: block !important;
-  overflow: auto !important;
-  overscroll-behavior: contain;
-  touch-action: pan-x pan-y;
-  padding: 8px 80px 100px 8px;
+  display: flex !important;
+  overflow: hidden !important;
+  padding: 0;
 }
 .board-viewport.compact-viewport .board-stage {
-  transform-origin: top left;
-  margin: 8px;
+  transform-origin: center;
+  margin: 0;
 }
 .board-viewport.compact-viewport::after { display: none; }
 

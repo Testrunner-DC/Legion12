@@ -22,18 +22,20 @@ try {
   const results=[]
   const out=path.resolve(root,'../artifacts/mobile-viewport')
   fs.mkdirSync(out,{recursive:true})
-  for (const size of [{width:1280,height:720},{width:1280,height:480},{width:390,height:844},{width:844,height:390}]) {
+  for (const size of [{width:1280,height:720},{width:1280,height:480},{width:390,height:844},{width:375,height:667},{width:844,height:390},{width:740,height:360}]) {
     await page.setViewportSize(size)
     await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__mobile__`)
     await page.locator('.board-stage').waitFor()
     await page.waitForTimeout(150)
     const result=await page.evaluate(()=>{
-      const board=document.querySelector('.board-viewport'),stage=document.querySelector('.board-stage'),rect=document.body.getBoundingClientRect()
-      return {mode:document.documentElement.dataset.l12Viewport,body:{left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom},overflow:getComputedStyle(board).overflowY,scrollable:board.scrollHeight>board.clientHeight,scale:getComputedStyle(stage).transform}
+      const board=document.querySelector('.board-viewport'),stage=document.querySelector('.board-stage'),rect=document.body.getBoundingClientRect(),boardRect=window.qaRect(board),stageRect=window.qaRect(stage),style=getComputedStyle(board)
+      return {mode:document.documentElement.dataset.l12Viewport,body:{left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom},board:{left:boardRect.left,top:boardRect.top,right:boardRect.right,bottom:boardRect.bottom},stage:{left:stageRect.left,top:stageRect.top,right:stageRect.right,bottom:stageRect.bottom},overflowX:style.overflowX,overflowY:style.overflowY,scale:getComputedStyle(stage).transform}
     })
     assert.ok(result.body.left>=-1&&result.body.top>=-1&&result.body.right<=size.width+1&&result.body.bottom<=size.height+1,JSON.stringify(result))
     assert.equal(result.mode,size.width<size.height?'landscape':'normal')
-    if(size.height<600||size.width<820) { assert.equal(result.overflow,'auto');assert.ok(result.scrollable) }
+    assert.equal(result.overflowX,'hidden')
+    assert.equal(result.overflowY,'hidden')
+    assert.ok(result.stage.left>=result.board.left-1&&result.stage.top>=result.board.top-1&&result.stage.right<=result.board.right+1&&result.stage.bottom<=result.board.bottom+1,JSON.stringify(result))
     // Body Teleport: a logical fixed button must hit-test at its rotated DOM rect.
     await page.evaluate(()=>{const b=document.createElement('button');b.id='qa-fixed';b.style.cssText='position:fixed;left:120px;top:90px;width:80px;height:40px;z-index:2147483647';b.textContent='点选目标';b.onclick=()=>b.dataset.clicked='yes';document.body.append(b)})
     await page.locator('#qa-fixed').click()
@@ -102,5 +104,5 @@ try {
   assert.equal(await page.locator('body').evaluate(el=>getComputedStyle(el).transform),'none')
   assert.deepEqual(errors,[])
   console.log(JSON.stringify(results,null,2))
-  console.log('Mobile viewport: 4 viewports, body Teleport hit testing, inverse coordinates, prompt minimize/restore, deck landscape, input fallback passed; screenshots: '+out)
+  console.log('Mobile viewport: 6 desktop/mobile viewports fit the whole battle board, body Teleport hit testing, inverse coordinates, prompt minimize/restore, deck landscape, input fallback passed; screenshots: '+out)
 } finally { await browser?.close();await server.close() }
