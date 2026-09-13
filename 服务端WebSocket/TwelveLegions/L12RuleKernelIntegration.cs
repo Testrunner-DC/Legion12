@@ -1518,6 +1518,8 @@ public sealed partial class L12GameEngine
         // legacy substring parser, where reminder text can contain the same timing words.
         if (L12SimpleDrawTriggerEffects.Find(card.CardId, trigger) is { } simpleDraw)
             return simpleDraw.SettlementText;
+        if (L12SimpleMasterHealTriggerEffects.Find(card.CardId, trigger) is { } simpleHeal)
+            return simpleHeal.SettlementText;
         if (string.IsNullOrWhiteSpace(card.EffectText)) return fallback;
         var lines = card.EffectText.Replace("\r", string.Empty, StringComparison.Ordinal)
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

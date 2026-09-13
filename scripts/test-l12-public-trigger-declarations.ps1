@@ -27,6 +27,7 @@ $s2Universal = Read-Source 'L12S2UniversalEffects.cs'
 $atomicPrograms = Read-Source 'AtomicEffects.cs'
 $atomicRuntime = Read-Source 'L12AtomicRuntimeIntegration.cs'
 $simpleDrawTriggers = Read-Source 'L12SimpleDrawTriggerEffects.cs'
+$simpleMasterHealTriggers = Read-Source 'L12SimpleMasterHealTriggerEffects.cs'
 $trialAdvancePlans = Read-Source 'L12TrialAdvanceEffectPlans.cs'
 $attackPlans = Read-Source 'L12AttackPublicTriggerPlans.cs'
 $entryPlans = Read-Source 'L12EnterPublicTriggerPlans.cs'
@@ -286,6 +287,13 @@ foreach ($simpleDrawSpec in @(
 }
 Assert-Contains $simpleDrawTriggers 'DrawRecipient: "source-owner"' `
     'Infiltrator death draw must retain the source-owner recipient policy.'
+Assert-Contains $atomicPrograms 'programs.AddRange(L12SimpleMasterHealTriggerEffects.All.Select(SimpleMasterHealProgram));' `
+    'Simple death-heal effects must be generated from their shared definition.'
+foreach ($simpleHealSpec in @('new("S01-0302", 3, "death"', 'new("S02-0613", 3, "death"')) {
+    Assert-Contains $simpleMasterHealTriggers $simpleHealSpec "Simple death-heal inventory is missing: $simpleHealSpec"
+}
+Assert-Contains $simpleMasterHealTriggers 'HealRecipient: "both"' `
+    'Joan death heal must retain the both-masters recipient policy.'
 if ($atomicRuntime.IndexOf('CreatePrompt(', [StringComparison]::Ordinal) -ge 0) {
     throw 'Verified atomic runtime must not create any resolution-time Optional prompt.'
 }

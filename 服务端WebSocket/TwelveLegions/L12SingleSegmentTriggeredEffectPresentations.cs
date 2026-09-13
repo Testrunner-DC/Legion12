@@ -19,6 +19,9 @@ internal static class L12SingleSegmentTriggeredEffectPresentations
         .. L12SimpleDrawTriggerEffects.All.Select(spec =>
             new L12SingleSegmentTriggeredEffectPresentationDefinition(
                 spec.CardId, spec.AbilitySequence, spec.Trigger, spec.SettlementText)),
+        .. L12SimpleMasterHealTriggerEffects.All.Select(spec =>
+            new L12SingleSegmentTriggeredEffectPresentationDefinition(
+                spec.CardId, spec.AbilitySequence, spec.Trigger, spec.SettlementText)),
         new("S01-0112", 3, "death"),
         new("S01-0210", 3, "death"),
         new("S01-0304", 3, "death"),

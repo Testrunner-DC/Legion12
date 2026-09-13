@@ -756,8 +756,6 @@ public static class L12VerifiedAtomicPrograms
                 Atom(L12AtomKinds.Condition, "我方士气不高于 7 张", ("expression", "controller.morale<=7")),
                 OptionalDraw("荆轲"),
                 Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "荆轲登场效果抽牌时牌库为空"), ("event", "荆轲抽取 1 张牌"))),
-            Program("S01-0302", "death",
-                Atom(L12AtomKinds.HealMaster, "我方主宰增加 1 点血量", ("amount", "1"), ("reason", "金发哈拉尔阵亡效果"))),
             Program("S01-0302", "attack",
                 Atom(L12AtomKinds.Condition, "我方主宰血量不高于 6", ("expression", "controller.hp<=6")),
                 Atom(L12AtomKinds.Keyword, "本回合获得强攻", ("keyword", "strong-attack"), ("event", "{source} 本回合获得强攻"))),
@@ -823,8 +821,6 @@ public static class L12VerifiedAtomicPrograms
                 Atom(L12AtomKinds.GainRune, "获得 1 符文", ("amount", "1"), ("eventType", "runes"), ("event", "{source}使我方获得{value}符文"))),
             Program("S02-0609", "death",
                 Atom(L12AtomKinds.AdvanceTrial, "试炼 +1", ("amount", "1"))),
-            Program("S02-0613", "death",
-                Atom(L12AtomKinds.HealMaster, "双方主宰增加 1 点血量", ("amount", "1"), ("target", "both"), ("reason", "圣女贞德阵亡时效果"))),
             Program("S02-0612", "enter",
                 Atom(L12AtomKinds.Keyword, "获得冲锋", ("keyword", "charge"), ("event", "{source} 获得冲锋"))),
             Program("S02-0616", "enter",
@@ -955,6 +951,7 @@ public static class L12VerifiedAtomicPrograms
                 Atom(L12AtomKinds.DamageMaster, "双方主宰各受到 1 点非致命伤害", ("amount", "1"), ("target", "both"), ("lethal", "false"), ("neutralSource", "true"), ("reason", "〈暴怒之罪〉"))),
         };
         programs.AddRange(L12SimpleDrawTriggerEffects.All.Select(SimpleDrawProgram));
+        programs.AddRange(L12SimpleMasterHealTriggerEffects.All.Select(SimpleMasterHealProgram));
         return programs.ToDictionary(program => program.ProgramId, StringComparer.OrdinalIgnoreCase);
     }
 
@@ -999,6 +996,12 @@ public static class L12VerifiedAtomicPrograms
             ("event", spec.EventText)));
         return Program(spec.CardId, spec.Trigger, [.. operations]);
     }
+
+    private static L12VerifiedAtomicProgram SimpleMasterHealProgram(L12SimpleMasterHealTriggerSpec spec)
+        => Program(spec.CardId, spec.Trigger,
+            Atom(L12AtomKinds.HealMaster, spec.SettlementText,
+                ("amount", spec.Amount.ToString()), ("target", spec.HealRecipient),
+                ("reason", spec.Reason)));
 
     private static L12EffectAtom Atom(string kind, string label, params (string Key, string Value)[] parameters)
     {
