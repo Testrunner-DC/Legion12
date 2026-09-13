@@ -79,6 +79,7 @@ public sealed class StarterMissingEffectsRegressionTests
         {
             ["killed"] = "true",
             ["combatKillConfirmed"] = "true",
+            ["sourceWasAttackingLegion"] = "true",
         });
         Choose(zhaoGame, "mode:use");
         Choose(zhaoGame, "zhao-piercing-morale");

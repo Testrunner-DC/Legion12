@@ -284,7 +284,8 @@ public sealed partial class L12GameEngine
             killer.CardId,
             TriggersPrintedKillTiming: true,
             CausedBySourceCard: true,
-            [defeatedInstanceId]));
+            [defeatedInstanceId],
+            SourceWasAttackingLegion: isAttackerKill));
     }
 
     private void QueueAttackerAfterAttackTriggers(int playerIndex, L12CardInstance attacker)

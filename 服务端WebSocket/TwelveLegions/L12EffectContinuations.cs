@@ -28,6 +28,7 @@ public sealed partial class L12GameEngine
         if (action == "private-view-confirm") { FinishStackItem(item); return; }
         var source = FindSource(item);
         var player = State.Players[item.Controller];
+        if (TryContinueOpponentHandDiscardTrigger(item, prompt, chosen)) return;
         if (action.StartsWith("s2-", StringComparison.Ordinal))
         {
             if (ContinueS2CounterEffect(item, prompt, chosen)) return;

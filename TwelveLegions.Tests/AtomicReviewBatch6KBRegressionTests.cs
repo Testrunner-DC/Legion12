@@ -334,7 +334,7 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         var discard = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(1, discard.PlayerIndex);
         Assert.True(discard.IsPrivate);
-        Assert.Equal("nefertiti-discard", discard.Data["action"]);
+        Assert.Equal(L12OpponentHandDiscardTriggerEffects.Continuation, discard.Data["action"]);
         Assert.Equal(6, discard.ValidChoices.Count);
     }
 

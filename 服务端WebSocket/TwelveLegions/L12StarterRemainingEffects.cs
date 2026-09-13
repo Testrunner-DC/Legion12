@@ -582,9 +582,10 @@ public sealed partial class L12GameEngine
             case "crossbow-ready":
             case "wangzhaojun-draw":
             {
-                if (plan == "zhaoyun-kill-piercing" && candidate.Data.GetValueOrDefault("killed") != "true")
+                if (plan == "zhaoyun-kill-piercing"
+                    && !HasEligiblePiercingTriggerFacts(candidate.Data))
                 {
-                    RemoveUnstackedTriggerCandidate(candidate, "赵云本次进攻没有完成击杀");
+                    RemoveUnstackedTriggerCandidate(candidate, "赵云不是完成本次击杀的进攻军团");
                     return true;
                 }
                 var onceKey = plan == "crossbow-ready" ? $"trigger:starter-crossbow-ready:{source.InstanceId}:{State.TurnSerial}" : null;
@@ -1105,7 +1106,8 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             case "zhaoyun-kill-piercing":
-                if (FindOnField(player, item.SourceInstanceId, out _, out _) is { } piercingZhaoyun)
+                if (HasEligiblePiercingTriggerFacts(item.Data)
+                    && FindOnField(player, item.SourceInstanceId, out _, out _) is { } piercingZhaoyun)
                 {
                     player.UsedAbilities.Add($"starter-piercing:{piercingZhaoyun.InstanceId}:{State.TurnSerial}");
                     BeginPiercingAttack(item.Controller, piercingZhaoyun);

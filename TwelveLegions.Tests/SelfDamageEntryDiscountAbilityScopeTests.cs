@@ -55,9 +55,11 @@ public sealed class SelfDamageEntryDiscountAbilityScopeTests
 
         Assert.Null(afterDamage.CostText);
         Assert.Equal(afterDamage.Text, afterDamage.ResolutionText);
-        Assert.Contains(afterDamage.Atoms, atom => atom.Kind == L12AtomKinds.Discard
+        Assert.Contains(afterDamage.Atoms, atom => atom.Kind == L12AtomKinds.CompositeFlow
             && atom.Stage == "resolution"
-            && atom.Parameters.GetValueOrDefault("zone") == "opponent.hand");
+            && atom.Parameters.GetValueOrDefault("flow") == L12OpponentHandDiscardTriggerEffects.Flow
+            && atom.Parameters.GetValueOrDefault("from") == "opponent.hand"
+            && atom.Parameters.GetValueOrDefault("to") == "opponent.graveyard");
         Assert.DoesNotContain(afterDamage.Atoms, atom => atom.Stage == "cost");
 
         var ragnar = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find("S01-0303"));

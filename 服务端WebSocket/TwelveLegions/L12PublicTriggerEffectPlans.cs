@@ -225,6 +225,7 @@ public sealed partial class L12GameEngine
     private static bool HasPublicTriggerDeclarationPlan(string cardId, string trigger,
         IReadOnlyDictionary<string, string>? data = null)
         => HasStarterTargetedTriggerDeclarationPlan(cardId, trigger)
+            || L12OpponentHandDiscardTriggerEffects.Find(cardId, trigger) is not null
             || HasTrialAdvanceTriggerDeclarationPlan(cardId, trigger, data)
             || Batch6JAEnterPlan(cardId, trigger) is not null
             || HasAttackPublicTriggerDeclarationPlan(cardId, trigger)
@@ -292,6 +293,11 @@ public sealed partial class L12GameEngine
 
     private bool TryBeginPublicTriggerDeclaration(L12TriggerCandidate candidate, L12CardInstance source)
     {
+        if (L12OpponentHandDiscardTriggerEffects.Find(candidate.SourceCardId, candidate.Trigger) is not null)
+        {
+            candidate.Data["declaration-complete"] = "true";
+            return false;
+        }
         if (TryBeginStarterTargetedTriggerDeclaration(candidate, source))
             return true;
         if (TryBeginTrialAdvanceTriggerDeclaration(candidate, source))

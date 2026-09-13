@@ -70,6 +70,7 @@ public sealed partial class L12GameEngine
 
     private void ResolveStructuredCompositeFlow(L12StackItem item)
     {
+        if (TryResolveOpponentHandDiscardTrigger(item)) return;
         if (TryResolveStarterRemainingEffect(item)) return;
         if (TryResolveStarterTargetedEffect(item)) return;
         switch (item.Trigger)

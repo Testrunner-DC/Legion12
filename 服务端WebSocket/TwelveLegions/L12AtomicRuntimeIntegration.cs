@@ -169,6 +169,8 @@ public sealed partial class L12GameEngine
             "controller.hand<=5" => controller.Hand.Count <= 5,
             "controller.hand<=4" => controller.Hand.Count <= 4,
             "controller.hand<=opponent.hand" => controller.Hand.Count <= opponent.Hand.Count,
+            "opponent.hand>=6" => opponent.Hand.Count >= 6,
+            "controller.god-power>=1" => controller.Morale.Any(card => card.IsGodPower),
             "controller.morale<=7" => controller.Morale.Count <= 7,
             "controller.hp<=opponent.hp" => controller.Hp <= opponent.Hp,
             "controller.hp<=7" => controller.Hp <= 7,

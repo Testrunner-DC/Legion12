@@ -925,7 +925,6 @@ public static class L12VerifiedAtomicPrograms
             StarterTargetedProgram("ST03-08", "continuous", "starter-grave-asgard-copies"),
             StarterTargetedProgram("ST03-10", "play", "legendary-bloodline"),
             StarterTargetedProgram("ST03-M1", "active", "sif-cycle"),
-            StarterTargetedProgram("ST04-02", "attack", "kojiro-discard"),
             StarterTargetedProgram("ST04-02", "death", "kojiro-death-kill"),
             StarterTargetedProgram("ST04-04", "enter", "kai-master-waiver"),
             StarterTargetedProgram("ST04-05", "opponent-turn-lethal", "kondo-lethal-substitution"),
@@ -949,6 +948,7 @@ public static class L12VerifiedAtomicPrograms
         programs.AddRange(L12SimpleDrawTriggerEffects.All.Select(SimpleDrawProgram));
         programs.AddRange(L12SimpleMasterHealTriggerEffects.All.Select(SimpleMasterHealProgram));
         programs.AddRange(L12SimpleTrialAdvanceTriggerEffects.All.Select(SimpleTrialAdvanceProgram));
+        programs.AddRange(L12OpponentHandDiscardTriggerEffects.All.Select(OpponentHandDiscardProgram));
         return programs.ToDictionary(program => program.ProgramId, StringComparer.OrdinalIgnoreCase);
     }
 
@@ -1004,6 +1004,20 @@ public static class L12VerifiedAtomicPrograms
         => Program(spec.CardId, spec.Trigger,
             Atom(L12AtomKinds.AdvanceTrial, spec.SettlementText,
                 ("amount", spec.Amount.ToString())));
+
+    private static L12VerifiedAtomicProgram OpponentHandDiscardProgram(
+        L12OpponentHandDiscardTriggerSpec spec)
+    {
+        var operations = new List<L12EffectAtom>();
+        if (spec.Condition is not null)
+            operations.Add(Atom(L12AtomKinds.Condition, "检查令对方弃牌的触发条件",
+                ("expression", spec.Condition)));
+        operations.Add(Atom(L12AtomKinds.CompositeFlow, spec.SettlementText,
+            ("flow", L12OpponentHandDiscardTriggerEffects.Flow),
+            ("chooser", "opponent"), ("amount", "1"),
+            ("from", "opponent.hand"), ("to", "opponent.graveyard")));
+        return Program(spec.CardId, spec.Trigger, [.. operations]);
+    }
 
     private static L12EffectAtom Atom(string kind, string label, params (string Key, string Value)[] parameters)
     {

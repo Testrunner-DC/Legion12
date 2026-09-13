@@ -790,10 +790,11 @@ public sealed partial class L12GameEngine
         }
         if (card.CardId is "S02-0606" or "S02-0611" or "S02-0608")
         {
-            var killed = item.Data.GetValueOrDefault("killed") == "true";
-            var granted = card.CardId != "S02-0608"
-                || State.Players[item.Controller].UsedAbilities.Remove($"crusade-piercing:{card.InstanceId}:{State.TurnSerial}");
-            if (killed && granted) BeginPiercingAttack(item.Controller, card);
+            var eligible = HasEligiblePiercingTriggerFacts(item.Data);
+            var granted = card.CardId != "S02-0608" || eligible
+                && State.Players[item.Controller].UsedAbilities.Remove(
+                    $"crusade-piercing:{card.InstanceId}:{State.TurnSerial}");
+            if (eligible && granted) BeginPiercingAttack(item.Controller, card);
             FinishStackItem(item);
             return true;
         }

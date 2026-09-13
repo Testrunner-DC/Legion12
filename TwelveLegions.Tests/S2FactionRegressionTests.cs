@@ -1274,7 +1274,7 @@ public sealed class S2FactionRegressionTests
                 .Take(helen.Cost).Select(card => card.InstanceId).ToList())).Accepted);
         var prompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(1, prompt.PlayerIndex);
-        Assert.Equal("s2-helen-entry-discard", prompt.Data["action"]);
+        Assert.Equal(L12OpponentHandDiscardTriggerEffects.Continuation, prompt.Data["action"]);
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
             Choice: discarded.InstanceId)).Accepted);
 

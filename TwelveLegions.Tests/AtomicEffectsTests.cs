@@ -140,6 +140,13 @@ public sealed class AtomicEffectsTests
                     atom => atom.Kind == L12AtomKinds.Draw);
                 continue;
             }
+            if (L12OpponentHandDiscardTriggerEffects.Find(program.CardId, program.Trigger) is not null)
+            {
+                Assert.Contains(currentProgram.Atoms, atom => atom.Kind == L12AtomKinds.CompositeFlow
+                    && atom.Parameters.GetValueOrDefault("flow")
+                        == L12OpponentHandDiscardTriggerEffects.Flow);
+                continue;
+            }
             Assert.Same(program, currentProgram);
 
             var card = Assert.IsType<L12AtomicCardEffect>(catalog.AtomicEffects.Find(program.CardId));

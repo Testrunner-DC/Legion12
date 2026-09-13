@@ -560,44 +560,33 @@ public sealed class CombatTimelineRegressionTests
         Assert.True(firstGrave > lastGrantedKill);
     }
 
-    [Fact]
-    public void DefenderCombatKillPiercingSuspendsAndResumesParentCombat()
+    [Theory]
+    [InlineData("S02-0606")]
+    [InlineData("ST01-01")]
+    public void DefenderCombatKillNeverTriggersPiercing(string defenderCardId)
     {
         var game = Create(828063);
         ReadyForCombat(game);
         var attacker = PlainLegion("defender-piercing-attacker", 1000);
-        var defender = Card("S02-0606", "defender-piercing-survivor");
+        var defender = Card(defenderCardId, $"defender-piercing-{defenderCardId}");
         defender.Troops = 2000;
         game.State.Players[0].Field[0][0] = attacker;
         game.State.Players[1].Field[0][0] = defender;
+        game.State.Players[1].Morale.Add(new L12MoraleCard
+        {
+            CardId = "S01-01C1", InstanceId = $"defender-piercing-morale-{defenderCardId}",
+        });
 
         Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
             Target: new L12AttackTarget("legion", defender.InstanceId))).Accepted);
 
-        for (var step = 0; step < 20 && game.State.SuspendedCombatContexts.Count == 0; step++)
-        {
-            var prompt = game.State.PendingPrompts.FirstOrDefault();
-            if (prompt is null) break;
-            var choice = prompt.Kind == "response" ? "pass"
-                : prompt.ValidChoices.Contains("skip") ? "skip"
-                : prompt.ValidChoices.Contains("no") ? "no"
-                : prompt.ValidChoices[0];
-            Assert.True(game.Handle(prompt.PlayerIndex,
-                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
-        }
-
-        Assert.Single(game.State.SuspendedCombatContexts);
-        Assert.Equal(L12CombatStage.AttackerDeathTriggers, game.State.SuspendedCombatContexts[0].Stage);
-        Assert.Equal(1, game.State.PendingDefense?.AttackerPlayer);
-        Assert.Equal("master", game.State.PendingDefense?.Target.Type);
-        Assert.Equal(1000, game.State.PendingDefense?.AttackValue);
-
-        for (var step = 0; step < 20 && game.State.PendingDefense is not null; step++)
+        for (var step = 0; step < 40; step++)
         {
             var prompt = game.State.PendingPrompts.FirstOrDefault();
             if (prompt is not null)
             {
                 var choice = prompt.Kind == "response" ? "pass"
+                    : prompt.ValidChoices.Contains("mode:use") ? "mode:use"
                     : prompt.ValidChoices.Contains("skip") ? "skip"
                     : prompt.ValidChoices.Contains("no") ? "no"
                     : prompt.ValidChoices[0];
@@ -605,24 +594,28 @@ public sealed class CombatTimelineRegressionTests
                     new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
                 continue;
             }
-            if (game.State.Phase == L12Phase.Defense)
-            {
-                Assert.True(game.Handle(1 - game.State.PendingDefense.AttackerPlayer,
-                    new L12Command("resolveDefense", CardInstanceIds: [])).Accepted);
-            }
+            var pending = game.State.PendingDefense;
+            if (pending is null) break;
+            Assert.Equal(L12CombatStage.DefenseChoice, pending.Stage);
+            Assert.True(game.Handle(1 - pending.AttackerPlayer,
+                new L12Command("resolveDefense", CardInstanceIds: [])).Accepted);
         }
 
         Assert.Null(game.State.PendingDefense);
         Assert.Empty(game.State.SuspendedCombatContexts);
         Assert.Contains(attacker, game.State.Players[0].Graveyard);
         Assert.Same(defender, game.State.Players[1].Field[0][0]);
-        Assert.Contains(game.State.Events, entry => entry.Type == "combat-resume");
+        Assert.Single(game.State.Players[1].Morale);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "piercing");
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.InstanceId == defender.InstanceId)
+            && entry.Text.Contains("击杀时", StringComparison.Ordinal));
     }
 
     [Fact]
     [Trait("L12Evidence", "bug:BUG-20260908-a9503661")]
     [Trait("L12Evidence", "bug:BUG-20260908-2e0f11ea")]
-    public void XiaotianDeathAndPercivalCounterattackKeepDefenseOnActualVictimAndResumeCombat()
+    public void XiaotianDeathResolvesButDefendingPercivalDoesNotPierce()
     {
         var game = Create(296501);
         ReadyForCombat(game);
@@ -641,7 +634,6 @@ public sealed class CombatTimelineRegressionTests
             Target: new L12AttackTarget("legion", percival.InstanceId)));
         Assert.True(attack.Accepted, attack.Error);
 
-        var defendedCounterattack = false;
         var choseDeathEffect = false;
         for (var step = 0; step < 70; step++)
         {
@@ -663,20 +655,11 @@ public sealed class CombatTimelineRegressionTests
             if (pending is null) break;
             if (pending.Stage != L12CombatStage.DefenseChoice)
                 Assert.Fail($"Unexpected stalled combat stage: {pending.Stage}");
-            if (pending.AttackerPlayer == 1 && pending.Target.Type == "master")
-            {
-                Assert.Equal(0, game.State.ActivePlayer);
-                Assert.Equal(2000, pending.AttackValue);
-                Assert.Single(game.State.SuspendedCombatContexts);
-                Assert.False(game.Handle(1, new L12Command("resolveDefense", CardInstanceIds: [])).Accepted);
-                defendedCounterattack = true;
-            }
             var defense = game.Handle(1 - pending.AttackerPlayer,
                 new L12Command("resolveDefense", CardInstanceIds: []));
             Assert.True(defense.Accepted, defense.Error);
         }
 
-        Assert.True(defendedCounterattack);
         Assert.True(choseDeathEffect);
         Assert.Null(game.State.PendingDefense);
         Assert.Empty(game.State.SuspendedCombatContexts);
@@ -685,7 +668,7 @@ public sealed class CombatTimelineRegressionTests
         Assert.Equal(moraleBefore + 1, game.State.Players[0].Morale.Count);
         Assert.True(game.State.Players[0].Morale[^1].Tapped);
         Assert.Same(percival, game.State.Players[1].Field[0][0]);
-        Assert.Contains(game.State.Events, entry => entry.Type == "combat-resume");
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type is "piercing" or "combat-resume");
     }
 
     [Fact]

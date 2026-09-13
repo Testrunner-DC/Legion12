@@ -19,14 +19,21 @@ internal sealed record L12KillSourceEvent(
     string SourceCardId,
     bool TriggersPrintedKillTiming,
     bool CausedBySourceCard,
-    IReadOnlyList<string> TargetInstanceIds);
+    IReadOnlyList<string> TargetInstanceIds,
+    bool SourceWasAttackingLegion = false);
 
 internal sealed record L12PendingKillSourceEvent(L12KillSourceEvent Event);
 
 public sealed partial class L12GameEngine
 {
+    private const string PiercingAttackingLegionFact = "sourceWasAttackingLegion";
     private readonly List<L12PendingKillSourceEvent> _pendingKillSourceEvents = [];
     private readonly HashSet<string> _consumedGrantedKillSourceEvents = new(StringComparer.Ordinal);
+
+    private static bool HasEligiblePiercingTriggerFacts(IReadOnlyDictionary<string, string> data)
+        => data.GetValueOrDefault("killed") == "true"
+            && data.GetValueOrDefault("combatKillConfirmed") == "true"
+            && data.GetValueOrDefault(PiercingAttackingLegionFact) == "true";
 
     private void RecordPotentialStateBasedSourceKills(L12StackItem item, L12CardInstance source,
         IEnumerable<L12CardInstance> targets)
@@ -90,15 +97,19 @@ public sealed partial class L12GameEngine
                 ["sourceKind"] = killEvent.Kind.ToString(),
                 ["targetInstanceIds"] = string.Join('|', killEvent.TargetInstanceIds),
                 ["triggersPrintedKillTiming"] = killEvent.TriggersPrintedKillTiming ? "true" : "false",
+                [PiercingAttackingLegionFact] = killEvent.SourceWasAttackingLegion ? "true" : "false",
             });
 
         var candidates = new List<L12TriggerCandidate>();
         var printedKillTimingIsLegal = killEvent.TriggersPrintedKillTiming
             && NativeCombatKillCards.Contains(source.CardId)
             && (source.CardId != "S02-0002" || killEvent.SourceController == State.ActivePlayer);
-        if (printedKillTimingIsLegal
-            || killEvent.TriggersPrintedKillTiming && source.CardId == "S02-0608"
-                && controller.UsedAbilities.Contains($"crusade-piercing:{source.InstanceId}:{State.TurnSerial}"))
+        var isPrintedPiercing = source.CardId is "S02-0606" or "S02-0611" or "ST01-01";
+        var hasGrantedPiercing = source.CardId == "S02-0608"
+            && controller.UsedAbilities.Contains($"crusade-piercing:{source.InstanceId}:{State.TurnSerial}");
+        var piercingRoleIsLegal = killEvent.SourceWasAttackingLegion;
+        if ((printedKillTimingIsLegal && (!isPrintedPiercing || piercingRoleIsLegal))
+            || (killEvent.TriggersPrintedKillTiming && hasGrantedPiercing && piercingRoleIsLegal))
         {
             var trigger = source.CardId == "S02-0002" ? "after-kill" : "after-attack";
             candidates.Add(CreateTriggerCandidate(killEvent.SourceController, source, trigger, "【击杀时】效果",
@@ -109,6 +120,7 @@ public sealed partial class L12GameEngine
                     ["defeatedInstanceId"] = string.Join('|', killEvent.TargetInstanceIds),
                     ["combatTiming"] = "kill",
                     ["killSourceKind"] = killEvent.Kind.ToString(),
+                    [PiercingAttackingLegionFact] = killEvent.SourceWasAttackingLegion ? "true" : "false",
                 }));
         }
 
