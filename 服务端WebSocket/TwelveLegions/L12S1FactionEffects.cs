@@ -1395,6 +1395,9 @@ public sealed partial class L12GameEngine
                     // 本回合的前排持续状态，不是只给结算当刻的实体加值。
                     player.UsedAbilities.Add($"amaterasu-front-aura:{State.TurnSerial}");
                     RecalculateContinuousTroops();
+                    AddEvent("effect", item.Controller,
+                        "天照大神使我方前排所有【高天原】军团本回合兵力+1000",
+                        source is null ? [] : [source]);
                 }
                 FinishStackItem(item);
                 return true;

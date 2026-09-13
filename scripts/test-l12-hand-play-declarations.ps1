@@ -28,6 +28,7 @@ $s2 = Read-Source 'L12S2UniversalEffects.cs'
 $s2Faction = Read-Source 'L12S2FactionEffects.cs'
 $continuations = Read-Source 'L12EffectContinuations.cs'
 $effectGeneratedPlay = Read-Source 'L12EffectGeneratedPlay.cs'
+$triggerGateway = Read-Source 'L12PublicTriggerEffectPlans.cs'
 $allRuntime = $s1 + "`n" + $s1Faction + "`n" + $cards + "`n" + $s2 + "`n" + $s2Faction + "`n" + $continuations
 
 foreach ($cardId in @(
@@ -99,6 +100,15 @@ Assert-Contains $plans 'case "conditional-master-damage"' 'Composite hand play m
 Assert-Contains $plans 'case "grave-bottom"' 'Composite hand play must support ordered grave-to-library-bottom costs.'
 Assert-Contains $plans '!next.PreStackCost && !TryPayCompositeSegmentCost' 'Prepaid costs must not be charged again between independent segments.'
 Assert-Contains $actions 'TryCommitCompositePreStackCosts(playerIndex, card, compositeDeclaration)' 'Ordinary hand play must atomically commit declared colon costs before stack entry.'
+Assert-Contains $triggerGateway 'L12StructuredCardRules.RequiresPreStackEnterCost(source)' 'Every entry source must pass the shared pre-stack enter-cost gateway.'
+Assert-Contains $triggerGateway 'data?.GetValueOrDefault("entryCostPaid") != "true"' 'The shared entry gateway must distinguish paid entry costs.'
+Assert-Contains $triggerGateway 'data?.GetValueOrDefault("entryCostUnavailable") != "true"' 'The shared entry gateway must preserve the mandatory unavailable-cost fallback.'
+Assert-Contains $s2Faction 'L12StructuredCardRules.CurrentCostEquals(card, 8)' 'Yingzheng must validate the current, not printed, cost of the discarded legion.'
+$yingzhengGatewayCalls = [regex]::Matches(($actions + "`n" + $triggerGateway + "`n" + $allRuntime),
+    'BeginYingzhengEnterActivation\(').Count
+if ($yingzhengGatewayCalls -ne 2) {
+    throw "Yingzheng pre-stack entry payment must have exactly one caller plus its definition; found $yingzhengGatewayCalls references."
+}
 Assert-Contains $actions 'HasHandPlayPlan(card.CardId)' 'Ordinary hand play must route every composite plan through the shared declaration entry.'
 Assert-Contains $s2Faction 'BeginEffectGeneratedFreePlay(item.Controller, card, item, "library"' 'Every effect-generated free play must enter the shared authority transaction.'
 Assert-Contains $effectGeneratedPlay 'BeginCommittedCompositeEffectDeclaration(activation.Controller, card, parent, "finish-parent")' 'Free composite tactics must enter the same composite declaration planner.'

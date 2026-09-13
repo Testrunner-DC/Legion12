@@ -377,21 +377,16 @@ public sealed partial class L12GameEngine
         if (HasImmediateEffect(card, trigger))
         {
             State.CheckDisasterAfterStack |= card.CardType == "legion" && State.DisasterValue > 8;
-            if (trigger == "enter" && L12StructuredCardRules.RequiresPreStackEnterCost(card))
-                BeginYingzhengEnterActivation(playerIndex, card);
-            else
-            {
-                Dictionary<string, string>? declaredData = compositeDeclaration is not null
-                    ? CompositeFirstSegmentData(card.CardId, compositeDeclaration)
-                    : L12StructuredCardRules.RequiresPreStackHandPlayTarget(card.CardId)
-                        && command.Target is { Type: "legion" }
-                        ? new Dictionary<string, string> { ["target"] = command.Target.InstanceId ?? string.Empty }
-                        : null;
-                QueueOrPushTriggeredEffect(playerIndex, card, trigger,
-                    trigger == "enter" ? "【登场时】效果" : "战术效果",
-                    targets: compositeDeclaration is null ? null : CompositeFirstSegmentTargets(card.CardId, compositeDeclaration),
-                    data: declaredData);
-            }
+            Dictionary<string, string>? declaredData = compositeDeclaration is not null
+                ? CompositeFirstSegmentData(card.CardId, compositeDeclaration)
+                : L12StructuredCardRules.RequiresPreStackHandPlayTarget(card.CardId)
+                    && command.Target is { Type: "legion" }
+                    ? new Dictionary<string, string> { ["target"] = command.Target.InstanceId ?? string.Empty }
+                    : null;
+            QueueOrPushTriggeredEffect(playerIndex, card, trigger,
+                trigger == "enter" ? "【登场时】效果" : "战术效果",
+                targets: compositeDeclaration is null ? null : CompositeFirstSegmentTargets(card.CardId, compositeDeclaration),
+                data: declaredData);
             if (card.CardType == "legion") QueueS2GrailRoundTableEntry(playerIndex, card);
         }
         else

@@ -88,6 +88,51 @@ public sealed class Batch299EffectRegressionTests
     }
 
     [Fact]
+    public void AmaterasuFrontBuffIsVisibleAndAuthoritativeInV2SnapshotsAndReconnect()
+    {
+        var game = Create(stateFormatVersion: 2);
+        var owner = game.State.Players[0];
+        var discard = Card(game, "S01-0003", "amaterasu-v2-cost");
+        var front = Card(game, "S01-0404", "amaterasu-v2-front");
+        owner.Hand.Add(discard);
+        owner.Field[0][0] = front;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "amaterasuReady")).Accepted);
+        Resolve(game, discard.InstanceId);
+        if (game.State.PendingPrompts.FirstOrDefault()?.Kind != "response") Resolve(game);
+        Pass(game);
+
+        static JsonElement VisibleCard(L12GameEngine current)
+        {
+            var json = JsonSerializer.SerializeToElement(current.SnapshotFor(0),
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            return json.GetProperty("players")[0].GetProperty("field")[0][0];
+        }
+
+        Assert.Equal(front.BaseTroops + 1000, VisibleCard(game).GetProperty("troops").GetInt32());
+        Assert.Contains(VisibleCard(game).GetProperty("statusEffects").EnumerateArray(), status =>
+            status.GetProperty("source").GetString() == "天照大神"
+            && status.GetProperty("label").GetString() == "本回合兵力+1000");
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect"
+            && entry.Text.Contains("前排所有【高天原】军团本回合兵力+1000", StringComparison.Ordinal));
+        Assert.Contains($"amaterasu-front-aura:{game.State.TurnSerial}", owner.UsedAbilities);
+
+        var restored = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(),
+            game.RandomState!.Value, game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        Assert.Equal(front.BaseTroops + 1000, VisibleCard(restored).GetProperty("troops").GetInt32());
+        Assert.Contains(VisibleCard(restored).GetProperty("statusEffects").EnumerateArray(), status =>
+            status.GetProperty("source").GetString() == "天照大神");
+
+        restored.State.TurnSerial++;
+        Call(restored, "RecalculateContinuousTroops");
+        Assert.Equal(front.BaseTroops, VisibleCard(restored).GetProperty("troops").GetInt32());
+        Assert.DoesNotContain(VisibleCard(restored).GetProperty("statusEffects").EnumerateArray(), status =>
+            status.TryGetProperty("source", out var source) && source.GetString() == "天照大神");
+    }
+
+    [Fact]
     public void YingzhengWithoutEightCostOnlyRevealsAndDoesNotKillReturnOrRestrict()
     {
         var game = Create(); var owner = game.State.Players[0];

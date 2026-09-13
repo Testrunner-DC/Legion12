@@ -957,7 +957,14 @@ public sealed partial class L12GameEngine
             case "s2-yingzheng-enter-cost":
             {
                 var result = ResolveYingzhengEnterCost(prompt, chosen[0]);
-                if (!result.Accepted) return result;
+                if (!result.Accepted)
+                {
+                    var sourceId = prompt.Data.GetValueOrDefault("sourceInstanceId");
+                    var source = FindOnField(State.Players[prompt.PlayerIndex], sourceId, out _, out _);
+                    if (source is not null)
+                        BeginYingzhengEnterActivation(prompt.PlayerIndex, source);
+                    return result;
+                }
                 break;
             }
             case "s2-promotion-foundation":

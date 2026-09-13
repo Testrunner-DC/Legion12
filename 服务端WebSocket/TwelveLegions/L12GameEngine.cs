@@ -831,6 +831,9 @@ public sealed partial class L12GameEngine
             effects.Add(new("power-up", $"临时兵力+{positive}", string.Join('、', activeTimed.Where(item => item.TroopsDelta > 0).Select(item => item.Source).Distinct())));
         if (negative < 0)
             effects.Add(new("power-down", $"临时兵力{negative}", string.Join('、', activeTimed.Where(item => item.TroopsDelta < 0).Select(item => item.Source).Distinct())));
+        if (row == 0 && controller.UsedAbilities.Contains($"amaterasu-front-aura:{State.TurnSerial}")
+            && L12StructuredCardRules.HasFaction(controller, card, "gaotianyuan"))
+            effects.Add(new("power-up", "本回合兵力+1000", "天照大神"));
         if (card.CannotUntapUntilRound >= State.Round || card.CannotReadyByEffectUntilTurn >= State.TurnSerial)
             effects.Add(new("lock", "暂时无法转为活跃"));
         if (card.CannotAttack) effects.Add(new("disabled", "无法进攻"));

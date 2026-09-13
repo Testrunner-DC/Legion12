@@ -16,6 +16,12 @@ if (s1.find(card => card.id === 'S01-0319')?.effect !== huntingMomentText
   throw new Error('猎杀时刻必须在服务端、图鉴与搜索数据中统一使用已批准的非费用效果文本')
 }
 const s2 = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/cards.s2.json'))
+const wukongEffect = '我方 回合1次 可返还2至8士气：将此主宰作为【斗士】军团在我方前排活跃登场，兵力=本次返还的士气数量×1000，在登场回合即可进攻，且在我方回合结束时/进攻后返回主宰区。\n「作为军团」离场时 返回主宰区，若我方士气少于对方，可从士气牌库追加1张休整的士气。'
+if (s2.find(card => card.id === 'S02-01M1')?.effect !== wukongEffect
+  || webLookup.find(card => card.cardNo === 'S02-01M1')?.effectText !== wukongEffect
+  || !webLookup.find(card => card.cardNo === 'S02-01M1')?.searchText?.includes(wukongEffect)) {
+  throw new Error('孙悟空勘误文本必须在服务端、图鉴与搜索数据中逐字一致')
+}
 const st = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/cards.st.json'))
 const webSt = JSON.parse(read('../public/data/l12/cards.st.json'))
 const angusEffect = '规则上，可完成的试炼数量增加1张。\n我方 回合1次 推进试炼进度时，可获得1符文。\n回合1次 当我方成功发动战术效果时，试炼+1。'

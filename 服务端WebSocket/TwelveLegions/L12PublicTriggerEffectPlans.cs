@@ -258,6 +258,15 @@ public sealed partial class L12GameEngine
     private void QueueOrPushTriggeredEffect(int controller, L12CardInstance source, string trigger, string text,
         IEnumerable<string>? targets = null, Dictionary<string, string>? data = null)
     {
+        // 冒号前的登场费用必须由所有登场入口共用同一预支付网关。手牌打出、效果登场、
+        // GM 置入与权威事件都可能来到这里，任何调用方都不得先把嬴政的击杀段直接入栈。
+        if (trigger == "enter" && L12StructuredCardRules.RequiresPreStackEnterCost(source)
+            && data?.GetValueOrDefault("entryCostPaid") != "true"
+            && data?.GetValueOrDefault("entryCostUnavailable") != "true")
+        {
+            BeginYingzhengEnterActivation(controller, source);
+            return;
+        }
         if (TryQueueAttackPublicTriggerCandidates(controller, source, trigger, text, targets, data))
             return;
         if (!HasPublicTriggerDeclarationPlan(source.CardId, trigger, data))

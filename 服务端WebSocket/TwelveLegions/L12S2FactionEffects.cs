@@ -2789,7 +2789,7 @@ public sealed partial class L12GameEngine
     private void BeginYingzhengEnterActivation(int playerIndex, L12CardInstance source)
     {
         var player = State.Players[playerIndex];
-        var choices = player.Hand.Where(candidate => candidate.CardType == "legion" && candidate.Cost == 8)
+        var choices = YingzhengEnterCostCandidates(player)
             .Select(candidate => candidate.InstanceId).ToArray();
         if (choices.Length == 0)
         {
@@ -2815,10 +2815,21 @@ public sealed partial class L12GameEngine
         var sourceId = prompt.Data.GetValueOrDefault("sourceInstanceId");
         var source = FindOnField(player, sourceId, out _, out _);
         if (source is null || !L12StructuredCardRules.RequiresPreStackEnterCost(source))
-            return CommandResult.Reject("始皇帝 嬴政已不在战场，登场时效果无法发动");
+        {
+            AddEvent("effect-cancelled", prompt.PlayerIndex,
+                "始皇帝 嬴政已不在战场，登场时效果停止且支付流程关闭");
+            return CommandResult.Ok();
+        }
         var discard = player.Hand.FirstOrDefault(card => card.InstanceId == selectedId
-            && card.CardType == "legion" && card.Cost == 8);
-        if (discard is null) return CommandResult.Reject("所选费用为8的军团已不在手牌中");
+            && IsYingzhengEnterCostCandidate(card));
+        if (discard is null)
+        {
+            if (YingzhengEnterCostCandidates(player).Length > 0)
+                return CommandResult.Reject("所选费用为8的军团已失效，请重新选择");
+            QueueOrPushTriggeredEffect(prompt.PlayerIndex, source, "enter", "【登场时】效果",
+                data: new Dictionary<string, string> { ["entryCostUnavailable"] = "true" });
+            return CommandResult.Ok();
+        }
 
         player.Hand.Remove(discard);
         player.Graveyard.Add(discard);
@@ -2829,6 +2840,12 @@ public sealed partial class L12GameEngine
         QueueOrPushTriggeredEffect(prompt.PlayerIndex, source, "enter", "【登场时】效果", data: data);
         return CommandResult.Ok();
     }
+
+    private static bool IsYingzhengEnterCostCandidate(L12CardInstance card)
+        => card.CardType == "legion" && L12StructuredCardRules.CurrentCostEquals(card, 8);
+
+    private static L12CardInstance[] YingzhengEnterCostCandidates(L12PlayerState player)
+        => player.Hand.Where(IsYingzhengEnterCostCandidate).ToArray();
 
     private void ResolveYingzhengKillSegment(L12StackItem item)
     {
