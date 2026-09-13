@@ -346,6 +346,20 @@ internal static partial class L12CompositeEffectPlans
                 new("magatama-immortal", "八尺琼勾玉：使已选择的本回合位移过的军团本回合获得免死",
                     PublicTargetKeys: ["immortalTarget"], RequiredDeclarationKey: "immortalTarget"),
             ],
+            ["active:S02-0520:forgePromotionDiscount"] =
+            [
+                new("forge-promotion-discount", "匠神锻造炉：本回合下一次晋升登场消耗并翻转的神力-1"),
+            ],
+            ["active:S02-0520:forgeReadyOnKill"] =
+            [
+                new("forge-ready-after-kill", "匠神锻造炉：使已选择的军团本回合下一次击杀对方军团后转为活跃",
+                    PublicTargetKeys: ["readyTarget"], RequiredDeclarationKey: "readyTarget"),
+            ],
+            ["active:S02-06M1:morriganReadyOnKill"] =
+            [
+                new("morrigan-ready-after-kill", "莫瑞甘：使已选择的【彼界】军团本回合下一次击杀对方军团后转为活跃",
+                    PublicTargetKeys: ["readyTarget"], RequiredDeclarationKey: "readyTarget"),
+            ],
             ["active:S02-05D1:divinityRecover"] =
             [
                 new("divinity-recover", "奥林匹斯 诸神巅：将已声明的墓地卡牌加入手牌",

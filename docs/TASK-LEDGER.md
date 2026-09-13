@@ -1,5 +1,11 @@
 # 十二军团任务台账
 
+## EFFECT-20260913-READY-AFTER-KILL：锻造炉与莫瑞甘击杀后转活跃协议
+
+- 匠神锻造炉的`forgePromotionDiscount`、`forgeReadyOnKill`分别接入独立第1/1段并共同映射印刷能力序号2；莫瑞甘`morriganReadyOnKill`接入同型独立段并映射其印刷能力序号2。实际模式、目标、结算、动效、日志、回放和恢复不再读取整段通用文案。
+- 锻造炉主动休整+1士气、莫瑞甘2符文均在响应前支付。击杀后转活跃目标在候选、提交和逆序结算共享“仍为我方公开军团+当前有效阵营”判断，锻造炉还要求非【晋升者】；失效=`failed`、不改选且Cost不回退。无可支付资源/无目标在Prompt或入栈前拒绝，目标选择可取消，被无效不写入状态，V2恢复与旧Prompt重复提交受冻结身份约束。
+- 全池`ReadyAfterNextKill`写入扫描确认只有匠神锻造炉、莫瑞甘两处，消费统一进入击杀来源事件。专项/相邻13/13、Focused与Batch规则均3058/3058通过，提交级Release待跑；旧主动整段场景13→12。本批未部署。
+
 ## EFFECT-20260913-MAGATAMA-ACTIVES：八尺琼勾玉双主动生命周期
 
 - `magatamaMove`与`magatamaImmortal`分别接入`magatama-cavalry-move`、`magatama-immortal`第1/1段，并共同映射印刷能力序号2；按钮、目标声明、真实结算、动效、日志、回放和恢复可区分玩家实际选择。

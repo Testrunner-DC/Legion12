@@ -1312,7 +1312,8 @@ public sealed partial class L12GameEngine
             if (ability == "forgeReadyOnKill")
             {
                 declaredTarget = FindOnField(player, target, out _, out _);
-                if (declaredTarget is null || !L12StructuredCardRules.HasFaction(player, declaredTarget, "olympus")
+                if (declaredTarget is null || declaredTarget.Hidden || !IsFieldLegion(declaredTarget)
+                    || !L12StructuredCardRules.HasFaction(player, declaredTarget, "olympus")
                     || declaredTarget.HasTrait("晋升者"))
                     return CommandResult.Reject("选择的军团不符合匠神锻造炉条件");
             }
@@ -1326,21 +1327,32 @@ public sealed partial class L12GameEngine
             source.Tapped = true;
             var data = new Dictionary<string, string> { ["ability"] = ability };
             if (declaredTarget is not null) data["target"] = declaredTarget.InstanceId;
+            var forgeDeclared = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            if (declaredTarget is not null) forgeDeclared["readyTarget"] = [declaredTarget.InstanceId];
+            foreach (var pair in CompositeFirstSegmentData($"active:S02-0520:{ability}", forgeDeclared))
+                data[pair.Key] = pair.Value;
             PushEffect(playerIndex, source, "active", "主动休整效果", data: data);
             return CommandResult.Ok();
         }
         if (ability == "morriganReadyOnKill" && source.CardId == "S02-06M1")
         {
             var declaredTarget = FindOnField(player, target, out _, out _);
-            if (declaredTarget is null || !L12StructuredCardRules.HasFaction(player, declaredTarget, "otherworld"))
+            if (declaredTarget is null || declaredTarget.Hidden || !IsFieldLegion(declaredTarget)
+                || !L12StructuredCardRules.HasFaction(player, declaredTarget, "otherworld"))
                 return CommandResult.Reject("选择的军团不符合莫瑞甘效果条件");
             if (!L12S2ZoneOps.SpendRunes(player, 2)) return CommandResult.Reject("需要消耗2符文");
             player.UsedAbilities.Add(onceKey);
-            PushEffect(playerIndex, source, "active", "主宰效果", data: new Dictionary<string, string>
+            var morriganDeclared = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
             {
-                ["ability"] = ability,
-                ["target"] = declaredTarget.InstanceId,
-            });
+                ["readyTarget"] = [declaredTarget.InstanceId],
+            };
+            var morriganData = new Dictionary<string, string>
+            {
+                ["ability"] = ability, ["target"] = declaredTarget.InstanceId,
+            };
+            foreach (var pair in CompositeFirstSegmentData("active:S02-06M1:morriganReadyOnKill", morriganDeclared))
+                morriganData[pair.Key] = pair.Value;
+            PushEffect(playerIndex, source, "active", "主宰效果", data: morriganData);
             return CommandResult.Ok();
         }
         if (ability == "merlinRune" && source.CardId == "S02-0603")
@@ -1617,24 +1629,31 @@ public sealed partial class L12GameEngine
         if (ability == "forgeReadyOnKill" && source?.CardId == "S02-0520")
         {
             var target = FindOnField(player, item.Data.GetValueOrDefault("target"), out _, out _);
-            if (target is not null)
+            if (target is not null && !target.Hidden && IsFieldLegion(target)
+                && L12StructuredCardRules.HasFaction(player, target, "olympus")
+                && !target.HasTrait("晋升者"))
             {
                 target.ReadyAfterNextKillUntilTurn = State.TurnSerial;
                 target.ReadyAfterNextKillSourceName = "匠神锻造炉";
                 AddEvent("effect", item.Controller, $"〈{target.Name}〉本回合下一次击杀对方军团后转为活跃", source, target);
             }
+            else RecordTargetSettlementFailure(item, item.Data.GetValueOrDefault("target"),
+                "所选军团已离场、不再是公开军团、失去有效【奥林匹斯】特征或已成为【晋升者】");
             FinishStackItem(item);
             return true;
         }
         if (ability == "morriganReadyOnKill" && source?.CardId == "S02-06M1")
         {
             var target = FindOnField(player, item.Data.GetValueOrDefault("target"), out _, out _);
-            if (target is not null && L12StructuredCardRules.HasFaction(player, target, "otherworld"))
+            if (target is not null && !target.Hidden && IsFieldLegion(target)
+                && L12StructuredCardRules.HasFaction(player, target, "otherworld"))
             {
                 target.ReadyAfterNextKillUntilTurn = State.TurnSerial;
                 target.ReadyAfterNextKillSourceName = "莫瑞甘";
                 AddEvent("effect", item.Controller, $"〈{target.Name}〉本回合下一次击杀对方军团后转为活跃", source, target);
             }
+            else RecordTargetSettlementFailure(item, item.Data.GetValueOrDefault("target"),
+                "所选军团已离场、不再是公开军团或失去有效【彼界】特征");
             FinishStackItem(item);
             return true;
         }
