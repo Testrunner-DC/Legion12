@@ -17,7 +17,7 @@ public sealed partial class L12GameEngine
             ("S02-0610", "enter", _, _) => "finn-entry",
             ("S02-0614", "enter", _, _) => "constance-entry",
             ("S02-0610", "trial-advance-followup", "finnReady", _) => "finn-ready",
-            ("S02-06M2", "active", "angusTacticTrial", _) => "angus",
+            ("S02-06M2", "tactic-effect-resolved", "angusTacticTrial", _) => "angus",
             ("S02-06D1", "turn-start", "avalonTurnStart", _) => "avalon",
             _ => null,
         };

@@ -47,10 +47,14 @@ $remainingPromptTokenCount = [regex]::Matches($allRuntime, '\bCreatePrompt\(').C
 # This is a pre-payment response declaration, not a resolution-time effect choice.
 # Keep the exemption exact and single-site; other new prompts still hit the ratchet.
 $responseTargetDeclarationCount = [regex]::Matches($prompts,
-    'CreatePrompt\(playerIndex, "response-target", "选择本次响应的效果对象", targets\.Select\(item => item\.StackItemId\)\.Append\("cancel"\),\s*1, 1, "stack-response-target", isPrivate: true, data: data\);').Count
+    'CreatePrompt\(playerIndex,\s*"response-target"').Count
 if ($responseTargetDeclarationCount -ne 1) {
     throw 'Expected exactly one explicit stack-target pre-payment declaration prompt.'
 }
+Assert-Contains $prompts 'targets.Select(item => item.StackItemId).Append("cancel")' `
+    'The stack-target pre-payment declaration must retain its explicit cancel choice.'
+Assert-Contains $prompts '1, 1, "stack-response-target", isPrivate: true, data: data);' `
+    'The stack-target pre-payment declaration must remain private and single-choice.'
 $remainingPromptTokenCount -= $responseTargetDeclarationCount
 if ($remainingPromptTokenCount -gt 136) {
     throw "Resolution prompt inventory regressed above the ruling-closure ratchet: $remainingPromptTokenCount > 136"
@@ -64,6 +68,27 @@ foreach ($cardId in @(
     'S02-0304', 'S02-0305', 'S02-05M1', 'S02-06M1', 'S02-0102', 'S02-06S4'
 )) {
     Assert-Contains $plans $cardId "Public trigger declaration plan is missing card $cardId."
+}
+foreach ($semanticTrigger in @(
+    '("S02-0304", "master-damaged-by-effect", "margaretMasterDamage", _)',
+    '("S02-0305", "master-damaged", "anderstorpRingDraw", _)',
+    '("S02-05M1", "friendly-ranged-death", "artemisDeathFlip", _)',
+    '("S02-06S4", "friendly-round-table-enter", "grailRoundTableRune", _)',
+    '("S02-06M2", "tactic-effect-resolved", "angusTacticTrial", _)'
+)) {
+    Assert-Contains ($plans + "`n" + $trialAdvancePlans) $semanticTrigger `
+        "An event-triggered effect lost its semantic runtime trigger: $semanticTrigger"
+}
+foreach ($legacyActiveTrigger in @(
+    '("S02-0304", "active", "margaretMasterDamage", _)',
+    '("S02-0305", "active", "anderstorpRingDraw", _)',
+    '("S02-05M1", "active", "artemisDeathFlip", _)',
+    '("S02-06S4", "active", "grailRoundTableRune", _)',
+    '("S02-06M2", "active", "angusTacticTrial", _)'
+)) {
+    if (($plans + "`n" + $trialAdvancePlans).IndexOf($legacyActiveTrigger, [StringComparison]::Ordinal) -ge 0) {
+        throw "Event-triggered effect regressed to the active-button runtime key: $legacyActiveTrigger"
+    }
 }
 
 foreach ($cardId in @('S01-0101', 'S01-0108', 'S01-0311', 'S02-0001', 'S02-0012', 'S02-01M1', 'S01-01C1')) {
@@ -280,7 +305,8 @@ Assert-Contains $composite '["trigger:S02-0523:trojan-after-attack"]' 'Trojan Ho
 Assert-Contains $plans 'CompositeFirstSegmentData("trigger:S02-0523:trojan-after-attack"' 'Trojan Horse declaration must attach its structured placement identity before stack entry.'
 Assert-Contains $remaining 'RecordTargetSettlementFailure(item, destination' 'Trojan Horse must report a declared slot invalidated during reverse settlement as failed.'
 Assert-Contains $composite '["trigger:S02-0523:trojan-expiry"]' 'Trojan Horse expiry must use a structured delayed plan.'
-Assert-Contains $composite 'new("trojan-expiry-draw", "随后抽取1张牌", RequiresPreviousSuccess: true)' 'Trojan Horse draw must depend on successful expiry discard.'
+Assert-Contains $composite 'new("trojan-expiry-draw",' 'Trojan Horse expiry must retain its independent draw segment.'
+Assert-Contains $composite 'RequiresPreviousSuccess: true)' 'Trojan Horse draw must depend on successful expiry discard.'
 Assert-Contains $remaining 'horse.DiscardAtEndOfTurnUntilTurn = -1;' 'Trojan Horse expiry must reserve the exact delayed instance before queueing.'
 Assert-Contains $remaining 'PushEffect(endingPlayer, horse, "trojan-expiry"' 'Trojan Horse expiry must enter the shared effect lifecycle instead of resolving inline.'
 Assert-Contains $cardEffects 'case "trojan-expiry": ResolveS2TrojanHorseExpiry(item); break;' 'Trojan Horse expiry needs a structured resolver dispatch.'

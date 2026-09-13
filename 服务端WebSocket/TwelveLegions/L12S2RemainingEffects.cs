@@ -681,7 +681,7 @@ public sealed partial class L12GameEngine
         if (player.MasterId != "S02-06M2" || !player.UsedAbilities.Add(key)) return;
         var master = CreateCard("S02-06M2", $"master-{playerIndex}");
         QueueTriggerCandidates([
-            CreateTriggerCandidate(playerIndex, master, "active", "战术效果结算成功时效果",
+            CreateTriggerCandidate(playerIndex, master, "tactic-effect-resolved", "战术效果结算成功时效果",
                 new Dictionary<string, string> { ["ability"] = "angusTacticTrial", ["tactic"] = tactic.CardId })
         ]);
     }
@@ -729,7 +729,7 @@ public sealed partial class L12GameEngine
         var trial = player.SpecialZones.Trials.FirstOrDefault(card => card.CardId == "S02-06S4" && card.TrialCompleted);
         if (State.ActivePlayer != playerIndex || legion.CardType != "legion" || !legion.HasTrait("圆桌骑士")
             || trial is null || player.UsedAbilities.Contains(key) || !player.UsedAbilities.Add(pendingKey)) return null;
-        return CreateTriggerCandidate(playerIndex, trial, "active", "我方【圆桌骑士】登场时效果",
+        return CreateTriggerCandidate(playerIndex, trial, "friendly-round-table-enter", "我方【圆桌骑士】登场时效果",
             new Dictionary<string, string>
             {
                 ["ability"] = "grailRoundTableRune", ["entered"] = legion.InstanceId,
@@ -752,7 +752,7 @@ public sealed partial class L12GameEngine
             || !player.Morale.Any(card => card.Tapped && !card.IsGodPower)
             || player.UsedAbilities.Contains(key) || !player.UsedAbilities.Add(pendingKey)) return null;
         var master = CreateCard("S02-05M1", $"master-{owner}");
-        return CreateTriggerCandidate(owner, master, "active", "我方远程军团阵亡时效果",
+        return CreateTriggerCandidate(owner, master, "friendly-ranged-death", "我方远程军团阵亡时效果",
             new Dictionary<string, string>
             {
                 ["ability"] = "artemisDeathFlip", ["defeated"] = defeated.CardId,
@@ -817,7 +817,7 @@ public sealed partial class L12GameEngine
         if (State.ActivePlayer != playerIndex || player.Relic?.CardId != "S02-0305"
             || player.UsedAbilities.Contains(key) || !player.UsedAbilities.Add(pendingKey))
             return null;
-        return CreateTriggerCandidate(playerIndex, player.Relic, "active", "主宰受到伤害时效果",
+        return CreateTriggerCandidate(playerIndex, player.Relic, "master-damaged", "主宰受到伤害时效果",
             new Dictionary<string, string>
             {
                 ["ability"] = "anderstorpRingDraw",

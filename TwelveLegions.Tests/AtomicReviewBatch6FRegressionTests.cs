@@ -341,7 +341,12 @@ public sealed class AtomicReviewBatch6FRegressionTests
 
         QueueAngusTactic(game, tactic);
         var item = Assert.Single(game.State.EffectStack);
+        Assert.Equal("tactic-effect-resolved", item.Trigger);
         Assert.Equal("true", item.Data["trialAdvanceEvent"]);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.CardId == "S02-06M2"));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-activation"
+            && entry.Cards.Any(card => card.CardId == "S02-06M2"));
         Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
         item.Negated = true;
         PassResponses(game);

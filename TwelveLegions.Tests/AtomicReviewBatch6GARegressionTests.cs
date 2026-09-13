@@ -142,7 +142,7 @@ public sealed class AtomicReviewBatch6GARegressionTests
             {
                 var source = Card("S02-0304", "batch6ga-margaret-damage");
                 player.Field[0][0] = source;
-                QueueDirectTrigger(game, source, "active",
+                QueueDirectTrigger(game, source, "master-damaged-by-effect",
                     new Dictionary<string, string> { ["ability"] = "margaretMasterDamage" });
                 break;
             }
@@ -257,6 +257,10 @@ public sealed class AtomicReviewBatch6GARegressionTests
 
         var margaret = Assert.IsType<L12CardInstance>(player.Field[0][0]);
         Assert.True(margaret.Tapped);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.InstanceId == margaret.InstanceId));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-activation"
+            && entry.Cards.Any(card => card.InstanceId == margaret.InstanceId));
         var heal = Assert.Single(game.State.EffectStack);
         Assert.Equal("margaret-heal", heal.Data["atomicFlow"]);
         heal.Negated = true;
@@ -293,5 +297,154 @@ public sealed class AtomicReviewBatch6GARegressionTests
 
         Assert.False(morale.IsGodPower);
         Assert.Contains("trigger:artemis-ranged-death:3", player.UsedAbilities);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0305")]
+    [Trait("L12Evidence", "entry:anderstorp-single-trigger-positive")]
+    public void AnderstorpDamageDrawUsesTriggeredPresentationAndResolvesOnce()
+    {
+        var game = Create(9203, "S02-0305");
+        var player = game.State.Players[0];
+        player.Library.Add(Card("S02-0004", "batch6ga-ring-draw"));
+
+        QueueFocusTrigger(game, "anderstorp");
+        ResolveOnlyPrompt(game, "mode:use");
+        PassResponses(game);
+
+        Assert.Contains(player.Hand, card => card.InstanceId == "batch6ga-ring-draw");
+        var declaration = Assert.Single(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.InstanceId == "batch6ga-ring"));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-activation"
+            && entry.Cards.Any(card => card.InstanceId == "batch6ga-ring"));
+        Assert.NotNull(declaration.EffectSceneId);
+        Assert.Equal(1, declaration.EffectSegmentIndex);
+        Assert.Equal(1, declaration.EffectSegmentCount);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == "batch6ga-ring"));
+        Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.Equal(declaration.EffectSceneId, result.EffectSceneId);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0305")]
+    [Trait("L12Evidence", "entry:anderstorp-single-trigger-decline")]
+    public void AnderstorpDamageDrawDeclineIsDistinctAndCreatesNoStack()
+    {
+        var game = Create(9204, "S02-0305");
+        var player = game.State.Players[0];
+        player.Library.Add(Card("S02-0004", "batch6ga-ring-decline-draw"));
+
+        QueueFocusTrigger(game, "anderstorp");
+        var prompt = ResolveOnlyPrompt(game, "mode:none");
+
+        Assert.Empty(game.State.EffectStack);
+        Assert.Empty(player.Hand);
+        Assert.DoesNotContain("trigger:anderstorp-draw:3", player.UsedAbilities);
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-declined"
+            && entry.EffectResultStatus == "declined"
+            && entry.Cards.Any(card => card.InstanceId == "batch6ga-ring"));
+        Assert.False(game.Handle(prompt.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "mode:use")).Accepted);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0305")]
+    [Trait("L12Evidence", "entry:anderstorp-single-trigger-negated")]
+    public void AnderstorpDamageDrawNegatedDoesNotDraw()
+    {
+        var game = Create(9205, "S02-0305");
+        var player = game.State.Players[0];
+        player.Library.Add(Card("S02-0004", "batch6ga-ring-negated-draw"));
+
+        QueueFocusTrigger(game, "anderstorp");
+        ResolveOnlyPrompt(game, "mode:use");
+        Assert.Single(game.State.EffectStack).Negated = true;
+        PassResponses(game);
+
+        Assert.Empty(player.Hand);
+        Assert.Contains(player.Library, card => card.InstanceId == "batch6ga-ring-negated-draw");
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "negated"
+            && entry.Cards.Any(card => card.InstanceId == "batch6ga-ring"));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0305")]
+    [Trait("L12Evidence", "entry:anderstorp-single-trigger-reconnect")]
+    public void AnderstorpDamageDrawResumesOnceAfterCheckpointAndRejectsOldPrompt()
+    {
+        var game = Create(9206, "S02-0305");
+        var player = game.State.Players[0];
+        player.Library.Add(Card("S02-0004", "batch6ga-ring-restore-draw"));
+
+        QueueFocusTrigger(game, "anderstorp");
+        ResolveOnlyPrompt(game, "mode:use");
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        var random = game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0);
+        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+
+        game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint, random,
+            game.CardFactSignalSequence, autoPassEmptyResponses: false,
+            concealHiddenResponseAvailability: false);
+        PassResponses(game);
+
+        Assert.Single(game.State.Players[0].Hand,
+            card => card.InstanceId == "batch6ga-ring-restore-draw");
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "resolved"
+            && entry.Cards.Any(card => card.InstanceId == "batch6ga-ring"));
+        Assert.False(game.Handle(response.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+    }
+
+    public static IEnumerable<object[]> AdditionalSingleTriggerPlans()
+    {
+        yield return ["artemis", "S02-05M1", "S02-05M1"];
+        yield return ["grail-round-table", "", "S02-06S4"];
+    }
+
+    [Theory]
+    [MemberData(nameof(AdditionalSingleTriggerPlans))]
+    [Trait("L12Evidence", "entry:batch6ga-single-trigger-positive")]
+    public void AdditionalSingleTriggersPublishTriggeredPresentationAndResolve(
+        string plan, string? masterId, string sourceCardId)
+    {
+        var game = Create(9207 + plan.Length, masterId);
+
+        QueueFocusTrigger(game, plan);
+        ResolveOnlyPrompt(game, "mode:use");
+        if (plan == "artemis") ResolveOnlyPrompt(game, "batch6ga-artemis-morale");
+        PassResponses(game);
+
+        var declaration = Assert.Single(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.CardId == sourceCardId));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-activation"
+            && entry.Cards.Any(card => card.CardId == sourceCardId));
+        Assert.NotNull(declaration.EffectSceneId);
+        Assert.Equal(1, declaration.EffectSegmentIndex);
+        Assert.Equal(1, declaration.EffectSegmentCount);
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "resolved"
+            && entry.EffectSceneId == declaration.EffectSceneId);
+    }
+
+    [Theory]
+    [MemberData(nameof(AdditionalSingleTriggerPlans))]
+    [Trait("L12Evidence", "entry:batch6ga-single-trigger-decline")]
+    public void AdditionalSingleTriggerDeclinesAreDistinctAndRejectDuplicates(
+        string plan, string? masterId, string sourceCardId)
+    {
+        var game = Create(9209 + plan.Length, masterId);
+
+        QueueFocusTrigger(game, plan);
+        var prompt = ResolveOnlyPrompt(game, "mode:none");
+
+        Assert.Empty(game.State.EffectStack);
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-declined"
+            && entry.EffectResultStatus == "declined"
+            && entry.Cards.Any(card => card.CardId == sourceCardId));
+        Assert.False(game.Handle(prompt.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "mode:use")).Accepted);
     }
 }

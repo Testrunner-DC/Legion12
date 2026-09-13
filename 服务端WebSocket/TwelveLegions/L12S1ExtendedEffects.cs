@@ -1255,7 +1255,7 @@ public sealed partial class L12GameEngine
         {
             candidates.AddRange(PublicLegions(player)
                 .Where(card => card.CardId == "S02-0304" && !card.Tapped)
-                .Select(card => CreateTriggerCandidate(damagedPlayer, card, "active", "【我方主宰因效果受到伤害时】效果",
+                .Select(card => CreateTriggerCandidate(damagedPlayer, card, "master-damaged-by-effect", "【我方主宰因效果受到伤害时】效果",
                     new Dictionary<string, string> { ["ability"] = "margaretMasterDamage" })));
         }
         if (BuildAnderstorpRingDrawCandidate(damagedPlayer) is { } ringDraw)

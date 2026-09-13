@@ -16,6 +16,9 @@ internal static class L12SingleSegmentTriggeredEffectPresentations
     private static readonly L12SingleSegmentTriggeredEffectPresentationDefinition[] Definitions =
     [
         new("S02-0001", 1, "s2-after-opponent-tactic"),
+        new("S02-0305", 3, "master-damaged"),
+        new("S02-05M1", 1, "friendly-ranged-death"),
+        new("S02-06S4", 3, "friendly-round-table-enter"),
     ];
 
     internal static IReadOnlyList<L12SingleSegmentTriggeredEffectPresentationDefinition> All => Definitions;

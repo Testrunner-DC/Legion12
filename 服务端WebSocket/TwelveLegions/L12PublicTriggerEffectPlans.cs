@@ -182,12 +182,12 @@ public sealed partial class L12GameEngine
         {
             ("S02-0102", "enter", _, _) => "limu-enter",
             ("S02-0304", "enter", _, _) => "margaret-entry-mill",
-            ("S02-0304", "active", "margaretMasterDamage", _) => "margaret-master-damage",
-            ("S02-0305", "active", "anderstorpRingDraw", _) => "anderstorp-draw",
-            ("S02-05M1", "active", "artemisDeathFlip", _) => "artemis-death-flip",
+            ("S02-0304", "master-damaged-by-effect", "margaretMasterDamage", _) => "margaret-master-damage",
+            ("S02-0305", "master-damaged", "anderstorpRingDraw", _) => "anderstorp-draw",
+            ("S02-05M1", "friendly-ranged-death", "artemisDeathFlip", _) => "artemis-death-flip",
             ("S02-06M1", "morrigan-enemy-death", _, _) => "morrigan-rune",
             ("S02-0102", "master-morale-return", _, "limu") => "limu-morale",
-            ("S02-06S4", "active", "grailRoundTableRune", _) => "grail-round-table-rune",
+            ("S02-06S4", "friendly-round-table-enter", "grailRoundTableRune", _) => "grail-round-table-rune",
             ("S02-06M2", "trial-advance", "angusTrialAdvanceRune", _) => "angus-trial-rune",
             _ => null,
         };
