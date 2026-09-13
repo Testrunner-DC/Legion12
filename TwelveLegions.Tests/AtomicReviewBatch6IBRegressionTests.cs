@@ -394,13 +394,12 @@ public sealed class AtomicReviewBatch6IBRegressionTests
     }
 
     [Theory]
-    [InlineData("S01-0001", 2, "teach-death-discard")]
-    [InlineData("S01-0303", 1, "death-cycle-discard")]
-    [InlineData("S01-0306", 2, "death-cycle-discard")]
-    [InlineData("S02-0301", 1, "s2-asgard-death-discard")]
+    [InlineData("S01-0001", 2)]
+    [InlineData("S01-0303", 1)]
+    [InlineData("S01-0306", 2)]
+    [InlineData("S02-0301", 1)]
     [Trait("L12Evidence", "entry:batch6ib-delayed-hidden-discard")]
-    public void DrawCycleDeclaresOnlyModeAndDelaysExactDiscardUntilAfterDraw(string cardId, int drawCount,
-        string discardAction)
+    public void DrawCycleDeclaresOnlyModeAndDelaysExactDiscardUntilAfterDraw(string cardId, int drawCount)
     {
         var game = Create(9860 + cardId[^1]);
         var player = game.State.Players[0];
@@ -414,7 +413,10 @@ public sealed class AtomicReviewBatch6IBRegressionTests
         PassResponses(game);
 
         var discard = OnlyPrompt(game);
-        Assert.Equal(discardAction, discard.Data.GetValueOrDefault("action"));
+        Assert.Equal("pending-activation", discard.Continuation);
+        Assert.Equal("hand-card", discard.Kind);
+        Assert.DoesNotContain("skip", discard.ValidChoices);
+        Assert.False(discard.Data.ContainsKey("action"));
         Assert.Equal(before + drawCount, player.Hand.Count);
     }
 

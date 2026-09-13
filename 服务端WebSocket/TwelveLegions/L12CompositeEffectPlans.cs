@@ -38,6 +38,10 @@ internal static partial class L12CompositeEffectPlans
         "active:S01-04M1:amaterasuReady",
         "active:S01-03D1:valhallaKill",
         "trigger:S01-0406:enter",
+        "trigger:S01-0001:death",
+        "trigger:S01-0303:death",
+        "trigger:S01-0306:death",
+        "trigger:S02-0301:death",
         "starter-oiran-active",
         "starter-nuada-active",
         "S02-0620",
@@ -439,6 +443,34 @@ internal static partial class L12CompositeEffectPlans
             [
                 new("teach-enter-discard", "黑胡子蒂奇：双方各弃置合计2张手牌"),
                 new("teach-enter-draw", "黑胡子蒂奇：随后我方抽取2张牌，对方抽取1张牌"),
+            ],
+            ["trigger:S01-0001:death"] =
+            [
+                new("death-cycle-draw-2", "黑胡子蒂奇：抽取2张牌"),
+                new("death-cycle-discard", "黑胡子蒂奇：并弃置1张手牌",
+                    DeclareAtSegmentStart: true, DeclarationTiming: "post-draw-private",
+                    RequiresPreviousSuccess: true),
+            ],
+            ["trigger:S01-0303:death"] =
+            [
+                new("death-cycle-draw-1", "传奇的拉格纳：抽取1张牌"),
+                new("death-cycle-discard", "传奇的拉格纳：并弃置1张手牌",
+                    DeclareAtSegmentStart: true, DeclarationTiming: "post-draw-private",
+                    RequiresPreviousSuccess: true),
+            ],
+            ["trigger:S01-0306:death"] =
+            [
+                new("death-cycle-draw-2", "奥拉夫二世：抽取2张牌"),
+                new("death-cycle-discard", "奥拉夫二世：并弃置1张手牌",
+                    DeclareAtSegmentStart: true, DeclarationTiming: "post-draw-private",
+                    RequiresPreviousSuccess: true),
+            ],
+            ["trigger:S02-0301:death"] =
+            [
+                new("death-cycle-draw-1", "雷神之锤：抽取1张牌"),
+                new("death-cycle-discard", "雷神之锤：并弃置1张手牌",
+                    DeclareAtSegmentStart: true, DeclarationTiming: "post-draw-private",
+                    RequiresPreviousSuccess: true),
             ],
             ["response:S01-0020"] =
             [
@@ -1633,6 +1665,16 @@ public sealed partial class L12GameEngine
                     targets, 1));
                 return true;
             }
+            case "death-cycle-discard":
+            {
+                if (player.Hand.Count == 0) return false;
+                var discard = CompositeStep("hand-card", "discardTarget",
+                    $"{item.SourceName}：抽牌完成后选择必须弃置的1张手牌",
+                    player.Hand.Select(card => card.InstanceId), 1);
+                discard.CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed;
+                steps.Add(discard);
+                return true;
+            }
             default:
                 return false;
         }
@@ -2020,6 +2062,8 @@ public sealed partial class L12GameEngine
     private bool ValidateCompositeSegmentTargets(int controller, string flow, L12StackItem item)
         => flow switch
         {
+            "death-cycle-discard" => CompositeDeclared(item, "discardTarget").SingleOrDefault() is { } discard
+                && State.Players[controller].Hand.Any(card => card.InstanceId == discard),
             "nyx-secondary" => DeclaredEnemyTarget(controller,
                 CompositeDeclared(item, "secondaryTarget").SingleOrDefault()) is not null,
             "round-table-buff" => FindOnField(State.Players[controller],
@@ -2079,6 +2123,34 @@ public sealed partial class L12GameEngine
                 && State.Players[controller].Field[palacePosition.Item1][palacePosition.Item2] is null,
             _ => true,
         };
+
+    private bool TryResolveDrawDiscardDeathSegment(L12StackItem item, L12CardInstance card)
+    {
+        var flow = AtomicFlowKey(item, card);
+        if (flow is "death-cycle-draw-1" or "death-cycle-draw-2")
+        {
+            var drawCount = flow.EndsWith("-2", StringComparison.Ordinal) ? 2 : 1;
+            if (!Draw(State.Players[item.Controller], drawCount))
+            {
+                AddEvent("effect-failed", item.Controller,
+                    $"〈{item.SourceName}〉阵亡效果抽取{drawCount}张牌时牌库数量不足", card);
+                SetWinner(1 - item.Controller, $"{item.SourceName}阵亡效果抽牌时牌库为空");
+            }
+            FinishStackItem(item);
+            return true;
+        }
+        if (flow != "death-cycle-discard") return false;
+
+        var player = State.Players[item.Controller];
+        var discardId = CompositeDeclared(item, "discardTarget").SingleOrDefault();
+        var target = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == discardId);
+        if (target is null)
+            RecordTargetSettlementFailure(item, discardId, "已选择的手牌不再位于手牌中");
+        else
+            MoveHandToGrave(player, target.InstanceId, causedByEffect: true, card);
+        FinishStackItem(item);
+        return true;
+    }
 
     private bool TryPayCompositeSegmentCost(int controller, L12CardInstance source,
         L12CompositeEffectSegmentSpec segment, L12StackItem item)

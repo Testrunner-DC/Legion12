@@ -1320,8 +1320,11 @@ public sealed class S2FactionRegressionTests
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: optional.PromptId,
             Choice: "mode:use")).Accepted);
         PassResponses(game);
-        Assert.Contains(game.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "s2-asgard-death-discard");
+        var discard = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", discard.Continuation);
+        Assert.Equal("hand-card", discard.Kind);
+        Assert.DoesNotContain("skip", discard.ValidChoices);
+        Assert.False(discard.Data.ContainsKey("action"));
         Assert.Contains(game.State.Events, entry => entry.Text.Contains("卡纽特大帝触发了1张军团"));
     }
 

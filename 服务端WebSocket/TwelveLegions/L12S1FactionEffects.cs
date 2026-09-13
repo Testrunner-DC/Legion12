@@ -362,6 +362,7 @@ public sealed partial class L12GameEngine
     private bool TryResolveS1FactionDeath(L12StackItem item, L12CardInstance card)
     {
         var player = State.Players[item.Controller];
+        if (TryResolveDrawDiscardDeathSegment(item, card)) return true;
         switch (AtomicFlowKey(item, card))
         {
             case "thutmose-debuff": ApplySunKingDebuff(item); return true;

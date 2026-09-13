@@ -367,6 +367,21 @@ foreach ($obsoleteTakedaSplit in @('batch6JAFollowup', 'takeda-followup', 'case 
 Assert-Contains $composite '["trigger:S01-0111:enter"]' 'Zhuge reveal and disaster adjustment must remain independent stack segments.'
 Assert-Contains $composite '["trigger:S01-0217:enter"]' 'Canopic Jar One target and discard must remain independent stack segments.'
 Assert-Contains $composite '["trigger:S01-0220:enter"]' 'Canopic Jar Four target and discard must remain independent stack segments.'
+foreach ($drawDiscardPlan in @(
+    'trigger:S01-0001:death', 'trigger:S01-0303:death',
+    'trigger:S01-0306:death', 'trigger:S02-0301:death'
+)) {
+    Assert-Contains $composite ('["' + $drawDiscardPlan + '"]') `
+        "Draw-then-discard death trigger lost its structured plan: $drawDiscardPlan"
+    Assert-Contains $composite ('"' + $drawDiscardPlan + '",') `
+        "Draw-then-discard death trigger lost its single-response registration: $drawDiscardPlan"
+}
+Assert-Contains $composite 'DeclarationTiming: "post-draw-private"' `
+    'Draw-then-discard triggers must choose the exact private hand card only after drawing.'
+Assert-Contains $composite 'discard.CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed;' `
+    'The mandatory discard after a chosen draw effect must not expose a cancellation escape.'
+Assert-Contains $composite 'TryResolveDrawDiscardDeathSegment' `
+    'All draw-then-discard death triggers must share one settlement implementation.'
 foreach ($legalHiddenPrompt in @('s2-ring-search','s2-magatama-search','s2-takeda-search','s2-robin-summon-squire')) {
     Assert-Contains $entryPlans $legalHiddenPrompt "Legal post-reveal hidden prompt is missing: $legalHiddenPrompt"
 }

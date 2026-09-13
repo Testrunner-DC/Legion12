@@ -1634,6 +1634,14 @@ public sealed partial class L12GameEngine
             };
             candidate.Data["declaredTargets"] = string.Join('|', legacyTargets);
         }
+        if (batch6IBPlan is "teach-draw-cycle" or "ragnar-draw-cycle" or "olaf-draw-cycle"
+            or "thor-draw-cycle")
+        {
+            var composite = CompositeFirstSegmentData($"trigger:{candidate.SourceCardId}:death",
+                activation.DeclaredValues);
+            foreach (var pair in composite) candidate.Data[pair.Key] = pair.Value;
+            RefreshDeclaredPresentationSceneId(candidate, declaredSource);
+        }
         if (batch6GAPlan == "limu-enter")
         {
             var composite = CompositeFirstSegmentData("trigger:S02-0102:enter", activation.DeclaredValues);
