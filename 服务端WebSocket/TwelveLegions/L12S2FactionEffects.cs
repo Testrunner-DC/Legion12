@@ -59,7 +59,7 @@ public sealed partial class L12GameEngine
     {
         "S02-02M1" =>
         [
-            new("nephthysSacrifice", "我方 回合1次：弃置我方战场任意数量的军团；每弃置1张，本回合下一张带有天灾等级的【太阳城】军团登场费用-1。"),
+            new("nephthysSacrifice", "我方 回合1次 可弃置我方战场上任意数量军团，每弃置1张，本回合我方下1张带有天灾等级的【太阳城】军团登场费用-1。"),
         ],
         "S02-0204" => [new("imhotepDiscount", "主动休整：本回合下1张带有天灾等级的【太阳城】军团登场费用-1")],
         "S02-0513" => [new("aristotleDiscount", "主动休整：本回合下一张【奥林匹斯】军团登场费用-1")],
@@ -1266,14 +1266,15 @@ public sealed partial class L12GameEngine
             if (declaredIds.Length == 0) return CommandResult.Reject("至少需要选择1张我方军团");
             var declared = declaredIds.Select(id => FindOnField(player, id, out _, out _)).ToArray();
             if (declared.Any(card => card is null || !IsFieldLegion(card))) return CommandResult.Reject("选择的军团已不在我方战场");
-            foreach (var card in declared.Cast<L12CardInstance>())
-                MoveFieldCardToZone(player, card, "graveyard", "被奈芙蒂斯效果弃置");
             player.UsedAbilities.Add(onceKey);
-            PushEffect(playerIndex, source, "active", "主宰效果", data: new Dictionary<string, string>
+            var compositeDeclared = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
             {
-                ["ability"] = ability,
-                ["count"] = declaredIds.Length.ToString(),
-            });
+                ["sacrificeTargets"] = [.. declaredIds],
+            };
+            var data = CompositeFirstSegmentData("active:S02-02M1:nephthysSacrifice", compositeDeclared);
+            data["ability"] = ability;
+            data["count"] = declaredIds.Length.ToString();
+            PushEffect(playerIndex, source, "active", "主宰效果", data: data);
             return CommandResult.Ok();
         }
         if (ability == "avalonRecover" && source.CardId == "S02-06D1")
@@ -1585,10 +1586,42 @@ public sealed partial class L12GameEngine
         }
         if (ability == "nephthysSacrifice" && source?.CardId == "S02-02M1")
         {
-            var count = int.TryParse(item.Data.GetValueOrDefault("count"), out var parsed) ? parsed : 0;
-            player.NextS2SunDisasterLegionDiscount += Math.Max(0, count);
-            AddEvent("effect", item.Controller,
-                $"奈芙蒂斯弃置{count}张军团；本回合下一张带有天灾等级的【太阳城】军团登场费用-{count}", source);
+            var declaredIds = CompositeDeclared(item, "sacrificeTargets");
+            if (declaredIds.Length == 0 && !item.Data.ContainsKey("compositePlan"))
+            {
+                // 兼容升级前已经支付弃置并进入堆叠的检查点；旧堆叠只冻结数量。
+                var legacyCount = int.TryParse(item.Data.GetValueOrDefault("count"), out var parsed) ? parsed : 0;
+                player.NextS2SunDisasterLegionDiscount += Math.Max(0, legacyCount);
+                AddEvent("effect", item.Controller,
+                    $"奈芙蒂斯弃置{legacyCount}张军团；本回合下一张带有天灾等级的【太阳城】军团登场费用-{legacyCount}", source);
+                FinishStackItem(item);
+                return true;
+            }
+
+            var discarded = new List<L12CardInstance>();
+            foreach (var id in declaredIds.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                var legion = FindOnField(player, id, out _, out _);
+                if (legion is null || legion.Hidden || !IsFieldLegion(legion)) continue;
+                if (!MoveFieldCardToZone(player, legion, "graveyard", "被奈芙蒂斯效果弃置")) continue;
+                if (AuthoritativeCardLocations(id).Any(location => location.Zone == "graveyard"))
+                    discarded.Add(legion);
+            }
+
+            if (discarded.Count == 0)
+                RecordTargetSettlementFailure(item, string.Join('|', declaredIds),
+                    "全部已声明军团均已离场、不再是公开军团或未能实际弃置至墓地");
+            else
+            {
+                player.NextS2SunDisasterLegionDiscount += discarded.Count;
+                AddEvent("effect", item.Controller,
+                    $"奈芙蒂斯实际弃置{discarded.Count}张军团；本回合下一张带有天灾等级的【太阳城】军团登场费用-{discarded.Count}",
+                    discarded.Prepend(source).ToArray());
+                if (discarded.Count < declaredIds.Length)
+                    AddEvent("effect", item.Controller,
+                        $"奈芙蒂斯有{declaredIds.Length - discarded.Count}张已声明军团在逆结算后失效或未能实际弃置；其余军团继续结算",
+                        source);
+            }
             FinishStackItem(item);
             return true;
         }

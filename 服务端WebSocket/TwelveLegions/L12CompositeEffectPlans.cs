@@ -342,6 +342,11 @@ internal static partial class L12CompositeEffectPlans
                     CostKind: "morale-return", CostKey: "returnCost", PublicTargetKeys: ["entrySlot"],
                     PreStackCost: true, RequiredDeclarationKey: "entrySlot"),
             ],
+            ["active:S02-02M1:nephthysSacrifice"] =
+            [
+                new("nephthys-sacrifice-discount", "奈芙蒂斯：弃置仍合法的已声明我方军团，并按实际弃置数量使本回合我方下一张带有天灾等级的【太阳城】军团登场费用降低",
+                    PublicTargetKeys: ["sacrificeTargets"], RequiredDeclarationKey: "sacrificeTargets"),
+            ],
             ["active:S02-0404:magatamaMove"] =
             [
                 new("magatama-cavalry-move", "八尺琼勾玉：使已选择的我方活跃军团进行1次骑兵位移",
