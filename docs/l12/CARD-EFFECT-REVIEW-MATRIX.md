@@ -1,5 +1,18 @@
 # 324 张卡效独立审查矩阵
 
+## 2026-09-14 抽牌后弃牌补充审查
+
+| 卡牌 | 时点 | 统一计划 | 结论与证据 |
+| --- | --- | --- | --- |
+| S01-0001 黑胡子蒂奇 | death | `trigger:S01-0001:death` | 两段单响应；抽2成功后私密强制弃1；`DrawDiscardDeathTriggerPresentationTests` |
+| S01-0303 传奇的拉格纳 | death | `trigger:S01-0303:death` | 两段单响应；抽1成功后私密强制弃1；同上 |
+| S01-0306 奥拉夫二世 | death | `trigger:S01-0306:death` | 两段单响应；抽2失败时弃牌段跳过；同上 |
+| S02-0301 雷神之锤 | death | `trigger:S02-0301:death` | 两段单响应；抽1成功后私密强制弃1；同上 |
+| S02-0502 赫拉克勒斯 | enter | `trigger:S02-0502:enter` | 可选登场效果入栈前声明；抽2后强制弃1；同上、`S2FactionRegressionTests`、`Bq20260830RegressionTests` |
+| S01-03M2 洛基 | active | `active:S01-03M2:lokiCycle` | 1士气预付；普通/信仰狂热者路径共享计划；`ExtendedCardEffectsTests`、`FaithZealotMasterAuditRegressionTests` |
+
+扫描范围为S1/S2/ST完整卡文与运行时抽牌/弃牌处理。〈神之天平〉是双方先弃后抽，山河社稷图和孟婆是独立能力，均不属于本组合协议。
+
 生成日期：2026-09-03
 
 本表把“是否进入原子路由”与“是否存在权威实战入口”分开。主动注册、时机集合、响应池、静态/派生规则、主宰/阵营与试炼/Token/特殊区都是真实运行入口；测试文件只是独立证据，不会单独把卡升级为“已实装”。`细原子已验证`仍只证明至少1项能力被接管。
