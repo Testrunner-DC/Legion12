@@ -36,6 +36,7 @@ internal static partial class L12CompositeEffectPlans
         "trigger:S01-0420:reaction",
         "response:S02-0106",
         "active:S01-04M1:amaterasuReady",
+        "starter-oiran-active",
         "S02-0620",
     };
 
@@ -1953,6 +1954,11 @@ public sealed partial class L12GameEngine
                     && L12StructuredCardRules.HasFaction(State.Players[controller], card, "asgard"))),
             "oiran-ready-morale" => CompositeDeclared(item, "moraleTarget").SingleOrDefault() is { } moraleTarget
                 && State.Players[controller].Morale.Any(card => card.InstanceId == moraleTarget && card.Tapped),
+            "oiran-enemy-debuff" => DeclaredEnemyTarget(controller,
+                CompositeDeclared(item, "enemyTarget").SingleOrDefault()) is not null,
+            "oiran-own-buff" => FindOnField(State.Players[controller],
+                    CompositeDeclared(item, "ownTarget").SingleOrDefault(), out _, out _) is { } oiranOwn
+                && IsFieldLegion(oiranOwn),
             "cosmos-yin-buff" => CompositeDeclared(item, "buffTarget").SingleOrDefault() is { } cosmosTarget
                 && FindOnField(State.Players[controller], cosmosTarget, out _, out _) is { } cosmosLegion
                 && IsFieldLegion(cosmosLegion),

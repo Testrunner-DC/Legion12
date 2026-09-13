@@ -359,7 +359,18 @@ public sealed partial class L12GameEngine
         if (ability == "lightSwordActive")
             DeclarePresentationBranch(data, "light-sword-active", "mode", values[0]);
         IEnumerable<string>? publicTargets = null;
-        if (ability == "athenaFrontBuff")
+        if (ability == "oiranTransfer")
+        {
+            data["compositePlan"] = "starter-oiran-active";
+            data["compositeSegment"] = "0";
+            data["compositeResponseScope"] = "single-effect";
+            data["atomicFlow"] = "oiran-enemy-debuff";
+            data["atomicContinuation"] = "true";
+            data["declared:enemyTarget"] = values[0];
+            data["declared:ownTarget"] = values[1];
+            publicTargets = [values[0]];
+        }
+        else if (ability == "athenaFrontBuff")
         {
             data["compositePlan"] = "starter-athena-active";
             data["compositeSegment"] = "0";
@@ -398,12 +409,58 @@ public sealed partial class L12GameEngine
                 break;
             case "oiranTransfer":
             {
-                var enemy = DeclaredEnemyTarget(item.Controller, values.ElementAtOrDefault(0));
-                var own = FindOnField(player, values.ElementAtOrDefault(1), out _, out _);
-                if (enemy is not null) AddTimedModifier(enemy, -1000, 0, State.TurnSerial, source?.Name ?? "吉原的花魁");
-                if (own is not null && IsFieldLegion(own)) AddTimedModifier(own, 1000, 0, State.TurnSerial, source?.Name ?? "吉原的花魁");
-                AddEvent("effect", item.Controller, "吉原的花魁使所选对方军团本回合兵力-1000，并使所选我方军团本回合兵力+1000", source is null ? [] : [source]);
-                break;
+                var flow = item.Data.GetValueOrDefault("atomicFlow");
+                if (flow == "oiran-enemy-debuff")
+                {
+                    var targetId = CompositeDeclared(item, "enemyTarget").SingleOrDefault();
+                    var enemy = DeclaredEnemyTarget(item.Controller, targetId);
+                    if (enemy is null)
+                        RecordTargetSettlementFailure(item, targetId, "所选对方军团已离场或不再是军团");
+                    else
+                    {
+                        AddTimedModifier(enemy, -1000, 0, State.TurnSerial, source?.Name ?? "吉原的花魁");
+                        AddEvent("effect", item.Controller,
+                            $"吉原的花魁使〈{enemy.Name}〉本回合兵力-1000", enemy);
+                    }
+                }
+                else if (flow == "oiran-own-buff")
+                {
+                    var targetId = CompositeDeclared(item, "ownTarget").SingleOrDefault();
+                    var own = FindOnField(player, targetId, out _, out _);
+                    if (own is null || !IsFieldLegion(own))
+                        RecordTargetSettlementFailure(item, targetId, "所选我方军团已离场或不再是军团");
+                    else
+                    {
+                        AddTimedModifier(own, 1000, 0, State.TurnSerial, source?.Name ?? "吉原的花魁");
+                        AddEvent("effect", item.Controller,
+                            $"吉原的花魁使〈{own.Name}〉本回合兵力+1000", own);
+                    }
+                }
+                else
+                {
+                    // 兼容升级前已持久化、尚未带组合段身份的在途堆叠。旧项目仍按
+                    // 原声明顺序结算，但日志只记录实际仍合法的对象，避免伪记全成功。
+                    var enemy = DeclaredEnemyTarget(item.Controller, values.ElementAtOrDefault(0));
+                    var own = FindOnField(player, values.ElementAtOrDefault(1), out _, out _);
+                    if (enemy is not null)
+                    {
+                        AddTimedModifier(enemy, -1000, 0, State.TurnSerial, source?.Name ?? "吉原的花魁");
+                        AddEvent("effect", item.Controller,
+                            $"吉原的花魁使〈{enemy.Name}〉本回合兵力-1000", enemy);
+                    }
+                    if (own is not null && IsFieldLegion(own))
+                    {
+                        AddTimedModifier(own, 1000, 0, State.TurnSerial, source?.Name ?? "吉原的花魁");
+                        AddEvent("effect", item.Controller,
+                            $"吉原的花魁使〈{own.Name}〉本回合兵力+1000", own);
+                    }
+                    if (enemy is null || own is null || !IsFieldLegion(own))
+                        AddEvent("effect-failed", item.Controller,
+                            "吉原的花魁升级前在途效果的部分对象已失效，仅结算仍合法对象",
+                            source is null ? [] : [source]);
+                }
+                FinishStackItem(item);
+                return true;
             }
             case "lightSwordActive":
                 if (values.ElementAtOrDefault(0) == "mode:rune")

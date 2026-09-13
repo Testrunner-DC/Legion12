@@ -30,6 +30,11 @@ internal static partial class L12CompositeEffectPlans
                 new("athena-morale-flip", "翻转已声明的1张士气", PublicTargetKeys: ["flipTarget"]),
                 new("athena-front-buff", "选择我方前排最多2张【奥林匹斯】军团，本回合兵力+1000，且对对方主宰造成的伤害+1", PublicTargetKeys: ["buffTargets"]),
             ],
+            ["starter-oiran-active"] =
+            [
+                new("oiran-enemy-debuff", "选择对方1张军团，本回合兵力-1000", PublicTargetKeys: ["enemyTarget"]),
+                new("oiran-own-buff", "选择我方1张军团，本回合兵力+1000", PublicTargetKeys: ["ownTarget"]),
+            ],
         };
 }
 

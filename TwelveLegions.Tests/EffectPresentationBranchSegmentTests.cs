@@ -418,6 +418,8 @@ public sealed class EffectPresentationBranchSegmentTests
             && plan.CardId == "ST05-01" && plan.Segments.Count == 2);
         Assert.Contains(plans, plan => plan.PlanId == "starter-athena-active"
             && plan.CardId == "ST05-M1" && plan.Segments.Count == 2);
+        Assert.Contains(plans, plan => plan.PlanId == "starter-oiran-active"
+            && plan.CardId == "ST04-06" && plan.Segments.Count == 2);
 
         var catalog = Catalog;
         Assert.Equal(2, catalog.AtomicEffects.Find("ST05-01")!.Abilities
@@ -429,6 +431,11 @@ public sealed class EffectPresentationBranchSegmentTests
             .SelectMany(ability => ability.Presentations)
             .Count(scene => scene.Trigger.StartsWith(
                 L12EffectPresentationVariants.SceneKeyPrefix("starter-athena-active"),
+                StringComparison.Ordinal)));
+        Assert.Equal(2, catalog.AtomicEffects.Find("ST04-06")!.Abilities
+            .SelectMany(ability => ability.Presentations)
+            .Count(scene => scene.Trigger.StartsWith(
+                L12EffectPresentationVariants.SceneKeyPrefix("starter-oiran-active"),
                 StringComparison.Ordinal)));
 
         var mordred = catalog.AtomicEffects.Find("ST06-04")!.Abilities
