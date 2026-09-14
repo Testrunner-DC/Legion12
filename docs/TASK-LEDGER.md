@@ -1,5 +1,11 @@
 # 十二军团任务台账
 
+## EFFECT-20260914-ACTIVE-COST-SUMMARY-CONSOLIDATION：主动费用摘要归并
+
+- 清除天照、洛基、英灵殿、花魁、努阿达共6处单卡手写支付摘要，改由主动提交快照统一生成实际卡名、数量与资源类型。英灵殿不再显示“按效果合计2张”，而是显示真实两张回库卡及休整来源。
+- 阿麦金保留唯一显式主动回执，用于表达不造成状态差的“展示已锁定牌顶”Cost；重连持久化仍读取入栈时冻结回执。
+- 功能提交`00de3c6fbcefa683bfc3be1de8f5193ffd33c807`通过相关/重连85/85、Focused/Release规则3260/3260、平台116/116、UI323、连接23、卡图324+42与生产构建；证据`D:\GPT\Legion12\artifacts\deploy\00de3c6fbcefa683bfc3be1de8f5193ffd33c807\l12-release-00de3c6fbcefa683bfc3be1de8f5193ffd33c807.json`，未部署。
+
 ## EFFECT-20260914-PRINTED-COLON-COST-BOUNDARY：全时点冒号费用边界
 
 - 统一边界判定只读取冒号前最后完整子句的支付动作，不再把时点、条件、骰点或选项标点当成Cost。当前全目录155个真实冒号费用段全部具有Cost原子，缺失0、非语义Cost误报0。
