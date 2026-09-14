@@ -46,7 +46,7 @@
 
 | 卡号 / 卡名 | 项数 | 最短规则断言 | 运行时代码证据 | 测试证据 | 唯一状态 |
 |---|---:|---|---|---|---|
-| S01-0301 贝奥武夫 | 4 | 墓地减费按当前公开墓地；登场弃顶2确定；进攻伤害费用预付；阵亡抽牌可选模式入栈前声明。 | `L12AttackPublicTriggerPlans`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6HRegressionTests`、`AtomicReviewBatch6IARegressionTests` | 通过 |
+| S01-0301 贝奥武夫 | 4 | 墓地减费按当前公开墓地；登场弃顶2确定；进攻伤害费用预付；阵亡抽牌可选模式入栈前声明。 | `L12SimpleSelfTroopBuffTriggerEffects`、`L12AttackPublicTriggerPlans`、`L12AtomicRuntimeIntegration`、`L12PublicTriggerEffectPlans` | `SimpleSelfTroopBuffTriggerConsistencyTests`、`AtomicReviewBatch6HRegressionTests`、`AtomicReviewBatch6IARegressionTests` | 通过 |
 | S01-0302 金发哈拉尔 | 3 | 登场费按己方军团数；低血时进攻获得本回合强攻；阵亡治疗强制且来源离场用 LKI。 | `L12Actions`、`L12S1FactionEffects` | `GameEngineTests`、`RuleKernelTests` | 通过 |
 | S01-0303 传奇的拉格纳 | 3 | 自伤减费为打出选择；低血登场冲锋；阵亡抽1后弃1同句结算，弃牌身份仅抽后私密选择。 | `L12PublicTriggerEffectPlans`、`L12S1FactionEffects` | `AtomicReviewBatch6IBRegressionTests`、`LatestBugRegressionTests` | 通过 |
 | S01-0304 无情者哈拉尔 | 3 | 自伤减费前置；登场血量条件锁定；阵亡强制公开击杀目标入栈前声明，无目标不造空栈。 | `L12EnterPublicTriggerPlans`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6IARegressionTests`、`AtomicReviewBatch6IBRegressionTests` | 通过 |
@@ -56,7 +56,7 @@
 | S01-0308 血斧艾瑞克 | 3 | 自伤减费；真实进攻对主宰造成伤害后经已验证 `after-damage` 路由恰一次令受影响对手私密弃牌，重复提交不能再次消费；阵亡公开墓地军团/位置前置并 Try 登场。 | `L12RuntimeEffectRoutes`、`L12Actions`、`L12S1FactionEffects` | `Bq20260904_03RegressionTests`、`AtomicEffectsTests`、`AtomicReviewBatch6ERegressionTests` | 明确错误→已修复 |
 | S01-0309 布伦希尔德 | 3 | 远程静态；登场自伤费用与齐格鲁德/位置预付预声明；阵亡抽牌可选条件在候选建立时锁定。 | `L12PublicTriggerEffectPlans`、`L12EnterPublicTriggerPlans` | `AtomicReviewBatch6IARegressionTests`、`AtomicReviewBatch6ERegressionTests` | 通过 |
 | S01-0310 齐格鲁德 | 3 | 自伤减费；位移回合1次为不可响应规则动作，按钮与目的地由服务端投影；进攻时仅在格拉墨仍存在时获得本回合兵力层。 | `L12Actions`、`L12RuleActions`、`L12S1FactionEffects` | `CavalryMoveRuleActionTests`、`GameEngineTests`、`LatestBugRegressionTests` | 通过 |
-| S01-0311 古斯塔夫一世 | 2 | 进攻与进攻后各自独立时点；各自2张有序墓地费用入栈前预付，后者使用 pending→final 回合1次。 | `L12AttackPublicTriggerPlans`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6HRegressionTests`、`AtomicReviewBatch6JBRegressionTests` | 通过 |
+| S01-0311 古斯塔夫一世 | 2 | 进攻与进攻后各自独立时点；各自2张有序墓地费用入栈前预付，后者使用 pending→final 回合1次。 | `L12SimpleSelfTroopBuffTriggerEffects`、`L12AttackPublicTriggerPlans`、`L12AtomicRuntimeIntegration`、`L12PublicTriggerEffectPlans` | `SimpleSelfTroopBuffTriggerConsistencyTests`、`AtomicReviewBatch6HRegressionTests`、`AtomicReviewBatch6JBRegressionTests` | 通过 |
 | S01-0312 铁盾拉葛莎 | 1 | 前排挑衅与对方回合+1000均为位置/回合条件持续层，离位或换回合即时撤销未消费层。 | `L12StructuredCardRules`、`L12RuleKernel` | `GameEngineTests`、`RuleKernelTests` | 通过 |
 | S01-0313 神箭奥德尔 | 3 | 远程静态；登场自伤费用入栈前声明；阵亡公开活跃军团目标前置并重验。 | `L12EnterPublicTriggerPlans`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6JARegressionTests`、`AtomicReviewBatch6IBRegressionTests` | 通过 |
 | S01-0314 奥尔加 | 3 | 远程静态与自伤减费；主动弃自身不是阵亡，公开前排目标前置且兵力-2000仅本回合。 | `L12PublicActiveEffectPlans`、`L12S1FactionEffects` | `LatestBugRegressionTests`、`RuleKernelTests` | 通过 |
