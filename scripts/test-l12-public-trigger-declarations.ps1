@@ -273,7 +273,7 @@ foreach ($verifiedOptionalProgram in @(
     'Program("S01-0409", "after-attack"', 'Program("S01-0115", "enter"',
     'Program("S01-0304", "enter"', 'Program("S02-0104", "enter"',
     'Program("S02-0507", "enter"',
-    'Program("S02-0507", "promotion-enter"', 'Program("S02-0616", "enter"'
+    'Program("S02-0507", "promotion-enter"'
 )) {
     Assert-Contains $atomicPrograms $verifiedOptionalProgram "Verified atomic Optional inventory is missing: $verifiedOptionalProgram"
 }
@@ -304,6 +304,10 @@ foreach ($simpleTrialSpec in @('new("S02-0609", 3, "death"', 'new("ST06-06", 2, 
 Assert-Contains $atomicPrograms '.Where(spec => spec.OwnsStandaloneAtomicAbility).Select(SimpleResourceProgram));' `
     'Standalone single-segment resource abilities must be generated from their shared definition.'
 foreach ($simpleResourceSpec in @(
+    'new("S02-0603", 2, "enter"', 'new("S02-0606", 2, "enter"',
+    'new("S02-0607", 1, "enter"', 'new("S02-0616", 2, "enter"',
+    'new("S02-0618", 3, "enter"', 'new("ST06-03", 1, "enter"',
+    'new("ST06-08", 1, "enter"',
     'new("S02-01S1", 2, "death"', 'new("S02-0508", 2, "death"',
     'new("S02-05M1", 1, "friendly-ranged-death"',
     'new("S02-06M1", 1, "morrigan-enemy-death"',
@@ -321,6 +325,8 @@ Assert-Contains $plans 'TryBeginSimpleResourceTriggerDeclaration' `
     'Resource triggers must declare optional mode and exact morale targets before stack entry.'
 Assert-Contains $plans 'TryCompleteSimpleResourceTriggerDeclaration' `
     'Resource declarations must share one atomic commit route.'
+Assert-Contains $plans 'if (steps.Count == 0)' `
+    'Mandatory resource effects without a mode or target must not create an empty PendingActivation.'
 Assert-Contains $prompts 'TryResolveSimpleResourceTrigger(item)' `
     'Resource triggers must settle through the shared resolver before card-specific dispatch.'
 Assert-Contains $simpleResourceTriggers 'var target = player.Morale.FirstOrDefault' `

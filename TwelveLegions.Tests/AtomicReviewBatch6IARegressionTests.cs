@@ -23,15 +23,12 @@ public sealed class AtomicReviewBatch6IARegressionTests
         ("S02-0512", "death"),
         ("S02-0507", "enter"),
         ("S02-0507", "promotion-enter"),
-        ("S02-0616", "enter"),
         ("ST01-02", "after-attack"),
         ("ST02-04", "enter"),
         ("ST05-04", "enter"),
-        ("ST06-03", "enter"),
         ("ST06-05", "enter"),
         ("ST06-05", "attack"),
         ("ST06-06", "enter"),
-        ("ST06-08", "enter"),
     ];
 
     private static L12GameEngine Create(int seed)

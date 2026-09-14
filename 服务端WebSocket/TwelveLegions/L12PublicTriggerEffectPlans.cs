@@ -235,6 +235,14 @@ public sealed partial class L12GameEngine
                 SimpleResourceMoraleTargets(player, spec), requiredChoice: spec.Optional ? "mode:use" : null,
                 allowCancel: spec.Optional));
 
+        // 必发且没有目标/模式需要玩家声明的单段资源效果直接进入响应堆叠。
+        // 不创建零步骤 PendingActivation，否则刷新恢复后会留下无法完成的空声明。
+        if (steps.Count == 0)
+        {
+            candidate.Data["declaration-complete"] = "true";
+            return false;
+        }
+
         var result = BeginPendingActivationSequence(candidate.Controller, source,
             "public-trigger-declaration", steps, candidate.CandidateId);
         if (!result.Accepted)

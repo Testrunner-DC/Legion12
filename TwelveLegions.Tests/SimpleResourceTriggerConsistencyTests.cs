@@ -94,10 +94,17 @@ public sealed class SimpleResourceTriggerConsistencyTests
 
     [Fact]
     [Trait("L12Evidence", "entry:simple-resource-trigger-spec")]
-    public void NineExactResourceTriggersOwnOneStructuredDefinitionAndOneSettlementScene()
+    public void ExactResourceTriggersOwnOneStructuredDefinitionAndOneSettlementScene()
     {
         var expected = new[]
         {
+            ("S02-0603", 2, "enter", "gain-runes", 1, false),
+            ("S02-0606", 2, "enter", "gain-runes", 1, false),
+            ("S02-0607", 1, "enter", "gain-runes", 1, false),
+            ("S02-0616", 2, "enter", "gain-runes", 1, true),
+            ("S02-0618", 3, "enter", "gain-runes", 1, false),
+            ("ST06-03", 1, "enter", "gain-runes", 1, true),
+            ("ST06-08", 1, "enter", "gain-runes", 1, true),
             ("S02-01S1", 2, "death", "add-rested-morale", 1, true),
             ("S02-0508", 2, "death", "flip-morale-to-god-power", 1, false),
             ("S02-05M1", 1, "friendly-ranged-death", "flip-morale-to-god-power", 1, true),
@@ -153,6 +160,77 @@ public sealed class SimpleResourceTriggerConsistencyTests
                     ["mode"] = spec.DataMode ?? string.Empty,
                 }));
         }
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:simple-resource-trigger-mandatory-no-selection")]
+    public void MandatoryRuneEntryUsesResponseStackWithoutCreatingAnEmptyDeclaration()
+    {
+        var game = Create(11005);
+
+        Queue(game, "S02-0603", "enter");
+
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Single(game.State.EffectStack);
+        Assert.Single(game.State.PendingPrompts, item => item.Kind == "response");
+        PassResponses(game);
+
+        Assert.Equal(1, game.State.Players[0].SpecialZones.Runes);
+        Assert.Single(game.State.Events, entry => entry.Type == "runes"
+            && entry.Text.Contains("梅林", StringComparison.Ordinal));
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "resolved"
+            && entry.Cards.Any(card => card.CardId == "S02-0603"));
+    }
+
+    [Theory]
+    [InlineData("S02-0603", false)]
+    [InlineData("S02-0606", false)]
+    [InlineData("S02-0607", false)]
+    [InlineData("S02-0616", true)]
+    [InlineData("S02-0618", false)]
+    [InlineData("ST06-03", true)]
+    [InlineData("ST06-08", true)]
+    [Trait("L12Evidence", "entry:simple-resource-trigger-rune-entry-pool")]
+    public void EveryRuneEntryCardUsesTheSameDeclarationAndSettlementProtocol(string cardId, bool optional)
+    {
+        var game = Create(11007);
+
+        Queue(game, cardId, "enter");
+        if (optional)
+        {
+            var declaration = Assert.Single(game.State.PendingPrompts);
+            Assert.Equal("pending-activation", declaration.Continuation);
+            Resolve(game, declaration, "mode:use");
+        }
+
+        Assert.Single(game.State.EffectStack);
+        Assert.Single(game.State.PendingPrompts, item => item.Kind == "response");
+        PassResponses(game);
+
+        Assert.Equal(1, game.State.Players[0].SpecialZones.Runes);
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "resolved"
+            && entry.Cards.Any(card => card.CardId == cardId));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:simple-resource-trigger-optional-decline")]
+    public void OptionalRuneEntryCanBeDeclinedWithoutCreatingAStackItem()
+    {
+        var game = Create(11006);
+
+        Queue(game, "ST06-03", "enter");
+
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", declaration.Continuation);
+        Resolve(game, declaration, "mode:none");
+
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Equal(0, game.State.Players[0].SpecialZones.Runes);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-declined"
+            && entry.Cards.Any(card => card.CardId == "ST06-03"));
     }
 
     [Fact]
