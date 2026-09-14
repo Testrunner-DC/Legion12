@@ -109,7 +109,10 @@ public sealed class AtomicReviewBatch6IBRegressionTests
         var cards = new Dictionary<string, L12CardInstance>();
         var morale = new Dictionary<string, L12MoraleCard>();
         if (trigger is "after-attack" or "after-kill")
+        {
+            if (cardId == "S02-0002") source.Tapped = true;
             player.Field[0][0] = source;
+        }
         else
             player.Resolving.Add(source);
 

@@ -150,14 +150,6 @@ public sealed partial class L12GameEngine
                     PromptDiscard(item, 1 - item.Controller, 1, "纳芙蒂蒂：对方弃置1张手牌", "nefertiti-discard");
                 else FinishStackItem(item);
                 return true;
-            case "尼托克丽丝":
-            {
-                var guards = PublicLegions(player).Where(target => target.CardId == "S01-0212" && target.Tapped).Select(target => target.InstanceId).ToArray();
-                if (guards.Length == 0) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "target", "尼托克丽丝：选择我方1张陵墓守卫转为活跃", guards, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "nitocris-ready" });
-                return true;
-            }
             case "托勒密十三世":
             {
                 var previousId = player.LastActiveTacticCardId;
@@ -475,18 +467,6 @@ public sealed partial class L12GameEngine
                     FinishStackItem(item); return true;
                 }
                 SummonAsgardFromGrave(item, 3); return true;
-            case "神箭奥德尔":
-            {
-                var targetId = PublicTriggerDeclared(item, "restTarget");
-                var target = FindOnField(State.Players[1 - item.Controller], targetId, out _, out _);
-                if (target is not null && !target.Tapped)
-                {
-                    target.Tapped = true;
-                    AddEvent("effect", item.Controller, "神箭奥德尔将目标转为休整", card);
-                }
-                else AddEvent("effect-cancelled", item.Controller, "神箭奥德尔已声明的活跃目标失效；效果取消", card);
-                FinishStackItem(item); return true;
-            }
             default: return false;
         }
     }
@@ -552,7 +532,6 @@ public sealed partial class L12GameEngine
                 }
                 FinishStackItem(item); return true;
             case "nefertiti-discard": MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true); FinishStackItem(item); return true;
-            case "nitocris-ready": { var target = FindOnField(player, chosen[0], out _, out _); if (target is not null && source is not null) ReadyCardByEffect(item.Controller, source, target, $"{target.Name}因效果转为活跃"); FinishStackItem(item); return true; }
             case "ankh-enter":
             {
                 var target = FindOnField(player, chosen[0], out _, out _);

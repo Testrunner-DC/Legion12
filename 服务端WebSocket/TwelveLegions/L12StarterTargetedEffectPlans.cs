@@ -133,27 +133,6 @@ public sealed partial class L12GameEngine
                 ];
                 break;
             }
-            case "antinous-ready":
-            {
-                if (!player.HandDiscardedByMasterThisTurn)
-                {
-                    RemoveUnstackedTriggerCandidate(candidate,
-                        "〈安提诺乌斯〉登场前，本回合尚未因主宰弃置过手牌");
-                    return true;
-                }
-                candidate.Data["starterConditionLocked"] = "true";
-                var restedOlympus = PublicLegions(player)
-                    .Where(card => card.Tapped && L12StructuredCardRules.HasFaction(player, card, "olympus"))
-                    .Select(card => card.InstanceId).ToList();
-                steps =
-                [
-                    StarterStep("option", "mode", "安提诺乌斯：是否将我方1张休整的【奥林匹斯】军团转为活跃？",
-                        Modes(restedOlympus.Count > 0)),
-                    StarterStep("field-legion", "readyTarget", "安提诺乌斯：选择要转为活跃的【奥林匹斯】军团",
-                        restedOlympus, requiredChoice: "mode:use"),
-                ];
-                break;
-            }
             case "elizabeth-lock-morale":
             {
                 var restedMorale = opponent.Morale.Where(card => card.Tapped)
@@ -263,7 +242,7 @@ public sealed partial class L12GameEngine
 
         var mode = activation.DeclaredValues.GetValueOrDefault("mode", []).SingleOrDefault();
         var isOptionalActivation = plan is "xiaohe-summon" or "khufu-debuff" or "snake-charmer-summon"
-            or "george-debuff" or "freydis-recover" or "penelope-summon" or "antinous-ready";
+            or "george-debuff" or "freydis-recover" or "penelope-summon";
         if (isOptionalActivation && mode != "mode:use")
         {
             CleanupPublicTriggerReservation(candidate);
@@ -340,14 +319,6 @@ public sealed partial class L12GameEngine
                     error = "珀涅罗珀选择的神力、手牌军团或登场位置已失效；未支付神力且效果未入栈";
                 break;
             }
-            case "antinous-ready":
-                if (candidate.Data.GetValueOrDefault("starterConditionLocked") != "true"
-                    || FindOnField(player,
-                        activation.DeclaredValues.GetValueOrDefault("readyTarget", []).SingleOrDefault(), out _, out _)
-                        is not { Tapped: true } readyTarget
-                    || !L12StructuredCardRules.HasFaction(player, readyTarget, "olympus"))
-                    error = "安提诺乌斯选择的休整【奥林匹斯】军团已失效；效果未入栈";
-                break;
             case "elizabeth-lock-morale":
             {
                 var moraleTargets = activation.DeclaredValues.GetValueOrDefault("moraleTargets", []);
@@ -431,7 +402,7 @@ public sealed partial class L12GameEngine
         var flow = item.Data.GetValueOrDefault("atomicFlow");
         if (flow is not ("xiaohe-summon" or "khufu-debuff" or "snake-charmer-summon"
             or "george-debuff" or "freydis-recover" or "penelope-summon" or "khufu-counter-protection"
-            or "antinous-ready" or "elizabeth-derived-cost" or "elizabeth-lock-morale"
+            or "elizabeth-derived-cost" or "elizabeth-lock-morale"
             or "mordred-enter-choice" or "mordred-death-kill" or "boudica-immortal"))
             return false;
 
@@ -475,17 +446,6 @@ public sealed partial class L12GameEngine
                 }
                 else AddEvent("effect-cancelled", item.Controller,
                     "弗蕾迪斯选择的墓地军团已离开墓地，本次回收未生效");
-                break;
-            }
-            case "antinous-ready":
-            {
-                var target = FindOnField(player, One("readyTarget"), out _, out _);
-                var source = FindOnField(player, item.SourceInstanceId, out _, out _)
-                    ?? item.SourceSnapshot ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
-                if (target is { Tapped: true } && L12StructuredCardRules.HasFaction(player, target, "olympus"))
-                    ReadyCardByEffect(item.Controller, source, target, $"{target.Name}因安提诺乌斯效果转为活跃");
-                else AddEvent("effect-cancelled", item.Controller,
-                    "安提诺乌斯选择的军团已不再是休整的【奥林匹斯】军团，本次转为活跃未生效");
                 break;
             }
             case "elizabeth-derived-cost":

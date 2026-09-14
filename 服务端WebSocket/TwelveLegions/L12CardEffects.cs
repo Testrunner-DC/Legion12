@@ -373,7 +373,7 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return;
             default:
-                if (!TryResolveS1ExtendedAfterAttack(item, card) && !TryResolveS2UniversalAfterAttack(item, card)
+                if (!TryResolveS1ExtendedAfterAttack(item, card)
                     && !TryResolveS2FactionAfterAttack(item, card)) FinishStackItem(item);
                 return;
         }

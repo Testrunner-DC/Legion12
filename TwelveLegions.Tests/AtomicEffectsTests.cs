@@ -250,6 +250,14 @@ public sealed class AtomicEffectsTests
                     or L12AtomKinds.GainRune or L12AtomKinds.FlipMorale);
                 continue;
             }
+            if (L12SimpleCardStateTriggerEffects.Find(program.CardId, program.Trigger) is { } stateSpec)
+            {
+                Assert.DoesNotContain(currentProgram.Atoms,
+                    atom => atom.Kind == L12AtomKinds.CompositeFlow);
+                Assert.Contains(currentProgram.Atoms, atom => atom.Kind == (stateSpec.Operation ==
+                    L12SimpleCardStateTriggerEffects.Ready ? L12AtomKinds.Ready : L12AtomKinds.Rest));
+                continue;
+            }
             if (L12OpponentHandDiscardTriggerEffects.Find(program.CardId, program.Trigger) is not null)
             {
                 Assert.Contains(currentProgram.Atoms, atom => atom.Kind == L12AtomKinds.CompositeFlow

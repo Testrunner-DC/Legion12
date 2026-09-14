@@ -858,7 +858,6 @@ public static class L12VerifiedAtomicPrograms
             StarterTargetedProgram("ST02-06", "enter", "george-debuff"),
             StarterTargetedProgram("ST03-03", "enter", "freydis-recover"),
             StarterTargetedProgram("ST05-03", "enter", "penelope-summon"),
-            StarterTargetedProgram("ST05-07", "enter", "antinous-ready"),
             StarterTargetedProgram("ST06-01", "continuous", "elizabeth-derived-cost"),
             StarterTargetedProgram("ST06-01", "enter", "elizabeth-lock-morale"),
             StarterTargetedProgram("ST06-04", "enter", "mordred-enter-choice"),
@@ -960,6 +959,7 @@ public static class L12VerifiedAtomicPrograms
         programs.AddRange(L12SimpleDrawTriggerEffects.All.Select(SimpleDrawProgram));
         programs.AddRange(L12SimpleMasterHealTriggerEffects.All.Select(SimpleMasterHealProgram));
         programs.AddRange(L12SimpleTrialAdvanceTriggerEffects.All.Select(SimpleTrialAdvanceProgram));
+        programs.AddRange(L12SimpleCardStateTriggerEffects.All.Select(SimpleCardStateProgram));
         programs.AddRange(L12SimpleResourceTriggerEffects.All
             .Where(spec => spec.OwnsStandaloneAtomicAbility).Select(SimpleResourceProgram));
         programs.AddRange(L12OpponentHandDiscardTriggerEffects.All.Select(OpponentHandDiscardProgram));
@@ -1048,6 +1048,28 @@ public static class L12VerifiedAtomicPrograms
                     ("amount", spec.Amount.ToString()), ("event", spec.EventText)),
             _ => throw new InvalidOperationException($"未知单段资源操作：{spec.Operation}"),
         });
+        return Program(spec.CardId, spec.Trigger, [.. operations]);
+    }
+
+    private static L12VerifiedAtomicProgram SimpleCardStateProgram(L12SimpleCardStateTriggerSpec spec)
+    {
+        var operations = new List<L12EffectAtom>();
+        if (spec.CandidateCondition is not null)
+            operations.Add(Atom(L12AtomKinds.Condition, "检查军团状态触发条件",
+                ("expression", spec.CandidateCondition)));
+        if (spec.Optional)
+            operations.Add(Atom(L12AtomKinds.Optional, "可发动单段军团状态效果",
+                ("prompt", spec.PromptText), ("yes", "发动"), ("no", "不发动")));
+        if (spec.TargetScope != L12SimpleCardStateTriggerEffects.Source)
+            operations.Add(Atom(L12AtomKinds.SelectTarget, "选择1张合法军团",
+                ("zone", spec.TargetScope),
+                ("cardId", spec.RequiredCardId ?? string.Empty),
+                ("faction", spec.RequiredFaction ?? string.Empty),
+                ("requiredState", spec.Operation == L12SimpleCardStateTriggerEffects.Ready ? "tapped" : "active"),
+                ("min", "1"), ("max", "1"), ("presentation", "direct-board")));
+        operations.Add(Atom(spec.Operation == L12SimpleCardStateTriggerEffects.Ready
+                ? L12AtomKinds.Ready : L12AtomKinds.Rest,
+            spec.SettlementText, ("target", spec.TargetScope), ("event", spec.EventText)));
         return Program(spec.CardId, spec.Trigger, [.. operations]);
     }
 

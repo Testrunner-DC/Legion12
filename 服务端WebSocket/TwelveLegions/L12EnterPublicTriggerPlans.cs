@@ -11,7 +11,7 @@ public sealed partial class L12GameEngine
         ["S01-0110|enter"] = "mozi", ["S01-0111|enter"] = "zhuge",
         ["S01-0112|enter"] = "sunwu", ["S01-0201|enter"] = "thutmose",
         ["S01-0202|enter"] = "ramses", ["S01-0205|enter"] = "horemheb",
-        ["S01-0210|enter"] = "nitocris", ["S01-0215|enter"] = "ankh",
+        ["S01-0215|enter"] = "ankh",
         ["S01-0217|enter"] = "canopic-one", ["S01-0220|enter"] = "canopic-four",
         ["S01-0313|enter"] = "oddr", ["S01-0316|enter"] = "egil",
         ["S01-0317|enter"] = "gram", ["S01-0402|enter"] = "nobunaga",
@@ -169,8 +169,6 @@ public sealed partial class L12GameEngine
                 Optional("霍列姆赫布：预先声明是否弃置陵墓守卫获得冲锋");
                 One("field-legion", "discardCost", "霍列姆赫布：预先选择弃置的陵墓守卫",
                     tombGuards.Select(card => card.InstanceId), "mode:use"); break;
-            case "nitocris": One("field-legion", "target", "尼托克丽丝：预先选择转为活跃的陵墓守卫",
-                own.Where(card => card.CardId == "S01-0212" && card.Tapped).Select(card => card.InstanceId)); break;
             case "ankh": One("field-legion", "target", "安卡神碑：选择本回合兵力+2000的陵墓守卫",
                 own.Where(card => card.CardId == "S01-0212").Select(card => card.InstanceId)); break;
             case "canopic-one": One("field-legion", "targets", "卡诺匹斯罐一：选择本回合兵力+2000并获得强攻的太阳城军团",
@@ -538,7 +536,6 @@ public sealed partial class L12GameEngine
                 return true;
             }
             case "horemheb": if (FindOnField(player, item.SourceInstanceId, out _, out _) is { } horemheb) horemheb.HasCharge = true; break;
-            case "nitocris": if (FindOnField(player, One("target"), out _, out _) is { } nitocris) ReadyCardByEffect(item.Controller, source, nitocris, $"{nitocris.Name}因效果转为活跃"); break;
             case "ankh": if (FindOnField(player, One("target"), out _, out _) is { } ankh) AddTimedModifier(ankh, 2000, 0, State.TurnSerial, source.Name); break;
             case "oddr": Draw(player, 1); break;
             case "egil": if (FindOnField(opponent, One("target"), out _, out _) is { } egil) AddTimedModifier(egil, -2000, 0, State.TurnSerial, source.Name); break;

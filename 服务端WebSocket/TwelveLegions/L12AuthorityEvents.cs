@@ -127,7 +127,7 @@ public sealed partial class L12GameEngine
                 break;
             }
             case "effect-ready":
-                CommitEffectReady(authorityEvent);
+                CommitEffectReady(authorityEvent, item);
                 break;
             case "effect-hand-add":
                 // 加入手牌本身已经由 LibraryOps/区域操作提交；此事件只提供统一响应时点。
@@ -170,15 +170,30 @@ public sealed partial class L12GameEngine
         return true;
     }
 
-    private void CommitEffectReady(L12AuthorityEvent authorityEvent)
+    private void CommitEffectReady(L12AuthorityEvent authorityEvent, L12StackItem item)
     {
         var player = State.Players[authorityEvent.ActorPlayer];
         var card = FindOnField(player, authorityEvent.TargetInstanceId, out _, out _)
             ?? (player.Relic?.InstanceId == authorityEvent.TargetInstanceId ? player.Relic : null)
             ?? player.ExtraRelics.FirstOrDefault(candidate => candidate.InstanceId == authorityEvent.TargetInstanceId);
-        if (card is not null) card.Tapped = false;
         var morale = player.Morale.FirstOrDefault(candidate => candidate.InstanceId == authorityEvent.TargetInstanceId);
+        if (card is null && morale is null)
+        {
+            AddEvent("effect-cancelled", authorityEvent.ActorPlayer,
+                $"{item.Text}的目标已离开原区域；转为活跃未生效");
+            return;
+        }
+        if (card is { Tapped: false } || morale is { Tapped: false })
+        {
+            AddEvent("effect-cancelled", authorityEvent.ActorPlayer,
+                $"{item.Text}的目标已不再为休整状态；转为活跃未生效",
+                card is null ? [] : [card]);
+            return;
+        }
+        if (card is not null) card.Tapped = false;
         if (morale is not null) morale.Tapped = false;
+        AddEvent("effect", authorityEvent.ActorPlayer, item.Text,
+            card is null ? [] : [card]);
     }
 
     private void QueueNonHandEntry(int playerIndex, L12CardInstance card, string originZone)
@@ -207,11 +222,22 @@ public sealed partial class L12GameEngine
         QueueS2GrailRoundTableEntry(playerIndex, card);
     }
 
-    private void ReadyCardByEffect(int playerIndex, L12CardInstance source, L12CardInstance target, string reason)
+    private void ReadyCardByEffect(int playerIndex, L12CardInstance source, L12CardInstance target, string reason,
+        L12StackItem? resultOwner = null)
     {
         if (!target.Tapped) return;
-        QueueAuthorityEvent("effect-ready", playerIndex, source, reason, subjectPlayer: playerIndex,
+        var readyItem = QueueAuthorityEvent("effect-ready", playerIndex, source, reason, subjectPlayer: playerIndex,
             targetInstanceId: target.InstanceId, causedByEffect: true);
+        if (resultOwner is null) return;
+
+        // A single-segment ready effect is not complete until its independent authority event
+        // survives responses and revalidates the target. Transfer that segment's presentation
+        // ownership to the authority item so logs never publish an early "resolved" result and
+        // then a contradictory failure when the target changed during the second window.
+        foreach (var key in new[] { "presentationSceneId", "presentationFlow", "triggerEffectText" })
+            if (resultOwner.Data.GetValueOrDefault(key) is { Length: > 0 } value)
+                readyItem.Data[key] = value;
+        resultOwner.Data["effectResultPublished"] = "true";
     }
 
     private void ReadyMoraleByEffect(int playerIndex, L12CardInstance source, L12MoraleCard target, string reason)

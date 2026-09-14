@@ -29,6 +29,7 @@ $atomicRuntime = Read-Source 'L12AtomicRuntimeIntegration.cs'
 $simpleDrawTriggers = Read-Source 'L12SimpleDrawTriggerEffects.cs'
 $simpleMasterHealTriggers = Read-Source 'L12SimpleMasterHealTriggerEffects.cs'
 $simpleTrialAdvanceTriggers = Read-Source 'L12SimpleTrialAdvanceTriggerEffects.cs'
+$simpleCardStateTriggers = Read-Source 'L12SimpleCardStateTriggerEffects.cs'
 $simpleResourceTriggers = Read-Source 'L12SimpleResourceTriggerEffects.cs'
 $trialAdvancePlans = Read-Source 'L12TrialAdvanceEffectPlans.cs'
 $attackPlans = Read-Source 'L12AttackPublicTriggerPlans.cs'
@@ -85,9 +86,9 @@ foreach ($semanticTrigger in @(
     '("S02-04M1", "friendly-front-to-back", "tsukuyomiReadyMorale", _)',
     'new("S02-01M1", 2, "master-legion-returned"',
     'new("S01-01C1", 2, "morale-returned-to-zero"',
-    'S02-0002|after-kill'
+    'new("S02-0002", 2, "after-kill"'
 )) {
-    Assert-Contains ($plans + "`n" + $trialAdvancePlans + "`n" + $simpleResourceTriggers) $semanticTrigger `
+    Assert-Contains ($plans + "`n" + $trialAdvancePlans + "`n" + $simpleResourceTriggers + "`n" + $simpleCardStateTriggers) $semanticTrigger `
         "An event-triggered effect lost its semantic runtime trigger: $semanticTrigger"
 }
 foreach ($legacyRuntimeTrigger in @(
@@ -163,7 +164,7 @@ foreach ($legacy6JBAction in @(
 
 foreach ($cardId in @(
     'S01-0001', 'S01-0112', 'S01-0115', 'S01-0207', 'S01-0210', 'S01-0303',
-    'S01-0304', 'S01-0306', 'S01-0313', 'S01-0403', 'S01-0407', 'S02-0002',
+    'S01-0304', 'S01-0306', 'S01-0403', 'S01-0407',
     'S02-0301', 'S02-0518', 'S02-0601', 'S02-0615'
 )) {
     Assert-Contains $plans ('["' + $cardId + '|') "Batch 6I-B public trigger plan is missing card $cardId."
@@ -301,6 +302,32 @@ Assert-Contains $atomicPrograms 'programs.AddRange(L12SimpleTrialAdvanceTriggerE
 foreach ($simpleTrialSpec in @('new("S02-0609", 3, "death"', 'new("ST06-06", 2, "death"')) {
     Assert-Contains $simpleTrialAdvanceTriggers $simpleTrialSpec "Simple death trial-advance inventory is missing: $simpleTrialSpec"
 }
+Assert-Contains $atomicPrograms 'programs.AddRange(L12SimpleCardStateTriggerEffects.All.Select(SimpleCardStateProgram));' `
+    'Single-card ready/rest triggers must be generated from their shared definition.'
+foreach ($simpleCardStateSpec in @(
+    'new("S01-0210", 2, "enter"', 'new("S01-0313", 3, "death"',
+    'new("S02-0002", 2, "after-kill"', 'new("ST05-07", 1, "enter"'
+)) {
+    Assert-Contains $simpleCardStateTriggers $simpleCardStateSpec "Single-card state trigger inventory is missing: $simpleCardStateSpec"
+}
+Assert-Contains $kernel '.Where(PrepareSimpleCardStateTriggerCandidate)' `
+    'Every trigger batch must pass through the shared card-state candidate gate.'
+Assert-Contains $plans 'TryBeginSimpleCardStateTriggerDeclaration' `
+    'Single-card state triggers must declare mode and exact public targets before stack entry.'
+Assert-Contains $plans 'TryCompleteSimpleCardStateTriggerDeclaration' `
+    'Single-card state declarations must share one atomic commit route.'
+Assert-Contains $prompts 'TryResolveSimpleCardStateTrigger(item)' `
+    'Single-card state triggers must share one settlement route.'
+foreach ($legacyStatePlan in @(
+    '["S01-0210|enter"] = "nitocris"',
+    '["S01-0313|death"] = "oddr-rest"',
+    '["S02-0002|after-kill"] = "alice-ready"',
+    '("ST05-07", "enter") => "antinous-ready"'
+)) {
+    if ($allRuntime.IndexOf($legacyStatePlan, [StringComparison]::Ordinal) -ge 0) {
+        throw "Legacy per-card state trigger plan returned: $legacyStatePlan"
+    }
+}
 Assert-Contains $atomicPrograms '.Where(spec => spec.OwnsStandaloneAtomicAbility).Select(SimpleResourceProgram));' `
     'Standalone single-segment resource abilities must be generated from their shared definition.'
 foreach ($simpleResourceSpec in @(
@@ -404,7 +431,7 @@ foreach ($hiddenCardId in @('S01-0103', 'S02-0401', 'S02-0403')) {
 
 foreach ($cardId in @(
     'S01-0101','S01-0102','S01-0103','S01-0108','S01-0110','S01-0111','S01-0112',
-    'S01-0201','S01-0202','S01-0205','S01-0210','S01-0215','S01-0217','S01-0220',
+    'S01-0201','S01-0202','S01-0205','S01-0215','S01-0217','S01-0220',
     'S01-0313','S01-0316','S01-0317','S01-0402','S01-0403','S01-0406','S01-0408',
     'S01-0411','S01-0412','S01-0416','S01-0417','S02-0003','S02-0008','S02-0204',
     'S02-0303','S02-0401','S02-0402','S02-0404','S02-0501','S02-0502','S02-0505',

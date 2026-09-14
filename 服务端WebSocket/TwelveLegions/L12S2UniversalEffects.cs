@@ -12,11 +12,6 @@ public sealed partial class L12GameEngine
         "S02-0009", "S02-0010", "S02-0011", "S02-0012", "S02-0013", "S02-0014", "S02-0105",
     };
 
-    internal static readonly HashSet<string> S2UniversalAfterAttackCards = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "S02-0002",
-    };
-
     private static bool HasS2UniversalImmediateEffect(string cardId, string trigger)
         => trigger == "enter" ? S2UniversalEnterCards.Contains(cardId) : S2UniversalTacticCards.Contains(cardId);
 
@@ -146,27 +141,6 @@ public sealed partial class L12GameEngine
             default:
                 return false;
         }
-    }
-
-    private bool TryResolveS2UniversalAfterAttack(L12StackItem item, L12CardInstance card)
-    {
-        if (card.CardId != "S02-0002") return false;
-        if (item.Data.GetValueOrDefault("killed") != "true"
-            || PublicTriggerDeclared(item, "mode") != "mode:use")
-        {
-            FinishStackItem(item);
-            return true;
-        }
-        var source = FindSource(item);
-        if (source is not null && FindOnField(State.Players[item.Controller], source.InstanceId, out _, out _) is not null)
-        {
-            ReadyCardByEffect(item.Controller, source, source, $"{source.Name}因击杀转为活跃");
-            AddEvent("effect", item.Controller, "疯狂的爱丽丝因击杀转为活跃", source);
-        }
-        else AddEvent("effect-cancelled", item.Controller,
-            "疯狂的爱丽丝在结算时已不在战场；转为活跃效果取消", card);
-        FinishStackItem(item);
-        return true;
     }
 
     private void QueueS2ExorcistReturns(int tacticController, L12CardInstance tactic)

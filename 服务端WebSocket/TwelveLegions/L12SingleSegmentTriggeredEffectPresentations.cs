@@ -25,6 +25,9 @@ internal static class L12SingleSegmentTriggeredEffectPresentations
         .. L12SimpleTrialAdvanceTriggerEffects.All.Select(spec =>
             new L12SingleSegmentTriggeredEffectPresentationDefinition(
                 spec.CardId, spec.AbilitySequence, spec.Trigger, spec.SettlementText)),
+        .. L12SimpleCardStateTriggerEffects.All.Select(spec =>
+            new L12SingleSegmentTriggeredEffectPresentationDefinition(
+                spec.CardId, spec.AbilitySequence, spec.Trigger, spec.SettlementText)),
         .. L12SimpleResourceTriggerEffects.All.Select(spec =>
             new L12SingleSegmentTriggeredEffectPresentationDefinition(
                 spec.CardId, spec.AbilitySequence, spec.Trigger, spec.SettlementText)),
@@ -36,10 +39,8 @@ internal static class L12SingleSegmentTriggeredEffectPresentations
         new("S01-0304", 3, "death"),
         new("S01-0307", 2, "death"),
         new("S01-0308", 3, "death"),
-        new("S01-0313", 3, "death"),
         new("S01-0407", 2, "death"),
         new("S02-0001", 1, "s2-after-opponent-tactic"),
-        new("S02-0002", 2, "after-kill"),
         new("S02-0202", 2, "death"),
         new("S02-0305", 3, "master-damaged"),
         new("S02-0518", 3, "death"),

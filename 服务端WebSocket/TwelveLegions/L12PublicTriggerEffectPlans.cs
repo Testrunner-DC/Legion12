@@ -40,10 +40,8 @@ public sealed partial class L12GameEngine
             ["S01-0306|death"] = "olaf-draw-cycle",
             ["S01-0307|death"] = "grave-to-hand",
             ["S01-0308|death"] = "grave-legion-summon",
-            ["S01-0313|death"] = "oddr-rest",
             ["S01-0403|death"] = "uesugi-counters",
             ["S01-0407|death"] = "hand-legion-summon",
-            ["S02-0002|after-kill"] = "alice-ready",
             ["S02-0202|death"] = "grave-legion-summon",
             ["S02-0301|death"] = "thor-draw-cycle",
             ["S02-0518|death"] = "grave-to-hand",
@@ -124,28 +122,17 @@ public sealed partial class L12GameEngine
                     candidate.Trigger, out var summon)
                 && EmptySlots(player).Any() && LegalGraveLegionSummonTargets(summon, player).Length > 0,
             "harald-kill" => PublicLegions(opponent).Any(card => card.Troops <= 2000),
-            "oddr-rest" => PublicLegions(opponent).Any(card => !card.Tapped),
             "uesugi-counters" => Enumerable.Range(0, 3).Any(slot => player.Field[1][slot] is null)
                 && player.Hand.Any(card => IsCounterTactic(card.CardId)),
             "hand-legion-summon" => TryGetHandLegionSummonTriggerSpec(candidate.SourceCardId,
                     candidate.Trigger, out var handSummon)
                 && EmptySlots(player).Any() && LegalHandLegionSummonTargets(handSummon, player).Length > 0,
             "gwen-choice" => candidate.Data.GetValueOrDefault("cause") == "effect",
-            "alice-ready" => candidate.Data.GetValueOrDefault("killed") == "true",
             _ => true,
         };
         if (!legal)
             return false;
 
-        if (plan == "alice-ready")
-        {
-            var onceKey = $"alice-ready:{candidate.SourceInstanceId}:{State.TurnSerial}";
-            var pendingKey = $"{onceKey}:pending";
-            if (player.UsedAbilities.Contains(onceKey) || player.UsedAbilities.Contains(pendingKey)) return false;
-            player.UsedAbilities.Add(pendingKey);
-            candidate.Data["onceKey"] = onceKey;
-            candidate.Data["cleanupReservation"] = pendingKey;
-        }
         candidate.Data["batch6IBConditionLocked"] = "true";
         return true;
     }
@@ -334,7 +321,8 @@ public sealed partial class L12GameEngine
         // 它仍注册为已验证原子程序供后台审计，但不能再被旧的通用可选触发
         // 准备器重复解释，否则资源协议的领域条件会落入旧表达式解释器。
         if (L12SimpleResourceTriggerEffects.Find(
-                candidate.SourceCardId, candidate.Trigger, candidate.Data) is not null)
+                candidate.SourceCardId, candidate.Trigger, candidate.Data) is not null
+            || L12SimpleCardStateTriggerEffects.Find(candidate.SourceCardId, candidate.Trigger) is not null)
             return true;
 
         var program = VerifiedAtomicOptionalTriggerPlan(candidate.SourceCardId, candidate.Trigger);
@@ -360,7 +348,8 @@ public sealed partial class L12GameEngine
 
     private static bool HasPublicTriggerDeclarationPlan(string cardId, string trigger,
         IReadOnlyDictionary<string, string>? data = null)
-        => HasStarterTargetedTriggerDeclarationPlan(cardId, trigger)
+        => L12SimpleCardStateTriggerEffects.Find(cardId, trigger) is not null
+            || HasStarterTargetedTriggerDeclarationPlan(cardId, trigger)
             || L12OpponentHandDiscardTriggerEffects.Find(cardId, trigger) is not null
             || HasTrialAdvanceTriggerDeclarationPlan(cardId, trigger, data)
             || Batch6JAEnterPlan(cardId, trigger) is not null
@@ -435,6 +424,8 @@ public sealed partial class L12GameEngine
             candidate.Data["declaration-complete"] = "true";
             return false;
         }
+        if (TryBeginSimpleCardStateTriggerDeclaration(candidate, source))
+            return true;
         if (TryBeginStarterTargetedTriggerDeclaration(candidate, source))
             return true;
         if (TryBeginTrialAdvanceTriggerDeclaration(candidate, source))
@@ -509,7 +500,7 @@ public sealed partial class L12GameEngine
             ];
         }
         else if (batch6IBPlan is "teach-draw-cycle" or "ragnar-draw-cycle" or "olaf-draw-cycle"
-            or "alice-ready" or "thor-draw-cycle")
+            or "thor-draw-cycle")
         {
             steps =
             [
@@ -547,7 +538,7 @@ public sealed partial class L12GameEngine
                     min: 0, max: 1, requiredChoice: "mode:use"),
             ];
         }
-        else if (batch6IBPlan is "tutankhamun-top" or "oddr-rest")
+        else if (batch6IBPlan == "tutankhamun-top")
         {
             var targets = batch6IBPlan switch
             {
@@ -555,14 +546,13 @@ public sealed partial class L12GameEngine
                         && card.CardId != "S01-0207"
                         && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng") && L12StructuredCardRules.CurrentCostAtMost(card, 4))
                     .Select(card => card.InstanceId),
-                "oddr-rest" => PublicLegions(opponent).Where(card => !card.Tapped).Select(card => card.InstanceId),
                 _ => [],
             };
-            var key = batch6IBPlan == "oddr-rest" ? "restTarget" : "recoverTarget";
+            const string key = "recoverTarget";
             steps =
             [
                 PublicTriggerStep("option", "mode", $"〈{source.Name}〉：预先声明是否发动可选阵亡效果", ["mode:none", "mode:use"]),
-                PublicTriggerStep(batch6IBPlan == "oddr-rest" ? "field-legion" : "grave-card", key,
+                PublicTriggerStep("grave-card", key,
                     $"〈{source.Name}〉：预先选择阵亡效果的公开目标", targets,
                     requiredChoice: "mode:use"),
             ];
@@ -1139,6 +1129,8 @@ public sealed partial class L12GameEngine
 
     private bool TryCompletePublicTriggerDeclaration(L12TriggerCandidate candidate, L12PendingActivation activation)
     {
+        if (TryCompleteSimpleCardStateTriggerDeclaration(candidate, activation))
+            return true;
         if (TryCompleteStarterTargetedTriggerDeclaration(candidate, activation))
             return true;
         if (TryCompleteTrialAdvanceTriggerDeclaration(candidate, activation))
@@ -1341,12 +1333,6 @@ public sealed partial class L12GameEngine
             var target = activation.DeclaredValues.GetValueOrDefault("killTarget", []).SingleOrDefault();
             if (DeclaredEnemyTarget(candidate.Controller, target, card => card.Troops <= 2000) is null)
                 error = "无情者哈拉尔的强制公开目标已失效；效果未入栈";
-        }
-        else if (batch6IBPlan == "oddr-rest")
-        {
-            var target = activation.DeclaredValues.GetValueOrDefault("restTarget", []).SingleOrDefault();
-            if (mode == "mode:use" && DeclaredEnemyTarget(candidate.Controller, target, card => !card.Tapped) is null)
-                error = "神箭奥德尔声明的活跃军团目标已失效；效果未入栈";
         }
         else if (batch6IBPlan == "uesugi-counters")
         {
@@ -1679,17 +1665,6 @@ public sealed partial class L12GameEngine
                 player.UsedAbilities.Add(onceKey);
         }
 
-        if (error is null && batch6IBPlan == "alice-ready" && mode == "mode:use")
-        {
-            var onceKey = candidate.Data.GetValueOrDefault("onceKey") ?? string.Empty;
-            var pendingKey = candidate.Data.GetValueOrDefault("cleanupReservation") ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(onceKey) || string.IsNullOrWhiteSpace(pendingKey)
-                || player.UsedAbilities.Contains(onceKey) || !player.UsedAbilities.Contains(pendingKey))
-                error = "疯狂的爱丽丝的回合次数保留已失效；效果未入栈";
-            else
-                player.UsedAbilities.Add(onceKey);
-        }
-
         if (error is null && batch6JBPlan == "gustav-ready" && mode == "mode:use")
         {
             var onceKey = candidate.Data.GetValueOrDefault("onceKey") ?? string.Empty;
@@ -1716,7 +1691,6 @@ public sealed partial class L12GameEngine
                 "grave-to-hand" or "tutankhamun-top" =>
                     activation.DeclaredValues.GetValueOrDefault("recoverTarget", []),
                 "jingke-kill" or "harald-kill" => activation.DeclaredValues.GetValueOrDefault("killTarget", []),
-                "oddr-rest" => activation.DeclaredValues.GetValueOrDefault("restTarget", []),
                 "uesugi-counters" => activation.DeclaredValues.GetValueOrDefault("entryCards", []),
                 "grave-legion-summon" or "hand-legion-summon" =>
                     activation.DeclaredValues.GetValueOrDefault("entryCard", [])

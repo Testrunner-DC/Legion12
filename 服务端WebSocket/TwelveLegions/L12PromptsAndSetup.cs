@@ -1963,6 +1963,7 @@ public sealed partial class L12GameEngine
             ResolvePuppetResponse(item);
             return;
         }
+        if (TryResolveSimpleCardStateTrigger(item)) return;
         if (TryResolveSimpleResourceTrigger(item)) return;
         ResolveCardEffect(item);
     }
