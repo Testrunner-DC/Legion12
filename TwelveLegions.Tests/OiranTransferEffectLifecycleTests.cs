@@ -100,10 +100,14 @@ public sealed class OiranTransferEffectLifecycleTests
         var (source, own, enemy) = Prepare(game);
         var oldPrompts = Declare(game, source, enemy, own);
         Assert.True(source.Tapped);
+        Assert.Equal($"休整〈{source.Name}〉",
+            Assert.Single(game.State.EffectStack).Data["paidCostSummary"]);
         var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
         game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
             game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
             autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        Assert.Equal($"休整〈{source.Name}〉", Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Kind == "response").Data["responsePaidCostSummary"]);
 
         PassResponses(game);
 

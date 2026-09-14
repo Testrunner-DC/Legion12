@@ -117,10 +117,19 @@ public sealed class ValhallaKillEffectLifecycleTests
         Assert.True(fixture.Source.Tapped);
         Assert.Contains(fixture.CostA, game.State.Players[0].Library);
         Assert.Contains(fixture.CostB, game.State.Players[0].Library);
+        var paidCost = Assert.Single(game.State.EffectStack).Data["paidCostSummary"];
+        Assert.Contains($"休整〈{fixture.Source.Name}〉", paidCost, StringComparison.Ordinal);
+        Assert.Contains($"将墓地中的〈{fixture.CostA.Name}〉置于牌库底部", paidCost,
+            StringComparison.Ordinal);
+        Assert.Contains($"将墓地中的〈{fixture.CostB.Name}〉置于牌库底部", paidCost,
+            StringComparison.Ordinal);
         var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
         game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
             game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
             autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        Assert.Equal(paidCost, Assert.Single(game.State.EffectStack).Data["paidCostSummary"]);
+        Assert.Equal(paidCost, Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Kind == "response").Data["responsePaidCostSummary"]);
 
         PassResponses(game);
 

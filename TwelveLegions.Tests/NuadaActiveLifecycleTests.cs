@@ -110,7 +110,9 @@ public sealed class NuadaActiveLifecycleTests
         Assert.Equal(0, game.State.Players[0].SpecialZones.Runes);
         Assert.True(morale.Tapped);
         Assert.Equal(0, game.State.Players[0].SpecialZones.Trials[0].TrialProgress);
-        Assert.Single(game.State.EffectStack).Negated = true;
+        var stackItem = Assert.Single(game.State.EffectStack);
+        Assert.Equal("消耗2符文", stackItem.Data["paidCostSummary"]);
+        stackItem.Negated = true;
         DrainPrompts(game);
 
         Assert.True(morale.Tapped);
@@ -210,6 +212,8 @@ public sealed class NuadaActiveLifecycleTests
         game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint, random,
             game.CardFactSignalSequence, autoPassEmptyResponses: false,
             concealHiddenResponseAvailability: false);
+        Assert.Equal("消耗2符文", Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Kind == "response").Data["responsePaidCostSummary"]);
         DrainPrompts(game);
 
         Assert.False(game.State.Players[0].Morale.Single().Tapped);

@@ -754,6 +754,7 @@ public sealed class ExtendedCardEffectsTests
         Assert.Equal("active:S01-03M2:lokiCycle", first.Data["compositePlan"]);
         Assert.Equal("draw-discard-draw-1", first.Data["atomicFlow"]);
         Assert.Equal("single-effect", first.Data["compositeResponseScope"]);
+        Assert.Equal("消耗1士气", first.Data["paidCostSummary"]);
         Assert.Equal(activeBefore - 1, player.Morale.Count(card => !card.Tapped));
 
         PassResponses(game);
