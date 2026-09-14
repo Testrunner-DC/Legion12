@@ -13,16 +13,18 @@ public sealed partial class L12GameEngine
         bool Optional = true);
 
     private static readonly IReadOnlyDictionary<string, AttackPublicTriggerPlan> AttackPublicTriggerPlans =
-        new Dictionary<string, AttackPublicTriggerPlan>(StringComparer.OrdinalIgnoreCase)
+        BuildAttackPublicTriggerPlans();
+
+    private static IReadOnlyDictionary<string, AttackPublicTriggerPlan> BuildAttackPublicTriggerPlans()
+    {
+        var plans = new Dictionary<string, AttackPublicTriggerPlan>(StringComparer.OrdinalIgnoreCase)
         {
             ["S01-0401"] = new("honda", Optional: false),
             ["S01-0104"] = new("hanxin", "return-morale"),
             ["S01-0106"] = new("guanyu", "return-morale"),
             ["S01-0203"] = new("menes", "discard-own-legion"),
             ["S01-0208"] = new("ay", "ordinary-morale", "own-front-low"),
-            ["S01-0301"] = new("beowulf", "master-damage"),
             ["S01-0306"] = new("olaf", "grave-bottom-one"),
-            ["S01-0311"] = new("gustav", "grave-bottom-two"),
             ["S01-0402"] = new("nobunaga", "ordinary-morale"),
             ["S01-0405"] = new("miyamoto"),
             ["S01-0406"] = new("hijikata", "ordinary-morale", "enemy-cost-one"),
@@ -30,17 +32,18 @@ public sealed partial class L12GameEngine
             ["S01-0413"] = new("hiromasa", TargetKind: "enemy-covered-counter", Optional: false),
             ["S01-0416"] = new("inahime", TargetKind: "own-front-gaotianyuan", Optional: false),
             ["S02-0103"] = new("pingyang"),
-            ["S02-0509"] = new("odysseus", "show-hand-tactic"),
             ["S02-0511"] = new("perot", "god-power", "attack-legion"),
-            ["S02-0517"] = new("penthesilea", "god-power"),
-            ["S02-0519"] = new("spartan", "god-power"),
             ["S02-0605"] = new("bors", "ordinary-morale"),
-            ["S02-0606"] = new("percival", "discard-hand"),
             ["S02-0607"] = new("gawain", "rune-count", Optional: false),
             ["S02-0608"] = new("richard"),
             ["S02-0612"] = new("scathach", "rune-one"),
             ["S02-0617"] = new("robin"),
         };
+        foreach (var spec in L12SimpleSelfTroopBuffTriggerEffects.All)
+            if (!plans.TryAdd(spec.CardId, new AttackPublicTriggerPlan(spec.PlanId, spec.CostKind)))
+                throw new InvalidOperationException($"重复的进攻时单段兵力规格：{spec.CardId}");
+        return plans;
+    }
 
     private static bool HasAttackPublicTriggerDeclarationPlan(string cardId, string trigger)
         => trigger.Equals("attack", StringComparison.OrdinalIgnoreCase)
@@ -87,7 +90,9 @@ public sealed partial class L12GameEngine
             return true;
         }
 
-        QueueTriggerCandidates([Candidate(AttackPublicTriggerPlans[source.CardId].PlanId, text)]);
+        var simpleBuff = L12SimpleSelfTroopBuffTriggerEffects.Find(source.CardId, trigger);
+        QueueTriggerCandidates([Candidate(AttackPublicTriggerPlans[source.CardId].PlanId,
+            simpleBuff?.SettlementText ?? text)]);
         return true;
     }
 
@@ -129,7 +134,9 @@ public sealed partial class L12GameEngine
         {
             var canUse = CanDeclareAttackPlan(candidate, plan, source);
             if (plan.Optional)
-                steps.Add(PublicTriggerStep("option", "mode", $"{source.Name}：预先声明是否发动进攻时效果",
+                steps.Add(PublicTriggerStep("option", "mode",
+                    L12SimpleSelfTroopBuffTriggerEffects.Find(candidate.SourceCardId, candidate.Trigger)?.PromptText
+                        ?? $"{source.Name}：预先声明是否发动进攻时效果",
                     canUse ? ["mode:none", "mode:use"] : ["mode:none"]));
 
             var required = plan.Optional ? "mode:use" : null;
@@ -543,15 +550,9 @@ public sealed partial class L12GameEngine
                     AddTimedModifier(ayTarget, 2000, 0, State.TurnSerial, "阿伊");
                 else Cancel("阿伊声明的目标已失效；已支付费用不返还");
                 Finish(); return true;
-            case "beowulf":
-                BuffSource(2000, "贝奥武夫");
-                Finish(); return true;
             case "olaf":
                 if (source is null) Cancel("奥拉夫二世已离开战场；已支付的墓地费用不返还");
                 else GrantStrongAttack(source);
-                Finish(); return true;
-            case "gustav":
-                BuffSource(2000, "古斯塔夫一世");
                 Finish(); return true;
             case "nobunaga":
                 foreach (var enemy in PublicLegions(opponent)) enemy.CostModifier--;
@@ -602,9 +603,6 @@ public sealed partial class L12GameEngine
                 }
                 Finish(); return true;
             }
-            case "odysseus":
-                BuffSource(1000, "奥德修斯");
-                Finish(); return true;
             case "perot":
                 BuffSource(1000, "珀洛特埃");
                 if (source is not null)
@@ -613,18 +611,9 @@ public sealed partial class L12GameEngine
                     ApplyS2Shock(item, source);
                 }
                 Finish(); return true;
-            case "penthesilea":
-                BuffSource(2000, "彭忒西勒亚");
-                Finish(); return true;
-            case "spartan":
-                BuffSource(2000, "斯巴达勇士");
-                Finish(); return true;
             case "bors":
                 if (source is null) Cancel("鲍斯已离开战场；已支付费用不返还");
                 else GrantStrongAttack(source);
-                Finish(); return true;
-            case "percival":
-                BuffSource(2000, "帕西瓦尔");
                 Finish(); return true;
             case "gawain":
             {

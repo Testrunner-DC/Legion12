@@ -1527,6 +1527,8 @@ public sealed partial class L12GameEngine
             return simpleTrial.SettlementText;
         if (L12SimpleCardStateTriggerEffects.Find(card.CardId, trigger) is { } simpleCardState)
             return simpleCardState.SettlementText;
+        if (L12SimpleSelfTroopBuffTriggerEffects.Find(card.CardId, trigger) is { } simpleSelfBuff)
+            return simpleSelfBuff.SettlementText;
         if (L12SimpleResourceTriggerEffects.Find(card.CardId, trigger, data) is { } simpleResource)
             return simpleResource.SettlementText;
         if (L12OpponentHandDiscardTriggerEffects.Find(card.CardId, trigger) is { } discardOne)

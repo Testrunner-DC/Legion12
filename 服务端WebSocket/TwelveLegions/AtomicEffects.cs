@@ -960,6 +960,7 @@ public static class L12VerifiedAtomicPrograms
         programs.AddRange(L12SimpleMasterHealTriggerEffects.All.Select(SimpleMasterHealProgram));
         programs.AddRange(L12SimpleTrialAdvanceTriggerEffects.All.Select(SimpleTrialAdvanceProgram));
         programs.AddRange(L12SimpleCardStateTriggerEffects.All.Select(SimpleCardStateProgram));
+        programs.AddRange(L12SimpleSelfTroopBuffTriggerEffects.All.Select(SimpleSelfTroopBuffProgram));
         programs.AddRange(L12SimpleResourceTriggerEffects.All
             .Where(spec => spec.OwnsStandaloneAtomicAbility).Select(SimpleResourceProgram));
         programs.AddRange(L12OpponentHandDiscardTriggerEffects.All.Select(OpponentHandDiscardProgram));
@@ -977,7 +978,7 @@ public static class L12VerifiedAtomicPrograms
         {
             AtomId = $"atom-{index + 1}",
             Order = index + 1,
-            Stage = atom.Kind switch
+            Stage = atom.Parameters.GetValueOrDefault("role") == "cost" ? "cost" : atom.Kind switch
             {
                 L12AtomKinds.Trigger => "trigger",
                 L12AtomKinds.Condition or L12AtomKinds.Optional => "condition",
@@ -1071,6 +1072,42 @@ public static class L12VerifiedAtomicPrograms
                 ? L12AtomKinds.Ready : L12AtomKinds.Rest,
             spec.SettlementText, ("target", spec.TargetScope), ("event", spec.EventText)));
         return Program(spec.CardId, spec.Trigger, [.. operations]);
+    }
+
+    private static L12VerifiedAtomicProgram SimpleSelfTroopBuffProgram(
+        L12SimpleSelfTroopBuffTriggerSpec spec)
+    {
+        var cost = spec.CostKind switch
+        {
+            "master-damage" => Atom(L12AtomKinds.DamageMaster, "对我方主宰造成1点伤害",
+                ("role", "cost"), ("prepaid", "true"), ("amount", "1"),
+                ("target", "controller-master")),
+            "grave-bottom-two" => Atom(L12AtomKinds.MoveZone, "墓地2张卡牌自选顺序返回牌库底部",
+                ("role", "cost"), ("prepaid", "true"), ("from", "controller.graveyard"),
+                ("to", "controller.library-bottom"), ("amount", "2"), ("ordered", "true")),
+            "show-hand-tactic" => Atom(L12AtomKinds.Visibility, "展示手牌中的1张战术卡",
+                ("role", "cost"), ("prepaid", "true"), ("zone", "controller.hand"),
+                ("filter", "card-type=tactic"), ("amount", "1"),
+                ("visibility", "both-players"), ("presentation", "battlefield-overlay-no-mask"),
+                ("durationMs", "3000"), ("opponentConfirmation", "none"),
+                ("log", "public-card-link")),
+            "god-power" => Atom(L12AtomKinds.FlipMorale, "消耗并翻转1神力",
+                ("role", "cost"), ("prepaid", "true"), ("amount", "1"),
+                ("from", "active-god-power"),
+                ("to", "rested-morale")),
+            "discard-hand" => Atom(L12AtomKinds.Discard, "弃置1张手牌",
+                ("role", "cost"), ("prepaid", "true"),
+                ("from", "controller.hand"), ("amount", "1")),
+            _ => throw new InvalidOperationException($"未知单段自身兵力费用：{spec.CostKind}"),
+        };
+        return Program(spec.CardId, spec.Trigger,
+            Atom(L12AtomKinds.Optional, "可发动单段自身兵力效果",
+                ("prompt", spec.PromptText), ("yes", "发动"), ("no", "不发动")),
+            cost,
+            Atom(L12AtomKinds.ModifyTroops, spec.SettlementText,
+                ("target", "source"), ("operation", "add"),
+                ("value", spec.Amount.ToString()), ("event", spec.EventText)),
+            Atom(L12AtomKinds.Duration, "持续至本回合结束", ("duration", "this-turn")));
     }
 
     private static L12VerifiedAtomicProgram OpponentHandDiscardProgram(

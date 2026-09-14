@@ -30,6 +30,7 @@ $simpleDrawTriggers = Read-Source 'L12SimpleDrawTriggerEffects.cs'
 $simpleMasterHealTriggers = Read-Source 'L12SimpleMasterHealTriggerEffects.cs'
 $simpleTrialAdvanceTriggers = Read-Source 'L12SimpleTrialAdvanceTriggerEffects.cs'
 $simpleCardStateTriggers = Read-Source 'L12SimpleCardStateTriggerEffects.cs'
+$simpleSelfTroopBuffTriggers = Read-Source 'L12SimpleSelfTroopBuffTriggerEffects.cs'
 $simpleResourceTriggers = Read-Source 'L12SimpleResourceTriggerEffects.cs'
 $trialAdvancePlans = Read-Source 'L12TrialAdvanceEffectPlans.cs'
 $attackPlans = Read-Source 'L12AttackPublicTriggerPlans.cs'
@@ -206,9 +207,13 @@ foreach ($cardId in @(
     'S02-0509', 'S02-0511', 'S02-0517', 'S02-0519', 'S02-0605', 'S02-0606', 'S02-0607',
     'S02-0608', 'S02-0612', 'S02-0617'
 )) {
-    Assert-Contains $attackPlans ('["' + $cardId + '"]') "Attack public trigger plan is missing card $cardId."
+    Assert-Contains ($attackPlans + "`n" + $simpleSelfTroopBuffTriggers) ('"' + $cardId + '"') "Attack public trigger plan is missing card $cardId."
 }
 Assert-Contains $attackPlans 'AttackPublicTriggerPlans' 'Attack declarations need a shared data-driven plan table.'
+Assert-Contains $attackPlans 'foreach (var spec in L12SimpleSelfTroopBuffTriggerEffects.All)' `
+    'Simple self-buff attack declarations must be generated from the shared effect specification.'
+Assert-Contains $attackPlans 'new AttackPublicTriggerPlan(spec.PlanId, spec.CostKind)' `
+    'Simple self-buff attack declarations must preserve their declared plan and cost contracts.'
 Assert-Contains $attackPlans 'TryQueueAttackPublicTriggerCandidates' 'Attack triggers must share one candidate entry.'
 Assert-Contains $attackPlans 'CreateTriggerCandidate(controller, source, trigger, candidateText, candidateData, source)' 'Attack candidates must retain a last-known source snapshot.'
 Assert-Contains $attackPlans 'PayAttackPublicCost(candidate, activation, plan, player, source, costIds)' 'Attack colon costs must commit before stack entry.'
@@ -269,6 +274,10 @@ Assert-Contains $plans 'candidate.Data["verifiedAtomicConditionLocked"] = "true"
 Assert-Contains $kernel '.Where(PrepareVerifiedAtomicOptionalCandidate)' 'Every TriggerBatch entry must filter verified Optional candidates through the common condition gate.'
 Assert-Contains $atomicRuntime 'PublicTriggerDeclared(item, "mode") != "mode:use"' 'Verified atomic resolution must consume only the immutable declared mode.'
 Assert-Contains $atomicRuntime 'item.Data.GetValueOrDefault("verifiedAtomicConditionLocked") != "true"' 'Verified atomic resolution must not re-evaluate a trigger-time condition locked before stack entry.'
+Assert-Contains $atomicRuntime 'atom.Stage == "cost" &&' `
+    'Prepaid attack costs must be recognized from their explicit atomic stage.'
+Assert-Contains $atomicRuntime 'atom.Parameters.GetValueOrDefault("prepaid") == "true"' `
+    'Prepaid attack costs must not be charged again during atomic resolution.'
 foreach ($verifiedOptionalProgram in @(
     'Program("S01-0413", "enter"', 'Program("S01-0405", "attack"',
     'Program("S01-0409", "after-attack"', 'Program("S01-0115", "enter"',

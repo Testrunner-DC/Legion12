@@ -28,6 +28,9 @@ internal static class L12SingleSegmentTriggeredEffectPresentations
         .. L12SimpleCardStateTriggerEffects.All.Select(spec =>
             new L12SingleSegmentTriggeredEffectPresentationDefinition(
                 spec.CardId, spec.AbilitySequence, spec.Trigger, spec.SettlementText)),
+        .. L12SimpleSelfTroopBuffTriggerEffects.All.Select(spec =>
+            new L12SingleSegmentTriggeredEffectPresentationDefinition(
+                spec.CardId, spec.AbilitySequence, spec.Trigger, spec.SettlementText)),
         .. L12SimpleResourceTriggerEffects.All.Select(spec =>
             new L12SingleSegmentTriggeredEffectPresentationDefinition(
                 spec.CardId, spec.AbilitySequence, spec.Trigger, spec.SettlementText)),

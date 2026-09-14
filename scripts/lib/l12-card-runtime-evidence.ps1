@@ -156,6 +156,7 @@ function Get-L12FineAtomicProgramMatches {
         'L12SimpleMasterHealTriggerEffects.cs',
         'L12SimpleTrialAdvanceTriggerEffects.cs',
         'L12SimpleCardStateTriggerEffects.cs',
+        'L12SimpleSelfTroopBuffTriggerEffects.cs',
         'L12SimpleResourceTriggerEffects.cs'
     )) {
         $source = [System.IO.File]::ReadAllText(

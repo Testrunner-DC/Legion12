@@ -258,6 +258,14 @@ public sealed class AtomicEffectsTests
                     L12SimpleCardStateTriggerEffects.Ready ? L12AtomKinds.Ready : L12AtomKinds.Rest));
                 continue;
             }
+            if (L12SimpleSelfTroopBuffTriggerEffects.Find(program.CardId, program.Trigger) is not null)
+            {
+                Assert.DoesNotContain(currentProgram.Atoms,
+                    atom => atom.Kind == L12AtomKinds.CompositeFlow);
+                Assert.Single(currentProgram.Atoms,
+                    atom => atom.Kind == L12AtomKinds.ModifyTroops);
+                continue;
+            }
             if (L12OpponentHandDiscardTriggerEffects.Find(program.CardId, program.Trigger) is not null)
             {
                 Assert.Contains(currentProgram.Atoms, atom => atom.Kind == L12AtomKinds.CompositeFlow
