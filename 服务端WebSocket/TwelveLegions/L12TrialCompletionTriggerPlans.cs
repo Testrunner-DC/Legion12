@@ -183,16 +183,15 @@ public sealed partial class L12GameEngine
                 .ToArray();
             if (count <= 0 || targets.Any(target => target is null
                     || DeclaredEnemyTarget(candidate.Controller, target) is null)
-                || player.SpecialZones.Runes < count || !L12S2ZoneOps.SpendRunes(player, count))
+                || player.SpecialZones.Runes < count)
             {
                 RemoveUnstackedTriggerCandidate(candidate,
-                    "芬尼亚传奇声明的符文数量或公开目标已失效；未支付符文且效果未入栈");
+                    "芬尼亚传奇声明的符文数量或公开目标已失效；效果未入栈");
                 return true;
             }
             candidate.Data["fenianTargets"] = string.Join('|', targets!);
+            candidate.Data["fenianRuneCount"] = count.ToString();
             candidate.Data["trialSegment"] = "0";
-            AddEvent("cost", candidate.Controller, $"芬尼亚传奇入栈前消耗{count}符文", candidate.SourceSnapshot ??
-                CreateCard(candidate.SourceCardId, candidate.SourceInstanceId));
         }
 
         if (plan == "lake-lady")
@@ -300,13 +299,24 @@ public sealed partial class L12GameEngine
         {
             var targets = item.Data.GetValueOrDefault("fenianTargets", string.Empty)
                 .Split('|', StringSplitOptions.RemoveEmptyEntries);
-            var targetId = segment >= 0 && segment < targets.Length ? targets[segment] : null;
-            var target = DeclaredEnemyTarget(item.Controller, targetId);
-            if (target is null)
+            var count = int.TryParse(item.Data.GetValueOrDefault("fenianRuneCount"), out var parsedCount)
+                ? parsedCount : 0;
+            var resolvedTargets = targets.Select(targetId => DeclaredEnemyTarget(item.Controller, targetId)).ToArray();
+            if (count <= 0 || targets.Length != count || resolvedTargets.Any(target => target is null)
+                || player.SpecialZones.Runes < count)
+            {
                 AddEvent("effect-cancelled", item.Controller,
-                    "芬尼亚传奇选择的目标已失效；该目标不受影响，已支付符文不返还", source);
+                    "芬尼亚传奇在结算时的符文数量或已选择目标不再合法；消耗符文与全部兵力降低均不结算", source);
+            }
             else
-                AddTimedModifier(target, -3000, 0, ExpiryAtNextOwnEnd(item.Controller), "芬尼亚传奇");
+            {
+                _ = L12S2ZoneOps.SpendRunes(player, count);
+                foreach (var target in resolvedTargets)
+                    AddTimedModifier(target!, -3000, 0, ExpiryAtNextOwnEnd(item.Controller), "芬尼亚传奇");
+                AddEvent("effect", item.Controller,
+                    $"芬尼亚传奇消耗{count}符文，使已选择的{resolvedTargets.Length}个目标各获得本回合兵力-3000",
+                    source);
+            }
             ResolveStateBasedLegionDeaths();
             FinishStackItem(item);
             return;
@@ -368,8 +378,6 @@ public sealed partial class L12GameEngine
         var next = plan switch
         {
             "lake-lady" when current < 2 => current + 1,
-            "fenian-legend" when current + 1 < item.Data.GetValueOrDefault("fenianTargets", string.Empty)
-                .Split('|', StringSplitOptions.RemoveEmptyEntries).Length => current + 1,
             "sky-city" when current + 1 < item.Data.GetValueOrDefault("skySegments", string.Empty)
                 .Split('|', StringSplitOptions.RemoveEmptyEntries).Length => current + 1,
             _ => -1,

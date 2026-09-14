@@ -455,9 +455,12 @@ public sealed partial class L12GameEngine
             }
             case "show-hand-tactic":
                 if (player.Hand.FirstOrDefault(card => card.InstanceId == costIds[0]) is { } shown)
+                {
                     AddPresentationEvent("reveal", candidate.Controller,
                         $"奥德修斯展示手牌中的〈{shown.Name}〉作为进攻效果费用",
                         "S02-0509", "attack-cost", shown);
+                    RecordPaidCostPresentation(candidate.Data, $"展示手牌中的〈{shown.Name}〉");
+                }
                 break;
             case "god-power":
                 if (player.Morale.First(card => card.InstanceId == costIds[0]) is { } power)

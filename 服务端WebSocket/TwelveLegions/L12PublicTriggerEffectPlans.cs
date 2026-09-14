@@ -1140,15 +1140,10 @@ public sealed partial class L12GameEngine
         }
         if (error is null && batch6JBPlan == "lubu-ready")
         {
-            var costs = activation.DeclaredValues.GetValueOrDefault("returnCost", []);
+            var returnedMorale = activation.DeclaredValues.GetValueOrDefault("returnCost", []);
             if (mode == "mode:use" && (FindOnField(player, candidate.SourceInstanceId, out _, out _) is null
-                || costs.Count != 4 || !CanReturnSelectedMoraleById(player, costs, 4)))
-                error = "吕布声明的4张士气费用或来源已失效；未支付费用且效果未入栈";
-            else if (mode == "mode:use")
-            {
-                _ = ReturnSelectedMoraleById(player, costs, 4);
-                AddEvent("cost", candidate.Controller, "吕布在入栈前返还4张已声明士气", declaredSource);
-            }
+                || returnedMorale.Count != 4 || !CanReturnSelectedMoraleById(player, returnedMorale, 4)))
+                error = "吕布声明的4张士气或来源已失效；效果未入栈";
         }
         else if (batch6JBPlan == "mulan-lock-morale")
         {

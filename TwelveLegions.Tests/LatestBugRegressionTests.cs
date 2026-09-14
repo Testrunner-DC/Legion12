@@ -1221,7 +1221,7 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
-    public void FenianLegendPrepaysThreeRunesForThreeRepeatableIndependentDebuffs()
+    public void FenianLegendResolvesThreeRepeatableDebuffsAsOneEffectChain()
     {
         var game = Create(64105);
         var player = game.State.Players[0];
@@ -1257,8 +1257,7 @@ public sealed class LatestBugRegressionTests
 
         Assert.Equal(0, player.SpecialZones.Runes);
         Assert.Equal(enemy.BaseTroops - 9000, enemy.Troops);
-        Assert.Contains(game.State.Events, entry => entry.Text.Contains("第2个目标", StringComparison.Ordinal));
-        Assert.Contains(game.State.Events, entry => entry.Text.Contains("第3个目标", StringComparison.Ordinal));
+        Assert.Contains(game.State.Events, entry => entry.Text.Contains("已选择的3个目标", StringComparison.Ordinal));
     }
 
     [Fact]

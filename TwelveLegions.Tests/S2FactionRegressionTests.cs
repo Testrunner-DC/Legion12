@@ -2247,6 +2247,10 @@ public sealed class S2FactionRegressionTests
         var blocker = Card("S02-0608", "richard-blocker");
         blocker.Troops = 12000;
         var extra = Card("S02-0001", "richard-extra-discard");
+        var responseCounter = Card("S01-0016", "richard-cost-response-counter");
+        responseCounter.Hidden = true;
+        responseCounter.SetRound = 0;
+        defender.Field[1][0] = responseCounter;
         defender.Hand.Clear();
         defender.Hand.AddRange([blocker, extra]);
         game.State.ActivePlayer = 0;
@@ -2268,6 +2272,16 @@ public sealed class S2FactionRegressionTests
         Assert.Equal("pending-activation", attackEffect.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: attackEffect.PromptId,
             CardInstanceIds: [firstSquire.InstanceId, secondSquire.InstanceId])).Accepted);
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("response", response.Kind);
+        Assert.Equal("弃置战场上的〈侍从骑士〉×2", response.Data["responsePaidCostSummary"]);
+        Assert.Contains("Cost（已支付）：弃置战场上的〈侍从骑士〉×2", response.Text,
+            StringComparison.Ordinal);
+        var paidResponseStart = response.Text.LastIndexOf("Cost（已支付）", StringComparison.Ordinal);
+        Assert.True(paidResponseStart >= 0);
+        var paidResponse = response.Text[paidResponseStart..];
+        Assert.Contains("每弃置1张", paidResponse, StringComparison.Ordinal);
+        Assert.DoesNotContain("可弃置下方任意数量", paidResponse, StringComparison.Ordinal);
         PassResponses(game);
         Assert.Equal(richard.BaseTroops + 2000, richard.Troops);
         Assert.Empty(richard.AttachedCards);

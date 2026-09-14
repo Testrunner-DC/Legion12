@@ -174,8 +174,8 @@ public sealed class AtomicReviewBatch6BRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S02-06S5")]
-    [Trait("L12Evidence", "entry:trial-completion-colon-cost-pre-stack")]
-    public void FenianTrialPrepaysXRunesAndQueuesRepeatableTargetsAsIndependentSegments()
+    [Trait("L12Evidence", "entry:trial-completion-no-colon-effect-chain")]
+    public void FenianTrialSpendsRunesAndAppliesRepeatableTargetsOnlyDuringResolution()
     {
         var game = Create(7623);
         var player = game.State.Players[0];
@@ -192,19 +192,19 @@ public sealed class AtomicReviewBatch6BRegressionTests
         Resolve(game, enemy.InstanceId);
         Resolve(game, enemy.InstanceId);
 
-        Assert.Equal(0, player.SpecialZones.Runes);
+        Assert.Equal(3, player.SpecialZones.Runes);
         Assert.Single(game.State.EffectStack);
         game.State.EffectStack[0].Negated = true;
         PassResponses(game);
 
-        Assert.Equal(enemy.BaseTroops - 6000, enemy.Troops);
-        Assert.Equal(0, player.SpecialZones.Runes);
+        Assert.Equal(enemy.BaseTroops, enemy.Troops);
+        Assert.Equal(3, player.SpecialZones.Runes);
     }
 
     [Fact]
     [Trait("L12Evidence", "card:S02-06S5")]
     [Trait("L12Evidence", "entry:trial-completion-source-snapshot-target-loss")]
-    public void FenianTargetLossCancelsOnlyItsSegmentAndNeverRefundsPrepaidRunes()
+    public void FenianTargetLossCancelsTheWholeUnpaidEffectChain()
     {
         var game = Create(76231);
         var player = game.State.Players[0];
@@ -219,7 +219,7 @@ public sealed class AtomicReviewBatch6BRegressionTests
         Resolve(game, "rune-count:2");
         Resolve(game, first.InstanceId);
         Resolve(game, second.InstanceId);
-        Assert.Equal(0, player.SpecialZones.Runes);
+        Assert.Equal(2, player.SpecialZones.Runes);
 
         player.SpecialZones.Trials.Remove(trial);
         game.State.Players[1].Field[0][0] = null;
@@ -227,9 +227,9 @@ public sealed class AtomicReviewBatch6BRegressionTests
         PassResponses(game);
 
         Assert.Equal(first.BaseTroops, first.Troops);
-        Assert.Equal(second.BaseTroops - 3000, second.Troops);
-        Assert.Equal(0, player.SpecialZones.Runes);
-        Assert.Contains(game.State.Events, entry => entry.Text.Contains("已支付符文不返还", StringComparison.Ordinal));
+        Assert.Equal(second.BaseTroops, second.Troops);
+        Assert.Equal(2, player.SpecialZones.Runes);
+        Assert.Contains(game.State.Events, entry => entry.Text.Contains("消耗符文与全部兵力降低均不结算", StringComparison.Ordinal));
     }
 
     [Fact]

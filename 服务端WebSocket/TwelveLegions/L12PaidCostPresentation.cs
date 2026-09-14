@@ -23,6 +23,8 @@ public sealed partial class L12GameEngine
         IReadOnlyDictionary<string, PaidCostCardSnapshot> Field);
 
     private ActivePaidCostSnapshot? _activePaidCostSnapshot;
+    private readonly Dictionary<string, ActivePaidCostSnapshot> _triggerPaidCostSnapshots =
+        new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// 只登记已经完成支付的公开 Cost。响应说明不得从卡文猜测是否支付，也不得把尚未
@@ -45,15 +47,45 @@ public sealed partial class L12GameEngine
 
     private static IReadOnlyDictionary<string, PaidCostCardSnapshot> SnapshotCostCards(
         IEnumerable<L12CardInstance> cards)
-        => cards.ToDictionary(card => card.InstanceId,
-            card => new PaidCostCardSnapshot(card.Name, card.CardId, card.Tapped),
-            StringComparer.OrdinalIgnoreCase);
+        => cards.GroupBy(card => card.InstanceId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key,
+                group => group.Select(card => new PaidCostCardSnapshot(card.Name, card.CardId, card.Tapped)).Last(),
+                StringComparer.OrdinalIgnoreCase);
 
     private static IReadOnlyDictionary<string, PaidCostMoraleSnapshot> SnapshotCostMorale(
         IEnumerable<L12MoraleCard> cards)
-        => cards.ToDictionary(card => card.InstanceId,
-            card => new PaidCostMoraleSnapshot(card.CardId, card.Tapped, card.IsGodPower),
-            StringComparer.OrdinalIgnoreCase);
+        => cards.GroupBy(card => card.InstanceId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key,
+                group => group.Select(card => new PaidCostMoraleSnapshot(card.CardId, card.Tapped, card.IsGodPower)).Last(),
+                StringComparer.OrdinalIgnoreCase);
+
+    private static void AddCostCardSummaries(List<string> summaries,
+        IEnumerable<PaidCostCardSnapshot> cards, Func<string, string> describe)
+    {
+        foreach (var group in cards.GroupBy(card => card.Name, StringComparer.Ordinal))
+        {
+            var label = group.Count() == 1 ? $"〈{group.Key}〉" : $"〈{group.Key}〉×{group.Count()}";
+            summaries.Add(describe(label));
+        }
+    }
+
+    private static IEnumerable<L12CardInstance> CostFieldCards(L12PlayerState player)
+    {
+        foreach (var card in player.Field.SelectMany(row => row).Where(card => card is not null).Select(card => card!))
+        {
+            yield return card;
+            foreach (var attached in CostAttachedCards(card)) yield return attached;
+        }
+    }
+
+    private static IEnumerable<L12CardInstance> CostAttachedCards(L12CardInstance host)
+    {
+        foreach (var attached in host.AttachedCards)
+        {
+            yield return attached;
+            foreach (var nested in CostAttachedCards(attached)) yield return nested;
+        }
+    }
 
     private ActivePaidCostSnapshot CaptureActivePaidCostSnapshot(int controller, L12CardInstance source)
     {
@@ -73,7 +105,7 @@ public sealed partial class L12GameEngine
             SnapshotCostCards(player.Graveyard),
             SnapshotCostCards(player.Library),
             SnapshotCostMorale(player.Morale),
-            SnapshotCostCards(player.Field.SelectMany(row => row).Where(card => card is not null).Select(card => card!)));
+            SnapshotCostCards(CostFieldCards(player)));
     }
 
     /// <summary>
@@ -92,12 +124,42 @@ public sealed partial class L12GameEngine
         var player = State.Players[controller];
         var runtimeAbility = data.GetValueOrDefault("ability") ?? string.Empty;
         var sourceRestIsCost = L12StructuredCardRules.IsActiveRestAbility(source.CardId, runtimeAbility);
+        AddPaidCostPresentationFromSnapshot(before, source, data, sourceRestIsCost);
+    }
+
+    /// <summary>
+    /// 触发效果完成声明时，由公共入口保存支付前快照；真正压入堆叠时才生成回执。
+    /// 各登场／进攻／阵亡完成器因此无需各自拼接费用文案，并且响应窗口与重连读取同一元数据。
+    /// </summary>
+    private void BeginTriggeredPaidCostCapture(L12TriggerCandidate candidate, L12CardInstance source)
+        => _triggerPaidCostSnapshots[candidate.CandidateId] =
+            CaptureActivePaidCostSnapshot(candidate.Controller, source);
+
+    private void EndTriggeredPaidCostCapture(L12TriggerCandidate candidate)
+        => _triggerPaidCostSnapshots.Remove(candidate.CandidateId);
+
+    private void AddTriggeredPaidCostPresentation(L12TriggerCandidate candidate)
+    {
+        if (candidate.Data.ContainsKey(PaidCostSummaryDataKey)
+            || !_triggerPaidCostSnapshots.TryGetValue(candidate.CandidateId, out var before)) return;
+        var source = FindAuthoritativeCard(candidate.SourceInstanceId)
+            ?? candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+        // 触发声明完成器只允许在入栈前执行 Cost；若来源在这段边界内转为休整，该变化必为已支付费用。
+        AddPaidCostPresentationFromSnapshot(before, source, candidate.Data, sourceRestIsCost: true);
+    }
+
+    private void AddPaidCostPresentationFromSnapshot(ActivePaidCostSnapshot before,
+        L12CardInstance source, Dictionary<string, string> data, bool sourceRestIsCost)
+    {
+        var player = State.Players[before.Controller];
         var currentHand = player.Hand.Select(card => card.InstanceId).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var currentGrave = player.Graveyard.ToDictionary(card => card.InstanceId, StringComparer.OrdinalIgnoreCase);
+        var currentGrave = player.Graveyard.GroupBy(card => card.InstanceId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.OrdinalIgnoreCase);
         var currentLibrary = player.Library.Select(card => card.InstanceId).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var currentMorale = player.Morale.ToDictionary(card => card.InstanceId, StringComparer.OrdinalIgnoreCase);
-        var currentField = player.Field.SelectMany(row => row).Where(card => card is not null).Select(card => card!)
-            .ToDictionary(card => card.InstanceId, StringComparer.OrdinalIgnoreCase);
+        var currentMorale = player.Morale.GroupBy(card => card.InstanceId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.OrdinalIgnoreCase);
+        var currentField = CostFieldCards(player).GroupBy(card => card.InstanceId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.OrdinalIgnoreCase);
         var summaries = new List<string>();
 
         var damage = Math.Max(0, before.Hp - player.Hp);
@@ -118,22 +180,25 @@ public sealed partial class L12GameEngine
         var spentRunes = Math.Max(0, before.Runes - player.SpecialZones.Runes);
         if (spentRunes > 0) summaries.Add($"消耗{spentRunes}符文");
 
-        foreach (var pair in before.Hand.Where(pair => !currentHand.Contains(pair.Key)
-                     && currentGrave.ContainsKey(pair.Key)))
-            summaries.Add($"弃置手牌中的〈{pair.Value.Name}〉");
-        foreach (var pair in before.Field.Where(pair => !currentField.ContainsKey(pair.Key)
-                     && currentGrave.ContainsKey(pair.Key)))
-            summaries.Add($"弃置战场上的〈{pair.Value.Name}〉");
-        foreach (var pair in before.Library.Where(pair => !currentLibrary.Contains(pair.Key)
-                     && currentGrave.ContainsKey(pair.Key)))
-            summaries.Add($"弃置牌库顶部的〈{pair.Value.Name}〉");
-        foreach (var pair in before.Graveyard.Where(pair => !currentGrave.ContainsKey(pair.Key)
-                     && currentLibrary.Contains(pair.Key)))
-            summaries.Add($"将墓地中的〈{pair.Value.Name}〉置于牌库底部");
+        AddCostCardSummaries(summaries, before.Hand.Where(pair => !currentHand.Contains(pair.Key)
+                && currentGrave.ContainsKey(pair.Key)).Select(pair => pair.Value),
+            label => $"弃置手牌中的{label}");
+        AddCostCardSummaries(summaries, before.Hand.Where(pair => !currentHand.Contains(pair.Key)
+                && currentLibrary.Contains(pair.Key)).Select(pair => pair.Value),
+            label => $"展示手牌中的{label}并置于牌库顶部");
+        AddCostCardSummaries(summaries, before.Field.Where(pair => !currentField.ContainsKey(pair.Key)
+                && currentGrave.ContainsKey(pair.Key)).Select(pair => pair.Value),
+            label => $"弃置战场上的{label}");
+        AddCostCardSummaries(summaries, before.Library.Where(pair => !currentLibrary.Contains(pair.Key)
+                && currentGrave.ContainsKey(pair.Key)).Select(pair => pair.Value),
+            label => $"弃置牌库顶部的{label}");
+        AddCostCardSummaries(summaries, before.Graveyard.Where(pair => !currentGrave.ContainsKey(pair.Key)
+                && currentLibrary.Contains(pair.Key)).Select(pair => pair.Value),
+            label => $"将墓地中的{label}置于牌库底部");
 
         var masterNowTapped = player.MasterTapped;
         var usesMasterZone = source.CardType is "master" or "divinity"
-            || source.InstanceId.Equals($"master-{controller}", StringComparison.OrdinalIgnoreCase);
+            || source.InstanceId.Equals($"master-{before.Controller}", StringComparison.OrdinalIgnoreCase);
         if (sourceRestIsCost && !before.MasterTapped && masterNowTapped && usesMasterZone)
             summaries.Add($"休整〈{before.SourceName}〉");
         var sourceNowTapped = usesMasterZone ? masterNowTapped
@@ -188,6 +253,15 @@ public sealed partial class L12GameEngine
         var current = segments[index];
         return CompositeSegmentEnabled(current, item)
             ? current.Text.Trim().TrimEnd('。') + "。"
+            : fallback;
+    }
+
+    private static string ResolvePaidResponseEffectText(L12StackItem item, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(item.Data.GetValueOrDefault(PaidCostSummaryDataKey))) return fallback;
+        var split = L12StructuredCardRules.SplitAbilityText(fallback, hasCost: true);
+        return !string.IsNullOrWhiteSpace(split.CostText) && !string.IsNullOrWhiteSpace(split.ResolutionText)
+            ? split.ResolutionText!.Trim()
             : fallback;
     }
 

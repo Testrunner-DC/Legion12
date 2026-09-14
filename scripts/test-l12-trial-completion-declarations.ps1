@@ -19,6 +19,10 @@ function Assert-Contains([string]$Text, [string]$Pattern, [string]$Message) {
     if ($Text.IndexOf($Pattern, [StringComparison]::Ordinal) -lt 0) { throw $Message }
 }
 
+function Assert-NotContains([string]$Text, [string]$Pattern, [string]$Message) {
+    if ($Text.IndexOf($Pattern, [StringComparison]::Ordinal) -ge 0) { throw $Message }
+}
+
 $plans = Read-Source 'L12TrialCompletionTriggerPlans.cs'
 $s2 = Read-Source 'L12S2FactionEffects.cs'
 $kernel = Read-Source 'L12RuleKernelIntegration.cs'
@@ -38,7 +42,8 @@ foreach ($contract in @(
     'QueueNextTrialCompletionSegment',
     'trial-completion-library-arthur',
     'trial-completion-library-search',
-    'fenianTargets'
+    'fenianTargets',
+    'fenianRuneCount'
 )) {
     Assert-Contains $plans $contract "Batch 6B trial-completion contract is missing: $contract"
 }
@@ -52,7 +57,12 @@ Assert-Contains $kernel 'L12ActivationCancellationPolicy.NotAllowed => false' 'M
 Assert-Contains $prompts 'QueueNextTrialCompletionSegment(item)' 'Independent trial-completion segments must continue after resolution or negation.'
 Assert-Contains $prompts '["mode:grave"]' 'The public graveyard mode needs a player-facing label.'
 Assert-Contains $prompts '["mode:library"]' 'The delayed library mode needs a player-facing label.'
-Assert-Contains $plans 'L12S2ZoneOps.SpendRunes(player, count)' 'Fenian Legend must atomically prepay X runes before stack entry.'
+Assert-Contains $plans 'resolvedTargets.Any(target => target is null)' 'Fenian Legend must revalidate every declared target at resolution.'
+Assert-Contains $plans 'player.SpecialZones.Runes < count' 'Fenian Legend must revalidate the declared rune amount at resolution.'
+Assert-Contains $plans 'L12S2ZoneOps.SpendRunes(player, count)' 'Fenian Legend must spend X runes only while its effect resolves.'
+Assert-NotContains $plans '芬尼亚传奇入栈前消耗' 'Fenian Legend has no printed colon and must not prepay runes before response.'
+Assert-Contains $tests 'FenianTrialSpendsRunesAndAppliesRepeatableTargetsOnlyDuringResolution' 'Fenian negation must preserve runes and stop every debuff.'
+Assert-Contains $tests 'FenianTargetLossCancelsTheWholeUnpaidEffectChain' 'Fenian target invalidation must fail atomically without spending runes.'
 $remaining = Read-Source 'L12S2RemainingEffects.cs'
 $angusTests = Read-Source 'EffectBatch294RegressionTests.cs'
 Assert-Contains $s2 'if (advanced) QueueS2AngusTrialAdvanceRune(playerIndex, source ?? trial)' 'Angus must trigger only after actual trial progress increases.'
@@ -84,4 +94,4 @@ foreach ($legacy in @(
     }
 }
 
-Write-Host 'Trial completion TriggerBatch, hidden-information delay, prepaid-cost, and independent-segment guard passed.'
+Write-Host 'Trial completion TriggerBatch, hidden-information delay, colon boundary, and atomic effect-chain guard passed.'

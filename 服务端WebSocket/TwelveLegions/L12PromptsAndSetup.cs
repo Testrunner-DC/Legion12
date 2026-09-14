@@ -1489,11 +1489,14 @@ public sealed partial class L12GameEngine
     private string BuildResponsePromptText(L12StackItem top)
     {
         var source = FindSource(top) ?? top.SourceSnapshot;
-        var effect = top.Text;
+        var declaredEffect = top.Data.GetValueOrDefault("responseUsesTriggerEffectText") == "true"
+            ? top.Data.GetValueOrDefault("triggerEffectText") : null;
+        var effect = string.IsNullOrWhiteSpace(declaredEffect) ? top.Text : declaredEffect;
         if (source is not null && top.Trigger is "reaction" or "s2-reaction" or "response-negate"
                 or "response-block" or "response-retarget-master")
             effect = ResolveResponseEffectDisplayText(source, effect);
         effect = ResolveCompositeResponseEffectText(top, effect);
+        effect = ResolvePaidResponseEffectText(top, effect);
         var timing = top.Trigger switch
         {
             "promotion-enter" => "晋升登场",

@@ -310,8 +310,8 @@ public sealed class AtomicReviewBatch6JBRegressionTests
     }
 
     [Fact]
-    [Trait("L12Evidence", "trigger:batch6jb-lubu-prepaid-no-refund")]
-    public void LuBuReturnsFourDeclaredMoraleBeforeStackAndNegationDoesNotRefundThem()
+    [Trait("L12Evidence", "trigger:batch6jb-lubu-effect-chain-negation")]
+    public void LuBuDeclaresFourMoraleButNegationStopsBothReturnAndReady()
     {
         var game = Create(9999);
         var player = game.State.Players[0];
@@ -332,13 +332,97 @@ public sealed class AtomicReviewBatch6JBRegressionTests
         Resolve(game, "mode:use");
         Resolve(game, choices: returned);
 
-        Assert.Equal(2, player.Morale.Count);
-        Assert.DoesNotContain(player.Morale, card => returned.Contains(card.InstanceId));
+        Assert.Equal(6, player.Morale.Count);
+        Assert.All(returned, id => Assert.Contains(player.Morale, card => card.InstanceId == id));
+        var response = OnlyPrompt(game);
+        Assert.Equal("response", response.Kind);
+        Assert.False(response.Data.ContainsKey("responsePaidCostSummary"));
+        Assert.DoesNotContain("Cost（已支付）", response.Text, StringComparison.Ordinal);
         game.State.EffectStack[^1].Negated = true;
         PassResponses(game);
 
         Assert.True(lubu.Tapped);
+        Assert.Equal(6, player.Morale.Count);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "trigger:batch6jb-lubu-effect-chain-resolves")]
+    public void LuBuReturnsFourDeclaredMoraleAndReadiesOnlyDuringResolution()
+    {
+        var game = Create(10001);
+        var player = game.State.Players[0];
+        var lubu = Card("S01-0101", "batch6jb-lubu-resolve");
+        lubu.Tapped = true;
+        player.Field[0][0] = lubu;
+        AddMorale(player, 6, "batch6jb-lubu-resolve-morale");
+        HoldOpponentResponseWindow(game);
+        var returned = player.Morale.Take(4).Select(card => card.InstanceId).ToList();
+
+        Invoke(game, "QueueOrPushTriggeredEffect", 0, lubu, "after-attack", "吕布进攻后", null,
+            new Dictionary<string, string>());
+        Resolve(game, "mode:use");
+        Resolve(game, choices: returned);
+
+        Assert.Equal(6, player.Morale.Count);
+        Assert.True(lubu.Tapped);
+        PassResponses(game);
+
         Assert.Equal(2, player.Morale.Count);
+        Assert.DoesNotContain(player.Morale, card => returned.Contains(card.InstanceId));
+        Assert.False(lubu.Tapped);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "trigger:batch6jb-lubu-effect-chain-revalidates")]
+    public void LuBuResolutionFailsAtomicallyWhenOneDeclaredMoraleLeavesDuringResponse()
+    {
+        var game = Create(10002);
+        var player = game.State.Players[0];
+        var lubu = Card("S01-0101", "batch6jb-lubu-revalidate");
+        lubu.Tapped = true;
+        player.Field[0][0] = lubu;
+        AddMorale(player, 6, "batch6jb-lubu-revalidate-morale");
+        HoldOpponentResponseWindow(game);
+        var returned = player.Morale.Take(4).Select(card => card.InstanceId).ToList();
+
+        Invoke(game, "QueueOrPushTriggeredEffect", 0, lubu, "after-attack", "吕布进攻后", null,
+            new Dictionary<string, string>());
+        Resolve(game, "mode:use");
+        Resolve(game, choices: returned);
+        player.Morale.RemoveAll(card => card.InstanceId == returned[0]);
+        PassResponses(game);
+
+        Assert.Equal(5, player.Morale.Count);
+        Assert.All(returned.Skip(1), id => Assert.Contains(player.Morale, card => card.InstanceId == id));
+        Assert.True(lubu.Tapped);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("返还士气与转为活跃均不结算", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "trigger:batch6jb-gawain-no-colon-effect-chain")]
+    public void GawainRuneSelectionIsNotPaidCostAndNegationStopsRuneSpend()
+    {
+        var game = Create(10003);
+        var player = game.State.Players[0];
+        var gawain = Card("S02-0607", "batch6jb-gawain-no-colon");
+        player.Field[0][0] = gawain;
+        player.SpecialZones.Runes = 3;
+        HoldOpponentResponseWindow(game);
+
+        Invoke(game, "QueueOrPushTriggeredEffect", 0, gawain, "attack", "高文进攻时", null,
+            new Dictionary<string, string>());
+        Resolve(game, "rune-count:2");
+
+        var response = OnlyPrompt(game);
+        Assert.Equal("response", response.Kind);
+        Assert.False(response.Data.ContainsKey("responsePaidCostSummary"));
+        Assert.DoesNotContain("Cost（已支付）", response.Text, StringComparison.Ordinal);
+        game.State.EffectStack[^1].Negated = true;
+        PassResponses(game);
+
+        Assert.Equal(3, player.SpecialZones.Runes);
+        Assert.Equal(gawain.BaseTroops, gawain.Troops);
     }
 
     [Fact]
@@ -363,6 +447,16 @@ public sealed class AtomicReviewBatch6JBRegressionTests
         Assert.Empty(player.Graveyard);
         Assert.Equal([second.InstanceId, first.InstanceId], player.Library.TakeLast(2).Select(card => card.InstanceId));
         Assert.Contains($"gustav-ready:{gustav.InstanceId}:{game.State.TurnSerial}", player.UsedAbilities);
+        var response = OnlyPrompt(game);
+        Assert.Equal("response", response.Kind);
+        Assert.Contains($"将墓地中的〈{first.Name}〉置于牌库底部",
+            response.Data["responsePaidCostSummary"], StringComparison.Ordinal);
+        Assert.Contains($"将墓地中的〈{second.Name}〉置于牌库底部",
+            response.Data["responsePaidCostSummary"], StringComparison.Ordinal);
+        Assert.Contains("Cost（已支付）", response.Text, StringComparison.Ordinal);
+        Assert.Contains("将此军团转为活跃", response.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("效果：我方 回合1次 此军团进攻后，可将墓地", response.Text,
+            StringComparison.Ordinal);
         game.State.EffectStack[^1].Negated = true;
         PassResponses(game);
 

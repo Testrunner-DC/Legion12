@@ -1795,6 +1795,7 @@ public sealed partial class L12GameEngine
 
     private void AddTriggerCandidateToStack(L12TriggerCandidate candidate)
     {
+        AddTriggeredPaidCostPresentation(candidate);
         var triggerEffectText = candidate.Data.GetValueOrDefault("triggerEffectText");
         if (string.IsNullOrWhiteSpace(triggerEffectText)) triggerEffectText = candidate.Text;
         var stackText = candidate.Data.GetValueOrDefault("stackText");
@@ -1963,6 +1964,26 @@ public sealed partial class L12GameEngine
     {
         var candidate = State.PendingTriggerStackCandidates.FirstOrDefault(item => item.CandidateId == activation.TriggerCandidateId);
         if (candidate is null) { AdvanceTriggerBatches(); return; }
+        var source = FindAuthoritativeCard(candidate.SourceInstanceId)
+            ?? candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+        // A completed public declaration may use a short internal stack label for routing.
+        // Response presentation must use the card's resolved trigger segment instead.
+        candidate.Data["responseUsesTriggerEffectText"] = "true";
+        BeginTriggeredPaidCostCapture(candidate, source);
+        try
+        {
+            CompleteTriggerDeclarationCore(candidate, activation);
+        }
+        finally
+        {
+            if (candidate.Data.GetValueOrDefault("declaration-complete") == "true")
+                AddTriggeredPaidCostPresentation(candidate);
+            EndTriggeredPaidCostCapture(candidate);
+        }
+    }
+
+    private void CompleteTriggerDeclarationCore(L12TriggerCandidate candidate, L12PendingActivation activation)
+    {
         if (!TryPreparePrideMasterSurchargeCommit(candidate, activation)) return;
         if (TryCompletePublicTriggerDeclaration(candidate, activation))
         {
