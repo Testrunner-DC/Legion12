@@ -7,15 +7,13 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib/l12-card-runtime-evidence.ps1')
 $sourcePath = Join-Path $ProjectRoot '服务端WebSocket/TwelveLegions'
 $dataPath = Join-Path $sourcePath 'Data'
-$atomicSource = [System.IO.File]::ReadAllText((Join-Path $sourcePath 'AtomicEffects.cs'), [System.Text.Encoding]::UTF8)
 $routeSource = [System.IO.File]::ReadAllText((Join-Path $sourcePath 'L12RuntimeEffectRoutes.cs'), [System.Text.Encoding]::UTF8)
 $cardIdPattern = '(?:S\d{2}|ST(?:\d{2})?)-[A-Za-z0-9]+'
-$programMatches = [regex]::Matches($atomicSource,
-    'Program\("(?<id>' + $cardIdPattern + ')"\s*,\s*"(?<trigger>[^"]+)"')
+$programMatches = @(Get-L12FineAtomicProgramMatches -SourcePath $sourcePath)
 $routeMatches = [regex]::Matches($routeSource,
     'new\("(?<id>' + $cardIdPattern + ')"\s*,\s*"(?<trigger>[^"]+)"')
 
-function Group-TriggersByCard([System.Text.RegularExpressions.MatchCollection]$matches) {
+function Group-TriggersByCard([System.Collections.IEnumerable]$matches) {
     $grouped = @{}
     foreach ($match in $matches) {
         $id = $match.Groups['id'].Value

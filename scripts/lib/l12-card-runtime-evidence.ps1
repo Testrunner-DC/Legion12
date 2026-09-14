@@ -138,3 +138,32 @@
     }
     return $result
 }
+
+function Get-L12FineAtomicProgramMatches {
+    param([Parameter(Mandatory = $true)][string]$SourcePath)
+
+    $cardIdPattern = '(?:S\d{2}|ST(?:\d{2})?)-[A-Za-z0-9]+'
+    $atomicSource = [System.IO.File]::ReadAllText(
+        (Join-Path $SourcePath 'AtomicEffects.cs'), [System.Text.Encoding]::UTF8)
+    $matches = New-Object System.Collections.Generic.List[System.Text.RegularExpressions.Match]
+    foreach ($match in [regex]::Matches($atomicSource,
+        'Program\("(?<id>' + $cardIdPattern + ')"\s*,\s*"(?<trigger>[^"]+)"')) {
+        $matches.Add($match)
+    }
+
+    foreach ($fileName in @(
+        'L12SimpleDrawTriggerEffects.cs',
+        'L12SimpleMasterHealTriggerEffects.cs',
+        'L12SimpleTrialAdvanceTriggerEffects.cs',
+        'L12SimpleCardStateTriggerEffects.cs',
+        'L12SimpleResourceTriggerEffects.cs'
+    )) {
+        $source = [System.IO.File]::ReadAllText(
+            (Join-Path $SourcePath $fileName), [System.Text.Encoding]::UTF8)
+        foreach ($match in [regex]::Matches($source,
+            'new\("(?<id>' + $cardIdPattern + ')"\s*,\s*\d+\s*,\s*"(?<trigger>[^"]+)"')) {
+            $matches.Add($match)
+        }
+    }
+    return @($matches)
+}

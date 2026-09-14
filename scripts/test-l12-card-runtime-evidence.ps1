@@ -24,4 +24,20 @@ Assert-ContainsEvidence $evidence 'S01-0113' 'LatestBugRegressionTests.cs' 'abil
 Assert-ContainsEvidence $evidence 'S02-06S1' 'RuleKernelTests.cs' 'token type'
 Assert-ContainsEvidence $evidence 'TEST-RUNE' 'ExtendedCardEffectsTests.cs' 'type'
 Assert-ContainsEvidence $evidence 'TEST-TRIAL' 'Bq20260830_02RegressionTests.cs' 'shared-entry'
+$finePrograms = @(Get-L12FineAtomicProgramMatches -SourcePath (Join-Path $ProjectRoot '服务端WebSocket/TwelveLegions'))
+if ($finePrograms.Count -ne 122) {
+    throw "Fine atomic evidence expected 122 explicit and generated programs, got $($finePrograms.Count)."
+}
+foreach ($expected in @(
+    @{ Id = 'S01-0210'; Trigger = 'enter' },
+    @{ Id = 'S01-0313'; Trigger = 'death' },
+    @{ Id = 'S02-0002'; Trigger = 'after-kill' },
+    @{ Id = 'ST05-07'; Trigger = 'enter' }
+)) {
+    if (-not ($finePrograms | Where-Object {
+        $_.Groups['id'].Value -eq $expected.Id -and $_.Groups['trigger'].Value -eq $expected.Trigger
+    })) {
+        throw "Generated fine atomic evidence did not include $($expected.Id)/$($expected.Trigger)."
+    }
+}
 Write-Host 'Card runtime semantic evidence tests passed.'

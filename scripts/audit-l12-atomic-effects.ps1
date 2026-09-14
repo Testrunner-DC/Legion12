@@ -36,26 +36,12 @@ $branchPatterns = [ordered]@{
     cardSwitchArm = '(?m)^\s*"' + $cardIdPattern + '"\s*=>'
     effectTextInference = '(?:EffectText|\.Effect)\??\.Contains\s*\('
 }
-$atomicSource = [System.IO.File]::ReadAllText((Join-Path $sourcePath 'AtomicEffects.cs'), [System.Text.Encoding]::UTF8)
-$generatedProgramSources = @(
-    'L12SimpleDrawTriggerEffects.cs',
-    'L12SimpleMasterHealTriggerEffects.cs',
-    'L12SimpleTrialAdvanceTriggerEffects.cs',
-    'L12SimpleCardStateTriggerEffects.cs',
-    'L12SimpleResourceTriggerEffects.cs'
-) | ForEach-Object {
-    [System.IO.File]::ReadAllText((Join-Path $sourcePath $_), [System.Text.Encoding]::UTF8)
-}
 $routeSource = [System.IO.File]::ReadAllText((Join-Path $sourcePath 'L12RuntimeEffectRoutes.cs'), [System.Text.Encoding]::UTF8)
-$fineProgramMatches = [regex]::Matches($atomicSource,
-    'Program\("(?<id>' + $cardIdPattern + ')"\s*,\s*"(?<trigger>[^"]+)"')
-$generatedProgramMatches = @($generatedProgramSources | ForEach-Object {
-    [regex]::Matches($_, 'new\("(?<id>' + $cardIdPattern + ')"\s*,\s*\d+\s*,\s*"(?<trigger>[^"]+)"')
-})
-$fineProgramCount = $fineProgramMatches.Count + $generatedProgramMatches.Count
+$fineProgramMatches = @(Get-L12FineAtomicProgramMatches -SourcePath $sourcePath)
+$fineProgramCount = $fineProgramMatches.Count
 $compositeRouteMatches = [regex]::Matches($routeSource,
     'new\("(?<id>' + $cardIdPattern + ')"\s*,\s*"(?<trigger>[^"]+)"')
-$fineCardIds = @(@($fineProgramMatches) + @($generatedProgramMatches) |
+$fineCardIds = @($fineProgramMatches |
     ForEach-Object { $_.Groups['id'].Value } | Sort-Object -Unique)
 $compositeCardIds = @($compositeRouteMatches | ForEach-Object { $_.Groups['id'].Value } | Sort-Object -Unique)
 $catalogOnlyCardIds = @($cards | Where-Object {
