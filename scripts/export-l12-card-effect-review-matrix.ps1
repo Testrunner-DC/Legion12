@@ -30,6 +30,20 @@ foreach ($fileName in @('cards.s1.json', 'cards.s2.json', 'cards.st.json')) {
     $decoded = [System.IO.File]::ReadAllText((Join-Path $dataPath $fileName), [System.Text.Encoding]::UTF8) | ConvertFrom-Json
     foreach ($card in $decoded) { $cards.Add($card) }
 }
+$auditStatusByCard = @{}
+foreach ($fileName in @(
+    'S01-UNIVERSAL-HEAVEN-ABILITY-AUDIT.md', 'S01-SUN-CITY-ASGARD-ABILITY-AUDIT.md',
+    'S01-TAKAMAGAHARA-ABILITY-AUDIT.md', 'S02-UNIVERSAL-HEAVEN-ABILITY-AUDIT.md',
+    'S02-SUN-CITY-ASGARD-ABILITY-AUDIT.md', 'S02-TAKAMAGAHARA-OLYMPUS-ABILITY-AUDIT.md',
+    'S02-OTHERWORLD-DISASTER-ABILITY-AUDIT.md'
+)) {
+    $text = [System.IO.File]::ReadAllText(
+        (Join-Path $ProjectRoot "docs/l12/$fileName"), [System.Text.Encoding]::UTF8)
+    foreach ($match in [regex]::Matches($text,
+        '(?m)^\| (?<id>S\d{2}-[A-Za-z0-9]+) [^|\r\n]+ \| \d+ \|.*?\| (?<status>[^|\r\n]+) \|\r?$')) {
+        $auditStatusByCard[$match.Groups['id'].Value] = $match.Groups['status'].Value.Trim()
+    }
+}
 $runtimeEvidence = Get-L12CardRuntimeEvidence -ProjectRoot $ProjectRoot -Cards $cards
 $batch6HReviewedCardIds = @(
     'S01-0104', 'S01-0106', 'S01-0203', 'S01-0208', 'S01-0301', 'S01-0306', 'S01-0311',
@@ -260,6 +274,17 @@ $rows = foreach ($card in ($cards | Sort-Object id)) {
     }
     if ($batch6MFixedCardIds -contains $card.id) {
         $review += '（6M最终交叉审查明确错误已修复）'
+    }
+    # Route topology is generated, while semantic rulings come from the seven authoritative
+    # per-card audit tables. Historical batch arrays may retain superseded classifications;
+    # normalize those suffixes and then project the current ruling without rewriting it.
+    $review = [regex]::Replace($review,
+        '（[^）]*(?:明确错误已修复|有疑点，见OPEN-QUESTIONS)[^）]*）', '')
+    $auditStatus = $auditStatusByCard[$card.id]
+    if ($auditStatus -eq '明确错误→已修复') {
+        $review += '（逐卡审查明确错误已修复）'
+    } elseif ($auditStatus -and $auditStatus.StartsWith('有疑点', [StringComparison]::Ordinal)) {
+        $review += '（逐卡审查有疑点，见OPEN-QUESTIONS）'
     }
     [pscustomobject]@{
         Id = $card.id
