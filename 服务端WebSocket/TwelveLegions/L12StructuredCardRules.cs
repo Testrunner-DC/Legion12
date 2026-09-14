@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace TwelveLegions.Server;
 
 /// <summary>
@@ -24,11 +26,38 @@ public static partial class L12StructuredCardRules
 {
     public static (string? CostText, string ResolutionText) SplitAbilityText(string text, bool hasCost)
     {
-        if (!hasCost) return (null, text);
+        if (!hasCost || !HasPrintedCostBoundary(text)) return (null, text);
         var separator = text.IndexOfAny(['：', ':']);
         return separator > 0 && separator + 1 < text.Length
             ? (text[..separator].Trim(), text[(separator + 1)..].Trim())
             : (null, text);
+    }
+
+    /// <summary>
+    /// 只把冒号前最后一个完整子句中的支付动作视为印刷Cost。
+    /// “进攻时：”、“1~2：”、“选择一项：”只是时点/分支标点，不能因为冒号后出现弃置等字样就误报为Cost。
+    /// </summary>
+    public static bool HasPrintedCostBoundary(string text)
+    {
+        var separator = text.IndexOfAny(['：', ':']);
+        if (separator <= 0) return false;
+        var prefix = text[..separator].Trim();
+        var clauseStart = prefix.LastIndexOfAny(['。', '；', ';']);
+        var clause = prefix[(clauseStart + 1)..].Trim();
+        if (string.IsNullOrWhiteSpace(clause) || clause.EndsWith("时", StringComparison.Ordinal)
+            || Regex.IsMatch(clause, @"^(?:\d+\s*[~～至-]\s*\d+|选择(?:以下)?一?项)$"))
+            return false;
+        return clause.Contains("消耗", StringComparison.Ordinal)
+            || clause.Contains("返还", StringComparison.Ordinal)
+            || clause.Contains("弃置", StringComparison.Ordinal)
+            || clause.Contains("展示", StringComparison.Ordinal)
+            || clause.Contains("移除", StringComparison.Ordinal)
+            || clause.Contains("放回", StringComparison.Ordinal)
+            || clause.Contains("返回", StringComparison.Ordinal)
+            || clause.Contains("置入", StringComparison.Ordinal)
+            || clause.Contains("主动休整", StringComparison.Ordinal)
+            || clause.Contains("转为休整", StringComparison.Ordinal)
+            || Regex.IsMatch(clause, @"对我方主宰造成\s*\d+点伤害");
     }
 
     public static bool CurrentCostAtMost(L12CardInstance card, int maximum)

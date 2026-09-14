@@ -501,6 +501,7 @@ public sealed class L12AtomicEffectCatalog
                 source.Parameters, descriptor.RuntimeExecutable,
                 "shared-structured-rule", source.Stage));
         }
+        EnsurePrintedCostBoundaryAtom(atoms, template.Text, "shared-structured-rule");
         var route = template.RuntimeRouteOwner
             ? verified ?? L12RuntimeEffectRoutes.FindProgram(card.Id, template.Trigger)
             : null;
@@ -598,6 +599,8 @@ public sealed class L12AtomicEffectCatalog
         if (card.CardType is "disaster" or "destruction" or "trial" || ContainsAny(text, "晋升", "神力", "试炼", "符文", "卡诺匹斯", "陵墓守卫", "天灾"))
             Add(atoms, L12AtomKinds.Special, "进入专属规则内核", new() { ["domain"] = DetectDomain(card, text) }, "inferred");
 
+        EnsurePrintedCostBoundaryAtom(atoms, text, "printed-colon-boundary");
+
         var route = L12RuntimeEffectRoutes.FindProgram(card.Id, trigger);
         if (route is not null)
         {
@@ -622,6 +625,25 @@ public sealed class L12AtomicEffectCatalog
         var descriptor = L12EffectAtomRegistry.Get(kind);
         atoms.Add(new L12EffectAtom($"atom-{atoms.Count + 1}", kind, label, atoms.Count + 1,
             new ReadOnlyDictionary<string, string>(parameters), descriptor.RuntimeExecutable, source, StageFor(kind)));
+    }
+
+    private static void EnsurePrintedCostBoundaryAtom(List<L12EffectAtom> atoms, string text, string source)
+    {
+        if (atoms.Any(atom => atom.Stage == "cost") || !L12StructuredCardRules.HasPrintedCostBoundary(text)) return;
+        var separator = text.IndexOfAny(['：', ':']);
+        var costText = text[..separator].Trim();
+        var descriptor = L12EffectAtomRegistry.Get(L12AtomKinds.Special);
+        var insertion = atoms.FindIndex(atom => atom.Stage is "resolution" or "duration");
+        if (insertion < 0) insertion = atoms.Count;
+        atoms.Insert(insertion, new L12EffectAtom(string.Empty, L12AtomKinds.Special,
+            "执行冒号前印刷Cost", 0,
+            new ReadOnlyDictionary<string, string>(new Dictionary<string, string>
+            {
+                ["semantic"] = "printed-colon-cost",
+                ["text"] = costText,
+            }), descriptor.RuntimeExecutable, source, "cost"));
+        for (var index = 0; index < atoms.Count; index++)
+            atoms[index] = atoms[index] with { AtomId = $"atom-{index + 1}", Order = index + 1 };
     }
 
     private static void AddNumeric(List<L12EffectAtom> atoms, string kind, string text, string label)

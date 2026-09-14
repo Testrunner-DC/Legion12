@@ -148,6 +148,77 @@ public sealed class AtomicEffectsTests
     }
 
     [Fact]
+    public void EverySemanticPrintedColonClauseIsRepresentedAsCostAcrossTheCatalog()
+    {
+        var offenders = Catalog.AtomicEffects.All
+            .SelectMany(card => card.Abilities.Select(ability => (card.CardId, Ability: ability)))
+            .Where(item => L12StructuredCardRules.HasPrintedCostBoundary(item.Ability.Text)
+                && string.IsNullOrWhiteSpace(item.Ability.CostText))
+            .Select(item => $"{item.CardId}:{item.Ability.AbilityId}")
+            .ToArray();
+
+        Assert.True(offenders.Length == 0,
+            $"冒号前含支付动作的能力必须建模为 Cost：{string.Join(", ", offenders)}");
+    }
+
+    [Theory]
+    [InlineData("进攻后：抽取1张牌。")]
+    [InlineData("触发 回合玩家掷骰。1~2：弃置最左列。")]
+    [InlineData("选择一项：抽取1张牌；或弃置1张牌。")]
+    [InlineData("此军团返回牌库顶部时：将士气转为活跃。")]
+    public void TimingAndBranchColonsAreNotPrintedCosts(string text)
+    {
+        Assert.False(L12StructuredCardRules.HasPrintedCostBoundary(text));
+        Assert.Null(L12StructuredCardRules.SplitAbilityText(text, true).CostText);
+    }
+
+    [Theory]
+    [InlineData("S01-0301", "attack", "对我方主宰造成1点伤害")]
+    [InlineData("S01-0305", "death", "墓地4张卡牌")]
+    [InlineData("S01-0306", "attack", "墓地1张卡牌置入我方牌库底部")]
+    [InlineData("S01-0309", "enter", "对我方主宰造成1点伤害")]
+    [InlineData("S01-0311", "attack", "墓地2张卡牌")]
+    [InlineData("S01-0311", "after-attack", "墓地2张卡牌")]
+    [InlineData("S01-0313", "enter", "对我方主宰造成1点伤害")]
+    [InlineData("S01-0318", "play", "对我方主宰造成1点伤害")]
+    [InlineData("S01-03D1", "static", "对我方主宰造成1点伤害")]
+    [InlineData("S02-0207", "play", "弃置我方战场上最多3张军团")]
+    [InlineData("S02-0304", "master-damaged-by-effect", "将此军团转为休整")]
+    [InlineData("S02-0307", "play", "弃置我方牌库顶部1张牌")]
+    [InlineData("S02-0509", "attack", "展示手牌中的1张战术卡")]
+    [InlineData("S02-0608", "attack", "弃置下方任意数量<侍从骑士>")]
+    [InlineData("S02-06D1", "static", "消耗2符文")]
+    [InlineData("S02-06M1", "static", "消耗2符文")]
+    [InlineData("S02-06S1", "static", "消耗1符文")]
+    [InlineData("S02-06S3", "death", "移除<王者之剑>")]
+    [InlineData("S02-06S5", "static", "消耗1符文")]
+    public void PreviouslyMissingPrintedCostsAreExplicitInTheCatalog(
+        string cardId, string trigger, string expectedCostFragment)
+    {
+        var ability = Assert.Single(Catalog.AtomicEffects.Find(cardId)!.Abilities,
+            candidate => candidate.Trigger == trigger
+                && candidate.Text.IndexOfAny(['：', ':']) > 0
+                && candidate.Text.Contains(expectedCostFragment, StringComparison.Ordinal));
+        Assert.Contains(expectedCostFragment, ability.CostText, StringComparison.Ordinal);
+        Assert.Contains(ability.Atoms, atom => atom.Stage == "cost");
+    }
+
+    [Theory]
+    [InlineData("S01-0213", "after-attack", "进攻后：")]
+    [InlineData("S01-0224", "play", "发动战术效果或圣物效果时：")]
+    [InlineData("S01-0414", "after-attack", "返回牌库顶部时：")]
+    [InlineData("S01-DS01", "static", "双数：")]
+    [InlineData("ST05-10", "play", "选择一项：")]
+    public void CatalogTimingAndBranchColonsDoNotExposeFakeCosts(
+        string cardId, string trigger, string textFragment)
+    {
+        var ability = Assert.Single(Catalog.AtomicEffects.Find(cardId)!.Abilities,
+            candidate => candidate.Trigger == trigger
+                && candidate.Text.Contains(textFragment, StringComparison.Ordinal));
+        Assert.Null(ability.CostText);
+    }
+
+    [Fact]
     public void EveryMigratedLegacyCaseUsesOneSharedCompositeRouteWithoutLegacyFallback()
     {
         var catalog = Catalog;
