@@ -118,7 +118,7 @@ internal static class L12EffectPresentationVariants
         Branch("desert-transaction", "按1张结算", "不再弃置，按数量1处理", "desertRepeatCount", "count:1"),
         Branch("desert-transaction", "按2张结算", "不再弃置，按数量2处理", "desertRepeatCount", "count:2"),
         Branch("desert-transaction", "按3张结算", "不再弃置，按数量3处理", "desertRepeatCount", "count:3"),
-        Branch("amakine-top-card", "等待展示牌库顶牌", "展示牌库顶部1张牌，并按其有效特征选择去向", "place", "mode:pending"),
+        Branch("amakine-top-card", "等待处理已展示牌", "处理已展示的牌，并按其有效特征选择去向", "place", "mode:pending"),
         Branch("amakine-top-card", "加入手牌", "将仅具有【彼界】单一特征的牌加入手牌", "place", "hand"),
         Branch("amakine-top-card", "返回牌库顶部", "将展示的牌返回牌库顶部", "place", "top"),
         Branch("amakine-top-card", "返回牌库底部", "将展示的牌返回牌库底部", "place", "bottom"),

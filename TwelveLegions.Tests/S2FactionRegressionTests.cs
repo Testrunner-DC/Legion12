@@ -1999,6 +1999,9 @@ public sealed class S2FactionRegressionTests
         Assert.Equal(1, response.PlayerIndex);
         Assert.Equal("response", response.Kind);
         Assert.Contains(absoluteDefense.InstanceId, response.ValidChoices);
+        Assert.Contains("消耗1符文", response.Data["responsePaidCostSummary"], StringComparison.Ordinal);
+        Assert.Contains($"休整〈{merlin.Name}〉", response.Data["responsePaidCostSummary"], StringComparison.Ordinal);
+        Assert.Contains("Cost（已支付）", response.Text, StringComparison.Ordinal);
         Assert.Contains("本回合兵力-3000", response.Text, StringComparison.Ordinal);
         Assert.Equal(target.BaseTroops, target.Troops);
     }

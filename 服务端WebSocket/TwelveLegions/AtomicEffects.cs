@@ -473,7 +473,15 @@ public sealed class L12AtomicEffectCatalog
     private static L12AtomicAbility BuildStructuredAbility(
         L12CardDefinition card, L12StructuredAbilityTemplate template, int sequence)
     {
-        if (L12VerifiedAtomicPrograms.Find(card.Id, template.Trigger, template.Text) is { } verified)
+        var verified = L12VerifiedAtomicPrograms.Find(card.Id, template.Trigger, template.Text);
+        var verifiedOnlyDispatchesCompositeFlow = verified is not null
+            && verified.Atoms.Where(atom => atom.Kind != L12AtomKinds.Trigger)
+                .All(atom => atom.Kind == L12AtomKinds.CompositeFlow);
+        // A composite runtime route is the execution endpoint, not a replacement for the
+        // reviewed condition / target / cost / resolution definition.  Keeping both is
+        // especially important for colon costs: response prompts and the admin editor must
+        // still see the printed pre-colon clause even though resolution is delegated.
+        if (verified is not null && !verifiedOnlyDispatchesCompositeFlow)
             return verified.ToAbility(card, template.Text, sequence) with
             {
                 ExecutionModel = template.ExecutionModel,
@@ -494,7 +502,7 @@ public sealed class L12AtomicEffectCatalog
                 "shared-structured-rule", source.Stage));
         }
         var route = template.RuntimeRouteOwner
-            ? L12RuntimeEffectRoutes.FindProgram(card.Id, template.Trigger)
+            ? verified ?? L12RuntimeEffectRoutes.FindProgram(card.Id, template.Trigger)
             : null;
         if (route is not null)
         {

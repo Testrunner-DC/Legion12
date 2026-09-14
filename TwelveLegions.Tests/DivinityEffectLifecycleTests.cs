@@ -143,6 +143,10 @@ public sealed class DivinityEffectLifecycleTests
         Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
             Ability: "divinityFreePromotion")).Accepted);
         var item = Assert.Single(game.State.EffectStack);
+        Assert.Equal($"休整〈{item.SourceName}〉", item.Data["paidCostSummary"]);
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.Equal($"休整〈{item.SourceName}〉", response.Data["responsePaidCostSummary"]);
+        Assert.Contains("Cost（已支付）", response.Text, StringComparison.Ordinal);
         item.Negated = true;
         PassResponses(game);
 

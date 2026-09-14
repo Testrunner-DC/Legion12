@@ -404,7 +404,7 @@ internal static partial class L12CompositeEffectPlans
             ],
             ["active:S02-0616:amakineTop"] =
             [
-                new("amakine-top-card", "阿麦金：展示牌库顶部1张牌，并按其有效特征选择去向"),
+                new("amakine-top-card", "阿麦金：处理已展示的牌；若其只拥有【彼界】特征，可将其加入手牌，否则将其返回牌库顶部或底部"),
             ],
             ["active:ST05-06:telemachusTopThree"] =
             [

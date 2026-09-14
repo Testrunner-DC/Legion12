@@ -96,6 +96,62 @@ public sealed class AtomicReviewBatch3RegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "cost-presentation:return-morale-active-rest")]
+    public void ActiveReturnAndRestCostsUseTheCommittedStateReceipt()
+    {
+        var game = Create(6899);
+        var player = game.State.Players[0];
+        var liuBei = Card("S01-0105", "active-cost-receipt-liubei");
+        player.Field[0][0] = liuBei;
+        player.Morale.Clear();
+        player.Morale.Add(new L12MoraleCard
+        {
+            InstanceId = "active-cost-return-ready", CardId = "S01-01C1", Tapped = false,
+        });
+        player.Morale.Add(new L12MoraleCard
+        {
+            InstanceId = "active-cost-return-rested", CardId = "S01-01C1", Tapped = true,
+        });
+        HoldOpponentResponseWindow(game);
+        PrepareMain(game);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", liuBei.InstanceId,
+            Ability: "searchBrothers")).Accepted);
+        var payment = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("resource-return", payment.Kind);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            CardInstanceIds: ["active-cost-return-ready"])).Accepted);
+
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.Contains("返还1士气", response.Data["responsePaidCostSummary"], StringComparison.Ordinal);
+        Assert.Contains($"休整〈{liuBei.Name}〉", response.Data["responsePaidCostSummary"],
+            StringComparison.Ordinal);
+        Assert.Contains("Cost（已支付）", response.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "cost-presentation:waived-cost-is-not-paid")]
+    public void WaivedActiveCostDoesNotCreateAFakePaidCostLine()
+    {
+        var game = CreateWithFirstMaster("S01-01M1", 6900);
+        var player = game.State.Players[0];
+        player.Morale.Clear();
+        player.Library.Clear();
+        player.Library.Add(Card("S01-0101", "waived-active-cost-draw"));
+        PrepareMain(game);
+        player.MasterMoraleWaiverUntilTurn = game.State.TurnSerial;
+        HoldOpponentResponseWindow(game);
+
+        var activation = game.Handle(0,
+            new L12Command("activateAbility", "master-0", Ability: "drawCycle"));
+
+        Assert.True(activation.Accepted, activation.Error);
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.False(response.Data.ContainsKey("responsePaidCostSummary"));
+        Assert.DoesNotContain("Cost（已支付）", response.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     [Trait("L12Evidence", "ability:asgardDraw")]
     public void AsgardDrawChecksAndPaysOptionalHealAfterTheDrawResolves()
     {
@@ -209,6 +265,7 @@ public sealed class AtomicReviewBatch3RegressionTests
         var recover = Card("S01-0202", "sun-declared-recover");
         player.Library.Add(hiddenTop);
         player.Graveyard.Add(recover);
+        HoldOpponentResponseWindow(game);
         PrepareMain(game);
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "sunTopThree")).Accepted);
@@ -219,11 +276,16 @@ public sealed class AtomicReviewBatch3RegressionTests
         ResolveSinglePrompt(game, recover.InstanceId);
         Assert.Equal(0, player.Morale.Count(card => !card.Tapped));
 
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.Equal("消耗2士气", response.Data["responsePaidCostSummary"]);
+        Assert.Contains("Cost（已支付）：消耗2士气", response.Text, StringComparison.Ordinal);
+
         PassResponses(game);
         var hiddenPick = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("faction-search-pick", hiddenPick.Data["action"]);
         Assert.Contains(hiddenTop.InstanceId, hiddenPick.ValidChoices);
         ResolveSinglePrompt(game, hiddenTop.InstanceId);
+        PassResponses(game);
 
         Assert.Contains(hiddenTop, player.Hand);
         Assert.Contains(recover, player.Hand);
@@ -306,6 +368,10 @@ public sealed class AtomicReviewBatch3RegressionTests
         Assert.DoesNotContain(discard, player.Hand);
         Assert.Contains(discard, player.Graveyard);
         Assert.Single(game.State.EffectStack);
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.Equal($"弃置手牌中的〈{discard.Name}〉", response.Data["responsePaidCostSummary"]);
+        Assert.Contains($"Cost（已支付）：弃置手牌中的〈{discard.Name}〉", response.Text,
+            StringComparison.Ordinal);
         PassResponses(game);
         Assert.Single(player.Morale);
     }

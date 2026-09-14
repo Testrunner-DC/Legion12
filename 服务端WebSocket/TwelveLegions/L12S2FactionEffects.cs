@@ -1471,11 +1471,20 @@ public sealed partial class L12GameEngine
         {
             if (source.Tapped) return CommandResult.Reject("阿麦金必须为活跃状态");
             if (player.Library.Count == 0) return CommandResult.Reject("牌库为空，无法展示牌库顶部的牌");
+            var revealed = player.Library[0];
             source.Tapped = true;
-            var data = new Dictionary<string, string> { ["ability"] = ability };
+            var data = new Dictionary<string, string>
+            {
+                ["ability"] = ability,
+                ["amakine-top"] = revealed.InstanceId,
+            };
             foreach (var pair in CompositeFirstSegmentData("active:S02-0616:amakineTop",
                          new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
                 data[pair.Key] = pair.Value;
+            RecordPaidCostPresentation(data, $"休整〈{source.Name}〉",
+                $"展示牌库顶部的〈{revealed.Name}〉");
+            AddPresentationEvent("reveal", playerIndex,
+                $"阿麦金展示牌库顶部的〈{revealed.Name}〉作为发动费用", "S02-0616", "top-card", revealed);
             DeclarePresentationBranch(data, "amakine-top-card", "place", "mode:pending");
             PushEffect(playerIndex, source, "active", "主动效果", data: data);
             return CommandResult.Ok();
@@ -1876,19 +1885,17 @@ public sealed partial class L12GameEngine
         }
         if (ability == "amakineTop" && item.SourceCardId == "S02-0616")
         {
-            if (player.Library.Count == 0)
+            var revealedId = item.Data.GetValueOrDefault("amakine-top");
+            var top = player.Library.FirstOrDefault(card => card.InstanceId == revealedId);
+            if (top is null)
             {
                 item.Data["effectResultStatus"] = "failed";
                 AddEvent("effect-failed", item.Controller,
-                    "阿麦金发动后牌库顶部的处理对象在逆结算前消失，效果未能完成结算",
+                    "阿麦金已作为费用展示的牌在逆结算前离开牌库，效果未能完成结算",
                     source is null ? [] : [source]);
                 FinishStackItem(item);
                 return true;
             }
-            var top = player.Library[0];
-            item.Data["amakine-top"] = top.InstanceId;
-            AddPresentationEvent("reveal", item.Controller,
-                $"阿麦金展示牌库顶部的〈{top.Name}〉", "S02-0616", "top-card", top);
             var isOnlyOtherworldTrait = L12StructuredCardRules.HasOnlyEffectiveFactionTrait(
                 player, top, "otherworld");
             item.Data["amakine-can-take"] = isOnlyOtherworldTrait ? "true" : "false";

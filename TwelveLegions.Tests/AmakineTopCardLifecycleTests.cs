@@ -69,7 +69,7 @@ public sealed class AmakineTopCardLifecycleTests
         var scenes = ability.Presentations.Where(scene => scene.Flow == "amakine-top-card").ToArray();
 
         Assert.Equal(4, scenes.Length);
-        foreach (var label in new[] { "加入手牌", "返回牌库顶部", "返回牌库底部", "等待展示牌库顶牌" })
+        foreach (var label in new[] { "加入手牌", "返回牌库顶部", "返回牌库底部", "等待处理已展示牌" })
             Assert.Contains(scenes, scene => scene.BranchLabel == label);
         Assert.All(scenes, scene =>
         {
@@ -91,6 +91,15 @@ public sealed class AmakineTopCardLifecycleTests
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", source.InstanceId,
             Ability: "amakineTop")).Accepted);
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.Contains($"休整〈{source.Name}〉", response.Data["responsePaidCostSummary"],
+            StringComparison.Ordinal);
+        Assert.Contains($"展示牌库顶部的〈{top.Name}〉", response.Data["responsePaidCostSummary"],
+            StringComparison.Ordinal);
+        Assert.Contains("效果：阿麦金：处理已展示的牌", response.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("效果：主动休整 展示", response.Text, StringComparison.Ordinal);
+        Assert.Contains(game.State.Events, entry => entry.Type == "reveal"
+            && entry.Cards.Any(card => card.InstanceId == top.InstanceId));
         PassResponses(game);
         var prompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-amakine-top-place", prompt.Data["action"]);
@@ -190,14 +199,14 @@ public sealed class AmakineTopCardLifecycleTests
 
         Assert.True(source.Tapped);
         Assert.Empty(game.State.PendingPrompts);
-        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "reveal"
+        Assert.Contains(game.State.Events, entry => entry.Type == "reveal"
             && entry.Cards.Any(card => card.InstanceId == "amakine-empty-top"));
         Assert.Equal("failed", Result(game, source.InstanceId).EffectResultStatus);
     }
 
     [Fact]
     [Trait("L12Evidence", "ability:amakineTop")]
-    public void NegatedAmakineDoesNotRevealAndKeepsThePaidActiveRest()
+    public void NegatedAmakineKeepsItsPaidRestAndTopCardReveal()
     {
         var game = Create(91376);
         var player = game.State.Players[0];
@@ -208,13 +217,15 @@ public sealed class AmakineTopCardLifecycleTests
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", source.InstanceId,
             Ability: "amakineTop")).Accepted);
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.Contains($"展示牌库顶部的〈{top.Name}〉", response.Text, StringComparison.Ordinal);
         Assert.Single(game.State.EffectStack).Negated = true;
         PassResponses(game);
 
         Assert.True(source.Tapped);
         Assert.Single(player.Library);
         Assert.Empty(player.Hand);
-        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "reveal"
+        Assert.Contains(game.State.Events, entry => entry.Type == "reveal"
             && entry.Cards.Any(card => card.InstanceId == top.InstanceId));
         Assert.Equal("negated", Result(game, source.InstanceId).EffectResultStatus);
     }

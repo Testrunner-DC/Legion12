@@ -240,6 +240,8 @@ public static partial class L12StructuredCardRules
         string trigger, string executionModel, string text)
     {
         var atoms = new List<L12StructuredAtomTemplate>();
+        var separator = text.IndexOfAny(['：', ':']);
+        var printedCostClause = separator > 0 ? text[..separator] : string.Empty;
         void Add(string kind, string label, string stage, params (string Key, string Value)[] values)
         {
             if (atoms.Any(atom => atom.Kind == kind && atom.Label == label && atom.Stage == stage)) return;
@@ -285,7 +287,12 @@ public static partial class L12StructuredCardRules
         if (text.Contains("加入手牌", StringComparison.Ordinal))
             Add(L12AtomKinds.MoveZone, "将所选或展示的卡牌加入手牌", "resolution",
                 ("to", "controller.hand"), ("event", "add-card-to-hand-by-effect"));
-        if (text.Contains("返回", StringComparison.Ordinal) && text.Contains("牌库", StringComparison.Ordinal))
+        var returnsCardsToLibraryAsPrintedCost = printedCostClause.Contains("返回", StringComparison.Ordinal)
+            && printedCostClause.Contains("牌库", StringComparison.Ordinal);
+        if (returnsCardsToLibraryAsPrintedCost)
+            Add(L12AtomKinds.MoveZone, "将冒号前指定卡牌返回牌库", "cost", ("to", "owner.library"));
+        if (!returnsCardsToLibraryAsPrintedCost
+            && text.Contains("返回", StringComparison.Ordinal) && text.Contains("牌库", StringComparison.Ordinal))
             Add(L12AtomKinds.MoveZone, "按文本将卡牌返回牌库", "resolution", ("to", "owner.library"));
         if (text.Contains("活跃登场", StringComparison.Ordinal) || text.Contains("休整登场", StringComparison.Ordinal))
             Add(L12AtomKinds.MoveZone, "将所选军团按指定状态登场", "resolution", ("to", "field"));

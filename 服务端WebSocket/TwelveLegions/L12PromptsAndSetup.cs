@@ -1312,6 +1312,11 @@ public sealed partial class L12GameEngine
     private L12StackItem PushEffect(int controller, L12CardInstance source, string trigger, string text,
         IEnumerable<string>? targets = null, Dictionary<string, string>? data = null)
     {
+        if (trigger == "active")
+        {
+            data ??= new Dictionary<string, string>();
+            AddActivePaidCostPresentation(controller, source, data);
+        }
         var sourceAbilities = GetAbilities(source.CardId);
         if (trigger == "active" && State.ActiveDisaster?.CardId == "S02-DS03"
             && sourceAbilities.Any(ability => ability.Id == data?.GetValueOrDefault("ability")
@@ -1488,7 +1493,7 @@ public sealed partial class L12GameEngine
         if (source is not null && top.Trigger is "reaction" or "s2-reaction" or "response-negate"
                 or "response-block" or "response-retarget-master")
             effect = ResolveResponseEffectDisplayText(source, effect);
-        effect = CompleteSingleResponseEffectText(top, effect);
+        effect = ResolveCompositeResponseEffectText(top, effect);
         var timing = top.Trigger switch
         {
             "promotion-enter" => "晋升登场",

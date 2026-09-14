@@ -103,6 +103,21 @@ public sealed partial class L12GameEngine
                 source = CreateCard(moraleId, $"faction-{playerIndex}");
         }
         if (source is null) return CommandResult.Reject("主动效果来源不在我方公开区域");
+        var previousSnapshot = _activePaidCostSnapshot;
+        _activePaidCostSnapshot = CaptureActivePaidCostSnapshot(playerIndex, source);
+        try
+        {
+            return BeginActiveAbilityWithSource(playerIndex, player, source, ability, command);
+        }
+        finally
+        {
+            _activePaidCostSnapshot = previousSnapshot;
+        }
+    }
+
+    private CommandResult BeginActiveAbilityWithSource(int playerIndex, L12PlayerState player,
+        L12CardInstance source, string ability, L12Command command)
+    {
         if (ability != "discardHolyLock" && source.AttachedCards.Any(card => card.CardId == "S02-0013"))
             return CommandResult.Reject("该圣物被〈神圣伽锁〉叠放，当前无法使用");
         if (!L12StructuredCardRules.IsActiveRestAbility(source.CardId, ability)
@@ -259,6 +274,23 @@ public sealed partial class L12GameEngine
     }
 
     private CommandResult CommitActiveAbility(int playerIndex, L12CardInstance source, string ability, string? target,
+        bool? useTombGuards = null, IReadOnlyCollection<string>? selectedResourceIds = null,
+        IReadOnlyCollection<string>? selectedReturnIds = null)
+    {
+        var previousSnapshot = _activePaidCostSnapshot;
+        _activePaidCostSnapshot = CaptureActivePaidCostSnapshot(playerIndex, source);
+        try
+        {
+            return CommitActiveAbilityCore(playerIndex, source, ability, target, useTombGuards,
+                selectedResourceIds, selectedReturnIds);
+        }
+        finally
+        {
+            _activePaidCostSnapshot = previousSnapshot;
+        }
+    }
+
+    private CommandResult CommitActiveAbilityCore(int playerIndex, L12CardInstance source, string ability, string? target,
         bool? useTombGuards = null, IReadOnlyCollection<string>? selectedResourceIds = null,
         IReadOnlyCollection<string>? selectedReturnIds = null)
     {

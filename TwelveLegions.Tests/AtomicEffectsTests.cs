@@ -109,12 +109,42 @@ public sealed class AtomicEffectsTests
             Assert.DoesNotContain(program.Atoms, atom => atom.Kind == L12AtomKinds.Legacy);
             Assert.All(program.Atoms, atom => Assert.True(atom.RuntimeExecutable));
             var card = Assert.IsType<L12AtomicCardEffect>(catalog.AtomicEffects.Find(program.CardId));
-            var ability = Assert.Single(card.Abilities, candidate => candidate.Trigger == program.Trigger);
+            var compositeFlow = program.Atoms.SingleOrDefault(atom => atom.Kind == L12AtomKinds.CompositeFlow);
+            var ability = Assert.Single(card.Abilities, candidate => candidate.Trigger == program.Trigger
+                && (compositeFlow is null || candidate.Atoms.Any(atom => atom.Kind == L12AtomKinds.CompositeFlow
+                    && atom.Parameters.GetValueOrDefault("flow") == compositeFlow.Parameters.GetValueOrDefault("flow"))));
             Assert.Equal("verified", ability.MigrationStatus);
-            Assert.Contains("verified-runtime-program", ability.MappingSource, StringComparison.Ordinal);
-            Assert.Equal(program.Atoms, ability.Atoms);
+            if (compositeFlow is not null
+                && program.Atoms.Where(atom => atom.Kind != L12AtomKinds.Trigger)
+                    .All(atom => atom.Kind == L12AtomKinds.CompositeFlow)
+                && ability.MappingSource.Contains("shared-structured-rule", StringComparison.Ordinal))
+            {
+                Assert.Contains("verified-composite-flow", ability.MappingSource, StringComparison.Ordinal);
+                Assert.Contains(ability.Atoms, atom => atom.Kind == L12AtomKinds.CompositeFlow
+                    && atom.Parameters.GetValueOrDefault("flow") == compositeFlow.Parameters.GetValueOrDefault("flow"));
+            }
+            else
+            {
+                Assert.Contains("verified-runtime-program", ability.MappingSource, StringComparison.Ordinal);
+                Assert.Equal(program.Atoms, ability.Atoms);
+            }
         }
         Assert.True(catalog.AtomicEffects.Coverage().VerifiedAbilities >= L12VerifiedAtomicPrograms.All.Count);
+    }
+
+    [Fact]
+    public void EveryPrintedActiveColonClauseIsRepresentedAsCost()
+    {
+        var offenders = Catalog.AtomicEffects.All
+            .SelectMany(card => card.Abilities.Select(ability => (card.CardId, Ability: ability)))
+            .Where(item => item.Ability.Trigger.Contains("active", StringComparison.OrdinalIgnoreCase)
+                && item.Ability.Text.IndexOfAny(['：', ':']) > 0
+                && string.IsNullOrWhiteSpace(item.Ability.CostText))
+            .Select(item => $"{item.CardId}:{item.Ability.AbilityId}")
+            .ToArray();
+
+        Assert.True(offenders.Length == 0,
+            $"含冒号的主动效果必须将冒号前文本建模为 Cost：{string.Join(", ", offenders)}");
     }
 
     [Fact]

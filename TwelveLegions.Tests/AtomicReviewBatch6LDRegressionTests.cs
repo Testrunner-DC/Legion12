@@ -409,6 +409,10 @@ public sealed class AtomicReviewBatch6LDRegressionTests
         Assert.Null(player.Field[0][0]);
         Assert.Contains(galahad, player.Graveyard);
         var stackItem = Assert.Single(game.State.EffectStack);
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.Equal($"弃置战场上的〈{galahad.Name}〉", response.Data["responsePaidCostSummary"]);
+        Assert.Contains($"Cost（已支付）：弃置战场上的〈{galahad.Name}〉", response.Text,
+            StringComparison.Ordinal);
         stackItem.Negated = true;
         PassResponses(game);
 

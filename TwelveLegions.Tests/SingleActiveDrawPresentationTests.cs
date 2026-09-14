@@ -105,12 +105,20 @@ public sealed class SingleActiveDrawPresentationTests
         Assert.True(power.Tapped);
         Assert.False(power.IsGodPower);
         var responsePrompt = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.Equal("消耗并翻转1神力", responsePrompt.Data["responsePaidCostSummary"]);
+        Assert.Contains("Cost（已支付）：消耗并翻转1神力", responsePrompt.Text,
+            StringComparison.Ordinal);
         var stack = Assert.Single(game.State.EffectStack);
         Assert.False(string.IsNullOrWhiteSpace(stack.Data.GetValueOrDefault("presentationSceneId")));
         var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
         game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
             game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
             autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+
+        var restoredResponse = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.Equal("消耗并翻转1神力", restoredResponse.Data["responsePaidCostSummary"]);
+        Assert.Contains("Cost（已支付）：消耗并翻转1神力", restoredResponse.Text,
+            StringComparison.Ordinal);
 
         PassResponses(game);
 
