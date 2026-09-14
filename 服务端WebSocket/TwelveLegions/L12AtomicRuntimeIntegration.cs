@@ -101,6 +101,22 @@ public sealed partial class L12GameEngine
                     EmitVerifiedAtomicEvent(atom, item.Controller, source, controller.SpecialZones.Runes - before);
                     break;
                 }
+                case L12AtomKinds.FlipMorale:
+                {
+                    var targetId = PublicTriggerDeclared(item, "moraleTarget");
+                    var target = controller.Morale.FirstOrDefault(card =>
+                        card.InstanceId == targetId && !card.IsGodPower);
+                    if (target is null)
+                    {
+                        RecordTargetSettlementFailure(item, source.InstanceId,
+                            $"〈{source.Name}〉声明的士气目标在结算时已失效");
+                        FinishStackItem(item);
+                        return true;
+                    }
+                    L12S2ZoneOps.FlipMoraleFace(controller, target.InstanceId, toGodPower: true);
+                    EmitVerifiedAtomicEvent(atom, item.Controller, source, 1);
+                    break;
+                }
                 case L12AtomKinds.AdvanceTrial:
                     AdvanceTrial(item.Controller, AtomicInt(atom, "amount"), source);
                     break;

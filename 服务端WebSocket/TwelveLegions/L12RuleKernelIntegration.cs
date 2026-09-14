@@ -1419,6 +1419,7 @@ public sealed partial class L12GameEngine
         var materialized = supplied.Where(PrepareOpponentHandDiscardTriggerCandidate)
             .Where(PrepareAttackPublicTriggerCandidate)
             .Where(PrepareBatch6JAEnterCandidate)
+            .Where(PrepareSimpleResourceTriggerCandidate)
             .Where(PrepareBatch6JBPublicTriggerCandidate)
             .Where(PrepareBatch6IBPublicTriggerCandidate)
             .Where(PrepareVerifiedAtomicOptionalCandidate).ToArray();
@@ -1523,6 +1524,8 @@ public sealed partial class L12GameEngine
             return simpleHeal.SettlementText;
         if (L12SimpleTrialAdvanceTriggerEffects.Find(card.CardId, trigger) is { } simpleTrial)
             return simpleTrial.SettlementText;
+        if (L12SimpleResourceTriggerEffects.Find(card.CardId, trigger, data) is { } simpleResource)
+            return simpleResource.SettlementText;
         if (L12OpponentHandDiscardTriggerEffects.Find(card.CardId, trigger) is { } discardOne)
             return discardOne.SettlementText;
         if (string.IsNullOrWhiteSpace(card.EffectText)) return fallback;

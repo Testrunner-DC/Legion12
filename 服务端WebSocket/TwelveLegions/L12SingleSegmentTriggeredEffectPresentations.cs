@@ -25,6 +25,9 @@ internal static class L12SingleSegmentTriggeredEffectPresentations
         .. L12SimpleTrialAdvanceTriggerEffects.All.Select(spec =>
             new L12SingleSegmentTriggeredEffectPresentationDefinition(
                 spec.CardId, spec.AbilitySequence, spec.Trigger, spec.SettlementText)),
+        .. L12SimpleResourceTriggerEffects.All.Select(spec =>
+            new L12SingleSegmentTriggeredEffectPresentationDefinition(
+                spec.CardId, spec.AbilitySequence, spec.Trigger, spec.SettlementText)),
         .. L12OpponentHandDiscardTriggerEffects.All.Select(spec =>
             new L12SingleSegmentTriggeredEffectPresentationDefinition(
                 spec.CardId, spec.AbilitySequence, spec.Trigger, spec.SettlementText)),
@@ -37,20 +40,13 @@ internal static class L12SingleSegmentTriggeredEffectPresentations
         new("S01-0407", 2, "death"),
         new("S02-0001", 1, "s2-after-opponent-tactic"),
         new("S02-0002", 2, "after-kill"),
-        new("S02-01S1", 2, "death"),
         new("S02-0202", 2, "death"),
         new("S02-0305", 3, "master-damaged"),
-        new("S02-0508", 2, "death"),
         new("S02-0518", 3, "death"),
         new("S02-0601", 2, "death"),
-        new("S02-05M1", 1, "friendly-ranged-death"),
-        new("S02-06S4", 3, "friendly-round-table-enter"),
         new("S02-04M1", 1, "friendly-legion-moves"),
         new("S02-04M1", 2, "friendly-back-to-front"),
         new("S02-04M1", 3, "friendly-front-to-back"),
-        new("S02-01M1", 2, "master-legion-returned",
-            "若我方士气少于对方，可从士气牌库追加1张休整的士气。"),
-        new("S01-01C1", 2, "morale-returned-to-zero"),
     ];
 
     internal static IReadOnlyList<L12SingleSegmentTriggeredEffectPresentationDefinition> All => Definitions;

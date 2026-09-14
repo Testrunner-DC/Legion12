@@ -147,19 +147,6 @@ public sealed partial class L12GameEngine
             FinishStackItem(item);
             return;
         }
-        if (item.Data.GetValueOrDefault("mode") == "limu")
-        {
-            if (player.MoraleDeck.Count > 0)
-            {
-                AddMorale(player, 1, tapped: true);
-                AddEvent("morale", item.Controller, "李牧从士气牌库追加1张休整士气",
-                    FindSource(item) is { } liMu ? [liMu] : []);
-            }
-            else
-                AddEvent("effect-cancelled", item.Controller, "李牧结算时士气牌库已空；无法追加士气，回合次数不恢复");
-            FinishStackItem(item);
-            return;
-        }
         if (item.Data.GetValueOrDefault("mode") != "xiaotian" || player.Field[0].All(card => card is not null))
         {
             FinishStackItem(item);
@@ -836,24 +823,6 @@ public sealed partial class L12GameEngine
                     "忒修斯已声明的【晋升者】目标失效；效果取消", card);
                 FinishStackItem(item); return true;
             }
-            case "哮天犬·稚":
-                if (PublicTriggerDeclared(item, "mode") == "mode:use" && player.MoraleDeck.Count > 0)
-                {
-                    AddMorale(player, 1, tapped: true);
-                    AddEvent("morale", item.Controller, "哮天犬·稚从士气牌库追加1张休整士气", card);
-                }
-                FinishStackItem(item); return true;
-            case "阿塔兰忒":
-            {
-                var moraleId = PublicTriggerDeclared(item, "moraleTarget");
-                if (player.Morale.Any(candidate => candidate.InstanceId == moraleId && !candidate.IsGodPower))
-                {
-                    L12S2ZoneOps.FlipMoraleFace(player, moraleId, toGodPower: true);
-                    AddEvent("morale", item.Controller, "阿塔兰忒阵亡时翻转1张士气", card);
-                }
-                else AddEvent("effect-cancelled", item.Controller, "阿塔兰忒已声明的士气目标失效；效果取消", card);
-                FinishStackItem(item); return true;
-            }
             case "格温莉安":
                 if (item.Data.GetValueOrDefault("cause") != "effect") { FinishStackItem(item); return true; }
                 if (PublicTriggerDeclared(item, "mode") == "mode:heal")
@@ -1208,15 +1177,6 @@ public sealed partial class L12GameEngine
                 ["ability"] = "nephthysScarabEntry", ["defeated"] = defeated.InstanceId,
                 ["onceKey"] = onceKey,
             });
-    }
-
-    private void ResolveS2MorriganEnemyDeath(L12StackItem item)
-    {
-        var player = State.Players[item.Controller];
-        L12S2ZoneOps.GainRunes(player, 1);
-        AddEvent("runes", item.Controller, "莫瑞甘因对方军团阵亡使我方获得1符文",
-            FindSource(item) is { } source ? [source] : []);
-        FinishStackItem(item);
     }
 
     private void ResolveS2NephthysOwnDeath(L12StackItem item)

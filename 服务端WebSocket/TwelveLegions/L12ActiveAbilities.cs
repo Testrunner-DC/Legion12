@@ -814,10 +814,6 @@ public sealed partial class L12GameEngine
                 AddMorale(player, 1, tapped: false, fromFactionEffect: true);
                 AddEvent("faction-effect", item.Controller, "天廷阵营效果：追加 1 张活跃士气");
                 FinishStackItem(item); return;
-            case "factionZeroRecovery":
-                AddMorale(player, 2, tapped: true, fromFactionEffect: true);
-                AddEvent("faction-effect", item.Controller, "天廷阵营效果：追加 2 张休整士气");
-                FinishStackItem(item); return;
             case "factionDrawMove":
             {
                 if (!Draw(player, 1)) { SetWinner(1 - item.Controller, "高天原阵营效果抽牌时牌库为空"); FinishStackItem(item); return; }

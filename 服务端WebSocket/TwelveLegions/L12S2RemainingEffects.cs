@@ -453,46 +453,10 @@ public sealed partial class L12GameEngine
                     "所选军团已离场、不再是公开军团、失去有效【奥林匹斯】特征或当前费用不再为3至6");
                 FinishStackItem(item); return true;
             }
-            case "artemisDeathFlip" when item.SourceCardId == "S02-05M1":
-            {
-                var morale = player.Morale.FirstOrDefault(card => card.InstanceId == PublicTriggerDeclared(item, "moraleTarget")
-                    && card.Tapped && !card.IsGodPower);
-                if (morale is not null)
-                {
-                    L12S2ZoneOps.FlipMoraleFace(player, morale.InstanceId, toGodPower: true);
-                    AddEvent("morale", item.Controller, "阿尔忒弥斯将声明的休整士气翻转为神力",
-                        source is not null ? [source] : []);
-                }
-                else
-                    AddEvent("effect-cancelled", item.Controller,
-                        "阿尔忒弥斯选择的士气目标已失效；该项效果不结算，已登记的回合次数不恢复");
-                FinishStackItem(item);
-                return true;
-            }
             case "hippolytaRevive" when source?.CardId == "S02-0510":
                 SummonFromAnyPrivateZone(player, item.Data["revive"], item.Data["slot"], tapped: false);
                 FinishStackItem(item); return true;
             case "angusTacticTrial" when item.SourceCardId == "S02-06M2":
-                FinishStackItem(item);
-                return true;
-            case "grailRoundTableRune" when item.SourceCardId == "S02-06S4":
-                L12S2ZoneOps.GainRunes(player, 1);
-                AddEvent("runes", item.Controller, "〈寻找圣杯之旅〉使我方获得1符文",
-                    source is not null ? [source] : []);
-                FinishStackItem(item);
-                return true;
-            case "wukongReturnMorale" when item.SourceCardId == "S02-01M1":
-                if (PublicTriggerDeclared(item, "mode") == "mode:use" && player.MoraleDeck.Count > 0
-                    && player.Morale.Count < State.Players[1 - item.Controller].Morale.Count)
-                {
-                    var added = AddMorale(player, 1, tapped: true);
-                    if (added > 0) AddEvent("morale", item.Controller,
-                        "孙悟空返回主宰区后追加1张休整士气", source is null ? [] : [source]);
-                }
-                else if (PublicTriggerDeclared(item, "mode") == "mode:use")
-                    AddEvent("effect-cancelled", item.Controller,
-                        "孙悟空返回后的士气条件在结算时失效；追加士气效果取消",
-                        source is null ? [] : [source]);
                 FinishStackItem(item);
                 return true;
             case "anderstorpRingDraw" when item.SourceCardId == "S02-0305":
@@ -684,19 +648,6 @@ public sealed partial class L12GameEngine
             CreateTriggerCandidate(playerIndex, master, "tactic-effect-resolved", "战术效果结算成功时效果",
                 new Dictionary<string, string> { ["ability"] = "angusTacticTrial", ["tactic"] = tactic.CardId })
         ]);
-    }
-
-    private bool TryResolveS2AngusTrialAdvanceRune(L12StackItem item)
-    {
-        if (Batch6GAPublicTriggerPlan(item.SourceCardId, item.Trigger, item.Data) != "angus-trial-rune")
-            return false;
-        var player = State.Players[item.Controller];
-        var source = FindSource(item);
-        L12S2ZoneOps.GainRunes(player, 1);
-        AddEvent("runes", item.Controller, "安格斯·麦·奥格使我方获得1符文",
-            source is not null ? [source] : []);
-        FinishStackItem(item);
-        return true;
     }
 
     private void QueueS2AngusTrialAdvanceRune(int playerIndex, L12CardInstance advanceSource)

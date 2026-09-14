@@ -44,10 +44,8 @@ public sealed partial class L12GameEngine
             ["S01-0403|death"] = "uesugi-counters",
             ["S01-0407|death"] = "hand-legion-summon",
             ["S02-0002|after-kill"] = "alice-ready",
-            ["S02-01S1|death"] = "xiaotian-morale",
             ["S02-0202|death"] = "grave-legion-summon",
             ["S02-0301|death"] = "thor-draw-cycle",
-            ["S02-0508|death"] = "atalanta-flip",
             ["S02-0518|death"] = "grave-to-hand",
             ["S02-0601|death"] = "hand-legion-summon",
             ["S02-0615|death"] = "gwen-choice",
@@ -61,8 +59,6 @@ public sealed partial class L12GameEngine
             ["S01-0311|after-attack|"] = "gustav-ready",
             ["S02-0001|s2-after-opponent-tactic|"] = "exorcist-return",
             ["S02-0012|prayer-private|"] = "prayer-private",
-            ["S02-01M1|master-legion-returned|wukongReturnMorale"] = "wukong-return-morale",
-            ["S01-01C1|morale-returned-to-zero|factionZeroRecovery"] = "faction-zero-recovery",
         };
 
     private static string? Batch6JBPublicTriggerPlan(string cardId, string trigger,
@@ -87,10 +83,6 @@ public sealed partial class L12GameEngine
                     .Sum(L12StructuredCardRules.StarterGraveCardCopies) >= 2,
             "exorcist-return" => sourceOnField,
             "prayer-private" => State.DisasterDeck.Count > 0 && ActiveResourceCount(player) >= 1,
-            "wukong-return-morale" => player.Morale.Count < opponent.Morale.Count && player.MoraleDeck.Count > 0,
-            "faction-zero-recovery" => (player.Morale.Count == 0
-                || candidate.Data.GetValueOrDefault("factionZeroEligibleAtReturn") == "true")
-                && player.MoraleDeck.Count > 0,
             _ => false,
         };
         if (!legal)
@@ -104,17 +96,6 @@ public sealed partial class L12GameEngine
             player.UsedAbilities.Add(pendingKey);
             candidate.Data["onceKey"] = onceKey;
             candidate.Data["cleanupReservation"] = pendingKey;
-        }
-        else if (plan == "faction-zero-recovery")
-        {
-            const string onceKey = "trigger:factionZeroRecovery";
-            const string pendingKey = "pending:factionZeroRecovery";
-            const string queuedKey = "queued:factionZeroRecovery";
-            if (player.UsedAbilities.Contains(onceKey) || player.UsedAbilities.Contains(pendingKey)) return false;
-            player.UsedAbilities.Add(pendingKey);
-            candidate.Data["onceKey"] = onceKey;
-            candidate.Data["cleanupReservation"] = pendingKey;
-            candidate.Data["cleanupQueuedReservation"] = queuedKey;
         }
         candidate.Data["batch6JBConditionLocked"] = "true";
         return true;
@@ -149,8 +130,6 @@ public sealed partial class L12GameEngine
             "hand-legion-summon" => TryGetHandLegionSummonTriggerSpec(candidate.SourceCardId,
                     candidate.Trigger, out var handSummon)
                 && EmptySlots(player).Any() && LegalHandLegionSummonTargets(handSummon, player).Length > 0,
-            "xiaotian-morale" => player.MoraleDeck.Count > 0,
-            "atalanta-flip" => player.Morale.Any(card => !card.IsGodPower),
             "gwen-choice" => candidate.Data.GetValueOrDefault("cause") == "effect",
             "alice-ready" => candidate.Data.GetValueOrDefault("killed") == "true",
             _ => true,
@@ -177,6 +156,153 @@ public sealed partial class L12GameEngine
     private static string? FifthBatchPublicTriggerPlan(string cardId, string trigger)
         => FifthBatchPublicTriggerPlans.GetValueOrDefault($"{cardId}|{trigger}");
 
+    private IEnumerable<string> SimpleResourceMoraleTargets(L12PlayerState player,
+        L12SimpleResourceTriggerSpec spec)
+        => player.Morale.Where(card => !card.IsGodPower
+                && (spec.TargetFilter != L12SimpleResourceTriggerEffects.RestedMorale || card.Tapped))
+            .Select(card => card.InstanceId);
+
+    private bool SimpleResourceTriggerConditionMet(L12TriggerCandidate candidate,
+        L12SimpleResourceTriggerSpec spec)
+    {
+        var player = State.Players[candidate.Controller];
+        var opponent = State.Players[1 - candidate.Controller];
+        if (spec.TargetFilter is not null && !SimpleResourceMoraleTargets(player, spec).Any()) return false;
+        return spec.CandidateCondition switch
+        {
+            null => true,
+            "morale-deck-not-empty" => player.MoraleDeck.Count > 0,
+            "controller-morale-less-than-opponent" => player.Morale.Count < opponent.Morale.Count
+                && player.MoraleDeck.Count > 0,
+            "controller-morale-zero-or-return-locked" => (player.Morale.Count == 0
+                    || candidate.Data.GetValueOrDefault("factionZeroEligibleAtReturn") == "true")
+                && player.MoraleDeck.Count > 0,
+            _ => false,
+        };
+    }
+
+    private bool PrepareSimpleResourceTriggerCandidate(L12TriggerCandidate candidate)
+    {
+        var spec = L12SimpleResourceTriggerEffects.Find(candidate.SourceCardId, candidate.Trigger, candidate.Data);
+        if (spec is null) return true;
+        if (candidate.Data.GetValueOrDefault("simpleResourceConditionLocked") == "true") return true;
+        if (!SimpleResourceTriggerConditionMet(candidate, spec))
+        {
+            CleanupPublicTriggerReservation(candidate);
+            return false;
+        }
+
+        if (spec.RequiresOnceReservation)
+        {
+            var player = State.Players[candidate.Controller];
+            if (spec.DataAbility == "factionZeroRecovery"
+                && string.IsNullOrWhiteSpace(candidate.Data.GetValueOrDefault("onceKey")))
+            {
+                const string onceKey = "trigger:factionZeroRecovery";
+                const string pendingKey = "pending:factionZeroRecovery";
+                const string queuedKey = "queued:factionZeroRecovery";
+                if (player.UsedAbilities.Contains(onceKey) || player.UsedAbilities.Contains(pendingKey)) return false;
+                player.UsedAbilities.Add(pendingKey);
+                candidate.Data["onceKey"] = onceKey;
+                candidate.Data["cleanupReservation"] = pendingKey;
+                candidate.Data["cleanupQueuedReservation"] = queuedKey;
+            }
+            var once = candidate.Data.GetValueOrDefault("onceKey") ?? string.Empty;
+            var pending = candidate.Data.GetValueOrDefault("cleanupReservation") ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(once) || string.IsNullOrWhiteSpace(pending)
+                || player.UsedAbilities.Contains(once) || !player.UsedAbilities.Contains(pending))
+            {
+                CleanupPublicTriggerReservation(candidate);
+                return false;
+            }
+        }
+        candidate.Data["simpleResourceConditionLocked"] = "true";
+        return true;
+    }
+
+    private bool TryBeginSimpleResourceTriggerDeclaration(L12TriggerCandidate candidate, L12CardInstance source)
+    {
+        var spec = L12SimpleResourceTriggerEffects.Find(candidate.SourceCardId, candidate.Trigger, candidate.Data);
+        if (spec is null) return false;
+        var player = State.Players[candidate.Controller];
+        var steps = new List<L12ActivationSelectionStep>();
+        if (spec.Optional)
+            steps.Add(PublicTriggerStep("option", "mode",
+                $"〈{spec.Name}〉：预先声明是否发动{spec.SettlementText}", ["mode:none", "mode:use"]));
+        if (spec.TargetFilter is not null)
+            steps.Add(PublicTriggerStep("target-morale", "moraleTarget",
+                $"〈{spec.Name}〉：选择要翻转为神力的1张{(spec.TargetFilter == L12SimpleResourceTriggerEffects.RestedMorale ? "休整" : string.Empty)}士气",
+                SimpleResourceMoraleTargets(player, spec), requiredChoice: spec.Optional ? "mode:use" : null,
+                allowCancel: spec.Optional));
+
+        var result = BeginPendingActivationSequence(candidate.Controller, source,
+            "public-trigger-declaration", steps, candidate.CandidateId);
+        if (!result.Accepted)
+            RemoveUnstackedTriggerCandidate(candidate, result.Error ?? "单段资源效果声明已失效；效果未入栈");
+        return true;
+    }
+
+    private bool TryCompleteSimpleResourceTriggerDeclaration(L12TriggerCandidate candidate,
+        L12PendingActivation activation)
+    {
+        var spec = L12SimpleResourceTriggerEffects.Find(candidate.SourceCardId, candidate.Trigger, candidate.Data);
+        if (spec is null) return false;
+        var player = State.Players[candidate.Controller];
+        var source = FindAuthoritativeCard(candidate.SourceInstanceId)
+            ?? candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+        var mode = activation.DeclaredValues.GetValueOrDefault("mode", []).SingleOrDefault();
+        if (spec.Optional && mode == "mode:none")
+        {
+            CleanupPublicTriggerReservation(candidate);
+            State.PendingTriggerStackCandidates.Remove(candidate);
+            if (_catalog.AtomicEffects.Find(candidate.SourceCardId) is { } atomic
+                && L12SingleSegmentTriggeredEffectPresentations.TryResolveScene(atomic,
+                    candidate.Trigger, out var sceneId))
+                AddPresentationEventById("effect-declined", candidate.Controller,
+                    $"〈{spec.Name}〉的可选资源效果选择不发动，未进入堆叠", sceneId, source);
+            else
+                AddEvent("ability-cancelled", candidate.Controller,
+                    $"〈{spec.Name}〉的可选资源效果选择不发动，未进入堆叠");
+            AdvanceTriggerBatches();
+            return true;
+        }
+
+        string? error = candidate.Data.GetValueOrDefault("simpleResourceConditionLocked") == "true"
+            ? null : $"〈{spec.Name}〉的资源触发条件未在候选建立时锁定；效果未入栈";
+        if (error is null && (!SimpleResourceTriggerConditionMet(candidate, spec)
+            || spec.Optional && mode != "mode:use"))
+            error = $"〈{spec.Name}〉的资源条件或发动选择已失效；效果未入栈";
+        if (error is null && spec.TargetFilter is not null)
+        {
+            var target = activation.DeclaredValues.GetValueOrDefault("moraleTarget", []).SingleOrDefault();
+            if (target is null || !SimpleResourceMoraleTargets(player, spec)
+                .Contains(target, StringComparer.OrdinalIgnoreCase))
+                error = $"〈{spec.Name}〉声明的士气目标已失效；效果未入栈";
+        }
+        if (error is null && spec.RequiresOnceReservation)
+        {
+            var once = candidate.Data.GetValueOrDefault("onceKey") ?? string.Empty;
+            var pending = candidate.Data.GetValueOrDefault("cleanupReservation") ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(once) || string.IsNullOrWhiteSpace(pending)
+                || player.UsedAbilities.Contains(once) || !player.UsedAbilities.Contains(pending))
+                error = $"〈{spec.Name}〉的回合次数保留已失效；效果未入栈";
+            else
+                player.UsedAbilities.Add(once);
+        }
+        if (error is not null)
+        {
+            RemoveUnstackedTriggerCandidate(candidate, error);
+            return true;
+        }
+
+        foreach (var pair in activation.DeclaredValues)
+            candidate.Data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
+        candidate.Data["declaration-complete"] = "true";
+        CleanupPublicTriggerReservation(candidate);
+        AdvanceTriggerBatches();
+        return true;
+    }
+
     private static string? Batch6GAPublicTriggerPlan(string cardId, string trigger,
         IReadOnlyDictionary<string, string>? data)
         => (cardId, trigger, data?.GetValueOrDefault("ability"), data?.GetValueOrDefault("mode")) switch
@@ -185,11 +311,6 @@ public sealed partial class L12GameEngine
             ("S02-0304", "enter", _, _) => "margaret-entry-mill",
             ("S02-0304", "master-damaged-by-effect", "margaretMasterDamage", _) => "margaret-master-damage",
             ("S02-0305", "master-damaged", "anderstorpRingDraw", _) => "anderstorp-draw",
-            ("S02-05M1", "friendly-ranged-death", "artemisDeathFlip", _) => "artemis-death-flip",
-            ("S02-06M1", "morrigan-enemy-death", _, _) => "morrigan-rune",
-            ("S02-0102", "master-morale-return", _, "limu") => "limu-morale",
-            ("S02-06S4", "friendly-round-table-enter", "grailRoundTableRune", _) => "grail-round-table-rune",
-            ("S02-06M2", "trial-advance", "angusTrialAdvanceRune", _) => "angus-trial-rune",
             _ => null,
         };
 
@@ -201,6 +322,13 @@ public sealed partial class L12GameEngine
 
     private bool PrepareVerifiedAtomicOptionalCandidate(L12TriggerCandidate candidate)
     {
+        // 单段资源触发的候选条件、目标选择与次数预占由统一资源协议负责。
+        // 它仍注册为已验证原子程序供后台审计，但不能再被旧的通用可选触发
+        // 准备器重复解释，否则资源协议的领域条件会落入旧表达式解释器。
+        if (L12SimpleResourceTriggerEffects.Find(
+                candidate.SourceCardId, candidate.Trigger, candidate.Data) is not null)
+            return true;
+
         var program = VerifiedAtomicOptionalTriggerPlan(candidate.SourceCardId, candidate.Trigger);
         if (program is null) return true;
         if (candidate.Data.GetValueOrDefault("verifiedAtomicConditionLocked") == "true") return true;
@@ -230,6 +358,7 @@ public sealed partial class L12GameEngine
             || Batch6JAEnterPlan(cardId, trigger) is not null
             || HasAttackPublicTriggerDeclarationPlan(cardId, trigger)
             || HasTrialCompletionTriggerDeclarationPlan(cardId, trigger, data)
+            || L12SimpleResourceTriggerEffects.Find(cardId, trigger, data) is not null
             || Batch6JBPublicTriggerPlan(cardId, trigger, data) is not null
             || Batch6IBPublicTriggerPlan(cardId, trigger) is not null
             || VerifiedAtomicOptionalTriggerPlan(cardId, trigger) is not null
@@ -317,6 +446,8 @@ public sealed partial class L12GameEngine
             return true;
         if (TryBeginAttackPublicTriggerDeclaration(candidate, source))
             return true;
+        if (TryBeginSimpleResourceTriggerDeclaration(candidate, source))
+            return true;
 
         if (batch6JBPlan == "lubu-ready")
         {
@@ -350,7 +481,7 @@ public sealed partial class L12GameEngine
                     "graveCost", graveCards, required: 2, requiredDeclaredChoice: "mode:use"),
             ];
         }
-        else if (batch6JBPlan is "exorcist-return" or "wukong-return-morale" or "faction-zero-recovery")
+        else if (batch6JBPlan == "exorcist-return")
         {
             steps =
             [
@@ -370,7 +501,7 @@ public sealed partial class L12GameEngine
             ];
         }
         else if (batch6IBPlan is "teach-draw-cycle" or "ragnar-draw-cycle" or "olaf-draw-cycle"
-            or "alice-ready" or "xiaotian-morale" or "thor-draw-cycle")
+            or "alice-ready" or "thor-draw-cycle")
         {
             steps =
             [
@@ -483,15 +614,6 @@ public sealed partial class L12GameEngine
                 requiredChoice: handSummon.Optional ? "mode:use" : null,
                 minReferenceCount: 1, allowCancel: handSummon.Optional));
         }
-        else if (batch6IBPlan == "atalanta-flip")
-        {
-            steps =
-            [
-                PublicTriggerStep("target-morale", "moraleTarget", "阿塔兰忒：预先选择要翻转的1张士气",
-                    player.Morale.Where(card => !card.IsGodPower).Select(card => card.InstanceId),
-                    allowCancel: false),
-            ];
-        }
         else if (batch6IBPlan == "gwen-choice")
         {
             steps =
@@ -540,28 +662,7 @@ public sealed partial class L12GameEngine
                     canUse ? ["mode:none", "mode:use"] : ["mode:none"]),
             ];
         }
-        else if (batch6GAPlan == "artemis-death-flip")
-        {
-            var morale = player.Morale.Where(card => card.Tapped && !card.IsGodPower)
-                .Select(card => card.InstanceId).ToList();
-            steps =
-            [
-                PublicTriggerStep("option", "mode", "阿尔忒弥斯：预先声明是否翻转1张休整士气",
-                    morale.Count > 0 ? ["mode:none", "mode:use"] : ["mode:none"]),
-                PublicTriggerStep("target-morale", "moraleTarget", "阿尔忒弥斯：预先选择要翻转的1张休整士气",
-                    morale, requiredChoice: "mode:use"),
-            ];
-        }
-        else if (batch6GAPlan == "limu-morale")
-        {
-            steps =
-            [
-                PublicTriggerStep("option", "mode", "李牧：预先声明是否追加1张休整士气",
-                    player.MoraleDeck.Count > 0 ? ["mode:none", "mode:use"] : ["mode:none"]),
-            ];
-        }
-        else if (batch6GAPlan is "anderstorp-draw" or "morrigan-rune" or "grail-round-table-rune"
-                 or "angus-trial-rune")
+        else if (batch6GAPlan == "anderstorp-draw")
         {
             steps =
             [
@@ -1040,6 +1141,8 @@ public sealed partial class L12GameEngine
             return true;
         if (TryCompleteAttackPublicTriggerDeclaration(candidate, activation))
             return true;
+        if (TryCompleteSimpleResourceTriggerDeclaration(candidate, activation))
+            return true;
         var key = (candidate.SourceCardId, candidate.Trigger, candidate.Data.GetValueOrDefault("ability"));
         var batch6JBPlan = Batch6JBPublicTriggerPlan(candidate.SourceCardId, candidate.Trigger, candidate.Data);
         var batch6IBPlan = Batch6IBPublicTriggerPlan(candidate.SourceCardId, candidate.Trigger);
@@ -1130,7 +1233,7 @@ public sealed partial class L12GameEngine
         else if (verifiedAtomicOptional is not null
             && candidate.Data.GetValueOrDefault("verifiedAtomicConditionLocked") != "true")
             error = $"〈{candidate.SourceName}〉的可选原子条件未在触发时点锁定；效果未入栈";
-        if (error is null && (batch6JBPlan is "gustav-ready" or "faction-zero-recovery") && mode == "mode:use")
+        if (error is null && batch6JBPlan == "gustav-ready" && mode == "mode:use")
         {
             var onceKey = candidate.Data.GetValueOrDefault("onceKey") ?? string.Empty;
             var pendingKey = candidate.Data.GetValueOrDefault("cleanupReservation") ?? string.Empty;
@@ -1182,14 +1285,6 @@ public sealed partial class L12GameEngine
                     payment, activation.DeclaredValues)))
                 error = "祷告仪式声明的资源费用或天灾牌库已失效；未支付费用且效果未入栈";
         }
-        else if (batch6JBPlan == "wukong-return-morale" && mode == "mode:use"
-            && (player.Morale.Count >= State.Players[1 - candidate.Controller].Morale.Count || player.MoraleDeck.Count == 0))
-            error = "孙悟空返回后的士气条件已失效；效果未入栈";
-        else if (batch6JBPlan == "faction-zero-recovery" && mode == "mode:use"
-            && ((player.Morale.Count != 0
-                    && candidate.Data.GetValueOrDefault("factionZeroEligibleAtReturn") != "true")
-                || player.MoraleDeck.Count == 0))
-            error = "天廷阵营的零士气条件已失效；效果未入栈";
         else if (batch6IBPlan == "grave-to-hand"
             && TryGetGraveToHandTriggerSpec(candidate.SourceCardId, candidate.Trigger, out var graveRecoverySpec))
         {
@@ -1273,14 +1368,6 @@ public sealed partial class L12GameEngine
             if (expectsSelection && !validEmpty && !validSelected)
                 error = $"〈{candidate.SourceName}〉声明的私密手牌军团或公开登场位置已失效；效果未入栈";
         }
-        else if (batch6IBPlan == "xiaotian-morale" && mode == "mode:use" && player.MoraleDeck.Count == 0)
-            error = "哮天犬·稚的士气牌库已空；效果未入栈";
-        else if (batch6IBPlan == "atalanta-flip")
-        {
-            var target = activation.DeclaredValues.GetValueOrDefault("moraleTarget", []).SingleOrDefault();
-            if (target is null || !player.Morale.Any(card => card.InstanceId == target && !card.IsGodPower))
-                error = "阿塔兰忒声明的士气目标已失效；效果未入栈";
-        }
         else if (batch6IBPlan == "gwen-choice" && (mode is not ("mode:heal" or "mode:draw")
             || candidate.Data.GetValueOrDefault("cause") != "effect"))
             error = "格温莉安选择的阵亡原因或效果已失效；效果未入栈";
@@ -1311,15 +1398,6 @@ public sealed partial class L12GameEngine
                 AddEvent("cost", candidate.Controller, "玛格丽特一世入栈前转为休整", margaret);
             }
         }
-        else if (batch6GAPlan == "artemis-death-flip")
-        {
-            var moraleId = activation.DeclaredValues.GetValueOrDefault("moraleTarget", []).SingleOrDefault();
-            if (mode == "mode:use" && !player.Morale.Any(card => card.InstanceId == moraleId
-                    && card.Tapped && !card.IsGodPower))
-                error = "阿尔忒弥斯声明的休整士气目标已失效；效果未入栈";
-        }
-        else if (batch6GAPlan == "limu-morale" && mode == "mode:use" && player.MoraleDeck.Count == 0)
-            error = "李牧的士气牌库已空；效果未入栈";
         else if (batch6DPlan == "tomb-construct")
         {
             var guardIds = candidate.Data.GetValueOrDefault("tombGuardIds", string.Empty)
@@ -1582,9 +1660,7 @@ public sealed partial class L12GameEngine
                 error = "坂本龙马声明的军团或位移位置已失效；效果未入栈";
         }
 
-        if (error is null && mode == "mode:use"
-            && batch6GAPlan is "anderstorp-draw" or "artemis-death-flip" or "morrigan-rune"
-                or "limu-morale" or "grail-round-table-rune" or "angus-trial-rune")
+        if (error is null && mode == "mode:use" && batch6GAPlan == "anderstorp-draw")
         {
             var onceKey = candidate.Data.GetValueOrDefault("onceKey") ?? string.Empty;
             var pendingKey = candidate.Data.GetValueOrDefault("cleanupReservation") ?? string.Empty;
@@ -1606,7 +1682,7 @@ public sealed partial class L12GameEngine
                 player.UsedAbilities.Add(onceKey);
         }
 
-        if (error is null && (batch6JBPlan is "gustav-ready" or "faction-zero-recovery") && mode == "mode:use")
+        if (error is null && batch6JBPlan == "gustav-ready" && mode == "mode:use")
         {
             var onceKey = candidate.Data.GetValueOrDefault("onceKey") ?? string.Empty;
             player.UsedAbilities.Add(onceKey);

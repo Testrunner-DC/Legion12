@@ -104,7 +104,6 @@ public sealed partial class L12GameEngine
             case "prayer-private": ResolvePrayerPrivatePreview(item); break;
             case "discard-trigger": ResolveS2DiscardTrigger(item); break;
             case "forge-ready-after-kill": ResolveForgeReadyAfterKill(item); break;
-            case "morrigan-enemy-death": ResolveS2MorriganEnemyDeath(item); break;
             case "nephthys-own-death": ResolveS2NephthysOwnDeath(item); break;
             case "master-morale-return": ResolveS2MasterMoraleReturn(item); break;
             case "medjed-master-damage": ResolveMedjedMasterDamageReaction(item); break;

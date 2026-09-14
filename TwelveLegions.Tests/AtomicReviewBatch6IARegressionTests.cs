@@ -179,6 +179,8 @@ public sealed class AtomicReviewBatch6IARegressionTests
     {
         var actual = L12VerifiedAtomicPrograms.All
             .Where(program => program.Atoms.Any(atom => atom.Kind == L12AtomKinds.Optional))
+            .Where(program => !L12SimpleResourceTriggerEffects.All.Any(spec =>
+                spec.CardId == program.CardId && spec.Trigger == program.Trigger))
             .Select(program => (program.CardId, program.Trigger))
             .OrderBy(program => program.CardId, StringComparer.Ordinal)
             .ThenBy(program => program.Trigger, StringComparer.Ordinal)

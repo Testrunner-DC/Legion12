@@ -72,7 +72,7 @@ public static partial class L12StructuredCardRules
                 H("continuous", "continuous", "「位于前排」我方主宰无法被兵力不高于2000的军团进攻。"),
                 H("enter", "triggered", "登场时 弃置手牌中1张费用为8的军团：击杀除此军团以外的所有军团。随后返还所有士气，且本回合我方无法因阵营效果以外的方式追加士气。若未能满足登场时效果的发动条件，则展示我方所有手牌。")),
             "S02-0102" => HumanCard(
-                H("morale-returned-by-master", "triggered", "我方 回合1次 我方士气因主宰效果返还4张及以上时，可从士气牌库追加1张休整的士气。"),
+                H("master-morale-return", "triggered", "我方 回合1次 我方士气因主宰效果返还4张及以上时，可从士气牌库追加1张休整的士气。"),
                 H("enter", "triggered", "登场时 可展示牌库顶部1张牌。若其为费用不高于4的<主动战术>，可无需消耗费用将其打出；否则将其返回牌库底部。随后可抽取1张牌。")),
             "S02-0103" => HumanCard(
                 H("enter", "triggered", "登场时 本回合我方主宰对对方主宰造成的下一次伤害变为2。"),
@@ -85,7 +85,7 @@ public static partial class L12StructuredCardRules
             "S02-0106" => HumanCard(
                 H("opponent-attack-or-effect", "reaction", "对方 进攻或发动效果时：展示牌库顶部1张牌。若其为费用不高于3的【天廷】军团，将其弃置。随后选择我方1张军团，本回合增加因此效果弃置军团的费用和兵力，否则将其返回牌库底部。")),
             "S02-01S1" => HumanCard(
-                H("morale-returned-by-master", "triggered", "「主宰为杨戬时」我方 回合1次 我方士气因主宰效果返还4张及以上时，<哮天犬·稚>可在前排活跃登场，视为1张兵力2000的【特殊】军团。"),
+                H("master-morale-return", "triggered", "「主宰为杨戬时」我方 回合1次 我方士气因主宰效果返还4张及以上时，<哮天犬·稚>可在前排活跃登场，视为1张兵力2000的【特殊】军团。"),
                 H("death", "triggered", "阵亡时 可从士气牌库追加1张休整的士气。")),
             "S02-0201" => HumanCard(
                 H("continuous", "rule", "规则上，此军团构筑时不计入卡组数量，不能进入手牌和牌库，游戏开始时置入墓地，此军团以任何形式离场均视为置入所有者墓地。"),

@@ -29,6 +29,7 @@ $atomicRuntime = Read-Source 'L12AtomicRuntimeIntegration.cs'
 $simpleDrawTriggers = Read-Source 'L12SimpleDrawTriggerEffects.cs'
 $simpleMasterHealTriggers = Read-Source 'L12SimpleMasterHealTriggerEffects.cs'
 $simpleTrialAdvanceTriggers = Read-Source 'L12SimpleTrialAdvanceTriggerEffects.cs'
+$simpleResourceTriggers = Read-Source 'L12SimpleResourceTriggerEffects.cs'
 $trialAdvancePlans = Read-Source 'L12TrialAdvanceEffectPlans.cs'
 $attackPlans = Read-Source 'L12AttackPublicTriggerPlans.cs'
 $entryPlans = Read-Source 'L12EnterPublicTriggerPlans.cs'
@@ -70,23 +71,23 @@ foreach ($cardId in @(
     'S01-0105', 'S01-0207', 'S01-0208', 'S01-0309', 'S01-0021', 'S01-0213',
     'S01-0223', 'S01-0320', 'S01-0224', 'S02-0202', 'S02-0203', 'S02-0205', 'S01-0206', 'S01-0407',
     'S01-0204', 'S01-0414', 'S01-0417',
-    'S02-0304', 'S02-0305', 'S02-05M1', 'S02-06M1', 'S02-0102', 'S02-06S4'
+    'S02-0304', 'S02-0305', 'S02-0102'
 )) {
     Assert-Contains $plans $cardId "Public trigger declaration plan is missing card $cardId."
 }
 foreach ($semanticTrigger in @(
     '("S02-0304", "master-damaged-by-effect", "margaretMasterDamage", _)',
     '("S02-0305", "master-damaged", "anderstorpRingDraw", _)',
-    '("S02-05M1", "friendly-ranged-death", "artemisDeathFlip", _)',
-    '("S02-06S4", "friendly-round-table-enter", "grailRoundTableRune", _)',
+    'new("S02-05M1", 1, "friendly-ranged-death"',
+    'new("S02-06S4", 2, "friendly-round-table-enter"',
     '("S02-06M2", "tactic-effect-resolved", "angusTacticTrial", _)',
     '("S02-04M1", "friendly-legion-moves", "tsukuyomiFollowMove", _)',
     '("S02-04M1", "friendly-front-to-back", "tsukuyomiReadyMorale", _)',
-    'S02-01M1|master-legion-returned|wukongReturnMorale',
-    'S01-01C1|morale-returned-to-zero|factionZeroRecovery',
+    'new("S02-01M1", 2, "master-legion-returned"',
+    'new("S01-01C1", 2, "morale-returned-to-zero"',
     'S02-0002|after-kill'
 )) {
-    Assert-Contains ($plans + "`n" + $trialAdvancePlans) $semanticTrigger `
+    Assert-Contains ($plans + "`n" + $trialAdvancePlans + "`n" + $simpleResourceTriggers) $semanticTrigger `
         "An event-triggered effect lost its semantic runtime trigger: $semanticTrigger"
 }
 foreach ($legacyRuntimeTrigger in @(
@@ -114,7 +115,7 @@ Assert-Contains $starterRemaining 'faction, "morale-returned-to-zero"' `
 Assert-Contains $prompts 'faction, "morale-returned-to-zero"' `
     'The resumed Tianting zero-morale path must retain its semantic trigger.'
 
-foreach ($cardId in @('S01-0101', 'S01-0108', 'S01-0311', 'S02-0001', 'S02-0012', 'S02-01M1', 'S01-01C1')) {
+foreach ($cardId in @('S01-0101', 'S01-0108', 'S01-0311', 'S02-0001', 'S02-0012')) {
     Assert-Contains $plans $cardId "Batch 6J-B public trigger declaration plan is missing card $cardId."
 }
 Assert-Contains $plans 'Batch6JBPublicTriggerPlans' 'Batch 6J-B triggers need one shared data-driven declaration table.'
@@ -163,7 +164,7 @@ foreach ($legacy6JBAction in @(
 foreach ($cardId in @(
     'S01-0001', 'S01-0112', 'S01-0115', 'S01-0207', 'S01-0210', 'S01-0303',
     'S01-0304', 'S01-0306', 'S01-0313', 'S01-0403', 'S01-0407', 'S02-0002',
-    'S02-01S1', 'S02-0301', 'S02-0508', 'S02-0518', 'S02-0601', 'S02-0615'
+    'S02-0301', 'S02-0518', 'S02-0601', 'S02-0615'
 )) {
     Assert-Contains $plans ('["' + $cardId + '|') "Batch 6I-B public trigger plan is missing card $cardId."
 }
@@ -300,6 +301,34 @@ Assert-Contains $atomicPrograms 'programs.AddRange(L12SimpleTrialAdvanceTriggerE
 foreach ($simpleTrialSpec in @('new("S02-0609", 3, "death"', 'new("ST06-06", 2, "death"')) {
     Assert-Contains $simpleTrialAdvanceTriggers $simpleTrialSpec "Simple death trial-advance inventory is missing: $simpleTrialSpec"
 }
+Assert-Contains $atomicPrograms '.Where(spec => spec.OwnsStandaloneAtomicAbility).Select(SimpleResourceProgram));' `
+    'Standalone single-segment resource abilities must be generated from their shared definition.'
+foreach ($simpleResourceSpec in @(
+    'new("S02-01S1", 2, "death"', 'new("S02-0508", 2, "death"',
+    'new("S02-05M1", 1, "friendly-ranged-death"',
+    'new("S02-06M1", 1, "morrigan-enemy-death"',
+    'new("S02-0102", 1, "master-morale-return"',
+    'new("S02-06S4", 2, "friendly-round-table-enter"',
+    'new("S02-06M2", 2, "trial-advance"',
+    'new("S02-01M1", 2, "master-legion-returned"',
+    'new("S01-01C1", 2, "morale-returned-to-zero"'
+)) {
+    Assert-Contains $simpleResourceTriggers $simpleResourceSpec "Single-segment resource trigger inventory is missing: $simpleResourceSpec"
+}
+Assert-Contains $kernel '.Where(PrepareSimpleResourceTriggerCandidate)' `
+    'Every trigger batch must pass through the shared resource candidate gate.'
+Assert-Contains $plans 'TryBeginSimpleResourceTriggerDeclaration' `
+    'Resource triggers must declare optional mode and exact morale targets before stack entry.'
+Assert-Contains $plans 'TryCompleteSimpleResourceTriggerDeclaration' `
+    'Resource declarations must share one atomic commit route.'
+Assert-Contains $prompts 'TryResolveSimpleResourceTrigger(item)' `
+    'Resource triggers must settle through the shared resolver before card-specific dispatch.'
+Assert-Contains $simpleResourceTriggers 'var target = player.Morale.FirstOrDefault' `
+    'Declared morale targets must be looked up again at reverse-order settlement.'
+Assert-Contains $simpleResourceTriggers '&& !card.IsGodPower' `
+    'Declared morale targets must still be ordinary morale at reverse-order settlement.'
+Assert-Contains $simpleResourceTriggers 'OwnsStandaloneAtomicAbility: false' `
+    'Wukong resource follow-up must remain a child segment of its printed leave replacement ability.'
 if ($atomicRuntime.IndexOf('CreatePrompt(', [StringComparison]::Ordinal) -ge 0) {
     throw 'Verified atomic runtime must not create any resolution-time Optional prompt.'
 }
@@ -321,7 +350,9 @@ Assert-Contains $plans 'margaretMasterDamage' 'Margaret damage trigger must pred
 Assert-Contains $allRuntime 'margaret-heal-lock' 'Margaret heal and heal-lock sentences must remain independent stack segments.'
 Assert-Contains $plans 'cleanupReservation' 'Optional once-per-turn triggers must reserve pending state before player declaration.'
 Assert-Contains $plans 'player.UsedAbilities.Add(onceKey)' 'Committed optional triggers must consume their once before stack entry.'
-Assert-Contains $plans 'card.Tapped && !card.IsGodPower' 'Artemis must declare an exact rested ordinary morale target.'
+Assert-Contains $plans 'player.Morale.Where(card => !card.IsGodPower' 'Resource target declarations must exclude god-power cards.'
+Assert-Contains $plans 'spec.TargetFilter != L12SimpleResourceTriggerEffects.RestedMorale || card.Tapped' `
+    'Artemis must declare an exact rested ordinary morale target.'
 Assert-Contains $kernel 'SourceSnapshot = CaptureLastKnownSourceSnapshot(sourceSnapshot ?? card)' 'Every generated trigger candidate must carry a last-known source snapshot.'
 Assert-Contains $kernel 'FindAuthoritativeCard(candidate.SourceInstanceId)' 'Trigger declarations must resolve sources through the internal authoritative lookup.'
 Assert-Contains $plans 'owner-unused-slot' 'Tomb Construct must declare owner battlefield slots before stack entry.'

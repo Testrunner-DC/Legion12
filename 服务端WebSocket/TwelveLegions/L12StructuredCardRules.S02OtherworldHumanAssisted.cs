@@ -152,6 +152,21 @@ public static partial class L12StructuredCardRules
                     Atom(L12AtomKinds.Special, "由玩家声明并支付X符文", "cost",
                         ("semantic", "pay-variable-runes"), ("minimum", "0"))),
                 OH("play", "spell", "选择对方1张军团，本回合兵力-6000。")),
+
+            "S02-06M1" => OtherworldCard(
+                OH("morrigan-enemy-death", "triggered", "我方 回合1次 对方军团阵亡时，可获得1符文。"),
+                OH("active", "activated", "我方 回合1次 可消耗2符文：选择我方1张【彼界】军团，在本回合其下一次击杀对方军团后转为活跃。")),
+
+            "S02-06M2" => OtherworldCard(
+                OH("rule", "rule", "规则上，可完成的试炼数量增加1张。",
+                    Atom(L12AtomKinds.Special, "可完成的试炼数量增加1张", "rule",
+                        ("semantic", "additional-completable-trial"), ("amount", "1"))),
+                OH("trial-advance", "triggered", "我方 回合1次 推进试炼进度时，可获得1符文。"),
+                OH("tactic-effect-resolved", "triggered", "回合1次 当我方成功发动战术效果时，试炼+1。")),
+
+            "S02-06S4" => OtherworldCard(
+                OH("trial-complete", "triggered", "触发 可查看我方牌库，选择1张【彼界】军团展示并加入手牌。随后重洗牌库。"),
+                OH("friendly-round-table-enter", "triggered", "我方 回合1次 我方【圆桌骑士】登场时，可获得1符文。")),
             _ => [],
         };
         return abilities.Count > 0;

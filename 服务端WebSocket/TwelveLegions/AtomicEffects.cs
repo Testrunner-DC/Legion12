@@ -22,6 +22,7 @@ public static class L12AtomKinds
     public const string Draw = "operation.draw";
     public const string AddMorale = "operation.add-morale";
     public const string GainRune = "operation.gain-rune";
+    public const string FlipMorale = "operation.flip-morale";
     public const string AdvanceTrial = "operation.advance-trial";
     public const string ModifyTroops = "operation.modify-troops";
     public const string MoveZone = "operation.move-zone";
@@ -325,6 +326,7 @@ public static class L12EffectAtomRegistry
             [L12AtomKinds.Draw] = new(L12AtomKinds.Draw, "牌库", "抽牌", "从牌库顶抽牌；空牌库按规则判负。", true, "LibraryOps.Draw"),
             [L12AtomKinds.AddMorale] = new(L12AtomKinds.AddMorale, "结算", "追加士气", "从士气牌库追加活跃或休整士气。", true, "MoraleOps.Add"),
             [L12AtomKinds.GainRune] = new(L12AtomKinds.GainRune, "专属资源", "获得符文", "在彼界专属区域获得指定数量的符文。", true, "L12S2ZoneOps.GainRunes"),
+            [L12AtomKinds.FlipMorale] = new(L12AtomKinds.FlipMorale, "专属资源", "翻转士气", "将已声明且结算时仍合法的普通士气翻转为神力。", true, "L12S2ZoneOps.FlipMoraleFace"),
             [L12AtomKinds.AdvanceTrial] = new(L12AtomKinds.AdvanceTrial, "专属资源", "推进试炼", "推进当前未完成试炼，并同步公开进度与对局记录。", true, "AdvanceTrial"),
             [L12AtomKinds.ModifyTroops] = new(L12AtomKinds.ModifyTroops, "数值", "修改兵力", "通过派生兵力层叠加临时、持续或设定值修正。", true, "DerivedStats"),
             [L12AtomKinds.MoveZone] = new(L12AtomKinds.MoveZone, "区域", "移动区域", "在手牌、牌库、墓地、战场、圣物区、额外区和移出区之间移动。", true, "ZoneMove"),
@@ -978,6 +980,8 @@ public static class L12VerifiedAtomicPrograms
         programs.AddRange(L12SimpleDrawTriggerEffects.All.Select(SimpleDrawProgram));
         programs.AddRange(L12SimpleMasterHealTriggerEffects.All.Select(SimpleMasterHealProgram));
         programs.AddRange(L12SimpleTrialAdvanceTriggerEffects.All.Select(SimpleTrialAdvanceProgram));
+        programs.AddRange(L12SimpleResourceTriggerEffects.All
+            .Where(spec => spec.OwnsStandaloneAtomicAbility).Select(SimpleResourceProgram));
         programs.AddRange(L12OpponentHandDiscardTriggerEffects.All.Select(OpponentHandDiscardProgram));
         return programs.ToDictionary(program => program.ProgramId, StringComparer.OrdinalIgnoreCase);
     }
@@ -1034,6 +1038,38 @@ public static class L12VerifiedAtomicPrograms
         => Program(spec.CardId, spec.Trigger,
             Atom(L12AtomKinds.AdvanceTrial, spec.SettlementText,
                 ("amount", spec.Amount.ToString())));
+
+    private static L12VerifiedAtomicProgram SimpleResourceProgram(L12SimpleResourceTriggerSpec spec)
+    {
+        var operations = new List<L12EffectAtom>();
+        if (spec.CandidateCondition is not null)
+            operations.Add(Atom(L12AtomKinds.Condition, "检查资源触发条件",
+                ("expression", spec.CandidateCondition)));
+        if (spec.Optional)
+            operations.Add(Atom(L12AtomKinds.Optional, "可发动单段资源效果",
+                ("prompt", $"{spec.Name}：是否发动{spec.SettlementText}"),
+                ("yes", "发动"), ("no", "不发动")));
+        if (spec.TargetFilter is not null)
+            operations.Add(Atom(L12AtomKinds.SelectTarget, "选择1张合法士气",
+                ("zone", "controller.morale"), ("filter", spec.TargetFilter),
+                ("min", "1"), ("max", "1"), ("presentation", "direct-board")));
+        operations.Add(spec.Operation switch
+        {
+            L12SimpleResourceTriggerEffects.AddRestedMorale =>
+                Atom(L12AtomKinds.AddMorale, spec.SettlementText,
+                    ("amount", spec.Amount.ToString()), ("tapped", "true"),
+                    ("event", spec.EventText)),
+            L12SimpleResourceTriggerEffects.GainRunes =>
+                Atom(L12AtomKinds.GainRune, spec.SettlementText,
+                    ("amount", spec.Amount.ToString()), ("event", spec.EventText)),
+            L12SimpleResourceTriggerEffects.FlipMoraleToGodPower =>
+                Atom(L12AtomKinds.FlipMorale, spec.SettlementText,
+                    ("operation", "flip-selected-to-god-power"),
+                    ("amount", spec.Amount.ToString()), ("event", spec.EventText)),
+            _ => throw new InvalidOperationException($"未知单段资源操作：{spec.Operation}"),
+        });
+        return Program(spec.CardId, spec.Trigger, [.. operations]);
+    }
 
     private static L12VerifiedAtomicProgram OpponentHandDiscardProgram(
         L12OpponentHandDiscardTriggerSpec spec)

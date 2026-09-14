@@ -188,7 +188,7 @@ public sealed class AtomicEffectsTests
     [InlineData("S02-0509", "attack", "展示手牌中的1张战术卡")]
     [InlineData("S02-0608", "attack", "弃置下方任意数量<侍从骑士>")]
     [InlineData("S02-06D1", "static", "消耗2符文")]
-    [InlineData("S02-06M1", "static", "消耗2符文")]
+    [InlineData("S02-06M1", "active", "消耗2符文")]
     [InlineData("S02-06S1", "static", "消耗1符文")]
     [InlineData("S02-06S3", "death", "移除<王者之剑>")]
     [InlineData("S02-06S5", "static", "消耗1符文")]
@@ -239,6 +239,15 @@ public sealed class AtomicEffectsTests
                     atom => atom.Kind == L12AtomKinds.CompositeFlow);
                 Assert.Single(currentProgram.Atoms,
                     atom => atom.Kind == L12AtomKinds.Draw);
+                continue;
+            }
+            if (L12SimpleResourceTriggerEffects.All.Any(spec =>
+                    spec.CardId == program.CardId && spec.Trigger == program.Trigger))
+            {
+                Assert.DoesNotContain(currentProgram.Atoms,
+                    atom => atom.Kind == L12AtomKinds.CompositeFlow);
+                Assert.Contains(currentProgram.Atoms, atom => atom.Kind is L12AtomKinds.AddMorale
+                    or L12AtomKinds.GainRune or L12AtomKinds.FlipMorale);
                 continue;
             }
             if (L12OpponentHandDiscardTriggerEffects.Find(program.CardId, program.Trigger) is not null)
