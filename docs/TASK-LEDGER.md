@@ -2,9 +2,10 @@
 
 ## EFFECT-20260917-DRAW-DISCARD-POOL-GUARD：抽牌后强制弃牌全卡池防回归
 
-- 状态：提交级Release已通过，待同步；未部署。
+- 状态：提交级Release已通过，已同步；未部署。
 - 同型扫描：按完整句型`抽取1/2张牌，并弃置1张手牌`扫描S1/S2/ST，精确命中S01-0001黑胡子蒂奇、S01-0303传奇的拉格纳、S01-0306奥拉夫二世、S01-03M2洛基、S02-0301雷神之锤、S02-0502赫拉克勒斯。既有复合计划已覆盖全部6项，未发现新的运行时旁路。
 - 已完成：新增目录守卫，逐项验证共享`draw-discard-draw-1/2 → draw-discard-discard`、后段`RequiresPreviousSuccess`、同一能力的两段呈现和无`Legacy`回退。洛基因同卡还有另一主动能力，防护按能力段而非卡级迁移汇总标签判定，避免错误放行或误报。定向18/18、Focused、Batch全池门禁与提交级Release通过；功能提交`ef5dd2a`，证据`D:\GPT\Legion12\artifacts\deploy\ef5dd2ad4c3c75a776ee9ceadd6d287a49fa8991\l12-release-ef5dd2ad4c3c75a776ee9ceadd6d287a49fa8991.json`。
+- 同步回执：功能提交`ef5dd2a`及验证回执`f80d6e5`已推送至`origin/main`并精确读回；上项的“待同步”为Release完成时的执行前记录，现由本项覆盖。
 
 ## EFFECT-20260917-SUPPORT-DEATH-WITHOUT-ATTACK-KILL：支援阵亡与进攻击杀事实分离
 

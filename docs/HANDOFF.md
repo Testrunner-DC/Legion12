@@ -1,9 +1,10 @@
 # 十二军团简短交接
 
-## 2026-09-17 抽牌后强制弃牌全卡池防回归（提交级Release通过，待同步）
+## 2026-09-17 抽牌后强制弃牌全卡池防回归（提交级Release通过，已同步）
 
 - 以印刷完整句型扫描S1/S2/ST，精确命中黑胡子蒂奇、传奇的拉格纳、奥拉夫二世、洛基、雷神之锤、赫拉克勒斯6项；全部已进入同一`draw-discard-draw-1/2 → draw-discard-discard`计划，无新增旁路。
 - 新增回归守卫固定两段共享Flow、`RequiresPreviousSuccess`、同一能力场景和无`Legacy`回退；洛基按能力段核验，不误用同卡另一主动能力导致的卡级汇总状态。功能提交`ef5dd2a`；定向18/18、Focused、Batch与提交级Release通过，证据`D:\GPT\Legion12\artifacts\deploy\ef5dd2ad4c3c75a776ee9ceadd6d287a49fa8991\l12-release-ef5dd2ad4c3c75a776ee9ceadd6d287a49fa8991.json`；待同步，未部署。
+- 同步回执：`ef5dd2a`和`f80d6e5`已推送至`origin/main`并精确读回；上一项中的“待同步”为执行前状态，现由本项覆盖，未部署。
 
 ## 2026-09-17 支援阵亡与进攻方击杀事实分离（提交级Release通过，已同步）
 
