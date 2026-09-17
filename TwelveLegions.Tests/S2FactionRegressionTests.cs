@@ -558,6 +558,11 @@ public sealed class S2FactionRegressionTests
         PassResponses(game);
 
         var faith = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", faith.Continuation);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: faith.PromptId,
+            Choice: "mode:use")).Accepted);
+        PassResponses(game);
+        faith = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-faith-zealot", faith.Data["action"]);
         Assert.Contains("drawCycle", faith.ValidChoices);
         var moraleBefore = player.Morale.Select(card => (card.InstanceId, card.Tapped)).ToArray();
@@ -603,8 +608,10 @@ public sealed class S2FactionRegressionTests
         Assert.False(target.Tapped);
     }
 
-    [Fact]
-    public void FaithZealotOncePerTurnUsageIsTrackedPerPhysicalInstance()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FaithZealotSameBatchCopiesShareNameButDecliningFirstLeavesSecondAvailable(bool declineFirst)
     {
         var game = Create(63111);
         var player = game.State.Players[0];
@@ -622,20 +629,42 @@ public sealed class S2FactionRegressionTests
         Assert.True(game.Handle(0, new L12Command("playCard", beowulf.InstanceId,
             Row: 0, Slot: 0)).Accepted);
 
-        var triggeredInstances = new HashSet<string>();
-        while (triggeredInstances.Count < 2)
+        var declarations = 0;
+        var generatedChoices = 0;
+        for (var safety = 0; safety < 20; safety++)
         {
             PassResponses(game);
-            var prompt = Assert.Single(game.State.PendingPrompts,
-                candidate => candidate.Data.GetValueOrDefault("action") == "s2-faith-zealot");
-            triggeredInstances.Add(prompt.Data["sourceInstanceId"]);
+            if (game.State.PendingPrompts.Count == 0) break;
+            var prompt = Assert.Single(game.State.PendingPrompts);
+            if (prompt.Kind == "trigger-order")
+            {
+                Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+                    CardInstanceIds: prompt.ValidChoices.ToList())).Accepted);
+                continue;
+            }
+            if (prompt.Continuation == "pending-activation")
+            {
+                Assert.Equal("S02-0006", Assert.Single(game.State.PendingActivations).SourceCardId);
+                declarations++;
+                Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+                    Choice: declineFirst && declarations == 1 ? "mode:none" : "mode:use")).Accepted);
+                continue;
+            }
+            Assert.Equal("s2-faith-zealot", prompt.Data.GetValueOrDefault("action"));
+            generatedChoices++;
             Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
                 Choice: "skip")).Accepted);
         }
 
-        Assert.Equal(new[] { first.InstanceId, second.InstanceId }.Order(), triggeredInstances.Order());
-        Assert.Contains($"trigger:faith-zealot:{first.InstanceId}", player.UsedAbilities);
-        Assert.Contains($"trigger:faith-zealot:{second.InstanceId}", player.UsedAbilities);
+        Assert.Equal(declineFirst ? 2 : 1, declarations);
+        Assert.Equal(1, generatedChoices);
+        Assert.Contains("card-name:S02-0006", player.UsedAbilities);
+        Assert.DoesNotContain(player.UsedAbilities, key => key.StartsWith("trigger:faith-zealot:"));
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Empty(game.State.PendingTriggerBatches);
+        Assert.Empty(game.State.PendingTriggerStackCandidates);
     }
 
     [Fact]

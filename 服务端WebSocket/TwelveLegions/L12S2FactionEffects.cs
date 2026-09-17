@@ -88,8 +88,8 @@ public sealed partial class L12GameEngine
         if (card.CardId != "S02-0006" || State.ActivePlayer != player.PlayerIndex) return;
         if (originZone != "library" && !(originZone == "hand" && causedByEffect)) return;
 
-        var onceKey = $"trigger:faith-zealot:{card.InstanceId}";
-        if (!player.UsedAbilities.Add(onceKey)) return;
+        // 候选不占次数：同一弃牌批次的其他同名卡仍可在前者拒绝后发动。
+        if (L12CardNameUsageRules.HasUsed(player, card.CardId)) return;
         QueueTriggerCandidates(
         [
             CreateTriggerCandidate(player.PlayerIndex, card, "discard-trigger", "弃置时效果",

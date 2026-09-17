@@ -89,7 +89,7 @@ public sealed partial class L12GameEngine
             return CommandResult.Reject($"〈天地异变〉持续期间，无法从手牌打出与牌库顶部相同兵种（{card.Profession}）的军团");
         if (card.CardId == "S02-0306" && player.MasterDamageTakenThisTurn < 2)
             return CommandResult.Reject("本回合我方主宰受到的累计伤害不足2点");
-        if (card.CardId == "S02-0306" && player.UsedAbilities.Contains("s2-mimir-used"))
+        if (card.CardId == "S02-0306" && L12CardNameUsageRules.HasUsed(player, card.CardId))
             return CommandResult.Reject("〈密米尔之泉〉每回合只可使用1次");
         if (IsCounterTactic(card.CardId)) return SetCounterTactic(playerIndex, card, command);
         var christinaReplacementKey = $"starter-christina-free-tactic:{State.TurnSerial}";

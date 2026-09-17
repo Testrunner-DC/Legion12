@@ -364,6 +364,7 @@ public sealed partial class L12GameEngine
             || FifthBatchPublicTriggerPlan(cardId, trigger) is not null
             || (cardId, trigger, data?.GetValueOrDefault("ability"), data?.GetValueOrDefault("mode")) switch
         {
+            ("S02-0006", "discard-trigger", _, _) => true,
             ("S02-04M1", "friendly-legion-moves", "tsukuyomiFollowMove", _) => true,
             ("S02-04M1", "friendly-front-to-back", "tsukuyomiReadyMorale", _) => true,
             ("S02-0523", "trojan-after-attack", _, _) => true,
@@ -448,7 +449,22 @@ public sealed partial class L12GameEngine
         if (TryBeginSimpleResourceTriggerDeclaration(candidate, source))
             return true;
 
-        if (batch6JBPlan == "lubu-ready")
+        if (candidate.SourceCardId == "S02-0006" && candidate.Trigger == "discard-trigger")
+        {
+            // 多张同名候选可共存，但每个声明开始/提交时都重验共享次数。
+            if (L12CardNameUsageRules.HasUsed(player, candidate.SourceCardId))
+            {
+                RemoveUnstackedTriggerCandidate(candidate, "〈信仰狂热者〉的卡名共享次数已使用；效果未入栈");
+                return true;
+            }
+            steps =
+            [
+                PublicTriggerStep("option", "mode",
+                    $"{source.Name}：是否发动？{_catalog.AtomicEffects.Find(candidate.SourceCardId)!.Abilities.Single(ability => ability.Trigger == "discarded").Text}",
+                    ["mode:none", "mode:use"]),
+            ];
+        }
+        else if (batch6JBPlan == "lubu-ready")
         {
             steps =
             [
@@ -1153,6 +1169,7 @@ public sealed partial class L12GameEngine
         var handled = batch6JBPlan is not null || batch6IBPlan is not null || verifiedAtomicOptional is not null || batch6GAPlan is not null || batch6DPlan is not null
             || fifthBatchPlan is not null || key switch
         {
+            ("S02-0006", "discard-trigger", _) => true,
             ("S02-04M1", "friendly-legion-moves", "tsukuyomiFollowMove") => true,
             ("S02-04M1", "friendly-front-to-back", "tsukuyomiReadyMorale") => true,
             ("S02-0523", "trojan-after-attack", _) => true,
@@ -1653,6 +1670,10 @@ public sealed partial class L12GameEngine
             if (!ValidateRyomaMoveDeclaration(player, targets, slots))
                 error = "坂本龙马声明的军团或位移位置已失效；效果未入栈";
         }
+
+        if (error is null && key is ("S02-0006", "discard-trigger", _)
+            && (mode != "mode:use" || !L12CardNameUsageRules.TryUse(player, candidate.SourceCardId)))
+            error = "〈信仰狂热者〉的发动选择或卡名共享次数已失效；效果未入栈";
 
         if (error is null && mode == "mode:use" && batch6GAPlan == "anderstorp-draw")
         {

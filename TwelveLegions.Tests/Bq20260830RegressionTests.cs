@@ -89,6 +89,11 @@ public sealed class Bq20260830RegressionTests
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: discard.PromptId,
             Choice: zealot.InstanceId)).Accepted);
         PassResponses(game);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", declaration.Continuation);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "mode:use")).Accepted);
+        PassResponses(game);
         return Assert.Single(game.State.PendingPrompts,
             prompt => prompt.Data.GetValueOrDefault("action") == "s2-faith-zealot");
     }

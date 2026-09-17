@@ -1327,7 +1327,7 @@ public sealed partial class L12GameEngine
                 && new[] { opponent.Relic }.Concat(opponent.ExtraRelics)
                     .Any(target => target?.InstanceId == artifactId && target.CardType == "artifact"),
             "S02-0306" => (effectOnlyRepeat || player.MasterDamageTakenThisTurn >= 2
-                && !player.UsedAbilities.Contains("s2-mimir-used"))
+                && !L12CardNameUsageRules.HasUsed(player, card.CardId))
                 && mode is "mode:none" or "mode:mill",
             "S02-0522" => mode is "mode:none" or "mode:second"
                 && Enemy("primaryTarget")
@@ -1445,7 +1445,7 @@ public sealed partial class L12GameEngine
         var first = segments.FirstOrDefault(segment => CompositeSegmentEnabled(segment, declaration));
         if (preStackCosts.Length == 0 && first is not null
             && !TryPayCompositeDeclaredCost(controller, source, first, declaration)) return false;
-        if (source.CardId == "S02-0306") player.UsedAbilities.Add("s2-mimir-used");
+        if (source.CardId == "S02-0306") player.UsedAbilities.Add(L12CardNameUsageRules.Key(source.CardId));
         return true;
     }
 

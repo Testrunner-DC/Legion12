@@ -198,8 +198,13 @@ public sealed class RulingClosureRegressionTests
             && entry.Cards.Any(card => card.InstanceId == substitute.InstanceId));
         Assert.DoesNotContain(game.State.Events, entry => entry.Type == "leave"
             && entry.Cards.Any(card => card.InstanceId == substitute.InstanceId));
-        Assert.Contains(player.UsedAbilities,
-            key => key == $"trigger:faith-zealot:{substitute.InstanceId}");
+        Assert.DoesNotContain("card-name:S02-0006", player.UsedAbilities);
+        var faithDeclaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", faithDeclaration.Continuation);
+        Assert.Equal(substitute.InstanceId, Assert.Single(game.State.PendingActivations).SourceInstanceId);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: faithDeclaration.PromptId,
+            Choice: "mode:use")).Accepted);
+        Assert.Contains("card-name:S02-0006", player.UsedAbilities);
     }
 
     [Fact]
@@ -387,6 +392,10 @@ public sealed class RulingClosureRegressionTests
         var zealot = Card("S02-0006", "ruling-faith-zealot");
         player.Graveyard.Add(zealot);
         InvokePrivate(game, "NotifyCardDiscarded", player, zealot, "library", true);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", declaration.Continuation);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "mode:use")).Accepted);
         PassResponses(game);
 
         var choice = Assert.Single(game.State.PendingPrompts,
