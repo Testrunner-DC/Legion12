@@ -1106,7 +1106,7 @@ public sealed partial class L12GameEngine
         {
             if (source.TrialCompleted || source.TrialProgress < 8)
                 return CommandResult.Reject("试炼进度达到8后才可完成试炼");
-            PushEffect(playerIndex, source, "active", "完成试炼", data: new Dictionary<string, string> { ["ability"] = ability });
+            CompleteTrialRuleAction(playerIndex, source);
             return CommandResult.Ok();
         }
         if (source.CardType == "trial" && ability is "fenianReady" or "crusadeTrialNoLoss" or "crusadeRichardPiercing" or "crusadeRecover")
@@ -1906,10 +1906,8 @@ public sealed partial class L12GameEngine
         }
         if (ability == "completeTrial" && source?.CardType == "trial")
         {
-            source.TrialCompleted = true;
-            player.SpecialZones.TrialLevel = player.SpecialZones.Trials.Where(card => !card.TrialCompleted).Select(card => card.TrialProgress).DefaultIfEmpty().Max();
-            AddEvent("trial", item.Controller, $"完成试炼《{source.Name}》", source);
-            QueueCompletedTrialTriggerBatch(item.Controller, source);
+            // Compatibility for an already queued legacy completion item.
+            CompleteTrialRuleAction(item.Controller, source);
             FinishStackItem(item);
             return true;
         }

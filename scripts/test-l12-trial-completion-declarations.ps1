@@ -48,7 +48,9 @@ foreach ($contract in @(
     Assert-Contains $plans $contract "Batch 6B trial-completion contract is missing: $contract"
 }
 
-Assert-Contains $s2 'QueueCompletedTrialTriggerBatch(item.Controller, source)' 'completeTrial must publish a shared completion event instead of resolving printed effects inline.'
+Assert-Contains $s2 'CompleteTrialRuleAction(playerIndex, source)' 'completeTrial must execute directly as a rule action.'
+Assert-Contains $plans 'QueueCompletedTrialTriggerBatch(controller, trial)' 'The rule flip must publish the separate printed completion trigger.'
+Assert-NotContains $s2 'PushEffect(playerIndex, source, "active", "完成试炼"' 'The rule flip must not be a negatable active effect.'
 Assert-Contains $models 'MinimumReferenceNumericValue' 'Variable rune declarations must drive a generic number of public target steps.'
 Assert-Contains $models 'L12ActivationCancellationPolicy' 'A declaration must carry an explicit whole-flow cancellation policy.'
 Assert-Contains $kernel 'DeclaredNumericValueAtLeast' 'Pending activation must honor numeric conditional declaration steps.'

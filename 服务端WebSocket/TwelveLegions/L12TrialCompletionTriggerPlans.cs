@@ -9,6 +9,18 @@ public sealed partial class L12GameEngine
     private const string TrialLakeLady = "S02-06S3";
     private const string TrialGrailJourney = "S02-06S4";
     private const string TrialFenianLegend = "S02-06S5";
+    private void CompleteTrialRuleAction(int controller, L12CardInstance trial)
+    {
+        if (trial.TrialCompleted) return;
+        trial.TrialCompleted = true;
+        var player = State.Players[controller];
+        player.SpecialZones.TrialLevel = player.SpecialZones.Trials.Where(card => !card.TrialCompleted)
+            .Select(card => card.TrialProgress).DefaultIfEmpty().Max();
+        AddEvent("trial", controller, $"完成试炼《{trial.Name}》", trial);
+        // Flipping is a rule action. Only the resulting printed trigger gets a response window.
+        QueueCompletedTrialTriggerBatch(controller, trial);
+    }
+
     private static bool HasTrialCompletionTriggerDeclarationPlan(string cardId, string trigger,
         IReadOnlyDictionary<string, string>? data)
         => trigger == "trial-complete"
