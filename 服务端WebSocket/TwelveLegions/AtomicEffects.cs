@@ -431,10 +431,11 @@ public sealed class L12AtomicEffectCatalog
                     }).ToList()
                     : L12CounterTacticRules.FallbackTrigger(card.Id) is { } responseTrigger
                         ? [BuildAbility(card, text, 1, responseTrigger)]
-                        : SplitAbilities(text).Select((clause, index) => BuildAbility(card, clause, index + 1)).ToList();
+                        : BuildFallbackAbilities(card, text);
         foreach (var overlay in L12StructuredCardRules.GetCombatOverlayAbilities(card.Id))
         {
-            if (sourceAbilities.Any(ability => ability.Trigger == overlay.Trigger && ability.Text == overlay.Text)) continue;
+            if (sourceAbilities.Any(ability => ability.Trigger == overlay.Trigger && ability.Text == overlay.Text
+                || L12StructuredCardRules.MatchesRangedOverlay(ability.Text, ability.ExecutionModel, overlay))) continue;
             sourceAbilities.Add(BuildStructuredAbility(card, overlay, sourceAbilities.Count + 1));
         }
         var abilities = L12EffectPresentationScenes.AttachCardContext(sourceAbilities
@@ -534,11 +535,29 @@ public sealed class L12AtomicEffectCatalog
             template.ReviewStatus, template.ReviewSource);
     }
 
-    private static string[] SplitAbilities(string text)
+    private static List<L12AtomicAbility> BuildFallbackAbilities(L12CardDefinition card, string text)
+    {
+        // Extract only an already registered, exact printed prefix. Never infer a new
+        // combat rule from a substring inside a cost, temporary grant or other effect.
+        var prefix = L12StructuredCardRules.GetCombatOverlayAbilities(card.Id)
+            .FirstOrDefault(overlay => L12StructuredCardRules.IsBasicRangedOverlay(overlay)
+                && text.StartsWith(overlay.Text, StringComparison.Ordinal));
+        if (prefix is null)
+            return SplitAbilities(text).Select((clause, index) => BuildAbility(card, clause, index + 1)).ToList();
+        var result = new List<L12AtomicAbility> { BuildStructuredAbility(card, prefix, 1) };
+        var remaining = text[prefix.Text.Length..].Trim();
+        result.AddRange(SplitAbilities(remaining, preserveLeadingSubject: true)
+            .Select((clause, index) => BuildAbility(card, clause, index + 2)));
+        return result;
+    }
+
+    private static string[] SplitAbilities(string text, bool preserveLeadingSubject = false)
     {
         if (string.IsNullOrWhiteSpace(text)) return [];
         var normalized = text.Replace("\r", string.Empty).Replace("\n", "。").Trim();
-        var starts = AbilityBoundaryPattern.Matches(normalized).Select(match => match.Index).Where(index => index > 0).Distinct().Order().ToArray();
+        var starts = AbilityBoundaryPattern.Matches(normalized).Select(match => match.Index)
+            .Where(index => index > 0 && !(preserveLeadingSubject && normalized[..index].Trim() is "我方" or "对方"))
+            .Distinct().Order().ToArray();
         var segments = new List<string>();
         var cursor = 0;
         foreach (var start in starts)

@@ -493,9 +493,20 @@ public static partial class L12StructuredCardRules
     {
         var result = new List<L12StructuredAbilityTemplate>();
         if (TryGetStructuredAbilities(cardId, out var structured)) result.AddRange(structured);
-        result.AddRange(GetCombatOverlayAbilities(cardId));
+        foreach (var overlay in GetCombatOverlayAbilities(cardId))
+            if (!result.Any(ability => MatchesRangedOverlay(ability.Text, ability.ExecutionModel, overlay)))
+                result.Add(overlay);
         return result;
     }
+
+    internal static bool IsBasicRangedOverlay(L12StructuredAbilityTemplate overlay)
+        => overlay.ExecutionModel == "continuous"
+            && overlay.Atoms.Any(atom => atom.Parameters.GetValueOrDefault("rangeBonus") == "1")
+            && overlay.Atoms.Any(atom => atom.Parameters.GetValueOrDefault("rangedNoLoss") == "true");
+
+    internal static bool MatchesRangedOverlay(string text, string executionModel, L12StructuredAbilityTemplate overlay)
+        => IsBasicRangedOverlay(overlay) && executionModel == "continuous"
+            && string.Equals(text.Trim().TrimEnd('。'), overlay.Text.Trim().TrimEnd('。'), StringComparison.Ordinal);
 
     public static IReadOnlyList<L12StructuredAbilityTemplate> GetCombatOverlayAbilities(string cardId)
     {
