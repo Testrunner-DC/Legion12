@@ -196,8 +196,8 @@ public sealed class Bq20260907_266RegressionTests
             player.Library.Select(card => card.InstanceId));
         Assert.Contains(game.State.Events, actionEvent => actionEvent.Type == "effect"
             && actionEvent.Text.Contains("返回牌库底部", StringComparison.Ordinal));
-        Assert.Contains(game.State.Events, actionEvent => actionEvent.Type == "effect-cancelled"
-            && actionEvent.Text.Contains("击杀目标已失效", StringComparison.Ordinal)
+        Assert.Contains(game.State.Events, actionEvent => actionEvent.Type == "effect-failed"
+            && actionEvent.Text.Contains("不再符合条件", StringComparison.Ordinal)
             && actionEvent.Text.Contains("不撤销", StringComparison.Ordinal));
         Assert.DoesNotContain(game.State.Events, actionEvent => actionEvent.Text.Contains("被猎杀时刻击杀", StringComparison.Ordinal));
     }
