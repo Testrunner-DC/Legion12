@@ -1260,7 +1260,7 @@ public sealed partial class L12GameEngine
         if (player.MasterId == "S01-02M3" && State.ActivePlayer == 1 - damagedPlayer
             && sourcePlayer == 1 - damagedPlayer
             && player.Graveyard.Any(card => card.CardId == "S01-0212")
-            && !player.UsedAbilities.Contains("trigger:medjedDamageResponse")
+            && !player.UsedAbilities.Contains(L12MasterTriggeredUsageRules.Key("medjedDamageResponse", player.PlayerIndex, State.TurnSerial))
             && player.UsedAbilities.Add("pending:medjedDamageResponse"))
         {
             var master = CreateCard(player.MasterId, $"master-{damagedPlayer}");

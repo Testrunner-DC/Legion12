@@ -21,11 +21,23 @@ public sealed partial class L12GameEngine
             player.UsedAbilities.Add(ActiveAbilityUsageKey(source.InstanceId, canonical, ability));
     }
 
-    private L12AbilityView[] UsedLimitedMasterAbilityViews(L12PlayerState player)
+    private string? UsedMasterAbilityUsageKey(L12PlayerState player, string ability)
+    {
+        var key = L12ActiveUsageRules.Find(player.MasterId, ability) is not null
+            ? ActiveAbilityUsageKey($"master-{player.PlayerIndex}", player.MasterId, ability)
+            : L12MasterTriggeredUsageRules.Find(player.MasterId, ability)?.Key(player.PlayerIndex, State.TurnSerial);
+        return key is not null && player.UsedAbilities.Contains(key) ? key : null;
+    }
+
+    private L12AbilityView[] UsedMasterUsageResetChoices(L12PlayerState player)
         => GetAbilities(player.MasterId)
             .Where(view => !view.TriggerOnly && HasUsedLimitedActiveAbility(player, player.MasterId, $"master-{player.PlayerIndex}", view.Id))
             .GroupBy(view => ActiveAbilityUsageKey($"master-{player.PlayerIndex}", player.MasterId, view.Id))
             .Select(group => group.First() with { Label = string.Join(" / ", group.Select(view => view.Label)) })
+            .Concat(L12MasterTriggeredUsageRules.All.Where(rule => rule.CardId == player.MasterId
+                    && UsedMasterAbilityUsageKey(player, rule.Ability) is not null)
+                .Select(rule => new L12AbilityView(rule.Ability, _catalog.AtomicEffects.Find(rule.CardId)!.Abilities
+                    .Single(ability => ability.Sequence == rule.AbilitySequence).Text)))
             .ToArray();
 
     // Hand placement is not the activation cost printed in a counter's effect.

@@ -641,7 +641,7 @@ public sealed partial class L12GameEngine
     private void QueueS2AngusTacticTrial(int playerIndex, L12CardInstance tactic)
     {
         var player = State.Players[playerIndex];
-        var key = $"trigger:angus-tactic:{State.TurnSerial}";
+        var key = L12MasterTriggeredUsageRules.Key("angusTacticTrial", player.PlayerIndex, State.TurnSerial);
         if (player.MasterId != "S02-06M2" || !player.UsedAbilities.Add(key)) return;
         var master = CreateCard("S02-06M2", $"master-{playerIndex}");
         QueueTriggerCandidates([
@@ -653,7 +653,7 @@ public sealed partial class L12GameEngine
     private void QueueS2AngusTrialAdvanceRune(int playerIndex, L12CardInstance advanceSource)
     {
         var player = State.Players[playerIndex];
-        var onceKey = $"trigger:angus-trial-rune:{State.TurnSerial}";
+        var onceKey = L12MasterTriggeredUsageRules.Key("angusTrialAdvanceRune", player.PlayerIndex, State.TurnSerial);
         var pendingKey = $"{onceKey}:pending";
         if (State.ActivePlayer != playerIndex || player.MasterId != "S02-06M2"
             || player.UsedAbilities.Contains(onceKey) || !player.UsedAbilities.Add(pendingKey)) return;
@@ -697,7 +697,7 @@ public sealed partial class L12GameEngine
     private L12TriggerCandidate? BuildArtemisRangedDeathCandidate(int owner, L12CardInstance defeated)
     {
         var player = State.Players[owner];
-        var key = $"trigger:artemis-ranged-death:{State.TurnSerial}";
+        var key = L12MasterTriggeredUsageRules.Key("artemisDeathFlip", player.PlayerIndex, State.TurnSerial);
         var pendingKey = $"{key}:pending";
         if (player.MasterId != "S02-05M1" || !defeated.LastKnownWasRanged
             || !player.Morale.Any(card => card.Tapped && !card.IsGodPower)
@@ -813,7 +813,7 @@ public sealed partial class L12GameEngine
         if (fromRow == 0 && toRow == 1 && player.Morale.Any(card => card.Tapped))
             candidates.Add(CreateTriggerCandidate(playerIndex, master, "friendly-front-to-back", "军团从前排位移至后排时效果",
                 new Dictionary<string, string> { ["ability"] = "tsukuyomiReadyMorale", ["moved"] = moved.InstanceId }));
-        var key = $"active:master-{playerIndex}:tsukuyomiFollowMove";
+        var key = L12MasterTriggeredUsageRules.Key("tsukuyomiFollowMove", player.PlayerIndex, State.TurnSerial);
         if (!player.UsedAbilities.Contains(key) && ActiveResourceCount(player) > 0
             && State.Players.Any(targetController => PublicLegions(targetController).Any(card =>
                 card.InstanceId != moved.InstanceId

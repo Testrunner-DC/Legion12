@@ -74,6 +74,19 @@ foreach ($source in @($active, $s1, $s2, $s2Faction)) {
 }
 if ($usage -match 'Regex\.|\.Effect|EffectText') { throw 'Usage policy must not infer live rules from prose.' }
 $universal = Read-Source 'L12S2UniversalEffects.cs'
-Assert-Contains $universal 'UsedLimitedMasterAbilityViews(player)' 'Reset candidates must use explicit shared limits.'
-Assert-Contains $universal 'ActiveAbilityUsageKey(' 'Reset settlement must use the same grouped key.'
+Assert-Contains $universal 'UsedMasterUsageResetChoices(player)' 'Reset candidates must include explicit active and triggered limits.'
+Assert-Contains $universal 'UsedMasterAbilityUsageKey(player, targetAbility)' 'Reset settlement must use the same grouped key.'
+Assert-Contains $universal 'Kind = "option", Text = ' 'Master usage choices must be typed options, not card instance targets.'
+Assert-Contains $availability '_catalog.AtomicEffects.Find(rule.CardId)!.Abilities' 'Triggered reset labels must come from effect segments.'
+$triggerUsageSources = $s1 + $s2 + $s2Faction + (Read-Source 'L12PublicTriggerEffectPlans.cs') +
+    (Read-Source 'L12S1ExtendedEffects.cs') + (Read-Source 'L12StarterRemainingEffects.cs')
+foreach ($ability in @('medjedDamageResponse', 'nephthysScarab', 'tsukuyomiFollowMove', 'artemisDeathFlip',
+    'morriganEnemyDeathRune', 'angusTrialAdvanceRune', 'angusTacticTrial', 'changeRestedMorale', 'kagutsuchiBuff')) {
+    Assert-Contains $triggerUsageSources ('L12MasterTriggeredUsageRules.Key("' + $ability + '"') 'Trigger producers and reset must share the persisted key definition.'
+}
+foreach ($rawKey in @('"trigger:medjedDamageResponse"', '$"s2-nephthys-scarab:', '$"s2-morrigan-rune:',
+    '$"trigger:angus-tactic:', '$"trigger:angus-trial-rune:', '$"trigger:artemis-ranged-death:',
+    '$"trigger:starter-change:', '$"trigger:starter-kagutsuchi:', ':tsukuyomiFollowMove"')) {
+    if ($triggerUsageSources.Contains($rawKey)) { throw "Raw master trigger usage key returned: $rawKey" }
+}
 Write-Host 'Public active declaration guard passed.'

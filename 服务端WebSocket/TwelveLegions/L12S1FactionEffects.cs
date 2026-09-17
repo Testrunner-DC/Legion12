@@ -1573,7 +1573,7 @@ public sealed partial class L12GameEngine
         var guardId = PublicTriggerDeclared(item, "entryCard");
         var destination = PublicTriggerDeclared(item, "entrySlot");
         if (player.MasterId != "S01-02M3"
-            || !player.UsedAbilities.Contains("trigger:medjedDamageResponse")
+            || !player.UsedAbilities.Contains(L12MasterTriggeredUsageRules.Key("medjedDamageResponse", player.PlayerIndex, State.TurnSerial))
             || !player.Graveyard.Any(card => card.InstanceId == guardId && card.CardId == "S01-0212")
             || !EmptySlots(player).Contains(destination, StringComparer.OrdinalIgnoreCase))
         {

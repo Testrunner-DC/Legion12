@@ -1166,7 +1166,7 @@ public sealed partial class L12GameEngine
     {
         var controller = 1 - defeatedController;
         var player = State.Players[controller];
-        var onceKey = $"s2-morrigan-rune:{State.TurnSerial}";
+        var onceKey = L12MasterTriggeredUsageRules.Key("morriganEnemyDeathRune", player.PlayerIndex, State.TurnSerial);
         var pendingKey = $"{onceKey}:pending";
         if (State.ActivePlayer != controller || player.MasterId != "S02-06M1" || player.UsedAbilities.Contains(onceKey))
             return null;
@@ -1182,7 +1182,7 @@ public sealed partial class L12GameEngine
     private L12TriggerCandidate? BuildNephthysOwnDeathCandidate(int defeatedController, L12CardInstance defeated)
     {
         var player = State.Players[defeatedController];
-        var onceKey = $"s2-nephthys-scarab:{State.TurnSerial}";
+        var onceKey = L12MasterTriggeredUsageRules.Key("nephthysScarab", player.PlayerIndex, State.TurnSerial);
         if (State.ActivePlayer == defeatedController || player.MasterId != "S02-02M1"
             || player.UsedAbilities.Contains(onceKey) || defeated.Faction != "taiyangcheng"
             || defeated.CurrentCost < 2 || !player.Graveyard.Any(card => card.CardId == "S02-0201")
@@ -1200,7 +1200,7 @@ public sealed partial class L12GameEngine
     private void ResolveS2NephthysOwnDeath(L12StackItem item)
     {
         var player = State.Players[item.Controller];
-        var onceKey = item.Data.GetValueOrDefault("onceKey") ?? $"s2-nephthys-scarab:{State.TurnSerial}";
+        var onceKey = item.Data.GetValueOrDefault("onceKey") ?? L12MasterTriggeredUsageRules.Key("nephthysScarab", player.PlayerIndex, State.TurnSerial);
         if (State.ActivePlayer == item.Controller || player.MasterId != "S02-02M1"
             || !player.UsedAbilities.Contains(onceKey) || !player.Graveyard.Any(card => card.CardId == "S02-0201")
             || !EmptySlots(player).Any())

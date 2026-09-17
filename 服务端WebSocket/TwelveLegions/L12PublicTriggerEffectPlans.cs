@@ -1441,7 +1441,7 @@ public sealed partial class L12GameEngine
             var oldSlot = -1;
             var targetOnField = targetPlayer is null ? null
                 : FindOnField(targetPlayer, targetId, out row, out oldSlot);
-            var onceKey = $"active:master-{candidate.Controller}:tsukuyomiFollowMove";
+            var onceKey = L12MasterTriggeredUsageRules.Key("tsukuyomiFollowMove", player.PlayerIndex, State.TurnSerial);
             if (player.UsedAbilities.Contains(onceKey) || targetOnField is null
                 || !IsFieldLegion(targetOnField) || targetOnField.Hidden
                 || targetOnField.InstanceId == candidate.Data.GetValueOrDefault("moved") || slot is null
@@ -1477,14 +1477,14 @@ public sealed partial class L12GameEngine
                 || entryCard is null || !player.Graveyard.Any(card => card.InstanceId == entryCard
                     && card.CardId == PublicTriggerTombGuardCard)
                 || slot is null || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase)
-                || player.UsedAbilities.Contains("trigger:medjedDamageResponse"))
+                || player.UsedAbilities.Contains(L12MasterTriggeredUsageRules.Key("medjedDamageResponse", player.PlayerIndex, State.TurnSerial)))
                 error = "梅杰德的公开军团或登场位置已失效；效果未入栈";
             else
-                player.UsedAbilities.Add("trigger:medjedDamageResponse");
+                player.UsedAbilities.Add(L12MasterTriggeredUsageRules.Key("medjedDamageResponse", player.PlayerIndex, State.TurnSerial));
         }
         else if (key.Item1 == "S02-02M1")
         {
-            var onceKey = $"s2-nephthys-scarab:{State.TurnSerial}";
+            var onceKey = L12MasterTriggeredUsageRules.Key("nephthysScarab", player.PlayerIndex, State.TurnSerial);
             var slot = activation.DeclaredValues.GetValueOrDefault("entrySlot", []).SingleOrDefault();
             if (State.ActivePlayer == candidate.Controller || player.MasterId != "S02-02M1"
                 || player.UsedAbilities.Contains(onceKey) || entryCard is null

@@ -972,7 +972,7 @@ public sealed partial class L12GameEngine
         if (L12StructuredCardRules.StarterRemainingPlan(player.MasterId, "legion-attack-timing")
             != "kagutsuchi-buff" || ActiveResourceCount(player) < moraleCost && player.Hand.Count == 0)
             return null;
-        var onceKey = $"trigger:starter-kagutsuchi:{State.TurnSerial}";
+        var onceKey = L12MasterTriggeredUsageRules.Key("kagutsuchiBuff", player.PlayerIndex, State.TurnSerial);
         var pendingKey = $"{onceKey}:pending";
         if (player.UsedAbilities.Contains(onceKey) || !player.UsedAbilities.Add(pendingKey)) return null;
         var master = CreateCard(player.MasterId, $"master-{controller}");
@@ -1015,7 +1015,7 @@ public sealed partial class L12GameEngine
             if (returnedEvents > 0 && L12StructuredCardRules.StarterRemainingPlan(player.MasterId,
                     "morale-return") == "change-rested-morale")
             {
-                var onceKey = $"trigger:starter-change:{State.TurnSerial}";
+                var onceKey = L12MasterTriggeredUsageRules.Key("changeRestedMorale", player.PlayerIndex, State.TurnSerial);
                 var pendingKey = $"{onceKey}:pending";
                 if (!player.UsedAbilities.Contains(onceKey) && player.UsedAbilities.Add(pendingKey))
                 {

@@ -181,10 +181,17 @@ public sealed partial class L12GameEngine
         if (ability == "shennongReset" && source.CardId == "S02-0104")
         {
             var player = State.Players[playerIndex];
-            var used = UsedLimitedMasterAbilityViews(player);
+            var used = UsedMasterUsageResetChoices(player);
             if (used.Length == 0) return CommandResult.Reject("我方主宰没有已使用的效果次数");
-            var result = BeginPendingActivation(playerIndex, source, ability, used.Select(view => view.Id).ToArray(),
-                "神农鼎：选择要重置使用次数的主宰效果");
+            var result = BeginPendingActivationSequence(playerIndex, source, ability,
+            [
+                new L12ActivationSelectionStep
+                {
+                    Kind = "option", Text = "神农鼎：选择要重置使用次数的主宰效果",
+                    ValidChoices = used.Select(view => view.Id).ToList(),
+                    ChoiceLabels = used.ToDictionary(view => view.Id, view => view.Label, StringComparer.OrdinalIgnoreCase),
+                },
+            ]);
             var prompt = State.PendingPrompts.LastOrDefault(candidate => candidate.PlayerIndex == playerIndex
                 && candidate.Continuation == "pending-activation");
             if (prompt is not null)
@@ -231,8 +238,7 @@ public sealed partial class L12GameEngine
         {
             var targetAbility = item.Data.GetValueOrDefault("target") ?? string.Empty;
             var player = State.Players[item.Controller];
-            var targetKey = ActiveAbilityUsageKey($"master-{item.Controller}", player.MasterId, targetAbility);
-            if (HasUsedLimitedActiveAbility(player, player.MasterId, $"master-{item.Controller}", targetAbility)
+            if (UsedMasterAbilityUsageKey(player, targetAbility) is { } targetKey
                 && player.UsedAbilities.Remove(targetKey))
                 AddEvent("effect", item.Controller, "神农鼎重置我方主宰1个效果的使用次数", source);
             else
