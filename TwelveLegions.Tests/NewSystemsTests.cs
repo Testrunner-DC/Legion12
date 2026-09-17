@@ -403,8 +403,10 @@ public sealed class NewSystemsTests
         game.State.DisasterValue = 9;
         game.State.DisasterDeck.Clear();
         game.State.DisasterDeck.Add(CreateInstance("S01-DS05", "test-dragon-descent"));
-        game.State.Players[0].Graveyard.Add(CreateInstance("S01-0001", "grave-a"));
-        game.State.Players[1].Graveyard.Add(CreateInstance("S01-0002", "grave-b"));
+        game.State.Players[0].Graveyard.AddRange(Enumerable.Range(0, 4)
+            .Select(index => CreateInstance("S01-0001", $"grave-a-{index}")));
+        game.State.Players[1].Graveyard.AddRange(Enumerable.Range(0, 4)
+            .Select(index => CreateInstance("S01-0002", $"grave-b-{index}")));
 
         Assert.True(game.Handle(game.State.ActivePlayer, new L12Command("endTurn")).Accepted);
         foreach (var confirmation in game.State.PendingPrompts

@@ -35,6 +35,75 @@ public sealed partial class L12GameEngine
             LegionCardsOnly = legionOnly,
         };
 
+    // Fixed-count effects may still be activated without a complete set, but never
+    // return a partial set. Costs use their separate, mandatory payment protocol.
+    private static bool ValidateFixedGraveEffectDeclaration(L12PlayerState owner,
+        IEnumerable<string> declared, int required)
+    {
+        var values = declared.ToArray();
+        var available = owner.Graveyard.Where(CanEnterHandOrLibrary)
+            .Sum(L12StructuredCardRules.StarterGraveCardCopies);
+        return available < required ? values.Length == 0
+            : TryResolveFixedGraveEffectDeclaration(owner, values, required, out _);
+    }
+
+    private static bool TryResolveFixedGraveEffectDeclaration(L12PlayerState owner,
+        IEnumerable<string> declared, int required, out L12CardInstance[] cards)
+    {
+        var values = declared.ToArray();
+        var representations = values.Where(value => value.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)).ToArray();
+        var ids = values.Where(value => !value.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)).ToArray();
+        cards = ids.Select(id => owner.Graveyard.FirstOrDefault(card => card.InstanceId == id
+                && CanEnterHandOrLibrary(card))).OfType<L12CardInstance>().ToArray();
+        return representations.Length <= 1 && ids.Distinct(StringComparer.OrdinalIgnoreCase).Count() == ids.Length
+            && cards.Length == ids.Length
+            && L12StructuredCardRules.IsExactGraveCardRepresentation(owner, cards, representations.SingleOrDefault(), required);
+    }
+
+    private const string FixedGraveReturnResolutionAbility = "fixed-grave-return-resolution";
+
+    private bool BeginFixedGraveReturnResolution(L12StackItem item, int playerIndex, int required)
+    {
+        var player = State.Players[playerIndex];
+        var grave = player.Graveyard.Where(CanEnterHandOrLibrary).ToArray();
+        if (grave.Sum(L12StructuredCardRules.StarterGraveCardCopies) < required) return false;
+        var source = FindSource(item);
+        if (source is null) return false;
+        var step = GraveEffectSelectionStep(player,
+            $"〈{item.SourceName}〉：选择合计视为{required}张墓地卡牌，依选择顺序返回牌库底部",
+            "graveEffect", grave, required);
+        step.CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed;
+        var result = BeginPendingActivationSequence(playerIndex, source, FixedGraveReturnResolutionAbility, [step]);
+        if (!result.Accepted) return false;
+        var activation = State.PendingActivations.Last(candidate => candidate.Controller == playerIndex
+            && candidate.Ability == FixedGraveReturnResolutionAbility);
+        activation.CommittedCompletion = item.StackItemId;
+        foreach (var prompt in State.PendingPrompts.Where(prompt => prompt.Data.GetValueOrDefault("activationId") == activation.ActivationId))
+        {
+            prompt.Data["simultaneous"] = "true";
+            prompt.Data["action"] = "disaster-grave-bottom";
+        }
+        return true;
+    }
+
+    private void CompleteFixedGraveReturnResolution(L12PendingActivation activation, bool cancelled = false)
+    {
+        var item = State.EffectStack.FirstOrDefault(item => item.StackItemId == activation.CommittedCompletion);
+        if (item is null) return;
+        var player = State.Players[activation.Controller];
+        if (!cancelled && !item.Negated
+            && activation.SelectionSteps.FirstOrDefault()?.RepresentedCount is > 0 and var required
+            && TryResolveFixedGraveEffectDeclaration(player, activation.DeclaredTargets, required, out var cards))
+        {
+            MoveGraveToLibraryBottom(player, cards);
+            AddEvent("effect", activation.Controller,
+                $"〈{item.SourceName}〉将墓地{cards.Length}张实体卡牌依选择顺序返回牌库底部", cards);
+        }
+        if (!State.PendingActivations.Any(candidate => candidate.Ability == FixedGraveReturnResolutionAbility
+                && candidate.CommittedCompletion == item.StackItemId))
+            FinishStackItem(item);
+    }
+
     private static bool IsGraveEffectDeclaration(string? declarationKey)
         => declarationKey?.StartsWith("graveEffect", StringComparison.OrdinalIgnoreCase) == true;
 
@@ -1022,6 +1091,12 @@ public sealed partial class L12GameEngine
     {
         State.PendingActivations.Remove(activation);
 
+        if (activation.Ability == FixedGraveReturnResolutionAbility)
+        {
+            CompleteFixedGraveReturnResolution(activation);
+            return;
+        }
+
         if (activation.TriggerCandidateId is not null)
         {
             CompleteTriggerDeclaration(activation);
@@ -1144,6 +1219,12 @@ public sealed partial class L12GameEngine
     private void RejectPendingActivation(L12PendingActivation activation, string reason, bool emitEvent = true)
     {
         State.PendingActivations.Remove(activation);
+        if (activation.Ability == FixedGraveReturnResolutionAbility)
+        {
+            if (emitEvent) AddEvent("effect-cancelled", activation.Controller, reason);
+            CompleteFixedGraveReturnResolution(activation, cancelled: true);
+            return;
+        }
         var cancelledFreeMasterActivation = ClearFreeMasterActivation(activation);
         if (activation.Ability == EffectGeneratedFreePlayAbility)
         {

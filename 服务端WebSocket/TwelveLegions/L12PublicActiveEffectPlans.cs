@@ -137,10 +137,10 @@ public sealed partial class L12GameEngine
             {
                 var grave = player.Graveyard.Where(CanEnterHandOrLibrary).ToArray();
                 if (grave.Sum(L12StructuredCardRules.StarterGraveCardCopies) < 2)
-                    return CommandResult.Reject("墓地卡牌合计需能视为2张");
+                    return CommitActiveAbility(playerIndex, source, ability, null);
                 return BeginPendingActivationSequence(playerIndex, source, ability,
-                [GraveCostSelectionStep(player, "洛基：选择合计视为2张、返回牌库底部的墓地卡牌",
-                    "graveCards", grave, required: 2)]);
+                [GraveEffectSelectionStep(player, "洛基：选择合计视为2张、返回牌库底部的墓地卡牌",
+                    "graveEffect", grave, required: 2)]);
             }
             case ("S01-01D1", "palaceExchange"):
             {

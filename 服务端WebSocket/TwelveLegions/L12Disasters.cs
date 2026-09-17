@@ -408,18 +408,7 @@ public sealed partial class L12GameEngine
         var prompted = 0;
         for (var playerIndex = 0; playerIndex < 2; playerIndex++)
         {
-            var grave = State.Players[playerIndex].Graveyard.Where(CanEnterHandOrLibrary).ToArray();
-            var count = Math.Min(4, grave.Length);
-            if (count == 0) continue;
-            CreatePrompt(playerIndex, "order", $"选择墓地 {count} 张牌，依选择顺序返回牌库底部", grave.Select(card => card.InstanceId),
-                count, count, "disaster-effect", item.StackItemId,
-                data: new Dictionary<string, string>
-                {
-                    ["action"] = "disaster-grave-bottom",
-                    ["player"] = playerIndex.ToString(),
-                    ["simultaneous"] = "true"
-                });
-            prompted++;
+            if (BeginFixedGraveReturnResolution(item, playerIndex, 4)) prompted++;
         }
         if (prompted == 0) FinishStackItem(item);
     }
@@ -428,11 +417,9 @@ public sealed partial class L12GameEngine
     {
         var playerIndex = int.Parse(prompt.Data["player"]);
         var player = State.Players[playerIndex];
-        foreach (var id in chosen)
-        {
-            var card = player.Graveyard.First(candidate => candidate.InstanceId == id);
-            MoveGraveToLibraryBottom(player, [card]);
-        }
+        // Compatibility with checkpoints containing the former direct order prompt.
+        if (TryResolveFixedGraveEffectDeclaration(player, chosen, 4, out var cards))
+            MoveGraveToLibraryBottom(player, cards);
         if (!State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
             && candidate.Data.GetValueOrDefault("action") == "disaster-grave-bottom"))
             FinishStackItem(item);

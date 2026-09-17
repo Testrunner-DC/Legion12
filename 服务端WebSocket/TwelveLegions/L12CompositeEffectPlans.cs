@@ -1360,21 +1360,8 @@ public sealed partial class L12GameEngine
 
     private static bool ValidateHuntingMomentGraveEffect(L12PlayerState player,
         IReadOnlyDictionary<string, List<string>> declared)
-    {
-        var eligible = player.Graveyard.Where(CanEnterHandOrLibrary).ToArray();
-        var canReturnFour = eligible.Sum(L12StructuredCardRules.StarterGraveCardCopies) >= 4;
-        var selectedIds = declared.GetValueOrDefault("graveEffect", []);
-        var representation = declared.GetValueOrDefault("graveEffectCopies", []).SingleOrDefault();
-        if (!canReturnFour)
-            return selectedIds.Count == 0 && string.IsNullOrWhiteSpace(representation);
-        if (selectedIds.Count is < 1 or > 4
-            || selectedIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != selectedIds.Count)
-            return false;
-        var selected = selectedIds.Select(id => eligible.FirstOrDefault(card => card.InstanceId == id))
-            .OfType<L12CardInstance>().ToArray();
-        return selected.Length == selectedIds.Count
-            && L12StructuredCardRules.IsExactGraveCardRepresentation(player, selected, representation, 4);
-    }
+        => ValidateFixedGraveEffectDeclaration(player, declared.GetValueOrDefault("graveEffect", [])
+            .Concat(declared.GetValueOrDefault("graveEffectCopies", [])), 4);
 
     private bool ValidateForgedOrdersDeclaration(L12PlayerState opponent,
         IReadOnlyDictionary<string, List<string>> declared)

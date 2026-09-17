@@ -143,6 +143,21 @@ public sealed partial class L12GameEngine
             || activation.CurrentStep < 0 || activation.CurrentStep >= activation.SelectionSteps.Count)
             return false;
 
+        if (activation.Ability == FixedGraveReturnResolutionAbility)
+        {
+            var step = activation.SelectionSteps[0];
+            var owner = State.Players[activation.Controller];
+            var remaining = owner.Graveyard.Where(card => CanEnterHandOrLibrary(card)
+                && step.ValidChoices.Contains(card.InstanceId, StringComparer.OrdinalIgnoreCase)).ToArray();
+            return step.RepresentedCount is > 0 and var required
+                && remaining.Sum(L12StructuredCardRules.StarterGraveCardCopies) >= required
+                && activation.DeclaredValues.GetValueOrDefault("graveEffect", [])
+                    .All(id => remaining.Any(card => card.InstanceId == id))
+                && State.EffectStack.Any(item => !item.Negated && item.StackItemId == activation.CommittedCompletion
+                && item.SourceInstanceId == activation.SourceInstanceId
+                && item.SourceCardId == activation.SourceCardId);
+        }
+
         if (activation.TriggerCandidateId is not null)
         {
             var candidate = State.PendingTriggerStackCandidates.FirstOrDefault(candidate =>

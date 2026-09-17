@@ -301,8 +301,7 @@ public sealed partial class L12GameEngine
             {
                 var declared = CompositeDeclared(item, "graveEffect")
                     .Concat(CompositeDeclared(item, "graveEffectCopies"));
-                if (L12StructuredCardRules.TryResolveGraveCostDeclaration(player, declared, 4,
-                        string.Empty, legionOnly: false, out var returned, out _))
+                if (TryResolveFixedGraveEffectDeclaration(player, declared, 4, out var returned))
                 {
                     MoveGraveToLibraryBottom(player, returned);
                     var physicalText = returned.Length == 4
@@ -964,9 +963,8 @@ public sealed partial class L12GameEngine
             case "lokiHeal" when source.CardId == "S01-03M2":
             {
                 var ids = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
-                if (!L12StructuredCardRules.TryResolveGraveCostDeclaration(player, ids, 2, string.Empty,
-                        legionOnly: false, out _, out _))
-                    return CommandResult.Reject("洛基声明的合计2张墓地费用已失效");
+                if (!ValidateFixedGraveEffectDeclaration(player, ids, 2))
+                    return CommandResult.Reject("洛基声明的墓地回库对象已失效");
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气");
                 RecordLimitedActiveAbilityUse(player, source, ability);
                 break;
@@ -1362,16 +1360,14 @@ public sealed partial class L12GameEngine
             case "lokiHeal":
             {
                 var ids = item.Data.GetValueOrDefault("target", string.Empty)
-                    .Split('|', StringSplitOptions.RemoveEmptyEntries)
-                    .Where(id => !id.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)).ToArray();
-                var cards = ids.Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id
-                        && CanEnterHandOrLibrary(card)))
-                    .Where(card => card is not null).Cast<L12CardInstance>().ToArray();
-                if (cards.Length > 0)
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries);
+                if (TryResolveFixedGraveEffectDeclaration(player, ids, 2, out var cards))
                 {
                     MoveGraveToLibraryBottom(player, cards);
-                    HealMaster(item.Controller, 1, "洛基主宰效果");
+                    AddEvent("effect", item.Controller,
+                        $"〈{item.SourceName}〉将墓地{cards.Length}张实体卡牌返回牌库底部", cards);
                 }
+                HealMaster(item.Controller, 1, "洛基主宰效果");
                 FinishStackItem(item);
                 return true;
             }

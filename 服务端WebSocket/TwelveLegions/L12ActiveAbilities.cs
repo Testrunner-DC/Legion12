@@ -170,9 +170,6 @@ public sealed partial class L12GameEngine
                     },
                 ]);
             }
-            case ("S01-03M2", "lokiHeal"):
-                // 返回墓地2张卡是该选项在冒号后执行的额外消耗；免费副本不声明、不移动它们。
-                return CommitActiveAbility(playerIndex, source, ability, null);
             default:
                 return null;
         }
@@ -529,8 +526,10 @@ public sealed partial class L12GameEngine
         {
             case ("S01-01M1", "drawCycle"):
             case ("S01-03M2", "lokiCycle"):
-            case ("S01-03M2", "lokiHeal"):
                 return declared.Length == 0 ? null : "所选主宰效果不需要目标";
+            case ("S01-03M2", "lokiHeal"):
+                return ValidateFixedGraveEffectDeclaration(player, declared, 2)
+                    ? null : "洛基声明的墓地回库对象已失效";
             case ("S01-02M3", "medjedDebuff"):
                 return declared.Length == 2 && declared[0] is "mode:normal" or "mode:strong"
                     && DeclaredEnemyTarget(playerIndex, declared[1]) is not null
@@ -690,13 +689,6 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         var source = FindSource(item);
         var ability = item.Data.GetValueOrDefault("ability") ?? string.Empty;
-        if (item.Data.GetValueOrDefault("freeMasterActivation") == "true"
-            && item.SourceCardId == "S01-03M2" && ability == "lokiHeal")
-        {
-            HealMaster(item.Controller, 1, "洛基主宰效果");
-            FinishStackItem(item);
-            return;
-        }
         if (TryResolveStarterRemainingActiveEffect(item, source, ability)) return;
         switch (ability)
         {

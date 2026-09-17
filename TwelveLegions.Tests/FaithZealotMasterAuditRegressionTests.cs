@@ -120,7 +120,7 @@ public sealed class FaithZealotMasterAuditRegressionTests
     }
 
     [Fact]
-    public void FreeLokiHealWaivesBothMoraleAndGraveReturnCost()
+    public void FreeLokiHealWithEmptyGraveStillHealsWithoutMorale()
     {
         var game = Create(25302);
         var player = game.State.Players[0];
@@ -585,11 +585,11 @@ public sealed class FaithZealotMasterAuditRegressionTests
         Assert.All(expected, ability => Assert.True(prompt.Data.ContainsKey(ability)));
     }
 
-    private static L12GameEngine Create(int seed, int firstFactionIndex = 0)
+    private static L12GameEngine Create(int seed, int firstFactionIndex = 0, int stateFormatVersion = 1)
     {
         var game = new L12GameEngine(Catalog, "faith-zealot-audit", "FAITH253", seed,
             ["甲", "乙"], [firstFactionIndex, 1], skipPreparation: true,
-            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false, stateFormatVersion: stateFormatVersion);
         game.State.ActivePlayer = 0;
         game.State.FirstPlayer = 0;
         game.State.Round = 2;
@@ -614,6 +614,299 @@ public sealed class FaithZealotMasterAuditRegressionTests
             player.UsedAbilities.Clear();
         }
         return game;
+    }
+
+    public static IEnumerable<object[]> LokiGraveCases()
+    {
+        foreach (var free in new[] { false, true })
+        foreach (var count in new[] { 0, 1, 2, 3 })
+        foreach (var restore in new[] { false, true })
+            yield return [free, count, restore];
+    }
+
+    private static L12GameEngine LokiGame(bool free, int count)
+    {
+        var game = Create(91792, stateFormatVersion: 2);
+        SetMaster(game.State.Players[0], "S01-03M2");
+        game.State.Players[0].Hp = 5;
+        if (!free) game.State.Players[0].Morale.Add(new L12MoraleCard
+            { CardId = "S01-03C1", InstanceId = "loki-cost" });
+        game.State.Players[0].Graveyard.AddRange(Enumerable.Range(0, count)
+            .Select(index => Card("S01-0001", $"loki-return-{index}")));
+        return game;
+    }
+
+    private static void BeginLokiHeal(L12GameEngine game, bool free)
+    {
+        if (free) Resolve(game, OpenFaithChoice(game, "S01-03M2"), "lokiHeal");
+        else
+        {
+            var result = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "lokiHeal"));
+            Assert.True(result.Accepted, result.Error);
+        }
+    }
+
+    private static L12GameEngine RestoreLoki(L12GameEngine game)
+        => L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(), game.RandomState!.Value,
+            game.CardFactSignalSequence, autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+
+    [Theory]
+    [MemberData(nameof(LokiGraveCases))]
+    public void LokiHealRequiresFullReturnCountButAlwaysHealsAtResolution(bool free, int count, bool restore)
+    {
+        var game = LokiGame(free, count);
+        BeginLokiHeal(game, free);
+        if (restore) game = RestoreLoki(game);
+        var player = game.State.Players[0];
+        var selected = player.Graveyard.TakeLast(count >= 2 ? 2 : 0).Reverse()
+            .Select(card => card.InstanceId).ToArray();
+        if (count >= 2)
+        {
+            var selection = Prompt(game);
+            Assert.Equal("pending-activation", selection.Continuation);
+            Assert.Equal(Math.Min(2, count), selection.MinChoose);
+            Assert.Equal(Math.Min(2, count), selection.MaxChoose);
+            Assert.Equal(count, selection.ValidChoices.Count(choice => choice != "skip"));
+            Assert.Empty(player.UsedAbilities);
+            Assert.All(player.Morale, morale => Assert.False(morale.Tapped));
+            ResolveMany(game, selection, selected);
+            Assert.False(game.Handle(0, new L12Command("resolvePrompt", PromptId: selection.PromptId,
+                CardInstanceIds: selected.ToList())).Accepted);
+        }
+        var item = Assert.Single(game.State.EffectStack);
+        Assert.Equal("lokiHeal", item.Data["ability"]);
+        Assert.Equal(count, player.Graveyard.Count);
+        Assert.Empty(player.Library);
+        Assert.Equal(5, player.Hp);
+        if (free) Assert.Empty(player.UsedAbilities);
+        else Assert.True(Assert.Single(player.Morale).Tapped);
+        if (restore) game = RestoreLoki(game);
+        PassResponses(game);
+        player = game.State.Players[0];
+        Assert.Equal(selected, player.Library.Select(card => card.InstanceId));
+        Assert.Equal(count - selected.Length, player.Graveyard.Count);
+        Assert.Equal(6, player.Hp);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+        if (free) Assert.Empty(player.UsedAbilities);
+        else Assert.False(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "lokiCycle")).Accepted);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void LokiHealNegationStopsBothEffectsAndStaleTargetsDoNotStopHealing(bool free, bool negate)
+    {
+        var game = LokiGame(free, 2);
+        BeginLokiHeal(game, free);
+        ResolveMany(game, Prompt(game), "loki-return-0", "loki-return-1");
+        var item = Assert.Single(game.State.EffectStack);
+        item.Negated = negate;
+        var player = game.State.Players[0];
+        var removed = player.Graveyard[0];
+        player.Graveyard.Remove(removed);
+        player.Hand.Add(removed);
+        // A new card must not replace a declared target that left the graveyard.
+        player.Graveyard.Add(Card("S01-0002", "loki-new-grave"));
+        game = RestoreLoki(game);
+        PassResponses(game);
+        player = game.State.Players[0];
+        Assert.Equal(negate ? 5 : 6, player.Hp);
+        Assert.Empty(player.Library);
+        Assert.Contains(player.Graveyard, card => card.InstanceId == "loki-return-1");
+        Assert.Contains(player.Graveyard, card => card.InstanceId == "loki-new-grave");
+        Assert.Contains(player.Hand, card => card.InstanceId == removed.InstanceId);
+        if (free) Assert.Empty(player.UsedAbilities);
+        else Assert.True(Assert.Single(player.Morale).Tapped);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LokiHealWarriorRepresentationIsAnEffectInBothRoutes(bool free)
+    {
+        var game = LokiGame(free, 0);
+        var player = game.State.Players[0];
+        player.Graveyard.Add(Card("ST03-08", "loki-warrior"));
+        BeginLokiHeal(game, free);
+        ResolveMany(game, Prompt(game), "loki-warrior");
+        var representation = Prompt(game);
+        Assert.Contains("墓地效果", representation.Text);
+        var choice = Assert.Single(representation.ValidChoices,
+            value => representation.ChoiceLabels.GetValueOrDefault(value, "").Contains("视为2张", StringComparison.Ordinal));
+        Resolve(game, representation, choice);
+        Assert.Single(player.Graveyard);
+        Assert.Empty(player.Library);
+        PassResponses(game);
+        Assert.Equal(["loki-warrior"], player.Library.Select(card => card.InstanceId));
+        Assert.Equal(6, player.Hp);
+    }
+
+    [Fact]
+    public void LokiHealFailedPaymentCanBeCancelledWithoutUsingTheTurn()
+    {
+        var game = LokiGame(false, 2);
+        BeginLokiHeal(game, false);
+        var player = game.State.Players[0];
+        Assert.Single(player.Morale).Tapped = true;
+        var prompt = Prompt(game);
+        game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            CardInstanceIds: ["loki-return-0", "loki-return-1"]));
+        foreach (var pending in game.State.PendingPrompts.ToArray())
+        {
+            Assert.Contains("skip", pending.ValidChoices);
+            Resolve(game, pending, "skip");
+        }
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Empty(player.UsedAbilities);
+        Assert.Equal(2, player.Graveyard.Count);
+        Assert.Equal(5, player.Hp);
+        Assert.Single(player.Morale).Tapped = false;
+        BeginLokiHeal(game, false);
+        ResolveMany(game, Prompt(game), "loki-return-0", "loki-return-1");
+        PassResponses(game);
+        Assert.Equal(6, player.Hp);
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, false)]
+    [InlineData(2, false)]
+    [InlineData(3, false)]
+    [InlineData(4, false)]
+    [InlineData(5, false)]
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    [InlineData(2, true)]
+    [InlineData(3, true)]
+    [InlineData(4, true)]
+    [InlineData(5, true)]
+    public void DragonFixedReturnUsesSameExactCountAndPreservesSimultaneousChoice(int count, bool restore)
+    {
+        var game = Create(91793, stateFormatVersion: 2);
+        var disaster = Card("S01-DS05", "dragon-source");
+        game.State.ActiveDisaster = disaster;
+        var item = new L12StackItem { StackItemId = "dragon-fixed-return", Controller = 0,
+            SourceCardId = disaster.CardId, SourceInstanceId = disaster.InstanceId,
+            SourceName = disaster.Name, SourceSnapshot = disaster, Trigger = "disaster", Text = disaster.EffectText ?? string.Empty };
+        game.State.EffectStack.Add(item);
+        game.State.IsResolvingStack = true;
+        foreach (var player in game.State.Players)
+            player.Graveyard.AddRange(Enumerable.Range(0, count)
+                .Select(index => Card("S01-0001", $"dragon-{player.PlayerIndex}-{index}")));
+        Invoke(game, "BeginDisasterGraveBottom", item);
+        if (restore) game = RestoreLoki(game);
+        if (count >= 4)
+        {
+            Assert.Equal(2, game.State.PendingActivations.Count);
+            Assert.Equal(2, game.State.PendingPrompts.Count);
+            foreach (var prompt in game.State.PendingPrompts.ToArray())
+            {
+                Assert.DoesNotContain("skip", prompt.ValidChoices);
+                Assert.Equal(4, prompt.MinChoose);
+                Assert.Equal(4, prompt.MaxChoose);
+                ResolveMany(game, prompt, prompt.ValidChoices.TakeLast(4).Reverse().ToArray());
+            }
+        }
+        foreach (var player in game.State.Players)
+        {
+            Assert.Equal(count >= 4 ? 4 : 0, player.Library.Count);
+            Assert.Equal(count >= 4 ? count - 4 : count, player.Graveyard.Count);
+        }
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+    }
+
+    [Fact]
+    public void DragonFixedReturnUsesSharedWarriorCountWithoutPartialMovement()
+    {
+        var game = Create(91794, stateFormatVersion: 2);
+        var disaster = Card("S01-DS05", "dragon-warrior-source");
+        game.State.ActiveDisaster = disaster;
+        var item = new L12StackItem { StackItemId = "dragon-warrior-return", Controller = 0,
+            SourceCardId = disaster.CardId, SourceInstanceId = disaster.InstanceId,
+            SourceName = disaster.Name, SourceSnapshot = disaster, Trigger = "disaster", Text = disaster.EffectText ?? string.Empty };
+        game.State.EffectStack.Add(item);
+        game.State.IsResolvingStack = true;
+        var player = game.State.Players[0];
+        player.Graveyard.AddRange([Card("ST03-08", "dragon-warrior"), Card("S01-0001", "dragon-companion")]);
+        Invoke(game, "BeginDisasterGraveBottom", item);
+        ResolveMany(game, Prompt(game), "dragon-warrior", "dragon-companion");
+        game = RestoreLoki(game);
+        var representation = Prompt(game);
+        Assert.Contains("墓地效果", representation.Text);
+        Resolve(game, representation, Assert.Single(representation.ValidChoices,
+            value => representation.ChoiceLabels.GetValueOrDefault(value, "").Contains("视为3张", StringComparison.Ordinal)));
+        Assert.Equal(["dragon-warrior", "dragon-companion"], game.State.Players[0].Library.Select(card => card.InstanceId));
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DragonFixedReturnStaleOrOrphanSelectionClosesWithoutPartialMovement(bool orphan)
+    {
+        var game = Create(91795, stateFormatVersion: 2);
+        var disaster = Card("S01-DS05", "dragon-stale-source");
+        game.State.ActiveDisaster = disaster;
+        var item = new L12StackItem { StackItemId = "dragon-stale-return", Controller = 0,
+            SourceCardId = disaster.CardId, SourceInstanceId = disaster.InstanceId,
+            SourceName = disaster.Name, SourceSnapshot = disaster, Trigger = "disaster", Text = "魔龙回库" };
+        game.State.EffectStack.Add(item);
+        game.State.IsResolvingStack = true;
+        var player = game.State.Players[0];
+        player.Graveyard.AddRange(Enumerable.Range(0, 4).Select(index => Card("S01-0001", $"dragon-stale-{index}")));
+        Invoke(game, "BeginDisasterGraveBottom", item);
+        var prompt = Prompt(game);
+        if (orphan) game.State.PendingPrompts.Clear();
+        else
+        {
+            player.Hand.Add(player.Graveyard[0]);
+            player.Graveyard.RemoveAt(0);
+        }
+        game = RestoreLoki(game);
+        game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            CardInstanceIds: prompt.ValidChoices.ToList()));
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled");
+        Assert.Empty(game.State.Players[0].Library);
+        Assert.Equal(orphan ? 4 : 3, game.State.Players[0].Graveyard.Count);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    public void DragonLegacyOrderCheckpointUsesFixedCountWithoutPartialReturn(int count)
+    {
+        var game = Create(91796, stateFormatVersion: 2);
+        var disaster = Card("S01-DS05", "dragon-legacy-source");
+        game.State.ActiveDisaster = disaster;
+        var item = new L12StackItem { StackItemId = "dragon-legacy-return", Controller = 0,
+            SourceCardId = disaster.CardId, SourceInstanceId = disaster.InstanceId,
+            SourceName = disaster.Name, SourceSnapshot = disaster, Trigger = "disaster", Text = "魔龙回库" };
+        game.State.EffectStack.Add(item);
+        game.State.IsResolvingStack = true;
+        game.State.Players[0].Graveyard.AddRange(Enumerable.Range(0, count)
+            .Select(index => Card("S01-0001", $"legacy-{index}")));
+        var prompt = new L12Prompt { PromptId = "legacy-return-prompt", PlayerIndex = 0,
+            Kind = "order", Text = "旧存档墓地回库", Continuation = "disaster-effect",
+            StackItemId = item.StackItemId, MinChoose = count, MaxChoose = count,
+            ValidChoices = game.State.Players[0].Graveyard.Select(card => card.InstanceId).ToList(),
+            Data = new() { ["action"] = "disaster-grave-bottom", ["player"] = "0", ["simultaneous"] = "true" } };
+        game.State.PendingPrompts.Add(prompt);
+        game = RestoreLoki(game);
+        ResolveMany(game, Prompt(game), prompt.ValidChoices.ToArray());
+        Assert.Equal(count == 4 ? 4 : 0, game.State.Players[0].Library.Count);
+        Assert.Equal(count == 4 ? 0 : 1, game.State.Players[0].Graveyard.Count);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
     }
 
     private static int DeterministicSeed(string value)
@@ -776,7 +1069,7 @@ public sealed class FaithZealotMasterAuditRegressionTests
     {
         var result = game.Handle(prompt.PlayerIndex,
             new L12Command("resolvePrompt", PromptId: prompt.PromptId, CardInstanceIds: choices.ToList()));
-        Assert.True(result.Accepted, result.Error);
+        Assert.True(result.Accepted, result.Error + "; " + string.Join(" | ", game.State.Events.TakeLast(8).Select(entry => entry.Text)));
     }
 
     private static void PassResponses(L12GameEngine game, int maximum = 12)
