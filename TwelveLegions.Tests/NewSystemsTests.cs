@@ -395,14 +395,23 @@ public sealed class NewSystemsTests
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Data.GetValueOrDefault("action") == "disaster-discard");
     }
 
-    [Fact]
-    public void DragonDescentLetsBothPlayersOrderTheirGraveyardsSimultaneously()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DragonDescentEmptyColumnStillReturnsBothGraveyardsAsAnExplicitException(bool restore)
     {
-        var game = Create(seed: 5530);
+        var game = new L12GameEngine(Catalog, "dragon-empty-column", "DRAGONEMPTY", 5530,
+            ["甲", "乙"], [0, 1], skipPreparation: true, stateFormatVersion: 2);
         game.State.Phase = L12Phase.Main;
         game.State.DisasterValue = 9;
         game.State.DisasterDeck.Clear();
         game.State.DisasterDeck.Add(CreateInstance("S01-DS05", "test-dragon-descent"));
+        foreach (var player in game.State.Players)
+        {
+            player.Field[0] = new L12CardInstance?[3];
+            player.Field[1] = new L12CardInstance?[3];
+            player.Graveyard.Clear();
+        }
         game.State.Players[0].Graveyard.AddRange(Enumerable.Range(0, 4)
             .Select(index => CreateInstance("S01-0001", $"grave-a-{index}")));
         game.State.Players[1].Graveyard.AddRange(Enumerable.Range(0, 4)
@@ -421,6 +430,13 @@ public sealed class NewSystemsTests
                 new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
         }
 
+        Assert.All(game.State.Players, player =>
+        {
+            Assert.All(player.Field.SelectMany(row => row), card => Assert.Null(card));
+            Assert.Equal(4, player.Graveyard.Count);
+        });
+        if (restore) game = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(),
+            game.RandomState!.Value, game.CardFactSignalSequence);
         var orderPrompts = game.State.PendingPrompts
             .Where(prompt => prompt.Data.GetValueOrDefault("action") == "disaster-grave-bottom").ToArray();
         Assert.Equal(2, orderPrompts.Length);
@@ -432,6 +448,20 @@ public sealed class NewSystemsTests
             CardInstanceIds: first.ValidChoices.ToList())).Accepted);
         Assert.Single(game.State.PendingPrompts,
             prompt => prompt.Data.GetValueOrDefault("action") == "disaster-grave-bottom");
+        if (restore) game = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(),
+            game.RandomState!.Value, game.CardFactSignalSequence);
+        var second = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "disaster-grave-bottom");
+        Assert.True(game.Handle(second.PlayerIndex, new L12Command("resolvePrompt", PromptId: second.PromptId,
+            CardInstanceIds: second.ValidChoices.ToList())).Accepted);
+        foreach (var order in orderPrompts)
+        {
+            var player = game.State.Players[order.PlayerIndex];
+            Assert.Equal(order.ValidChoices, player.Library.TakeLast(4).Select(card => card.InstanceId));
+            Assert.DoesNotContain(player.Graveyard, card => order.ValidChoices.Contains(card.InstanceId));
+        }
+        Assert.Empty(game.State.PendingActivations);
+        Assert.DoesNotContain(game.State.EffectStack, item => item.SourceCardId == "S01-DS05");
     }
 
     [Fact]

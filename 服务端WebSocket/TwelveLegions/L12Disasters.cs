@@ -400,6 +400,8 @@ public sealed partial class L12GameEngine
                 if (card is not null) RemoveFromField(State.Players[owner], card, true, "因魔龙降世置入墓地",
                     queueDeathTrigger: false, leaveKind: L12FieldLeaveKind.PutIntoGraveyard);
             }
+        // 2026-09-18 玩家裁定：魔龙降世的回库不依赖该列实际移入墓地的张数。
+        // 即使掷中空列也继续；这是本卡特例，不改变其他卡的“随后”依赖规则。
         BeginDisasterGraveBottom(item);
     }
 

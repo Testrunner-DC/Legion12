@@ -157,6 +157,43 @@ public sealed partial class L12GameEngine
         return resolved;
     }
 
+    // 两个预先声明的独立去向，组合现有回手/回库操作；不是固定数量整组回库原子。
+    // 每次移动前读取当前墓地区域与条件，不能用另一合法对象替代失效对象。
+    private void ResolveDeclaredGraveDestinations(L12StackItem item, string handId, string bottomId,
+        Func<L12CardInstance, bool>? predicate = null)
+    {
+        if (string.IsNullOrWhiteSpace(handId) || string.IsNullOrWhiteSpace(bottomId)
+            || string.Equals(handId, bottomId, StringComparison.OrdinalIgnoreCase))
+        {
+            RecordResolutionFailure(item, "墓地对象的去向声明不完整或重复");
+            return;
+        }
+        var player = State.Players[item.Controller];
+        var resolved = 0;
+        foreach (var (id, toHand) in new[] { (handId, true), (bottomId, false) })
+        {
+            var card = player.Graveyard.FirstOrDefault(card => card.InstanceId == id
+                && CanEnterHandOrLibrary(card) && (predicate?.Invoke(card) ?? true));
+            if (card is null) continue;
+            if (toHand)
+            {
+                player.Graveyard.Remove(card);
+                AddCardToHandByEffect(player, card, "graveyard", $"{card.Name}从墓地加入手牌");
+            }
+            else
+            {
+                MoveGraveToLibraryBottom(player, [card]);
+                AddEvent("return", item.Controller, $"〈{card.Name}〉从墓地置于牌库底部", card);
+            }
+            resolved++;
+        }
+        if (resolved == 0)
+            RecordTargetSettlementFailure(item, $"{handId}|{bottomId}", "所选墓地对象均不再符合条件");
+        else if (resolved < 2)
+            AddEvent("effect", item.Controller, $"〈{item.SourceName}〉有1个已声明对象在逆结算后失效；其余对象继续结算",
+                FindSource(item) is { } source ? [source] : []);
+    }
+
     private static string? DeclaredStatus(string type)
         => type is "effect-trigger" or "effect-activation" or "effect-response" ? "declared" : null;
 

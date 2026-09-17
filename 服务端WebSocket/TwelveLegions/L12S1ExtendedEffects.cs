@@ -1117,20 +1117,14 @@ public sealed partial class L12GameEngine
             case "blood-eagle-recover":
             {
                 var order = CompositeDeclared(item, "graveOrder");
-                if (order is not [var handId, var bottomId]) { FinishStackItem(item); return; }
-                var handCard = player.Graveyard.FirstOrDefault(card => card.InstanceId == handId);
-                var bottomCard = player.Graveyard.FirstOrDefault(card => card.InstanceId == bottomId);
-                if (handCard is not null)
+                if (order is not [var handId, var bottomId])
                 {
-                    player.Graveyard.Remove(handCard);
-                    AddCardToHandByEffect(player, handCard, "graveyard", $"{handCard.Name}从墓地加入手牌");
+                    RecordResolutionFailure(item, "墓地对象的去向声明不完整");
+                    FinishStackItem(item); return;
                 }
-                if (bottomCard is not null)
-                {
-                    player.Graveyard.Remove(bottomCard);
-                    player.Library.Add(bottomCard);
-                    AddEvent("return", item.Controller, $"〈{bottomCard.Name}〉从墓地置于牌库底部", bottomCard);
-                }
+                ResolveDeclaredGraveDestinations(item, handId, bottomId,
+                    card => card.InstanceId != item.SourceInstanceId
+                        && L12StructuredCardRules.HasFaction(player, card, "asgard"));
                 FinishStackItem(item);
                 return;
             }

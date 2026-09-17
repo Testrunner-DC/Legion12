@@ -1609,7 +1609,7 @@ public sealed partial class L12GameEngine
                 || order.Any(id => !player.Graveyard.Any(card => card.InstanceId == id
                     && card.InstanceId != candidate.SourceInstanceId && CanEnterHandOrLibrary(card)
                     && L12StructuredCardRules.HasFaction(player, card, "asgard"))))
-                error = "复仇血鹰选择的墓地顺序已失效；此前的兵力增加效果仍会进入堆叠";
+                error = "复仇血鹰选择的墓地顺序已失效；此前的兵力减少效果仍会进入堆叠";
             if (error is not null)
             {
                 activation.DeclaredValues.Clear();

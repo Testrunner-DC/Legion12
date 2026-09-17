@@ -1344,16 +1344,14 @@ public sealed partial class L12GameEngine
             case "valkyrieRecover":
             {
                 var ids = item.Data.GetValueOrDefault("target")?.Split('|', StringSplitOptions.RemoveEmptyEntries) ?? [];
-                if (ids.Length != 3) { FinishStackItem(item); return true; }
-                var handCard = player.Graveyard.FirstOrDefault(card => card.InstanceId == ids[2]);
-                var bottomCard = player.Graveyard.FirstOrDefault(card => ids.Take(2).Contains(card.InstanceId, StringComparer.OrdinalIgnoreCase)
-                    && card.InstanceId != ids[2]);
-                if (handCard is not null)
+                if (ids.Length != 3 || string.Equals(ids[0], ids[1], StringComparison.OrdinalIgnoreCase)
+                    || !ids.Take(2).Contains(ids[2], StringComparer.OrdinalIgnoreCase))
                 {
-                    player.Graveyard.Remove(handCard);
-                    AddCardToHandByEffect(player, handCard, "graveyard", $"{handCard.Name}因瓦尔基里效果加入手牌");
+                    RecordResolutionFailure(item, "墓地对象的去向声明不完整或重复");
+                    FinishStackItem(item); return true;
                 }
-                if (bottomCard is not null) MoveGraveToLibraryBottom(player, [bottomCard]);
+                ResolveDeclaredGraveDestinations(item, ids[2],
+                    ids.Take(2).Single(id => !string.Equals(id, ids[2], StringComparison.OrdinalIgnoreCase)));
                 FinishStackItem(item); return true;
             }
             case "lokiCycle": Draw(player, 1); PromptDiscard(item, item.Controller, 1, "洛基：弃置1张手牌", "death-cycle-discard"); return true;
