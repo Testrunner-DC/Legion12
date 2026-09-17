@@ -1208,7 +1208,7 @@ public sealed partial class L12GameEngine
                 : L12CombatStage.AttackerAfterAttack;
         AddEvent("combat", playerIndex, pending.AttackNoLoss || pending.IsRanged && pending.RangedNoLoss
             ? $"进攻无损：防守军团承受 {defenderDamage} 点战斗伤害，进攻军团不减损"
-            : $"进攻者以冻结进攻值 {attackValue} 造成 {defenderDamage} 点战斗伤害；防守军团以当前兵力 {targetTroops} 反击",
+            : $"进攻者以 {attackValue} 点进攻值造成 {defenderDamage} 点战斗伤害；防守军团以当前兵力 {targetTroops} 反击",
             attacker, target);
         AdvanceCombatTimelineIfIdle();
         return CommandResult.Ok();

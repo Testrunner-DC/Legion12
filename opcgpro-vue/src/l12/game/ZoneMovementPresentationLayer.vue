@@ -5,7 +5,7 @@ import { visibleViewport, viewportRect } from '../mobileViewport'
 import { CARD_IMAGE_PLACEHOLDER, resolveCardAssetUrls } from '../cardAssets'
 import type { ActionEvent, Card } from '../types'
 
-type Zone = 'hand' | 'library' | 'field' | 'graveyard' | 'relic' | 'master' | 'center'
+type Zone = 'hand' | 'library' | 'field' | 'graveyard' | 'relic' | 'master' | 'center' | 'disaster'
 type AnchorRect = { x: number; y: number; width: number; height: number }
 type Movement = {
   sequence: number
@@ -20,6 +20,7 @@ type Movement = {
   toRect: AnchorRect
   sourceGhost?: HTMLElement
   preparedImageUrl?: string
+  disasterReveal?: boolean
 }
 
 const props = withDefaults(defineProps<{
@@ -86,7 +87,12 @@ function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: Anc
   let from: Zone
   let to: Zone
   let label: string
-  if (event.type === 'counter-set') {
+  if (event.type === 'disaster-reveal') {
+    // A disaster without a triggered effect still has a public reveal moment.
+    // Keep it in the card-movement queue so it receives the same presentation
+    // ordering as every other authoritative card action.
+    from = 'disaster'; to = 'disaster'; label = '天灾翻开'
+  } else if (event.type === 'counter-set') {
     from = 'hand'; to = 'field'; label = '盖伏'
   } else if (event.type === 'play') {
     from = 'hand'; to = event.cards?.[0]?.cardType === 'artifact' ? 'relic'
@@ -119,6 +125,7 @@ function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: Anc
     covered: card?.hidden === true,
     fromRect,
     toRect,
+    disasterReveal: event.type === 'disaster-reveal',
   }
 }
 
@@ -136,6 +143,7 @@ function cardElement(instanceId?: string) {
 function zoneElement(zone: Zone, playerIndex: number) {
   if (zone === 'center') return null
   const root = document.querySelector('[data-l12-game-stage]')
+  if (zone === 'disaster') return root?.querySelector('[data-l12-zone="disaster"]') ?? null
   return root?.querySelector(`[data-player-index="${playerIndex}"][data-l12-zone="${zone}"]`)
     ?? root?.querySelector(`[data-player-index="${playerIndex}"] [data-l12-zone="${zone}"]`)
     ?? null
@@ -312,6 +320,8 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
   showNext()
 }, { immediate: true })
 watch(() => props.paused, paused => {
+  // An animation that has already become visible must yield to a newly opened
+  // modal. It is presentation only, so do not replay it after the modal closes.
   if (paused && active.value) cancelActiveMovement()
   if (!paused) showNext()
 })
@@ -323,8 +333,14 @@ onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewpo
   <Teleport to="body">
     <div v-if="active && !active.sourceGhost" :key="active.sequence" class="zone-card-movement" :style="motionStyle"
       data-ui-contract="authoritative-zone-card-movement" aria-hidden="true">
-      <div class="moving-card" data-essential-motion :class="{ concealed: active.concealed, covered: active.covered }">
-        <img v-if="active.concealed" src="/assets/l12/card-back-official.png" alt="" />
+      <div class="moving-card" data-essential-motion :class="{ concealed: active.concealed, covered: active.covered, 'disaster-reveal': active.disasterReveal }">
+        <template v-if="active.disasterReveal && active.preparedImageUrl">
+          <span class="disaster-reveal-card">
+            <img class="disaster-reveal-back" src="/assets/l12/card-back-disaster.png" alt="" />
+            <img class="disaster-reveal-front" :src="active.preparedImageUrl" :alt="active.card?.name || ''" />
+          </span>
+        </template>
+        <img v-else-if="active.concealed" src="/assets/l12/card-back-official.png" alt="" />
         <img v-else-if="active.preparedImageUrl" :src="active.preparedImageUrl" :alt="active.card?.name || ''" />
       </div>
     </div>
@@ -334,7 +350,10 @@ onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewpo
 <style scoped>
 .zone-card-movement{position:fixed;z-index:2147482988;left:0;top:0;width:0;height:0;pointer-events:none}.moving-card{position:absolute;width:72px;height:101px;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0);animation:l12-zone-card-flight var(--move-duration,.44s) cubic-bezier(.24,.72,.28,1) both;filter:drop-shadow(0 8px 10px rgba(0,0,0,.72));will-change:transform,opacity}.moving-card>img,.moving-card :deep(.l12-card-image){width:100%;height:100%;object-fit:contain}.moving-card.concealed>img{object-fit:cover;border:1px solid #d6c488}
 .moving-card.covered:not(.concealed){filter:grayscale(.45) brightness(.72) drop-shadow(0 12px 14px #000)}
+.disaster-reveal-card{position:relative;display:block;width:100%;height:100%;perspective:800px;transform-style:preserve-3d}.disaster-reveal-card>img{position:absolute;inset:0;width:100%;height:100%;backface-visibility:hidden}.disaster-reveal-back{object-fit:cover;animation:l12-disaster-card-back var(--move-duration,.44s) ease-in both}.disaster-reveal-front{animation:l12-disaster-card-front var(--move-duration,.44s) ease-out both}
 @keyframes l12-zone-card-flight{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale))}}
+@keyframes l12-disaster-card-back{0%,42%{opacity:1;transform:rotateY(0)}58%,100%{opacity:0;transform:rotateY(90deg)}}
+@keyframes l12-disaster-card-front{0%,42%{opacity:0;transform:rotateY(-90deg)}58%,100%{opacity:1;transform:rotateY(0)}}
 @media(max-width:700px){.moving-card{width:56px;height:79px}.moving-card small{bottom:-18px;font-size:var(--l12-board-copy,13px)}}
 .zone-card-movement{z-index:902}
 </style>

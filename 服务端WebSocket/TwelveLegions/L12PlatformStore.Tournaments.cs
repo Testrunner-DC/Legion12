@@ -309,6 +309,7 @@ public sealed partial class L12PlatformStore
         public List<string> CardIds { get; set; } = [];
         public List<string> MoraleIds { get; set; } = [];
         public List<string> SpecialIds { get; set; } = [];
+        public Dictionary<string, string> AlternateArtSelections { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
     private sealed class TournamentParticipantRow
@@ -1067,6 +1068,7 @@ public sealed partial class L12PlatformStore
             CardIds = [.. participant.Deck.CardIds],
             MoraleIds = [.. participant.Deck.MoraleIds],
             SpecialIds = [.. participant.Deck.SpecialIds],
+            AlternateArtSelections = new Dictionary<string, string>(participant.Deck.AlternateArtSelections, StringComparer.OrdinalIgnoreCase),
         }, participant.Deck.Hash);
     }
 
@@ -1802,7 +1804,7 @@ public sealed partial class L12PlatformStore
         ValidateStructuredTournamentDeck(rules, saved.MasterId, saved.CardIds, saved.MoraleIds, saved.SpecialIds);
         var canonical = JsonSerializer.Serialize(new
         {
-            saved.Name, saved.MasterId, saved.CardIds, saved.MoraleIds, saved.SpecialIds,
+            saved.Name, saved.MasterId, saved.CardIds, saved.MoraleIds, saved.SpecialIds, saved.AlternateArtSelections,
         });
         return new TournamentDeckSnapshotRow
         {
@@ -1812,6 +1814,7 @@ public sealed partial class L12PlatformStore
             CardIds = [.. saved.CardIds],
             MoraleIds = [.. saved.MoraleIds],
             SpecialIds = [.. saved.SpecialIds],
+            AlternateArtSelections = new Dictionary<string, string>(saved.AlternateArtSelections, StringComparer.OrdinalIgnoreCase),
             Hash = Hash(canonical),
             SubmittedAt = DateTimeOffset.UtcNow,
         };
@@ -1997,6 +2000,7 @@ public sealed partial class L12PlatformStore
             participant.Deck.CardIds ??= [];
             participant.Deck.MoraleIds ??= [];
             participant.Deck.SpecialIds ??= [];
+            participant.Deck.AlternateArtSelections ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             if (participant.Seed < 1) participant.Seed = nextSeed;
             nextSeed = Math.Max(nextSeed + 1, participant.Seed + 1);
         }

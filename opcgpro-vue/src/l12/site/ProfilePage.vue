@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { l12State } from '@/l12/net'
 import RankedPenaltyHistory from './RankedPenaltyHistory.vue'
-import { canAccessAdmin, changePassword, changeUsername, emailApi, login, logout, mfaCapability as loadMfaCapability, PlatformRequestError, platformRequest, platformState, rankedApi, register, sessionApi, type EmailStatus, type MfaCapability, type PlatformSession, type RankedOverview } from '@/l12/platform'
+import { canAccessAdmin, changePassword, changeUsername, emailApi, login, logout, mfaCapability as loadMfaCapability, PlatformRequestError, platformRequest, platformState, rankedApi, refreshCurrentAccount, register, sessionApi, usernameChangeApi, type EmailStatus, type MfaCapability, type PlatformSession, type RankedOverview, type UsernameChangeStatus } from '@/l12/platform'
 import { ensureOfficialPrebuiltDecks } from '@/l12/decks'
 import RankedMasterTitleRulesModal from './RankedMasterTitleRulesModal.vue'
 
@@ -16,6 +16,9 @@ const authMode = ref<'login' | 'register'>('login')
 const auth = reactive({ username: '', password: '', currentPassword: '', newPassword: '' })
 const usernameChange = reactive({ username: '', currentPassword: '' })
 const usernameChangeNotice = ref('')
+const renameStatus = ref<UsernameChangeStatus | null>(null)
+const renameForm = reactive({ username: '', currentPassword: '', reason: '' })
+const renameNotice = ref('')
 const emailForm = reactive({ email: '', currentPassword: '' })
 const authBusy = ref(false)
 const route = useRoute()
@@ -40,6 +43,10 @@ async function loadAccountData() {
     selectedMasterTitle.value = rankedResult.value.profile.selectedMasterTitle || ''
   }
 }
+async function loadRenameStatus() {
+  if (!platformState.account || platformState.account.mustChangeUsername) { renameStatus.value = null; return }
+  try { renameStatus.value = await usernameChangeApi.status() } catch { renameStatus.value = null }
+}
 
 async function saveRankedTitle() {
   authBusy.value = true; notice.value = ''
@@ -62,7 +69,7 @@ async function loadEmailCapability() {
     await loadEmailStatus()
   } catch { emailFeatureEnabled.value = false; emailStatus.value = null }
 }
-onMounted(() => { loadAccountData(); loadEmailCapability(); loadMfaCapability().then(value => { mfa.value = value }).catch(() => {}) })
+onMounted(() => { loadAccountData(); loadEmailCapability(); loadRenameStatus(); loadMfaCapability().then(value => { mfa.value = value }).catch(() => {}) })
 watch(publicHistory, value => localStorage.setItem('l12-public-history', String(value)))
 const authSubmitLabel = computed(() => authBusy.value
   ? (authMode.value === 'login' ? '登录中…' : '正在建立账号…')
@@ -136,6 +143,28 @@ async function submitUsernameChange() {
       if (redirect) await router.replace(redirect)
     }
   } catch (error) { usernameChangeNotice.value = error instanceof Error ? error.message : '用户名修改失败' }
+  finally { authBusy.value = false }
+}
+async function useFreeRename() {
+  if (authBusy.value) return
+  authBusy.value = true; renameNotice.value = ''
+  try {
+    const result = await usernameChangeApi.useFreeRename(renameForm.currentPassword, renameForm.username)
+    renameForm.username = ''; renameForm.currentPassword = ''
+    await refreshCurrentAccount({ force: true }); await loadRenameStatus()
+    notice.value = result.message
+  } catch (error) { renameNotice.value = error instanceof Error ? error.message : '改名失败' }
+  finally { authBusy.value = false }
+}
+async function submitRenameRequest() {
+  if (authBusy.value) return
+  authBusy.value = true; renameNotice.value = ''
+  try {
+    const request = await usernameChangeApi.request(renameForm.username, renameForm.reason)
+    renameForm.username = ''; renameForm.reason = ''
+    renameStatus.value = { ...(renameStatus.value ?? { freeRenameAvailable: false, freeRenameUsed: 1 }), latestRequest: request }
+    notice.value = '改名申请已提交，等待管理员审核'
+  } catch (error) { renameNotice.value = error instanceof Error ? error.message : '提交改名申请失败' }
   finally { authBusy.value = false }
 }
 async function submitPassword() {
@@ -229,6 +258,7 @@ function openBugFeedback() { (document.querySelector('.bug-feedback-trigger') as
       <template v-else>
         <p v-if="platformState.account.mustChangePassword" class="password-required">管理员已重置此账号密码，必须修改密码。完成下方操作前，请勿继续使用临时密码。</p>
         <div class="account-form"><label>当前密码<input v-model="auth.currentPassword" type="password" autocomplete="current-password"/></label><label>新密码<input v-model="auth.newPassword" type="password" minlength="8" maxlength="128" autocomplete="new-password"/></label><button class="primary" :disabled="authBusy" @click="submitPassword">修改密码</button><button class="logout" :disabled="authBusy" @click="signOut">退出当前设备</button></div>
+        <section v-if="renameStatus" class="rename-manager"><header><div><h3>改名</h3><p>{{ renameStatus.freeRenameAvailable ? '你还有一次自助改名机会；确认后立即生效。' : '自助改名机会已使用，后续改名需要填写原因并由管理员审核。' }}</p></div><span>{{ renameStatus.freeRenameAvailable ? '可自助改名 1 次' : '需管理员审核' }}</span></header><template v-if="renameStatus.freeRenameAvailable"><div class="rename-form"><label>新用户名<input v-model.trim="renameForm.username" maxlength="11" autocomplete="username" placeholder="2–11 个可见字符"/></label><label>当前密码<input v-model="renameForm.currentPassword" type="password" autocomplete="current-password"/></label><button :disabled="authBusy || !renameForm.username || !renameForm.currentPassword" @click="useFreeRename">确认改名</button></div></template><template v-else><div v-if="renameStatus.latestRequest?.status === 'pending'" class="rename-request-status"><b>申请审核中</b><span>{{ renameStatus.latestRequest.currentUsername }} → {{ renameStatus.latestRequest.requestedUsername }}</span><small>提交于 {{ new Date(renameStatus.latestRequest.createdAt).toLocaleString() }}。管理员处理后会在此显示结果。</small></div><template v-else><div v-if="renameStatus.latestRequest" class="rename-request-status" :class="renameStatus.latestRequest.status"><b>{{ renameStatus.latestRequest.status === 'approved' ? '最近申请已通过' : '最近申请未通过' }}</b><span>{{ renameStatus.latestRequest.currentUsername }} → {{ renameStatus.latestRequest.requestedUsername }}</span><small v-if="renameStatus.latestRequest.reviewNote">管理员说明：{{ renameStatus.latestRequest.reviewNote }}</small></div><div class="rename-form request"><label>申请的新用户名<input v-model.trim="renameForm.username" maxlength="11" autocomplete="username" placeholder="2–11 个可见字符"/></label><label>申请原因<textarea v-model.trim="renameForm.reason" rows="3" maxlength="400" placeholder="请说明需要再次改名的原因（4–400 字）"></textarea></label><button :disabled="authBusy || !renameForm.username || renameForm.reason.trim().length < 4" @click="submitRenameRequest">提交审核申请</button></div></template></template><p v-if="renameNotice" class="rename-notice" role="alert">{{ renameNotice }}</p></section>
         <section v-if="emailFeatureEnabled" class="email-manager">
           <header><div><h3>邮箱与账号恢复</h3><p v-if="emailStatus?.verified">已验证：{{ emailStatus.maskedEmail }}</p><p v-else>尚未绑定已验证邮箱，忘记密码时无法找回。</p><small v-if="emailStatus?.pendingMaskedEmail">待验证：{{ emailStatus.pendingMaskedEmail }} · {{ new Date(emailStatus.pendingExpiresAt || '').toLocaleString() }} 前有效</small></div></header>
           <div class="email-form"><label>新邮箱 / 换绑邮箱<input v-model="emailForm.email" type="email" maxlength="254" autocomplete="email"/></label><label>当前密码<input v-model="emailForm.currentPassword" type="password" autocomplete="current-password"/></label><button :disabled="authBusy || !emailStatus?.mailConfigured" @click="submitEmailBinding">发送验证邮件</button><button v-if="emailStatus?.verified" class="danger" :disabled="authBusy" @click="unbindEmail">解绑邮箱</button></div>
@@ -275,4 +305,5 @@ function openBugFeedback() { (document.querySelector('.bug-feedback-trigger') as
 .rank-links{display:flex;align-items:center;gap:9px}.rank-links button{padding:8px 11px;border:1px solid #a9873f;background:#261d0e;color:#f0d477;font-size:14px;font-weight:900}
 .username-change-gate{position:fixed;z-index:1000;inset:0;display:grid;place-items:center;padding:18px;background:#020609e8;backdrop-filter:blur(8px)}.username-change-card{width:min(520px,100%);padding:26px;border:1px solid #9f7d36;background:#0d151b;color:#edf0ed;box-shadow:0 24px 80px #000}.username-change-card>small{color:#54c5cc;font-weight:900;letter-spacing:.14em}.username-change-card h2{margin:8px 0 10px;font-size:24px}.username-change-card>p{color:#99a5a8;line-height:1.7}.username-change-card>b{display:block;padding:10px 12px;border-left:3px solid #d7b75d;background:#211b0f;color:#f0d77f}.username-change-card label{display:block;margin-top:16px;font-weight:900}.username-change-card input{display:block;width:100%;box-sizing:border-box;margin-top:7px;padding:12px;border:1px solid #53626a;background:#070d11;color:#fff}.username-change-card label span{display:block;margin-top:5px;color:#77878c;font-size:13px;font-weight:500}.username-change-card>div{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}.username-change-card .primary{margin:0}.username-change-error{padding:9px 11px;border-left:3px solid #d96b72;background:#281217;color:#f0a4aa!important}
 @media(max-width:760px){.rank-overview>header{align-items:flex-start;flex-direction:column;gap:10px}.rank-links{width:100%;justify-content:space-between}}
+.rename-manager{grid-column:1/-1;margin-top:18px;border-top:1px solid #35424a;padding-top:16px}.rename-manager>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.rename-manager h3{margin:0;font-size:14px}.rename-manager p{margin:4px 0;color:#7f8c91;font-size:14px}.rename-manager>header>span{padding:5px 8px;border:1px solid #806a32;background:#211a0b;color:#e6cc83;font-size:13px;font-weight:900;white-space:nowrap}.rename-form{display:grid;grid-template-columns:1fr 1fr auto;align-items:end;gap:8px}.rename-form label{margin:12px 0 0}.rename-form textarea{box-sizing:border-box;display:block;width:100%;margin-top:8px;padding:10px;border:1px solid #4b5860;background:#080e13;color:#fff;resize:vertical}.rename-form button{padding:10px;border:1px solid #caaa55;background:#30240c;color:#f2d77c;font-weight:900}.rename-form button:disabled{opacity:.45}.rename-request-status{display:grid;gap:4px;margin-top:12px;padding:10px;border-left:3px solid #b8953e;background:#211b0e}.rename-request-status span,.rename-request-status small{color:#aeb6b5;font-size:14px}.rename-request-status.approved{border-color:#52bd8b;background:#10251c}.rename-request-status.rejected{border-color:#bb5861;background:#291217}.rename-notice{padding:9px 11px;border-left:3px solid #d96b72;background:#281217;color:#f0a4aa!important}@media(max-width:900px){.rename-form{grid-template-columns:1fr 1fr}.rename-form.request{grid-template-columns:1fr}.rename-form button{width:100%}}@media(max-width:560px){.rename-manager>header{flex-direction:column}.rename-form{grid-template-columns:1fr}}
 </style>

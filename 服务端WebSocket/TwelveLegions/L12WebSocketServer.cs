@@ -489,6 +489,32 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             return result.Success ? Results.Ok(new { result.Message, result.Account })
                 : Results.BadRequest(new { result.Message });
         });
+        _app.MapGet("/api/auth/username-change-status", (HttpRequest request) =>
+        {
+            var authenticated = _platform.AuthenticateSession(request.Headers.Authorization);
+            return authenticated is null ? ApiError(request, "authentication_required", "请先登录账号", StatusCodes.Status401Unauthorized)
+                : Results.Ok(_platform.UsernameChangeStatus(authenticated.Account.Id));
+        });
+        _app.MapPost("/api/auth/username-change", (HttpRequest request, ChangeUsernameRequest body) =>
+        {
+            var authenticated = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (authenticated is null)
+                return ApiError(request, "authentication_required", "请先登录账号", StatusCodes.Status401Unauthorized);
+            var result = _platform.SelfServiceChangeUsername(authenticated.Account.Id, body.CurrentPassword ?? string.Empty,
+                body.NewUsername ?? string.Empty, authenticated.SessionId);
+            return result.Success ? Results.Ok(new { result.Message, result.Account }) : Results.BadRequest(new { result.Message });
+        });
+        _app.MapPost("/api/auth/username-change-requests", (HttpRequest request, UsernameChangeApplicationRequest body) =>
+        {
+            var authenticated = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (authenticated is null)
+                return ApiError(request, "authentication_required", "请先登录账号", StatusCodes.Status401Unauthorized);
+            try { return Results.Ok(_platform.SubmitUsernameChangeRequest(authenticated.Account.Id,
+                body.NewUsername ?? string.Empty, body.Reason ?? string.Empty)); }
+            catch (KeyNotFoundException error) { return ApiError(request, "account_missing", error.Message, StatusCodes.Status404NotFound); }
+            catch (InvalidOperationException error) { return ApiError(request, "username_change_unavailable", error.Message, StatusCodes.Status409Conflict); }
+            catch (ArgumentException error) { return ApiError(request, "username_change_invalid", error.Message, StatusCodes.Status400BadRequest); }
+        });
         _app.MapPut("/api/auth/audio-preferences", (HttpRequest request, L12AudioPreferencesView body) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
@@ -1131,6 +1157,22 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             if (!TryAuthorize(request, L12Permission.AdminAccountsRead, out _, out var failure)) return failure;
             return Results.Ok(_platform.Accounts());
+        });
+        _app.MapGet("/api/admin/username-change-requests", (HttpRequest request, string? status) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminAccountsRead, out _, out var failure)) return failure;
+            return Results.Ok(_platform.UsernameChangeRequests(status));
+        });
+        _app.MapPost("/api/admin/username-change-requests/{id}/review", (HttpRequest request, string id,
+            UsernameChangeReviewRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminAccountStatusWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try { return Results.Ok(_platform.ReviewUsernameChangeRequest(authenticated.Account, id, body.Approve,
+                body.Note, RequestAuditContext(request, permission))); }
+            catch (KeyNotFoundException error) { return ApiError(request, "username_change_request_missing", error.Message, StatusCodes.Status404NotFound); }
+            catch (InvalidOperationException error) { return ApiError(request, "username_change_request_conflict", error.Message, StatusCodes.Status409Conflict); }
+            catch (ArgumentException error) { return ApiError(request, "username_change_request_invalid", error.Message, StatusCodes.Status400BadRequest); }
         });
         _app.MapPut("/api/admin/accounts/{id}/role", (HttpRequest request, string id, RoleRequest body) =>
         {
@@ -1870,6 +1912,64 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var outcome = _adminCommands.Execute(command, permission, ExecuteEffectReview,
                 current => ValidateEffectReview(current, false));
             return AdminCommandResponse(request, command, outcome);
+        });
+        _app.MapGet("/api/me/alternate-arts", (HttpRequest request) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            return account is null ? Results.Unauthorized() : Results.Ok(_platform.OwnedAlternateArts(account.Id));
+        });
+        _app.MapGet("/api/admin/alternate-arts", (HttpRequest request, bool? includeInactive) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            return Results.Ok(_platform.AlternateArts(includeInactive == true));
+        });
+        _app.MapPut("/api/admin/alternate-arts", (HttpRequest request, L12AlternateArtDraft draft) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try { return Results.Ok(_platform.SaveAlternateArt(authenticated.Account, draft, RequestAuditContext(request, permission))); }
+            catch (ArgumentException error) { return ApiError(request, "alternate_art_invalid", error.Message, StatusCodes.Status400BadRequest); }
+        });
+        _app.MapGet("/api/admin/alternate-art-grants", (HttpRequest request, string? username) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            return Results.Ok(_platform.AlternateArtGrants(username));
+        });
+        _app.MapPost("/api/admin/alternate-art-grants", (HttpRequest request, L12AlternateArtGrantDraft draft) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try { return Results.Ok(_platform.GrantAlternateArt(authenticated.Account, draft, RequestAuditContext(request, permission))); }
+            catch (KeyNotFoundException error) { return ApiError(request, "alternate_art_target_missing", error.Message, StatusCodes.Status404NotFound); }
+            catch (ArgumentException error) { return ApiError(request, "alternate_art_grant_invalid", error.Message, StatusCodes.Status400BadRequest); }
+        });
+        _app.MapDelete("/api/admin/alternate-art-grants/{id}", (HttpRequest request, string id) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try { _platform.RevokeAlternateArtGrant(authenticated.Account, id, RequestAuditContext(request, permission)); return Results.NoContent(); }
+            catch (KeyNotFoundException error) { return ApiError(request, "alternate_art_grant_missing", error.Message, StatusCodes.Status404NotFound); }
+        });
+        _app.MapGet("/api/admin/alternate-art-award-rules", (HttpRequest request) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            return Results.Ok(_platform.AlternateArtAwardRules());
+        });
+        _app.MapPut("/api/admin/alternate-art-award-rules", (HttpRequest request, L12AlternateArtAwardRuleDraft draft) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try { return Results.Ok(_platform.SaveAlternateArtAwardRule(authenticated.Account, draft, RequestAuditContext(request, permission))); }
+            catch (KeyNotFoundException error) { return ApiError(request, "alternate_art_missing", error.Message, StatusCodes.Status404NotFound); }
+            catch (ArgumentException error) { return ApiError(request, "alternate_art_award_rule_invalid", error.Message, StatusCodes.Status400BadRequest); }
+        });
+        _app.MapPost("/api/admin/alternate-art-award-rules/event-dispatch", (HttpRequest request, L12AlternateArtEventDispatchDraft draft) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try { return Results.Ok(_platform.DispatchAlternateArtEvent(authenticated.Account, draft, RequestAuditContext(request, permission))); }
+            catch (KeyNotFoundException error) { return ApiError(request, "alternate_art_event_target_missing", error.Message, StatusCodes.Status404NotFound); }
+            catch (ArgumentException error) { return ApiError(request, "alternate_art_event_invalid", error.Message, StatusCodes.Status400BadRequest); }
         });
         _app.MapPut("/api/admin/effects/{cardId}/presentations/{sceneId}",
             (HttpRequest request, string cardId, string sceneId, EffectPresentationRequest body) =>
@@ -3558,6 +3658,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
 public sealed record AuthRequest(string? Username, string? Password);
 public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
 public sealed record ChangeUsernameRequest(string? CurrentPassword, string? NewUsername);
+public sealed record UsernameChangeApplicationRequest(string? NewUsername, string? Reason);
+public sealed record UsernameChangeReviewRequest(bool Approve, string? Note);
 public sealed record CurrentPasswordRequest(string? CurrentPassword);
 public sealed record EmailBindingRequest(string? Email, string? CurrentPassword);
 public sealed record ForgotPasswordRequest(string? Email);

@@ -44,6 +44,7 @@ export interface SavedL12Deck {
   cardIds: string[]
   moraleIds: string[]
   specialIds: string[]
+  alternateArtSelections?: Record<string, string>
   updatedAt: string
 }
 
@@ -216,11 +217,15 @@ export function saveSelectedDeckName(scope: L12DeckSelectionScope, name: string)
 }
 
 function normalizeSavedDeck(deck: SavedL12Deck): SavedL12Deck {
+  const alternateArtSelections = Object.fromEntries(Object.entries(deck.alternateArtSelections ?? {})
+    .filter(([cardId, artId]) => cardId.trim() && typeof artId === 'string' && artId.trim())
+    .slice(0, 128).map(([cardId, artId]) => [cardId.trim(), artId.trim()]))
   return {
     ...deck,
     cardIds: [...deck.cardIds],
     moraleIds: (deck.moraleIds ?? []).map(canonicalMoraleCardId),
     specialIds: [...(deck.specialIds ?? [])],
+    alternateArtSelections,
   }
 }
 

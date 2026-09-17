@@ -14,6 +14,11 @@ export interface AccountStatusOperation { applied: boolean; account: PlatformAcc
 export interface PlatformSession {
   id: string; createdAt: string; expiresAt: string; current: boolean; authStrength: string; permissionVersion: number
 }
+export interface UsernameChangeRequest {
+  id: string; accountId: string; currentUsername: string; requestedUsername: string; reason: string
+  status: 'pending' | 'approved' | 'rejected'; reviewedByUsername?: string; reviewNote?: string; createdAt: string; reviewedAt?: string
+}
+export interface UsernameChangeStatus { freeRenameAvailable: boolean; freeRenameUsed: number; latestRequest?: UsernameChangeRequest }
 export interface SessionRevocation { sessionId?: string; revokedCount: number; alreadyRevoked: boolean }
 export interface EmailStatus {
   bound: boolean; verified: boolean; maskedEmail?: string; pendingMaskedEmail?: string
@@ -87,7 +92,7 @@ export interface AtomicCoverage {
 export interface AtomicEffectPage { items: AtomicCardEffect[]; total: number; page: number; pageSize: number; coverage: AtomicCoverage }
 export interface ContentEntry { key: string; draftValue: string; publishedValue: string; status: 'draft' | 'published'; updatedBy?: string; updatedAt?: string; publishedBy?: string; publishedAt?: string; version: number; publishedVersionId?: string; rollbackVersionId?: string }
 export type SiteContentKind = 'news' | 'video' | 'product'
-export type SiteMediaKind = 'hero' | 'article' | SiteContentKind
+export type SiteMediaKind = 'hero' | 'article' | 'card-art' | SiteContentKind
 export interface SiteMediaPolicy {
   kind: SiteMediaKind; label: string; desktopWidth: number; desktopHeight: number
   mobileWidth: number; mobileHeight: number; thumbnailWidth: number; thumbnailHeight: number
@@ -172,6 +177,9 @@ export interface AdminAnalyticsCoverage {
   exactDeckSnapshots: number; inferredDeckSnapshots: number; privateDuringActiveMatch: boolean
   metrics: AdminAnalyticsMetricCoverage[]; limitations: string[]
 }
+export interface AlternateArt { id: string; baseCardId: string; displayName: string; mediaAssetId: string; imageUrl: string; thumbnailUrl: string; active: boolean; createdAt: string; updatedAt: string }
+export interface AlternateArtGrant { id: string; accountId: string; username: string; alternateArtId: string; sourceKind: 'manual' | 'rank-reached' | 'season-final' | 'event'; sourceReference: string; grantedAt: string; revokedAt?: string }
+export interface AlternateArtAwardRule { id: string; alternateArtId: string; kind: 'rank-reached' | 'season-final' | 'event'; seasonId: string; eventId: string; minimumTierIndex: number; active: boolean; createdAt: string; updatedAt: string }
 export interface AdminAnalyticsMetricCoverage {
   metric: string; unit: string; eligibleSamples: number; observedSamples: number
   exactFacts: number; inferredFacts: number; partialFacts: number
@@ -722,6 +730,16 @@ export async function changeUsername(currentPassword: string, newUsername: strin
   return result
 }
 
+export const usernameChangeApi = {
+  status: () => platformRequest<UsernameChangeStatus>('/api/auth/username-change-status'),
+  useFreeRename: (currentPassword: string, newUsername: string) => platformRequest<{ message: string; account: PlatformAccount }>('/api/auth/username-change', {
+    method: 'POST', body: JSON.stringify({ currentPassword, newUsername }),
+  }),
+  request: (newUsername: string, reason: string) => platformRequest<UsernameChangeRequest>('/api/auth/username-change-requests', {
+    method: 'POST', body: JSON.stringify({ newUsername, reason }),
+  }),
+}
+
 export const updateAudioPreferences = (value: NonNullable<PlatformAccount['audioPreferences']>) =>
   platformRequest<NonNullable<PlatformAccount['audioPreferences']>>('/api/auth/audio-preferences', {
     method: 'PUT', body: JSON.stringify(value),
@@ -876,6 +894,16 @@ export const adminApi = {
   siteMedia: (kind?: SiteMediaKind) => platformRequest<SiteMedia[]>(`/api/admin/site/media${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`),
   uploadSiteMedia: (form: FormData) => platformRequest<SiteMedia>('/api/admin/site/media', { method: 'POST', body: form }),
   deleteSiteMedia: (id: string) => platformRequest<void>(`/api/admin/site/media/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  alternateArts: (includeInactive = true) => platformRequest<AlternateArt[]>(`/api/admin/alternate-arts?includeInactive=${includeInactive}`),
+  saveAlternateArt: (draft: Partial<AlternateArt> & Pick<AlternateArt, 'baseCardId' | 'displayName' | 'mediaAssetId'>) => platformRequest<AlternateArt>('/api/admin/alternate-arts', { method: 'PUT', body: JSON.stringify(draft) }),
+  alternateArtGrants: (username?: string) => platformRequest<AlternateArtGrant[]>(`/api/admin/alternate-art-grants${username ? `?username=${encodeURIComponent(username)}` : ''}`),
+  grantAlternateArt: (draft: { alternateArtId: string; username: string; sourceKind: AlternateArtGrant['sourceKind']; sourceReference?: string }) => platformRequest<AlternateArtGrant>('/api/admin/alternate-art-grants', { method: 'POST', body: JSON.stringify(draft) }),
+  revokeAlternateArtGrant: (id: string) => platformRequest<void>(`/api/admin/alternate-art-grants/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  usernameChangeRequests: (status = '') => platformRequest<UsernameChangeRequest[]>(`/api/admin/username-change-requests${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+  reviewUsernameChangeRequest: (id: string, approve: boolean, note = '') => platformRequest<UsernameChangeRequest>(`/api/admin/username-change-requests/${encodeURIComponent(id)}/review`, { method: 'POST', body: JSON.stringify({ approve, note }) }),
+  alternateArtAwardRules: () => platformRequest<AlternateArtAwardRule[]>('/api/admin/alternate-art-award-rules'),
+  saveAlternateArtAwardRule: (draft: Partial<AlternateArtAwardRule> & Pick<AlternateArtAwardRule, 'alternateArtId' | 'kind' | 'seasonId' | 'eventId' | 'minimumTierIndex'>) => platformRequest<AlternateArtAwardRule>('/api/admin/alternate-art-award-rules', { method: 'PUT', body: JSON.stringify(draft) }),
+  dispatchAlternateArtEvent: (ruleId: string, usernames: string[]) => platformRequest<AlternateArtGrant[]>('/api/admin/alternate-art-award-rules/event-dispatch', { method: 'POST', body: JSON.stringify({ ruleId, usernames }) }),
   siteCategories: (kind?: SiteContentKind) => platformRequest<SiteCategory[]>(`/api/admin/site/categories${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`),
   saveSiteCategory: (category: Partial<SiteCategory> & Pick<SiteCategory, 'kind' | 'name' | 'slug' | 'sortOrder' | 'active'>) => {
     const body = { kind: category.kind, name: category.name, slug: category.slug, sortOrder: category.sortOrder,
@@ -1075,6 +1103,11 @@ export const friendApi = {
     method: 'POST', body: JSON.stringify({ accountId }),
   }),
   unblock: (accountId: string) => platformRequest<void>(`/api/friends/blocked/${encodeURIComponent(accountId)}`, { method: 'DELETE' }),
+}
+
+/** 玩家自己的异画库存；卡图选择仍由服务端在开局时二次校验。 */
+export const alternateArtApi = {
+  mine: () => platformRequest<AlternateArt[]>('/api/me/alternate-arts'),
 }
 
 export const publicDeckApi = {

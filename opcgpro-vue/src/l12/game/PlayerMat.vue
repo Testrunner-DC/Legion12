@@ -37,6 +37,7 @@ const props = defineProps<{
   combatTargetMaster?: boolean
   paymentChoiceIds?: string[]
   paymentSelectedIds?: string[]
+  mobileMoralePicker?: boolean
   hiddenRevealCard?: Card | null
   interactionPromptActive?: boolean
   canActivateOsiris?: boolean
@@ -52,6 +53,7 @@ const emit = defineEmits<{
   factionAbility: [ability: string]
   selectCard: [card: Card]
   paymentResource: [instanceId: string]
+  openMoralePayment: []
 }>()
 const isSelected = (instanceId?: string) => Boolean(instanceId
   && (props.selectedId === instanceId || props.selectedIds?.includes(instanceId)))
@@ -75,8 +77,7 @@ watch(() => props.interactionPromptActive, active => {
 const currentMoraleLimit = computed(() => props.player.morale.length)
 const topGraveyard = computed(() => props.player.graveyard?.at(-1) ?? null)
 type MoraleResource = PlayerView['morale'][number]
-const visibleMoraleLimit = 12
-const visibleTemporaryMoraleCount = computed(() => Math.min(visibleMoraleLimit, Math.max(0, Math.floor(props.player.temporaryMorale ?? 0))))
+const visibleTemporaryMoraleCount = computed(() => Math.max(0, Math.floor(props.player.temporaryMorale ?? 0)))
 const displayMoraleSlots = computed<Array<MoraleResource>>(() => {
   const olympus = props.player.faction === 'olympus'
   const resources = props.player.morale.map((resource, originalIndex) => ({ resource, originalIndex }))
@@ -89,7 +90,9 @@ const displayMoraleSlots = computed<Array<MoraleResource>>(() => {
       || rank(left.resource) - rank(right.resource)
       || left.originalIndex - right.originalIndex
   })
-  return resources.map(({ resource }) => resource).slice(0, Math.max(0, visibleMoraleLimit - visibleTemporaryMoraleCount.value))
+  // Every resource remains visible.  The phone landscape layout adapts its grid to
+  // available space instead of applying a gameplay-facing display cap.
+  return resources.map(({ resource }) => resource)
 })
 const visibleMoraleCount = computed(() => visibleTemporaryMoraleCount.value + displayMoraleSlots.value.length)
 function moraleState(card: MoraleResource) {
@@ -252,7 +255,9 @@ function handleSlot(row: number, slot: number, card: Card | null) {
   emit('slot', row, slot, card)
 }
 function selectMoralePayment(instanceId: string) {
-  if (props.paymentChoiceIds?.includes(instanceId)) emit('paymentResource', instanceId)
+  if (!props.paymentChoiceIds?.includes(instanceId)) return
+  if (props.mobileMoralePicker) { emit('openMoralePayment'); return }
+  emit('paymentResource', instanceId)
 }
 function temporaryMoraleChoiceId(index: number) {
   return `temporary-morale:${index}`
@@ -509,7 +514,7 @@ function beginCardAbility(card: Card) {
 .resource-zone,.resource-faction-action,.resource-morale-summary,.resource-morale-stack{width:156px;max-width:156px}.resource-zone{gap:8px}.resource-morale-summary{grid-template-columns:68px 88px;height:38px}.resource-morale-label{min-width:68px;height:38px;padding:0 10px}.resource-morale-count{width:88px;max-width:88px;height:38px;min-height:38px;padding:0 12px}.resource-morale-stack{min-height:54px;justify-content:center;gap:8px 10px;padding:10px}
 .resource-morale-stack.morale-remainder-1::after,.resource-morale-stack.morale-remainder-2::after{content:'';display:block;flex:none;height:32px;pointer-events:none;visibility:hidden}.resource-morale-stack.morale-remainder-1::after{width:74px}.resource-morale-stack.morale-remainder-2::after{width:32px}
 .commander-zone{grid-template-columns:140px 132.25px}.battle-zone{transform:translateX(-74px)}.mat-piles{transform:translateX(-24px)}
-.relic-zone{box-sizing:border-box;width:132.25px;height:185.15px;aspect-ratio:5/7}.relic-zone :deep(.card-tile){width:127.65px;height:178.71px;flex-basis:127.65px;aspect-ratio:5/7}
+.relic-zone{box-sizing:border-box;width:132.25px;height:185.15px;aspect-ratio:5/7;display:grid;place-items:center;overflow:hidden;container-type:size}.relic-zone :deep(.card-tile){width:127.65px;height:178.71px;flex-basis:127.65px;aspect-ratio:5/7}.relic-zone :deep(.card-tile.tapped){width:calc(100cqw * 5 / 7);height:100cqw;max-width:100cqh;max-height:100cqw;flex-basis:calc(100cqw * 5 / 7)}
 .special-lane{left:6px;width:152px;height:286px}.special-lane.visible{align-content:start}.side-opponent .special-lane{top:auto;bottom:calc(100% + 11px);align-content:end}.side-my .special-lane{left:6px;top:calc(100% + 11px);bottom:auto;width:152px;align-content:start}
 .trial-zone{flex-direction:column}.side-opponent .trial-zone{flex-direction:column-reverse}.trial-card,.side-my .trial-card{width:135.52px}
 </style>

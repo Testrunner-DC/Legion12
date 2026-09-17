@@ -13,6 +13,93 @@ namespace GrandUMIServer.Tests;
 public sealed class SiteContentPlatformStoreTests
 {
     [Fact]
+    public void RuleRulingsPublishOnlyStructuredConfirmedEntries()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-rule-rulings-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            Assert.True(store.IsContentKeyAllowed("rules.rulings"));
+            var published = JsonSerializer.Serialize(new
+            {
+                entries = new[]
+                {
+                    new { id = "RULING-TEST-1", scope = "card", question = "测试问题", answer = "裁定：测试答案。",
+                        category = "单卡裁定", sourceKind = "user-ruling", sourceRef = "用户确认裁定 · 2026-09-17",
+                        recordedAt = "2026-09-17", status = "published", cardIds = Array.Empty<string>(),
+                        productIds = Array.Empty<string>(), tags = Array.Empty<string>(), sourceIds = new[] { "LEGACY-FAQ-47" },
+                        supersedes = new[] { "LEGACY-FAQ-47" } },
+                },
+            });
+            store.SaveContentDraft(admin, "rules.rulings", published);
+            store.PublishContent(admin, "rules.rulings");
+            Assert.Equal(published, store.GetContent("rules.rulings"));
+
+            var mixedDraft = JsonSerializer.Serialize(new
+            {
+                entries = new[]
+                {
+                    new { id = "RULING-TEST-1", scope = "card", question = "测试问题", answer = "裁定：测试答案。",
+                        category = "单卡裁定", sourceKind = "user-ruling", sourceRef = "用户确认裁定 · 2026-09-17",
+                        recordedAt = "2026-09-17", status = "published", cardIds = Array.Empty<string>(),
+                        productIds = Array.Empty<string>(), tags = Array.Empty<string>(), sourceIds = new[] { "LEGACY-FAQ-47" },
+                        supersedes = new[] { "LEGACY-FAQ-47" } },
+                    new { id = "RULING-TEST-2", scope = "card", question = "待复核问题", answer = "尚待审核。",
+                        category = "单卡裁定", sourceKind = "official-faq", sourceRef = "原始 FAQ",
+                        recordedAt = "2026-09-17", status = "pending", cardIds = Array.Empty<string>(),
+                        productIds = Array.Empty<string>(), tags = Array.Empty<string>(), sourceIds = Array.Empty<string>(),
+                        supersedes = Array.Empty<string>() },
+                },
+            });
+            store.SaveContentDraft(admin, "rules.rulings", mixedDraft);
+            store.PublishContent(admin, "rules.rulings");
+            using var publicDocument = JsonDocument.Parse(store.GetContent("rules.rulings"));
+            var publicEntries = publicDocument.RootElement.GetProperty("entries");
+            Assert.Single(publicEntries.EnumerateArray());
+            Assert.Equal("RULING-TEST-1", publicEntries[0].GetProperty("id").GetString());
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void RuleCenterPublishDoesNotExposePendingEntries()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-rule-center-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            Assert.True(store.IsContentKeyAllowed("rules.center"));
+            var draft = JsonSerializer.Serialize(new
+            {
+                coreBlocks = new[] { new { page = "1", text = "核心规则测试文本" } },
+                quickStart = Array.Empty<object>(), terms = Array.Empty<object>(), versions = Array.Empty<object>(),
+                tournament = new object[]
+                {
+                    new { id = "tournament-pending", title = "待发布赛制", body = "不能公开。", sourceRef = "内部草稿",
+                        tags = Array.Empty<string>(), status = "pending" },
+                    new { id = "tournament-published", title = "已发布赛制", body = "可以公开。", sourceRef = "管理员审核",
+                        tags = Array.Empty<string>(), status = "published" },
+                },
+            });
+            store.SaveContentDraft(admin, "rules.center", draft);
+            store.PublishContent(admin, "rules.center");
+            using var publicDocument = JsonDocument.Parse(store.GetContent("rules.center"));
+            var tournament = publicDocument.RootElement.GetProperty("tournament");
+            Assert.Single(tournament.EnumerateArray());
+            Assert.Equal("tournament-published", tournament[0].GetProperty("id").GetString());
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void UploadedMediaUsesContentHashesAndCannotBeDeletedWhileAnyVersionReferencesIt()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-site-content-{Guid.NewGuid():N}");

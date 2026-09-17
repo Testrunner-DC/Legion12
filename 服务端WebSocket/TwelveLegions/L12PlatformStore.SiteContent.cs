@@ -107,6 +107,9 @@ public sealed partial class L12PlatformStore
             ["article"] = new("article", "资讯正文图片", 0, 0, 0, 0, 0, 0,
                 "不限固定尺寸与长宽比；生成交付图时完整保留原图构图，不裁切、不拉伸",
                 ["image/jpeg", "image/png", "image/webp", "image/avif"], true),
+            ["card-art"] = new("card-art", "卡牌异画", 0, 0, 0, 0, 0, 0,
+                "完整保留异画原始构图；上传前确认已获得可用于游戏内展示的授权，禁止上传含主动内容的 SVG",
+                ["image/jpeg", "image/png", "image/webp", "image/avif"], true),
             ["video"] = new("video", "视频封面", 1280, 720, 1280, 720, 480, 270,
                 "全端固定 16:9；建议原图 1280×720 或更高同等比例，播放主体避开四角控件区域",
                 ["image/jpeg", "image/png", "image/webp", "image/avif"]),
@@ -135,6 +138,9 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var changed = false;
+            _data.AlternateArts ??= [];
+            _data.AlternateArtGrants ??= [];
+            _data.AlternateArtAwardRules ??= [];
             foreach (var group in DefaultSiteCategories.GroupBy(item => item.Kind))
             {
                 if (_data.SiteCategories.Any(item => item.Kind == group.Key)) continue;
@@ -486,6 +492,16 @@ public sealed partial class L12PlatformStore
 
     internal void ValidateSiteContentValue(string key, string value, bool publishing)
     {
+        if (string.Equals(key, "rules.rulings", StringComparison.OrdinalIgnoreCase))
+        {
+            ValidateRuleRulings(value, publishing);
+            return;
+        }
+        if (string.Equals(key, "rules.center", StringComparison.OrdinalIgnoreCase))
+        {
+            ValidateRuleCenter(value);
+            return;
+        }
         if (!string.Equals(key, HomeCompositionContentKey, StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(key, SiteLegalContentKey, StringComparison.OrdinalIgnoreCase)) return;
         if (value.Length > 250_000) throw new ArgumentException("站点编排内容超过 250KB 限制");
@@ -548,6 +564,223 @@ public sealed partial class L12PlatformStore
             }
         }
         catch (JsonException error) { throw new ArgumentException($"站点编排 JSON 无效：{error.Message}"); }
+    }
+
+    /// <summary>
+    /// 公开裁定采用结构化草稿，而不是把原始问答表直接推到玩家页面。
+    /// pending 记录可以保存在草稿中供逐条复核，但不得随发布批次公开。
+    /// </summary>
+    private static void ValidateRuleRulings(string value, bool publishing)
+    {
+        if (value.Length > 250_000) throw new ArgumentException("规则裁定内容超过 250KB 限制");
+        if (string.IsNullOrWhiteSpace(value)) return;
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            if (document.RootElement.ValueKind != JsonValueKind.Object ||
+                !document.RootElement.TryGetProperty("entries", out var entries) ||
+                entries.ValueKind != JsonValueKind.Array)
+                throw new ArgumentException("规则裁定必须是包含 entries 数组的 JSON 对象");
+            if (entries.GetArrayLength() > 500) throw new ArgumentException("规则裁定最多 500 条");
+
+            var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in entries.EnumerateArray())
+            {
+                if (entry.ValueKind != JsonValueKind.Object) throw new ArgumentException("每条规则裁定必须是 JSON 对象");
+                var id = RequireRulingText(entry, "id", 100);
+                if (!id.All(character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.'))
+                    throw new ArgumentException("规则裁定 id 只能使用英文、数字、连字符、下划线或句点");
+                if (!ids.Add(id)) throw new ArgumentException($"规则裁定 id 重复：{id}");
+
+                RequireRulingText(entry, "question", 500);
+                RequireRulingText(entry, "answer", 8000);
+                RequireRulingText(entry, "category", 100);
+                RequireRulingText(entry, "sourceRef", 300);
+                var recordedAt = RequireRulingText(entry, "recordedAt", 40);
+                if (!DateTimeOffset.TryParse(recordedAt, out _)) throw new ArgumentException("规则裁定 recordedAt 必须是有效日期");
+                if (entry.TryGetProperty("effectiveAt", out var effectiveAt) && effectiveAt.ValueKind is not JsonValueKind.Null)
+                {
+                    var effectiveAtText = RequireRulingText(entry, "effectiveAt", 40);
+                    if (!DateTimeOffset.TryParse(effectiveAtText, out _)) throw new ArgumentException("规则裁定 effectiveAt 必须是有效日期");
+                }
+
+                RequireRulingChoice(entry, "scope", ["general", "card", "errata", "construction", "tournament"]);
+                RequireRulingChoice(entry, "sourceKind", ["rulebook", "official-faq", "user-ruling", "designer-ruling"]);
+                RequireRulingChoice(entry, "status", ["published", "pending", "superseded"]);
+
+                ValidateRulingStringArray(entry, "cardIds", 64, 80);
+                ValidateRulingStringArray(entry, "productIds", 64, 80);
+                ValidateRulingStringArray(entry, "tags", 32, 80);
+                ValidateRulingStringArray(entry, "sourceIds", 64, 100);
+                var supersedes = ValidateRulingStringArray(entry, "supersedes", 32, 100);
+                if (supersedes.Contains(id, StringComparer.OrdinalIgnoreCase))
+                    throw new ArgumentException($"规则裁定 {id} 不能替代自身");
+            }
+        }
+        catch (JsonException error) { throw new ArgumentException($"规则裁定 JSON 无效：{error.Message}"); }
+    }
+
+    /// <summary>
+    /// Produces the immutable player-facing snapshot. Draft rows remain intact so an
+    /// administrator can continue reviewing them after publishing confirmed rows.
+    /// </summary>
+    internal static string PreparePublicContentValue(string key, string value)
+    {
+        var rulings = string.Equals(key, "rules.rulings", StringComparison.OrdinalIgnoreCase);
+        var center = string.Equals(key, "rules.center", StringComparison.OrdinalIgnoreCase);
+        if (!rulings && !center) return value;
+        if (rulings) ValidateRuleRulings(value, false);
+        else ValidateRuleCenter(value);
+        if (string.IsNullOrWhiteSpace(value)) return value;
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            using var buffer = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(buffer))
+            {
+                writer.WriteStartObject();
+                foreach (var property in document.RootElement.EnumerateObject())
+                {
+                    writer.WritePropertyName(property.Name);
+                    var filteredCollection = rulings
+                        ? string.Equals(property.Name, "entries", StringComparison.Ordinal)
+                        : property.Name is "quickStart" or "terms" or "tournament" or "versions";
+                    if (!filteredCollection)
+                    {
+                        property.Value.WriteTo(writer);
+                        continue;
+                    }
+                    writer.WriteStartArray();
+                    foreach (var entry in property.Value.EnumerateArray())
+                    {
+                        var status = entry.TryGetProperty("status", out var statusValue) && statusValue.ValueKind == JsonValueKind.String
+                            ? statusValue.GetString() : null;
+                        if (rulings ? string.Equals(status, "published", StringComparison.Ordinal)
+                            : !string.Equals(status, "pending", StringComparison.Ordinal) && !string.Equals(status, "superseded", StringComparison.Ordinal))
+                            entry.WriteTo(writer);
+                    }
+                    writer.WriteEndArray();
+                }
+                writer.WriteEndObject();
+            }
+            return System.Text.Encoding.UTF8.GetString(buffer.ToArray());
+        }
+        catch (JsonException error) { throw new ArgumentException($"规则裁定 JSON 无效：{error.Message}"); }
+    }
+
+    private static void ValidateRuleCenter(string value)
+    {
+        if (value.Length > 250_000) throw new ArgumentException("规则中心内容超过 250KB 限制");
+        if (string.IsNullOrWhiteSpace(value)) return;
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) throw new ArgumentException("规则中心必须是 JSON 对象");
+            ValidateRuleCenterBlocks(root, "coreBlocks", 300);
+            ValidateRuleCenterEntries(root, "quickStart", 40);
+            ValidateRuleCenterEntries(root, "terms", 100);
+            ValidateRuleCenterEntries(root, "tournament", 100);
+            ValidateRuleCenterVersions(root, "versions", 100);
+        }
+        catch (JsonException error) { throw new ArgumentException($"规则中心 JSON 无效：{error.Message}"); }
+    }
+
+    private static void ValidateRuleCenterBlocks(JsonElement root, string property, int maximum)
+    {
+        if (!root.TryGetProperty(property, out var rows) || rows.ValueKind != JsonValueKind.Array || rows.GetArrayLength() > maximum)
+            throw new ArgumentException($"规则中心字段 {property} 必须是最多 {maximum} 项的数组");
+        foreach (var row in rows.EnumerateArray())
+        {
+            if (row.ValueKind != JsonValueKind.Object) throw new ArgumentException($"规则中心字段 {property} 的每项必须是对象");
+            RequireRulingText(row, "page", 20);
+            ValidateOptionalRulingText(row, "topic", 100);
+            ValidateOptionalRulingText(row, "chapter", 100);
+            RequireRulingText(row, "text", 12_000);
+        }
+    }
+
+    private static void ValidateRuleCenterEntries(JsonElement root, string property, int maximum)
+    {
+        if (!root.TryGetProperty(property, out var rows) || rows.ValueKind != JsonValueKind.Array || rows.GetArrayLength() > maximum)
+            throw new ArgumentException($"规则中心字段 {property} 必须是最多 {maximum} 项的数组");
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows.EnumerateArray())
+        {
+            if (row.ValueKind != JsonValueKind.Object) throw new ArgumentException($"规则中心字段 {property} 的每项必须是对象");
+            var id = RequireRulingText(row, "id", 100);
+            if (!ids.Add(id)) throw new ArgumentException($"规则中心字段 {property} 含重复 ID：{id}");
+            RequireRulingText(row, "title", 300);
+            RequireRulingText(row, "body", 12_000);
+            RequireRulingText(row, "sourceRef", 300);
+            ValidateOptionalRulingChoice(row, "status", ["published", "pending", "superseded"]);
+            ValidateRulingStringArray(row, "tags", 32, 80);
+        }
+    }
+
+    private static void ValidateRuleCenterVersions(JsonElement root, string property, int maximum)
+    {
+        if (!root.TryGetProperty(property, out var rows) || rows.ValueKind != JsonValueKind.Array || rows.GetArrayLength() > maximum)
+            throw new ArgumentException($"规则中心字段 {property} 必须是最多 {maximum} 项的数组");
+        foreach (var row in rows.EnumerateArray())
+        {
+            if (row.ValueKind != JsonValueKind.Object) throw new ArgumentException($"规则中心字段 {property} 的每项必须是对象");
+            RequireRulingText(row, "id", 100);
+            RequireRulingText(row, "title", 300);
+            RequireRulingText(row, "kind", 80);
+            RequireRulingText(row, "sourceRef", 300);
+            RequireRulingChoice(row, "status", ["published", "pending"]);
+            RequireRulingText(row, "summary", 12_000);
+            ValidateOptionalRulingText(row, "version", 100);
+            ValidateOptionalRulingText(row, "recordedAt", 40);
+            ValidateOptionalRulingText(row, "effectiveAt", 40);
+        }
+    }
+
+    private static void ValidateOptionalRulingText(JsonElement entry, string property, int maximum)
+    {
+        if (!entry.TryGetProperty(property, out var value) || value.ValueKind is JsonValueKind.Null) return;
+        if (value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString()) ||
+            (value.GetString()?.Length ?? 0) > maximum)
+            throw new ArgumentException($"规则中心字段 {property} 必须是长度为 1 至 {maximum} 的文本");
+    }
+
+    private static void ValidateOptionalRulingChoice(JsonElement entry, string property, IReadOnlyList<string> allowed)
+    {
+        if (!entry.TryGetProperty(property, out var value) || value.ValueKind is JsonValueKind.Null) return;
+        RequireRulingChoice(entry, property, allowed);
+    }
+
+    private static string RequireRulingText(JsonElement entry, string property, int maximum)
+    {
+        if (!entry.TryGetProperty(property, out var value) || value.ValueKind != JsonValueKind.String ||
+            string.IsNullOrWhiteSpace(value.GetString()) || (value.GetString()?.Length ?? 0) > maximum)
+            throw new ArgumentException($"规则裁定字段 {property} 必须是长度为 1 至 {maximum} 的文本");
+        return value.GetString()!.Trim();
+    }
+
+    private static string RequireRulingChoice(JsonElement entry, string property, IReadOnlyList<string> allowed)
+    {
+        var value = RequireRulingText(entry, property, 40);
+        if (!allowed.Contains(value, StringComparer.Ordinal))
+            throw new ArgumentException($"规则裁定字段 {property} 不支持值 {value}");
+        return value;
+    }
+
+    private static IReadOnlyList<string> ValidateRulingStringArray(JsonElement entry, string property, int maximumItems, int maximumLength)
+    {
+        if (!entry.TryGetProperty(property, out var values) || values.ValueKind != JsonValueKind.Array ||
+            values.GetArrayLength() > maximumItems)
+            throw new ArgumentException($"规则裁定字段 {property} 必须是最多 {maximumItems} 项的数组");
+        var result = new List<string>();
+        foreach (var value in values.EnumerateArray())
+        {
+            if (value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString()) ||
+                (value.GetString()?.Length ?? 0) > maximumLength)
+                throw new ArgumentException($"规则裁定字段 {property} 只能包含长度为 1 至 {maximumLength} 的文本");
+            result.Add(value.GetString()!.Trim());
+        }
+        return result;
     }
 
     internal string SiteMediaUrl(string? id, string variant = "desktop")
@@ -625,7 +858,7 @@ public sealed partial class L12PlatformStore
         count += _data.ContentEntries.Sum(entry => CountJsonString(entry.DraftValue, id) +
             CountJsonString(entry.PublishedValue, id));
         count += _data.ContentVersions.Sum(version => CountJsonString(version.Value, id));
-        return count;
+        return count + _data.AlternateArts.Count(row => row.MediaAssetId == id);
     }
 
     private void MigrateCategoryReferences(SiteCategoryRow source, SiteCategoryRow target)

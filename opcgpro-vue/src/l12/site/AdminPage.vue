@@ -11,9 +11,10 @@ import AdminRankedIntegrityPanel from './AdminRankedIntegrityPanel.vue'
 import AdminMatchesPanel from './AdminMatchesPanel.vue'
 import AdminCardAnalyticsPanel from './AdminCardAnalyticsPanel.vue'
 import AdminMatchGovernancePanel from './AdminMatchGovernancePanel.vue'
+import AdminUsernameChangeRequestsPanel from './AdminUsernameChangeRequestsPanel.vue'
 import TournamentCenterPage from './TournamentCenterPage.vue'
 
-type AdminTab = 'overview' | 'bugs' | 'accounts' | 'matches' | 'match-governance' | 'card-analytics' | 'content' | 'effects' | 'releases' | 'commands' | 'audit' | 'integrity' | 'security' | 'operations' | 'tournaments'
+type AdminTab = 'overview' | 'bugs' | 'accounts' | 'username-requests' | 'matches' | 'match-governance' | 'card-analytics' | 'content' | 'effects' | 'releases' | 'commands' | 'audit' | 'integrity' | 'security' | 'operations' | 'tournaments'
 const route = useRoute()
 const tab = ref<AdminTab>(route.query.section === 'matches' ? 'matches' : 'overview')
 const adminMatchId = ref(typeof route.query.matchId === 'string' ? route.query.matchId : '')
@@ -293,7 +294,7 @@ onMounted(() => { void initializeAdminPage() })
       <div class="admin-shell">
       <aside class="admin-sidebar">
         <nav><small>总览</small><button :class="{ active: tab === 'overview' }" @click="tab = 'overview'">▦ 后台概览</button></nav>
-        <nav><small>用户与反馈</small><button v-if="hasPermission('admin.accounts.read')" :class="{ active: tab === 'accounts' }" @click="tab = 'accounts'; loadAccounts()">♙ 账号与会话</button><button v-if="hasPermission('admin.bugs.read')" :class="{ active: tab === 'bugs' }" @click="tab = 'bugs'; loadBugs()">⚑ Bug 管理</button></nav>
+        <nav><small>用户与反馈</small><button v-if="hasPermission('admin.accounts.read')" :class="{ active: tab === 'accounts' }" @click="tab = 'accounts'; loadAccounts()">♙ 账号与会话</button><button v-if="hasPermission('admin.accounts.read')" :class="{ active: tab === 'username-requests' }" @click="tab = 'username-requests'">✎ 改名审核</button><button v-if="hasPermission('admin.bugs.read')" :class="{ active: tab === 'bugs' }" @click="tab = 'bugs'; loadBugs()">⚑ Bug 管理</button></nav>
         <nav><small>对局与数据</small><button v-if="hasPermission('admin.matches.read')" :class="{ active: tab === 'matches' }" @click="adminMatchId = ''; tab = 'matches'">▣ 对局档案</button><button v-if="hasPermission('admin.match-governance.read')" :class="{ active: tab === 'match-governance' }" @click="tab = 'match-governance'">⚖ 对局治理</button><button v-if="hasPermission('admin.analytics.read')" :class="{ active: tab === 'card-analytics' }" @click="tab = 'card-analytics'">◈ 单卡分析</button></nav>
         <nav><small>站点内容</small><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'content' }" @click="tab = 'content'">▤ 站点内容工作台</button></nav>
         <nav><small>游戏与赛事运营</small><button v-if="hasPermission('admin.operations.read')" :class="{ active: tab === 'operations' }" @click="tab = 'operations'">⚙ 游戏运营配置</button><button v-if="hasPermission('tournaments.manage') || hasPermission('tournaments.rulings.write')" :class="{ active: tab === 'tournaments' }" @click="tab = 'tournaments'">♜ 赛事管理</button><button v-if="hasPermission('admin.commands.read')" :class="{ active: tab === 'commands' }" @click="tab = 'commands'; loadControlPlane()">⌁ 管理操作记录</button></nav>
@@ -323,6 +324,7 @@ onMounted(() => { void initializeAdminPage() })
       <AdminMatchesPanel v-else-if="tab === 'matches' && hasPermission('admin.matches.read')" :initial-match-id="adminMatchId" @notice="notice = $event"/>
       <AdminMatchGovernancePanel v-else-if="tab === 'match-governance' && hasPermission('admin.match-governance.read')" @notice="notice = $event"/>
       <AdminCardAnalyticsPanel v-else-if="tab === 'card-analytics' && hasPermission('admin.analytics.read')" @notice="notice = $event" @open-match="openAdminMatch"/>
+      <AdminUsernameChangeRequestsPanel v-else-if="tab === 'username-requests' && hasPermission('admin.accounts.read')" @notice="notice = $event"/>
       <TournamentCenterPage v-else-if="tab === 'tournaments' && (hasPermission('tournaments.manage') || hasPermission('tournaments.rulings.write'))" admin-mode embedded/>
       <section v-else-if="tab === 'accounts'" class="panel account-panel">
         <header>
@@ -419,7 +421,7 @@ onMounted(() => { void initializeAdminPage() })
                       <em :data-overridden="scene.overridden">{{ scene.overridden ? '人工覆盖生效' : '沿用默认推导' }}</em>
                     </div>
                     <dl><dt>默认文本</dt><dd>{{ scene.defaultText }}</dd><dt>当前生效</dt><dd>{{ scene.effectiveText }}</dd></dl>
-                    <label>编辑文案<textarea v-model="presentationDrafts[scene.sceneId]" rows="5" maxlength="2000" data-ui-contract="effect-presentation-multiline" :aria-label="`${selectedEffect.name} ${presentationSceneName(scene)} 动效文案`" @keydown.enter.stop @keyup.enter.stop></textarea></label>
+                    <label>编辑文案<textarea v-model="presentationDrafts[scene.sceneId]" rows="5" maxlength="2000" data-ui-contract="effect-presentation-multiline" :aria-label="`${selectedEffect.name} ${presentationSceneName(scene)} 动效文案`" @keydown.enter.stop @keyup.enter.stop></textarea><small>按 Enter 换行；公告与对局动效会保留手动换行。</small></label>
                     <small v-if="scene.placeholders.length" class="presentation-placeholders">允许的公开占位符：{{ formatPlaceholders(scene) }}</small>
                     <div class="presentation-preview"><small>预览</small><strong>{{ presentationDrafts[scene.sceneId] }}</strong></div>
                     <footer><button :disabled="!hasPermission('admin.effects.review') || presentationSaving !== ''" @click="savePresentation(scene)">{{ presentationSaving === scene.sceneId ? '保存中…' : '保存文案' }}</button><button class="restore" :disabled="!scene.overridden || !hasPermission('admin.effects.review') || presentationSaving !== ''" @click="restorePresentation(scene)">恢复默认</button></footer>

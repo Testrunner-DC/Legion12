@@ -755,6 +755,9 @@ public sealed partial class L12PlatformStore
                 secondSevenBefore, secondStreakBefore);
             var secondSettlement = SettleOne(matchId, second, winner == 1, secondRating,
                 firstSevenBefore, firstStreakBefore);
+            // 段位异画以结算后的权威资料为准，重复结算会命中同一来源记录而保持幂等。
+            ApplyRankReachedAlternateArtAwardsLocked(first.AccountId, first.SeasonId, TierIndex(first));
+            ApplyRankReachedAlternateArtAwardsLocked(second.AccountId, second.SeasonId, TierIndex(second));
             var expectedFirst = 1d / (1d + Math.Pow(10d, (secondRating - firstRating) / 400d));
             first.HiddenRating = Math.Clamp(firstRating + 24d * ((winner == 0 ? 1d : 0d) - expectedFirst), 500d, 2500d);
             second.HiddenRating = Math.Clamp(secondRating + 24d * ((winner == 1 ? 1d : 0d) - (1d - expectedFirst)), 500d, 2500d);
@@ -1031,7 +1034,11 @@ public sealed partial class L12PlatformStore
         var champions = CurrentMasterChampions();
         var rows = _data.RankedProfiles.Where(row => row.SeasonId == outgoingSeasonId).ToArray();
         foreach (var row in rows)
+        {
+            // 在归档前使用该赛季的最终七曜值计算门槛；重复切换同一赛季只会复用同一权益记录。
+            ApplySeasonFinalAlternateArtAwardsLocked(row.AccountId, outgoingSeasonId, TierIndex(row));
             ArchiveRankedProfile(row, outgoingSeasonName, true, PlayerTitles(row, FactionRank(row), champions));
+        }
     }
 
     private L12RankedProfileView ProfileView(RankedProfileRow row)

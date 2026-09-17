@@ -74,6 +74,8 @@ public sealed class L12PresetDeckDefinition
     public required List<string> CardIds { get; init; }
     public required List<string> MoraleIds { get; init; }
     public List<string> SpecialIds { get; init; } = [];
+    /// <summary>玩家选择的异画：规则卡牌编号 -> 已拥有的异画编号。服务端会再次校验权益。</summary>
+    public Dictionary<string, string> AlternateArtSelections { get; init; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class L12CustomDeckSubmission
@@ -83,6 +85,7 @@ public sealed class L12CustomDeckSubmission
     public List<string> CardIds { get; init; } = [];
     public List<string> MoraleIds { get; init; } = [];
     public List<string> SpecialIds { get; init; } = [];
+    public Dictionary<string, string> AlternateArtSelections { get; init; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class L12RoomOptions
@@ -104,7 +107,7 @@ public sealed class L12CardInstance
     public required string Name { get; init; }
     public required string CardType { get; init; }
     public required string Faction { get; init; }
-    public string? ImageUrl { get; init; }
+    public string? ImageUrl { get; set; }
     public int Cost { get; init; }
     /// <summary>卡面是否实际印刷费用；与支付计算使用的数值0分开保存。</summary>
     public bool HasPrintedCost { get; init; } = true;

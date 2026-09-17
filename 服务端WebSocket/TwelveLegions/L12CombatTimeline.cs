@@ -77,7 +77,7 @@ public sealed partial class L12GameEngine
                     pending.Stage = L12CombatStage.DefenseChoice;
                     State.Phase = L12Phase.Defense;
                     AddEvent("combat-stage", 1 - pending.AttackerPlayer,
-                        $"防守方【对方进攻时】响应已全部结算；本次进攻数值冻结为 {pending.AttackValue}，进入抵挡/支援");
+                        $"防守方【对方进攻时】响应已全部结算；本次进攻值为 {pending.AttackValue}，请选择抵挡或支援");
                     if (AutoResolveLegionDefenseWithoutSupport()) return;
                     return;
 

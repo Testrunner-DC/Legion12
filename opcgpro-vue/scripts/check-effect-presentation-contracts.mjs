@@ -75,6 +75,8 @@ assert(overrideGuard >= 0 && overrideGuard < oiranFallback,
   'Authoritative override must win before the legacy Oiran compatibility fallback')
 assert(board.includes('.public-reveal-animation strong{') && board.includes('white-space:pre-wrap;overflow-wrap:anywhere'))
 assert(eventLog.includes('.event-effect{') && eventLog.includes('white-space:pre-wrap'))
+assert(actionLayer.includes('.l12-action-presentation .action-copy strong{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;text-overflow:clip}'),
+  '对局动效公告必须保留后台手动换行，并对超长单行安全折行')
 for (const contract of [
   "event.type === 'effect-result'",
   "event.effectResultStatus !== 'declared'",

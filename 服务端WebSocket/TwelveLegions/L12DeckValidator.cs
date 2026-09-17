@@ -17,6 +17,7 @@ public static class L12DeckValidator
             CardIds = preset.CardIds.ToList(),
             MoraleIds = preset.MoraleIds.ToList(),
             SpecialIds = preset.SpecialIds.ToList(),
+            AlternateArtSelections = new Dictionary<string, string>(preset.AlternateArtSelections, StringComparer.OrdinalIgnoreCase),
         }, out _, out error, cardRestrictions);
 
     public static bool TryValidate(
@@ -153,6 +154,9 @@ public static class L12DeckValidator
             CardIds = submission.CardIds.ToList(),
             MoraleIds = normalizedMoraleIds,
             SpecialIds = submission.SpecialIds.ToList(),
+            AlternateArtSelections = submission.AlternateArtSelections
+                .Where(item => !string.IsNullOrWhiteSpace(item.Key) && !string.IsNullOrWhiteSpace(item.Value))
+                .Take(128).ToDictionary(item => item.Key.Trim(), item => item.Value.Trim(), StringComparer.OrdinalIgnoreCase),
         };
         error = string.Empty;
         return true;

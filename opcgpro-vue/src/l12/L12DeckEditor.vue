@@ -9,7 +9,7 @@ import {
   MAIN_DECK_TYPES, automaticExtraCardIdsForMaster, buildMoraleDeck, deckCountSummary, deleteDeck, doesNotCountTowardMainDeck, effectiveDeckLimit, ensureOfficialPrebuiltDecks, filterableCardCost, loadDeckCatalog, loadSavedDecks, trialCapacityForMaster,
   saveDeck, validateDeck, type DeckCard, type SavedL12Deck,
 } from './decks'
-import { platformState, publicDeckApi } from './platform'
+import { alternateArtApi, platformState, publicDeckApi, type AlternateArt } from './platform'
 import CardImage from './CardImage.vue'
 import CardDetailContent from './CardDetailContent.vue'
 import DeckProfile from './DeckProfile.vue'
@@ -42,8 +42,10 @@ const deckImageBlob = ref<Blob | null>(null)
 const generatingDeckImage = ref(false)
 const publicationId = ref(typeof route.query.published === 'string' ? route.query.published : '')
 const editorContentRevision = ref(0)
+const ownedAlternateArts = ref<AlternateArt[]>([])
+const alternateArtSelections = ref<Record<string, string>>({})
 
-watch([deckName, masterId, counts, specialIds], () => editorContentRevision.value++, { deep: true, flush: 'sync' })
+watch([deckName, masterId, counts, specialIds, alternateArtSelections], () => editorContentRevision.value++, { deep: true, flush: 'sync' })
 
 const factionLabels: Record<string, string> = {
   universal: '通用', tianting: '天廷', gaotianyuan: '高天原', asgard: '阿斯加德',
@@ -55,10 +57,14 @@ const typeLabels: Record<string, string> = {
 
 onMounted(async () => {
   try {
-    ;[catalog.value, savedDecks.value] = await Promise.all([
+    const [loadedCatalog, loadedDecks, arts] = await Promise.all([
       loadDeckCatalog(),
       ensureOfficialPrebuiltDecks(),
+      platformState.account ? alternateArtApi.mine().catch(() => [] as AlternateArt[]) : Promise.resolve([] as AlternateArt[]),
     ])
+    catalog.value = loadedCatalog
+    savedDecks.value = loadedDecks
+    ownedAlternateArts.value = arts
     const requested = typeof router.currentRoute.value.query.deck === 'string' ? router.currentRoute.value.query.deck : ''
     if (requested && savedDecks.value[requested]) loadDeck(savedDecks.value[requested], true)
     else selected.value = mainCards.value[0] ?? null
@@ -85,6 +91,8 @@ const trialCapacity = computed(() => trialCapacityForMaster(selectedMaster.value
 const availableTrials = computed(() => catalog.value.filter(card => card.cardType === 'trial'
   && card.faction === selectedMaster.value?.faction))
 const selectedTrials = computed(() => specialIds.value.map(id => byId.value.get(id)).filter(Boolean) as DeckCard[])
+const selectedAlternateArts = computed(() => selected.value
+  ? ownedAlternateArts.value.filter(art => art.baseCardId === selected.value!.id) : [])
 const entries = computed(() => Object.entries(counts.value)
   .filter(([, count]) => count > 0)
   .map(([id, count]) => ({ card: byId.value.get(id)!, count }))
@@ -182,6 +190,7 @@ function newDeck() {
   masterId.value = ''
   counts.value = {}
   specialIds.value = []
+  alternateArtSelections.value = {}
   selected.value = mainCards.value[0] ?? null
   notice.value = '已新建空白牌库'
 }
@@ -191,6 +200,7 @@ function currentDeck(): SavedL12Deck {
     name: deckName.value.trim(), masterId: masterId.value,
     cardIds: entries.value.flatMap(entry => Array(entry.count).fill(entry.card.id)),
     moraleIds: moraleIds.value, specialIds: [...specialIds.value], updatedAt: new Date().toISOString(),
+    alternateArtSelections: { ...alternateArtSelections.value },
   }
 }
 
@@ -298,7 +308,15 @@ function loadDeck(deck: SavedL12Deck, preservePublication = false) {
   deck.cardIds.forEach(id => next[id] = (next[id] || 0) + 1)
   counts.value = next
   specialIds.value = [...(deck.specialIds ?? [])]
+  alternateArtSelections.value = { ...(deck.alternateArtSelections ?? {}) }
   notice.value = `已载入〈${deck.name}〉`
+}
+
+function selectAlternateArt(cardId: string, artId: string) {
+  const next = { ...alternateArtSelections.value }
+  if (artId) next[cardId] = artId
+  else delete next[cardId]
+  alternateArtSelections.value = next
 }
 
 function requestDelete(name = activeDeckName.value ?? '') {
@@ -381,6 +399,14 @@ onBeforeUnmount(closeDeckImage)
         <p class="kicker">CARD DETAIL</p><h2>卡牌详情</h2>
         <section v-if="selected" class="builder-card-detail archive-detail">
           <CardDetailContent :card="selected" :show-catalog-only="false"/>
+          <label v-if="selectedAlternateArts.length" class="alternate-art-selector">
+            <span>对局卡图</span>
+            <select :value="alternateArtSelections[selected.id] ?? ''" @change="selectAlternateArt(selected!.id, ($event.target as HTMLSelectElement).value)">
+              <option value="">使用原始卡图</option>
+              <option v-for="art in selectedAlternateArts" :key="art.id" :value="art.id">{{ art.displayName }}</option>
+            </select>
+            <small>已选择的异画只改变本人的对局显示，不改变卡牌规则。</small>
+          </label>
         </section>
         <p v-else class="empty-detail">选择卡牌后在此查看详情。</p>
       </aside>

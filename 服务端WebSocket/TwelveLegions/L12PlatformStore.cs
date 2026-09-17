@@ -23,7 +23,8 @@ public sealed record L12AuthenticatedSession(L12AccountView Account, string Sess
 public sealed record L12SessionRevocationResult(bool Found, string? SessionId, int RevokedCount,
     bool AlreadyRevoked, IReadOnlyList<string> RevokedSessionIds);
 public sealed record L12AccountDeckView(string Name, string MasterId, IReadOnlyList<string> CardIds,
-    IReadOnlyList<string> MoraleIds, IReadOnlyList<string> SpecialIds, DateTimeOffset UpdatedAt);
+    IReadOnlyList<string> MoraleIds, IReadOnlyList<string> SpecialIds, DateTimeOffset UpdatedAt,
+    IReadOnlyDictionary<string, string>? AlternateArtSelections = null);
 public sealed record L12PublishedDeckView(string Id, string OwnerId, string Author, L12AccountDeckView Deck,
     int Views, int Likes, int Copies, bool Liked, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 public sealed record L12BugDiagnosticView(DateTimeOffset CapturedAt, string? MatchId, string? RoomCode,
@@ -77,6 +78,7 @@ public sealed partial class L12PlatformStore
         public DateTimeOffset? EmailVerifiedAt { get; set; }
         public bool MustChangePassword { get; set; }
         public bool MustChangeUsername { get; set; }
+        public int SelfServiceUsernameChangeCount { get; set; }
         public bool Deleted { get; set; }
         public bool MusicEnabled { get; set; } = true;
         public double MusicVolume { get; set; } = 0.35;
@@ -207,6 +209,7 @@ public sealed partial class L12PlatformStore
         public List<string> CardIds { get; set; } = [];
         public List<string> MoraleIds { get; set; } = [];
         public List<string> SpecialIds { get; set; } = [];
+        public Dictionary<string, string> AlternateArtSelections { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
 
@@ -259,6 +262,10 @@ public sealed partial class L12PlatformStore
         public List<ContentRow> ContentEntries { get; set; } = [];
         public List<ArticleRow> Articles { get; set; } = [];
         public List<SiteMediaRow> SiteMedia { get; set; } = [];
+        public List<AlternateArtRow> AlternateArts { get; set; } = [];
+        public List<AlternateArtGrantRow> AlternateArtGrants { get; set; } = [];
+        public List<AlternateArtAwardRuleRow> AlternateArtAwardRules { get; set; } = [];
+        public List<UsernameChangeRequestRow> UsernameChangeRequests { get; set; } = [];
         public List<SiteCategoryRow> SiteCategories { get; set; } = [];
         public List<EffectReviewRow> EffectReviews { get; set; } = [];
         public List<EffectPresentationOverrideRow> EffectPresentationOverrides { get; set; } = [];
@@ -295,6 +302,60 @@ public sealed partial class L12PlatformStore
         public List<RankedIntegrityAppealRow> RankedIntegrityAppeals { get; set; } = [];
     }
 
+    private sealed class AlternateArtRow
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string BaseCardId { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public string MediaAssetId { get; set; } = string.Empty;
+        public bool Active { get; set; } = true;
+        public string CreatedByAccountId { get; set; } = string.Empty;
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
+    private sealed class AlternateArtGrantRow
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string AccountId { get; set; } = string.Empty;
+        public string AlternateArtId { get; set; } = string.Empty;
+        public string SourceKind { get; set; } = "manual";
+        public string SourceReference { get; set; } = string.Empty;
+        public string GrantedByAccountId { get; set; } = string.Empty;
+        public DateTimeOffset GrantedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset? RevokedAt { get; set; }
+        public string? RevokedByAccountId { get; set; }
+    }
+
+    private sealed class AlternateArtAwardRuleRow
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string AlternateArtId { get; set; } = string.Empty;
+        /// <summary>rank-reached / season-final / event</summary>
+        public string Kind { get; set; } = string.Empty;
+        public string SeasonId { get; set; } = string.Empty;
+        public string EventId { get; set; } = string.Empty;
+        public int MinimumTierIndex { get; set; }
+        public bool Active { get; set; } = true;
+        public string CreatedByAccountId { get; set; } = string.Empty;
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
+    private sealed class UsernameChangeRequestRow
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string AccountId { get; set; } = string.Empty;
+        public string CurrentUsername { get; set; } = string.Empty;
+        public string RequestedUsername { get; set; } = string.Empty;
+        public string Reason { get; set; } = string.Empty;
+        public string Status { get; set; } = "pending";
+        public string? ReviewedByAccountId { get; set; }
+        public string? ReviewNote { get; set; }
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset? ReviewedAt { get; set; }
+    }
+
     private readonly object _gate = new();
     private readonly string _path;
     private readonly IReadOnlyList<L12PresetDeckDefinition> _officialDecks;
@@ -327,6 +388,7 @@ public sealed partial class L12PlatformStore
         _data = LoadTransactionalState();
         EnsureRootAdmin();
         EnsureUsernameModeration();
+        EnsureUsernameChangeState();
         EnsureOperationsState();
         EnsureRankedState();
         EnsureArticleState();
@@ -716,6 +778,7 @@ public sealed partial class L12PlatformStore
             row.CardIds = deck.CardIds.ToList();
             row.MoraleIds = deck.MoraleIds.ToList();
             row.SpecialIds = deck.SpecialIds.ToList();
+            row.AlternateArtSelections = SanitizeOwnedAlternateArtSelections(accountId, deck.AlternateArtSelections);
             row.UpdatedAt = DateTimeOffset.UtcNow;
             Save();
             return ToView(row);
@@ -1393,7 +1456,8 @@ public sealed partial class L12PlatformStore
         => _data.Friends.FirstOrDefault(row => (row.RequesterId == firstAccountId && row.AddresseeId == secondAccountId)
             || (row.RequesterId == secondAccountId && row.AddresseeId == firstAccountId));
     private static L12AccountDeckView ToView(DeckRow row) => new(row.Name, row.MasterId, row.CardIds.ToArray(),
-        row.MoraleIds.ToArray(), row.SpecialIds.ToArray(), row.UpdatedAt);
+        row.MoraleIds.ToArray(), row.SpecialIds.ToArray(), row.UpdatedAt,
+        new Dictionary<string, string>(row.AlternateArtSelections ?? [], StringComparer.OrdinalIgnoreCase));
     private L12PublishedDeckView ToView(PublishedDeckRow row, string? viewerAccountId)
     {
         var owner = _data.Accounts.FirstOrDefault(account => account.Id == row.OwnerId);

@@ -66,10 +66,11 @@ public sealed partial class L12GameEngine
         bool? concealHiddenResponseAvailability = null,
         L12OperationsPolicySnapshot? operationsPolicy = null,
         int stateFormatVersion = 0,
-        IReadOnlyList<L12FrozenEffectPresentation>? effectPresentationSnapshot = null)
+        IReadOnlyList<L12FrozenEffectPresentation>? effectPresentationSnapshot = null,
+        IReadOnlyDictionary<string, string>[]? alternateArtUrls = null)
         : this(catalog, matchId, roomCode, seed, playerNames,
             deckIndexes.Select(catalog.DeckAt).ToArray(), skipPreparation, disasterMode, autoPassEmptyResponses,
-            concealHiddenResponseAvailability, operationsPolicy, stateFormatVersion, effectPresentationSnapshot)
+            concealHiddenResponseAvailability, operationsPolicy, stateFormatVersion, effectPresentationSnapshot, alternateArtUrls)
     {
     }
 
@@ -86,7 +87,8 @@ public sealed partial class L12GameEngine
         bool? concealHiddenResponseAvailability = null,
         L12OperationsPolicySnapshot? operationsPolicy = null,
         int stateFormatVersion = 0,
-        IReadOnlyList<L12FrozenEffectPresentation>? effectPresentationSnapshot = null)
+        IReadOnlyList<L12FrozenEffectPresentation>? effectPresentationSnapshot = null,
+        IReadOnlyDictionary<string, string>[]? alternateArtUrls = null)
     {
         if (playerNames.Length != 2 || decks.Length != 2)
             throw new ArgumentException("十二军团对战需要两名玩家和两副牌库");
@@ -111,8 +113,8 @@ public sealed partial class L12GameEngine
             FirstPlayer = 0,
             Players =
             [
-                BuildPlayer(0, playerNames[0], decks[0]),
-                BuildPlayer(1, playerNames[1], decks[1]),
+                BuildPlayer(0, playerNames[0], decks[0], alternateArtUrls?.ElementAtOrDefault(0)),
+                BuildPlayer(1, playerNames[1], decks[1], alternateArtUrls?.ElementAtOrDefault(1)),
             ],
         };
 
@@ -902,7 +904,8 @@ public sealed partial class L12GameEngine
         _cachedStateHash = null;
     }
 
-    private L12PlayerState BuildPlayer(int index, string name, L12PresetDeckDefinition deck)
+    private L12PlayerState BuildPlayer(int index, string name, L12PresetDeckDefinition deck,
+        IReadOnlyDictionary<string, string>? alternateArtUrls = null)
     {
         var master = _catalog.Cards[deck.MasterId];
         // 正式主宰必须消费目录中的权威血量；少量规则单元测试会临时把普通卡
@@ -918,7 +921,7 @@ public sealed partial class L12GameEngine
             Faction = master.Faction,
             MasterId = master.Id,
             MasterName = master.NameZh,
-            MasterImageUrl = master.ImageUrl,
+            MasterImageUrl = ResolveAlternateArtUrl(master.Id, master.ImageUrl, alternateArtUrls),
             Hp = masterHp,
             MaxHp = masterHp,
         };
@@ -929,6 +932,7 @@ public sealed partial class L12GameEngine
         {
             var definition = _catalog.Cards[cardId];
             var card = CreateCard(cardId, $"p{index}-c{++mainDeckIndex}");
+            card.ImageUrl = ResolveAlternateArtUrl(card.CardId, card.ImageUrl, alternateArtUrls);
             if (L12SpecialDeckRules.StartsInGraveyard(definition))
             {
                 player.Graveyard.Add(card);
@@ -943,7 +947,11 @@ public sealed partial class L12GameEngine
                 CardId = _catalog.MoraleIdentities.CanonicalDeckCardId(deck.MoraleIds[i]),
             });
         for (var i = 0; i < deck.SpecialIds.Count; i++)
-            player.SpecialZones.Trials.Add(CreateCard(deck.SpecialIds[i], $"p{index}-special-{i + 1}"));
+        {
+            var card = CreateCard(deck.SpecialIds[i], $"p{index}-special-{i + 1}");
+            card.ImageUrl = ResolveAlternateArtUrl(card.CardId, card.ImageUrl, alternateArtUrls);
+            player.SpecialZones.Trials.Add(card);
+        }
         player.TrialOrderDone = player.SpecialZones.Trials.Count <= 1;
         if (player.Faction == "taiyangcheng" && _catalog.Cards.ContainsKey("S01-0212"))
         {
@@ -956,6 +964,11 @@ public sealed partial class L12GameEngine
             player.Graveyard.Add(CreateCard("S01-02M2", $"p{index}-osiris"));
         return player;
     }
+
+    private static string? ResolveAlternateArtUrl(string cardId, string? originalUrl,
+        IReadOnlyDictionary<string, string>? alternateArtUrls)
+        => alternateArtUrls is not null && alternateArtUrls.TryGetValue(cardId, out var url)
+            && !string.IsNullOrWhiteSpace(url) ? url : originalUrl;
 
     private static string NormalizeDisasterMode(string? mode) => mode switch
     {

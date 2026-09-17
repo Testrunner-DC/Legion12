@@ -5,7 +5,11 @@ namespace TwelveLegions.Server;
 internal sealed record L12StoredAdminCommand(string Id, string Signature, L12AdminCommandView View);
 internal sealed record L12StoredAdminApproval(string Status, L12AdminApprovalView View);
 
-public sealed record L12ContentPublishItem(string Key, string DraftValue, long EntryVersion);
+/// <summary>
+/// DraftValue is retained for optimistic-concurrency checks. PublishedValue is the
+/// server-prepared public snapshot, which may deliberately omit unreviewed draft rows.
+/// </summary>
+public sealed record L12ContentPublishItem(string Key, string DraftValue, string PublishedValue, long EntryVersion);
 public sealed record L12ContentPublishCommandPayload(IReadOnlyList<L12ContentPublishItem> Items);
 public sealed record L12ContentRollbackItem(string Key, string TargetValue, long EntryVersion,
     string ExpectedPublishedVersionId, string? TargetVersionId);
@@ -111,7 +115,7 @@ public sealed partial class L12PlatformStore
         "home.decksTitle", "home.decksText", "home.recordsTitle", "home.recordsText", "home.newsTitle",
         "home.latestNews", "home.newsEmptyTitle", "home.newsEmptyText", "home.rulesTitle", "home.cardLinkLabel",
         "home.rulesLinkLabel", "home.replayLinkLabel", "home.developmentTitle", "home.battleStatus",
-        "home.s1Status", "home.s2Status", "home.mobileStatus", "rules.notice", "news.entries",
+        "home.s1Status", "home.s2Status", "home.mobileStatus", "rules.notice", "rules.rulings", "rules.center", "news.entries",
         HomeCompositionContentKey, SiteLegalContentKey,
         // 兼容旧 platform.json 和既有平台持久化测试中的早期首页键。
         "home.hero.title",
@@ -333,7 +337,8 @@ public sealed partial class L12PlatformStore
             {
                 var row = FindContentEntry(key);
                 var published = _data.Content.GetValueOrDefault(key, string.Empty);
-                return new L12ContentPublishItem(key, row?.DraftValue ?? published, row?.Version ?? 0);
+                var draft = row?.DraftValue ?? published;
+                return new L12ContentPublishItem(key, draft, PreparePublicContentValue(key, draft), row?.Version ?? 0);
             }).ToArray());
         }
     }
@@ -347,8 +352,8 @@ public sealed partial class L12PlatformStore
             {
                 var row = FindContentEntry(item.Key);
                 var published = row?.PublishedValue ?? _data.Content.GetValueOrDefault(item.Key, string.Empty);
-                return new L12ContentPreviewItem(item.Key, item.DraftValue, published, item.EntryVersion,
-                    item.DraftValue != published);
+                return new L12ContentPreviewItem(item.Key, item.PublishedValue, published, item.EntryVersion,
+                    item.PublishedValue != published);
             }).ToArray());
         }
     }
@@ -375,7 +380,7 @@ public sealed partial class L12PlatformStore
                 {
                     BatchId = batch.Id,
                     Key = row.Key,
-                    Value = item.DraftValue,
+                    Value = item.PublishedValue,
                     PreviousVersionId = previousVersionId,
                     Kind = "publish",
                     ActorId = actor.Id,
@@ -387,13 +392,13 @@ public sealed partial class L12PlatformStore
                 {
                     Key = row.Key,
                     PreviousValue = row.PublishedValue,
-                    PublishedValue = item.DraftValue,
+                    PublishedValue = item.PublishedValue,
                     PreviousVersionId = previousVersionId,
                     PublishedVersionId = version.Id,
                 });
-                AddAdminAudit(actor, "content", "publish", row.Key, row.PublishedValue, item.DraftValue,
+                AddAdminAudit(actor, "content", "publish", row.Key, row.PublishedValue, item.PublishedValue,
                     batch.Id, context);
-                row.PublishedValue = item.DraftValue;
+                row.PublishedValue = item.PublishedValue;
                 row.Status = "published";
                 row.PublishedBy = actor.Username;
                 row.PublishedAt = now;
@@ -521,7 +526,8 @@ public sealed partial class L12PlatformStore
             var currentVersion = row?.Version ?? 0;
             if (currentVersion != item.EntryVersion || currentDraft != item.DraftValue)
                 throw new L12ContentStateConflictException($"内容 {item.Key} 的草稿已变化，请重新预览");
-            ValidateSiteContentValue(item.Key, item.DraftValue, true);
+            ValidateSiteContentValue(item.Key, item.DraftValue, false);
+            ValidateSiteContentValue(item.Key, item.PublishedValue, true);
         }
     }
 

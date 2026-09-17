@@ -148,10 +148,18 @@ function uniqueSources(sources: Array<CardAssetSource | null>) {
   })
 }
 
+// 异画文件由本站后台上传，只有本站受控媒体路由可以覆盖官方清单卡图。
+// 不把任意 API / WebSocket 中的 imageUrl 当作图片地址，避免把展示层变成外链追踪入口。
+function trustedSiteMediaSource(url: string | undefined): CardAssetSource | null {
+  const normalized = url?.trim() ?? ''
+  if (!normalized.startsWith('/api/site/media/')) return null
+  return { kind: 'sameOrigin', lowWebp: normalized, webp: normalized }
+}
+
 function resolvedCardAssetFromManifest(
   manifest: CardAssetManifest,
   cardId: string,
-  _legacyUrl: string | undefined,
+  legacyUrl: string | undefined,
   intent: CardImageIntent,
 ): ResolvedCardAsset | null {
   const entry = manifest.cards[cardId]
@@ -165,6 +173,7 @@ function resolvedCardAssetFromManifest(
     intent,
     orientation: entry.orientation,
     sources: uniqueSources([
+      trustedSiteMediaSource(legacyUrl),
       explicitCdnBaseUrl ? sourceFor('cdn', explicitCdnBaseUrl, entry.variants, intent) : null,
       sourceFor('sameOrigin', sameOrigin, entry.variants, intent),
       !explicitCdnBaseUrl && manifestCdnBaseUrl
@@ -184,11 +193,12 @@ export function peekCardAsset(cardId: string, legacyUrl: string | undefined, int
   return manifestValue ? resolvedCardAssetFromManifest(manifestValue, cardId, legacyUrl, intent) : null
 }
 
-export function fallbackCardAsset(cardId: string, _legacyUrl: string | undefined, intent: CardImageIntent): ResolvedCardAsset {
+export function fallbackCardAsset(cardId: string, legacyUrl: string | undefined, intent: CardImageIntent): ResolvedCardAsset {
   return {
     cardId,
     intent,
-    sources: [{ kind: 'placeholder', lowWebp: CARD_IMAGE_PLACEHOLDER, webp: CARD_IMAGE_PLACEHOLDER }],
+    sources: uniqueSources([trustedSiteMediaSource(legacyUrl),
+      { kind: 'placeholder', lowWebp: CARD_IMAGE_PLACEHOLDER, webp: CARD_IMAGE_PLACEHOLDER }]),
   }
 }
 

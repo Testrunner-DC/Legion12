@@ -54,6 +54,8 @@ export function masterProfileUrl(masterId?: string, fallback?: string) {
 }
 
 export function roundCardUrl(cardId?: string, fallback?: string) {
+  // 玩家已装备的后台异画必须优先于少数规则卡的圆形展示素材。
+  if (fallback?.startsWith('/api/site/media/')) return fallback
   const asset = cardId ? roundCardAssets[cardId] : undefined
   return asset ? `${assetRoot}/round/${asset}` : fallback
 }

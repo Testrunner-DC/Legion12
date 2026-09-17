@@ -66,7 +66,7 @@ async function startSandbox() {
       <div class="sandbox-grid">
         <section class="sandbox-deck"><b>我方牌库</b><DeckProfile v-if="playerDeck" compact :master-id="playerDeck.masterId" :master-name="byId.get(playerDeck.masterId)?.nameZh" :name="playerDeck.name" context="我方"/><p v-else>没有已保存牌库</p><span :class="{ invalid: !!playerDeckError }">{{ playerDeckError || '符合沙盒构筑规则' }}</span><button type="button" @click="selectorTarget = 'sandbox-player'">更换牌库</button></section>
         <section class="sandbox-deck"><b>对手牌库</b><DeckProfile v-if="opponentDeck" compact :master-id="opponentDeck.masterId" :master-name="byId.get(opponentDeck.masterId)?.nameZh" :name="opponentDeck.name" context="对手"/><p v-else>没有已保存牌库</p><span :class="{ invalid: !!opponentDeckError }">{{ opponentDeckError || '符合沙盒构筑规则' }}</span><button type="button" @click="selectorTarget = 'sandbox-opponent'">更换牌库</button></section>
-        <div class="sandbox-account"><b>测试账号</b><span>{{ platformState.account?.username || '尚未登录' }}</span><router-link v-if="!platformState.account" to="/profile">前往登录</router-link></div>
+        <div class="sandbox-account"><b>测试账号</b><span>{{ platformState.account?.username || '尚未登录' }}</span><router-link v-if="!platformState.account" to="/me">前往登录</router-link></div>
         <label><b>天灾模式</b><select v-model="disasterMode"><option value="none">不使用天灾</option><option value="random">随机天灾</option><option value="all">全部天灾</option><option value="custom">自定天灾（四张始终公开）</option></select></label>
       </div>
       <div class="capabilities"><article><b>卡牌与区域</b><span>加牌、置顶/置底、墓地、无视费用打出、击杀与状态切换。</span></article><article><b>阶段与数值</b><span>切换回合玩家和阶段，调整血量、天灾值、士气并触发天灾。</span></article><article><b>可复现记录</b><span>每条 GM 指令由服务端校验，并写入与实战相同的状态快照。</span></article></div>

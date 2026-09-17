@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ActionEvent, Card, DisasterCardView, GameState, Phase } from '../types'
 import { isHorizontalCardType } from '../cardPresentation'
-import { destructionRoundBackUrl, disasterRoundUrl } from '../specialAssets'
+import { blackLotusLogoUrl, destructionRoundBackUrl, disasterRoundUrl, factionLogoUrls, godPowerLogoUrl } from '../specialAssets'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
 import BattleEventLog from './BattleEventLog.vue'
@@ -39,8 +39,16 @@ const emit = defineEmits<{ gmPlacementResolved: []; settings: [] }>()
 const scale = ref(1)
 const stageSize = computed(() => l12State.gmEnabled
   ? { width: 2304, height: 1296 }
-  : { width: 2048, height: 1152 })
+  // The two 350px battlefield halves plus their protected centre seam need 754px
+  // after the felt's own border and padding.  Keep that room in the outer stage
+  // rather than shrinking the six fixed battlefield cells.
+  : { width: 2048, height: 1264 })
 const compactViewport = ref(false)
+// Kept deliberately separate from `compactViewport`: short desktop windows (1280×480)
+// must retain their established board. This flag is only for touch-phone landscape.
+const mobileLandscapeViewport = ref(false)
+const mobileRecordOpen = ref(false)
+const mobileMoralePickerOpen = ref(false)
 const selectedId = ref<string | null>(null)
 const focusCard = ref<Card | null>(null)
 const inspectorAnchor = ref<HTMLElement | null>(null)
@@ -188,11 +196,38 @@ const resourceSelectionPrompt = computed(() => props.game.prompts?.find(prompt =
 const paymentChoiceIds = computed(() => (resourceSelectionPrompt.value
   ?? (boardTargetPrompt.value?.data?.choiceMode === 'mixed-board-payment' ? boardTargetPrompt.value : null))
   ?.validChoices.filter(id => id !== 'skip' && id !== 'cancel') ?? [])
+// Only a real resource prompt may open the enlarged morale picker.  Mixed board
+// selection uses the same low-level selection helper, but is not a morale prompt.
+const mobileMoralePickerEnabled = computed(() => mobileLandscapeViewport.value && Boolean(resourceSelectionPrompt.value))
+type MobileMoraleCandidate = {
+  id: string
+  label: string
+  detail: string
+  iconUrl: string
+  state: 'morale' | 'god-power' | 'temporary'
+}
+const mobileMoraleChoices = computed<MobileMoraleCandidate[]>(() => paymentChoiceIds.value.flatMap<MobileMoraleCandidate>(id => {
+  if (id.startsWith('temporary-morale:')) return [{
+    id,
+    label: '临时士气',
+    detail: '休整时消失',
+    iconUrl: blackLotusLogoUrl,
+    state: 'temporary' as const,
+  }]
+  const owner = [viewMe.value, viewEnemy.value].find(player => player.morale.some(resource => resource.instanceId === id))
+  const resource = owner?.morale.find(item => item.instanceId === id)
+  if (!owner || !resource) return []
+  const godPower = Boolean(resource.isGodPower)
+  return [{
+    id,
+    label: godPower ? '神力' : '士气',
+    detail: `${getFactionPresentation(owner.faction).label} · ${resource.tapped ? '休整' : '活跃'}`,
+    iconUrl: godPower ? godPowerLogoUrl : (factionLogoUrls[owner.faction] ?? ''),
+    state: godPower ? 'god-power' as const : 'morale' as const,
+  }]
+}))
 const activeBoardPromptId = computed(() => boardTargetPrompt.value?.promptId
   ?? boardSlotPrompt.value?.promptId ?? resourceSelectionPrompt.value?.promptId ?? null)
-const passivePresentationPaused = computed(() => Boolean(
-  publicReveal.value || diceReveal.value || hiddenRevealCard.value || activeBoardPromptId.value,
-))
 const modalInspectorVisible = computed(() => Boolean(focusCard.value && (
   graveyardPlayer.value !== null || !promptMinimized.value && (
     masterPlayerIndex.value !== null || props.game.phase === 'Mulligan'
@@ -200,6 +235,18 @@ const modalInspectorVisible = computed(() => Boolean(focusCard.value && (
     || (props.game.prompts?.length ?? 0) > 0 || props.game.waitingPrompt
   )
 )))
+const modalPresentationPaused = computed(() => Boolean(
+  activeBoardPromptId.value
+  // PromptOverlay is a modal while it is expanded. Card presentations that
+  // arrive with its prompt stay queued until the player closes or minimizes it.
+  || (hasBlockingPrompt.value && !promptMinimized.value)
+  || graveyardPlayer.value !== null || masterPlayerIndex.value !== null
+  || customDisasterSlot.value !== null || mobileRecordOpen.value || mobileMoralePickerOpen.value
+  || modalInspectorVisible.value,
+))
+const passivePresentationPaused = computed(() => Boolean(
+  publicReveal.value || diceReveal.value || hiddenRevealCard.value || modalPresentationPaused.value,
+))
 function updateInspectorFloatRect() {
   if (!modalInspectorVisible.value || !inspectorAnchor.value) return
   const rect = viewportRect(inspectorAnchor.value)
@@ -299,7 +346,13 @@ watch(activeBoardPromptId, promptId => {
   focusCard.value = null
   customDisasterSlot.value = null
 })
-watch(() => resourceSelectionPrompt.value?.promptId, () => { paymentResourceIds.value = [] })
+watch(() => resourceSelectionPrompt.value?.promptId, () => {
+  paymentResourceIds.value = []
+  mobileMoralePickerOpen.value = false
+})
+watch(mobileMoralePickerEnabled, enabled => {
+  if (!enabled) mobileMoralePickerOpen.value = false
+})
 watch(controlledPlayerIndex, () => {
   selectedId.value = null
   focusCard.value = null
@@ -430,7 +483,7 @@ const combat = computed(() => {
   return {
     attacker, target, attackerOwner, targetOwner, supports, stage: pending.stage,
     attackValue: pending.attackValue > 0 ? pending.attackValue : attacker.troops,
-    attackUnit: pending.attackValue > 0 ? '冻结进攻值' : '兵力',
+    attackUnit: pending.attackValue > 0 ? '进攻值' : '兵力',
     targetName: target?.name ?? targetOwner.master.masterName,
     targetValue: target ? target.troops + supports.reduce((sum, card) => sum + card.troops, 0) : targetOwner.master.hp,
     targetUnit: target ? '兵力' : '血量',
@@ -459,12 +512,16 @@ const supportReady = computed(() => {
 function updateScale() {
   const viewport = visibleViewport()
   compactViewport.value = viewport.width < 820 || viewport.height < 600
+  const coarseTouch = window.matchMedia?.('(pointer: coarse) and (hover: none)').matches ?? false
+  mobileLandscapeViewport.value = coarseTouch && viewport.width >= 640 && viewport.width <= 960 && viewport.height >= 340 && viewport.height <= 430
   // The hand fan and left utility dock paint about 42 logical pixels beyond the stage's
   // nominal 16:9 box. Because the stage is vertically centered below the 52px site bar,
   // reserve that overflow on both edges so every control stays visible at exact 16:9.
   const availableHeight = Math.max(1, viewport.height - 124)
   const availableWidth = Math.max(1, viewport.width - (props.gmPanelOpen && !compactViewport.value ? 344 : 0))
-  scale.value = Math.min(1, availableWidth / stageSize.value.width, availableHeight / stageSize.value.height)
+  scale.value = mobileLandscapeViewport.value
+    ? 1
+    : Math.min(1, availableWidth / stageSize.value.width, availableHeight / stageSize.value.height)
   window.requestAnimationFrame(updateInspectorFloatRect)
 }
 watch(stageSize, updateScale)
@@ -673,6 +730,14 @@ function cancelResourcePayment() {
   if (!prompt?.validChoices.includes('cancel')) return
   command('resolvePrompt', { promptId: prompt.promptId, cardInstanceIds: ['cancel'] })
 }
+function confirmMobileMoralePayment(skip = false) {
+  confirmResourcePayment(skip)
+  mobileMoralePickerOpen.value = false
+}
+function cancelMobileMoralePayment() {
+  cancelResourcePayment()
+  mobileMoralePickerOpen.value = false
+}
 function enemySlot(row: number, slot: number, card: Card | null) {
   if (card) focusCard.value = card
   if (resolveBoardSlotPrompt(enemy.value.playerIndex, row, slot)) return
@@ -803,7 +868,7 @@ function statusTexts(card: Card) {
 </script>
 
 <template>
-  <div class="board-viewport" :class="{ 'compact-viewport': compactViewport, 'read-only-board': readOnly, 'gm-panel-docked': gmPanelOpen && !compactViewport }">
+  <div class="board-viewport" :class="{ 'compact-viewport': compactViewport, 'mobile-landscape-board': mobileLandscapeViewport, 'read-only-board': readOnly, 'gm-panel-docked': gmPanelOpen && !compactViewport }" :data-l12-mobile-landscape="mobileLandscapeViewport ? 'true' : undefined">
     <div class="board-stage" :style="{ width: `${stageSize.width}px`, height: `${stageSize.height}px`, transform: `scale(${scale})`, '--l12-board-copy': `${13 / Math.min(1, scale)}px`, '--l12-board-meta': `${11 / Math.min(1, scale)}px`, '--l12-board-micro': `${9 / Math.min(1, scale)}px`, '--l12-effect-copy': `${13 / Math.min(1, scale)}px` }">
       <div class="stage-layout">
         <aside class="board-rail left-rail">
@@ -820,7 +885,7 @@ function statusTexts(card: Card) {
               </div>
             </section>
             <section class="grand-panel current-disaster-panel" data-ui-contract="left-current-disaster">
-                <button type="button" class="current-disaster-card" :disabled="!game.activeDisaster"
+                <button type="button" class="current-disaster-card" data-l12-zone="disaster" :disabled="!game.activeDisaster"
                   @mouseenter="game.activeDisaster && (focusCard = game.activeDisaster)" @click="game.activeDisaster && (focusCard = game.activeDisaster)">
                   <CardImage v-if="game.activeDisaster" :card-id="game.activeDisaster.cardId" :legacy-url="game.activeDisaster.imageUrl" :alt="game.activeDisaster.name" intent="board" eager />
                   <img v-else src="/assets/l12/card-back-disaster.png" alt="天灾牌背" />
@@ -892,13 +957,14 @@ function statusTexts(card: Card) {
               :combat-target-id="combat?.targetOwner.playerIndex === viewEnemy.playerIndex ? combat.target?.instanceId : null"
               :combat-target-master="combat?.targetOwner.playerIndex === viewEnemy.playerIndex && !combat.target"
               :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="paymentResourceIds"
+              :mobile-morale-picker="mobileMoralePickerEnabled"
               :master-targetable="!isControlledPlayer(viewEnemy.playerIndex) && !combat && selectedAttackTargets.includes('master')"
               @slot="(row, slot, card) => slotFor(viewEnemy.playerIndex, row, slot, card)" @master="masterFor(viewEnemy.playerIndex)"
               @focus="focusCard = $event" @graveyard="(!hasBlockingPrompt || promptMinimized) && (graveyardPlayer = $event)"
               @card-action="(action, card) => fieldActionFor(viewEnemy.playerIndex, action, card)"
               @ability="(card, ability) => activateAbilityFor(viewEnemy.playerIndex, card, ability)"
               @faction-ability="ability => activateFactionAbilityFor(viewEnemy.playerIndex, ability)"
-              @select-card="card => selectPublicCardFor(viewEnemy.playerIndex, card)" @payment-resource="togglePaymentResource" />
+              @select-card="card => selectPublicCardFor(viewEnemy.playerIndex, card)" @payment-resource="togglePaymentResource" @open-morale-payment="mobileMoralePickerOpen = true" />
             <div class="board-seam" data-ui-contract="phase-safe-track">
               <span class="board-midline-anchor" aria-hidden="true" />
             </div>
@@ -956,7 +1022,7 @@ function statusTexts(card: Card) {
               :selection-mode="selectionModeFor(viewMe.playerIndex)" :targetable-ids="targetableIdsFor(viewMe.playerIndex)"
               :prompt-slot-ids="boardSlotTargetPlayerIndex === viewMe.playerIndex ? (boardSlotPrompt?.validChoices ?? []) : []"
               :attackable-ids="isControlledPlayer(viewMe.playerIndex) ? attackableIds : []" :response-playable-ids="isControlledPlayer(viewMe.playerIndex) ? responsePlayableIds : []"
-              :selected-target-ids="boardTargetIds" :response-target-ids="promptMinimized ? responseTargetIds : []" :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="paymentResourceIds"
+              :selected-target-ids="boardTargetIds" :response-target-ids="promptMinimized ? responseTargetIds : []" :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="paymentResourceIds" :mobile-morale-picker="mobileMoralePickerEnabled"
               :can-activate-osiris="isControlledPlayer(viewMe.playerIndex) && canActivateOsiris"
               :osiris-victory-disabled-reason="osirisVictoryDisabledReason"
               :combat-attacker-id="combat?.attackerOwner.playerIndex === viewMe.playerIndex ? combat.attacker.instanceId : null"
@@ -969,7 +1035,7 @@ function statusTexts(card: Card) {
               @select-card="card => selectPublicCardFor(viewMe.playerIndex, card)"
               @ability="(card, ability) => activateAbilityFor(viewMe.playerIndex, card, ability)"
               @faction-ability="ability => activateFactionAbilityFor(viewMe.playerIndex, ability)"
-              @payment-resource="togglePaymentResource" />
+              @payment-resource="togglePaymentResource" @open-morale-payment="mobileMoralePickerOpen = true" />
           </div>
           <div class="board-status-lane my-status-lane" data-ui-contract="player-status-safe-lane">
             <PlayerTurnClock class="board-player-clock my-player-clock" :player-index="viewMe.playerIndex" side="my"
@@ -984,6 +1050,7 @@ function statusTexts(card: Card) {
 
         <aside class="board-rail right-rail">
           <section class="grand-panel player-panel" data-ui-contract="complete-player-summary">
+            <button v-if="mobileLandscapeViewport" type="button" class="mobile-record-trigger" @click="mobileRecordOpen = true">对局记录</button>
             <article class="player-summary opponent-summary">
               <div class="player-summary-primary"><b>对方</b><strong>{{ viewEnemy.name || '未命名玩家' }}</strong></div>
               <div class="player-summary-meta">
@@ -1005,11 +1072,34 @@ function statusTexts(card: Card) {
           <section class="grand-panel log-panel record-log"><h3>对局记录</h3>
             <BattleEventLog :events="game.recentEvents ?? []" :you="game.you" :names="game.players.map(player => player.name)" @focus="focusCard = $event" />
           </section>
-          <section v-if="!combat && !readOnly" class="grand-panel action-panel"><h3>操作</h3><GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
+          <section v-if="!combat && !readOnly" class="grand-panel action-panel" :class="{ 'mobile-context-actions': mobileLandscapeViewport }"><h3>操作</h3><GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
             :mulligan-count="mulliganIds.length" :defense-count="defenseIds.length" :defense-target-type="defenseTargetType"
             :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="l12State.pendingAction" @command="command" /></section>
         </aside>
       </div>
+      <Teleport to="body">
+        <section v-if="mobileLandscapeViewport && mobileRecordOpen" class="mobile-record-overlay" role="dialog" aria-modal="true" aria-label="对局记录">
+          <header><h2>对局记录</h2><button type="button" @click="mobileRecordOpen = false">关闭</button></header>
+          <BattleEventLog :events="game.recentEvents ?? []" :you="game.you" :names="game.players.map(player => player.name)" @focus="focusCard = $event" />
+        </section>
+      </Teleport>
+      <Teleport to="body">
+        <section v-if="mobileMoralePickerEnabled && mobileMoralePickerOpen" class="mobile-record-overlay mobile-morale-overlay" role="dialog" aria-modal="true" aria-label="选择士气">
+          <header><div><h2>选择士气</h2><small>已选择 {{ paymentResourceIds.length }}/{{ resourceSelectionPrompt?.maxChoose ?? 0 }}</small></div><button type="button" @click="mobileMoralePickerOpen = false">返回对局</button></header>
+          <p v-if="resourceSelectionPrompt" class="mobile-morale-prompt">{{ resourceSelectionPrompt.text }}</p>
+          <div class="mobile-morale-picker" aria-label="可选择的士气">
+            <button v-for="choice in mobileMoraleChoices" :key="choice.id" type="button" :class="['mobile-morale-choice', choice.state, { selected: paymentResourceIds.includes(choice.id) }]" :aria-pressed="paymentResourceIds.includes(choice.id)" @click="togglePaymentResource(choice.id)">
+              <img :src="choice.iconUrl" :alt="choice.label" /><span><b>{{ choice.label }}</b><small>{{ choice.detail }}</small></span>
+            </button>
+            <p v-if="!mobileMoraleChoices.length">当前提示没有可选择的士气。</p>
+          </div>
+          <footer v-if="resourceSelectionPrompt" class="mobile-morale-actions">
+            <button v-if="resourceSelectionPrompt.validChoices.includes('skip')" type="button" @click="confirmMobileMoralePayment(true)">不发动</button>
+            <button v-if="resourceSelectionPrompt.validChoices.includes('cancel')" type="button" @click="cancelMobileMoralePayment">取消打出</button>
+            <button class="primary" type="button" :disabled="paymentResourceIds.length < resourceSelectionPrompt.minChoose || paymentResourceIds.length > resourceSelectionPrompt.maxChoose" @click="confirmMobileMoralePayment(false)">{{ resourceSelectionPrompt.kind === 'resource-return' || resourceSelectionPrompt.data?.choiceMode === 'resource-return' ? '确认返还' : resourceSelectionPrompt.kind === 'resource-payment' || resourceSelectionPrompt.data?.choiceMode === 'resource-payment' ? '确认支付' : '确认选择' }}</button>
+          </footer>
+        </section>
+      </Teleport>
       <GraveyardOverlay v-if="graveyardPlayer !== null" :players="[viewMe, viewEnemy]" :initial-player="graveyardPlayer"
         :own-player-index="game.you" :can-activate-osiris="canActivateOsiris" :inspection-only="hasBlockingPrompt"
         @close="graveyardPlayer = null" @focus="focusCard = $event" @ability="activateAbility" />
@@ -1063,10 +1153,12 @@ function statusTexts(card: Card) {
 .right-rail{width:auto}.right-rail .record-log{display:flex;flex:1;flex-direction:column;min-height:150px}.right-rail .action-panel{max-height:300px;overflow:auto}.right-rail .action-panel :deep(.l12-actions>p){display:none}.board-rail .card-inspector{overflow:auto}.session-disaster-strip span{white-space:normal!important;overflow-wrap:anywhere}
 .felt-board{
   --l12-board-seam-safe-height:44px;
+  --l12-battlefield-half-height:350px;
   box-sizing:border-box;
   width:100%;
+  min-height:calc(var(--l12-battlefield-half-height) * 2 + var(--l12-board-seam-safe-height) + 10px);
   display:grid;
-  grid-template-rows:minmax(0,1fr) var(--l12-board-seam-safe-height) minmax(0,1fr);
+  grid-template-rows:minmax(var(--l12-battlefield-half-height),1fr) var(--l12-board-seam-safe-height) minmax(var(--l12-battlefield-half-height),1fr);
   justify-self:center;
   align-items:stretch;
 }
@@ -1104,4 +1196,9 @@ function statusTexts(card: Card) {
 .dice-reveal-animation{position:fixed;z-index:2147483001;left:50%;top:45%;display:grid;justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.dice-reveal-values{display:flex;gap:14px}.dice-reveal-values b{display:grid;width:76px;height:76px;place-items:center;border:3px solid #e3c36d;border-radius:15px;background:#f1eee2;box-shadow:0 12px 30px #000,0 0 22px rgba(227,195,109,.35);color:#111;font-size:max(44px,var(--l12-board-copy,13px));line-height:1;animation:l12-dice-roll .18s infinite alternate}.dice-reveal-animation.settled .dice-reveal-values b{animation:l12-dice-land .32s ease-out}.dice-reveal-animation strong{max-width:min(720px,82vw);padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.92);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:var(--l12-board-copy,13px);font-weight:900;text-align:center}.dice-reveal-enter-active,.dice-reveal-leave-active{transition:opacity .2s ease,filter .2s ease}.dice-reveal-enter-from,.dice-reveal-leave-to{opacity:0;filter:blur(5px)}@keyframes l12-dice-roll{from{transform:rotate(-10deg) scale(.94)}to{transform:rotate(10deg) scale(1.06)}}@keyframes l12-dice-land{0%{transform:scale(1.35) rotate(20deg)}100%{transform:scale(1) rotate(0)}}
 .public-reveal-animation{z-index:903}.dice-reveal-animation{z-index:904}.board-target-controls{z-index:3000}.card-inspector-floating{z-index:3100!important}
 .battle-title{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}.battle-title b,.battle-title i{padding:3px 6px;border:1px solid #82663a;border-radius:3px;background:#261b0c;color:#f2d27a;font-size:var(--l12-board-copy,13px);font-style:normal;font-weight:900}.battle-title i{border-color:#75509a;background:#1b1028;color:#dfbdff}
+
+/* The selector is deliberately runtime-gated.  A short desktop window is not a phone
+   landscape view, so no desktop grid is affected by these rules. */
+.mobile-landscape-board{top:0!important;right:0!important;bottom:0!important;left:0!important;padding:4px!important;overflow:hidden}.mobile-landscape-board .board-stage{width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;aspect-ratio:auto!important;transform:none!important;--l12-board-copy:12px!important;--l12-board-meta:10px!important;--l12-board-micro:9px!important}.mobile-landscape-board .stage-layout{height:100%;grid-template-columns:112px 42px minmax(0,1fr) 112px;gap:4px}.mobile-landscape-board .left-rail{min-height:0;overflow:hidden}.mobile-landscape-board .left-detail-layout{display:none}.mobile-landscape-board .left-disaster-row{grid-template-columns:1fr;gap:4px}.mobile-landscape-board .left-disaster-row>.grand-panel{min-height:0}.mobile-landscape-board .session-disaster-panel{padding:4px!important}.mobile-landscape-board .session-disaster-panel h3{font-size:10px}.mobile-landscape-board .session-disaster-strip{grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}.mobile-landscape-board .session-disaster-strip button{width:auto;min-width:0;height:auto;aspect-ratio:1}.mobile-landscape-board .current-disaster-panel{padding:3px!important}.mobile-landscape-board .phase-column{margin-block:0;padding:3px!important;gap:3px}.mobile-landscape-board .phase-disaster-value{min-height:38px;gap:2px;padding:2px}.mobile-landscape-board .phase-disaster-value img{width:18px;height:20px}.mobile-landscape-board .phase-disaster-value b{font-size:20px}.mobile-landscape-board .board-center{--l12-hand-lane-height:50px;grid-template-rows:var(--l12-hand-lane-height) 34px minmax(0,1fr) 34px var(--l12-hand-lane-height);gap:2px}.mobile-landscape-board .board-center>.l12-hand{width:calc(100% - 112px);height:var(--l12-hand-lane-height)!important;min-height:var(--l12-hand-lane-height);transform:none}.mobile-landscape-board .board-status-lane{height:34px!important;min-height:34px!important}.mobile-landscape-board .felt-board{--l12-board-seam-safe-height:18px;--l12-battlefield-half-height:0px;min-height:0}.mobile-landscape-board .battlefield-half{min-width:0;min-height:0;overflow:clip}.mobile-landscape-board .battlefield-half :deep(.l12-player-mat){width:100%;height:100%;min-width:0;min-height:0;grid-template-rows:minmax(0,1fr)}.mobile-landscape-board .battlefield-half :deep(.battle-zone){width:100%;height:100%;min-width:0;min-height:0;align-self:stretch}.mobile-landscape-board .felt-board :deep(.formation){height:100%;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));justify-content:stretch;gap:2px}.mobile-landscape-board .felt-board :deep(.formation-slot .card-tile),.mobile-landscape-board .felt-board :deep(.formation-slot .card-tile.tapped){width:min(100%,54px);height:auto;max-height:76px;aspect-ratio:5/7;flex-basis:auto}.mobile-landscape-board .right-rail{grid-template-rows:auto minmax(0,1fr) auto;min-height:0;overflow:hidden}.mobile-landscape-board .player-panel{min-height:0;padding:4px!important}.mobile-landscape-board .player-panel>hr,.mobile-landscape-board .right-rail .record-log{display:none}.mobile-landscape-board .player-summary{gap:2px}.mobile-landscape-board .player-summary-primary>strong{font-size:12px!important}.mobile-landscape-board .player-summary-meta{gap:2px;font-size:9px}.mobile-landscape-board .connection-state{font-size:9px!important}.mobile-landscape-board .right-rail .action-panel{max-height:78px;padding:4px!important}.mobile-landscape-board .right-rail .action-panel h3{display:none}.mobile-landscape-board .board-target-controls{top:4px;max-width:calc(100vw - 16px);padding:6px 8px}.mobile-landscape-board .board-target-controls strong{max-width:46vw}.mobile-landscape-board .resource-payment-controls{bottom:4px;top:auto}.mobile-landscape-board .battlefield-half :deep(.resource-zone){transform:scale(.78);transform-origin:center}.mobile-landscape-board .public-reveal-cards .l12-card-image{width:72px;height:101px}.mobile-landscape-board .dice-reveal-values b{width:46px;height:46px;font-size:28px}
+.mobile-record-trigger{width:100%;min-height:28px;border:1px solid #587b7d;background:#10191a;color:#bce8e8;font:inherit;font-weight:900}.mobile-context-actions{position:absolute!important;z-index:70;right:4px;bottom:4px;width:164px;max-height:88px!important;overflow:auto!important;background:rgba(8,12,13,.96)!important}.mobile-landscape-board .card-context-actions{position:fixed!important;z-index:80!important;right:4px!important;bottom:96px!important;left:auto!important;display:flex!important;max-width:164px!important;max-height:104px!important;flex-wrap:wrap;overflow:auto;background:rgba(8,12,13,.98);box-shadow:0 0 0 1px #587b7d}.mobile-landscape-board .card-context-actions button{min-height:30px;padding:4px 7px;font-size:11px}.mobile-landscape-board .battlefield-half :deep(.resource-zone){width:96px;max-width:96px;gap:3px;transform:none}.mobile-landscape-board .battlefield-half :deep(.resource-faction-action),.mobile-landscape-board .battlefield-half :deep(.resource-morale-summary),.mobile-landscape-board .battlefield-half :deep(.resource-morale-stack){width:96px;max-width:96px}.mobile-landscape-board .battlefield-half :deep(.resource-morale-summary){grid-template-columns:42px 54px;height:28px}.mobile-landscape-board .battlefield-half :deep(.resource-morale-label),.mobile-landscape-board .battlefield-half :deep(.resource-morale-count){width:auto;min-width:0;height:28px;min-height:28px;padding:0 3px;font-size:11px}.mobile-landscape-board .battlefield-half :deep(.resource-morale-stack){display:grid;grid-template-columns:repeat(auto-fit,minmax(18px,1fr));grid-auto-rows:18px;min-height:0;gap:2px;padding:3px}.mobile-landscape-board .battlefield-half :deep(.resource-morale-stack .morale-orb){width:18px;height:18px;min-width:18px;justify-self:center}.mobile-landscape-board .battlefield-half :deep(.resource-morale-stack .morale-orb img){width:12px;height:12px}.mobile-record-overlay{position:fixed;z-index:2147483600;inset:0;display:flex;min-height:0;flex-direction:column;padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));background:rgba(5,8,9,.985);color:#edf1ec}.mobile-record-overlay header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:4px 0 10px;border-bottom:1px solid #46504e}.mobile-record-overlay h2{margin:0;font-size:18px}.mobile-record-overlay button{min-width:72px;min-height:36px;border:1px solid #7f8a86;background:#172021;color:#fff;font-weight:900}.mobile-record-overlay :deep(.event-list){min-height:0;flex:1;overflow:auto;padding:12px 2px}.mobile-morale-overlay header small{display:block;margin-top:3px;color:#b8c5c0;font-weight:800}.mobile-morale-prompt{margin:10px 0 6px;color:#e7ece6;font-size:13px;font-weight:800}.mobile-morale-picker{display:grid;min-height:0;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;overflow:auto;padding:4px 0}.mobile-morale-picker>p{grid-column:1/-1;color:#b7c0bb;text-align:center}.mobile-morale-choice{display:flex;min-width:0;min-height:66px;align-items:center;gap:9px;padding:7px 9px;text-align:left}.mobile-morale-choice img{width:35px;height:35px;flex:none;object-fit:contain}.mobile-morale-choice span{display:grid;min-width:0;gap:3px}.mobile-morale-choice small{overflow:hidden;color:#c1cbc5;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.mobile-morale-choice.selected{border-color:#f1c75b;background:#554414;box-shadow:0 0 0 2px rgba(241,199,91,.45)}.mobile-morale-choice.god-power{border-color:#60cde8}.mobile-morale-choice.temporary{border-color:#e9e9dc}.mobile-morale-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;padding-top:9px;border-top:1px solid #46504e}.mobile-morale-actions .primary{border-color:#e0bd62;background:#544319}
 </style>
