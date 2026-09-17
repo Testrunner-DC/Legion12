@@ -421,6 +421,8 @@ public sealed partial class L12GameEngine
                 if (!string.IsNullOrWhiteSpace(target)
                     && DeclaredEnemyTarget(item.Controller, target, legion => legion.Troops <= 2000) is not null)
                     KillTarget(item, target, "被荆轲阵亡效果击杀");
+                else RecordTargetSettlementFailure(item, target,
+                    "所选军团已离场、不再是军团或当前兵力已高于2000");
                 FinishStackItem(item); return true;
             }
             case "上杉谦信":

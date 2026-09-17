@@ -107,9 +107,11 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             case "chaotic-arrows-effect":
-                foreach (var targetId in CompositeDeclared(item, "killTargets"))
-                    if (DeclaredEnemyTarget(item.Controller, targetId, target => target.DisplayBaseTroops <= 2000) is not null)
-                        KillTarget(item, targetId, "被〈纷乱箭〉击杀");
+                ResolveDeclaredEnemyTargets(item, CompositeDeclared(item, "killTargets"),
+                    target => target.DisplayBaseTroops <= 2000,
+                    (targetId, _) => KillTarget(item, targetId, "被〈纷乱箭〉击杀"),
+                    "发动时没有选择原本兵力不高于2000的军团",
+                    "所选军团已离场、不再是军团或原本兵力已高于2000");
                 FinishStackItem(item);
                 return true;
             case "holy-lock-effect":
@@ -129,6 +131,8 @@ public sealed partial class L12GameEngine
                 var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
                 if (DeclaredEnemyTarget(item.Controller, targetId, target => target.DisplayBaseTroops <= 3000) is not null)
                     KillTarget(item, targetId!, "被〈乾坤 阳〉击杀");
+                else RecordTargetSettlementFailure(item, targetId,
+                    "所选军团已离场、不再是军团或原本兵力已高于3000");
                 FinishStackItem(item);
                 return true;
             }

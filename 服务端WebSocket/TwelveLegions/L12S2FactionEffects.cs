@@ -630,8 +630,10 @@ public sealed partial class L12GameEngine
         }
         if (AtomicFlowKey(item, card) == "glory-flip")
         {
+            var declared = CompositeDeclared(item, "flipTargets").Take(3)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             var flipped = 0;
-            foreach (var id in CompositeDeclared(item, "flipTargets").Take(3))
+            foreach (var id in declared)
             {
                 var morale = player.Morale.FirstOrDefault(resource => resource.InstanceId == id && !resource.IsGodPower);
                 if (morale is null) continue;
@@ -639,6 +641,12 @@ public sealed partial class L12GameEngine
                 flipped++;
             }
             if (flipped > 0) AddEvent("morale", item.Controller, $"〈荣耀之路〉翻转{flipped}张士气", card);
+            if (flipped == 0)
+                RecordTargetSettlementFailure(item, string.Join('|', declared),
+                    declared.Length == 0 ? "发动时没有选择可翻转的普通士气" : "所选士气已离开士气区或已被翻转为神力");
+            else if (flipped < declared.Length)
+                AddEvent("effect", item.Controller,
+                    $"〈{card.Name}〉有{declared.Length - flipped}个已声明士气对象在逆结算后失效；其余对象继续结算", card);
             FinishStackItem(item);
             return true;
         }
@@ -693,17 +701,21 @@ public sealed partial class L12GameEngine
         {
             var target = DeclaredEnemyTarget(item.Controller, item.Data.GetValueOrDefault("target"));
             if (target is not null) AddTimedModifier(target, -6000, 0, ExpiryAtNextOwnEnd(item.Controller), card.Name);
+            else RecordTargetSettlementFailure(item, item.Data.GetValueOrDefault("target"),
+                "所选军团已离场或不再是军团");
             FinishStackItem(item);
             return true;
         }
         if (AtomicFlowKey(item, card) == "round-table-buff")
         {
             var target = FindOnField(player, CompositeDeclared(item, "buffTarget").SingleOrDefault(), out _, out _);
-            if (target is not null && target.HasTrait("圆桌骑士"))
+            if (target is not null && IsFieldLegion(target) && !target.Hidden && target.HasTrait("圆桌骑士"))
             {
                 AddTimedModifier(target, 2000, 0, ExpiryAtNextOwnEnd(item.Controller), card.Name);
                 AddEvent("effect", item.Controller, $"〈圆桌领域〉使{target.Name}本回合兵力+2000", card, target);
             }
+            else RecordTargetSettlementFailure(item, CompositeDeclared(item, "buffTarget").SingleOrDefault(),
+                "所选军团已离场、不再是军团或失去【圆桌骑士】特征");
             FinishStackItem(item);
             return true;
         }
@@ -751,8 +763,18 @@ public sealed partial class L12GameEngine
             {
                 var own = FindOnField(player, item.Data.GetValueOrDefault("hannibalOwn"), out _, out _);
                 var enemy = DeclaredEnemyTarget(item.Controller, item.Data.GetValueOrDefault("hannibalEnemy"));
-                if (own is not null) AddTimedModifier(own, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), card.Name);
-                if (enemy is not null) AddTimedModifier(enemy, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), card.Name);
+                var ownValid = own is not null && IsFieldLegion(own) && !own.Hidden;
+                var enemyValid = enemy is not null;
+                if (ownValid) AddTimedModifier(own!, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), card.Name);
+                if (enemyValid) AddTimedModifier(enemy!, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), card.Name);
+                if (!ownValid && !enemyValid)
+                    RecordTargetSettlementFailure(item,
+                        string.Join('|', new[] { item.Data.GetValueOrDefault("hannibalOwn"), item.Data.GetValueOrDefault("hannibalEnemy") }
+                            .Where(id => !string.IsNullOrWhiteSpace(id))),
+                        "双方已声明军团均已离场或不再是军团");
+                else if (!ownValid || !enemyValid)
+                    AddEvent("effect", item.Controller,
+                        $"〈{card.Name}〉有1个已声明对象在逆结算后失效；其余对象继续结算", card);
             }
             FinishStackItem(item);
             return true;
@@ -1623,6 +1645,8 @@ public sealed partial class L12GameEngine
                 AddTimedModifier(target, -4000, 0, ExpiryAtNextOwnEnd(item.Controller), "彼界 阿瓦隆");
                 AddEvent("effect", item.Controller, $"彼界 阿瓦隆使〈{target.Name}〉本回合兵力-4000", source, target);
             }
+            else RecordTargetSettlementFailure(item, item.Data.GetValueOrDefault("target"),
+                "所选对方军团已离场或不再是军团");
             FinishStackItem(item);
             return true;
         }

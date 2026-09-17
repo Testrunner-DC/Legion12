@@ -321,8 +321,8 @@ public sealed partial class L12GameEngine
                 if (DeclaredEnemyTarget(item.Controller, targetId, target => target.Troops <= 6000) is not null)
                     KillTarget(item, targetId!, "被猎杀时刻击杀");
                 else
-                    AddEvent("effect-cancelled", item.Controller,
-                        $"〈{item.SourceName}〉的击杀目标已失效，墓地返回效果不撤销");
+                    RecordTargetSettlementFailure(item, targetId,
+                        "击杀目标已离场、不再是军团或当前兵力已高于6000；此前墓地返回效果不撤销");
                 FinishStackItem(item);
                 return true;
             }
@@ -420,7 +420,8 @@ public sealed partial class L12GameEngine
                 var target = PublicTriggerDeclared(item, "killTarget");
                 if (DeclaredEnemyTarget(item.Controller, target, legion => legion.Troops <= 2000) is not null)
                     KillTarget(item, target, "被无情者哈拉尔阵亡效果击杀");
-                else AddEvent("effect-cancelled", item.Controller, "无情者哈拉尔已声明的目标失效；效果取消", card);
+                else RecordTargetSettlementFailure(item, target,
+                    "所选军团已离场、不再是军团或当前兵力已高于2000");
                 FinishStackItem(item); return true;
             }
             case "勇士比约恩":
@@ -1526,8 +1527,8 @@ public sealed partial class L12GameEngine
         var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
         if (DeclaredEnemyTarget(item.Controller, targetId, target => target.Troops <= 1000) is not null)
             KillTarget(item, targetId!, "被图特摩斯三世击杀");
-        else AddEvent("effect-cancelled", item.Controller,
-            "图特摩斯三世选择的击杀目标已失效；该目标不会被击杀");
+        else RecordTargetSettlementFailure(item, targetId,
+            "所选军团已离场、不再是军团或当前兵力已高于1000");
         FinishStackItem(item);
     }
 

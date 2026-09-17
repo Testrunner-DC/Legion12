@@ -1149,8 +1149,8 @@ public sealed partial class L12GameEngine
                     AddTimedModifier(target, -3000, 0, State.TurnSerial, item.SourceName);
                     AddEvent("effect", item.Controller, $"〈{target.Name}〉本回合兵力-3000", target);
                 }
-                else AddEvent("effect-cancelled", item.Controller,
-                    "陵墓的守卫者对应的位移军团已离场，本次兵力变化未生效");
+                else RecordTargetSettlementFailure(item, StarterDeclaredOne(item, "fixedTarget"),
+                    "对应的位移军团已离场或不再是军团");
                 FinishStackItem(item);
                 return true;
             }
@@ -1168,9 +1168,11 @@ public sealed partial class L12GameEngine
                 return true;
             }
             case "kojiro-death-kill":
-                foreach (var targetId in StarterDeclaredMany(item, "enemyTargets"))
-                    if (DeclaredEnemyTarget(item.Controller, targetId, card => card.DisplayBaseTroops <= 2000) is not null)
-                        KillTarget(item, targetId, "被佐佐木小次郎的阵亡时效果击杀");
+                ResolveDeclaredEnemyTargets(item, StarterDeclaredMany(item, "enemyTargets"),
+                    card => card.DisplayBaseTroops <= 2000,
+                    (targetId, _) => KillTarget(item, targetId, "被佐佐木小次郎的阵亡时效果击杀"),
+                    "发动时没有选择原本兵力不高于2000的军团",
+                    "所选军团已离场、不再是军团或原本兵力已高于2000");
                 FinishStackItem(item);
                 return true;
             case "kai-master-waiver":
@@ -1187,8 +1189,8 @@ public sealed partial class L12GameEngine
                     AddTimedModifier(target, 2000, 0, State.TurnSerial, item.SourceName);
                     AddEvent("effect", item.Controller, $"〈{target.Name}〉本回合兵力+2000", target);
                 }
-                else AddEvent("effect-cancelled", item.Controller,
-                    "迦具土对应的军团已离场，本次兵力+2000未生效；已支付费用不返还");
+                else RecordTargetSettlementFailure(item, StarterDeclaredOne(item, "fixedTarget"),
+                    "对应的我方军团已离场或不再是军团");
                 FinishStackItem(item);
                 return true;
             }
@@ -1318,9 +1320,11 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             case "light-sword-enter-kill":
-                foreach (var targetId in StarterDeclaredMany(item, "enemyTargets"))
-                    if (DeclaredEnemyTarget(item.Controller, targetId, card => card.DisplayBaseTroops <= 2000) is not null)
-                        KillTarget(item, targetId, "被光之剑的登场时效果击杀");
+                ResolveDeclaredEnemyTargets(item, StarterDeclaredMany(item, "enemyTargets"),
+                    card => card.DisplayBaseTroops <= 2000,
+                    (targetId, _) => KillTarget(item, targetId, "被光之剑的登场时效果击杀"),
+                    "发动时没有选择原本兵力不高于2000的军团",
+                    "所选军团已离场、不再是军团或原本兵力已高于2000");
                 FinishStackItem(item);
                 return true;
             case "sky-city-completion":

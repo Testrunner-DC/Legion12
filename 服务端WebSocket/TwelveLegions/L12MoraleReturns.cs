@@ -151,13 +151,27 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 break;
             case "wuzetian-lock":
-                foreach (var id in (data.GetValueOrDefault("targets") ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var declared = (data.GetValueOrDefault("targets") ?? string.Empty)
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries)
+                    .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                var locked = 0;
+                foreach (var id in declared)
                 {
                     var lockTarget = FindOnField(State.Players[1 - item.Controller], id, out _, out _);
-                    if (lockTarget is not null) lockTarget.CannotUntapUntilRound = State.Round + 1;
+                    if (lockTarget is null || !IsFieldLegion(lockTarget) || lockTarget.Hidden) continue;
+                    lockTarget.CannotUntapUntilRound = State.Round + 1;
+                    locked++;
                 }
+                if (locked == 0)
+                    RecordTargetSettlementFailure(item, string.Join('|', declared),
+                        declared.Length == 0 ? "发动时没有选择休整军团" : "所选军团已离场、不再是军团或已不再公开");
+                else if (locked < declared.Length)
+                    AddEvent("effect", item.Controller,
+                        $"〈{item.SourceName}〉有{declared.Length - locked}个已声明对象在逆结算后失效；其余对象继续结算");
                 FinishStackItem(item);
                 break;
+            }
             case "march-followup-paid":
             {
                 var targets = PublicLegions(State.Players[1 - item.Controller])
@@ -174,14 +188,27 @@ public sealed partial class L12GameEngine
                 break;
             }
             case "mozi-immortal":
-                foreach (var id in (data.GetValueOrDefault("targets") ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var declared = (data.GetValueOrDefault("targets") ?? string.Empty)
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries)
+                    .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                var granted = 0;
+                foreach (var id in declared)
                 {
                     var target = FindOnField(player, id, out _, out _);
-                    if (target is null) continue;
+                    if (target is null || !IsFieldLegion(target) || target.Hidden) continue;
                     GrantImmortalUntilNextTurnStart(target, item.Controller);
+                    granted++;
                 }
+                if (granted == 0)
+                    RecordTargetSettlementFailure(item, string.Join('|', declared),
+                        declared.Length == 0 ? "发动时没有选择我方军团" : "所选军团已离场、不再是军团或已不再公开");
+                else if (granted < declared.Length)
+                    AddEvent("effect", item.Controller,
+                        $"〈{item.SourceName}〉有{declared.Length - granted}个已声明对象在逆结算后失效；其余对象继续结算");
                 FinishStackItem(item);
                 break;
+            }
             case "zhuge-peek":
             {
                 if (player.Library.Count == 0) { FinishStackItem(item); break; }

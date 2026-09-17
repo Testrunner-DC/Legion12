@@ -113,6 +113,38 @@ public sealed partial class L12GameEngine
             source is null ? [] : [source]);
     }
 
+    /// <summary>
+    /// 统一结算“选择最多 N 个对方军团”的独立目标。未声明对象是必发效果的空处理；
+    /// 已声明对象全部失效是整段失败；仅部分失效时，仍合法的对象继续结算，并留下
+    /// 可供回放与排错使用的公开说明。
+    /// </summary>
+    private int ResolveDeclaredEnemyTargets(L12StackItem item, IEnumerable<string> declaredTargets,
+        Func<L12CardInstance, bool>? predicate, Action<string, L12CardInstance> resolve,
+        string noTargetReason, string invalidTargetReason)
+    {
+        var declared = declaredTargets
+            .Where(id => !string.IsNullOrWhiteSpace(id) && !id.StartsWith("mode:", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var resolved = 0;
+        foreach (var targetId in declared)
+        {
+            var target = DeclaredEnemyTarget(item.Controller, targetId, predicate);
+            if (target is null) continue;
+            resolve(targetId, target);
+            resolved++;
+        }
+
+        if (resolved == 0)
+            RecordTargetSettlementFailure(item, string.Join('|', declared),
+                declared.Length == 0 ? noTargetReason : invalidTargetReason);
+        else if (resolved < declared.Length)
+            AddEvent("effect", item.Controller,
+                $"〈{item.SourceName}〉有{declared.Length - resolved}个已声明对象在逆结算后失效；其余对象继续结算",
+                FindSource(item) is { } source ? [source] : []);
+        return resolved;
+    }
+
     private static string? DeclaredStatus(string type)
         => type is "effect-trigger" or "effect-activation" or "effect-response" ? "declared" : null;
 
