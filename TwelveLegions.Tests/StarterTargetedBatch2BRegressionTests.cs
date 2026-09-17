@@ -224,6 +224,8 @@ public sealed class StarterTargetedBatch2BRegressionTests
 
         Assert.Equal(game.State.Round + 1, first.CannotUntapUntilRound);
         Assert.Equal(0, second.CannotUntapUntilRound);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect"
+            && entry.Text.Contains("其余对象继续结算", StringComparison.Ordinal));
         first.Tapped = true;
         game.State.Round = first.CannotUntapUntilRound;
         Invoke(game, "Untap", opponent);
@@ -241,6 +243,28 @@ public sealed class StarterTargetedBatch2BRegressionTests
         ChooseMany(one, only.InstanceId);
         PassResponses(one);
         Assert.Equal(one.State.Round + 1, only.CannotUntapUntilRound);
+    }
+
+    [Fact]
+    public void ElizabethRecordsFailedSettlementWhenEveryDeclaredMoraleHasRecovered()
+    {
+        var game = Create(202061);
+        var source = Card("ST06-01", "elizabeth-all-stale");
+        var opponent = game.State.Players[1];
+        var morale = new L12MoraleCard { CardId = "S01-01C1", InstanceId = "elizabeth-all-stale-morale", Tapped = true };
+        game.State.Players[0].Field[0][0] = source;
+        opponent.Morale.Add(morale);
+        HoldOpponentResponseWindow(game, "elizabeth-all-stale");
+
+        Queue(game, source);
+        ChooseMany(game, morale.InstanceId);
+        morale.Tapped = false;
+        PassResponses(game);
+
+        Assert.Equal(0, morale.CannotUntapUntilRound);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("伊丽莎白一世", StringComparison.Ordinal)
+            && entry.EffectResultStatus == "failed");
     }
 
     [Fact]
@@ -297,7 +321,7 @@ public sealed class StarterTargetedBatch2BRegressionTests
 
         Assert.Same(target, game.State.Players[1].Field[0][0]);
         Assert.DoesNotContain(target, game.State.Players[1].Graveyard);
-        var failure = Assert.Single(game.State.Events, entry => entry.Type == "effect-cancelled"
+        var failure = Assert.Single(game.State.Events, entry => entry.Type == "effect-failed"
             && entry.Text.Contains("莫德雷德", StringComparison.Ordinal));
         Assert.Equal("failed", failure.EffectResultStatus);
     }
@@ -341,5 +365,28 @@ public sealed class StarterTargetedBatch2BRegressionTests
         Invoke(expiryGame, "ExpireEffectsAtPlayerTurnStart", 0);
         Assert.Equal(0, expiryTarget.ImmortalUses);
         Assert.Equal(-1, expiryTarget.ImmortalUntilTurn);
+    }
+
+    [Fact]
+    public void BoudicaRecordsFailedSettlementWhenTheDeclaredOtherworldLegionLeaves()
+    {
+        var game = Create(202121);
+        var player = game.State.Players[0];
+        var boudica = Card("ST06-07", "boudica-stale");
+        var target = Card("ST06-02", "boudica-stale-target");
+        player.Field[0][0] = boudica;
+        player.Field[0][1] = target;
+        HoldOpponentResponseWindow(game, "boudica-stale");
+
+        Queue(game, boudica);
+        Choose(game, target.InstanceId);
+        player.Field[0][1] = null;
+        player.Graveyard.Add(target);
+        PassResponses(game);
+
+        Assert.Equal(0, target.ImmortalUses);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("布狄卡", StringComparison.Ordinal)
+            && entry.EffectResultStatus == "failed");
     }
 }

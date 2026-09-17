@@ -167,7 +167,7 @@ public sealed partial class L12GameEngine
                     StarterSelectionStep("field-legion", "enemyTarget",
                         "莫德雷德：选择对方1张兵力不高于2000的军团击杀",
                         killTargets, required, 1, targetPlayerIndex: opponent.PlayerIndex,
-                        autoSelectWhenExact: true),
+                        autoSelectWhenExact: killTargets.Count == 0),
                 ];
                 break;
             }
@@ -428,8 +428,8 @@ public sealed partial class L12GameEngine
                     AddTimedModifier(enemy, delta, 0, State.TurnSerial, item.SourceName);
                     AddEvent("effect", item.Controller, $"〈{enemy.Name}〉本回合兵力{delta}", enemy);
                 }
-                else AddEvent("effect-cancelled", item.Controller,
-                    $"〈{item.SourceName}〉选择的对方军团已离场，本次兵力变化未生效");
+                else RecordTargetSettlementFailure(item, One("enemyTarget"),
+                    $"〈{item.SourceName}〉选择的对方军团已离场或不再符合条件，本次兵力变化未生效");
                 break;
             case "freydis-recover":
             {
@@ -444,8 +444,8 @@ public sealed partial class L12GameEngine
                         $"弗蕾迪斯展示〈{recover.Name}〉并将其加入手牌",
                         "ST03-03", "grave-hit");
                 }
-                else AddEvent("effect-cancelled", item.Controller,
-                    "弗蕾迪斯选择的墓地军团已离开墓地，本次回收未生效");
+                else RecordTargetSettlementFailure(item, One("recoverTarget"),
+                    "弗蕾迪斯选择的墓地军团已离开墓地或不再符合回收条件，本次回收未生效");
                 break;
             }
             case "elizabeth-derived-cost":
@@ -453,19 +453,23 @@ public sealed partial class L12GameEngine
             case "elizabeth-lock-morale":
             {
                 var opponent = State.Players[1 - item.Controller];
-                foreach (var targetId in Many("moraleTargets"))
+                var declared = Many("moraleTargets");
+                var resolved = 0;
+                foreach (var targetId in declared)
                 {
                     var morale = opponent.Morale.FirstOrDefault(card => card.InstanceId == targetId && card.Tapped);
-                    if (morale is null)
-                    {
-                        AddEvent("effect-cancelled", item.Controller,
-                            "伊丽莎白一世选择的士气已不再休整，本次限制未生效");
-                        continue;
-                    }
+                    if (morale is null) continue;
                     morale.CannotUntapUntilRound = Math.Max(morale.CannotUntapUntilRound, State.Round + 1);
                     AddEvent("effect", item.Controller,
                         "所选士气下个重置阶段无法转为活跃");
+                    resolved++;
                 }
+                if (resolved == 0 && declared.Length > 0)
+                    RecordTargetSettlementFailure(item, string.Join('|', declared),
+                        "伊丽莎白一世选择的士气已不再休整，本次限制未生效");
+                else if (resolved < declared.Length)
+                    AddEvent("effect", item.Controller,
+                        $"〈{item.SourceName}〉有{declared.Length - resolved}张已声明士气在逆结算后失效；其余对象继续结算");
                 break;
             }
             case "mordred-enter-choice":
@@ -489,9 +493,9 @@ public sealed partial class L12GameEngine
                 if (targetId is not null && DeclaredEnemyTarget(item.Controller, targetId,
                         card => card.Troops <= 2000) is not null)
                     KillTarget(item, targetId, "被莫德雷德阵亡时效果击杀");
-                else if (targetId is not null)
-                    AddEvent("effect-cancelled", item.Controller,
-                        "莫德雷德选择的军团兵力已高于2000或已离场，本次击杀未生效");
+                else
+                    RecordTargetSettlementFailure(item, targetId,
+                        "莫德雷德选择的军团兵力已高于2000、已离场或不再是军团，本次击杀未生效");
                 break;
             }
             case "boudica-immortal":
@@ -503,8 +507,8 @@ public sealed partial class L12GameEngine
                     AddEvent("effect", item.Controller,
                         $"〈{target.Name}〉直到下个我方回合开始前获得一次免死", target);
                 }
-                else AddEvent("effect-cancelled", item.Controller,
-                    "布狄卡选择的【彼界】军团已离场，本次免死未生效");
+                else RecordTargetSettlementFailure(item, One("immortalTarget"),
+                    "布狄卡选择的【彼界】军团已离场或不再符合条件，本次免死未生效");
                 break;
             }
         }

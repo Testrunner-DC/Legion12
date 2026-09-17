@@ -183,6 +183,35 @@ public sealed class StarterTargetedBatch2ARegressionTests
     }
 
     [Fact]
+    public void KhufuKeepsItsPaidGuardButRecordsFailedSettlementWhenTheDeclaredTargetChanges()
+    {
+        var game = Create(201021);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var khufu = Card("ST02-01", "khufu-stale");
+        var guard = Card("S01-0212", "khufu-stale-guard");
+        var enemy = Card("S01-0102", "khufu-stale-enemy");
+        player.Field[0][0] = khufu;
+        player.Field[0][1] = guard;
+        opponent.Field[0][0] = enemy;
+        HoldOpponentResponseWindow(game);
+
+        Queue(game, khufu);
+        Choose(game, "mode:use");
+        Choose(game, guard.InstanceId);
+        Choose(game, enemy.InstanceId);
+        opponent.Field[0][0] = null;
+        opponent.Graveyard.Add(enemy);
+        PassResponses(game);
+
+        Assert.Contains(guard, player.Graveyard);
+        Assert.Contains(enemy, opponent.Graveyard);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("胡夫", StringComparison.Ordinal)
+            && entry.EffectResultStatus == "failed");
+    }
+
+    [Fact]
     public void SnakeCharmerLibraryChoiceIsControllerOnlyUntilCobraEnters()
     {
         var game = Create(20103);
@@ -286,5 +315,33 @@ public sealed class StarterTargetedBatch2ARegressionTests
         Assert.DoesNotContain(recover, player.Graveyard);
         Assert.Contains(game.State.Events, entry => entry.Text.Contains("展示", StringComparison.Ordinal)
             && entry.Text.Contains(recover.Name, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void FreydisKeepsItsPaidHandCostButRecordsFailedSettlementWhenGraveTargetLeaves()
+    {
+        var game = Create(201051);
+        var player = game.State.Players[0];
+        var freydis = Card("ST03-03", "freydis-stale");
+        var handCost = Card("S01-0002", "freydis-stale-cost");
+        var recover = Card("S01-0302", "freydis-stale-recover");
+        player.Field[0][0] = freydis;
+        player.Hand.Add(handCost);
+        player.Graveyard.Add(recover);
+        HoldOpponentResponseWindow(game);
+
+        Queue(game, freydis);
+        Choose(game, "mode:use");
+        Choose(game, handCost.InstanceId);
+        Choose(game, recover.InstanceId);
+        player.Graveyard.Remove(recover);
+        player.Hand.Add(recover);
+        PassResponses(game);
+
+        Assert.Contains(handCost, player.Graveyard);
+        Assert.Contains(recover, player.Hand);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("弗蕾迪斯", StringComparison.Ordinal)
+            && entry.EffectResultStatus == "failed");
     }
 }
