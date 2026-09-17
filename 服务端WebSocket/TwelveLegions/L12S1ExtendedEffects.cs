@@ -919,11 +919,7 @@ public sealed partial class L12GameEngine
         CompleteEffectLegionEntry(battlefield, card, "hand");
     }
 
-    private static bool IsCounterTactic(string cardId) => cardId is
-        "S01-0016" or "S01-0017" or "S01-0018" or "S01-0019" or "S01-0020" or "S01-0021" or "S01-0120" or
-        "S01-0223" or "S01-0224" or "S01-0320" or "S01-0420" or
-        "S02-0015" or "S02-0016" or "S02-0017" or "S02-0018" or "S02-0106" or "S02-0523" or
-        "ST01-10";
+    private static bool IsCounterTactic(string cardId) => L12CounterTacticRules.Contains(cardId);
 
     private bool CanUseS1ReactionAtStack(string cardId, int playerIndex, L12StackItem top)
     {

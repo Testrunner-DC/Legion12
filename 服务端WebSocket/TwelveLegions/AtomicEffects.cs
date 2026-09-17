@@ -429,7 +429,9 @@ public sealed class L12AtomicEffectCatalog
                         ReviewStatus = "human-assisted",
                         ReviewSource = "product-database",
                     }).ToList()
-                    : SplitAbilities(text).Select((clause, index) => BuildAbility(card, clause, index + 1)).ToList();
+                    : L12CounterTacticRules.FallbackTrigger(card.Id) is { } responseTrigger
+                        ? [BuildAbility(card, text, 1, responseTrigger)]
+                        : SplitAbilities(text).Select((clause, index) => BuildAbility(card, clause, index + 1)).ToList();
         foreach (var overlay in L12StructuredCardRules.GetCombatOverlayAbilities(card.Id))
         {
             if (sourceAbilities.Any(ability => ability.Trigger == overlay.Trigger && ability.Text == overlay.Text)) continue;
@@ -561,9 +563,10 @@ public sealed class L12AtomicEffectCatalog
         return abilities.ToArray();
     }
 
-    private static L12AtomicAbility BuildAbility(L12CardDefinition card, string text, int sequence)
+    private static L12AtomicAbility BuildAbility(L12CardDefinition card, string text, int sequence,
+        string? triggerOverride = null)
     {
-        var trigger = DetectTrigger(card, text);
+        var trigger = triggerOverride ?? DetectTrigger(card, text);
         if (L12VerifiedAtomicPrograms.Find(card.Id, trigger, text) is { } verified)
             return verified.ToAbility(card, text, sequence);
         var atoms = new List<L12EffectAtom>();
@@ -688,6 +691,7 @@ public sealed class L12AtomicEffectCatalog
         {
             "enter" or "death" or "leave" or "after-attack" or "attack" or "turn-start" or "turn-end" or "disaster" => "triggered",
             "active" or "play" => "activated",
+            "reaction" or "s2-reaction" => "reaction",
             "promotion" => "summon-flow",
             "static" when ContainsAny(text, "作为代替", "代替承受", "代替阵亡") => "replacement",
             "static" => "continuous",

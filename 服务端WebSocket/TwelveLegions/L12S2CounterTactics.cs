@@ -108,15 +108,19 @@ public sealed partial class L12GameEngine
                     var selected = CompositeDeclared(item, "handTarget").SingleOrDefault();
                     if (selected is not null && affected.Hand.Any(card => card.InstanceId == selected))
                         MoveHandToGrave(affected, selected, causedByEffect: true);
+                    else RecordTargetSettlementFailure(item, selected, "已选择的匿名对象不再位于对方手牌中");
                     FinishStackItem(item);
                     return;
                 }
-                if (mode == "mode:suppress" && target is not null)
+                var entered = target is null ? null : FindOnField(affected, target.SourceInstanceId, out _, out _);
+                if (mode == "mode:suppress" && target is not null
+                    && target.Data.GetValueOrDefault("eventType") == "non-hand-entry"
+                    && entered is not null && IsAuthoritativeFieldLegion(entered))
                 {
                     target.Data["suppressEnter"] = "true";
-                    var entered = FindOnField(affected, target.SourceInstanceId, out _, out _);
-                    if (entered is not null) AddTimedModifier(entered, -3000, 0, State.TurnSerial, "破败仪式");
+                    AddTimedModifier(entered, -3000, 0, State.TurnSerial, "破败仪式");
                 }
+                else RecordResolutionFailure(item, "原登场事件或对应的场上军团已失效，无法无效登场效果或减少兵力");
                 FinishStackItem(item);
                 return;
             }
@@ -127,10 +131,10 @@ public sealed partial class L12GameEngine
                 var selected = affected.Hand.FirstOrDefault(card => card.InstanceId == selectedId);
                 if (selected is not null)
                 {
-                    affected.Hand.Remove(selected);
-                    affected.Library.Insert(0, selected);
+                    L12LibraryOps.PutOnTop(affected, [selected]);
                     AddEvent("return", item.Controller, "〈粮草掠夺〉将盲选的1张对方手牌返回所有者牌库顶部");
                 }
+                else RecordTargetSettlementFailure(item, selectedId, "已选择的匿名对象不再位于对方手牌中");
                 FinishStackItem(item);
                 return;
             }
@@ -141,6 +145,7 @@ public sealed partial class L12GameEngine
             case "毒药发作":
             case "poison-negate":
                 if (target is not null) NegateEffectReadyBatch(target);
+                else RecordTargetSettlementFailure(item, item.Targets.FirstOrDefault(), "原转活跃权威事件已经离开堆叠");
                 FinishStackItem(item);
                 return;
             case "poison-discard":

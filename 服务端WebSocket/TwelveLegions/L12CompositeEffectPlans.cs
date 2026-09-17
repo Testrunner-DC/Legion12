@@ -602,12 +602,12 @@ internal static partial class L12CompositeEffectPlans
             ["response:S02-0017"] =
             [
                 new("supply-plunder-return", "将所选的1张对方手牌返回牌库顶部"),
-                new("supply-plunder-draw", "随后我方抽取1张牌"),
+                new("supply-plunder-draw", "随后我方抽取1张牌", RequiresPreviousSuccess: true),
             ],
             ["response:S02-0018"] =
             [
                 new("poison-negate", "令本次因效果转为活跃无效"),
-                new("poison-discard", "随后受影响玩家弃置1张手牌"),
+                new("poison-discard", "随后受影响玩家弃置1张手牌", RequiresPreviousSuccess: true),
             ],
         };
 

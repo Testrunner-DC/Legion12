@@ -20,7 +20,8 @@ public sealed class EffectLifecycleInventoryTests
     };
 
     internal sealed record AbilityRow(string CardId, string Name, L12AtomicAbility Definition,
-        string EntryEvidence, string[] RouteCandidates, string[] ReviewGaps);
+        string EntryEvidence, string[] RouteCandidates, string[] ReviewGaps,
+        L12AbilityTestReference[] TestReferences);
     internal sealed record Inventory(int Schema, int CardCount, string[] CardsWithoutAbilities,
         AbilityRow[] Abilities);
 
@@ -56,6 +57,7 @@ public sealed class EffectLifecycleInventoryTests
     {
         var fine = L12VerifiedAtomicPrograms.All;
         var routes = L12RuntimeEffectRoutes.AllPrograms;
+        var evidence = EffectLifecycleEvidence.Read(catalog);
         var cards = catalog.AtomicEffects.All.OrderBy(card => card.CardId, StringComparer.Ordinal).ToArray();
         var rows = cards.SelectMany(card => card.Abilities.OrderBy(ability => ability.Sequence).Select(ability =>
         {
@@ -77,9 +79,10 @@ public sealed class EffectLifecycleInventoryTests
                 gaps.Add("single-candidate-choice");
                 gaps.Add("multi-target-applicability");
             }
-            return new AbilityRow(card.CardId, card.Name, ability, entry, candidates, gaps.ToArray());
+            return new AbilityRow(card.CardId, card.Name, ability, entry, candidates, gaps.ToArray(),
+                evidence.Where(reference => reference.AbilityId == ability.AbilityId).ToArray());
         })).ToArray();
-        return new Inventory(1, cards.Length,
+        return new Inventory(2, cards.Length,
             cards.Where(card => card.Abilities.Count == 0).Select(card => card.CardId).ToArray(), rows);
     }
 
@@ -100,9 +103,15 @@ public sealed class EffectLifecycleInventoryTests
         text.AppendLine();
         text.AppendLine("fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；owner-unreviewed = 还需定位实际入口。前两者也不等于生命周期验收通过。");
         text.AppendLine("同卡同触发只算候选，不能把另一能力的程序继承为本能力已覆盖。无能力卡单列，不能从分母中静默消失。");
-        text.AppendLine("所有测试维度当前均为待核对：不代表没有既有测试，须补具名用例与实际执行回执；静态/替代能力等不适用路径必须写明理由，不能自动算通过。");
+        text.AppendLine("具名用例按完整能力ID（含结构哈希）绑定；只记录列出的测试范围，不把声明期恢复冒充结算期恢复，也不把源代码引用当实际执行回执。完整异常矩阵仍待核对；不适用路径必须说明理由。");
         text.AppendLine("共同待核对项：生命周期档案、展示消费者、正例、无目标、无效、目标失效、重复提交、重连。费用段另核对取消兜底，对象选择另核对唯一候选/多目标适用性。");
         text.AppendLine("完整原子参数、Cost/效果正文、场景与路由候选保存在同次生成的JSON审计产物；程序标签verified仅为既有目录状态。").AppendLine();
+        text.AppendLine("## 已关联具名证据（不是整能力验收通过）").AppendLine();
+        text.AppendLine("| 能力ID | 测试方法 / 参数卡牌 | 已核对的用例范围 |");
+        text.AppendLine("| --- | --- | --- |");
+        foreach (var reference in inventory.Abilities.SelectMany(row => row.TestReferences))
+            text.AppendLine($"| {Cell(reference.AbilityId)} | {Cell(reference.TestMethod)} / {reference.CaseCardId} | {Cell(string.Join(", ", reference.Scopes))} |");
+        text.AppendLine();
         text.AppendLine("## 能力清单").AppendLine();
         text.AppendLine("| 卡牌/效果段 | 稳定能力ID | 时点/模型 | 定义证据 | Cost | 原子顺序 | 场景数 | 正文 |");
         text.AppendLine("| --- | --- | --- | --- | --- | --- | ---: | --- |");
@@ -166,6 +175,23 @@ public sealed class EffectLifecycleInventoryTests
     {
         Assert.Equal(Render(Build(Catalog)), Render(Build(Catalog)));
         Assert.Equal("&lt;主动&gt;&#124;A<br>B&amp;C", Cell("<主动>|A\nB&C"));
+    }
+
+    [Fact]
+    public void PublicResponseFamilyHasExactLiveCasesWithoutClaimingFullLifecycleCoverage()
+    {
+        var catalog = Catalog;
+        var evidence = EffectLifecycleEvidence.Read(catalog).Where(reference => reference.TestMethod.EndsWith(
+            nameof(StackResponseChoiceRegressionTests.PublicResponseDeclarationsRestoreAndRejectDuplicateFinalSubmission), StringComparison.Ordinal)).ToArray();
+        var plans = (IReadOnlyDictionary<string, string>)typeof(L12GameEngine)
+            .GetField("PublicResponsePlans", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!;
+        Assert.Equal(plans.Keys.Order(), evidence.Select(reference => reference.CaseCardId).Distinct().Order());
+        Assert.All(evidence, reference =>
+        {
+            Assert.Contains("reconnect-declaration", reference.Scopes);
+            Assert.DoesNotContain("reconnect", reference.Scopes);
+            Assert.Equal("linked-not-execution-receipt", reference.Status);
+        });
     }
 
     [Fact]

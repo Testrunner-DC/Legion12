@@ -32,15 +32,16 @@ public sealed class StackResponseChoiceRegressionTests
         return game;
     }
 
-    private static L12CardInstance Card(string id, string instance, int owner)
+    private static L12CardInstance Card(string id, string instance, int owner,
+        string? cardType = null, int? troops = null)
     {
         var definition = Catalog.Cards[id];
         return new L12CardInstance
         {
             InstanceId = instance, CardId = id, OwnerIndex = owner, Name = definition.NameZh,
-            CardType = definition.CardType, Faction = definition.Faction,
+            CardType = cardType ?? definition.CardType, Faction = definition.Faction,
             EffectText = definition.Effect, ImageUrl = definition.ImageUrl,
-            Troops = definition.Troops ?? 0, BaseTroops = definition.Troops ?? 0,
+            Troops = troops ?? definition.Troops ?? 0, BaseTroops = troops ?? definition.Troops ?? 0,
             Cost = definition.Cost ?? 0, SummonRound = -1,
         };
     }
@@ -429,6 +430,10 @@ public sealed class StackResponseChoiceRegressionTests
     [InlineData("S01-0120")]
     [InlineData("S02-0016")]
     [InlineData("S02-0017")]
+    [L12AbilityEvidence("S01-0020:ability:reaction:f099e096c2d7437b", "commit-declaration", "reconnect-declaration", "duplicate-declaration", "presentation-declaration")]
+    [L12AbilityEvidence("S01-0120:ability:reaction:0865f062354681b2", "commit-declaration", "reconnect-declaration", "duplicate-declaration", "presentation-declaration")]
+    [L12AbilityEvidence("S02-0016:ability:s2-reaction:37e38b08d365f0bb", "commit-declaration", "reconnect-declaration", "duplicate-declaration", "presentation-declaration")]
+    [L12AbilityEvidence("S02-0017:ability:s2-reaction:0e0643c2b48ae93e", "commit-declaration", "reconnect-declaration", "duplicate-declaration", "presentation-declaration")]
     public void PublicResponseDeclarationsRestoreAndRejectDuplicateFinalSubmission(string cardId)
     {
         var game = Create();
@@ -486,6 +491,13 @@ public sealed class StackResponseChoiceRegressionTests
         Assert.NotNull(finalPromptId);
         Assert.NotNull(finalChoice);
         Assert.Single(game.State.EffectStack, item => item.SourceInstanceId == response.InstanceId);
+        var responseEvent = Assert.Single(game.State.Events, entry => entry.Type is "effect-response" or "effect-announced"
+            && entry.Cards.Any(card => card.InstanceId == response.InstanceId));
+        var ability = Assert.Single(Catalog.AtomicEffects.Find(cardId)!.Abilities,
+            candidate => candidate.Trigger == (cardId.StartsWith("S01-", StringComparison.Ordinal)
+                ? "reaction" : "s2-reaction"));
+        Assert.Equal(ability.AbilityId, responseEvent.EffectAbilityId);
+        Assert.Contains(ability.Presentations, scene => scene.SceneId == responseEvent.EffectSceneId);
         Assert.False(game.Handle(1,
             new L12Command("resolvePrompt", PromptId: finalPromptId, Choice: finalChoice)).Accepted);
         Assert.Single(game.State.EffectStack, item => item.SourceInstanceId == response.InstanceId);
@@ -513,6 +525,107 @@ public sealed class StackResponseChoiceRegressionTests
         Assert.DoesNotContain(game.State.EffectStack, item => item.SourceInstanceId == response.InstanceId);
         Assert.Contains(game.State.Events, item => item.Type == "ability-rejected"
             && item.Text.Contains("战斗至黎明", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("S02-0016", "discard", "normal")]
+    [InlineData("S02-0016", "discard", "moved")]
+    [InlineData("S02-0016", "discard", "negated")]
+    [InlineData("S02-0016", "suppress", "normal")]
+    [InlineData("S02-0016", "suppress", "moved")]
+    [InlineData("S02-0016", "suppress", "non-legion")]
+    [InlineData("S02-0016", "suppress", "negated")]
+    [InlineData("S02-0017", "return", "normal")]
+    [InlineData("S02-0017", "return", "moved")]
+    [InlineData("S02-0017", "return", "negated")]
+    [InlineData("S02-0018", "negate-ready", "normal")]
+    [InlineData("S02-0018", "negate-ready", "missing-event")]
+    [InlineData("S02-0018", "negate-ready", "negated")]
+    [L12AbilityEvidence("S02-0016:ability:s2-reaction:37e38b08d365f0bb", "normal-settlement", "negated-settlement", "target-invalidated-settlement", "reconnect-settlement", "duplicate-rejected")]
+    [L12AbilityEvidence("S02-0017:ability:s2-reaction:0e0643c2b48ae93e", "normal-settlement", "negated-settlement", "target-invalidated-settlement", "reconnect-settlement", "duplicate-rejected", "success-dependency")]
+    [L12AbilityEvidence("S02-0018:ability:s2-reaction:e0e92d0479a94844", "normal-settlement", "negated-settlement", "target-invalidated-settlement", "reconnect-settlement", "duplicate-rejected", "success-dependency")]
+    public void ResponseSettlementRevalidatesObjectsAndSuccessDependenciesAfterRecovery(
+        string cardId, string branch, string outcome)
+    {
+        var game = Create();
+        var root = AddEffect(game, "settlement-root", "authority-event");
+        root.Data["eventType"] = cardId switch
+        {
+            "S02-0016" => "non-hand-entry",
+            "S02-0017" => "effect-hand-add",
+            _ => "effect-ready",
+        };
+        var entered = Card(root.SourceCardId, root.SourceInstanceId, 0, troops: 6000);
+        game.State.Players[0].Field[0][0] = entered;
+        var chosen = Card("S01-0003", "settlement-chosen", 0);
+        game.State.Players[0].Hand.Add(chosen);
+        game.State.Players[1].Library.Clear();
+        game.State.Players[1].Library.Add(Card("S01-0003", "settlement-draw", 1));
+        var response = Counter(game, 0, cardId);
+        Offer(game);
+        var submitted = Resolve(game, response.InstanceId);
+        if (cardId == "S02-0016") submitted = Resolve(game, $"mode:{branch}");
+        if (branch is "discard" or "return")
+        {
+            var selection = Assert.Single(game.State.PendingPrompts);
+            Assert.Equal("opponent-hand-card", selection.Kind);
+            // Even a sole private object requires a real player choice.
+            submitted = Resolve(game, selection.ValidChoices.Single(choice => choice != "skip"));
+        }
+        var responseItem = Assert.Single(game.State.EffectStack, item => item.SourceInstanceId == response.InstanceId);
+        if (outcome == "negated") responseItem.Negated = true;
+        if (outcome == "moved")
+        {
+            if (branch == "suppress") game.State.Players[0].Field[0][0] = null;
+            else game.State.Players[0].Hand.Remove(chosen);
+            game.State.Players[0].Graveyard.Add(branch == "suppress" ? entered : chosen);
+        }
+        if (outcome == "non-legion") game.State.Players[0].Field[0][0] =
+            Card(entered.CardId, entered.InstanceId, 0, cardType: "artifact", troops: 6000);
+        if (outcome == "missing-event") game.State.EffectStack.Remove(root);
+        game = Restore(game);
+        var restoredAuthority = game.State.EffectStack.FirstOrDefault(item => item.StackItemId == root.StackItemId);
+
+        for (var step = 0; step < 32 && game.State.PendingPrompts.Count > 0; step++)
+        {
+            var prompt = Assert.Single(game.State.PendingPrompts);
+            if (prompt.Kind == "response") Resolve(game, "pass");
+            else if (cardId == "S02-0018" && outcome == "normal" && prompt.Kind == "hand-card")
+                Resolve(game, chosen.InstanceId);
+            else break;
+        }
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+        var results = game.State.Events.Where(entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.CardId == cardId)).OrderBy(entry => entry.EffectSegmentIndex).ToArray();
+        Assert.NotEmpty(results);
+        Assert.Equal(outcome == "normal" ? "resolved" : outcome == "negated" ? "negated" : "failed",
+            results[0].EffectResultStatus);
+        if (cardId is "S02-0017" or "S02-0018")
+        {
+            Assert.Equal(2, results.Length);
+            Assert.Equal(outcome == "normal" ? "resolved" : "skipped", results[1].EffectResultStatus);
+        }
+        if (cardId == "S02-0017")
+        {
+            Assert.Equal(outcome == "normal", game.State.Players[1].Hand.Any(card => card.InstanceId == "settlement-draw"));
+            Assert.Equal(outcome == "normal", game.State.Players[0].Library.Any(card => card.InstanceId == chosen.InstanceId));
+        }
+        if (cardId == "S02-0018")
+            Assert.Equal(outcome == "normal", game.State.Players[0].Graveyard.Any(card => card.InstanceId == chosen.InstanceId));
+        if (cardId == "S02-0016" && branch == "discard")
+            Assert.Equal(outcome != "negated", game.State.Players[0].Graveyard.Any(card => card.InstanceId == chosen.InstanceId));
+        if (branch == "suppress" && outcome != "moved")
+            Assert.Equal(outcome == "normal" ? 3000 : 6000, game.State.Players[0].Field[0][0]!.Troops);
+        if (branch == "suppress")
+            Assert.Equal(outcome == "normal", restoredAuthority?.Data.GetValueOrDefault("suppressEnter") == "true");
+        Assert.Single(game.State.Players.SelectMany(player => player.Hand.Concat(player.Graveyard).Concat(player.Library)),
+            card => card.InstanceId == chosen.InstanceId);
+        Assert.False(game.Handle(submitted.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: submitted.PromptId, Choice: "pass")).Accepted);
+        Assert.Equal(results.Length, game.State.Events.Count(entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.CardId == cardId)));
     }
 
     [Fact]

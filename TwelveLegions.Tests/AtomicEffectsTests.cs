@@ -205,7 +205,7 @@ public sealed class AtomicEffectsTests
 
     [Theory]
     [InlineData("S01-0213", "after-attack", "进攻后：")]
-    [InlineData("S01-0224", "play", "发动战术效果或圣物效果时：")]
+    [InlineData("S01-0224", "reaction", "发动战术效果或圣物效果时：")]
     [InlineData("S01-0414", "after-attack", "返回牌库顶部时：")]
     [InlineData("S01-DS01", "static", "双数：")]
     [InlineData("ST05-10", "play", "选择一项：")]
