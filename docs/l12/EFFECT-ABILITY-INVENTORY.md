@@ -5,19 +5,31 @@
 
 卡牌：324；能力段：711；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`b3eae477973929272a01d988d497b2081a201b88b10ede631eca1ce9c939b182`。
+内容指纹：`3e26353a5a51c355e66bc89d4538085d3e16b431b054dc2560a66ea997b04941`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
 | composite-definition | 209 |
 | fine-definition | 87 |
-| owner-unreviewed | 415 |
+| owner-unreviewed | 410 |
+| shared-rule-owner | 5 |
 
-fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；owner-unreviewed = 还需定位实际入口。前两者也不等于生命周期验收通过。
+fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；shared-rule-owner = 精确能力已绑定共用规则入口及适用性档案；owner-unreviewed = 还需定位实际入口。任何一种归属证据均不等于生命周期验收通过。
 同卡同触发只算候选，不能把另一能力的程序继承为本能力已覆盖。无能力卡单列，不能从分母中静默消失。
 具名用例按完整能力ID（含结构哈希）绑定；只记录列出的测试范围，不把声明期恢复冒充结算期恢复，也不把源代码引用当实际执行回执。完整异常矩阵仍待核对；不适用路径必须说明理由。
 共同待核对项：生命周期档案、展示消费者、正例、无目标、无效、目标失效、重复提交、重连。费用段另核对取消兜底，对象选择另核对唯一候选/多目标适用性。
 完整原子参数、Cost/效果正文、场景与路由候选保存在同次生成的JSON审计产物；程序标签verified仅为既有目录状态。
+
+## 已核对生命周期档案（不是执行回执）
+
+### rule-action:cavalry-move
+
+精确绑定能力数：5。运行入口：button = L12GameEngine.BuildRuleActionViews；candidate-generation = L12GameEngine.CavalryMoveDestinationKeys；command = L12GameEngine.CavalryMove；destination-revalidation = L12GameEngine.IsLegalCavalryMoveDestination；movement-event = L12GameEngine.RecordLegionMovement；presentation = L12GameEngine.NativeCavalryMovePresentation；source-eligibility = L12GameEngine.CavalryMoveSourceUnavailableReason；timing = L12GameEngine.CavalryMoveTimingUnavailableReason。
+
+- multi-target-applicability：一次只移动来源军团到一个空位，不存在独立多目标结算。
+- negated：原生职介位移是立即执行的规则动作，不创建可响应或无效的效果堆叠；后续位移触发另行验收。
+- payment-cancel：没有卡牌或资源费用，也无支付Prompt；未提交目的地不产生动作。
+- target-invalidated：无入栈后目标窗口；改以提交时来源/目的地复验覆盖过期客户端选择。
 
 ## 已关联具名证据（不是整能力验收通过）
 
@@ -28,6 +40,14 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0120:ability:reaction:0865f062354681b2 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ConditionalResponseSegmentsReportActualOutcomesAfterRecovery / S01-0120 | conditional-settlement, declined-branch, empty-library, negated-settlement, reconnect-settlement, target-invalidated-settlement |
 | S01-0120:ability:reaction:0865f062354681b2 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.NestedResponseKeepsItsDeclaredRootWhenIntermediateStackChanges / S01-0120 | nested-authority, reconnect-settlement |
 | S01-0120:ability:reaction:0865f062354681b2 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.PublicResponseDeclarationsRestoreAndRejectDuplicateFinalSubmission / S01-0120 | commit-declaration, duplicate-declaration, presentation-declaration, reconnect-declaration |
+| S01-0310:ability:active:0a0575206e996652 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / S01-0310 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
+| S01-0310:ability:active:0a0575206e996652 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / S01-0310 | destination-invalidated, reconnect-before-command, source-invalidated |
+| S01-0310:ability:active:0a0575206e996652 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / S01-0310 | button-rejection-consistency, timing |
+| S01-0310:ability:active:0a0575206e996652 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / S01-0310 | button-text, duplicate-submit, no-resource-cost, normal, presentation-event, reconnect-after-command, reconnect-before-command |
+| S01-0409:ability:active:56a01edf47ee1225 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / S01-0409 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
+| S01-0409:ability:active:56a01edf47ee1225 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / S01-0409 | destination-invalidated, reconnect-before-command, source-invalidated |
+| S01-0409:ability:active:56a01edf47ee1225 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / S01-0409 | button-rejection-consistency, timing |
+| S01-0409:ability:active:56a01edf47ee1225 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / S01-0409 | button-text, duplicate-submit, no-resource-cost, normal, presentation-event, reconnect-after-command, reconnect-before-command |
 | S02-0016:ability:s2-reaction:37e38b08d365f0bb | TwelveLegions.Tests.StackResponseChoiceRegressionTests.NestedResponseKeepsItsDeclaredRootWhenIntermediateStackChanges / S02-0016 | nested-authority, reconnect-settlement |
 | S02-0016:ability:s2-reaction:37e38b08d365f0bb | TwelveLegions.Tests.StackResponseChoiceRegressionTests.PublicResponseDeclarationsRestoreAndRejectDuplicateFinalSubmission / S02-0016 | commit-declaration, duplicate-declaration, presentation-declaration, reconnect-declaration |
 | S02-0016:ability:s2-reaction:37e38b08d365f0bb | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ResponseSettlementRevalidatesObjectsAndSuccessDependenciesAfterRecovery / S02-0016 | duplicate-rejected, negated-settlement, normal-settlement, reconnect-settlement, target-invalidated-settlement |
@@ -36,6 +56,18 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0017:ability:s2-reaction:0e0643c2b48ae93e | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ResponseSettlementRevalidatesObjectsAndSuccessDependenciesAfterRecovery / S02-0017 | duplicate-rejected, negated-settlement, normal-settlement, reconnect-settlement, success-dependency, target-invalidated-settlement |
 | S02-0018:ability:s2-reaction:e0e92d0479a94844 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.NestedResponseKeepsItsDeclaredRootWhenIntermediateStackChanges / S02-0018 | nested-authority, reconnect-settlement |
 | S02-0018:ability:s2-reaction:e0e92d0479a94844 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ResponseSettlementRevalidatesObjectsAndSuccessDependenciesAfterRecovery / S02-0018 | duplicate-rejected, negated-settlement, normal-settlement, reconnect-settlement, success-dependency, target-invalidated-settlement |
+| S02-0505:ability:active:bac4cb5d348f29f1 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / S02-0505 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
+| S02-0505:ability:active:bac4cb5d348f29f1 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / S02-0505 | destination-invalidated, reconnect-before-command, source-invalidated |
+| S02-0505:ability:active:bac4cb5d348f29f1 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / S02-0505 | button-rejection-consistency, timing |
+| S02-0505:ability:active:bac4cb5d348f29f1 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / S02-0505 | button-text, duplicate-submit, no-resource-cost, normal, presentation-event, reconnect-after-command, reconnect-before-command |
+| ST01-01:ability:active:69626894e55e27e5 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / ST01-01 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
+| ST01-01:ability:active:69626894e55e27e5 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / ST01-01 | destination-invalidated, reconnect-before-command, source-invalidated |
+| ST01-01:ability:active:69626894e55e27e5 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / ST01-01 | button-rejection-consistency, timing |
+| ST01-01:ability:active:69626894e55e27e5 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / ST01-01 | button-text, duplicate-submit, no-resource-cost, normal, presentation-event, reconnect-after-command, reconnect-before-command |
+| ST06-04:ability:active:719cc1c7c1084fa0 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / ST06-04 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
+| ST06-04:ability:active:719cc1c7c1084fa0 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / ST06-04 | destination-invalidated, reconnect-before-command, source-invalidated |
+| ST06-04:ability:active:719cc1c7c1084fa0 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / ST06-04 | button-rejection-consistency, timing |
+| ST06-04:ability:active:719cc1c7c1084fa0 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / ST06-04 | button-text, duplicate-submit, no-resource-cost, normal, presentation-event, reconnect-after-command, reconnect-before-command |
 
 ## 能力清单
 
@@ -233,7 +265,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0309 布伦希尔德 #3 | S01-0309:ability:death:cd0e9cfabc8baede | death/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.draw | 1 | 阵亡时 若我方主宰血量不高于对方，可抽取1张牌 |
 | S01-0309 布伦希尔德 #4 | S01-0309:ability:static:e3471cd2a7042e59 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
 | S01-0310 齐格鲁德 #1 | S01-0310:ability:hand-play:5e06807975eda2b7 | hand-play/special-summon | owner-unreviewed | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.damage-master → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可对我方主宰造成1点伤害：此军团登场费用-1。 |
-| S01-0310 齐格鲁德 #2 | S01-0310:ability:active:0a0575206e996652 | active/rule-action | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move → duration:duration.apply | 1 | 我方回合1次 可进行1次位移。 |
+| S01-0310 齐格鲁德 #2 | S01-0310:ability:active:0a0575206e996652 | active/rule-action | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move → duration:duration.apply | 1 | 我方回合1次 可进行1次位移。 |
 | S01-0310 齐格鲁德 #3 | S01-0310:ability:attack:02cb9deafea9e44b | attack/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 1 | 进攻时 若我方存在&lt;神剑格拉墨&gt;，此军团本回合兵力+1000。 |
 | S01-0311 古斯塔夫一世 #1 | S01-0311:ability:attack:0f533a6e93811615 | attack/triggered | fine-definition | 进攻时 可将墓地2张卡牌自选顺序返回我方牌库底部 | trigger:trigger.observe → condition:control.optional → cost:operation.move-zone → resolution:operation.modify-troops → duration:duration.apply | 1 | 进攻时 可将墓地2张卡牌自选顺序返回我方牌库底部：此军团本回合兵力+2000 |
 | S01-0311 古斯塔夫一世 #2 | S01-0311:ability:static:3409dd9fa29f684f | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:legacy.resolve | 0 | 我方 回合1次 此军团 |
@@ -281,7 +313,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0408 高杉晋作 #2 | S01-0408:ability:attack:6577727173c2557b | attack/triggered | composite-definition | 进攻时 可消耗1士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.pay-morale → duration:duration.apply → resolution:operation.composite-flow | 1 | 进攻时 可消耗1士气：选择对方1张军团，本回合费用-2 |
 | S01-0409 源义经 #1 | S01-0409:ability:static:6c03e83e9e18abb1 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于后排」进攻距离+1，远程进攻无损。 |
 | S01-0409 源义经 #2 | S01-0409:ability:attack:c900a6435336564c | attack/triggered | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 1 | 「位于后排」进攻时 此军团兵力视为2000。 |
-| S01-0409 源义经 #3 | S01-0409:ability:active:56a01edf47ee1225 | active/rule-action | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move → duration:duration.apply | 1 | 我方 回合1次 可进行1次位移。 |
+| S01-0409 源义经 #3 | S01-0409:ability:active:56a01edf47ee1225 | active/rule-action | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move → duration:duration.apply | 1 | 我方 回合1次 可进行1次位移。 |
 | S01-0409 源义经 #4 | S01-0409:ability:after-attack:87f74fda19997f92 | after-attack/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.draw | 1 | 击杀时 可抽取1张牌。 |
 | S01-0410 巴御前 #1 | S01-0410:ability:static:007ed8c3ab6b4506 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.attack-rule | 0 | 进攻距离+1，远程进攻无损 |
 | S01-0410 巴御前 #2 | S01-0410:ability:enter:c25e438ab6938fb8 | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.keyword | 1 | 登场时 获得冲锋。（可在登场回合进攻） |
@@ -468,7 +500,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0504 阿喀琉斯 #2 | S02-0504:ability:lethal-replacement:3fb565d50830f260 | lethal-replacement/replacement | owner-unreviewed | 「位于前排」回合1次 即将阵亡时，可消耗并翻转1神力 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:special.domain → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」回合1次 即将阵亡时，可消耗并翻转1神力：代替承受本次致命进攻或效果。 |
 | S02-0505 珀尔修斯·晋升 #1 | S02-0505:ability:promotion:e890e8664470e824 | promotion/summon-flow | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → cost:special.domain → target:selection.target → resolution:operation.move-zone → resolution:legacy.resolve | 1 | 晋升 消耗并翻转1神力，叠放至我方同名非【晋升者】军团上方登场。 |
 | S02-0505 珀尔修斯·晋升 #2 | S02-0505:ability:promotion-enter:125b53eb65b262bb | promotion-enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.set-state → duration:duration.apply → resolution:operation.composite-flow | 1 | 晋升登场 可选择对方1张休整的军团，使其在下个对方重置阶段无法转为活跃。 |
-| S02-0505 珀尔修斯·晋升 #3 | S02-0505:ability:active:bac4cb5d348f29f1 | active/rule-action | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move → duration:duration.apply | 1 | 我方 回合1次 可进行1次位移。 |
+| S02-0505 珀尔修斯·晋升 #3 | S02-0505:ability:active:bac4cb5d348f29f1 | active/rule-action | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move → duration:duration.apply | 1 | 我方 回合1次 可进行1次位移。 |
 | S02-0505 珀尔修斯·晋升 #4 | S02-0505:ability:enter:2f48770e568d4c27 | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.keyword | 1 | 登场时 获得 ABILITY 5。 |
 | S02-0505 珀尔修斯·晋升 #5 | S02-0505:ability:keyword-definition:cf232142ca7d10f9 | keyword-definition/keyword-definition | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 冲锋 在登场的回合即可进行进攻。 |
 | S02-0506 珀尔修斯 #1 | S02-0506:ability:enter:190c1bf49c2ede8b | enter/triggered | composite-definition | 登场时 可弃置1张手牌 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.discard → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 可弃置1张手牌：将墓地1张&lt;珀尔修斯·晋升&gt;加入手牌。 |
@@ -646,7 +678,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | ST-DS01 怒触不周山 #1 | ST-DS01:ability:disaster:00612b44a6a3ac99 | disaster/triggered | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:special.domain → resolution:legacy.resolve | 1 | 触发 将所有前排兵力不高于4000的军团置入所有者墓地。 |
 | ST-DS02 色欲之罪 #1 | ST-DS02:ability:continuous:88bf24739956a581 | continuous/continuous | composite-definition | — | trigger:trigger.observe → condition:condition.expression → continuous:operation.modify-troops → cost:cost.discard → resolution:operation.composite-flow | 0 | 持续 带有天灾等级的军团兵力+1000，且发动进攻需要弃置1张手牌。 |
 | ST-DS03 邪眼末日 #1 | ST-DS03:ability:disaster:c974ef724419ccdf | disaster/triggered | owner-unreviewed | — | trigger:trigger.observe → cost:cost.discard → resolution:special.domain → resolution:legacy.resolve | 1 | 触发 双方弃置各自战场上1张军团。 |
-| ST01-01 赵云 #1 | ST01-01:ability:active:69626894e55e27e5 | active/rule-action | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.move | 1 | 我方 回合1次 可进行1次位移。 |
+| ST01-01 赵云 #1 | ST01-01:ability:active:69626894e55e27e5 | active/rule-action | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.move | 1 | 我方 回合1次 可进行1次位移。 |
 | ST01-01 赵云 #2 | ST01-01:ability:enter:c162f6022d363e83 | enter/triggered | composite-definition | 登场时 可返还1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale → resolution:operation.keyword → resolution:operation.composite-flow | 1 | 登场时 可返还1士气：获得冲锋。 |
 | ST01-01 赵云 #3 | ST01-01:ability:granted:c502e9ac1489cd1a | granted/granted-effect | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 冲锋 在登场的回合即可进行进攻。 |
 | ST01-01 赵云 #4 | ST01-01:ability:after-attack:961ff51902cf99a2 | after-attack/triggered | composite-definition | 击杀时 可返还1士气 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:cost.return-morale → resolution:operation.keyword → resolution:operation.composite-flow | 1 | 击杀时 可返还1士气：本回合获得贯穿。 |
@@ -735,7 +767,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | ST06-02 森林魁熊 #3 | ST06-02:ability:static:af427a4637e1c138 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.keyword → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」获得【挑衅】。 |
 | ST06-03 加雷斯 #1 | ST06-03:ability:enter:1775bb55f896a6fc | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.gain-rune | 1 | 登场时 可获得1符文。 |
 | ST06-03 加雷斯 #2 | ST06-03:ability:after-attack:7a77bba666481ed8 | after-attack/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.ready → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 1 | 击杀时 可将此军团转为活跃，本回合兵力+2000。 |
-| ST06-04 莫德雷德 #1 | ST06-04:ability:active:719cc1c7c1084fa0 | active/rule-action | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.move | 1 | 我方 回合1次 可进行1次骑兵位移。 |
+| ST06-04 莫德雷德 #1 | ST06-04:ability:active:719cc1c7c1084fa0 | active/rule-action | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.move | 1 | 我方 回合1次 可进行1次骑兵位移。 |
 | ST06-04 莫德雷德 #2 | ST06-04:ability:enter:8dd378e7c1342c6e | enter/triggered | composite-definition | — | trigger:trigger.observe → target:selection.mode → resolution:operation.gain-rune → resolution:operation.keyword → resolution:operation.composite-flow | 3 | 登场时 选择获得1符文或获得冲锋。 |
 | ST06-04 莫德雷德 #3 | ST06-04:ability:death:4aff670fce04a56c | death/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 阵亡时 击杀对方1张兵力不高于2000的军团。 |
 | ST06-05 栖木猎鹰 #1 | ST06-05:ability:enter:f3fa11bf004dd4f4 | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw | 1 | 登场时 可抽取1张牌。 |

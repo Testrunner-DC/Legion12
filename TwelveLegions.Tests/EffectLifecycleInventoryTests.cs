@@ -21,7 +21,7 @@ public sealed class EffectLifecycleInventoryTests
 
     internal sealed record AbilityRow(string CardId, string Name, L12AtomicAbility Definition,
         string EntryEvidence, string[] RouteCandidates, string[] ReviewGaps,
-        L12AbilityTestReference[] TestReferences);
+        L12AbilityTestReference[] TestReferences, L12LifecycleProfile? Profile);
     internal sealed record Inventory(int Schema, int CardCount, string[] CardsWithoutAbilities,
         AbilityRow[] Abilities);
 
@@ -58,10 +58,12 @@ public sealed class EffectLifecycleInventoryTests
         var fine = L12VerifiedAtomicPrograms.All;
         var routes = L12RuntimeEffectRoutes.AllPrograms;
         var evidence = EffectLifecycleEvidence.Read(catalog);
+        var profiles = EffectLifecycleProfiles.Read(catalog);
         var cards = catalog.AtomicEffects.All.OrderBy(card => card.CardId, StringComparer.Ordinal).ToArray();
         var rows = cards.SelectMany(card => card.Abilities.OrderBy(ability => ability.Sequence).Select(ability =>
         {
-            var entry = EntryEvidence(ability, fine, routes);
+            var profile = profiles.GetValueOrDefault(ability.AbilityId);
+            var entry = profile is null ? EntryEvidence(ability, fine, routes) : "shared-rule-owner";
             var candidates = fine.Concat(routes).Where(program => program.CardId == card.CardId
                     && program.Trigger == ability.Trigger)
                 .Select(program => string.IsNullOrEmpty(program.ProgramId)
@@ -73,6 +75,12 @@ public sealed class EffectLifecycleInventoryTests
                 "negated", "target-invalidated", "duplicate-submit", "reconnect",
             };
             if (entry == "owner-unreviewed") gaps.Insert(0, "runtime-owner");
+            if (profile is not null)
+            {
+                gaps.Remove("protocol-profile");
+                gaps.RemoveAll(profile.NotApplicable.ContainsKey);
+                gaps.AddRange(["source-invalidated", "destination-invalidated", "single-candidate-choice"]);
+            }
             if (ability.Atoms.Any(atom => atom.Stage == "cost")) gaps.Add("payment-cancel");
             if (ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.SelectTarget))
             {
@@ -80,9 +88,9 @@ public sealed class EffectLifecycleInventoryTests
                 gaps.Add("multi-target-applicability");
             }
             return new AbilityRow(card.CardId, card.Name, ability, entry, candidates, gaps.ToArray(),
-                evidence.Where(reference => reference.AbilityId == ability.AbilityId).ToArray());
+                evidence.Where(reference => reference.AbilityId == ability.AbilityId).ToArray(), profile);
         })).ToArray();
-        return new Inventory(2, cards.Length,
+        return new Inventory(3, cards.Length,
             cards.Where(card => card.Abilities.Count == 0).Select(card => card.CardId).ToArray(), rows);
     }
 
@@ -101,11 +109,22 @@ public sealed class EffectLifecycleInventoryTests
         foreach (var group in inventory.Abilities.GroupBy(row => row.EntryEvidence).OrderBy(group => group.Key, StringComparer.Ordinal))
             text.AppendLine($"| {group.Key} | {group.Count()} |");
         text.AppendLine();
-        text.AppendLine("fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；owner-unreviewed = 还需定位实际入口。前两者也不等于生命周期验收通过。");
+        text.AppendLine("fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；shared-rule-owner = 精确能力已绑定共用规则入口及适用性档案；owner-unreviewed = 还需定位实际入口。任何一种归属证据均不等于生命周期验收通过。");
         text.AppendLine("同卡同触发只算候选，不能把另一能力的程序继承为本能力已覆盖。无能力卡单列，不能从分母中静默消失。");
         text.AppendLine("具名用例按完整能力ID（含结构哈希）绑定；只记录列出的测试范围，不把声明期恢复冒充结算期恢复，也不把源代码引用当实际执行回执。完整异常矩阵仍待核对；不适用路径必须说明理由。");
         text.AppendLine("共同待核对项：生命周期档案、展示消费者、正例、无目标、无效、目标失效、重复提交、重连。费用段另核对取消兜底，对象选择另核对唯一候选/多目标适用性。");
         text.AppendLine("完整原子参数、Cost/效果正文、场景与路由候选保存在同次生成的JSON审计产物；程序标签verified仅为既有目录状态。").AppendLine();
+        text.AppendLine("## 已核对生命周期档案（不是执行回执）").AppendLine();
+        foreach (var group in inventory.Abilities.Where(row => row.Profile is not null).GroupBy(row => row.Profile!.Id))
+        {
+            var profile = group.First().Profile!;
+            text.AppendLine($"### {profile.Id}").AppendLine();
+            text.AppendLine($"精确绑定能力数：{group.Count()}。运行入口："
+                + string.Join("；", profile.RuntimeOwners.Select(owner => $"{owner.Key} = L12GameEngine.{owner.Value}")) + "。").AppendLine();
+            foreach (var exclusion in profile.NotApplicable)
+                text.AppendLine($"- {exclusion.Key}：{exclusion.Value}");
+            text.AppendLine();
+        }
         text.AppendLine("## 已关联具名证据（不是整能力验收通过）").AppendLine();
         text.AppendLine("| 能力ID | 测试方法 / 参数卡牌 | 已核对的用例范围 |");
         text.AppendLine("| --- | --- | --- |");
@@ -192,6 +211,51 @@ public sealed class EffectLifecycleInventoryTests
             Assert.DoesNotContain("reconnect", reference.Scopes);
             Assert.Equal("linked-not-execution-receipt", reference.Status);
         });
+    }
+
+    [Fact]
+    public void ReviewedRuleActionProfilesHaveExactOwnersAndReasonedExemptions()
+    {
+        var inventory = Build(Catalog);
+        var rows = inventory.Abilities.Where(row => row.Profile is not null).ToArray();
+        Assert.Equal(EffectLifecycleProfiles.NativeCavalryAbilityIds.Order(), rows.Select(row => row.Definition.AbilityId).Order());
+        Assert.All(rows, row =>
+        {
+            Assert.Equal("shared-rule-owner", row.EntryEvidence);
+            Assert.Equal("rule-action:cavalry-move", row.Profile!.Id);
+            Assert.Equal("CavalryMove", row.Profile.RuntimeOwners["command"]);
+            Assert.Equal("BuildRuleActionViews", row.Profile.RuntimeOwners["button"]);
+            Assert.DoesNotContain("runtime-owner", row.ReviewGaps);
+            Assert.DoesNotContain("protocol-profile", row.ReviewGaps);
+            Assert.All(row.Profile.NotApplicable, exclusion =>
+            {
+                Assert.NotEmpty(exclusion.Value);
+                Assert.DoesNotContain(exclusion.Key, row.ReviewGaps);
+            });
+            Assert.Contains("source-invalidated", row.ReviewGaps);
+            Assert.Contains("destination-invalidated", row.ReviewGaps);
+            Assert.Contains("normal", row.ReviewGaps); // Linked cases are not a release receipt.
+            Assert.Equal(4, row.TestReferences.Length);
+            Assert.All(row.TestReferences, reference => Assert.Equal("linked-not-execution-receipt", reference.Status));
+            Assert.Contains(row.TestReferences, reference => reference.Scopes.Contains("reconnect-after-command"));
+            Assert.Contains(row.TestReferences, reference => reference.Scopes.Contains("single-candidate-choice"));
+        });
+    }
+
+    [Fact]
+    public void ACardOrRuleActionLabelAloneCannotInheritAReviewedOwner()
+    {
+        var catalog = Catalog;
+        var inventory = Build(catalog);
+        foreach (var id in EffectLifecycleProfiles.NativeCavalryAbilityIds)
+        {
+            var row = inventory.Abilities.Single(item => item.Definition.AbilityId == id);
+            Assert.All(inventory.Abilities.Where(item => item.CardId == row.CardId && item.Definition.AbilityId != id),
+                other => Assert.Null(other.Profile));
+            var unrelated = row.Definition with { AbilityId = id + "-unreviewed", StructureHash = "changed" };
+            Assert.Equal("owner-unreviewed", EntryEvidence(unrelated, [], []));
+            Assert.False(EffectLifecycleProfiles.Read(catalog).ContainsKey(unrelated.AbilityId));
+        }
     }
 
     [Fact]

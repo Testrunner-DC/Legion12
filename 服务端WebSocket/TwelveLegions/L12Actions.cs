@@ -1348,7 +1348,8 @@ public sealed partial class L12GameEngine
 
     private CommandResult CavalryMove(int playerIndex, L12Command command)
     {
-        if (!CanAct(playerIndex)) return CommandResult.Reject("只能在自己的主要阶段发动骑兵位移");
+        if (CavalryMoveTimingUnavailableReason(playerIndex) is { } timingReason)
+            return CommandResult.Reject(timingReason);
         if (command.Row is null or < 0 or > 1 || command.Slot is null or < 0 or > 2) return CommandResult.Reject("目标阵地无效");
         var player = State.Players[playerIndex];
         var card = FindOnField(player, command.CardInstanceId, out var sourceRow, out var sourceSlot);

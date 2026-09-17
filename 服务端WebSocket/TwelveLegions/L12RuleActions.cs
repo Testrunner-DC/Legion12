@@ -23,9 +23,8 @@ public sealed partial class L12GameEngine
             : State.EffectPresentationSnapshot?.FirstOrDefault(item => item.SceneId == scene.SceneId)?.Text
                 ?? scene.DefaultText;
         var targetKeys = CavalryMoveDestinationKeys(player);
-        var reason = !CanAct(player.PlayerIndex)
-            ? "仅在我方主要阶段可以进行骑兵位移"
-            : CavalryMoveSourceUnavailableReason(player, card, row)
+        var reason = CavalryMoveTimingUnavailableReason(player.PlayerIndex)
+            ?? CavalryMoveSourceUnavailableReason(player, card, row)
                 ?? (targetKeys.Count == 0
                     ? State.ActiveDisaster?.CardId == "S01-DS03"
                         ? "〈腐秽大地〉持续期间没有可位移的前排空位"
@@ -34,6 +33,9 @@ public sealed partial class L12GameEngine
         return [new L12RuleActionView("cavalryMove", scene?.Label ?? "骑兵位移", text,
             reason is null, reason, scene?.SceneId, targetKeys)];
     }
+
+    private string? CavalryMoveTimingUnavailableReason(int playerIndex)
+        => CanAct(playerIndex) ? null : "仅在我方主要阶段且没有待处理操作时可以进行骑兵位移";
 
     private string? CavalryMoveSourceUnavailableReason(L12PlayerState player,
         L12CardInstance card, int row)

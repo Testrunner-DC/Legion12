@@ -4,7 +4,7 @@ using Xunit;
 
 namespace TwelveLegions.Tests;
 
-public sealed class CavalryMoveRuleActionTests
+public sealed partial class CavalryMoveRuleActionTests
 {
     private static L12Catalog Catalog => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -13,7 +13,7 @@ public sealed class CavalryMoveRuleActionTests
     {
         var game = new L12GameEngine(Catalog, "cavalry-rule-action", "CAVALRY", seed,
             ["甲", "乙"], [0, 0], skipPreparation: true,
-            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false, stateFormatVersion: 2);
         game.State.ActivePlayer = 0;
         game.State.Round = 2;
         game.State.TurnSerial = 4;
@@ -23,16 +23,17 @@ public sealed class CavalryMoveRuleActionTests
         return game;
     }
 
-    private static L12CardInstance Card(string cardId, string instanceId)
+    private static L12CardInstance Card(string cardId, string instanceId,
+        string? profession = null, string? cardType = null)
     {
         var definition = Catalog.Cards[cardId];
         return new L12CardInstance
         {
             InstanceId = instanceId, CardId = definition.Id, Name = definition.NameZh,
-            CardType = definition.CardType, Faction = definition.Faction,
+            CardType = cardType ?? definition.CardType, Faction = definition.Faction,
             ImageUrl = definition.ImageUrl, EffectText = definition.Effect,
-            Traits = [.. definition.Traits], Profession = definition.Profession,
-            EffectiveProfession = definition.Profession, Cost = definition.Cost ?? 0,
+            Traits = [.. definition.Traits], Profession = profession ?? definition.Profession,
+            EffectiveProfession = profession ?? definition.Profession, Cost = definition.Cost ?? 0,
             BaseTroops = definition.Troops ?? 0, Troops = definition.Troops ?? 0,
             OwnerIndex = 0, SummonRound = -1,
         };
@@ -138,7 +139,7 @@ public sealed class CavalryMoveRuleActionTests
         Assert.True(game.Handle(0,
             new L12Command("cavalryMove", cavalry.InstanceId, Row: 1, Slot: 2)).Accepted);
         var random = game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0);
-        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        var checkpoint = game.SerializeFullState();
         game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint, random,
             game.CardFactSignalSequence, autoPassEmptyResponses: false,
             concealHiddenResponseAvailability: false);
