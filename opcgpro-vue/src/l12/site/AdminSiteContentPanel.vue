@@ -5,10 +5,9 @@ import { adminApi, hasPermission, type Article, type ContentBatch, type ContentE
 import AdminArticlesPanel from './AdminArticlesPanel.vue'
 import MediaUploadField from './MediaUploadField.vue'
 import AdminRuleRulingsPanel from './AdminRuleRulingsPanel.vue'
-import AdminAlternateArtsPanel from './AdminAlternateArtsPanel.vue'
 import { createHomeHeroSlide, createHomeNotice, defaultHomeComposition, defaultSiteLegal, homeCompositionKey, parseHomeComposition, parseSiteLegal, serializeHomeComposition, serializeSiteLegal, siteLegalKey, type HomeComposition, type HomeNotice, type SiteLegalContent } from './homeContent'
 
-type SiteSection = 'media' | 'hero' | 'notices' | 'home-news' | 'home-product' | 'home-video' | 'news' | 'video' | 'product' | 'rules' | 'alternate-arts' | 'categories' | 'legal'
+type SiteSection = 'media' | 'hero' | 'notices' | 'home-news' | 'home-product' | 'home-video' | 'news' | 'video' | 'product' | 'rules' | 'categories' | 'legal'
 const emit = defineEmits<{ notice: [value: string] }>()
 const section = ref<SiteSection>('media')
 const composition = reactive<HomeComposition>(defaultHomeComposition())
@@ -30,7 +29,7 @@ const sections: { id: SiteSection; label: string }[] = [
   { id: 'home-news', label: '资讯区外观' }, { id: 'news', label: '资讯稿件' },
   { id: 'home-product', label: '产品区外观' }, { id: 'product', label: '产品稿件' },
   { id: 'home-video', label: '视频区外观' }, { id: 'video', label: '视频稿件' },
-  { id: 'rules', label: '规则中心审核' }, { id: 'alternate-arts', label: '异画权益' }, { id: 'categories', label: '分类管理' }, { id: 'legal', label: '页尾与法务' },
+  { id: 'rules', label: '规则中心审核' }, { id: 'categories', label: '分类管理' }, { id: 'legal', label: '页尾与法务' },
 ]
 const mediaByKind = computed(() => media.value.filter(item => item.kind === mediaKind.value))
 const heroMedia = computed(() => media.value.filter(item => item.kind === 'hero'))
@@ -216,8 +215,6 @@ onMounted(load)
     <AdminArticlesPanel v-else-if="section === 'video'" kind="video" @notice="showNotice"/>
     <AdminArticlesPanel v-else-if="section === 'product'" kind="product" @notice="showNotice"/>
     <AdminRuleRulingsPanel v-else-if="section === 'rules'" @notice="showNotice"/>
-    <AdminAlternateArtsPanel v-else-if="section === 'alternate-arts'" @notice="showNotice"/>
-
     <section v-else-if="section === 'categories'" class="content-panel category-manager">
       <header><div><h3>分类管理</h3><p>分类完全由后台维护；非空分类删除时必须选择同类型启用分类迁移，否则服务端拒绝。</p></div><select v-model="categoryKind"><option value="news">资讯分类</option><option value="video">视频分类</option><option value="product">商品分类</option></select></header>
       <div class="new-category"><input v-model="newCategory.name" placeholder="新分类名称"><input v-model="newCategory.slug" placeholder="URL 标识（可留空）"><button @click="createCategory">新增分类</button></div>

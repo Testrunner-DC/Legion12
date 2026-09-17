@@ -13,6 +13,29 @@ namespace GrandUMIServer.Tests;
 public sealed class SiteContentPlatformStoreTests
 {
     [Fact]
+    public void AlternateArtProductsAreUniqueAndPersistAcrossStoreReload()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-alternate-art-products-{Guid.NewGuid():N}");
+        try
+        {
+            var path = Path.Combine(root, "platform.json");
+            var store = new L12PlatformStore(path);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var saved = store.SaveAlternateArtProduct(admin, new L12AlternateArtProductDraft(null, "S01 赛季典藏"));
+            Assert.Equal("S01 赛季典藏", saved.Name);
+            Assert.Throws<ArgumentException>(() => store.SaveAlternateArtProduct(admin,
+                new L12AlternateArtProductDraft(null, "s01 赛季典藏")));
+
+            var reloaded = new L12PlatformStore(path);
+            Assert.Contains(reloaded.AlternateArtProducts(), item => item.Id == saved.Id && item.Name == saved.Name);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void RuleRulingsPublishOnlyStructuredConfirmedEntries()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-rule-rulings-{Guid.NewGuid():N}");

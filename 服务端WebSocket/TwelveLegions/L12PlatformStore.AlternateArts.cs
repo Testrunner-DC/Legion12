@@ -1,25 +1,62 @@
 namespace TwelveLegions.Server;
 
-public sealed record L12AlternateArtView(string Id, string BaseCardId, string DisplayName, string MediaAssetId,
-    string ImageUrl, string ThumbnailUrl, bool Active, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record L12AlternateArtView(string Id, string ArtCode, string BaseCardId, string DisplayName, string MediaAssetId,
+    string ImageUrl, string ThumbnailUrl, bool Active, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
+    string ProductId = "", string ProductName = "");
+public sealed record L12AlternateArtProductView(string Id, string Name, bool Active,
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 public sealed record L12AlternateArtGrantView(string Id, string AccountId, string Username, string AlternateArtId,
     string SourceKind, string SourceReference, DateTimeOffset GrantedAt, DateTimeOffset? RevokedAt);
-public sealed record L12AlternateArtDraft(string? Id, string BaseCardId, string DisplayName, string MediaAssetId,
-    bool Active = true);
+public sealed record L12AlternateArtDraft(string? Id, string ArtCode, string BaseCardId, string DisplayName, string MediaAssetId,
+    bool Active = true, string ProductId = "");
+public sealed record L12AlternateArtProductDraft(string? Id, string Name, bool Active = true);
 public sealed record L12AlternateArtGrantDraft(string AlternateArtId, string Username, string SourceKind,
     string SourceReference = "");
 public sealed record L12AlternateArtAwardRuleView(string Id, string AlternateArtId, string Kind, string SeasonId,
-    string EventId, int MinimumTierIndex, bool Active, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+    string EventId, int MinimumTierIndex, bool Active, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
+    string MasterId = "");
 public sealed record L12AlternateArtAwardRuleDraft(string? Id, string AlternateArtId, string Kind, string SeasonId,
-    string EventId, int MinimumTierIndex, bool Active = true);
+    string EventId, int MinimumTierIndex, bool Active = true, string MasterId = "");
 public sealed record L12AlternateArtEventDispatchDraft(string RuleId, IReadOnlyList<string> Usernames);
+public sealed record L12AlternateArtRankedParticipantDispatchDraft(string AlternateArtId, string SeasonId = "");
+public sealed record L12AlternateArtRankedParticipantDispatchPreview(int EligibleAccounts, int AlreadyGranted,
+    int ToGrant, string SourceReference);
 
 public sealed partial class L12PlatformStore
 {
     private static readonly IReadOnlySet<string> AlternateArtGrantSources =
-        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "manual", "rank-reached", "season-final", "event" };
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "manual", "rank-reached", "season-final", "master-champion-season-final", "event", "ranked-participants" };
     private static readonly IReadOnlySet<string> AlternateArtAwardKinds =
-        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "rank-reached", "season-final", "event" };
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "rank-reached", "season-final", "master-champion-season-final", "event" };
+
+    public IReadOnlyList<L12AlternateArtProductView> AlternateArtProducts(bool includeInactive = false)
+    {
+        lock (_gate) return _data.AlternateArtProducts.Where(row => includeInactive || row.Active)
+            .OrderBy(row => row.Name, StringComparer.OrdinalIgnoreCase).Select(ToAlternateArtProductView).ToArray();
+    }
+
+    public L12AlternateArtProductView SaveAlternateArtProduct(L12AccountView actor, L12AlternateArtProductDraft draft,
+        L12AdminAuditContext? context = null)
+    {
+        lock (_gate)
+        {
+            var name = LimitSiteText(draft.Name, 100);
+            if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("异画归属产品名称不能为空");
+            var row = string.IsNullOrWhiteSpace(draft.Id) ? null : _data.AlternateArtProducts.FirstOrDefault(item => item.Id == draft.Id);
+            if (row is null && _data.AlternateArtProducts.Any(item => item.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                throw new ArgumentException("同名异画归属产品已存在");
+            var previous = row is null ? null : System.Text.Json.JsonSerializer.Serialize(ToAlternateArtProductView(row));
+            if (row is null) { row = new AlternateArtProductRow { CreatedByAccountId = actor.Id }; _data.AlternateArtProducts.Add(row); }
+            row.Name = name;
+            row.Active = draft.Active;
+            row.UpdatedAt = DateTimeOffset.UtcNow;
+            var view = ToAlternateArtProductView(row);
+            AddAdminAudit(actor, "alternate-art-product", previous is null ? "create" : "update", row.Id, previous,
+                System.Text.Json.JsonSerializer.Serialize(view), null, context);
+            Save();
+            return view;
+        }
+    }
 
     public IReadOnlyList<L12AlternateArtView> AlternateArts(bool includeInactive = false)
     {
@@ -43,6 +80,12 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
+            var existing = string.IsNullOrWhiteSpace(draft.Id) ? null : _data.AlternateArts.FirstOrDefault(item => item.Id == draft.Id);
+            var artCode = LimitSiteText(draft.ArtCode, 80).ToUpperInvariant();
+            if (string.IsNullOrWhiteSpace(artCode) && existing is null) throw new ArgumentException("新异画必须设置独立编号");
+            if (!string.IsNullOrWhiteSpace(artCode) && _data.AlternateArts.Any(item => item.Id != draft.Id
+                && item.ArtCode.Equals(artCode, StringComparison.OrdinalIgnoreCase)))
+                throw new ArgumentException("异画编号已被使用");
             var baseCardId = draft.BaseCardId?.Trim() ?? string.Empty;
             if (!_officialCards.ContainsKey(baseCardId)) throw new ArgumentException("异画必须绑定到现有的规则卡牌编号");
             var media = ActiveMedia(draft.MediaAssetId) ?? throw new ArgumentException("异画素材不存在或已删除");
@@ -50,7 +93,10 @@ public sealed partial class L12PlatformStore
                 throw new ArgumentException("异画必须使用“卡牌异画”素材上传入口的图片");
             var displayName = LimitSiteText(draft.DisplayName, 100);
             if (string.IsNullOrWhiteSpace(displayName)) throw new ArgumentException("异画名称不能为空");
-            var row = string.IsNullOrWhiteSpace(draft.Id) ? null : _data.AlternateArts.FirstOrDefault(item => item.Id == draft.Id);
+            var productId = draft.ProductId?.Trim() ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(productId) && !_data.AlternateArtProducts.Any(item => item.Id == productId && item.Active))
+                throw new ArgumentException("异画归属产品不存在或已停用");
+            var row = existing;
             var previous = row is null ? null : System.Text.Json.JsonSerializer.Serialize(ToAlternateArtView(row));
             if (row is null)
             {
@@ -58,8 +104,10 @@ public sealed partial class L12PlatformStore
                 _data.AlternateArts.Add(row);
             }
             row.BaseCardId = baseCardId;
+            row.ArtCode = artCode;
             row.DisplayName = displayName;
             row.MediaAssetId = media.Id;
+            row.ProductId = productId;
             row.Active = draft.Active;
             row.UpdatedAt = DateTimeOffset.UtcNow;
             var view = ToAlternateArtView(row);
@@ -145,7 +193,7 @@ public sealed partial class L12PlatformStore
             if (!AlternateArtAwardKinds.Contains(kind)) throw new ArgumentException("发放规则类型无效");
             var seasonId = LimitSiteText(draft.SeasonId, 100);
             var eventId = LimitSiteText(draft.EventId, 160);
-            if (kind is "rank-reached" or "season-final" && string.IsNullOrWhiteSpace(seasonId))
+            if (kind is "rank-reached" or "season-final" or "master-champion-season-final" && string.IsNullOrWhiteSpace(seasonId))
                 throw new ArgumentException("段位和赛季结算规则必须填写赛季编号");
             if (kind == "event" && string.IsNullOrWhiteSpace(eventId)) throw new ArgumentException("活动规则必须填写活动编号");
             if (draft.MinimumTierIndex is < 0 or > 4) throw new ArgumentException("最低段位只能为 0 至 4");
@@ -160,6 +208,7 @@ public sealed partial class L12PlatformStore
             row.Kind = kind;
             row.SeasonId = seasonId;
             row.EventId = eventId;
+            row.MasterId = LimitSiteText(draft.MasterId, 100);
             row.MinimumTierIndex = draft.MinimumTierIndex;
             row.Active = draft.Active;
             row.UpdatedAt = DateTimeOffset.UtcNow;
@@ -197,6 +246,47 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    public L12AlternateArtRankedParticipantDispatchPreview PreviewRankedParticipantAlternateArtDispatch(
+        L12AlternateArtRankedParticipantDispatchDraft draft)
+    {
+        lock (_gate)
+        {
+            var art = _data.AlternateArts.FirstOrDefault(row => row.Id == draft.AlternateArtId && row.Active)
+                ?? throw new KeyNotFoundException("异画不存在或未启用");
+            var seasonId = LimitSiteText(draft.SeasonId, 100);
+            var sourceReference = string.IsNullOrWhiteSpace(seasonId) ? "beta-ranked-participants" : $"ranked-participants:{seasonId}";
+            var accounts = _data.RankedProfiles.Where(row => string.IsNullOrWhiteSpace(seasonId)
+                    || row.SeasonId.Equals(seasonId, StringComparison.OrdinalIgnoreCase))
+                .Select(row => row.AccountId).Distinct(StringComparer.OrdinalIgnoreCase)
+                .Where(accountId => _data.Accounts.Any(account => account.Id == accountId && !account.Deleted)).ToArray();
+            var alreadyGranted = accounts.Count(accountId => _data.AlternateArtGrants.Any(row => row.AccountId == accountId
+                && row.AlternateArtId == art.Id && row.RevokedAt is null && row.SourceKind == "ranked-participants"
+                && row.SourceReference == sourceReference));
+            return new L12AlternateArtRankedParticipantDispatchPreview(accounts.Length, alreadyGranted,
+                accounts.Length - alreadyGranted, sourceReference);
+        }
+    }
+
+    public IReadOnlyList<L12AlternateArtGrantView> DispatchRankedParticipantAlternateArt(L12AccountView actor,
+        L12AlternateArtRankedParticipantDispatchDraft draft, L12AdminAuditContext? context = null)
+    {
+        lock (_gate)
+        {
+            var preview = PreviewRankedParticipantAlternateArtDispatch(draft);
+            var seasonId = draft.SeasonId?.Trim() ?? string.Empty;
+            var accounts = _data.RankedProfiles.Where(row => string.IsNullOrWhiteSpace(seasonId)
+                    || row.SeasonId.Equals(seasonId, StringComparison.OrdinalIgnoreCase))
+                .Select(row => row.AccountId).Distinct(StringComparer.OrdinalIgnoreCase)
+                .Where(accountId => _data.Accounts.Any(account => account.Id == accountId && !account.Deleted)).ToArray();
+            var grants = accounts.Select(accountId => ToAlternateArtGrantView(GrantAlternateArtToAccountLocked(accountId,
+                draft.AlternateArtId, "ranked-participants", preview.SourceReference, actor.Id))).ToArray();
+            AddAdminAudit(actor, "alternate-art-grant", "dispatch-ranked-participants", draft.AlternateArtId, null,
+                $"source={preview.SourceReference};eligible={preview.EligibleAccounts};new={preview.ToGrant}", null, context);
+            Save();
+            return grants;
+        }
+    }
+
     private void ApplyRankReachedAlternateArtAwardsLocked(string accountId, string seasonId, int tierIndex)
     {
         foreach (var rule in _data.AlternateArtAwardRules.Where(row => row.Active && row.Kind == "rank-reached"
@@ -213,6 +303,20 @@ public sealed partial class L12PlatformStore
                      && tierIndex >= row.MinimumTierIndex))
             if (IsActiveAlternateArt(rule.AlternateArtId))
                 GrantAlternateArtToAccountLocked(accountId, rule.AlternateArtId, "season-final", seasonId, "system");
+    }
+
+    private void ApplyMasterChampionSeasonFinalAlternateArtAwardsLocked(
+        IReadOnlyDictionary<string, RankedMasterRecordRow> champions, string seasonId)
+    {
+        foreach (var rule in _data.AlternateArtAwardRules.Where(row => row.Active && row.Kind == "master-champion-season-final"
+                     && string.Equals(row.SeasonId, seasonId, StringComparison.OrdinalIgnoreCase)))
+        {
+            if (!IsActiveAlternateArt(rule.AlternateArtId)) continue;
+            foreach (var champion in champions.Values.Where(item => string.IsNullOrWhiteSpace(rule.MasterId)
+                         || item.MasterId.Equals(rule.MasterId, StringComparison.OrdinalIgnoreCase)))
+                GrantAlternateArtToAccountLocked(champion.AccountId, rule.AlternateArtId,
+                    "master-champion-season-final", $"{seasonId}:{champion.MasterId}", "system");
+        }
     }
 
     private bool IsActiveAlternateArt(string alternateArtId)
@@ -271,9 +375,12 @@ public sealed partial class L12PlatformStore
         return result;
     }
 
-    private L12AlternateArtView ToAlternateArtView(AlternateArtRow row) => new(row.Id, row.BaseCardId, row.DisplayName,
+    private L12AlternateArtView ToAlternateArtView(AlternateArtRow row) => new(row.Id, row.ArtCode, row.BaseCardId, row.DisplayName,
         row.MediaAssetId, SiteMediaUrl(row.MediaAssetId), SiteMediaUrl(row.MediaAssetId, "thumbnail"), row.Active,
-        row.CreatedAt, row.UpdatedAt);
+        row.CreatedAt, row.UpdatedAt, row.ProductId,
+        _data.AlternateArtProducts.FirstOrDefault(item => item.Id == row.ProductId)?.Name ?? "");
+    private static L12AlternateArtProductView ToAlternateArtProductView(AlternateArtProductRow row)
+        => new(row.Id, row.Name, row.Active, row.CreatedAt, row.UpdatedAt);
 
     private L12AlternateArtGrantView ToAlternateArtGrantView(AlternateArtGrantRow row)
         => new(row.Id, row.AccountId, _data.Accounts.FirstOrDefault(account => account.Id == row.AccountId)?.Username ?? "已删除账号",
@@ -281,5 +388,5 @@ public sealed partial class L12PlatformStore
 
     private static L12AlternateArtAwardRuleView ToAlternateArtAwardRuleView(AlternateArtAwardRuleRow row)
         => new(row.Id, row.AlternateArtId, row.Kind, row.SeasonId, row.EventId, row.MinimumTierIndex,
-            row.Active, row.CreatedAt, row.UpdatedAt);
+            row.Active, row.CreatedAt, row.UpdatedAt, row.MasterId);
 }

@@ -1918,6 +1918,20 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var account = _platform.Authenticate(request.Headers.Authorization);
             return account is null ? Results.Unauthorized() : Results.Ok(_platform.OwnedAlternateArts(account.Id));
         });
+        // 画廊是公开展示；权益只在构筑选用和开局二次校验时生效。
+        _app.MapGet("/api/alternate-arts", () => Results.Ok(_platform.AlternateArts()));
+        _app.MapGet("/api/admin/alternate-art-products", (HttpRequest request, bool? includeInactive) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            return Results.Ok(_platform.AlternateArtProducts(includeInactive == true));
+        });
+        _app.MapPut("/api/admin/alternate-art-products", (HttpRequest request, L12AlternateArtProductDraft draft) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try { return Results.Ok(_platform.SaveAlternateArtProduct(authenticated.Account, draft, RequestAuditContext(request, permission))); }
+            catch (ArgumentException error) { return ApiError(request, "alternate_art_product_invalid", error.Message, StatusCodes.Status400BadRequest); }
+        });
         _app.MapGet("/api/admin/alternate-arts", (HttpRequest request, bool? includeInactive) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
@@ -1970,6 +1984,19 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             try { return Results.Ok(_platform.DispatchAlternateArtEvent(authenticated.Account, draft, RequestAuditContext(request, permission))); }
             catch (KeyNotFoundException error) { return ApiError(request, "alternate_art_event_target_missing", error.Message, StatusCodes.Status404NotFound); }
             catch (ArgumentException error) { return ApiError(request, "alternate_art_event_invalid", error.Message, StatusCodes.Status400BadRequest); }
+        });
+        _app.MapPost("/api/admin/alternate-art-grants/ranked-participants/preview", (HttpRequest request, L12AlternateArtRankedParticipantDispatchDraft draft) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            try { return Results.Ok(_platform.PreviewRankedParticipantAlternateArtDispatch(draft)); }
+            catch (KeyNotFoundException error) { return ApiError(request, "alternate_art_missing", error.Message, StatusCodes.Status404NotFound); }
+        });
+        _app.MapPost("/api/admin/alternate-art-grants/ranked-participants/dispatch", (HttpRequest request, L12AlternateArtRankedParticipantDispatchDraft draft) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try { return Results.Ok(_platform.DispatchRankedParticipantAlternateArt(authenticated.Account, draft, RequestAuditContext(request, permission))); }
+            catch (KeyNotFoundException error) { return ApiError(request, "alternate_art_missing", error.Message, StatusCodes.Status404NotFound); }
         });
         _app.MapPut("/api/admin/effects/{cardId}/presentations/{sceneId}",
             (HttpRequest request, string cardId, string sceneId, EffectPresentationRequest body) =>

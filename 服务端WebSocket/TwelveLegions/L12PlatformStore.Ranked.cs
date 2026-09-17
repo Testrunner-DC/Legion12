@@ -1039,6 +1039,7 @@ public sealed partial class L12PlatformStore
             ApplySeasonFinalAlternateArtAwardsLocked(row.AccountId, outgoingSeasonId, TierIndex(row));
             ArchiveRankedProfile(row, outgoingSeasonName, true, PlayerTitles(row, FactionRank(row), champions));
         }
+        ApplyMasterChampionSeasonFinalAlternateArtAwardsLocked(champions, outgoingSeasonId);
     }
 
     private L12RankedProfileView ProfileView(RankedProfileRow row)

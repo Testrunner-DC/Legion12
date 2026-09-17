@@ -262,6 +262,7 @@ public sealed partial class L12PlatformStore
         public List<ContentRow> ContentEntries { get; set; } = [];
         public List<ArticleRow> Articles { get; set; } = [];
         public List<SiteMediaRow> SiteMedia { get; set; } = [];
+        public List<AlternateArtProductRow> AlternateArtProducts { get; set; } = [];
         public List<AlternateArtRow> AlternateArts { get; set; } = [];
         public List<AlternateArtGrantRow> AlternateArtGrants { get; set; } = [];
         public List<AlternateArtAwardRuleRow> AlternateArtAwardRules { get; set; } = [];
@@ -305,9 +306,21 @@ public sealed partial class L12PlatformStore
     private sealed class AlternateArtRow
     {
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string ArtCode { get; set; } = string.Empty;
         public string BaseCardId { get; set; } = string.Empty;
         public string DisplayName { get; set; } = string.Empty;
         public string MediaAssetId { get; set; } = string.Empty;
+        public string ProductId { get; set; } = string.Empty;
+        public bool Active { get; set; } = true;
+        public string CreatedByAccountId { get; set; } = string.Empty;
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
+    private sealed class AlternateArtProductRow
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string Name { get; set; } = string.Empty;
         public bool Active { get; set; } = true;
         public string CreatedByAccountId { get; set; } = string.Empty;
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -331,10 +344,11 @@ public sealed partial class L12PlatformStore
     {
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public string AlternateArtId { get; set; } = string.Empty;
-        /// <summary>rank-reached / season-final / event</summary>
+        /// <summary>rank-reached / season-final / master-champion-season-final / event</summary>
         public string Kind { get; set; } = string.Empty;
         public string SeasonId { get; set; } = string.Empty;
         public string EventId { get; set; } = string.Empty;
+        public string MasterId { get; set; } = string.Empty;
         public int MinimumTierIndex { get; set; }
         public bool Active { get; set; } = true;
         public string CreatedByAccountId { get; set; } = string.Empty;

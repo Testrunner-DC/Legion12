@@ -6,6 +6,7 @@ import { cardArchiveProducts, displayCardNumber, filterableCardCost, loadCardArc
 import { cardErrataForCard, type CardErrataRecord } from './data/cardErrata'
 import CardImage from './CardImage.vue'
 import CardDetailContent from './CardDetailContent.vue'
+import { alternateArtApi, type AlternateArt } from './platform'
 
 type CatalogCard = DeckCard
 type ArchivePage = 'catalog' | 'gallery'
@@ -31,6 +32,7 @@ const galleryVariantPatterns = [
   /^ST\d{2}-C1st$/,
 ]
 const cards = ref<CatalogCard[]>([])
+const uploadedGalleryArts = ref<AlternateArt[]>([])
 const loading = ref(true)
 const loadError = ref('')
 const page = ref<ArchivePage>('catalog')
@@ -50,13 +52,25 @@ const modalCloseButton = ref<HTMLButtonElement | null>(null)
 let modalTrigger: HTMLElement | null = null
 
 const logicalCards = computed(() => groupArchiveCards(cards.value))
-const galleryCards = computed(() => cards.value.filter(isGalleryVariant).sort(compareArchiveVersions))
+const galleryCards = computed(() => {
+  const legacy = cards.value.filter(isGalleryVariant)
+  const uploaded = uploadedGalleryArts.value.flatMap(art => {
+    const base = cards.value.find(card => card.id === art.baseCardId)
+    if (!base) return []
+    return [{ ...base, id: `ALT-${art.artCode || art.id}`, number: art.artCode || `ALT-${art.id.slice(0, 8)}`,
+      nameZh: `${base.nameZh} · ${art.displayName}`, imageUrl: art.imageUrl, archiveBaseCardId: base.id,
+      products: art.productName ? [art.productName] : base.products }]
+  })
+  return [...legacy, ...uploaded].sort(compareArchiveVersions)
+})
 const productOptions = computed(() => cardArchiveProducts.filter(value => cards.value.some(card => card.products?.includes(value))))
 
 onMounted(async () => {
   window.addEventListener('keydown', onWindowKeydown)
   try {
-    cards.value = await loadCardArchiveCatalog()
+    const [catalog, arts] = await Promise.all([loadCardArchiveCatalog(), alternateArtApi.gallery()])
+    cards.value = catalog
+    uploadedGalleryArts.value = arts
     const first = logicalCards.value[0]
     if (first) selectLogical(first)
     selectedGalleryId.value = galleryCards.value[0]?.id ?? ''

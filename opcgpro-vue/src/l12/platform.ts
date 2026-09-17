@@ -177,9 +177,11 @@ export interface AdminAnalyticsCoverage {
   exactDeckSnapshots: number; inferredDeckSnapshots: number; privateDuringActiveMatch: boolean
   metrics: AdminAnalyticsMetricCoverage[]; limitations: string[]
 }
-export interface AlternateArt { id: string; baseCardId: string; displayName: string; mediaAssetId: string; imageUrl: string; thumbnailUrl: string; active: boolean; createdAt: string; updatedAt: string }
-export interface AlternateArtGrant { id: string; accountId: string; username: string; alternateArtId: string; sourceKind: 'manual' | 'rank-reached' | 'season-final' | 'event'; sourceReference: string; grantedAt: string; revokedAt?: string }
-export interface AlternateArtAwardRule { id: string; alternateArtId: string; kind: 'rank-reached' | 'season-final' | 'event'; seasonId: string; eventId: string; minimumTierIndex: number; active: boolean; createdAt: string; updatedAt: string }
+export interface AlternateArt { id: string; artCode: string; baseCardId: string; displayName: string; mediaAssetId: string; imageUrl: string; thumbnailUrl: string; active: boolean; createdAt: string; updatedAt: string; productId?: string; productName?: string }
+export interface AlternateArtProduct { id: string; name: string; active: boolean; createdAt: string; updatedAt: string }
+export interface AlternateArtRankedParticipantDispatchPreview { eligibleAccounts: number; alreadyGranted: number; toGrant: number; sourceReference: string }
+export interface AlternateArtGrant { id: string; accountId: string; username: string; alternateArtId: string; sourceKind: 'manual' | 'rank-reached' | 'season-final' | 'master-champion-season-final' | 'event' | 'ranked-participants'; sourceReference: string; grantedAt: string; revokedAt?: string }
+export interface AlternateArtAwardRule { id: string; alternateArtId: string; kind: 'rank-reached' | 'season-final' | 'master-champion-season-final' | 'event'; seasonId: string; eventId: string; minimumTierIndex: number; active: boolean; createdAt: string; updatedAt: string; masterId?: string }
 export interface AdminAnalyticsMetricCoverage {
   metric: string; unit: string; eligibleSamples: number; observedSamples: number
   exactFacts: number; inferredFacts: number; partialFacts: number
@@ -895,9 +897,13 @@ export const adminApi = {
   uploadSiteMedia: (form: FormData) => platformRequest<SiteMedia>('/api/admin/site/media', { method: 'POST', body: form }),
   deleteSiteMedia: (id: string) => platformRequest<void>(`/api/admin/site/media/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   alternateArts: (includeInactive = true) => platformRequest<AlternateArt[]>(`/api/admin/alternate-arts?includeInactive=${includeInactive}`),
-  saveAlternateArt: (draft: Partial<AlternateArt> & Pick<AlternateArt, 'baseCardId' | 'displayName' | 'mediaAssetId'>) => platformRequest<AlternateArt>('/api/admin/alternate-arts', { method: 'PUT', body: JSON.stringify(draft) }),
+  alternateArtProducts: (includeInactive = true) => platformRequest<AlternateArtProduct[]>(`/api/admin/alternate-art-products?includeInactive=${includeInactive}`),
+  saveAlternateArtProduct: (draft: Partial<AlternateArtProduct> & Pick<AlternateArtProduct, 'name'>) => platformRequest<AlternateArtProduct>('/api/admin/alternate-art-products', { method: 'PUT', body: JSON.stringify(draft) }),
+  saveAlternateArt: (draft: Partial<AlternateArt> & Pick<AlternateArt, 'artCode' | 'baseCardId' | 'displayName' | 'mediaAssetId'>) => platformRequest<AlternateArt>('/api/admin/alternate-arts', { method: 'PUT', body: JSON.stringify(draft) }),
   alternateArtGrants: (username?: string) => platformRequest<AlternateArtGrant[]>(`/api/admin/alternate-art-grants${username ? `?username=${encodeURIComponent(username)}` : ''}`),
   grantAlternateArt: (draft: { alternateArtId: string; username: string; sourceKind: AlternateArtGrant['sourceKind']; sourceReference?: string }) => platformRequest<AlternateArtGrant>('/api/admin/alternate-art-grants', { method: 'POST', body: JSON.stringify(draft) }),
+  previewAlternateArtRankedParticipants: (draft: { alternateArtId: string; seasonId?: string }) => platformRequest<AlternateArtRankedParticipantDispatchPreview>('/api/admin/alternate-art-grants/ranked-participants/preview', { method: 'POST', body: JSON.stringify(draft) }),
+  dispatchAlternateArtRankedParticipants: (draft: { alternateArtId: string; seasonId?: string }) => platformRequest<AlternateArtGrant[]>('/api/admin/alternate-art-grants/ranked-participants/dispatch', { method: 'POST', body: JSON.stringify(draft) }),
   revokeAlternateArtGrant: (id: string) => platformRequest<void>(`/api/admin/alternate-art-grants/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   usernameChangeRequests: (status = '') => platformRequest<UsernameChangeRequest[]>(`/api/admin/username-change-requests${status ? `?status=${encodeURIComponent(status)}` : ''}`),
   reviewUsernameChangeRequest: (id: string, approve: boolean, note = '') => platformRequest<UsernameChangeRequest>(`/api/admin/username-change-requests/${encodeURIComponent(id)}/review`, { method: 'POST', body: JSON.stringify({ approve, note }) }),
@@ -1108,6 +1114,7 @@ export const friendApi = {
 /** 玩家自己的异画库存；卡图选择仍由服务端在开局时二次校验。 */
 export const alternateArtApi = {
   mine: () => platformRequest<AlternateArt[]>('/api/me/alternate-arts'),
+  gallery: () => platformRequest<AlternateArt[]>('/api/alternate-arts'),
 }
 
 export const publicDeckApi = {
