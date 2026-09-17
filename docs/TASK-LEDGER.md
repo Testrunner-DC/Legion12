@@ -9,7 +9,7 @@
 
 - 已完成：turn-phase、card-effect、gm三种来源随 PendingDisasterTriggerSource 保存，回合阶段自然增长与主动军团/卡效跨阈值不再共享错误的 Round == 1 判断；排程、Stack、日志、回放与V2恢复同源。
 - 〈诸神黄昏〉仅 turn-phase 走双方各抽2；card-effect 走其余玩家抽2、结束当前回合并追加回合。后续天灾分支必须读来源事实。
-- 功能提交`0a384b7`；聚焦天灾组105/105、Focused规则3301/3301、Batch全池审计和Release配置规则3301/3301通过；待发布前提交级Release验证，未部署。
+- 功能提交`0a384b7`、文档提交`db0847c`；聚焦天灾组105/105、Focused规则3301/3301、Batch全池审计和提交级Release（平台116/116、UI323、连接23、卡图324+42及前后端生产构建）通过；证据`D:\GPT\Legion12\artifacts\deploy\db0847c696675eeed82bddfed95a4773ba659806\l12-release-db0847c696675eeed82bddfed95a4773ba659806.json`，待同步，未部署。
 
 ## EFFECT-20260914-SIMPLE-SELF-TROOP-BUFF：进攻时自身单段兵力增益统一协议
 

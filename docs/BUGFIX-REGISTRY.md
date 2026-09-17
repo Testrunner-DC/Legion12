@@ -5,7 +5,7 @@
 - 根因：BeginDisasterTrigger以 Round == 1 写入 opening，把“开场触发”误判为整局首回合，而非用户已裁定的“回合阶段自然增长导致的天灾触发”。〈诸神黄昏〉在后续回合自然达到阈值时因此走了主动分支，错误结束当前回合并追加额外回合。
 - 同型扫描：全量检查回合阶段入口、军团登场、效果生成登场、诸葛亮、祷告仪式、黑色莲花等所有天灾值调整、延后排程、GM调试、日志、表现与V2恢复。只有〈诸神黄昏〉读取来源作规则分支；所有触发型天灾均共享同一来源、排程与日志协议。
 - 修复：新增可序列化 PendingDisasterTriggerSource。结束阶段的自然+1预置 turn-phase；军团登场与卡牌效果跨阈值记录 card-effect；GM显式标为 gm。排程关闭、翻灾、Stack数据、日志和回放全程传递同一来源；旧检查点保留 opening 回退兼容。〈诸神黄昏〉仅在 turn-phase 时双方各抽2，否则走主动分支。
-- 防回滚：NewSystemsTests 覆盖后续回合自然增长、真实带天灾等级军团登场、V2检查点恢复后的来源保留；ApprovedTriggerBoundaryRegressionTests、天灾等级和延后排程相邻组共105/105通过。功能提交`0a384b7`已通过Focused规则3301/3301、Batch全池审计和Release配置规则3301/3301；待干净提交的最终Release门禁，未部署。
+- 防回滚：NewSystemsTests 覆盖后续回合自然增长、真实带天灾等级军团登场、V2检查点恢复后的来源保留；ApprovedTriggerBoundaryRegressionTests、天灾等级和延后排程相邻组共105/105通过。功能提交`0a384b7`与文档提交`db0847c`已通过Focused规则3301/3301、Batch全池审计及提交级Release：平台116/116、UI323、连接23、卡图324+42与前后端生产构建；证据`D:\GPT\Legion12\artifacts\deploy\db0847c696675eeed82bddfed95a4773ba659806\l12-release-db0847c696675eeed82bddfed95a4773ba659806.json`，未部署。
 
 ## 2026-09-14 进攻时支付Cost后自身单段兵力增益仍由六套逐卡流程结算
 
