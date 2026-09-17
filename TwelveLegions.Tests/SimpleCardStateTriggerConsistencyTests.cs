@@ -348,10 +348,72 @@ public sealed class SimpleCardStateTriggerConsistencyTests
         Choose(game, "pass");
         Choose(game, "pass");
 
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
             && entry.Text.Contains("已不再为休整状态", StringComparison.Ordinal));
         Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
             && entry.EffectResultStatus == "failed"
             && entry.EffectText?.Contains("转为活跃", StringComparison.Ordinal) == true);
+    }
+
+    [Theory]
+    [InlineData("field", "normal")]
+    [InlineData("relic", "normal")]
+    [InlineData("morale", "normal")]
+    [InlineData("field", "moved")]
+    [InlineData("relic", "moved")]
+    [InlineData("morale", "moved")]
+    [InlineData("field", "ready")]
+    [InlineData("relic", "ready")]
+    [InlineData("morale", "ready")]
+    [InlineData("field", "negated")]
+    [InlineData("relic", "negated")]
+    [InlineData("morale", "negated")]
+    public void ReadyAuthorityBindsOriginalZoneAcrossRecoveryAndRejectsDuplicate(string zone, string change)
+    {
+        var game = Create(11116);
+        var player = game.State.Players[0];
+        var source = Card("S01-0210", "ready-zone-source");
+        var target = Card(zone == "relic" ? "S01-0417" : "S01-0212", "ready-zone-target");
+        target.Troops = 3000;
+        target.Tapped = true;
+        var morale = new L12MoraleCard { CardId = "ST05-C1", InstanceId = "ready-zone-morale", Tapped = true };
+        player.Field[0][0] = source;
+        if (zone == "field") player.Field[0][1] = target;
+        else if (zone == "relic") player.Relic = target;
+        else player.Morale.Add(morale);
+
+        if (zone == "morale") Invoke(game, "ReadyMoraleByEffect", 0, source, morale, "测试士气转为活跃");
+        else Invoke(game, "ReadyCardByEffect", 0, source, target, "测试卡牌转为活跃", null);
+        Assert.Equal(zone, Assert.Single(game.State.AuthorityEvents, e => e.Type == "effect-ready").OriginZone);
+        var pending = Assert.Single(game.State.PendingPrompts);
+        if (change == "moved")
+        {
+            if (zone == "field") { player.Field[0][1] = null; player.Relic = target; }
+            else if (zone == "relic") { player.Relic = null; player.Field[0][1] = target; }
+            else { player.Morale.Remove(morale); player.MoraleDeck.Add(morale); }
+        }
+        else if (change == "ready") { target.Tapped = false; morale.Tapped = false; }
+        else if (change == "negated") Assert.Single(game.State.EffectStack).Negated = true;
+
+        game = L12GameEngine.RestoreCheckpoint(Catalog,
+            game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,"),
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        var item = Assert.Single(game.State.EffectStack);
+        PassResponses(game);
+        player = game.State.Players[0];
+        var tapped = zone == "morale"
+            ? player.Morale.Concat(player.MoraleDeck).Single(c => c.InstanceId == morale.InstanceId).Tapped
+            : (player.Relic?.InstanceId == target.InstanceId ? player.Relic : player.Field[0][1])!.Tapped;
+        Assert.Equal(change is "moved" or "negated", tapped);
+        if (change is "moved" or "ready")
+        {
+            Assert.Equal("failed", item.Data["effectResultStatus"]);
+            Assert.Single(game.State.Events, e => e.Type == "effect-failed");
+        }
+        Assert.Empty(game.State.EffectStack);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.False(game.Handle(pending.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: pending.PromptId, Choice: "pass")).Accepted);
     }
 }

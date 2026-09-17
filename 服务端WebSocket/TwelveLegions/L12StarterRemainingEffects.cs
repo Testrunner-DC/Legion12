@@ -1197,14 +1197,14 @@ public sealed partial class L12GameEngine
             case "gareth-kill-ready":
             {
                 var gareth = FindOnField(player, item.SourceInstanceId, out _, out _);
-                if (gareth is not null)
+                if (gareth is not null && IsFieldLegion(gareth))
                 {
                     ReadyCardByEffect(item.Controller, gareth, gareth, "加雷斯因击杀时效果转为活跃");
                     AddTimedModifier(gareth, 2000, 0, State.TurnSerial, item.SourceName);
                     AddEvent("effect", item.Controller, "加雷斯本回合兵力+2000", gareth);
                 }
-                else AddEvent("effect-cancelled", item.Controller,
-                    "加雷斯已经离场，本次转为活跃及兵力+2000未生效");
+                else RecordResolutionFailure(item,
+                    "来源军团已离场或不再是军团，无法转为活跃或获得兵力");
                 FinishStackItem(item);
                 return true;
             }
@@ -1304,14 +1304,16 @@ public sealed partial class L12GameEngine
             }
             case "nuada-rune-buff":
             {
-                var target = FindOnField(player, StarterDeclaredOne(item, "buffTarget"), out _, out _);
-                if (target is not null && L12StructuredCardRules.HasFaction(player, target, "otherworld"))
+                var targetId = StarterDeclaredOne(item, "buffTarget");
+                var target = FindOnField(player, targetId, out _, out _);
+                if (target is not null && IsFieldLegion(target)
+                    && L12StructuredCardRules.HasFaction(player, target, "otherworld"))
                 {
                     AddTimedModifier(target, 1000, 0, State.TurnSerial, item.SourceName);
                     AddEvent("effect", item.Controller, $"〈{target.Name}〉本回合兵力+1000", target);
                 }
-                else AddEvent("effect-cancelled", item.Controller,
-                    "银臂努阿达选择的彼界军团已离场，本次兵力+1000未生效");
+                else RecordTargetSettlementFailure(item, targetId,
+                    "所选彼界军团已离场、不再是军团或失去【彼界】特征");
                 FinishStackItem(item);
                 return true;
             }
@@ -1363,20 +1365,25 @@ public sealed partial class L12GameEngine
             }
             case "legendary-bloodline-base":
             {
-                var target = FindOnField(player, StarterDeclaredOne(item, "buffTarget"), out _, out _);
-                if (target is not null && L12StructuredCardRules.HasFaction(player, target, "asgard"))
+                var targetId = StarterDeclaredOne(item, "buffTarget");
+                var target = FindOnField(player, targetId, out _, out _);
+                if (target is not null && IsFieldLegion(target)
+                    && L12StructuredCardRules.HasFaction(player, target, "asgard"))
                 {
                     AddTimedModifier(target, 2000, 0, State.TurnSerial, item.SourceName);
                     AddEvent("effect", item.Controller, $"〈{target.Name}〉本回合兵力+2000", target);
                 }
-                else AddEvent("effect-cancelled", item.Controller, "所选阿斯加德军团已离场，本次兵力+2000未生效");
+                else RecordTargetSettlementFailure(item, targetId,
+                    "所选阿斯加德军团已离场、不再是军团或失去【阿斯加德】特征");
                 FinishStackItem(item);
                 return true;
             }
             case "legendary-bloodline-grave":
             {
-                var target = FindOnField(player, StarterDeclaredOne(item, "buffTarget"), out _, out _);
-                if (target is not null && L12StructuredCardRules.HasFaction(player, target, "asgard"))
+                var targetId = StarterDeclaredOne(item, "buffTarget");
+                var target = FindOnField(player, targetId, out _, out _);
+                if (target is not null && IsFieldLegion(target)
+                    && L12StructuredCardRules.HasFaction(player, target, "asgard"))
                 {
                     var bonus = CountGraveFactionLegions(player, "asgard") / 3 * 1000;
                     if (bonus > 0)
@@ -1387,23 +1394,28 @@ public sealed partial class L12GameEngine
                     }
                     else AddEvent("effect", item.Controller, "墓地中不足3张阿斯加德军团，没有获得额外兵力", target);
                 }
-                else AddEvent("effect-cancelled", item.Controller, "所选阿斯加德军团已离场，本次按墓地数量增加兵力未生效");
+                else RecordTargetSettlementFailure(item, targetId,
+                    "所选阿斯加德军团已离场、不再是军团或失去【阿斯加德】特征");
                 FinishStackItem(item);
                 return true;
             }
             case "invasion-fire":
             {
                 var source = FindSource(item);
-                var target = FindOnField(player, StarterDeclaredOne(item, "attachTarget"), out _, out _);
-                if (source is not null && target is not null
-                    && L12StructuredCardRules.HasFaction(player, target, "gaotianyuan")
-                    && player.Resolving.Remove(source))
+                var targetId = StarterDeclaredOne(item, "attachTarget");
+                var target = FindOnField(player, targetId, out _, out _);
+                if (target is null || !IsFieldLegion(target)
+                    || !L12StructuredCardRules.HasFaction(player, target, "gaotianyuan"))
+                    RecordTargetSettlementFailure(item, targetId,
+                        "所选高天原军团已离场、不再是军团或失去【高天原】特征");
+                else if (source is null || !player.Resolving.Remove(source))
+                    RecordResolutionFailure(item, "待叠放的〈侵略如火〉已不在结算区");
+                else
                 {
                     source.OwnerIndex ??= item.Controller;
                     target.AttachedCards.Add(source);
                     AddEvent("attach", item.Controller, $"〈{source.Name}〉叠放至〈{target.Name}〉下方；该军团获得强攻", source, target);
                 }
-                else AddEvent("effect-cancelled", item.Controller, "所选高天原军团已离场，〈侵略如火〉未能叠放");
                 FinishStackItem(item);
                 return true;
             }
@@ -1414,7 +1426,8 @@ public sealed partial class L12GameEngine
                     ? StarterDeclaredOne(item, "shockTarget")
                     : StarterDeclaredOne(item, "rangedTarget");
                 var target = FindOnField(player, targetId, out var targetRow, out _);
-                if (target is not null && L12StructuredCardRules.HasFaction(player, target, "olympus")
+                if (target is not null && IsFieldLegion(target)
+                    && L12StructuredCardRules.HasFaction(player, target, "olympus")
                     && (mode != "mode:ranged" || L12StructuredCardRules.IsRangedLegion(target, targetRow)))
                 {
                     if (mode == "mode:shock")
@@ -1430,7 +1443,8 @@ public sealed partial class L12GameEngine
                         AddEvent("effect", item.Controller, $"〈{target.Name}〉本回合进攻时兵力+2000", target);
                     }
                 }
-                else AddEvent("effect-cancelled", item.Controller, "所选奥林匹斯军团已离场或不再符合条件");
+                else RecordTargetSettlementFailure(item, targetId,
+                    "所选奥林匹斯军团已离场、不再是军团或不再符合所选分支条件");
                 FinishStackItem(item);
                 return true;
             }
@@ -1551,8 +1565,7 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         if (player.Morale.FirstOrDefault(card => card.InstanceId == moraleId) is not { } morale)
         {
-            AddEvent("effect-cancelled", item.Controller, "雅典娜选择的士气已离开士气区，本次翻转未生效",
-                source is null ? [] : [source]);
+            RecordTargetSettlementFailure(item, moraleId, "所选士气已离开士气区");
             return;
         }
         L12S2ZoneOps.FlipMoraleFace(player, morale.InstanceId, toGodPower: !morale.IsGodPower);
@@ -1563,19 +1576,32 @@ public sealed partial class L12GameEngine
         IEnumerable<string> targetIds)
     {
         var player = State.Players[item.Controller];
+        var declared = targetIds.Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase).Take(2).ToArray();
         var applied = 0;
-        foreach (var id in targetIds.Distinct(StringComparer.OrdinalIgnoreCase).Take(2))
+        foreach (var id in declared)
             if (FindOnField(player, id, out var row, out _) is { } target && row == 0
-                && L12StructuredCardRules.HasFaction(player, target, "olympus"))
+                && IsFieldLegion(target) && L12StructuredCardRules.HasFaction(player, target, "olympus"))
             {
                 AddTimedModifier(target, 1000, 0, State.TurnSerial, "雅典娜");
                 target.MasterAttackDamageBonus = 1;
                 target.MasterAttackDamageBonusUntilTurn = State.TurnSerial;
                 applied++;
             }
-        AddEvent("effect", item.Controller,
-            $"雅典娜使{applied}张前排奥林匹斯军团本回合兵力+1000，且对主宰造成的伤害+1",
-            source is null ? [] : [source]);
+        if (applied == 0)
+            RecordTargetSettlementFailure(item, string.Join('|', declared),
+                declared.Length == 0 ? "本段没有选择需要强化的军团"
+                    : "已声明军团均已离场、不再是军团、不再位于前排或失去【奥林匹斯】特征");
+        else
+        {
+            AddEvent("effect", item.Controller,
+                $"雅典娜使{applied}张前排奥林匹斯军团本回合兵力+1000，且对主宰造成的伤害+1",
+                source is null ? [] : [source]);
+            if (applied < declared.Length)
+                AddEvent("effect", item.Controller,
+                    $"雅典娜有{declared.Length - applied}张已声明军团在逆序结算后失效；其余军团继续结算",
+                    source is null ? [] : [source]);
+        }
     }
 
     private static bool HorusUsesTombGuardCostMode(string? target)

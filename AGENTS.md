@@ -28,7 +28,7 @@ These rules apply to every change in this repository.
 
 Standing user authorization (2026-08-30): every completed change batch that passes its required verification and has no unresolved remote conflict is authorized to be committed and pushed to `origin/main` without requesting another per-batch push confirmation. This standing authorization does not include server deployment, production version switching, service restart, destructive remote operations, purchases, credentials, or other external systems; production deployment still requires explicit authorization for that batch.
 
-1. After each independently completed feature or bug fix, run the required verification before touching remote history. Do not accumulate verified local fixes without publishing them.
+1. User update (2026-09-17): group related fixes into one bounded lifecycle-family batch and commit/push after that batch's verification. Do not create a separate commit or release run for every small resolver or documentation receipt. Update `docs/EFFECT-LIFECYCLE-ROADMAP.md` as progress changes; include code, regressions and records in the same batch. Preserve unrelated existing changes even when there are no active parallel tasks.
 2. Fetch the remote and compare the current branch with `origin/main` to detect collaborator commits.
 3. If `origin/main` contains new commits, preserve the authoritative local worktree and integrate the remote commits safely. Never use a destructive reset or checkout. Stop for conflict review rather than choosing one side blindly.
 4. If the branch is current, or after remote changes have been integrated and the full verification passes again, commit that feature or bug fix with a descriptive Chinese commit message and push it to the remote repository.

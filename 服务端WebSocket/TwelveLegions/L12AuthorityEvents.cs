@@ -173,21 +173,25 @@ public sealed partial class L12GameEngine
     private void CommitEffectReady(L12AuthorityEvent authorityEvent, L12StackItem item)
     {
         var player = State.Players[authorityEvent.ActorPlayer];
-        var card = FindOnField(player, authorityEvent.TargetInstanceId, out _, out _)
-            ?? (player.Relic?.InstanceId == authorityEvent.TargetInstanceId ? player.Relic : null)
-            ?? player.ExtraRelics.FirstOrDefault(candidate => candidate.InstanceId == authorityEvent.TargetInstanceId);
-        var morale = player.Morale.FirstOrDefault(candidate => candidate.InstanceId == authorityEvent.TargetInstanceId);
+        var zone = authorityEvent.OriginZone;
+        // Legacy checkpoints lack a zone; newly queued events bind the original zone.
+        var card = zone is null or "field"
+            ? FindOnField(player, authorityEvent.TargetInstanceId, out _, out _) : null;
+        if (zone is null or "relic")
+            card ??= (player.Relic?.InstanceId == authorityEvent.TargetInstanceId ? player.Relic : null)
+                ?? player.ExtraRelics.FirstOrDefault(candidate => candidate.InstanceId == authorityEvent.TargetInstanceId);
+        var morale = zone is null or "morale"
+            ? player.Morale.FirstOrDefault(candidate => candidate.InstanceId == authorityEvent.TargetInstanceId) : null;
         if (card is null && morale is null)
         {
-            AddEvent("effect-cancelled", authorityEvent.ActorPlayer,
-                $"{item.Text}的目标已离开原区域；转为活跃未生效");
+            RecordTargetSettlementFailure(item, authorityEvent.TargetInstanceId,
+                "转为活跃的目标已离开原区域");
             return;
         }
         if (card is { Tapped: false } || morale is { Tapped: false })
         {
-            AddEvent("effect-cancelled", authorityEvent.ActorPlayer,
-                $"{item.Text}的目标已不再为休整状态；转为活跃未生效",
-                card is null ? [] : [card]);
+            RecordTargetSettlementFailure(item, authorityEvent.TargetInstanceId,
+                "转为活跃的目标已不再为休整状态");
             return;
         }
         if (card is not null) card.Tapped = false;
@@ -226,8 +230,12 @@ public sealed partial class L12GameEngine
         L12StackItem? resultOwner = null)
     {
         if (!target.Tapped) return;
+        var player = State.Players[playerIndex];
+        var originZone = ReferenceEquals(FindOnField(player, target.InstanceId, out _, out _), target)
+            ? "field" : ReferenceEquals(player.Relic, target) || player.ExtraRelics.Contains(target)
+                ? "relic" : "unavailable";
         var readyItem = QueueAuthorityEvent("effect-ready", playerIndex, source, reason, subjectPlayer: playerIndex,
-            targetInstanceId: target.InstanceId, causedByEffect: true);
+            targetInstanceId: target.InstanceId, originZone: originZone, causedByEffect: true);
         if (resultOwner is null) return;
 
         // A single-segment ready effect is not complete until its independent authority event
@@ -249,7 +257,7 @@ public sealed partial class L12GameEngine
             return;
         }
         QueueAuthorityEvent("effect-ready", playerIndex, source, reason, subjectPlayer: playerIndex,
-            targetInstanceId: target.InstanceId, causedByEffect: true);
+            targetInstanceId: target.InstanceId, originZone: "morale", causedByEffect: true);
     }
 
     private void NotifyCardAddedToHandByEffect(L12PlayerState player, L12CardInstance card, string originZone, string reason)

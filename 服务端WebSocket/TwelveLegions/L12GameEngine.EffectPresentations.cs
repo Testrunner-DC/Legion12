@@ -114,6 +114,18 @@ public sealed partial class L12GameEngine
     }
 
     /// <summary>
+    /// 用于不存在“已声明目标”、但结算所必需的权威来源或区域事务已失效的情形。
+    /// 这不是玩家选择不发动，也不是效果被无效；已进入堆叠的本段应明确结束为失败。
+    /// </summary>
+    private void RecordResolutionFailure(L12StackItem item, string reason)
+    {
+        item.Data["effectResultStatus"] = "failed";
+        var source = FindSource(item) ?? item.SourceSnapshot;
+        AddEvent("effect-failed", item.Controller,
+            $"〈{item.SourceName}〉结算时无法继续：{reason}", source is null ? [] : [source]);
+    }
+
+    /// <summary>
     /// 统一结算“选择最多 N 个对方军团”的独立目标。未声明对象是必发效果的空处理；
     /// 已声明对象全部失效是整段失败；仅部分失效时，仍合法的对象继续结算，并留下
     /// 可供回放与排错使用的公开说明。

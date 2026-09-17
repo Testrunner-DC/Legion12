@@ -9,10 +9,10 @@ public sealed class StarterBatch3BRegressionTests
 {
     private static readonly L12Catalog Catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
 
-    private static L12GameEngine Create(int seed)
+    private static L12GameEngine Create(int seed, bool autoPassEmptyResponses = true)
     {
         var game = new L12GameEngine(Catalog, "starter-3b", "STARTER3B", seed, ["甲", "乙"], [0, 1],
-            skipPreparation: true);
+            skipPreparation: true, autoPassEmptyResponses: autoPassEmptyResponses);
         game.State.ActivePlayer = 0;
         game.State.FirstPlayer = 0;
         game.State.Round = 2;
@@ -34,7 +34,7 @@ public sealed class StarterBatch3BRegressionTests
         return game;
     }
 
-    private static L12CardInstance Card(string cardId, string instanceId)
+    private static L12CardInstance Card(string cardId, string instanceId, string? cardType = null)
     {
         var definition = Catalog.Cards[cardId];
         return new L12CardInstance
@@ -42,7 +42,7 @@ public sealed class StarterBatch3BRegressionTests
             InstanceId = instanceId,
             CardId = definition.Id,
             Name = definition.NameZh,
-            CardType = definition.CardType,
+            CardType = cardType ?? definition.CardType,
             Faction = definition.Faction,
             ImageUrl = definition.ImageUrl,
             Cost = definition.Cost ?? 0,
@@ -148,6 +148,38 @@ public sealed class StarterBatch3BRegressionTests
     {
         for (var index = 0; index < count; index++)
             player.Morale.Add(new L12MoraleCard { CardId = "S01-01C1", InstanceId = $"{prefix}-{index}" });
+    }
+
+    private static L12StackItem RemainingItem(L12CardInstance source, string flow,
+        params (string Key, string Value)[] declarations)
+    {
+        var item = new L12StackItem
+        {
+            StackItemId = $"starter-remaining-{flow}-{source.InstanceId}",
+            Controller = 0,
+            SourceInstanceId = source.InstanceId,
+            SourceCardId = source.CardId,
+            SourceName = source.Name,
+            Trigger = "test",
+            Text = flow,
+            SourceSnapshot = source,
+        };
+        item.Data["atomicFlow"] = flow;
+        foreach (var (key, value) in declarations) item.Data[$"declared:{key}"] = value;
+        return item;
+    }
+
+    private static void ResolveRemaining(L12GameEngine game, L12StackItem item)
+    {
+        game.State.EffectStack.Add(item);
+        Assert.True((bool)Invoke(game, "TryResolveStarterRemainingEffect", item)!);
+    }
+
+    private static void AssertSettlementFailed(L12GameEngine game, L12StackItem item)
+    {
+        Assert.Equal("failed", item.Data["effectResultStatus"]);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled");
     }
 
     [Theory]
@@ -958,6 +990,126 @@ public sealed class StarterBatch3BRegressionTests
             new Dictionary<string, string> { ["killed"] = "false" });
         Assert.Empty(missedGame.State.PendingPrompts);
         Assert.True(missed.Tapped);
+    }
+
+    [Fact]
+    public void StarterRemainingDeclaredObjectsAndRequiredSourcesFailAtSettlement()
+    {
+        var garethGame = Create(204164);
+        var gareth = Card("ST06-03", "gareth-left-before-resolution");
+        var garethItem = RemainingItem(gareth, "gareth-kill-ready");
+        ResolveRemaining(garethGame, garethItem);
+        AssertSettlementFailed(garethGame, garethItem);
+
+        var nuadaGame = Create(204165);
+        var nuada = Card("ST06-M1", "nuada-rune-source");
+        var nuadaItem = RemainingItem(nuada, "nuada-rune-buff", ("buffTarget", "left-otherworld"));
+        ResolveRemaining(nuadaGame, nuadaItem);
+        AssertSettlementFailed(nuadaGame, nuadaItem);
+
+        var bloodlineGame = Create(204166);
+        var bloodline = Card("ST03-10", "bloodline-source");
+        var baseItem = RemainingItem(bloodline, "legendary-bloodline-base", ("buffTarget", "left-asgard"));
+        ResolveRemaining(bloodlineGame, baseItem);
+        AssertSettlementFailed(bloodlineGame, baseItem);
+        var graveItem = RemainingItem(bloodline, "legendary-bloodline-grave", ("buffTarget", "left-asgard"));
+        ResolveRemaining(bloodlineGame, graveItem);
+        AssertSettlementFailed(bloodlineGame, graveItem);
+
+        var fireGame = Create(204167);
+        var fire = Card("ST04-10", "invasion-fire-source");
+        fireGame.State.Players[0].Resolving.Add(fire);
+        var fireTargetItem = RemainingItem(fire, "invasion-fire", ("attachTarget", "left-gaotianyuan"));
+        ResolveRemaining(fireGame, fireTargetItem);
+        AssertSettlementFailed(fireGame, fireTargetItem);
+
+        var sourceLostGame = Create(204168);
+        var sourceLostFire = Card("ST04-10", "invasion-fire-left-resolution");
+        var host = Card("ST04-03", "still-valid-fire-host");
+        sourceLostGame.State.Players[0].Field[0][0] = host;
+        var sourceLostItem = RemainingItem(sourceLostFire, "invasion-fire", ("attachTarget", host.InstanceId));
+        ResolveRemaining(sourceLostGame, sourceLostItem);
+        AssertSettlementFailed(sourceLostGame, sourceLostItem);
+
+        var giftGame = Create(204169);
+        var gift = Card("ST05-10", "hunter-gift-source");
+        var giftItem = RemainingItem(gift, "hunter-gift", ("mode", "mode:shock"), ("shockTarget", "left-olympus"));
+        ResolveRemaining(giftGame, giftItem);
+        AssertSettlementFailed(giftGame, giftItem);
+
+        var athenaGame = Create(204170);
+        var athena = Card("ST05-M1", "athena-source");
+        var moraleItem = RemainingItem(athena, "athena-morale-flip", ("flipTarget", "left-morale"));
+        ResolveRemaining(athenaGame, moraleItem);
+        AssertSettlementFailed(athenaGame, moraleItem);
+
+        var athenaTargetGame = Create(204171);
+        var athenaTarget = Card("ST05-01", "athena-no-longer-legion", cardType: "relic");
+        athenaTargetGame.State.Players[0].Field[0][0] = athenaTarget;
+        var buffItem = RemainingItem(athena, "athena-front-buff", ("buffTargets", athenaTarget.InstanceId));
+        ResolveRemaining(athenaTargetGame, buffItem);
+        AssertSettlementFailed(athenaTargetGame, buffItem);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void AthenaDeclaredTargetsResolveActualSurvivorsAfterResponseAndRecovery(int surviving)
+    {
+        var game = Create(204172, autoPassEmptyResponses: false);
+        var player = game.State.Players[0];
+        SetMaster(player, "ST05-M1");
+        var cost = Card("ST01-01", "athena-recovery-cost");
+        var first = Card("ST05-02", "athena-recovery-first");
+        var second = Card("ST05-02", "athena-recovery-second");
+        var morale = new L12MoraleCard { CardId = "ST05-C1", InstanceId = "athena-recovery-morale" };
+        player.Hand.Add(cost);
+        player.Morale.Add(morale);
+        player.Field[0][0] = first;
+        player.Field[0][1] = second;
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "athenaFrontBuff")).Accepted);
+        Choose(game, cost.InstanceId);
+        Choose(game, morale.InstanceId);
+        ChooseMany(game, first.InstanceId, second.InstanceId);
+        var response = Prompt(game);
+        Assert.Equal("response", response.Kind);
+        Assert.Contains(cost, player.Graveyard);
+        if (surviving < 2) { player.Field[0][1] = null; player.Graveyard.Add(second); }
+        if (surviving < 1) { player.Field[0][0] = null; player.Graveyard.Add(first); }
+        game = L12GameEngine.RestoreCheckpoint(Catalog,
+            game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,"),
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+            autoPassEmptyResponses: false);
+        PassResponses(game);
+        player = game.State.Players[0];
+        Assert.Contains(player.Graveyard, c => c.InstanceId == cost.InstanceId);
+        Assert.True(player.Morale.Single().IsGodPower);
+        var buffResult = Assert.Single(game.State.Events, e => e.Type == "effect-result"
+            && e.EffectText?.Contains("对对方主宰造成的伤害+1", StringComparison.Ordinal) == true);
+        Assert.Equal(surviving == 0 ? "failed" : "resolved", buffResult.EffectResultStatus);
+        foreach (var target in player.Field[0].Where(c => c is not null))
+        {
+            Assert.Equal(target!.BaseTroops + 1000, target.Troops);
+            Assert.Equal(1, target.MasterAttackDamageBonus);
+        }
+        if (surviving == 1) Assert.Contains(game.State.Events, e => e.Text.Contains("其余军团继续结算", StringComparison.Ordinal));
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+        Assert.False(game.Handle(response.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+    }
+
+    [Fact]
+    public void AthenaWithoutDeclaredTargetsSkipsInsteadOfFailing()
+    {
+        var game = Create(204173);
+        var item = RemainingItem(Card("ST05-M1", "athena-empty"), "athena-front-buff");
+        ResolveRemaining(game, item);
+        Assert.Equal("skipped", item.Data["effectResultStatus"]);
+        Assert.Contains(game.State.Events, e => e.Type == "effect-noop");
+        Assert.DoesNotContain(game.State.Events, e => e.Type == "effect-failed");
+        Assert.Empty(game.State.PendingPrompts);
     }
 
     [Fact]
