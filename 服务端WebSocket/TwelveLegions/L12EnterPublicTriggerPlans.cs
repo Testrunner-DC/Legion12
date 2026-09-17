@@ -455,6 +455,21 @@ public sealed partial class L12GameEngine
         return ResolveBatch6JAEnterEffect(item, source, plan);
     }
 
+    /// <summary>
+    /// 登场公开声明中的“对方军团”始终指结算时仍在对方战场、公开且处于军团状态的
+    /// 实例。声明时通过候选筛选不等于结算资格；响应可令已声明对象离场、覆盖或改变
+    /// 为非军团，也可改变兵力/费用等附加门槛。
+    /// </summary>
+    private L12CardInstance? ResolveDeclaredEntryEnemyLegion(L12StackItem item, string? targetId,
+        Func<L12CardInstance, bool>? predicate, string requirement)
+    {
+        var target = DeclaredEnemyTarget(item.Controller, targetId, predicate);
+        if (target is null)
+            RecordTargetSettlementFailure(item, targetId,
+                $"所选军团已离场、被覆盖、不再是军团，或不再满足{requirement}");
+        return target;
+    }
+
     private bool ResolveBatch6JAEnterEffect(L12StackItem item, L12CardInstance source, string? plan)
     {
         var player = State.Players[item.Controller];
@@ -512,18 +527,35 @@ public sealed partial class L12GameEngine
 
         switch (plan)
         {
-            case "lubu": KillTarget(item, One("target"), "被吕布效果击杀"); break;
-            case "wuzetian": foreach (var id in Many("targets")) if (FindOnField(opponent, id, out _, out _) is { } card) card.CannotUntapUntilRound = State.Round + 1; break;
+            case "lubu":
+                if (ResolveDeclaredEntryEnemyLegion(item, One("target"),
+                    card => card.DisasterLevel is 1 or 2, "天灾等级为1或2") is { } lubuTarget)
+                    KillTarget(item, lubuTarget.InstanceId, "被吕布效果击杀");
+                break;
+            case "wuzetian":
+                ResolveDeclaredEnemyTargets(item, Many("targets"), card => card.Tapped,
+                    (_, target) => target.CannotUntapUntilRound = State.Round + 1,
+                    "发动时没有选择休整的对方军团", "所选军团已离场、被覆盖、不再是军团或已转为活跃");
+                break;
             case "lijing": BeginLiJingEffect(item); return true;
             case "mulan": if (FindOnField(player, item.SourceInstanceId, out _, out _) is { } mulan) mulan.HasCharge = true; break;
             case "mozi": foreach (var id in Many("targets")) if (FindOnField(player, id, out _, out _) is { } card) GrantImmortalUntilNextTurnStart(card, item.Controller); break;
             case "sunwu": player.FreeTacticCount++; break;
             case "kusanagi":
-                if (DeclaredEnemyTarget(item.Controller, One("target"),
-                    card => L12StructuredCardRules.CurrentCostAtMost(card, 2)) is not null)
-                    KillTarget(item, One("target"), $"被{source.Name}击杀");
+                if (ResolveDeclaredEntryEnemyLegion(item, One("target"),
+                    card => L12StructuredCardRules.CurrentCostAtMost(card, 2), "当前费用不高于2") is { } kusanagiTarget)
+                    KillTarget(item, kusanagiTarget.InstanceId, $"被{source.Name}击杀");
                 break;
-            case "thutmose" or "nobunaga": KillTarget(item, One("target"), $"被{source.Name}击杀"); break;
+            case "thutmose":
+                if (ResolveDeclaredEntryEnemyLegion(item, One("target"), card => card.Troops <= 5000,
+                    "当前兵力不高于5000") is { } thutmoseTarget)
+                    KillTarget(item, thutmoseTarget.InstanceId, $"被{source.Name}击杀");
+                break;
+            case "nobunaga":
+                if (ResolveDeclaredEntryEnemyLegion(item, One("target"),
+                    card => L12StructuredCardRules.CurrentCostAtMost(card, 4), "当前费用不高于4") is { } nobunagaTarget)
+                    KillTarget(item, nobunagaTarget.InstanceId, $"被{source.Name}击杀");
+                break;
             case "ramses":
             {
                 var inherited = L12StructuredCardRules.HasSummonTurnCounterTacticProtection(source, State.Round);
@@ -539,9 +571,25 @@ public sealed partial class L12GameEngine
             case "horemheb": if (FindOnField(player, item.SourceInstanceId, out _, out _) is { } horemheb) horemheb.HasCharge = true; break;
             case "ankh": if (FindOnField(player, One("target"), out _, out _) is { } ankh) AddTimedModifier(ankh, 2000, 0, State.TurnSerial, source.Name); break;
             case "oddr": Draw(player, 1); break;
-            case "egil": if (FindOnField(opponent, One("target"), out _, out _) is { } egil) AddTimedModifier(egil, -2000, 0, State.TurnSerial, source.Name); break;
-            case "gram": ReturnEnemyFieldToLibraryBottom(item.Controller, One("target")); break;
-            case "uesugi": KillTarget(item, One("target"), "被上杉谦信击杀"); break;
+            case "egil":
+                if (ResolveDeclaredEntryEnemyLegion(item, One("target"), null, "对方军团条件") is { } egilTarget)
+                    AddTimedModifier(egilTarget, -2000, 0, State.TurnSerial, source.Name);
+                break;
+            case "gram":
+                if (ResolveDeclaredEntryEnemyLegion(item, One("target"),
+                    card => card.Troops <= 3000 && !L12SpecialDeckRules.IsDerivedSpecialCard(card),
+                    "当前兵力不高于3000且不是衍生特殊卡") is { } gramTarget)
+                    ReturnEnemyFieldToLibraryBottom(item.Controller, gramTarget.InstanceId);
+                break;
+            case "uesugi":
+            {
+                var maximum = State.Players.SelectMany(owner => owner.Field[1])
+                    .Count(card => card is { CardType: "tactic" });
+                if (ResolveDeclaredEntryEnemyLegion(item, One("target"),
+                    card => L12StructuredCardRules.CurrentCostAtMost(card, maximum), $"当前费用不高于{maximum}") is { } uesugiTarget)
+                    KillTarget(item, uesugiTarget.InstanceId, "被上杉谦信击杀");
+                break;
+            }
             // 升级前检查点中的旧整段StackItem继续使用集合匹配；新声明均走上方
             // hijikata-kill-broad / hijikata-kill-low 两段结构流程。
             case "hijikata":
@@ -594,7 +642,10 @@ public sealed partial class L12GameEngine
                     takasugiTargets, "takasugi-enter-target", []);
                 return true;
             case "abe": if (FindOnField(player, One("target"), out _, out _) is { } abe) GrantImmortalUntilNextTurnStart(abe, item.Controller); break;
-            case "tachibana": if (FindOnField(opponent, One("target"), out _, out _) is { } tachibana) AddTimedModifier(tachibana, 0, -3, State.TurnSerial, source.Name); break;
+            case "tachibana":
+                if (ResolveDeclaredEntryEnemyLegion(item, One("target"), null, "对方军团条件") is { } tachibanaTarget)
+                    AddTimedModifier(tachibanaTarget, 0, -3, State.TurnSerial, source.Name);
+                break;
             case "inahime":
                 if (FindOnField(player, One("target"), out var inaRow, out _) is { } ina && inaRow == 0
                     && IsFieldLegion(ina) && ina.InstanceId != item.SourceInstanceId && ina.Troops <= 5000
@@ -657,7 +708,10 @@ public sealed partial class L12GameEngine
                 CreatePrompt(item.Controller, "optional-card", "罗宾汉：选择1张侍从骑士活跃登场", candidates.Select(card => card.InstanceId).Append("skip"), 1, 1,
                     "card-effect", item.StackItemId, data: data); return true;
             }
-            case "claudia": if (FindOnField(opponent, One("target"), out _, out _) is { } claudia) AddTimedModifier(claudia, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), source.Name); break;
+            case "claudia":
+                if (ResolveDeclaredEntryEnemyLegion(item, One("target"), null, "对方军团条件") is { } claudiaTarget)
+                    AddTimedModifier(claudiaTarget, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), source.Name);
+                break;
             case "magatama-search":
             {
                 var choices = player.Library.Where(card => L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")
@@ -700,8 +754,14 @@ public sealed partial class L12GameEngine
                 if (target is not null) { player.Graveyard.Remove(target); AddCardToHandByEffect(player, target, "graveyard", $"{source.Name}将{target.Name}加入手牌"); }
                 break;
             }
-            case "heracles-promotion": KillTarget(item, One("target"), "被赫拉克勒斯·晋升击杀"); break;
-            case "perseus-promotion": if (FindOnField(opponent, One("target"), out _, out _) is { } perseus) perseus.CannotUntapUntilRound = Math.Max(perseus.CannotUntapUntilRound, State.Round + 1); break;
+            case "heracles-promotion":
+                if (ResolveDeclaredEntryEnemyLegion(item, One("target"), null, "对方军团条件") is { } heraclesTarget)
+                    KillTarget(item, heraclesTarget.InstanceId, "被赫拉克勒斯·晋升击杀");
+                break;
+            case "perseus-promotion":
+                if (ResolveDeclaredEntryEnemyLegion(item, One("target"), card => card.Tapped, "休整状态") is { } perseusTarget)
+                    perseusTarget.CannotUntapUntilRound = Math.Max(perseusTarget.CannotUntapUntilRound, State.Round + 1);
+                break;
             case "richard":
                 AdvanceTrial(item.Controller, 2, source);
                 if (FindOnField(player, item.SourceInstanceId, out _, out _) is { } richard)
