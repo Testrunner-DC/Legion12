@@ -53,7 +53,7 @@ public sealed class PlayerReplayRetentionTests
         var recent = await recorder.ListRecentPlayerReplayMatchesAsync(
             "account-a", "甲", limit: 200);
         Assert.Equal(MatchRecorder.PlayerReplayWindowSize, recent.Count);
-        Assert.Equal("recent-29", recent[0].MatchId);
+        Assert.Equal($"recent-{MatchRecorder.PlayerReplayWindowSize - 1:D2}", recent[0].MatchId);
         Assert.Equal("recent-00", recent[^1].MatchId);
         Assert.All(recent, item => Assert.Equal(1, item.CommandCount));
         Assert.Empty(await recorder.ListRecentPlayerReplayMatchesAsync("account-z", "甲"));
@@ -81,19 +81,20 @@ public sealed class PlayerReplayRetentionTests
             evidenceProvider: EvidenceProvider,
             utcNow: now);
         Assert.True(cleanup.Ran);
-        Assert.Equal(2, cleanup.PurgedMatches);
-        Assert.Equal(2, cleanup.RetainedCommandRows);
+        Assert.Equal(3, cleanup.PurgedMatches);
+        Assert.Equal(3, cleanup.RetainedCommandRows);
         Assert.True(cleanup.ClearedPayloadBytes > 0);
         Assert.False(cleanup.HasMoreEligibleMatches);
         Assert.Equal(recorder.NextStorageCleanupUtc(now), cleanup.NextRunUtc);
-        Assert.Equal(2, evidenceReads);
+        Assert.Equal(3, evidenceReads);
 
+        await AssertPayloadPurgedPreservingArchiveAsync(path, "old-ranked");
         await AssertPayloadPurgedPreservingArchiveAsync(path, "old-casual");
         await AssertPayloadPurgedPreservingArchiveAsync(path, "old-friendly",
             """{"type":"authorityConclusion","agreedDraw":true}""");
         foreach (var protectedMatch in new[]
                  {
-                     "union-protected", "old-ranked", "bug-held", "room-held",
+                     "union-protected", "bug-held", "room-held",
                      "late-bug-held", "running",
                  })
         {
@@ -121,15 +122,16 @@ public sealed class PlayerReplayRetentionTests
         {
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
-            for (var index = 0; index < MatchRecorder.PlayerReplayCleanupMaximumMatchesPerRun + 31; index++)
+            for (var index = 0; index < MatchRecorder.PlayerReplayCleanupMaximumMatchesPerRun
+                 + MatchRecorder.PlayerReplayWindowSize + 1; index++)
                 await SeedMatchAsync(connection, transaction, $"tie-{index:D3}", "casual",
                     "account-a", "account-b", origin.AddHours(-2), origin.AddHours(-1));
             await transaction.CommitAsync();
         }
 
         var visible = await first.ListRecentPlayerReplayMatchesAsync("account-a", "甲", 200);
-        Assert.Equal(30, visible.Count);
-        var lastIndex = MatchRecorder.PlayerReplayCleanupMaximumMatchesPerRun + 30;
+        Assert.Equal(MatchRecorder.PlayerReplayWindowSize, visible.Count);
+        var lastIndex = MatchRecorder.PlayerReplayCleanupMaximumMatchesPerRun + MatchRecorder.PlayerReplayWindowSize;
         var protectedId = $"tie-{MatchRecorder.PlayerReplayCleanupMaximumMatchesPerRun + 1:D3}";
         var expiredId = $"tie-{MatchRecorder.PlayerReplayCleanupMaximumMatchesPerRun:D3}";
         Assert.Equal($"tie-{lastIndex:D3}", visible[0].MatchId);
@@ -190,7 +192,7 @@ public sealed class PlayerReplayRetentionTests
         {
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
-            for (var index = 0; index < 31; index++)
+            for (var index = 0; index < MatchRecorder.PlayerReplayWindowSize + 1; index++)
                 await SeedMatchAsync(connection, transaction, $"rollback-{index:D2}", "friendly",
                     "account-a", "account-b", origin.AddHours(-32 + index),
                     origin.AddHours(-31 + index));

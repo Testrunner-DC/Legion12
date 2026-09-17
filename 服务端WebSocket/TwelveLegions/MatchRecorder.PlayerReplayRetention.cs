@@ -4,7 +4,9 @@ namespace TwelveLegions.Server;
 
 public sealed partial class MatchRecorder
 {
-    public const int PlayerReplayWindowSize = 30;
+    // 回放仅用于近期复盘与即时问题定位；玩家可导出 JSON 自行保存。
+    // 结算、战绩、主宰和先后手等分析事实独立保存，不依赖完整状态载荷。
+    public const int PlayerReplayWindowSize = 10;
     public static readonly TimeSpan PlayerReplayCleanupInterval = TimeSpan.FromDays(1);
     internal const int PlayerReplayCleanupBatchSize = 25;
     internal const int PlayerReplayCleanupMaximumMatchesPerRun = 500;
@@ -489,7 +491,7 @@ public sealed partial class MatchRecorder
         command.CommandText = PlayerReplayWindowCte + """
             SELECT m.match_id,m.room_code
             FROM matches m
-            WHERE m.mode_id IN ('casual','friendly') AND m.ended_utc IS NOT NULL
+            WHERE m.mode_id <> 'sandbox' AND m.ended_utc IS NOT NULL
               AND NOT EXISTS(
                   SELECT 1 FROM protected_replays p WHERE p.match_id=m.match_id)
               AND NOT EXISTS(
@@ -535,7 +537,7 @@ public sealed partial class MatchRecorder
             SELECT COUNT(*)
             FROM matches m
             WHERE m.match_id=$match
-              AND m.mode_id IN ('casual','friendly') AND m.ended_utc IS NOT NULL
+              AND m.mode_id <> 'sandbox' AND m.ended_utc IS NOT NULL
               AND NOT EXISTS(
                   SELECT 1 FROM protected_replays p WHERE p.match_id=m.match_id)
               AND NOT EXISTS(

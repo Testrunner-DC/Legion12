@@ -179,7 +179,7 @@ export interface AdminAnalyticsCoverage {
 }
 export interface AlternateArt { id: string; artCode: string; baseCardId: string; displayName: string; mediaAssetId: string; imageUrl: string; thumbnailUrl: string; active: boolean; createdAt: string; updatedAt: string; productId?: string; productName?: string }
 export interface AlternateArtProduct { id: string; name: string; active: boolean; createdAt: string; updatedAt: string }
-export interface AlternateArtRankedParticipantDispatchPreview { eligibleAccounts: number; alreadyGranted: number; toGrant: number; sourceReference: string }
+export interface AlternateArtRankedParticipantDispatchPreview { eligibleAccounts: number; alreadyGranted: number; toGrant: number; sourceReference: string; seasonId: string }
 export interface ServerStorageVolume { mountPoint: string; totalBytes: number; usedBytes: number; freeBytes: number }
 export interface ServerStorageCategory { id: string; label: string; path: string; bytes: number; available: boolean }
 export interface ServerStorageStatus { observedAt: string; processId: number; workingSetBytes: number; volumes: ServerStorageVolume[]; categories: ServerStorageCategory[] }

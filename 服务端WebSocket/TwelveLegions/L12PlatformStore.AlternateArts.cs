@@ -20,7 +20,7 @@ public sealed record L12AlternateArtAwardRuleDraft(string? Id, string AlternateA
 public sealed record L12AlternateArtEventDispatchDraft(string RuleId, IReadOnlyList<string> Usernames);
 public sealed record L12AlternateArtRankedParticipantDispatchDraft(string AlternateArtId, string SeasonId = "");
 public sealed record L12AlternateArtRankedParticipantDispatchPreview(int EligibleAccounts, int AlreadyGranted,
-    int ToGrant, string SourceReference);
+    int ToGrant, string SourceReference, string SeasonId);
 
 public sealed partial class L12PlatformStore
 {
@@ -253,17 +253,20 @@ public sealed partial class L12PlatformStore
         {
             var art = _data.AlternateArts.FirstOrDefault(row => row.Id == draft.AlternateArtId && row.Active)
                 ?? throw new KeyNotFoundException("异画不存在或未启用");
-            var seasonId = LimitSiteText(draft.SeasonId, 100);
-            var sourceReference = string.IsNullOrWhiteSpace(seasonId) ? "beta-ranked-participants" : $"ranked-participants:{seasonId}";
-            var accounts = _data.RankedProfiles.Where(row => string.IsNullOrWhiteSpace(seasonId)
-                    || row.SeasonId.Equals(seasonId, StringComparison.OrdinalIgnoreCase))
-                .Select(row => row.AccountId).Distinct(StringComparer.OrdinalIgnoreCase)
+            // 空值只表示“本赛季”，绝不再隐式扩展为所有历史赛季。
+            // 历史赛季同时读取归档档案与主宰战绩，保证已经结算的赛季仍可补发。
+            var requestedSeasonId = LimitSiteText(draft.SeasonId, 100);
+            var seasonId = string.IsNullOrWhiteSpace(requestedSeasonId)
+                ? RequireOperationsConfig().Season.Id
+                : requestedSeasonId;
+            var sourceReference = $"ranked-participants:{seasonId}";
+            var accounts = RankedParticipantAccountIdsLocked(seasonId)
                 .Where(accountId => _data.Accounts.Any(account => account.Id == accountId && !account.Deleted)).ToArray();
             var alreadyGranted = accounts.Count(accountId => _data.AlternateArtGrants.Any(row => row.AccountId == accountId
                 && row.AlternateArtId == art.Id && row.RevokedAt is null && row.SourceKind == "ranked-participants"
                 && row.SourceReference == sourceReference));
             return new L12AlternateArtRankedParticipantDispatchPreview(accounts.Length, alreadyGranted,
-                accounts.Length - alreadyGranted, sourceReference);
+                accounts.Length - alreadyGranted, sourceReference, seasonId);
         }
     }
 
@@ -273,10 +276,7 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var preview = PreviewRankedParticipantAlternateArtDispatch(draft);
-            var seasonId = draft.SeasonId?.Trim() ?? string.Empty;
-            var accounts = _data.RankedProfiles.Where(row => string.IsNullOrWhiteSpace(seasonId)
-                    || row.SeasonId.Equals(seasonId, StringComparison.OrdinalIgnoreCase))
-                .Select(row => row.AccountId).Distinct(StringComparer.OrdinalIgnoreCase)
+            var accounts = RankedParticipantAccountIdsLocked(preview.SeasonId)
                 .Where(accountId => _data.Accounts.Any(account => account.Id == accountId && !account.Deleted)).ToArray();
             var grants = accounts.Select(accountId => ToAlternateArtGrantView(GrantAlternateArtToAccountLocked(accountId,
                 draft.AlternateArtId, "ranked-participants", preview.SourceReference, actor.Id))).ToArray();
@@ -286,6 +286,19 @@ public sealed partial class L12PlatformStore
             return grants;
         }
     }
+
+    private IReadOnlyCollection<string> RankedParticipantAccountIdsLocked(string seasonId)
+        => _data.RankedProfiles.Where(row => row.SeasonId.Equals(seasonId, StringComparison.OrdinalIgnoreCase)
+                && row.PlacementPlayed + row.Wins + row.Losses > 0)
+            .Select(row => row.AccountId)
+            .Concat(_data.RankedProfileHistory.Where(row => row.SeasonId.Equals(seasonId, StringComparison.OrdinalIgnoreCase)
+                    && row.PlacementPlayed + row.Wins + row.Losses > 0)
+                .Select(row => row.AccountId))
+            .Concat(_data.RankedMasterRecords.Where(row => row.SeasonId.Equals(seasonId, StringComparison.OrdinalIgnoreCase)
+                    && row.Games > 0)
+                .Select(row => row.AccountId))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
     private void ApplyRankReachedAlternateArtAwardsLocked(string accountId, string seasonId, int tierIndex)
     {
