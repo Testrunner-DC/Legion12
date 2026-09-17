@@ -359,6 +359,15 @@ public sealed class L12AtomicEffectCatalog
         @"登场时|阵亡时|离场时|进攻时|进攻后|击杀时|受到伤害时|造成伤害时|回合开始时|回合结束时|天灾触发时|主动休整|主动翻回正面|主动\s|盖伏|反击",
         RegexOptions.CultureInvariant);
 
+    // 引用的时点/卡牌类型是当前效果的正文，不是来源卡自己的新时点。
+    // 保留等长位置，分段仍切原文，不能把被引用的卡文丢掉或改写。
+    private static readonly Regex ReferencedTimingPattern = new(
+        @"「[^」]*」|『[^』]*』|“[^”]*”|〈[^〉]*〉|《[^》]*》|【[^】]*】|<[^>]*>|反击战术|(?:登场时|阵亡时|离场时|进攻时|击杀时)效果",
+        RegexOptions.CultureInvariant);
+
+    private static string MaskTimingReferences(string text)
+        => ReferencedTimingPattern.Replace(text, match => new string(' ', match.Length));
+
     private static readonly string[] TimingTokens =
     [
         "登场时", "阵亡时", "离场时", "进攻时", "进攻后", "受到伤害时", "造成伤害时", "回合开始时",
@@ -555,7 +564,7 @@ public sealed class L12AtomicEffectCatalog
     {
         if (string.IsNullOrWhiteSpace(text)) return [];
         var normalized = text.Replace("\r", string.Empty).Replace("\n", "。").Trim();
-        var starts = AbilityBoundaryPattern.Matches(normalized).Select(match => match.Index)
+        var starts = AbilityBoundaryPattern.Matches(MaskTimingReferences(normalized)).Select(match => match.Index)
             .Where(index => index > 0 && !(preserveLeadingSubject && normalized[..index].Trim() is "我方" or "对方"))
             .Distinct().Order().ToArray();
         var segments = new List<string>();
@@ -568,7 +577,7 @@ public sealed class L12AtomicEffectCatalog
         }
         var tail = normalized[cursor..].Trim(' ', '。', '；', ';');
         if (tail.Length > 0) segments.Add(tail);
-        var chunks = segments.SelectMany(segment => Regex.Split(segment, @"(?<=[。；;])"))
+        var chunks = segments.SelectMany(SplitUnquotedSentences)
             .Select(chunk => chunk.Trim(' ', '。', '；', ';')).Where(chunk => chunk.Length > 0).ToList();
         if (chunks.Count == 0) return [text];
         var abilities = new List<string>();
@@ -580,6 +589,17 @@ public sealed class L12AtomicEffectCatalog
             else abilities[^1] = $"{abilities[^1]}。{chunk}";
         }
         return abilities.ToArray();
+    }
+
+    private static IEnumerable<string> SplitUnquotedSentences(string text)
+    {
+        var cursor = 0;
+        foreach (Match separator in Regex.Matches(MaskTimingReferences(text), @"[。；;]"))
+        {
+            yield return text[cursor..(separator.Index + 1)];
+            cursor = separator.Index + 1;
+        }
+        if (cursor < text.Length) yield return text[cursor..];
     }
 
     private static L12AtomicAbility BuildAbility(L12CardDefinition card, string text, int sequence,
@@ -692,7 +712,9 @@ public sealed class L12AtomicEffectCatalog
 
     private static bool ContainsAny(string value, params string[] tokens) => tokens.Any(value.Contains);
     private static string DetectTrigger(L12CardDefinition card, string text)
-        => text.Contains("登场时") ? "enter"
+    {
+        text = MaskTimingReferences(text);
+        return text.Contains("登场时") ? "enter"
             : text.Contains("阵亡时") ? "death"
             : text.Contains("离场时") ? "leave"
             : text.Contains("进攻后") || text.Contains("击杀时") ? "after-attack"
@@ -703,6 +725,7 @@ public sealed class L12AtomicEffectCatalog
             : card.CardType is "disaster" or "destruction" && text.StartsWith("触发", StringComparison.Ordinal) ? "disaster"
             : card.CardType == "tactic" ? "play"
             : "static";
+    }
     private static string ExtractCondition(string text) => text.Length <= 80 ? text : text[..80] + "…";
     private static string ExtractDuration(string text) => new[] { "本次进攻", "本回合", "下个回合", "本局" }.FirstOrDefault(text.Contains) ?? "持续";
     private static string ExecutionModelFor(string trigger, string text)

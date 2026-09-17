@@ -3,15 +3,15 @@
 由 `scripts/export-l12-effect-lifecycle-inventory.ps1` 从实际 L12Catalog 生成；不要手工修改此表。
 本表只盘点定义与待核对项，不是测试通过证明。执行进度与最终验收仍以 [实施计划](../EFFECT-LIFECYCLE-ROADMAP.md) 为准。
 
-卡牌：324；能力段：692；无能力卡：7。
+卡牌：324；能力段：684；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`148a28cdf841a851ea5cb59bf52f34f2ea8b35938f7e17dd705bc9a57dffea18`。
+内容指纹：`55475e19ec9ea0d76635122ab6752082c9825b1448788e12bb97316bed4a9a2b`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
-| composite-definition | 209 |
+| composite-definition | 208 |
 | fine-definition | 87 |
-| owner-unreviewed | 344 |
+| owner-unreviewed | 337 |
 | shared-rule-owner | 52 |
 
 fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；shared-rule-owner = 精确能力已绑定共用规则入口及适用性档案；owner-unreviewed = 还需定位实际入口。任何一种归属证据均不等于生命周期验收通过。
@@ -230,17 +230,13 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-01M1 杨戬 #2 | S01-01M1:ability:static:d024f673ff236321 | static/continuous | owner-unreviewed | 我方 回合1次 可返还4士气 | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale | 0 | 我方 回合1次 可返还4士气：对对方主宰造成1点非致命伤害。【杨戬专属】哮天犬·稚 |
 | S01-01M1 杨戬 #3 | S01-01M1:ability:static:0924c3a5995ba164 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:cost.return-morale → resolution:operation.move-zone → resolution:operation.ready | 0 | 我方 回合1次 我方士气因主宰效果返还4张及以上时，&lt;哮天犬·稚&gt;可在前排活跃登场，视为1张兵力2000的【特殊】军团 |
 | S01-01M1 杨戬 #4 | S01-01M1:ability:death:ee5adb706424f233 | death/triggered | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → resolution:operation.add-morale → resolution:operation.rest | 1 | 阵亡时 可从士气牌库追加1张休整的士气 |
-| S01-01M2 孟婆 #1 | S01-01M2:ability:static:ad3561bcad0fa6b3 | static/continuous | owner-unreviewed | 我方 回合1次 可选择以下一项。·返还1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → target:selection.mode → cost:cost.return-morale → duration:duration.apply | 0 | 我方 回合1次 可选择以下一项。·返还1士气：选择对方1张军团，本回合失去「 |
-| S01-01M2 孟婆 #2 | S01-01M2:ability:death:15748b3bb20610a4 | death/triggered | owner-unreviewed | 阵亡时」效果。若我方手牌不高于5张，可抽取1张牌。·若我方士气少于对方，弃置1张手牌 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:cost.discard → resolution:operation.draw → resolution:operation.add-morale → resolution:operation.rest | 1 | 阵亡时」效果。若我方手牌不高于5张，可抽取1张牌。·若我方士气少于对方，弃置1张手牌：从士气牌库追加1张休整的士气 |
-| S01-0201 图特摩斯三世 #1 | S01-0201:ability:static:6d91edf38e4a47e1 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.move-zone | 0 | 此军团登场回合不受 |
-| S01-0201 图特摩斯三世 #2 | S01-0201:ability:static:309015079d4be9a5 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:legacy.resolve | 0 | 反击战术效果影响 |
-| S01-0201 图特摩斯三世 #3 | S01-0201:ability:enter:9a481888b22aee09 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 击杀对方1张兵力不高于5000的军团 |
-| S01-0201 图特摩斯三世 #4 | S01-0201:ability:attack:6f39bcf2f2087d89 | attack/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.composite-flow | 3 | 进攻时 |
-| S01-0201 图特摩斯三世 #5 | S01-0201:ability:death:3be85aa38d99c0d3 | death/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 3 | 阵亡时 对方所有军团本回合兵力-1000。随后击杀对方1张兵力不高于1000的军团 |
-| S01-0202 拉美西斯二世 #1 | S01-0202:ability:static:6d91edf38e4a47e1 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.move-zone | 0 | 此军团登场回合不受 |
-| S01-0202 拉美西斯二世 #2 | S01-0202:ability:static:1b78db07a1a50eee | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:special.domain → resolution:legacy.resolve | 0 | 反击战术效果影响。若我方战场不存在&lt;陵墓守卫&gt;，此军团登场费用-2 |
-| S01-0202 拉美西斯二世 #3 | S01-0202:ability:enter:87a28b0c36100693 | enter/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 选择&lt;拉美西斯二世&gt;以外最多3张【太阳城】军团，自选顺序发动其 |
-| S01-0202 拉美西斯二世 #4 | S01-0202:ability:enter:79b4a7d90170825a | enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时效果 |
+| S01-01M2 孟婆 #1 | S01-01M2:ability:static:f3ee48a69ee29306 | static/continuous | owner-unreviewed | 我方 回合1次 可选择以下一项。·返还1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → target:selection.mode → cost:cost.return-morale → cost:cost.discard → resolution:operation.draw → resolution:operation.add-morale → resolution:operation.rest → duration:duration.apply | 0 | 我方 回合1次 可选择以下一项。·返还1士气：选择对方1张军团，本回合失去「阵亡时」效果。若我方手牌不高于5张，可抽取1张牌。·若我方士气少于对方，弃置1张手牌：从士气牌库追加1张休整的士气 |
+| S01-0201 图特摩斯三世 #1 | S01-0201:ability:static:7d31de8999ce168a | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.move-zone | 0 | 此军团登场回合不受反击战术效果影响 |
+| S01-0201 图特摩斯三世 #2 | S01-0201:ability:enter:9a481888b22aee09 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 击杀对方1张兵力不高于5000的军团 |
+| S01-0201 图特摩斯三世 #3 | S01-0201:ability:attack:6f39bcf2f2087d89 | attack/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.composite-flow | 3 | 进攻时 |
+| S01-0201 图特摩斯三世 #4 | S01-0201:ability:death:3be85aa38d99c0d3 | death/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 3 | 阵亡时 对方所有军团本回合兵力-1000。随后击杀对方1张兵力不高于1000的军团 |
+| S01-0202 拉美西斯二世 #1 | S01-0202:ability:static:76a4a87caae11a73 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:special.domain → resolution:legacy.resolve | 0 | 此军团登场回合不受反击战术效果影响。若我方战场不存在&lt;陵墓守卫&gt;，此军团登场费用-2 |
+| S01-0202 拉美西斯二世 #2 | S01-0202:ability:enter:488058d9c4033af4 | enter/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 选择&lt;拉美西斯二世&gt;以外最多3张【太阳城】军团，自选顺序发动其登场时效果 |
 | S01-0203 美尼斯 #1 | S01-0203:ability:static:0a317a499dc4420e | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → resolution:special.domain → resolution:legacy.resolve | 0 | 对方回合 若我方战场不存在&lt;陵墓守卫&gt;，此军团兵力+1000 |
 | S01-0203 美尼斯 #2 | S01-0203:ability:attack:31291f70ecb6b701 | attack/triggered | composite-definition | 进攻时 可弃置我方战场上1张军团 | trigger:trigger.observe → condition:control.optional → cost:cost.discard → resolution:operation.damage-master → resolution:operation.modify-troops → resolution:operation.keyword → duration:duration.apply → resolution:operation.composite-flow | 1 | 进攻时 可弃置我方战场上1张军团：此军团本回合兵力+2000，并获得强攻。（进攻对主宰造成额外1点伤害） |
 | S01-0204 陵墓构造体 #1 | S01-0204:ability:static:f02e35e83c5ebb48 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → resolution:legacy.resolve | 0 | 「位于前排」获得挑畔。（对方只可进攻带有此效果的军团） |
@@ -362,10 +358,8 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0401 本多忠胜 #2 | S01-0401:ability:attack:ecd7f4f29923a686 | attack/triggered | composite-definition | — | trigger:trigger.observe → duration:duration.apply → resolution:operation.composite-flow | 3 | 进攻时 对方所有军团本回合费用-1。随后击杀对方1张费用为0的军团 |
 | S01-0402 织田信长 #1 | S01-0402:ability:enter:28437823889be2d3 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 击杀对方1张费用不高于4的军团 |
 | S01-0402 织田信长 #2 | S01-0402:ability:attack:54bfa6b97746205c | attack/triggered | composite-definition | 进攻时 可消耗1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → duration:duration.apply → resolution:operation.composite-flow | 1 | 进攻时 可消耗1士气：对方所有军团，本回合费用-1 |
-| S01-0403 上杉谦信 #1 | S01-0403:ability:enter:a2fd3b5e14447852 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 击杀对方1张费用不高于X的军团。（X=双方战场&lt; |
-| S01-0403 上杉谦信 #2 | S01-0403:ability:static:e467cd29710958fe | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:legacy.resolve | 0 | 反击战术&gt;合计数量） |
-| S01-0403 上杉谦信 #3 | S01-0403:ability:death:eb934dc8d5cc9e38 | death/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.composite-flow | 1 | 阵亡时 将手牌中最多2张&lt; |
-| S01-0403 上杉谦信 #4 | S01-0403:ability:static:17adb415e355003b | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:legacy.resolve | 0 | 反击战术&gt;置入我方后排 |
+| S01-0403 上杉谦信 #1 | S01-0403:ability:enter:ebef3f55d68053ea | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 击杀对方1张费用不高于X的军团。（X=双方战场&lt;反击战术&gt;合计数量） |
+| S01-0403 上杉谦信 #2 | S01-0403:ability:death:c3e5fc27d01fe269 | death/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.composite-flow | 1 | 阵亡时 将手牌中最多2张&lt;反击战术&gt;置入我方后排 |
 | S01-0404 真田幸村 #1 | S01-0404:ability:enter:c25e438ab6938fb8 | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.keyword | 1 | 登场时 获得冲锋。（可在登场回合进攻） |
 | S01-0405 宫本武藏 #1 | S01-0405:ability:enter:46425018899cf08f | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.keyword | 1 | 登场时 若我方前排没有其他军团，此军团获得冲锋。（可在登场回合进攻） |
 | S01-0405 宫本武藏 #2 | S01-0405:ability:attack:fcbd396bbfbd88b2 | attack/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.draw | 1 | 进攻时 若我方手牌数量不高于对方，可抽取1张牌 |
@@ -388,8 +382,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0412 立花誾千代 #2 | S01-0412:ability:death:8e3f657c72894324 | death/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.composite-flow | 1 | 阵亡时 直到下个我方回合结束前，对方所有军团费用-1 |
 | S01-0413 源博雅 #1 | S01-0413:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
 | S01-0413 源博雅 #2 | S01-0413:ability:enter:eb2856bbafa7432e | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.draw | 1 | 登场时 若我方手牌不高于5张，可抽取1张牌 |
-| S01-0413 源博雅 #3 | S01-0413:ability:attack:c7b38ff3e0825fca | attack/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.composite-flow | 1 | 进攻时 选择对方1张&lt; |
-| S01-0413 源博雅 #4 | S01-0413:ability:static:b048d8ef1eec8a19 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → duration:duration.apply → resolution:legacy.resolve | 0 | 反击战术&gt;，本回合无法发动 |
+| S01-0413 源博雅 #3 | S01-0413:ability:attack:f4160b9115a574fa | attack/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → duration:duration.apply → resolution:operation.composite-flow | 1 | 进攻时 选择对方1张&lt;反击战术&gt;，本回合无法发动 |
 | S01-0414 桂小五郎 #1 | S01-0414:ability:static:e001b352b3693d93 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:legacy.resolve | 0 | 此军团 |
 | S01-0414 桂小五郎 #2 | S01-0414:ability:after-attack:a356848bc7dd9124 | after-attack/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → resolution:operation.ready → resolution:operation.composite-flow | 1 | 进攻后，可返回牌库顶部。此军团返回牌库顶部时：将我方最多2张士气转为活跃 |
 | S01-0415 服部半藏 #1 | S01-0415:ability:static:9ba2f4f5354a2a05 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」进攻距离+1，远程进攻无损。 |
@@ -417,8 +410,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-DS02 百鬼夜行 #2 | S01-DS02:ability:static:4408d437a8ab5e5a | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 带有天灾等级的军团进攻主宰时，造成的伤害+1 |
 | S01-DS02 百鬼夜行 #3 | S01-DS02:ability:turn-end:9d632a451357ff71 | turn-end/triggered | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:special.domain → resolution:legacy.resolve | 1 | 回合结束时，回合玩家将手牌返回牌库底部，直至手牌数量不高于5 |
 | S01-DS03 腐秽大地 #1 | S01-DS03:ability:disaster:b550db07535ba893 | disaster/triggered | composite-definition | — | trigger:trigger.observe → resolution:special.domain → resolution:operation.composite-flow | 1 | 触发 将所有后排军团置入所有者墓地 |
-| S01-DS03 腐秽大地 #2 | S01-DS03:ability:static:ec2922910ead0457 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 后排无法放置军团。打出&lt; |
-| S01-DS03 腐秽大地 #3 | S01-DS03:ability:static:dae7e02011be72e4 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 反击战术&gt;无需消耗费用 |
+| S01-DS03 腐秽大地 #2 | S01-DS03:ability:static:70004a014a03d2a0 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 后排无法放置军团。打出&lt;反击战术&gt;无需消耗费用 |
 | S01-DS04 雷霆天怒 #1 | S01-DS04:ability:disaster:1ea0951ecffc8449 | disaster/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:special.domain → resolution:operation.composite-flow | 1 | 触发 所有玩家掷骰，数字最小的玩家选择其1张军团返回所有者手牌 |
 | S01-DS04 雷霆天怒 #2 | S01-DS04:ability:static:017c7359962a2512 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 兵力高于2000的军团 |
 | S01-DS04 雷霆天怒 #3 | S01-DS04:ability:attack:68f2ff0b600a41e8 | attack/triggered | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.rest → resolution:special.domain → resolution:legacy.resolve | 1 | 进攻时需掷骰。1~2：此军团转为休整并结束进攻 |
