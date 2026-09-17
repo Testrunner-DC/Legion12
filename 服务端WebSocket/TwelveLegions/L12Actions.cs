@@ -1127,7 +1127,10 @@ public sealed partial class L12GameEngine
             if (supporters.Length > 0)
             {
                 pending.Stage = L12CombatStage.AttackerAfterAttack;
-                foreach (var support in supporters) RemoveFromField(defender, support, true, "作为支援军团阵亡");
+                // 支援者自身以阵亡离场，故会建立其【阵亡时】；但不写入本次交战的
+                // Defeated*InstanceId，也不产生战斗击杀来源，进攻军团不得触发【击杀时】。
+                foreach (var support in supporters) RemoveFromField(defender, support, true, "作为支援军团阵亡",
+                    leaveKind: L12FieldLeaveKind.Defeat);
                 AddEvent("support", playerIndex, $"{string.Join('、', supporters.Select(card => card.Name))}联合支援{target.Name}，支援者阵亡；交战双方不损兵且不产生击杀",
                     supporters.Append(target).Append(attacker).ToArray());
                 AdvanceCombatTimelineIfIdle();

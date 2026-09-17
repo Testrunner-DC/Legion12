@@ -243,6 +243,48 @@ public sealed class CombatTimelineRegressionTests
     }
 
     [Fact]
+    public void SupportDeathTriggersItsOwnDeathButNeverCreatesAnAttackerKillAcrossV2Recovery()
+    {
+        var game = Create(828034, autoPass: false);
+        ReadyForCombat(game);
+        var attacker = Card("S01-0409", "support-death-attacker"); // 源义经：印刷【击杀时】
+        var target = PlainLegion("support-death-target", 1000);
+        var supporter = Card("S01-0102", "support-death-wuzetian"); // 武则天：印刷【阵亡时】
+        attacker.Troops = 4000;
+        supporter.Troops = 3000;
+        game.State.Players[0].Field[0][0] = attacker;
+        game.State.Players[1].Field[0][0] = target;
+        game.State.Players[1].Field[1][0] = supporter;
+        game.State.Players[1].Hp = 9;
+        game.State.Players[1].Library.Clear();
+        game.State.Players[1].Library.Add(PlainLegion("support-death-draw", 1000));
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", target.InstanceId))).Accepted);
+        PassCurrentResponse(game);
+        PassCurrentResponse(game);
+        Assert.Equal(L12CombatStage.DefenseChoice, game.State.PendingDefense?.Stage);
+
+        Assert.True(game.Handle(1, new L12Command("resolveDefense",
+            SupportInstanceId: supporter.InstanceId)).Accepted);
+        Assert.NotEmpty(game.State.PendingPrompts);
+
+        var random = game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0);
+        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint, random,
+            game.CardFactSignalSequence, autoPassEmptyResponses: false,
+            concealHiddenResponseAvailability: false);
+        for (var pass = 0; pass < 12 && game.State.PendingPrompts.Count > 0; pass++)
+            PassCurrentResponse(game);
+
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Contains(game.State.Players[1].Graveyard, card => card.InstanceId == supporter.InstanceId);
+        Assert.Equal(10, game.State.Players[1].Hp);
+        Assert.Contains(game.State.Players[1].Hand, card => card.InstanceId == "support-death-draw");
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "kill-source");
+    }
+
+    [Fact]
     public void CooperativeSupportMayJoinTheDirectRearSupportWithoutReplacingIt()
     {
         var game = Create(828031);
