@@ -120,8 +120,7 @@ public sealed partial class L12GameEngine
     {
         if (ability != "discardHolyLock" && source.AttachedCards.Any(card => card.CardId == "S02-0013"))
             return CommandResult.Reject("该圣物被〈神圣伽锁〉叠放，当前无法使用");
-        if (!L12StructuredCardRules.IsActiveRestAbility(source.CardId, ability)
-            && player.UsedAbilities.Contains(ActiveAbilityUsageKey(source.InstanceId, source.CardId, ability))
+        if (HasUsedLimitedActiveAbility(player, source.CardId, source.InstanceId, ability)
             && !MatchesPendingFreeMasterActivation(playerIndex, source, ability))
             return CommandResult.Reject("该效果本回合已经发动");
         if (TryBeginFaithZealotFreeMasterDeclaration(playerIndex, source, ability) is { } freeDeclaration)
@@ -222,6 +221,8 @@ public sealed partial class L12GameEngine
 
     private string? ValidatePublicActiveDeclarationBeforePayment(int playerIndex, L12CardInstance source, string ability, string? target)
     {
+        if (ability == "extendedRange" && L12StructuredCardSemantics.HasBackRowExtendedRangeActive(source.CardId))
+            return ExtendedRangeSourceUnavailableReason(State.Players[playerIndex], source);
         if (ValidateStarterRemainingActiveDeclaration(playerIndex, source, ability, target) is { } starterError)
             return starterError;
         var player = State.Players[playerIndex];
@@ -232,9 +233,6 @@ public sealed partial class L12GameEngine
                 return "我方手牌需不高于3张";
             case ("S01-0317", "gramReady") when !source.Tapped:
                 return "神剑格拉墨需为休整";
-            case ("S01-0003", "extendedRange")
-                when FindOnField(player, source.InstanceId, out var row, out _) is null || row != 1:
-                return "该效果只能在后排发动";
             case ("S01-02D1", "sunBottomEnemy")
                 when DeclaredEnemyTarget(playerIndex, target,
                     card => card.Troops <= 4000 && !L12SpecialDeckRules.IsDerivedSpecialCard(card)) is null:
@@ -300,8 +298,8 @@ public sealed partial class L12GameEngine
         var onceKey = ActiveAbilityUsageKey(source.InstanceId, source.CardId, ability);
         if (TryCommitFreeMasterActivation(playerIndex, source, ability, target) is { } freeResult)
             return freeResult;
-        if (!L12StructuredCardRules.IsActiveRestAbility(source.CardId, ability)
-            && player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
+        if (HasUsedLimitedActiveAbility(player, source.CardId, source.InstanceId, ability))
+            return CommandResult.Reject("该效果本回合已经发动");
         if (ValidatePublicActiveDeclarationBeforePayment(playerIndex, source, ability, target) is { } declarationError)
             return CommandResult.Reject(declarationError);
         var moraleQuote = QuoteActiveMorale(player, source, ability, target);
@@ -366,7 +364,7 @@ public sealed partial class L12GameEngine
             };
             if (declaredReturnIds is not null) paymentData["returnIds"] = string.Join('|', declaredReturnIds);
             CreateResourcePaymentPrompt(playerIndex, moraleCost, "active-morale-choice", null, paymentData,
-                excludedResourceIds);
+                excludedResourceIds, allowCancel: true);
             return CommandResult.Ok();
         }
         if (selectedResourceIds is not null
@@ -677,7 +675,7 @@ public sealed partial class L12GameEngine
             or "medjedDebuff" or "valkyrieRecover" or "lokiCycle" or "lokiHeal" or "amaterasuKill" => 1,
         "kusanagi" or "factionAddActive" or "factionDrawMove" or "destroyInfiltrator" or "sunGuard" or "asgardDraw"
             or "gramReady" or "sunTopThree" or "sunBottomEnemy" or "valhallaRecover" or "yomiSweep" => 2,
-        "extendedRange" when source.CardId == "S01-0003" => 2,
+        "extendedRange" when L12StructuredCardSemantics.ExtendedRangeRule(source.CardId) is { } rangeRule => rangeRule.ConsumeMorale,
         "discardHolyLock" => 3,
         "forgePromotionDiscount" or "forgeReadyOnKill" or "olympusMoraleFlip" => 1,
         "horusRevive" when !HorusUsesTombGuardCostMode(target) => 1,

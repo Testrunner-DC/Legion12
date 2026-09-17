@@ -5,7 +5,7 @@
 
 卡牌：324；能力段：692；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`56ea6cd9781eca93ec51ee83c8b845d7000b6a41721f39b9de5a7f443437de1a`。
+内容指纹：`a5f0ff6e1e14c549cab222f1a9b611e1c2e19896ef2f8c8f96641ff1424e7966`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
@@ -35,8 +35,24 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 | 能力ID | 测试方法 / 参数卡牌 | 已核对的用例范围 |
 | --- | --- | --- |
+| S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.ASecondActivationPaysAgainAndIgnoresLegacyOnceMarkers / S01-0003 | button-enabled, legacy-once-marker, payment-per-activation, repeat-activation |
+| S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.InvalidPaymentChoiceCanBeCancelledAfterRecoveryWithoutPaymentOrDeadlock / S01-0003 | duplicate-cancel, invalid-payment, payment-cancel, reconnect-payment |
+| S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.MissingOrNonLegionSourceFailsInsteadOfGrantingOutOfZone / S01-0003 | non-legion-state-fixture, reconnect-settlement, source-invalidated-settlement |
+| S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.NegationPreservesPaymentButDoesNotGrantRange / S01-0003 | negated-settlement, paid-cost-preserved, reconnect-settlement |
+| S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.NoEnemyIsNotAnActivationCostAndRangeExpiresAtTurnEnd / S01-0003 | no-enemy, turn-end-expiry |
+| S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.PaidRangeHasItsOwnActiveCostAndSingleResultScene / S01-0003 | cost-scope, presentation-identity |
+| S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.PaidRangeUsesOnlyItsPrintedTargetsAfterV2Recovery / S01-0003 | authoritative-attack, legal-targets, normal, reconnect-settlement |
+| S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.SourceRowIsCheckedBeforePaymentAndInsufficientCostDoesNotLockTheGame / S01-0003 | activation-row, insufficient-cost |
 | S01-0020:ability:reaction:f099e096c2d7437b | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ConditionalResponseSegmentsReportActualOutcomesAfterRecovery / S01-0020 | conditional-settlement, declined-branch, empty-library, negated-settlement, no-target, reconnect-settlement |
 | S01-0020:ability:reaction:f099e096c2d7437b | TwelveLegions.Tests.StackResponseChoiceRegressionTests.PublicResponseDeclarationsRestoreAndRejectDuplicateFinalSubmission / S01-0020 | commit-declaration, duplicate-declaration, presentation-declaration, reconnect-declaration |
+| S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.ASecondActivationPaysAgainAndIgnoresLegacyOnceMarkers / S01-0113 | button-enabled, legacy-once-marker, payment-per-activation, repeat-activation |
+| S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.InvalidPaymentChoiceCanBeCancelledAfterRecoveryWithoutPaymentOrDeadlock / S01-0113 | duplicate-cancel, invalid-payment, payment-cancel, reconnect-payment |
+| S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.MissingOrNonLegionSourceFailsInsteadOfGrantingOutOfZone / S01-0113 | non-legion-state-fixture, reconnect-settlement, source-invalidated-settlement |
+| S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.NegationPreservesPaymentButDoesNotGrantRange / S01-0113 | negated-settlement, paid-cost-preserved, reconnect-settlement |
+| S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.NoEnemyIsNotAnActivationCostAndRangeExpiresAtTurnEnd / S01-0113 | no-enemy, turn-end-expiry |
+| S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.PaidRangeHasItsOwnActiveCostAndSingleResultScene / S01-0113 | cost-scope, presentation-identity |
+| S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.PaidRangeUsesOnlyItsPrintedTargetsAfterV2Recovery / S01-0113 | authoritative-attack, legal-targets, normal, reconnect-settlement |
+| S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.SourceRowIsCheckedBeforePaymentAndInsufficientCostDoesNotLockTheGame / S01-0113 | activation-row, insufficient-cost |
 | S01-0120:ability:reaction:0865f062354681b2 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ConditionalResponseSegmentsReportActualOutcomesAfterRecovery / S01-0120 | conditional-settlement, declined-branch, empty-library, negated-settlement, reconnect-settlement, target-invalidated-settlement |
 | S01-0120:ability:reaction:0865f062354681b2 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.NestedResponseKeepsItsDeclaredRootWhenIntermediateStackChanges / S01-0120 | nested-authority, reconnect-settlement |
 | S01-0120:ability:reaction:0865f062354681b2 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.PublicResponseDeclarationsRestoreAndRejectDuplicateFinalSubmission / S01-0120 | commit-declaration, duplicate-declaration, presentation-declaration, reconnect-declaration |
@@ -78,7 +94,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0002 佣兵部队 #1 | S01-0002:ability:static:95d8e97d936cec37 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move | 0 | 我方 回合1次 可进行1次位移 |
 | S01-0002 佣兵部队 #2 | S01-0002:ability:static:05ab97cccf7cf46e | static/continuous | owner-unreviewed | 对方 进攻我方军团时，可从手牌中弃置此军团 | trigger:trigger.observe → condition:control.optional → cost:cost.discard → resolution:operation.attack-rule → duration:duration.apply | 1 | 对方 进攻我方军团时，可从手牌中弃置此军团：抵挡本次进攻 |
 | S01-0003 攻城投石车 #1 | S01-0003:ability:static:e3471cd2a7042e59 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
-| S01-0003 攻城投石车 #2 | S01-0003:ability:static:b5adccad515a8379 | static/continuous | owner-unreviewed | 位于后排 可消耗2士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → duration:duration.apply | 0 | 位于后排 可消耗2士气：此军团本回合可进攻对方后排和主宰 |
+| S01-0003 攻城投石车 #2 | S01-0003:ability:active:73c59f9367069790 | active/activated | owner-unreviewed | 位于后排 可消耗2士气 | trigger:trigger.observe → condition:condition.expression → cost:cost.pay-morale → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 1 | 位于后排 可消耗2士气：此军团本回合可进攻对方后排和主宰。 |
 | S01-0004 无名的渗透者 #1 | S01-0004:ability:static:1644ef88125b05c1 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:special.domain → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 此军团可在战场任意位置休整登场，不可进行支援和进攻。 |
 | S01-0004 无名的渗透者 #2 | S01-0004:ability:active:6f9f6988e1ea4be0 | active/activated | owner-unreviewed | 我方/对方 可消耗2士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → resolution:operation.move-zone → resolution:legacy.resolve | 1 | 我方/对方 可消耗2士气：击杀此军团。 |
 | S01-0004 无名的渗透者 #3 | S01-0004:ability:death:17a2eed7427d41ed | death/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.draw | 1 | 阵亡时 此军团的所有者抽取1张牌。 |
@@ -131,7 +147,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0112 孙武 #2 | S01-0112:ability:enter:340a3c71e63af3b0 | enter/triggered | composite-definition | 登场时 可返还1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → cost:cost.return-morale → resolution:operation.move-zone → duration:duration.apply → resolution:operation.composite-flow | 1 | 登场时 可返还1士气：本回合从手牌中打出的下1张战术卡无需消耗费用 |
 | S01-0112 孙武 #3 | S01-0112:ability:death:c91a9e71e9680c3d | death/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → resolution:special.domain → resolution:operation.composite-flow | 1 | 阵亡时 若天灾值不高于4，可选择墓地1张费用不高于4的战术卡回到手牌 |
 | S01-0113 养由基 #1 | S01-0113:ability:static:e3471cd2a7042e59 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
-| S01-0113 养由基 #2 | S01-0113:ability:static:023071a6a2b36c23 | static/continuous | owner-unreviewed | 「位于后排」可返还1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale → duration:duration.apply | 0 | 「位于后排」可返还1士气：此军团本回合可进攻对方后排 |
+| S01-0113 养由基 #2 | S01-0113:ability:active:e1b5cdab435b4c1f | active/activated | owner-unreviewed | 「位于后排」可返还1士气 | trigger:trigger.observe → condition:condition.expression → cost:cost.return-morale → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 1 | 「位于后排」可返还1士气：此军团本回合可进攻对方后排。 |
 | S01-0114 秦良玉 #1 | S01-0114:ability:static:e3471cd2a7042e59 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
 | S01-0114 秦良玉 #2 | S01-0114:ability:static:a91d7d481db612a9 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone | 0 | 若我方士气少于对方，此军团登场费用-1 |
 | S01-0114 秦良玉 #3 | S01-0114:ability:enter:89b2c77605906107 | enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.add-morale → resolution:operation.move-zone → resolution:operation.rest → resolution:operation.composite-flow | 1 | 登场时 从士气牌库追加1张休整的士气 |

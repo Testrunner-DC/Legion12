@@ -16,6 +16,8 @@ internal static class L12SingleSegmentEffectPresentations
 
     private static readonly L12SingleSegmentEffectPresentationDefinition[] Definitions =
     [
+        new("S01-0003", 2, "extendedRange"),
+        new("S01-0113", 2, "extendedRange"),
         new("S01-0004", 2, "destroyInfiltrator"),
         new("S01-01C1", 1, "factionAddActive"),
         new("S01-0109", 2, "addMorale"),

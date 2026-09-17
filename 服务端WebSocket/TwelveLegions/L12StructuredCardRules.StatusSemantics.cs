@@ -1,5 +1,7 @@
 namespace TwelveLegions.Server;
 
+public sealed record L12ExtendedRangeRule(string Text, string CostText, int ConsumeMorale, int ReturnMorale, bool AllowsMaster);
+
 /// <summary>
 /// Runtime identity predicates backed by the structured card rule layer.
 /// Keeping these identities here prevents presentation and lifecycle consumers
@@ -17,10 +19,10 @@ public static class L12StructuredCardSemantics
     private const string KusanagiCardId = "S01-0417";
     private const string TombGuardCardId = "S01-0212";
     private const string ProliferatingScarabCardId = "S02-0201";
-    private static readonly HashSet<string> ExtendedRangeActiveCards = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, L12ExtendedRangeRule> ExtendedRangeRules = new(StringComparer.OrdinalIgnoreCase)
     {
-        "S01-0003",
-        "S01-0113",
+        ["S01-0003"] = new("位于后排 可消耗2士气：此军团本回合可进攻对方后排和主宰。", "消耗2士气", 2, 0, true),
+        ["S01-0113"] = new("「位于后排」可返还1士气：此军团本回合可进攻对方后排。", "返还1士气", 0, 1, false),
     };
     private static readonly HashSet<string> AttachedStrongAttackCards = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -44,7 +46,10 @@ public static class L12StructuredCardSemantics
         => string.Equals(cardId, MedjedCardId, StringComparison.OrdinalIgnoreCase);
 
     public static bool HasBackRowExtendedRangeActive(string? cardId)
-        => cardId is not null && ExtendedRangeActiveCards.Contains(cardId);
+        => ExtendedRangeRule(cardId) is not null;
+
+    public static L12ExtendedRangeRule? ExtendedRangeRule(string? cardId)
+        => cardId is null ? null : ExtendedRangeRules.GetValueOrDefault(cardId);
 
     public static bool IsGram(string? cardId)
         => string.Equals(cardId, GramCardId, StringComparison.OrdinalIgnoreCase);

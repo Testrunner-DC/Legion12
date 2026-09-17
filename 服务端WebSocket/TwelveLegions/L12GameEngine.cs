@@ -582,8 +582,7 @@ public sealed partial class L12GameEngine
                     || player.Relic is { Tapped: true } relic && relic.InstanceId == sourceInstanceId
                     || player.ExtraRelics.Any(extraRelic => extraRelic.InstanceId == sourceInstanceId && extraRelic.Tapped)))
                 return view with { Enabled = false, DisabledReason = $"{_catalog.Cards.GetValueOrDefault(cardId)?.NameZh ?? "该卡牌"}必须为活跃状态" };
-            if (!L12StructuredCardRules.IsActiveRestAbility(cardId, view.Id)
-                && player.UsedAbilities.Contains(ActiveAbilityUsageKey(sourceInstanceId, cardId, view.Id)))
+            if (HasUsedLimitedActiveAbility(player, cardId, sourceInstanceId, view.Id))
                 return view with { Enabled = false, DisabledReason = "该效果本回合已经发动" };
             if (availabilitySource is not null
                 && ActiveAbilityUnavailableReason(player, availabilitySource, view.Id) is { } availabilityReason)
@@ -647,8 +646,8 @@ public sealed partial class L12GameEngine
         if (ability == "sunDraw" && player.Hand.Count > 3)
             return "我方手牌需不高于3张";
         if (ability == "extendedRange" && L12StructuredCardSemantics.HasBackRowExtendedRangeActive(source.CardId)
-            && (FindOnField(player, source.InstanceId, out var rangeRow, out _) is null || rangeRow != 1))
-            return "该效果只能在后排发动";
+            && ExtendedRangeSourceUnavailableReason(player, source) is { } rangeError)
+            return rangeError;
         if (ability == "gramReady" && L12StructuredCardSemantics.IsGram(source.CardId) && !source.Tapped)
             return "神剑格拉墨需为休整";
         if (ability == "revealHidden" && L12StructuredCardSemantics.IsHattoriHanzo(source.CardId) && !source.Hidden)
@@ -853,6 +852,7 @@ public sealed partial class L12GameEngine
         if (card.DiscardAtEndOfTurnUntilTurn >= State.TurnSerial)
             effects.Add(new("discard-end", "回合结束时弃置"));
         if (card.CanAttackBackAndMasterUntilTurn >= State.TurnSerial
+            || card.CanAttackBackUntilTurn >= State.TurnSerial
             || card.CanAttackMasterOnSummonUntilTurn >= State.TurnSerial
             || card.CanAttackLegionsOnSummonUntilTurn >= State.TurnSerial)
             effects.Add(new("extra-attack", "本回合获得额外进攻对象权限"));
@@ -1452,6 +1452,7 @@ public sealed partial class L12GameEngine
             card.MasterAttackDamageBonus = 0;
             card.MasterAttackDamageBonusUntilTurn = -1;
             card.CanAttackBackAndMasterUntilTurn = card.CanAttackBackAndMasterUntilTurn <= completedTurn ? -1 : card.CanAttackBackAndMasterUntilTurn;
+            if (card.CanAttackBackUntilTurn <= completedTurn) card.CanAttackBackUntilTurn = null;
             card.TauntUntilTurn = card.TauntUntilTurn <= completedTurn ? -1 : card.TauntUntilTurn;
             if (card.TauntExpiresAtPlayerTurnEnd == completedPlayer && completedTurn > card.TauntGrantedTurnSerial)
             {
@@ -1856,6 +1857,7 @@ public sealed partial class L12GameEngine
         card.CannotAttack = card.CardId is "S02-0005" or "S02-0007" or "S02-0201" or "S02-0603";
         card.CannotSupport = card.CardId == "S02-0201";
         card.CanAttackBackAndMasterUntilTurn = -1;
+        card.CanAttackBackUntilTurn = null;
         card.CanAttackMasterOnSummonUntilTurn = -1;
         card.CanAttackLegionsOnSummonUntilTurn = -1;
         card.TauntUntilTurn = -1;

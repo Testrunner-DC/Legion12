@@ -193,6 +193,8 @@ public sealed class EffectPresentationBranchSegmentTests
     {
         var expected = new[]
         {
+            ("S01-0003", 2, "extendedRange"),
+            ("S01-0113", 2, "extendedRange"),
             ("S01-0004", 2, "destroyInfiltrator"),
             ("S01-01C1", 1, "factionAddActive"),
             ("S01-0109", 2, "addMorale"),

@@ -862,7 +862,7 @@ public sealed partial class L12GameEngine
         else if (State.ActiveDisaster?.CardId == "S02-DS02" && targetRow == 0 && !card.Tapped)
             error = "〈迷雾绝境〉生效时不可进攻处于活跃状态的前排军团";
         else if (IsProtectedByRestedAmakine(defender, card)) error = "休整的阿麦金使活跃的试炼军团不可被进攻";
-        else if (row == 1 && targetRow != 0 && attacker.CanAttackBackAndMasterUntilTurn != State.TurnSerial)
+        else if (row == 1 && targetRow != 0 && !CanAttackBackFromBackRow(attacker))
             error = "后排远程军团只能进攻对方前排";
         else if (row == 0 && targetRow == 1 && !HasRangeInPosition(attacker, row))
             error = "近战军团无法进攻对方后排";
@@ -890,6 +890,9 @@ public sealed partial class L12GameEngine
     private static bool HasRangeInPosition(L12CardInstance card, int row)
         => L12StructuredCardRules.CombatProfile(card, row).HasRangeBonus;
 
+    private bool CanAttackBackFromBackRow(L12CardInstance card)
+        => card.CanAttackBackAndMasterUntilTurn == State.TurnSerial || card.CanAttackBackUntilTurn == State.TurnSerial;
+
     private static bool HasFrontRowLowTroopMasterProtection(L12PlayerState defender, int attackerTroops)
         => defender.Field[0].Any(card => card is not null && !card.Hidden && IsFieldLegion(card)
             && L12StructuredCardRules.ProtectsMasterFromTroops(card, 0, attackerTroops));
@@ -902,7 +905,7 @@ public sealed partial class L12GameEngine
             var target = defender.Field[targetRow][slot];
             if (target is null || target.Hidden || !IsFieldLegion(target)) continue;
             if (State.ActiveDisaster?.CardId == "S02-DS02" && targetRow == 0 && !target.Tapped) continue;
-            if (row == 1 && targetRow != 0 && attacker.CanAttackBackAndMasterUntilTurn != State.TurnSerial) continue;
+            if (row == 1 && targetRow != 0 && !CanAttackBackFromBackRow(attacker)) continue;
             if (row == 0 && targetRow == 1 && !HasRangeInPosition(attacker, row)) continue;
             var ranged = row == 1 || targetRow == 1;
             if (ranged && State.ActiveDisaster?.CardId == "S02-DS04") continue;

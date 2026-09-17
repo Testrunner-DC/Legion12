@@ -67,16 +67,23 @@ public sealed class RangedAbilityIdentityTests
     }
 
     [Theory]
-    [InlineData("S01-0003", "登场时 此军团本回合获得进攻距离+1，远程进攻无损。", "enter")]
-    [InlineData("S01-0003", "「位于前排」进攻距离+1，远程进攻无损。", "static")]
-    [InlineData("S01-0003", "进攻距离+1，远程进攻无损时，抽取1张牌。", "static")]
-    public void OverlayDoesNotAbsorbATriggeredGrantDifferentRowOrNonBoundary(string cardId, string text, string trigger)
+    [InlineData("登场时 此军团本回合获得进攻距离+1，远程进攻无损。", "enter")]
+    [InlineData("「位于前排」进攻距离+1，远程进攻无损。", "static")]
+    [InlineData("进攻距离+1，远程进攻无损时，抽取1张牌。", "static")]
+    public void OverlayDoesNotAbsorbATriggeredGrantDifferentRowOrNonBoundary(string text, string trigger)
     {
-        var card = SyntheticCard(cardId, text);
-        var abilities = L12AtomicEffectCatalog.Build([card]).Find(cardId)!.Abilities;
-        Assert.Equal(2, abilities.Count);
-        Assert.Single(abilities, ability => ability.Text.TrimEnd('。') == text.TrimEnd('。') && ability.Trigger == trigger);
-        Assert.Single(abilities, ability => ability.Text == RangedText + "。" && ability.Trigger == "static");
+        // Exercise the two shared boundary helpers directly. Real cards may acquire
+        // reviewed definitions later and then correctly bypass the fallback parser.
+        const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic;
+        var card = SyntheticCard("S01-0003", text);
+        var abilities = Assert.IsType<List<L12AtomicAbility>>(typeof(L12AtomicEffectCatalog)
+            .GetMethod("BuildFallbackAbilities", flags)!.Invoke(null, [card, text]));
+        var actual = Assert.Single(abilities);
+        Assert.Equal(text.TrimEnd('。'), actual.Text.TrimEnd('。'));
+        Assert.Equal(trigger, actual.Trigger);
+        var overlay = Assert.Single(L12StructuredCardRules.GetCombatOverlayAbilities(card.Id));
+        Assert.Equal(false, typeof(L12StructuredCardRules).GetMethod("MatchesRangedOverlay", flags)!
+            .Invoke(null, [actual.Text, actual.ExecutionModel, overlay]));
     }
 
     [Fact]

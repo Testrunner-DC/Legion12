@@ -1398,7 +1398,7 @@ contracts.push(
   [board.includes("filter(id => id !== 'skip' && id !== 'cancel')")
     && board.includes('function cancelResourcePayment()')
     && board.includes('resourceSelectionPrompt.validChoices.includes(\'cancel\')')
-    && board.includes('@click="cancelResourcePayment">取消打出</button>')
+    && board.includes('@click="cancelResourcePayment">{{ resourceSelectionPrompt.data?.cancel ?? \'取消打出\' }}</button>')
     && prompt.includes("'decline', 'cancel'")
     && prompt.includes("id === 'cancel' && p.data?.allowCancel === 'true'"),
     '打出前支付取消必须复用既有支付控制条与Prompt底部次级按钮，且取消值不得混入资源或卡牌选择'],

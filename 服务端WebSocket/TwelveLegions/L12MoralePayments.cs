@@ -110,7 +110,7 @@ public sealed partial class L12GameEngine
         {
             choices = choices.Append("cancel");
             data["allowCancel"] = "true";
-            data["cancel"] = "取消打出";
+            data["cancel"] = continuation == "active-morale-choice" ? "不发动" : "取消打出";
         }
         data["cost"] = totalCost.ToString();
         data["visibleCost"] = totalCost.ToString();

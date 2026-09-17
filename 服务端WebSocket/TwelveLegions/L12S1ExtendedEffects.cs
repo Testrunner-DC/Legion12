@@ -35,13 +35,13 @@ public sealed partial class L12GameEngine
     private List<L12AbilityView> GetAbilities(string cardId)
     {
         cardId = _catalog.MoraleIdentities.CanonicalEffectCardId(cardId);
+        if (L12StructuredCardSemantics.ExtendedRangeRule(cardId) is { } rangeRule)
+            return [new("extendedRange", $"{rangeRule.CostText}：进攻后排{(rangeRule.AllowsMaster ? "和主宰" : "")}")];
         return cardId switch
         {
-        "S01-0003" => [new("extendedRange", "消耗2士气：扩展进攻范围")],
         "S01-0004" => [new("destroyInfiltrator", "消耗2士气：击杀此军团")],
         "S01-0105" => [new("searchBrothers", "检索关羽/张飞")],
         "S01-0109" => [new("addMorale", "追加士气")],
-        "S01-0113" => [new("extendedRange", "返还1士气：进攻后排")],
         "S01-0116" => [new("xishiExchange", "弃置自身并返还1士气：替换登场")],
         "S01-0117" => [new("artifactDraw", "返还1活跃士气：抽取1张牌。"), new("artifactSearch", "弃置1张手牌：查看牌库顶部3张牌，选择其中1张【天廷】卡牌，展示并加入手牌，其余卡牌自选顺序返回牌库顶部或底部。")],
         "S01-0415" => [new("revealHidden", "主动：翻回正面，作为军团恢复公开状态。")],
@@ -666,12 +666,13 @@ public sealed partial class L12GameEngine
         };
         switch (ability)
         {
-            case "extendedRange" when source.CardId is "S01-0003" or "S01-0113":
+            case "extendedRange" when L12StructuredCardSemantics.ExtendedRangeRule(source.CardId) is { } rangeRule:
             {
-                if (FindOnField(player, source.InstanceId, out var row, out _) is null || row != 1) return CommandResult.Reject("该效果只能在后排发动");
-                var paid = source.CardId == "S01-0003" ? ConsumeMorale(2) : returnMoralePrepaid || ReturnMorale(player, 1);
-                if (!paid) return CommandResult.Reject(source.CardId == "S01-0003" ? "需要消耗2张活跃士气" : "需要返还1张士气");
-                if (source.CardId == "S01-0003") player.UsedAbilities.Add(onceKey);
+                if (ExtendedRangeSourceUnavailableReason(player, source) is { } rangeError) return CommandResult.Reject(rangeError);
+                var paid = rangeRule.ConsumeMorale > 0 ? ConsumeMorale(rangeRule.ConsumeMorale)
+                    : returnMoralePrepaid || ReturnMorale(player, rangeRule.ReturnMorale);
+                if (!paid) return CommandResult.Reject(rangeRule.ConsumeMorale > 0
+                    ? $"需要消耗{rangeRule.ConsumeMorale}张活跃士气" : $"需要返还{rangeRule.ReturnMorale}张士气");
                 break;
             }
             case "xishiExchange" when source.CardId == "S01-0116":
@@ -719,8 +720,15 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         switch (ability)
         {
-            case "extendedRange" when source is not null:
-                source.CanAttackBackAndMasterUntilTurn = State.TurnSerial;
+            case "extendedRange" when L12StructuredCardSemantics.ExtendedRangeRule(item.SourceCardId) is { } rangeRule:
+                var current = FindOnField(player, item.SourceInstanceId, out _, out _);
+                if (current is null || !IsFieldLegion(current))
+                {
+                    RecordResolutionFailure(item, "来源已不在我方战场或已不是军团");
+                    FinishStackItem(item); return true;
+                }
+                current.CanAttackBackUntilTurn = State.TurnSerial;
+                if (rangeRule.AllowsMaster) current.CanAttackBackAndMasterUntilTurn = State.TurnSerial;
                 FinishStackItem(item); return true;
             case "xishiExchange":
             {

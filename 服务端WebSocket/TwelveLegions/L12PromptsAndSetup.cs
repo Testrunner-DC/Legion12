@@ -835,12 +835,14 @@ public sealed partial class L12GameEngine
             }
             case "active-morale-choice":
             {
+                if (isExplicitCancellation) break;
                 var result = ResolveTombGuardActivePaymentChoice(prompt, chosen);
                 if (!result.Accepted) return result;
                 break;
             }
             case "active-return-choice":
             {
+                if (isExplicitCancellation) break;
                 var result = ResolveActiveReturnMoraleChoice(prompt, chosen);
                 if (!result.Accepted) return result;
                 break;

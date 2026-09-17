@@ -378,6 +378,8 @@ public static class L12S2ZoneOps
         promoted.CannotSupport |= foundation.CannotSupport;
         promoted.CanAttackBackAndMasterUntilTurn = Math.Max(promoted.CanAttackBackAndMasterUntilTurn,
             foundation.CanAttackBackAndMasterUntilTurn);
+        if (foundation.CanAttackBackUntilTurn is { } backPermission)
+            promoted.CanAttackBackUntilTurn = Math.Max(promoted.CanAttackBackUntilTurn ?? -1, backPermission);
         promoted.CanAttackMasterOnSummonUntilTurn = Math.Max(promoted.CanAttackMasterOnSummonUntilTurn,
             foundation.CanAttackMasterOnSummonUntilTurn);
         promoted.CanAttackLegionsOnSummonUntilTurn = Math.Max(promoted.CanAttackLegionsOnSummonUntilTurn,

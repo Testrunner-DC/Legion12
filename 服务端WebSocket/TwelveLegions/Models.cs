@@ -196,6 +196,9 @@ public sealed class L12CardInstance
     public List<string> StatusIcons { get; set; } = [];
     public List<L12StatusEffectView> StatusEffects { get; set; } = [];
     public int CanAttackBackAndMasterUntilTurn { get; set; } = -1;
+    // Omit the unused new permission so old checkpoints retain their serialized shape.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? CanAttackBackUntilTurn { get; set; }
     public int CanAttackMasterOnSummonUntilTurn { get; set; } = -1;
     public int CanAttackLegionsOnSummonUntilTurn { get; set; } = -1;
     /// <summary>由限时效果赋予的挑畔持续到哪个回合结束；前排判定仍由进攻规则实时计算。</summary>

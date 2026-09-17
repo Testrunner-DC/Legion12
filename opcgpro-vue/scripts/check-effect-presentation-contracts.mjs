@@ -166,4 +166,11 @@ for (const { cardId, sceneKey } of explicitPairs) {
     `Delegated publisher evidence is stale for ${cardId}/${sceneKey}`)
 }
 
+assert(board.includes("resourceSelectionPrompt.data?.cancel ?? '取消打出'"),
+  'Resource payment cancellation must use the authoritative label in the existing footer')
+assert(backend.includes('excludedResourceIds, allowCancel: true);'),
+  'Active morale payment must retain its pre-stack cancellation escape')
+assert(backend.includes('continuation == "active-return-choice"') && backend.includes('data["cancel"] = "不发动";'),
+  'Active morale return must distinguish cancellation from mandatory effect-stage return')
+
 console.log(`Effect presentation contracts passed: ${explicitPairs.length} explicit card/scene publishers, system exemptions bounded, multiline UI/runtime preserved.`)

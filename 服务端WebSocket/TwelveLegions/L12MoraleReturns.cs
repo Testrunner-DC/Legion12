@@ -6,7 +6,14 @@ public sealed partial class L12GameEngine
         Dictionary<string, string> data, bool requireActive = false)
     {
         var player = State.Players[playerIndex];
-        var choices = player.Morale.Where(card => !requireActive || !card.Tapped).Select(card => card.InstanceId).ToArray();
+        var choices = player.Morale.Where(card => !requireActive || !card.Tapped).Select(card => card.InstanceId).ToList();
+        // Only a pre-stack activation cost is cancellable; effect-stage returns remain mandatory.
+        if (continuation == "active-return-choice")
+        {
+            choices.Add("cancel");
+            data["allowCancel"] = "true";
+            data["cancel"] = "不发动";
+        }
         data["count"] = count.ToString();
         data["requireActive"] = requireActive.ToString();
         data["choiceMode"] = "resource-return";
@@ -26,7 +33,7 @@ public sealed partial class L12GameEngine
             "nonLethal" when source.CardId == "S01-01M1" => 4,
             "searchBrothers" when source.CardId == "S01-0105" => 1,
             "artifactDraw" when source.CardId == "S01-0117" => 1,
-            "extendedRange" when source.CardId == "S01-0113" => 1,
+            "extendedRange" when L12StructuredCardSemantics.ExtendedRangeRule(source.CardId) is { } rangeRule => rangeRule.ReturnMorale,
             "xishiExchange" when source.CardId == "S01-0116" => 1,
             "mengpoSilence" when source.CardId == "S01-01M2" => 1,
             "shennongReset" when source.CardId == "S02-0104" => 1,
@@ -41,15 +48,14 @@ public sealed partial class L12GameEngine
     private string? ValidateActiveReturnPrepayment(int playerIndex, L12CardInstance source, string ability, string? target)
     {
         var player = State.Players[playerIndex];
+        if (ability == "extendedRange" && L12StructuredCardSemantics.HasBackRowExtendedRangeActive(source.CardId))
+            return ExtendedRangeSourceUnavailableReason(player, source);
         return ability switch
         {
             "searchBrothers" when source.CardId == "S01-0105" && source.Tapped
                 => "刘备必须为活跃状态",
             "artifactDraw" when source.CardId == "S01-0117" && source.Tapped
                 => "山河社稷图必须为活跃状态",
-            "extendedRange" when source.CardId == "S01-0113"
-                && (FindOnField(player, source.InstanceId, out var row, out _) is null || row != 1)
-                => "该效果只能在后排发动",
             "xishiExchange" when source.CardId == "S01-0116" && !IsValidXishiDeclaration(player, source, target)
                 => "声明的手牌目标、战场或位置不再合法",
             "palaceExchange" when source.CardId == "S01-01D1" && source.Tapped

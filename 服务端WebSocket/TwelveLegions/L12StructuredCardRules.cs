@@ -558,6 +558,11 @@ public static partial class L12StructuredCardRules
 
     public static bool TryGetStructuredAbilities(string cardId, out IReadOnlyList<L12StructuredAbilityTemplate> abilities)
     {
+        if (L12StructuredCardSemantics.ExtendedRangeRule(cardId) is { } rangeRule)
+        {
+            abilities = ExtendedRangeAbilities(rangeRule);
+            return true;
+        }
         if (TryGetStarterBatch1Abilities(cardId, out abilities)) return true;
         if (TryGetStarterTargetedBatch2AAbilities(cardId, out abilities)) return true;
         if (TryGetStarterTargetedBatch2BAbilities(cardId, out abilities)) return true;
@@ -612,6 +617,20 @@ public static partial class L12StructuredCardRules
         };
         return abilities.Count > 0;
     }
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> ExtendedRangeAbilities(L12ExtendedRangeRule rule) =>
+    [
+        RangedAbility(),
+        new("active", "activated", rule.Text,
+        [
+            new(L12AtomKinds.Condition, "发动时位于我方后排", "condition", new() { ["expression"] = "source.row=back;source.zone=field" }),
+            new(rule.ConsumeMorale > 0 ? L12AtomKinds.PayMorale : L12AtomKinds.ReturnMorale, rule.CostText, "cost",
+                new() { ["amount"] = (rule.ConsumeMorale + rule.ReturnMorale).ToString() }),
+            new(L12AtomKinds.AttackRule, "本回合扩展进攻对象", "resolution",
+                new() { ["allowBackRow"] = "true", ["allowMaster"] = rule.AllowsMaster ? "true" : "false" }),
+            new(L12AtomKinds.Duration, "本回合", "duration", new() { ["duration"] = "this-turn" }),
+        ], ReviewStatus: "confirmed", ReviewSource: "user-20260917") { RuntimeAbilityId = "extendedRange" },
+    ];
 
     private static IReadOnlyList<L12StructuredAbilityTemplate> InfiltratorAbilities() =>
     [
