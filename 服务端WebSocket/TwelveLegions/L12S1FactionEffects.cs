@@ -1635,10 +1635,13 @@ public sealed partial class L12GameEngine
 
     private void Mill(L12PlayerState player, int count, string source)
     {
-        var result = L12LibraryOps.Mill(player, count);
-        if (!result.Success) { SetWinner(1 - player.PlayerIndex, $"{source}操作牌库时牌库数量不足"); return; }
-        AddEvent("mill", player.PlayerIndex, $"{source}弃置牌库顶部{result.Cards.Count}张牌", result.Cards.ToArray());
-        foreach (var card in result.Cards) NotifyCardDiscarded(player, card, "library", causedByEffect: true);
+        if (State.Phase == L12Phase.GameOver) return;
+        var origin = State.IsResolvingStack ? State.EffectStack.LastOrDefault() : null;
+        var result = L12LibraryOps.Mill(player, count, card =>
+            NotifyCardDiscarded(player, card, "library", causedByEffect: true));
+        if (result.Cards.Count > 0)
+            AddEvent("mill", player.PlayerIndex, $"{source}弃置牌库顶部{result.Cards.Count}张牌", result.Cards.ToArray());
+        CompleteLibrarySequence(player, result, count, origin, source);
     }
 
     private void MoveGraveToLibraryBottom(L12PlayerState player, IEnumerable<L12CardInstance> cards)

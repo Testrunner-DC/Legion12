@@ -241,7 +241,7 @@ public sealed class DrawDiscardDeathTriggerPresentationTests
     }
 
     [Fact]
-    public void FailedAtomicDrawDoesNotOpenTheMandatoryDiscardPrompt()
+    public void PartialSequentialDrawKeepsTheDrawnCardAndLosesWithoutOpeningDiscard()
     {
         var game = Create(31602);
         game.State.Players[0].Hand.Add(Card("S01-0002", "short-library-existing"));
@@ -254,7 +254,9 @@ public sealed class DrawDiscardDeathTriggerPresentationTests
         Assert.Empty(game.State.PendingPrompts);
         Assert.Empty(game.State.PendingActivations);
         Assert.Contains(game.State.Players[0].Hand, card => card.InstanceId == "short-library-existing");
-        Assert.DoesNotContain(game.State.Players[0].Hand, card => card.InstanceId == "only-one-card");
+        Assert.Contains(game.State.Players[0].Hand, card => card.InstanceId == "only-one-card");
+        Assert.Empty(game.State.Players[0].Library);
+        Assert.Equal(1, game.State.Winner);
         var results = game.State.Events.Where(entry => entry.Type == "effect-result"
                 && entry.Cards.Any(card => card.CardId == "S01-0306"))
             .OrderBy(entry => entry.EffectSegmentIndex).ToArray();

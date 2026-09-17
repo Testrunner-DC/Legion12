@@ -1205,23 +1205,22 @@ public sealed partial class L12GameEngine
 
     private bool Draw(L12PlayerState player, int count, bool logEffectDraw = true)
     {
-        var result = L12LibraryOps.Draw(player, count);
-        if (!result.Success) return false;
-        foreach (var card in result.Cards)
-            TrackCardFact("draw", player.PlayerIndex, card, "library", "hand");
-        if (State.IsResolvingStack && State.EffectStack.LastOrDefault() is { } origin)
+        if (State.Phase == L12Phase.GameOver) return false;
+        var origin = State.IsResolvingStack ? State.EffectStack.LastOrDefault() : null;
+        var result = L12LibraryOps.Draw(player, count, card =>
         {
-            if (logEffectDraw && result.Cards.Count > 0)
-            {
-                var source = FindSource(origin);
-                AddEvent("draw", player.PlayerIndex,
-                    $"〈{origin.SourceName}〉使{player.Name}抽取 {result.Cards.Count} 张牌",
-                    source is null ? [] : [source]);
-            }
-            foreach (var card in result.Cards)
+            TrackCardFact("draw", player.PlayerIndex, card, "library", "hand");
+            if (origin is not null)
                 NotifyCardAddedToHandByEffect(player, card, "library", $"{player.Name}因效果将{card.Name}加入手牌");
+        });
+        if (origin is not null && logEffectDraw && result.Cards.Count > 0)
+        {
+            var source = FindSource(origin);
+            AddEvent("draw", player.PlayerIndex,
+                $"〈{origin.SourceName}〉使{player.Name}抽取 {result.Cards.Count} 张牌",
+                source is null ? [] : [source]);
         }
-        return true;
+        return CompleteLibrarySequence(player, result, count, origin, origin?.SourceName ?? "抽牌");
     }
 
     private int AddMorale(L12PlayerState player, int count, bool tapped = false, bool fromFactionEffect = false)
@@ -1971,6 +1970,7 @@ public sealed partial class L12GameEngine
 
     private void SetWinner(int winner, string reason)
     {
+        if (State.Phase == L12Phase.GameOver) return;
         State.Winner = winner;
         State.WinnerReason = reason;
         State.Phase = L12Phase.GameOver;

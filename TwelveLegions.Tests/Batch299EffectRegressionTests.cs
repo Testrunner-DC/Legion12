@@ -176,6 +176,35 @@ public sealed class Batch299EffectRegressionTests
         Assert.Empty(game.State.PendingPrompts);
     }
 
+    [Theory]
+    [InlineData("S01-0316", 0)]
+    [InlineData("S01-0316", 1)]
+    [InlineData("S01-0317", 0)]
+    [InlineData("S01-0317", 1)]
+    public void SequentialDiscardDoesNotPartiallyPayAnUnaffordableEntryCost(string cardId, int available)
+    {
+        var game = Create(stateFormatVersion: 2);
+        var player = game.State.Players[0];
+        var source = Card(game, cardId, "unaffordable-library-cost");
+        player.Hand.Add(source);
+        for (var index = 0; index < available; index++)
+            player.Library.Add(Card(game, "S01-0003", $"unpaid-top-{index}"));
+        for (var index = 0; index < source.Cost; index++)
+            player.Morale.Add(new L12MoraleCard { InstanceId = $"summon-cost-{index}", CardId = "S01-01C1" });
+        var hp = player.Hp;
+        var result = game.Handle(0, new L12Command("playCard", source.InstanceId, Row: 0, Slot: 0));
+        Assert.True(result.Accepted, result.Error);
+        Pass(game);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Equal(available, player.Library.Count);
+        Assert.DoesNotContain(player.Graveyard, card => card.InstanceId.StartsWith("unpaid-top-", StringComparison.Ordinal));
+        Assert.Equal(hp, player.Hp);
+        Assert.Null(game.State.Winner);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "mill"
+            && entry.Cards.Any(card => card.InstanceId.StartsWith("unpaid-top-", StringComparison.Ordinal)));
+    }
+
     [Fact]
     public void EgilWithOneLegalTargetStillRequiresPlayerTargetSelection()
     {

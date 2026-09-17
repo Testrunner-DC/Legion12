@@ -4,15 +4,8 @@ public sealed record L12LibraryResult(bool Success, IReadOnlyList<L12CardInstanc
 
 public static class L12LibraryOps
 {
-    public static L12LibraryResult Draw(L12PlayerState player, int count)
-    {
-        if (count < 0) return new(false, [], "抽牌数量不能为负数");
-        if (player.Library.Count < count) return new(false, [], "牌库数量不足");
-        var cards = player.Library.Take(count).ToArray();
-        player.Library.RemoveRange(0, count);
-        player.Hand.AddRange(cards);
-        return new(true, cards);
-    }
+    public static L12LibraryResult Draw(L12PlayerState player, int count, Action<L12CardInstance>? onMoved = null)
+        => MoveLibraryCardsOneAtATime(player, player.Hand, count, onMoved);
 
     public static L12LibraryResult ViewTop(L12PlayerState player, int count)
     {
@@ -21,13 +14,23 @@ public static class L12LibraryOps
         return new(true, player.Library.Take(count).ToArray());
     }
 
-    public static L12LibraryResult Mill(L12PlayerState player, int count)
+    public static L12LibraryResult Mill(L12PlayerState player, int count, Action<L12CardInstance>? onMoved = null)
+        => MoveLibraryCardsOneAtATime(player, player.Graveyard, count, onMoved);
+
+    private static L12LibraryResult MoveLibraryCardsOneAtATime(L12PlayerState player,
+        List<L12CardInstance> destination, int count, Action<L12CardInstance>? onMoved)
     {
-        if (count < 0) return new(false, [], "弃置数量不能为负数");
-        if (player.Library.Count < count) return new(false, [], "牌库数量不足");
-        var cards = player.Library.Take(count).ToArray();
-        player.Library.RemoveRange(0, count);
-        player.Graveyard.AddRange(cards);
+        if (count < 0) return new(false, [], "操作数量不能为负数");
+        var cards = new List<L12CardInstance>();
+        for (var index = 0; index < count; index++)
+        {
+            if (player.Library.Count == 0) return new(false, cards, "下一次操作时牌库为空");
+            var card = player.Library[0];
+            player.Library.RemoveAt(0);
+            destination.Add(card);
+            cards.Add(card);
+            onMoved?.Invoke(card);
+        }
         return new(true, cards);
     }
 

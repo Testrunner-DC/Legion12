@@ -78,11 +78,13 @@ public sealed class RuleKernelTests
     }
 
     [Fact]
-    public void DrawIsAtomicWhenLibraryIsTooSmall()
+    public void DrawKeepsCompletedCardsWhenTheNextDrawFindsAnEmptyLibrary()
     {
         var player = Player(); player.Library.Add(Card("a"));
         var result = L12LibraryOps.Draw(player, 2);
-        Assert.False(result.Success); Assert.Single(player.Library); Assert.Empty(player.Hand);
+        Assert.False(result.Success); Assert.Empty(player.Library);
+        Assert.Equal("a", Assert.Single(player.Hand).InstanceId);
+        Assert.Equal("a", Assert.Single(result.Cards).InstanceId);
     }
 
     [Theory]
@@ -126,11 +128,13 @@ public sealed class RuleKernelTests
     }
 
     [Fact]
-    public void MillIsAtomicAndMovesCardsToGraveyard()
+    public void MillKeepsEachDiscardBeforeTheNextOperationFindsAnEmptyLibrary()
     {
         var player = Player(); player.Library.AddRange([Card("a"), Card("b")]);
-        Assert.False(L12LibraryOps.Mill(player, 3).Success); Assert.Equal(2, player.Library.Count);
-        Assert.True(L12LibraryOps.Mill(player, 2).Success); Assert.Empty(player.Library); Assert.Equal(2, player.Graveyard.Count);
+        var result = L12LibraryOps.Mill(player, 3);
+        Assert.False(result.Success); Assert.Empty(player.Library);
+        Assert.Equal(new[] { "a", "b" }, result.Cards.Select(card => card.InstanceId));
+        Assert.Equal(new[] { "a", "b" }, player.Graveyard.Select(card => card.InstanceId));
     }
 
     [Fact]
