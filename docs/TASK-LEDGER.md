@@ -1,9 +1,15 @@
 # 十二军团任务台账
 
-## EFFECT-20260914-DISASTER-TRIGGER-SOURCES：天灾开场/主动触发来源分离（下一批）
+## EFFECT-20260917-SUPPORT-DEATH-WITHOUT-ATTACK-KILL：支援阵亡与进攻击杀事实分离（下一批）
 
-- 已确认裁定：开场触发仅指回合阶段增长造成的天灾触发；主动触发仅指打出天灾军团或使用卡牌造成的触发。
-- 下一批需全池扫描所有天灾等级增长、天灾军团、卡牌触发、监听器、次数键、响应、日志、回放与恢复入口，以来源事实分流，不能按最终天灾卡号合并。
+- 已确认裁定：支援军团阵亡会触发其【阵亡时】；但不构成进攻军团击杀，进攻军团不得因此触发【击杀时】。
+- 下一批需扫描 L12Actions 支援离场、RemoveFromField默认死亡触发、L12CombatTimeline击杀事实、TriggerBatch、现有支援/击杀/阵亡测试和V2恢复，确保死亡事实与击杀事实独立。
+
+## EFFECT-20260917-DISASTER-TRIGGER-SOURCES：天灾开场/主动触发来源分离
+
+- 已完成：turn-phase、card-effect、gm三种来源随 PendingDisasterTriggerSource 保存，回合阶段自然增长与主动军团/卡效跨阈值不再共享错误的 Round == 1 判断；排程、Stack、日志、回放与V2恢复同源。
+- 〈诸神黄昏〉仅 turn-phase 走双方各抽2；card-effect 走其余玩家抽2、结束当前回合并追加回合。后续天灾分支必须读来源事实。
+- 功能提交`0a384b7`；聚焦天灾组105/105、Focused规则3301/3301、Batch全池审计和Release配置规则3301/3301通过；待发布前提交级Release验证，未部署。
 
 ## EFFECT-20260914-SIMPLE-SELF-TROOP-BUFF：进攻时自身单段兵力增益统一协议
 

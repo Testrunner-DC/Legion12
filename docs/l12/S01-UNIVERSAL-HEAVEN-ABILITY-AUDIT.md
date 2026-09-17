@@ -79,7 +79,7 @@
 | S01-DS06 神之天平 | 1 | 先统一血量并按是否变化抽牌，再各自弃1抽1；私密弃牌由各受影响玩家选择。 | `L12Disasters`、`L12StructuredCardRules` | `NewSystemsTests` | 通过 |
 | S01-DS07 天启默示录 | 1 | 各玩家选择战场保留至2，其他军团进入所有者墓地；手牌自选顺序回底后抽4，身份仅本人可见。 | `L12Disasters`、`L12AuthoritativeCardZones` | `NewSystemsTests` | 通过 |
 | S01-DS08 虚构的圣杯 | 1 | 每次合法使用圣物效果时对该玩家主宰造成1点非致命伤害；不是入栈前费用。 | `L12PromptsAndSetup`、`L12StructuredCardRules` | `ExtendedCardEffectsTests`、`LatestBugRegressionTests` | 通过 |
-| S01-DS09 诸神黄昏 | 1 | 全军团进入所有者墓地；开场/主动触发分支分别抽牌；主动分支立即结束并给触发者追加回合。 | `L12Disasters`、`L12StructuredCardRules` | `NewSystemsTests` | 通过 |
+| S01-DS09 诸神黄昏 | 1 | 全军团进入所有者墓地；回合阶段自然增长为开场分支、军团/卡效跨阈值为主动分支，分别抽牌；主动分支立即结束并给触发者追加回合。 | `L12Disasters`、`L12GameEngine`、`L12PromptsAndSetup`、`L12StructuredCardRules` | `NewSystemsTests`、`ApprovedTriggerBoundaryRegressionTests` | 通过 |
 | S01-DS10 堙灭 | 1 | 每个回合开始对所有主宰各造成1点非致命伤害，依次产生合法受伤触发且不造成致命。 | `L12GameEngine`、`L12Disasters` | `Bq20260830_02RegressionTests`、`NewSystemsTests` | 通过 |
 
 ## 同类全池扫描与未改边界
