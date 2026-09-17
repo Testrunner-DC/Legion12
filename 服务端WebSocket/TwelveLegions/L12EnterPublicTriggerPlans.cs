@@ -405,7 +405,8 @@ public sealed partial class L12GameEngine
                 }
                 else MoveHandToGrave(player, discard, causedByEffect: false);
             }
-            if (plan is "oddr" or "egil") DamageMaster(candidate.Controller, 1, $"{candidate.SourceName}登场效果费用");
+            if (plan is "oddr" or "egil"
+                && !PayMasterDamageCostAndCanContinue(candidate.Controller, 1, $"{candidate.SourceName}登场效果费用")) return true;
             if (plan is "egil" or "gram") Mill(player, 2, $"{candidate.SourceName}登场效果费用");
         }
         foreach (var pair in activation.DeclaredValues)

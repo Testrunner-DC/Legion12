@@ -206,7 +206,7 @@ public sealed partial class L12GameEngine
         }
 
         var selfDamageRule = card.CardType == "legion" ? SelfDamageEntryDiscount(card) : null;
-        var mayUseSelfDamageDiscount = selfDamageRule is not null && player.Hp > selfDamageRule.DamageAmount;
+        var mayUseSelfDamageDiscount = selfDamageRule is not null && CanPayMasterDamageCost(player, selfDamageRule.DamageAmount);
         if (mayUseSelfDamageDiscount && command.Choice?.StartsWith("self-damage-cost", StringComparison.Ordinal) != true
             && command.Choice?.StartsWith("normal-cost", StringComparison.Ordinal) != true)
         {
@@ -274,13 +274,14 @@ public sealed partial class L12GameEngine
                     compositeReservation.TemporaryMorale),
                 compositeReservation.ResourceIds, compositeReservation.TemporaryMorale);
         if (!paid) return CommandResult.Reject("选择的支付资源已失效或数量不正确");
-        if (usedAsgardSelfDamageDiscount)
-            DamageMaster(playerIndex, selfDamageRule!.DamageAmount,
-                $"{card.Name}发动「{selfDamageRule.CostText}：{selfDamageRule.ResolutionText}」");
+        if (usedAsgardSelfDamageDiscount
+            && !PayMasterDamageCostAndCanContinue(playerIndex, selfDamageRule!.DamageAmount,
+                $"{card.Name}发动「{selfDamageRule.CostText}：{selfDamageRule.ResolutionText}」"))
+            return CommandResult.Ok();
         if (usesChristinaReplacement)
         {
             player.UsedAbilities.Remove(christinaReplacementKey);
-            DamageMaster(playerIndex, 1, "克里斯蒂娜主动效果");
+            if (!PayMasterDamageCostAndCanContinue(playerIndex, 1, "克里斯蒂娜主动效果")) return CommandResult.Ok();
             AddEvent("cost", playerIndex, "克里斯蒂娜使本次主动战术无需消耗费用，改为我方主宰受到1点伤害", card);
         }
         if (rolloReturns.Length > 0)
@@ -618,7 +619,7 @@ public sealed partial class L12GameEngine
         if (card.CardId == "S02-0601" && player.S2ArthurDiscountUntilTurn >= State.TurnSerial) modifier -= 3;
         if (card.CardId == "S01-0403" && player.UsedAbilities.Contains("s2-fortune-next-uesugi")) modifier -= 2;
         var selfDamageRule = SelfDamageEntryDiscount(card);
-        if (useSelfDamageDiscount && selfDamageRule is not null && player.Hp > selfDamageRule.DamageAmount)
+        if (useSelfDamageDiscount && selfDamageRule is not null && CanPayMasterDamageCost(player, selfDamageRule.DamageAmount))
             modifier += selfDamageRule.CostAdjustment;
         if (card.CardType == "legion" && card.Faction == player.Faction && player.NextFactionLegionDiscount > 0)
             modifier -= player.NextFactionLegionDiscount;

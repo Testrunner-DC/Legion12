@@ -256,7 +256,7 @@ public sealed partial class L12GameEngine
             "return-morale" => CanReturnMorale(player, 1),
             "discard-own-legion" => PublicLegions(player).Any(),
             "ordinary-morale" => ActiveResourceCount(player) > 0,
-            "master-damage" => player.Hp > 1,
+            "master-damage" => CanPayMasterDamageCost(player, 1),
             "grave-bottom-one" => player.Graveyard.Any(CanEnterHandOrLibrary),
             "grave-bottom-two" => player.Graveyard.Where(CanEnterHandOrLibrary)
                 .Sum(L12StructuredCardRules.StarterGraveCardCopies) >= 2,
@@ -355,7 +355,7 @@ public sealed partial class L12GameEngine
                         => "美尼斯声明的弃置费用已失效；未支付费用且效果未入栈",
                     "ordinary-morale" when !CanConsumeAttackOrdinaryCost(player, costIds)
                         => $"{candidate.SourceName}声明的士气费用已失效；未支付费用且效果未入栈",
-                    "master-damage" when player.Hp <= 1
+                    "master-damage" when !CanPayMasterDamageCost(player, 1)
                         => "贝奥武夫的主宰伤害费用已失效；未支付费用且效果未入栈",
                     "grave-bottom-one" when costIds.Count != 1
                         || !player.Graveyard.Any(card => card.InstanceId == costIds[0]
@@ -410,6 +410,8 @@ public sealed partial class L12GameEngine
                 PayAttackPublicCost(candidate, activation, plan, player, source, costIds);
         }
 
+        if (State.Phase == L12Phase.GameOver) return true;
+
         if (error is not null)
         {
             RemoveUnstackedTriggerCandidate(candidate, error);
@@ -446,7 +448,7 @@ public sealed partial class L12GameEngine
                 _ = TryConsumeSelectedResources(player, 1, costIds);
                 break;
             case "master-damage":
-                DamageMaster(candidate.Controller, 1, "贝奥武夫进攻效果费用");
+                _ = PayMasterDamageCostAndCanContinue(candidate.Controller, 1, "贝奥武夫进攻效果费用");
                 break;
             case "grave-bottom-one":
                 MoveGraveToLibraryBottom(player, costIds.Select(id => player.Graveyard.First(card =>

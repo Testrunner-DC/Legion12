@@ -2215,7 +2215,7 @@ public sealed partial class L12GameEngine
                 return true;
             }
             case "conditional-master-damage":
-                if (player.Hp > 5) DamageMaster(controller, segment.Cost, $"〈{source.Name}〉的发动费用");
+                if (player.Hp > 5) return PayMasterDamageCostAndCanContinue(controller, segment.Cost, $"〈{source.Name}〉的发动费用");
                 else AddEvent("cost", controller, $"〈{source.Name}〉的主宰伤害费用因血量不高于5而不减少血量", source);
                 return State.Phase != L12Phase.GameOver;
             case "grave-bottom":

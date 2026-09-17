@@ -286,7 +286,9 @@ public sealed class SimpleSelfTroopBuffTriggerConsistencyTests
         var game = Create(11300 + cardId[^1]);
         var source = Card(cardId, $"cannot-pay-{cardId}");
         game.State.Players[0].Field[0][0] = source;
-        game.State.Players[0].Hp = 1;
+        // 只检查费用候选，0血表示没有可支付的伤害额度；1血已不属于费用不足。
+        // 真实1血发动并立即判败由LethalSelfDamageCostTests覆盖。
+        game.State.Players[0].Hp = cardId == "S01-0301" ? 0 : 1;
 
         Queue(game, source);
 

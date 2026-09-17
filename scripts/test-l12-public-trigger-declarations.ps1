@@ -263,7 +263,12 @@ if ($trialAdvancePlans.IndexOf('TrialCompleted = true', [StringComparison]::Ordi
 }
 Assert-Contains $plans 'TryConsumeSelectedResources(player, 1' 'Tsukuyomi must commit its declared resource before stack entry.'
 Assert-Contains $plans 'ReturnSelectedMoraleById(player, [costId], 1)' 'Liu Bei must return the declared morale before stack entry.'
-Assert-Contains $plans 'DamageMaster(candidate.Controller, 1,' 'Brynhild must pay the known master-damage cost before stack entry.'
+$masterDamageCosts = Read-Source 'L12MasterDamageCosts.cs'
+Assert-Contains $plans 'if (!PayMasterDamageCostAndCanContinue(candidate.Controller, 1, "布伦希尔德登场效果费用")) return true;' `
+    'Brynhild must pay before stack entry and stop its declaration after lethal payment.'
+Assert-Contains $masterDamageCosts 'player.Hp >= amount' 'The final health point must remain payable as a cost.'
+Assert-Contains $masterDamageCosts 'DamageMaster(playerIndex, amount, reason);' 'Shared damage costs must keep the authoritative damage and replacement path.'
+Assert-Contains $masterDamageCosts 'return State.Phase != L12Phase.GameOver;' 'Shared damage costs must report terminal payment to stop downstream operations.'
 Assert-Contains $plans 'candidate.Data["preserveIndependentStack"] = "true"' 'Immortal Gift must preserve its independent draw segment when summon declaration is absent.'
 Assert-Contains $plans 'activation.DeclaredValues["entryCard"] = ["mode:none"]' 'Immortal Gift invalid summon segment must cancel independently.'
 Assert-Contains $plans 'Batch6GAPublicTriggerPlan' 'Batch 6G-A triggers need one shared data-driven declaration route.'

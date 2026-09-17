@@ -915,7 +915,7 @@ public sealed partial class L12GameEngine
                 steps =
                 [
                     PublicTriggerStep("option", "mode", "布伦希尔德：预先声明是否支付1点主宰伤害费用",
-                        player.Hp > 1 ? ["mode:none", "mode:use"] : ["mode:none"]),
+                        CanPayMasterDamageCost(player, 1) ? ["mode:none", "mode:use"] : ["mode:none"]),
                 ];
                 if (sigurd.Count > 0 && EmptySlots(player).Any())
                 {
@@ -1561,12 +1561,12 @@ public sealed partial class L12GameEngine
         else if (key is ("S01-0309", "enter", _))
         {
             var sigurdZone = player.Hand.Concat(player.Graveyard).ToList();
-            if (player.Hp <= 1 || entryCard is not null && (!sigurdZone.Any(card => card.InstanceId == entryCard
+            if (!CanPayMasterDamageCost(player, 1) || entryCard is not null && (!sigurdZone.Any(card => card.InstanceId == entryCard
                     && card.CardId == PublicTriggerSigurdCard)
                 || !ValidateDeclaredEntry(candidate.Controller, activation, entryCard, sigurdZone)))
                 error = "布伦希尔德声明的齐格鲁德或登场位置已失效；未承受伤害且效果未入栈";
             else
-                DamageMaster(candidate.Controller, 1, "布伦希尔德登场效果费用");
+                if (!PayMasterDamageCostAndCanContinue(candidate.Controller, 1, "布伦希尔德登场效果费用")) return true;
         }
         else if (key.Item1 == "S01-0021")
         {

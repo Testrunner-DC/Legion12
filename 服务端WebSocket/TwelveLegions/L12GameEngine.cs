@@ -221,8 +221,11 @@ public sealed partial class L12GameEngine
 
         if (result.Accepted)
         {
-            ResolveStateBasedLegionDeaths(suppressStateDeathTriggers);
-            FlushStarterResourceTriggerBatches();
+            if (State.Phase != L12Phase.GameOver)
+            {
+                ResolveStateBasedLegionDeaths(suppressStateDeathTriggers);
+                FlushStarterResourceTriggerBatches();
+            }
             State.Revision++;
             CheckWinner();
         }
@@ -1897,7 +1900,7 @@ public sealed partial class L12GameEngine
             snapshot.Troops = snapshot.CurrentTroops;
             var selfDamageRule = SelfDamageEntryDiscount(card);
             var selfDamageDiscount = selfDamageRule is not null
-                && State.Players[playerIndex].Hp > selfDamageRule.DamageAmount;
+                && CanPayMasterDamageCost(State.Players[playerIndex], selfDamageRule.DamageAmount);
             var spentRunes = card.CardId == "S02-0622"
                 ? Math.Min(State.Players[playerIndex].SpecialZones.Runes, (card.Cost + 1) / 2)
                 : 0;
@@ -1981,6 +1984,9 @@ public sealed partial class L12GameEngine
         State.PendingPrompts.Clear();
         State.EffectStack.Clear();
         State.DeferredEffectStack.Clear();
+        State.PendingActivations.Clear();
+        State.PendingTriggerBatches.Clear();
+        State.PendingTriggerStackCandidates.Clear();
         State.IsResolvingStack = false;
         State.ResponseWindow = null;
         AddEvent("game-over", winner, $"{State.Players[winner].Name} 获胜：{reason}");

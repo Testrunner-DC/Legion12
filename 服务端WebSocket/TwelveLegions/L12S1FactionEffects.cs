@@ -558,10 +558,17 @@ public sealed partial class L12GameEngine
             case "canopic-four":
                 foreach (var id in chosen.Where(id => id != "skip")) { var target = FindOnField(player, id, out _, out _); if (target is not null) GrantImmortalUntilNextTurnStart(target, item.Controller); }
                 if (source is not null) DiscardRelic(player, source); FinishStackItem(item); return true;
-            case "oddr-draw": if (chosen[0] == "yes") { DamageMaster(item.Controller, 1, "神箭奥德尔登场效果"); Draw(player, 1); } FinishStackItem(item); return true;
+            case "oddr-draw":
+                if (chosen[0] == "yes")
+                {
+                    if (!PayMasterDamageCostAndCanContinue(item.Controller, 1, "神箭奥德尔登场效果")) return true;
+                    Draw(player, 1);
+                }
+                FinishStackItem(item); return true;
             case "egil-pay":
                 if (chosen[0] == "no") { FinishStackItem(item); return true; }
-                DamageMaster(item.Controller, 1, "夺命诗人埃吉尔效果"); Mill(player, 2, "夺命诗人埃吉尔"); PromptEnemyByTroops(item, "egil-debuff", "选择对方1张军团，本回合兵力-2000", int.MaxValue, false); return true;
+                if (!PayMasterDamageCostAndCanContinue(item.Controller, 1, "夺命诗人埃吉尔效果")) return true;
+                Mill(player, 2, "夺命诗人埃吉尔"); PromptEnemyByTroops(item, "egil-debuff", "选择对方1张军团，本回合兵力-2000", int.MaxValue, false); return true;
             case "egil-debuff": { var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, -2000, 0, State.TurnSerial, "夺命诗人埃吉尔"); FinishStackItem(item); return true; }
             case "gram-bottom":
                 if (chosen[0] != "skip") ReturnEnemyFieldToLibraryBottom(item.Controller, chosen[0]);
@@ -914,7 +921,10 @@ public sealed partial class L12GameEngine
                 RecordLimitedActiveAbilityUse(player, source, ability);
                 break;
             }
-            case "valhallaDiscount" when source.CardId == "S01-03D1": if (player.Hp <= 1) return CommandResult.Reject("主宰血量不足"); DamageMaster(playerIndex, 1, "英灵殿费用减免"); RecordLimitedActiveAbilityUse(player, source, ability); break;
+            case "valhallaDiscount" when source.CardId == "S01-03D1":
+                if (!CanPayMasterDamageCost(player, 1)) return CommandResult.Reject("主宰血量不足");
+                if (!PayMasterDamageCostAndCanContinue(playerIndex, 1, "英灵殿费用减免")) return CommandResult.Ok();
+                RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "valhallaRecover" when source.CardId == "S01-03D1":
                 if (target != "mode:none" && !player.Graveyard.Any(card => card.InstanceId == target
                         && L12StructuredCardRules.HasFaction(player, card, "asgard")
@@ -947,14 +957,14 @@ public sealed partial class L12GameEngine
             case "valkyrieRecover" when source.CardId == "S01-03M1":
             {
                 var ids = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
-                if (ids.Length != 3 || player.Hp <= 1 || ActiveResourceCount(player) < 1)
-                    return CommandResult.Reject("需要完成墓地选择、1张活跃士气且主宰血量需高于1");
+                if (ids.Length != 3 || !CanPayMasterDamageCost(player, 1) || ActiveResourceCount(player) < 1)
+                    return CommandResult.Reject("需要完成墓地选择、1张活跃士气且主宰血量至少为1");
                 var pair = ids.Take(2).Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id && CanEnterHandOrLibrary(card))).ToArray();
                 if (pair.Any(card => card is null) || pair.Select(card => card!.InstanceId).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2
                     || !ids.Take(2).Contains(ids[2], StringComparer.OrdinalIgnoreCase))
                     return CommandResult.Reject("瓦尔基里声明的墓地卡牌不再合法");
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气");
-                DamageMaster(playerIndex, 1, "瓦尔基里主宰效果");
+                if (!PayMasterDamageCostAndCanContinue(playerIndex, 1, "瓦尔基里主宰效果")) return CommandResult.Ok();
                 RecordLimitedActiveAbilityUse(player, source, ability);
                 break;
             }
@@ -1192,6 +1202,7 @@ public sealed partial class L12GameEngine
                 var declared = item.Data.GetValueOrDefault("target", string.Empty)
                     .Split('|', StringSplitOptions.RemoveEmptyEntries);
                 DamageMaster(item.Controller, 1, "阿尔维达主动效果");
+                if (State.Phase == L12Phase.GameOver) return true;
                 if (declared.Length == 3 && ParseEffectEntryBattlefieldChoice(declared[1]) == item.Controller)
                     SummonFromAnyPrivateZone(player, declared[0], declared[2], tapped: false);
                 FinishStackItem(item);

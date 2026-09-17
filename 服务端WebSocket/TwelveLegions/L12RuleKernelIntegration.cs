@@ -2135,7 +2135,7 @@ public sealed partial class L12GameEngine
                 AdvanceTriggerBatches();
                 return;
             }
-            DamageMaster(candidate.Controller, 1, "勇士比约恩阵亡效果");
+            if (!PayMasterDamageCostAndCanContinue(candidate.Controller, 1, "勇士比约恩阵亡效果")) return;
             MoveGraveToLibraryBottom(player, costs);
             candidate.Data["declaredGraveOrder"] = string.Join('|', costs.Select(card => card.InstanceId));
             candidate.Data["declaredSlot"] = slot;
