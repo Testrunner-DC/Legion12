@@ -62,4 +62,18 @@ foreach ($legacy in @(
     }
 }
 
+$availability = Read-Source 'L12ActionAvailability.cs'
+$usage = Read-Source 'L12ActiveUsageRules.cs'
+Assert-Contains $availability 'L12ActiveUsageRules.Find(canonical, ability) is not null' 'Usage gates must opt in to explicit limits.'
+Assert-Contains $active 'L12ActiveUsageRules.UsageKey(sourceInstanceId, sourceCardId, ability)' 'Shared usage keys must come from the reviewed registry.'
+foreach ($source in @($active, $s1, $s2, $s2Faction)) {
+    Assert-Contains $source 'RecordLimitedActiveAbilityUse(player, source, ability)' 'Active costs must use the shared usage writer.'
+    if ($source.Contains('player.UsedAbilities.Add(onceKey);')) {
+        throw 'A raw active once-key write bypasses explicit usage rules.'
+    }
+}
+if ($usage -match 'Regex\.|\.Effect|EffectText') { throw 'Usage policy must not infer live rules from prose.' }
+$universal = Read-Source 'L12S2UniversalEffects.cs'
+Assert-Contains $universal 'UsedLimitedMasterAbilityViews(player)' 'Reset candidates must use explicit shared limits.'
+Assert-Contains $universal 'ActiveAbilityUsageKey(' 'Reset settlement must use the same grouped key.'
 Write-Host 'Public active declaration guard passed.'

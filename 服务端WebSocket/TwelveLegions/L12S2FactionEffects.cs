@@ -884,8 +884,7 @@ public sealed partial class L12GameEngine
         var player = State.Players[playerIndex];
         if (ability == "nephthysSacrifice" && source.CardId == "S02-02M1")
         {
-            var onceKey = $"active:{source.InstanceId}:{ability}";
-            if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
+            if (HasUsedLimitedActiveAbility(player, source.CardId, source.InstanceId, ability)) return CommandResult.Reject("该效果本回合已经发动");
             var choices = PublicLegions(player).Select(card => card.InstanceId).ToArray();
             if (choices.Length == 0) return CommandResult.Reject("我方战场没有可弃置的军团");
             return BeginPendingActivation(playerIndex, source, ability, choices,
@@ -926,25 +925,23 @@ public sealed partial class L12GameEngine
             return BeginTrialAdvanceActivation(playerIndex, source);
         if (ability == "godPowerDraw" && source.CardId == "S02-05C1")
         {
-            if (player.UsedAbilities.Contains($"active:{source.InstanceId}:{ability}")) return CommandResult.Reject("该效果本回合已经发动");
+            if (HasUsedLimitedActiveAbility(player, source.CardId, source.InstanceId, ability)) return CommandResult.Reject("该效果本回合已经发动");
             if (!L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1)) return CommandResult.Reject("需要1张活跃的神力");
-            player.UsedAbilities.Add($"active:{source.InstanceId}:{ability}");
+            RecordLimitedActiveAbilityUse(player, source, ability);
             PushEffect(playerIndex, source, "active", "主动效果", data: new Dictionary<string, string> { ["ability"] = ability });
             return CommandResult.Ok();
         }
         if (ability == "olympusMoraleFlip" && source.CardId is "S02-05C1" or "S02-05C1A")
         {
-            var onceKey = $"active:{source.InstanceId}:{ability}";
-            if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
+            if (HasUsedLimitedActiveAbility(player, source.CardId, source.InstanceId, ability)) return CommandResult.Reject("该效果本回合已经发动");
             if (!player.Morale.Any(card => !card.IsGodPower)) return CommandResult.Reject("没有可翻转的士气");
             return CommitActiveAbility(playerIndex, source, ability, null);
         }
         if (ability == "prometheusTopThree" && source.CardId == "S02-05M2")
         {
-            var onceKey = $"active:{source.InstanceId}:{ability}";
-            if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
+            if (HasUsedLimitedActiveAbility(player, source.CardId, source.InstanceId, ability)) return CommandResult.Reject("该效果本回合已经发动");
             if (!L12S2ZoneOps.ConsumeGodPower(player, 1)) return CommandResult.Reject("需要1张活跃的神力");
-            player.UsedAbilities.Add(onceKey);
+            RecordLimitedActiveAbilityUse(player, source, ability);
             var data = new Dictionary<string, string> { ["ability"] = ability };
             foreach (var pair in CompositeFirstSegmentData("active:S02-05M2:prometheusTopThree",
                          new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
@@ -954,8 +951,7 @@ public sealed partial class L12GameEngine
         }
         if (ability == "morriganReadyOnKill" && source.CardId == "S02-06M1")
         {
-            var onceKey = $"active:{source.InstanceId}:{ability}";
-            if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
+            if (HasUsedLimitedActiveAbility(player, source.CardId, source.InstanceId, ability)) return CommandResult.Reject("该效果本回合已经发动");
             if (player.SpecialZones.Runes < 2) return CommandResult.Reject("需要消耗2符文");
             var choices = PublicLegions(player)
                 .Where(card => L12StructuredCardRules.HasFaction(player, card, "otherworld"))
@@ -968,7 +964,7 @@ public sealed partial class L12GameEngine
         }
         if (ability == "runeUse" && source.CardId == "S02-06C1")
         {
-            if (player.UsedAbilities.Contains($"active:{source.InstanceId}:{ability}")) return CommandResult.Reject("符文效果本回合已经发动");
+            if (HasUsedLimitedActiveAbility(player, source.CardId, source.InstanceId, ability)) return CommandResult.Reject("符文效果本回合已经发动");
             if (player.SpecialZones.Runes < 1) return CommandResult.Reject("需要消耗1符文");
             return BeginPendingActivationSequence(playerIndex, source, ability,
             [
@@ -1116,7 +1112,7 @@ public sealed partial class L12GameEngine
         if (source.CardType == "trial" && ability is "fenianReady" or "crusadeTrialNoLoss" or "crusadeRichardPiercing" or "crusadeRecover")
         {
             if (!source.TrialCompleted) return CommandResult.Reject("该试炼尚未完成");
-            if (player.UsedAbilities.Contains(ActiveAbilityUsageKey(source.InstanceId, source.CardId, ability)))
+            if (HasUsedLimitedActiveAbility(player, source.CardId, source.InstanceId, ability))
                 return CommandResult.Reject("该效果本回合已经发动");
             if (ability == "fenianReady")
             {
@@ -1232,7 +1228,7 @@ public sealed partial class L12GameEngine
         var player = State.Players[playerIndex];
         if (ability == "factionGainRune" && source.CardId == "S02-06C1")
         {
-            if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
+            if (HasUsedLimitedActiveAbility(player, source.CardId, source.InstanceId, ability)) return CommandResult.Reject("该效果本回合已经发动");
             var paid = useTombGuards switch
             {
                 true => TryConsumeMorale(player, 2, preferTombGuards: true, allowTombGuards: true),
@@ -1240,20 +1236,20 @@ public sealed partial class L12GameEngine
                 _ => TryConsumeMorale(player, 2),
             };
             if (!paid) return CommandResult.Reject("需要消耗2士气");
-            player.UsedAbilities.Add(onceKey);
+            RecordLimitedActiveAbilityUse(player, source, ability);
             PushEffect(playerIndex, source, "active", "主动效果",
                 data: new Dictionary<string, string> { ["ability"] = ability });
             return CommandResult.Ok();
         }
         if (ability == "nephthysSacrifice" && source.CardId == "S02-02M1")
         {
-            if (player.UsedAbilities.Contains(onceKey)) return CommandResult.Reject("该效果本回合已经发动");
+            if (HasUsedLimitedActiveAbility(player, source.CardId, source.InstanceId, ability)) return CommandResult.Reject("该效果本回合已经发动");
             var declaredIds = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries)
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             if (declaredIds.Length == 0) return CommandResult.Reject("至少需要选择1张我方军团");
             var declared = declaredIds.Select(id => FindOnField(player, id, out _, out _)).ToArray();
             if (declared.Any(card => card is null || !IsFieldLegion(card))) return CommandResult.Reject("选择的军团已不在我方战场");
-            player.UsedAbilities.Add(onceKey);
+            RecordLimitedActiveAbilityUse(player, source, ability);
             var compositeDeclared = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
             {
                 ["sacrificeTargets"] = [.. declaredIds],
@@ -1272,7 +1268,7 @@ public sealed partial class L12GameEngine
             var tactic = player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1] && card.CardType is "tactic" or "counter-tactic");
             if (legion is null || tactic is null) return CommandResult.Reject("选择的墓地卡牌已不合法");
             if (!L12S2ZoneOps.SpendRunes(player, 2)) return CommandResult.Reject("需要消耗2符文");
-            player.UsedAbilities.Add(onceKey);
+            RecordLimitedActiveAbilityUse(player, source, ability);
             PushEffect(playerIndex, source, "active", "主神效果", data: new Dictionary<string, string>
             {
                 ["ability"] = ability,
@@ -1329,7 +1325,7 @@ public sealed partial class L12GameEngine
                 || !L12StructuredCardRules.HasFaction(player, declaredTarget, "otherworld"))
                 return CommandResult.Reject("选择的军团不符合莫瑞甘效果条件");
             if (!L12S2ZoneOps.SpendRunes(player, 2)) return CommandResult.Reject("需要消耗2符文");
-            player.UsedAbilities.Add(onceKey);
+            RecordLimitedActiveAbilityUse(player, source, ability);
             var morriganDeclared = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
             {
                 ["readyTarget"] = [declaredTarget.InstanceId],
@@ -1397,7 +1393,7 @@ public sealed partial class L12GameEngine
                 return CommandResult.Reject("减兵目标不合法");
             player.Hand.Remove(discard);
             player.Graveyard.Add(discard);
-            player.UsedAbilities.Add(onceKey);
+            RecordLimitedActiveAbilityUse(player, source, ability);
             var data = new Dictionary<string, string> { ["ability"] = ability, ["targets"] = string.Join('|', declared.Skip(1)) };
             PushEffect(playerIndex, source, "active", "主动效果", data: data);
             AddEvent("cost", playerIndex, $"弃置〈{discard.Name}〉支付黄金圣甲虫费用", discard);
@@ -1480,7 +1476,7 @@ public sealed partial class L12GameEngine
             // 冒号前弃置是发动费用：先完成权威离场，再创建可响应的堆叠项。
             RemoveFromField(player, source, true, "作为加拉哈德主动效果的费用被弃置",
                 leaveKind: L12FieldLeaveKind.Discard);
-            player.UsedAbilities.Add(onceKey);
+            RecordLimitedActiveAbilityUse(player, source, ability);
             var data = new Dictionary<string, string> { ["ability"] = ability, ["healMode"] = target };
             DeclarePresentationBranch(data, "galahad-grail-reward", "healMode", target);
             PushEffect(playerIndex, source, "active", "完成试炼后的主动效果",
@@ -1493,7 +1489,7 @@ public sealed partial class L12GameEngine
             var mode = target;
             if (mode is not ("mode:trial" or "mode:draw")) return CommandResult.Reject("符文效果选项不合法");
             L12S2ZoneOps.SpendRunes(player, 1);
-            player.UsedAbilities.Add(onceKey);
+            RecordLimitedActiveAbilityUse(player, source, ability);
             var data = new Dictionary<string, string> { ["ability"] = ability, ["mode"] = mode };
             DeclarePresentationBranch(data, "otherworld-rune-use", "mode", mode);
             PushEffect(playerIndex, source, "active", "符文效果", data: data);
@@ -1540,7 +1536,7 @@ public sealed partial class L12GameEngine
                 player.Graveyard.Add(discardCost);
                 AddEvent("cost", playerIndex, $"弃置〈{discardCost.Name}〉支付十字军东征费用", discardCost);
             }
-            player.UsedAbilities.Add(onceKey);
+            RecordLimitedActiveAbilityUse(player, source, ability);
             PushEffect(playerIndex, source, "active", "已完成试炼的主动效果",
                 data: new Dictionary<string, string> { ["ability"] = ability, ["target"] = target ?? string.Empty });
             return CommandResult.Ok();
@@ -1548,7 +1544,7 @@ public sealed partial class L12GameEngine
         if (ability == "olympusMoraleFlip" && source.CardId is "S02-05C1" or "S02-05C1A")
         {
             if (!TryConsumeMorale(player, 1)) return CommandResult.Reject("需要1张活跃的士气");
-            player.UsedAbilities.Add(onceKey);
+            RecordLimitedActiveAbilityUse(player, source, ability);
             PushEffect(playerIndex, source, "active", "阵营效果",
                 data: new Dictionary<string, string>
                 {

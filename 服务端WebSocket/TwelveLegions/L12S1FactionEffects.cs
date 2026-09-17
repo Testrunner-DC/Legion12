@@ -763,14 +763,14 @@ public sealed partial class L12GameEngine
                     || player.Field[row][slot] is not null)
                     return CommandResult.Reject("太阳城阵营效果选择的陵墓守卫或登场位置已失效");
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气");
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 break;
             }
-            case "sunDraw" when source.CardId == "S01-02C1": if (player.Hand.Count > 3 || !ConsumeMorale(1)) return CommandResult.Reject("手牌需不高于3张，且需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
+            case "sunDraw" when source.CardId == "S01-02C1": if (player.Hand.Count > 3 || !ConsumeMorale(1)) return CommandResult.Reject("手牌需不高于3张，且需要1张活跃士气"); RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "asgardDraw" when source.CardId == "S01-03C1":
             {
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气");
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 break;
             }
             case "alvidaSummon" when source.CardId == "S01-0307":
@@ -799,7 +799,7 @@ public sealed partial class L12GameEngine
                     return CommandResult.Reject("无法弃置来源军团支付费用");
                 break;
             case "gramReady" when source.CardId == "S01-0317": if (!source.Tapped || !ConsumeMorale(2)) return CommandResult.Reject("神剑格拉墨需为休整，且需要2张活跃士气"); break;
-            case "palaceReward" when source.CardId == "S01-01D1": if (player.ReturnedMoraleThisTurn <= 1) return CommandResult.Reject("本回合返还士气需高于1张"); player.UsedAbilities.Add(onceKey); break;
+            case "palaceReward" when source.CardId == "S01-01D1": if (player.ReturnedMoraleThisTurn <= 1) return CommandResult.Reject("本回合返还士气需高于1张"); RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "palaceExchange" when source.CardId == "S01-01D1":
             {
                 var values = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
@@ -826,14 +826,14 @@ public sealed partial class L12GameEngine
             case "mengpoSilence" when source.CardId == "S01-01M2":
                 if (!string.IsNullOrWhiteSpace(target) && DeclaredEnemyTarget(playerIndex, target) is null)
                     return CommandResult.Reject("目标不再合法");
-                if (!returnMoralePrepaid && !ReturnMorale(player, 1)) return CommandResult.Reject("需要返还1张士气"); player.UsedAbilities.Add(onceKey); break;
+                if (!returnMoralePrepaid && !ReturnMorale(player, 1)) return CommandResult.Reject("需要返还1张士气"); RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "mengpoMorale" when source.CardId == "S01-01M2":
             {
                 var discard = player.Hand.FirstOrDefault(card => card.InstanceId == target);
                 if (player.Morale.Count >= State.Players[1 - playerIndex].Morale.Count || discard is null)
                     return CommandResult.Reject("士气需少于对方，且声明的弃牌费用必须保持合法");
                 MoveHandToGrave(player, discard.InstanceId, causedByEffect: false, source);
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 break;
             }
             case "sunTopThree" or "sunBottomEnemy" when source.CardId == "S01-02D1":
@@ -845,7 +845,7 @@ public sealed partial class L12GameEngine
                 if (ability == "sunBottomEnemy" && DeclaredEnemyTarget(playerIndex, target,
                         card => card.Troops <= 4000 && !L12SpecialDeckRules.IsDerivedSpecialCard(card)) is null)
                     return CommandResult.Reject("目标不再合法");
-                if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气"); player.UsedAbilities.Add(onceKey); break;
+                if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气"); RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "ankhReady" when source.CardId == "S01-0215":
             {
                 var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
@@ -912,17 +912,17 @@ public sealed partial class L12GameEngine
                     return CommandResult.Reject("梅杰德选择的效果、陵墓守卫或目标不再合法");
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张可用资源");
                 if (guard is not null) guard.Tapped = true;
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 break;
             }
-            case "valhallaDiscount" when source.CardId == "S01-03D1": if (player.Hp <= 1) return CommandResult.Reject("主宰血量不足"); DamageMaster(playerIndex, 1, "英灵殿费用减免"); player.UsedAbilities.Add(onceKey); break;
+            case "valhallaDiscount" when source.CardId == "S01-03D1": if (player.Hp <= 1) return CommandResult.Reject("主宰血量不足"); DamageMaster(playerIndex, 1, "英灵殿费用减免"); RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "valhallaRecover" when source.CardId == "S01-03D1":
                 if (target != "mode:none" && !player.Graveyard.Any(card => card.InstanceId == target
                         && L12StructuredCardRules.HasFaction(player, card, "asgard")
                         && CanEnterHandOrLibrary(card)))
                     return CommandResult.Reject("英灵殿声明的墓地回收目标已失效");
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气");
-                player.UsedAbilities.Add(onceKey); break;
+                RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "valhallaKill" when source.CardId == "S01-03D1":
             {
                 var ids = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
@@ -956,11 +956,11 @@ public sealed partial class L12GameEngine
                     return CommandResult.Reject("瓦尔基里声明的墓地卡牌不再合法");
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气");
                 DamageMaster(playerIndex, 1, "瓦尔基里主宰效果");
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 break;
             }
             case "lokiCycle" when source.CardId == "S01-03M2":
-                if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
+                if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气"); RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "lokiHeal" when source.CardId == "S01-03M2":
             {
                 var ids = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
@@ -968,10 +968,10 @@ public sealed partial class L12GameEngine
                         legionOnly: false, out _, out _))
                     return CommandResult.Reject("洛基声明的合计2张墓地费用已失效");
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气");
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 break;
             }
-            case "yomiDiscount" when source.CardId == "S01-04D1": player.UsedAbilities.Add(onceKey); break;
+            case "yomiDiscount" when source.CardId == "S01-04D1": RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "yomiSweep" when source.CardId == "S01-04D1":
             {
                 var ids = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
@@ -981,7 +981,7 @@ public sealed partial class L12GameEngine
                     || ids[0] != "mode:none" && ids[0].Equals(ids[1], StringComparison.OrdinalIgnoreCase))
                     return CommandResult.Reject("黄泉之门的公开击杀目标声明已失效");
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气");
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 break;
             }
             case "yomiRecover" when source.CardId == "S01-04D1":
@@ -1007,7 +1007,7 @@ public sealed partial class L12GameEngine
                 if (debuff is null || kill is null
                     && (declared[1] != "mode:none" || hasRequiredKill))
                     return CommandResult.Reject("天照大神声明的费用降低或击杀目标已失效");
-                if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
+                if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气"); RecordLimitedActiveAbilityUse(player, source, ability); break;
             }
             case "amaterasuReady" when source.CardId == "S01-04M1":
             {
@@ -1017,7 +1017,7 @@ public sealed partial class L12GameEngine
                     : null;
                 if (discard is null) return CommandResult.Reject("声明的弃牌费用已失效");
                 MoveHandToGrave(player, discard.InstanceId, causedByEffect: false, source);
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 break;
             }
             default: return null;

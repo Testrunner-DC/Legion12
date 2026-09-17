@@ -670,8 +670,7 @@ public sealed partial class L12GameEngine
             return "士气需少于对方，且需弃置1张手牌";
         if (ability == "shennongReset")
         {
-            var hasUsedMasterAbility = GetAbilities(player.MasterId)
-                .Any(view => player.UsedAbilities.Contains($"active:master-{player.PlayerIndex}:{view.Id}"));
+            var hasUsedMasterAbility = UsedLimitedMasterAbilityViews(player).Length > 0;
             if (!hasUsedMasterAbility) return "我方主宰没有已使用的效果次数";
         }
         if (ability == "sunGuard" || ability == "cleopatraGuard")

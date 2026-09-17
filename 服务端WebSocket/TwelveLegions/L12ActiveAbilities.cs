@@ -195,13 +195,7 @@ public sealed partial class L12GameEngine
         => card.CardId == "S02-0301" && ability == "thorHammerRevive" && player.MasterId == "S02-03M1";
 
     private static string ActiveAbilityUsageKey(string sourceInstanceId, string sourceCardId, string ability)
-        => sourceCardId == "S01-03M2" && ability is "lokiCycle" or "lokiHeal"
-            ? $"active:{sourceInstanceId}:loki"
-            : sourceCardId == "S01-01M2" && ability is "mengpoSilence" or "mengpoMorale"
-                ? $"active:{sourceInstanceId}:mengpo-choice"
-            : sourceCardId == "S02-06S6" && ability is "crusadeTrialNoLoss" or "crusadeRichardPiercing" or "crusadeRecover"
-                ? $"active:{sourceInstanceId}:crusade-choice"
-            : $"active:{sourceInstanceId}:{ability}";
+        => L12ActiveUsageRules.UsageKey(sourceInstanceId, sourceCardId, ability);
 
     private string[] ActiveAbilityReservedResourceIds(L12PlayerState player, L12CardInstance source, string ability,
         string? target, bool reserveInternalCosts)
@@ -414,14 +408,14 @@ public sealed partial class L12GameEngine
             }
             case "drawCycle" when source.CardId == "S01-01M1":
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要消耗 1 张活跃士气");
-                player.UsedAbilities.Add(onceKey); break;
+                RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "nonLethal" when source.CardId == "S01-01M1":
                 if (!ReturnMoraleCost(4)) return CommandResult.Reject("需要返还 4 张士气");
                 moraleReturnedByMasterEffect = 4;
-                player.UsedAbilities.Add(onceKey); break;
+                RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "frontBuff" when source.CardId == "S01-04M2":
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要消耗 1 张活跃士气");
-                player.UsedAbilities.Add(onceKey); break;
+                RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "kusanagi" when source.CardId == "S01-04M2":
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要消耗 2 张活跃士气");
                 break;
@@ -445,18 +439,17 @@ public sealed partial class L12GameEngine
                 AddEvent("cost", playerIndex, $"弃置 {discard.Name} 支付山河社稷图费用", discard); break;
             }
             case "kusanagiDebuff" or "kusanagiStrong" when source.CardId == "S01-0417":
-                if (player.UsedAbilities.Contains($"active:{source.InstanceId}:choice")) return CommandResult.Reject("草薙剑的效果本回合已经发动");
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要消耗 1 张活跃士气");
-                player.UsedAbilities.Add($"active:{source.InstanceId}:choice"); break;
+                RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "discardHolyLock" when source.AttachedCards.Any(card => card.CardId == "S02-0013"):
                 if (!ConsumeMorale(3)) return CommandResult.Reject("需要消耗3张活跃士气");
                 break;
             case "factionAddActive" when source.CardId == "S01-01C1":
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要消耗 2 张活跃士气");
-                player.UsedAbilities.Add(onceKey); break;
+                RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "factionDrawMove" when source.CardId == "S01-04C1":
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要消耗 2 张活跃士气");
-                player.UsedAbilities.Add(onceKey); break;
+                RecordLimitedActiveAbilityUse(player, source, ability); break;
             default:
             {
                 var result = TryCommitS2UniversalActiveAbility(playerIndex, source, ability, target, onceKey, returnPrepaid)

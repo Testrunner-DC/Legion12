@@ -70,7 +70,7 @@ public sealed partial class L12GameEngine
                 => "神农鼎必须为活跃状态",
             "shennongReset" when source.CardId == "S02-0104"
                 && (string.IsNullOrWhiteSpace(target)
-                    || !player.UsedAbilities.Contains($"active:master-{playerIndex}:{target}"))
+                    || !HasUsedLimitedActiveAbility(player, player.MasterId, $"master-{playerIndex}", target))
                 => "所选主宰效果已不再处于使用过的状态",
             _ => null,
         };

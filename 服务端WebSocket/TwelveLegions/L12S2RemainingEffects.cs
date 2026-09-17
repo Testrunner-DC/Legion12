@@ -147,7 +147,7 @@ public sealed partial class L12GameEngine
                     || costs.Any(card => card.InstanceId == source.InstanceId))
                     return CommandResult.Reject("墓地卡牌或可用战场位置已失效");
                 MoveGraveToLibraryBottom(player, costs);
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 PushEffect(playerIndex, source, "active", "主动效果",
                     data: new Dictionary<string, string> { ["ability"] = ability, ["slot"] = slot });
                 return CommandResult.Ok();
@@ -167,7 +167,7 @@ public sealed partial class L12GameEngine
                     return CommandResult.Reject("声明的前排位置已失效");
                 if (!ReturnSelectedMorale(player, cards.Cast<L12MoraleCard>().ToArray()))
                     return CommandResult.Reject("选择的士气已失效");
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 var compositeDeclared = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["returnCost"] = [.. ids], ["entrySlot"] = [slot],
@@ -182,11 +182,11 @@ public sealed partial class L12GameEngine
             }
             case "thorCharge" when source.CardId == "S02-03M1":
                 if (player.Hp > 3 || !TryConsumeMorale(player, 2)) return CommandResult.Reject("需要主宰血量不高于3且消耗2士气");
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 PushEffect(playerIndex, source, "active", "主宰效果", data: new Dictionary<string, string> { ["ability"] = ability });
                 return CommandResult.Ok();
             case "divinityFlipMorale" when source.CardId == "S02-05D1":
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 PushEffect(playerIndex, source, "active", "主神效果",
                     data: new Dictionary<string, string>
                     {
@@ -249,7 +249,7 @@ public sealed partial class L12GameEngine
                     DeclarePresentationBranch(data, "divinity-power", "mode", declared[0]);
                 if (!L12S2ZoneOps.ConsumeAndFlipGodPower(player, 2))
                     return CommandResult.Reject("需要2张活跃的神力");
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 PushEffect(playerIndex, source, "active", "主神效果", data: data);
                 return CommandResult.Ok();
             }
@@ -285,7 +285,7 @@ public sealed partial class L12GameEngine
                     player.Hand.Remove(discarded); player.Graveyard.Add(discarded);
                 }
                 else return CommandResult.Reject("支付方式不合法");
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 var compositeDeclared = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["buffTarget"] = [legion.InstanceId], ["buffMode"] = [buffMode],

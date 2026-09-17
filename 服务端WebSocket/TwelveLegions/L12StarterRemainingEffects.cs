@@ -353,7 +353,7 @@ public sealed partial class L12GameEngine
                 AddEvent("cost", controller, "特勒马科斯主动休整", source);
                 break;
         }
-        if (ability is not ("telemachusTopThree" or "oasisDancerBuff" or "christinaFreeTactic" or "kaneMillOne" or "oiranTransfer" or "lightSwordActive")) player.UsedAbilities.Add(onceKey);
+        RecordLimitedActiveAbilityUse(player, source, ability);
         var data = new Dictionary<string, string> { ["ability"] = ability };
         if (values.Length > 0) data["target"] = string.Join('|', values);
         if (ability == "lightSwordActive")

@@ -67,7 +67,11 @@ Assert-Contains $faction 'var isOnlyOtherworldTrait = L12StructuredCardRules.Has
 Assert-Contains $faction 'item.Data["amakine-can-take"] = isOnlyOtherworldTrait ? "true" : "false";' 'Amakine only-Otherworld eligibility must be frozen before the choice.'
 Assert-Contains $faction 'var choices = isOnlyOtherworldTrait ? new[] { "hand", "top", "bottom" }' 'Amakine may offer hand only for cards whose sole effective trait is Otherworld.'
 
-Assert-Contains $active '$"active:{sourceInstanceId}:crusade-choice"' 'Crusade three modes must share the printed once-per-turn key.'
+$usageRules = Read-Source 'L12ActiveUsageRules.cs'
+foreach ($ability in @('crusadeTrialNoLoss', 'crusadeRichardPiercing', 'crusadeRecover')) {
+    Assert-Contains $usageRules ('new("S02-06S6", "' + $ability + '", "crusade-choice")') 'Crusade three modes must share the printed once-per-turn key.'
+}
+Assert-Contains $active 'L12ActiveUsageRules.UsageKey(sourceInstanceId, sourceCardId, ability)' 'Active usage must consume the shared registry key.'
 $galahadStart = $faction.IndexOf('if (ability == "galahadGrailReward" && source.CardId == "S02-0604")', [StringComparison]::Ordinal)
 $galahadCommit = $faction.IndexOf('if (ability == "galahadGrailReward" && source.CardId == "S02-0604")', $galahadStart + 1, [StringComparison]::Ordinal)
 $galahadEnd = $faction.IndexOf('if (ability == "runeUse"', $galahadCommit, [StringComparison]::Ordinal)
