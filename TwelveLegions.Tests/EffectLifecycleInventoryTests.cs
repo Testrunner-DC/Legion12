@@ -79,7 +79,7 @@ public sealed class EffectLifecycleInventoryTests
             {
                 gaps.Remove("protocol-profile");
                 gaps.RemoveAll(profile.NotApplicable.ContainsKey);
-                gaps.AddRange(["source-invalidated", "destination-invalidated", "single-candidate-choice"]);
+                gaps.AddRange(profile.AdditionalChecks);
             }
             if (ability.Atoms.Any(atom => atom.Stage == "cost")) gaps.Add("payment-cancel");
             if (ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.SelectTarget))
@@ -120,7 +120,8 @@ public sealed class EffectLifecycleInventoryTests
             var profile = group.First().Profile!;
             text.AppendLine($"### {profile.Id}").AppendLine();
             text.AppendLine($"精确绑定能力数：{group.Count()}。运行入口："
-                + string.Join("；", profile.RuntimeOwners.Select(owner => $"{owner.Key} = L12GameEngine.{owner.Value}")) + "。").AppendLine();
+                + string.Join("；", profile.RuntimeOwners.Select(owner => $"{owner.Key} = "
+                    + (owner.Value.Contains('.') ? owner.Value : $"L12GameEngine.{owner.Value}"))) + "。").AppendLine();
             foreach (var exclusion in profile.NotApplicable)
                 text.AppendLine($"- {exclusion.Key}：{exclusion.Value}");
             text.AppendLine();
@@ -217,7 +218,7 @@ public sealed class EffectLifecycleInventoryTests
     public void ReviewedRuleActionProfilesHaveExactOwnersAndReasonedExemptions()
     {
         var inventory = Build(Catalog);
-        var rows = inventory.Abilities.Where(row => row.Profile is not null).ToArray();
+        var rows = inventory.Abilities.Where(row => row.Profile?.Id == "rule-action:cavalry-move").ToArray();
         Assert.Equal(EffectLifecycleProfiles.NativeCavalryAbilityIds.Order(), rows.Select(row => row.Definition.AbilityId).Order());
         Assert.All(rows, row =>
         {
@@ -251,11 +252,40 @@ public sealed class EffectLifecycleInventoryTests
         {
             var row = inventory.Abilities.Single(item => item.Definition.AbilityId == id);
             Assert.All(inventory.Abilities.Where(item => item.CardId == row.CardId && item.Definition.AbilityId != id),
-                other => Assert.Null(other.Profile));
+                other => Assert.NotEqual("rule-action:cavalry-move", other.Profile?.Id));
             var unrelated = row.Definition with { AbilityId = id + "-unreviewed", StructureHash = "changed" };
             Assert.Equal("owner-unreviewed", EntryEvidence(unrelated, [], []));
             Assert.False(EffectLifecycleProfiles.Read(catalog).ContainsKey(unrelated.AbilityId));
         }
+    }
+
+    [Fact]
+    public void PrintedRangeProfilesBindOnlyExactContinuousSegmentsAndDoNotClaimBattleCompletion()
+    {
+        var inventory = Build(Catalog);
+        var rows = inventory.Abilities.Where(row => row.Profile?.Id == "continuous:printed-range").ToArray();
+        Assert.Equal(47, rows.Length);
+        Assert.Equal(EffectLifecycleProfiles.PrintedRangedAbilityIds.Order(), rows.Select(row => row.Definition.AbilityId).Order());
+        Assert.All(rows, row =>
+        {
+            Assert.Equal("shared-rule-owner", row.EntryEvidence);
+            Assert.Equal("L12StructuredCardRules.CombatProfile", row.Profile!.RuntimeOwners["condition-and-permission"]);
+            Assert.Equal("TryValidateAttackTarget", row.Profile.RuntimeOwners["target-revalidation"]);
+            Assert.All(row.Profile.NotApplicable, exclusion =>
+            {
+                Assert.NotEmpty(exclusion.Value);
+                Assert.DoesNotContain(exclusion.Key, row.ReviewGaps);
+            });
+            Assert.DoesNotContain("destination-invalidated", row.ReviewGaps); // Not the cavalry protocol.
+            Assert.Contains("target-invalidated", row.ReviewGaps);
+            Assert.Contains("ranged-no-loss", row.ReviewGaps); // Profile/preview checks are not damage tests.
+            var evidence = Assert.Single(row.TestReferences, reference => reference.TestMethod.EndsWith(
+                nameof(PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview), StringComparison.Ordinal));
+            Assert.Contains("reconnect-profile", evidence.Scopes);
+            Assert.DoesNotContain("reconnect", evidence.Scopes);
+            Assert.Equal("linked-not-execution-receipt", evidence.Status);
+        });
+        Assert.Null(inventory.Abilities.Single(row => row.CardId == "S01-0003" && row.Definition.Trigger == "active").Profile);
     }
 
     [Fact]
