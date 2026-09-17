@@ -5,7 +5,7 @@
 
 卡牌：324；能力段：711；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`51778ddff3f3c015102b13be6eb9f12340da17b6f8549be079521aa23b6897a4`。
+内容指纹：`b3eae477973929272a01d988d497b2081a201b88b10ede631eca1ce9c939b182`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
@@ -23,12 +23,18 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 | 能力ID | 测试方法 / 参数卡牌 | 已核对的用例范围 |
 | --- | --- | --- |
+| S01-0020:ability:reaction:f099e096c2d7437b | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ConditionalResponseSegmentsReportActualOutcomesAfterRecovery / S01-0020 | conditional-settlement, declined-branch, empty-library, negated-settlement, no-target, reconnect-settlement |
 | S01-0020:ability:reaction:f099e096c2d7437b | TwelveLegions.Tests.StackResponseChoiceRegressionTests.PublicResponseDeclarationsRestoreAndRejectDuplicateFinalSubmission / S01-0020 | commit-declaration, duplicate-declaration, presentation-declaration, reconnect-declaration |
+| S01-0120:ability:reaction:0865f062354681b2 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ConditionalResponseSegmentsReportActualOutcomesAfterRecovery / S01-0120 | conditional-settlement, declined-branch, empty-library, negated-settlement, reconnect-settlement, target-invalidated-settlement |
+| S01-0120:ability:reaction:0865f062354681b2 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.NestedResponseKeepsItsDeclaredRootWhenIntermediateStackChanges / S01-0120 | nested-authority, reconnect-settlement |
 | S01-0120:ability:reaction:0865f062354681b2 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.PublicResponseDeclarationsRestoreAndRejectDuplicateFinalSubmission / S01-0120 | commit-declaration, duplicate-declaration, presentation-declaration, reconnect-declaration |
+| S02-0016:ability:s2-reaction:37e38b08d365f0bb | TwelveLegions.Tests.StackResponseChoiceRegressionTests.NestedResponseKeepsItsDeclaredRootWhenIntermediateStackChanges / S02-0016 | nested-authority, reconnect-settlement |
 | S02-0016:ability:s2-reaction:37e38b08d365f0bb | TwelveLegions.Tests.StackResponseChoiceRegressionTests.PublicResponseDeclarationsRestoreAndRejectDuplicateFinalSubmission / S02-0016 | commit-declaration, duplicate-declaration, presentation-declaration, reconnect-declaration |
 | S02-0016:ability:s2-reaction:37e38b08d365f0bb | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ResponseSettlementRevalidatesObjectsAndSuccessDependenciesAfterRecovery / S02-0016 | duplicate-rejected, negated-settlement, normal-settlement, reconnect-settlement, target-invalidated-settlement |
+| S02-0017:ability:s2-reaction:0e0643c2b48ae93e | TwelveLegions.Tests.StackResponseChoiceRegressionTests.AnonymousReturnUsesOwnerLibraryBeforeFollowingDraw / S02-0017 | owner-destination, private-return, reconnect-settlement |
 | S02-0017:ability:s2-reaction:0e0643c2b48ae93e | TwelveLegions.Tests.StackResponseChoiceRegressionTests.PublicResponseDeclarationsRestoreAndRejectDuplicateFinalSubmission / S02-0017 | commit-declaration, duplicate-declaration, presentation-declaration, reconnect-declaration |
 | S02-0017:ability:s2-reaction:0e0643c2b48ae93e | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ResponseSettlementRevalidatesObjectsAndSuccessDependenciesAfterRecovery / S02-0017 | duplicate-rejected, negated-settlement, normal-settlement, reconnect-settlement, success-dependency, target-invalidated-settlement |
+| S02-0018:ability:s2-reaction:e0e92d0479a94844 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.NestedResponseKeepsItsDeclaredRootWhenIntermediateStackChanges / S02-0018 | nested-authority, reconnect-settlement |
 | S02-0018:ability:s2-reaction:e0e92d0479a94844 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ResponseSettlementRevalidatesObjectsAndSuccessDependenciesAfterRecovery / S02-0018 | duplicate-rejected, negated-settlement, normal-settlement, reconnect-settlement, success-dependency, target-invalidated-settlement |
 
 ## 能力清单

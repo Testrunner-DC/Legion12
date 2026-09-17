@@ -103,7 +103,7 @@ public sealed partial class L12GameEngine
             if (handTargets.Length == 0)
                 unavailableReason = "粮草掠夺当前没有可返回牌库的对方手牌，不能发动";
             steps.Add(PublicResponseStep("opponent-hand-anonymous", "handTarget",
-                "粮草掠夺：从随机排列的匿名对方手牌中盲选1张返回牌库顶部", handTargets));
+                "粮草掠夺：从随机排列的匿名对方手牌中盲选1张返回所有者牌库顶部", handTargets));
         }
         else
         {

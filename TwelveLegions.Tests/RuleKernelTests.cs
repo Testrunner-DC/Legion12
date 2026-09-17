@@ -85,6 +85,30 @@ public sealed class RuleKernelTests
         Assert.False(result.Success); Assert.Single(player.Library); Assert.Empty(player.Hand);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LibraryTopTransferSeparatesSourceFromDestinationWithoutDuplicatingCards(bool samePlayer)
+    {
+        var source = Player();
+        var destination = samePlayer ? source : Player();
+        var first = Card("return-first");
+        var second = Card("return-second");
+        source.Hand.Add(first);
+        source.Graveyard.Add(second);
+        destination.Library.Add(Card("original-top"));
+        Assert.False(L12LibraryOps.PutOnTop(source, destination, [first, first]));
+        Assert.Single(source.Hand);
+        Assert.Single(source.Graveyard);
+        Assert.Equal("original-top", Assert.Single(destination.Library).InstanceId);
+        Assert.True(L12LibraryOps.PutOnTop(source, destination, [second, first]));
+        Assert.Empty(source.Hand);
+        Assert.Empty(source.Graveyard);
+        Assert.Equal(new[] { "return-second", "return-first", "original-top" },
+            destination.Library.Select(card => card.InstanceId));
+        if (!samePlayer) Assert.Empty(source.Library);
+    }
+
     [Fact]
     public void DrawMovesExactlyTheRequestedTopCards()
     {

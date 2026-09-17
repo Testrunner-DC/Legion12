@@ -6,7 +6,7 @@ using Xunit;
 
 namespace TwelveLegions.Tests;
 
-public sealed class StackResponseChoiceRegressionTests
+public sealed partial class StackResponseChoiceRegressionTests
 {
     private static L12Catalog Catalog => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
 

@@ -131,7 +131,7 @@ public sealed partial class L12GameEngine
                 var selected = affected.Hand.FirstOrDefault(card => card.InstanceId == selectedId);
                 if (selected is not null)
                 {
-                    L12LibraryOps.PutOnTop(affected, [selected]);
+                    L12LibraryOps.PutOnTop(affected, CardOwner(selected, affected), [selected]);
                     AddEvent("return", item.Controller, "〈粮草掠夺〉将盲选的1张对方手牌返回所有者牌库顶部");
                 }
                 else RecordTargetSettlementFailure(item, selectedId, "已选择的匿名对象不再位于对方手牌中");
@@ -211,10 +211,8 @@ public sealed partial class L12GameEngine
 
     private L12StackItem? TargetAuthorityStackItem(L12StackItem response)
     {
-        var target = State.EffectStack.FirstOrDefault(candidate => candidate.StackItemId == response.Targets.FirstOrDefault());
-        if (target is null) return null;
-        var timing = ResponseTimingContext(target);
-        return timing.Trigger == "authority-event" ? timing : null;
+        var timing = DeclaredResponseTimingTarget(response);
+        return timing?.Trigger == "authority-event" ? timing : null;
     }
 
     private void NegateEffectReadyBatch(L12StackItem target)

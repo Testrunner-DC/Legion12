@@ -601,7 +601,7 @@ internal static partial class L12CompositeEffectPlans
             ],
             ["response:S02-0017"] =
             [
-                new("supply-plunder-return", "将所选的1张对方手牌返回牌库顶部"),
+                new("supply-plunder-return", "将所选的1张对方手牌返回所有者牌库顶部"),
                 new("supply-plunder-draw", "随后我方抽取1张牌", RequiresPreviousSuccess: true),
             ],
             ["response:S02-0018"] =

@@ -1005,22 +1005,28 @@ public sealed partial class L12GameEngine
             }
             case "战斗至黎明":
             case "battle-until-dawn-buff":
-                foreach (var target in PublicLegions(player)) AddTimedModifier(target, 1000, 0, State.TurnSerial, "战斗至黎明");
+            {
+                var targets = PublicLegions(player).ToArray();
+                if (targets.Length == 0) RecordTargetSettlementFailure(item, null, "我方当前没有军团可以增加兵力");
+                foreach (var target in targets) AddTimedModifier(target, 1000, 0, State.TurnSerial, "战斗至黎明");
                 FinishStackItem(item); return;
+            }
             case "battle-until-dawn-draw":
-                if (player.Graveyard.Count >= 5) Draw(player, 1);
-                FinishStackItem(item); return;
+                ResolveConditionalResponseDraw(item, player.Graveyard.Count >= 5, "墓地卡牌数量已少于5张");
+                return;
             case "空城计":
             case "empty-city-block":
             {
-                var targetStack = State.EffectStack.FirstOrDefault(stack => stack.StackItemId == item.Targets.FirstOrDefault());
-                if (targetStack is not null) targetStack.Negated = true;
+                var targetStack = DeclaredResponseTimingTarget(item);
+                if (targetStack?.Trigger == "opponent-attack") targetStack.Negated = true;
+                else RecordTargetSettlementFailure(item, item.Targets.FirstOrDefault(), "原进攻已离开堆叠或不再是进攻事件");
                 FinishStackItem(item);
                 return;
             }
             case "empty-city-draw":
-                if (!player.Field[0].Any(card => card is not null && IsFieldLegion(card))) Draw(player, 1);
-                FinishStackItem(item); return;
+                ResolveConditionalResponseDraw(item,
+                    !player.Field[0].Any(card => card is not null && IsFieldLegion(card)), "我方前排已有军团");
+                return;
             case "拼死反抗":
             {
                 var declared = item.Data.GetValueOrDefault("declaredTargets");
