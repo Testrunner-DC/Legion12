@@ -1937,6 +1937,11 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
             return Results.Ok(_platform.AlternateArts(includeInactive == true));
         });
+        _app.MapGet("/api/admin/server-storage", (HttpRequest request) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminSecurityRead, out _, out var failure)) return failure;
+            return Results.Ok(L12ServerStorageMonitor.Read());
+        });
         _app.MapPut("/api/admin/alternate-arts", (HttpRequest request, L12AlternateArtDraft draft) =>
         {
             const L12Permission permission = L12Permission.AdminContentDraft;

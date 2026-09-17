@@ -13,9 +13,10 @@ import AdminCardAnalyticsPanel from './AdminCardAnalyticsPanel.vue'
 import AdminMatchGovernancePanel from './AdminMatchGovernancePanel.vue'
 import AdminUsernameChangeRequestsPanel from './AdminUsernameChangeRequestsPanel.vue'
 import AdminAlternateArtsPanel from './AdminAlternateArtsPanel.vue'
+import AdminServerStoragePanel from './AdminServerStoragePanel.vue'
 import TournamentCenterPage from './TournamentCenterPage.vue'
 
-type AdminTab = 'overview' | 'bugs' | 'accounts' | 'username-requests' | 'matches' | 'match-governance' | 'card-analytics' | 'content' | 'alternate-arts' | 'effects' | 'releases' | 'commands' | 'audit' | 'integrity' | 'security' | 'operations' | 'tournaments'
+type AdminTab = 'overview' | 'bugs' | 'accounts' | 'username-requests' | 'matches' | 'match-governance' | 'card-analytics' | 'content' | 'alternate-arts' | 'effects' | 'releases' | 'commands' | 'audit' | 'integrity' | 'security' | 'storage' | 'operations' | 'tournaments'
 const route = useRoute()
 const tab = ref<AdminTab>(route.query.section === 'matches' ? 'matches' : 'overview')
 const adminMatchId = ref(typeof route.query.matchId === 'string' ? route.query.matchId : '')
@@ -301,7 +302,7 @@ onMounted(() => { void initializeAdminPage() })
         <nav><small>收藏与权益</small><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'alternate-arts' }" @click="tab = 'alternate-arts'">✦ 异画管理与权益</button></nav>
         <nav><small>游戏与赛事运营</small><button v-if="hasPermission('admin.operations.read')" :class="{ active: tab === 'operations' }" @click="tab = 'operations'">⚙ 游戏运营配置</button><button v-if="hasPermission('tournaments.manage') || hasPermission('tournaments.rulings.write')" :class="{ active: tab === 'tournaments' }" @click="tab = 'tournaments'">♜ 赛事管理</button><button v-if="hasPermission('admin.commands.read')" :class="{ active: tab === 'commands' }" @click="tab = 'commands'; loadControlPlane()">⌁ 管理操作记录</button></nav>
         <nav><small>卡牌与规则</small><button v-if="hasPermission('admin.effects.read')" :class="{ active: tab === 'effects' }" @click="tab = 'effects'; loadEffects()">◇ 卡效原子化</button></nav>
-        <nav><small>系统与治理</small><button v-if="hasPermission('releases.read') || hasPermission('releases.runtime.read')" :class="{ active: tab === 'releases' }" @click="tab = 'releases'; loadReleases()">⇧ 软件发布</button><button v-if="hasPermission('admin.security.read')" :class="{ active: tab === 'security' }" @click="tab = 'security'; loadSecurity()">◆ 安全状态</button><button v-if="hasPermission('admin.audit.read')" :class="{ active: tab === 'integrity' }" @click="tab = 'integrity'">⚖ 排位完整性</button><button v-if="hasPermission('admin.audit.read')" :class="{ active: tab === 'audit' }" @click="tab = 'audit'; loadAudit()">≡ 审计日志</button></nav>
+        <nav><small>系统与治理</small><button v-if="hasPermission('releases.read') || hasPermission('releases.runtime.read')" :class="{ active: tab === 'releases' }" @click="tab = 'releases'; loadReleases()">⇧ 软件发布</button><button v-if="hasPermission('admin.security.read')" :class="{ active: tab === 'security' }" @click="tab = 'security'; loadSecurity()">◆ 安全状态</button><button v-if="hasPermission('admin.security.read')" :class="{ active: tab === 'storage' }" @click="tab = 'storage'">▤ 服务器存储</button><button v-if="hasPermission('admin.audit.read')" :class="{ active: tab === 'integrity' }" @click="tab = 'integrity'">⚖ 排位完整性</button><button v-if="hasPermission('admin.audit.read')" :class="{ active: tab === 'audit' }" @click="tab = 'audit'; loadAudit()">≡ 审计日志</button></nav>
       </aside>
       <main class="admin-content">
       <section v-if="tab === 'overview'" class="overview-grid">
@@ -328,6 +329,7 @@ onMounted(() => { void initializeAdminPage() })
       <AdminCardAnalyticsPanel v-else-if="tab === 'card-analytics' && hasPermission('admin.analytics.read')" @notice="notice = $event" @open-match="openAdminMatch"/>
       <AdminUsernameChangeRequestsPanel v-else-if="tab === 'username-requests' && hasPermission('admin.accounts.read')" @notice="notice = $event"/>
       <AdminAlternateArtsPanel v-else-if="tab === 'alternate-arts' && hasPermission('admin.content.read')" @notice="notice = $event"/>
+      <AdminServerStoragePanel v-else-if="tab === 'storage' && hasPermission('admin.security.read')" @notice="notice = $event"/>
       <TournamentCenterPage v-else-if="tab === 'tournaments' && (hasPermission('tournaments.manage') || hasPermission('tournaments.rulings.write'))" admin-mode embedded/>
       <section v-else-if="tab === 'accounts'" class="panel account-panel">
         <header>
