@@ -4159,3 +4159,10 @@
 - 修复：新增共享结算辅助。没有已声明目标时明确跳过；全部已声明目标无效时记录`effect-failed`；部分目标失效则记录公开部分失效事件并继续合法目标。单目标路径也不再只写`effect-cancelled`。
 - 扫描：小次郎、光明之剑、乱箭齐发、乾阳、汉尼拔、武则天、墨子、荆轲、狩猎时刻、残酷哈拉尔、图特摩斯三世、槲寄生之灾、圆桌、阿瓦隆等相邻定向结算入口已纳入。判断仅基于当前权威场上实例与当前类型状态。
 - 防回归：新增`DeclaredTargetSettlementLifecycleTests`，固定全失效、部分失效继续及两目标逆结算场景。定向4/4、相关270/270、隔离工作树Focused/Batch及提交级Release通过；实现、交接和回归断言提交已推送，`origin/main=5a3b9b81ca07680d59acb3df962650dbd0275635`。本任务未部署。
+
+## BUG-20260917-STARTER-TARGET-SETTLEMENT｜启动卡组定向效果仍把结算时失效写为取消
+
+- 根因：启动卡组的结构化目标计划已在声明期验证对象，却没有接入P2共享结算结果协议。胡夫、乔泽、弗蕾迪斯、莫德雷德、布狄卡仍发出`effect-cancelled`；伊丽莎白逐张发取消事件，不能表达“全部失败”与“部分继续”。莫德雷德的空候选跳过配置又与唯一对象自动选择共用同一开关。
+- 修复：单对象改用`RecordTargetSettlementFailure`；伊丽莎白按已声明士气汇总为全失效失败或部分失效继续。莫德雷德只有候选为0时自动跳过，候选为1时继续向玩家显示对象选择。
+- 扫描：`L12StarterTargetedEffectPlans`的全部定向结算流，包含`khufu-debuff`、`george-debuff`、`freydis-recover`、`elizabeth-lock-morale`、`mordred-death-kill`和`boudica-immortal`；没有留下该文件内的`effect-cancelled`目标结算入口。
+- 防回归：新增胡夫费用已支付后目标离场、弗蕾迪斯费用已支付后墓地对象离开、伊丽莎白全失效与部分继续、布狄卡目标离场；莫德雷德原场景固定“无候选跳过、唯一候选点击、兵力变化后失败”。定向20/20、Focused/Batch规则3311/3311及全卡原子审计通过；Release、推送和部署回执待补。
