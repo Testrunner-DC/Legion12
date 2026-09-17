@@ -390,9 +390,11 @@ public sealed partial class L12GameEngine
                         || row != 0 || !IsFieldLegion(target) || target.Troops > 2000
                         => "阿伊声明的前排目标已失效；未支付费用且效果未入栈",
                     "enemy-cost-one" when targetId is null
-                        || FindOnField(opponent, targetId, out _, out _) is not { } target || !L12StructuredCardRules.CurrentCostAtMost(target, 1)
+                        || DeclaredEnemyTarget(candidate.Controller, targetId,
+                            target => L12StructuredCardRules.CurrentCostAtMost(target, 1)) is null
                         => "土方岁三声明的击杀目标已失效；未支付费用且效果未入栈",
-                    "enemy-legion" when targetId is null || FindOnField(opponent, targetId, out _, out _) is null
+                    "enemy-legion" when targetId is null
+                        || DeclaredEnemyTarget(candidate.Controller, targetId, predicate: null) is null
                         => "高杉晋作声明的目标已失效；未支付费用且效果未入栈",
                     "enemy-covered-counter" when targetId is null
                         || FindOnField(opponent, targetId, out var row, out _) is not { CardType: "tactic" } || row != 1
@@ -560,13 +562,13 @@ public sealed partial class L12GameEngine
                 foreach (var enemy in PublicLegions(opponent)) enemy.CostModifier--;
                 Finish(); return true;
             case "hijikata":
-                if (FindOnField(opponent, targetId, out _, out _) is { } hijikataTarget
-                    && L12StructuredCardRules.CurrentCostAtMost(hijikataTarget, 1))
-                    KillTarget(item, targetId, "被土方岁三击杀");
+                if (DeclaredEnemyTarget(item.Controller, targetId,
+                    target => L12StructuredCardRules.CurrentCostAtMost(target, 1)) is { } hijikataTarget)
+                    KillTarget(item, hijikataTarget.InstanceId, "被土方岁三击杀");
                 else Cancel("土方岁三声明的目标已失效；已支付费用不返还");
                 Finish(); return true;
             case "takasugi":
-                if (FindOnField(opponent, targetId, out _, out _) is { } takasugiTarget)
+                if (DeclaredEnemyTarget(item.Controller, targetId, predicate: null) is { } takasugiTarget)
                     takasugiTarget.CostModifier -= 2;
                 else Cancel("高杉晋作声明的目标已失效；已支付费用不返还");
                 Finish(); return true;

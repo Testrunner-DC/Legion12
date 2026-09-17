@@ -38,7 +38,8 @@ public sealed class AtomicReviewBatch6HRegressionTests
         return game;
     }
 
-    private static L12CardInstance Card(string cardId, string instanceId, int troops = 0)
+    private static L12CardInstance Card(string cardId, string instanceId, int troops = 0, string? cardType = null,
+        int? cost = null)
     {
         var definition = Catalog.Cards[cardId];
         return new L12CardInstance
@@ -46,10 +47,10 @@ public sealed class AtomicReviewBatch6HRegressionTests
             InstanceId = instanceId,
             CardId = definition.Id,
             Name = definition.NameZh,
-            CardType = definition.CardType,
+            CardType = cardType ?? definition.CardType,
             Faction = definition.Faction,
             ImageUrl = definition.ImageUrl,
-            Cost = definition.Cost ?? 0,
+            Cost = cost ?? definition.Cost ?? 0,
             EffectText = definition.Effect,
             Traits = [.. definition.Traits],
             Profession = definition.Profession,
@@ -89,6 +90,15 @@ public sealed class AtomicReviewBatch6HRegressionTests
                 new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "pass"));
             Assert.True(result.Accepted, result.Error);
         }
+    }
+
+    private static L12GameEngine RestoreAsV2(L12GameEngine game)
+    {
+        var random = game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0);
+        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        return L12GameEngine.RestoreCheckpoint(Catalog, checkpoint, random,
+            game.CardFactSignalSequence, autoPassEmptyResponses: false,
+            concealHiddenResponseAvailability: false);
     }
 
     private static void AttackMaster(L12GameEngine game, L12CardInstance attacker)
@@ -282,6 +292,64 @@ public sealed class AtomicReviewBatch6HRegressionTests
 
         Assert.True(morale.Tapped);
         Assert.Equal(0, target.CostModifier);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled");
+    }
+
+    [Theory]
+    [InlineData("S01-0406", 76021)] // 土方岁三：当前费用不高于1
+    [InlineData("S01-0408", 76022)] // 高杉晋作：对方军团
+    [Trait("L12Evidence", "entry:attack-enemy-legion-current-state")]
+    public void DeclaredEnemyAttackTargetThatBecomesAnArtifactDuringResponsesIsNotResolved(string sourceId, int seed)
+    {
+        var game = Create(seed);
+        var player = game.State.Players[0];
+        var enemy = game.State.Players[1];
+        var source = Card(sourceId, $"batch6h-state-{sourceId}");
+        var target = Card("S01-0001", $"batch6h-state-target-{sourceId}", cost: 1);
+        var morale = Morale($"batch6h-state-morale-{sourceId}");
+        player.Morale.Add(morale);
+        enemy.Field[0][0] = target;
+
+        AttackMaster(game, source);
+        Resolve(game, "mode:use");
+        Resolve(game, target.InstanceId);
+        Assert.True(morale.Tapped);
+
+        var transformed = Card("S01-0001", target.InstanceId, cardType: "artifact", cost: 1);
+        enemy.Field[0][0] = transformed;
+        PassResponses(game);
+
+        Assert.Same(transformed, enemy.Field[0][0]);
+        Assert.Equal(0, transformed.CostModifier);
+        Assert.True(morale.Tapped);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled");
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:attack-enemy-legion-v2-recovery")]
+    public void RestoredAttackResponseWindowRevalidatesEnemyLegionAndRejectsItsOldResponsePrompt()
+    {
+        var game = Create(76023);
+        var player = game.State.Players[0];
+        var enemy = game.State.Players[1];
+        var source = Card("S01-0408", "batch6h-restore-takasugi");
+        var target = Card("S01-0001", "batch6h-restore-target");
+        var morale = Morale("batch6h-restore-morale");
+        player.Morale.Add(morale);
+        enemy.Field[0][0] = target;
+
+        AttackMaster(game, source);
+        Resolve(game, "mode:use");
+        Resolve(game, target.InstanceId);
+        var responseId = Assert.Single(game.State.PendingPrompts).PromptId;
+        game = RestoreAsV2(game);
+        var transformed = Card("S01-0001", target.InstanceId, cardType: "artifact");
+        game.State.Players[1].Field[0][0] = transformed;
+        PassResponses(game);
+
+        Assert.True(game.State.Players[0].Morale.Single(card => card.InstanceId == morale.InstanceId).Tapped);
+        Assert.Equal(0, transformed.CostModifier);
+        Assert.False(game.Handle(0, new L12Command("resolvePrompt", PromptId: responseId, Choice: "pass")).Accepted);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled");
     }
 
