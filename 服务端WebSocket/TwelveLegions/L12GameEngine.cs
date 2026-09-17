@@ -367,6 +367,7 @@ public sealed partial class L12GameEngine
     private L12ActionEvent FilterDisasterEvent(L12ActionEvent actionEvent, int viewer, bool revealAll,
         bool revealAllHands = false)
     {
+        actionEvent = L12TrialProgressVisibility.PublicEvent(actionEvent);
         if (actionEvent.Type == "private-return")
             return revealAllHands || actionEvent.PlayerIndex == viewer
                 ? actionEvent with { Type = "return" }

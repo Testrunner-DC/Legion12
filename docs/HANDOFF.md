@@ -6,6 +6,7 @@
 - 新文件L12TrialProgressVisibility.cs、TrialProgressPrivacyTests.cs；MatchRecorder.cs局部加入回放过滤；L12GameEngine.cs只新增FilterDisasterEvent的一行，提交时不得带入已有异画修改。隔离副本相同一行已单独应用，不能从开发目录整体复制引擎。
 - 试炼相邻49/49退出0（包含真实V2重放）；骑兵相邻58/58、台账8/8退出0。两项分别有界记录，准备最终Batch；干净Release和同步尚未完成，不得登记为已部署。
 - 集成Batch已完成3454/3454、零失败/跳过、退出0，全卡静态门禁通过。代码按两项分开提交，最终提交树一次Release后精确推送，避免重复发布验证。引擎补丁产物cache/primary/trial-privacy-engine-8554994.patch仅含一行，目标blob=42bab4db2d72b9a37f06b560f7faec4568768eb5。
+- 骑兵归属提交b79870fc33f024ba967739eb5578504b4ea3defd；试炼代码随后单独提交。远端在提交前仍为8554994，最终Release通过后才一起同步；本批没有生产部署授权，必须询问后才可上线。
 
 ## 2026-09-17 当前批次：原生骑兵规则动作归属
 

@@ -531,6 +531,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         }
         root["PendingPrompts"] = new JsonArray();
         root["PendingActivations"] = new JsonArray();
+        L12TrialProgressVisibility.RedactRecordedState(root);
         return JsonSerializer.SerializeToElement(root);
     }
 
