@@ -15,7 +15,6 @@ public sealed partial class L12PlatformStore
             _data.UsernameChangeRequests ??= [];
             foreach (var request in _data.UsernameChangeRequests)
                 request.Status = request.Status is "pending" or "approved" or "rejected" ? request.Status : "rejected";
-            Save(false);
         }
     }
 
