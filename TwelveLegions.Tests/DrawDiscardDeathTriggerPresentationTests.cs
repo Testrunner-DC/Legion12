@@ -17,6 +17,44 @@ public sealed class DrawDiscardDeathTriggerPresentationTests
         yield return ["S02-0301", 1];
     }
 
+    [Fact]
+    [Trait("L12Evidence", "catalog:draw-then-mandatory-discard-shared-plan")]
+    public void EveryPrintedDrawThenMandatoryDiscardAbilityUsesTheSharedCompositePlan()
+    {
+        // 这是完整句型守卫，而非根据某个旧结算器的卡号列表反推。新增同形态卡若没有
+        // 接入两个共享段，必须在这里显式迁移，不能悄悄回落到逐卡 Draw + PromptDiscard。
+        var printed = Catalog.Cards.Values
+            .Where(card => (card.Effect ?? string.Empty).Contains("抽取1张牌，并弃置1张手牌",
+                    StringComparison.Ordinal)
+                || (card.Effect ?? string.Empty).Contains("抽取2张牌，并弃置1张手牌",
+                    StringComparison.Ordinal))
+            .Select(card => card.Id)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var expected = new[] { "S01-0001", "S01-0303", "S01-0306", "S01-03M2", "S02-0301", "S02-0502" };
+        Assert.Equal(expected, printed);
+
+        foreach (var cardId in printed)
+        {
+            var plans = L12CompositeEffectPlans.PresentationPlansForCard(cardId);
+            var plan = Assert.Single(plans, candidate => candidate.Segments.Count == 2
+                && candidate.Segments[0].Flow is "draw-discard-draw-1" or "draw-discard-draw-2"
+                && candidate.Segments[1].Flow == "draw-discard-discard");
+            Assert.True(plan.Segments[1].RequiresPreviousSuccess);
+
+            var ability = Assert.Single(Catalog.AtomicEffects.Find(cardId)!.Abilities, candidate =>
+                candidate.Presentations.Any(scene => scene.Flow == plan.Segments[0].Flow
+                    && scene.SegmentIndex == 1 && scene.SegmentCount == 2)
+                && candidate.Presentations.Any(scene => scene.Flow == "draw-discard-discard"
+                    && scene.SegmentIndex == 2 && scene.SegmentCount == 2));
+            // 同一张卡还可有其他同时点能力（洛基即有另一条主动能力），目录总状态不应
+            // 取代本能力的运行事实。这里固定禁止旧式回退，并以两个 Flow 验证实际共享路径。
+            Assert.False(ability.HasLegacyFallback,
+                $"{cardId} 的抽牌弃牌能力不得回落到旧式结算器：{ability.MappingSource}");
+            Assert.DoesNotContain(ability.Atoms, atom => atom.Kind == L12AtomKinds.Legacy);
+        }
+    }
+
     [Theory]
     [InlineData("S02-0502", "enter", "draw-discard-draw-2")]
     [InlineData("S01-03M2", "active", "draw-discard-draw-1")]
