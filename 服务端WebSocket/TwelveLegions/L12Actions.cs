@@ -565,8 +565,6 @@ public sealed partial class L12GameEngine
             return;
         }
         AdjustDisasterValue(card.DisasterLevel, playerIndex, "天灾值增加至 {value}");
-        if (deferTriggerUntilStackSettles && State.DisasterValue > 8)
-            State.CheckDisasterAfterStack = true;
     }
 
     private static int ParseDeclaredRuneCount(string? choice, int available)

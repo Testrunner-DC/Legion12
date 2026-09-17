@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Reflection;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -58,6 +59,14 @@ public sealed class NewSystemsTests
             Troops = definition.Troops ?? 0,
             DisasterLevel = definition.DisasterLevel ?? 0,
         };
+    }
+
+    private static void Invoke(L12GameEngine game, string methodName, params object?[] arguments)
+    {
+        var method = typeof(L12GameEngine).GetMethod(methodName,
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        method.Invoke(game, arguments);
     }
 
     [Fact]
@@ -933,7 +942,7 @@ public sealed class NewSystemsTests
     }
 
     [Fact]
-    public void RagnarokTriggeredAtTurnStartSkipsTheInterruptedTurnsResetAndDraw()
+    public void RagnarokTriggeredByTurnPhaseGrowthUsesTheOpeningBranchAtEveryRound()
     {
         var game = Create(seed: 88602);
         game.State.ActivePlayer = 0;
@@ -949,16 +958,59 @@ public sealed class NewSystemsTests
         Assert.True(game.Handle(0, new L12Command("endTurn")).Accepted);
 
         Assert.Equal(1, game.State.ActivePlayer);
-        Assert.Equal(4, game.State.Round);
-        Assert.Equal(9, game.State.TurnSerial);
+        Assert.Equal(3, game.State.Round);
+        Assert.Equal(8, game.State.TurnSerial);
         Assert.Equal(L12Phase.Main, game.State.Phase);
         Assert.Equal(-1, game.State.ExtraTurnsForPlayer);
-        Assert.Equal(nextPlayerHandBefore + 1, game.State.Players[1].Hand.Count);
+        Assert.Equal(nextPlayerHandBefore + 3, game.State.Players[1].Hand.Count);
         Assert.Equal(opponentHandBefore + 2, game.State.Players[0].Hand.Count);
         Assert.Single(game.State.Events, entry => entry.Type == "phase"
             && entry.PlayerIndex == 1 && entry.Text == "执行重置阶段");
         Assert.Single(game.State.Events, entry => entry.Type == "phase"
             && entry.PlayerIndex == 1 && entry.Text == "执行抽牌阶段");
+        Assert.Contains(game.State.Events, entry => entry.Type == "disaster-trigger-source"
+            && entry.Text.Contains("开场触发"));
+    }
+
+    [Fact]
+    public void CardEffectScheduledRagnarokKeepsItsActiveSourceAcrossV2Recovery()
+    {
+        var game = Create(seed: 88603);
+        game.State.EffectStack.Clear();
+        game.State.DeferredEffectStack.Clear();
+        game.State.PendingPrompts.Clear();
+        game.State.PendingActivations.Clear();
+        game.State.PendingTriggerBatches.Clear();
+        game.State.PendingTriggerStackCandidates.Clear();
+        game.State.ResponseWindow = null;
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.TurnSerial = 7;
+        game.State.Phase = L12Phase.Main;
+        game.State.DisasterDeck.Clear();
+        game.State.DisasterDeck.Add(CreateInstance("S01-DS09", "card-effect-ragnarok"));
+        game.State.DisasterValue = 7;
+        var disasterLegion = CreateInstance("S01-0001", "card-effect-disaster-legion");
+        Assert.Equal(2, disasterLegion.DisasterLevel);
+
+        Invoke(game, "ApplyDisasterLevelOnEntry", 0, disasterLegion, true);
+        Assert.True(game.State.CheckDisasterAfterStack);
+        Assert.Equal("card-effect", game.State.PendingDisasterTriggerSource);
+
+        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        var random = game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0);
+        var restored = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint, random,
+            game.CardFactSignalSequence, autoPassEmptyResponses: false,
+            concealHiddenResponseAvailability: false);
+
+        Assert.True(restored.State.CheckDisasterAfterStack);
+        Assert.Equal("card-effect", restored.State.PendingDisasterTriggerSource);
+        Invoke(restored, "AfterStackSettled");
+
+        Assert.Contains(restored.State.Events, entry => entry.Type == "disaster-trigger-source"
+            && entry.Text.Contains("主动触发"));
+        Assert.False(restored.State.CheckDisasterAfterStack);
+        Assert.Null(restored.State.PendingDisasterTriggerSource);
     }
 
     [Fact]

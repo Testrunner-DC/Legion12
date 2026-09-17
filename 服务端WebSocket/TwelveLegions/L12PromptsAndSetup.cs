@@ -2147,10 +2147,12 @@ public sealed partial class L12GameEngine
         }
         if (State.CheckDisasterAfterStack)
         {
+            var triggerSource = State.PendingDisasterTriggerSource ?? DisasterTriggerSourceCardEffect;
             State.CheckDisasterAfterStack = false;
+            State.PendingDisasterTriggerSource = null;
             if (State.DisasterValue > 8)
             {
-                BeginDisasterTrigger(opening: false);
+                BeginDisasterTrigger(triggerSource);
                 if (State.EffectStack.Count > 0 || State.PendingPrompts.Count > 0) return;
             }
         }

@@ -730,6 +730,8 @@ public sealed class L12GameState
     public int LastTurnStartDisasterEffectTurn { get; set; } = -1;
     public string? LastTurnStartDisasterEffectInstanceId { get; set; }
     public bool CheckDisasterAfterStack { get; set; }
+    /// <summary>已越过阈值但尚待当前堆叠关闭的天灾触发来源；检查点恢复后仍决定分支、日志与回放语义。</summary>
+    public string? PendingDisasterTriggerSource { get; set; }
     public int ExtraTurnsForPlayer { get; set; } = -1;
     public int CounterTacticsDisabledUntilTurnSerial { get; set; } = -1;
     public int CounterTacticsDisabledExpiresAtPlayerTurnStart { get; set; } = -1;

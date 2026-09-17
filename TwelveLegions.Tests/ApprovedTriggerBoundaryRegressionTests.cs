@@ -61,7 +61,7 @@ public sealed class ApprovedTriggerBoundaryRegressionTests
         game.State.DisasterDeck.Clear();
         game.State.DisasterDeck.Add(Card("S01-DS10", "natural-disaster"));
 
-        Invoke(game, "BeginDisasterTrigger", false, false);
+        Invoke(game, "BeginDisasterTrigger", "turn-phase", false);
 
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "response");
         Assert.Empty(game.State.EffectStack);

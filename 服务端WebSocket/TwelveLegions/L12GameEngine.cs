@@ -963,6 +963,10 @@ public sealed partial class L12GameEngine
         _ => "all",
     };
 
+    private const string DisasterTriggerSourceTurnPhase = "turn-phase";
+    private const string DisasterTriggerSourceCardEffect = "card-effect";
+    private const string DisasterTriggerSourceGm = "gm";
+
     private bool DisastersEnabled => State.DisasterMode != "none";
 
     private void SetDisasterValue(int value, int? playerIndex = null, string? text = null)
@@ -977,10 +981,14 @@ public sealed partial class L12GameEngine
     private void AdjustDisasterValue(int delta, int? playerIndex = null, string? text = null)
     {
         SetDisasterValue(State.DisasterValue + delta, playerIndex, text);
-        // 所有卡效都经由这一入口调整天灾值。达到现行“超过 8”阈值后只登记一次，
-        // 由 AfterStackSettled 在当前效果、衍生触发和响应事务全部关闭后翻开下一张天灾。
+        // 所有卡效都经由这一入口调整天灾值。首次越过现行“超过 8”阈值的来源
+        // 必须随状态保存；由 AfterStackSettled 在当前效果、衍生触发和响应事务全部关闭后翻开下一张天灾。
         if (DisastersEnabled && State.DisasterValue > 8)
+        {
+            if (!State.CheckDisasterAfterStack)
+                State.PendingDisasterTriggerSource ??= DisasterTriggerSourceCardEffect;
             State.CheckDisasterAfterStack = true;
+        }
     }
 
     private L12CardInstance CreateCard(string cardId, string instanceId)
@@ -1048,7 +1056,10 @@ public sealed partial class L12GameEngine
         if (DisastersEnabled && State.DisasterValue > 8)
         {
             State.ResumeTurnStartAfterStack = true;
-            BeginDisasterTrigger(opening: State.Round == 1, atTurnStart: true);
+            // 回合阶段的自然增长永远是“开场触发”，不取决于这是第几回合。
+            State.CheckDisasterAfterStack = false;
+            State.PendingDisasterTriggerSource = null;
+            BeginDisasterTrigger(DisasterTriggerSourceTurnPhase, atTurnStart: true);
             // Effects may settle synchronously.  In that case AfterStackSettled
             // has already resumed (or ended) the turn-start sequence; continuing
             // here would execute Reset/Draw/Morale a second time.
@@ -1165,6 +1176,8 @@ public sealed partial class L12GameEngine
             SetDisasterValue(0);
         else
         {
+            if (State.DisasterValue + 1 > 8)
+                State.PendingDisasterTriggerSource = DisasterTriggerSourceTurnPhase;
             AdjustDisasterValue(1, playerIndex, "天灾值增加至 {value}");
         }
         AddEvent("end-turn", playerIndex, $"{current.Name} 结束回合");

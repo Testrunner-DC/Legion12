@@ -2,8 +2,11 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
-    private void BeginDisasterTrigger(bool opening, bool atTurnStart = false)
+    private void BeginDisasterTrigger(string triggerSource, bool atTurnStart = false)
     {
+        triggerSource = triggerSource == DisasterTriggerSourceTurnPhase
+            ? DisasterTriggerSourceTurnPhase
+            : triggerSource == DisasterTriggerSourceGm ? DisasterTriggerSourceGm : DisasterTriggerSourceCardEffect;
         if (!DisastersEnabled) { SetDisasterValue(0); return; }
         if (State.ActiveDisaster?.CardId == "S01-DS10" && State.DisasterDeck.Count == 0)
         {
@@ -28,13 +31,26 @@ public sealed partial class L12GameEngine
         State.ActiveDisaster = disaster;
         State.DisasterValue = 0;
         AddEvent("disaster", State.ActivePlayer, $"翻开天灾〈{disaster.Name}〉", disaster);
+        var triggerSourceText = triggerSource == DisasterTriggerSourceTurnPhase
+            ? "因回合阶段天灾值增长开场触发"
+            : triggerSource == DisasterTriggerSourceGm ? "由 GM 调试主动触发"
+            : "因军团登场或卡牌效果主动触发";
+        var triggerEffectText = triggerSource == DisasterTriggerSourceTurnPhase
+            ? "天灾开场触发效果"
+            : "天灾主动触发效果";
+        AddEvent("disaster-trigger-source", State.ActivePlayer,
+            $"〈{disaster.Name}〉{triggerSourceText}", disaster);
         if (atTurnStart) ResolveTurnStartDisasterEffectIfNeeded();
         if (L12StructuredCardRules.HasTriggeredDisasterEffect(disaster.CardId))
-            PublishEffectPresentation("effect-trigger", null, disaster, "disaster", "天灾触发效果");
+            PublishEffectPresentation("effect-trigger", null, disaster, "disaster", triggerEffectText);
         else
             AddEvent("disaster-reveal", null, $"天灾〈{disaster.Name}〉公开", disaster);
-        PushEffect(State.ActivePlayer, disaster, "disaster", "天灾触发效果",
-            data: new Dictionary<string, string> { ["opening"] = opening ? "true" : "false" });
+        PushEffect(State.ActivePlayer, disaster, "disaster", triggerEffectText,
+            data: new Dictionary<string, string>
+            {
+                ["opening"] = triggerSource == DisasterTriggerSourceTurnPhase ? "true" : "false",
+                ["triggerSource"] = triggerSource,
+            });
     }
 
     private void ResolveTurnStartDisasterEffectIfNeeded()
@@ -572,8 +588,10 @@ public sealed partial class L12GameEngine
             foreach (var card in DisasterLegions(State.Players[owner]).ToArray())
                 RemoveFromField(State.Players[owner], card, true, "因诸神黄昏置入墓地",
                     queueDeathTrigger: false, leaveKind: L12FieldLeaveKind.PutIntoGraveyard);
-        var opening = item.Data.GetValueOrDefault("opening") == "true";
-        if (opening)
+        // 旧检查点只有 opening；新检查点以不可歧义的权威来源决定分支。
+        var turnPhase = item.Data.GetValueOrDefault("triggerSource") == DisasterTriggerSourceTurnPhase
+            || (!item.Data.ContainsKey("triggerSource") && item.Data.GetValueOrDefault("opening") == "true");
+        if (turnPhase)
         {
             Draw(State.Players[0], 2); Draw(State.Players[1], 2);
         }
