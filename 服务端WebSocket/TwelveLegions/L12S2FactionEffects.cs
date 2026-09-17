@@ -2047,15 +2047,8 @@ public sealed partial class L12GameEngine
                     FinishStackItem(item);
                     return true;
                 }
-                item.Data["reorder-context"] = "prometheus";
-                item.Data["reorder-cards"] = string.Join('|', remaining);
-                CreatePrompt(item.Controller, "order", "普罗米修斯：排列其余卡牌，并将其全部放回牌库顶部或全部放回牌库底部",
-                    remaining, remaining.Length, remaining.Length, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string>
-                    {
-                        ["action"] = "reorder-order",
-                        ["placementMode"] = "all-top-bottom",
-                    });
+                BeginAllTopBottomReorder(item, "prometheus", remaining,
+                    "普罗米修斯：排列其余卡牌，并将其全部放回牌库顶部或全部放回牌库底部");
                 return true;
             }
             case "s2-takeda-search":
@@ -2641,17 +2634,8 @@ public sealed partial class L12GameEngine
             return;
         }
 
-        var data = new Dictionary<string, string>
-        {
-            ["action"] = "s2-fortune-bottom-order",
-            ["placementMode"] = "all-bottom",
-            ["layout"] = "single-row",
-            ["displayCardIds"] = string.Join('|', remaining.Select(card => card.InstanceId)),
-        };
-        foreach (var card in remaining) AddPromptCardData(data, card);
-        CreatePrompt(item.Controller, "order", "调整其余卡牌的顺序，然后全部放回牌库底部。",
-            remaining.Select(card => card.InstanceId), remaining.Count, remaining.Count,
-            "card-effect", item.StackItemId, data: data);
+        CreateLibraryPlacementPrompt(item, remaining.Select(card => card.InstanceId), "s2-fortune-bottom-order", "all-bottom",
+            "调整其余卡牌的顺序，然后全部放回牌库底部。");
     }
 
     private void CompleteS2FortuneBottomOrder(L12StackItem item, List<string> order)
@@ -2703,15 +2687,8 @@ public sealed partial class L12GameEngine
             CompleteRunePowerBottomOrder(item, remaining.Select(card => card.InstanceId).ToList());
             return;
         }
-        var data = new Dictionary<string, string>
-        {
-            ["action"] = "s2-rune-power-bottom-order", ["placementMode"] = "all-bottom",
-            ["displayCardIds"] = string.Join('|', remaining.Select(card => card.InstanceId)), ["layout"] = "single-row",
-        };
-        foreach (var card in remaining) AddPromptCardData(data, card);
-        CreatePrompt(item.Controller, "order", "调整其余卡牌的顺序，然后全部放回牌库底部。",
-            remaining.Select(card => card.InstanceId), remaining.Length, remaining.Length,
-            "card-effect", item.StackItemId, data: data);
+        CreateLibraryPlacementPrompt(item, remaining.Select(card => card.InstanceId), "s2-rune-power-bottom-order", "all-bottom",
+            "调整其余卡牌的顺序，然后全部放回牌库底部。");
     }
 
     private void CompleteRunePowerBottomOrder(L12StackItem item, IReadOnlyCollection<string> order)

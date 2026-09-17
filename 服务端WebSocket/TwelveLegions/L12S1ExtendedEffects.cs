@@ -872,20 +872,8 @@ public sealed partial class L12GameEngine
             CompleteCampOrder(item, remaining.ToList());
             return;
         }
-        var data = new Dictionary<string, string>
-        {
-            ["action"] = "camp-order",
-            ["placementMode"] = "all-bottom",
-            ["layout"] = "single-row",
-            ["displayCardIds"] = string.Join('|', remaining),
-        };
-        foreach (var id in remaining)
-        {
-            var card = player.Library.First(candidate => candidate.InstanceId == id);
-            AddPromptCardData(data, card);
-        }
-        CreatePrompt(item.Controller, "order", "野外扎营：调整其余卡牌的顺序，然后全部放回牌库底部。",
-            remaining, remaining.Length, remaining.Length, "card-effect", item.StackItemId, data: data);
+        CreateLibraryPlacementPrompt(item, remaining, "camp-order", "all-bottom",
+            "野外扎营：调整其余卡牌的顺序，然后全部放回牌库底部。");
     }
 
     private void CompleteCampOrder(L12StackItem item, List<string> order)

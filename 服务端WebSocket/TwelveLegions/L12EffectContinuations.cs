@@ -24,7 +24,14 @@ public sealed partial class L12GameEngine
         }
         var item = State.EffectStack.FirstOrDefault(stack => stack.StackItemId == prompt.StackItemId);
         if (item is null) return;
+        if (TryContinueLibraryPlacement(item, prompt, command)) return;
         var action = prompt.Data.GetValueOrDefault("action") ?? string.Empty;
+        if (IsLibraryInspectionChoiceAction(action) && chosen.Any(id => id != "skip"
+                && State.Players[item.Controller].Library.All(card => card.InstanceId != id)))
+        {
+            FailLibraryPlacement(item);
+            return;
+        }
         if (action == "private-view-confirm") { FinishStackItem(item); return; }
         var source = FindSource(item);
         var player = State.Players[item.Controller];
@@ -395,35 +402,16 @@ public sealed partial class L12GameEngine
         }
         item.Data["reorder-context"] = context;
         item.Data["reorder-cards"] = string.Join('|', cards.Select(card => card.InstanceId));
-        CreatePrompt(item.Controller, "order", $"依次选择牌库顶部 {cards.Length} 张牌的排列顺序", cards.Select(card => card.InstanceId),
-            cards.Length, cards.Length, "card-effect", item.StackItemId,
-            data: new Dictionary<string, string>
-            {
-                ["action"] = "reorder-order",
-                ["placementMode"] = "split-top-bottom",
-            });
+        CreateLibraryPlacementPrompt(item, cards.Select(card => card.InstanceId), "reorder-order", "split-top-bottom",
+            $"依次选择牌库顶部 {cards.Length} 张牌的排列顺序");
     }
 
     private void BeginAllTopBottomReorder(L12StackItem item, string context, IEnumerable<string> cardIds, string text)
     {
         var ids = cardIds.Distinct().ToArray();
-        if (ids.Length == 0) { FinishStackItem(item); return; }
         item.Data["reorder-context"] = context;
         item.Data["reorder-cards"] = string.Join('|', ids);
-        var data = new Dictionary<string, string>
-        {
-            ["action"] = "reorder-order",
-            ["placementMode"] = "all-top-bottom",
-            ["displayCardIds"] = string.Join('|', ids),
-        };
-        var player = State.Players[item.Controller];
-        foreach (var id in ids)
-        {
-            var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == id);
-            if (card is not null) AddPromptCardData(data, card);
-        }
-        CreatePrompt(item.Controller, "order", text, ids, ids.Length, ids.Length,
-            "card-effect", item.StackItemId, data: data);
+        CreateLibraryPlacementPrompt(item, ids, "reorder-order", "all-top-bottom", text);
     }
 
     private void ContinueReorderOrder(L12StackItem item, L12Prompt prompt, List<string> chosen)
@@ -436,34 +424,15 @@ public sealed partial class L12GameEngine
 
     private void CompleteTopDeckReorderDirect(L12StackItem item, List<string> topIds, List<string> bottomIds)
     {
-        var player = State.Players[item.Controller];
-        var expected = item.Data["reorder-cards"].Split('|');
-        var ordered = topIds.Concat(bottomIds).ToArray();
-        if (ordered.Length != expected.Length || ordered.Distinct().Count() != expected.Length
-            || ordered.Any(id => !expected.Contains(id)))
-        {
-            AddEvent("effect-rejected", item.Controller, "牌库调整结果不完整");
-            FinishStackItem(item);
-            return;
-        }
-        var cards = expected.ToDictionary(id => id, id => player.Library.First(card => card.InstanceId == id));
-        foreach (var card in cards.Values) player.Library.Remove(card);
-        player.Library.InsertRange(0, topIds.Select(id => cards[id]));
-        player.Library.AddRange(bottomIds.Select(id => cards[id]));
-        AddEvent("reorder", item.Controller, $"将 {topIds.Count} 张牌放回牌库顶部、{bottomIds.Count} 张牌放回牌库底部");
-        FinishStackItem(item);
+        CompleteLibraryPlacement(item, item.Data["reorder-cards"].Split('|', StringSplitOptions.RemoveEmptyEntries), topIds, bottomIds);
     }
 
     private void CompleteTopDeckReorder(L12StackItem item, L12Prompt prompt, string topCountText)
     {
-        var player = State.Players[item.Controller];
-        var ids = item.Data["reorder-order"].Split('|');
-        var cards = ids.Select(id => player.Library.First(card => card.InstanceId == id)).ToArray();
-        foreach (var card in cards) player.Library.Remove(card);
-        var topCount = int.Parse(topCountText);
-        player.Library.InsertRange(0, cards.Take(topCount));
-        player.Library.AddRange(cards.Skip(topCount));
-        FinishStackItem(item);
+        var ids = item.Data["reorder-order"].Split('|', StringSplitOptions.RemoveEmptyEntries);
+        if (!int.TryParse(topCountText, out var topCount) || topCount < 0 || topCount > ids.Length)
+        { FailLibraryPlacement(item); return; }
+        CompleteLibraryPlacement(item, ids, ids.Take(topCount).ToArray(), ids.Skip(topCount).ToArray());
     }
 
     private void BeginOiranGift(L12StackItem item)
@@ -538,19 +507,8 @@ public sealed partial class L12GameEngine
             CompleteOiranOrder(item, remaining);
             return;
         }
-        var data = new Dictionary<string, string>
-        {
-            ["action"] = "oiran-order",
-            ["placementMode"] = "all-bottom",
-            ["displayCardIds"] = string.Join('|', remaining)
-        };
-        foreach (var id in remaining)
-        {
-            var card = player.Library.First(candidate => candidate.InstanceId == id);
-            AddPromptCardData(data, card);
-        }
-        CreatePrompt(item.Controller, "order", "调整其余展示牌的顺序，然后将它们全部放回牌库底部。",
-            remaining, remaining.Count, remaining.Count, "card-effect", item.StackItemId, data: data);
+        CreateLibraryPlacementPrompt(item, remaining, "oiran-order", "all-bottom",
+            "调整其余展示牌的顺序，然后将它们全部放回牌库底部。");
     }
 
     private void CompleteOiranOrder(L12StackItem item, List<string> order)

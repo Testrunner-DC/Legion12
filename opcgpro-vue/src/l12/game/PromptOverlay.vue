@@ -88,7 +88,7 @@ watch(() => `${prompt.value?.promptId ?? ''}:${props.game.phase}:${me.value.mull
   placementSelected.value = null
   draggedChoice.value = null
   placementOrder.value = (prompt.value?.validChoices ?? []).filter(id => id !== 'skip')
-})
+}, { immediate: true })
 watch(minimized, value => emit('minimizedChange', value), { immediate: true })
 const responseTargetIds = computed(() => {
   if (!minimized.value || !visible.value || !prompt.value) return []

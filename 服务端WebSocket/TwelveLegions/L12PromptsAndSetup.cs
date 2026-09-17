@@ -617,6 +617,12 @@ public sealed partial class L12GameEngine
         var chosen = new List<string>();
         if (prompt.Data.GetValueOrDefault("placementMode") is "split-top-bottom" or "all-top-bottom" or "all-bottom")
         {
+            var mode = prompt.Data["placementMode"];
+            if (mode == "all-bottom" && command.TopCardInstanceIds is { Count: > 0 })
+                return CommandResult.Reject("这些卡牌必须全部放回牌库底部");
+            if (mode == "all-top-bottom" && command.TopCardInstanceIds is { Count: > 0 }
+                && command.BottomCardInstanceIds is { Count: > 0 })
+                return CommandResult.Reject("这些卡牌必须全部放回顶部或全部放回底部");
             chosen.AddRange(command.TopCardInstanceIds ?? []);
             chosen.AddRange(command.BottomCardInstanceIds ?? []);
             if (chosen.Count != chosen.Distinct().Count()) return CommandResult.Reject("同一张牌不能同时靠顶和靠底");

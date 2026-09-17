@@ -98,7 +98,7 @@ public sealed partial class L12GameEngine
 
     private bool ReconcilePendingActivationTransactions()
     {
-        var changed = false;
+        var changed = ReconcileLibraryPlacementPrompts();
         var activationSnapshot = State.PendingActivations.ToArray();
         foreach (var activation in activationSnapshot)
         {
