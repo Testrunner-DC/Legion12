@@ -1,8 +1,16 @@
 # 十二军团任务台账
 
+## EFFECT-20260917-P0-ABILITY-INVENTORY：逐能力可再生基线
+
+- 状态：运行目录324卡/719段已生成；定向5/5、Batch 3333/3333和全卡静态门禁通过，退出码0。集中提交后进行干净Release与同步；P0整体未完成，未部署。
+- 内容：从实际能力定义导出稳定ID、正文/Cost、原子参数、场景、入口匹配及待核对维度；细原子定义87、复合定义200、入口归属待核对432，另列7张无能力卡。
+- 防误报：同卡同触发不能替另一能力背书；所有测试维度保留待核对，不凭卡级引用算通过。提交的清单必须与运行目录完全一致，否则规则测试失败。
+- 下一步：核对时点/印刷分段与旧入口归属，按族关联具名用例和适用性；共享计划不是新操作原子。
+- 范围：仅离线导出器、测试及计划记录。既有UI/平台修改（包括后续出现的L12PlatformStore.cs修改）保留，不混入本批。
+
 ## EFFECT-20260917-P2-READY-ZONE：启动卡组目标结果与转活跃区域绑定
 
-- 状态：定向64项、Focused 3327项、最终Batch 3328项全部通过（退出码0，零跳过），全卡原子及规范门禁通过；待本次集中提交后的Release与同步，未部署。
+- 状态：定向64项、Focused 3327项、最终Batch 3328项全部通过；79dfdce干净Release退出0（规则3328、平台116、UI323、连接23、卡图324+42及前后端构建），main已精确读回一致，未部署。回执随下一批归档，避免独立文档提交/重复Release。
 - 范围：ST剩余处理器7处旧取消分支、雅典娜多目标结果、侵略如火来源移区；公共转活跃三类目标保存原区域，响应后不跨区追踪。
 - 证据：`StarterRemainingDeclaredObjectsAndRequiredSourcesFailAtSettlement`覆盖结算入口；`AthenaDeclaredTargetsResolveActualSurvivorsAfterResponseAndRecovery`覆盖实际声明/支付/响应/恢复后的0、1、2个存活目标；`ReadyAuthorityBindsOriginalZoneAcrossRecoveryAndRejectsDuplicate`覆盖三类区域×四种结果。
 - 限制：旧检查点无OriginZone时兼容旧查询。单个处理器还有其他静默结果/私区事务未归并；P2总体继续进行。

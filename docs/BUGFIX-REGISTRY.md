@@ -4166,7 +4166,7 @@
 - 修复：公共转活跃创建时绑定OriginZone，结算按原区域及休整状态验证；ST单目标补当前类型与阵营，雅典娜无对象跳过、全失效失败、部分失效只处理存活对象。侵略如火将宿主失效与来源离开结算区区分记录。
 - 同类扫描：`rg -n "effect-cancelled|FindOnField|CommitEffectReady|ReadyCardByEffect|ReadyMoraleByEffect" 服务端WebSocket/TwelveLegions`；本批覆盖ST06-03、ST06-M1、ST03-10、ST04-10、ST05-10、ST05-M1及公共转活跃出口。其他已发现入口列入路线图，未宣称整个卡池已完成。
 - 回归：两份`StarterBatch3BRegressionTests`、`SimpleCardStateTriggerConsistencyTests`中的真实响应与V2恢复测试覆盖原区域三类×正常/换区/提前活跃/无效及重复提交；雅典娜真实弃牌后全/部分失效、0对象跳过；定向64项通过后新增0对象一项，最终汇总待收口。
-- 最终验证：Focused 3327/3327、补充空目标回归后Batch 3328/3328，均退出码0、零失败零跳过；全卡原子审计及规范门禁通过。提交级Release与同步随后执行。
+- 最终验证：Focused 3327/3327、补充空目标回归后Batch 3328/3328，均退出码0、零失败零跳过；全卡原子审计及规范门禁通过。79dfdce干净Release最终退出0（规则3328、平台116、UI323、连接23、卡图324+42及前后端构建），main已精确读回；完整提交与产物路径见实施计划。
 - 兼容与边界：旧存档未保存OriginZone时保留历史查找；不变更响应窗口数量。无前端布局改动。本批尚未部署。
 
 ## BUG-20260917-STARTER-TARGET-SETTLEMENT｜启动卡组定向效果仍把结算时失效写为取消
