@@ -5,7 +5,7 @@
 - 根因：支援结算虽已调用通用阵亡离场管线，却只由默认参数隐含`Defeat`语义，且没有端到端回归固定“自身阵亡效果照常结算、进攻军团不获得击杀”的边界；后续若把支援离场与战斗伤害结果粗合并，容易同时丢失阵亡触发或误建【击杀时】。
 - 同型扫描：全量检查支援声明/结算、`RemoveFromField`、战斗时间线的`Defeated*InstanceId`、`QueueCombatKillTriggers`、类型化`L12KillSourceEvent`、状态式击杀、震击连带、死亡候选和V2恢复。支援只有`L12Actions.ResolveDefenseCore`一个权威离场入口；印刷击杀与临时击杀只由`CombatDamage`的权威交战双方及被击杀实例建立，卡效/状态击杀另有类型化来源且同样不触发印刷【击杀时】。
 - 修复：支援者离场显式标记`L12FieldLeaveKind.Defeat`，保留其自身【阵亡时】候选；不写入本次交战的`Defeated*InstanceId`，也不创建`kill-source`。新增武则天支援、源义经进攻的V2恢复端到端样例，固定支援者入墓后抽牌并治疗、没有进攻方击杀事实。
-- 防回滚：功能提交`e01cd28`；战斗时间线、类型化击杀、协防/近藤相邻回归126/126及Focused规则3302/3302通过；待Batch与提交级Release验证，未部署。
+- 防回滚：功能提交`e01cd28`、文档提交`0dc7cff`；战斗时间线、类型化击杀、协防/近藤相邻回归126/126、Focused/Batch/提交级Release规则3302/3302、平台116/116、UI323、连接23、卡图324+42及前后端生产构建通过。证据`D:\GPT\Legion12\artifacts\deploy\0dc7cff87820defba7fe50f154617b68226af69e\l12-release-0dc7cff87820defba7fe50f154617b68226af69e.json`，未部署。
 
 ## 2026-09-17 天灾“开场”被错误实现为仅首回合触发
 
