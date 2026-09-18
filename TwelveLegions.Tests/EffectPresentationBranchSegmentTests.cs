@@ -1591,6 +1591,51 @@ public sealed class EffectPresentationBranchSegmentTests
         }
     }
 
+    [Theory]
+    [InlineData("canopic-search", "TryContinueS1Faction", "S01-0216", "S01-0217", false)]
+    [InlineData("scout-shuffle", "TryContinueS1Extended", "S01-0013", "S01-0001", true)]
+    [Trait("L12Evidence", "legacy-prompt:private-zone-current-state")]
+    public void LegacyPrivatePromptFailsSafelyWhenItsDeclaredCardLeavesTheZone(
+        string action, string resolver, string sourceCardId, string targetCardId, bool opponentOwnsTarget)
+    {
+        var game = Create(Catalog, 307470 + action.Length);
+        var source = Card(Catalog, sourceCardId, $"legacy-private-source-{action}");
+        var target = Card(Catalog, targetCardId, $"legacy-private-target-{action}", owner: opponentOwnsTarget ? 1 : 0);
+        var targetOwner = game.State.Players[opponentOwnsTarget ? 1 : 0];
+        game.State.Players[0].Resolving.Add(source);
+        if (opponentOwnsTarget) targetOwner.Hand.Add(target); else targetOwner.Library.Add(target);
+        if (opponentOwnsTarget) targetOwner.Hand.Remove(target); else targetOwner.Library.Remove(target);
+        var item = new L12StackItem { StackItemId = $"legacy-private-stack-{action}", Controller = 0, SourceInstanceId = source.InstanceId, SourceCardId = source.CardId, SourceName = source.Name, SourceSnapshot = source.Clone(), Trigger = "enter", Text = source.EffectText ?? source.Name };
+        var prompt = new L12Prompt { PromptId = $"legacy-private-prompt-{action}", PlayerIndex = opponentOwnsTarget ? 1 : 0, Kind = "card", Text = action, ValidChoices = [target.InstanceId], MinChoose = 1, MaxChoose = 1, Continuation = "card-effect", StackItemId = item.StackItemId, Data = new Dictionary<string, string> { ["action"] = action } };
+        Invoke(game, resolver, item, prompt, new List<string> { target.InstanceId }, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: target.InstanceId));
+        Assert.DoesNotContain(target, targetOwner.Hand); Assert.DoesNotContain(target, targetOwner.Library);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
+    [Theory]
+    [InlineData("canopic-search", "TryContinueS1Faction", "S01-0216", "S01-0217", false)]
+    [InlineData("scout-shuffle", "TryContinueS1Extended", "S01-0013", "S01-0001", true)]
+    [Trait("L12Evidence", "legacy-prompt:private-zone-repeat")]
+    public void LegacyPrivatePromptRejectsTheSameSelectionAfterItHasAlreadyResolved(
+        string action, string resolver, string sourceCardId, string targetCardId, bool opponentOwnsTarget)
+    {
+        var game = Create(Catalog, 307480 + action.Length);
+        var source = Card(Catalog, sourceCardId, $"legacy-repeat-source-{action}");
+        var target = Card(Catalog, targetCardId, $"legacy-repeat-target-{action}", owner: opponentOwnsTarget ? 1 : 0);
+        var targetOwner = game.State.Players[opponentOwnsTarget ? 1 : 0];
+        game.State.Players[0].Resolving.Add(source);
+        if (opponentOwnsTarget) targetOwner.Hand.Add(target); else targetOwner.Library.Add(target);
+        var item = new L12StackItem { StackItemId = $"legacy-repeat-stack-{action}", Controller = 0, SourceInstanceId = source.InstanceId, SourceCardId = source.CardId, SourceName = source.Name, SourceSnapshot = source.Clone(), Trigger = "enter", Text = source.EffectText ?? source.Name };
+        var prompt = new L12Prompt { PromptId = $"legacy-repeat-prompt-{action}", PlayerIndex = opponentOwnsTarget ? 1 : 0, Kind = "card", Text = action, ValidChoices = [target.InstanceId], MinChoose = 1, MaxChoose = 1, Continuation = "card-effect", StackItemId = item.StackItemId, Data = new Dictionary<string, string> { ["action"] = action } };
+        var command = new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: target.InstanceId);
+        Invoke(game, resolver, item, prompt, new List<string> { target.InstanceId }, command);
+        Assert.Contains(target, opponentOwnsTarget ? targetOwner.Library : targetOwner.Hand);
+        Invoke(game, resolver, item, prompt, new List<string> { target.InstanceId }, command);
+        Assert.Equal(1, targetOwner.Hand.Count(card => card.InstanceId == target.InstanceId)
+            + targetOwner.Library.Count(card => card.InstanceId == target.InstanceId));
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
     private static object? Invoke(object target, string methodName, params object?[] args)
     {
         var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)

@@ -563,7 +563,14 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item); return true;
             case "scout-shuffle":
             {
-                var target = enemy.Hand.First(candidate => candidate.InstanceId == chosen[0]); enemy.Hand.Remove(target); enemy.Library.Add(target); ShuffleLibrary(enemy, "前线侦查结算");
+                var target = enemy.Hand.FirstOrDefault(candidate => candidate.InstanceId == chosen[0]);
+                if (target is null)
+                {
+                    RecordTargetSettlementFailure(item, chosen[0], "所选手牌已离开对方手牌区");
+                    FinishStackItem(item);
+                    return true;
+                }
+                enemy.Hand.Remove(target); enemy.Library.Add(target); ShuffleLibrary(enemy, "前线侦查结算");
                 FinishStackItem(item); return true;
             }
             case "ambush-buff":

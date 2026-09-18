@@ -547,7 +547,15 @@ public sealed partial class L12GameEngine
             case "ankh-ready-target": { var target = DeclaredOwnLegionTarget(item.Controller, chosen[0]); if (target is not null && target.CardId == "S01-0212" && source is not null) ReadyCardByEffect(item.Controller, source, target, $"{target.Name}因效果转为活跃"); FinishStackItem(item); return true; }
             case "canopic-search":
             {
-                var selected = player.Library.First(candidate => candidate.InstanceId == chosen[0]);
+                var selected = player.Library.FirstOrDefault(candidate => candidate.InstanceId == chosen[0]
+                    && candidate.Name.Contains("卡诺匹斯罐", StringComparison.Ordinal));
+                if (selected is null)
+                {
+                    RecordTargetSettlementFailure(item, chosen[0], "所选卡诺匹斯罐已离开牌库或不再符合检索条件");
+                    ShuffleLibrary(player, "卡诺匹斯箱检索对象失效");
+                    FinishStackItem(item);
+                    return true;
+                }
                 player.Library.Remove(selected);
                 PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
                     $"卡诺匹斯箱展示〈{selected.Name}〉并加入手牌", $"{selected.Name}因效果加入手牌",
