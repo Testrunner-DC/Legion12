@@ -202,8 +202,10 @@ public sealed partial class L12GameEngine
         {
             case "march-buff-effect":
             {
-                var target = FindOnField(player, CompositeDeclared(item, "buffTarget").SingleOrDefault(), out _, out _);
+                var targetId = CompositeDeclared(item, "buffTarget").SingleOrDefault();
+                var target = DeclaredOwnLegionTarget(item.Controller, targetId);
                 if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, card.Name);
+                else RecordTargetSettlementFailure(item, targetId, "所选我方军团已离场或不再是军团");
                 var canContinue = CanReturnMorale(player, 2)
                     && PublicLegions(State.Players[1 - item.Controller]).Any(candidate => candidate.Troops <= 6000);
                 if (!canContinue)

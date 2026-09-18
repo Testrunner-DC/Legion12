@@ -1398,6 +1398,126 @@ public sealed class EffectPresentationBranchSegmentTests
         Assert.Null(game.State.Players[1].Field[1][0]);
     }
 
+    [Fact]
+    [Trait("L12Evidence", "composite:own-legion-current-state")]
+    public void StrategicTransferDoesNotReturnOrBuffAnObjectThatIsNoLongerALegion()
+    {
+        var game = Create(Catalog, 307404);
+        var source = Card(Catalog, "S01-0009", "transfer-current-source");
+        var transformed = Card(Catalog, "S01-0019", "transfer-current-target");
+        game.State.Players[0].Resolving.Add(source);
+        game.State.Players[0].Field[0][0] = transformed;
+        var item = new L12StackItem
+        {
+            StackItemId = "transfer-current-stack", Controller = 0, SourceInstanceId = source.InstanceId,
+            SourceCardId = source.CardId, SourceName = source.Name, SourceSnapshot = source.Clone(),
+            Trigger = "play", Text = source.EffectText ?? source.Name,
+        };
+        item.Data["atomicFlow"] = "strategic-transfer-effect";
+        item.Data["compositePlan"] = "S01-0009";
+        item.Data["compositeSegment"] = "0";
+        item.Data["declared:returnTarget"] = transformed.InstanceId;
+        item.Data["declared:buffTarget"] = transformed.InstanceId;
+        Invoke(game, "TryResolveS1ExtendedTactic", item, source);
+
+        Assert.Same(transformed, game.State.Players[0].Field[0][0]);
+        Assert.DoesNotContain(transformed, game.State.Players[0].Hand);
+        Assert.Empty(transformed.TimedModifiers);
+        Assert.Equal(2, game.State.Events.Count(entry => entry.Type == "effect-failed"));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "composite:own-legion-current-state")]
+    public void StrategicTransferSkipsOnlyTheInvalidOwnLegionTarget()
+    {
+        var game = Create(Catalog, 307405);
+        var source = Card(Catalog, "S01-0009", "transfer-partial-source");
+        var invalidReturn = Card(Catalog, "S01-0019", "transfer-partial-invalid");
+        var validBuff = Card(Catalog, "S01-0406", "transfer-partial-valid");
+        game.State.Players[0].Resolving.Add(source);
+        game.State.Players[0].Field[0][0] = invalidReturn;
+        game.State.Players[0].Field[0][1] = validBuff;
+        var item = new L12StackItem
+        {
+            StackItemId = "transfer-partial-stack", Controller = 0, SourceInstanceId = source.InstanceId,
+            SourceCardId = source.CardId, SourceName = source.Name, SourceSnapshot = source.Clone(),
+            Trigger = "play", Text = source.EffectText ?? source.Name,
+        };
+        item.Data["atomicFlow"] = "strategic-transfer-effect";
+        item.Data["compositePlan"] = "S01-0009";
+        item.Data["compositeSegment"] = "0";
+        item.Data["declared:returnTarget"] = invalidReturn.InstanceId;
+        item.Data["declared:buffTarget"] = validBuff.InstanceId;
+        Invoke(game, "TryResolveS1ExtendedTactic", item, source);
+
+        Assert.Same(invalidReturn, game.State.Players[0].Field[0][0]);
+        Assert.Contains(validBuff.TimedModifiers, modifier => modifier.TroopsDelta == 2000);
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "composite:own-legion-current-state")]
+    public void StrategicTransferRevalidatesOwnLegionStateAfterV2Recovery()
+    {
+        var game = Create(Catalog, 307407, stateFormatVersion: 2);
+        var source = Card(Catalog, "S01-0009", "transfer-recover-source");
+        var original = Card(Catalog, "S01-0406", "transfer-recover-target");
+        game.State.Players[0].Resolving.Add(source);
+        game.State.Players[0].Field[0][0] = original;
+        var item = new L12StackItem
+        {
+            StackItemId = "transfer-recover-stack", Controller = 0, SourceInstanceId = source.InstanceId,
+            SourceCardId = source.CardId, SourceName = source.Name, SourceSnapshot = source.Clone(),
+            Trigger = "play", Text = source.EffectText ?? source.Name,
+        };
+        item.Data["atomicFlow"] = "strategic-transfer-effect";
+        item.Data["compositePlan"] = "S01-0009";
+        item.Data["compositeSegment"] = "0";
+        item.Data["declared:returnTarget"] = original.InstanceId;
+        item.Data["declared:buffTarget"] = original.InstanceId;
+        game.State.EffectStack.Add(item);
+
+        game = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(),
+            game.RandomState!.Value, game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        var transformed = Card(Catalog, "S01-0019", original.InstanceId);
+        game.State.Players[0].Field[0][0] = transformed;
+        var restoredItem = Assert.Single(game.State.EffectStack);
+        var restoredSource = Assert.Single(game.State.Players[0].Resolving);
+        Invoke(game, "TryResolveS1ExtendedTactic", restoredItem, restoredSource);
+
+        Assert.Same(transformed, game.State.Players[0].Field[0][0]);
+        Assert.DoesNotContain(transformed, game.State.Players[0].Hand);
+        Assert.Empty(transformed.TimedModifiers);
+        Assert.Equal(2, game.State.Events.Count(entry => entry.Type == "effect-failed"));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "composite:own-legion-current-state")]
+    public void MarchDoesNotBuffAnObjectThatIsNoLongerALegion()
+    {
+        var game = Create(Catalog, 307406);
+        var source = Card(Catalog, "S01-0118", "march-current-source");
+        var transformed = Card(Catalog, "S01-0019", "march-current-target");
+        game.State.Players[0].Resolving.Add(source);
+        game.State.Players[0].Field[0][0] = transformed;
+        var item = new L12StackItem
+        {
+            StackItemId = "march-current-stack", Controller = 0, SourceInstanceId = source.InstanceId,
+            SourceCardId = source.CardId, SourceName = source.Name, SourceSnapshot = source.Clone(),
+            Trigger = "play", Text = source.EffectText ?? source.Name,
+        };
+        item.Data["atomicFlow"] = "march-buff-effect";
+        item.Data["compositePlan"] = "S01-0118";
+        item.Data["compositeSegment"] = "0";
+        item.Data["declared:buffTarget"] = transformed.InstanceId;
+        Invoke(game, "ResolveTacticEffect", item);
+
+        Assert.Same(transformed, game.State.Players[0].Field[0][0]);
+        Assert.Empty(transformed.TimedModifiers);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
     private static object? Invoke(object target, string methodName, params object?[] args)
     {
         var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)

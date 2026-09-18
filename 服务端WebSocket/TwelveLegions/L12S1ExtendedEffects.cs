@@ -252,10 +252,14 @@ public sealed partial class L12GameEngine
                 return true;
             case "strategic-transfer-effect":
             {
-                var returnTarget = FindOnField(player, CompositeDeclared(item, "returnTarget").SingleOrDefault(), out _, out _);
+                var returnTargetId = CompositeDeclared(item, "returnTarget").SingleOrDefault();
+                var returnTarget = DeclaredOwnLegionTarget(item.Controller, returnTargetId);
                 if (returnTarget is not null) MoveFieldCardToZone(player, returnTarget, "hand", "因战略转移返回手牌");
-                var buffTarget = FindOnField(player, CompositeDeclared(item, "buffTarget").SingleOrDefault(), out _, out _);
+                else RecordTargetSettlementFailure(item, returnTargetId, "所选我方军团已离场或不再是军团");
+                var buffTargetId = CompositeDeclared(item, "buffTarget").SingleOrDefault();
+                var buffTarget = DeclaredOwnLegionTarget(item.Controller, buffTargetId);
                 if (buffTarget is not null) AddTimedModifier(buffTarget, 2000, 0, State.TurnSerial, card.Name);
+                else RecordTargetSettlementFailure(item, buffTargetId, "所选我方军团已离场或不再是军团");
                 FinishStackItem(item);
                 return true;
             }

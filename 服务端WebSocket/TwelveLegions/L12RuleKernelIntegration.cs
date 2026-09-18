@@ -1430,6 +1430,13 @@ public sealed partial class L12GameEngine
         return card is not null && IsFieldLegion(card) && !card.Hidden && (predicate?.Invoke(card) ?? true) ? card : null;
     }
 
+    private L12CardInstance? DeclaredOwnLegionTarget(int controller, string? instanceId,
+        Func<L12CardInstance, bool>? predicate = null)
+    {
+        var card = FindOnField(State.Players[controller], instanceId, out _, out _);
+        return card is not null && IsFieldLegion(card) && (predicate?.Invoke(card) ?? true) ? card : null;
+    }
+
     private bool IsEnemyTargetLegal(int controller, string? instanceId, Func<L12CardInstance, bool> predicate)
         => DeclaredEnemyTarget(controller, instanceId, predicate) is not null;
 
