@@ -1962,6 +1962,7 @@ public sealed partial class L12GameEngine
                         $"梅林展示〈{selected.Name}〉并加入手牌", "梅林检索主动战术",
                         "S02-0603", "search-hit");
                 }
+                else RecordTargetSettlementFailure(item, chosen[0], "所选主动战术已离开牌库或不再符合检索条件");
                 ShuffleLibrary(player, "梅林检索结算");
                 FinishStackItem(item);
                 return true;
@@ -2065,6 +2066,7 @@ public sealed partial class L12GameEngine
                             $"武田信玄展示〈{selected.Name}〉并加入手牌",
                             "武田信玄检索高天原军团", "S02-0401", "search-hit");
                     }
+                    else RecordTargetSettlementFailure(item, chosen[0], "所选高天原军团已离开牌库或不再符合检索条件");
                 }
                 ShuffleLibrary(player, "武田信玄检索结算");
                 return BeginTakedaFollowupWithinStack(item);
@@ -2325,6 +2327,12 @@ public sealed partial class L12GameEngine
                         $"〈符文之力〉展示〈{selected.Name}〉并加入手牌",
                         "符文之力将【彼界】卡牌加入手牌", "S02-0620", "search-hit");
                 }
+                else if (chosen[0] != "skip")
+                {
+                    RecordTargetSettlementFailure(item, chosen[0], "所选彼界卡牌已离开牌库或不再符合检索条件");
+                    FinishStackItem(item);
+                    return true;
+                }
                 PromptRunePowerBottomOrder(item, ids);
                 return true;
             }
@@ -2409,6 +2417,7 @@ public sealed partial class L12GameEngine
                         $"圆桌领域展示〈{selected.Name}〉并加入手牌",
                         "圆桌领域将【圆桌骑士】军团加入手牌", "S02-0621", "search-hit");
                 }
+                else RecordTargetSettlementFailure(item, chosen[0], "所选圆桌骑士军团已离开牌库或不再符合检索条件");
                 ShuffleLibrary(player, "圆桌领域检索结算");
                 FinishStackItem(item);
                 return true;
@@ -2428,6 +2437,7 @@ public sealed partial class L12GameEngine
                             $"八尺琼勾玉展示〈{selected.Name}〉并加入手牌",
                             "八尺琼勾玉将【高天原】的【骑兵】军团加入手牌", "S02-0404", "search-hit");
                     }
+                    else RecordTargetSettlementFailure(item, chosen[0], "所选高天原骑兵军团已离开牌库或不再符合检索条件");
                 }
                 ShuffleLibrary(player, "八尺琼勾玉检索结算");
                 FinishStackItem(item);
@@ -2444,6 +2454,7 @@ public sealed partial class L12GameEngine
                         $"〈荣耀之路〉展示〈{selected.Name}〉并加入手牌",
                         "荣耀之路将【奥林匹斯】卡牌加入手牌", "S02-0521", "search-hit");
                 }
+                else RecordTargetSettlementFailure(item, chosen[0], "所选奥林匹斯卡牌已离开牌库或不再符合检索条件");
                 ShuffleLibrary(player, "荣耀之路检索结算");
                 FinishStackItem(item);
                 return true;

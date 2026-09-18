@@ -296,7 +296,8 @@ public sealed partial class L12GameEngine
             case "s2-ring-search":
             {
                 var player = State.Players[item.Controller];
-                var target = player.Library.FirstOrDefault(candidate => candidate.InstanceId == chosen[0]);
+                var target = player.Library.FirstOrDefault(candidate => candidate.InstanceId == chosen[0]
+                    && L12StructuredCardRules.HasFaction(player, candidate, "universal"));
                 if (target is not null)
                 {
                     player.Library.Remove(target);
@@ -304,6 +305,7 @@ public sealed partial class L12GameEngine
                         $"万物统御之戒展示并将〈{target.Name}〉加入手牌",
                         $"万物统御之戒将{target.Name}加入手牌", "S02-0008", "search-hit");
                 }
+                else RecordTargetSettlementFailure(item, chosen[0], "所选【通用】卡牌已离开牌库或不再符合检索条件");
                 ShuffleLibrary(player, "万物统御之戒检索结算");
                 FinishStackItem(item);
                 break;

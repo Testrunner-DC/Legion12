@@ -1680,6 +1680,47 @@ public sealed class EffectPresentationBranchSegmentTests
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
     }
 
+    [Theory]
+    [InlineData("s2-merlin-search", "S02-0603")]
+    [InlineData("s2-takeda-search", "S02-0401")]
+    [InlineData("s2-rune-power-pick", "S02-0620")]
+    [InlineData("s2-round-table-search", "S02-0621")]
+    [InlineData("s2-magatama-search", "S02-0404")]
+    [InlineData("s2-glory-search", "S02-0521")]
+    [Trait("L12Evidence", "s2-search:library-current-state")]
+    public void S2LibrarySearchPublishesFailureWhenItsDeclaredNonSkipCardLeavesTheLibrary(
+        string action, string sourceCardId)
+    {
+        var game = Create(Catalog, 307510 + action.Length);
+        var source = Card(Catalog, sourceCardId, $"s2-search-source-{action}");
+        var target = Card(Catalog, "S01-0001", $"s2-search-target-{action}");
+        game.State.Players[0].Resolving.Add(source);
+        var item = new L12StackItem { StackItemId = $"s2-search-stack-{action}", Controller = 0, SourceInstanceId = source.InstanceId, SourceCardId = source.CardId, SourceName = source.Name, SourceSnapshot = source.Clone(), Trigger = "active", Text = source.EffectText ?? source.Name };
+        if (action == "s2-rune-power-pick") item.Data["rune-power-top"] = target.InstanceId;
+        var prompt = new L12Prompt { PromptId = $"s2-search-prompt-{action}", PlayerIndex = 0, Kind = "search", Text = action, ValidChoices = [target.InstanceId], MinChoose = 1, MaxChoose = 1, Continuation = "card-effect", StackItemId = item.StackItemId, Data = new Dictionary<string, string> { ["action"] = action } };
+        Invoke(game, "TryContinueS2Faction", item, prompt, new List<string> { target.InstanceId }, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: target.InstanceId));
+        Assert.DoesNotContain(target, game.State.Players[0].Hand);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
+    [Theory]
+    [InlineData("s2-ring-search", "S02-0008", "ContinueS2UniversalEffect")]
+    [InlineData("trial-completion-library-search", "S02-06S4", "TryContinueTrialCompletionEffect")]
+    [Trait("L12Evidence", "s2-search:library-current-state")]
+    public void S2CrossRouterLibrarySearchPublishesFailureWhenItsDeclaredCardLeavesTheLibrary(
+        string action, string sourceCardId, string resolver)
+    {
+        var game = Create(Catalog, 307520 + action.Length);
+        var source = Card(Catalog, sourceCardId, $"s2-cross-search-source-{action}");
+        var target = Card(Catalog, "S01-0001", $"s2-cross-search-target-{action}");
+        game.State.Players[0].Resolving.Add(source);
+        var item = new L12StackItem { StackItemId = $"s2-cross-search-stack-{action}", Controller = 0, SourceInstanceId = source.InstanceId, SourceCardId = source.CardId, SourceName = source.Name, SourceSnapshot = source.Clone(), Trigger = "trial-complete", Text = source.EffectText ?? source.Name };
+        var prompt = new L12Prompt { PromptId = $"s2-cross-search-prompt-{action}", PlayerIndex = 0, Kind = "search", Text = action, ValidChoices = [target.InstanceId], MinChoose = 1, MaxChoose = 1, Continuation = "card-effect", StackItemId = item.StackItemId, Data = new Dictionary<string, string> { ["action"] = action } };
+        Invoke(game, resolver, item, prompt, new List<string> { target.InstanceId });
+        Assert.DoesNotContain(target, game.State.Players[0].Hand);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
     private static object? Invoke(object target, string methodName, params object?[] args)
     {
         var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)
