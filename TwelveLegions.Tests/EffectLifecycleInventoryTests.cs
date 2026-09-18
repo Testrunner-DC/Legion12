@@ -312,6 +312,34 @@ public sealed class EffectLifecycleInventoryTests
     }
 
     [Fact]
+    public void CounterDeploymentProfileBindsOnlyItsTwoHandCounterSegments()
+    {
+        var rows = Build(Catalog).Abilities.Where(item => item.Profile?.Id == "composite:counter-deployment").ToArray();
+        Assert.Equal(EffectLifecycleProfiles.CounterDeploymentAbilityIds.Order(),
+            rows.Select(row => row.Definition.AbilityId).Order());
+        Assert.All(rows, row =>
+        {
+            Assert.Equal("shared-rule-owner", row.EntryEvidence);
+            Assert.Equal("IsCounterDeploymentCandidate", row.Profile!.RuntimeOwners["candidate-generation"]);
+            Assert.Equal("SetDeclaredCounterTactics", row.Profile.RuntimeOwners["settlement-revalidation"]);
+            Assert.Contains("independent-target-settlement", row.ReviewGaps);
+            Assert.Contains("no-target", row.ReviewGaps);
+            Assert.Contains("negated", row.ReviewGaps);
+            Assert.Contains("reconnect", row.ReviewGaps);
+        });
+        var defense = Assert.Single(rows, row => row.CardId == "S02-0009");
+        Assert.Contains(defense.TestReferences, reference => reference.Scopes.Contains("normal"));
+        Assert.Contains(defense.TestReferences, reference => reference.Scopes.Contains("target-invalidated"));
+        Assert.Contains(defense.TestReferences, reference => reference.Scopes.Contains("no-target"));
+        Assert.Contains(defense.TestReferences, reference => reference.Scopes.Contains("negated"));
+        Assert.Contains(defense.TestReferences, reference => reference.Scopes.Contains("reconnect"));
+        Assert.Contains(defense.TestReferences, reference => reference.Scopes.Contains("duplicate-submit"));
+        var uesugi = Assert.Single(rows, row => row.CardId == "S01-0403");
+        Assert.Contains(uesugi.TestReferences, reference => reference.Scopes.Contains("normal"));
+        Assert.Contains(uesugi.TestReferences, reference => reference.Scopes.Contains("target-invalidated"));
+    }
+
+    [Fact]
     public void CommittedInventoryMatchesRuntimeDefinitions()
     {
         var inventory = Build(Catalog);

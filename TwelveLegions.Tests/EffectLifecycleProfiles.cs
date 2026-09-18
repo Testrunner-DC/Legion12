@@ -28,6 +28,22 @@ internal static class EffectLifecycleProfiles
             ["no-target"] = "本效果必须先声明1张合格手牌军团；不存在候选时不能发动，且尚未提交弃置费用。",
         }) { AdditionalChecks = ["cost-prepaid", "settlement-slot-invalidated", "single-candidate-choice"] };
 
+    internal static readonly string[] CounterDeploymentAbilityIds =
+    [
+        "S01-0403:ability:death:c3e5fc27d01fe269",
+        "S02-0009:ability:play:ff53cfd909161da1",
+    ];
+
+    private static readonly L12LifecycleProfile CounterDeployment = new("composite:counter-deployment",
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["candidate-generation"] = "IsCounterDeploymentCandidate",
+            ["slot-declaration"] = "CreateActivationStepPrompt",
+            ["settlement-revalidation"] = "SetDeclaredCounterTactics",
+        },
+        new SortedDictionary<string, string>(StringComparer.Ordinal))
+        { AdditionalChecks = ["private-hand-redaction", "independent-target-settlement", "slot-invalidated"] };
+
     internal static readonly string[] NativeCavalryAbilityIds =
     [
         "S01-0310:ability:active:0a0575206e996652",
@@ -147,6 +163,7 @@ internal static class EffectLifecycleProfiles
         var abilities = catalog.AtomicEffects.All.SelectMany(card => card.Abilities)
             .ToDictionary(ability => ability.AbilityId, StringComparer.Ordinal);
         ValidateOwners(DesertHandSummon);
+        ValidateOwners(CounterDeployment);
         ValidateOwners(NativeCavalry);
         ValidateOwners(PrintedRanged);
         var bindings = new Dictionary<string, L12LifecycleProfile>(StringComparer.Ordinal);
@@ -155,6 +172,14 @@ internal static class EffectLifecycleProfiles
             || !desertHandSummon.Text.Contains("天灾等级与弃置军团数量相同", StringComparison.Ordinal))
             throw new InvalidOperationException($"Stale reviewed desert hand-summon profile: {DesertHandSummonAbilityId}");
         bindings.Add(DesertHandSummonAbilityId, DesertHandSummon);
+        foreach (var id in CounterDeploymentAbilityIds)
+        {
+            if (!abilities.TryGetValue(id, out var counterDeployment)
+                || counterDeployment.Text is null || !counterDeployment.Text.Contains("反击战术", StringComparison.Ordinal)
+                || counterDeployment.ExecutionModel is not ("spell" or "triggered"))
+                throw new InvalidOperationException($"Stale reviewed counter-deployment profile: {id}");
+            bindings.Add(id, CounterDeployment);
+        }
         foreach (var id in NativeCavalryAbilityIds)
         {
             if (!abilities.TryGetValue(id, out var ability) || ability.ExecutionModel != "rule-action"

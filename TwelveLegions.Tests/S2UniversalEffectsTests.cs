@@ -1070,6 +1070,7 @@ public sealed class S2UniversalEffectsTests
     }
 
     [Fact]
+    [L12AbilityEvidence("S02-0009:ability:play:ff53cfd909161da1", "normal", "multi-target-applicability")]
     public void DefenseDeploymentSetsUpToTwoCounterTacticsWithoutTheirNormalSetCost()
     {
         var game = Create(seed: 6206);
@@ -1099,6 +1100,184 @@ public sealed class S2UniversalEffectsTests
         Assert.Contains(covered, card => card.InstanceId == firstCounter.InstanceId);
         Assert.Contains(covered, card => card.InstanceId == secondCounter.InstanceId);
         Assert.Contains(player.Graveyard, card => card.InstanceId == deployment.InstanceId);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0009")]
+    [Trait("L12Evidence", "entry:defense-deployment-independent-revalidation")]
+    [L12AbilityEvidence("S02-0009:ability:play:ff53cfd909161da1",
+        "target-invalidated", "slot-invalidated", "independent-target-settlement")]
+    public void DefenseDeploymentKeepsOneValidCounterAndItsIndependentDrawWhenAnotherDeclaredCounterExpires()
+    {
+        var game = Create(seed: 62061, autoPassEmptyResponses: false);
+        var player = game.State.Players[0];
+        player.Hand.Clear();
+        player.Library.Clear();
+        player.Graveyard.Clear();
+        player.Field[0] = new L12CardInstance?[3];
+        player.Field[1] = new L12CardInstance?[3];
+        var deployment = Instance("S02-0009", "defense-independent-source");
+        var stale = Instance("S02-0015", "defense-independent-stale");
+        var valid = Instance("S01-0016", "defense-independent-valid");
+        var draw = Instance("S01-0003", "defense-independent-draw");
+        player.Hand.AddRange([deployment, stale, valid]);
+        player.Library.Add(draw);
+        AddMorale(player, deployment.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", deployment.InstanceId)).Accepted);
+        var hand = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: hand.PromptId,
+            CardInstanceIds: [stale.InstanceId, valid.InstanceId])).Accepted);
+        var firstSlot = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: firstSlot.PromptId,
+            Choice: "1:0")).Accepted);
+        var secondSlot = Assert.Single(game.State.PendingPrompts);
+        Assert.DoesNotContain("1:0", secondSlot.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: secondSlot.PromptId,
+            Choice: "1:1")).Accepted);
+
+        Assert.True(player.Hand.Remove(stale));
+        player.Graveyard.Add(stale);
+        player.Field[1][0] = Instance("S01-0003", "defense-independent-occupied");
+        PassResponses(game);
+
+        Assert.Same(valid, player.Field[1][1]);
+        Assert.Contains(stale, player.Graveyard);
+        Assert.Contains(draw, player.Hand);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect"
+            && entry.Text.Contains("其余对象继续结算", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0009")]
+    [Trait("L12Evidence", "entry:defense-deployment-zero-selection")]
+    [L12AbilityEvidence("S02-0009:ability:play:ff53cfd909161da1", "no-target")]
+    public void DefenseDeploymentMayChooseZeroCountersAndStillResolvesItsIndependentDraw()
+    {
+        var game = Create(seed: 62062, autoPassEmptyResponses: false);
+        var player = game.State.Players[0];
+        player.Hand.Clear();
+        player.Library.Clear();
+        player.Graveyard.Clear();
+        player.Field[0] = new L12CardInstance?[3];
+        player.Field[1] = new L12CardInstance?[3];
+        var deployment = Instance("S02-0009", "defense-zero-source");
+        var draw = Instance("S01-0003", "defense-zero-draw");
+        player.Hand.Add(deployment);
+        player.Library.Add(draw);
+        AddMorale(player, deployment.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", deployment.InstanceId)).Accepted);
+        var selection = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(0, selection.MinChoose);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: selection.PromptId,
+            CardInstanceIds: [])).Accepted);
+        PassResponses(game);
+
+        Assert.Contains(draw, player.Hand);
+        Assert.Empty(player.Field[1].OfType<L12CardInstance>());
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0009")]
+    [Trait("L12Evidence", "entry:defense-deployment-negated")]
+    [L12AbilityEvidence("S02-0009:ability:play:ff53cfd909161da1", "negated")]
+    public void DefenseDeploymentStopsBeforeSettingTheDeclaredCounterWhenActuallyNegated()
+    {
+        var game = Create(seed: 62063, autoPassEmptyResponses: false);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        player.Hand.Clear();
+        player.Library.Clear();
+        player.Graveyard.Clear();
+        player.Field[0] = new L12CardInstance?[3];
+        player.Field[1] = new L12CardInstance?[3];
+        opponent.Hand.Clear();
+        opponent.Field[1] = new L12CardInstance?[3];
+        var deployment = Instance("S02-0009", "defense-negated-source");
+        var counter = Instance("S02-0015", "defense-negated-entry");
+        player.Hand.AddRange([deployment, counter]);
+        AddMorale(player, deployment.Cost);
+        var absoluteDefense = Instance("S01-0016", "defense-negated-absolute");
+        absoluteDefense.Hidden = true;
+        absoluteDefense.SetRound = 0;
+        var discard = Instance("S01-0003", "defense-negated-discard");
+        opponent.Field[1][0] = absoluteDefense;
+        opponent.Hand.Add(discard);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", deployment.InstanceId)).Accepted);
+        var selection = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: selection.PromptId,
+            CardInstanceIds: [counter.InstanceId])).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId, Choice: "1:0")).Accepted);
+
+        var ownPriority = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: ownPriority.PromptId, Choice: "pass")).Accepted);
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(1, response.PlayerIndex);
+        Assert.Contains(absoluteDefense.InstanceId, response.ValidChoices);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: response.PromptId,
+            Choice: absoluteDefense.InstanceId)).Accepted);
+        var discardPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(discard.InstanceId, discardPrompt.ValidChoices);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: discardPrompt.PromptId,
+            Choice: discard.InstanceId)).Accepted);
+        PassResponses(game);
+
+        Assert.Contains(counter, player.Hand);
+        Assert.DoesNotContain(counter, player.Field.SelectMany(row => row).OfType<L12CardInstance>());
+        Assert.Contains(discard, opponent.Graveyard);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-negated"
+            && entry.EffectResultStatus == "negated");
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0009")]
+    [Trait("L12Evidence", "entry:defense-deployment-reconnect-duplicate")]
+    [L12AbilityEvidence("S02-0009:ability:play:ff53cfd909161da1", "reconnect", "duplicate-submit")]
+    public void DefenseDeploymentRestoresItsDeclaredCounterAndRejectsTheConsumedSelectionPrompt()
+    {
+        var game = Create(seed: 62064, autoPassEmptyResponses: false);
+        var player = game.State.Players[0];
+        player.Hand.Clear();
+        player.Library.Clear();
+        player.Graveyard.Clear();
+        player.Field[0] = new L12CardInstance?[3];
+        player.Field[1] = new L12CardInstance?[3];
+        var deployment = Instance("S02-0009", "defense-restore-source");
+        var counter = Instance("S02-0015", "defense-restore-counter");
+        player.Hand.AddRange([deployment, counter]);
+        AddMorale(player, deployment.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", deployment.InstanceId)).Accepted);
+        var selection = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: selection.PromptId,
+            CardInstanceIds: [counter.InstanceId])).Accepted);
+        Assert.False(game.Handle(0, new L12Command("resolvePrompt", PromptId: selection.PromptId,
+            CardInstanceIds: [counter.InstanceId])).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId, Choice: "1:0")).Accepted);
+
+        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0),
+            game.CardFactSignalSequence, autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        PassResponses(game);
+
+        Assert.Equal(counter.InstanceId, game.State.Players[0].Field[1][0]?.InstanceId);
     }
 
     [Fact]

@@ -62,22 +62,9 @@ public sealed partial class L12GameEngine
             case "defense-deployment-set":
             {
                 var cards = CompositeDeclared(item, "entryCards");
-                for (var index = 0; index < cards.Length; index++)
-                {
-                    var slotText = CompositeDeclared(item, $"entrySlot{index + 1}").SingleOrDefault();
-                    if (slotText?.Split(':') is not ["1", var slotValue]
-                        || !int.TryParse(slotValue, out var slot) || slot is < 0 or > 2
-                        || player.Field[1][slot] is not null) continue;
-                    var counter = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == cards[index]
-                        && IsCounterTactic(candidate.CardId));
-                    if (counter is null) continue;
-                    player.Hand.Remove(counter);
-                    counter.Hidden = true;
-                    counter.SetRound = State.Round;
-                    counter.SummonRound = State.Round;
-                    player.Field[1][slot] = counter;
-                    AddEvent("counter-set", item.Controller, $"{player.Name}因〈防御部署〉在后排{slot + 1}号位覆盖1张反击战术");
-                }
+                SetDeclaredCounterTactics(item, cards,
+                    [.. Enumerable.Range(0, cards.Length).Select(index =>
+                        CompositeDeclared(item, $"entrySlot{index + 1}").SingleOrDefault())]);
                 FinishStackItem(item);
                 return true;
             }
@@ -373,6 +360,51 @@ public sealed partial class L12GameEngine
             else AddEvent("draw", item.Controller, "〈防御部署〉因手牌不高于4张抽取1张牌", source is null ? [] : [source]);
         }
         FinishStackItem(item);
+    }
+
+    // Both 〈防御部署〉 and 〈上杉谦信〉 declare private hand counters and public
+    // back-row slots before the response window. Settlement always uses the same
+    // current-state check, never substitutes another hand card, and lets a valid
+    // independently declared counter continue when its sibling has gone stale.
+    private static bool IsCounterDeploymentCandidate(L12CardInstance candidate, string? sourceInstanceId = null)
+        => candidate.InstanceId != sourceInstanceId && IsCounterTactic(candidate.CardId);
+
+    private int SetDeclaredCounterTactics(L12StackItem item, IReadOnlyList<string> declaredCards,
+        IReadOnlyList<string?> declaredSlots)
+    {
+        var player = State.Players[item.Controller];
+        var declared = declaredCards.Take(2).ToArray();
+        if (declared.Length == 0) return 0;
+
+        var resolved = 0;
+        var usedSlots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < declared.Length; index++)
+        {
+            var slotText = declaredSlots.ElementAtOrDefault(index);
+            var counter = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == declared[index]
+                && IsCounterDeploymentCandidate(candidate));
+            if (counter is null || slotText?.Split(':') is not ["1", var slotValue]
+                || !int.TryParse(slotValue, out var slot) || slot is < 0 or > 2
+                || !usedSlots.Add(slotText) || player.Field[1][slot] is not null)
+                continue;
+
+            player.Hand.Remove(counter);
+            counter.Hidden = true;
+            counter.SetRound = State.Round;
+            counter.SummonRound = State.Round;
+            player.Field[1][slot] = counter;
+            AddEvent("counter-set", item.Controller,
+                $"{player.Name}因〈{item.SourceName}〉在后排{slot + 1}号位覆盖1张反击战术");
+            resolved++;
+        }
+
+        if (resolved == 0)
+            RecordTargetSettlementFailure(item, string.Join('|', declared), "已声明的反击战术已离开手牌或后排位置已失效");
+        else if (resolved < declared.Length)
+            AddEvent("effect", item.Controller,
+                $"〈{item.SourceName}〉有{declared.Length - resolved}张已声明的反击战术或后排位置在逆结算后失效；其余对象继续结算",
+                FindSource(item) is { } source ? [source] : []);
+        return resolved;
     }
 
     private void BeginPrayerPublicPreview(L12StackItem item)

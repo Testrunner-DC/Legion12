@@ -856,7 +856,7 @@ public sealed partial class L12GameEngine
 
             case "S02-0009":
                 steps.Add(CompositeStep("hand-cards", "entryCards", "防御部署：私密选择手牌中最多2张反击战术",
-                    player.Hand.Where(card => card.InstanceId != source.InstanceId && IsCounterTactic(card.CardId))
+                    player.Hand.Where(card => IsCounterDeploymentCandidate(card, source.InstanceId))
                         .Select(card => card.InstanceId), 0, 2));
                 steps.Add(CompositeStep("composite-defense-slot", "entrySlot1", "防御部署：公开声明第1张反击战术的后排位置",
                     Enumerable.Range(0, 3).Where(slot => player.Field[1][slot] is null).Select(slot => $"1:{slot}"), 1,

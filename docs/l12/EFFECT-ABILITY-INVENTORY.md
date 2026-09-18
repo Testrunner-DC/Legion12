@@ -5,14 +5,14 @@
 
 卡牌：324；能力段：684；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`13000419d31f95bf9696650466eebe348743a0b2a4cf7853c8e4b2620f7e5375`。
+内容指纹：`1c756a31ac32820bcb4a38a4e70a6b2c76dc21f170e99044761326f22b9e4eaf`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
-| composite-definition | 208 |
+| composite-definition | 206 |
 | fine-definition | 87 |
 | owner-unreviewed | 336 |
-| shared-rule-owner | 53 |
+| shared-rule-owner | 55 |
 
 fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；shared-rule-owner = 精确能力已绑定共用规则入口及适用性档案；owner-unreviewed = 还需定位实际入口。任何一种归属证据均不等于生命周期验收通过。
 同卡同触发只算候选，不能把另一能力的程序继承为本能力已覆盖。无能力卡单列，不能从分母中静默消失。
@@ -40,6 +40,11 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 - negated：原生职介位移是立即执行的规则动作，不创建可响应或无效的效果堆叠；后续位移触发另行验收。
 - payment-cancel：没有卡牌或资源费用，也无支付Prompt；未提交目的地不产生动作。
 - target-invalidated：无入栈后目标窗口；改以提交时来源/目的地复验覆盖过期客户端选择。
+
+### composite:counter-deployment
+
+精确绑定能力数：2。运行入口：candidate-generation = L12GameEngine.IsCounterDeploymentCandidate；settlement-revalidation = L12GameEngine.SetDeclaredCounterTactics；slot-declaration = L12GameEngine.CreateActivationStepPrompt。
+
 
 ### composite:desert-hand-summon
 
@@ -96,6 +101,8 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0313:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0313 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0314:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0314 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0316:ability:static:9ba2f4f5354a2a05 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0316 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
+| S01-0403:ability:death:c3e5fc27d01fe269 | TwelveLegions.Tests.AtomicReviewBatch6IBRegressionTests.UesugiCounterDeploymentDoesNotReplaceItsDeclaredHandCounterAfterResponse / S01-0403 | target-invalidated |
+| S01-0403:ability:death:c3e5fc27d01fe269 | TwelveLegions.Tests.AtomicReviewBatch6IBRegressionTests.UesugiCounterDeploymentSetsItsDeclaredHandCounterAfterResponses / S01-0403 | normal |
 | S01-0409:ability:static:6c03e83e9e18abb1 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0409 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0409:ability:static:6c03e83e9e18abb1 | TwelveLegions.Tests.PrintedRangedProfileTests.RepresentativeRangeConditionsActuallyPreventRetaliationAfterRestore / S01-0409 | duplicate-attack, normal-ranged-combat, reconnect-before-attack |
 | S01-0409:ability:active:56a01edf47ee1225 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / S01-0409 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
@@ -108,6 +115,11 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0415:ability:static:9ba2f4f5354a2a05 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0415 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0416:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0416 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0003:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0003 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
+| S02-0009:ability:play:ff53cfd909161da1 | TwelveLegions.Tests.S2UniversalEffectsTests.DefenseDeploymentKeepsOneValidCounterAndItsIndependentDrawWhenAnotherDeclaredCounterExpires / S02-0009 | independent-target-settlement, slot-invalidated, target-invalidated |
+| S02-0009:ability:play:ff53cfd909161da1 | TwelveLegions.Tests.S2UniversalEffectsTests.DefenseDeploymentMayChooseZeroCountersAndStillResolvesItsIndependentDraw / S02-0009 | no-target |
+| S02-0009:ability:play:ff53cfd909161da1 | TwelveLegions.Tests.S2UniversalEffectsTests.DefenseDeploymentRestoresItsDeclaredCounterAndRejectsTheConsumedSelectionPrompt / S02-0009 | duplicate-submit, reconnect |
+| S02-0009:ability:play:ff53cfd909161da1 | TwelveLegions.Tests.S2UniversalEffectsTests.DefenseDeploymentSetsUpToTwoCounterTacticsWithoutTheirNormalSetCost / S02-0009 | multi-target-applicability, normal |
+| S02-0009:ability:play:ff53cfd909161da1 | TwelveLegions.Tests.S2UniversalEffectsTests.DefenseDeploymentStopsBeforeSettingTheDeclaredCounterWhenActuallyNegated / S02-0009 | negated |
 | S02-0016:ability:s2-reaction:37e38b08d365f0bb | TwelveLegions.Tests.StackResponseChoiceRegressionTests.NestedResponseKeepsItsDeclaredRootWhenIntermediateStackChanges / S02-0016 | nested-authority, reconnect-settlement |
 | S02-0016:ability:s2-reaction:37e38b08d365f0bb | TwelveLegions.Tests.StackResponseChoiceRegressionTests.PublicResponseDeclarationsRestoreAndRejectDuplicateFinalSubmission / S02-0016 | commit-declaration, duplicate-declaration, presentation-declaration, reconnect-declaration |
 | S02-0016:ability:s2-reaction:37e38b08d365f0bb | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ResponseSettlementRevalidatesObjectsAndSuccessDependenciesAfterRecovery / S02-0016 | duplicate-rejected, negated-settlement, normal-settlement, reconnect-settlement, target-invalidated-settlement |
@@ -371,7 +383,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0402 织田信长 #1 | S01-0402:ability:enter:28437823889be2d3 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 击杀对方1张费用不高于4的军团 |
 | S01-0402 织田信长 #2 | S01-0402:ability:attack:54bfa6b97746205c | attack/triggered | composite-definition | 进攻时 可消耗1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → duration:duration.apply → resolution:operation.composite-flow | 1 | 进攻时 可消耗1士气：对方所有军团，本回合费用-1 |
 | S01-0403 上杉谦信 #1 | S01-0403:ability:enter:ebef3f55d68053ea | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 击杀对方1张费用不高于X的军团。（X=双方战场&lt;反击战术&gt;合计数量） |
-| S01-0403 上杉谦信 #2 | S01-0403:ability:death:c3e5fc27d01fe269 | death/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.composite-flow | 1 | 阵亡时 将手牌中最多2张&lt;反击战术&gt;置入我方后排 |
+| S01-0403 上杉谦信 #2 | S01-0403:ability:death:c3e5fc27d01fe269 | death/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.composite-flow | 1 | 阵亡时 将手牌中最多2张&lt;反击战术&gt;置入我方后排 |
 | S01-0404 真田幸村 #1 | S01-0404:ability:enter:c25e438ab6938fb8 | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.keyword | 1 | 登场时 获得冲锋。（可在登场回合进攻） |
 | S01-0405 宫本武藏 #1 | S01-0405:ability:enter:46425018899cf08f | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.keyword | 1 | 登场时 若我方前排没有其他军团，此军团获得冲锋。（可在登场回合进攻） |
 | S01-0405 宫本武藏 #2 | S01-0405:ability:attack:fcbd396bbfbd88b2 | attack/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.draw | 1 | 进攻时 若我方手牌数量不高于对方，可抽取1张牌 |
@@ -451,7 +463,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0007 重装士兵 #3 | S02-0007:ability:granted:be3174252606645e | granted/granted-continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.keyword → resolution:legacy.resolve | 0 | 挑衅 对方只可进攻拥有 挑衅 效果的军团，若有多个具有 挑衅效果的军团，则可以选择其中1个进行进攻。 |
 | S02-0008 万物统御之戒 #1 | S02-0008:ability:continuous:766cca673a9815ad | continuous/rule | owner-unreviewed | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 规则上，本圣物位于圣物区时，所有【通用】卡牌都视为与我方主宰阵营相同。 |
 | S02-0008 万物统御之戒 #2 | S02-0008:ability:enter:d55717584e8ef56e | enter/triggered | composite-definition | 登场时 可弃置1张手牌 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.discard → resolution:operation.move-zone → resolution:operation.shuffle → resolution:visibility.policy → resolution:operation.composite-flow | 2 | 登场时 可弃置1张手牌：查看我方牌库，选择1张【通用】卡牌展示并加入手牌。随后重洗牌库。 |
-| S02-0009 防御部署 #1 | S02-0009:ability:play:ff53cfd909161da1 | play/spell | composite-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.draw → resolution:operation.composite-flow | 3 | 将手牌中最多2张&lt;反击战术&gt;置入战场。若手牌数量不高于4，可抽取1张牌。 |
+| S02-0009 防御部署 #1 | S02-0009:ability:play:ff53cfd909161da1 | play/spell | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.draw → resolution:operation.composite-flow | 3 | 将手牌中最多2张&lt;反击战术&gt;置入战场。若手牌数量不高于4，可抽取1张牌。 |
 | S02-0010 黑色莲花 #1 | S02-0010:ability:play:6d06ac2a469671de | play/spell | composite-definition | 将天灾值增加或减少最多1点。 可消耗3士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → resolution:special.domain → resolution:operation.composite-flow | 5 | 将天灾值增加或减少最多1点。 可消耗3士气：将此战术休整置入士气区，此战术视为1张士气。 |
 | S02-0010 黑色莲花 #2 | S02-0010:ability:return-as-morale:9169de0e99d296e2 | return-as-morale/replacement | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:legacy.resolve | 0 | 「作为士气」当此战术作为士气被返还时，置入所有者墓地。 |
 | S02-0011 纷乱箭 #1 | S02-0011:ability:play:16d3a82605980345 | play/spell | composite-definition | — | trigger:trigger.observe → resolution:special.domain → resolution:operation.composite-flow | 2 | 击杀对方最多3张原本兵力不高于2000的军团。 |

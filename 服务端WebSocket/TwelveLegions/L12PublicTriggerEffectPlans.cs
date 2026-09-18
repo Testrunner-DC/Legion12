@@ -595,7 +595,7 @@ public sealed partial class L12GameEngine
         }
         else if (batch6IBPlan == "uesugi-counters")
         {
-            var counters = player.Hand.Where(card => IsCounterTactic(card.CardId)).Select(card => card.InstanceId).ToList();
+            var counters = player.Hand.Where(card => IsCounterDeploymentCandidate(card)).Select(card => card.InstanceId).ToList();
             var backSlots = Enumerable.Range(0, 3).Where(slot => player.Field[1][slot] is null)
                 .Select(slot => $"1:{slot}").ToList();
             var maximum = Math.Min(2, Math.Min(counters.Count, backSlots.Count));

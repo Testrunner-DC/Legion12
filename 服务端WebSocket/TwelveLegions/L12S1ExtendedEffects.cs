@@ -438,20 +438,7 @@ public sealed partial class L12GameEngine
                 var selected = PublicTriggerDeclared(item, "entryCards")
                     .Split('|', StringSplitOptions.RemoveEmptyEntries);
                 var destinations = new[] { PublicTriggerDeclared(item, "entrySlot1"), PublicTriggerDeclared(item, "entrySlot2") };
-                for (var index = 0; index < Math.Min(selected.Length, destinations.Length); index++)
-                {
-                    var counter = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == selected[index]
-                        && IsCounterTactic(candidate.CardId));
-                    var (row, slot) = ParseSlot(destinations[index]);
-                    if (counter is null || row != 1 || slot is < 0 or > 2 || player.Field[row][slot] is not null)
-                    {
-                        AddEvent("effect-cancelled", item.Controller,
-                            "上杉谦信已声明的反击战术或后排位置失效；仅取消该对象", card);
-                        continue;
-                    }
-                    player.Hand.Remove(counter); counter.Hidden = true; counter.SetRound = State.Round;
-                    player.Field[row][slot] = counter;
-                }
+                SetDeclaredCounterTactics(item, selected, destinations);
                 FinishStackItem(item); return true;
             }
             case "坂本龙马":

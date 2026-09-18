@@ -740,6 +740,55 @@ public sealed class AtomicReviewBatch6IBRegressionTests
         Assert.DoesNotContain(fixture.Cards["private"].InstanceId, opponentSnapshot, StringComparison.Ordinal);
     }
 
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0403")]
+    [Trait("L12Evidence", "entry:uesugi-counter-deployment-revalidation")]
+    [L12AbilityEvidence("S01-0403:ability:death:c3e5fc27d01fe269", "target-invalidated")]
+    public void UesugiCounterDeploymentDoesNotReplaceItsDeclaredHandCounterAfterResponse()
+    {
+        var game = Create(98513);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        opponent.Field[0][0] = Card("S01-0003", "batch6ib-uesugi-opponent-legion");
+        var fixture = QueueReviewedTrigger(game, "S01-0403", "death");
+
+        ResolveChoice(game, "mode:use");
+        ResolveCards(game, fixture.Cards["private"].InstanceId);
+        var slot = OnlyPrompt(game);
+        Assert.Contains("1:0", slot.ValidChoices);
+        ResolveChoice(game, "1:0");
+
+        Assert.True(player.Hand.Remove(fixture.Cards["private"]));
+        player.Graveyard.Add(fixture.Cards["private"]);
+        PassResponses(game);
+
+        Assert.Contains(fixture.Cards["private"], player.Graveyard);
+        Assert.DoesNotContain(fixture.Cards["private"], player.Field.SelectMany(row => row).OfType<L12CardInstance>());
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("已声明的对象", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0403")]
+    [Trait("L12Evidence", "entry:uesugi-counter-deployment-normal")]
+    [L12AbilityEvidence("S01-0403:ability:death:c3e5fc27d01fe269", "normal")]
+    public void UesugiCounterDeploymentSetsItsDeclaredHandCounterAfterResponses()
+    {
+        var game = Create(98514);
+        var player = game.State.Players[0];
+        game.State.Players[1].Field[0][0] = Card("S01-0003", "batch6ib-uesugi-normal-opponent-legion");
+        var fixture = QueueReviewedTrigger(game, "S01-0403", "death");
+
+        ResolveChoice(game, "mode:use");
+        ResolveCards(game, fixture.Cards["private"].InstanceId);
+        ResolveChoice(game, "1:0");
+        PassResponses(game);
+
+        Assert.Same(fixture.Cards["private"], player.Field[1][0]);
+        Assert.True(fixture.Cards["private"].Hidden);
+        Assert.Equal(game.State.Round, fixture.Cards["private"].SummonRound);
+    }
+
     [Theory]
     [InlineData("S01-0001", 2)]
     [InlineData("S01-0303", 1)]
