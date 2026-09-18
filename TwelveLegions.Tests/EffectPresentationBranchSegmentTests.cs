@@ -1309,6 +1309,95 @@ public sealed class EffectPresentationBranchSegmentTests
         => new ReadOnlyDictionary<string, string>(choices.ToDictionary(choice => choice.Key,
             choice => choice.Value, StringComparer.OrdinalIgnoreCase));
 
+    [Fact]
+    [Trait("L12Evidence", "composite:volley-current-enemy-legion")]
+    public void VolleySingleTargetDoesNotDebuffAnObjectThatIsNoLongerALegion()
+    {
+        var game = Create(Catalog, 307401);
+        var source = Card(Catalog, "S01-0005", "volley-current-source");
+        var transformed = Card(Catalog, "S01-0019", "volley-current-target", owner: 1);
+        game.State.Players[0].Resolving.Add(source);
+        game.State.Players[1].Field[0][0] = transformed;
+        var item = new L12StackItem
+        {
+            StackItemId = "volley-current-stack", Controller = 0, SourceInstanceId = source.InstanceId,
+            SourceCardId = source.CardId, SourceName = source.Name, SourceSnapshot = source.Clone(),
+            Trigger = "play", Text = source.EffectText ?? source.Name,
+        };
+        item.Data["atomicFlow"] = "volley-effect";
+        item.Data["compositePlan"] = "S01-0005";
+        item.Data["compositeSegment"] = "0";
+        item.Data["declared:volleyMode"] = "mode:single";
+        item.Data["declared:singleTarget"] = transformed.InstanceId;
+        Invoke(game, "TryResolveS1ExtendedTactic", item, source);
+
+        Assert.Same(transformed, game.State.Players[1].Field[0][0]);
+        Assert.Empty(transformed.TimedModifiers);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "composite:volley-current-enemy-legion")]
+    public void VolleySingleTargetRevalidatesCurrentLegionStateAfterV2Recovery()
+    {
+        var game = Create(Catalog, 307403, stateFormatVersion: 2);
+        var source = Card(Catalog, "S01-0005", "volley-recover-source");
+        var original = Card(Catalog, "S01-0406", "volley-recover-target", owner: 1);
+        game.State.Players[0].Resolving.Add(source);
+        game.State.Players[1].Field[0][0] = original;
+        var item = new L12StackItem
+        {
+            StackItemId = "volley-recover-stack", Controller = 0, SourceInstanceId = source.InstanceId,
+            SourceCardId = source.CardId, SourceName = source.Name, SourceSnapshot = source.Clone(),
+            Trigger = "play", Text = source.EffectText ?? source.Name,
+        };
+        item.Data["atomicFlow"] = "volley-effect";
+        item.Data["compositePlan"] = "S01-0005";
+        item.Data["compositeSegment"] = "0";
+        item.Data["declared:volleyMode"] = "mode:single";
+        item.Data["declared:singleTarget"] = original.InstanceId;
+        game.State.EffectStack.Add(item);
+
+        game = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(),
+            game.RandomState!.Value, game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        var transformed = Card(Catalog, "S01-0019", original.InstanceId, owner: 1);
+        game.State.Players[1].Field[0][0] = transformed;
+        var restoredItem = Assert.Single(game.State.EffectStack);
+        var restoredSource = Assert.Single(game.State.Players[0].Resolving);
+        Invoke(game, "TryResolveS1ExtendedTactic", restoredItem, restoredSource);
+
+        Assert.Same(transformed, game.State.Players[1].Field[0][0]);
+        Assert.Empty(transformed.TimedModifiers);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "composite:forged-orders-current-enemy-legion")]
+    public void ForgedOrdersDoesNotMoveAnObjectThatIsNoLongerALegion()
+    {
+        var game = Create(Catalog, 307402);
+        var source = Card(Catalog, "S01-0010", "forged-current-source");
+        var transformed = Card(Catalog, "S01-0019", "forged-current-target", owner: 1);
+        game.State.Players[0].Resolving.Add(source);
+        game.State.Players[1].Field[0][0] = transformed;
+        var item = new L12StackItem
+        {
+            StackItemId = "forged-current-stack", Controller = 0, SourceInstanceId = source.InstanceId,
+            SourceCardId = source.CardId, SourceName = source.Name, SourceSnapshot = source.Clone(),
+            Trigger = "play", Text = source.EffectText ?? source.Name,
+        };
+        item.Data["atomicFlow"] = "forged-orders-effect";
+        item.Data["compositePlan"] = "S01-0010";
+        item.Data["compositeSegment"] = "0";
+        item.Data["declared:moveTargets"] = transformed.InstanceId;
+        item.Data["declared:moveSlot1"] = "1:0";
+        Invoke(game, "TryResolveS1ExtendedTactic", item, source);
+
+        Assert.Same(transformed, game.State.Players[1].Field[0][0]);
+        Assert.Null(game.State.Players[1].Field[1][0]);
+    }
+
     private static object? Invoke(object target, string methodName, params object?[] args)
     {
         var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)

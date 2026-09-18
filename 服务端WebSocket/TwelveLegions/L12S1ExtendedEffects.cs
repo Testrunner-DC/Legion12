@@ -239,9 +239,9 @@ public sealed partial class L12GameEngine
                 else
                 {
                     var targetId = CompositeDeclared(item, "singleTarget").SingleOrDefault();
-                    var target = FindOnField(enemy, targetId, out _, out _);
+                    var target = DeclaredEnemyTarget(item.Controller, targetId);
                     if (target is not null) AddTimedModifier(target, -4000, 0, State.TurnSerial, card.Name);
-                    else RecordTargetSettlementFailure(item, targetId, "所选对方军团已离场");
+                    else RecordTargetSettlementFailure(item, targetId, "所选对方军团已离场或不再是军团");
                 }
                 FinishStackItem(item);
                 return true;
@@ -264,7 +264,11 @@ public sealed partial class L12GameEngine
                 var targets = CompositeDeclared(item, "moveTargets");
                 for (var index = 0; index < targets.Length; index++)
                 {
-                    var target = FindOnField(enemy, targets[index], out var row, out var slot);
+                    var target = DeclaredEnemyTarget(item.Controller, targets[index]);
+                    var row = -1;
+                    var slot = -1;
+                    if (target is not null)
+                        _ = FindOnField(enemy, target.InstanceId, out row, out slot);
                     var destination = CompositeDeclared(item, $"moveSlot{index + 1}").SingleOrDefault();
                     if (target is null || destination?.Split(':') is not [var rowText, var slotText]
                         || !int.TryParse(rowText, out var nextRow) || !int.TryParse(slotText, out var nextSlot)

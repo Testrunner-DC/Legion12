@@ -1373,7 +1373,7 @@ public sealed partial class L12GameEngine
         {
             var target = FindOnField(opponent, targets[index], out var row, out var slot);
             var declaredSlot = declared.GetValueOrDefault($"moveSlot{index + 1}", []).SingleOrDefault();
-            if (target is null || target.Hidden || declaredSlot != $"{1 - row}:{slot}"
+            if (target is null || target.Hidden || !IsFieldLegion(target) || declaredSlot != $"{1 - row}:{slot}"
                 || opponent.Field[1 - row][slot] is not null
                 || State.ActiveDisaster?.CardId == "S01-DS03" && 1 - row == 1) return false;
         }
