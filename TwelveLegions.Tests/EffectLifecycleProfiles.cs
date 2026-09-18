@@ -13,6 +13,21 @@ internal sealed record L12LifecycleProfile(string Id, IReadOnlyDictionary<string
 
 internal static class EffectLifecycleProfiles
 {
+    // 〈沙漠君临〉的手牌军团必须在声明时明确选择；结算不能替换成另一张候选。
+    internal const string DesertHandSummonAbilityId = "S02-0207:ability:play:528a4430c4b87fb5";
+
+    private static readonly L12LifecycleProfile DesertHandSummon = new("composite:desert-hand-summon",
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["candidate-generation"] = "IsDesertHandSummonCandidate",
+            ["cost-commit"] = "TryCommitCompositePreStackCosts",
+            ["settlement-revalidation"] = "TryResolveS2FactionTactic",
+        },
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["no-target"] = "本效果必须先声明1张合格手牌军团；不存在候选时不能发动，且尚未提交弃置费用。",
+        }) { AdditionalChecks = ["cost-prepaid", "settlement-slot-invalidated", "single-candidate-choice"] };
+
     internal static readonly string[] NativeCavalryAbilityIds =
     [
         "S01-0310:ability:active:0a0575206e996652",
@@ -131,9 +146,15 @@ internal static class EffectLifecycleProfiles
     {
         var abilities = catalog.AtomicEffects.All.SelectMany(card => card.Abilities)
             .ToDictionary(ability => ability.AbilityId, StringComparer.Ordinal);
+        ValidateOwners(DesertHandSummon);
         ValidateOwners(NativeCavalry);
         ValidateOwners(PrintedRanged);
         var bindings = new Dictionary<string, L12LifecycleProfile>(StringComparer.Ordinal);
+        if (!abilities.TryGetValue(DesertHandSummonAbilityId, out var desertHandSummon)
+            || desertHandSummon.CardId != "S02-0207" || desertHandSummon.Trigger != "play"
+            || !desertHandSummon.Text.Contains("天灾等级与弃置军团数量相同", StringComparison.Ordinal))
+            throw new InvalidOperationException($"Stale reviewed desert hand-summon profile: {DesertHandSummonAbilityId}");
+        bindings.Add(DesertHandSummonAbilityId, DesertHandSummon);
         foreach (var id in NativeCavalryAbilityIds)
         {
             if (!abilities.TryGetValue(id, out var ability) || ability.ExecutionModel != "rule-action"
@@ -144,7 +165,7 @@ internal static class EffectLifecycleProfiles
         // New matching cards remain review work; do not silently grant old evidence to them.
         var matching = abilities.Values.Where(ability => ability.ExecutionModel == "rule-action"
             && L12EffectPresentationScenes.IsCavalryMoveRuleAction(ability)).Select(ability => ability.AbilityId);
-        if (!matching.ToHashSet(StringComparer.Ordinal).SetEquals(bindings.Keys))
+        if (!matching.ToHashSet(StringComparer.Ordinal).SetEquals(NativeCavalryAbilityIds))
             throw new InvalidOperationException("Native cavalry family changed; review its per-ability bindings.");
         foreach (var id in PrintedRangedAbilityIds)
         {

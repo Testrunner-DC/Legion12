@@ -753,8 +753,8 @@ public sealed partial class L12GameEngine
                     ? parsedCount
                     : activation.DeclaredValues.GetValueOrDefault("discardTargets", [])
                         .Count(id => !id.StartsWith("mode:", StringComparison.OrdinalIgnoreCase));
-            var choices = player.Hand.Where(card => card.CardType == "legion" && card.Faction == "taiyangcheng"
-                    && card.DisasterLevel == discardCount && card.InstanceId != activation.SourceInstanceId)
+            var choices = player.Hand.Where(card => IsDesertHandSummonCandidate(player, card, discardCount,
+                    activation.SourceInstanceId))
                 .Select(card => card.InstanceId).ToList();
             step.ValidChoices.Clear();
             step.ValidChoices.AddRange(choices);

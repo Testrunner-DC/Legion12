@@ -289,6 +289,29 @@ public sealed class EffectLifecycleInventoryTests
     }
 
     [Fact]
+    public void DesertHandSummonProfileUsesOneSharedCandidateRuleAndExplainsItsUnavailablePath()
+    {
+        var row = Assert.Single(Build(Catalog).Abilities,
+            item => item.Definition.AbilityId == EffectLifecycleProfiles.DesertHandSummonAbilityId);
+        Assert.Equal("shared-rule-owner", row.EntryEvidence);
+        Assert.Equal("composite:desert-hand-summon", row.Profile!.Id);
+        Assert.Equal("IsDesertHandSummonCandidate", row.Profile.RuntimeOwners["candidate-generation"]);
+        Assert.Equal("TryResolveS2FactionTactic", row.Profile.RuntimeOwners["settlement-revalidation"]);
+        Assert.DoesNotContain("runtime-owner", row.ReviewGaps);
+        Assert.DoesNotContain("protocol-profile", row.ReviewGaps);
+        Assert.DoesNotContain("no-target", row.ReviewGaps);
+        Assert.Contains("cost-prepaid", row.ReviewGaps);
+        Assert.Contains("settlement-slot-invalidated", row.ReviewGaps);
+        Assert.Contains("payment-cancel", row.ReviewGaps);
+        Assert.Equal(6, row.TestReferences.Length);
+        Assert.Contains(row.TestReferences, reference => reference.Scopes.Contains("normal"));
+        Assert.Contains(row.TestReferences, reference => reference.Scopes.Contains("negated"));
+        Assert.Contains(row.TestReferences, reference => reference.Scopes.Contains("target-invalidated"));
+        Assert.Contains(row.TestReferences, reference => reference.Scopes.Contains("reconnect"));
+        Assert.Contains(row.TestReferences, reference => reference.Scopes.Contains("payment-cancel"));
+    }
+
+    [Fact]
     public void CommittedInventoryMatchesRuntimeDefinitions()
     {
         var inventory = Build(Catalog);

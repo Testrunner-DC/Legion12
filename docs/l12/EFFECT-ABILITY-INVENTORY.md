@@ -5,14 +5,14 @@
 
 卡牌：324；能力段：684；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`55475e19ec9ea0d76635122ab6752082c9825b1448788e12bb97316bed4a9a2b`。
+内容指纹：`13000419d31f95bf9696650466eebe348743a0b2a4cf7853c8e4b2620f7e5375`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
 | composite-definition | 208 |
 | fine-definition | 87 |
-| owner-unreviewed | 337 |
-| shared-rule-owner | 52 |
+| owner-unreviewed | 336 |
+| shared-rule-owner | 53 |
 
 fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；shared-rule-owner = 精确能力已绑定共用规则入口及适用性档案；owner-unreviewed = 还需定位实际入口。任何一种归属证据均不等于生命周期验收通过。
 同卡同触发只算候选，不能把另一能力的程序继承为本能力已覆盖。无能力卡单列，不能从分母中静默消失。
@@ -40,6 +40,12 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 - negated：原生职介位移是立即执行的规则动作，不创建可响应或无效的效果堆叠；后续位移触发另行验收。
 - payment-cancel：没有卡牌或资源费用，也无支付Prompt；未提交目的地不产生动作。
 - target-invalidated：无入栈后目标窗口；改以提交时来源/目的地复验覆盖过期客户端选择。
+
+### composite:desert-hand-summon
+
+精确绑定能力数：1。运行入口：candidate-generation = L12GameEngine.IsDesertHandSummonCandidate；cost-commit = L12GameEngine.TryCommitCompositePreStackCosts；settlement-revalidation = L12GameEngine.TryResolveS2FactionTactic。
+
+- no-target：本效果必须先声明1张合格手牌军团；不存在候选时不能发动，且尚未提交弃置费用。
 
 ## 已关联具名证据（不是整能力验收通过）
 
@@ -111,6 +117,12 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0018:ability:s2-reaction:e0e92d0479a94844 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.NestedResponseKeepsItsDeclaredRootWhenIntermediateStackChanges / S02-0018 | nested-authority, reconnect-settlement |
 | S02-0018:ability:s2-reaction:e0e92d0479a94844 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ResponseSettlementRevalidatesObjectsAndSuccessDependenciesAfterRecovery / S02-0018 | duplicate-rejected, negated-settlement, normal-settlement, reconnect-settlement, success-dependency, target-invalidated-settlement |
 | S02-0204:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0204 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
+| S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleCancellationBeforeCommitLeavesCostAndSourceUntouched / S02-0207 | payment-cancel |
+| S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleFailsWithoutSubstitutionWhenItsDeclaredHandLegionLeavesBeforeSettlement / S02-0207 | target-invalidated |
+| S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleNegationKeepsItsPreStackDiscardCostAndDoesNotSummon / S02-0207 | negated |
+| S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRulePrepaysDiscardCostBeforeResponseAndOccupiedSlotDoesNotRefundOrOverwrite / S02-0207 | cost-prepaid, settlement-slot-invalidated |
+| S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleRestoresTheDeclaredHandSummonBeforeItsResponseWindowSettles / S02-0207 | reconnect |
+| S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleUsesEffectiveFactionForHandCandidateAndSettlement / S02-0207 | candidate-effective-faction, duplicate-submit, normal, single-candidate-choice |
 | S02-0304:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0304 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0505:ability:active:bac4cb5d348f29f1 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / S02-0505 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
 | S02-0505:ability:active:bac4cb5d348f29f1 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / S02-0505 | destination-invalidated, reconnect-before-command, source-invalidated |
@@ -487,7 +499,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0206 无畏的刺杀 #1 | S02-0206:ability:play:ca021e5c16b59965 | play/spell | owner-unreviewed | — | trigger:trigger.observe → target:selection.target → resolution:operation.modify-troops → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 2 | 选择我方前排1张【太阳城】军团，本回合兵力+3000，进攻对方军团时获得ABILITY 2。 |
 | S02-0206 无畏的刺杀 #2 | S02-0206:ability:granted:1aba3f5bd15a426d | granted/granted-continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 0 | 必中 进攻无法被抵挡/支援。 |
 | S02-0206 无畏的刺杀 #3 | S02-0206:ability:play:bd784d08e38e0ed8 | play/spell | owner-unreviewed | — | trigger:trigger.observe → duration:duration.apply → resolution:legacy.resolve | 1 | 本回合此军团无法因效果重置为活跃，回合结束时弃置此军团。 |
-| S02-0207 沙漠君临 #1 | S02-0207:ability:play:528a4430c4b87fb5 | play/spell | owner-unreviewed | 弃置我方战场上最多3张军团 | trigger:trigger.observe → cost:special.domain → resolution:operation.move-zone → resolution:legacy.resolve | 5 | 弃置我方战场上最多3张军团：将手牌中1张天灾等级与弃置军团数量相同的【太阳城】军团活跃登场。 |
+| S02-0207 沙漠君临 #1 | S02-0207:ability:play:528a4430c4b87fb5 | play/spell | shared-rule-owner | 弃置我方战场上最多3张军团 | trigger:trigger.observe → cost:special.domain → resolution:operation.move-zone → resolution:legacy.resolve | 5 | 弃置我方战场上最多3张军团：将手牌中1张天灾等级与弃置军团数量相同的【太阳城】军团活跃登场。 |
 | S02-02M1 奈芙蒂斯 #1 | S02-02M1:ability:continuous:a83e1e0971bbe6f0 | continuous/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 我方&lt;陵墓守卫&gt;无法进攻主宰。 |
 | S02-02M1 奈芙蒂斯 #2 | S02-02M1:ability:active:014219b1c6c557fa | active/activated | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → resolution:operation.set-state → duration:duration.apply → duration:duration.apply → resolution:legacy.resolve | 2 | 我方 回合1次 可弃置我方战场上任意数量军团，每弃置1张，本回合我方下1张带有天灾等级的【太阳城】军团登场费用-1。 |
 | S02-02M1 奈芙蒂斯 #3 | S02-02M1:ability:friendly-legion-death:a366c9a7f75b5f29 | friendly-legion-death/triggered | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → duration:duration.apply → resolution:legacy.resolve | 1 | 对方 回合1次 我方费用为2及以上的【太阳城】军团阵亡时，可将墓地1张&lt;增殖的甲虫&gt;活跃登场。 |

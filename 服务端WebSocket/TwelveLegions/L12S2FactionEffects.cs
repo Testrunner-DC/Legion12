@@ -730,19 +730,28 @@ public sealed partial class L12GameEngine
         var summonId = CompositeDeclared(item, "summonTarget").SingleOrDefault();
         var slotChoice = CompositeDeclared(item, "summonSlot").SingleOrDefault();
         var summon = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == summonId
-            && candidate.CardType == "legion" && candidate.Faction == "taiyangcheng"
-            && candidate.DisasterLevel == discardCount);
+            && IsDesertHandSummonCandidate(player, candidate, discardCount, item.SourceInstanceId));
         if (discardIds.Length > 3 || summon is null || slotChoice is null
             || !TrySummonFromAnyPrivateZone(player, item.Controller, summon.InstanceId, slotChoice, tapped: false))
         {
-            AddEvent("effect-cancelled", item.Controller,
-                "〈沙漠君临〉声明的手牌军团或登场位置已失效；登场取消，已弃置费用不恢复", card);
+            RecordTargetSettlementFailure(item, summonId,
+                "沙漠君临已选择的手牌军团或登场位置已失效；登场失败，已弃置费用不恢复");
             FinishStackItem(item);
             return true;
         }
         FinishStackItem(item);
         return true;
     }
+
+    // Candidate construction and response-time settlement share this exact current-state
+    // rule. A continuous faction mapping therefore stays valid, but an object that has
+    // left hand cannot be replaced by another candidate after declaration.
+    private static bool IsDesertHandSummonCandidate(L12PlayerState player, L12CardInstance candidate,
+        int discardCount, string? sourceInstanceId)
+        => candidate.InstanceId != sourceInstanceId
+            && candidate.CardType == "legion"
+            && L12StructuredCardRules.HasFaction(player, candidate, "taiyangcheng")
+            && candidate.DisasterLevel == discardCount;
 
     private bool TryResolveS2FactionAttack(L12StackItem item, L12CardInstance card)
     {
