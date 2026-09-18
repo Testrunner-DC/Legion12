@@ -2197,6 +2197,10 @@ public sealed partial class L12GameEngine
                     AddCardToHandByEffect(player, promotion, "graveyard", "珀尔修斯将〈珀尔修斯·晋升〉加入手牌");
                     AddEvent("effect", item.Controller, "珀尔修斯弃置1张手牌，将墓地的〈珀尔修斯·晋升〉加入手牌", promotion, discarded);
                 }
+                else RecordTargetSettlementFailure(item, chosen[0],
+                    discarded is null
+                        ? "所选手牌已离开手牌区，无法支付弃置费用"
+                        : "墓地中的〈珀尔修斯·晋升〉已离开墓地区");
                 FinishStackItem(item);
                 return true;
             }
@@ -2204,7 +2208,12 @@ public sealed partial class L12GameEngine
             {
                 if (chosen[0] == "skip") { FinishStackItem(item); return true; }
                 var shown = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == chosen[0] && candidate.CardType == "legion");
-                if (shown is null) { FinishStackItem(item); return true; }
+                if (shown is null)
+                {
+                    RecordTargetSettlementFailure(item, chosen[0], "所选军团已离开手牌区或不再是军团，无法支付展示并回顶费用");
+                    FinishStackItem(item);
+                    return true;
+                }
                 player.Hand.Remove(shown);
                 player.Library.Insert(0, shown);
                 item.Data["heracles-shown-cost"] = shown.CurrentCost.ToString();
@@ -2220,6 +2229,7 @@ public sealed partial class L12GameEngine
                 var maxCost = int.TryParse(item.Data.GetValueOrDefault("heracles-shown-cost"), out var parsed) ? parsed : -1;
                 if (target is not null && L12StructuredCardRules.CurrentCostAtMost(target, maxCost))
                     KillTarget(item, target.InstanceId, "被赫拉克勒斯·晋升击杀");
+                else RecordTargetSettlementFailure(item, chosen[0], "所选军团已离场或费用不再符合展示军团的费用上限");
                 FinishStackItem(item);
                 return true;
             }
@@ -2236,7 +2246,12 @@ public sealed partial class L12GameEngine
             case "s2-gaotianyuan-ready-discard":
             {
                 var discarded = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == chosen[0]);
-                if (discarded is null) { FinishStackItem(item); return true; }
+                if (discarded is null)
+                {
+                    RecordTargetSettlementFailure(item, chosen[0], "所选手牌已离开手牌区，无法支付弃置费用");
+                    FinishStackItem(item);
+                    return true;
+                }
                 player.Hand.Remove(discarded);
                 player.Graveyard.Add(discarded);
                 var targets = (item.Data.GetValueOrDefault("s2-gaotianyuan-ready-targets") ?? string.Empty)
@@ -2264,11 +2279,13 @@ public sealed partial class L12GameEngine
                     data: new Dictionary<string, string> { ["action"] = "s2-olympus-draw-discard" });
                 return true;
             case "s2-olympus-draw-discard":
-                MoveHandToGrave(player, chosen[0], causedByEffect: true);
+                if (!MoveHandToGrave(player, chosen[0], causedByEffect: true))
+                    RecordTargetSettlementFailure(item, chosen[0], "所选手牌已离开手牌区，无法执行抽牌后的弃置");
                 FinishStackItem(item);
                 return true;
             case "s2-helen-entry-discard":
-                MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true);
+                if (!MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true))
+                    RecordTargetSettlementFailure(item, chosen[0], "所选对方手牌已离开手牌区，无法执行强制弃置");
                 FinishStackItem(item);
                 return true;
             case "s2-canute-trigger-deaths":
@@ -2379,10 +2396,11 @@ public sealed partial class L12GameEngine
                 CompleteRunePowerBottomOrder(item, chosen);
                 return true;
             case "s2-joan-master-guard":
-                if (chosen.Count > 0 && chosen[0] != "skip" && player.Hand.Any(card => card.InstanceId == chosen[0]))
+                if (chosen.Count > 0 && chosen[0] != "skip")
                 {
-                    MoveHandToGrave(player, chosen[0], causedByEffect: false);
-                    ProtectMasterUntilNextTurnStart(player, item.Controller);
+                    if (MoveHandToGrave(player, chosen[0], causedByEffect: false))
+                        ProtectMasterUntilNextTurnStart(player, item.Controller);
+                    else RecordTargetSettlementFailure(item, chosen[0], "所选手牌已离开手牌区，无法支付弃置费用");
                 }
                 FinishStackItem(item);
                 return true;
@@ -2391,11 +2409,14 @@ public sealed partial class L12GameEngine
                 var target = FindOnField(player, chosen[0], out _, out _);
                 if (target is { Tapped: true } && IsFieldLegion(target)
                     && L12StructuredCardRules.HasFaction(player, target, "gaotianyuan")) target.Tapped = false;
+                else RecordTargetSettlementFailure(item, chosen[0],
+                    "所选休整【高天原】军团已离场、不再是军团、失去特征或已转为活跃");
                 FinishStackItem(item);
                 return true;
             }
             case "s2-asgard-death-discard":
-                MoveHandToGrave(player, chosen[0], causedByEffect: true);
+                if (!MoveHandToGrave(player, chosen[0], causedByEffect: true))
+                    RecordTargetSettlementFailure(item, chosen[0], "所选手牌已离开手牌区，无法执行抽牌后的弃置");
                 FinishStackItem(item);
                 return true;
             case "s2-mistletoe-debuff":
@@ -2485,7 +2506,12 @@ public sealed partial class L12GameEngine
                     item.Data["invalid"] = "true";
                     AddEvent("defense", prompt.PlayerIndex, "未支付〈狮心王理查一世〉要求的额外弃牌费用，本次抵挡/支援无效");
                 }
-                else MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: false);
+                else if (!MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: false))
+                {
+                    item.Data["invalid"] = "true";
+                    RecordTargetSettlementFailure(item, chosen[0],
+                        "所选额外弃置手牌已离开手牌区，本次抵挡/支援无效");
+                }
                 ResolveAuthorityEvent(item);
                 return true;
             }

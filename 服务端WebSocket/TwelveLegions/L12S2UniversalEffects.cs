@@ -283,8 +283,14 @@ public sealed partial class L12GameEngine
                 break;
             case "s2-ring-discard":
             {
-                MoveHandToGrave(State.Players[item.Controller], chosen[0], causedByEffect: false);
-                var candidates = State.Players[item.Controller].Library
+                var player = State.Players[item.Controller];
+                if (!MoveHandToGrave(player, chosen[0], causedByEffect: false))
+                {
+                    RecordTargetSettlementFailure(item, chosen[0], "所选手牌已离开手牌区，无法支付弃置费用");
+                    FinishStackItem(item);
+                    break;
+                }
+                var candidates = player.Library
                     .Where(candidate => candidate.Faction == "universal")
                     .Select(candidate => candidate.InstanceId).ToArray();
                 if (candidates.Length == 0) { FinishStackItem(item); break; }
@@ -297,7 +303,9 @@ public sealed partial class L12GameEngine
             {
                 var player = State.Players[item.Controller];
                 var target = player.Library.FirstOrDefault(candidate => candidate.InstanceId == chosen[0]
-                    && L12StructuredCardRules.HasFaction(player, candidate, "universal"));
+                    // 〈万物统御之戒〉在圣物区会把印刷【通用】牌的有效阵营映射为主宰阵营；
+                    // 此处卡文检索的是印刷【通用】牌，必须与候选生成使用同一身份判据。
+                    && candidate.Faction == "universal");
                 if (target is not null)
                 {
                     player.Library.Remove(target);

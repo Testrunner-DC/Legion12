@@ -260,14 +260,25 @@ public sealed partial class L12GameEngine
                 }
                 else
                 {
-                    DeclarePresentationBranch(item.Data, "landlord-coercion", "mode", "mode:discard");
-                    item.Data.Remove("presentationSceneId");
-                    MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true);
+                    if (MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true))
+                    {
+                        DeclarePresentationBranch(item.Data, "landlord-coercion", "mode", "mode:discard");
+                        item.Data.Remove("presentationSceneId");
+                    }
+                    else
+                    {
+                        DeclarePresentationBranch(item.Data, "landlord-coercion", "mode", "mode:invalidate");
+                        item.Data.Remove("presentationSceneId");
+                        if (target is not null) target.Data["invalid"] = "true";
+                        RecordTargetSettlementFailure(item, chosen[0],
+                            "所选额外弃置手牌已离开手牌区，本次抵挡/支援无效");
+                    }
                 }
                 FinishStackItem(item);
                 return true;
             case "s2-poison-discard":
-                MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true);
+                if (!MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true))
+                    RecordTargetSettlementFailure(item, chosen[0], "所选手牌已离开手牌区，无法执行强制弃置");
                 FinishStackItem(item);
                 return true;
             default:

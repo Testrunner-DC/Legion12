@@ -1721,6 +1721,200 @@ public sealed class EffectPresentationBranchSegmentTests
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
     }
 
+    [Fact]
+    [Trait("L12Evidence", "s2-private-choice:current-state")]
+    public void PerseusRecoveryPublishesFailureWhenItsDeclaredDiscardCostLeavesTheHand()
+    {
+        var game = Create(Catalog, 307530);
+        var source = Card(Catalog, "S02-0506", "perseus-source");
+        var promotion = Card(Catalog, "S02-0505", "perseus-promotion");
+        game.State.Players[0].Resolving.Add(source);
+        game.State.Players[0].Graveyard.Add(promotion);
+        var item = new L12StackItem { StackItemId = "perseus-stale-discard-stack", Controller = 0, SourceInstanceId = source.InstanceId, SourceCardId = source.CardId, SourceName = source.Name, SourceSnapshot = source.Clone(), Trigger = "enter", Text = source.EffectText ?? source.Name };
+        var prompt = new L12Prompt
+        {
+            PromptId = "perseus-stale-discard", PlayerIndex = 0, Kind = "hand-card",
+            Text = "珀尔修斯弃置手牌",
+            ValidChoices = ["departed-hand-card"], MinChoose = 1, MaxChoose = 1,
+            Continuation = "card-effect", StackItemId = item.StackItemId,
+            Data = new Dictionary<string, string> { ["action"] = "s2-perseus-recover-promotion" },
+        };
+
+        Invoke(game, "TryContinueS2Faction", item, prompt, new List<string> { "departed-hand-card" },
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "departed-hand-card"));
+
+        Assert.Contains(promotion, game.State.Players[0].Graveyard);
+        Assert.DoesNotContain(promotion, game.State.Players[0].Hand);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "s2-private-choice:current-state")]
+    public void HeraclesPromotionDoesNotOpenKillChoiceWhenItsDeclaredShowCostLeavesTheHand()
+    {
+        var game = Create(Catalog, 307531);
+        var source = Card(Catalog, "S02-0501", "heracles-promotion-source");
+        game.State.Players[0].Resolving.Add(source);
+        var item = new L12StackItem { StackItemId = "heracles-promotion-stale-show-stack", Controller = 0, SourceInstanceId = source.InstanceId, SourceCardId = source.CardId, SourceName = source.Name, SourceSnapshot = source.Clone(), Trigger = "promotion-enter", Text = source.EffectText ?? source.Name };
+        var prompt = new L12Prompt
+        {
+            PromptId = "heracles-promotion-stale-show", PlayerIndex = 0, Kind = "optional-card",
+            Text = "赫拉克勒斯·晋升展示手牌",
+            ValidChoices = ["departed-hand-legion"], MinChoose = 1, MaxChoose = 1,
+            Continuation = "card-effect", StackItemId = item.StackItemId,
+            Data = new Dictionary<string, string> { ["action"] = "s2-heracles-promotion-show" },
+        };
+
+        Invoke(game, "TryContinueS2Faction", item, prompt, new List<string> { "departed-hand-legion" },
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "departed-hand-legion"));
+
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "s2-private-choice:current-state")]
+    public void IioNaotoraDoesNotOpenReadyChoiceWhenItsDeclaredDiscardCostLeavesTheHand()
+    {
+        var game = Create(Catalog, 307532);
+        var source = Card(Catalog, "S02-0402", "iio-source");
+        game.State.Players[0].Resolving.Add(source);
+        var item = new L12StackItem { StackItemId = "iio-stale-discard-stack", Controller = 0, SourceInstanceId = source.InstanceId, SourceCardId = source.CardId, SourceName = source.Name, SourceSnapshot = source.Clone(), Trigger = "enter", Text = source.EffectText ?? source.Name };
+        item.Data["s2-gaotianyuan-ready-targets"] = "former-target";
+        var prompt = new L12Prompt
+        {
+            PromptId = "iio-stale-discard", PlayerIndex = 0, Kind = "hand-card",
+            Text = "井伊直虎弃置手牌",
+            ValidChoices = ["departed-hand-card"], MinChoose = 1, MaxChoose = 1,
+            Continuation = "card-effect", StackItemId = item.StackItemId,
+            Data = new Dictionary<string, string> { ["action"] = "s2-gaotianyuan-ready-discard" },
+        };
+
+        Invoke(game, "TryContinueS2Faction", item, prompt, new List<string> { "departed-hand-card" },
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "departed-hand-card"));
+
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
+    [Theory]
+    [InlineData("s2-olympus-draw-discard", "S02-0502", 0)]
+    [InlineData("s2-helen-entry-discard", "S02-0515", 1)]
+    [InlineData("s2-joan-master-guard", "S02-0613", 0)]
+    [InlineData("s2-asgard-death-discard", "S02-0301", 0)]
+    [Trait("L12Evidence", "s2-hand-discard:current-state")]
+    public void S2FactionHandDiscardPublishesFailureWhenItsDeclaredCardLeavesTheHand(
+        string action, string sourceCardId, int promptPlayer)
+    {
+        var game = Create(Catalog, 307540 + action.Length);
+        var source = Card(Catalog, sourceCardId, $"hand-discard-source-{action}");
+        game.State.Players[0].Resolving.Add(source);
+        var item = ResolutionItem(source, $"hand-discard-stack-{action}");
+        var prompt = ContinuationPrompt($"hand-discard-prompt-{action}", promptPlayer, action,
+            "departed-hand-card", item.StackItemId);
+
+        Invoke(game, "TryContinueS2Faction", item, prompt, new List<string> { "departed-hand-card" },
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "departed-hand-card"));
+
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
+    [Theory]
+    [InlineData("s2-heracles-promotion-kill", "S02-0501")]
+    [InlineData("s2-gaotianyuan-ready-target", "S02-0402")]
+    [Trait("L12Evidence", "s2-hand-discard:dependent-target")]
+    public void S2PostDiscardTargetPublishesFailureWhenItsDeclaredTargetIsNoLongerLegal(
+        string action, string sourceCardId)
+    {
+        var game = Create(Catalog, 307550 + action.Length);
+        var source = Card(Catalog, sourceCardId, $"post-discard-source-{action}");
+        game.State.Players[0].Resolving.Add(source);
+        var item = ResolutionItem(source, $"post-discard-stack-{action}");
+        item.Data["heracles-shown-cost"] = "4";
+        var prompt = ContinuationPrompt($"post-discard-prompt-{action}", 0, action,
+            "departed-field-legion", item.StackItemId);
+
+        Invoke(game, "TryContinueS2Faction", item, prompt, new List<string> { "departed-field-legion" },
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "departed-field-legion"));
+
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "s2-hand-discard:cost-stops-followup")]
+    public void RingDoesNotOpenSearchWhenItsDeclaredDiscardCostLeavesTheHand()
+    {
+        var game = Create(Catalog, 307560);
+        var source = Card(Catalog, "S02-0008", "ring-discard-source");
+        var libraryCard = Card(Catalog, "S02-0008", "ring-library-card");
+        game.State.Players[0].Resolving.Add(source);
+        game.State.Players[0].Library.Add(libraryCard);
+        var item = ResolutionItem(source, "ring-discard-stack");
+        var prompt = ContinuationPrompt("ring-discard-prompt", 0, "s2-ring-discard",
+            "departed-hand-card", item.StackItemId);
+
+        Invoke(game, "ContinueS2UniversalEffect", item, prompt, new List<string> { "departed-hand-card" });
+
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Contains(libraryCard, game.State.Players[0].Library);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
+    [Theory]
+    [InlineData("s2-poison-discard", "S02-0018")]
+    [Trait("L12Evidence", "s2-hand-discard:counter-current-state")]
+    public void S2CounterHandDiscardPublishesFailureWhenItsDeclaredCardLeavesTheHand(
+        string action, string sourceCardId)
+    {
+        var game = Create(Catalog, 307570 + action.Length);
+        var source = Card(Catalog, sourceCardId, $"counter-hand-discard-source-{action}");
+        game.State.Players[0].Resolving.Add(source);
+        var item = ResolutionItem(source, $"counter-hand-discard-stack-{action}");
+        var prompt = ContinuationPrompt($"counter-hand-discard-prompt-{action}", 0, action,
+            "departed-hand-card", item.StackItemId);
+
+        Invoke(game, "ContinueS2CounterEffect", item, prompt, new List<string> { "departed-hand-card" });
+
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "s2-hand-discard:otherwise-invalid")]
+    public void LandlordCoercionInvalidatesSupportWhenItsDeclaredRequiredDiscardLeavesTheHand()
+    {
+        var game = Create(Catalog, 307580);
+        var source = Card(Catalog, "S02-0015", "landlord-source");
+        var defended = ResolutionItem(source, "landlord-defended-stack");
+        game.State.EffectStack.Add(defended);
+        var item = ResolutionItem(source, "landlord-stack");
+        var prompt = ContinuationPrompt("landlord-prompt", 0, "s2-landlord-extra-discard",
+            "departed-hand-card", item.StackItemId);
+        prompt.Data["targetStackId"] = defended.StackItemId;
+
+        Invoke(game, "ContinueS2CounterEffect", item, prompt, new List<string> { "departed-hand-card" });
+
+        Assert.Equal("true", defended.Data["invalid"]);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "s2-hand-discard:otherwise-invalid")]
+    public void RichardInvalidatesSupportWhenItsDeclaredRequiredDiscardLeavesTheHand()
+    {
+        var game = Create(Catalog, 307581);
+        var source = Card(Catalog, "S02-0608", "richard-source");
+        game.State.Players[0].Resolving.Add(source);
+        var item = ResolutionItem(source, "richard-extra-discard-stack");
+        var prompt = ContinuationPrompt("richard-extra-discard-prompt", 0,
+            "s2-richard-defense-extra-discard", "departed-hand-card", item.StackItemId);
+
+        Invoke(game, "TryContinueS2Faction", item, prompt, new List<string> { "departed-hand-card" },
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "departed-hand-card"));
+
+        Assert.Equal("true", item.Data["invalid"]);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
     private static object? Invoke(object target, string methodName, params object?[] args)
     {
         var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)
@@ -1858,4 +2052,22 @@ public sealed class EffectPresentationBranchSegmentTests
             SummonRound = -1,
         };
     }
+
+    private static L12StackItem ResolutionItem(L12CardInstance source, string stackItemId)
+        => new()
+        {
+            StackItemId = stackItemId, Controller = source.OwnerIndex ?? 0,
+            SourceInstanceId = source.InstanceId, SourceCardId = source.CardId,
+            SourceName = source.Name, SourceSnapshot = source.Clone(), Trigger = "enter",
+            Text = source.EffectText ?? source.Name,
+        };
+
+    private static L12Prompt ContinuationPrompt(string promptId, int playerIndex, string action,
+        string choice, string stackItemId)
+        => new()
+        {
+            PromptId = promptId, PlayerIndex = playerIndex, Kind = "hand-card", Text = action,
+            ValidChoices = [choice], MinChoose = 1, MaxChoose = 1, Continuation = "card-effect",
+            StackItemId = stackItemId, Data = new Dictionary<string, string> { ["action"] = action },
+        };
 }
