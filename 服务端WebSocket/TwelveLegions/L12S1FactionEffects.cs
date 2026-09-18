@@ -569,7 +569,7 @@ public sealed partial class L12GameEngine
                 if (chosen[0] == "no") { FinishStackItem(item); return true; }
                 if (!PayMasterDamageCostAndCanContinue(item.Controller, 1, "夺命诗人埃吉尔效果")) return true;
                 Mill(player, 2, "夺命诗人埃吉尔"); PromptEnemyByTroops(item, "egil-debuff", "选择对方1张军团，本回合兵力-2000", int.MaxValue, false); return true;
-            case "egil-debuff": { var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, -2000, 0, State.TurnSerial, "夺命诗人埃吉尔"); FinishStackItem(item); return true; }
+            case "egil-debuff": { var target = DeclaredEnemyTarget(item.Controller, chosen[0]); if (target is not null) AddTimedModifier(target, -2000, 0, State.TurnSerial, "夺命诗人埃吉尔"); else RecordTargetSettlementFailure(item, chosen[0], "所选对方军团已离场或不再是军团"); FinishStackItem(item); return true; }
             case "gram-bottom":
                 if (chosen[0] != "skip") ReturnEnemyFieldToLibraryBottom(item.Controller, chosen[0]);
                 FinishStackItem(item); return true;
@@ -585,9 +585,9 @@ public sealed partial class L12GameEngine
             case "summon-asgard": if (chosen[0] == "skip") FinishStackItem(item); else { item.Data["faction-summon"] = chosen[0]; PromptFirstEmptySlot(item, "faction-summon-slot", "选择军团活跃登场的位置"); } return true;
             case "erik-discard": MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true); FinishStackItem(item); return true;
             case "queued-summon-slot": CompleteQueuedSummon(item, chosen[0]); return true;
-            case "mengpo-silence": { var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) target.SuppressDeathUntilTurn = State.TurnSerial; if (player.Hand.Count <= 5) Draw(player, 1); FinishStackItem(item); return true; }
+            case "mengpo-silence": { var target = DeclaredEnemyTarget(item.Controller, chosen[0]); if (target is not null) target.SuppressDeathUntilTurn = State.TurnSerial; else RecordTargetSettlementFailure(item, chosen[0], "所选对方军团已离场或不再是军团"); if (player.Hand.Count <= 5) Draw(player, 1); FinishStackItem(item); return true; }
             case "sun-bottom": ReturnEnemyFieldToLibraryBottom(item.Controller, chosen[0]); FinishStackItem(item); return true;
-            case "medjed-debuff": { var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, -1000, 0, State.TurnSerial, "梅杰德"); FinishStackItem(item); return true; }
+            case "medjed-debuff": { var target = DeclaredEnemyTarget(item.Controller, chosen[0]); if (target is not null) AddTimedModifier(target, -1000, 0, State.TurnSerial, "梅杰德"); else RecordTargetSettlementFailure(item, chosen[0], "所选对方军团已离场或不再是军团"); FinishStackItem(item); return true; }
             default: return false;
         }
     }

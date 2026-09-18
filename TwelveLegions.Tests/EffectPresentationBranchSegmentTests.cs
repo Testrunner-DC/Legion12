@@ -1548,6 +1548,24 @@ public sealed class EffectPresentationBranchSegmentTests
         Assert.Empty(transformed.TimedModifiers);
     }
 
+    [Theory]
+    [InlineData("egil-debuff")]
+    [InlineData("mengpo-silence")]
+    [InlineData("medjed-debuff")]
+    [Trait("L12Evidence", "legacy-prompt:enemy-legion-current-state")]
+    public void LegacyFactionPromptDoesNotApplyToAnObjectThatIsNoLongerALegion(string action)
+    {
+        var game = Create(Catalog, 307430 + action.Length);
+        var source = Card(Catalog, "S01-0402", $"legacy-source-{action}");
+        var transformed = Card(Catalog, "S01-0019", $"legacy-target-{action}", owner: 1);
+        game.State.Players[0].Resolving.Add(source);
+        game.State.Players[1].Field[0][0] = transformed;
+        var item = new L12StackItem { StackItemId = $"legacy-stack-{action}", Controller = 0, SourceInstanceId = source.InstanceId, SourceCardId = source.CardId, SourceName = source.Name, SourceSnapshot = source.Clone(), Trigger = "enter", Text = source.EffectText ?? source.Name };
+        var prompt = new L12Prompt { PromptId = $"legacy-prompt-{action}", PlayerIndex = 0, Kind = "target", Text = action, ValidChoices = [transformed.InstanceId], MinChoose = 1, MaxChoose = 1, Continuation = "card-effect", StackItemId = item.StackItemId, Data = new Dictionary<string, string> { ["action"] = action } };
+        Invoke(game, "TryContinueS1Faction", item, prompt, new List<string> { transformed.InstanceId }, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: transformed.InstanceId));
+        Assert.Same(transformed, game.State.Players[1].Field[0][0]); Assert.Empty(transformed.TimedModifiers); Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
     private static object? Invoke(object target, string methodName, params object?[] args)
     {
         var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)

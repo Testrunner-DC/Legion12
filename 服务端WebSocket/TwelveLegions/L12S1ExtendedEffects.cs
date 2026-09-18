@@ -545,7 +545,7 @@ public sealed partial class L12GameEngine
             case "takasugi-debuff":
             case "tachibana-debuff":
             {
-                var target = FindOnField(enemy, chosen[0], out _, out _);
+                var target = DeclaredEnemyTarget(item.Controller, chosen[0]);
                 if (target is not null) target.CostModifier += action == "tachibana-debuff" ? -3 : -2;
                 FinishStackItem(item); return true;
             }
@@ -590,13 +590,13 @@ public sealed partial class L12GameEngine
             }
             case "last-stand-single":
             {
-                var target = FindOnField(enemy, chosen[0], out _, out _);
+                var target = DeclaredEnemyTarget(item.Controller, chosen[0]);
                 if (target is not null) AddTimedModifier(target, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), "拼死反抗");
                 FinishStackItem(item); return true;
             }
             case "seppuku-cost":
             {
-                var target = FindOnField(enemy, chosen[0], out _, out _);
+                var target = DeclaredEnemyTarget(item.Controller, chosen[0]);
                 if (target is not null) AddTimedModifier(target, 0, -2, ExpiryAtNextOwnEnd(item.Controller), "切腹仪式");
                 FinishStackItem(item); return true;
             }
