@@ -836,7 +836,15 @@ public sealed partial class L12GameEngine
     private void CompleteLiuBeiSearch(L12StackItem item, string cardId)
     {
         var player = State.Players[item.Controller];
-        var card = player.Library.First(candidate => candidate.InstanceId == cardId);
+        var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == cardId
+            && candidate.CardId is "S01-0106" or "S01-0107");
+        if (card is null)
+        {
+            RecordTargetSettlementFailure(item, cardId, "所选关羽或张飞已离开牌库或不再符合检索条件");
+            ShuffleLibrary(player, "刘备检索对象失效");
+            FinishStackItem(item);
+            return;
+        }
         player.Library.Remove(card);
         PubliclyRevealThenAddCardToHandByEffect(player, card, "library",
             $"刘备展示〈{card.Name}〉并加入手牌", $"刘备将{card.Name}加入手牌",

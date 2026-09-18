@@ -1636,6 +1636,50 @@ public sealed class EffectPresentationBranchSegmentTests
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
     }
 
+    [Theory]
+    [InlineData("liubei", "S01-0105", "S01-0106")]
+    [InlineData("faction-top", "S01-02D1", "S01-0106")]
+    [Trait("L12Evidence", "legacy-search:library-current-state")]
+    public void LegacyLibrarySearchFailsSafelyWhenItsDeclaredCardLeavesTheLibrary(
+        string action, string sourceCardId, string targetCardId)
+    {
+        var game = Create(Catalog, 307490 + action.Length);
+        var source = Card(Catalog, sourceCardId, $"legacy-library-source-{action}");
+        var target = Card(Catalog, targetCardId, $"legacy-library-target-{action}");
+        var player = game.State.Players[0];
+        player.Resolving.Add(source); player.Library.Add(target); player.Library.Remove(target);
+        var item = new L12StackItem { StackItemId = $"legacy-library-stack-{action}", Controller = 0, SourceInstanceId = source.InstanceId, SourceCardId = source.CardId, SourceName = source.Name, SourceSnapshot = source.Clone(), Trigger = "active", Text = source.EffectText ?? source.Name };
+        if (action == "faction-top") item.Data["faction-search-top"] = target.InstanceId;
+        if (action == "liubei") Invoke(game, "CompleteLiuBeiSearch", item, target.InstanceId);
+        else Invoke(game, "CompleteFactionTopSearch", item, new List<string> { target.InstanceId });
+        Assert.DoesNotContain(target, player.Hand); Assert.DoesNotContain(target, player.Library);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
+    [Theory]
+    [InlineData("liubei", "S01-0105", "S01-0106")]
+    [InlineData("faction-top", "S01-02D1", "S01-0106")]
+    [Trait("L12Evidence", "legacy-search:library-repeat")]
+    public void LegacyLibrarySearchRejectsTheSameCardAfterItHasAlreadyResolved(
+        string action, string sourceCardId, string targetCardId)
+    {
+        var game = Create(Catalog, 307500 + action.Length);
+        var source = Card(Catalog, sourceCardId, $"legacy-library-repeat-source-{action}");
+        var target = Card(Catalog, targetCardId, $"legacy-library-repeat-target-{action}");
+        var player = game.State.Players[0];
+        player.Resolving.Add(source); player.Library.Add(target);
+        var item = new L12StackItem { StackItemId = $"legacy-library-repeat-stack-{action}", Controller = 0, SourceInstanceId = source.InstanceId, SourceCardId = source.CardId, SourceName = source.Name, SourceSnapshot = source.Clone(), Trigger = "active", Text = source.EffectText ?? source.Name };
+        if (action == "faction-top") item.Data["faction-search-top"] = target.InstanceId;
+        if (action == "liubei") Invoke(game, "CompleteLiuBeiSearch", item, target.InstanceId);
+        else Invoke(game, "CompleteFactionTopSearch", item, new List<string> { target.InstanceId });
+        Assert.Contains(target, player.Hand);
+        if (action == "liubei") Invoke(game, "CompleteLiuBeiSearch", item, target.InstanceId);
+        else Invoke(game, "CompleteFactionTopSearch", item, new List<string> { target.InstanceId });
+        Assert.Equal(1, player.Hand.Count(card => card.InstanceId == target.InstanceId)
+            + player.Library.Count(card => card.InstanceId == target.InstanceId));
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
     private static object? Invoke(object target, string methodName, params object?[] args)
     {
         var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)

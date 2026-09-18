@@ -1788,7 +1788,13 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         foreach (var id in chosen)
         {
-            var card = player.Library.First(candidate => candidate.InstanceId == id);
+            var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == id);
+            if (card is null)
+            {
+                RecordTargetSettlementFailure(item, id, "所选牌库卡牌已离开牌库");
+                FinishStackItem(item);
+                return;
+            }
             player.Library.Remove(card);
             PubliclyRevealThenAddCardToHandByEffect(player, card, "library",
                 $"〈{item.SourceName}〉展示〈{card.Name}〉并加入手牌", $"{card.Name}因效果加入手牌",
