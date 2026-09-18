@@ -189,6 +189,36 @@ public sealed class DivinityEffectLifecycleTests
             });
     }
 
+    [Fact]
+    public void DivinityRecoveryRevalidatesAfterRestoreAndRejectsTheConsumedSelectionPrompt()
+    {
+        var game = Create(91328, stateFormatVersion: 2);
+        AddGodPowers(game);
+        var recovery = Card("S02-0522", "divinity-restored-departed-recovery");
+        game.State.Players[0].Graveyard.Add(recovery);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "divinityPower")).Accepted);
+        Resolve(game, "mode:recover");
+        var recoveryPrompt = Assert.Single(game.State.PendingPrompts);
+        Resolve(game, recovery.InstanceId);
+        Assert.False(game.Handle(0, new L12Command("resolvePrompt", PromptId: recoveryPrompt.PromptId,
+            Choice: recovery.InstanceId)).Accepted);
+
+        game = Restore(game);
+        var restoredRecovery = Assert.Single(game.State.Players[0].Graveyard,
+            card => card.InstanceId == recovery.InstanceId);
+        game.State.Players[0].Graveyard.Remove(restoredRecovery);
+        game.State.Players[0].Library.Add(restoredRecovery);
+        PassResponses(game);
+
+        Assert.Contains(restoredRecovery, game.State.Players[0].Library);
+        Assert.DoesNotContain(restoredRecovery, game.State.Players[0].Hand);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "failed" && entry.EffectSegmentIndex == 1
+            && entry.Cards.Any(card => card.InstanceId == "master-0"));
+    }
+
     private static L12GameEngine Create(int seed, int stateFormatVersion = 0)
     {
         var catalog = Catalog;

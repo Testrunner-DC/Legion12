@@ -273,14 +273,11 @@ public sealed partial class L12GameEngine
                 else
                 {
                     var targetId = CompositeDeclared(item, "recoverTarget").SingleOrDefault();
-                    var target = player.Graveyard.FirstOrDefault(candidate => candidate.InstanceId == targetId
-                        && candidate.CardId != card.CardId && CanEnterHandOrLibrary(candidate)
-                        && L12StructuredCardRules.HasFaction(player, candidate, "taiyangcheng"));
-                    if (target is not null)
-                    {
-                        player.Graveyard.Remove(target);
-                        AddCardToHandByEffect(player, target, "graveyard", $"{target.Name}从墓地加入手牌");
-                    }
+                    _ = TryMoveDeclaredGraveCardToHand(item, targetId,
+                        (owner, candidate) => candidate.CardId != card.CardId && CanEnterHandOrLibrary(candidate)
+                            && L12StructuredCardRules.HasFaction(owner, candidate, "taiyangcheng"),
+                        "杜阿特之门将所选【太阳城】卡牌从墓地加入手牌",
+                        "杜阿特之门已选择的墓地回收对象已离开墓地或不再符合【太阳城】条件");
                 }
                 FinishStackItem(item);
                 return true;
@@ -1248,16 +1245,11 @@ public sealed partial class L12GameEngine
                 if (AtomicFlowKey(item) == "sun-top-three-recover")
                 {
                     var targetId = CompositeDeclared(item, "graveCard").SingleOrDefault();
-                    var recover = player.Graveyard.FirstOrDefault(card => card.InstanceId == targetId
-                        && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")
-                        && CanEnterHandOrLibrary(card));
-                    if (recover is null)
-                        AddEvent("effect-cancelled", item.Controller, "众神之乡声明的墓地回收目标已失效");
-                    else
-                    {
-                        player.Graveyard.Remove(recover);
-                        AddCardToHandByEffect(player, recover, "graveyard", "众神之乡回收太阳城卡牌");
-                    }
+                    _ = TryMoveDeclaredGraveCardToHand(item, targetId,
+                        (owner, candidate) => L12StructuredCardRules.HasFaction(owner, candidate, "taiyangcheng")
+                            && CanEnterHandOrLibrary(candidate),
+                        "众神之乡回收太阳城卡牌",
+                        "众神之乡已选择的墓地回收对象已离开墓地或不再符合【太阳城】条件");
                     FinishStackItem(item); return true;
                 }
                 BeginFactionTopSearch(item, 3, "taiyangcheng", string.Empty, "sun-divinity"); return true;
@@ -1320,16 +1312,11 @@ public sealed partial class L12GameEngine
                 if (AtomicFlowKey(item) == "valhalla-recover")
                 {
                     var targetId = CompositeDeclared(item, "graveCard").SingleOrDefault();
-                    var recover = player.Graveyard.FirstOrDefault(card => card.InstanceId == targetId
-                        && L12StructuredCardRules.HasFaction(player, card, "asgard")
-                        && CanEnterHandOrLibrary(card));
-                    if (recover is null)
-                        AddEvent("effect-cancelled", item.Controller, "英灵殿声明的墓地回收目标已失效");
-                    else
-                    {
-                        player.Graveyard.Remove(recover);
-                        AddCardToHandByEffect(player, recover, "graveyard", "英灵殿回收阿斯加德卡牌");
-                    }
+                    _ = TryMoveDeclaredGraveCardToHand(item, targetId,
+                        (owner, candidate) => L12StructuredCardRules.HasFaction(owner, candidate, "asgard")
+                            && CanEnterHandOrLibrary(candidate),
+                        "英灵殿回收阿斯加德卡牌",
+                        "英灵殿已选择的墓地回收对象已离开墓地或不再符合【阿斯加德】条件；已支付士气不返还");
                     FinishStackItem(item); return true;
                 }
                 Mill(player, 2, "英灵殿"); FinishStackItem(item); return true;

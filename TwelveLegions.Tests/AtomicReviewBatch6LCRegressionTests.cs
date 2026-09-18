@@ -523,6 +523,43 @@ public sealed class AtomicReviewBatch6LCRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "card:S02-05D1")]
+    [Trait("L12Evidence", "entry:divinity-recovery-current-state")]
+    public void DivinityEntrySegmentContinuesWhenItsDeclaredRecoveryCardLeavesTheGraveyard()
+    {
+        var game = Create(86121, "S02-05D1");
+        var player = game.State.Players[0];
+        var recover = Card("S02-0522", "batch6lc-divinity-departed-recover");
+        var entry = Card("S02-0502", "batch6lc-divinity-departed-entry");
+        player.Graveyard.AddRange([recover, entry]);
+        for (var index = 0; index < 2; index++)
+            player.Morale.Add(new L12MoraleCard
+            {
+                CardId = "S02-05C1", InstanceId = $"batch6lc-divinity-departed-power-{index}",
+                IsGodPower = true,
+            });
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "divinityPower")).Accepted);
+        Resolve(game, "mode:recover");
+        Resolve(game, recover.InstanceId);
+        Resolve(game, entry.InstanceId);
+        Resolve(game, "0:0");
+
+        Assert.True(player.Graveyard.Remove(recover));
+        player.Library.Add(recover);
+        var second = PassUntilFlow(game, "divinity-entry");
+        PassResponses(game);
+
+        Assert.Contains(recover, player.Library);
+        Assert.DoesNotContain(recover, player.Hand);
+        Assert.Same(entry, player.Field[0][0]);
+        Assert.Contains(game.State.Events, entryEvent => entryEvent.Type == "effect-failed"
+            && entryEvent.Text.Contains("墓地回收对象", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.EffectStack, item => item.StackItemId == second.StackItemId);
+    }
+
+    [Fact]
     [Trait("L12Evidence", "entry:olympus-four-state-resource-model")]
     public void GodPowerPaymentPreservesTheFourIndependentFaceAndReadinessStates()
     {

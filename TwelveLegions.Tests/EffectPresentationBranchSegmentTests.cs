@@ -1915,6 +1915,51 @@ public sealed class EffectPresentationBranchSegmentTests
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
     }
 
+    [Theory]
+    [InlineData("duat", "S01-0221", "duat-effect", "duatMode", "mode:recover", "recoverTarget")]
+    [InlineData("sun-top", "S01-02D1", "sun-top-three-recover", "recoverMode", "mode:recover", "graveCard")]
+    [InlineData("valhalla", "S01-03D1", "valhalla-recover", "recoverMode", "mode:recover", "graveCard")]
+    [InlineData("divinity", "S02-05D1", "divinity-recover", "entryMode", "mode:none", "recoverCard")]
+    [InlineData("wisdom", "S01-0224", "wisdom-recover", "recoverMode", "mode:recover", "recoverTarget")]
+    [Trait("L12Evidence", "private-zone:declared-grave-recovery-current-state")]
+    public void DeclaredGraveRecoveryRoutesPublishFailureWhenTheChosenCardLeavesTheGraveyard(
+        string route, string sourceCardId, string flow, string modeKey, string mode, string targetKey)
+    {
+        var game = Create(Catalog, 307600 + route.Length,
+            firstMasterId: sourceCardId == "S02-05D1" ? sourceCardId : null);
+        var source = Card(Catalog, sourceCardId, $"grave-recovery-source-{route}");
+        var item = ResolutionItem(source, $"grave-recovery-stack-{route}");
+        item.Data["atomicFlow"] = flow;
+        item.Data["mode"] = "mode:recover";
+        item.Data[$"declared:{modeKey}"] = mode;
+        item.Data[$"declared:{targetKey}"] = "departed-grave-card";
+
+        switch (route)
+        {
+            case "duat":
+                Assert.True((bool)Invoke(game, "TryResolveS1FactionTactic", item, source)!);
+                break;
+            case "sun-top":
+                Assert.True((bool)Invoke(game, "TryResolveS1FactionActive", item, source, "sunTopThree")!);
+                break;
+            case "valhalla":
+                Assert.True((bool)Invoke(game, "TryResolveS1FactionActive", item, source, "valhallaRecover")!);
+                break;
+            case "divinity":
+                Assert.True((bool)Invoke(game, "TryResolveS2RemainingAbility", item, source, "divinityPower")!);
+                break;
+            case "wisdom":
+                Invoke(game, "ResolveWisdomCodexReward", item);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(route));
+        }
+
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("墓地", StringComparison.Ordinal));
+        Assert.Empty(game.State.Players[0].Hand);
+    }
+
     private static object? Invoke(object target, string methodName, params object?[] args)
     {
         var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)

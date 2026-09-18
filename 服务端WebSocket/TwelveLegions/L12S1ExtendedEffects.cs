@@ -1215,7 +1215,13 @@ public sealed partial class L12GameEngine
                 return;
             case "wisdom-recover":
                 var target = CompositeDeclared(item, "recoverTarget").SingleOrDefault();
-                if (target is not null) MoveGraveToHand(player, target);
+                _ = TryMoveDeclaredGraveCardToHand(item, target,
+                    (owner, candidate) => candidate.InstanceId != item.SourceInstanceId
+                        && L12StructuredCardRules.CurrentCostAtMost(candidate, 3)
+                        && candidate.CardType is "tactic" or "artifact"
+                        && CanEnterHandOrLibrary(candidate),
+                    "智慧法典将所选墓地卡牌加入手牌",
+                    "智慧法典已选择的墓地回收对象已离开墓地或不再符合费用与类型条件");
                 FinishStackItem(item);
                 return;
             default:

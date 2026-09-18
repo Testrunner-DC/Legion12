@@ -194,6 +194,24 @@ public sealed partial class L12GameEngine
                 FindSource(item) is { } source ? [source] : []);
     }
 
+    // 已声明的单个墓地回手对象：所有续接均在结算期重新读取墓地、资格及区域替代限制。
+    // 不存在或失效时不补选，并由同一结果协议写出 failed。
+    private bool TryMoveDeclaredGraveCardToHand(L12StackItem item, string? targetId,
+        Func<L12PlayerState, L12CardInstance, bool> isLegal, string successText, string failureReason)
+    {
+        var player = State.Players[item.Controller];
+        var target = player.Graveyard.FirstOrDefault(card => card.InstanceId == targetId && isLegal(player, card));
+        if (target is null)
+        {
+            RecordTargetSettlementFailure(item, targetId, failureReason);
+            return false;
+        }
+
+        player.Graveyard.Remove(target);
+        AddCardToHandByEffect(player, target, "graveyard", successText);
+        return true;
+    }
+
     private static string? DeclaredStatus(string type)
         => type is "effect-trigger" or "effect-activation" or "effect-response" ? "declared" : null;
 

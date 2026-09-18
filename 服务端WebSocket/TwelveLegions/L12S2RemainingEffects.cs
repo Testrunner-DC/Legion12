@@ -212,7 +212,8 @@ public sealed partial class L12GameEngine
                 {
                     var recover = declared.Length >= 3
                         ? player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1]
-                            && L12StructuredCardRules.HasFaction(player, card, "olympus"))
+                            && L12StructuredCardRules.HasFaction(player, card, "olympus")
+                            && CanEnterHandOrLibrary(card))
                         : null;
                     var noEntry = declared.Length == 3 && declared[2] == "mode:none";
                     var entry = declared.Length == 5
@@ -400,17 +401,11 @@ public sealed partial class L12GameEngine
                 if (AtomicFlowKey(item, source) == "divinity-recover")
                 {
                     var recoveredId = CompositeDeclared(item, "recoverCard").SingleOrDefault();
-                    var recovered = player.Graveyard.FirstOrDefault(card => card.InstanceId == recoveredId
-                        && L12StructuredCardRules.HasFaction(player, card, "olympus"));
-                    if (recovered is not null)
-                    {
-                        player.Graveyard.Remove(recovered);
-                        AddCardToHandByEffect(player, recovered, "grave",
-                            $"诸神巅将〈{recovered.Name}〉从墓地加入手牌");
-                    }
-                    else
-                        AddEvent("effect-cancelled", item.Controller,
-                            "诸神巅声明的墓地回收目标已失效；后续登场段仍独立继续");
+                    _ = TryMoveDeclaredGraveCardToHand(item, recoveredId,
+                        (owner, candidate) => L12StructuredCardRules.HasFaction(owner, candidate, "olympus")
+                            && CanEnterHandOrLibrary(candidate),
+                        "诸神巅将所选【奥林匹斯】卡牌从墓地加入手牌",
+                        "诸神巅已选择的墓地回收对象已离开墓地或不再符合【奥林匹斯】条件；后续登场段仍独立继续");
                     FinishStackItem(item);
                     return true;
                 }
