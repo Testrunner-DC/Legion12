@@ -525,21 +525,26 @@ public sealed partial class L12GameEngine
             case "horemheb-charge":
                 if (chosen[0] != "skip" && source is not null)
                 {
-                    var target = FindOnField(player, chosen[0], out _, out _);
-                    if (target is not null)
-                        RemoveFromField(player, target, true, "被霍列姆赫布弃置", leaveKind: L12FieldLeaveKind.Discard);
+                    var target = DeclaredOwnLegionTarget(item.Controller, chosen[0]);
+                    if (target is null)
+                    {
+                        RecordTargetSettlementFailure(item, chosen[0], "所选陵墓守卫已离场或不再是军团");
+                        FinishStackItem(item);
+                        return true;
+                    }
+                    RemoveFromField(player, target, true, "被霍列姆赫布弃置", leaveKind: L12FieldLeaveKind.Discard);
                     source.HasCharge = true;
                 }
                 FinishStackItem(item); return true;
             case "nefertiti-discard": MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true); FinishStackItem(item); return true;
             case "ankh-enter":
             {
-                var target = FindOnField(player, chosen[0], out _, out _);
+                var target = DeclaredOwnLegionTarget(item.Controller, chosen[0]);
                 if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "安卡神碑");
                 FinishStackItem(item);
                 return true;
             }
-            case "ankh-ready-target": { var target = FindOnField(player, chosen[0], out _, out _); if (target is not null && target.CardId == "S01-0212" && source is not null) ReadyCardByEffect(item.Controller, source, target, $"{target.Name}因效果转为活跃"); FinishStackItem(item); return true; }
+            case "ankh-ready-target": { var target = DeclaredOwnLegionTarget(item.Controller, chosen[0]); if (target is not null && target.CardId == "S01-0212" && source is not null) ReadyCardByEffect(item.Controller, source, target, $"{target.Name}因效果转为活跃"); FinishStackItem(item); return true; }
             case "canopic-search":
             {
                 var selected = player.Library.First(candidate => candidate.InstanceId == chosen[0]);
@@ -552,7 +557,7 @@ public sealed partial class L12GameEngine
             }
             case "canopic-one":
             {
-                var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) { AddTimedModifier(target, 2000, 0, State.TurnSerial, "卡诺匹斯罐 一"); GrantStrongAttack(target); }
+                var target = DeclaredOwnLegionTarget(item.Controller, chosen[0]); if (target is not null) { AddTimedModifier(target, 2000, 0, State.TurnSerial, "卡诺匹斯罐 一"); GrantStrongAttack(target); }
                 if (source is not null) DiscardRelic(player, source); FinishStackItem(item); return true;
             }
             case "canopic-four":

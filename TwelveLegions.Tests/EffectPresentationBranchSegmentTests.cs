@@ -1566,6 +1566,31 @@ public sealed class EffectPresentationBranchSegmentTests
         Assert.Same(transformed, game.State.Players[1].Field[0][0]); Assert.Empty(transformed.TimedModifiers); Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
     }
 
+    [Theory]
+    [InlineData("abe-immortal", "TryContinueS1Extended")]
+    [InlineData("ambush-buff", "TryContinueS1Extended")]
+    [InlineData("horemheb-charge", "TryContinueS1Faction")]
+    [InlineData("ankh-enter", "TryContinueS1Faction")]
+    [InlineData("ankh-ready-target", "TryContinueS1Faction")]
+    [InlineData("canopic-one", "TryContinueS1Faction")]
+    [Trait("L12Evidence", "legacy-prompt:own-legion-current-state")]
+    public void LegacyOwnLegionPromptDoesNotApplyToAnObjectThatIsNoLongerALegion(string action, string resolver)
+    {
+        var game = Create(Catalog, 307450 + action.Length);
+        var source = Card(Catalog, "S01-0402", $"legacy-own-source-{action}");
+        var transformed = Card(Catalog, "S01-0019", $"legacy-own-target-{action}");
+        game.State.Players[0].Resolving.Add(source); game.State.Players[0].Field[0][0] = transformed;
+        var item = new L12StackItem { StackItemId = $"legacy-own-stack-{action}", Controller = 0, SourceInstanceId = source.InstanceId, SourceCardId = source.CardId, SourceName = source.Name, SourceSnapshot = source.Clone(), Trigger = "enter", Text = source.EffectText ?? source.Name };
+        var prompt = new L12Prompt { PromptId = $"legacy-own-prompt-{action}", PlayerIndex = 0, Kind = "target", Text = action, ValidChoices = [transformed.InstanceId], MinChoose = 1, MaxChoose = 1, Continuation = "card-effect", StackItemId = item.StackItemId, Data = new Dictionary<string, string> { ["action"] = action } };
+        Invoke(game, resolver, item, prompt, new List<string> { transformed.InstanceId }, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: transformed.InstanceId));
+        Assert.Same(transformed, game.State.Players[0].Field[0][0]); Assert.Empty(transformed.TimedModifiers);
+        if (action == "horemheb-charge")
+        {
+            Assert.False(source.HasCharge);
+            Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+        }
+    }
+
     private static object? Invoke(object target, string methodName, params object?[] args)
     {
         var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)

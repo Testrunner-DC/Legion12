@@ -551,7 +551,7 @@ public sealed partial class L12GameEngine
             }
             case "abe-immortal":
             {
-                var target = FindOnField(player, chosen[0], out _, out _);
+                var target = DeclaredOwnLegionTarget(item.Controller, chosen[0]);
                 if (target is not null) GrantImmortalUntilNextTurnStart(target, item.Controller);
                 FinishStackItem(item); return true;
             }
@@ -568,7 +568,7 @@ public sealed partial class L12GameEngine
             }
             case "ambush-buff":
             {
-                var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "伏击");
+                var target = DeclaredOwnLegionTarget(item.Controller, chosen[0]); if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "伏击");
                 FinishStackItem(item); return true;
             }
             case "empty-city-block":
