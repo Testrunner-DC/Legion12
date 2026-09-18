@@ -1518,6 +1518,36 @@ public sealed class EffectPresentationBranchSegmentTests
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
     }
 
+    [Theory]
+    [InlineData("S02-04M1", "tsukuyomiFrontAttackBuff", "target", "TryResolveS2RemainingAbility")]
+    [InlineData("ST04-M1", "kagutsuchi-buff", "declared:fixedTarget", "TryResolveStarterRemainingEffect")]
+    [Trait("L12Evidence", "trigger:own-legion-current-state")]
+    public void TriggeredOwnLegionEffectsDoNotApplyToAnObjectThatIsNoLongerALegion(
+        string sourceCardId, string flow, string targetKey, string resolver)
+    {
+        var game = Create(Catalog, 307408 + sourceCardId.Length);
+        var source = Card(Catalog, sourceCardId, $"trigger-own-source-{sourceCardId}");
+        var transformed = Card(Catalog, "S01-0019", $"trigger-own-target-{sourceCardId}");
+        game.State.Players[0].Resolving.Add(source);
+        game.State.Players[0].Field[0][0] = transformed;
+        var item = new L12StackItem
+        {
+            StackItemId = $"trigger-own-stack-{sourceCardId}", Controller = 0,
+            SourceInstanceId = source.InstanceId, SourceCardId = source.CardId,
+            SourceName = source.Name, SourceSnapshot = source.Clone(), Trigger = "active",
+            Text = source.EffectText ?? source.Name,
+        };
+        item.Data["atomicFlow"] = flow;
+        item.Data[targetKey] = transformed.InstanceId;
+        if (resolver == "TryResolveS2RemainingAbility")
+            Invoke(game, resolver, item, source, flow);
+        else
+            Invoke(game, resolver, item);
+
+        Assert.Same(transformed, game.State.Players[0].Field[0][0]);
+        Assert.Empty(transformed.TimedModifiers);
+    }
+
     private static object? Invoke(object target, string methodName, params object?[] args)
     {
         var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)

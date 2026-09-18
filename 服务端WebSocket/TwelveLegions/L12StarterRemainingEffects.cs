@@ -1183,7 +1183,7 @@ public sealed partial class L12GameEngine
                 return true;
             case "kagutsuchi-buff":
             {
-                var target = FindOnField(player, StarterDeclaredOne(item, "fixedTarget"), out _, out _);
+                var target = DeclaredOwnLegionTarget(item.Controller, StarterDeclaredOne(item, "fixedTarget"));
                 if (target is not null)
                 {
                     AddTimedModifier(target, 2000, 0, State.TurnSerial, item.SourceName);

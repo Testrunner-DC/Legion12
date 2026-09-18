@@ -466,7 +466,7 @@ public sealed partial class L12GameEngine
                 return true;
             case "tsukuyomiFrontAttackBuff" when item.SourceCardId == "S02-04M1":
             {
-                var legion = FindOnField(player, item.Data.GetValueOrDefault("target"), out _, out _);
+                var legion = DeclaredOwnLegionTarget(item.Controller, item.Data.GetValueOrDefault("target"));
                 if (legion is not null)
                 {
                     if (legion.TsukuyomiFrontMoveBonusTurn != State.TurnSerial)
@@ -480,7 +480,7 @@ public sealed partial class L12GameEngine
                 }
                 else
                     AddEvent("effect-cancelled", item.Controller,
-                        "月读后排位移至前排的军团已离场；本次进攻兵力效果取消");
+                        "月读后排位移至前排的军团已离场或不再是军团；本次进攻兵力效果取消");
                 FinishStackItem(item);
                 return true;
             }
