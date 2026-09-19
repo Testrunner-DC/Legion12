@@ -177,11 +177,8 @@ public sealed partial class L12GameEngine
         FinishStackItem(item);
     }
 
-    private static bool IsTrialLegion(L12CardInstance card)
-        => card.CardId is "S02-0604" or "S02-0610" or "S02-0614";
-
     private static bool IsProtectedByRestedAmakine(L12PlayerState owner, L12CardInstance target)
-        => !target.Tapped && IsTrialLegion(target)
+        => !target.Tapped && L12StructuredCardRules.IsTrialLegion(target)
             && PublicLegions(owner).Any(card => card.CardId == "S02-0616" && card.Tapped);
 
     private IEnumerable<string> EffectCavalryDestinations(L12PlayerState battlefield)
@@ -930,7 +927,7 @@ public sealed partial class L12GameEngine
             return BeginPendingActivation(playerIndex, source, ability, choices,
                 "选择我方1张【晋升者】以外的【奥林匹斯】军团");
         }
-        if (ability == "trialAdvance" && source.TrialValue > 0)
+        if (ability == "trialAdvance" && L12StructuredCardRules.IsTrialLegion(source))
             return BeginTrialAdvanceActivation(playerIndex, source);
         if (ability == "godPowerDraw" && source.CardId == "S02-05C1")
         {
@@ -1139,7 +1136,7 @@ public sealed partial class L12GameEngine
             if (ability == "crusadeTrialNoLoss")
             {
                 if (player.SpecialZones.Runes < 1) return CommandResult.Reject("需要消耗1符文");
-                var choices = PublicLegions(player).Where(card => card.CardId is "S02-0604" or "S02-0610" or "S02-0614")
+                var choices = PublicLegions(player).Where(L12StructuredCardRules.IsTrialLegion)
                     .Select(card => card.InstanceId).ToArray();
                 if (choices.Length == 0) return CommandResult.Reject("战场上没有【试炼军团】");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
@@ -1524,7 +1521,8 @@ public sealed partial class L12GameEngine
             else if (ability == "crusadeTrialNoLoss")
             {
                 var chosen = FindOnField(player, declared.FirstOrDefault(), out _, out _);
-                if (chosen?.CardId is not ("S02-0604" or "S02-0610" or "S02-0614")) return CommandResult.Reject("目标不是【试炼军团】");
+                if (chosen is null || !L12StructuredCardRules.IsTrialLegion(chosen))
+                    return CommandResult.Reject("目标不是【试炼军团】");
             }
             else if (ability == "crusadeRichardPiercing")
             {
@@ -1933,7 +1931,14 @@ public sealed partial class L12GameEngine
             else if (ability == "crusadeTrialNoLoss")
             {
                 var target = FindOnField(player, declared.FirstOrDefault(), out _, out _);
-                if (target is not null) target.NextAttackNoLossUses++;
+                if (target is null || !L12StructuredCardRules.IsTrialLegion(target))
+                {
+                    AddEvent("effect-cancelled", item.Controller,
+                        "十字军东征选择的目标已离场或不再是【试炼军团】；不获得下一次进攻无损", source);
+                    FinishStackItem(item);
+                    return true;
+                }
+                target.NextAttackNoLossUses++;
             }
             else if (ability == "crusadeRichardPiercing")
             {

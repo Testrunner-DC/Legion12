@@ -552,11 +552,12 @@ public sealed partial class L12GameEngine
                     ? view.Id == "skyCityDiscount"
                     : view.Id == "completeTrial")
                 .ToList();
-        if (_catalog.Cards.GetValueOrDefault(cardId) is { CardType: "legion", TrialValue: > 0 } definition
+        if (_catalog.Cards.GetValueOrDefault(cardId) is { } definition
+            && L12StructuredCardRules.IsTrialLegion(definition)
             && views.All(view => view.Id != "trialAdvance"))
         {
             views.Insert(0, new L12AbilityView("trialAdvance",
-                $"试炼 休整此军团：增加{definition.TrialValue.Value}点试炼进度。"));
+                $"试炼 休整此军团：增加{definition.TrialValue.GetValueOrDefault()}点试炼进度。"));
         }
 
         return views.Select(view =>
@@ -1033,7 +1034,7 @@ public sealed partial class L12GameEngine
             CannotAttack = card.Id is "S02-0005" or "S02-0007" or "S02-0201" or "S02-0603",
             CannotSupport = card.Id == "S02-0201",
         };
-        if (instance.TrialValue > 0 && instance.CardType == "legion"
+        if (L12StructuredCardRules.IsTrialLegion(instance)
             && instance.Abilities.All(view => view.Id != "trialAdvance"))
             instance.Abilities.Insert(0, new L12AbilityView("trialAdvance", $"发动试炼（试炼值{instance.TrialValue}）"));
         return instance;

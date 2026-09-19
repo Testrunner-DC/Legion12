@@ -156,6 +156,8 @@ public sealed partial class L12GameEngine
     private CommandResult BeginTrialAdvanceActivation(int playerIndex, L12CardInstance source)
     {
         var player = State.Players[playerIndex];
+        if (!L12StructuredCardRules.IsTrialLegion(source))
+            return CommandResult.Reject("只有【试炼军团】可以发动试炼");
         if (source.Tapped) return CommandResult.Reject("该军团必须为活跃状态");
         if (source.SummonRound >= State.Round) return CommandResult.Reject("登场回合不能通过通常行动发动试炼");
         if (player.SpecialZones.Trials.All(card => card.TrialCompleted)) return CommandResult.Reject("没有尚未完成的试炼");
@@ -166,7 +168,7 @@ public sealed partial class L12GameEngine
 
     private CommandResult? TryCommitTrialAdvanceActivation(int playerIndex, L12CardInstance source, string ability)
     {
-        if (ability != "trialAdvance" || source.TrialValue <= 0) return null;
+        if (ability != "trialAdvance" || !L12StructuredCardRules.IsTrialLegion(source)) return null;
         var player = State.Players[playerIndex];
         if (source.Tapped || source.SummonRound >= State.Round
             || player.SpecialZones.Trials.All(card => card.TrialCompleted)

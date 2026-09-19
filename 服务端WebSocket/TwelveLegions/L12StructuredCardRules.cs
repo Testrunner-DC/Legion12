@@ -66,6 +66,16 @@ public static partial class L12StructuredCardRules
     public static bool CurrentCostEquals(L12CardInstance card, int value)
         => card.HasPrintedCost && card.CurrentCost == value;
 
+    /// <summary>
+    /// 【试炼军团】是卡牌类型与当前实例试炼值共同定义的规则身份。
+    /// 试炼值不是阵营、特征或职介；所有候选、提交与结算入口都必须查询此定义，禁止维护卡号白名单。
+    /// </summary>
+    public static bool IsTrialLegion(L12CardInstance card)
+        => card.CardType == "legion" && card.TrialValue > 0;
+
+    public static bool IsTrialLegion(L12CardDefinition card)
+        => card.CardType == "legion" && card.TrialValue is > 0;
+
     private static readonly HashSet<string> AlwaysRangedCards = new(StringComparer.Ordinal)
     {
         "S01-0003", "S01-0110", "S01-0111", "S01-0112", "S01-0113", "S01-0114", "S01-0116",

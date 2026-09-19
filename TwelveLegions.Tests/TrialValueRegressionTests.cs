@@ -20,9 +20,19 @@ public sealed class TrialValueRegressionTests
             ["S02-0614"] = 1,
             ["S02-0617"] = 1,
             ["S02-0610"] = 1,
+            ["ST06-06"] = 1,
+            ["ST06-07"] = 1,
+            ["ST06-08"] = 2,
         };
 
         foreach (var (cardId, trialValue) in expected)
             Assert.Equal(trialValue, Catalog.Cards[cardId].TrialValue);
+
+        var actualTrialLegions = Catalog.Cards.Values
+            .Where(L12StructuredCardRules.IsTrialLegion)
+            .Select(card => card.Id)
+            .OrderBy(cardId => cardId, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(expected.Keys.OrderBy(cardId => cardId, StringComparer.Ordinal), actualTrialLegions);
     }
 }
