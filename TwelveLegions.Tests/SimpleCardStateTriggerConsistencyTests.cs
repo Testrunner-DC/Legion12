@@ -282,7 +282,9 @@ public sealed class SimpleCardStateTriggerConsistencyTests
 
         Assert.True(target.Tapped);
         Assert.False(other.Tapped);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("不再处于要求的活跃状态", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
             && entry.Text.Contains("不再处于要求的活跃状态", StringComparison.Ordinal));
         Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
             && entry.EffectResultStatus == "failed"

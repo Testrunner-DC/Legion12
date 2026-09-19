@@ -152,7 +152,7 @@ public sealed partial class L12GameEngine
 
         if (!SimpleResourceSettlementConditionMet(item, spec))
         {
-            AddEvent("effect-cancelled", item.Controller,
+            AddEvent("effect-failed", item.Controller,
                 $"〈{spec.Name}〉的资源条件在结算时失效；该项效果不结算，已登记的回合次数不恢复",
                 source is null ? [] : [source]);
             FinishStackItem(item);
@@ -169,7 +169,7 @@ public sealed partial class L12GameEngine
                     AddEvent(spec.FromFactionEffect ? "faction-effect" : "morale", item.Controller,
                         spec.EventText, source is null ? [] : [source]);
                 else
-                    AddEvent("effect-cancelled", item.Controller,
+                    AddEvent("effect-failed", item.Controller,
                         $"〈{spec.Name}〉结算时士气牌库已空；无法追加士气",
                         source is null ? [] : [source]);
                 break;
@@ -185,9 +185,8 @@ public sealed partial class L12GameEngine
                     && !card.IsGodPower
                     && (spec.TargetFilter != L12SimpleResourceTriggerEffects.RestedMorale || card.Tapped));
                 if (target is null)
-                    AddEvent("effect-cancelled", item.Controller,
-                        $"〈{spec.Name}〉声明的士气目标在结算时失效；该项效果不结算，已登记的回合次数不恢复",
-                        source is null ? [] : [source]);
+                    RecordTargetSettlementFailure(item, targetId,
+                        "声明的士气目标在结算时失效；该项效果不结算，已登记的回合次数不恢复");
                 else
                 {
                     L12S2ZoneOps.FlipMoraleFace(player, target.InstanceId, toGodPower: true);
@@ -196,7 +195,7 @@ public sealed partial class L12GameEngine
                 break;
             }
             default:
-                AddEvent("effect-cancelled", item.Controller,
+                AddEvent("effect-failed", item.Controller,
                     $"〈{spec.Name}〉的资源操作未登记；效果不结算", source is null ? [] : [source]);
                 break;
         }

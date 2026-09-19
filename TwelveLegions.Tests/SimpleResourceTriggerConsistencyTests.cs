@@ -269,7 +269,9 @@ public sealed class SimpleResourceTriggerConsistencyTests
         PassResponses(game);
 
         Assert.True(target.IsGodPower);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("目标在结算时失效", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
             && entry.Text.Contains("目标在结算时失效", StringComparison.Ordinal));
         Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
             && entry.EffectResultStatus == "failed"
@@ -306,6 +308,32 @@ public sealed class SimpleResourceTriggerConsistencyTests
             && entry.Cards.Any(card => card.CardId == "S02-01S1"));
         Assert.False(game.Handle(oldResponse.PlayerIndex,
             new L12Command("resolvePrompt", PromptId: oldResponse.PromptId, Choice: "pass")).Accepted);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-01M1")]
+    [Trait("L12Evidence", "entry:simple-resource-trigger-condition-revalidate")]
+    public void WukongResourceConditionFailureAfterDeclarationIsFailedNotCancelled()
+    {
+        var game = Create(110031);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        player.MoraleDeck.Add(Morale("wukong-deck-morale"));
+        opponent.Morale.Add(Morale("wukong-opponent-morale"));
+        Queue(game, "S02-01M1", "master-legion-returned",
+            new Dictionary<string, string> { ["ability"] = "wukongReturnMorale" });
+        Resolve(game, Assert.Single(game.State.PendingPrompts), "mode:use");
+        Assert.Single(game.State.EffectStack);
+
+        player.Morale.Add(Morale("wukong-current-morale"));
+        PassResponses(game);
+
+        Assert.Single(player.Morale);
+        Assert.Single(player.MoraleDeck);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("资源条件在结算时失效", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("资源条件在结算时失效", StringComparison.Ordinal));
     }
 
     [Fact]

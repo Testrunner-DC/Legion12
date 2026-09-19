@@ -237,9 +237,8 @@ public sealed partial class L12GameEngine
         var source = FindSource(item) ?? item.SourceSnapshot ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
         if (target is null)
         {
-            AddEvent("effect-cancelled", item.Controller,
-                $"〈{spec.Name}〉声明的军团已离场、类型或阵营已变化，或不再处于要求的{(spec.Operation == L12SimpleCardStateTriggerEffects.Ready ? "休整" : "活跃")}状态；本次效果未生效",
-                source);
+            RecordTargetSettlementFailure(item, targetId,
+                $"声明的军团已离场、类型或阵营已变化，或不再处于要求的{(spec.Operation == L12SimpleCardStateTriggerEffects.Ready ? "休整" : "活跃")}状态");
             FinishStackItem(item);
             return true;
         }
