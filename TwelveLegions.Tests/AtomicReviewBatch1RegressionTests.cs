@@ -86,7 +86,7 @@ public sealed class AtomicReviewBatch1RegressionTests
     }
 
     [Fact]
-    public void NyxDeclaresBothPublicTargetsModeAndGodPowerBeforeBasePayment()
+    public void NyxDeclaresItsOptionalSecondSegmentOnlyAfterThePrimarySegmentResolves()
     {
         var game = Create();
         var player = game.State.Players[0];
@@ -101,16 +101,19 @@ public sealed class AtomicReviewBatch1RegressionTests
 
         Assert.True(game.Handle(0, new L12Command("playCard", nyx.InstanceId)).Accepted);
 
-        var mode = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("pending-activation", mode.Continuation);
-        Assert.Contains("mode:second", mode.ValidChoices);
+        var primary = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", primary.Continuation);
+        Assert.Contains(first.InstanceId, primary.ValidChoices);
         Assert.Contains(nyx, player.Hand);
         Assert.False(power.Tapped);
 
-        Resolve(game, "mode:second");
-        var primary = Assert.Single(game.State.PendingPrompts);
-        Assert.Contains(first.InstanceId, primary.ValidChoices);
         Resolve(game, first.InstanceId);
+        Assert.Equal(2000, first.Troops);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("mode:second", mode.ValidChoices);
+        Assert.False(power.Tapped);
+
+        Resolve(game, "mode:second");
         var payment = Assert.Single(game.State.PendingPrompts);
         Assert.Contains(power.InstanceId, payment.ValidChoices);
         Resolve(game, power.InstanceId);
@@ -201,8 +204,10 @@ public sealed class AtomicReviewBatch1RegressionTests
         player.Hand.Add(nyx);
 
         Assert.True(game.Handle(0, new L12Command("playCard", nyx.InstanceId)).Accepted);
-        Resolve(game, "mode:second");
         Resolve(game, first.InstanceId);
+        Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
+        PassResponses(game);
+        Resolve(game, "mode:second");
         Resolve(game, power.InstanceId);
         Resolve(game, second.InstanceId);
         Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
@@ -211,12 +216,11 @@ public sealed class AtomicReviewBatch1RegressionTests
             CardInstanceId: second.InstanceId)).Accepted);
         PassResponses(game);
 
-        Assert.False(power.Tapped);
-        Assert.True(power.IsGodPower);
+        Assert.True(power.Tapped);
+        Assert.False(power.IsGodPower);
         Assert.Equal(2000, first.Troops);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
-            && entry.Text.Contains("响应逆结算后不再符合条件", StringComparison.Ordinal)
-            && entry.Text.Contains("此前效果不回退", StringComparison.Ordinal));
+            && entry.Text.Contains("逆结算后不再符合条件", StringComparison.Ordinal));
         Assert.Empty(game.State.PendingPrompts);
         Assert.Empty(game.State.EffectStack);
     }
@@ -254,5 +258,27 @@ public sealed class AtomicReviewBatch1RegressionTests
             .Where(entry => entry.Type == "effect-trigger").Select(entry => entry.Text)));
         Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-trigger"
             && entry.Text.Contains("【击杀时】", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("S01-0007", "camp-heal")]
+    [InlineData("S01-0013", "scout-shuffle-effect")]
+    [InlineData("S01-0014", "ritual-disaster")]
+    [InlineData("S01-0118", "march-kill-segment")]
+    [InlineData("S01-0119", "observing-stars-morale")]
+    [InlineData("S01-0419", "oiran-ready-morale")]
+    [InlineData("S02-0010", "black-lotus-morale")]
+    [InlineData("S02-0105", "qianyang-draw")]
+    [InlineData("S02-0306", "mimir-mill")]
+    [InlineData("S02-0521", "glory-search")]
+    [InlineData("S02-0522", "nyx-secondary")]
+    [InlineData("S02-0620", "rune-search-choice")]
+    [InlineData("S02-0621", "round-table-buff")]
+    public void IndependentOptionalLaterSegmentsDeclareAtTheirOwnBoundary(string cardId, string flow)
+    {
+        var segment = Assert.Single(L12CompositeEffectPlans.Segments(cardId), candidate => candidate.Flow == flow);
+
+        Assert.True(segment.DeclareAtSegmentStart);
+        Assert.False(segment.PreStackCost);
     }
 }

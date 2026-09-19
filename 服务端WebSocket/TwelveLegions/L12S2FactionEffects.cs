@@ -661,20 +661,7 @@ public sealed partial class L12GameEngine
         }
         if (AtomicFlowKey(item, card) == "rune-search-choice")
         {
-            var canPay = CompositeOrdinaryPaymentChoices(player).Any();
-            if (!canPay || player.Library.Count == 0)
-            {
-                FinishStackItem(item);
-                return true;
-            }
-            CreatePrompt(item.Controller, "option", "符文之力：是否消耗1士气发动牌库查看效果",
-                ["mode:search", "mode:none"], 1, 1, "card-effect", item.StackItemId,
-                data: new Dictionary<string, string>
-                {
-                    ["action"] = "s2-rune-power-mode",
-                    ["mode:search"] = "消耗1士气：查看牌库顶部3张牌",
-                    ["mode:none"] = "不发动",
-                });
+            BeginRunePowerSearch(item);
             return true;
         }
         if (AtomicFlowKey(item, card) == "round-table-search")

@@ -207,9 +207,12 @@ public sealed class CardNameUsageLimitTests
             { InstanceId = $"mimir-morale-{i}", CardId = "S01-01C1" });
         var result = game.Handle(0, new L12Command("playCard", copies[0].InstanceId));
         Assert.True(result.Accepted, result.Error);
-        Choose(game, Assert.Single(game.State.PendingPrompts), "mode:none");
         Assert.Single(game.State.EffectStack).Negated = negated;
         game = Restore(game);
+        Pass(game);
+        var laterSegment = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", laterSegment.Continuation);
+        Choose(game, laterSegment, "mode:none");
         Pass(game);
         result = game.Handle(0, new L12Command("playCard", copies[1].InstanceId));
         Assert.False(result.Accepted);

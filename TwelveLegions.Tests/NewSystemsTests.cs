@@ -763,10 +763,6 @@ public sealed class NewSystemsTests
         var revealed = player.Library.Take(3).Select(card => card.InstanceId).ToArray();
 
         Assert.True(game.Handle(owner, new L12Command("playCard", camp.InstanceId)).Accepted);
-        var followupDeclaration = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("pending-activation", followupDeclaration.Continuation);
-        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: followupDeclaration.PromptId,
-            Choice: "mode:none")).Accepted);
         while (game.State.PendingPrompts.FirstOrDefault()?.Kind == "response")
         {
             var response = game.State.PendingPrompts[0];
@@ -781,7 +777,42 @@ public sealed class NewSystemsTests
         var bottom = revealed.Reverse().ToList();
         Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: order.PromptId,
             TopCardInstanceIds: [], BottomCardInstanceIds: bottom)).Accepted);
+        var followupDeclaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", followupDeclaration.Continuation);
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: followupDeclaration.PromptId,
+            Choice: "mode:none")).Accepted);
         Assert.Equal(bottom, player.Library.TakeLast(bottom.Count).Select(card => card.InstanceId));
+    }
+
+    [Fact]
+    public void WildCampKeepsItsSearchWhenTheLaterMoraleCostCannotBePaid()
+    {
+        var game = Create(seed: 55281);
+        const int owner = 0;
+        var player = game.State.Players[owner];
+        var camp = CreateInstance("S01-0007", "wild-camp-staged-cost");
+        var eligibleDefinition = Catalog.Cards.Values.First(card => card.CardType == "legion"
+            && card.Faction == player.Faction);
+        var eligible = CreateInstance(eligibleDefinition.Id, "wild-camp-staged-hit");
+        player.Hand.Clear();
+        player.Hand.Add(camp);
+        player.Library.Clear();
+        player.Library.Add(eligible);
+        player.Morale.Clear();
+        AddActiveMorale(player, camp.Cost);
+        game.State.ActivePlayer = owner;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(owner, new L12Command("playCard", camp.InstanceId)).Accepted);
+        var search = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("camp-pick", search.Data["action"]);
+        Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: search.PromptId,
+            Choice: eligible.InstanceId)).Accepted);
+
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Contains(eligible, player.Hand);
+        Assert.Contains(camp, player.Graveyard);
+        Assert.Equal(camp.Cost, player.Morale.Count(card => card.Tapped));
     }
 
     [Fact]

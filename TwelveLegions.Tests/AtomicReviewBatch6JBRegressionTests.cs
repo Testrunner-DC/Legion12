@@ -92,11 +92,11 @@ public sealed class AtomicReviewBatch6JBRegressionTests
                 new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "pass")).Accepted);
     }
 
-    [Theory]
-    [InlineData("S01-0007")]
-    [Trait("L12Evidence", "hand-play:batch6jb-public-followup-declaration")]
-    public void RemainingCompositeTacticsDeclareTheirPublicFollowupBeforeAnyStack(string cardId)
+    [Fact]
+    [Trait("L12Evidence", "hand-play:batch6jb-staged-followup-declaration")]
+    public void WildCampDoesNotDeclareItsIndependentFollowupBeforeTheSearchStack()
     {
+        const string cardId = "S01-0007";
         var game = Create(9980 + cardId[^1]);
         var player = game.State.Players[0];
         var opponent = game.State.Players[1];
@@ -111,9 +111,14 @@ public sealed class AtomicReviewBatch6JBRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("playCard", source.InstanceId)).Accepted);
 
-        Assert.Equal("pending-activation", OnlyPrompt(game).Continuation);
-        Assert.Empty(game.State.EffectStack);
-        Assert.Contains(game.State.PendingActivations, activation => activation.SourceCardId == cardId);
+        var search = OnlyPrompt(game);
+        Assert.Equal("search", search.Kind);
+        Assert.Equal("camp-pick", search.Data["action"]);
+        Assert.NotEqual("pending-activation", search.Continuation);
+        Assert.Equal("camp-search", Assert.Single(game.State.EffectStack).Data["atomicFlow"]);
+        Assert.DoesNotContain(game.State.PendingActivations, activation => activation.SourceCardId == cardId);
+        Assert.DoesNotContain(source, player.Hand);
+        Assert.Contains(source, player.Resolving);
     }
 
     [Fact]
@@ -241,8 +246,8 @@ public sealed class AtomicReviewBatch6JBRegressionTests
     }
 
     [Fact]
-    [Trait("L12Evidence", "hand-play:batch6jb-prepaid-independent-segments")]
-    public void WildCampPrepaysTheDeclaredFollowupAndStillQueuesItWhenTheSearchIsNegated()
+    [Trait("L12Evidence", "hand-play:batch6jb-staged-independent-segments")]
+    public void WildCampDeclaresItsIndependentFollowupAfterTheSearchIsNegated()
     {
         var game = new L12GameEngine(Catalog, "atomic-review-batch6jb", "ATOMIC6JB", 9998,
             ["甲", "乙"], [0, 1], skipPreparation: true, autoPassEmptyResponses: false);
@@ -258,17 +263,18 @@ public sealed class AtomicReviewBatch6JBRegressionTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", camp.InstanceId)).Accepted);
-        Resolve(game, "mode:draw");
-
-        Assert.Equal(camp.Cost + 1, player.Morale.Count(morale => morale.Tapped));
-        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "resource-payment");
         Assert.True(game.State.EffectStack.Count > 0,
             $"prompts={string.Join(';', game.State.PendingPrompts.Select(prompt => $"{prompt.Kind}:{prompt.Continuation}:{prompt.Data.GetValueOrDefault("activationStep")}"))}; "
             + $"activations={string.Join(';', game.State.PendingActivations.Select(activation => $"{activation.Ability}:{activation.CurrentStep}"))}; "
             + $"events={string.Join(';', game.State.Events.TakeLast(8).Select(entry => $"{entry.Type}:{entry.Text}"))}");
         Assert.Equal("camp-search", game.State.EffectStack[^1].Data["atomicFlow"]);
+        Assert.Equal(camp.Cost, player.Morale.Count(morale => morale.Tapped));
         game.State.EffectStack[^1].Negated = true;
         PassCurrentResponseWindow(game);
+
+        var followup = OnlyPrompt(game);
+        Assert.Equal("pending-activation", followup.Continuation);
+        Resolve(game, "mode:draw");
 
         Assert.Equal("camp-draw", game.State.EffectStack[^1].Data["atomicFlow"]);
         Assert.Equal(camp.Cost + 1, player.Morale.Count(morale => morale.Tapped));

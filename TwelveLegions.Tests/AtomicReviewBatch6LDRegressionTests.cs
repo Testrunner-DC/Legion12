@@ -312,6 +312,8 @@ public sealed class AtomicReviewBatch6LDRegressionTests
         Assert.Equal(1, player.SpecialZones.Runes);
         Resolve(game, "mode:search");
         Assert.All(player.Morale, morale => Assert.True(morale.Tapped));
+        Assert.Equal("rune-search-choice", game.State.EffectStack[^1].Data["atomicFlow"]);
+        PassResponses(game);
         var hidden = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-rune-power-pick", hidden.Data["action"]);
         Assert.Contains(universal.InstanceId, hidden.ValidChoices);

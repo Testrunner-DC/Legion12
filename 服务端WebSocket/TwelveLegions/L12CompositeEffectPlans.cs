@@ -46,7 +46,6 @@ internal static partial class L12CompositeEffectPlans
         "active:S01-03M2:lokiCycle",
         "starter-oiran-active",
         "starter-nuada-active",
-        "S02-0620",
     };
 
     internal static bool UsesSingleResponseEffect(string? planId)
@@ -88,10 +87,10 @@ internal static partial class L12CompositeEffectPlans
             [
                 new("camp-search", "查看牌库顶部3张牌，选择军团并排列其余牌"),
                 new("camp-heal", "消耗1士气：我方主宰增加1点血量",
-                    "mode:heal", "ordinary-payment", "campHealCost", 1, PreStackCost: true,
-                    RequiredDeclarationKey: "campMode"),
+                    "mode:heal", "ordinary-payment", "campHealCost", 1,
+                    RequiredDeclarationKey: "campMode", DeclareAtSegmentStart: true),
                 new("camp-draw", "消耗1士气：抽取1张牌",
-                    "mode:draw", "ordinary-payment", "campDrawCost", 1, PreStackCost: true,
+                    "mode:draw", "ordinary-payment", "campDrawCost", 1,
                     RequiredDeclarationKey: "campMode"),
             ],
             ["S01-0009"] =
@@ -113,13 +112,13 @@ internal static partial class L12CompositeEffectPlans
             [
                 new("scout-reveal", "查看对方所有手牌"),
                 new("scout-shuffle-effect", "消耗1士气：令对方选择1张手牌洗回牌库",
-                    "mode:use", "ordinary-payment", "scoutCost", 1, PreStackCost: true,
+                    "mode:use", "ordinary-payment", "scoutCost", 1,
                     DeclareAtSegmentStart: true),
             ],
             ["S01-0014"] =
             [
                 new("ritual-draw", "抽取1张牌"),
-                new("ritual-disaster", "将天灾值增加或减少已声明的数值"),
+                new("ritual-disaster", "将天灾值增加或减少最多2点", DeclareAtSegmentStart: true),
             ],
             ["S01-0015"] =
             [
@@ -132,13 +131,14 @@ internal static partial class L12CompositeEffectPlans
                     PublicTargetKeys: ["buffTarget"]),
                 new("march-kill-segment", "返还2士气：击杀对方1张兵力不高于6000的军团",
                     "mode:use", "morale-return", "marchReturnCost", 2,
-                    PublicTargetKeys: ["killTarget"], PreStackCost: true,
+                    PublicTargetKeys: ["killTarget"],
                     RequiredDeclarationKey: "marchMode", DeclareAtSegmentStart: true),
             ],
             ["S01-0119"] =
             [
                 new("observing-stars-reorder", "查看并排列牌库顶部5张牌"),
-                new("observing-stars-morale", "从士气牌库追加1张活跃士气", "mode:morale"),
+                new("observing-stars-morale", "从士气牌库追加1张活跃士气", "mode:morale",
+                    DeclareAtSegmentStart: true),
             ],
             ["S01-0221"] =
             [
@@ -177,7 +177,8 @@ internal static partial class L12CompositeEffectPlans
             [
                 new("black-lotus-disaster", "将天灾值增加或减少已声明的数值"),
                 new("black-lotus-morale", "消耗3士气：将此战术休整置入士气区",
-                    "mode:morale", "ordinary-payment", "lotusCost", 3, PreStackCost: true),
+                    "mode:morale", "ordinary-payment", "lotusCost", 3,
+                    DeclareAtSegmentStart: true),
             ],
             ["S02-0011"] =
             [
@@ -192,7 +193,8 @@ internal static partial class L12CompositeEffectPlans
             ["S02-0306"] =
             [
                 new("mimir-recover-draw", "我方主宰增加1点血量并抽取1张牌"),
-                new("mimir-mill", "弃置我方牌库顶部2张牌", "mode:mill"),
+                new("mimir-mill", "弃置我方牌库顶部2张牌", "mode:mill",
+                    DeclareAtSegmentStart: true),
             ],
             ["S02-0405"] =
             [
@@ -201,32 +203,40 @@ internal static partial class L12CompositeEffectPlans
             ],
             ["S02-0522"] =
             [
-                new("nyx-primary", "选择对方1张军团，本回合兵力-3000"),
+                new("nyx-primary", "选择对方1张军团，本回合兵力-3000",
+                    PublicTargetKeys: ["primaryTarget"]),
                 new("nyx-secondary", "消耗并翻转1神力：选择对方1张军团，本回合兵力-2000",
-                    "mode:second", "god-power-flip", "secondCost", 1),
+                    "mode:second", "god-power-flip", "secondCost", 1,
+                    PublicTargetKeys: ["secondaryTarget"], DeclareAtSegmentStart: true),
             ],
             ["S02-0105"] =
             [
-                new("qianyang-kill", "击杀对方1张原本兵力不高于3000的军团"),
+                new("qianyang-kill", "击杀对方1张原本兵力不高于3000的军团",
+                    PublicTargetKeys: ["killTarget"]),
                 new("qianyang-draw", "返还1士气：抽取1张牌",
-                    "mode:draw", "morale-return", "drawCost", 1),
+                    "mode:draw", "morale-return", "drawCost", 1,
+                    DeclareAtSegmentStart: true),
             ],
             ["S02-0521"] =
             [
                 new("glory-flip", "翻转最多3张士气"),
                 new("glory-search", "消耗并翻转2神力：检索1张【奥林匹斯】卡牌",
-                    "mode:search", "god-power-flip", "searchCost", 2),
+                    "mode:search", "god-power-flip", "searchCost", 2,
+                    DeclareAtSegmentStart: true),
             ],
             ["S02-0620"] =
             [
                 new("rune-gain", "获得1符文"),
-                new("rune-search-choice", "可消耗1士气：查看牌库顶部3张牌"),
+                new("rune-search-choice", "消耗1士气：查看牌库顶部3张牌并处理符合条件的【彼界】卡牌",
+                    "mode:search", "ordinary-payment", "runeSearchCost", 1,
+                    DeclareAtSegmentStart: true),
             ],
             ["S02-0621"] =
             [
                 new("round-table-search", "检索1张【圆桌骑士】军团"),
                 new("round-table-buff", "消耗1士气：选择我方1张【圆桌骑士】军团，本回合兵力+2000",
-                    "mode:buff", "ordinary-payment", "buffCost", 1),
+                    "mode:buff", "ordinary-payment", "buffCost", 1,
+                    PublicTargetKeys: ["buffTarget"], DeclareAtSegmentStart: true),
             ],
             ["S02-0207"] =
             [
@@ -612,7 +622,11 @@ internal static partial class L12CompositeEffectPlans
         };
 
     private static readonly HashSet<string> HandPlayPlansWithoutControllerDeclaration =
-        new(StringComparer.OrdinalIgnoreCase) { "S01-0013", "S01-0015", "S01-0419", "S02-0405", "S02-0620" };
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "S01-0007", "S01-0013", "S01-0014", "S01-0015", "S01-0119", "S01-0419",
+            "S02-0306", "S02-0405", "S02-0620", "S02-0621",
+        };
 
     public static bool HasHandPlayPlan(string cardId)
         => HandPlayPlans.ContainsKey(cardId)
@@ -714,24 +728,7 @@ public sealed partial class L12GameEngine
                 break;
 
             case "S01-0007":
-            {
-                var canPay = ActiveResourceCount(player) >= 1;
-                steps.Add(CompositeStep("option", "campMode", "野外扎营：选择是否消耗1士气，并选择主宰增加血量或抽牌",
-                    canPay ? ["mode:none", "mode:heal", "mode:draw"] : ["mode:none"], 1, 1,
-                    new()
-                    {
-                        ["mode:none"] = "查看牌库顶部3张牌，选择1张同阵营军团展示并加入手牌，其余置入牌库底部",
-                        ["mode:heal"] = "消耗1士气：我方主宰增加1点血量",
-                        ["mode:draw"] = "消耗1士气：抽取1张牌",
-                    }));
-                steps.Add(CompositeStep("composite-ordinary-payment", "campHealCost",
-                    "野外扎营：预先选择治疗段消耗的1份资源", CompositeOrdinaryPaymentChoices(player), 1,
-                    requiredChoice: "mode:heal", autoSelectEquivalentOrdinaryMorale: true));
-                steps.Add(CompositeStep("composite-ordinary-payment", "campDrawCost",
-                    "野外扎营：选择抽取1张牌所消耗的1份资源", CompositeOrdinaryPaymentChoices(player), 1,
-                    requiredChoice: "mode:draw", autoSelectEquivalentOrdinaryMorale: true));
                 break;
-            }
 
             case "S01-0009":
                 steps.Add(CompositeStep("field-legion", "returnTarget", "战略转移：预先选择回到手牌的我方军团",
@@ -770,8 +767,6 @@ public sealed partial class L12GameEngine
             }
 
             case "S01-0014":
-                steps.Add(CompositeStep("option", "disasterValue", "祭天仪式：选择将天灾值增加或减少最多2点",
-                    ["-2", "-1", "0", "1", "2"], 1, 1));
                 break;
 
             case "S01-0118":
@@ -787,17 +782,7 @@ public sealed partial class L12GameEngine
             }
 
             case "S01-0119":
-            {
-                var modes = new List<string> { "mode:none" };
-                if (player.MoraleDeck.Count > 0) modes.Add("mode:morale");
-                steps.Add(CompositeStep("option", "mode", "观星：选择是否从士气牌库追加1张活跃士气",
-                    modes, 1, 1, new()
-                    {
-                        ["mode:none"] = "查看牌库顶部5张牌，自选顺序放回牌库顶部或底部",
-                        ["mode:morale"] = "从士气牌库追加1张活跃士气",
-                    }));
                 break;
-            }
 
             case "S01-0221":
             {
@@ -867,22 +852,9 @@ public sealed partial class L12GameEngine
                 break;
 
             case "S02-0010":
-            {
-                var modes = new List<string> { "mode:none" };
-                if (ActiveResourceCount(player) >= 3) modes.Add("mode:morale");
                 steps.Add(CompositeStep("option", "disasterMode", "黑色莲花：预先声明天灾值调整",
                     ["-1", "0", "1"], 1, 1));
-                steps.Add(CompositeStep("option", "mode", "黑色莲花：选择是否消耗3士气，将此战术休整置入士气区",
-                    modes, 1, 1, new()
-                    {
-                        ["mode:none"] = "调整天灾值后置入墓地",
-                        ["mode:morale"] = "消耗3士气：将此战术休整置入士气区并视为1张士气",
-                    }));
-                steps.Add(CompositeStep("composite-ordinary-payment", "lotusCost", "黑色莲花：选择将此战术置入士气区所消耗的3份资源",
-                    CompositeOrdinaryPaymentChoices(player), 3, 3, requiredChoice: "mode:morale",
-                    autoSelectEquivalentOrdinaryMorale: true));
                 break;
-            }
 
             case "S02-0011":
                 steps.Add(CompositeStep("enemy-legion", "killTargets", "纷乱箭：预先选择最多3张原本兵力不高于2000的军团",
@@ -897,86 +869,26 @@ public sealed partial class L12GameEngine
                 break;
 
             case "S02-0306":
-                steps.Add(CompositeStep("option", "mode", "密米尔之泉：选择是否弃置我方牌库顶部2张牌",
-                    ["mode:none", "mode:mill"], 1, 1, new()
-                    {
-                        ["mode:none"] = "我方主宰增加1点血量，抽取1张牌",
-                        ["mode:mill"] = "弃置我方牌库顶部2张牌",
-                    }));
                 break;
 
             case "S02-0522":
-                steps.Add(CompositeStep("option", "mode", "倪克斯的陨星：选择是否消耗并翻转1神力，使对方1张军团本回合兵力-2000",
-                    ["mode:none", "mode:second"], 1, 1,
-                    new()
-                    {
-                        ["mode:none"] = "选择对方1张军团，本回合兵力-3000",
-                        ["mode:second"] = "消耗并翻转1神力：选择对方1张军团，本回合兵力-2000",
-                    }));
                 steps.Add(CompositeStep("enemy-legion", "primaryTarget", "倪克斯的陨星：选择本回合兵力-3000的目标",
                     PublicLegions(opponent).Select(card => card.InstanceId), 1));
-                steps.Add(CompositeStep("target-morale", "secondCost", "倪克斯的陨星：选择为兵力-2000效果消耗并翻转的1神力",
-                    player.Morale.Where(card => card.IsGodPower && !card.Tapped).Select(card => card.InstanceId), 1,
-                    requiredChoice: "mode:second"));
-                steps.Add(CompositeStep("enemy-legion", "secondaryTarget", "倪克斯的陨星：选择本回合兵力-2000的目标",
-                    PublicLegions(opponent).Select(card => card.InstanceId), 1, requiredChoice: "mode:second"));
                 break;
 
             case "S02-0105":
-                steps.Add(CompositeStep("option", "mode", "乾坤 阳：预先声明是否发动返还士气并抽牌",
-                    ["mode:none", "mode:draw"], 1, 1,
-                    new()
-                    {
-                        ["mode:none"] = "击杀对方1张原本兵力不高于3000的军团",
-                        ["mode:draw"] = "返还1士气：抽取1张牌",
-                    }));
                 steps.Add(CompositeStep("enemy-legion", "killTarget", "乾坤 阳：预先选择击杀目标",
                     PublicLegions(opponent).Where(card => card.DisplayBaseTroops <= 3000 && !card.Hidden)
                         .Select(card => card.InstanceId), 1));
-                steps.Add(CompositeStep("resource-return", "drawCost", "乾坤 阳：预先选择返还的1张士气",
-                    player.Morale.Select(card => card.InstanceId), 1, requiredChoice: "mode:draw"));
                 break;
 
             case "S02-0521":
-                steps.Add(CompositeStep("option", "mode", "荣耀之路：预先声明是否发动神力检索段",
-                    ["mode:none", "mode:search"], 1, 1,
-                    new()
-                    {
-                        ["mode:none"] = "翻转最多3张士气",
-                        ["mode:search"] = "消耗并翻转2神力：查看牌库，选择1张【奥林匹斯】卡牌展示并加入手牌，随后重洗牌库",
-                    }));
                 steps.Add(CompositeStep("target-morale", "flipTargets", "荣耀之路：预先选择最多3张要翻转的士气",
                     player.Morale.Where(card => !card.IsGodPower).Select(card => card.InstanceId), 0, 3));
-                steps.Add(CompositeStep("composite-glory-god-power-cost", "searchCost",
-                    "荣耀之路：预先选择检索段消耗并翻转的2张神力", ["dynamic:1", "dynamic:2"], 2, 2,
-                    requiredChoice: "mode:search"));
                 break;
 
             case "S02-0621":
-            {
-                var roundTableTargets = PublicLegions(player)
-                    .Where(card => card.HasTrait("圆桌骑士"))
-                    .Select(card => card.InstanceId)
-                    .ToArray();
-                var roundTablePayments = CompositeOrdinaryPaymentChoices(player).ToArray();
-                var roundTableModes = roundTableTargets.Length > 0 && roundTablePayments.Length > 0
-                    ? new[] { "mode:none", "mode:buff" }
-                    : ["mode:none"];
-                steps.Add(CompositeStep("option", "mode", "圆桌领域：选择是否消耗1士气使军团本回合兵力+2000",
-                    roundTableModes, 1, 1,
-                    new()
-                    {
-                        ["mode:none"] = "查看牌库，选择1张【圆桌骑士】军团展示并加入手牌，随后重洗牌库",
-                        ["mode:buff"] = "消耗1士气：选择我方1张【圆桌骑士】军团，本回合兵力+2000",
-                    }));
-                steps.Add(CompositeStep("field-legion", "buffTarget", "圆桌领域：选择本回合兵力+2000的【圆桌骑士】军团",
-                    roundTableTargets, 1,
-                    requiredChoice: "mode:buff"));
-                steps.Add(CompositeStep("composite-ordinary-payment", "buffCost", "圆桌领域：预先选择支付的1份资源",
-                    roundTablePayments, 1, requiredChoice: "mode:buff",
-                    autoSelectEquivalentOrdinaryMorale: true));
                 break;
-            }
 
             case "S02-0207":
                 steps.Add(CompositeStep("field-legion", "discardTargets", "沙漠君临：预先选择最多3张要弃置的我方军团",
@@ -1239,21 +1151,10 @@ public sealed partial class L12GameEngine
             var id = declared.GetValueOrDefault(key, []).SingleOrDefault();
             return PublicLegions(player).Any(target => target.InstanceId == id && (predicate?.Invoke(target) ?? true));
         }
-        bool GodPowerCost(string key, int count)
-        {
-            var ids = declared.GetValueOrDefault(key, []);
-            return ids.Count == count && ids.Distinct(StringComparer.OrdinalIgnoreCase).Count() == count
-                && ids.All(id => player.Morale.Any(resource => resource.InstanceId == id && resource.IsGodPower && !resource.Tapped));
-        }
         bool OrdinaryCost(string key)
         {
             var id = declared.GetValueOrDefault(key, []).SingleOrDefault();
             return id is not null && CanConsumeSelectedResources(player, 1, [id]);
-        }
-        bool OrdinaryCosts(string key, int count)
-        {
-            var ids = declared.GetValueOrDefault(key, []);
-            return CanConsumeSelectedResources(player, count, ids);
         }
         bool EnemyMany(string key, int maximum, Func<L12CardInstance, bool>? predicate = null)
         {
@@ -1284,10 +1185,7 @@ public sealed partial class L12GameEngine
                 && (volleyMode != "mode:single" || Enemy("singleTarget")),
             "S01-0006" => effectOnlyRepeat || declared.GetValueOrDefault("discardCost", []) is [var discardId]
                 && discardId != card.InstanceId && player.Hand.Any(candidate => candidate.InstanceId == discardId),
-            "S01-0007" => declared.GetValueOrDefault("campMode", []).SingleOrDefault() is { } campMode
-                && campMode is "mode:none" or "mode:heal" or "mode:draw"
-                && (effectOnlyRepeat || campMode != "mode:heal" || OrdinaryCost("campHealCost"))
-                && (effectOnlyRepeat || campMode != "mode:draw" || OrdinaryCost("campDrawCost")),
+            "S01-0007" => declared.Count == 0,
             "S01-0009" => Own("returnTarget") && Own("buffTarget"),
             "S01-0010" => ValidateForgedOrdersDeclaration(opponent, declared),
             "S01-0011" => declared.GetValueOrDefault("lockTarget", []).SingleOrDefault() is { } lockTarget
@@ -1295,14 +1193,12 @@ public sealed partial class L12GameEngine
                     || opponent.Morale.Any(target => target.InstanceId == lockTarget)),
             "S01-0013" => mode is "mode:none" or "mode:use"
                 && (mode != "mode:use" || opponent.Hand.Count > 0 && (effectOnlyRepeat || OrdinaryCost("scoutCost"))),
-            "S01-0014" => declared.GetValueOrDefault("disasterValue", []).SingleOrDefault()
-                is "-2" or "-1" or "0" or "1" or "2",
+            "S01-0014" => declared.Count == 0,
             "S01-0015" => declared.Count == 0,
             "S01-0118" => declared.GetValueOrDefault("buffTarget", []).SingleOrDefault() is { } marchTarget
                 && (marchTarget == "mode:none" || Own("buffTarget", target =>
                     FindOnField(player, target.InstanceId, out var row, out _) is not null && row == 0)),
-            "S01-0119" => mode is "mode:none" or "mode:morale"
-                && (mode == "mode:none" || player.MoraleDeck.Count > 0),
+            "S01-0119" => declared.Count == 0,
             "S01-0221" => declared.GetValueOrDefault("duatMode", []).SingleOrDefault() is { } duatMode
                 && duatMode is "mode:kill" or "mode:recover"
                 && (duatMode != "mode:kill" || Enemy("killTarget", target => target.Troops <= 5000))
@@ -1319,33 +1215,22 @@ public sealed partial class L12GameEngine
                     && player.Morale.Any(card => card.InstanceId == moraleTarget && card.Tapped)),
             "S01-0418" => Enemy("killTarget", target => L12StructuredCardRules.CurrentCostAtMost(target, 7)),
             "S02-0009" => ValidateDefenseDeploymentDeclaration(player, card, declared),
-            "S02-0010" => declared.GetValueOrDefault("disasterMode", []).SingleOrDefault() is "-1" or "0" or "1"
-                && (mode is "mode:none" or "mode:morale")
-                && (effectOnlyRepeat || mode == "mode:none" || OrdinaryCosts("lotusCost", 3)),
+            "S02-0010" => declared.GetValueOrDefault("disasterMode", []).SingleOrDefault() is "-1" or "0" or "1",
             "S02-0011" => EnemyMany("killTargets", 3, target => target.DisplayBaseTroops <= 2000),
             "S02-0013" => declared.GetValueOrDefault("artifactTarget", []).SingleOrDefault() is { } artifactId
                 && new[] { opponent.Relic }.Concat(opponent.ExtraRelics)
                     .Any(target => target?.InstanceId == artifactId && target.CardType == "artifact"),
             "S02-0306" => (effectOnlyRepeat || player.MasterDamageTakenThisTurn >= 2
                 && !L12CardNameUsageRules.HasUsed(player, card.CardId))
-                && mode is "mode:none" or "mode:mill",
-            "S02-0522" => mode is "mode:none" or "mode:second"
-                && Enemy("primaryTarget")
-                && (mode == "mode:none" || (effectOnlyRepeat || GodPowerCost("secondCost", 1)) && Enemy("secondaryTarget")),
-            "S02-0105" => mode is "mode:none" or "mode:draw"
-                && Enemy("killTarget", target => target.DisplayBaseTroops <= 3000)
-                && (mode == "mode:none" || effectOnlyRepeat || declared.GetValueOrDefault("drawCost", []).SingleOrDefault() is { } moraleId
-                    && player.Morale.Any(resource => resource.InstanceId == moraleId)),
-            "S02-0521" => mode is "mode:none" or "mode:search"
-                && declared.GetValueOrDefault("flipTargets", []).Count <= 3
+                && declared.Count == 0,
+            "S02-0522" => Enemy("primaryTarget"),
+            "S02-0105" => Enemy("killTarget", target => target.DisplayBaseTroops <= 3000),
+            "S02-0521" => declared.GetValueOrDefault("flipTargets", []).Count <= 3
                 && declared.GetValueOrDefault("flipTargets", []).Distinct(StringComparer.OrdinalIgnoreCase).Count()
                     == declared.GetValueOrDefault("flipTargets", []).Count
-                && declared.GetValueOrDefault("flipTargets", []).All(id => player.Morale.Any(resource => resource.InstanceId == id && !resource.IsGodPower))
-                && (effectOnlyRepeat || mode == "mode:none" || ValidateGloryPlannedCost(player, declared)),
+                && declared.GetValueOrDefault("flipTargets", []).All(id => player.Morale.Any(resource => resource.InstanceId == id && !resource.IsGodPower)),
             "S02-0620" => declared.Count == 0,
-            "S02-0621" => mode is "mode:none" or "mode:buff"
-                && (mode == "mode:none" || Own("buffTarget", target => target.HasTrait("圆桌骑士"))
-                    && (effectOnlyRepeat || OrdinaryCost("buffCost"))),
+            "S02-0621" => declared.Count == 0,
             "S02-0207" => ValidateDesertDeclaration(player, card, declared, effectOnlyRepeat),
             "S02-0307" => (effectOnlyRepeat || player.Library.Count >= 1)
                 && (declared.GetValueOrDefault("curseTarget", []).Count == 0 || Enemy("curseTarget")),
@@ -1434,16 +1319,6 @@ public sealed partial class L12GameEngine
             && !TryPayCompositeDeclaredCost(controller, source, first, declaration)) return false;
         if (source.CardId == "S02-0306") player.UsedAbilities.Add(L12CardNameUsageRules.Key(source.CardId));
         return true;
-    }
-
-    private static bool ValidateGloryPlannedCost(L12PlayerState player,
-        IReadOnlyDictionary<string, List<string>> declared)
-    {
-        var flipIds = declared.GetValueOrDefault("flipTargets", []).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var costIds = declared.GetValueOrDefault("searchCost", []);
-        return costIds.Count == 2 && costIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() == 2
-            && costIds.All(id => player.Morale.Any(resource => resource.InstanceId == id && !resource.Tapped
-                && (resource.IsGodPower || flipIds.Contains(id))));
     }
 
     private bool ValidateDesertDeclaration(L12PlayerState player, L12CardInstance source,
@@ -1574,6 +1449,145 @@ public sealed partial class L12GameEngine
         var targetKey = segment.PublicTargetKeys?.SingleOrDefault();
         switch (segment.Flow)
         {
+            case "ritual-disaster":
+                steps.Add(CompositeStep("option", "disasterValue",
+                    "祭天仪式：选择将天灾值增加或减少最多2点",
+                    ["-2", "-1", "0", "1", "2"], 1, 1));
+                return true;
+            case "observing-stars-morale":
+            {
+                if (player.MoraleDeck.Count == 0) return false;
+                var requiredMode = segment.RequiredMode ?? "mode:morale";
+                steps.Add(CompositeStep("option", "mode",
+                    "观星：选择是否从士气牌库追加1张活跃士气",
+                    ["mode:none", requiredMode], 1, 1, new()
+                    {
+                        ["mode:none"] = "不发动后续追加士气效果",
+                        [requiredMode] = "从士气牌库追加1张活跃士气",
+                    }));
+                return true;
+            }
+            case "mimir-mill":
+            {
+                var requiredMode = segment.RequiredMode ?? "mode:mill";
+                steps.Add(CompositeStep("option", "mode",
+                    "密米尔之泉：选择是否弃置我方牌库顶部2张牌",
+                    ["mode:none", requiredMode], 1, 1, new()
+                    {
+                        ["mode:none"] = "不发动后续弃牌效果",
+                        [requiredMode] = "弃置我方牌库顶部2张牌",
+                    }));
+                return true;
+            }
+            case "camp-heal":
+            {
+                var resources = CompositeOrdinaryPaymentChoices(player).ToArray();
+                var repeatedEffectOnly = item.Data.GetValueOrDefault("repeatedEffectOnly") == "true";
+                if (!repeatedEffectOnly && resources.Length < segment.Cost) return false;
+                steps.Add(CompositeStep("option", "campMode",
+                    "野外扎营：选择是否消耗1士气，并选择主宰增加血量或抽牌",
+                    ["mode:none", "mode:heal", "mode:draw"], 1, 1, new()
+                    {
+                        ["mode:none"] = "不发动后续效果",
+                        ["mode:heal"] = "消耗1士气：我方主宰增加1点血量",
+                        ["mode:draw"] = "消耗1士气：抽取1张牌",
+                    }));
+                if (!repeatedEffectOnly)
+                {
+                    steps.Add(CompositeStep("composite-ordinary-payment", "campHealCost",
+                        "野外扎营：选择治疗段消耗的1份资源", resources, 1,
+                        requiredChoice: "mode:heal", autoSelectEquivalentOrdinaryMorale: true));
+                    steps.Add(CompositeStep("composite-ordinary-payment", "campDrawCost",
+                        "野外扎营：选择抽牌段消耗的1份资源", resources, 1,
+                        requiredChoice: "mode:draw", autoSelectEquivalentOrdinaryMorale: true));
+                }
+                return true;
+            }
+            case "black-lotus-morale":
+            {
+                var resources = CompositeOrdinaryPaymentChoices(player).ToArray();
+                var repeatedEffectOnly = item.Data.GetValueOrDefault("repeatedEffectOnly") == "true";
+                if (!repeatedEffectOnly && resources.Length < segment.Cost) return false;
+                var requiredMode = segment.RequiredMode ?? "mode:morale";
+                steps.Add(CompositeStep("option", "mode",
+                    "黑色莲花：是否消耗3士气，将此战术休整置入士气区？",
+                    ["mode:none", requiredMode], 1, 1, new()
+                    {
+                        ["mode:none"] = "不发动后续效果，此战术结算后置入墓地",
+                        [requiredMode] = "消耗3士气：将此战术休整置入士气区并视为1张士气",
+                    }));
+                if (!repeatedEffectOnly)
+                    steps.Add(CompositeStep("composite-ordinary-payment", segment.CostKey ?? "lotusCost",
+                        "黑色莲花：选择将此战术置入士气区所消耗的3份资源",
+                        resources, segment.Cost, segment.Cost, requiredChoice: requiredMode,
+                        autoSelectEquivalentOrdinaryMorale: true));
+                return true;
+            }
+            case "qianyang-draw":
+            {
+                var repeatedEffectOnly = item.Data.GetValueOrDefault("repeatedEffectOnly") == "true";
+                if (!repeatedEffectOnly && !CanReturnMorale(player, segment.Cost)) return false;
+                var requiredMode = segment.RequiredMode ?? "mode:draw";
+                steps.Add(CompositeStep("option", "mode",
+                    "乾坤 阳：是否返还1士气，发动独立的抽牌效果？",
+                    ["mode:none", requiredMode], 1, 1, new()
+                    {
+                        ["mode:none"] = "不发动后续抽牌效果",
+                        [requiredMode] = "返还1士气：抽取1张牌",
+                    }));
+                if (!repeatedEffectOnly)
+                    steps.Add(CompositeStep("resource-return", segment.CostKey ?? "drawCost",
+                        "乾坤 阳：选择返还的1张士气",
+                        player.Morale.Select(card => card.InstanceId), segment.Cost, segment.Cost,
+                        requiredChoice: requiredMode));
+                return true;
+            }
+            case "round-table-buff":
+            {
+                var targets = PublicLegions(player).Where(card => card.HasTrait("圆桌骑士"))
+                    .Select(card => card.InstanceId).ToArray();
+                var resources = CompositeOrdinaryPaymentChoices(player).ToArray();
+                var repeatedEffectOnly = item.Data.GetValueOrDefault("repeatedEffectOnly") == "true";
+                if (targets.Length == 0 || !repeatedEffectOnly && resources.Length < segment.Cost
+                    || string.IsNullOrWhiteSpace(targetKey)) return false;
+                var requiredMode = segment.RequiredMode ?? "mode:buff";
+                steps.Add(CompositeStep("option", "mode",
+                    "圆桌领域：是否消耗1士气，使我方1张【圆桌骑士】军团本回合兵力+2000？",
+                    ["mode:none", requiredMode], 1, 1, new()
+                    {
+                        ["mode:none"] = "不发动后续强化效果",
+                        [requiredMode] = "消耗1士气：选择我方1张【圆桌骑士】军团，本回合兵力+2000",
+                    }));
+                steps.Add(CompositeStep("field-legion", targetKey,
+                    "圆桌领域：选择本回合兵力+2000的【圆桌骑士】军团",
+                    targets, 1, requiredChoice: requiredMode));
+                if (!repeatedEffectOnly)
+                    steps.Add(CompositeStep("composite-ordinary-payment", segment.CostKey ?? "buffCost",
+                        "圆桌领域：选择支付的1份资源", resources, segment.Cost, segment.Cost,
+                        requiredChoice: requiredMode, autoSelectEquivalentOrdinaryMorale: true));
+                return true;
+            }
+            case "rune-search-choice":
+            {
+                var resources = CompositeOrdinaryPaymentChoices(player).ToArray();
+                var repeatedEffectOnly = item.Data.GetValueOrDefault("repeatedEffectOnly") == "true";
+                if (player.Library.Count == 0 || !repeatedEffectOnly && resources.Length < segment.Cost)
+                    return false;
+                var requiredMode = segment.RequiredMode ?? "mode:search";
+                steps.Add(CompositeStep("option", "mode",
+                    "符文之力：是否消耗1士气，发动独立的牌库查看效果？",
+                    ["mode:none", requiredMode], 1, 1, new()
+                    {
+                        ["mode:none"] = "不发动后续牌库查看效果",
+                        [requiredMode] = "消耗1士气：查看牌库顶部3张牌并处理符合条件的【彼界】卡牌",
+                    }));
+                if (!repeatedEffectOnly)
+                    steps.Add(CompositeStep("composite-ordinary-payment", segment.CostKey ?? "runeSearchCost",
+                        "符文之力：选择牌库查看段消耗的1份资源",
+                        resources, segment.Cost, segment.Cost, requiredChoice: requiredMode,
+                        autoSelectEquivalentOrdinaryMorale: true));
+                return true;
+            }
             case "zhuge-disaster":
                 steps.Add(CompositeStep("option", "disasterMode", "诸葛亮：是否调整天灾值？",
                     ["mode:none", "mode:use"], 1, 1, new() { ["mode:none"] = "不发动", ["mode:use"] = "发动" }));
@@ -1632,6 +1646,51 @@ public sealed partial class L12GameEngine
                 steps.Add(CompositeStep("enemy-legion", targetKey,
                     "本多忠胜：选择减费结算后当前费用为0的军团并击杀",
                     targets, 1));
+                return true;
+            }
+            case "nyx-secondary":
+            {
+                var targets = PublicLegions(opponent).Select(card => card.InstanceId).ToArray();
+                var powers = player.Morale.Where(card => card.IsGodPower && !card.Tapped)
+                    .Select(card => card.InstanceId).ToArray();
+                var repeatedEffectOnly = item.Data.GetValueOrDefault("repeatedEffectOnly") == "true";
+                if (targets.Length == 0 || !repeatedEffectOnly && powers.Length < segment.Cost
+                    || string.IsNullOrWhiteSpace(targetKey)) return false;
+                var requiredMode = segment.RequiredMode ?? "mode:second";
+                steps.Add(CompositeStep("option", "mode",
+                    "倪克斯的陨星：是否消耗并翻转1神力，发动独立的兵力-2000效果？",
+                    ["mode:none", requiredMode], 1, 1, new()
+                    {
+                        ["mode:none"] = "不发动后续效果",
+                        [requiredMode] = "消耗并翻转1神力：选择对方1张军团，本回合兵力-2000",
+                    }));
+                if (!repeatedEffectOnly)
+                    steps.Add(CompositeStep("target-morale", segment.CostKey ?? "secondCost",
+                        "倪克斯的陨星：选择消耗并翻转的1张当前活跃神力",
+                        powers, segment.Cost, segment.Cost, requiredChoice: requiredMode));
+                steps.Add(CompositeStep("enemy-legion", targetKey,
+                    "倪克斯的陨星：选择本回合兵力-2000的目标",
+                    targets, 1, requiredChoice: requiredMode));
+                return true;
+            }
+            case "glory-search":
+            {
+                var powers = player.Morale.Where(card => card.IsGodPower && !card.Tapped)
+                    .Select(card => card.InstanceId).ToArray();
+                var repeatedEffectOnly = item.Data.GetValueOrDefault("repeatedEffectOnly") == "true";
+                if (!repeatedEffectOnly && powers.Length < segment.Cost) return false;
+                var requiredMode = segment.RequiredMode ?? "mode:search";
+                steps.Add(CompositeStep("option", "mode",
+                    "荣耀之路：是否消耗并翻转2神力，发动独立的牌库检索效果？",
+                    ["mode:none", requiredMode], 1, 1, new()
+                    {
+                        ["mode:none"] = "不发动后续检索效果",
+                        [requiredMode] = "消耗并翻转2神力：查看牌库，选择1张【奥林匹斯】卡牌展示并加入手牌，随后重洗牌库",
+                    }));
+                if (!repeatedEffectOnly)
+                    steps.Add(CompositeStep("target-morale", segment.CostKey ?? "searchCost",
+                        "荣耀之路：选择检索段消耗并翻转的2张当前活跃神力",
+                        powers, segment.Cost, segment.Cost, requiredChoice: requiredMode));
                 return true;
             }
             case "march-kill-segment":
@@ -2079,7 +2138,7 @@ public sealed partial class L12GameEngine
                 CompositeDeclared(item, "secondaryTarget").SingleOrDefault()) is not null,
             "round-table-buff" => FindOnField(State.Players[controller],
                     CompositeDeclared(item, "buffTarget").SingleOrDefault(), out _, out _) is { } target
-                && target.HasTrait("圆桌骑士"),
+                && IsFieldLegion(target) && !target.Hidden && target.HasTrait("圆桌骑士"),
             "march-kill-effect" or "march-kill-segment" => DeclaredEnemyTarget(controller,
                 CompositeDeclared(item, "killTarget").SingleOrDefault(), target => target.Troops <= 6000) is not null,
             "yomi-kill3" => CompositeDeclared(item, "kill3Target").SingleOrDefault() is { } kill3

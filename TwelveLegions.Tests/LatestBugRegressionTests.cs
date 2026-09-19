@@ -1724,10 +1724,12 @@ public sealed class LatestBugRegressionTests
         PassResponses(game);
         Assert.Equal(1, player.SpecialZones.Runes);
         var mode = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-rune-power-mode", mode.Data["action"]);
+        Assert.Equal("pending-activation", mode.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
             Choice: "mode:search")).Accepted);
         Assert.All(player.Morale, morale => Assert.True(morale.Tapped));
+        Assert.Equal("rune-search-choice", game.State.EffectStack[^1].Data["atomicFlow"]);
+        PassResponses(game);
         var pick = Assert.Single(game.State.PendingPrompts);
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "resource-payment");
         Assert.Equal("s2-rune-power-pick", pick.Data["action"]);
@@ -1747,6 +1749,31 @@ public sealed class LatestBugRegressionTests
         Assert.Contains(eligible, player.Hand);
         Assert.Equal([sameName.InstanceId, neutral.InstanceId], player.Library.TakeLast(2).Select(card => card.InstanceId));
         Assert.Contains(game.State.Events, entry => entry.Type == "reveal" && entry.Cards.Any(card => card.InstanceId == eligible.InstanceId));
+    }
+
+    [Fact]
+    public void RunePowerKeepsItsRuneGainWhenTheLaterMoraleCostCannotBePaid()
+    {
+        var game = Create(64281);
+        var player = game.State.Players[0];
+        var runePower = Card("S02-0620", "rune-power-staged-cost");
+        player.Hand.Clear();
+        player.Library.Clear();
+        player.Morale.Clear();
+        player.Hand.Add(runePower);
+        player.Library.Add(Card("S02-0609", "rune-power-staged-library"));
+        AddReadyMorale(player, runePower.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var played = game.Handle(0, new L12Command("playCard", runePower.InstanceId));
+        Assert.True(played.Accepted, played.Error);
+        PassResponses(game);
+
+        Assert.Equal(1, player.SpecialZones.Runes);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Contains(runePower, player.Graveyard);
+        Assert.Equal(runePower.Cost, player.Morale.Count(card => card.Tapped));
     }
 
     [Fact]

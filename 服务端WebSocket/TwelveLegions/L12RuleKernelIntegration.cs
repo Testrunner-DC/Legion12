@@ -613,24 +613,6 @@ public sealed partial class L12GameEngine
                     State.Players[index].Morale.Any(morale => morale.InstanceId == choice)), -1);
             if (targetPlayerIndex < 0) targetPlayerIndex = null;
         }
-        else if (step.Kind == "composite-glory-god-power-cost")
-        {
-            var player = State.Players[activation.Controller];
-            var plannedFlips = activation.DeclaredValues.GetValueOrDefault("flipTargets", [])
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var choices = player.Morale.Where(card => !card.Tapped
-                    && (card.IsGodPower || plannedFlips.Contains(card.InstanceId)))
-                .Select(card => card.InstanceId).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            step.ValidChoices.Clear();
-            step.ValidChoices.AddRange(choices);
-            if (choices.Count < step.MinChoose)
-            {
-                RejectPendingActivation(activation, "荣耀之路没有足够的已声明神力费用，效果未支付费用也未入栈");
-                return;
-            }
-            promptKind = "resource-payment";
-            targetPlayerIndex = activation.Controller;
-        }
         else if (step.Kind == "composite-ordinary-payment")
         {
             var choices = HasPrideMasterSurchargeStep(activation)

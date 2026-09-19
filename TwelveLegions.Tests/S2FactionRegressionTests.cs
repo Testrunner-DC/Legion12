@@ -2181,15 +2181,16 @@ public sealed class S2FactionRegressionTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", road.InstanceId)).Accepted);
-        var mode = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
-            Choice: "mode:search")).Accepted);
         var flip = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(3, flip.MaxChoose);
         var flipIds = player.Morale.Where(card => !card.Tapped && flip.ValidChoices.Contains(card.InstanceId))
             .Take(3).Select(card => card.InstanceId).ToArray();
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: flip.PromptId,
             CardInstanceIds: flipIds.ToList())).Accepted);
+        PassResponses(game);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:search")).Accepted);
         var payment = Assert.Single(game.State.PendingPrompts);
         var paidIds = payment.ValidChoices.Take(2).ToArray();
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
@@ -2209,6 +2210,52 @@ public sealed class S2FactionRegressionTests
             Assert.False(card.IsGodPower);
         });
         Assert.Single(player.Morale, card => flipIds.Contains(card.InstanceId) && card.IsGodPower && !card.Tapped);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0521:independent-segment-declaration")]
+    public void GloryRoadKeepsItsFlipSegmentWhenTheLaterGodPowerCostCannotBePaid()
+    {
+        var game = Create(63611);
+        var player = game.State.Players[0];
+        var road = Card("S02-0521", "glory-road-rested-flips");
+        player.Hand.Clear();
+        player.Library.Clear();
+        player.Morale.Clear();
+        player.Hand.Add(road);
+        for (var index = 0; index < 3; index++)
+            player.Morale.Add(new L12MoraleCard
+            {
+                InstanceId = $"glory-rested-{index}", CardId = "S02-05C1A", Tapped = true,
+            });
+        for (var index = 0; index < road.Cost; index++)
+            player.Morale.Add(new L12MoraleCard
+            {
+                InstanceId = $"glory-base-cost-{index}", CardId = "S02-05C1A", Tapped = false,
+            });
+        var restedIds = player.Morale.Where(card => card.Tapped).Select(card => card.InstanceId).ToList();
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", road.InstanceId)).Accepted);
+        var flip = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(3, flip.MaxChoose);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: flip.PromptId,
+            CardInstanceIds: restedIds)).Accepted);
+        PassResponses(game);
+
+        Assert.DoesNotContain(road, player.Hand);
+        Assert.Contains(road, player.Graveyard);
+        Assert.All(player.Morale.Where(card => restedIds.Contains(card.InstanceId)), card =>
+        {
+            Assert.True(card.Tapped);
+            Assert.True(card.IsGodPower);
+        });
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectSegmentIndex == 1 && entry.EffectResultStatus == "resolved"
+            && entry.Cards.Any(card => card.InstanceId == road.InstanceId));
     }
 
     [Fact]
@@ -3929,6 +3976,10 @@ public sealed class S2FactionRegressionTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", tactic.InstanceId)).Accepted);
+        var search = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-round-table-search", search.Data["action"]);
+        Assert.Equal([searchedKnight.InstanceId], search.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: search.PromptId, Choice: searchedKnight.InstanceId)).Accepted);
         var mode = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
             Choice: "mode:buff")).Accepted);
@@ -3936,11 +3987,7 @@ public sealed class S2FactionRegressionTests
         Assert.Contains(fieldKnight.InstanceId, buffTarget.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: buffTarget.PromptId,
             Choice: fieldKnight.InstanceId)).Accepted);
-        var search = Assert.Single(game.State.PendingPrompts);
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "resource-payment");
-        Assert.Equal("s2-round-table-search", search.Data["action"]);
-        Assert.Equal([searchedKnight.InstanceId], search.ValidChoices);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: search.PromptId, Choice: searchedKnight.InstanceId)).Accepted);
 
         PassResponses(game);
 
@@ -3948,6 +3995,37 @@ public sealed class S2FactionRegressionTests
         Assert.Equal(nonKnight, Assert.Single(player.Library));
         Assert.Equal(fieldKnight.BaseTroops + 2000, fieldKnight.Troops);
         Assert.Equal(3, player.Morale.Count(card => card.Tapped));
+    }
+
+    [Fact]
+    public void RoundTableDomainKeepsItsSearchWhenTheLaterMoraleCostCannotBePaid()
+    {
+        var game = Create(63321);
+        var player = game.State.Players[0];
+        player.Hand.Clear();
+        player.Library.Clear();
+        var tactic = Card("S02-0621", "round-table-staged-cost");
+        var searchedKnight = Card("S02-0601", "round-table-staged-hit");
+        var fieldKnight = Card("S02-0605", "round-table-staged-field");
+        player.Hand.Add(tactic);
+        player.Library.Add(searchedKnight);
+        player.Field[0][0] = fieldKnight;
+        player.Morale.Clear();
+        AddMorale(player, tactic.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", tactic.InstanceId)).Accepted);
+        var search = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-round-table-search", search.Data["action"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: search.PromptId,
+            Choice: searchedKnight.InstanceId)).Accepted);
+
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Contains(searchedKnight, player.Hand);
+        Assert.Equal(fieldKnight.BaseTroops, fieldKnight.Troops);
+        Assert.Contains(tactic, player.Graveyard);
+        Assert.Equal(tactic.Cost, player.Morale.Count(card => card.Tapped));
     }
 
     [Fact]

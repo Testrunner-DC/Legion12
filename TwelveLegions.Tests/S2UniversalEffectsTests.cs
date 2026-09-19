@@ -988,13 +988,13 @@ public sealed class S2UniversalEffectsTests
         var disasterPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", disasterPrompt.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: disasterPrompt.PromptId, Choice: "1")).Accepted);
+        Assert.Equal(5, game.State.DisasterValue);
 
         var moralePrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", moralePrompt.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: moralePrompt.PromptId,
             Choice: "mode:morale")).Accepted);
 
-        Assert.Equal(5, game.State.DisasterValue);
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "resource-payment");
         var converted = Assert.Single(player.Morale, card => card.CardId == "S02-0010");
         Assert.True(converted.Tapped);
@@ -1028,6 +1028,29 @@ public sealed class S2UniversalEffectsTests
     }
 
     [Fact]
+    public void BlackLotusKeepsItsDisasterAdjustmentWhenTheLaterMoraleCostCannotBePaid()
+    {
+        var game = Create(seed: 62122);
+        var player = game.State.Players[0];
+        var lotus = TakeCard(game, 0, "S02-0010");
+        player.Morale.Clear();
+        AddMorale(player, lotus.Cost);
+        game.State.DisasterValue = 4;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", lotus.InstanceId)).Accepted);
+        var disasterPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: disasterPrompt.PromptId,
+            Choice: "1")).Accepted);
+
+        Assert.Equal(5, game.State.DisasterValue);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Contains(lotus, player.Graveyard);
+        Assert.Equal(lotus.Cost, player.Morale.Count(card => card.Tapped));
+    }
+
+    [Fact]
     public void ReturnedBlackLotusGoesToGraveyardInsteadOfMoraleDeck()
     {
         var game = CreateTianting(seed: 6213);
@@ -1053,12 +1076,12 @@ public sealed class S2UniversalEffectsTests
         player.Morale.Insert(0, converted);
 
         Assert.True(game.Handle(0, new L12Command("playCard", qianyang.InstanceId)).Accepted);
-        var mode = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
-            Choice: "mode:draw")).Accepted);
         var killTarget = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: killTarget.PromptId,
             CardInstanceIds: [target.InstanceId])).Accepted);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:draw")).Accepted);
         var returnPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("resource-return", returnPrompt.Kind);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: returnPrompt.PromptId,
@@ -1425,12 +1448,12 @@ public sealed class S2UniversalEffectsTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", tactic.InstanceId)).Accepted);
-        var mode = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
-            Choice: "mode:draw")).Accepted);
         var killTarget = Assert.Single(game.State.PendingPrompts);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: killTarget.PromptId,
             CardInstanceIds: [target.InstanceId])).Accepted);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+            Choice: "mode:draw")).Accepted);
         var returnPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("resource-return", returnPrompt.Kind);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: returnPrompt.PromptId,
@@ -1440,5 +1463,32 @@ public sealed class S2UniversalEffectsTests
         Assert.Contains(target, game.State.Players[1].Graveyard);
         Assert.Equal(2, player.Morale.Count);
         Assert.Contains(tactic, player.Graveyard);
+    }
+
+    [Fact]
+    public void QianKunYangKeepsItsKillWhenTheLaterReturnCostCannotBePaid()
+    {
+        var game = CreateTianting(seed: 62111);
+        var player = game.State.Players[0];
+        var tactic = Instance("S02-0105", "qianyang-staged-cost");
+        var target = Instance("S02-0003", "qianyang-staged-target");
+        player.Hand.Clear();
+        player.Hand.Add(tactic);
+        game.State.Players[1].Field[0][0] = target;
+        player.Morale.Clear();
+        player.TemporaryMorale = tactic.Cost;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", tactic.InstanceId)).Accepted);
+        var killTarget = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: killTarget.PromptId,
+            CardInstanceIds: [target.InstanceId])).Accepted);
+
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Contains(target, game.State.Players[1].Graveyard);
+        Assert.Contains(tactic, player.Graveyard);
+        Assert.Empty(player.Morale);
+        Assert.Equal(0, player.TemporaryMorale);
     }
 }
