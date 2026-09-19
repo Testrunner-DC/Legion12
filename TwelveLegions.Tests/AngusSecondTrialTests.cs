@@ -95,6 +95,32 @@ public sealed class AngusSecondTrialTests
         Assert.False(game.Handle(0, new L12Command("activateAbility", second.InstanceId, Ability: "fenianReady")).Accepted);
     }
 
+    [Fact]
+    [Trait("L12Evidence", "entry:effect-ready-restriction-fenian")]
+    public void FenianTrialMayPayItsRuneButSkipsWhenEveryPostColonTargetIsBlocked()
+    {
+        var game = Create("S02-06S5"); var player = game.State.Players[0];
+        foreach (var trial in player.SpecialZones.Trials) trial.TrialCompleted = true;
+        var second = player.SpecialZones.Trials[1];
+        var legion = (L12CardInstance)typeof(L12GameEngine)
+            .GetMethod("CreateCard", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(game, ["S02-0610", "blocked-fenian-finn"])!;
+        legion.Tapped = true;
+        legion.CannotReadyByEffectUntilTurn = game.State.TurnSerial;
+        player.Field[0][0] = legion;
+        player.SpecialZones.Runes = 1;
+
+        var result = game.Handle(0,
+            new L12Command("activateAbility", second.InstanceId, Ability: "fenianReady"));
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.Equal(0, player.SpecialZones.Runes);
+        PassResponses(game);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-noop"
+            && entry.Text.Contains("没有可因效果转为活跃", StringComparison.Ordinal));
+        Assert.True(legion.Tapped);
+    }
+
     private static void Complete(L12GameEngine game, L12CardInstance trial)
     {
         var result = game.Handle(0, new L12Command("activateAbility", trial.InstanceId, Ability: "completeTrial"));

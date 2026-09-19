@@ -476,7 +476,7 @@ public sealed partial class L12GameEngine
             var player = State.Players[item.Controller];
             var source = FindOnField(player, item.SourceInstanceId, out _, out _);
             if (source is not null)
-                ReadyCardByEffect(item.Controller, source, source, "古斯塔夫一世因进攻后效果转为活跃");
+                ReadyCardByEffect(item.Controller, source, source, "古斯塔夫一世因进攻后效果转为活跃", item);
             else AddEvent("effect-cancelled", item.Controller,
                 "古斯塔夫一世在结算时已不在战场；转为活跃段取消，已置底费用不恢复", card);
         }
@@ -541,7 +541,7 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             }
-            case "ankh-ready-target": { var target = DeclaredOwnLegionTarget(item.Controller, chosen[0]); if (target is not null && target.CardId == "S01-0212" && source is not null) ReadyCardByEffect(item.Controller, source, target, $"{target.Name}因效果转为活跃"); FinishStackItem(item); return true; }
+            case "ankh-ready-target": { var target = DeclaredOwnLegionTarget(item.Controller, chosen[0]); if (target is not null && target.CardId == "S01-0212" && source is not null) ReadyCardByEffect(item.Controller, source, target, $"{target.Name}因效果转为活跃", item); FinishStackItem(item); return true; }
             case "canopic-search":
             {
                 var selected = player.Library.FirstOrDefault(candidate => candidate.InstanceId == chosen[0]
@@ -622,14 +622,14 @@ public sealed partial class L12GameEngine
                     "孟婆：选择对方最多1张军团，本回合失去「阵亡时」效果", min: 0, max: 1);
             case "ankhReady":
                 if (player.Hand.Count == 0
-                    || !PublicLegions(player).Any(card => card.CardId == "S01-0212" && card.Tapped))
+                    || !PublicLegions(player).Any(card => card.CardId == "S01-0212" && CanReadyCardByEffect(card)))
                     return CommandResult.Reject("需要我方存在休整的陵墓守卫，且手牌中有1张可弃置卡牌");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
                     new L12ActivationSelectionStep
                     {
                         Kind = "active-target", Text = "安卡神碑：选择我方1张休整的陵墓守卫",
-                        ValidChoices = PublicLegions(player).Where(card => card.CardId == "S01-0212" && card.Tapped).Select(card => card.InstanceId).ToList(),
+                        ValidChoices = PublicLegions(player).Where(card => card.CardId == "S01-0212" && CanReadyCardByEffect(card)).Select(card => card.InstanceId).ToList(),
                     },
                     new L12ActivationSelectionStep
                     {
@@ -866,7 +866,7 @@ public sealed partial class L12GameEngine
             {
                 var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
                 var guard = declared.Length == 2 ? PublicLegions(player).FirstOrDefault(card => card.InstanceId == declared[0]
-                    && card.CardId == "S01-0212" && card.Tapped) : null;
+                    && card.CardId == "S01-0212" && CanReadyCardByEffect(card)) : null;
                 var discard = declared.Length == 2 ? player.Hand.FirstOrDefault(card => card.InstanceId == declared[1]) : null;
                 if (source.Tapped || guard is null || discard is null) return CommandResult.Reject("安卡神碑的目标或弃牌费用已不合法");
                 source.Tapped = true;
@@ -1224,7 +1224,7 @@ public sealed partial class L12GameEngine
                         "所选对方前排军团已离场；若发动时原本无对象则仅跳过本段");
                 FinishStackItem(item);
                 return true;
-            case "gramReady": if (source is not null) ReadyCardByEffect(item.Controller, source, source, $"{source.Name}因效果转为活跃"); FinishStackItem(item); return true;
+            case "gramReady": if (source is not null) ReadyCardByEffect(item.Controller, source, source, $"{source.Name}因效果转为活跃", item); FinishStackItem(item); return true;
             case "palaceReward":
                 if (AtomicFlowKey(item) == "palace-reward-morale") AddMorale(player, 2, true);
                 else if (AtomicFlowKey(item) == "palace-reward-draw") Draw(player, 1);
@@ -1257,8 +1257,8 @@ public sealed partial class L12GameEngine
             case "ankhReady":
             {
                 var guardId = item.Data.GetValueOrDefault("target", string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-                var guard = PublicLegions(player).FirstOrDefault(card => card.InstanceId == guardId && card.CardId == "S01-0212" && card.Tapped);
-                if (guard is not null) ReadyCardByEffect(item.Controller, source ?? guard, guard, $"{guard.Name}因安卡神碑转为活跃");
+                var guard = PublicLegions(player).FirstOrDefault(card => card.InstanceId == guardId && card.CardId == "S01-0212" && CanReadyCardByEffect(card));
+                if (guard is not null) ReadyCardByEffect(item.Controller, source ?? guard, guard, $"{guard.Name}因安卡神碑转为活跃", item);
                 else RecordTargetSettlementFailure(item, guardId,
                     "所选〈陵墓守卫〉已离场或不再为休整状态");
                 FinishStackItem(item);

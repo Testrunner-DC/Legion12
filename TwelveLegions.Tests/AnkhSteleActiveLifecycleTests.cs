@@ -96,6 +96,31 @@ public sealed class AnkhSteleActiveLifecycleTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "entry:effect-ready-restriction-ankh")]
+    public void ReadyModeRejectsWhenEveryGuardIsBlockedBeforeDiscardPayment()
+    {
+        var game = Create(91380);
+        var player = game.State.Players[0];
+        var source = Card("S01-0215", "ankh-blocked-source");
+        var guard = Card("S01-0212", "ankh-blocked-guard");
+        var discard = Card("S01-0201", "ankh-blocked-discard");
+        guard.Tapped = true;
+        guard.CannotReadyByEffectUntilTurn = game.State.TurnSerial;
+        player.Relic = source;
+        player.Field[0][0] = guard;
+        player.Hand.Add(discard);
+
+        var result = game.Handle(0, new L12Command("activateAbility", source.InstanceId,
+            Ability: "ankhReady"));
+
+        Assert.False(result.Accepted);
+        Assert.Contains(discard, player.Hand);
+        Assert.Empty(player.Graveyard);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.False(source.Tapped);
+    }
+
+    [Fact]
     [Trait("L12Evidence", "ability:ankhReady")]
     public void ReadyModeCanCancelBeforePaymentWithoutChangingState()
     {

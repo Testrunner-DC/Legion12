@@ -199,6 +199,33 @@ public sealed class AtomicReviewBatch6FRegressionTests
         Assert.DoesNotContain($"trial-card-lock:{finn.InstanceId}:{game.State.TurnSerial}", player.UsedAbilities);
     }
 
+    [Fact]
+    [Trait("L12Evidence", "entry:effect-ready-restriction-finn-paid-cost")]
+    public void FinnKeepsPaidRuneButDoesNotReadyOrLockWhenRestrictionAppearsAfterDeclaration()
+    {
+        var game = Create(8012);
+        var player = game.State.Players[0];
+        var finn = Card("S02-0610", "batch6f-blocked-finn-follow-up");
+        _ = AddOpenTrial(game);
+        player.Field[0][0] = finn;
+        player.SpecialZones.Runes = 1;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", finn.InstanceId,
+            Ability: "trialAdvance")).Accepted);
+        PassResponses(game);
+        Resolve(game, "mode:use");
+        Assert.Equal(0, player.SpecialZones.Runes);
+        finn.CannotReadyByEffectUntilTurn = game.State.TurnSerial;
+
+        PassResponses(game);
+
+        Assert.True(finn.Tapped);
+        Assert.Equal(0, player.SpecialZones.Runes);
+        Assert.DoesNotContain($"trial-card-lock:{finn.InstanceId}:{game.State.TurnSerial}", player.UsedAbilities);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("无法因效果转为活跃", StringComparison.Ordinal));
+    }
+
     public static IEnumerable<object[]> EntryPlans()
     {
         yield return ["S02-0602", new[] { "mode:none", "mode:use" }];

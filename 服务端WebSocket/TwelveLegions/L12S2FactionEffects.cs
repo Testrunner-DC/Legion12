@@ -393,7 +393,7 @@ public sealed partial class L12GameEngine
             case "井伊直虎":
             {
                 var choices = player.Hand.Select(candidate => candidate.InstanceId).ToList();
-                var targets = PublicFactionLegions(player, "gaotianyuan").Where(candidate => candidate.Tapped)
+                var targets = PublicFactionLegions(player, "gaotianyuan").Where(CanReadyCardByEffect)
                     .Select(candidate => candidate.InstanceId).ToList();
                 if (choices.Count == 0 || targets.Count == 0) { FinishStackItem(item); return true; }
                 item.Data["s2-gaotianyuan-ready-targets"] = string.Join('|', targets);
@@ -1123,11 +1123,12 @@ public sealed partial class L12GameEngine
             if (ability == "fenianReady")
             {
                 if (player.SpecialZones.Runes < 1) return CommandResult.Reject("需要消耗1符文");
-                var choices = PublicLegions(player).Where(card => card.Tapped
+                var choices = PublicLegions(player).Where(card => CanReadyCardByEffect(card)
                         && L12StructuredCardRules.HasFaction(player, card, "otherworld")
                         && (card.CardId == "S02-0610" || card.DisplayBaseTroops <= 4000))
                     .Select(card => card.InstanceId).ToArray();
-                if (choices.Length == 0) return CommandResult.Reject("没有符合条件的休整军团");
+                if (choices.Length == 0)
+                    return CommitActiveAbility(playerIndex, source, ability, target: null);
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
                     new L12ActivationSelectionStep { Kind = "active-target", Text = "选择我方1张〈芬恩〉或原本兵力不高于4000的【彼界】军团转为活跃", ValidChoices = choices.ToList() },
@@ -1513,9 +1514,9 @@ public sealed partial class L12GameEngine
             if (ability == "fenianReady")
             {
                 var chosen = FindOnField(player, declared.FirstOrDefault(), out _, out _);
-                if (chosen is null || !chosen.Tapped
+                if (declared.Length > 0 && (chosen is null || !CanReadyCardByEffect(chosen)
                     || !L12StructuredCardRules.HasFaction(player, chosen, "otherworld")
-                    || (chosen.CardId != "S02-0610" && chosen.DisplayBaseTroops > 4000))
+                    || (chosen.CardId != "S02-0610" && chosen.DisplayBaseTroops > 4000)))
                     return CommandResult.Reject("目标不符合转为活跃的条件");
             }
             else if (ability == "crusadeTrialNoLoss")
@@ -1925,8 +1926,22 @@ public sealed partial class L12GameEngine
             var declared = (item.Data.GetValueOrDefault("target") ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
             if (ability == "fenianReady")
             {
+                if (declared.Length == 0)
+                {
+                    item.Data["effectResultStatus"] = "skipped";
+                    AddEvent("effect-noop", item.Controller,
+                        "芬尼亚传说支付符文后没有可因效果转为活跃的合法军团，跳过效果段", source);
+                    FinishStackItem(item);
+                    return true;
+                }
                 var target = FindOnField(player, declared.FirstOrDefault(), out _, out _);
-                if (target is not null) target.Tapped = false;
+                if (target is not null
+                    && L12StructuredCardRules.HasFaction(player, target, "otherworld")
+                    && (target.CardId == "S02-0610" || target.DisplayBaseTroops <= 4000))
+                    ReadyCardByEffect(item.Controller, source, target,
+                        $"{target.Name}因芬尼亚传说转为活跃", item);
+                else RecordTargetSettlementFailure(item, declared.FirstOrDefault(),
+                    "芬尼亚传说所选目标已离场、失去【彼界】特征或不再符合原本兵力条件");
             }
             else if (ability == "crusadeTrialNoLoss")
             {
@@ -2272,8 +2287,17 @@ public sealed partial class L12GameEngine
                 player.Graveyard.Add(discarded);
                 var targets = (item.Data.GetValueOrDefault("s2-gaotianyuan-ready-targets") ?? string.Empty)
                     .Split('|', StringSplitOptions.RemoveEmptyEntries);
-                if (targets.Length == 0) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "target", "选择1张休整的【高天原】军团转为活跃", targets, 1, 1,
+                var currentTargets = targets.Where(id => FindOnField(player, id, out _, out _) is { } target
+                        && IsFieldLegion(target) && L12StructuredCardRules.HasFaction(player, target, "gaotianyuan")
+                        && CanReadyCardByEffect(target))
+                    .ToArray();
+                if (currentTargets.Length == 0)
+                {
+                    RecordTargetSettlementFailure(item, null, "支付弃牌费用后已无可因效果转为活跃的【高天原】军团");
+                    FinishStackItem(item);
+                    return true;
+                }
+                CreatePrompt(item.Controller, "target", "选择1张休整的【高天原】军团转为活跃", currentTargets, 1, 1,
                     "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-gaotianyuan-ready-target" });
                 return true;
             }
@@ -2423,10 +2447,12 @@ public sealed partial class L12GameEngine
             case "s2-gaotianyuan-ready-target":
             {
                 var target = FindOnField(player, chosen[0], out _, out _);
-                if (target is { Tapped: true } && IsFieldLegion(target)
-                    && L12StructuredCardRules.HasFaction(player, target, "gaotianyuan")) target.Tapped = false;
+                if (target is not null && IsFieldLegion(target)
+                    && L12StructuredCardRules.HasFaction(player, target, "gaotianyuan"))
+                    ReadyCardByEffect(item.Controller, item.SourceSnapshot ?? target, target,
+                        $"{target.Name}因井伊直虎转为活跃", item);
                 else RecordTargetSettlementFailure(item, chosen[0],
-                    "所选休整【高天原】军团已离场、不再是军团、失去特征或已转为活跃");
+                    "所选休整【高天原】军团已离场、不再是军团或失去特征");
                 FinishStackItem(item);
                 return true;
             }

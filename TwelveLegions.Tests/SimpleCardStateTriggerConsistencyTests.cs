@@ -160,6 +160,60 @@ public sealed class SimpleCardStateTriggerConsistencyTests
             && entry.Cards.Any(card => card.CardId == "S01-0210"));
     }
 
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0210")]
+    [Trait("L12Evidence", "entry:effect-ready-restriction-candidate")]
+    public void MandatoryNitocrisSilentlySkipsWhenEveryRestedTargetCannotReadyByEffect()
+    {
+        var game = Create(11117);
+        var source = Card("S01-0210", "nitocris-blocked-source");
+        var guard = Card("S01-0212", "nitocris-blocked-guard");
+        guard.Tapped = true;
+        guard.CannotReadyByEffectUntilTurn = game.State.TurnSerial;
+        game.State.Players[0].Field[0][0] = source;
+        game.State.Players[0].Field[0][1] = guard;
+
+        Queue(game, source, "enter");
+
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+        Assert.True(guard.Tapped);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:effect-ready-restriction-settlement")]
+    [Trait("L12Evidence", "entry:effect-ready-restriction-reconnect")]
+    public void ReadyAuthorityRejectsTargetThatBecomesBlockedDuringItsResponseWindow()
+    {
+        var game = Create(11118);
+        var source = Card("S01-0210", "ready-blocked-source");
+        var guard = Card("S01-0212", "ready-blocked-target");
+        guard.Tapped = true;
+        game.State.Players[0].Field[0][0] = source;
+        game.State.Players[0].Field[0][1] = guard;
+        Queue(game, source, "enter");
+        ChooseCard(game, guard.InstanceId);
+        Choose(game, "pass");
+        Choose(game, "pass");
+        Assert.Equal("authority-event", Assert.Single(game.State.EffectStack).Trigger);
+        guard.CannotReadyByEffectUntilTurn = game.State.TurnSerial;
+
+        game = L12GameEngine.RestoreCheckpoint(Catalog,
+            game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,"),
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        PassResponses(game);
+
+        guard = game.State.Players[0].Field[0][1]!;
+        Assert.True(guard.Tapped);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("无法因效果转为活跃", StringComparison.Ordinal));
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "failed"
+            && entry.EffectText?.Contains("转为活跃", StringComparison.Ordinal) == true);
+    }
+
     [Theory]
     [InlineData("S01-0210", "enter")]
     [InlineData("S01-0313", "death")]

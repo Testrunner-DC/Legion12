@@ -117,6 +117,29 @@ public sealed class StarterMissingEffectsRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "entry:effect-ready-restriction-crossbow")]
+    public void CrossbowMayPayItsCostButItsReadySegmentFailsWhileBlocked()
+    {
+        var game = Create(207141);
+        var player = game.State.Players[0];
+        var crossbow = Card("ST01-07", "blocked-crossbow");
+        crossbow.Tapped = true;
+        crossbow.CannotReadyByEffectUntilTurn = game.State.TurnSerial;
+        player.Field[1][0] = crossbow;
+        player.Morale.Add(new L12MoraleCard { CardId = "ST01-C1", InstanceId = "blocked-crossbow-morale" });
+
+        QueueTrigger(game, crossbow, "after-attack");
+
+        Choose(game, "mode:use");
+        Choose(game, "blocked-crossbow-morale");
+        Assert.Empty(player.Morale);
+        PassResponses(game);
+        Assert.True(crossbow.Tapped);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("无法因效果转为活跃", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void NieYinniangAndKaneReachTheirSharedVerifiedRuntimeFlows()
     {
         var nieGame = Create(20716);

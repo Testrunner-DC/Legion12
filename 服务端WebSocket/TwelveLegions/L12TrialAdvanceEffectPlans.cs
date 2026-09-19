@@ -239,9 +239,9 @@ public sealed partial class L12GameEngine
             case "finn-ready":
                 if (source is not null)
                 {
-                    source.Tapped = false;
-                    player.UsedAbilities.Add($"trial-card-lock:{source.InstanceId}:{State.TurnSerial}");
-                    AddEvent("ready", item.Controller, "芬恩转为活跃，本回合不能再次发动试炼", source);
+                    var readyItem = ReadyCardByEffect(item.Controller, source, source,
+                        "芬恩转为活跃，本回合不能再次发动试炼", item);
+                    if (readyItem is not null) readyItem.Data["lockTrialCardUntilTurnEnd"] = "true";
                 }
                 else AddEvent("effect-cancelled", item.Controller, "芬恩已离场；转为活跃段取消，已支付符文不返还");
                 break;

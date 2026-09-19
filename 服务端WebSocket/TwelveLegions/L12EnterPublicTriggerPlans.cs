@@ -274,7 +274,8 @@ public sealed partial class L12GameEngine
             }
             case "ii-naotora":
             {
-                var targets = own.Where(card => L12StructuredCardRules.HasFaction(player, card, "gaotianyuan") && card.Tapped)
+                var targets = own.Where(card => L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")
+                        && CanReadyCardByEffect(card))
                     .Select(card => card.InstanceId).ToArray();
                 if (player.Hand.Count == 0) break;
                 Optional("井伊直虎：预先声明是否弃置1张手牌发动效果");
@@ -746,7 +747,7 @@ public sealed partial class L12GameEngine
                 }
                 break;
             }
-            case "ii-naotora": if (FindOnField(player, One("target"), out _, out _) is { } ii) ReadyCardByEffect(item.Controller, source, ii, $"{ii.Name}因效果转为活跃"); break;
+            case "ii-naotora": if (FindOnField(player, One("target"), out _, out _) is { } ii) ReadyCardByEffect(item.Controller, source, ii, $"{ii.Name}因效果转为活跃", item); break;
             case "imhotep":
             case "perseus":
             {

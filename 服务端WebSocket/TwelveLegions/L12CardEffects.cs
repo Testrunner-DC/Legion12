@@ -359,7 +359,7 @@ public sealed partial class L12GameEngine
                     {
                         _ = ReturnSelectedMoraleById(player, returnedMorale, 4);
                         AddEvent("effect", item.Controller, "吕布因进攻后效果返还4张已选择士气", lubu);
-                        ReadyCardByEffect(item.Controller, lubu, lubu, "吕布因进攻后效果转为活跃");
+                        ReadyCardByEffect(item.Controller, lubu, lubu, "吕布因进攻后效果转为活跃", item);
                     }
                 }
                 FinishStackItem(item);
@@ -410,7 +410,7 @@ public sealed partial class L12GameEngine
     {
         var card = FindSource(item);
         var sourceName = item.Data.GetValueOrDefault("source-name") ?? "效果";
-        if (card is not null) ReadyCardByEffect(item.Controller, card, card, $"{card.Name}因{sourceName}转为活跃");
+        if (card is not null) ReadyCardByEffect(item.Controller, card, card, $"{card.Name}因{sourceName}转为活跃", item);
         FinishStackItem(item);
     }
 

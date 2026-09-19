@@ -194,8 +194,16 @@ public sealed partial class L12GameEngine
                 "转为活跃的目标已不再为休整状态");
             return;
         }
+        if (card is not null && !CanReadyCardByEffect(card))
+        {
+            RecordTargetSettlementFailure(item, authorityEvent.TargetInstanceId,
+                $"{card.Name}本回合无法因效果转为活跃");
+            return;
+        }
         if (card is not null) card.Tapped = false;
         if (morale is not null) morale.Tapped = false;
+        if (card is not null && item.Data.GetValueOrDefault("lockTrialCardUntilTurnEnd") == "true")
+            player.UsedAbilities.Add($"trial-card-lock:{card.InstanceId}:{State.TurnSerial}");
         AddEvent("effect", authorityEvent.ActorPlayer, item.Text,
             card is null ? [] : [card]);
     }
@@ -226,17 +234,32 @@ public sealed partial class L12GameEngine
         QueueS2GrailRoundTableEntry(playerIndex, card);
     }
 
-    private void ReadyCardByEffect(int playerIndex, L12CardInstance source, L12CardInstance target, string reason,
+    private bool CanReadyCardByEffect(L12CardInstance target)
+        => target.Tapped && target.CannotReadyByEffectUntilTurn < State.TurnSerial;
+
+    private L12StackItem? ReadyCardByEffect(int playerIndex, L12CardInstance source, L12CardInstance target, string reason,
         L12StackItem? resultOwner = null)
     {
-        if (!target.Tapped) return;
+        if (!target.Tapped)
+        {
+            if (resultOwner is not null)
+                RecordTargetSettlementFailure(resultOwner, target.InstanceId, "转为活跃的目标已不再为休整状态");
+            return null;
+        }
+        if (!CanReadyCardByEffect(target))
+        {
+            var failure = $"{target.Name}本回合无法因效果转为活跃";
+            if (resultOwner is not null) RecordTargetSettlementFailure(resultOwner, target.InstanceId, failure);
+            else AddEvent("effect-failed", playerIndex, failure, source, target);
+            return null;
+        }
         var player = State.Players[playerIndex];
         var originZone = ReferenceEquals(FindOnField(player, target.InstanceId, out _, out _), target)
             ? "field" : ReferenceEquals(player.Relic, target) || player.ExtraRelics.Contains(target)
                 ? "relic" : "unavailable";
         var readyItem = QueueAuthorityEvent("effect-ready", playerIndex, source, reason, subjectPlayer: playerIndex,
             targetInstanceId: target.InstanceId, originZone: originZone, causedByEffect: true);
-        if (resultOwner is null) return;
+        if (resultOwner is null) return readyItem;
 
         // A single-segment ready effect is not complete until its independent authority event
         // survives responses and revalidates the target. Transfer that segment's presentation
@@ -246,6 +269,7 @@ public sealed partial class L12GameEngine
             if (resultOwner.Data.GetValueOrDefault(key) is { Length: > 0 } value)
                 readyItem.Data[key] = value;
         resultOwner.Data["effectResultPublished"] = "true";
+        return readyItem;
     }
 
     private void ReadyMoraleByEffect(int playerIndex, L12CardInstance source, L12MoraleCard target, string reason)

@@ -352,6 +352,29 @@ public sealed class ActiveUsageLimitTests
         Assert.DoesNotContain("active:gram:gramReady", player.UsedAbilities);
     }
 
+    [Fact]
+    [Trait("L12Evidence", "entry:effect-ready-restriction-gram")]
+    public void GramMayPayMoraleButItsReadySegmentFailsWhileBlocked()
+    {
+        var game = Create();
+        var player = game.State.Players[0];
+        var gram = Card("S01-0317", "blocked-gram");
+        gram.Tapped = true;
+        gram.CannotReadyByEffectUntilTurn = game.State.TurnSerial;
+        player.Relic = gram;
+
+        var result = game.Handle(0, new L12Command("activateAbility", gram.InstanceId,
+            Ability: "gramReady"));
+
+        Assert.True(result.Accepted, result.Error);
+        PassResponses(game);
+        Assert.Equal(4, player.Morale.Count);
+        Assert.Equal(2, player.Morale.Count(morale => morale.Tapped));
+        Assert.True(gram.Tapped);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("无法因效果转为活跃", StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

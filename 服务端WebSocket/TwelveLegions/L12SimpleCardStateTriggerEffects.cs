@@ -81,7 +81,7 @@ public sealed partial class L12GameEngine
     private bool IsLegalSimpleCardStateTarget(L12PlayerState targetPlayer, L12CardInstance target,
         L12SimpleCardStateTriggerSpec spec)
     {
-        if (spec.Operation == L12SimpleCardStateTriggerEffects.Ready && !target.Tapped) return false;
+        if (spec.Operation == L12SimpleCardStateTriggerEffects.Ready && !CanReadyCardByEffect(target)) return false;
         if (spec.Operation == L12SimpleCardStateTriggerEffects.Rest && target.Tapped) return false;
         if (spec.RequiredCardId is not null
             && !target.CardId.Equals(spec.RequiredCardId, StringComparison.OrdinalIgnoreCase)) return false;

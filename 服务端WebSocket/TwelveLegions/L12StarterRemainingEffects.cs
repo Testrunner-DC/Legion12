@@ -1116,7 +1116,7 @@ public sealed partial class L12GameEngine
                 return true;
             case "crossbow-ready":
                 if (FindOnField(player, item.SourceInstanceId, out _, out _) is { } crossbow)
-                    ReadyCardByEffect(item.Controller, crossbow, crossbow, "诸葛连弩兵因进攻后效果转为活跃");
+                    ReadyCardByEffect(item.Controller, crossbow, crossbow, "诸葛连弩兵因进攻后效果转为活跃", item);
                 FinishStackItem(item);
                 return true;
             case "wangzhaojun-draw":
@@ -1199,7 +1199,7 @@ public sealed partial class L12GameEngine
                 var gareth = FindOnField(player, item.SourceInstanceId, out _, out _);
                 if (gareth is not null && IsFieldLegion(gareth))
                 {
-                    ReadyCardByEffect(item.Controller, gareth, gareth, "加雷斯因击杀时效果转为活跃");
+                    ReadyCardByEffect(item.Controller, gareth, gareth, "加雷斯因击杀时效果转为活跃", item);
                     AddTimedModifier(gareth, 2000, 0, State.TurnSerial, item.SourceName);
                     AddEvent("effect", item.Controller, "加雷斯本回合兵力+2000", gareth);
                 }
