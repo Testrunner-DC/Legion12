@@ -5,14 +5,14 @@
 
 卡牌：324；能力段：684；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`1c756a31ac32820bcb4a38a4e70a6b2c76dc21f170e99044761326f22b9e4eaf`。
+内容指纹：`e947f74bc8a092e655246755886ba638c74a3e4fb8cff2cdfdcb64513122d179`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
-| composite-definition | 206 |
+| composite-definition | 205 |
 | fine-definition | 87 |
-| owner-unreviewed | 336 |
-| shared-rule-owner | 55 |
+| owner-unreviewed | 334 |
+| shared-rule-owner | 58 |
 
 fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；shared-rule-owner = 精确能力已绑定共用规则入口及适用性档案；owner-unreviewed = 还需定位实际入口。任何一种归属证据均不等于生命周期验收通过。
 同卡同触发只算候选，不能把另一能力的程序继承为本能力已覆盖。无能力卡单列，不能从分母中静默消失。
@@ -31,6 +31,13 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 - negated：该持续能力没有独立入栈、支付或响应窗口，不能作为堆叠效果单独无效；对进攻事件的无效仍属战斗动作验收。
 - payment-cancel：本段没有费用或支付Prompt；相邻付费扩展射程是另一段，不继承此豁免。
 - single-candidate-choice：本段不创建对象选择Prompt；玩家主动提交进攻目标由进攻规则处理，不能自动替玩家进攻。
+
+### private-zone:strict-hand-entry
+
+精确绑定能力数：3。运行入口：declaration = L12GameEngine.CreateActivationStepPrompt；dependent-continuation = L12GameEngine.QueueNextCompositeSegment；failed-settlement = L12GameEngine.RecordTargetSettlementFailure；settlement-revalidation = L12GameEngine.TrySummonFromHand；source-failure = L12GameEngine.RecordResolutionFailure。
+
+- replacement：已声明的手牌实例若离开手牌区，结算仅失败；不得从墓地、牌库或其他手牌替代。
+- slot-invalidated：已声明位置失效时不得覆盖或改选；本段记录失败。
 
 ### rule-action:cavalry-move
 
@@ -211,7 +218,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0103 李靖 #1 | S01-0103:ability:enter:46c35ac58c1f7cec | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → cost:cost.return-morale → resolution:operation.move-zone → resolution:operation.ready → resolution:visibility.policy → resolution:operation.composite-flow | 2 | 登场时 可展示牌库顶部1张牌。随后，选择将其放回牌库顶部或底部。若展示卡牌为费用不高于5的【天廷】军团，可返还1士气，将其活跃登场作为代替 |
 | S01-0104 韩信 #1 | S01-0104:ability:static:a91d7d481db612a9 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone | 0 | 若我方士气少于对方，此军团登场费用-1 |
 | S01-0104 韩信 #2 | S01-0104:ability:attack:dca347f8b8ee1cd7 | attack/triggered | composite-definition | 进攻时 可返还1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale → resolution:operation.damage-master → resolution:operation.modify-troops → resolution:operation.keyword → duration:duration.apply → resolution:operation.composite-flow | 1 | 进攻时 可返还1士气：此军团本回合兵力+1000，并获得强攻。（进攻对主宰造成额外1点伤害） |
-| S01-0105 刘备 #1 | S01-0105:ability:enter:ee4ec5ee9f9e1cce | enter/triggered | composite-definition | 登场时 可返还1士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.return-morale → resolution:operation.move-zone → resolution:operation.ready → resolution:operation.composite-flow | 1 | 登场时 可返还1士气：选择将手牌中1张&lt;关羽&gt;或&lt;张飞&gt;活跃登场 |
+| S01-0105 刘备 #1 | S01-0105:ability:enter:ee4ec5ee9f9e1cce | enter/triggered | shared-rule-owner | 登场时 可返还1士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.return-morale → resolution:operation.move-zone → resolution:operation.ready → resolution:operation.composite-flow | 1 | 登场时 可返还1士气：选择将手牌中1张&lt;关羽&gt;或&lt;张飞&gt;活跃登场 |
 | S01-0105 刘备 #2 | S01-0105:ability:active:0e81cd47a6221fd8 | active/activated | owner-unreviewed | 主动休整 可返还1士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.return-morale → cost:cost.rest-source → resolution:operation.move-zone → resolution:operation.shuffle → resolution:visibility.policy | 4 | 主动休整 可返还1士气：查看我方牌库，选择1张&lt;关羽&gt;或&lt;张飞&gt;展示并加入手牌。随后，重洗牌库 |
 | S01-0106 关羽 #1 | S01-0106:ability:static:95d8e97d936cec37 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move | 0 | 我方 回合1次 可进行1次位移 |
 | S01-0106 关羽 #2 | S01-0106:ability:attack:0aff2fe7a3f9b83e | attack/triggered | composite-definition | 进攻时 可返还1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale → resolution:operation.modify-troops → resolution:operation.attack-rule → resolution:operation.keyword → duration:duration.apply → resolution:operation.composite-flow | 1 | 进攻时 可返还1士气：此军团本回合兵力+1000，并获得必中。（进攻无法被抵挡/支援） |
@@ -240,7 +247,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0115 荆轲 #2 | S01-0115:ability:enter:9207ec0f85a3108c | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.draw | 1 | 登场时 若我方士气不高于7，可抽取1张牌 |
 | S01-0115 荆轲 #3 | S01-0115:ability:death:02a4c394eda56050 | death/triggered | composite-definition | 阵亡时 可返还1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:cost.return-morale → resolution:operation.composite-flow | 1 | 阵亡时 可返还1士气：击杀对方最多1张兵力不高于2000的军团 |
 | S01-0116 西施 #1 | S01-0116:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
-| S01-0116 西施 #2 | S01-0116:ability:static:74c527aaab5e91cd | static/continuous | owner-unreviewed | 我方回合 可弃置此军团并返还1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → cost:cost.return-morale → cost:cost.discard → resolution:operation.draw → resolution:operation.move-zone → resolution:operation.ready | 2 | 我方回合 可弃置此军团并返还1士气：选择手牌中最多1张&lt;西施&gt;以外兵力不高于2000的军团活跃登场。随后抽取1张牌 |
+| S01-0116 西施 #2 | S01-0116:ability:static:74c527aaab5e91cd | static/continuous | shared-rule-owner | 我方回合 可弃置此军团并返还1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → cost:cost.return-morale → cost:cost.discard → resolution:operation.draw → resolution:operation.move-zone → resolution:operation.ready | 2 | 我方回合 可弃置此军团并返还1士气：选择手牌中最多1张&lt;西施&gt;以外兵力不高于2000的军团活跃登场。随后抽取1张牌 |
 | S01-0117 山河社稷图 #1 | S01-0117:ability:enter:62b39a2956892655 | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.add-morale | 1 | 登场时 从士气牌库追加1张活跃的士气 |
 | S01-0117 山河社稷图 #2 | S01-0117:ability:active:00ffc1c99afdac78 | active/activated | owner-unreviewed | 主动休整 选择以下一项。返还1活跃士气 | trigger:trigger.observe → condition:condition.expression → target:selection.target → target:selection.mode → cost:cost.return-morale → cost:cost.rest-source → cost:cost.discard → resolution:operation.draw → resolution:operation.move-zone → resolution:operation.ready → resolution:visibility.policy | 5 | 主动休整 选择以下一项。返还1活跃士气：抽取1张牌。弃置1张手牌：查看牌库顶部3张牌，选择其中1张【天廷】卡牌，展示并加入手牌，其余卡牌自选顺序返回牌库顶部或底部 |
 | S01-0118 神妙行军 #1 | S01-0118:ability:play:5a3bc969a95c080b | play/activated | composite-definition | 选择我方前排1张军团，本回合兵力+2000。可返还2士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → cost:cost.return-morale → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 3 | 选择我方前排1张军团，本回合兵力+2000。可返还2士气：击杀对方1张兵力不高于6000的军团 |
@@ -291,7 +298,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0212 陵墓守卫 #2 | S01-0212:ability:static:025749085872cdff | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → resolution:legacy.resolve | 0 | 我方回合 此军团在战场上可视为1张士气 |
 | S01-0212 陵墓守卫 #3 | S01-0212:ability:static:41e4f8ffab1c36b2 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.modify-troops | 0 | 对方回合 此军团费用+1，位于前排时兵力+1000. |
 | S01-0213 锡瓦的卡巴 #1 | S01-0213:ability:static:9ba2f4f5354a2a05 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」进攻距离+1，远程进攻无损。 |
-| S01-0213 锡瓦的卡巴 #2 | S01-0213:ability:after-attack:55cfe31dc7ed5969 | after-attack/triggered | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:cost.pay-morale → resolution:operation.move-zone → resolution:operation.ready → resolution:operation.rest | 1 | 对方 进攻后：此军团可从手牌无需消耗费用活跃登场。若进行以上操作，则下个我方重置阶段，我方1张休整的士气无法转为活跃 |
+| S01-0213 锡瓦的卡巴 #2 | S01-0213:ability:after-attack:55cfe31dc7ed5969 | after-attack/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:cost.pay-morale → resolution:operation.move-zone → resolution:operation.ready → resolution:operation.rest | 1 | 对方 进攻后：此军团可从手牌无需消耗费用活跃登场。若进行以上操作，则下个我方重置阶段，我方1张休整的士气无法转为活跃 |
 | S01-0214 克利奥帕特拉七世 #1 | S01-0214:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
 | S01-0214 克利奥帕特拉七世 #2 | S01-0214:ability:active:30e47404439f2371 | active/activated | owner-unreviewed | 主动休整 可消耗1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → cost:cost.rest-source → resolution:operation.move-zone → resolution:operation.ready → resolution:special.domain → resolution:legacy.resolve | 1 | 主动休整 可消耗1士气：将墓地1张&lt;陵墓守卫&gt;活跃登场 |
 | S01-0215 安卡神碑 #1 | S01-0215:ability:enter:d233a71e98f8438c | enter/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 1 | 登场时 选择我方1张&lt;陵墓守卫&gt;，本回合兵力+2000。 |

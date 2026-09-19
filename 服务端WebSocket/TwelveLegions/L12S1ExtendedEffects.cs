@@ -740,8 +740,13 @@ public sealed partial class L12GameEngine
                     {
                         var declared = item.Data.GetValueOrDefault("target", string.Empty)
                             .Split('|', StringSplitOptions.RemoveEmptyEntries);
-                        if (declared.Length == 3 && ParseEffectEntryBattlefieldChoice(declared[1]) is { } battlefield)
-                            SummonFromHand(player, declared[0], declared[2], tapped: false, battlefield);
+                        if (declared.Length != 3 || ParseEffectEntryBattlefieldChoice(declared[1]) is not { } battlefield)
+                            RecordResolutionFailure(item, "已声明的手牌军团或登场战场格式不完整");
+                        else if (!TrySummonFromHand(player, declared[0], declared[2], tapped: false, battlefield,
+                                     candidate => candidate.CardType == "legion"
+                                         && candidate.CardId != "S01-0116" && candidate.Troops <= 2000))
+                            RecordTargetSettlementFailure(item, declared[0],
+                                "已声明的手牌军团、登场战场或位置在响应逆结算后失效；不改选其他对象");
                         FinishStackItem(item); return true;
                     }
                     case "xishi-draw":
@@ -905,18 +910,32 @@ public sealed partial class L12GameEngine
                 ? playerIndex
                 : null;
 
-    private void SummonFromHand(L12PlayerState player, string cardId, string slotChoice, bool tapped, int? targetPlayerIndex = null)
+    /// <summary>
+    /// 严格结算已声明的手牌登场：只能移动同一张仍在手牌区的实例，不能把它在响应
+    /// 期间移入墓地/牌库后的同实例当作替代对象，也不能覆盖或改选位置。调用方据返回值
+    /// 决定本效果段是否失败及是否可继续“随后”段。
+    /// </summary>
+    private bool TrySummonFromHand(L12PlayerState player, string cardId, string slotChoice, bool tapped,
+        int? targetPlayerIndex = null, Func<L12CardInstance, bool>? candidateRule = null)
     {
-        var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == cardId); if (card is null) return;
+        var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == cardId
+            && candidate.CardType == "legion" && (candidateRule?.Invoke(candidate) ?? true));
+        if (card is null) return false;
         var battlefield = targetPlayerIndex ?? player.PlayerIndex;
-        if (battlefield != player.PlayerIndex && card.CardId != "S01-0004") return;
+        if (battlefield < 0 || battlefield >= State.Players.Length
+            || battlefield != player.PlayerIndex && card.CardId != "S01-0004"
+            || !EmptySlots(State.Players[battlefield]).Contains(slotChoice, StringComparer.OrdinalIgnoreCase)) return false;
         var (row, slot) = ParseSlot(slotChoice);
-        if (row is < 0 or > 1 || slot is < 0 or > 2 || State.Players[battlefield].Field[row][slot] is not null) return;
         player.Hand.Remove(card); card.OwnerIndex ??= player.PlayerIndex; card.Tapped = tapped; card.SummonRound = State.Round;
         State.Players[battlefield].Field[row][slot] = card;
         AddEvent("put", battlefield, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
         CompleteEffectLegionEntry(battlefield, card, "hand");
+        return true;
     }
+
+    private void SummonFromHand(L12PlayerState player, string cardId, string slotChoice, bool tapped,
+        int? targetPlayerIndex = null)
+        => _ = TrySummonFromHand(player, cardId, slotChoice, tapped, targetPlayerIndex);
 
     private static bool IsCounterTactic(string cardId) => L12CounterTacticRules.Contains(cardId);
 
@@ -1122,9 +1141,16 @@ public sealed partial class L12GameEngine
             case "锡瓦的卡巴":
                 if (!string.IsNullOrWhiteSpace(PublicTriggerDeclared(item, "entrySlot")))
                 {
-                    SummonFromHand(player, item.SourceInstanceId, PublicTriggerDeclared(item, "entrySlot"), false);
-                    var lockedMorale = player.Morale.FirstOrDefault(card => card.Tapped);
-                    if (lockedMorale is not null) lockedMorale.CannotUntapUntilRound = State.Round + 1;
+                    if (TrySummonFromHand(player, item.SourceInstanceId,
+                            PublicTriggerDeclared(item, "entrySlot"), false, candidateRule:
+                            candidate => candidate.CardId == "S01-0213"))
+                    {
+                        var lockedMorale = player.Morale.FirstOrDefault(card => card.Tapped);
+                        if (lockedMorale is not null) lockedMorale.CannotUntapUntilRound = State.Round + 1;
+                    }
+                    else
+                        RecordResolutionFailure(item,
+                            "来源已不在手牌区或预先选择的登场位置在响应逆结算后失效；不执行下个重置阶段的士气锁定");
                     FinishStackItem(item); return;
                 }
                 FinishStackItem(item); return;

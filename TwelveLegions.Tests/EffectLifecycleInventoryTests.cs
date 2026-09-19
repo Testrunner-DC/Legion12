@@ -340,6 +340,20 @@ public sealed class EffectLifecycleInventoryTests
     }
 
     [Fact]
+    public void StrictHandEntryProfileBindsOnlyTheThreeReviewedPrivateEntrySegments()
+    {
+        var rows = Build(Catalog).Abilities.Where(item => item.Profile?.Id == "private-zone:strict-hand-entry").ToArray();
+        Assert.Equal(EffectLifecycleProfiles.StrictHandEntryAbilityIds.Order(),
+            rows.Select(row => row.Definition.AbilityId).Order());
+        Assert.All(rows, row =>
+        {
+            Assert.Equal("shared-rule-owner", row.EntryEvidence);
+            Assert.Equal("TrySummonFromHand", row.Profile!.RuntimeOwners["settlement-revalidation"]);
+            Assert.Contains("stale-instance-no-replacement", row.Profile.AdditionalChecks);
+        });
+    }
+
+    [Fact]
     public void CommittedInventoryMatchesRuntimeDefinitions()
     {
         var inventory = Build(Catalog);

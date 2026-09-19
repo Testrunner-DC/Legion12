@@ -155,6 +155,62 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         Assert.True(Assert.IsType<bool>(method.Invoke(null, [cardId, trigger, null])));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("L12Evidence", "card:S01-0213")]
+    [Trait("L12Evidence", "entry:strict-hand-entry-settlement")]
+    public void SiwaKabaLocksMoraleOnlyWhenItsDeclaredHandEntrySucceeds(bool staleBeforeSettlement)
+    {
+        var game = Create(staleBeforeSettlement ? 8220 : 8219);
+        var player = game.State.Players[0];
+        var kaba = Card("S01-0213", $"batch6kb-kaba-strict-{staleBeforeSettlement}");
+        player.Hand.Add(kaba);
+        var morale = new L12MoraleCard
+        {
+            CardId = "S01-02C1",
+            InstanceId = $"batch6kb-kaba-morale-{staleBeforeSettlement}",
+            Tapped = true,
+        };
+        player.Morale.Add(morale);
+        var beforeLock = morale.CannotUntapUntilRound;
+        var item = new L12StackItem
+        {
+            StackItemId = $"batch6kb-kaba-stack-{staleBeforeSettlement}",
+            Controller = 0,
+            SourceInstanceId = kaba.InstanceId,
+            SourceCardId = kaba.CardId,
+            SourceName = kaba.Name,
+            SourceSnapshot = kaba,
+            Trigger = "reaction",
+            Text = "锡瓦的卡巴进攻后效果",
+        };
+        item.Data["atomicFlow"] = "锡瓦的卡巴";
+        item.Data["declared:entrySlot"] = "0:0";
+        game.State.EffectStack.Add(item);
+        if (staleBeforeSettlement)
+        {
+            player.Hand.Remove(kaba);
+            player.Graveyard.Add(kaba);
+        }
+
+        Invoke(game, "ResolveS1ReactionEffect", item);
+
+        if (staleBeforeSettlement)
+        {
+            Assert.Contains(kaba, player.Graveyard);
+            Assert.Null(player.Field[0][0]);
+            Assert.Equal(beforeLock, morale.CannotUntapUntilRound);
+            Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+                && entry.Text.Contains("不执行下个重置阶段的士气锁定", StringComparison.Ordinal));
+        }
+        else
+        {
+            Assert.Same(kaba, player.Field[0][0]);
+            Assert.Equal(game.State.Round + 1, morale.CannotUntapUntilRound);
+        }
+    }
+
     [Fact]
     [Trait("L12Evidence", "card:S01-0223")]
     public void ImmortalGiftUsesCurrentCostAndMayDeclineTheWholeReaction()

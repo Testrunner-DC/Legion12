@@ -368,8 +368,12 @@ public sealed partial class L12GameEngine
         {
             var battlefield = ParseEffectEntryBattlefieldChoice(PublicTriggerDeclared(item, "entryBattlefield"))
                 ?? item.Controller;
-            SummonFromHand(player, PublicTriggerDeclared(item, "entryCard"),
-                PublicTriggerDeclared(item, "entrySlot"), tapped: false, battlefield);
+            var entryCard = PublicTriggerDeclared(item, "entryCard");
+            if (!TrySummonFromHand(player, entryCard,
+                    PublicTriggerDeclared(item, "entrySlot"), tapped: false, battlefield,
+                    candidate => candidate.CardId is "S01-0106" or "S01-0107"))
+                RecordTargetSettlementFailure(item, entryCard,
+                    "已声明的关羽/张飞或登场位置在响应逆结算后失效；不改选其他对象");
             FinishStackItem(item);
             return;
         }

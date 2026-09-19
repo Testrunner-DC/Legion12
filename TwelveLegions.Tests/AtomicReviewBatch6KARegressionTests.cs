@@ -1,3 +1,4 @@
+using System.Reflection;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -111,6 +112,13 @@ public sealed class AtomicReviewBatch6KARegressionTests
     {
         for (var safety = 0; safety < 80 && game.State.PendingPrompts.FirstOrDefault()?.Kind == "response"; safety++)
             Resolve(game, "pass");
+    }
+
+    private static object? Invoke(object target, string name, params object?[] args)
+    {
+        var method = target.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new MissingMethodException(target.GetType().Name, name);
+        return method.Invoke(target, args);
     }
 
     private static L12StackItem PassUntilFlow(L12GameEngine game, string flow)
@@ -347,6 +355,77 @@ public sealed class AtomicReviewBatch6KARegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "card:S01-0116")]
+    [Trait("L12Evidence", "entry:strict-hand-entry-settlement")]
+    public void XishiDoesNotReplaceAStaleDeclaredHandLegionAndStopsItsThenDraw()
+    {
+        var game = Create(8116);
+        var player = game.State.Players[0];
+        var xishi = Card("S01-0116", "batch6ka-xishi-stale-source");
+        var declared = Card("S01-0003", "batch6ka-xishi-stale-hand");
+        player.Field[0][0] = xishi;
+        player.Hand.Add(declared);
+        player.Library.Add(Card("S01-0003", "batch6ka-xishi-stale-draw"));
+        AddReadyMorale(player, 1);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", xishi.InstanceId,
+            Ability: "xishiExchange")).Accepted);
+        Resolve(game, declared.InstanceId);
+        Resolve(game, "0:0");
+
+        var summon = Assert.Single(game.State.EffectStack,
+            item => item.Data.GetValueOrDefault("atomicFlow") == "xishi-summon");
+        Assert.Same(declared, Assert.Single(player.Hand));
+        player.Hand.Remove(declared);
+        player.Graveyard.Add(declared);
+
+        PassResponses(game);
+
+        Assert.DoesNotContain(declared, player.Field.SelectMany(row => row));
+        Assert.Contains(declared, player.Graveyard);
+        Assert.DoesNotContain(player.Hand, card => card.InstanceId == "batch6ka-xishi-stale-draw");
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == xishi.InstanceId)
+            && entry.EffectResultStatus == "failed");
+        Assert.DoesNotContain(game.State.EffectStack,
+            item => item.Data.GetValueOrDefault("atomicFlow") == "xishi-draw");
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0116")]
+    [Trait("L12Evidence", "entry:strict-hand-entry-settlement")]
+    public void XishiRevalidatesTheDeclaredLegionsTroopsBeforeEntry()
+    {
+        var game = Create(8117);
+        var player = game.State.Players[0];
+        var xishi = Card("S01-0116", "batch6ka-xishi-stale-troops-source");
+        var declared = Card("S01-0003", "batch6ka-xishi-stale-troops-hand");
+        player.Field[0][0] = xishi;
+        player.Hand.Add(declared);
+        player.Library.Add(Card("S01-0003", "batch6ka-xishi-stale-troops-draw"));
+        AddReadyMorale(player, 1);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", xishi.InstanceId,
+            Ability: "xishiExchange")).Accepted);
+        Resolve(game, declared.InstanceId);
+        Resolve(game, "0:0");
+
+        Assert.Single(game.State.EffectStack,
+            item => item.Data.GetValueOrDefault("atomicFlow") == "xishi-summon");
+        declared.Troops = 3000;
+        PassResponses(game);
+
+        Assert.Contains(declared, player.Hand);
+        Assert.DoesNotContain(declared, player.Field.SelectMany(row => row));
+        Assert.DoesNotContain(player.Hand, card => card.InstanceId == "batch6ka-xishi-stale-troops-draw");
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == xishi.InstanceId)
+            && entry.EffectResultStatus == "failed");
+        Assert.DoesNotContain(game.State.EffectStack,
+            item => item.Data.GetValueOrDefault("atomicFlow") == "xishi-draw");
+    }
+
+    [Fact]
     [Trait("L12Evidence", "card:S01-0105")]
     public void LiuBeiSearchAndSubsequentShuffleUseIndependentSegments()
     {
@@ -370,6 +449,68 @@ public sealed class AtomicReviewBatch6KARegressionTests
         PassResponses(game);
         Assert.DoesNotContain(game.State.PendingPrompts,
             prompt => prompt.Data.GetValueOrDefault("action") == "liubei-search");
+    }
+
+    [Theory]
+    [InlineData("none")]
+    [InlineData("source")]
+    [InlineData("slot")]
+    [Trait("L12Evidence", "card:S01-0105")]
+    [Trait("L12Evidence", "entry:strict-hand-entry-settlement")]
+    public void LiuBeiSettlesOnlyWhenTheDeclaredBrotherAndSlotRemainValid(string staleMode)
+    {
+        var game = Create(staleMode switch { "source" => 8120, "slot" => 8121, _ => 8119 });
+        var player = game.State.Players[0];
+        var liuBei = Card("S01-0105", $"batch6ka-liubei-strict-{staleMode}");
+        var guanYu = Card("S01-0106", $"batch6ka-guanyu-strict-{staleMode}");
+        player.Field[0][0] = liuBei;
+        player.Hand.Add(guanYu);
+        var item = new L12StackItem
+        {
+            StackItemId = $"batch6ka-liubei-stack-{staleMode}",
+            Controller = 0,
+            SourceInstanceId = liuBei.InstanceId,
+            SourceCardId = liuBei.CardId,
+            SourceName = liuBei.Name,
+            SourceSnapshot = liuBei,
+            Trigger = "enter",
+            Text = "刘备登场效果",
+        };
+        item.Data["declared:entryCard"] = guanYu.InstanceId;
+        item.Data["declared:entryBattlefield"] = "battlefield:0";
+        item.Data["declared:entrySlot"] = "0:1";
+        game.State.EffectStack.Add(item);
+        if (staleMode == "source")
+        {
+            player.Hand.Remove(guanYu);
+            player.Graveyard.Add(guanYu);
+        }
+        else if (staleMode == "slot")
+        {
+            player.Field[0][1] = Card("S01-0003", "batch6ka-liubei-slot-occupant");
+        }
+
+        Invoke(game, "BeginLiuBeiEnter", item);
+
+        if (staleMode == "source")
+        {
+            Assert.Contains(guanYu, player.Graveyard);
+            Assert.Null(player.Field[0][1]);
+            Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+                && entry.Text.Contains("不改选其他对象", StringComparison.Ordinal));
+        }
+        else if (staleMode == "slot")
+        {
+            Assert.Contains(guanYu, player.Hand);
+            Assert.Equal("batch6ka-liubei-slot-occupant", player.Field[0][1]?.InstanceId);
+            Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+                && entry.Text.Contains("不改选其他对象", StringComparison.Ordinal));
+        }
+        else
+        {
+            Assert.Same(guanYu, player.Field[0][1]);
+            Assert.DoesNotContain(guanYu, player.Hand);
+        }
     }
 
     [Fact]

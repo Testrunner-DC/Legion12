@@ -44,6 +44,28 @@ internal static class EffectLifecycleProfiles
         new SortedDictionary<string, string>(StringComparer.Ordinal))
         { AdditionalChecks = ["private-hand-redaction", "independent-target-settlement", "slot-invalidated"] };
 
+    internal static readonly string[] StrictHandEntryAbilityIds =
+    [
+        "S01-0105:ability:enter:ee4ec5ee9f9e1cce",
+        "S01-0116:ability:static:74c527aaab5e91cd",
+        "S01-0213:ability:after-attack:55cfe31dc7ed5969",
+    ];
+
+    private static readonly L12LifecycleProfile StrictHandEntry = new("private-zone:strict-hand-entry",
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["declaration"] = "CreateActivationStepPrompt",
+            ["settlement-revalidation"] = "TrySummonFromHand",
+            ["failed-settlement"] = "RecordTargetSettlementFailure",
+            ["source-failure"] = "RecordResolutionFailure",
+            ["dependent-continuation"] = "QueueNextCompositeSegment",
+        },
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["replacement"] = "已声明的手牌实例若离开手牌区，结算仅失败；不得从墓地、牌库或其他手牌替代。",
+            ["slot-invalidated"] = "已声明位置失效时不得覆盖或改选；本段记录失败。",
+        }) { AdditionalChecks = ["private-hand-redaction", "settlement-slot-invalidated", "stale-instance-no-replacement", "then-requires-success"] };
+
     internal static readonly string[] NativeCavalryAbilityIds =
     [
         "S01-0310:ability:active:0a0575206e996652",
@@ -164,6 +186,7 @@ internal static class EffectLifecycleProfiles
             .ToDictionary(ability => ability.AbilityId, StringComparer.Ordinal);
         ValidateOwners(DesertHandSummon);
         ValidateOwners(CounterDeployment);
+        ValidateOwners(StrictHandEntry);
         ValidateOwners(NativeCavalry);
         ValidateOwners(PrintedRanged);
         var bindings = new Dictionary<string, L12LifecycleProfile>(StringComparer.Ordinal);
@@ -179,6 +202,14 @@ internal static class EffectLifecycleProfiles
                 || counterDeployment.ExecutionModel is not ("spell" or "triggered"))
                 throw new InvalidOperationException($"Stale reviewed counter-deployment profile: {id}");
             bindings.Add(id, CounterDeployment);
+        }
+        foreach (var id in StrictHandEntryAbilityIds)
+        {
+            if (!abilities.TryGetValue(id, out var strictHandEntry)
+                || strictHandEntry.CardId is not ("S01-0105" or "S01-0116" or "S01-0213")
+                || strictHandEntry.ExecutionModel is not ("continuous" or "triggered"))
+                throw new InvalidOperationException($"Stale reviewed strict hand-entry profile: {id}");
+            bindings.Add(id, StrictHandEntry);
         }
         foreach (var id in NativeCavalryAbilityIds)
         {

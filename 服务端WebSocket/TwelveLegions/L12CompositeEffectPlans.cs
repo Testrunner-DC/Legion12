@@ -293,7 +293,7 @@ internal static partial class L12CompositeEffectPlans
                 new("xishi-summon", "西施：将已声明的其他军团活跃登场",
                     "mode:summon", PublicTargetKeys: ["entryCard", "entrySlot"],
                     RequiredDeclarationKey: "summonMode"),
-                new("xishi-draw", "西施：随后抽取1张牌"),
+                new("xishi-draw", "西施：随后抽取1张牌", RequiresPreviousSuccess: true),
             ],
             ["active:S01-01M1:drawCycle"] =
             [
