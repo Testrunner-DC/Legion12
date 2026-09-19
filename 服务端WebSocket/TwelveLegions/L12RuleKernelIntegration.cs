@@ -1453,6 +1453,59 @@ public sealed partial class L12GameEngine
         return resolved;
     }
 
+    private bool TryGetDeclaredPublicLegion(int targetController, string? targetId,
+        Func<L12CardInstance, bool>? predicate, out L12PlayerState player,
+        out L12CardInstance target, out int row, out int slot)
+    {
+        player = targetController is >= 0 and <= 1 ? State.Players[targetController] : State.Players[0];
+        target = null!;
+        row = -1;
+        slot = -1;
+        if (targetController is < 0 or > 1 || string.IsNullOrWhiteSpace(targetId)) return false;
+        var current = FindOnField(player, targetId, out row, out slot);
+        if (current is null || !IsFieldLegion(current) || current.Hidden
+            || !(predicate?.Invoke(current) ?? true)) return false;
+        target = current;
+        return true;
+    }
+
+    /// <summary>
+    /// 结算预先公开声明的军团位移。目标、控制方、当前军团身份和目的地均重新读取；
+    /// 失败时不覆盖、不补选，已支付费用不返还。调用方可在移动提交后、派生位移触发前追加同段结果。
+    /// </summary>
+    private bool TryMoveDeclaredPublicLegion(L12StackItem item, int targetController,
+        string? targetId, string? destination, Func<L12CardInstance, bool>? predicate,
+        bool requireAdjacent, string failureReason, Func<L12CardInstance, string> successText,
+        Action<L12CardInstance>? afterMove = null, bool recordFailure = true)
+    {
+        if (!TryGetDeclaredPublicLegion(targetController, targetId, predicate,
+                out var player, out var target, out var fromRow, out var fromSlot))
+        {
+            if (recordFailure) RecordTargetSettlementFailure(item, targetId, failureReason);
+            return false;
+        }
+
+        var (toRow, toSlot) = ParseSlot(destination ?? string.Empty);
+        var validDestination = toRow is >= 0 and <= 1 && toSlot is >= 0 and <= 2
+            && (toRow != fromRow || toSlot != fromSlot)
+            && player.Field[toRow][toSlot] is null
+            && (!requireAdjacent || AdjacentEmptySlots(player, fromRow, fromSlot)
+                .Contains(destination!, StringComparer.OrdinalIgnoreCase));
+        if (!validDestination)
+        {
+            if (recordFailure) RecordTargetSettlementFailure(item, targetId, failureReason);
+            return false;
+        }
+
+        player.Field[fromRow][fromSlot] = null;
+        player.Field[toRow][toSlot] = target;
+        target.LastMovedTurn = State.TurnSerial;
+        afterMove?.Invoke(target);
+        AddEvent("move", item.Controller, successText(target), target);
+        RecordLegionMovement(targetController, target, fromRow, toRow);
+        return true;
+    }
+
     private bool IsEnemyTargetLegal(int controller, string? instanceId, Func<L12CardInstance, bool> predicate)
         => DeclaredEnemyTarget(controller, instanceId, predicate) is not null;
 

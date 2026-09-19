@@ -136,8 +136,8 @@ public sealed class AtomicReviewBatch4RegressionTests
         Assert.True(morale.Tapped);
         Assert.Contains(target, player.Graveyard);
         Assert.Null(player.Field[0][1]);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
-            && entry.Text.Contains("不回滚", StringComparison.Ordinal));
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("不返还", StringComparison.Ordinal));
     }
 
     [Fact]

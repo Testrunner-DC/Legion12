@@ -338,7 +338,11 @@ public sealed partial class L12GameEngine
             case "萨拉丁":
                 if (!string.IsNullOrWhiteSpace(PublicTriggerDeclared(item, "moveTarget")))
                 {
-                    MoveOwnCardToSlot(player, PublicTriggerDeclared(item, "moveTarget"), PublicTriggerDeclared(item, "moveSlot"));
+                    _ = TryMoveDeclaredPublicLegion(item, item.Controller,
+                        PublicTriggerDeclared(item, "moveTarget"), PublicTriggerDeclared(item, "moveSlot"),
+                        target => target.CardId == "S01-0212", requireAdjacent: false,
+                        "所选对象已离场、不再是公开军团、不再是〈陵墓守卫〉或声明位置已失效",
+                        target => $"萨拉丁使〈{target.Name}〉位移");
                     FinishStackItem(item); return true;
                 }
                 FinishStackItem(item); return true;
@@ -388,7 +392,11 @@ public sealed partial class L12GameEngine
                 if (item.Data.TryGetValue("declaredTargets", out var saladinDeclared))
                 {
                     var selected = saladinDeclared.Split('|', StringSplitOptions.RemoveEmptyEntries);
-                    if (selected.Length == 2) MoveOwnCardToSlot(player, selected[0], selected[1]);
+                    if (selected.Length == 2)
+                        _ = TryMoveDeclaredPublicLegion(item, item.Controller, selected[0], selected[1],
+                            target => target.CardId == "S01-0212", requireAdjacent: false,
+                            "所选对象已离场、不再是公开军团、不再是〈陵墓守卫〉或声明位置已失效",
+                            target => $"萨拉丁使〈{target.Name}〉位移");
                     FinishStackItem(item); return true;
                 }
                 FinishStackItem(item); return true;
@@ -1878,9 +1886,4 @@ public sealed partial class L12GameEngine
     private void SummonFromAnyPrivateZone(L12PlayerState player, string instanceId, string slotChoice, bool tapped)
         => _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, instanceId, slotChoice, tapped);
 
-    private void MoveOwnCardToSlot(L12PlayerState player, string instanceId, string slotChoice)
-    {
-        var card = FindOnField(player, instanceId, out var row, out var slot); if (card is null) return; var (targetRow, targetSlot) = ParseSlot(slotChoice); player.Field[row][slot] = null; player.Field[targetRow][targetSlot] = card; card.LastMovedTurn = State.TurnSerial;
-        RecordLegionMovement(player.PlayerIndex, card, row, targetRow);
-    }
 }

@@ -485,25 +485,11 @@ public sealed partial class L12GameEngine
                 var destination = PublicTriggerDeclared(item, "slot");
                 var targetController = int.TryParse(item.Data.GetValueOrDefault("targetPlayerIndex"), out var parsedController)
                     && parsedController is >= 0 and <= 1 ? parsedController : -1;
-                var targetPlayer = targetController >= 0 ? State.Players[targetController] : null;
-                var oldRow = -1;
-                var oldSlot = -1;
-                var legion = targetPlayer is null ? null
-                    : FindOnField(targetPlayer, targetId, out oldRow, out oldSlot);
-                if (legion is not null
-                    && legion.InstanceId != item.Data.GetValueOrDefault("moved")
-                    && AdjacentEmptySlots(targetPlayer!, oldRow, oldSlot).Contains(destination, StringComparer.OrdinalIgnoreCase))
-                {
-                    var (newRow, newSlot) = ParseSlot(destination);
-                    targetPlayer!.Field[oldRow][oldSlot] = null;
-                    targetPlayer.Field[newRow][newSlot] = legion;
-                    legion.LastMovedTurn = State.TurnSerial;
-                    AddTimedModifier(legion, 0, -1, ExpiryAtNextOwnEnd(item.Controller), "月读");
-                    AddEvent("move", item.Controller, $"月读使〈{legion.Name}〉位移1格", legion);
-                    RecordLegionMovement(targetController, legion, oldRow, newRow);
-                }
-                else
-                    AddEvent("effect-cancelled", item.Controller, "月读的公开位移目标或位置已失效；已支付费用不回滚");
+                _ = TryMoveDeclaredPublicLegion(item, targetController, targetId, destination,
+                    target => target.InstanceId != item.Data.GetValueOrDefault("moved"), requireAdjacent: true,
+                    "所选对象已离场、不再是公开军团、与触发位移对象相同或声明的相邻位置已失效；已支付费用不返还",
+                    target => $"月读使〈{target.Name}〉位移1格",
+                    target => AddTimedModifier(target, 0, -1, ExpiryAtNextOwnEnd(item.Controller), "月读"));
                 FinishStackItem(item);
                 return true;
             }

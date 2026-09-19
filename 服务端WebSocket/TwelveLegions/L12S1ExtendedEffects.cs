@@ -179,8 +179,10 @@ public sealed partial class L12GameEngine
                 {
                     var destinations = new[] { PublicTriggerDeclared(item, "moveSlot1"), PublicTriggerDeclared(item, "moveSlot2") };
                     if (declaredTargets.Length == 2
-                        && FindOnField(player, declaredTargets[0], out var firstRow, out var firstSlot) is { Tapped: true } first
-                        && FindOnField(player, declaredTargets[1], out var secondRow, out var secondSlot) is { Tapped: true } second
+                        && TryGetDeclaredPublicLegion(item.Controller, declaredTargets[0], card => card.Tapped,
+                            out _, out var first, out var firstRow, out var firstSlot)
+                        && TryGetDeclaredPublicLegion(item.Controller, declaredTargets[1], card => card.Tapped,
+                            out _, out var second, out var secondRow, out var secondSlot)
                         && destinations[0] == $"{secondRow}:{secondSlot}" && destinations[1] == $"{firstRow}:{firstSlot}")
                     {
                         player.Field[firstRow][firstSlot] = second;
@@ -192,8 +194,20 @@ public sealed partial class L12GameEngine
                         AddEvent("move", item.Controller, $"坂本龙马使{first.Name}与{second.Name}互换阵地", first, second);
                         FinishStackItem(item); return true;
                     }
+                    var moved = 0;
                     for (var index = 0; index < declaredTargets.Length; index++)
-                        MoveOwnCardToSlot(player, declaredTargets[index], destinations[index]);
+                        if (TryMoveDeclaredPublicLegion(item, item.Controller, declaredTargets[index],
+                                destinations.ElementAtOrDefault(index), null, requireAdjacent: false,
+                                "所选对象已离场、不再是公开军团或声明位置已失效",
+                                target => $"坂本龙马使〈{target.Name}〉位移", recordFailure: false))
+                            moved++;
+                    if (moved == 0)
+                        RecordTargetSettlementFailure(item, string.Join('|', declaredTargets),
+                            "全部已声明军团或位移位置在逆结算后失效");
+                    else if (moved < declaredTargets.Length)
+                        AddEvent("effect", item.Controller,
+                            $"〈坂本龙马〉有{declaredTargets.Length - moved}个已声明对象在逆结算后失效；其余对象继续结算",
+                            FindSource(item) is { } currentSource ? [currentSource] : []);
                     FinishStackItem(item); return true;
                 }
                 FinishStackItem(item); return true;
