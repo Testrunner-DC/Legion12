@@ -101,10 +101,11 @@ VITE_WS_URL=ws://<主机IP>:8080/ws
 
 ## 验证
 
-在仓库根目录运行后端规则回归：
+在仓库根目录运行后端规则与平台回归：
 
 ```powershell
 dotnet test ".\TwelveLegions.Tests\TwelveLegions.Tests.csproj"
+dotnet test ".\TwelveLegions.Platform.Tests\TwelveLegions.Platform.Tests.csproj"
 ```
 
 运行前端 UI 契约、类型检查和生产构建：
@@ -137,7 +138,8 @@ node .\scripts\ws-smoke.mjs
 Legion12/
 ├─ opcgpro-vue/             Vue 前端、官网与对战界面
 ├─ 服务端WebSocket/          ASP.NET Core 服务端与规则内核
-├─ TwelveLegions.Tests/     十二军团规则和平台回归测试
+├─ TwelveLegions.Tests/     十二军团规则与对局回归测试
+├─ TwelveLegions.Platform.Tests/ 十二军团平台、后台与控制面回归测试
 ├─ scripts/                 数据同步、资源审计与联机冒烟脚本
 └─ docs/                    协议、规则审计、卡效状态和修复记录
 ```

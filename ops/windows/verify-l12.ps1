@@ -110,7 +110,7 @@ try {
     # and temporary paths cannot race during teardown.
     Invoke-External dotnet test ".\TwelveLegions.Tests\TwelveLegions.Tests.csproj" --configuration Release '--' 'xUnit.ParallelizeTestCollections=false'
     Write-Host "[L12 验证] 运行平台持久化测试..."
-    Invoke-External dotnet test ".\服务端WebSocket.Tests\GrandUMIServer.Tests.csproj" --configuration Release --filter "FullyQualifiedName~PlatformStoreTests|FullyQualifiedName~ControlPlane" '--' 'xUnit.ParallelizeTestCollections=false'
+    Invoke-External dotnet test ".\TwelveLegions.Platform.Tests\TwelveLegions.Platform.Tests.csproj" --configuration Release '--' 'xUnit.ParallelizeTestCollections=false'
 
     Write-Host "[L12 验证] 在隔离目录安装锁定依赖并构建前端..."
     $frontendSourceRoot = Join-Path $repoRoot "opcgpro-vue"

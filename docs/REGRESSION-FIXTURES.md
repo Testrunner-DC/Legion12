@@ -24,7 +24,7 @@
 ## 推荐位置
 
 - 纯规则：`TwelveLegions.Tests` 内的对应规则测试类；
-- WebSocket、顺序与恢复：`服务端WebSocket.Tests/Fixtures/`；
+- WebSocket、顺序与恢复：`TwelveLegions.Tests` 内对应测试类及受治理的脱敏样例；
 - 前端只读回放：`opcgpro-vue/src/data/fixtures/`；
 - 跨层发布回归：通过现有 UI 契约和 WebSocket 冒烟脚本读取经过匿名化的固定样例。
 

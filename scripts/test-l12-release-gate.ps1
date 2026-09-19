@@ -99,7 +99,7 @@ Assert-True ($dryRun.Output.Contains(".\ops\windows\verify-l12.ps1")) "Release d
 $verifySource = Get-Content -LiteralPath $verifyScript -Raw
 $deploySource = Get-Content -LiteralPath $deployScript -Raw
 Assert-True (([regex]::Matches($verifySource, 'Invoke-External dotnet test "\.\\TwelveLegions\.Tests')).Count -eq 1) "Commit-level verifier must run full rules exactly once."
-Assert-True (([regex]::Matches($verifySource, 'Invoke-External dotnet test [^\r\n]+PlatformStoreTests')).Count -eq 1) "Commit-level verifier must run filtered platform tests exactly once."
+Assert-True (([regex]::Matches($verifySource, 'Invoke-External dotnet test "\.\\TwelveLegions\.Platform\.Tests')).Count -eq 1) "Commit-level verifier must run the dedicated platform suite exactly once."
 Assert-True (([regex]::Matches($verifySource, 'Invoke-External \$npmExecutable ci')).Count -eq 1) "Commit-level verifier must install the isolated frontend exactly once."
 Assert-True (([regex]::Matches($verifySource, 'Invoke-External \$npmExecutable run build')).Count -eq 1) "Commit-level verifier must build the isolated frontend exactly once."
 Assert-True ($deploySource.Contains('$cardAssetsProbe = if ($ServerArtifactRoot -eq "/www/legion12")')) "Deployment must probe the server content-addressed card cache before upload."

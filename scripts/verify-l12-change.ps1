@@ -174,7 +174,7 @@ try {
         if ($path.EndsWith(".cs", [StringComparison]::OrdinalIgnoreCase) -and -not $path.StartsWith("TwelveLegions.Tests/", [StringComparison]::OrdinalIgnoreCase)) {
             $backendChanged = $true
         }
-        if ($path.EndsWith("GrandUMIServer.Tests.csproj", [StringComparison]::OrdinalIgnoreCase) -or $path.Contains("WebSocket.Tests/") -or $path.Contains("WebSocketBridge")) {
+        if ($path.StartsWith("TwelveLegions.Platform.Tests/", [StringComparison]::OrdinalIgnoreCase)) {
             $platformChanged = $true
         }
         if ($path.Contains("/TwelveLegions/") -and $path.EndsWith(".cs", [StringComparison]::OrdinalIgnoreCase)) {
@@ -251,8 +251,8 @@ try {
             Invoke-Checked "L12 focused rule tests" "dotnet" @("test", ".\TwelveLegions.Tests\TwelveLegions.Tests.csproj", "--no-restore", "--", "xUnit.ParallelizeTestCollections=false")
         }
         if ($platformChanged) {
-            $platformProject = Get-ChildItem -LiteralPath $repoRoot -Filter "GrandUMIServer.Tests.csproj" -Recurse | Select-Object -First 1 -ExpandProperty FullName
-            Invoke-Checked "Platform persistence focused tests" "dotnet" @("test", $platformProject, "--no-restore", "--filter", "FullyQualifiedName~PlatformStoreTests|FullyQualifiedName~ControlPlane")
+            $platformProject = Join-Path $repoRoot "TwelveLegions.Platform.Tests\TwelveLegions.Platform.Tests.csproj"
+            Invoke-Checked "Platform persistence focused tests" "dotnet" @("test", $platformProject, "--no-restore", "--", "xUnit.ParallelizeTestCollections=false")
         }
         if ($frontendChanged) {
             Invoke-Checked "Frontend UI contracts" "npm.cmd" @("run", "check:ui-contracts") (Join-Path $repoRoot "opcgpro-vue")
@@ -278,8 +278,8 @@ try {
         Invoke-Checked "L12 full rule tests" "dotnet" @("test", ".\TwelveLegions.Tests\TwelveLegions.Tests.csproj", "--configuration", "Release", "--", "xUnit.ParallelizeTestCollections=false")
     }
     if ($platformChanged) {
-        $platformProject = Get-ChildItem -LiteralPath $repoRoot -Filter "GrandUMIServer.Tests.csproj" -Recurse | Select-Object -First 1 -ExpandProperty FullName
-        Invoke-Checked "Platform persistence release gate" "dotnet" @("test", $platformProject, "--configuration", "Release", "--filter", "FullyQualifiedName~PlatformStoreTests|FullyQualifiedName~ControlPlane")
+        $platformProject = Join-Path $repoRoot "TwelveLegions.Platform.Tests\TwelveLegions.Platform.Tests.csproj"
+        Invoke-Checked "Platform persistence release gate" "dotnet" @("test", $platformProject, "--configuration", "Release", "--", "xUnit.ParallelizeTestCollections=false")
     }
     if ($frontendChanged) {
         $clientRelease = (& git -C $repoRoot rev-parse HEAD).Trim()
