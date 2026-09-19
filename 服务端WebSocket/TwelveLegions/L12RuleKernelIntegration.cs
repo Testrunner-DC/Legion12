@@ -1419,6 +1419,40 @@ public sealed partial class L12GameEngine
         return card is not null && IsFieldLegion(card) && (predicate?.Invoke(card) ?? true) ? card : null;
     }
 
+    /// <summary>
+    /// 公开声明的“我方军团”在结算时必须仍为同一张位于我方战场的军团，
+    /// 并继续满足该能力的当前状态门槛。失效对象不补选，且统一记录为结算失败。
+    /// </summary>
+    private L12CardInstance? ResolveDeclaredOwnLegionTarget(L12StackItem item, string? targetId,
+        Func<L12CardInstance, bool>? predicate, string requirement)
+    {
+        var target = DeclaredOwnLegionTarget(item.Controller, targetId, predicate);
+        if (target is null)
+            RecordTargetSettlementFailure(item, targetId,
+                $"所选我方军团已离场、被覆盖、不再是军团，或不再满足{requirement}");
+        return target;
+    }
+
+    private L12CardInstance[] ResolveDeclaredOwnLegionTargets(L12StackItem item,
+        IEnumerable<string> targetIds, Func<L12CardInstance, bool>? predicate,
+        string noTargetReason, string invalidTargetReason)
+    {
+        var declared = targetIds
+            .Where(id => !string.IsNullOrWhiteSpace(id) && !id.StartsWith("mode:", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var resolved = declared.Select(id => DeclaredOwnLegionTarget(item.Controller, id, predicate))
+            .Where(card => card is not null).Cast<L12CardInstance>().ToArray();
+        if (resolved.Length == 0)
+            RecordTargetSettlementFailure(item, string.Join('|', declared),
+                declared.Length == 0 ? noTargetReason : invalidTargetReason);
+        else if (resolved.Length < declared.Length)
+            AddEvent("effect", item.Controller,
+                $"〈{item.SourceName}〉有{declared.Length - resolved.Length}个已声明对象在逆结算后失效；其余对象继续结算",
+                FindSource(item) is { } source ? [source] : []);
+        return resolved;
+    }
+
     private bool IsEnemyTargetLegal(int controller, string? instanceId, Func<L12CardInstance, bool> predicate)
         => DeclaredEnemyTarget(controller, instanceId, predicate) is not null;
 

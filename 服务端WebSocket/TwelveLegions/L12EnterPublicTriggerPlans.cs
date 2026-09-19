@@ -471,41 +471,6 @@ public sealed partial class L12GameEngine
         return target;
     }
 
-    /// <summary>
-    /// 登场公开声明中的“我方军团”必须在结算时仍是同一张位于我方战场的军团，
-    /// 并继续满足卡文限定。响应可令对象离场、被覆盖、改变卡种/有效阵营、位置或状态；
-    /// 已失效的声明不得按实例ID继续结算，也不得以另一合法对象补位。
-    /// </summary>
-    private L12CardInstance? ResolveDeclaredEntryOwnLegion(L12StackItem item, string? targetId,
-        Func<L12CardInstance, bool>? predicate, string requirement)
-    {
-        var target = DeclaredOwnLegionTarget(item.Controller, targetId, predicate);
-        if (target is null)
-            RecordTargetSettlementFailure(item, targetId,
-                $"所选我方军团已离场、被覆盖、不再是军团，或不再满足{requirement}");
-        return target;
-    }
-
-    private L12CardInstance[] ResolveDeclaredEntryOwnLegions(L12StackItem item,
-        IEnumerable<string> targetIds, Func<L12CardInstance, bool>? predicate,
-        string noTargetReason, string invalidTargetReason)
-    {
-        var declared = targetIds
-            .Where(id => !string.IsNullOrWhiteSpace(id) && !id.StartsWith("mode:", StringComparison.OrdinalIgnoreCase))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        var resolved = declared.Select(id => DeclaredOwnLegionTarget(item.Controller, id, predicate))
-            .Where(card => card is not null).Cast<L12CardInstance>().ToArray();
-        if (resolved.Length == 0)
-            RecordTargetSettlementFailure(item, string.Join('|', declared),
-                declared.Length == 0 ? noTargetReason : invalidTargetReason);
-        else if (resolved.Length < declared.Length)
-            AddEvent("effect", item.Controller,
-                $"〈{item.SourceName}〉有{declared.Length - resolved.Length}个已声明对象在逆结算后失效；其余对象继续结算",
-                FindSource(item) is { } source ? [source] : []);
-        return resolved;
-    }
-
     private bool ResolveBatch6JAEnterEffect(L12StackItem item, L12CardInstance source, string? plan)
     {
         var player = State.Players[item.Controller];
@@ -528,7 +493,7 @@ public sealed partial class L12GameEngine
         }
         if (flow is "canopic-one" or "canopic-four")
         {
-            var targets = ResolveDeclaredEntryOwnLegions(item, Many("targets"),
+            var targets = ResolveDeclaredOwnLegionTargets(item, Many("targets"),
                 card => L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"),
                 "发动时没有选择太阳城军团", "所选对象已离场、不再是军团或不再具有太阳城阵营");
             foreach (var target in targets)
@@ -578,7 +543,7 @@ public sealed partial class L12GameEngine
             case "lijing": BeginLiJingEffect(item); return true;
             case "mulan": if (FindOnField(player, item.SourceInstanceId, out _, out _) is { } mulan) mulan.HasCharge = true; break;
             case "mozi":
-                foreach (var target in ResolveDeclaredEntryOwnLegions(item, Many("targets"),
+                foreach (var target in ResolveDeclaredOwnLegionTargets(item, Many("targets"),
                              card => L12StructuredCardRules.HasFaction(player, card, "tianting"),
                              "发动时没有选择天廷军团", "所选对象已离场、不再是军团或不再具有天廷阵营"))
                     GrantImmortalUntilNextTurnStart(target, item.Controller);
@@ -602,7 +567,7 @@ public sealed partial class L12GameEngine
             case "ramses":
             {
                 var inherited = L12StructuredCardRules.HasSummonTurnCounterTacticProtection(source, State.Round);
-                var targets = ResolveDeclaredEntryOwnLegions(item, Many("targets"),
+                var targets = ResolveDeclaredOwnLegionTargets(item, Many("targets"),
                         card => L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")
                             && !string.Equals(card.Name, source.Name, StringComparison.Ordinal),
                         "发动时没有选择其他太阳城军团",
@@ -617,7 +582,7 @@ public sealed partial class L12GameEngine
             }
             case "horemheb": if (FindOnField(player, item.SourceInstanceId, out _, out _) is { } horemheb) horemheb.HasCharge = true; break;
             case "ankh":
-                if (ResolveDeclaredEntryOwnLegion(item, One("target"),
+                if (ResolveDeclaredOwnLegionTarget(item, One("target"),
                         card => card.CardId == "S01-0212", "卡名为〈陵墓守卫〉") is { } ankh)
                     AddTimedModifier(ankh, 2000, 0, State.TurnSerial, source.Name);
                 break;
@@ -693,7 +658,7 @@ public sealed partial class L12GameEngine
                     takasugiTargets, "takasugi-enter-target", []);
                 return true;
             case "abe":
-                if (ResolveDeclaredEntryOwnLegion(item, One("target"), null, "我方军团条件") is { } abe)
+                if (ResolveDeclaredOwnLegionTarget(item, One("target"), null, "我方军团条件") is { } abe)
                     GrantImmortalUntilNextTurnStart(abe, item.Controller);
                 break;
             case "tachibana":
@@ -701,7 +666,7 @@ public sealed partial class L12GameEngine
                     AddTimedModifier(tachibanaTarget, 0, -3, State.TurnSerial, source.Name);
                 break;
             case "inahime":
-                if (ResolveDeclaredEntryOwnLegion(item, One("target"), card =>
+                if (ResolveDeclaredOwnLegionTarget(item, One("target"), card =>
                         FindOnField(player, card.InstanceId, out var row, out _) is not null && row == 0
                         && card.InstanceId != item.SourceInstanceId && card.Troops <= 5000
                         && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan"),
@@ -801,7 +766,7 @@ public sealed partial class L12GameEngine
                 break;
             }
             case "ii-naotora":
-                if (ResolveDeclaredEntryOwnLegion(item, One("target"),
+                if (ResolveDeclaredOwnLegionTarget(item, One("target"),
                         card => L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")
                             && CanReadyCardByEffect(card),
                         "休整、具有高天原阵营且当前允许因效果转为活跃") is { } ii)

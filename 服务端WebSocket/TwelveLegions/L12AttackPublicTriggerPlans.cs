@@ -550,9 +550,11 @@ public sealed partial class L12GameEngine
                 if (source is not null) GrantStrongAttack(source);
                 Finish(); return true;
             case "ay":
-                if (FindOnField(player, targetId, out _, out _) is { } ayTarget)
+                if (ResolveDeclaredOwnLegionTarget(item, targetId, card =>
+                        FindOnField(player, card.InstanceId, out var row, out _) is not null
+                        && row == 0 && card.Troops <= 2000,
+                        "位于前排且兵力不高于2000") is { } ayTarget)
                     AddTimedModifier(ayTarget, 2000, 0, State.TurnSerial, "阿伊");
-                else Cancel("阿伊声明的目标已失效；已支付费用不返还");
                 Finish(); return true;
             case "olaf":
                 if (source is null) Cancel("奥拉夫二世已离开战场；已支付的墓地费用不返还");
@@ -579,12 +581,13 @@ public sealed partial class L12GameEngine
                 else Cancel("源博雅声明的覆盖反击战术已失效");
                 Finish(); return true;
             case "inahime":
-                if (FindOnField(player, targetId, out var targetRow, out _) is { } inahimeTarget && targetRow == 0
-                    && IsFieldLegion(inahimeTarget) && inahimeTarget.InstanceId != item.SourceInstanceId
-                    && L12StructuredCardRules.HasFaction(player, inahimeTarget, "gaotianyuan")
-                    && inahimeTarget.Troops <= 5000)
+                if (ResolveDeclaredOwnLegionTarget(item, targetId, card =>
+                        FindOnField(player, card.InstanceId, out var row, out _) is not null && row == 0
+                        && card.InstanceId != item.SourceInstanceId
+                        && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")
+                        && card.Troops <= 5000,
+                        "位于前排、兵力不高于5000且具有高天原阵营") is { } inahimeTarget)
                     AddTimedModifier(inahimeTarget, 1000, 0, State.TurnSerial, "稻姬本多小松");
-                else Cancel("稻姬声明的目标已失效");
                 Finish(); return true;
             case "pingyang":
             {
