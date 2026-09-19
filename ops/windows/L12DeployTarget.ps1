@@ -80,6 +80,9 @@ function Resolve-L12SshOptions {
     foreach ($option in @(
         "-o", "BatchMode=yes",
         "-o", "ConnectTimeout=20",
+        "-o", "ConnectionAttempts=5",
+        "-o", "ServerAliveInterval=10",
+        "-o", "ServerAliveCountMax=6",
         "-o", "StrictHostKeyChecking=yes",
         "-o", "UserKnownHostsFile=$trustedKnownHosts",
         "-o", "HostName=$($endpoint.TrustedHostKeyAlias)",
