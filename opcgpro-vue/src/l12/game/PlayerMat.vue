@@ -295,7 +295,7 @@ function beginCardAbility(card: Card) {
   <section v-bind="$attrs" class="l12-player-mat" :class="[`side-${side}`, `faction-${player.faction}`, { 'active-turn': active }]"
     :data-player-index="player.playerIndex">
     <div class="commander-zone">
-      <span class="mobile-hand-count" :aria-label="`${side === 'opponent' ? '对手' : '我方'}手牌 ${player.handCount ?? player.hand?.length ?? 0} 张`"><i>手牌</i><b>{{ player.handCount ?? player.hand?.length ?? 0 }}</b></span>
+      <span v-if="mobileMoralePicker" class="mobile-hand-count" :aria-label="`${side === 'opponent' ? '对手' : '我方'}手牌 ${player.handCount ?? player.hand?.length ?? 0} 张`"><i>手牌</i><b>{{ player.handCount ?? player.hand?.length ?? 0 }}</b></span>
       <div v-if="player.faction === 'otherworld' || player.specialZones?.canopicTrack?.length"
         class="master-marker-track" :class="{ runes: player.faction === 'otherworld', canopic: Boolean(player.specialZones?.canopicTrack?.length) }">
         <template v-if="player.faction === 'otherworld'">
@@ -419,14 +419,14 @@ function beginCardAbility(card: Card) {
     <div class="resource-zone" data-ui-contract="centered-resource-zone">
       <button class="faction-effect-trigger resource-faction-action" data-ui-contract="resource-faction-action"
         @click.stop="factionOpen = true; factionMinimized = false">阵营效果</button>
-      <button type="button" class="resource-morale-summary" data-ui-contract="resource-morale-summary" :aria-disabled="!mobileMoralePicker" @click.stop="openMoralePanel">
+      <component :is="mobileMoralePicker ? 'button' : 'div'" :type="mobileMoralePicker ? 'button' : undefined" class="resource-morale-summary" data-ui-contract="resource-morale-summary" :aria-disabled="mobileMoralePicker ? false : undefined" @click.stop="mobileMoralePicker && openMoralePanel()">
         <span class="resource-morale-label" data-ui-contract="resource-morale-label">
-          <img v-if="factionLogoUrls[player.faction]" :src="factionLogoUrls[player.faction]" :alt="`${player.faction}士气`" />
+          <img v-if="mobileMoralePicker && factionLogoUrls[player.faction]" :src="factionLogoUrls[player.faction]" :alt="`${player.faction}士气`" />
           <span>士气</span>
         </span>
         <b class="morale-count resource-morale-count" data-ui-contract="resource-morale-count"
           :title="`当前活跃士气 ${activeMorale} / 当前士气上限 ${currentMoraleLimit}`">{{ activeMorale }}/{{ currentMoraleLimit }}</b>
-      </button>
+      </component>
       <div class="morale-stack resource-morale-stack" data-ui-contract="resource-morale-stack"
         :class="{ 'morale-remainder-1': visibleMoraleCount % 3 === 1, 'morale-remainder-2': visibleMoraleCount % 3 === 2 }">
       <button v-for="index in visibleTemporaryMoraleCount" :key="`temporary-${index}`" type="button"

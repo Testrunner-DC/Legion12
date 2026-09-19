@@ -431,6 +431,12 @@ const contracts = [
     && playerMat.includes('align-self:center')
     && playerMat.includes('.side-opponent .resource-morale-stack{order:1;flex-wrap:wrap-reverse;align-content:flex-end}')
     && !playerMat.includes('Array<null>'), '桌面士气区保持原有实时展示；自动横屏时根据可用宽高自适应网格、显示全部实际资源，且不预占未追加的图标'],
+  [playerMat.includes('v-if="mobileMoralePicker" class="mobile-hand-count"')
+    && playerMat.includes(":is=\"mobileMoralePicker ? 'button' : 'div'\"")
+    && playerMat.includes('class="temporary-site-logo" :src="siteBrandIconUrl" alt="临时士气"')
+    && gamePage.includes('.battle-route-controls .mobile-route-break{display:none}')
+    && gamePage.includes('.mobile-route-break{display:inline}')
+    && prompt.includes('--inspector-safe-lane:clamp(118px,19vw,258px)'), '移动专用手牌计数、阵营标识和路由换行不得泄漏到桌面；临时士气始终使用网站图标，桌面弹框安全区必须使用经验证的窄侧栏比例'],
   [l12Types.includes('cannotUntapUntilRound?: number')
     && playerMat.includes('function moraleLocked(card: MoraleResource)')
     && playerMat.includes('lockedUntilRound > 0 && lockedUntilRound >= (props.round ?? 0)')
@@ -608,7 +614,7 @@ const contracts = [
   [battleLog.includes('class="event-message"') && battleLog.includes('overflow-wrap:anywhere'), '对局记录必须使用可换行的独立消息容器'],
   [board.includes('<Teleport to="body">') && board.includes('public-card-reveal-animation') && board.includes('.public-reveal-animation{z-index:903}') && board.includes("event.type === 'effect-trigger'") && board.includes("event.type === 'effect-response'") && board.includes("event.type === 'effect-activation'") && board.includes("event.type === 'reveal'") && board.includes("event.playerIndex !== props.game.you") && board.includes("event.type === 'effect-trigger' && /展示|公开/.test(event.text)") && board.includes("event.type === 'search' && /展示|加入手牌/") && board.includes('text: publicRevealText(event)') && board.includes('const override = event.effectText?.trim()') && board.indexOf('if (override) return override') < board.indexOf('/花魁的馈赠/.test(text)') && board.includes('花魁的馈赠将〈${card.name}〉加入手牌') && board.includes('l12AnimationDuration(3000, 700)') && !board.includes('reveal-confirm') && !board.includes('public-reveal-mask'), '公开展示、检索加入手牌、触发、响应与发动效果必须只向非发动方播放无蒙版非阻塞动画；标准三秒且关闭动画时仍保留可读下限，只呈现事件单条效果文本和涉及卡图，后台覆盖优先于花魁兼容文案'],
   [prompt.includes("const usesDetailCardImages = computed(() => isDisasterChoice.value || isInfoConfirm.value)") && prompt.includes(":intent=\"usesDetailCardImages ? 'detail' : 'thumb'\"") && prompt.split(":alt=\"entry.card.name || '天灾'\" intent=\"detail\"").length - 1 === 2 && prompt.includes("'disaster-choice': isDisasterChoice"), '公开天灾禁选、随机公开、触发确认及已公开历史必须请求详情级高清图，不得使用缩略图源'],
-  [board.includes(':inspector-visible="modalInspectorVisible"') && prompt.includes("'inspector-active': inspectorVisible") && prompt.includes('--inspector-safe-lane:min(290px,calc(34vw + 38px))') && prompt.includes('--inspector-safe-lane:92px') && prompt.includes('@media(max-width:520px)')
+  [board.includes(':inspector-visible="modalInspectorVisible"') && prompt.includes("'inspector-active': inspectorVisible") && prompt.includes('--inspector-safe-lane:clamp(118px,19vw,258px)') && prompt.includes('--inspector-safe-lane:92px') && prompt.includes('@media(max-width:520px)')
     && board.includes('const logicalWidth = inspectorAnchor.value.offsetWidth') && board.includes('transform: `scale(${floatScale})`')
     && board.includes("'--l12-board-copy': `${13 / Math.min(1, floatScale)}px`") && board.includes("'--l12-board-meta': `${11 / Math.min(1, floatScale)}px`") && board.includes("'--l12-effect-copy': `${13 / Math.min(1, floatScale)}px`") && board.includes('inspector-style-scope') && board.includes('overflow:auto!important'), '弹框期间原选中详情必须固定侧置并保持原容器的大小和位置，继承语义字号层级，为核心弹框保留安全区，在窄屏与缩放下也不得互相遮挡'],
   [board.includes("event.type === 'disaster-reveal'") && board.includes("event.playerIndex === null") && battleLog.includes("'disaster-reveal': '本局天灾'") && battleLog.includes("'effect-response': '响应'") && battleLog.includes("'effect-activation': '发动'"), '天灾必须向双方播放，响应与发动动画必须进入可读日志'],
