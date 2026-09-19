@@ -292,7 +292,10 @@ public sealed class AtomicReviewBatch6HRegressionTests
 
         Assert.True(morale.Tapped);
         Assert.Equal(0, target.CostModifier);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled");
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("高杉晋作", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("高杉晋作", StringComparison.Ordinal));
     }
 
     [Theory]
@@ -322,7 +325,10 @@ public sealed class AtomicReviewBatch6HRegressionTests
         Assert.Same(transformed, enemy.Field[0][0]);
         Assert.Equal(0, transformed.CostModifier);
         Assert.True(morale.Tapped);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled");
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains(source.Name, StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains(source.Name, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -350,7 +356,10 @@ public sealed class AtomicReviewBatch6HRegressionTests
         Assert.True(game.State.Players[0].Morale.Single(card => card.InstanceId == morale.InstanceId).Tapped);
         Assert.Equal(0, transformed.CostModifier);
         Assert.False(game.Handle(0, new L12Command("resolvePrompt", PromptId: responseId, Choice: "pass")).Accepted);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled");
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains(source.Name, StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains(source.Name, StringComparison.Ordinal));
     }
 
     [Fact]

@@ -506,11 +506,11 @@ public sealed partial class L12GameEngine
         var source = FindOnField(player, item.SourceInstanceId, out _, out _);
         var targetId = PublicTriggerDeclared(item, "target");
 
-        void Cancel(string reason) => AddEvent("effect-cancelled", item.Controller, reason, card);
+        void Fail(string reason) => AddEvent("effect-failed", item.Controller, reason, card);
         void Finish() => FinishStackItem(item);
         void BuffSource(int amount, string label)
         {
-            if (source is null) Cancel($"〈{item.SourceName}〉已离开战场；其自身兵力增加不结算");
+            if (source is null) Fail($"〈{item.SourceName}〉已离开战场；其自身兵力增加不结算");
             else AddTimedModifier(source, amount, 0,
                 item.SourceCardId.StartsWith("S02", StringComparison.Ordinal) ? ExpiryAtNextOwnEnd(item.Controller) : State.TurnSerial,
                 label);
@@ -557,7 +557,7 @@ public sealed partial class L12GameEngine
                     AddTimedModifier(ayTarget, 2000, 0, State.TurnSerial, "阿伊");
                 Finish(); return true;
             case "olaf":
-                if (source is null) Cancel("奥拉夫二世已离开战场；已支付的墓地费用不返还");
+                if (source is null) Fail("奥拉夫二世已离开战场；已支付的墓地费用不返还");
                 else GrantStrongAttack(source);
                 Finish(); return true;
             case "nobunaga":
@@ -567,18 +567,18 @@ public sealed partial class L12GameEngine
                 if (DeclaredEnemyTarget(item.Controller, targetId,
                     target => L12StructuredCardRules.CurrentCostAtMost(target, 1)) is { } hijikataTarget)
                     KillTarget(item, hijikataTarget.InstanceId, "被土方岁三击杀");
-                else Cancel("土方岁三声明的目标已失效；已支付费用不返还");
+                else Fail("土方岁三声明的目标已失效；已支付费用不返还");
                 Finish(); return true;
             case "takasugi":
                 if (DeclaredEnemyTarget(item.Controller, targetId, predicate: null) is { } takasugiTarget)
                     takasugiTarget.CostModifier -= 2;
-                else Cancel("高杉晋作声明的目标已失效；已支付费用不返还");
+                else Fail("高杉晋作声明的目标已失效；已支付费用不返还");
                 Finish(); return true;
             case "hiromasa":
                 if (FindOnField(opponent, targetId, out var counterRow, out _) is { CardType: "tactic" } counter
                     && counterRow == 1)
                     counter.CannotRespondUntilRound = State.Round;
-                else Cancel("源博雅声明的覆盖反击战术已失效");
+                else Fail("源博雅声明的覆盖反击战术已失效");
                 Finish(); return true;
             case "inahime":
                 if (ResolveDeclaredOwnLegionTarget(item, targetId, card =>
@@ -600,7 +600,7 @@ public sealed partial class L12GameEngine
                     {
                         if (source is not null)
                             AddTimedModifier(source, 2000, 0, ExpiryAtNextOwnEnd(item.Controller), "平阳昭公主");
-                        else Cancel("平阳昭公主已离开战场；展示仍结算但自身增益取消");
+                        else Fail("平阳昭公主已离开战场；展示仍结算但自身增益取消");
                     }
                     else
                     {
@@ -619,7 +619,7 @@ public sealed partial class L12GameEngine
                 }
                 Finish(); return true;
             case "bors":
-                if (source is null) Cancel("鲍斯已离开战场；已支付费用不返还");
+                if (source is null) Fail("鲍斯已离开战场；已支付费用不返还");
                 else GrantStrongAttack(source);
                 Finish(); return true;
             case "gawain":
@@ -628,7 +628,7 @@ public sealed partial class L12GameEngine
                     && int.TryParse(countText, out var declared) ? declared : 0;
                 if (count <= 0 || !L12S2ZoneOps.SpendRunes(player, count))
                 {
-                    Cancel("高文选择的符文数量在结算时已失效；不消耗符文");
+                    Fail("高文选择的符文数量在结算时已失效；不消耗符文");
                     Finish(); return true;
                 }
                 var data = new Dictionary<string, string>
@@ -648,7 +648,7 @@ public sealed partial class L12GameEngine
                 var count = PublicTriggerDeclared(item, "runeCount").Split(':') is ["rune-count", var countText]
                     && int.TryParse(countText, out var declared) ? declared : 0;
                 if (source is null || count <= 0)
-                    Cancel("高文已离开战场；已消耗符文不返还，兵力增加不结算");
+                    Fail("高文已离开战场；已消耗符文不返还，兵力增加不结算");
                 else
                 {
                     AddTimedModifier(source, count * 1000, 0, ExpiryAtNextOwnEnd(item.Controller), "高文");
@@ -666,13 +666,13 @@ public sealed partial class L12GameEngine
                 if (State.PendingDefense is { } richardAttack
                     && richardAttack.AttackerInstanceId == item.SourceInstanceId)
                     richardAttack.RichardDefenseTaxActive = true;
-                else Cancel("理查增加抵挡费用的效果已不属于当前进攻，效果取消");
+                else Fail("理查增加抵挡费用的效果已不属于当前进攻，效果未能结算");
                 Finish(); return true;
             case "richard-squires":
             {
                 var count = int.TryParse(PublicTriggerDeclared(item, "squireCount"), out var declared) ? declared : 0;
                 if (source is null || count <= 0)
-                    Cancel("理查已离开战场；已弃置的侍从骑士不返还，兵力增加不结算");
+                    Fail("理查已离开战场；已弃置的侍从骑士不返还，兵力增加不结算");
                 else
                     AddTimedModifier(source, count * 1000, 0, ExpiryAtNextOwnEnd(item.Controller), "狮心王理查一世");
                 Finish(); return true;
