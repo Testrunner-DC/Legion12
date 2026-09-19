@@ -407,14 +407,19 @@ const contracts = [
     && playerMat.includes('.formation-slot.combat-attacker{box-shadow:none!important}')
     && playerMat.includes('.formation-slot.combat-target,.mini-master.combat-target')
     && playerMat.includes('@keyframes l12-combat-target-cue'), '进攻结算中的发光动画只能落在真实被攻击对象；进攻来源、支援候选及其他可交互对象不得复用目标发光'],
-  [playerMat.includes('temporaryMoraleCount') && playerMat.includes('data-ui-contract="temporary-morale-selectable-lotus"')
-    && (playerMat.match(/data-ui-contract="temporary-morale-selectable-lotus"/g) ?? []).length === 1
+  [playerMat.includes('temporaryMoraleCount') && playerMat.includes('data-ui-contract="temporary-morale-selectable-site-logo"')
+    && (playerMat.match(/data-ui-contract="temporary-morale-selectable-site-logo"/g) ?? []).length === 1
     && playerMat.includes('props.player.spendableResourceCount ??')
     && playerMat.includes('temporaryMoraleChoiceId(index)')
     && playerMat.includes('temporaryMoralePayable(index)')
-    && playerMat.includes(':src="blackLotusLogoUrl" alt="黑色莲花临时士气"')
+    && playerMat.includes(':src="siteBrandIconUrl" alt="临时士气"')
+    && playerMat.includes("card.cardId === 'S02-0010'")
+    && playerMat.includes('class="black-lotus-logo" :src="blackLotusLogoUrl" alt="黑色莲花"')
+    && board.includes("blackLotus ? '黑色莲花' : '士气'")
+    && board.includes("blackLotus ? 'black-lotus' as const")
     && specialAssets.includes('/logo/black-lotus.png') && existsSync(blackLotusPath)
-    && l12GameEngine.includes('current.TemporaryMorale = 0;'), '临时士气必须逐个显示为黑色莲花实体、进入可选支付交互，并由权威结束阶段在休整时清空'],
+    && specialAssets.includes("siteBrandIconUrl = '/favicon.png'")
+    && l12GameEngine.includes('current.TemporaryMorale = 0;'), '黑色莲花士气必须使用Lotus图标；临时士气必须逐个使用网站Logo、进入可选支付交互，并由权威结束阶段在休整时清空'],
   [playerMat.includes('.resource-zone,.resource-faction-action,.resource-morale-summary,.resource-morale-stack{width:156px;max-width:156px}')
     && playerMat.includes('.resource-morale-stack{min-height:54px;justify-content:center;gap:8px 10px;padding:10px}')
     && playerMat.includes('.resource-morale-stack .morale-orb{width:32px;height:32px;min-width:32px')

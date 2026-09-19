@@ -4,7 +4,7 @@ import { computed, ref, watch } from 'vue'
 import CardTile from '../CardTile.vue'
 import type { Card, PlayerView } from '../types'
 import { isCounterTacticCard } from '../cardPresentation'
-import { blackLotusLogoUrl, factionLogoUrls, godPowerLogoUrl, roundCardUrl } from '../specialAssets'
+import { blackLotusLogoUrl, factionLogoUrls, godPowerLogoUrl, roundCardUrl, siteBrandIconUrl } from '../specialAssets'
 import CardImage from '../CardImage.vue'
 
 const props = defineProps<{
@@ -100,6 +100,9 @@ function moraleState(card: MoraleResource) {
   if (card.isGodPower) return card.tapped ? 'rested-god-power' : 'active-god-power'
   return card.tapped ? 'rested-morale' : 'active-morale'
 }
+function isBlackLotusMorale(card: MoraleResource) {
+  return card.cardId === 'S02-0010'
+}
 function moraleLocked(card: MoraleResource) {
   const lockedUntilRound = card.cannotUntapUntilRound ?? 0
   return lockedUntilRound > 0 && lockedUntilRound >= (props.round ?? 0)
@@ -112,7 +115,7 @@ function moraleLabel(card: MoraleResource) {
     'active-god-power': '活跃神力',
     'rested-god-power': '休整神力',
   }
-  const label = labels[state]
+  const label = isBlackLotusMorale(card) ? `黑色莲花（${card.tapped ? '休整' : '活跃'}）` : labels[state]
   return moraleLocked(card) ? `${label}；本轮重置阶段无法转为活跃` : label
 }
 const temporaryMoraleCount = computed(() => Math.max(0, Math.floor(props.player.temporaryMorale ?? 0)))
@@ -413,18 +416,20 @@ function beginCardAbility(card: Card) {
       <div class="morale-stack resource-morale-stack" data-ui-contract="resource-morale-stack"
         :class="{ 'morale-remainder-1': visibleMoraleCount % 3 === 1, 'morale-remainder-2': visibleMoraleCount % 3 === 2 }">
       <button v-for="index in visibleTemporaryMoraleCount" :key="`temporary-${index}`" type="button"
-        class="morale-orb temporary-morale" data-ui-contract="temporary-morale-selectable-lotus"
+        class="morale-orb temporary-morale" data-ui-contract="temporary-morale-selectable-site-logo"
         :class="{ payable: temporaryMoralePayable(index), selected: paymentSelectedIds?.includes(temporaryMoraleChoiceId(index)) }"
         :title="temporaryMoralePayable(index) ? '点击选择此临时士气支付；休整时消失' : '临时士气；休整时消失'"
         :aria-disabled="!temporaryMoralePayable(index)"
         @click.stop="temporaryMoralePayable(index) && selectMoralePayment(temporaryMoraleChoiceId(index))">
-        <img :src="blackLotusLogoUrl" alt="黑色莲花临时士气" />
+        <img class="temporary-site-logo" :src="siteBrandIconUrl" alt="临时士气" />
       </button>
       <button v-for="morale in displayMoraleSlots" :key="morale.instanceId" type="button" class="morale-orb"
-        :class="[moraleState(morale), { payable: paymentChoiceIds?.includes(morale.instanceId), selected: paymentSelectedIds?.includes(morale.instanceId) }]"
+        :class="[moraleState(morale), { 'black-lotus-morale': isBlackLotusMorale(morale), payable: paymentChoiceIds?.includes(morale.instanceId), selected: paymentSelectedIds?.includes(morale.instanceId) }]"
+        :data-ui-contract="isBlackLotusMorale(morale) ? 'black-lotus-morale' : undefined"
         :title="moraleLabel(morale)" :aria-disabled="!paymentChoiceIds?.includes(morale.instanceId)"
         @click.stop="selectMoralePayment(morale.instanceId)">
         <img v-if="morale.isGodPower" class="god-power-logo" :src="godPowerLogoUrl" alt="神力" />
+        <img v-else-if="isBlackLotusMorale(morale)" class="black-lotus-logo" :src="blackLotusLogoUrl" alt="黑色莲花" />
         <img v-else-if="factionLogoUrls[player.faction]" :src="factionLogoUrls[player.faction]" :alt="player.faction" />
         <span v-if="moraleLocked(morale)" class="morale-lock-icon" data-ui-contract="active-morale-lock"
           role="img" title="本轮重置阶段无法转为活跃" aria-label="本轮重置阶段无法转为活跃"></span>
@@ -508,6 +513,7 @@ function beginCardAbility(card: Card) {
 .value-badge{display:grid!important;min-width:25px!important;height:22px!important;place-items:center!important;padding:0 6px!important;border:1px solid #f2f0e6!important;border-radius:2px!important;background:#090b0d!important;color:#fff!important;box-shadow:0 2px 0 #000,0 0 0 1px rgba(0,0,0,.65)!important;font-weight:900!important;line-height:1!important}.value-badge small{margin-left:1px;color:#bfc3c0;font-size:.62em}.pile .pile-count{position:absolute;z-index:8;right:3px;top:3px}.mini-master .master-health{position:absolute;z-index:8;right:3px;bottom:3px;display:inline-flex!important;width:max-content;min-width:44px!important;align-items:center;justify-content:center;white-space:nowrap}.master-protection-icon{position:absolute;z-index:9;left:4px;top:4px;display:grid;width:18px;height:18px;place-items:center;border:1px solid #75c79c;border-radius:2px;background:rgba(8,11,12,.94);color:#a4e7bd;font-size:var(--l12-board-copy,13px);font-style:normal;line-height:1}.morale-count{display:grid;min-width:42px;height:24px;place-items:center;padding:0 7px;border:1px solid #cbc6b8;background:#080a0b;color:#fff;box-shadow:0 2px 0 #000;font-size:var(--l12-board-copy,13px);line-height:1;white-space:nowrap}.morale-orb[aria-disabled="true"]{cursor:default}.morale-orb.active-morale[aria-disabled="true"],.morale-orb.active-god-power[aria-disabled="true"]{opacity:1}
 .master-column .mini-master .master-health{right:6px;bottom:5px;min-width:58px!important;height:32px!important;padding:0 8px!important;font-size:max(21px,var(--l12-board-copy,13px))!important}.master-column .mini-master .master-health small{margin-left:2px;font-size:var(--l12-board-copy,13px)!important}
 .resource-morale-stack .morale-orb{width:32px;height:32px;min-width:32px}.resource-morale-stack .morale-orb img{width:21px;height:21px}.resource-morale-stack .morale-orb.temporary-morale img{width:23px;height:23px}
+.resource-morale-stack .morale-orb.temporary-morale{border-color:#d8dde0;background:#15191b;box-shadow:0 0 8px rgba(232,238,240,.38)}.resource-morale-stack .morale-orb.temporary-morale .temporary-site-logo{filter:brightness(0) invert(1)}.resource-morale-stack .morale-orb.black-lotus-morale{border-color:#d4ae42;background:#080909;box-shadow:0 0 9px rgba(212,174,66,.45)}.resource-morale-stack .morale-orb.black-lotus-morale .black-lotus-logo{width:24px;height:24px}
 .side-my{--resource-accent:#53bdc5}.side-opponent{--resource-accent:#c9505a}
 .resource-morale-count{height:34px;min-height:34px;padding:0 5px;border-color:color-mix(in srgb,var(--resource-accent,#d2c8a5) 48%,#5b625f);background:rgba(7,10,11,.72);box-shadow:none;color:#f0eee6;font-size:max(16px,var(--l12-board-copy,13px))}
 .l12-player-mat{grid-template-columns:minmax(270px,300px) minmax(500px,1fr) 100px 156px}.mat-piles{transform:translateX(-30px)}

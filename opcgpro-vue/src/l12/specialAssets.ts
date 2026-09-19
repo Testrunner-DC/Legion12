@@ -46,6 +46,7 @@ export const factionLogoUrls: Record<string, string> = {
 
 export const godPowerLogoUrl = `${assetRoot}/logo/olympus-god-power.png`
 export const blackLotusLogoUrl = `${assetRoot}/logo/black-lotus.png`
+export const siteBrandIconUrl = '/favicon.png'
 export const defaultSiteLogoUrl = `${assetRoot}/logo/main.png`
 export const transparentSiteLogoUrl = `${assetRoot}/logo/main-trans.png`
 
