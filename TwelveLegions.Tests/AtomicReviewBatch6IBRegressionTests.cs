@@ -606,6 +606,47 @@ public sealed class AtomicReviewBatch6IBRegressionTests
             && entry.Cards.Any(card => card.CardId == "S01-0112"));
     }
 
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0112:counter-tactic-recovery")]
+    public void SunWuMayRecoverDarkPassAsATactic()
+    {
+        var game = Create(9850);
+        var player = game.State.Players[0];
+        var darkPass = Card("ST01-10", "sunwu-dark-pass");
+        player.Graveyard.Add(darkPass);
+
+        QueueReviewedTrigger(game, "S01-0112", "death", withLegalChoices: false);
+        ResolveChoice(game, "mode:use");
+        var targetPrompt = OnlyPrompt(game);
+        Assert.Contains(darkPass.InstanceId, targetPrompt.ValidChoices);
+        ResolveCards(game, darkPass.InstanceId);
+        PassResponses(game);
+
+        Assert.Contains(darkPass, player.Hand);
+        Assert.DoesNotContain(darkPass, player.Graveyard);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0112:tactic-identity-revalidated")]
+    public void SunWuRecoveryFailsWhenDeclaredCardCostExceedsFourDuringResponses()
+    {
+        var game = Create(9851);
+        var player = game.State.Players[0];
+        var darkPass = Card("ST01-10", "sunwu-dark-pass-revalidated");
+        player.Graveyard.Add(darkPass);
+
+        QueueReviewedTrigger(game, "S01-0112", "death", withLegalChoices: false);
+        ResolveChoice(game, "mode:use");
+        ResolveCards(game, darkPass.InstanceId);
+        darkPass.CostModifier = 3;
+        PassResponses(game);
+
+        Assert.Contains(darkPass, player.Graveyard);
+        Assert.DoesNotContain(darkPass, player.Hand);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("逆结算后不再符合条件", StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData("S01-0304")]
     [InlineData("S01-0313")]

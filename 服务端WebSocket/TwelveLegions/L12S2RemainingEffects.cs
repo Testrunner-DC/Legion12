@@ -799,13 +799,14 @@ public sealed partial class L12GameEngine
         if (player.MasterId != "S02-04M1" || State.ActivePlayer != playerIndex) return;
         var master = CreateCard("S02-04M1", $"master-{playerIndex}");
         var candidates = new List<L12TriggerCandidate>();
-        if (fromRow == 1 && toRow == 0)
+        var movedIsHighHeaven = L12StructuredCardRules.HasFaction(player, moved, "gaotianyuan");
+        if (fromRow == 1 && toRow == 0 && movedIsHighHeaven)
             candidates.Add(CreateTriggerCandidate(playerIndex, master, "friendly-back-to-front",
                 "军团从后排位移至前排时效果", new Dictionary<string, string>
                 {
                     ["ability"] = "tsukuyomiFrontAttackBuff", ["target"] = moved.InstanceId,
                 }));
-        if (fromRow == 0 && toRow == 1 && player.Morale.Any(card => card.Tapped))
+        if (fromRow == 0 && toRow == 1 && movedIsHighHeaven && player.Morale.Any(card => card.Tapped))
             candidates.Add(CreateTriggerCandidate(playerIndex, master, "friendly-front-to-back", "军团从前排位移至后排时效果",
                 new Dictionary<string, string> { ["ability"] = "tsukuyomiReadyMorale", ["moved"] = moved.InstanceId }));
         var key = L12MasterTriggeredUsageRules.Key("tsukuyomiFollowMove", player.PlayerIndex, State.TurnSerial);

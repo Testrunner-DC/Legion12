@@ -4498,6 +4498,70 @@ public sealed class S2FactionRegressionTests
         }
     }
 
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(1, 0)]
+    [Trait("L12Evidence", "card:S02-04M1:faction-restricted-movement-trigger")]
+    public void TsukuyomiFactionRestrictedMovementTriggersIgnoreNonHighHeavenLegions(
+        int sourceRow, int targetRow)
+    {
+        var game = CreateWithFirstMaster("S02-04M1", 63376 + sourceRow);
+        var player = game.State.Players[0];
+        var moved = Card("S01-0101", $"tsukuyomi-non-high-heaven-{sourceRow}");
+        var hippolyta = Card("S02-0510", $"tsukuyomi-free-move-{sourceRow}");
+        moved.SummonRound = 0;
+        hippolyta.Tapped = true;
+        player.Field[sourceRow][0] = moved;
+        player.Field[0][2] = hippolyta;
+        player.Morale.Clear();
+        var restedMorale = new L12MoraleCard
+        {
+            CardId = "S02-04C1", InstanceId = $"tsukuyomi-rested-morale-{sourceRow}", Tapped = true,
+        };
+        player.Morale.Add(restedMorale);
+        player.UsedAbilities.Add(L12MasterTriggeredUsageRules.Key(
+            "tsukuyomiFollowMove", player.PlayerIndex, game.State.TurnSerial));
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        var result = game.Handle(0, new L12Command("move", moved.InstanceId, Row: targetRow, Slot: 0));
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.Empty(game.State.PendingTriggerStackCandidates);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.DoesNotContain(game.State.EffectStack,
+            item => item.SourceCardId == "S02-04M1"
+                && item.Trigger is "friendly-back-to-front" or "friendly-front-to-back");
+        Assert.Equal(0, moved.TsukuyomiFrontMoveBonusCount);
+        Assert.True(restedMorale.Tapped);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-04M1:effective-faction-movement-trigger")]
+    public void TsukuyomiMovementTriggerUsesEffectiveFactionFromRing()
+    {
+        var game = CreateWithFirstMaster("S02-04M1", 63378);
+        var player = game.State.Players[0];
+        var moved = Card("S01-0001", "tsukuyomi-ring-converted-mover");
+        var hippolyta = Card("S02-0510", "tsukuyomi-ring-free-move");
+        moved.SummonRound = 0;
+        hippolyta.Tapped = true;
+        player.Field[1][0] = moved;
+        player.Field[0][2] = hippolyta;
+        player.Relic = Card("S02-0008", "tsukuyomi-ring");
+        player.UsedAbilities.Add(L12MasterTriggeredUsageRules.Key(
+            "tsukuyomiFollowMove", player.PlayerIndex, game.State.TurnSerial));
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        var result = game.Handle(0, new L12Command("move", moved.InstanceId, Row: 0, Slot: 0));
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.Equal(1, moved.TsukuyomiFrontMoveBonusCount);
+    }
+
     [Fact]
     public void EmptyCanopicBoxSearchStillShufflesAndWritesAnAuthoritativeLog()
     {
