@@ -167,7 +167,11 @@ try {
             "test -d '/opt/legion12-static/card-assets/$cardAssetsHash' && test ! -L '/opt/legion12-static/card-assets/$cardAssetsHash'"
         }
         & ssh @sshOptions $Server $cardAssetsProbe
-        $cardAssetsCached = $LASTEXITCODE -eq 0
+        $cardAssetsProbeExitCode = $LASTEXITCODE
+        if ($cardAssetsProbeExitCode -ne 0 -and $cardAssetsProbeExitCode -ne 1) {
+            throw "卡图缓存探测连接失败（退出码 $cardAssetsProbeExitCode），拒绝把连接故障误判为缓存缺失并重复上传卡图。"
+        }
+        $cardAssetsCached = $cardAssetsProbeExitCode -eq 0
         if ($cardAssetsCached) {
             Write-Host "[L12 部署] 服务器复用优化卡图缓存：$cardAssetsHash"
         }

@@ -205,13 +205,20 @@ try {
     Invoke-External scp @sshOptions $artifact.ReleaseArchive "$($endpoint.Destination):$remoteRelease"
 
     & ssh @sshOptions $endpoint.Destination "test -d '/opt/legion12-testrun-static/card-assets/$($artifact.CardAssetsHash)'"
-    $assetsCached = $LASTEXITCODE -eq 0
+    $assetProbeExitCode = $LASTEXITCODE
+    if ($assetProbeExitCode -ne 0 -and $assetProbeExitCode -ne 1) {
+        throw "Card asset cache probe failed (exit code $assetProbeExitCode); refusing to treat a connection failure as a cache miss."
+    }
+    $assetsCached = $assetProbeExitCode -eq 0
     $assetShaArgument = "-"
     $assetPathArgument = "-"
     if (-not $assetsCached) {
         Invoke-External scp @sshOptions $artifact.CardAssetsArchive "$($endpoint.Destination):$remoteAssets"
         $assetShaArgument = $artifact.CardAssetsSha256
         $assetPathArgument = $remoteAssets
+    }
+    else {
+        Write-Host "[L12 testrun deploy] Reusing content-addressed card asset cache: $($artifact.CardAssetsHash)"
     }
     $mode = if ($DryRun) { "dry-run" } else { "deploy" }
     Invoke-External ssh @sshOptions $endpoint.Destination "/usr/local/sbin/deploy-legion12-testrun-release $mode $($artifact.Commit) $($artifact.ReleaseSha256) $remoteRelease $($artifact.CardAssetsHash) $assetShaArgument $assetPathArgument"
