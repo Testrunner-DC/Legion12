@@ -73,13 +73,15 @@ try {
         factionTitleBackgrounds: styles('[data-variant="faction-title"]'),
         masterBackgrounds: styles('[data-variant="master-title"]'),
         icons: [...document.querySelectorAll('.ranked-identity-badge>i')].map(element => element.textContent),
+        brandLogos: [...document.querySelectorAll('[data-variant="master-title"] .identity-brand-logo')].map(element => element.getAttribute('src')),
         overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
       }
     })
     if (new Set(report.tierBackgrounds).size !== 3) throw new Error('三派系段位没有使用三套主题色')
     if (new Set(report.factionTitleBackgrounds).size !== 3) throw new Error('三派系称号没有使用三套主题色')
     if (new Set(report.masterBackgrounds).size !== 1) throw new Error('最强主宰称号没有保持统一金色身份')
-    if (!report.icons.includes('◆') || !report.icons.includes('♛')) throw new Error('派系称号与最强主宰称号缺少可辨识图形')
+    if (!report.icons.includes('◆')) throw new Error('派系称号缺少可辨识图形')
+    if (report.brandLogos.length !== 3 || report.brandLogos.some(source => source !== '/favicon.png')) throw new Error('最强主宰称号没有复用网站 Logo')
     if (report.overflow) throw new Error(`${viewport.width}px 视口出现横向溢出`)
     await page.screenshot({ path: path.join(output, `ranked-identity-${viewport.width}.png`), fullPage: true })
   }

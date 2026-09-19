@@ -20,12 +20,14 @@ const factionKey = computed(() => {
   return 'neutral'
 })
 
-const badgeIcon = computed(() => props.variant === 'master-title' ? '♛' : props.variant === 'faction-title' ? '◆' : '')
+const siteBrandIcon = '/favicon.png'
+const badgeIcon = computed(() => props.variant === 'faction-title' ? '◆' : '')
 </script>
 
 <template>
   <span class="ranked-identity-badge" :class="[`is-${variant}`, `faction-${factionKey}`, { compact }]" :title="label">
-    <i v-if="badgeIcon" aria-hidden="true">{{ badgeIcon }}</i>
+    <img v-if="variant === 'master-title'" class="identity-brand-logo" :src="siteBrandIcon" alt="" aria-hidden="true" />
+    <i v-else-if="badgeIcon" aria-hidden="true">{{ badgeIcon }}</i>
     <span>{{ label }}</span>
   </span>
 </template>
@@ -133,6 +135,16 @@ const badgeIcon = computed(() => props.variant === 'master-title' ? '♛' : prop
   font-size: inherit !important;
   font-style: normal;
   filter: drop-shadow(0 0 4px currentColor);
+}
+
+.ranked-identity-badge > .identity-brand-logo {
+  width: 1.05em;
+  height: 1.05em;
+  flex: 0 0 1.05em;
+  border: 0;
+  border-radius: 0;
+  object-fit: contain;
+  filter: drop-shadow(0 0 4px #ffd047);
 }
 
 .ranked-identity-badge > span {

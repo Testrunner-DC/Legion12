@@ -310,7 +310,7 @@ const contracts = [
     && profilePage.includes("import RankedIdentityBadge from '@/l12/RankedIdentityBadge.vue'") && profilePage.includes(':variant="profileTitleVariant(title)"')
     && rankedIdentityBadge.includes("variant?: 'tier' | 'faction-title' | 'master-title'") && rankedIdentityBadge.includes('--ranked-tier-badge-font-size: 15px;') && rankedIdentityBadge.includes('--ranked-title-badge-font-size: 15px;')
     && rankedIdentityBadge.includes('faction-order') && rankedIdentityBadge.includes('faction-chaos') && rankedIdentityBadge.includes('faction-fate')
-    && rankedIdentityBadge.includes("props.variant === 'master-title' ? '♛'") && rankedIdentityBadge.includes("props.variant === 'faction-title' ? '◆'")
+    && rankedIdentityBadge.includes("const siteBrandIcon = '/favicon.png'") && rankedIdentityBadge.includes('class="identity-brand-logo"') && rankedIdentityBadge.includes("props.variant === 'faction-title' ? '◆'")
     && rankedIdentityBadge.includes('linear-gradient(135deg, #b47716 0%, #6f3d08 48%, #3a1d02 100%)')
     && rankedIdentityBadge.includes('color: inherit !important;') && rankedIdentityBadge.includes('max-width: none;') && rankedIdentityBadge.includes('text-overflow: clip;'), '排行榜、个人页和对战摘要必须复用同一排位身份徽章：三派系段位与派系称号使用各自主题色，最强主宰称号使用独立金色冠冕；无数据时不伪造占位'],
   [adminIntegrity.includes('data-ui-contract="ranked-integrity-review"') && adminIntegrity.includes('不自动扣减七曜') && adminIntegrity.includes('建议人工核对'), '防刷分信号必须只进入管理员人工复核，不得自动惩罚正常重复对局'],
