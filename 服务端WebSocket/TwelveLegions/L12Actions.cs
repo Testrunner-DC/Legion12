@@ -697,7 +697,7 @@ public sealed partial class L12GameEngine
         if (command.Target is null) return CommandResult.Reject("缺少进攻目标");
         var attacker = FindOnField(State.Players[playerIndex], command.CardInstanceId, out var row, out _);
         if (attacker is null) return CommandResult.Reject("进攻军团不在战场");
-        if (attacker.CannotAttack) return CommandResult.Reject("该军团不能进攻");
+        if (L12StructuredCardRules.CannotAttack(attacker, row)) return CommandResult.Reject("该军团不能进攻");
         if (!CanAttackFromRow(attacker, row)) return CommandResult.Reject("该军团在当前位置无法进攻");
         if (attacker.Tapped) return CommandResult.Reject("休整军团不能进攻");
         if (attacker.Hidden) return CommandResult.Reject("隐匿军团需先翻回正面");
@@ -859,7 +859,7 @@ public sealed partial class L12GameEngine
 
         var card = FindOnField(defender, target.InstanceId, out var targetRow, out _);
         if (card is null || card.Hidden || !IsFieldLegion(card)) error = "目标不是可进攻军团";
-        else if (card.CardId == "S02-0516" && !card.Tapped) error = "活跃的汉尼拔无法被进攻";
+        else if (L12StructuredCardRules.CannotBeAttacked(card, targetRow)) error = $"活跃的〈{card.Name}〉无法被进攻";
         else if (State.ActiveDisaster?.CardId == "S02-DS02" && targetRow == 0 && !card.Tapped)
             error = "〈迷雾绝境〉生效时不可进攻处于活跃状态的前排军团";
         else if (IsProtectedByRestedAmakine(defender, card)) error = "休整的阿麦金使活跃的试炼军团不可被进攻";
@@ -925,6 +925,8 @@ public sealed partial class L12GameEngine
         error = string.Empty;
         if (defender.MasterCannotBeAttackedUntilTurn >= State.TurnSerial)
             error = "对方主宰当前不能被进攻";
+        else if (L12StructuredCardRules.CombatProfile(attacker, row).CannotAttackMaster)
+            error = "此军团无法进攻主宰";
         else if (attacker.CardId == "S01-0212" && State.Players[playerIndex].MasterId == "S02-02M1")
             error = "奈芙蒂斯使我方陵墓守卫无法进攻主宰";
         else if (HasFrontRowLowTroopMasterProtection(defender, attacker.Troops))
@@ -1023,7 +1025,8 @@ public sealed partial class L12GameEngine
                 return CommandResult.Reject("只能选择我方后排军团进行支援");
             if (supportSlot != targetSlot && !L12StructuredCardRules.HasCooperativeSupport(support, supportRow))
                 return CommandResult.Reject("非同列后排军团必须具有协防");
-            if (support.CannotSupport) return CommandResult.Reject($"〈{support.Name}〉当前无法支援");
+            if (L12StructuredCardRules.CannotSupport(support, supportRow))
+                return CommandResult.Reject($"〈{support.Name}〉当前无法支援");
             supporters.Add(support);
         }
         if (target.Troops + supporters.Sum(card => card.Troops) < EffectiveAttackValue(pending, attacker))
@@ -1040,7 +1043,8 @@ public sealed partial class L12GameEngine
         if (attacker is null || target is null || targetRow != 0 || defender.BackRowCannotSupport
             || L12StructuredCardRules.CannotReceiveBackRowSupport(target, targetRow)) return false;
         var supporters = defender.Field[1]
-            .Where(card => card is not null && IsFieldLegion(card) && !card.CannotSupport)
+            .Where(card => card is not null && IsFieldLegion(card)
+                && !L12StructuredCardRules.CannotSupport(card, 1))
             .Cast<L12CardInstance>()
             .Where(card => FindOnField(defender, card.InstanceId, out var row, out var slot) is not null
                 && (slot == targetSlot || L12StructuredCardRules.HasCooperativeSupport(card, row)))

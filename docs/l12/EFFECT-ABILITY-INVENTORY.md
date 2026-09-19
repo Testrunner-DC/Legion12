@@ -5,7 +5,7 @@
 
 卡牌：324；能力段：684；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`e947f74bc8a092e655246755886ba638c74a3e4fb8cff2cdfdcb64513122d179`。
+内容指纹：`e971048139e7d010a9f1fe3978cb94afbc9d0e0f1996550dcbb19a27bf5af748`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
@@ -502,7 +502,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-01S1 哮天犬·稚 #1 | S02-01S1:ability:master-morale-return:8d098fe32e7b253b | master-morale-return/triggered | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.move-zone → duration:duration.apply → resolution:legacy.resolve | 1 | 「主宰为杨戬时」我方 回合1次 我方士气因主宰效果返还4张及以上时，&lt;哮天犬·稚&gt;可在前排活跃登场，视为1张兵力2000的【特殊】军团。 |
 | S02-01S1 哮天犬·稚 #2 | S02-01S1:ability:death:544dd81cfc7627f4 | death/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.add-morale | 1 | 阵亡时 可从士气牌库追加1张休整的士气。 |
 | S02-0201 增殖的甲虫 #1 | S02-0201:ability:continuous:16b90b36ef8afe2c | continuous/rule | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.move-zone → resolution:legacy.resolve | 0 | 规则上，此军团构筑时不计入卡组数量，不能进入手牌和牌库，游戏开始时置入墓地，此军团以任何形式离场均视为置入所有者墓地。 |
-| S02-0201 增殖的甲虫 #2 | S02-0201:ability:continuous:644225d5127263cd | continuous/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 无法进攻，无法支援。 |
+| S02-0201 增殖的甲虫 #2 | S02-0201:ability:continuous:39b0b1524eaed536 | continuous/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 无法进攻，无法支援。 |
 | S02-0202 陵墓圣武士 #1 | S02-0202:ability:continuous:94759febdd62fd32 | continuous/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → duration:duration.apply → condition:visibility.policy → resolution:legacy.resolve | 0 | 我方回合 本回合我方每有1张卡名包含&lt;陵墓&gt;的军团离场时，此军团登场费用-1。 |
 | S02-0202 陵墓圣武士 #2 | S02-0202:ability:death:79d8237fa4fa11c6 | death/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 阵亡时 将墓地1张&lt;陵墓守卫&gt;活跃登场。 |
 | S02-0203 哈特谢普苏特 #1 | S02-0203:ability:continuous:418e71545576e12d | continuous/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.set-state → resolution:legacy.resolve | 0 | 若我方战场不存在&lt;陵墓守卫&gt;，此军团登场费用-1。 |
@@ -706,7 +706,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0615 格温莉安 #1 | S02-0615:ability:continuous:16dc08d7324d1649 | continuous/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → resolution:operation.set-state → resolution:legacy.resolve | 0 | 「位于前排」获得ABILITY 2，且在对方回合此军团兵力+1000。 |
 | S02-0615 格温莉安 #2 | S02-0615:ability:keyword-definition:8a4c9aff096f6526 | keyword-definition/granted-continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.keyword → resolution:legacy.resolve | 0 | 挑衅 对方只可进攻拥有 挑衅 效果的军团，若有多个具有 挑衅效果的军团，则可以选择其中1个进行进攻。 |
 | S02-0615 格温莉安 #3 | S02-0615:ability:death:99b745c7faa9a5c9 | death/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw → resolution:operation.heal-master → condition:condition.expression → resolution:operation.composite-flow | 3 | 当此军团因效果阵亡时，我方主宰可增加1点血量或抽取1张牌。 |
-| S02-0616 阿麦金 #1 | S02-0616:ability:continuous:06090e0cae9fefb6 | continuous/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 此军团休整时，我方试炼军团活跃时不可被进攻。 |
+| S02-0616 阿麦金 #1 | S02-0616:ability:continuous:5afe2828d587391f | continuous/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → condition:condition.expression → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 此军团休整时，我方试炼军团活跃时不可被进攻。 |
 | S02-0616 阿麦金 #2 | S02-0616:ability:enter:d634145a7ee14bd0 | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.gain-rune | 1 | 登场时 可获得1符文。 |
 | S02-0616 阿麦金 #3 | S02-0616:ability:active:3616b237df312569 | active/activated | owner-unreviewed | 主动休整 展示牌库顶部1张牌 | trigger:trigger.observe → condition:control.optional → cost:cost.rest-source → resolution:operation.move-zone → resolution:operation.move-zone → resolution:visibility.policy → resolution:legacy.resolve | 6 | 主动休整 展示牌库顶部1张牌：若其只拥有【彼界】特征，可将其加入手牌；否则将其返回牌库顶部或底部。 |
 | S02-0617 罗宾汉 #1 | S02-0617:ability:trial:bb29c925c9fcdc82 | trial/rule | owner-unreviewed | — | trigger:trigger.observe → rule:special.domain → resolution:legacy.resolve | 1 | 试炼 1 |

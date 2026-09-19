@@ -412,7 +412,8 @@ public sealed partial class L12GameEngine
         for (var slot = 0; slot < 3; slot++)
         {
             var attacker = player.Field[row][slot];
-            if (attacker is null || attacker.CannotAttack || attacker.Tapped || attacker.Hidden
+            if (attacker is null || L12StructuredCardRules.CannotAttack(attacker, row)
+                || attacker.Tapped || attacker.Hidden
                 || !CanAttackFromRow(attacker, row)) continue;
             var targets = new List<string>();
             for (var targetRow = 0; targetRow < 2; targetRow++)
@@ -842,8 +843,8 @@ public sealed partial class L12GameEngine
             effects.Add(new("power-up", "本回合兵力+1000", "天照大神"));
         if (card.CannotUntapUntilRound >= State.Round || card.CannotReadyByEffectUntilTurn >= State.TurnSerial)
             effects.Add(new("lock", "暂时无法转为活跃"));
-        if (card.CannotAttack) effects.Add(new("disabled", "无法进攻"));
-        if (card.CannotSupport) effects.Add(new("disabled", "无法支援"));
+        if (L12StructuredCardRules.CannotAttack(card, row)) effects.Add(new("disabled", "无法进攻"));
+        if (L12StructuredCardRules.CannotSupport(card, row)) effects.Add(new("disabled", "无法支援"));
         if (row == 1 && controller.BackRowCannotSupport) effects.Add(new("disabled", "后排军团无法支援"));
         if (card.CannotRespondUntilRound >= State.Round) effects.Add(new("disabled", "无法响应或发动效果"));
         if (HasActiveImmortal(card, row))
@@ -852,8 +853,8 @@ public sealed partial class L12GameEngine
             effects.Add(new("shield", "〈王者之剑〉可代替承受致命进攻或效果", "湖中仙女的馈赠"));
         if (IsProtectedByRestedAmakine(controller, card))
             effects.Add(new("shield", "暂时不可被进攻", "阿麦金"));
-        if (L12StructuredCardSemantics.IsHannibal(card.CardId) && !card.Tapped)
-            effects.Add(new("shield", "活跃时不可被进攻", "汉尼拔"));
+        if (L12StructuredCardRules.CannotBeAttacked(card, row))
+            effects.Add(new("shield", "活跃时不可被进攻", card.Name));
         if (card.DiscardAtEndOfTurnUntilTurn >= State.TurnSerial)
             effects.Add(new("discard-end", "回合结束时弃置"));
         if (card.CanAttackBackAndMasterUntilTurn >= State.TurnSerial
@@ -1031,8 +1032,8 @@ public sealed partial class L12GameEngine
             Profession = card.Profession,
             EffectiveProfession = card.Profession,
             Abilities = GetAbilities(card.Id),
-            CannotAttack = card.Id is "S02-0005" or "S02-0007" or "S02-0201" or "S02-0603",
-            CannotSupport = card.Id == "S02-0201",
+            CannotAttack = L12StructuredCardRules.HasUnconditionalAttackRestriction(card.Id, "cannotAttack"),
+            CannotSupport = L12StructuredCardRules.HasUnconditionalAttackRestriction(card.Id, "cannotSupport"),
         };
         if (L12StructuredCardRules.IsTrialLegion(instance)
             && instance.Abilities.All(view => view.Id != "trialAdvance"))
@@ -1871,8 +1872,8 @@ public sealed partial class L12GameEngine
         card.AttacksThisTurn = 0;
         card.TrialProgress = 0;
         card.TrialCompleted = false;
-        card.CannotAttack = card.CardId is "S02-0005" or "S02-0007" or "S02-0201" or "S02-0603";
-        card.CannotSupport = card.CardId == "S02-0201";
+        card.CannotAttack = L12StructuredCardRules.HasUnconditionalAttackRestriction(card.CardId, "cannotAttack");
+        card.CannotSupport = L12StructuredCardRules.HasUnconditionalAttackRestriction(card.CardId, "cannotSupport");
         card.CanAttackBackAndMasterUntilTurn = -1;
         card.CanAttackBackUntilTurn = null;
         card.CanAttackMasterOnSummonUntilTurn = -1;

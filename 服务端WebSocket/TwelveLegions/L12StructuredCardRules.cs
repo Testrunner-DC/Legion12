@@ -12,6 +12,10 @@ public sealed record L12ConditionalCombatProfile(
     bool HasRangedNoLoss,
     bool HasAttackNoLoss,
     bool CannotBeRanged,
+    bool CannotAttackMaster,
+    bool CannotAttack,
+    bool CannotSupport,
+    bool CannotBeAttacked,
     int? AttackTroopsSetValue,
     int IncomingRangedCombatDamageAdjustment,
     string ConditionExpression);
@@ -346,7 +350,7 @@ public static partial class L12StructuredCardRules
     {
         if (card.TauntUntilTurn >= 0) return !card.TauntRequiresFrontRow || row == 0;
         var abilities = GetCombatRuleAbilities(card.CardId);
-        return abilities.Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatchesRow(ability, row))
+        return abilities.Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatches(ability, card, row))
             // `granted-continuous` 是被其他能力引用的定义，不能脱离授予条件独立生效。
             .Where(ability => ability.ExecutionModel != "granted-continuous")
             .Where(ability => !ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.Condition
@@ -357,7 +361,7 @@ public static partial class L12StructuredCardRules
     public static bool CannotReceiveBackRowSupport(L12CardInstance card, int row)
     {
         var abilities = GetCombatRuleAbilities(card.CardId);
-        return abilities.Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatchesRow(ability, row))
+        return abilities.Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatches(ability, card, row))
             .SelectMany(ability => ability.Atoms)
             .Any(atom => atom.Kind == L12AtomKinds.AttackRule
                 && atom.Parameters.GetValueOrDefault("cannotReceiveBackRowSupport") == "true");
@@ -367,7 +371,7 @@ public static partial class L12StructuredCardRules
     {
         if (row != 1) return false;
         return GetCombatRuleAbilities(card.CardId)
-            .Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatchesRow(ability, row))
+            .Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatches(ability, card, row))
             .SelectMany(ability => ability.Atoms)
             .Any(atom => atom.Kind == L12AtomKinds.Keyword
                 && atom.Parameters.GetValueOrDefault("keywordRef") == "cooperative-support");
@@ -400,11 +404,15 @@ public static partial class L12StructuredCardRules
         var rangedNoLoss = false;
         var attackNoLoss = false;
         var cannotBeRanged = false;
+        var cannotAttackMaster = false;
+        var cannotAttack = false;
+        var cannotSupport = false;
+        var cannotBeAttacked = false;
         int? attackTroopsSetValue = null;
         var incomingRangedCombatDamageAdjustment = 0;
         var matchedConditions = new List<string>();
         var abilities = GetCombatRuleAbilities(card.CardId);
-        foreach (var ability in abilities.Where(ability => ConditionMatchesRow(ability, row)))
+        foreach (var ability in abilities.Where(ability => ConditionMatches(ability, card, row)))
         {
             var expression = ConditionExpression(ability);
             if (!string.IsNullOrWhiteSpace(expression)) matchedConditions.Add(expression);
@@ -422,6 +430,15 @@ public static partial class L12StructuredCardRules
                     rangedNoLoss |= atom.Parameters.GetValueOrDefault("rangedNoLoss") == "true";
                     attackNoLoss |= atom.Parameters.GetValueOrDefault("attackNoLoss") == "true";
                     cannotBeRanged |= atom.Parameters.GetValueOrDefault("cannotBeRanged") == "true";
+                    cannotAttackMaster |= ability.ExecutionModel != "granted-continuous"
+                        && atom.Parameters.GetValueOrDefault("cannotAttackMaster") == "true";
+                    cannotAttack |= ability.ExecutionModel != "granted-continuous"
+                        && atom.Parameters.GetValueOrDefault("cannotAttack") == "true";
+                    cannotSupport |= ability.ExecutionModel != "granted-continuous"
+                        && atom.Parameters.GetValueOrDefault("cannotSupport") == "true";
+                    cannotBeAttacked |= ability.ExecutionModel != "granted-continuous"
+                        && (atom.Parameters.GetValueOrDefault("cannotBeAttacked") == "true"
+                            || atom.Parameters.GetValueOrDefault("targetableByAttack") == "false");
                     if (int.TryParse(atom.Parameters.GetValueOrDefault("incomingRangedCombatDamageAdjustment"),
                             out var adjustment))
                         incomingRangedCombatDamageAdjustment += adjustment;
@@ -443,18 +460,43 @@ public static partial class L12StructuredCardRules
             rangedNoLoss = true;
         }
 
-        return new(profession, ranged, ranged && rangedNoLoss, attackNoLoss, cannotBeRanged, attackTroopsSetValue,
+        return new(profession, ranged, ranged && rangedNoLoss, attackNoLoss, cannotBeRanged, cannotAttackMaster,
+            cannotAttack, cannotSupport, cannotBeAttacked, attackTroopsSetValue,
             incomingRangedCombatDamageAdjustment,
             matchedConditions.Count == 0 ? "always" : string.Join(';', matchedConditions.Distinct(StringComparer.Ordinal)));
     }
 
     public static bool ProtectsMasterFromTroops(L12CardInstance card, int row, int attackerTroops)
         => GetCombatRuleAbilities(card.CardId)
-            .Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatchesRow(ability, row))
+            .Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatches(ability, card, row))
             .SelectMany(ability => ability.Atoms)
             .Where(atom => atom.Kind == L12AtomKinds.AttackRule)
             .Select(atom => atom.Parameters.GetValueOrDefault("protectMasterFromTroopsAtMost"))
             .Any(value => int.TryParse(value, out var threshold) && attackerTroops <= threshold);
+
+    public static bool CannotAttack(L12CardInstance card, int row)
+        => card.CannotAttack || CombatProfile(card, row).CannotAttack;
+
+    public static bool CannotSupport(L12CardInstance card, int row)
+        => card.CannotSupport || CombatProfile(card, row).CannotSupport;
+
+    public static bool CannotBeAttacked(L12CardInstance card, int row)
+        => CombatProfile(card, row).CannotBeAttacked;
+
+    public static bool HasUnconditionalAttackRestriction(string cardId, string parameter)
+        => GetCombatRuleAbilities(cardId)
+            .Where(ability => ability.ExecutionModel == "continuous"
+                && string.IsNullOrWhiteSpace(ConditionExpression(ability)))
+            .SelectMany(ability => ability.Atoms)
+            .Any(atom => atom.Kind == L12AtomKinds.AttackRule
+                && atom.Parameters.GetValueOrDefault(parameter) == "true");
+
+    public static bool ProtectsActiveTrialLegions(L12CardInstance card)
+        => GetCombatRuleAbilities(card.CardId)
+            .Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatches(ability, card, 0))
+            .SelectMany(ability => ability.Atoms)
+            .Any(atom => atom.Kind == L12AtomKinds.AttackRule
+                && atom.Parameters.GetValueOrDefault("protect") == "controller.active-trial-legions");
 
     public static string? EffectiveProfession(L12CardInstance card, int row)
         => CombatProfile(card, row).EffectiveProfession;
@@ -554,12 +596,14 @@ public static partial class L12StructuredCardRules
         => ability.Atoms.FirstOrDefault(atom => atom.Kind == L12AtomKinds.Condition)
             ?.Parameters.GetValueOrDefault("expression");
 
-    private static bool ConditionMatchesRow(L12StructuredAbilityTemplate ability, int row)
+    private static bool ConditionMatches(L12StructuredAbilityTemplate ability, L12CardInstance card, int row)
     {
         var expression = ConditionExpression(ability);
         if (string.IsNullOrWhiteSpace(expression)) return true;
         if (expression.Contains("source.row=front", StringComparison.Ordinal) && row != 0) return false;
         if (expression.Contains("source.row=back", StringComparison.Ordinal) && row != 1) return false;
+        if (expression.Contains("source.ready=true", StringComparison.Ordinal) && card.Tapped) return false;
+        if (expression.Contains("source.rested=true", StringComparison.Ordinal) && !card.Tapped) return false;
         return true;
     }
 

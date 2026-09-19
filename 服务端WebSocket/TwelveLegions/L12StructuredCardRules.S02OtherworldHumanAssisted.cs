@@ -119,6 +119,7 @@ public static partial class L12StructuredCardRules
 
             "S02-0616" => OtherworldCard(
                 OH("continuous", "continuous", "此军团休整时，我方试炼军团活跃时不可被进攻。",
+                    Atom(L12AtomKinds.Condition, "此军团处于休整", "condition", ("expression", "source.rested=true")),
                     Atom(L12AtomKinds.AttackRule, "保护我方活跃试炼军团不可被进攻", "resolution",
                         ("protect", "controller.active-trial-legions"))),
                 OH("enter", "triggered", "登场时 可获得1符文。"),

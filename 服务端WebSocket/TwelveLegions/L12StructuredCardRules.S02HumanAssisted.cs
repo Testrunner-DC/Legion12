@@ -376,6 +376,8 @@ public static partial class L12StructuredCardRules
             add(L12AtomKinds.AttackRule, "无法进攻主宰", "resolution", ("cannotAttackMaster", "true"));
         else if (text.Contains("无法进攻", StringComparison.Ordinal))
             add(L12AtomKinds.AttackRule, "无法进攻", "resolution", ("cannotAttack", "true"));
+        if (text.Contains("无法支援", StringComparison.Ordinal))
+            add(L12AtomKinds.AttackRule, "无法支援", "resolution", ("cannotSupport", "true"));
         if (text.Contains("无法被远程进攻", StringComparison.Ordinal))
             add(L12AtomKinds.AttackRule, "无法被远程进攻", "resolution", ("cannotBeRanged", "true"));
         if (text.Contains("主宰无法被兵力不高于2000的军团进攻", StringComparison.Ordinal))

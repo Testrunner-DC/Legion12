@@ -179,7 +179,7 @@ public sealed partial class L12GameEngine
 
     private static bool IsProtectedByRestedAmakine(L12PlayerState owner, L12CardInstance target)
         => !target.Tapped && L12StructuredCardRules.IsTrialLegion(target)
-            && PublicLegions(owner).Any(card => card.CardId == "S02-0616" && card.Tapped);
+            && PublicLegions(owner).Any(L12StructuredCardRules.ProtectsActiveTrialLegions);
 
     private IEnumerable<string> EffectCavalryDestinations(L12PlayerState battlefield)
         => EmptySlots(battlefield).Where(choice => State.ActiveDisaster?.CardId != "S01-DS03"

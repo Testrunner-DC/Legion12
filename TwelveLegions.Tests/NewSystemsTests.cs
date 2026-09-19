@@ -1603,7 +1603,7 @@ public sealed class NewSystemsTests
     public void ThunderWrathDoesNotRollForLegionsWithTwoThousandTroops()
     {
         var game = Create(seed: 7841);
-        var attacker = CreateInstance("S02-0005", "thunder-low-attacker");
+        var attacker = CreateInstance("S01-0003", "thunder-low-attacker");
         attacker.SummonRound = -1;
         game.State.Players[0].Field[0][0] = attacker;
         game.State.Players[1].Field[0] = new L12CardInstance?[3];
