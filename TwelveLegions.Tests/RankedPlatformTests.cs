@@ -16,7 +16,9 @@ public sealed class RankedPlatformTests
 
         var identity = store.RankedBattleIdentity(account.Id, 0);
 
+        Assert.Equal(string.Empty, identity.Faction);
         Assert.Equal(string.Empty, identity.RankLabel);
+        Assert.False(identity.RankIsTitle);
         Assert.Null(identity.MasterTitle);
     }
 
@@ -160,7 +162,9 @@ public sealed class RankedPlatformTests
         var selected = store.SelectRankedMasterTitle(amaterasu.Id, "最强天照");
         Assert.Equal("最强天照", selected.SelectedMasterTitle);
         var battleIdentity = store.RankedBattleIdentity(amaterasu.Id, 0);
+        Assert.Equal("秩序", battleIdentity.Faction);
         Assert.Equal(selected.RankLabel, battleIdentity.RankLabel);
+        Assert.Equal(selected.PlacementTitle is not null, battleIdentity.RankIsTitle);
         Assert.Equal("最强天照", battleIdentity.MasterTitle);
         Assert.Throws<ArgumentException>(() => store.SelectRankedMasterTitle(amaterasu.Id, "未获得的称号"));
 

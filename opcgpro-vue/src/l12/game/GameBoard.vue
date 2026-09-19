@@ -1049,8 +1049,8 @@ function statusTexts(card: Card) {
             <article class="player-summary opponent-summary">
               <div class="player-summary-primary"><b>对方</b><strong>{{ viewEnemy.name || '未命名玩家' }}</strong></div>
               <div class="player-summary-meta">
-                <RankedIdentityBadge v-if="identityLabel(enemyBadge?.rankLabel)" class="rank-badge" variant="tier" compact :label="identityLabel(enemyBadge?.rankLabel)" />
-                <RankedIdentityBadge v-if="identityLabel(enemyBadge?.masterTitle)" class="title-badge" variant="title" compact :label="identityLabel(enemyBadge?.masterTitle)" />
+                <RankedIdentityBadge v-if="identityLabel(enemyBadge?.rankLabel)" class="rank-badge" :variant="enemyBadge?.rankIsTitle ? 'faction-title' : 'tier'" :faction="enemyBadge?.faction" compact :label="identityLabel(enemyBadge?.rankLabel)" />
+                <RankedIdentityBadge v-if="identityLabel(enemyBadge?.masterTitle)" class="title-badge" variant="master-title" :faction="enemyBadge?.faction" compact :label="identityLabel(enemyBadge?.masterTitle)" />
                 <span class="connection-state" :class="{ online: playerConnection(viewEnemy.playerIndex) }"><i/>{{ connectionLabel(viewEnemy.playerIndex) }}</span>
               </div>
             </article>
@@ -1058,8 +1058,8 @@ function statusTexts(card: Card) {
             <article class="player-summary my-summary">
               <div class="player-summary-primary"><b>我方</b><strong class="mine">{{ viewMe.name || '未命名玩家' }}</strong></div>
               <div class="player-summary-meta">
-                <RankedIdentityBadge v-if="identityLabel(myBadge?.rankLabel)" class="rank-badge" variant="tier" compact :label="identityLabel(myBadge?.rankLabel)" />
-                <RankedIdentityBadge v-if="identityLabel(myBadge?.masterTitle)" class="title-badge" variant="title" compact :label="identityLabel(myBadge?.masterTitle)" />
+                <RankedIdentityBadge v-if="identityLabel(myBadge?.rankLabel)" class="rank-badge" :variant="myBadge?.rankIsTitle ? 'faction-title' : 'tier'" :faction="myBadge?.faction" compact :label="identityLabel(myBadge?.rankLabel)" />
+                <RankedIdentityBadge v-if="identityLabel(myBadge?.masterTitle)" class="title-badge" variant="master-title" :faction="myBadge?.faction" compact :label="identityLabel(myBadge?.masterTitle)" />
                 <span class="connection-state" :class="{ online: playerConnection(viewMe.playerIndex) }"><i/>{{ connectionLabel(viewMe.playerIndex) }}</span>
               </div>
             </article>

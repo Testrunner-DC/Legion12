@@ -34,8 +34,8 @@ public sealed record L12RankedProfileView(string AccountId, string Username, str
     int TierIndex, int FactionRank, string? Title, IReadOnlyList<string> Titles,
     string RankLabel, string? PlacementTitle, string? SelectedMasterTitle,
     IReadOnlyList<string> MasterTitles);
-public sealed record L12RankedBattleIdentityView(int PlayerIndex, string RankLabel,
-    string? MasterTitle);
+public sealed record L12RankedBattleIdentityView(int PlayerIndex, string Faction, string RankLabel,
+    bool RankIsTitle, string? MasterTitle);
 public sealed record L12RankedProfileHistoryView(string SeasonId, string Faction, int SevenValue,
     int PlacementPlayed, int PlacementWins, int Wins, int Losses, int WinStreak,
     DateTimeOffset ArchivedAt);
@@ -403,7 +403,9 @@ public sealed partial class L12PlatformStore
                     : $"定级 {row.PlacementPlayed}/{_data.RankedConfig.PlacementMatches}");
             var masterTitles = PlayerMasterTitles(row, CurrentMasterChampions());
             var selected = SelectedMasterTitle(row, masterTitles);
-            return new L12RankedBattleIdentityView(playerIndex, rankLabel, selected);
+            var faction = string.IsNullOrWhiteSpace(row.Faction) ? string.Empty : FactionFor(row.Faction).Name;
+            return new L12RankedBattleIdentityView(playerIndex, faction, rankLabel,
+                placementTitle is not null, selected);
         }
     }
 

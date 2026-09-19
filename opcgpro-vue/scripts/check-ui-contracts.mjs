@@ -296,7 +296,7 @@ const contracts = [
     && playerTurnClock.includes('.player-turn-clock{box-sizing:border-box;display:grid;width:138px;')
     && playerTurnClock.includes("'untimed-clock': !clock") && playerTurnClock.includes('.player-turn-clock.untimed-clock{width:130px;min-height:0;padding:5px}')
     && !playerTurnClock.includes('无时限') && !playerTurnClock.includes('v-if="active"'), '双方回合玩家框必须常驻；排位显示总操作、本次操作或重连倒计时，无计时房间只保留回合玩家/等待回合并收缩'],
-  [board.includes('data-ui-contract="complete-player-summary"') && board.includes('class="player-summary-primary"') && board.includes('class="player-summary-meta"') && board.includes('class="rank-badge" variant="tier" compact') && board.includes('class="title-badge" variant="title" compact')
+  [board.includes('data-ui-contract="complete-player-summary"') && board.includes('class="player-summary-primary"') && board.includes('class="player-summary-meta"') && board.includes(":variant=\"enemyBadge?.rankIsTitle ? 'faction-title' : 'tier'\"") && board.includes('class="title-badge" variant="master-title"')
     && board.includes('v-if="identityLabel(enemyBadge?.rankLabel)"') && board.includes('v-if="identityLabel(enemyBadge?.masterTitle)"')
     && board.includes('v-if="identityLabel(myBadge?.rankLabel)"') && board.includes('v-if="identityLabel(myBadge?.masterTitle)"')
     && board.includes("absentIdentityLabels = new Set(['未定级', '暂无段位', '无段位', '未评级', '暂无称号', '无称号', '未获得称号', '暂无'])")
@@ -306,11 +306,13 @@ const contracts = [
     && board.includes('.player-panel{box-sizing:border-box;height:auto!important;min-height:144px') && board.includes('.player-summary-meta{display:flex;')
     && board.includes('.player-summary-meta>.rank-badge,.player-summary-meta>.title-badge{min-width:max-content;max-width:none;flex:none}')
     && board.includes('.player-summary-meta>.connection-state{min-width:0;max-width:100%!important;') && board.includes('margin-left:auto!important;')
-    && rankings.includes("import RankedIdentityBadge from '@/l12/RankedIdentityBadge.vue'") && rankings.includes('<RankedIdentityBadge v-for="title in row.titles"')
-    && rankedIdentityBadge.includes("variant?: 'tier' | 'title'") && rankedIdentityBadge.includes('--ranked-tier-badge-font-size: 15px;') && rankedIdentityBadge.includes('--ranked-title-badge-font-size: 15px;')
-    && rankedIdentityBadge.includes('linear-gradient(135deg, #b47716 0%, #6f3d08 48%, #3a1d02 100%)') && rankedIdentityBadge.includes('✦')
-    && rankedIdentityBadge.includes('drop-shadow(0 0 4px #ffd047)') && rankedIdentityBadge.includes('color: inherit !important;')
-    && rankedIdentityBadge.includes('max-width: none;') && rankedIdentityBadge.includes('text-overflow: clip;'), '对战右上双方摘要必须各保持两行：身份与昵称；存在排位等级或称号时复用真实徽章组件并完整显示，无数据时留空而非伪造占位；在线状态自动占据剩余空间'],
+    && rankings.includes("import RankedIdentityBadge from '@/l12/RankedIdentityBadge.vue'") && rankings.includes('<RankedIdentityBadge v-for="title in row.titles"') && rankings.includes(':variant="titleVariant(title)"')
+    && profilePage.includes("import RankedIdentityBadge from '@/l12/RankedIdentityBadge.vue'") && profilePage.includes(':variant="profileTitleVariant(title)"')
+    && rankedIdentityBadge.includes("variant?: 'tier' | 'faction-title' | 'master-title'") && rankedIdentityBadge.includes('--ranked-tier-badge-font-size: 15px;') && rankedIdentityBadge.includes('--ranked-title-badge-font-size: 15px;')
+    && rankedIdentityBadge.includes('faction-order') && rankedIdentityBadge.includes('faction-chaos') && rankedIdentityBadge.includes('faction-fate')
+    && rankedIdentityBadge.includes("props.variant === 'master-title' ? '♛'") && rankedIdentityBadge.includes("props.variant === 'faction-title' ? '◆'")
+    && rankedIdentityBadge.includes('linear-gradient(135deg, #b47716 0%, #6f3d08 48%, #3a1d02 100%)')
+    && rankedIdentityBadge.includes('color: inherit !important;') && rankedIdentityBadge.includes('max-width: none;') && rankedIdentityBadge.includes('text-overflow: clip;'), '排行榜、个人页和对战摘要必须复用同一排位身份徽章：三派系段位与派系称号使用各自主题色，最强主宰称号使用独立金色冠冕；无数据时不伪造占位'],
   [adminIntegrity.includes('data-ui-contract="ranked-integrity-review"') && adminIntegrity.includes('不自动扣减七曜') && adminIntegrity.includes('建议人工核对'), '防刷分信号必须只进入管理员人工复核，不得自动惩罚正常重复对局'],
   [shell.includes('friendApi.request(player.accountId)') && shell.includes('inviteFriend(player.accountId)') && shell.includes('spectateRoom(player.roomCode)')
     && shell.includes("player.activity === 'playing'") && shell.includes(':disabled="!player.canSpectate"')

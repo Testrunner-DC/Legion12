@@ -81,6 +81,8 @@ const visiblePlayers = computed(() => query.value
 const visibleMasters = computed(() => query.value
   ? analytics.value.masters.filter(row => `${row.masterName} ${row.masterId} ${row.strongestPlayer ?? ''} ${row.title ?? ''}`.toLocaleLowerCase().includes(query.value))
   : analytics.value.masters)
+const currentMasterTitles = computed(() => new Set(analytics.value.masters.flatMap(row => row.title ? [row.title] : [])))
+const titleVariant = (title: string) => title.startsWith('最强') || currentMasterTitles.value.has(title) ? 'master-title' as const : 'faction-title' as const
 const matrixMasters = computed(() => visibleMasters.value)
 const matrixMasterColumnWidth = '银臂努阿达'.length * 14 + 44
 const visibleHonors = computed(() => {
@@ -144,8 +146,8 @@ onBeforeUnmount(() => {
       <div v-for="row in visiblePlayers" :key="`${row.rank}-${row.username}-${row.faction}`" class="tr" :class="[`rank-${Math.min(row.rank, 4)}`, { 'is-me': row.username === platformState.account?.username }]">
         <b>#{{ row.rank }}</b>
         <strong class="player-name"><span class="username">{{ row.username }} <i v-if="row.username === platformState.account?.username" class="me-badge">我</i></span></strong>
-        <span>{{ row.faction }}</span><span>{{ row.tier }}</span>
-        <span class="title-list player-title-cell"><RankedIdentityBadge v-for="title in row.titles" :key="title" class="title-badge" :label="title"/><span v-if="!row.titles?.length">—</span></span>
+        <span>{{ row.faction }}</span><span><RankedIdentityBadge variant="tier" :faction="row.faction" :label="row.tier"/></span>
+        <span class="title-list player-title-cell"><RankedIdentityBadge v-for="title in row.titles" :key="title" :variant="titleVariant(title)" :faction="row.faction" :label="title"/><span v-if="!row.titles?.length">—</span></span>
         <span v-if="row.favoriteMasterId" class="player-master"><img class="player-master-avatar" data-ui-contract="ranking-master-avatar" :src="masterProfileUrl(row.favoriteMasterId)" :alt="`${row.favoriteMasterName || row.favoriteMasterId}头像`"/><b>{{ row.favoriteMasterName || row.favoriteMasterId }}</b></span><span v-else>—</span>
         <strong>{{ row.displayValue }}</strong><span>{{ row.wins + row.losses }}</span>
         <span><i>{{ row.wins }}</i>胜 <em>{{ row.losses }}</em>负</span><strong>{{ percent((row.wins + row.losses) ? row.wins * 100 / (row.wins + row.losses) : 0) }}</strong>
@@ -158,7 +160,7 @@ onBeforeUnmount(() => {
       <div v-for="row in visibleMasters" :key="row.masterId" class="tr" :class="`rank-${Math.min(row.rank, 4)}`">
         <b>#{{ row.rank }}</b>
         <span class="master-card"><img class="master-avatar" data-ui-contract="ranking-master-avatar" :src="masterProfileUrl(row.masterId)" :alt="`${row.masterName}头像`"/><strong>{{ row.masterName }}<small>{{ row.masterId }}</small></strong></span>
-        <span class="champion"><b v-if="row.title" class="champion-title"><i>♛</i><span>{{ row.title }}</span></b><strong>{{ row.strongestPlayer || '尚未产生' }}</strong></span>
+        <span class="champion"><RankedIdentityBadge v-if="row.title" variant="master-title" :label="row.title"/><strong>{{ row.strongestPlayer || '尚未产生' }}</strong></span>
         <strong>{{ row.games }}</strong><span><i>{{ row.wins }}</i>胜 <em>{{ row.losses }}</em>负</span><b class="rate">{{ percent(row.winRate) }}</b><span>{{ percent(row.usageRate) }}</span>
         <span>{{ percent(row.firstWinRate) }}<small>{{ row.firstWins }}/{{ row.firstGames }}</small></span><span>{{ percent(row.secondWinRate) }}<small>{{ row.secondWins }}/{{ row.secondGames }}</small></span>
       </div>
@@ -168,7 +170,7 @@ onBeforeUnmount(() => {
     <section v-else-if="tab === 'history'" class="rank-panel honor-table">
       <div class="thead"><span>赛季</span><span>获奖玩家</span><span>派系</span><span>赛季段位</span><span>赛季七曜值</span><span>获得称号</span></div>
       <div v-for="row in visibleHonors" :key="`${row.seasonId}-${row.username}-${row.titles.join('|')}`" class="tr">
-        <strong>{{ row.seasonName }}<small>{{ row.seasonId }}</small></strong><b>{{ row.username }}</b><span>{{ row.faction }}</span><span>{{ row.tier }}</span><strong>{{ row.displayValue }}</strong><span class="title-list"><RankedIdentityBadge v-for="title in row.titles" :key="title" class="title-badge" :label="title"/></span>
+        <strong>{{ row.seasonName }}<small>{{ row.seasonId }}</small></strong><b>{{ row.username }}</b><span>{{ row.faction }}</span><span><RankedIdentityBadge variant="tier" :faction="row.faction" :label="row.tier"/></span><strong>{{ row.displayValue }}</strong><span class="title-list"><RankedIdentityBadge v-for="title in row.titles" :key="title" :variant="titleVariant(title)" :faction="row.faction" :label="title"/></span>
       </div>
       <div v-if="!visibleHonors.length" class="empty">尚无已经结算并冻结的历史赛季称号</div>
     </section>

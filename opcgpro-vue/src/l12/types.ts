@@ -164,7 +164,7 @@ export interface GameState {
   winnerReason?: string | null
   matchGovernance?: MatchGovernanceClientState
   players: PlayerView[]
-  playerBadges?: Array<{ playerIndex: number; rankLabel: string; masterTitle?: string }>
+  playerBadges?: Array<{ playerIndex: number; faction?: string; rankLabel: string; rankIsTitle?: boolean; masterTitle?: string }>
   lastAction?: ActionEvent | null
   recentEvents?: ActionEvent[]
   legalAttackTargets?: Record<string, string[]>
