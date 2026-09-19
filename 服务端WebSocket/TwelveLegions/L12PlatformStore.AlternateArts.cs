@@ -87,12 +87,13 @@ public sealed partial class L12PlatformStore
                 && item.ArtCode.Equals(artCode, StringComparison.OrdinalIgnoreCase)))
                 throw new ArgumentException("异画编号已被使用");
             var baseCardId = draft.BaseCardId?.Trim() ?? string.Empty;
-            if (!_officialCards.ContainsKey(baseCardId)) throw new ArgumentException("异画必须绑定到现有的规则卡牌编号");
+            if (!_officialCards.TryGetValue(baseCardId, out var baseCard))
+                throw new ArgumentException("异画必须绑定到现有的规则卡牌编号");
             var media = ActiveMedia(draft.MediaAssetId) ?? throw new ArgumentException("异画素材不存在或已删除");
             if (!string.Equals(media.Kind, "card-art", StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("异画必须使用“卡牌异画”素材上传入口的图片");
-            var displayName = LimitSiteText(draft.DisplayName, 100);
-            if (string.IsNullOrWhiteSpace(displayName)) throw new ArgumentException("异画名称不能为空");
+            // 异画是原卡的外观权益，名称属于规则卡牌身份，不能由上传表单另造或改写。
+            var displayName = LimitSiteText(baseCard.NameZh, 100);
             var productId = draft.ProductId?.Trim() ?? string.Empty;
             if (!string.IsNullOrWhiteSpace(productId) && !_data.AlternateArtProducts.Any(item => item.Id == productId && item.Active))
                 throw new ArgumentException("异画归属产品不存在或已停用");

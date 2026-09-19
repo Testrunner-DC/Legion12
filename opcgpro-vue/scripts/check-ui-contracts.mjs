@@ -456,7 +456,10 @@ const contracts = [
     && playerMat.includes('.resource-morale-summary{order:2;display:grid') && playerMat.includes('.side-opponent .resource-morale-summary{order:2}')
     && playerMat.includes('white-space:nowrap')
     && playerMat.includes('@click.stop="factionOpen = true; factionMinimized = false"')
-    && playerMat.includes('@click.stop="selectMoralePayment(morale.instanceId)"') && board.includes('mobileMoralePickerEnabled') && board.includes('mobile-morale-picker'), '阵营效果、同行士气标题/计数和士气堆在桌面共用156px边界并保留文字内距；手机横屏仅在支付类提示中从原位打开大候选层，并复用原确认、取消与支付交互'],
+    && playerMat.includes('@click.stop="inspectOrSelectMorale(morale.instanceId)"')
+    && playerMat.includes('class="mobile-morale-stack-trigger"')
+    && board.includes('mobileMoralePickerEnabled') && board.includes('mobileMoraleInteractive')
+    && board.includes('mobile-morale-picker') && board.includes('@click="mobileMoraleInteractive && togglePaymentResource(choice.id)"'), '阵营效果、同行士气标题/计数和士气堆在桌面共用156px边界并保留文字内距；手机横屏整个士气区可打开大面板查看，只在支付类提示中允许选择并复用原确认、取消与支付交互'],
   [playerMat.includes("if (props.promptSlotIds?.includes(`${row}:${slot}`))")
     && playerMat.indexOf("if (props.promptSlotIds?.includes(`${row}:${slot}`))") < playerMat.indexOf("if (card && props.paymentChoiceIds?.includes(card.instanceId))")
     && playerMat.includes("available: promptSlotIds?.includes(`${row}:${slot}`) || isPlacementDestination")
@@ -605,7 +608,7 @@ const contracts = [
   [battleLog.includes('class="event-message"') && battleLog.includes('overflow-wrap:anywhere'), '对局记录必须使用可换行的独立消息容器'],
   [board.includes('<Teleport to="body">') && board.includes('public-card-reveal-animation') && board.includes('.public-reveal-animation{z-index:903}') && board.includes("event.type === 'effect-trigger'") && board.includes("event.type === 'effect-response'") && board.includes("event.type === 'effect-activation'") && board.includes("event.type === 'reveal'") && board.includes("event.playerIndex !== props.game.you") && board.includes("event.type === 'effect-trigger' && /展示|公开/.test(event.text)") && board.includes("event.type === 'search' && /展示|加入手牌/") && board.includes('text: publicRevealText(event)') && board.includes('const override = event.effectText?.trim()') && board.indexOf('if (override) return override') < board.indexOf('/花魁的馈赠/.test(text)') && board.includes('花魁的馈赠将〈${card.name}〉加入手牌') && board.includes('l12AnimationDuration(3000, 700)') && !board.includes('reveal-confirm') && !board.includes('public-reveal-mask'), '公开展示、检索加入手牌、触发、响应与发动效果必须只向非发动方播放无蒙版非阻塞动画；标准三秒且关闭动画时仍保留可读下限，只呈现事件单条效果文本和涉及卡图，后台覆盖优先于花魁兼容文案'],
   [prompt.includes("const usesDetailCardImages = computed(() => isDisasterChoice.value || isInfoConfirm.value)") && prompt.includes(":intent=\"usesDetailCardImages ? 'detail' : 'thumb'\"") && prompt.split(":alt=\"entry.card.name || '天灾'\" intent=\"detail\"").length - 1 === 2 && prompt.includes("'disaster-choice': isDisasterChoice"), '公开天灾禁选、随机公开、触发确认及已公开历史必须请求详情级高清图，不得使用缩略图源'],
-  [board.includes(':inspector-visible="modalInspectorVisible"') && prompt.includes("'inspector-active': inspectorVisible") && prompt.includes('--inspector-safe-lane:clamp(118px,19vw,258px)') && prompt.includes('@media(max-width:520px)')
+  [board.includes(':inspector-visible="modalInspectorVisible"') && prompt.includes("'inspector-active': inspectorVisible") && prompt.includes('--inspector-safe-lane:min(290px,calc(34vw + 38px))') && prompt.includes('--inspector-safe-lane:92px') && prompt.includes('@media(max-width:520px)')
     && board.includes('const logicalWidth = inspectorAnchor.value.offsetWidth') && board.includes('transform: `scale(${floatScale})`')
     && board.includes("'--l12-board-copy': `${13 / Math.min(1, floatScale)}px`") && board.includes("'--l12-board-meta': `${11 / Math.min(1, floatScale)}px`") && board.includes("'--l12-effect-copy': `${13 / Math.min(1, floatScale)}px`") && board.includes('inspector-style-scope') && board.includes('overflow:auto!important'), '弹框期间原选中详情必须固定侧置并保持原容器的大小和位置，继承语义字号层级，为核心弹框保留安全区，在窄屏与缩放下也不得互相遮挡'],
   [board.includes("event.type === 'disaster-reveal'") && board.includes("event.playerIndex === null") && battleLog.includes("'disaster-reveal': '本局天灾'") && battleLog.includes("'effect-response': '响应'") && battleLog.includes("'effect-activation': '发动'"), '天灾必须向双方播放，响应与发动动画必须进入可读日志'],
@@ -632,9 +635,9 @@ const contracts = [
     && !matchRecords.includes('selectMatch(matches.value[0])')
     && matchRecords.includes("router.push({ name: 'match-replay'")
     && matchRecords.includes("router.push({ name: 'json-replay'"), '对局记录只允许选择摘要；服务器记录与JSON均须在玩家点击播放后进入独立回放路由，不得默认加载或嵌入渲染棋盘'],
-  [matchRecords.includes('/api/matches?limit=30') && matchRecords.includes('最近 30 场回放')
+  [matchRecords.includes('/api/matches?limit=10') && matchRecords.includes('7 天内最近 10 场回放')
     && l12ServerSources.includes('IsWithinRecentPlayerReplayWindowAsync')
-    && l12ServerSources.includes('RunPlayerReplayCleanupIfDueAsync'), '玩家回放必须限制最近30场并由服务端统一可见性与每日清理保护'],
+    && l12ServerSources.includes('RunPlayerReplayCleanupIfDueAsync'), '玩家回放必须限制7天内最近10场并由服务端统一可见性与每日清理保护'],
   [router.includes("name: 'json-replay'") && router.includes("name: 'match-replay'") && router.includes("name: 'admin-match-replay'")
     && replayPage.includes('<GameBoard v-if="currentGame" :game="currentGame" :replay-focus-card="replayFocusCard" read-only />')
     && replayPage.includes('>上一步</button>') && replayPage.includes("playing ? '暂停' : '播放'")
@@ -689,7 +692,7 @@ const contracts = [
     && !sandbox.includes('<select v-model="opponentDeckName"'), '沙盒双方必须复用同一保存牌库选择器，且不得套用赛季禁限卡或退回原生下拉'],
   [deckEditor.includes("import DeckProfile from './DeckProfile.vue'") && deckLibrary.includes("import DeckProfile from '@/l12/DeckProfile.vue'") && lobby.includes("import DeckProfile from '@/l12/DeckProfile.vue'") && sandbox.includes("import DeckProfile from '@/l12/DeckProfile.vue'") && legacyLobby.includes("import DeckProfile from './DeckProfile.vue'"), '牌库编辑器、牌库页、对战房间和沙盒的牌库框必须统一接入 DeckProfile'],
   [!deckLibrary.includes('<div class="banner-strip">') && !lobby.includes('<div class="deck-thumb">库</div>') && !legacyLobby.includes('class="commander-glyph">{{ deck.'), '牌库框不得恢复多卡裁切条或“库”占位图替代已选择主宰 Profile'],
-  [playerMat.includes('const displayMoraleSlots = computed') && playerMat.includes('payable(right.resource) - payable(left.resource)') && playerMat.includes('rank(left.resource) - rank(right.resource)') && playerMat.includes("isGodPower ? (tapped ? 2 : 0) : (tapped ? 3 : 1)") && playerMat.includes(':key="morale.instanceId"') && playerMat.includes('selectMoralePayment(morale.instanceId)'), '费用资源必须优先展示当前可支付实例，再按状态排序，同时保留真实士气实例 ID 作为支付与返还目标'],
+  [playerMat.includes('const displayMoraleSlots = computed') && playerMat.includes('payable(right.resource) - payable(left.resource)') && playerMat.includes('rank(left.resource) - rank(right.resource)') && playerMat.includes("isGodPower ? (tapped ? 2 : 0) : (tapped ? 3 : 1)") && playerMat.includes(':key="morale.instanceId"') && playerMat.includes('inspectOrSelectMorale(morale.instanceId)') && board.includes(':key="choice.id"') && board.includes('togglePaymentResource(choice.id)'), '费用资源必须优先展示当前可支付实例，再按状态排序，桌面与大面板均必须保留真实士气实例 ID 作为支付与返还目标'],
   [playerMat.includes('class="god-power-logo"') && playerMat.includes('sepia(1) saturate(3.2)') && playerMat.includes('border-color:#f4dda1'), '神力必须使用淡黄色 Logo 与独立描边，不能继续与白色士气图标混淆'],
   [cardTile.includes('attachedGroups') && cardTile.includes('attached-card-orbs') && cardTile.includes("$emit('focusCard', group.card)"), '叠放卡牌必须由公共卡牌组件合并为圆形卡图，并可进入统一详情'],
   [l12StructuredSemantics.includes('GrantsStrongAttackWhileAttached')
@@ -1236,7 +1239,7 @@ contracts.push([
 ])
 
 const latestReleaseEntry = shell.slice(
-  shell.indexOf("date: '2026-09-18'"),
+  shell.indexOf("date: '2026-09-20'"),
   shell.indexOf("date: '2026-09-14'"),
 )
 const currentReleaseEntry = shell.slice(
@@ -1258,11 +1261,13 @@ contracts.push([
     && latestReleaseEntry.includes("title: '天灾与卡面呈现'")
     && latestReleaseEntry.includes("title: '卡牌效果与结算'")
     && latestReleaseEntry.includes("title: '规则中心与卡牌收藏'")
-    && latestReleaseEntry.includes("title: '账号与个人页面'")
+    && latestReleaseEntry.includes("title: '反击、试炼与战斗限制'")
+    && latestReleaseEntry.includes("title: '账号、战绩、回放与个人页面'")
     && ['确认抵挡／不抵挡', '确认支援／不支援', '没有额外触发效果的天灾公开', '诸神黄昏',
       '贝奥武夫', '尼托克丽丝', '梅林', '洛基', '猎杀时刻', '魔龙降世', '野外扎营',
       '山河社稷图', '观星', '法老王的庆典', '众神之乡', '无骨者伊瓦尔', '花魁的馈赠',
-      '武运在天 铠甲在前', '柏拉图', '普罗米修斯', '符文之力', '特勒马科斯', '异画', '昵称修改']
+      '武运在天 铠甲在前', '柏拉图', '普罗米修斯', '符文之力', '特勒马科斯', '卡牌详情抽屉',
+      '对手手牌数', '宫廷魔术师', '试炼军团', '7天内最近10场', '异画', '昵称修改']
       .every(detail => latestReleaseEntry.includes(detail))
     && internalReleaseTerms.every(term => !latestReleaseEntry.includes(term)),
   '最新玩家更新日志必须覆盖本期移动端、天灾卡面、牌库整理、卡效结算、规则中心、异画与改名功能，并排除后台和内部治理内容',

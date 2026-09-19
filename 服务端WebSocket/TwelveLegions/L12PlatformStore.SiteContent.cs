@@ -2,12 +2,14 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace TwelveLegions.Server;
 
 public sealed record L12SiteMediaPolicyView(string Kind, string Label, int DesktopWidth, int DesktopHeight,
     int MobileWidth, int MobileHeight, int ThumbnailWidth, int ThumbnailHeight, string SafeArea,
     IReadOnlyList<string> AcceptedOriginalFormats, bool FlexibleDimensions = false);
+public sealed record L12RuleItemPublishRequest(string Key, string Collection, string ItemId);
 
 public sealed record L12SiteMediaUpload(string Kind, string OriginalFileName, string OriginalContentType,
     byte[] Original, byte[] DesktopWebp, byte[] MobileWebp, byte[] ThumbnailWebp, string AltText,
@@ -40,6 +42,65 @@ public sealed class L12SiteContentConflictException(string message) : InvalidOpe
 
 public sealed partial class L12PlatformStore
 {
+    public L12ContentEntryView PublishRuleItem(L12AccountView actor, L12RuleItemPublishRequest request,
+        L12AdminAuditContext? context = null)
+    {
+        var key = request.Key?.Trim() ?? string.Empty;
+        var collection = request.Collection?.Trim() ?? string.Empty;
+        var itemId = request.ItemId?.Trim() ?? string.Empty;
+        if (key is not ("rules.rulings" or "rules.center")) throw new ArgumentException("只能逐项发布规则中心内容");
+        var allowedCollections = key == "rules.rulings" ? new[] { "entries" }
+            : new[] { "coreBlocks", "quickStart", "terms", "tournament", "versions" };
+        if (!allowedCollections.Contains(collection, StringComparer.Ordinal) || string.IsNullOrWhiteSpace(itemId))
+            throw new ArgumentException("规则条目标识无效");
+        lock (_gate)
+        {
+            var row = EnsureContentEntry(key);
+            var draft = JsonNode.Parse(row.DraftValue) as JsonObject ?? throw new ArgumentException("规则草稿不是有效对象");
+            var draftItems = draft[collection] as JsonArray ?? throw new ArgumentException("规则草稿缺少指定分组");
+            var selected = draftItems.OfType<JsonObject>().FirstOrDefault(item =>
+                string.Equals(item["id"]?.GetValue<string>(), itemId, StringComparison.OrdinalIgnoreCase))
+                ?? throw new KeyNotFoundException("规则草稿中找不到指定条目");
+            selected["status"] = "published";
+
+            JsonObject published;
+            if (!string.IsNullOrWhiteSpace(row.PublishedValue))
+                published = JsonNode.Parse(row.PublishedValue) as JsonObject ?? new JsonObject();
+            else if (key == "rules.center")
+            {
+                published = draft.DeepClone().AsObject();
+                foreach (var group in allowedCollections) published[group] = new JsonArray();
+            }
+            else published = new JsonObject { ["entries"] = new JsonArray() };
+            var publicItems = published[collection] as JsonArray ?? new JsonArray();
+            published[collection] = publicItems;
+            var existingIndex = -1;
+            for (var index = 0; index < publicItems.Count; index++)
+                if (publicItems[index] is JsonObject current && string.Equals(current["id"]?.GetValue<string>(),
+                        itemId, StringComparison.OrdinalIgnoreCase)) { existingIndex = index; break; }
+            var publicItem = selected.DeepClone();
+            if (existingIndex >= 0) publicItems[existingIndex] = publicItem;
+            else publicItems.Add(publicItem);
+
+            var previous = row.PublishedValue;
+            row.DraftValue = draft.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            row.PublishedValue = PreparePublicContentValue(key,
+                published.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            ValidateSiteContentValue(key, row.PublishedValue, true);
+            _data.Content[key] = row.PublishedValue;
+            row.Status = row.DraftValue == row.PublishedValue ? "published" : "draft";
+            row.UpdatedBy = actor.Username;
+            row.UpdatedAt = DateTimeOffset.UtcNow;
+            row.PublishedBy = actor.Username;
+            row.PublishedAt = DateTimeOffset.UtcNow;
+            row.Version++;
+            row.PublishedVersionId = Guid.NewGuid().ToString("N");
+            AddAdminAudit(actor, "rule-item", "publish", $"{key}/{collection}/{itemId}", previous,
+                row.PublishedValue, "逐项审核并发布", context);
+            Save();
+            return ToView(row);
+        }
+    }
     public const string HomeCompositionContentKey = "home.composition";
     public const string SiteLegalContentKey = "site.footer";
     public const int SiteMediaOriginalMaxBytes = 16 * 1024 * 1024;
@@ -644,7 +705,7 @@ public sealed partial class L12PlatformStore
                     writer.WritePropertyName(property.Name);
                     var filteredCollection = rulings
                         ? string.Equals(property.Name, "entries", StringComparison.Ordinal)
-                        : property.Name is "quickStart" or "terms" or "tournament" or "versions";
+                        : property.Name is "coreBlocks" or "quickStart" or "terms" or "tournament" or "versions";
                     if (!filteredCollection)
                     {
                         property.Value.WriteTo(writer);

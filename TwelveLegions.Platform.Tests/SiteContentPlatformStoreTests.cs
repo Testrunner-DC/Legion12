@@ -36,6 +36,33 @@ public sealed class SiteContentPlatformStoreTests
     }
 
     [Fact]
+    public void AlternateArtNameAlwaysFollowsBaseCardAndActiveArtIsPublic()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-alternate-art-card-{Guid.NewGuid():N}");
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var media = Upload(store, admin, "card-art");
+            var product = store.SaveAlternateArtProduct(admin, new(null, "活动典藏"));
+            var baseCard = catalog.Cards.Values.First();
+
+            var saved = store.SaveAlternateArt(admin, new(null, "ALT-TEST-001", baseCard.Id,
+                "不应采用的自定义卡名", media.Id, Active: true, ProductId: product.Id));
+
+            Assert.Equal(baseCard.NameZh, saved.DisplayName);
+            Assert.Equal(product.Id, saved.ProductId);
+            Assert.Contains(store.AlternateArts(), item => item.Id == saved.Id && item.Active);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void RuleRulingsPublishOnlyStructuredConfirmedEntries()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-rule-rulings-{Guid.NewGuid():N}");
@@ -115,6 +142,66 @@ public sealed class SiteContentPlatformStoreTests
             var tournament = publicDocument.RootElement.GetProperty("tournament");
             Assert.Single(tournament.EnumerateArray());
             Assert.Equal("tournament-published", tournament[0].GetProperty("id").GetString());
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void RuleItemPublicationDoesNotPublishSiblingDrafts()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-rule-item-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var draft = JsonSerializer.Serialize(new
+            {
+                entries = new[]
+                {
+                    new { id = "RULING-ONE", scope = "card", question = "第一条？", answer = "第一条裁定。",
+                        category = "单卡裁定", sourceKind = "user-ruling", sourceRef = "管理员复核",
+                        recordedAt = "2026-09-19", status = "pending", cardIds = Array.Empty<string>(),
+                        productIds = Array.Empty<string>(), tags = Array.Empty<string>(), sourceIds = Array.Empty<string>(),
+                        supersedes = Array.Empty<string>() },
+                    new { id = "RULING-TWO", scope = "card", question = "第二条？", answer = "第二条裁定。",
+                        category = "单卡裁定", sourceKind = "user-ruling", sourceRef = "管理员复核",
+                        recordedAt = "2026-09-19", status = "pending", cardIds = Array.Empty<string>(),
+                        productIds = Array.Empty<string>(), tags = Array.Empty<string>(), sourceIds = Array.Empty<string>(),
+                        supersedes = Array.Empty<string>() },
+                },
+            });
+            store.SaveContentDraft(admin, "rules.rulings", draft);
+            store.PublishRuleItem(admin, new("rules.rulings", "entries", "RULING-ONE"));
+
+            using var publicDocument = JsonDocument.Parse(store.GetContent("rules.rulings"));
+            var publicEntries = publicDocument.RootElement.GetProperty("entries");
+            Assert.Single(publicEntries.EnumerateArray());
+            Assert.Equal("RULING-ONE", publicEntries[0].GetProperty("id").GetString());
+            using var savedDraft = JsonDocument.Parse(store.GetContentEntry("rules.rulings").DraftValue);
+            Assert.Equal("published", savedDraft.RootElement.GetProperty("entries")[0].GetProperty("status").GetString());
+            Assert.Equal("pending", savedDraft.RootElement.GetProperty("entries")[1].GetProperty("status").GetString());
+
+            var centerDraft = JsonSerializer.Serialize(new
+            {
+                coreBlocks = Array.Empty<object>(), quickStart = Array.Empty<object>(), tournament = Array.Empty<object>(),
+                versions = Array.Empty<object>(),
+                terms = new[]
+                {
+                    new { id = "term-one", title = "术语一", body = "术语一说明。", sourceRef = "管理员复核",
+                        tags = Array.Empty<string>(), status = "pending" },
+                    new { id = "term-two", title = "术语二", body = "术语二说明。", sourceRef = "管理员复核",
+                        tags = Array.Empty<string>(), status = "pending" },
+                },
+            });
+            store.SaveContentDraft(admin, "rules.center", centerDraft);
+            store.PublishRuleItem(admin, new("rules.center", "terms", "term-one"));
+            using var centerPublic = JsonDocument.Parse(store.GetContent("rules.center"));
+            var publicTerms = centerPublic.RootElement.GetProperty("terms");
+            Assert.Single(publicTerms.EnumerateArray());
+            Assert.Equal("term-one", publicTerms[0].GetProperty("id").GetString());
         }
         finally
         {

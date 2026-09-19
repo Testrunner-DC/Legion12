@@ -40,18 +40,19 @@ export function useLandscapeViewport(enabled: Ref<boolean>) {
     const top = (visual?.offsetTop ?? 0) + inset(safe?.paddingTop)
     const width = Math.max(1, (visual?.width ?? innerWidth) - inset(safe?.paddingLeft) - inset(safe?.paddingRight))
     const height = Math.max(1, (visual?.height ?? innerHeight) - inset(safe?.paddingTop) - inset(safe?.paddingBottom))
-    // CSS fallback rotates the complete fixed host, including body Teleports. Never
-    // promise hardware orientation lock: mobile browsers commonly reject lock().
-    const rotated = Math.min(innerWidth, innerHeight) <= 820 && innerHeight > innerWidth && !editable()
-    const nextLayout = { active: true, rotated, left, top, width: rotated ? height : width, height: rotated ? width : height }
+    // Never rotate the complete document in CSS.  Browser overlays, safe areas and
+    // fixed Teleports would otherwise calculate against different coordinate spaces.
+    // When a handset cannot lock, App.vue asks the player to rotate the device.
+    const rotated = false
+    const nextLayout = { active: true, rotated, left, top, width, height }
     const changed = JSON.stringify(layout) !== JSON.stringify(nextLayout)
     layout = nextLayout
     const root = document.documentElement
-    root.dataset.l12Viewport = rotated ? 'landscape' : 'normal'
+    root.dataset.l12Viewport = width >= height ? 'landscape' : 'normal'
     root.dataset.l12Compact = String(layout.width < 820 || layout.height < 600)
     root.style.setProperty('--l12-viewport-width', `${layout.width}px`)
     root.style.setProperty('--l12-viewport-height', `${layout.height}px`)
-    root.style.setProperty('--l12-viewport-left', `${left + (rotated ? width : 0)}px`)
+    root.style.setProperty('--l12-viewport-left', `${left}px`)
     root.style.setProperty('--l12-viewport-top', `${top}px`)
     if (changed) window.dispatchEvent(new Event('l12-viewport-change'))
   }

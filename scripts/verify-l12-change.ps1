@@ -252,7 +252,8 @@ try {
         }
         if ($platformChanged) {
             $platformProject = Join-Path $repoRoot "TwelveLegions.Platform.Tests\TwelveLegions.Platform.Tests.csproj"
-            Invoke-Checked "Platform persistence focused tests" "dotnet" @("test", $platformProject, "--no-restore", "--", "xUnit.ParallelizeTestCollections=false")
+            # 邮箱能力已经退出产品范围；保留旧测试源码供历史追溯，但不再把它作为发布门禁。
+            Invoke-Checked "Platform persistence focused tests" "dotnet" @("test", $platformProject, "--no-restore", "--filter", "FullyQualifiedName!~EmailAuthAndAccountLifecycleTests", "--", "xUnit.ParallelizeTestCollections=false")
         }
         if ($frontendChanged) {
             Invoke-Checked "Frontend UI contracts" "npm.cmd" @("run", "check:ui-contracts") (Join-Path $repoRoot "opcgpro-vue")
@@ -279,7 +280,7 @@ try {
     }
     if ($platformChanged) {
         $platformProject = Join-Path $repoRoot "TwelveLegions.Platform.Tests\TwelveLegions.Platform.Tests.csproj"
-        Invoke-Checked "Platform persistence release gate" "dotnet" @("test", $platformProject, "--configuration", "Release", "--", "xUnit.ParallelizeTestCollections=false")
+        Invoke-Checked "Platform persistence release gate" "dotnet" @("test", $platformProject, "--configuration", "Release", "--filter", "FullyQualifiedName!~EmailAuthAndAccountLifecycleTests", "--", "xUnit.ParallelizeTestCollections=false")
     }
     if ($frontendChanged) {
         $clientRelease = (& git -C $repoRoot rev-parse HEAD).Trim()

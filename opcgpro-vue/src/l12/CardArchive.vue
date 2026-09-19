@@ -7,6 +7,7 @@ import { cardErrataForCard, type CardErrataRecord } from './data/cardErrata'
 import CardImage from './CardImage.vue'
 import CardDetailContent from './CardDetailContent.vue'
 import { alternateArtApi, type AlternateArt } from './platform'
+import MobileFilterSheet from './site/MobileFilterSheet.vue'
 
 type CatalogCard = DeckCard
 type ArchivePage = 'catalog' | 'gallery'
@@ -43,6 +44,7 @@ const cost = ref('all')
 const disaster = ref('all')
 const product = ref('all')
 const sort = ref<'number' | 'cost' | 'troops' | 'name'>('number')
+const filtersOpen = ref(false)
 const selectedLogicalId = ref('')
 const selectedVersionId = ref('')
 const selectedGalleryId = ref('')
@@ -151,6 +153,19 @@ const modalVersionIndex = computed(() => modalCard.value
   : -1)
 const visibleCount = computed(() => page.value === 'gallery' ? filteredGallery.value.length : filteredCatalog.value.length)
 const totalCount = computed(() => page.value === 'gallery' ? galleryCards.value.length : logicalCards.value.length)
+const activeFilterCount = computed(() => [type.value, faction.value, product.value, cost.value, disaster.value]
+  .filter(value => value !== 'all').length + (sort.value === 'number' ? 0 : 1))
+const activeFilterSummary = computed(() => {
+  const parts = [
+    type.value !== 'all' ? typeLabels[type.value] : '',
+    faction.value !== 'all' ? factionLabels[faction.value] : '',
+    product.value !== 'all' ? product.value : '',
+    cost.value !== 'all' ? `费用 ${cost.value}` : '',
+    disaster.value !== 'all' ? `天灾 ${disaster.value}` : '',
+    sort.value !== 'number' ? `按${sort.value === 'cost' ? '费用' : sort.value === 'troops' ? '兵力' : '名称'}排序` : '',
+  ].filter(Boolean)
+  return parts.length > 3 ? `${parts.slice(0, 3).join(' · ')} · +${parts.length - 3}` : parts.join(' · ')
+})
 
 function selectLogical(entry: LogicalArchiveCard) {
   if (selectedLogicalId.value === entry.logicalId) return
@@ -229,14 +244,28 @@ function resetFilters() {
 
     <div class="archive-toolbar">
       <label class="archive-search"><span>搜索</span><input v-model="query" type="search" placeholder="卡名、编号或效果文字"/></label>
-      <label><span>类型</span><select v-model="type"><option value="all">全部类型</option><option v-for="key in types" :key="key" :value="key">{{ typeLabels[key] }}</option></select></label>
-      <label><span>阵营</span><select v-model="faction"><option value="all">全部阵营</option><option v-for="key in factions" :key="key" :value="key">{{ factionLabels[key] }}</option></select></label>
-      <label><span>收录产品</span><select v-model="product"><option value="all">全部产品</option><option v-for="value in productOptions" :key="value" :value="value">{{ value }}</option></select></label>
-      <label><span>费用</span><select v-model="cost"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value" :value="value">{{ value }}</option></select></label>
-      <label><span>天灾等级</span><select v-model="disaster"><option value="all">全部</option><option value="none">无</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select></label>
-      <label><span>排序</span><select v-model="sort"><option value="number">编号</option><option value="cost">费用</option><option value="troops">兵力</option><option value="name">名称</option></select></label>
-      <button class="archive-reset" @click="resetFilters">重置</button>
+      <MobileFilterSheet v-model="filtersOpen" title="图鉴筛选与排序" :active-count="activeFilterCount" @reset="resetFilters">
+        <div class="archive-filter-fields">
+          <label><span>类型</span><select v-model="type"><option value="all">全部类型</option><option v-for="key in types" :key="key" :value="key">{{ typeLabels[key] }}</option></select></label>
+          <label><span>阵营</span><select v-model="faction"><option value="all">全部阵营</option><option v-for="key in factions" :key="key" :value="key">{{ factionLabels[key] }}</option></select></label>
+          <label><span>收录产品</span><select v-model="product"><option value="all">全部产品</option><option v-for="value in productOptions" :key="value" :value="value">{{ value }}</option></select></label>
+          <label><span>费用</span><select v-model="cost"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value" :value="value">{{ value }}</option></select></label>
+          <label><span>天灾等级</span><select v-model="disaster"><option value="all">全部</option><option value="none">无</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select></label>
+          <label><span>排序</span><select v-model="sort"><option value="number">编号</option><option value="cost">费用</option><option value="troops">兵力</option><option value="name">名称</option></select></label>
+        </div>
+        <template #apply-label>查看 {{ visibleCount }} 张结果</template>
+      </MobileFilterSheet>
+      <div class="archive-desktop-filters archive-filter-fields">
+        <label><span>类型</span><select v-model="type"><option value="all">全部类型</option><option v-for="key in types" :key="key" :value="key">{{ typeLabels[key] }}</option></select></label>
+        <label><span>阵营</span><select v-model="faction"><option value="all">全部阵营</option><option v-for="key in factions" :key="key" :value="key">{{ factionLabels[key] }}</option></select></label>
+        <label><span>收录产品</span><select v-model="product"><option value="all">全部产品</option><option v-for="value in productOptions" :key="value" :value="value">{{ value }}</option></select></label>
+        <label><span>费用</span><select v-model="cost"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value" :value="value">{{ value }}</option></select></label>
+        <label><span>天灾等级</span><select v-model="disaster"><option value="all">全部</option><option value="none">无</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select></label>
+        <label><span>排序</span><select v-model="sort"><option value="number">编号</option><option value="cost">费用</option><option value="troops">兵力</option><option value="name">名称</option></select></label>
+        <button class="archive-reset" @click="resetFilters">重置</button>
+      </div>
     </div>
+    <button v-if="activeFilterCount" type="button" class="archive-filter-summary" @click="filtersOpen = true">{{ activeFilterSummary }}</button>
 
     <div v-if="loading" class="archive-empty">正在载入卡牌数据…</div>
     <div v-else-if="loadError" class="archive-empty error">{{ loadError }}</div>

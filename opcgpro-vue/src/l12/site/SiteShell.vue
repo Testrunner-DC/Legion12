@@ -11,13 +11,16 @@ const siteBrandIcon = '/favicon.png'
 const releaseVersion = String(import.meta.env.VITE_APP_VERSION || 'dev')
 const updateEntries = [
   {
-    date: '2026-09-18', title: '卡牌规则、移动端操作与个性化收藏更新', version: releaseVersion,
+    date: '2026-09-20', title: '移动端对战、全卡池结算与个人资料更新', version: releaseVersion,
     sections: [
       { title: '移动端横屏与对局操作', items: [
         '手机横屏对局会使用完整画面空间：双方战场保留原有格位尺寸，外层区域会随可用高度收口；圣物休整后会在圣物区域内自动适配，不再超出容器。',
         '士气在横屏时可点开大尺寸选择面板，原位置仍持续显示实时数量；每行数量会随画面比例安排，点击时不再受小格子限制。',
         '点选手牌或场上军团后，可执行操作会集中显示在结束回合按钮上方；未选中卡牌时不会出现无关操作。进攻、打出、发动等操作保持原有规则，只是更容易触达。',
         '对局记录改为可展开查看，默认不再挤占战场；展开后仍可完整阅读行动与结算结果。主宰、墓地、士气和记录等面板会在移动端安全区域内打开。',
+        '点击手牌、战场卡、圣物、试炼或当前天灾后，左侧卡牌详情抽屉会显示完整卡图、数值和效果文字；展开／收起按钮常驻于天灾列顶部，弹框出现时也会为详情留出安全位置。',
+        '手牌在手机横屏不再扇形展开；常规数量保持间距，数量较多时才轻微叠放。对手手牌数、当前天灾、双方额外区、试炼进度及限时对局计时会在各自专用位置显示，不再与战场或手牌互相遮挡。',
+        '士气标题、数量和下方整片士气区都可打开同一个大面板；查看状态时不会改变游戏，支付或返还时才能选择真实士气。支付面板可最小化，便于同时检查场面。',
         '进攻后的选择只显示“确认抵挡／不抵挡”或“确认支援／不支援”。战斗信息使用“进攻值”等玩家可读名称，不再显示内部状态词；取消或未选择时不会被当作已执行动作。',
       ] },
       { title: '天灾与卡面呈现', items: [
@@ -44,6 +47,13 @@ const updateEntries = [
         '单一合法对象仍需要玩家明确点选；没有合法对象时会跳过对应效果段，而不是生成无法完成的空选择。选择后对象离区、数值改变、位置被占或效果被无效时，会以实际结果结束，不会偷偷替换目标。',
         '同一次效果中包含多个对象、先后步骤或不同分支时，每一部分会独立复核。前一部分成功不代表后一部分必定成功；一侧对象失效也不会阻止另一侧仍合法的结算。',
         '反击与响应效果会绑定本次实际响应的对象和时点。响应期间场面改变后重新核对，不会错误套用更早的一次进攻、另一张卡或先前的目标。',
+        '登场、进攻及复合效果中声明的敌我军团，都会在响应结束时再核对同一张卡仍在正确阵营和军团区，并仍满足前排、兵力、费用、阵营或活跃／休整限制。多个目标中部分失效时只跳过失效对象，不补选也不撤销已支付费用。',
+      ] },
+      { title: '反击、试炼与战斗限制', items: [
+        '反击战术统一按真实卡牌身份判定；〈防御部署〉与〈上杉谦信〉从手牌选择后排登场时，会逐张重新核对卡牌仍在手牌、仍为反击战术且原后排仍有空位，不会用另一张手牌补位。',
+        '〈宫廷魔术师〉的反击限制覆盖普通响应、匿名盖伏和触发候选；主动休整按正确费用、被无效、重新活跃和断线恢复状态记录。保护型效果只排除直接影响当前响应效果的反击，不再误禁整个响应窗口。',
+        '试炼军团统一按“军团且具有正试炼值”识别，通常试炼操作、〈阿麦金〉与〈十字军东征〉的选择、支付和恢复使用同一规则。试炼翻面先完成公开步骤，再进入可响应的效果。',
+        '不能进攻、不能支援、必中、攻击阻断及“无法因效果转为活跃”均使用公共规则；按钮、可选对象、响应资格、结算和重连后状态保持一致。',
       ] },
       { title: '规则中心与卡牌收藏', items: [
         '规则中心改为按基础规则、对局流程、关键词、常见问答、单卡裁定、赛事规则和版本记录浏览；赛事内容与玩家规则放在同一规则页的不同子页，可按关键词检索。',
@@ -51,8 +61,10 @@ const updateEntries = [
         '获得使用权的异画可在牌库编辑时为对应卡牌选择，并可在个人收藏中确认已拥有的样式。异画只改变本人对局中看到的卡图，不改变卡牌规则、牌库合法性或其他玩家的显示。',
         '卡牌画廊现在只展示异画：新登记并公开的异画会立即出现，并带有独立编号、名称和所绑定原卡；浏览画廊不需要先拥有该异画。',
       ] },
-      { title: '账号与个人页面', items: [
+      { title: '账号、战绩、回放与个人页面', items: [
         '“我的”页面现在可直接完成一次昵称修改；再次修改时可填写原因提交申请，结果会在个人页面显示。改名成功后，其他已登录设备会按安全规则重新验证身份。',
+        '“我的”页面整合总体、排位和各主宰的独立战绩，可查看场次、胜负、胜率和先后手表现。段位、派系称号与最强主宰称号在排行榜、个人页和对战中使用同一套主题样式，最强标识改用十二军团 Logo。',
+        '玩家服务端回放调整为7天内最近10场；到期前可导出紧凑JSON长期自存，之后在本地导入播放。回放过期不会删除赛果、构筑、排位结果或个人战绩。',
       ] },
     ],
   },
@@ -512,6 +524,11 @@ const connectionLabel = computed(() => {
   return l12State.connectionIssue === 'websocket' ? '对战连接中断' : '未连接'
 })
 
+function openBugFeedback() {
+  mobileOpen.value = false
+  window.dispatchEvent(new Event('l12-open-bug-feedback'))
+}
+
 watch(() => route.fullPath, () => { mobileOpen.value = false })
 function enterFriendRoom() { void router.push('/battle') }
 let presenceTimer = 0
@@ -596,6 +613,8 @@ onBeforeUnmount(() => {
           <SiteIcon :name="item.icon"/><span>{{ item.label }}</span>
         </router-link>
       </nav>
+
+      <button class="mobile-feedback-utility" type="button" @click="openBugFeedback"><SiteIcon name="bug"/><span>反馈 Bug</span></button>
 
       <div class="site-utilities">
         <button title="设置" @click="modal = 'settings'"><SiteIcon name="settings"/><span>设置</span></button>
@@ -684,7 +703,10 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .site-shell{--nav-w:92px;width:100vw;height:100vh;background:radial-gradient(circle at 80% 10%,rgba(18,101,108,.12),transparent 34%),radial-gradient(circle at 12% 84%,rgba(121,22,32,.13),transparent 35%),#060a0d;color:#f2f0e9;font-family:'Microsoft YaHei','微软雅黑',system-ui,sans-serif}.site-sidebar{position:fixed;z-index:40;inset:0 auto 0 0;width:var(--nav-w);display:flex;flex-direction:column;border-right:1px solid rgba(232,227,213,.16);background:#0d1318}.site-brand{display:flex;height:96px;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#f3eee1;text-decoration:none}.site-brand img{width:44px;height:44px;border:0;border-radius:0;object-fit:contain;filter:brightness(0) invert(1)}.site-nav{display:flex;flex:1;min-height:0;flex-direction:column;overflow-y:auto}.site-nav a,.site-utilities button{position:relative;display:flex;min-height:58px;flex-direction:column;align-items:center;justify-content:center;gap:5px;border:0;background:transparent;color:#7d8991;text-decoration:none}.site-nav a:hover,.site-nav a.router-link-active{background:linear-gradient(90deg,rgba(48,181,190,.2),transparent);color:#f4f1e9}.site-nav a.router-link-active::before{content:'';position:absolute;left:0;top:12px;bottom:12px;width:3px;background:#51c5cc;box-shadow:0 0 12px #51c5cc}.site-nav b,.site-utilities b{font-size:15px}.site-nav span,.site-utilities span{font-size:14px;font-weight:900}.site-utilities{display:flex;flex-direction:column;gap:8px;padding:8px 0;border-top:1px solid rgba(232,227,213,.12)}.site-utilities button{width:100%;min-height:48px}.site-utilities .connection i{width:8px;height:8px;border-radius:50%;background:#6b7272}.site-utilities .connection.online i{background:#55c99a;box-shadow:0 0 8px #55c99a}.site-utilities .connection.connecting i{background:#d7b15f}.site-content{position:absolute;inset:0 0 0 var(--nav-w);overflow:auto}.site-mobile-head{display:none}.site-modal-mask{position:fixed;z-index:100;inset:0;display:grid;place-items:center;padding:20px;background:rgba(1,4,7,.75);backdrop-filter:blur(10px)}.site-modal{width:min(560px,94vw);max-height:min(720px,90vh);overflow:auto;border:1px solid rgba(235,230,216,.28);background:#111923;box-shadow:0 28px 90px #000;padding:24px}.site-modal>header{display:flex;align-items:center;justify-content:space-between;padding-bottom:15px;border-bottom:1px solid rgba(235,230,216,.14)}.site-modal header small{color:#51c5cc;font:900 14px monospace;letter-spacing:.18em}.site-modal h2{margin:4px 0 0;font-size:24px}.site-modal header button{width:34px;height:34px;border:1px solid #48545c;background:#0a1016;color:#fff}.setting-row{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 0;border-bottom:1px solid rgba(235,230,216,.1)}.setting-row b,.setting-row span{display:block}.setting-row span{margin-top:5px;color:#7f8b93;font-size:14px}.setting-row select,.toggle{min-width:118px;padding:10px;border:1px solid #52606a;background:#081018;color:#fff;font-weight:900}.toggle.on{border-color:#54b48f;color:#7ee2b9}.setting-note{color:#7e898f;font-size:14px;line-height:1.7}.update-modal article{padding:18px 0;border-bottom:1px solid rgba(235,230,216,.1)}.update-modal time{color:#d6ad59;font-size:14px;font-weight:900}.update-modal h3{margin:6px 0;font-size:15px}.update-modal code{display:inline-block;padding:3px 6px;border:1px solid #6f602e;color:#e5c866;font-size:14px}.update-modal li{margin:7px 0;color:#a8b0b3;font-size:14px;line-height:1.6}.online-entry{display:flex;align-items:center;gap:12px;margin-top:12px;padding:14px;background:#0a1118}.online-entry>i{flex:0 0 auto;width:9px;height:9px;border-radius:50%;background:#55c99a;box-shadow:0 0 8px #55c99a}.online-identity{min-width:0;flex:1}.online-entry b,.online-entry span{display:block}.online-entry span{margin-top:3px;color:#718088;font-size:14px}.online-actions{display:flex;flex:0 0 auto;gap:7px}.online-actions button{min-width:82px;padding:8px 10px;border:1px solid #d2b35f;background:#29220f;color:#f0d478;font-size:14px;font-weight:900}.online-actions button:disabled{border-color:#3f484e;background:#121920;color:#68747a;cursor:not-allowed}.online-notice{margin:12px 0 0;padding:9px 11px;border-left:3px solid #51c5cc;background:#0a151b;color:#9fd5d8;font-size:14px}.modal-empty{margin-top:18px;padding:38px 20px;border:1px dashed #39444b;color:#738089;text-align:center;font-size:14px;line-height:1.7}
-@media(max-width:760px){.site-shell{--nav-w:0px}.site-mobile-head{position:fixed;z-index:60;top:0;left:0;right:0;height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;border-bottom:1px solid rgba(232,227,213,.16);background:#0d1318}.mobile-brand{display:flex;align-items:center;gap:9px;color:#fff;text-decoration:none}.mobile-brand b{display:grid;width:30px;height:30px;place-items:center;border:1px solid #d8b362;font:900 14px Georgia}.mobile-brand span{font-weight:900}.site-mobile-head button{width:38px;height:38px;border:1px solid #46525a;background:#111a22;color:#fff;font-size:20px}.site-sidebar{top:58px;width:min(310px,84vw);transform:translateX(-105%);transition:transform .2s}.site-sidebar.open{transform:none;box-shadow:18px 0 50px #000}.site-brand{display:none}.site-nav a,.site-utilities button{min-height:52px;flex-direction:row;justify-content:flex-start;padding:0 24px;gap:15px}.site-nav span,.site-utilities span{font-size:14px}.site-utilities{display:grid;grid-template-columns:1fr 1fr;column-gap:0;row-gap:8px}.site-content{top:58px}.site-modal{padding:18px}.setting-row{align-items:flex-start;flex-direction:column}.setting-row select,.toggle{width:100%}}
+@media(max-width:760px){.site-shell{--nav-w:0px}.site-mobile-head{position:fixed;z-index:60;top:0;left:0;right:0;height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;border-bottom:1px solid rgba(232,227,213,.16);background:#0d1318}.mobile-brand{display:flex;align-items:center;gap:9px;color:#fff;text-decoration:none}.mobile-brand b{display:grid;width:30px;height:30px;place-items:center;border:1px solid #d8b362;font:900 14px Georgia}.mobile-brand span{font-weight:900}.site-mobile-head button{width:38px;height:38px;border:1px solid #46525a;background:#111a22;color:#fff;font-size:20px}.site-sidebar{top:58px;width:min(310px,84vw);transform:translateX(-105%);transition:transform .2s}.site-sidebar.open{transform:none;box-shadow:18px 0 50px #000}.site-brand{display:none}.site-nav a,.site-utilities button,.mobile-feedback-utility{min-height:52px;flex-direction:row;justify-content:flex-start;padding:0 24px;gap:15px}.site-nav span,.site-utilities span,.mobile-feedback-utility span{font-size:14px}.mobile-feedback-utility{display:flex;width:100%;align-items:center;border:0;border-top:1px solid rgba(232,227,213,.12);background:#17130d;color:#edcf78;font-weight:900}.mobile-feedback-utility :deep(svg){width:20px;height:20px}.site-utilities{display:grid;grid-template-columns:1fr 1fr;column-gap:0;row-gap:8px}.site-content{top:58px}.site-modal{padding:18px}.setting-row{align-items:flex-start;flex-direction:column}.setting-row select,.toggle{width:100%}}
+.mobile-feedback-utility{display:none;width:100%;min-height:48px;align-items:center;justify-content:center;gap:5px;border:0;border-top:1px solid rgba(232,227,213,.12);background:#17130d;color:#edcf78;font-size:13px;font-weight:900}
+@media(max-width:760px){.mobile-feedback-utility{display:flex}}
+@media(min-width:761px) and (max-height:520px){.mobile-feedback-utility{display:flex;flex-direction:column}.mobile-feedback-utility :deep(svg){width:20px;height:20px}}
 .utility-icon{position:relative;display:grid;place-items:center}.utility-icon>i{position:absolute;top:-7px;right:-9px;display:grid!important;min-width:15px!important;width:auto!important;height:15px!important;place-items:center;padding:0 3px;border-radius:8px!important;background:#71303a;color:#fff;font:900 14px monospace!important;font-style:normal}.site-utilities .connection .utility-icon>i{top:auto;right:-5px;bottom:-3px;width:7px!important;min-width:7px!important;height:7px!important;padding:0;border-radius:50%!important;background:#6b7272}.site-utilities .connection.online .utility-icon>i{background:#55c99a!important;box-shadow:0 0 8px #55c99a}.site-utilities .connection.connecting .utility-icon>i{background:#d7b15f!important}
 .site-utilities .utility-unread{position:absolute;right:6px;top:4px;display:grid;min-width:18px;height:18px;place-items:center;padding:0 3px;border-radius:10px;background:#be3340;color:#fff;font:900 12px/1 monospace}.site-utilities button.has-unread{color:#f2d478}.online-unread{display:inline-block!important;margin-top:5px!important;padding:2px 6px;border:1px solid #a93642;background:#2d1117;color:#ef9ca5!important;font-size:12px!important;font-style:normal;font-weight:900}.online-actions{flex-wrap:wrap;justify-content:flex-end}
 .audio-setting{display:flex;align-items:center;gap:12px}.audio-setting input{width:150px}
@@ -698,4 +720,5 @@ onBeforeUnmount(() => {
 .update-section h4{margin:0 0 8px;padding-left:9px;border-left:3px solid #d6ad59;color:#f0ede5;font-size:14px}
 .update-modal ul{margin:0;padding-left:20px}
 .update-modal li{margin:8px 0;color:#b2b9bc;line-height:1.75}
+@media(max-width:760px){.site-content{right:0;bottom:0;overflow-x:clip;overscroll-behavior-y:contain;padding-bottom:env(safe-area-inset-bottom)}.site-modal-mask{align-items:end;padding:0;background:rgba(1,4,7,.82)}.site-modal{width:100%;max-height:min(92dvh,760px);padding:18px max(16px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));border-right:0;border-bottom:0;border-left:0}.site-modal>header{padding-top:0}.online-entry{align-items:flex-start;flex-wrap:wrap}.online-actions{width:100%}.online-actions button{flex:1}.update-modal{max-height:92dvh}.setting-row{gap:10px}}
 </style>

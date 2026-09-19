@@ -13,6 +13,7 @@ const props = withDefaults(defineProps<{
   mulliganSelectedIds?: string[]
   busy?: boolean
   suppressedPromptId?: string | null
+  suppressedPromptIds?: string[]
   suppressDefenseWait?: boolean
   readOnly?: boolean
   inspectorVisible?: boolean
@@ -25,7 +26,13 @@ const emit = defineEmits<{
   responseTargetsChange: [ids: string[]]
 }>()
 
-const prompt = computed(() => props.game.prompts?.find(item => item.promptId !== props.suppressedPromptId) ?? null)
+const prompt = computed(() => {
+  const suppressed = new Set([
+    ...(props.suppressedPromptIds ?? []),
+    ...(props.suppressedPromptId ? [props.suppressedPromptId] : []),
+  ])
+  return props.game.prompts?.find(item => !suppressed.has(item.promptId)) ?? null
+})
 const waitingPrompt = computed(() => prompt.value ? null : props.game.waitingPrompt ?? null)
 const sandboxActorIndex = computed(() => {
   if (!l12State.gmEnabled) return props.game.you
@@ -725,7 +732,7 @@ function kindLabel() {
 .response-target-detail{flex:none;align-self:center;margin:8px;padding:8px;border:1px solid #52615d;background:#162629;color:#b9e7e5}
 .initiative-race{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.initiative-race article{display:grid;grid-template-columns:52px 1fr 58px;grid-template-rows:auto auto;align-items:center;gap:3px 9px;padding:10px;border:2px solid #4c5553;background:#0c1112}.initiative-race article.winner{border-color:#e4bd58;box-shadow:0 0 18px rgba(228,189,88,.35)}.initiative-race img{grid-row:1/3;width:52px;height:73px;object-fit:contain}.initiative-race div{display:grid}.initiative-race strong{color:#fff;font-size:var(--l12-board-copy,13px)}.initiative-race span{color:#89928e;font-size:var(--l12-board-copy,13px)}.initiative-race b{grid-column:3;grid-row:1/3;color:#fff;font-size:max(52px,var(--l12-board-copy,13px));line-height:1;animation:dice-shake .18s infinite alternate}.initiative-race.settled b{animation:dice-land .32s ease-out}.initiative-race em{grid-column:3;grid-row:2;color:#e6c15e;font-size:var(--l12-board-copy,13px);font-style:normal;text-align:center;transform:translateY(14px)}@keyframes dice-shake{from{transform:rotate(-9deg) scale(.94)}to{transform:rotate(9deg) scale(1.05)}}@keyframes dice-land{0%{transform:scale(1.35) rotate(18deg)}100%{transform:scale(1) rotate(0)}}
 .l12-prompt-overlay{position:fixed!important;z-index:2147483600!important;inset:0;box-sizing:border-box;display:flex!important;width:100vw;height:100vh;align-items:center!important;justify-content:center!important;padding:18px;background:rgba(2,4,5,.48)!important;backdrop-filter:blur(3px)}
-.l12-prompt-overlay.inspector-active:not(.minimized){--inspector-safe-lane:clamp(118px,19vw,258px);padding-left:var(--inspector-safe-lane)}.l12-prompt-overlay.inspector-active:not(.minimized) .prompt-panel{max-width:calc(100vw - var(--inspector-safe-lane) - 18px)}
+.l12-prompt-overlay.inspector-active:not(.minimized){--inspector-safe-lane:min(290px,calc(34vw + 38px));padding-left:var(--inspector-safe-lane)}.l12-prompt-overlay.inspector-active:not(.minimized) .prompt-panel{max-width:calc(100vw - var(--inspector-safe-lane) - 18px)}
 .prompt-panel{position:relative;width:min(760px,calc(100vw - 36px));max-height:calc(100vh - 36px);margin:auto;padding:16px;overflow-x:hidden;overflow-y:auto}
 .prompt-panel header{position:relative;padding-right:44px}.prompt-minimize{position:absolute;right:0;top:0;width:32px;height:27px;border:1px solid #8b918d;background:#111718;color:#fff;font-size:max(18px,var(--l12-board-copy,13px));line-height:18px}.prompt-minimize:hover{border-color:#70d7df;background:#174e54}
 .l12-prompt-overlay.initiative .prompt-panel{width:min(480px,calc(100vw - 32px));padding:24px}.l12-prompt-overlay.initiative .prompt-choices{display:grid;grid-template-columns:1fr 1fr;min-height:112px;align-items:stretch}.l12-prompt-overlay.initiative .prompt-choices>button{width:100%;max-width:none;min-height:92px;border:2px solid #eeeadf;background:#121718;color:#fff;font-size:max(18px,var(--l12-board-copy,13px))}.l12-prompt-overlay.initiative .prompt-choices>button:hover,.l12-prompt-overlay.initiative .prompt-choices>button.selected{border-color:#7de1e7;background:#1b6f77;color:#fff}

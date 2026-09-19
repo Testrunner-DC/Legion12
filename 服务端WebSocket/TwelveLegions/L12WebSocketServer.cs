@@ -489,6 +489,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             return result.Success ? Results.Ok(new { result.Message, result.Account })
                 : Results.BadRequest(new { result.Message });
         });
+        _app.MapGet("/api/me/statistics", async (HttpRequest request) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            return Results.Ok(await _recorder.PlayerStatisticsAsync(account.Id, account.Username));
+        });
         _app.MapGet("/api/auth/username-change-status", (HttpRequest request) =>
         {
             var authenticated = _platform.AuthenticateSession(request.Headers.Authorization);
@@ -1912,6 +1919,24 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var outcome = _adminCommands.Execute(command, permission, ExecuteEffectReview,
                 current => ValidateEffectReview(current, false));
             return AdminCommandResponse(request, command, outcome);
+        });
+        _app.MapPost("/api/admin/rule-items/publish", (HttpRequest request, L12RuleItemPublishRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentPublish;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try
+            {
+                return Results.Ok(_platform.PublishRuleItem(authenticated.Account, body,
+                    AuditContext(request, permission)));
+            }
+            catch (KeyNotFoundException error)
+            {
+                return ApiError(request, "rule_item_not_found", error.Message, StatusCodes.Status404NotFound);
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "invalid_rule_item", error.Message, StatusCodes.Status400BadRequest);
+            }
         });
         _app.MapGet("/api/me/alternate-arts", (HttpRequest request) =>
         {

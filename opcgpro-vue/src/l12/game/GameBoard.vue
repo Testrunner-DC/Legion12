@@ -49,6 +49,9 @@ const compactViewport = ref(false)
 const mobileLandscapeViewport = ref(false)
 const mobileRecordOpen = ref(false)
 const mobileMoralePickerOpen = ref(false)
+// On phones the card face stays intentionally compact.  A direct card tap opens
+// this independent left drawer so rules text is never dependent on tiny overlays.
+const mobileInspectorOpen = ref(false)
 const selectedId = ref<string | null>(null)
 const focusCard = ref<Card | null>(null)
 const inspectorAnchor = ref<HTMLElement | null>(null)
@@ -190,9 +193,11 @@ const resourceSelectionPrompt = computed(() => props.game.prompts?.find(prompt =
 const paymentChoiceIds = computed(() => (resourceSelectionPrompt.value
   ?? (boardTargetPrompt.value?.data?.choiceMode === 'mixed-board-payment' ? boardTargetPrompt.value : null))
   ?.validChoices.filter(id => id !== 'skip' && id !== 'cancel') ?? [])
-// Only a real resource prompt may open the enlarged morale picker.  Mixed board
-// selection uses the same low-level selection helper, but is not a morale prompt.
-const mobileMoralePickerEnabled = computed(() => mobileLandscapeViewport.value && Boolean(resourceSelectionPrompt.value))
+// The compact resource strip is always a readable entry point on a phone.  A
+// real resource prompt additionally turns the same large sheet into a selector;
+// merely viewing morale never changes game state.
+const mobileMoralePickerEnabled = computed(() => mobileLandscapeViewport.value)
+const mobileMoraleInteractive = computed(() => Boolean(resourceSelectionPrompt.value))
 type MobileMoraleCandidate = {
   id: string
   label: string
@@ -200,7 +205,11 @@ type MobileMoraleCandidate = {
   iconUrl: string
   state: 'morale' | 'god-power' | 'black-lotus' | 'temporary'
 }
-const mobileMoraleChoices = computed<MobileMoraleCandidate[]>(() => paymentChoiceIds.value.flatMap<MobileMoraleCandidate>(id => {
+const mobileMoraleChoices = computed<MobileMoraleCandidate[]>(() => {
+  const choiceIds = mobileMoraleInteractive.value
+    ? paymentChoiceIds.value
+    : viewMe.value.morale.map(resource => resource.instanceId)
+  return choiceIds.flatMap<MobileMoraleCandidate>(id => {
   if (id.startsWith('temporary-morale:')) return [{
     id,
     label: '临时士气',
@@ -220,9 +229,14 @@ const mobileMoraleChoices = computed<MobileMoraleCandidate[]>(() => paymentChoic
     iconUrl: godPower ? godPowerLogoUrl : blackLotus ? blackLotusLogoUrl : (factionLogoUrls[owner.faction] ?? ''),
     state: godPower ? 'god-power' as const : blackLotus ? 'black-lotus' as const : 'morale' as const,
   }]
-}))
-const activeBoardPromptId = computed(() => boardTargetPrompt.value?.promptId
-  ?? boardSlotPrompt.value?.promptId ?? resourceSelectionPrompt.value?.promptId ?? null)
+  })
+})
+const activeBoardPromptIds = computed(() => [
+  boardTargetPrompt.value?.promptId,
+  boardSlotPrompt.value?.promptId,
+  resourceSelectionPrompt.value?.promptId,
+].filter((promptId): promptId is string => Boolean(promptId)))
+const activeBoardPromptId = computed(() => activeBoardPromptIds.value[0] ?? null)
 const modalInspectorVisible = computed(() => Boolean(focusCard.value && (
   graveyardPlayer.value !== null || !promptMinimized.value && (
     masterPlayerIndex.value !== null || props.game.phase === 'Mulligan'
@@ -284,6 +298,9 @@ function sessionDisasterState(card: DisasterCardView | null) {
 }
 function isVisibleDisasterCard(card: DisasterCardView): card is Card {
   return !card.hidden && Boolean(card.cardId && card.name && card.cardType)
+}
+function isCurrentTrial(trials: Array<{ instanceId: string; trialCompleted?: boolean }> | undefined, trial: { instanceId: string }) {
+  return trials?.find(candidate => !candidate.trialCompleted)?.instanceId === trial.instanceId
 }
 function focusSessionDisaster(card: DisasterCardView, index?: number) {
   if (isVisibleDisasterCard(card)) focusCard.value = card
@@ -509,7 +526,10 @@ function updateScale() {
   const viewport = visibleViewport()
   compactViewport.value = viewport.width < 820 || viewport.height < 600
   const coarseTouch = window.matchMedia?.('(pointer: coarse) and (hover: none)').matches ?? false
-  mobileLandscapeViewport.value = coarseTouch && viewport.width >= 640 && viewport.width <= 960 && viewport.height >= 340 && viewport.height <= 430
+  // 568×320 is still a common phone landscape viewport once browser chrome and
+  // safe areas have been deducted.  Below this threshold the desktop board was
+  // scaled as a whole, which also made the hand-count numeral unreadable.
+  mobileLandscapeViewport.value = coarseTouch && viewport.width >= 520 && viewport.width <= 960 && viewport.height >= 300 && viewport.height <= 430
   // The hand fan and left utility dock paint about 42 logical pixels beyond the stage's
   // nominal 16:9 box. Because the stage is vertically centered below the 52px site bar,
   // reserve that overflow on both edges so every control stays visible at exact 16:9.
@@ -586,11 +606,13 @@ function playableHandIdsFor(playerIndex: number) {
 function selectHandFor(playerIndex: number, card: Card) {
   if (isControlledPlayer(playerIndex)) selectHand(card)
   else focusCard.value = card
+  if (mobileLandscapeViewport.value) mobileInspectorOpen.value = true
 }
 function playFromHandFor(playerIndex: number, card: Card) {
   if (isControlledPlayer(playerIndex)) playFromHand(card)
 }
 function slotFor(playerIndex: number, row: number, slot: number, card: Card | null) {
+  if (card && mobileLandscapeViewport.value) mobileInspectorOpen.value = true
   if (props.gmPlacement && props.gmPlacement.targetPlayer === playerIndex) {
     if (card) { focusCard.value = card; return }
     gmAction({
@@ -623,7 +645,13 @@ function activateFactionAbilityFor(playerIndex: number, ability: string) {
 }
 function selectPublicCardFor(playerIndex: number, card: Card) {
   focusCard.value = card
+  if (mobileLandscapeViewport.value) mobileInspectorOpen.value = true
   if (isControlledPlayer(playerIndex)) selectPublicCard(card)
+}
+function inspectActiveDisaster() {
+  if (!props.game.activeDisaster) return
+  focusCard.value = props.game.activeDisaster
+  if (mobileLandscapeViewport.value) mobileInspectorOpen.value = true
 }
 function targetableIdsFor(playerIndex: number) {
   if (boardTargetPrompt.value) return boardTargetableIds.value
@@ -868,8 +896,22 @@ function statusTexts(card: Card) {
     <div class="board-stage" :style="{ width: `${stageSize.width}px`, height: `${stageSize.height}px`, transform: `scale(${scale})`, '--l12-board-copy': `${13 / Math.min(1, scale)}px`, '--l12-board-meta': `${11 / Math.min(1, scale)}px`, '--l12-board-micro': `${9 / Math.min(1, scale)}px`, '--l12-effect-copy': `${13 / Math.min(1, scale)}px` }">
       <div class="stage-layout">
         <aside class="board-rail left-rail">
-          <div v-if="sessionDisasters.length" class="left-disaster-row">
-            <section class="grand-panel session-disaster-panel" aria-label="本局天灾">
+          <button v-if="mobileLandscapeViewport" type="button" class="mobile-card-inspector-handle" :class="{ open: mobileInspectorOpen }" :aria-expanded="mobileInspectorOpen" @click="mobileInspectorOpen = !mobileInspectorOpen">{{ mobileInspectorOpen ? '收起详情' : '展开卡牌详情' }}</button>
+          <section v-if="mobileLandscapeViewport && viewEnemy.specialZones?.trials?.length" class="mobile-extra-zone mobile-extra-zone-opponent" aria-label="对手额外区">
+            <small>对手额外区</small>
+            <div>
+              <button v-for="trial in viewEnemy.specialZones.trials" :key="trial.instanceId" type="button" class="mobile-extra-card"
+                :class="{ concealed: trial.hidden, inactive: !trial.hidden && !trial.trialCompleted }"
+                :disabled="trial.hidden" :title="trial.hidden ? '对手未揭示的试炼' : trial.name"
+                @mouseenter="!trial.hidden && (focusCard = trial)" @click.stop="!trial.hidden && selectPublicCardFor(viewEnemy.playerIndex, trial)">
+                <img v-if="trial.hidden" class="trial-card-back" src="/assets/l12/trial-back.png" alt="对手未揭示的试炼" />
+                <CardImage v-else :card-id="trial.cardId" :legacy-url="trial.imageUrl" :alt="trial.name" intent="board" eager />
+                <b v-if="isCurrentTrial(viewEnemy.specialZones?.trials, trial)" aria-label="当前试炼进度">{{ trial.trialProgress ?? viewEnemy.specialZones?.trialLevel ?? 0 }}</b>
+              </button>
+            </div>
+          </section>
+          <div v-if="sessionDisasters.length || game.activeDisaster" class="left-disaster-row">
+            <section v-if="sessionDisasters.length" class="grand-panel session-disaster-panel" aria-label="本局天灾">
               <h3>本局天灾</h3>
               <div class="session-disaster-strip">
                 <button v-for="(card, index) in sessionDisasterSlots" :key="card?.instanceId ?? `hidden-disaster-${index}`"
@@ -882,12 +924,25 @@ function statusTexts(card: Card) {
             </section>
             <section class="grand-panel current-disaster-panel" data-ui-contract="left-current-disaster">
                 <button type="button" class="current-disaster-card" data-l12-zone="disaster" :disabled="!game.activeDisaster"
-                  @mouseenter="game.activeDisaster && (focusCard = game.activeDisaster)" @click="game.activeDisaster && (focusCard = game.activeDisaster)">
+                  @mouseenter="game.activeDisaster && (focusCard = game.activeDisaster)" @click="inspectActiveDisaster">
                   <CardImage v-if="game.activeDisaster" :card-id="game.activeDisaster.cardId" :legacy-url="game.activeDisaster.imageUrl" :alt="game.activeDisaster.name" intent="board" eager />
                   <img v-else src="/assets/l12/card-back-disaster.png" alt="天灾牌背" />
+                  <span class="mobile-current-disaster-copy"><b>当前天灾</b><i>{{ game.activeDisaster?.name || '尚未揭示' }}</i></span>
                 </button>
             </section>
           </div>
+          <section v-if="mobileLandscapeViewport && viewMe.specialZones?.trials?.length" class="mobile-extra-zone mobile-extra-zone-my" aria-label="我方额外区">
+            <small>我方额外区</small>
+            <div>
+              <button v-for="trial in viewMe.specialZones.trials" :key="trial.instanceId" type="button" class="mobile-extra-card"
+                :class="{ concealed: trial.hidden, inactive: !trial.hidden && !trial.trialCompleted }"
+                :title="trial.hidden ? '我方未揭示的试炼' : trial.name"
+                @mouseenter="focusCard = trial" @click.stop="selectPublicCardFor(viewMe.playerIndex, trial)">
+                <CardImage :card-id="trial.cardId" :legacy-url="trial.imageUrl" :alt="trial.name" intent="board" eager />
+                <b v-if="isCurrentTrial(viewMe.specialZones?.trials, trial)" aria-label="当前试炼进度">{{ trial.trialProgress ?? viewMe.specialZones?.trialLevel ?? 0 }}</b>
+              </button>
+            </div>
+          </section>
           <div class="left-detail-layout">
             <div class="left-card-column">
               <div ref="inspectorAnchor" class="card-inspector-anchor" data-ui-contract="selected-card-inspector-anchor">
@@ -1045,6 +1100,15 @@ function statusTexts(card: Card) {
         </main>
 
         <aside class="board-rail right-rail">
+          <!-- Phone status lanes are intentionally not over the hands.  A timed
+               match instead receives its own reserved pair of compact clocks in
+               this otherwise unused section of the right rail. -->
+          <section v-if="mobileLandscapeViewport && l12State.rankedClock" class="mobile-timed-clocks" aria-label="双方对局计时">
+            <PlayerTurnClock class="mobile-rail-clock opponent-player-clock" :player-index="viewEnemy.playerIndex" side="opponent"
+              :active="game.activePlayer === viewEnemy.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
+            <PlayerTurnClock class="mobile-rail-clock my-player-clock" :player-index="viewMe.playerIndex" side="my"
+              :active="game.activePlayer === viewMe.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
+          </section>
           <section class="grand-panel player-panel" data-ui-contract="complete-player-summary">
             <button v-if="mobileLandscapeViewport" type="button" class="mobile-record-trigger" @click="mobileRecordOpen = true">对局记录</button>
             <article class="player-summary opponent-summary">
@@ -1080,14 +1144,31 @@ function statusTexts(card: Card) {
         </section>
       </Teleport>
       <Teleport to="body">
+        <Transition name="mobile-card-inspector">
+          <aside v-if="mobileLandscapeViewport && mobileInspectorOpen" class="mobile-card-inspector" role="dialog" aria-modal="false" aria-label="卡牌详情">
+            <header><div><small>卡牌详情</small><h2>{{ focusCard?.name || '选择一张卡牌' }}</h2></div><button type="button" @click="mobileInspectorOpen = false">收起</button></header>
+            <template v-if="focusCard">
+            <CardImage class="mobile-inspector-card-image" :card-id="focusCard.cardId" :legacy-url="focusCard.imageUrl" :alt="focusCard.name" intent="detail" eager />
+            <div v-if="focusCard.traits?.length || focusCard.profession" class="inspector-card-tags">
+              <span v-for="trait in focusCard.traits" :key="trait">{{ trait }}</span><span v-if="focusCard.profession">{{ focusCard.profession }}</span>
+            </div>
+            <div v-if="focusCard.trialValue" class="inspector-card-tags"><span>试炼值 {{ focusCard.trialValue }}</span></div>
+            <p class="mobile-inspector-effect l12-effect-body l12-effect-body--compact">{{ focusCard.effectText || '无效果文字' }}</p>
+            <ul v-if="statusTexts(focusCard).length" class="inspector-statuses"><li v-for="text in statusTexts(focusCard)" :key="text">{{ text }}</li></ul>
+            </template>
+            <p v-else class="mobile-inspector-empty">点击手牌、场上卡牌、圣物、试炼或当前天灾，即可在此查看完整信息。</p>
+          </aside>
+        </Transition>
+      </Teleport>
+      <Teleport to="body">
         <section v-if="mobileMoralePickerEnabled && mobileMoralePickerOpen" class="mobile-record-overlay mobile-morale-overlay" role="dialog" aria-modal="true" aria-label="选择士气">
-          <header><div><h2>选择士气</h2><small>已选择 {{ paymentResourceIds.length }}/{{ resourceSelectionPrompt?.maxChoose ?? 0 }}</small></div><button type="button" @click="mobileMoralePickerOpen = false">返回对局</button></header>
-          <p v-if="resourceSelectionPrompt" class="mobile-morale-prompt">{{ resourceSelectionPrompt.text }}</p>
+          <header><div><h2>{{ mobileMoraleInteractive ? '选择士气' : '我方士气' }}</h2><small>{{ mobileMoraleInteractive ? `已选择 ${paymentResourceIds.length}/${resourceSelectionPrompt?.maxChoose ?? 0}` : `活跃 ${viewMe.morale.filter(item => !item.tapped).length} / 共 ${viewMe.morale.length}` }}</small></div><div class="mobile-morale-header-actions"><button v-if="mobileMoraleInteractive" type="button" @click="mobileMoralePickerOpen = false">最小化</button><button type="button" @click="mobileMoralePickerOpen = false">返回对局</button></div></header>
+          <p class="mobile-morale-prompt">{{ resourceSelectionPrompt?.text || '这里展示当前士气状态；需要支付或返还时会自动变为可选择面板。' }}</p>
           <div class="mobile-morale-picker" aria-label="可选择的士气">
-            <button v-for="choice in mobileMoraleChoices" :key="choice.id" type="button" :class="['mobile-morale-choice', choice.state, { selected: paymentResourceIds.includes(choice.id) }]" :aria-pressed="paymentResourceIds.includes(choice.id)" @click="togglePaymentResource(choice.id)">
+            <button v-for="choice in mobileMoraleChoices" :key="choice.id" type="button" :disabled="!mobileMoraleInteractive" :class="['mobile-morale-choice', choice.state, { selected: paymentResourceIds.includes(choice.id) }]" :aria-pressed="paymentResourceIds.includes(choice.id)" @click="mobileMoraleInteractive && togglePaymentResource(choice.id)">
               <img :src="choice.iconUrl" :alt="choice.label" /><span><b>{{ choice.label }}</b><small>{{ choice.detail }}</small></span>
             </button>
-            <p v-if="!mobileMoraleChoices.length">当前提示没有可选择的士气。</p>
+            <p v-if="!mobileMoraleChoices.length">{{ mobileMoraleInteractive ? '当前提示没有可选择的士气。' : '当前没有士气。' }}</p>
           </div>
           <footer v-if="resourceSelectionPrompt" class="mobile-morale-actions">
             <button v-if="resourceSelectionPrompt.validChoices.includes('skip')" type="button" @click="confirmMobileMoralePayment(true)">不发动</button>
@@ -1128,7 +1209,7 @@ function statusTexts(card: Card) {
             : resourceSelectionPrompt.kind === 'resource-payment' || resourceSelectionPrompt.data?.choiceMode === 'resource-payment'
               ? '确认支付' : '确认选择' }}</button>
       </div>
-      <PromptOverlay v-if="!readOnly || game.phase === 'DisasterPreparation'" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction" :inspector-visible="modalInspectorVisible"
+      <PromptOverlay v-if="!readOnly || game.phase === 'DisasterPreparation'" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppressed-prompt-ids="activeBoardPromptIds" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction" :inspector-visible="modalInspectorVisible"
         @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" @minimized-change="promptMinimized = $event" @response-targets-change="responseTargetIds = $event" />
     </div>
   </div>
@@ -1196,7 +1277,753 @@ function statusTexts(card: Card) {
 /* The selector is deliberately runtime-gated.  A short desktop window is not a phone
    landscape view, so no desktop grid is affected by these rules. */
 .mobile-landscape-board{top:0!important;right:0!important;bottom:0!important;left:0!important;padding:4px!important;overflow:hidden}.mobile-landscape-board .board-stage{width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;aspect-ratio:auto!important;transform:none!important;--l12-board-copy:12px!important;--l12-board-meta:10px!important;--l12-board-micro:9px!important}.mobile-landscape-board .stage-layout{height:100%;grid-template-columns:112px 42px minmax(0,1fr) 112px;gap:4px}.mobile-landscape-board .left-rail{min-height:0;overflow:hidden}.mobile-landscape-board .left-detail-layout{display:none}.mobile-landscape-board .left-disaster-row{grid-template-columns:1fr;gap:4px}.mobile-landscape-board .left-disaster-row>.grand-panel{min-height:0}.mobile-landscape-board .session-disaster-panel{padding:4px!important}.mobile-landscape-board .session-disaster-panel h3{font-size:10px}.mobile-landscape-board .session-disaster-strip{grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}.mobile-landscape-board .session-disaster-strip button{width:auto;min-width:0;height:auto;aspect-ratio:1}.mobile-landscape-board .current-disaster-panel{padding:3px!important}.mobile-landscape-board .phase-column{margin-block:0;padding:3px!important;gap:3px}.mobile-landscape-board .phase-disaster-value{min-height:38px;gap:2px;padding:2px}.mobile-landscape-board .phase-disaster-value img{width:18px;height:20px}.mobile-landscape-board .phase-disaster-value b{font-size:20px}.mobile-landscape-board .board-center{--l12-hand-lane-height:50px;grid-template-rows:var(--l12-hand-lane-height) 34px minmax(0,1fr) 34px var(--l12-hand-lane-height);gap:2px}.mobile-landscape-board .board-center>.l12-hand{width:calc(100% - 112px);height:var(--l12-hand-lane-height)!important;min-height:var(--l12-hand-lane-height);transform:none}.mobile-landscape-board .board-status-lane{height:34px!important;min-height:34px!important}.mobile-landscape-board .felt-board{--l12-board-seam-safe-height:18px;--l12-battlefield-half-height:0px;min-height:0}.mobile-landscape-board .battlefield-half{min-width:0;min-height:0;overflow:clip}.mobile-landscape-board .battlefield-half :deep(.l12-player-mat){width:100%;height:100%;min-width:0;min-height:0;grid-template-rows:minmax(0,1fr)}.mobile-landscape-board .battlefield-half :deep(.battle-zone){width:100%;height:100%;min-width:0;min-height:0;align-self:stretch}.mobile-landscape-board .felt-board :deep(.formation){height:100%;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));justify-content:stretch;gap:2px}.mobile-landscape-board .felt-board :deep(.formation-slot .card-tile),.mobile-landscape-board .felt-board :deep(.formation-slot .card-tile.tapped){width:min(100%,54px);height:auto;max-height:76px;aspect-ratio:5/7;flex-basis:auto}.mobile-landscape-board .right-rail{grid-template-rows:auto minmax(0,1fr) auto;min-height:0;overflow:hidden}.mobile-landscape-board .player-panel{min-height:0;padding:4px!important}.mobile-landscape-board .player-panel>hr,.mobile-landscape-board .right-rail .record-log{display:none}.mobile-landscape-board .player-summary{gap:2px}.mobile-landscape-board .player-summary-primary>strong{font-size:12px!important}.mobile-landscape-board .player-summary-meta{gap:2px;font-size:9px}.mobile-landscape-board .connection-state{font-size:9px!important}.mobile-landscape-board .right-rail .action-panel{max-height:78px;padding:4px!important}.mobile-landscape-board .right-rail .action-panel h3{display:none}.mobile-landscape-board .board-target-controls{top:4px;max-width:calc(100vw - 16px);padding:6px 8px}.mobile-landscape-board .board-target-controls strong{max-width:46vw}.mobile-landscape-board .resource-payment-controls{bottom:4px;top:auto}.mobile-landscape-board .battlefield-half :deep(.resource-zone){transform:scale(.78);transform-origin:center}.mobile-landscape-board .public-reveal-cards .l12-card-image{width:72px;height:101px}.mobile-landscape-board .dice-reveal-values b{width:46px;height:46px;font-size:28px}
-.mobile-record-trigger{width:100%;min-height:28px;border:1px solid #587b7d;background:#10191a;color:#bce8e8;font:inherit;font-weight:900}.mobile-context-actions{position:absolute!important;z-index:70;right:4px;bottom:4px;width:164px;max-height:88px!important;overflow:auto!important;background:rgba(8,12,13,.96)!important}.mobile-landscape-board .card-context-actions{position:fixed!important;z-index:80!important;right:4px!important;bottom:96px!important;left:auto!important;display:flex!important;max-width:164px!important;max-height:104px!important;flex-wrap:wrap;overflow:auto;background:rgba(8,12,13,.98);box-shadow:0 0 0 1px #587b7d}.mobile-landscape-board .card-context-actions button{min-height:30px;padding:4px 7px;font-size:11px}.mobile-landscape-board .battlefield-half :deep(.resource-zone){width:96px;max-width:96px;gap:3px;transform:none}.mobile-landscape-board .battlefield-half :deep(.resource-faction-action),.mobile-landscape-board .battlefield-half :deep(.resource-morale-summary),.mobile-landscape-board .battlefield-half :deep(.resource-morale-stack){width:96px;max-width:96px}.mobile-landscape-board .battlefield-half :deep(.resource-morale-summary){grid-template-columns:42px 54px;height:28px}.mobile-landscape-board .battlefield-half :deep(.resource-morale-label),.mobile-landscape-board .battlefield-half :deep(.resource-morale-count){width:auto;min-width:0;height:28px;min-height:28px;padding:0 3px;font-size:11px}.mobile-landscape-board .battlefield-half :deep(.resource-morale-stack){display:grid;grid-template-columns:repeat(auto-fit,minmax(18px,1fr));grid-auto-rows:18px;min-height:0;gap:2px;padding:3px}.mobile-landscape-board .battlefield-half :deep(.resource-morale-stack .morale-orb){width:18px;height:18px;min-width:18px;justify-self:center}.mobile-landscape-board .battlefield-half :deep(.resource-morale-stack .morale-orb img){width:12px;height:12px}.mobile-record-overlay{position:fixed;z-index:2147483600;inset:0;display:flex;min-height:0;flex-direction:column;padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));background:rgba(5,8,9,.985);color:#edf1ec}.mobile-record-overlay header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:4px 0 10px;border-bottom:1px solid #46504e}.mobile-record-overlay h2{margin:0;font-size:18px}.mobile-record-overlay button{min-width:72px;min-height:36px;border:1px solid #7f8a86;background:#172021;color:#fff;font-weight:900}.mobile-record-overlay :deep(.event-list){min-height:0;flex:1;overflow:auto;padding:12px 2px}.mobile-morale-overlay header small{display:block;margin-top:3px;color:#b8c5c0;font-weight:800}.mobile-morale-prompt{margin:10px 0 6px;color:#e7ece6;font-size:13px;font-weight:800}.mobile-morale-picker{display:grid;min-height:0;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;overflow:auto;padding:4px 0}.mobile-morale-picker>p{grid-column:1/-1;color:#b7c0bb;text-align:center}.mobile-morale-choice{display:flex;min-width:0;min-height:66px;align-items:center;gap:9px;padding:7px 9px;text-align:left}.mobile-morale-choice img{width:35px;height:35px;flex:none;object-fit:contain}.mobile-morale-choice span{display:grid;min-width:0;gap:3px}.mobile-morale-choice small{overflow:hidden;color:#c1cbc5;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.mobile-morale-choice.selected{border-color:#f1c75b;background:#554414;box-shadow:0 0 0 2px rgba(241,199,91,.45)}.mobile-morale-choice.god-power{border-color:#60cde8}.mobile-morale-choice.temporary{border-color:#e9e9dc}.mobile-morale-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;padding-top:9px;border-top:1px solid #46504e}.mobile-morale-actions .primary{border-color:#e0bd62;background:#544319}
-.mobile-morale-choice.black-lotus{border-color:#d4ae42;background:#0c0d0d}
-.mobile-morale-choice.temporary img{filter:brightness(0) invert(1)}
+.mobile-record-trigger{width:100%;min-height:34px;border:1px solid #587b7d;background:#10191a;color:#bce8e8;font:inherit;font-weight:900}.mobile-context-actions{position:absolute!important;z-index:70;right:4px;bottom:4px;width:176px;min-height:46px;max-height:none!important;overflow:visible!important;background:rgba(8,12,13,.98)!important;box-shadow:0 0 0 1px #587b7d}.mobile-context-actions :deep(.l12-actions>p){display:none!important}.mobile-context-actions :deep(.l12-actions button){width:100%;min-height:42px;padding:8px 10px;font-size:13px}.mobile-landscape-board .card-context-actions{position:fixed!important;z-index:80!important;right:4px!important;bottom:56px!important;left:auto!important;display:flex!important;width:176px!important;max-width:176px!important;max-height:96px!important;flex-wrap:wrap;overflow:auto;background:rgba(8,12,13,.98);box-shadow:0 0 0 1px #587b7d}.mobile-landscape-board .card-context-actions button{min-height:38px;padding:6px 8px;font-size:12px}.mobile-landscape-board .battlefield-half :deep(.resource-zone){width:96px;max-width:96px;gap:3px;transform:none}.mobile-landscape-board .battlefield-half :deep(.resource-faction-action),.mobile-landscape-board .battlefield-half :deep(.resource-morale-summary),.mobile-landscape-board .battlefield-half :deep(.resource-morale-stack){width:96px;max-width:96px}.mobile-landscape-board .battlefield-half :deep(.resource-morale-summary){grid-template-columns:42px 54px;height:28px}.mobile-landscape-board .battlefield-half :deep(.resource-morale-label),.mobile-landscape-board .battlefield-half :deep(.resource-morale-count){width:auto;min-width:0;height:28px;min-height:28px;padding:0 3px;font-size:11px}.mobile-landscape-board .battlefield-half :deep(.resource-morale-stack){display:grid;grid-template-columns:repeat(auto-fit,minmax(18px,1fr));grid-auto-rows:18px;min-height:0;gap:2px;padding:3px}.mobile-landscape-board .battlefield-half :deep(.resource-morale-stack .morale-orb){width:18px;height:18px;min-width:18px;justify-self:center}.mobile-landscape-board .battlefield-half :deep(.resource-morale-stack .morale-orb img){width:12px;height:12px}.mobile-record-overlay{position:fixed;z-index:2147483600;inset:0;display:flex;min-height:0;flex-direction:column;padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));background:rgba(5,8,9,.985);color:#edf1ec}.mobile-record-overlay header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:4px 0 10px;border-bottom:1px solid #46504e}.mobile-record-overlay h2{margin:0;font-size:18px}.mobile-record-overlay button{min-width:72px;min-height:36px;border:1px solid #7f8a86;background:#172021;color:#fff;font-weight:900}.mobile-record-overlay :deep(.event-list){min-height:0;flex:1;overflow:auto;padding:12px 2px}.mobile-morale-overlay header small{display:block;margin-top:3px;color:#b8c5c0;font-weight:800}.mobile-morale-prompt{margin:10px 0 6px;color:#e7ece6;font-size:13px;font-weight:800}.mobile-morale-picker{display:grid;min-height:0;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;overflow:auto;padding:4px 0}.mobile-morale-picker>p{grid-column:1/-1;color:#b7c0bb;text-align:center}.mobile-morale-choice{display:flex;min-width:0;min-height:66px;align-items:center;gap:9px;padding:7px 9px;text-align:left}.mobile-morale-choice img{width:35px;height:35px;flex:none;object-fit:contain}.mobile-morale-choice span{display:grid;min-width:0;gap:3px}.mobile-morale-choice small{overflow:hidden;color:#c1cbc5;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.mobile-morale-choice:disabled{opacity:1}.mobile-morale-choice:disabled small{color:#a8b2ad}.mobile-morale-choice.selected{border-color:#f1c75b;background:#554414;box-shadow:0 0 0 2px rgba(241,199,91,.45)}.mobile-morale-choice.god-power{border-color:#60cde8}.mobile-morale-choice.temporary{border-color:#e9e9dc}.mobile-morale-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;padding-top:9px;border-top:1px solid #46504e}.mobile-morale-actions .primary{border-color:#e0bd62;background:#544319}
+
+.mobile-landscape-board :deep(.battlefield-half .master-marker-track){left:1px!important;top:84px!important;bottom:auto!important;width:198px!important;height:36px!important;transform:scale(.31)!important;transform-origin:left top}.mobile-landscape-board :deep(.battlefield-half .special-lane.visible){left:2px!important;top:106px!important;bottom:auto!important;width:62px!important;height:22px!important;align-content:center!important;justify-items:start!important}.mobile-landscape-board :deep(.battlefield-half .trial-zone),.mobile-landscape-board :deep(.battlefield-half.side-opponent .trial-zone){flex-direction:row!important;gap:2px}.mobile-landscape-board :deep(.battlefield-half .trial-card),.mobile-landscape-board :deep(.battlefield-half .side-my .trial-card){width:30px!important}.mobile-landscape-board :deep(.battlefield-half .trial-card b){min-width:12px!important;height:12px!important;padding:0 2px!important;border-width:1px!important;font-size:8px!important}
+/*
+ * Mobile battle board — reviewed layout.
+ * The board keeps a dedicated, unclipped field area.  Edge rails are reserved for
+ * controls and status so neither a card nor a card action is ever placed over a
+ * formation cell.
+ */
+.mobile-landscape-board {
+  padding: 4px !important;
+}
+.mobile-landscape-board .board-stage {
+  --l12-board-copy: 12px !important;
+  --l12-board-meta: 10px !important;
+  --l12-board-micro: 9px !important;
+  position: relative;
+  height: calc(100% - 8px) !important;
+}
+.mobile-landscape-board .stage-layout {
+  inset: 0 !important;
+  grid-template-columns: 76px minmax(0, 1fr) 112px !important;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 4px;
+}
+.mobile-landscape-board .left-rail { grid-column: 1; grid-row: 1; }
+.mobile-landscape-board .phase-column { display: none; }
+.mobile-landscape-board .left-disaster-row { height: 100%; grid-template-columns: 1fr; }
+.mobile-landscape-board .left-disaster-row > .current-disaster-panel { display: none; }
+.mobile-landscape-board .session-disaster-panel { padding: 4px !important; }
+.mobile-landscape-board .session-disaster-panel h3 { display: none; }
+.mobile-landscape-board .session-disaster-strip {
+  grid-template-columns: 1fr !important;
+  gap: 5px;
+}
+.mobile-landscape-board .session-disaster-strip button {
+  width: 42px !important;
+  min-width: 42px !important;
+  height: 42px !important;
+  justify-self: center;
+}
+.mobile-landscape-board .board-center {
+  grid-column: 2;
+  grid-row: 1;
+  grid-template-rows: 0 0 minmax(0, 1fr) 0 68px !important;
+  gap: 3px;
+  overflow: hidden;
+}
+.mobile-landscape-board .board-center > .opponent-hand,
+.mobile-landscape-board .board-center > .board-status-lane { display: none !important; }
+.mobile-landscape-board .board-center > .l12-hand:last-child {
+  width: 100% !important;
+  height: 68px !important;
+  min-height: 68px !important;
+  padding: 0 3px;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  transform: none !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+}
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap),
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back) {
+  width: 48px !important;
+  height: 67px !important;
+  min-width: 48px !important;
+  flex: 0 0 48px !important;
+  margin-left: 0 !important;
+}
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-tile) {
+  width: 48px !important;
+  height: 67px !important;
+  min-height: 67px !important;
+  flex-basis: 48px !important;
+}
+.mobile-landscape-board .felt-board {
+  --l12-board-seam-safe-height: 18px;
+  min-height: 0;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+.mobile-landscape-board .battlefield-half { overflow: hidden; }
+.mobile-landscape-board :deep(.battlefield-half.l12-player-mat) {
+  display: grid !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  grid-template-columns: 62px minmax(0, 1fr) 38px 86px !important;
+  grid-template-rows: minmax(0, 1fr) !important;
+  gap: 3px !important;
+  align-items: stretch !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .commander-zone) {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  grid-template-columns: 1fr !important;
+  align-self: stretch !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .mini-master) {
+  width: 54px !important;
+  height: 76px !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .master-column) { min-width: 0 !important; }
+.mobile-landscape-board :deep(.battlefield-half .battle-zone) {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  transform: none !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .mat-piles) {
+  width: 38px !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  grid-template-rows: repeat(2, minmax(0, 1fr)) !important;
+  gap: 3px !important;
+  transform: none !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .mat-piles .pile) {
+  width: 38px !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .mat-piles .pile-card) {
+  width: 34px !important;
+  height: 48px !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .mat-piles .pile span) { display: none; }
+.mobile-landscape-board :deep(.battlefield-half .resource-zone),
+.mobile-landscape-board :deep(.battlefield-half .resource-faction-action),
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-summary),
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack) {
+  width: 86px !important;
+  max-width: 86px !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .resource-zone) {
+  min-height: 0 !important;
+  height: 100% !important;
+  justify-content: center !important;
+  gap: 3px !important;
+  overflow: hidden;
+}
+.mobile-landscape-board :deep(.battlefield-half .resource-faction-action) {
+  min-height: 28px !important;
+  padding: 2px 4px !important;
+  font-size: 10px !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-summary) {
+  grid-template-columns: 36px 50px !important;
+  height: 36px !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-label) {
+  display: grid !important;
+  min-width: 36px !important;
+  height: 36px !important;
+  padding: 0 !important;
+  place-items: center;
+  border-radius: 50%;
+}
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-label img) {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-label span) { display: none; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-count) {
+  width: 50px !important;
+  max-width: 50px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 0 3px !important;
+  font-size: 12px !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack) {
+  display: grid !important;
+  min-height: 0 !important;
+  grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: 17px;
+  gap: 2px;
+  padding: 3px;
+}
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb) {
+  width: 17px !important;
+  height: 17px !important;
+  min-width: 17px !important;
+  justify-self: center;
+}
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb img) {
+  width: 11px !important;
+  height: 11px !important;
+}
+.mobile-landscape-board .felt-board :deep(.formation) {
+  width: 100% !important;
+  height: 100% !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  justify-content: stretch;
+  gap: 2px 3px;
+}
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-tile),
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-tile.tapped) {
+  width: 52px !important;
+  height: 73px !important;
+  max-width: calc(100% - 2px) !important;
+  max-height: calc(100% - 2px) !important;
+  flex-basis: 52px !important;
+}
+.mobile-landscape-board .right-rail {
+  grid-column: 3;
+  grid-row: 1;
+  grid-template-rows: auto minmax(0, 1fr) 54px;
+  min-height: 0;
+  overflow: visible;
+}
+.mobile-landscape-board .right-rail .player-panel {
+  position: static !important;
+  min-height: 0;
+  padding: 4px !important;
+}
+.mobile-landscape-board .right-rail .player-panel { grid-row: 1; }
+.mobile-landscape-board .right-rail .player-summary,
+.mobile-landscape-board .right-rail .record-log { display: none; }
+.mobile-landscape-board .mobile-record-trigger {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  width: 102px;
+  min-height: 36px;
+  padding: 4px 5px;
+  font-size: 11px;
+  transform: translateY(-50%);
+}
+.mobile-landscape-board .right-rail .action-panel,
+.mobile-landscape-board .mobile-context-actions {
+  position: relative !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: 100% !important;
+  height: 54px !important;
+  min-height: 54px !important;
+  max-height: none !important;
+  padding: 3px !important;
+  overflow: visible !important;
+}
+.mobile-landscape-board .right-rail .action-panel { grid-row: 3; align-self: end; }
+.mobile-landscape-board .right-rail .action-panel h3 { display: none; }
+.mobile-landscape-board .card-context-actions {
+  position: fixed !important;
+  z-index: 81 !important;
+  right: 6px !important;
+  bottom: 62px !important;
+  left: auto !important;
+  display: flex !important;
+  width: 106px !important;
+  max-width: 106px !important;
+  max-height: calc(100vh - 170px) !important;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  overflow-y: auto;
+  background: rgba(8, 12, 13, .98);
+  box-shadow: 0 0 0 1px #587b7d, 0 8px 18px rgba(0, 0, 0, .48);
+}
+.mobile-landscape-board .card-context-actions button {
+  min-height: 32px;
+  padding: 5px 7px;
+  font-size: 11px;
+}
+/* Field and hand actions are rendered by child components, so this must cross the
+   scoped-style boundary.  The right rail is the only allowed mobile action dock. */
+.mobile-landscape-board :deep(.card-context-actions) {
+  position: fixed !important;
+  z-index: 81 !important;
+  right: 6px !important;
+  bottom: 62px !important;
+  left: auto !important;
+  display: flex !important;
+  width: 106px !important;
+  max-width: 106px !important;
+  max-height: calc(100vh - 170px) !important;
+  flex-direction: column !important;
+  flex-wrap: nowrap !important;
+  overflow-y: auto !important;
+  background: rgba(8, 12, 13, .98) !important;
+  box-shadow: 0 0 0 1px #587b7d, 0 8px 18px rgba(0, 0, 0, .48) !important;
+  transform: none !important;
+}
+.mobile-landscape-board :deep(.card-context-actions button) {
+  min-height: 32px !important;
+  padding: 5px 7px !important;
+  color: #fff !important;
+  font-size: 11px !important;
+  line-height: 1 !important;
+  text-align: center !important;
+}
+/* The modal is intentionally compact: it keeps the current board visible behind it. */
+.mobile-record-overlay {
+  position: fixed;
+  z-index: 2147483600;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  box-sizing: border-box;
+  width: min(560px, calc(100vw - 150px));
+  max-height: calc(100vh - 28px);
+  min-height: 0;
+  flex-direction: column;
+  padding: 10px 12px;
+  border: 1px solid #536663;
+  background: rgba(7, 11, 12, .98);
+  color: #edf1ec;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .36), 0 14px 40px rgba(0, 0, 0, .76);
+  transform: translate(-50%, -50%);
+}
+.mobile-record-overlay header { padding: 0 0 7px; }
+.mobile-record-overlay h2 { font-size: 15px; }
+.mobile-record-overlay button { min-width: 62px; min-height: 30px; font-size: 11px; }
+.mobile-record-overlay :deep(.event-list) { padding: 7px 1px; }
+.mobile-morale-overlay {
+  width: min(420px, calc(100vw - 220px));
+  max-height: min(290px, calc(100vh - 28px));
+}
+.mobile-morale-prompt { margin: 7px 0 4px; font-size: 11px; }
+.mobile-morale-picker {
+  grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+  gap: 7px;
+  overflow-x: hidden;
+  padding: 5px 1px;
+}
+.mobile-morale-choice {
+  display: grid;
+  width: 44px;
+  min-height: 44px;
+  padding: 2px;
+  place-items: center;
+  border-radius: 50%;
+}
+.mobile-morale-choice img { width: 30px; height: 30px; }
+.mobile-morale-choice span { display: none; }
+.mobile-morale-actions { padding-top: 7px; }
+
+/*
+ * Phone battlefield v2.  This is a separate geometry rather than a scaled-down
+ * desktop mat: every zone has an allocated rectangle, the six combat cells are
+ * square, and no value marker is allowed to cover a card face.
+ */
+.mobile-landscape-board .stage-layout {
+  grid-template-columns: 108px minmax(0, 1fr) 102px !important;
+  gap: 4px !important;
+}
+.mobile-landscape-board .left-rail { overflow: visible !important; }
+.mobile-landscape-board .left-disaster-row {
+  display: grid !important;
+  grid-template-rows: 58px minmax(0, 1fr);
+  gap: 4px !important;
+}
+.mobile-landscape-board .session-disaster-panel { grid-row: 2 !important; min-height: 0 !important; }
+.mobile-landscape-board .session-disaster-strip { grid-template-columns: repeat(2, 42px) !important; }
+.mobile-landscape-board .left-disaster-row > .current-disaster-panel {
+  grid-row: 1 !important;
+  display: block !important;
+  min-height: 58px !important;
+  padding: 2px !important;
+}
+.mobile-landscape-board .current-disaster-card {
+  display: grid !important;
+  width: 100% !important;
+  height: 52px !important;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 5px;
+  padding: 3px !important;
+  text-align: left;
+}
+.mobile-landscape-board .current-disaster-card > .l12-card-image,
+.mobile-landscape-board .current-disaster-card > img {
+  width: 44px !important;
+  height: 44px !important;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.mobile-current-disaster-copy { display: grid; min-width: 0; align-content: center; gap: 2px; }
+.mobile-current-disaster-copy b { color: #c9b478; font-size: 10px; line-height: 1; }
+.mobile-current-disaster-copy i { overflow: hidden; color: #f3f1e9; font-size: 11px; font-style: normal; font-weight: 900; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
+
+.mobile-landscape-board :deep(.battlefield-half.l12-player-mat) {
+  grid-template-columns: 132px 216px 40px 82px !important;
+  justify-content: center !important;
+  gap: 4px !important;
+  overflow: visible !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .commander-zone) {
+  display: grid !important;
+  grid-template-columns: 62px 62px !important;
+  grid-template-rows: minmax(0, 1fr) 22px !important;
+  gap: 3px 4px !important;
+  align-content: center !important;
+  justify-content: center !important;
+  overflow: hidden !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .master-column),
+.mobile-landscape-board :deep(.battlefield-half .relic-zone) {
+  width: 62px !important;
+  min-width: 62px !important;
+  height: 80px !important;
+  min-height: 80px !important;
+  align-self: center !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .mini-master) {
+  width: 62px !important;
+  height: 80px !important;
+  min-width: 62px !important;
+  min-height: 80px !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .mini-master > span:not(.master-away)) {
+  right: 2px !important;
+  bottom: 2px !important;
+  left: 2px !important;
+  overflow: hidden !important;
+  font-size: 9px !important;
+  line-height: 1.05 !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .master-health) {
+  right: 2px !important;
+  bottom: 17px !important;
+  min-width: 0 !important;
+  height: 17px !important;
+  padding: 0 3px !important;
+  font-size: 10px !important;
+  line-height: 17px !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .master-health small) { font-size: 8px !important; }
+.mobile-landscape-board :deep(.battlefield-half .relic-zone .card-tile),
+.mobile-landscape-board :deep(.battlefield-half .relic-zone .card-tile.tapped) {
+  width: 54px !important;
+  height: 76px !important;
+  max-width: 54px !important;
+  max-height: 76px !important;
+  flex-basis: 54px !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .extra-relic) { max-width: 54px !important; max-height: 76px !important; }
+.mobile-landscape-board :deep(.battlefield-half .master-marker-track) {
+  position: static !important;
+  z-index: auto !important;
+  grid-column: 1 / -1 !important;
+  grid-row: 2 !important;
+  display: flex !important;
+  width: 100% !important;
+  height: 22px !important;
+  min-height: 22px !important;
+  justify-content: center !important;
+  gap: 4px !important;
+  transform: none !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .master-marker-track .rune-orb),
+.mobile-landscape-board :deep(.battlefield-half .master-marker-track .canopic-orb) {
+  box-sizing: border-box !important;
+  width: 19px !important;
+  height: 19px !important;
+  min-width: 19px !important;
+  min-height: 19px !important;
+  aspect-ratio: 1 !important;
+  border-radius: 50% !important;
+  transform: none !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .master-marker-track img) { width: 15px !important; height: 15px !important; }
+.mobile-landscape-board :deep(.battlefield-half .special-lane.visible) {
+  position: static !important;
+  grid-column: 1 !important;
+  grid-row: 1 !important;
+  display: grid !important;
+  width: 62px !important;
+  height: auto !important;
+  min-height: 0 !important;
+  align-content: center !important;
+  justify-items: start !important;
+  transform: none !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .trial-zone),
+.mobile-landscape-board :deep(.battlefield-half.side-opponent .trial-zone) { flex-direction: column !important; gap: 3px !important; }
+.mobile-landscape-board :deep(.battlefield-half .trial-card) { width: 42px !important; height: 26px !important; }
+.mobile-landscape-board :deep(.battlefield-half .trial-card b) { min-width: 14px !important; height: 14px !important; padding: 0 2px !important; font-size: 8px !important; }
+
+.mobile-landscape-board :deep(.battlefield-half .battle-zone) { width: 216px !important; max-width: 216px !important; justify-self: center !important; }
+.mobile-landscape-board .felt-board :deep(.formation) {
+  width: 214px !important;
+  height: 140px !important;
+  grid-template-columns: repeat(3, 68px) !important;
+  grid-template-rows: repeat(2, 68px) !important;
+  justify-content: center !important;
+  align-content: center !important;
+  gap: 4px !important;
+}
+.mobile-landscape-board .felt-board :deep(.formation-slot) {
+  box-sizing: border-box !important;
+  width: 68px !important;
+  height: 68px !important;
+  min-width: 68px !important;
+  min-height: 68px !important;
+  aspect-ratio: 1 !important;
+  overflow: visible !important;
+}
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-tile),
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-tile.tapped) {
+  width: 46px !important;
+  height: 64px !important;
+  min-width: 46px !important;
+  min-height: 64px !important;
+  max-width: none !important;
+  max-height: none !important;
+  flex-basis: 46px !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .mat-piles) {
+  width: 40px !important;
+  min-width: 40px !important;
+  grid-template-rows: repeat(2, 52px) !important;
+  align-content: center !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .mat-piles .pile) { width: 40px !important; height: 52px !important; }
+.mobile-landscape-board :deep(.battlefield-half .mat-piles .pile-card) { width: 38px !important; height: 50px !important; }
+.mobile-landscape-board :deep(.battlefield-half .mat-piles .pile .pile-count) {
+  right: 1px !important;
+  top: 1px !important;
+  min-width: 17px !important;
+  height: 17px !important;
+  padding: 0 2px !important;
+  font-size: 9px !important;
+  line-height: 17px !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .resource-zone),
+.mobile-landscape-board :deep(.battlefield-half .resource-faction-action),
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-summary),
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack) { width: 82px !important; max-width: 82px !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-summary) { grid-template-columns: 32px 50px !important; height: 32px !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-label) {
+  width: 32px !important;
+  min-width: 32px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  aspect-ratio: 1 !important;
+  border-radius: 50% !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-label img) { width: 22px !important; height: 22px !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-count) { width: 50px !important; height: 32px !important; min-height: 32px !important; font-size: 10px !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack) { grid-template-columns: repeat(4, 17px) !important; grid-auto-rows: 17px !important; justify-content: center !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb) { width: 17px !important; height: 17px !important; min-width: 17px !important; min-height: 17px !important; aspect-ratio: 1 !important; border-radius: 50% !important; }
+
+/* The right rail is a small dock, not an opaque information panel over the mat. */
+.mobile-landscape-board .right-rail { grid-template-rows: 34px minmax(0, 1fr) 48px !important; overflow: visible !important; }
+.mobile-landscape-board .right-rail .player-panel { display: contents !important; }
+.mobile-landscape-board .mobile-record-trigger { position: static !important; grid-column: 1; grid-row: 1; width: 100% !important; min-height: 30px !important; padding: 3px !important; font-size: 10px !important; transform: none !important; }
+.mobile-landscape-board .right-rail .action-panel { height: 48px !important; min-height: 48px !important; }
+.mobile-landscape-board .card-context-actions,
+.mobile-landscape-board :deep(.card-context-actions) { right: 5px !important; bottom: 54px !important; width: 96px !important; max-width: 96px !important; }
+
+.mobile-card-inspector {
+  position: fixed;
+  z-index: 2147483602;
+  top: 34px;
+  bottom: 8px;
+  /* The top disaster-rail tab stays visible while the drawer is open. */
+  left: 8px;
+  display: flex;
+  box-sizing: border-box;
+  width: min(250px, 34vw);
+  min-width: 210px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px;
+  overflow: hidden;
+  border: 1px solid #668a86;
+  background: rgba(7, 12, 13, .985);
+  box-shadow: 8px 0 26px rgba(0, 0, 0, .62);
+  color: #f1f2ec;
+}
+.mobile-card-inspector header { display: flex; align-items: center; justify-content: space-between; gap: 7px; border-bottom: 1px solid #47605d; padding-bottom: 5px; }
+.mobile-card-inspector header small { display: block; color: #aebfbb; font-size: 9px; line-height: 1; }
+.mobile-card-inspector h2 { max-width: 150px; margin: 3px 0 0; overflow: hidden; font-size: 13px; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
+.mobile-card-inspector header button { min-width: 42px; min-height: 26px; padding: 2px 5px; border: 1px solid #607a76; background: #172021; color: #fff; font-size: 10px; font-weight: 900; }
+.mobile-inspector-card-image { display: block; width: 86px; height: 120px; margin: 0 auto; object-fit: contain; }
+.mobile-inspector-effect { min-height: 0; margin: 0; overflow: auto; color: #edf0e9; font-size: 11px; line-height: 1.38; }
+.mobile-card-inspector .inspector-card-tags { margin: 0 auto; gap: 3px; }
+.mobile-card-inspector .inspector-card-tags span { padding: 2px 4px; font-size: 9px; }
+.mobile-card-inspector .inspector-statuses { max-height: 70px; margin: 0; overflow: auto; }
+.mobile-card-inspector .inspector-statuses li { font-size: 10px; }
+.mobile-card-inspector-enter-active,.mobile-card-inspector-leave-active { transition: transform .18s ease, opacity .18s ease; }
+.mobile-card-inspector-enter-from,.mobile-card-inspector-leave-to { opacity: 0; transform: translateX(-100%); }
+
+.mobile-morale-choice { box-sizing: border-box !important; width: 44px !important; min-width: 44px !important; max-width: 44px !important; height: 44px !important; min-height: 44px !important; max-height: 44px !important; aspect-ratio: 1 !important; justify-self: center !important; align-self: center !important; flex: 0 0 44px !important; border-radius: 50% !important; }
+.mobile-morale-choice img { width: 28px !important; height: 28px !important; }
+.mobile-morale-header-actions { display: flex; gap: 4px; }
+.mobile-morale-header-actions button { min-width: 46px !important; }
+
+.mobile-landscape-board .right-rail .player-panel {
+  display: block !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.mobile-landscape-board .right-rail .player-panel > .player-summary,
+.mobile-landscape-board .right-rail .player-panel > hr { display: none !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-cost),
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-power),
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-disaster) {
+  min-width: 0 !important;
+  padding: 1px 3px !important;
+  border-width: 1px !important;
+  font-size: 9px !important;
+  line-height: 1.1 !important;
+}
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-power) { bottom: 2px !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-status-icons) { top: 24px !important; gap: 1px !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-status-icon) { width: 12px !important; min-width: 12px !important; height: 12px !important; flex-basis: 12px !important; font-size: 8px !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-keyword-stack),
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-tile.has-status-effects .card-keyword-stack) { bottom: 19px !important; gap: 1px !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-keyword-row > .card-keyword) { padding: 1px !important; font-size: 7px !important; }
+
+/* Use the otherwise spare disaster rail as a true vertical extra-zone rail: the
+   opponent's trial cards enter from above and ours from below. */
+.mobile-landscape-board .left-rail { display: flex !important; flex-direction: column !important; gap: 4px !important; }
+.mobile-landscape-board .left-disaster-row { height: auto !important; min-height: 0 !important; flex: 1 1 auto !important; }
+.mobile-extra-zone { display: grid; width: 100%; max-height: 112px; flex: 0 1 auto; gap: 2px; box-sizing: border-box; padding: 2px; border: 1px solid rgba(115, 141, 136, .54); background: rgba(7, 11, 12, .82); }
+.mobile-extra-zone > small { color: #a9bbb6; font-size: 8px; font-weight: 900; line-height: 1; letter-spacing: .04em; text-align: center; }
+.mobile-extra-zone > div { display: flex; max-height: 96px; flex-direction: column; align-items: center; gap: 2px; overflow-y: auto; scrollbar-width: thin; }
+.mobile-extra-card { position: relative; width: 76px; min-width: 76px; height: 54px; min-height: 54px; padding: 0; overflow: hidden; border: 1px solid #719288; background: #080b0b; }
+.mobile-extra-card > .l12-card-image,.mobile-extra-card > img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.mobile-extra-card.inactive { filter: grayscale(.85) brightness(.58); }
+.mobile-extra-card b { position: absolute; left: 50%; top: 50%; display: grid; width: 15px; height: 15px; place-items: center; border: 1px solid #79c889; border-radius: 50%; background: #102e17; color: #fff; font-size: 8px; transform: translate(-50%, -50%); }
+/* Trial cards have been relocated to the disaster rail.  Override the earlier
+   `.special-lane.visible` desktop rule with equal specificity so the old
+   commander-adjacent copy can never reappear on a phone. */
+.mobile-landscape-board :deep(.battlefield-half .special-lane.visible),
+.mobile-landscape-board :deep(.battlefield-half .special-lane.visible .trial-zone) { display: none !important; }
+
+/* The hand lane owns its full height.  No fan, tilt or lift may intrude into the field. */
+.mobile-landscape-board .board-center { grid-template-rows: 0 0 minmax(0, 1fr) 0 74px !important; }
+.mobile-landscape-board .felt-board { position: relative; z-index: 1 !important; overflow: hidden !important; }
+.mobile-landscape-board .board-center > .l12-hand:last-child { position: relative; z-index: 42; height: 74px !important; min-height: 74px !important; padding: 2px 4px 0 !important; align-items: flex-end !important; gap: 4px !important; overflow-x: auto !important; overflow-y: hidden !important; }
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap),
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back) { width: 50px !important; min-width: 50px !important; height: 70px !important; min-height: 70px !important; flex: 0 0 50px !important; margin-left: 0 !important; transform: none !important; }
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap:nth-child(n + 10)),
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back:nth-child(n + 10)) { margin-left: -10px !important; }
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap:hover),
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap.selected) { transform: translateY(-2px) !important; }
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-tile) { width: 50px !important; height: 70px !important; min-height: 70px !important; flex-basis: 50px !important; }
+
+/* A small, edge-hugging data treatment keeps card art clear; full values live in the drawer. */
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-cost),
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-power),
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-disaster) { padding: 0 2px !important; border-width: 1px !important; font-size: 8px !important; line-height: 10px !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-cost) { left: 1px !important; top: 1px !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-disaster) { right: 1px !important; top: 1px !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-power) { bottom: 1px !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-status-icons) { left: 1px !important; top: 21px !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-status-icon) { width: 10px !important; min-width: 10px !important; height: 10px !important; flex-basis: 10px !important; font-size: 7px !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-keyword-stack),
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-tile.has-status-effects .card-keyword-stack) { right: 1px !important; bottom: 13px !important; left: auto !important; width: auto !important; max-width: calc(100% - 2px) !important; transform: none !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-keyword-row > .card-keyword) { padding: 0 1px !important; font-size: 6px !important; }
+
+.mobile-landscape-board :deep(.battlefield-half .commander-zone) { position: relative !important; overflow: visible !important; }
+.mobile-landscape-board :deep(.battlefield-half .mobile-hand-count) { position: absolute !important; z-index: 22; left: -44px !important; top: 5px !important; display: grid !important; width: 48px; height: 28px; place-items: center; border: 1px solid rgba(224, 226, 216, .62); background: rgba(6, 10, 11, .88); box-shadow: 0 3px 7px rgba(0,0,0,.5); color: #e8ebe4; line-height: 1; }
+.mobile-landscape-board :deep(.battlefield-half .mobile-hand-count i) { color: #9fb2ae; font-size: 8px; font-style: normal; }
+.mobile-landscape-board :deep(.battlefield-half .mobile-hand-count b) { color: #fff; font-size: 13px; font-variant-numeric: tabular-nums; }
+
+.mobile-landscape-board .current-disaster-panel { grid-template-columns: 20px minmax(0, 1fr) !important; column-gap: 2px; }
+.mobile-landscape-board .current-disaster-panel .mobile-card-inspector-handle { position: relative; z-index: 2147483603; grid-column: 1; grid-row: 1; width: 20px; min-width: 20px; min-height: 52px; padding: 3px 2px; border: 1px solid #668a86; background: #111b1c; box-shadow: 2px 0 6px rgba(0,0,0,.45); color: #e8f1ed; font-size: 8px; font-weight: 900; line-height: 1.1; writing-mode: vertical-rl; }
+.mobile-landscape-board .current-disaster-panel .mobile-card-inspector-handle.open { border-color: #d0c480; background: #2d2a16; }
+.mobile-landscape-board .current-disaster-panel .current-disaster-card { grid-column: 2; }
+.mobile-inspector-empty { margin: auto 0; color: #b7c6c0; font-size: 11px; line-height: 1.55; text-align: center; }
+
+/* Final mobile collision guard: the field and the hand own separate stacking
+   contexts, so a battlefield child can never intercept a scrolling hand card. */
+.mobile-landscape-board .board-center { isolation: isolate; }
+.mobile-landscape-board .felt-board { z-index: 0 !important; }
+.mobile-landscape-board .board-center > .l12-hand:last-child { grid-row: 5 !important; margin-top: 3px !important; pointer-events: auto !important; isolation: isolate; }
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap),
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back) { top: 8px !important; bottom: auto !important; }
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-cost),
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-power),
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-disaster) { min-width: 0 !important; padding: 0 1px !important; border-width: 1px !important; font-size: 7px !important; line-height: 8px !important; }
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-cost) { left: 1px !important; top: 1px !important; }
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-disaster) { right: 1px !important; top: 1px !important; }
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-power) { right: 1px !important; bottom: 1px !important; }
+
+/* The morale summary and every visible orb lead to the same phone picker. */
+.mobile-landscape-board :deep(.resource-morale-stack) { position: relative; }
+.mobile-landscape-board :deep(.mobile-morale-stack-trigger) { position: absolute; z-index: 14; inset: 0; display: block; width: 100%; height: 100%; padding: 0; border: 0; background: transparent; cursor: pointer; }
+
+/* The route dock is read top-to-bottom: return/surrender first, then the log. */
+.mobile-landscape-board .mobile-record-trigger { position: fixed !important; z-index: 1600; top: 98px !important; right: 6px !important; width: 90px !important; min-height: 28px !important; padding: 3px 2px !important; transform: none !important; }
+
+/* Timed matches retain both clocks in their own right-rail slot.  This is below
+   return/surrender and the match log, above the contextual end-turn action. */
+.mobile-landscape-board .mobile-timed-clocks { position: fixed; z-index: 1600; top: 132px; right: 6px; display: grid; width: 90px; gap: 4px; }
+.mobile-landscape-board .mobile-timed-clocks :deep(.player-turn-clock) { display: grid; width: 90px; min-height: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; padding: 3px; box-shadow: 0 3px 8px rgba(0,0,0,.62); }
+.mobile-landscape-board .mobile-timed-clocks :deep(.player-turn-clock strong) { grid-column: 1 / -1; padding: 2px 1px; font-size: 8px; line-height: 1; }
+.mobile-landscape-board .mobile-timed-clocks :deep(.player-turn-clock span) { gap: 0; }
+.mobile-landscape-board .mobile-timed-clocks :deep(.player-turn-clock small) { font-size: 7px; line-height: 1; }
+.mobile-landscape-board .mobile-timed-clocks :deep(.player-turn-clock b) { font-size: 10px; line-height: 1.1; }
+
+/* The drawer tab is the first item in the entire disaster rail: above opponent
+   extras, session disasters and the current-disaster card. */
+.mobile-landscape-board .left-rail > .mobile-card-inspector-handle { position: relative; z-index: 2147483603; display: block; width: 100%; min-height: 22px; flex: 0 0 22px; padding: 3px 4px; overflow: hidden; border: 1px solid #668a86; background: #111b1c; box-shadow: 0 2px 6px rgba(0,0,0,.45); color: #e8f1ed; font-size: 9px; font-weight: 900; line-height: 1; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.mobile-landscape-board .left-rail > .mobile-card-inspector-handle.open { border-color: #d0c480; background: #2d2a16; }
+
+/* Disaster circles are visual content of this rail, never floating decoration.
+   The panel clips active glows and the strip owns the complete two-column grid. */
+.mobile-landscape-board .session-disaster-panel { box-sizing: border-box !important; overflow: hidden !important; }
+.mobile-landscape-board .session-disaster-strip { box-sizing: border-box !important; width: 100% !important; max-width: 100% !important; justify-content: center !important; overflow: hidden !important; }
+.mobile-landscape-board .session-disaster-strip button { box-sizing: border-box !important; max-width: 42px !important; max-height: 42px !important; overflow: hidden !important; }
+
+/* The disaster-rail tab is only a handle.  The actual card drawer is an
+   independent, opaque reading surface, so it never inherits the rail width. */
+.mobile-card-inspector {
+  width: clamp(250px, 34vw, 320px);
+  max-width: calc(100vw - 120px);
+  background: #070c0d;
+  opacity: 1 !important;
+  backdrop-filter: none;
+}
+
+/* On phones the resource summary must say what it opens.  The faction action
+   remains a separate control above it; this restores the explicit “士气” label. */
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-summary) {
+  grid-template-columns: 38px 44px !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-label) {
+  width: 38px !important;
+  min-width: 38px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  aspect-ratio: auto !important;
+  font-size: 10px !important;
+  letter-spacing: 0 !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-label img) { display: none !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-label span) { display: block !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-count) {
+  width: 44px !important;
+  max-width: 44px !important;
+  padding: 0 !important;
+  font-size: 10px !important;
+}
+.mobile-morale-choice.black-lotus { border-color: #d4ae42; background: #0c0d0d; }
+.mobile-morale-choice.temporary img { filter: brightness(0) invert(1); }
 </style>

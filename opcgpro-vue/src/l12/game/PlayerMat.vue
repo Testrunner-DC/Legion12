@@ -262,6 +262,16 @@ function selectMoralePayment(instanceId: string) {
   if (props.mobileMoralePicker) { emit('openMoralePayment'); return }
   emit('paymentResource', instanceId)
 }
+function openMoralePanel() {
+  if (props.mobileMoralePicker) emit('openMoralePayment')
+}
+function inspectOrSelectMorale(instanceId: string) {
+  if (props.mobileMoralePicker) {
+    emit('openMoralePayment')
+    return
+  }
+  selectMoralePayment(instanceId)
+}
 function temporaryMoraleChoiceId(index: number) {
   return `temporary-morale:${index}`
 }
@@ -285,6 +295,7 @@ function beginCardAbility(card: Card) {
   <section v-bind="$attrs" class="l12-player-mat" :class="[`side-${side}`, `faction-${player.faction}`, { 'active-turn': active }]"
     :data-player-index="player.playerIndex">
     <div class="commander-zone">
+      <span class="mobile-hand-count" :aria-label="`${side === 'opponent' ? '对手' : '我方'}手牌 ${player.handCount ?? player.hand?.length ?? 0} 张`"><i>手牌</i><b>{{ player.handCount ?? player.hand?.length ?? 0 }}</b></span>
       <div v-if="player.faction === 'otherworld' || player.specialZones?.canopicTrack?.length"
         class="master-marker-track" :class="{ runes: player.faction === 'otherworld', canopic: Boolean(player.specialZones?.canopicTrack?.length) }">
         <template v-if="player.faction === 'otherworld'">
@@ -408,11 +419,14 @@ function beginCardAbility(card: Card) {
     <div class="resource-zone" data-ui-contract="centered-resource-zone">
       <button class="faction-effect-trigger resource-faction-action" data-ui-contract="resource-faction-action"
         @click.stop="factionOpen = true; factionMinimized = false">阵营效果</button>
-      <div class="resource-morale-summary" data-ui-contract="resource-morale-summary">
-        <span class="resource-morale-label" data-ui-contract="resource-morale-label">士气</span>
+      <button type="button" class="resource-morale-summary" data-ui-contract="resource-morale-summary" :aria-disabled="!mobileMoralePicker" @click.stop="openMoralePanel">
+        <span class="resource-morale-label" data-ui-contract="resource-morale-label">
+          <img v-if="factionLogoUrls[player.faction]" :src="factionLogoUrls[player.faction]" :alt="`${player.faction}士气`" />
+          <span>士气</span>
+        </span>
         <b class="morale-count resource-morale-count" data-ui-contract="resource-morale-count"
           :title="`当前活跃士气 ${activeMorale} / 当前士气上限 ${currentMoraleLimit}`">{{ activeMorale }}/{{ currentMoraleLimit }}</b>
-      </div>
+      </button>
       <div class="morale-stack resource-morale-stack" data-ui-contract="resource-morale-stack"
         :class="{ 'morale-remainder-1': visibleMoraleCount % 3 === 1, 'morale-remainder-2': visibleMoraleCount % 3 === 2 }">
       <button v-for="index in visibleTemporaryMoraleCount" :key="`temporary-${index}`" type="button"
@@ -420,20 +434,24 @@ function beginCardAbility(card: Card) {
         :class="{ payable: temporaryMoralePayable(index), selected: paymentSelectedIds?.includes(temporaryMoraleChoiceId(index)) }"
         :title="temporaryMoralePayable(index) ? '点击选择此临时士气支付；休整时消失' : '临时士气；休整时消失'"
         :aria-disabled="!temporaryMoralePayable(index)"
-        @click.stop="temporaryMoralePayable(index) && selectMoralePayment(temporaryMoraleChoiceId(index))">
+        @click.stop="temporaryMoralePayable(index) && inspectOrSelectMorale(temporaryMoraleChoiceId(index))">
         <img class="temporary-site-logo" :src="siteBrandIconUrl" alt="临时士气" />
       </button>
       <button v-for="morale in displayMoraleSlots" :key="morale.instanceId" type="button" class="morale-orb"
         :class="[moraleState(morale), { 'black-lotus-morale': isBlackLotusMorale(morale), payable: paymentChoiceIds?.includes(morale.instanceId), selected: paymentSelectedIds?.includes(morale.instanceId) }]"
         :data-ui-contract="isBlackLotusMorale(morale) ? 'black-lotus-morale' : undefined"
         :title="moraleLabel(morale)" :aria-disabled="!paymentChoiceIds?.includes(morale.instanceId)"
-        @click.stop="selectMoralePayment(morale.instanceId)">
+        @click.stop="inspectOrSelectMorale(morale.instanceId)">
         <img v-if="morale.isGodPower" class="god-power-logo" :src="godPowerLogoUrl" alt="神力" />
         <img v-else-if="isBlackLotusMorale(morale)" class="black-lotus-logo" :src="blackLotusLogoUrl" alt="黑色莲花" />
         <img v-else-if="factionLogoUrls[player.faction]" :src="factionLogoUrls[player.faction]" :alt="player.faction" />
         <span v-if="moraleLocked(morale)" class="morale-lock-icon" data-ui-contract="active-morale-lock"
           role="img" title="本轮重置阶段无法转为活跃" aria-label="本轮重置阶段无法转为活跃"></span>
       </button>
+      <!-- On a phone the entire visible morale block opens one picker.  Individual
+           on-board circles no longer make an immediate payment selection. -->
+      <button v-if="mobileMoralePicker" type="button" class="mobile-morale-stack-trigger"
+        aria-label="打开士气选择" title="打开士气选择" @click.stop="openMoralePanel"></button>
       </div>
     </div>
   </section>

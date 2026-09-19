@@ -331,13 +331,13 @@ public sealed partial class MatchRecorder
     }
 
     public Task<IReadOnlyList<L12MatchSummary>> ListMatchesForAccountAsync(
-        string accountId, string legacyPlayerName, int limit = 30) =>
+        string accountId, string legacyPlayerName, int limit = PlayerReplayWindowSize) =>
         ListRecentPlayerReplayMatchesAsync(accountId, legacyPlayerName, limit);
 
     public async Task<L12MatchDetail?> GetMatchForAccountAsync(
         string matchId, string accountId, string legacyPlayerName)
     {
-        // The URL must obey the same 30-match ownership window as the list.
+        // The URL must obey the same age-and-count ownership window as the list.
         // Check expiry before trying to reconstruct a journal whose checkpoints were pruned.
         if (!await IsWithinRecentPlayerReplayWindowAsync(matchId, accountId, legacyPlayerName)
             || await IsPlayerReplayPayloadExpiredAsync(matchId)) return null;

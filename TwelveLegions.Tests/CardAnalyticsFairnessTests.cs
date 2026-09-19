@@ -196,10 +196,10 @@ public sealed class CardAnalyticsFairnessTests
             now.AddDays(-11), null);
         await SeedRetentionFactAsync(connection, "error-ranked-11", "ranked", 2, "effects-v2",
             now.AddDays(-11), 0, "invalid");
-        await SeedRetentionFactAsync(connection, "friendly-10", "friendly", 0, null,
-            now.AddDays(-10), 0);
-        await SeedRetentionFactAsync(connection, "friendly-9", "friendly", 0, null,
-            now.AddDays(-9), 0);
+        await SeedRetentionFactAsync(connection, "friendly-7", "friendly", 0, null,
+            now.AddDays(-7), 0);
+        await SeedRetentionFactAsync(connection, "friendly-6", "friendly", 0, null,
+            now.AddDays(-6), 0);
         await SeedRetentionFactAsync(connection, "sandbox-11", "sandbox", 0, null,
             now.AddDays(-11), 0);
         await SeedRetentionFactAsync(connection, "unrecognized-mode-11", "future-mode", 0, null,
@@ -208,8 +208,8 @@ public sealed class CardAnalyticsFairnessTests
             null, null);
         await SeedRetentionFactAsync(connection, "ranked-31-compacted", "ranked", 2, "effects-v2",
             now.AddDays(-31), 0);
-        await SeedRetentionFactAsync(connection, "ranked-30-compacted", "ranked", 2, "effects-v2",
-            now.AddDays(-30), 0);
+        await SeedRetentionFactAsync(connection, "ranked-7-compacted", "ranked", 2, "effects-v2",
+            now.AddDays(-7), 0);
 
         Assert.Equal(2, await recorder.CompactCompletedCardFactsBatchAsync());
         await SeedRetentionFactAsync(connection, "ranked-31-uncompacted", "ranked", 2, "effects-v2",
@@ -230,8 +230,8 @@ public sealed class CardAnalyticsFairnessTests
                  WHERE match_id IN ('friendly-11','casual-11','legacy-ranked-11',
                      'draw-ranked-11','error-ranked-11')),
                 (SELECT COUNT(*) FROM match_card_facts
-                 WHERE match_id IN ('friendly-10','friendly-9','sandbox-11','active-old','unrecognized-mode-11',
-                     'ranked-30-compacted','ranked-31-uncompacted')),
+                 WHERE match_id IN ('friendly-7','friendly-6','sandbox-11','active-old','unrecognized-mode-11',
+                     'ranked-7-compacted','ranked-31-uncompacted')),
                 (SELECT COUNT(*) FROM match_card_facts WHERE match_id='ranked-31-compacted'),
                 (SELECT COUNT(*) FROM match_card_fact_summaries WHERE match_id='ranked-31-compacted'),
                 (SELECT COUNT(*) FROM match_card_fact_compactions

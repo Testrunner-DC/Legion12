@@ -1,4 +1,7 @@
 using Microsoft.Data.Sqlite;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -178,6 +181,104 @@ public sealed class PlayerReplayRetentionTests
     }
 
     [Fact]
+    public async Task SevenDayLimitExpiresPayloadEvenWhenMatchIsStillWithinCountWindow()
+    {
+        var directory = TestDirectory("age-limit");
+        var path = Path.Combine(directory, "matches.db");
+        var origin = new DateTimeOffset(2026, 9, 20, 0, 0, 0, TimeSpan.Zero);
+        var now = origin;
+        await using var recorder = new MatchRecorder(path, () => now);
+        await recorder.InitializeAsync();
+        Assert.False((await recorder.RunPlayerReplayCleanupIfDueAsync(utcNow: now)).Ran);
+
+        await using (var connection = new SqliteConnection($"Data Source={path}"))
+        {
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction();
+            await SeedMatchAsync(connection, transaction, "age-expired", "ranked",
+                "account-a", "account-b", origin.AddDays(-8).AddMinutes(-20),
+                origin.AddDays(-8));
+            await transaction.CommitAsync();
+        }
+
+        Assert.Empty(await recorder.ListRecentPlayerReplayMatchesAsync("account-a", "甲"));
+        Assert.False(await recorder.IsWithinRecentPlayerReplayWindowAsync(
+            "age-expired", "account-a", "甲"));
+
+        now = origin.AddDays(1);
+        var cleanup = await recorder.RunPlayerReplayCleanupIfDueAsync(utcNow: now);
+        Assert.True(cleanup.Ran);
+        Assert.Equal(1, cleanup.PurgedMatches);
+        await AssertPayloadPurgedPreservingArchiveAsync(path, "age-expired");
+    }
+
+    [Fact]
+    public async Task CompletedAppliedRankedReplayIsReleasedWhileRecoveryAndDamagedRowsStayProtected()
+    {
+        var directory = TestDirectory("ranked-terminal-state");
+        var path = Path.Combine(directory, "matches.db");
+        var origin = new DateTimeOffset(2026, 9, 20, 0, 0, 0, TimeSpan.Zero);
+        var now = origin;
+        await using var recorder = new MatchRecorder(path, () => now);
+        await recorder.InitializeAsync();
+        Assert.False((await recorder.RunPlayerReplayCleanupIfDueAsync(utcNow: now)).Ran);
+
+        await using (var connection = new SqliteConnection($"Data Source={path}"))
+        {
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction();
+            foreach (var id in new[]
+                     {
+                         "applied-completed", "applied-no-runtime", "pending-completed",
+                         "applied-active", "corrupt-applied", "runtime-only", "quarantined",
+                     })
+                await SeedMatchAsync(connection, transaction, id, "ranked",
+                    "account-a", "account-b", origin.AddDays(-9), origin.AddDays(-8));
+            await SeedRankedLifecycleAsync(connection, transaction, "applied-completed",
+                origin, outboxStatus: "applied", runtimeStatus: "completed");
+            await SeedRankedLifecycleAsync(connection, transaction, "applied-no-runtime",
+                origin, outboxStatus: "applied", runtimeStatus: null);
+            await SeedRankedLifecycleAsync(connection, transaction, "pending-completed",
+                origin, outboxStatus: "pending", runtimeStatus: "completed");
+            await SeedRankedLifecycleAsync(connection, transaction, "applied-active",
+                origin, outboxStatus: "applied", runtimeStatus: "active");
+            await SeedRankedLifecycleAsync(connection, transaction, "corrupt-applied",
+                origin, outboxStatus: "applied", runtimeStatus: "completed", corruptHash: true);
+            await SeedRankedLifecycleAsync(connection, transaction, "runtime-only",
+                origin, outboxStatus: null, runtimeStatus: "completed");
+            await SeedRankedLifecycleAsync(connection, transaction, "quarantined",
+                origin, outboxStatus: "applied", runtimeStatus: "completed");
+            var quarantine = connection.CreateCommand();
+            quarantine.Transaction = transaction;
+            quarantine.CommandText = """
+                INSERT INTO ranked_recovery_quarantine(match_id,reason,created_utc)
+                VALUES('quarantined','test',$utc);
+                """;
+            quarantine.Parameters.AddWithValue("$utc", origin.ToString("O"));
+            await quarantine.ExecuteNonQueryAsync();
+            await transaction.CommitAsync();
+        }
+
+        now = origin.AddDays(1);
+        var cleanup = await recorder.RunPlayerReplayCleanupIfDueAsync(utcNow: now);
+        Assert.True(cleanup.Ran);
+        Assert.Equal(2, cleanup.PurgedMatches);
+        Assert.False(cleanup.HasMoreEligibleMatches);
+        await AssertPayloadPurgedPreservingArchiveAsync(path, "applied-completed");
+        await AssertPayloadPurgedPreservingArchiveAsync(path, "applied-no-runtime");
+        foreach (var protectedMatch in new[]
+                 {
+                     "pending-completed", "applied-active", "corrupt-applied",
+                     "runtime-only", "quarantined",
+                 })
+        {
+            var rows = await ReadRowsAsync(path, protectedMatch);
+            Assert.Equal(0, rows.ExpirationRows);
+            Assert.NotNull(rows.InitialStateJson);
+        }
+    }
+
+    [Fact]
     public async Task PurgeFailureRollsBackEveryPayloadMutationAndReleasesLease()
     {
         var directory = TestDirectory("atomic-failure");
@@ -243,9 +344,11 @@ public sealed class PlayerReplayRetentionTests
             INSERT INTO matches(
                 match_id,room_code,seed,player_0,player_1,deck_0,deck_1,started_utc,
                 ended_utc,winner,final_hash,error,mode_id,account_0,account_1,
-                initial_state_json,storage_version)
+                rules_version,rules_policy_version,season_id,first_player,fact_schema_version,
+                effect_version,analytics_version,initial_state_json,storage_version)
             VALUES($id,$room,1,'甲','乙','构筑甲','构筑乙',$started,$ended,$winner,$hash,NULL,
-                   $mode,$account0,$account1,$initial,$storage);
+                   $mode,$account0,$account1,'rules-test',7,'season-test',0,1,
+                   'effect-test',2,$initial,$storage);
             INSERT INTO match_participants(
                 match_id,player_index,account_id,display_name,master_id,master_name,
                 deck_name,deck_snapshot_coverage)
@@ -258,6 +361,15 @@ public sealed class PlayerReplayRetentionTests
                 kind,player_index,account_id,card_id,coverage,metadata_json)
             VALUES($id,'fact-1',1,1,1,1,'Main',$started,'played',0,$account0,
                    'card-a','exact','{}');
+            INSERT INTO match_card_fact_summaries(
+                match_id,player_index,card_id,drawn,played,activated_sample,settled_sample,
+                resolved_sample,negated_sample,fizzled_sample,observed_sample,first_draw_turn,
+                first_play_turn,activated,resolved,negated,fizzled,exact_facts,inferred_facts,
+                partial_facts,draw_exact,draw_inferred,draw_partial,play_exact,play_inferred,
+                play_partial,activation_exact,activation_inferred,activation_partial,
+                settlement_exact,settlement_inferred,settlement_partial)
+            VALUES($id,0,'card-a',0,1,0,0,0,0,0,1,NULL,1,0,0,0,0,1,0,0,0,0,0,1,0,0,
+                   0,0,0,0,0,0);
             INSERT INTO match_events(
                 match_id,sequence,received_utc,player_index,command_json,accepted,error,
                 revision,state_hash,state_json,request_id)
@@ -313,6 +425,12 @@ public sealed class PlayerReplayRetentionTests
         Assert.Equal(2, rows.ParticipantRows);
         Assert.Equal(2, rows.DeckRows);
         Assert.Equal(1, rows.CardFactRows);
+        Assert.Equal(1, rows.CardSummaryRows);
+        Assert.Equal("rules-test", rows.RulesVersion);
+        Assert.Equal(7, rows.RulesPolicyVersion);
+        Assert.Equal("season-test", rows.SeasonId);
+        Assert.Equal("effect-test", rows.EffectVersion);
+        Assert.Equal(2, rows.AnalyticsVersion);
         Assert.Equal(0, rows.Winner);
         Assert.Equal($"final-{matchId}", rows.FinalHash);
         Assert.Equal(1, rows.ExpirationRows);
@@ -338,6 +456,12 @@ public sealed class PlayerReplayRetentionTests
                 (SELECT COUNT(*) FROM match_participants WHERE match_id=$match),
                 (SELECT COUNT(*) FROM match_deck_cards WHERE match_id=$match),
                 (SELECT COUNT(*) FROM match_card_facts WHERE match_id=$match),
+                (SELECT COUNT(*) FROM match_card_fact_summaries WHERE match_id=$match),
+                (SELECT rules_version FROM matches WHERE match_id=$match),
+                (SELECT rules_policy_version FROM matches WHERE match_id=$match),
+                (SELECT season_id FROM matches WHERE match_id=$match),
+                (SELECT effect_version FROM matches WHERE match_id=$match),
+                (SELECT analytics_version FROM matches WHERE match_id=$match),
                 (SELECT winner FROM matches WHERE match_id=$match),
                 (SELECT final_hash FROM matches WHERE match_id=$match),
                 (SELECT COUNT(*) FROM player_replay_payload_expirations WHERE match_id=$match),
@@ -357,9 +481,15 @@ public sealed class PlayerReplayRetentionTests
             reader.IsDBNull(4) ? null : reader.GetString(4),
             reader.GetInt32(5), reader.GetInt32(6), reader.GetInt32(7),
             reader.GetInt32(8), reader.GetInt32(9), reader.GetInt32(10),
-            reader.IsDBNull(11) ? null : reader.GetInt32(11),
+            reader.GetInt32(11),
             reader.IsDBNull(12) ? null : reader.GetString(12),
-            reader.GetInt32(13), reader.GetInt64(14), reader.GetInt64(15));
+            reader.GetInt32(13),
+            reader.IsDBNull(14) ? null : reader.GetString(14),
+            reader.IsDBNull(15) ? null : reader.GetString(15),
+            reader.GetInt32(16),
+            reader.IsDBNull(17) ? null : reader.GetInt32(17),
+            reader.IsDBNull(18) ? null : reader.GetString(18),
+            reader.GetInt32(19), reader.GetInt64(20), reader.GetInt64(21));
     }
 
     private static async Task<int> CountExpirationsAsync(string path)
@@ -369,6 +499,63 @@ public sealed class PlayerReplayRetentionTests
         var command = connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM player_replay_payload_expirations;";
         return Convert.ToInt32(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task SeedRankedLifecycleAsync(
+        SqliteConnection connection, SqliteTransaction transaction, string matchId,
+        DateTimeOffset origin, string? outboxStatus, string? runtimeStatus,
+        bool corruptHash = false)
+    {
+        if (outboxStatus is not null)
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                Version = 1,
+                MatchId = matchId,
+                FirstAccountId = "account-a",
+                SecondAccountId = "account-b",
+                FirstMasterId = "master-a",
+                SecondMasterId = "master-b",
+                Winner = (int?)0,
+                StartedAt = origin.AddDays(-9),
+                EndedAt = origin.AddDays(-8),
+                MeaningfulCommandCount = 1,
+                ConclusionKind = "normal",
+                FirstNetworkFingerprint = "",
+                SecondNetworkFingerprint = "",
+                FinalRound = 3,
+            });
+            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload)))
+                .ToLowerInvariant();
+            var outbox = connection.CreateCommand();
+            outbox.Transaction = transaction;
+            outbox.CommandText = """
+                INSERT INTO ranked_settlement_outbox(
+                    match_id,payload_json,payload_hash,status,created_utc,applied_utc)
+                VALUES($id,$payload,$hash,$status,$utc,
+                       CASE WHEN $status='applied' THEN $utc ELSE NULL END);
+                """;
+            outbox.Parameters.AddWithValue("$id", matchId);
+            outbox.Parameters.AddWithValue("$payload", payload);
+            outbox.Parameters.AddWithValue("$hash", corruptHash ? "bad" : hash);
+            outbox.Parameters.AddWithValue("$status", outboxStatus);
+            outbox.Parameters.AddWithValue("$utc", origin.ToString("O"));
+            await outbox.ExecuteNonQueryAsync();
+        }
+        if (runtimeStatus is null) return;
+        var runtime = connection.CreateCommand();
+        runtime.Transaction = transaction;
+        runtime.CommandText = """
+            INSERT INTO ranked_match_runtime(
+                match_id,room_code,status,checkpoint_json,checkpoint_hash,
+                checkpoint_generation,updated_utc)
+            VALUES($id,$room,$status,'{}','hash',1,$utc);
+            """;
+        runtime.Parameters.AddWithValue("$id", matchId);
+        runtime.Parameters.AddWithValue("$room", $"ROOM-{matchId}");
+        runtime.Parameters.AddWithValue("$status", runtimeStatus);
+        runtime.Parameters.AddWithValue("$utc", origin.ToString("O"));
+        await runtime.ExecuteNonQueryAsync();
     }
 
     private static async Task AssertCleanupLeaseReleasedAsync(string path)
@@ -398,6 +585,12 @@ public sealed class PlayerReplayRetentionTests
         int ParticipantRows,
         int DeckRows,
         int CardFactRows,
+        int CardSummaryRows,
+        string? RulesVersion,
+        int RulesPolicyVersion,
+        string? SeasonId,
+        string? EffectVersion,
+        int AnalyticsVersion,
         int? Winner,
         string? FinalHash,
         int ExpirationRows,

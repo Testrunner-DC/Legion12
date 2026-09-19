@@ -12,6 +12,15 @@ if (fixtureStart < 'const entry = `'.length || fixtureEnd < fixtureStart)
 
 const fixtureSetup = fixtureSource.slice(fixtureStart, fixtureEnd)
 const entry = fixtureSetup + `
+// Visual QA may run in a desktop browser with a phone-sized viewport.  This flag
+// only affects the synthetic preview, allowing it to exercise the production
+// touch-landscape branch without changing application runtime detection.
+if(params.has('mobile')){
+ const nativeMatchMedia=window.matchMedia.bind(window)
+ window.matchMedia=query=>query==='(pointer: coarse) and (hover: none)'
+  ? {matches:true,media:query,addEventListener(){},removeEventListener(){},addListener(){},removeListener(){},dispatchEvent(){return false}}
+  : nativeMatchMedia(query)
+}
 const trialCount=Math.max(0,Math.min(2,Number(params.get('trials')||0)))
 const myTrialCount=Math.max(0,Math.min(1,Number(params.get('myTrials')||0)))
 const showcaseHandCount=Math.max(1,Math.min(40,Number(params.get('hand')||6)))
@@ -103,6 +112,9 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`Invali
 
 const server = await createServer({
   root,
+  // Avoid the bundled config temporary-file path.  That directory can be held by
+  // a concurrent local dev server during visual QA on Windows.
+  configLoader: 'runner',
   server: { host: '127.0.0.1', port, strictPort: true },
   plugins: [{
     name: 'l12-battle-layout-preview',

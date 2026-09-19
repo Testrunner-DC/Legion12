@@ -8,6 +8,7 @@ import { getEffectiveOperationsPolicy, platformState, publicDeckApi, type Effect
 import { useRoute, useRouter } from 'vue-router'
 import DeckProfile from '@/l12/DeckProfile.vue'
 import DeckConstructionBrowser, { type ConstructionEntry } from './DeckConstructionBrowser.vue'
+import MobileFilterSheet from './MobileFilterSheet.vue'
 
 const tab = ref<'mine' | 'plaza'>('mine')
 const catalog = ref<DeckCard[]>([])
@@ -22,6 +23,7 @@ const publishName = ref('')
 const showPublish = ref(false)
 const factionFilter = ref('all')
 const sortMode = ref<'popular' | 'newest' | 'name'>('popular')
+const plazaFiltersOpen = ref(false)
 const imagePreview = ref<{ deck: SavedL12Deck; blob: Blob; url: string } | null>(null)
 const route = useRoute()
 const router = useRouter()
@@ -86,6 +88,11 @@ const selectedTypes = computed(() => {
   })
   return [...totals].map(([type, count]) => [cardTypeLabel(type), count] as const)
 })
+const plazaFilterCount = computed(() => (factionFilter.value === 'all' ? 0 : 1) + (sortMode.value === 'popular' ? 0 : 1))
+const plazaFilterSummary = computed(() => [
+  factionFilter.value === 'all' ? '' : (factionLabels[factionFilter.value] || factionFilter.value),
+  sortMode.value === 'popular' ? '' : (sortMode.value === 'newest' ? '最新排序' : '名称排序'),
+].filter(Boolean).join(' · '))
 const selectedEntries = computed<ConstructionEntry[]>(() => {
   if (!selected.value) return []
   const deck = selected.value.deck
@@ -200,12 +207,14 @@ async function importFromCode() {
     saved.value = loadSavedDecks(); importCode.value = ''; notice.value = `已导入《${confirmed.name}》`
   } catch (error) { notice.value = error instanceof Error ? error.message : '牌库码导入失败' }
 }
+function resetPlazaFilters() { factionFilter.value = 'all'; sortMode.value = 'popular' }
 </script>
 
 <template>
   <div class="deck-page">
     <header class="page-head"><div><small>DECK LIBRARY</small><h1>牌库</h1><p>构筑、保存、分享并发现公开牌库。</p></div><router-link :to="editorLink()">＋ 新建牌库</router-link></header>
     <div class="deck-tabs"><button :class="{ active: tab === 'mine' }" @click="tab = 'mine'">我的牌库</button><button :class="{ active: tab === 'plaza' }" @click="tab = 'plaza'">公开牌库</button></div>
+    <p v-if="notice" class="deck-notice">{{ notice }}</p>
 
     <template v-if="tab === 'mine'">
       <section class="import-panel"><input v-model="importCode" placeholder="粘贴 L12D1 开头的牌库码"/><button :disabled="!importCode.trim()" @click="importFromCode">导入牌库码</button><button :disabled="!mine.length" @click="showPublish = true">公开牌库</button></section>
@@ -214,11 +223,10 @@ async function importFromCode() {
     </template>
 
     <template v-else>
-      <section class="plaza-toolbar"><input v-model="query" placeholder="搜索牌库名称、作者或主宰"/><select v-model="factionFilter"><option value="all">全部阵营</option><option v-for="faction in plazaFactions" :key="faction" :value="faction">{{ factionLabels[faction] || faction }}</option></select><select v-model="sortMode"><option value="popular">热门</option><option value="newest">最新</option><option value="name">名称</option></select><button :disabled="!mine.length" @click="showPublish = true">发布我的牌库</button></section>
+      <section class="plaza-toolbar"><input v-model="query" placeholder="搜索牌库名称、作者或主宰"/><MobileFilterSheet v-model="plazaFiltersOpen" title="牌库筛选与排序" :active-count="plazaFilterCount" @reset="resetPlazaFilters"><div class="plaza-filter-fields"><label>阵营<select v-model="factionFilter"><option value="all">全部阵营</option><option v-for="faction in plazaFactions" :key="faction" :value="faction">{{ factionLabels[faction] || faction }}</option></select></label><label>排序<select v-model="sortMode"><option value="popular">热门</option><option value="newest">最新</option><option value="name">名称</option></select></label></div><template #apply-label>查看 {{ filteredPublished.length }} 个牌库</template></MobileFilterSheet><div class="plaza-desktop-filters"><select v-model="factionFilter"><option value="all">全部阵营</option><option v-for="faction in plazaFactions" :key="faction" :value="faction">{{ factionLabels[faction] || faction }}</option></select><select v-model="sortMode"><option value="popular">热门</option><option value="newest">最新</option><option value="name">名称</option></select></div><button :disabled="!mine.length" @click="showPublish = true">发布我的牌库</button></section>
+      <button v-if="plazaFilterCount" type="button" class="plaza-filter-summary" @click="plazaFiltersOpen = true">{{ plazaFilterSummary }}</button>
       <section class="plaza-grid"><article v-for="entry in filteredPublished" :key="entry.id" :class="`faction-${deckFaction(entry)}`"><button class="plaza-summary" @click="openDeck(entry)"><DeckProfile :master-id="entry.deck.masterId" :master-name="byId.get(entry.deck.masterId)?.nameZh" :fallback-url="byId.get(entry.deck.masterId)?.imageUrl" :name="entry.deck.name" :context="entry.author" :meta="`${deckCountSummary(entry.deck.cardIds, byId).label} 主牌 · ${entry.deck.moraleIds.length} 士气`"/></button><footer><span>浏览量 {{ entry.views ?? 0 }}</span><button :class="{ liked: entry.liked }" :disabled="entry.official" @click="toggleLike(entry)">♡ {{ entry.likes }}</button><span>复制 {{ entry.copies }}</span><span class="season-compliance" :class="{ compliant: seasonRequirement(entry).compliant }" :title="seasonRequirement(entry).reason">{{ seasonRequirement(entry).label }}</span><button @click="openDeck(entry)">查看构筑</button></footer></article></section>
     </template>
-    <p v-if="notice" class="deck-notice">{{ notice }}</p>
-
     <div v-if="selected" class="modal-mask" @click.self="selected = null"><section class="deck-detail"><header><div><small>{{ selected.author }}</small><h2>{{ selected.deck.name }}</h2><p>{{ byId.get(selected.deck.masterId)?.nameZh }} · {{ factionLabels[byId.get(selected.deck.masterId)?.faction || ''] }} · {{ deckCountSummary(selected.deck.cardIds, byId).label }} 张主牌</p></div><button @click="selected = null">×</button></header><div class="deck-analysis"><aside><DeckProfile :master-id="selected.deck.masterId" :master-name="byId.get(selected.deck.masterId)?.nameZh" :fallback-url="byId.get(selected.deck.masterId)?.imageUrl" :name="selected.deck.name" context="主宰" :meta="`${selected.deck.moraleIds.length} 张士气`"/><section><b>费用曲线</b><div class="detail-curve"><i v-for="(value,index) in selectedCurve" :key="index"><span :style="{height:`${Math.max(4,value/selectedCurveMax*62)}px`}"></span><small>{{ index === 8 ? '8+' : index }}</small><em>{{ value }}</em></i></div></section><section><b>卡牌类型</b><p v-for="[type,count] in selectedTypes" :key="type"><span>{{ type }}</span><strong>{{ count }}</strong></p></section></aside><DeckConstructionBrowser :entries="selectedEntries" :catalog="catalog" :title="`${selected.deck.name} · 全部构筑`"/></div><footer><button v-if="!selected.official" :disabled="!platformState.account" @click="toggleLike(selected)">♡ 点赞 {{ selected.likes }}</button><button @click="copyCode(selected.deck)">复制牌库码</button><button @click="previewImage(selected.deck)">生成牌库图</button><button v-if="selected.ownerId === platformState.account?.id" @click="editPublished(selected)">编辑公开牌库</button><button v-if="selected.ownerId === platformState.account?.id" class="danger" @click="deletePublished(selected)">删除公开牌库</button><button class="primary" @click="copyToMine(selected)">复制到我的牌库</button></footer></section></div>
     <div v-if="showPublish" class="modal-mask" @click.self="showPublish = false"><section class="publish-modal"><header><h2>公开牌库</h2><button @click="showPublish = false">×</button></header><p>选择一个已保存且合法的牌库公开展示。公开后可由作者继续编辑或删除。</p><select v-model="publishName"><option value="">选择牌库</option><option v-for="deck in mine" :key="deck.name" :value="deck.name">{{ deck.name }}</option></select><button class="primary" :disabled="!publishName || !platformState.account" @click="publishDeck">确认公开</button></section></div>
     <div v-if="imagePreview" class="modal-mask image-mask" @click.self="closeImagePreview"><section class="image-preview"><header><div><small>16:9 SHARE IMAGE</small><h2>{{ imagePreview.deck.name }} · 牌库图</h2></div><button @click="closeImagePreview">×</button></header><img :src="imagePreview.url" alt="牌库图预览"/><footer><button @click="copyPreviewImage">复制图片</button><button class="primary" @click="downloadDeckImage(imagePreview.deck,catalog,imagePreview.blob)">下载 PNG</button></footer></section></div>
@@ -236,4 +244,7 @@ async function importFromCode() {
 .mine-grid>article>:deep(.deck-profile){border:0;background:transparent}.plaza-summary>:deep(.deck-profile){border:0;background:transparent}.deck-analysis>aside>:deep(.deck-profile){width:100%}
 .plaza-grid footer{--deck-faction:72,84,91;display:grid;grid-template-columns:auto auto auto minmax(112px,1fr) auto;align-items:center;gap:8px;padding:10px 12px;border-top-color:rgba(var(--deck-faction),.48);background:linear-gradient(90deg,rgba(var(--deck-faction),.2),rgba(var(--deck-faction),.08))}.plaza-grid .faction-tianting footer{--deck-faction:34,105,113}.plaza-grid .faction-taiyangcheng footer{--deck-faction:126,91,28}.plaza-grid .faction-asgard footer{--deck-faction:44,79,122}.plaza-grid .faction-gaotianyuan footer{--deck-faction:128,43,54}.plaza-grid .faction-olympus footer{--deck-faction:86,56,126}.plaza-grid .faction-otherworld footer,.plaza-grid .faction-bijie footer{--deck-faction:35,112,83}.plaza-grid footer button{color:#d2d9d8;font-size:14px}.plaza-grid footer button.liked{color:#ff8995}.plaza-grid footer span{color:#c7cecd;font-size:14px;white-space:nowrap}.plaza-grid footer .season-compliance{justify-self:end;color:#f0a9ad;font-weight:900}.plaza-grid footer .season-compliance.compliant{color:#a4e4c8}
 @media(max-width:700px){.plaza-grid footer{grid-template-columns:repeat(3,auto);justify-content:space-between}.plaza-grid footer .season-compliance{grid-column:1/3;justify-self:start}}
+.plaza-filter-fields{display:grid;gap:14px}.plaza-filter-fields label{display:grid;gap:6px;color:#b9c2c4;font-size:13px;font-weight:900}.plaza-filter-fields select{width:100%;padding:10px;border:1px solid #46545d;background:#070d12;color:#fff}.plaza-desktop-filters{display:contents}.plaza-filter-summary{display:none}
+@media(max-width:700px){.plaza-toolbar{grid-template-columns:minmax(0,1fr) auto!important;align-items:stretch}.plaza-toolbar>input{min-width:0}.plaza-desktop-filters{display:none}.plaza-toolbar>button:last-child{grid-column:1/-1;min-height:40px}.plaza-filter-summary{display:block;width:100%;margin:-6px 0 12px;padding:8px 10px;border:1px solid #52636a;background:#101a20;color:#c7d8d6;font-size:12px;font-weight:800;text-align:left}.deck-page{overflow-x:clip}.plaza-grid footer{row-gap:7px}.deck-detail,.image-preview{width:100%;max-height:100dvh;border:0}.deck-detail>header,.image-preview header{padding:14px}.deck-detail>footer,.image-preview footer{padding:12px;gap:7px}.deck-detail h2,.image-preview h2{font-size:20px}}
+@media(max-width:520px){.deck-page{padding:14px 12px 42px}.page-head{gap:8px;margin-bottom:12px}.page-head small{font-size:11px}.page-head h1{font-size:25px}.page-head p{font-size:12px}.page-head>a{padding:9px 12px;font-size:13px}.deck-tabs{margin-bottom:10px}.deck-tabs button{min-height:42px;padding:9px;font-size:13px}.deck-notice{position:static;max-width:none;margin:0 0 10px;padding:9px 10px;font-size:12px;box-shadow:none}.import-panel,.plaza-toolbar{gap:7px;margin-bottom:10px;padding:9px}.import-panel input,.plaza-toolbar input{padding:10px;font-size:12px}.import-panel button,.plaza-toolbar button{min-height:40px;padding:9px 11px;font-size:13px}.mine-grid,.plaza-grid{gap:9px}.mine-grid>article{padding:11px}.deck-banner{height:96px}.mine-grid h2,.plaza-summary h2{font-size:15px}.mine-grid p,.plaza-summary p,.plaza-summary span,.plaza-grid footer button,.plaza-grid footer span{font-size:12px}.empty-state{min-height:280px}.empty-state p,.empty-state a{font-size:12px}.plaza-filter-summary{margin:-3px 0 9px}}
 </style>

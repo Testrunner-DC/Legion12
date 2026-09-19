@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { l12State, startAutomaticConnection, stopAutomaticConnection } from '@/l12/net'
 import { authState, platformState, updateAudioPreferences } from '@/l12/platform'
@@ -14,7 +14,21 @@ import '@/l12/mobileViewport.css'
 
 const route = useRoute()
 const immersive = computed(() => route.meta.immersive === true)
-useLandscapeViewport(computed(() => route.path === '/game' || route.path === '/deck-editor' || route.meta.replay === true))
+const landscapeExperience = computed(() => route.path === '/game' || route.meta.replay === true)
+useLandscapeViewport(landscapeExperience)
+const portraitHandset = ref(false)
+function updatePortraitHandset() {
+  const viewport = window.visualViewport
+  const width = viewport?.width ?? window.innerWidth
+  const height = viewport?.height ?? window.innerHeight
+  const coarseTouch = window.matchMedia?.('(pointer: coarse) and (hover: none)').matches ?? false
+  portraitHandset.value = coarseTouch && Math.min(width, height) <= 820 && height > width
+}
+async function requestLandscapeExperience() {
+  try { await document.documentElement.requestFullscreen?.() } catch { /* optional browser enhancement */ }
+  try { await (screen.orientation as ScreenOrientation & { lock?: (value: string) => Promise<void> }).lock?.('landscape') } catch { /* iOS Safari may require manual rotation */ }
+  updatePortraitHandset()
+}
 const backgroundMusic = new BackgroundMusicController()
 let battleTrack = 0
 let primed = false
@@ -42,6 +56,7 @@ function refreshBackgroundMusic() {
 }
 function primeMusic() { primed = true; refreshBackgroundMusic() }
 watch(() => route.path, () => refreshBackgroundMusic())
+watch(landscapeExperience, () => updatePortraitHandset())
 watch(audioPreferences, value => {
   syncAudioStore()
   refreshBackgroundMusic()
@@ -64,12 +79,19 @@ watch(() => platformState.account?.audioPreferences, async value => {
   await nextTick()
   applyingAccountPreferences = false
 }, { immediate: true, deep: true })
-onMounted(() => window.addEventListener('pointerdown', primeMusic, { once: true }))
+onMounted(() => {
+  window.addEventListener('pointerdown', primeMusic, { once: true })
+  window.addEventListener('resize', updatePortraitHandset)
+  window.visualViewport?.addEventListener('resize', updatePortraitHandset)
+  updatePortraitHandset()
+})
 onBeforeUnmount(() => {
   audioSaveGeneration++
   window.clearTimeout(audioSaveTimer)
   backgroundMusic.destroy()
   window.removeEventListener('pointerdown', primeMusic)
+  window.removeEventListener('resize', updatePortraitHandset)
+  window.visualViewport?.removeEventListener('resize', updatePortraitHandset)
 })
 watch(() => [platformState.token, authState.verified] as const, ([token, verified]) => {
   if (token && verified) startAutomaticConnection()
@@ -83,6 +105,11 @@ watch(() => [platformState.token, authState.verified] as const, ([token, verifie
   <GlobalBugFeedback />
   <FriendRequestNotifications />
   <RankedIntegrityNotice />
+  <Teleport to="body">
+    <section v-if="landscapeExperience && portraitHandset" class="l12-rotate-device" role="dialog" aria-modal="true" aria-labelledby="rotate-device-title">
+      <div><i aria-hidden="true">↻</i><h1 id="rotate-device-title">请横置设备</h1><p>横屏后会以真实安全区显示完整战场与操作区，不会再旋转或压缩整页界面。</p><button type="button" @click="requestLandscapeExperience">尝试进入横屏</button></div>
+    </section>
+  </Teleport>
 </template>
 
 <style>
@@ -117,4 +144,5 @@ watch(() => [platformState.token, authState.verified] as const, ([token, verifie
 :root[data-l12-animation="fast"] *{--l12-motion-duration:.55s}
 :root[data-l12-animation="off"] *{--l12-motion-duration:0s}
 :root[data-l12-animation="off"] *:not([data-essential-motion]){animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
+.l12-rotate-device{position:fixed;z-index:2147483647;inset:0;display:grid;padding:max(24px,env(safe-area-inset-top)) max(24px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(24px,env(safe-area-inset-left));place-items:center;background:#070b0df2;color:#f1ede2;text-align:center}.l12-rotate-device>div{width:min(340px,100%);padding:28px 22px;border:1px solid #7c6939;background:#10191e;box-shadow:0 24px 70px #000}.l12-rotate-device i{display:grid;width:58px;height:58px;margin:auto;place-items:center;border:1px solid #d7b75d;border-radius:50%;color:#f0d27b;font-size:34px;font-style:normal}.l12-rotate-device h1{margin:17px 0 8px;font-size:22px}.l12-rotate-device p{margin:0;color:#abb6b6;font-size:13px;line-height:1.7}.l12-rotate-device button{min-height:42px;margin-top:20px;padding:9px 16px;border:1px solid #e2c36b;background:#e2c36b;color:#101416;font-size:14px;font-weight:900}
 </style>

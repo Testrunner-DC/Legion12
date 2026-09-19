@@ -8,6 +8,8 @@ import { resolveClientReleaseVersion } from './scripts/client-release-version.mj
 export default defineConfig(({ command }) => {
   const clientRelease = resolveClientReleaseVersion({ command, supplied: process.env.VITE_APP_VERSION })
   return {
+    // 本机可为并行任务指定独立缓存目录，避免预览、校验彼此锁住 node_modules/.vite。
+    cacheDir: process.env.L12_VITE_CACHE_DIR || undefined,
     define: {
       'import.meta.env.VITE_APP_VERSION': JSON.stringify(clientRelease),
     },

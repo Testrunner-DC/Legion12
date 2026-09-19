@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using System.Text.Json;
 
 namespace TwelveLegions.Server;
 
@@ -7,6 +8,7 @@ public sealed partial class MatchRecorder
     // 回放仅用于近期复盘与即时问题定位；玩家可导出 JSON 自行保存。
     // 结算、战绩、主宰和先后手等分析事实独立保存，不依赖完整状态载荷。
     public const int PlayerReplayWindowSize = 10;
+    public static readonly TimeSpan PlayerReplayMaximumAge = TimeSpan.FromDays(7);
     public static readonly TimeSpan PlayerReplayCleanupInterval = TimeSpan.FromDays(1);
     internal const int PlayerReplayCleanupBatchSize = 25;
     internal const int PlayerReplayCleanupMaximumMatchesPerRun = 500;
@@ -36,7 +38,7 @@ public sealed partial class MatchRecorder
             GROUP BY participant_key,match_id,ended_utc,started_utc
         ),
         ordered_entries AS (
-            SELECT participant_key,match_id,
+            SELECT participant_key,match_id,ended_utc,
                    ROW_NUMBER() OVER (
                        PARTITION BY participant_key
                        ORDER BY julianday(ended_utc) DESC,ended_utc DESC,
@@ -45,7 +47,8 @@ public sealed partial class MatchRecorder
             FROM distinct_entries
         ),
         protected_replays AS (
-            SELECT DISTINCT match_id FROM ordered_entries WHERE replay_ordinal <= $window
+            SELECT DISTINCT match_id FROM ordered_entries
+            WHERE replay_ordinal <= $window AND julianday(ended_utc)>=julianday($cutoff)
         )
         """;
 
@@ -79,7 +82,7 @@ public sealed partial class MatchRecorder
             GROUP BY participant_key,match_id,ended_utc,started_utc
         ),
         ordered_entries AS (
-            SELECT participant_key,match_id,
+            SELECT participant_key,match_id,ended_utc,
                    ROW_NUMBER() OVER (
                        PARTITION BY participant_key
                        ORDER BY julianday(ended_utc) DESC,ended_utc DESC,
@@ -88,7 +91,8 @@ public sealed partial class MatchRecorder
             FROM distinct_entries
         ),
         protected_replays AS (
-            SELECT DISTINCT match_id FROM ordered_entries WHERE replay_ordinal <= $window
+            SELECT DISTINCT match_id FROM ordered_entries
+            WHERE replay_ordinal <= $window AND julianday(ended_utc)>=julianday($cutoff)
         )
         """;
 
@@ -135,6 +139,7 @@ public sealed partial class MatchRecorder
         string accountId, string legacyPlayerName, int limit = PlayerReplayWindowSize,
         CancellationToken cancellationToken = default)
     {
+        var cutoff = _utcNow().ToUniversalTime().Subtract(PlayerReplayMaximumAge).ToString("O");
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         var command = connection.CreateCommand();
@@ -143,6 +148,8 @@ public sealed partial class MatchRecorder
                    m.started_utc,m.ended_utc,m.winner,m.final_hash,m.error,COUNT(e.id)
             FROM matches m LEFT JOIN match_events e ON e.match_id=m.match_id
             WHERE m.mode_id <> 'sandbox' AND m.ended_utc IS NOT NULL
+              AND julianday(m.ended_utc)>=julianday($cutoff)
+              AND NOT EXISTS(SELECT 1 FROM player_replay_payload_expirations x WHERE x.match_id=m.match_id)
               AND (
                     m.account_0=$account OR m.account_1=$account
                     OR ((m.account_0 IS NULL AND m.player_0=$player)
@@ -155,6 +162,7 @@ public sealed partial class MatchRecorder
             """;
         command.Parameters.AddWithValue("$account", accountId);
         command.Parameters.AddWithValue("$player", legacyPlayerName);
+        command.Parameters.AddWithValue("$cutoff", cutoff);
         command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, PlayerReplayWindowSize));
         var matches = new List<L12MatchSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -167,6 +175,7 @@ public sealed partial class MatchRecorder
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(matchId)) return false;
+        var cutoff = _utcNow().ToUniversalTime().Subtract(PlayerReplayMaximumAge).ToString("O");
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         var command = connection.CreateCommand();
@@ -175,6 +184,8 @@ public sealed partial class MatchRecorder
                 SELECT m.match_id
                 FROM matches m
                 WHERE m.mode_id <> 'sandbox' AND m.ended_utc IS NOT NULL
+                  AND julianday(m.ended_utc)>=julianday($cutoff)
+                  AND NOT EXISTS(SELECT 1 FROM player_replay_payload_expirations x WHERE x.match_id=m.match_id)
                   AND (
                         m.account_0=$account OR m.account_1=$account
                         OR ((m.account_0 IS NULL AND m.player_0=$player)
@@ -189,6 +200,7 @@ public sealed partial class MatchRecorder
         command.Parameters.AddWithValue("$account", accountId);
         command.Parameters.AddWithValue("$player", legacyPlayerName);
         command.Parameters.AddWithValue("$window", PlayerReplayWindowSize);
+        command.Parameters.AddWithValue("$cutoff", cutoff);
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken)) == 1;
     }
 
@@ -301,7 +313,7 @@ public sealed partial class MatchRecorder
             {
                 var remainingCapacity = PlayerReplayCleanupMaximumMatchesPerRun - purgedMatches;
                 var candidates = await ReadPlayerReplayCleanupCandidatesAsync(connection,
-                    Math.Min(PlayerReplayCleanupBatchSize, remainingCapacity), cancellationToken);
+                    Math.Min(PlayerReplayCleanupBatchSize, remainingCapacity), now, cancellationToken);
                 if (candidates.Count == 0) break;
 
                 foreach (var candidate in candidates)
@@ -327,8 +339,14 @@ public sealed partial class MatchRecorder
                         }
                     }
                     if (!await IsPlayerReplayPurgeEligibleAsync(
-                            connection, purgeTransaction, candidate.MatchId, cancellationToken))
+                            connection, purgeTransaction, candidate.MatchId, now, cancellationToken))
                     {
+                        // A damaged or only partially finalized ranked row must not pin the
+                        // oldest page of candidates forever. Hold it for this maintenance run;
+                        // the next daily run will validate it again after any repair.
+                        await InsertReplayCleanupHoldAsync(connection, purgeTransaction,
+                            "player_replay_cleanup_match_holds", candidate.MatchId,
+                            cancellationToken);
                         await purgeTransaction.CommitAsync(cancellationToken);
                         continue;
                     }
@@ -365,7 +383,7 @@ public sealed partial class MatchRecorder
                     await Task.Yield();
             }
 
-            var hasMore = await HasPlayerReplayCleanupCandidateAsync(connection, cancellationToken);
+            var hasMore = await HasPlayerReplayCleanupCandidateAsync(connection, now, cancellationToken);
             var nextRun = NextStorageCleanupUtc(now);
             Console.WriteLine($"Player replay cleanup: pruned={purgedMatches};backlog={hasMore};nextUtc={nextRun:O}");
             using (var finish = connection.BeginTransaction(deferred: false))
@@ -485,7 +503,8 @@ public sealed partial class MatchRecorder
 
     private static async Task<IReadOnlyList<PlayerReplayCleanupCandidate>>
         ReadPlayerReplayCleanupCandidatesAsync(
-            SqliteConnection connection, int limit, CancellationToken cancellationToken)
+            SqliteConnection connection, int limit, DateTimeOffset now,
+            CancellationToken cancellationToken)
     {
         var command = connection.CreateCommand();
         command.CommandText = PlayerReplayWindowCte + """
@@ -501,9 +520,16 @@ public sealed partial class MatchRecorder
               AND NOT EXISTS(
                   SELECT 1 FROM player_replay_cleanup_room_holds h WHERE h.value=m.room_code)
               AND NOT EXISTS(
-                  SELECT 1 FROM ranked_settlement_outbox o WHERE o.match_id=m.match_id)
+                  SELECT 1 FROM ranked_settlement_outbox o
+                  WHERE o.match_id=m.match_id AND o.status<>'applied')
               AND NOT EXISTS(
-                  SELECT 1 FROM ranked_match_runtime r WHERE r.match_id=m.match_id)
+                  SELECT 1 FROM ranked_match_runtime r
+                  WHERE r.match_id=m.match_id AND r.status<>'completed')
+              AND NOT EXISTS(
+                  SELECT 1 FROM ranked_match_runtime r
+                  WHERE r.match_id=m.match_id
+                    AND NOT EXISTS(SELECT 1 FROM ranked_settlement_outbox o
+                                   WHERE o.match_id=m.match_id))
               AND NOT EXISTS(
                   SELECT 1 FROM ranked_recovery_quarantine q WHERE q.match_id=m.match_id)
               AND (
@@ -519,6 +545,7 @@ public sealed partial class MatchRecorder
             LIMIT $limit;
             """;
         command.Parameters.AddWithValue("$window", PlayerReplayWindowSize);
+        command.Parameters.AddWithValue("$cutoff", now.Subtract(PlayerReplayMaximumAge).ToString("O"));
         command.Parameters.AddWithValue("$limit", limit);
         var result = new List<PlayerReplayCleanupCandidate>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -529,7 +556,7 @@ public sealed partial class MatchRecorder
 
     private static async Task<bool> IsPlayerReplayPurgeEligibleAsync(
         SqliteConnection connection, SqliteTransaction transaction, string matchId,
-        CancellationToken cancellationToken)
+        DateTimeOffset now, CancellationToken cancellationToken)
     {
         var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -547,9 +574,16 @@ public sealed partial class MatchRecorder
               AND NOT EXISTS(
                   SELECT 1 FROM player_replay_cleanup_room_holds h WHERE h.value=m.room_code)
               AND NOT EXISTS(
-                  SELECT 1 FROM ranked_settlement_outbox o WHERE o.match_id=m.match_id)
+                  SELECT 1 FROM ranked_settlement_outbox o
+                  WHERE o.match_id=m.match_id AND o.status<>'applied')
               AND NOT EXISTS(
-                  SELECT 1 FROM ranked_match_runtime r WHERE r.match_id=m.match_id)
+                  SELECT 1 FROM ranked_match_runtime r
+                  WHERE r.match_id=m.match_id AND r.status<>'completed')
+              AND NOT EXISTS(
+                  SELECT 1 FROM ranked_match_runtime r
+                  WHERE r.match_id=m.match_id
+                    AND NOT EXISTS(SELECT 1 FROM ranked_settlement_outbox o
+                                   WHERE o.match_id=m.match_id))
               AND NOT EXISTS(
                   SELECT 1 FROM ranked_recovery_quarantine q WHERE q.match_id=m.match_id)
               AND (
@@ -562,8 +596,59 @@ public sealed partial class MatchRecorder
                   );
             """;
         command.Parameters.AddWithValue("$window", PlayerReplayWindowSize);
+        command.Parameters.AddWithValue("$cutoff", now.Subtract(PlayerReplayMaximumAge).ToString("O"));
         command.Parameters.AddWithValue("$match", matchId);
-        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken)) == 1;
+        if (Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken)) != 1)
+            return false;
+        return await HasReleasableRankedRecoveryStateAsync(
+            connection, transaction, matchId, cancellationToken);
+    }
+
+    private static async Task<bool> HasReleasableRankedRecoveryStateAsync(
+        SqliteConnection connection, SqliteTransaction transaction, string matchId,
+        CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT m.mode_id,r.status,o.status,o.payload_json,o.payload_hash
+            FROM matches m
+            LEFT JOIN ranked_match_runtime r ON r.match_id=m.match_id
+            LEFT JOIN ranked_settlement_outbox o ON o.match_id=m.match_id
+            WHERE m.match_id=$match;
+            """;
+        command.Parameters.AddWithValue("$match", matchId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return false;
+        var mode = reader.GetString(0);
+        var hasRuntime = !reader.IsDBNull(1);
+        var hasOutbox = !reader.IsDBNull(2);
+
+        // Legacy/non-ranked rows without recovery metadata keep their historical
+        // eligibility. Once ranked recovery metadata exists, only a fully applied,
+        // internally valid settlement may release the bulky replay body.
+        if (!hasRuntime && !hasOutbox) return true;
+        if (hasRuntime && !string.Equals(reader.GetString(1), "completed", StringComparison.Ordinal))
+            return false;
+        if (!hasOutbox || !string.Equals(reader.GetString(2), "applied", StringComparison.Ordinal))
+            return false;
+        try
+        {
+            var json = reader.GetString(3);
+            if (!string.Equals(PersistenceHash(json), reader.GetString(4),
+                    StringComparison.OrdinalIgnoreCase)) return false;
+            var payload = JsonSerializer.Deserialize<L12RankedSettlementEnvelope>(
+                json, RankedPersistenceJson);
+            if (payload is null || payload.MatchId != matchId || payload.FinalRound <= 0)
+                return false;
+            ValidateSettlement(payload);
+            return mode != "ranked" || payload.EndedAt >= payload.StartedAt;
+        }
+        catch (Exception error) when (error is JsonException or InvalidDataException
+                                     or InvalidOperationException or FormatException)
+        {
+            return false;
+        }
     }
 
     private static async Task<PlayerReplayPayloadMetrics> ReadPlayerReplayPayloadMetricsAsync(
@@ -598,9 +683,10 @@ public sealed partial class MatchRecorder
     }
 
     private static async Task<bool> HasPlayerReplayCleanupCandidateAsync(
-        SqliteConnection connection, CancellationToken cancellationToken)
+        SqliteConnection connection, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        var candidates = await ReadPlayerReplayCleanupCandidatesAsync(connection, 1, cancellationToken);
+        var candidates = await ReadPlayerReplayCleanupCandidatesAsync(
+            connection, 1, now, cancellationToken);
         return candidates.Count != 0;
     }
 

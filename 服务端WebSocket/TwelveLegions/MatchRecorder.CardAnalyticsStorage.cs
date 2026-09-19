@@ -5,8 +5,10 @@ namespace TwelveLegions.Server;
 
 public sealed partial class MatchRecorder
 {
-    internal static readonly TimeSpan DetailedCardFactRetention = TimeSpan.FromDays(30);
-    internal static readonly TimeSpan NonAnalyticCardFactRetention = TimeSpan.FromDays(10);
+    // Detailed facts are short-lived diagnostic material. Ranked analytic matches are compacted
+    // before pruning, so long-term reports continue to use the durable per-match summaries.
+    internal static readonly TimeSpan DetailedCardFactRetention = TimeSpan.FromDays(7);
+    internal static readonly TimeSpan NonAnalyticCardFactRetention = TimeSpan.FromDays(7);
     private readonly SemaphoreSlim _cardFactMaintenanceGate = new(1, 1);
     private long _nextCardFactMaintenanceUtcTicks = DateTimeOffset.MinValue.UtcDateTime.Ticks;
     internal sealed record CardFactMaintenanceSnapshot(DateTimeOffset CheckedAt, int Compacted,

@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { adminApi, hasPermission, type AlternateArt, type AlternateArtAwardRule, type AlternateArtGrant, type AlternateArtProduct, type AlternateArtRankedParticipantDispatchPreview, type SiteMedia } from '@/l12/platform'
 import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import MediaUploadField from './MediaUploadField.vue'
+import FilteredSingleCardPicker, { type FilteredSingleCardItem } from './FilteredSingleCardPicker.vue'
 
 const emit = defineEmits<{ notice: [value: string] }>()
 const arts = ref<AlternateArt[]>([])
@@ -20,21 +21,29 @@ const eventUsernames = ref('')
 const betaGrantForm = reactive({ alternateArtId: '', seasonId: '' })
 const betaGrantPreview = ref<AlternateArtRankedParticipantDispatchPreview | null>(null)
 const rankedParticipantScope = ref<'current' | 'specified'>('current')
-const artPickerTarget = ref<'grant' | 'participants' | 'rule' | null>(null)
-const artPickerQuery = ref('')
+const artPickerTarget = ref<'base' | 'grant' | 'participants' | 'rule' | null>(null)
 const cardById = computed(() => new Map(catalog.value.map(card => [card.id, card])))
 const selectedArt = computed(() => arts.value.find(item => item.id === grantForm.alternateArtId))
 const selectedParticipantArt = computed(() => arts.value.find(item => item.id === betaGrantForm.alternateArtId))
 const selectedRuleArt = computed(() => arts.value.find(item => item.id === ruleForm.alternateArtId))
-const pickerArts = computed(() => {
-  const keyword = artPickerQuery.value.trim().toLocaleLowerCase('zh-CN')
-  return arts.value.filter(art => art.active && (!keyword || [art.artCode, art.displayName, art.baseCardId,
-    art.productName, cardById.value.get(art.baseCardId)?.nameZh].some(value => value?.toLocaleLowerCase('zh-CN').includes(keyword))))
-    .sort((left, right) => left.artCode.localeCompare(right.artCode, 'zh-CN'))
-})
+const basePickerItems = computed<FilteredSingleCardItem[]>(() => catalog.value.map(card => ({ id: card.id, cardId: card.id,
+  number: card.number, name: card.nameZh, imageUrl: card.imageUrl, cardType: card.cardType, faction: card.faction,
+  product: card.product, cost: card.cost })))
+const artPickerItems = computed<FilteredSingleCardItem[]>(() => arts.value.filter(art => art.active).map(art => {
+  const card = cardById.value.get(art.baseCardId)
+  return { id: art.id, cardId: art.baseCardId, number: art.artCode, name: art.displayName,
+    imageUrl: art.thumbnailUrl, cardType: card?.cardType, faction: card?.faction, product: art.productName || card?.product,
+    subtitle: `${art.artCode} · ${card?.nameZh || art.baseCardId}` }
+}))
+const selectedBaseCard = computed(() => cardById.value.get(artForm.baseCardId))
 function notice(value: string) { emit('notice', value) }
-function openArtPicker(target: 'grant' | 'participants' | 'rule') { artPickerQuery.value = ''; artPickerTarget.value = target }
-function chooseArt(art: AlternateArt) {
+function openArtPicker(target: 'base' | 'grant' | 'participants' | 'rule') { artPickerTarget.value = target }
+function choosePickerItem(item: FilteredSingleCardItem) {
+  if (artPickerTarget.value === 'base') {
+    artForm.baseCardId = item.cardId; artForm.displayName = item.name; artPickerTarget.value = null; return
+  }
+  const art = arts.value.find(row => row.id === item.id)
+  if (!art) return
   if (artPickerTarget.value === 'grant') grantForm.alternateArtId = art.id
   else if (artPickerTarget.value === 'participants') betaGrantForm.alternateArtId = art.id
   else if (artPickerTarget.value === 'rule') ruleForm.alternateArtId = art.id
@@ -62,17 +71,20 @@ async function saveProduct() {
   try {
     const saved = await adminApi.saveAlternateArtProduct({ ...productForm, id: productForm.id || undefined })
     products.value = [saved, ...products.value.filter(item => item.id !== saved.id)]
-    artForm.productId ||= saved.id
+    artForm.productId = saved.id
     resetProduct()
     notice('异画归属产品已保存，可在异画登记时选用')
   } catch (error) { notice(error instanceof Error ? error.message : '异画归属产品保存失败') }
 }
 async function saveArt() {
   try {
+    const base = cardById.value.get(artForm.baseCardId)
+    if (!base) { notice('请先通过单卡筛选选择原卡'); return }
+    artForm.displayName = base.nameZh
     const saved = await adminApi.saveAlternateArt({ ...artForm, id: artForm.id || undefined })
     arts.value = [saved, ...arts.value.filter(item => item.id !== saved.id)]
     grantForm.alternateArtId ||= saved.id
-    notice('异画已保存；只有被授予权益的玩家才可以在构筑中选用')
+    notice(saved.active ? '异画已保存并立即进入画廊；获得权益的玩家可在构筑中选用' : '异画已保存为停用状态，不会在画廊展示')
     resetArt()
   } catch (error) { notice(error instanceof Error ? error.message : '异画保存失败') }
 }
@@ -135,14 +147,14 @@ onMounted(load)
   <section class="alternate-admin">
     <header><div><small>ALTERNATE ART</small><h3>异画与玩家权益</h3><p>异画不改变卡牌编号、效果或构筑合法性。先上传并绑定原卡，再授予玩家；派发来源会写入审计记录。</p></div><button @click="load">{{ busy ? '读取中…' : '刷新' }}</button></header>
     <section class="product-editor"><h4>异画归属产品</h4><p>产品独立于站点商品，可先在此新建，再绑定一张或多张异画。</p><div class="form-grid"><label>产品名称<input v-model.trim="productForm.name" maxlength="100" placeholder="例如：S01 赛季典藏"></label><label class="check"><input v-model="productForm.active" type="checkbox">可继续绑定</label></div><div class="actions"><button @click="resetProduct">清空</button><button v-if="hasPermission('admin.content.draft')" class="primary" @click="saveProduct">保存归属产品</button></div><article v-for="product in products" :key="product.id"><span>{{ product.name }} · {{ product.active ? '可用' : '已停用' }}</span><button @click="editProduct(product)">编辑</button></article></section>
-    <section class="art-editor"><h4>{{ artForm.id ? '编辑异画' : '新建异画' }}</h4><div class="form-grid"><label>异画编号<input v-model.trim="artForm.artCode" maxlength="80" placeholder="例如：ALT-S01-001"></label><label>原卡<select v-model="artForm.baseCardId"><option value="">选择原卡</option><option v-for="card in catalog" :key="card.id" :value="card.id">{{ card.id }} · {{ card.nameZh }}</option></select></label><label>异画名称<input v-model.trim="artForm.displayName" maxlength="100" placeholder="例如：第 1 赛季典藏异画"></label><label>归属产品<select v-model="artForm.productId"><option value="">暂不归属产品</option><option v-for="item in products.filter(product => product.active || product.id === artForm.productId)" :key="item.id" :value="item.id">{{ item.name }}</option></select></label><label>异画素材<select v-model="artForm.mediaAssetId"><option value="">先上传或选择素材</option><option v-for="item in media" :key="item.id" :value="item.id">{{ item.altText || item.contentHash.slice(0, 12) }}</option></select></label><label class="check"><input v-model="artForm.active" type="checkbox">允许新授予与选用</label></div><MediaUploadField v-if="hasPermission('admin.content.draft')" kind="card-art" :initial-alt="artForm.displayName" @uploaded="uploaded" @notice="notice"/><div class="actions"><button @click="resetArt">清空</button><button v-if="hasPermission('admin.content.draft')" class="primary" @click="saveArt">保存并公开展示异画</button></div></section>
+    <section class="art-editor"><h4>{{ artForm.id ? '编辑异画' : '新建异画' }}</h4><p>异画卡名始终沿用原卡；启用后保存即进入玩家画廊，不需要再走资讯或站点内容发布。</p><div class="form-grid"><label>异画编号<input v-model.trim="artForm.artCode" maxlength="80" placeholder="例如：ALT-S01-001"></label><label>绑定原卡<button class="art-choice" type="button" @click="openArtPicker('base')">{{ selectedBaseCard ? `${selectedBaseCard.number} · ${selectedBaseCard.nameZh}` : '打开单卡筛选选择原卡' }}</button></label><label>卡名（随原卡，不可单独修改）<input :value="selectedBaseCard?.nameZh || '选择原卡后自动带入'" disabled></label><label>归属产品（复用已有）<select v-model="artForm.productId"><option value="">暂不归属产品</option><option v-for="item in products.filter(product => product.active || product.id === artForm.productId)" :key="item.id" :value="item.id">{{ item.name }}</option></select></label><label>异画素材<select v-model="artForm.mediaAssetId"><option value="">先上传或选择素材</option><option v-for="item in media" :key="item.id" :value="item.id">{{ item.altText || item.contentHash.slice(0, 12) }}</option></select></label><label class="check"><input v-model="artForm.active" type="checkbox">启用并在画廊展示</label></div><MediaUploadField v-if="hasPermission('admin.content.draft')" kind="card-art" :initial-alt="selectedBaseCard?.nameZh || '异画卡图'" @uploaded="uploaded" @notice="notice"/><div class="actions"><button @click="resetArt">清空</button><button v-if="hasPermission('admin.content.draft')" class="primary" @click="saveArt">保存并同步画廊</button></div></section>
     <section class="art-list"><h4>已登记异画</h4><article v-for="art in arts" :key="art.id"><img :src="art.thumbnailUrl" :alt="art.displayName"><div><b>{{ art.displayName }}</b><span>{{ art.artCode || '待补异画编号' }} · {{ art.baseCardId }} · {{ cardById.get(art.baseCardId)?.nameZh || '原卡资料加载中' }}</span><small>{{ art.productName || '未归属产品' }} · {{ art.active ? '已在画廊展示，可授予' : '已停用，不展示不再授予' }}</small></div><button @click="editArt(art)">编辑</button></article><p v-if="!arts.length">尚未登记异画。</p></section>
     <section class="grant-panel"><h4>直接派发（兜底）</h4><p>赛季达段、赛季结算和活动派发将使用同一权益记录；此处可处理补发、修正与活动名单。</p><div class="form-grid"><label>异画<button class="art-choice" type="button" @click="openArtPicker('grant')">{{ selectedArt ? `${selectedArt.artCode} · ${selectedArt.displayName}` : '打开异画卡查选择' }}</button></label><label>玩家账号<input v-model.trim="grantForm.username" placeholder="精确用户名"></label><label>派发来源<select v-model="grantForm.sourceKind"><option value="manual">后台直接派发</option><option value="rank-reached">赛季达到段位</option><option value="season-final">赛季结算</option><option value="event">活动派发</option></select></label><label>来源备注<input v-model.trim="grantForm.sourceReference" maxlength="240" :placeholder="selectedArt ? `例如：${selectedArt.displayName} 补发` : '赛季编号、活动编号或处理说明'"></label></div><button v-if="hasPermission('admin.content.draft')" class="primary" @click="grant">派发异画权益</button></section>
     <section class="award-rules"><h4>自动派发规则</h4><p>“达到段位”在排位结算后即时检查；“赛季结算”和“最强主宰”在后台归档旧赛季时自动执行；活动规则需由管理员在名单确认后执行。</p><div class="form-grid"><label>异画<button class="art-choice" type="button" @click="openArtPicker('rule')">{{ selectedRuleArt ? `${selectedRuleArt.artCode} · ${selectedRuleArt.displayName}` : '打开异画卡查选择' }}</button></label><label>规则类型<select v-model="ruleForm.kind"><option value="rank-reached">赛季达到段位</option><option value="season-final">赛季结算</option><option value="master-champion-season-final">赛季最强主宰</option><option value="event">活动派发</option></select></label><label v-if="ruleForm.kind !== 'event'">赛季编号<input v-model.trim="ruleForm.seasonId" maxlength="100" placeholder="例如：S01"></label><label v-else>活动编号<input v-model.trim="ruleForm.eventId" maxlength="160" placeholder="例如：2026-国庆活动"></label><label v-if="ruleForm.kind === 'master-champion-season-final'">指定主宰<select v-model="ruleForm.masterId"><option value="">所有最强主宰得主</option><option v-for="card in catalog.filter(item => item.cardType === 'master')" :key="card.id" :value="card.id">{{ card.nameZh }}</option></select></label><label v-if="ruleForm.kind === 'rank-reached' || ruleForm.kind === 'season-final'">最低段位<select v-model.number="ruleForm.minimumTierIndex"><option v-for="index in 5" :key="index - 1" :value="index - 1">第 {{ index }} 档及以上</option></select></label><label class="check"><input v-model="ruleForm.active" type="checkbox">启用此规则</label></div><div class="actions"><button @click="resetRule">清空</button><button v-if="hasPermission('admin.content.draft')" class="primary" @click="saveRule">保存规则</button></div><article v-for="rule in awardRules" :key="rule.id" :class="{ inactive: !rule.active }"><div><b>{{ arts.find(art => art.id === rule.alternateArtId)?.displayName || rule.alternateArtId }}</b><span>{{ rule.kind === 'rank-reached' ? `赛季达段 · ${rule.seasonId} · 第 ${rule.minimumTierIndex + 1} 档及以上` : rule.kind === 'season-final' ? `赛季结算 · ${rule.seasonId} · 第 ${rule.minimumTierIndex + 1} 档及以上` : rule.kind === 'master-champion-season-final' ? `赛季最强主宰 · ${rule.seasonId} · ${rule.masterId || '全部主宰'}` : `活动派发 · ${rule.eventId}` }}</span><small>{{ rule.active ? '已启用' : '已停用' }}</small></div><button @click="editRule(rule)">编辑</button></article><p v-if="!awardRules.length">尚未设置自动派发规则。</p></section>
     <section class="event-dispatch"><h4>赛季排位参与者派发</h4><p>选择异画后先预览。默认只覆盖本赛季参与过排位的玩家；也可明确填写一个历史赛季。确认后同一异画、同一赛季只会派发一次。</p><div class="form-grid"><label>异画<button class="art-choice" type="button" @click="openArtPicker('participants')">{{ selectedParticipantArt ? `${selectedParticipantArt.artCode} · ${selectedParticipantArt.displayName}` : '打开异画卡查选择' }}</button></label><label>派发范围<select v-model="rankedParticipantScope" @change="betaGrantPreview = null"><option value="current">本赛季参与过排位的玩家</option><option value="specified">指定赛季参与过排位的玩家</option></select></label><label v-if="rankedParticipantScope === 'specified'">指定赛季<input v-model.trim="betaGrantForm.seasonId" maxlength="100" placeholder="例如：S01" @input="betaGrantPreview = null"></label></div><p v-if="betaGrantPreview">{{ betaGrantPreview.seasonId }} 赛季可参与 {{ betaGrantPreview.eligibleAccounts }} 人；已拥有同来源权益 {{ betaGrantPreview.alreadyGranted }} 人；本次新增 {{ betaGrantPreview.toGrant }} 人。</p><div class="actions"><button @click="previewBetaGrant">预览派发范围</button><button v-if="betaGrantPreview && hasPermission('admin.content.draft')" class="primary" @click="dispatchBetaGrant">确认派发</button></div></section>
     <section v-if="awardRules.some(rule => rule.active && rule.kind === 'event')" class="event-dispatch"><h4>执行活动名单</h4><p>确认活动获奖名单后粘贴精确玩家账号；每行一个，也可用逗号分隔。系统会逐名校验账号并写入派发记录。</p><textarea v-model="eventUsernames" rows="5" placeholder="玩家账号 1&#10;玩家账号 2"></textarea><div v-for="rule in awardRules.filter(rule => rule.active && rule.kind === 'event')" :key="rule.id" class="event-rule"><span>{{ arts.find(art => art.id === rule.alternateArtId)?.displayName || rule.alternateArtId }} · {{ rule.eventId }}</span><button v-if="hasPermission('admin.content.draft')" class="primary" @click="dispatchEvent(rule)">按此规则派发</button></div></section>
     <section class="grant-list"><h4>派发记录</h4><article v-for="grantRow in grants" :key="grantRow.id" :class="{ revoked: grantRow.revokedAt }"><div><b>{{ grantRow.username }}</b><span>{{ arts.find(art => art.id === grantRow.alternateArtId)?.displayName || grantRow.alternateArtId }}</span><small>{{ grantRow.sourceKind }}{{ grantRow.sourceReference ? ` · ${grantRow.sourceReference}` : '' }} · {{ new Date(grantRow.grantedAt).toLocaleString() }}</small></div><button v-if="!grantRow.revokedAt && hasPermission('admin.content.draft')" class="danger" @click="revoke(grantRow)">撤回</button><em v-else-if="grantRow.revokedAt">已撤回</em></article><p v-if="!grants.length">暂无派发记录。</p></section>
-    <Teleport to="body"><div v-if="artPickerTarget" class="art-picker-mask" @click.self="artPickerTarget = null"><section class="art-picker" role="dialog" aria-modal="true" aria-label="选择异画"><header><div><small>ALTERNATE ART ARCHIVE</small><h2>选择要派发的异画</h2></div><button type="button" @click="artPickerTarget = null">×</button></header><input v-model="artPickerQuery" type="search" autofocus placeholder="搜索异画编号、名称、原卡或产品"><div class="art-picker-grid"><button v-for="art in pickerArts" :key="art.id" type="button" class="art-picker-card" @click="chooseArt(art)"><img :src="art.thumbnailUrl" :alt="art.displayName"><b>{{ art.displayName }}</b><small>{{ art.artCode }} · {{ cardById.get(art.baseCardId)?.nameZh || art.baseCardId }}</small><span>{{ art.productName || '未归属产品' }}</span></button><p v-if="!pickerArts.length">没有符合条件的可派发异画。</p></div></section></div></Teleport>
+    <Teleport to="body"><FilteredSingleCardPicker v-if="artPickerTarget" :title="artPickerTarget === 'base' ? '选择异画绑定的原卡' : '选择异画'" :items="artPickerTarget === 'base' ? basePickerItems : artPickerItems" @select="choosePickerItem" @close="artPickerTarget = null"/></Teleport>
   </section>
 </template>
 

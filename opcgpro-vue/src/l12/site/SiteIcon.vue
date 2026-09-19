@@ -19,6 +19,7 @@ defineProps<{ name: string }>()
     <g v-else-if="name === 'updates'"><path d="M6 2h9l4 4v16H6zM14 2v5h5M9 12h7M9 16h7"/></g>
     <g v-else-if="name === 'online'"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-4 2.5-6 6-6 2.3 0 4.2.9 5.2 2.6M17 10a3 3 0 1 0 0-6M16 14c3.2 0 5 2 5 5"/></g>
     <g v-else-if="name === 'connection'"><path d="M2 8.8a15 15 0 0 1 20 0M5.5 12.3a10 10 0 0 1 13 0M9 15.8a5 5 0 0 1 6 0"/><circle cx="12" cy="20" r="1"/></g>
+    <g v-else-if="name === 'bug'"><path d="M8 8.5h8a3 3 0 0 1 3 3v5a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3v-5a3 3 0 0 1 3-3ZM12 5v3.5M8 5.5l1.5 3M16 5.5 14.5 8.5M2 11h3M2 16h3M19 11h3M19 16h3"/><circle cx="9.5" cy="13.5" r=".7"/><circle cx="14.5" cy="13.5" r=".7"/></g>
   </svg>
 </template>
 

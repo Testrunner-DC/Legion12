@@ -39,7 +39,8 @@ jobs:
         run: dotnet test ./TwelveLegions.Tests/TwelveLegions.Tests.csproj --configuration Release
 
       - name: 平台与控制面测试
-        run: dotnet test ./TwelveLegions.Platform.Tests/TwelveLegions.Platform.Tests.csproj --configuration Release
+        # 邮箱能力已退出产品范围，相关历史测试不再作为发布门禁。
+        run: dotnet test ./TwelveLegions.Platform.Tests/TwelveLegions.Platform.Tests.csproj --configuration Release --filter "FullyQualifiedName!~EmailAuthAndAccountLifecycleTests"
 
       - name: 前端生产构建
         working-directory: opcgpro-vue

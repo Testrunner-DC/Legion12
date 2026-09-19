@@ -19,6 +19,9 @@ export interface UsernameChangeRequest {
   status: 'pending' | 'approved' | 'rejected'; reviewedByUsername?: string; reviewNote?: string; createdAt: string; reviewedAt?: string
 }
 export interface UsernameChangeStatus { freeRenameAvailable: boolean; freeRenameUsed: number; latestRequest?: UsernameChangeRequest }
+export interface PlayerStatLine { games: number; wins: number; losses: number; draws: number; firstGames: number; firstWins: number; secondGames: number; secondWins: number }
+export interface PlayerMasterStatistics { masterId: string; masterName: string; overall: PlayerStatLine; ranked: PlayerStatLine }
+export interface PlayerStatistics { overall: PlayerStatLine; ranked: PlayerStatLine; masters: PlayerMasterStatistics[]; updatedAt?: string }
 export interface SessionRevocation { sessionId?: string; revokedCount: number; alreadyRevoked: boolean }
 export interface EmailStatus {
   bound: boolean; verified: boolean; maskedEmail?: string; pendingMaskedEmail?: string
@@ -745,6 +748,10 @@ export const usernameChangeApi = {
   }),
 }
 
+export const playerApi = {
+  statistics: () => platformRequest<PlayerStatistics>('/api/me/statistics'),
+}
+
 export const updateAudioPreferences = (value: NonNullable<PlatformAccount['audioPreferences']>) =>
   platformRequest<NonNullable<PlatformAccount['audioPreferences']>>('/api/auth/audio-preferences', {
     method: 'PUT', body: JSON.stringify(value),
@@ -927,6 +934,7 @@ export const adminApi = {
   saveContentDraft: (key: string, value: string) => platformRequest<ContentEntry>(`/api/admin/v1/content/${encodeURIComponent(key)}/draft`, { method: 'PUT', body: JSON.stringify(commandBody('draft', { value })) }),
   previewContent: (keys: string[]) => platformRequest<ContentBatchPreview>('/api/admin/v1/content/preview', { method: 'POST', body: JSON.stringify({ keys }) }),
   publishContent: (keys: string[], dryRun = false) => platformRequest<AdminCommandAccepted | ContentBatchOperation>('/api/admin/v1/content/publish', { method: 'POST', body: JSON.stringify(commandBody('content-publish', { keys, dryRun })) }),
+  publishRuleItem: (key: 'rules.rulings' | 'rules.center', collection: string, itemId: string) => platformRequest<ContentEntry>('/api/admin/rule-items/publish', { method: 'POST', body: JSON.stringify({ key, collection, itemId }) }),
   contentBatches: () => platformRequest<ContentBatch[]>('/api/admin/v1/content/batches'),
   rollbackContent: (batchId: string, dryRun = false) => platformRequest<AdminCommandAccepted | ContentBatchOperation>('/api/admin/v1/content/rollback', { method: 'POST', body: JSON.stringify(commandBody('content-rollback', { batchId, dryRun })) }),
   effectAtoms: () => platformRequest<EffectAtomDescriptor[]>('/api/admin/effect-atoms'),

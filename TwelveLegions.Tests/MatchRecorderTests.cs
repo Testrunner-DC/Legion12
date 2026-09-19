@@ -73,6 +73,27 @@ public sealed class MatchRecorderTests
     }
 
     [Fact]
+    public async Task PlayerStatisticsRemainAvailableIndependentlyOfReplayPayloads()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-tests", Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "matches.db");
+        var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
+        var game = new L12GameEngine(catalog, "player-statistics-test", "STAT01", 79, ["甲", "乙"], [0, 1], skipPreparation: true);
+        await using var recorder = new MatchRecorder(path);
+        await recorder.InitializeAsync();
+        await recorder.StartAsync(game.State, "ranked", "account-a", "account-b");
+        game.ConcludeByAuthority(0, "统计测试");
+        await recorder.CompleteAsync(game);
+
+        var statistics = await recorder.PlayerStatisticsAsync("account-a", "已经改名的甲");
+        Assert.Equal(1, statistics.Overall.Games);
+        Assert.Equal(1, statistics.Overall.Wins);
+        Assert.Equal(1, statistics.Ranked.Games);
+        Assert.Single(statistics.Masters);
+        Assert.Equal(1, statistics.Masters[0].Ranked.Wins);
+    }
+
+    [Fact]
     public async Task PlayerReplayRedactsOpponentPrivateZonesAndUsesCoveredCardOwnershipKnowledge()
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-tests", Guid.NewGuid().ToString("N"));

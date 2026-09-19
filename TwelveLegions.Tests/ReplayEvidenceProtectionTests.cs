@@ -6,7 +6,7 @@ namespace TwelveLegions.Tests;
 public sealed class ReplayEvidenceProtectionTests
 {
     [Fact]
-    public void UnresolvedReportsProtectAllDiagnosticReferencesAndReleaseOnlyAfterClosure()
+    public void OnlyTriagedRecentExplicitBugBindingsProtectReplayPayload()
     {
         var path = Path.Combine(Path.GetTempPath(), "l12-replay-evidence",
             Guid.NewGuid().ToString("N"), "platform.json");
@@ -18,22 +18,26 @@ public sealed class ReplayEvidenceProtectionTests
             new L12ClientConnectionDiagnosticView(now, "/battle", "ok", 200, "ok", 200,
                 "open", null, null, null, null, 0, "CLIENT", "client", null, "ready", "ok", "none"),
             new L12ConnectionClaimDiagnosticView(now, "ready", 1, null, "CLAIM", "claim", null, null));
-        // The existing report normalizer binds client diagnostics to the authoritative top-level ID.
-        var expected = new[] { "primary", "diagnostic", "claim" }.Order().ToArray();
-        Assert.Equal(expected, store.UnresolvedReplayEvidence().MatchIds.Order().ToArray());
-        Assert.Equal(3, store.UnresolvedReplayEvidence().RoomCodes.Count);
+        Assert.Empty(store.ReplayEvidenceAt(now).MatchIds); // untriaged reports do not hold payloads
         var admin = new L12AccountView("fixture-admin", "fixture", "admin", now, false);
         foreach (var status in new[] { "confirmed", "in-progress" })
         {
             store.UpdateBug(admin, report.Id, status, null, null, null);
-            Assert.Equal(expected, store.UnresolvedReplayEvidence().MatchIds.Order().ToArray());
+            var evidence = store.ReplayEvidenceAt(now);
+            Assert.Equal(["primary"], evidence.MatchIds);
+            Assert.Equal(["PRIMARY"], evidence.RoomCodes);
+            Assert.DoesNotContain("diagnostic", evidence.MatchIds);
+            Assert.DoesNotContain("claim", evidence.MatchIds);
         }
         store.UpdateBug(admin, report.Id, "resolved", null, null, null);
-        Assert.Empty(store.UnresolvedReplayEvidence().MatchIds);
+        Assert.Empty(store.ReplayEvidenceAt(now).MatchIds);
         store.UpdateBug(admin, report.Id, "new", null, null, null);
-        Assert.Equal(3, new L12PlatformStore(path).UnresolvedReplayEvidence().MatchIds.Count);
+        Assert.Empty(new L12PlatformStore(path).ReplayEvidenceAt(now).MatchIds);
+        store.UpdateBug(admin, report.Id, "confirmed", null, null, null);
+        Assert.Empty(store.ReplayEvidenceAt(
+            report.CreatedAt.Add(L12PlatformStore.BugReplayEvidenceMaximumAge).AddTicks(1)).MatchIds);
         store.UpdateBug(admin, report.Id, "closed", null, null, null);
-        Assert.Empty(store.UnresolvedReplayEvidence().RoomCodes);
+        Assert.Empty(store.ReplayEvidenceAt(now).RoomCodes);
         Assert.Single(store.Bugs(null)); // Cleanup protection never deletes the report itself.
     }
 }

@@ -1,16 +1,15 @@
-/* One transformed fixed host includes the app, native hit testing and all body
-   Teleports. Safe-area and visualViewport offsets are applied before rotation. */
+/* The game lives in the device's real viewport.  Earlier releases rotated the
+   entire body as a fallback when a browser rejected orientation locking.  That
+   made fixed overlays, safe areas and desktop-sized components use different
+   coordinate systems.  Keep one coordinate system instead; App.vue displays a
+   rotate-device guide when a handset remains portrait. */
 html[data-l12-viewport] body {
   position: fixed;
-  inset: auto;
-  left: var(--l12-viewport-left);
-  top: var(--l12-viewport-top);
-  width: var(--l12-viewport-width);
-  height: var(--l12-viewport-height);
-  transform: translate(0, 0);
-  transform-origin: 0 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: none;
 }
-html[data-l12-viewport=landscape] body { transform: rotate(90deg); }
 html[data-l12-viewport] #app { width: 100%; height: 100%; }
 
 /* The battle table always fits the logical landscape viewport in one screen.

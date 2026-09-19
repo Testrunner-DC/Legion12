@@ -57,12 +57,22 @@ export interface AdminReplaySource {
 }
 
 let importedReplay: MatchDetail | null = null
+export const replayFormatVersion = 1
+export const replayCompatibilityVersion = 1
 
 export function rememberImportedReplay(detail: MatchDetail) { importedReplay = detail }
 export function consumeImportedReplay() { return importedReplay }
 
 export function parseReplayPayload(raw: unknown): MatchDetail {
-  const candidate = (raw as any)?.format === 'legion12-replay' ? (raw as any).detail : raw
+  const envelope = raw as any
+  if (envelope?.format !== 'legion12-replay') {
+    if (envelope?.match?.matchId && Array.isArray(envelope.commands)) throw new Error('版本已更新')
+    throw new Error('文件不是有效的十二军团回放')
+  }
+  if (envelope.version !== replayFormatVersion
+    || (envelope.compatibilityVersion ?? 1) !== replayCompatibilityVersion)
+    throw new Error('版本已更新')
+  const candidate = envelope.detail
   if (!candidate?.match?.matchId || !Array.isArray(candidate.commands))
     throw new Error('文件不是有效的十二军团回放')
   if (candidate.commands.some((command: any) => !command || typeof command.state !== 'object'))
@@ -71,7 +81,10 @@ export function parseReplayPayload(raw: unknown): MatchDetail {
 }
 
 export function exportReplayPayload(detail: MatchDetail) {
-  return { format: 'legion12-replay', version: 1, exportedAt: new Date().toISOString(), detail }
+  return {
+    format: 'legion12-replay', version: replayFormatVersion,
+    compatibilityVersion: replayCompatibilityVersion, exportedAt: new Date().toISOString(), detail,
+  }
 }
 
 export function adminReplayDetail(source: AdminReplaySource): MatchDetail {
