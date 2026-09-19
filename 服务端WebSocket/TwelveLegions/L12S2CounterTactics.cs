@@ -115,12 +115,15 @@ public sealed partial class L12GameEngine
                 var entered = target is null ? null : FindOnField(affected, target.SourceInstanceId, out _, out _);
                 if (mode == "mode:suppress" && target is not null
                     && target.Data.GetValueOrDefault("eventType") == "non-hand-entry"
-                    && entered is not null && IsAuthoritativeFieldLegion(entered))
+                    && entered is not null && IsAuthoritativeFieldLegion(entered)
+                    && !IsProtectedFromCounterTactics(target))
                 {
                     target.Data["suppressEnter"] = "true";
                     AddTimedModifier(entered, -3000, 0, State.TurnSerial, "破败仪式");
                 }
-                else RecordResolutionFailure(item, "原登场事件或对应的场上军团已失效，无法无效登场效果或减少兵力");
+                else RecordResolutionFailure(item, IsProtectedFromCounterTactics(target ?? item)
+                    ? "登场军团不受反击战术效果影响"
+                    : "原登场事件或对应的场上军团已失效，无法无效登场效果或减少兵力");
                 FinishStackItem(item);
                 return;
             }

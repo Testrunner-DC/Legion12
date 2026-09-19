@@ -1462,11 +1462,12 @@ public sealed partial class L12GameEngine
         var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
         var responseCards = player.Field[1].Where(card => card is { CardType: "tactic" }
             && card.CannotRespondUntilRound < State.Round).Cast<L12CardInstance>().ToArray();
-        if (CounterTacticsAreDisabled() || protectedFromCounters) responseCards = [];
+        if (CounterTacticsAreDisabled()) responseCards = [];
         if (disasterAuthorityTiming)
             responseCards = responseCards.Where(card => !IsCounterTactic(card.CardId)).ToArray();
         foreach (var card in responseCards)
         {
+            if (protectedFromCounters && CounterTacticAffectsRespondedEffect(card.CardId)) continue;
             if (card.CardId == "S01-0016" && top.Controller != playerIndex && top.Trigger != "authority-event"
                 && player.Hand.Count > 0 && (!defenderAttackTimingRoot || playerIndex == defendingPlayer))
                 choices.Add(card.InstanceId);
@@ -1564,7 +1565,7 @@ public sealed partial class L12GameEngine
     /// </summary>
     private bool CanMasterCardPoolRespondAtTiming(int playerIndex, L12StackItem top, bool protectedFromCounters)
     {
-        if (top.Controller == playerIndex || protectedFromCounters || IsDisasterAuthorityTiming(top)) return false;
+        if (top.Controller == playerIndex || IsDisasterAuthorityTiming(top)) return false;
         var player = State.Players[playerIndex];
         var pool = _catalog.Cards.Values.Where(card =>
             card.Faction == "universal" || card.Faction == player.Faction);
@@ -1573,7 +1574,9 @@ public sealed partial class L12GameEngine
         var hasEligibleCoveredCard = !CounterTacticsAreDisabled()
             && player.Field[1].Any(card => card is { Hidden: true, CardType: "tactic" }
                 && card.CannotRespondUntilRound < State.Round);
-        if (hasEligibleCoveredCard && pool.Any(card => IsPoolCounterResponseAtTiming(card.Id, playerIndex, top)))
+        if (hasEligibleCoveredCard && pool.Any(card =>
+                (!protectedFromCounters || !L12CounterTacticRules.AffectsRespondedEffect(card))
+                && IsPoolCounterResponseAtTiming(card.Id, playerIndex, top)))
             return true;
 
         var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
@@ -1659,6 +1662,10 @@ public sealed partial class L12GameEngine
         return source is not null
             && L12StructuredCardRules.HasSummonTurnCounterTacticProtection(source, State.Round);
     }
+
+    private bool CounterTacticAffectsRespondedEffect(string cardId)
+        => _catalog.Cards.TryGetValue(cardId, out var definition)
+            && L12CounterTacticRules.AffectsRespondedEffect(definition);
 
     private bool IsDisasterAuthorityTiming(L12StackItem top)
     {

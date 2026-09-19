@@ -16,6 +16,9 @@ public static class L12CounterTacticRules
     public static bool IsCounterTactic(L12CardInstance card)
         => card.CardType.Equals("tactic", StringComparison.OrdinalIgnoreCase) && card.IsCounterTactic;
 
+    public static bool AffectsRespondedEffect(L12CardDefinition card)
+        => IsCounterTactic(card) && card.AffectsRespondedEffect;
+
     public static bool IsActiveTactic(L12CardDefinition card)
         => IsTactic(card) && !card.IsCounterTactic;
 

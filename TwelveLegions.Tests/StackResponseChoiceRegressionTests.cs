@@ -46,9 +46,10 @@ public sealed partial class StackResponseChoiceRegressionTests
         };
     }
 
-    private static L12StackItem AddEffect(L12GameEngine game, string id, string trigger = "enter", int owner = 0)
+    private static L12StackItem AddEffect(L12GameEngine game, string id, string trigger = "enter", int owner = 0,
+        string sourceCardId = "S01-0103")
     {
-        var source = Card("S01-0103", $"source-{id}", owner);
+        var source = Card(sourceCardId, $"source-{id}", owner);
         if (trigger == "enter")
         {
             var slot = Array.FindIndex(game.State.Players[owner].Field[0], card => card is null);
@@ -535,6 +536,7 @@ public sealed partial class StackResponseChoiceRegressionTests
     [InlineData("S02-0016", "suppress", "moved")]
     [InlineData("S02-0016", "suppress", "non-legion")]
     [InlineData("S02-0016", "suppress", "negated")]
+    [InlineData("S02-0016", "suppress", "protected")]
     [InlineData("S02-0017", "return", "normal")]
     [InlineData("S02-0017", "return", "moved")]
     [InlineData("S02-0017", "return", "negated")]
@@ -548,14 +550,18 @@ public sealed partial class StackResponseChoiceRegressionTests
         string cardId, string branch, string outcome)
     {
         var game = Create();
-        var root = AddEffect(game, "settlement-root", "authority-event");
+        var root = AddEffect(game, "settlement-root", "authority-event", sourceCardId:
+            outcome == "protected" ? "ST02-01" : "S01-0103");
         root.Data["eventType"] = cardId switch
         {
             "S02-0016" => "non-hand-entry",
             "S02-0017" => "effect-hand-add",
             _ => "effect-ready",
         };
-        var entered = Card(root.SourceCardId, root.SourceInstanceId, 0, troops: 6000);
+        var entered = Card(outcome == "protected" ? "ST02-01" : root.SourceCardId,
+            root.SourceInstanceId, 0, troops: 6000);
+        if (outcome == "protected")
+            entered.SummonRound = game.State.Round;
         game.State.Players[0].Field[0][0] = entered;
         var chosen = Card("S01-0003", "settlement-chosen", 0);
         game.State.Players[0].Hand.Add(chosen);

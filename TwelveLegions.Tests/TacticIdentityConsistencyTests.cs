@@ -52,4 +52,19 @@ public sealed class TacticIdentityConsistencyTests
         Assert.True(L12CounterTacticRules.IsActiveTactic(activeTactic));
         Assert.False(L12CounterTacticRules.IsCounterTactic(activeTactic));
     }
+
+    [Fact]
+    [Trait("L12Evidence", "family:counter-protection-impact")]
+    public void CounterTacticsThatDirectlyAffectTheRespondedEffectAreDeclaredInCardData()
+    {
+        var catalog = Catalog;
+        var affectsRespondedEffect = catalog.Cards.Values
+            .Where(L12CounterTacticRules.AffectsRespondedEffect)
+            .Select(card => card.Id)
+            .OrderBy(cardId => cardId, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(new[] { "S01-0016", "S01-0018", "S02-0018" }, affectsRespondedEffect);
+        Assert.All(affectsRespondedEffect, cardId => Assert.True(catalog.Cards[cardId].IsCounterTactic));
+    }
 }

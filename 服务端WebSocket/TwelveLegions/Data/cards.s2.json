@@ -275,6 +275,7 @@
     "imageUrl": "/cards/faces/通用/毒药发作.png",
     "cardType": "tactic",
     "isCounterTactic": true,
+    "affectsRespondedEffect": true,
     "product": "S02",
     "faction": "universal",
     "cost": 2,

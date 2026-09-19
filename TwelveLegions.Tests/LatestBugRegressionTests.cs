@@ -1,4 +1,5 @@
 using TwelveLegions.Server;
+using System.Reflection;
 using System.Text.Json;
 using Xunit;
 
@@ -1644,32 +1645,58 @@ public sealed class LatestBugRegressionTests
     }
 
     [Theory]
-    [InlineData("S01-0201")]
-    [InlineData("S01-0202")]
-    public void SummonTurnCounterTacticProtectionComesFromStructuredRules(string cardId)
+    [InlineData("S01-0201", "S01-0016", false)]
+    [InlineData("S01-0201", "S01-0018", false)]
+    [InlineData("S01-0201", "S01-0019", true)]
+    [InlineData("S01-0201", "S02-0106", true)]
+    [InlineData("S01-0202", "S01-0016", false)]
+    [InlineData("S01-0202", "S01-0018", false)]
+    [InlineData("S01-0202", "S01-0019", true)]
+    [InlineData("S01-0202", "S02-0106", true)]
+    [InlineData("ST02-01", "S01-0016", false)]
+    [InlineData("ST02-01", "S01-0018", false)]
+    [InlineData("ST02-01", "S01-0019", true)]
+    [InlineData("ST02-01", "S02-0106", true)]
+    public void SummonTurnCounterTacticProtectionOnlyBlocksResponsesThatAffectProtectedEffect(
+        string cardId, string responseCardId, bool expectedAvailable)
     {
         var game = Create(6427);
         var owner = game.State.Players[0];
         var opponent = game.State.Players[1];
         var protectedLegion = Card(cardId, $"structured-counter-protection-{cardId}");
-        var ambush = Card("S01-0019", $"structured-counter-ambush-{cardId}");
-        owner.Hand.Clear();
-        owner.Hand.Add(protectedLegion);
-        AddReadyMorale(owner, protectedLegion.Cost);
-        ambush.Hidden = true;
-        ambush.SetRound = 0;
-        opponent.Field[1][0] = ambush;
+        var response = Card(responseCardId, $"structured-counter-response-{cardId}-{responseCardId}");
+        var responseTarget = Card("S01-0001", $"structured-counter-response-target-{cardId}-{responseCardId}");
+        var discard = Card("S01-0005", $"structured-counter-discard-{cardId}-{responseCardId}");
+        owner.Field[0][0] = protectedLegion;
+        opponent.Hand.Clear();
+        opponent.Hand.Add(discard);
+        opponent.Field[0][0] = responseTarget;
+        response.Hidden = true;
+        response.SetRound = 0;
+        opponent.Field[1][0] = response;
         game.State.ActivePlayer = 0;
         game.State.Round = 2;
         game.State.Phase = L12Phase.Main;
+        protectedLegion.SummonRound = game.State.Round;
 
-        var played = game.Handle(0, new L12Command("playCard", protectedLegion.InstanceId, Row: 0, Slot: 0));
-
-        Assert.True(played.Accepted, played.Error);
-        Assert.DoesNotContain(game.State.PendingPrompts,
-            prompt => prompt.Kind == "response" && prompt.ValidChoices.Contains(ambush.InstanceId));
-        Assert.Same(ambush, opponent.Field[1][0]);
-        Assert.True(ambush.Hidden);
+        var push = typeof(L12GameEngine).GetMethod("PushEffect", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new MissingMethodException(nameof(L12GameEngine), "PushEffect");
+        push.Invoke(game, [0, protectedLegion, "enter", "受保护的登场时效果", null,
+            new Dictionary<string, string>()]);
+        var ownerResponse = game.State.PendingPrompts.FirstOrDefault(prompt =>
+            prompt.PlayerIndex == 0 && prompt.Kind == "response");
+        if (ownerResponse is not null)
+            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: ownerResponse.PromptId,
+                Choice: "pass")).Accepted);
+        var actualAvailable = game.State.PendingPrompts.Any(
+            prompt => prompt.Kind == "response" && prompt.ValidChoices.Contains(response.InstanceId));
+        Assert.True(actualAvailable == expectedAvailable,
+            "prompts=" + string.Join(" || ", game.State.PendingPrompts.Select(prompt =>
+                $"p{prompt.PlayerIndex}:{prompt.Kind}:{string.Join(',', prompt.ValidChoices)}"))
+            + "; stack=" + string.Join(" || ", game.State.EffectStack.Select(item =>
+                $"{item.SourceCardId}:{item.Trigger}:{item.Text}")));
+        Assert.Same(response, opponent.Field[1][0]);
+        Assert.True(response.Hidden);
         Assert.Same(protectedLegion, owner.Field[0][0]);
     }
 
