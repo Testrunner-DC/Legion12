@@ -1468,6 +1468,7 @@ public sealed partial class L12GameEngine
         foreach (var card in responseCards)
         {
             if (protectedFromCounters && CounterTacticAffectsRespondedEffect(card.CardId)) continue;
+            if (!ResponseCardMayRespondToSelectedEffect(card.CardId, top)) continue;
             if (card.CardId == "S01-0016" && top.Controller != playerIndex && top.Trigger != "authority-event"
                 && player.Hand.Count > 0 && (!defenderAttackTimingRoot || playerIndex == defendingPlayer))
                 choices.Add(card.InstanceId);
@@ -1484,7 +1485,7 @@ public sealed partial class L12GameEngine
                 choices.Add(card.InstanceId);
         }
         if (!protectedFromCounters && top.Trigger == "opponent-attack" && State.PendingDefense?.Target.Type == "legion"
-            && State.PendingDefense.SureHit != true && playerIndex == defendingPlayer)
+            && ResponseCardMayRespondToSelectedEffect("S01-0002", top) && playerIndex == defendingPlayer)
             choices.AddRange(player.Hand.Where(card => card.CardId == "S01-0002").Select(card => card.InstanceId));
         if (!protectedFromCounters && top.Trigger == "opponent-attack" && State.PendingDefense?.Target.Type == "master"
             && playerIndex == defendingPlayer
@@ -1581,7 +1582,8 @@ public sealed partial class L12GameEngine
 
         var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
         if (playerIndex != defendingPlayer || player.Hand.Count == 0 || top.Trigger != "opponent-attack") return false;
-        if (State.PendingDefense?.Target.Type == "legion" && State.PendingDefense.SureHit != true
+        if (State.PendingDefense?.Target.Type == "legion"
+            && ResponseCardMayRespondToSelectedEffect("S01-0002", top)
             && pool.Any(card => card.Id == "S01-0002"))
             return true;
         return State.PendingDefense?.Target.Type == "master"
@@ -1595,6 +1597,7 @@ public sealed partial class L12GameEngine
         L12StackItem top)
     {
         if (!IsCounterTactic(cardId)) return false;
+        if (!ResponseCardMayRespondToSelectedEffect(cardId, top)) return false;
         if (top.Trigger == "opponent-attack")
         {
             var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
@@ -1666,6 +1669,18 @@ public sealed partial class L12GameEngine
     private bool CounterTacticAffectsRespondedEffect(string cardId)
         => _catalog.Cards.TryGetValue(cardId, out var definition)
             && L12CounterTacticRules.AffectsRespondedEffect(definition);
+
+    private bool ResponseCardMayRespondToSelectedEffect(string cardId, L12StackItem target)
+    {
+        if (State.PendingDefense?.SureHit != true
+            || !_catalog.Cards.TryGetValue(cardId, out var definition)
+            || !L12CounterTacticRules.BlocksAttack(definition)) return true;
+
+        // 绝对防御一类混合卡直接响应进攻根项时使用“抵挡”分支；响应链上的
+        // 独立效果时使用“无效该效果”分支。必中只禁止前者，不能封锁后者。
+        return L12CounterTacticRules.AffectsRespondedEffect(definition)
+            && target.Trigger != "opponent-attack";
+    }
 
     private bool IsDisasterAuthorityTiming(L12StackItem top)
     {

@@ -82,6 +82,11 @@ public sealed partial class StackResponseChoiceRegressionTests
         typeof(L12GameEngine).GetMethod("OfferResponse", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(game, null);
     }
 
+    private static IReadOnlyList<string> LegalResponses(L12GameEngine game, int playerIndex, L12StackItem target)
+        => Assert.IsAssignableFrom<IReadOnlyList<string>>(typeof(L12GameEngine)
+            .GetMethod("LegalResponseSources", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(game, [playerIndex, target]));
+
     private static L12Prompt Resolve(L12GameEngine game, string choice)
     {
         var prompt = Assert.Single(game.State.PendingPrompts);
@@ -526,6 +531,92 @@ public sealed partial class StackResponseChoiceRegressionTests
         Assert.DoesNotContain(game.State.EffectStack, item => item.SourceInstanceId == response.InstanceId);
         Assert.Contains(game.State.Events, item => item.Type == "ability-rejected"
             && item.Text.Contains("战斗至黎明", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void SureHitExcludesOnlyResponsesThatWouldBlockTheAttack()
+    {
+        var game = Create();
+        var attack = AddEffect(game, "sure-hit-attack", "opponent-attack");
+        game.State.PendingDefense = new L12PendingDefense
+        {
+            AttackerPlayer = 0,
+            AttackerInstanceId = attack.SourceInstanceId,
+            Target = new L12AttackTarget("legion", "sure-hit-legion-target"),
+            SureHit = true,
+        };
+        var absoluteDefense = Counter(game, 0, "S01-0016");
+        var emptyCity = Counter(game, 1, "S01-0120");
+        var battleUntilDawn = Counter(game, 2, "S01-0020");
+        var mercenaries = Card("S01-0002", "sure-hit-mercenaries", 1);
+        game.State.Players[1].Hand.Add(mercenaries);
+        game.State.Players[1].Hand.Add(Card("S01-0003", "sure-hit-discard", 1));
+        game.State.Players[1].Morale.Add(new L12MoraleCard
+        {
+            CardId = "S01-01C1",
+            InstanceId = "sure-hit-returnable-morale",
+        });
+
+        var responses = LegalResponses(game, 1, attack);
+
+        Assert.DoesNotContain(absoluteDefense.InstanceId, responses);
+        Assert.DoesNotContain(emptyCity.InstanceId, responses);
+        Assert.DoesNotContain(mercenaries.InstanceId, responses);
+        Assert.Contains(battleUntilDawn.InstanceId, responses);
+
+        game = Restore(game);
+        attack = Assert.Single(game.State.EffectStack, item => item.StackItemId == "sure-hit-attack");
+        responses = LegalResponses(game, 1, attack);
+        Assert.DoesNotContain(absoluteDefense.InstanceId, responses);
+        Assert.DoesNotContain(emptyCity.InstanceId, responses);
+        Assert.DoesNotContain(mercenaries.InstanceId, responses);
+        Assert.Contains(battleUntilDawn.InstanceId, responses);
+    }
+
+    [Fact]
+    public void SureHitStillAllowsAbsoluteDefenseToNegateAnIndependentAttackEffect()
+    {
+        var game = Create();
+        var attack = AddEffect(game, "sure-hit-root", "opponent-attack");
+        var attackEffect = AddEffect(game, "sure-hit-triggered-effect", "attack");
+        game.State.PendingDefense = new L12PendingDefense
+        {
+            AttackerPlayer = 0,
+            AttackerInstanceId = attack.SourceInstanceId,
+            Target = new L12AttackTarget("legion", "sure-hit-target"),
+            SureHit = true,
+        };
+        var absoluteDefense = Counter(game, 0, "S01-0016");
+        game.State.Players[1].Hand.Add(Card("S01-0003", "sure-hit-negate-discard", 1));
+
+        Assert.DoesNotContain(absoluteDefense.InstanceId, LegalResponses(game, 1, attack));
+        Assert.Contains(absoluteDefense.InstanceId, LegalResponses(game, 1, attackEffect));
+
+        game = Restore(game);
+        attack = Assert.Single(game.State.EffectStack, item => item.StackItemId == "sure-hit-root");
+        attackEffect = Assert.Single(game.State.EffectStack, item => item.StackItemId == "sure-hit-triggered-effect");
+        Assert.DoesNotContain(absoluteDefense.InstanceId, LegalResponses(game, 1, attack));
+        Assert.Contains(absoluteDefense.InstanceId, LegalResponses(game, 1, attackEffect));
+    }
+
+    [Fact]
+    public void AttackBlockingResponseIdentityMatchesTheCurrentCardPoolAndAtomicCatalog()
+    {
+        var expected = new[] { "S01-0002", "S01-0016", "S01-0120" };
+        var actual = Catalog.Cards.Values
+            .Where(L12CounterTacticRules.BlocksAttack)
+            .Select(card => card.Id)
+            .OrderBy(cardId => cardId, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(expected, actual);
+        Assert.All(expected, cardId => Assert.True(Catalog.AtomicEffects.Find(cardId)!.BlocksAttack));
+        Assert.All(Catalog.AtomicEffects.All.Where(card => !expected.Contains(card.CardId, StringComparer.Ordinal)),
+            card => Assert.False(card.BlocksAttack));
+        Assert.Equal(new[] { "S01-0016", "S01-0120" }, Catalog.Cards.Values
+            .Where(card => L12CounterTacticRules.IsCounterTactic(card) && card.BlocksAttack)
+            .Select(card => card.Id)
+            .OrderBy(cardId => cardId, StringComparer.Ordinal));
     }
 
     [Theory]

@@ -19,6 +19,9 @@ public static class L12CounterTacticRules
     public static bool AffectsRespondedEffect(L12CardDefinition card)
         => IsCounterTactic(card) && card.AffectsRespondedEffect;
 
+    public static bool BlocksAttack(L12CardDefinition card)
+        => card.BlocksAttack;
+
     public static bool IsActiveTactic(L12CardDefinition card)
         => IsTactic(card) && !card.IsCounterTactic;
 

@@ -127,7 +127,10 @@ public sealed record L12AtomicCardEffect(
     int LegacyAtomCount,
     string[] AtomKinds,
     string ReviewStatus = "unreviewed",
-    string ReviewSource = "automatic");
+    string ReviewSource = "automatic")
+{
+    public bool BlocksAttack { get; init; }
+}
 
 public sealed record L12AtomicCoverage(
     int TotalCards,
@@ -465,7 +468,10 @@ public sealed class L12AtomicEffectCatalog
             card.IsCounterTactic, card.ImageUrl,
             text, abilities, status, atomCount, executable, legacy,
             abilities.SelectMany(ability => ability.Atoms).Select(atom => atom.Kind).Distinct(StringComparer.Ordinal).Order().ToArray(),
-            reviewStatus, reviewSource);
+            reviewStatus, reviewSource)
+        {
+            BlocksAttack = card.BlocksAttack,
+        };
     }
 
     private static IReadOnlyList<string> SplitDatabaseAtomicReference(string? reference)

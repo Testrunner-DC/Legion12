@@ -53,6 +53,8 @@ public sealed class L12CardDefinition
     public bool IsCounterTactic { get; init; }
     /// <summary>该反击战术是否直接无效或改变它所响应的效果；用于受保护效果的统一候选判断。</summary>
     public bool AffectsRespondedEffect { get; init; }
+    /// <summary>该卡是否具有“抵挡本次进攻”响应分支；必中攻击不得选择该分支。</summary>
+    public bool BlocksAttack { get; init; }
     public required string Product { get; init; }
     public required string Faction { get; init; }
     public int? Cost { get; init; }
