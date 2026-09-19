@@ -3,6 +3,7 @@ defineOptions({ inheritAttrs: false })
 import { computed, ref, watch } from 'vue'
 import CardTile from '../CardTile.vue'
 import type { Card, PlayerView } from '../types'
+import { isCounterTacticCard } from '../cardPresentation'
 import { blackLotusLogoUrl, factionLogoUrls, godPowerLogoUrl, roundCardUrl } from '../specialAssets'
 import CardImage from '../CardImage.vue'
 
@@ -152,8 +153,7 @@ function canAttack(card: Card, row: number) {
   return Boolean(props.actionsEnabled && !card.cannotAttack && (row === 0 || card.hasRangeBonus) && !card.tapped && !card.hidden && (card.summonRound < (props.round ?? 0) || card.hasCharge))
 }
 function isCounterTactic(card: Card | null) {
-  return card?.cardType === 'counter-tactic'
-    || ['S01-0016', 'S01-0017', 'S01-0018', 'S01-0019', 'S01-0020', 'S01-0021', 'S01-0120', 'S01-0223', 'S01-0224', 'S01-0320', 'S01-0420'].includes(card?.cardId ?? '')
+  return isCounterTacticCard(card)
 }
 function isBattlefieldLegionCard(card: Card) {
   return card.cardType === 'legion' || card.isMasterLegion === true || card.cardId === 'S01-0417' && card.troops > 0

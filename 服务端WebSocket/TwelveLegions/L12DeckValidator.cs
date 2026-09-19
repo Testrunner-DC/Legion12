@@ -3,7 +3,7 @@ namespace TwelveLegions.Server;
 public static class L12DeckValidator
 {
     private static readonly HashSet<string> MainDeckTypes =
-        ["legion", "tactic", "counter-tactic", "artifact"];
+        ["legion", "tactic", "artifact"];
 
     public static bool TryValidatePreset(
         L12Catalog catalog,

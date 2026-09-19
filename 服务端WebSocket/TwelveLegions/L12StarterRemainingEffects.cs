@@ -543,7 +543,7 @@ public sealed partial class L12GameEngine
                 item.Data["telemachusTop"] = string.Join('|', top.Select(card => card.InstanceId));
                 var choices = top.Where(card => card.CardType == "legion"
                             && L12StructuredCardRules.IsRangedLegion(card)
-                        || card.CardType is "tactic" or "counter-tactic"
+                        || card.CardType == "tactic"
                             && L12StructuredCardRules.HasFaction(player, card, "olympus"))
                     .Select(card => card.InstanceId).ToArray();
                 if (choices.Length == 0)
@@ -1462,7 +1462,7 @@ public sealed partial class L12GameEngine
                 item.Data["telemachusTop"] = string.Join('|', top.Select(card => card.InstanceId));
                 var choices = top.Where(card => card.CardType == "legion"
                             && L12StructuredCardRules.IsRangedLegion(card)
-                        || card.CardType is "tactic" or "counter-tactic"
+                        || card.CardType == "tactic"
                             && L12StructuredCardRules.HasFaction(player, card, "olympus"))
                     .Select(card => card.InstanceId).ToArray();
                 if (choices.Length == 0)
@@ -1530,7 +1530,7 @@ public sealed partial class L12GameEngine
                 if (chosenId is not null && topIds.Contains(chosenId, StringComparer.OrdinalIgnoreCase)
                     && player.Library.FirstOrDefault(card => card.InstanceId == chosenId) is { } selected
                     && (selected.CardType == "legion" && L12StructuredCardRules.IsRangedLegion(selected)
-                        || selected.CardType is "tactic" or "counter-tactic"
+                        || selected.CardType == "tactic"
                             && L12StructuredCardRules.HasFaction(player, selected, "olympus")))
                 {
                     _ = PubliclyRevealThenMoveLibraryCardToHandByEffect(player, selected.InstanceId,

@@ -449,7 +449,7 @@ onBeforeUnmount(closeDeckImage)
               <CardImage :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb" :fit="isHorizontalCardType(card.cardType) ? 'contain' : 'cover'"/>
               <b v-if="counts[card.id]" class="copy-count">×{{ counts[card.id] }}</b>
             </button>
-            <div><b>{{ card.nameZh }}</b><small>{{ card.number }} · {{ cardTypeLabel(card.cardType) }}</small></div>
+            <div><b>{{ card.nameZh }}</b><small>{{ card.number }} · {{ cardTypeLabel(card.cardType, card.isCounterTactic) }}</small></div>
             <div class="pool-count-controls">
               <button :disabled="!(counts[card.id] || 0)" aria-label="减少一张" @click.stop="remove(card.id)">−</button>
               <strong>{{ counts[card.id] || 0 }}</strong>

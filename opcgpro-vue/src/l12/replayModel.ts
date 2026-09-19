@@ -4,6 +4,7 @@ export interface ReplayCardDefinition {
   id: string
   nameZh: string
   cardType: string
+  isCounterTactic?: boolean
   faction: string
   imageUrl?: string
   effect?: string
@@ -262,6 +263,7 @@ function publicReplayCards(game: GameState): Card[] {
 function replayDefinitionCard(definition: ReplayCardDefinition, instanceId: string): Card {
   return {
     instanceId, cardId: definition.id, name: definition.nameZh, cardType: definition.cardType,
+    isCounterTactic: definition.isCounterTactic,
     faction: definition.faction, imageUrl: definition.imageUrl, effectText: definition.effect,
     cost: 0, baseTroops: 0, troops: 0, disasterLevel: 0, tapped: false, summonRound: 0,
   }

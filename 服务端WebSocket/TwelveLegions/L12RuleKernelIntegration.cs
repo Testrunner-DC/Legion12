@@ -1498,13 +1498,19 @@ public sealed partial class L12GameEngine
             var artemis = BuildArtemisRangedDeathCandidate(entry.Controller, entry.SourceSnapshot);
             if (artemis is not null) candidates.Add(artemis);
         }
+        var seenCounterTactics = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        candidates = candidates.Where(candidate => !IsCounterTactic(candidate.SourceCardId)
+                || seenCounterTactics.Add($"{candidate.Controller}:{candidate.SourceInstanceId}"))
+            .ToList();
         QueueTriggerCandidates(candidates);
     }
 
     private void QueueTriggerCandidates(IEnumerable<L12TriggerCandidate> candidates)
     {
         var supplied = candidates.ToArray();
-        var materialized = supplied.Where(PrepareOpponentHandDiscardTriggerCandidate)
+        var materialized = supplied
+            .Where(candidate => !CounterTacticsAreDisabled() || !IsCounterTactic(candidate.SourceCardId))
+            .Where(PrepareOpponentHandDiscardTriggerCandidate)
             .Where(PrepareAttackPublicTriggerCandidate)
             .Where(PrepareBatch6JAEnterCandidate)
             .Where(PrepareSimpleCardStateTriggerCandidate)
@@ -1880,6 +1886,12 @@ public sealed partial class L12GameEngine
         while (State.PendingTriggerStackCandidates.Count > 0)
         {
             var candidate = State.PendingTriggerStackCandidates[0];
+            if (CounterTacticsAreDisabled() && IsCounterTactic(candidate.SourceCardId))
+            {
+                CleanupPublicTriggerReservation(candidate);
+                State.PendingTriggerStackCandidates.RemoveAt(0);
+                continue;
+            }
             if (candidate.Data.ContainsKey("declaration-committing")
                 || candidate.Data.ContainsKey(PrideMasterSurchargeCommitBarrier)) return;
             if (State.PendingActivations.Any(activation => activation.TriggerCandidateId == candidate.CandidateId)) return;
@@ -2077,6 +2089,9 @@ public sealed partial class L12GameEngine
             EndTriggeredPaidCostCapture(candidate);
         }
     }
+
+    private bool CounterTacticsAreDisabled()
+        => State.TurnSerial < State.CounterTacticsDisabledUntilTurnSerial;
 
     private void CompleteTriggerDeclarationCore(L12TriggerCandidate candidate, L12PendingActivation activation)
     {

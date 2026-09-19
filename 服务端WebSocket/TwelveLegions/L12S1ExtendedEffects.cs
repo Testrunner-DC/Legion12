@@ -937,7 +937,9 @@ public sealed partial class L12GameEngine
         int? targetPlayerIndex = null)
         => _ = TrySummonFromHand(player, cardId, slotChoice, tapped, targetPlayerIndex);
 
-    private static bool IsCounterTactic(string cardId) => L12CounterTacticRules.Contains(cardId);
+    private bool IsCounterTactic(string cardId)
+        => _catalog.Cards.TryGetValue(cardId, out var definition)
+            && L12CounterTacticRules.IsCounterTactic(definition);
 
     private bool CanUseS1ReactionAtStack(string cardId, int playerIndex, L12StackItem top)
     {

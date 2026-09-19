@@ -824,10 +824,17 @@ const contracts = [
     && centralModeChoiceLabels.get('mode:none') === '不发动'
     && prompt.includes('effect-option-list'), '兰斯洛特等多项选发效果必须在同一发动弹框展示每个实际效果选项及不发动，不能退化成无内容的确认框'],
   [cardPresentation.includes("tactic: '主动战术'")
-    && cardPresentation.includes("'counter-tactic': '反击战术'")
-    && deckConstructionBrowser.includes('cardTypeLabel(selected.cardType)')
-    && adminPage.includes('cardTypeLabel(card.cardType)')
-    && adminPage.includes('cardTypeLabel(selectedEffect.cardType)'), '所有卡牌详情、构筑与后台原子效果清单必须明确区分主动战术和反击战术，不得显示内部英文类型'],
+    && !cardPresentation.includes("'counter-tactic': '反击战术'")
+    && cardPresentation.includes('isCounterTacticCard')
+    && cardPresentation.includes("cardType === 'tactic' && isCounterTactic")
+    && decks.includes('isCounterTactic: authoritative?.isCounterTactic === true')
+    && !decks.includes('S1_COUNTER_TACTICS')
+    && board.includes('isCounterTacticCard(card)') && !board.includes('counterIds = new Set')
+    && playerMat.includes('isCounterTacticCard(card)') && !playerMat.includes("['S01-0016'")
+    && l12PromptSetup.includes('isCounterTactic')
+    && deckConstructionBrowser.includes('cardTypeLabel(selected.cardType, selected.isCounterTactic)')
+    && adminPage.includes('cardTypeLabel(card.cardType, card.isCounterTactic)')
+    && adminPage.includes('cardTypeLabel(selectedEffect.cardType, selectedEffect.isCounterTactic)'), '主动/反击战术必须共用tactic类型并由独立属性贯穿目录、对战、弹框与后台；不得保留卡号清单或显示内部英文类型'],
   [l12PromptSetup.includes('"discard-or-decline", "optional-card", "search"') && l12PromptSetup.includes('data.TryAdd("layout", "single-row")') && l12PromptSetup.includes('data["displayCardIds"]') && prompt.includes("prompt.value?.data?.layout === 'single-row'") && prompt.includes('displayCardIds') && prompt.includes('unavailable'), '弃牌及查看多张选择部分必须使用横向全卡图列表，并将不合法卡灰置不可选'],
   [l12PromptSetup.includes('ExpandGraveyardSelectionDisplay(playerIndex, kind, validChoices, data)')
     && l12PromptSetup.includes('kind.Equals("grave-card"') && l12PromptSetup.includes('SelectMany(player => player.Graveyard)')

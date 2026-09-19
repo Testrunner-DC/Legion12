@@ -3,12 +3,14 @@ import { getEffectiveOperationsPolicy, platformRequest, platformState, type Oper
 import moraleIdentityData from '../../../服务端WebSocket/TwelveLegions/Data/morale-identities.json'
 import cardProductInclusionsData from '../../../服务端WebSocket/TwelveLegions/Data/card-product-inclusions.json'
 import cardArchiveAssetsData from '../../../服务端WebSocket/TwelveLegions/Data/card-archive-assets.json'
+import seasonTwoRulesData from '../../../服务端WebSocket/TwelveLegions/Data/cards.s2.json'
 
 export interface DeckCard {
   id: string
   number: string
   nameZh: string
   cardType: string
+  isCounterTactic?: boolean
   product: string
   faction: string
   imageUrl?: string
@@ -81,7 +83,7 @@ export const L12_DECK_SELECTION_SCOPES = [
   'ranked', 'casual', 'friendly', 'sandbox-player', 'sandbox-opponent',
 ] as const
 export type L12DeckSelectionScope = typeof L12_DECK_SELECTION_SCOPES[number]
-export const MAIN_DECK_TYPES = new Set(['legion', 'tactic', 'counter-tactic', 'artifact'])
+export const MAIN_DECK_TYPES = new Set(['legion', 'tactic', 'artifact'])
 
 /** 费用筛选按规则费用维度处理；没有印刷费用的非主宰卡归入0费，但仍不伪造卡面数字。 */
 export function filterableCardCost(card: Pick<DeckCard, 'cardType' | 'cost'>): number | null {
@@ -108,10 +110,9 @@ interface CardArchiveAsset {
   rarity: string
   sourceArchiveName: string
 }
-const S1_COUNTER_TACTICS = new Set([
-  'S01-0016', 'S01-0017', 'S01-0018', 'S01-0019', 'S01-0020', 'S01-0021',
-  'S01-0120', 'S01-0223', 'S01-0224', 'S01-0320', 'S01-0420',
-])
+const seasonTwoIdentityById = new Map((seasonTwoRulesData as Array<{
+  id: string; cardType: string; isCounterTactic?: boolean
+}>).map(card => [card.id, card]))
 
 const lookupFactionMap: Record<string, string> = {
   通用: 'universal', 天廷: 'tianting', 高天原: 'gaotianyuan', 阿斯加德: 'asgard',
@@ -167,11 +168,13 @@ function normalizeLookupRarity(value: string | null | undefined) {
 }
 
 function lookupDeckCard(card: LookupCard): DeckCard {
+  const authoritative = seasonTwoIdentityById.get(card.cardNo)
   return normalizeCardDimensions(normalizeMoraleCatalogCard({
     id: card.cardNo,
     number: card.cardNo,
     nameZh: card.name,
-    cardType: normalizeLookupCardType(card.type, card.name),
+    cardType: authoritative?.cardType ?? normalizeLookupCardType(card.type, card.name),
+    isCounterTactic: authoritative?.isCounterTactic === true,
     product: card.cardNo.split('-')[0] || 'UNKNOWN',
     faction: lookupFactionMap[card.faction] ?? card.faction,
     imageUrl: card.image ? `https://twelve-legions-card-lookup.pages.dev${card.image}` : undefined,
@@ -297,10 +300,7 @@ export function loadDeckCatalog(): Promise<DeckCard[]> {
     fetch('/data/l12/cards.st.json', { cache: 'no-store' }),
   ]).then(async ([s1Response, lookupResponse, stResponse]) => {
     if (!s1Response.ok || !lookupResponse.ok || !stResponse.ok) throw new Error('卡牌数据加载失败')
-    const seasonOneRaw: DeckCard[] = await s1Response.json()
-    const seasonOne = seasonOneRaw.map(card => S1_COUNTER_TACTICS.has(card.id)
-      ? { ...card, cardType: 'counter-tactic' }
-      : card)
+    const seasonOne: DeckCard[] = await s1Response.json()
     const lookup: LookupCard[] = await lookupResponse.json()
     const seasonTwo = lookup.filter(card => card.cardNo?.startsWith('S02-')).map(lookupDeckCard)
     const starterProducts: DeckCard[] = await stResponse.json()

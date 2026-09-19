@@ -14,7 +14,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', keydown))
     <section class="catalog-detail-dialog" role="dialog" aria-modal="true" :aria-label="card.nameZh">
       <header><h2>{{ card.nameZh }}</h2><button aria-label="关闭卡牌详情" autofocus @click="emit('close')">×</button></header>
       <div class="catalog-detail-body"><div class="catalog-detail-image" :class="{ horizontal: isHorizontalCardType(card.cardType) }"><CardImage :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="detail" native-orientation/></div>
-        <div><p>{{ card.number }} · {{ cardTypeLabel(card.cardType) }}</p><dl>
+        <div><p>{{ card.number }} · {{ cardTypeLabel(card.cardType, card.isCounterTactic) }}</p><dl>
           <template v-if="card.cost != null"><dt>费用</dt><dd>{{ card.cost }}</dd></template>
           <template v-if="card.troops != null"><dt>兵力</dt><dd>{{ card.troops }}</dd></template>
           <template v-if="card.hp != null"><dt>血量</dt><dd>{{ card.hp }}</dd></template>

@@ -390,7 +390,7 @@ onMounted(() => { void initializeAdminPage() })
             <div class="effect-scroll" tabindex="0" aria-label="全卡效能力清单，可上下滚动">
               <div class="effect-table-head"><span>卡牌</span><span>组合</span><span>迁移状态</span></div>
               <button v-for="card in effectCards" :key="card.cardId" class="effect-row" :class="{ selected: selectedEffect?.cardId === card.cardId }" @click="selectEffect(card)">
-                <span class="effect-identity"><CardImage :card-id="card.cardId" :legacy-url="card.imageUrl" :alt="card.name" intent="thumb" fit="cover" object-position="center 30%"/><span><code>{{ card.cardId }}</code><b>{{ card.name }}</b><small>{{ card.faction }} · {{ cardTypeLabel(card.cardType) }}</small></span></span>
+                <span class="effect-identity"><CardImage :card-id="card.cardId" :legacy-url="card.imageUrl" :alt="card.name" intent="thumb" fit="cover" object-position="center 30%"/><span><code>{{ card.cardId }}</code><b>{{ card.name }}</b><small>{{ card.faction }} · {{ cardTypeLabel(card.cardType, card.isCounterTactic) }}</small></span></span>
                 <span class="effect-count"><b>{{ card.abilities.length }}</b> 能力 / <b>{{ card.atomCount }}</b> 原子<small v-if="card.legacyAtomCount">{{ card.legacyAtomCount }} 个兜底节点</small><em class="review-pill" :data-review="card.reviewStatus">{{ reviewLabel(card.reviewStatus) }}</em></span>
                 <span class="status-pill" :data-status="card.migrationStatus">{{ statusLabel(card.migrationStatus) }}</span>
               </button>
@@ -400,7 +400,7 @@ onMounted(() => { void initializeAdminPage() })
           </section>
           <section class="panel effect-detail">
             <template v-if="selectedEffect">
-              <header><div><small>{{ selectedEffect.cardId }} · {{ selectedEffect.product }}</small><h2>{{ selectedEffect.name }}</h2><p>{{ selectedEffect.faction }} · {{ cardTypeLabel(selectedEffect.cardType) }}</p></div><span class="effect-header-status"><em class="review-pill" :data-review="selectedEffect.reviewStatus">{{ reviewLabel(selectedEffect.reviewStatus) }}</em><span class="status-pill" :data-status="selectedEffect.migrationStatus">{{ statusLabel(selectedEffect.migrationStatus) }}</span></span></header>
+              <header><div><small>{{ selectedEffect.cardId }} · {{ selectedEffect.product }}</small><h2>{{ selectedEffect.name }}</h2><p>{{ selectedEffect.faction }} · {{ cardTypeLabel(selectedEffect.cardType, selectedEffect.isCounterTactic) }}</p></div><span class="effect-header-status"><em class="review-pill" :data-review="selectedEffect.reviewStatus">{{ reviewLabel(selectedEffect.reviewStatus) }}</em><span class="status-pill" :data-status="selectedEffect.migrationStatus">{{ statusLabel(selectedEffect.migrationStatus) }}</span></span></header>
               <div class="original-text"><b>卡面原文</b><p class="l12-effect-body">{{ selectedEffect.effectText || '无效果文本' }}</p></div>
               <article v-for="ability in selectedEffect.abilities" :key="ability.abilityId" class="ability-card">
                 <header><span><small>ABILITY {{ ability.sequence }}</small><b>{{ ability.trigger }}</b><em class="execution-model">{{ ability.executionModel }}</em></span><span class="effect-header-status"><em class="review-pill" :data-review="ability.reviewStatus">{{ reviewLabel(ability.reviewStatus) }}</em><span class="status-pill" :data-status="ability.migrationStatus">{{ statusLabel(ability.migrationStatus) }}</span></span></header>

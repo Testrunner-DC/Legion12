@@ -49,6 +49,8 @@ public sealed class L12CardDefinition
     public required string NameZh { get; init; }
     public string? ImageUrl { get; init; }
     public required string CardType { get; init; }
+    /// <summary>战术的独立反击身份；主动战术为 tactic 且本值为 false。</summary>
+    public bool IsCounterTactic { get; init; }
     public required string Product { get; init; }
     public required string Faction { get; init; }
     public int? Cost { get; init; }
@@ -106,6 +108,7 @@ public sealed class L12CardInstance
     public required string CardId { get; init; }
     public required string Name { get; init; }
     public required string CardType { get; init; }
+    public bool IsCounterTactic { get; init; }
     public required string Faction { get; init; }
     public string? ImageUrl { get; set; }
     public int Cost { get; init; }

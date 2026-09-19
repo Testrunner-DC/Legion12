@@ -1016,6 +1016,7 @@ public sealed partial class L12GameEngine
             CardId = card.Id,
             Name = card.NameZh,
             CardType = card.CardType,
+            IsCounterTactic = card.IsCounterTactic,
             Faction = card.Faction,
             ImageUrl = card.ImageUrl,
             EffectText = card.Effect,

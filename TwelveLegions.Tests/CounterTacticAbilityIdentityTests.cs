@@ -1,4 +1,3 @@
-using System.Reflection;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -10,9 +9,8 @@ public sealed class CounterTacticAbilityIdentityTests
 
     public static IEnumerable<object[]> S1Counters()
     {
-        var isCounter = typeof(L12GameEngine).GetMethod("IsCounterTactic", BindingFlags.NonPublic | BindingFlags.Static)!;
         return Catalog.Cards.Values.Where(card => card.Id.StartsWith("S01-", StringComparison.Ordinal)
-                && (bool)isCounter.Invoke(null, [card.Id])!)
+                && card.IsCounterTactic)
             .OrderBy(card => card.Id).Select(card => new object[] { card.Id });
     }
 

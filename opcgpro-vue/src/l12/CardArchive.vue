@@ -260,7 +260,7 @@ function resetFilters() {
                 <b class="archive-version-count">{{ displayedVersionIndex(entry) + 1 }}/{{ entry.versions.length }}</b>
               </template>
             </div>
-            <span>{{ displayedVersion(entry).nameZh }}</span><small>{{ displayCardNumber(displayedVersion(entry)) }} · {{ cardTypeLabel(displayedVersion(entry).cardType) }}</small>
+            <span>{{ displayedVersion(entry).nameZh }}</span><small>{{ displayCardNumber(displayedVersion(entry)) }} · {{ cardTypeLabel(displayedVersion(entry).cardType, displayedVersion(entry).isCounterTactic) }}</small>
           </article>
           <div v-if="!filteredCatalog.length" class="archive-empty">没有符合条件的卡牌。</div>
         </template>
@@ -278,7 +278,7 @@ function resetFilters() {
               <b v-if="card.disasterLevel" class="archive-disaster">{{ card.disasterLevel }}</b>
               <b v-if="card.troops" class="archive-troops">{{ card.troops }}</b>
             </div>
-            <span>{{ card.nameZh }}</span><small>{{ displayCardNumber(card) }} · {{ cardTypeLabel(card.cardType) }}</small>
+            <span>{{ card.nameZh }}</span><small>{{ displayCardNumber(card) }} · {{ cardTypeLabel(card.cardType, card.isCounterTactic) }}</small>
           </article>
           <div v-if="!filteredGallery.length" class="archive-empty">没有符合条件的展示版本。</div>
         </template>

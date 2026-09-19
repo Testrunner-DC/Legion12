@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ActionEvent, Card, DisasterCardView, GameState, Phase } from '../types'
-import { isHorizontalCardType } from '../cardPresentation'
+import { isCounterTacticCard, isHorizontalCardType } from '../cardPresentation'
 import { blackLotusLogoUrl, destructionRoundBackUrl, disasterRoundUrl, factionLogoUrls, godPowerLogoUrl } from '../specialAssets'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
@@ -126,13 +126,7 @@ const activeMorale = computed(() =>
   + (props.game.activePlayer === me.value.playerIndex
     ? me.value.field.flat().filter(card => card?.cardId === 'S01-0212' && !card.tapped && !card.hidden).length : 0)),
 )
-const counterIds = new Set([
-  'S01-0016', 'S01-0017', 'S01-0018', 'S01-0019', 'S01-0020', 'S01-0021',
-  'S01-0120', 'S01-0223', 'S01-0224', 'S01-0320', 'S01-0420',
-  'S02-0015', 'S02-0016', 'S02-0017', 'S02-0018',
-  'S02-0523',
-])
-const isCounter = (card?: Card | null) => Boolean(card && (card.cardType === 'counter-tactic' || counterIds.has(card.cardId)))
+const isCounter = (card?: Card | null) => isCounterTacticCard(card)
 const isInfiltrator = (card?: Card | null) => card?.cardId === 'S01-0004'
 const promotionFoundationIdsFor = (card: Card) => me.value.promotionOptions?.[card.instanceId] ?? []
 const canPromote = (card: Card) => promotionFoundationIdsFor(card).length > 0
@@ -309,6 +303,7 @@ const boardSlotPreview = computed<Card | null>(() => {
     cardId: prompt.data?.[`${id}:cardId`] ?? '',
     name: prompt.data?.[id] ?? '展示牌',
     cardType: prompt.data?.[`${id}:cardType`] ?? '',
+    isCounterTactic: prompt.data?.[`${id}:isCounterTactic`] === 'true',
     faction: prompt.data?.[`${id}:faction`] ?? '',
     traits: prompt.data?.[`${id}:traits`]?.split('|').filter(Boolean) ?? [],
     profession: prompt.data?.[`${id}:profession`] || undefined,

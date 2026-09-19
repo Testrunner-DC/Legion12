@@ -227,7 +227,7 @@ public sealed partial class PlatformStoreTests
                 new L12AtomicAbility("TEST-001:A2", "TEST-001", 2, "能力二", "enter", [],
                     "legacy-backed", true, "test", 1m),
             };
-            var effect = new L12AtomicCardEffect("TEST-001", "测试卡", "S02", "neutral", "legion", null,
+            var effect = new L12AtomicCardEffect("TEST-001", "测试卡", "S02", "neutral", "legion", false, null,
                 "能力一。能力二。", abilities, "legacy-backed", 0, 0, 0, []);
 
             store.SaveEffectReview(admin, effect.CardId, abilities[0].AbilityId, "confirmed", "只确认能力一");
@@ -265,7 +265,7 @@ public sealed partial class PlatformStoreTests
             store.SaveEffectReview(admin, "TEST-002", legacy.AbilityId, "confirmed", "旧序号记录");
 
             var stable = L12AtomicAbilityIdentity.Assign("TEST-002", legacy, 1);
-            var effect = new L12AtomicCardEffect("TEST-002", "测试卡", "S02", "neutral", "legion", null,
+            var effect = new L12AtomicCardEffect("TEST-002", "测试卡", "S02", "neutral", "legion", false, null,
                 legacy.Text, [stable], "legacy-backed", 0, 0, 0, []);
             Assert.Equal("confirmed", store.ApplyEffectReviews(effect).Abilities[0].ReviewStatus);
 

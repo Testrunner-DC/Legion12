@@ -903,7 +903,7 @@ public sealed partial class L12GameEngine
         {
             if (player.SpecialZones.Runes < 2) return CommandResult.Reject("需要消耗2符文");
             var legions = player.Graveyard.Where(card => card.CardType == "legion").Select(card => card.InstanceId).ToList();
-            var tactics = player.Graveyard.Where(card => card.CardType is "tactic" or "counter-tactic").Select(card => card.InstanceId).ToList();
+            var tactics = player.Graveyard.Where(card => card.CardType == "tactic").Select(card => card.InstanceId).ToList();
             if (legions.Count == 0 || tactics.Count == 0) return CommandResult.Reject("墓地中需要同时存在军团和战术");
             return BeginPendingActivationSequence(playerIndex, source, ability,
             [
@@ -1192,17 +1192,19 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[defeatedController];
         var onceKey = L12MasterTriggeredUsageRules.Key("nephthysScarab", player.PlayerIndex, State.TurnSerial);
+        var pendingKey = $"{onceKey}:pending";
         if (State.ActivePlayer == defeatedController || player.MasterId != "S02-02M1"
             || player.UsedAbilities.Contains(onceKey) || defeated.Faction != "taiyangcheng"
             || defeated.CurrentCost < 2 || !player.Graveyard.Any(card => card.CardId == "S02-0201")
             || !EmptySlots(player).Any())
             return null;
+        if (!player.UsedAbilities.Add(pendingKey)) return null;
         var master = CreateCard(player.MasterId, $"master-{defeatedController}");
         return CreateTriggerCandidate(defeatedController, master, "nephthys-own-death", "【我方军团阵亡时】效果",
             new Dictionary<string, string>
             {
                 ["ability"] = "nephthysScarabEntry", ["defeated"] = defeated.InstanceId,
-                ["onceKey"] = onceKey,
+                ["onceKey"] = onceKey, ["cleanupReservation"] = pendingKey,
             });
     }
 
@@ -1274,7 +1276,7 @@ public sealed partial class L12GameEngine
             var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
             if (declared.Length != 2 || declared[0] == declared[1]) return CommandResult.Reject("需要分别选择1张军团和1张战术");
             var legion = player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[0] && card.CardType == "legion");
-            var tactic = player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1] && card.CardType is "tactic" or "counter-tactic");
+            var tactic = player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1] && card.CardType == "tactic");
             if (legion is null || tactic is null) return CommandResult.Reject("选择的墓地卡牌已不合法");
             if (!L12S2ZoneOps.SpendRunes(player, 2)) return CommandResult.Reject("需要消耗2符文");
             RecordLimitedActiveAbilityUse(player, source, ability);

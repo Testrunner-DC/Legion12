@@ -34,7 +34,7 @@ function hasCostDimension(card: DeckCard) {
     <h2 :id="titleId">{{ card.nameZh }}</h2>
     <div class="archive-tags">
       <span v-for="trait in card.traits" :key="trait">{{ trait }}</span>
-      <span>{{ cardTypeLabel(card.cardType) }}</span>
+      <span>{{ cardTypeLabel(card.cardType, card.isCounterTactic) }}</span>
       <span v-if="card.profession">{{ card.profession }}</span>
       <span v-if="card.rarity">{{ card.rarity }}</span>
     </div>

@@ -4,7 +4,7 @@ const TYPE_PRIORITY: Record<string, number> = {
   legion: 0,
   artifact: 1,
   tactic: 2,
-  'counter-tactic': 2,
+
 }
 
 /**

@@ -117,6 +117,7 @@ public sealed record L12AtomicCardEffect(
     string Product,
     string Faction,
     string CardType,
+    bool IsCounterTactic,
     string? ImageUrl,
     string EffectText,
     IReadOnlyList<L12AtomicAbility> Abilities,
@@ -438,7 +439,7 @@ public sealed class L12AtomicEffectCatalog
                         ReviewStatus = "human-assisted",
                         ReviewSource = "product-database",
                     }).ToList()
-                    : L12CounterTacticRules.FallbackTrigger(card.Id) is { } responseTrigger
+                    : L12CounterTacticRules.FallbackTrigger(card) is { } responseTrigger
                         ? [BuildAbility(card, text, 1, responseTrigger)]
                         : BuildFallbackAbilities(card, text);
         foreach (var overlay in L12StructuredCardRules.GetCombatOverlayAbilities(card.Id))
@@ -460,7 +461,8 @@ public sealed class L12AtomicEffectCatalog
             : "partially-atomized";
         var reviewStatus = L12EffectReviewAggregation.CardStatus(abilities);
         var reviewSource = L12EffectReviewAggregation.CardSource(abilities);
-        return new L12AtomicCardEffect(card.Id, card.NameZh, card.Product, card.Faction, card.CardType, card.ImageUrl,
+        return new L12AtomicCardEffect(card.Id, card.NameZh, card.Product, card.Faction, card.CardType,
+            card.IsCounterTactic, card.ImageUrl,
             text, abilities, status, atomCount, executable, legacy,
             abilities.SelectMany(ability => ability.Atoms).Select(atom => atom.Kind).Distinct(StringComparer.Ordinal).Order().ToArray(),
             reviewStatus, reviewSource);

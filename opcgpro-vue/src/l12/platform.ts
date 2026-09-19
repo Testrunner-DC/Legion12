@@ -81,7 +81,7 @@ export interface AtomicAbility {
   presentations?: EffectPresentationScene[]
 }
 export interface AtomicCardEffect {
-  cardId: string; name: string; product: string; faction: string; cardType: string; imageUrl?: string; effectText: string
+  cardId: string; name: string; product: string; faction: string; cardType: string; isCounterTactic: boolean; imageUrl?: string; effectText: string
   abilities: AtomicAbility[]; migrationStatus: string; atomCount: number; executableAtomCount: number; legacyAtomCount: number; atomKinds: string[]
   reviewStatus: 'unreviewed' | 'human-assisted' | 'confirmed' | 'rejected'; reviewSource: string
 }

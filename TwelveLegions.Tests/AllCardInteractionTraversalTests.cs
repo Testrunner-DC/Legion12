@@ -69,8 +69,8 @@ public sealed class AllCardInteractionTraversalTests
         {
             "legion" or "token" => PlayFromHand(game, player, source, row: 0, slot: 0),
             "artifact" => PlayFromHand(game, player, source),
+            "tactic" when definition.IsCounterTactic => CoverCounterTactic(game, player, source),
             "tactic" => PlayFromHand(game, player, source),
-            "counter-tactic" => CoverCounterTactic(game, player, source),
             "destruction" => PutDisasterIntoAuthoritativeDeck(game, source),
             "trial" => PutTrialIntoSpecialZone(player, source),
             "rune" => PutRuneIntoResourceZone(player, source),

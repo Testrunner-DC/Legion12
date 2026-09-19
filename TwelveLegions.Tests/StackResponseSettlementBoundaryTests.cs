@@ -149,9 +149,7 @@ public sealed partial class StackResponseChoiceRegressionTests
     [Fact]
     public void EveryConditionalDrawCounterUsesTheReviewedPair()
     {
-        var isCounter = typeof(L12GameEngine).GetMethod("IsCounterTactic",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-        var matches = Catalog.Cards.Values.Where(card => (bool)isCounter.Invoke(null, [card.Id])!
+        var matches = Catalog.Cards.Values.Where(card => card.IsCounterTactic
             && System.Text.RegularExpressions.Regex.IsMatch(card.Effect ?? string.Empty, "若.*可抽取1张牌"))
             .Select(card => card.Id).Order(StringComparer.Ordinal).ToArray();
         Assert.Equal(new[] { "S01-0020", "S01-0120" }, matches);

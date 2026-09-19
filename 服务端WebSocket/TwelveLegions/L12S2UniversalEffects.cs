@@ -366,7 +366,7 @@ public sealed partial class L12GameEngine
     // back-row slots before the response window. Settlement always uses the same
     // current-state check, never substitutes another hand card, and lets a valid
     // independently declared counter continue when its sibling has gone stale.
-    private static bool IsCounterDeploymentCandidate(L12CardInstance candidate, string? sourceInstanceId = null)
+    private bool IsCounterDeploymentCandidate(L12CardInstance candidate, string? sourceInstanceId = null)
         => candidate.InstanceId != sourceInstanceId && IsCounterTactic(candidate.CardId);
 
     private int SetDeclaredCounterTactics(L12StackItem item, IReadOnlyList<string> declaredCards,

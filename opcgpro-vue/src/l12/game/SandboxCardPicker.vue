@@ -71,7 +71,7 @@ const filtered = computed(() => {
         <div v-else class="card-grid">
           <article v-for="card in filtered" :key="card.id" class="picker-card" :class="{ horizontal: isHorizontalCardType(card.cardType) }">
             <button class="picker-image" :aria-label="`查看${card.nameZh}详情`" @click="detailCard = card"><CardImage :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb" native-orientation/></button>
-            <b>{{ card.nameZh }}</b><small>{{ card.number }} · {{ cardTypeLabel(card.cardType) }}</small>
+            <b>{{ card.nameZh }}</b><small>{{ card.number }} · {{ cardTypeLabel(card.cardType, card.isCounterTactic) }}</small>
             <div class="picker-card-actions"><button @click="detailCard = card">详情</button><button @click="emit('select', card)">选择</button></div>
           </article>
           <p v-if="!filtered.length" class="state">没有符合条件的卡片</p>

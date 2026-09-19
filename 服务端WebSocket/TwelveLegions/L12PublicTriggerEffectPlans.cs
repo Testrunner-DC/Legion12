@@ -1502,9 +1502,11 @@ public sealed partial class L12GameEngine
         else if (key.Item1 == "S02-02M1")
         {
             var onceKey = L12MasterTriggeredUsageRules.Key("nephthysScarab", player.PlayerIndex, State.TurnSerial);
+            var pendingKey = candidate.Data.GetValueOrDefault("cleanupReservation") ?? string.Empty;
             var slot = activation.DeclaredValues.GetValueOrDefault("entrySlot", []).SingleOrDefault();
             if (State.ActivePlayer == candidate.Controller || player.MasterId != "S02-02M1"
-                || player.UsedAbilities.Contains(onceKey) || entryCard is null
+                || player.UsedAbilities.Contains(onceKey) || string.IsNullOrWhiteSpace(pendingKey)
+                || !player.UsedAbilities.Contains(pendingKey) || entryCard is null
                 || !player.Graveyard.Any(card => card.InstanceId == entryCard
                     && card.CardId == PublicTriggerScarabCard)
                 || slot is null || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))

@@ -32,6 +32,7 @@ export interface Card {
   cardId: string
   name: string
   cardType: string
+  isCounterTactic?: boolean
   faction: string
   imageUrl?: string
   effectText?: string

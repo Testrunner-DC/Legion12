@@ -542,6 +542,7 @@ public sealed partial class L12GameEngine
         if (!string.IsNullOrWhiteSpace(card.EffectText)) data.TryAdd($"{id}:effect", card.EffectText);
         data.TryAdd($"{id}:cardId", card.CardId);
         data.TryAdd($"{id}:cardType", card.CardType);
+        data.TryAdd($"{id}:isCounterTactic", card.IsCounterTactic ? "true" : "false");
         data.TryAdd($"{id}:faction", card.Faction);
         if (PromptCardZone(card) is { } zone) data.TryAdd($"{id}:zone", zone);
         if (card.Traits.Count > 0) data.TryAdd($"{id}:traits", string.Join('|', card.Traits));
@@ -1461,7 +1462,7 @@ public sealed partial class L12GameEngine
         var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
         var responseCards = player.Field[1].Where(card => card is { CardType: "tactic" }
             && card.CannotRespondUntilRound < State.Round).Cast<L12CardInstance>().ToArray();
-        if (State.TurnSerial < State.CounterTacticsDisabledUntilTurnSerial || protectedFromCounters) responseCards = [];
+        if (CounterTacticsAreDisabled() || protectedFromCounters) responseCards = [];
         if (disasterAuthorityTiming)
             responseCards = responseCards.Where(card => !IsCounterTactic(card.CardId)).ToArray();
         foreach (var card in responseCards)
@@ -1569,7 +1570,7 @@ public sealed partial class L12GameEngine
             card.Faction == "universal" || card.Faction == player.Faction);
 
         // 盖伏区数量和禁用状态均为公开场面信息；牌的真实身份不是。同回合盖伏可以立即响应。
-        var hasEligibleCoveredCard = State.TurnSerial >= State.CounterTacticsDisabledUntilTurnSerial
+        var hasEligibleCoveredCard = !CounterTacticsAreDisabled()
             && player.Field[1].Any(card => card is { Hidden: true, CardType: "tactic" }
                 && card.CannotRespondUntilRound < State.Round);
         if (hasEligibleCoveredCard && pool.Any(card => IsPoolCounterResponseAtTiming(card.Id, playerIndex, top)))
