@@ -618,13 +618,8 @@ public sealed partial class L12GameEngine
         if (counterTactic) return card.CurrentCost;
         var modifier = card.CostModifier;
         if (card.CardType == "tactic" && !IsCounterTactic(card.CardId)) modifier += player.NextActiveTacticSurcharge;
-        if (card.CardId is "S01-0104" or "S01-0107" or "S01-0114"
-            && State.Players[playerIndex].Morale.Count < State.Players[1 - playerIndex].Morale.Count)
-            modifier--;
+        modifier += PrintedEntryCostModifier(playerIndex, card);
         if (card.CardId == "S01-0202" && !PublicLegions(player).Any(target => target.CardId == "S01-0212")) modifier -= 2;
-        if (card.CardId == "S01-0301") modifier -= CountGraveFactionLegions(player, "asgard") / 4;
-        if (card.CardId == "S01-0302") modifier -= PublicLegions(player).Count();
-        if (card.CardId is "S01-0305" or "S01-0306" && player.Hp <= 6) modifier--;
         if (card.CardId == "S02-0202") modifier -= player.TombNamedLegionsLeftThisTurn;
         if (card.CardId == "S02-0203" && !PublicLegions(player).Any(target => target.CardId == "S01-0212")) modifier--;
         modifier += L12StructuredCardRules.HandPlayCostModifier(player, card);
@@ -648,6 +643,23 @@ public sealed partial class L12GameEngine
         if (card.CardId == "S02-0302") modifier -= Math.Clamp(rolloReturnCount, 0, 8) / 2;
         if (card.CardId == "ST03-01" && useSigurdDiscount) modifier--;
         return Math.Max(0, card.Cost + modifier);
+    }
+
+    private int PrintedEntryCostModifier(int playerIndex, L12CardInstance card)
+    {
+        var rule = L12StructuredCardSemantics.PrintedEntryCostRule(card.CardId);
+        if (rule is null) return 0;
+        var player = State.Players[playerIndex];
+        return rule.Condition switch
+        {
+            "controller-morale-less-than-opponent" => player.Morale.Count < State.Players[1 - playerIndex].Morale.Count
+                ? rule.Adjustment : 0,
+            "grave-faction-legions-per-threshold" when rule.Threshold > 0 && rule.Faction is not null
+                => CountGraveFactionLegions(player, rule.Faction) / rule.Threshold * rule.Adjustment,
+            "friendly-field-legion-count" => PublicLegions(player).Count() * rule.Adjustment,
+            "controller-hp-at-most" => player.Hp <= rule.Threshold ? rule.Adjustment : 0,
+            _ => 0,
+        };
     }
 
     private CommandResult SetCounterTactic(int playerIndex, L12CardInstance card, L12Command command)

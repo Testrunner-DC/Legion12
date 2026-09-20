@@ -419,6 +419,37 @@ internal static class EffectLifecycleProfiles
             && rules.Any(atom => atom.Parameters.Keys.Any(ReviewedContinuousCombatRuleParameters.Contains));
     }
 
+    internal static readonly string[] PrintedEntryCostAbilityIds =
+    [
+        "S01-0104:ability:static:a91d7d481db612a9",
+        "S01-0114:ability:static:a91d7d481db612a9",
+        "S01-0301:ability:static:71dd875155781eb0",
+        "S01-0302:ability:static:acc29b0ca499d087",
+        "S01-0305:ability:static:9ed1ca8df2e5f029",
+        "S01-0306:ability:static:9ed1ca8df2e5f029",
+    ];
+
+    private static readonly L12LifecycleProfile PrintedEntryCost =
+        new("hand-play:printed-entry-cost-condition",
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["definition"] = "L12StructuredCardSemantics.PrintedEntryCostRule",
+                ["condition-and-calculation"] = "PrintedEntryCostModifier",
+                ["combined-play-cost"] = "GetPlayCostWithSigurdDiscount",
+                ["button-and-snapshot"] = "SnapshotHand",
+                ["resource-payment"] = "EnsurePlayResourcePaymentChoice",
+            },
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["no-target"] = "本族只按当前公开状态修改手牌打出费用，不选择效果对象。",
+                ["negated"] = "印刷持续减费在支付前参与实际费用计算，不独立入栈，不能作为一次效果被无效。",
+                ["target-invalidated"] = "没有效果目标；资源支付提交时重新计算当前状态下的实际费用。",
+                ["multi-target-applicability"] = "一次只计算当前待打出手牌实例的费用。",
+            })
+        {
+            AdditionalChecks = ["condition-false", "zero-floor", "payment-cancel", "reconnect-payment", "display-and-payment-parity"],
+        };
+
     private static void ValidateOwners(L12LifecycleProfile profile)
     {
         foreach (var owner in profile.RuntimeOwners.Values)
@@ -448,6 +479,7 @@ internal static class EffectLifecycleProfiles
         ValidateOwners(SelfDamageEntryDiscount);
         foreach (var profile in CombatKeywordProfiles.Values) ValidateOwners(profile);
         ValidateOwners(StructuredContinuousCombatRule);
+        ValidateOwners(PrintedEntryCost);
         var bindings = new Dictionary<string, L12LifecycleProfile>(StringComparer.Ordinal);
         if (!abilities.TryGetValue(DesertHandSummonAbilityId, out var desertHandSummon)
             || desertHandSummon.CardId != "S02-0207" || desertHandSummon.Trigger != "play"
@@ -563,6 +595,22 @@ internal static class EffectLifecycleProfiles
             .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);
         if (!structuredContinuousCombatRules.SetEquals(StructuredContinuousCombatRuleAbilityIds))
             throw new InvalidOperationException("Structured continuous combat-rule family changed; review its per-ability bindings.");
+        foreach (var id in PrintedEntryCostAbilityIds)
+        {
+            if (!abilities.TryGetValue(id, out var ability) || ability.ExecutionModel != "continuous"
+                || L12StructuredCardSemantics.PrintedEntryCostRule(ability.CardId) is null)
+                throw new InvalidOperationException($"Stale reviewed printed entry-cost rule: {id}");
+            bindings.Add(id, PrintedEntryCost);
+        }
+        var reviewedPrintedEntryCostCards = PrintedEntryCostAbilityIds
+            .Select(id => id[..id.IndexOf(":ability:", StringComparison.Ordinal)])
+            .Append("S01-0107").ToHashSet(StringComparer.Ordinal);
+        var actualPrintedEntryCostCards = abilities.Values.Select(ability => ability.CardId)
+            .Distinct(StringComparer.Ordinal)
+            .Where(cardId => L12StructuredCardSemantics.PrintedEntryCostRule(cardId) is not null)
+            .ToHashSet(StringComparer.Ordinal);
+        if (!actualPrintedEntryCostCards.SetEquals(reviewedPrintedEntryCostCards))
+            throw new InvalidOperationException("Printed entry-cost rule family changed; review its per-ability bindings.");
         return bindings;
     }
 }

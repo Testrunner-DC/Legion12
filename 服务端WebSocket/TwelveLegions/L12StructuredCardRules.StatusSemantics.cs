@@ -1,6 +1,8 @@
 namespace TwelveLegions.Server;
 
 public sealed record L12ExtendedRangeRule(string Text, string CostText, int ConsumeMorale, int ReturnMorale, bool AllowsMaster);
+public sealed record L12PrintedEntryCostRule(string Condition, int Adjustment, int Threshold = 0,
+    string? Faction = null);
 
 /// <summary>
 /// Runtime identity predicates backed by the structured card rule layer.
@@ -24,6 +26,17 @@ public static class L12StructuredCardSemantics
         ["S01-0003"] = new("位于后排 可消耗2士气：此军团本回合可进攻对方后排和主宰。", "消耗2士气", 2, 0, true),
         ["S01-0113"] = new("「位于后排」可返还1士气：此军团本回合可进攻对方后排。", "返还1士气", 0, 1, false),
     };
+    private static readonly Dictionary<string, L12PrintedEntryCostRule> PrintedEntryCostRules =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["S01-0104"] = new("controller-morale-less-than-opponent", -1),
+            ["S01-0107"] = new("controller-morale-less-than-opponent", -1),
+            ["S01-0114"] = new("controller-morale-less-than-opponent", -1),
+            ["S01-0301"] = new("grave-faction-legions-per-threshold", -1, 4, "asgard"),
+            ["S01-0302"] = new("friendly-field-legion-count", -1),
+            ["S01-0305"] = new("controller-hp-at-most", -1, 6),
+            ["S01-0306"] = new("controller-hp-at-most", -1, 6),
+        };
     private static readonly HashSet<string> AttachedStrongAttackCards = new(StringComparer.OrdinalIgnoreCase)
     {
         KingsSwordCardId,
@@ -50,6 +63,9 @@ public static class L12StructuredCardSemantics
 
     public static L12ExtendedRangeRule? ExtendedRangeRule(string? cardId)
         => cardId is null ? null : ExtendedRangeRules.GetValueOrDefault(cardId);
+
+    public static L12PrintedEntryCostRule? PrintedEntryCostRule(string? cardId)
+        => cardId is null ? null : PrintedEntryCostRules.GetValueOrDefault(cardId);
 
     public static bool IsGram(string? cardId)
         => string.Equals(cardId, GramCardId, StringComparison.OrdinalIgnoreCase);
