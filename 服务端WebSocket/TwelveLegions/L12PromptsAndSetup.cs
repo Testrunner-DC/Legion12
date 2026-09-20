@@ -2086,8 +2086,7 @@ public sealed partial class L12GameEngine
         // 失败时则由 AbortCompositeSegmentDeclaration 直接恢复下层逆序结算。
         if (queuedCompositeContinuation && State.PendingActivations.Any(activation =>
                 activation.Ability == CompositeSegmentDeclarationAbility
-                && TryReadCompositeSegmentDeclarationContext(activation, out var context)
-                && context.Data.GetValueOrDefault("sameStackContinuation") == "true"))
+                && TryReadCompositeSegmentDeclarationContext(activation, out _)))
         {
             State.IsResolvingStack = false;
             return;
@@ -2099,11 +2098,18 @@ public sealed partial class L12GameEngine
             return;
         }
         State.IsResolvingStack = false;
-        if (State.PendingTriggerBatches.Count > 0)
+        if ((State.PendingTriggerBatches.Count > 0 || State.PendingTriggerStackCandidates.Count > 0)
+            && State.DeferredEffectStack.LastOrDefault()?.Data.GetValueOrDefault("atomicFlow")
+                == "composite-state-check-barrier")
         {
+            // 状态检查屏障的唯一职责就是等待首段产生的阵亡等真实触发完整结算。
+            // 普通“随后”段仍优先于同一时点兄弟候选，但屏障本身绝不能先启动并与
+            // 触发效果的响应窗口同时暴露后段目标声明。
             AdvanceTriggerBatches();
-            if (State.PendingPrompts.Any(prompt => prompt.Continuation == "trigger-batch-order")
-                || State.EffectStack.Count > 0) return;
+            if (State.PendingPrompts.Count > 0 || State.PendingActivations.Count > 0
+                || State.ResponseWindow is not null || State.EffectStack.Count > 0
+                || State.PendingTriggerBatches.Count > 0 || State.PendingTriggerStackCandidates.Count > 0)
+                return;
         }
         if (State.DeferredEffectStack.Count > 0)
         {
@@ -2116,6 +2122,15 @@ public sealed partial class L12GameEngine
             AddEvent("stack-open", null, "当前堆叠关闭，处理下一项结算中产生的额外触发式效果");
             BeginStackItem(next);
             return;
+        }
+        if (State.PendingTriggerBatches.Count > 0 || State.PendingTriggerStackCandidates.Count > 0)
+        {
+            // 当前卡牌同一效果链的延后段已经全部完成，才轮到同一时点排序中的下一项。
+            // 否则“抽牌，随后弃牌”会在弃牌前让后续墓地效果取得资格，重新冻结旧状态。
+            AdvanceTriggerBatches();
+            if (State.PendingPrompts.Any(prompt => prompt.Continuation == "trigger-batch-order")
+                || State.PendingActivations.Any(activation => activation.TriggerCandidateId is not null)
+                || State.EffectStack.Count > 0) return;
         }
         AfterStackSettled();
     }

@@ -2,6 +2,11 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
+    private const string DeferredTriggerQualification = "defer-qualification-until-turn";
+    private const string TriggerTimingGroup = "trigger-timing-group";
+    private const string TriggerControllerOrder = "trigger-controller-order";
+    private const string TriggerOrderResolved = "trigger-order-resolved";
+
     private static L12ActivationSelectionStep GraveCostSelectionStep(L12PlayerState owner,
         string text, string declarationKey, IReadOnlyCollection<L12CardInstance> candidates,
         int required, string faction = "", bool legionOnly = false,
@@ -1599,16 +1604,16 @@ public sealed partial class L12GameEngine
     private void QueueTriggerCandidates(IEnumerable<L12TriggerCandidate> candidates)
     {
         var supplied = candidates.ToArray();
+        // 同一权威时点的多个候选必须先让玩家决定发动顺序。其可变资格、费用和目标
+        // 在真正轮到该候选声明时再读取；否则前一项结算产生的墓地牌、符文或其他资源
+        // 永远无法供后一项使用。单候选仍沿用即时准备，避免无意义的空声明。
+        if (supplied.Length > 1)
+            foreach (var candidate in supplied)
+                candidate.Data[DeferredTriggerQualification] = "true";
         var materialized = supplied
             .Where(candidate => !CounterTacticsAreDisabled() || !IsCounterTactic(candidate.SourceCardId))
-            .Where(PrepareOpponentHandDiscardTriggerCandidate)
-            .Where(PrepareAttackPublicTriggerCandidate)
-            .Where(PrepareBatch6JAEnterCandidate)
-            .Where(PrepareSimpleCardStateTriggerCandidate)
-            .Where(PrepareSimpleResourceTriggerCandidate)
-            .Where(PrepareBatch6JBPublicTriggerCandidate)
-            .Where(PrepareBatch6IBPublicTriggerCandidate)
-            .Where(PrepareVerifiedAtomicOptionalCandidate).ToArray();
+            .Where(candidate => candidate.Data.ContainsKey(DeferredTriggerQualification)
+                || PrepareTriggerCandidateForDeclaration(candidate)).ToArray();
         if (materialized.Length == 0)
         {
             if (supplied.Length > 0) TrySettleScheduledDisasterIfIdle();
@@ -1616,8 +1621,28 @@ public sealed partial class L12GameEngine
             return;
         }
 
-        foreach (var planned in L12TriggerBatchPlanner.Plan(materialized, State.ActivePlayer))
+        var plannedBatches = L12TriggerBatchPlanner.Plan(materialized, State.ActivePlayer).ToArray();
+        var timingGroup = supplied.Length > 1 ? $"timing-{++State.TriggerBatchSequence}" : null;
+        if (timingGroup is not null)
         {
+            for (var controllerOrder = 0; controllerOrder < plannedBatches.Length; controllerOrder++)
+            foreach (var candidate in plannedBatches[controllerOrder])
+            {
+                candidate.Data[TriggerTimingGroup] = timingGroup;
+                candidate.Data[TriggerControllerOrder] = controllerOrder.ToString();
+            }
+        }
+
+        // 各方先按行动玩家顺序完成本方发动顺序；真正结算时按控制者顺序整体逆序。
+        // 单候选控制者没有排序弹框，但也必须等其他控制者完成排序后再进入结算队列。
+        var orderedPlans = timingGroup is null
+            ? plannedBatches
+            : plannedBatches.Where(batch => batch.Count > 1)
+                .Concat(plannedBatches.Where(batch => batch.Count == 1).Reverse()).ToArray();
+        foreach (var planned in orderedPlans)
+        {
+            if (timingGroup is not null && planned.Count == 1)
+                planned[0].Data[TriggerOrderResolved] = "true";
             State.PendingTriggerBatches.Add(new L12TriggerBatch
             {
                 BatchId = $"batch-{++State.TriggerBatchSequence}",
@@ -1942,6 +1967,11 @@ public sealed partial class L12GameEngine
         AdvancePendingTriggerStackCandidates();
         if (State.PendingTriggerStackCandidates.Count > 0
             || State.PendingActivations.Any(activation => activation.TriggerCandidateId is not null)) return;
+        if (!State.IsResolvingStack && State.EffectStack.Count > 0)
+        {
+            if (State.ResponseWindow is null) BeginResponseWindow(State.EffectStack[^1]);
+            return;
+        }
         while (State.PendingTriggerBatches.Count > 0)
         {
             var batch = State.PendingTriggerBatches[0];
@@ -1952,6 +1982,11 @@ public sealed partial class L12GameEngine
                 AdvancePendingTriggerStackCandidates();
                 if (State.PendingTriggerStackCandidates.Count > 0
                     || State.PendingActivations.Any(activation => activation.TriggerCandidateId is not null)) return;
+                if (!State.IsResolvingStack && State.EffectStack.Count > 0)
+                {
+                    if (State.ResponseWindow is null) BeginResponseWindow(State.EffectStack[^1]);
+                    return;
+                }
                 continue;
             }
             var data = new Dictionary<string, string> { ["batchId"] = batch.BatchId, ["choiceMode"] = "ordered" };
@@ -1967,9 +2002,7 @@ public sealed partial class L12GameEngine
                 "trigger-batch-order", isPrivate: false, data: data);
             return;
         }
-        if (!State.IsResolvingStack && State.EffectStack.Count > 0 && State.ResponseWindow is null)
-            BeginResponseWindow(State.EffectStack[^1]);
-        else if (State.EffectStack.Count == 0)
+        if (State.EffectStack.Count == 0)
         {
             TrySettleScheduledDisasterIfIdle();
             // A declaration can disappear without ever creating a stack item (for example an
@@ -1985,10 +2018,53 @@ public sealed partial class L12GameEngine
     {
         var batch = State.PendingTriggerBatches.FirstOrDefault(item => item.BatchId == prompt.Data.GetValueOrDefault("batchId"));
         if (batch is null) return;
+        var originalIndex = State.PendingTriggerBatches.IndexOf(batch);
         State.PendingTriggerBatches.Remove(batch);
         var byId = batch.Candidates.ToDictionary(candidate => candidate.CandidateId, StringComparer.OrdinalIgnoreCase);
-        // 玩家选择发动／入栈顺序，结算保持后进先出。
-        foreach (var id in chosen) State.PendingTriggerStackCandidates.Add(byId[id]);
+        // 玩家选择的是发动顺序；后发动者先结算。不要在此冻结全部声明，而是拆成
+        // 逆序的单候选检查点：每项完成响应与结算后，下一项才取得最新资格并声明。
+        var orderedResolution = chosen.AsEnumerable().Reverse()
+            .Select(id =>
+            {
+                var candidate = byId[id];
+                candidate.Data[TriggerOrderResolved] = "true";
+                return new L12TriggerBatch
+                {
+                    BatchId = $"{batch.BatchId}:ordered:{candidate.CandidateId}",
+                    Controller = batch.Controller,
+                    Candidates = [candidate],
+                };
+            }).ToList();
+        var timingGroup = batch.Candidates[0].Data.GetValueOrDefault(TriggerTimingGroup);
+        if (string.IsNullOrWhiteSpace(timingGroup))
+            State.PendingTriggerBatches.InsertRange(Math.Max(0, originalIndex), orderedResolution);
+        else
+        {
+            var controllerOrder = int.Parse(batch.Candidates[0].Data[TriggerControllerOrder]);
+            var insertionIndex = State.PendingTriggerBatches.FindIndex(item =>
+                item.Candidates[0].Data.GetValueOrDefault(TriggerTimingGroup) == timingGroup);
+            if (insertionIndex < 0) insertionIndex = Math.Max(0, originalIndex);
+            while (insertionIndex < State.PendingTriggerBatches.Count)
+            {
+                var existing = State.PendingTriggerBatches[insertionIndex];
+                if (existing.Candidates[0].Data.GetValueOrDefault(TriggerTimingGroup) != timingGroup) break;
+                var resolved = existing.Candidates.All(candidate =>
+                    candidate.Data.GetValueOrDefault(TriggerOrderResolved) == "true");
+                if (!resolved)
+                {
+                    insertionIndex++;
+                    continue;
+                }
+                var existingOrder = int.Parse(existing.Candidates[0].Data[TriggerControllerOrder]);
+                if (existingOrder > controllerOrder)
+                {
+                    insertionIndex++;
+                    continue;
+                }
+                break;
+            }
+            State.PendingTriggerBatches.InsertRange(insertionIndex, orderedResolution);
+        }
         AddEvent("trigger-order", batch.Controller, $"{State.Players[batch.Controller].Name} 已排列同一时点的 {chosen.Count} 个触发效果");
         AdvanceTriggerBatches();
     }
@@ -2004,14 +2080,36 @@ public sealed partial class L12GameEngine
                 State.PendingTriggerStackCandidates.RemoveAt(0);
                 continue;
             }
+            if (candidate.Data.Remove(DeferredTriggerQualification)
+                && !PrepareTriggerCandidateForDeclaration(candidate))
+            {
+                CleanupPublicTriggerReservation(candidate);
+                State.PendingTriggerStackCandidates.RemoveAt(0);
+                AddEvent("effect-skipped", candidate.Controller,
+                    $"〈{candidate.SourceName}〉在轮到声明时已无合法发动条件，跳过该同一时点效果");
+                continue;
+            }
             if (candidate.Data.ContainsKey("declaration-committing")
                 || candidate.Data.ContainsKey(PrideMasterSurchargeCommitBarrier)) return;
             if (State.PendingActivations.Any(activation => activation.TriggerCandidateId == candidate.CandidateId)) return;
             if (!candidate.Data.ContainsKey("declaration-complete") && TryBeginTriggerDeclaration(candidate)) return;
             State.PendingTriggerStackCandidates.RemoveAt(0);
             AddTriggerCandidateToStack(candidate);
+            // 同一时点排序后的兄弟效果逐项声明、响应并结算；当前项入栈后必须立刻
+            // 交还响应窗口，不能继续冻结下一项的候选、费用或目标。
+            return;
         }
     }
+
+    private bool PrepareTriggerCandidateForDeclaration(L12TriggerCandidate candidate)
+        => PrepareOpponentHandDiscardTriggerCandidate(candidate)
+            && PrepareAttackPublicTriggerCandidate(candidate)
+            && PrepareBatch6JAEnterCandidate(candidate)
+            && PrepareSimpleCardStateTriggerCandidate(candidate)
+            && PrepareSimpleResourceTriggerCandidate(candidate)
+            && PrepareBatch6JBPublicTriggerCandidate(candidate)
+            && PrepareBatch6IBPublicTriggerCandidate(candidate)
+            && PrepareVerifiedAtomicOptionalCandidate(candidate);
 
     private void AddTriggerCandidateToStack(L12TriggerCandidate candidate)
     {

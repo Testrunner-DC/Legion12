@@ -301,7 +301,8 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         var giftChoice = order.ValidChoices.Single(id => order.Data[id].Contains("不朽之礼", StringComparison.Ordinal));
         var nitocrisChoice = order.ValidChoices.Single(id => order.Data[id].Contains("尼托克丽丝", StringComparison.Ordinal));
         var ordered = game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
-            CardInstanceIds: [giftChoice, nitocrisChoice]));
+            // 玩家排列发动顺序；后发动者先结算。让不朽之礼后发动，先取得是否发动选择。
+            CardInstanceIds: [nitocrisChoice, giftChoice]));
         Assert.True(ordered.Accepted, ordered.Error);
 
         var giftMode = Assert.Single(game.State.PendingPrompts);

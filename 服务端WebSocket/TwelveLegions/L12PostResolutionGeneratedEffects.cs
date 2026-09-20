@@ -164,6 +164,17 @@ public sealed partial class L12GameEngine
             return;
         }
         State.IsResolvingStack = false;
+        // 结算后生成的互动（例如信仰狂热者选择主宰效果）仍属于当前触发项的完整
+        // 生命周期。它结束以后必须先恢复同一时点中尚未轮到声明的兄弟项；直接进入
+        // AfterStackSettled 会把已持久化的单候选批次留在无人推进的状态。
+        if (State.PendingTriggerBatches.Count > 0 || State.PendingTriggerStackCandidates.Count > 0)
+        {
+            AdvanceTriggerBatches();
+            if (State.PendingPrompts.Count > 0 || State.PendingActivations.Count > 0
+                || State.ResponseWindow is not null || State.EffectStack.Count > 0
+                || State.PendingTriggerBatches.Count > 0 || State.PendingTriggerStackCandidates.Count > 0)
+                return;
+        }
         AfterStackSettled();
     }
 }

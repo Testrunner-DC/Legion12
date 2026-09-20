@@ -330,7 +330,8 @@ public sealed class Bq20260903_01RegressionTests
                 && label.Contains("军团位移时效果", StringComparison.Ordinal));
         var front = Assert.Single(order.ValidChoices, id => id != follow && id != "pass");
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
-            CardInstanceIds: [follow, front])).Accepted);
+            // 后发动者先结算；让跟随位移先进入逐项声明与响应。
+            CardInstanceIds: [front, follow])).Accepted);
 
         ResolveOnlyPrompt(game, "mode:use");
         var targetPrompt = Assert.Single(game.State.PendingPrompts);

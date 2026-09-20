@@ -17,7 +17,8 @@ internal sealed record L12CompositeEffectSegmentSpec(
     string? DeclarationTiming = null,
     bool RequiresPreviousSuccess = false,
     string? DeclinedMode = null,
-    string? DeclinedDeclarationKey = null);
+    string? DeclinedDeclarationKey = null,
+    bool WaitForStateCheckTriggers = false);
 
 /// <summary>
 /// 多段卡效的权威计划。卡牌差异只存在于这份声明数据；通用运行时负责在计划指定的
@@ -429,13 +430,15 @@ internal static partial class L12CompositeEffectPlans
             [
                 new("thutmose-debuff", "图特摩斯三世：对方所有军团本回合兵力-1000"),
                 new("thutmose-kill", "图特摩斯三世：随后击杀1张当前兵力不高于1000的军团",
-                    PublicTargetKeys: ["killTarget"], DeclareAtSegmentStart: true),
+                    PublicTargetKeys: ["killTarget"], DeclareAtSegmentStart: true,
+                    WaitForStateCheckTriggers: true),
             ],
             ["trigger:S01-0201:death"] =
             [
                 new("thutmose-debuff", "图特摩斯三世：对方所有军团本回合兵力-1000"),
                 new("thutmose-kill", "图特摩斯三世：随后击杀1张当前兵力不高于1000的军团",
-                    PublicTargetKeys: ["killTarget"], DeclareAtSegmentStart: true),
+                    PublicTargetKeys: ["killTarget"], DeclareAtSegmentStart: true,
+                    WaitForStateCheckTriggers: true),
             ],
             ["trigger:S01-0401:attack"] =
             [
@@ -1999,7 +2002,8 @@ public sealed partial class L12GameEngine
                 if (CompositeSegmentAlreadyDeclaredAsDisabled(next, item)) continue;
                 // 兵力变化可先产生状态检查与阵亡触发。用一个无响应的延迟载体把声明
                 // 排在整批触发之后，保证目标集合来自所有必要状态动作完成后的场面。
-                if (item.Data.GetValueOrDefault("compositeStateCheckBarrier") != "true"
+                if (next.WaitForStateCheckTriggers
+                    && item.Data.GetValueOrDefault("compositeStateCheckBarrier") != "true"
                     && (State.PendingTriggerBatches.Count > 0 || State.PendingTriggerStackCandidates.Count > 0))
                 {
                     var barrier = new L12StackItem

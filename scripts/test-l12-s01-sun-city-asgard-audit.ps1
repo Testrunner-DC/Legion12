@@ -55,7 +55,7 @@ foreach ($token in @(
     '"' + [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5peg6aqo6ICF5LyK55Om5bCU77ya6aKE5YWI5aOw5piO5piv5ZCm5p+l55yL54mM5bqT6aG26YOoM+W8oOeJjA==')) + '"'
 )) { Assert-Contains $triggers $token "Batch 6K-B public declaration token is missing: $token" }
 # BATCH296 P2: the user approved post-debuff targeting for both attack and death.
-if ([regex]::Matches($composite, 'new\("thutmose-kill",[^)]*DeclareAtSegmentStart: true\)').Count -ne 2) {
+if ([regex]::Matches($composite, '(?s)new\("thutmose-kill",.*?DeclareAtSegmentStart: true,\s*WaitForStateCheckTriggers: true\)').Count -ne 2) {
     throw 'Both Thutmose follow-up kills must declare their target at their own segment start.'
 }
 Assert-Contains $composite 'PublicLegions(opponent).Where(card => card.Troops <= 1000)' 'Thutmose must use current post-debuff troops for follow-up candidates.'

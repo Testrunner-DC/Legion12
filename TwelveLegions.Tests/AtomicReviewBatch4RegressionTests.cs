@@ -107,8 +107,7 @@ public sealed class AtomicReviewBatch4RegressionTests
             CardInstanceIds: [attackBuff, followMove])).Accepted);
         var mode = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", mode.Continuation);
-        Assert.Single(game.State.EffectStack,
-            item => item.Data.GetValueOrDefault("ability") == "tsukuyomiFrontAttackBuff");
+        Assert.Empty(game.State.EffectStack);
         Resolve(game, "mode:use");
         // 唯一合法的士气费用由公共费用组件自动选中，目标与位置仍由玩家选择。
         var targetPrompt = Assert.Single(game.State.PendingPrompts);
@@ -122,11 +121,9 @@ public sealed class AtomicReviewBatch4RegressionTests
 
         Assert.True(morale.Tapped);
         Assert.Contains("active:master-0:tsukuyomiFollowMove", player.UsedAbilities);
-        Assert.Equal(2, game.State.EffectStack.Count);
-        Assert.Contains(game.State.EffectStack, item => item.Trigger == "friendly-back-to-front"
-            && item.Data.GetValueOrDefault("ability") == "tsukuyomiFrontAttackBuff");
-        Assert.Contains(game.State.EffectStack, item => item.Trigger == "friendly-legion-moves"
+        Assert.Single(game.State.EffectStack, item => item.Trigger == "friendly-legion-moves"
             && item.Data.GetValueOrDefault("ability") == "tsukuyomiFollowMove");
+        Assert.Single(game.State.PendingTriggerBatches);
         Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-activation"
             && entry.Cards.Any(card => card.CardId == "S02-04M1"));
         player.Field[0][2] = null;

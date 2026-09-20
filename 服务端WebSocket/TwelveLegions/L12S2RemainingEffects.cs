@@ -655,24 +655,29 @@ public sealed partial class L12GameEngine
 
     private void QueueS2AngusTrialAdvanceRune(int playerIndex, L12CardInstance advanceSource)
     {
+        var candidate = BuildS2AngusTrialAdvanceRuneCandidate(playerIndex, advanceSource);
+        if (candidate is not null) QueueTriggerCandidates([candidate]);
+    }
+
+    private L12TriggerCandidate? BuildS2AngusTrialAdvanceRuneCandidate(int playerIndex,
+        L12CardInstance advanceSource)
+    {
         var player = State.Players[playerIndex];
         var onceKey = L12MasterTriggeredUsageRules.Key("angusTrialAdvanceRune", player.PlayerIndex, State.TurnSerial);
         var pendingKey = $"{onceKey}:pending";
         if (State.ActivePlayer != playerIndex || player.MasterId != "S02-06M2"
-            || player.UsedAbilities.Contains(onceKey) || !player.UsedAbilities.Add(pendingKey)) return;
+            || player.UsedAbilities.Contains(onceKey) || !player.UsedAbilities.Add(pendingKey)) return null;
         var master = CreateCard("S02-06M2", $"master-{playerIndex}");
-        QueueTriggerCandidates([
-            CreateTriggerCandidate(playerIndex, master, "trial-advance",
-                "推进试炼进度时可获得1符文",
-                new Dictionary<string, string>
-                {
-                    ["ability"] = "angusTrialAdvanceRune",
-                    ["advancedBy"] = advanceSource.CardId,
-                    ["onceKey"] = onceKey,
-                    ["cleanupReservation"] = pendingKey,
-                    ["triggerEffectText"] = "我方 回合1次 推进试炼进度时，可获得1符文。",
-                }, master)
-        ]);
+        return CreateTriggerCandidate(playerIndex, master, "trial-advance",
+            "推进试炼进度时可获得1符文",
+            new Dictionary<string, string>
+            {
+                ["ability"] = "angusTrialAdvanceRune",
+                ["advancedBy"] = advanceSource.CardId,
+                ["onceKey"] = onceKey,
+                ["cleanupReservation"] = pendingKey,
+                ["triggerEffectText"] = "我方 回合1次 推进试炼进度时，可获得1符文。",
+            }, master);
     }
 
     private L12TriggerCandidate? BuildS2GrailRoundTableEntryCandidate(int playerIndex, L12CardInstance legion)

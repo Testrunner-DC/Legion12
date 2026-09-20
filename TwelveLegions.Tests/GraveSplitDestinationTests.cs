@@ -189,10 +189,16 @@ public sealed class GraveSplitDestinationTests
     {
         var response = Assert.Single(game.State.PendingPrompts);
         var stale = new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass");
-        for (var count = 0; game.State.PendingPrompts.FirstOrDefault()?.Kind == "response"; count++)
+        for (var count = 0; game.State.PendingPrompts.Count > 0; count++)
         {
-            Assert.True(count < 20);
-            Resolve(game, choice: "pass");
+            Assert.True(count < 40);
+            var prompt = Assert.Single(game.State.PendingPrompts);
+            if (prompt.Kind == "response")
+                Resolve(game, choice: "pass");
+            else if (prompt.Continuation == "pending-activation" && prompt.ValidChoices.Contains("mode:none"))
+                Resolve(game, choice: "mode:none");
+            else
+                Assert.Fail($"未预期的后续弹框：{prompt.Kind}/{prompt.Continuation}");
         }
         Assert.Empty(game.State.PendingPrompts);
         Assert.Empty(game.State.PendingActivations);

@@ -348,7 +348,7 @@ public sealed partial class StackResponseChoiceRegressionTests
     }
 
     [Fact]
-    public void BothPlayersChooseActivationOrderAndTheResultResolvesInReverseOrder()
+    public void BothPlayersChooseActivationOrderBeforeSequentialReverseResolution()
     {
         var game = Create();
         L12TriggerCandidate Candidate(int owner, string id) => new()
@@ -369,11 +369,19 @@ public sealed partial class StackResponseChoiceRegressionTests
         Assert.Equal(1, second.PlayerIndex);
         Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: second.PromptId,
             CardInstanceIds: ["C", "D"])).Accepted);
-        Assert.Equal(new[] { "B", "A", "C", "D" }, game.State.EffectStack.Select(item => item.SourceName));
-        // Use negated effects to observe the shared pop order without invoking unrelated card resolvers.
-        foreach (var item in game.State.EffectStack) item.Negated = true;
-        Resolve(game, "pass");
-        Resolve(game, "pass");
+        // 排序先由双方完成；随后才按整体逆序逐项声明、响应和结算，而不是冻结四项状态。
+        foreach (var expected in new[] { "D", "C", "A", "B" })
+        {
+            var item = Assert.Single(game.State.EffectStack);
+            Assert.Equal(expected, item.SourceName);
+            item.Negated = true;
+            for (var safety = 0; game.State.EffectStack.Any(effect => effect.StackItemId == item.StackItemId); safety++)
+            {
+                Assert.True(safety < 5);
+                Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
+                Resolve(game, "pass");
+            }
+        }
         var resolved = game.State.Events.Where(item => item.Type == "stack-resolve").Select(item => item.Text).ToArray();
         Assert.Equal(4, resolved.Length);
         foreach (var pair in new[] { "D", "C", "A", "B" }.Select((id, index) => (id, index)))

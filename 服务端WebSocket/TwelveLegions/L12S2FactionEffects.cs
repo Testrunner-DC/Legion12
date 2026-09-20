@@ -186,6 +186,13 @@ public sealed partial class L12GameEngine
             || !choice.StartsWith("1:", StringComparison.Ordinal));
 
     private bool AdvanceTrial(int playerIndex, int count, L12CardInstance? source = null)
+        => AdvanceTrialCore(playerIndex, count, source, queueAngusTrigger: true);
+
+    private bool AdvanceTrialWithoutAngusTrigger(int playerIndex, int count, L12CardInstance? source = null)
+        => AdvanceTrialCore(playerIndex, count, source, queueAngusTrigger: false);
+
+    private bool AdvanceTrialCore(int playerIndex, int count, L12CardInstance? source,
+        bool queueAngusTrigger)
     {
         var player = State.Players[playerIndex];
         var trial = player.SpecialZones.Trials.FirstOrDefault(card => !card.TrialCompleted);
@@ -195,7 +202,7 @@ public sealed partial class L12GameEngine
         player.SpecialZones.TrialLevel = trial.TrialProgress;
         AddEvent("trial", playerIndex, $"《{trial.Name}》试炼进度 {before} → {trial.TrialProgress}", source ?? trial);
         var advanced = trial.TrialProgress > before;
-        if (advanced) QueueS2AngusTrialAdvanceRune(playerIndex, source ?? trial);
+        if (advanced && queueAngusTrigger) QueueS2AngusTrialAdvanceRune(playerIndex, source ?? trial);
         return advanced;
     }
 

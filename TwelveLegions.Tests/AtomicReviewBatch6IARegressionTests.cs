@@ -319,15 +319,17 @@ public sealed class AtomicReviewBatch6IARegressionTests
         var first = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", first.Continuation);
         ResolveOnlyPrompt(game, "mode:use");
+        Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
+        PassResponses(game);
         var second = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", second.Continuation);
         ResolveOnlyPrompt(game, "mode:use");
+        Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
+        PassResponses(game);
 
-        Assert.Equal(2, game.State.EffectStack.Count);
-        Assert.Contains(game.State.EffectStack, item => item.Trigger == "enter"
-            && item.Data.GetValueOrDefault("declared:mode") == "mode:use");
-        Assert.Contains(game.State.EffectStack, item => item.Trigger == "promotion-enter"
-            && item.Data.GetValueOrDefault("declared:mode") == "mode:use");
+        Assert.Empty(game.State.EffectStack);
+        Assert.Equal(2, game.State.Players[0].Hand.Count);
+        Assert.Empty(game.State.PendingTriggerBatches);
     }
 
     [Fact]

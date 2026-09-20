@@ -326,7 +326,7 @@ public sealed class AtomicReviewBatch6FRegressionTests
     [Fact]
     [Trait("L12Evidence", "card:S02-0602")]
     [Trait("L12Evidence", "entry:grail-round-table-shared-trigger-order")]
-    public void CompletedGrailAndLancelotEntryShareOnePlayerOrderedTriggerBatch()
+    public void CompletedGrailMayResolveBeforeLancelotRechecksAndPaysTheNewRune()
     {
         var game = Create(80312, "S02-06M1");
         var player = game.State.Players[0];
@@ -343,8 +343,83 @@ public sealed class AtomicReviewBatch6FRegressionTests
         var order = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("trigger-order", order.Kind);
         Assert.Equal(2, order.ValidChoices.Count);
-        Assert.Contains(order.ValidChoices, id => order.Data[id].Contains("兰斯洛特", StringComparison.Ordinal));
-        Assert.Contains(order.ValidChoices, id => order.Data[id].Contains("寻找圣杯之旅", StringComparison.Ordinal));
+        var lancelotTrigger = Assert.Single(order.ValidChoices,
+            id => order.Data[id].Contains("兰斯洛特", StringComparison.Ordinal));
+        var grailTrigger = Assert.Single(order.ValidChoices,
+            id => order.Data[id].Contains("寻找圣杯之旅", StringComparison.Ordinal));
+
+        // 发动顺序为兰斯洛特→圣杯，因此逆结算时圣杯先获得符文。
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
+            CardInstanceIds: [lancelotTrigger, grailTrigger])).Accepted);
+        var grailDecision = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("寻找圣杯之旅", grailDecision.Text, StringComparison.Ordinal);
+
+        var firstPromptId = grailDecision.PromptId;
+        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        var restoredDecision = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(firstPromptId, restoredDecision.PromptId);
+        Assert.Single(game.State.PendingTriggerBatches);
+        player = game.State.Players[0];
+        lancelot = Assert.Single(player.Field.SelectMany(row => row), card =>
+            card?.InstanceId == "batch6f-lancelot-grail-order")!;
+
+        Resolve(game, "mode:use");
+        var duplicate = game.Handle(0, new L12Command("resolvePrompt", PromptId: firstPromptId,
+            Choice: "mode:use"));
+        Assert.False(duplicate.Accepted);
+        PassResponses(game);
+
+        Assert.Equal(1, player.SpecialZones.Runes);
+        var lancelotDecision = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("兰斯洛特", lancelotDecision.Text, StringComparison.Ordinal);
+        Assert.Contains("mode:use", lancelotDecision.ValidChoices);
+        Resolve(game, "mode:use");
+        Assert.Equal(0, player.SpecialZones.Runes);
+        PassResponses(game);
+        Assert.True(lancelot.HasCharge);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "cards:S02-0610,S02-06M2")]
+    [Trait("L12Evidence", "entry:trial-followups-recheck-latest-runes")]
+    public void AngusMayResolveBeforeFinnRechecksAndPaysTheNewRune()
+    {
+        var game = Create(80313, "S02-06M2");
+        var player = game.State.Players[0];
+        var finn = Card("S02-0610", "batch6f-finn-angus-order");
+        finn.SummonRound = 0;
+        player.Field[0][0] = finn;
+        player.SpecialZones.Runes = 0;
+        _ = AddOpenTrial(game);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", finn.InstanceId,
+            Ability: "trialAdvance")).Accepted);
+        var order = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("trigger-batch-order", order.Continuation);
+        var finnTrigger = Assert.Single(order.ValidChoices,
+            id => order.Data[id].Contains("芬恩", StringComparison.Ordinal));
+        var angusTrigger = Assert.Single(order.ValidChoices,
+            id => order.Data[id].Contains("安格斯", StringComparison.Ordinal));
+
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
+            CardInstanceIds: [finnTrigger, angusTrigger])).Accepted);
+        var angusDecision = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("安格斯", angusDecision.Text, StringComparison.Ordinal);
+        Resolve(game, "mode:use");
+        PassResponses(game);
+
+        Assert.Equal(1, player.SpecialZones.Runes);
+        var finnDecision = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("芬恩", finnDecision.Text, StringComparison.Ordinal);
+        Assert.Contains("mode:use", finnDecision.ValidChoices);
+        Resolve(game, "mode:use");
+        PassResponses(game);
+
+        Assert.Equal(0, player.SpecialZones.Runes);
+        Assert.False(finn.Tapped);
     }
 
     [Fact]

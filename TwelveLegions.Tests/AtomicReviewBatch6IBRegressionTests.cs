@@ -858,6 +858,58 @@ public sealed class AtomicReviewBatch6IBRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "cards:S01-0306,S01-0307")]
+    [Trait("L12Evidence", "entry:ordered-death-triggers-recheck-graveyard")]
+    public void OlafMayResolveFirstAndAlvidaThenSeesTheNewlyDiscardedGraveCard()
+    {
+        var game = Create(9869);
+        var player = game.State.Players[0];
+        var olaf = Card("S01-0306", "batch6ib-ordered-olaf");
+        var alvida = Card("S01-0307", "batch6ib-ordered-alvida");
+        var recoverable = Card("S01-0303", "batch6ib-new-alvida-target", cost: 2);
+        var filler = Card("S01-0002", "batch6ib-olaf-filler");
+        player.Resolving.AddRange([olaf, alvida]);
+        player.Library.AddRange([filler, recoverable]);
+
+        var olafCandidate = Assert.IsType<L12TriggerCandidate>(Invoke(game, "CreateTriggerCandidate",
+            0, olaf, "death", "奥拉夫二世阵亡时效果", null, olaf));
+        var alvidaCandidate = Assert.IsType<L12TriggerCandidate>(Invoke(game, "CreateTriggerCandidate",
+            0, alvida, "death", "阿尔维达阵亡时效果", null, alvida));
+        _ = Invoke(game, "QueueTriggerCandidates", (object)new[] { olafCandidate, alvidaCandidate });
+
+        var order = OnlyPrompt(game);
+        Assert.Equal("trigger-batch-order", order.Continuation);
+        var olafTrigger = Assert.Single(order.ValidChoices,
+            id => order.Data[id].Contains("奥拉夫", StringComparison.Ordinal));
+        var alvidaTrigger = Assert.Single(order.ValidChoices,
+            id => order.Data[id].Contains("阿尔维达", StringComparison.Ordinal));
+        // 发动顺序为阿尔维达→奥拉夫，因此奥拉夫先结算。
+        ResolveCards(game, alvidaTrigger, olafTrigger);
+        Assert.Contains("奥拉夫", OnlyPrompt(game).Text, StringComparison.Ordinal);
+        ResolveChoice(game, "mode:use");
+        PassResponses(game);
+
+        var discard = OnlyPrompt(game);
+        Assert.Contains(recoverable.InstanceId, discard.ValidChoices);
+        ResolveCards(game, recoverable.InstanceId);
+        PassResponses(game);
+
+        Assert.True(game.State.PendingPrompts.Count == 1,
+            $"grave={string.Join('|', player.Graveyard.Select(card => card.InstanceId))}; " +
+            $"batches={game.State.PendingTriggerBatches.Count}; candidates={game.State.PendingTriggerStackCandidates.Count}; " +
+            $"activations={game.State.PendingActivations.Count}; stack={game.State.EffectStack.Count}; deferred={game.State.DeferredEffectStack.Count}; " +
+            $"events={string.Join(" || ", game.State.Events.TakeLast(40).Select(entry => entry.Type + ':' + entry.Text))}");
+        var recovery = OnlyPrompt(game);
+        Assert.Contains("阿尔维达", recovery.Text, StringComparison.Ordinal);
+        Assert.Contains(recoverable.InstanceId, recovery.ValidChoices);
+        ResolveCards(game, recoverable.InstanceId);
+        PassResponses(game);
+
+        Assert.Contains(recoverable, player.Hand);
+        Assert.DoesNotContain(recoverable, player.Graveyard);
+    }
+
+    [Fact]
     [Trait("L12Evidence", "card:S02-0002")]
     [Trait("L12Evidence", "entry:batch6ib-alice-once-reservation")]
     public void AliceDeclineReleasesPendingOnceAndCommitFinalizesItBeforeStack()

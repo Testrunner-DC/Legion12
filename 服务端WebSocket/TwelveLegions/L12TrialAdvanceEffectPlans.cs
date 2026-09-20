@@ -187,8 +187,13 @@ public sealed partial class L12GameEngine
         var player = State.Players[playerIndex];
         source.Tapped = true;
         AddEvent("trial-action", playerIndex, $"〈{source.Name}〉休整并发动试炼", source);
-        if (AdvanceTrial(playerIndex, source.TrialValue, source))
-            QueueFinnReadyAfterTrial(playerIndex, source);
+        if (source.CardId == TrialAdvanceFinnCardId)
+        {
+            if (AdvanceTrialWithoutAngusTrigger(playerIndex, source.TrialValue, source))
+                QueueFinnTrialAdvanceFollowups(playerIndex, source, source);
+        }
+        else
+            _ = AdvanceTrial(playerIndex, source.TrialValue, source);
         return CommandResult.Ok();
     }
 
@@ -202,15 +207,22 @@ public sealed partial class L12GameEngine
         switch (plan)
         {
             case "generic":
-                if (AdvanceTrial(item.Controller, int.Parse(item.Data["trialAdvanceCount"]), item.SourceSnapshot ?? source))
-                    QueueFinnReadyAfterTrial(item.Controller, source);
+                if (source?.CardId == TrialAdvanceFinnCardId)
+                {
+                    if (AdvanceTrialWithoutAngusTrigger(item.Controller, int.Parse(item.Data["trialAdvanceCount"]),
+                            item.SourceSnapshot ?? source))
+                        QueueFinnTrialAdvanceFollowups(item.Controller, source, item.SourceSnapshot ?? source);
+                }
+                else
+                    _ = AdvanceTrial(item.Controller, int.Parse(item.Data["trialAdvanceCount"]), item.SourceSnapshot ?? source);
                 break;
             case "galahad-entry":
                 _ = AdvanceTrial(item.Controller, 2, item.SourceSnapshot ?? source);
                 break;
             case "finn-entry":
-                if (AdvanceTrial(item.Controller, 1, item.SourceSnapshot ?? source))
-                    QueueFinnReadyAfterTrial(item.Controller, source);
+                if (item.SourceSnapshot is { } finnSnapshot
+                    && AdvanceTrialWithoutAngusTrigger(item.Controller, 1, finnSnapshot))
+                    QueueFinnTrialAdvanceFollowups(item.Controller, source, finnSnapshot);
                 break;
             case "constance-entry":
                 if (mode == "mode:trial") _ = AdvanceTrial(item.Controller, 1, item.SourceSnapshot ?? source);
@@ -262,12 +274,29 @@ public sealed partial class L12GameEngine
 
     private void QueueFinnReadyAfterTrial(int playerIndex, L12CardInstance? source)
     {
-        if (source?.CardId != TrialAdvanceFinnCardId) return;
+        var candidate = BuildFinnReadyAfterTrialCandidate(playerIndex, source);
+        if (candidate is not null) QueueTriggerCandidates([candidate]);
+    }
+
+    private L12TriggerCandidate? BuildFinnReadyAfterTrialCandidate(int playerIndex, L12CardInstance? source)
+    {
+        if (source?.CardId != TrialAdvanceFinnCardId) return null;
         var player = State.Players[playerIndex];
-        if (FindOnField(player, source.InstanceId, out _, out _) is null || !source.Tapped
-            || player.SpecialZones.Runes < 1) return;
-        QueueTriggerCandidates([CreateTriggerCandidate(playerIndex, source, "trial-advance-followup",
-            "发动试炼后效果", new Dictionary<string, string> { ["ability"] = "finnReady" })]);
+        if (FindOnField(player, source.InstanceId, out _, out _) is null || !source.Tapped) return null;
+        // 是否有符文属于该可选效果轮到声明时的资格，不能在同刻的安格斯效果结算前裁掉。
+        return CreateTriggerCandidate(playerIndex, source, "trial-advance-followup",
+            "发动试炼后效果", new Dictionary<string, string> { ["ability"] = "finnReady" });
+    }
+
+    private void QueueFinnTrialAdvanceFollowups(int playerIndex, L12CardInstance? fieldSource,
+        L12CardInstance advanceSource)
+    {
+        var candidates = new List<L12TriggerCandidate>();
+        if (BuildS2AngusTrialAdvanceRuneCandidate(playerIndex, advanceSource) is { } angus)
+            candidates.Add(angus);
+        if (BuildFinnReadyAfterTrialCandidate(playerIndex, fieldSource) is { } finn)
+            candidates.Add(finn);
+        if (candidates.Count > 0) QueueTriggerCandidates(candidates);
     }
 
     private void QueueAvalonTurnStart(int playerIndex)

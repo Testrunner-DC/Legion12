@@ -122,7 +122,9 @@ foreach ($cardId in @('S01-0101', 'S01-0108', 'S01-0311', 'S02-0001', 'S02-0012'
 }
 Assert-Contains $plans 'Batch6JBPublicTriggerPlans' 'Batch 6J-B triggers need one shared data-driven declaration table.'
 Assert-Contains $plans 'PrepareBatch6JBPublicTriggerCandidate' 'Batch 6J-B public conditions and once reservations need one shared candidate filter.'
-Assert-Contains $kernel '.Where(PrepareBatch6JBPublicTriggerCandidate)' 'Every TriggerBatch entry must filter Batch 6J-B candidates before ordering.'
+Assert-Contains $kernel 'private bool PrepareTriggerCandidateForDeclaration' 'Every TriggerBatch entry needs one shared candidate preparation gate.'
+Assert-Contains $kernel '&& PrepareBatch6JBPublicTriggerCandidate(candidate)' 'The shared TriggerBatch preparation gate must filter Batch 6J-B candidates.'
+Assert-Contains $kernel '|| PrepareTriggerCandidateForDeclaration(candidate)).ToArray();' 'Immediate and deferred TriggerBatch candidates must both use the shared preparation gate.'
 Assert-Contains $kernel 'activation.TriggerCandidateId == candidate.CandidateId' 'A trigger candidate with an open declaration must not create duplicate PendingActivations.'
 Assert-Contains $plans 'PublicTriggerStep("target-morale", "returnCost"' 'Lu Bu must declare the exact four-morale cost before stack entry.'
 Assert-Contains $plans 'MoveGraveToLibraryBottom(player, physicalCosts)' 'Gustav must commit his ordered grave cost before stack entry.'
@@ -171,7 +173,7 @@ foreach ($cardId in @(
     Assert-Contains $plans ('["' + $cardId + '|') "Batch 6I-B public trigger plan is missing card $cardId."
 }
 Assert-Contains $plans 'PrepareBatch6IBPublicTriggerCandidate' 'Batch 6I-B needs one shared pre-batch candidate filter.'
-Assert-Contains $kernel '.Where(PrepareBatch6IBPublicTriggerCandidate)' 'Every TriggerBatch entry must filter Batch 6I-B candidates before ordering.'
+Assert-Contains $kernel '&& PrepareBatch6IBPublicTriggerCandidate(candidate)' 'The shared TriggerBatch preparation gate must filter Batch 6I-B candidates.'
 Assert-Contains $plans 'requiredChoice is not null' `
     'Steps after an explicit activation decision must use the distinct whole-activation cancellation policy.'
 Assert-Contains $plans 'L12ActivationCancellationPolicy.SeparateChoice' `
@@ -276,7 +278,7 @@ Assert-Contains $plans 'VerifiedAtomicOptionalTriggerPlan' 'Verified atomic Opti
 Assert-Contains $plans 'PrepareVerifiedAtomicOptionalCandidate' 'Verified atomic Optional conditions must be checked before candidate admission.'
 Assert-Contains $plans 'TakeWhile(atom => atom.Kind != L12AtomKinds.Optional)' 'Only public conditions before Optional may gate candidate creation.'
 Assert-Contains $plans 'candidate.Data["verifiedAtomicConditionLocked"] = "true"' 'Verified atomic trigger-time conditions must be immutable after candidate creation.'
-Assert-Contains $kernel '.Where(PrepareVerifiedAtomicOptionalCandidate)' 'Every TriggerBatch entry must filter verified Optional candidates through the common condition gate.'
+Assert-Contains $kernel '&& PrepareVerifiedAtomicOptionalCandidate(candidate)' 'The shared TriggerBatch preparation gate must filter verified Optional candidates.'
 Assert-Contains $atomicRuntime 'PublicTriggerDeclared(item, "mode") != "mode:use"' 'Verified atomic resolution must consume only the immutable declared mode.'
 Assert-Contains $atomicRuntime 'item.Data.GetValueOrDefault("verifiedAtomicConditionLocked") != "true"' 'Verified atomic resolution must not re-evaluate a trigger-time condition locked before stack entry.'
 Assert-Contains $atomicRuntime 'atom.Stage == "cost" &&' `
@@ -324,7 +326,7 @@ foreach ($simpleCardStateSpec in @(
 )) {
     Assert-Contains $simpleCardStateTriggers $simpleCardStateSpec "Single-card state trigger inventory is missing: $simpleCardStateSpec"
 }
-Assert-Contains $kernel '.Where(PrepareSimpleCardStateTriggerCandidate)' `
+Assert-Contains $kernel '&& PrepareSimpleCardStateTriggerCandidate(candidate)' `
     'Every trigger batch must pass through the shared card-state candidate gate.'
 Assert-Contains $plans 'TryBeginSimpleCardStateTriggerDeclaration' `
     'Single-card state triggers must declare mode and exact public targets before stack entry.'
@@ -360,7 +362,7 @@ foreach ($simpleResourceSpec in @(
 )) {
     Assert-Contains $simpleResourceTriggers $simpleResourceSpec "Single-segment resource trigger inventory is missing: $simpleResourceSpec"
 }
-Assert-Contains $kernel '.Where(PrepareSimpleResourceTriggerCandidate)' `
+Assert-Contains $kernel '&& PrepareSimpleResourceTriggerCandidate(candidate)' `
     'Every trigger batch must pass through the shared resource candidate gate.'
 Assert-Contains $plans 'TryBeginSimpleResourceTriggerDeclaration' `
     'Resource triggers must declare optional mode and exact morale targets before stack entry.'
@@ -372,7 +374,11 @@ Assert-Contains $prompts 'TryResolveSimpleResourceTrigger(item)' `
     'Resource triggers must settle through the shared resolver before card-specific dispatch.'
 Assert-Contains $simpleResourceTriggers 'var target = player.Morale.FirstOrDefault' `
     'Declared morale targets must be looked up again at reverse-order settlement.'
-Assert-Contains $simpleResourceTriggers '&& !card.IsGodPower' `
+Assert-Contains $simpleResourceTriggers '&& CanFlipMoraleToGodPower(card,' `
+    'Declared morale targets must revalidate through the shared morale-face eligibility rule.'
+Assert-Contains $allRuntime 'private bool CanFlipMoraleToGodPower(L12MoraleCard card' `
+    'The shared morale-face eligibility rule must remain available to declarations and settlement.'
+Assert-Contains $allRuntime '=> !card.IsGodPower' `
     'Declared morale targets must still be ordinary morale at reverse-order settlement.'
 Assert-Contains $simpleResourceTriggers 'OwnsStandaloneAtomicAbility: false' `
     'Wukong resource follow-up must remain a child segment of its printed leave replacement ability.'
@@ -397,9 +403,9 @@ Assert-Contains $plans 'margaretMasterDamage' 'Margaret damage trigger must pred
 Assert-Contains $allRuntime 'margaret-heal-lock' 'Margaret heal and heal-lock sentences must remain independent stack segments.'
 Assert-Contains $plans 'cleanupReservation' 'Optional once-per-turn triggers must reserve pending state before player declaration.'
 Assert-Contains $plans 'player.UsedAbilities.Add(onceKey)' 'Committed optional triggers must consume their once before stack entry.'
-Assert-Contains $plans 'player.Morale.Where(card => !card.IsGodPower' 'Resource target declarations must exclude god-power cards.'
-Assert-Contains $plans 'spec.TargetFilter != L12SimpleResourceTriggerEffects.RestedMorale || card.Tapped' `
-    'Artemis must declare an exact rested ordinary morale target.'
+Assert-Contains $plans 'player.Morale.Where(card => CanFlipMoraleToGodPower(card,' 'Resource target declarations must use the shared morale-face eligibility rule.'
+Assert-Contains $plans 'onlyTapped: spec.TargetFilter == L12SimpleResourceTriggerEffects.RestedMorale' `
+    'Artemis must declare an exact rested ordinary morale target through the shared eligibility rule.'
 Assert-Contains $kernel 'SourceSnapshot = CaptureLastKnownSourceSnapshot(sourceSnapshot ?? card)' 'Every generated trigger candidate must carry a last-known source snapshot.'
 Assert-Contains $kernel 'FindAuthoritativeCard(candidate.SourceInstanceId)' 'Trigger declarations must resolve sources through the internal authoritative lookup.'
 Assert-Contains $plans 'owner-unused-slot' 'Tomb Construct must declare owner battlefield slots before stack entry.'
@@ -462,7 +468,7 @@ foreach ($contract in @(
 )) {
     Assert-Contains $entryPlans $contract "Batch 6J-A public entry contract is missing: $contract"
 }
-Assert-Contains $kernel '.Where(PrepareBatch6JAEnterCandidate)' 'Every TriggerBatch entry must filter Batch 6J-A enter candidates.'
+Assert-Contains $kernel '&& PrepareBatch6JAEnterCandidate(candidate)' 'The shared TriggerBatch preparation gate must filter Batch 6J-A enter candidates.'
 foreach ($obsoleteTakedaSplit in @('batch6JAFollowup', 'takeda-followup', 'case "enter-followup"')) {
     if ($allRuntime.IndexOf($obsoleteTakedaSplit, [StringComparison]::Ordinal) -ge 0) {
         throw "Takeda must resolve as one stack item; obsolete split route returned: $obsoleteTakedaSplit"
