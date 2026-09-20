@@ -5,14 +5,14 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`451fae64a2123e56e228e4621c7aedca4a8d6943b2bac4fdad051c8d1f39a8e3`。
+内容指纹：`6f51bd982b9229abeb2660b07386bdc97086e58ec25996673d09a60b54a2df0d`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
-| composite-definition | 202 |
+| composite-definition | 201 |
 | fine-definition | 86 |
-| owner-unreviewed | 254 |
-| shared-rule-owner | 144 |
+| owner-unreviewed | 252 |
+| shared-rule-owner | 147 |
 
 fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；shared-rule-owner = 精确能力已绑定共用规则入口及适用性档案；owner-unreviewed = 还需定位实际入口。任何一种归属证据均不等于生命周期验收通过。
 同卡同触发只算候选，不能把另一能力的程序继承为本能力已覆盖。无能力卡单列，不能从分母中静默消失。
@@ -70,6 +70,26 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 精确绑定能力数：27。运行入口：button-eligibility = L12GameEngine.BuildAbilityViews；cost-commit = L12GameEngine.CommitStructuredActiveRestCost；cost-presentation = L12GameEngine.AddActivePaidCostPresentation；response-stack = L12GameEngine.PushEffect；runtime-identity = L12StructuredCardRules.IsActiveRestAbility。
 
+
+### continuous:summon-turn-counter-protection
+
+精确绑定能力数：2。运行入口：current-round-condition = L12StructuredCardRules.HasSummonTurnCounterTacticProtection；definition = L12StructuredCardSemantics.HasSummonTurnCounterTacticProtection；delegated-entry-inheritance = L12GameEngine.ResolveBatch6JAEnterEffect；legacy-delegated-entry-inheritance = L12GameEngine.TryContinueS1Faction；response-candidate-and-submit = L12GameEngine.IsProtectedFromCounterTactics。
+
+- multi-target-applicability：每个被转发的登场效果分别携带保护标记，不把多段效果合并为一个响应对象。
+- negated：保护本身是登场回合持续规则，不独立入栈；不能先无效保护再响应受保护效果。
+- no-target：持续保护不选择对象；它只过滤会影响受保护效果的反击响应。
+- payment-cancel：保护本身没有费用；反击战术是否支付费用由其自身协议处理。
+- target-invalidated：没有效果目标；每次响应候选与提交均按当前堆叠来源和回合复验。
+
+### continuous:ramses-protection-and-entry-cost
+
+精确绑定能力数：1。运行入口：button-and-snapshot = L12GameEngine.SnapshotHand；combined-play-cost = L12GameEngine.GetPlayCostWithSigurdDiscount；current-round-condition = L12StructuredCardRules.HasSummonTurnCounterTacticProtection；definition = L12StructuredCardSemantics.HasSummonTurnCounterTacticProtection；delegated-entry-inheritance = L12GameEngine.ResolveBatch6JAEnterEffect；entry-cost-calculation = L12GameEngine.PrintedEntryCostModifier；entry-cost-definition = L12StructuredCardSemantics.PrintedEntryCostRule；legacy-delegated-entry-inheritance = L12GameEngine.TryContinueS1Faction；resource-payment = L12GameEngine.EnsurePlayResourcePaymentChoice；response-candidate-and-submit = L12GameEngine.IsProtectedFromCounterTactics。
+
+- multi-target-applicability：减费只计算当前手牌实例；转发的每个登场效果分别携带保护标记。
+- negated：两项持续规则都不独立入栈，不能作为一次效果被无效。
+- no-target：持续保护与持续减费均不创建效果对象。
+- payment-cancel：保护没有费用；登场资源支付取消由公共手牌打出协议处理。
+- target-invalidated：保护按当前回合和堆叠来源复验；减费在支付提交时按当前场上陵墓守卫复算。
 
 ### hand-play:self-damage-entry-discount
 
@@ -217,6 +237,10 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0120:ability:reaction:0865f062354681b2 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.NestedResponseKeepsItsDeclaredRootWhenIntermediateStackChanges / S01-0120 | nested-authority, reconnect-settlement |
 | S01-0120:ability:reaction:0865f062354681b2 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.PublicResponseDeclarationsRestoreAndRejectDuplicateFinalSubmission / S01-0120 | commit-declaration, duplicate-declaration, presentation-declaration, reconnect-declaration |
 | S01-01D1:ability:active:2b7ae6d9b09b600b | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-01D1 | active-rest-cost, runtime-branch-mapping |
+| S01-0201:ability:static:7d31de8999ce168a | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionExpiresBeforeALaterRoundAttackEffect / S01-0201 | expiry, summon-round |
+| S01-0201:ability:static:7d31de8999ce168a | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionOnlyBlocksResponsesThatAffectProtectedEffect / S01-0201 | anonymous-availability, four-response-types |
+| S01-0202:ability:static:76a4a87caae11a73 | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionExpiresBeforeALaterRoundAttackEffect / S01-0202 | expiry, summon-round |
+| S01-0202:ability:static:76a4a87caae11a73 | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionOnlyBlocksResponsesThatAffectProtectedEffect / S01-0202 | anonymous-availability, four-response-types |
 | S01-0208:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0208 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0209:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0209 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0210:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0210 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
@@ -354,6 +378,8 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | ST01-07:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST01-07 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | ST01-08:ability:static:9ba2f4f5354a2a05 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST01-08 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | ST01-09:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST01-09 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
+| ST02-01:ability:continuous:42ada4e462a2fb94 | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionExpiresBeforeALaterRoundAttackEffect / ST02-01 | expiry, summon-round |
+| ST02-01:ability:continuous:42ada4e462a2fb94 | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionOnlyBlocksResponsesThatAffectProtectedEffect / ST02-01 | anonymous-availability, four-response-types |
 | ST02-05:ability:active:80aa98cc24ef764e | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / ST02-05 | active-rest-cost, runtime-branch-mapping |
 | ST02-08:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST02-08 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | ST03-02:ability:continuous:057a02a660ebfae1 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / ST03-02 | condition-false, source-still-in-hand |
@@ -460,11 +486,11 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-01M1 杨戬 #3 | S01-01M1:ability:static:0924c3a5995ba164 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:cost.return-morale → resolution:operation.move-zone → resolution:operation.ready | 0 | 我方 回合1次 我方士气因主宰效果返还4张及以上时，&lt;哮天犬·稚&gt;可在前排活跃登场，视为1张兵力2000的【特殊】军团 |
 | S01-01M1 杨戬 #4 | S01-01M1:ability:death:ee5adb706424f233 | death/triggered | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → resolution:operation.add-morale → resolution:operation.rest | 1 | 阵亡时 可从士气牌库追加1张休整的士气 |
 | S01-01M2 孟婆 #1 | S01-01M2:ability:static:f3ee48a69ee29306 | static/continuous | owner-unreviewed | 我方 回合1次 可选择以下一项。·返还1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → target:selection.mode → cost:cost.return-morale → cost:cost.discard → resolution:operation.draw → resolution:operation.add-morale → resolution:operation.rest → duration:duration.apply | 0 | 我方 回合1次 可选择以下一项。·返还1士气：选择对方1张军团，本回合失去「阵亡时」效果。若我方手牌不高于5张，可抽取1张牌。·若我方士气少于对方，弃置1张手牌：从士气牌库追加1张休整的士气 |
-| S01-0201 图特摩斯三世 #1 | S01-0201:ability:static:7d31de8999ce168a | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.move-zone | 0 | 此军团登场回合不受反击战术效果影响 |
+| S01-0201 图特摩斯三世 #1 | S01-0201:ability:static:7d31de8999ce168a | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.move-zone | 0 | 此军团登场回合不受反击战术效果影响 |
 | S01-0201 图特摩斯三世 #2 | S01-0201:ability:enter:9a481888b22aee09 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 击杀对方1张兵力不高于5000的军团 |
 | S01-0201 图特摩斯三世 #3 | S01-0201:ability:attack:5232e2abcec6d049 | attack/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.composite-flow | 3 | 进攻时/ |
 | S01-0201 图特摩斯三世 #4 | S01-0201:ability:death:3be85aa38d99c0d3 | death/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 3 | 阵亡时 对方所有军团本回合兵力-1000。随后击杀对方1张兵力不高于1000的军团 |
-| S01-0202 拉美西斯二世 #1 | S01-0202:ability:static:76a4a87caae11a73 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:special.domain → resolution:legacy.resolve | 0 | 此军团登场回合不受反击战术效果影响。若我方战场不存在&lt;陵墓守卫&gt;，此军团登场费用-2 |
+| S01-0202 拉美西斯二世 #1 | S01-0202:ability:static:76a4a87caae11a73 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:special.domain → resolution:legacy.resolve | 0 | 此军团登场回合不受反击战术效果影响。若我方战场不存在&lt;陵墓守卫&gt;，此军团登场费用-2 |
 | S01-0202 拉美西斯二世 #2 | S01-0202:ability:enter:488058d9c4033af4 | enter/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 选择&lt;拉美西斯二世&gt;以外最多3张【太阳城】军团，自选顺序发动其登场时效果 |
 | S01-0203 美尼斯 #1 | S01-0203:ability:static:0a317a499dc4420e | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → resolution:special.domain → resolution:legacy.resolve | 0 | 对方回合 若我方战场不存在&lt;陵墓守卫&gt;，此军团兵力+1000 |
 | S01-0203 美尼斯 #2 | S01-0203:ability:attack:31291f70ecb6b701 | attack/triggered | composite-definition | 进攻时 可弃置我方战场上1张军团 | trigger:trigger.observe → condition:control.optional → cost:cost.discard → resolution:operation.damage-master → resolution:operation.modify-troops → resolution:operation.keyword → duration:duration.apply → resolution:operation.composite-flow | 1 | 进攻时 可弃置我方战场上1张军团：此军团本回合兵力+2000，并获得强攻。（进攻对主宰造成额外1点伤害） |
@@ -980,7 +1006,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | ST01-C1 士气·天廷 #1 | ST01-C1:ability:static:6907bfcf5dbbfeb4 | static/continuous | owner-unreviewed | 我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → resolution:operation.add-morale → resolution:operation.ready | 0 | 我方 回合1次 可消耗2士气：从士气牌库追加1张活跃的士气。 |
 | ST01-C1 士气·天廷 #2 | ST01-C1:ability:static:605b9aa3d8a1ed93 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → resolution:operation.add-morale → resolution:operation.rest | 0 | 我方 回合1次 我方士气为0张时，可从士气牌库追加2张休整的士气。 |
 | ST01-M1 嫦娥 #1 | ST01-M1:ability:morale-return:3488642de8b32238 | morale-return/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.add-morale → resolution:operation.composite-flow | 1 | 回合1次 我方返还士气时，可从士气牌库追加1张休整的士气。 |
-| ST02-01 胡夫 #1 | ST02-01:ability:continuous:42ada4e462a2fb94 | continuous/continuous | composite-definition | — | trigger:trigger.observe → continuous:operation.set-state → resolution:operation.composite-flow | 0 | 此军团登场时不受反击战术效果影响。 |
+| ST02-01 胡夫 #1 | ST02-01:ability:continuous:42ada4e462a2fb94 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → continuous:operation.set-state → resolution:operation.composite-flow | 0 | 此军团登场时不受反击战术效果影响。 |
 | ST02-01 胡夫 #2 | ST02-01:ability:enter:e216943b2cbaa027 | enter/triggered | composite-definition | 登场时 可弃置我方战场1张&lt;陵墓守卫&gt; | trigger:trigger.observe → condition:control.optional → target:selection.target → target:selection.target → cost:cost.discard → resolution:operation.modify-troops → resolution:operation.composite-flow | 1 | 登场时 可弃置我方战场1张&lt;陵墓守卫&gt;：选择对方1张军团，本回合兵力-4000。 |
 | ST02-02 沙漠卫兵 #1 | ST02-02:ability:static:5e319b130a35d15f | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops | 0 | 「位于前排」获得Ability 2，且在对方回合此军团兵力+1000。 |
 | ST02-02 沙漠卫兵 #2 | ST02-02:ability:static:3a3e650e43b3745a | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → resolution:legacy.resolve | 0 | 挑衅 对方只可进攻带有此效果的军团。 |

@@ -529,6 +529,66 @@ internal static class EffectLifecycleProfiles
                 "display-and-submit-parity", "reconnect-derived-state"],
         };
 
+    internal static readonly string[] PureSummonTurnCounterProtectionAbilityIds =
+    [
+        "S01-0201:ability:static:7d31de8999ce168a",
+        "ST02-01:ability:continuous:42ada4e462a2fb94",
+    ];
+
+    internal const string RamsesProtectionAndEntryCostAbilityId =
+        "S01-0202:ability:static:76a4a87caae11a73";
+
+    private static readonly L12LifecycleProfile SummonTurnCounterProtection =
+        new("continuous:summon-turn-counter-protection",
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["definition"] = "L12StructuredCardSemantics.HasSummonTurnCounterTacticProtection",
+                ["current-round-condition"] = "L12StructuredCardRules.HasSummonTurnCounterTacticProtection",
+                ["response-candidate-and-submit"] = "IsProtectedFromCounterTactics",
+                ["delegated-entry-inheritance"] = "ResolveBatch6JAEnterEffect",
+                ["legacy-delegated-entry-inheritance"] = "TryContinueS1Faction",
+            },
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["no-target"] = "持续保护不选择对象；它只过滤会影响受保护效果的反击响应。",
+                ["negated"] = "保护本身是登场回合持续规则，不独立入栈；不能先无效保护再响应受保护效果。",
+                ["payment-cancel"] = "保护本身没有费用；反击战术是否支付费用由其自身协议处理。",
+                ["target-invalidated"] = "没有效果目标；每次响应候选与提交均按当前堆叠来源和回合复验。",
+                ["multi-target-applicability"] = "每个被转发的登场效果分别携带保护标记，不把多段效果合并为一个响应对象。",
+            })
+        {
+            AdditionalChecks = ["summon-round", "four-response-types", "delegated-entry", "expiry",
+                "anonymous-availability", "reconnect-derived-state"],
+        };
+
+    private static readonly L12LifecycleProfile RamsesProtectionAndEntryCost =
+        new("continuous:ramses-protection-and-entry-cost",
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["definition"] = "L12StructuredCardSemantics.HasSummonTurnCounterTacticProtection",
+                ["current-round-condition"] = "L12StructuredCardRules.HasSummonTurnCounterTacticProtection",
+                ["response-candidate-and-submit"] = "IsProtectedFromCounterTactics",
+                ["delegated-entry-inheritance"] = "ResolveBatch6JAEnterEffect",
+                ["legacy-delegated-entry-inheritance"] = "TryContinueS1Faction",
+                ["entry-cost-definition"] = "L12StructuredCardSemantics.PrintedEntryCostRule",
+                ["entry-cost-calculation"] = "PrintedEntryCostModifier",
+                ["combined-play-cost"] = "GetPlayCostWithSigurdDiscount",
+                ["button-and-snapshot"] = "SnapshotHand",
+                ["resource-payment"] = "EnsurePlayResourcePaymentChoice",
+            },
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["no-target"] = "持续保护与持续减费均不创建效果对象。",
+                ["negated"] = "两项持续规则都不独立入栈，不能作为一次效果被无效。",
+                ["payment-cancel"] = "保护没有费用；登场资源支付取消由公共手牌打出协议处理。",
+                ["target-invalidated"] = "保护按当前回合和堆叠来源复验；减费在支付提交时按当前场上陵墓守卫复算。",
+                ["multi-target-applicability"] = "减费只计算当前手牌实例；转发的每个登场效果分别携带保护标记。",
+            })
+        {
+            AdditionalChecks = [.. SummonTurnCounterProtection.AdditionalChecks, "entry-cost-condition-false",
+                "entry-cost-display-and-payment-parity", "entry-cost-zero-floor"],
+        };
+
     private static void ValidateOwners(L12LifecycleProfile profile)
     {
         foreach (var owner in profile.RuntimeOwners.Values)
@@ -561,6 +621,8 @@ internal static class EffectLifecycleProfiles
         ValidateOwners(PrintedEntryCost);
         ValidateOwners(StructuredHandCost);
         ValidateOwners(HandPlayBlock);
+        ValidateOwners(SummonTurnCounterProtection);
+        ValidateOwners(RamsesProtectionAndEntryCost);
         var bindings = new Dictionary<string, L12LifecycleProfile>(StringComparer.Ordinal);
         if (!abilities.TryGetValue(DesertHandSummonAbilityId, out var desertHandSummon)
             || desertHandSummon.CardId != "S02-0207" || desertHandSummon.Trigger != "play"
@@ -714,6 +776,29 @@ internal static class EffectLifecycleProfiles
             .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);
         if (!handPlayBlocks.SetEquals(HandPlayBlockAbilityIds))
             throw new InvalidOperationException("Hand-play block family changed; review its per-ability bindings.");
+        foreach (var id in PureSummonTurnCounterProtectionAbilityIds)
+        {
+            if (!abilities.TryGetValue(id, out var ability) || ability.ExecutionModel != "continuous"
+                || !L12StructuredCardSemantics.HasSummonTurnCounterTacticProtection(ability.CardId))
+                throw new InvalidOperationException($"Stale reviewed summon-turn counter protection: {id}");
+            bindings.Add(id, SummonTurnCounterProtection);
+        }
+        if (!abilities.TryGetValue(RamsesProtectionAndEntryCostAbilityId, out var ramses)
+            || ramses.ExecutionModel != "continuous"
+            || !L12StructuredCardSemantics.HasSummonTurnCounterTacticProtection(ramses.CardId)
+            || L12StructuredCardSemantics.PrintedEntryCostRule(ramses.CardId) is null)
+            throw new InvalidOperationException($"Stale reviewed Ramses combined continuous rule: {RamsesProtectionAndEntryCostAbilityId}");
+        bindings.Add(RamsesProtectionAndEntryCostAbilityId, RamsesProtectionAndEntryCost);
+        var expectedProtectionCards = PureSummonTurnCounterProtectionAbilityIds
+            .Append(RamsesProtectionAndEntryCostAbilityId)
+            .Select(id => id[..id.IndexOf(":ability:", StringComparison.Ordinal)])
+            .ToHashSet(StringComparer.Ordinal);
+        var actualProtectionCards = abilities.Values.Select(ability => ability.CardId)
+            .Distinct(StringComparer.Ordinal)
+            .Where(L12StructuredCardSemantics.HasSummonTurnCounterTacticProtection)
+            .ToHashSet(StringComparer.Ordinal);
+        if (!actualProtectionCards.SetEquals(expectedProtectionCards))
+            throw new InvalidOperationException("Summon-turn counter protection family changed; review its per-ability bindings.");
         return bindings;
     }
 }

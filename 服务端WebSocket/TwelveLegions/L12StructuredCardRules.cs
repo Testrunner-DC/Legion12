@@ -165,13 +165,6 @@ public static partial class L12StructuredCardRules
         "ST05-06|telemachusTopThree", "ST06-09|lightSwordActive",
     };
 
-    // 卡面明确写明“登场回合不受反击战术效果影响”的军团。
-    // 响应窗口只查询这一处结构化规则，禁止再从 EffectText.Contains 推断。
-    private static readonly HashSet<string> SummonTurnCounterTacticProtectionCards = new(StringComparer.Ordinal)
-    {
-        "S01-0201", "S01-0202", "ST02-01",
-    };
-
     // 冒号前存在“先选择并支付登场时效果费用”的卡，必须在效果入栈前完成预声明。
     // 身份映射集中在结构化规则层；运行时入口只查询规则能力，禁止重新出现分散卡号分支。
     private static readonly HashSet<string> PreStackEnterCostCards = new(StringComparer.Ordinal)
@@ -510,7 +503,8 @@ public static partial class L12StructuredCardRules
         => string.Equals(EffectiveProfession(card, row), profession, StringComparison.Ordinal);
 
     public static bool HasSummonTurnCounterTacticProtection(L12CardInstance card, int currentRound)
-        => card.SummonRound == currentRound && SummonTurnCounterTacticProtectionCards.Contains(card.CardId);
+        => card.SummonRound == currentRound
+            && L12StructuredCardSemantics.HasSummonTurnCounterTacticProtection(card.CardId);
 
     public static bool RequiresPreStackEnterCost(L12CardInstance card)
         => PreStackEnterCostCards.Contains(card.CardId);

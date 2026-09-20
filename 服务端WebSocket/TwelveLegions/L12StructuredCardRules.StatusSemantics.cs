@@ -48,6 +48,11 @@ public static class L12StructuredCardSemantics
             ["S02-0305"] = new("artifact", false, 0, "〈安德华拉诺特〉使我方无法从手牌打出圣物"),
             ["S02-0205"] = new("artifact", true, 1, "〈黄金圣甲虫〉位于我方圣物区，我方无法从手牌打出其他圣物"),
         };
+    private static readonly HashSet<string> SummonTurnCounterTacticProtectionCards =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "S01-0201", "S01-0202", "ST02-01",
+        };
     private static readonly HashSet<string> AttachedStrongAttackCards = new(StringComparer.OrdinalIgnoreCase)
     {
         KingsSwordCardId,
@@ -80,6 +85,9 @@ public static class L12StructuredCardSemantics
 
     public static L12HandPlayBlockRule? HandPlayBlockRule(string? cardId)
         => cardId is null ? null : HandPlayBlockRules.GetValueOrDefault(cardId);
+
+    public static bool HasSummonTurnCounterTacticProtection(string? cardId)
+        => cardId is not null && SummonTurnCounterTacticProtectionCards.Contains(cardId);
 
     public static bool IsGram(string? cardId)
         => string.Equals(cardId, GramCardId, StringComparison.OrdinalIgnoreCase);

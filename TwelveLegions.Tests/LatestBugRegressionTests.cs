@@ -1711,6 +1711,9 @@ public sealed class LatestBugRegressionTests
     [InlineData("ST02-01", "S01-0018", false)]
     [InlineData("ST02-01", "S01-0019", true)]
     [InlineData("ST02-01", "S02-0106", true)]
+    [L12AbilityEvidence("S01-0201:ability:static:7d31de8999ce168a", "four-response-types", "anonymous-availability")]
+    [L12AbilityEvidence("S01-0202:ability:static:76a4a87caae11a73", "four-response-types", "anonymous-availability")]
+    [L12AbilityEvidence("ST02-01:ability:continuous:42ada4e462a2fb94", "four-response-types", "anonymous-availability")]
     public void SummonTurnCounterTacticProtectionOnlyBlocksResponsesThatAffectProtectedEffect(
         string cardId, string responseCardId, bool expectedAvailable)
     {
@@ -1759,6 +1762,9 @@ public sealed class LatestBugRegressionTests
     [InlineData("S01-0202")]
     [InlineData("ST02-01")]
     [Trait("L12Evidence", "family:summon-turn-counter-protection-expiry")]
+    [L12AbilityEvidence("S01-0201:ability:static:7d31de8999ce168a", "summon-round", "expiry")]
+    [L12AbilityEvidence("S01-0202:ability:static:76a4a87caae11a73", "summon-round", "expiry")]
+    [L12AbilityEvidence("ST02-01:ability:continuous:42ada4e462a2fb94", "summon-round", "expiry")]
     public void SummonTurnCounterTacticProtectionExpiresBeforeALaterRoundAttackEffect(string cardId)
     {
         var game = Create(64271 + cardId.Length);
