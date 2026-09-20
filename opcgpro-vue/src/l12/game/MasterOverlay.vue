@@ -3,8 +3,8 @@ import { computed, ref, watch } from 'vue'
 import type { PlayerView } from '../types'
 import CardImage from '../CardImage.vue'
 
-const props = defineProps<{ player: PlayerView; mine: boolean; canActivate: boolean; busy?: boolean }>()
-const emit = defineEmits<{ close: []; activate: [ability: string] }>()
+const props = defineProps<{ player: PlayerView; mine: boolean; canActivate: boolean; busy?: boolean; mobileLayout?: boolean }>()
+const emit = defineEmits<{ close: []; activate: [ability: string]; focus: []; inspect: [] }>()
 const minimized = ref(false)
 watch(() => props.player.playerIndex, () => { minimized.value = false })
 
@@ -26,14 +26,14 @@ const abilities = computed<AbilityEntry[]>(() => {
 
 <template>
   <Teleport to="body">
-    <div class="master-overlay" :class="{ minimized }" @click.self="emit('close')">
+    <div class="master-overlay" :class="{ minimized, 'mobile-safe-overlay': mobileLayout }" @click.self="emit('close')">
       <section v-if="minimized" class="master-minimized">
         <button :aria-label="`展开：${player.master.masterName} · 主宰效果`" :title="`${player.master.masterName} · 主宰效果`" @click="minimized = false">展开</button>
       </section>
       <section v-else class="master-dialog" role="dialog" aria-modal="true" :aria-label="`${player.master.masterName}主宰效果`">
         <button class="master-minimize" aria-label="最小化弹框" title="最小化以查看场面" @click="minimized = true">—</button>
         <button class="master-close" aria-label="关闭" @click="emit('close')">×</button>
-        <CardImage :card-id="player.master.masterId" :legacy-url="player.master.masterImageUrl" :alt="player.master.masterName" intent="detail" eager />
+        <CardImage :card-id="player.master.masterId" :legacy-url="player.master.masterImageUrl" :alt="player.master.masterName" intent="detail" eager role="button" tabindex="0" aria-label="选择主宰卡牌" @click="mobileLayout ? emit('focus') : emit('inspect')" />
         <div class="master-content">
           <small>{{ mine ? '我方主宰' : '对方主宰' }}</small>
           <h2>{{ player.master.masterName }}</h2>
@@ -63,4 +63,6 @@ const abilities = computed<AbilityEntry[]>(() => {
 .master-overlay{position:fixed;z-index:1080;inset:0;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(2,4,5,.7);backdrop-filter:blur(5px)}
 .master-dialog{position:relative;display:grid;width:min(720px,calc(100vw - 36px));max-height:calc(100vh - 36px);grid-template-columns:220px 1fr;gap:22px;box-sizing:border-box;padding:22px;border:1px solid #ded9cc;background:linear-gradient(145deg,#171c1d,#07090a);box-shadow:0 24px 70px #000}.master-dialog>.l12-card-image{width:220px;height:308px;background:#050708}.master-content small{color:#70d7df;font-size:var(--l12-board-copy,13px);letter-spacing:.15em}.master-content h2{margin:7px 0 4px;color:#fff;font-size:max(27px,var(--l12-board-copy,13px))}.master-content>b{color:#d2525b;font-size:var(--l12-board-copy,13px)}.master-content>p{max-height:92px;overflow:auto;color:#d4d5cf;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:1.75;white-space:pre-wrap}.master-abilities{display:grid;gap:8px;margin-top:16px}.master-abilities button{padding:10px 12px;border:1px solid #70d7df;background:#132b2e;color:#fff;text-align:left}.master-abilities button:hover:not(:disabled){background:#1b6f77}.master-abilities button:disabled{border-color:#515755;background:#222625;color:#777}.master-abilities strong,.master-abilities span{display:block}.master-abilities strong{font-size:var(--l12-board-copy,13px)}.master-abilities span{margin-top:3px;color:#c6cbc5;font-size:var(--l12-board-copy,13px);line-height:1.45}.master-hint{display:block;margin-top:13px;color:#8d9490;font-size:var(--l12-board-copy,13px)}.master-minimize,.master-close{position:absolute;top:9px;width:31px;height:29px;border:1px solid #777;background:#111;color:#fff;font-size:max(18px,var(--l12-board-copy,13px))}.master-minimize{right:47px}.master-close{right:9px}.master-overlay.minimized{z-index:2000;inset:auto 16px 66px auto;padding:0;background:transparent;backdrop-filter:none;pointer-events:none}.master-minimized{display:block;pointer-events:auto}.master-minimized button{padding:6px 10px;border:1px solid #70d7df;background:#174e54;color:#fff;box-shadow:0 12px 35px #000}
 @media(max-width:650px){.master-dialog{grid-template-columns:1fr;overflow:auto}.master-dialog>.l12-card-image{width:140px;height:196px;margin:auto}.master-overlay.minimized{right:10px;bottom:60px}}
+.master-overlay.mobile-safe-overlay{z-index:2147483605;inset:var(--l12-viewport-top,0px) auto auto var(--l12-viewport-left,0px);box-sizing:border-box;width:var(--l12-viewport-width,100vw);height:var(--l12-viewport-height,100vh);padding:8px}.master-overlay.mobile-safe-overlay .master-dialog{width:min(560px,100%);max-height:100%;grid-template-columns:118px minmax(0,1fr);gap:12px;padding:13px;overflow:auto}.master-overlay.mobile-safe-overlay .master-dialog>.l12-card-image{width:118px;height:165px}.master-overlay.mobile-safe-overlay.minimized{inset:auto calc(var(--l12-viewport-left,0px) + 8px) calc(var(--l12-viewport-top,0px) + 8px) auto;width:auto;height:auto;padding:0}
+.master-overlay.mobile-safe-overlay.minimized{inset:auto calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 110px) calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + var(--l12-mobile-hand-h,64px) + 5px) auto}
 </style>

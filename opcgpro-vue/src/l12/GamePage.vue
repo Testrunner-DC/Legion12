@@ -13,8 +13,17 @@ const game = computed(() => l12State.game)
 const agreedDraw = computed(() => game.value?.phase === 'GameOver' && game.value.winner == null
   && (game.value.matchGovernance?.drawRequest?.status === 'accepted'
     || game.value.recentEvents?.some(event => event.type === 'game-draw')))
+const playerFacingWinnerReason = computed(() => {
+  const raw = game.value?.winnerReason?.trim() ?? ''
+  const filtered = raw.split(/(?<=[。！？；])|\n+/)
+    .map(part => part.trim())
+    .filter(part => part && !/(双方.*离开.*关闭房间|最长.*30\s*分钟|点击返回.*离开本局|返回后才离开|服务器.*保留|结果将保留在此处)/.test(part))
+    .join('')
+  return filtered || '对局已结束'
+})
 const settingsOpen = ref(false)
 const gmPanelOpen = ref(l12State.gmEnabled)
+const gameOverMinimized = ref(false)
 const opponent = computed(() => l12State.room?.players.find(player => player.playerIndex !== l12State.room?.yourPlayerIndex))
 const completedOsirisSequence = ref('')
 const osirisSequenceKey = ref('')
@@ -41,6 +50,7 @@ watch(() => [game.value?.matchId ?? '', game.value?.recentEvents?.map(event => e
   if (key === completedOsirisSequence.value || key === osirisSequenceKey.value) return
   osirisSequenceKey.value = key
 }, { immediate: true })
+watch(() => `${game.value?.matchId ?? ''}:${game.value?.phase ?? ''}`, () => { gameOverMinimized.value = false })
 const osirisSequencePlaying = computed(() => Boolean(osirisSequenceKey.value
   && completedOsirisSequence.value !== osirisSequenceKey.value))
 function completeOsirisSequence() {
@@ -94,11 +104,15 @@ function returnToLobby() {
     </Transition>
 
     <Transition name="fade">
-      <div v-if="game.phase === 'GameOver' && !osirisSequencePlaying" class="game-over"
+      <button v-if="game.phase === 'GameOver' && !osirisSequencePlaying && gameOverMinimized" class="game-over-restore" type="button" @click="gameOverMinimized = false">恢复对局结果</button>
+    </Transition>
+    <Transition name="fade">
+      <div v-if="game.phase === 'GameOver' && !osirisSequencePlaying && !gameOverMinimized" class="game-over"
         data-ui-contract="manual-game-over-exit" role="dialog" aria-modal="true" aria-label="对局结果">
+        <button class="game-over-minimize" type="button" aria-label="最小化对局结果" @click="gameOverMinimized = true">—</button>
         <p>{{ game.winner == null ? (agreedDraw ? '平局' : '对局无效') : (game.winner === game.you ? '胜利' : '败北') }}</p>
-        <strong>{{ game.winnerReason || '对局已结束' }}</strong>
-        <small>MATCH {{ game.matchId.slice(0, 12) }} · REV {{ game.revision }}</small>
+        <strong>{{ playerFacingWinnerReason }}</strong>
+        <small>对局编号 {{ game.matchId.slice(0, 12) }}</small>
         <section v-if="l12State.rankedSettlement" class="ranked-result">
           <b>{{ l12State.rankedSettlement.faction }} · {{ ['held', 'voided'].includes(l12State.rankedSettlement.rewardStatus || '') ? l12State.rankedSettlement.tierBefore : l12State.rankedSettlement.tierAfter }}</b>
           <strong v-if="l12State.rankedSettlement.rewardStatus === 'held'">本局排位收益待审核，尚未计入七曜值与战绩。请查看处置通知，可提交申诉。</strong>
@@ -121,7 +135,22 @@ function returnToLobby() {
 .battle-route-controls{position:fixed;z-index:1600;top:12px;right:14px;display:flex;align-items:center;gap:7px;padding:6px;border:1px solid #445057;background:#080d11e8;box-shadow:0 8px 24px #000}.battle-route-controls span{display:flex;align-items:center;gap:6px;padding:0 7px;color:#b76570;font-size:14px;font-weight:900}.battle-route-controls span.online{color:#58c99a}.battle-route-controls i{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 7px currentColor}.battle-route-controls button{padding:7px 10px;border:1px solid #57636a;background:#121a20;color:#fff;font-size:14px;font-weight:900}.battle-route-controls .surrender{border-color:#7f343e;background:#321219;color:#f2b6bc}.battle-route-controls .mobile-route-break{display:none}
 .battle-settings-button{position:fixed;z-index:1600;left:12px;bottom:12px;display:grid;width:48px;height:48px;place-items:center;border:1px solid #59666b;background:#080d11ed;box-shadow:0 8px 24px #000;color:#e8d183;font-size:19px}.battle-settings-button span{position:absolute;left:100%;bottom:0;padding:4px 7px;border:1px solid #38454b;background:#080d11ed;color:#9da8a8;font-size:14px;letter-spacing:.12em}.battle-settings-mask{position:fixed;z-index:4000;inset:0;display:grid;place-items:center;padding:18px;background:#010407c9;backdrop-filter:blur(8px)}
 .battle-ranked-ticker{position:fixed;z-index:1500;top:8px;left:50%;width:min(760px,calc(100vw - 430px));transform:translateX(-50%)}.ranked-result{display:flex;min-width:320px;flex-direction:column;gap:6px;margin:12px 0;padding:12px;border:1px solid #a88c42;background:#17150d}.ranked-result>b{color:#e8cf7e}.ranked-result strong{font-size:14px}.ranked-result i{color:#65d2a1;font-style:normal}.ranked-result details span{display:flex;justify-content:space-between;color:#b5bdbe;font-size:14px}.ranked-result summary{cursor:pointer;color:#e1c978;font-size:14px}@media(max-width:900px){.battle-ranked-ticker{top:52px;width:calc(100vw - 20px)}}
+.game-over-minimize,.game-over-restore{display:none}
 /* Only the runtime-gated touch battlefield gets this compact route dock.  Desktop
    controls retain their existing layout even in a short browser window. */
-.game-page:has(.mobile-landscape-board) .battle-route-controls{top:42px;right:6px;width:90px;box-sizing:border-box;display:grid;grid-template-columns:1fr 1fr;gap:3px;padding:3px;box-shadow:none}.game-page:has(.mobile-landscape-board) .battle-route-controls>span{display:none}.game-page:has(.mobile-landscape-board) .battle-route-controls button{min-height:28px;padding:3px 2px;font-size:10px;line-height:1.05}.game-page:has(.mobile-landscape-board) .battle-route-controls .mobile-route-break{display:inline}.game-page:has(.mobile-landscape-board) .battle-route-controls .mobile-route-break::after{content:'\A';white-space:pre}.game-page:has(.mobile-landscape-board) .battle-ranked-ticker{display:none}
+.game-page:has(.mobile-landscape-board){inset:0!important;width:100vw!important;height:100vh!important}
+.game-page:has(.mobile-landscape-board) .battle-route-controls{top:calc(var(--l12-viewport-top,0px) + 42px);right:calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 6px);width:90px;box-sizing:border-box;display:grid;grid-template-columns:1fr 1fr;gap:3px;padding:3px;box-shadow:none}.game-page:has(.mobile-landscape-board) .battle-route-controls>span{display:none}.game-page:has(.mobile-landscape-board) .battle-route-controls button{min-width:0;min-height:28px;padding:3px 2px;font-size:10px;line-height:1.05}.game-page:has(.mobile-landscape-board) .battle-route-controls .mobile-route-break{display:inline}.game-page:has(.mobile-landscape-board) .battle-route-controls .mobile-route-break::after{content:'\A';white-space:pre}.game-page:has(.mobile-landscape-board) .battle-ranked-ticker{display:none}
+.game-page:has(.mobile-landscape-board) :deep(.gm-open){top:calc(var(--l12-viewport-top,0px) + 42px);right:calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 102px)}
+.game-page:has(.mobile-landscape-board) :deep(.gm-panel){top:calc(var(--l12-viewport-top,0px) + 8px);right:calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 8px);bottom:auto;box-sizing:border-box;width:min(320px,calc(var(--l12-viewport-width,100vw) - 16px));height:calc(var(--l12-viewport-height,100vh) - 16px)}
+.game-page:has(.mobile-landscape-board) .game-over{box-sizing:border-box;top:var(--l12-viewport-top,0px);left:var(--l12-viewport-left,0px);right:auto;bottom:auto;width:var(--l12-viewport-width,100vw);height:var(--l12-viewport-height,100vh);padding:max(10px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));place-content:safe center;gap:6px;overflow:auto}
+.game-page:has(.mobile-landscape-board) .game-over>p{font-size:clamp(32px,10vh,52px);line-height:1;letter-spacing:.12em}
+.game-page:has(.mobile-landscape-board) .game-over>strong{display:block;max-width:min(620px,calc(var(--l12-viewport-width,100vw) - 32px));margin:auto;font-size:12px;line-height:1.35}
+.game-page:has(.mobile-landscape-board) .game-over>small{font-size:9px;line-height:1.2}
+.game-page:has(.mobile-landscape-board) .game-over>.ranked-result{box-sizing:border-box;width:min(440px,calc(var(--l12-viewport-width,100vw) - 32px));min-width:0;max-height:42vh;margin:2px auto;padding:6px 8px;gap:3px;overflow:auto}
+.game-page:has(.mobile-landscape-board) .game-over>.ranked-result>b{font-size:12px}
+.game-page:has(.mobile-landscape-board) .game-over>.ranked-result strong,.game-page:has(.mobile-landscape-board) .game-over>.ranked-result summary,.game-page:has(.mobile-landscape-board) .game-over>.ranked-result details span{font-size:10px;line-height:1.3}
+.game-page:has(.mobile-landscape-board) .game-over>button{min-height:32px;margin:0 auto;padding:5px 18px;font-size:12px}
+.game-page:has(.mobile-landscape-board) .game-over>.game-over-minimize{position:absolute;top:8px;right:8px;display:block;width:34px;min-width:34px;height:30px;margin:0;padding:0}
+.game-page:has(.mobile-landscape-board) .game-over-restore{position:fixed;z-index:2147483604;left:calc(var(--l12-viewport-left,0px) + 96px);bottom:calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + 74px);display:block;min-height:32px;padding:4px 9px;border:1px solid #d6bd69;background:#403714;color:#fff;font-size:10px;font-weight:900}
+.game-page:has(.mobile-landscape-board):has(.game-over) .battle-route-controls{display:none}
 </style>

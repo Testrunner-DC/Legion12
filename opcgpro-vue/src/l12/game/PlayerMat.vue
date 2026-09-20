@@ -49,6 +49,7 @@ const emit = defineEmits<{
   slot: [row: number, slot: number, card: Card | null]
   master: []
   focus: [card: Card]
+  inspect: [card: Card]
   graveyard: [playerIndex: number]
   cardAction: [action: 'attack' | 'move' | 'freeMove' | 'cavalryMove', card: Card]
   ability: [card: Card, ability: string]
@@ -57,6 +58,10 @@ const emit = defineEmits<{
   paymentResource: [instanceId: string]
   openMoralePayment: []
 }>()
+function focusPopupCard(card:Card){
+  emit('focus',card)
+  if(!props.mobileLayout)emit('inspect',card)
+}
 const isSelected = (instanceId?: string) => Boolean(instanceId
   && (props.selectedId === instanceId || props.selectedIds?.includes(instanceId)))
 
@@ -281,6 +286,7 @@ function temporaryMoralePayable(index: number) {
   return Boolean(props.controllable && props.paymentChoiceIds?.includes(temporaryMoraleChoiceId(index)))
 }
 function selectRunePayment(index: number) {
+  if (props.mobileMoralePicker) { emit('openMoralePayment'); return }
   const choiceId = `rune:${index}`
   if (props.paymentChoiceIds?.includes(choiceId)) emit('paymentResource', choiceId)
 }
@@ -461,14 +467,15 @@ function beginCardAbility(card: Card) {
   </section>
 
   <Teleport to="body">
-    <div v-if="factionOpen" class="faction-effect-overlay" :class="{ minimized: factionMinimized }" @click.self="factionOpen = false">
+    <div v-if="factionOpen" class="faction-effect-overlay" :class="{ minimized: factionMinimized, 'mobile-safe-overlay': mobileLayout }" @click.self="factionOpen = false">
       <section v-if="factionMinimized" class="faction-minimized-bar">
         <button :aria-label="`展开：${player.factionEffect?.name || '阵营效果'}`" :title="player.factionEffect?.name || '阵营效果'" @click="factionMinimized = false">展开</button>
       </section>
       <section v-else class="faction-effect-dialog" role="dialog" aria-modal="true">
         <button class="faction-minimize" aria-label="最小化弹框" title="最小化以查看场面" @click="factionMinimized = true">—</button>
         <button class="faction-close" aria-label="关闭" @click="factionOpen = false">×</button>
-        <CardImage v-if="player.factionEffect" :card-id="player.factionEffect.cardId" :legacy-url="player.factionEffect.imageUrl" :alt="player.factionEffect.name" intent="detail" eager />
+        <CardImage v-if="player.factionEffect" :card-id="player.factionEffect.cardId" :legacy-url="player.factionEffect.imageUrl" :alt="player.factionEffect.name" intent="detail" eager
+          role="button" tabindex="0" aria-label="选择阵营效果卡牌" @click="focusPopupCard({ ...masterCard, instanceId: `faction-${player.playerIndex}`, cardId: player.factionEffect.cardId, name: player.factionEffect.name, cardType: 'faction', imageUrl: player.factionEffect.imageUrl, effectText: player.factionEffect.effectText })" />
         <div>
           <small>{{ side === 'my' ? '我方阵营效果' : '对方阵营效果' }}</small>
           <h2>{{ player.factionEffect?.name || '阵营效果' }}</h2>
@@ -488,14 +495,14 @@ function beginCardAbility(card: Card) {
   </Teleport>
 
   <Teleport to="body">
-    <div v-if="abilityCardOpen" class="faction-effect-overlay" :class="{ minimized: abilityCardMinimized }" @click.self="abilityCardOpen = null">
+    <div v-if="abilityCardOpen" class="faction-effect-overlay" :class="{ minimized: abilityCardMinimized, 'mobile-safe-overlay': mobileLayout }" @click.self="abilityCardOpen = null">
       <section v-if="abilityCardMinimized" class="faction-minimized-bar">
         <button :aria-label="`展开：${abilityCardOpen.name}`" :title="abilityCardOpen.name" @click="abilityCardMinimized = false">展开</button>
       </section>
       <section v-else class="faction-effect-dialog" role="dialog" aria-modal="true">
         <button class="faction-minimize" aria-label="最小化弹框" @click="abilityCardMinimized = true">—</button>
         <button class="faction-close" aria-label="关闭" @click="abilityCardOpen = null">×</button>
-        <CardImage :card-id="abilityCardOpen.cardId" :legacy-url="abilityCardOpen.imageUrl" :alt="abilityCardOpen.name" intent="detail" eager @mouseenter="emit('focus', abilityCardOpen)" />
+        <CardImage :card-id="abilityCardOpen.cardId" :legacy-url="abilityCardOpen.imageUrl" :alt="abilityCardOpen.name" intent="detail" eager role="button" tabindex="0" aria-label="选择卡牌" @mouseenter="emit('focus', abilityCardOpen)" @click="focusPopupCard(abilityCardOpen)" />
         <div>
           <small>卡牌效果</small><h2>{{ abilityCardOpen.name }}</h2>
           <p v-if="!activeAbilities(abilityCardOpen).length" class="l12-effect-body">{{ abilityCardOpen.effectText || '暂无效果文字' }}</p>
@@ -560,4 +567,6 @@ function beginCardAbility(card: Card) {
 .faction-effect-dialog>.l12-card-image{width:220px;height:308px;background:#050708}
 .faction-effect-dialog small{color:var(--cyan);font-size:var(--l12-board-copy,13px);letter-spacing:.14em}.faction-effect-dialog h2{margin:8px 0 14px;color:#f0ede4;font-size:max(25px,var(--l12-board-copy,13px))}.faction-effect-dialog p{color:#d4d5cf;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:1.85;white-space:pre-wrap}.faction-close,.faction-minimize{position:absolute;top:9px;width:30px;height:30px;border:1px solid #777;background:#111;color:#eee;font-size:max(20px,var(--l12-board-copy,13px))}.faction-close{right:9px}.faction-minimize{right:47px}.faction-effect-actions{display:grid;gap:8px;margin-top:20px}.faction-effect-actions button{padding:11px;border:1px solid var(--cyan);background:rgba(40,133,140,.2);color:#fff;font-weight:900;text-align:left}.faction-effect-actions button:disabled{cursor:not-allowed;border-color:#4a504e;background:#202423;color:#737a77;filter:saturate(.25)}.faction-action-hint{display:block;margin-top:18px;color:#777f7c;font-size:var(--l12-board-copy,13px)}.faction-effect-overlay.minimized{z-index:2000;inset:auto 16px 66px auto;display:block;background:transparent;backdrop-filter:none;pointer-events:none}.faction-minimized-bar{display:block;pointer-events:auto}.faction-minimized-bar button{padding:6px 10px;border:1px solid var(--cyan);background:#174e54;color:#fff;box-shadow:0 12px 35px #000}
 @media(max-width:650px){.faction-effect-dialog{grid-template-columns:1fr}.faction-effect-dialog>.l12-card-image{width:140px;height:196px;margin:auto}.faction-effect-overlay.minimized{right:10px;bottom:60px}}
+.faction-effect-overlay.mobile-safe-overlay{z-index:2147483605;inset:var(--l12-viewport-top,0px) auto auto var(--l12-viewport-left,0px);box-sizing:border-box;width:var(--l12-viewport-width,100vw);height:var(--l12-viewport-height,100vh);padding:8px;overflow:hidden}.faction-effect-overlay.mobile-safe-overlay .faction-effect-dialog{box-sizing:border-box;width:min(560px,100%);max-height:100%;grid-template-columns:minmax(92px,118px) minmax(0,1fr);gap:12px;padding:13px;overflow:auto}.faction-effect-overlay.mobile-safe-overlay .faction-effect-dialog>.l12-card-image{width:118px;height:165px;align-self:start}.faction-effect-overlay.mobile-safe-overlay .faction-effect-dialog h2{margin:4px 0 8px;font-size:18px;line-height:1.25}.faction-effect-overlay.mobile-safe-overlay .faction-effect-dialog p{max-height:36vh;margin:0;overflow:auto;font-size:12px;line-height:1.55}.faction-effect-overlay.mobile-safe-overlay .faction-effect-actions{max-height:34vh;margin-top:10px;overflow:auto}.faction-effect-overlay.mobile-safe-overlay .faction-effect-actions button{padding:8px;font-size:12px;line-height:1.45}.faction-effect-overlay.mobile-safe-overlay.minimized{inset:auto calc(var(--l12-viewport-left,0px) + 8px) calc(var(--l12-viewport-top,0px) + 8px) auto;width:auto;height:auto;padding:0}
+.faction-effect-overlay.mobile-safe-overlay.minimized{inset:auto calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 110px) calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + var(--l12-mobile-hand-h,64px) + 5px) auto}
 </style>

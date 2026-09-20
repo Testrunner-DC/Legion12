@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { Card, DisasterCardView, GameState, Prompt } from '../types'
 import { isHorizontalCardType } from '../cardPresentation'
 import { gameAction, l12State, sandboxAction } from '../net'
@@ -17,6 +17,7 @@ const props = withDefaults(defineProps<{
   suppressDefenseWait?: boolean
   readOnly?: boolean
   inspectorVisible?: boolean
+  mobileLayout?: boolean
 }>(), { mulliganSelectedIds: () => [], busy: false, suppressDefenseWait: false, readOnly: false, inspectorVisible: false })
 const emit = defineEmits<{
   mulliganToggle: [id: string]
@@ -350,6 +351,60 @@ const displayedChoices = computed(() => {
 function disabledChoiceReason(choice: string) {
   return prompt.value?.data?.[`disabledChoice:${choice}`] ?? ''
 }
+function updateCardStripEdges(element: HTMLElement) {
+  const overflow = element.scrollWidth > element.clientWidth + 2
+  element.dataset.overflow = overflow ? 'true' : 'false'
+  element.dataset.moreStart = overflow && element.scrollLeft > 2 ? 'true' : 'false'
+  element.dataset.moreEnd = overflow && element.scrollLeft + element.clientWidth < element.scrollWidth - 2 ? 'true' : 'false'
+}
+function cardStripEventTarget(event: Event) {
+  const target = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>('.prompt-card-strip') : null
+  return target
+}
+function onCardStripScroll(event: Event) {
+  const element = cardStripEventTarget(event)
+  if (element) updateCardStripEdges(element)
+}
+function onCardStripWheel(event: WheelEvent) {
+  const element = cardStripEventTarget(event)
+  if (!element || element.scrollWidth <= element.clientWidth + 2) return
+  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+  if (!delta) return
+  event.preventDefault()
+  element.scrollLeft += delta
+  updateCardStripEdges(element)
+}
+function refreshCardStrips() {
+  nextTick(() => document.querySelectorAll<HTMLElement>('.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip').forEach(updateCardStripEdges))
+}
+let cardStripDrag: { element: HTMLElement; pointerId: number; startX: number; startScroll: number; moved: boolean } | null = null
+function onCardStripPointerDown(event: PointerEvent) {
+  if (!props.mobileLayout || event.button !== 0) return
+  const element = cardStripEventTarget(event)
+  if (!element || element.scrollWidth <= element.clientWidth + 2) return
+  // Do not capture a simple tap: pointer capture retargets the eventual click
+  // to the strip and makes the card itself impossible to select. Capture only
+  // after the gesture has crossed the drag threshold.
+  cardStripDrag = { element, pointerId:event.pointerId, startX:event.clientX, startScroll:element.scrollLeft, moved:false }
+}
+function onCardStripPointerMove(event: PointerEvent) {
+  if (!cardStripDrag || cardStripDrag.pointerId !== event.pointerId) return
+  if (!cardStripDrag.moved && Math.abs(event.clientX - cardStripDrag.startX) < 5) return
+  if (!cardStripDrag.moved) {
+    cardStripDrag.moved = true
+    cardStripDrag.element.setPointerCapture?.(event.pointerId)
+  }
+  event.preventDefault()
+  cardStripDrag.element.scrollLeft = cardStripDrag.startScroll - (event.clientX - cardStripDrag.startX)
+  updateCardStripEdges(cardStripDrag.element)
+}
+function endCardStripPointer(event: PointerEvent) {
+  if (!cardStripDrag || cardStripDrag.pointerId !== event.pointerId) return
+  if (cardStripDrag.element.hasPointerCapture?.(event.pointerId)) cardStripDrag.element.releasePointerCapture?.(event.pointerId)
+  updateCardStripEdges(cardStripDrag.element)
+  cardStripDrag = null
+}
+watch(() => `${visible.value}:${minimized.value}:${displayedChoices.value.length}`, refreshCardStrips, { immediate: true })
 const primaryChoices = computed(() => (hasCardChoices.value || (isEffectDecision.value && !isPureEffectDecision.value))
   ? displayedChoices.value.filter(id => !isDeclineChoice(id)) : displayedChoices.value)
 const supplementalChoices = computed(() => currentChoices.value
@@ -531,8 +586,9 @@ function kindLabel() {
 
 <template>
   <Teleport to="body">
-    <div v-if="visible" class="l12-prompt-overlay"
-      :class="{ preparation: isPreparation, initiative: isInitiative, 'disaster-choice': isDisasterChoice, 'information-confirm': isInfoConfirm, waiting: waitingPrompt || (isMulliganPhase && !isMulligan), minimized, 'inspector-active': inspectorVisible }">
+    <div v-if="visible" class="l12-prompt-overlay" @scroll.capture="onCardStripScroll" @wheel="onCardStripWheel"
+      @pointerdown="onCardStripPointerDown" @pointermove="onCardStripPointerMove" @pointerup="endCardStripPointer" @pointercancel="endCardStripPointer"
+      :class="{ preparation: isPreparation, initiative: isInitiative, 'disaster-choice': isDisasterChoice, 'information-confirm': isInfoConfirm, waiting: waitingPrompt || (isMulliganPhase && !isMulligan), minimized, 'inspector-active': inspectorVisible, 'mobile-safe-overlay': mobileLayout }">
       <section v-if="minimized" class="prompt-minimized-bar" role="status">
         <button :aria-label="`展开：${overlayTitle}`" :title="overlayTitle" @click="minimized = false">展开</button>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
@@ -776,6 +832,7 @@ function kindLabel() {
 @media(max-width:700px){.disaster-preparation-history{grid-template-columns:1fr;max-height:260px;overflow:auto}.disaster-preparation-history>section>div{min-height:68px}.disaster-preparation-history button{width:96px;min-width:96px}.disaster-preparation-history img,.disaster-preparation-history .l12-card-image{width:86px}}
 .initiative-race img{width:58px;height:58px;object-fit:cover;border:2px solid #666;border-radius:2px}
 .l12-prompt-overlay,.l12-prompt-overlay.minimized{z-index:3000!important}
+.l12-prompt-overlay.mobile-safe-overlay{inset:var(--l12-viewport-top,0px) auto auto var(--l12-viewport-left,0px)!important;width:var(--l12-viewport-width,100vw)!important;height:var(--l12-viewport-height,100vh)!important;padding:8px!important;overflow:hidden}.l12-prompt-overlay.mobile-safe-overlay .prompt-panel,.l12-prompt-overlay.mobile-safe-overlay .waiting-panel{box-sizing:border-box;max-width:100%!important;max-height:100%;overflow:auto}.l12-prompt-overlay.mobile-safe-overlay .prompt-panel{padding:12px}.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip{position:relative;max-height:54vh;overflow-x:auto;overflow-y:hidden;overscroll-behavior-inline:contain;scroll-behavior:smooth;scrollbar-width:none;touch-action:pan-x}.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip::-webkit-scrollbar{display:none}.l12-prompt-overlay.mobile-safe-overlay.minimized{inset:auto calc(var(--l12-viewport-left,0px) + 8px) calc(var(--l12-viewport-top,0px) + 8px) auto!important;width:auto!important;height:auto!important;padding:0!important}
 /* Center short candidate groups without hiding the start of overflowing rows. */
 .prompt-choices.prompt-card-strip{justify-content:safe center}
 .prompt-choices.effect-option-list{display:flex;width:100%;flex-wrap:wrap;justify-content:center}
@@ -787,4 +844,8 @@ function kindLabel() {
 .prompt-action-footer>.prompt-footer-choice,.prompt-action-footer>.prompt-confirm-choice{box-sizing:border-box;width:112px;min-width:112px;min-height:44px;padding:9px 12px;font-size:var(--l12-board-copy,13px);line-height:1.35;text-align:center}
 .prompt-action-footer>.prompt-footer-choice.selected{border-color:#70d7df;background:#174e54;color:#fff}
 @media(max-width:520px){.prompt-action-footer>span{flex-basis:100%}}
+.l12-prompt-overlay.mobile-safe-overlay.minimized{inset:auto calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 110px) calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + var(--l12-mobile-hand-h,64px) + 5px) auto!important}
+.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip[data-more-start="false"][data-more-end="true"]{box-shadow:inset -16px 0 14px -13px #7adce5}
+.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip[data-more-start="true"][data-more-end="false"]{box-shadow:inset 16px 0 14px -13px #7adce5}
+.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip[data-more-start="true"][data-more-end="true"]{box-shadow:inset 16px 0 14px -13px #7adce5,inset -16px 0 14px -13px #7adce5}
 </style>

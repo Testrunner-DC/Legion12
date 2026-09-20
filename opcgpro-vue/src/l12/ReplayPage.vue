@@ -5,6 +5,7 @@ import GameBoard from './game/GameBoard.vue'
 import { loadDeckCatalog, type DeckCard } from './decks'
 import { adminApi, PlatformRequestError, platformRequest } from './platform'
 import { adminReplayDetail, consumeImportedReplay, replayFocusCardAt, replayGameAt, type MatchDetail } from './replayModel'
+import { isMobileDeviceExperience } from './mobileViewport'
 
 const route = useRoute()
 const router = useRouter()
@@ -20,6 +21,9 @@ const replayNextCursor = ref<string | undefined>()
 const replayTotalCommands = ref(0)
 const loadingReplayPage = ref(false)
 const replayPresentationBusy = ref(false)
+// Mobile replay is intentionally a hard stop: do not load its data or mount a
+// board behind a message that a player cannot use on this form factor.
+const mobileReplayBlocked = isMobileDeviceExperience()
 let timer: ReturnType<typeof setTimeout> | null = null
 let playbackGeneration = 0
 
@@ -51,7 +55,9 @@ const replayResult = computed(() => {
   }
 })
 
-onMounted(loadReplay)
+onMounted(() => {
+  if (!mobileReplayBlocked) void loadReplay()
+})
 onBeforeUnmount(stop)
 
 async function loadReplay() {
@@ -185,22 +191,26 @@ function returnFromReplay() {
 
 <template>
   <div class="game-page replay-page">
-    <GameBoard v-if="currentGame" :game="currentGame" :replay-focus-card="replayFocusCard"
+    <main v-if="mobileReplayBlocked" class="replay-mobile-blocked" role="status">
+      <p>请到电脑端查看回放</p>
+      <button @click="returnFromReplay">{{ returnLabel }}</button>
+    </main>
+    <GameBoard v-else-if="currentGame" :game="currentGame" :replay-focus-card="replayFocusCard"
       :replay-playback-speed="playbackSpeed" read-only @replay-presentation-change="replayPresentationBusy = $event" />
 
-    <div class="replay-route-controls">
+    <div v-if="!mobileReplayBlocked" class="replay-route-controls">
       <span v-if="detail">{{ detail.match.player0 }} VS {{ detail.match.player1 }}</span>
       <button @click="returnFromReplay">{{ returnLabel }}</button>
     </div>
 
-    <p v-if="catalogWarning" class="replay-catalog-warning" role="status">{{ catalogWarning }}</p>
+    <p v-if="!mobileReplayBlocked && catalogWarning" class="replay-catalog-warning" role="status">{{ catalogWarning }}</p>
 
-    <div v-if="replayResult" class="replay-result" :data-state="replayResult.state" aria-live="polite">
+    <div v-if="!mobileReplayBlocked && replayResult" class="replay-result" :data-state="replayResult.state" aria-live="polite">
       <strong>对局结束</strong>
       <span v-for="(player, index) in replayResult.players" :key="index" :data-result="player.result"><b>{{ player.name }}</b><em>{{ player.result }}</em></span>
     </div>
 
-    <div v-if="currentGame" class="replay-controls" aria-label="回放控制">
+    <div v-if="!mobileReplayBlocked && currentGame" class="replay-controls" aria-label="回放控制">
       <button :disabled="atFirst || replayPresentationBusy" @click="previous">上一步</button>
       <button class="play" @click="toggle">{{ playing ? '暂停' : '播放' }}</button>
       <button v-for="speed in ([1, 2, 3] as const)" :key="speed" class="speed" :class="{ active: playbackSpeed === speed }" :aria-pressed="playbackSpeed === speed" @click="setPlaybackSpeed(speed)">{{ speed.toFixed(1) }}</button>
@@ -208,7 +218,7 @@ function returnFromReplay() {
       <small>步骤 {{ selectedStep + 1 }} / {{ totalSteps }}<template v-if="isAdminReplay"> · 分页</template></small>
     </div>
 
-    <main v-if="loading || error" class="replay-loading">
+    <main v-if="!mobileReplayBlocked && (loading || error)" class="replay-loading">
       <p>{{ loading ? '正在加载回放…' : error }}</p>
       <button v-if="error" @click="returnFromReplay">{{ returnLabel }}</button>
     </main>
@@ -217,6 +227,7 @@ function returnFromReplay() {
 
 <style scoped>
 .replay-page{background:#050809}
+.replay-mobile-blocked{position:fixed;inset:0;display:grid;place-content:center;justify-items:center;gap:14px;background:radial-gradient(circle,rgba(28,70,74,.28),transparent 40%),#050809;color:#e7e4da;font-weight:900}.replay-mobile-blocked p{margin:0;font-size:18px}.replay-mobile-blocked button{padding:8px 12px;border:1px solid #667276;background:#11191c;color:#f1eee6;font-size:14px;font-weight:900}
 .replay-route-controls{position:fixed;z-index:3200;top:12px;right:14px;display:flex;align-items:center;gap:9px;padding:6px;border:1px solid #445057;background:#080d11ed;box-shadow:0 8px 24px #000}
 .replay-route-controls span{max-width:310px;overflow:hidden;padding:0 7px;color:#aeb8b7;font-size:14px;font-weight:900;text-overflow:ellipsis;white-space:nowrap}
 .replay-route-controls button,.replay-controls button,.replay-loading button{padding:8px 12px;border:1px solid #667276;background:#11191c;color:#f1eee6;font-size:14px;font-weight:900}

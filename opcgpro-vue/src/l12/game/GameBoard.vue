@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ActionEvent, Card, DisasterCardView, GameState, Phase } from '../types'
 import { isCounterTacticCard, isHorizontalCardType } from '../cardPresentation'
-import { blackLotusLogoUrl, destructionRoundBackUrl, disasterRoundUrl, factionLogoUrls, godPowerLogoUrl, siteBrandIconUrl } from '../specialAssets'
+import { blackLotusLogoUrl, destructionRoundBackUrl, disasterRoundUrl, factionLogoUrls, godPowerLogoUrl, roundCardUrl, siteBrandIconUrl } from '../specialAssets'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
 import BattleEventLog from './BattleEventLog.vue'
@@ -25,7 +25,7 @@ import CardDetailContent from '../CardDetailContent.vue'
 import type { DeckCard } from '../decks'
 import RankedIdentityBadge from '../RankedIdentityBadge.vue'
 import { getFactionPresentation } from '../factionPresentation'
-import { visibleViewport, viewportRect } from '../mobileViewport'
+import { isMobileDeviceExperience, visibleViewport, viewportRect } from '../mobileViewport'
 
 type GmPlacementRequest = {
   type: 'placeCard' | 'playHandCard'
@@ -56,10 +56,14 @@ const compactViewport = ref(false)
 // Kept deliberately separate from `compactViewport`: short desktop windows (1280×480)
 // must retain their established board. This flag is only for touch-phone landscape.
 const mobileLandscapeViewport = ref(false)
+const mobileDeviceExperience = ref(false)
 const mobileRecordOpen = ref(false)
+const mobileRecordMinimized = ref(false)
 const mobileMoralePickerOpen = ref(false)
-// On phones the card face stays intentionally compact.  A direct card tap opens
-// this independent left drawer so rules text is never dependent on tiny overlays.
+const mobileMoralePickerMinimized = ref(false)
+const mobileMoraleReason = ref('')
+// On phones the card face stays intentionally compact. The independent left
+// drawer is opened only through its persistent handle, keeping a card tap safe.
 const mobileInspectorOpen = ref(false)
 const selectedId = ref<string | null>(null)
 const focusCard = ref<Card | null>(null)
@@ -103,6 +107,9 @@ const playArmed = ref(false)
 const masterPlayerIndex = ref<number | null>(null)
 const boardTargetIds = ref<string[]>([])
 const paymentResourceIds = ref<string[]>([])
+const boardControlMinimized = ref(false)
+const combatDecisionMinimized = ref(false)
+const inspectionLayerMinimized = computed(() => promptMinimized.value || boardControlMinimized.value || mobileMoralePickerMinimized.value || combatDecisionMinimized.value)
 const phasePlaybackPhase = ref<Phase | null>(null)
 const hiddenRevealCard = ref<Card | null>(null)
 const publicReveal = ref<{ sequence: number; cards: Card[]; text: string } | null>(null)
@@ -248,8 +255,32 @@ type MobileMoraleCandidate = {
   label: string
   detail: string
   iconUrl: string
-  state: 'morale' | 'god-power' | 'black-lotus' | 'temporary'
+  state: 'rune' | 'morale' | 'god-power' | 'black-lotus' | 'temporary'
+  selectable: boolean
+  disabledReason: string
 }
+const mobileRuneChoices = computed<MobileMoraleCandidate[]>(() => {
+  if (viewMe.value.faction !== 'otherworld') return []
+  const runeIds = paymentChoiceIds.value.filter(id => /^rune:\d+$/.test(id))
+  const runeCount = Math.max(0, viewMe.value.specialZones?.runes ?? 0)
+  const highestPromptRune = Math.max(0, ...runeIds.map(id => Number(id.split(':')[1]) || 0))
+  const slotCount = Math.max(runeCount, highestPromptRune)
+  return Array.from({ length: slotCount }, (_, offset) => {
+    const index = offset + 1
+    const id = `rune:${index}`
+    const owned = index <= runeCount
+    const selectable = mobileMoraleInteractive.value && paymentChoiceIds.value.includes(id)
+    return {
+      id,
+      label: `彼界符文 ${index}`,
+      detail: selectable ? '可用于当前选择' : !owned ? '尚未获得这枚符文' : mobileMoraleInteractive.value ? '当前支付不能使用这枚符文' : '当前拥有；需要符文时可选择',
+      iconUrl: roundCardUrl('S02-06S1') ?? '',
+      state: 'rune' as const,
+      selectable,
+      disabledReason: selectable ? '' : !owned ? '尚未获得这枚符文' : mobileMoraleInteractive.value ? '当前支付不能使用这枚符文' : '查看状态时无需选择',
+    }
+  })
+})
 const mobileMoraleChoices = computed<MobileMoraleCandidate[]>(() => {
   const choiceIds = mobileMoraleInteractive.value
     ? paymentChoiceIds.value
@@ -259,8 +290,10 @@ const mobileMoraleChoices = computed<MobileMoraleCandidate[]>(() => {
     id,
     label: '临时士气',
     detail: '休整时消失',
-    iconUrl: siteBrandIconUrl,
-    state: 'temporary' as const,
+     iconUrl: siteBrandIconUrl,
+     state: 'temporary' as const,
+     selectable: mobileMoraleInteractive.value && paymentChoiceIds.value.includes(id),
+     disabledReason: mobileMoraleInteractive.value && paymentChoiceIds.value.includes(id) ? '' : mobileMoraleInteractive.value ? '当前支付不能使用这枚临时士气' : '查看状态时无需选择',
   }]
   const owner = [viewMe.value, viewEnemy.value].find(player => player.morale.some(resource => resource.instanceId === id))
   const resource = owner?.morale.find(item => item.instanceId === id)
@@ -271,8 +304,10 @@ const mobileMoraleChoices = computed<MobileMoraleCandidate[]>(() => {
     id,
     label: godPower ? '神力' : blackLotus ? '黑色莲花' : '士气',
     detail: `${blackLotus ? '专属士气' : getFactionPresentation(owner.faction).label} · ${resource.tapped ? '休整' : '活跃'}`,
-    iconUrl: godPower ? godPowerLogoUrl : blackLotus ? blackLotusLogoUrl : (factionLogoUrls[owner.faction] ?? ''),
-    state: godPower ? 'god-power' as const : blackLotus ? 'black-lotus' as const : 'morale' as const,
+     iconUrl: godPower ? godPowerLogoUrl : blackLotus ? blackLotusLogoUrl : (factionLogoUrls[owner.faction] ?? ''),
+     state: godPower ? 'god-power' as const : blackLotus ? 'black-lotus' as const : 'morale' as const,
+     selectable: mobileMoraleInteractive.value && paymentChoiceIds.value.includes(id),
+     disabledReason: mobileMoraleInteractive.value && paymentChoiceIds.value.includes(id) ? '' : mobileMoraleInteractive.value ? (resource.tapped ? '这枚士气正在休整' : '当前支付不能使用这枚士气') : '查看状态时无需选择',
   }]
   })
 })
@@ -282,7 +317,11 @@ const activeBoardPromptIds = computed(() => [
   resourceSelectionPrompt.value?.promptId,
 ].filter((promptId): promptId is string => Boolean(promptId)))
 const activeBoardPromptId = computed(() => activeBoardPromptIds.value[0] ?? null)
-const modalInspectorVisible = computed(() => Boolean(focusCard.value && (
+watch(activeBoardPromptId, () => { boardControlMinimized.value = false })
+watch(() => [props.game.phase, props.game.pendingDefense?.stage, props.game.turnSerial], () => {
+  combatDecisionMinimized.value = false
+})
+const modalInspectorVisible = computed(() => Boolean(!mobileLandscapeViewport.value && focusCard.value && (
   graveyardPlayer.value !== null || !promptMinimized.value && (
     masterPlayerIndex.value !== null || props.game.phase === 'Mulligan'
     || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Disaster'
@@ -444,7 +483,9 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
   promptMinimized.value = false
 })
 function showNextPublicReveal() {
-  if (publicReveal.value || !publicRevealQueue.length) return
+  // A modal owns the screen, and an authoritative zone movement owns the card
+  // presentation lane.  Do not start the secondary reveal until both yield.
+  if (publicReveal.value || !publicRevealQueue.length || modalPresentationPaused.value || replayZonePresentationBusy.value) return
   publicReveal.value = publicRevealQueue.shift() ?? null
   if (!publicReveal.value) return
   if (publicRevealTimer) clearTimeout(publicRevealTimer)
@@ -467,6 +508,10 @@ function publicRevealText(event: ActionEvent) {
   if (card && /花魁的馈赠/.test(text)) return `花魁的馈赠将〈${card.name}〉加入手牌`
   return text
 }
+// Disaster reveals have their own authoritative back-to-face movement.  Keep
+// them out of the secondary public-card overlay so the two animations cannot
+// cover or cancel each other.
+function isDisasterRevealEvent(event: ActionEvent) { return event.type === 'disaster-reveal' }
 function diceValuesFromEvent(event: ActionEvent) {
   const result = event.text.match(/结果为\s*([1-6])/)?.[1]
   if (result) return [Number(result)]
@@ -474,7 +519,7 @@ function diceValuesFromEvent(event: ActionEvent) {
   return [...rollText.matchAll(/(?:^|\s)([1-6])(?=，|,|。|$)/g)].map(match => Number(match[1])).slice(-2)
 }
 function showNextDiceReveal() {
-  if (diceReveal.value || !diceRevealQueue.length) return
+  if (diceReveal.value || !diceRevealQueue.length || modalPresentationPaused.value || replayZonePresentationBusy.value) return
   const next = diceRevealQueue.shift()
   if (!next) return
   const values = next.values.length ? next.values : [1]
@@ -498,12 +543,12 @@ function showNextDiceReveal() {
 }
 watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
   const fresh = (props.game.recentEvents ?? [])
-    .filter(event => event.cards?.length && event.sequence > lastPublicRevealSequence.value
-      && (event.type === 'disaster-reveal' || event.playerIndex === null || event.playerIndex !== props.game.you)
+    .filter(event => !isDisasterRevealEvent(event) && event.cards?.length && event.sequence > lastPublicRevealSequence.value
+      && (event.playerIndex === null || event.playerIndex !== props.game.you)
       && (event.type === 'effect-result'
         || (event.effectResultStatus !== 'declared'
           && (event.type === 'effect-trigger' || event.type === 'effect-response' || event.type === 'effect-activation'))
-        || event.type === 'reveal' || event.type === 'disaster-reveal' || event.text.includes('展示')
+        || event.type === 'reveal' || event.text.includes('展示')
         || (event.type === 'search' && /展示|加入手牌/.test(event.effectText || event.text)))
       && !(event.type === 'effect-trigger' && /展示|公开/.test(event.text)))
     .sort((left, right) => left.sequence - right.sequence)
@@ -515,7 +560,70 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
     })
     lastPublicRevealSequence.value = Math.max(lastPublicRevealSequence.value, event.sequence)
   }
-  showNextPublicReveal()
+  // Let ZoneMovementPresentationLayer observe the same authoritative batch
+  // first.  A disaster-reveal owns the flip animation; its following effect
+  // presentation waits for that movement instead of cancelling it.
+  void nextTick(showNextPublicReveal)
+})
+function openMobileMoralePicker() {
+  mobileMoralePickerMinimized.value = false
+  mobileMoraleReason.value = ''
+  mobileMoralePickerOpen.value = true
+}
+function chooseMobileMorale(choice:MobileMoraleCandidate){
+  if(!choice.selectable){mobileMoraleReason.value=choice.disabledReason||'当前不能选择';return}
+  mobileMoraleReason.value=''
+  togglePaymentResource(choice.id)
+}
+function inspectDialogCard(card: Card) {
+  focusCard.value = card
+  if (mobileLandscapeViewport.value) mobileInspectorOpen.value = true
+}
+function inspectMasterCard(playerIndex: number) {
+  const player = props.game.players[playerIndex]
+  if (!player) return
+  const card:Card={
+    instanceId: `master-${playerIndex}`,
+    cardId: player.master.masterId,
+    name: player.master.masterName,
+    cardType: 'master',
+    faction: player.faction,
+    imageUrl: player.master.masterImageUrl,
+    effectText: player.master.effectText,
+    cost: 0,
+    baseTroops: 0,
+    troops: 0,
+    disasterLevel: 0,
+    tapped: Boolean(player.master.tapped),
+    summonRound: 0,
+    abilities: player.master.abilities,
+  }
+  inspectDialogCard(card)
+}
+function focusMasterCard(playerIndex:number){
+  const player=props.game.players[playerIndex]
+  if(!player)return
+  focusCard.value={instanceId:`master-${playerIndex}`,cardId:player.master.masterId,name:player.master.masterName,cardType:'master',faction:player.faction,imageUrl:player.master.masterImageUrl,effectText:player.master.effectText,cost:0,baseTroops:0,troops:0,disasterLevel:0,tapped:Boolean(player.master.tapped),summonRound:0,abilities:player.master.abilities}
+}
+watch([modalPresentationPaused, replayZonePresentationBusy], ([modalPaused, zoneBusy], [wasModalPaused]) => {
+  if (modalPaused && !wasModalPaused) {
+    // A presentation that was already visible yields permanently to a newly
+    // opened modal.  It is never pushed back into the queue for replay.
+    if (publicRevealTimer) clearTimeout(publicRevealTimer)
+    publicRevealTimer = null
+    publicReveal.value = null
+    if (diceRollTimer) clearInterval(diceRollTimer)
+    if (diceSettleTimer) clearTimeout(diceSettleTimer)
+    if (diceHideTimer) clearTimeout(diceHideTimer)
+    diceRollTimer = null
+    diceSettleTimer = null
+    diceHideTimer = null
+    diceReveal.value = null
+  }
+  if (!modalPaused && !zoneBusy) {
+    showNextPublicReveal()
+    showNextDiceReveal()
+  }
 })
 watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
   const fresh = (props.game.recentEvents ?? [])
@@ -548,6 +656,18 @@ const combat = computed(() => {
     targetUnit: target ? '兵力' : '血量',
   }
 })
+const combatStageLabel = computed(() => {
+  const stage = props.game.pendingDefense?.stage
+  if (stage === 'AttackerAttackTiming') return '进攻宣告'
+  if (stage === 'DefenderAttackTiming') return '进攻响应'
+  if (stage === 'DefenseChoice') return '抵挡与支援'
+  if (stage === 'CombatDamage') return '伤害结算'
+  if (stage === 'KillTriggers' || stage === 'DefenderKillTriggers') return '击杀结算'
+  if (stage === 'AttackerDeathTriggers' || stage === 'DefenderDeathTriggers' || stage === 'FinalizeDeaths') return '阵亡结算'
+  if (stage === 'AttackerAfterAttack' || stage === 'DefenderAfterAttack') return '进攻后结算'
+  if (stage === 'Complete') return '战斗完成'
+  return '战斗结算'
+})
 const eligibleSupportIds = computed(() => {
   if (defenseTargetType.value !== 'legion') return []
   const targetId = props.game.pendingDefense?.target.instanceId
@@ -571,11 +691,9 @@ const supportReady = computed(() => {
 function updateScale() {
   const viewport = visibleViewport()
   compactViewport.value = viewport.width < 820 || viewport.height < 600
-  const coarseTouch = window.matchMedia?.('(pointer: coarse) and (hover: none)').matches ?? false
-  // 568×320 is still a common phone landscape viewport once browser chrome and
-  // safe areas have been deducted.  Below this threshold the desktop board was
-  // scaled as a whole, which also made the hand-count numeral unreadable.
-  mobileLandscapeViewport.value = coarseTouch && viewport.width >= 520 && viewport.width <= 960 && viewport.height >= 300 && viewport.height <= 430
+  // Device eligibility is captured at mount. Browser chrome changing the visual
+  // viewport height must not select the desktop board on a handset.
+  mobileLandscapeViewport.value = mobileDeviceExperience.value && viewport.width >= viewport.height
   // The hand fan and left utility dock paint about 42 logical pixels beyond the stage's
   // nominal 16:9 box. Because the stage is vertically centered below the 52px site bar,
   // reserve that overflow on both edges so every control stays visible at exact 16:9.
@@ -592,6 +710,7 @@ onMounted(() => {
   lastHiddenRevealSequence.value = Math.max(0, ...(props.game.recentEvents ?? []).map(event => event.sequence))
   lastPublicRevealSequence.value = lastHiddenRevealSequence.value
   lastDiceSequence.value = lastHiddenRevealSequence.value
+  mobileDeviceExperience.value = isMobileDeviceExperience()
   updateScale()
   window.addEventListener('resize', updateScale)
   window.addEventListener('l12-viewport-change', updateScale)
@@ -653,13 +772,12 @@ function playableHandIdsFor(playerIndex: number) {
 function selectHandFor(playerIndex: number, card: Card) {
   if (isControlledPlayer(playerIndex)) selectHand(card)
   else focusCard.value = card
-  if (mobileLandscapeViewport.value) mobileInspectorOpen.value = true
 }
 function playFromHandFor(playerIndex: number, card: Card) {
   if (isControlledPlayer(playerIndex)) playFromHand(card)
 }
 function slotFor(playerIndex: number, row: number, slot: number, card: Card | null) {
-  if (card && mobileLandscapeViewport.value) mobileInspectorOpen.value = true
+  if (card) focusCard.value = card
   if (props.gmPlacement && props.gmPlacement.targetPlayer === playerIndex) {
     if (card) { focusCard.value = card; return }
     gmAction({
@@ -692,13 +810,11 @@ function activateFactionAbilityFor(playerIndex: number, ability: string) {
 }
 function selectPublicCardFor(playerIndex: number, card: Card) {
   focusCard.value = card
-  if (mobileLandscapeViewport.value) mobileInspectorOpen.value = true
   if (isControlledPlayer(playerIndex)) selectPublicCard(card)
 }
 function inspectActiveDisaster() {
   if (!props.game.activeDisaster) return
   focusCard.value = props.game.activeDisaster
-  if (mobileLandscapeViewport.value) mobileInspectorOpen.value = true
 }
 function targetableIdsFor(playerIndex: number) {
   if (boardTargetPrompt.value) return boardTargetableIds.value
@@ -718,7 +834,7 @@ function selectHand(card: Card) {
   if (props.game.phase === 'Defense' && defenseTargetType.value === 'master') return toggle(defenseIds.value, card.instanceId)
   selectedId.value = selectedId.value === card.instanceId ? null : card.instanceId
   mode.value = 'play'
-  playArmed.value = selectedId.value === card.instanceId && (card.cardType === 'legion' || isCounter(card)) && playableIds.value.includes(card.instanceId)
+  playArmed.value = !mobileLandscapeViewport.value && selectedId.value === card.instanceId && (card.cardType === 'legion' || isCounter(card)) && playableIds.value.includes(card.instanceId)
 }
 function resolveBoardSlotPrompt(playerIndex: number, row: number, slot: number) {
   const prompt = boardSlotPrompt.value
@@ -940,10 +1056,12 @@ function statusTexts(card: Card) {
 
 <template>
   <div class="board-viewport" :class="{ 'compact-viewport': compactViewport, 'mobile-landscape-board': mobileLandscapeViewport, 'read-only-board': readOnly, 'gm-panel-docked': gmPanelOpen && !compactViewport }" :data-l12-mobile-landscape="mobileLandscapeViewport ? 'true' : undefined">
+    <Teleport to="body">
+      <button v-if="mobileLandscapeViewport" type="button" class="mobile-card-inspector-handle mobile-card-inspector-handle-global" :class="{ open: mobileInspectorOpen }" :aria-expanded="mobileInspectorOpen" @click="mobileInspectorOpen = !mobileInspectorOpen">{{ mobileInspectorOpen ? '收起详情' : '展开卡牌详情' }}</button>
+    </Teleport>
     <div class="board-stage" :style="{ width: `${stageSize.width}px`, height: `${stageSize.height}px`, transform: `scale(${scale})`, '--l12-board-copy': `${13 / Math.min(1, scale)}px`, '--l12-board-meta': `${11 / Math.min(1, scale)}px`, '--l12-board-micro': `${9 / Math.min(1, scale)}px`, '--l12-effect-copy': `${13 / Math.min(1, scale)}px` }">
       <div class="stage-layout">
         <aside class="board-rail left-rail">
-          <button v-if="mobileLandscapeViewport" type="button" class="mobile-card-inspector-handle" :class="{ open: mobileInspectorOpen }" :aria-expanded="mobileInspectorOpen" @click="mobileInspectorOpen = !mobileInspectorOpen">{{ mobileInspectorOpen ? '收起详情' : '展开卡牌详情' }}</button>
           <section v-if="mobileLandscapeViewport && viewEnemy.specialZones?.trials?.length" class="mobile-extra-zone mobile-extra-zone-opponent" aria-label="对手额外区">
             <small>对手额外区</small>
             <div>
@@ -1022,7 +1140,7 @@ function statusTexts(card: Card) {
           <HandArea v-if="l12State.gmEnabled" class="opponent-hand" :cards="viewEnemy.hand" :player-index="viewEnemy.playerIndex"
             :selected-ids="selectedHandIdsFor(viewEnemy.playerIndex)"
             :playable-ids="playableHandIdsFor(viewEnemy.playerIndex)" :dim-unplayable="isControlledPlayer(viewEnemy.playerIndex) && game.phase !== 'Mulligan'"
-            :show-play-action="!hasBlockingPrompt && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
+            :show-play-action="!hasBlockingPrompt && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction" :confirm-all-playable="mobileLandscapeViewport" :mobile-layout="mobileLandscapeViewport"
             @select="selectHandFor(viewEnemy.playerIndex, $event)" @play="playFromHandFor(viewEnemy.playerIndex, $event)" @focus="focusCard = $event" />
           <HandArea v-else class="opponent-hand" hidden :count="viewEnemy.handCount || 0" :player-index="viewEnemy.playerIndex" />
           <div class="board-status-lane opponent-status-lane" data-ui-contract="opponent-status-safe-lane">
@@ -1052,11 +1170,11 @@ function statusTexts(card: Card) {
               :mobile-morale-picker="mobileMoralePickerEnabled"
               :master-targetable="!isControlledPlayer(viewEnemy.playerIndex) && !combat && selectedAttackTargets.includes('master')"
               @slot="(row, slot, card) => slotFor(viewEnemy.playerIndex, row, slot, card)" @master="masterFor(viewEnemy.playerIndex)"
-              @focus="focusCard = $event" @graveyard="(!hasBlockingPrompt || promptMinimized) && (graveyardPlayer = $event)"
+              @focus="focusCard = $event" @inspect="inspectDialogCard" @graveyard="(!hasBlockingPrompt || inspectionLayerMinimized) && (graveyardPlayer = $event)"
               @card-action="(action, card) => fieldActionFor(viewEnemy.playerIndex, action, card)"
               @ability="(card, ability) => activateAbilityFor(viewEnemy.playerIndex, card, ability)"
               @faction-ability="ability => activateFactionAbilityFor(viewEnemy.playerIndex, ability)"
-              @select-card="card => selectPublicCardFor(viewEnemy.playerIndex, card)" @payment-resource="togglePaymentResource" @open-morale-payment="mobileMoralePickerOpen = true" />
+              @select-card="card => selectPublicCardFor(viewEnemy.playerIndex, card)" @payment-resource="togglePaymentResource" @open-morale-payment="openMobileMoralePicker" />
             <div class="board-seam" data-ui-contract="phase-safe-track">
               <span class="board-midline-anchor" aria-hidden="true" />
             </div>
@@ -1090,21 +1208,25 @@ function statusTexts(card: Card) {
             <div v-if="mode === 'attack' && selectedId && !combat && !hasBlockingPrompt" class="board-mode-hint" data-ui-contract="cancel-local-attack-selection">
               <span>请选择进攻对象</span><button type="button" @click="cancelLocalAttackSelection">取消</button>
             </div>
-            <div v-if="combat && !activeBoardPromptId" class="combat-presentation">
+            <div v-if="combat && !activeBoardPromptId" class="combat-presentation" :class="{ 'combat-presentation--passive': game.pendingDefense?.stage !== 'DefenseChoice' }">
               <i class="combat-trace"/>
               <div class="combat-versus">
+                <small v-if="mobileLandscapeViewport" class="combat-stage-label">{{ combatStageLabel }}</small>
                 <span :class="combat.attackerOwner.playerIndex === game.you ? 'mine' : 'opponent'">{{ combat.attackerOwner.playerIndex === game.you ? '我方' : '对手' }} · {{ combat.attacker.name }}</span>
                 <b>{{ combat.attackValue }}<small>{{ combat.attackUnit }}</small></b>
                 <em>⚔</em>
                 <span :class="combat.targetOwner.playerIndex === game.you ? 'mine' : 'opponent'">{{ combat.targetOwner.playerIndex === game.you ? '我方' : '对手' }} · {{ combat.targetName }}</span>
                 <b>{{ combat.targetValue }}<small>{{ combat.targetUnit }}</small></b>
               </div>
-              <div v-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && !readOnly" class="combat-resolution-panel">
+              <div v-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && !readOnly && !combatDecisionMinimized" class="combat-resolution-panel">
+                <button v-if="mobileLandscapeViewport" class="combat-decision-minimize" type="button" aria-label="最小化支援或抵挡选择" @click="combatDecisionMinimized = true">−</button>
                 <GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
                   :mulligan-count="mulliganIds.length" :defense-count="defenseIds.length" :defense-target-type="defenseTargetType"
                   :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="l12State.pendingAction" @command="command" />
               </div>
             </div>
+            <button v-if="mobileLandscapeViewport && combat && game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && combatDecisionMinimized"
+              class="combat-decision-restore" type="button" @click="combatDecisionMinimized = false">恢复支援/抵挡</button>
             <PlayerMat class="battlefield-half my-half" :player="viewMe" side="my" :controllable="isControlledPlayer(viewMe.playerIndex)"
               :mobile-layout="mobileLandscapeViewport"
               :active="game.activePlayer === viewMe.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
@@ -1125,12 +1247,12 @@ function statusTexts(card: Card) {
               :combat-target-master="combat?.targetOwner.playerIndex === viewMe.playerIndex && !combat.target"
               :master-targetable="!isControlledPlayer(viewMe.playerIndex) && !combat && selectedAttackTargets.includes('master')"
               @slot="(row, slot, card) => slotFor(viewMe.playerIndex, row, slot, card)" @master="masterFor(viewMe.playerIndex)"
-              @focus="focusCard = $event" @graveyard="(!hasBlockingPrompt || promptMinimized) && (graveyardPlayer = $event)"
+              @focus="focusCard = $event" @inspect="inspectDialogCard" @graveyard="(!hasBlockingPrompt || inspectionLayerMinimized) && (graveyardPlayer = $event)"
               @card-action="(action, card) => fieldActionFor(viewMe.playerIndex, action, card)"
               @select-card="card => selectPublicCardFor(viewMe.playerIndex, card)"
               @ability="(card, ability) => activateAbilityFor(viewMe.playerIndex, card, ability)"
               @faction-ability="ability => activateFactionAbilityFor(viewMe.playerIndex, ability)"
-              @payment-resource="togglePaymentResource" @open-morale-payment="mobileMoralePickerOpen = true" />
+              @payment-resource="togglePaymentResource" @open-morale-payment="openMobileMoralePicker" />
           </div>
           <div class="board-status-lane my-status-lane" data-ui-contract="player-status-safe-lane">
             <PlayerTurnClock class="board-player-clock my-player-clock" :player-index="viewMe.playerIndex" side="my"
@@ -1139,7 +1261,7 @@ function statusTexts(card: Card) {
           <HandArea v-if="l12State.spectating" class="spectator-hand" hidden :count="viewMe.handCount || 0" :player-index="viewMe.playerIndex" />
           <HandArea v-else :cards="viewMe.hand" :player-index="viewMe.playerIndex" :selected-ids="selectedHandIdsFor(viewMe.playerIndex)"
             :playable-ids="playableHandIdsFor(viewMe.playerIndex)" :dim-unplayable="isControlledPlayer(viewMe.playerIndex) && game.phase !== 'Mulligan'"
-            :show-play-action="!hasBlockingPrompt && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
+            :show-play-action="!hasBlockingPrompt && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction" :confirm-all-playable="mobileLandscapeViewport" :mobile-layout="mobileLandscapeViewport"
             @select="selectHandFor(viewMe.playerIndex, $event)" @play="playFromHandFor(viewMe.playerIndex, $event)" @focus="focusCard = $event" />
         </main>
 
@@ -1154,7 +1276,7 @@ function statusTexts(card: Card) {
               :active="game.activePlayer === viewMe.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
           </section>
           <section class="grand-panel player-panel" data-ui-contract="complete-player-summary">
-            <button v-if="mobileLandscapeViewport" type="button" class="mobile-record-trigger" @click="mobileRecordOpen = true">对局记录</button>
+            <button v-if="mobileLandscapeViewport" type="button" class="mobile-record-trigger" @click="mobileRecordOpen = true; mobileRecordMinimized = false">对局记录</button>
             <article class="player-summary opponent-summary">
               <div class="player-summary-primary"><b>对方</b><strong>{{ viewEnemy.name || '未命名玩家' }}</strong></div>
               <div class="player-summary-meta">
@@ -1182,14 +1304,15 @@ function statusTexts(card: Card) {
         </aside>
       </div>
       <Teleport to="body">
-        <section v-if="mobileLandscapeViewport && mobileRecordOpen" class="mobile-record-overlay" role="dialog" aria-modal="true" aria-label="对局记录">
-          <header><h2>对局记录</h2><button type="button" @click="mobileRecordOpen = false">关闭</button></header>
+        <section v-if="mobileLandscapeViewport && mobileRecordOpen" class="mobile-record-overlay mobile-safe-overlay" role="dialog" aria-modal="true" aria-label="对局记录">
+          <header><h2>对局记录</h2><div class="mobile-record-actions"><button type="button" @click="mobileRecordOpen = false; mobileRecordMinimized = true">最小化</button><button type="button" @click="mobileRecordOpen = false; mobileRecordMinimized = false">关闭</button></div></header>
           <BattleEventLog :events="game.recentEvents ?? []" :you="game.you" :names="game.players.map(player => player.name)" @focus="focusCard = $event" />
         </section>
       </Teleport>
+      <button v-if="mobileLandscapeViewport && mobileRecordMinimized" class="mobile-record-restore" type="button" @click="mobileRecordOpen = true; mobileRecordMinimized = false">恢复对局记录</button>
       <Teleport to="body">
         <Transition name="mobile-card-inspector">
-          <aside v-if="mobileLandscapeViewport && mobileInspectorOpen" class="mobile-card-inspector" role="dialog" aria-modal="false" aria-label="卡牌详情">
+          <aside v-if="mobileLandscapeViewport && mobileInspectorOpen" class="mobile-card-inspector mobile-safe-overlay" role="dialog" aria-modal="false" aria-label="卡牌详情">
             <header><div><small>卡牌详情</small><h2>{{ focusCard?.name || '选择一张卡牌' }}</h2></div><button type="button" @click="mobileInspectorOpen = false">收起</button></header>
             <div v-if="focusCard && focusDetailCard" class="archive-detail mobile-card-detail-body">
               <CardDetailContent :card="focusDetailCard" :show-catalog-only="false" />
@@ -1200,13 +1323,23 @@ function statusTexts(card: Card) {
         </Transition>
       </Teleport>
       <Teleport to="body">
-        <section v-if="mobileMoralePickerEnabled && mobileMoralePickerOpen" class="mobile-record-overlay mobile-morale-overlay" role="dialog" aria-modal="true" aria-label="选择士气">
-          <header><div><h2>{{ mobileMoraleInteractive ? '选择士气' : '我方士气' }}</h2><small>{{ mobileMoraleInteractive ? `已选择 ${paymentResourceIds.length}/${resourceSelectionPrompt?.maxChoose ?? 0}` : `活跃 ${viewMe.morale.filter(item => !item.tapped).length} / 共 ${viewMe.morale.length}` }}</small></div><div class="mobile-morale-header-actions"><button v-if="mobileMoraleInteractive" type="button" @click="mobileMoralePickerOpen = false">最小化</button><button type="button" @click="mobileMoralePickerOpen = false">返回对局</button></div></header>
+        <section v-if="mobileMoralePickerEnabled && mobileMoralePickerOpen" class="mobile-record-overlay mobile-morale-overlay mobile-safe-overlay" role="dialog" aria-modal="true" aria-label="选择士气">
+          <header><div><h2>{{ mobileMoraleInteractive ? '选择士气' : '我方士气' }}</h2><small>{{ mobileMoraleInteractive ? `已选择 ${paymentResourceIds.length}/${resourceSelectionPrompt?.maxChoose ?? 0}` : `活跃 ${viewMe.morale.filter(item => !item.tapped).length} / 共 ${viewMe.morale.length}` }}</small></div><div class="mobile-morale-header-actions"><button type="button" @click="mobileMoralePickerOpen = false; mobileMoralePickerMinimized = true">最小化</button><button type="button" @click="mobileMoralePickerOpen = false; mobileMoralePickerMinimized = false">返回对局</button></div></header>
           <p class="mobile-morale-prompt">{{ resourceSelectionPrompt?.text || '这里展示当前士气状态；需要支付或返还时会自动变为可选择面板。' }}</p>
-          <div class="mobile-morale-picker" aria-label="可选择的士气">
-            <button v-for="choice in mobileMoraleChoices" :key="choice.id" type="button" :disabled="!mobileMoraleInteractive" :class="['mobile-morale-choice', choice.state, { selected: paymentResourceIds.includes(choice.id) }]" :aria-pressed="paymentResourceIds.includes(choice.id)" @click="mobileMoraleInteractive && togglePaymentResource(choice.id)">
-              <img :src="choice.iconUrl" :alt="choice.label" /><span><b>{{ choice.label }}</b><small>{{ choice.detail }}</small></span>
-            </button>
+          <div class="mobile-morale-picker" aria-label="可选择的士气与符文">
+            <section v-if="viewMe.faction === 'otherworld'" class="mobile-rune-row" aria-label="彼界阵营符文">
+              <div v-if="mobileRuneChoices.length">
+                <button v-for="choice in mobileRuneChoices" :key="choice.id" type="button" :class="['mobile-morale-choice', choice.state, { selected: paymentResourceIds.includes(choice.id), unavailable: !choice.selectable }]" :aria-pressed="paymentResourceIds.includes(choice.id)" :aria-disabled="!choice.selectable" :aria-label="`${choice.label}${choice.disabledReason ? `：${choice.disabledReason}` : ''}`" :title="choice.disabledReason || choice.label" @click="chooseMobileMorale(choice)">
+                  <img :src="choice.iconUrl" alt="" />
+                </button>
+              </div>
+            </section>
+            <section class="mobile-resource-row" aria-label="普通士气与特殊士气">
+              <button v-for="choice in mobileMoraleChoices" :key="choice.id" type="button" :class="['mobile-morale-choice', choice.state, { selected: paymentResourceIds.includes(choice.id), unavailable: !choice.selectable }]" :aria-pressed="paymentResourceIds.includes(choice.id)" :aria-disabled="!choice.selectable" :aria-label="`${choice.label}${choice.disabledReason ? `：${choice.disabledReason}` : ''}`" :title="choice.disabledReason || choice.label" @click="chooseMobileMorale(choice)">
+                <img :src="choice.iconUrl" alt="" />
+              </button>
+            </section>
+            <p v-if="mobileMoraleReason" class="mobile-morale-reason" role="status">{{ mobileMoraleReason }}</p>
             <p v-if="!mobileMoraleChoices.length">{{ mobileMoraleInteractive ? '当前提示没有可选择的士气。' : '当前没有士气。' }}</p>
           </div>
           <footer v-if="resourceSelectionPrompt" class="mobile-morale-actions">
@@ -1216,30 +1349,36 @@ function statusTexts(card: Card) {
           </footer>
         </section>
       </Teleport>
+      <button v-if="mobileMoralePickerEnabled && mobileMoralePickerMinimized" class="mobile-morale-restore" type="button" @click="openMobileMoralePicker">恢复士气选择</button>
       <GraveyardOverlay v-if="graveyardPlayer !== null" :players="[viewMe, viewEnemy]" :initial-player="graveyardPlayer"
         :own-player-index="game.you" :can-activate-osiris="canActivateOsiris" :inspection-only="hasBlockingPrompt"
-        @close="graveyardPlayer = null" @focus="focusCard = $event" @ability="activateAbility" />
+        :mobile-layout="mobileLandscapeViewport"
+        @close="graveyardPlayer = null" @focus="focusCard = $event" @inspect="inspectDialogCard" @ability="activateAbility" />
       <MasterOverlay v-if="masterPlayerIndex !== null" :player="game.players[masterPlayerIndex]" :mine="masterPlayerIndex === controlledPlayerIndex"
-        :can-activate="!readOnly && masterPlayerIndex === controlledPlayerIndex && isMyMain" :busy="l12State.pendingAction" @close="masterPlayerIndex = null" @activate="activateMaster" />
-      <div v-if="gmPlacement && !readOnly" class="board-target-controls gm-placement-controls">
+        :can-activate="!readOnly && masterPlayerIndex === controlledPlayerIndex && isMyMain" :busy="l12State.pendingAction" :mobile-layout="mobileLandscapeViewport" @close="masterPlayerIndex = null" @activate="activateMaster" @focus="focusMasterCard(masterPlayerIndex)" @inspect="inspectMasterCard(masterPlayerIndex)" />
+      <div v-if="gmPlacement && !readOnly && !boardControlMinimized" class="board-target-controls gm-placement-controls">
         <strong>GM：请选择〈{{ gmPlacement.cardName }}〉的登场位置</strong><span>直接点击目标玩家的绿色高亮空位</span>
+        <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
         <button @click="emit('gmPlacementResolved')">取消</button>
       </div>
-      <div v-if="boardTargetPrompt && !readOnly" class="board-target-controls">
+      <div v-if="boardTargetPrompt && !readOnly && !boardControlMinimized" class="board-target-controls">
         <strong>{{ boardTargetPrompt.text }}</strong><span>已选择 {{ boardTargetIds.length }}/{{ boardTargetPrompt.maxChoose }}</span>
+        <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
         <button v-if="boardTargetPrompt.validChoices.includes('skip')" @click="resolveBoardTarget(true)">不发动</button>
         <button class="primary" :disabled="boardTargetIds.length < boardTargetPrompt.minChoose" @click="resolveBoardTarget(false)">{{ boardTargetPrompt.data?.choiceMode === 'mixed-board-payment' ? '确认费用' : '确认发动' }}</button>
       </div>
-      <div v-if="boardSlotPrompt && !readOnly" class="board-target-controls board-slot-controls">
+      <div v-if="boardSlotPrompt && !readOnly && !boardControlMinimized" class="board-target-controls board-slot-controls">
         <CardImage v-if="boardSlotPreview" :card-id="boardSlotPreview.cardId" :legacy-url="boardSlotPreview.imageUrl" :alt="boardSlotPreview.name" intent="board" eager
           @mouseenter="focusCard = boardSlotPreview" @click="focusCard = boardSlotPreview" />
         <strong>{{ boardSlotPrompt.text }}</strong><span>直接点击绿色高亮空位</span>
+        <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
         <button v-if="boardSlotPrompt.validChoices.includes('skip')"
           @click="command('resolvePrompt', { promptId: boardSlotPrompt.promptId, cardInstanceIds: ['skip'] })">取消</button>
       </div>
-      <div v-if="resourceSelectionPrompt && !readOnly" class="board-target-controls resource-payment-controls">
+      <div v-if="resourceSelectionPrompt && !readOnly && !boardControlMinimized" class="board-target-controls resource-payment-controls">
         <strong>{{ resourceSelectionPrompt.text }}</strong>
         <span>已选择 {{ paymentResourceIds.length }}/{{ resourceSelectionPrompt.maxChoose }}</span>
+        <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
         <button v-if="resourceSelectionPrompt.validChoices.includes('skip')" @click="confirmResourcePayment(true)">不发动</button>
         <button v-if="resourceSelectionPrompt.validChoices.includes('cancel')" @click="cancelResourcePayment">{{ resourceSelectionPrompt.data?.cancel ?? '取消打出' }}</button>
         <button class="primary" :disabled="paymentResourceIds.length < resourceSelectionPrompt.minChoose"
@@ -1248,7 +1387,8 @@ function statusTexts(card: Card) {
             : resourceSelectionPrompt.kind === 'resource-payment' || resourceSelectionPrompt.data?.choiceMode === 'resource-payment'
               ? '确认支付' : '确认选择' }}</button>
       </div>
-      <PromptOverlay v-if="!readOnly || game.phase === 'DisasterPreparation'" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppressed-prompt-ids="activeBoardPromptIds" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction" :inspector-visible="modalInspectorVisible"
+      <button v-if="mobileLandscapeViewport && boardControlMinimized && (gmPlacement || boardTargetPrompt || boardSlotPrompt || resourceSelectionPrompt)" class="board-control-restore" type="button" @click="boardControlMinimized = false">恢复当前选择</button>
+      <PromptOverlay v-if="!readOnly || game.phase === 'DisasterPreparation'" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppressed-prompt-ids="activeBoardPromptIds" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction" :inspector-visible="modalInspectorVisible" :mobile-layout="mobileLandscapeViewport"
         @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" @minimized-change="promptMinimized = $event" @response-targets-change="responseTargetIds = $event" />
     </div>
   </div>
@@ -1698,7 +1838,7 @@ function statusTexts(card: Card) {
 }
 .mobile-current-disaster-copy { display: grid; min-width: 0; align-content: center; gap: 2px; }
 .mobile-current-disaster-copy b { color: #c9b478; font-size: 10px; line-height: 1; }
-.mobile-current-disaster-copy i { overflow: hidden; color: #f3f1e9; font-size: 11px; font-style: normal; font-weight: 900; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
+.mobile-current-disaster-copy i { display: -webkit-box; overflow: hidden; color: #f3f1e9; font-size: 11px; font-style: normal; font-weight: 900; line-height: 1.08; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
 
 .mobile-landscape-board :deep(.battlefield-half.l12-player-mat) {
   grid-template-columns: 132px 216px 40px 82px !important;
@@ -1874,7 +2014,9 @@ function statusTexts(card: Card) {
 
 .mobile-card-inspector {
   position: fixed;
-  z-index: 2147483602;
+  /* Card details are a temporary reading layer above whichever interaction
+     opened them. Closing the drawer reveals the untouched source dialog. */
+  z-index: 2147483640;
   top: 34px;
   bottom: 8px;
   /* The top disaster-rail tab stays visible while the drawer is open. */
@@ -1911,7 +2053,7 @@ function statusTexts(card: Card) {
 .mobile-card-inspector .inspector-statuses { max-height: 70px; margin: 0; overflow: auto; }
 .mobile-card-inspector .inspector-statuses li { font-size: 10px; }
 .mobile-card-inspector-enter-active,.mobile-card-inspector-leave-active { transition: transform .18s ease, opacity .18s ease; }
-.mobile-card-inspector-enter-from,.mobile-card-inspector-leave-to { opacity: 0; transform: translateX(-100%); }
+.mobile-card-inspector-enter-from,.mobile-card-inspector-leave-to { opacity: 0; }
 
 .mobile-morale-choice { box-sizing: border-box !important; width: 44px !important; min-width: 44px !important; max-width: 44px !important; height: 44px !important; min-height: 44px !important; max-height: 44px !important; aspect-ratio: 1 !important; justify-self: center !important; align-self: center !important; flex: 0 0 44px !important; border-radius: 50% !important; }
 .mobile-morale-choice img { width: 28px !important; height: 28px !important; }
@@ -1991,10 +2133,10 @@ function statusTexts(card: Card) {
 .mobile-landscape-board :deep(.battlefield-half .mobile-hand-count i) { color: #9fb2ae; font-size: 8px; font-style: normal; }
 .mobile-landscape-board :deep(.battlefield-half .mobile-hand-count b) { color: #fff; font-size: 13px; font-variant-numeric: tabular-nums; }
 
-.mobile-landscape-board .current-disaster-panel { grid-template-columns: 20px minmax(0, 1fr) !important; column-gap: 2px; }
+.mobile-landscape-board .current-disaster-panel { grid-template-columns: minmax(0, 1fr) !important; column-gap: 0; }
 .mobile-landscape-board .current-disaster-panel .mobile-card-inspector-handle { position: relative; z-index: 2147483603; grid-column: 1; grid-row: 1; width: 20px; min-width: 20px; min-height: 52px; padding: 3px 2px; border: 1px solid #668a86; background: #111b1c; box-shadow: 2px 0 6px rgba(0,0,0,.45); color: #e8f1ed; font-size: 8px; font-weight: 900; line-height: 1.1; writing-mode: vertical-rl; }
 .mobile-landscape-board .current-disaster-panel .mobile-card-inspector-handle.open { border-color: #d0c480; background: #2d2a16; }
-.mobile-landscape-board .current-disaster-panel .current-disaster-card { grid-column: 2; }
+.mobile-landscape-board .current-disaster-panel .current-disaster-card { grid-column: 1; }
 .mobile-inspector-empty { margin: auto 0; color: #b7c6c0; font-size: 11px; line-height: 1.55; text-align: center; }
 
 /* Final mobile collision guard: the field and the hand own separate stacking
@@ -2016,11 +2158,11 @@ function statusTexts(card: Card) {
 .mobile-landscape-board :deep(.mobile-morale-stack-trigger) { position: absolute; z-index: 14; inset: 0; display: block; width: 100%; height: 100%; padding: 0; border: 0; background: transparent; cursor: pointer; }
 
 /* The route dock is read top-to-bottom: return/surrender first, then the log. */
-.mobile-landscape-board .mobile-record-trigger { position: fixed !important; z-index: 1600; top: 98px !important; right: 6px !important; width: 90px !important; min-height: 28px !important; padding: 3px 2px !important; transform: none !important; }
+.mobile-landscape-board .mobile-record-trigger { position: fixed !important; z-index: 1600; top:calc(var(--l12-viewport-top,0px) + 98px) !important; right:calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 6px) !important; width: 90px !important; min-height: 28px !important; padding: 3px 2px !important; transform: none !important; }
 
 /* Timed matches retain both clocks in their own right-rail slot.  This is below
    return/surrender and the match log, above the contextual end-turn action. */
-.mobile-landscape-board .mobile-timed-clocks { position: fixed; z-index: 1600; top: 132px; right: 6px; display: grid; width: 90px; gap: 4px; }
+.mobile-landscape-board .mobile-timed-clocks { position: fixed; z-index: 1600; top:calc(var(--l12-viewport-top,0px) + 132px); right:calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 6px); display: grid; width: 90px; gap: 4px; }
 .mobile-landscape-board .mobile-timed-clocks :deep(.player-turn-clock) { display: grid; width: 90px; min-height: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; padding: 3px; box-shadow: 0 3px 8px rgba(0,0,0,.62); }
 .mobile-landscape-board .mobile-timed-clocks :deep(.player-turn-clock strong) { grid-column: 1 / -1; padding: 2px 1px; font-size: 8px; line-height: 1; }
 .mobile-landscape-board .mobile-timed-clocks :deep(.player-turn-clock span) { gap: 0; }
@@ -2031,6 +2173,28 @@ function statusTexts(card: Card) {
    extras, session disasters and the current-disaster card. */
 .mobile-landscape-board .left-rail > .mobile-card-inspector-handle { position: relative; z-index: 2147483603; display: block; width: 100%; min-height: 22px; flex: 0 0 22px; padding: 3px 4px; overflow: hidden; border: 1px solid #668a86; background: #111b1c; box-shadow: 0 2px 6px rgba(0,0,0,.45); color: #e8f1ed; font-size: 9px; font-weight: 900; line-height: 1; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .mobile-landscape-board .left-rail > .mobile-card-inspector-handle.open { border-color: #d0c480; background: #2d2a16; }
+:global(.mobile-card-inspector-handle-global) {
+  position:fixed !important;
+  z-index:2147483646 !important;
+  left:calc(var(--l12-viewport-left,0px) + 8px) !important;
+  top:calc(var(--l12-viewport-top,0px) + 8px) !important;
+  box-sizing:border-box;
+  width:88px;
+  min-height:24px;
+  padding:3px 5px;
+  overflow:hidden;
+  border:1px solid #668a86;
+  background:#111b1c;
+  color:#e8f1ed;
+  font-size:9px;
+  font-weight:900;
+  line-height:1;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  box-shadow:0 3px 9px #000;
+}
+:global(.mobile-card-inspector-handle-global.open) { border-color:#d0c480; background:#2d2a16; }
+:global(.mobile-safe-overlay:not(.mobile-card-inspector)) { padding-top:38px !important; }
 
 /* Disaster circles are visual content of this rail, never floating decoration.
    The panel clips active glows and the strip owns the complete two-column grid. */
@@ -2041,8 +2205,8 @@ function statusTexts(card: Card) {
 /* The disaster-rail tab is only a handle.  The actual card drawer is an
    independent, opaque reading surface, so it never inherits the rail width. */
 .mobile-card-inspector {
-  width: clamp(250px, 34vw, 320px);
-  max-width: calc(100vw - 120px);
+  width: min(clamp(280px, 38vw, 340px), calc(var(--l12-viewport-width, 100vw) - 16px));
+  max-width: calc(var(--l12-viewport-width, 100vw) - 16px);
   background: #070c0d;
   opacity: 1 !important;
   backdrop-filter: none;
@@ -2105,4 +2269,372 @@ function statusTexts(card: Card) {
   line-height: 1.1 !important;
   white-space: normal;
 }
+.mobile-record-overlay.mobile-safe-overlay { top: calc(var(--l12-viewport-top, 0px) + (var(--l12-viewport-height, 100vh) / 2)); left: calc(var(--l12-viewport-left, 0px) + (var(--l12-viewport-width, 100vw) / 2)); width: min(560px, calc(var(--l12-viewport-width, 100vw) - 16px)); max-height: calc(var(--l12-viewport-height, 100vh) - 16px); }
+.mobile-morale-overlay.mobile-safe-overlay { width: min(420px, calc(var(--l12-viewport-width, 100vw) - 16px)); max-height: calc(var(--l12-viewport-height, 100vh) - 16px); }
+.mobile-card-inspector.mobile-safe-overlay {
+  position:fixed !important;
+  inset:calc(var(--l12-viewport-top,0px) + 8px) auto auto calc(var(--l12-viewport-left,0px) + 8px) !important;
+  box-sizing:border-box;
+  width:min(clamp(280px,38vw,340px),calc(var(--l12-viewport-width,100vw) - 16px)) !important;
+  min-width:0;
+  max-width:calc(var(--l12-viewport-width,100vw) - 16px) !important;
+  height:calc(var(--l12-viewport-height,100vh) - 16px) !important;
+  max-height:calc(var(--l12-viewport-height,100vh) - 16px) !important;
+  transform:none !important;
+}
+.mobile-card-inspector.mobile-safe-overlay>header>div { min-width:0; flex:1; }
+.mobile-card-inspector.mobile-safe-overlay>header h2 {
+  max-width:none;
+  overflow:visible;
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+  line-clamp:2;
+  text-overflow:clip;
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
+/* Card actions stay in the end-turn column, directly above that control. They
+   only out-rank the right rail on phone landscape; desktop stacking is untouched. */
+.mobile-landscape-board :deep(.card-context-actions) { position: fixed !important; z-index: 2147483500 !important; right:calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 5px) !important; bottom:calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + 64px) !important; left: auto !important; width: 96px !important; max-width: 96px !important; pointer-events: auto !important; transform: none !important; }
+.mobile-landscape-board .resource-payment-controls { top:auto !important; bottom:calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + 4px) !important; max-width:calc(var(--l12-viewport-width,100vw) - 16px) !important; }
+/* The rail itself is only a layout reservation.  Let a card-action dock behind
+   its empty surface receive the tap, while restoring normal hit testing to the
+   rail's real controls. */
+.mobile-landscape-board .right-rail { pointer-events: none !important; }
+.mobile-landscape-board .right-rail button,.mobile-landscape-board .right-rail a,.mobile-landscape-board .right-rail input,.mobile-landscape-board .right-rail select,.mobile-landscape-board .right-rail textarea { pointer-events: auto !important; }
+/* Defense decisions are player choices, not explanatory panels, on phone
+   landscape. Keep both outcomes in one compact, reachable horizontal bar. */
+.mobile-landscape-board .right-rail .action-panel :deep(.l12-actions) { display: grid !important; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 4px; align-items:stretch; }
+.mobile-landscape-board .right-rail .action-panel :deep(.l12-actions>p) { display:none !important; }
+.mobile-landscape-board .right-rail .action-panel :deep(.l12-actions button) { min-width:0 !important; min-height:38px !important; height:38px !important; padding:3px 4px !important; font-size:11px !important; line-height:1 !important; white-space:nowrap; }
+/* Main phase has one persistent action. Let it occupy the complete dock width
+   so “结束回合” remains one readable four-character label on narrow phones. */
+.mobile-landscape-board .right-rail .action-panel :deep(.l12-actions button:last-child) { grid-column:1 / -1; }
+/* DefenseChoice is rendered inside the combat presentation, not the rail. */
+.mobile-landscape-board .combat-resolution-panel { box-sizing:border-box !important; width:min(210px,calc(var(--l12-viewport-width,100vw) - 200px)) !important; max-width:calc(var(--l12-viewport-width,100vw) - 200px) !important; height:42px !important; padding:2px !important; overflow:hidden !important; }
+.mobile-landscape-board .combat-resolution-panel :deep(.l12-actions) { display:grid !important; box-sizing:border-box; grid-template-columns:repeat(2,minmax(0,1fr)) !important; height:38px !important; padding-right:30px; gap:4px !important; }
+.mobile-landscape-board .combat-resolution-panel :deep(.l12-actions>p) { display:none !important; }
+.mobile-landscape-board .combat-resolution-panel :deep(.l12-actions button) { min-width:0 !important; min-height:38px !important; height:38px !important; padding:3px 4px !important; font-size:11px !important; line-height:1 !important; white-space:nowrap !important; }
+.mobile-landscape-board .combat-decision-minimize { position:absolute; top:4px; right:3px; z-index:2; width:26px; min-width:26px; height:32px; padding:0; border:1px solid #7a807d; background:#151a1b; color:#fff; font-size:18px; line-height:1; }
+.mobile-landscape-board .combat-decision-restore { position:fixed; z-index:2147483610; right:calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 110px); bottom:calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + var(--l12-mobile-hand-h,64px) + 5px); min-height:32px; padding:5px 10px; border:1px solid #d7ad62; background:#4b331d; color:#fff; font-size:11px; font-weight:900; }
+/* Defense decisions stay in a compact top bar so the defender can still tap
+   hand and battlefield cards. The desktop combat presentation is untouched. */
+.mobile-landscape-board .combat-presentation {
+  position: fixed !important;
+  z-index: 2147483400 !important;
+  top: calc(var(--l12-viewport-top, 0px) + 4px) !important;
+  left: calc(var(--l12-viewport-left, 0px) + (var(--l12-viewport-width, 100vw) / 2)) !important;
+  width: min(420px, calc(var(--l12-viewport-width, 100vw) - 196px)) !important;
+  height: auto !important;
+  transform: translateX(-50%) !important;
+}
+.mobile-landscape-board .combat-trace { display: none !important; }
+.mobile-landscape-board .combat-versus {
+  top: 0 !important;
+  box-sizing: border-box;
+  max-width: 100% !important;
+  gap: 5px !important;
+  padding: 4px 7px !important;
+  font-size: 10px !important;
+  transform: translateX(-50%) !important;
+}
+.mobile-landscape-board .combat-stage-label { flex:0 0 auto; color:#e7ca73; font-size:9px; font-weight:900; letter-spacing:.08em; white-space:nowrap; }
+.mobile-landscape-board .combat-versus span { max-width: 92px !important; }
+.mobile-landscape-board .combat-versus > b { gap: 2px !important; padding: 2px 4px !important; }
+.mobile-landscape-board .combat-versus em { font-size: 12px !important; }
+.mobile-landscape-board .combat-resolution-panel {
+  top: 34px !important;
+  box-sizing: border-box;
+  width: 100% !important;
+  padding: 4px !important;
+}
+.mobile-landscape-board .combat-resolution-panel :deep(.l12-actions) { grid-template-columns: repeat(2,minmax(0,1fr)); padding-right:30px; gap: 4px !important; }
+.mobile-landscape-board .combat-resolution-panel :deep(.l12-actions button) { min-height: 32px; padding: 5px 7px !important; font-size: 11px !important; }
+/* Non-interactive combat stages reserve the commander-side hand counter lane.
+   DefenseChoice keeps the actionable top bar. */
+.mobile-landscape-board .combat-presentation--passive {
+  top:calc(var(--l12-viewport-top,0px) + 36px) !important;
+  left:calc(var(--l12-viewport-left,0px) + (var(--l12-viewport-width,100vw) / 2) + var(--l12-mobile-hand-count-w)) !important;
+  width:min(360px,calc(var(--l12-viewport-width,100vw) - 260px)) !important;
+  pointer-events:none !important;
+}
+.mobile-landscape-board .combat-presentation--passive .combat-versus {
+  width:100% !important;
+  justify-content:center;
+  gap:4px !important;
+  padding:2px 5px !important;
+  min-height:20px;
+  box-shadow:0 3px 10px #000b;
+}
+.mobile-landscape-board .combat-presentation--passive .combat-versus span { max-width:70px !important; }
+.mobile-landscape-board .combat-presentation--passive .combat-versus > b { padding:1px 3px !important; }
+.mobile-landscape-board .combat-presentation--passive .combat-versus b small { font-size:8px !important; }
+/* Phone landscape has a separate compact allocation.  The wide board rules
+   above deliberately do not leak here: resource text remains readable before
+   the six battlefield cells claim any optional spare space. */
+@media (max-height: 520px) {
+  .mobile-landscape-board .board-stage { height: calc(100% - 12px) !important; }
+  .mobile-landscape-board .stage-layout { grid-template-columns: 88px minmax(0,1fr) 90px !important; }
+  .mobile-landscape-board .left-rail,.mobile-landscape-board .left-disaster-row,.mobile-landscape-board .left-disaster-row>.grand-panel { width: 88px !important; min-width: 88px !important; box-sizing: border-box; }
+  .mobile-landscape-board .session-disaster-strip { grid-template-columns: repeat(2,30px) !important; grid-template-rows: repeat(2,30px) !important; gap: 4px !important; }
+  .mobile-landscape-board .session-disaster-strip button { width: 30px !important; min-width: 30px !important; max-width: 30px !important; height: 30px !important; max-height: 30px !important; }
+  .mobile-landscape-board .current-disaster-card { grid-template-columns: 34px minmax(0,1fr) !important; gap: 4px !important; padding: 3px !important; }
+  .mobile-landscape-board .current-disaster-card > .l12-card-image,
+  .mobile-landscape-board .current-disaster-card > img { width: 34px !important; height: 34px !important; align-self: center; }
+  .mobile-landscape-board .board-center { grid-template-rows: 24px 0 minmax(0,1fr) 0 64px !important; }
+  .mobile-landscape-board :deep(.battlefield-half.l12-player-mat) { grid-template-columns: 82px minmax(90px,1fr) 22px 66px !important; gap: 2px !important; }
+  .mobile-landscape-board :deep(.battlefield-half .commander-zone) { width: 82px !important; min-width: 82px !important; min-height: 0 !important; grid-template-columns: 40px 40px !important; gap: 2px !important; transform: none !important; margin-left: 0 !important; }
+  .mobile-landscape-board :deep(.battlefield-half .master-column) { width: 40px !important; min-width: 40px !important; transform: none !important; margin-left: 0 !important; }
+  .mobile-landscape-board :deep(.battlefield-half .relic-zone) { width: 40px !important; min-width: 40px !important; transform: none !important; margin-left: 0 !important; }
+  .mobile-landscape-board :deep(.battlefield-half .mini-master),.mobile-landscape-board :deep(.battlefield-half .relic-zone .card-tile),.mobile-landscape-board :deep(.battlefield-half .relic-zone .card-tile.tapped) { width: 40px !important; height: 56px !important; }
+  .mobile-landscape-board :deep(.battlefield-half .mat-piles) { width: 22px !important; min-width: 22px !important; grid-template-rows: repeat(2, 38px) !important; }
+  .mobile-landscape-board :deep(.battlefield-half .mat-piles .pile) { width: 22px !important; height: 38px !important; }
+  .mobile-landscape-board :deep(.battlefield-half .mat-piles .pile-card) { width: 20px !important; height: 28px !important; }
+  .mobile-landscape-board :deep(.battlefield-half .resource-zone),.mobile-landscape-board :deep(.battlefield-half .resource-faction-action),.mobile-landscape-board :deep(.battlefield-half .resource-morale-summary),.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack) { width: 66px !important; max-width: 66px !important; }
+  .mobile-landscape-board :deep(.battlefield-half .resource-faction-action) { min-height: 24px !important; padding: 1px 2px !important; font-size: 8px !important; line-height: 1.1 !important; white-space: normal !important; overflow-wrap: anywhere; }
+  .mobile-landscape-board :deep(.battlefield-half .resource-morale-summary) { grid-template-columns: 29px 37px !important; height: 27px !important; }
+  .mobile-landscape-board :deep(.battlefield-half .resource-morale-label),.mobile-landscape-board :deep(.battlefield-half .resource-morale-count) { width: auto !important; min-width: 0 !important; height: 27px !important; min-height: 27px !important; padding: 0 2px !important; font-size: 8px !important; }
+  .mobile-landscape-board :deep(.battlefield-half .resource-morale-stack) { grid-template-columns: repeat(4, 13px) !important; grid-auto-rows: 13px !important; gap: 2px !important; padding: 3px !important; }
+  .mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb) { width: 13px !important; min-width: 13px !important; height: 13px !important; min-height: 13px !important; }
+  .mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb img) { width: 9px !important; height: 9px !important; }
+  .mobile-landscape-board :deep(.battlefield-half .battle-zone) { width: 100% !important; max-width: none !important; }
+  .mobile-landscape-board .felt-board :deep(.formation) { width: 100% !important; height: 114px !important; grid-template-columns: repeat(3,minmax(0,1fr)) !important; grid-template-rows: repeat(2,56px) !important; gap: 2px !important; }
+  .mobile-landscape-board .felt-board :deep(.formation-slot) { width: auto !important; min-width: 0 !important; height: 56px !important; min-height: 56px !important; }
+  .mobile-landscape-board .felt-board :deep(.formation-slot .card-tile),.mobile-landscape-board .felt-board :deep(.formation-slot .card-tile.tapped) { width: min(90%,40px) !important; height: 55px !important; min-width: 0 !important; min-height: 0 !important; flex-basis: auto !important; }
+  .mobile-landscape-board .board-center > .l12-hand:last-child,.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap),.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back),.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-tile) { height: 60px !important; min-height: 60px !important; }
+  .mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap),.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back),.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-tile) { width: 43px !important; min-width: 43px !important; flex-basis: 43px !important; }
+}
+/* Touch tablets use the available canvas rather than the phone's fixed field
+   dimensions. The device class remains locked at mount; only this width tier
+   changes the allocation. */
+@media (min-height: 521px) {
+  .mobile-landscape-board .stage-layout { grid-template-columns: 118px minmax(0,1fr) 118px !important; }
+  .mobile-landscape-board .left-rail,.mobile-landscape-board .left-disaster-row,.mobile-landscape-board .left-disaster-row>.grand-panel { width: 118px !important; min-width: 118px !important; box-sizing: border-box; }
+  .mobile-landscape-board .board-center { grid-template-rows: 30px 0 minmax(0,1fr) 0 102px !important; }
+  .mobile-landscape-board :deep(.battlefield-half.l12-player-mat) { grid-template-columns: 133px minmax(160px,1fr) 40px 92px !important; gap: 5px !important; }
+  .mobile-landscape-board :deep(.battlefield-half .commander-zone) { width: 133px !important; min-width: 133px !important; min-height: 0 !important; grid-template-columns: 64px 64px !important; gap: 5px !important; transform: none !important; margin-left: 0 !important; }
+  .mobile-landscape-board :deep(.battlefield-half .master-column) { width: 64px !important; min-width: 64px !important; transform: none !important; margin-left: 0 !important; }
+  .mobile-landscape-board :deep(.battlefield-half .relic-zone) { width: 64px !important; min-width: 64px !important; transform: none !important; margin-left: 0 !important; }
+  .mobile-landscape-board :deep(.battlefield-half .mini-master),.mobile-landscape-board :deep(.battlefield-half .relic-zone .card-tile),.mobile-landscape-board :deep(.battlefield-half .relic-zone .card-tile.tapped) { width: 64px !important; height: 90px !important; }
+  .mobile-landscape-board :deep(.battlefield-half .battle-zone) { width: 100% !important; max-width: none !important; }
+  .mobile-landscape-board .felt-board :deep(.formation) { width: 100% !important; height: 184px !important; grid-template-columns: repeat(3,minmax(0,1fr)) !important; grid-template-rows: repeat(2,90px) !important; gap: 4px !important; }
+  .mobile-landscape-board .felt-board :deep(.formation-slot) { width: auto !important; min-width: 0 !important; height: 90px !important; min-height: 90px !important; }
+  .mobile-landscape-board .felt-board :deep(.formation-slot .card-tile),.mobile-landscape-board .felt-board :deep(.formation-slot .card-tile.tapped) { width: min(88%,64px) !important; height: 89px !important; min-width: 0 !important; min-height: 0 !important; flex-basis: auto !important; }
+  .mobile-landscape-board .board-center > .l12-hand:last-child,.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap),.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back),.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-tile) { height: 96px !important; min-height: 96px !important; }
+  .mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap),.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back),.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-tile) { width: 68px !important; min-width: 68px !important; flex-basis: 68px !important; }
+}
+
+/* B3 mobile card system. One fluid scale owns every card-bearing zone; this
+   final mobile-only layer intentionally replaces the older per-zone sizes. */
+.mobile-landscape-board {
+  top:var(--l12-viewport-top,0px) !important;
+  right:auto !important;
+  bottom:auto !important;
+  left:var(--l12-viewport-left,0px) !important;
+  box-sizing:border-box;
+  width:var(--l12-viewport-width,100vw) !important;
+  height:var(--l12-viewport-height,100vh) !important;
+  /* The card scale is solved from both axes. The width reserve contains the
+     two outer rails plus hand-count/resource lanes; the height term divides
+     the remaining felt between two players and two square formation rows.
+     This keeps every card-bearing zone on one scale instead of capping tall
+     screens at the old 90px tablet value. */
+  --l12-mobile-outer-reserve:310px;
+  --l12-mobile-card-h:clamp(46px,min(calc((var(--l12-viewport-width,100vw) - var(--l12-mobile-outer-reserve)) / 5.15),calc((var(--l12-viewport-height,100vh) - var(--l12-mobile-hand-h) - 60px) / 4 - 2px)),166px);
+  --l12-mobile-card-w:calc(var(--l12-mobile-card-h) * 5 / 7);
+  --l12-mobile-slot:calc(var(--l12-mobile-card-h) + 2px);
+  --l12-mobile-formation-w:calc(var(--l12-mobile-slot) * 3 + 4px);
+  --l12-mobile-commander-w:calc(var(--l12-mobile-card-w) * 2 + 4px);
+  --l12-mobile-resource-w:clamp(74px,9vw,92px);
+  --l12-mobile-marker:min(19px,calc((var(--l12-mobile-commander-w) - 12px) / 5));
+  --l12-mobile-marker-gap:clamp(1px,.4vh,4px);
+  --l12-mobile-hand-count-w:clamp(36px,calc(var(--l12-mobile-card-w) * .72),48px);
+  --l12-mobile-hand-count-h:clamp(14px,3.3vh,24px);
+  --l12-mobile-hand-h:clamp(64px,16vh,102px);
+  --l12-mobile-hand-card-h:calc(var(--l12-mobile-hand-h) - 6px);
+  --l12-mobile-hand-card-w:calc(var(--l12-mobile-hand-card-h) * 5 / 7);
+  --l12-mobile-group-gap:clamp(2px,calc((var(--l12-viewport-width,100vw) - 620px) / 14 + 3px),calc(var(--l12-mobile-card-w) * 1.5));
+}
+@media (min-height:521px) { .mobile-landscape-board { --l12-mobile-outer-reserve:386px; --l12-mobile-group-gap:2px; } }
+.mobile-landscape-board :deep(.battlefield-half.l12-player-mat) {
+  box-sizing:border-box !important;
+  grid-template-columns:var(--l12-mobile-commander-w) var(--l12-mobile-formation-w) var(--l12-mobile-card-w) var(--l12-mobile-resource-w) !important;
+  gap:var(--l12-mobile-group-gap) !important;
+  justify-content:center !important;
+  padding-inline:0 !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .commander-zone) {
+  width:var(--l12-mobile-commander-w) !important;
+  min-width:var(--l12-mobile-commander-w) !important;
+  grid-template-columns:repeat(2,var(--l12-mobile-card-w)) !important;
+  grid-template-rows:minmax(0,1fr) calc(var(--l12-mobile-marker) + 2px) !important;
+  gap:2px 4px !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .mobile-hand-count) {
+  position:absolute !important;
+  z-index:22;
+  left:4px !important;
+  top:1px !important;
+  display:flex !important;
+  box-sizing:border-box;
+  width:var(--l12-mobile-hand-count-w) !important;
+  min-width:var(--l12-mobile-hand-count-w) !important;
+  height:var(--l12-mobile-hand-count-h) !important;
+  align-items:center;
+  justify-content:center;
+  gap:1px;
+  padding:0 2px;
+  overflow:hidden;
+  border:1px solid rgba(224,226,216,.62);
+  background:rgba(6,10,11,.92);
+  box-shadow:0 2px 5px rgba(0,0,0,.45);
+  color:#e8ebe4;
+  line-height:1;
+  white-space:nowrap;
+}
+.mobile-landscape-board :deep(.battlefield-half .mobile-hand-count i) { color:#aebdb9; font-size:clamp(7px,1.35vh,9px); font-style:normal; }
+.mobile-landscape-board :deep(.battlefield-half .mobile-hand-count b) { color:#fff; font-size:clamp(8px,1.55vh,11px); font-variant-numeric:tabular-nums; }
+.mobile-landscape-board :deep(.battlefield-half .master-column),
+.mobile-landscape-board :deep(.battlefield-half .relic-zone),
+.mobile-landscape-board :deep(.battlefield-half .mini-master),
+.mobile-landscape-board :deep(.battlefield-half .relic-zone .card-tile),
+.mobile-landscape-board :deep(.battlefield-half .relic-zone .card-tile.tapped) {
+  box-sizing:border-box !important;
+  width:var(--l12-mobile-card-w) !important;
+  min-width:var(--l12-mobile-card-w) !important;
+  max-width:var(--l12-mobile-card-w) !important;
+  height:var(--l12-mobile-card-h) !important;
+  min-height:var(--l12-mobile-card-h) !important;
+  max-height:var(--l12-mobile-card-h) !important;
+  flex-basis:var(--l12-mobile-card-w) !important;
+  aspect-ratio:5/7 !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .extra-relic) { width:var(--l12-mobile-card-w) !important; height:var(--l12-mobile-card-h) !important; max-width:var(--l12-mobile-card-w) !important; max-height:var(--l12-mobile-card-h) !important; }
+.mobile-landscape-board :deep(.battlefield-half .battle-zone) { width:var(--l12-mobile-formation-w) !important; min-width:var(--l12-mobile-formation-w) !important; max-width:var(--l12-mobile-formation-w) !important; justify-self:center !important; }
+.mobile-landscape-board .felt-board :deep(.formation) {
+  box-sizing:border-box !important;
+  width:var(--l12-mobile-formation-w) !important;
+  height:calc(var(--l12-mobile-slot) * 2 + 2px) !important;
+  grid-template-columns:repeat(3,var(--l12-mobile-slot)) !important;
+  grid-template-rows:repeat(2,var(--l12-mobile-slot)) !important;
+  gap:2px !important;
+  align-content:center !important;
+  justify-content:center !important;
+}
+.mobile-landscape-board .felt-board :deep(.formation-slot) {
+  box-sizing:border-box !important;
+  width:var(--l12-mobile-slot) !important;
+  min-width:var(--l12-mobile-slot) !important;
+  height:var(--l12-mobile-slot) !important;
+  min-height:var(--l12-mobile-slot) !important;
+  aspect-ratio:1 !important;
+}
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-tile),
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-tile.tapped) {
+  width:var(--l12-mobile-card-w) !important;
+  min-width:var(--l12-mobile-card-w) !important;
+  max-width:var(--l12-mobile-card-w) !important;
+  height:var(--l12-mobile-card-h) !important;
+  min-height:var(--l12-mobile-card-h) !important;
+  max-height:var(--l12-mobile-card-h) !important;
+  flex-basis:var(--l12-mobile-card-w) !important;
+  aspect-ratio:5/7 !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .mat-piles) {
+  width:var(--l12-mobile-card-w) !important;
+  min-width:var(--l12-mobile-card-w) !important;
+  height:calc(var(--l12-mobile-card-h) * 2 + 2px) !important;
+  grid-template-rows:repeat(2,var(--l12-mobile-card-h)) !important;
+  gap:2px !important;
+  align-content:center !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .mat-piles .pile),
+.mobile-landscape-board :deep(.battlefield-half .mat-piles .pile.deck),
+.mobile-landscape-board :deep(.battlefield-half .mat-piles .pile-card) {
+  box-sizing:border-box !important;
+  width:var(--l12-mobile-card-w) !important;
+  min-width:var(--l12-mobile-card-w) !important;
+  height:var(--l12-mobile-card-h) !important;
+  min-height:var(--l12-mobile-card-h) !important;
+  aspect-ratio:5/7 !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .mat-piles .pile .pile-count) { right:1px !important; top:1px !important; min-width:14px !important; height:14px !important; padding:0 2px !important; font-size:8px !important; line-height:14px !important; }
+.mobile-landscape-board :deep(.battlefield-half .mat-piles .pile>span) { left:1px !important; bottom:1px !important; padding:1px 2px !important; font-size:7px !important; }
+.mobile-landscape-board :deep(.battlefield-half .master-marker-track) { box-sizing:border-box !important; width:100% !important; height:calc(var(--l12-mobile-marker) + 2px) !important; min-height:calc(var(--l12-mobile-marker) + 2px) !important; gap:var(--l12-mobile-marker-gap) !important; padding-inline:2px !important; overflow:visible !important; }
+.mobile-landscape-board :deep(.battlefield-half .master-marker-track .rune-orb),
+.mobile-landscape-board :deep(.battlefield-half .master-marker-track .canopic-orb) { width:var(--l12-mobile-marker) !important; min-width:var(--l12-mobile-marker) !important; height:var(--l12-mobile-marker) !important; min-height:var(--l12-mobile-marker) !important; flex:0 0 var(--l12-mobile-marker) !important; }
+.mobile-landscape-board :deep(.battlefield-half .master-marker-track img) { width:calc(var(--l12-mobile-marker) - 4px) !important; height:calc(var(--l12-mobile-marker) - 4px) !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-zone),
+.mobile-landscape-board :deep(.battlefield-half .resource-faction-action),
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-summary),
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack) { box-sizing:border-box !important; width:var(--l12-mobile-resource-w) !important; max-width:var(--l12-mobile-resource-w) !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-summary) { grid-template-columns:minmax(24px,42%) minmax(34px,58%) !important; height:26px !important; min-height:26px !important; overflow:hidden !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-label),
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-count) { width:auto !important; min-width:0 !important; max-width:none !important; height:26px !important; min-height:26px !important; padding:0 2px !important; overflow:hidden !important; font-size:8px !important; white-space:nowrap !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-label img) { width:18px !important; height:18px !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-faction-action) { min-height:24px !important; padding:1px 2px !important; font-size:8px !important; line-height:1.1 !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack) { grid-template-columns:repeat(4,minmax(11px,1fr)) !important; grid-auto-rows:clamp(12px,2.2vh,17px) !important; gap:2px !important; padding:2px !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb) { width:clamp(12px,2.2vh,17px) !important; min-width:clamp(12px,2.2vh,17px) !important; height:clamp(12px,2.2vh,17px) !important; min-height:clamp(12px,2.2vh,17px) !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb img) { width:calc(clamp(12px,2.2vh,17px) - 4px) !important; height:calc(clamp(12px,2.2vh,17px) - 4px) !important; }
+.mobile-landscape-board .board-center { grid-template-rows:0 0 minmax(0,1fr) 0 var(--l12-mobile-hand-h) !important; }
+.mobile-landscape-board .board-center > .l12-hand:last-child { box-sizing:border-box; height:var(--l12-mobile-hand-h) !important; min-height:var(--l12-mobile-hand-h) !important; margin-top:0 !important; padding:2px 4px !important; align-items:flex-start !important; overflow-x:auto !important; overflow-y:hidden !important; }
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap),
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back),
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-tile) { box-sizing:border-box !important; top:0 !important; bottom:auto !important; width:var(--l12-mobile-hand-card-w) !important; min-width:var(--l12-mobile-hand-card-w) !important; height:var(--l12-mobile-hand-card-h) !important; min-height:var(--l12-mobile-hand-card-h) !important; flex:0 0 var(--l12-mobile-hand-card-w) !important; aspect-ratio:5/7 !important; }
+
+/* R6 phone-only proportional allocation. The complete card-bearing group grows
+   from one shared card height; no zone receives an independent stretch. */
+.mobile-landscape-board .felt-board { display:grid !important; align-content:center !important; }
+.mobile-landscape-board .felt-board :deep(.battlefield-half.l12-player-mat) { align-self:center !important; }
+.mobile-landscape-board .board-mode-hint {
+  position:fixed !important; z-index:2147483500 !important;
+  right:calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 5px) !important;
+  bottom:calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + 64px) !important;
+  left:auto !important; width:96px !important; max-width:96px !important;
+  box-sizing:border-box; display:grid !important; gap:3px; padding:4px !important;
+}
+:global(.mobile-action-dock) { position:fixed !important; z-index:2147483604 !important; right:calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 5px) !important; bottom:calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + 64px) !important; left:auto !important; display:flex !important; box-sizing:border-box; width:96px !important; max-width:96px !important; max-height:calc(var(--l12-viewport-height,100vh) - 72px); flex-wrap:wrap; gap:3px; padding:3px; overflow:auto; border:1px solid #587b7d; background:rgba(8,12,13,.98); box-shadow:0 5px 18px #000; transform:none !important; pointer-events:auto !important; }
+:global(.mobile-action-dock button) { box-sizing:border-box; min-width:0 !important; min-height:32px !important; flex:1 1 42px; padding:3px 4px !important; font-size:10px !important; line-height:1.1 !important; white-space:normal; }
+.mobile-landscape-board .board-mode-hint span { font-size:9px !important; line-height:1.15; white-space:normal; }
+.mobile-landscape-board .board-mode-hint button { min-height:32px !important; padding:3px 5px !important; }
+
+/* The detail drawer is a reading surface. The small reference image never
+   pushes the name, basic values or rules text below the first screen. */
+.mobile-card-detail-body { display:grid !important; box-sizing:border-box; width:100%; min-width:0; grid-template-columns:72px minmax(0,1fr); grid-template-rows:minmax(0,1fr); align-items:start; gap:8px; overflow:hidden !important; }
+.mobile-card-detail-body :deep(.archive-detail-image),
+.mobile-card-detail-body :deep(.archive-detail-image.horizontal) { box-sizing:border-box; width:72px !important; max-width:72px !important; max-height:102px; margin:0 !important; align-self:start; overflow:hidden; }
+.mobile-card-detail-body :deep(.archive-detail-image.horizontal) { height:auto; aspect-ratio:8/5; }
+.mobile-card-detail-body :deep(.card-detail-copy) { display:flex; box-sizing:border-box; width:100%; min-width:0; min-height:0; max-height:100%; flex-direction:column; overflow:hidden; padding-right:3px; }
+.mobile-card-detail-body :deep(.card-detail-copy *) { max-width:100%; }
+.mobile-card-detail-body :deep(.card-detail-copy>h2) { margin-top:0; }
+.mobile-card-detail-body :deep(.card-detail-copy>.archive-effect) { display:flex; min-height:52px; flex:1; flex-direction:column; overflow:hidden; }
+.mobile-card-detail-body :deep(.card-detail-copy>.archive-effect>.l12-effect-body) { min-height:0; flex:1; overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; }
+.mobile-card-detail-body>.battle-card-status { grid-column:2; max-height:70px; overflow:auto; }
+
+/* Morale/rune picker: Otherworld runes are the first, dedicated row. Field
+   circles remain a read-only summary and all exact selection happens here. */
+.mobile-morale-picker { display:block !important; overflow-y:auto !important; }
+.mobile-rune-row,.mobile-resource-row { box-sizing:border-box; width:100%; }
+.mobile-rune-row { padding:4px 0 7px; border-bottom:1px solid #46504e; }
+.mobile-rune-row>div { display:flex; min-height:48px; align-items:center; gap:7px; overflow-x:auto; scrollbar-width:none; touch-action:pan-x; }
+.mobile-rune-row>div::-webkit-scrollbar { display:none; }
+.mobile-resource-row { display:grid; grid-template-columns:repeat(auto-fill,44px); align-items:center; gap:7px; padding-top:7px; }
+.mobile-morale-choice { position:relative; display:grid !important; box-sizing:border-box !important; width:44px !important; min-width:44px !important; max-width:44px !important; height:44px !important; min-height:44px !important; max-height:44px !important; flex:0 0 44px !important; place-items:center; padding:5px !important; border:2px solid #7a8882 !important; border-radius:50% !important; background:#101516 !important; aspect-ratio:1 !important; cursor:pointer; }
+.mobile-morale-choice img { display:block; width:30px !important; height:30px !important; object-fit:contain; border-radius:50%; }
+.mobile-morale-choice.rune { border-color:#5d9f71 !important; }
+.mobile-morale-choice.god-power { border-color:#60cde8 !important; }
+.mobile-morale-choice.black-lotus { border-color:#d4ae42 !important; }
+.mobile-morale-choice.temporary { border-color:#e9e9dc !important; }
+.mobile-morale-choice.unavailable { filter:grayscale(.82) brightness(.5); border-style:dashed !important; cursor:help; }
+.mobile-morale-choice.selected { filter:none; border-color:#f1c75b !important; background:#443713 !important; box-shadow:0 0 0 2px rgba(241,199,91,.55),0 0 10px rgba(241,199,91,.45) !important; }
+.mobile-morale-choice.selected::after { content:'✓'; position:absolute; right:-3px; bottom:-3px; display:grid; width:16px; height:16px; place-items:center; border:1px solid #fff3bb; border-radius:50%; background:#796019; color:#fff; font-size:10px; font-weight:900; }
+.mobile-morale-reason { box-sizing:border-box; width:100%; min-height:20px; margin:7px 0 0 !important; padding:3px 6px; overflow:hidden; border-left:2px solid #d4ae42; color:#efe2b2 !important; font-size:10px; line-height:14px; text-align:left !important; text-overflow:ellipsis; white-space:nowrap; }
+.mobile-morale-restore { position:fixed; z-index:2147483604; left:calc(var(--l12-viewport-left,0px) + 96px); bottom:calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + var(--l12-mobile-hand-h) + 5px); min-height:32px; padding:4px 9px; border:1px solid #70d7df; background:#174e54; color:#fff; font-size:10px; font-weight:900; box-shadow:0 6px 18px #000; }
+.mobile-record-actions { display:flex; gap:4px; }
+.mobile-record-actions button { min-width:58px; }
+.mobile-record-restore,.board-control-restore { position:fixed; z-index:2147483604; left:calc(var(--l12-viewport-left,0px) + 96px); min-height:32px; padding:4px 9px; border:1px solid #70d7df; background:#174e54; color:#fff; font-size:10px; font-weight:900; box-shadow:0 6px 18px #000; }
+.mobile-record-restore { top:calc(var(--l12-viewport-top,0px) + 6px); }
+.board-control-restore { bottom:calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + var(--l12-mobile-hand-h) + 5px); }
+.mobile-landscape-board .board-control-minimize { min-height:30px !important; padding:3px 6px !important; }
 </style>

@@ -41,7 +41,7 @@ function rankedSetupLimitLabel() {
     </template>
     <template v-else-if="game.activePlayer === me.playerIndex && game.phase === 'Main'">
       <p v-if="me.nextLegionChargeMaxCost" class="pending-effect">全军出击：本回合下一张费用不高于 {{ me.nextLegionChargeMaxCost }} 的军团获得冲锋。</p>
-      <p class="card-action-hint">点击主宰查看并发动主宰效果；点击手牌或战场军团后，操作按钮会显示在卡牌上方。</p>
+      <p class="card-action-hint">点击主宰查看并发动主宰效果；点击手牌或战场军团后显示可执行操作。</p>
       <button class="danger" :disabled="busy" @click="emit('command','endTurn')">{{ busy ? '处理中…' : '结束回合' }}</button>
     </template>
     <p v-else class="waiting">等待对手操作…</p>

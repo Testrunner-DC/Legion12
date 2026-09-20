@@ -472,7 +472,9 @@ const contracts = [
     && playerMat.includes('@click.stop="inspectOrSelectMorale(morale.instanceId)"')
     && playerMat.includes('class="mobile-morale-stack-trigger"')
     && board.includes('mobileMoralePickerEnabled') && board.includes('mobileMoraleInteractive')
-    && board.includes('mobile-morale-picker') && board.includes('@click="mobileMoraleInteractive && togglePaymentResource(choice.id)"'), '阵营效果、同行士气标题/计数和士气堆在桌面共用156px边界并保留文字内距；手机横屏整个士气区可打开大面板查看，只在支付类提示中允许选择并复用原确认、取消与支付交互'],
+    && board.includes('mobile-morale-picker') && board.includes('@click="chooseMobileMorale(choice)"')
+    && board.includes(':aria-disabled="!choice.selectable"') && board.includes("mobileMoraleReason.value=choice.disabledReason||'当前不能选择'")
+    && board.includes('mobileRuneChoices') && board.includes("state: 'rune'"), '阵营效果、同行士气标题/计数和士气堆在桌面共用156px边界并保留文字内距；手机横屏整个士气区可打开图标化大面板查看，彼界符文置于首排；不可用资源仍可点出弹框级原因，支付类提示复用原确认、取消与支付交互'],
   [playerMat.includes("if (props.promptSlotIds?.includes(`${row}:${slot}`))")
     && playerMat.indexOf("if (props.promptSlotIds?.includes(`${row}:${slot}`))") < playerMat.indexOf("if (card && props.paymentChoiceIds?.includes(card.instanceId))")
     && playerMat.includes("available: promptSlotIds?.includes(`${row}:${slot}`) || isPlacementDestination")
@@ -656,7 +658,7 @@ const contracts = [
     && l12ServerSources.includes('IsWithinRecentPlayerReplayWindowAsync')
     && l12ServerSources.includes('RunPlayerReplayCleanupIfDueAsync'), '玩家回放必须限制7天内最近10场并由服务端统一可见性与每日清理保护'],
   [router.includes("name: 'json-replay'") && router.includes("name: 'match-replay'") && router.includes("name: 'admin-match-replay'")
-    && replayPage.includes('<GameBoard v-if="currentGame" :game="currentGame" :replay-focus-card="replayFocusCard"')
+    && replayPage.includes('<GameBoard v-else-if="currentGame" :game="currentGame" :replay-focus-card="replayFocusCard"')
     && replayPage.includes(':replay-playback-speed="playbackSpeed" read-only @replay-presentation-change="replayPresentationBusy = $event"')
     && replayPage.includes('>上一步</button>') && replayPage.includes("playing ? '暂停' : '播放'")
     && replayPage.includes("loadingReplayPage ? '加载中' : '下一步'") && replayPage.includes("isAdminReplay.value ? '返回后台对局档案' : '返回对局记录'")

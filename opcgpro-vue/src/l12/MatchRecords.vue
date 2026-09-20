@@ -5,6 +5,7 @@ import { platformRequest } from './platform'
 import {
   exportReplayPayload, parseReplayPayload, rememberImportedReplay, type MatchDetail, type MatchSummary,
 } from './replayModel'
+import { isMobileDeviceExperience } from './mobileViewport'
 
 const router = useRouter()
 const route = useRoute()
@@ -12,8 +13,15 @@ const matches = ref<MatchSummary[]>([])
 const selected = ref<MatchSummary | null>(null)
 const loading = ref(false)
 const error = ref('')
+const mobileReplayNotice = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 const canUseSelectedReplay = computed(() => Boolean(selected.value?.endedUtc && selected.value.commandCount > 0))
+const mobileReplayBlocked = isMobileDeviceExperience()
+
+function blockMobileReplay() {
+  error.value = '请到电脑端查看回放'
+  mobileReplayNotice.value = true
+}
 
 onMounted(async () => {
   await loadMatches()
@@ -37,8 +45,14 @@ function selectMatch(match: MatchSummary) {
 }
 
 function playSelected() {
+  if (mobileReplayBlocked) return blockMobileReplay()
   if (selected.value?.endedUtc && selected.value.commandCount > 0)
     router.push({ name: 'match-replay', params: { matchId: selected.value.matchId } })
+}
+
+function openReplayImport() {
+  if (mobileReplayBlocked) return blockMobileReplay()
+  fileInput.value?.click()
 }
 
 async function resolveSelectedDetail() {
@@ -72,6 +86,10 @@ async function exportReplay() {
 }
 
 async function importReplay(event: Event) {
+  if (mobileReplayBlocked) {
+    ;(event.target as HTMLInputElement).value = ''
+    return blockMobileReplay()
+  }
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
@@ -111,12 +129,16 @@ function resultLabel(match: MatchSummary) {
       </div>
       <div class="record-file-actions">
         <input ref="fileInput" type="file" accept="application/json,.json" @change="importReplay"/>
-        <button @click="fileInput?.click()">打开 JSON 回放</button>
+        <button @click="openReplayImport">打开 JSON 回放</button>
         <button :disabled="!canUseSelectedReplay" @click="exportReplay">保存 JSON</button>
         <button @click="loadMatches">刷新记录</button>
       </div>
     </header>
     <p v-if="error" class="records-error">{{ error }}</p>
+    <div v-if="mobileReplayNotice" class="mobile-replay-notice" role="alertdialog" aria-modal="true" aria-label="移动端回放提示">
+      <p>请到电脑端查看回放</p>
+      <button type="button" @click="mobileReplayNotice = false">知道了</button>
+    </div>
     <div class="records-workspace">
       <aside class="records-list">
         <button v-for="match in matches" :key="match.matchId"
@@ -155,6 +177,7 @@ function resultLabel(match: MatchSummary) {
 <style scoped>
 .record-file-actions{display:flex;align-items:center;gap:8px}.record-file-actions input{display:none}
 .records-retention-note{display:block;margin-top:6px;color:#87918e;font-size:13px;line-height:1.5}
+.mobile-replay-notice{position:fixed;z-index:2147483600;left:50%;top:50%;display:grid;box-sizing:border-box;width:min(320px,calc(100vw - 24px));justify-items:center;gap:14px;padding:18px;border:1px solid #667276;background:#090e10;color:#eeeae0;box-shadow:0 0 0 100vmax rgba(0,0,0,.58),0 16px 40px #000;transform:translate(-50%,-50%)}.mobile-replay-notice p{margin:0;font-size:15px;font-weight:900}.mobile-replay-notice button{min-width:88px;min-height:36px;padding:7px 12px;border:1px solid #8a9692;background:#172021;color:#fff;font-weight:900}
 .record-launch{display:grid;min-height:360px;place-items:center;align-content:center;gap:24px;border:1px solid rgba(240,239,229,.16);background:radial-gradient(circle at 50% 42%,rgba(41,117,123,.13),transparent 45%),rgba(4,7,8,.48);text-align:center}
 .record-launch>div{display:flex;align-items:center;justify-content:center;gap:14px}.record-launch span,.record-launch small{color:#78817d;font-size:14px}.record-launch b{color:#ece9df;font-size:15px}.record-launch p{max-width:520px;margin:0;color:#8f9793;font-size:14px;line-height:1.8}.record-launch button{padding:13px 32px;border:1px solid #d7c06f;background:#2c2612;color:#f4dda0;font-weight:900;letter-spacing:.12em}.record-launch button:disabled{cursor:not-allowed;opacity:.35}
 @media(max-width:720px){.records-header{align-items:flex-start;gap:12px}.record-file-actions{flex-wrap:wrap}.record-launch>div{flex-direction:column;gap:6px}}

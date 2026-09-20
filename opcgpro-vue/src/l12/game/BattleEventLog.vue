@@ -69,6 +69,9 @@ function compactMove(event: ActionEvent, text: string) {
 function side(index?: number) { return index == null ? '' : index === props.you ? '我方' : '对方' }
 function message(event: ActionEvent) {
   let text = redactHiddenCardNames(event, normalizeTypography(event.text))
+  // Keep the server event unchanged while hiding an implementation term from
+  // the player-facing record.
+  text = text.replace(/冻结进攻值/g, '进攻值')
   const name = event.playerIndex == null ? '' : props.names[event.playerIndex]
   if (name && text.startsWith(name)) text = text.slice(name.length).replace(/^\s*[：:]?\s*/, '')
   text = text.replace(/对手/g, '对方')

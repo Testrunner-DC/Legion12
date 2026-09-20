@@ -4,7 +4,16 @@ import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const server = await createServer({ root, server: { middlewareMode: true }, appType: 'custom', optimizeDeps: { noDiscovery: true } })
+const server = await createServer({
+  root,
+  // This verifier runs from release worktrees whose node_modules may be a
+  // read-only junction. The runner loader avoids Vite writing config bundles
+  // into node_modules/.vite-temp while preserving the same project config.
+  configLoader: 'runner',
+  server: { middlewareMode: true },
+  appType: 'custom',
+  optimizeDeps: { noDiscovery: true },
+})
 
 const replayCard = (instanceId, cardId, name) => ({
   InstanceId: instanceId, CardId: cardId, Name: name, CardType: 'legion', Faction: 'otherworld',

@@ -17,6 +17,20 @@ export function visibleViewport() {
   return { width: viewport?.width ?? window.innerWidth, height: viewport?.height ?? window.innerHeight }
 }
 
+// A battle layout is a device capability, not a transient viewport-height
+// measurement. Browser chrome must not turn a handset into a desktop board.
+export function isMobileDeviceExperience() {
+  if (typeof window === 'undefined') return false
+  const coarseTouch = window.matchMedia?.('(pointer: coarse) and (hover: none)').matches ?? false
+  if (!coarseTouch) return false
+  const visual = window.visualViewport
+  const width = visual?.width ?? window.innerWidth
+  const height = visual?.height ?? window.innerHeight
+  const shortEdge = Math.min(width, height)
+  const longEdge = Math.max(width, height)
+  return shortEdge >= 300 && shortEdge <= 1024 && longEdge <= 1366
+}
+
 export function useLandscapeViewport(enabled: Ref<boolean>) {
   let probe: HTMLDivElement | null = null
   let locked = false

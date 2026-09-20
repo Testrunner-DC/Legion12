@@ -41,7 +41,9 @@ let preparationCount = 0
 const preparedImageUrls = new Map<string, string>()
 
 function notifyBusy() {
-  emit('busyChange', Boolean(props.playbackSpeed && (active.value || queue.length || preparationCount)))
+  // The parent also coordinates live card reveals with modal prompts.  Report
+  // the real presentation state in every mode; replay is only one consumer.
+  emit('busyChange', Boolean(active.value || queue.length || preparationCount))
 }
 
 function replayDuration(standardMs: number, liveMinimumMs: number, replayMinimumMs = liveMinimumMs) {
@@ -313,9 +315,12 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
   const starts = fresh.map(event => {
     const draft = movementFromEvent(event, fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex))
     if (!draft) return null
-    const source = cardElement(draft.card?.instanceId)
+    // A disaster is revealed from its dedicated deck/active-disaster anchor,
+    // not cloned from the newly visible session thumbnail.  Using that
+    // thumbnail as a source would skip the card-back/front flip entirely.
+    const source = draft.disasterReveal ? null : cardElement(draft.card?.instanceId)
     return {
-      rect: elementRect(source) ?? resolveRect(draft.from, draft.playerIndex, draft.card?.instanceId),
+      rect: elementRect(source) ?? resolveRect(draft.from, draft.playerIndex, draft.disasterReveal ? undefined : draft.card?.instanceId),
       ghost: source instanceof HTMLElement ? source.cloneNode(true) as HTMLElement : undefined,
     }
   })
@@ -328,7 +333,7 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
   for (const [index, event] of fresh.entries()) {
     const draft = movementFromEvent(event, fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex))
     const movement = draft && starts[index]
-      ? movementFromEvent(event, starts[index]!.rect, resolveRect(draft.to, draft.playerIndex, draft.card?.instanceId))
+      ? movementFromEvent(event, starts[index]!.rect, resolveRect(draft.to, draft.playerIndex, draft.disasterReveal ? undefined : draft.card?.instanceId))
       : null
     if (movement) movement.sourceGhost = starts[index]?.ghost
     if (movement && !movement.sourceGhost && !movement.concealed && movement.card) {
