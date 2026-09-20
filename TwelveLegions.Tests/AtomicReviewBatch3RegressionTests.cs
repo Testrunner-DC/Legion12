@@ -251,6 +251,93 @@ public sealed class AtomicReviewBatch3RegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "ability:factionDrawMove")]
+    public void GaotianyuanChosenMoverLeavingTheFieldIsFailedNotCancelled()
+    {
+        var game = CreateWithFirstMaster("S01-04M2", 69021);
+        var player = game.State.Players[0];
+        player.Morale.Clear();
+        player.Library.Clear();
+        AddMorale(player, 2, "S01-04C1");
+        player.Library.Add(Card("S01-0401", "gaotianyuan-stale-target-draw"));
+        var mover = Card("S01-0402", "gaotianyuan-stale-target-mover");
+        player.Field[0][0] = mover;
+        HoldOpponentResponseWindow(game);
+        PrepareMain(game);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "faction-0", Ability: "factionDrawMove")).Accepted);
+        PassResponses(game);
+        var target = Assert.Single(game.State.PendingPrompts);
+        player.Field[0][0] = null;
+        player.Graveyard.Add(mover);
+        ResolveSinglePrompt(game, mover.InstanceId);
+
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("军团已无法位移", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("军团已无法位移", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "ability:factionDrawMove")]
+    public void GaotianyuanChosenMoverLosingEveryAdjacentSlotIsFailedNotCancelled()
+    {
+        var game = CreateWithFirstMaster("S01-04M2", 69022);
+        var player = game.State.Players[0];
+        player.Morale.Clear();
+        player.Library.Clear();
+        AddMorale(player, 2, "S01-04C1");
+        player.Library.Add(Card("S01-0401", "gaotianyuan-no-slot-draw"));
+        var mover = Card("S01-0402", "gaotianyuan-no-slot-mover");
+        player.Field[0][0] = mover;
+        HoldOpponentResponseWindow(game);
+        PrepareMain(game);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "faction-0", Ability: "factionDrawMove")).Accepted);
+        PassResponses(game);
+        var target = Assert.Single(game.State.PendingPrompts);
+        player.Field[0][1] = Card("S01-0101", "gaotianyuan-no-slot-front-blocker");
+        player.Field[1][0] = Card("S01-0101", "gaotianyuan-no-slot-back-blocker");
+        ResolveSinglePrompt(game, mover.InstanceId);
+
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("没有相邻空位", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("没有相邻空位", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "ability:factionDrawMove")]
+    public void GaotianyuanDeclaredDestinationBecomingOccupiedIsFailedNotCancelled()
+    {
+        var game = CreateWithFirstMaster("S01-04M2", 69023);
+        var player = game.State.Players[0];
+        player.Morale.Clear();
+        player.Library.Clear();
+        AddMorale(player, 2, "S01-04C1");
+        player.Library.Add(Card("S01-0401", "gaotianyuan-stale-slot-draw"));
+        var mover = Card("S01-0402", "gaotianyuan-stale-slot-mover");
+        player.Field[0][0] = mover;
+        HoldOpponentResponseWindow(game);
+        PrepareMain(game);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "faction-0", Ability: "factionDrawMove")).Accepted);
+        PassResponses(game);
+        ResolveSinglePrompt(game, mover.InstanceId);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        var destination = slot.ValidChoices.First();
+        var parts = destination.Split(':');
+        player.Field[int.Parse(parts[0])][int.Parse(parts[1])] =
+            Card("S01-0101", "gaotianyuan-stale-slot-blocker");
+        ResolveSinglePrompt(game, destination);
+
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("位移位置已失效", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("位移位置已失效", StringComparison.Ordinal));
+    }
+
+    [Fact]
     [Trait("L12Evidence", "ability:sunTopThree")]
     public void SunTopThreeKeepsHiddenPickDelayedButPredeclaresPublicGraveRecovery()
     {

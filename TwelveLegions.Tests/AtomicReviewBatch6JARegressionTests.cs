@@ -228,6 +228,36 @@ public sealed class AtomicReviewBatch6JARegressionTests
         Assert.Equal(-2, target.CostModifier);
     }
 
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0408")]
+    [Trait("L12Evidence", "entry:takasugi-target-after-draw-stale")]
+    public void TakasugiDrawFollowupTargetLeavingTheFieldIsFailedNotCancelled()
+    {
+        var game = Create(996021);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        player.Library.Clear();
+        player.Hand.Clear();
+        player.Library.Add(Card("S01-0002", "takasugi-stale-draw"));
+        var target = Card("S01-0201", "takasugi-stale-target");
+        opponent.Field[0][0] = target;
+        var source = Card("S01-0408", "takasugi-stale-source");
+
+        Invoke(game, "QueueOrPushTriggeredEffect", 0, source, "enter", "高杉晋作登场时效果", null,
+            new Dictionary<string, string>());
+        PassResponses(game);
+        var prompt = OnlyPrompt(game);
+        opponent.Field[0][0] = null;
+        opponent.Graveyard.Add(target);
+
+        Resolve(game, target.InstanceId);
+
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("抽牌后的目标已失效", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("抽牌后的目标已失效", StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData("S01-0103")]
     [InlineData("S02-0008")]

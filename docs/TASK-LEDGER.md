@@ -1,10 +1,21 @@
 # 十二军团任务台账
 
-## EFFECT-20260920-POST-RESOLUTION-GENERATED-OUTCOME：结算后生成互动结果分类（开发中，未部署）
+## EFFECT-20260920-RESPONSE-SCOPE-NEWLINE-DEFAULT：响应范围默认按换行划分（规则输入，未部署）
+
+- 用户提供复核版表格并确认：人工已填内容优先；其余能力默认每个卡文换行段对应一个响应/无效范围，未来明确特例再覆盖。冒号前仍为Cost，同一行内分支或“随后”不因原子数量自动拆窗；天灾不可响应并排除。
+- 只读核对：表内305张非天灾卡、343条能力行，当前85条R、35条Cost已有人工填写。后续导入需保留S1换行结果并对人工值与自动默认值标记来源。
+
+## EFFECT-20260920-PROMPT-CONTINUATION-OUTCOME：结算期Prompt陈旧选择结果分类（扫描中，未部署）
+
+- 范围：高杉晋作抽牌后目标与高天原阵营位移的4条陈旧选择失效出口；主动跳过、初始无目标/无可移动对象保持非失败。
+- 实施：4条陈旧选择失效统一走`RecordPromptContinuationFailure`；高杉抽牌结果保留，高天原不补选、不覆盖，主动跳过和初始无对象保持非失败。
+- 当前证据：真实Prompt流程修复前4/4红；修复后核心4/4、相邻147/147及Focused/Batch规则4208/4208通过，失败0、跳过0、退出0。下一检查点为隔离提交级Release与main同步；未部署。
+
+## EFFECT-20260920-POST-RESOLUTION-GENERATED-OUTCOME：结算后生成互动结果分类（已同步，未部署）
 
 - 范围：`L12PostResolutionGeneratedEffects`全部两类消费者，托勒密十三世重复主动战术、信仰狂热者免费主宰效果；覆盖4条真正失败出口，初始无目标、主动跳过和实际被无效分别保留独立结果。
 - 实施：身份损坏、声明目标失效、所选主宰能力无法建立/发动统一走`RecordPostResolutionGeneratedFailure`；托勒密重复效果无初始合法目标仍为`effect-noop`。
-- 当前证据：托勒密身份、目标失效2项修复前2/2红；修复后专项3/3、相邻136/136及Focused/Batch规则4204/4204通过，失败0、跳过0、退出0。下一检查点为隔离提交级Release与main同步；未部署。
+- 最终证据：托勒密身份、目标失效2项修复前2/2红；专项3/3、相邻136/136。`a0cd3c43ec5e96a5a9750d16658693ed2b06d337`干净Release规则4204/4204、平台137/137、UI326及全部门禁通过，退出0并由`origin/main`精确读回。回执位于`D:/GPT/Legion12/artifacts/deploy/a0cd3c43ec5e96a5a9750d16658693ed2b06d337/`；未部署。
 
 ## EFFECT-20260920-GENERATED-PLAY-SETTLEMENT-OUTCOME：效果生成免费打出结算结果分类（已同步，未部署）
 

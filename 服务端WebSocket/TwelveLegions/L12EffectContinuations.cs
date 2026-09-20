@@ -85,9 +85,8 @@ public sealed partial class L12GameEngine
                 var opponent = State.Players[1 - item.Controller];
                 if (FindOnField(opponent, chosen[0], out _, out _) is { } target && IsFieldLegion(target))
                     AddTimedModifier(target, 0, -2, State.TurnSerial, item.SourceName);
-                else if (source is not null)
-                    AddEvent("effect-cancelled", item.Controller, "高杉晋作抽牌后的目标已失效；抽牌结果保留", source);
-                else AddEvent("effect-cancelled", item.Controller, "高杉晋作抽牌后的目标已失效；抽牌结果保留");
+                else RecordPromptContinuationFailure(item,
+                    "高杉晋作抽牌后的目标已失效；抽牌结果保留", source);
                 FinishStackItem(item);
                 break;
             }
@@ -274,14 +273,14 @@ public sealed partial class L12GameEngine
         var legion = FindOnField(player, choice, out var row, out var slot);
         if (legion is null || !IsFieldLegion(legion) || legion.Tapped || legion.Hidden)
         {
-            AddEvent("effect-cancelled", item.Controller, "高天原阵营效果选择的军团已无法位移");
+            RecordPromptContinuationFailure(item, "高天原阵营效果选择的军团已无法位移");
             FinishStackItem(item);
             return;
         }
         var destinations = AdjacentEmptySlots(player, row, slot).ToArray();
         if (destinations.Length == 0)
         {
-            AddEvent("effect-cancelled", item.Controller, "高天原阵营效果选择的军团已没有相邻空位");
+            RecordPromptContinuationFailure(item, "高天原阵营效果选择的军团已没有相邻空位");
             FinishStackItem(item);
             return;
         }
@@ -301,7 +300,7 @@ public sealed partial class L12GameEngine
             || State.ActiveDisaster?.CardId == "S01-DS03" && targetRow == 1
             || player.Field[targetRow][targetSlot] is not null)
         {
-            AddEvent("effect-cancelled", item.Controller, "高天原阵营效果选择的位移位置已失效");
+            RecordPromptContinuationFailure(item, "高天原阵营效果选择的位移位置已失效");
             FinishStackItem(item);
             return;
         }
@@ -312,6 +311,10 @@ public sealed partial class L12GameEngine
         RecordLegionMovement(item.Controller, legion, row, targetRow);
         FinishStackItem(item);
     }
+
+    private void RecordPromptContinuationFailure(L12StackItem item, string reason,
+        L12CardInstance? source = null)
+        => AddEvent("effect-failed", item.Controller, reason, source is null ? [] : [source]);
 
     private void BeginLiJingEffect(L12StackItem item)
     {
