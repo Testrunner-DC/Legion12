@@ -21,6 +21,8 @@ import PhasePlayback from './PhasePlayback.vue'
 import PromptOverlay from './PromptOverlay.vue'
 import SandboxCardPicker, { type SandboxCatalogCard } from './SandboxCardPicker.vue'
 import CardImage from '../CardImage.vue'
+import CardDetailContent from '../CardDetailContent.vue'
+import type { DeckCard } from '../decks'
 import RankedIdentityBadge from '../RankedIdentityBadge.vue'
 import { getFactionPresentation } from '../factionPresentation'
 import { visibleViewport, viewportRect } from '../mobileViewport'
@@ -61,6 +63,31 @@ const mobileMoralePickerOpen = ref(false)
 const mobileInspectorOpen = ref(false)
 const selectedId = ref<string | null>(null)
 const focusCard = ref<Card | null>(null)
+const focusDetailCard = computed<DeckCard | null>(() => {
+  const card = focusCard.value
+  if (!card) return null
+  const master = card.cardType === 'master'
+    ? props.game.players.find(player => player.master.masterId === card.cardId)?.master
+    : undefined
+  return {
+    id: card.cardId,
+    number: card.cardId,
+    nameZh: card.name,
+    cardType: card.cardType,
+    isCounterTactic: card.isCounterTactic,
+    product: '',
+    faction: card.faction,
+    imageUrl: card.imageUrl,
+    cost: card.hasPrintedCost === false ? undefined : (card.currentCost ?? card.cost),
+    hp: master?.hp,
+    troops: card.cardType === 'legion' ? card.troops : undefined,
+    disasterLevel: card.disasterLevel || undefined,
+    trialValue: card.trialValue || undefined,
+    traits: card.traits ?? [],
+    profession: card.profession,
+    effect: card.effectText,
+  }
+})
 const inspectorAnchor = ref<HTMLElement | null>(null)
 const inspectorFloatStyle = ref<Record<string, string>>({})
 watch(() => props.replayFocusCard, card => {
@@ -967,18 +994,11 @@ function statusTexts(card: Card) {
               <div ref="inspectorAnchor" class="card-inspector-anchor" data-ui-contract="selected-card-inspector-anchor">
               <Teleport to="body" :disabled="!modalInspectorVisible">
                 <div class="board-rail inspector-style-scope">
-                <section class="grand-panel card-inspector" data-ui-contract="selected-card-inspector" :style="modalInspectorVisible ? inspectorFloatStyle : undefined" :class="{ 'card-inspector-floating': modalInspectorVisible, 'horizontal-inspector': focusCard && isHorizontalCardType(focusCard.cardType) }">
+                <section class="grand-panel card-inspector archive-detail" data-ui-contract="selected-card-inspector" :style="modalInspectorVisible ? inspectorFloatStyle : undefined" :class="{ 'card-inspector-floating': modalInspectorVisible, 'horizontal-inspector': focusCard && isHorizontalCardType(focusCard.cardType) }">
                   <i class="corner tl"/><i class="corner tr"/><i class="corner bl"/><i class="corner br"/>
-                  <h3>选中卡牌</h3>
-                  <template v-if="focusCard">
-                    <CardImage class="inspector-card-image" :card-id="focusCard.cardId" :legacy-url="focusCard.imageUrl" :alt="focusCard.name" intent="detail" eager />
-                    <h2>{{ focusCard.name }}</h2>
-                    <div v-if="focusCard.traits?.length || focusCard.profession" class="inspector-card-tags">
-                      <span v-for="trait in focusCard.traits" :key="trait">{{ trait }}</span><span v-if="focusCard.profession">{{ focusCard.profession }}</span>
-                    </div>
-                    <div v-if="focusCard.trialValue" class="inspector-card-tags"><span>试炼值 {{ focusCard.trialValue }}</span></div>
-                    <p class="inspector-effect l12-effect-body l12-effect-body--compact">{{ focusCard.effectText || '无效果文字' }}</p>
-                    <ul v-if="statusTexts(focusCard).length" class="inspector-statuses"><li v-for="text in statusTexts(focusCard)" :key="text">{{ text }}</li></ul>
+                  <template v-if="focusCard && focusDetailCard">
+                    <CardDetailContent :card="focusDetailCard" :show-catalog-only="false" />
+                    <section v-if="statusTexts(focusCard).length" class="archive-effect battle-card-status"><b>当前状态</b><ul class="inspector-statuses"><li v-for="text in statusTexts(focusCard)" :key="text">{{ text }}</li></ul></section>
                   </template>
                   <div v-else class="empty-inspector">悬停或选择卡牌<br/>查看数值</div>
                 </section>
@@ -1168,15 +1188,10 @@ function statusTexts(card: Card) {
         <Transition name="mobile-card-inspector">
           <aside v-if="mobileLandscapeViewport && mobileInspectorOpen" class="mobile-card-inspector" role="dialog" aria-modal="false" aria-label="卡牌详情">
             <header><div><small>卡牌详情</small><h2>{{ focusCard?.name || '选择一张卡牌' }}</h2></div><button type="button" @click="mobileInspectorOpen = false">收起</button></header>
-            <template v-if="focusCard">
-            <CardImage class="mobile-inspector-card-image" :card-id="focusCard.cardId" :legacy-url="focusCard.imageUrl" :alt="focusCard.name" intent="detail" eager />
-            <div v-if="focusCard.traits?.length || focusCard.profession" class="inspector-card-tags">
-              <span v-for="trait in focusCard.traits" :key="trait">{{ trait }}</span><span v-if="focusCard.profession">{{ focusCard.profession }}</span>
+            <div v-if="focusCard && focusDetailCard" class="archive-detail mobile-card-detail-body">
+              <CardDetailContent :card="focusDetailCard" :show-catalog-only="false" />
+              <section v-if="statusTexts(focusCard).length" class="archive-effect battle-card-status"><b>当前状态</b><ul class="inspector-statuses"><li v-for="text in statusTexts(focusCard)" :key="text">{{ text }}</li></ul></section>
             </div>
-            <div v-if="focusCard.trialValue" class="inspector-card-tags"><span>试炼值 {{ focusCard.trialValue }}</span></div>
-            <p class="mobile-inspector-effect l12-effect-body l12-effect-body--compact">{{ focusCard.effectText || '无效果文字' }}</p>
-            <ul v-if="statusTexts(focusCard).length" class="inspector-statuses"><li v-for="text in statusTexts(focusCard)" :key="text">{{ text }}</li></ul>
-            </template>
             <p v-else class="mobile-inspector-empty">点击手牌、场上卡牌、圣物、试炼或当前天灾，即可在此查看完整信息。</p>
           </aside>
         </Transition>
@@ -1249,6 +1264,7 @@ function statusTexts(card: Card) {
 .board-center>.opponent-hand{grid-row:1}.opponent-status-lane{grid-row:2}.felt-board{grid-row:3}.my-status-lane{grid-row:4}.board-center>.l12-hand:last-child{grid-row:5}
 .board-viewport{top:52px}.board-status-lane{height:70px!important;min-height:70px!important;flex-shrink:0}.player-summary :is(.player-summary-primary,.player-summary-meta,.connection-state){font-size:var(--l12-board-copy,13px)!important}
 .right-rail{width:auto}.right-rail .record-log{display:flex;flex:1;flex-direction:column;min-height:150px}.right-rail .action-panel{max-height:300px;overflow:auto}.right-rail .action-panel :deep(.l12-actions>p){display:none}.board-rail .card-inspector{overflow:auto}.session-disaster-strip span{white-space:normal!important;overflow-wrap:anywhere}
+.card-inspector.archive-detail{display:block;box-sizing:border-box;border-left:1px solid rgba(240,239,229,.2)}.card-inspector :deep(.card-detail-copy){min-width:0}.card-inspector :deep(.archive-tags){flex-wrap:wrap}.card-inspector :deep(.archive-effect p){white-space:pre-wrap;overflow-wrap:anywhere}.battle-card-status{margin-top:2px}.battle-card-status>ul{margin-top:7px}
 .felt-board{
   --l12-board-seam-safe-height:44px;
   --l12-battlefield-half-height:350px;
@@ -1288,7 +1304,7 @@ function statusTexts(card: Card) {
 .inspector-card-tags{display:flex;box-sizing:border-box;width:max-content;max-width:100%;align-self:center;justify-content:center;flex-wrap:wrap;gap:5px;margin:0 auto 7px}.inspector-card-tags span{flex:0 0 auto;padding:2px 6px;border:1px solid #4f5e5b;background:#111819;color:#8fdad7;font-size:var(--l12-board-copy,13px);font-weight:900;white-space:nowrap}
 .left-disaster-row{display:grid;width:100%;grid-template-columns:132px minmax(0,1fr);gap:8px;flex:none}.left-disaster-row>.grand-panel{box-sizing:border-box;width:100%;min-width:0;min-height:178px}.session-disaster-panel{display:grid;align-content:center;justify-items:center;padding:8px!important}.session-disaster-panel h3{width:100%;margin:0 0 8px}.session-disaster-strip{display:grid;width:max-content;grid-template-columns:repeat(2,51.2px);gap:8px}.session-disaster-strip button{width:51.2px;min-width:51.2px;height:51.2px;padding:0;overflow:hidden;border:2px solid #c8b978;border-radius:50%;background:#070a0b}.session-disaster-strip button.hidden,.session-disaster-strip button.unrevealed{border-color:#49504e;filter:grayscale(1) brightness(.58)}.session-disaster-strip button.revealed{border-color:#69716f;filter:grayscale(.85) brightness(.58)}.session-disaster-strip button.resolved{border-color:#76508f;box-shadow:0 0 8px rgba(133,75,174,.28);filter:grayscale(.35) brightness(.64) saturate(.82)}.session-disaster-strip button.active{border-color:#bc6cff;box-shadow:0 0 13px rgba(187,87,255,.72),inset 0 0 0 1px rgba(231,202,255,.42);filter:none}.session-disaster-strip img,.session-disaster-strip .l12-card-image{width:100%;height:100%;border-radius:50%;transform:scale(1.09)}.session-disaster-strip button:not(.hidden):hover{border-color:#d49aff;box-shadow:0 0 11px rgba(190,102,255,.52)}.left-disaster-row>.current-disaster-panel{display:grid;place-items:center;padding:10px!important}
 .session-disaster-panel h3{text-align:center}
-.card-inspector-anchor{display:flex;flex:1;min-height:0}.card-inspector-anchor>.card-inspector{width:100%}.selected-card-utility-slot{box-sizing:border-box;width:100%;height:60px;flex:none}.inspector-card-image{display:block;width:168px;height:235px;max-width:100%;flex:0 0 235px;margin:4px auto 10px;object-fit:contain;background:#050708}.card-inspector.horizontal-inspector .inspector-card-image{width:100%;max-width:239px;height:auto;flex-basis:auto;aspect-ratio:8/5}.card-inspector-floating{position:fixed!important;z-index:1600!important;box-sizing:border-box;overflow:auto!important;transform-origin:left top;pointer-events:none}.card-inspector-floating .inspector-card-image{width:min(168px,100%);max-width:100%;height:auto;aspect-ratio:5/7}.card-inspector-floating.horizontal-inspector .inspector-card-image{aspect-ratio:8/5}
+.card-inspector-anchor{display:flex;flex:1;min-height:0}.card-inspector-anchor>.card-inspector{width:100%}.selected-card-utility-slot{box-sizing:border-box;width:100%;height:60px;flex:none}.card-inspector :deep(.archive-detail-image){width:207px;max-width:100%}.card-inspector :deep(.archive-detail-image.horizontal){width:250px}.card-inspector-floating{position:fixed!important;z-index:1600!important;box-sizing:border-box;overflow:auto!important;transform-origin:left top;pointer-events:none}
 .inspector-style-scope{display:contents!important}
 .session-disaster-strip button.replaceable{cursor:pointer}.session-disaster-strip button.replaceable:hover{border-color:#e6bd4a;box-shadow:0 0 12px #d49c3d80}
 .dice-reveal-animation{position:fixed;z-index:2147483001;left:50%;top:45%;display:grid;justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.dice-reveal-values{display:flex;gap:14px}.dice-reveal-values b{display:grid;width:76px;height:76px;place-items:center;border:3px solid #e3c36d;border-radius:15px;background:#f1eee2;box-shadow:0 12px 30px #000,0 0 22px rgba(227,195,109,.35);color:#111;font-size:max(44px,var(--l12-board-copy,13px));line-height:1;animation:l12-dice-roll .18s infinite alternate}.dice-reveal-animation.settled .dice-reveal-values b{animation:l12-dice-land .32s ease-out}.dice-reveal-animation strong{max-width:min(720px,82vw);padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.92);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:var(--l12-board-copy,13px);font-weight:900;text-align:center}.dice-reveal-enter-active,.dice-reveal-leave-active{transition:opacity .2s ease,filter .2s ease}.dice-reveal-enter-from,.dice-reveal-leave-to{opacity:0;filter:blur(5px)}@keyframes l12-dice-roll{from{transform:rotate(-10deg) scale(.94)}to{transform:rotate(10deg) scale(1.06)}}@keyframes l12-dice-land{0%{transform:scale(1.35) rotate(20deg)}100%{transform:scale(1) rotate(0)}}
@@ -1875,12 +1891,20 @@ function statusTexts(card: Card) {
 }
 .mobile-card-inspector header { display: flex; align-items: center; justify-content: space-between; gap: 7px; border-bottom: 1px solid #47605d; padding-bottom: 5px; }
 .mobile-card-inspector header small { display: block; color: #aebfbb; font-size: 9px; line-height: 1; }
-.mobile-card-inspector h2 { max-width: 150px; margin: 3px 0 0; overflow: hidden; font-size: 13px; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
+.mobile-card-inspector header h2 { max-width: 150px; margin: 3px 0 0; overflow: hidden; font-size: 13px; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
 .mobile-card-inspector header button { min-width: 42px; min-height: 26px; padding: 2px 5px; border: 1px solid #607a76; background: #172021; color: #fff; font-size: 10px; font-weight: 900; }
-.mobile-inspector-card-image { display: block; width: 86px; height: 120px; margin: 0 auto; object-fit: contain; }
-.mobile-inspector-effect { min-height: 0; margin: 0; overflow: auto; color: #edf0e9; font-size: 11px; line-height: 1.38; }
-.mobile-card-inspector .inspector-card-tags { margin: 0 auto; gap: 3px; }
-.mobile-card-inspector .inspector-card-tags span { padding: 2px 4px; font-size: 9px; }
+.mobile-card-detail-body { display: block !important; min-height: 0; flex: 1; padding: 6px 2px 8px; border-left: 0; overflow-x: hidden; overflow-y: auto; background: transparent; }
+.mobile-card-detail-body :deep(.archive-detail-image) { width: min(150px, 100%); margin-bottom: 8px; }
+.mobile-card-detail-body :deep(.archive-detail-image.horizontal) { width: 100%; }
+.mobile-card-detail-body :deep(.card-detail-copy) { min-width: 0; }
+.mobile-card-detail-body :deep(.archive-tags) { flex-wrap: wrap; gap: 3px; }
+.mobile-card-detail-body :deep(.archive-tags span) { padding: 2px 4px; font-size: 9px; }
+.mobile-card-detail-body :deep(.archive-number),.mobile-card-detail-body :deep(.archive-effect b),.mobile-card-detail-body :deep(dt),.mobile-card-detail-body :deep(dd) { font-size: 10px; }
+.mobile-card-detail-body :deep(.card-detail-copy>h2) { margin: 3px 0 6px; font-size: 14px; white-space: normal; overflow-wrap: anywhere; }
+.mobile-card-detail-body :deep(.card-detail-copy>dl) { margin: 7px 0; }
+.mobile-card-detail-body :deep(.card-detail-copy>dl>*) { padding: 4px; }
+.mobile-card-detail-body :deep(.archive-effect) { padding: 7px 0; }
+.mobile-card-detail-body :deep(.archive-effect p) { margin-top: 4px; font-size: 11px; line-height: 1.42; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mobile-card-inspector .inspector-statuses { max-height: 70px; margin: 0; overflow: auto; }
 .mobile-card-inspector .inspector-statuses li { font-size: 10px; }
 .mobile-card-inspector-enter-active,.mobile-card-inspector-leave-active { transition: transform .18s ease, opacity .18s ease; }

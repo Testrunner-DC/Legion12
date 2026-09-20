@@ -14,6 +14,7 @@ const read = relative => fs.readFileSync(path.join(root, relative), 'utf8')
 const sharedSource = read('src/l12/CardDetailContent.vue')
 const archiveSource = read('src/l12/CardArchive.vue')
 const editorSource = read('src/l12/L12DeckEditor.vue')
+const boardSource = read('src/l12/game/GameBoard.vue')
 assert(sharedSource.includes("showCatalogOnly ? 'catalog' : 'builder'"), 'shared detail must expose its rendering context')
 assert(sharedSource.includes('<template v-if="showCatalogOnly">'), 'catalog-only content must have one shared visibility boundary')
 assert(sharedSource.includes('<slot name="catalog-extra"/>'), 'future catalog-only records need a guarded extension point')
@@ -22,6 +23,11 @@ assert(archiveSource.includes('<CardDetailContent :card="selectedDetailCard">')
 assert(archiveSource.includes('layout="modal"') && archiveSource.includes('#image-overlay'), 'archive modal must reuse shared detail and preserve version controls')
 assert(editorSource.includes(':show-catalog-only="false"'), 'deck editor must explicitly hide catalog-only details')
 assert(!editorSource.includes('class="builder-card-tags"'), 'deck editor must not keep a parallel detail renderer')
+assert(boardSource.includes("import CardDetailContent from '../CardDetailContent.vue'"), 'battle board must import the shared card detail')
+assert.equal((boardSource.match(/<CardDetailContent :card="focusDetailCard" :show-catalog-only="false" \/>/g) ?? []).length, 2,
+  'desktop and mobile battle inspectors must both reuse the shared detail and hide catalog-only records')
+assert(!boardSource.includes('class="inspector-effect') && !boardSource.includes('class="mobile-inspector-effect'),
+  'battle board must not retain a parallel legacy effect renderer')
 
 fs.mkdirSync(out, { recursive: true })
 
@@ -50,6 +56,11 @@ const server = await createServer({ root, server: { host: '127.0.0.1', port: 0, 
   resolveId(id) { if (id === '/__shared_card_detail__.js') return id },
   load(id) { if (id === '/__shared_card_detail__.js') return entry },
   configureServer(devServer) { devServer.middlewares.use((request, response, next) => {
+    if (request.url?.match(/^\/api\/alternate-arts(\?|$)/)) {
+      response.setHeader('Content-Type', 'application/json')
+      response.end('[]')
+      return
+    }
     if (request.url?.match(/^\/__shared_card_detail__(\?|$)/)) {
       response.setHeader('Content-Type', 'text/html')
       response.end('<style>html,body,#app{width:100%;height:100%;margin:0;background:#05090b}.detail-contract{display:grid;grid-template-columns:repeat(2,minmax(0,320px));gap:24px;padding:24px}.contract-detail{display:block!important;height:720px;box-sizing:border-box}</style><div id="app"></div><script type="module" src="/@vite/client"></script><script type="module" src="/__shared_card_detail__.js"></script>')
@@ -74,7 +85,11 @@ try {
   const page = await browser.newPage()
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
-  await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
+  await page.route('**/*', route => {
+    const url = new URL(route.request().url())
+    if (url.pathname === '/api/alternate-arts') return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    return url.hostname === '127.0.0.1' ? route.continue() : route.abort()
+  })
 
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto(`http://127.0.0.1:${port}/__shared_card_detail__?mode=contract`)

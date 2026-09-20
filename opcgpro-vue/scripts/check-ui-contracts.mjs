@@ -906,7 +906,7 @@ const contracts = [
     && cardArchive.includes("import CardDetailContent from './CardDetailContent.vue'")
     && deckEditor.includes("import CardDetailContent from './CardDetailContent.vue'")
     && deckEditor.includes(':show-catalog-only="false"')
-    && board.includes('inspector-effect l12-effect-body l12-effect-body--compact') && prompt.includes("'l12-effect-body': isEffectOptionList") && masterOverlay.includes('player.master.effectText') && masterOverlay.includes('class="l12-effect-body l12-effect-body--compact">{{ entry.label }}') && playerMat.includes('player.factionEffect?.effectText') && playerMat.includes('class="l12-effect-body l12-effect-body--compact"') && adminPage.includes('<p class="l12-effect-body">{{ selectedEffect.effectText') && adminPage.includes('<span class="l12-effect-body">{{ ability.costText }}</span>') && adminPage.includes('<span class="l12-effect-body">{{ ability.resolutionText }}</span>') && adminPage.includes('.security-metrics,.effect-segments{grid-template-columns:1fr}') && !cardDetailContent.includes('archive-number l12-effect-body') && !deckEditor.includes('<small class="l12-effect-body">{{ selected.number') && !globalStyle.includes('--l12-board-readable'), '全站卡效正文必须共用自适应语义字号并保留权威换行，覆盖卡牌详情、牌库编辑、对战、Prompt、主宰/阵营与管理后台；辅助信息按组件空间使用metadata/micro层级，不得恢复全项目14px硬阈值'],
+    && board.includes('<CardDetailContent :card="focusDetailCard" :show-catalog-only="false" />') && prompt.includes("'l12-effect-body': isEffectOptionList") && masterOverlay.includes('player.master.effectText') && masterOverlay.includes('class="l12-effect-body l12-effect-body--compact">{{ entry.label }}') && playerMat.includes('player.factionEffect?.effectText') && playerMat.includes('class="l12-effect-body l12-effect-body--compact"') && adminPage.includes('<p class="l12-effect-body">{{ selectedEffect.effectText') && adminPage.includes('<span class="l12-effect-body">{{ ability.costText }}</span>') && adminPage.includes('<span class="l12-effect-body">{{ ability.resolutionText }}</span>') && adminPage.includes('.security-metrics,.effect-segments{grid-template-columns:1fr}') && !cardDetailContent.includes('archive-number l12-effect-body') && !deckEditor.includes('<small class="l12-effect-body">{{ selected.number') && !globalStyle.includes('--l12-board-readable'), '全站卡效正文必须共用自适应语义字号并保留权威换行，覆盖卡牌详情、牌库编辑、对战、Prompt、主宰/阵营与管理后台；辅助信息按组件空间使用metadata/micro层级，不得恢复全项目14px硬阈值'],
   [gmPanel.includes("emit('armPlacement'") && gamePage.includes(':gm-placement="gmPlacement"') && board.includes("emit('gmPlacementResolved')") && board.includes('GM：请选择'), 'GM 打出军团必须回到棋盘并点击目标玩家的绿色空位'],
   [playerMat.includes('selectRunePayment') && playerMat.includes('`rune:${index}`') && playerMat.includes('payable: paymentChoiceIds'), '符文支付必须直接点击场上的可用符文，不得恢复编号弹框'],
   [playerMat.includes('data-ui-contract="independent-trial-action"') && playerMat.includes("emit('ability', player.field[row][slot]!, 'trialAdvance')")
@@ -1401,11 +1401,14 @@ contracts.push(
   [playerMat.includes('inheritAttrs: false') && playerMat.includes('v-bind="$attrs"')
     && board.includes('--l12-board-copy') && board.includes('--l12-board-meta') && board.includes('--l12-board-micro') && board.includes('flex-wrap:wrap'),
     '多根PlayerMat必须显式向场面根节点传递外框样式，缩放后的正文、辅助与微标签层级不得破坏布局'],
-  [board.includes('.inspector-card-tags{display:flex;box-sizing:border-box;width:max-content;max-width:100%;align-self:center;justify-content:center;flex-wrap:wrap;gap:5px;margin:0 auto 7px}')
-    && board.includes('.inspector-card-tags span{flex:0 0 auto;') && board.includes('white-space:nowrap')
-    && board.includes('.inspector-card-image{display:block;width:168px;height:235px;')
-    && board.includes('.card-inspector.horizontal-inspector .inspector-card-image{width:100%;max-width:239px;'),
-    '选中卡牌多标签必须保持自然宽度并作为整体居中，必要时换行但不得拉伸；卡图在固定详情容器内放大约15%'],
+  [board.includes("import CardDetailContent from '../CardDetailContent.vue'")
+    && (board.match(/<CardDetailContent :card="focusDetailCard" :show-catalog-only="false" \/>/g) ?? []).length === 2
+    && board.includes('const focusDetailCard = computed<DeckCard | null>')
+    && board.includes('class="grand-panel card-inspector archive-detail"')
+    && board.includes('class="archive-detail mobile-card-detail-body"')
+    && !board.includes('class="inspector-effect') && !board.includes('class="mobile-inspector-effect')
+    && cardDetailContent.includes('<template v-if="showCatalogOnly">'),
+    '桌面、移动端对战与回放的选中卡牌必须直接复用图鉴详情组件，并统一隐藏收录产品和刊物记录，不得保留平行旧模板'],
   [board.includes('const availableHeight = Math.max(1, viewport.height - 124)')
     && visualLayoutCheck.includes("throw new Error('Hand leaves viewport at '")
     && visualLayoutCheck.includes("throw new Error('Utility dock leaves viewport at '"),
@@ -1436,7 +1439,7 @@ contracts.push(
     '平局申请和玩家举报必须使用独立治理协议、后台与RBAC；同意平局不得沿用无效局文案'],
   [responsiveTypeCheck.includes('{ width: 1920, height: 1080 }') && responsiveTypeCheck.includes('{ width: 1440, height: 810 }')
     && responsiveTypeCheck.includes('{ width: 1280, height: 720 }') && responsiveTypeCheck.includes('{ width: 760, height: 900 }')
-    && responsiveTypeCheck.includes('{ width: 390, height: 844 }') && responsiveTypeCheck.includes("page.locator('.inspector-effect').waitFor()")
+    && responsiveTypeCheck.includes('{ width: 390, height: 844 }') && responsiveTypeCheck.includes('[data-card-detail-context="builder"] .archive-effect .l12-effect-body')
     && responsiveTypeCheck.includes('selected-card effect prose must wrap without horizontal overflow'),
     '响应式字号专项必须覆盖三档16:9桌面、760与390窄宽，并实际选中卡牌验证正文和标签而非只检查空详情'],
   [board.includes('Math.min(1, availableWidth / stageSize.value.width, availableHeight / stageSize.value.height)')

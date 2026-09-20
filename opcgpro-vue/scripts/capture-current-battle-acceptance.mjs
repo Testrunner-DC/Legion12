@@ -61,10 +61,14 @@ try {
   assert.deepEqual(standard.moraleTriggers, [true, true], 'both full morale stacks must open the picker')
   await page.screenshot({ path: path.join(output, '01-mobile-standard-844x390.png') })
 
-  await page.getByRole('button', { name: '展开卡牌详情', exact: true }).click()
-  await page.locator('.mobile-card-inspector').waitFor()
+  await page.locator('.board-center>.l12-hand:last-child .hand-card-wrap').first().click()
+  const cardDrawer = page.locator('.mobile-card-inspector')
+  if (!await cardDrawer.isVisible()) await page.getByRole('button', { name: '展开卡牌详情', exact: true }).click()
+  await cardDrawer.waitFor()
+  await page.waitForTimeout(250)
   const drawer = await page.evaluate(() => {
     const panel = document.querySelector('.mobile-card-inspector')
+    const sharedDetail = panel?.querySelector('[data-card-detail-context="builder"]')
     const handle = document.querySelector('.left-rail > .mobile-card-inspector-handle')
     const panelRect = panel?.getBoundingClientRect()
     const handleRect = handle?.getBoundingClientRect()
@@ -72,10 +76,16 @@ try {
     return {
       opaque: style?.opacity === '1' && style?.backgroundColor === 'rgb(7, 12, 13)',
       independentWidth: Boolean(panelRect && handleRect && panelRect.width >= 250 && panelRect.width > handleRect.width * 2),
+      sharedDetail: Boolean(sharedDetail),
+      productSections: panel?.querySelectorAll('.archive-decks').length ?? -1,
+      horizontalOverflow: Boolean(sharedDetail && sharedDetail.scrollWidth > sharedDetail.clientWidth + 1),
     }
   })
   assert.equal(drawer.opaque, true, 'card drawer must use an opaque surface')
   assert.equal(drawer.independentWidth, true, 'card drawer width must be independent of its rail handle')
+  assert.equal(drawer.sharedDetail, true, 'card drawer must render the shared archive detail')
+  assert.equal(drawer.productSections, 0, 'battle card drawer must hide catalog-only product/publication records')
+  assert.equal(drawer.horizontalOverflow, false, 'shared card detail must not overflow the mobile drawer horizontally')
   await page.screenshot({ path: path.join(output, '02-card-drawer-844x390.png') })
 
   await load({ width: 568, height: 320 })

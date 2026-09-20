@@ -72,13 +72,15 @@ try {
     await page.goto(`http://127.0.0.1:${port}/__batch282__`)
     await page.locator('.board-center>.l12-hand:last-child .hand-card-wrap').first().waitFor()
     await page.locator('.board-center>.l12-hand:last-child .hand-card-wrap').first().hover()
-    await page.locator('.inspector-effect').waitFor()
+    await page.locator('[data-ui-contract="selected-card-inspector"] [data-card-detail-context="builder"] .archive-effect .l12-effect-body').waitFor()
     await page.waitForTimeout(350)
     const battle = await page.evaluate(() => {
       const box = selector => { const element = document.querySelector(selector); if (!element) return null; const rect = element.getBoundingClientRect(); return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, clientWidth: element.clientWidth, scrollWidth: element.scrollWidth } }
-      const effect = document.querySelector('.inspector-effect')
-      const tags = [...document.querySelectorAll('.inspector-card-tags span')].map(tag => ({ text: tag.textContent?.trim(), ...box('.inspector-card-tags') }))
-      return { effect: box('.inspector-effect'), tags, bodyScrollWidth: document.documentElement.scrollWidth, copySize: getComputedStyle(document.querySelector('.event-message')).fontSize, effectSize: getComputedStyle(effect).fontSize }
+      const effectSelector = '[data-ui-contract="selected-card-inspector"] [data-card-detail-context="builder"] .archive-effect .l12-effect-body'
+      const tagsSelector = '[data-ui-contract="selected-card-inspector"] [data-card-detail-context="builder"] .archive-tags'
+      const effect = document.querySelector(effectSelector)
+      const tags = [...document.querySelectorAll(`${tagsSelector} span`)].map(tag => ({ text: tag.textContent?.trim(), ...box(tagsSelector) }))
+      return { effect: box(effectSelector), tags, bodyScrollWidth: document.documentElement.scrollWidth, copySize: getComputedStyle(document.querySelector('.event-message')).fontSize, effectSize: getComputedStyle(effect).fontSize }
     })
     assert(battle.effect, `selected-card effect missing at ${viewport.width}x${viewport.height}`)
     console.log(JSON.stringify({ viewport, battle }))
@@ -91,7 +93,7 @@ try {
     await page.locator('.builder-card-detail').waitFor()
     const deck = await page.evaluate(() => {
       const rect = selector => { const element = document.querySelector(selector); const value = element.getBoundingClientRect(); return { left: value.left, right: value.right, top: value.top, bottom: value.bottom, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth } }
-      return { topbar: rect('.deck-builder-topbar'), grid: rect('.deck-builder-grid'), shell: rect('.deck-builder-shell'), bodyScrollWidth: document.documentElement.scrollWidth, effectWrap: getComputedStyle(document.querySelector('.builder-card-detail p')).whiteSpace }
+      return { topbar: rect('.deck-builder-topbar'), grid: rect('.deck-builder-grid'), shell: rect('.deck-builder-shell'), bodyScrollWidth: document.documentElement.scrollWidth, effectWrap: getComputedStyle(document.querySelector('.builder-card-detail .archive-effect .l12-effect-body')).whiteSpace }
     })
     assert(deck.grid.top >= deck.topbar.bottom - 1, `deck content must start below the topbar at ${viewport.width}x${viewport.height}`)
     assert(deck.shell.scrollWidth <= deck.shell.clientWidth + 1, `deck builder must contain horizontal overflow at ${viewport.width}x${viewport.height}`)
