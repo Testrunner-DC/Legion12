@@ -359,6 +359,66 @@ internal static class EffectLifecycleProfiles
             }) { AdditionalChecks = ["parent-grant-boundary", "authoritative-consumer", "leave-or-turn-expiry", "reconnect-state"] };
     }
 
+    internal static readonly string[] StructuredContinuousCombatRuleAbilityIds =
+    [
+        "S01-0004:ability:static:1644ef88125b05c1",
+        "S01-0101:ability:static:1f027ad861ea0006",
+        "S01-0101:ability:static:1041797d91099ae1",
+        "S02-0002:ability:continuous:5643b9f0c6e298e6",
+        "S02-0005:ability:continuous:0663e3d5b31edc67",
+        "S02-0007:ability:continuous:602cafbbc29faa3f",
+        "S02-0101:ability:continuous:4cd3104ae17d316d",
+        "S02-0201:ability:continuous:39b0b1524eaed536",
+        "S02-02M1:ability:continuous:a83e1e0971bbe6f0",
+        "S02-0302:ability:continuous:48719a94741bbf36",
+        "S02-0503:ability:static:5e2fcb0f2798f57a",
+        "S02-0504:ability:static:0ada28f438439ac2",
+        "S02-0516:ability:static:17774ead9eb8ed69",
+        "S02-0603:ability:continuous:5e0d666ac6a386ba",
+        "S02-0609:ability:continuous:dc2aa603cc3d136c",
+        "S02-0616:ability:continuous:5afe2828d587391f",
+    ];
+
+    private static readonly L12LifecycleProfile StructuredContinuousCombatRule =
+        new("continuous:structured-combat-rule",
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["definition"] = "L12StructuredCardRules.GetCombatRuleAbilities",
+                ["condition-and-active-state"] = "L12StructuredCardRules.CombatProfile",
+                ["attack-candidates"] = "BuildLegalAttackTargets",
+                ["attack-revalidation"] = "TryValidateAttackTarget",
+                ["master-protection"] = "L12StructuredCardRules.ProtectsMasterFromTroops",
+                ["support-source-revalidation"] = "L12StructuredCardRules.CannotSupport",
+                ["support-target-revalidation"] = "L12StructuredCardRules.CannotReceiveBackRowSupport",
+                ["trial-protection"] = "L12StructuredCardRules.ProtectsActiveTrialLegions",
+                ["combat-settlement"] = "ResolveDefenseCore",
+            },
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["negated"] = "印刷持续战斗规则不独立入栈，不能被一次效果无效；授予它的父效果若存在则另行验收。",
+                ["payment-cancel"] = "本族持续规则本身没有费用或支付Prompt。",
+                ["single-candidate-choice"] = "本族只约束公共进攻/支援候选与提交复验，不代替玩家选择合法目标。",
+                ["duplicate-submit"] = "持续规则读取无副作用；重复进攻或支援提交仍由公共动作协议拒绝。",
+            })
+        {
+            AdditionalChecks = ["row-and-ready-condition", "source-current-type", "candidate-and-submit-parity", "reconnect-derived-state"],
+        };
+
+    private static readonly HashSet<string> ReviewedContinuousCombatRuleParameters = new(StringComparer.Ordinal)
+    {
+        "cannotAttack", "cannotSupport", "attackNoLoss", "cannotBeRanged",
+        "protectMasterFromTroopsAtMost", "cannotAttackMaster", "cannotReceiveBackRowSupport",
+        "incomingRangedCombatDamageAdjustment", "targetableByAttack", "protect",
+    };
+
+    private static bool IsStructuredContinuousCombatRule(L12AtomicAbility ability)
+    {
+        if (ability.ExecutionModel is not ("continuous" or "granted-continuous")) return false;
+        var rules = ability.Atoms.Where(atom => atom.Kind == L12AtomKinds.AttackRule).ToArray();
+        return rules.Length > 0 && rules.All(atom => !atom.Parameters.ContainsKey("text"))
+            && rules.Any(atom => atom.Parameters.Keys.Any(ReviewedContinuousCombatRuleParameters.Contains));
+    }
+
     private static void ValidateOwners(L12LifecycleProfile profile)
     {
         foreach (var owner in profile.RuntimeOwners.Values)
@@ -387,6 +447,7 @@ internal static class EffectLifecycleProfiles
         ValidateOwners(ActiveRest);
         ValidateOwners(SelfDamageEntryDiscount);
         foreach (var profile in CombatKeywordProfiles.Values) ValidateOwners(profile);
+        ValidateOwners(StructuredContinuousCombatRule);
         var bindings = new Dictionary<string, L12LifecycleProfile>(StringComparer.Ordinal);
         if (!abilities.TryGetValue(DesertHandSummonAbilityId, out var desertHandSummon)
             || desertHandSummon.CardId != "S02-0207" || desertHandSummon.Trigger != "play"
@@ -492,6 +553,16 @@ internal static class EffectLifecycleProfiles
             .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);
         if (!keywordDefinitions.SetEquals(reviewedKeywordIds))
             throw new InvalidOperationException("Combat keyword-definition family changed; review its per-ability bindings.");
+        foreach (var id in StructuredContinuousCombatRuleAbilityIds)
+        {
+            if (!abilities.TryGetValue(id, out var ability) || !IsStructuredContinuousCombatRule(ability))
+                throw new InvalidOperationException($"Stale reviewed structured continuous combat rule: {id}");
+            bindings.Add(id, StructuredContinuousCombatRule);
+        }
+        var structuredContinuousCombatRules = abilities.Values.Where(IsStructuredContinuousCombatRule)
+            .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);
+        if (!structuredContinuousCombatRules.SetEquals(StructuredContinuousCombatRuleAbilityIds))
+            throw new InvalidOperationException("Structured continuous combat-rule family changed; review its per-ability bindings.");
         return bindings;
     }
 }
