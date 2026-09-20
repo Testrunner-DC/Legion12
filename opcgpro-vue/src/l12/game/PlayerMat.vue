@@ -368,7 +368,7 @@ function beginCardAbility(card: Card) {
               'response-target': !player.field[row][slot]?.hidden && responseTargetIds?.includes(player.field[row][slot]?.instanceId ?? ''),
               'payment-resource': paymentChoiceIds?.includes(player.field[row][slot]?.instanceId ?? ''),
               'payment-selected': paymentSelectedIds?.includes(player.field[row][slot]?.instanceId ?? ''),
-              'resource-ready': controllable && player.faction === 'taiyangcheng' && player.field[row][slot]?.cardId === 'S01-0212' && !player.field[row][slot]?.tapped,
+              'resource-ready': controllable && Boolean(player.field[row][slot]?.spendableResourceType),
               [counterState(player.field[row][slot])]: Boolean(counterState(player.field[row][slot]))
             }"
             @click="handleSlot(row, slot, player.field[row][slot])" @keyup.enter="handleSlot(row, slot, player.field[row][slot])">

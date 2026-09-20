@@ -1025,7 +1025,7 @@ public sealed partial class L12GameEngine
     {
         foreach (var temporary in TemporaryMoralePaymentChoices(player)) yield return temporary;
         foreach (var morale in player.Morale.Where(card => !card.Tapped)) yield return morale.InstanceId;
-        foreach (var guard in ActiveTombGuardResources(player)) yield return guard.InstanceId;
+        foreach (var fieldResource in SpendableFieldMoraleResources(player)) yield return fieldResource.InstanceId;
     }
 
     private void CompleteCompositeHandPlayDeclaration(L12PendingActivation activation)

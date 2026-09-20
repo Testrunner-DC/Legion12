@@ -229,7 +229,7 @@ public sealed partial class L12GameEngine
             summaries.Add($"休整〈{before.SourceName}〉");
         foreach (var pair in before.Field.Where(pair => pair.Key != source.InstanceId && !pair.Value.Tapped
                      && currentField.GetValueOrDefault(pair.Key) is { Tapped: true }))
-            summaries.Add(pair.Value.CardId is "S01-0202" or "ST02-T1"
+            summaries.Add(L12StructuredCardSemantics.FieldMoraleResourceRule(pair.Value.CardId) is not null
                 ? $"以休整〈{pair.Value.Name}〉支付1士气"
                 : $"休整〈{pair.Value.Name}〉");
 

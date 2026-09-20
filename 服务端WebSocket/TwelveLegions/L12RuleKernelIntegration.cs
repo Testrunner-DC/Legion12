@@ -639,7 +639,7 @@ public sealed partial class L12GameEngine
             var player = State.Players[activation.Controller];
             var resourceChoices = step.ValidChoices.Where(id =>
                 player.Morale.Any(card => card.InstanceId == id && !card.Tapped)
-                || ActiveTombGuardResources(player).Any(card => card.InstanceId == id)
+                || SpendableFieldMoraleResources(player).Any(card => card.InstanceId == id)
                 || TemporaryMoralePaymentChoices(player).Contains(id, StringComparer.OrdinalIgnoreCase)).ToArray();
             if (resourceChoices.Length == 1) promptLockedChoices = resourceChoices[0];
         }
@@ -1183,7 +1183,7 @@ public sealed partial class L12GameEngine
             selectedResourceIds = activation.DeclaredValues.GetValueOrDefault("moraleCost", [])
                 .Where(id => TemporaryMoralePaymentChoices(player).Contains(id, StringComparer.OrdinalIgnoreCase)
                     || player.Morale.Any(card => card.InstanceId == id)
-                    || ActiveTombGuardResources(player).Any(card => card.InstanceId == id))
+                    || SpendableFieldMoraleResources(player).Any(card => card.InstanceId == id))
                 .ToArray();
         }
         var committingFreeMasterActivation = MatchesPendingFreeMasterActivation(

@@ -5,14 +5,14 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`1e5b136aad51da40d5a0b5a16218252bbbe9dcc27600040832caa377d8e51c9b`。
+内容指纹：`95cdc61a48ce21df37fcd30e1ab568336671c020b7588a6f0581415f7d2e75fb`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
 | composite-definition | 201 |
 | fine-definition | 86 |
-| owner-unreviewed | 244 |
-| shared-rule-owner | 155 |
+| owner-unreviewed | 243 |
+| shared-rule-owner | 156 |
 
 fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；shared-rule-owner = 精确能力已绑定共用规则入口及适用性档案；owner-unreviewed = 还需定位实际入口。任何一种归属证据均不等于生命周期验收通过。
 同卡同触发只算候选，不能把另一能力的程序继承为本能力已覆盖。无能力卡单列，不能从分母中静默消失。
@@ -100,6 +100,16 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 - no-target：规则能力不选择对象；其他效果选择该卡时由目标效果自己的声明协议处理。
 - payment-cancel：规则能力没有费用；以该卡支付其他费用时仍按支付效果处理，并在离场后进入所有者墓地。
 - target-invalidated：没有自身目标；通用回手/回库候选与提交均从同一身份判断，已离区实例不得替换。
+
+### continuous:field-morale-resource
+
+精确绑定能力数：1。运行入口：automatic-payment = L12GameEngine.TryConsumeMorale；candidate-generation = L12GameEngine.SpendableFieldMoraleResources；composite-reservation = L12GameEngine.CompositeOrdinaryPaymentChoices；definition = L12StructuredCardSemantics.FieldMoraleResourceRule；effect-payment-retry = L12GameEngine.ContinueEffectMoralePayment；manual-payment = L12GameEngine.CreateResourcePaymentPrompt；paid-cost-presentation = L12GameEngine.AddPaidCostPresentationFromSnapshot；rejected-submit-rollback = L12GameEngine.RestoreActiveResourceRollback；selected-payment-commit = L12GameEngine.TryConsumeSelectedResources；selected-payment-revalidation = L12GameEngine.CanConsumeSelectedResources；snapshot-count = L12GameEngine.ActiveResourceCount；snapshot-projection = L12GameEngine.SnapshotField。
+
+- multi-target-applicability：每个合法场上实例各代表1份资源；混合支付按实例去重并一次性提交。
+- negated：持续资源能力不独立入栈，不能作为一次效果被无效；已支付费用不因后续效果无效而恢复。
+- no-target：持续资源能力不选择效果目标；支付协议只要求玩家选择实际消耗的资源实例。
+- payment-cancel：允许取消的支付流程由公共支付Prompt释放声明；未提交前不改变军团状态。
+- target-invalidated：支付提交时按原实例、当前控制者、当前回合、当前军团与活跃状态复验；失效时不换资源补位。
 
 ### continuous:opponent-turn-field-rule
 
@@ -570,7 +580,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0211 托勒密十三世 #1 | S01-0211:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
 | S01-0211 托勒密十三世 #2 | S01-0211:ability:enter:329b99bbae76f963 | enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.move-zone → duration:duration.apply → resolution:operation.composite-flow | 1 | 登场时 再次发动本回合打出的上1张&lt;主动战术&gt;效果 |
 | S01-0212 陵墓守卫 #1 | S01-0212:ability:static:6d8b57888db9839b | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone | 0 | 规则上，此军团构筑时不计入卡组数量，且不能进入手牌和牌库，游戏开始时置入墓地，此军团以任何形式离场均视为置入所有者墓地 |
-| S01-0212 陵墓守卫 #2 | S01-0212:ability:static:025749085872cdff | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → resolution:legacy.resolve | 0 | 我方回合 此军团在战场上可视为1张士气 |
+| S01-0212 陵墓守卫 #2 | S01-0212:ability:static:025749085872cdff | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:legacy.resolve | 0 | 我方回合 此军团在战场上可视为1张士气 |
 | S01-0212 陵墓守卫 #3 | S01-0212:ability:static:2f33fb3652e7bd28 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.modify-troops | 0 | 对方回合 此军团费用+1，位于前排时兵力+1000 |
 | S01-0213 锡瓦的卡巴 #1 | S01-0213:ability:static:9ba2f4f5354a2a05 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」进攻距离+1，远程进攻无损。 |
 | S01-0213 锡瓦的卡巴 #2 | S01-0213:ability:after-attack:55cfe31dc7ed5969 | after-attack/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:cost.pay-morale → resolution:operation.move-zone → resolution:operation.ready → resolution:operation.rest | 1 | 对方 进攻后：此军团可从手牌无需消耗费用活跃登场。若进行以上操作，则下个我方重置阶段，我方1张休整的士气无法转为活跃 |

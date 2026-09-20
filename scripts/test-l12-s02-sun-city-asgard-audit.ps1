@@ -17,10 +17,15 @@ function Assert-Contains([string]$Text, [string]$Pattern, [string]$Message) {
 
 $game = Read-Source 'L12GameEngine.cs'
 $morale = Read-Source 'L12MoralePayments.cs'
+$statusSemantics = Read-Source 'L12StructuredCardRules.StatusSemantics.cs'
 $composite = Read-Source 'L12CompositeEffectPlans.cs'
 $faction = Read-Source 'L12S2FactionEffects.cs'
 $remaining = Read-Source 'L12S2RemainingEffects.cs'
 $prompts = Read-Source 'L12PromptsAndSetup.cs'
+$paidCost = Read-Source 'L12PaidCostPresentation.cs'
+$playerMatPath = Join-Path $ProjectRoot 'opcgpro-vue/src/l12/game/PlayerMat.vue'
+if (-not (Test-Path -LiteralPath $playerMatPath)) { throw 'Missing L12 PlayerMat.vue' }
+$playerMat = [System.IO.File]::ReadAllText($playerMatPath, [System.Text.Encoding]::UTF8)
 $tests = Read-Source 'AtomicReviewBatch6LBRegressionTests.cs'
 $audit = Read-Source 'S02-SUN-CITY-ASGARD-ABILITY-AUDIT.md'
 
@@ -59,7 +64,18 @@ Assert-Contains $remaining 'BeginPendingActivationSequence(playerIndex, source, 
 if ($morale.Contains('player.Faction == "taiyangcheng" && State.ActivePlayer')) {
     throw 'A controlled Tomb Guard must not gain an extra unprinted controller-faction restriction.'
 }
-Assert-Contains $morale '=> State.ActivePlayer == player.PlayerIndex;' 'Tomb Guard resource legality must follow the current controller own-turn condition.'
+Assert-Contains $statusSemantics '[TombGuardCardId] = new("tomb-guard", "陵墓守卫", ControllerTurnOnly: true, RequiresActive: true)' 'Tomb Guard resource semantics must remain structured as an active own-turn field resource.'
+Assert-Contains $morale 'L12StructuredCardSemantics.FieldMoraleResourceRule(card.CardId)' 'Field-resource candidate generation must read the structured rule definition.'
+Assert-Contains $morale 'State.ActivePlayer == player.PlayerIndex' 'Field-resource legality must follow the current controller own-turn condition.'
+Assert-Contains $morale 'SpendableFieldMoraleResources' 'All Tomb Guard resource consumers must share the field-resource candidate set.'
+Assert-Contains $paidCost 'L12StructuredCardSemantics.FieldMoraleResourceRule(pair.Value.CardId)' 'Paid-cost presentation must read the structured field-resource identity.'
+if ($paidCost.Contains('pair.Value.CardId is "S01-0202" or "ST02-T1"')) {
+    throw 'Paid-cost presentation must not retain the stale Tomb Guard card-id whitelist.'
+}
+Assert-Contains $playerMat 'Boolean(player.field[row][slot]?.spendableResourceType)' 'Field-resource ready styling must read the authoritative snapshot projection.'
+if ($playerMat.Contains("player.faction === 'taiyangcheng' && player.field[row][slot]?.cardId === 'S01-0212'")) {
+    throw 'The client must not add a faction restriction to the field-resource ready marker.'
+}
 
 $fixedStatus = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5piO56Gu6ZSZ6K+v4oaS5bey5L+u5aSN'))
 $passedStatus = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('6YCa6L+H'))

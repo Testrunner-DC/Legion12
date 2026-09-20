@@ -130,6 +130,9 @@ public sealed class L12CardInstance
     public int? MinimumPlayCost { get; set; }
     /// <summary>当前公开场面下禁止从手牌打出此牌的权威原因；为空表示未被静态规则禁止。</summary>
     public string? PlayBlockedReason { get; set; }
+    /// <summary>当前快照中该公开场上卡可作为哪一类支付资源；为空表示当前不可支付。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SpendableResourceType { get; set; }
     public string? EffectText { get; init; }
     public int BaseTroops { get; init; }
     public int Troops { get; set; }

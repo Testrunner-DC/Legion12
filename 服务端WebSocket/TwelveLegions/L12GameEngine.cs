@@ -750,7 +750,7 @@ public sealed partial class L12GameEngine
                 && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"));
             var visibleCost = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 0 : 1;
             var resources = player.TemporaryMorale + player.Morale.Count(card => !card.Tapped)
-                + ActiveTombGuardResources(player).Count();
+                + SpendableFieldMoraleResources(player).Count();
             var canUseTombGuardCost = field.Count(card =>
                 L12StructuredCardSemantics.IsTombGuard(card.CardId)) >= 2;
             var canUseMoraleLegionCost = field.Length >= 2 && resources >= visibleCost;
@@ -784,6 +784,9 @@ public sealed partial class L12GameEngine
                 // cannot safely reuse the ability list captured when the card instance
                 // was created.
                 snapshot.Troops = snapshot.CurrentTroops;
+                snapshot.SpendableResourceType = CanUseFieldMoraleResource(player, card)
+                    ? L12StructuredCardSemantics.FieldMoraleResourceRule(card.CardId)?.ResourceType
+                    : null;
                 snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
                 snapshot.RuleActions = BuildRuleActionViews(player, card, rowIndex);
                 snapshot.ActiveKeywords = BuildActiveKeywords(player, card, rowIndex);
@@ -1265,7 +1268,7 @@ public sealed partial class L12GameEngine
 
     private int ActiveResourceCount(L12PlayerState player)
         => player.TemporaryMorale + player.Morale.Count(card => !card.Tapped)
-            + ActiveTombGuardResources(player).Count();
+            + SpendableFieldMoraleResources(player).Count();
 
     private static int ActiveMoraleCountWithoutTombGuards(L12PlayerState player)
         => player.TemporaryMorale + player.Morale.Count(card => !card.Tapped);
@@ -1280,10 +1283,10 @@ public sealed partial class L12GameEngine
         var temporary = Math.Min(cost, player.TemporaryMorale);
         player.TemporaryMorale -= temporary;
         var remaining = cost - temporary;
-        allowTombGuards = allowTombGuards && CanUseTombGuardsAsResource(player);
+        allowTombGuards = allowTombGuards && SpendableFieldMoraleResources(player).Any();
         if (allowTombGuards && preferTombGuards)
         {
-            var guards = ActiveTombGuardResources(player).Take(remaining).ToList();
+            var guards = SpendableFieldMoraleResources(player).Take(remaining).ToList();
             foreach (var guard in guards) guard.Tapped = true;
             remaining -= guards.Count;
         }
@@ -1291,8 +1294,12 @@ public sealed partial class L12GameEngine
         foreach (var card in available) card.Tapped = true;
         remaining -= available.Count;
         if (allowTombGuards && remaining > 0)
-            foreach (var guard in ActiveTombGuardResources(player).Take(remaining)) guard.Tapped = true;
-        return true;
+        {
+            var guards = SpendableFieldMoraleResources(player).Take(remaining).ToList();
+            foreach (var guard in guards) guard.Tapped = true;
+            remaining -= guards.Count;
+        }
+        return remaining == 0;
     }
 
     private static bool CanReturnMorale(L12PlayerState player, int count) => player.Morale.Count >= count;

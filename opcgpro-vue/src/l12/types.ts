@@ -64,6 +64,7 @@ export interface Card {
   playCost?: number
   minimumPlayCost?: number
   playBlockedReason?: string
+  spendableResourceType?: string
   tapped: boolean
   summonRound: number
   cannotAttack?: boolean

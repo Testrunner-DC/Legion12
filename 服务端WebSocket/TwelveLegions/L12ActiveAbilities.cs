@@ -267,16 +267,47 @@ public sealed partial class L12GameEngine
         IReadOnlyCollection<string>? selectedReturnIds = null)
     {
         var previousSnapshot = _activePaidCostSnapshot;
+        var rollback = CaptureActiveResourceRollback(State.Players[playerIndex]);
         _activePaidCostSnapshot = CaptureActivePaidCostSnapshot(playerIndex, source);
         try
         {
-            return CommitActiveAbilityCore(playerIndex, source, ability, target, useTombGuards,
+            var result = CommitActiveAbilityCore(playerIndex, source, ability, target, useTombGuards,
                 selectedResourceIds, selectedReturnIds);
+            if (!result.Accepted) RestoreActiveResourceRollback(State.Players[playerIndex], rollback);
+            return result;
         }
         finally
         {
             _activePaidCostSnapshot = previousSnapshot;
         }
+    }
+
+    private sealed record ActiveResourceRollback(
+        int TemporaryMorale,
+        int MasterMoraleWaiverCredit,
+        bool MasterTapped,
+        IReadOnlyDictionary<L12MoraleCard, bool> MoraleTapped,
+        IReadOnlyDictionary<L12CardInstance, bool> PublicCardTapped);
+
+    private static ActiveResourceRollback CaptureActiveResourceRollback(L12PlayerState player)
+    {
+        var publicCards = player.Field.SelectMany(row => row).OfType<L12CardInstance>()
+            .Concat(player.Relic is null ? [] : [player.Relic])
+            .Concat(player.ExtraRelics)
+            .Concat(player.Resolving)
+            .Distinct()
+            .ToDictionary(card => card, card => card.Tapped);
+        return new ActiveResourceRollback(player.TemporaryMorale, player.MasterMoraleWaiverCredit,
+            player.MasterTapped, player.Morale.Distinct().ToDictionary(card => card, card => card.Tapped), publicCards);
+    }
+
+    private static void RestoreActiveResourceRollback(L12PlayerState player, ActiveResourceRollback rollback)
+    {
+        player.TemporaryMorale = rollback.TemporaryMorale;
+        player.MasterMoraleWaiverCredit = rollback.MasterMoraleWaiverCredit;
+        player.MasterTapped = rollback.MasterTapped;
+        foreach (var pair in rollback.MoraleTapped) pair.Key.Tapped = pair.Value;
+        foreach (var pair in rollback.PublicCardTapped) pair.Key.Tapped = pair.Value;
     }
 
     private CommandResult CommitActiveAbilityCore(int playerIndex, L12CardInstance source, string ability, string? target,

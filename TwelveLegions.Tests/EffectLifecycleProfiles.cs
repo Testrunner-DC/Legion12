@@ -595,6 +595,42 @@ internal static class EffectLifecycleProfiles
            && L12StructuredCardSemantics.HasOutOfDeckGraveyardLifecycle(ability.CardId)
            && ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.MoveZone);
 
+    internal const string FieldMoraleResourceAbilityId =
+        "S01-0212:ability:static:025749085872cdff";
+
+    private static readonly L12LifecycleProfile FieldMoraleResource =
+        new("continuous:field-morale-resource",
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["definition"] = "L12StructuredCardSemantics.FieldMoraleResourceRule",
+                ["candidate-generation"] = "SpendableFieldMoraleResources",
+                ["snapshot-count"] = "ActiveResourceCount",
+                ["manual-payment"] = "CreateResourcePaymentPrompt",
+                ["selected-payment-revalidation"] = "CanConsumeSelectedResources",
+                ["selected-payment-commit"] = "TryConsumeSelectedResources",
+                ["automatic-payment"] = "TryConsumeMorale",
+                ["composite-reservation"] = "CompositeOrdinaryPaymentChoices",
+                ["effect-payment-retry"] = "ContinueEffectMoralePayment",
+                ["rejected-submit-rollback"] = "RestoreActiveResourceRollback",
+                ["snapshot-projection"] = "SnapshotField",
+                ["paid-cost-presentation"] = "AddPaidCostPresentationFromSnapshot",
+            },
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["no-target"] = "持续资源能力不选择效果目标；支付协议只要求玩家选择实际消耗的资源实例。",
+                ["negated"] = "持续资源能力不独立入栈，不能作为一次效果被无效；已支付费用不因后续效果无效而恢复。",
+                ["payment-cancel"] = "允许取消的支付流程由公共支付Prompt释放声明；未提交前不改变军团状态。",
+                ["target-invalidated"] = "支付提交时按原实例、当前控制者、当前回合、当前军团与活跃状态复验；失效时不换资源补位。",
+                ["multi-target-applicability"] = "每个合法场上实例各代表1份资源；混合支付按实例去重并一次性提交。",
+            })
+        {
+            AdditionalChecks = ["exact-card-family", "controller-turn", "opponent-turn", "front-row",
+                "back-row", "current-controller", "active-only", "hidden-or-non-legion", "mixed-payment",
+                "reservation", "effect-payment-cancel", "stale-effect-payment-retry",
+                "rejected-active-rollback", "paid-cost-presentation", "stale-resource",
+                "duplicate-submit", "reconnect-derived-state", "authoritative-snapshot-projection"],
+        };
+
     internal const string OpponentTurnFieldRuleAbilityId =
         "S01-0212:ability:static:2f33fb3652e7bd28";
 
@@ -897,6 +933,16 @@ internal static class EffectLifecycleProfiles
             .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);
         if (!outOfDeckGraveyardLifecycles.SetEquals(OutOfDeckGraveyardLifecycleAbilityIds))
             throw new InvalidOperationException("Out-of-deck graveyard lifecycle family changed; review its per-ability bindings.");
+        if (!abilities.TryGetValue(FieldMoraleResourceAbilityId, out var fieldMoraleResource)
+            || fieldMoraleResource.ExecutionModel != "continuous"
+            || L12StructuredCardSemantics.FieldMoraleResourceRule(fieldMoraleResource.CardId) is null)
+            throw new InvalidOperationException($"Stale reviewed field morale resource: {FieldMoraleResourceAbilityId}");
+        bindings.Add(FieldMoraleResourceAbilityId, FieldMoraleResource);
+        var fieldMoraleResourceCards = abilities.Values
+            .Where(ability => L12StructuredCardSemantics.FieldMoraleResourceRule(ability.CardId) is not null)
+            .Select(ability => ability.CardId).Distinct(StringComparer.Ordinal).ToHashSet(StringComparer.Ordinal);
+        if (!fieldMoraleResourceCards.SetEquals(["S01-0212"]))
+            throw new InvalidOperationException("Field morale-resource family changed; review its per-ability bindings.");
         if (!abilities.TryGetValue(OpponentTurnFieldRuleAbilityId, out var opponentTurnFieldRule)
             || opponentTurnFieldRule.ExecutionModel != "continuous"
             || L12StructuredCardSemantics.OpponentTurnFieldRule(opponentTurnFieldRule.CardId) is null)

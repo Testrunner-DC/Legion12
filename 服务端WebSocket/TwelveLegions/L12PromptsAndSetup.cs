@@ -693,7 +693,7 @@ public sealed partial class L12GameEngine
         {
             var player = State.Players[playerIndex];
             var resources = chosen.Count(id => player.Morale.Any(card => card.InstanceId == id && !card.Tapped)
-                || ActiveTombGuardResources(player).Any(card => card.InstanceId == id)
+                || SpendableFieldMoraleResources(player).Any(card => card.InstanceId == id)
                 || TemporaryMoralePaymentChoices(player).Contains(id, StringComparer.OrdinalIgnoreCase));
             var fieldLegions = chosen.Count(id => FindOnField(player, id, out _, out _) is { } card
                 && IsFieldLegion(card));
@@ -836,14 +836,14 @@ public sealed partial class L12GameEngine
             case "play-morale-choice":
             {
                 if (isExplicitCancellation) break;
-                var result = ResolveTombGuardPlayPaymentChoice(prompt, chosen);
+                var result = ResolveFieldResourcePlayPaymentChoice(prompt, chosen);
                 if (!result.Accepted) return result;
                 break;
             }
             case "active-morale-choice":
             {
                 if (isExplicitCancellation) break;
-                var result = ResolveTombGuardActivePaymentChoice(prompt, chosen);
+                var result = ResolveFieldResourceActivePaymentChoice(prompt, chosen);
                 if (!result.Accepted) return result;
                 break;
             }
@@ -1022,7 +1022,7 @@ public sealed partial class L12GameEngine
             TargetPlayerIndex: int.TryParse(prompt.Data.GetValueOrDefault("targetPlayerIndex"), out var targetPlayerIndex) ? targetPlayerIndex : null));
     }
 
-    private CommandResult ResolveTombGuardPlayPaymentChoice(L12Prompt prompt, List<string> chosen)
+    private CommandResult ResolveFieldResourcePlayPaymentChoice(L12Prompt prompt, List<string> chosen)
     {
         int? row = int.TryParse(prompt.Data.GetValueOrDefault("row"), out var parsedRow) ? parsedRow : null;
         int? slot = int.TryParse(prompt.Data.GetValueOrDefault("slot"), out var parsedSlot) ? parsedSlot : null;
@@ -1072,7 +1072,7 @@ public sealed partial class L12GameEngine
             CardInstanceIds: chosen));
     }
 
-    private CommandResult ResolveTombGuardActivePaymentChoice(L12Prompt prompt, List<string> chosen)
+    private CommandResult ResolveFieldResourceActivePaymentChoice(L12Prompt prompt, List<string> chosen)
     {
         var player = State.Players[prompt.PlayerIndex];
         var sourceId = prompt.Data.GetValueOrDefault("sourceId") ?? string.Empty;
