@@ -158,10 +158,9 @@ function returnFromReplay() {
     router.push({ name: 'admin', query: { ...route.query, section: 'matches', matchId: detail.value?.match.matchId } })
     return
   }
-  router.push({
-    name: 'records',
-    query: route.name === 'json-replay' ? { source: 'json' } : { selected: detail.value?.match.matchId },
-  })
+  router.push(route.name === 'json-replay'
+    ? { name: 'records' }
+    : { name: 'records', query: { selected: detail.value?.match.matchId } })
 }
 </script>
 

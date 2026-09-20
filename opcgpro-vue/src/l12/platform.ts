@@ -180,7 +180,7 @@ export interface AdminAnalyticsCoverage {
   exactDeckSnapshots: number; inferredDeckSnapshots: number; privateDuringActiveMatch: boolean
   metrics: AdminAnalyticsMetricCoverage[]; limitations: string[]
 }
-export interface AlternateArt { id: string; artCode: string; baseCardId: string; displayName: string; mediaAssetId: string; imageUrl: string; thumbnailUrl: string; active: boolean; createdAt: string; updatedAt: string; productId?: string; productName?: string }
+export interface AlternateArt { id: string; artCode: string; baseCardId: string; displayName: string; mediaAssetId: string; imageUrl: string; thumbnailUrl: string; active: boolean; createdAt: string; updatedAt: string; productId?: string; productName?: string; cardImageId?: string; builtIn?: boolean }
 export interface AlternateArtProduct { id: string; name: string; active: boolean; createdAt: string; updatedAt: string }
 export interface AlternateArtRankedParticipantDispatchPreview { eligibleAccounts: number; alreadyGranted: number; toGrant: number; sourceReference: string; seasonId: string }
 export interface ServerStorageVolume { mountPoint: string; totalBytes: number; usedBytes: number; freeBytes: number }
@@ -382,7 +382,8 @@ export interface RankedIntegrityAudit {
   firstAccountId: string; firstPlayer: string; secondAccountId: string; secondPlayer: string
   winner?: number | null; durationMs: number; meaningfulCommandCount: number; conclusionKind: string
   networkLinked: boolean; networkCorrelationId?: string | null; signals: RankedIntegritySignal[]
-  reviewRecommended: boolean; enforcement: 'none' | string; createdAt: string
+  reviewRecommended: boolean; effectiveDisposition: 'unreviewed' | 'review' | 'normal' | 'insufficient' | 'system-error' | 'confirmed' | string
+  enforcement: 'none' | string; createdAt: string
 }
 export interface OperationsConfigView {
   version: number; versionId: string; config: OperationsConfigPayload; updatedBy: string; updatedAt: string

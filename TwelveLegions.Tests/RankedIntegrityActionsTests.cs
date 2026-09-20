@@ -25,6 +25,41 @@ public sealed class RankedIntegrityActionsTests
     }
 
     [Fact]
+    public void ReviewQueueExcludesEffectiveTerminalDecisionsAndRestoresRevokedCases()
+    {
+        var fixture = Create("review-queue-terminal-filter");
+        var endedAt = DateTimeOffset.UtcNow;
+        fixture.Store.SettleRankedMatch("review-queue-match", fixture.First.Id,
+            fixture.Second.Id, 0, integrity: new L12RankedIntegrityContext(
+                endedAt.AddSeconds(-40), endedAt, 0, "surrender", null, null, 1));
+
+        var initial = Assert.Single(fixture.Store.RankedIntegrityAudits(fixture.Admin,
+            matchId: "review-queue-match", reviewOnly: true));
+        Assert.Equal("unreviewed", initial.EffectiveDisposition);
+
+        var action = Input("review-queue-confirmed", "confirmed", ["review-queue-match"]);
+        var preview = fixture.Store.PreviewRankedIntegrityAction(fixture.Admin, action);
+        var decision = fixture.Store.ConfirmRankedIntegrityAction(fixture.Admin, action,
+            preview.Revision, Audit("review-queue-confirmed"));
+
+        Assert.Empty(fixture.Store.RankedIntegrityAudits(fixture.Admin,
+            matchId: "review-queue-match", reviewOnly: true));
+        var historical = Assert.Single(fixture.Store.RankedIntegrityAudits(fixture.Admin,
+            matchId: "review-queue-match"));
+        Assert.Equal("confirmed", historical.EffectiveDisposition);
+
+        var revoke = Input("review-queue-revoked", "revoked", ["review-queue-match"],
+            revokesDecisionId: decision.DecisionId);
+        var revokePreview = fixture.Store.PreviewRankedIntegrityAction(fixture.Admin, revoke);
+        fixture.Store.ConfirmRankedIntegrityAction(fixture.Admin, revoke, revokePreview.Revision,
+            Audit("review-queue-revoked"));
+
+        var restored = Assert.Single(fixture.Store.RankedIntegrityAudits(fixture.Admin,
+            matchId: "review-queue-match", reviewOnly: true));
+        Assert.Equal("unreviewed", restored.EffectiveDisposition);
+    }
+
+    [Fact]
     public void ThirdRepeatedUnilateralExtremeZeroActionMatchIsHeldAndNotified()
     {
         var fixture = Create("automatic-hold");

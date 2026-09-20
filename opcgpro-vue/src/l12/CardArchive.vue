@@ -56,7 +56,7 @@ let modalTrigger: HTMLElement | null = null
 const logicalCards = computed(() => groupArchiveCards(cards.value))
 const galleryCards = computed(() => {
   const legacy = cards.value.filter(isGalleryVariant)
-  const uploaded = uploadedGalleryArts.value.flatMap(art => {
+  const uploaded = uploadedGalleryArts.value.filter(art => !art.builtIn).flatMap(art => {
     const base = cards.value.find(card => card.id === art.baseCardId)
     if (!base) return []
     return [{ ...base, id: `ALT-${art.artCode || art.id}`, number: art.artCode || `ALT-${art.id.slice(0, 8)}`,
@@ -65,7 +65,11 @@ const galleryCards = computed(() => {
   })
   return [...legacy, ...uploaded].sort(compareArchiveVersions)
 })
-const productOptions = computed(() => cardArchiveProducts.filter(value => cards.value.some(card => card.products?.includes(value))))
+const productOptions = computed(() => [...new Set([
+  ...cardArchiveProducts,
+  ...galleryCards.value.flatMap(card => card.products ?? []),
+])].filter(value => cards.value.some(card => card.products?.includes(value))
+  || galleryCards.value.some(card => card.products?.includes(value))))
 
 onMounted(async () => {
   window.addEventListener('keydown', onWindowKeydown)
@@ -307,9 +311,9 @@ function resetFilters() {
               <b v-if="card.disasterLevel" class="archive-disaster">{{ card.disasterLevel }}</b>
               <b v-if="card.troops" class="archive-troops">{{ card.troops }}</b>
             </div>
-            <span>{{ card.nameZh }}</span><small>{{ displayCardNumber(card) }} · {{ cardTypeLabel(card.cardType, card.isCounterTactic) }}</small>
+            <span>{{ card.nameZh }}</span><small>{{ displayCardNumber(card) }} · 异画 · {{ cardTypeLabel(card.cardType, card.isCounterTactic) }}</small>
           </article>
-          <div v-if="!filteredGallery.length" class="archive-empty">没有符合条件的展示版本。</div>
+          <div v-if="!filteredGallery.length" class="archive-empty">没有符合条件的异画。</div>
         </template>
       </div>
 

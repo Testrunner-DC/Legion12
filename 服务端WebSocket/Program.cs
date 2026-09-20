@@ -12,7 +12,7 @@ Directory.CreateDirectory(runtimePath);
 
 var catalog = L12Catalog.Load(dataPath);
 var platform = new L12PlatformStore(Path.Combine(runtimePath, "platform.json"), catalog.PresetDecks,
-    officialCards: catalog.Cards);
+    officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts);
 
 var bootstrapIndex = Array.FindIndex(args,
     argument => string.Equals(argument, "--bootstrap-second-approver", StringComparison.Ordinal));

@@ -451,8 +451,9 @@ const contracts = [
     && prompt.includes(':data-ui-contract="isDeclineChoice(choice) ? \'minimum-decline-action\' : undefined"')
     && prompt.includes('min-width:112px!important;min-height:44px!important'), '所有“不响应”选项必须走统一拒绝动作识别，并保持至少112×44像素的可操作尺寸'],
   [gamePage.includes('data-ui-contract="manual-game-over-exit"')
-    && gamePage.includes('点击返回后才离开本局')
-    && gamePage.includes('<button @click="returnToLobby">返回大厅</button>'), '胜负结算必须保持在结果页，只有玩家明确点击返回后才离开对局'],
+    && gamePage.includes('<button @click="returnToLobby">返回大厅</button>')
+    && !gamePage.includes('点击返回后才离开本局')
+    && !gamePage.includes('双方都离开后关闭房间'), '胜负结算必须保持在结果页并保留明确返回按钮，不对玩家暴露房间保留机制'],
   [playerMat.includes('data-ui-contract="resource-faction-action"') && playerMat.includes('data-ui-contract="resource-morale-summary"') && playerMat.includes('data-ui-contract="resource-morale-label"')
     && playerMat.includes('data-ui-contract="resource-morale-count"') && playerMat.includes('data-ui-contract="resource-morale-stack"')
     && playerMat.indexOf('data-ui-contract="resource-faction-action"') > playerMat.indexOf('<div class="mat-piles">')
@@ -640,8 +641,10 @@ const contracts = [
   [!matchRecords.includes("import GameBoard from './game/GameBoard.vue'")
     && !matchRecords.includes('selectMatch(matches.value[0])')
     && matchRecords.includes("router.push({ name: 'match-replay'")
-    && matchRecords.includes("router.push({ name: 'json-replay'"), '对局记录只允许选择摘要；服务器记录与JSON均须在玩家点击播放后进入独立回放路由，不得默认加载或嵌入渲染棋盘'],
-  [matchRecords.includes('/api/matches?limit=10') && matchRecords.includes('7 天内最近 10 场回放')
+    && matchRecords.includes("rememberImportedReplay(detail)")
+    && matchRecords.includes("router.push({ name: 'json-replay'"), '对局记录只允许选择摘要；服务器记录由玩家确认后播放，本地JSON打开后直接进入独立回放路由，不得加入记录列表或嵌入渲染棋盘'],
+  [matchRecords.includes('/api/matches?limit=10') && matchRecords.includes('<h1>对局回放</h1>')
+    && matchRecords.includes('仅保存7天内最近10场回放，历史回放文件可能随版本更新失效。')
     && l12ServerSources.includes('IsWithinRecentPlayerReplayWindowAsync')
     && l12ServerSources.includes('RunPlayerReplayCleanupIfDueAsync'), '玩家回放必须限制7天内最近10场并由服务端统一可见性与每日清理保护'],
   [router.includes("name: 'json-replay'") && router.includes("name: 'match-replay'") && router.includes("name: 'admin-match-replay'")

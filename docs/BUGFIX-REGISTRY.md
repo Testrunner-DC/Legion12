@@ -11,6 +11,13 @@
 - 修复：4条出口统一走`RecordPromptContinuationFailure`；高杉已完成的抽牌保留，高天原不补选、不覆盖，主动跳过和初始无对象保持非失败。
 - 红绿与相邻证据：真实Prompt流程覆盖目标离场、相邻位置全部消失及声明位置被占用，修复前4/4失败；修复后核心4/4、相邻147/147及Focused/Batch规则4208/4208通过，失败0、跳过0、退出0。待隔离提交级Release与main同步；未部署。
 
+## BUG-20260920-RANKED-INTEGRITY-RESOLVED-QUEUE｜已处置对局仍出现在“仅需复核”（已同步，未部署）
+
+- 现象与根因：后台完成正常、证据不足、系统异常或确认违规处置后，对局仍出现在“仅需复核”。`RankedIntegrityAudits(reviewOnly)`只读取对局建立时的`ReviewRecommended`，未与`RankedIntegrityDecisions`的最新未撤销决定汇合。
+- 修复与边界：审计视图增加生效处置；`normal / insufficient / system-error / confirmed`视为终态并从待复核队列排除，`unreviewed / review`仍可处理。历史查询不删数据，终态行只禁止重复勾选；撤销后忽略被撤销决定，对局按原风险信号恢复待复核。
+- 同类扫描：检查处置预览/确认、决定撤销、收益状态、排位禁入、申诉和前端批量勾选路径；权威有效性继续使用“最新revision + 未被撤销”，不改已有处置、积分或通知。
+- 防回滚：`ReviewQueueExcludesEffectiveTerminalDecisionsAndRestoresRevokedCases`固定待复核→终态移出→完整历史可见→撤销恢复链路；专项1/1，整合最新main后的干净Release规则4209/4209、平台138/138、UI契约326项及正式发布构建通过，main精确读回；未部署。
+
 ## BUG-20260920-POST-RESOLUTION-GENERATED-OUTCOME｜结算后生成互动的失败、无事发生与跳过结果混用（已同步，未部署）
 
 - 根因与全族：`L12PostResolutionGeneratedEffects`覆盖托勒密十三世、信仰狂热者全部两类结算后生成互动；托勒密的重复卡身份损坏和已声明目标失效仍写`effect-cancelled`，而同一调度器的信仰狂热者已写失败，结果协议不一致。

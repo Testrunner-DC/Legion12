@@ -43,6 +43,7 @@ export interface ResolvedCardAsset {
 const MANIFEST_PATH = '/card-assets/card-assets.manifest.json'
 const SAME_ORIGIN_ROOT = '/card-assets'
 const RETRY_COOLDOWN_MS = 15_000
+const CARD_IMAGE_ID_MARKER = 'l12-card-id:'
 
 export const CARD_IMAGE_PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 336">
@@ -156,13 +157,20 @@ function trustedSiteMediaSource(url: string | undefined): CardAssetSource | null
   return { kind: 'sameOrigin', lowWebp: normalized, webp: normalized }
 }
 
+function selectedManifestCardId(cardId: string, legacyUrl: string | undefined) {
+  const normalized = legacyUrl?.trim() ?? ''
+  return normalized.startsWith(CARD_IMAGE_ID_MARKER)
+    ? normalized.slice(CARD_IMAGE_ID_MARKER.length).trim()
+    : cardId
+}
+
 function resolvedCardAssetFromManifest(
   manifest: CardAssetManifest,
   cardId: string,
   legacyUrl: string | undefined,
   intent: CardImageIntent,
 ): ResolvedCardAsset | null {
-  const entry = manifest.cards[cardId]
+  const entry = manifest.cards[selectedManifestCardId(cardId, legacyUrl)]
   if (!entry) return null
 
   const explicitCdnBaseUrl = configuredCdnBase()
@@ -204,7 +212,8 @@ export function fallbackCardAsset(cardId: string, legacyUrl: string | undefined,
 
 export async function resolveCardAsset(cardId: string, legacyUrl: string | undefined, intent: CardImageIntent): Promise<ResolvedCardAsset> {
   let manifest = await loadCardAssetManifest()
-  let entry = manifest?.cards[cardId]
+  const manifestCardId = selectedManifestCardId(cardId, legacyUrl)
+  let entry = manifest?.cards[manifestCardId]
   if (manifest && !entry) {
     if (manifestPromise) {
       manifest = await manifestPromise
@@ -212,7 +221,7 @@ export async function resolveCardAsset(cardId: string, legacyUrl: string | undef
       missingEntryRefreshAfter = Date.now() + RETRY_COOLDOWN_MS
       manifest = await loadCardAssetManifest(true)
     }
-    entry = manifest?.cards[cardId]
+    entry = manifest?.cards[manifestCardId]
   }
   if (!manifest || !entry) return fallbackCardAsset(cardId, legacyUrl, intent)
   return resolvedCardAssetFromManifest(manifest, cardId, legacyUrl, intent)

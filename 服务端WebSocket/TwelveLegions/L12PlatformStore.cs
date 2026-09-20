@@ -374,6 +374,7 @@ public sealed partial class L12PlatformStore
     private readonly string _path;
     private readonly IReadOnlyList<L12PresetDeckDefinition> _officialDecks;
     private readonly IReadOnlyDictionary<string, L12CardDefinition> _officialCards;
+    private readonly IReadOnlyDictionary<string, L12OfficialAlternateArtDefinition> _officialAlternateArts;
     private readonly IL12EmailSender _emailSender;
     private readonly bool _emailFeatureEnabled;
     private DataFile _data;
@@ -389,11 +390,14 @@ public sealed partial class L12PlatformStore
         IL12MfaCredentialProtector? mfaCredentialProtector = null,
         IReadOnlyDictionary<string, L12CardDefinition>? officialCards = null,
         IL12EmailSender? emailSender = null,
-        bool? emailFeatureEnabled = null)
+        bool? emailFeatureEnabled = null,
+        IReadOnlyList<L12OfficialAlternateArtDefinition>? officialAlternateArts = null)
     {
         _path = path;
         _officialDecks = officialDecks ?? [];
         _officialCards = officialCards ?? new Dictionary<string, L12CardDefinition>(StringComparer.OrdinalIgnoreCase);
+        _officialAlternateArts = (officialAlternateArts ?? []).ToDictionary(row => row.Id,
+            StringComparer.OrdinalIgnoreCase);
         _mfaCredentialProtector = mfaCredentialProtector ?? new L12UnavailableMfaCredentialProtector();
         _emailSender = emailSender ?? L12SmtpEmailSender.FromEnvironment();
         _emailFeatureEnabled = emailFeatureEnabled ?? L12EmailFeature.EnabledFromEnvironment();

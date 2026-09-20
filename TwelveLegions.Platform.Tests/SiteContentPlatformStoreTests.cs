@@ -63,6 +63,54 @@ public sealed class SiteContentPlatformStoreTests
     }
 
     [Fact]
+    public void GalleryCardsAreGrantableBuiltInAlternateArtsAndResolveThroughCardManifest()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-gallery-alternate-art-{Guid.NewGuid():N}");
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            Assert.Equal(42, catalog.OfficialAlternateArts.Count);
+            Assert.Contains(catalog.OfficialAlternateArts, row => row.CardImageId == "S02-05C1A");
+            Assert.DoesNotContain(catalog.OfficialAlternateArts, row => row.CardImageId == "S02-05C1B");
+
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var player = store.Register("gal" + Guid.NewGuid().ToString("N")[..7],
+                "Password123!").Account!;
+            var art = store.AlternateArts().First(row => row.BuiltIn);
+            Assert.True(art.Active);
+            Assert.False(string.IsNullOrWhiteSpace(art.CardImageId));
+
+            store.GrantAlternateArt(admin, new L12AlternateArtGrantDraft(art.Id,
+                player.Username, "manual", "gallery-regression"));
+            Assert.Contains(store.OwnedAlternateArts(player.Id), row => row.Id == art.Id && row.BuiltIn);
+
+            var preset = catalog.PresetDecks[0];
+            var deck = new L12PresetDeckDefinition
+            {
+                Name = "内置异画测试",
+                MasterId = preset.MasterId,
+                CardIds = preset.CardIds.ToList(),
+                MoraleIds = preset.MoraleIds.ToList(),
+                SpecialIds = preset.SpecialIds.ToList(),
+                AlternateArtSelections = new(StringComparer.OrdinalIgnoreCase) { [art.BaseCardId] = art.Id },
+            };
+            var saved = store.UpsertDeck(player.Id, deck);
+            Assert.Equal(art.Id, saved.AlternateArtSelections![art.BaseCardId]);
+            Assert.Equal($"l12-card-id:{art.CardImageId}",
+                store.ResolveOwnedAlternateArtUrls(player.Id, saved.AlternateArtSelections)[art.BaseCardId]);
+
+            Assert.Throws<ArgumentException>(() => store.SaveAlternateArt(admin,
+                new(null, art.ArtCode, art.BaseCardId, art.DisplayName, "missing-media")));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void RuleRulingsPublishOnlyStructuredConfirmedEntries()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-rule-rulings-{Guid.NewGuid():N}");

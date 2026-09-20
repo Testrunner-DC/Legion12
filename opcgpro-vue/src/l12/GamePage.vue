@@ -98,7 +98,6 @@ function returnToLobby() {
         data-ui-contract="manual-game-over-exit" role="dialog" aria-modal="true" aria-label="对局结果">
         <p>{{ game.winner == null ? (agreedDraw ? '平局' : '对局无效') : (game.winner === game.you ? '胜利' : '败北') }}</p>
         <strong>{{ game.winnerReason || '对局已结束' }}</strong>
-        <small>点击返回后离开结算；双方都离开后关闭房间，最长保留30分钟。</small>
         <small>MATCH {{ game.matchId.slice(0, 12) }} · REV {{ game.revision }}</small>
         <section v-if="l12State.rankedSettlement" class="ranked-result">
           <b>{{ l12State.rankedSettlement.faction }} · {{ ['held', 'voided'].includes(l12State.rankedSettlement.rewardStatus || '') ? l12State.rankedSettlement.tierBefore : l12State.rankedSettlement.tierAfter }}</b>
@@ -108,7 +107,6 @@ function returnToLobby() {
           <strong v-else>七曜值 {{ l12State.rankedSettlement.before.toLocaleString() }} → {{ l12State.rankedSettlement.after.toLocaleString() }} <i>{{ l12State.rankedSettlement.delta >= 0 ? '+' : '' }}{{ l12State.rankedSettlement.delta.toLocaleString() }}</i></strong>
           <details v-if="l12State.rankedSettlement.components.length && !['held', 'voided'].includes(l12State.rankedSettlement.rewardStatus || '')"><summary>查看结算明细</summary><span v-for="item in l12State.rankedSettlement.components" :key="item.kind">{{ item.label }} {{ item.value >= 0 ? '+' : '' }}{{ item.value.toLocaleString() }}</span></details>
         </section>
-        <small>结果将保留在此处，点击返回后才离开本局。</small>
         <button @click="returnToLobby">返回大厅</button>
       </div>
     </Transition>

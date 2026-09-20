@@ -31,6 +31,15 @@ function duration(ms: number) {
   return `${Math.floor(seconds / 60)}分${seconds % 60}秒`
 }
 
+function dispositionLabel(value: RankedIntegrityAudit['effectiveDisposition']) {
+  return ({ unreviewed: '待处理', review: '复核中', normal: '正常', insufficient: '证据不足',
+    'system-error': '系统异常', confirmed: '已确认违规' } as Record<string, string>)[value] || value
+}
+
+function selectable(row: RankedIntegrityAudit) {
+  return row.effectiveDisposition === 'unreviewed' || row.effectiveDisposition === 'review'
+}
+
 async function load() {
   loading.value = true
   notice.value = ''
@@ -57,10 +66,10 @@ onMounted(load)
     <details v-if="groups.length" class="risk-groups"><summary>相同对手归组（仅当前查询结果，不代表完整对局历史）</summary><button v-for="group in groups" :key="group.key" @click="selectGroup(group)">{{ group.names }} · {{ group.rows.length }}条 · 同一账号最多获胜{{ Math.max(0, ...group.winnerCounts.values()) }}条 · 选择{{ Math.min(50, group.rows.length) }}条</button></details>
     <div class="integrity-head"><span>时间 / 对局</span><span>双方玩家</span><span>对局证据</span><span>处置</span></div>
     <PagedCollection :items="rows" v-slot="{ items: paged1566 }"><article v-for="row in paged1566" :key="row.id" class="integrity-row" :data-review="row.reviewRecommended">
-      <span><label><input v-model="selected" type="checkbox" :value="row.matchId"/>选择此局</label>{{ new Date(row.createdAt).toLocaleString() }}<code>{{ row.matchId }}</code><small>{{ row.seasonId }}</small></span>
+      <span><label><input v-model="selected" type="checkbox" :value="row.matchId" :disabled="!selectable(row)"/>选择此局</label>{{ new Date(row.createdAt).toLocaleString() }}<code>{{ row.matchId }}</code><small>{{ row.seasonId }}</small></span>
       <span><b>{{ row.firstPlayer }}</b><small>{{ row.firstAccountId }}</small><b>{{ row.secondPlayer }}</b><small>{{ row.secondAccountId }}</small></span>
       <span><em v-for="signal in row.signals" :key="signal.code">{{ signal.label }}</em><small>时长 {{ duration(row.durationMs) }} · 有效操作 {{ row.meaningfulCommandCount }} · {{ row.conclusionKind }}</small><code v-if="row.networkCorrelationId">网络关联号 {{ row.networkCorrelationId }}</code></span>
-      <span><b>{{ row.reviewRecommended ? '建议人工核对' : '仅留痕' }}</b><small>当前处置：{{ row.enforcement === 'none' ? '无' : integrityLabel(row.enforcement) }}</small></span>
+      <span><b>{{ dispositionLabel(row.effectiveDisposition) }}</b><small>{{ selectable(row) ? (row.reviewRecommended ? '建议人工核对' : '仅留痕') : '已完成处理' }}</small><small>收益状态：{{ row.enforcement === 'none' ? '无' : integrityLabel(row.enforcement) }}</small></span>
     </article></PagedCollection>
     <div v-if="!loading && !rows.length" class="empty">当前筛选下没有排位风险记录</div>
     <RankedIntegrityActions :rows="rows" :selected="selected" @refresh="load"/>

@@ -3,29 +3,22 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { platformRequest } from './platform'
 import {
-  consumeImportedReplay, exportReplayPayload, parseReplayPayload, rememberImportedReplay,
-  type MatchDetail, type MatchSummary,
+  exportReplayPayload, parseReplayPayload, rememberImportedReplay, type MatchDetail, type MatchSummary,
 } from './replayModel'
 
 const router = useRouter()
 const route = useRoute()
 const matches = ref<MatchSummary[]>([])
 const selected = ref<MatchSummary | null>(null)
-const imported = ref<MatchDetail | null>(null)
 const loading = ref(false)
 const error = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
-const selectedSummary = computed(() => imported.value?.match ?? selected.value)
-const canUseSelectedReplay = computed(() => Boolean(imported.value
-  || (selectedSummary.value?.endedUtc && selectedSummary.value.commandCount > 0)))
+const canUseSelectedReplay = computed(() => Boolean(selected.value?.endedUtc && selected.value.commandCount > 0))
 
 onMounted(async () => {
   await loadMatches()
-  if (route.query.source === 'json') imported.value = consumeImportedReplay()
-  else {
-    const selectedId = String(route.query.selected ?? '')
-    selected.value = matches.value.find(match => match.matchId === selectedId) ?? null
-  }
+  const selectedId = String(route.query.selected ?? '')
+  selected.value = matches.value.find(match => match.matchId === selectedId) ?? null
 })
 
 async function loadMatches() {
@@ -40,24 +33,26 @@ async function loadMatches() {
 
 function selectMatch(match: MatchSummary) {
   selected.value = match
-  imported.value = null
   error.value = ''
 }
 
 function playSelected() {
-  if (imported.value) {
-    rememberImportedReplay(imported.value)
-    router.push({ name: 'json-replay' })
-    return
-  }
   if (selected.value?.endedUtc && selected.value.commandCount > 0)
     router.push({ name: 'match-replay', params: { matchId: selected.value.matchId } })
 }
 
 async function resolveSelectedDetail() {
-  if (imported.value) return imported.value
   if (!selected.value) return null
   return platformRequest<MatchDetail>(`/api/matches/${encodeURIComponent(selected.value.matchId)}`)
+}
+
+function replayFileDate(raw: string) {
+  const date = new Date(raw)
+  if (Number.isNaN(date.getTime())) return '日期未知'
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 async function exportReplay() {
@@ -68,7 +63,7 @@ async function exportReplay() {
     const blob = new Blob([JSON.stringify(exportReplayPayload(detail))], { type: 'application/json' })
     const anchor = document.createElement('a')
     anchor.href = URL.createObjectURL(blob)
-    anchor.download = `${detail.match.matchId}.l12-replay.json`
+    anchor.download = `${replayFileDate(detail.match.startedUtc)}-${detail.match.matchId}.json`
     anchor.click()
     window.setTimeout(() => URL.revokeObjectURL(anchor.href), 1000)
   } catch (reason) {
@@ -82,10 +77,10 @@ async function importReplay(event: Event) {
   if (!file) return
   error.value = ''
   try {
-    imported.value = parseReplayPayload(JSON.parse(await file.text()))
-    selected.value = null
+    const detail = parseReplayPayload(JSON.parse(await file.text()))
+    rememberImportedReplay(detail)
+    await router.push({ name: 'json-replay' })
   } catch (reason) {
-    imported.value = null
     error.value = reason instanceof Error ? reason.message : '回放导入失败'
   } finally { input.value = '' }
 }
@@ -109,7 +104,11 @@ function resultLabel(match: MatchSummary) {
   <section class="match-records grand-panel">
     <i class="corner tl"/><i class="corner tr"/><i class="corner bl"/><i class="corner br"/>
     <header class="records-header">
-      <div><p class="kicker">PLAYER REPLAYS · 7 DAYS / RECENT 10 / JSON</p><h1>7 天内最近 10 场回放</h1></div>
+      <div>
+        <p class="kicker">PLAYER REPLAYS · 7 DAYS / RECENT 10 / JSON</p>
+        <h1>对局回放</h1>
+        <small class="records-retention-note">仅保存7天内最近10场回放，历史回放文件可能随版本更新失效。</small>
+      </div>
       <div class="record-file-actions">
         <input ref="fileInput" type="file" accept="application/json,.json" @change="importReplay"/>
         <button @click="fileInput?.click()">打开 JSON 回放</button>
@@ -120,36 +119,30 @@ function resultLabel(match: MatchSummary) {
     <p v-if="error" class="records-error">{{ error }}</p>
     <div class="records-workspace">
       <aside class="records-list">
-        <button v-if="imported" class="selected imported-record" @click="selected = null">
-          <span><b>{{ imported.match.player0 }}</b><em>VS</em><b>{{ imported.match.player1 }}</b></span>
-          <small>本地 JSON · {{ imported.commands.length }} 个步骤</small>
-          <i>待播放</i>
-        </button>
         <button v-for="match in matches" :key="match.matchId"
-          :class="{ selected: !imported && selected?.matchId === match.matchId }" @click="selectMatch(match)">
+          :class="{ selected: selected?.matchId === match.matchId }" @click="selectMatch(match)">
           <span><b>{{ match.player0 }}</b><em>VS</em><b>{{ match.player1 }}</b></span>
           <small>{{ dateLabel(match.startedUtc) }} · {{ match.commandCount }} 次操作</small>
           <i>{{ resultLabel(match) }}</i>
         </button>
-        <p v-if="!loading && !matches.length && !imported">尚无已记录对局。</p>
+        <p v-if="!loading && !matches.length">尚无已记录对局。</p>
       </aside>
 
-      <main v-if="selectedSummary" class="record-detail">
+      <main v-if="selected" class="record-detail">
         <header>
           <div>
-            <small>{{ imported ? 'LOCAL JSON REPLAY' : `ROOM ${selectedSummary.roomCode}` }}</small>
-            <h2>{{ selectedSummary.player0 }} <em>VS</em> {{ selectedSummary.player1 }}</h2>
-            <p>{{ selectedSummary.deck0 }} · {{ selectedSummary.deck1 }}</p>
+            <small>ROOM {{ selected.roomCode }}</small>
+            <h2>{{ selected.player0 }} <em>VS</em> {{ selected.player1 }}</h2>
           </div>
-          <code>{{ selectedSummary.matchId.slice(0, 12) }}</code>
+          <code>{{ selected.matchId.slice(0, 12) }}</code>
         </header>
         <section class="record-launch">
           <div>
-            <span>{{ dateLabel(selectedSummary.startedUtc) }}</span>
-            <b>{{ resultLabel(selectedSummary) }}</b>
-            <small>{{ imported?.commands.length ?? selectedSummary.commandCount }} 个回放步骤</small>
+            <span>{{ dateLabel(selected.startedUtc) }}</span>
+            <b>{{ resultLabel(selected) }}</b>
+            <small>{{ selected.commandCount }} 个回放步骤</small>
           </div>
-          <p v-if="!imported && selectedSummary.commandCount === 0">这场对局的回放载荷已清理，摘要与结算结果仍保留。</p>
+          <p v-if="selected.commandCount === 0">这场对局的回放载荷已清理，摘要与结算结果仍保留。</p>
           <p v-else>回放将在独立的完整对战界面中打开。进入播放器前不会加载或渲染棋盘。</p>
           <button class="primary" :disabled="!canUseSelectedReplay" @click="playSelected">播放回放</button>
         </section>
@@ -161,7 +154,8 @@ function resultLabel(match: MatchSummary) {
 
 <style scoped>
 .record-file-actions{display:flex;align-items:center;gap:8px}.record-file-actions input{display:none}
+.records-retention-note{display:block;margin-top:6px;color:#87918e;font-size:13px;line-height:1.5}
 .record-launch{display:grid;min-height:360px;place-items:center;align-content:center;gap:24px;border:1px solid rgba(240,239,229,.16);background:radial-gradient(circle at 50% 42%,rgba(41,117,123,.13),transparent 45%),rgba(4,7,8,.48);text-align:center}
-.record-launch>div{display:flex;align-items:center;justify-content:center;gap:14px}.record-launch span,.record-launch small{color:#78817d;font-size:14px}.record-launch b{color:#ece9df;font-size:15px}.record-launch p{max-width:520px;margin:0;color:#8f9793;font-size:14px;line-height:1.8}.record-launch button{padding:13px 32px;border:1px solid #d7c06f;background:#2c2612;color:#f4dda0;font-weight:900;letter-spacing:.12em}.record-launch button:disabled{cursor:not-allowed;opacity:.35}.imported-record{border-color:#d7c06f!important}
+.record-launch>div{display:flex;align-items:center;justify-content:center;gap:14px}.record-launch span,.record-launch small{color:#78817d;font-size:14px}.record-launch b{color:#ece9df;font-size:15px}.record-launch p{max-width:520px;margin:0;color:#8f9793;font-size:14px;line-height:1.8}.record-launch button{padding:13px 32px;border:1px solid #d7c06f;background:#2c2612;color:#f4dda0;font-weight:900;letter-spacing:.12em}.record-launch button:disabled{cursor:not-allowed;opacity:.35}
 @media(max-width:720px){.records-header{align-items:flex-start;gap:12px}.record-file-actions{flex-wrap:wrap}.record-launch>div{flex-direction:column;gap:6px}}
 </style>

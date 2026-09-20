@@ -2,7 +2,7 @@ namespace TwelveLegions.Server;
 
 public sealed record L12AlternateArtView(string Id, string ArtCode, string BaseCardId, string DisplayName, string MediaAssetId,
     string ImageUrl, string ThumbnailUrl, bool Active, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
-    string ProductId = "", string ProductName = "");
+    string ProductId = "", string ProductName = "", string CardImageId = "", bool BuiltIn = false);
 public sealed record L12AlternateArtProductView(string Id, string Name, bool Active,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 public sealed record L12AlternateArtGrantView(string Id, string AccountId, string Username, string AlternateArtId,
@@ -60,8 +60,9 @@ public sealed partial class L12PlatformStore
 
     public IReadOnlyList<L12AlternateArtView> AlternateArts(bool includeInactive = false)
     {
-        lock (_gate) return _data.AlternateArts.Where(row => includeInactive || row.Active)
-            .OrderByDescending(row => row.UpdatedAt).Select(ToAlternateArtView).ToArray();
+        lock (_gate) return _officialAlternateArts.Values.Select(ToAlternateArtView)
+            .Concat(_data.AlternateArts.Where(row => includeInactive || row.Active).Select(ToAlternateArtView))
+            .OrderBy(row => row.ArtCode, StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
     public IReadOnlyList<L12AlternateArtView> OwnedAlternateArts(string accountId)
@@ -70,8 +71,10 @@ public sealed partial class L12PlatformStore
         {
             var ownedIds = _data.AlternateArtGrants.Where(row => row.AccountId == accountId && row.RevokedAt is null)
                 .Select(row => row.AlternateArtId).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            return _data.AlternateArts.Where(row => row.Active && ownedIds.Contains(row.Id))
-                .OrderByDescending(row => row.UpdatedAt).Select(ToAlternateArtView).ToArray();
+            return _officialAlternateArts.Values.Select(ToAlternateArtView)
+                .Concat(_data.AlternateArts.Where(row => row.Active).Select(ToAlternateArtView))
+                .Where(row => ownedIds.Contains(row.Id))
+                .OrderBy(row => row.ArtCode, StringComparer.OrdinalIgnoreCase).ToArray();
         }
     }
 
@@ -81,10 +84,14 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var existing = string.IsNullOrWhiteSpace(draft.Id) ? null : _data.AlternateArts.FirstOrDefault(item => item.Id == draft.Id);
+            if (!string.IsNullOrWhiteSpace(draft.Id) && _officialAlternateArts.ContainsKey(draft.Id))
+                throw new ArgumentException("内置异画由卡牌图库管理，不能在此编辑");
             var artCode = LimitSiteText(draft.ArtCode, 80).ToUpperInvariant();
             if (string.IsNullOrWhiteSpace(artCode) && existing is null) throw new ArgumentException("新异画必须设置独立编号");
-            if (!string.IsNullOrWhiteSpace(artCode) && _data.AlternateArts.Any(item => item.Id != draft.Id
-                && item.ArtCode.Equals(artCode, StringComparison.OrdinalIgnoreCase)))
+            if (!string.IsNullOrWhiteSpace(artCode) && (_officialAlternateArts.Values.Any(item =>
+                    item.ArtCode.Equals(artCode, StringComparison.OrdinalIgnoreCase))
+                || _data.AlternateArts.Any(item => item.Id != draft.Id
+                    && item.ArtCode.Equals(artCode, StringComparison.OrdinalIgnoreCase))))
                 throw new ArgumentException("异画编号已被使用");
             var baseCardId = draft.BaseCardId?.Trim() ?? string.Empty;
             if (!_officialCards.TryGetValue(baseCardId, out var baseCard))
@@ -124,7 +131,7 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
-            var art = _data.AlternateArts.FirstOrDefault(row => row.Id == draft.AlternateArtId && row.Active)
+            var art = FindActiveAlternateArtLocked(draft.AlternateArtId)
                 ?? throw new KeyNotFoundException("异画不存在或未启用");
             var account = _data.Accounts.FirstOrDefault(row => string.Equals(row.Username, draft.Username?.Trim(), StringComparison.OrdinalIgnoreCase)
                 && !row.Deleted) ?? throw new KeyNotFoundException("目标玩家不存在");
@@ -188,7 +195,7 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
-            var art = _data.AlternateArts.FirstOrDefault(row => row.Id == draft.AlternateArtId)
+            var art = FindAlternateArtLocked(draft.AlternateArtId)
                 ?? throw new KeyNotFoundException("异画不存在");
             var kind = draft.Kind?.Trim().ToLowerInvariant() ?? string.Empty;
             if (!AlternateArtAwardKinds.Contains(kind)) throw new ArgumentException("发放规则类型无效");
@@ -252,7 +259,7 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
-            var art = _data.AlternateArts.FirstOrDefault(row => row.Id == draft.AlternateArtId && row.Active)
+            var art = FindActiveAlternateArtLocked(draft.AlternateArtId)
                 ?? throw new KeyNotFoundException("异画不存在或未启用");
             // 空值只表示“本赛季”，绝不再隐式扩展为所有历史赛季。
             // 历史赛季同时读取归档档案与主宰战绩，保证已经结算的赛季仍可补发。
@@ -334,12 +341,12 @@ public sealed partial class L12PlatformStore
     }
 
     private bool IsActiveAlternateArt(string alternateArtId)
-        => _data.AlternateArts.Any(row => row.Id == alternateArtId && row.Active);
+        => FindActiveAlternateArtLocked(alternateArtId) is not null;
 
     private AlternateArtGrantRow GrantAlternateArtToAccountLocked(string accountId, string alternateArtId,
         string sourceKind, string sourceReference, string grantedByAccountId)
     {
-        var art = _data.AlternateArts.FirstOrDefault(row => row.Id == alternateArtId && row.Active)
+        var art = FindActiveAlternateArtLocked(alternateArtId)
             ?? throw new InvalidOperationException("异画已停用或不存在，无法派发");
         var row = _data.AlternateArtGrants.FirstOrDefault(item => item.AccountId == accountId && item.AlternateArtId == art.Id
             && item.RevokedAt is null && string.Equals(item.SourceKind, sourceKind, StringComparison.OrdinalIgnoreCase)
@@ -362,9 +369,12 @@ public sealed partial class L12PlatformStore
             var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var selection in selections.Take(128))
             {
-                var art = _data.AlternateArts.FirstOrDefault(row => row.Id == selection.Value && row.Active &&
-                    string.Equals(row.BaseCardId, selection.Key, StringComparison.OrdinalIgnoreCase));
-                if (art is not null && owned.Contains(art.Id)) result[art.BaseCardId] = SiteMediaUrl(art.MediaAssetId);
+                var art = FindActiveAlternateArtLocked(selection.Value);
+                if (art is not null && owned.Contains(art.Id)
+                    && string.Equals(art.BaseCardId, selection.Key, StringComparison.OrdinalIgnoreCase))
+                    result[art.BaseCardId] = art.BuiltIn
+                        ? $"l12-card-id:{art.CardImageId}"
+                        : SiteMediaUrl(art.MediaAssetId);
             }
             return result;
         }
@@ -382,9 +392,10 @@ public sealed partial class L12PlatformStore
             var cardId = selection.Key?.Trim();
             var artId = selection.Value?.Trim();
             if (string.IsNullOrWhiteSpace(cardId) || string.IsNullOrWhiteSpace(artId)) continue;
-            var art = _data.AlternateArts.FirstOrDefault(row => row.Id == artId && row.Active
-                && string.Equals(row.BaseCardId, cardId, StringComparison.OrdinalIgnoreCase));
-            if (art is not null && owned.Contains(art.Id)) result[art.BaseCardId] = art.Id;
+            var art = FindActiveAlternateArtLocked(artId);
+            if (art is not null && owned.Contains(art.Id)
+                && string.Equals(art.BaseCardId, cardId, StringComparison.OrdinalIgnoreCase))
+                result[art.BaseCardId] = art.Id;
         }
         return result;
     }
@@ -393,6 +404,22 @@ public sealed partial class L12PlatformStore
         row.MediaAssetId, SiteMediaUrl(row.MediaAssetId), SiteMediaUrl(row.MediaAssetId, "thumbnail"), row.Active,
         row.CreatedAt, row.UpdatedAt, row.ProductId,
         _data.AlternateArtProducts.FirstOrDefault(item => item.Id == row.ProductId)?.Name ?? "");
+    private static L12AlternateArtView ToAlternateArtView(L12OfficialAlternateArtDefinition row)
+        => new(row.Id, row.ArtCode, row.BaseCardId, row.DisplayName, "", "", "", true,
+            DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, "", row.ProductName, row.CardImageId, true);
+    private L12AlternateArtView? FindAlternateArtLocked(string alternateArtId)
+    {
+        if (_officialAlternateArts.TryGetValue(alternateArtId, out var official))
+            return ToAlternateArtView(official);
+        var custom = _data.AlternateArts.FirstOrDefault(row => row.Id == alternateArtId);
+        return custom is null ? null : ToAlternateArtView(custom);
+    }
+
+    private L12AlternateArtView? FindActiveAlternateArtLocked(string alternateArtId)
+    {
+        var art = FindAlternateArtLocked(alternateArtId);
+        return art is { Active: true } ? art : null;
+    }
     private static L12AlternateArtProductView ToAlternateArtProductView(AlternateArtProductRow row)
         => new(row.Id, row.Name, row.Active, row.CreatedAt, row.UpdatedAt);
 

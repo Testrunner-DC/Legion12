@@ -403,7 +403,7 @@ onBeforeUnmount(closeDeckImage)
             <span>对局卡图</span>
             <select :value="alternateArtSelections[selected.id] ?? ''" @change="selectAlternateArt(selected!.id, ($event.target as HTMLSelectElement).value)">
               <option value="">使用原始卡图</option>
-              <option v-for="art in selectedAlternateArts" :key="art.id" :value="art.id">{{ art.displayName }}</option>
+              <option v-for="art in selectedAlternateArts" :key="art.id" :value="art.id">{{ art.artCode }} · {{ art.displayName }}</option>
             </select>
             <small>已选择的异画只改变本人的对局显示，不改变卡牌规则。</small>
           </label>

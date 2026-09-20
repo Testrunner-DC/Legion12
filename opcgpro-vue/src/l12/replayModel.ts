@@ -98,8 +98,8 @@ export function adminReplayDetail(source: AdminReplaySource): MatchDetail {
       roomCode: value(firstState, 'RoomCode', 'roomCode', ''),
       player0: source.summary.players[0]?.displayName || '玩家1',
       player1: source.summary.players[1]?.displayName || '玩家2',
-      deck0: source.summary.players[0]?.deckName || '',
-      deck1: source.summary.players[1]?.deckName || '',
+      deck0: '',
+      deck1: '',
       startedUtc: source.summary.startedUtc,
       endedUtc: source.summary.endedUtc,
       winner: winner >= 0 ? winner : null,
@@ -159,7 +159,7 @@ function replayPlayer(raw: any, catalog?: ReadonlyMap<string, ReplayCardDefiniti
   const rawFactionAbilities = value<any[]>(factionRaw, 'Abilities', 'abilities', [])
   return {
     playerIndex: value(raw, 'PlayerIndex', 'playerIndex', 0), name: value(raw, 'Name', 'name', '玩家'),
-    deckName: value(raw, 'DeckName', 'deckName', ''), faction: value(raw, 'Faction', 'faction', ''),
+    deckName: '', faction: value(raw, 'Faction', 'faction', ''),
     master: {
       masterId, masterName: value(raw, 'MasterName', 'masterName', masterDefinition?.nameZh ?? '主宰'),
       masterImageUrl: value(raw, 'MasterImageUrl', 'masterImageUrl', masterDefinition?.imageUrl),

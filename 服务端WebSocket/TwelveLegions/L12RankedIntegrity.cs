@@ -22,6 +22,7 @@ public sealed record L12RankedIntegrityAuditView(
     string? NetworkCorrelationId,
     IReadOnlyList<L12RankedIntegritySignalView> Signals,
     bool ReviewRecommended,
+    string EffectiveDisposition,
     string Enforcement,
     DateTimeOffset CreatedAt);
 
@@ -94,7 +95,8 @@ public sealed partial class L12PlatformStore
             if (!string.IsNullOrWhiteSpace(matchId))
                 rows = rows.Where(row => string.Equals(row.MatchId, matchId.Trim(),
                     StringComparison.OrdinalIgnoreCase));
-            if (reviewOnly) rows = rows.Where(row => row.ReviewRecommended);
+            if (reviewOnly) rows = rows.Where(row => row.ReviewRecommended
+                && !IsTerminalRankedIntegrityDisposition(RankedIntegrityDispositionLocked(row.MatchId)));
             return rows.OrderByDescending(row => row.CreatedAt)
                 .Take(Math.Clamp(limit, 1, 500)).Select(RankedIntegrityView).ToArray();
         }
@@ -403,8 +405,20 @@ public sealed partial class L12PlatformStore
             AccountName(row.SecondAccountId), row.Winner, row.DurationMs, row.MeaningfulCommandCount,
             row.ConclusionKind, linked, reference, row.Signals.Select(code =>
                 new L12RankedIntegritySignalView(code, IntegritySignalLabel(code))).ToArray(),
-            row.ReviewRecommended, row.Enforcement, row.CreatedAt);
+            row.ReviewRecommended, RankedIntegrityDispositionLocked(row.MatchId), row.Enforcement, row.CreatedAt);
     }
+
+    private string RankedIntegrityDispositionLocked(string matchId)
+        => _data.RankedIntegrityDecisions
+            .Where(row => row.Disposition != "revoked"
+                && row.MatchIds.Contains(matchId, StringComparer.OrdinalIgnoreCase)
+                && !IsDecisionRevokedLocked(row.Id))
+            .OrderByDescending(row => row.Revision)
+            .Select(row => row.Disposition)
+            .FirstOrDefault() ?? "unreviewed";
+
+    private static bool IsTerminalRankedIntegrityDisposition(string disposition)
+        => disposition is "normal" or "insufficient" or "system-error" or "confirmed";
 
     private static string IntegritySignalLabel(string code) => code switch
     {

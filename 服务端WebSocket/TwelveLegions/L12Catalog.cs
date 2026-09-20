@@ -2,6 +2,14 @@ using System.Text.Json;
 
 namespace TwelveLegions.Server;
 
+public sealed record L12OfficialAlternateArtDefinition(
+    string Id,
+    string ArtCode,
+    string BaseCardId,
+    string DisplayName,
+    string CardImageId,
+    string ProductName);
+
 public sealed class L12Catalog
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -13,16 +21,19 @@ public sealed class L12Catalog
     public IReadOnlyList<L12PresetDeckDefinition> PresetDecks { get; }
     public L12MoraleIdentityCatalog MoraleIdentities { get; }
     public L12AtomicEffectCatalog AtomicEffects { get; }
+    public IReadOnlyList<L12OfficialAlternateArtDefinition> OfficialAlternateArts { get; }
 
     private L12Catalog(
         IReadOnlyDictionary<string, L12CardDefinition> cards,
         IReadOnlyList<L12PresetDeckDefinition> presetDecks,
-        L12MoraleIdentityCatalog moraleIdentities)
+        L12MoraleIdentityCatalog moraleIdentities,
+        IReadOnlyList<L12OfficialAlternateArtDefinition> officialAlternateArts)
     {
         Cards = cards;
         PresetDecks = presetDecks;
         MoraleIdentities = moraleIdentities;
         AtomicEffects = L12AtomicEffectCatalog.Build(cards.Values);
+        OfficialAlternateArts = officialAlternateArts;
     }
 
     public static L12Catalog Load(string dataPath)
@@ -76,7 +87,49 @@ public sealed class L12Catalog
                 throw new InvalidDataException($"预组 {deck.Name} 包含无效的特殊区卡牌。");
         }
 
-        return new L12Catalog(byId, decks, moraleIdentities);
+        var officialAlternateArts = LoadOfficialAlternateArts(dataPath, byId);
+        return new L12Catalog(byId, decks, moraleIdentities, officialAlternateArts);
+    }
+
+    private static IReadOnlyList<L12OfficialAlternateArtDefinition> LoadOfficialAlternateArts(
+        string dataPath, IReadOnlyDictionary<string, L12CardDefinition> cards)
+    {
+        var path = Path.Combine(dataPath, "card-archive-assets.json");
+        if (!File.Exists(path)) throw new FileNotFoundException("画廊异画登记缺失", path);
+        var archive = JsonSerializer.Deserialize<ArchiveAlternateArtCatalog>(File.ReadAllText(path), JsonOptions)
+            ?? throw new InvalidDataException("画廊异画登记格式无效");
+        var definitions = archive.Cards
+            .Where(row => !row.Id.Equals("S02-05C1B", StringComparison.OrdinalIgnoreCase))
+            .Select(row => OfficialAlternateArt(row.Id, row.BaseCardId, row.Products.FirstOrDefault()
+                ?? row.Product, cards)).ToList();
+        definitions.Add(OfficialAlternateArt("S02-05C1A", "S02-05C1", "第2季|典藏版", cards));
+        var duplicateCodes = definitions.GroupBy(row => row.ArtCode, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1).Select(group => group.Key).ToArray();
+        if (duplicateCodes.Length > 0)
+            throw new InvalidDataException($"画廊异画编号重复：{string.Join(", ", duplicateCodes)}");
+        return definitions.OrderBy(row => row.ArtCode, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    private static L12OfficialAlternateArtDefinition OfficialAlternateArt(string cardImageId,
+        string baseCardId, string productName, IReadOnlyDictionary<string, L12CardDefinition> cards)
+    {
+        if (!cards.TryGetValue(baseCardId, out var baseCard))
+            throw new InvalidDataException($"画廊异画 {cardImageId} 引用了不存在的原卡 {baseCardId}");
+        return new L12OfficialAlternateArtDefinition($"catalog-alt:{cardImageId}", cardImageId,
+            baseCardId, baseCard.NameZh, cardImageId, productName);
+    }
+
+    private sealed class ArchiveAlternateArtCatalog
+    {
+        public List<ArchiveAlternateArtRow> Cards { get; init; } = [];
+    }
+
+    private sealed class ArchiveAlternateArtRow
+    {
+        public string Id { get; init; } = string.Empty;
+        public string BaseCardId { get; init; } = string.Empty;
+        public string Product { get; init; } = string.Empty;
+        public List<string> Products { get; init; } = [];
     }
 
     public L12PresetDeckDefinition DeckAt(int index)

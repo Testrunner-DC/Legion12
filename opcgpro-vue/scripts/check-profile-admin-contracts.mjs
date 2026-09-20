@@ -13,8 +13,10 @@ const checks = [
     && profile.includes('await loadRenameStatus()') && profile.includes('renameStatus.value = null'),
   '改名状态必须随登录账号切换刷新，并在退出时清空'],
   [platform.includes("statistics: () => platformRequest<PlayerStatistics>('/api/me/statistics')")
-    && profile.includes('各主宰战绩') && profile.includes('playerStatistics.overall.firstGames'),
-  '我的页面必须使用独立统计接口展示总体、先后手及各主宰战绩'],
+    && profile.includes('<h2>战绩</h2>') && profile.includes('<b>主宰战绩</b>')
+    && profile.includes('playerStatistics.overall.firstGames') && profile.includes('masterProfileUrl(master.masterId)')
+    && !profile.includes('统计摘要独立保留，不依赖录像文件') && !profile.includes('同时列出整体与排位表现'),
+  '我的页面必须使用独立统计接口，以排行榜同源样式展示战绩和主宰战绩，不暴露存储实现说明'],
   [admin.includes("tab === 'rules'") && admin.includes('§ 规则中心审核')
     && !siteContent.includes("section === 'rules'") && !siteContent.includes("id: 'rules'"),
   '规则中心审核必须与站点内容工作台平级'],
