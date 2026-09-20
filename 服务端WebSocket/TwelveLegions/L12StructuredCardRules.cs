@@ -589,6 +589,26 @@ public static partial class L12StructuredCardRules
         return false;
     }
 
+    /// <summary>
+    /// 读取卡牌自身的结构化关键词定义。定义只描述关键词的规则语义；具体由哪一段效果、
+    /// 费用或条件授予该关键词，仍由引用这个定义的父能力负责。
+    /// </summary>
+    public static bool HasKeywordDefinition(string cardId, string keyword)
+        => TryGetStructuredAbilities(cardId, out var abilities)
+            && abilities.Any(ability => ability.Trigger == "keyword-definition"
+                && ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.Keyword
+                    && atom.Parameters.GetValueOrDefault("keywordRef") == keyword));
+
+    /// <summary>
+    /// 读取印刷能力中由父能力引用的关键词。ST早期结构使用granted子能力，S2使用
+    /// keyword-definition；运行时不能为同一规则语义继续维护卡号白名单。
+    /// </summary>
+    public static bool HasPrintedKeywordReference(string cardId, string keyword)
+        => TryGetStructuredAbilities(cardId, out var abilities)
+            && abilities.Any(ability => ability.Trigger is "keyword-definition" or "granted"
+                && ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.Keyword
+                    && atom.Parameters.GetValueOrDefault("keywordRef") == keyword));
+
     private static bool IsContinuous(string executionModel)
         => executionModel is "continuous" or "granted-continuous";
 

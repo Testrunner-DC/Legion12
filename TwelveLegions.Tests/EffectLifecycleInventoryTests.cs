@@ -370,6 +370,31 @@ public sealed class EffectLifecycleInventoryTests
     }
 
     [Fact]
+    public void CombatKeywordProfilesBindEveryPrintedKeywordDefinitionExactlyOnce()
+    {
+        var inventory = Build(Catalog);
+        var expected = EffectLifecycleProfiles.CombatKeywordDefinitionAbilityIds
+            .SelectMany(pair => pair.Value.Select(id => (Id: id, Keyword: pair.Key)))
+            .OrderBy(entry => entry.Id).ToArray();
+        var rows = inventory.Abilities
+            .Where(row => row.Profile?.Id.StartsWith("keyword:", StringComparison.Ordinal) == true)
+            .OrderBy(row => row.Definition.AbilityId).ToArray();
+        Assert.Equal(expected.Select(entry => entry.Id), rows.Select(row => row.Definition.AbilityId));
+        Assert.Equal(expected.Select(entry => $"keyword:{entry.Keyword}"), rows.Select(row => row.Profile!.Id));
+        Assert.All(rows, row =>
+        {
+            Assert.Equal("shared-rule-owner", row.EntryEvidence);
+            Assert.Equal("L12StructuredCardRules.HasKeywordDefinition", row.Profile!.RuntimeOwners["definition"]);
+            Assert.DoesNotContain("negated", row.ReviewGaps);
+            Assert.DoesNotContain("payment-cancel", row.ReviewGaps);
+            Assert.Contains("parent-grant-boundary", row.ReviewGaps);
+            Assert.Contains(row.TestReferences, reference => reference.TestMethod.EndsWith(
+                nameof(CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner),
+                StringComparison.Ordinal));
+        });
+    }
+
+    [Fact]
     public void DesertHandSummonProfileUsesOneSharedCandidateRuleAndExplainsItsUnavailablePath()
     {
         var row = Assert.Single(Build(Catalog).Abilities,

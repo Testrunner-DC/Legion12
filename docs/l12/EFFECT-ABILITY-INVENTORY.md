@@ -5,14 +5,14 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`523bc26b485d9cb2117a3730990e8ef95e7e7759aef4f38f423af3afd317c09b`。
+内容指纹：`bd1e9336eecf9a795ea9e01867f9abcf649ebdf99a7e775de01665f009b81eea`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
 | composite-definition | 204 |
 | fine-definition | 87 |
-| owner-unreviewed | 302 |
-| shared-rule-owner | 93 |
+| owner-unreviewed | 287 |
+| shared-rule-owner | 108 |
 
 fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；shared-rule-owner = 精确能力已绑定共用规则入口及适用性档案；owner-unreviewed = 还需定位实际入口。任何一种归属证据均不等于生命周期验收通过。
 同卡同触发只算候选，不能把另一能力的程序继承为本能力已覆盖。无能力卡单列，不能从分母中静默消失。
@@ -81,6 +81,60 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 精确绑定能力数：1。运行入口：candidate-generation = L12GameEngine.IsDesertHandSummonCandidate；cost-commit = L12GameEngine.TryCommitCompositePreStackCosts；settlement-revalidation = L12GameEngine.TryResolveS2FactionTactic。
 
 - no-target：本效果必须先声明1张合格手牌军团；不存在候选时不能发动，且尚未提交弃置费用。
+
+### keyword:taunt
+
+精确绑定能力数：4。运行入口：active-state = L12StructuredCardRules.HasTaunt；attack-candidates = L12GameEngine.BuildLegalAttackTargets；attack-revalidation = L12GameEngine.TryValidateAttackTarget；definition = L12StructuredCardRules.HasKeywordDefinition；presentation = L12GameEngine.BuildActiveKeywords。
+
+- duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
+- negated：关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于引用它的父能力。
+- single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+
+### keyword:charge
+
+精确绑定能力数：3。运行入口：attack-candidates = L12GameEngine.BuildLegalAttackTargets；attack-revalidation = L12GameEngine.TryValidateAttackTarget；definition = L12StructuredCardRules.HasKeywordDefinition；leave-reset = L12GameEngine.ResetCardAfterLeavingField；presentation = L12GameEngine.BuildActiveKeywords。
+
+- duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
+- negated：关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于引用它的父能力。
+- single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+
+### keyword:shock
+
+精确绑定能力数：2。运行入口：attack-trigger = L12GameEngine.ApplyS2Shock；combat-settlement = L12GameEngine.ResolveDefenseCore；definition = L12StructuredCardRules.HasKeywordDefinition；presentation = L12GameEngine.BuildActiveKeywords；turn-expiry = L12GameEngine.ResetTemporaryCardState。
+
+- duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
+- negated：关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于引用它的父能力。
+- single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+
+### keyword:strong-attack
+
+精确绑定能力数：2。运行入口：active-state = L12StructuredCardSemantics.HasEffectiveStrongAttack；combat-settlement = L12GameEngine.Attack；definition = L12StructuredCardRules.HasKeywordDefinition；grant = L12GameEngine.GrantStrongAttack；presentation = L12GameEngine.BuildActiveKeywords；turn-expiry = L12GameEngine.ResetTemporaryCardState。
+
+- duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
+- negated：关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于引用它的父能力。
+- single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+
+### keyword:piercing
+
+精确绑定能力数：2。运行入口：combat-settlement = L12GameEngine.ResolveDefenseCore；definition = L12StructuredCardRules.HasKeywordDefinition；generated-attack = L12GameEngine.BeginPiercingAttack；kill-fact-gate = L12GameEngine.ResolveTypedKillSourceEvent；master-target-revalidation = L12GameEngine.CanAttackMasterTarget；printed-identity = L12StructuredCardRules.HasPrintedKeywordReference；printed-settlement = L12GameEngine.TryResolveS2FactionAfterAttack。
+
+- duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
+- negated：关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于引用它的父能力。
+- single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+
+### keyword:death-immunity
+
+精确绑定能力数：2。运行入口：active-state = L12GameEngine.HasActiveImmortal；definition = L12StructuredCardRules.HasKeywordDefinition；grant = L12GameEngine.GrantImmortalUntilNextTurnStart；lethal-replacement = L12GameEngine.RemoveFromField；presentation = L12GameEngine.BuildActiveKeywords；turn-expiry = L12GameEngine.ExpireEffectsAtPlayerTurnStart。
+
+- duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
+- negated：关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于引用它的父能力。
+- single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
 
 ## 已关联具名证据（不是整能力验收通过）
 
@@ -183,17 +237,22 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRulePrepaysDiscardCostBeforeResponseAndOccupiedSlotDoesNotRefundOrOverwrite / S02-0207 | cost-prepaid, settlement-slot-invalidated |
 | S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleRestoresTheDeclaredHandSummonBeforeItsResponseWindowSettles / S02-0207 | reconnect |
 | S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleUsesEffectiveFactionForHandCandidateAndSettlement / S02-0207 | candidate-effective-faction, duplicate-submit, normal, single-candidate-choice |
+| S02-0302:ability:keyword-definition:eaba79729a9d7a65 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0302 | authoritative-consumer, parent-grant-boundary |
 | S02-0303:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.EveryPrintedSelfDamageDiscountUsesOneHandPlayCostProtocol / S02-0303 | last-health-terminal, optional-choice, reconnect-payment |
 | S02-0304:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0304 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0404:ability:active:b30de444d37a3b6e | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0404 | active-rest-cost, runtime-branch-mapping |
+| S02-0503:ability:keyword-definition:6692b63a59c971d0 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0503 | authoritative-consumer, parent-grant-boundary |
 | S02-0505:ability:active:bac4cb5d348f29f1 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / S02-0505 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
 | S02-0505:ability:active:bac4cb5d348f29f1 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / S02-0505 | destination-invalidated, reconnect-before-command, source-invalidated |
 | S02-0505:ability:active:bac4cb5d348f29f1 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / S02-0505 | button-rejection-consistency, timing |
 | S02-0505:ability:active:bac4cb5d348f29f1 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / S02-0505 | button-text, duplicate-submit, no-resource-cost, normal, presentation-event, reconnect-after-command, reconnect-before-command |
+| S02-0505:ability:keyword-definition:cf232142ca7d10f9 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0505 | authoritative-consumer, parent-grant-boundary |
 | S02-0507:ability:static:3f520b391281b325 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0507 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0507:ability:static:3f520b391281b325 | TwelveLegions.Tests.PrintedRangedProfileTests.RepresentativeRangeConditionsActuallyPreventRetaliationAfterRestore / S02-0507 | duplicate-attack, normal-ranged-combat, reconnect-before-attack |
 | S02-0508:ability:static:aa41bff900061e1d | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0508 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0510:ability:active:2ee4c7f29b568e48 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0510 | active-rest-cost, runtime-branch-mapping |
+| S02-0511:ability:keyword-definition:96aa4e9504b12339 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0511 | authoritative-consumer, parent-grant-boundary |
+| S02-0512:ability:keyword-definition:6692b63a59c971d0 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0512 | authoritative-consumer, parent-grant-boundary |
 | S02-0513:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0513 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0513:ability:active:0b4d5245336709f8 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0513 | active-rest-cost, runtime-branch-mapping |
 | S02-0514:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0514 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
@@ -201,8 +260,18 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0517:ability:static:9ba2f4f5354a2a05 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0517 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0520:ability:active:e4e320d416a9c103 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0520 | active-rest-cost, runtime-branch-mapping |
 | S02-05D1:ability:active:f160e84288ecb28c | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-05D1 | active-rest-cost, runtime-branch-mapping |
+| S02-05M1:ability:keyword-definition:62d5e99aeb08acbb | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-05M1 | authoritative-consumer, parent-grant-boundary |
+| S02-05M1:ability:keyword-definition:96aa4e9504b12339 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-05M1 | authoritative-consumer, parent-grant-boundary |
+| S02-0602:ability:keyword-definition:beff9037e2c10a9d | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0602 | authoritative-consumer, parent-grant-boundary |
 | S02-0603:ability:active:8768d3f1fcb44728 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0603 | active-rest-cost, runtime-branch-mapping |
+| S02-0605:ability:keyword-definition:60bccaeb6d982ea8 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0605 | authoritative-consumer, parent-grant-boundary |
+| S02-0606:ability:keyword-definition:672734be0285300f | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0606 | authoritative-consumer, parent-grant-boundary |
+| S02-0608:ability:keyword-definition:4d1e472a814a1e0b | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0608 | authoritative-consumer, parent-grant-boundary |
+| S02-0611:ability:keyword-definition:4d1e472a814a1e0b | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0611 | authoritative-consumer, parent-grant-boundary |
+| S02-0611:ability:keyword-definition:672734be0285300f | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0611 | authoritative-consumer, parent-grant-boundary |
+| S02-0612:ability:keyword-definition:beff9037e2c10a9d | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0612 | authoritative-consumer, parent-grant-boundary |
 | S02-0614:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0614 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
+| S02-0615:ability:keyword-definition:8a4c9aff096f6526 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0615 | authoritative-consumer, parent-grant-boundary |
 | S02-0616:ability:active:3616b237df312569 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0616 | active-rest-cost, runtime-branch-mapping |
 | S02-0617:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0617 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0618:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0618 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
@@ -585,7 +654,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0301 雷神之锤 #4 | S02-0301:ability:active:61c655977499e4be | active/activated | owner-unreviewed | 「位于墓地」我方 回合1次 可将墓地3张卡牌自选顺序返回我方牌库底部 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.move-zone → resolution:operation.move-zone → duration:duration.apply → resolution:legacy.resolve | 1 | 「位于墓地」我方 回合1次 可将墓地3张卡牌自选顺序返回我方牌库底部：将此军团活跃登场。 |
 | S02-0302 步行者罗洛 #1 | S02-0302:ability:hand-play:4e8ff9ea92325bac | hand-play/special-summon | owner-unreviewed | 可将墓地最多8张【阿斯加德】卡牌自选顺序返回我方牌库底部 | trigger:trigger.observe → condition:control.optional → cost:operation.move-zone → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可将墓地最多8张【阿斯加德】卡牌自选顺序返回我方牌库底部：每返回2张，此军团登场费用-1。 |
 | S02-0302 步行者罗洛 #2 | S02-0302:ability:continuous:48719a94741bbf36 | continuous/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 「位于前排」获得ABILITY 3，且无法被后排支援。 |
-| S02-0302 步行者罗洛 #3 | S02-0302:ability:keyword-definition:eaba79729a9d7a65 | keyword-definition/keyword-definition | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.keyword → resolution:legacy.resolve | 1 | 挑衅 对方只可进攻拥有挑衅效果的军团，若有多个具有挑衅效果的军团，则可以选择其中1个进行进攻。 |
+| S02-0302 步行者罗洛 #3 | S02-0302:ability:keyword-definition:eaba79729a9d7a65 | keyword-definition/keyword-definition | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.keyword → resolution:legacy.resolve | 1 | 挑衅 对方只可进攻拥有挑衅效果的军团，若有多个具有挑衅效果的军团，则可以选择其中1个进行进攻。 |
 | S02-0302 步行者罗洛 #4 | S02-0302:ability:enter:f2164791a703075c | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.heal-master | 1 | 登场时 我方主宰增加1点血量。 |
 | S02-0303 卡纽特大帝 #1 | S02-0303:ability:hand-play:5e06807975eda2b7 | hand-play/special-summon | shared-rule-owner | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.damage-master → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可对我方主宰造成1点伤害：此军团登场费用-1。 |
 | S02-0303 卡纽特大帝 #2 | S02-0303:ability:enter:188ca2ec5d57c93a | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.composite-flow | 1 | 登场时 可选择我方战场或墓地最多2张非同名的【阿斯加德】军团，触发其阵亡效果。 |
@@ -634,14 +703,14 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0503 阿喀琉斯·晋升 #3 | S02-0503:ability:promotion-enter:15500275140609c1 | promotion-enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.attack-rule → duration:duration.apply → resolution:operation.composite-flow | 1 | 晋升登场 本回合可进攻对方军团。 |
 | S02-0503 阿喀琉斯·晋升 #4 | S02-0503:ability:after-attack:e3ced12ddde14fdb | after-attack/triggered | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 1 | 击杀时 直到我方下个回合结束前，此军团获得 ABILITY 5。 |
 | S02-0503 阿喀琉斯·晋升 #5 | S02-0503:ability:granted-static:e67d03cee97f98a6 | granted-static/granted-continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → resolution:legacy.resolve | 0 | 「位于前排」获得 ABILITY 6。 |
-| S02-0503 阿喀琉斯·晋升 #6 | S02-0503:ability:keyword-definition:6692b63a59c971d0 | keyword-definition/keyword-definition | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 挑衅 对方只可进攻拥有挑衅效果的军团，若有多个具有挑衅效果的军团，则可以选择其中1个进行进攻。 |
+| S02-0503 阿喀琉斯·晋升 #6 | S02-0503:ability:keyword-definition:6692b63a59c971d0 | keyword-definition/keyword-definition | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 挑衅 对方只可进攻拥有挑衅效果的军团，若有多个具有挑衅效果的军团，则可以选择其中1个进行进攻。 |
 | S02-0504 阿喀琉斯 #1 | S02-0504:ability:static:0ada28f438439ac2 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」我方主宰无法被兵力不高于2000的军团进攻。 |
 | S02-0504 阿喀琉斯 #2 | S02-0504:ability:lethal-replacement:3fb565d50830f260 | lethal-replacement/replacement | owner-unreviewed | 「位于前排」回合1次 即将阵亡时，可消耗并翻转1神力 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:special.domain → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」回合1次 即将阵亡时，可消耗并翻转1神力：代替承受本次致命进攻或效果。 |
 | S02-0505 珀尔修斯·晋升 #1 | S02-0505:ability:promotion:e890e8664470e824 | promotion/summon-flow | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → cost:special.domain → target:selection.target → resolution:operation.move-zone → resolution:legacy.resolve | 1 | 晋升 消耗并翻转1神力，叠放至我方同名非【晋升者】军团上方登场。 |
 | S02-0505 珀尔修斯·晋升 #2 | S02-0505:ability:promotion-enter:125b53eb65b262bb | promotion-enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.set-state → duration:duration.apply → resolution:operation.composite-flow | 1 | 晋升登场 可选择对方1张休整的军团，使其在下个对方重置阶段无法转为活跃。 |
 | S02-0505 珀尔修斯·晋升 #3 | S02-0505:ability:active:bac4cb5d348f29f1 | active/rule-action | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move → duration:duration.apply | 1 | 我方 回合1次 可进行1次位移。 |
 | S02-0505 珀尔修斯·晋升 #4 | S02-0505:ability:enter:2f48770e568d4c27 | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.keyword | 1 | 登场时 获得 ABILITY 5。 |
-| S02-0505 珀尔修斯·晋升 #5 | S02-0505:ability:keyword-definition:cf232142ca7d10f9 | keyword-definition/keyword-definition | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 冲锋 在登场的回合即可进行进攻。 |
+| S02-0505 珀尔修斯·晋升 #5 | S02-0505:ability:keyword-definition:cf232142ca7d10f9 | keyword-definition/keyword-definition | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 冲锋 在登场的回合即可进行进攻。 |
 | S02-0506 珀尔修斯 #1 | S02-0506:ability:enter:190c1bf49c2ede8b | enter/triggered | composite-definition | 登场时 可弃置1张手牌 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.discard → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 可弃置1张手牌：将墓地1张&lt;珀尔修斯·晋升&gt;加入手牌。 |
 | S02-0507 阿塔兰忒·晋升 #1 | S02-0507:ability:promotion:e890e8664470e824 | promotion/summon-flow | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → cost:special.domain → target:selection.target → resolution:operation.move-zone → resolution:legacy.resolve | 1 | 晋升 消耗并翻转1神力，叠放至我方同名非【晋升者】军团上方登场。 |
 | S02-0507 阿塔兰忒·晋升 #2 | S02-0507:ability:promotion-enter:63c22abdf0d41b8e | promotion-enter/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw | 1 | 晋升登场 可抽取1张牌。 |
@@ -658,10 +727,10 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0510 希波吕忒 #3 | S02-0510:ability:active:2ee4c7f29b568e48 | active/activated | shared-rule-owner | 主动休整 消耗3士气并弃置1张手牌 | trigger:trigger.observe → condition:condition.expression → cost:cost.rest-source → cost:cost.pay-morale → target:selection.target → cost:cost.discard → target:selection.target → target:selection.target → resolution:operation.move-zone → resolution:legacy.resolve | 1 | 主动休整 消耗3士气并弃置1张手牌：选择墓地1张费用不高于4的【奥林匹斯】军团活跃登场。 |
 | S02-0511 珀洛特埃 #1 | S02-0511:ability:enter:398588321106818e | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.set-state | 1 | 登场时 本回合可进攻对方军团。 |
 | S02-0511 珀洛特埃 #2 | S02-0511:ability:attack:c367ee3457cbd5f4 | attack/triggered | owner-unreviewed | 进攻时 若目标为对方军团，可消耗并翻转1神力 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:special.domain → resolution:operation.modify-troops → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 1 | 进攻时 若目标为对方军团，可消耗并翻转1神力：本回合兵力+1000，并获得 ABILITY 3。 |
-| S02-0511 珀洛特埃 #3 | S02-0511:ability:keyword-definition:96aa4e9504b12339 | keyword-definition/keyword-definition | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.keyword → duration:duration.apply → resolution:legacy.resolve | 1 | 震击 进攻时，被进攻者左右相邻的军团在本回合中兵力-2000。 |
+| S02-0511 珀洛特埃 #3 | S02-0511:ability:keyword-definition:96aa4e9504b12339 | keyword-definition/keyword-definition | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → duration:duration.apply → resolution:legacy.resolve | 1 | 震击 进攻时，被进攻者左右相邻的军团在本回合中兵力-2000。 |
 | S02-0512 埃涅阿斯 #1 | S02-0512:ability:static:fff4ed8e0ac25ed9 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于手牌」若我方神力为0张，此军团登场费用-1。 |
 | S02-0512 埃涅阿斯 #2 | S02-0512:ability:static:e44e97f2fb745816 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → resolution:legacy.resolve | 0 | 「位于前排」获得 ABILITY 3。 |
-| S02-0512 埃涅阿斯 #3 | S02-0512:ability:keyword-definition:6692b63a59c971d0 | keyword-definition/keyword-definition | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 挑衅 对方只可进攻拥有挑衅效果的军团，若有多个具有挑衅效果的军团，则可以选择其中1个进行进攻。 |
+| S02-0512 埃涅阿斯 #3 | S02-0512:ability:keyword-definition:6692b63a59c971d0 | keyword-definition/keyword-definition | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 挑衅 对方只可进攻拥有挑衅效果的军团，若有多个具有挑衅效果的军团，则可以选择其中1个进行进攻。 |
 | S02-0512 埃涅阿斯 #4 | S02-0512:ability:death:fe4dc14c5a024047 | death/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw | 1 | 阵亡时 可抽取1张牌。 |
 | S02-0513 亚里士多德 #1 | S02-0513:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
 | S02-0513 亚里士多德 #2 | S02-0513:ability:enter:eef83ec51f2ef093 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:special.domain → resolution:operation.composite-flow | 1 | 登场时 可翻转1张士气。 |
@@ -704,13 +773,13 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-05D1 奥林匹斯 诸神巅 #4 | S02-05D1:ability:setup:cb6a45eff0631d64 | setup/triggered | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.add-morale → resolution:legacy.resolve | 1 | 主神开场即可追加2张额外士气。 |
 | S02-05M1 阿尔忒弥斯 #1 | S02-05M1:ability:friendly-ranged-death:ba2dac5cf1c08527 | friendly-ranged-death/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.flip-morale | 1 | 回合1次 我方远程军团阵亡时，可翻转1张休整的士气。 |
 | S02-05M1 阿尔忒弥斯 #2 | S02-05M1:ability:active:2ddf90ef1e57a50d | active/activated | owner-unreviewed | 我方 回合1次 可消耗并翻转1神力或弃置1张手牌 | trigger:trigger.observe → condition:condition.expression → cost:selection.mode → target:selection.target → target:selection.mode → duration:duration.apply → resolution:legacy.resolve | 3 | 我方 回合1次 可消耗并翻转1神力或弃置1张手牌：选择我方1张费用为3至6的【奥林匹斯】军团，本回合获得 ABILITY 3 或 ABILITY 4。 |
-| S02-05M1 阿尔忒弥斯 #3 | S02-05M1:ability:keyword-definition:62d5e99aeb08acbb | keyword-definition/keyword-definition | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 强攻 此军团因进攻对主宰造成伤害时，额外再造成1点伤害。 |
-| S02-05M1 阿尔忒弥斯 #4 | S02-05M1:ability:keyword-definition:96aa4e9504b12339 | keyword-definition/keyword-definition | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.keyword → duration:duration.apply → resolution:legacy.resolve | 1 | 震击 进攻时，被进攻者左右相邻的军团在本回合中兵力-2000。 |
+| S02-05M1 阿尔忒弥斯 #3 | S02-05M1:ability:keyword-definition:62d5e99aeb08acbb | keyword-definition/keyword-definition | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 强攻 此军团因进攻对主宰造成伤害时，额外再造成1点伤害。 |
+| S02-05M1 阿尔忒弥斯 #4 | S02-05M1:ability:keyword-definition:96aa4e9504b12339 | keyword-definition/keyword-definition | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → duration:duration.apply → resolution:legacy.resolve | 1 | 震击 进攻时，被进攻者左右相邻的军团在本回合中兵力-2000。 |
 | S02-05M2 普罗米修斯 #1 | S02-05M2:ability:active:e4b2c63a32960f8e | active/activated | owner-unreviewed | 我方 回合1次 消耗1神力 | trigger:trigger.observe → condition:condition.expression → cost:special.domain → resolution:special.domain → target:selection.target → resolution:visibility.policy → resolution:operation.move-zone → target:selection.target → target:selection.mode → resolution:operation.move-zone → duration:duration.apply → resolution:legacy.resolve | 3 | 我方 回合1次 消耗1神力：查看牌库顶部3张牌，选择其中1张【奥林匹斯】卡牌，展示并加入手牌，其余卡牌自选顺序返回牌库顶部或底部。 |
 | S02-0601 亚瑟王 #1 | S02-0601:ability:enter:d85ecd5fb722d62d | enter/triggered | composite-definition | 登场时 可消耗1符文 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.move-zone → resolution:special.domain → resolution:operation.composite-flow | 1 | 登场时 可消耗1符文：将1张&lt;王者之剑&gt;叠放至此军团下方。 |
 | S02-0601 亚瑟王 #2 | S02-0601:ability:death:85656f23e734439d | death/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 阵亡时 可将手牌中1张费用不高于4的【圆桌骑士】军团活跃登场。 |
 | S02-0602 兰斯洛特 #1 | S02-0602:ability:enter:1ec4fb001f87c88e | enter/triggered | composite-definition | 登场时 可消耗1符文 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.set-state → resolution:operation.composite-flow | 1 | 登场时 可消耗1符文：获得ABILITY 2。 |
-| S02-0602 兰斯洛特 #2 | S02-0602:ability:keyword-definition:beff9037e2c10a9d | keyword-definition/granted-continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → resolution:operation.keyword → resolution:legacy.resolve | 0 | 冲锋 在登场的回合即可进行进攻。 |
+| S02-0602 兰斯洛特 #2 | S02-0602:ability:keyword-definition:beff9037e2c10a9d | keyword-definition/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.keyword → resolution:legacy.resolve | 0 | 冲锋 在登场的回合即可进行进攻。 |
 | S02-0602 兰斯洛特 #3 | S02-0602:ability:after-kill:e290e1e434e45531 | after-kill/triggered | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → target:selection.mode → target:selection.target → resolution:legacy.resolve | 3 | 击杀时 可选择ABILITY 4或ABILITY 5。 |
 | S02-0602 兰斯洛特 #4 | S02-0602:ability:granted:7a7545729484412a | granted/granted-effect | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.advance-trial → resolution:legacy.resolve | 1 | 试炼+1。 |
 | S02-0602 兰斯洛特 #5 | S02-0602:ability:granted:6235a3f3a12afdbb | granted/granted-effect | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.gain-rune → resolution:legacy.resolve | 1 | 获得1符文。 |
@@ -724,17 +793,17 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0604 加拉哈德 #3 | S02-0604:ability:trial-completed:9d25a05a194bedc1 | trial-completed/triggered | owner-unreviewed | 我方回合 试炼&lt;寻找圣杯之旅&gt;完成后，可弃置此军团 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:cost.discard → resolution:operation.draw → resolution:operation.heal-master → condition:condition.expression → resolution:legacy.resolve | 3 | 我方回合 试炼&lt;寻找圣杯之旅&gt;完成后，可弃置此军团：抽取1张牌，我方主宰可增加1点血量。 |
 | S02-0605 鲍斯 #1 | S02-0605:ability:continuous:5ff487de55c0ca1d | continuous/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:special.domain → resolution:legacy.resolve | 0 | 「位于手牌」我方战场每存在1张【彼界】军团，此军团登场费用-1。 |
 | S02-0605 鲍斯 #2 | S02-0605:ability:attack:82a5bf2622bf4d20 | attack/triggered | owner-unreviewed | 进攻时 可消耗1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 1 | 进攻时 可消耗1士气：本回合获得ABILITY 3。 |
-| S02-0605 鲍斯 #3 | S02-0605:ability:keyword-definition:60bccaeb6d982ea8 | keyword-definition/granted-continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 0 | 强攻 此军团因进攻对主宰造成伤害时，额外再造成1点伤害。 |
+| S02-0605 鲍斯 #3 | S02-0605:ability:keyword-definition:60bccaeb6d982ea8 | keyword-definition/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 0 | 强攻 此军团因进攻对主宰造成伤害时，额外再造成1点伤害。 |
 | S02-0605 鲍斯 #4 | S02-0605:ability:death:290ffa58316ea18b | death/triggered | composite-definition | — | trigger:trigger.observe → resolution:cost.discard → resolution:operation.composite-flow | 1 | 阵亡时 对方弃置1张手牌。 |
 | S02-0606 帕西瓦尔 #1 | S02-0606:ability:trial:bb29c925c9fcdc82 | trial/rule | owner-unreviewed | — | trigger:trigger.observe → rule:special.domain → resolution:legacy.resolve | 1 | 试炼 1 |
 | S02-0606 帕西瓦尔 #2 | S02-0606:ability:enter:798511dfd0a8fb7f | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.gain-rune | 1 | 登场时 获得1符文。 |
 | S02-0606 帕西瓦尔 #3 | S02-0606:ability:attack:0e67ec1e2f1885c6 | attack/triggered | fine-definition | 进攻时 可弃置1张手牌 | trigger:trigger.observe → condition:control.optional → cost:cost.discard → resolution:operation.modify-troops → duration:duration.apply | 1 | 进攻时 可弃置1张手牌：本回合兵力+2000。 |
 | S02-0606 帕西瓦尔 #4 | S02-0606:ability:after-kill:7680beaaf4313595 | after-kill/triggered | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 1 | 击杀时 本回合获得ABILITY 5。 |
-| S02-0606 帕西瓦尔 #5 | S02-0606:ability:keyword-definition:672734be0285300f | keyword-definition/granted-continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 0 | 贯穿 击杀时 在进攻军团后，以此军团剩余的兵力对对方主宰发动1次进攻，此次进攻不会触发“进攻时”效果。 |
+| S02-0606 帕西瓦尔 #5 | S02-0606:ability:keyword-definition:672734be0285300f | keyword-definition/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 0 | 贯穿 击杀时 在进攻军团后，以此军团剩余的兵力对对方主宰发动1次进攻，此次进攻不会触发“进攻时”效果。 |
 | S02-0607 高文 #1 | S02-0607:ability:enter:763a91057766361c | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.gain-rune | 1 | 登场时 获得1符文。 |
 | S02-0607 高文 #2 | S02-0607:ability:attack:25d5c998d14502d7 | attack/triggered | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.modify-troops → duration:duration.apply → cost:special.domain → resolution:operation.set-state → resolution:legacy.resolve | 1 | 进攻时 可消耗X符文。每消耗1符文，本回合此军团兵力+1000，且对对方主宰造成的伤害+1。 |
 | S02-0608 狮心王理查一世 #1 | S02-0608:ability:enter:7aacad3877f7fd4c | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.move-zone → resolution:operation.set-state → resolution:operation.advance-trial → resolution:selection.target → resolution:operation.composite-flow | 1 | 登场时 试炼+2。可从我方战场/手牌/牌库/墓地将最多3张&lt;侍从骑士&gt;叠放至此军团下方，且直到下个我方回合开始前，获得ABILITY 2。 |
-| S02-0608 狮心王理查一世 #2 | S02-0608:ability:keyword-definition:4d1e472a814a1e0b | keyword-definition/granted-continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.keyword → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 0 | 免死 仅1次，即将阵亡时，将兵力在本回合变为1000作为代替。 |
+| S02-0608 狮心王理查一世 #2 | S02-0608:ability:keyword-definition:4d1e472a814a1e0b | keyword-definition/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 0 | 免死 仅1次，即将阵亡时，将兵力在本回合变为1000作为代替。 |
 | S02-0608 狮心王理查一世 #3 | S02-0608:ability:attack:4581df1cc635dd68 | attack/triggered | owner-unreviewed | — | trigger:trigger.observe → resolution:cost.discard → resolution:operation.set-state → resolution:legacy.resolve | 1 | 进攻时 对方进行抵挡/支援需要额外弃置1张手牌，否则本次抵挡/支援无效。 |
 | S02-0608 狮心王理查一世 #4 | S02-0608:ability:attack:0999d120e02e3c50 | attack/triggered | owner-unreviewed | 可弃置下方任意数量&lt;侍从骑士&gt; | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 1 | 可弃置下方任意数量&lt;侍从骑士&gt;：每弃置1张，本回合兵力+1000。 |
 | S02-0609 侍从骑士 #1 | S02-0609:ability:trial:bb29c925c9fcdc82 | trial/rule | owner-unreviewed | — | trigger:trigger.observe → rule:special.domain → resolution:legacy.resolve | 1 | 试炼 1 |
@@ -745,12 +814,12 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0610 芬恩 #3 | S02-0610:ability:after-trial:451b6d549a5c98c4 | after-trial/triggered | owner-unreviewed | 此军团发动试炼后可消耗1符文 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.ready → duration:duration.apply → resolution:operation.set-state → resolution:legacy.resolve | 1 | 此军团发动试炼后可消耗1符文：将此军团转为活跃，且本回合无法再次发动试炼。 |
 | S02-0611 库丘林 #1 | S02-0611:ability:continuous:5745356459e85080 | continuous/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → resolution:legacy.resolve | 0 | 「位于手牌」我方战场上存在&lt;斯卡哈&gt;时，此军团登场费用-2。 |
 | S02-0611 库丘林 #2 | S02-0611:ability:enter:0cc32f023a1b4f11 | enter/triggered | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → resolution:legacy.resolve | 1 | 登场时 直到下个我方回合开始前，此军团「位于前排」获得ABILITY 3。 |
-| S02-0611 库丘林 #3 | S02-0611:ability:keyword-definition:4d1e472a814a1e0b | keyword-definition/granted-continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.keyword → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 0 | 免死 仅1次，即将阵亡时，将兵力在本回合变为1000作为代替。 |
+| S02-0611 库丘林 #3 | S02-0611:ability:keyword-definition:4d1e472a814a1e0b | keyword-definition/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 0 | 免死 仅1次，即将阵亡时，将兵力在本回合变为1000作为代替。 |
 | S02-0611 库丘林 #4 | S02-0611:ability:after-kill:7680beaaf4313595 | after-kill/triggered | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 1 | 击杀时 本回合获得ABILITY 5。 |
-| S02-0611 库丘林 #5 | S02-0611:ability:keyword-definition:672734be0285300f | keyword-definition/granted-continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 0 | 贯穿 击杀时 在进攻军团后，以此军团剩余的兵力对对方主宰发动1次进攻，此次进攻不会触发“进攻时”效果。 |
+| S02-0611 库丘林 #5 | S02-0611:ability:keyword-definition:672734be0285300f | keyword-definition/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 0 | 贯穿 击杀时 在进攻军团后，以此军团剩余的兵力对对方主宰发动1次进攻，此次进攻不会触发“进攻时”效果。 |
 | S02-0612 斯卡哈 #1 | S02-0612:ability:continuous:064a0a1c5382575c | continuous/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → resolution:legacy.resolve | 0 | 「位于手牌」我方战场上存在&lt;库丘林&gt;时，此军团登场费用-2。 |
 | S02-0612 斯卡哈 #2 | S02-0612:ability:enter:af81d1bed4470503 | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.keyword | 1 | 登场时 获得ABILITY 3。 |
-| S02-0612 斯卡哈 #3 | S02-0612:ability:keyword-definition:beff9037e2c10a9d | keyword-definition/granted-continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → resolution:operation.keyword → resolution:legacy.resolve | 0 | 冲锋 在登场的回合即可进行进攻。 |
+| S02-0612 斯卡哈 #3 | S02-0612:ability:keyword-definition:beff9037e2c10a9d | keyword-definition/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.keyword → resolution:legacy.resolve | 0 | 冲锋 在登场的回合即可进行进攻。 |
 | S02-0612 斯卡哈 #4 | S02-0612:ability:attack:c195f409c875e9eb | attack/triggered | owner-unreviewed | 进攻时 可消耗1符文 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.attack-rule → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 1 | 进攻时 可消耗1符文：本回合进攻无损且兵力+2000。 |
 | S02-0613 圣女贞德 #1 | S02-0613:ability:trial:bb29c925c9fcdc82 | trial/rule | owner-unreviewed | — | trigger:trigger.observe → rule:special.domain → resolution:legacy.resolve | 1 | 试炼 1 |
 | S02-0613 圣女贞德 #2 | S02-0613:ability:enter:64f69e75c8f9a3da | enter/triggered | composite-definition | 登场时 可弃置1张手牌 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:cost.discard → resolution:operation.attack-rule → resolution:operation.composite-flow | 1 | 登场时 可弃置1张手牌：我方主宰直到下个我方回合开始前无法被进攻。 |
@@ -761,7 +830,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0614 康斯坦丝 #4 | S02-0614:ability:granted:6235a3f3a12afdbb | granted/granted-effect | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.gain-rune → resolution:legacy.resolve | 1 | 获得1符文。 |
 | S02-0614 康斯坦丝 #5 | S02-0614:ability:granted:45f31f84b8f800cd | granted/granted-effect | owner-unreviewed | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 1 | 发动试炼。 |
 | S02-0615 格温莉安 #1 | S02-0615:ability:continuous:16dc08d7324d1649 | continuous/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → resolution:operation.set-state → resolution:legacy.resolve | 0 | 「位于前排」获得ABILITY 2，且在对方回合此军团兵力+1000。 |
-| S02-0615 格温莉安 #2 | S02-0615:ability:keyword-definition:8a4c9aff096f6526 | keyword-definition/granted-continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.keyword → resolution:legacy.resolve | 0 | 挑衅 对方只可进攻拥有 挑衅 效果的军团，若有多个具有 挑衅效果的军团，则可以选择其中1个进行进攻。 |
+| S02-0615 格温莉安 #2 | S02-0615:ability:keyword-definition:8a4c9aff096f6526 | keyword-definition/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.keyword → resolution:legacy.resolve | 0 | 挑衅 对方只可进攻拥有 挑衅 效果的军团，若有多个具有 挑衅效果的军团，则可以选择其中1个进行进攻。 |
 | S02-0615 格温莉安 #3 | S02-0615:ability:death:99b745c7faa9a5c9 | death/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw → resolution:operation.heal-master → condition:condition.expression → resolution:operation.composite-flow | 3 | 当此军团因效果阵亡时，我方主宰可增加1点血量或抽取1张牌。 |
 | S02-0616 阿麦金 #1 | S02-0616:ability:continuous:5afe2828d587391f | continuous/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → condition:condition.expression → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 此军团休整时，我方试炼军团活跃时不可被进攻。 |
 | S02-0616 阿麦金 #2 | S02-0616:ability:enter:d634145a7ee14bd0 | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.gain-rune | 1 | 登场时 可获得1符文。 |

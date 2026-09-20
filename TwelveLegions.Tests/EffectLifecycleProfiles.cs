@@ -264,6 +264,101 @@ internal static class EffectLifecycleProfiles
             ["multi-target-applicability"] = "一次只修改当前手牌军团的本次打出费用。",
         }) { AdditionalChecks = ["optional-choice", "payment-cancel", "last-health-terminal", "reconnect-payment", "card-remains-on-lethal-cost"] };
 
+    internal static readonly IReadOnlyDictionary<string, string[]> CombatKeywordDefinitionAbilityIds =
+        new SortedDictionary<string, string[]>(StringComparer.Ordinal)
+        {
+            ["taunt"] =
+            [
+                "S02-0302:ability:keyword-definition:eaba79729a9d7a65",
+                "S02-0503:ability:keyword-definition:6692b63a59c971d0",
+                "S02-0512:ability:keyword-definition:6692b63a59c971d0",
+                "S02-0615:ability:keyword-definition:8a4c9aff096f6526",
+            ],
+            ["charge"] =
+            [
+                "S02-0505:ability:keyword-definition:cf232142ca7d10f9",
+                "S02-0602:ability:keyword-definition:beff9037e2c10a9d",
+                "S02-0612:ability:keyword-definition:beff9037e2c10a9d",
+            ],
+            ["shock"] =
+            [
+                "S02-0511:ability:keyword-definition:96aa4e9504b12339",
+                "S02-05M1:ability:keyword-definition:96aa4e9504b12339",
+            ],
+            ["strong-attack"] =
+            [
+                "S02-05M1:ability:keyword-definition:62d5e99aeb08acbb",
+                "S02-0605:ability:keyword-definition:60bccaeb6d982ea8",
+            ],
+            ["piercing"] =
+            [
+                "S02-0606:ability:keyword-definition:672734be0285300f",
+                "S02-0611:ability:keyword-definition:672734be0285300f",
+            ],
+            ["death-immunity"] =
+            [
+                "S02-0608:ability:keyword-definition:4d1e472a814a1e0b",
+                "S02-0611:ability:keyword-definition:4d1e472a814a1e0b",
+            ],
+        };
+
+    private static readonly IReadOnlyDictionary<string, L12LifecycleProfile> CombatKeywordProfiles =
+        new SortedDictionary<string, L12LifecycleProfile>(StringComparer.Ordinal)
+        {
+            ["taunt"] = KeywordProfile("taunt",
+                ("active-state", "L12StructuredCardRules.HasTaunt"),
+                ("attack-candidates", "BuildLegalAttackTargets"),
+                ("attack-revalidation", "TryValidateAttackTarget"),
+                ("presentation", "BuildActiveKeywords")),
+            ["charge"] = KeywordProfile("charge",
+                ("attack-candidates", "BuildLegalAttackTargets"),
+                ("attack-revalidation", "TryValidateAttackTarget"),
+                ("presentation", "BuildActiveKeywords"),
+                ("leave-reset", "ResetCardAfterLeavingField")),
+            ["shock"] = KeywordProfile("shock",
+                ("attack-trigger", "ApplyS2Shock"),
+                ("combat-settlement", "ResolveDefenseCore"),
+                ("presentation", "BuildActiveKeywords"),
+                ("turn-expiry", "ResetTemporaryCardState")),
+            ["strong-attack"] = KeywordProfile("strong-attack",
+                ("active-state", "L12StructuredCardSemantics.HasEffectiveStrongAttack"),
+                ("grant", "GrantStrongAttack"),
+                ("combat-settlement", "Attack"),
+                ("presentation", "BuildActiveKeywords"),
+                ("turn-expiry", "ResetTemporaryCardState")),
+            ["piercing"] = KeywordProfile("piercing",
+                ("printed-identity", "L12StructuredCardRules.HasPrintedKeywordReference"),
+                ("kill-fact-gate", "ResolveTypedKillSourceEvent"),
+                ("printed-settlement", "TryResolveS2FactionAfterAttack"),
+                ("generated-attack", "BeginPiercingAttack"),
+                ("master-target-revalidation", "CanAttackMasterTarget"),
+                ("combat-settlement", "ResolveDefenseCore")),
+            ["death-immunity"] = KeywordProfile("death-immunity",
+                ("grant", "GrantImmortalUntilNextTurnStart"),
+                ("active-state", "HasActiveImmortal"),
+                ("lethal-replacement", "RemoveFromField"),
+                ("presentation", "BuildActiveKeywords"),
+                ("turn-expiry", "ExpireEffectsAtPlayerTurnStart")),
+        };
+
+    private static L12LifecycleProfile KeywordProfile(string keyword,
+        params (string Boundary, string Owner)[] runtimeOwners)
+    {
+        var owners = new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["definition"] = "L12StructuredCardRules.HasKeywordDefinition",
+        };
+        foreach (var (boundary, owner) in runtimeOwners) owners.Add(boundary, owner);
+        return new($"keyword:{keyword}", owners,
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["negated"] = "关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。",
+                ["payment-cancel"] = "关键词定义本身没有费用或支付Prompt；费用属于引用它的父能力。",
+                ["single-candidate-choice"] = "关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。",
+                ["duplicate-submit"] = "关键词定义没有独立提交命令；重复读取规则语义必须无副作用。",
+            }) { AdditionalChecks = ["parent-grant-boundary", "authoritative-consumer", "leave-or-turn-expiry", "reconnect-state"] };
+    }
+
     private static void ValidateOwners(L12LifecycleProfile profile)
     {
         foreach (var owner in profile.RuntimeOwners.Values)
@@ -291,6 +386,7 @@ internal static class EffectLifecycleProfiles
         ValidateOwners(PaidExtendedRange);
         ValidateOwners(ActiveRest);
         ValidateOwners(SelfDamageEntryDiscount);
+        foreach (var profile in CombatKeywordProfiles.Values) ValidateOwners(profile);
         var bindings = new Dictionary<string, L12LifecycleProfile>(StringComparer.Ordinal);
         if (!abilities.TryGetValue(DesertHandSummonAbilityId, out var desertHandSummon)
             || desertHandSummon.CardId != "S02-0207" || desertHandSummon.Trigger != "play"
@@ -376,6 +472,26 @@ internal static class EffectLifecycleProfiles
             .Select(ability => ability.AbilityId);
         if (!selfDamageEntryDiscounts.ToHashSet(StringComparer.Ordinal).SetEquals(SelfDamageEntryDiscountAbilityIds))
             throw new InvalidOperationException("Self-damage entry-discount family changed; review its per-ability bindings.");
+        foreach (var (keyword, ids) in CombatKeywordDefinitionAbilityIds)
+        {
+            var profile = CombatKeywordProfiles[keyword];
+            foreach (var id in ids)
+            {
+                if (!abilities.TryGetValue(id, out var ability) || ability.Trigger != "keyword-definition"
+                    || ability.ExecutionModel is not ("keyword-definition" or "granted-continuous")
+                    || !ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.Keyword
+                        && atom.Parameters.GetValueOrDefault("keywordRef") == keyword)
+                    || !L12StructuredCardRules.HasKeywordDefinition(ability.CardId, keyword))
+                    throw new InvalidOperationException($"Stale reviewed {keyword} keyword definition: {id}");
+                bindings.Add(id, profile);
+            }
+        }
+        var reviewedKeywordIds = CombatKeywordDefinitionAbilityIds.Values.SelectMany(ids => ids)
+            .ToHashSet(StringComparer.Ordinal);
+        var keywordDefinitions = abilities.Values.Where(ability => ability.Trigger == "keyword-definition")
+            .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);
+        if (!keywordDefinitions.SetEquals(reviewedKeywordIds))
+            throw new InvalidOperationException("Combat keyword-definition family changed; review its per-ability bindings.");
         return bindings;
     }
 }

@@ -101,10 +101,10 @@ public sealed partial class L12GameEngine
             });
 
         var candidates = new List<L12TriggerCandidate>();
+        var isPrintedPiercing = L12StructuredCardRules.HasPrintedKeywordReference(source.CardId, "piercing");
         var printedKillTimingIsLegal = killEvent.TriggersPrintedKillTiming
-            && NativeCombatKillCards.Contains(source.CardId)
+            && (NativeCombatKillCards.Contains(source.CardId) || isPrintedPiercing)
             && (source.CardId != "S02-0002" || killEvent.SourceController == State.ActivePlayer);
-        var isPrintedPiercing = source.CardId is "S02-0606" or "S02-0611" or "ST01-01";
         var hasGrantedPiercing = source.CardId == "S02-0608"
             && controller.UsedAbilities.Contains($"crusade-piercing:{source.InstanceId}:{State.TurnSerial}");
         var piercingRoleIsLegal = killEvent.SourceWasAttackingLegion;

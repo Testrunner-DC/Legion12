@@ -790,10 +790,11 @@ public sealed partial class L12GameEngine
             FinishStackItem(item);
             return true;
         }
-        if (card.CardId is "S02-0606" or "S02-0611" or "S02-0608")
+        var hasPrintedPiercing = L12StructuredCardRules.HasPrintedKeywordReference(card.CardId, "piercing");
+        if (hasPrintedPiercing || card.CardId == "S02-0608")
         {
             var eligible = HasEligiblePiercingTriggerFacts(item.Data);
-            var granted = card.CardId != "S02-0608" || eligible
+            var granted = hasPrintedPiercing || eligible
                 && State.Players[item.Controller].UsedAbilities.Remove(
                     $"crusade-piercing:{card.InstanceId}:{State.TurnSerial}");
             if (eligible && granted) BeginPiercingAttack(item.Controller, card);
