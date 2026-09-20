@@ -27,7 +27,8 @@ public sealed partial class L12GameEngine
         if (!_catalog.Cards.TryGetValue(repeatedCardId, out var definition)
             || definition.CardType != "tactic" || IsCounterTactic(repeatedCardId))
         {
-            AddEvent("effect-cancelled", controller, "托勒密十三世没有可再次发动的主动战术效果");
+            RecordPostResolutionGeneratedFailure(controller,
+                "托勒密十三世没有可再次发动的主动战术效果");
             ResumeAfterPostResolutionGeneratedInteraction();
             return;
         }
@@ -76,7 +77,7 @@ public sealed partial class L12GameEngine
         if (L12StructuredCardRules.RequiresPreStackHandPlayTarget(source.CardId)
             && DeclaredEnemyTarget(activation.Controller, target) is null)
         {
-            AddEvent("effect-cancelled", activation.Controller,
+            RecordPostResolutionGeneratedFailure(activation.Controller,
                 $"〈{source.Name}〉的重复效果目标失效；未建立效果", source);
             ResumeAfterPostResolutionGeneratedInteraction();
             return;
@@ -129,7 +130,7 @@ public sealed partial class L12GameEngine
         var master = CreateCard(player.MasterId, $"master-{prompt.PlayerIndex}");
         if (!IsFaithZealotEligibleAbility(player.MasterId, ability))
         {
-            AddEvent("effect-failed", prompt.PlayerIndex,
+            RecordPostResolutionGeneratedFailure(prompt.PlayerIndex,
                 "〈信仰狂热者〉在结算后无法建立所选主宰效果");
             ResumeAfterPostResolutionGeneratedInteraction();
             return;
@@ -144,10 +145,14 @@ public sealed partial class L12GameEngine
             new L12Command("activateAbility", CardInstanceId: master.InstanceId, Ability: ability));
         if (result.Accepted) return;
         State.FreeMasterActivation = null;
-        AddEvent("effect-failed", prompt.PlayerIndex,
+        RecordPostResolutionGeneratedFailure(prompt.PlayerIndex,
             $"〈信仰狂热者〉无法发动所选主宰效果：{result.Error}");
         ResumeAfterPostResolutionGeneratedInteraction();
     }
+
+    private void RecordPostResolutionGeneratedFailure(int controller, string reason,
+        L12CardInstance? card = null)
+        => AddEvent("effect-failed", controller, reason, card is null ? [] : [card]);
 
     private void ResumeAfterPostResolutionGeneratedInteraction()
     {

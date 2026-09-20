@@ -318,7 +318,7 @@ public sealed class RulingClosureRegressionTests
     }
 
     [Fact]
-    public void PtolemyCancelsWhenARepeatedEffectsDeclaredTargetBecomesInvalid()
+    public void PtolemyFailsWhenARepeatedEffectsDeclaredTargetBecomesInvalid()
     {
         var game = Create();
         var player = game.State.Players[0];
@@ -341,8 +341,36 @@ public sealed class RulingClosureRegressionTests
             Choice: target.InstanceId)).Accepted);
 
         Assert.DoesNotContain(game.State.EffectStack, item => item.SourceCardId == "S02-0622");
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
             && entry.Text.Contains("目标失效", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("目标失效", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void PtolemyInvalidRepeatedCardIdentityIsFailedNotCancelled()
+    {
+        var game = Create();
+
+        _ = InvokePrivate(game, "BeginPtolemyRepeatedTacticEffect", 0, "S01-0101");
+
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("没有可再次发动的主动战术效果", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("没有可再次发动的主动战术效果", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void PtolemyRepeatedTargetEffectWithoutAnInitialTargetRemainsNoop()
+    {
+        var game = Create();
+
+        _ = InvokePrivate(game, "BeginPtolemyRepeatedTacticEffect", 0, "S02-0622");
+
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-noop"
+            && entry.Text.Contains("没有合法目标", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("没有合法目标", StringComparison.Ordinal));
     }
 
     [Fact]

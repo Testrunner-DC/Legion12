@@ -1,10 +1,16 @@
 # 十二军团任务台账
 
-## EFFECT-20260920-GENERATED-PLAY-SETTLEMENT-OUTCOME：效果生成免费打出结算结果分类（开发中，未部署）
+## EFFECT-20260920-POST-RESOLUTION-GENERATED-OUTCOME：结算后生成互动结果分类（开发中，未部署）
+
+- 范围：`L12PostResolutionGeneratedEffects`全部两类消费者，托勒密十三世重复主动战术、信仰狂热者免费主宰效果；覆盖4条真正失败出口，初始无目标、主动跳过和实际被无效分别保留独立结果。
+- 实施：身份损坏、声明目标失效、所选主宰能力无法建立/发动统一走`RecordPostResolutionGeneratedFailure`；托勒密重复效果无初始合法目标仍为`effect-noop`。
+- 当前证据：托勒密身份、目标失效2项修复前2/2红；修复后专项3/3、相邻136/136及Focused/Batch规则4204/4204通过，失败0、跳过0、退出0。下一检查点为隔离提交级Release与main同步；未部署。
+
+## EFFECT-20260920-GENERATED-PLAY-SETTLEMENT-OUTCOME：效果生成免费打出结算结果分类（已同步，未部署）
 
 - 范围：李牧、冲田总司共用的`L12EffectGeneratedPlay`事务；覆盖起始来源、合法登场位、声明建立与提交中止4个失败出口，不把玩家主动选择加入手牌或真实响应无效混入。
 - 实施：事务失败统一由`RecordEffectGeneratedPlayFailure`写入`effect-failed`；来源或位置失效不改选、不覆盖，卡牌保留在权威区域。未改卡效、Cost、响应范围或界面布局。
-- 当前证据：位置失效与提交时来源失效2项修复前2/2红；修复后事务级15/15、相邻224/224、效果生成打出/私有区事务静态门禁及Focused/Batch规则4202/4202通过，失败0、跳过0、退出0，并覆盖起始来源无效、无合法登场位。下一检查点为隔离提交级Release与main同步；未部署。
+- 最终证据：位置失效与提交时来源失效2项修复前2/2红；事务级15/15、相邻224/224、效果生成打出/私有区事务静态门禁。`4c5188266ca8db9ec3c8fcf41000e39268ca221b`干净Release规则4202/4202、平台137/137、UI326及全部门禁通过，退出0并由`origin/main`精确读回。回执位于`D:/GPT/Legion12/artifacts/deploy/4c5188266ca8db9ec3c8fcf41000e39268ca221b/`；未部署。
 
 ## EFFECT-20260920-SIMPLE-TRIGGER-SETTLEMENT-OUTCOME：结构化简单触发结算结果分类（已同步，未部署）
 
