@@ -5,14 +5,14 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`93789b83891ef334341ece10c7b2e477bdfaf5b9701800dca360100ee2ba5ae2`。
+内容指纹：`1e5b136aad51da40d5a0b5a16218252bbbe9dcc27600040832caa377d8e51c9b`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
 | composite-definition | 201 |
 | fine-definition | 86 |
-| owner-unreviewed | 245 |
-| shared-rule-owner | 154 |
+| owner-unreviewed | 244 |
+| shared-rule-owner | 155 |
 
 fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；shared-rule-owner = 精确能力已绑定共用规则入口及适用性档案；owner-unreviewed = 还需定位实际入口。任何一种归属证据均不等于生命周期验收通过。
 同卡同触发只算候选，不能把另一能力的程序继承为本能力已覆盖。无能力卡单列，不能从分母中静默消失。
@@ -100,6 +100,16 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 - no-target：规则能力不选择对象；其他效果选择该卡时由目标效果自己的声明协议处理。
 - payment-cancel：规则能力没有费用；以该卡支付其他费用时仍按支付效果处理，并在离场后进入所有者墓地。
 - target-invalidated：没有自身目标；通用回手/回库候选与提交均从同一身份判断，已离区实例不得替换。
+
+### continuous:opponent-turn-field-rule
+
+精确绑定能力数：1。运行入口：authoritative-recalculation = L12GameEngine.RecalculateContinuousTroops；cost-derivation = L12StructuredCardRules.OpponentTurnCostModifier；definition = L12StructuredCardSemantics.OpponentTurnFieldRule；front-troops-derivation = L12StructuredCardRules.OpponentTurnFrontTroopsBonus。
+
+- multi-target-applicability：每个同名实例分别重算，不共享或累积到其他军团。
+- negated：持续能力不独立入栈，不能作为一次效果被无效。
+- no-target：持续能力只修改自身衍生数值，不创建对象选择。
+- payment-cancel：能力没有费用；衍生费用只供其他支付协议读取。
+- target-invalidated：没有效果目标；每次快照与结算前按当前回合、控制者和位置重算。
 
 ### continuous:relic-zone-limit-exempt
 
@@ -269,6 +279,10 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0212:ability:static:6d8b57888db9839b | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.DerivedCardVanishRuleKeepsPriorityOverTheGraveyardLifecycle / S01-0212 | derived-card-precedence |
 | S01-0212:ability:static:6d8b57888db9839b | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.EveryFieldDepartureDestinationIsReplacedWithTheOwnersGraveyard / S01-0212 | all-departure-destinations, controller-owner-split, hand-filter, library-filter, owner-graveyard |
 | S01-0212:ability:static:6d8b57888db9839b | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.SpecialDeckAndDepartureDefinitionsMatchTheClosedFamilyWithoutReadingDisplayText / S01-0212 | exact-card-family, text-independent |
+| S01-0212:ability:static:2f33fb3652e7bd28 | TwelveLegions.Tests.OpponentTurnFieldRuleLifecycleProfileTests.LeavingTheFieldClearsBothDerivedValues / S01-0212 | leave-reset |
+| S01-0212:ability:static:2f33fb3652e7bd28 | TwelveLegions.Tests.OpponentTurnFieldRuleLifecycleProfileTests.OpponentTurnFieldRuleIsAClosedStructuredFamily / S01-0212 | cost-and-troops-same-definition, exact-card-family |
+| S01-0212:ability:static:2f33fb3652e7bd28 | TwelveLegions.Tests.OpponentTurnFieldRuleLifecycleProfileTests.OpponentTurnUsesCurrentControllerRatherThanPrintedOwner / S01-0212 | current-controller |
+| S01-0212:ability:static:2f33fb3652e7bd28 | TwelveLegions.Tests.OpponentTurnFieldRuleLifecycleProfileTests.RuntimeRecalculatesCostAndTroopsFromCurrentTurnAndRow / S01-0212 | back-row, controller-turn, front-row, opponent-turn, reconnect-idempotence |
 | S01-0213:ability:static:9ba2f4f5354a2a05 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0213 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0214:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0214 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0214:ability:active:30e47404439f2371 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-0214 | active-rest-cost, runtime-branch-mapping |
@@ -557,7 +571,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0211 托勒密十三世 #2 | S01-0211:ability:enter:329b99bbae76f963 | enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.move-zone → duration:duration.apply → resolution:operation.composite-flow | 1 | 登场时 再次发动本回合打出的上1张&lt;主动战术&gt;效果 |
 | S01-0212 陵墓守卫 #1 | S01-0212:ability:static:6d8b57888db9839b | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone | 0 | 规则上，此军团构筑时不计入卡组数量，且不能进入手牌和牌库，游戏开始时置入墓地，此军团以任何形式离场均视为置入所有者墓地 |
 | S01-0212 陵墓守卫 #2 | S01-0212:ability:static:025749085872cdff | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → resolution:legacy.resolve | 0 | 我方回合 此军团在战场上可视为1张士气 |
-| S01-0212 陵墓守卫 #3 | S01-0212:ability:static:2f33fb3652e7bd28 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.modify-troops | 0 | 对方回合 此军团费用+1，位于前排时兵力+1000 |
+| S01-0212 陵墓守卫 #3 | S01-0212:ability:static:2f33fb3652e7bd28 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.modify-troops | 0 | 对方回合 此军团费用+1，位于前排时兵力+1000 |
 | S01-0213 锡瓦的卡巴 #1 | S01-0213:ability:static:9ba2f4f5354a2a05 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」进攻距离+1，远程进攻无损。 |
 | S01-0213 锡瓦的卡巴 #2 | S01-0213:ability:after-attack:55cfe31dc7ed5969 | after-attack/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:cost.pay-morale → resolution:operation.move-zone → resolution:operation.ready → resolution:operation.rest | 1 | 对方 进攻后：此军团可从手牌无需消耗费用活跃登场。若进行以上操作，则下个我方重置阶段，我方1张休整的士气无法转为活跃 |
 | S01-0214 克利奥帕特拉七世 #1 | S01-0214:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |

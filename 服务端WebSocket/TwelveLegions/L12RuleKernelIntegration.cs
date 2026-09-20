@@ -2328,7 +2328,9 @@ public sealed partial class L12GameEngine
                 var card = player.Field[row][slot];
                 if (card is null || !IsFieldLegion(card)) continue;
                 card.EffectiveProfession = L12StructuredCardRules.EffectiveProfession(card, row);
-                card.ContinuousCostModifier = card.CardId == "S01-0212" && State.ActivePlayer != player.PlayerIndex ? 1 : 0;
+                card.ContinuousCostModifier = State.ActivePlayer != player.PlayerIndex
+                    ? L12StructuredCardRules.OpponentTurnCostModifier(card.CardId)
+                    : 0;
                 var bonus = GetTurnAndPositionContinuousTroops(player, card, row, slot);
                 L12DerivedStats.ApplyContinuousModifiers(card, bonus, globalModifier, State.TurnSerial);
             }

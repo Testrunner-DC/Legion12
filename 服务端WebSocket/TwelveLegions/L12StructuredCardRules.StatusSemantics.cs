@@ -5,6 +5,7 @@ public sealed record L12PrintedEntryCostRule(string Condition, int Adjustment, i
     string? Faction = null, string? ReferenceCardId = null);
 public sealed record L12HandPlayBlockRule(string BlockedCardType, bool AllowsSameCardId, int Priority,
     string Reason);
+public sealed record L12OpponentTurnFieldRule(int CostAdjustment, int FrontRowTroopsBonus);
 
 /// <summary>
 /// Runtime identity predicates backed by the structured card rule layer.
@@ -63,6 +64,11 @@ public static class L12StructuredCardSemantics
         {
             TombGuardCardId, ProliferatingScarabCardId,
         };
+    private static readonly Dictionary<string, L12OpponentTurnFieldRule> OpponentTurnFieldRules =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            [TombGuardCardId] = new(1, 1000),
+        };
     private static readonly HashSet<string> AttachedStrongAttackCards = new(StringComparer.OrdinalIgnoreCase)
     {
         KingsSwordCardId,
@@ -104,6 +110,9 @@ public static class L12StructuredCardSemantics
 
     public static bool HasOutOfDeckGraveyardLifecycle(string? cardId)
         => cardId is not null && OutOfDeckGraveyardLifecycleCards.Contains(cardId);
+
+    public static L12OpponentTurnFieldRule? OpponentTurnFieldRule(string? cardId)
+        => cardId is null ? null : OpponentTurnFieldRules.GetValueOrDefault(cardId);
 
     public static bool IsGram(string? cardId)
         => string.Equals(cardId, GramCardId, StringComparison.OrdinalIgnoreCase);

@@ -595,6 +595,32 @@ internal static class EffectLifecycleProfiles
            && L12StructuredCardSemantics.HasOutOfDeckGraveyardLifecycle(ability.CardId)
            && ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.MoveZone);
 
+    internal const string OpponentTurnFieldRuleAbilityId =
+        "S01-0212:ability:static:2f33fb3652e7bd28";
+
+    private static readonly L12LifecycleProfile OpponentTurnFieldRule =
+        new("continuous:opponent-turn-field-rule",
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["definition"] = "L12StructuredCardSemantics.OpponentTurnFieldRule",
+                ["cost-derivation"] = "L12StructuredCardRules.OpponentTurnCostModifier",
+                ["front-troops-derivation"] = "L12StructuredCardRules.OpponentTurnFrontTroopsBonus",
+                ["authoritative-recalculation"] = "RecalculateContinuousTroops",
+            },
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["no-target"] = "持续能力只修改自身衍生数值，不创建对象选择。",
+                ["negated"] = "持续能力不独立入栈，不能作为一次效果被无效。",
+                ["payment-cancel"] = "能力没有费用；衍生费用只供其他支付协议读取。",
+                ["target-invalidated"] = "没有效果目标；每次快照与结算前按当前回合、控制者和位置重算。",
+                ["multi-target-applicability"] = "每个同名实例分别重算，不共享或累积到其他军团。",
+            })
+        {
+            AdditionalChecks = ["exact-card-family", "opponent-turn", "controller-turn", "front-row",
+                "back-row", "current-controller", "cost-and-troops-same-definition", "leave-reset",
+                "reconnect-idempotence"],
+        };
+
     internal static readonly string[] PureSummonTurnCounterProtectionAbilityIds =
     [
         "S01-0201:ability:static:7d31de8999ce168a",
@@ -690,6 +716,7 @@ internal static class EffectLifecycleProfiles
         ValidateOwners(HandPlayBlock);
         ValidateOwners(RelicZoneLimitExempt);
         ValidateOwners(OutOfDeckGraveyardLifecycle);
+        ValidateOwners(OpponentTurnFieldRule);
         ValidateOwners(SummonTurnCounterProtection);
         ValidateOwners(RamsesProtectionAndEntryCost);
         var bindings = new Dictionary<string, L12LifecycleProfile>(StringComparer.Ordinal);
@@ -870,6 +897,18 @@ internal static class EffectLifecycleProfiles
             .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);
         if (!outOfDeckGraveyardLifecycles.SetEquals(OutOfDeckGraveyardLifecycleAbilityIds))
             throw new InvalidOperationException("Out-of-deck graveyard lifecycle family changed; review its per-ability bindings.");
+        if (!abilities.TryGetValue(OpponentTurnFieldRuleAbilityId, out var opponentTurnFieldRule)
+            || opponentTurnFieldRule.ExecutionModel != "continuous"
+            || L12StructuredCardSemantics.OpponentTurnFieldRule(opponentTurnFieldRule.CardId) is null)
+            throw new InvalidOperationException($"Stale reviewed opponent-turn field rule: {OpponentTurnFieldRuleAbilityId}");
+        bindings.Add(OpponentTurnFieldRuleAbilityId, OpponentTurnFieldRule);
+        var opponentTurnFieldRules = abilities.Values
+            .Where(ability => ability.ExecutionModel == "continuous"
+                && L12StructuredCardSemantics.OpponentTurnFieldRule(ability.CardId) is not null
+                && ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.ModifyTroops))
+            .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);
+        if (!opponentTurnFieldRules.SetEquals([OpponentTurnFieldRuleAbilityId]))
+            throw new InvalidOperationException("Opponent-turn field-rule family changed; review its per-ability bindings.");
         foreach (var id in PureSummonTurnCounterProtectionAbilityIds)
         {
             if (!abilities.TryGetValue(id, out var ability) || ability.ExecutionModel != "continuous"

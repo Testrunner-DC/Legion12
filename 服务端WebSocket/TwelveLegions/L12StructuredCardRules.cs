@@ -116,7 +116,6 @@ public static partial class L12StructuredCardRules
         = new Dictionary<string, int>(StringComparer.Ordinal)
         {
             ["S01-0107"] = 1000,
-            ["S01-0212"] = 1000,
             ["S01-0312"] = 1000,
             ["S02-0004"] = 1000,
             ["S02-0007"] = 1000,
@@ -256,7 +255,11 @@ public static partial class L12StructuredCardRules
         => ActiveRestAbilities.Contains($"{cardId}|{ability}");
 
     public static int OpponentTurnFrontTroopsBonus(string cardId)
-        => OpponentTurnFrontTroopsBonuses.GetValueOrDefault(cardId);
+        => L12StructuredCardSemantics.OpponentTurnFieldRule(cardId)?.FrontRowTroopsBonus
+           ?? OpponentTurnFrontTroopsBonuses.GetValueOrDefault(cardId);
+
+    public static int OpponentTurnCostModifier(string cardId)
+        => L12StructuredCardSemantics.OpponentTurnFieldRule(cardId)?.CostAdjustment ?? 0;
 
     public static bool HasAnyRowRangeBonus(L12CardInstance card)
         => CombatProfile(card, 0).HasRangeBonus || CombatProfile(card, 1).HasRangeBonus;
