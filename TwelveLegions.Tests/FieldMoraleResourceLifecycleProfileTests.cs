@@ -345,4 +345,38 @@ public sealed class FieldMoraleResourceLifecycleProfileTests
         Assert.Equal("以休整〈陵墓守卫〉支付1士气", item.Data["paidCostSummary"]);
         Assert.True(guard.Tapped);
     }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0212")]
+    public void StaleFieldResourceSelectionReopensActivePaymentWithoutSubstitutingOrdinaryMorale()
+    {
+        var game = Create(92664);
+        var player = game.State.Players[0];
+        var source = Card("S01-02C1", "faction-0");
+        var guard = Card("S01-0212", "active-retry-guard");
+        var ordinary = new L12MoraleCard { CardId = "S01-02C1", InstanceId = "active-retry-morale" };
+        player.Field[0][0] = guard;
+        player.Morale.Add(ordinary);
+
+        var opened = Assert.IsType<CommandResult>(Call(game, "CommitActiveAbility", 0, source,
+            "sunDraw", null, null, null, null));
+        Assert.True(opened.Accepted, opened.Error);
+        var first = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(guard.InstanceId, first.ValidChoices);
+        Assert.Contains(ordinary.InstanceId, first.ValidChoices);
+        guard.Tapped = true;
+
+        var stale = game.Handle(0, new L12Command("resolvePrompt", PromptId: first.PromptId,
+            CardInstanceIds: [guard.InstanceId]));
+
+        Assert.True(stale.Accepted, stale.Error);
+        var retry = Assert.Single(game.State.PendingPrompts);
+        Assert.NotEqual(first.PromptId, retry.PromptId);
+        Assert.DoesNotContain(guard.InstanceId, retry.ValidChoices);
+        Assert.Contains(ordinary.InstanceId, retry.ValidChoices);
+        Assert.Contains("cancel", retry.ValidChoices);
+        Assert.Contains("已失效", retry.Data["retryReason"]);
+        Assert.False(ordinary.Tapped);
+        Assert.Empty(game.State.EffectStack);
+    }
 }

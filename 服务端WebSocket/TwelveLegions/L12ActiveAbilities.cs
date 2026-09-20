@@ -2,6 +2,8 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
+    private const string ActivePaymentSelectionInvalidError = "选择的支付资源已失效或数量不正确";
+
     // 〈信仰狂热者〉只能触发卡面明确写有“消耗士气”的主宰效果。“返还士气”、
     // 神力、符文、主动休整以及需要既成攻防/位移参照的时点效果都不在此列。
     // 显式列出 22 张可构筑主宰与 6 张主神，避免新增能力因通用费用函数而被默认纳入。
@@ -391,7 +393,7 @@ public sealed partial class L12GameEngine
         }
         if (selectedResourceIds is not null
             && !CanConsumeSelectedResources(player, moraleCost, selectedResourceIds, excludedResourceIds))
-            return CommandResult.Reject("选择的支付资源已失效或数量不正确");
+            return CommandResult.Reject(ActivePaymentSelectionInvalidError);
         var returnPrepaid = false;
         if (declaredReturnIds is not null)
         {
@@ -402,7 +404,7 @@ public sealed partial class L12GameEngine
         if (selectedResourceIds is not null)
         {
             if (!TryConsumeSelectedResources(player, moraleCost, selectedResourceIds, excludedResourceIds))
-                return CommandResult.Reject("选择的支付资源已失效或数量不正确");
+                return CommandResult.Reject(ActivePaymentSelectionInvalidError);
             // 下层各阵营效果仍通过统一 ConsumeMorale 申报费用；以临时士气作为一次性预付凭证，避免重复扣费。
             player.TemporaryMorale += moraleCost;
         }
@@ -510,6 +512,40 @@ public sealed partial class L12GameEngine
         PushEffect(playerIndex, source, "active", "主动效果", data: data);
         if (moraleReturnedByMasterEffect > 0)
             QueueS2MasterMoraleReturnTriggers(playerIndex, source, moraleReturnedByMasterEffect);
+        return CommandResult.Ok();
+    }
+
+    private CommandResult RetryActiveMoralePaymentAfterRejectedSelection(L12Prompt prompt,
+        L12CardInstance source, IReadOnlyCollection<string> selectedReturnIds, CommandResult failure)
+    {
+        if (!string.Equals(failure.Error, ActivePaymentSelectionInvalidError, StringComparison.Ordinal))
+            return failure;
+        var player = State.Players[prompt.PlayerIndex];
+        var ability = prompt.Data.GetValueOrDefault("ability") ?? string.Empty;
+        var target = prompt.Data.GetValueOrDefault("target");
+        if (HasUsedLimitedActiveAbility(player, source.CardId, source.InstanceId, ability)
+            || ValidatePublicActiveDeclarationBeforePayment(prompt.PlayerIndex, source, ability, target) is not null)
+            return failure;
+
+        var quote = QuoteActiveMorale(player, source, ability, target);
+        var reserved = ActiveAbilityReservedResourceIds(player, source, ability, target,
+            reserveInternalCosts: quote.Surcharge > 0);
+        var excluded = selectedReturnIds.Concat(reserved)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (quote.Total <= 0 || ActiveResourceCountExcluding(player, excluded) < quote.Total)
+            return failure;
+
+        var paymentData = new Dictionary<string, string>
+        {
+            ["sourceId"] = source.InstanceId,
+            ["sourceCardId"] = source.CardId,
+            ["ability"] = ability,
+            ["target"] = target ?? string.Empty,
+            ["retryReason"] = "上次选择的支付资源已失效，请重新选择或取消发动",
+        };
+        if (selectedReturnIds.Count > 0) paymentData["returnIds"] = string.Join('|', selectedReturnIds);
+        CreateResourcePaymentPrompt(prompt.PlayerIndex, quote.Total, "active-morale-choice", null,
+            paymentData, excluded, allowCancel: true);
         return CommandResult.Ok();
     }
 

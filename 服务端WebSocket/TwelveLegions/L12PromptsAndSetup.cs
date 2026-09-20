@@ -1084,9 +1084,13 @@ public sealed partial class L12GameEngine
         if (source is null) return CommandResult.Reject("主动效果来源已不在合法区域");
         var returnIds = (prompt.Data.GetValueOrDefault("returnIds") ?? string.Empty)
             .Split('|', StringSplitOptions.RemoveEmptyEntries);
-        return CommitActiveAbility(prompt.PlayerIndex, source, prompt.Data.GetValueOrDefault("ability") ?? string.Empty,
+        var result = CommitActiveAbility(prompt.PlayerIndex, source,
+            prompt.Data.GetValueOrDefault("ability") ?? string.Empty,
             prompt.Data.GetValueOrDefault("target"), selectedResourceIds: chosen,
             selectedReturnIds: returnIds.Length == 0 ? null : returnIds);
+        return result.Accepted
+            ? result
+            : RetryActiveMoralePaymentAfterRejectedSelection(prompt, source, returnIds, result);
     }
 
     private CommandResult ResolveActiveReturnMoraleChoice(L12Prompt prompt, List<string> chosen)
