@@ -5,14 +5,14 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`6f51bd982b9229abeb2660b07386bdc97086e58ec25996673d09a60b54a2df0d`。
+内容指纹：`9f7a71c2aa1aa63b19ca9918b85d261691ac39cad539134f6e0143fceeeefe52`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
 | composite-definition | 201 |
 | fine-definition | 86 |
-| owner-unreviewed | 252 |
-| shared-rule-owner | 147 |
+| owner-unreviewed | 247 |
+| shared-rule-owner | 152 |
 
 fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；shared-rule-owner = 精确能力已绑定共用规则入口及适用性档案；owner-unreviewed = 还需定位实际入口。任何一种归属证据均不等于生命周期验收通过。
 同卡同触发只算候选，不能把另一能力的程序继承为本能力已覆盖。无能力卡单列，不能从分母中静默消失。
@@ -90,6 +90,16 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 - no-target：持续保护与持续减费均不创建效果对象。
 - payment-cancel：保护没有费用；登场资源支付取消由公共手牌打出协议处理。
 - target-invalidated：保护按当前回合和堆叠来源复验；减费在支付提交时按当前场上陵墓守卫复算。
+
+### continuous:relic-zone-limit-exempt
+
+精确绑定能力数：5。运行入口：artifact-zone-placement = L12GameEngine.PlaceArtifactInRelicZone；definition = L12StructuredCardSemantics.IgnoresRelicZoneLimit。
+
+- multi-target-applicability：每张符合身份的圣物独立进入额外圣物位，不替换既有主圣物。
+- negated：规则持续生效且不独立入栈，不能作为一次效果被无效。
+- no-target：持续上限豁免不选择对象；仅决定该圣物进入主圣物位或额外圣物位。
+- payment-cancel：豁免不改变打出费用；支付取消仍由手牌打出协议处理。
+- target-invalidated：没有效果目标；落位时按当前主圣物位状态重新判断。
 
 ### hand-play:self-damage-entry-discount
 
@@ -249,6 +259,16 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0214:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0214 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0214:ability:active:30e47404439f2371 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-0214 | active-rest-cost, runtime-branch-mapping |
 | S01-0215:ability:active:6984859bdd4fa8b1 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-0215 | active-rest-cost, runtime-branch-mapping |
+| S01-0216:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.ANameContainingCanopicDoesNotExemptAnUnrelatedArtifact / S01-0216 | ordinary-artifact-replaces |
+| S01-0216:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.EmptyPrimarySlotReceivesTheFirstExemptArtifact / S01-0216 | primary-empty |
+| S01-0216:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.RelicZoneLimitExemptDefinitionsMatchTheClosedFamily / S01-0216 | exact-card-family, primary-occupied |
+| S01-0217:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.RelicZoneLimitExemptDefinitionsMatchTheClosedFamily / S01-0217 | exact-card-family, primary-occupied |
+| S01-0217:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.ZhugeGeneratedArtifactPlayUsesTheSharedPlacementKernel / S01-0217 | zhuge-generated-play |
+| S01-0218:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.EffectGeneratedArtifactPlayUsesTheSameExemptionIdentity / S01-0218 | effect-generated-play |
+| S01-0218:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.RelicZoneLimitExemptDefinitionsMatchTheClosedFamily / S01-0218 | exact-card-family, primary-occupied |
+| S01-0219:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.GmPlacementUsesTheSharedArtifactZoneRule / S01-0219 | gm-play |
+| S01-0219:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.RelicZoneLimitExemptDefinitionsMatchTheClosedFamily / S01-0219 | exact-card-family, primary-occupied |
+| S01-0220:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.RelicZoneLimitExemptDefinitionsMatchTheClosedFamily / S01-0220 | exact-card-family, primary-occupied |
 | S01-0301:ability:static:71dd875155781eb0 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.PrintedEntryCostDefinitionsMatchTheReviewedCardFamily / S01-0301 | condition-false, display-and-payment-parity |
 | S01-0302:ability:static:acc29b0ca499d087 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.PrintedEntryCostDefinitionsMatchTheReviewedCardFamily / S01-0302 | condition-false, display-and-payment-parity |
 | S01-0303:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.EveryPrintedSelfDamageDiscountUsesOneHandPlayCostProtocol / S01-0303 | last-health-terminal, optional-choice, reconnect-payment |
@@ -529,15 +549,15 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0215 安卡神碑 #2 | S01-0215:ability:active:6984859bdd4fa8b1 | active/activated | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → target:selection.mode → cost:cost.rest-source → resolution:legacy.resolve | 3 | 主动休整 选择 ABILITY 3 或 ABILITY 4。 |
 | S01-0215 安卡神碑 #3 | S01-0215:ability:mode-ready-guard:3e3294affff84b58 | mode-ready-guard/granted-effect | owner-unreviewed | 弃置1张手牌 | trigger:trigger.observe → target:selection.target → cost:cost.discard → resolution:operation.ready → resolution:legacy.resolve | 1 | 弃置1张手牌：选择我方1张休整的&lt;陵墓守卫&gt;转为活跃。 |
 | S01-0215 安卡神碑 #4 | S01-0215:ability:mode-rest-and-draw:8c1a03af8e682c53 | mode-rest-and-draw/granted-effect | owner-unreviewed | 将我方1张&lt;陵墓守卫&gt;转为休整 | trigger:trigger.observe → target:selection.target → cost:operation.rest → resolution:operation.draw → resolution:legacy.resolve | 1 | 将我方1张&lt;陵墓守卫&gt;转为休整：抽取1张牌。 |
-| S01-0216 卡诺匹斯箱 #1 | S01-0216:ability:static:bf632dc8776cd134 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 规则上，名字包含&lt;卡诺匹斯&gt;的圣物不计入圣物区上限 |
+| S01-0216 卡诺匹斯箱 #1 | S01-0216:ability:static:bf632dc8776cd134 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 规则上，名字包含&lt;卡诺匹斯&gt;的圣物不计入圣物区上限 |
 | S01-0216 卡诺匹斯箱 #2 | S01-0216:ability:enter:5556e829df71990d | enter/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → cost:cost.discard → resolution:operation.move-zone → resolution:operation.shuffle → resolution:visibility.policy → resolution:special.domain → resolution:operation.composite-flow | 4 | 登场时 查看我方牌库，选择1张名字包含&lt;卡诺匹斯罐&gt;的圣物展示并加入手牌，重洗牌库。随后我方主宰增加1点血量，并弃置此圣物 |
-| S01-0217 卡诺匹斯罐 一 #1 | S01-0217:ability:static:bf632dc8776cd134 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 规则上，名字包含&lt;卡诺匹斯&gt;的圣物不计入圣物区上限 |
+| S01-0217 卡诺匹斯罐 一 #1 | S01-0217:ability:static:bf632dc8776cd134 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 规则上，名字包含&lt;卡诺匹斯&gt;的圣物不计入圣物区上限 |
 | S01-0217 卡诺匹斯罐 一 #2 | S01-0217:ability:enter:8ea3b4d8050e35b5 | enter/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → cost:cost.discard → resolution:operation.damage-master → resolution:operation.modify-troops → resolution:operation.move-zone → resolution:operation.keyword → duration:duration.apply → resolution:operation.composite-flow | 3 | 登场时 选择我方1张【太阳城】军团，本回合兵力+2000并获得强攻。随后弃置此圣物。（进攻对主宰造成额外1点伤害） |
-| S01-0218 卡诺匹斯罐 二 #1 | S01-0218:ability:static:bf632dc8776cd134 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 规则上，名字包含&lt;卡诺匹斯&gt;的圣物不计入圣物区上限 |
+| S01-0218 卡诺匹斯罐 二 #1 | S01-0218:ability:static:bf632dc8776cd134 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 规则上，名字包含&lt;卡诺匹斯&gt;的圣物不计入圣物区上限 |
 | S01-0218 卡诺匹斯罐 二 #2 | S01-0218:ability:enter:81c513f1ff31f50a | enter/triggered | composite-definition | — | trigger:trigger.observe → cost:cost.discard → resolution:operation.move-zone → duration:duration.apply → resolution:operation.composite-flow | 3 | 登场时 本回合我方从手牌中打出的下1张战术卡无需消耗费用。随后弃置此圣物 |
-| S01-0219 卡诺匹斯罐 三 #1 | S01-0219:ability:static:bf632dc8776cd134 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 规则上，名字包含&lt;卡诺匹斯&gt;的圣物不计入圣物区上限 |
+| S01-0219 卡诺匹斯罐 三 #1 | S01-0219:ability:static:bf632dc8776cd134 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 规则上，名字包含&lt;卡诺匹斯&gt;的圣物不计入圣物区上限 |
 | S01-0219 卡诺匹斯罐 三 #2 | S01-0219:ability:enter:791d664310509f08 | enter/triggered | composite-definition | — | trigger:trigger.observe → cost:cost.discard → resolution:operation.move-zone → duration:duration.apply → resolution:operation.composite-flow | 3 | 登场时 本回合获得2点临时士气。随后弃置此圣物 |
-| S01-0220 卡诺匹斯罐 四 #1 | S01-0220:ability:static:bf632dc8776cd134 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 规则上，名字包含&lt;卡诺匹斯&gt;的圣物不计入圣物区上限 |
+| S01-0220 卡诺匹斯罐 四 #1 | S01-0220:ability:static:bf632dc8776cd134 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 规则上，名字包含&lt;卡诺匹斯&gt;的圣物不计入圣物区上限 |
 | S01-0220 卡诺匹斯罐 四 #2 | S01-0220:ability:enter:5ef43e6bebcbe561 | enter/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → cost:cost.discard → resolution:operation.move-zone → resolution:operation.keyword → duration:duration.apply → resolution:operation.composite-flow | 3 | 登场时 选择我方最多2张【太阳城】军团，直到我方下个回合开始前获得免死。随后弃置此圣物。（仅1次，即将 |
 | S01-0220 卡诺匹斯罐 四 #3 | S01-0220:ability:death:00f139f8bc316591 | death/triggered | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.modify-troops → duration:duration.apply | 1 | 阵亡时，将兵力在本回合变为1000作为代替） |
 | S01-0221 杜阿特之门 #1 | S01-0221:ability:play:4b2b6b45cea1e729 | play/activated | composite-definition | — | trigger:trigger.observe → condition:condition.expression → target:selection.target → target:selection.mode → resolution:operation.move-zone → resolution:operation.composite-flow | 3 | 选择以下一项。·击杀对方1张兵力不高于5000的军团。·选择墓地最多1张&lt;杜阿特之门&gt;以外的【太阳城】卡牌加入手牌 |

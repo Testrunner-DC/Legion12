@@ -529,6 +529,36 @@ internal static class EffectLifecycleProfiles
                 "display-and-submit-parity", "reconnect-derived-state"],
         };
 
+    internal static readonly string[] RelicZoneLimitExemptAbilityIds =
+    [
+        "S01-0216:ability:static:bf632dc8776cd134",
+        "S01-0217:ability:static:bf632dc8776cd134",
+        "S01-0218:ability:static:bf632dc8776cd134",
+        "S01-0219:ability:static:bf632dc8776cd134",
+        "S01-0220:ability:static:bf632dc8776cd134",
+    ];
+
+    private static readonly L12LifecycleProfile RelicZoneLimitExempt =
+        new("continuous:relic-zone-limit-exempt",
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["definition"] = "L12StructuredCardSemantics.IgnoresRelicZoneLimit",
+                ["artifact-zone-placement"] = "PlaceArtifactInRelicZone",
+            },
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["no-target"] = "持续上限豁免不选择对象；仅决定该圣物进入主圣物位或额外圣物位。",
+                ["negated"] = "规则持续生效且不独立入栈，不能作为一次效果被无效。",
+                ["payment-cancel"] = "豁免不改变打出费用；支付取消仍由手牌打出协议处理。",
+                ["target-invalidated"] = "没有效果目标；落位时按当前主圣物位状态重新判断。",
+                ["multi-target-applicability"] = "每张符合身份的圣物独立进入额外圣物位，不替换既有主圣物。",
+            })
+        {
+            AdditionalChecks = ["exact-card-family", "artifact-only", "primary-empty", "primary-occupied",
+                "ordinary-artifact-replaces", "hand-play", "effect-generated-play", "zhuge-generated-play",
+                "gm-play", "reconnect-zone-state"],
+        };
+
     internal static readonly string[] PureSummonTurnCounterProtectionAbilityIds =
     [
         "S01-0201:ability:static:7d31de8999ce168a",
@@ -621,6 +651,7 @@ internal static class EffectLifecycleProfiles
         ValidateOwners(PrintedEntryCost);
         ValidateOwners(StructuredHandCost);
         ValidateOwners(HandPlayBlock);
+        ValidateOwners(RelicZoneLimitExempt);
         ValidateOwners(SummonTurnCounterProtection);
         ValidateOwners(RamsesProtectionAndEntryCost);
         var bindings = new Dictionary<string, L12LifecycleProfile>(StringComparer.Ordinal);
@@ -776,6 +807,18 @@ internal static class EffectLifecycleProfiles
             .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);
         if (!handPlayBlocks.SetEquals(HandPlayBlockAbilityIds))
             throw new InvalidOperationException("Hand-play block family changed; review its per-ability bindings.");
+        foreach (var id in RelicZoneLimitExemptAbilityIds)
+        {
+            if (!abilities.TryGetValue(id, out var ability) || ability.ExecutionModel != "continuous"
+                || !L12StructuredCardSemantics.IgnoresRelicZoneLimit(ability.CardId))
+                throw new InvalidOperationException($"Stale reviewed relic-zone limit exemption: {id}");
+            bindings.Add(id, RelicZoneLimitExempt);
+        }
+        var relicZoneLimitExemptions = abilities.Values.Where(ability => ability.ExecutionModel == "continuous"
+                && L12StructuredCardSemantics.IgnoresRelicZoneLimit(ability.CardId))
+            .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);
+        if (!relicZoneLimitExemptions.SetEquals(RelicZoneLimitExemptAbilityIds))
+            throw new InvalidOperationException("Relic-zone limit exemption family changed; review its per-ability bindings.");
         foreach (var id in PureSummonTurnCounterProtectionAbilityIds)
         {
             if (!abilities.TryGetValue(id, out var ability) || ability.ExecutionModel != "continuous"

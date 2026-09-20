@@ -153,17 +153,7 @@ public sealed partial class L12GameEngine
         card.SummonRound = State.Round;
         if (card.CardType == "artifact")
         {
-            if (card.Name.Contains("卡诺匹斯", StringComparison.Ordinal) && player.Relic is not null)
-                player.ExtraRelics.Add(card);
-            else
-            {
-                if (player.Relic is not null)
-                {
-                    DiscardRelic(player, player.Relic);
-                    AddEvent("leave", activation.Controller, "原圣物离开圣物区");
-                }
-                player.Relic = card;
-            }
+            PlaceArtifactInRelicZone(activation.Controller, card);
             ApplyDisasterLevelOnEntry(activation.Controller, card, deferTriggerUntilStackSettles: true);
             AddEvent("play", activation.Controller, $"{reason}使〈{card.Name}〉无需消耗费用打出", card);
             ResolveOnPlayContinuousEffects(activation.Controller, card);

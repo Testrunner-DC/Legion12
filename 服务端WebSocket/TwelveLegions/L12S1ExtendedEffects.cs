@@ -520,11 +520,10 @@ public sealed partial class L12GameEngine
                 player.Resolving.Remove(artifact);
                 if (chosen[0] == "play")
                 {
-                    if (player.Relic is not null) DiscardRelic(player, player.Relic);
                     artifact.OwnerIndex ??= item.Controller;
                     artifact.SummonRound = State.Round;
                     artifact.Tapped = false;
-                    player.Relic = artifact;
+                    PlaceArtifactInRelicZone(item.Controller, artifact);
                     ApplyDisasterLevelOnEntry(item.Controller, artifact, deferTriggerUntilStackSettles: true);
                     AddEvent("play", item.Controller,
                         $"诸葛亮使〈{artifact.Name}〉无需消耗费用活跃登场", artifact);

@@ -53,6 +53,11 @@ public static class L12StructuredCardSemantics
         {
             "S01-0201", "S01-0202", "ST02-01",
         };
+    private static readonly HashSet<string> RelicZoneLimitExemptCards =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "S01-0216", "S01-0217", "S01-0218", "S01-0219", "S01-0220",
+        };
     private static readonly HashSet<string> AttachedStrongAttackCards = new(StringComparer.OrdinalIgnoreCase)
     {
         KingsSwordCardId,
@@ -88,6 +93,9 @@ public static class L12StructuredCardSemantics
 
     public static bool HasSummonTurnCounterTacticProtection(string? cardId)
         => cardId is not null && SummonTurnCounterTacticProtectionCards.Contains(cardId);
+
+    public static bool IgnoresRelicZoneLimit(string? cardId)
+        => cardId is not null && RelicZoneLimitExemptCards.Contains(cardId);
 
     public static bool IsGram(string? cardId)
         => string.Equals(cardId, GramCardId, StringComparison.OrdinalIgnoreCase);

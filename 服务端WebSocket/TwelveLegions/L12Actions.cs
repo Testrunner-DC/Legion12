@@ -5,6 +5,22 @@ public sealed partial class L12GameEngine
     private static L12SelfDamageEntryDiscountRule? SelfDamageEntryDiscount(L12CardInstance card)
         => L12StructuredCardRules.SelfDamageEntryDiscount(card.CardId);
 
+    private void PlaceArtifactInRelicZone(int playerIndex, L12CardInstance card)
+    {
+        var player = State.Players[playerIndex];
+        if (L12StructuredCardSemantics.IgnoresRelicZoneLimit(card.CardId) && player.Relic is not null)
+        {
+            player.ExtraRelics.Add(card);
+            return;
+        }
+        if (player.Relic is not null)
+        {
+            DiscardRelic(player, player.Relic);
+            AddEvent("leave", playerIndex, "原圣物离开圣物区");
+        }
+        player.Relic = card;
+    }
+
     private void CreateOptionalGraveEntryCostPrompt(int playerIndex, string kind, string text,
         IReadOnlyCollection<L12CardInstance> cards, int minimum, int maximum, string continuation,
         Dictionary<string, string> data)
@@ -319,19 +335,7 @@ public sealed partial class L12GameEngine
             // 圣物的实际打出回合也是其入场回合；若同回合随后被规则视为军团，
             // 公共进攻合法性仍应据此施加召唤失调。
             card.SummonRound = State.Round;
-            if (card.Name.Contains("卡诺匹斯", StringComparison.Ordinal) && player.Relic is not null)
-            {
-                player.ExtraRelics.Add(card);
-            }
-            else
-            {
-                if (player.Relic is not null)
-                {
-                    DiscardRelic(player, player.Relic);
-                    AddEvent("leave", playerIndex, "原圣物离开圣物区");
-                }
-                player.Relic = card;
-            }
+            PlaceArtifactInRelicZone(playerIndex, card);
         }
         else
         {

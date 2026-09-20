@@ -176,8 +176,7 @@ public sealed partial class L12GameEngine
         {
             if (removeFromHand) player.Hand.Remove(card);
             card.SummonRound = State.Round;
-            if (player.Relic is not null) DiscardRelic(player, player.Relic);
-            player.Relic = card;
+            PlaceArtifactInRelicZone(command.TargetPlayer, card);
         }
         else if (card.CardType == "tactic")
         {
