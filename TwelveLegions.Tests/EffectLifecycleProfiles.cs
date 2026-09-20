@@ -501,6 +501,34 @@ internal static class EffectLifecycleProfiles
                 && atom.Parameters.GetValueOrDefault("semantic") == "entry-cost-minus-per-friendly-faction-legion");
     }
 
+    internal static readonly string[] HandPlayBlockAbilityIds =
+    [
+        "S02-0205:ability:continuous:44bfa636b58de089",
+        "S02-0305:ability:continuous:26b824128ffced1a",
+    ];
+
+    private static readonly L12LifecycleProfile HandPlayBlock =
+        new("hand-play:artifact-block",
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["definition"] = "L12StructuredCardSemantics.HandPlayBlockRule",
+                ["condition-and-reason"] = "L12StructuredCardRules.HandPlayBlockReason",
+                ["button-and-snapshot"] = "SnapshotHand",
+                ["authoritative-submit"] = "PlayCard",
+            },
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["no-target"] = "持续封锁只判断待打出的手牌卡种，不创建对象选择。",
+                ["negated"] = "来源位于圣物区期间的持续规则不独立入栈，不能作为一次效果被无效。",
+                ["payment-cancel"] = "封锁在资源支付前拒绝，未创建支付Prompt，也不会扣除资源。",
+                ["target-invalidated"] = "没有效果目标；提交时按当前圣物区来源重新判断，旧按钮状态不具权威性。",
+                ["multi-target-applicability"] = "每次只判断当前提交的一张手牌；其他手牌各自读取同一规则。",
+            })
+        {
+            AdditionalChecks = ["source-zone", "same-card-exception", "priority", "non-artifact-unaffected",
+                "display-and-submit-parity", "reconnect-derived-state"],
+        };
+
     private static void ValidateOwners(L12LifecycleProfile profile)
     {
         foreach (var owner in profile.RuntimeOwners.Values)
@@ -532,6 +560,7 @@ internal static class EffectLifecycleProfiles
         ValidateOwners(StructuredContinuousCombatRule);
         ValidateOwners(PrintedEntryCost);
         ValidateOwners(StructuredHandCost);
+        ValidateOwners(HandPlayBlock);
         var bindings = new Dictionary<string, L12LifecycleProfile>(StringComparer.Ordinal);
         if (!abilities.TryGetValue(DesertHandSummonAbilityId, out var desertHandSummon)
             || desertHandSummon.CardId != "S02-0207" || desertHandSummon.Trigger != "play"
@@ -673,6 +702,18 @@ internal static class EffectLifecycleProfiles
             .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);
         if (!structuredHandCosts.SetEquals(StructuredHandCostAbilityIds))
             throw new InvalidOperationException("Structured hand-condition cost family changed; review its per-ability bindings.");
+        foreach (var id in HandPlayBlockAbilityIds)
+        {
+            if (!abilities.TryGetValue(id, out var ability) || ability.ExecutionModel != "continuous"
+                || L12StructuredCardSemantics.HandPlayBlockRule(ability.CardId) is null)
+                throw new InvalidOperationException($"Stale reviewed hand-play block rule: {id}");
+            bindings.Add(id, HandPlayBlock);
+        }
+        var handPlayBlocks = abilities.Values.Where(ability => ability.ExecutionModel == "continuous"
+                && L12StructuredCardSemantics.HandPlayBlockRule(ability.CardId) is not null)
+            .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);
+        if (!handPlayBlocks.SetEquals(HandPlayBlockAbilityIds))
+            throw new InvalidOperationException("Hand-play block family changed; review its per-ability bindings.");
         return bindings;
     }
 }

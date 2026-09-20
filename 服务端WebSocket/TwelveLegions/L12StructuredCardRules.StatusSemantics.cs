@@ -3,6 +3,8 @@ namespace TwelveLegions.Server;
 public sealed record L12ExtendedRangeRule(string Text, string CostText, int ConsumeMorale, int ReturnMorale, bool AllowsMaster);
 public sealed record L12PrintedEntryCostRule(string Condition, int Adjustment, int Threshold = 0,
     string? Faction = null, string? ReferenceCardId = null);
+public sealed record L12HandPlayBlockRule(string BlockedCardType, bool AllowsSameCardId, int Priority,
+    string Reason);
 
 /// <summary>
 /// Runtime identity predicates backed by the structured card rule layer.
@@ -40,6 +42,12 @@ public static class L12StructuredCardSemantics
             ["S02-0202"] = new("named-legions-left-this-turn", -1),
             ["S02-0203"] = new("controller-field-card-absent", -1, ReferenceCardId: "S01-0212"),
         };
+    private static readonly Dictionary<string, L12HandPlayBlockRule> HandPlayBlockRules =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["S02-0305"] = new("artifact", false, 0, "〈安德华拉诺特〉使我方无法从手牌打出圣物"),
+            ["S02-0205"] = new("artifact", true, 1, "〈黄金圣甲虫〉位于我方圣物区，我方无法从手牌打出其他圣物"),
+        };
     private static readonly HashSet<string> AttachedStrongAttackCards = new(StringComparer.OrdinalIgnoreCase)
     {
         KingsSwordCardId,
@@ -69,6 +77,9 @@ public static class L12StructuredCardSemantics
 
     public static L12PrintedEntryCostRule? PrintedEntryCostRule(string? cardId)
         => cardId is null ? null : PrintedEntryCostRules.GetValueOrDefault(cardId);
+
+    public static L12HandPlayBlockRule? HandPlayBlockRule(string? cardId)
+        => cardId is null ? null : HandPlayBlockRules.GetValueOrDefault(cardId);
 
     public static bool IsGram(string? cardId)
         => string.Equals(cardId, GramCardId, StringComparison.OrdinalIgnoreCase);

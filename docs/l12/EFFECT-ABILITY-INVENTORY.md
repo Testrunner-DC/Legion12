@@ -5,14 +5,14 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`275f3b845aed729239e601f434c4b9ab1d0fec4159322ff00c64dddac6c55d8e`。
+内容指纹：`451fae64a2123e56e228e4621c7aedca4a8d6943b2bac4fdad051c8d1f39a8e3`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
 | composite-definition | 202 |
 | fine-definition | 86 |
-| owner-unreviewed | 256 |
-| shared-rule-owner | 142 |
+| owner-unreviewed | 254 |
+| shared-rule-owner | 144 |
 
 fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；shared-rule-owner = 精确能力已绑定共用规则入口及适用性档案；owner-unreviewed = 还需定位实际入口。任何一种归属证据均不等于生命周期验收通过。
 同卡同触发只算候选，不能把另一能力的程序继承为本能力已覆盖。无能力卡单列，不能从分母中静默消失。
@@ -93,6 +93,16 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 精确绑定能力数：2。运行入口：candidate-generation = L12GameEngine.IsCounterDeploymentCandidate；settlement-revalidation = L12GameEngine.SetDeclaredCounterTactics；slot-declaration = L12GameEngine.CreateActivationStepPrompt。
 
+
+### hand-play:artifact-block
+
+精确绑定能力数：2。运行入口：authoritative-submit = L12GameEngine.PlayCard；button-and-snapshot = L12GameEngine.SnapshotHand；condition-and-reason = L12StructuredCardRules.HandPlayBlockReason；definition = L12StructuredCardSemantics.HandPlayBlockRule。
+
+- multi-target-applicability：每次只判断当前提交的一张手牌；其他手牌各自读取同一规则。
+- negated：来源位于圣物区期间的持续规则不独立入栈，不能作为一次效果被无效。
+- no-target：持续封锁只判断待打出的手牌卡种，不创建对象选择。
+- payment-cancel：封锁在资源支付前拒绝，未创建支付Prompt，也不会扣除资源。
+- target-invalidated：没有效果目标；提交时按当前圣物区来源重新判断，旧按钮状态不具权威性。
 
 ### composite:desert-hand-summon
 
@@ -273,6 +283,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0203:ability:continuous:418e71545576e12d | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.PrintedEntryCostDefinitionsMatchTheReviewedCardFamily / S02-0203 | condition-false, display-and-payment-parity |
 | S02-0204:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0204 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0204:ability:active:4257a82eec559a94 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0204 | active-rest-cost, runtime-branch-mapping |
+| S02-0205:ability:continuous:44bfa636b58de089 | TwelveLegions.Tests.HandPlayBlockLifecycleProfileTests.HandPlayBlockDefinitionsMatchTheClosedFamily / S02-0205 | display-and-submit-parity, same-card-exception |
 | S02-0205:ability:active:8023ed21f8771697 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0205 | active-rest-cost, runtime-branch-mapping |
 | S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleCancellationBeforeCommitLeavesCostAndSourceUntouched / S02-0207 | payment-cancel |
 | S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleFailsWithoutSubstitutionWhenItsDeclaredHandLegionLeavesBeforeSettlement / S02-0207 | target-invalidated |
@@ -285,6 +296,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0302:ability:keyword-definition:eaba79729a9d7a65 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0302 | authoritative-consumer, parent-grant-boundary |
 | S02-0303:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.EveryPrintedSelfDamageDiscountUsesOneHandPlayCostProtocol / S02-0303 | last-health-terminal, optional-choice, reconnect-payment |
 | S02-0304:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0304 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
+| S02-0305:ability:continuous:26b824128ffced1a | TwelveLegions.Tests.HandPlayBlockLifecycleProfileTests.HandPlayBlockDefinitionsMatchTheClosedFamily / S02-0305 | display-and-submit-parity, priority |
 | S02-0404:ability:active:b30de444d37a3b6e | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0404 | active-rest-cost, runtime-branch-mapping |
 | S02-0503:ability:static:5e2fcb0f2798f57a | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0503 | authoritative-consumer, combat-settlement |
 | S02-0503:ability:keyword-definition:6692b63a59c971d0 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0503 | authoritative-consumer, parent-grant-boundary |
@@ -698,7 +710,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0204 伊姆何泰普 #1 | S02-0204:ability:continuous:e9823ffd970d6ce6 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
 | S02-0204 伊姆何泰普 #2 | S02-0204:ability:enter:753c4d14ca73c931 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → resolution:visibility.policy → resolution:operation.composite-flow | 1 | 登场时 若我方手牌数量少于对方，可将墓地1张费用为6及以上的【太阳城】军团展示并加入手牌。 |
 | S02-0204 伊姆何泰普 #3 | S02-0204:ability:active:4257a82eec559a94 | active/activated | shared-rule-owner | — | trigger:trigger.observe → cost:cost.rest-source → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 1 | 主动休整 本回合我方下1张带有天灾等级的【太阳城】军团登场费用-1。 |
-| S02-0205 黄金圣甲虫 #1 | S02-0205:ability:continuous:44bfa636b58de089 | continuous/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 若&lt;黄金圣甲虫&gt;位于我方圣物区，我方无法从手牌打出其他圣物。 |
+| S02-0205 黄金圣甲虫 #1 | S02-0205:ability:continuous:44bfa636b58de089 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 若&lt;黄金圣甲虫&gt;位于我方圣物区，我方无法从手牌打出其他圣物。 |
 | S02-0205 黄金圣甲虫 #2 | S02-0205:ability:enter:391da24eedbd81b7 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 可将墓地1张&lt;增殖的甲虫&gt;活跃登场。 |
 | S02-0205 黄金圣甲虫 #3 | S02-0205:ability:active:8023ed21f8771697 | active/activated | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → cost:cost.rest-source → resolution:operation.move-zone → resolution:legacy.resolve | 1 | 主动休整 可将墓地1张&lt;增殖的甲虫&gt;活跃登场。 |
 | S02-0205 黄金圣甲虫 #4 | S02-0205:ability:active:bf422a987e0ab5de | active/activated | owner-unreviewed | 我方 回合1次 可弃置1张手牌 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.discard → resolution:operation.modify-troops → duration:duration.apply → duration:duration.apply → resolution:legacy.resolve | 1 | 我方 回合1次 可弃置1张手牌：选择对方最多2张军团，本回合兵力-1000。 |
@@ -723,7 +735,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0304 玛格丽特一世 #2 | S02-0304:ability:enter:3f76727a32a3cf1e | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.composite-flow | 1 | 登场时 可弃置我方牌库顶部1张牌。 |
 | S02-0304 玛格丽特一世 #3 | S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b | master-damaged-by-effect/triggered | owner-unreviewed | 我方回合 我方主宰因效果受到伤害时，可将此军团转为休整 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:special.domain → resolution:operation.rest → resolution:operation.heal-master → duration:duration.apply → resolution:legacy.resolve | 1 | 我方回合 我方主宰因效果受到伤害时，可将此军团转为休整：我方主宰增加1点血量。随后本回合我方主宰血量无法因军团效果增加。 |
 | S02-0305 安德华拉诺特 #1 | S02-0305:ability:game-setup:cf14affeb486a9f7 | game-setup/setup | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:legacy.resolve | 1 | 规则上，在游戏开始时可将此圣物从牌库置入圣物区，起始手牌数量为4张，且我方回合结束时弃置手牌，直至手牌数量不高于6张。 |
-| S02-0305 安德华拉诺特 #2 | S02-0305:ability:continuous:26b824128ffced1a | continuous/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 我方无法从手牌打出圣物。 |
+| S02-0305 安德华拉诺特 #2 | S02-0305:ability:continuous:26b824128ffced1a | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 我方无法从手牌打出圣物。 |
 | S02-0305 安德华拉诺特 #3 | S02-0305:ability:master-damaged:a4a2c92cad3ad28c | master-damaged/triggered | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw → duration:duration.apply → resolution:legacy.resolve | 1 | 我方 回合1次 我方主宰受到伤害时，可抽取1张牌。 |
 | S02-0305 安德华拉诺特 #4 | S02-0305:ability:master-damaged:4c8ce907eed1f778 | master-damaged/replacement | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:legacy.resolve | 0 | 对方回合 我方主宰受到的第一次伤害变为2。 |
 | S02-0306 密米尔之泉 #1 | S02-0306:ability:continuous:a5a8e191442bbfac | continuous/rule | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → duration:duration.apply → resolution:legacy.resolve | 2 | &lt;密米尔之泉&gt;每回合只可使用1次。 |

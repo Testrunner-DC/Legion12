@@ -305,17 +305,22 @@ public static partial class L12StructuredCardRules
 
     public static string? HandPlayBlockReason(L12PlayerState controller, L12CardInstance card)
     {
-        if (card.CardType != "artifact") return null;
         var artifactZone = controller.Relic is null
             ? controller.ExtraRelics
             : controller.ExtraRelics.Prepend(controller.Relic);
-        if (artifactZone.Any(source => source.CardId == "S02-0305"))
-            return "〈安德华拉诺特〉使我方无法从手牌打出圣物";
-        // “其他圣物”不包含另一张〈黄金圣甲虫〉。同名圣物可正常打出并按
-        // 圣物顶替规则处理；不同名圣物仍由此权威查询同时禁用按钮与提交。
-        if (card.CardId != "S02-0205"
-            && artifactZone.Any(source => source.CardId == "S02-0205"))
-            return "〈黄金圣甲虫〉位于我方圣物区，我方无法从手牌打出其他圣物";
+        var blockers = artifactZone
+            .Select(source => (Source: source, Rule: L12StructuredCardSemantics.HandPlayBlockRule(source.CardId)))
+            .Where(entry => entry.Rule is not null)
+            .OrderBy(entry => entry.Rule!.Priority);
+        foreach (var (source, ruleOrNull) in blockers)
+        {
+            var rule = ruleOrNull!;
+            if (!string.Equals(card.CardType, rule.BlockedCardType, StringComparison.Ordinal)) continue;
+            // “其他圣物”不包含另一张同名来源；是否允许同名由规则参数决定。
+            if (rule.AllowsSameCardId && string.Equals(card.CardId, source.CardId, StringComparison.OrdinalIgnoreCase))
+                continue;
+            return rule.Reason;
+        }
         return null;
     }
 
