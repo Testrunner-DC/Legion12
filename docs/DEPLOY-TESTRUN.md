@@ -21,7 +21,7 @@
 
 1. 由 DNS 管理者把 `testrun.legion-12.com` 指向当前源站；本仓库脚本不修改 DNS。
 2. 在干净提交上完成 Release，取得 schema 3 的 `l12-release-<commit>.json`、运行包和卡图包。不要用当前脏树或手工 tar 包。
-3. 通过已经人工核验的 `38.76.208.25` 主机指纹，把运行包上传为 `/opt/legion12-testrun-deployment/incoming/l12-testrun-release-<commit>.tar.gz`；卡图缓存缺失时上传为 `l12-testrun-card-assets-<assetHash>.tar.gz`。把以下仓库文件上传到同名 `/tmp` 路径：
+3. 通过已经人工核验的 `154.201.80.91` 主机指纹，把运行包上传为 `/opt/legion12-testrun-deployment/incoming/l12-testrun-release-<commit>.tar.gz`；卡图缓存缺失时上传为 `l12-testrun-card-assets-<assetHash>.tar.gz`。把以下仓库文件上传到同名 `/tmp` 路径：
    - `bootstrap-l12-testrun.sh`
    - `legion12-testrun.service`
    - `legion12-testrun-http.nginx`
@@ -50,7 +50,7 @@ pwsh -NoProfile -File .\ops\windows\deploy-l12-testrun.ps1 `
 
 先增加 `-ValidateArtifactOnly` 可只检查目标和归档而不建立远程连接；增加 `-DryRun` 会上传到验收站 incoming 并执行服务器端只读/暂存验证，但不停止服务或切换版本。
 
-入口只接受 `root@testrun.legion-12.com` 或 `root@38.76.208.25`，实际连接固定为 `38.76.208.25`，并强制 `StrictHostKeyChecking=yes`、该 IP 的 `HostKeyAlias` 及显式 known_hosts。它拒绝脏工作区、与 HEAD 不同的 manifest、错误 schema/文件名/SHA256/提交标记、链接或特殊成员、越界路径、runtime、内嵌卡图和额外顶层内容。
+入口只接受 `root@testrun.legion-12.com` 或 `root@154.201.80.91`，实际连接固定为 `154.201.80.91`，并强制 `StrictHostKeyChecking=yes`、该 IP 的 `HostKeyAlias` 及显式 known_hosts。它拒绝脏工作区、与 HEAD 不同的 manifest、错误 schema/文件名/SHA256/提交标记、链接或特殊成员、越界路径、runtime、内嵌卡图和额外顶层内容。
 
 服务器日常入口 `/usr/local/sbin/deploy-legion12-testrun-release` 只读取并校验现有 TLS vhost，不安装、替换或 reload Nginx，不修改 env/systemd，不使用正式服务、正式端口或正式 runtime。它停止验收服务后快照验收 runtime，以原子链接切换版本，并同时核验本机/公网提交身份、首页、卡牌页和 WebSocket。新版本失败时只恢复上一测试版本并重启验收服务，不自动用快照覆盖可能已产生的新测试数据；若旧版本也无法验证，则保持验收服务停止并写入 `deployment-blocked.txt` 等待人工对账。成功后只保留当前与上一测试程序、最新 1 份测试 runtime 快照、被这两个程序实际引用的卡图哈希，并删除超过 2 天的测试 incoming 文件；正式服任何目录都不在该清理范围。
 

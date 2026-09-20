@@ -12,7 +12,7 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $script:TestrunHost = "testrun.legion-12.com"
-$script:TestrunAddress = "38.76.208.25"
+$script:TestrunAddress = "154.201.80.91"
 
 function Invoke-External {
     param(
