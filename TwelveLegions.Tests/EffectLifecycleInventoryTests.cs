@@ -346,6 +346,30 @@ public sealed class EffectLifecycleInventoryTests
     }
 
     [Fact]
+    public void SelfDamageEntryDiscountProfileBindsOnlyTheSixHandPlayCostSegments()
+    {
+        var inventory = Build(Catalog);
+        var rows = inventory.Abilities.Where(row => row.Profile?.Id == "hand-play:self-damage-entry-discount").ToArray();
+        Assert.Equal(EffectLifecycleProfiles.SelfDamageEntryDiscountAbilityIds.Order(),
+            rows.Select(row => row.Definition.AbilityId).Order());
+        Assert.All(rows, row =>
+        {
+            Assert.Equal("shared-rule-owner", row.EntryEvidence);
+            Assert.Equal("L12StructuredCardRules.SelfDamageEntryDiscount", row.Profile!.RuntimeOwners["definition"]);
+            Assert.Equal("PlayCard", row.Profile.RuntimeOwners["declaration-and-choice"]);
+            Assert.Equal("PayMasterDamageCostAndCanContinue", row.Profile.RuntimeOwners["self-damage-payment"]);
+            Assert.DoesNotContain("no-target", row.ReviewGaps);
+            Assert.DoesNotContain("negated", row.ReviewGaps);
+            Assert.Contains("payment-cancel", row.ReviewGaps);
+            var evidence = Assert.Single(row.TestReferences,
+                reference => reference.TestMethod.EndsWith(
+                    nameof(SelfDamageEntryDiscountLifecycleProfileTests.EveryPrintedSelfDamageDiscountUsesOneHandPlayCostProtocol),
+                    StringComparison.Ordinal));
+            Assert.Contains("last-health-terminal", evidence.Scopes);
+        });
+    }
+
+    [Fact]
     public void DesertHandSummonProfileUsesOneSharedCandidateRuleAndExplainsItsUnavailablePath()
     {
         var row = Assert.Single(Build(Catalog).Abilities,

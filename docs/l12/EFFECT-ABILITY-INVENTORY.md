@@ -5,14 +5,14 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`07b89f7e0783ae2c37a88eb2024139f3e330c7f931173a2c0973fc97bd4bc57c`。
+内容指纹：`523bc26b485d9cb2117a3730990e8ef95e7e7759aef4f38f423af3afd317c09b`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
 | composite-definition | 204 |
 | fine-definition | 87 |
-| owner-unreviewed | 308 |
-| shared-rule-owner | 87 |
+| owner-unreviewed | 302 |
+| shared-rule-owner | 93 |
 
 fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；shared-rule-owner = 精确能力已绑定共用规则入口及适用性档案；owner-unreviewed = 还需定位实际入口。任何一种归属证据均不等于生命周期验收通过。
 同卡同触发只算候选，不能把另一能力的程序继承为本能力已覆盖。无能力卡单列，不能从分母中静默消失。
@@ -52,6 +52,15 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 精确绑定能力数：27。运行入口：button-eligibility = L12GameEngine.BuildAbilityViews；cost-commit = L12GameEngine.CommitStructuredActiveRestCost；cost-presentation = L12GameEngine.AddActivePaidCostPresentation；response-stack = L12GameEngine.PushEffect；runtime-identity = L12StructuredCardRules.IsActiveRestAbility。
 
+
+### hand-play:self-damage-entry-discount
+
+精确绑定能力数：6。运行入口：cost-calculation = L12GameEngine.GetPlayCostWithSigurdDiscount；declaration-and-choice = L12GameEngine.PlayCard；definition = L12StructuredCardRules.SelfDamageEntryDiscount；resource-payment = L12GameEngine.EnsurePlayResourcePaymentChoice；self-damage-payment = L12GameEngine.PayMasterDamageCostAndCanContinue。
+
+- multi-target-applicability：一次只修改当前手牌军团的本次打出费用。
+- negated：冒号前自伤只改变本次打出费用，不生成独立可响应效果；支付最后1血会立即判败并终止打出。
+- no-target：该手牌费用能力不选择效果对象；合法位置和打出资源属于打出动作本身。
+- target-invalidated：没有效果目标；提交时只复验手牌实例、位置与实际支付资源。
 
 ### rule-action:cavalry-move
 
@@ -120,13 +129,18 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0214:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0214 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0214:ability:active:30e47404439f2371 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-0214 | active-rest-cost, runtime-branch-mapping |
 | S01-0215:ability:active:6984859bdd4fa8b1 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-0215 | active-rest-cost, runtime-branch-mapping |
+| S01-0303:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.EveryPrintedSelfDamageDiscountUsesOneHandPlayCostProtocol / S01-0303 | last-health-terminal, optional-choice, reconnect-payment |
+| S01-0304:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.EveryPrintedSelfDamageDiscountUsesOneHandPlayCostProtocol / S01-0304 | last-health-terminal, optional-choice, reconnect-payment |
+| S01-0308:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.EveryPrintedSelfDamageDiscountUsesOneHandPlayCostProtocol / S01-0308 | last-health-terminal, optional-choice, reconnect-payment |
 | S01-0309:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0309 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
+| S01-0310:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.EveryPrintedSelfDamageDiscountUsesOneHandPlayCostProtocol / S01-0310 | last-health-terminal, optional-choice, reconnect-payment |
 | S01-0310:ability:active:0a0575206e996652 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / S01-0310 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
 | S01-0310:ability:active:0a0575206e996652 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / S01-0310 | destination-invalidated, reconnect-before-command, source-invalidated |
 | S01-0310:ability:active:0a0575206e996652 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / S01-0310 | button-rejection-consistency, timing |
 | S01-0310:ability:active:0a0575206e996652 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / S01-0310 | button-text, duplicate-submit, no-resource-cost, normal, presentation-event, reconnect-after-command, reconnect-before-command |
 | S01-0313:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0313 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0314:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0314 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
+| S01-0314:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.EveryPrintedSelfDamageDiscountUsesOneHandPlayCostProtocol / S01-0314 | last-health-terminal, optional-choice, reconnect-payment |
 | S01-0316:ability:static:9ba2f4f5354a2a05 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0316 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0317:ability:active:90c21e26f3d58b69 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-0317 | active-rest-cost, runtime-branch-mapping |
 | S01-03D1:ability:active:79829ccbe13dcca0 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-03D1 | active-rest-cost, runtime-branch-mapping |
@@ -169,6 +183,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRulePrepaysDiscardCostBeforeResponseAndOccupiedSlotDoesNotRefundOrOverwrite / S02-0207 | cost-prepaid, settlement-slot-invalidated |
 | S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleRestoresTheDeclaredHandSummonBeforeItsResponseWindowSettles / S02-0207 | reconnect |
 | S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleUsesEffectiveFactionForHandCandidateAndSettlement / S02-0207 | candidate-effective-faction, duplicate-submit, normal, single-candidate-choice |
+| S02-0303:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.EveryPrintedSelfDamageDiscountUsesOneHandPlayCostProtocol / S02-0303 | last-health-terminal, optional-choice, reconnect-payment |
 | S02-0304:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0304 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0404:ability:active:b30de444d37a3b6e | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0404 | active-rest-cost, runtime-branch-mapping |
 | S02-0505:ability:active:bac4cb5d348f29f1 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / S02-0505 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
@@ -379,10 +394,10 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0302 金发哈拉尔 #1 | S01-0302:ability:static:acc29b0ca499d087 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone | 0 | 我方每存在1张军团，此军团登场费用-1 |
 | S01-0302 金发哈拉尔 #2 | S01-0302:ability:attack:e1925644421ebcfc | attack/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.keyword | 1 | 进攻时 若我方主宰血量不高于6，此军团本回合获得强攻。（进攻对主宰造成额外1点伤害） |
 | S01-0302 金发哈拉尔 #3 | S01-0302:ability:death:245b8340cc94aed0 | death/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.heal-master | 1 | 阵亡时 我方主宰增加1点血量 |
-| S01-0303 传奇的拉格纳 #1 | S01-0303:ability:hand-play:5e06807975eda2b7 | hand-play/special-summon | owner-unreviewed | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.damage-master → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可对我方主宰造成1点伤害：此军团登场费用-1。 |
+| S01-0303 传奇的拉格纳 #1 | S01-0303:ability:hand-play:5e06807975eda2b7 | hand-play/special-summon | shared-rule-owner | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.damage-master → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可对我方主宰造成1点伤害：此军团登场费用-1。 |
 | S01-0303 传奇的拉格纳 #2 | S01-0303:ability:enter:ad235a4ffdc55fe7 | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.keyword | 1 | 登场时 若我方主宰血量不高于7，获得冲锋。（可在登场回合进攻） |
 | S01-0303 传奇的拉格纳 #3 | S01-0303:ability:death:d26c9c0565422dce | death/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw → resolution:cost.discard → resolution:operation.composite-flow | 3 | 阵亡时 可抽取1张牌，并弃置1张手牌。 |
-| S01-0304 无情者哈拉尔 #1 | S01-0304:ability:hand-play:5e06807975eda2b7 | hand-play/special-summon | owner-unreviewed | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.damage-master → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可对我方主宰造成1点伤害：此军团登场费用-1。 |
+| S01-0304 无情者哈拉尔 #1 | S01-0304:ability:hand-play:5e06807975eda2b7 | hand-play/special-summon | shared-rule-owner | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.damage-master → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可对我方主宰造成1点伤害：此军团登场费用-1。 |
 | S01-0304 无情者哈拉尔 #2 | S01-0304:ability:enter:746ece3973c3f91f | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.damage-master | 1 | 登场时 若对方主宰血量高于我方，可对其造成1点伤害。 |
 | S01-0304 无情者哈拉尔 #3 | S01-0304:ability:death:0d6332e67771e0c7 | death/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 阵亡时 击杀对方1张兵力不高于2000的军团。 |
 | S01-0305 勇士比约恩 #1 | S01-0305:ability:static:9ed1ca8df2e5f029 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone | 0 | 若我方主宰血量不高于6，此军团登场费用-1 |
@@ -392,13 +407,13 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0306 奥拉夫二世 #3 | S01-0306:ability:death:df0840798433a345 | death/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → cost:cost.discard → resolution:operation.draw → resolution:operation.composite-flow | 3 | 阵亡时 可抽取2张牌，并弃置1张手牌 |
 | S01-0307 阿尔维达 #1 | S01-0307:ability:static:b89287bced985f8c | static/continuous | owner-unreviewed | 我方回合 可弃置此军团 | trigger:trigger.observe → condition:control.optional → cost:cost.discard → resolution:operation.move-zone → resolution:operation.ready → resolution:special.domain → resolution:legacy.resolve | 0 | 我方回合 可弃置此军团：对我方主宰造成1点伤害，将手牌中1张天灾等级2的军团活跃登场 |
 | S01-0307 阿尔维达 #2 | S01-0307:ability:death:79329a4fe221b0e0 | death/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 阵亡时 将墓地1张费用不高于3的【阿斯加德】卡牌加入手牌 |
-| S01-0308 血斧艾瑞克 #1 | S01-0308:ability:hand-play:5e06807975eda2b7 | hand-play/special-summon | owner-unreviewed | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.damage-master → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可对我方主宰造成1点伤害：此军团登场费用-1。 |
+| S01-0308 血斧艾瑞克 #1 | S01-0308:ability:hand-play:5e06807975eda2b7 | hand-play/special-summon | shared-rule-owner | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.damage-master → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可对我方主宰造成1点伤害：此军团登场费用-1。 |
 | S01-0308 血斧艾瑞克 #2 | S01-0308:ability:after-damage:33e459431fcbeeb0 | after-damage/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → target:selection.target → resolution:cost.discard → resolution:operation.composite-flow | 1 | 此军团对对方主宰造成伤害时：对方弃置1张手牌。 |
 | S01-0308 血斧艾瑞克 #3 | S01-0308:ability:death:94ee1a17102e681e | death/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 阵亡时 将墓地1张费用不高于3的【阿斯加德】军团活跃登场。 |
 | S01-0309 布伦希尔德 #1 | S01-0309:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
 | S01-0309 布伦希尔德 #2 | S01-0309:ability:enter:e9dcf28980e1de53 | enter/triggered | composite-definition | 登场时 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.move-zone → resolution:operation.ready → resolution:operation.composite-flow | 1 | 登场时 可对我方主宰造成1点伤害：可将手牌或墓地的1张&lt;齐格鲁德&gt;活跃登场 |
 | S01-0309 布伦希尔德 #3 | S01-0309:ability:death:cd0e9cfabc8baede | death/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.draw | 1 | 阵亡时 若我方主宰血量不高于对方，可抽取1张牌 |
-| S01-0310 齐格鲁德 #1 | S01-0310:ability:hand-play:5e06807975eda2b7 | hand-play/special-summon | owner-unreviewed | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.damage-master → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可对我方主宰造成1点伤害：此军团登场费用-1。 |
+| S01-0310 齐格鲁德 #1 | S01-0310:ability:hand-play:5e06807975eda2b7 | hand-play/special-summon | shared-rule-owner | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.damage-master → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可对我方主宰造成1点伤害：此军团登场费用-1。 |
 | S01-0310 齐格鲁德 #2 | S01-0310:ability:active:0a0575206e996652 | active/rule-action | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move → duration:duration.apply | 1 | 我方回合1次 可进行1次位移。 |
 | S01-0310 齐格鲁德 #3 | S01-0310:ability:attack:02cb9deafea9e44b | attack/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 1 | 进攻时 若我方存在&lt;神剑格拉墨&gt;，此军团本回合兵力+1000。 |
 | S01-0311 古斯塔夫一世 #1 | S01-0311:ability:attack:0f533a6e93811615 | attack/triggered | fine-definition | 进攻时 可将墓地2张卡牌自选顺序返回我方牌库底部 | trigger:trigger.observe → condition:control.optional → cost:operation.move-zone → resolution:operation.modify-troops → duration:duration.apply | 1 | 进攻时 可将墓地2张卡牌自选顺序返回我方牌库底部：此军团本回合兵力+2000 |
@@ -410,7 +425,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0313 神箭奥德尔 #2 | S01-0313:ability:enter:48f49bf5f355a620 | enter/triggered | composite-definition | 登场时 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.draw → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 可对我方主宰造成1点伤害：抽取1张牌 |
 | S01-0313 神箭奥德尔 #3 | S01-0313:ability:death:8cc83cce5988d4da | death/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.rest | 1 | 阵亡时 可选择对方1张活跃军团，将其转为休整 |
 | S01-0314 奥尔加 #1 | S01-0314:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
-| S01-0314 奥尔加 #2 | S01-0314:ability:hand-play:5e06807975eda2b7 | hand-play/special-summon | owner-unreviewed | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.damage-master → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可对我方主宰造成1点伤害：此军团登场费用-1。 |
+| S01-0314 奥尔加 #2 | S01-0314:ability:hand-play:5e06807975eda2b7 | hand-play/special-summon | shared-rule-owner | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.damage-master → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可对我方主宰造成1点伤害：此军团登场费用-1。 |
 | S01-0314 奥尔加 #3 | S01-0314:ability:active:a923615d65edc8ea | active/activated | owner-unreviewed | 我方回合 可弃置此军团 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → target:selection.target → cost:cost.discard → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 1 | 我方回合 可弃置此军团：选择对方前排1张军团，本回合兵力-2000。 |
 | S01-0315 无骨者伊瓦尔 #1 | S01-0315:ability:enter:f908c4d5feb68d83 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.move-zone → resolution:visibility.policy → resolution:operation.composite-flow | 1 | 登场时 可查看牌库顶部3张牌，选择1张&lt;无骨者伊瓦尔&gt;以外的【阿斯加德】卡牌，展示并加入手牌，其余卡牌自选顺序返回牌库底部 |
 | S01-0316 夺命诗人埃吉尔 #1 | S01-0316:ability:static:9ba2f4f5354a2a05 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」进攻距离+1，远程进攻无损。 |
@@ -572,7 +587,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0302 步行者罗洛 #2 | S02-0302:ability:continuous:48719a94741bbf36 | continuous/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 「位于前排」获得ABILITY 3，且无法被后排支援。 |
 | S02-0302 步行者罗洛 #3 | S02-0302:ability:keyword-definition:eaba79729a9d7a65 | keyword-definition/keyword-definition | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.keyword → resolution:legacy.resolve | 1 | 挑衅 对方只可进攻拥有挑衅效果的军团，若有多个具有挑衅效果的军团，则可以选择其中1个进行进攻。 |
 | S02-0302 步行者罗洛 #4 | S02-0302:ability:enter:f2164791a703075c | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.heal-master | 1 | 登场时 我方主宰增加1点血量。 |
-| S02-0303 卡纽特大帝 #1 | S02-0303:ability:hand-play:5e06807975eda2b7 | hand-play/special-summon | owner-unreviewed | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.damage-master → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可对我方主宰造成1点伤害：此军团登场费用-1。 |
+| S02-0303 卡纽特大帝 #1 | S02-0303:ability:hand-play:5e06807975eda2b7 | hand-play/special-summon | shared-rule-owner | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.damage-master → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可对我方主宰造成1点伤害：此军团登场费用-1。 |
 | S02-0303 卡纽特大帝 #2 | S02-0303:ability:enter:188ca2ec5d57c93a | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.composite-flow | 1 | 登场时 可选择我方战场或墓地最多2张非同名的【阿斯加德】军团，触发其阵亡效果。 |
 | S02-0304 玛格丽特一世 #1 | S02-0304:ability:continuous:e9823ffd970d6ce6 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:legacy.resolve | 2 | 进攻距离+1，远程进攻无损。 |
 | S02-0304 玛格丽特一世 #2 | S02-0304:ability:enter:3f76727a32a3cf1e | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.composite-flow | 1 | 登场时 可弃置我方牌库顶部1张牌。 |

@@ -237,6 +237,33 @@ internal static class EffectLifecycleProfiles
         new SortedDictionary<string, string>(StringComparer.Ordinal))
         { AdditionalChecks = ["active-rest-cost", "paid-cost-preserved", "readied-source-reuse", "runtime-branch-mapping"] };
 
+    internal static readonly string[] SelfDamageEntryDiscountAbilityIds =
+    [
+        "S01-0303:ability:hand-play:5e06807975eda2b7",
+        "S01-0304:ability:hand-play:5e06807975eda2b7",
+        "S01-0308:ability:hand-play:5e06807975eda2b7",
+        "S01-0310:ability:hand-play:5e06807975eda2b7",
+        "S01-0314:ability:hand-play:5e06807975eda2b7",
+        "S02-0303:ability:hand-play:5e06807975eda2b7",
+    ];
+
+    private static readonly L12LifecycleProfile SelfDamageEntryDiscount = new("hand-play:self-damage-entry-discount",
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["definition"] = "L12StructuredCardRules.SelfDamageEntryDiscount",
+            ["declaration-and-choice"] = "PlayCard",
+            ["cost-calculation"] = "GetPlayCostWithSigurdDiscount",
+            ["resource-payment"] = "EnsurePlayResourcePaymentChoice",
+            ["self-damage-payment"] = "PayMasterDamageCostAndCanContinue",
+        },
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["no-target"] = "该手牌费用能力不选择效果对象；合法位置和打出资源属于打出动作本身。",
+            ["negated"] = "冒号前自伤只改变本次打出费用，不生成独立可响应效果；支付最后1血会立即判败并终止打出。",
+            ["target-invalidated"] = "没有效果目标；提交时只复验手牌实例、位置与实际支付资源。",
+            ["multi-target-applicability"] = "一次只修改当前手牌军团的本次打出费用。",
+        }) { AdditionalChecks = ["optional-choice", "payment-cancel", "last-health-terminal", "reconnect-payment", "card-remains-on-lethal-cost"] };
+
     private static void ValidateOwners(L12LifecycleProfile profile)
     {
         foreach (var owner in profile.RuntimeOwners.Values)
@@ -263,6 +290,7 @@ internal static class EffectLifecycleProfiles
         ValidateOwners(PrintedRanged);
         ValidateOwners(PaidExtendedRange);
         ValidateOwners(ActiveRest);
+        ValidateOwners(SelfDamageEntryDiscount);
         var bindings = new Dictionary<string, L12LifecycleProfile>(StringComparer.Ordinal);
         if (!abilities.TryGetValue(DesertHandSummonAbilityId, out var desertHandSummon)
             || desertHandSummon.CardId != "S02-0207" || desertHandSummon.Trigger != "play"
@@ -333,6 +361,21 @@ internal static class EffectLifecycleProfiles
             .Select(ability => ability.AbilityId);
         if (!activeRest.ToHashSet(StringComparer.Ordinal).SetEquals(ActiveRestAbilityIds))
             throw new InvalidOperationException("Active-rest family changed; review its per-ability bindings.");
+        foreach (var id in SelfDamageEntryDiscountAbilityIds)
+        {
+            if (!abilities.TryGetValue(id, out var ability) || ability.Trigger != "hand-play"
+                || ability.ExecutionModel != "special-summon"
+                || !ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.DamageMaster && atom.Stage == "cost"
+                    && atom.Parameters.GetValueOrDefault("semantic") == "self-damage-entry-discount-cost"))
+                throw new InvalidOperationException($"Stale reviewed self-damage entry-discount profile: {id}");
+            bindings.Add(id, SelfDamageEntryDiscount);
+        }
+        var selfDamageEntryDiscounts = abilities.Values.Where(ability => ability.Trigger == "hand-play"
+            && ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.DamageMaster && atom.Stage == "cost"
+                && atom.Parameters.GetValueOrDefault("semantic") == "self-damage-entry-discount-cost"))
+            .Select(ability => ability.AbilityId);
+        if (!selfDamageEntryDiscounts.ToHashSet(StringComparer.Ordinal).SetEquals(SelfDamageEntryDiscountAbilityIds))
+            throw new InvalidOperationException("Self-damage entry-discount family changed; review its per-ability bindings.");
         return bindings;
     }
 }
