@@ -1746,9 +1746,8 @@ public sealed partial class L12GameEngine
             if (!string.IsNullOrWhiteSpace(sharedCombatTiming))
                 return TrimTrailingEffectReminder(sharedCombatTiming);
         }
-        var sharedTimingLine = lines.FirstOrDefault(line =>
-            line.StartsWith("登场时/进攻时", StringComparison.Ordinal));
-        if (sharedTimingLine is not null && trigger is "enter" or "promotion-enter" or "attack")
+        var sharedTimingLine = lines.FirstOrDefault(line => SharedTimingContainsTrigger(line, trigger));
+        if (sharedTimingLine is not null)
             return TrimTrailingEffectReminder(SpecializeSharedTriggerTiming(sharedTimingLine, trigger));
         var abilitySegments = lines.SelectMany(SplitEffectAbilitySegments).ToArray();
         var markerMatch = abilitySegments.FirstOrDefault(segment => markers.Length > 0
@@ -1769,23 +1768,45 @@ public sealed partial class L12GameEngine
     {
         const string chargeKeywordReminder = "（可在登场回合进攻）";
         var trimmed = text.Trim();
-        return trimmed.EndsWith(chargeKeywordReminder, StringComparison.Ordinal)
-            ? trimmed[..^chargeKeywordReminder.Length].TrimEnd()
-            : trimmed;
+        var reminderEnd = trimmed.EndsWith('。') ? trimmed.Length - 1 : trimmed.Length;
+        return reminderEnd >= chargeKeywordReminder.Length
+            && trimmed.AsSpan(0, reminderEnd).EndsWith(chargeKeywordReminder, StringComparison.Ordinal)
+                ? trimmed[..(reminderEnd - chargeKeywordReminder.Length)].TrimEnd()
+                : trimmed;
     }
 
     private static string SpecializeSharedTriggerTiming(string text, string trigger)
     {
         // A printed line may deliberately share one body between multiple trigger
         // timings. The action banner must still name only the timing that fired.
-        const string sharedEnterAttack = "登场时/进攻时";
-        if (!text.StartsWith(sharedEnterAttack, StringComparison.Ordinal)) return text;
-        return trigger switch
+        var timing = trigger switch
         {
-            "enter" or "promotion-enter" => $"登场时{text[sharedEnterAttack.Length..]}",
-            "attack" => $"进攻时{text[sharedEnterAttack.Length..]}",
-            _ => text,
+            "enter" or "promotion-enter" => "登场时",
+            "attack" => "进攻时",
+            "death" => "阵亡时",
+            "leave" => "离场时",
+            _ => null,
         };
+        if (timing is null) return text;
+        foreach (var shared in new[] { "登场时/进攻时", "进攻时/阵亡时", "阵亡时/离场时" })
+            if (text.StartsWith(shared, StringComparison.Ordinal) && shared.Contains(timing, StringComparison.Ordinal))
+                return $"{timing}{text[shared.Length..]}";
+        return text;
+    }
+
+    private static bool SharedTimingContainsTrigger(string text, string trigger)
+    {
+        var timing = trigger switch
+        {
+            "enter" or "promotion-enter" => "登场时",
+            "attack" => "进攻时",
+            "death" => "阵亡时",
+            "leave" => "离场时",
+            _ => null,
+        };
+        return timing is not null && new[] { "登场时/进攻时", "进攻时/阵亡时", "阵亡时/离场时" }
+            .Any(shared => text.StartsWith(shared, StringComparison.Ordinal)
+                && shared.Contains(timing, StringComparison.Ordinal));
     }
 
     private static IEnumerable<string> SplitEffectAbilitySegments(string text)

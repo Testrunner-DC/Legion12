@@ -843,7 +843,9 @@ public sealed class EffectPresentationBranchSegmentTests
         Assert.Equal("mode:front", item.Data["declared:volleyMode"]);
         var presentation = Assert.Single(game.State.Events, action => action.Cards.Any(card =>
             card.InstanceId == source.InstanceId) && action.EffectText == "前排分支覆盖\n第二行");
-        Assert.Equal(source.EffectText, presentation.Text);
+        Assert.Equal(string.Join(' ', source.EffectText!.Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)),
+            presentation.Text);
         Assert.Equal("declared", presentation.EffectResultStatus);
         Assert.Equal(front.SceneId, presentation.EffectSceneId);
         Assert.Equal(front.AbilityId, presentation.EffectAbilityId);

@@ -176,7 +176,7 @@ public sealed class Bq20260907_263RegressionTests
     public void NonKeywordTrailingRuleParenthesesRemainInTriggeredEffectText()
     {
         var uesugi = Card("S01-0403", "bq263-uesugi");
-        Assert.Equal("登场时 击杀对方1张费用不高于X的军团。（X=双方战场<反击战术>合计数量）",
+        Assert.Equal("登场时 击杀对方1张费用不高于X的军团。（X=双方战场<反击战术>合计数量）。",
             L12GameEngine.ResolveTriggeredEffectDisplayText(uesugi, "enter", "【登场时】效果"));
 
         var custom = new L12CardInstance

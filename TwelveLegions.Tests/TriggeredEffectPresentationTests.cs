@@ -20,10 +20,16 @@ public sealed class TriggeredEffectPresentationTests
             {
                 var resolved = L12GameEngine.ResolveTriggeredEffectDisplayText(source, trigger, fallback);
                 Assert.DoesNotContain('\n', resolved);
-                if (definition.Id == "ST06-05")
-                    Assert.EndsWith("可抽取1张牌。", resolved, StringComparison.Ordinal);
-                else
+                var responseScopes = Catalog.AtomicEffects.Find(definition.Id)?.ResponseScopes ?? [];
+                if (responseScopes.Count == 0)
+                {
+                    Assert.Contains(definition.CardType, new[] { "disaster", "destruction" });
                     Assert.Contains(Normalize(resolved), Normalize(definition.Effect!), StringComparison.Ordinal);
+                }
+                else
+                    Assert.Contains(responseScopes, scope =>
+                        Normalize(SpecializeSharedTiming(scope.Text, trigger))
+                            .Contains(Normalize(resolved), StringComparison.Ordinal));
                 audited++;
             }
         }
@@ -51,6 +57,22 @@ public sealed class TriggeredEffectPresentationTests
             L12GameEngine.ResolveTriggeredEffectDisplayText(source, "enter", "【登场时】效果"));
         Assert.Equal("进攻时 可抽取1张牌。",
             L12GameEngine.ResolveTriggeredEffectDisplayText(source, "attack", "【进攻时】效果"));
+    }
+
+    [Theory]
+    [InlineData("S01-0111", "attack", "进攻时 可返还1士气：")]
+    [InlineData("S01-0111", "death", "阵亡时 可返还1士气：")]
+    [InlineData("S01-0204", "death", "阵亡时 将此军团下方")]
+    [InlineData("S01-0204", "leave", "离场时 将此军团下方")]
+    public void EverySupportedSharedTimingShowsOnlyTheTriggerThatActuallyFired(
+        string cardId, string trigger, string expectedPrefix)
+    {
+        var source = CreateInstance(Catalog.Cards[cardId]);
+
+        var resolved = L12GameEngine.ResolveTriggeredEffectDisplayText(source, trigger, "触发效果");
+
+        Assert.StartsWith(expectedPrefix, resolved, StringComparison.Ordinal);
+        Assert.DoesNotContain('/', resolved);
     }
 
     [Fact]
@@ -171,4 +193,21 @@ public sealed class TriggeredEffectPresentationTests
     private static string Normalize(string value)
         => value.Replace("\r", string.Empty, StringComparison.Ordinal)
             .Replace("\n", " ", StringComparison.Ordinal);
+
+    private static string SpecializeSharedTiming(string text, string trigger)
+    {
+        var timing = trigger switch
+        {
+            "enter" or "promotion-enter" => "登场时",
+            "attack" => "进攻时",
+            "death" => "阵亡时",
+            "leave" => "离场时",
+            _ => null,
+        };
+        if (timing is null) return text;
+        foreach (var shared in new[] { "登场时/进攻时", "进攻时/阵亡时", "阵亡时/离场时" })
+            if (text.StartsWith(shared, StringComparison.Ordinal) && shared.Contains(timing, StringComparison.Ordinal))
+                return $"{timing}{text[shared.Length..]}";
+        return text;
+    }
 }

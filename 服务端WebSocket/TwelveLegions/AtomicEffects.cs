@@ -130,6 +130,7 @@ public sealed record L12AtomicCardEffect(
     string ReviewSource = "automatic")
 {
     public bool BlocksAttack { get; init; }
+    public IReadOnlyList<L12ResponseScopeDefinition> ResponseScopes { get; init; } = [];
 }
 
 public sealed record L12AtomicCoverage(
@@ -471,6 +472,7 @@ public sealed class L12AtomicEffectCatalog
             reviewStatus, reviewSource)
         {
             BlocksAttack = card.BlocksAttack,
+            ResponseScopes = L12ResponseScopeRules.Build(card),
         };
     }
 

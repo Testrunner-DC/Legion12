@@ -8,6 +8,30 @@ const read = path => {
 const s1 = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/cards.s1.json'))
 const webS1 = JSON.parse(read('../public/data/l12/cards.s1.json'))
 const webLookup = JSON.parse(read('../public/data/l12/cards.lookup.json'))
+const webS1ById = new Map(webS1.map(card => [card.id, card]))
+const lookupByCardNo = new Map(webLookup.map(card => [card.cardNo, card]))
+const lookupExemptS1Ids = new Set(['S01-00C1', 'S01-01C1', 'S01-02C1', 'S01-03C1', 'S01-03M2', 'S01-04C1'])
+if (s1.length !== webS1.length) throw new Error('S1服务端与图鉴卡牌数量不一致')
+for (const card of s1) {
+  const webCard = webS1ById.get(card.id)
+  if (!webCard || webCard.effect !== card.effect) {
+    throw new Error(`${card.id}的S1服务端与图鉴卡文不一致`)
+  }
+  if (String(card.effect ?? '').includes('\r')) {
+    throw new Error(`${card.id}的S1卡文必须统一使用LF换行`)
+  }
+  const lookupCard = lookupByCardNo.get(card.id)
+  if (!lookupCard) {
+    if (!lookupExemptS1Ids.has(card.id)) throw new Error(`${card.id}缺少图鉴搜索数据`)
+    continue
+  }
+  if (lookupCard.effectText !== card.effect || !lookupCard.searchText?.includes(card.effect)) {
+    throw new Error(`${card.id}的S1服务端、图鉴详情与搜索卡文不一致`)
+  }
+}
+for (const cardId of lookupExemptS1Ids) {
+  if (lookupByCardNo.has(cardId)) throw new Error(`${cardId}已进入图鉴搜索数据，应移出S1搜索豁免`)
+}
 const huntingMomentText = '将墓地4张卡牌自选顺序返回我方牌库底部，击杀对方1张兵力不高于6000的军团。'
 if (s1.find(card => card.id === 'S01-0319')?.effect !== huntingMomentText
   || webS1.find(card => card.id === 'S01-0319')?.effect !== huntingMomentText
