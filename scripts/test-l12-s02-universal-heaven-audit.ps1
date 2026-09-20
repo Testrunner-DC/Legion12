@@ -19,6 +19,15 @@ $composite = Read-Source 'L12CompositeEffectPlans.cs'
 $remaining = Read-Source 'L12S2RemainingEffects.cs'
 $faction = Read-Source 'L12S2FactionEffects.cs'
 $game = Read-Source 'L12GameEngine.cs'
+$moralePayments = Read-Source 'L12MoralePayments.cs'
+$moraleReturns = Read-Source 'L12MoraleReturns.cs'
+$statusSemantics = Read-Source 'L12StructuredCardRules.StatusSemantics.cs'
+$playerMat = [System.IO.File]::ReadAllText(
+    (Join-Path $ProjectRoot 'opcgpro-vue/src/l12/game/PlayerMat.vue'), [System.Text.Encoding]::UTF8)
+$gameBoard = [System.IO.File]::ReadAllText(
+    (Join-Path $ProjectRoot 'opcgpro-vue/src/l12/game/GameBoard.vue'), [System.Text.Encoding]::UTF8)
+$replayModel = [System.IO.File]::ReadAllText(
+    (Join-Path $ProjectRoot 'opcgpro-vue/src/l12/replayModel.ts'), [System.Text.Encoding]::UTF8)
 $active = Read-Source 'L12ActiveAbilities.cs'
 $publicTrigger = Read-Source 'L12PublicTriggerEffectPlans.cs'
 $enterPlans = Read-Source 'L12EnterPublicTriggerPlans.cs'
@@ -69,6 +78,18 @@ Assert-Contains $open $noOpenQuestionText 'Resolved ruling questions must leave 
 Assert-Contains $postResolution 'BeginFaithZealotMasterChoice(completed)' 'Faith Zealot master choice must begin only after its parent effect completes.'
 Assert-Contains $postResolution '"faith-zealot-post-resolution"' 'Faith Zealot must create a post-resolution interaction.'
 Assert-Contains $rulingTests 'FaithZealotMasterChoiceAppearsOnlyAfterZealotLeavesTheStack' 'Faith Zealot post-resolution regression is missing.'
+
+Assert-Contains $statusSemantics '["S02-0010"] = new("black-lotus", "黑色莲花", ReturnsToOwnerGraveyard: true)' 'Black Lotus morale-zone identity must remain in the structured semantic registry.'
+Assert-Contains $moralePayments '.MoraleZoneResourceRule(morale.CardId)?.ResourceType' 'Morale payment must project structured morale-zone resource identity.'
+Assert-Contains $moraleReturns '.MoraleZoneResourceRule(morale.CardId)?.ResourceType' 'Morale return prompt must project structured morale-zone resource identity.'
+Assert-Contains $game 'L12StructuredCardSemantics.MoraleZoneResourceRule(card.CardId) is { ReturnsToOwnerGraveyard: true }' 'Morale return settlement must use the structured destination rule.'
+Assert-Contains $game 'morale = SnapshotMorale(player)' 'Both player snapshots must use the authoritative morale projection.'
+Assert-Contains $playerMat "card.resourceType === 'black-lotus'" 'Player mat Black Lotus identity must come from the authoritative resource type.'
+Assert-Contains $gameBoard "resource.resourceType === 'black-lotus'" 'Mobile picker Black Lotus identity must come from the authoritative resource type.'
+foreach ($source in @($playerMat, $gameBoard)) {
+    if ($source.Contains("cardId === 'S02-0010'")) { throw 'Black Lotus UI must not restore a card-id identity branch.' }
+}
+Assert-Contains $replayModel "resourceType: value(card, 'ResourceType', 'resourceType', undefined)" 'Replay projection must preserve structured morale-zone resource identity.'
 
 $rawFactionFilter = '\.Faction\s*(?:==|!=)\s*"(?:tianting|taiyangcheng|asgard|gaotianyuan|olympus|otherworld)"'
 foreach ($source in @($composite, $publicTrigger, $enterPlans, $attackPlans)) {

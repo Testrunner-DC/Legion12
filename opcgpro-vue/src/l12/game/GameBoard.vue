@@ -266,7 +266,7 @@ const mobileMoraleChoices = computed<MobileMoraleCandidate[]>(() => {
   const resource = owner?.morale.find(item => item.instanceId === id)
   if (!owner || !resource) return []
   const godPower = Boolean(resource.isGodPower)
-  const blackLotus = resource.cardId === 'S02-0010'
+  const blackLotus = resource.resourceType === 'black-lotus'
   return [{
     id,
     label: godPower ? '神力' : blackLotus ? '黑色莲花' : '士气',

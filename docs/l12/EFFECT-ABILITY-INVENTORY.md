@@ -5,14 +5,14 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`95cdc61a48ce21df37fcd30e1ab568336671c020b7588a6f0581415f7d2e75fb`。
+内容指纹：`6f3a07ff7678b324679ecae30a30e794425c51c955ccddcdc907f02e73502a8d`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
 | composite-definition | 201 |
 | fine-definition | 86 |
-| owner-unreviewed | 243 |
-| shared-rule-owner | 156 |
+| owner-unreviewed | 242 |
+| shared-rule-owner | 157 |
 
 fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；shared-rule-owner = 精确能力已绑定共用规则入口及适用性档案；owner-unreviewed = 还需定位实际入口。任何一种归属证据均不等于生命周期验收通过。
 同卡同触发只算候选，不能把另一能力的程序继承为本能力已覆盖。无能力卡单列，不能从分母中静默消失。
@@ -153,6 +153,16 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 精确绑定能力数：2。运行入口：candidate-generation = L12GameEngine.IsCounterDeploymentCandidate；settlement-revalidation = L12GameEngine.SetDeclaredCounterTactics；slot-declaration = L12GameEngine.CreateActivationStepPrompt。
 
+
+### replacement:morale-zone-resource
+
+精确绑定能力数：1。运行入口：definition = L12StructuredCardSemantics.MoraleZoneResourceRule；payment-identity = L12GameEngine.OrdinaryPaymentSemanticKey；payment-prompt = L12GameEngine.CreateResourcePaymentPrompt；return-prompt = L12GameEngine.CreateReturnMoralePrompt；return-settlement = L12GameEngine.ReturnMoraleCardToDestination；snapshot-projection = L12GameEngine.SnapshotMorale。
+
+- multi-target-applicability：同批返还的每个资源分别按当前身份决定去向，不合并、不转移到其他实例。
+- negated：替代规则不独立入栈，不可单独响应或无效；已支付的返还费用不因后续效果无效而恢复。
+- no-target：替代规则自身不选择对象；返还效果仍按公共协议选择实际士气实例。
+- payment-cancel：替代规则没有自身费用；它作为资源被消耗或返还时，由父级支付协议处理取消。
+- target-invalidated：提交时选定实例必须仍在当前玩家士气区；失效后不改选其他资源补位。
 
 ### hand-play:artifact-block
 
@@ -350,6 +360,11 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0009:ability:play:ff53cfd909161da1 | TwelveLegions.Tests.S2UniversalEffectsTests.DefenseDeploymentRestoresItsDeclaredCounterAndRejectsTheConsumedSelectionPrompt / S02-0009 | duplicate-submit, reconnect |
 | S02-0009:ability:play:ff53cfd909161da1 | TwelveLegions.Tests.S2UniversalEffectsTests.DefenseDeploymentSetsUpToTwoCounterTacticsWithoutTheirNormalSetCost / S02-0009 | multi-target-applicability, normal |
 | S02-0009:ability:play:ff53cfd909161da1 | TwelveLegions.Tests.S2UniversalEffectsTests.DefenseDeploymentStopsBeforeSettingTheDeclaredCounterWhenActuallyNegated / S02-0009 | negated |
+| S02-0010:ability:return-as-morale:9169de0e99d296e2 | TwelveLegions.Tests.BlackLotusMoraleResourceLifecycleProfileTests.BlackLotusOwnsTheOnlyStructuredMoraleZoneReplacement / S02-0010 | exact-card-family, runtime-branch-mapping |
+| S02-0010:ability:return-as-morale:9169de0e99d296e2 | TwelveLegions.Tests.BlackLotusMoraleResourceLifecycleProfileTests.EveryViewerReceivesTheSameAuthoritativeResourceIdentity / S02-0010 | frontend-structured-identity, reconnect, v2-snapshot |
+| S02-0010:ability:return-as-morale:9169de0e99d296e2 | TwelveLegions.Tests.BlackLotusMoraleResourceLifecycleProfileTests.OnlyEligibleBlackLotusReturnsAutomaticallyToOwnerGraveyard / S02-0010 | automatic-return, return-owner-graveyard |
+| S02-0010:ability:return-as-morale:9169de0e99d296e2 | TwelveLegions.Tests.BlackLotusMoraleResourceLifecycleProfileTests.PaymentPromptDistinguishesBlackLotusAndConsumesOnlyTheSelectedInstance / S02-0010 | duplicate-submit, normal, payment-distinct-identity |
+| S02-0010:ability:return-as-morale:9169de0e99d296e2 | TwelveLegions.Tests.BlackLotusMoraleResourceLifecycleProfileTests.ReturnPromptAndSettlementUseTheSameIdentityWithoutSecondMovement / S02-0010 | duplicate-submit, return-owner-graveyard, target-invalidated |
 | S02-0016:ability:s2-reaction:37e38b08d365f0bb | TwelveLegions.Tests.StackResponseChoiceRegressionTests.NestedResponseKeepsItsDeclaredRootWhenIntermediateStackChanges / S02-0016 | nested-authority, reconnect-settlement |
 | S02-0016:ability:s2-reaction:37e38b08d365f0bb | TwelveLegions.Tests.StackResponseChoiceRegressionTests.PublicResponseDeclarationsRestoreAndRejectDuplicateFinalSubmission / S02-0016 | commit-declaration, duplicate-declaration, presentation-declaration, reconnect-declaration |
 | S02-0016:ability:s2-reaction:37e38b08d365f0bb | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ResponseSettlementRevalidatesObjectsAndSuccessDependenciesAfterRecovery / S02-0016 | duplicate-rejected, negated-settlement, normal-settlement, reconnect-settlement, target-invalidated-settlement |
@@ -758,7 +773,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0008 万物统御之戒 #2 | S02-0008:ability:enter:d55717584e8ef56e | enter/triggered | composite-definition | 登场时 可弃置1张手牌 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.discard → resolution:operation.move-zone → resolution:operation.shuffle → resolution:visibility.policy → resolution:operation.composite-flow | 2 | 登场时 可弃置1张手牌：查看我方牌库，选择1张【通用】卡牌展示并加入手牌。随后重洗牌库。 |
 | S02-0009 防御部署 #1 | S02-0009:ability:play:ff53cfd909161da1 | play/spell | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.draw → resolution:operation.composite-flow | 3 | 将手牌中最多2张&lt;反击战术&gt;置入战场。若手牌数量不高于4，可抽取1张牌。 |
 | S02-0010 黑色莲花 #1 | S02-0010:ability:play:6d06ac2a469671de | play/spell | composite-definition | 将天灾值增加或减少最多1点。 可消耗3士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → resolution:special.domain → resolution:operation.composite-flow | 5 | 将天灾值增加或减少最多1点。 可消耗3士气：将此战术休整置入士气区，此战术视为1张士气。 |
-| S02-0010 黑色莲花 #2 | S02-0010:ability:return-as-morale:9169de0e99d296e2 | return-as-morale/replacement | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:legacy.resolve | 0 | 「作为士气」当此战术作为士气被返还时，置入所有者墓地。 |
+| S02-0010 黑色莲花 #2 | S02-0010:ability:return-as-morale:9169de0e99d296e2 | return-as-morale/replacement | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:legacy.resolve | 0 | 「作为士气」当此战术作为士气被返还时，置入所有者墓地。 |
 | S02-0011 纷乱箭 #1 | S02-0011:ability:play:16d3a82605980345 | play/spell | composite-definition | — | trigger:trigger.observe → resolution:special.domain → resolution:operation.composite-flow | 2 | 击杀对方最多3张原本兵力不高于2000的军团。 |
 | S02-0012 祷告仪式 #1 | S02-0012:ability:play:bafe1ab6a18493c0 | play/spell | composite-definition | — | trigger:trigger.observe → resolution:visibility.policy → resolution:operation.composite-flow | 2 | 询问对方是否同意公开下1张天灾卡。若同意则执行ABILITY 2；若不同意则执行ABILITY 3。 |
 | S02-0012 祷告仪式 #2 | S02-0012:ability:granted:e5bb0cce96aba072 | granted/granted-effect | owner-unreviewed | — | trigger:trigger.observe → resolution:visibility.policy → resolution:legacy.resolve | 1 | 公开下1张天灾卡。 |

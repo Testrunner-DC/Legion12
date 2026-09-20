@@ -88,7 +88,11 @@ public sealed partial class L12GameEngine
         var morale = player.Morale.FirstOrDefault(card => card.InstanceId.Equals(
             choiceId, StringComparison.OrdinalIgnoreCase) && !card.Tapped);
         if (morale is not null)
-            return $"morale:{morale.CardId}:{morale.IsGodPower}:{morale.CannotUntapUntilRound}";
+        {
+            var resourceType = L12StructuredCardSemantics.MoraleZoneResourceRule(morale.CardId)?.ResourceType
+                ?? (morale.IsGodPower ? "god-power" : "morale");
+            return $"morale:{resourceType}:{morale.CardId}:{morale.CannotUntapUntilRound}";
+        }
         // 场上陵墓守卫的位置、兵力及附加状态都可能影响后续效果；即使同名也不能
         // 自动替玩家选定其中一张。
         var guard = SpendableFieldMoraleResources(player).FirstOrDefault(card => card.InstanceId.Equals(
@@ -148,14 +152,21 @@ public sealed partial class L12GameEngine
         foreach (var choiceId in availableTemporaryMorale)
             data[$"{choiceId}:resourceType"] = "temporary-morale";
         foreach (var morale in availableMorale)
-            data[$"{morale.InstanceId}:resourceType"] = morale.IsGodPower ? "god-power" : "morale";
+            data[$"{morale.InstanceId}:resourceType"] = L12StructuredCardSemantics
+                .MoraleZoneResourceRule(morale.CardId)?.ResourceType
+                ?? (morale.IsGodPower ? "god-power" : "morale");
         foreach (var guard in availableGuards)
             data[$"{guard.InstanceId}:resourceType"] = L12StructuredCardSemantics
                 .FieldMoraleResourceRule(guard.CardId)!.ResourceType;
         var resourceNames = new List<string>();
         if (availableTemporaryMorale.Length > 0) resourceNames.Add("临时士气");
-        if (availableMorale.Any(card => !card.IsGodPower)) resourceNames.Add("士气");
+        if (availableMorale.Any(card => !card.IsGodPower
+                && L12StructuredCardSemantics.MoraleZoneResourceRule(card.CardId) is null))
+            resourceNames.Add("士气");
         if (availableMorale.Any(card => card.IsGodPower)) resourceNames.Add("神力");
+        resourceNames.AddRange(availableMorale
+            .Select(card => L12StructuredCardSemantics.MoraleZoneResourceRule(card.CardId)?.DisplayName)
+            .OfType<string>().Distinct(StringComparer.Ordinal));
         resourceNames.AddRange(availableGuards
             .Select(guard => L12StructuredCardSemantics.FieldMoraleResourceRule(guard.CardId)!.DisplayName)
             .Distinct(StringComparer.Ordinal));

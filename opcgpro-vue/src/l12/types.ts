@@ -99,7 +99,7 @@ export interface PlayerView {
   handCount?: number
   moraleDeck?: Array<{ instanceId: string; cardId: string; tapped: boolean; isGodPower?: boolean }>
   moraleDeckCount?: number
-  morale: Array<{ instanceId: string; cardId: string; tapped: boolean; isGodPower?: boolean; cannotUntapUntilRound?: number }>
+  morale: Array<{ instanceId: string; cardId: string; resourceType?: string; tapped: boolean; isGodPower?: boolean; cannotUntapUntilRound?: number }>
   field: Array<Array<Card | null>>
   relic?: Card | null
   extraRelics?: Card[]

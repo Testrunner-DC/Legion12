@@ -21,7 +21,7 @@ const player = {
   libraryCount: 30, hand: [], handCount: 0, graveyard: [], field: [[null, null, null], [null, null, null]],
   morale: [
     { instanceId: 'ordinary', cardId: 'ST06-C1', tapped: false },
-    { instanceId: 'lotus', cardId: 'S02-0010', tapped: true },
+    { instanceId: 'lotus', cardId: 'S02-0010', resourceType: 'black-lotus', tapped: true },
   ],
   temporaryMorale: 1, mulliganDone: true,
   specialZones: { runes: 0, trialLevel: 0, godPower: [], trials: [] },

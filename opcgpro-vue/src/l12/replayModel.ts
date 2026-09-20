@@ -232,6 +232,7 @@ function replayPlayer(raw: any, catalog?: ReadonlyMap<string, ReplayCardDefiniti
     })),
     morale: value<any[]>(raw, 'Morale', 'morale', []).map(card => ({
       instanceId: value(card, 'InstanceId', 'instanceId', ''), cardId: value(card, 'CardId', 'cardId', ''),
+      resourceType: value(card, 'ResourceType', 'resourceType', undefined),
       tapped: value(card, 'Tapped', 'tapped', false),
     })),
     field: [0, 1].map(row => [0, 1, 2].map(slot => replayCard(fieldRaw?.[row]?.[slot]))),

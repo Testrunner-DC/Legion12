@@ -631,6 +631,34 @@ internal static class EffectLifecycleProfiles
                 "duplicate-submit", "reconnect-derived-state", "authoritative-snapshot-projection"],
         };
 
+    internal const string BlackLotusMoraleReturnAbilityId =
+        "S02-0010:ability:return-as-morale:9169de0e99d296e2";
+
+    private static readonly L12LifecycleProfile MoraleZoneResource =
+        new("replacement:morale-zone-resource",
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["definition"] = "L12StructuredCardSemantics.MoraleZoneResourceRule",
+                ["payment-identity"] = "OrdinaryPaymentSemanticKey",
+                ["payment-prompt"] = "CreateResourcePaymentPrompt",
+                ["return-prompt"] = "CreateReturnMoralePrompt",
+                ["return-settlement"] = "ReturnMoraleCardToDestination",
+                ["snapshot-projection"] = "SnapshotMorale",
+            },
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["no-target"] = "替代规则自身不选择对象；返还效果仍按公共协议选择实际士气实例。",
+                ["negated"] = "替代规则不独立入栈，不可单独响应或无效；已支付的返还费用不因后续效果无效而恢复。",
+                ["payment-cancel"] = "替代规则没有自身费用；它作为资源被消耗或返还时，由父级支付协议处理取消。",
+                ["target-invalidated"] = "提交时选定实例必须仍在当前玩家士气区；失效后不改选其他资源补位。",
+                ["multi-target-applicability"] = "同批返还的每个资源分别按当前身份决定去向，不合并、不转移到其他实例。",
+            })
+        {
+            AdditionalChecks = ["exact-card-family", "entered-tapped", "payment-distinct-identity",
+                "return-owner-graveyard", "automatic-return", "duplicate-submit",
+                "v2-snapshot", "replay-projection", "frontend-structured-identity"],
+        };
+
     internal const string OpponentTurnFieldRuleAbilityId =
         "S01-0212:ability:static:2f33fb3652e7bd28";
 
@@ -752,6 +780,7 @@ internal static class EffectLifecycleProfiles
         ValidateOwners(HandPlayBlock);
         ValidateOwners(RelicZoneLimitExempt);
         ValidateOwners(OutOfDeckGraveyardLifecycle);
+        ValidateOwners(MoraleZoneResource);
         ValidateOwners(OpponentTurnFieldRule);
         ValidateOwners(SummonTurnCounterProtection);
         ValidateOwners(RamsesProtectionAndEntryCost);
@@ -943,6 +972,21 @@ internal static class EffectLifecycleProfiles
             .Select(ability => ability.CardId).Distinct(StringComparer.Ordinal).ToHashSet(StringComparer.Ordinal);
         if (!fieldMoraleResourceCards.SetEquals(["S01-0212"]))
             throw new InvalidOperationException("Field morale-resource family changed; review its per-ability bindings.");
+        if (!abilities.TryGetValue(BlackLotusMoraleReturnAbilityId, out var moraleZoneResource)
+            || moraleZoneResource.CardId != "S02-0010"
+            || moraleZoneResource.Trigger != "return-as-morale"
+            || moraleZoneResource.ExecutionModel != "replacement"
+            || L12StructuredCardSemantics.MoraleZoneResourceRule(moraleZoneResource.CardId) is null)
+            throw new InvalidOperationException(
+                $"Stale reviewed morale-zone resource replacement: {BlackLotusMoraleReturnAbilityId}");
+        bindings.Add(BlackLotusMoraleReturnAbilityId, MoraleZoneResource);
+        var moraleZoneResourceCards = abilities.Values
+            .Where(ability => L12StructuredCardSemantics.MoraleZoneResourceRule(ability.CardId) is not null
+                && ability.Trigger == "return-as-morale" && ability.ExecutionModel == "replacement")
+            .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);
+        if (!moraleZoneResourceCards.SetEquals([BlackLotusMoraleReturnAbilityId]))
+            throw new InvalidOperationException(
+                "Morale-zone resource replacement family changed; review its per-ability bindings.");
         if (!abilities.TryGetValue(OpponentTurnFieldRuleAbilityId, out var opponentTurnFieldRule)
             || opponentTurnFieldRule.ExecutionModel != "continuous"
             || L12StructuredCardSemantics.OpponentTurnFieldRule(opponentTurnFieldRule.CardId) is null)

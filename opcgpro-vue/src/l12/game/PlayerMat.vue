@@ -101,7 +101,7 @@ function moraleState(card: MoraleResource) {
   return card.tapped ? 'rested-morale' : 'active-morale'
 }
 function isBlackLotusMorale(card: MoraleResource) {
-  return card.cardId === 'S02-0010'
+  return card.resourceType === 'black-lotus'
 }
 function moraleLocked(card: MoraleResource) {
   const lockedUntilRound = card.cannotUntapUntilRound ?? 0

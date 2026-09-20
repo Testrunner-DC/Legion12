@@ -8,6 +8,8 @@ public sealed record L12HandPlayBlockRule(string BlockedCardType, bool AllowsSam
 public sealed record L12OpponentTurnFieldRule(int CostAdjustment, int FrontRowTroopsBonus);
 public sealed record L12FieldMoraleResourceRule(string ResourceType, string DisplayName,
     bool ControllerTurnOnly, bool RequiresActive);
+public sealed record L12MoraleZoneResourceRule(string ResourceType, string DisplayName,
+    bool ReturnsToOwnerGraveyard);
 
 /// <summary>
 /// Runtime identity predicates backed by the structured card rule layer.
@@ -76,6 +78,11 @@ public static class L12StructuredCardSemantics
         {
             [TombGuardCardId] = new("tomb-guard", "陵墓守卫", ControllerTurnOnly: true, RequiresActive: true),
         };
+    private static readonly Dictionary<string, L12MoraleZoneResourceRule> MoraleZoneResourceRules =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["S02-0010"] = new("black-lotus", "黑色莲花", ReturnsToOwnerGraveyard: true),
+        };
     private static readonly HashSet<string> AttachedStrongAttackCards = new(StringComparer.OrdinalIgnoreCase)
     {
         KingsSwordCardId,
@@ -123,6 +130,9 @@ public static class L12StructuredCardSemantics
 
     public static L12FieldMoraleResourceRule? FieldMoraleResourceRule(string? cardId)
         => cardId is null ? null : FieldMoraleResourceRules.GetValueOrDefault(cardId);
+
+    public static L12MoraleZoneResourceRule? MoraleZoneResourceRule(string? cardId)
+        => cardId is null ? null : MoraleZoneResourceRules.GetValueOrDefault(cardId);
 
     public static bool IsGram(string? cardId)
         => string.Equals(cardId, GramCardId, StringComparison.OrdinalIgnoreCase);

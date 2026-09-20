@@ -255,7 +255,8 @@ public sealed partial class L12GameEngine
                 master = MasterSnapshot(player),
                 factionEffect = FactionEffectSnapshot(player),
                 libraryCount = player.Library.Count, libraryTop = State.ActiveDisaster?.CardId == "S02-DS01" ? player.Library.FirstOrDefault() : null,
-                hand = SnapshotHand(index), promotionOptions = BuildS2PromotionOptions(player), player.MoraleDeck, player.Morale,
+                hand = SnapshotHand(index), promotionOptions = BuildS2PromotionOptions(player), player.MoraleDeck,
+                morale = SnapshotMorale(player),
                 field = SnapshotField(player, viewer, revealAllHands), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), player.Removed, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters),
                 player.TemporaryMorale, spendableResourceCount = ActiveResourceCount(player), player.NextLegionChargeMaxCost, player.NextLegionEntryDiscount, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
             }
@@ -266,7 +267,7 @@ public sealed partial class L12GameEngine
                 factionEffect = FactionEffectSnapshot(player),
                 libraryCount = player.Library.Count, libraryTop = State.ActiveDisaster?.CardId == "S02-DS01" ? player.Library.FirstOrDefault() : null,
                 handCount = player.Hand.Count,
-                moraleDeckCount = player.MoraleDeck.Count, player.Morale,
+                moraleDeckCount = player.MoraleDeck.Count, morale = SnapshotMorale(player),
                 field = SnapshotField(player, viewer, revealAllHands), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), graveyardCount = player.Graveyard.Count,
                 removedCount = player.Removed.Count, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters), player.TemporaryMorale, spendableResourceCount = ActiveResourceCount(player), player.NextLegionChargeMaxCost, player.NextLegionEntryDiscount, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
             }).ToArray();
@@ -1366,7 +1367,7 @@ public sealed partial class L12GameEngine
 
     private void ReturnMoraleCardToDestination(L12PlayerState player, L12MoraleCard card)
     {
-        if (card.CardId == "S02-0010")
+        if (L12StructuredCardSemantics.MoraleZoneResourceRule(card.CardId) is { ReturnsToOwnerGraveyard: true })
         {
             var lotus = CreateCard(card.CardId, card.InstanceId);
             player.Graveyard.Add(lotus);
@@ -1375,6 +1376,18 @@ public sealed partial class L12GameEngine
         }
         player.MoraleDeck.Add(card);
     }
+
+    private static object[] SnapshotMorale(L12PlayerState player)
+        => player.Morale.Select(card => (object)new
+        {
+            card.InstanceId,
+            card.CardId,
+            card.Tapped,
+            card.IsGodPower,
+            card.CannotUntapUntilRound,
+            resourceType = L12StructuredCardSemantics.MoraleZoneResourceRule(card.CardId)?.ResourceType
+                ?? (card.IsGodPower ? "god-power" : "morale"),
+        }).ToArray();
 
     private void DiscardAttachedCards(L12CardInstance host, string reason)
     {
