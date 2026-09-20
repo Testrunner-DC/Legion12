@@ -10,6 +10,10 @@ const replayCard = (instanceId, cardId, name) => ({
   InstanceId: instanceId, CardId: cardId, Name: name, CardType: 'legion', Faction: 'otherworld',
   Cost: 2, BaseTroops: 3000, Troops: 3000, DisasterLevel: 0, Tapped: false, SummonRound: 1,
 })
+const disaster = (instanceId, cardId, name) => ({
+  InstanceId: instanceId, CardId: cardId, Name: name, CardType: 'disaster', Faction: 'universal',
+  Cost: 0, BaseTroops: 0, Troops: 0, DisasterLevel: 0, Tapped: false, SummonRound: 0,
+})
 const player = (index) => ({
   PlayerIndex: index, Name: `玩家${index + 1}`, DeckName: '回放测试', Faction: index ? 'tianting' : 'otherworld',
   MasterId: index ? 'MASTER-1' : 'MASTER-0', MasterName: index ? '' : '旧录像主宰名', Hp: 8, MaxHp: 10,
@@ -51,6 +55,24 @@ try {
   assert.equal(faction?.effectText, '权威阵营效果文本')
   assert.equal(replayGameAt(factionDetail, 0, new Map(catalog.map(card => [card.id, card])))?.players[1].factionEffect?.cardId, 'RUNE-1')
 
+  const currentDisaster = disaster('disaster-1', 'S01-DS01', '日月无光')
+  const disasterState = {
+    ...state(basePlayers), ActiveDisaster: currentDisaster,
+    SessionDisasters: [currentDisaster, { InstanceId: 'hidden-1', Hidden: true }, { InstanceId: 'hidden-2', Hidden: true }, disaster('final-1', 'S01-DS10', '堙灭')],
+    RemovedDisasters: [], RevealedDisasters: [currentDisaster], ChosenDisasters: [], DisasterDeck: [{ Hidden: true }],
+  }
+  const disasterDetail = { match, commands: [command(1, 0, { type: 'passPriority' }, disasterState)] }
+  const replayDisasterState = replayGameAt(disasterDetail, 0)
+  assert.equal(replayDisasterState?.activeDisaster?.cardId, 'S01-DS01')
+  assert.equal(replayDisasterState?.sessionDisasters?.length, 4)
+  assert.equal(replayDisasterState?.sessionDisasters?.[1].hidden, true)
+
+  const legacyDisasterState = state(basePlayers, [{ Sequence: 1, Type: 'disaster-reveal', PlayerIndex: null, Text: '天灾翻开', Cards: [currentDisaster] }])
+  const legacyDisasterDetail = { match, commands: [command(1, 0, { type: 'passPriority' }, legacyDisasterState)] }
+  const legacyReplayDisaster = replayGameAt(legacyDisasterDetail, 0)
+  assert.equal(legacyReplayDisaster?.activeDisaster?.cardId, 'S01-DS01')
+  assert.equal(legacyReplayDisaster?.sessionDisasters?.length, 4)
+
   const promptState = state(basePlayers, [], [{ PromptId: 'prompt-1', SourceInstanceId: 'master-1', SourceCardId: 'MASTER-1' }])
   const promptDetail = { match, commands: [
     command(1, 1, { type: 'passPriority' }, promptState),
@@ -80,7 +102,7 @@ try {
     { Sequence: 1, Type: 'turn-end', PlayerIndex: 0, Text: '回合结束', Cards: [source] },
   ]))] }
   assert.equal(replayFocusCardAt(systemOnly, 0, catalog), null)
-  console.log('Replay focus passed: exact master/faction sources, prompt source, prior-zone source, actor event fallback and system-event exclusion.')
+  console.log('Replay focus passed: exact master/faction/disaster state, prompt source, prior-zone source, actor event fallback and system-event exclusion.')
 } finally {
   await server.close()
 }

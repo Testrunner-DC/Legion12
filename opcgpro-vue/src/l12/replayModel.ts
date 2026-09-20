@@ -1,4 +1,4 @@
-import type { ActionEvent, Card, GameState, Phase, PlayerView } from './types'
+import type { ActionEvent, Card, DisasterCardView, GameState, Phase, PlayerView } from './types'
 
 export interface ReplayCardDefinition {
   id: string
@@ -139,6 +139,54 @@ function replayCard(raw: any): Card | null {
   }
 }
 
+function replayDisasterView(raw: any): DisasterCardView | null {
+  if (!raw) return null
+  const instanceId = value(raw, 'InstanceId', 'instanceId', '')
+  if (!instanceId) return null
+  const hidden = value(raw, 'Hidden', 'hidden', false)
+  const cardId = value(raw, 'CardId', 'cardId', '')
+  if (hidden || !cardId) return {
+    instanceId,
+    hidden: true,
+    ownerIndex: value(raw, 'OwnerIndex', 'ownerIndex', undefined),
+  }
+  return replayCard(raw)
+}
+
+function replayActiveDisasterAt(detail: MatchDetail, step: number, raw: any) {
+  const hasExplicit = Object.prototype.hasOwnProperty.call(raw ?? {}, 'ActiveDisaster')
+    || Object.prototype.hasOwnProperty.call(raw ?? {}, 'activeDisaster')
+  if (hasExplicit) return replayCard(value(raw, 'ActiveDisaster', 'activeDisaster', null))
+  for (let index = step; index >= 0; index--) {
+    const events = value<any[]>(detail.commands[index]?.state, 'Events', 'events', [])
+    const latest = [...events].reverse().find(event => ['disaster-reveal', 'disaster-removed'].includes(
+      value<string>(event, 'Type', 'type', ''),
+    ))
+    if (!latest) continue
+    if (value<string>(latest, 'Type', 'type', '') === 'disaster-removed') return null
+    return replayCard(value<any[]>(latest, 'Cards', 'cards', [])[0])
+  }
+  return null
+}
+
+function replaySessionDisasters(raw: any, activeDisaster: Card | null): DisasterCardView[] {
+  const recorded = value<any[]>(raw, 'SessionDisasters', 'sessionDisasters', [])
+    .map(replayDisasterView).filter(Boolean) as DisasterCardView[]
+  if (recorded.length) return recorded
+  const known = [
+    ...value<any[]>(raw, 'RevealedDisasters', 'revealedDisasters', []),
+    ...value<any[]>(raw, 'ChosenDisasters', 'chosenDisasters', []),
+    ...value<any[]>(raw, 'RemovedDisasters', 'removedDisasters', []),
+    ...(activeDisaster ? [activeDisaster] : []),
+  ].map(replayDisasterView).filter((card): card is DisasterCardView => Boolean(card && !card.hidden))
+    .filter((card, index, cards) => cards.findIndex(candidate => candidate.instanceId === card.instanceId) === index)
+  const ordinary = known.filter(card => card.cardId !== 'S01-DS10').slice(0, 3)
+  while (ordinary.length < 3) ordinary.push({ instanceId: `replay-hidden-disaster-${ordinary.length}`, hidden: true })
+  const final = known.find(card => card.cardId === 'S01-DS10')
+    ?? { instanceId: 'replay-hidden-final-disaster', hidden: true }
+  return [...ordinary, final]
+}
+
 function replayAbility(raw: any) {
   return {
     id: value(raw, 'Id', 'id', ''), label: value(raw, 'Label', 'label', ''),
@@ -212,6 +260,7 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
   if (!raw) return null
   const rawPhase = value<any>(raw, 'Phase', 'phase', 'Main')
   const defense = value<any>(raw, 'PendingDefense', 'pendingDefense', null)
+  const activeDisaster = replayActiveDisasterAt(detail, step, raw)
   const events: ActionEvent[] = value<any[]>(raw, 'Events', 'events', []).map(event => ({
     sequence: value(event, 'Sequence', 'sequence', 0), type: value(event, 'Type', 'type', ''),
     playerIndex: value(event, 'PlayerIndex', 'playerIndex', undefined), text: value(event, 'Text', 'text', ''),
@@ -235,7 +284,14 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
     phase: typeof rawPhase === 'number' ? phaseNames[rawPhase] ?? 'Main' : rawPhase,
     round: value(raw, 'Round', 'round', 1), disasterMode: value(raw, 'DisasterMode', 'disasterMode', 'all'),
     disasterValue: value(raw, 'DisasterValue', 'disasterValue', 0),
-    activeDisaster: replayCard(value(raw, 'ActiveDisaster', 'activeDisaster', null)),
+    activeDisaster,
+    disasterDeck: value<any[]>(raw, 'DisasterDeck', 'disasterDeck', []).map(() => ({ hidden: true })),
+    bannedDisasters: value<any[]>(raw, 'BannedDisasters', 'bannedDisasters', []).map(replayCard).filter(Boolean) as Card[],
+    removedDisasters: value<any[]>(raw, 'RemovedDisasters', 'removedDisasters', []).map(replayCard).filter(Boolean) as Card[],
+    revealedDisasters: value<any[]>(raw, 'RevealedDisasters', 'revealedDisasters', []).map(replayCard).filter(Boolean) as Card[],
+    chosenDisasters: value<any[]>(raw, 'ChosenDisasters', 'chosenDisasters', []).map(replayDisasterView).filter(Boolean) as DisasterCardView[],
+    sessionDisasters: replaySessionDisasters(raw, activeDisaster),
+    disasterPreparationStep: value(raw, 'DisasterPreparationStep', 'disasterPreparationStep', 0),
     players: value<any[]>(raw, 'Players', 'players', []).map(player => replayPlayer(player, catalog)),
     pendingDefense: defense ? {
       attackerPlayer: value(defense, 'AttackerPlayer', 'attackerPlayer', 0),

@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url'
 const source = readFileSync(fileURLToPath(new URL('../src/l12/MatchRecords.vue', import.meta.url)), 'utf8')
 const replayPage = readFileSync(fileURLToPath(new URL('../src/l12/ReplayPage.vue', import.meta.url)), 'utf8')
 const replayModel = readFileSync(fileURLToPath(new URL('../src/l12/replayModel.ts', import.meta.url)), 'utf8')
+const gameBoard = readFileSync(fileURLToPath(new URL('../src/l12/game/GameBoard.vue', import.meta.url)), 'utf8')
+const zonePresentation = readFileSync(fileURLToPath(new URL('../src/l12/game/ZoneMovementPresentationLayer.vue', import.meta.url)), 'utf8')
+const combatPresentation = readFileSync(fileURLToPath(new URL('../src/l12/game/CombatMotionPresentationLayer.vue', import.meta.url)), 'utf8')
 
 assert.match(source,
   /selected\.value\?\.endedUtc\s*&&\s*selected\.value\.commandCount\s*>\s*0/,
@@ -31,5 +34,17 @@ assert.match(replayModel, /deckName:\s*'',\s*faction:/,
   'all replay board states must hide deck names')
 assert.doesNotMatch(replayPage, /source:\s*['"]json['"]/,
   'returning from a JSON replay must not add it to the replay history')
+assert.match(replayPage, /:replay-playback-speed="playbackSpeed"[^]*@replay-presentation-change="replayPresentationBusy = \$event"/,
+  'replay speed and presentation completion must be connected to the board')
+assert.doesNotMatch(replayPage, /setInterval|clearInterval/,
+  'automatic replay must not advance on an interval that can overrun card presentation')
+assert.match(replayPage, /if \(replayPresentationBusy\.value\)[^]*setTimeout[^]*return[^]*selectedStep\.value = target/,
+  'automatic replay must wait until card presentation is idle before advancing')
+assert.match(gameBoard, /if \(!props\.replayPlaybackSpeed\) return l12AnimationDuration\(3000, 700\)[^]*l12AnimationDuration\(1600, 420\) \/ props\.replayPlaybackSpeed/,
+  'only replay card reveals may use the accelerated duration')
+assert.match(zonePresentation, /if \(!props\.playbackSpeed\) return l12AnimationDuration\(standardMs, liveMinimumMs\)[^]*l12AnimationDuration\(standardMs, replayMinimumMs\) \/ props\.playbackSpeed/,
+  'zone-card motion must preserve live timing and scale only in replay')
+assert.match(combatPresentation, /if \(!props\.playbackSpeed\) return l12AnimationDuration\(standardMs, liveMinimumMs\)[^]*l12AnimationDuration\(standardMs, replayMinimumMs\) \/ props\.playbackSpeed/,
+  'combat-card motion must preserve live timing and scale only in replay')
 
-console.log('L12 replay-retention UI checks passed (12 assertions).')
+console.log('L12 replay-retention UI checks passed (18 assertions).')

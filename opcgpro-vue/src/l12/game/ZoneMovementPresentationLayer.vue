@@ -28,14 +28,26 @@ const props = withDefaults(defineProps<{
   matchId: string
   viewerPlayerIndex: number
   paused?: boolean
-}>(), { paused: false })
+  playbackSpeed?: number | null
+}>(), { paused: false, playbackSpeed: null })
+const emit = defineEmits<{ busyChange: [busy: boolean] }>()
 
 const active = ref<Movement | null>(null)
 const queue: Movement[] = []
 let initialized = false
 let lastSequence = 0
 let timer: ReturnType<typeof setTimeout> | null = null
+let preparationCount = 0
 const preparedImageUrls = new Map<string, string>()
+
+function notifyBusy() {
+  emit('busyChange', Boolean(props.playbackSpeed && (active.value || queue.length || preparationCount)))
+}
+
+function replayDuration(standardMs: number, liveMinimumMs: number, replayMinimumMs = liveMinimumMs) {
+  if (!props.playbackSpeed) return l12AnimationDuration(standardMs, liveMinimumMs)
+  return Math.max(replayMinimumMs, Math.round(l12AnimationDuration(standardMs, replayMinimumMs) / props.playbackSpeed))
+}
 
 function waitForImage(url: string) {
   return new Promise<boolean>(resolve => {
@@ -161,9 +173,9 @@ function resolveRect(zone: Zone, playerIndex: number, instanceId?: string) {
 }
 
 function movementDuration(movement: Movement) {
-  if (!movement.sourceGhost) return l12AnimationDuration(440, 180)
+  if (!movement.sourceGhost) return replayDuration(440, 180, 100)
   const distance = Math.hypot(movement.toRect.x - movement.fromRect.x, movement.toRect.y - movement.fromRect.y)
-  return l12AnimationDuration(Math.round(Math.min(500, Math.max(340, 320 + distance * .16))), 180)
+  return replayDuration(Math.round(Math.min(500, Math.max(340, 320 + distance * .16))), 180, 100)
 }
 
 const motionStyle = computed(() => {
@@ -196,6 +208,7 @@ function showNext() {
   if (active.value || props.paused || queue.length === 0) return
   active.value = queue.shift() ?? null
   if (!active.value) return
+  notifyBusy()
   const destination = cardElement(active.value.card?.instanceId)
   if (destination instanceof HTMLElement) {
     hiddenTarget = destination
@@ -213,6 +226,7 @@ function showNext() {
     active.value = null
     timer = null
     showNext()
+    notifyBusy()
   }
   if (active.value.sourceGhost) {
     const source = active.value.fromRect
@@ -245,11 +259,11 @@ function showNext() {
       activeGhostWrapper?.remove()
       activeGhostWrapper = null
     }
-    timer = setTimeout(finish, duration + l12AnimationDuration(80, 20))
+    timer = setTimeout(finish, duration + replayDuration(80, 20))
     return
   }
   const duration = movementDuration(active.value)
-  timer = setTimeout(finish, duration + l12AnimationDuration(20, 10))
+  timer = setTimeout(finish, duration + replayDuration(20, 10))
 }
 
 function cancelActiveMovement() {
@@ -261,6 +275,7 @@ function cancelActiveMovement() {
   activeGhostWrapper = null
   revealTarget()
   active.value = null
+  notifyBusy()
 }
 
 let viewportGeneration = 0
@@ -268,6 +283,7 @@ function viewportChanged() {
   viewportGeneration++
   cancelActiveMovement()
   queue.length = 0
+  notifyBusy()
   lastSequence = Math.max(lastSequence, ...props.events.map(event => event.sequence))
 }
 function reset() {
@@ -276,6 +292,7 @@ function reset() {
   queue.length = 0
   initialized = false
   lastSequence = 0
+  notifyBusy()
 }
 
 watch(() => props.matchId, reset, { flush: 'sync' })
@@ -287,6 +304,11 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
     return
   }
   const fresh = props.events.filter(item => item.sequence > lastSequence).sort((a, b) => a.sequence - b.sequence)
+  const hasMovement = fresh.some(event => movementFromEvent(event, fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex)))
+  if (hasMovement) {
+    preparationCount++
+    notifyBusy()
+  }
   const generation = viewportGeneration
   const starts = fresh.map(event => {
     const draft = movementFromEvent(event, fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex))
@@ -298,7 +320,11 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
     }
   })
   await nextTick()
-  if (generation !== viewportGeneration) return
+  if (generation !== viewportGeneration) {
+    if (hasMovement) preparationCount--
+    notifyBusy()
+    return
+  }
   for (const [index, event] of fresh.entries()) {
     const draft = movementFromEvent(event, fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex))
     const movement = draft && starts[index]
@@ -308,7 +334,11 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
     if (movement && !movement.sourceGhost && !movement.concealed && movement.card) {
       movement.preparedImageUrl = await prepareMovementImage(movement.card)
     }
-    if (generation !== viewportGeneration) return
+    if (generation !== viewportGeneration) {
+      if (hasMovement) preparationCount--
+      notifyBusy()
+      return
+    }
     const previous = queue.at(-1) ?? active.value
     const repeated = movement && previous && movement.card?.instanceId
       && movement.card.instanceId === previous.card?.instanceId
@@ -317,6 +347,8 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
     if (movement && !repeated) queue.push(movement)
     lastSequence = Math.max(lastSequence, event.sequence)
   }
+  if (hasMovement) preparationCount--
+  notifyBusy()
   showNext()
 }, { immediate: true })
 watch(() => props.paused, paused => {
@@ -326,7 +358,7 @@ watch(() => props.paused, paused => {
   if (!paused) showNext()
 })
 onMounted(() => window.addEventListener('l12-viewport-change', viewportChanged))
-onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewportChanged); reset() })
+onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewportChanged); reset(); emit('busyChange', false) })
 </script>
 
 <template>

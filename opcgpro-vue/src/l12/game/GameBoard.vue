@@ -34,8 +34,15 @@ type GmPlacementRequest = {
   cardType: string
   triggerEffects: boolean
 }
-const props = withDefaults(defineProps<{ game: GameState; readOnly?: boolean; replayFocusCard?: Card | null; gmPlacement?: GmPlacementRequest | null; gmPanelOpen?: boolean }>(), { readOnly: false, replayFocusCard: null, gmPlacement: null, gmPanelOpen: false })
-const emit = defineEmits<{ gmPlacementResolved: []; settings: [] }>()
+const props = withDefaults(defineProps<{
+  game: GameState
+  readOnly?: boolean
+  replayFocusCard?: Card | null
+  replayPlaybackSpeed?: number | null
+  gmPlacement?: GmPlacementRequest | null
+  gmPanelOpen?: boolean
+}>(), { readOnly: false, replayFocusCard: null, replayPlaybackSpeed: null, gmPlacement: null, gmPanelOpen: false })
+const emit = defineEmits<{ gmPlacementResolved: []; settings: []; replayPresentationChange: [busy: boolean] }>()
 const scale = ref(1)
 const stageSize = computed(() => l12State.gmEnabled
   ? { width: 2304, height: 1296 }
@@ -82,11 +89,22 @@ const lastPublicRevealSequence = ref(0)
 const lastDiceSequence = ref(0)
 const publicRevealQueue: Array<{ sequence: number; cards: Card[]; text: string }> = []
 const diceRevealQueue: Array<{ sequence: number; values: number[]; text: string }> = []
+const replayZonePresentationBusy = ref(false)
+const replayCombatPresentationBusy = ref(false)
 let hiddenRevealTimer: ReturnType<typeof setTimeout> | null = null
 let publicRevealTimer: ReturnType<typeof setTimeout> | null = null
 let diceRollTimer: ReturnType<typeof setInterval> | null = null
 let diceSettleTimer: ReturnType<typeof setTimeout> | null = null
 let diceHideTimer: ReturnType<typeof setTimeout> | null = null
+const replayCardPresentationBusy = computed(() => Boolean(props.replayPlaybackSpeed && (
+  hiddenRevealCard.value || publicReveal.value || replayZonePresentationBusy.value || replayCombatPresentationBusy.value
+)))
+watch(replayCardPresentationBusy, busy => emit('replayPresentationChange', busy), { immediate: true })
+
+function cardRevealDuration() {
+  if (!props.replayPlaybackSpeed) return l12AnimationDuration(3000, 700)
+  return Math.max(300, Math.round(l12AnimationDuration(1600, 420) / props.replayPlaybackSpeed))
+}
 const controlledPlayerIndex = computed(() => {
   if (props.readOnly || !l12State.gmEnabled) return props.game.you
   const pendingPrompt = props.game.prompts?.[0]
@@ -386,7 +404,7 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
   lastHiddenRevealSequence.value = event.sequence
   hiddenRevealCard.value = event.cards[0]
   if (hiddenRevealTimer) clearTimeout(hiddenRevealTimer)
-  hiddenRevealTimer = setTimeout(() => { hiddenRevealCard.value = null }, l12AnimationDuration(3000, 700))
+  hiddenRevealTimer = setTimeout(() => { hiddenRevealCard.value = null }, cardRevealDuration())
 })
 watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
   const specialVictory = [...(props.game.recentEvents ?? [])].reverse().find(item => item.type === 'special-victory'
@@ -406,7 +424,7 @@ function showNextPublicReveal() {
     publicReveal.value = null
     publicRevealTimer = null
     showNextPublicReveal()
-  }, l12AnimationDuration(3000, 700))
+  }, cardRevealDuration())
 }
 function publicRevealText(event: ActionEvent) {
   const override = event.effectText?.trim()
@@ -560,6 +578,7 @@ onBeforeUnmount(() => {
   if (diceRollTimer) clearInterval(diceRollTimer)
   if (diceSettleTimer) clearTimeout(diceSettleTimer)
   if (diceHideTimer) clearTimeout(diceHideTimer)
+  emit('replayPresentationChange', false)
 })
 
 function withPromptBinding(extra: Record<string, unknown>) {
@@ -1023,8 +1042,10 @@ function statusTexts(card: Card) {
             <ActionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId" :player-names="game.players.map(player => player.name)"
               :paused="passivePresentationPaused" />
             <ZoneMovementPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
-              :viewer-player-index="game.you" :paused="passivePresentationPaused" />
-            <CombatMotionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId" />
+              :viewer-player-index="game.you" :paused="passivePresentationPaused" :playback-speed="replayPlaybackSpeed"
+              @busy-change="replayZonePresentationBusy = $event" />
+            <CombatMotionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
+              :playback-speed="replayPlaybackSpeed" @busy-change="replayCombatPresentationBusy = $event" />
             <Teleport to="body">
               <Transition name="public-reveal">
                 <div v-if="publicReveal && !activeBoardPromptId" :key="publicReveal.sequence" class="public-reveal-animation" data-ui-contract="public-card-reveal-animation">

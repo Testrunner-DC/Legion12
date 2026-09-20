@@ -537,13 +537,15 @@ const contracts = [
     && backgroundMusic.includes('track.generation !== this.generation') && backgroundMusic.includes('destroy()')
     && app.includes('new BackgroundMusicController()') && !app.includes('new Audio('), '场景切换、对局曲目轮换及快速开关音乐必须由单一代次控制器淡出/淡入，过期ended回调不得叠播或改写当前曲目'],
   [audioPreferencesModule.includes('export function l12AnimationDuration')
-    && combatMotionLayer.includes('l12AnimationDuration(360, 24)') && combatMotionLayer.includes('l12AnimationDuration(920, 260)')
+    && combatMotionLayer.includes('if (!props.playbackSpeed) return l12AnimationDuration(standardMs, liveMinimumMs)')
+    && combatMotionLayer.includes('presentationDuration(360, 24, 80)') && combatMotionLayer.includes('presentationDuration(920, 260, 160)')
     && zoneMovementLayer.includes('function movementDuration(movement: Movement)')
+    && zoneMovementLayer.includes('if (!props.playbackSpeed) return l12AnimationDuration(standardMs, liveMinimumMs)')
     && zoneMovementLayer.includes("'--move-duration': `${movementDuration(active.value)}ms`")
     && zoneMovementLayer.includes('animation:l12-zone-card-flight var(--move-duration,.44s)')
     && zoneMovementLayer.includes('class="moving-card" data-essential-motion')
     && !zoneMovementLayer.includes('@media(prefers-reduced-motion:reduce){.moving-card{animation-duration:')
-    && zoneMovementLayer.includes('timer = setTimeout(finish, duration + l12AnimationDuration')
+    && zoneMovementLayer.includes('timer = setTimeout(finish, duration + replayDuration')
     && board.includes('l12AnimationDuration(3000, 700)') && board.includes('l12AnimationDuration(900, 180)'), '动画设置必须被战斗WAAPI、跨区CSS/WAAPI及公开结算计时共同消费；视觉时长和移动队列锁必须同源，关闭时仍保留必要公开信息最短可读时间'],
   [app.includes(':root[data-l12-card-size="small"] .archive-grid')
     && app.includes(':root[data-l12-card-size="large"] .deck-card-grid')
@@ -648,17 +650,21 @@ const contracts = [
     && l12ServerSources.includes('IsWithinRecentPlayerReplayWindowAsync')
     && l12ServerSources.includes('RunPlayerReplayCleanupIfDueAsync'), '玩家回放必须限制7天内最近10场并由服务端统一可见性与每日清理保护'],
   [router.includes("name: 'json-replay'") && router.includes("name: 'match-replay'") && router.includes("name: 'admin-match-replay'")
-    && replayPage.includes('<GameBoard v-if="currentGame" :game="currentGame" :replay-focus-card="replayFocusCard" read-only />')
+    && replayPage.includes('<GameBoard v-if="currentGame" :game="currentGame" :replay-focus-card="replayFocusCard"')
+    && replayPage.includes(':replay-playback-speed="playbackSpeed" read-only @replay-presentation-change="replayPresentationBusy = $event"')
     && replayPage.includes('>上一步</button>') && replayPage.includes("playing ? '暂停' : '播放'")
     && replayPage.includes("loadingReplayPage ? '加载中' : '下一步'") && replayPage.includes("isAdminReplay.value ? '返回后台对局档案' : '返回对局记录'")
     && gameReentry.includes('!route.replay') && l12Net.includes('replay: router.currentRoute.value.meta.replay === true')
     && board.includes('props.readOnly || !l12State.gmEnabled'), '回放必须使用与正式对战一致的独立全屏棋盘，左下提供上一步/播放/下一步，右上返回记录，并且不得被现存实时对局或沙盒控制状态污染'],
   [replayPage.includes('const playbackSpeed = ref<1 | 2 | 3>(1)')
-    && replayPage.includes('const interval = 2700 / playbackSpeed.value')
+    && replayPage.includes('const delay = Math.max(120, Math.round(650 / playbackSpeed.value))')
+    && replayPage.includes('if (replayPresentationBusy.value)')
+    && replayPage.includes('timer = window.setTimeout(() => void advancePlayback(generation), 40)')
+    && !replayPage.includes('const interval = 2700 / playbackSpeed.value')
     && replayPage.includes('([1, 2, 3] as const)') && replayPage.includes('{{ speed.toFixed(1) }}')
-    && replayPage.includes('if (atLast.value) stop()') && replayPage.includes('class="replay-result"')
+    && replayPage.includes('if (atLast.value) return stop()') && replayPage.includes('class="replay-result"')
     && replayPage.includes("detail.value.match.winner ?? currentGame.value.winner")
-    && replayPage.includes("result: winner === 0 ? '胜' : '负'") && replayPage.includes("result: winner === 1 ? '胜' : '负'"), '三类共用回放必须默认1倍速并提供1.0/2.0/3.0切换；旧0.9秒节奏作为3倍速，抵达最后一步立即停止并显示双方赛果'],
+    && replayPage.includes("result: winner === 0 ? '胜' : '负'") && replayPage.includes("result: winner === 1 ? '胜' : '负'"), '三类共用回放必须默认1倍速并提供1.0/2.0/3.0切换；按回放倍速缩短卡面动画且等待动画完成后推进，抵达最后一步立即停止并显示双方赛果'],
   [gamePage.includes('data-ui-contract="manual-game-over-exit"')
     && gamePage.includes("game.value?.phase === 'GameOver'")
     && gamePage.includes('leaveRoom()') && gamePage.includes("router.push('/lobby')")

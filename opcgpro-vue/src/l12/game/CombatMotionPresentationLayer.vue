@@ -4,7 +4,8 @@ import { l12AnimationDuration } from '../audioPreferences'
 import { viewportRect } from '../mobileViewport'
 import type { ActionEvent, Card } from '../types'
 
-const props = defineProps<{ events: ActionEvent[]; matchId: string }>()
+const props = withDefaults(defineProps<{ events: ActionEvent[]; matchId: string; playbackSpeed?: number | null }>(), { playbackSpeed: null })
+const emit = defineEmits<{ busyChange: [busy: boolean] }>()
 
 type CardSnapshot = { ghost: HTMLElement; rect: DOMRect }
 type CapturedCard = CardSnapshot & { card: Card }
@@ -18,6 +19,15 @@ const overlays = new Set<HTMLElement>()
 const fieldSnapshots = new Map<string, CardSnapshot>()
 const defeatedInstances = new Set<string>()
 
+function presentationDuration(standardMs: number, liveMinimumMs: number, replayMinimumMs = liveMinimumMs) {
+  if (!props.playbackSpeed) return l12AnimationDuration(standardMs, liveMinimumMs)
+  return Math.max(replayMinimumMs, Math.round(l12AnimationDuration(standardMs, replayMinimumMs) / props.playbackSpeed))
+}
+
+function notifyBusy() {
+  emit('busyChange', Boolean(props.playbackSpeed && animations.size))
+}
+
 function cardElement(instanceId?: string) {
   if (!instanceId) return null
   return document.querySelector(`[data-l12-game-stage] .formation-slot [data-card-instance-id="${CSS.escape(instanceId)}"]`)
@@ -29,7 +39,11 @@ function zoneElement(zone: string, playerIndex: number) {
 
 function remember(animation: Animation) {
   animations.add(animation)
-  const cleanup = () => animations.delete(animation)
+  notifyBusy()
+  const cleanup = () => {
+    animations.delete(animation)
+    notifyBusy()
+  }
   animation.addEventListener('finish', cleanup, { once: true })
   animation.addEventListener('cancel', cleanup, { once: true })
 }
@@ -75,7 +89,7 @@ function animateAttack(event: ActionEvent) {
     { transform: 'translate3d(0,0,0)' },
     { transform: `translate3d(${dx / distance * step}px,${dy / distance * step}px,0)`, offset: .48 },
     { transform: 'translate3d(0,0,0)' },
-  ], { duration: l12AnimationDuration(360, 24), easing: 'cubic-bezier(.25,.72,.35,1)' })
+  ], { duration: presentationDuration(360, 24, 80), easing: 'cubic-bezier(.25,.72,.35,1)' })
   remember(animation)
 }
 
@@ -86,7 +100,7 @@ function animatePowerBadge(element: HTMLElement) {
     { transform: 'translateX(-50%) scale(1)', filter: 'brightness(1)' },
     { transform: 'translateX(-50%) scale(1.14)', filter: 'brightness(1.55)', offset: .45 },
     { transform: 'translateX(-50%) scale(1)', filter: 'brightness(1)' },
-  ], { duration: l12AnimationDuration(280, 80), easing: 'ease-out' })
+  ], { duration: presentationDuration(280, 80), easing: 'ease-out' })
   remember(animation)
 }
 
@@ -148,7 +162,7 @@ function animateDefeat(captured: CapturedCard, event: ActionEvent, index: number
   const graveRect = graveElement ? viewportRect(graveElement) : null
   const dx = graveRect ? graveRect.left + graveRect.width / 2 - (captured.rect.left + captured.rect.width / 2) : 0
   const dy = graveRect ? graveRect.top + graveRect.height / 2 - (captured.rect.top + captured.rect.height / 2) : 18
-  const duration = l12AnimationDuration(920, 260)
+  const duration = presentationDuration(920, 260, 160)
   const animation = wrapper.animate([
     { transform: 'translate3d(0,0,0) scale(1)', opacity: 1, filter: 'grayscale(0) brightness(1)' },
     { transform: 'translate3d(0,0,0) scale(1.06)', opacity: 1, filter: 'grayscale(0) brightness(1.45)', offset: .14 },
@@ -197,6 +211,7 @@ function reset() {
   defeatedInstances.clear()
   initialized = false
   lastSequence = 0
+  notifyBusy()
 }
 
 watch(() => props.matchId, reset, { flush: 'sync' })
@@ -236,7 +251,7 @@ function viewportChanged() {
   void nextTick().then(refreshFieldSnapshots)
 }
 onMounted(() => { window.addEventListener('l12-viewport-change', viewportChanged); void nextTick().then(refreshFieldSnapshots) })
-onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewportChanged); reset() })
+onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewportChanged); reset(); emit('busyChange', false) })
 </script>
 
 <template></template>

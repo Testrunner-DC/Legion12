@@ -19,7 +19,9 @@ const catalogWarning = ref('')
 const replayNextCursor = ref<string | undefined>()
 const replayTotalCommands = ref(0)
 const loadingReplayPage = ref(false)
-let timer: ReturnType<typeof setInterval> | null = null
+const replayPresentationBusy = ref(false)
+let timer: ReturnType<typeof setTimeout> | null = null
+let playbackGeneration = 0
 
 const replayCatalog = computed(() => new Map(cards.value.map(card => [card.id, card])))
 const currentGame = computed(() => detail.value ? replayGameAt(detail.value, selectedStep.value, replayCatalog.value) : null)
@@ -87,12 +89,13 @@ async function loadReplay() {
 }
 
 function clearPlaybackTimer() {
-  if (timer) window.clearInterval(timer)
+  if (timer) window.clearTimeout(timer)
   timer = null
 }
 
 function stop() {
   playing.value = false
+  playbackGeneration++
   clearPlaybackTimer()
 }
 
@@ -136,14 +139,30 @@ function toggle() {
 
 function startPlaybackTimer() {
   clearPlaybackTimer()
-  const interval = 2700 / playbackSpeed.value
-  timer = window.setInterval(() => void (async () => {
-    if (atLast.value) return stop()
-    const target = selectedStep.value + 1
-    if (!await ensureReplayStepLoaded(target)) return
-    selectedStep.value = target
-    if (atLast.value) stop()
-  })(), interval)
+  const generation = ++playbackGeneration
+  schedulePlaybackAdvance(generation)
+}
+
+function schedulePlaybackAdvance(generation: number) {
+  if (!playing.value || generation !== playbackGeneration) return
+  const delay = Math.max(120, Math.round(650 / playbackSpeed.value))
+  timer = window.setTimeout(() => void advancePlayback(generation), delay)
+}
+
+async function advancePlayback(generation: number) {
+  timer = null
+  if (!playing.value || generation !== playbackGeneration) return
+  if (replayPresentationBusy.value) {
+    timer = window.setTimeout(() => void advancePlayback(generation), 40)
+    return
+  }
+  if (atLast.value) return stop()
+  const target = selectedStep.value + 1
+  if (!await ensureReplayStepLoaded(target)) return stop()
+  if (!playing.value || generation !== playbackGeneration) return
+  selectedStep.value = target
+  if (atLast.value) return stop()
+  schedulePlaybackAdvance(generation)
 }
 
 function setPlaybackSpeed(speed: 1 | 2 | 3) {
@@ -166,7 +185,8 @@ function returnFromReplay() {
 
 <template>
   <div class="game-page replay-page">
-    <GameBoard v-if="currentGame" :game="currentGame" :replay-focus-card="replayFocusCard" read-only />
+    <GameBoard v-if="currentGame" :game="currentGame" :replay-focus-card="replayFocusCard"
+      :replay-playback-speed="playbackSpeed" read-only @replay-presentation-change="replayPresentationBusy = $event" />
 
     <div class="replay-route-controls">
       <span v-if="detail">{{ detail.match.player0 }} VS {{ detail.match.player1 }}</span>
@@ -181,10 +201,10 @@ function returnFromReplay() {
     </div>
 
     <div v-if="currentGame" class="replay-controls" aria-label="回放控制">
-      <button :disabled="atFirst" @click="previous">上一步</button>
+      <button :disabled="atFirst || replayPresentationBusy" @click="previous">上一步</button>
       <button class="play" @click="toggle">{{ playing ? '暂停' : '播放' }}</button>
       <button v-for="speed in ([1, 2, 3] as const)" :key="speed" class="speed" :class="{ active: playbackSpeed === speed }" :aria-pressed="playbackSpeed === speed" @click="setPlaybackSpeed(speed)">{{ speed.toFixed(1) }}</button>
-      <button :disabled="atLast || loadingReplayPage" @click="next">{{ loadingReplayPage ? '加载中' : '下一步' }}</button>
+      <button :disabled="atLast || loadingReplayPage || replayPresentationBusy" @click="next">{{ loadingReplayPage ? '加载中' : '下一步' }}</button>
       <small>步骤 {{ selectedStep + 1 }} / {{ totalSteps }}<template v-if="isAdminReplay"> · 分页</template></small>
     </div>
 
