@@ -177,8 +177,97 @@ public sealed class AtomicReviewBatch6JCRegressionTests
         Assert.DoesNotContain(top, player.Hand);
         Assert.DoesNotContain(top, player.Field.SelectMany(row => row));
         Assert.Same(blocker, player.Field[int.Parse(parts[0])][int.Parse(parts[1])]);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.EffectResultStatus == "failed"
             && entry.Text.Contains("位置已失效", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("位置已失效", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:batch6jc-okita-source-invalid-failed")]
+    public void OkitaCommittedCardLeavingItsOriginIsFailedNotCancelled()
+    {
+        var game = Create(97021);
+        var player = game.State.Players[0];
+        var top = Card("S01-0410", "batch6jc-source-invalid-legion");
+        BeginOkitaTop(game, top);
+        ResolveOnlyPrompt(game, "play");
+        var slot = Assert.Single(game.State.PendingPrompts);
+        var declared = slot.ValidChoices.First();
+        player.Library.Remove(top);
+        player.Hand.Add(top);
+
+        ResolveOnlyPrompt(game, declared);
+
+        Assert.Contains(top, player.Hand);
+        Assert.DoesNotContain(top, player.Field.SelectMany(row => row));
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("打出来源已失效", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("打出来源已失效", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:effect-generated-play-invalid-origin")]
+    public void GeneratedPlayRejectsAnInvalidOriginAsFailed()
+    {
+        var game = Create(97022);
+        var card = Card("S01-0410", "batch6jc-invalid-origin-legion");
+        var parent = new L12StackItem
+        {
+            StackItemId = "batch6jc-invalid-origin-parent",
+            Controller = 0,
+            SourceInstanceId = "batch6jc-invalid-origin-source",
+            SourceCardId = "S02-0403",
+            SourceName = "冲田总司",
+            Trigger = "attack",
+            Text = "效果生成打出",
+        };
+        game.State.EffectStack.Add(parent);
+
+        InvokeVoid(game, "BeginEffectGeneratedFreePlay", 0, card, parent, "library", "〈冲田总司〉");
+
+        Assert.Empty(game.State.EffectStack);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("打出来源已失效", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("打出来源已失效", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:effect-generated-play-no-entry-slot")]
+    public void GeneratedLegionPlayWithoutALegalSlotIsFailedAndKeepsTheCardInItsOrigin()
+    {
+        var game = Create(97023);
+        var player = game.State.Players[0];
+        var card = Card("S01-0410", "batch6jc-no-slot-legion");
+        player.Library.Add(card);
+        for (var row = 0; row < 2; row++)
+        for (var slot = 0; slot < 3; slot++)
+            player.Field[row][slot] = Card("S01-0101", $"batch6jc-no-slot-{row}-{slot}");
+        var parent = new L12StackItem
+        {
+            StackItemId = "batch6jc-no-slot-parent",
+            Controller = 0,
+            SourceInstanceId = "batch6jc-no-slot-source",
+            SourceCardId = "S02-0403",
+            SourceName = "冲田总司",
+            Trigger = "attack",
+            Text = "效果生成打出",
+        };
+        game.State.EffectStack.Add(parent);
+
+        InvokeVoid(game, "BeginEffectGeneratedFreePlay", 0, card, parent, "library", "〈冲田总司〉");
+
+        Assert.Contains(card, player.Library);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.EffectResultStatus == "failed"
+            && entry.Text.Contains("没有合法登场位置", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("没有合法登场位置", StringComparison.Ordinal));
     }
 
     [Fact]

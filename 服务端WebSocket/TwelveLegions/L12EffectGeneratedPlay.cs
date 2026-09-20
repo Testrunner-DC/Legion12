@@ -28,7 +28,8 @@ public sealed partial class L12GameEngine
         if (locations.Count != 1 || locations[0].Host.PlayerIndex != controller
             || locations[0].Zone != originZone || !ReferenceEquals(locations[0].Card, card))
         {
-            AddEvent("effect-cancelled", controller, $"{reason}的打出来源已失效；不改选且不移动其他实例");
+            RecordEffectGeneratedPlayFailure(controller,
+                $"{reason}的打出来源已失效；不改选且不移动其他实例");
             FinishStackItem(parent);
             return CommandResult.Ok();
         }
@@ -38,7 +39,8 @@ public sealed partial class L12GameEngine
             var choices = EffectGeneratedFreePlaySlots(State.Players[controller]).ToArray();
             if (choices.Length == 0)
             {
-                AddEvent("effect-cancelled", controller, $"{reason}没有合法登场位置；该卡牌保留在原区域", card);
+                RecordEffectGeneratedPlayFailure(controller,
+                    $"{reason}没有合法登场位置；该卡牌保留在原区域", card);
                 FinishStackItem(parent);
                 return CommandResult.Ok();
             }
@@ -57,7 +59,8 @@ public sealed partial class L12GameEngine
             ], triggerCandidateId: null, playCardInstanceId: card.InstanceId, responseTargetStackItemId: null);
             if (!result.Accepted)
             {
-                AddEvent("effect-cancelled", controller, result.Error ?? $"{reason}无法建立免费打出声明", card);
+                RecordEffectGeneratedPlayFailure(controller,
+                    result.Error ?? $"{reason}无法建立免费打出声明", card);
                 FinishStackItem(parent);
                 return CommandResult.Ok();
             }
@@ -223,7 +226,11 @@ public sealed partial class L12GameEngine
 
     private void AbortEffectGeneratedFreePlay(L12PendingActivation activation, string reason)
     {
-        AddEvent("effect-cancelled", activation.Controller, reason);
+        RecordEffectGeneratedPlayFailure(activation.Controller, reason);
         if (FindEffectGeneratedPlayParent(activation) is { } parent) FinishStackItem(parent);
     }
+
+    private void RecordEffectGeneratedPlayFailure(int controller, string reason,
+        L12CardInstance? card = null)
+        => AddEvent("effect-failed", controller, reason, card is null ? [] : [card]);
 }
