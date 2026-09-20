@@ -5,14 +5,14 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`36f4007cad54eb77e35661ab5852dba0617a0a07f19d1a430e458579a9bd7331`。
+内容指纹：`58fa1c81ee4bfcae012ee8d10f63c14da8a0729e33b508212eaa051ebb68b703`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
 | composite-definition | 205 |
 | fine-definition | 87 |
-| owner-unreviewed | 336 |
-| shared-rule-owner | 58 |
+| owner-unreviewed | 334 |
+| shared-rule-owner | 60 |
 
 fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；shared-rule-owner = 精确能力已绑定共用规则入口及适用性档案；owner-unreviewed = 还需定位实际入口。任何一种归属证据均不等于生命周期验收通过。
 同卡同触发只算候选，不能把另一能力的程序继承为本能力已覆盖。无能力卡单列，不能从分母中静默消失。
@@ -31,6 +31,15 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 - negated：该持续能力没有独立入栈、支付或响应窗口，不能作为堆叠效果单独无效；对进攻事件的无效仍属战斗动作验收。
 - payment-cancel：本段没有费用或支付Prompt；相邻付费扩展射程是另一段，不继承此豁免。
 - single-candidate-choice：本段不创建对象选择Prompt；玩家主动提交进攻目标由进攻规则处理，不能自动替玩家进攻。
+
+### active:paid-extended-range
+
+精确绑定能力数：2。运行入口：activation-eligibility = L12GameEngine.ExtendedRangeSourceUnavailableReason；attack-candidates = L12GameEngine.BuildLegalAttackTargets；attack-revalidation = L12GameEngine.TryValidateAttackTarget；cost-commit = L12GameEngine.TryCommitS1ExtendedActiveAbility；definition = L12StructuredCardSemantics.ExtendedRangeRule；expiry = L12GameEngine.ResetTemporaryCardState；response-stack = L12GameEngine.PushEffect；settlement = L12GameEngine.TryResolveS1ExtendedActive。
+
+- multi-target-applicability：一次结算只更新来源军团的权限，不同时处理多个进攻对象。
+- no-target：本效果不选择进攻对象，只赋予来源本回合的进攻权限；即使当前没有对方对象也可支付并发动。
+- single-candidate-choice：没有效果目标选择Prompt；玩家之后主动提交具体进攻目标。
+- target-invalidated：本效果入栈时不声明进攻对象；实际进攻另由公共战斗入口按当时状态生成并复验目标。
 
 ### private-zone:strict-hand-entry
 
@@ -186,7 +195,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0002 佣兵部队 #1 | S01-0002:ability:static:95d8e97d936cec37 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move | 0 | 我方 回合1次 可进行1次位移 |
 | S01-0002 佣兵部队 #2 | S01-0002:ability:static:05ab97cccf7cf46e | static/continuous | owner-unreviewed | 对方 进攻我方军团时，可从手牌中弃置此军团 | trigger:trigger.observe → condition:control.optional → cost:cost.discard → resolution:operation.attack-rule → duration:duration.apply | 1 | 对方 进攻我方军团时，可从手牌中弃置此军团：抵挡本次进攻 |
 | S01-0003 攻城投石车 #1 | S01-0003:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
-| S01-0003 攻城投石车 #2 | S01-0003:ability:active:73c59f9367069790 | active/activated | owner-unreviewed | 位于后排 可消耗2士气 | trigger:trigger.observe → condition:condition.expression → cost:cost.pay-morale → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 1 | 位于后排 可消耗2士气：此军团本回合可进攻对方后排和主宰。 |
+| S01-0003 攻城投石车 #2 | S01-0003:ability:active:73c59f9367069790 | active/activated | shared-rule-owner | 位于后排 可消耗2士气 | trigger:trigger.observe → condition:condition.expression → cost:cost.pay-morale → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 1 | 位于后排 可消耗2士气：此军团本回合可进攻对方后排和主宰。 |
 | S01-0004 无名的渗透者 #1 | S01-0004:ability:static:1644ef88125b05c1 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:special.domain → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 此军团可在战场任意位置休整登场，不可进行支援和进攻。 |
 | S01-0004 无名的渗透者 #2 | S01-0004:ability:active:6f9f6988e1ea4be0 | active/activated | owner-unreviewed | 我方/对方 可消耗2士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → resolution:operation.move-zone → resolution:legacy.resolve | 1 | 我方/对方 可消耗2士气：击杀此军团。 |
 | S01-0004 无名的渗透者 #3 | S01-0004:ability:death:17a2eed7427d41ed | death/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.draw | 1 | 阵亡时 此军团的所有者抽取1张牌。 |
@@ -239,7 +248,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0112 孙武 #2 | S01-0112:ability:enter:340a3c71e63af3b0 | enter/triggered | composite-definition | 登场时 可返还1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → cost:cost.return-morale → resolution:operation.move-zone → duration:duration.apply → resolution:operation.composite-flow | 1 | 登场时 可返还1士气：本回合从手牌中打出的下1张战术卡无需消耗费用 |
 | S01-0112 孙武 #3 | S01-0112:ability:death:c91a9e71e9680c3d | death/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → resolution:special.domain → resolution:operation.composite-flow | 1 | 阵亡时 若天灾值不高于4，可选择墓地1张费用不高于4的战术卡回到手牌 |
 | S01-0113 养由基 #1 | S01-0113:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
-| S01-0113 养由基 #2 | S01-0113:ability:active:e1b5cdab435b4c1f | active/activated | owner-unreviewed | 「位于后排」可返还1士气 | trigger:trigger.observe → condition:condition.expression → cost:cost.return-morale → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 1 | 「位于后排」可返还1士气：此军团本回合可进攻对方后排。 |
+| S01-0113 养由基 #2 | S01-0113:ability:active:e1b5cdab435b4c1f | active/activated | shared-rule-owner | 「位于后排」可返还1士气 | trigger:trigger.observe → condition:condition.expression → cost:cost.return-morale → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 1 | 「位于后排」可返还1士气：此军团本回合可进攻对方后排。 |
 | S01-0114 秦良玉 #1 | S01-0114:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
 | S01-0114 秦良玉 #2 | S01-0114:ability:static:a91d7d481db612a9 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone | 0 | 若我方士气少于对方，此军团登场费用-1 |
 | S01-0114 秦良玉 #3 | S01-0114:ability:enter:89b2c77605906107 | enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.add-morale → resolution:operation.move-zone → resolution:operation.rest → resolution:operation.composite-flow | 1 | 登场时 从士气牌库追加1张休整的士气 |

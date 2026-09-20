@@ -166,6 +166,32 @@ internal static class EffectLifecycleProfiles
             ["multi-target-applicability"] = "本段仅提供来源军团的持续进攻权限，不独立结算多个对象。",
         }) { AdditionalChecks = ["source-row-change", "attack-preview", "ranged-no-loss", "profession-grant"] };
 
+    internal static readonly string[] PaidExtendedRangeAbilityIds =
+    [
+        "S01-0003:ability:active:73c59f9367069790",
+        "S01-0113:ability:active:e1b5cdab435b4c1f",
+    ];
+
+    private static readonly L12LifecycleProfile PaidExtendedRange = new("active:paid-extended-range",
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["definition"] = "L12StructuredCardSemantics.ExtendedRangeRule",
+            ["activation-eligibility"] = "ExtendedRangeSourceUnavailableReason",
+            ["cost-commit"] = "TryCommitS1ExtendedActiveAbility",
+            ["response-stack"] = "PushEffect",
+            ["settlement"] = "TryResolveS1ExtendedActive",
+            ["attack-candidates"] = "BuildLegalAttackTargets",
+            ["attack-revalidation"] = "TryValidateAttackTarget",
+            ["expiry"] = "ResetTemporaryCardState",
+        },
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["no-target"] = "本效果不选择进攻对象，只赋予来源本回合的进攻权限；即使当前没有对方对象也可支付并发动。",
+            ["target-invalidated"] = "本效果入栈时不声明进攻对象；实际进攻另由公共战斗入口按当时状态生成并复验目标。",
+            ["single-candidate-choice"] = "没有效果目标选择Prompt；玩家之后主动提交具体进攻目标。",
+            ["multi-target-applicability"] = "一次结算只更新来源军团的权限，不同时处理多个进攻对象。",
+        }) { AdditionalChecks = ["source-invalidated", "payment-cancel", "paid-cost-preserved", "repeat-activation", "turn-end-expiry", "authoritative-attack"] };
+
     private static void ValidateOwners(L12LifecycleProfile profile)
     {
         foreach (var owner in profile.RuntimeOwners.Values)
@@ -173,6 +199,7 @@ internal static class EffectLifecycleProfiles
             var parts = owner.Split('.');
             var type = parts.Length == 1 ? typeof(L12GameEngine)
                 : parts[0] == nameof(L12StructuredCardRules) ? typeof(L12StructuredCardRules)
+                : parts[0] == nameof(L12StructuredCardSemantics) ? typeof(L12StructuredCardSemantics)
                 : throw new InvalidOperationException($"Unknown lifecycle owner type: {owner}");
             if (!type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)
                     .Any(method => method.Name == parts[^1]))
@@ -189,6 +216,7 @@ internal static class EffectLifecycleProfiles
         ValidateOwners(StrictHandEntry);
         ValidateOwners(NativeCavalry);
         ValidateOwners(PrintedRanged);
+        ValidateOwners(PaidExtendedRange);
         var bindings = new Dictionary<string, L12LifecycleProfile>(StringComparer.Ordinal);
         if (!abilities.TryGetValue(DesertHandSummonAbilityId, out var desertHandSummon)
             || desertHandSummon.CardId != "S02-0207" || desertHandSummon.Trigger != "play"
@@ -235,6 +263,17 @@ internal static class EffectLifecycleProfiles
             && ability.Text.Contains("进攻距离+1，远程进攻无损", StringComparison.Ordinal)).Select(ability => ability.AbilityId);
         if (!printedRanged.ToHashSet(StringComparer.Ordinal).SetEquals(PrintedRangedAbilityIds))
             throw new InvalidOperationException("Printed ranged family changed; review its per-ability bindings.");
+        foreach (var id in PaidExtendedRangeAbilityIds)
+        {
+            if (!abilities.TryGetValue(id, out var ability) || ability.ExecutionModel != "activated"
+                || ability.Trigger != "active" || L12StructuredCardSemantics.ExtendedRangeRule(ability.CardId) is null)
+                throw new InvalidOperationException($"Stale reviewed paid extended-range profile: {id}");
+            bindings.Add(id, PaidExtendedRange);
+        }
+        var paidExtendedRange = abilities.Values.Where(ability => ability.Trigger == "active"
+            && L12StructuredCardSemantics.ExtendedRangeRule(ability.CardId) is not null).Select(ability => ability.AbilityId);
+        if (!paidExtendedRange.ToHashSet(StringComparer.Ordinal).SetEquals(PaidExtendedRangeAbilityIds))
+            throw new InvalidOperationException("Paid extended-range family changed; review its per-ability bindings.");
         return bindings;
     }
 }

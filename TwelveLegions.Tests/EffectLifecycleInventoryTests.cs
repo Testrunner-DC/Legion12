@@ -285,7 +285,35 @@ public sealed class EffectLifecycleInventoryTests
             Assert.DoesNotContain("reconnect", evidence.Scopes);
             Assert.Equal("linked-not-execution-receipt", evidence.Status);
         });
-        Assert.Null(inventory.Abilities.Single(row => row.CardId == "S01-0003" && row.Definition.Trigger == "active").Profile);
+        Assert.Equal("active:paid-extended-range",
+            inventory.Abilities.Single(row => row.CardId == "S01-0003" && row.Definition.Trigger == "active").Profile?.Id);
+    }
+
+    [Fact]
+    public void PaidExtendedRangeProfilesBindOnlyTheTwoActiveSegmentsAndKeepTheirCostsDistinct()
+    {
+        var inventory = Build(Catalog);
+        var rows = inventory.Abilities.Where(row => row.Profile?.Id == "active:paid-extended-range").ToArray();
+        Assert.Equal(EffectLifecycleProfiles.PaidExtendedRangeAbilityIds.Order(),
+            rows.Select(row => row.Definition.AbilityId).Order());
+        Assert.All(rows, row =>
+        {
+            Assert.Equal("shared-rule-owner", row.EntryEvidence);
+            Assert.Equal("L12StructuredCardSemantics.ExtendedRangeRule", row.Profile!.RuntimeOwners["definition"]);
+            Assert.Equal("TryCommitS1ExtendedActiveAbility", row.Profile.RuntimeOwners["cost-commit"]);
+            Assert.Equal("TryResolveS1ExtendedActive", row.Profile.RuntimeOwners["settlement"]);
+            Assert.Equal("TryValidateAttackTarget", row.Profile.RuntimeOwners["attack-revalidation"]);
+            Assert.DoesNotContain("no-target", row.ReviewGaps);
+            Assert.DoesNotContain("target-invalidated", row.ReviewGaps);
+            Assert.Contains("payment-cancel", row.ReviewGaps);
+            Assert.Contains(row.TestReferences, reference => reference.Scopes.Contains("negated-settlement"));
+            Assert.Contains(row.TestReferences, reference => reference.Scopes.Contains("repeat-activation"));
+            Assert.Contains(row.TestReferences, reference => reference.Scopes.Contains("source-invalidated-settlement"));
+            Assert.Contains(row.TestReferences, reference => reference.Scopes.Contains("reconnect-payment"));
+            Assert.Contains(row.TestReferences, reference => reference.Scopes.Contains("authoritative-attack"));
+        });
+        Assert.Contains("消耗2士气", rows.Single(row => row.CardId == "S01-0003").Definition.CostText);
+        Assert.Contains("返还1士气", rows.Single(row => row.CardId == "S01-0113").Definition.CostText);
     }
 
     [Fact]
