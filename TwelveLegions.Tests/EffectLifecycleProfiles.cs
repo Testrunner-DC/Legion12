@@ -559,6 +559,42 @@ internal static class EffectLifecycleProfiles
                 "gm-play", "reconnect-zone-state"],
         };
 
+    internal static readonly string[] OutOfDeckGraveyardLifecycleAbilityIds =
+    [
+        "S01-0212:ability:static:6d8b57888db9839b",
+        "S02-0201:ability:continuous:16b90b36ef8afe2c",
+    ];
+
+    private static readonly L12LifecycleProfile OutOfDeckGraveyardLifecycle =
+        new("continuous:out-of-deck-graveyard-lifecycle",
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["definition"] = "L12StructuredCardSemantics.HasOutOfDeckGraveyardLifecycle",
+                ["deck-size-rule"] = "L12SpecialDeckRules.DoesNotCountTowardMainDeck",
+                ["opening-zone-rule"] = "L12SpecialDeckRules.StartsInGraveyard",
+                ["hand-library-replacement"] = "L12SpecialDeckRules.CannotEnterHandOrLibrary",
+                ["departure-replacement"] = "L12SpecialDeckRules.AlwaysReturnsToOwnerGraveyard",
+                ["authoritative-departure"] = "MoveFieldCardToZone",
+            },
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["no-target"] = "规则能力不选择对象；其他效果选择该卡时由目标效果自己的声明协议处理。",
+                ["negated"] = "规则能力不独立入栈，不能作为一次效果被无效；离场替代在目标效果结算时适用。",
+                ["payment-cancel"] = "规则能力没有费用；以该卡支付其他费用时仍按支付效果处理，并在离场后进入所有者墓地。",
+                ["target-invalidated"] = "没有自身目标；通用回手/回库候选与提交均从同一身份判断，已离区实例不得替换。",
+                ["multi-target-applicability"] = "多张同族卡分别应用区域替代，不因同批移动而合并或补位。",
+            })
+        {
+            AdditionalChecks = ["exact-card-family", "text-independent", "deck-count", "opening-graveyard",
+                "hand-filter", "library-filter", "owner-graveyard", "all-departure-destinations",
+                "derived-card-precedence", "controller-owner-split", "reconnect-authoritative-zone"],
+        };
+
+    private static bool IsOutOfDeckGraveyardLifecycleAbility(L12AtomicAbility ability)
+        => ability.ExecutionModel is "continuous" or "rule"
+           && L12StructuredCardSemantics.HasOutOfDeckGraveyardLifecycle(ability.CardId)
+           && ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.MoveZone);
+
     internal static readonly string[] PureSummonTurnCounterProtectionAbilityIds =
     [
         "S01-0201:ability:static:7d31de8999ce168a",
@@ -627,6 +663,7 @@ internal static class EffectLifecycleProfiles
             var type = parts.Length == 1 ? typeof(L12GameEngine)
                 : parts[0] == nameof(L12StructuredCardRules) ? typeof(L12StructuredCardRules)
                 : parts[0] == nameof(L12StructuredCardSemantics) ? typeof(L12StructuredCardSemantics)
+                : parts[0] == nameof(L12SpecialDeckRules) ? typeof(L12SpecialDeckRules)
                 : throw new InvalidOperationException($"Unknown lifecycle owner type: {owner}");
             if (!type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)
                     .Any(method => method.Name == parts[^1]))
@@ -652,6 +689,7 @@ internal static class EffectLifecycleProfiles
         ValidateOwners(StructuredHandCost);
         ValidateOwners(HandPlayBlock);
         ValidateOwners(RelicZoneLimitExempt);
+        ValidateOwners(OutOfDeckGraveyardLifecycle);
         ValidateOwners(SummonTurnCounterProtection);
         ValidateOwners(RamsesProtectionAndEntryCost);
         var bindings = new Dictionary<string, L12LifecycleProfile>(StringComparer.Ordinal);
@@ -819,6 +857,19 @@ internal static class EffectLifecycleProfiles
             .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);
         if (!relicZoneLimitExemptions.SetEquals(RelicZoneLimitExemptAbilityIds))
             throw new InvalidOperationException("Relic-zone limit exemption family changed; review its per-ability bindings.");
+        foreach (var id in OutOfDeckGraveyardLifecycleAbilityIds)
+        {
+            if (!abilities.TryGetValue(id, out var ability)
+                || ability.ExecutionModel is not ("continuous" or "rule")
+                || !L12StructuredCardSemantics.HasOutOfDeckGraveyardLifecycle(ability.CardId))
+                throw new InvalidOperationException($"Stale reviewed out-of-deck graveyard lifecycle: {id}");
+            bindings.Add(id, OutOfDeckGraveyardLifecycle);
+        }
+        var outOfDeckGraveyardLifecycles = abilities.Values
+            .Where(IsOutOfDeckGraveyardLifecycleAbility)
+            .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);
+        if (!outOfDeckGraveyardLifecycles.SetEquals(OutOfDeckGraveyardLifecycleAbilityIds))
+            throw new InvalidOperationException("Out-of-deck graveyard lifecycle family changed; review its per-ability bindings.");
         foreach (var id in PureSummonTurnCounterProtectionAbilityIds)
         {
             if (!abilities.TryGetValue(id, out var ability) || ability.ExecutionModel != "continuous"

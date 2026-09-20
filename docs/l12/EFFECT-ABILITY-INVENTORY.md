@@ -5,14 +5,14 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`9f7a71c2aa1aa63b19ca9918b85d261691ac39cad539134f6e0143fceeeefe52`。
+内容指纹：`93789b83891ef334341ece10c7b2e477bdfaf5b9701800dca360100ee2ba5ae2`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
 | composite-definition | 201 |
 | fine-definition | 86 |
-| owner-unreviewed | 247 |
-| shared-rule-owner | 152 |
+| owner-unreviewed | 245 |
+| shared-rule-owner | 154 |
 
 fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；shared-rule-owner = 精确能力已绑定共用规则入口及适用性档案；owner-unreviewed = 还需定位实际入口。任何一种归属证据均不等于生命周期验收通过。
 同卡同触发只算候选，不能把另一能力的程序继承为本能力已覆盖。无能力卡单列，不能从分母中静默消失。
@@ -90,6 +90,16 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 - no-target：持续保护与持续减费均不创建效果对象。
 - payment-cancel：保护没有费用；登场资源支付取消由公共手牌打出协议处理。
 - target-invalidated：保护按当前回合和堆叠来源复验；减费在支付提交时按当前场上陵墓守卫复算。
+
+### continuous:out-of-deck-graveyard-lifecycle
+
+精确绑定能力数：2。运行入口：authoritative-departure = L12GameEngine.MoveFieldCardToZone；deck-size-rule = L12SpecialDeckRules.DoesNotCountTowardMainDeck；definition = L12StructuredCardSemantics.HasOutOfDeckGraveyardLifecycle；departure-replacement = L12SpecialDeckRules.AlwaysReturnsToOwnerGraveyard；hand-library-replacement = L12SpecialDeckRules.CannotEnterHandOrLibrary；opening-zone-rule = L12SpecialDeckRules.StartsInGraveyard。
+
+- multi-target-applicability：多张同族卡分别应用区域替代，不因同批移动而合并或补位。
+- negated：规则能力不独立入栈，不能作为一次效果被无效；离场替代在目标效果结算时适用。
+- no-target：规则能力不选择对象；其他效果选择该卡时由目标效果自己的声明协议处理。
+- payment-cancel：规则能力没有费用；以该卡支付其他费用时仍按支付效果处理，并在离场后进入所有者墓地。
+- target-invalidated：没有自身目标；通用回手/回库候选与提交均从同一身份判断，已离区实例不得替换。
 
 ### continuous:relic-zone-limit-exempt
 
@@ -255,6 +265,10 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0209:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0209 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0210:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0210 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0211:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0211 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
+| S01-0212:ability:static:6d8b57888db9839b | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.BothCardsAreExcludedFromDeckCountAndStartInGraveyard / S01-0212 | deck-count, opening-graveyard |
+| S01-0212:ability:static:6d8b57888db9839b | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.DerivedCardVanishRuleKeepsPriorityOverTheGraveyardLifecycle / S01-0212 | derived-card-precedence |
+| S01-0212:ability:static:6d8b57888db9839b | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.EveryFieldDepartureDestinationIsReplacedWithTheOwnersGraveyard / S01-0212 | all-departure-destinations, controller-owner-split, hand-filter, library-filter, owner-graveyard |
+| S01-0212:ability:static:6d8b57888db9839b | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.SpecialDeckAndDepartureDefinitionsMatchTheClosedFamilyWithoutReadingDisplayText / S01-0212 | exact-card-family, text-independent |
 | S01-0213:ability:static:9ba2f4f5354a2a05 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0213 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0214:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0214 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0214:ability:active:30e47404439f2371 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-0214 | active-rest-cost, runtime-branch-mapping |
@@ -322,6 +336,9 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0018:ability:s2-reaction:e0e92d0479a94844 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ResponseSettlementRevalidatesObjectsAndSuccessDependenciesAfterRecovery / S02-0018 | duplicate-rejected, negated-settlement, normal-settlement, reconnect-settlement, success-dependency, target-invalidated-settlement |
 | S02-0101:ability:continuous:4cd3104ae17d316d | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0101 | authoritative-consumer, row-and-ready-condition |
 | S02-0104:ability:active:1687d445c6acc308 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0104 | active-rest-cost, runtime-branch-mapping |
+| S02-0201:ability:continuous:16b90b36ef8afe2c | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.BothCardsAreExcludedFromDeckCountAndStartInGraveyard / S02-0201 | deck-count, opening-graveyard |
+| S02-0201:ability:continuous:16b90b36ef8afe2c | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.EveryFieldDepartureDestinationIsReplacedWithTheOwnersGraveyard / S02-0201 | all-departure-destinations, controller-owner-split, hand-filter, library-filter, owner-graveyard |
+| S02-0201:ability:continuous:16b90b36ef8afe2c | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.SpecialDeckAndDepartureDefinitionsMatchTheClosedFamilyWithoutReadingDisplayText / S02-0201 | exact-card-family, text-independent |
 | S02-0201:ability:continuous:39b0b1524eaed536 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0201 | authoritative-consumer, candidate-and-submit-parity |
 | S02-0202:ability:continuous:94759febdd62fd32 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.PrintedEntryCostDefinitionsMatchTheReviewedCardFamily / S02-0202 | condition-false, display-and-payment-parity |
 | S02-0203:ability:continuous:418e71545576e12d | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.PrintedEntryCostDefinitionsMatchTheReviewedCardFamily / S02-0203 | condition-false, display-and-payment-parity |
@@ -538,7 +555,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0210 尼托克丽丝 #3 | S01-0210:ability:death:601fa9db2745d075 | death/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:operation.ready → resolution:operation.composite-flow | 1 | 阵亡时 将我方墓地1张费用不高于2的【太阳城】军团活跃登场 |
 | S01-0211 托勒密十三世 #1 | S01-0211:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
 | S01-0211 托勒密十三世 #2 | S01-0211:ability:enter:329b99bbae76f963 | enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.move-zone → duration:duration.apply → resolution:operation.composite-flow | 1 | 登场时 再次发动本回合打出的上1张&lt;主动战术&gt;效果 |
-| S01-0212 陵墓守卫 #1 | S01-0212:ability:static:6d8b57888db9839b | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone | 0 | 规则上，此军团构筑时不计入卡组数量，且不能进入手牌和牌库，游戏开始时置入墓地，此军团以任何形式离场均视为置入所有者墓地 |
+| S01-0212 陵墓守卫 #1 | S01-0212:ability:static:6d8b57888db9839b | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone | 0 | 规则上，此军团构筑时不计入卡组数量，且不能进入手牌和牌库，游戏开始时置入墓地，此军团以任何形式离场均视为置入所有者墓地 |
 | S01-0212 陵墓守卫 #2 | S01-0212:ability:static:025749085872cdff | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → resolution:legacy.resolve | 0 | 我方回合 此军团在战场上可视为1张士气 |
 | S01-0212 陵墓守卫 #3 | S01-0212:ability:static:2f33fb3652e7bd28 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.modify-troops | 0 | 对方回合 此军团费用+1，位于前排时兵力+1000 |
 | S01-0213 锡瓦的卡巴 #1 | S01-0213:ability:static:9ba2f4f5354a2a05 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」进攻距离+1，远程进攻无损。 |
@@ -746,7 +763,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-01M1 孙悟空 #2 | S02-01M1:ability:leave:cf42cfffe1b9b9bc | leave/replacement | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → replacement:operation.move-zone → condition:condition.expression → condition:control.optional → resolution:operation.add-morale → resolution:legacy.resolve | 1 | 「作为军团」离场时 返回主宰区，若我方士气少于对方，可从士气牌库追加1张休整的士气。 |
 | S02-01S1 哮天犬·稚 #1 | S02-01S1:ability:master-morale-return:8d098fe32e7b253b | master-morale-return/triggered | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.move-zone → duration:duration.apply → resolution:legacy.resolve | 1 | 「主宰为杨戬时」我方 回合1次 我方士气因主宰效果返还4张及以上时，&lt;哮天犬·稚&gt;可在前排活跃登场，视为1张兵力2000的【特殊】军团。 |
 | S02-01S1 哮天犬·稚 #2 | S02-01S1:ability:death:544dd81cfc7627f4 | death/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.add-morale | 1 | 阵亡时 可从士气牌库追加1张休整的士气。 |
-| S02-0201 增殖的甲虫 #1 | S02-0201:ability:continuous:16b90b36ef8afe2c | continuous/rule | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.move-zone → resolution:legacy.resolve | 0 | 规则上，此军团构筑时不计入卡组数量，不能进入手牌和牌库，游戏开始时置入墓地，此军团以任何形式离场均视为置入所有者墓地。 |
+| S02-0201 增殖的甲虫 #1 | S02-0201:ability:continuous:16b90b36ef8afe2c | continuous/rule | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.move-zone → resolution:legacy.resolve | 0 | 规则上，此军团构筑时不计入卡组数量，不能进入手牌和牌库，游戏开始时置入墓地，此军团以任何形式离场均视为置入所有者墓地。 |
 | S02-0201 增殖的甲虫 #2 | S02-0201:ability:continuous:39b0b1524eaed536 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 无法进攻，无法支援。 |
 | S02-0202 陵墓圣武士 #1 | S02-0202:ability:continuous:94759febdd62fd32 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → duration:duration.apply → condition:visibility.policy → resolution:legacy.resolve | 0 | 我方回合 本回合我方每有1张卡名包含&lt;陵墓&gt;的军团离场时，此军团登场费用-1。 |
 | S02-0202 陵墓圣武士 #2 | S02-0202:ability:death:79d8237fa4fa11c6 | death/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 阵亡时 将墓地1张&lt;陵墓守卫&gt;活跃登场。 |
