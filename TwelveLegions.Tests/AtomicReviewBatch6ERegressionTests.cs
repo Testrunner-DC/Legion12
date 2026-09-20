@@ -327,6 +327,7 @@ public sealed class AtomicReviewBatch6ERegressionTests
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", source.InstanceId,
             Ability: "scarabSummon")).Accepted);
+        Resolve(game, summoned.InstanceId);
         Resolve(game, "0:1");
         Assert.True(source.Tapped);
         var blocker = Card("S01-0003", "batch6e-golden-active-blocker");
@@ -337,7 +338,7 @@ public sealed class AtomicReviewBatch6ERegressionTests
         Assert.Contains(summoned, player.Graveyard);
         Assert.True(source.Tapped);
         Assert.DoesNotContain($"active:{source.InstanceId}:scarabSummon", player.UsedAbilities);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
             && entry.Text.Contains("位置", StringComparison.Ordinal));
         var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
             && entry.Cards.Any(card => card.InstanceId == source.InstanceId));
@@ -359,6 +360,7 @@ public sealed class AtomicReviewBatch6ERegressionTests
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", source.InstanceId,
             Ability: "scarabSummon")).Accepted);
+        Resolve(game, summoned.InstanceId);
         Resolve(game, "0:1");
         var stackItem = Assert.Single(game.State.EffectStack);
         stackItem.Negated = true;

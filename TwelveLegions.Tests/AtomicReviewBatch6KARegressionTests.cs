@@ -427,6 +427,7 @@ public sealed class AtomicReviewBatch6KARegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S01-0105")]
+    [Trait("L12Evidence", "ability:searchBrothers")]
     public void LiuBeiSearchAndSubsequentShuffleUseIndependentSegments()
     {
         var game = Create(8105);

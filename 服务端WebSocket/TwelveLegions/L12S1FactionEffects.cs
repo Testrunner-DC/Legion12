@@ -1189,8 +1189,21 @@ public sealed partial class L12GameEngine
             {
                 var declared = item.Data.GetValueOrDefault("target", string.Empty)
                     .Split('|', StringSplitOptions.RemoveEmptyEntries);
-                if (declared.Length == 3 && ParseEffectEntryBattlefieldChoice(declared[1]) == item.Controller)
-                    SummonFromAnyPrivateZone(player, declared[0], declared[2], tapped: false);
+                var guardId = declared.ElementAtOrDefault(0);
+                var slot = declared.ElementAtOrDefault(2);
+                var guard = player.Graveyard.FirstOrDefault(card => card.InstanceId == guardId
+                    && card.CardId == "S01-0212");
+                if (declared.Length != 3 || ParseEffectEntryBattlefieldChoice(declared[1]) != item.Controller
+                    || guard is null)
+                    RecordTargetSettlementFailure(item, guardId,
+                        "所选〈陵墓守卫〉已离开墓地或登场战场声明失效；主动休整与士气费用不返还");
+                else if (string.IsNullOrWhiteSpace(slot)
+                         || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
+                    RecordTargetSettlementFailure(item, slot,
+                        "已声明的活跃登场位置不再为空；主动休整与士气费用不返还");
+                else if (!TrySummonFromAnyPrivateZone(player, item.Controller, guard.InstanceId, slot, tapped: false))
+                    RecordTargetSettlementFailure(item, guardId,
+                        "所选〈陵墓守卫〉或登场位置在最终区域事务中失效；主动休整与士气费用不返还");
                 FinishStackItem(item);
                 return true;
             }

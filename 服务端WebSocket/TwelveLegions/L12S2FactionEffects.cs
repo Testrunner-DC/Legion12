@@ -1042,9 +1042,26 @@ public sealed partial class L12GameEngine
             return CommitActiveAbility(playerIndex, source, ability, target: null);
         if (ability == "scarabSummon" && source.CardId == "S02-0205")
         {
-            var scarab = player.Graveyard.FirstOrDefault(card => card.CardId == "S02-0201");
-            if (scarab is null || !EmptySlots(player).Any()) return CommandResult.Reject("墓地没有可登场的〈增殖的甲虫〉或没有空位");
-            return BeginPendingActivation(playerIndex, source, ability, EmptySlots(player).ToArray(), "选择〈增殖的甲虫〉活跃登场的位置");
+            var scarabs = player.Graveyard.Where(card => card.CardId == "S02-0201")
+                .Select(card => card.InstanceId).ToList();
+            var slots = EmptySlots(player).ToList();
+            if (scarabs.Count == 0 || slots.Count == 0)
+                return CommandResult.Reject("墓地没有可登场的〈增殖的甲虫〉或没有空位");
+            return BeginPendingActivationSequence(playerIndex, source, ability,
+            [
+                new L12ActivationSelectionStep
+                {
+                    Kind = "grave-card", DeclarationKey = "graveCard",
+                    Text = "黄金圣甲虫：选择墓地1张〈增殖的甲虫〉",
+                    ValidChoices = scarabs,
+                },
+                new L12ActivationSelectionStep
+                {
+                    Kind = "slot", DeclarationKey = "entrySlot",
+                    Text = "黄金圣甲虫：选择该军团活跃登场的位置",
+                    ValidChoices = slots,
+                },
+            ]);
         }
         if (ability == "scarabDebuff" && source.CardId == "S02-0205")
         {
@@ -1374,10 +1391,20 @@ public sealed partial class L12GameEngine
         }
         if (ability == "scarabSummon" && source.CardId == "S02-0205")
         {
-            if (source.Tapped) return CommandResult.Reject("黄金圣甲虫必须为活跃状态");
-            if (!EmptySlots(player).Contains(target ?? string.Empty)) return CommandResult.Reject("登场位置不合法");
+            var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+            var scarab = declared.Length == 2
+                ? player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[0]
+                    && card.CardId == "S02-0201")
+                : null;
+            if (source.Tapped || scarab is null || !EmptySlots(player).Contains(declared.ElementAtOrDefault(1)))
+                return CommandResult.Reject("黄金圣甲虫必须为活跃状态，且所选甲虫与登场位置必须合法");
             source.Tapped = true;
-            PushEffect(playerIndex, source, "active", "主动效果", data: new Dictionary<string, string> { ["ability"] = ability, ["target"] = target! });
+            PushEffect(playerIndex, source, "active", "主动休整效果", data: new Dictionary<string, string>
+            {
+                ["ability"] = ability,
+                ["revive"] = scarab.InstanceId,
+                ["slot"] = declared[1],
+            });
             return CommandResult.Ok();
         }
         if (ability == "scarabDebuff" && source.CardId == "S02-0205")
@@ -1784,13 +1811,21 @@ public sealed partial class L12GameEngine
         }
         if (ability == "scarabSummon" && source?.CardId == "S02-0205")
         {
-            var scarab = player.Graveyard.FirstOrDefault(card => card.CardId == "S02-0201");
+            var reviveId = item.Data.GetValueOrDefault("revive");
+            var slot = item.Data.GetValueOrDefault("slot");
+            var scarab = player.Graveyard.FirstOrDefault(card => card.InstanceId == reviveId
+                && card.CardId == "S02-0201");
             if (scarab is null)
-                AddEvent("effect-cancelled", item.Controller,
-                    "黄金圣甲虫声明的增殖甲虫已失效；主动休整费用不返还");
-            else
-                _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, scarab.InstanceId,
-                    item.Data.GetValueOrDefault("target") ?? string.Empty, tapped: false);
+                RecordTargetSettlementFailure(item, reviveId,
+                    "所选〈增殖的甲虫〉已离开墓地；不改选其他同名卡，主动休整费用不返还");
+            else if (string.IsNullOrWhiteSpace(slot)
+                     || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
+                RecordTargetSettlementFailure(item, slot,
+                    "已声明的活跃登场位置不再为空；主动休整费用不返还");
+            else if (!TrySummonFromAnyPrivateZone(player, player.PlayerIndex, scarab.InstanceId,
+                         slot, tapped: false))
+                RecordTargetSettlementFailure(item, reviveId,
+                    "所选〈增殖的甲虫〉或登场位置在最终区域事务中失效；主动休整费用不返还");
             FinishStackItem(item);
             return true;
         }

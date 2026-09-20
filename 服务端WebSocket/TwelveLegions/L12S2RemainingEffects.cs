@@ -307,12 +307,15 @@ public sealed partial class L12GameEngine
             case "hippolytaRevive" when source.CardId == "S02-0510":
             {
                 var declared = SplitDeclared(target);
-                if (declared.Length != 3 || source.Tapped || !TryConsumeMorale(player, 3)) return CommandResult.Reject("发动条件或士气不足");
+                if (declared.Length != 3 || source.Tapped)
+                    return CommandResult.Reject("希波吕忒必须为活跃状态且声明完整");
                 var discard = player.Hand.FirstOrDefault(card => card.InstanceId == declared[0]);
                 var revive = player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1]
                     && L12StructuredCardRules.HasFaction(player, card, "olympus")
                     && card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, 4));
-                if (discard is null || revive is null || !EmptySlots(player).Contains(declared[2])) return CommandResult.Reject("选择的卡牌或位置已失效");
+                if (discard is null || revive is null || !EmptySlots(player).Contains(declared[2]))
+                    return CommandResult.Reject("选择的卡牌或位置已失效；费用未支付");
+                if (!TryConsumeMorale(player, 3)) return CommandResult.Reject("需要3张活跃士气");
                 source.Tapped = true; player.Hand.Remove(discard); player.Graveyard.Add(discard);
                 PushEffect(playerIndex, source, "active", "主动休整效果", data: new Dictionary<string, string>
                 {
@@ -449,8 +452,26 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item); return true;
             }
             case "hippolytaRevive" when source?.CardId == "S02-0510":
-                SummonFromAnyPrivateZone(player, item.Data["revive"], item.Data["slot"], tapped: false);
-                FinishStackItem(item); return true;
+            {
+                var reviveId = item.Data.GetValueOrDefault("revive");
+                var slot = item.Data.GetValueOrDefault("slot");
+                var revive = player.Graveyard.FirstOrDefault(card => card.InstanceId == reviveId
+                    && card.CardType == "legion"
+                    && L12StructuredCardRules.CurrentCostAtMost(card, 4)
+                    && L12StructuredCardRules.HasFaction(player, card, "olympus"));
+                if (revive is null)
+                    RecordTargetSettlementFailure(item, reviveId,
+                        "所选军团已离开墓地、当前费用高于4或失去有效【奥林匹斯】特征；主动休整、士气与弃牌费用不返还");
+                else if (string.IsNullOrWhiteSpace(slot)
+                         || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
+                    RecordTargetSettlementFailure(item, slot,
+                        "已声明的活跃登场位置不再为空；主动休整、士气与弃牌费用不返还");
+                else if (!TrySummonFromAnyPrivateZone(player, item.Controller, revive.InstanceId, slot, tapped: false))
+                    RecordTargetSettlementFailure(item, reviveId,
+                        "所选军团或登场位置在最终区域事务中失效；主动休整、士气与弃牌费用不返还");
+                FinishStackItem(item);
+                return true;
+            }
             case "angusTacticTrial" when item.SourceCardId == "S02-06M2":
                 FinishStackItem(item);
                 return true;

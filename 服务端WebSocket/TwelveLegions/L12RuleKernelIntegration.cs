@@ -1550,11 +1550,17 @@ public sealed partial class L12GameEngine
         var revive = player.Graveyard.FirstOrDefault(card => card.InstanceId == reviveId
             && card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "tianting")
             && L12StructuredCardRules.CurrentCostAtMost(card, paid));
-        if (revive is not null && battlefield == item.Controller && slotChoice is not null
-            && slotChoice.Split(':') is [var rowText, var slotText]
-            && int.TryParse(rowText, out var row) && int.TryParse(slotText, out var slot)
-            && row is >= 0 and <= 1 && slot is >= 0 and <= 2 && player.Field[row][slot] is null)
-            SummonFromAnyPrivateZone(player, revive.InstanceId, slotChoice, tapped: false);
+        if (revive is null)
+            RecordTargetSettlementFailure(item, reviveId,
+                "所选【天廷】军团已离开墓地、当前费用超过已返还士气数或失去有效【天廷】特征；主动休整与已返还士气不恢复");
+        else if (battlefield != item.Controller || string.IsNullOrWhiteSpace(slotChoice)
+                 || !EmptySlots(player).Contains(slotChoice, StringComparer.OrdinalIgnoreCase))
+            RecordTargetSettlementFailure(item, slotChoice,
+                "已声明的我方活跃登场位置失效；主动休整与已返还士气不恢复");
+        else if (!TrySummonFromAnyPrivateZone(player, item.Controller, revive.InstanceId,
+                     slotChoice, tapped: false))
+            RecordTargetSettlementFailure(item, reviveId,
+                "所选【天廷】军团或登场位置在最终区域事务中失效；主动休整与已返还士气不恢复");
         FinishStackItem(item);
     }
 
