@@ -1,3 +1,4 @@
+using System.Reflection;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -95,6 +96,26 @@ public sealed class CourtMagicianActiveRestLifecycleTests
         Assert.True(magician.Tapped);
         Assert.Equal(-1, game.State.CounterTacticsDisabledUntilTurnSerial);
         Assert.Equal(-1, game.State.CounterTacticsDisabledExpiresAtPlayerTurnStart);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "family:active-rest-common-stack-cost")]
+    public void CommonActiveStackBoundaryCommitsStructuredRestAndNegationCannotRefundIt()
+    {
+        var game = Create(920011, autoPassEmptyResponses: false);
+        var magician = Card("S02-0003", "court-magician-common-boundary");
+        PrepareMain(game, magician);
+        var push = typeof(L12GameEngine).GetMethods(BindingFlags.Instance | BindingFlags.NonPublic)
+            .Single(method => method.Name == "PushEffect" && method.GetParameters().Length == 6);
+
+        push.Invoke(game, [0, magician, "active", "主动效果", null,
+            new Dictionary<string, string> { ["ability"] = "disableCounters" }]);
+
+        Assert.True(magician.Tapped);
+        Assert.Single(game.State.EffectStack).Negated = true;
+        PassResponses(game);
+        Assert.True(magician.Tapped);
+        Assert.Equal(-1, game.State.CounterTacticsDisabledUntilTurnSerial);
     }
 
     [Fact]

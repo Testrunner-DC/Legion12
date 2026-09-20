@@ -510,6 +510,31 @@ public sealed class AtomicReviewBatch6HRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "card:S02-0403")]
+    [Trait("L12Evidence", "entry:attack-counter-tactic-ineligible")]
+    public void OkitaAddsARevealedCounterTacticToHandInsteadOfTryingToPlayIt()
+    {
+        var game = Create(76081);
+        var player = game.State.Players[0];
+        var okita = Card("S02-0403", "batch6h-okita-counter-control");
+        var seppuku = Card("S01-0420", "batch6h-okita-counter-top");
+        player.Library.Clear();
+        player.Library.Add(seppuku);
+
+        AttackMaster(game, okita);
+        PassResponses(game);
+
+        Assert.Contains(seppuku, player.Hand);
+        Assert.DoesNotContain(seppuku, player.Library);
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "s2-okita-top");
+        Assert.DoesNotContain(game.State.PendingActivations,
+            activation => activation.PlayCardInstanceId == seppuku.InstanceId);
+        Assert.Contains(game.State.AuthorityEvents, entry => entry.Type == "effect-hand-add"
+            && entry.TargetInstanceId == seppuku.InstanceId);
+    }
+
+    [Fact]
     [Trait("L12Evidence", "card:S02-0519")]
     public void SpartanWarriorUsesItsOwnModifierLabel()
     {

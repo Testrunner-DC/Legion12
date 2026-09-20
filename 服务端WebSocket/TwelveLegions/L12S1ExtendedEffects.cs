@@ -522,7 +522,17 @@ public sealed partial class L12GameEngine
                 if (chosen[0] == "play")
                 {
                     if (player.Relic is not null) DiscardRelic(player, player.Relic);
-                    player.Relic = artifact; artifact.Tapped = false;
+                    artifact.OwnerIndex ??= item.Controller;
+                    artifact.SummonRound = State.Round;
+                    artifact.Tapped = false;
+                    player.Relic = artifact;
+                    ApplyDisasterLevelOnEntry(item.Controller, artifact, deferTriggerUntilStackSettles: true);
+                    AddEvent("play", item.Controller,
+                        $"诸葛亮使〈{artifact.Name}〉无需消耗费用活跃登场", artifact);
+                    ResolveOnPlayContinuousEffects(item.Controller, artifact);
+                    RecalculateContinuousTroops();
+                    if (HasImmediateEffect(artifact, "enter"))
+                        QueueOrPushTriggeredEffect(item.Controller, artifact, "enter", "【登场时】效果");
                 }
                 else AddCardToHandByEffect(player, artifact, "library", $"诸葛亮将{artifact.Name}加入手牌");
                 FinishStackItem(item); return true;
@@ -1245,10 +1255,7 @@ public sealed partial class L12GameEngine
             case "wisdom-recover":
                 var target = CompositeDeclared(item, "recoverTarget").SingleOrDefault();
                 _ = TryMoveDeclaredGraveCardToHand(item, target,
-                    (owner, candidate) => candidate.InstanceId != item.SourceInstanceId
-                        && L12StructuredCardRules.CurrentCostAtMost(candidate, 3)
-                        && candidate.CardType is "tactic" or "artifact"
-                        && CanEnterHandOrLibrary(candidate),
+                    (owner, candidate) => IsWisdomCodexRecoveryCandidate(candidate),
                     "智慧法典将所选墓地卡牌加入手牌",
                     "智慧法典已选择的墓地回收对象已离开墓地或不再符合费用与类型条件");
                 FinishStackItem(item);
@@ -1259,6 +1266,12 @@ public sealed partial class L12GameEngine
                 return;
         }
     }
+
+    private bool IsWisdomCodexRecoveryCandidate(L12CardInstance candidate)
+        => candidate.CardId != "S01-0224"
+            && L12StructuredCardRules.CurrentCostAtMost(candidate, 3)
+            && candidate.CardType is "tactic" or "artifact"
+            && CanEnterHandOrLibrary(candidate);
 
     private void QueueS1PostAttackReactions(int attackerPlayer)
     {

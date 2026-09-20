@@ -1754,6 +1754,46 @@ public sealed class LatestBugRegressionTests
         Assert.Same(protectedLegion, owner.Field[0][0]);
     }
 
+    [Theory]
+    [InlineData("S01-0201")]
+    [InlineData("S01-0202")]
+    [InlineData("ST02-01")]
+    [Trait("L12Evidence", "family:summon-turn-counter-protection-expiry")]
+    public void SummonTurnCounterTacticProtectionExpiresBeforeALaterRoundAttackEffect(string cardId)
+    {
+        var game = Create(64271 + cardId.Length);
+        var owner = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var source = Card(cardId, $"expired-counter-protection-{cardId}");
+        var absoluteDefense = Card("S01-0016", $"expired-counter-response-{cardId}");
+        var discard = Card("S01-0005", $"expired-counter-discard-{cardId}");
+        owner.Field[0][0] = source;
+        opponent.Hand.Clear();
+        opponent.Hand.Add(discard);
+        absoluteDefense.Hidden = true;
+        absoluteDefense.SetRound = 0;
+        opponent.Field[1][0] = absoluteDefense;
+        game.State.ActivePlayer = 0;
+        game.State.Round = 3;
+        game.State.Phase = L12Phase.Main;
+        source.SummonRound = 2;
+
+        Assert.False(L12StructuredCardRules.HasSummonTurnCounterTacticProtection(source, game.State.Round));
+        var push = typeof(L12GameEngine).GetMethod("PushEffect", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new MissingMethodException(nameof(L12GameEngine), "PushEffect");
+        push.Invoke(game, [0, source, "attack", "非登场回合的进攻时效果", null,
+            new Dictionary<string, string>()]);
+        var ownerResponse = game.State.PendingPrompts.FirstOrDefault(prompt =>
+            prompt.PlayerIndex == 0 && prompt.Kind == "response");
+        if (ownerResponse is not null)
+            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: ownerResponse.PromptId,
+                Choice: "pass")).Accepted);
+
+        var response = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.PlayerIndex == 1 && prompt.Kind == "response");
+        Assert.Contains(absoluteDefense.InstanceId, response.ValidChoices);
+    }
+
     [Fact]
     public void RunePowerCompletesOptionalPaymentSearchRevealAndBottomOrder()
     {
@@ -2118,6 +2158,7 @@ public sealed class LatestBugRegressionTests
         var canopic = Card("S01-0219", "wisdom-artifact-entry");
         var discard = Card("S01-0001", "wisdom-discard-cost");
         var recovery = Card("S01-0012", "wisdom-recovery");
+        var anotherWisdom = Card("S01-0224", "wisdom-recovery-same-name");
         var draw = Card("S01-0001", "wisdom-draw");
         wisdom.Hidden = true;
         wisdom.SetRound = 0;
@@ -2126,7 +2167,7 @@ public sealed class LatestBugRegressionTests
         codexOwner.Library.Clear();
         codexOwner.Library.Add(draw);
         codexOwner.Graveyard.Clear();
-        codexOwner.Graveyard.Add(recovery);
+        codexOwner.Graveyard.AddRange([recovery, anotherWisdom]);
         opponent.Hand.Clear();
         opponent.Hand.AddRange([canopic, discard]);
         game.State.ActivePlayer = 1;
@@ -2154,6 +2195,7 @@ public sealed class LatestBugRegressionTests
             Choice: "mode:recover")).Accepted);
         var recoveryTarget = Assert.Single(game.State.PendingPrompts);
         Assert.Contains(recovery.InstanceId, recoveryTarget.ValidChoices);
+        Assert.DoesNotContain(anotherWisdom.InstanceId, recoveryTarget.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: recoveryTarget.PromptId,
             Choice: recovery.InstanceId)).Accepted);
         PassResponses(game);
@@ -2231,6 +2273,123 @@ public sealed class LatestBugRegressionTests
         var triggeredResponse = Assert.Single(triggeredGame.State.PendingPrompts);
         Assert.Contains(triggeredWisdom.InstanceId, triggeredResponse.ValidChoices);
         Assert.Contains("主宰受到伤害时效果", triggeredGame.State.EffectStack[^1].Text);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0224")]
+    [Trait("L12Evidence", "response-source:last-known-snapshot")]
+    public void WisdomCodexCanRespondWhenTheTargetEffectSourceOnlyHasALastKnownSnapshot()
+    {
+        var game = Create(6439);
+        var wisdom = Card("S01-0224", "wisdom-snapshot-response");
+        wisdom.Hidden = true;
+        wisdom.SetRound = 0;
+        game.State.Players[0].Field[1][0] = wisdom;
+        game.State.Round = 2;
+        var tactic = Card("S01-0012", "departed-tactic-source");
+        var target = new L12StackItem
+        {
+            StackItemId = "snapshot-only-target",
+            Controller = 1,
+            SourceInstanceId = tactic.InstanceId,
+            SourceCardId = tactic.CardId,
+            SourceName = tactic.Name,
+            SourceSnapshot = tactic.Clone(),
+            Trigger = "play",
+            Text = "战术效果",
+        };
+
+        var method = typeof(L12GameEngine).GetMethod("CanUseS1ReactionAtStack",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        Assert.True((bool)method.Invoke(game, [wisdom.CardId, 0, target])!);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0224")]
+    [Trait("L12Evidence", "named-card-exclusion")]
+    public void WisdomCodexRecoveryRejectsAnotherWisdomCodexButKeepsOtherEligibleCards()
+    {
+        var game = Create(6440);
+        var owner = game.State.Players[0];
+        var source = Card("S01-0224", "wisdom-reward-source");
+        var anotherWisdom = Card("S01-0224", "wisdom-reward-same-name");
+        var eligible = Card("S01-0012", "wisdom-reward-eligible");
+        owner.Graveyard.Clear();
+        owner.Graveyard.AddRange([source, anotherWisdom, eligible]);
+
+        var invalid = new L12StackItem
+        {
+            StackItemId = "wisdom-recover-same-name",
+            Controller = 0,
+            SourceInstanceId = source.InstanceId,
+            SourceCardId = source.CardId,
+            SourceName = source.Name,
+            SourceSnapshot = source.Clone(),
+            Trigger = "wisdom-reward",
+            Text = "智慧法典回收",
+        };
+        invalid.Data["atomicFlow"] = "wisdom-recover";
+        invalid.Data["declared:recoverTarget"] = anotherWisdom.InstanceId;
+        game.State.EffectStack.Add(invalid);
+
+        var method = typeof(L12GameEngine).GetMethod("ResolveWisdomCodexReward",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        method.Invoke(game, [invalid]);
+
+        Assert.Contains(anotherWisdom, owner.Graveyard);
+        Assert.DoesNotContain(anotherWisdom, owner.Hand);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+
+        var candidateMethod = typeof(L12GameEngine).GetMethod("IsWisdomCodexRecoveryCandidate",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        Assert.False((bool)candidateMethod.Invoke(game, [anotherWisdom])!);
+        Assert.True((bool)candidateMethod.Invoke(game, [eligible])!);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0103,S01-01M1")]
+    [Trait("L12Evidence", "damage-source:explicit-stack-item")]
+    public void PingyangUsesTheYangjianEffectSourceEvenWhenAnotherStackItemIsAboveIt()
+    {
+        var game = CreateWithFirstMaster("S01-01M1", 6441);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        player.NextMasterDamageToOpponentBecomesTwoUntilTurn = game.State.TurnSerial;
+        opponent.Hp = Math.Max(4, opponent.Hp);
+        var before = opponent.Hp;
+        var yangjian = Card("S01-01M1", "master-0");
+        var active = new L12StackItem
+        {
+            StackItemId = "yangjian-nonlethal-under-stack",
+            Controller = 0,
+            SourceInstanceId = yangjian.InstanceId,
+            SourceCardId = yangjian.CardId,
+            SourceName = yangjian.Name,
+            SourceSnapshot = yangjian.Clone(),
+            Trigger = "active",
+            Text = "杨戬的主宰效果",
+        };
+        active.Data["ability"] = "nonLethal";
+        var unrelated = Card("S01-0001", "unrelated-stack-source");
+        var laterStackItem = new L12StackItem
+        {
+            StackItemId = "unrelated-stack-item",
+            Controller = 1,
+            SourceInstanceId = unrelated.InstanceId,
+            SourceCardId = unrelated.CardId,
+            SourceName = unrelated.Name,
+            SourceSnapshot = unrelated.Clone(),
+            Trigger = "enter",
+            Text = "无关的后入栈效果",
+        };
+        game.State.EffectStack.AddRange([active, laterStackItem]);
+
+        var method = typeof(L12GameEngine).GetMethod("ResolveActiveEffect",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        method.Invoke(game, [active]);
+
+        Assert.Equal(before - 2, opponent.Hp);
+        Assert.Equal(-1, player.NextMasterDamageToOpponentBecomesTwoUntilTurn);
     }
 
     [Fact]

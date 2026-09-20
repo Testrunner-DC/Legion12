@@ -40,6 +40,13 @@ if (s1.find(card => card.id === 'S01-0319')?.effect !== huntingMomentText
   throw new Error('猎杀时刻必须在服务端、图鉴与搜索数据中统一使用已批准的非费用效果文本')
 }
 const s2 = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/cards.s2.json'))
+const tauntCards = [...s1, ...s2].filter(card => String(card.effect ?? '').includes('挑衅'))
+if ([...s1, ...s2].some(card => String(card.effect ?? '').includes('挑畔'))
+  || webLookup.some(card => String(card.effectText ?? '').includes('挑畔') || String(card.searchText ?? '').includes('挑畔'))
+  || tauntCards.some(card => !lookupByCardNo.get(card.id)?.searchText?.includes('挑衅'))
+  || !['S02-0004', 'S02-0007'].every(cardId => lookupByCardNo.get(cardId)?.searchText?.includes('挑衅'))) {
+  throw new Error('挑衅关键词必须在权威卡文、图鉴与组卡搜索中使用统一写法')
+}
 const wukongEffect = '我方 回合1次 可返还2至8士气：将此主宰作为【斗士】军团在我方前排活跃登场，兵力=本次返还的士气数量×1000，在登场回合即可进攻，且在我方回合结束时/进攻后返回主宰区。\n「作为军团」离场时 返回主宰区，若我方士气少于对方，可从士气牌库追加1张休整的士气。'
 if (s2.find(card => card.id === 'S02-01M1')?.effect !== wukongEffect
   || webLookup.find(card => card.cardNo === 'S02-01M1')?.effectText !== wukongEffect

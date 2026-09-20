@@ -1051,6 +1051,60 @@ public sealed class S2UniversalEffectsTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "card:S02-0010,S01-0016")]
+    [Trait("L12Evidence", "composite-segment:independent-response")]
+    public void AbsoluteDefenseMayNegateBlackLotusMoraleSegmentWithoutUndoingTheDisasterAdjustment()
+    {
+        var game = Create(seed: 62123);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var lotus = TakeCard(game, 0, "S02-0010");
+        var absoluteDefense = SetCounter(game, 1, "S01-0016");
+        var discard = Instance("S01-0005", "black-lotus-absolute-defense-cost");
+        opponent.Hand.Clear();
+        opponent.Hand.Add(discard);
+        AddMorale(player, 4);
+        game.State.DisasterValue = 4;
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", lotus.InstanceId)).Accepted);
+        var disasterDeclaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", disasterDeclaration.Continuation);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: disasterDeclaration.PromptId,
+            Choice: "1")).Accepted);
+        var firstResponse = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.PlayerIndex == 1 && prompt.Kind == "response");
+        Assert.Contains(absoluteDefense.InstanceId, firstResponse.ValidChoices);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: firstResponse.PromptId,
+            Choice: "pass")).Accepted);
+
+        Assert.Equal(5, game.State.DisasterValue);
+        var moraleDeclaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", moraleDeclaration.Continuation);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: moraleDeclaration.PromptId,
+            Choice: "mode:morale")).Accepted);
+
+        var secondResponse = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.PlayerIndex == 1 && prompt.Kind == "response");
+        Assert.Contains(absoluteDefense.InstanceId, secondResponse.ValidChoices);
+        Assert.Equal("black-lotus-morale", game.State.EffectStack[^1].Data["atomicFlow"]);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: secondResponse.PromptId,
+            Choice: absoluteDefense.InstanceId)).Accepted);
+        var discardPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("stack-response-discard", discardPrompt.Continuation);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: discardPrompt.PromptId,
+            Choice: discard.InstanceId)).Accepted);
+        PassResponses(game);
+
+        Assert.Equal(5, game.State.DisasterValue);
+        Assert.DoesNotContain(player.Morale, morale => morale.CardId == "S02-0010");
+        Assert.Contains(player.Graveyard, card => card.InstanceId == lotus.InstanceId);
+        Assert.Equal(4, player.Morale.Count(card => card.Tapped));
+    }
+
+    [Fact]
     public void ReturnedBlackLotusGoesToGraveyardInsteadOfMoraleDeck()
     {
         var game = CreateTianting(seed: 6213);

@@ -2152,8 +2152,7 @@ public sealed partial class L12GameEngine
                     card => L12StructuredCardRules.CurrentCostEquals(card, 0)) is not null),
             "wisdom-recover" => CompositeDeclared(item, "recoverTarget").SingleOrDefault() is { } wisdom
                 && State.Players[controller].Graveyard.Any(card => card.InstanceId == wisdom
-                    && card.InstanceId != item.SourceInstanceId && L12StructuredCardRules.CurrentCostAtMost(card, 3)
-                    && card.CardType is "tactic" or "artifact"),
+                    && IsWisdomCodexRecoveryCandidate(card)),
             "blood-eagle-recover" => CompositeDeclared(item, "graveOrder") is [var handCard, var bottomCard]
                 && !handCard.Equals(bottomCard, StringComparison.OrdinalIgnoreCase)
                 && new[] { handCard, bottomCard }.Any(id => State.Players[controller].Graveyard.Any(card =>

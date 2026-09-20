@@ -344,4 +344,38 @@ public sealed class StarterTargetedBatch2ARegressionTests
             && entry.Text.Contains("弗蕾迪斯", StringComparison.Ordinal)
             && entry.EffectResultStatus == "failed");
     }
+
+    [Fact]
+    [Trait("L12Evidence", "auxiliary:jozef-front-attacks-zhuge-liang-front")]
+    public void FrontRowJozefMayAttackFrontRowZhugeLiangWithoutAnExternalRestriction()
+    {
+        var game = Create(201052);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.TurnSerial = 3;
+        game.State.Phase = L12Phase.Main;
+        game.State.ActiveDisaster = null;
+        foreach (var player in game.State.Players)
+        {
+            player.Field[0] = new L12CardInstance?[3];
+            player.Field[1] = new L12CardInstance?[3];
+            player.Hand.Clear();
+        }
+        var jozef = Card("ST02-06", "auxiliary-jozef-front");
+        var zhugeLiang = Card("S01-0111", "auxiliary-zhuge-front");
+        jozef.SummonRound = -1;
+        jozef.OwnerIndex = 0;
+        zhugeLiang.SummonRound = -1;
+        zhugeLiang.OwnerIndex = 1;
+        game.State.Players[0].Field[0][0] = jozef;
+        game.State.Players[1].Field[0][0] = zhugeLiang;
+
+        var result = game.Handle(0, new L12Command("attack", jozef.InstanceId,
+            Target: new L12AttackTarget("legion", zhugeLiang.InstanceId)));
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.Contains(game.State.Events, entry => entry.Type == "attack"
+            && entry.Text.Contains("乔泽", StringComparison.Ordinal)
+            && entry.Text.Contains("诸葛亮", StringComparison.Ordinal));
+    }
 }

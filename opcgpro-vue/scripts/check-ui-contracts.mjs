@@ -450,6 +450,10 @@ const contracts = [
     && prompt.includes("explicitLabel === '不响应' || explicitLabel === '不发动'")
     && prompt.includes(':data-ui-contract="isDeclineChoice(choice) ? \'minimum-decline-action\' : undefined"')
     && prompt.includes('min-width:112px!important;min-height:44px!important'), '所有“不响应”选项必须走统一拒绝动作识别，并保持至少112×44像素的可操作尺寸'],
+  [prompt.includes("prompt.value?.kind === 'trigger-order'")
+    && prompt.includes('第${declarationOrder}个发动 · 第${resolutionOrder}个结算')
+    && prompt.includes('data-ui-contract="trigger-order-lifo-hint"')
+    && prompt.includes('后发动的先结算'), '同一时点触发排序必须同时显示发动顺序与逆序结算顺序，避免把点击序号误读为结算序号'],
   [gamePage.includes('data-ui-contract="manual-game-over-exit"')
     && gamePage.includes('<button @click="returnToLobby">返回大厅</button>')
     && !gamePage.includes('点击返回后才离开本局')
@@ -883,6 +887,10 @@ const contracts = [
     && prompt.includes('v-if="showPreviewCard') && !prompt.includes('v-if="previewCardId && !displayedChoices.includes(previewCardId)"'), '效果决定与场面目标不得因 previewCardId 显示来源卡图；仅处理中卡牌与信息公开确认可显式开启预览'],
   [prompt.includes('const cardId = cardIdFor(id)') && prompt.includes('if (!card && !imageUrl && !cardId) return null')
     && prompt.includes('cardId: detail.cardId') && promptCardCandidate.includes(':card-id="cardId"'), 'Prompt 候选只要具有 cardId 就必须创建详情并渲染 CardImage，不得依赖旧 imageUrl 才显示卡图'],
+  [prompt.includes('<template v-for="choice in primaryChoices" :key="choice">')
+    && prompt.includes(':card-id="cardIdFor(choice)"')
+    && prompt.includes('@focus="focusChoice(choice)" @select="toggle(choice)"')
+    && prompt.includes('const currentChoices = computed(() => isMulligan.value ? (me.value.hand ?? []).map(card => card.instanceId) : (prompt.value?.validChoices ?? []))'), '天灾禁用等卡牌Prompt必须以服务端validChoices实例ID贯穿卡图、聚焦与提交，不得用显示顺序、名称或cardId替代实例ID'],
   [l12PromptSetup.includes('"optional-cards", "order", "trial-order"')
     && l12PromptSetup.includes('var isCardChoice = explicitDisplayIds.Length > 0')
     && l12PromptSetup.includes('data.TryAdd($"{id}:name", card.Name)')

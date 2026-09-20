@@ -14,7 +14,8 @@ public sealed partial class L12GameEngine
     };
 
     private static bool HasImmediateEffect(L12CardInstance card, string trigger)
-        => L12VerifiedAtomicPrograms.Find(card.CardId, trigger) is not null
+        => trigger == "attack" && card.HasShock
+            || L12VerifiedAtomicPrograms.Find(card.CardId, trigger) is not null
             || (trigger == "enter" ? ImmediateEnterCards.Contains(card.CardId) || HasS1ExtendedImmediateEffect(card.CardId, trigger)
                 || HasS2UniversalImmediateEffect(card.CardId, trigger)
                 || HasS2FactionImmediateEffect(card.CardId, trigger)
@@ -61,6 +62,13 @@ public sealed partial class L12GameEngine
             return;
         }
         if (TryResolveTrialAdvanceEffect(item)) return;
+        if (item.Trigger == "attack"
+            && item.Data.GetValueOrDefault("shockApplied") != "true"
+            && FindSource(item) is { HasShock: true } shockSource)
+        {
+            ApplyS2Shock(item, shockSource);
+            item.Data["shockApplied"] = "true";
+        }
         // 复合能力拆出的后续独立段已经由前一段指定 atomicFlow；若再次从卡牌根程序
         // 开始执行，会把该 flow 覆盖回第一段并重复提示。后续段直接进入结构化复合路由。
         if (item.Data.GetValueOrDefault("atomicContinuation") != "true"

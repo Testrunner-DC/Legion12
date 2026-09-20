@@ -326,7 +326,7 @@ public sealed partial class L12GameEngine
         item.Data["revealed"] = top.InstanceId;
         var choices = new List<string> { "top", "bottom" };
         if (top.CardType == "legion" && top.Faction == "tianting" && L12StructuredCardRules.CurrentCostAtMost(top, 5)
-            && CanReturnMorale(player, 1) && player.Field.SelectMany(row => row).Any(card => card is null))
+            && CanReturnMorale(player, 1) && EmptySlots(player).Any())
             choices.Add("recruit");
         var data = new Dictionary<string, string>
         {
@@ -357,10 +357,8 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == item.Data["revealed"]);
         if (card is null) { FinishStackItem(item); return; }
-        var (row, slot) = ParseSlot(slotChoice);
-        player.Library.Remove(card); card.SummonRound = State.Round; card.Tapped = false; player.Field[row][slot] = card;
-        AddEvent("put", item.Controller, $"李靖使 {card.Name} 活跃登场", card);
-        CompleteEffectLegionEntry(item.Controller, card, "library");
+        if (!TrySummonFromAnyPrivateZone(player, item.Controller, card.InstanceId, slotChoice, tapped: false))
+            RecordPromptContinuationFailure(item, "李靖已声明的登场位置已失效；展示卡保留在原区域", card);
         FinishStackItem(item);
     }
 

@@ -740,7 +740,7 @@ public sealed partial class L12GameEngine
     private bool TryResolveS2FactionAttack(L12StackItem item, L12CardInstance card)
     {
         var player = State.Players[item.Controller];
-        if (card.HasShock)
+        if (card.HasShock && item.Data.GetValueOrDefault("shockApplied") != "true")
         {
             ApplyS2Shock(item, card);
             item.Data["shockApplied"] = "true";
@@ -2921,7 +2921,7 @@ public sealed partial class L12GameEngine
         AddPresentationEvent("reveal", item.Controller,
             $"冲田总司展示牌库顶部的〈{top.Name}〉", "S02-0403", "top-card", top);
         var eligible = L12StructuredCardRules.HasFaction(player, top, "gaotianyuan") && L12StructuredCardRules.CurrentCostAtMost(top, 3)
-            && top.CardType is "legion" or "artifact" or "tactic";
+            && (top.CardType is "legion" or "artifact" || top.CardType == "tactic" && !IsCounterTactic(top.CardId));
         if (!eligible || top.CardType == "legion" && !EffectGeneratedFreePlaySlots(player).Any())
         {
             AddS2OkitaRevealedCardToHand(item);
@@ -2965,7 +2965,9 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[item.Controller];
         var card = FindS2OkitaRevealedCard(item);
-        if (card is null || !L12StructuredCardRules.HasFaction(player, card, "gaotianyuan") || !L12StructuredCardRules.CurrentCostAtMost(card, 3))
+        if (card is null || !L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")
+            || !L12StructuredCardRules.CurrentCostAtMost(card, 3)
+            || card.CardType == "tactic" && IsCounterTactic(card.CardId))
         {
             FinishStackItem(item);
             return;

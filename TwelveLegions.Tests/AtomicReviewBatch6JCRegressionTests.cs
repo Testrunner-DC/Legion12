@@ -335,6 +335,41 @@ public sealed class AtomicReviewBatch6JCRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "entry:auxiliary-limu-counter-bottom")]
+    public void LiMuRevealingAbsoluteDefenseReturnsItToTheLibraryBottomWithoutOpeningAPlayFlow()
+    {
+        var game = Create(97041);
+        var player = game.State.Players[0];
+        var liMu = Card("S02-0102", "auxiliary-limu-counter-source");
+        var absoluteDefense = Card("S01-0016", "auxiliary-limu-absolute-defense");
+        player.Field[0][0] = liMu;
+        player.Library.Clear();
+        player.Library.Add(absoluteDefense);
+        var item = new L12StackItem
+        {
+            StackItemId = "auxiliary-limu-counter-parent",
+            Controller = 0,
+            SourceInstanceId = liMu.InstanceId,
+            SourceCardId = liMu.CardId,
+            SourceName = liMu.Name,
+            Trigger = "enter",
+            Text = "李牧展示段",
+        };
+        game.State.EffectStack.Add(item);
+
+        InvokeVoid(game, "RevealS2LiMuTop", item);
+
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Same(absoluteDefense, Assert.Single(player.Library));
+        Assert.Contains(game.State.Events, entry => entry.Type == "library"
+            && entry.Cards.Any(card => card.InstanceId == absoluteDefense.InstanceId));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "stack-push"
+            && entry.Cards.Any(card => card.InstanceId == absoluteDefense.InstanceId));
+    }
+
+    [Fact]
     [Trait("L12Evidence", "entry:batch6jc-limu-composite-common-free-play")]
     public void LiMuCompositeTacticKeepsPrivateZoneUntilItsPublicDeclarationCommits()
     {

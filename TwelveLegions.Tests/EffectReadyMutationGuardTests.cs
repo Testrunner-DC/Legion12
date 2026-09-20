@@ -20,7 +20,6 @@ public sealed class EffectReadyMutationGuardTests
 
         var expected = new[]
         {
-            "L12EffectContinuations.cs|player.Library.Remove(card); card.SummonRound = State.Round; card.Tapped = false; player.Field[row][slot] = card;",
             "L12GmCommands.cs|attacker.Tapped = false;",
             "L12AuthorityEvents.cs|if (card is not null) card.Tapped = false;",
             "L12AuthorityEvents.cs|if (morale is not null) morale.Tapped = false;",
@@ -29,7 +28,7 @@ public sealed class EffectReadyMutationGuardTests
             "L12GameEngine.cs|if (morale.CannotUntapUntilRound < State.Round) morale.Tapped = false;",
             "L12GameEngine.cs|if (card is not null && card.CannotUntapUntilRound < State.Round) card.Tapped = false;",
             "L12GameEngine.cs|if (player.Relic is not null && player.Relic.CannotUntapUntilRound < State.Round) player.Relic.Tapped = false;",
-            "L12S1ExtendedEffects.cs|player.Relic = artifact; artifact.Tapped = false;",
+            "L12S1ExtendedEffects.cs|artifact.Tapped = false;",
             "L12S2FactionEffects.cs|xiaotian.Tapped = false;",
             "L12S2RemainingEffects.cs|morale.Tapped = false;",
             "L12StarterRemainingEffects.cs|target.Tapped = false;",

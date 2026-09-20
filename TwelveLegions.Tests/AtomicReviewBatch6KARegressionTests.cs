@@ -589,4 +589,38 @@ public sealed class AtomicReviewBatch6KARegressionTests
         Assert.Same(revive, player.Field[1][2]);
         Assert.Contains(victim, enemy.Field.SelectMany(row => row));
     }
+
+    [Fact]
+    [Trait("L12Evidence", "auxiliary:plague-locks-next-opponent-reset")]
+    public void PlagueInfectionLocksExactlyTheNextOpponentReset()
+    {
+        var game = Create(8109);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var plague = Card("S01-0011", "batch6ka-plague");
+        var target = new L12MoraleCard
+        {
+            CardId = "S01-01C1",
+            InstanceId = "batch6ka-plague-target",
+            Tapped = true,
+        };
+        player.Hand.Add(plague);
+        opponent.Morale.Add(target);
+        AddReadyMorale(player, plague.CurrentCost);
+        var resolvingRound = game.State.Round;
+
+        var play = game.Handle(0, new L12Command("playCard", plague.InstanceId));
+        Assert.True(play.Accepted, play.Error);
+        Resolve(game, target.InstanceId);
+        PassResponses(game);
+
+        Assert.Equal(resolvingRound + 1, target.CannotUntapUntilRound);
+        game.State.Round = resolvingRound + 1;
+        Invoke(game, "Untap", opponent);
+        Assert.True(target.Tapped);
+
+        game.State.Round = resolvingRound + 2;
+        Invoke(game, "Untap", opponent);
+        Assert.False(target.Tapped);
+    }
 }

@@ -712,7 +712,8 @@ public sealed partial class L12GameEngine
                 }
                 FinishStackItem(item); return;
             case "nonLethal":
-                DamageMasterNonLethal(1 - item.Controller, 1, "杨戬的主宰效果"); FinishStackItem(item); return;
+                DamageMasterNonLethalFromEffect(item, 1 - item.Controller, 1, "杨戬的主宰效果");
+                FinishStackItem(item); return;
             case "frontBuff":
                 player.UsedAbilities.Add($"susano-buff:{item.Data["target"]}"); FinishStackItem(item); return;
             case "kusanagi":

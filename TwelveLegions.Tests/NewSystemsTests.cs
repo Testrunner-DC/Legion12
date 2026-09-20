@@ -607,6 +607,44 @@ public sealed class NewSystemsTests
     }
 
     [Fact]
+    public void DisasterBanKeepsTheSelectedInstanceBoundAcrossCheckpointRestore()
+    {
+        var game = new L12GameEngine(Catalog, "disaster-ban-binding", "RULE12", 4422,
+            ["甲", "乙"], [0, 1], skipPreparation: false, stateFormatVersion: 2);
+        var initiative = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(initiative.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: initiative.PromptId, Choice: "first")).Accepted);
+
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("disaster-ban", prompt.Kind);
+        var hundredDemons = game.State.DisasterPool.Single(card => card.CardId == "S01-DS02");
+        var selected = game.State.DisasterPool.First(card => card.CardId != hundredDemons.CardId);
+        Assert.Contains(selected.InstanceId, prompt.ValidChoices);
+        Assert.Equal(selected.CardId, prompt.Data[$"{selected.InstanceId}:cardId"]);
+        Assert.Equal(selected.Name, prompt.Data[$"{selected.InstanceId}:name"]);
+
+        game = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(),
+            game.RandomState!.Value, game.CardFactSignalSequence);
+        var restoredPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(selected.InstanceId, restoredPrompt.ValidChoices);
+        Assert.Equal(selected.CardId, restoredPrompt.Data[$"{selected.InstanceId}:cardId"]);
+
+        Assert.True(game.Handle(restoredPrompt.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: restoredPrompt.PromptId,
+                Choice: selected.InstanceId)).Accepted);
+
+        var banned = Assert.Single(game.State.BannedDisasters);
+        Assert.Equal(selected.InstanceId, banned.InstanceId);
+        Assert.Equal(selected.CardId, banned.CardId);
+        Assert.DoesNotContain(game.State.DisasterPool, card => card.InstanceId == selected.InstanceId);
+        Assert.Contains(game.State.DisasterPool, card => card.InstanceId == hundredDemons.InstanceId);
+        Assert.Contains(game.State.Events, entry => entry.Type == "disaster-banned"
+            && entry.Cards.Count() == 1
+            && entry.Cards[0].InstanceId == selected.InstanceId
+            && entry.Cards[0].CardId == selected.CardId);
+    }
+
+    [Fact]
     public void YangJianDrawCycleReturnsTheSelectedHandCardInTheSamePrompt()
     {
         var game = Create(seed: 5519);

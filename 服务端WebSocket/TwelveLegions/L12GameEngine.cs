@@ -2046,11 +2046,12 @@ public sealed partial class L12GameEngine
         return sourceItem is null || sourceItem.Trigger == "disaster" ? null : sourceItem.Controller;
     }
 
-    private int ApplyOutgoingMasterDamageOverride(int targetPlayerIndex, int amount, int? sourcePlayer, bool neutralSource)
+    private int ApplyOutgoingMasterDamageOverride(int targetPlayerIndex, int amount, int? sourcePlayer,
+        bool neutralSource, L12StackItem? declaredSourceItem = null)
     {
         var resolvedSourcePlayer = ResolveDamageSourcePlayer(sourcePlayer, neutralSource);
         if (resolvedSourcePlayer is not (0 or 1) || resolvedSourcePlayer == targetPlayerIndex) return amount;
-        var sourceItem = State.EffectStack.LastOrDefault();
+        var sourceItem = declaredSourceItem ?? State.EffectStack.LastOrDefault();
         var source = State.Players[resolvedSourcePlayer.Value];
         if (sourceItem?.Controller != resolvedSourcePlayer || sourceItem.SourceCardId != source.MasterId
             || source.NextMasterDamageToOpponentBecomesTwoUntilTurn != State.TurnSerial)
@@ -2083,16 +2084,26 @@ public sealed partial class L12GameEngine
     }
 
     private void DamageMasterNonLethal(int playerIndex, int amount, string source, int? sourcePlayer = null, bool neutralSource = false)
+        => DamageMasterNonLethalCore(playerIndex, amount, source, sourcePlayer, neutralSource, null);
+
+    private void DamageMasterNonLethalFromEffect(L12StackItem sourceItem, int playerIndex, int amount, string source)
+        => DamageMasterNonLethalCore(playerIndex, amount, source, sourceItem.Controller,
+            neutralSource: false, sourceItem);
+
+    private void DamageMasterNonLethalCore(int playerIndex, int amount, string source, int? sourcePlayer,
+        bool neutralSource, L12StackItem? declaredSourceItem)
     {
         var player = State.Players[playerIndex];
-        amount = ApplyOutgoingMasterDamageOverride(playerIndex, amount, sourcePlayer, neutralSource);
+        amount = ApplyOutgoingMasterDamageOverride(playerIndex, amount, sourcePlayer, neutralSource,
+            declaredSourceItem);
         if (!neutralSource) amount = AdjustAnderstorpRingDamage(player, amount);
         amount = Math.Max(0, amount);
         var actual = Math.Min(amount, Math.Max(0, player.Hp - 1));
         if (actual == 0) return;
         player.Hp -= actual;
         player.MasterDamageTakenThisTurn += actual;
-        TrackMasterDamageFact(playerIndex, actual, sourcePlayer, neutralSource, combatDamage: false);
+        TrackMasterDamageFact(playerIndex, actual, sourcePlayer, neutralSource, combatDamage: false,
+            declaredSourceItem);
         AddEvent("damage", playerIndex, $"{player.Name} 的主宰因{source}失去 {actual} 点非致命伤害");
         QueueS1MasterDamageReaction(playerIndex, ResolveDamageSourcePlayer(sourcePlayer, neutralSource), effectDamage: true);
     }

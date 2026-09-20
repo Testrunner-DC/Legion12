@@ -163,6 +163,35 @@ public sealed partial class StackResponseChoiceRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "card:S01-0016,S02-0006")]
+    [Trait("L12Evidence", "auxiliary-report:absolute-defense-faith-zealot")]
+    public void AbsoluteDefenseDiscardCostDoesNotTriggerFaithZealot()
+    {
+        var game = Create();
+        game.State.ActivePlayer = 1;
+        var target = AddEffect(game, "faith-cost-target", owner: 0);
+        target.Negated = false;
+        var absoluteDefense = Counter(game, 0, "S01-0016");
+        var zealot = Card("S02-0006", "faith-as-absolute-defense-cost", 1);
+        game.State.Players[1].Hand.Add(zealot);
+
+        Offer(game, 1);
+        Resolve(game, absoluteDefense.InstanceId);
+        var payment = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("stack-response-discard", payment.Continuation);
+        Resolve(game, zealot.InstanceId);
+
+        Assert.Contains(zealot, game.State.Players[1].Graveyard);
+        Assert.DoesNotContain(game.State.PendingTriggerStackCandidates,
+            candidate => candidate.SourceCardId == "S02-0006");
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "s2-faith-zealot");
+        Assert.DoesNotContain(game.State.Players[1].UsedAbilities,
+            key => key.Contains("faith-zealot", StringComparison.OrdinalIgnoreCase)
+                || key == "card-name:S02-0006");
+    }
+
+    [Fact]
     public void ResponseHighlightsOnlyPublicFieldInstancesAndKeepsHiddenIdentityPrivate()
     {
         var game = Create();

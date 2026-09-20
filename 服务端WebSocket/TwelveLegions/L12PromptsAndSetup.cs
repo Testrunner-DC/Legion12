@@ -1324,6 +1324,7 @@ public sealed partial class L12GameEngine
         if (trigger == "active")
         {
             data ??= new Dictionary<string, string>();
+            CommitStructuredActiveRestCost(controller, source, data.GetValueOrDefault("ability"));
             AddActivePaidCostPresentation(controller, source, data);
         }
         var sourceAbilities = GetAbilities(source.CardId);
@@ -1817,6 +1818,8 @@ public sealed partial class L12GameEngine
         player.Hand.Remove(discard);
         player.Graveyard.Add(discard);
         AddEvent("cost", playerIndex, $"{player.Name} 弃置 {discard.Name} 支付〈绝对防御〉费用", discard);
+        // 冒号前的弃置是支付 Cost，不是“因效果从手牌弃置”。
+        // 因此即使弃置的是〈信仰狂热者〉，也不能调用 NotifyCardDiscarded。
         CommitNegateResponse(playerIndex, response, prompt.StackItemId!);
     }
 

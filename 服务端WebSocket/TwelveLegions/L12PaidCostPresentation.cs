@@ -2,6 +2,25 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
+    /// <summary>
+    /// “主动休整”是入栈前支付的公共 Cost。逐卡提交器仍负责资格、目标及其他费用，
+    /// 这里在所有主动效果共用的入栈边界最终提交来源休整，确保新入口不会漏付；
+    /// 后续被无效、目标失效或恢复检查点都只处理效果结果，不得回退此状态。
+    /// </summary>
+    private void CommitStructuredActiveRestCost(int controller, L12CardInstance source, string? ability)
+    {
+        if (string.IsNullOrWhiteSpace(ability)
+            || !L12StructuredCardRules.IsActiveRestAbility(source.CardId, ability)) return;
+
+        var player = State.Players[controller];
+        var authoritative = FindAuthoritativeCard(source.InstanceId) ?? source;
+        authoritative.Tapped = true;
+        source.Tapped = true;
+        if (source.CardType is "master" or "divinity"
+            || source.InstanceId.Equals($"master-{controller}", StringComparison.OrdinalIgnoreCase))
+            player.MasterTapped = true;
+    }
+
     internal const string PaidCostSummaryDataKey = "paidCostSummary";
 
     private sealed record PaidCostCardSnapshot(string Name, string CardId, bool Tapped);

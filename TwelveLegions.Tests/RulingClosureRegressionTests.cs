@@ -498,6 +498,37 @@ public sealed class RulingClosureRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "card:S01-DS03")]
+    [Trait("L12Evidence", "auxiliary-report:corrupt-land-placement")]
+    public void CorruptLandPreventsLiJingFromOfferingRearRowRecruitWhenNoFrontSlotExists()
+    {
+        var game = Create();
+        var player = game.State.Players[0];
+        var liJing = Card("S01-0103", "ruling-corrupt-li-jing");
+        var hiddenTop = Card("S01-0105", "ruling-corrupt-li-jing-top");
+        game.State.ActiveDisaster = Card("S01-DS03", "ruling-corrupt-land");
+        player.Field[0][1] = Card("S01-0001", "ruling-corrupt-front-1");
+        player.Field[0][2] = Card("S01-0002", "ruling-corrupt-front-2");
+        player.Hand.Add(liJing);
+        player.Library.Add(hiddenTop);
+        AddReadyMorale(player, liJing.Cost);
+
+        Assert.True(game.Handle(0, new L12Command("playCard", liJing.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var declaration = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "pending-activation");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "mode:use")).Accepted);
+        PassResponses(game);
+
+        var choice = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "lijing-choice");
+        Assert.Equal(["top", "bottom"], choice.ValidChoices);
+        Assert.DoesNotContain("recruit", choice.ValidChoices);
+        Assert.Same(hiddenTop, player.Library[0]);
+        Assert.All(player.Field[1], Assert.Null);
+    }
+
+    [Fact]
     public void ThunderWrathTieProcessesActivePlayerThenOtherPlayerAndRecordsTheSequence()
     {
         var tied = Create();

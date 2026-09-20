@@ -219,8 +219,20 @@ function cardName(id: string) {
     ?? label(id)
 }
 function selectionHint(id: string) {
+  const orderHint = triggerOrderHint(id)
+  if (orderHint) return orderHint
   const value = naturalChoiceLabel(prompt.value?.choiceLabels?.[id], id)
   return value?.startsWith('当前') ? value : ''
+}
+const isTriggerOrder = computed(() => prompt.value?.kind === 'trigger-order'
+  && prompt.value?.data?.choiceMode === 'ordered')
+function triggerOrderHint(id: string) {
+  if (!isTriggerOrder.value) return ''
+  const declarationIndex = selected.value.indexOf(id)
+  if (declarationIndex < 0) return ''
+  const declarationOrder = declarationIndex + 1
+  const resolutionOrder = (prompt.value?.maxChoose ?? selected.value.length) - declarationIndex
+  return `第${declarationOrder}个发动 · 第${resolutionOrder}个结算`
 }
 function cardMeta(id: string) {
   return naturalChoiceLabel(prompt.value?.data?.[`${id}:zone`], id)
@@ -623,12 +635,13 @@ function kindLabel() {
               :horizontal="isHorizontalCardType(detailFor(choice)?.cardType)" :selected="selected.includes(choice)"
               :unavailable="isCardSelectionPrompt && !prompt.validChoices.includes(choice)"
               :intent="usesDetailCardImages ? 'detail' : 'thumb'" :size="isInfoConfirm ? 'featured' : 'standard'"
-              :selection-order="selected.includes(choice) && prompt.maxChoose > 1 ? selected.indexOf(choice) + 1 : undefined"
+              :selection-order="!isTriggerOrder && selected.includes(choice) && prompt.maxChoose > 1 ? selected.indexOf(choice) + 1 : undefined"
               @focus="focusChoice(choice)" @select="toggle(choice)"/>
             <button v-else :class="{ selected: selected.includes(choice), 'decline-action': isDeclineChoice(choice), 'unavailable-choice': Boolean(disabledChoiceReason(choice)) }"
               :disabled="l12State.pendingAction || Boolean(disabledChoiceReason(choice))" :title="disabledChoiceReason(choice)"
               :data-ui-contract="isDeclineChoice(choice) ? 'minimum-decline-action' : undefined" @click="toggle(choice)">
               <span :class="{ 'l12-effect-body': isEffectOptionList, 'l12-effect-body--compact': isEffectOptionList }">{{ label(choice) }}</span>
+              <small v-if="triggerOrderHint(choice)" class="trigger-order-hint">{{ triggerOrderHint(choice) }}</small>
               <small v-if="disabledChoiceReason(choice)">{{ disabledChoiceReason(choice) }}</small>
             </button>
           </template>
@@ -668,6 +681,12 @@ function kindLabel() {
           </template>
           <template v-else-if="prompt.data?.choiceMode === 'instant'">
             <span>点击选项后立即结算</span>
+          </template>
+          <template v-else-if="isTriggerOrder">
+            <span data-ui-contract="trigger-order-lifo-hint">按点击顺序发动；后发动的先结算。每项会同时标注发动序号与结算序号。</span>
+            <button class="primary prompt-confirm-choice" :disabled="l12State.pendingAction || selected.length !== prompt.maxChoose" @click="confirm">
+              {{ l12State.pendingAction ? '处理中…' : '确认发动顺序' }}
+            </button>
           </template>
           <template v-else>
             <span>{{ isEffectDecision ? '请选择是否发动本次效果' : isInfoConfirm ? '双方均确认后继续' : `选择 ${prompt.minChoose}–${prompt.maxChoose} 项` }}</span>
@@ -738,6 +757,7 @@ function kindLabel() {
 .l12-prompt-overlay.initiative .prompt-panel{width:min(480px,calc(100vw - 32px));padding:24px}.l12-prompt-overlay.initiative .prompt-choices{display:grid;grid-template-columns:1fr 1fr;min-height:112px;align-items:stretch}.l12-prompt-overlay.initiative .prompt-choices>button{width:100%;max-width:none;min-height:92px;border:2px solid #eeeadf;background:#121718;color:#fff;font-size:max(18px,var(--l12-board-copy,13px))}.l12-prompt-overlay.initiative .prompt-choices>button:hover,.l12-prompt-overlay.initiative .prompt-choices>button.selected{border-color:#7de1e7;background:#1b6f77;color:#fff}
 .prompt-panel.has-card-choices{width:min(920px,calc(100vw - 36px))}.prompt-card-strip{display:flex;min-width:0;max-width:100%;flex-wrap:nowrap;align-items:flex-start;justify-content:flex-start;gap:8px;padding:10px 3px;overflow-x:auto;overflow-y:hidden;scrollbar-color:#65706d #111516;scrollbar-width:thin}.prompt-choices.prompt-card-strip{max-height:none}.featured-card-strip{justify-content:center;margin:2px auto}
 .prompt-choices.effect-option-list{display:grid;max-width:100%;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));align-items:stretch;gap:8px;margin:12px auto;padding:2px 1px 8px;overflow:visible}.prompt-choices.effect-option-list>button{width:100%;min-width:0;max-width:none;min-height:54px;padding:10px 16px;border:2px solid #d9d8cf;background:#101516;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;line-height:1.55;text-align:left;white-space:normal}.prompt-choices.effect-option-list>button:hover,.prompt-choices.effect-option-list>button.selected{border-color:#70d7df;background:#174e54;color:#fff}
+.trigger-order-hint{display:block;margin-top:5px;color:#ffe78d;font-size:var(--l12-board-micro,9px);font-weight:900;line-height:1.35}
 .prompt-choices>button.decline-action,.prompt-action-footer>button.decline-action{box-sizing:border-box;min-width:112px!important;min-height:44px!important;padding:9px 16px!important;font-size:var(--l12-board-copy,13px)!important;line-height:1.35}
 .effect-decision-header h2{margin-bottom:8px}.effect-decision-text{margin:0;padding:11px 13px;border:1px solid #3b4542;background:#0b1011;color:#eef0eb;font-size:var(--l12-board-copy,13px);line-height:1.75;white-space:pre-wrap}.prompt-panel.effect-decision .prompt-choices.effect-option-list{max-width:520px}.prompt-panel.effect-decision .prompt-choices.effect-option-list>button{text-align:center;font-size:var(--l12-board-copy,13px)}
 .prompt-panel.single-card-row{width:min(920px,calc(100vw - 36px))}.l12-prompt-overlay.information-confirm .prompt-panel{width:min(850px,calc(100vw - 36px));overflow-y:auto}.l12-prompt-overlay.information-confirm .prompt-card-strip{justify-content:center}.mulligan-panel{width:min(920px,calc(100vw - 36px))!important}.l12-prompt-overlay.disaster-choice .prompt-panel{width:min(980px,calc(100vw - 36px))}

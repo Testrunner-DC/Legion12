@@ -284,6 +284,68 @@ public sealed class AtomicReviewBatch6KCRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "card:S01-04M1")]
+    [Trait("L12Evidence", "auxiliary-report:amaterasu-existing-cost-reduction")]
+    public void AmaterasuDoesNotKillAThreeCostLegionAfterOnlyTwoTotalCostReductions()
+    {
+        var game = Create("S01-04M1", 8311);
+        var player = game.State.Players[0];
+        var enemy = game.State.Players[1];
+        AddMorale(player, 1);
+        var baiQi = Card("S01-0109", "amaterasu-three-cost-bai-qi");
+        baiQi.CostModifier = -1; // e.g. an earlier Kusanagi debuff: 3 -> 2.
+        enemy.Field[0][0] = baiQi;
+
+        Assert.Equal(2, baiQi.CurrentCost);
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "amaterasuKill")).Accepted);
+        Resolve(game, baiQi.InstanceId);
+
+        var killPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(["mode:none"], killPrompt.ValidChoices);
+        Resolve(game, "mode:none");
+        PassResponses(game);
+
+        Assert.Equal(1, baiQi.CurrentCost);
+        Assert.Same(baiQi, enemy.Field[0][0]);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Empty(game.State.DeferredEffectStack);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("L12Evidence", "card:S01-03M2")]
+    [Trait("L12Evidence", "auxiliary-report:loki-heal")]
+    public void LokiMayHealWithFewerThanTwoGraveCardsButReturnsNoPartialSetAndConsumesSharedUse(int graveCount)
+    {
+        var game = Create("S01-03M2", 8312 + graveCount);
+        var player = game.State.Players[0];
+        AddMorale(player, 1);
+        player.Hp--;
+        var grave = Enumerable.Range(0, graveCount)
+            .Select(index => Card("S01-0301", $"loki-insufficient-grave-{index}"))
+            .ToArray();
+        player.Graveyard.AddRange(grave);
+        var hpBefore = player.Hp;
+
+        var result = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "lokiHeal"));
+        Assert.True(result.Accepted, result.Error);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "pending-activation");
+        PassResponses(game);
+
+        Assert.Equal(hpBefore + 1, player.Hp);
+        Assert.Equal(grave.Select(card => card.InstanceId), player.Graveyard.Select(card => card.InstanceId));
+        Assert.DoesNotContain(grave, card => player.Library.Contains(card));
+        Assert.True(Assert.Single(player.Morale).Tapped);
+        Assert.Contains("active:master-0:loki", player.UsedAbilities);
+        var second = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "lokiCycle"));
+        Assert.False(second.Accepted);
+        Assert.Contains("本回合", second.Error);
+    }
+
+    [Fact]
     [Trait("L12Evidence", "card:S01-0418")]
     public void DivinePunishmentDeclaresItsPublicKillTargetBeforePaymentAndStack()
     {
@@ -382,6 +444,73 @@ public sealed class AtomicReviewBatch6KCRegressionTests
         var debuff = Assert.Single(game.State.PendingPrompts);
         Assert.DoesNotContain(counter.InstanceId, debuff.ValidChoices);
         Assert.Contains(enemyLegion.InstanceId, debuff.ValidChoices);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0412")]
+    [Trait("L12Evidence", "entry:death-mandatory-full-flow")]
+    public void TachibanaDeathAlwaysDebuffsEveryCurrentEnemyLegionAndCloses()
+    {
+        var game = Create(seed: 8311);
+        var player = game.State.Players[0];
+        var enemy = game.State.Players[1];
+        var tachibana = Card("S01-0412", "batch6kc-tachibana-death");
+        var front = Card("S01-0001", "batch6kc-tachibana-front", cost: 3);
+        var back = Card("S01-0003", "batch6kc-tachibana-back", cost: 2);
+        player.Field[0][0] = tachibana;
+        enemy.Field[0][0] = front;
+        enemy.Field[1][0] = back;
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: tachibana.InstanceId)).Accepted);
+        PassResponses(game);
+
+        Assert.Contains(tachibana, player.Graveyard);
+        Assert.Equal(2, front.CurrentCost);
+        Assert.Equal(1, back.CurrentCost);
+        Assert.Contains(front.TimedModifiers, modifier => modifier.Source == "立花誾千代"
+            && modifier.CostDelta == -1);
+        Assert.Contains(back.TimedModifiers, modifier => modifier.Source == "立花誾千代"
+            && modifier.CostDelta == -1);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect"
+            && entry.Text.Contains("立花誾千代阵亡", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0412")]
+    [Trait("L12Evidence", "entry:simultaneous-death-no-dedup")]
+    public void TwoSimultaneousTachibanaDeathsRemainTwoOrderedMandatoryEffects()
+    {
+        var game = Create(seed: 8312);
+        var enemy = game.State.Players[1];
+        var first = Card("S01-0412", "batch6kc-tachibana-same-time-a");
+        var second = Card("S01-0412", "batch6kc-tachibana-same-time-b");
+        var target = Card("S01-0001", "batch6kc-tachibana-same-time-target", cost: 3);
+        enemy.Field[0][0] = target;
+
+        var deaths = new (int Controller, L12CardInstance Card, L12CardInstance SourceSnapshot)[]
+        {
+            (0, first, first.Clone()),
+            (0, second, second.Clone()),
+        };
+        Invoke(game, "QueueSimultaneousDeathTriggers", deaths);
+
+        var order = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("trigger-order", order.Kind);
+        Resolve(game, order.ValidChoices.ToArray());
+        PassResponses(game);
+
+        Assert.Equal(1, target.CurrentCost);
+        Assert.Equal(2, target.TimedModifiers.Count(modifier => modifier.Source == "立花誾千代"
+            && modifier.CostDelta == -1));
+        Assert.Equal(2, game.State.Events.Count(entry => entry.Type == "effect"
+            && entry.Text.Contains("立花誾千代阵亡", StringComparison.Ordinal)));
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
     }
 
     [Theory]

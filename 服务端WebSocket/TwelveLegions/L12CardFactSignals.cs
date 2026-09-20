@@ -141,9 +141,9 @@ public sealed partial class L12GameEngine
     }
 
     private void TrackMasterDamageFact(int targetPlayerIndex, int amount, int? declaredSourcePlayer,
-        bool neutralSource, bool combatDamage)
+        bool neutralSource, bool combatDamage, L12StackItem? declaredSourceItem = null)
     {
-        var source = State.EffectStack.LastOrDefault();
+        var source = declaredSourceItem ?? State.EffectStack.LastOrDefault();
         var sourcePlayer = ResolveDamageSourcePlayer(declaredSourcePlayer, neutralSource);
         var data = new Dictionary<string, string>(StringComparer.Ordinal)
         {

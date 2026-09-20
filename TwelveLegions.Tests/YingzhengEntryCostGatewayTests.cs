@@ -235,6 +235,41 @@ public sealed class YingzhengEntryCostGatewayTests
             card => card.InstanceId == cost.InstanceId);
     }
 
+    [Fact]
+    public void PaidEntryReturningAllMoraleStillQueuesTiantingZeroMoraleRecovery()
+    {
+        var game = Create(91339, stateFormatVersion: 2);
+        var player = game.State.Players[0];
+        Assert.Equal("tianting", player.Faction);
+        var yingzheng = Card("S02-0101", "yingzheng-zero-recovery-source");
+        var cost = Card("S02-0101", "yingzheng-zero-recovery-cost");
+        player.Hand.AddRange([yingzheng, cost]);
+        AddMorale(player, yingzheng.CurrentCost);
+
+        var play = game.Handle(0,
+            new L12Command("playCard", yingzheng.InstanceId, Row: 0, Slot: 0));
+        Assert.True(play.Accepted, play.Error);
+        var costPrompt = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "s2-yingzheng-enter-cost");
+        var payment = game.Handle(0, new L12Command("resolvePrompt",
+            PromptId: costPrompt.PromptId, Choice: cost.InstanceId));
+        Assert.True(payment.Accepted, payment.Error);
+        PassResponses(game);
+
+        var recovery = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "pending-activation");
+        Assert.Contains("士气·天廷", recovery.Text, StringComparison.Ordinal);
+        var activate = game.Handle(0, new L12Command("resolvePrompt",
+            PromptId: recovery.PromptId, Choice: "mode:use"));
+        Assert.True(activate.Accepted, activate.Error);
+        PassResponses(game);
+
+        Assert.Equal(2, player.Morale.Count);
+        Assert.All(player.Morale, morale => Assert.True(morale.Tapped));
+        Assert.Contains(game.State.Events, entry => entry.Type == "faction-effect"
+            && entry.Text.Contains("追加 2 张休整士气", StringComparison.Ordinal));
+    }
+
     private static L12GameEngine Create(int seed, int stateFormatVersion = 0)
     {
         var basis = Catalog.DeckAt(0);

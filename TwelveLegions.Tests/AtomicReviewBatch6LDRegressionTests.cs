@@ -233,6 +233,28 @@ public sealed class AtomicReviewBatch6LDRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "auxiliary:grail-journey-searches-mordred")]
+    public void GrailCompletionCanSearchStarterMordredAsAnOtherworldLegion()
+    {
+        var game = Create(8711);
+        var player = game.State.Players[0];
+        var mordred = Card("ST06-04", "batch6ld-grail-mordred");
+        player.Library.Add(mordred);
+
+        BeginCompletion(game, "S02-06S4", "batch6ld-grail-mordred-trial");
+        Resolve(game, "mode:use");
+        PassResponses(game);
+
+        var search = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("trial-completion-library-search", search.Data["action"]);
+        Assert.Contains(mordred.InstanceId, search.ValidChoices);
+        Resolve(game, mordred.InstanceId);
+
+        Assert.Contains(mordred, player.Hand);
+        Assert.DoesNotContain(mordred, player.Library);
+    }
+
+    [Fact]
     [Trait("L12Evidence", "cards:S02-0605,S02-0008")]
     public void BorsDiscountCountsAUniversalLegionWhileTheRingIsActive()
     {

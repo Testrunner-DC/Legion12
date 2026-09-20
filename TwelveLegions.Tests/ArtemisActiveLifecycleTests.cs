@@ -258,4 +258,84 @@ public sealed class ArtemisActiveLifecycleTests
         Assert.Single(game.State.Events, entry => entry.Type == "effect"
             && entry.Text.Contains("本回合获得强攻", StringComparison.Ordinal));
     }
+
+    [Fact]
+    [Trait("L12Evidence", "ability:artemisBuff")]
+    public void GrantedShockCreatesAnAttackTimingForALegionWithoutAPrintedAttackEffect()
+    {
+        var game = Create(91457);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var attacker = Card("S02-0502", "artemis-shock-attacker", 4);
+        var discard = Card("S02-0001", "artemis-shock-discard");
+        var left = Card("ST01-01", "artemis-shock-left");
+        var primary = Card("ST01-01", "artemis-shock-primary");
+        var right = Card("ST01-01", "artemis-shock-right");
+        attacker.SummonRound = 0;
+        attacker.Troops = 10000;
+        primary.Troops = 9000;
+        player.Field[0][0] = attacker;
+        player.Hand.Add(discard);
+        opponent.Field[0][0] = left;
+        opponent.Field[0][1] = primary;
+        opponent.Field[0][2] = right;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "artemisBuff")).Accepted);
+        ResolveOnly(game, "pay:discard");
+        ResolveOnly(game, discard.InstanceId);
+        ResolveOnly(game, attacker.InstanceId);
+        ResolveOnly(game, "buff:shock");
+        PassResponses(game);
+        Assert.True(attacker.HasShock);
+
+        var attack = game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", primary.InstanceId)));
+        Assert.True(attack.Accepted, attack.Error);
+        PassResponses(game);
+
+        Assert.Equal(left.BaseTroops - 2000, left.Troops);
+        Assert.Equal(right.BaseTroops - 2000, right.Troops);
+        Assert.True(attacker.HasShock);
+        Assert.Contains(game.State.Events, entry => entry.Text.Contains(
+            "震击使进攻目标左右相邻军团", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "ability:artemisBuff")]
+    public void GrantedStrongAttackDealsTwoMasterDamageAndExpiresAtTurnEnd()
+    {
+        var game = Create(91458);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var attacker = Card("S02-0502", "artemis-strong-attacker", 4);
+        var discard = Card("S02-0001", "artemis-strong-discard");
+        attacker.SummonRound = 0;
+        player.Field[0][0] = attacker;
+        player.Hand.Add(discard);
+        opponent.Hp = 8;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "artemisBuff")).Accepted);
+        ResolveOnly(game, "pay:discard");
+        ResolveOnly(game, discard.InstanceId);
+        ResolveOnly(game, attacker.InstanceId);
+        ResolveOnly(game, "buff:strong");
+        PassResponses(game);
+
+        Assert.True(attacker.HasStrongAttack);
+        var attack = game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master")));
+        Assert.True(attack.Accepted, attack.Error);
+        Assert.Equal(2, game.State.PendingDefense?.MasterDamage);
+        PassResponses(game);
+        var noBlock = game.Handle(1, new L12Command("resolveDefense", CardInstanceIds: []));
+        Assert.True(noBlock.Accepted, noBlock.Error);
+        Assert.Equal(6, opponent.Hp);
+        Assert.True(attacker.HasStrongAttack);
+
+        var endTurn = game.Handle(0, new L12Command("endTurn"));
+        Assert.True(endTurn.Accepted, endTurn.Error);
+        Assert.False(attacker.HasStrongAttack);
+    }
 }

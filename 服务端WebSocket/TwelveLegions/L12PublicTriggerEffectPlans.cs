@@ -744,8 +744,7 @@ public sealed partial class L12GameEngine
         else if (fifthBatchPlan == "wisdom-reward")
         {
             candidate.Data["preserveIndependentStack"] = "true";
-            var recover = player.Graveyard.Where(card => card.InstanceId != candidate.SourceInstanceId
-                    && L12StructuredCardRules.CurrentCostAtMost(card, 3) && card.CardType is "tactic" or "artifact")
+            var recover = player.Graveyard.Where(IsWisdomCodexRecoveryCandidate)
                 .Select(card => card.InstanceId).ToList();
             if (recover.Count == 0)
             {
@@ -1627,8 +1626,7 @@ public sealed partial class L12GameEngine
         {
             var recovery = activation.DeclaredValues.GetValueOrDefault("recoverTarget", []).SingleOrDefault();
             if (mode == "mode:recover" && (recovery is null || !player.Graveyard.Any(card =>
-                    card.InstanceId == recovery && card.InstanceId != candidate.SourceInstanceId && L12StructuredCardRules.CurrentCostAtMost(card, 3)
-                    && card.CardType is "tactic" or "artifact")))
+                    card.InstanceId == recovery && IsWisdomCodexRecoveryCandidate(card))))
             {
                 activation.DeclaredValues["mode"] = ["mode:none"];
                 activation.DeclaredValues.Remove("recoverTarget");

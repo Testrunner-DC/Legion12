@@ -303,8 +303,8 @@ public sealed class AtomicReviewBatch6FRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S02-0602")]
-    [Trait("L12Evidence", "entry:lancelot-entry-latest-rune-state")]
-    public void LancelotEntryMaySpendARuneGainedAfterItsTriggerWasQueued()
+    [Trait("L12Evidence", "entry:lancelot-entry-frozen-rune-eligibility")]
+    public void LancelotEntryWithoutARuneOffersOnlyDeclineAndDoesNotAcceptALaterMutation()
     {
         var game = Create(80311);
         var player = game.State.Players[0];
@@ -313,15 +313,38 @@ public sealed class AtomicReviewBatch6FRegressionTests
         player.SpecialZones.Runes = 0;
 
         QueueTrigger(game, lancelot, "enter");
-        var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Contains("mode:use", prompt.ValidChoices);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
 
-        player.SpecialZones.Runes = 1; // 同时点的圣杯触发先结算后所得符文
-        Resolve(game, "mode:use");
-        PassResponses(game);
+        player.SpecialZones.Runes = 1;
 
-        Assert.Equal(0, player.SpecialZones.Runes);
-        Assert.True(lancelot.HasCharge);
+        Assert.Equal(1, player.SpecialZones.Runes);
+        Assert.False(lancelot.HasCharge);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0602")]
+    [Trait("L12Evidence", "entry:grail-round-table-shared-trigger-order")]
+    public void CompletedGrailAndLancelotEntryShareOnePlayerOrderedTriggerBatch()
+    {
+        var game = Create(80312, "S02-06M1");
+        var player = game.State.Players[0];
+        var grail = AddOpenTrial(game);
+        grail.TrialCompleted = true;
+        var lancelot = Card("S02-0602", "batch6f-lancelot-grail-order");
+        lancelot.CostModifier = -lancelot.Cost;
+        player.Hand.Add(lancelot);
+
+        var play = game.Handle(0, new L12Command("playCard", lancelot.InstanceId,
+            Row: 0, Slot: 0));
+
+        Assert.True(play.Accepted, play.Error);
+        var order = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("trigger-order", order.Kind);
+        Assert.Equal(2, order.ValidChoices.Count);
+        Assert.Contains(order.ValidChoices, id => order.Data[id].Contains("兰斯洛特", StringComparison.Ordinal));
+        Assert.Contains(order.ValidChoices, id => order.Data[id].Contains("寻找圣杯之旅", StringComparison.Ordinal));
     }
 
     [Fact]

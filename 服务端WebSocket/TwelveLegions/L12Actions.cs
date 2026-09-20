@@ -375,6 +375,9 @@ public sealed partial class L12GameEngine
         // 黯陨晨星的免费分支持续整个回合，由回合切换统一清除。
 
         var trigger = card.CardType is "legion" or "artifact" ? "enter" : "play";
+        var grailEntryCandidate = card.CardType == "legion"
+            ? BuildS2GrailRoundTableEntryCandidate(playerIndex, card)
+            : null;
         if (HasImmediateEffect(card, trigger))
         {
             State.CheckDisasterAfterStack |= card.CardType == "legion" && State.DisasterValue > 8;
@@ -386,11 +389,20 @@ public sealed partial class L12GameEngine
                     : null;
             if (compositeDeclaration is not null && declaredData is not null)
                 RecordCompositePreResponseCosts(card.CardId, compositeDeclaration, declaredData);
-            QueueOrPushTriggeredEffect(playerIndex, card, trigger,
-                trigger == "enter" ? "【登场时】效果" : "战术效果",
-                targets: compositeDeclaration is null ? null : CompositeFirstSegmentTargets(card.CardId, compositeDeclaration),
-                data: declaredData);
-            if (card.CardType == "legion") QueueS2GrailRoundTableEntry(playerIndex, card);
+            var declaredTargets = compositeDeclaration is null
+                ? null
+                : CompositeFirstSegmentTargets(card.CardId, compositeDeclaration);
+            if (grailEntryCandidate is not null)
+            {
+                var entryCandidate = CreateTriggerCandidate(playerIndex, card, trigger, "【登场时】效果", declaredData);
+                if (declaredTargets is not null)
+                    entryCandidate.Data["declaredTargets"] = string.Join('|', declaredTargets);
+                QueueTriggerCandidates([entryCandidate, grailEntryCandidate]);
+            }
+            else
+                QueueOrPushTriggeredEffect(playerIndex, card, trigger,
+                    trigger == "enter" ? "【登场时】效果" : "战术效果",
+                    targets: declaredTargets, data: declaredData);
         }
         else
         {
@@ -399,7 +411,7 @@ public sealed partial class L12GameEngine
                 ResetCardAfterLeavingField(card);
                 player.Graveyard.Add(card);
             }
-            if (card.CardType == "legion") QueueS2GrailRoundTableEntry(playerIndex, card);
+            if (grailEntryCandidate is not null) QueueTriggerCandidates([grailEntryCandidate]);
             TrySettleScheduledDisasterIfIdle();
         }
         return CommandResult.Ok();

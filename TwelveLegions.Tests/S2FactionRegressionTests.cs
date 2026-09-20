@@ -3192,6 +3192,54 @@ public sealed class S2FactionRegressionTests
         Assert.DoesNotContain(sword, player.Graveyard);
         Assert.Equal(sword.BaseTroops, sword.Troops);
         Assert.Null(sword.SetTroopsValue);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+        Assert.DoesNotContain(game.State.PendingTriggerStackCandidates,
+            candidate => candidate.SourceInstanceId == sword.InstanceId);
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.InstanceId == sword.InstanceId)
+            && entry.Text.Contains("离场", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TransformedKusanagiDeathCreatesOnlyItsLeaveReturnAndClosesTheChain()
+    {
+        var game = CreateWithFirstMaster("S01-04M2", 631541);
+        var player = game.State.Players[0];
+        var sword = Card("S01-0417", "kusanagi-transformed-leaves");
+        player.Relic = sword;
+        AddMorale(player, 2);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "kusanagi")).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId,
+            Choice: "0:0")).Accepted);
+        PassResponses(game);
+        Assert.Same(sword, player.Field[0][0]);
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: sword.InstanceId)).Accepted);
+        PassResponses(game);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", declaration.Continuation);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "trigger-order");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "mode:use")).Accepted);
+        PassResponses(game);
+
+        Assert.Same(sword, player.Library[0]);
+        Assert.DoesNotContain(sword, player.Graveyard);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+        Assert.DoesNotContain(game.State.PendingTriggerStackCandidates,
+            candidate => candidate.SourceInstanceId == sword.InstanceId);
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.InstanceId == sword.InstanceId)
+            && entry.Text.Contains("离场", StringComparison.Ordinal));
     }
 
     [Fact]

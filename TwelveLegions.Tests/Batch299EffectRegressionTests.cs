@@ -772,6 +772,44 @@ public sealed class Batch299EffectRegressionTests
         Assert.Equal(before + 1, game.State.DisasterValue);
     }
 
+    [Fact]
+    [Trait("L12Evidence", "auxiliary:zhuge-effect-generated-artifact-entry")]
+    public void ZhugePlayingRevealedLandscapeScrollTriggersItsEntryMorale()
+    {
+        var game = Create();
+        var owner = game.State.Players[0];
+        var zhuge = Card(game, "S01-0111", "zhuge-artifact-source");
+        var landscape = Card(game, "S01-0117", "zhuge-landscape-scroll");
+        var defender = Card(game, "S01-0003", "zhuge-artifact-defender");
+        owner.Field[0][0] = zhuge;
+        zhuge.SummonRound = -1;
+        game.State.Players[1].Field[0][0] = defender;
+        defender.SummonRound = -1;
+        owner.Library.Add(landscape);
+        owner.Morale.Add(new L12MoraleCard
+        {
+            InstanceId = "zhuge-entry-cost-morale",
+            CardId = "S01-01C1",
+        });
+
+        var attack = game.Handle(0, new L12Command("attack", zhuge.InstanceId,
+            Target: new L12AttackTarget("legion", defender.InstanceId)));
+        Assert.True(attack.Accepted, attack.Error);
+        Pass(game);
+        Resolve(game, "yes");
+        Pass(game);
+        var artifactChoice = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("play", artifactChoice.ValidChoices);
+        Resolve(game, "play");
+        Pass(game);
+
+        Assert.Same(landscape, owner.Relic);
+        Assert.Single(owner.Morale);
+        Assert.False(owner.Morale[0].Tapped);
+        Assert.Contains(game.State.Events,
+            entry => entry.Text.Contains("山河社稷图从士气牌库追加", StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData(0, true)]
     [InlineData(2, true)]

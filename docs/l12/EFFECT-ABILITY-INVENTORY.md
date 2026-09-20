@@ -5,7 +5,7 @@
 
 卡牌：324；能力段：685；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`321148ca62d7c03881501648e5af8202810e18fe5a0392b151542c2185da74a4`。
+内容指纹：`22bf507f2a3ee0a100765a9a2a9214a6d4a0217be5b961e5ddc80f2703a66dcf`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
@@ -270,7 +270,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0202 拉美西斯二世 #2 | S01-0202:ability:enter:488058d9c4033af4 | enter/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 选择&lt;拉美西斯二世&gt;以外最多3张【太阳城】军团，自选顺序发动其登场时效果 |
 | S01-0203 美尼斯 #1 | S01-0203:ability:static:0a317a499dc4420e | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → resolution:special.domain → resolution:legacy.resolve | 0 | 对方回合 若我方战场不存在&lt;陵墓守卫&gt;，此军团兵力+1000 |
 | S01-0203 美尼斯 #2 | S01-0203:ability:attack:31291f70ecb6b701 | attack/triggered | composite-definition | 进攻时 可弃置我方战场上1张军团 | trigger:trigger.observe → condition:control.optional → cost:cost.discard → resolution:operation.damage-master → resolution:operation.modify-troops → resolution:operation.keyword → duration:duration.apply → resolution:operation.composite-flow | 1 | 进攻时 可弃置我方战场上1张军团：此军团本回合兵力+2000，并获得强攻。（进攻对主宰造成额外1点伤害） |
-| S01-0204 陵墓构造体 #1 | S01-0204:ability:static:f02e35e83c5ebb48 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → resolution:legacy.resolve | 0 | 「位于前排」获得挑畔。（对方只可进攻带有此效果的军团） |
+| S01-0204 陵墓构造体 #1 | S01-0204:ability:static:4108715d77479b32 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → resolution:legacy.resolve | 0 | 「位于前排」获得挑衅。（对方只可进攻带有此效果的军团） |
 | S01-0204 陵墓构造体 #2 | S01-0204:ability:enter:a96863e7cb33076c | enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.modify-troops → resolution:operation.move-zone → resolution:special.domain → resolution:operation.composite-flow | 1 | 登场时 将我方墓地所有&lt;陵墓守卫&gt;叠放在此军团下方。此军团下每有1张&lt;陵墓守卫&gt;，获得兵力+1000 |
 | S01-0204 陵墓构造体 #3 | S01-0204:ability:death:1b878fe13df989c4 | death/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.composite-flow | 1 | 阵亡时/ |
 | S01-0204 陵墓构造体 #4 | S01-0204:ability:leave:a59801f7c2874f4a | leave/triggered | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.move-zone → resolution:operation.rest → resolution:special.domain → resolution:legacy.resolve | 3 | 离场时 将此军团下方所有&lt;陵墓守卫&gt;休整登场 |
@@ -363,7 +363,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0311 古斯塔夫一世 #1 | S01-0311:ability:attack:0f533a6e93811615 | attack/triggered | fine-definition | 进攻时 可将墓地2张卡牌自选顺序返回我方牌库底部 | trigger:trigger.observe → condition:control.optional → cost:operation.move-zone → resolution:operation.modify-troops → duration:duration.apply | 1 | 进攻时 可将墓地2张卡牌自选顺序返回我方牌库底部：此军团本回合兵力+2000 |
 | S01-0311 古斯塔夫一世 #2 | S01-0311:ability:static:3409dd9fa29f684f | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:legacy.resolve | 0 | 我方 回合1次 此军团 |
 | S01-0311 古斯塔夫一世 #3 | S01-0311:ability:after-attack:65ce2315ff4c0465 | after-attack/triggered | owner-unreviewed | 进攻后，可将墓地2张卡牌自选顺序返回我方牌库底部 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.ready → resolution:legacy.resolve | 1 | 进攻后，可将墓地2张卡牌自选顺序返回我方牌库底部：将此军团转为活跃 |
-| S01-0312 铁盾拉葛莎 #1 | S01-0312:ability:static:56c7c1ba69533024 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → resolution:operation.modify-troops | 0 | 「位于前排」获得挑畔，且在对方回合此军团兵力+1000。（对方只可进攻带有此效果的军团） |
+| S01-0312 铁盾拉葛莎 #1 | S01-0312:ability:static:b2e1a67373ad69cc | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → resolution:operation.modify-troops | 0 | 「位于前排」获得挑衅，且在对方回合此军团兵力+1000。（对方只可进攻带有此效果的军团） |
 | S01-0312 铁盾拉葛莎 #2 | S01-0312:ability:static:af427a4637e1c138 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.keyword → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」获得【挑衅】。 |
 | S01-0313 神箭奥德尔 #1 | S01-0313:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
 | S01-0313 神箭奥德尔 #2 | S01-0313:ability:enter:48f49bf5f355a620 | enter/triggered | composite-definition | 登场时 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.draw → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 可对我方主宰造成1点伤害：抽取1张牌 |
