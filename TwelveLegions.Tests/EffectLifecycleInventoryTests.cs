@@ -317,6 +317,35 @@ public sealed class EffectLifecycleInventoryTests
     }
 
     [Fact]
+    public void ActiveRestProfileOwnsTheCommonCostBoundaryWithoutClaimingCardSpecificSettlement()
+    {
+        var inventory = Build(Catalog);
+        var rows = inventory.Abilities.Where(row => row.Profile?.Id == "cost:active-rest").ToArray();
+        Assert.Equal(27, rows.Length);
+        Assert.Equal(EffectLifecycleProfiles.ActiveRestAbilityIds.Order(),
+            rows.Select(row => row.Definition.AbilityId).Order());
+        Assert.All(rows, row =>
+        {
+            Assert.Equal("shared-rule-owner", row.EntryEvidence);
+            Assert.Equal("L12StructuredCardRules.IsActiveRestAbility", row.Profile!.RuntimeOwners["runtime-identity"]);
+            Assert.Equal("CommitStructuredActiveRestCost", row.Profile.RuntimeOwners["cost-commit"]);
+            Assert.Equal("AddActivePaidCostPresentation", row.Profile.RuntimeOwners["cost-presentation"]);
+            Assert.Contains(row.Definition.Atoms,
+                atom => atom.Kind == L12AtomKinds.RestSource && atom.Stage == "cost");
+            Assert.Contains("normal", row.ReviewGaps);
+            Assert.Contains("negated", row.ReviewGaps);
+            Assert.Contains("target-invalidated", row.ReviewGaps);
+            Assert.Contains("reconnect", row.ReviewGaps);
+            var evidence = Assert.Single(row.TestReferences,
+                reference => reference.TestMethod.EndsWith(
+                    nameof(ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary),
+                    StringComparison.Ordinal));
+            Assert.Contains("active-rest-cost", evidence.Scopes);
+            Assert.Equal("linked-not-execution-receipt", evidence.Status);
+        });
+    }
+
+    [Fact]
     public void DesertHandSummonProfileUsesOneSharedCandidateRuleAndExplainsItsUnavailablePath()
     {
         var row = Assert.Single(Build(Catalog).Abilities,

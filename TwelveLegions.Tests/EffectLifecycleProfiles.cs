@@ -192,6 +192,51 @@ internal static class EffectLifecycleProfiles
             ["multi-target-applicability"] = "一次结算只更新来源军团的权限，不同时处理多个进攻对象。",
         }) { AdditionalChecks = ["source-invalidated", "payment-cancel", "paid-cost-preserved", "repeat-activation", "turn-end-expiry", "authoritative-attack"] };
 
+    // 27个印刷能力段映射为31个运行能力；安卡神碑、八尺琼勾玉和匠神锻造炉的
+    // 分支共用同一印刷段。这里只归属公共主动休整Cost，不冒充逐卡后段已使用同一结算器。
+    internal static readonly string[] ActiveRestAbilityIds =
+    [
+        "S01-0105:ability:active:0e81cd47a6221fd8",
+        "S01-0109:ability:active:88c64e7a7e50fb25",
+        "S01-0117:ability:active:ba48403c4da1e24c",
+        "S01-01D1:ability:active:2b7ae6d9b09b600b",
+        "S01-0214:ability:active:30e47404439f2371",
+        "S01-0215:ability:active:6984859bdd4fa8b1",
+        "S01-0317:ability:active:90c21e26f3d58b69",
+        "S01-03D1:ability:active:79829ccbe13dcca0",
+        "S01-04D1:ability:active:67457fb394219836",
+        "S02-0003:ability:active:484fb98a6af8df3f",
+        "S02-0104:ability:active:1687d445c6acc308",
+        "S02-0204:ability:active:4257a82eec559a94",
+        "S02-0205:ability:active:8023ed21f8771697",
+        "S02-0404:ability:active:b30de444d37a3b6e",
+        "S02-0510:ability:active:2ee4c7f29b568e48",
+        "S02-0513:ability:active:0b4d5245336709f8",
+        "S02-0520:ability:active:e4e320d416a9c103",
+        "S02-05D1:ability:active:f160e84288ecb28c",
+        "S02-0603:ability:active:8768d3f1fcb44728",
+        "S02-0616:ability:active:3616b237df312569",
+        "S02-06D1:ability:active:30a9d18991dc8481",
+        "ST02-05:ability:active:80aa98cc24ef764e",
+        "ST03-05:ability:active:87d142bd0e12a218",
+        "ST03-07:ability:active:0d4ebc1a2ab8b128",
+        "ST04-06:ability:active:8f6b1b9dfc246e36",
+        "ST05-06:ability:active:cc5d71f55d3a253f",
+        "ST06-09:ability:active:e533dbf15f08cea0",
+    ];
+
+    private static readonly L12LifecycleProfile ActiveRest = new("cost:active-rest",
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["runtime-identity"] = "L12StructuredCardRules.IsActiveRestAbility",
+            ["button-eligibility"] = "BuildAbilityViews",
+            ["cost-commit"] = "CommitStructuredActiveRestCost",
+            ["cost-presentation"] = "AddActivePaidCostPresentation",
+            ["response-stack"] = "PushEffect",
+        },
+        new SortedDictionary<string, string>(StringComparer.Ordinal))
+        { AdditionalChecks = ["active-rest-cost", "paid-cost-preserved", "readied-source-reuse", "runtime-branch-mapping"] };
+
     private static void ValidateOwners(L12LifecycleProfile profile)
     {
         foreach (var owner in profile.RuntimeOwners.Values)
@@ -217,6 +262,7 @@ internal static class EffectLifecycleProfiles
         ValidateOwners(NativeCavalry);
         ValidateOwners(PrintedRanged);
         ValidateOwners(PaidExtendedRange);
+        ValidateOwners(ActiveRest);
         var bindings = new Dictionary<string, L12LifecycleProfile>(StringComparer.Ordinal);
         if (!abilities.TryGetValue(DesertHandSummonAbilityId, out var desertHandSummon)
             || desertHandSummon.CardId != "S02-0207" || desertHandSummon.Trigger != "play"
@@ -274,6 +320,19 @@ internal static class EffectLifecycleProfiles
             && L12StructuredCardSemantics.ExtendedRangeRule(ability.CardId) is not null).Select(ability => ability.AbilityId);
         if (!paidExtendedRange.ToHashSet(StringComparer.Ordinal).SetEquals(PaidExtendedRangeAbilityIds))
             throw new InvalidOperationException("Paid extended-range family changed; review its per-ability bindings.");
+        foreach (var id in ActiveRestAbilityIds)
+        {
+            if (!abilities.TryGetValue(id, out var ability) || ability.Trigger != "active"
+                || !ability.Text.Contains("主动休整", StringComparison.Ordinal)
+                || !ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.RestSource && atom.Stage == "cost"))
+                throw new InvalidOperationException($"Stale reviewed active-rest profile: {id}");
+            bindings.Add(id, ActiveRest);
+        }
+        var activeRest = abilities.Values.Where(ability => ability.Trigger == "active"
+            && ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.RestSource && atom.Stage == "cost"))
+            .Select(ability => ability.AbilityId);
+        if (!activeRest.ToHashSet(StringComparer.Ordinal).SetEquals(ActiveRestAbilityIds))
+            throw new InvalidOperationException("Active-rest family changed; review its per-ability bindings.");
         return bindings;
     }
 }
