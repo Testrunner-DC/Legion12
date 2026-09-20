@@ -452,6 +452,55 @@ internal static class EffectLifecycleProfiles
             AdditionalChecks = ["condition-false", "zero-floor", "payment-cancel", "reconnect-payment", "display-and-payment-parity"],
         };
 
+    internal static readonly string[] StructuredHandCostAbilityIds =
+    [
+        "S02-0509:ability:static:fff4ed8e0ac25ed9",
+        "S02-0510:ability:static:52b46f1b508e6aa1",
+        "S02-0512:ability:static:fff4ed8e0ac25ed9",
+        "S02-0518:ability:static:fff4ed8e0ac25ed9",
+        "S02-0605:ability:continuous:5ff487de55c0ca1d",
+        "S02-0611:ability:continuous:5745356459e85080",
+        "S02-0612:ability:continuous:064a0a1c5382575c",
+        "ST03-02:ability:continuous:057a02a660ebfae1",
+        "ST04-10:ability:continuous:2a1c905931cd7b32",
+        "ST06-01:ability:continuous:3ced1d4d38141877",
+    ];
+
+    private static readonly L12LifecycleProfile StructuredHandCost =
+        new("hand-play:structured-hand-condition-cost",
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["definition"] = "L12StructuredCardRules.TryGetStructuredAbilities",
+                ["condition-and-calculation"] = "L12StructuredCardRules.HandPlayCostModifier",
+                ["combined-play-cost"] = "GetPlayCostWithSigurdDiscount",
+                ["button-and-snapshot"] = "SnapshotHand",
+                ["resource-payment"] = "EnsurePlayResourcePaymentChoice",
+            },
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["no-target"] = "本族只读取手牌实例与当前公开状态计算打出费用，不创建效果对象。",
+                ["negated"] = "满足条件期间的持续费用修正不独立入栈，不能作为一次效果被无效。",
+                ["target-invalidated"] = "没有效果目标；支付时必须按当前状态重新计算实际费用。",
+                ["multi-target-applicability"] = "一次只计算当前待打出手牌实例，不修改其他手牌实例。",
+            })
+        {
+            AdditionalChecks = ["condition-false", "source-still-in-hand", "effective-faction", "zero-floor",
+                "payment-cancel", "reconnect-payment", "display-and-payment-parity"],
+        };
+
+    internal static bool IsStructuredHandCostAbility(L12AtomicAbility ability)
+    {
+        if (ability.ExecutionModel != "continuous") return false;
+        var hasHandCondition = ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.Condition
+            && atom.Parameters.GetValueOrDefault("expression")?.Contains("source.zone=hand", StringComparison.Ordinal) == true);
+        if (!hasHandCondition) return false;
+        return ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.SetState
+                && atom.Parameters.GetValueOrDefault("key") == "source.derived-cost"
+                && atom.Parameters.GetValueOrDefault("operation") == "add")
+            || ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.Special
+                && atom.Parameters.GetValueOrDefault("semantic") == "entry-cost-minus-per-friendly-faction-legion");
+    }
+
     private static void ValidateOwners(L12LifecycleProfile profile)
     {
         foreach (var owner in profile.RuntimeOwners.Values)
@@ -482,6 +531,7 @@ internal static class EffectLifecycleProfiles
         foreach (var profile in CombatKeywordProfiles.Values) ValidateOwners(profile);
         ValidateOwners(StructuredContinuousCombatRule);
         ValidateOwners(PrintedEntryCost);
+        ValidateOwners(StructuredHandCost);
         var bindings = new Dictionary<string, L12LifecycleProfile>(StringComparer.Ordinal);
         if (!abilities.TryGetValue(DesertHandSummonAbilityId, out var desertHandSummon)
             || desertHandSummon.CardId != "S02-0207" || desertHandSummon.Trigger != "play"
@@ -613,6 +663,16 @@ internal static class EffectLifecycleProfiles
             .ToHashSet(StringComparer.Ordinal);
         if (!actualPrintedEntryCostCards.SetEquals(reviewedPrintedEntryCostCards))
             throw new InvalidOperationException("Printed entry-cost rule family changed; review its per-ability bindings.");
+        foreach (var id in StructuredHandCostAbilityIds)
+        {
+            if (!abilities.TryGetValue(id, out var ability) || !IsStructuredHandCostAbility(ability))
+                throw new InvalidOperationException($"Stale reviewed structured hand-cost rule: {id}");
+            bindings.Add(id, StructuredHandCost);
+        }
+        var structuredHandCosts = abilities.Values.Where(IsStructuredHandCostAbility)
+            .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);
+        if (!structuredHandCosts.SetEquals(StructuredHandCostAbilityIds))
+            throw new InvalidOperationException("Structured hand-condition cost family changed; review its per-ability bindings.");
         return bindings;
     }
 }
