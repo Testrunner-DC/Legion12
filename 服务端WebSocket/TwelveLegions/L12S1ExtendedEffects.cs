@@ -101,7 +101,7 @@ public sealed partial class L12GameEngine
             new("completeTrial", "试炼达到8：完成《十字军东征》。"),
             new("crusadeTrialNoLoss", "消耗1符文：选择我方1张【试炼军团】，本回合下一次进攻无损。"),
             new("crusadeRichardPiercing", "消耗2符文：本回合我方1张〈狮心王理查一世〉击杀时获得贯穿。"),
-            new("crusadeRecover", "消耗2符文并弃置1张手牌：将墓地1张只有【彼界】特征的卡牌加入手牌。"),
+            new("crusadeRecover", "消耗2符文：弃置1张手牌，并将墓地1张只有【彼界】特征的卡牌加入手牌。"),
         ],
             _ => GetStarterRemainingAbilityViews(cardId) is { Count: > 0 } starterAbilities
                 ? starterAbilities

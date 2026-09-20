@@ -1421,6 +1421,60 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "keyword:piercing")]
+    [Trait("L12Evidence", "card:S02-DS05")]
+    public void WrathDisasterKeepsOrdinaryLegionPriorityButDoesNotBlockGeneratedPiercing()
+    {
+        var game = Create(64250);
+        var attackerPlayer = game.State.Players[0];
+        var defender = game.State.Players[1];
+        var attacker = Card("S02-0606", "piercing-wrath-attacker");
+        var killed = Card("S01-0102", "piercing-wrath-killed");
+        var remaining = Card("S01-0103", "piercing-wrath-remaining");
+        attacker.Troops = 5000;
+        killed.Troops = 1000;
+        remaining.Troops = 2000;
+        attacker.SummonRound = killed.SummonRound = remaining.SummonRound = 0;
+        attackerPlayer.Field[0][0] = attacker;
+        defender.Field[0][0] = killed;
+        defender.Field[0][1] = remaining;
+        defender.Field[1] = new L12CardInstance?[3];
+        defender.Hand.Clear();
+        game.State.ActiveDisaster = Card("S02-DS05", "active-wrath-disaster");
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        var directMaster = game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master")));
+        Assert.False(directMaster.Accepted);
+        Assert.Contains("暴怒之罪", directMaster.Error, StringComparison.Ordinal);
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", killed.InstanceId))).Accepted);
+        for (var step = 0; step < 16 && game.State.PendingDefense?.Target.Type != "master"; step++)
+        {
+            var prompt = game.State.PendingPrompts.FirstOrDefault();
+            if (prompt is null) continue;
+            var choice = prompt.Kind == "response" ? "pass"
+                : prompt.ValidChoices.Contains("skip") ? "skip"
+                : prompt.ValidChoices.Contains("no") ? "no"
+                : prompt.ValidChoices[0];
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+        }
+
+        Assert.Contains(killed, defender.Resolving);
+        Assert.Contains(remaining, defender.Field[0]);
+        Assert.NotNull(game.State.PendingDefense);
+        Assert.Equal("master", game.State.PendingDefense!.Target.Type);
+        Assert.True(game.State.PendingDefense.SuppressAttackTriggers);
+        Assert.Equal(4000, game.State.PendingDefense.AttackValue);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("贯穿进攻失败") && entry.Text.Contains("暴怒之罪"));
+    }
+
+    [Fact]
     public void PiercingRetargetedByMagiciansPuppetUsesTheRealRemainingTroopsAndBothLegionsDie()
     {
         var game = Create(64251);

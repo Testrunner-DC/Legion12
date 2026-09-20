@@ -1497,7 +1497,6 @@ public sealed partial class L12GameEngine
             var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
             var runeCost = ability == "fenianReady" || ability == "crusadeTrialNoLoss" ? 1 : 2;
             if (player.SpecialZones.Runes < runeCost) return CommandResult.Reject($"需要消耗{runeCost}符文");
-            L12CardInstance? discardCost = null;
             if (ability == "fenianReady")
             {
                 var chosen = FindOnField(player, declared.FirstOrDefault(), out _, out _);
@@ -1524,17 +1523,12 @@ public sealed partial class L12GameEngine
                 var recover = player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1]
                     && L12StructuredCardRules.HasOnlyEffectiveFactionTrait(player, card, "otherworld"));
                 if (discard is null || recover is null) return CommandResult.Reject("弃置或回收的卡牌已不合法");
-                discardCost = discard;
             }
             if (!L12S2ZoneOps.SpendRunes(player, runeCost)) return CommandResult.Reject($"需要消耗{runeCost}符文");
-            if (discardCost is not null)
-            {
-                player.Hand.Remove(discardCost);
-                player.Graveyard.Add(discardCost);
-                AddEvent("cost", playerIndex, $"弃置〈{discardCost.Name}〉支付十字军东征费用", discardCost);
-            }
             RecordLimitedActiveAbilityUse(player, source, ability);
-            PushEffect(playerIndex, source, "active", "已完成试炼的主动效果",
+            // 使用公共主动效果标签，让按钮、动效与响应窗口按 ability 读取同一结构化文案，
+            // 避免把“已完成试炼的主动效果”这一泛称写入堆叠。
+            PushEffect(playerIndex, source, "active", "主动效果",
                 data: new Dictionary<string, string> { ["ability"] = ability, ["target"] = target ?? string.Empty });
             return CommandResult.Ok();
         }
@@ -1949,6 +1943,12 @@ public sealed partial class L12GameEngine
             }
             else if (declared.Length == 2)
             {
+                // “2张符文：”是本分支的全部Cost；弃置手牌与墓地回收都位于冒号后，
+                // 必须等响应结束后作为效果结算。效果被无效时不得提前弃置手牌。
+                var discard = player.Hand.FirstOrDefault(card => card.InstanceId == declared[0]);
+                if (discard is null || !MoveHandToGrave(player, discard.InstanceId, causedByEffect: true, source))
+                    RecordTargetSettlementFailure(item, declared[0], "十字军东征所选手牌已不在手牌中，无法弃置");
+
                 var recover = player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[1]
                     && L12StructuredCardRules.HasOnlyEffectiveFactionTrait(player, card, "otherworld"));
                 if (recover is not null)
@@ -1956,6 +1956,8 @@ public sealed partial class L12GameEngine
                     player.Graveyard.Remove(recover);
                     AddCardToHandByEffect(player, recover, "graveyard", "十字军东征回收彼界卡牌");
                 }
+                else RecordTargetSettlementFailure(item, declared[1],
+                    "十字军东征所选墓地卡牌已离开墓地或不再只有【彼界】特征");
             }
             FinishStackItem(item);
             return true;

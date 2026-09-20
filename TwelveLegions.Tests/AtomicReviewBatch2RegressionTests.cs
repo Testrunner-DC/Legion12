@@ -467,7 +467,7 @@ public sealed class AtomicReviewBatch2RegressionTests
 
     [Fact]
     [Trait("L12Evidence", "ability:crusadeRecover")]
-    public void CrusadeRecoverCommitsCostsAndUsesAuthoritativeHandAdd()
+    public void CrusadeRecoverPaysOnlyRunesBeforeResponseAndResolvesDiscardAndRecoveryAfterward()
     {
         var game = Create(6814);
         var (player, trial) = PrepareCrusade(game, 2);
@@ -477,6 +477,12 @@ public sealed class AtomicReviewBatch2RegressionTests
         player.Graveyard.Clear();
         player.Hand.Add(discard);
         player.Graveyard.Add(recover);
+        var opponent = game.State.Players[1];
+        var availableDefense = Card("S01-0016", "crusade-pass-defense");
+        availableDefense.Hidden = true;
+        availableDefense.SetRound = 0;
+        opponent.Field[1][0] = availableDefense;
+        opponent.Hand.Add(Card("S01-0004", "crusade-pass-defense-cost"));
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", trial.InstanceId,
             Ability: "crusadeRecover")).Accepted);
@@ -491,14 +497,136 @@ public sealed class AtomicReviewBatch2RegressionTests
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: recoverPrompt.PromptId,
             Choice: recover.InstanceId)).Accepted);
         Assert.Equal(0, player.SpecialZones.Runes);
-        Assert.Contains(discard, player.Graveyard);
+        Assert.Contains(discard, player.Hand);
+        Assert.Contains(recover, player.Graveyard);
+        var response = Assert.Single(game.State.PendingPrompts, entry => entry.Kind == "response");
+        Assert.Equal("消耗2符文", response.Data["responsePaidCostSummary"]);
+        Assert.Contains("弃置1张手牌，并将墓地1张只有【彼界】特征的卡牌加入手牌", response.Text,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(discard.Name, response.Data["responsePaidCostSummary"], StringComparison.Ordinal);
         PassResponses(game);
 
+        Assert.Contains(discard, player.Graveyard);
+        Assert.DoesNotContain(discard, player.Hand);
         Assert.Contains(recover, player.Hand);
         Assert.DoesNotContain(recover, player.Graveyard);
         Assert.Contains(game.State.AuthorityEvents, entry => entry.Type == "effect-hand-add"
             && entry.TargetInstanceId == recover.InstanceId && entry.OriginZone == "graveyard"
             && entry.DestinationZone == "hand");
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "ability:crusadeRecover")]
+    [Trait("L12Evidence", "family:colon-cost-boundary")]
+    public void NegatedCrusadeRecoverKeepsTheSelectedHandCardAndGraveCardInPlace()
+    {
+        var game = Create(68140);
+        var (player, trial) = PrepareCrusade(game, 2);
+        var discard = Card("S01-0003", "crusade-negated-discard");
+        var recover = Card("S02-0610", "crusade-negated-recover");
+        player.Hand.Clear();
+        player.Graveyard.Clear();
+        player.Hand.Add(discard);
+        player.Graveyard.Add(recover);
+
+        var opponent = game.State.Players[1];
+        var defense = Card("S01-0016", "crusade-negating-defense");
+        var defenseCost = Card("S01-0004", "crusade-negating-defense-cost");
+        defense.Hidden = true;
+        defense.SetRound = 0;
+        opponent.Field[1][0] = defense;
+        opponent.Hand.Add(defenseCost);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", trial.InstanceId,
+            Ability: "crusadeRecover")).Accepted);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: discard.InstanceId)).Accepted);
+        prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: recover.InstanceId)).Accepted);
+
+        Assert.Equal(0, player.SpecialZones.Runes);
+        Assert.Contains(discard, player.Hand);
+        Assert.Contains(recover, player.Graveyard);
+
+        if (Assert.Single(game.State.PendingPrompts).PlayerIndex == 0)
+        {
+            prompt = Assert.Single(game.State.PendingPrompts);
+            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+                Choice: "pass")).Accepted);
+        }
+        prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(defense.InstanceId, prompt.ValidChoices);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: defense.InstanceId)).Accepted);
+        prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: defenseCost.InstanceId)).Accepted);
+        PassResponses(game);
+
+        Assert.Contains(discard, player.Hand);
+        Assert.DoesNotContain(discard, player.Graveyard);
+        Assert.Contains(recover, player.Graveyard);
+        Assert.DoesNotContain(recover, player.Hand);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Trait("L12Evidence", "ability:crusadeRecover")]
+    [Trait("L12Evidence", "family:independent-effect-results")]
+    public void CrusadeRecoverResolvesEachPostColonResultAgainstItsCurrentZone(bool expireDiscard)
+    {
+        var game = Create(expireDiscard ? 681401 : 681402);
+        var (player, trial) = PrepareCrusade(game, 2);
+        var discard = Card("S01-0003", $"crusade-partial-discard-{expireDiscard}");
+        var recover = Card("S02-0610", $"crusade-partial-recover-{expireDiscard}");
+        player.Hand.Clear();
+        player.Graveyard.Clear();
+        player.Hand.Add(discard);
+        player.Graveyard.Add(recover);
+
+        var opponent = game.State.Players[1];
+        var defense = Card("S01-0016", $"crusade-partial-defense-{expireDiscard}");
+        defense.Hidden = true;
+        defense.SetRound = 0;
+        opponent.Field[1][0] = defense;
+        opponent.Hand.Add(Card("S01-0004", $"crusade-partial-defense-cost-{expireDiscard}"));
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", trial.InstanceId,
+            Ability: "crusadeRecover")).Accepted);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: discard.InstanceId)).Accepted);
+        prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: recover.InstanceId)).Accepted);
+
+        if (expireDiscard)
+        {
+            player.Hand.Remove(discard);
+            player.Library.Add(discard);
+        }
+        else
+        {
+            player.Graveyard.Remove(recover);
+            player.Library.Add(recover);
+        }
+        PassResponses(game);
+
+        if (expireDiscard)
+        {
+            Assert.Contains(discard, player.Library);
+            Assert.Contains(recover, player.Hand);
+        }
+        else
+        {
+            Assert.Contains(discard, player.Graveyard);
+            Assert.Contains(recover, player.Library);
+        }
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Cards.Any(card => card.InstanceId == trial.InstanceId));
     }
 
     [Fact]

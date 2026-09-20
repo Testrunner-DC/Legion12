@@ -920,7 +920,7 @@ public sealed partial class L12GameEngine
         => row == 0 || (row == 1 && HasRangeInPosition(card, row));
 
     private bool CanAttackMasterTarget(int playerIndex, L12CardInstance attacker, int row,
-        L12PlayerState defender, out string error)
+        L12PlayerState defender, out string error, bool isPiercingAttack = false)
     {
         error = string.Empty;
         if (defender.MasterCannotBeAttackedUntilTurn >= State.TurnSerial)
@@ -933,7 +933,10 @@ public sealed partial class L12GameEngine
             error = "对方前排军团使主宰无法被兵力不高于2000的军团进攻";
         else if (State.ActiveDisaster?.CardId == "S02-DS02" && attacker.Troops <= 2000)
             error = "〈迷雾绝境〉生效时兵力不高于2000的军团无法进攻主宰";
-        else if (State.ActiveDisaster?.CardId == "S02-DS05" && HasMandatoryDisasterLegionTarget(attacker, row, defender))
+        // 〈暴怒之罪〉只约束玩家声明的普通进攻目标。贯穿已经由“击杀所进攻军团”
+        // 这一事实生成对主宰的专属进攻，不能再次被普通目标优先规则改写或阻断。
+        else if (!isPiercingAttack && State.ActiveDisaster?.CardId == "S02-DS05"
+                 && HasMandatoryDisasterLegionTarget(attacker, row, defender))
             error = "〈暴怒之罪〉生效时必须优先进攻范围内的对方军团";
         else
         {
@@ -1289,7 +1292,8 @@ public sealed partial class L12GameEngine
         if (State.Phase == L12Phase.GameOver
             || FindOnField(player, attacker.InstanceId, out var row, out _) is null) return;
         var opponent = State.Players[1 - playerIndex];
-        if (!CanAttackMasterTarget(playerIndex, attacker, row, opponent, out var error))
+        if (!CanAttackMasterTarget(playerIndex, attacker, row, opponent, out var error,
+                isPiercingAttack: true))
         {
             AddEvent("effect-failed", playerIndex, $"{attacker.Name}的贯穿进攻失败：{error}", attacker);
             return;
