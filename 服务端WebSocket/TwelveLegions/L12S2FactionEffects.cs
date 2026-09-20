@@ -1626,14 +1626,13 @@ public sealed partial class L12GameEngine
         }
         if (ability == "avalonDebuff" && source?.CardId == "S02-06D1")
         {
-            var target = DeclaredEnemyTarget(item.Controller, item.Data.GetValueOrDefault("target"));
+            var target = ResolveDeclaredEnemyLegionTarget(item, item.Data.GetValueOrDefault("target"),
+                predicate: null, "仍为对方公开军团");
             if (target is not null)
             {
                 AddTimedModifier(target, -4000, 0, ExpiryAtNextOwnEnd(item.Controller), "彼界 阿瓦隆");
                 AddEvent("effect", item.Controller, $"彼界 阿瓦隆使〈{target.Name}〉本回合兵力-4000", source, target);
             }
-            else RecordTargetSettlementFailure(item, item.Data.GetValueOrDefault("target"),
-                "所选对方军团已离场或不再是军团");
             FinishStackItem(item);
             return true;
         }
@@ -1646,17 +1645,16 @@ public sealed partial class L12GameEngine
         }
         if (ability == "forgeReadyOnKill" && source?.CardId == "S02-0520")
         {
-            var target = FindOnField(player, item.Data.GetValueOrDefault("target"), out _, out _);
-            if (target is not null && !target.Hidden && IsFieldLegion(target)
-                && L12StructuredCardRules.HasFaction(player, target, "olympus")
-                && !target.HasTrait("晋升者"))
+            var target = ResolveDeclaredOwnLegionTarget(item, item.Data.GetValueOrDefault("target"),
+                card => !card.Hidden && L12StructuredCardRules.HasFaction(player, card, "olympus")
+                    && !card.HasTrait("晋升者"),
+                "公开、具有有效【奥林匹斯】特征且不具有【晋升者】特征");
+            if (target is not null)
             {
                 target.ReadyAfterNextKillUntilTurn = State.TurnSerial;
                 target.ReadyAfterNextKillSourceName = "匠神锻造炉";
                 AddEvent("effect", item.Controller, $"〈{target.Name}〉本回合下一次击杀对方军团后转为活跃", source, target);
             }
-            else RecordTargetSettlementFailure(item, item.Data.GetValueOrDefault("target"),
-                "所选军团已离场、不再是公开军团、失去有效【奥林匹斯】特征或已成为【晋升者】");
             FinishStackItem(item);
             return true;
         }
@@ -1737,8 +1735,13 @@ public sealed partial class L12GameEngine
         {
             if (item.Data.GetValueOrDefault("mode") == "mode:debuff")
             {
-                var target = DeclaredEnemyTarget(item.Controller, item.Data.GetValueOrDefault("target"));
-                if (target is not null) AddTimedModifier(target, -3000, 0, ExpiryAtNextOwnEnd(item.Controller), "梅林");
+                var target = ResolveDeclaredEnemyLegionTarget(item,
+                    item.Data.GetValueOrDefault("target"), predicate: null, "仍为对方公开军团");
+                if (target is not null)
+                {
+                    AddTimedModifier(target, -3000, 0, ExpiryAtNextOwnEnd(item.Controller), "梅林");
+                    AddEvent("effect", item.Controller, $"梅林使〈{target.Name}〉本回合兵力-3000", source, target);
+                }
             }
             else
             {

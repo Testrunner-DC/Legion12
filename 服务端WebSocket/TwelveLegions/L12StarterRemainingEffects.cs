@@ -438,10 +438,9 @@ public sealed partial class L12GameEngine
                 if (flow == "oiran-enemy-debuff")
                 {
                     var targetId = CompositeDeclared(item, "enemyTarget").SingleOrDefault();
-                    var enemy = DeclaredEnemyTarget(item.Controller, targetId);
-                    if (enemy is null)
-                        RecordTargetSettlementFailure(item, targetId, "所选对方军团已离场或不再是军团");
-                    else
+                    var enemy = ResolveDeclaredEnemyLegionTarget(item, targetId,
+                        predicate: null, "仍为对方公开军团");
+                    if (enemy is not null)
                     {
                         AddTimedModifier(enemy, -1000, 0, State.TurnSerial, source?.Name ?? "吉原的花魁");
                         AddEvent("effect", item.Controller,
@@ -451,10 +450,9 @@ public sealed partial class L12GameEngine
                 else if (flow == "oiran-own-buff")
                 {
                     var targetId = CompositeDeclared(item, "ownTarget").SingleOrDefault();
-                    var own = FindOnField(player, targetId, out _, out _);
-                    if (own is null || !IsFieldLegion(own))
-                        RecordTargetSettlementFailure(item, targetId, "所选我方军团已离场或不再是军团");
-                    else
+                    var own = ResolveDeclaredOwnLegionTarget(item, targetId,
+                        predicate: null, "仍为我方军团");
+                    if (own is not null)
                     {
                         AddTimedModifier(own, 1000, 0, State.TurnSerial, source?.Name ?? "吉原的花魁");
                         AddEvent("effect", item.Controller,
@@ -493,8 +491,11 @@ public sealed partial class L12GameEngine
                     L12S2ZoneOps.GainRunes(player, 1);
                     AddEvent("runes", item.Controller, "光之剑使我方获得1符文", source is null ? [] : [source]);
                 }
-                else if (FindOnField(player, values.ElementAtOrDefault(2), out var row, out _) is { } target
-                         && row == 0 && L12StructuredCardRules.HasFaction(player, target, "otherworld"))
+                else if (ResolveDeclaredOwnLegionTarget(item, values.ElementAtOrDefault(2),
+                             card => FindOnField(player, card.InstanceId, out var row, out _) is not null
+                                 && row == 0
+                                 && L12StructuredCardRules.HasFaction(player, card, "otherworld"),
+                             "位于前排且具有有效【彼界】特征") is { } target)
                 {
                     AddTimedModifier(target, 2000, 0, State.TurnSerial, source?.Name ?? "光之剑");
                     AddEvent("effect", item.Controller, $"光之剑使〈{target.Name}〉本回合兵力+2000", target);

@@ -1416,7 +1416,22 @@ public sealed partial class L12GameEngine
         Func<L12CardInstance, bool>? predicate = null)
     {
         var card = FindOnField(State.Players[controller], instanceId, out _, out _);
-        return card is not null && IsFieldLegion(card) && (predicate?.Invoke(card) ?? true) ? card : null;
+        return card is not null && IsFieldLegion(card) && !card.Hidden
+            && (predicate?.Invoke(card) ?? true) ? card : null;
+    }
+
+    /// <summary>
+    /// 公开声明的“对方军团”在结算时必须仍为同一张位于对方战场的公开军团，
+    /// 并继续满足该能力的当前状态门槛。失效对象不补选，且统一记录为结算失败。
+    /// </summary>
+    private L12CardInstance? ResolveDeclaredEnemyLegionTarget(L12StackItem item, string? targetId,
+        Func<L12CardInstance, bool>? predicate, string requirement)
+    {
+        var target = DeclaredEnemyTarget(item.Controller, targetId, predicate);
+        if (target is null)
+            RecordTargetSettlementFailure(item, targetId,
+                $"所选对方军团已离场、被覆盖、转为隐藏、不再是军团，或不再满足{requirement}");
+        return target;
     }
 
     /// <summary>
@@ -1519,7 +1534,8 @@ public sealed partial class L12GameEngine
 
     private void ResolveDeclaredPalaceExchangeKill(L12StackItem item)
     {
-        var target = DeclaredEnemyTarget(item.Controller, item.Data.GetValueOrDefault("target"));
+        var target = ResolveDeclaredEnemyLegionTarget(item, item.Data.GetValueOrDefault("target"),
+            predicate: null, "仍为对方公开军团");
         if (target is not null) KillTarget(item, target.InstanceId, "被凌霄宝殿击杀");
         FinishStackItem(item);
     }
