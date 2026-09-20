@@ -13,7 +13,7 @@
 | 部署状态/归档 | `/opt/legion12-testrun-deployment` |
 | 环境文件 | `/etc/legion12-testrun.env` |
 
-测试服务的 systemd 单元显式屏蔽正式活动目录、正式 runtime 和正式卡图目录，只给验收 runtime 写权限；`CPUWeight`/`IOWeight` 为 10、`Nice=10`、`OOMScoreAdjust=750`，以调度权重而不是半核硬限额让默认权重的正式服务优先。内存由原来的 512 MiB 调整为 `MemoryHigh=768M`、`MemoryMax=896M`，避免常规加载过早 OOM，同时仍低于正式服务现有 1 GiB 上限。
+测试服务的 systemd 单元显式屏蔽正式活动目录、正式 runtime 和正式卡图目录，只给验收 runtime 写权限；`CPUWeight`/`IOWeight` 为 10、`Nice=10`、`OOMScoreAdjust=750`，以调度权重而不是半核硬限额让默认权重的正式服务优先。内存由原来的 512 MiB 调整为 `MemoryHigh=768M`、`MemoryMax=896M`，避免常规加载过早 OOM，同时仍低于正式服务现有 1 GiB 上限。测试服固定使用 `L12_TESTRUN_MATCH_STORAGE=ephemeral`：账号、构筑和必要站点配置继续保留，但服务每次启动都会在严格核验测试域和独立 runtime 后清空 `matches.db` 及其 WAL/SHM，不把测试对局、录像或分析事实作为长期数据保存。
 
 ## 首次 bootstrap（只执行一次）
 

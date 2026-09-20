@@ -10,6 +10,12 @@ var dataPath = Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data");
 var runtimePath = Path.Combine(AppContext.BaseDirectory, "runtime");
 Directory.CreateDirectory(runtimePath);
 
+var ephemeralTestMatches = L12TestRunStorageProfile.Prepare(runtimePath,
+    Environment.GetEnvironmentVariable(L12TestRunStorageProfile.EnvironmentKey),
+    Environment.GetEnvironmentVariable("L12_PUBLIC_BASE_URL"));
+if (ephemeralTestMatches)
+    Console.WriteLine("Test-run match storage: ephemeral; previous match, replay and analytics data cleared.");
+
 var catalog = L12Catalog.Load(dataPath);
 var platform = new L12PlatformStore(Path.Combine(runtimePath, "platform.json"), catalog.PresetDecks,
     officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts);

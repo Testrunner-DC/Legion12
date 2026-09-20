@@ -148,6 +148,7 @@ allowed = {
     "L12_SMTP_HOST", "L12_SMTP_PORT", "L12_SMTP_USERNAME", "L12_SMTP_PASSWORD",
     "L12_SMTP_FROM_ADDRESS", "L12_SMTP_FROM_NAME", "L12_SMTP_ENABLE_SSL",
     "L12_ENABLE_SECOND_APPROVER_BOOTSTRAP", "L12_SECOND_APPROVER_BOOTSTRAP_TOKEN",
+    "L12_TESTRUN_MATCH_STORAGE",
 }
 values = {}
 with open(path, "r", encoding="utf-8") as handle:
@@ -174,6 +175,8 @@ for key in values:
         raise SystemExit("SMTP values must remain empty on testrun")
 if values["L12_ENABLE_SECOND_APPROVER_BOOTSTRAP"] != "false" or values["L12_SECOND_APPROVER_BOOTSTRAP_TOKEN"] != "":
     raise SystemExit("offline approver bootstrap must remain disabled on testrun")
+if values["L12_TESTRUN_MATCH_STORAGE"] != "ephemeral":
+    raise SystemExit("testrun match storage must remain ephemeral")
 metadata = os.stat(path, follow_symlinks=False)
 if stat.S_IMODE(metadata.st_mode) != 0o600 or metadata.st_uid != 0 or metadata.st_gid != 0:
     raise SystemExit("testrun environment must be root:root mode 0600")
@@ -313,6 +316,7 @@ L12_SMTP_FROM_NAME=
 L12_SMTP_ENABLE_SSL=
 L12_ENABLE_SECOND_APPROVER_BOOTSTRAP=false
 L12_SECOND_APPROVER_BOOTSTRAP_TOKEN=
+L12_TESTRUN_MATCH_STORAGE=ephemeral
 EOF
 chown root:root "$environment_temp"
 chmod 0600 "$environment_temp"
