@@ -6,6 +6,18 @@ namespace TwelveLegions.Server;
 /// </summary>
 public sealed partial class L12GameEngine
 {
+    /// <summary>
+    /// 双方私密同时选择共用的提交边界。当前提交只写入堆叠项目，最后一个同族
+    /// Prompt 提交后才允许调用方统一结算，避免先提交玩家的选择提前改变公开状态。
+    /// </summary>
+    private bool CommitSimultaneousPrivateSelection(L12StackItem item, L12Prompt prompt,
+        string action, string storagePrefix, IReadOnlyCollection<string> chosen, char separator = ',')
+    {
+        item.Data[$"{storagePrefix}:{prompt.PlayerIndex}"] = string.Join(separator, chosen);
+        return !State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
+            && candidate.Data.GetValueOrDefault("action") == action);
+    }
+
     private bool TryGetBoundPendingActivation(L12Prompt prompt, L12Command command,
         out L12PendingActivation activation, out string error)
     {

@@ -162,10 +162,8 @@ public sealed partial class L12GameEngine
 
     private void CompleteStarterEvilEyeDiscard(L12StackItem item, L12Prompt prompt, List<string> chosen)
     {
-        var playerIndex = int.Parse(prompt.Data["player"]);
-        item.Data[$"evil-eye-discard:{playerIndex}"] = chosen.SingleOrDefault() ?? string.Empty;
-        if (State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
-            && candidate.Data.GetValueOrDefault("action") == "disaster-st-evil-eye-discard")) return;
+        if (!CommitSimultaneousPrivateSelection(item, prompt, "disaster-st-evil-eye-discard",
+                "evil-eye-discard", chosen)) return;
         for (var owner = 0; owner < 2; owner++)
         {
             var id = item.Data.GetValueOrDefault($"evil-eye-discard:{owner}");
@@ -195,10 +193,8 @@ public sealed partial class L12GameEngine
 
     private void CompleteS2FogDiscard(L12StackItem item, L12Prompt prompt, List<string> chosen)
     {
-        var playerIndex = int.Parse(prompt.Data["player"]);
-        item.Data[$"fog-discard:{playerIndex}"] = string.Join(',', chosen);
-        if (State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
-            && candidate.Data.GetValueOrDefault("action") == "disaster-s2-fog-discard")) return;
+        if (!CommitSimultaneousPrivateSelection(item, prompt, "disaster-s2-fog-discard",
+                "fog-discard", chosen)) return;
         for (var owner = 0; owner < 2; owner++)
         {
             var player = State.Players[owner];
@@ -457,10 +453,8 @@ public sealed partial class L12GameEngine
 
     private void CompleteDisasterDiscard(L12StackItem item, L12Prompt prompt, List<string> chosen)
     {
-        var promptPlayer = int.Parse(prompt.Data["player"]);
-        item.Data[$"balance-discard:{promptPlayer}"] = string.Join(',', chosen);
-        if (State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
-            && candidate.Data.GetValueOrDefault("action") == "disaster-discard")) return;
+        if (!CommitSimultaneousPrivateSelection(item, prompt, "disaster-discard",
+                "balance-discard", chosen)) return;
         for (var owner = 0; owner < 2; owner++)
         {
             var player = State.Players[owner];
@@ -538,10 +532,8 @@ public sealed partial class L12GameEngine
 
     private void ContinueApocalypseHandOrder(L12StackItem item, L12Prompt prompt, List<string> chosen)
     {
-        var playerIndex = int.Parse(prompt.Data["player"]);
-        item.Data[$"apocalypse-hand-order:{playerIndex}"] = string.Join('|', chosen);
-        if (State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
-            && candidate.Data.GetValueOrDefault("action") == "disaster-apocalypse-hand-order")) return;
+        if (!CommitSimultaneousPrivateSelection(item, prompt, "disaster-apocalypse-hand-order",
+                "apocalypse-hand-order", chosen, '|')) return;
         CompleteApocalypseHands(item);
     }
 

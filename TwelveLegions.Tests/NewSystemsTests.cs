@@ -380,7 +380,11 @@ public sealed class NewSystemsTests
             .Where(prompt => prompt.Data.GetValueOrDefault("action") == "disaster-discard").ToArray();
         Assert.Equal(2, discardPrompts.Length);
         Assert.Equal([0, 1], discardPrompts.Select(prompt => prompt.PlayerIndex).Order().ToArray());
-        Assert.All(discardPrompts, prompt => Assert.Equal("true", prompt.Data["simultaneous"]));
+        Assert.All(discardPrompts, prompt =>
+        {
+            Assert.True(prompt.IsPrivate);
+            Assert.Equal("true", prompt.Data["simultaneous"]);
+        });
 
         var first = discardPrompts[0];
         var firstHandBefore = game.State.Players[first.PlayerIndex].Hand.Select(card => card.InstanceId).ToArray();
@@ -393,6 +397,64 @@ public sealed class NewSystemsTests
         Assert.True(game.Handle(second.PlayerIndex, new L12Command("resolvePrompt", PromptId: second.PromptId,
             Choice: second.ValidChoices[0])).Accepted);
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Data.GetValueOrDefault("action") == "disaster-discard");
+    }
+
+    [Fact]
+    public void FogDeadEndUsesTheSharedPrivateSimultaneousTransactionAcrossRestore()
+    {
+        var game = Create(seed: 55281);
+        for (var owner = 0; owner < 2; owner++)
+        {
+            game.State.Players[owner].Hand.Clear();
+            game.State.Players[owner].Hand.AddRange(Enumerable.Range(0, 7)
+                .Select(index => CreateInstance("S01-0002", $"fog-{owner}-{index}")));
+        }
+        var fog = CreateInstance("S02-DS02", "fog-simultaneous");
+        game.State.ActiveDisaster = fog;
+        var item = new L12StackItem
+        {
+            StackItemId = "fog-simultaneous-stack", Controller = 0,
+            SourceInstanceId = fog.InstanceId, SourceCardId = fog.CardId,
+            SourceName = fog.Name, Trigger = "disaster", Text = fog.EffectText ?? string.Empty,
+        };
+        game.State.EffectStack.Add(item);
+        Invoke(game, "ResolveDisasterEffect", item);
+
+        var prompts = game.State.PendingPrompts
+            .Where(prompt => prompt.Data.GetValueOrDefault("action") == "disaster-s2-fog-discard")
+            .OrderBy(prompt => prompt.PlayerIndex).ToArray();
+        Assert.Equal(2, prompts.Length);
+        Assert.All(prompts, prompt =>
+        {
+            Assert.True(prompt.IsPrivate);
+            Assert.Equal("true", prompt.Data["simultaneous"]);
+            Assert.Equal(2, prompt.MinChoose);
+            Assert.Equal(2, prompt.MaxChoose);
+        });
+        var firstCommand = new L12Command("resolvePrompt", PromptId: prompts[0].PromptId,
+            CardInstanceIds: prompts[0].ValidChoices.Take(2).ToList());
+        Assert.True(game.Handle(0, firstCommand).Accepted);
+        Assert.Equal(7, game.State.Players[0].Hand.Count);
+
+        var random = game.RandomState ?? new L12RandomState(1, 2, 3, 4, 5, 0);
+        game = L12GameEngine.RestoreCheckpoint(Catalog,
+            game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,"), random,
+            game.CardFactSignalSequence, autoPassEmptyResponses: false,
+            concealHiddenResponseAvailability: false);
+        Assert.False(game.Handle(0, firstCommand).Accepted);
+        var secondPrompt = Assert.Single(game.State.PendingPrompts);
+        var secondCommand = new L12Command("resolvePrompt", PromptId: secondPrompt.PromptId,
+            CardInstanceIds: secondPrompt.ValidChoices.Take(2).ToList());
+        Assert.True(game.Handle(1, secondCommand).Accepted);
+        Assert.False(game.Handle(1, secondCommand).Accepted);
+
+        Assert.All(game.State.Players, player =>
+        {
+            Assert.Equal(5, player.Hand.Count);
+            Assert.Equal(2, player.Graveyard.Count);
+        });
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.DoesNotContain(game.State.EffectStack, stack => stack.StackItemId == item.StackItemId);
     }
 
     [Theory]

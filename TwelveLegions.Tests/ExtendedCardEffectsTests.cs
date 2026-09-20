@@ -618,7 +618,11 @@ public sealed class ExtendedCardEffectsTests
         PassResponses(game);
         var prompts = game.State.PendingPrompts.Where(prompt => prompt.Data.GetValueOrDefault("action") == "teach-discard").ToArray();
         Assert.Equal(2, prompts.Length);
-        Assert.All(prompts, prompt => Assert.Equal("true", prompt.Data["simultaneous"]));
+        Assert.All(prompts, prompt =>
+        {
+            Assert.True(prompt.IsPrivate);
+            Assert.Equal("true", prompt.Data["simultaneous"]);
+        });
 
         var first = prompts[0];
         var firstCards = first.ValidChoices.Take(2).ToList();

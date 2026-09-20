@@ -491,9 +491,8 @@ public sealed partial class L12GameEngine
         {
             case "teach-discard":
             {
-                item.Data[$"teach-discard:{prompt.PlayerIndex}"] = string.Join(',', chosen);
-                if (State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
-                    && candidate.Data.GetValueOrDefault("action") == "teach-discard")) return true;
+                if (!CommitSimultaneousPrivateSelection(item, prompt, "teach-discard",
+                        "teach-discard", chosen)) return true;
                 for (var chooserIndex = 0; chooserIndex < 2; chooserIndex++)
                 {
                     var chooser = State.Players[chooserIndex];

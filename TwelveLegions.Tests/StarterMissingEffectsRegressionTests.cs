@@ -621,14 +621,113 @@ public sealed class StarterMissingEffectsRegressionTests
             Assert.Equal("post-hidden-reveal", prompt.Data["declarationTiming"]);
         });
         var firstPrompt = eyeGame.State.PendingPrompts.Single(prompt => prompt.PlayerIndex == 0);
-        Assert.True(eyeGame.Handle(0, new L12Command("resolvePrompt", PromptId: firstPrompt.PromptId,
-            Choice: first.InstanceId)).Accepted);
-        Assert.Same(first, eyeGame.State.Players[0].Field[0][0]);
         var secondPrompt = eyeGame.State.PendingPrompts.Single(prompt => prompt.PlayerIndex == 1);
-        Assert.True(eyeGame.Handle(1, new L12Command("resolvePrompt", PromptId: secondPrompt.PromptId,
+        var firstView = JsonSerializer.SerializeToElement(eyeGame.SnapshotFor(0),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var secondView = JsonSerializer.SerializeToElement(eyeGame.SnapshotFor(1),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var firstVisiblePrompt = Assert.Single(firstView.GetProperty("prompts").EnumerateArray());
+        var secondVisiblePrompt = Assert.Single(secondView.GetProperty("prompts").EnumerateArray());
+        Assert.Equal(firstPrompt.PromptId, firstVisiblePrompt.GetProperty("promptId").GetString());
+        Assert.Equal(secondPrompt.PromptId, secondVisiblePrompt.GetProperty("promptId").GetString());
+        Assert.Equal([first.InstanceId], firstVisiblePrompt.GetProperty("validChoices").EnumerateArray()
+            .Select(value => value.GetString()!).ToArray());
+        Assert.Equal([second.InstanceId], secondVisiblePrompt.GetProperty("validChoices").EnumerateArray()
+            .Select(value => value.GetString()!).ToArray());
+        Assert.DoesNotContain(secondPrompt.PromptId, firstVisiblePrompt.GetRawText(), StringComparison.Ordinal);
+        Assert.DoesNotContain(firstPrompt.PromptId, secondVisiblePrompt.GetRawText(), StringComparison.Ordinal);
+
+        var firstCommand = new L12Command("resolvePrompt", PromptId: firstPrompt.PromptId,
+            Choice: first.InstanceId);
+        Assert.True(eyeGame.Handle(0, firstCommand).Accepted);
+        Assert.False(eyeGame.Handle(0, firstCommand).Accepted);
+        Assert.Same(first, eyeGame.State.Players[0].Field[0][0]);
+
+        var waitingView = JsonSerializer.SerializeToElement(eyeGame.SnapshotFor(0),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Equal(0, waitingView.GetProperty("prompts").GetArrayLength());
+        Assert.Equal(1, waitingView.GetProperty("waitingPrompt").GetProperty("playerIndex").GetInt32());
+        Assert.DoesNotContain(second.InstanceId, waitingView.GetProperty("waitingPrompt").GetRawText(),
+            StringComparison.Ordinal);
+
+        var random = eyeGame.RandomState ?? new L12RandomState(1, 2, 3, 4, 5, 0);
+        eyeGame = L12GameEngine.RestoreCheckpoint(Catalog,
+            eyeGame.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,"), random,
+            eyeGame.CardFactSignalSequence, autoPassEmptyResponses: false,
+            concealHiddenResponseAvailability: false);
+        var restoredSecondPrompt = Assert.Single(eyeGame.State.PendingPrompts);
+        Assert.Equal(secondPrompt.PromptId, restoredSecondPrompt.PromptId);
+        Assert.True(eyeGame.Handle(1, new L12Command("resolvePrompt", PromptId: restoredSecondPrompt.PromptId,
             Choice: second.InstanceId)).Accepted);
-        Assert.Contains(first, eyeGame.State.Players[0].Graveyard);
-        Assert.Contains(second, eyeGame.State.Players[1].Graveyard);
+        Assert.False(eyeGame.Handle(1, new L12Command("resolvePrompt", PromptId: restoredSecondPrompt.PromptId,
+            Choice: second.InstanceId)).Accepted);
+        Assert.Contains(eyeGame.State.Players[0].Graveyard, card => card.InstanceId == first.InstanceId);
+        Assert.Contains(eyeGame.State.Players[1].Graveyard, card => card.InstanceId == second.InstanceId);
         Assert.Empty(eyeGame.State.PendingTriggerBatches);
+    }
+
+    [Fact]
+    public void StarterEvilEyeRevalidatesBothDeclaredInstancesAndDoesNotDeadlockWhenOneVanished()
+    {
+        var game = Create(20714);
+        var first = Card("ST01-05", "eye-stale-first");
+        var second = Card("ST02-09", "eye-stale-second");
+        second.OwnerIndex = 1;
+        game.State.Players[0].Field[0][0] = first;
+        game.State.Players[1].Field[0][0] = second;
+        var eye = Card("ST-DS03", "eye-stale-disaster");
+        game.State.ActiveDisaster = eye;
+        var item = new L12StackItem
+        {
+            StackItemId = "eye-stale-stack", Controller = 0, SourceInstanceId = eye.InstanceId,
+            SourceCardId = eye.CardId, SourceName = eye.Name, Trigger = "disaster", Text = eye.EffectText ?? string.Empty,
+        };
+        game.State.EffectStack.Add(item);
+        typeof(L12GameEngine).GetMethod("ResolveDisasterEffect", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(game, [item]);
+
+        var firstPrompt = game.State.PendingPrompts.Single(prompt => prompt.PlayerIndex == 0);
+        var secondPrompt = game.State.PendingPrompts.Single(prompt => prompt.PlayerIndex == 1);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: firstPrompt.PromptId,
+            Choice: first.InstanceId)).Accepted);
+        game.State.Players[1].Field[0][0] = null;
+        game.State.Players[1].Graveyard.Add(second);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: secondPrompt.PromptId,
+            Choice: second.InstanceId)).Accepted);
+
+        Assert.Contains(first, game.State.Players[0].Graveyard);
+        Assert.Single(game.State.Players[1].Graveyard, card => card.InstanceId == second.InstanceId);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.DoesNotContain(game.State.EffectStack, stack => stack.StackItemId == item.StackItemId);
+    }
+
+    [Fact]
+    public void StarterEvilEyeSkipsTheEmptyBoardAndStillResolvesTheOtherPlayersChoice()
+    {
+        var game = Create(20715);
+        var onlyLegion = Card("ST01-05", "eye-only-legion");
+        onlyLegion.OwnerIndex = 1;
+        game.State.Players[1].Field[0][0] = onlyLegion;
+        var eye = Card("ST-DS03", "eye-empty-board-disaster");
+        game.State.ActiveDisaster = eye;
+        var item = new L12StackItem
+        {
+            StackItemId = "eye-empty-board-stack", Controller = 0,
+            SourceInstanceId = eye.InstanceId, SourceCardId = eye.CardId,
+            SourceName = eye.Name, Trigger = "disaster", Text = eye.EffectText ?? string.Empty,
+        };
+        game.State.EffectStack.Add(item);
+        typeof(L12GameEngine).GetMethod("ResolveDisasterEffect", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(game, [item]);
+
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(1, prompt.PlayerIndex);
+        Assert.Equal([onlyLegion.InstanceId], prompt.ValidChoices);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: onlyLegion.InstanceId)).Accepted);
+
+        Assert.Contains(onlyLegion, game.State.Players[1].Graveyard);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.DoesNotContain(game.State.EffectStack, stack => stack.StackItemId == item.StackItemId);
     }
 }
