@@ -5,14 +5,14 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`96d20adc17182ff4ff787ec6b9eaf5a79602da390cd5efd2cd8f53b690c8e580`。
+内容指纹：`4a1dde21b30272a38b0d672707e54b3d8f3273db67ee96dc6d7f2511a01d73ee`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
 | composite-definition | 204 |
 | fine-definition | 87 |
-| owner-unreviewed | 265 |
-| shared-rule-owner | 130 |
+| owner-unreviewed | 263 |
+| shared-rule-owner | 132 |
 
 fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；shared-rule-owner = 精确能力已绑定共用规则入口及适用性档案；owner-unreviewed = 还需定位实际入口。任何一种归属证据均不等于生命周期验收通过。
 同卡同触发只算候选，不能把另一能力的程序继承为本能力已覆盖。无能力卡单列，不能从分母中静默消失。
@@ -52,7 +52,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 ### hand-play:printed-entry-cost-condition
 
-精确绑定能力数：6。运行入口：button-and-snapshot = L12GameEngine.SnapshotHand；combined-play-cost = L12GameEngine.GetPlayCostWithSigurdDiscount；condition-and-calculation = L12GameEngine.PrintedEntryCostModifier；definition = L12StructuredCardSemantics.PrintedEntryCostRule；resource-payment = L12GameEngine.EnsurePlayResourcePaymentChoice。
+精确绑定能力数：8。运行入口：button-and-snapshot = L12GameEngine.SnapshotHand；combined-play-cost = L12GameEngine.GetPlayCostWithSigurdDiscount；condition-and-calculation = L12GameEngine.PrintedEntryCostModifier；definition = L12StructuredCardSemantics.PrintedEntryCostRule；resource-payment = L12GameEngine.EnsurePlayResourcePaymentChoice。
 
 - multi-target-applicability：一次只计算当前待打出手牌实例的费用。
 - negated：印刷持续减费在支付前参与实际费用计算，不独立入栈，不能作为一次效果被无效。
@@ -260,6 +260,8 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0101:ability:continuous:4cd3104ae17d316d | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0101 | authoritative-consumer, row-and-ready-condition |
 | S02-0104:ability:active:1687d445c6acc308 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0104 | active-rest-cost, runtime-branch-mapping |
 | S02-0201:ability:continuous:39b0b1524eaed536 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0201 | authoritative-consumer, candidate-and-submit-parity |
+| S02-0202:ability:continuous:94759febdd62fd32 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.PrintedEntryCostDefinitionsMatchTheReviewedCardFamily / S02-0202 | condition-false, display-and-payment-parity |
+| S02-0203:ability:continuous:418e71545576e12d | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.PrintedEntryCostDefinitionsMatchTheReviewedCardFamily / S02-0203 | condition-false, display-and-payment-parity |
 | S02-0204:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0204 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0204:ability:active:4257a82eec559a94 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0204 | active-rest-cost, runtime-branch-mapping |
 | S02-0205:ability:active:8023ed21f8771697 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0205 | active-rest-cost, runtime-branch-mapping |
@@ -669,9 +671,9 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-01S1 哮天犬·稚 #2 | S02-01S1:ability:death:544dd81cfc7627f4 | death/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.add-morale | 1 | 阵亡时 可从士气牌库追加1张休整的士气。 |
 | S02-0201 增殖的甲虫 #1 | S02-0201:ability:continuous:16b90b36ef8afe2c | continuous/rule | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.move-zone → resolution:legacy.resolve | 0 | 规则上，此军团构筑时不计入卡组数量，不能进入手牌和牌库，游戏开始时置入墓地，此军团以任何形式离场均视为置入所有者墓地。 |
 | S02-0201 增殖的甲虫 #2 | S02-0201:ability:continuous:39b0b1524eaed536 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 无法进攻，无法支援。 |
-| S02-0202 陵墓圣武士 #1 | S02-0202:ability:continuous:94759febdd62fd32 | continuous/continuous | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → duration:duration.apply → condition:visibility.policy → resolution:legacy.resolve | 0 | 我方回合 本回合我方每有1张卡名包含&lt;陵墓&gt;的军团离场时，此军团登场费用-1。 |
+| S02-0202 陵墓圣武士 #1 | S02-0202:ability:continuous:94759febdd62fd32 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → duration:duration.apply → condition:visibility.policy → resolution:legacy.resolve | 0 | 我方回合 本回合我方每有1张卡名包含&lt;陵墓&gt;的军团离场时，此军团登场费用-1。 |
 | S02-0202 陵墓圣武士 #2 | S02-0202:ability:death:79d8237fa4fa11c6 | death/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 阵亡时 将墓地1张&lt;陵墓守卫&gt;活跃登场。 |
-| S02-0203 哈特谢普苏特 #1 | S02-0203:ability:continuous:418e71545576e12d | continuous/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.set-state → resolution:legacy.resolve | 0 | 若我方战场不存在&lt;陵墓守卫&gt;，此军团登场费用-1。 |
+| S02-0203 哈特谢普苏特 #1 | S02-0203:ability:continuous:418e71545576e12d | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.set-state → resolution:legacy.resolve | 0 | 若我方战场不存在&lt;陵墓守卫&gt;，此军团登场费用-1。 |
 | S02-0203 哈特谢普苏特 #2 | S02-0203:ability:enter:d02761e5760092ed | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 可将墓地1张&lt;增殖的甲虫&gt;活跃登场。 |
 | S02-0203 哈特谢普苏特 #3 | S02-0203:ability:death:4f44435f01c08067 | death/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw | 1 | 阵亡时 可抽取1张牌。 |
 | S02-0204 伊姆何泰普 #1 | S02-0204:ability:continuous:e9823ffd970d6ce6 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |

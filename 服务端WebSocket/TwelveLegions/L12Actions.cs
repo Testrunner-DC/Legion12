@@ -619,9 +619,6 @@ public sealed partial class L12GameEngine
         var modifier = card.CostModifier;
         if (card.CardType == "tactic" && !IsCounterTactic(card.CardId)) modifier += player.NextActiveTacticSurcharge;
         modifier += PrintedEntryCostModifier(playerIndex, card);
-        if (card.CardId == "S01-0202" && !PublicLegions(player).Any(target => target.CardId == "S01-0212")) modifier -= 2;
-        if (card.CardId == "S02-0202") modifier -= player.TombNamedLegionsLeftThisTurn;
-        if (card.CardId == "S02-0203" && !PublicLegions(player).Any(target => target.CardId == "S01-0212")) modifier--;
         modifier += L12StructuredCardRules.HandPlayCostModifier(player, card);
         if (card.CardId == "S02-0601" && player.S2ArthurDiscountUntilTurn >= State.TurnSerial) modifier -= 3;
         if (card.CardId == "S01-0403" && player.UsedAbilities.Contains("s2-fortune-next-uesugi")) modifier -= 2;
@@ -658,6 +655,9 @@ public sealed partial class L12GameEngine
                 => CountGraveFactionLegions(player, rule.Faction) / rule.Threshold * rule.Adjustment,
             "friendly-field-legion-count" => PublicLegions(player).Count() * rule.Adjustment,
             "controller-hp-at-most" => player.Hp <= rule.Threshold ? rule.Adjustment : 0,
+            "controller-field-card-absent" when rule.ReferenceCardId is not null
+                => PublicLegions(player).Any(target => target.CardId == rule.ReferenceCardId) ? 0 : rule.Adjustment,
+            "named-legions-left-this-turn" => player.TombNamedLegionsLeftThisTurn * rule.Adjustment,
             _ => 0,
         };
     }

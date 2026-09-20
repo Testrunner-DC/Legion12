@@ -14,11 +14,13 @@ public sealed class PrintedEntryCostLifecycleProfileTests
     [L12AbilityEvidence("S01-0302:ability:static:acc29b0ca499d087", "condition-false", "display-and-payment-parity")]
     [L12AbilityEvidence("S01-0305:ability:static:9ed1ca8df2e5f029", "condition-false", "display-and-payment-parity")]
     [L12AbilityEvidence("S01-0306:ability:static:9ed1ca8df2e5f029", "condition-false", "display-and-payment-parity")]
+    [L12AbilityEvidence("S02-0202:ability:continuous:94759febdd62fd32", "condition-false", "display-and-payment-parity")]
+    [L12AbilityEvidence("S02-0203:ability:continuous:418e71545576e12d", "condition-false", "display-and-payment-parity")]
     public void PrintedEntryCostDefinitionsMatchTheReviewedCardFamily()
     {
         var expected = EffectLifecycleProfiles.PrintedEntryCostAbilityIds
             .Select(id => id[..id.IndexOf(":ability:", StringComparison.Ordinal)])
-            .Append("S01-0107")
+            .Concat(["S01-0107", "S01-0202"])
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
         var actual = Catalog.Cards.Keys
@@ -75,6 +77,32 @@ public sealed class PrintedEntryCostLifecycleProfileTests
         Assert.Equal(card.Cost, HandCost(game, card));
         game.State.Players[0].Hp = 6;
         Assert.Equal(Math.Max(0, card.Cost - 1), HandCost(game, card));
+    }
+
+    [Theory]
+    [InlineData("S01-0202", 2)]
+    [InlineData("S02-0203", 1)]
+    public void MissingTombGuardDiscountUsesTheCurrentField(string cardId, int discount)
+    {
+        var game = Create(70140 + cardId[^1]);
+        var card = PutOnlyCardInHand(game, cardId);
+        Assert.Equal(Math.Max(0, card.Cost - discount), HandCost(game, card));
+
+        game.State.Players[0].Field[0][0] = Card("S01-0212", "field-tomb-guard");
+        Assert.Equal(card.Cost, HandCost(game, card));
+
+        game.State.Players[0].Field[0][0] = null;
+        Assert.Equal(Math.Max(0, card.Cost - discount), HandCost(game, card));
+    }
+
+    [Fact]
+    public void TombNamedLegionLeaveCountScalesTheCurrentPlayCost()
+    {
+        var game = Create(70150);
+        var card = PutOnlyCardInHand(game, "S02-0202");
+        Assert.Equal(card.Cost, HandCost(game, card));
+        game.State.Players[0].TombNamedLegionsLeftThisTurn = 2;
+        Assert.Equal(Math.Max(0, card.Cost - 2), HandCost(game, card));
     }
 
     private static L12GameEngine Create(int seed)

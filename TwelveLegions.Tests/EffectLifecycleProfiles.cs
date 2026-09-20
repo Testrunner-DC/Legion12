@@ -427,6 +427,8 @@ internal static class EffectLifecycleProfiles
         "S01-0302:ability:static:acc29b0ca499d087",
         "S01-0305:ability:static:9ed1ca8df2e5f029",
         "S01-0306:ability:static:9ed1ca8df2e5f029",
+        "S02-0202:ability:continuous:94759febdd62fd32",
+        "S02-0203:ability:continuous:418e71545576e12d",
     ];
 
     private static readonly L12LifecycleProfile PrintedEntryCost =
@@ -604,7 +606,7 @@ internal static class EffectLifecycleProfiles
         }
         var reviewedPrintedEntryCostCards = PrintedEntryCostAbilityIds
             .Select(id => id[..id.IndexOf(":ability:", StringComparison.Ordinal)])
-            .Append("S01-0107").ToHashSet(StringComparer.Ordinal);
+            .Concat(["S01-0107", "S01-0202"]).ToHashSet(StringComparer.Ordinal);
         var actualPrintedEntryCostCards = abilities.Values.Select(ability => ability.CardId)
             .Distinct(StringComparer.Ordinal)
             .Where(cardId => L12StructuredCardSemantics.PrintedEntryCostRule(cardId) is not null)

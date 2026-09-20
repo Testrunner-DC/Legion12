@@ -2,7 +2,7 @@ namespace TwelveLegions.Server;
 
 public sealed record L12ExtendedRangeRule(string Text, string CostText, int ConsumeMorale, int ReturnMorale, bool AllowsMaster);
 public sealed record L12PrintedEntryCostRule(string Condition, int Adjustment, int Threshold = 0,
-    string? Faction = null);
+    string? Faction = null, string? ReferenceCardId = null);
 
 /// <summary>
 /// Runtime identity predicates backed by the structured card rule layer.
@@ -32,10 +32,13 @@ public static class L12StructuredCardSemantics
             ["S01-0104"] = new("controller-morale-less-than-opponent", -1),
             ["S01-0107"] = new("controller-morale-less-than-opponent", -1),
             ["S01-0114"] = new("controller-morale-less-than-opponent", -1),
+            ["S01-0202"] = new("controller-field-card-absent", -2, ReferenceCardId: "S01-0212"),
             ["S01-0301"] = new("grave-faction-legions-per-threshold", -1, 4, "asgard"),
             ["S01-0302"] = new("friendly-field-legion-count", -1),
             ["S01-0305"] = new("controller-hp-at-most", -1, 6),
             ["S01-0306"] = new("controller-hp-at-most", -1, 6),
+            ["S02-0202"] = new("named-legions-left-this-turn", -1),
+            ["S02-0203"] = new("controller-field-card-absent", -1, ReferenceCardId: "S01-0212"),
         };
     private static readonly HashSet<string> AttachedStrongAttackCards = new(StringComparer.OrdinalIgnoreCase)
     {
