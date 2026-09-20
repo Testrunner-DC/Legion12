@@ -217,7 +217,9 @@ public sealed class AllCardInteractionTraversalTests
         for (var moraleIndex = 0; moraleIndex < 16; moraleIndex++)
             player.Morale.Add(new L12MoraleCard
             {
-                CardId = "S01-00C1",
+                // 全卡交互遍历需要同时覆盖普通士气与神力面。使用实际拥有神力面的
+                // 奥林匹斯士气，避免构造“通用士气被强行标成神力”的非法状态。
+                CardId = "S02-05C1A",
                 InstanceId = $"resource-{index}-{moraleIndex}",
                 IsGodPower = moraleIndex >= 8,
                 Tapped = false,

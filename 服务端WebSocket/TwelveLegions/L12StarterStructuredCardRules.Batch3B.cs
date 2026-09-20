@@ -40,9 +40,6 @@ public static partial class L12StructuredCardRules
     internal static bool HasDedicatedEndTurnDiscardRoute(string cardId)
         => cardId == "S02-0523";
 
-    internal static bool IsReversibleOlympusMorale(string cardId)
-        => cardId is "S02-05C1" or "S02-05C1A" or "ST05-C1";
-
     internal static string? StarterRemainingPlan(string cardId, string trigger)
         => (cardId, trigger) switch
         {

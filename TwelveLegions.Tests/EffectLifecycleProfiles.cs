@@ -659,6 +659,42 @@ internal static class EffectLifecycleProfiles
                 "v2-snapshot", "replay-projection", "frontend-structured-identity"],
         };
 
+    internal static readonly string[] MoraleFaceFlipAbilityIds =
+    [
+        "S02-0508:ability:death:9aea23b4138e399e",
+        "S02-0513:ability:enter:eef83ec51f2ef093",
+        "S02-0518:ability:enter:6e9ddf89fefa712f",
+        "S02-0520:ability:enter:361ec387b847ecee",
+        "S02-0521:ability:play:4ae24413479102d1",
+        "S02-05C1:ability:active:1ae9b19504eac93a",
+        "S02-05C1A:ability:active:1ae9b19504eac93a",
+        "S02-05D1:ability:active:519ab3c1379a9256",
+        "S02-05M1:ability:friendly-ranged-death:ba2dac5cf1c08527",
+        "ST05-C1:ability:static:6fe475d8923feb65",
+        "ST05-M1:ability:active:b1f11ab05f68dda0",
+    ];
+
+    private static readonly L12LifecycleProfile MoraleFaceFlip =
+        new("resource:morale-face-flip",
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["identity-definition"] = "L12MoraleIdentityCatalog.CanUseGodPowerFace",
+                ["candidate-generation"] = "CanFlipMoraleToGodPower",
+                ["toggle-candidate-generation"] = "CanToggleMoraleFace",
+                ["resolution-prompt"] = "PromptS2FlipMorale",
+                ["settlement-mutation"] = "L12S2ZoneOps.FlipMoraleFace",
+            },
+            new SortedDictionary<string, string>(StringComparer.Ordinal))
+        {
+            AdditionalChecks = ["exact-printed-family", "version-alias", "black-lotus-excluded",
+                "candidate-settlement-parity", "rested-only-filter", "single-candidate-choice",
+                "multi-target-independent-revalidation", "v2-prompt-reconnect"],
+        };
+
+    private static bool IsMoraleFaceFlipAbility(L12AtomicAbility ability)
+        => ability.Text.Contains("翻转", StringComparison.Ordinal)
+            && ability.Text.Contains("士气", StringComparison.Ordinal);
+
     internal const string OpponentTurnFieldRuleAbilityId =
         "S01-0212:ability:static:2f33fb3652e7bd28";
 
@@ -754,6 +790,8 @@ internal static class EffectLifecycleProfiles
                 : parts[0] == nameof(L12StructuredCardRules) ? typeof(L12StructuredCardRules)
                 : parts[0] == nameof(L12StructuredCardSemantics) ? typeof(L12StructuredCardSemantics)
                 : parts[0] == nameof(L12SpecialDeckRules) ? typeof(L12SpecialDeckRules)
+                : parts[0] == nameof(L12MoraleIdentityCatalog) ? typeof(L12MoraleIdentityCatalog)
+                : parts[0] == nameof(L12S2ZoneOps) ? typeof(L12S2ZoneOps)
                 : throw new InvalidOperationException($"Unknown lifecycle owner type: {owner}");
             if (!type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)
                     .Any(method => method.Name == parts[^1]))
@@ -781,6 +819,7 @@ internal static class EffectLifecycleProfiles
         ValidateOwners(RelicZoneLimitExempt);
         ValidateOwners(OutOfDeckGraveyardLifecycle);
         ValidateOwners(MoraleZoneResource);
+        ValidateOwners(MoraleFaceFlip);
         ValidateOwners(OpponentTurnFieldRule);
         ValidateOwners(SummonTurnCounterProtection);
         ValidateOwners(RamsesProtectionAndEntryCost);
@@ -987,6 +1026,17 @@ internal static class EffectLifecycleProfiles
         if (!moraleZoneResourceCards.SetEquals([BlackLotusMoraleReturnAbilityId]))
             throw new InvalidOperationException(
                 "Morale-zone resource replacement family changed; review its per-ability bindings.");
+        foreach (var id in MoraleFaceFlipAbilityIds)
+        {
+            if (!abilities.TryGetValue(id, out var ability) || !IsMoraleFaceFlipAbility(ability))
+                throw new InvalidOperationException($"Stale reviewed morale-face flip ability: {id}");
+            bindings.Add(id, MoraleFaceFlip);
+        }
+        var moraleFaceFlipAbilities = abilities.Values.Where(IsMoraleFaceFlipAbility)
+            .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);
+        if (!moraleFaceFlipAbilities.SetEquals(MoraleFaceFlipAbilityIds))
+            throw new InvalidOperationException(
+                "Printed morale-face flip family changed; review its per-ability bindings.");
         if (!abilities.TryGetValue(OpponentTurnFieldRuleAbilityId, out var opponentTurnFieldRule)
             || opponentTurnFieldRule.ExecutionModel != "continuous"
             || L12StructuredCardSemantics.OpponentTurnFieldRule(opponentTurnFieldRule.CardId) is null)

@@ -145,12 +145,12 @@ public sealed partial class L12GameEngine
                 ]);
             }
             case "athenaFrontBuff":
-                if (player.Hand.Count == 0 || player.Morale.Count == 0)
+                if (player.Hand.Count == 0 || !player.Morale.Any(CanToggleMoraleFace))
                     return CommandResult.Reject("需要1张手牌和1张士气");
                 return BeginPendingActivationSequence(controller, source, ability,
                 [
                     new L12ActivationSelectionStep { Kind = "hand-card", DeclarationKey = "discardCost", Text = "雅典娜：选择弃置的1张手牌", ValidChoices = player.Hand.Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 1 },
-                    new L12ActivationSelectionStep { Kind = "target-morale", DeclarationKey = "flipTarget", Text = "雅典娜：选择翻转的1张士气", ValidChoices = player.Morale.Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 1 },
+                    new L12ActivationSelectionStep { Kind = "target-morale", DeclarationKey = "flipTarget", Text = "雅典娜：选择翻转的1张士气", ValidChoices = player.Morale.Where(CanToggleMoraleFace).Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 1 },
                     new L12ActivationSelectionStep { Kind = "field-legion", DeclarationKey = "buffTargets", Text = "雅典娜：选择我方前排最多2张奥林匹斯军团", ValidChoices = player.Field[0].Where(card => card is not null && IsFieldLegion(card) && L12StructuredCardRules.HasFaction(player, card, "olympus")).Select(card => card!.InstanceId).ToList(), MinChoose = 0, MaxChoose = 2 },
                 ]);
             case "telemachusTopThree":
@@ -261,7 +261,8 @@ public sealed partial class L12GameEngine
             }
             case "athenaFrontBuff":
                 if (values.Length is < 2 or > 4 || !player.Hand.Any(card => card.InstanceId == values[0])
-                    || !player.Morale.Any(card => card.InstanceId == values[1])) return "雅典娜选择的弃牌费用或士气已失效";
+                    || !player.Morale.Any(card => card.InstanceId == values[1] && CanToggleMoraleFace(card)))
+                    return "雅典娜选择的弃牌费用或士气已失效";
                 if (values.Skip(2).Distinct(StringComparer.OrdinalIgnoreCase).Count() != values.Length - 2
                     || values.Skip(2).Any(id => player.Field[0].All(card => card?.InstanceId != id
                         || !IsFieldLegion(card) || !L12StructuredCardRules.HasFaction(player, card, "olympus"))))
@@ -1568,12 +1569,14 @@ public sealed partial class L12GameEngine
         string? moraleId)
     {
         var player = State.Players[item.Controller];
-        if (player.Morale.FirstOrDefault(card => card.InstanceId == moraleId) is not { } morale)
+        if (player.Morale.FirstOrDefault(card => card.InstanceId == moraleId
+                && CanToggleMoraleFace(card)) is not { } morale)
         {
             RecordTargetSettlementFailure(item, moraleId, "所选士气已离开士气区");
             return;
         }
-        L12S2ZoneOps.FlipMoraleFace(player, morale.InstanceId, toGodPower: !morale.IsGodPower);
+        L12S2ZoneOps.FlipMoraleFace(player, _catalog.MoraleIdentities,
+            morale.InstanceId, toGodPower: !morale.IsGodPower);
         AddEvent("morale", item.Controller, "雅典娜翻转1张士气", source is null ? [] : [source]);
     }
 

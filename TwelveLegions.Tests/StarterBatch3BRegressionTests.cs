@@ -1101,6 +1101,53 @@ public sealed class StarterBatch3BRegressionTests
     }
 
     [Fact]
+    [L12AbilityEvidence("ST05-M1:ability:active:b1f11ab05f68dda0",
+        "candidate-generation", "black-lotus-excluded", "single-candidate-choice")]
+    public void AthenaFlipTargetUsesTheGodPowerIdentityInsteadOfEveryMoraleZoneResource()
+    {
+        var game = Create(204174);
+        var player = game.State.Players[0];
+        SetMaster(player, "ST05-M1");
+        var discard = Card("ST01-01", "athena-identity-cost");
+        var target = new L12MoraleCard { CardId = "ST05-C1", InstanceId = "athena-identity-target" };
+        var lotus = new L12MoraleCard { CardId = "S02-0010", InstanceId = "athena-identity-black-lotus" };
+        player.Hand.Add(discard);
+        player.Morale.AddRange([lotus, target]);
+
+        Assert.True(game.Handle(0,
+            new L12Command("activateAbility", "master-0", Ability: "athenaFrontBuff")).Accepted);
+        Choose(game, discard.InstanceId);
+        var prompt = Prompt(game);
+
+        Assert.Equal([target.InstanceId], prompt.ValidChoices.Where(id => id != "skip"));
+        Assert.DoesNotContain(lotus.InstanceId, prompt.ValidChoices);
+    }
+
+    [Fact]
+    [L12AbilityEvidence("ST05-M1:ability:active:b1f11ab05f68dda0",
+        "no-target", "no-payment-before-choice", "black-lotus-excluded")]
+    public void AthenaCannotStartWithOnlyBlackLotusAndDoesNotPayTheDiscardCost()
+    {
+        var game = Create(204175);
+        var player = game.State.Players[0];
+        SetMaster(player, "ST05-M1");
+        var discard = Card("ST01-01", "athena-no-target-cost");
+        var lotus = new L12MoraleCard { CardId = "S02-0010", InstanceId = "athena-only-black-lotus" };
+        player.Hand.Add(discard);
+        player.Morale.Add(lotus);
+
+        var result = game.Handle(0,
+            new L12Command("activateAbility", "master-0", Ability: "athenaFrontBuff"));
+
+        Assert.False(result.Accepted);
+        Assert.Contains(discard, player.Hand);
+        Assert.DoesNotContain(discard, player.Graveyard);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.DoesNotContain(player.UsedAbilities,
+            key => key.Contains("athenaFrontBuff", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void AthenaWithoutDeclaredTargetsSkipsInsteadOfFailing()
     {
         var game = Create(204173);

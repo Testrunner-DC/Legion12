@@ -884,7 +884,7 @@ public sealed partial class L12GameEngine
 
             case "S02-0521":
                 steps.Add(CompositeStep("target-morale", "flipTargets", "荣耀之路：预先选择最多3张要翻转的士气",
-                    player.Morale.Where(card => !card.IsGodPower).Select(card => card.InstanceId), 0, 3));
+                    player.Morale.Where(card => CanFlipMoraleToGodPower(card)).Select(card => card.InstanceId), 0, 3));
                 break;
 
             case "S02-0621":
@@ -1228,7 +1228,8 @@ public sealed partial class L12GameEngine
             "S02-0521" => declared.GetValueOrDefault("flipTargets", []).Count <= 3
                 && declared.GetValueOrDefault("flipTargets", []).Distinct(StringComparer.OrdinalIgnoreCase).Count()
                     == declared.GetValueOrDefault("flipTargets", []).Count
-                && declared.GetValueOrDefault("flipTargets", []).All(id => player.Morale.Any(resource => resource.InstanceId == id && !resource.IsGodPower)),
+                && declared.GetValueOrDefault("flipTargets", []).All(id => player.Morale.Any(resource =>
+                    resource.InstanceId == id && CanFlipMoraleToGodPower(resource))),
             "S02-0620" => declared.Count == 0,
             "S02-0621" => declared.Count == 0,
             "S02-0207" => ValidateDesertDeclaration(player, card, declared, effectOnlyRepeat),

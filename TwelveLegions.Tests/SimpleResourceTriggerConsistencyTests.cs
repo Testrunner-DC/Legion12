@@ -89,8 +89,9 @@ public sealed class SimpleResourceTriggerConsistencyTests
         }
     }
 
-    private static L12MoraleCard Morale(string id, bool tapped = true, bool godPower = false)
-        => new() { CardId = "S01-01C1", InstanceId = id, Tapped = tapped, IsGodPower = godPower };
+    private static L12MoraleCard Morale(string id, bool tapped = true, bool godPower = false,
+        string cardId = "S02-05C1")
+        => new() { CardId = cardId, InstanceId = id, Tapped = tapped, IsGodPower = godPower };
 
     [Fact]
     [Trait("L12Evidence", "entry:simple-resource-trigger-spec")]
@@ -308,6 +309,69 @@ public sealed class SimpleResourceTriggerConsistencyTests
             && entry.Cards.Any(card => card.CardId == "S02-01S1"));
         Assert.False(game.Handle(oldResponse.PlayerIndex,
             new L12Command("resolvePrompt", PromptId: oldResponse.PromptId, Choice: "pass")).Accepted);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:simple-resource-trigger-god-power-identity")]
+    [L12AbilityEvidence("S02-0508:ability:death:9aea23b4138e399e",
+        "candidate-generation", "black-lotus-excluded", "single-candidate-choice")]
+    public void MoraleFlipTargetListUsesGodPowerIdentityAndExcludesBlackLotus()
+    {
+        var game = Create(110021);
+        var target = Morale("atalanta-olympus-morale", tapped: false);
+        var lotus = Morale("atalanta-black-lotus", tapped: false, cardId: "S02-0010");
+        game.State.Players[0].Morale.AddRange([lotus, target]);
+
+        Queue(game, "S02-0508", "death");
+
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal([target.InstanceId], prompt.ValidChoices);
+        Assert.DoesNotContain(lotus.InstanceId, prompt.ValidChoices);
+    }
+
+    [Fact]
+    [L12AbilityEvidence("S02-0508:ability:death:9aea23b4138e399e",
+        "candidate-generation", "candidate-settlement-parity")]
+    [L12AbilityEvidence("S02-05M1:ability:friendly-ranged-death:ba2dac5cf1c08527",
+        "candidate-generation", "black-lotus-excluded", "rested-only-filter")]
+    public void EveryMoraleFlipFilterUsesTheSameGodPowerIdentityBoundary()
+    {
+        var game = Create(110022);
+        var player = game.State.Players[0];
+        var active = Morale("flip-filter-active", tapped: false);
+        var rested = Morale("flip-filter-rested", tapped: true, cardId: "ST05-C1");
+        var activeLotus = Morale("flip-filter-active-lotus", tapped: false, cardId: "S02-0010");
+        var restedLotus = Morale("flip-filter-rested-lotus", tapped: true, cardId: "S02-0010");
+        player.Morale.AddRange([activeLotus, restedLotus, active, rested]);
+        var anySpec = L12SimpleResourceTriggerEffects.Find("S02-0508", "death")!;
+        var restedSpec = L12SimpleResourceTriggerEffects.Find("S02-05M1", "friendly-ranged-death",
+            new Dictionary<string, string> { ["ability"] = "artemisDeathFlip" })!;
+
+        var any = Assert.IsAssignableFrom<IEnumerable<string>>(
+            Invoke(game, "SimpleResourceMoraleTargets", player, anySpec)).ToArray();
+        var onlyRested = Assert.IsAssignableFrom<IEnumerable<string>>(
+            Invoke(game, "SimpleResourceMoraleTargets", player, restedSpec)).ToArray();
+
+        Assert.Equal([active.InstanceId, rested.InstanceId], any);
+        Assert.Equal([rested.InstanceId], onlyRested);
+    }
+
+    [Fact]
+    [L12AbilityEvidence("S02-0508:ability:death:9aea23b4138e399e",
+        "no-target", "black-lotus-excluded")]
+    public void MandatoryMoraleFlipWithOnlyBlackLotusSilentlySkipsBeforeStacking()
+    {
+        var game = Create(110023);
+        var lotus = Morale("atalanta-no-target-lotus", tapped: false, cardId: "S02-0010");
+        game.State.Players[0].Morale.Add(lotus);
+
+        Queue(game, "S02-0508", "death");
+
+        Assert.Empty(game.State.PendingTriggerStackCandidates);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+        Assert.False(lotus.IsGodPower);
     }
 
     [Fact]

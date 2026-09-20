@@ -119,7 +119,7 @@ public sealed partial class L12GameEngine
                 {
                     var targetId = PublicTriggerDeclared(item, "moraleTarget");
                     var target = controller.Morale.FirstOrDefault(card =>
-                        card.InstanceId == targetId && !card.IsGodPower);
+                        card.InstanceId == targetId && CanFlipMoraleToGodPower(card));
                     if (target is null)
                     {
                         RecordTargetSettlementFailure(item, source.InstanceId,
@@ -127,7 +127,8 @@ public sealed partial class L12GameEngine
                         FinishStackItem(item);
                         return true;
                     }
-                    L12S2ZoneOps.FlipMoraleFace(controller, target.InstanceId, toGodPower: true);
+                    L12S2ZoneOps.FlipMoraleFace(controller, _catalog.MoraleIdentities,
+                        target.InstanceId, toGodPower: true);
                     EmitVerifiedAtomicEvent(atom, item.Controller, source, 1);
                     break;
                 }

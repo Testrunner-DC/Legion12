@@ -146,8 +146,8 @@ public sealed partial class L12GameEngine
 
     private IEnumerable<string> SimpleResourceMoraleTargets(L12PlayerState player,
         L12SimpleResourceTriggerSpec spec)
-        => player.Morale.Where(card => !card.IsGodPower
-                && (spec.TargetFilter != L12SimpleResourceTriggerEffects.RestedMorale || card.Tapped))
+        => player.Morale.Where(card => CanFlipMoraleToGodPower(card,
+                onlyTapped: spec.TargetFilter == L12SimpleResourceTriggerEffects.RestedMorale))
             .Select(card => card.InstanceId);
 
     private bool SimpleResourceTriggerConditionMet(L12TriggerCandidate candidate,

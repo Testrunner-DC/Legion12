@@ -599,7 +599,7 @@ public sealed partial class L12GameEngine
                 return view with { Enabled = false, DisabledReason = "我方士气为0张时触发", TriggerOnly = true };
             if (view.Id == "godPowerDraw" && !player.Morale.Any(card => card.IsGodPower && !card.Tapped))
                 return view with { Enabled = false, DisabledReason = "需要1张活跃神力" };
-            if (view.Id == "olympusMoraleFlip" && !player.Morale.Any(card => !card.IsGodPower))
+            if (view.Id == "olympusMoraleFlip" && !player.Morale.Any(card => CanFlipMoraleToGodPower(card)))
                 return view with { Enabled = false, DisabledReason = "没有可翻转为神力的士气" };
             if (view.Id == "isisVictory")
             {
@@ -1388,6 +1388,14 @@ public sealed partial class L12GameEngine
             resourceType = L12StructuredCardSemantics.MoraleZoneResourceRule(card.CardId)?.ResourceType
                 ?? (card.IsGodPower ? "god-power" : "morale"),
         }).ToArray();
+
+    private bool CanFlipMoraleToGodPower(L12MoraleCard card, bool onlyTapped = false)
+        => !card.IsGodPower
+            && (!onlyTapped || card.Tapped)
+            && _catalog.MoraleIdentities.CanUseGodPowerFace(card.CardId);
+
+    private bool CanToggleMoraleFace(L12MoraleCard card)
+        => _catalog.MoraleIdentities.CanUseGodPowerFace(card.CardId);
 
     private void DiscardAttachedCards(L12CardInstance host, string reason)
     {

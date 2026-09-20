@@ -632,9 +632,11 @@ public sealed partial class L12GameEngine
             var flipped = 0;
             foreach (var id in declared)
             {
-                var morale = player.Morale.FirstOrDefault(resource => resource.InstanceId == id && !resource.IsGodPower);
+                var morale = player.Morale.FirstOrDefault(resource =>
+                    resource.InstanceId == id && CanFlipMoraleToGodPower(resource));
                 if (morale is null) continue;
-                L12S2ZoneOps.FlipMoraleFace(player, morale.InstanceId, toGodPower: true);
+                L12S2ZoneOps.FlipMoraleFace(player, _catalog.MoraleIdentities,
+                    morale.InstanceId, toGodPower: true);
                 flipped++;
             }
             if (flipped > 0) AddEvent("morale", item.Controller, $"〈荣耀之路〉翻转{flipped}张士气", card);
@@ -928,7 +930,8 @@ public sealed partial class L12GameEngine
         if (ability == "olympusMoraleFlip" && source.CardId is "S02-05C1" or "S02-05C1A")
         {
             if (HasUsedLimitedActiveAbility(player, source.CardId, source.InstanceId, ability)) return CommandResult.Reject("该效果本回合已经发动");
-            if (!player.Morale.Any(card => !card.IsGodPower)) return CommandResult.Reject("没有可翻转的士气");
+            if (!player.Morale.Any(card => CanFlipMoraleToGodPower(card)))
+                return CommandResult.Reject("没有可翻转的士气");
             return CommitActiveAbility(playerIndex, source, ability, null);
         }
         if (ability == "prometheusTopThree" && source.CardId == "S02-05M2")
@@ -2389,8 +2392,9 @@ public sealed partial class L12GameEngine
                 }
                 var onlyTapped = item.Data.GetValueOrDefault("resolutionFlipMoraleOnlyTapped") == "true";
                 var morale = player.Morale.FirstOrDefault(card => card.InstanceId == chosen[0]
-                    && !card.IsGodPower && (!onlyTapped || card.Tapped));
-                if (morale is null || !L12S2ZoneOps.FlipMoraleFace(player, morale.InstanceId, toGodPower: true))
+                    && CanFlipMoraleToGodPower(card, onlyTapped));
+                if (morale is null || !L12S2ZoneOps.FlipMoraleFace(player, _catalog.MoraleIdentities,
+                        morale.InstanceId, toGodPower: true))
                     RecordTargetSettlementFailure(item, chosen[0],
                         onlyTapped ? "所选休整士气已离开士气区、转为活跃或不再是士气面"
                             : "所选士气已离开士气区或不再是士气面");
@@ -2822,7 +2826,8 @@ public sealed partial class L12GameEngine
     private bool PromptS2FlipMorale(L12StackItem item, L12CardInstance source, bool optional = false, bool onlyTapped = false)
     {
         var player = State.Players[item.Controller];
-        var choices = player.Morale.Where(card => !card.IsGodPower && (!onlyTapped || card.Tapped)).Select(card => card.InstanceId).ToList();
+        var choices = player.Morale.Where(card => CanFlipMoraleToGodPower(card, onlyTapped))
+            .Select(card => card.InstanceId).ToList();
         if (choices.Count == 0)
         {
             var hadCommittedCandidate = item.Data.GetValueOrDefault("resolutionTimeMoraleCandidateCommitted") == "true";

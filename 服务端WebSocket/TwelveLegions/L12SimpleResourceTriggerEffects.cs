@@ -182,14 +182,15 @@ public sealed partial class L12GameEngine
             {
                 var targetId = PublicTriggerDeclared(item, "moraleTarget");
                 var target = player.Morale.FirstOrDefault(card => card.InstanceId == targetId
-                    && !card.IsGodPower
-                    && (spec.TargetFilter != L12SimpleResourceTriggerEffects.RestedMorale || card.Tapped));
+                    && CanFlipMoraleToGodPower(card,
+                        onlyTapped: spec.TargetFilter == L12SimpleResourceTriggerEffects.RestedMorale));
                 if (target is null)
                     RecordTargetSettlementFailure(item, targetId,
                         "声明的士气目标在结算时失效；该项效果不结算，已登记的回合次数不恢复");
                 else
                 {
-                    L12S2ZoneOps.FlipMoraleFace(player, target.InstanceId, toGodPower: true);
+                    L12S2ZoneOps.FlipMoraleFace(player, _catalog.MoraleIdentities,
+                        target.InstanceId, toGodPower: true);
                     AddEvent("morale", item.Controller, spec.EventText, source is null ? [] : [source]);
                 }
                 break;

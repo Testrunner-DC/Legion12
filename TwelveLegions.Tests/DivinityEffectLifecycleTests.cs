@@ -23,6 +23,8 @@ public sealed class DivinityEffectLifecycleTests
     }
 
     [Fact]
+    [L12AbilityEvidence("S02-05D1:ability:active:519ab3c1379a9256",
+        "normal", "v2-prompt-reconnect", "duplicate-submit")]
     public void DivinityFlipRestoresItsSceneAndPublishesResolved()
     {
         var game = Create(91321, stateFormatVersion: 2);
@@ -50,6 +52,8 @@ public sealed class DivinityEffectLifecycleTests
     }
 
     [Fact]
+    [L12AbilityEvidence("S02-05D1:ability:active:519ab3c1379a9256",
+        "target-invalidated", "candidate-settlement-parity")]
     public void DivinityFlipFailsWhenItsResolutionTimeCandidateDisappears()
     {
         var game = Create(91322);
@@ -66,6 +70,51 @@ public sealed class DivinityEffectLifecycleTests
             key => key.Contains("divinityFlipMorale", StringComparison.Ordinal));
         Assert.Empty(game.State.PendingPrompts);
         Assert.Empty(game.State.EffectStack);
+    }
+
+    [Fact]
+    [L12AbilityEvidence("S02-05D1:ability:active:519ab3c1379a9256",
+        "candidate-generation", "black-lotus-excluded", "single-candidate-choice")]
+    public void DivinityFlipNeverOffersBlackLotusAsAGodPowerFaceTarget()
+    {
+        var game = Create(913221);
+        var target = Morale("divinity-identity-target");
+        var lotus = new L12MoraleCard
+        {
+            CardId = "S02-0010", InstanceId = "divinity-identity-black-lotus",
+        };
+        game.State.Players[0].Morale.AddRange([lotus, target]);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "divinityFlipMorale")).Accepted);
+        PassResponses(game);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+
+        Assert.Equal([target.InstanceId], prompt.ValidChoices);
+        Assert.DoesNotContain(lotus.InstanceId, prompt.ValidChoices);
+    }
+
+    [Fact]
+    [L12AbilityEvidence("S02-05D1:ability:active:519ab3c1379a9256",
+        "no-target", "black-lotus-excluded")]
+    public void DivinityFlipCannotStartWithOnlyBlackLotusInTheMoraleZone()
+    {
+        var game = Create(913222);
+        var player = game.State.Players[0];
+        var lotus = new L12MoraleCard
+        {
+            CardId = "S02-0010", InstanceId = "divinity-only-black-lotus",
+        };
+        player.Morale.Add(lotus);
+
+        var result = game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "divinityFlipMorale"));
+
+        Assert.False(result.Accepted);
+        Assert.False(lotus.IsGodPower);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.DoesNotContain(player.UsedAbilities,
+            key => key.Contains("divinityFlipMorale", StringComparison.Ordinal));
     }
 
     [Fact]

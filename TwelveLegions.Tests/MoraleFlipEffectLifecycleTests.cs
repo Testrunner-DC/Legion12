@@ -42,10 +42,11 @@ public sealed class MoraleFlipEffectLifecycleTests
         };
     }
 
-    private static L12MoraleCard Morale(string instanceId, bool tapped = false) => new()
+    private static L12MoraleCard Morale(string instanceId, bool tapped = false,
+        string cardId = "S02-05C1") => new()
     {
         InstanceId = instanceId,
-        CardId = "S02-05C1",
+        CardId = cardId,
         Tapped = tapped,
     };
 
@@ -93,6 +94,8 @@ public sealed class MoraleFlipEffectLifecycleTests
 
     [Fact]
     [Trait("L12Evidence", "ability:olympusMoraleFlip")]
+    [L12AbilityEvidence("S02-05C1:ability:active:1ae9b19504eac93a",
+        "normal", "payment-separate", "v2-prompt-reconnect", "duplicate-submit")]
     public void OlympusMoraleFlipKeepsPaymentSeparateAndResolvesAfterCheckpoint()
     {
         var game = CreateWithFirstMaster("S02-05M1", 91331);
@@ -130,6 +133,8 @@ public sealed class MoraleFlipEffectLifecycleTests
 
     [Fact]
     [Trait("L12Evidence", "ability:olympusMoraleFlip")]
+    [L12AbilityEvidence("S02-05C1:ability:active:1ae9b19504eac93a",
+        "negated", "paid-cost-preserved")]
     public void NegatedOlympusMoraleFlipKeepsPaidMoraleAndCreatesNoTargetPrompt()
     {
         var game = CreateWithFirstMaster("S02-05M1", 91332);
@@ -154,6 +159,8 @@ public sealed class MoraleFlipEffectLifecycleTests
 
     [Fact]
     [Trait("L12Evidence", "ability:olympusMoraleFlip")]
+    [L12AbilityEvidence("S02-05C1:ability:active:1ae9b19504eac93a",
+        "target-invalidated", "candidate-settlement-parity")]
     public void OlympusMoraleFlipFailsWhenEverySettlementCandidateChangedFaceDuringResponses()
     {
         var game = CreateWithFirstMaster("S02-05M1", 91333);
@@ -179,6 +186,8 @@ public sealed class MoraleFlipEffectLifecycleTests
 
     [Fact]
     [Trait("L12Evidence", "ability:olympusMoraleFlip")]
+    [L12AbilityEvidence("S02-05C1:ability:active:1ae9b19504eac93a",
+        "target-invalidated", "single-candidate-choice")]
     public void OlympusMoraleFlipRevalidatesTheFrozenSelectionBeforeChangingItsFace()
     {
         var game = CreateWithFirstMaster("S02-05M1", 91334);
@@ -203,6 +212,56 @@ public sealed class MoraleFlipEffectLifecycleTests
         Assert.Equal("failed", Result(game, "faction-0").EffectResultStatus);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
             && entry.Text.Contains("所选士气", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "ability:olympusMoraleFlip:god-power-identity")]
+    [L12AbilityEvidence("S02-05C1:ability:active:1ae9b19504eac93a",
+        "no-target", "black-lotus-excluded")]
+    public void OlympusMoraleFlipCannotStartWhenBlackLotusIsTheOnlyMoraleZoneResource()
+    {
+        var game = CreateWithFirstMaster("S02-05M1", 913341);
+        var player = game.State.Players[0];
+        PrepareMain(game);
+        player.Morale.Clear();
+        var lotus = Morale("olympus-only-black-lotus", cardId: "S02-0010");
+        player.Morale.Add(lotus);
+
+        var result = game.Handle(0, new L12Command("activateAbility", "faction-0",
+            Ability: "olympusMoraleFlip"));
+
+        Assert.False(result.Accepted);
+        Assert.Contains("没有可翻转", result.Error, StringComparison.Ordinal);
+        Assert.False(lotus.Tapped);
+        Assert.False(lotus.IsGodPower);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.DoesNotContain(player.UsedAbilities,
+            key => key.Contains("olympusMoraleFlip", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "ability:olympusMoraleFlip:god-power-identity")]
+    public void BlackLotusMayPayMoraleCostButNeverAppearsAsTheFlipTarget()
+    {
+        var game = CreateWithFirstMaster("S02-05M1", 913342);
+        var player = game.State.Players[0];
+        PrepareMain(game);
+        player.Morale.Clear();
+        var lotus = Morale("olympus-black-lotus-payment", cardId: "S02-0010");
+        var target = Morale("olympus-identity-target", cardId: "ST05-C1");
+        player.Morale.AddRange([lotus, target]);
+
+        CommitOlympusFlip(game, lotus.InstanceId);
+        PassResponses(game);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+
+        Assert.Equal([target.InstanceId], prompt.ValidChoices);
+        Assert.DoesNotContain(lotus.InstanceId, prompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: target.InstanceId)).Accepted);
+        Assert.True(lotus.Tapped);
+        Assert.False(lotus.IsGodPower);
+        Assert.True(target.IsGodPower);
     }
 
     [Fact]

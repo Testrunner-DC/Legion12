@@ -58,7 +58,8 @@ public sealed partial class L12GameEngine
                 if (player.Hp > 3) return CommandResult.Reject("我方主宰血量需要不高于3");
                 return CommitActiveAbility(playerIndex, source, ability, null);
             case "divinityFlipMorale" when source.CardId == "S02-05D1":
-                if (!player.Morale.Any(card => !card.IsGodPower)) return CommandResult.Reject("没有可翻转的士气");
+                if (!player.Morale.Any(card => CanFlipMoraleToGodPower(card)))
+                    return CommandResult.Reject("没有可翻转的士气");
                 return CommitActiveAbility(playerIndex, source, ability, null);
             case "divinityPower" when source.CardId == "S02-05D1":
                 return TryBeginPublicActiveDeclaration(playerIndex, source, ability);
@@ -702,7 +703,7 @@ public sealed partial class L12GameEngine
         var key = L12MasterTriggeredUsageRules.Key("artemisDeathFlip", player.PlayerIndex, State.TurnSerial);
         var pendingKey = $"{key}:pending";
         if (player.MasterId != "S02-05M1" || !defeated.LastKnownWasRanged
-            || !player.Morale.Any(card => card.Tapped && !card.IsGodPower)
+            || !player.Morale.Any(card => CanFlipMoraleToGodPower(card, onlyTapped: true))
             || player.UsedAbilities.Contains(key) || !player.UsedAbilities.Add(pendingKey)) return null;
         var master = CreateCard("S02-05M1", $"master-{owner}");
         return CreateTriggerCandidate(owner, master, "friendly-ranged-death", "我方远程军团阵亡时效果",

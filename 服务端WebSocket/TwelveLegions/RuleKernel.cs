@@ -308,10 +308,11 @@ public static class L12S2ZoneOps
         return true;
     }
 
-    public static bool FlipMoraleFace(L12PlayerState player, string instanceId, bool? toGodPower = null)
+    public static bool FlipMoraleFace(L12PlayerState player, L12MoraleIdentityCatalog identities,
+        string instanceId, bool? toGodPower = null)
     {
         var morale = player.Morale.FirstOrDefault(card => card.InstanceId == instanceId);
-        if (morale is null || !L12StructuredCardRules.IsReversibleOlympusMorale(morale.CardId)) return false;
+        if (morale is null || !identities.CanUseGodPowerFace(morale.CardId)) return false;
         morale.IsGodPower = toGodPower ?? !morale.IsGodPower;
         return true;
     }
