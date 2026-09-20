@@ -24,7 +24,25 @@ public static partial class L12StructuredCardRules
             "ST01-08" => [new("enter", "triggered", "登场时 本回合对方军团挑衅效果无效。", [new(L12AtomKinds.SetState, "本回合对方军团挑衅效果无效", "resolution", new() { ["key"] = "opponent.taunt-disabled-this-turn", ["duration"] = "this-turn" })], "human-assisted", "product-database")],
             "ST01-09" => [new("enter", "triggered", "登场时 可返还1士气：抽取1张牌。", [new(L12AtomKinds.Optional, "可发动", "condition", new()), new(L12AtomKinds.ReturnMorale, "返还1士气", "cost", new() { ["amount"] = "1" }), new(L12AtomKinds.Draw, "抽取1张牌", "resolution", new() { ["amount"] = "1" })], "human-assisted", "product-database")],
             "ST01-10" => [new("reaction", "triggered", "对方 进攻后，可返还1士气：从我方手牌中将1张费用不高于4的【天廷】军团活跃登场。", [new(L12AtomKinds.Optional, "可发动", "condition", new()), new(L12AtomKinds.ReturnMorale, "返还1士气", "cost", new() { ["amount"] = "1" }), new(L12AtomKinds.SelectTarget, "选择手牌中1张费用不高于4的【天廷】军团", "target", new() { ["zone"] = "controller.hand", ["filter"] = "faction=tianting;legion=true;current-cost<=4" }), new(L12AtomKinds.SelectTarget, "选择活跃登场位置", "target", new() { ["zone"] = "controller.field.empty-slot", ["empty"] = "true" }), new(L12AtomKinds.MoveZone, "所选军团活跃登场", "resolution", new() { ["from"] = "controller.hand", ["to"] = "controller.field", ["state"] = "active" })], "human-assisted", "product-database")],
-            "ST03-07" => [new("enter", "triggered", "登场时 可弃置我方牌库顶部2张牌。", [new(L12AtomKinds.Optional, "可发动", "condition", new()), new(L12AtomKinds.MoveZone, "弃置牌库顶部2张牌", "resolution", new() { ["from"] = "controller.library-top", ["to"] = "controller.graveyard", ["amount"] = "2" })], "human-assisted", "product-database")],
+            "ST03-07" =>
+            [
+                new("enter", "triggered", "登场时 可弃置我方牌库顶部2张牌。",
+                [
+                    new(L12AtomKinds.Optional, "可发动", "condition", new()),
+                    new(L12AtomKinds.MoveZone, "弃置牌库顶部2张牌", "resolution", new()
+                    {
+                        ["from"] = "controller.library-top", ["to"] = "controller.graveyard", ["amount"] = "2",
+                    }),
+                ], "human-assisted", "product-database"),
+                new("active", "activated", "主动休整 弃置我方牌库顶部1张牌。",
+                [
+                    new(L12AtomKinds.RestSource, "主动休整", "cost", new()),
+                    new(L12AtomKinds.MoveZone, "弃置牌库顶部1张牌", "resolution", new()
+                    {
+                        ["from"] = "controller.library-top", ["to"] = "controller.graveyard", ["amount"] = "1",
+                    }),
+                ], "human-assisted", "product-database"),
+            ],
             "ST01-06" =>
             [
                 new("enter", "triggered", "登场时 本回合我方下1张军团登场费用-1。",

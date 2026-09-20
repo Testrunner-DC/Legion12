@@ -59,6 +59,7 @@ public sealed class CourtMagicianActiveRestLifecycleTests
 
     [Fact]
     [Trait("L12Evidence", "card:S02-0003")]
+    [Trait("L12Evidence", "ability:disableCounters")]
     [Trait("L12Evidence", "family:active-rest-lifecycle")]
     public void ActiveRestIsPaidBeforeResponseAndNegationDoesNotStartTheSeal()
     {

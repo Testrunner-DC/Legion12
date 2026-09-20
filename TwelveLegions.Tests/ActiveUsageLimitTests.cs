@@ -280,6 +280,7 @@ public sealed class ActiveUsageLimitTests
     [InlineData("S01-03M2", "loki", "resolved")]
     [InlineData("S01-03M2", "loki", "negated")]
     [InlineData("S01-03M2", "loki", "failed")]
+    [Trait("L12Evidence", "ability:shennongReset")]
     public void ShennongResetsOneSharedGroupAfterRecoveryWithoutTouchingOtherMarkers(
         string masterId, string group, string outcome)
     {

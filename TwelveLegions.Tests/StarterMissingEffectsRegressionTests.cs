@@ -140,6 +140,7 @@ public sealed class StarterMissingEffectsRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "ability:kaneMillOne")]
     public void NieYinniangAndKaneReachTheirSharedVerifiedRuntimeFlows()
     {
         var nieGame = Create(20716);
@@ -438,6 +439,7 @@ public sealed class StarterMissingEffectsRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "ability:oasisDancerBuff")]
     public void OasisDancerRestsAndBuffsEveryTaiyangchengLegionForTheTurn()
     {
         var game = Create(20704);
@@ -458,6 +460,7 @@ public sealed class StarterMissingEffectsRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "ability:christinaFreeTactic")]
     public void ChristinaReplacesOnlyTheNextEligibleActiveTacticCostWithOneMasterDamage()
     {
         var game = Create(20705);

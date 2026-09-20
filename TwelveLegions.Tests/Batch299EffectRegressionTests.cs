@@ -593,6 +593,7 @@ public sealed class Batch299EffectRegressionTests
     [Theory]
     [InlineData(false, 2)]
     [InlineData(true, 1)]
+    [Trait("L12Evidence", "ability:aristotleDiscount")]
     public void AristotleDiscountAccumulatesOnlySuccessfulEffects(bool negateSecond, int expected)
     {
         var game = Create(); var owner = game.State.Players[0];

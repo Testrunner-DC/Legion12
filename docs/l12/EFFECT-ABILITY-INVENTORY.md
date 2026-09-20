@@ -3,15 +3,15 @@
 由 `scripts/export-l12-effect-lifecycle-inventory.ps1` 从实际 L12Catalog 生成；不要手工修改此表。
 本表只盘点定义与待核对项，不是测试通过证明。执行进度与最终验收仍以 [实施计划](../EFFECT-LIFECYCLE-ROADMAP.md) 为准。
 
-卡牌：324；能力段：685；无能力卡：7。
+卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`22bf507f2a3ee0a100765a9a2a9214a6d4a0217be5b961e5ddc80f2703a66dcf`。
+内容指纹：`36f4007cad54eb77e35661ab5852dba0617a0a07f19d1a430e458579a9bd7331`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
 | composite-definition | 205 |
 | fine-definition | 87 |
-| owner-unreviewed | 335 |
+| owner-unreviewed | 336 |
 | shared-rule-owner | 58 |
 
 fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；shared-rule-owner = 精确能力已绑定共用规则入口及适用性档案；owner-unreviewed = 还需定位实际入口。任何一种归属证据均不等于生命周期验收通过。
@@ -807,6 +807,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | ST03-05 克里斯蒂娜 #1 | ST03-05:ability:static:efd7771da618f0ac | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule | 0 | 进攻距离+1，远程进攻无损。 |
 | ST03-05 克里斯蒂娜 #2 | ST03-05:ability:active:87d142bd0e12a218 | active/activated | owner-unreviewed | — | trigger:trigger.observe → condition:condition.expression → cost:cost.rest-source → duration:duration.apply | 1 | 主动休整 本回合从我方手牌中打出的下1张费用不高于3的&lt;主动战术&gt;无需消耗费用，改为对我方主宰造成1点伤害。 |
 | ST03-07 送葬者凯恩 #1 | ST03-07:ability:enter:629a2d1a4ab94c1d | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 可弃置我方牌库顶部2张牌。 |
+| ST03-07 送葬者凯恩 #2 | ST03-07:ability:active:0d4ebc1a2ab8b128 | active/activated | owner-unreviewed | — | trigger:trigger.observe → cost:cost.rest-source → resolution:operation.move-zone → resolution:legacy.resolve | 1 | 主动休整 弃置我方牌库顶部1张牌。 |
 | ST03-08 渴求死亡的勇士 #1 | ST03-08:ability:continuous:7ffc6ec471452fc7 | continuous/continuous | composite-definition | — | trigger:trigger.observe → continuous:operation.set-state → resolution:operation.composite-flow | 0 | 「位于墓地」可最多视为3张【阿斯加德】军团。 |
 | ST03-10 传奇的血脉 #1 | ST03-10:ability:play:9c7331d3ea2cdebb | play/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.modify-troops → resolution:operation.modify-troops → resolution:operation.composite-flow | 3 | 选择我方1张【阿斯加德】军团，本回合兵力+2000。每当我方墓地有3张【阿斯加德】军团，该军团兵力额外+1000。 |
 | ST03-C1 士气·阿斯加德 #1 | ST03-C1:ability:static:36b1c5751cc508f9 | static/continuous | owner-unreviewed | 我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:cost.pay-morale → resolution:operation.draw | 0 | 我方 回合1次 可消耗2士气：抽取1张牌；若我方主宰血量不高于5，可额外消耗1士气，我方主宰增加1点血量。 |

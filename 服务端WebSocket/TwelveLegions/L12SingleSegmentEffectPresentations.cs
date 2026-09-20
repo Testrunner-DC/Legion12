@@ -42,6 +42,7 @@ internal static class L12SingleSegmentEffectPresentations
         new("S02-06D1", 4, "avalonDebuff"),
         new("ST02-05", 1, "oasisDancerBuff"),
         new("ST03-05", 2, "christinaFreeTactic"),
+        new("ST03-07", 2, "kaneMillOne"),
         new("ST03-M1", 1, "sifCycle"),
         new("ST06-S1", 2, "skyCityDiscount"),
     ];

@@ -219,6 +219,7 @@ public sealed class EffectPresentationBranchSegmentTests
             ("S02-06D1", 4, "avalonDebuff"),
             ("ST02-05", 1, "oasisDancerBuff"),
             ("ST03-05", 2, "christinaFreeTactic"),
+            ("ST03-07", 2, "kaneMillOne"),
             ("ST03-M1", 1, "sifCycle"),
             ("ST06-S1", 2, "skyCityDiscount"),
         };
@@ -245,6 +246,7 @@ public sealed class EffectPresentationBranchSegmentTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "ability:addMorale")]
     public void RealSingleActiveEffectPublishesResolvedResult()
     {
         var catalog = Catalog;

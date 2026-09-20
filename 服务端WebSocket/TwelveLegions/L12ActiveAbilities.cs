@@ -732,7 +732,29 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item); return;
             }
             case "addMorale":
-                AddMorale(player, 1, tapped: true); FinishStackItem(item); return;
+            {
+                if (player.FactionMoraleAdditionForbiddenUntilTurn == State.TurnSerial)
+                {
+                    item.Data["effectResultStatus"] = "failed";
+                    AddEvent("effect-failed", item.Controller,
+                        "始皇帝 嬴政使本回合无法以阵营效果以外的方式追加士气；白起的主动休整费用不恢复",
+                        source is null ? [] : [source]);
+                }
+                else
+                {
+                    var added = AddMorale(player, 1, tapped: true);
+                    if (added == 0)
+                    {
+                        item.Data["effectResultStatus"] = "skipped";
+                        AddEvent("effect-noop", item.Controller,
+                            "士气牌库为空，白起追加休整士气的效果跳过；主动休整费用不恢复",
+                            source is null ? [] : [source]);
+                    }
+                    else AddEvent("effect", item.Controller, "白起从士气牌库追加1张休整的士气",
+                        source is null ? [] : [source]);
+                }
+                FinishStackItem(item); return;
+            }
             case "searchBrothers":
             {
                 if (AtomicFlowKey(item) == "liubei-shuffle")

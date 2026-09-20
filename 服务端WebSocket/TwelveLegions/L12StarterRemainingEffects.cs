@@ -429,9 +429,13 @@ public sealed partial class L12GameEngine
                 AddEvent("effect", item.Controller, "本回合从手牌打出的下1张费用不高于3的主动战术无需消耗费用，改为对我方主宰造成1点伤害", source is null ? [] : [source]);
                 break;
             case "kaneMillOne":
+            {
+                var hadCard = player.Library.Count > 0;
                 Mill(player, 1, "送葬者凯恩主动效果");
-                AddEvent("effect", item.Controller, "送葬者凯恩弃置我方牌库顶部1张牌", source is null ? [] : [source]);
+                if (hadCard)
+                    AddEvent("effect", item.Controller, "送葬者凯恩弃置我方牌库顶部1张牌", source is null ? [] : [source]);
                 break;
+            }
             case "oiranTransfer":
             {
                 var flow = item.Data.GetValueOrDefault("atomicFlow");

@@ -3695,6 +3695,7 @@ public sealed class S2FactionRegressionTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    [Trait("L12Evidence", "ability:imhotepDiscount")]
     public void NephthysAndImhotepDiscountsAccumulateInEitherOrder(bool imhotepFirst)
     {
         var game = CreateWithFirstMaster("S02-02M1", imhotepFirst ? 63261 : 63262);

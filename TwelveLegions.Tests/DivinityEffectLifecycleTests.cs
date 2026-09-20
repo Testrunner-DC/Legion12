@@ -136,6 +136,7 @@ public sealed class DivinityEffectLifecycleTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "ability:divinityFreePromotion")]
     public void NegatedFreePromotionKeepsRestCostAndPublishesNegated()
     {
         var game = Create(91326);
