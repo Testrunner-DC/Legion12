@@ -36,7 +36,7 @@ public sealed class DeclaredTargetSettlementLifecycleTests
         return game;
     }
 
-    private static L12CardInstance Card(string cardId, string instanceId)
+    private static L12CardInstance Card(string cardId, string instanceId, int? troops = null)
     {
         var definition = Catalog.Cards[cardId];
         return new L12CardInstance
@@ -52,8 +52,8 @@ public sealed class DeclaredTargetSettlementLifecycleTests
             Traits = [.. definition.Traits],
             Profession = definition.Profession,
             EffectiveProfession = definition.Profession,
-            BaseTroops = definition.Troops ?? 0,
-            Troops = definition.Troops ?? 0,
+            BaseTroops = troops ?? definition.Troops ?? 0,
+            Troops = troops ?? definition.Troops ?? 0,
             SummonRound = -1,
         };
     }
@@ -102,6 +102,47 @@ public sealed class DeclaredTargetSettlementLifecycleTests
         Assert.Contains(valid, game.State.Players[1].Graveyard);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect"
             && entry.Text.Contains("1个已声明对象", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "type:multi-enemy-target-lethal-replacement")]
+    public void ChaoticArrowsWaitsForLethalReplacementBeforeKillingItsNextTarget()
+    {
+        var game = Create(94109);
+        var source = Card("S02-0011", "chaotic-arrows-replacement-source");
+        var horemheb = Card("S01-0205", "chaotic-arrows-horemheb", 2000);
+        var guard = Card("S01-0212", "chaotic-arrows-guard");
+        var next = Card("S02-0003", "chaotic-arrows-next", 2000);
+        game.State.Players[0].Resolving.Add(source);
+        game.State.Players[1].Field[0][0] = horemheb;
+        game.State.Players[1].Field[0][1] = guard;
+        game.State.Players[1].Field[0][2] = next;
+
+        Push(game, source, "play", new()
+        {
+            ["atomicFlow"] = "chaotic-arrows-effect",
+            ["atomicContinuation"] = "true",
+            ["declared:killTargets"] = $"{horemheb.InstanceId}|{next.InstanceId}",
+        });
+        PassResponses(game);
+
+        var replacement = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("effect-lethal-replacement", replacement.Continuation);
+        Assert.Same(horemheb, game.State.Players[1].Field[0][0]);
+        Assert.Same(guard, game.State.Players[1].Field[0][1]);
+        Assert.Same(next, game.State.Players[1].Field[0][2]);
+
+        var result = game.Handle(1, new L12Command("resolvePrompt", PromptId: replacement.PromptId,
+            Choice: guard.InstanceId));
+        Assert.True(result.Accepted, result.Error);
+
+        Assert.Same(horemheb, game.State.Players[1].Field[0][0]);
+        Assert.Null(game.State.Players[1].Field[0][1]);
+        Assert.Null(game.State.Players[1].Field[0][2]);
+        Assert.Contains(guard, game.State.Players[1].Graveyard);
+        Assert.Contains(next, game.State.Players[1].Graveyard);
+        Assert.DoesNotContain(game.State.EffectStack,
+            item => item.SourceInstanceId == source.InstanceId && item.Data.GetValueOrDefault("atomicFlow") == "chaotic-arrows-effect");
     }
 
     [Fact]

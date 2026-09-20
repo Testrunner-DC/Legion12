@@ -334,4 +334,93 @@ public sealed class AtomicReviewBatch6LARegressionTests
         Assert.Single(player.Morale);
         Assert.True(player.Morale[0].Tapped);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("L12Evidence", "bug:BUG-20260920-ab0b8444")]
+    public void YingzhengWaitsForEachLethalReplacementBeforeContinuingMassKill(bool restore)
+    {
+        var (game, player, _, _) = BeginYingzheng(8420 + (restore ? 1 : 0));
+        var opponent = game.State.Players[1];
+        var horemheb = Card("S01-0205", $"yingzheng-horemheb-{restore}");
+        var guard = Card("S01-0212", $"yingzheng-guard-{restore}");
+        opponent.Field[0][0] = horemheb;
+        opponent.Field[0][1] = guard;
+
+        for (var safety = 0; safety < 20; safety++)
+        {
+            var prompt = Assert.Single(game.State.PendingPrompts);
+            if (prompt.Continuation == "effect-lethal-replacement") break;
+            Assert.Equal("stack-response", prompt.Continuation);
+            Resolve(game, "pass");
+        }
+
+        var replacement = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("effect-lethal-replacement", replacement.Continuation);
+        Assert.Equal(horemheb.InstanceId, replacement.Data["cardInstanceId"]);
+        Assert.Same(horemheb, opponent.Field[0][0]);
+        Assert.Same(guard, opponent.Field[0][1]);
+        Assert.Equal(8, player.Morale.Count);
+        Assert.NotEqual(game.State.TurnSerial, player.FactionMoraleAdditionForbiddenUntilTurn);
+
+        if (restore)
+            game = L12GameEngine.RestoreCheckpoint(Catalog,
+                game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,"),
+                game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0),
+                game.CardFactSignalSequence, autoPassEmptyResponses: false,
+                concealHiddenResponseAvailability: false);
+
+        replacement = Assert.Single(game.State.PendingPrompts);
+        var result = game.Handle(replacement.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: replacement.PromptId, Choice: guard.InstanceId));
+        Assert.True(result.Accepted, result.Error);
+        PassResponses(game);
+
+        player = game.State.Players[0];
+        opponent = game.State.Players[1];
+        Assert.NotNull(opponent.Field[0][0]);
+        Assert.Equal(horemheb.InstanceId, opponent.Field[0][0]!.InstanceId);
+        Assert.Null(opponent.Field[0][1]);
+        Assert.Contains(opponent.Graveyard, card => card.InstanceId == guard.InstanceId);
+        Assert.Empty(player.Morale);
+        Assert.Equal(game.State.TurnSerial, player.FactionMoraleAdditionForbiddenUntilTurn);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+
+        var repeated = game.Handle(replacement.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: replacement.PromptId, Choice: guard.InstanceId));
+        Assert.False(repeated.Accepted);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "bug:BUG-20260920-ab0b8444")]
+    public void YingzhengDeclinedLethalReplacementDefeatsProtectedCardThenContinues()
+    {
+        var (game, player, _, _) = BeginYingzheng(8422);
+        var opponent = game.State.Players[1];
+        var horemheb = Card("S01-0205", "yingzheng-decline-horemheb");
+        var guard = Card("S01-0212", "yingzheng-decline-guard");
+        opponent.Field[0][0] = horemheb;
+        opponent.Field[0][1] = guard;
+
+        for (var safety = 0; safety < 20; safety++)
+        {
+            var prompt = Assert.Single(game.State.PendingPrompts);
+            if (prompt.Continuation == "effect-lethal-replacement") break;
+            Resolve(game, "pass");
+        }
+        var replacement = Assert.Single(game.State.PendingPrompts);
+        Resolve(game, "decline");
+        PassResponses(game);
+
+        Assert.DoesNotContain(opponent.Field.SelectMany(row => row), card => card is not null);
+        Assert.Contains(opponent.Graveyard, card => card.InstanceId == horemheb.InstanceId);
+        Assert.Contains(opponent.Graveyard, card => card.InstanceId == guard.InstanceId);
+        Assert.Empty(player.Morale);
+        Assert.Equal(game.State.TurnSerial, player.FactionMoraleAdditionForbiddenUntilTurn);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.PromptId == replacement.PromptId);
+    }
 }

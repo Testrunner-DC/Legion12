@@ -109,17 +109,19 @@ public sealed partial class L12GameEngine
             AttachCardLethalKillSource(protectedCard, pending.Event);
     }
 
-    private void AttachCardLethalKillSource(L12CardInstance protectedCard, L12KillSourceEvent killEvent)
-    {
-        var prompt = State.PendingPrompts.LastOrDefault(candidate =>
+    private L12Prompt? EffectLethalReplacementPrompt(string protectedInstanceId)
+        => State.PendingPrompts.LastOrDefault(candidate =>
             candidate.Continuation == "effect-lethal-replacement"
-            && candidate.Data.GetValueOrDefault("cardInstanceId") == protectedCard.InstanceId
-            && candidate.Data.ContainsKey("replacementKind"));
-        if (prompt is null) return;
+            && candidate.Data.GetValueOrDefault("cardInstanceId") == protectedInstanceId);
+
+    private bool AttachCardLethalKillSource(L12CardInstance protectedCard, L12KillSourceEvent killEvent)
+    {
+        var prompt = EffectLethalReplacementPrompt(protectedCard.InstanceId);
+        if (prompt is null) return false;
         var count = int.TryParse(prompt.Data.GetValueOrDefault("lethalKillSourceCount"), out var parsed)
             ? parsed : 0;
         for (var index = 0; index < count; index++)
-            if (prompt.Data.GetValueOrDefault($"lethalKillSource:{index}:eventId") == killEvent.EventId) return;
+            if (prompt.Data.GetValueOrDefault($"lethalKillSource:{index}:eventId") == killEvent.EventId) return true;
         var prefix = $"lethalKillSource:{count}:";
         prompt.Data[$"{prefix}eventId"] = killEvent.EventId;
         prompt.Data[$"{prefix}kind"] = killEvent.Kind.ToString();
@@ -129,6 +131,24 @@ public sealed partial class L12GameEngine
         prompt.Data[$"{prefix}printed"] = killEvent.TriggersPrintedKillTiming.ToString();
         prompt.Data[$"{prefix}caused"] = killEvent.CausedBySourceCard.ToString();
         prompt.Data["lethalKillSourceCount"] = (count + 1).ToString();
+        return true;
+    }
+
+    private void AttachEffectKillContinuation(L12CardInstance protectedCard, L12StackItem sourceItem,
+        string continuation)
+    {
+        var prompt = EffectLethalReplacementPrompt(protectedCard.InstanceId);
+        if (prompt is null) return;
+        prompt.Data["effectKillContinuation"] = continuation;
+        prompt.Data["effectKillStackItemId"] = sourceItem.StackItemId;
+        sourceItem.Data["pendingEffectKillPromptId"] = prompt.PromptId;
+    }
+
+    private void OverrideEffectKillContinuation(L12StackItem sourceItem, string continuation)
+    {
+        var promptId = sourceItem.Data.GetValueOrDefault("pendingEffectKillPromptId");
+        var prompt = State.PendingPrompts.FirstOrDefault(candidate => candidate.PromptId == promptId);
+        if (prompt is not null) prompt.Data["effectKillContinuation"] = continuation;
     }
 
     private void ResolveAttachedCardLethalKillSources(L12Prompt prompt, string defeatedInstanceId)

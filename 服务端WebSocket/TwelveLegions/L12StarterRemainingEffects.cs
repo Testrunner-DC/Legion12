@@ -1174,11 +1174,11 @@ public sealed partial class L12GameEngine
                 return true;
             }
             case "kojiro-death-kill":
-                ResolveDeclaredEnemyTargets(item, StarterDeclaredMany(item, "enemyTargets"),
+                if (!ResolveDeclaredEnemyKillTargets(item, StarterDeclaredMany(item, "enemyTargets"),
                     card => card.DisplayBaseTroops <= 2000,
-                    (targetId, _) => KillTarget(item, targetId, "被佐佐木小次郎的阵亡时效果击杀"),
+                    "被佐佐木小次郎的阵亡时效果击杀",
                     "发动时没有选择原本兵力不高于2000的军团",
-                    "所选军团已离场、不再是军团或原本兵力已高于2000");
+                    "所选军团已离场、不再是军团或原本兵力已高于2000")) return true;
                 FinishStackItem(item);
                 return true;
             case "kai-master-waiver":
@@ -1328,11 +1328,11 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             case "light-sword-enter-kill":
-                ResolveDeclaredEnemyTargets(item, StarterDeclaredMany(item, "enemyTargets"),
+                if (!ResolveDeclaredEnemyKillTargets(item, StarterDeclaredMany(item, "enemyTargets"),
                     card => card.DisplayBaseTroops <= 2000,
-                    (targetId, _) => KillTarget(item, targetId, "被光之剑的登场时效果击杀"),
+                    "被光之剑的登场时效果击杀",
                     "发动时没有选择原本兵力不高于2000的军团",
-                    "所选军团已离场、不再是军团或原本兵力已高于2000");
+                    "所选军团已离场、不再是军团或原本兵力已高于2000")) return true;
                 FinishStackItem(item);
                 return true;
             case "sky-city-completion":

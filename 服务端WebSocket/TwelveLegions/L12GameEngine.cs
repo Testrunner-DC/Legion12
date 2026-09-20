@@ -1759,12 +1759,20 @@ public sealed partial class L12GameEngine
         var player = State.Players[playerIndex];
         var cardId = prompt.Data.GetValueOrDefault("cardInstanceId");
         var card = FindOnField(player, cardId, out _, out _);
-        if (card is null) return;
+        if (card is null)
+        {
+            ResumeEffectKillContinuation(prompt);
+            return;
+        }
         if (prompt.Data.ContainsKey("replacementKind"))
         {
-            if (ResolveEffectCardLethalSubstitution(player, card, prompt, choice)) return;
-            RemoveFromField(player, card, true, prompt.Data.GetValueOrDefault("reason", "阵亡"),
-                bypassLethalReplacement: true);
+            if (!ResolveEffectCardLethalSubstitution(player, card, prompt, choice))
+            {
+                var removed = RemoveFromField(player, card, true,
+                    prompt.Data.GetValueOrDefault("reason", "阵亡"), bypassLethalReplacement: true);
+                if (removed) ResolveAttachedCardLethalKillSources(prompt, card.InstanceId);
+            }
+            ResumeEffectKillContinuation(prompt);
             return;
         }
         player.UsedAbilities.Remove($"pending:{AchillesReplacementKey(card)}");
@@ -1777,10 +1785,13 @@ public sealed partial class L12GameEngine
             card.Tapped = prompt.Data["preservedTapped"] == "true";
             AddEvent("replacement", playerIndex,
                 $"{card.Name}消耗并翻转1神力，代替承受致命效果并保持当时状态", card);
+            ResumeEffectKillContinuation(prompt);
             return;
         }
-        RemoveFromField(player, card, true, prompt.Data.GetValueOrDefault("reason", "阵亡"),
+        var defeated = RemoveFromField(player, card, true, prompt.Data.GetValueOrDefault("reason", "阵亡"),
             bypassLethalReplacement: true);
+        if (defeated) ResolveAttachedCardLethalKillSources(prompt, card.InstanceId);
+        ResumeEffectKillContinuation(prompt);
     }
 
     private bool MoveFieldCardToZone(L12PlayerState player, L12CardInstance card, string destination, string reason,

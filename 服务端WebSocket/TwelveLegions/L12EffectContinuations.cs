@@ -157,14 +157,18 @@ public sealed partial class L12GameEngine
         }
     }
 
-    private void KillTarget(L12StackItem sourceItem, string instanceId, string reason)
+    /// <summary>
+    /// 结算一次效果击杀。返回 false 表示该对象正在等待“即将阵亡”替代裁定，
+    /// 调用方必须暂停当前效果段，并在替代弹框完成后从持久化续程点恢复。
+    /// </summary>
+    private bool KillTarget(L12StackItem sourceItem, string instanceId, string reason)
     {
         for (var owner = 0; owner < 2; owner++)
         {
             var target = FindOnField(State.Players[owner], instanceId, out _, out _);
             if (target is null) continue;
             var source = FindSource(sourceItem);
-            if (source is null) return;
+            if (source is null) return true;
             var killEvent = new L12KillSourceEvent(
                 $"effect-kill:{sourceItem.StackItemId}:{source.InstanceId}",
                 L12KillSourceKind.CardEffect,
@@ -176,11 +180,79 @@ public sealed partial class L12GameEngine
                 [target.InstanceId]);
             if (!RemoveFromField(State.Players[owner], target, true, reason))
             {
-                AttachCardLethalKillSource(target, killEvent);
-                return;
+                // 湖中仙女之剑等同步替代不会建立弹框，属于本次动作已完成；
+                // 只有实际附着到待裁定弹框时，调用方才需要暂停。
+                if (!AttachCardLethalKillSource(target, killEvent)) return true;
+                AttachEffectKillContinuation(target, sourceItem, "finish-stack-item");
+                return false;
             }
             ResolveTypedKillSourceEvent(killEvent);
+            return true;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// 多对象击杀的公共逐项续程。目标顺序与当前索引写入 StackItem，确保任一对象
+    /// 建立“即将阵亡”裁定时不会越过后续对象，且检查点恢复后仍从下一项继续。
+    /// </summary>
+    private bool ResolveSequentialEffectKills(L12StackItem item, IEnumerable<string>? initialTargets = null,
+        string? initialReason = null)
+    {
+        const string targetsKey = "sequentialEffectKillTargets";
+        const string indexKey = "sequentialEffectKillIndex";
+        const string reasonKey = "sequentialEffectKillReason";
+        if (!item.Data.TryGetValue(targetsKey, out var serializedTargets))
+        {
+            serializedTargets = string.Join('|', (initialTargets ?? [])
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.OrdinalIgnoreCase));
+            item.Data[targetsKey] = serializedTargets;
+            item.Data[indexKey] = "0";
+            item.Data[reasonKey] = initialReason ?? "被效果击杀";
+        }
+
+        var targets = serializedTargets.Split('|', StringSplitOptions.RemoveEmptyEntries);
+        var index = int.TryParse(item.Data.GetValueOrDefault(indexKey), out var parsed) ? parsed : 0;
+        while (index < targets.Length)
+        {
+            var targetId = targets[index++];
+            item.Data[indexKey] = index.ToString();
+            var target = State.Players.Select(player => FindOnField(player, targetId, out _, out _))
+                .FirstOrDefault(card => card is not null);
+            if (target is null) continue;
+            if (KillTarget(item, targetId, item.Data.GetValueOrDefault(reasonKey, "被效果击杀"))) continue;
+            AttachEffectKillContinuation(target, item, "sequential-effect-kills");
+            return false;
+        }
+
+        item.Data.Remove(targetsKey);
+        item.Data.Remove(indexKey);
+        item.Data.Remove(reasonKey);
+        return true;
+    }
+
+    private void ResumeEffectKillContinuation(L12Prompt prompt)
+    {
+        if (prompt.Data.GetValueOrDefault("effectKillStackItemId") is not { Length: > 0 } stackItemId)
             return;
+        var item = State.EffectStack.FirstOrDefault(candidate => candidate.StackItemId == stackItemId);
+        if (item is null) return;
+        item.Data.Remove("pendingEffectKillPromptId");
+        switch (prompt.Data.GetValueOrDefault("effectKillContinuation"))
+        {
+            case "yingzheng-mass-kill":
+                if (ResolveYingzhengKillSegment(item)) FinishStackItem(item);
+                return;
+            case "sequential-effect-kills":
+                if (ResolveSequentialEffectKills(item)) FinishStackItem(item);
+                return;
+            case "legacy-hijikata-next":
+                ContinueLegacyHijikataAfterKill(item);
+                return;
+            default:
+                FinishStackItem(item);
+                return;
         }
     }
 

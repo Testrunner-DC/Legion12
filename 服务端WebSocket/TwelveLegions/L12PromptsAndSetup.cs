@@ -2038,6 +2038,10 @@ public sealed partial class L12GameEngine
 
     private void FinishStackItem(L12StackItem item)
     {
+        if (item.Data.GetValueOrDefault("pendingEffectKillPromptId") is { Length: > 0 } promptId
+            && State.PendingPrompts.Any(prompt => prompt.PromptId == promptId))
+            return;
+        item.Data.Remove("pendingEffectKillPromptId");
         var resultStatus = TrackStackCompletion(item);
         AddEffectResultEvent(item, resultStatus);
         QueueNextTrialCompletionSegment(item);

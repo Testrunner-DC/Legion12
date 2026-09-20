@@ -543,13 +543,12 @@ public sealed partial class L12GameEngine
                 if (chosen[0] != "skip") KillTarget(item, chosen[0], $"被{source?.Name}击杀");
                 FinishStackItem(item); return true;
             case "hijikata-enter-kill":
-                if (chosen[0] != "skip") KillTarget(item, chosen[0], "被土方岁三击杀");
-                if (item.Data["hijikata-step"] == "2")
+                if (chosen[0] != "skip" && !KillTarget(item, chosen[0], "被土方岁三击杀"))
                 {
-                    item.Data["hijikata-step"] = "1";
-                    PromptEnemyLegion(item, "hijikata-enter-kill", "土方岁三：击杀对方1张费用不高于1的军团", target => L12StructuredCardRules.CurrentCostAtMost(target, 1), true);
+                    OverrideEffectKillContinuation(item, "legacy-hijikata-next");
+                    return true;
                 }
-                else FinishStackItem(item);
+                ContinueLegacyHijikataAfterKill(item);
                 return true;
             case "takasugi-debuff":
             case "tachibana-debuff":
@@ -737,6 +736,19 @@ public sealed partial class L12GameEngine
         }
         PushEffect(playerIndex, source, "active", "主动效果", data: data);
         return CommandResult.Ok();
+    }
+
+    private void ContinueLegacyHijikataAfterKill(L12StackItem item)
+    {
+        if (item.Data.GetValueOrDefault("hijikata-step") == "2")
+        {
+            item.Data["hijikata-step"] = "1";
+            PromptEnemyLegion(item, "hijikata-enter-kill",
+                "土方岁三：击杀对方1张费用不高于1的军团",
+                target => L12StructuredCardRules.CurrentCostAtMost(target, 1), true);
+            return;
+        }
+        FinishStackItem(item);
     }
 
     private bool TryResolveS1ExtendedActive(L12StackItem item, L12CardInstance? source, string ability)

@@ -635,14 +635,13 @@ public sealed partial class L12GameEngine
                     if (broad is not null) resolved.Add(broad.InstanceId);
                     if (low is not null && low.InstanceId != broad?.InstanceId) resolved.Add(low.InstanceId);
                 }
-                foreach (var id in declared)
-                {
-                    if (resolved.Contains(id)) KillTarget(item, id, "被土方岁三击杀");
-                    else RecordTargetSettlementFailure(item, id,
+                foreach (var id in declared.Where(id => !resolved.Contains(id)))
+                    RecordTargetSettlementFailure(item, id,
                         "所选军团已离场、当前费用高于2，或另一项要求的当前费用已高于1");
-                }
                 if (resolved.Count > 0 && resolved.Count < declared.Length)
                     item.Data["effectResultStatus"] = "resolved";
+                if (!ResolveSequentialEffectKills(item, declared.Where(resolved.Contains), "被土方岁三击杀"))
+                    return true;
                 break;
             }
             case "takasugi":

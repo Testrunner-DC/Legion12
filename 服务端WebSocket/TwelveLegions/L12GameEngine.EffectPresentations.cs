@@ -157,6 +157,26 @@ public sealed partial class L12GameEngine
         return resolved;
     }
 
+    private bool ResolveDeclaredEnemyKillTargets(L12StackItem item, IEnumerable<string> declaredTargets,
+        Func<L12CardInstance, bool>? predicate, string reason,
+        string noTargetReason, string invalidTargetReason)
+    {
+        var declared = declaredTargets
+            .Where(id => !string.IsNullOrWhiteSpace(id) && !id.StartsWith("mode:", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var legal = declared.Where(targetId => DeclaredEnemyTarget(item.Controller, targetId, predicate) is not null)
+            .ToArray();
+        if (legal.Length == 0)
+            RecordTargetSettlementFailure(item, string.Join('|', declared),
+                declared.Length == 0 ? noTargetReason : invalidTargetReason);
+        else if (legal.Length < declared.Length)
+            AddEvent("effect", item.Controller,
+                $"〈{item.SourceName}〉有{declared.Length - legal.Length}个已声明对象在逆结算后失效；其余对象继续结算",
+                FindSource(item) is { } source ? [source] : []);
+        return ResolveSequentialEffectKills(item, legal, reason);
+    }
+
     // 两个预先声明的独立去向，组合现有回手/回库操作；不是固定数量整组回库原子。
     // 每次移动前读取当前墓地区域与条件，不能用另一合法对象替代失效对象。
     private void ResolveDeclaredGraveDestinations(L12StackItem item, string handId, string bottomId,

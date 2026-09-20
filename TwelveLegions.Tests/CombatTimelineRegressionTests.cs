@@ -521,6 +521,41 @@ public sealed class CombatTimelineRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "bug:BUG-20260920-09e5efc2")]
+    public void LancelotAttackingRolloKeepsLancelotsKillTimingThroughMutualDefeat()
+    {
+        var game = Create(828069);
+        ReadyForCombat(game);
+        var lancelot = Card("S02-0602", "lancelot-versus-rollo");
+        var rollo = Card("S02-0302", "rollo-versus-lancelot");
+        game.State.Players[0].Field[0][0] = lancelot;
+        game.State.Players[1].Field[0][0] = rollo;
+
+        Assert.True(game.Handle(0, new L12Command("attack", lancelot.InstanceId,
+            Target: new L12AttackTarget("legion", rollo.InstanceId))).Accepted);
+
+        Assert.Equal(L12CombatStage.KillTriggers, game.State.PendingDefense?.Stage);
+        Assert.Contains(lancelot, game.State.Players[0].Resolving);
+        Assert.Contains(rollo, game.State.Players[1].Resolving);
+        Assert.Empty(game.State.Players[0].Graveyard);
+        Assert.Empty(game.State.Players[1].Graveyard);
+
+        var killPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(0, killPrompt.PlayerIndex);
+        Assert.Contains("mode:rune", killPrompt.ValidChoices);
+        var runesBefore = game.State.Players[0].SpecialZones.Runes;
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: killPrompt.PromptId,
+            Choice: "mode:rune")).Accepted);
+
+        Assert.Equal(runesBefore + 1, game.State.Players[0].SpecialZones.Runes);
+        Assert.Contains(lancelot, game.State.Players[0].Graveyard);
+        Assert.Contains(rollo, game.State.Players[1].Graveyard);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.InstanceId == lancelot.InstanceId)
+            && entry.Text.Contains("击杀时", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void DefenderCombatKillConsumesGrantedReadyEffect()
     {
         var game = Create(828062);

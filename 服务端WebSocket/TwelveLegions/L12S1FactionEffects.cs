@@ -1366,11 +1366,8 @@ public sealed partial class L12GameEngine
                 var graveIds = ids.Where(id => player.Library.Any(card => card.InstanceId == id)).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 var targets = ids.Where(id => !graveIds.Contains(id)
                     && !id.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)).ToArray();
-                if (targets.Length == 2)
-                {
-                    if (targets[0] != "mode:none") KillTarget(item, targets[0], "被英灵殿击杀");
-                    if (targets[1] != "mode:none") KillTarget(item, targets[1], "被英灵殿击杀");
-                }
+                if (targets.Length == 2 && !ResolveSequentialEffectKills(item,
+                        targets.Where(target => target != "mode:none"), "被英灵殿击杀")) return true;
                 FinishStackItem(item); return true;
             }
             case "valkyrieRecover":

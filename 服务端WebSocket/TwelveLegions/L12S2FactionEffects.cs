@@ -427,8 +427,7 @@ public sealed partial class L12GameEngine
                     foreach (var pair in CompositeFirstSegmentData("trigger:S02-0101:enter",
                                  new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
                         item.Data[pair.Key] = pair.Value;
-                    ResolveYingzhengKillSegment(item);
-                    FinishStackItem(item);
+                    if (ResolveYingzhengKillSegment(item)) FinishStackItem(item);
                     return true;
                 }
                 AddPresentationEvent("reveal", item.Controller,
@@ -438,8 +437,7 @@ public sealed partial class L12GameEngine
                 return true;
             }
             case "yingzheng-kill":
-                ResolveYingzhengKillSegment(item);
-                FinishStackItem(item);
+                if (ResolveYingzhengKillSegment(item)) FinishStackItem(item);
                 return true;
             case "yingzheng-return":
                 ResolveYingzhengReturnSegment(item);
@@ -3089,14 +3087,28 @@ public sealed partial class L12GameEngine
     private static L12CardInstance[] YingzhengEnterCostCandidates(L12PlayerState player)
         => player.Hand.Where(IsYingzhengEnterCostCandidate).ToArray();
 
-    private void ResolveYingzhengKillSegment(L12StackItem item)
+    private bool ResolveYingzhengKillSegment(L12StackItem item)
     {
-        foreach (var owner in State.Players)
-            foreach (var target in owner.Field.SelectMany(row => row).Where(target => target is not null
-                         && target.InstanceId != item.SourceInstanceId && IsFieldLegion(target)).Cast<L12CardInstance>().ToArray())
-                KillTarget(item, target.InstanceId, "被始皇帝 嬴政击杀");
-        AddEvent("effect", item.Controller, "始皇帝 嬴政击杀除此军团以外的所有军团",
-            FindSource(item) is { } source ? [source] : []);
+        var initialTargets = State.Players
+            .SelectMany(owner => owner.Field.SelectMany(row => row))
+            .Where(target => target is not null && target.InstanceId != item.SourceInstanceId
+                && IsFieldLegion(target))
+            .Cast<L12CardInstance>()
+            .Select(target => target.InstanceId)
+            .ToArray();
+        if (!ResolveSequentialEffectKills(item, initialTargets, "被始皇帝 嬴政击杀"))
+        {
+            OverrideEffectKillContinuation(item, "yingzheng-mass-kill");
+            return false;
+        }
+
+        if (item.Data.GetValueOrDefault("yingzhengMassKillCompleted") != "true")
+        {
+            item.Data["yingzhengMassKillCompleted"] = "true";
+            AddEvent("effect", item.Controller, "始皇帝 嬴政击杀除此军团以外的所有军团",
+                FindSource(item) is { } source ? [source] : []);
+        }
+        return true;
     }
 
     private void ResolveYingzhengReturnSegment(L12StackItem item)
