@@ -626,8 +626,7 @@ function kindLabel() {
         <div v-else class="prompt-choices" :class="{ 'prompt-card-strip': hasCardChoices, 'effect-option-list': isEffectOptionList, 'response-target-list': prompt.kind === 'response-target' }">
           <template v-for="choice in primaryChoices" :key="choice">
             <article v-if="prompt.kind === 'response-target'" class="response-target-row" :class="{ selected: selected.includes(choice) }">
-              <button class="response-target-select l12-effect-body" :aria-pressed="selected.includes(choice)" :disabled="l12State.pendingAction" @click="toggle(choice)">{{ label(choice) }}</button>
-              <button v-if="detailFor(choice)" class="response-target-detail" :aria-label="`查看${cardName(choice)}来源详情`" @click="focusChoice(choice)">来源详情</button>
+              <button class="response-target-select l12-effect-body" :aria-pressed="selected.includes(choice)" :disabled="l12State.pendingAction" @click="focusChoice(choice); toggle(choice)">{{ label(choice) }}</button>
             </article>
             <PromptCardCandidate v-else-if="detailFor(choice)"
               :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :name="cardName(choice)" :meta="cardMeta(choice)"
@@ -748,7 +747,6 @@ function kindLabel() {
 .response-target-row{display:flex;flex:none;align-items:stretch;gap:8px;border:1px solid #52615d;background:#10191a}
 .response-target-row.selected{border-color:#79d2ce;box-shadow:inset 0 0 0 1px #79d2ce}
 .response-target-select{flex:1;min-width:0;padding:12px;border:0;background:transparent;color:#eee;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere}
-.response-target-detail{flex:none;align-self:center;margin:8px;padding:8px;border:1px solid #52615d;background:#162629;color:#b9e7e5}
 .initiative-race{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.initiative-race article{display:grid;grid-template-columns:52px 1fr 58px;grid-template-rows:auto auto;align-items:center;gap:3px 9px;padding:10px;border:2px solid #4c5553;background:#0c1112}.initiative-race article.winner{border-color:#e4bd58;box-shadow:0 0 18px rgba(228,189,88,.35)}.initiative-race img{grid-row:1/3;width:52px;height:73px;object-fit:contain}.initiative-race div{display:grid}.initiative-race strong{color:#fff;font-size:var(--l12-board-copy,13px)}.initiative-race span{color:#89928e;font-size:var(--l12-board-copy,13px)}.initiative-race b{grid-column:3;grid-row:1/3;color:#fff;font-size:max(52px,var(--l12-board-copy,13px));line-height:1;animation:dice-shake .18s infinite alternate}.initiative-race.settled b{animation:dice-land .32s ease-out}.initiative-race em{grid-column:3;grid-row:2;color:#e6c15e;font-size:var(--l12-board-copy,13px);font-style:normal;text-align:center;transform:translateY(14px)}@keyframes dice-shake{from{transform:rotate(-9deg) scale(.94)}to{transform:rotate(9deg) scale(1.05)}}@keyframes dice-land{0%{transform:scale(1.35) rotate(18deg)}100%{transform:scale(1) rotate(0)}}
 .l12-prompt-overlay{position:fixed!important;z-index:2147483600!important;inset:0;box-sizing:border-box;display:flex!important;width:100vw;height:100vh;align-items:center!important;justify-content:center!important;padding:18px;background:rgba(2,4,5,.48)!important;backdrop-filter:blur(3px)}
 .l12-prompt-overlay.inspector-active:not(.minimized){--inspector-safe-lane:clamp(118px,19vw,258px);padding-left:var(--inspector-safe-lane)}.l12-prompt-overlay.inspector-active:not(.minimized) .prompt-panel{max-width:calc(100vw - var(--inspector-safe-lane) - 18px)}

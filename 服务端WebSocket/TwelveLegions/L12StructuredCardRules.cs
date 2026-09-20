@@ -71,6 +71,12 @@ public static partial class L12StructuredCardRules
         => card.HasPrintedCost && card.CurrentCost == value;
 
     /// <summary>
+    /// 牌库检索按费用筛选时，未印刷费用的卡按0处理；这不会赋予其0费打出能力。
+    /// </summary>
+    public static bool SearchCostAtMost(L12CardInstance card, int maximum)
+        => (card.HasPrintedCost ? card.CurrentCost : 0) <= maximum;
+
+    /// <summary>
     /// 【试炼军团】是卡牌类型与当前实例试炼值共同定义的规则身份。
     /// 试炼值不是阵营、特征或职介；所有候选、提交与结算入口都必须查询此定义，禁止维护卡号白名单。
     /// </summary>

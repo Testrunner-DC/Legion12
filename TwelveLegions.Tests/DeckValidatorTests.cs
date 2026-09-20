@@ -97,7 +97,7 @@ public sealed class DeckValidatorTests
 
         Assert.Equal([
             "S01-0216", "S01-0217", "S01-0218", "S01-0219", "S01-0220",
-            "S02-0301", "S02-0305",
+            "S02-0301", "S02-0305", "S02-06S2",
         ], limited);
     }
 

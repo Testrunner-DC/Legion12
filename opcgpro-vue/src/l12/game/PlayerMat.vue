@@ -43,6 +43,7 @@ const props = defineProps<{
   interactionPromptActive?: boolean
   canActivateOsiris?: boolean
   osirisVictoryDisabledReason?: string
+  mobileLayout?: boolean
 }>()
 const emit = defineEmits<{
   slot: [row: number, slot: number, card: Card | null]
@@ -120,7 +121,8 @@ function moraleLabel(card: MoraleResource) {
 }
 const temporaryMoraleCount = computed(() => Math.max(0, Math.floor(props.player.temporaryMorale ?? 0)))
 const activeMorale = computed(() => props.player.morale.filter(card => !card.tapped).length + temporaryMoraleCount.value)
-const currentTrialInstanceId = computed(() => props.player.specialZones?.trials?.find(card => !card.trialCompleted)?.instanceId ?? null)
+const currentTrialInstanceId = computed(() => props.player.specialZones?.trials
+  ?.find(card => !card.trialCompleted && (card.trialProgress ?? 0) < 8)?.instanceId ?? null)
 const spendableMorale = computed(() => props.player.spendableResourceCount ?? (activeMorale.value
   + (props.active ? props.player.field.flat().filter(card => card?.cardId === 'S01-0212' && !card.tapped && !card.hidden).length : 0)))
 type AbilityEntry = { id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }
@@ -373,8 +375,9 @@ function beginCardAbility(card: Card) {
             }"
             @click="handleSlot(row, slot, player.field[row][slot])" @keyup.enter="handleSlot(row, slot, player.field[row][slot])">
             <template v-if="player.field[row][slot]">
+              <Teleport to="body" :disabled="!mobileLayout">
               <div v-if="selectedId === player.field[row][slot]!.instanceId && actionsEnabled && !attackMode && !moveMode && !freeMoveMode && !cavalryMoveMode && (canUseAbilities(player.field[row][slot]!) || canTrial(player.field[row][slot]!))"
-                class="card-context-actions field-actions">
+                class="card-context-actions field-actions" :class="{ 'mobile-action-dock': mobileLayout }">
                 <button v-if="canUseAbilities(player.field[row][slot]!) && canAttack(player.field[row][slot]!, row)" :class="{ active: attackMode }"
                   @click.stop="emit('cardAction', 'attack', player.field[row][slot]!)">{{ attackMode ? '选择目标' : '进攻' }}</button>
                 <button v-if="canUseAbilities(player.field[row][slot]!) && canMove(player.field[row][slot]!, row, slot)" :class="{ active: moveMode }"
@@ -390,6 +393,7 @@ function beginCardAbility(card: Card) {
                 <button v-if="canTrial(player.field[row][slot]!)" type="button" data-ui-contract="independent-trial-action"
                   @click.stop="emit('ability', player.field[row][slot]!, 'trialAdvance')">试炼</button>
               </div>
+              </Teleport>
               <CardTile :card="hiddenRevealCard?.instanceId === player.field[row][slot]!.instanceId ? hiddenRevealCard : player.field[row][slot]!"
                 :class="{ 'battlefield-legion-card': isBattlefieldLegionCard(player.field[row][slot]!) }"
                 :selected="isSelected(player.field[row][slot]!.instanceId)"

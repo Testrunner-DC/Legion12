@@ -729,6 +729,8 @@ const contracts = [
   [cardTile.includes("props.card.isMasterLegion === true") && cardTile.includes('displayBaseTroops'), '孙悟空等主宰军团化实体必须显示权威兵力且设定兵力不误判为增益'],
   [cardTile.includes('position:static!important') && cardTile.includes('object-position:center 14%'), '圆形叠放卡图不得被全局卡图定位规则覆盖'],
   [playerMat.includes("entry.id === 'trialAdvance'") && playerMat.includes('function canTrial') && playerMat.includes("'trialAdvance')"), '试炼军团必须拥有与进攻、移动并列的直接试炼按钮'],
+  [playerMat.includes("!card.trialCompleted && (card.trialProgress ?? 0) < 8")
+    && board.includes("!candidate.trialCompleted") && board.includes("(candidate.trialProgress ?? 0) < 8"), '当前可推进试炼的按钮与进度标记必须跳过已达8但尚未翻面的试炼，继续指向后续仍可推进的试炼'],
   [playerMat.includes("@click.stop=\"(!trial.hidden || side === 'my') && selectZoneCard(trial)\""), '试炼卡必须复用公开区域卡牌能力入口；己方未完成试炼仍可查看详情，对方未知试炼保持不可见'],
   [playerMat.includes('aspect-ratio:1752/1255') && playerMat.includes('class="trial-card-back"')
     && playerMat.includes('class="trial-progress"') && playerMat.includes('width:46px;min-width:46px;height:46px;min-height:46px')

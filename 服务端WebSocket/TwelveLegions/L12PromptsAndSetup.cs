@@ -1640,6 +1640,10 @@ public sealed partial class L12GameEngine
             && IsResponseEffectStackItem(top) && top.Controller != playerIndex
             && PublicLegions(State.Players[playerIndex]).Any())
             return true;
+        if (L12StructuredCardRules.RequiresOwnLegionResponseTarget(cardId)
+            && top.Trigger == "trial-complete" && top.Controller != playerIndex
+            && PublicLegions(State.Players[playerIndex]).Any())
+            return true;
         return CanUseS1ReactionAtStack(cardId, playerIndex, top);
     }
 

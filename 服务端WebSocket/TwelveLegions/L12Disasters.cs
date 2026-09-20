@@ -62,8 +62,8 @@ public sealed partial class L12GameEngine
 
         State.LastTurnStartDisasterEffectTurn = State.TurnSerial;
         State.LastTurnStartDisasterEffectInstanceId = disaster.InstanceId;
-        DamageMasterNonLethal(0, 1, "〈堙灭〉", neutralSource: true);
-        DamageMasterNonLethal(1, 1, "〈堙灭〉", neutralSource: true);
+        DamageMasterNonLethalWithoutDamageTriggeredRelics(0, 1, "〈堙灭〉", neutralSource: true);
+        DamageMasterNonLethalWithoutDamageTriggeredRelics(1, 1, "〈堙灭〉", neutralSource: true);
     }
 
     private void ResolveDisasterEffect(L12StackItem item)

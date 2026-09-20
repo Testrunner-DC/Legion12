@@ -267,7 +267,12 @@ public sealed class ControlPlaneModianImportTests
             server = new L12WebSocketServer(new L12RoomManager(catalog, recorder, store), recorder, store, catalog,
                 modianImportClient: fake);
             await server.StartAsync(0);
-            using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
+            var serverAddress = new Uri(Assert.Single(server.Addresses));
+            var clientAddress = new UriBuilder(serverAddress)
+            {
+                Host = serverAddress.Host is "0.0.0.0" or "::" ? "127.0.0.1" : serverAddress.Host
+            }.Uri;
+            using var client = new HttpClient { BaseAddress = clientAddress };
             var player = store.Register("tmodiac343e", "password-123");
             var admin = store.Login("Admin", "L12master");
 

@@ -367,6 +367,14 @@ public sealed partial class L12GameEngine
                 : AdjacentEmptySlots(battlefield, row, slot).ToList();
             step.ValidChoices.Clear();
             step.ValidChoices.AddRange(choices);
+            if (step.ValidChoices.Count == 0 && step.MinChoose == 0)
+            {
+                if (!string.IsNullOrWhiteSpace(step.DeclarationKey))
+                    activation.DeclaredValues[step.DeclarationKey] = [];
+                activation.CurrentStep++;
+                CreateActivationStepPrompt(activation);
+                return;
+            }
             if (step.ValidChoices.Count < step.MinChoose)
             {
                 RejectPendingActivation(activation, "所选军团没有可位移的相邻空位，效果未支付费用也未入栈");

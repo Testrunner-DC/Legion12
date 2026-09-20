@@ -32,7 +32,8 @@ public sealed partial class L12GameEngine
         if (plan is null) return false;
 
         var player = State.Players[candidate.Controller];
-        var hasOpenTrial = player.SpecialZones.Trials.Any(card => !card.TrialCompleted);
+        var hasOpenTrial = player.SpecialZones.Trials.Any(card => !card.TrialCompleted
+            && card.TrialProgress < 8);
         List<L12ActivationSelectionStep> steps = plan switch
         {
             "lancelot-entry" =>

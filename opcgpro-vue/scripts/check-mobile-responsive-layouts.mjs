@@ -3,13 +3,15 @@ import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 const read = path => readFile(resolve(root, path), 'utf8')
-const [viewportCss, viewportTs, app, archive, decks, board, shell, rules, profile, news, home, feedback, battleHub, rankings, tournaments, recovery, globalCss] = await Promise.all([
+const [viewportCss, viewportTs, app, archive, decks, board, playerMat, prompt, shell, rules, profile, news, home, feedback, battleHub, rankings, tournaments, recovery, globalCss] = await Promise.all([
   read('src/l12/mobileViewport.css'),
   read('src/l12/mobileViewport.ts'),
   read('src/App.vue'),
   read('src/l12/CardArchive.vue'),
   read('src/l12/site/DeckLibraryPage.vue'),
   read('src/l12/game/GameBoard.vue'),
+  read('src/l12/game/PlayerMat.vue'),
+  read('src/l12/game/PromptOverlay.vue'),
   read('src/l12/site/SiteShell.vue'),
   read('src/l12/site/RuleCenterPage.vue'),
   read('src/l12/site/ProfilePage.vue'),
@@ -35,6 +37,8 @@ expect(decks.includes('MobileFilterSheet') && decks.includes('plaza-desktop-filt
 expect(board.includes("const mobileMoralePickerEnabled = computed(() => mobileLandscapeViewport.value)"), 'morale summary must open on mobile even outside a payment prompt')
 expect(board.includes('mobileMoraleInteractive'), 'morale viewing and payment selection must remain distinct')
 expect(board.includes('bottom:56px!important') && board.includes('min-height:42px'), 'selected-card actions must reserve the lane above end turn')
+expect(playerMat.includes('<Teleport to="body" :disabled="!mobileLayout">') && playerMat.includes("'mobile-action-dock': mobileLayout") && board.includes(':mobile-layout="mobileLandscapeViewport"') && board.includes(':global(.mobile-action-dock)'), 'field attack and active-ability actions must use the shared body-level mobile action dock instead of remaining clipped inside the scaled battlefield')
+expect(prompt.includes('@click="focusChoice(choice); toggle(choice)"') && !prompt.includes('class="response-target-detail"'), 'response-target rows must focus and select through one unobscured control, including Court Magician counter-tactic choices')
 expect(shell.includes('overflow-x:clip') && shell.includes('env(safe-area-inset-bottom)'), 'site shell must contain portrait content and reserve the home indicator area')
 expect(rules.includes('.rule-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow:visible}'), 'portrait rule tabs must wrap instead of requiring horizontal scrolling')
 expect(shell.includes('max-height:520px') && feedback.includes('.bug-feedback-trigger{display:none}'), 'compact landscape and portrait feedback must be available without covering page controls')

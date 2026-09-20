@@ -507,11 +507,25 @@ public sealed partial class L12GameEngine
                 var destination = PublicTriggerDeclared(item, "slot");
                 var targetController = int.TryParse(item.Data.GetValueOrDefault("targetPlayerIndex"), out var parsedController)
                     && parsedController is >= 0 and <= 1 ? parsedController : -1;
-                _ = TryMoveDeclaredPublicLegion(item, targetController, targetId, destination,
-                    target => target.InstanceId != item.Data.GetValueOrDefault("moved"), requireAdjacent: true,
-                    "所选对象已离场、不再是公开军团、与触发位移对象相同或声明的相邻位置已失效；已支付费用不返还",
-                    target => $"月读使〈{target.Name}〉位移1格",
-                    target => AddTimedModifier(target, 0, -1, ExpiryAtNextOwnEnd(item.Controller), "月读"));
+                if (!TryGetDeclaredPublicLegion(targetController, targetId,
+                        target => target.InstanceId != item.Data.GetValueOrDefault("moved"),
+                        out _, out var target, out _, out _))
+                    RecordTargetSettlementFailure(item, targetId,
+                        "所选对象已离场、不再是公开军团或与触发位移对象相同；已支付费用不返还");
+                else
+                {
+                    if (!string.IsNullOrWhiteSpace(destination))
+                        _ = TryMoveDeclaredPublicLegion(item, targetController, targetId, destination,
+                            current => current.InstanceId != item.Data.GetValueOrDefault("moved"), requireAdjacent: true,
+                            "声明的相邻位置已失效；跳过位移，但费用降低继续结算",
+                            current => $"月读使〈{current.Name}〉位移1格");
+                    else
+                        AddEvent("effect-noop", item.Controller,
+                            $"〈{target.Name}〉没有相邻空位，月读跳过位移", target);
+                    AddTimedModifier(target, 0, -1, ExpiryAtNextOwnEnd(item.Controller), "月读");
+                    AddEvent("effect", item.Controller,
+                        $"月读使〈{target.Name}〉本回合费用-1", target);
+                }
                 FinishStackItem(item);
                 return true;
             }
@@ -825,9 +839,7 @@ public sealed partial class L12GameEngine
         var key = L12MasterTriggeredUsageRules.Key("tsukuyomiFollowMove", player.PlayerIndex, State.TurnSerial);
         if (!player.UsedAbilities.Contains(key) && ActiveResourceCount(player) > 0
             && State.Players.Any(targetController => PublicLegions(targetController).Any(card =>
-                card.InstanceId != moved.InstanceId
-                && FindOnField(targetController, card.InstanceId, out var row, out var slot) is not null
-                && AdjacentEmptySlots(targetController, row, slot).Any())))
+                card.InstanceId != moved.InstanceId)))
             candidates.Add(CreateTriggerCandidate(playerIndex, master, "friendly-legion-moves", "军团位移时效果",
                 new Dictionary<string, string> { ["ability"] = "tsukuyomiFollowMove", ["moved"] = moved.InstanceId }));
         QueueTriggerCandidates(candidates);

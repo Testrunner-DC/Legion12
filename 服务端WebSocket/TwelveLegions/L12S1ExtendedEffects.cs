@@ -314,7 +314,8 @@ public sealed partial class L12GameEngine
             {
                 var top = player.Library.Take(3).ToArray();
                 item.Data["camp-top"] = string.Join('|', top.Select(candidate => candidate.InstanceId));
-                var choices = top.Where(candidate => candidate.CardType == "legion" && candidate.Faction == player.Faction)
+                var choices = top.Where(candidate => candidate.CardType == "legion"
+                        && L12StructuredCardRules.HasFaction(player, candidate, player.Faction))
                     .Select(candidate => candidate.InstanceId).ToList();
                 if (top.Length == 0)
                 {
@@ -902,7 +903,8 @@ public sealed partial class L12GameEngine
             }
         }
         else if (topIds.Any(id => player.Library.Any(card => card.InstanceId == id
-                     && card.CardType == "legion" && card.Faction == player.Faction)))
+                     && card.CardType == "legion"
+                     && L12StructuredCardRules.HasFaction(player, card, player.Faction))))
         {
             item.Data["effectResultStatus"] = "failed";
             AddEvent("effect-failed", item.Controller,
@@ -1307,6 +1309,11 @@ public sealed partial class L12GameEngine
     }
 
     private void QueueS1MasterDamageReaction(int damagedPlayer, int? sourcePlayer, bool effectDamage)
+        => QueueS1MasterDamageReactionCore(damagedPlayer, sourcePlayer, effectDamage,
+            allowDamageTriggeredRelicEffects: true);
+
+    private void QueueS1MasterDamageReactionCore(int damagedPlayer, int? sourcePlayer, bool effectDamage,
+        bool allowDamageTriggeredRelicEffects)
     {
         var player = State.Players[damagedPlayer];
         var candidates = new List<L12TriggerCandidate>();
@@ -1329,7 +1336,7 @@ public sealed partial class L12GameEngine
                 .Select(card => CreateTriggerCandidate(damagedPlayer, card, "master-damaged-by-effect", "【我方主宰因效果受到伤害时】效果",
                     new Dictionary<string, string> { ["ability"] = "margaretMasterDamage" })));
         }
-        if (BuildAnderstorpRingDrawCandidate(damagedPlayer) is { } ringDraw)
+        if (allowDamageTriggeredRelicEffects && BuildAnderstorpRingDrawCandidate(damagedPlayer) is { } ringDraw)
             candidates.Add(ringDraw);
         QueueTriggerCandidates(candidates);
     }

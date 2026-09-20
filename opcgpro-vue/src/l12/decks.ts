@@ -111,7 +111,7 @@ interface CardArchiveAsset {
   sourceArchiveName: string
 }
 const seasonTwoIdentityById = new Map((seasonTwoRulesData as Array<{
-  id: string; cardType: string; isCounterTactic?: boolean
+  id: string; cardType: string; isCounterTactic?: boolean; deckLimit?: number
 }>).map(card => [card.id, card]))
 
 const lookupFactionMap: Record<string, string> = {
@@ -183,7 +183,7 @@ function lookupDeckCard(card: LookupCard): DeckCard {
     hp: card.health ?? undefined,
     disasterLevel: card.disasterLevel ?? undefined,
     trialValue: card.trialValue ?? undefined,
-    deckLimit: card.deckLimit ?? undefined,
+    deckLimit: authoritative?.deckLimit ?? card.deckLimit ?? undefined,
     rarity: normalizeLookupRarity(card.rarity),
     traits: card.tags ?? [],
     profession: card.subType || undefined,

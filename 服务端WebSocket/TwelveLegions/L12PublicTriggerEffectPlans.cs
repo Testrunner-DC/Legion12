@@ -769,9 +769,7 @@ public sealed partial class L12GameEngine
             {
                 var movedId = candidate.Data.GetValueOrDefault("moved");
                 var targets = State.Players.SelectMany(targetController => PublicLegions(targetController)
-                        .Where(card => card.InstanceId != movedId
-                            && FindOnField(targetController, card.InstanceId, out var row, out var slot) is not null
-                            && AdjacentEmptySlots(targetController, row, slot).Any()))
+                        .Where(card => card.InstanceId != movedId))
                     .Select(card => card.InstanceId).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
                 var canUse = targets.Count > 0 && ActiveResourceCount(player) > 0;
                 steps =
@@ -784,7 +782,7 @@ public sealed partial class L12GameEngine
                     PublicTriggerStep("field-legion", "target", "月读：预先选择双方战场另一张军团进行1格位移",
                         targets, requiredChoice: "mode:use"),
                     PublicTriggerStep("adjacent-slot", "slot", "月读：预先选择该军团位移后的相邻空位",
-                        ["dynamic"], referenceKey: "target", requiredChoice: "mode:use"),
+                        ["dynamic"], min: 0, max: 1, referenceKey: "target", requiredChoice: "mode:use"),
                 ];
                 break;
             }
@@ -1459,10 +1457,13 @@ public sealed partial class L12GameEngine
             var targetOnField = targetPlayer is null ? null
                 : FindOnField(targetPlayer, targetId, out row, out oldSlot);
             var onceKey = L12MasterTriggeredUsageRules.Key("tsukuyomiFollowMove", player.PlayerIndex, State.TurnSerial);
+            var adjacentSlots = targetPlayer is null || targetOnField is null
+                ? [] : AdjacentEmptySlots(targetPlayer, row, oldSlot).ToArray();
             if (player.UsedAbilities.Contains(onceKey) || targetOnField is null
                 || !IsFieldLegion(targetOnField) || targetOnField.Hidden
-                || targetOnField.InstanceId == candidate.Data.GetValueOrDefault("moved") || slot is null
-                || !AdjacentEmptySlots(targetPlayer!, row, oldSlot).Contains(slot, StringComparer.OrdinalIgnoreCase)
+                || targetOnField.InstanceId == candidate.Data.GetValueOrDefault("moved")
+                || slot is not null && !adjacentSlots.Contains(slot, StringComparer.OrdinalIgnoreCase)
+                || slot is null && adjacentSlots.Length > 0
                 || !CanConsumeSelectedResources(player, 1, cost))
                 error = "月读的费用、公开目标或位移位置已失效；未支付费用且效果未入栈";
             else

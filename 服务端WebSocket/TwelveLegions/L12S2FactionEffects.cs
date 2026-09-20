@@ -195,7 +195,8 @@ public sealed partial class L12GameEngine
         bool queueAngusTrigger)
     {
         var player = State.Players[playerIndex];
-        var trial = player.SpecialZones.Trials.FirstOrDefault(card => !card.TrialCompleted);
+        var trial = player.SpecialZones.Trials.FirstOrDefault(card => !card.TrialCompleted
+            && card.TrialProgress < 8);
         if (trial is null || count <= 0) return false;
         var before = trial.TrialProgress;
         trial.TrialProgress = Math.Min(8, trial.TrialProgress + count);
@@ -1782,7 +1783,7 @@ public sealed partial class L12GameEngine
             else
             {
                 var choices = player.Library.Where(card => card.CardType == "tactic"
-                        && L12StructuredCardRules.CurrentCostAtMost(card, 4) && !IsCounterTactic(card.CardId))
+                        && L12StructuredCardRules.SearchCostAtMost(card, 4) && !IsCounterTactic(card.CardId))
                     .Select(card => card.InstanceId).ToList();
                 if (choices.Count == 0)
                 {

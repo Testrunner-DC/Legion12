@@ -2122,15 +2122,22 @@ public sealed partial class L12GameEngine
         }
     }
 
-    private void DamageMasterNonLethal(int playerIndex, int amount, string source, int? sourcePlayer = null, bool neutralSource = false)
-        => DamageMasterNonLethalCore(playerIndex, amount, source, sourcePlayer, neutralSource, null);
+    private void DamageMasterNonLethal(int playerIndex, int amount, string source, int? sourcePlayer = null,
+        bool neutralSource = false)
+        => DamageMasterNonLethalCore(playerIndex, amount, source, sourcePlayer, neutralSource, null,
+            allowDamageTriggeredRelicEffects: true);
+
+    private void DamageMasterNonLethalWithoutDamageTriggeredRelics(int playerIndex, int amount, string source,
+        int? sourcePlayer = null, bool neutralSource = false)
+        => DamageMasterNonLethalCore(playerIndex, amount, source, sourcePlayer, neutralSource, null,
+            allowDamageTriggeredRelicEffects: false);
 
     private void DamageMasterNonLethalFromEffect(L12StackItem sourceItem, int playerIndex, int amount, string source)
         => DamageMasterNonLethalCore(playerIndex, amount, source, sourceItem.Controller,
-            neutralSource: false, sourceItem);
+            neutralSource: false, sourceItem, allowDamageTriggeredRelicEffects: true);
 
     private void DamageMasterNonLethalCore(int playerIndex, int amount, string source, int? sourcePlayer,
-        bool neutralSource, L12StackItem? declaredSourceItem)
+        bool neutralSource, L12StackItem? declaredSourceItem, bool allowDamageTriggeredRelicEffects)
     {
         var player = State.Players[playerIndex];
         amount = ApplyOutgoingMasterDamageOverride(playerIndex, amount, sourcePlayer, neutralSource,
@@ -2144,7 +2151,8 @@ public sealed partial class L12GameEngine
         TrackMasterDamageFact(playerIndex, actual, sourcePlayer, neutralSource, combatDamage: false,
             declaredSourceItem);
         AddEvent("damage", playerIndex, $"{player.Name} 的主宰因{source}失去 {actual} 点非致命伤害");
-        QueueS1MasterDamageReaction(playerIndex, ResolveDamageSourcePlayer(sourcePlayer, neutralSource), effectDamage: true);
+        QueueS1MasterDamageReactionCore(playerIndex, ResolveDamageSourcePlayer(sourcePlayer, neutralSource),
+            effectDamage: true, allowDamageTriggeredRelicEffects);
     }
 
     private void HealMaster(int playerIndex, int amount, string source, bool legionEffect = false)

@@ -344,8 +344,9 @@ function sessionDisasterState(card: DisasterCardView | null) {
 function isVisibleDisasterCard(card: DisasterCardView): card is Card {
   return !card.hidden && Boolean(card.cardId && card.name && card.cardType)
 }
-function isCurrentTrial(trials: Array<{ instanceId: string; trialCompleted?: boolean }> | undefined, trial: { instanceId: string }) {
-  return trials?.find(candidate => !candidate.trialCompleted)?.instanceId === trial.instanceId
+function isCurrentTrial(trials: Array<{ instanceId: string; trialCompleted?: boolean; trialProgress?: number }> | undefined, trial: { instanceId: string }) {
+  return trials?.find(candidate => !candidate.trialCompleted
+    && (candidate.trialProgress ?? 0) < 8)?.instanceId === trial.instanceId
 }
 function focusSessionDisaster(card: DisasterCardView, index?: number) {
   if (isVisibleDisasterCard(card)) focusCard.value = card
@@ -1030,6 +1031,7 @@ function statusTexts(card: Card) {
           </div>
           <div class="felt-board" data-l12-game-board data-ui-contract="persistent-board-safe-layout">
             <PlayerMat class="battlefield-half opponent-half" :player="viewEnemy" side="opponent" :controllable="isControlledPlayer(viewEnemy.playerIndex)"
+              :mobile-layout="mobileLandscapeViewport"
               :active="game.activePlayer === viewEnemy.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
               :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!hasBlockingPrompt && !readOnly && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
               :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewEnemy.playerIndex) || (isControlledPlayer(viewEnemy.playerIndex) && mode === 'play' && playArmed && (isInfiltrator(selectedHandCard) || selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))))"
@@ -1104,6 +1106,7 @@ function statusTexts(card: Card) {
               </div>
             </div>
             <PlayerMat class="battlefield-half my-half" :player="viewMe" side="my" :controllable="isControlledPlayer(viewMe.playerIndex)"
+              :mobile-layout="mobileLandscapeViewport"
               :active="game.activePlayer === viewMe.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
               :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard" :interaction-prompt-active="Boolean(hasBlockingPrompt)"
               :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!hasBlockingPrompt && !readOnly && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
@@ -2071,4 +2074,35 @@ function statusTexts(card: Card) {
 }
 .mobile-morale-choice.black-lotus { border-color: #d4ae42; background: #0c0d0d; }
 .mobile-morale-choice.temporary img { filter: brightness(0) invert(1); }
+:global(.mobile-action-dock) {
+  position: fixed !important;
+  z-index: 2147483604 !important;
+  right: calc(100vw - var(--l12-viewport-left, 0px) - var(--l12-viewport-width, 100vw) + 5px) !important;
+  bottom: calc(100vh - var(--l12-viewport-top, 0px) - var(--l12-viewport-height, 100vh) + 64px) !important;
+  left: auto !important;
+  display: flex !important;
+  box-sizing: border-box;
+  width: 96px !important;
+  max-width: 96px !important;
+  max-height: calc(var(--l12-viewport-height, 100vh) - 72px);
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 3px;
+  overflow: auto;
+  border: 1px solid #587b7d;
+  background: rgba(8, 12, 13, .98);
+  box-shadow: 0 5px 18px #000;
+  transform: none !important;
+  pointer-events: auto !important;
+}
+:global(.mobile-action-dock button) {
+  box-sizing: border-box;
+  min-width: 0 !important;
+  min-height: 32px !important;
+  flex: 1 1 42px;
+  padding: 3px 4px !important;
+  font-size: 10px !important;
+  line-height: 1.1 !important;
+  white-space: normal;
+}
 </style>
