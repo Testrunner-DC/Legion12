@@ -7,8 +7,8 @@ const root = path.resolve(import.meta.dirname, '..')
 const { chromium } = createRequire(import.meta.url)(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 const source = fs.readFileSync(path.join(root, 'scripts/verify-batch253-visual.mjs'), 'utf8')
 let entry = source.slice(source.indexOf('const entry = `') + 15, source.indexOf('\n`', source.indexOf('const entry = `')))
-entry = `import {ref} from 'vue';import Editor from '/src/l12/L12DeckEditor.vue';import {useLandscapeViewport,viewportRect} from '/src/l12/mobileViewport.ts';import '/src/l12/mobileViewport.css';window.qaRect=viewportRect;const qaEnabled=ref(true);window.qaExit=()=>qaEnabled.value=false;\n` + entry.replace('createApp({render:', 'createApp({setup(){useLandscapeViewport(qaEnabled)},render:').replace('()=>isPicker?', "()=>params.has('editor')?h(Editor):isPicker?")
-const server = await createServer({ root, server: { host: '127.0.0.1', port: 0 }, plugins: [{ name: 'mobile-fixture', resolveId(id) { if(id==='/__mobile__.js')return id }, load(id) { if(id==='/__mobile__.js')return entry }, configureServer(s) { s.middlewares.use((req,res,next)=>{if(req.url?.startsWith('/__mobile__')&&!req.url.includes('.js')){res.setHeader('Content-Type','text/html');res.end('<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><div id="l12-landscape-teleports"></div><div id="app" class="l12-landscape-surface"></div><script type="module" src="/__mobile__.js"></script>');return}next()}) } }] })
+entry = `import {ref} from 'vue';import Editor from '/src/l12/L12DeckEditor.vue';import {audioPreferences} from '/src/l12/audioPreferences.ts';import {useLandscapeViewport,viewportRect} from '/src/l12/mobileViewport.ts';import '/src/l12/mobileViewport.css';window.qaRect=viewportRect;window.qaMobileLayout=value=>audioPreferences.mobileLayout=value;const qaEnabled=ref(true);window.qaExit=()=>qaEnabled.value=false;\n` + entry.replace('createApp({render:', 'createApp({setup(){useLandscapeViewport(qaEnabled)},render:').replace('()=>isPicker?', "()=>params.has('editor')?h(Editor):isPicker?")
+const server = await createServer({ root, configLoader: 'runner', cacheDir: path.join(root, '.tmp', 'vite-mobile-test'), server: { host: '127.0.0.1', port: 0 }, plugins: [{ name: 'mobile-fixture', resolveId(id) { if(id==='/__mobile__.js')return id }, load(id) { if(id==='/__mobile__.js')return entry }, configureServer(s) { s.middlewares.use((req,res,next)=>{if(req.url?.startsWith('/__mobile__')&&!req.url.includes('.js')){res.setHeader('Content-Type','text/html');res.end('<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><div id="l12-landscape-teleports"></div><div id="app" class="l12-landscape-surface"></div><script type="module" src="/__mobile__.js"></script>');return}next()}) } }] })
 entry=entry.replace('window.__sentCommands=[]',`if(params.has('response'))l12State.game.prompts=[{promptId:'response-target-qa',playerIndex:0,kind:'response-target',text:'选择要响应的效果',validChoices:['stack-a','stack-b'],minChoose:1,maxChoose:1,data:{'stack-a':'同名来源：第一段\\n公开目标：军团甲','stack-b':'同名来源：第二段\\n公开目标：军团乙','stack-a:cardId':legions[0].id,'stack-b:cardId':legions[0].id,'stack-a:name':'同名来源','stack-b:name':'同名来源','stack-a:effect':'完整来源效果','stack-b:effect':'完整来源效果'},choiceLabels:{},createdRevision:1,controller:0}];window.__sentCommands=[]`)
 let browser
 entry=entry.replace('window.__sentCommands=[]', `if(params.has('response')){const p=l12State.game.prompts[0];l12State.game.players[0].field[0][1]={...l12State.game.players[0].field[0][0],instanceId:'same-name-second'};p.data.responseTargetIds=JSON.stringify(['0unit','same-name-second']);p.data['stack-a:responseTargetIds']=JSON.stringify(['0unit']);p.data['stack-b:responseTargetIds']=JSON.stringify(['same-name-second']);}window.__sentCommands=[]`)
@@ -76,6 +76,18 @@ try {
     }
     await page.screenshot({path:path.join(out,`battle-${size.width}-${size.height}.png`)})
   }
+  // Layout preference and physical rotation are deliberately independent.
+  await page.setViewportSize({width:844,height:390})
+  await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__mobile__`)
+  await page.evaluate(()=>window.qaMobileLayout('off'))
+  await page.waitForFunction(()=>document.documentElement.dataset.l12Mobile==='false')
+  assert.equal(await page.locator('html').getAttribute('data-l12-rotated'),'false')
+  await page.setViewportSize({width:1280,height:720})
+  await page.evaluate(()=>window.qaMobileLayout('on'))
+  await page.waitForFunction(()=>document.documentElement.dataset.l12Mobile==='true')
+  assert.equal(await page.locator('html').getAttribute('data-l12-rotated'),'false')
+  await page.evaluate(()=>window.qaMobileLayout('auto'))
+  await page.waitForFunction(()=>document.documentElement.dataset.l12Mobile==='false')
   const actionPage = await browser.newPage()
   await actionPage.addInitScript(() => {
     const native = window.matchMedia.bind(window)

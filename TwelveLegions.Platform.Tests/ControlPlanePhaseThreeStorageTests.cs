@@ -123,7 +123,7 @@ public sealed class ControlPlanePhaseThreeStorageTests
             var registered = store.Register("taudio2e2f5", "password-123").Account!;
 
             var saved = store.UpdateAudioPreferences(registered.Id,
-                new L12AudioPreferencesView(false, 0.82, true, 0.47, "large", "fast"));
+                new L12AudioPreferencesView(false, 0.82, true, 0.47, "large", "fast", "off"));
 
             Assert.False(saved.MusicEnabled);
             Assert.Equal(0.82, saved.MusicVolume, 3);
@@ -131,6 +131,7 @@ public sealed class ControlPlanePhaseThreeStorageTests
             Assert.Equal(0.47, saved.SfxVolume, 3);
             Assert.Equal("large", saved.CardSize);
             Assert.Equal("fast", saved.Animation);
+            Assert.Equal("off", saved.MobileLayout);
 
             var reloaded = new L12PlatformStore(path);
             var fromAnotherLogin = reloaded.Login("taudio2e2f5", "password-123").Account!;

@@ -357,10 +357,13 @@ const contracts = [
     && phaseTrack.includes('writing-mode:horizontal-tb;transform:none')
     && !phaseTrack.includes('<i>{{ index + 1 }}</i>') && phaseTrack.indexOf('class="round"') > phaseTrack.indexOf('v-for="item in phases"'), '左侧本局天灾与当前天灾保持独立并合计对齐选中卡；窄阶段列独立右移，不显示标题或序号，两字换行居中且TURN置底'],
   [board.includes('class="mobile-current-disaster-value" aria-label="当前天灾值"')
-    && board.includes('<em>{{ game.disasterValue }}</em>')
-    && board.includes('.mobile-current-disaster-value { display: none; }')
-    && board.includes('.mobile-landscape-board .mobile-current-disaster-value { display: inline-flex;')
-    && board.includes('.mobile-landscape-board .mobile-current-disaster-heading { display: flex;'), '移动对局必须在当前天灾信息块内持续显示当前天灾值，且该紧凑出口不得改变宽屏阶段列'],
+    && board.includes('<span>天灾值</span><b>{{ game.disasterValue }}</b>')
+    && board.includes('.mobile-landscape-board .left-disaster-row {\n  display: grid !important;\n  grid-template-rows: 58px 28px minmax(0, 1fr);')
+    && board.includes('.mobile-landscape-board .session-disaster-panel { grid-row: 3 !important;')
+    && board.includes('.mobile-landscape-board .left-disaster-row > .current-disaster-panel {\n  grid-row: 1 !important;')
+    && board.includes('.mobile-landscape-board .mobile-current-disaster-value { grid-row: 2;')
+    && board.includes('.mobile-landscape-board .mobile-current-disaster-copy { display: none; }')
+    && !board.includes('class="mobile-rail-disaster-value"'), '移动对局必须按当前天灾卡图、当前天灾值、本局天灾圆图的顺序独立显示；当前天灾卡图可点选但不得附加名称文字或占用右侧操作栏'],
   [(board.match(/<PlayerMat /g) ?? []).length === 2 && (board.match(/<HandArea /g) ?? []).length === 4
     && (board.match(/<GameActions /g) ?? []).length === 2 && board.includes('<BattleEventLog ')
     && board.includes('<PromptOverlay ') && board.includes('<GraveyardOverlay ') && board.includes('<MasterOverlay ')
@@ -528,7 +531,9 @@ const contracts = [
   [app.includes('/audio/legion12-site.mp3') && app.includes('/audio/legion12-battle-1.mp3')
     && app.includes('/audio/legion12-battle-2.mp3') && settingsModal.includes('v-model.number="audioPreferences.musicVolume"')
     && settingsModal.includes('v-model.number="audioPreferences.sfxVolume"') && settingsModal.includes('v-model="audioPreferences.cardSize"')
-    && settingsModal.includes('v-model="audioPreferences.animation"') && platform.includes('/api/auth/audio-preferences')
+    && settingsModal.includes('v-model="audioPreferences.animation"') && settingsModal.includes('v-model="audioPreferences.mobileLayout"')
+    && settingsModal.includes('<option value="auto">自动适配</option><option value="on">始终启用</option><option value="off">使用宽屏布局</option>')
+    && platform.includes('/api/auth/audio-preferences')
     && app.includes('watch(audioPreferences, value => {\n  syncAudioStore()')
     && app.includes('generation !== audioSaveGeneration')
     && audioPreferencesModule.includes("localStorage.setItem('l12-audio-preferences-v1'")
@@ -543,6 +548,7 @@ const contracts = [
     && settingsModal.includes('.volume-control{display:grid;min-width:0;grid-template-rows:auto auto')
     && settingsModal.indexOf('<label class="volume-control"') < settingsModal.indexOf('<button type="button" class="toggle"')
     && audioPreferencesModule.includes('dataset.l12CardSize') && audioPreferencesModule.includes('dataset.l12Animation')
+    && audioPreferencesModule.includes('dataset.l12MobileLayoutPreference')
     && shell.includes('<L12SettingsModal') && gamePage.includes('<L12SettingsModal'), '音乐、音效、卡牌尺寸与动画必须由官网/对局共用设置框，音乐低音量区使用细分感知曲线，并在每次操作时立即同步实际消费者、DOM显示和本地/账号持久化'],
   [backgroundMusic.includes('const FADE_DURATION_MS = 520') && backgroundMusic.includes('private generation = 0')
     && backgroundMusic.includes('private fades = new Map<HTMLAudioElement, number>()')
@@ -632,7 +638,8 @@ const contracts = [
   [prompt.includes("const usesDetailCardImages = computed(() => isDisasterChoice.value || isInfoConfirm.value)") && prompt.includes(":intent=\"usesDetailCardImages ? 'detail' : 'thumb'\"") && prompt.split(":alt=\"entry.card.name || '天灾'\" intent=\"detail\"").length - 1 === 2 && prompt.includes("'disaster-choice': isDisasterChoice"), '公开天灾禁选、随机公开、触发确认及已公开历史必须请求详情级高清图，不得使用缩略图源'],
   [board.includes(':inspector-visible="modalInspectorVisible"') && prompt.includes("'inspector-active': inspectorVisible") && prompt.includes('--inspector-safe-lane:clamp(118px,19vw,258px)') && prompt.includes('--inspector-safe-lane:92px') && prompt.includes('@media(max-width:520px)')
     && board.includes('const logicalWidth = inspectorAnchor.value.offsetWidth') && board.includes('transform: `scale(${floatScale})`')
-    && board.includes("'--l12-board-copy': `${13 / Math.min(1, floatScale)}px`") && board.includes("'--l12-board-meta': `${11 / Math.min(1, floatScale)}px`") && board.includes("'--l12-effect-copy': `${13 / Math.min(1, floatScale)}px`") && board.includes('inspector-style-scope') && board.includes('overflow:auto!important'), '弹框期间原选中详情必须固定侧置并保持原容器的大小和位置，继承语义字号层级，为核心弹框保留安全区，在窄屏与缩放下也不得互相遮挡'],
+    && board.includes('const adaptiveBoardToken = (base: number, currentScale: number)')
+    && board.includes("'--l12-board-copy': `${adaptiveBoardToken(13, floatScale)}px`") && board.includes("'--l12-board-meta': `${adaptiveBoardToken(11, floatScale)}px`") && board.includes("'--l12-effect-copy': `${adaptiveBoardToken(13, floatScale)}px`") && board.includes('inspector-style-scope') && board.includes('overflow:auto!important'), '弹框期间原选中详情必须固定侧置并保持原容器的大小和位置，继承连续缩放的语义字号层级，为核心弹框保留安全区，在窄屏与缩放下也不得互相遮挡'],
   [board.includes("event.type === 'disaster-reveal'") && board.includes("event.playerIndex === null") && battleLog.includes("'disaster-reveal': '本局天灾'") && battleLog.includes("'effect-response': '响应'") && battleLog.includes("'effect-activation': '发动'"), '天灾必须向双方播放，响应与发动动画必须进入可读日志'],
   [board.includes('resolvedDisasterIds') && board.includes("return 'active'") && board.includes("return 'resolved'")
     && board.includes('.session-disaster-strip button.unrevealed')

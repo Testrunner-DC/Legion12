@@ -46,6 +46,14 @@ const props = withDefaults(defineProps<{
 }>(), { readOnly: false, replayFocusCard: null, replayPlaybackSpeed: null, gmPlacement: null, gmPanelOpen: false })
 const emit = defineEmits<{ gmPlacementResolved: []; settings: []; replayPresentationChange: [busy: boolean] }>()
 const scale = ref(1)
+// Preserve the desktop hierarchy while allowing the whole board to become
+// genuinely denser on smaller canvases. Full inverse scaling made text remain
+// physically constant and therefore grow out of proportion to cards/zones.
+const adaptiveBoardToken = (base: number, currentScale: number) => {
+  const safeScale = Math.max(.1, Math.min(1, currentScale))
+  const minimumScreenSize = base >= 13 ? 8 : base >= 11 ? 7 : 6
+  return Math.max(base / Math.sqrt(safeScale), minimumScreenSize / safeScale)
+}
 const stageSize = computed(() => l12State.gmEnabled
   ? { width: 2304, height: 1296 }
   // The two 350px battlefield halves plus their protected centre seam need 754px
@@ -351,10 +359,10 @@ function updateInspectorFloatRect() {
     width: `${logicalWidth}px`,
     height: `${logicalHeight}px`,
     transform: `scale(${floatScale})`,
-    '--l12-board-copy': `${13 / Math.min(1, floatScale)}px`,
-    '--l12-board-meta': `${11 / Math.min(1, floatScale)}px`,
-    '--l12-board-micro': `${9 / Math.min(1, floatScale)}px`,
-    '--l12-effect-copy': `${13 / Math.min(1, floatScale)}px`,
+    '--l12-board-copy': `${adaptiveBoardToken(13, floatScale)}px`,
+    '--l12-board-meta': `${adaptiveBoardToken(11, floatScale)}px`,
+    '--l12-board-micro': `${adaptiveBoardToken(9, floatScale)}px`,
+    '--l12-effect-copy': `${adaptiveBoardToken(13, floatScale)}px`,
   }
 }
 watch(modalInspectorVisible, visible => {
@@ -1055,7 +1063,7 @@ function statusTexts(card: Card) {
     <Teleport :to="landscapeTeleportTarget()">
       <button v-if="mobileLandscapeViewport" type="button" class="mobile-card-inspector-handle mobile-card-inspector-handle-global" :class="{ open: mobileInspectorOpen }" :aria-expanded="mobileInspectorOpen" @click="mobileInspectorOpen = !mobileInspectorOpen">{{ mobileInspectorOpen ? '收起详情' : '展开卡牌详情' }}</button>
     </Teleport>
-    <div class="board-stage" :style="{ width: `${stageSize.width}px`, height: `${stageSize.height}px`, transform: `scale(${scale})`, '--l12-board-copy': `${13 / Math.min(1, scale)}px`, '--l12-board-meta': `${11 / Math.min(1, scale)}px`, '--l12-board-micro': `${9 / Math.min(1, scale)}px`, '--l12-effect-copy': `${13 / Math.min(1, scale)}px` }">
+    <div class="board-stage" :style="{ width: `${stageSize.width}px`, height: `${stageSize.height}px`, transform: `scale(${scale})`, '--l12-board-copy': `${adaptiveBoardToken(13, scale)}px`, '--l12-board-meta': `${adaptiveBoardToken(11, scale)}px`, '--l12-board-micro': `${adaptiveBoardToken(9, scale)}px`, '--l12-effect-copy': `${adaptiveBoardToken(13, scale)}px` }">
       <div class="stage-layout">
         <aside class="board-rail left-rail">
           <section v-if="mobileLandscapeViewport && viewEnemy.specialZones?.trials?.length" class="mobile-extra-zone mobile-extra-zone-opponent" aria-label="对手额外区">
@@ -1088,17 +1096,12 @@ function statusTexts(card: Card) {
                   @mouseenter="game.activeDisaster && (focusCard = game.activeDisaster)" @click="inspectActiveDisaster">
                   <CardImage v-if="game.activeDisaster" :card-id="game.activeDisaster.cardId" :legacy-url="game.activeDisaster.imageUrl" :alt="game.activeDisaster.name" intent="board" eager />
                   <img v-else src="/assets/l12/card-back-disaster.png" alt="天灾牌背" />
-                  <span class="mobile-current-disaster-copy">
-                    <span class="mobile-current-disaster-heading">
-                      <b>当前天灾</b>
-                      <strong class="mobile-current-disaster-value" aria-label="当前天灾值">
-                        <img src="/assets/l12/disaster-icon-source.png" alt="" />
-                        <em>{{ game.disasterValue }}</em>
-                      </strong>
-                    </span>
-                    <i>{{ game.activeDisaster?.name || '尚未揭示' }}</i>
-                  </span>
+                  <span class="mobile-current-disaster-copy"><b>当前天灾</b><i>{{ game.activeDisaster?.name || '尚未揭示' }}</i></span>
                 </button>
+            </section>
+            <section v-if="mobileLandscapeViewport" class="mobile-current-disaster-value" aria-label="当前天灾值">
+              <img src="/assets/l12/disaster-icon-source.png" alt="" />
+              <span>天灾值</span><b>{{ game.disasterValue }}</b>
             </section>
           </div>
           <section v-if="mobileLandscapeViewport && viewMe.specialZones?.trials?.length" class="mobile-extra-zone mobile-extra-zone-my" aria-label="我方额外区">
@@ -1274,12 +1277,6 @@ function statusTexts(card: Card) {
           <!-- Phone status lanes are intentionally not over the hands.  A timed
                match instead receives its own reserved pair of compact clocks in
                this otherwise unused section of the right rail. -->
-          <section v-if="mobileLandscapeViewport && l12State.rankedClock" class="mobile-timed-clocks" aria-label="双方对局计时">
-            <PlayerTurnClock class="mobile-rail-clock opponent-player-clock" :player-index="viewEnemy.playerIndex" side="opponent"
-              :active="game.activePlayer === viewEnemy.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
-            <PlayerTurnClock class="mobile-rail-clock my-player-clock" :player-index="viewMe.playerIndex" side="my"
-              :active="game.activePlayer === viewMe.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
-          </section>
           <section class="grand-panel player-panel" data-ui-contract="complete-player-summary">
             <button v-if="mobileLandscapeViewport" type="button" class="mobile-record-trigger" @click="mobileRecordOpen = true; mobileRecordMinimized = false">对局记录</button>
             <article class="player-summary opponent-summary">
@@ -1299,6 +1296,12 @@ function statusTexts(card: Card) {
                 <span class="connection-state" :class="{ online: playerConnection(viewMe.playerIndex) }"><i/>{{ connectionLabel(viewMe.playerIndex) }}</span>
               </div>
             </article>
+          </section>
+          <section v-if="mobileLandscapeViewport && l12State.rankedClock" class="mobile-timed-clocks" aria-label="双方对局计时">
+            <PlayerTurnClock class="mobile-rail-clock opponent-player-clock" :player-index="viewEnemy.playerIndex" side="opponent"
+              :active="game.activePlayer === viewEnemy.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
+            <PlayerTurnClock class="mobile-rail-clock my-player-clock" :player-index="viewMe.playerIndex" side="my"
+              :active="game.activePlayer === viewMe.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
           </section>
           <section class="grand-panel log-panel record-log"><h3>对局记录</h3>
             <BattleEventLog :events="game.recentEvents ?? []" :you="game.you" :names="game.players.map(player => player.name)" @focus="focusCard = $event" />
@@ -1814,10 +1817,10 @@ function statusTexts(card: Card) {
 .mobile-landscape-board .left-rail { overflow: visible !important; }
 .mobile-landscape-board .left-disaster-row {
   display: grid !important;
-  grid-template-rows: 58px minmax(0, 1fr);
+  grid-template-rows: 58px 28px minmax(0, 1fr);
   gap: 4px !important;
 }
-.mobile-landscape-board .session-disaster-panel { grid-row: 2 !important; min-height: 0 !important; }
+.mobile-landscape-board .session-disaster-panel { grid-row: 3 !important; min-height: 0 !important; }
 .mobile-landscape-board .session-disaster-strip { grid-template-columns: repeat(2, 42px) !important; }
 .mobile-landscape-board .left-disaster-row > .current-disaster-panel {
   grid-row: 1 !important;
@@ -1826,31 +1829,27 @@ function statusTexts(card: Card) {
   padding: 2px !important;
 }
 .mobile-landscape-board .current-disaster-card {
-  display: grid !important;
+  display: block !important;
   width: 100% !important;
   height: 52px !important;
-  grid-template-columns: 44px minmax(0, 1fr);
-  gap: 5px;
-  padding: 3px !important;
-  text-align: left;
+  padding: 2px !important;
 }
 .mobile-landscape-board .current-disaster-card > .l12-card-image,
 .mobile-landscape-board .current-disaster-card > img {
-  width: 44px !important;
-  height: 44px !important;
-  border-radius: 50%;
-  object-fit: cover;
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 0;
+  object-fit: contain;
 }
+.mobile-landscape-board .mobile-current-disaster-copy { display: none; }
+.mobile-current-disaster-value { display: none; }
+.mobile-landscape-board .mobile-current-disaster-value { grid-row: 2; display: grid; box-sizing: border-box; width: 100%; min-height: 28px; grid-template-columns: 16px minmax(0,1fr) auto; align-items: center; gap: 3px; padding: 3px 5px; border: 1px solid rgba(215,204,163,.72); background: rgba(7,10,11,.94); color: #e8e5d8; box-shadow: 0 3px 8px rgba(0,0,0,.62); }
+.mobile-landscape-board .mobile-current-disaster-value img { width: 13px; height: 14px; object-fit: contain; filter: invert(1); }
+.mobile-landscape-board .mobile-current-disaster-value span { min-width: 0; overflow: hidden; font-size: 9px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.mobile-landscape-board .mobile-current-disaster-value b { color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; line-height: 1; }
 .mobile-current-disaster-copy { display: grid; min-width: 0; align-content: center; gap: 2px; }
 .mobile-current-disaster-copy b { color: #c9b478; font-size: 10px; line-height: 1; }
 .mobile-current-disaster-copy i { display: -webkit-box; overflow: hidden; color: #f3f1e9; font-size: 11px; font-style: normal; font-weight: 900; line-height: 1.08; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
-.mobile-current-disaster-heading { display: contents; }
-.mobile-current-disaster-value { display: none; }
-.mobile-landscape-board .mobile-current-disaster-heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 2px; }
-.mobile-landscape-board .mobile-current-disaster-heading > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mobile-landscape-board .mobile-current-disaster-value { display: inline-flex; min-width: 20px; height: 15px; flex: none; align-items: center; justify-content: center; gap: 1px; padding: 0 2px; border: 1px solid rgba(215, 204, 163, .72); background: rgba(7, 10, 11, .9); color: #fff; font-size: 9px; font-weight: 900; line-height: 1; }
-.mobile-landscape-board .mobile-current-disaster-value img { width: 9px !important; height: 10px !important; border-radius: 0 !important; object-fit: contain !important; filter: invert(1); }
-.mobile-landscape-board .mobile-current-disaster-value em { font-style: normal; font-variant-numeric: tabular-nums; }
 
 .mobile-landscape-board :deep(.battlefield-half.l12-player-mat) {
   grid-template-columns: 132px 216px 40px 82px !important;
@@ -2086,12 +2085,12 @@ function statusTexts(card: Card) {
 .mobile-landscape-board .felt-board :deep(.formation-slot .card-power),
 .mobile-landscape-board .felt-board :deep(.formation-slot .card-disaster) {
   min-width: 0 !important;
-  padding: 1px 3px !important;
+  padding: var(--l12-card-stat-pad-y, 0) var(--l12-card-stat-pad-x, 1px) !important;
   border-width: 1px !important;
-  font-size: 9px !important;
-  line-height: 1.1 !important;
+  font-size: var(--l12-card-stat-font, 7px) !important;
+  line-height: var(--l12-card-stat-line, 8px) !important;
 }
-.mobile-landscape-board .felt-board :deep(.formation-slot .card-power) { bottom: 2px !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-power) { bottom: var(--l12-card-edge, 1px) !important; }
 .mobile-landscape-board .felt-board :deep(.formation-slot .card-status-icons) { top: 24px !important; gap: 1px !important; }
 .mobile-landscape-board .felt-board :deep(.formation-slot .card-status-icon) { width: 12px !important; min-width: 12px !important; height: 12px !important; flex-basis: 12px !important; font-size: 8px !important; }
 .mobile-landscape-board .felt-board :deep(.formation-slot .card-keyword-stack),
@@ -2130,10 +2129,10 @@ function statusTexts(card: Card) {
 /* A small, edge-hugging data treatment keeps card art clear; full values live in the drawer. */
 .mobile-landscape-board .felt-board :deep(.formation-slot .card-cost),
 .mobile-landscape-board .felt-board :deep(.formation-slot .card-power),
-.mobile-landscape-board .felt-board :deep(.formation-slot .card-disaster) { padding: 0 2px !important; border-width: 1px !important; font-size: 8px !important; line-height: 10px !important; }
-.mobile-landscape-board .felt-board :deep(.formation-slot .card-cost) { left: 1px !important; top: 1px !important; }
-.mobile-landscape-board .felt-board :deep(.formation-slot .card-disaster) { right: 1px !important; top: 1px !important; }
-.mobile-landscape-board .felt-board :deep(.formation-slot .card-power) { bottom: 1px !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-disaster) { padding: var(--l12-card-stat-pad-y, 0) var(--l12-card-stat-pad-x, 1px) !important; border-width: 1px !important; font-size: var(--l12-card-stat-font, 7px) !important; line-height: var(--l12-card-stat-line, 8px) !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-cost) { left: var(--l12-card-edge, 1px) !important; top: var(--l12-card-edge, 1px) !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-disaster) { right: var(--l12-card-edge, 1px) !important; top: var(--l12-card-edge, 1px) !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-power) { bottom: var(--l12-card-edge, 1px) !important; }
 .mobile-landscape-board .felt-board :deep(.formation-slot .card-status-icons) { left: 1px !important; top: 21px !important; }
 .mobile-landscape-board .felt-board :deep(.formation-slot .card-status-icon) { width: 10px !important; min-width: 10px !important; height: 10px !important; flex-basis: 10px !important; font-size: 7px !important; }
 .mobile-landscape-board .felt-board :deep(.formation-slot .card-keyword-stack),
@@ -2160,10 +2159,10 @@ function statusTexts(card: Card) {
 .mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back) { top: 8px !important; bottom: auto !important; }
 .mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-cost),
 .mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-power),
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-disaster) { min-width: 0 !important; padding: 0 1px !important; border-width: 1px !important; font-size: 7px !important; line-height: 8px !important; }
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-cost) { left: 1px !important; top: 1px !important; }
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-disaster) { right: 1px !important; top: 1px !important; }
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-power) { right: 1px !important; bottom: 1px !important; }
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-disaster) { min-width: 0 !important; padding: var(--l12-card-stat-pad-y, 0) var(--l12-card-stat-pad-x, 1px) !important; border-width: 1px !important; font-size: var(--l12-card-stat-font, 7px) !important; line-height: var(--l12-card-stat-line, 8px) !important; }
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-cost) { left: var(--l12-card-edge, 1px) !important; top: var(--l12-card-edge, 1px) !important; }
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-disaster) { right: var(--l12-card-edge, 1px) !important; top: var(--l12-card-edge, 1px) !important; }
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-power) { right: var(--l12-card-edge, 1px) !important; bottom: var(--l12-card-edge, 1px) !important; }
 
 /* The morale summary and every visible orb lead to the same phone picker. */
 .mobile-landscape-board :deep(.resource-morale-stack) { position: relative; }
@@ -2391,9 +2390,11 @@ function statusTexts(card: Card) {
   .mobile-landscape-board .left-rail,.mobile-landscape-board .left-disaster-row,.mobile-landscape-board .left-disaster-row>.grand-panel { width: 88px !important; min-width: 88px !important; box-sizing: border-box; }
   .mobile-landscape-board .session-disaster-strip { grid-template-columns: repeat(2,30px) !important; grid-template-rows: repeat(2,30px) !important; gap: 4px !important; }
   .mobile-landscape-board .session-disaster-strip button { width: 30px !important; min-width: 30px !important; max-width: 30px !important; height: 30px !important; max-height: 30px !important; }
-  .mobile-landscape-board .current-disaster-card { grid-template-columns: 34px minmax(0,1fr) !important; gap: 4px !important; padding: 3px !important; }
+  .mobile-landscape-board .left-disaster-row { grid-template-rows: 42px 24px minmax(0,1fr) !important; }
+  .mobile-landscape-board .current-disaster-card { height: 38px !important; padding: 2px !important; }
   .mobile-landscape-board .current-disaster-card > .l12-card-image,
-  .mobile-landscape-board .current-disaster-card > img { width: 34px !important; height: 34px !important; align-self: center; }
+  .mobile-landscape-board .current-disaster-card > img { width: 100% !important; height: 100% !important; }
+  .mobile-landscape-board .mobile-current-disaster-value { min-height: 24px; padding: 2px 4px; }
   .mobile-landscape-board .board-center { grid-template-rows: 24px 0 minmax(0,1fr) 0 64px !important; }
   .mobile-landscape-board :deep(.battlefield-half.l12-player-mat) { grid-template-columns: 82px minmax(90px,1fr) 22px 66px !important; gap: 2px !important; }
   .mobile-landscape-board :deep(.battlefield-half .commander-zone) { width: 82px !important; min-width: 82px !important; min-height: 0 !important; grid-template-columns: 40px 40px !important; gap: 2px !important; transform: none !important; margin-left: 0 !important; }

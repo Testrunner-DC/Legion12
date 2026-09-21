@@ -8,6 +8,7 @@ export interface L12AudioPreferences {
   sfxVolume: number
   cardSize: 'auto' | 'small' | 'medium' | 'large'
   animation: 'off' | 'fast' | 'standard'
+  mobileLayout: 'auto' | 'on' | 'off'
 }
 
 const stored = (() => {
@@ -22,6 +23,8 @@ const isCardSize = (value: unknown): value is L12AudioPreferences['cardSize'] =>
   && ['auto', 'small', 'medium', 'large'].includes(value)
 const isAnimation = (value: unknown): value is L12AudioPreferences['animation'] => typeof value === 'string'
   && ['off', 'fast', 'standard'].includes(value)
+const isMobileLayout = (value: unknown): value is L12AudioPreferences['mobileLayout'] => typeof value === 'string'
+  && ['auto', 'on', 'off'].includes(value)
 
 export const audioPreferences = reactive<L12AudioPreferences>({
   musicEnabled: typeof stored.musicEnabled === 'boolean' ? stored.musicEnabled : true,
@@ -30,6 +33,7 @@ export const audioPreferences = reactive<L12AudioPreferences>({
   sfxVolume: storedVolume(stored.sfxVolume, .7),
   cardSize: isCardSize(stored.cardSize) ? stored.cardSize : 'auto',
   animation: isAnimation(stored.animation) ? stored.animation : 'standard',
+  mobileLayout: isMobileLayout(stored.mobileLayout) ? stored.mobileLayout : 'auto',
 })
 
 export function applyAudioPreferences(value?: Partial<L12AudioPreferences> | null) {
@@ -42,6 +46,8 @@ export function applyAudioPreferences(value?: Partial<L12AudioPreferences> | nul
     ? value.cardSize : audioPreferences.cardSize
   audioPreferences.animation = value.animation && ['off', 'fast', 'standard'].includes(value.animation)
     ? value.animation : audioPreferences.animation
+  audioPreferences.mobileLayout = value.mobileLayout && ['auto', 'on', 'off'].includes(value.mobileLayout)
+    ? value.mobileLayout : audioPreferences.mobileLayout
   syncAudioStore()
 }
 
@@ -53,6 +59,7 @@ export function syncAudioStore() {
   if (typeof document !== 'undefined') {
     document.documentElement.dataset.l12CardSize = audioPreferences.cardSize
     document.documentElement.dataset.l12Animation = audioPreferences.animation
+    document.documentElement.dataset.l12MobileLayoutPreference = audioPreferences.mobileLayout
     const animationScale = audioPreferences.animation === 'off' ? '0' : audioPreferences.animation === 'fast' ? '.55' : '1'
     document.documentElement.style.setProperty('--l12-animation-scale', animationScale)
     document.documentElement.style.setProperty('--l12-card-scale', ({ small: '.86', medium: '1', large: '1.16', auto: '1' } as const)[audioPreferences.cardSize])

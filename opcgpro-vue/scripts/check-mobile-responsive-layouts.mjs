@@ -3,6 +3,9 @@ import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 const read = path => readFile(resolve(root, path), 'utf8')
+const settings = await read('src/l12/site/L12SettingsModal.vue')
+const audioPreferences = await read('src/l12/audioPreferences.ts')
+const cardTile = await read('src/l12/CardTile.vue')
 const [viewportCss, viewportTs, app, archive, decks, board, playerMat, prompt, shell, rules, profile, news, home, feedback, battleHub, rankings, tournaments, recovery, globalCss] = await Promise.all([
   read('src/l12/mobileViewport.css'),
   read('src/l12/mobileViewport.ts'),
@@ -31,10 +34,15 @@ const expect = (condition, message) => {
 
 expect(!viewportCss.includes('body {\n  transform: rotate(90deg)') && viewportCss.includes('.l12-landscape-surface,#l12-landscape-teleports'), 'only the opted-in route canvas and Teleport host may rotate')
 expect(viewportTs.includes('export function resolveViewportMode(') && !viewportTs.includes('(pointer: coarse)') && !viewportTs.includes('screen.orientation'), 'the viewport runtime must classify geometry without device identity or physical orientation')
+expect(viewportTs.includes("mobileLayout === 'on' ? true : mobileLayout === 'off' ? false : geometryMobile") && viewportTs.includes('watch([enabled, () => audioPreferences.mobileLayout], update)'), 'the user mobile-layout preference must override layout classification without taking over physical rotation')
+expect(viewportTs.includes('compactLandscape(rotatedWidth, rotatedHeight, previous.rotated)') && !viewportTs.includes('previous.rotated || previous.mobile'), 'forced mobile layout must not relax or couple the independent geometry rotation decision')
+expect(settings.includes('v-model="audioPreferences.mobileLayout"') && audioPreferences.includes("mobileLayout: 'auto' | 'on' | 'off'") && audioPreferences.includes('dataset.l12MobileLayoutPreference'), 'mobile layout choice must be exposed and persisted through the shared settings model')
+expect(cardTile.includes('container-type:inline-size') && cardTile.includes('--l12-card-stat-font:clamp(6px,11cqw,18px)') && board.includes('var(--l12-card-stat-font, 7px)'), 'card value badges must scale continuously from their own card container rather than viewport-specific fixed sizes')
 expect(app.includes('data-l12-landscape-canvas') && !app.includes('l12-rotate-device') && !app.includes('requestLandscapeExperience'), 'immersive compact routes must use the logical canvas without a rotate-device blocker')
 expect(archive.includes('MobileFilterSheet') && archive.includes('archive-desktop-filters'), 'card archive must retain search while moving portrait filters into a sheet')
 expect(decks.includes('MobileFilterSheet') && decks.includes('plaza-desktop-filters'), 'deck plaza must retain search while moving portrait filters into a sheet')
 expect(board.includes("const mobileMoralePickerEnabled = computed(() => mobileLandscapeViewport.value)"), 'morale summary must open on mobile even outside a payment prompt')
+expect(board.includes('class="mobile-current-disaster-value" aria-label="当前天灾值"') && board.includes('.mobile-landscape-board .mobile-current-disaster-value { grid-row: 2;') && board.includes('.mobile-landscape-board .session-disaster-panel { grid-row: 3 !important;'), 'current disaster card, value and round-card pool must own three non-overlapping rows in the left rail')
 expect(board.includes('mobileMoraleInteractive'), 'morale viewing and payment selection must remain distinct')
 expect(board.includes('bottom:56px!important') && board.includes('min-height:42px'), 'selected-card actions must reserve the lane above end turn')
 expect(playerMat.includes('<Teleport :to="landscapeTeleportTarget()" :disabled="!mobileLayout">') && playerMat.includes("'mobile-action-dock': mobileLayout") && board.includes(':mobile-layout="mobileLandscapeViewport"') && board.includes(':global(.mobile-action-dock)'), 'field attack and active-ability actions must use the shared logical-canvas mobile action dock instead of remaining clipped inside the battlefield')

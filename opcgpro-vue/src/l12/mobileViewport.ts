@@ -1,4 +1,5 @@
 import { onBeforeUnmount, onMounted, watch, type Ref } from 'vue'
+import { audioPreferences, type L12AudioPreferences } from './audioPreferences'
 
 type ViewportMode = {
   rotated: boolean
@@ -37,15 +38,19 @@ export function resolveViewportMode(
   physicalWidth: number,
   physicalHeight: number,
   previous: Pick<ViewportMode, 'rotated' | 'mobile'> = { rotated: false, mobile: false },
+  mobileLayout: L12AudioPreferences['mobileLayout'] = 'auto',
 ): ViewportMode {
   const portraitRatio = physicalHeight / Math.max(1, physicalWidth)
   const rotatedWidth = physicalHeight
   const rotatedHeight = physicalWidth
-  const rotatedCandidate = compactLandscape(rotatedWidth, rotatedHeight, previous.rotated || previous.mobile)
+  // Rotation is geometry-only. Forcing the mobile layout must never loosen the
+  // physical portrait thresholds or rotate an already-landscape viewport.
+  const rotatedCandidate = compactLandscape(rotatedWidth, rotatedHeight, previous.rotated)
   const rotated = rotatedCandidate && portraitRatio >= (previous.rotated ? 1.05 : 1.12)
   const width = rotated ? rotatedWidth : physicalWidth
   const height = rotated ? rotatedHeight : physicalHeight
-  const mobile = compactLandscape(width, height, previous.mobile)
+  const geometryMobile = compactLandscape(width, height, mobileLayout === 'auto' && previous.mobile)
+  const mobile = mobileLayout === 'on' ? true : mobileLayout === 'off' ? false : geometryMobile
   return { rotated, mobile, width, height }
 }
 
@@ -71,7 +76,7 @@ export function isMobileViewportExperience() {
   const viewport = window.visualViewport
   const width = viewport?.width ?? window.innerWidth
   const height = viewport?.height ?? window.innerHeight
-  return resolveViewportMode(width, height).mobile
+  return resolveViewportMode(width, height, undefined, audioPreferences.mobileLayout).mobile
 }
 
 // Compatibility entry used by the replay blocker. Its result is now based on
@@ -125,7 +130,7 @@ export function useLandscapeViewport(enabled: Ref<boolean>) {
     const top = (visual?.offsetTop ?? 0) + safeTop
     const physicalWidth = Math.max(1, (visual?.width ?? innerWidth) - safeLeft - safeRight)
     const physicalHeight = Math.max(1, (visual?.height ?? innerHeight) - safeTop - safeBottom)
-    const resolved = resolveViewportMode(physicalWidth, physicalHeight, previous)
+    const resolved = resolveViewportMode(physicalWidth, physicalHeight, previous, audioPreferences.mobileLayout)
     const mode = editable()
       ? {
           rotated: previous.rotated,
@@ -162,7 +167,7 @@ export function useLandscapeViewport(enabled: Ref<boolean>) {
     if (changed) window.dispatchEvent(new Event('l12-viewport-change'))
   }
 
-  watch(enabled, update)
+  watch([enabled, () => audioPreferences.mobileLayout], update)
   onMounted(() => {
     probe = document.createElement('div')
     probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)'
