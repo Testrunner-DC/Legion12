@@ -6,12 +6,14 @@ const read = path => readFile(resolve(root, path), 'utf8')
 const settings = await read('src/l12/site/L12SettingsModal.vue')
 const audioPreferences = await read('src/l12/audioPreferences.ts')
 const cardTile = await read('src/l12/CardTile.vue')
-const [viewportCss, viewportTs, app, archive, decks, board, playerMat, prompt, shell, rules, profile, news, home, feedback, battleHub, rankings, tournaments, recovery, globalCss] = await Promise.all([
+const [viewportCss, viewportTs, app, archive, decks, deckBrowser, filterSheet, board, playerMat, prompt, shell, rules, profile, news, home, feedback, battleHub, rankings, tournaments, recovery, globalCss] = await Promise.all([
   read('src/l12/mobileViewport.css'),
   read('src/l12/mobileViewport.ts'),
   read('src/App.vue'),
   read('src/l12/CardArchive.vue'),
   read('src/l12/site/DeckLibraryPage.vue'),
+  read('src/l12/site/DeckConstructionBrowser.vue'),
+  read('src/l12/site/MobileFilterSheet.vue'),
   read('src/l12/game/GameBoard.vue'),
   read('src/l12/game/PlayerMat.vue'),
   read('src/l12/game/PromptOverlay.vue'),
@@ -41,6 +43,9 @@ expect(cardTile.includes('container-type:inline-size') && cardTile.includes('--l
 expect(app.includes('data-l12-landscape-canvas') && !app.includes('l12-rotate-device') && !app.includes('requestLandscapeExperience'), 'immersive compact routes must use the logical canvas without a rotate-device blocker')
 expect(archive.includes('MobileFilterSheet') && archive.includes('archive-desktop-filters'), 'card archive must retain search while moving portrait filters into a sheet')
 expect(decks.includes('MobileFilterSheet') && decks.includes('plaza-desktop-filters'), 'deck plaza must retain search while moving portrait filters into a sheet')
+expect(deckBrowser.includes('MobileFilterSheet') && deckBrowser.includes('construction-desktop-filters') && deckBrowser.includes('grid-template-columns:minmax(0,1fr) auto'), 'shared deck construction viewer must retain search while moving portrait filters into a sheet')
+expect(rules.includes('MobileFilterSheet') && rules.includes('rule-desktop-filter') && rules.includes('desktop-popular-keywords'), 'rule center must retain search while moving portrait categories and keyword helpers into a sheet')
+expect(filterSheet.includes('@keydown.esc="close"') && filterSheet.includes('env(safe-area-inset-left)') && filterSheet.includes('env(safe-area-inset-right)'), 'shared portrait filter sheet must close by keyboard and respect both horizontal safe areas')
 expect(board.includes("const mobileMoralePickerEnabled = computed(() => mobileLandscapeViewport.value)"), 'morale summary must open on mobile even outside a payment prompt')
 expect(board.includes('class="mobile-detail-handle-reservation" aria-hidden="true"') && board.includes('--l12-mobile-left-rail-w:clamp(88px,calc(var(--l12-viewport-height,100vh) * .22),118px)') && board.includes('grid-template-columns:var(--l12-mobile-left-rail-w) minmax(0,1fr) var(--l12-mobile-right-rail-w)') && board.includes('grid-template-rows:var(--l12-mobile-current-disaster-h) var(--l12-mobile-disaster-value-h) calc(var(--l12-mobile-disaster-orb) * 2'), 'the detail handle, current disaster, value, round-card pool and optional extra zones must share one logical-viewport rail allocation')
 expect(!board.includes('@media (max-height: 520px)') && !board.includes('@media (min-height: 521px)'), 'logical portrait rotation and physical landscape must not receive different card geometry from physical CSS media height')
@@ -57,6 +62,7 @@ expect(decks.includes('.deck-notice{position:static;max-width:none'), 'portrait 
 expect(news.includes('.news-page h1{margin:4px 0;font-size:26px}') && home.includes('.hero-copy h1{font-size:26px;line-height:1.08}'), 'portrait editorial pages must use compact hero typography')
 expect(battleHub.includes('.battle-hub{padding:14px 10px 34px}') && battleHub.includes('.mode-panel{padding:14px}'), 'battle lobby must scale its panels and controls together on narrow phones')
 expect(rankings.includes('.ranking-page{--ranking-master-avatar:28px;padding:14px 10px 32px}') && rankings.includes('.matrix-grid{grid-auto-rows:52px}'), 'rankings must compact both table rows and matchup matrix cells')
+expect(rankings.includes('data-label="最擅长主宰"') && rankings.includes('data-label="最强玩家"') && rankings.includes('@media(max-width:850px)') && rankings.includes('.player-table,.master-table,.honor-table{overflow:visible'), 'portrait rankings must become labeled information cards instead of requiring horizontal table scrolling')
 expect(tournaments.includes('.tournament-page{padding:14px 10px 34px}') && tournaments.includes('.bracket>section{min-width:190px;padding:8px}'), 'tournament content must preserve bracket proportions while compacting its panels')
 expect(recovery.includes('.recovery-card{padding:18px}') && recovery.includes('.recovery-card button{min-height:42px'), 'recovery form must scale the card and primary control together')
 expect(globalCss.includes('body .friends-page{padding:14px 10px 34px}') && globalCss.includes('body .friends-page .hero-avatar{width:56px;height:56px'), 'friends page must compact its container and visual anchors together')

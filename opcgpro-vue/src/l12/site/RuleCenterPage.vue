@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { getEffectiveOperationsPolicy, getPublicContent, type EffectiveOperationsPolicy } from '@/l12/platform'
 import { mergedRulings, parsePublishedRuleCenter, parsePublishedRulings, type RuleCenterDocument, type RuleCenterEntry, type RuleRuling } from '@/l12/data/ruleCenterData'
+import MobileFilterSheet from './MobileFilterSheet.vue'
 
 type MainTab = 'core' | 'quick-start' | 'terms' | 'faq' | 'construction' | 'tournament' | 'versions'
 type FaqMode = 'general' | 'card'
@@ -10,6 +11,8 @@ const faqMode = ref<FaqMode>('general')
 const query = ref('')
 const topic = ref('all')
 const faqCategory = ref('all')
+const coreFiltersOpen = ref(false)
+const faqFiltersOpen = ref(false)
 const openIds = ref<Set<string>>(new Set())
 const ruleNotice = ref('')
 const dynamicRulings = ref<RuleRuling[]>([])
@@ -60,6 +63,8 @@ function switchTab(next: MainTab) { tab.value = next; query.value = ''; topic.va
 function toggleEntry(id: string) { const next = new Set(openIds.value); next.has(id) ? next.delete(id) : next.add(id); openIds.value = next }
 function setAllExpanded(expanded: boolean) { openIds.value = expanded ? new Set(faqResults.value.map(item => item.id)) : new Set() }
 function selectKeyword(keyword: string) { query.value = keyword }
+function resetCoreFilters() { topic.value = 'all' }
+function resetFaqFilters() { faqCategory.value = 'all' }
 function printRules() { window.print() }
 watch([tab, faqMode, faqCategory, query], () => { openIds.value = new Set() })
 onMounted(loadDynamicContent)
@@ -71,7 +76,14 @@ onMounted(loadDynamicContent)
     <aside v-if="ruleNotice" class="admin-rule-notice"><b>规则公告</b><span>{{ ruleNotice }}</span></aside>
     <nav class="rule-tabs" aria-label="规则中心栏目"><button v-for="item in tabs" :key="item.id" :class="{ active: tab === item.id }" @click="switchTab(item.id)">{{ item.label }}</button></nav>
     <template v-if="tab === 'core'">
-      <section class="rule-tools"><input v-model="query" placeholder="搜索规则章节或关键词"><select v-model="topic"><option value="all">全部章节</option><option v-for="value in topics" :key="value" :value="value">{{ value }}</option></select></section>
+      <section class="rule-tools">
+        <input v-model="query" type="search" placeholder="搜索规则章节或关键词">
+        <MobileFilterSheet v-model="coreFiltersOpen" title="规则章节筛选" :active-count="topic === 'all' ? 0 : 1" @reset="resetCoreFilters">
+          <div class="rule-filter-fields"><label><span>章节</span><select v-model="topic"><option value="all">全部章节</option><option v-for="value in topics" :key="value" :value="value">{{ value }}</option></select></label></div>
+          <template #apply-label>查看 {{ ruleResults.length }} 项结果</template>
+        </MobileFilterSheet>
+        <select v-model="topic" class="rule-desktop-filter" aria-label="按章节筛选"><option value="all">全部章节</option><option v-for="value in topics" :key="value" :value="value">{{ value }}</option></select>
+      </section>
       <div class="rule-layout"><aside><b>规则手册</b><span>{{ ruleCenter.coreBlocks.length }} 个规则内容块</span><p>内容按主题与章节检索。原始资料中的页码仅保留为内部追溯信息，电子版不对外显示。</p></aside><main><article v-for="(block, index) in ruleResults" :key="`${block.page}-${index}`"><header><span v-if="block.topic">{{ block.topic }}</span><b v-if="block.chapter">{{ block.chapter }}</b></header><p>{{ displayRuleText(block.text) }}</p></article><div v-if="!ruleCenter.coreBlocks.length" class="empty">核心规则资料尚未由管理员审核发布</div><div v-else-if="!ruleResults.length" class="empty">没有匹配的规则内容</div></main></div>
     </template>
     <template v-else-if="tab === 'quick-start' || tab === 'terms'">
@@ -80,7 +92,7 @@ onMounted(loadDynamicContent)
     </template>
     <template v-else-if="tab === 'faq'">
       <nav class="faq-mode-tabs" aria-label="FAQ 类型"><button :class="{ active: faqMode === 'general' }" @click="faqMode = 'general'; faqCategory = 'all'; query = ''"><b>常见问题</b><span>规则主题与通用裁定</span></button><button :class="{ active: faqMode === 'card' }" @click="faqMode = 'card'; faqCategory = 'all'; query = ''"><b>单卡问答</b><span>已确认的单卡裁定与勘误</span></button></nav>
-      <section class="faq-search-panel"><div><small>{{ faqMode === 'general' ? 'FAQ SEARCH' : 'CARD Q&A SEARCH' }}</small><h2>{{ faqMode === 'general' ? '从现行规则裁定中搜索' : '从已确认的单卡裁定中搜索' }}</h2><p>原始 FAQ 仅作为内部核对来源；口语化内容、冲突内容和未完成改写的条目不会在此公开。</p></div><div class="faq-search-row"><input v-model="query" :placeholder="faqMode === 'general' ? '输入规则关键词' : '输入卡名、卡号或关键词'"><select v-model="faqCategory"><option value="all">全部分类</option><option v-for="category in categoryCards" :key="category.id" :value="category.id">{{ category.label }}</option></select></div><div class="popular-keywords"><span>常用关键词</span><button v-for="keyword in popularKeywords" :key="keyword" @click="selectKeyword(keyword)">{{ keyword }}</button></div></section>
+      <section class="faq-search-panel"><div><small>{{ faqMode === 'general' ? 'FAQ SEARCH' : 'CARD Q&A SEARCH' }}</small><h2>{{ faqMode === 'general' ? '从现行规则裁定中搜索' : '从已确认的单卡裁定中搜索' }}</h2><p>原始 FAQ 仅作为内部核对来源；口语化内容、冲突内容和未完成改写的条目不会在此公开。</p></div><div class="faq-search-row"><input v-model="query" type="search" :placeholder="faqMode === 'general' ? '输入规则关键词' : '输入卡名、卡号或关键词'"><MobileFilterSheet v-model="faqFiltersOpen" title="裁定筛选" :active-count="faqCategory === 'all' ? 0 : 1" @reset="resetFaqFilters"><div class="rule-filter-fields"><label><span>分类</span><select v-model="faqCategory"><option value="all">全部分类</option><option v-for="category in categoryCards" :key="category.id" :value="category.id">{{ category.label }}</option></select></label><div class="popular-keywords mobile-popular-keywords"><span>常用关键词</span><button v-for="keyword in popularKeywords" :key="keyword" @click="selectKeyword(keyword); faqFiltersOpen = false">{{ keyword }}</button></div></div><template #apply-label>查看 {{ faqResults.length }} 项结果</template></MobileFilterSheet><select v-model="faqCategory" class="rule-desktop-filter"><option value="all">全部分类</option><option v-for="category in categoryCards" :key="category.id" :value="category.id">{{ category.label }}</option></select></div><div class="popular-keywords desktop-popular-keywords"><span>常用关键词</span><button v-for="keyword in popularKeywords" :key="keyword" @click="selectKeyword(keyword)">{{ keyword }}</button></div></section>
       <section class="faq-category-section"><header><h2>按分类查看</h2><span>分类用于检索，不改变裁定效力。</span></header><div class="faq-category-grid"><button v-for="category in categoryCards" :key="category.id" :class="{ active: faqCategory === category.id }" @click="faqCategory = faqCategory === category.id ? 'all' : category.id"><small>{{ category.count }} 条</small><b>{{ category.label }}</b></button></div></section>
       <div class="faq-result-bar"><b>{{ faqResults.length }} 条现行裁定</b><div><button @click="setAllExpanded(false)">全部收起</button><button @click="setAllExpanded(true)">全部展开</button></div></div>
       <div class="faq-list"><article v-for="item in faqResults" :key="item.id" :class="{ open: openIds.has(item.id) }"><button class="faq-question" :aria-expanded="openIds.has(item.id)" @click="toggleEntry(item.id)"><span class="faq-number">裁定</span><span class="faq-title"><small>{{ item.category }}</small><b>{{ item.question }}</b></span><span class="faq-toggle">{{ openIds.has(item.id) ? '−' : '+' }}</span></button><div v-if="openIds.has(item.id)" class="faq-answer"><strong>答</strong><div><p>{{ item.answer }}</p><div class="ruling-meta"><span>{{ item.sourceRef }}</span><span>记录：{{ item.recordedAt }}</span><span v-if="item.effectiveAt">生效：{{ item.effectiveAt }}</span></div><div v-if="item.tags.length" class="ruling-tags"><span v-for="tag in item.tags" :key="tag">{{ tag }}</span></div></div></div></article><div v-if="!faqResults.length" class="empty">当前没有符合条件的已确认裁定</div></div>
@@ -103,5 +115,7 @@ onMounted(loadDynamicContent)
 @media(max-width:850px){.rule-layout,.rule-tools,.faq-search-row,.policy-grid{grid-template-columns:1fr}.rule-layout>aside{position:static}.faq-category-grid{grid-template-columns:repeat(2,1fr)}.policy-restrictions{grid-column:auto}.version-list article{flex-direction:column}.version-list aside{min-width:0}.rules-head{align-items:flex-start;flex-direction:column}.policy-restrictions li{grid-template-columns:1fr}}
 @media(max-width:520px){.rules-page{padding:0 12px 48px}.rule-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow:visible}.rule-tabs button{min-width:0;padding:12px 8px;line-height:1.35;white-space:normal}.faq-mode-tabs button{padding:13px 12px}.faq-category-grid{grid-template-columns:1fr}.faq-question{grid-template-columns:48px minmax(0,1fr) 28px;padding:14px 10px;gap:8px}.faq-answer{grid-template-columns:48px minmax(0,1fr);padding:15px 10px;gap:8px}}
 @media(max-width:520px){.rules-head{gap:10px;padding:20px 0 12px}.rules-head small,.section-lead>small{font-size:11px}.rules-head h1{margin:4px 0;font-size:26px}.rules-head p,.section-lead p{font-size:12px;line-height:1.65}.rules-head button{padding:9px 12px;font-size:13px}.rule-tabs button{min-height:42px;padding:9px 6px;font-size:12px}.rule-tools{gap:7px;margin:10px 0}.rule-tools input,.rule-tools select,.faq-search-row input,.faq-search-row select,.section-lead input{padding:10px;font-size:12px}.rule-layout>aside,.rule-layout article,.entry-grid article{padding:15px}.rule-layout aside span,.rule-layout aside p,.rule-layout article header span,.rule-layout article header b,.rule-layout article p{font-size:12px}.section-lead{margin:14px 0;padding:17px}.section-lead h2{font-size:20px}.faq-mode-tabs{margin:12px 0}.faq-mode-tabs button{padding:11px 10px;font-size:12px}.faq-search-panel{padding:16px}.faq-search-panel>div:first-child small,.faq-search-panel p,.popular-keywords span,.popular-keywords button,.faq-category-section>header span,.faq-result-bar button{font-size:12px}.faq-search-panel h2{font-size:18px}.faq-category-grid button{min-height:70px;padding:12px}.faq-category-grid small{font-size:11px}.faq-category-grid b{margin-top:7px;font-size:13px}.faq-result-bar{margin-top:14px}.faq-title b,.faq-title small,.faq-number,.faq-answer p{font-size:12px}}
+.rule-filter-fields{display:grid;gap:12px}.rule-filter-fields label{display:grid;gap:6px;color:#aeb8ba;font-size:12px;font-weight:900}.rule-filter-fields select{box-sizing:border-box;min-width:0;width:100%;padding:10px;border:1px solid #46545c;background:#090f14;color:#fff;font-size:12px}.mobile-popular-keywords{margin-top:2px}.mobile-popular-keywords>span{width:100%}
+@media(max-width:700px){.rule-tools,.faq-search-row{grid-template-columns:minmax(0,1fr) auto}.rule-desktop-filter,.desktop-popular-keywords{display:none}.rule-tools input,.faq-search-row input{min-width:0}.faq-search-panel{overflow-x:clip}}
 @media print{.rules-page{padding:0;color:#111}.rules-head button,.rule-tabs,.rule-tools,.rule-layout>aside{display:none}.rule-layout{display:block}.rule-layout article{break-inside:avoid;border:0;border-bottom:1px solid #ccc;background:#fff}.rule-layout article p{color:#111}}
 </style>
