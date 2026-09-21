@@ -6,7 +6,7 @@ param(
     [string]$ArtifactManifest = "",
     [string]$CacheRoot = "",
     [ValidateSet("/opt", "/www/legion12")]
-    [string]$ServerArtifactRoot = "/opt",
+    [string]$ServerArtifactRoot = "/www/legion12",
     [switch]$DryRun,
     # 兼容旧调用；隔离工作树现在会自动通过 HEAD == origin/main 的强校验，
     # 不再需要调用者手动追加此参数。

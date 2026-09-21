@@ -150,8 +150,10 @@ try {
         Where-Object { $_ -is [Management.Automation.ValidateSetAttribute] } |
         ForEach-Object { $_.ValidValues })
     Assert-True ($artifactRootValidateSet.Count -eq 2) "服务器制品根参数不是精确双值白名单。"
-    Assert-True ($artifactRootValidateSet -contains "/opt") "服务器制品根参数缺少默认 /opt。"
+    Assert-True ($artifactRootValidateSet -contains "/opt") "服务器制品根参数缺少兼容 /opt。"
     Assert-True ($artifactRootValidateSet -contains "/www/legion12") "服务器制品根参数缺少固定 /www/legion12。"
+    Assert-True ((Get-Content -Raw -LiteralPath $windowsDeploy).Contains('[string]$ServerArtifactRoot = "/www/legion12"')) `
+        "Windows 正式部署入口没有默认使用当前生产制品根 /www/legion12。"
     $emptyKnownHosts = Join-Path $sshFixture "empty_known_hosts"
     Write-Utf8NoBom $emptyKnownHosts ""
     $missingTrustRejected = $false
@@ -691,7 +693,8 @@ exec "$L12_TEST_REAL_TAR" "$@"
         "Windows 发布入口没有把固定制品根传给最终服务器发布命令。"
     $artifactRootAst = $deployCommand.ScriptBlock.Ast.ParamBlock.Parameters |
         Where-Object { $_.Name.VariablePath.UserPath -eq "ServerArtifactRoot" }
-    Assert-True ($artifactRootAst.DefaultValue.Extent.Text -eq '"/opt"') "Windows 发布入口默认制品根不再是 /opt。"
+    Assert-True ($artifactRootAst.DefaultValue.Extent.Text -eq '"/www/legion12"') `
+        "Windows 发布入口默认制品根不是当前生产目录 /www/legion12。"
     $invalidArtifactRootEntrypoint = Invoke-NativeCapture -Executable $powerShellPath.Source -Arguments @(
         "-NoProfile", "-File", $windowsDeploy, "-ServerArtifactRoot", "/tmp", "-DryRun"
     )
