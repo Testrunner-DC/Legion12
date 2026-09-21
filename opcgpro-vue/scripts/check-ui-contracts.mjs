@@ -356,6 +356,11 @@ const contracts = [
     && phaseTrack.includes('.l12-phase-track.vertical{position:relative;inset:auto;display:grid')
     && phaseTrack.includes('writing-mode:horizontal-tb;transform:none')
     && !phaseTrack.includes('<i>{{ index + 1 }}</i>') && phaseTrack.indexOf('class="round"') > phaseTrack.indexOf('v-for="item in phases"'), '左侧本局天灾与当前天灾保持独立并合计对齐选中卡；窄阶段列独立右移，不显示标题或序号，两字换行居中且TURN置底'],
+  [board.includes('class="mobile-current-disaster-value" aria-label="当前天灾值"')
+    && board.includes('<em>{{ game.disasterValue }}</em>')
+    && board.includes('.mobile-current-disaster-value { display: none; }')
+    && board.includes('.mobile-landscape-board .mobile-current-disaster-value { display: inline-flex;')
+    && board.includes('.mobile-landscape-board .mobile-current-disaster-heading { display: flex;'), '移动对局必须在当前天灾信息块内持续显示当前天灾值，且该紧凑出口不得改变宽屏阶段列'],
   [(board.match(/<PlayerMat /g) ?? []).length === 2 && (board.match(/<HandArea /g) ?? []).length === 4
     && (board.match(/<GameActions /g) ?? []).length === 2 && board.includes('<BattleEventLog ')
     && board.includes('<PromptOverlay ') && board.includes('<GraveyardOverlay ') && board.includes('<MasterOverlay ')

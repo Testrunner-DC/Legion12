@@ -1088,7 +1088,16 @@ function statusTexts(card: Card) {
                   @mouseenter="game.activeDisaster && (focusCard = game.activeDisaster)" @click="inspectActiveDisaster">
                   <CardImage v-if="game.activeDisaster" :card-id="game.activeDisaster.cardId" :legacy-url="game.activeDisaster.imageUrl" :alt="game.activeDisaster.name" intent="board" eager />
                   <img v-else src="/assets/l12/card-back-disaster.png" alt="天灾牌背" />
-                  <span class="mobile-current-disaster-copy"><b>当前天灾</b><i>{{ game.activeDisaster?.name || '尚未揭示' }}</i></span>
+                  <span class="mobile-current-disaster-copy">
+                    <span class="mobile-current-disaster-heading">
+                      <b>当前天灾</b>
+                      <strong class="mobile-current-disaster-value" aria-label="当前天灾值">
+                        <img src="/assets/l12/disaster-icon-source.png" alt="" />
+                        <em>{{ game.disasterValue }}</em>
+                      </strong>
+                    </span>
+                    <i>{{ game.activeDisaster?.name || '尚未揭示' }}</i>
+                  </span>
                 </button>
             </section>
           </div>
@@ -1835,6 +1844,13 @@ function statusTexts(card: Card) {
 .mobile-current-disaster-copy { display: grid; min-width: 0; align-content: center; gap: 2px; }
 .mobile-current-disaster-copy b { color: #c9b478; font-size: 10px; line-height: 1; }
 .mobile-current-disaster-copy i { display: -webkit-box; overflow: hidden; color: #f3f1e9; font-size: 11px; font-style: normal; font-weight: 900; line-height: 1.08; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+.mobile-current-disaster-heading { display: contents; }
+.mobile-current-disaster-value { display: none; }
+.mobile-landscape-board .mobile-current-disaster-heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 2px; }
+.mobile-landscape-board .mobile-current-disaster-heading > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mobile-landscape-board .mobile-current-disaster-value { display: inline-flex; min-width: 20px; height: 15px; flex: none; align-items: center; justify-content: center; gap: 1px; padding: 0 2px; border: 1px solid rgba(215, 204, 163, .72); background: rgba(7, 10, 11, .9); color: #fff; font-size: 9px; font-weight: 900; line-height: 1; }
+.mobile-landscape-board .mobile-current-disaster-value img { width: 9px !important; height: 10px !important; border-radius: 0 !important; object-fit: contain !important; filter: invert(1); }
+.mobile-landscape-board .mobile-current-disaster-value em { font-style: normal; font-variant-numeric: tabular-nums; }
 
 .mobile-landscape-board :deep(.battlefield-half.l12-player-mat) {
   grid-template-columns: 132px 216px 40px 82px !important;
