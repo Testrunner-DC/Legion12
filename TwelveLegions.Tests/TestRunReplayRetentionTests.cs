@@ -146,7 +146,9 @@ public sealed class TestRunReplayRetentionTests
             if(OperatingSystem.IsWindows())
             {
                 var info=new System.Diagnostics.ProcessStartInfo("cmd.exe") { UseShellExecute=false,CreateNoWindow=true };
-                foreach(var arg in new[]{"/c","mklink","/J",alias,target})info.ArgumentList.Add(arg);
+                // Disable cmd AutoRun hooks: the full release suite can inherit a shell
+                // initializer that delays or replaces the built-in mklink command.
+                foreach(var arg in new[]{"/d","/c","mklink","/J",alias,target})info.ArgumentList.Add(arg);
                 using var process=System.Diagnostics.Process.Start(info)!;process.WaitForExit();Assert.Equal(0,process.ExitCode);
             }
             else Directory.CreateSymbolicLink(alias,target);
