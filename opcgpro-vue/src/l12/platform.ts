@@ -382,6 +382,7 @@ export interface RankedIntegrityAudit {
   firstAccountId: string; firstPlayer: string; secondAccountId: string; secondPlayer: string
   winner?: number | null; durationMs: number; meaningfulCommandCount: number; conclusionKind: string
   networkLinked: boolean; networkCorrelationId?: string | null; signals: RankedIntegritySignal[]
+  browserLinked: boolean; browserCorrelationId?: string | null; finalRound: number
   reviewRecommended: boolean; effectiveDisposition: 'unreviewed' | 'review' | 'normal' | 'insufficient' | 'system-error' | 'confirmed' | string
   enforcement: 'none' | string; createdAt: string
 }

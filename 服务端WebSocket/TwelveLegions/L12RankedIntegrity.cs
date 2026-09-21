@@ -20,6 +20,9 @@ public sealed record L12RankedIntegrityAuditView(
     string ConclusionKind,
     bool NetworkLinked,
     string? NetworkCorrelationId,
+    bool BrowserLinked,
+    string? BrowserCorrelationId,
+    int FinalRound,
     IReadOnlyList<L12RankedIntegritySignalView> Signals,
     bool ReviewRecommended,
     string EffectiveDisposition,
@@ -33,7 +36,9 @@ internal sealed record L12RankedIntegrityContext(
     string ConclusionKind,
     string? FirstNetworkFingerprint,
     string? SecondNetworkFingerprint,
-    int FinalRound = 0);
+    int FinalRound = 0,
+    string? FirstBrowserFingerprint = null,
+    string? SecondBrowserFingerprint = null);
 
 internal static class L12RankedNetworkPrivacy
 {
@@ -59,9 +64,14 @@ public sealed partial class L12PlatformStore
     private static readonly TimeSpan RankedExtremeShortMatch = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan RankedRepeatedPairWindow = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan RankedHighRiskCooldown = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan RankedPatternWindow = TimeSpan.FromHours(24);
+    private static readonly TimeSpan RankedClusterWindow = TimeSpan.FromDays(7);
+    private static readonly TimeSpan RankedPaddedMinimum = TimeSpan.FromMinutes(4);
+    private static readonly TimeSpan RankedPaddedMaximum = TimeSpan.FromMinutes(12);
 
     private sealed class RankedIntegrityAuditRow
     {
+        public int EvidenceVersion { get; set; }
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public string MatchId { get; set; } = string.Empty;
         public string SeasonId { get; set; } = string.Empty;
@@ -75,6 +85,9 @@ public sealed partial class L12PlatformStore
         public string ConclusionKind { get; set; } = "unknown";
         public string FirstNetworkFingerprint { get; set; } = string.Empty;
         public string SecondNetworkFingerprint { get; set; } = string.Empty;
+        public string FirstBrowserFingerprint { get; set; } = string.Empty;
+        public string SecondBrowserFingerprint { get; set; } = string.Empty;
+        public int FinalRound { get; set; }
         public List<string> Signals { get; set; } = [];
         public bool ReviewRecommended { get; set; }
         public bool RewardHeld { get; set; }
@@ -205,7 +218,12 @@ public sealed partial class L12PlatformStore
                 || !string.Equals(audit.FirstNetworkFingerprint,
                     NormalizeNetworkFingerprint(payload.FirstNetworkFingerprint), StringComparison.Ordinal)
                 || !string.Equals(audit.SecondNetworkFingerprint,
-                    NormalizeNetworkFingerprint(payload.SecondNetworkFingerprint), StringComparison.Ordinal))
+                    NormalizeNetworkFingerprint(payload.SecondNetworkFingerprint), StringComparison.Ordinal)
+                || audit.EvidenceVersion >= 2 && (!string.Equals(audit.FirstBrowserFingerprint,
+                        NormalizeBrowserFingerprint(payload.FirstBrowserFingerprint), StringComparison.Ordinal)
+                    || !string.Equals(audit.SecondBrowserFingerprint,
+                        NormalizeBrowserFingerprint(payload.SecondBrowserFingerprint), StringComparison.Ordinal)
+                    || audit.FinalRound != payload.FinalRound))
                 throw new InvalidOperationException("排位完整性账本与 outbox 幂等载荷冲突");
         }
     }
@@ -273,6 +291,9 @@ public sealed partial class L12PlatformStore
         var conclusion = "unknown";
         var firstNetwork = string.Empty;
         var secondNetwork = string.Empty;
+        var firstBrowser = string.Empty;
+        var secondBrowser = string.Empty;
+        var finalRound = 0;
         if (context is not null)
         {
             durationMs = Math.Max(0L, (long)(context.EndedAt - context.StartedAt).TotalMilliseconds);
@@ -281,8 +302,13 @@ public sealed partial class L12PlatformStore
                 ? "unknown" : context.ConclusionKind.Trim().ToLowerInvariant();
             firstNetwork = NormalizeNetworkFingerprint(context.FirstNetworkFingerprint);
             secondNetwork = NormalizeNetworkFingerprint(context.SecondNetworkFingerprint);
+            firstBrowser = NormalizeBrowserFingerprint(context.FirstBrowserFingerprint);
+            secondBrowser = NormalizeBrowserFingerprint(context.SecondBrowserFingerprint);
+            finalRound = Math.Max(0, context.FinalRound);
             if (!string.IsNullOrEmpty(firstNetwork) && FixedNetworkEquals(firstNetwork, secondNetwork))
                 signals.Add("linked-network");
+            if (!string.IsNullOrEmpty(firstBrowser) && FixedFingerprintEquals(firstBrowser, secondBrowser))
+                signals.Add("linked-browser");
             if (durationMs <= (long)RankedVeryShortMatch.TotalMilliseconds)
                 signals.Add("very-short-match");
             if (meaningful == 0) signals.Add("no-meaningful-actions");
@@ -297,9 +323,19 @@ public sealed partial class L12PlatformStore
             && IsRepeatedUnilateralExtremePairLocked(firstAccountId, secondAccountId, winner.Value,
                 durationMs, meaningful, context.EndedAt);
         if (rewardHeld) signals.Add("repeated-unilateral-extreme-pair");
-        var review = rewardHeld || signals.Count >= 2 && signals.Any(code => code != "linked-network");
+        if (context is not null && winner is 0 or 1)
+            AddAccountPatternSignalsLocked(signals, firstAccountId, secondAccountId, winner.Value,
+                durationMs, meaningful, finalRound, firstNetwork, secondNetwork,
+                firstBrowser, secondBrowser, context.EndedAt);
+        var review = rewardHeld
+            || signals.Contains("repeated-padded-transfer", StringComparer.Ordinal)
+            || signals.Contains("linked-loser-cluster", StringComparer.Ordinal)
+            || signals.Contains("unilateral-score-transfer", StringComparer.Ordinal)
+                && signals.Contains("repeated-pair-day", StringComparer.Ordinal)
+            || signals.Count(code => code is not ("linked-network" or "linked-browser")) >= 2;
         _data.RankedIntegrityAudits.Add(new RankedIntegrityAuditRow
         {
+            EvidenceVersion = 2,
             MatchId = matchId,
             SeasonId = RequireOperationsConfig().Season.Id,
             FirstAccountId = firstAccountId,
@@ -312,6 +348,9 @@ public sealed partial class L12PlatformStore
             ConclusionKind = conclusion,
             FirstNetworkFingerprint = firstNetwork,
             SecondNetworkFingerprint = secondNetwork,
+            FirstBrowserFingerprint = firstBrowser,
+            SecondBrowserFingerprint = secondBrowser,
+            FinalRound = finalRound,
             Signals = signals,
             ReviewRecommended = review,
             RewardHeld = rewardHeld,
@@ -392,18 +431,115 @@ public sealed partial class L12PlatformStore
     }
 
     private static bool FixedNetworkEquals(string left, string right)
-        => !string.IsNullOrEmpty(right) && CryptographicOperations.FixedTimeEquals(
+        => FixedFingerprintEquals(left, right);
+
+    private static string NormalizeBrowserFingerprint(string? value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant() ?? string.Empty;
+        return normalized.StartsWith("browser-v1:", StringComparison.Ordinal)
+            && normalized.Length == 75 && normalized[11..].All(Uri.IsHexDigit) ? normalized : string.Empty;
+    }
+
+    private static bool FixedFingerprintEquals(string left, string right)
+        => !string.IsNullOrEmpty(left) && !string.IsNullOrEmpty(right)
+           && left.Length == right.Length && CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(left), Encoding.UTF8.GetBytes(right));
+
+    private void AddAccountPatternSignalsLocked(List<string> signals, string firstAccountId,
+        string secondAccountId, int winner, long durationMs, int meaningful, int finalRound,
+        string firstNetwork, string secondNetwork, string firstBrowser, string secondBrowser,
+        DateTimeOffset endedAt)
+    {
+        var normalizedEndedAt = endedAt.ToUniversalTime();
+        var winningAccountId = winner == 0 ? firstAccountId : secondAccountId;
+        var losingAccountId = winner == 0 ? secondAccountId : firstAccountId;
+        var pairCutoff = normalizedEndedAt - RankedPatternWindow;
+        var pairHistory = _data.RankedIntegrityAudits.Where(row =>
+        {
+            var rowEndedAt = (row.EndedAt == default ? row.CreatedAt : row.EndedAt).ToUniversalTime();
+            return rowEndedAt >= pairCutoff && rowEndedAt <= normalizedEndedAt
+                && IsSameRankedPair(row, firstAccountId, secondAccountId) && row.Winner is 0 or 1;
+        }).ToArray();
+        var pairCount = pairHistory.Length + 1;
+        var unilateralWins = pairHistory.Count(row => WinnerAccountId(row).Equals(winningAccountId,
+            StringComparison.OrdinalIgnoreCase)) + 1;
+        if (pairCount >= 3) signals.Add("repeated-pair-day");
+        if (pairCount >= 3 && unilateralWins >= 3 && unilateralWins * 4 >= pairCount * 3)
+            signals.Add("unilateral-score-transfer");
+
+        if (IsLowProgressPaddedMatch(durationMs, meaningful, finalRound))
+        {
+            var priorPaddedWins = pairHistory.Count(row => WinnerAccountId(row).Equals(winningAccountId,
+                    StringComparison.OrdinalIgnoreCase)
+                && IsLowProgressPaddedMatch(row.DurationMs, row.MeaningfulCommandCount, row.FinalRound));
+            if (priorPaddedWins >= 2) signals.Add("repeated-padded-transfer");
+        }
+
+        var losingNetwork = winner == 0 ? secondNetwork : firstNetwork;
+        var losingBrowser = winner == 0 ? secondBrowser : firstBrowser;
+        if (string.IsNullOrEmpty(losingNetwork) && string.IsNullOrEmpty(losingBrowser)) return;
+        var clusterCutoff = normalizedEndedAt - RankedClusterWindow;
+        var beneficiaryHistory = _data.RankedIntegrityAudits.Where(row =>
+            {
+                var rowEndedAt = (row.EndedAt == default ? row.CreatedAt : row.EndedAt).ToUniversalTime();
+                return rowEndedAt >= clusterCutoff && rowEndedAt <= normalizedEndedAt
+                    && row.Winner is 0 or 1
+                    && WinnerAccountId(row).Equals(winningAccountId, StringComparison.OrdinalIgnoreCase);
+            }).ToArray();
+        var linkedLosingAccounts = beneficiaryHistory
+            .Select(row => (AccountId: LoserAccountId(row),
+                Network: FingerprintForAccount(row, LoserAccountId(row), browser: false),
+                Browser: FingerprintForAccount(row, LoserAccountId(row), browser: true)))
+            .Where(item => FingerprintMatches(item.Network, losingNetwork)
+                || FingerprintMatches(item.Browser, losingBrowser))
+            .Select(item => item.AccountId).Append(losingAccountId)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (linkedLosingAccounts.Length >= 2 && beneficiaryHistory.Length + 1 >= 3)
+            signals.Add("linked-loser-cluster");
+    }
+
+    private static bool IsLowProgressPaddedMatch(long durationMs, int meaningful, int finalRound)
+        => durationMs >= (long)RankedPaddedMinimum.TotalMilliseconds
+           && durationMs <= (long)RankedPaddedMaximum.TotalMilliseconds
+           && meaningful <= 6 && finalRound <= 3;
+
+    private static bool IsSameRankedPair(RankedIntegrityAuditRow row, string firstAccountId,
+        string secondAccountId)
+        => row.FirstAccountId.Equals(firstAccountId, StringComparison.OrdinalIgnoreCase)
+               && row.SecondAccountId.Equals(secondAccountId, StringComparison.OrdinalIgnoreCase)
+           || row.FirstAccountId.Equals(secondAccountId, StringComparison.OrdinalIgnoreCase)
+               && row.SecondAccountId.Equals(firstAccountId, StringComparison.OrdinalIgnoreCase);
+
+    private static string WinnerAccountId(RankedIntegrityAuditRow row)
+        => row.Winner == 0 ? row.FirstAccountId : row.SecondAccountId;
+
+    private static string LoserAccountId(RankedIntegrityAuditRow row)
+        => row.Winner == 0 ? row.SecondAccountId : row.FirstAccountId;
+
+    private static string FingerprintForAccount(RankedIntegrityAuditRow row, string accountId,
+        bool browser)
+        => row.FirstAccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase)
+            ? browser ? row.FirstBrowserFingerprint : row.FirstNetworkFingerprint
+            : browser ? row.SecondBrowserFingerprint : row.SecondNetworkFingerprint;
+
+    private static bool FingerprintMatches(string first, string second)
+        => !string.IsNullOrEmpty(first) && !string.IsNullOrEmpty(second)
+            && FixedFingerprintEquals(first, second);
 
     private L12RankedIntegrityAuditView RankedIntegrityView(RankedIntegrityAuditRow row)
     {
         var linked = !string.IsNullOrEmpty(row.FirstNetworkFingerprint)
             && FixedNetworkEquals(row.FirstNetworkFingerprint, row.SecondNetworkFingerprint);
         var reference = linked ? row.FirstNetworkFingerprint[..Math.Min(23, row.FirstNetworkFingerprint.Length)] : null;
+        var browserLinked = !string.IsNullOrEmpty(row.FirstBrowserFingerprint)
+            && FixedFingerprintEquals(row.FirstBrowserFingerprint, row.SecondBrowserFingerprint);
+        var browserReference = browserLinked
+            ? row.FirstBrowserFingerprint[..Math.Min(27, row.FirstBrowserFingerprint.Length)] : null;
         return new L12RankedIntegrityAuditView(row.Id, row.MatchId, row.SeasonId,
             row.FirstAccountId, AccountName(row.FirstAccountId), row.SecondAccountId,
             AccountName(row.SecondAccountId), row.Winner, row.DurationMs, row.MeaningfulCommandCount,
-            row.ConclusionKind, linked, reference, row.Signals.Select(code =>
+            row.ConclusionKind, linked, reference, browserLinked, browserReference, row.FinalRound,
+            row.Signals.Select(code =>
                 new L12RankedIntegritySignalView(code, IntegritySignalLabel(code))).ToArray(),
             row.ReviewRecommended, RankedIntegrityDispositionLocked(row.MatchId), row.Enforcement, row.CreatedAt);
     }
@@ -423,11 +559,16 @@ public sealed partial class L12PlatformStore
     private static string IntegritySignalLabel(string code) => code switch
     {
         "linked-network" => "双方网络关联（仅一项证据）",
+        "linked-browser" => "同一浏览器标识（仅一项证据）",
         "very-short-match" => "异常极短对局",
         "no-meaningful-actions" => "没有有效规则操作",
         "abnormal-surrender" => "极短或无操作投降",
         "abnormal-timeout" => "异常超时结束",
         "repeated-unilateral-extreme-pair" => "短时窗口内同一方重复零操作获胜（奖励暂扣）",
+        "repeated-pair-day" => "24小时内双方重复匹配",
+        "unilateral-score-transfer" => "重复对局胜负长期单向",
+        "repeated-padded-transfer" => "多局低操作对局疑似刻意拖延后单向结算",
+        "linked-loser-cluster" => "同一获益账号关联多个身份相近的失败账号",
         _ => code,
     };
 }

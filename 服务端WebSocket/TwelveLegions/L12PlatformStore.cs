@@ -515,6 +515,15 @@ public sealed partial class L12PlatformStore
         lock (_gate) return _data.Accounts.Any(row => row.Id == accountId);
     }
 
+    public IReadOnlyCollection<string> StatisticsExcludedAccountIds()
+    {
+        lock (_gate)
+        {
+            return _data.Accounts.Where(row => row.Disabled || row.Deleted)
+                .Select(row => row.Id).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        }
+    }
+
     public IReadOnlyList<L12SessionView> Sessions(string accountId, string? currentSessionId = null)
     {
         lock (_gate)

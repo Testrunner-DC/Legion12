@@ -20,7 +20,7 @@ internal sealed record L12RankedSettlementEnvelope(
     string FirstMasterId, string SecondMasterId, int? Winner,
     DateTimeOffset StartedAt, DateTimeOffset EndedAt, int MeaningfulCommandCount,
     string ConclusionKind, string FirstNetworkFingerprint, string SecondNetworkFingerprint,
-    int FinalRound = 0);
+    int FinalRound = 0, string FirstBrowserFingerprint = "", string SecondBrowserFingerprint = "");
 
 internal sealed record L12RankedSettlementOutboxEntry(
     string MatchId, L12RankedSettlementEnvelope? Payload, string PayloadHash, string Status, int Attempts,
@@ -129,7 +129,8 @@ public sealed partial class MatchRecorder
             || payload.FinalRound < 0
             || string.IsNullOrWhiteSpace(payload.ConclusionKind)
             || payload.FirstMasterId is null || payload.SecondMasterId is null
-            || payload.FirstNetworkFingerprint is null || payload.SecondNetworkFingerprint is null)
+            || payload.FirstNetworkFingerprint is null || payload.SecondNetworkFingerprint is null
+            || payload.FirstBrowserFingerprint is null || payload.SecondBrowserFingerprint is null)
             throw new InvalidDataException("排位结算 outbox 载荷结构无效");
     }
 

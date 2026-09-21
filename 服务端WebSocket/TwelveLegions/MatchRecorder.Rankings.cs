@@ -52,7 +52,8 @@ public sealed partial class MatchRecorder
                 result[payload.MatchId] = new L12RankingMatch(payload.MatchId, reader.GetString(1), reader.GetString(2),
                     payload.StartedAt.ToString("O"), reader.GetString(4), payload.Winner,
                     reader.IsDBNull(8) ? "" : reader.GetString(8), reader.IsDBNull(10) ? "" : reader.GetString(10),
-                    reader.GetInt32(6), payload.FirstMasterId, payload.SecondMasterId);
+                    reader.GetInt32(6), payload.FirstMasterId, payload.SecondMasterId,
+                    payload.FirstAccountId, payload.SecondAccountId);
             }
             catch (Exception error) when (error is JsonException or InvalidDataException or InvalidOperationException
                                           or FormatException)

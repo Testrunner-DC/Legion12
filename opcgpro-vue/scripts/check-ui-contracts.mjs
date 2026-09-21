@@ -1266,7 +1266,7 @@ contracts.push([
 ])
 
 const latestReleaseEntry = shell.slice(
-  shell.indexOf("date: '2026-09-20'"),
+  shell.indexOf("date: '2026-09-21'"),
   shell.indexOf("date: '2026-09-14'"),
 )
 const currentReleaseEntry = shell.slice(
@@ -1290,11 +1290,14 @@ contracts.push([
     && latestReleaseEntry.includes("title: '规则中心与卡牌收藏'")
     && latestReleaseEntry.includes("title: '反击、试炼与战斗限制'")
     && latestReleaseEntry.includes("title: '账号、战绩、回放与个人页面'")
+    && latestReleaseEntry.includes("title: '排位战绩与数据一致性'")
+    && latestReleaseEntry.includes("title: '历史排位结果'")
     && ['确认抵挡／不抵挡', '确认支援／不支援', '没有额外触发效果的天灾公开', '诸神黄昏',
       '贝奥武夫', '尼托克丽丝', '梅林', '洛基', '猎杀时刻', '魔龙降世', '野外扎营',
       '山河社稷图', '观星', '法老王的庆典', '众神之乡', '无骨者伊瓦尔', '花魁的馈赠',
       '武运在天 铠甲在前', '柏拉图', '普罗米修斯', '符文之力', '特勒马科斯', '卡牌详情抽屉',
-      '对手手牌数', '宫廷魔术师', '试炼军团', '7天内最近10场', '异画', '昵称修改']
+      '对手手牌数', '宫廷魔术师', '试炼军团', '7天内最近10场', '异画', '昵称修改',
+      '个人战绩、主宰战绩、排行榜、胜率与先后手数据中同步剔除', '历史对局会以结算当时保存的结果为准']
       .every(detail => latestReleaseEntry.includes(detail))
     && internalReleaseTerms.every(term => !latestReleaseEntry.includes(term)),
   '最新玩家更新日志必须覆盖本期移动端、天灾卡面、牌库整理、卡效结算、规则中心、异画与改名功能，并排除后台和内部治理内容',

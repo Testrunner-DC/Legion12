@@ -378,6 +378,50 @@ public sealed class RankedPlatformTests
     }
 
     [Fact]
+    public void DisabledAccountsAndTheirMatchesAreExcludedFromRankedStatistics()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-disabled-statistics",
+            Guid.NewGuid().ToString("N"));
+        var catalog = Catalog;
+        var store = new L12PlatformStore(Path.Combine(directory, "platform.json"),
+            catalog.PresetDecks, officialCards: catalog.Cards);
+        var admin = store.Login("Admin", "L12master").Account!;
+        var firstRegistration = store.Register("tdissta01", "Password123!");
+        var secondRegistration = store.Register("tdisstb02", "Password123!");
+        Assert.True(firstRegistration.Success, firstRegistration.Message);
+        Assert.True(secondRegistration.Success, secondRegistration.Message);
+        var first = firstRegistration.Account!;
+        var second = secondRegistration.Account!;
+        store.SelectRankedFaction(first.Id, "order");
+        store.SelectRankedFaction(second.Id, "chaos");
+        var config = store.RankedConfig(admin);
+        store.UpdateRankedConfig(admin, config with { PlacementMatches = 1 },
+            "缩短测试定级", new L12AdminAuditContext("disabled-statistics-config"));
+        store.SettleRankedMatch("disabled-statistics-match", first.Id, second.Id, 0);
+        var now = DateTimeOffset.UtcNow;
+        var source = new[]
+        {
+            new L12RankingMatch("disabled-statistics-match", first.Username, second.Username,
+                now.AddMinutes(-10).ToString("O"), now.AddMinutes(-2).ToString("O"), 0,
+                "天照大神", "西芙", 0, "S01-04M1", "ST03-M1", first.Id, second.Id),
+        };
+        Assert.Equal(1, store.RankedAnalytics(source, "7d").Summary.Matches);
+        Assert.Contains(store.RankedLeaderboard(), row => row.Username == first.Username);
+
+        store.SetAccountDisabled(admin, first.Id, true, "排除恶性账号统计",
+            new L12AdminAuditContext("disabled-statistics"), apply: true);
+
+        Assert.Contains(first.Id, store.StatisticsExcludedAccountIds());
+        Assert.Equal(0, store.RankedAnalytics(source, "7d").Summary.Matches);
+        Assert.DoesNotContain(store.RankedLeaderboard(), row => row.Username == first.Username);
+
+        store.SetAccountDisabled(admin, first.Id, false, "复核后恢复账号",
+            new L12AdminAuditContext("enabled-statistics"), apply: true);
+        Assert.Equal(1, store.RankedAnalytics(source, "7d").Summary.Matches);
+        Assert.Contains(store.RankedLeaderboard(), row => row.Username == first.Username);
+    }
+
+    [Fact]
     public async Task RepeatedOpponentMatchesAllSettleAndConcurrentReplayIsIdempotentButConflictsFailClosed()
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-replay", Guid.NewGuid().ToString("N"));

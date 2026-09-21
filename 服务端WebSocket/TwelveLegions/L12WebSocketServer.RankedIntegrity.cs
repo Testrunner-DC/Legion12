@@ -28,8 +28,14 @@ public sealed partial class L12WebSocketServer
         app.MapPost("/api/admin/ranked/integrity/decisions", (HttpRequest request, IntegrityConfirmRequest body) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminMatchGovernanceWrite, out var auth, out var failure)) return failure;
-            return IntegrityRequest(request, () => _platform.ConfirmRankedIntegrityAction(auth.Account, body.Input,
-                body.ExpectedRevision, RequestAuditContext(request, L12Permission.AdminMatchGovernanceWrite)));
+            return IntegrityRequest(request, () =>
+            {
+                var decision = _platform.ConfirmRankedIntegrityAction(auth.Account, body.Input,
+                    body.ExpectedRevision, RequestAuditContext(request,
+                        L12Permission.AdminMatchGovernanceWrite));
+                _recorder.InvalidateAnalyticsCache();
+                return decision;
+            });
         });
         app.MapGet("/api/admin/ranked/integrity/decisions", (HttpRequest request, string? cursor, int? limit) =>
         {

@@ -91,6 +91,16 @@ public sealed class MatchRecorderTests
         Assert.Equal(1, statistics.Ranked.Games);
         Assert.Single(statistics.Masters);
         Assert.Equal(1, statistics.Masters[0].Ranked.Wins);
+
+        var voided = await recorder.PlayerStatisticsAsync("account-a", "已经改名的甲",
+            excludedMatchIds: ["player-statistics-test"]);
+        Assert.Equal(0, voided.Overall.Games);
+        Assert.Empty(voided.Masters);
+
+        var disabledParticipant = await recorder.PlayerStatisticsAsync("account-a", "已经改名的甲",
+            excludedAccountIds: ["account-b"]);
+        Assert.Equal(0, disabledParticipant.Overall.Games);
+        Assert.Empty(disabledParticipant.Masters);
     }
 
     [Fact]

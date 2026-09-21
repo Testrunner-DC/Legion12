@@ -306,7 +306,8 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             SELECT m.match_id,m.player_0,m.player_1,m.started_utc,m.ended_utc,m.winner,
                    COALESCE(p0.master_name,''),COALESCE(p1.master_name,''),m.first_player,
                    m.storage_version,
-                   CASE WHEN m.storage_version < 2 THEN e.state_json ELSE NULL END
+                   CASE WHEN m.storage_version < 2 THEN e.state_json ELSE NULL END,
+                   m.account_0,m.account_1
             FROM matches m
             LEFT JOIN match_participants p0 ON p0.match_id=m.match_id AND p0.player_index=0
             LEFT JOIN match_participants p1 ON p1.match_id=m.match_id AND p1.player_index=1
@@ -350,7 +351,8 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             }
             matches.Add(new L12RankingMatch(reader.GetString(0), reader.GetString(1), reader.GetString(2),
                 reader.GetString(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetInt32(5),
-                master0, master1, firstPlayer));
+                master0, master1, firstPlayer, AccountId0: reader.IsDBNull(11) ? null : reader.GetString(11),
+                AccountId1: reader.IsDBNull(12) ? null : reader.GetString(12)));
         }
         return matches;
     }
@@ -647,4 +649,5 @@ public sealed record L12MatchDetail(L12MatchSummary Match, IReadOnlyList<L12Reco
 
 public sealed record L12RankingMatch(
     string MatchId, string Player0, string Player1, string StartedUtc, string EndedUtc, int? Winner,
-    string Master0, string Master1, int FirstPlayer, string? MasterId0 = null, string? MasterId1 = null);
+    string Master0, string Master1, int FirstPlayer, string? MasterId0 = null, string? MasterId1 = null,
+    string? AccountId0 = null, string? AccountId1 = null);

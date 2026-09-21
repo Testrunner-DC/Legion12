@@ -435,7 +435,8 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             return _data.RankedProfileHistory
-                .Where(row => row.FinalizedSeasonAwards && row.Titles.Count > 0)
+                .Where(row => row.FinalizedSeasonAwards && row.Titles.Count > 0
+                    && IsActiveAccountLocked(row.AccountId))
                 .OrderByDescending(row => row.ArchivedAt).ThenByDescending(row => row.SevenValue)
                 .Take(Math.Clamp(limit, 1, 2000))
                 .Select(row => new L12RankedSeasonHonorView(row.SeasonId,
@@ -457,6 +458,7 @@ public sealed partial class L12PlatformStore
             var rows = _data.RankedProfiles.Where(row => row.SeasonId == season
                     && row.PlacementPlayed >= _data.RankedConfig!.PlacementMatches
                     && !string.IsNullOrWhiteSpace(row.Faction)
+                    && IsActiveAccountLocked(row.AccountId)
                     && (string.IsNullOrWhiteSpace(faction) || string.Equals(row.Faction, faction, StringComparison.OrdinalIgnoreCase)))
                 .OrderByDescending(row => row.SevenValue).ThenByDescending(row => row.HiddenRating)
                 .ThenBy(row => AccountName(row.AccountId), StringComparer.OrdinalIgnoreCase).Take(Math.Clamp(limit, 1, 500)).ToArray();
@@ -505,6 +507,8 @@ public sealed partial class L12PlatformStore
                     Master1 = RankingMasterId(match.MasterId1, match.Master1),
                 })
                 .Where(item => !IsRankedMatchExcludedLocked(item.Match.MatchId)
+                    && (item.Match.AccountId0 is null || IsActiveAccountLocked(item.Match.AccountId0))
+                    && (item.Match.AccountId1 is null || IsActiveAccountLocked(item.Match.AccountId1))
                     && item.Started is not null && item.Started >= rangeStart && item.Started <= rangeEnd
                     && item.Ended is not null && item.Ended >= item.Started && item.Ended <= now
                     && item.Match.Winner is 0 or 1 && item.Master0 is not null && item.Master1 is not null)
@@ -936,9 +940,15 @@ public sealed partial class L12PlatformStore
         IReadOnlyDictionary<string, string> beforeMasterChampions,
         int firstStreakBefore, int secondStreakBefore, string? firstMasterId, string? secondMasterId)
     {
-        if (!_data.RankedConfig!.BroadcastEnabled) return [];
-        var config = NormalizeRankedBroadcastConfig(_data.RankedConfig.Broadcast);
         var winnerRow = winner == 0 ? first : second;
+        var highestTierIndex = _data.RankedConfig!.Factions[0].Tiers.Count - 1;
+        var reachedHighestTierNow = !winnerRow.ReachedHighestTier
+            && TierIndex(winnerRow) == highestTierIndex;
+        // 最高阶是排位档案事实，不是广播投递状态。关闭全服广播时也必须照常落档，
+        // 否则后续处置会把这类历史档案误判为结算链损坏。
+        if (reachedHighestTierNow) winnerRow.ReachedHighestTier = true;
+        if (!_data.RankedConfig.BroadcastEnabled) return [];
+        var config = NormalizeRankedBroadcastConfig(_data.RankedConfig.Broadcast);
         var loserRow = winner == 0 ? second : first;
         var loserStreakBefore = winner == 0 ? secondStreakBefore : firstStreakBefore;
         var rows = new List<RankedBroadcastRow>();
@@ -954,11 +964,10 @@ public sealed partial class L12PlatformStore
             Add("win-streak", $"【{faction.Name}】{winnerName} 已取得 {winnerRow.WinStreak} 连胜");
         if (config.StreakEndedEnabled && winnerMeetsTier && loserStreakBefore >= config.StreakEndedThreshold)
             Add("streak-ended", $"【{faction.Name}】{winnerName} 终结了 {AccountName(loserRow.AccountId)} 的 {loserStreakBefore} 连胜");
-        if (!winnerRow.ReachedHighestTier && TierIndex(winnerRow) == 4)
+        if (reachedHighestTierNow)
         {
-            winnerRow.ReachedHighestTier = true;
             if (config.HighestTierEnabled)
-                Add("highest-tier", $"【{faction.Name}】{winnerName} 晋升至 {faction.Tiers[4].Name}");
+                Add("highest-tier", $"【{faction.Name}】{winnerName} 晋升至 {faction.Tiers[highestTierIndex].Name}");
         }
         var after = FactionRank(winnerRow);
         var afterTitle = FactionPlacementTitle(winnerRow, after);
@@ -1169,7 +1178,8 @@ public sealed partial class L12PlatformStore
     {
         if (string.IsNullOrWhiteSpace(row.Faction) || row.PlacementPlayed < _data.RankedConfig!.PlacementMatches) return 0;
         return _data.RankedProfiles.Where(item => item.SeasonId == row.SeasonId && item.Faction == row.Faction
-                && item.PlacementPlayed >= _data.RankedConfig.PlacementMatches)
+                && item.PlacementPlayed >= _data.RankedConfig.PlacementMatches
+                && IsActiveAccountLocked(item.AccountId))
             .OrderByDescending(item => item.SevenValue).ThenByDescending(item => item.HiddenRating)
             .ThenBy(item => AccountName(item.AccountId), StringComparer.OrdinalIgnoreCase).ToList().IndexOf(row) + 1;
     }
@@ -1191,6 +1201,15 @@ public sealed partial class L12PlatformStore
                     && row.Faction == faction.Id && row.PlacementPlayed >= _data.RankedConfig.PlacementMatches
                     && _data.Accounts.Any(account => account.Id == row.AccountId && !account.Disabled && !account.Deleted))
                 .Sum(row => row.SevenValue));
+
+    private bool IsActiveAccountLocked(string accountId)
+    {
+        // 旧导入事实可能只保存了账号标识而没有可关联的账号行；未知历史身份继续保留，
+        // 只有平台明确知道已禁用/删除的账号才从统计中排除。
+        var account = _data.Accounts.FirstOrDefault(item => item.Id.Equals(accountId,
+            StringComparison.OrdinalIgnoreCase));
+        return account is null || !account.Disabled && !account.Deleted;
+    }
 
     private RankedFactionRow FactionFor(string id) => _data.RankedConfig!.Factions.First(row => row.Id == id);
     private RankedTierRow TierFor(RankedProfileRow row) => FactionFor(row.Faction ?? "order").Tiers[RankedTierIndex(row.SevenValue)];

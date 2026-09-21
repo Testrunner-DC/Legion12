@@ -25,6 +25,10 @@ public sealed class CardAnalyticsFairnessTests
         Assert.Equal(1, Assert.Single(after.Items, item => item.CardId == "TARGET").SampleSize);
         var detail = Assert.IsType<L12CardAnalyticsDetail>(await recorder.GetCardAnalyticsAsync("TARGET", excluded));
         Assert.Equal(1, detail.Summary.SampleSize);
+        var disabledAccount = query with { ExcludedAccountIds = ["valid-other"] };
+        var withoutDisabledParticipant = await recorder.ListCardAnalyticsAsync(disabledAccount);
+        Assert.Equal(1, Assert.Single(withoutDisabledParticipant.Items,
+            item => item.CardId == "TARGET").SampleSize);
         var restored = await recorder.ListCardAnalyticsAsync(query);
         Assert.Equal(2, Assert.Single(restored.Items, item => item.CardId == "TARGET").SampleSize);
     }

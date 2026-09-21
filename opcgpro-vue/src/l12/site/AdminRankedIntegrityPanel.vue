@@ -24,6 +24,22 @@ const groups = computed(() => {
   }
   return [...result.values()].filter(group => group.rows.length > 1).sort((a, b) => b.rows.length - a.rows.length)
 })
+const beneficiaryGroups = computed(() => {
+  const result = new Map<string, { key: string; name: string; opponents: Set<string>; rows: RankedIntegrityAudit[] }>()
+  for (const row of rows.value) {
+    if (row.winner !== 0 && row.winner !== 1) continue
+    if (!row.signals.some(signal => ['unilateral-score-transfer', 'repeated-padded-transfer', 'linked-loser-cluster'].includes(signal.code))) continue
+    const winnerId = row.winner === 0 ? row.firstAccountId : row.secondAccountId
+    const winnerName = row.winner === 0 ? row.firstPlayer : row.secondPlayer
+    const opponentId = row.winner === 0 ? row.secondAccountId : row.firstAccountId
+    const group = result.get(winnerId) || { key: winnerId, name: winnerName, opponents: new Set<string>(), rows: [] }
+    group.opponents.add(opponentId)
+    group.rows.push(row)
+    result.set(winnerId, group)
+  }
+  return [...result.values()].filter(group => group.rows.length > 1)
+    .sort((a, b) => b.rows.length - a.rows.length)
+})
 function selectGroup(group: { rows: RankedIntegrityAudit[] }) { selected.value = group.rows.slice(0, 50).map(row => row.matchId) }
 
 function duration(ms: number) {
@@ -64,11 +80,12 @@ onMounted(load)
     </header>
     <p v-if="notice" class="notice">{{ notice }}</p>
     <details v-if="groups.length" class="risk-groups"><summary>相同对手归组（仅当前查询结果，不代表完整对局历史）</summary><button v-for="group in groups" :key="group.key" @click="selectGroup(group)">{{ group.names }} · {{ group.rows.length }}条 · 同一账号最多获胜{{ Math.max(0, ...group.winnerCounts.values()) }}条 · 选择{{ Math.min(50, group.rows.length) }}条</button></details>
+    <details v-if="beneficiaryGroups.length" class="risk-groups"><summary>单向获益账号归组（仅当前查询结果，须人工核对）</summary><button v-for="group in beneficiaryGroups" :key="group.key" @click="selectGroup(group)">{{ group.name }} · 涉及{{ group.opponents.size }}个对手 · {{ group.rows.length }}条风险对局 · 选择{{ Math.min(50, group.rows.length) }}条</button></details>
     <div class="integrity-head"><span>时间 / 对局</span><span>双方玩家</span><span>对局证据</span><span>处置</span></div>
     <PagedCollection :items="rows" v-slot="{ items: paged1566 }"><article v-for="row in paged1566" :key="row.id" class="integrity-row" :data-review="row.reviewRecommended">
       <span><label><input v-model="selected" type="checkbox" :value="row.matchId" :disabled="!selectable(row)"/>选择此局</label>{{ new Date(row.createdAt).toLocaleString() }}<code>{{ row.matchId }}</code><small>{{ row.seasonId }}</small></span>
       <span><b>{{ row.firstPlayer }}</b><small>{{ row.firstAccountId }}</small><b>{{ row.secondPlayer }}</b><small>{{ row.secondAccountId }}</small></span>
-      <span><em v-for="signal in row.signals" :key="signal.code">{{ signal.label }}</em><small>时长 {{ duration(row.durationMs) }} · 有效操作 {{ row.meaningfulCommandCount }} · {{ row.conclusionKind }}</small><code v-if="row.networkCorrelationId">网络关联号 {{ row.networkCorrelationId }}</code></span>
+      <span><em v-for="signal in row.signals" :key="signal.code">{{ signal.label }}</em><small>时长 {{ duration(row.durationMs) }} · 有效操作 {{ row.meaningfulCommandCount }} · {{ row.finalRound > 0 ? `第 ${row.finalRound} 回合` : '回合未知' }} · {{ row.conclusionKind }}</small><code v-if="row.networkCorrelationId">网络关联号 {{ row.networkCorrelationId }}</code><code v-if="row.browserCorrelationId">浏览器关联号 {{ row.browserCorrelationId }}</code></span>
       <span><b>{{ dispositionLabel(row.effectiveDisposition) }}</b><small>{{ selectable(row) ? (row.reviewRecommended ? '建议人工核对' : '仅留痕') : '已完成处理' }}</small><small>收益状态：{{ row.enforcement === 'none' ? '无' : integrityLabel(row.enforcement) }}</small></span>
     </article></PagedCollection>
     <div v-if="!loading && !rows.length" class="empty">当前筛选下没有排位风险记录</div>

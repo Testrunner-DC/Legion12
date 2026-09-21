@@ -1213,25 +1213,70 @@ public sealed partial class L12PlatformStore
                 return false;
             }
         }
+        var last = segment[^1];
+        var lastFact = _data.RankedSettlementProfileFacts.FirstOrDefault(fact => fact.AppliedInitially
+            && fact.MatchId.Equals(last.MatchId, StringComparison.OrdinalIgnoreCase));
+        if (lastFact is not null)
+        {
+            var expected = lastFact.FirstAccountId.Equals(profile.AccountId,
+                StringComparison.OrdinalIgnoreCase) ? lastFact.FirstAfter
+                : lastFact.SecondAccountId.Equals(profile.AccountId, StringComparison.OrdinalIgnoreCase)
+                    ? lastFact.SecondAfter : null;
+            if (expected is null)
+            {
+                reason = $"matchId {last.MatchId} 的档案快照不包含当前账号";
+                return false;
+            }
+            if (!RankedProfileSettlementStateEqual(profile, expected))
+            {
+                reason = CurrentRankedProfileMismatchReason(profile, expected);
+                return false;
+            }
+            reason = string.Empty;
+            return true;
+        }
+
+        // 旧结算没有逐场档案快照时，只核对不随段位配置改变的账本字段。
+        // HighestFloor / ReachedHighestTier 属于规则派生状态，不能用当前版本配置重算后
+        // 反过来阻止历史处置。
         var projected = CloneRankedProfileSnapshot(CaptureRankedProfile(profile));
         ApplyDerivedRankedProfileState(projected, segment);
-        var last = segment[^1];
         if (profile.SevenValue != last.After || profile.PlacementPlayed != projected.PlacementPlayed
             || profile.PlacementWins != projected.PlacementWins || profile.Wins != projected.Wins
             || profile.Losses != projected.Losses || profile.WinStreak != projected.WinStreak
-            || profile.LossStreak != projected.LossStreak || profile.HighestFloor != projected.HighestFloor
-            || profile.ReachedHighestTier != projected.ReachedHighestTier)
+            || profile.LossStreak != projected.LossStreak)
         {
-            reason = $"当前档案与不可变结算链不一致"
-                + $"（七曜{profile.SevenValue}/{last.After}，定级{profile.PlacementPlayed}/{projected.PlacementPlayed}，"
-                + $"定级胜{profile.PlacementWins}/{projected.PlacementWins}，胜负{profile.Wins}-{profile.Losses}/"
-                + $"{projected.Wins}-{projected.Losses}，连胜负{profile.WinStreak}-{profile.LossStreak}/"
-                + $"{projected.WinStreak}-{projected.LossStreak}，保底{profile.HighestFloor}/{projected.HighestFloor}，"
-                + $"最高阶{profile.ReachedHighestTier}/{projected.ReachedHighestTier}）";
+            reason = CurrentRankedProfileMismatchReason(profile, projected, includeDerivedState: false);
             return false;
         }
         reason = string.Empty;
         return true;
+    }
+
+    private static bool RankedProfileSettlementStateEqual(RankedProfileRow profile,
+        RankedProfileSnapshotRow expected)
+        => profile.SeasonId.Equals(expected.SeasonId, StringComparison.OrdinalIgnoreCase)
+           && string.Equals(profile.Faction, expected.Faction, StringComparison.OrdinalIgnoreCase)
+           && Math.Abs(profile.HiddenRating - expected.HiddenRating) < 0.0000001d
+           && profile.SevenValue == expected.SevenValue
+           && profile.PlacementPlayed == expected.PlacementPlayed
+           && profile.PlacementWins == expected.PlacementWins
+           && profile.Wins == expected.Wins && profile.Losses == expected.Losses
+           && profile.WinStreak == expected.WinStreak && profile.LossStreak == expected.LossStreak
+           && profile.HighestFloor == expected.HighestFloor
+           && profile.ReachedHighestTier == expected.ReachedHighestTier;
+
+    private static string CurrentRankedProfileMismatchReason(RankedProfileRow profile,
+        RankedProfileSnapshotRow expected, bool includeDerivedState = true)
+    {
+        var derived = includeDerivedState
+            ? $"，保底{profile.HighestFloor}/{expected.HighestFloor}，最高阶{profile.ReachedHighestTier}/{expected.ReachedHighestTier}"
+            : string.Empty;
+        return $"当前档案与不可变结算链不一致"
+            + $"（七曜{profile.SevenValue}/{expected.SevenValue}，定级{profile.PlacementPlayed}/{expected.PlacementPlayed}，"
+            + $"定级胜{profile.PlacementWins}/{expected.PlacementWins}，胜负{profile.Wins}-{profile.Losses}/"
+            + $"{expected.Wins}-{expected.Losses}，连胜负{profile.WinStreak}-{profile.LossStreak}/"
+            + $"{expected.WinStreak}-{expected.LossStreak}{derived}）";
     }
 
     private void ApplyDerivedRankedProfileState(RankedProfileSnapshotRow target,

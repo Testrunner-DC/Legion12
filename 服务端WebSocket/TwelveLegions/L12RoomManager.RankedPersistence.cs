@@ -39,7 +39,8 @@ public sealed partial class L12RoomManager
             members[0].AccountId!, members[1].AccountId!, SelectedDeck(members[0]).MasterId,
             SelectedDeck(members[1]).MasterId, room.Game.State.Winner, room.StartedAt, endedAt,
             room.MeaningfulCommandCount, RankedConclusionKind(room),
-            members[0].IntegrityClientKey, members[1].IntegrityClientKey, room.Game.State.Round);
+            members[0].IntegrityClientKey, members[1].IntegrityClientKey, room.Game.State.Round,
+            members[0].RankedBrowserKey, members[1].RankedBrowserKey);
     }
 
     public async Task<L12RankedRecoverySummary> RestoreRankedRoomsAsync()
@@ -259,7 +260,9 @@ public sealed partial class L12RoomManager
             source.Decks.ElementAtOrDefault(1)?.MasterId ?? string.Empty,
             null, started, now, runtime?.MeaningfulCommandCount ?? 0,
             "restore-incompatible", runtime?.IntegrityClientKeys.ElementAtOrDefault(0) ?? string.Empty,
-            runtime?.IntegrityClientKeys.ElementAtOrDefault(1) ?? string.Empty);
+            runtime?.IntegrityClientKeys.ElementAtOrDefault(1) ?? string.Empty, 0,
+            runtime?.RankedBrowserKeys?.ElementAtOrDefault(0) ?? string.Empty,
+            runtime?.RankedBrowserKeys?.ElementAtOrDefault(1) ?? string.Empty);
         await _recorder.FinalizeIncompatibleRankedAsync(source, envelope,
             $"排位恢复不兼容：{reason}");
     }
@@ -320,7 +323,8 @@ public sealed partial class L12RoomManager
                 var context = new L12RankedIntegrityContext(payload.StartedAt, payload.EndedAt,
                     payload.MeaningfulCommandCount, payload.ConclusionKind,
                     payload.FirstNetworkFingerprint, payload.SecondNetworkFingerprint,
-                    payload.FinalRound);
+                    payload.FinalRound, payload.FirstBrowserFingerprint,
+                    payload.SecondBrowserFingerprint);
                 if (payload.Winner is { } winner)
                     _platform.SettleRankedMatch(payload.MatchId, payload.FirstAccountId,
                         payload.SecondAccountId, winner, payload.FirstMasterId,

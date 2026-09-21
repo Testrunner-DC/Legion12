@@ -156,6 +156,8 @@ public sealed partial class MatchRecorder
             MinimumSampleSize = Math.Clamp(query.MinimumSampleSize, 1, 1000),
             ExcludedMatchIds = query.ExcludedMatchIds?.Where(id => !string.IsNullOrWhiteSpace(id))
                 .Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray(),
+            ExcludedAccountIds = query.ExcludedAccountIds?.Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray(),
             Search = string.IsNullOrWhiteSpace(query.Search) ? null : query.Search.Trim(),
             CandidateCardIds = query.CandidateCardIds?.Where(cardId => !string.IsNullOrWhiteSpace(cardId))
                 .Select(cardId => cardId.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
@@ -212,6 +214,13 @@ public sealed partial class MatchRecorder
         {
             clauses.Add("NOT EXISTS(SELECT 1 FROM json_each($excludedMatches) excluded WHERE excluded.value=m.match_id)");
             parameters["$excludedMatches"] = System.Text.Json.JsonSerializer.Serialize(query.ExcludedMatchIds);
+        }
+        if (query.ExcludedAccountIds is { Count: > 0 })
+        {
+            clauses.Add("NOT EXISTS(SELECT 1 FROM match_participants excluded_participant "
+                + "JOIN json_each($excludedAccounts) excluded ON excluded.value=excluded_participant.account_id "
+                + "WHERE excluded_participant.match_id=m.match_id)");
+            parameters["$excludedAccounts"] = System.Text.Json.JsonSerializer.Serialize(query.ExcludedAccountIds);
         }
         if (query.OpponentMasterId is not null)
         {

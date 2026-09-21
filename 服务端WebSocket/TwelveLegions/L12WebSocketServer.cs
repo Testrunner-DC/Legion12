@@ -494,7 +494,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
             request.HttpContext.Response.Headers.CacheControl = "no-store";
-            return Results.Ok(await _recorder.PlayerStatisticsAsync(account.Id, account.Username));
+            return Results.Ok(await _recorder.PlayerStatisticsAsync(account.Id, account.Username,
+                _platform.RankedIntegrityExcludedMatchIds(), _platform.StatisticsExcludedAccountIds()));
         });
         _app.MapGet("/api/auth/username-change-status", (HttpRequest request) =>
         {
@@ -2821,7 +2822,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             RulesVersion: QueryValue(request, "rulesVersion"),
             SeasonId: QueryValue(request, "seasonId"),
             EffectVersion: _recorder.ResolveAnalyticsEffectVersion(QueryValue(request, "effectVersion")),
-            ExcludedMatchIds: _platform.RankedIntegrityExcludedMatchIds().ToArray());
+            ExcludedMatchIds: _platform.RankedIntegrityExcludedMatchIds().ToArray(),
+            ExcludedAccountIds: _platform.StatisticsExcludedAccountIds().ToArray());
     }
 
     private static string? QueryValue(HttpRequest request, params string[] names)
@@ -3570,6 +3572,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             var operation = _platform.SetAccountDisabled(actor, payload.AccountId, payload.Disabled,
                 payload.Reason, audit, apply);
+            if (operation.Applied) _recorder.InvalidateAnalyticsCache();
             return L12AdminCommandResult<L12AccountStatusOperationView>.Ok(operation,
                 apply ? "账号状态已更新" : "干运行验证通过");
         }
@@ -3623,6 +3626,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 L12PlatformStore.DeletedAccountName(prior.Id)).GetAwaiter().GetResult();
             var operation = _platform.DeleteAccountPersonalData(actor, payload.AccountId, payload.Reason,
                 audit, true) with { CleanedMatchRecords = cleanedMatches };
+            _recorder.InvalidateAnalyticsCache();
             return L12AdminCommandResult<L12AccountDeletionView>.Ok(operation, "账号已逻辑删除并清理个人数据");
         }
         catch (L12SecurityPolicyException error)

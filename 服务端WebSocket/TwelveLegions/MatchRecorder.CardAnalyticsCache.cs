@@ -43,6 +43,7 @@ public sealed partial class MatchRecorder
             query.EffectVersion,
             query.SeasonId,
             query.ExcludedMatchIds,
+            query.ExcludedAccountIds,
         });
 
     private bool TryReadAnalyticsResultCache<T>(string key, out T? value)

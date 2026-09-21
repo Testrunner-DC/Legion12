@@ -36,11 +36,27 @@ public sealed partial class MatchRecorder
     }
 
     public async Task<L12PlayerStatisticsView> PlayerStatisticsAsync(string accountId, string legacyPlayerName,
+        IReadOnlyCollection<string>? excludedMatchIds = null,
+        IReadOnlyCollection<string>? excludedAccountIds = null,
         CancellationToken cancellationToken = default)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         var command = connection.CreateCommand();
+        var exclusions = string.Empty;
+        if (excludedMatchIds is { Count: > 0 })
+        {
+            exclusions += "\n  AND NOT EXISTS(SELECT 1 FROM json_each($excludedMatches) excluded WHERE excluded.value=m.match_id)";
+            command.Parameters.AddWithValue("$excludedMatches", System.Text.Json.JsonSerializer.Serialize(
+                excludedMatchIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal)));
+        }
+        if (excludedAccountIds is { Count: > 0 })
+        {
+            exclusions += "\n  AND NOT EXISTS(SELECT 1 FROM json_each($excludedAccounts) excluded "
+                + "WHERE excluded.value=m.account_0 OR excluded.value=m.account_1)";
+            command.Parameters.AddWithValue("$excludedAccounts", System.Text.Json.JsonSerializer.Serialize(
+                excludedAccountIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal)));
+        }
         command.CommandText = """
             SELECT m.mode_id,m.winner,m.first_player,m.ended_utc,
                    CASE WHEN m.account_0=$account OR (m.account_0 IS NULL AND m.player_0=$player) THEN 0 ELSE 1 END AS player_index,
@@ -52,8 +68,7 @@ public sealed partial class MatchRecorder
               AND (m.account_0=$account OR m.account_1=$account
                    OR (m.account_0 IS NULL AND m.player_0=$player)
                    OR (m.account_1 IS NULL AND m.player_1=$player))
-            ORDER BY m.ended_utc DESC;
-            """;
+            """ + exclusions + "\nORDER BY m.ended_utc DESC;";
         command.Parameters.AddWithValue("$account", accountId);
         command.Parameters.AddWithValue("$player", legacyPlayerName);
         var overall = new MutableStatLine();

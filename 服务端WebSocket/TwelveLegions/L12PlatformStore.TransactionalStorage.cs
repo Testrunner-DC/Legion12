@@ -698,16 +698,21 @@ public sealed partial class L12PlatformStore
             || data.RankedIntegrityAudits.GroupBy(row => row.Id, StringComparer.OrdinalIgnoreCase)
                 .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1)
             || data.RankedIntegrityAudits.Any(row => string.IsNullOrWhiteSpace(row.Id)
+                || row.EvidenceVersion is < 0 or > 2
                 || string.IsNullOrWhiteSpace(row.FirstAccountId)
                 || string.IsNullOrWhiteSpace(row.SecondAccountId)
                 || string.Equals(row.FirstAccountId, row.SecondAccountId, StringComparison.OrdinalIgnoreCase)
                 || row.Winner is not null and not (0 or 1)
-                || row.DurationMs < 0 || row.MeaningfulCommandCount < 0
+                || row.DurationMs < 0 || row.MeaningfulCommandCount < 0 || row.FinalRound < 0
                 || row.Enforcement is not ("none" or "reward-held")
                 || (!string.IsNullOrEmpty(row.FirstNetworkFingerprint)
                     && NormalizeNetworkFingerprint(row.FirstNetworkFingerprint) != row.FirstNetworkFingerprint)
                 || (!string.IsNullOrEmpty(row.SecondNetworkFingerprint)
                     && NormalizeNetworkFingerprint(row.SecondNetworkFingerprint) != row.SecondNetworkFingerprint)
+                || (!string.IsNullOrEmpty(row.FirstBrowserFingerprint)
+                    && NormalizeBrowserFingerprint(row.FirstBrowserFingerprint) != row.FirstBrowserFingerprint)
+                || (!string.IsNullOrEmpty(row.SecondBrowserFingerprint)
+                    && NormalizeBrowserFingerprint(row.SecondBrowserFingerprint) != row.SecondBrowserFingerprint)
                 || !data.Accounts.Any(account => account.Id == row.FirstAccountId)
                 || !data.Accounts.Any(account => account.Id == row.SecondAccountId))
             || HasInvalidRankedIntegrityActionState(data))
