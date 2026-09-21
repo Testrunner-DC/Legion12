@@ -2408,7 +2408,7 @@ function statusTexts(card: Card) {
   /* The width equation also reserves the three inter-group gaps and the
      player's inner frame. Without this fixed reserve, mid-size 4:3 canvases
      centered an over-wide group and leaked a few pixels through both sides. */
-  --l12-mobile-card-h:clamp(46px,min(calc((var(--l12-viewport-width,100vw) - var(--l12-mobile-outer-reserve) - 20px) / 5.15),calc((var(--l12-viewport-height,100vh) - var(--l12-mobile-hand-h) - 60px) / 4 - 2px)),166px);
+  --l12-mobile-card-h:clamp(46px,min(calc((var(--l12-viewport-width,100vw) - var(--l12-mobile-outer-reserve) - 16px) / 5.15),calc((var(--l12-viewport-height,100vh) - var(--l12-mobile-hand-h) - 60px) / 4 - 2px)),166px);
   --l12-mobile-card-w:calc(var(--l12-mobile-card-h) * 5 / 7);
   --l12-mobile-slot:calc(var(--l12-mobile-card-h) + 2px);
   --l12-mobile-formation-w:calc(var(--l12-mobile-slot) * 3 + 4px);
@@ -2422,7 +2422,9 @@ function statusTexts(card: Card) {
   --l12-mobile-hand-card-h:calc(var(--l12-mobile-hand-h) - 6px);
   --l12-mobile-morale-orb:clamp(12px,calc(var(--l12-viewport-height,100vh) * .022),17px);
   --l12-mobile-hand-card-w:calc(var(--l12-mobile-hand-card-h) * 5 / 7);
-  --l12-mobile-group-gap:clamp(2px,calc(var(--l12-viewport-height,100vh) * .0065),5px);
+  --l12-mobile-player-w:calc(var(--l12-viewport-width,100vw) - var(--l12-mobile-left-rail-w) - var(--l12-mobile-right-rail-w) - 38px);
+  --l12-mobile-player-track-w:calc(var(--l12-mobile-commander-w) + var(--l12-mobile-formation-w) + var(--l12-mobile-card-w) + var(--l12-mobile-resource-w));
+  --l12-mobile-group-gap:clamp(2px,calc((var(--l12-mobile-player-w) - var(--l12-mobile-player-track-w) - 4px) / 3),calc(var(--l12-mobile-card-w) * 1.5));
   --l12-mobile-rail-gap:clamp(3px,calc(var(--l12-viewport-height,100vh) * .012),5px);
   --l12-mobile-detail-handle-h:clamp(24px,calc(var(--l12-viewport-height,100vh) * .07),30px);
   --l12-mobile-current-disaster-h:clamp(48px,calc(var(--l12-viewport-height,100vh) * .14),66px);
@@ -2437,7 +2439,7 @@ function statusTexts(card: Card) {
   grid-template-columns:var(--l12-mobile-commander-w) var(--l12-mobile-formation-w) var(--l12-mobile-card-w) var(--l12-mobile-resource-w) !important;
   gap:var(--l12-mobile-group-gap) !important;
   justify-content:center !important;
-  padding-inline:0 !important;
+  padding-inline:2px !important;
 }
 .mobile-landscape-board :deep(.battlefield-half .commander-zone) {
   width:var(--l12-mobile-commander-w) !important;
@@ -2587,6 +2589,9 @@ function statusTexts(card: Card) {
 }
 :global(.mobile-action-dock) { position:fixed !important; z-index:2147483604 !important; right:calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 5px) !important; bottom:calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + 64px) !important; left:auto !important; display:flex !important; box-sizing:border-box; width:96px !important; max-width:96px !important; max-height:calc(var(--l12-viewport-height,100vh) - 72px); flex-wrap:wrap; gap:3px; padding:3px; overflow:auto; border:1px solid #587b7d; background:rgba(8,12,13,.98); box-shadow:0 5px 18px #000; transform:none !important; pointer-events:auto !important; }
 :global(.mobile-action-dock button) { box-sizing:border-box; min-width:0 !important; min-height:32px !important; flex:1 1 42px; padding:3px 4px !important; font-size:10px !important; line-height:1.1 !important; white-space:normal; }
+.mobile-landscape-board :is(.right-rail,.board-mode-hint,.resource-payment-controls,.combat-resolution-panel,.card-context-actions) button,
+.mobile-safe-overlay button,
+:global(.mobile-action-dock button) { text-align:center; text-wrap:balance; overflow-wrap:anywhere; }
 .mobile-landscape-board .board-mode-hint span { font-size:9px !important; line-height:1.15; white-space:normal; }
 .mobile-landscape-board .board-mode-hint button { min-height:32px !important; padding:3px 5px !important; }
 

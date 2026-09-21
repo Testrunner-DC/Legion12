@@ -217,7 +217,10 @@ try {
         const blockers=[...mat.querySelectorAll('.mini-master,.relic-zone,.master-marker-track .rune-orb,.master-marker-track .canopic-orb,.formation')].filter(visible).map(node=>{const box=node.getBoundingClientRect();return{className:node.className,left:box.left,top:box.top,right:box.right,bottom:box.bottom}})
         return { label:element.getAttribute('aria-label')??'', text:element.textContent?.replace(/\s+/g,''), left:r.left,top:r.top,right:r.right,bottom:r.bottom, clipped:element.scrollWidth>element.clientWidth+1, safe:r.left>=safe.left-1&&r.top>=safe.top-1&&r.right<=safe.right+1&&r.bottom<=safe.bottom+1, overlaps:blockers.filter(box=>overlaps(r,box)) }
       })
-      return { safe, overflowX: document.documentElement.scrollWidth > innerWidth + 1, overflowY: document.documentElement.scrollHeight > innerHeight + 1, clipped, rogueScroll, floatingEnemyCount, handCounts, audits:{ interactive:interactiveAudit, critical:criticalAudit, overlays:overlayAudit } }
+      const routeButton=document.querySelector('.battle-route-controls button[aria-label="返回大厅"]')
+      const routeButtonRect=routeButton?rectOf(routeButton):null
+      const routeLines=routeButton?[...routeButton.querySelectorAll('.route-label>span')].map(element=>({text:element.textContent??'',...rectOf(element)})):[]
+      return { safe, overflowX: document.documentElement.scrollWidth > innerWidth + 1, overflowY: document.documentElement.scrollHeight > innerHeight + 1, clipped, rogueScroll, floatingEnemyCount, handCounts, routeButtonRect, routeLines, audits:{ interactive:interactiveAudit, critical:criticalAudit, overlays:overlayAudit } }
     }, { safeInsets:insets, auditSpec:{ interactiveSelector, criticalSelectors, overlaySelectors } })
     assert.equal(result.overflowX, false, `${label} has page horizontal overflow`)
     assert.equal(result.overflowY, false, `${label} has page vertical overflow`)
@@ -232,6 +235,8 @@ try {
     assert.equal(result.handCounts.filter(item=>/^对手手牌 \d+ 张$/.test(item.label)).length, 1, `${label} must render exactly one opponent hand counter`)
     assert.equal(result.handCounts.filter(item=>/^我方手牌 \d+ 张$/.test(item.label)).length, 1, `${label} must render exactly one own hand counter`)
     assert.equal(result.handCounts.every(item=>/^手牌\d+$/.test(item.text??'')&&!item.clipped&&item.safe&&item.overlaps.length===0), true, `${label} hand counter is clipped, unsafe, or overlaps protected board content: ${JSON.stringify(result.handCounts)}`)
+    assert.deepEqual(result.routeLines.map(item=>item.text),['返回','大厅'],`${label} return button must use a balanced 2+2 line break`)
+    assert.ok(result.routeButtonRect&&result.routeLines.every(item=>Math.abs((item.left+item.right-result.routeButtonRect.left-result.routeButtonRect.right)/2)<=1)&&result.routeLines[0].bottom<=result.routeLines[1].top+1,`${label} return button copy must be centered and vertically ordered: ${JSON.stringify({button:result.routeButtonRect,lines:result.routeLines})}`)
     return { safe:result.safe, audits:result.audits }
   }
   async function assertBoardGeometry(label, expectedMarkers = null) {
@@ -470,7 +475,11 @@ try {
   if (!quick && !safeOnly) {
     const random = []
     let seed = 73129
-    for (let index=0;index<30;index++) { seed=(seed*48271)%2147483647; const width=568+(seed%457); seed=(seed*48271)%2147483647; const maxHeight=Math.min(768,width-1); const height=320+(seed%(maxHeight-319)); random.push({width,height}) }
+    // Random mobile-layout scans stay inside the same 4:3-or-wider aspect
+    // contract used by automatic layout selection. Near-square viewports are
+    // intentionally covered by desktop/isolation tests instead of being
+    // forced into a layout the product would not select.
+    for (let index=0;index<30;index++) { seed=(seed*48271)%2147483647; const width=568+(seed%457); seed=(seed*48271)%2147483647; const maxHeight=Math.min(768,Math.floor(width*.75)); const height=320+(seed%(maxHeight-319)); random.push({width,height}) }
     random.push({width:568,height:320},{width:1024,height:768})
     for (const viewport of random) {
       await load(viewport,'field=full&markers=5&piles=40&hand=20&rankedClock=1')
@@ -478,7 +487,8 @@ try {
       await assertBoardGeometry(`scan ${viewport.width}x${viewport.height}`,5)
       await assertHand(`scan ${viewport.width}x${viewport.height}`)
       const before=await layoutRatios()
-      const neighbor={width:Math.min(1024,viewport.width+1),height:Math.min(viewport.width,Math.min(768,viewport.height+1))}
+      const neighborWidth=Math.min(1024,viewport.width+1)
+      const neighbor={width:neighborWidth,height:Math.min(Math.floor(neighborWidth*.75),Math.min(768,viewport.height+1))}
       await load(neighbor,'field=full&markers=5&piles=40&hand=20&rankedClock=1')
       const after=await layoutRatios()
       for(const key of Object.keys(before))assert.ok(Math.abs(before[key]-after[key])<=.1,`scan ${viewport.width}x${viewport.height} ${key} layout proportion jumps more than 10%`)
