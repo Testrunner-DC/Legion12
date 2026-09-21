@@ -13,6 +13,7 @@ entry=entry.replace('window.__sentCommands=[]',`if(params.has('response'))l12Sta
 let browser
 entry=entry.replace('window.__sentCommands=[]', `if(params.has('response')){const p=l12State.game.prompts[0];l12State.game.players[0].field[0][1]={...l12State.game.players[0].field[0][0],instanceId:'same-name-second'};p.data.responseTargetIds=JSON.stringify(['0unit','same-name-second']);p.data['stack-a:responseTargetIds']=JSON.stringify(['0unit']);p.data['stack-b:responseTargetIds']=JSON.stringify(['same-name-second']);}window.__sentCommands=[]`)
 entry=entry.replace("l12State.status='online'", `if(params.has('mobileAction')){l12State.game.players[0].field[0][0].abilities=[{id:'mobile-active-rest',label:'主动休整',enabled:true}];l12State.game.legalAttackTargets={'0unit':['master']}}l12State.status='online'`)
+entry=entry.replace('if(relicMode)players[0].relic=', `if(params.has('railStress')){const railTrials=side=>Array.from({length:3},(_,j)=>({...trial,instanceId:'rail-'+side+'-'+j,hidden:false,trialCompleted:j===0,trialProgress:j+1}));players[0].specialZones.trials=railTrials('my');players[1].specialZones.trials=railTrials('opponent')}if(relicMode)players[0].relic=`)
 try {
   await server.listen()
   browser = await chromium.launch({headless:true,channel:'msedge'})
@@ -42,7 +43,10 @@ try {
     await page.waitForTimeout(150)
     const result=await page.evaluate(()=>{
       const board=document.querySelector('.board-viewport'),stage=document.querySelector('.board-stage'),rect=document.body.getBoundingClientRect(),boardRect=window.qaRect(board),stageRect=window.qaRect(stage),style=getComputedStyle(board)
-      return {mode:document.documentElement.dataset.l12Viewport,mobile:document.documentElement.dataset.l12Mobile,rotated:document.documentElement.dataset.l12Rotated,body:{left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom},board:{left:boardRect.left,top:boardRect.top,right:boardRect.right,bottom:boardRect.bottom},stage:{left:stageRect.left,top:stageRect.top,right:stageRect.right,bottom:stageRect.bottom},overflowX:style.overflowX,overflowY:style.overflowY,scale:getComputedStyle(stage).transform}
+      const logicalRect=selector=>{const element=document.querySelector(selector);if(!element)return null;const value=window.qaRect(element);return {left:value.left,top:value.top,right:value.right,bottom:value.bottom,width:value.width,height:value.height}}
+      const geometry=Object.fromEntries(Object.entries({master:'.my-half .mini-master',relic:'.my-half .relic-zone .card-tile',fieldCard:'.my-half .formation-slot .card-tile',fieldSlot:'.my-half .formation-slot',pile:'.my-half .mat-piles .pile',resource:'.my-half .resource-zone',handCard:'.board-center>.l12-hand:last-child .card-tile',rightRail:'.right-rail'}).map(([key,selector])=>[key,logicalRect(selector)]))
+      const stat=document.querySelector('.my-half .formation-slot .card-cost,.my-half .formation-slot .card-power')
+      return {mode:document.documentElement.dataset.l12Viewport,mobile:document.documentElement.dataset.l12Mobile,rotated:document.documentElement.dataset.l12Rotated,body:{left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom},board:{left:boardRect.left,top:boardRect.top,right:boardRect.right,bottom:boardRect.bottom},stage:{left:stageRect.left,top:stageRect.top,right:stageRect.right,bottom:stageRect.bottom},overflowX:style.overflowX,overflowY:style.overflowY,scale:getComputedStyle(stage).transform,rail:logicalRect('.left-rail'),railItems:['.mobile-card-inspector-handle-global','.current-disaster-panel','.mobile-current-disaster-value','.session-disaster-panel'].map(logicalRect),geometry,statFont:stat?parseFloat(getComputedStyle(stat).fontSize):null}
     })
     assert.ok(result.body.left>=-1&&result.body.top>=-1&&result.body.right<=size.width+1&&result.body.bottom<=size.height+1,JSON.stringify(result))
     assert.equal(result.mode,'landscape')
@@ -51,6 +55,12 @@ try {
     assert.equal(result.overflowX,'hidden')
     assert.equal(result.overflowY,'hidden')
     assert.ok(result.stage.left>=result.board.left-1&&result.stage.top>=result.board.top-1&&result.stage.right<=result.board.right+1&&result.stage.bottom<=result.board.bottom+1,JSON.stringify(result))
+    if(size.mobile){
+      const items=result.railItems.filter(Boolean)
+      assert.equal(items.length,4,`mobile disaster rail inventory is incomplete: ${JSON.stringify(result)}`)
+      for(const item of items)assert.ok(item.left>=result.rail.left-3&&item.right<=result.rail.right+3&&item.top>=result.stage.top-3&&item.bottom<=result.stage.bottom+3,`mobile disaster rail item escaped its allocation: ${JSON.stringify(result)}`)
+      for(let index=1;index<items.length;index++)assert.ok(items[index-1].bottom<=items[index].top+1,`mobile disaster rail items overlap: ${JSON.stringify(result)}`)
+    }
     // Body Teleport: a logical fixed button must hit-test at its rotated DOM rect.
     await page.evaluate(()=>{const b=document.createElement('button');b.id='qa-fixed';b.style.cssText='position:fixed;left:120px;top:90px;width:80px;height:40px;z-index:2147483647';b.textContent='点选目标';b.onclick=()=>b.dataset.clicked='yes';document.querySelector('#l12-landscape-teleports').append(b)})
     await page.locator('#qa-fixed').click()
@@ -76,6 +86,33 @@ try {
     }
     await page.screenshot({path:path.join(out,`battle-${size.width}-${size.height}.png`)})
   }
+  const physicalLandscape=results.find(item=>item.size.width===844&&item.size.height===390)
+  const logicalLandscape=results.find(item=>item.size.width===390&&item.size.height===844)
+  assert.ok(physicalLandscape&&logicalLandscape)
+  assert.ok(Math.abs(physicalLandscape.rail.width-logicalLandscape.rail.width)<=1,`physical and logical landscape rails diverged: ${JSON.stringify({physicalLandscape:physicalLandscape.rail,logicalLandscape:logicalLandscape.rail})}`)
+  for(const key of Object.keys(physicalLandscape.geometry)){
+    const physical=physicalLandscape.geometry[key],logical=logicalLandscape.geometry[key]
+    if(!physical&&!logical)continue
+    assert.ok(physical&&logical,`physical/logical landscape inventory diverged for ${key}`)
+    assert.ok(Math.abs(physical.width-logical.width)<=1&&Math.abs(physical.height-logical.height)<=1,`physical/logical landscape geometry diverged for ${key}: ${JSON.stringify({physical,logical})}`)
+  }
+  assert.ok(Math.abs(physicalLandscape.statFont-logicalLandscape.statFont)<=.1,`physical/logical landscape card value typography diverged: ${JSON.stringify({physical:physicalLandscape.statFont,logical:logicalLandscape.statFont})}`)
+  const railStressResults=[]
+  for(const size of [{width:844,height:390},{width:390,height:844}]){
+    await page.setViewportSize(size)
+    await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__mobile__?railStress=1`)
+    await page.locator('.mobile-extra-zone-opponent').waitFor()
+    const stressedRail=await page.evaluate(()=>{
+      const stage=window.qaRect(document.querySelector('.board-stage'))
+      const selectors=['.mobile-card-inspector-handle-global','.mobile-extra-zone-opponent','.left-disaster-row','.mobile-extra-zone-my']
+      return {stage,items:selectors.map(selector=>{const element=document.querySelector(selector);const value=window.qaRect(element);return {selector,left:value.left,top:value.top,right:value.right,bottom:value.bottom,width:value.width,height:value.height}})}
+    })
+    for(let index=1;index<stressedRail.items.length;index++)assert.ok(stressedRail.items[index-1].bottom<=stressedRail.items[index].top+1,`stressed disaster rail overlaps: ${JSON.stringify(stressedRail)}`)
+    assert.ok(stressedRail.items.every(item=>item.left>=stressedRail.stage.left-1&&item.right<=stressedRail.stage.right+1&&item.top>=stressedRail.stage.top-1&&item.bottom<=stressedRail.stage.bottom+1),`stressed disaster rail escaped the safe rectangle: ${JSON.stringify(stressedRail)}`)
+    railStressResults.push(stressedRail.items)
+    await page.screenshot({path:path.join(out,`rail-stress-${size.width}-${size.height}.png`)})
+  }
+  for(let index=0;index<railStressResults[0].length;index++)assert.ok(Math.abs(railStressResults[0][index].width-railStressResults[1][index].width)<=1&&Math.abs(railStressResults[0][index].height-railStressResults[1][index].height)<=1,`physical/logical stressed rail geometry diverged: ${JSON.stringify({physical:railStressResults[0],logical:railStressResults[1]})}`)
   // Layout preference and physical rotation are deliberately independent.
   await page.setViewportSize({width:844,height:390})
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__mobile__`)

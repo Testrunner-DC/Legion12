@@ -1066,6 +1066,7 @@ function statusTexts(card: Card) {
     <div class="board-stage" :style="{ width: `${stageSize.width}px`, height: `${stageSize.height}px`, transform: `scale(${scale})`, '--l12-board-copy': `${adaptiveBoardToken(13, scale)}px`, '--l12-board-meta': `${adaptiveBoardToken(11, scale)}px`, '--l12-board-micro': `${adaptiveBoardToken(9, scale)}px`, '--l12-effect-copy': `${adaptiveBoardToken(13, scale)}px` }">
       <div class="stage-layout">
         <aside class="board-rail left-rail">
+          <span v-if="mobileLandscapeViewport" class="mobile-detail-handle-reservation" aria-hidden="true" />
           <section v-if="mobileLandscapeViewport && viewEnemy.specialZones?.trials?.length" class="mobile-extra-zone mobile-extra-zone-opponent" aria-label="对手额外区">
             <small>对手额外区</small>
             <div>
@@ -2187,17 +2188,18 @@ function statusTexts(card: Card) {
 :global(.mobile-card-inspector-handle-global) {
   position:fixed !important;
   z-index:2147483646 !important;
-  left:calc(var(--l12-viewport-left,0px) + 8px) !important;
+  left:calc(var(--l12-viewport-left,0px) + 4px) !important;
   top:calc(var(--l12-viewport-top,0px) + 8px) !important;
   box-sizing:border-box;
-  width:88px;
-  min-height:24px;
+  width:clamp(88px,calc(var(--l12-viewport-height,100vh) * .22),118px);
+  height:clamp(24px,calc(var(--l12-viewport-height,100vh) * .07),30px);
+  min-height:0;
   padding:3px 5px;
   overflow:hidden;
   border:1px solid #668a86;
   background:#111b1c;
   color:#e8f1ed;
-  font-size:9px;
+  font-size:clamp(8px,calc(var(--l12-viewport-height,100vh) * .023),10px);
   font-weight:900;
   line-height:1;
   text-overflow:ellipsis;
@@ -2206,7 +2208,6 @@ function statusTexts(card: Card) {
 }
 :global(.mobile-card-inspector-handle-global.open) { border-color:#d0c480; background:#2d2a16; }
 :global(.mobile-safe-overlay:not(.mobile-card-inspector)) { padding-top:38px !important; }
-
 /* Disaster circles are visual content of this rail, never floating decoration.
    The panel clips active glows and the strip owns the complete two-column grid. */
 .mobile-landscape-board .session-disaster-panel { box-sizing: border-box !important; overflow: hidden !important; }
@@ -2284,11 +2285,14 @@ function statusTexts(card: Card) {
 .mobile-morale-overlay.mobile-safe-overlay { width: min(420px, calc(var(--l12-viewport-width, 100vw) - 16px)); max-height: calc(var(--l12-viewport-height, 100vh) - 16px); }
 .mobile-card-inspector.mobile-safe-overlay {
   position:fixed !important;
-  inset:calc(var(--l12-viewport-top,0px) + 8px) auto auto calc(var(--l12-viewport-left,0px) + 8px) !important;
+  top:calc(var(--l12-viewport-top,0px) + 8px) !important;
+  right:auto !important;
+  bottom:auto !important;
+  left:calc(var(--l12-viewport-left,0px) + clamp(88px,calc(var(--l12-viewport-height,100vh) * .22),118px) + 12px) !important;
   box-sizing:border-box;
-  width:min(clamp(280px,38vw,340px),calc(var(--l12-viewport-width,100vw) - 16px)) !important;
+  width:min(clamp(280px,calc(var(--l12-viewport-width,100vw) * .38),340px),calc(var(--l12-viewport-width,100vw) - clamp(88px,calc(var(--l12-viewport-height,100vh) * .22),118px) - 20px)) !important;
   min-width:0;
-  max-width:calc(var(--l12-viewport-width,100vw) - 16px) !important;
+  max-width:calc(var(--l12-viewport-width,100vw) - clamp(88px,calc(var(--l12-viewport-height,100vh) * .22),118px) - 20px) !important;
   height:calc(var(--l12-viewport-height,100vh) - 16px) !important;
   max-height:calc(var(--l12-viewport-height,100vh) - 16px) !important;
   transform:none !important;
@@ -2381,65 +2385,10 @@ function statusTexts(card: Card) {
 .mobile-landscape-board .combat-presentation--passive .combat-versus span { max-width:70px !important; }
 .mobile-landscape-board .combat-presentation--passive .combat-versus > b { padding:1px 3px !important; }
 .mobile-landscape-board .combat-presentation--passive .combat-versus b small { font-size:8px !important; }
-/* Phone landscape has a separate compact allocation.  The wide board rules
-   above deliberately do not leak here: resource text remains readable before
-   the six battlefield cells claim any optional spare space. */
-@media (max-height: 520px) {
-  .mobile-landscape-board .board-stage { height: calc(100% - 12px) !important; }
-  .mobile-landscape-board .stage-layout { grid-template-columns: 88px minmax(0,1fr) 90px !important; }
-  .mobile-landscape-board .left-rail,.mobile-landscape-board .left-disaster-row,.mobile-landscape-board .left-disaster-row>.grand-panel { width: 88px !important; min-width: 88px !important; box-sizing: border-box; }
-  .mobile-landscape-board .session-disaster-strip { grid-template-columns: repeat(2,30px) !important; grid-template-rows: repeat(2,30px) !important; gap: 4px !important; }
-  .mobile-landscape-board .session-disaster-strip button { width: 30px !important; min-width: 30px !important; max-width: 30px !important; height: 30px !important; max-height: 30px !important; }
-  .mobile-landscape-board .left-disaster-row { grid-template-rows: 42px 24px minmax(0,1fr) !important; }
-  .mobile-landscape-board .current-disaster-card { height: 38px !important; padding: 2px !important; }
-  .mobile-landscape-board .current-disaster-card > .l12-card-image,
-  .mobile-landscape-board .current-disaster-card > img { width: 100% !important; height: 100% !important; }
-  .mobile-landscape-board .mobile-current-disaster-value { min-height: 24px; padding: 2px 4px; }
-  .mobile-landscape-board .board-center { grid-template-rows: 24px 0 minmax(0,1fr) 0 64px !important; }
-  .mobile-landscape-board :deep(.battlefield-half.l12-player-mat) { grid-template-columns: 82px minmax(90px,1fr) 22px 66px !important; gap: 2px !important; }
-  .mobile-landscape-board :deep(.battlefield-half .commander-zone) { width: 82px !important; min-width: 82px !important; min-height: 0 !important; grid-template-columns: 40px 40px !important; gap: 2px !important; transform: none !important; margin-left: 0 !important; }
-  .mobile-landscape-board :deep(.battlefield-half .master-column) { width: 40px !important; min-width: 40px !important; transform: none !important; margin-left: 0 !important; }
-  .mobile-landscape-board :deep(.battlefield-half .relic-zone) { width: 40px !important; min-width: 40px !important; transform: none !important; margin-left: 0 !important; }
-  .mobile-landscape-board :deep(.battlefield-half .mini-master),.mobile-landscape-board :deep(.battlefield-half .relic-zone .card-tile),.mobile-landscape-board :deep(.battlefield-half .relic-zone .card-tile.tapped) { width: 40px !important; height: 56px !important; }
-  .mobile-landscape-board :deep(.battlefield-half .mat-piles) { width: 22px !important; min-width: 22px !important; grid-template-rows: repeat(2, 38px) !important; }
-  .mobile-landscape-board :deep(.battlefield-half .mat-piles .pile) { width: 22px !important; height: 38px !important; }
-  .mobile-landscape-board :deep(.battlefield-half .mat-piles .pile-card) { width: 20px !important; height: 28px !important; }
-  .mobile-landscape-board :deep(.battlefield-half .resource-zone),.mobile-landscape-board :deep(.battlefield-half .resource-faction-action),.mobile-landscape-board :deep(.battlefield-half .resource-morale-summary),.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack) { width: 66px !important; max-width: 66px !important; }
-  .mobile-landscape-board :deep(.battlefield-half .resource-faction-action) { min-height: 24px !important; padding: 1px 2px !important; font-size: 8px !important; line-height: 1.1 !important; white-space: normal !important; overflow-wrap: anywhere; }
-  .mobile-landscape-board :deep(.battlefield-half .resource-morale-summary) { grid-template-columns: 29px 37px !important; height: 27px !important; }
-  .mobile-landscape-board :deep(.battlefield-half .resource-morale-label),.mobile-landscape-board :deep(.battlefield-half .resource-morale-count) { width: auto !important; min-width: 0 !important; height: 27px !important; min-height: 27px !important; padding: 0 2px !important; font-size: 8px !important; }
-  .mobile-landscape-board :deep(.battlefield-half .resource-morale-stack) { grid-template-columns: repeat(4, 13px) !important; grid-auto-rows: 13px !important; gap: 2px !important; padding: 3px !important; }
-  .mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb) { width: 13px !important; min-width: 13px !important; height: 13px !important; min-height: 13px !important; }
-  .mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb img) { width: 9px !important; height: 9px !important; }
-  .mobile-landscape-board :deep(.battlefield-half .battle-zone) { width: 100% !important; max-width: none !important; }
-  .mobile-landscape-board .felt-board :deep(.formation) { width: 100% !important; height: 114px !important; grid-template-columns: repeat(3,minmax(0,1fr)) !important; grid-template-rows: repeat(2,56px) !important; gap: 2px !important; }
-  .mobile-landscape-board .felt-board :deep(.formation-slot) { width: auto !important; min-width: 0 !important; height: 56px !important; min-height: 56px !important; }
-  .mobile-landscape-board .felt-board :deep(.formation-slot .card-tile),.mobile-landscape-board .felt-board :deep(.formation-slot .card-tile.tapped) { width: min(90%,40px) !important; height: 55px !important; min-width: 0 !important; min-height: 0 !important; flex-basis: auto !important; }
-  .mobile-landscape-board .board-center > .l12-hand:last-child,.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap),.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back),.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-tile) { height: 60px !important; min-height: 60px !important; }
-  .mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap),.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back),.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-tile) { width: 43px !important; min-width: 43px !important; flex-basis: 43px !important; }
-}
-/* Touch tablets use the available canvas rather than the phone's fixed field
-   dimensions. The device class remains locked at mount; only this width tier
-   changes the allocation. */
-@media (min-height: 521px) {
-  .mobile-landscape-board .stage-layout { grid-template-columns: 118px minmax(0,1fr) 118px !important; }
-  .mobile-landscape-board .left-rail,.mobile-landscape-board .left-disaster-row,.mobile-landscape-board .left-disaster-row>.grand-panel { width: 118px !important; min-width: 118px !important; box-sizing: border-box; }
-  .mobile-landscape-board .board-center { grid-template-rows: 30px 0 minmax(0,1fr) 0 102px !important; }
-  .mobile-landscape-board :deep(.battlefield-half.l12-player-mat) { grid-template-columns: 133px minmax(160px,1fr) 40px 92px !important; gap: 5px !important; }
-  .mobile-landscape-board :deep(.battlefield-half .commander-zone) { width: 133px !important; min-width: 133px !important; min-height: 0 !important; grid-template-columns: 64px 64px !important; gap: 5px !important; transform: none !important; margin-left: 0 !important; }
-  .mobile-landscape-board :deep(.battlefield-half .master-column) { width: 64px !important; min-width: 64px !important; transform: none !important; margin-left: 0 !important; }
-  .mobile-landscape-board :deep(.battlefield-half .relic-zone) { width: 64px !important; min-width: 64px !important; transform: none !important; margin-left: 0 !important; }
-  .mobile-landscape-board :deep(.battlefield-half .mini-master),.mobile-landscape-board :deep(.battlefield-half .relic-zone .card-tile),.mobile-landscape-board :deep(.battlefield-half .relic-zone .card-tile.tapped) { width: 64px !important; height: 90px !important; }
-  .mobile-landscape-board :deep(.battlefield-half .battle-zone) { width: 100% !important; max-width: none !important; }
-  .mobile-landscape-board .felt-board :deep(.formation) { width: 100% !important; height: 184px !important; grid-template-columns: repeat(3,minmax(0,1fr)) !important; grid-template-rows: repeat(2,90px) !important; gap: 4px !important; }
-  .mobile-landscape-board .felt-board :deep(.formation-slot) { width: auto !important; min-width: 0 !important; height: 90px !important; min-height: 90px !important; }
-  .mobile-landscape-board .felt-board :deep(.formation-slot .card-tile),.mobile-landscape-board .felt-board :deep(.formation-slot .card-tile.tapped) { width: min(88%,64px) !important; height: 89px !important; min-width: 0 !important; min-height: 0 !important; flex-basis: auto !important; }
-  .mobile-landscape-board .board-center > .l12-hand:last-child,.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap),.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back),.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-tile) { height: 96px !important; min-height: 96px !important; }
-  .mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap),.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back),.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-tile) { width: 68px !important; min-width: 68px !important; flex-basis: 68px !important; }
-}
-
-/* B3 mobile card system. One fluid scale owns every card-bearing zone; this
-   final mobile-only layer intentionally replaces the older per-zone sizes. */
+/* B3 mobile card system. One logical-viewport scale owns every card-bearing
+   zone. It deliberately replaces the former physical-height phone/tablet
+   branches so a rotated portrait and a physical landscape of the same logical
+   size resolve to identical geometry. */
 .mobile-landscape-board {
   top:var(--l12-viewport-top,0px) !important;
   right:auto !important;
@@ -2453,23 +2402,33 @@ function statusTexts(card: Card) {
      the remaining felt between two players and two square formation rows.
      This keeps every card-bearing zone on one scale instead of capping tall
      screens at the old 90px tablet value. */
-  --l12-mobile-outer-reserve:310px;
+  --l12-mobile-left-rail-w:clamp(88px,calc(var(--l12-viewport-height,100vh) * .22),118px);
+  --l12-mobile-right-rail-w:clamp(90px,calc(var(--l12-viewport-height,100vh) * .22),118px);
+  --l12-mobile-outer-reserve:calc(var(--l12-mobile-left-rail-w) + var(--l12-mobile-right-rail-w) + clamp(132px,calc(var(--l12-viewport-height,100vh) * .195),150px));
   --l12-mobile-card-h:clamp(46px,min(calc((var(--l12-viewport-width,100vw) - var(--l12-mobile-outer-reserve)) / 5.15),calc((var(--l12-viewport-height,100vh) - var(--l12-mobile-hand-h) - 60px) / 4 - 2px)),166px);
   --l12-mobile-card-w:calc(var(--l12-mobile-card-h) * 5 / 7);
   --l12-mobile-slot:calc(var(--l12-mobile-card-h) + 2px);
   --l12-mobile-formation-w:calc(var(--l12-mobile-slot) * 3 + 4px);
   --l12-mobile-commander-w:calc(var(--l12-mobile-card-w) * 2 + 4px);
-  --l12-mobile-resource-w:clamp(74px,9vw,92px);
+  --l12-mobile-resource-w:clamp(74px,calc(var(--l12-viewport-width,100vw) * .09),92px);
   --l12-mobile-marker:min(19px,calc((var(--l12-mobile-commander-w) - 12px) / 5));
-  --l12-mobile-marker-gap:clamp(1px,.4vh,4px);
+  --l12-mobile-marker-gap:clamp(1px,calc(var(--l12-viewport-height,100vh) * .004),4px);
   --l12-mobile-hand-count-w:clamp(36px,calc(var(--l12-mobile-card-w) * .72),48px);
-  --l12-mobile-hand-count-h:clamp(14px,3.3vh,24px);
-  --l12-mobile-hand-h:clamp(64px,16vh,102px);
+  --l12-mobile-hand-count-h:clamp(14px,calc(var(--l12-viewport-height,100vh) * .033),24px);
+  --l12-mobile-hand-h:clamp(64px,calc(var(--l12-viewport-height,100vh) * .16),102px);
   --l12-mobile-hand-card-h:calc(var(--l12-mobile-hand-h) - 6px);
+  --l12-mobile-morale-orb:clamp(12px,calc(var(--l12-viewport-height,100vh) * .022),17px);
   --l12-mobile-hand-card-w:calc(var(--l12-mobile-hand-card-h) * 5 / 7);
-  --l12-mobile-group-gap:clamp(2px,calc((var(--l12-viewport-width,100vw) - 620px) / 14 + 3px),calc(var(--l12-mobile-card-w) * 1.5));
+  --l12-mobile-group-gap:clamp(2px,calc(var(--l12-viewport-height,100vh) * .0065),5px);
+  --l12-mobile-rail-gap:clamp(3px,calc(var(--l12-viewport-height,100vh) * .012),5px);
+  --l12-mobile-detail-handle-h:clamp(24px,calc(var(--l12-viewport-height,100vh) * .07),30px);
+  --l12-mobile-current-disaster-h:clamp(48px,calc(var(--l12-viewport-height,100vh) * .14),66px);
+  --l12-mobile-disaster-value-h:clamp(24px,calc(var(--l12-viewport-height,100vh) * .07),30px);
+  --l12-mobile-disaster-orb:clamp(28px,calc(var(--l12-viewport-height,100vh) * .09),42px);
+  --l12-mobile-extra-zone-h:clamp(48px,calc(var(--l12-viewport-height,100vh) * .18),90px);
 }
-@media (min-height:521px) { .mobile-landscape-board { --l12-mobile-outer-reserve:386px; --l12-mobile-group-gap:2px; } }
+.mobile-landscape-board .stage-layout { grid-template-columns:var(--l12-mobile-left-rail-w) minmax(0,1fr) var(--l12-mobile-right-rail-w) !important; }
+.mobile-landscape-board .left-rail,.mobile-landscape-board .left-disaster-row,.mobile-landscape-board .left-disaster-row>.grand-panel { box-sizing:border-box; width:var(--l12-mobile-left-rail-w) !important; min-width:var(--l12-mobile-left-rail-w) !important; }
 .mobile-landscape-board :deep(.battlefield-half.l12-player-mat) {
   box-sizing:border-box !important;
   grid-template-columns:var(--l12-mobile-commander-w) var(--l12-mobile-formation-w) var(--l12-mobile-card-w) var(--l12-mobile-resource-w) !important;
@@ -2506,8 +2465,8 @@ function statusTexts(card: Card) {
   line-height:1;
   white-space:nowrap;
 }
-.mobile-landscape-board :deep(.battlefield-half .mobile-hand-count i) { color:#aebdb9; font-size:clamp(7px,1.35vh,9px); font-style:normal; }
-.mobile-landscape-board :deep(.battlefield-half .mobile-hand-count b) { color:#fff; font-size:clamp(8px,1.55vh,11px); font-variant-numeric:tabular-nums; }
+.mobile-landscape-board :deep(.battlefield-half .mobile-hand-count i) { color:#aebdb9; font-size:clamp(7px,calc(var(--l12-viewport-height,100vh) * .0135),9px); font-style:normal; }
+.mobile-landscape-board :deep(.battlefield-half .mobile-hand-count b) { color:#fff; font-size:clamp(8px,calc(var(--l12-viewport-height,100vh) * .0155),11px); font-variant-numeric:tabular-nums; }
 .mobile-landscape-board :deep(.battlefield-half .master-column),
 .mobile-landscape-board :deep(.battlefield-half .relic-zone),
 .mobile-landscape-board :deep(.battlefield-half .mini-master),
@@ -2587,14 +2546,30 @@ function statusTexts(card: Card) {
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-count) { width:auto !important; min-width:0 !important; max-width:none !important; height:26px !important; min-height:26px !important; padding:0 2px !important; overflow:hidden !important; font-size:8px !important; white-space:nowrap !important; }
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-label img) { width:18px !important; height:18px !important; }
 .mobile-landscape-board :deep(.battlefield-half .resource-faction-action) { min-height:24px !important; padding:1px 2px !important; font-size:8px !important; line-height:1.1 !important; }
-.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack) { grid-template-columns:repeat(4,minmax(11px,1fr)) !important; grid-auto-rows:clamp(12px,2.2vh,17px) !important; gap:2px !important; padding:2px !important; }
-.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb) { width:clamp(12px,2.2vh,17px) !important; min-width:clamp(12px,2.2vh,17px) !important; height:clamp(12px,2.2vh,17px) !important; min-height:clamp(12px,2.2vh,17px) !important; }
-.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb img) { width:calc(clamp(12px,2.2vh,17px) - 4px) !important; height:calc(clamp(12px,2.2vh,17px) - 4px) !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack) { grid-template-columns:repeat(4,minmax(11px,1fr)) !important; grid-auto-rows:var(--l12-mobile-morale-orb) !important; gap:2px !important; padding:2px !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb) { width:var(--l12-mobile-morale-orb) !important; min-width:var(--l12-mobile-morale-orb) !important; height:var(--l12-mobile-morale-orb) !important; min-height:var(--l12-mobile-morale-orb) !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb img) { width:calc(var(--l12-mobile-morale-orb) - 4px) !important; height:calc(var(--l12-mobile-morale-orb) - 4px) !important; }
 .mobile-landscape-board .board-center { grid-template-rows:0 0 minmax(0,1fr) 0 var(--l12-mobile-hand-h) !important; }
 .mobile-landscape-board .board-center > .l12-hand:last-child { box-sizing:border-box; height:var(--l12-mobile-hand-h) !important; min-height:var(--l12-mobile-hand-h) !important; margin-top:0 !important; padding:2px 4px !important; align-items:flex-start !important; overflow-x:auto !important; overflow-y:hidden !important; }
 .mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap),
 .mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back),
 .mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-tile) { box-sizing:border-box !important; top:0 !important; bottom:auto !important; width:var(--l12-mobile-hand-card-w) !important; min-width:var(--l12-mobile-hand-card-w) !important; height:var(--l12-mobile-hand-card-h) !important; min-height:var(--l12-mobile-hand-card-h) !important; flex:0 0 var(--l12-mobile-hand-card-w) !important; aspect-ratio:5/7 !important; }
+
+/* The complete left rail participates in one allocation model. The persistent
+   detail handle is a real first row, never a fixed overlay. Current disaster,
+   value and the four round cards each own a non-overlapping rectangle; optional
+   opponent/my extra zones share only the remaining height. */
+.mobile-landscape-board .left-rail { box-sizing:border-box !important; gap:var(--l12-mobile-rail-gap) !important; overflow:hidden !important; }
+.mobile-landscape-board .mobile-detail-handle-reservation { display:block; box-sizing:border-box; width:100%; height:var(--l12-mobile-detail-handle-h); min-height:var(--l12-mobile-detail-handle-h); flex:0 0 var(--l12-mobile-detail-handle-h); pointer-events:none; }
+.mobile-landscape-board .left-disaster-row { display:grid !important; width:100% !important; height:auto !important; min-height:0 !important; flex:0 0 auto !important; grid-template-rows:var(--l12-mobile-current-disaster-h) var(--l12-mobile-disaster-value-h) calc(var(--l12-mobile-disaster-orb) * 2 + var(--l12-mobile-rail-gap) + 8px) !important; gap:var(--l12-mobile-rail-gap) !important; }
+.mobile-landscape-board .left-disaster-row>.current-disaster-panel { box-sizing:border-box !important; min-height:var(--l12-mobile-current-disaster-h) !important; height:var(--l12-mobile-current-disaster-h) !important; padding:2px !important; overflow:hidden !important; }
+.mobile-landscape-board .current-disaster-card { box-sizing:border-box !important; height:calc(var(--l12-mobile-current-disaster-h) - 4px) !important; min-height:0 !important; padding:1px !important; overflow:hidden !important; }
+.mobile-landscape-board .mobile-current-disaster-value { box-sizing:border-box; height:var(--l12-mobile-disaster-value-h) !important; min-height:var(--l12-mobile-disaster-value-h) !important; padding:2px 4px; overflow:hidden; }
+.mobile-landscape-board .session-disaster-panel { box-sizing:border-box !important; height:calc(var(--l12-mobile-disaster-orb) * 2 + var(--l12-mobile-rail-gap) + 8px) !important; min-height:0 !important; align-content:center !important; padding:4px !important; overflow:hidden !important; }
+.mobile-landscape-board .session-disaster-strip { grid-template-columns:repeat(2,var(--l12-mobile-disaster-orb)) !important; grid-template-rows:repeat(2,var(--l12-mobile-disaster-orb)) !important; gap:var(--l12-mobile-rail-gap) !important; }
+.mobile-landscape-board .session-disaster-strip button { width:var(--l12-mobile-disaster-orb) !important; min-width:var(--l12-mobile-disaster-orb) !important; max-width:var(--l12-mobile-disaster-orb) !important; height:var(--l12-mobile-disaster-orb) !important; max-height:var(--l12-mobile-disaster-orb) !important; }
+.mobile-landscape-board .mobile-extra-zone { box-sizing:border-box; min-height:0 !important; max-height:var(--l12-mobile-extra-zone-h) !important; flex:1 1 var(--l12-mobile-extra-zone-h) !important; overflow:hidden; }
+.mobile-landscape-board .mobile-extra-zone>div { min-height:0; max-height:none; overflow-x:hidden; overflow-y:auto; }
 
 /* R6 phone-only proportional allocation. The complete card-bearing group grows
    from one shared card height; no zone receives an independent stretch. */

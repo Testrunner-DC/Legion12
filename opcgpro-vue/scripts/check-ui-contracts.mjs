@@ -358,9 +358,11 @@ const contracts = [
     && !phaseTrack.includes('<i>{{ index + 1 }}</i>') && phaseTrack.indexOf('class="round"') > phaseTrack.indexOf('v-for="item in phases"'), '左侧本局天灾与当前天灾保持独立并合计对齐选中卡；窄阶段列独立右移，不显示标题或序号，两字换行居中且TURN置底'],
   [board.includes('class="mobile-current-disaster-value" aria-label="当前天灾值"')
     && board.includes('<span>天灾值</span><b>{{ game.disasterValue }}</b>')
-    && board.includes('.mobile-landscape-board .left-disaster-row {\n  display: grid !important;\n  grid-template-rows: 58px 28px minmax(0, 1fr);')
-    && board.includes('.mobile-landscape-board .session-disaster-panel { grid-row: 3 !important;')
-    && board.includes('.mobile-landscape-board .left-disaster-row > .current-disaster-panel {\n  grid-row: 1 !important;')
+    && board.includes('class="mobile-detail-handle-reservation" aria-hidden="true"')
+    && board.includes('--l12-mobile-current-disaster-h:clamp(')
+    && board.includes('--l12-mobile-disaster-value-h:clamp(')
+    && board.includes('--l12-mobile-disaster-orb:clamp(')
+    && board.includes('grid-template-rows:var(--l12-mobile-current-disaster-h) var(--l12-mobile-disaster-value-h) calc(var(--l12-mobile-disaster-orb) * 2')
     && board.includes('.mobile-landscape-board .mobile-current-disaster-value { grid-row: 2;')
     && board.includes('.mobile-landscape-board .mobile-current-disaster-copy { display: none; }')
     && !board.includes('class="mobile-rail-disaster-value"'), '移动对局必须按当前天灾卡图、当前天灾值、本局天灾圆图的顺序独立显示；当前天灾卡图可点选但不得附加名称文字或占用右侧操作栏'],
