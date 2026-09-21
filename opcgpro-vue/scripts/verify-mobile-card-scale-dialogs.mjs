@@ -67,6 +67,8 @@ const states = [
   ['defense', 'field=full&markers=5&piles=40&hand=10&defense=1'],
   ['board-target', 'field=full&markers=5&piles=40&hand=10&board-target=1'],
   ['board-slot', 'field=empty&markers=5&piles=40&hand=10&board-slot=1'],
+  ['status-indicators', 'field=full&markers=5&piles=40&hand=10&fieldIndicators=1'],
+  ['action-dock', 'field=full&markers=5&piles=40&hand=10&action-fixture=1'],
   ['morale-overview', 'field=full&markers=5&piles=40&hand=10'],
   ['morale-payment', 'field=full&markers=5&piles=40&hand=10&morale-payment=1'],
   ['morale-payment-minimized', 'field=full&markers=5&piles=40&hand=10&morale-payment=1'],
@@ -81,7 +83,7 @@ const states = [
   ['settlement-win', 'field=full&markers=5&piles=40&hand=10&game-over=win'],
   ['settlement-loss', 'field=full&markers=5&piles=40&hand=10&game-over=loss'],
 ]
-const activeStates = quick ? states.filter(([name]) => ['full', 'markers-5', 'hand-20', 'inspector-open'].includes(name)) : states
+const activeStates = quick ? states.filter(([name]) => ['full', 'markers-5', 'hand-20', 'status-indicators', 'action-dock', 'inspector-open'].includes(name)) : states
 const dialogCases = [
   ['card-detail', 'field=full&markers=5&piles=40&hand=10', 'inspector'],
   ['master', 'field=full&markers=5&piles=40&hand=10&modalFixture=1', 'master'],
@@ -97,7 +99,7 @@ const dialogCases = [
   ['morale-payment', 'field=full&markers=5&piles=40&hand=10&morale-payment=1', 'morale'],
 ]
 fs.mkdirSync(output, { recursive: true })
-const manifest = { generatedAt: new Date().toISOString(), target, fixedViewports, acceptance: { safeViewport:'all visible interactive controls, battle-critical regions and overlays inside visualViewport minus CDP safe-area insets', safeAreaAudit:{ interactiveSelector, criticalSelectors, overlaySelectors }, handCounts:'exactly one PlayerMat hand count per player; no floating third entry; full text visible and clear of master/relic/markers/field', cardRatio:'5:7 ±5%; horizontal cards keep native ratio', formation:'six square slots, <=2px uniform gaps', cardScale:'master/relic/field/piles max visual-height ratio 1.15', spaceUtilization:'for empty/full at every fixed viewport, record commander+battle+piles+resource union; width>=640 requires >=75% occupation or both margins <=12%, left/right difference <=3pp, and every structural gap <=1.5 card widths', continuity:'1px-neighbor and safe-inset layout proportions change <=10 percentage points', scrolling:'page root fixed; horizontal scroll only in declared hand/card-list containers' }, randomScan: [], states: [], dialogs: [], safeArea: [], desktop: [], status: 'running' }
+const manifest = { generatedAt: new Date().toISOString(), target, fixedViewports, acceptance: { safeViewport:'all visible interactive controls, battle-critical regions and overlays inside visualViewport minus CDP safe-area insets', safeAreaAudit:{ interactiveSelector, criticalSelectors, overlaySelectors }, handCounts:'exactly one PlayerMat hand count per player; no floating third entry; full text visible and clear of master/relic/markers/field', cardRatio:'5:7 ±5%; horizontal cards keep native ratio', formation:'six square slots, <=2px uniform gaps', cardScale:'master/relic/field/piles max visual-height ratio 1.15', localScale:'status icons, keywords, master health, pile counts, morale summary and action buttons remain contained and scale continuously from card/logical viewport tokens', spaceUtilization:'for empty/full at every fixed viewport, record commander+battle+piles+resource union; width>=640 requires >=75% occupation or both margins <=12%, left/right difference <=3pp, and every structural gap <=1.5 card widths', continuity:'1px-neighbor and safe-inset layout proportions change <=10 percentage points', scrolling:'page root fixed; horizontal scroll only in declared hand/card-list containers' }, randomScan: [], states: [], dialogs: [], safeArea: [], desktop: [], status: 'running' }
 
 function intersects(a, b, tolerance = .5) {
   return a.left < b.right - tolerance && a.right > b.left + tolerance && a.top < b.bottom - tolerance && a.bottom > b.top + tolerance
@@ -172,6 +174,9 @@ try {
       await page.evaluate(() => window.__disasterFixture.openPrompt())
       await page.locator('.prompt-panel').waitFor()
       await page.locator('.zone-card-movement').waitFor({ state: 'detached' })
+    } else if (name === 'action-dock') {
+      await page.locator('.my-half .formation-slot .card-tile').first().click()
+      await page.locator('.card-context-actions').waitFor()
     }
   }
   async function assertCommon(label, insets = zeroInsets) {
@@ -311,6 +316,35 @@ try {
     }
     return metrics
   }
+  async function assertAdaptiveLocalScale(label) {
+    const metrics = await page.evaluate(() => {
+      const visible = element => { const r=element.getBoundingClientRect(),s=getComputedStyle(element); return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden' }
+      const rect = element => { const r=element.getBoundingClientRect(); return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height} }
+      const contained = (inner,outer,tolerance=1) => inner.left>=outer.left-tolerance&&inner.top>=outer.top-tolerance&&inner.right<=outer.right+tolerance&&inner.bottom<=outer.bottom+tolerance
+      const cardDetails=[...document.querySelectorAll('.battlefield-half .formation-slot .card-tile')].filter(visible).map(card=>{
+        const cardRect=rect(card)
+        const children=[...card.querySelectorAll('.card-cost,.card-power,.card-disaster,.card-status-icons,.card-keyword-stack')].filter(visible).map(element=>({className:element.className,rect:rect(element),font:parseFloat(getComputedStyle(element).fontSize)||0}))
+        return {card:cardRect,children,contained:children.every(item=>contained(item.rect,cardRect)),statusSizes:[...card.querySelectorAll('.card-status-icon')].filter(visible).map(element=>rect(element).width),keywordFonts:[...card.querySelectorAll('.card-keyword')].filter(visible).map(element=>parseFloat(getComputedStyle(element).fontSize)||0)}
+      })
+      const masters=[...document.querySelectorAll('.battlefield-half .mini-master')].filter(visible).map(master=>{const outer=rect(master),badge=master.querySelector('.master-health');return badge&&visible(badge)?{outer,badge:rect(badge),font:parseFloat(getComputedStyle(badge).fontSize)||0,contained:contained(rect(badge),outer)}:null}).filter(Boolean)
+      const piles=[...document.querySelectorAll('.battlefield-half .mat-piles .pile')].filter(visible).map(pile=>{const outer=rect(pile),badge=pile.querySelector('.pile-count');return badge&&visible(badge)?{outer,badge:rect(badge),font:parseFloat(getComputedStyle(badge).fontSize)||0,contained:contained(rect(badge),outer)}:null}).filter(Boolean)
+      const resources=[...document.querySelectorAll('.battlefield-half .resource-zone')].filter(visible).map(zone=>{const outer=rect(zone),summary=zone.querySelector('.resource-morale-summary');return summary&&visible(summary)?{outer,summary:rect(summary),font:parseFloat(getComputedStyle(summary.querySelector('.resource-morale-count')).fontSize)||0,contained:contained(rect(summary),outer)}:null}).filter(Boolean)
+      const actions=[...document.querySelectorAll('.card-context-actions button,.mobile-action-dock button,.right-rail .action-panel button')].filter(visible).map(button=>({rect:rect(button),font:parseFloat(getComputedStyle(button).fontSize)||0,text:button.textContent?.trim()||''}))
+      const root=getComputedStyle(document.documentElement),logicalHeight=parseFloat(root.getPropertyValue('--l12-viewport-height'))||innerHeight
+      return {cardDetails,masters,piles,resources,actions,logicalHeight}
+    })
+    assert.ok(metrics.cardDetails.length>=2,`${label} must expose field cards for local-scale verification`)
+    assert.equal(metrics.cardDetails.every(item=>item.contained),true,`${label} card badges/statuses/keywords leave their card: ${JSON.stringify(metrics.cardDetails.filter(item=>!item.contained))}`)
+    for(const item of metrics.cardDetails){
+      assert.equal(item.statusSizes.every(size=>size>=8&&size<=item.card.width*.31+1),true,`${label} status icon is not proportional to its card: ${JSON.stringify(item)}`)
+      assert.equal(item.keywordFonts.every(size=>size>=5.5&&size<=item.card.width*.19+1),true,`${label} keyword text is not proportional to its card: ${JSON.stringify(item)}`)
+    }
+    assert.equal(metrics.masters.every(item=>item.contained&&item.badge.height>=12&&item.badge.height<=item.outer.width*.48+1),true,`${label} master health badge is not locally scaled: ${JSON.stringify(metrics.masters)}`)
+    assert.equal(metrics.piles.every(item=>item.contained&&item.badge.height>=11&&item.badge.height<=item.outer.width*.48+1),true,`${label} pile badge is not locally scaled: ${JSON.stringify(metrics.piles)}`)
+    assert.equal(metrics.resources.every(item=>item.contained&&item.summary.height>=21&&item.summary.height<=item.outer.width*.43+1),true,`${label} morale summary is not locally scaled: ${JSON.stringify(metrics.resources)}`)
+    assert.equal(metrics.actions.every(item=>item.rect.height>=29&&item.rect.height<=metrics.logicalHeight*.13+1&&item.font>=8.5),true,`${label} action button is not scaled from the logical viewport: ${JSON.stringify(metrics.actions)}`)
+    return metrics
+  }
   function assertSafeAreaInventory(label, state, audit) {
     const counts=audit.audits.critical.counts
     const requireCount=(selector,minimum,description)=>assert.ok((counts[selector]??0)>=minimum,`${label} is missing ${description}: ${selector}=${counts[selector]??0}`)
@@ -391,9 +425,10 @@ try {
       }
       if (name.startsWith('hand-')) await assertHand(`${name} ${suffix}`)
       const spaceUtilization = ['empty','full'].includes(name) ? await assertSpaceUtilization(`${name} ${suffix}`) : undefined
+      const adaptiveLocalScale = ['status-indicators','action-dock'].includes(name) ? await assertAdaptiveLocalScale(`${name} ${suffix}`) : undefined
       const file = `state-${name}-${suffix}.png`
       await page.screenshot({ path:path.join(output,file) })
-      manifest.states.push({ state:name, viewport:suffix, file, ...(spaceUtilization ? {spaceUtilization} : {}), assertions:'passed' })
+      manifest.states.push({ state:name, viewport:suffix, file, ...(spaceUtilization ? {spaceUtilization} : {}), ...(adaptiveLocalScale ? {adaptiveLocalScale} : {}), assertions:'passed' })
     }
   }
 

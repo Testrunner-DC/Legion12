@@ -406,8 +406,11 @@ const contracts = [
     && playerMat.includes('data-ui-contract="actual-combat-target-only"'), '手牌与场上军团只移除卡片常驻装饰框，透明边线保持命中尺寸；六格边界及可用、选择、目标、支付、反击状态和键盘焦点标记必须保留'],
   [l12Types.includes("'lock' | 'power-up' | 'power-down' | 'disabled' | 'shield' | 'discard-end' | 'extra-attack'") && l12Types.includes('statusIcons?: string[]') && l12Types.includes('statusEffects?: CardStatusEffect[]'), '卡牌投影视图必须提供结构化 statusEffects/statusIcons 状态契约并兼容旧快照缺省'],
   [cardTile.includes('props.card.statusEffects ?? []') && cardTile.includes('props.card.statusIcons ?? []') && cardTile.includes('statusLabel(effect, kind)') && cardTile.includes(':title="status.label"') && cardTile.includes(':aria-label="status.label"')
-    && cardTile.includes('data-ui-contract="status-icons-wrap-down"') && cardTile.includes('.card-status-icons{left:3px;right:auto;top:50px;width:calc(100% - 6px);height:auto;max-height:none;flex-flow:row wrap')
-    && cardTile.includes('width:19.5px;min-width:19.5px;height:19.5px;flex:0 0 19.5px') && !cardTile.includes('modifier.costDelta'), '状态图标必须放大30%，首个对齐费用左边且不侵入费用；新增图标向右排列，宽度不足时向下换行'],
+    && cardTile.includes('data-ui-contract="status-icons-wrap-down"') && board.includes('--l12-card-status-size:clamp(8px,13.9cqw,19.5px)')
+    && board.includes('--l12-card-keyword-font:clamp(6px,7.2cqw,11.25px)')
+    && cardTile.includes('--l12-card-status-size:19.5px') && cardTile.includes('--l12-card-keyword-font:clamp(10px,var(--l12-board-micro,9px),11.25px)')
+    && cardTile.includes('width:var(--l12-card-status-size);min-width:var(--l12-card-status-size);height:var(--l12-card-status-size);flex:0 0 var(--l12-card-status-size)')
+    && cardTile.includes('font-size:var(--l12-card-keyword-font)') && !cardTile.includes('modifier.costDelta'), '状态图标、关键词和附着卡入口必须按卡牌容器连续缩放；首个状态对齐费用边且不侵入费用，新增图标宽度不足时向下换行'],
   [l12GameEngine.includes('new("keyword-disabled", "挑衅"') && l12GameEngine.includes('IsTauntSuppressed(controller)')
     && cardTile.includes("effect.kind.trim().toLowerCase() === 'keyword-disabled'")
     && cardTile.includes("keyword.disabled ? 'disabled-keyword-red-x' : undefined") && cardTile.includes(":class=\"{ 'disabled-keyword': keyword.disabled }\"")
@@ -454,6 +457,13 @@ const contracts = [
     && gamePage.includes('height:calc(var(--l12-viewport-height,100vh) - 16px)')
     && board.includes('text-align:center; text-wrap:balance; overflow-wrap:anywhere;')
     && prompt.includes('--inspector-safe-lane:clamp(118px,19vw,258px)'), '移动专用手牌计数、阵营标识和路由换行不得泄漏到桌面；临时士气始终使用网站图标，桌面弹框安全区必须使用经验证的窄侧栏比例'],
+  [board.includes('--l12-mobile-master-health-h:clamp(13px,calc(var(--l12-mobile-card-w) * .34),22px)')
+    && board.includes('--l12-mobile-pile-badge-h:clamp(12px,calc(var(--l12-mobile-card-w) * .30),20px)')
+    && board.includes('--l12-mobile-resource-summary-h:clamp(22px,calc(var(--l12-mobile-card-w) * .52),30px)')
+    && board.includes('--l12-mobile-action-h:clamp(30px,calc(var(--l12-viewport-height,100vh) * .09),38px)')
+    && board.includes('font-size:var(--l12-mobile-pile-count-font) !important')
+    && board.includes('font-size:var(--l12-mobile-resource-font) !important')
+    && board.includes('min-height:var(--l12-mobile-action-h) !important'), '移动主宰血量、牌堆数字、士气摘要与场面操作按钮必须从卡牌或逻辑视口比例令牌取值，不得恢复为各自固定尺寸'],
   [l12Types.includes('cannotUntapUntilRound?: number')
     && playerMat.includes('function moraleLocked(card: MoraleResource)')
     && playerMat.includes('lockedUntilRound > 0 && lockedUntilRound >= (props.round ?? 0)')
@@ -742,10 +752,10 @@ const contracts = [
     && l12GameEngine.includes('HasEffectiveStrongAttack(card)'), '王者之剑、侵掠如火、自身与临时强攻必须共用同一有效关键词查询'],
   [cardTile.includes('const keywordRows = computed') && cardTile.includes('entries.slice(index * 3, index * 3 + 3)')
     && cardTile.includes('data-ui-contract="keywords-three-per-row-upward"') && cardTile.includes('class="card-keyword-row"')
-    && cardTile.includes('bottom:40px;display:flex;width:calc(100% - 8px)') && cardTile.includes('flex-direction:column-reverse')
-    && cardTile.includes('align-items:stretch;gap:4px;transform:translateX(-50%)')
-    && cardTile.includes('.card-keyword-row{display:flex;width:100%;min-width:0;align-items:center;justify-content:center;gap:2px}')
-    && cardTile.includes('padding:4px;font-size:clamp(10px,var(--l12-board-micro,9px),11.25px)')
+    && cardTile.includes('bottom:var(--l12-card-keyword-bottom);display:flex') && cardTile.includes('flex-direction:column-reverse')
+    && cardTile.includes('align-items:stretch;gap:var(--l12-card-keyword-gap);transform:translateX(-50%)')
+    && cardTile.includes('.card-keyword-row{display:flex;width:100%;min-width:0;align-items:center;justify-content:center;gap:var(--l12-card-status-gap)}')
+    && cardTile.includes('padding:var(--l12-card-keyword-pad);font-size:var(--l12-card-keyword-font)')
     && !cardTile.includes('status-strong'), '当前生效关键词必须在兵力上方整组居中，每行最多3个且换行向上生长，不得溢出卡牌容器或恢复单字角标'],
   [cardTile.includes("props.card.isMasterLegion === true") && cardTile.includes('displayBaseTroops'), '孙悟空等主宰军团化实体必须显示权威兵力且设定兵力不误判为增益'],
   [cardTile.includes('position:static!important') && cardTile.includes('object-position:center 14%'), '圆形叠放卡图不得被全局卡图定位规则覆盖'],

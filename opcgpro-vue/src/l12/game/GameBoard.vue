@@ -2082,22 +2082,6 @@ function statusTexts(card: Card) {
 }
 .mobile-landscape-board .right-rail .player-panel > .player-summary,
 .mobile-landscape-board .right-rail .player-panel > hr { display: none !important; }
-.mobile-landscape-board .felt-board :deep(.formation-slot .card-cost),
-.mobile-landscape-board .felt-board :deep(.formation-slot .card-power),
-.mobile-landscape-board .felt-board :deep(.formation-slot .card-disaster) {
-  min-width: 0 !important;
-  padding: var(--l12-card-stat-pad-y, 0) var(--l12-card-stat-pad-x, 1px) !important;
-  border-width: 1px !important;
-  font-size: var(--l12-card-stat-font, 7px) !important;
-  line-height: var(--l12-card-stat-line, 8px) !important;
-}
-.mobile-landscape-board .felt-board :deep(.formation-slot .card-power) { bottom: var(--l12-card-edge, 1px) !important; }
-.mobile-landscape-board .felt-board :deep(.formation-slot .card-status-icons) { top: 24px !important; gap: 1px !important; }
-.mobile-landscape-board .felt-board :deep(.formation-slot .card-status-icon) { width: 12px !important; min-width: 12px !important; height: 12px !important; flex-basis: 12px !important; font-size: 8px !important; }
-.mobile-landscape-board .felt-board :deep(.formation-slot .card-keyword-stack),
-.mobile-landscape-board .felt-board :deep(.formation-slot .card-tile.has-status-effects .card-keyword-stack) { bottom: 19px !important; gap: 1px !important; }
-.mobile-landscape-board .felt-board :deep(.formation-slot .card-keyword-row > .card-keyword) { padding: 1px !important; font-size: 7px !important; }
-
 /* Use the otherwise spare disaster rail as a true vertical extra-zone rail: the
    opponent's trial cards enter from above and ours from below. */
 .mobile-landscape-board .left-rail { display: flex !important; flex-direction: column !important; gap: 4px !important; }
@@ -2134,11 +2118,11 @@ function statusTexts(card: Card) {
 .mobile-landscape-board .felt-board :deep(.formation-slot .card-cost) { left: var(--l12-card-edge, 1px) !important; top: var(--l12-card-edge, 1px) !important; }
 .mobile-landscape-board .felt-board :deep(.formation-slot .card-disaster) { right: var(--l12-card-edge, 1px) !important; top: var(--l12-card-edge, 1px) !important; }
 .mobile-landscape-board .felt-board :deep(.formation-slot .card-power) { bottom: var(--l12-card-edge, 1px) !important; }
-.mobile-landscape-board .felt-board :deep(.formation-slot .card-status-icons) { left: 1px !important; top: 21px !important; }
-.mobile-landscape-board .felt-board :deep(.formation-slot .card-status-icon) { width: 10px !important; min-width: 10px !important; height: 10px !important; flex-basis: 10px !important; font-size: 7px !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-status-icons) { left:var(--l12-card-status-edge,1px) !important; top:var(--l12-card-status-top,12px) !important; gap:var(--l12-card-status-gap,1px) !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-status-icon) { width:var(--l12-card-status-size,8px) !important; min-width:var(--l12-card-status-size,8px) !important; height:var(--l12-card-status-size,8px) !important; flex-basis:var(--l12-card-status-size,8px) !important; font-size:var(--l12-card-status-font,6px) !important; }
 .mobile-landscape-board .felt-board :deep(.formation-slot .card-keyword-stack),
-.mobile-landscape-board .felt-board :deep(.formation-slot .card-tile.has-status-effects .card-keyword-stack) { right: 1px !important; bottom: 13px !important; left: auto !important; width: auto !important; max-width: calc(100% - 2px) !important; transform: none !important; }
-.mobile-landscape-board .felt-board :deep(.formation-slot .card-keyword-row > .card-keyword) { padding: 0 1px !important; font-size: 6px !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-tile.has-status-effects .card-keyword-stack) { right:var(--l12-card-status-edge,1px) !important; bottom:var(--l12-card-keyword-bottom,12px) !important; left:auto !important; width:auto !important; max-width:calc(100% - var(--l12-card-status-edge,1px) - var(--l12-card-status-edge,1px)) !important; gap:var(--l12-card-keyword-gap,1px) !important; transform:none !important; }
+.mobile-landscape-board .felt-board :deep(.formation-slot .card-keyword-row > .card-keyword) { padding:0 var(--l12-card-keyword-pad,1px) !important; font-size:var(--l12-card-keyword-font,6px) !important; }
 
 .mobile-landscape-board :deep(.battlefield-half .commander-zone) { position: relative !important; overflow: visible !important; }
 .mobile-landscape-board :deep(.battlefield-half .mobile-hand-count) { position: absolute !important; z-index: 22; left: -44px !important; top: 5px !important; display: grid !important; width: 48px; height: 28px; place-items: center; border: 1px solid rgba(224, 226, 216, .62); background: rgba(6, 10, 11, .88); box-shadow: 0 3px 7px rgba(0,0,0,.5); color: #e8ebe4; line-height: 1; }
@@ -2431,8 +2415,22 @@ function statusTexts(card: Card) {
   --l12-mobile-disaster-value-h:clamp(24px,calc(var(--l12-viewport-height,100vh) * .07),30px);
   --l12-mobile-disaster-orb:clamp(28px,calc(var(--l12-viewport-height,100vh) * .09),42px);
   --l12-mobile-extra-zone-h:clamp(48px,calc(var(--l12-viewport-height,100vh) * .18),90px);
+  --l12-mobile-master-name-font:clamp(7px,calc(var(--l12-mobile-card-w) * .18),10px);
+  --l12-mobile-master-health-h:clamp(13px,calc(var(--l12-mobile-card-w) * .34),22px);
+  --l12-mobile-master-health-font:clamp(8px,calc(var(--l12-mobile-card-w) * .20),13px);
+  --l12-mobile-master-health-small:clamp(6px,calc(var(--l12-mobile-card-w) * .15),10px);
+  --l12-mobile-pile-badge-h:clamp(12px,calc(var(--l12-mobile-card-w) * .30),20px);
+  --l12-mobile-pile-count-font:clamp(7px,calc(var(--l12-mobile-card-w) * .18),11px);
+  --l12-mobile-pile-label-font:clamp(6px,calc(var(--l12-mobile-card-w) * .15),9px);
+  --l12-mobile-resource-summary-h:clamp(22px,calc(var(--l12-mobile-card-w) * .52),30px);
+  --l12-mobile-resource-font:clamp(7px,calc(var(--l12-mobile-card-w) * .17),10px);
+  --l12-mobile-action-w:clamp(84px,calc(var(--l12-mobile-right-rail-w) - 6px),104px);
+  --l12-mobile-action-h:clamp(30px,calc(var(--l12-viewport-height,100vh) * .09),38px);
+  --l12-mobile-action-font:clamp(9px,calc(var(--l12-viewport-height,100vh) * .025),11px);
 }
 .mobile-landscape-board .stage-layout { grid-template-columns:var(--l12-mobile-left-rail-w) minmax(0,1fr) var(--l12-mobile-right-rail-w) !important; }
+.mobile-landscape-board :deep(.card-tile) { --l12-card-status-edge:clamp(1px,2.2cqw,3px);--l12-card-status-top:clamp(12px,35.7cqw,50px);--l12-card-status-size:clamp(8px,13.9cqw,19.5px);--l12-card-status-gap:clamp(1px,1.5cqw,3px);--l12-card-status-font:clamp(6px,8.5cqw,12px);--l12-card-keyword-bottom:clamp(12px,28.5cqw,40px);--l12-card-keyword-gap:clamp(1px,2.8cqw,4px);--l12-card-keyword-pad:clamp(1px,2.8cqw,4px);--l12-card-keyword-font:clamp(6px,7.2cqw,11.25px);--l12-card-attached-size:clamp(12px,15.7cqw,22px);--l12-card-attached-bottom:clamp(15px,19.3cqw,27px); }
+.mobile-landscape-board :deep(.card-tile.compact) { --l12-card-status-top:clamp(11px,34cqw,34px);--l12-card-status-size:clamp(8px,17cqw,17px);--l12-card-keyword-bottom:clamp(11px,34cqw,34px);--l12-card-keyword-gap:clamp(1px,2cqw,2px);--l12-card-keyword-pad:clamp(1px,2cqw,2px);--l12-card-keyword-font:clamp(6px,9cqw,9px); }
 .mobile-landscape-board .left-rail,.mobile-landscape-board .left-disaster-row,.mobile-landscape-board .left-disaster-row>.grand-panel { box-sizing:border-box; width:var(--l12-mobile-left-rail-w) !important; min-width:var(--l12-mobile-left-rail-w) !important; }
 .mobile-landscape-board :deep(.battlefield-half.l12-player-mat) {
   box-sizing:border-box !important;
@@ -2488,6 +2486,9 @@ function statusTexts(card: Card) {
   aspect-ratio:5/7 !important;
 }
 .mobile-landscape-board :deep(.battlefield-half .extra-relic) { width:var(--l12-mobile-card-w) !important; height:var(--l12-mobile-card-h) !important; max-width:var(--l12-mobile-card-w) !important; max-height:var(--l12-mobile-card-h) !important; }
+.mobile-landscape-board :deep(.battlefield-half .mini-master>span:not(.master-away)) { right:var(--l12-card-edge,1px) !important; bottom:var(--l12-card-edge,1px) !important; left:var(--l12-card-edge,1px) !important; font-size:var(--l12-mobile-master-name-font) !important; }
+.mobile-landscape-board :deep(.battlefield-half .master-health) { right:var(--l12-card-edge,1px) !important; bottom:var(--l12-mobile-master-health-h) !important; min-width:0 !important; height:var(--l12-mobile-master-health-h) !important; padding:0 var(--l12-card-stat-pad-x,1px) !important; font-size:var(--l12-mobile-master-health-font) !important; line-height:var(--l12-mobile-master-health-h) !important; }
+.mobile-landscape-board :deep(.battlefield-half .master-health small) { font-size:var(--l12-mobile-master-health-small) !important; }
 .mobile-landscape-board :deep(.battlefield-half .battle-zone) { width:var(--l12-mobile-formation-w) !important; min-width:var(--l12-mobile-formation-w) !important; max-width:var(--l12-mobile-formation-w) !important; justify-self:center !important; }
 .mobile-landscape-board .felt-board :deep(.formation) {
   box-sizing:border-box !important;
@@ -2536,8 +2537,8 @@ function statusTexts(card: Card) {
   min-height:var(--l12-mobile-card-h) !important;
   aspect-ratio:5/7 !important;
 }
-.mobile-landscape-board :deep(.battlefield-half .mat-piles .pile .pile-count) { right:1px !important; top:1px !important; min-width:14px !important; height:14px !important; padding:0 2px !important; font-size:8px !important; line-height:14px !important; }
-.mobile-landscape-board :deep(.battlefield-half .mat-piles .pile>span) { left:1px !important; bottom:1px !important; padding:1px 2px !important; font-size:7px !important; }
+.mobile-landscape-board :deep(.battlefield-half .mat-piles .pile .pile-count) { right:var(--l12-card-edge,1px) !important; top:var(--l12-card-edge,1px) !important; min-width:var(--l12-mobile-pile-badge-h) !important; height:var(--l12-mobile-pile-badge-h) !important; padding:0 var(--l12-card-stat-pad-x,1px) !important; font-size:var(--l12-mobile-pile-count-font) !important; line-height:var(--l12-mobile-pile-badge-h) !important; }
+.mobile-landscape-board :deep(.battlefield-half .mat-piles .pile>span) { left:var(--l12-card-edge,1px) !important; bottom:var(--l12-card-edge,1px) !important; padding:var(--l12-card-stat-pad-y,0) var(--l12-card-stat-pad-x,1px) !important; font-size:var(--l12-mobile-pile-label-font) !important; }
 .mobile-landscape-board :deep(.battlefield-half .master-marker-track) { box-sizing:border-box !important; width:100% !important; height:calc(var(--l12-mobile-marker) + 2px) !important; min-height:calc(var(--l12-mobile-marker) + 2px) !important; gap:var(--l12-mobile-marker-gap) !important; padding-inline:2px !important; overflow:visible !important; }
 .mobile-landscape-board :deep(.battlefield-half .master-marker-track .rune-orb),
 .mobile-landscape-board :deep(.battlefield-half .master-marker-track .canopic-orb) { width:var(--l12-mobile-marker) !important; min-width:var(--l12-mobile-marker) !important; height:var(--l12-mobile-marker) !important; min-height:var(--l12-mobile-marker) !important; flex:0 0 var(--l12-mobile-marker) !important; }
@@ -2546,11 +2547,11 @@ function statusTexts(card: Card) {
 .mobile-landscape-board :deep(.battlefield-half .resource-faction-action),
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-summary),
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-stack) { box-sizing:border-box !important; width:var(--l12-mobile-resource-w) !important; max-width:var(--l12-mobile-resource-w) !important; }
-.mobile-landscape-board :deep(.battlefield-half .resource-morale-summary) { grid-template-columns:minmax(24px,42%) minmax(34px,58%) !important; height:26px !important; min-height:26px !important; overflow:hidden !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-summary) { grid-template-columns:minmax(24px,42%) minmax(34px,58%) !important; height:var(--l12-mobile-resource-summary-h) !important; min-height:var(--l12-mobile-resource-summary-h) !important; overflow:hidden !important; }
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-label),
-.mobile-landscape-board :deep(.battlefield-half .resource-morale-count) { width:auto !important; min-width:0 !important; max-width:none !important; height:26px !important; min-height:26px !important; padding:0 2px !important; overflow:hidden !important; font-size:8px !important; white-space:nowrap !important; }
-.mobile-landscape-board :deep(.battlefield-half .resource-morale-label img) { width:18px !important; height:18px !important; }
-.mobile-landscape-board :deep(.battlefield-half .resource-faction-action) { min-height:24px !important; padding:1px 2px !important; font-size:8px !important; line-height:1.1 !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-count) { width:auto !important; min-width:0 !important; max-width:none !important; height:var(--l12-mobile-resource-summary-h) !important; min-height:var(--l12-mobile-resource-summary-h) !important; padding:0 var(--l12-card-stat-pad-x,1px) !important; overflow:hidden !important; font-size:var(--l12-mobile-resource-font) !important; white-space:nowrap !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-label img) { width:calc(var(--l12-mobile-resource-summary-h) - 8px) !important; height:calc(var(--l12-mobile-resource-summary-h) - 8px) !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-faction-action) { min-height:calc(var(--l12-mobile-resource-summary-h) - 2px) !important; padding:1px var(--l12-card-stat-pad-x,1px) !important; font-size:var(--l12-mobile-resource-font) !important; line-height:1.1 !important; }
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-stack) { grid-template-columns:repeat(4,minmax(11px,1fr)) !important; grid-auto-rows:var(--l12-mobile-morale-orb) !important; gap:2px !important; padding:2px !important; }
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb) { width:var(--l12-mobile-morale-orb) !important; min-width:var(--l12-mobile-morale-orb) !important; height:var(--l12-mobile-morale-orb) !important; min-height:var(--l12-mobile-morale-orb) !important; }
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb img) { width:calc(var(--l12-mobile-morale-orb) - 4px) !important; height:calc(var(--l12-mobile-morale-orb) - 4px) !important; }
@@ -2584,11 +2585,14 @@ function statusTexts(card: Card) {
   position:fixed !important; z-index:2147483500 !important;
   right:calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 5px) !important;
   bottom:calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + 64px) !important;
-  left:auto !important; width:96px !important; max-width:96px !important;
+  left:auto !important; width:var(--l12-mobile-action-w) !important; max-width:var(--l12-mobile-action-w) !important;
   box-sizing:border-box; display:grid !important; gap:3px; padding:4px !important;
 }
-:global(.mobile-action-dock) { position:fixed !important; z-index:2147483604 !important; right:calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 5px) !important; bottom:calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + 64px) !important; left:auto !important; display:flex !important; box-sizing:border-box; width:96px !important; max-width:96px !important; max-height:calc(var(--l12-viewport-height,100vh) - 72px); flex-wrap:wrap; gap:3px; padding:3px; overflow:auto; border:1px solid #587b7d; background:rgba(8,12,13,.98); box-shadow:0 5px 18px #000; transform:none !important; pointer-events:auto !important; }
-:global(.mobile-action-dock button) { box-sizing:border-box; min-width:0 !important; min-height:32px !important; flex:1 1 42px; padding:3px 4px !important; font-size:10px !important; line-height:1.1 !important; white-space:normal; }
+:global(.mobile-action-dock) { position:fixed !important; z-index:2147483604 !important; right:calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 5px) !important; bottom:calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + 64px) !important; left:auto !important; display:flex !important; box-sizing:border-box; width:clamp(84px,calc(var(--l12-viewport-height,100vh) * .22 - 6px),104px) !important; max-width:clamp(84px,calc(var(--l12-viewport-height,100vh) * .22 - 6px),104px) !important; max-height:calc(var(--l12-viewport-height,100vh) - 72px); flex-wrap:wrap; gap:3px; padding:3px; overflow:auto; border:1px solid #587b7d; background:rgba(8,12,13,.98); box-shadow:0 5px 18px #000; transform:none !important; pointer-events:auto !important; }
+:global(.mobile-action-dock button) { box-sizing:border-box; min-width:0 !important; min-height:clamp(30px,calc(var(--l12-viewport-height,100vh) * .09),38px) !important; flex:1 1 45%; padding:3px 4px !important; font-size:clamp(9px,calc(var(--l12-viewport-height,100vh) * .025),11px) !important; line-height:1.1 !important; white-space:normal; }
+.mobile-landscape-board :deep(.card-context-actions) { width:var(--l12-mobile-action-w) !important; max-width:var(--l12-mobile-action-w) !important; }
+.mobile-landscape-board .right-rail .action-panel :deep(.l12-actions button),
+.mobile-landscape-board .combat-resolution-panel :deep(.l12-actions button) { min-height:var(--l12-mobile-action-h) !important; height:var(--l12-mobile-action-h) !important; font-size:var(--l12-mobile-action-font) !important; }
 .mobile-landscape-board :is(.right-rail,.board-mode-hint,.resource-payment-controls,.combat-resolution-panel,.card-context-actions) button,
 .mobile-safe-overlay button,
 :global(.mobile-action-dock button) { text-align:center; text-wrap:balance; overflow-wrap:anywhere; }
