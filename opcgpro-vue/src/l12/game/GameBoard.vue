@@ -2405,7 +2405,10 @@ function statusTexts(card: Card) {
   --l12-mobile-left-rail-w:clamp(88px,calc(var(--l12-viewport-height,100vh) * .22),118px);
   --l12-mobile-right-rail-w:clamp(90px,calc(var(--l12-viewport-height,100vh) * .22),118px);
   --l12-mobile-outer-reserve:calc(var(--l12-mobile-left-rail-w) + var(--l12-mobile-right-rail-w) + clamp(132px,calc(var(--l12-viewport-height,100vh) * .195),150px));
-  --l12-mobile-card-h:clamp(46px,min(calc((var(--l12-viewport-width,100vw) - var(--l12-mobile-outer-reserve)) / 5.15),calc((var(--l12-viewport-height,100vh) - var(--l12-mobile-hand-h) - 60px) / 4 - 2px)),166px);
+  /* The width equation also reserves the three inter-group gaps and the
+     player's inner frame. Without this fixed reserve, mid-size 4:3 canvases
+     centered an over-wide group and leaked a few pixels through both sides. */
+  --l12-mobile-card-h:clamp(46px,min(calc((var(--l12-viewport-width,100vw) - var(--l12-mobile-outer-reserve) - 20px) / 5.15),calc((var(--l12-viewport-height,100vh) - var(--l12-mobile-hand-h) - 60px) / 4 - 2px)),166px);
   --l12-mobile-card-w:calc(var(--l12-mobile-card-h) * 5 / 7);
   --l12-mobile-slot:calc(var(--l12-mobile-card-h) + 2px);
   --l12-mobile-formation-w:calc(var(--l12-mobile-slot) * 3 + 4px);

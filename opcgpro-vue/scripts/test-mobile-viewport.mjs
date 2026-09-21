@@ -45,8 +45,10 @@ try {
       const board=document.querySelector('.board-viewport'),stage=document.querySelector('.board-stage'),rect=document.body.getBoundingClientRect(),boardRect=window.qaRect(board),stageRect=window.qaRect(stage),style=getComputedStyle(board)
       const logicalRect=selector=>{const element=document.querySelector(selector);if(!element)return null;const value=window.qaRect(element);return {left:value.left,top:value.top,right:value.right,bottom:value.bottom,width:value.width,height:value.height}}
       const geometry=Object.fromEntries(Object.entries({master:'.my-half .mini-master',relic:'.my-half .relic-zone .card-tile',fieldCard:'.my-half .formation-slot .card-tile',fieldSlot:'.my-half .formation-slot',pile:'.my-half .mat-piles .pile',resource:'.my-half .resource-zone',handCard:'.board-center>.l12-hand:last-child .card-tile',rightRail:'.right-rail'}).map(([key,selector])=>[key,logicalRect(selector)]))
+      const regions=Object.fromEntries(Object.entries({leftRail:'.left-rail',center:'.board-center',rightRail:'.right-rail',felt:'.felt-board',hand:'.board-center>.l12-hand:last-child',opponentHalf:'.opponent-half',myHalf:'.my-half'}).map(([key,selector])=>[key,logicalRect(selector)]))
+      const playerGroups=side=>['commander-zone','battle-zone','mat-piles','resource-zone'].map(name=>logicalRect(`.${side}-half .${name}`))
       const stat=document.querySelector('.my-half .formation-slot .card-cost,.my-half .formation-slot .card-power')
-      return {mode:document.documentElement.dataset.l12Viewport,mobile:document.documentElement.dataset.l12Mobile,rotated:document.documentElement.dataset.l12Rotated,body:{left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom},board:{left:boardRect.left,top:boardRect.top,right:boardRect.right,bottom:boardRect.bottom},stage:{left:stageRect.left,top:stageRect.top,right:stageRect.right,bottom:stageRect.bottom},overflowX:style.overflowX,overflowY:style.overflowY,scale:getComputedStyle(stage).transform,rail:logicalRect('.left-rail'),railItems:['.mobile-card-inspector-handle-global','.current-disaster-panel','.mobile-current-disaster-value','.session-disaster-panel'].map(logicalRect),geometry,statFont:stat?parseFloat(getComputedStyle(stat).fontSize):null}
+      return {mode:document.documentElement.dataset.l12Viewport,mobile:document.documentElement.dataset.l12Mobile,rotated:document.documentElement.dataset.l12Rotated,body:{left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom},board:{left:boardRect.left,top:boardRect.top,right:boardRect.right,bottom:boardRect.bottom},stage:{left:stageRect.left,top:stageRect.top,right:stageRect.right,bottom:stageRect.bottom},overflowX:style.overflowX,overflowY:style.overflowY,scale:getComputedStyle(stage).transform,rail:logicalRect('.left-rail'),railItems:['.mobile-card-inspector-handle-global','.current-disaster-panel','.mobile-current-disaster-value','.session-disaster-panel'].map(logicalRect),regions,playerGroups:{opponent:playerGroups('opponent'),my:playerGroups('my')},geometry,statFont:stat?parseFloat(getComputedStyle(stat).fontSize):null}
     })
     assert.ok(result.body.left>=-1&&result.body.top>=-1&&result.body.right<=size.width+1&&result.body.bottom<=size.height+1,JSON.stringify(result))
     assert.equal(result.mode,'landscape')
@@ -56,10 +58,21 @@ try {
     assert.equal(result.overflowY,'hidden')
     assert.ok(result.stage.left>=result.board.left-1&&result.stage.top>=result.board.top-1&&result.stage.right<=result.board.right+1&&result.stage.bottom<=result.board.bottom+1,JSON.stringify(result))
     if(size.mobile){
+      const inside=(inner,outer,tolerance=1)=>inner&&outer&&inner.left>=outer.left-tolerance&&inner.top>=outer.top-tolerance&&inner.right<=outer.right+tolerance&&inner.bottom<=outer.bottom+tolerance
+      const disjoint=(first,second,tolerance=1)=>first.right<=second.left+tolerance||second.right<=first.left+tolerance||first.bottom<=second.top+tolerance||second.bottom<=first.top+tolerance
       const items=result.railItems.filter(Boolean)
       assert.equal(items.length,4,`mobile disaster rail inventory is incomplete: ${JSON.stringify(result)}`)
       for(const item of items)assert.ok(item.left>=result.rail.left-3&&item.right<=result.rail.right+3&&item.top>=result.stage.top-3&&item.bottom<=result.stage.bottom+3,`mobile disaster rail item escaped its allocation: ${JSON.stringify(result)}`)
       for(let index=1;index<items.length;index++)assert.ok(items[index-1].bottom<=items[index].top+1,`mobile disaster rail items overlap: ${JSON.stringify(result)}`)
+      assert.ok(result.regions.leftRail.right<=result.regions.center.left+1&&result.regions.center.right<=result.regions.rightRail.left+1,`mobile outer columns overlap: ${JSON.stringify(result.regions)}`)
+      assert.ok(inside(result.regions.felt,result.regions.center)&&inside(result.regions.hand,result.regions.center),`felt or hand escaped the center allocation: ${JSON.stringify(result.regions)}`)
+      assert.ok(result.regions.opponentHalf.bottom<=result.regions.myHalf.top+1,`player battlefield halves overlap: ${JSON.stringify(result.regions)}`)
+      assert.ok(result.regions.felt.bottom<=result.regions.hand.top+1,`battlefield overlaps the hand lane: ${JSON.stringify(result.regions)}`)
+      for(const [side,groups] of Object.entries(result.playerGroups)){
+        const half=result.regions[side==='my'?'myHalf':'opponentHalf']
+        assert.ok(groups.every(group=>inside(group,half,2)),`${side} battlefield group escaped its half: ${JSON.stringify({half,groups})}`)
+        for(let first=0;first<groups.length;first++)for(let second=first+1;second<groups.length;second++)assert.ok(disjoint(groups[first],groups[second]),`${side} battlefield groups overlap: ${JSON.stringify(groups)}`)
+      }
     }
     // Body Teleport: a logical fixed button must hit-test at its rotated DOM rect.
     await page.evaluate(()=>{const b=document.createElement('button');b.id='qa-fixed';b.style.cssText='position:fixed;left:120px;top:90px;width:80px;height:40px;z-index:2147483647';b.textContent='点选目标';b.onclick=()=>b.dataset.clicked='yes';document.querySelector('#l12-landscape-teleports').append(b)})
