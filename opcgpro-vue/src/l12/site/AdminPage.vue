@@ -20,6 +20,22 @@ import TournamentCenterPage from './TournamentCenterPage.vue'
 type AdminTab = 'overview' | 'bugs' | 'accounts' | 'username-requests' | 'matches' | 'match-governance' | 'card-analytics' | 'content' | 'rules' | 'alternate-arts' | 'effects' | 'releases' | 'commands' | 'audit' | 'integrity' | 'security' | 'storage' | 'operations' | 'tournaments'
 const route = useRoute()
 const tab = ref<AdminTab>(route.query.section === 'matches' ? 'matches' : 'overview')
+const availableAdminTabs = computed<Array<{ id: AdminTab; label: string }>>(() => [
+  { id: 'overview', label: '后台概览' },
+  ...(hasPermission('admin.accounts.read') ? [{ id: 'accounts' as const, label: '账号与会话' }, { id: 'username-requests' as const, label: '改名审核' }] : []),
+  ...(hasPermission('admin.bugs.read') ? [{ id: 'bugs' as const, label: 'Bug 管理' }] : []),
+  ...(hasPermission('admin.matches.read') ? [{ id: 'matches' as const, label: '对局档案' }] : []),
+  ...(hasPermission('admin.match-governance.read') ? [{ id: 'match-governance' as const, label: '对局治理' }] : []),
+  ...(hasPermission('admin.analytics.read') ? [{ id: 'card-analytics' as const, label: '单卡分析' }] : []),
+  ...(hasPermission('admin.content.read') ? [{ id: 'content' as const, label: '站点内容工作台' }, { id: 'rules' as const, label: '规则中心审核' }, { id: 'alternate-arts' as const, label: '异画管理与权益' }] : []),
+  ...(hasPermission('admin.operations.read') ? [{ id: 'operations' as const, label: '游戏运营配置' }] : []),
+  ...(hasPermission('tournaments.manage') || hasPermission('tournaments.rulings.write') ? [{ id: 'tournaments' as const, label: '赛事管理' }] : []),
+  ...(hasPermission('admin.commands.read') ? [{ id: 'commands' as const, label: '管理操作记录' }] : []),
+  ...(hasPermission('admin.effects.read') ? [{ id: 'effects' as const, label: '卡效原子化' }] : []),
+  ...(hasPermission('releases.read') || hasPermission('releases.runtime.read') ? [{ id: 'releases' as const, label: '软件发布' }] : []),
+  ...(hasPermission('admin.security.read') ? [{ id: 'security' as const, label: '安全状态' }, { id: 'storage' as const, label: '服务器存储' }] : []),
+  ...(hasPermission('admin.audit.read') ? [{ id: 'integrity' as const, label: '排位完整性' }, { id: 'audit' as const, label: '审计日志' }] : []),
+])
 const adminMatchId = ref(typeof route.query.matchId === 'string' ? route.query.matchId : '')
 const bugs = ref<BugReport[]>([])
 const accounts = ref<PlatformAccount[]>([])
@@ -80,6 +96,18 @@ async function loadBugs() { try { bugs.value = await adminApi.bugs({ status: sta
 async function loadAccounts() { try { accounts.value = await adminApi.accounts() } catch (error) { notice.value = error instanceof Error ? error.message : '加载失败' } }
 async function updateBug(item: BugReport) { try { const updated = await adminApi.updateBug(item.id, { status: item.status, priority: item.priority, assignee: item.assignee, adminNotes: item.adminNotes, comment: bugComments[item.id] }); bugs.value = bugs.value.map(bug => bug.id === updated.id ? updated : bug); bugComments[item.id] = ''; notice.value = `${item.id} 已更新并写入审计记录` } catch (error) { notice.value = error instanceof Error ? error.message : '更新失败' } }
 function bugActionLabel(action: string) { return ({ created: '建立反馈', status: '状态变更', priority: '优先级变更', assignee: '负责人变更', notes: '处理摘要变更', comment: '追加处理记录' } as Record<string, string>)[action] || action }
+function switchAdminTab(next: AdminTab) {
+  if (next === 'matches') adminMatchId.value = ''
+  tab.value = next
+  if (next === 'accounts') void loadAccounts()
+  else if (next === 'bugs') void loadBugs()
+  else if (next === 'effects') void loadEffects()
+  else if (next === 'releases') void loadReleases()
+  else if (next === 'commands') void loadControlPlane()
+  else if (next === 'security') void loadSecurity()
+  else if (next === 'audit') void loadAudit()
+}
+function onMobileAdminTabChange(event: Event) { switchAdminTab((event.target as HTMLSelectElement).value as AdminTab) }
 function openAdminMatch(matchId: string) { adminMatchId.value = matchId; tab.value = 'matches' }
 async function setRole(account: PlatformAccount) { try { const result = await adminApi.setRole(account.id, account.role as 'player' | 'admin', account.permissionVersion); notice.value = result.changed ? `${account.username} 的角色已更新为${result.role === 'admin' ? '管理员' : '玩家'}并写入审计` : '角色没有变化'; await loadAccounts() } catch (error) { notice.value = error instanceof Error ? error.message : '更新失败' } }
 async function revokeAccountSessions(account: PlatformAccount) {
@@ -295,21 +323,22 @@ onMounted(() => { void initializeAdminPage() })
     <section v-else-if="!canAccessAdmin" class="denied"><b>需要管理员权限</b><span>请先在“我的”页面登录管理员账号。</span></section>
     <template v-else>
       <div class="admin-shell">
+      <label class="admin-mobile-navigation"><span>后台模块</span><select :value="tab" aria-label="选择后台模块" @change="onMobileAdminTabChange"><option v-for="item in availableAdminTabs" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
       <aside class="admin-sidebar">
-        <nav><small>总览</small><button :class="{ active: tab === 'overview' }" @click="tab = 'overview'">▦ 后台概览</button></nav>
-        <nav><small>用户与反馈</small><button v-if="hasPermission('admin.accounts.read')" :class="{ active: tab === 'accounts' }" @click="tab = 'accounts'; loadAccounts()">♙ 账号与会话</button><button v-if="hasPermission('admin.accounts.read')" :class="{ active: tab === 'username-requests' }" @click="tab = 'username-requests'">✎ 改名审核</button><button v-if="hasPermission('admin.bugs.read')" :class="{ active: tab === 'bugs' }" @click="tab = 'bugs'; loadBugs()">⚑ Bug 管理</button></nav>
-        <nav><small>对局与数据</small><button v-if="hasPermission('admin.matches.read')" :class="{ active: tab === 'matches' }" @click="adminMatchId = ''; tab = 'matches'">▣ 对局档案</button><button v-if="hasPermission('admin.match-governance.read')" :class="{ active: tab === 'match-governance' }" @click="tab = 'match-governance'">⚖ 对局治理</button><button v-if="hasPermission('admin.analytics.read')" :class="{ active: tab === 'card-analytics' }" @click="tab = 'card-analytics'">◈ 单卡分析</button></nav>
-        <nav><small>站点内容</small><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'content' }" @click="tab = 'content'">▤ 站点内容工作台</button><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'rules' }" @click="tab = 'rules'">§ 规则中心审核</button></nav>
-        <nav><small>收藏与权益</small><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'alternate-arts' }" @click="tab = 'alternate-arts'">✦ 异画管理与权益</button></nav>
-        <nav><small>游戏与赛事运营</small><button v-if="hasPermission('admin.operations.read')" :class="{ active: tab === 'operations' }" @click="tab = 'operations'">⚙ 游戏运营配置</button><button v-if="hasPermission('tournaments.manage') || hasPermission('tournaments.rulings.write')" :class="{ active: tab === 'tournaments' }" @click="tab = 'tournaments'">♜ 赛事管理</button><button v-if="hasPermission('admin.commands.read')" :class="{ active: tab === 'commands' }" @click="tab = 'commands'; loadControlPlane()">⌁ 管理操作记录</button></nav>
-        <nav><small>卡牌与规则</small><button v-if="hasPermission('admin.effects.read')" :class="{ active: tab === 'effects' }" @click="tab = 'effects'; loadEffects()">◇ 卡效原子化</button></nav>
-        <nav><small>系统与治理</small><button v-if="hasPermission('releases.read') || hasPermission('releases.runtime.read')" :class="{ active: tab === 'releases' }" @click="tab = 'releases'; loadReleases()">⇧ 软件发布</button><button v-if="hasPermission('admin.security.read')" :class="{ active: tab === 'security' }" @click="tab = 'security'; loadSecurity()">◆ 安全状态</button><button v-if="hasPermission('admin.security.read')" :class="{ active: tab === 'storage' }" @click="tab = 'storage'">▤ 服务器存储</button><button v-if="hasPermission('admin.audit.read')" :class="{ active: tab === 'integrity' }" @click="tab = 'integrity'">⚖ 排位完整性</button><button v-if="hasPermission('admin.audit.read')" :class="{ active: tab === 'audit' }" @click="tab = 'audit'; loadAudit()">≡ 审计日志</button></nav>
+        <nav><small>总览</small><button :class="{ active: tab === 'overview' }" @click="switchAdminTab('overview')">▦ 后台概览</button></nav>
+        <nav><small>用户与反馈</small><button v-if="hasPermission('admin.accounts.read')" :class="{ active: tab === 'accounts' }" @click="switchAdminTab('accounts')">♙ 账号与会话</button><button v-if="hasPermission('admin.accounts.read')" :class="{ active: tab === 'username-requests' }" @click="switchAdminTab('username-requests')">✎ 改名审核</button><button v-if="hasPermission('admin.bugs.read')" :class="{ active: tab === 'bugs' }" @click="switchAdminTab('bugs')">⚑ Bug 管理</button></nav>
+        <nav><small>对局与数据</small><button v-if="hasPermission('admin.matches.read')" :class="{ active: tab === 'matches' }" @click="switchAdminTab('matches')">▣ 对局档案</button><button v-if="hasPermission('admin.match-governance.read')" :class="{ active: tab === 'match-governance' }" @click="switchAdminTab('match-governance')">⚖ 对局治理</button><button v-if="hasPermission('admin.analytics.read')" :class="{ active: tab === 'card-analytics' }" @click="switchAdminTab('card-analytics')">◈ 单卡分析</button></nav>
+        <nav><small>站点内容</small><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'content' }" @click="switchAdminTab('content')">▤ 站点内容工作台</button><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'rules' }" @click="switchAdminTab('rules')">§ 规则中心审核</button></nav>
+        <nav><small>收藏与权益</small><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'alternate-arts' }" @click="switchAdminTab('alternate-arts')">✦ 异画管理与权益</button></nav>
+        <nav><small>游戏与赛事运营</small><button v-if="hasPermission('admin.operations.read')" :class="{ active: tab === 'operations' }" @click="switchAdminTab('operations')">⚙ 游戏运营配置</button><button v-if="hasPermission('tournaments.manage') || hasPermission('tournaments.rulings.write')" :class="{ active: tab === 'tournaments' }" @click="switchAdminTab('tournaments')">♜ 赛事管理</button><button v-if="hasPermission('admin.commands.read')" :class="{ active: tab === 'commands' }" @click="switchAdminTab('commands')">⌁ 管理操作记录</button></nav>
+        <nav><small>卡牌与规则</small><button v-if="hasPermission('admin.effects.read')" :class="{ active: tab === 'effects' }" @click="switchAdminTab('effects')">◇ 卡效原子化</button></nav>
+        <nav><small>系统与治理</small><button v-if="hasPermission('releases.read') || hasPermission('releases.runtime.read')" :class="{ active: tab === 'releases' }" @click="switchAdminTab('releases')">⇧ 软件发布</button><button v-if="hasPermission('admin.security.read')" :class="{ active: tab === 'security' }" @click="switchAdminTab('security')">◆ 安全状态</button><button v-if="hasPermission('admin.security.read')" :class="{ active: tab === 'storage' }" @click="switchAdminTab('storage')">▤ 服务器存储</button><button v-if="hasPermission('admin.audit.read')" :class="{ active: tab === 'integrity' }" @click="switchAdminTab('integrity')">⚖ 排位完整性</button><button v-if="hasPermission('admin.audit.read')" :class="{ active: tab === 'audit' }" @click="switchAdminTab('audit')">≡ 审计日志</button></nav>
       </aside>
       <main class="admin-content">
       <section v-if="tab === 'overview'" class="overview-grid">
         <header class="panel"><div><small>CONTROL CENTER</small><h2>运营总览</h2><p>这里只显示摘要和入口；配置编辑只在对应模块内进行。</p></div></header>
-        <button class="overview-card" @click="tab='bugs'; loadBugs()"><small>用户与反馈</small><b>{{ bugs.filter(item => item.status !== 'resolved' && item.status !== 'closed').length }}</b><span>未闭环 Bug</span></button>
-        <button class="overview-card" @click="tab='accounts'; loadAccounts()"><small>账号与会话</small><b>{{ accounts.length }}</b><span>平台账号</span></button>
+        <button class="overview-card" @click="switchAdminTab('bugs')"><small>用户与反馈</small><b>{{ bugs.filter(item => item.status !== 'resolved' && item.status !== 'closed').length }}</b><span>未闭环 Bug</span></button>
+        <button class="overview-card" @click="switchAdminTab('accounts')"><small>账号与会话</small><b>{{ accounts.length }}</b><span>平台账号</span></button>
         <button v-if="hasPermission('admin.matches.read')" class="overview-card" @click="adminMatchId=''; tab='matches'"><small>对局与数据</small><b>档案</b><span>最近对局、玩家与构筑联查</span></button>
         <button v-if="hasPermission('admin.match-governance.read')" class="overview-card" @click="tab='match-governance'"><small>对局治理</small><b>双账本</b><span>平局申请与玩家举报独立处置</span></button>
         <button v-if="hasPermission('admin.analytics.read')" class="overview-card" @click="tab='card-analytics'"><small>平衡分析</small><b>单卡</b><span>入组、使用、结算与胜负关联</span></button>
@@ -345,9 +374,9 @@ onMounted(() => { void initializeAdminPage() })
         <div class="account-row head"><b>用户名 / 状态</b><span>建立时间</span><span>长期身份</span><span>有效权限</span><span>操作</span></div>
         <PagedCollection :items="activeAccounts" v-slot="{ items: paged30632 }"><div v-for="account in paged30632" :key="account.id" class="account-row">
           <b>{{ account.username }}<small :data-disabled="account.disabled">{{ account.disabled ? '已禁用' : '正常' }}<template v-if="account.mustChangeUsername"> · 待修改用户名</template><template v-if="account.mustChangePassword"> · 必须修改密码</template><template v-if="account.emailVerified"> · 邮箱 {{ account.emailMasked }}</template><template v-if="account.disabledReason"> · {{ account.disabledReason }}</template></small></b>
-          <span>{{ new Date(account.createdAt).toLocaleString() }}</span>
-          <select v-model="account.role" :disabled="account.username === 'Admin'"><option value="player">玩家</option><option value="admin">管理员</option></select>
-          <small :title="account.permissions?.join('\n')">{{ account.permissions?.length ?? 0 }} 项</small>
+          <span class="account-created" data-label="建立时间">{{ new Date(account.createdAt).toLocaleString() }}</span>
+          <label class="account-role"><span>长期身份</span><select v-model="account.role" :disabled="account.username === 'Admin'"><option value="player">玩家</option><option value="admin">管理员</option></select></label>
+          <small class="account-permissions" data-label="有效权限" :title="account.permissions?.join('\n')">{{ account.permissions?.length ?? 0 }} 项</small>
           <span class="account-actions"><input v-if="hasPermission('admin.accounts.status.write')" v-model="accountStatusReasons[account.id]" placeholder="状态 / 重置 / 删除理由"/><button :disabled="account.username === 'Admin'" @click="setRole(account)">保存身份</button><button v-if="hasPermission('admin.accounts.status.write')" class="status" :data-disabled="account.disabled" :disabled="account.username === 'Admin' || account.id === platformState.account?.id" @click="setAccountStatus(account)">{{ account.disabled ? '启用账号' : '禁用账号' }}</button><button class="revoke" @click="revokeAccountSessions(account)">撤销会话</button><button v-if="hasPermission('admin.accounts.status.write')" class="reset" :disabled="account.username === 'Admin' || account.id === platformState.account?.id" @click="resetAccountPassword(account)">重置密码</button><button v-if="hasPermission('admin.accounts.status.write')" class="delete" :disabled="account.username === 'Admin' || account.id === platformState.account?.id" @click="deleteAccount(account)">删除与清理</button></span>
         </div></PagedCollection>
         <div v-if="!activeAccounts.length" class="empty">没有符合条件的有效账号</div>
@@ -509,5 +538,59 @@ onMounted(() => { void initializeAdminPage() })
 .release-workbench{display:grid;grid-template-columns:1fr 1fr;gap:12px}.release-compose{grid-column:1/-1}.release-form{display:grid;grid-template-columns:180px minmax(260px,1fr) minmax(260px,1fr) auto;align-items:end;gap:8px;margin-top:14px}.release-form label{display:flex;min-width:0;flex-direction:column;gap:5px;color:#829096;font-size:14px;font-weight:900}.release-form select,.release-form input{box-sizing:border-box;width:100%}.release-actions{display:flex;gap:6px}.release-actions .confirm{border-color:#2f785e;background:#0d251c;color:#7fe0b9}.release-actions .reject{border-color:#84424b;background:#291116;color:#ef8994}.release-preview{margin-top:12px;padding:12px;border:1px solid #6b5a2d;background:#1d180c}.release-preview>b,.release-preview>span{display:block}.release-preview ol{display:flex;flex-wrap:wrap;gap:18px;margin:9px 0 0;padding-left:18px;color:#bfc7c6;font-size:14px}.release-environments{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.release-environments article{display:flex;flex-direction:column;gap:5px;padding:12px;border:1px solid #3d4a51;background:#0a1117}.release-environments article[data-state="healthy"]{border-color:#2f785e}.release-environments article[data-state="degraded"]{border-color:#84424b}.release-environments code,.release-artifacts code,.release-runs code{color:#dfc36f;overflow-wrap:anywhere}.release-environments span,.release-environments em{color:#879398;font-size:14px;font-style:normal}.release-artifacts article,.release-runs article{display:grid;grid-template-columns:minmax(230px,1fr) minmax(250px,1fr) minmax(260px,1.2fr);align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #303c43}.release-artifacts article span,.release-runs article>span:first-child{display:flex;min-width:0;flex-direction:column;gap:4px}.release-artifacts small,.release-runs small{letter-spacing:0!important}.release-checks{display:flex;flex-wrap:wrap;gap:4px}.release-checks em{padding:4px 6px;border:1px solid #82434c;background:#291116;color:#ef8994;font-size:14px;font-style:normal}.release-checks em[data-ok="true"]{border-color:#2f785e;background:#0d251c;color:#7fe0b9}
 @media(max-width:1300px){.admin-shell{grid-template-columns:190px minmax(0,1fr)}.overview-grid{grid-template-columns:repeat(2,1fr)}.effects-layout,.command-workbench,.release-workbench,.security-workbench{grid-template-columns:1fr}.coverage-strip{grid-template-columns:repeat(3,1fr)}.release-compose,.security-summary,.security-archive{grid-column:auto}.release-form{grid-template-columns:1fr 1fr}.account-actions{grid-template-columns:1fr 1fr}}@media(max-width:850px){.admin-shell{grid-template-columns:1fr}.admin-sidebar{position:static;grid-template-columns:1fr 1fr}.admin-sidebar nav{align-content:start;border-right:1px solid #26323a;border-bottom:0;padding:7px}.admin-sidebar nav:nth-child(even){border-right:0}.overview-grid{grid-template-columns:1fr}.bug-row{grid-template-columns:1fr}.account-row{grid-template-columns:1fr}.coverage-strip,.release-environments,.security-metrics{grid-template-columns:1fr 1fr}.effect-filters{grid-template-columns:1fr 1fr}.effect-table-head,.effect-row{grid-template-columns:minmax(180px,1fr) 110px}.effect-table-head span:last-child,.effect-row>.status-pill{display:none}.approval-row,.command-row,.content-preview>span,.release-form,.release-artifacts article,.release-runs article,.archive-form,.archive-row{grid-template-columns:1fr}.audit-filters input{width:100%}}@media(max-width:560px){.admin-sidebar{grid-template-columns:1fr}.admin-sidebar nav{border-right:0;border-bottom:1px solid #26323a}.coverage-strip,.release-environments,.security-metrics,.effect-segments{grid-template-columns:1fr}}
 .account-panel>header{gap:18px}.account-toolbar{display:flex;align-items:center;justify-content:flex-end;gap:7px}.account-toolbar input{box-sizing:border-box;width:min(300px,32vw)}.deleted-accounts-trigger{border-color:#796330!important;background:#241d0c!important;color:#e4c96f!important}.deleted-accounts-overlay{position:fixed;z-index:4100;inset:0;display:grid;place-items:center;padding:20px;background:rgba(1,4,6,.82);backdrop-filter:blur(6px)}.deleted-accounts-dialog{box-sizing:border-box;width:min(1040px,calc(100vw - 32px));max-height:calc(100vh - 40px);overflow:hidden;border:1px solid #65737a;background:#0b1218;box-shadow:0 28px 80px #000}.deleted-accounts-dialog>header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:18px;border-bottom:1px solid #35424a}.deleted-accounts-dialog h2{margin:4px 0}.deleted-accounts-dialog p{margin:0}.deleted-accounts-dialog>header>button{flex:0 0 34px;width:34px;height:34px;padding:0;border:1px solid #65737a;background:#111a20;color:#fff;font-size:20px}.deleted-account-list{max-height:calc(100vh - 180px);overflow:auto;padding:8px 18px 18px}.deleted-account-list article{display:grid;grid-template-columns:minmax(190px,1.2fr) repeat(4,minmax(140px,1fr));align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid #2e3a41}.deleted-account-list article>span{display:flex;min-width:0;flex-direction:column;gap:4px}.deleted-account-list code{overflow:hidden;color:#d8bd6a;text-overflow:ellipsis;white-space:nowrap}.deleted-account-list small{color:#77858b!important;letter-spacing:0!important}.deleted-account-list b{overflow-wrap:anywhere;font-size:14px}
+.account-role{display:contents}.account-role>span{display:none}
 @media(max-width:850px){.account-panel>header,.account-toolbar{align-items:stretch;flex-direction:column}.account-toolbar input{width:100%}.deleted-account-list article{grid-template-columns:1fr 1fr}.command-workbench{grid-template-columns:1fr}}@media(max-width:560px){.deleted-account-list article{grid-template-columns:1fr}}
+.admin-mobile-navigation{display:none}
+@media(max-width:850px){
+  .admin-page{overflow-x:clip;padding:22px clamp(12px,3.5vw,24px) 56px}
+  .admin-page>header{gap:10px}
+  .admin-page>header>div{min-width:0}
+  .admin-shell{gap:10px;margin-top:14px}
+  .admin-mobile-navigation{position:sticky;z-index:30;top:max(8px,env(safe-area-inset-top));display:grid;grid-column:1/-1;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:10px;box-sizing:border-box;width:100%;padding:9px 10px;border:1px solid #56636a;background:rgba(11,18,24,.96);box-shadow:0 10px 28px rgba(0,0,0,.36);backdrop-filter:blur(10px)}
+  .admin-mobile-navigation>span{color:#d9bd69;font-size:12px;font-weight:900;white-space:nowrap}
+  .admin-mobile-navigation select{box-sizing:border-box;min-width:0;width:100%;padding:9px 34px 9px 10px;border:1px solid #596870;background:#080e13;color:#fff;font:800 13px 'Microsoft YaHei','微软雅黑',sans-serif}
+  .admin-sidebar{display:none}
+  .admin-content{overflow:visible}
+  .panel,.denied{padding:14px}
+  .panel>header{align-items:stretch;flex-direction:column;gap:9px}
+  .panel>header>button,.panel>header>select{align-self:flex-start}
+  .effect-filters{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .effect-filters input{grid-column:1/-1}
+  .effect-filters input,.effect-filters select,.effect-filters button{width:100%}
+  .ability-review{grid-template-columns:1fr 1fr}
+  .ability-review textarea{grid-column:1/-1}
+  .news-editor-row{grid-template-columns:1fr}
+  .news-editor footer{align-items:stretch;flex-wrap:wrap}
+  .news-editor .delete{margin-left:0}
+  .presentation-heading{align-items:stretch;flex-direction:column}
+  .presentation-heading>em{align-self:flex-start}
+  .release-actions{flex-wrap:wrap}
+}
+@media(max-width:560px){
+  .admin-page{padding-inline:max(10px,env(safe-area-inset-left));padding-right:max(10px,env(safe-area-inset-right))}
+  .admin-page>header{align-items:stretch;flex-direction:column}
+  .admin-page>header a{align-self:flex-start}
+  .admin-page h1{font-size:24px}
+  .overview-card{min-height:104px;padding:14px}
+  .coverage-strip,.release-environments,.security-metrics,.effect-filters,.ability-review{grid-template-columns:1fr}
+  .effect-filters input{grid-column:auto}
+  .account-actions{grid-template-columns:1fr}
+  .account-actions input,.account-actions button{box-sizing:border-box;width:100%}
+  .account-row.head{display:none}
+  .account-row:not(.head){gap:9px;margin-top:9px;border:1px solid #303c43;background:#0a1117}
+  .account-created,.account-permissions{display:grid;grid-template-columns:78px minmax(0,1fr);align-items:center;gap:8px}
+  .account-created::before,.account-permissions::before{content:attr(data-label);color:#718087;font-size:12px;font-weight:900}
+  .account-role{display:grid;grid-template-columns:78px minmax(0,1fr);align-items:center;gap:8px}
+  .account-role>span{display:block;color:#718087;font-size:12px;font-weight:900}
+  .account-role select{box-sizing:border-box;width:100%}
+  .audit-filters{display:grid;grid-template-columns:1fr;width:100%}
+  .audit-filters select,.audit-filters input,.audit-filters button{box-sizing:border-box;width:100%}
+  .presentation-scene dl{grid-template-columns:1fr}
+  .presentation-scene footer{display:grid;grid-template-columns:1fr 1fr}
+  .presentation-scene footer button{width:100%}
+  .news-editor>header{align-items:stretch;flex-direction:column;gap:8px}
+  .news-editor footer{display:grid;grid-template-columns:1fr}
+  .release-actions{display:grid;grid-template-columns:1fr}
+  .release-actions button{width:100%}
+}
 </style>
