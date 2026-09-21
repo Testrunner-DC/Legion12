@@ -8,7 +8,7 @@ const { chromium } = createRequire(import.meta.url)(process.env.L12_PLAYWRIGHT |
 const source = fs.readFileSync(path.join(root, 'scripts/verify-batch253-visual.mjs'), 'utf8')
 let entry = source.slice(source.indexOf('const entry = `') + 15, source.indexOf('\n`', source.indexOf('const entry = `')))
 entry = `import {ref} from 'vue';import Editor from '/src/l12/L12DeckEditor.vue';import {useLandscapeViewport,viewportRect} from '/src/l12/mobileViewport.ts';import '/src/l12/mobileViewport.css';window.qaRect=viewportRect;const qaEnabled=ref(true);window.qaExit=()=>qaEnabled.value=false;\n` + entry.replace('createApp({render:', 'createApp({setup(){useLandscapeViewport(qaEnabled)},render:').replace('()=>isPicker?', "()=>params.has('editor')?h(Editor):isPicker?")
-const server = await createServer({ root, server: { host: '127.0.0.1', port: 0 }, plugins: [{ name: 'mobile-fixture', resolveId(id) { if(id==='/__mobile__.js')return id }, load(id) { if(id==='/__mobile__.js')return entry }, configureServer(s) { s.middlewares.use((req,res,next)=>{if(req.url?.startsWith('/__mobile__')&&!req.url.includes('.js')){res.setHeader('Content-Type','text/html');res.end('<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><div id="app"></div><script type="module" src="/__mobile__.js"></script>');return}next()}) } }] })
+const server = await createServer({ root, server: { host: '127.0.0.1', port: 0 }, plugins: [{ name: 'mobile-fixture', resolveId(id) { if(id==='/__mobile__.js')return id }, load(id) { if(id==='/__mobile__.js')return entry }, configureServer(s) { s.middlewares.use((req,res,next)=>{if(req.url?.startsWith('/__mobile__')&&!req.url.includes('.js')){res.setHeader('Content-Type','text/html');res.end('<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><div id="l12-landscape-teleports"></div><div id="app" class="l12-landscape-surface"></div><script type="module" src="/__mobile__.js"></script>');return}next()}) } }] })
 entry=entry.replace('window.__sentCommands=[]',`if(params.has('response'))l12State.game.prompts=[{promptId:'response-target-qa',playerIndex:0,kind:'response-target',text:'选择要响应的效果',validChoices:['stack-a','stack-b'],minChoose:1,maxChoose:1,data:{'stack-a':'同名来源：第一段\\n公开目标：军团甲','stack-b':'同名来源：第二段\\n公开目标：军团乙','stack-a:cardId':legions[0].id,'stack-b:cardId':legions[0].id,'stack-a:name':'同名来源','stack-b:name':'同名来源','stack-a:effect':'完整来源效果','stack-b:effect':'完整来源效果'},choiceLabels:{},createdRevision:1,controller:0}];window.__sentCommands=[]`)
 let browser
 entry=entry.replace('window.__sentCommands=[]', `if(params.has('response')){const p=l12State.game.prompts[0];l12State.game.players[0].field[0][1]={...l12State.game.players[0].field[0][0],instanceId:'same-name-second'};p.data.responseTargetIds=JSON.stringify(['0unit','same-name-second']);p.data['stack-a:responseTargetIds']=JSON.stringify(['0unit']);p.data['stack-b:responseTargetIds']=JSON.stringify(['same-name-second']);}window.__sentCommands=[]`)
@@ -23,22 +23,36 @@ try {
   const results=[]
   const out=path.resolve(root,'../artifacts/mobile-viewport')
   fs.mkdirSync(out,{recursive:true})
-  for (const size of [{width:1280,height:720},{width:1280,height:480},{width:390,height:844},{width:375,height:667},{width:844,height:390},{width:740,height:360}]) {
+  for (const size of [
+    {width:1280,height:720,mobile:false,rotated:false},
+    {width:1280,height:480,mobile:false,rotated:false},
+    {width:1366,height:768,mobile:false,rotated:false},
+    {width:1366,height:1024,mobile:true,rotated:false},
+    {width:1024,height:768,mobile:true,rotated:false},
+    {width:768,height:1024,mobile:true,rotated:true},
+    {width:800,height:800,mobile:false,rotated:false},
+    {width:390,height:844,mobile:true,rotated:true},
+    {width:375,height:667,mobile:true,rotated:true},
+    {width:844,height:390,mobile:true,rotated:false},
+    {width:740,height:360,mobile:true,rotated:false},
+  ]) {
     await page.setViewportSize(size)
     await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__mobile__`)
     await page.locator('.board-stage').waitFor()
     await page.waitForTimeout(150)
     const result=await page.evaluate(()=>{
       const board=document.querySelector('.board-viewport'),stage=document.querySelector('.board-stage'),rect=document.body.getBoundingClientRect(),boardRect=window.qaRect(board),stageRect=window.qaRect(stage),style=getComputedStyle(board)
-      return {mode:document.documentElement.dataset.l12Viewport,body:{left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom},board:{left:boardRect.left,top:boardRect.top,right:boardRect.right,bottom:boardRect.bottom},stage:{left:stageRect.left,top:stageRect.top,right:stageRect.right,bottom:stageRect.bottom},overflowX:style.overflowX,overflowY:style.overflowY,scale:getComputedStyle(stage).transform}
+      return {mode:document.documentElement.dataset.l12Viewport,mobile:document.documentElement.dataset.l12Mobile,rotated:document.documentElement.dataset.l12Rotated,body:{left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom},board:{left:boardRect.left,top:boardRect.top,right:boardRect.right,bottom:boardRect.bottom},stage:{left:stageRect.left,top:stageRect.top,right:stageRect.right,bottom:stageRect.bottom},overflowX:style.overflowX,overflowY:style.overflowY,scale:getComputedStyle(stage).transform}
     })
     assert.ok(result.body.left>=-1&&result.body.top>=-1&&result.body.right<=size.width+1&&result.body.bottom<=size.height+1,JSON.stringify(result))
-    assert.equal(result.mode,size.width>=size.height?'landscape':'normal')
+    assert.equal(result.mode,'landscape')
+    assert.equal(result.rotated,String(size.rotated))
+    assert.equal(result.mobile,String(size.mobile))
     assert.equal(result.overflowX,'hidden')
     assert.equal(result.overflowY,'hidden')
     assert.ok(result.stage.left>=result.board.left-1&&result.stage.top>=result.board.top-1&&result.stage.right<=result.board.right+1&&result.stage.bottom<=result.board.bottom+1,JSON.stringify(result))
     // Body Teleport: a logical fixed button must hit-test at its rotated DOM rect.
-    await page.evaluate(()=>{const b=document.createElement('button');b.id='qa-fixed';b.style.cssText='position:fixed;left:120px;top:90px;width:80px;height:40px;z-index:2147483647';b.textContent='点选目标';b.onclick=()=>b.dataset.clicked='yes';document.body.append(b)})
+    await page.evaluate(()=>{const b=document.createElement('button');b.id='qa-fixed';b.style.cssText='position:fixed;left:120px;top:90px;width:80px;height:40px;z-index:2147483647';b.textContent='点选目标';b.onclick=()=>b.dataset.clicked='yes';document.querySelector('#l12-landscape-teleports').append(b)})
     await page.locator('#qa-fixed').click()
     assert.equal(await page.locator('#qa-fixed').getAttribute('data-clicked'),'yes')
     const logical=await page.locator('#qa-fixed').evaluate(el=>{const r=window.qaRect(el);return{x:r.x,y:r.y,w:r.width,h:r.height}})
@@ -46,17 +60,20 @@ try {
     if(size.width<size.height){
       await page.evaluate(()=>{const input=document.createElement('input');input.id='qa-input';document.body.append(input);input.focus()})
       await page.waitForTimeout(50)
-      assert.equal(await page.locator('html').getAttribute('data-l12-viewport'),'normal')
+      assert.equal(await page.locator('html').getAttribute('data-l12-rotated'),'true')
       await page.locator('#qa-input').fill('键盘输入测试')
       await page.locator('#qa-input').evaluate(el=>el.blur())
-      await page.waitForFunction(()=>document.documentElement.dataset.l12Viewport==='normal')
-      assert.equal(await page.locator('html').getAttribute('data-l12-viewport'),'normal')
+      await page.waitForFunction(()=>document.documentElement.dataset.l12Rotated==='true')
+      assert.equal(await page.locator('html').getAttribute('data-l12-viewport'),'landscape')
     }
     results.push({size,...result,logical})
     await page.locator('#qa-fixed').evaluate(el=>el.remove())
-    await page.getByRole('button',{name:'打开对局设置',exact:true}).click()
-    await page.locator('.l12-settings-modal').waitFor()
-    await page.locator('.l12-settings-modal header button').click()
+    const settingsButton=page.getByRole('button',{name:'打开对局设置',exact:true})
+    if(await settingsButton.count()) {
+      await settingsButton.click()
+      await page.locator('.l12-settings-modal').waitFor()
+      await page.locator('.l12-settings-modal header button').click()
+    }
     await page.screenshot({path:path.join(out,`battle-${size.width}-${size.height}.png`)})
   }
   const actionPage = await browser.newPage()
@@ -87,9 +104,13 @@ try {
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__mobile__?effect=cost2`)
   await page.locator('.prompt-panel').waitFor()
   const prompt=await page.locator('.l12-prompt-overlay').evaluate(el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}})
-  assert.deepEqual(prompt,{x:0,y:0,w:390,h:844})
+  const logicalPrompt=await page.locator('.l12-prompt-overlay').evaluate(el=>{const r=window.qaRect(el);return{x:r.x,y:r.y,w:r.width,h:r.height}})
+  assert.deepEqual(logicalPrompt,{x:0,y:0,w:844,h:390})
   await page.locator('.prompt-minimize').first().click()
-  await page.locator('.prompt-minimized-bar button').first().click()
+  const minimizedRestore=page.locator('.prompt-minimized-bar button').first()
+  const minimizedRect=await minimizedRestore.evaluate(el=>{const r=el.getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height}})
+  assert.ok(minimizedRect.x>=0&&minimizedRect.y>=0&&minimizedRect.x+minimizedRect.w<=390&&minimizedRect.y+minimizedRect.h<=844,JSON.stringify(minimizedRect))
+  await minimizedRestore.click()
   await page.locator('.prompt-panel').waitFor()
   await page.screenshot({path:path.join(out,'portrait-prompt.png')})
   await page.getByRole('button',{name:'消耗1士气',exact:true}).click()
@@ -116,13 +137,22 @@ try {
   assert.ok(await page.evaluate(()=>JSON.stringify(window.__sentCommands).includes('stack-b')))
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__mobile__?editor=1`)
   await page.locator('.deck-builder-grid').waitFor()
-  assert.equal(await page.locator('html').getAttribute('data-l12-viewport'),'normal')
-  assert.equal(await page.locator('.deck-builder-grid').evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length),4)
+  assert.equal(await page.locator('html').getAttribute('data-l12-viewport'),'landscape')
+  assert.equal(await page.locator('html').getAttribute('data-l12-rotated'),'true')
+  assert.equal(await page.locator('.deck-builder-grid').evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length),3)
+  assert.equal(await page.locator('.deck-builder-shell').evaluate(el=>el.scrollWidth<=el.clientWidth+1),true)
   await page.locator('.deck-builder-topbar input').fill('移动端牌库输入')
   assert.equal(await page.locator('.deck-builder-topbar input').inputValue(),'移动端牌库输入')
   await page.locator('.deck-builder-topbar input').evaluate(el=>el.blur())
-  await page.waitForFunction(()=>document.documentElement.dataset.l12Viewport==='normal')
-  assert.equal(await page.locator('html').getAttribute('data-l12-viewport'),'normal')
+  await page.waitForFunction(()=>document.documentElement.dataset.l12Rotated==='true')
+  assert.equal(await page.locator('html').getAttribute('data-l12-viewport'),'landscape')
+  await page.setViewportSize({width:844,height:390})
+  await page.waitForFunction(()=>document.documentElement.dataset.l12Rotated==='false')
+  assert.equal(await page.locator('.deck-builder-topbar input').inputValue(),'移动端牌库输入')
+  assert.equal(await page.locator('html').getAttribute('data-l12-mobile'),'true')
+  await page.setViewportSize({width:390,height:844})
+  await page.waitForFunction(()=>document.documentElement.dataset.l12Rotated==='true')
+  assert.equal(await page.locator('.deck-builder-topbar input').inputValue(),'移动端牌库输入')
   await page.screenshot({path:path.join(out,'portrait-editor.png')})
   await page.evaluate(()=>window.qaExit())
   await page.waitForTimeout(50)
@@ -130,5 +160,5 @@ try {
   assert.equal(await page.locator('body').evaluate(el=>getComputedStyle(el).transform),'none')
   assert.deepEqual(errors,[])
   console.log(JSON.stringify(results,null,2))
-  console.log('Mobile viewport: 6 desktop/mobile viewports fit the whole battle board, body Teleport hit testing, inverse coordinates, prompt minimize/restore, deck landscape, input fallback passed; screenshots: '+out)
+  console.log('Viewport canvas: 11 viewport profiles fit the whole battle board, logical Teleport hit testing, inverse coordinates, prompt minimize/restore, deck landscape, portrait/landscape transition and state retention passed; screenshots: '+out)
 } finally { await browser?.close();await server.close() }

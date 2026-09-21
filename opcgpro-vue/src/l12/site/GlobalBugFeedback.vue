@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { captureBugClientDiagnostic, l12State } from '@/l12/net'
 import { platformState, submitBug } from '@/l12/platform'
+import { landscapeTeleportTarget } from '@/l12/mobileViewport'
 
 const route = useRoute()
 const open = ref(false)
@@ -40,7 +41,7 @@ async function submit() {
 
 <template>
   <button class="bug-feedback-trigger" type="button" @click="open = true">反馈 Bug</button>
-  <Teleport to="body">
+  <Teleport :to="landscapeTeleportTarget()">
     <div v-if="open" class="bug-feedback-mask" @click.self="open = false">
       <section class="bug-feedback-dialog" role="dialog" aria-modal="true" aria-label="反馈 Bug">
         <header><div><small>BUG REPORT</small><h2>反馈 Bug</h2></div><button @click="open = false">×</button></header>

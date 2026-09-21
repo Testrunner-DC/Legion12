@@ -1,8 +1,56 @@
 import { onBeforeUnmount, onMounted, watch, type Ref } from 'vue'
 
-let layout = { width: 0, height: 0, left: 0, top: 0, rotated: false, active: false }
+type ViewportMode = {
+  rotated: boolean
+  mobile: boolean
+  width: number
+  height: number
+}
 
-// Coordinates used by body Teleports must be in the same space as their fixed host.
+let layout = {
+  width: 0,
+  height: 0,
+  physicalWidth: 0,
+  physicalHeight: 0,
+  left: 0,
+  top: 0,
+  rotated: false,
+  mobile: false,
+  active: false,
+}
+
+function compactLandscape(width: number, height: number, relaxed: boolean) {
+  const ratio = width / Math.max(1, height)
+  const phone = width <= (relaxed ? 1180 : 1120)
+    && height <= (relaxed ? 860 : 820)
+    && ratio >= (relaxed ? 1.18 : 1.24)
+  const tablet = width <= (relaxed ? 1400 : 1366)
+    && height >= 700
+    && height <= (relaxed ? 1120 : 1060)
+    && ratio >= (relaxed ? 1.14 : 1.18)
+    && ratio <= (relaxed ? 1.56 : 1.50)
+  return phone || tablet
+}
+
+/** Resolve a logical canvas from the actual visual viewport only. */
+export function resolveViewportMode(
+  physicalWidth: number,
+  physicalHeight: number,
+  previous: Pick<ViewportMode, 'rotated' | 'mobile'> = { rotated: false, mobile: false },
+): ViewportMode {
+  const portraitRatio = physicalHeight / Math.max(1, physicalWidth)
+  const rotatedWidth = physicalHeight
+  const rotatedHeight = physicalWidth
+  const rotatedCandidate = compactLandscape(rotatedWidth, rotatedHeight, previous.rotated || previous.mobile)
+  const rotated = rotatedCandidate && portraitRatio >= (previous.rotated ? 1.05 : 1.12)
+  const width = rotated ? rotatedWidth : physicalWidth
+  const height = rotated ? rotatedHeight : physicalHeight
+  const mobile = compactLandscape(width, height, previous.mobile)
+  return { rotated, mobile, width, height }
+}
+
+// Coordinates used by transformed canvas Teleports must be expressed in the
+// same logical landscape coordinate space as the route canvas.
 export function viewportRect(element: Element): DOMRect {
   const rect = element.getBoundingClientRect()
   if (!layout.active) return rect
@@ -17,78 +65,104 @@ export function visibleViewport() {
   return { width: viewport?.width ?? window.innerWidth, height: viewport?.height ?? window.innerHeight }
 }
 
-// A battle layout is a device capability, not a transient viewport-height
-// measurement. Browser chrome must not turn a handset into a desktop board.
-export function isMobileDeviceExperience() {
+export function isMobileViewportExperience() {
   if (typeof window === 'undefined') return false
-  const coarseTouch = window.matchMedia?.('(pointer: coarse) and (hover: none)').matches ?? false
-  if (!coarseTouch) return false
-  const visual = window.visualViewport
-  const width = visual?.width ?? window.innerWidth
-  const height = visual?.height ?? window.innerHeight
-  const shortEdge = Math.min(width, height)
-  const longEdge = Math.max(width, height)
-  return shortEdge >= 300 && shortEdge <= 1024 && longEdge <= 1366
+  if (layout.active) return layout.mobile
+  const viewport = window.visualViewport
+  const width = viewport?.width ?? window.innerWidth
+  const height = viewport?.height ?? window.innerHeight
+  return resolveViewportMode(width, height).mobile
+}
+
+// Compatibility entry used by the replay blocker. Its result is now based on
+// geometry instead of device identity.
+export function isMobileDeviceExperience() {
+  return isMobileViewportExperience()
+}
+
+export function landscapeTeleportTarget() {
+  return typeof document !== 'undefined' && document.getElementById('l12-landscape-teleports')
+    ? '#l12-landscape-teleports'
+    : 'body'
 }
 
 export function useLandscapeViewport(enabled: Ref<boolean>) {
   let probe: HTMLDivElement | null = null
-  let locked = false
-  let generation = 0
-  let attemptedGeneration = -1
+  let previous: Pick<ViewportMode, 'rotated' | 'mobile'> = { rotated: false, mobile: false }
   const editable = () => document.activeElement instanceof HTMLElement
     && document.activeElement.matches('input:not([type=checkbox]):not([type=radio]),textarea,[contenteditable=true]')
+
+  function clear() {
+    layout.active = false
+    const root = document.documentElement
+    delete root.dataset.l12Viewport
+    delete root.dataset.l12Compact
+    delete root.dataset.l12Mobile
+    delete root.dataset.l12Rotated
+    root.style.removeProperty('--l12-viewport-width')
+    root.style.removeProperty('--l12-viewport-height')
+    root.style.removeProperty('--l12-physical-width')
+    root.style.removeProperty('--l12-physical-height')
+    root.style.removeProperty('--l12-viewport-left')
+    root.style.removeProperty('--l12-viewport-top')
+    document.body.removeAttribute('data-l12-rotated')
+  }
+
   function update() {
     if (!enabled.value) {
-      layout.active = false
-      delete document.documentElement.dataset.l12Viewport
-      delete document.documentElement.dataset.l12Compact
-      document.body.removeAttribute('data-l12-rotated')
+      clear()
       window.dispatchEvent(new Event('l12-viewport-change'))
       return
     }
     const visual = window.visualViewport
     const safe = probe ? getComputedStyle(probe) : null
     const inset = (value?: string) => Math.max(0, parseFloat(value ?? '') || 0)
-    const left = (visual?.offsetLeft ?? 0) + inset(safe?.paddingLeft)
-    const top = (visual?.offsetTop ?? 0) + inset(safe?.paddingTop)
-    const width = Math.max(1, (visual?.width ?? innerWidth) - inset(safe?.paddingLeft) - inset(safe?.paddingRight))
-    const height = Math.max(1, (visual?.height ?? innerHeight) - inset(safe?.paddingTop) - inset(safe?.paddingBottom))
-    // Never rotate the complete document in CSS.  Browser overlays, safe areas and
-    // fixed Teleports would otherwise calculate against different coordinate spaces.
-    // When a handset cannot lock, App.vue asks the player to rotate the device.
-    const rotated = false
-    const nextLayout = { active: true, rotated, left, top, width, height }
+    const safeLeft = inset(safe?.paddingLeft)
+    const safeRight = inset(safe?.paddingRight)
+    const safeTop = inset(safe?.paddingTop)
+    const safeBottom = inset(safe?.paddingBottom)
+    const left = (visual?.offsetLeft ?? 0) + safeLeft
+    const top = (visual?.offsetTop ?? 0) + safeTop
+    const physicalWidth = Math.max(1, (visual?.width ?? innerWidth) - safeLeft - safeRight)
+    const physicalHeight = Math.max(1, (visual?.height ?? innerHeight) - safeTop - safeBottom)
+    const resolved = resolveViewportMode(physicalWidth, physicalHeight, previous)
+    const mode = editable()
+      ? {
+          rotated: previous.rotated,
+          mobile: previous.mobile,
+          width: previous.rotated ? physicalHeight : physicalWidth,
+          height: previous.rotated ? physicalWidth : physicalHeight,
+        }
+      : resolved
+    previous = { rotated: mode.rotated, mobile: mode.mobile }
+    const nextLayout = {
+      active: true,
+      rotated: mode.rotated,
+      mobile: mode.mobile,
+      left,
+      top,
+      width: mode.width,
+      height: mode.height,
+      physicalWidth,
+      physicalHeight,
+    }
     const changed = JSON.stringify(layout) !== JSON.stringify(nextLayout)
     layout = nextLayout
     const root = document.documentElement
-    root.dataset.l12Viewport = width >= height ? 'landscape' : 'normal'
-    root.dataset.l12Compact = String(layout.width < 820 || layout.height < 600)
-    root.style.setProperty('--l12-viewport-width', `${layout.width}px`)
-    root.style.setProperty('--l12-viewport-height', `${layout.height}px`)
+    root.dataset.l12Viewport = 'landscape'
+    root.dataset.l12Compact = String(mode.mobile || mode.width < 820 || mode.height < 600)
+    root.dataset.l12Mobile = String(mode.mobile)
+    root.dataset.l12Rotated = String(mode.rotated)
+    root.style.setProperty('--l12-viewport-width', `${mode.width}px`)
+    root.style.setProperty('--l12-viewport-height', `${mode.height}px`)
+    root.style.setProperty('--l12-physical-width', `${physicalWidth}px`)
+    root.style.setProperty('--l12-physical-height', `${physicalHeight}px`)
     root.style.setProperty('--l12-viewport-left', `${left}px`)
     root.style.setProperty('--l12-viewport-top', `${top}px`)
     if (changed) window.dispatchEvent(new Event('l12-viewport-change'))
   }
-  async function requestOrientation() {
-    if (!enabled.value || locked || attemptedGeneration === generation || editable() || Math.min(innerWidth, innerHeight) > 820) return
-    attemptedGeneration = generation
-    const orientation = screen.orientation as ScreenOrientation & { lock?: (value: string) => Promise<void> }
-    const current = generation
-    try {
-      await orientation?.lock?.('landscape')
-      if (current !== generation || !enabled.value) { orientation?.unlock?.(); return }
-      locked = Boolean(orientation?.lock)
-    } catch { /* The CSS landscape canvas remains usable without fullscreen/lock. */ }
-    update()
-  }
-  function focusChanged() { requestAnimationFrame(update) }
-  watch(enabled, () => {
-    generation++
-    if (!enabled.value && locked) { screen.orientation?.unlock?.(); locked = false }
-    update()
-    void requestOrientation()
-  })
+
+  watch(enabled, update)
   onMounted(() => {
     probe = document.createElement('div')
     probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)'
@@ -96,24 +170,17 @@ export function useLandscapeViewport(enabled: Ref<boolean>) {
     window.addEventListener('resize', update)
     window.visualViewport?.addEventListener('resize', update)
     window.visualViewport?.addEventListener('scroll', update)
-    document.addEventListener('focusin', focusChanged)
-    document.addEventListener('focusout', focusChanged)
-    document.addEventListener('pointerup', requestOrientation)
+    document.addEventListener('focusin', update)
+    document.addEventListener('focusout', update)
     update()
-    void requestOrientation()
   })
   onBeforeUnmount(() => {
-    generation++
     window.removeEventListener('resize', update)
     window.visualViewport?.removeEventListener('resize', update)
     window.visualViewport?.removeEventListener('scroll', update)
-    document.removeEventListener('focusin', focusChanged)
-    document.removeEventListener('focusout', focusChanged)
-    document.removeEventListener('pointerup', requestOrientation)
+    document.removeEventListener('focusin', update)
+    document.removeEventListener('focusout', update)
     probe?.remove()
-    if (locked) screen.orientation?.unlock?.()
-    layout.active = false
-    delete document.documentElement.dataset.l12Viewport
-    delete document.documentElement.dataset.l12Compact
+    clear()
   })
 }

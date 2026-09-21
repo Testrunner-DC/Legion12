@@ -50,7 +50,10 @@ foreach ($contract in @(
 
 Assert-Contains $s2 'CompleteTrialRuleAction(playerIndex, source)' 'completeTrial must execute directly as a rule action.'
 Assert-Contains $plans 'QueueCompletedTrialTriggerBatch(controller, trial)' 'The rule flip must publish the separate printed completion trigger.'
-Assert-NotContains $s2 'PushEffect(playerIndex, source, "active", "完成试炼"' 'The rule flip must not be a negatable active effect.'
+$completeTrialText = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5a6M5oiQ6K+V54K8'))
+$fenianPreStackText = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('6Iqs5bC85Lqa5Lyg5aWH5YWl5qCI5YmN5raI6ICX'))
+$completeTrialPattern = 'PushEffect(playerIndex, source, "active", "' + $completeTrialText + '",'
+Assert-NotContains $s2 $completeTrialPattern 'The rule flip must not be a negatable active effect.'
 Assert-Contains $models 'MinimumReferenceNumericValue' 'Variable rune declarations must drive a generic number of public target steps.'
 Assert-Contains $models 'L12ActivationCancellationPolicy' 'A declaration must carry an explicit whole-flow cancellation policy.'
 Assert-Contains $kernel 'DeclaredNumericValueAtLeast' 'Pending activation must honor numeric conditional declaration steps.'
@@ -62,7 +65,7 @@ Assert-Contains $prompts '["mode:library"]' 'The delayed library mode needs a pl
 Assert-Contains $plans 'resolvedTargets.Any(target => target is null)' 'Fenian Legend must revalidate every declared target at resolution.'
 Assert-Contains $plans 'player.SpecialZones.Runes < count' 'Fenian Legend must revalidate the declared rune amount at resolution.'
 Assert-Contains $plans 'L12S2ZoneOps.SpendRunes(player, count)' 'Fenian Legend must spend X runes only while its effect resolves.'
-Assert-NotContains $plans '芬尼亚传奇入栈前消耗' 'Fenian Legend has no printed colon and must not prepay runes before response.'
+Assert-NotContains $plans $fenianPreStackText 'Fenian Legend has no printed colon and must not prepay runes before response.'
 Assert-Contains $tests 'FenianTrialSpendsRunesAndAppliesRepeatableTargetsOnlyDuringResolution' 'Fenian negation must preserve runes and stop every debuff.'
 Assert-Contains $tests 'FenianTargetLossCancelsTheWholeUnpaidEffectChain' 'Fenian target invalidation must fail atomically without spending runes.'
 $remaining = Read-Source 'L12S2RemainingEffects.cs'

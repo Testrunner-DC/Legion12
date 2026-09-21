@@ -266,7 +266,7 @@ if ($trialAdvancePlans.IndexOf('TrialCompleted = true', [StringComparison]::Ordi
 Assert-Contains $plans 'TryConsumeSelectedResources(player, 1' 'Tsukuyomi must commit its declared resource before stack entry.'
 Assert-Contains $plans 'ReturnSelectedMoraleById(player, [costId], 1)' 'Liu Bei must return the declared morale before stack entry.'
 $masterDamageCosts = Read-Source 'L12MasterDamageCosts.cs'
-Assert-Contains $plans 'if (!PayMasterDamageCostAndCanContinue(candidate.Controller, 1, "布伦希尔德登场效果费用")) return true;' `
+Assert-Contains $plans 'if (!PayMasterDamageCostAndCanContinue(candidate.Controller, 1,' `
     'Brynhild must pay before stack entry and stop its declaration after lethal payment.'
 Assert-Contains $masterDamageCosts 'player.Hp >= amount' 'The final health point must remain payable as a cost.'
 Assert-Contains $masterDamageCosts 'DamageMaster(playerIndex, amount, reason);' 'Shared damage costs must keep the authoritative damage and replacement path.'

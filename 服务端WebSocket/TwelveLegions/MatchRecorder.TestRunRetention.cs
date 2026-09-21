@@ -129,6 +129,12 @@ public sealed partial class MatchRecorder
 
     internal static bool IsTestRunRetentionIsolatedCore(string marker, string publicUrl,
         string testRuntime, string productionRuntime, string database, bool enforceInstalledPaths)
+        => IsTestRunRetentionIsolatedCore(marker, publicUrl, testRuntime, productionRuntime, database,
+            enforceInstalledPaths, ResolveRetentionPhysicalPath);
+
+    internal static bool IsTestRunRetentionIsolatedCore(string marker, string publicUrl,
+        string testRuntime, string productionRuntime, string database, bool enforceInstalledPaths,
+        Func<string,string> resolvePhysicalPath)
     {
         if (marker != "testrun" || !Uri.TryCreate(publicUrl, UriKind.Absolute, out var uri)
             || uri.Scheme != "https" || uri.Host != "testrun.legion-12.com"
@@ -141,17 +147,17 @@ public sealed partial class MatchRecorder
                 && (testRuntime != TestRunRuntimePath || productionRuntime != ProductionRuntimePath)) return false;
             if (Path.GetFileName(Path.TrimEndingDirectorySeparator(testRuntime)) != "legion12-testrun-runtime"
                 || Path.GetFileName(Path.TrimEndingDirectorySeparator(productionRuntime)) != "legion12-runtime") return false;
-            var physical = ResolveRetentionPhysicalPath(testRuntime);
+            var physical = resolvePhysicalPath(testRuntime);
             // Reject runtime/ancestor redirection, even to a different non-production directory.
             if (!string.Equals(Path.GetFullPath(testRuntime), physical, RetentionPathComparison)) return false;
-            var db = ResolveRetentionPhysicalPath(database);
+            var db = resolvePhysicalPath(database);
             // The installed release's publish/runtime is deliberately a link into this
             // isolated runtime. Resolve that alias, but never accept a DB-file symlink.
             if (new FileInfo(database).LinkTarget is not null || Path.GetFileName(db) != "matches.db") return false;
             var production = Path.GetFullPath(productionRuntime);
             // The test service deliberately has InaccessiblePaths for production runtime.
             // Its lexical exclusion remains mandatory even when metadata is inaccessible.
-            if (Directory.Exists(productionRuntime)) production = ResolveRetentionPhysicalPath(productionRuntime);
+            if (Directory.Exists(productionRuntime)) production = resolvePhysicalPath(productionRuntime);
             return IsRetentionDescendant(db, physical) && !IsRetentionDescendant(db, production)
                 && !IsRetentionDescendant(physical, production) && !IsRetentionDescendant(production, physical)
                 && !string.Equals(physical, production, RetentionPathComparison);

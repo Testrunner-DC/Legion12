@@ -4,6 +4,7 @@ import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from '../cardP
 import { filterableCardCost, loadDeckCatalog, type DeckCard } from '../decks'
 import CardImage from '../CardImage.vue'
 import CatalogCardDetails from '../CatalogCardDetails.vue'
+import { landscapeTeleportTarget } from '../mobileViewport'
 
 export type SandboxCatalogCard = DeckCard
 
@@ -55,7 +56,7 @@ const filtered = computed(() => {
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport :to="landscapeTeleportTarget()">
     <div class="picker-mask" @click.self="emit('close')">
       <section class="card-picker" role="dialog" aria-modal="true" :aria-label="title">
         <header><div><small>SANDBOX CARD ARCHIVE</small><h2>{{ title }}</h2></div><button @click="emit('close')">×</button></header>

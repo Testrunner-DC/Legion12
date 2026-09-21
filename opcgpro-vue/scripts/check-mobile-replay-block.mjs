@@ -16,9 +16,10 @@ const expect = (condition, message) => {
   if (!condition) throw new Error(`mobile replay / board contract: ${message}`)
 }
 
-expect(viewport.includes('export function isMobileDeviceExperience()'), 'mobile eligibility must have a stable device entry')
-expect(board.includes('mobileDeviceExperience.value = isMobileDeviceExperience()'), 'GameBoard must capture mobile eligibility at mount')
-expect(board.includes('mobileDeviceExperience.value && viewport.width >= viewport.height'), 'phone geometry must require the landscape tier')
+expect(viewport.includes('export function resolveViewportMode('), 'viewport classification must have a deterministic shared entry')
+expect(viewport.includes('export function isMobileViewportExperience()'), 'mobile eligibility must read the shared viewport mode')
+expect(!viewport.includes('(pointer: coarse)') && !viewport.includes('screen.orientation'), 'viewport classification must not depend on device identity or physical orientation locks')
+expect(board.includes('mobileLandscapeViewport.value = isMobileViewportExperience()'), 'GameBoard must follow the current logical viewport mode')
 expect(!board.includes('viewport.height >= 300 && viewport.height <= 430'), 'browser chrome height must not switch the board mode')
 for (const handler of ['selectHandFor', 'selectPublicCardFor', 'inspectActiveDisaster']) {
   const match = board.match(new RegExp(`function ${handler}[\\s\\S]*?\\n}`, 'm'))?.[0] ?? ''

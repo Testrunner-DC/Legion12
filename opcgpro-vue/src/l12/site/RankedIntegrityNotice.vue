@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { platformState } from '../platform'
 import { integrityApi, integrityLabel, type IntegrityNotification } from '../rankedIntegrity'
 import RankedAppealForm from './RankedAppealForm.vue'
+import { landscapeTeleportTarget } from '../mobileViewport'
 const items = ref<IntegrityNotification[]>([])
 const current = computed(() => items.value[0])
 const busy = ref(false); const error = ref(''); const appealing = ref(false)
@@ -36,7 +37,7 @@ onMounted(() => { void refresh(); timer = window.setInterval(changed, 20000); wi
 onBeforeUnmount(() => { generation++; window.clearInterval(timer); window.removeEventListener('focus', changed); document.removeEventListener('visibilitychange', changed); window.removeEventListener('l12-integrity-changed', changed) })
 </script>
 <template>
-  <Teleport to="body"><section v-if="current" class="integrity-notice" role="dialog" aria-modal="false" aria-labelledby="integrity-notice-title" data-ui-contract="ranked-integrity-result-notice">
+  <Teleport :to="landscapeTeleportTarget()"><section v-if="current" class="integrity-notice" role="dialog" aria-modal="false" aria-labelledby="integrity-notice-title" data-ui-contract="ranked-integrity-result-notice">
     <h2 id="integrity-notice-title">排位处理结果 <small v-if="items.length > 1">另有 {{ items.length - 1 }} 条</small></h2>
     <strong>{{ integrityLabel(current.outcome) }}</strong><time>{{ new Date(current.decidedAt).toLocaleString() }}</time>
     <p>{{ current.reason }}</p>

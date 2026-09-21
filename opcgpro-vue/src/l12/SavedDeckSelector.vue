@@ -4,6 +4,7 @@ import DeckProfile from './DeckProfile.vue'
 import { deckCountSummary, validateDeck, type DeckCard, type L12DeckSelectionScope,
   type SavedL12Deck } from './decks'
 import type { OperationsCardRestriction } from './platform'
+import { landscapeTeleportTarget } from './mobileViewport'
 
 const props = withDefaults(defineProps<{
   open: boolean
@@ -58,7 +59,7 @@ function confirm() {
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport :to="landscapeTeleportTarget()">
     <div v-if="open" class="saved-deck-selector-mask" data-ui-contract="l12-saved-deck-selector"
       @click.self="cancel">
       <section class="saved-deck-selector" role="dialog" aria-modal="true" :aria-label="`${modeLabel}更换牌库`">

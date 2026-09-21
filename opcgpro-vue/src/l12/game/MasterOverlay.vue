@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import type { PlayerView } from '../types'
 import CardImage from '../CardImage.vue'
+import { landscapeTeleportTarget } from '../mobileViewport'
 
 const props = defineProps<{ player: PlayerView; mine: boolean; canActivate: boolean; busy?: boolean; mobileLayout?: boolean }>()
 const emit = defineEmits<{ close: []; activate: [ability: string]; focus: []; inspect: [] }>()
@@ -25,7 +26,7 @@ const abilities = computed<AbilityEntry[]>(() => {
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport :to="landscapeTeleportTarget()">
     <div class="master-overlay" :class="{ minimized, 'mobile-safe-overlay': mobileLayout }" @click.self="emit('close')">
       <section v-if="minimized" class="master-minimized">
         <button :aria-label="`展开：${player.master.masterName} · 主宰效果`" :title="`${player.master.masterName} · 主宰效果`" @click="minimized = false">展开</button>

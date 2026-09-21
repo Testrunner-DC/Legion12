@@ -25,7 +25,7 @@ import CardDetailContent from '../CardDetailContent.vue'
 import type { DeckCard } from '../decks'
 import RankedIdentityBadge from '../RankedIdentityBadge.vue'
 import { getFactionPresentation } from '../factionPresentation'
-import { isMobileDeviceExperience, visibleViewport, viewportRect } from '../mobileViewport'
+import { isMobileViewportExperience, landscapeTeleportTarget, visibleViewport, viewportRect } from '../mobileViewport'
 
 type GmPlacementRequest = {
   type: 'placeCard' | 'playHandCard'
@@ -56,7 +56,6 @@ const compactViewport = ref(false)
 // Kept deliberately separate from `compactViewport`: short desktop windows (1280×480)
 // must retain their established board. This flag is only for touch-phone landscape.
 const mobileLandscapeViewport = ref(false)
-const mobileDeviceExperience = ref(false)
 const mobileRecordOpen = ref(false)
 const mobileRecordMinimized = ref(false)
 const mobileMoralePickerOpen = ref(false)
@@ -691,9 +690,7 @@ const supportReady = computed(() => {
 function updateScale() {
   const viewport = visibleViewport()
   compactViewport.value = viewport.width < 820 || viewport.height < 600
-  // Device eligibility is captured at mount. Browser chrome changing the visual
-  // viewport height must not select the desktop board on a handset.
-  mobileLandscapeViewport.value = mobileDeviceExperience.value && viewport.width >= viewport.height
+  mobileLandscapeViewport.value = isMobileViewportExperience()
   // The hand fan and left utility dock paint about 42 logical pixels beyond the stage's
   // nominal 16:9 box. Because the stage is vertically centered below the 52px site bar,
   // reserve that overflow on both edges so every control stays visible at exact 16:9.
@@ -710,7 +707,6 @@ onMounted(() => {
   lastHiddenRevealSequence.value = Math.max(0, ...(props.game.recentEvents ?? []).map(event => event.sequence))
   lastPublicRevealSequence.value = lastHiddenRevealSequence.value
   lastDiceSequence.value = lastHiddenRevealSequence.value
-  mobileDeviceExperience.value = isMobileDeviceExperience()
   updateScale()
   window.addEventListener('resize', updateScale)
   window.addEventListener('l12-viewport-change', updateScale)
@@ -1056,7 +1052,7 @@ function statusTexts(card: Card) {
 
 <template>
   <div class="board-viewport" :class="{ 'compact-viewport': compactViewport, 'mobile-landscape-board': mobileLandscapeViewport, 'read-only-board': readOnly, 'gm-panel-docked': gmPanelOpen && !compactViewport }" :data-l12-mobile-landscape="mobileLandscapeViewport ? 'true' : undefined">
-    <Teleport to="body">
+    <Teleport :to="landscapeTeleportTarget()">
       <button v-if="mobileLandscapeViewport" type="button" class="mobile-card-inspector-handle mobile-card-inspector-handle-global" :class="{ open: mobileInspectorOpen }" :aria-expanded="mobileInspectorOpen" @click="mobileInspectorOpen = !mobileInspectorOpen">{{ mobileInspectorOpen ? '收起详情' : '展开卡牌详情' }}</button>
     </Teleport>
     <div class="board-stage" :style="{ width: `${stageSize.width}px`, height: `${stageSize.height}px`, transform: `scale(${scale})`, '--l12-board-copy': `${13 / Math.min(1, scale)}px`, '--l12-board-meta': `${11 / Math.min(1, scale)}px`, '--l12-board-micro': `${9 / Math.min(1, scale)}px`, '--l12-effect-copy': `${13 / Math.min(1, scale)}px` }">
@@ -1111,7 +1107,7 @@ function statusTexts(card: Card) {
           <div class="left-detail-layout">
             <div class="left-card-column">
               <div ref="inspectorAnchor" class="card-inspector-anchor" data-ui-contract="selected-card-inspector-anchor">
-              <Teleport to="body" :disabled="!modalInspectorVisible">
+              <Teleport :to="landscapeTeleportTarget()" :disabled="!modalInspectorVisible">
                 <div class="board-rail inspector-style-scope">
                 <section class="grand-panel card-inspector archive-detail" data-ui-contract="selected-card-inspector" :style="modalInspectorVisible ? inspectorFloatStyle : undefined" :class="{ 'card-inspector-floating': modalInspectorVisible, 'horizontal-inspector': focusCard && isHorizontalCardType(focusCard.cardType) }">
                   <i class="corner tl"/><i class="corner tr"/><i class="corner bl"/><i class="corner br"/>
@@ -1186,7 +1182,7 @@ function statusTexts(card: Card) {
               @busy-change="replayZonePresentationBusy = $event" />
             <CombatMotionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
               :playback-speed="replayPlaybackSpeed" @busy-change="replayCombatPresentationBusy = $event" />
-            <Teleport to="body">
+            <Teleport :to="landscapeTeleportTarget()">
               <Transition name="public-reveal">
                 <div v-if="publicReveal && !activeBoardPromptId" :key="publicReveal.sequence" class="public-reveal-animation" data-ui-contract="public-card-reveal-animation">
                   <div class="public-reveal-cards">
@@ -1303,14 +1299,14 @@ function statusTexts(card: Card) {
             :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="l12State.pendingAction" @command="command" /></section>
         </aside>
       </div>
-      <Teleport to="body">
+      <Teleport :to="landscapeTeleportTarget()">
         <section v-if="mobileLandscapeViewport && mobileRecordOpen" class="mobile-record-overlay mobile-safe-overlay" role="dialog" aria-modal="true" aria-label="对局记录">
           <header><h2>对局记录</h2><div class="mobile-record-actions"><button type="button" @click="mobileRecordOpen = false; mobileRecordMinimized = true">最小化</button><button type="button" @click="mobileRecordOpen = false; mobileRecordMinimized = false">关闭</button></div></header>
           <BattleEventLog :events="game.recentEvents ?? []" :you="game.you" :names="game.players.map(player => player.name)" @focus="focusCard = $event" />
         </section>
       </Teleport>
       <button v-if="mobileLandscapeViewport && mobileRecordMinimized" class="mobile-record-restore" type="button" @click="mobileRecordOpen = true; mobileRecordMinimized = false">恢复对局记录</button>
-      <Teleport to="body">
+      <Teleport :to="landscapeTeleportTarget()">
         <Transition name="mobile-card-inspector">
           <aside v-if="mobileLandscapeViewport && mobileInspectorOpen" class="mobile-card-inspector mobile-safe-overlay" role="dialog" aria-modal="false" aria-label="卡牌详情">
             <header><div><small>卡牌详情</small><h2>{{ focusCard?.name || '选择一张卡牌' }}</h2></div><button type="button" @click="mobileInspectorOpen = false">收起</button></header>
@@ -1322,7 +1318,7 @@ function statusTexts(card: Card) {
           </aside>
         </Transition>
       </Teleport>
-      <Teleport to="body">
+      <Teleport :to="landscapeTeleportTarget()">
         <section v-if="mobileMoralePickerEnabled && mobileMoralePickerOpen" class="mobile-record-overlay mobile-morale-overlay mobile-safe-overlay" role="dialog" aria-modal="true" aria-label="选择士气">
           <header><div><h2>{{ mobileMoraleInteractive ? '选择士气' : '我方士气' }}</h2><small>{{ mobileMoraleInteractive ? `已选择 ${paymentResourceIds.length}/${resourceSelectionPrompt?.maxChoose ?? 0}` : `活跃 ${viewMe.morale.filter(item => !item.tapped).length} / 共 ${viewMe.morale.length}` }}</small></div><div class="mobile-morale-header-actions"><button type="button" @click="mobileMoralePickerOpen = false; mobileMoralePickerMinimized = true">最小化</button><button type="button" @click="mobileMoralePickerOpen = false; mobileMoralePickerMinimized = false">返回对局</button></div></header>
           <p class="mobile-morale-prompt">{{ resourceSelectionPrompt?.text || '这里展示当前士气状态；需要支付或返还时会自动变为可选择面板。' }}</p>

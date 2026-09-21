@@ -64,7 +64,8 @@ Assert-Contains $remaining 'BeginPendingActivationSequence(playerIndex, source, 
 if ($morale.Contains('player.Faction == "taiyangcheng" && State.ActivePlayer')) {
     throw 'A controlled Tomb Guard must not gain an extra unprinted controller-faction restriction.'
 }
-Assert-Contains $statusSemantics '[TombGuardCardId] = new("tomb-guard", "陵墓守卫", ControllerTurnOnly: true, RequiresActive: true)' 'Tomb Guard resource semantics must remain structured as an active own-turn field resource.'
+$tombGuardName = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('6Zm15aKT5a6I5Y2r'))
+Assert-Contains $statusSemantics "[TombGuardCardId] = new(`"tomb-guard`", `"$tombGuardName`", ControllerTurnOnly: true, RequiresActive: true)" 'Tomb Guard resource semantics must remain structured as an active own-turn field resource.'
 Assert-Contains $morale 'L12StructuredCardSemantics.FieldMoraleResourceRule(card.CardId)' 'Field-resource candidate generation must read the structured rule definition.'
 Assert-Contains $morale 'State.ActivePlayer == player.PlayerIndex' 'Field-resource legality must follow the current controller own-turn condition.'
 Assert-Contains $morale 'SpendableFieldMoraleResources' 'All Tomb Guard resource consumers must share the field-resource candidate set.'

@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import CardImage from '../CardImage.vue'
 import { playL12OsirisVictorySound } from './useL12ActionAudio'
+import { landscapeTeleportTarget } from '../mobileViewport'
 
 const emit = defineEmits<{ complete: [] }>()
 const stage = ref(0)
@@ -19,7 +20,7 @@ onBeforeUnmount(() => timers.forEach(timer => clearTimeout(timer)))
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport :to="landscapeTeleportTarget()">
     <div class="osiris-victory-sequence" data-ui-contract="osiris-special-victory-sequence" role="status"
       aria-label="复苏的奥西里斯特殊胜利动画">
       <div class="osiris-void" />

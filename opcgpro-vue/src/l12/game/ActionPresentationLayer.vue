@@ -7,6 +7,7 @@ import {
   type ActionPresentation,
 } from './actionPresentation'
 import { playL12ActionSound, primeL12ActionAudio } from './useL12ActionAudio'
+import { landscapeTeleportTarget } from '../mobileViewport'
 
 const props = withDefaults(defineProps<{
   events: ActionEvent[]
@@ -96,7 +97,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport :to="landscapeTeleportTarget()">
     <Transition name="l12-action-presentation" mode="out-in">
       <div v-if="active" :key="active.sequence" class="l12-action-presentation" :class="`kind-${active.kind}`"
         data-ui-contract="authoritative-action-presentation" aria-live="polite">

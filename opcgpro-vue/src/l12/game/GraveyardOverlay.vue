@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import CardTile from '../CardTile.vue'
 import type { Card, PlayerView } from '../types'
+import { landscapeTeleportTarget } from '../mobileViewport'
 
 const props = defineProps<{ players: PlayerView[]; initialPlayer: number; ownPlayerIndex: number; canActivateOsiris?: boolean; inspectionOnly?: boolean; mobileLayout?: boolean }>()
 const emit = defineEmits<{ close: []; focus: [card: Card]; inspect: [card: Card]; ability: [card: Card, ability: string] }>()
@@ -19,7 +20,7 @@ function selectCard(card: Card) {
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport :to="landscapeTeleportTarget()">
     <div class="graveyard-overlay" :class="{ minimized, 'mobile-safe-overlay': mobileLayout }" @click.self="emit('close')">
       <section v-if="minimized" class="graveyard-minimized"><button type="button" @click="minimized = false">恢复墓地</button></section>
       <section v-else class="graveyard-window">

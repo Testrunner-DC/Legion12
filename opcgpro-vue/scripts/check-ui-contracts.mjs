@@ -492,7 +492,7 @@ const contracts = [
     && board.includes('.left-disaster-row{display:grid;width:100%;grid-template-columns:132px minmax(0,1fr);gap:8px')
     && board.includes('.session-disaster-strip{display:grid;width:max-content;grid-template-columns:repeat(2,51.2px)')
     && board.includes('.session-disaster-strip button{width:51.2px;min-width:51.2px;height:51.2px'), '本局天灾与当前天灾必须保持两个独立面板并整体与选中卡牌共用左栏宽度；四枚圆形缩略图须缩小 20% 后按 2×2 排列'],
-  [board.includes('<Teleport to="body" :disabled="!modalInspectorVisible">'), '弹框期间必须复用原选中卡牌详情框'],
+  [board.includes('<Teleport :to="landscapeTeleportTarget()" :disabled="!modalInspectorVisible">'), '弹框期间必须复用原选中卡牌详情框'],
   [!board.includes('class="modal-card-inspector"'), '不得重新引入第二套弹框卡牌详情'],
   [!board.includes('<CardTile'), '卡牌详情不得渲染战场角标 UI'],
   [!prompt.includes('class="prompt-card-inspector"') && !prompt.includes('class="prompt-card-detail"'), 'PromptOverlay 不得自建卡牌详情框'],
@@ -623,7 +623,7 @@ const contracts = [
   [deckEditor.includes("deck.name === activeDeckName") && deckEditor.includes('.saved-list b{color:#f1eee5}') && deckEditor.includes('.saved-list span{color:#aab4b0}') && deckEditor.includes('.saved-list article.active{border-color:#86e8ee;background:#123e42'), '牌库编辑器左下牌库列表及当前牌库状态必须保持高对比'],
   [board.includes('card.playCost ?? card.currentCost ?? card.cost'), '手牌可打出校验必须使用服务端动态费用'],
   [battleLog.includes('class="event-message"') && battleLog.includes('overflow-wrap:anywhere'), '对局记录必须使用可换行的独立消息容器'],
-  [board.includes('<Teleport to="body">') && board.includes('public-card-reveal-animation') && board.includes('.public-reveal-animation{z-index:903}') && board.includes("event.type === 'effect-trigger'") && board.includes("event.type === 'effect-response'") && board.includes("event.type === 'effect-activation'") && board.includes("event.type === 'reveal'") && board.includes("event.playerIndex !== props.game.you") && board.includes("event.type === 'effect-trigger' && /展示|公开/.test(event.text)") && board.includes("event.type === 'search' && /展示|加入手牌/") && board.includes('text: publicRevealText(event)') && board.includes('const override = event.effectText?.trim()') && board.indexOf('if (override) return override') < board.indexOf('/花魁的馈赠/.test(text)') && board.includes('花魁的馈赠将〈${card.name}〉加入手牌') && board.includes('l12AnimationDuration(3000, 700)') && !board.includes('reveal-confirm') && !board.includes('public-reveal-mask'), '公开展示、检索加入手牌、触发、响应与发动效果必须只向非发动方播放无蒙版非阻塞动画；标准三秒且关闭动画时仍保留可读下限，只呈现事件单条效果文本和涉及卡图，后台覆盖优先于花魁兼容文案'],
+  [board.includes('<Teleport :to="landscapeTeleportTarget()">') && board.includes('public-card-reveal-animation') && board.includes('.public-reveal-animation{z-index:903}') && board.includes("event.type === 'effect-trigger'") && board.includes("event.type === 'effect-response'") && board.includes("event.type === 'effect-activation'") && board.includes("event.type === 'reveal'") && board.includes("event.playerIndex !== props.game.you") && board.includes("event.type === 'effect-trigger' && /展示|公开/.test(event.text)") && board.includes("event.type === 'search' && /展示|加入手牌/") && board.includes('text: publicRevealText(event)') && board.includes('const override = event.effectText?.trim()') && board.indexOf('if (override) return override') < board.indexOf('/花魁的馈赠/.test(text)') && board.includes('花魁的馈赠将〈${card.name}〉加入手牌') && board.includes('l12AnimationDuration(3000, 700)') && !board.includes('reveal-confirm') && !board.includes('public-reveal-mask'), '公开展示、检索加入手牌、触发、响应与发动效果必须只向非发动方播放无蒙版非阻塞动画；标准三秒且关闭动画时仍保留可读下限，只呈现事件单条效果文本和涉及卡图，后台覆盖优先于花魁兼容文案'],
   [prompt.includes("const usesDetailCardImages = computed(() => isDisasterChoice.value || isInfoConfirm.value)") && prompt.includes(":intent=\"usesDetailCardImages ? 'detail' : 'thumb'\"") && prompt.split(":alt=\"entry.card.name || '天灾'\" intent=\"detail\"").length - 1 === 2 && prompt.includes("'disaster-choice': isDisasterChoice"), '公开天灾禁选、随机公开、触发确认及已公开历史必须请求详情级高清图，不得使用缩略图源'],
   [board.includes(':inspector-visible="modalInspectorVisible"') && prompt.includes("'inspector-active': inspectorVisible") && prompt.includes('--inspector-safe-lane:clamp(118px,19vw,258px)') && prompt.includes('--inspector-safe-lane:92px') && prompt.includes('@media(max-width:520px)')
     && board.includes('const logicalWidth = inspectorAnchor.value.offsetWidth') && board.includes('transform: `scale(${floatScale})`')
@@ -1464,8 +1464,9 @@ contracts.push(
     && mobileViewportStyle.includes('.board-viewport.compact-viewport')
     && mobileViewportStyle.includes('overflow: hidden !important')
     && mobileViewportStyle.includes('transform-origin: center')
-    && mobileViewportCheck.includes('{width:375,height:667}')
-    && mobileViewportCheck.includes('{width:740,height:360}')
+    && mobileViewportCheck.includes('{width:375,height:667,mobile:true,rotated:true}')
+    && mobileViewportCheck.includes('{width:740,height:360,mobile:true,rotated:false}')
+    && mobileViewportCheck.includes('{width:1366,height:768,mobile:false,rotated:false}')
     && mobileViewportCheck.includes("assert.equal(result.overflowY,'hidden')")
     && mobileViewportCheck.includes('result.stage.bottom<=result.board.bottom+1'),
     '移动端自动横屏与实际横屏必须同时按宽高完整缩放棋盘，禁止恢复最低缩放或双轴滚动，并覆盖短屏边界'],

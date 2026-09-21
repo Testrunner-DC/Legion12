@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted } from 'vue'
 import type { DeckCard } from './decks'
 import { cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import CardImage from './CardImage.vue'
+import { landscapeTeleportTarget } from './mobileViewport'
 defineProps<{ card: DeckCard }>()
 const emit = defineEmits<{ close: [] }>()
 function keydown(event: KeyboardEvent) { if (event.key === 'Escape') { event.stopPropagation(); emit('close') } }
@@ -10,7 +11,7 @@ onMounted(() => window.addEventListener('keydown', keydown))
 onBeforeUnmount(() => window.removeEventListener('keydown', keydown))
 </script>
 <template>
-  <Teleport to="body"><div class="catalog-detail-mask" @click.self="emit('close')">
+  <Teleport :to="landscapeTeleportTarget()"><div class="catalog-detail-mask" @click.self="emit('close')">
     <section class="catalog-detail-dialog" role="dialog" aria-modal="true" :aria-label="card.nameZh">
       <header><h2>{{ card.nameZh }}</h2><button aria-label="关闭卡牌详情" autofocus @click="emit('close')">×</button></header>
       <div class="catalog-detail-body"><div class="catalog-detail-image" :class="{ horizontal: isHorizontalCardType(card.cardType) }"><CardImage :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="detail" native-orientation/></div>

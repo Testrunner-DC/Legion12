@@ -7,6 +7,7 @@ import { masterProfileUrl } from '../specialAssets'
 import CardImage from '../CardImage.vue'
 import PromptCardCandidate from './PromptCardCandidate.vue'
 import SetupDecisionClock from './SetupDecisionClock.vue'
+import { landscapeTeleportTarget } from '../mobileViewport'
 
 const props = withDefaults(defineProps<{
   game: GameState
@@ -585,7 +586,7 @@ function kindLabel() {
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport :to="landscapeTeleportTarget()">
     <div v-if="visible" class="l12-prompt-overlay" @scroll.capture="onCardStripScroll" @wheel="onCardStripWheel"
       @pointerdown="onCardStripPointerDown" @pointermove="onCardStripPointerMove" @pointerup="endCardStripPointer" @pointercancel="endCardStripPointer"
       :class="{ preparation: isPreparation, initiative: isInitiative, 'disaster-choice': isDisasterChoice, 'information-confirm': isInfoConfirm, waiting: waitingPrompt || (isMulliganPhase && !isMulligan), minimized, 'inspector-active': inspectorVisible, 'mobile-safe-overlay': mobileLayout }">

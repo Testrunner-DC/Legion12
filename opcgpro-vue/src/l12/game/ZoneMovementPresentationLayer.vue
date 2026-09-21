@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { l12AnimationDuration } from '../audioPreferences'
-import { visibleViewport, viewportRect } from '../mobileViewport'
+import { landscapeTeleportTarget, visibleViewport, viewportRect } from '../mobileViewport'
 import { CARD_IMAGE_PLACEHOLDER, resolveCardAssetUrls } from '../cardAssets'
 import type { ActionEvent, Card } from '../types'
 
@@ -367,7 +367,7 @@ onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewpo
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport :to="landscapeTeleportTarget()">
     <div v-if="active && !active.sourceGhost" :key="active.sequence" class="zone-card-movement" :style="motionStyle"
       data-ui-contract="authoritative-zone-card-movement" aria-hidden="true">
       <div class="moving-card" data-essential-motion :class="{ concealed: active.concealed, covered: active.covered, 'disaster-reveal': active.disasterReveal }">

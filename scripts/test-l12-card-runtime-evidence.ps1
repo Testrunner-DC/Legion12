@@ -24,7 +24,14 @@ Assert-ContainsEvidence $evidence 'S01-0113' 'LatestBugRegressionTests.cs' 'abil
 Assert-ContainsEvidence $evidence 'S02-06S1' 'RuleKernelTests.cs' 'token type'
 Assert-ContainsEvidence $evidence 'TEST-RUNE' 'ExtendedCardEffectsTests.cs' 'type'
 Assert-ContainsEvidence $evidence 'TEST-TRIAL' 'Bq20260830_02RegressionTests.cs' 'shared-entry'
-$finePrograms = @(Get-L12FineAtomicProgramMatches -SourcePath (Join-Path $ProjectRoot '服务端WebSocket/TwelveLegions'))
+$serverSourceRoot = Get-ChildItem -LiteralPath $ProjectRoot -Directory |
+    ForEach-Object { Join-Path $_.FullName 'TwelveLegions' } |
+    Where-Object { Test-Path -LiteralPath (Join-Path $_ 'AtomicEffects.cs') } |
+    Select-Object -First 1
+if ([string]::IsNullOrWhiteSpace($serverSourceRoot)) {
+    throw 'Could not locate the TwelveLegions server source root.'
+}
+$finePrograms = @(Get-L12FineAtomicProgramMatches -SourcePath $serverSourceRoot)
 if ($finePrograms.Count -ne 128) {
     throw "Fine atomic evidence expected 128 explicit and generated programs, got $($finePrograms.Count)."
 }

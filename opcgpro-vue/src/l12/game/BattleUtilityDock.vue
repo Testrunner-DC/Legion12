@@ -4,6 +4,7 @@ import { l12State } from '../net'
 import { friendApi } from '../platform'
 import { reportOpponent, requestMatchDraw, resolveMatchDraw } from '../matchGovernance'
 import FriendsPage from '../site/FriendsPage.vue'
+import { landscapeTeleportTarget } from '../mobileViewport'
 
 defineEmits<{ settings: [] }>()
 
@@ -155,7 +156,7 @@ function answerDraw(accept: boolean) {
     </button>
   </aside>
 
-  <Teleport to="body">
+  <Teleport :to="landscapeTeleportTarget()">
     <div v-if="showFriends" class="battle-modal-mask" @click.self="showFriends = false">
       <section class="battle-dialog friends-shell" role="dialog" aria-modal="true" aria-labelledby="battle-friends-title">
         <header><h2 id="battle-friends-title">好友</h2><button type="button" aria-label="关闭好友功能" @click="showFriends = false">×</button></header>

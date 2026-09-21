@@ -1,8 +1,6 @@
-/* The game lives in the device's real viewport.  Earlier releases rotated the
-   entire body as a fallback when a browser rejected orientation locking.  That
-   made fixed overlays, safe areas and desktop-sized components use different
-   coordinate systems.  Keep one coordinate system instead; App.vue displays a
-   rotate-device guide when a handset remains portrait. */
+/* Landscape routes live in a logical canvas derived from visualViewport. The
+   document is never rotated: only the opted-in route surface and its dedicated
+   Teleport host share the transform and coordinate system. */
 html[data-l12-viewport] body {
   position: fixed;
   inset: 0;
@@ -11,6 +9,21 @@ html[data-l12-viewport] body {
   transform: none;
 }
 html[data-l12-viewport] #app { width: 100%; height: 100%; }
+html[data-l12-viewport] :is(.l12-landscape-surface,#l12-landscape-teleports) {
+  position: fixed;
+  left: var(--l12-viewport-left);
+  top: var(--l12-viewport-top);
+  width: var(--l12-viewport-width);
+  height: var(--l12-viewport-height);
+  transform-origin: top left;
+}
+html[data-l12-rotated=true] :is(.l12-landscape-surface,#l12-landscape-teleports) {
+  transform: translateX(var(--l12-physical-width)) rotate(90deg);
+}
+.l12-landscape-surface { overflow: hidden; }
+.l12-landscape-surface .site-shell { width:100%;height:100%; }
+#l12-landscape-teleports { position:fixed;z-index:100000;inset:0;width:100%;height:100%;pointer-events:none; }
+#l12-landscape-teleports > * { pointer-events: auto; }
 
 /* The battle table always fits the logical landscape viewport in one screen.
    Text tokens compensate for the stage scale, so compact phones stay readable
@@ -33,16 +46,39 @@ html[data-l12-viewport] :is(.l12-prompt-overlay,.graveyard-overlay,.master-overl
 }
 html[data-l12-viewport] .game-over { padding: 16px; place-content: safe center; }
 html[data-l12-viewport] .battle-ranked-ticker { max-width: calc(var(--l12-viewport-width) - 24px); }
-html[data-l12-compact=true] .deck-builder-shell { overflow: auto; }
-html[data-l12-compact=true] .deck-builder-topbar { height: auto; min-height: 74px; flex-wrap: wrap; }
-html[data-l12-compact=true] .deck-builder-grid { flex: 1 0 auto; min-height: 600px; }
-html[data-l12-viewport=landscape] .deck-builder-grid {
+html[data-l12-mobile=true] .deck-builder-shell { position:absolute;overflow:hidden; }
+html[data-l12-mobile=true] .deck-builder-topbar { height:auto;min-height:76px;flex-wrap:wrap;gap:5px;padding:5px 8px; }
+html[data-l12-mobile=true] .deck-builder-topbar > div:nth-child(2) { display:none; }
+html[data-l12-mobile=true] .deck-builder-topbar label { display:grid;width:170px; }
+html[data-l12-mobile=true] .deck-builder-topbar input { width:170px;min-height:30px;padding:4px 7px;font-size:12px; }
+html[data-l12-mobile=true] .deck-total b { font-size:18px; }
+html[data-l12-mobile=true] .deck-total span { font-size:11px; }
+html[data-l12-mobile=true] .deck-file-actions { order:5;display:grid;width:100%;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px; }
+html[data-l12-mobile=true] .deck-file-actions button { min-width:0;padding:5px 4px;font-size:11px;white-space:nowrap; }
+html[data-l12-mobile=true] .deck-builder-grid {
+  display:grid;
+  flex:1 1 auto;
+  grid-template-columns:minmax(138px,21fr) minmax(260px,51fr) minmax(174px,28fr);
+  min-width:0;
+  min-height:0;
+  overflow:hidden;
+  gap:5px;
+  padding:5px;
+}
+html[data-l12-mobile=true] .deck-side-column { display:grid;grid-template-rows:minmax(0,1fr) minmax(92px,.55fr);min-height:0; }
+html[data-l12-mobile=true] .deck-builder-grid .grand-panel { min-height:0;padding:7px;overflow:hidden; }
+html[data-l12-mobile=true] .deck-detail-panel { order:initial;min-height:0; }
+html[data-l12-mobile=true] .saved-decks-panel { order:initial;max-height:none; }
+html[data-l12-mobile=true] .deck-catalog { order:initial;min-height:0; }
+html[data-l12-mobile=true] .deck-list { order:initial;min-height:0; }
+html[data-l12-mobile=true] .deck-card-grid { grid-template-columns:repeat(auto-fill,minmax(72px,1fr));max-height:none; }
+html[data-l12-mobile=true] .deck-entries { max-height:none; }
+html[data-l12-viewport=landscape]:not([data-l12-mobile=true]) .deck-builder-grid {
   display: grid;
   grid-template-columns: 220px minmax(440px,1fr) 280px;
   min-width: 980px;
 }
 html[data-l12-viewport=landscape] .deck-side-column { display: grid; }
-html[data-l12-compact=true] .deck-builder-topbar label { display: grid; }
 html[data-l12-viewport] :is(.prompt-panel,.graveyard-window,.master-dialog,.l12-settings-modal,.builder-modal,.deck-image-dialog,.delete-confirm-dialog,.archive-modal) {
   max-width: calc(var(--l12-viewport-width) - 36px) !important;
   max-height: calc(var(--l12-viewport-height) - 36px) !important;
@@ -51,6 +87,26 @@ html[data-l12-viewport] :is(.prompt-panel,.graveyard-window,.master-dialog,.l12-
 html[data-l12-viewport] .l12-prompt-overlay:not(.minimized) {
   width: var(--l12-viewport-width) !important;
   height: var(--l12-viewport-height) !important;
+}
+html[data-l12-viewport] #l12-landscape-teleports .l12-prompt-overlay.mobile-safe-overlay:not(.minimized) {
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+html[data-l12-viewport] #l12-landscape-teleports .mobile-safe-overlay:not(.minimized) {
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+html[data-l12-viewport] #l12-landscape-teleports .mobile-safe-overlay.minimized {
+  inset: auto 110px calc(var(--l12-mobile-hand-h,64px) + 5px) auto !important;
+  width: auto !important;
+  height: auto !important;
+}
+html[data-l12-viewport] #l12-landscape-teleports .l12-prompt-overlay.mobile-safe-overlay.minimized {
+  inset: auto 110px calc(var(--l12-mobile-hand-h,64px) + 5px) auto !important;
+  width: auto !important;
+  height: auto !important;
 }
 html[data-l12-viewport=landscape] .l12-prompt-overlay:not(.minimized) .prompt-panel {
   width: min(920px,calc(var(--l12-viewport-width) - 36px)) !important;

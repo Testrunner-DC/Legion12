@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { friendApi, platformState, type PlatformFriend } from '../platform'
 import { playL12FriendRequestSound, primeL12ActionAudio } from '../game/useL12ActionAudio'
+import { landscapeTeleportTarget } from '../mobileViewport'
 
 const requests = ref<PlatformFriend[]>([])
 const current = computed(() => requests.value[0])
@@ -63,7 +64,7 @@ onBeforeUnmount(() => {
 })
 </script>
 <template>
-  <Teleport to="body"><section v-if="current" class="friend-request-dialog" role="dialog" aria-modal="false" aria-labelledby="friend-request-title" aria-live="polite">
+  <Teleport :to="landscapeTeleportTarget()"><section v-if="current" class="friend-request-dialog" role="dialog" aria-modal="false" aria-labelledby="friend-request-title" aria-live="polite">
     <h2 id="friend-request-title">好友申请 <small v-if="requests.length > 1">{{ requests.length }}条待处理</small></h2>
     <p><b>{{ current.username }}</b> 希望添加你为好友。</p>
     <p v-if="notice" role="alert">{{ notice }}</p>
