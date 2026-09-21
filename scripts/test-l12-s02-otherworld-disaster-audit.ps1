@@ -132,7 +132,7 @@ $matrixFixedStatus = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String
 $fullPassedCount = @($allAuditRows | Where-Object Status -eq $passedStatus).Count
 $fullFixedCount = @($allAuditRows | Where-Object Status -eq $fixedStatus).Count
 $fullQuestionRows = @($allAuditRows | Where-Object { $_.Status.StartsWith($questionStatus, [StringComparison]::Ordinal) })
-if ($fullPassedCount -ne 189 -or $fullFixedCount -ne 59 -or $fullQuestionRows.Count -ne 0) {
+if ($fullPassedCount -ne 186 -or $fullFixedCount -ne 62 -or $fullQuestionRows.Count -ne 0) {
     throw "Full-pool audit status totals drifted (passed=$fullPassedCount, fixed=$fullFixedCount, questionCards=$($fullQuestionRows.Count))."
 }
 $expectedQuestionCards = @()
@@ -167,4 +167,4 @@ Assert-Contains $openQuestions $noOpenQuestionText 'OPEN-QUESTIONS must record t
 $openHeadings = [regex]::Matches($openQuestions, '(?m)^### [1-5]\. ').Count
 if ($openHeadings -ne 0) { throw "OPEN-QUESTIONS must not retain resolved numbered ruling items (actual=$openHeadings)." }
 
-Write-Host 'S02 Otherworld + disaster per-ability audit guard passed (38 cards / 107 current abilities; full audit: 248 cards / 577 abilities; 189 passed / 59 fixed / 0 question cards).'
+Write-Host 'S02 Otherworld + disaster per-ability audit guard passed (38 cards / 107 current abilities; full audit: 248 cards / 577 abilities; 186 passed / 62 fixed / 0 question cards).'

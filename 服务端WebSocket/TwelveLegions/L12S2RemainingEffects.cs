@@ -68,10 +68,9 @@ public sealed partial class L12GameEngine
                 return CommitActiveAbility(playerIndex, source, ability, null);
             case "artemisBuff" when source.CardId == "S02-05M1":
             {
-                var targets = PublicLegions(player).Where(card => L12StructuredCardRules.HasFaction(player, card, "olympus")
-                        && card.CurrentCost is >= 3 and <= 6)
+                var targets = PublicLegions(player).Where(card => L12StructuredCardRules.HasFaction(player, card, "olympus"))
                     .Select(card => card.InstanceId).ToList();
-                if (targets.Count == 0) return CommandResult.Reject("没有费用3至6的【奥林匹斯】军团");
+                if (targets.Count == 0) return CommandResult.Reject("没有【奥林匹斯】军团");
                 var payment = new List<string>();
                 var unavailable = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 if (player.Morale.Any(card => card.IsGodPower && !card.Tapped)) payment.Add("pay:god-power");
@@ -88,7 +87,7 @@ public sealed partial class L12GameEngine
                         DisabledChoiceReasons = unavailable, UiPattern = "effect-decision",
                         ChoiceLabels = new()
                         {
-                            ["pay:god-power"] = "消耗并翻转1神力",
+                            ["pay:god-power"] = "消耗1神力",
                             ["pay:discard"] = "弃置1张手牌",
                             ["skip"] = "取消发动",
                         },
@@ -100,7 +99,7 @@ public sealed partial class L12GameEngine
                     },
                     new L12ActivationSelectionStep
                     {
-                        Kind = "field-legion", DeclarationKey = "buffTarget", Text = "阿尔忒弥斯：选择我方1张费用3至6的【奥林匹斯】军团",
+                        Kind = "field-legion", DeclarationKey = "buffTarget", Text = "阿尔忒弥斯：选择我方1张【奥林匹斯】军团",
                         ValidChoices = targets,
                     },
                     new L12ActivationSelectionStep
@@ -273,12 +272,11 @@ public sealed partial class L12GameEngine
                 if (buffMode is not ("buff:strong" or "buff:shock")) return CommandResult.Reject("赋予能力选择不合法");
                 var legion = FindOnField(player, targetId, out _, out _);
                 if (legion is null || legion.Hidden || !IsFieldLegion(legion)
-                    || !L12StructuredCardRules.HasFaction(player, legion, "olympus")
-                    || legion.CurrentCost is < 3 or > 6) return CommandResult.Reject("目标已不合法");
+                    || !L12StructuredCardRules.HasFaction(player, legion, "olympus")) return CommandResult.Reject("目标已不合法");
                 L12CardInstance? discarded = null;
                 if (paymentMode == "pay:god-power")
                 {
-                    if (!L12S2ZoneOps.ConsumeAndFlipGodPower(player, 1)) return CommandResult.Reject("需要1张活跃神力");
+                    if (!L12S2ZoneOps.ConsumeGodPower(player, 1)) return CommandResult.Reject("需要1张活跃神力");
                 }
                 else if (paymentMode == "pay:discard")
                 {
@@ -300,7 +298,7 @@ public sealed partial class L12GameEngine
                 DeclarePresentationBranch(data, "artemis-grant", "buffMode", buffMode);
                 PushEffect(playerIndex, source, "active", "主宰效果", data: data);
                 AddEvent("cost", playerIndex,
-                    paymentMode == "pay:god-power" ? "阿尔忒弥斯消耗并翻转1神力"
+                    paymentMode == "pay:god-power" ? "阿尔忒弥斯消耗1神力"
                         : $"阿尔忒弥斯弃置〈{discarded!.Name}〉支付费用",
                     discarded ?? source);
                 return CommandResult.Ok();
@@ -438,8 +436,7 @@ public sealed partial class L12GameEngine
             {
                 var legion = FindOnField(player, item.Data["target"], out _, out _);
                 if (legion is not null && !legion.Hidden && IsFieldLegion(legion)
-                    && L12StructuredCardRules.HasFaction(player, legion, "olympus")
-                    && legion.CurrentCost is >= 3 and <= 6)
+                    && L12StructuredCardRules.HasFaction(player, legion, "olympus"))
                 {
                     if (item.Data["buff"] == "buff:strong") GrantStrongAttack(legion);
                     else legion.HasShock = true;
@@ -449,7 +446,7 @@ public sealed partial class L12GameEngine
                         source, legion);
                 }
                 else RecordTargetSettlementFailure(item, item.Data.GetValueOrDefault("target"),
-                    "所选军团已离场、不再是公开军团、失去有效【奥林匹斯】特征或当前费用不再为3至6");
+                    "所选军团已离场、不再是公开军团或失去有效【奥林匹斯】特征");
                 FinishStackItem(item); return true;
             }
             case "hippolytaRevive" when source?.CardId == "S02-0510":

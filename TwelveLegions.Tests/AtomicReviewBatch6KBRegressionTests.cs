@@ -212,6 +212,61 @@ public sealed class AtomicReviewBatch6KBRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "card:S01-0213")]
+    [Trait("L12Evidence", "entry:siwa-kaba-occupied-slot-special-graveyard")]
+    public void SiwaKabaMovesToGraveyardWhenItsDeclaredSlotIsOccupiedBeforeSettlement()
+    {
+        var game = Create(8221);
+        var player = game.State.Players[0];
+        var kaba = Card("S01-0213", "batch6kb-kaba-occupied");
+        player.Hand.Add(kaba);
+        player.Field[0][0] = Card("S01-0103", "batch6kb-slot-occupant");
+        var item = new L12StackItem
+        {
+            StackItemId = "batch6kb-kaba-occupied-stack", Controller = 0,
+            SourceInstanceId = kaba.InstanceId, SourceCardId = kaba.CardId,
+            SourceName = kaba.Name, SourceSnapshot = kaba, Trigger = "reaction",
+            Text = "锡瓦的卡巴进攻后效果",
+        };
+        item.Data["atomicFlow"] = "锡瓦的卡巴";
+        item.Data["declared:entrySlot"] = "0:0";
+        game.State.EffectStack.Add(item);
+
+        Invoke(game, "ResolveS1ReactionEffect", item);
+
+        Assert.DoesNotContain(kaba, player.Hand);
+        Assert.Contains(kaba, player.Graveyard);
+        Assert.Equal("batch6kb-slot-occupant", player.Field[0][0]!.InstanceId);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0213")]
+    [Trait("L12Evidence", "entry:siwa-kaba-negated-special-graveyard")]
+    public void NegatedSiwaKabaHandEntryMovesItsSourceToGraveyard()
+    {
+        var game = Create(8222);
+        var player = game.State.Players[0];
+        var kaba = Card("S01-0213", "batch6kb-kaba-negated");
+        player.Hand.Add(kaba);
+        var item = new L12StackItem
+        {
+            StackItemId = "batch6kb-kaba-negated-stack", Controller = 0,
+            SourceInstanceId = kaba.InstanceId, SourceCardId = kaba.CardId,
+            SourceName = kaba.Name, SourceSnapshot = kaba, Trigger = "reaction",
+            Text = "锡瓦的卡巴进攻后效果", Negated = true,
+        };
+        item.Data["atomicFlow"] = "锡瓦的卡巴";
+        item.Data["declared:entrySlot"] = "0:0";
+        game.State.EffectStack.Add(item);
+
+        Invoke(game, "ResolveTopStack");
+
+        Assert.DoesNotContain(kaba, player.Hand);
+        Assert.Contains(kaba, player.Graveyard);
+        Assert.Null(player.Field[0][0]);
+    }
+
+    [Fact]
     [Trait("L12Evidence", "card:S01-0223")]
     public void ImmortalGiftUsesCurrentCostAndMayDeclineTheWholeReaction()
     {

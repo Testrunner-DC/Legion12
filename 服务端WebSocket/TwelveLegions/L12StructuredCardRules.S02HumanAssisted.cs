@@ -31,7 +31,7 @@ public static partial class L12StructuredCardRules
                 H("granted", "granted-continuous", "挑衅 对方只可进攻拥有 挑衅 效果的军团，若有多个具有 挑衅效果的军团，则可以选择其中1个进行进攻。")),
             "S02-0005" => HumanCard(
                 H("continuous", "continuous", "无法进攻。"),
-                H("opponent-attacks-master", "reaction", "对方进攻我方主宰时，可从手牌中休整登场于前排。将本次进攻目标改为此军团。")),
+                H("opponent-attacks-master", "reaction", "对方进攻我方主宰时，可从手牌中休整登场于前排：将本次进攻目标改为此军团。")),
             "S02-0006" => HumanCard(
                 H("continuous", "rule", "<信仰狂热者>的效果每回合只可使用1次。"),
                 H("discarded", "triggered", "我方回合 此军团从牌库弃置或因效果从手牌弃置时：可无视消耗触发1次我方需要消耗士气的主宰效果，且不计入主宰效果使用次数。")),

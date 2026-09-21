@@ -42,8 +42,8 @@ foreach ($contract in @(
     'QueueNextTrialCompletionSegment',
     'trial-completion-library-arthur',
     'trial-completion-library-search',
-    'fenianTargets',
-    'fenianRuneCount'
+    'fenianTarget',
+    'fenianRunePaid'
 )) {
     Assert-Contains $plans $contract "Batch 6B trial-completion contract is missing: $contract"
 }
@@ -51,7 +51,6 @@ foreach ($contract in @(
 Assert-Contains $s2 'CompleteTrialRuleAction(playerIndex, source)' 'completeTrial must execute directly as a rule action.'
 Assert-Contains $plans 'QueueCompletedTrialTriggerBatch(controller, trial)' 'The rule flip must publish the separate printed completion trigger.'
 $completeTrialText = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5a6M5oiQ6K+V54K8'))
-$fenianPreStackText = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('6Iqs5bC85Lqa5Lyg5aWH5YWl5qCI5YmN5raI6ICX'))
 $completeTrialPattern = 'PushEffect(playerIndex, source, "active", "' + $completeTrialText + '",'
 Assert-NotContains $s2 $completeTrialPattern 'The rule flip must not be a negatable active effect.'
 Assert-Contains $models 'MinimumReferenceNumericValue' 'Variable rune declarations must drive a generic number of public target steps.'
@@ -62,12 +61,17 @@ Assert-Contains $kernel 'L12ActivationCancellationPolicy.NotAllowed => false' 'M
 Assert-Contains $prompts 'QueueNextTrialCompletionSegment(item)' 'Independent trial-completion segments must continue after resolution or negation.'
 Assert-Contains $prompts '["mode:grave"]' 'The public graveyard mode needs a player-facing label.'
 Assert-Contains $prompts '["mode:library"]' 'The delayed library mode needs a player-facing label.'
-Assert-Contains $plans 'resolvedTargets.Any(target => target is null)' 'Fenian Legend must revalidate every declared target at resolution.'
-Assert-Contains $plans 'player.SpecialZones.Runes < count' 'Fenian Legend must revalidate the declared rune amount at resolution.'
-Assert-Contains $plans 'L12S2ZoneOps.SpendRunes(player, count)' 'Fenian Legend must spend X runes only while its effect resolves.'
-Assert-NotContains $plans $fenianPreStackText 'Fenian Legend has no printed colon and must not prepay runes before response.'
-Assert-Contains $tests 'FenianTrialSpendsRunesAndAppliesRepeatableTargetsOnlyDuringResolution' 'Fenian negation must preserve runes and stop every debuff.'
-Assert-Contains $tests 'FenianTargetLossCancelsTheWholeUnpaidEffectChain' 'Fenian target invalidation must fail atomically without spending runes.'
+Assert-Contains $plans '!L12S2ZoneOps.SpendRunes(player, 1)' 'Each Fenian declaration must pay exactly one rune before its response stack opens.'
+Assert-Contains $plans 'var target = DeclaredEnemyTarget(item.Controller, targetId)' 'Each Fenian stack must revalidate its single frozen target at resolution.'
+$fenianPaidRuneNotRefundedText = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5bey5pSv5LuY56ym5paH5LiN6L+U6L+Y'))
+Assert-Contains $plans $fenianPaidRuneNotRefundedText 'Fenian target invalidation must report that its paid rune remains spent.'
+Assert-Contains $plans 'if (plan == "fenian-legend")' 'Fenian repeat availability must be evaluated only after the current stack item finishes.'
+Assert-Contains $plans 'player.SpecialZones.Runes <= 0 || !PublicLegions' 'Fenian repeat must stop when either runes or legal enemy targets are absent.'
+Assert-NotContains $plans 'fenianTargets' 'The retired batch target list must not return.'
+Assert-NotContains $plans 'fenianRuneCount' 'The retired variable rune-count declaration must not return.'
+Assert-Contains $tests 'FenianTrialPaysOneRuneForOneTargetAndOffersRepeatOnlyAfterThatStackEnds' 'Fenian negation must keep the one paid rune and offer the next independent use afterward.'
+Assert-Contains $tests 'FenianTargetLossFailsOnlyThatAlreadyPaidUseAndMayThenDeclineTheRepeat' 'Fenian target invalidation must fail only the paid current use.'
+Assert-Contains $tests 'FenianRepeatMayChooseTheSameStillLegalTargetInASecondIndependentStack' 'Fenian must allow the same still-legal target in a later independent stack.'
 $remaining = Read-Source 'L12S2RemainingEffects.cs'
 $advancePlans = Read-Source 'L12TrialAdvanceEffectPlans.cs'
 $angusTests = Read-Source 'EffectBatch294RegressionTests.cs'
@@ -102,4 +106,4 @@ foreach ($legacy in @(
     }
 }
 
-Write-Host 'Trial completion TriggerBatch, hidden-information delay, colon boundary, and atomic effect-chain guard passed.'
+Write-Host 'Trial completion TriggerBatch, hidden-information delay, and repeatable one-rune/one-target Fenian stack guard passed.'

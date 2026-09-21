@@ -310,9 +310,9 @@ public sealed class S2UniversalEffectsTests
         {
             // No block/support window remains: combat may finish immediately after the
             // legal retarget, so the puppet can already have died rather than still be on field.
-            Assert.Contains(game.State.Events, entry => entry.Type == "enter"
+            Assert.Contains(game.State.Events, entry => entry.Type == "cost"
                 && entry.Cards.Any(card => card.InstanceId == puppet.InstanceId)
-                && entry.Text.Contains("成为本次进攻目标"));
+                && entry.Text.Contains("支付", StringComparison.Ordinal));
             Assert.DoesNotContain(puppet, game.State.Players[1].Hand);
             Assert.Contains(puppet, game.State.Players[1].Graveyard);
             Assert.Null(game.State.PendingDefense);
@@ -394,7 +394,7 @@ public sealed class S2UniversalEffectsTests
     }
 
     [Fact]
-    public void NegatedMagiciansPuppetRemainsInHandAndDoesNotRetarget()
+    public void NegatedMagiciansPuppetKeepsItsPaidRestedEntryAndDoesNotRetarget()
     {
         var game = Create(seed: 6217);
         var attacker = Instance("S02-0003", "puppet-negate-attacker");
@@ -428,8 +428,9 @@ public sealed class S2UniversalEffectsTests
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: discardPrompt.PromptId,
             Choice: "puppet-negate-discard")).Accepted);
 
-        Assert.Contains(puppet, game.State.Players[1].Hand);
-        Assert.Null(game.State.Players[1].Field[0][1]);
+        Assert.DoesNotContain(puppet, game.State.Players[1].Hand);
+        Assert.Same(puppet, game.State.Players[1].Field[0][1]);
+        Assert.True(puppet.Tapped);
         Assert.Equal("master", game.State.PendingDefense?.Target.Type);
         Assert.Equal(L12Phase.Defense, game.State.Phase);
         var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"

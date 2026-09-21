@@ -188,10 +188,12 @@ public sealed partial class L12GameEngine
         if (returnedMorale > 0) summaries.Add($"返还{returnedMorale}士气");
         var tappedMorale = before.Morale
             .Where(pair => !pair.Value.Tapped && currentMorale.GetValueOrDefault(pair.Key) is { Tapped: true })
-            .Select(pair => pair.Value).ToArray();
-        var flippedGodPower = tappedMorale.Count(card => card.IsGodPower);
-        var consumedMorale = tappedMorale.Length - flippedGodPower;
+            .Select(pair => (Before: pair.Value, After: currentMorale[pair.Key])).ToArray();
+        var flippedGodPower = tappedMorale.Count(card => card.Before.IsGodPower && !card.After.IsGodPower);
+        var consumedGodPower = tappedMorale.Count(card => card.Before.IsGodPower && card.After.IsGodPower);
+        var consumedMorale = tappedMorale.Count(card => !card.Before.IsGodPower);
         if (consumedMorale > 0) summaries.Add($"消耗{consumedMorale}士气");
+        if (consumedGodPower > 0) summaries.Add($"消耗{consumedGodPower}神力");
         if (flippedGodPower > 0) summaries.Add($"消耗并翻转{flippedGodPower}神力");
         var temporaryMorale = Math.Max(0, before.TemporaryMorale - player.TemporaryMorale);
         if (temporaryMorale > 0) summaries.Add($"消耗{temporaryMorale}临时士气");

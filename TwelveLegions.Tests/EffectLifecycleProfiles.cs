@@ -283,11 +283,11 @@ internal static class EffectLifecycleProfiles
             ["shock"] =
             [
                 "S02-0511:ability:keyword-definition:96aa4e9504b12339",
-                "S02-05M1:ability:keyword-definition:96aa4e9504b12339",
+                "S02-05M1:ability:keyword-definition:41657ed47ef085ae",
             ],
             ["strong-attack"] =
             [
-                "S02-05M1:ability:keyword-definition:62d5e99aeb08acbb",
+                "S02-05M1:ability:keyword-definition:995c52041c470ca4",
                 "S02-0605:ability:keyword-definition:60bccaeb6d982ea8",
             ],
             ["piercing"] =

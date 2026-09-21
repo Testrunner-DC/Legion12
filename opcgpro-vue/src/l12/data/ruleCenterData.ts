@@ -98,6 +98,8 @@ export const VERSION_ENTRIES: RuleCenterVersion[] = [
 ]
 
 export const BUILT_IN_RULINGS: RuleRuling[] = [
+  { id: 'RULING-20260922-FENIAN-REPEAT', scope: 'card', question: '〈芬尼亚传奇〉的完成触发如何重复发动？', answer: '待审核草稿：每次只消耗1符文、选择对方1张军团并生成一个独立响应堆叠；该堆叠完整结算后，若仍有符文和合法目标，再询问是否重复发动。可再次选择同一张仍合法的军团。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-22', recordedAt: '2026-09-22', status: 'pending', cardIds: ['S02-06S5'], productIds: ['S02'], tags: ['芬尼亚传奇', '符文', '重复发动', '独立堆叠'], sourceIds: [], supersedes: [] },
+  { id: 'RULING-20260922-SIWA-KABA', scope: 'card', question: '〈锡瓦的卡巴〉从手牌发动登场效果后被无效，或登场位置失效时如何处理？', answer: '待审核草稿：这是〈锡瓦的卡巴〉的单卡特例。该手牌登场效果被无效时，将它从手牌置入墓地；若声明的登场位置在逆结算后已被占用，也将它置入墓地，且不执行后续士气锁定。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-22', recordedAt: '2026-09-22', status: 'pending', cardIds: ['S01-0213'], productIds: ['S01'], tags: ['锡瓦的卡巴', '无效', '登场位置', '墓地'], sourceIds: [], supersedes: [] },
   { id: 'RULING-20260917-LIVE-COST', scope: 'card', question: '奈芙蒂斯、不朽之礼等效果引用费用时，如何判断费用？', answer: '裁定：按该效果适用时的实时费用判断。除非卡牌文字明确要求印刷费用，否则不以卡牌上印刷的费用数值作为判断依据。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-17', recordedAt: '2026-09-17', status: 'published', cardIds: [], productIds: [], tags: ['奈芙蒂斯', '不朽之礼', '实时费用', '费用判断'], sourceIds: ['LEGACY-FAQ-47'], supersedes: ['LEGACY-FAQ-47'] },
   { id: 'RULING-20260902-HOREMHEB', scope: 'card', question: '霍列姆赫布的致命替代如何处理？', answer: '裁定：作为替代结果离场的〈陵墓守卫〉，承受被保护军团原本的致命结果，并按其所有者进入对应区域。〈霍列姆赫布〉不因该替代先离场或重新登场。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-02', recordedAt: '2026-09-02', status: 'published', cardIds: [], productIds: [], tags: ['霍列姆赫布', '陵墓守卫', '致命替代', '阵亡'], sourceIds: [], supersedes: [] },
   { id: 'RULING-20260902-HELEN', scope: 'card', question: '海伦弃置手牌中的军团卡是否视为阵亡或离场？', answer: '裁定：该军团卡从手牌进入其所有者的墓地，属于弃置；这次区域变更不视为战场上的阵亡或离场，因此不触发【阵亡时】或【离场时】。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-02', recordedAt: '2026-09-02', status: 'published', cardIds: [], productIds: [], tags: ['海伦', '弃牌', '阵亡', '离场'], sourceIds: [], supersedes: [] },
@@ -124,6 +126,12 @@ export function createRuleCenterDraft(): RuleCenterDocument {
 
 export function createRulingsDraft(): RuleRuling[] {
   return JSON.parse(JSON.stringify(BUILT_IN_RULINGS)) as RuleRuling[]
+}
+
+/** Add newly shipped pending-review seeds without replacing an administrator's existing draft. */
+export function withPendingRulingSeeds(existing: RuleRuling[]): RuleRuling[] {
+  const ids = new Set(existing.map(item => item.id))
+  return [...createRulingsDraft().filter(item => item.status === 'pending' && !ids.has(item.id)), ...existing]
 }
 
 /** 原始表的内容只供后台逐条复核。它从不构成公开 FAQ 的答案。 */

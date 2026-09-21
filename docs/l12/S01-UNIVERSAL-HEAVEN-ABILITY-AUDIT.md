@@ -28,7 +28,7 @@
 | S01-0013 前线侦查 | 1 | 查看手牌只对发动者可见；追加费用预付；被影响玩家在追加段结算时选择洗回对象。 | `L12CompositeEffectPlans`、`L12S1ExtendedEffects` | `AtomicReviewBatch6JBRegressionTests` | 通过 |
 | S01-0014 祭天仪式 | 1 | 抽牌与随后天灾调整是两段；天灾值 -2..2 在出牌前公开声明，前段无效不吞后段。 | `L12CompositeEffectPlans`、`L12S1ExtendedEffects` | `AtomicReviewBatch6CRegressionTests` | 通过 |
 | S01-0015 议和谈判 | 1 | 己方抽1与谈判分别响应；对方接受/拒绝是被影响玩家在第二段结算时选择。 | `L12CompositeEffectPlans`、`L12CardEffects` | `AtomicReviewBatch6CRegressionTests` | 通过 |
-| S01-0016 绝对防御 | 1 | 具体手牌弃置在响应入栈前私密声明并支付；进攻抵挡与效果无效只作用于所响应对象。 | `L12PromptsAndSetup`、`L12S1ExtendedEffects` | `CombatTimelineRegressionTests`、`GameEngineTests` | 通过 |
+| S01-0016 绝对防御 | 1 | 只响应对方进攻或对方效果；真实候选、匿名卡池可用性与提交复验共读同一谓词。具体手牌弃置在响应入栈前私密支付；抵挡/无效只作用于所响应对象。 | `L12PromptsAndSetup`、`L12S1ExtendedEffects` | `StackResponseChoiceRegressionTests`、`CombatTimelineRegressionTests` | 明确错误→已修复 |
 | S01-0017 拼死反抗 | 1 | 进攻后公开选择单体-2000或全体休整军团-1000；效果持续至下个己方回合结束。 | `L12CombatTimeline`、`L12S1ExtendedEffects` | `CombatTimelineRegressionTests`、`RuleKernelTests` | 通过 |
 | S01-0018 落穴陷阱 | 1 | 仅响应军团登场效果并无效该登场效果，不回滚军团已发生的登场与天灾值。 | `L12PromptsAndSetup`、`L12S1ExtendedEffects` | `AtomicReviewBatch6JCRegressionTests`、`NewSystemsTests` | 通过 |
 | S01-0019 伏击 | 1 | 我方公开军团目标在响应前声明；结算目标失效只取消+2000，不改响应费用/来源。 | `L12S1ExtendedEffects`、`L12StructuredCardRules` | `AtomicReviewBatch2RegressionTests`、`CombatTimelineRegressionTests` | 通过 |

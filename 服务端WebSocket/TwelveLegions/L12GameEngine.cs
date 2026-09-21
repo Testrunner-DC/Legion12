@@ -731,9 +731,8 @@ public sealed partial class L12GameEngine
             return "我方战场没有可选择的【彼界】军团";
         if (ability == "artemisBuff")
         {
-            if (!ownLegions.Any(card => L12StructuredCardRules.HasFaction(player, card, "olympus")
-                    && card.CurrentCost is >= 3 and <= 6))
-                return "没有费用3至6的【奥林匹斯】军团";
+            if (!ownLegions.Any(card => L12StructuredCardRules.HasFaction(player, card, "olympus")))
+                return "没有【奥林匹斯】军团";
             if (!player.Morale.Any(card => card.IsGodPower && !card.Tapped) && player.Hand.Count == 0)
                 return "没有可支付的神力或手牌";
         }

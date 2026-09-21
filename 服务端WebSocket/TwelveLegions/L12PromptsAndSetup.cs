@@ -1474,8 +1474,7 @@ public sealed partial class L12GameEngine
         {
             if (protectedFromCounters && CounterTacticAffectsRespondedEffect(card.CardId)) continue;
             if (!ResponseCardMayRespondToSelectedEffect(card.CardId, top)) continue;
-            if (card.CardId == "S01-0016" && top.Controller != playerIndex && top.Trigger != "authority-event"
-                && player.Hand.Count > 0 && (!defenderAttackTimingRoot || playerIndex == defendingPlayer))
+            if (card.CardId == "S01-0016" && CanAbsoluteDefenseRespondTo(playerIndex, top))
                 choices.Add(card.InstanceId);
             // “晋升登场”属于军团登场效果家族中的独立时点。落穴只检查它实际将要无效的
             // 当前堆叠项目，不能沿响应链借用更早的登场时点去无效绝对防御等反击效果。
@@ -1496,8 +1495,9 @@ public sealed partial class L12GameEngine
             && playerIndex == defendingPlayer
             && Enumerable.Range(0, 3).Any(slot => player.Field[0][slot] is null))
             choices.AddRange(player.Hand.Where(card => card.CardId == "S02-0005").Select(card => card.InstanceId));
-        // A hand response (notably the puppet) stays in hand until resolution, but its same
-        // physical instance is already committed and cannot be declared again in this window.
+        // The same physical response instance cannot be committed twice. Hand-entry costs such as
+        // the puppet leave hand before their effect enters the stack, while older hand responses
+        // are still protected by this identity guard.
         return choices.Where(id => !State.EffectStack.Any(item => item.SourceInstanceId == id
             && IsResponseEffectStackItem(item))).ToList();
     }
@@ -1603,21 +1603,28 @@ public sealed partial class L12GameEngine
     {
         if (!IsCounterTactic(cardId)) return false;
         if (!ResponseCardMayRespondToSelectedEffect(cardId, top)) return false;
+        if (cardId == "S01-0016")
+            return CanAbsoluteDefenseRespondTo(playerIndex, top);
         if (top.Trigger == "opponent-attack")
         {
             var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
-            if (cardId == "S01-0016")
-                return playerIndex == defendingPlayer && State.Players[playerIndex].Hand.Count > 0;
             return CanUseS1ResponseAtCurrentEffect(cardId, playerIndex, top)
                 && HasAvailablePublicResponseDeclaration(playerIndex, cardId, top);
         }
-        if (cardId == "S01-0016")
-            return top.Trigger != "authority-event" && State.Players[playerIndex].Hand.Count > 0;
         if (cardId == "S01-0018")
             return CanPitfallRespondToCurrentEffect(playerIndex, top);
         return (CanUseS1ResponseAtCurrentEffect(cardId, playerIndex, top)
                 || CanUseS2CounterAtStack(cardId, playerIndex, top))
             && HasAvailablePublicResponseDeclaration(playerIndex, cardId, top);
+    }
+
+    private bool CanAbsoluteDefenseRespondTo(int playerIndex, L12StackItem target)
+    {
+        if (target.Controller == playerIndex || target.Trigger == "authority-event"
+            || State.Players[playerIndex].Hand.Count == 0) return false;
+        if (target.Trigger != "opponent-attack") return true;
+        var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
+        return playerIndex == defendingPlayer;
     }
 
     private bool CanPitfallRespondToCurrentEffect(int playerIndex, L12StackItem target)
@@ -1767,7 +1774,7 @@ public sealed partial class L12GameEngine
                 .ToArray();
             if (frontSlots.Length == 0) { PassPriority(playerIndex); return; }
             var choices = frontSlots.Append("cancel").ToArray();
-            CreatePrompt(playerIndex, "slot", $"{response.Name}：预先选择休整登场的前排位置", choices,
+            CreatePrompt(playerIndex, "slot", $"{response.Name}：选择休整登场的前排位置（登场为费用）", choices,
                 1, 1, "stack-response-puppet-slot", targetStackItemId, isPrivate: true,
                 data: new Dictionary<string, string>
                 {
@@ -1849,6 +1856,14 @@ public sealed partial class L12GameEngine
             OfferResponse();
             return;
         }
+        var slot = int.Parse(slotChoice.AsSpan(2));
+        player.Hand.Remove(response);
+        response.Tapped = true;
+        response.SummonRound = State.Round;
+        player.Field[0][slot] = response;
+        AddEvent("cost", playerIndex, $"{response.Name} 从手牌休整登场于前排，支付响应费用", response);
+        AddEvent("enter", playerIndex, $"{response.Name} 从手牌休整登场于前排，完成冒号前费用", response);
+        CompleteEffectLegionEntry(playerIndex, response, "hand");
         CommitPuppetResponse(playerIndex, response, target.StackItemId, slotChoice);
     }
 
@@ -1862,7 +1877,7 @@ public sealed partial class L12GameEngine
             SourceCardId = response.CardId,
             SourceName = response.Name,
             Trigger = "response-retarget-master",
-            Text = "从手牌休整登场于前排，并将本次进攻目标改为此军团",
+            Text = "将本次进攻目标改为此军团",
         };
         item.Targets.Add(targetStackId);
         item.Data["slot"] = slotChoice;
@@ -1960,6 +1975,7 @@ public sealed partial class L12GameEngine
         if (item.Negated)
         {
             State.PendingPrompts.RemoveAll(prompt => prompt.StackItemId == item.StackItemId);
+            ResolveNegatedSourceSpecialCase(item);
             AddEvent("stack-resolve", item.Controller, $"〈{item.SourceName}〉的{item.Text}未产生效果");
             if (item.Trigger == "attack")
             {
@@ -2013,31 +2029,39 @@ public sealed partial class L12GameEngine
     private void ResolvePuppetResponse(L12StackItem item)
     {
         var player = State.Players[item.Controller];
-        var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == item.SourceInstanceId
-            && candidate.CardId == "S02-0005");
+        var card = FindOnField(player, item.SourceInstanceId, out var cardRow, out var cardSlot);
         var attackItem = State.EffectStack.FirstOrDefault(candidate => candidate.StackItemId == item.Targets.FirstOrDefault()
             && candidate.Trigger == "opponent-attack" && !candidate.Negated);
         var slotParts = item.Data.GetValueOrDefault("slot")?.Split(':');
         var slot = -1;
         var validSlot = slotParts is { Length: 2 }
             && int.TryParse(slotParts[0], out var row) && row == 0
-            && int.TryParse(slotParts[1], out slot) && slot is >= 0 and <= 2
-            && player.Field[0][slot] is null;
-        if (card is null || attackItem is null || State.PendingDefense?.Target.Type != "master" || !validSlot)
+            && int.TryParse(slotParts[1], out slot) && slot is >= 0 and <= 2;
+        var costStillPresent = card is { CardId: "S02-0005", Tapped: true }
+            && cardRow == 0 && cardSlot == slot && player.Field[0][slot] == card;
+        if (!costStillPresent || attackItem is null || State.PendingDefense?.Target.Type != "master" || !validSlot)
         {
-            AddEvent("effect-failed", item.Controller, $"〈{item.SourceName}〉未能在预先选择的位置登场，进攻目标不变");
+            AddEvent("effect-failed", item.Controller, $"〈{item.SourceName}〉的已支付登场状态或原进攻对象失效，进攻目标不变");
             FinishStackItem(item);
             return;
         }
 
-        player.Hand.Remove(card);
-        card.Tapped = true;
-        card.SummonRound = State.Round;
-        player.Field[0][slot] = card;
-        State.PendingDefense.Target = new L12AttackTarget("legion", card.InstanceId);
-        AddEvent("enter", item.Controller, $"{card.Name} 从手牌休整登场于前排，并成为本次进攻目标", card);
-        CompleteEffectLegionEntry(item.Controller, card, "hand");
+        State.PendingDefense.Target = new L12AttackTarget("legion", card!.InstanceId);
+        AddEvent("effect", item.Controller, $"{card.Name} 成为本次进攻目标", card);
         FinishStackItem(item);
+    }
+
+    private void ResolveNegatedSourceSpecialCase(L12StackItem item)
+    {
+        if (item.SourceCardId != "S01-0213" || item.Trigger != "reaction") return;
+        var player = State.Players[item.Controller];
+        var kaba = player.Hand.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId
+            && card.CardId == "S01-0213");
+        if (kaba is null) return;
+        player.Hand.Remove(kaba);
+        ResetCardAfterLeavingField(kaba);
+        player.Graveyard.Add(kaba);
+        AddEvent("move", item.Controller, "〈锡瓦的卡巴〉的手牌登场效果被无效，按单卡裁定置入墓地", kaba);
     }
 
     private void FinishStackItem(L12StackItem item)

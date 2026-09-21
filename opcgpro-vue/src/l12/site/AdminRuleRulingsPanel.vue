@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { adminApi, hasPermission } from '@/l12/platform'
-import { LEGACY_FAQ_SOURCES, createRuleCenterDraft, createRulingsDraft, mergedRulings, parseRulingDocument, type RuleRuling } from '@/l12/data/ruleCenterData'
+import { LEGACY_FAQ_SOURCES, createRuleCenterDraft, createRulingsDraft, mergedRulings, parseRulingDocument, withPendingRulingSeeds, type RuleRuling } from '@/l12/data/ruleCenterData'
 
 const emit = defineEmits<{ notice: [value: string] }>()
 const entries = ref<RuleRuling[]>([])
@@ -36,8 +36,10 @@ async function load() {
   busy.value = true
   try {
     const [rulings, center] = await Promise.all([adminApi.getContent('rules.rulings'), adminApi.getContent('rules.center')])
-    entries.value = parseRulingDocument(rulings.draftValue)
-    if (!entries.value.length && !rulings.draftValue.trim()) entries.value = createRulingsDraft()
+    const parsedRulings = parseRulingDocument(rulings.draftValue)
+    entries.value = !parsedRulings.length && !rulings.draftValue.trim()
+      ? createRulingsDraft()
+      : withPendingRulingSeeds(parsedRulings)
     const centerDocument = JSON.parse(center.draftValue.trim() || JSON.stringify(createRuleCenterDraft())) as Record<string, Array<Record<string, unknown>>>
     centerDocument.coreBlocks = (centerDocument.coreBlocks || []).map((block, index) => ({ ...block,
       id: typeof block.id === 'string' && block.id ? block.id : `core-rule-${index + 1}`,

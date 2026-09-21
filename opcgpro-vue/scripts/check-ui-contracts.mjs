@@ -1297,7 +1297,7 @@ contracts.push([
 ])
 
 const latestReleaseEntry = shell.slice(
-  shell.indexOf("date: '2026-09-21'"),
+  shell.indexOf("date: '2026-09-22'"),
   shell.indexOf("date: '2026-09-14'"),
 )
 const currentReleaseEntry = shell.slice(

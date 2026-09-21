@@ -1222,7 +1222,7 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
-    public void FenianLegendResolvesThreeRepeatableDebuffsAsOneEffectChain()
+    public void FenianLegendResolvesThreeRepeatableDebuffsAsThreeIndependentStacks()
     {
         var game = Create(64105);
         var player = game.State.Players[0];
@@ -1240,25 +1240,24 @@ public sealed class LatestBugRegressionTests
         Assert.True(game.Handle(0, new L12Command("activateAbility", trial.InstanceId,
             Ability: "completeTrial")).Accepted);
         PassResponses(game);
-        var mode = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
-            Choice: "mode:use")).Accepted);
-        var amount = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: amount.PromptId,
-            Choice: "rune-count:3")).Accepted);
         for (var index = 0; index < 3; index++)
         {
+            var mode = Assert.Single(game.State.PendingPrompts);
+            Assert.Contains("mode:use", mode.ValidChoices);
+            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+                Choice: "mode:use")).Accepted);
             var target = Assert.Single(game.State.PendingPrompts);
             Assert.Contains(enemy.InstanceId, target.ValidChoices);
             Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: target.PromptId,
                 Choice: enemy.InstanceId)).Accepted);
+            Assert.Equal(2 - index, player.SpecialZones.Runes);
+            PassResponses(game);
         }
-
-        PassResponses(game);
 
         Assert.Equal(0, player.SpecialZones.Runes);
         Assert.Equal(enemy.BaseTroops - 9000, enemy.Troops);
-        Assert.Contains(game.State.Events, entry => entry.Text.Contains("已选择的3个目标", StringComparison.Ordinal));
+        Assert.Equal(3, game.State.Events.Count(entry => entry.Type == "cost"
+            && entry.Text.Contains("芬尼亚传奇", StringComparison.Ordinal)));
     }
 
     [Fact]

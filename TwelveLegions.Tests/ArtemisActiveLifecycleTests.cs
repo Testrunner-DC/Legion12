@@ -145,7 +145,7 @@ public sealed class ArtemisActiveLifecycleTests
 
     [Fact]
     [Trait("L12Evidence", "ability:artemisBuff")]
-    public void TargetLeavingTheCostRangeDuringResponseFailsAndKeepsTheDiscardCost()
+    public void TargetCostChangesDuringResponseDoNotInvalidateTheErrataTarget()
     {
         var game = Create(91453);
         var player = game.State.Players[0];
@@ -164,9 +164,9 @@ public sealed class ArtemisActiveLifecycleTests
         PassResponses(game);
 
         Assert.Contains(discard, player.Graveyard);
-        Assert.False(target.HasStrongAttack);
+        Assert.True(target.HasStrongAttack);
         Assert.False(target.HasShock);
-        Assert.Equal("failed", Result(game).EffectResultStatus);
+        Assert.Equal("resolved", Result(game).EffectResultStatus);
     }
 
     [Fact]
@@ -191,7 +191,7 @@ public sealed class ArtemisActiveLifecycleTests
         PassResponses(game);
 
         Assert.True(power.Tapped);
-        Assert.False(power.IsGodPower);
+        Assert.True(power.IsGodPower);
         Assert.False(target.HasShock);
         Assert.Equal("failed", Result(game).EffectResultStatus);
     }
@@ -212,13 +212,35 @@ public sealed class ArtemisActiveLifecycleTests
         ResolveOnly(game, "pay:god-power");
         ResolveOnly(game, target.InstanceId);
         ResolveOnly(game, "buff:shock");
+        Assert.Equal("消耗1神力", Assert.Single(game.State.EffectStack).Data["paidCostSummary"]);
         Assert.Single(game.State.EffectStack).Negated = true;
         PassResponses(game);
 
         Assert.True(power.Tapped);
-        Assert.False(power.IsGodPower);
+        Assert.True(power.IsGodPower);
         Assert.False(target.HasShock);
         Assert.Equal("negated", Result(game).EffectResultStatus);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(8)]
+    [Trait("L12Evidence", "ability:artemisBuff")]
+    [Trait("L12Evidence", "entry:artemis-no-cost-range-target")]
+    public void ErrataTargetAllowsAnyCostOlympusLegion(int currentCost)
+    {
+        var game = Create(91459 + currentCost);
+        var player = game.State.Players[0];
+        var target = Card("S02-0502", $"artemis-any-cost-{currentCost}", currentCost);
+        player.Field[0][0] = target;
+        player.Hand.Add(Card("S02-0001", $"artemis-any-cost-discard-{currentCost}"));
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "artemisBuff")).Accepted);
+        ResolveOnly(game, "pay:discard");
+        ResolveOnly(game, player.Hand[0].InstanceId);
+
+        Assert.Contains(target.InstanceId, Assert.Single(game.State.PendingPrompts).ValidChoices);
     }
 
     [Fact]

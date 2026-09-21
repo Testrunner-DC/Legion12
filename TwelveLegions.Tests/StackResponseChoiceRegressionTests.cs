@@ -415,7 +415,7 @@ public sealed partial class StackResponseChoiceRegressionTests
     }
 
     [Fact]
-    public void ACommittedPuppetCannotBeDeclaredAgainWhileStillInHand()
+    public void ACommittedPuppetPaysItsHandEntryCostBeforeTheRetargetStackOpens()
     {
         var game = Create();
         var attack = AddEffect(game, "stack-1", "opponent-attack");
@@ -429,10 +429,34 @@ public sealed partial class StackResponseChoiceRegressionTests
         Offer(game);
         Resolve(game, puppet.InstanceId);
         Resolve(game, "0:1");
-        Assert.Contains(puppet, game.State.Players[1].Hand);
+        Assert.DoesNotContain(puppet, game.State.Players[1].Hand);
+        Assert.Same(puppet, game.State.Players[1].Field[0][1]);
+        Assert.True(puppet.Tapped);
         Assert.Single(game.State.EffectStack, item => item.SourceInstanceId == puppet.InstanceId);
         Assert.DoesNotContain(puppet.InstanceId, Assert.Single(game.State.PendingPrompts).ValidChoices);
         Assert.Equal(1, game.State.ResponseWindow!.PriorityPlayer);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0016")]
+    [Trait("L12Evidence", "entry:absolute-defense-shared-opponent-only-predicate")]
+    public void AbsoluteDefenseCandidateAndPoolAvailabilityBothRejectOwnEffects()
+    {
+        var game = Create();
+        var ownEffect = AddEffect(game, "own-effect", "play", owner: 1);
+        ownEffect.Negated = false;
+        var absolute = Counter(game, 0, "S01-0016");
+        game.State.Players[1].Hand.Add(Card("S01-0003", "absolute-payment", 1));
+
+        Assert.DoesNotContain(absolute.InstanceId, LegalResponses(game, 1, ownEffect));
+        var poolPredicate = typeof(L12GameEngine).GetMethod("IsPoolCounterResponseAtTiming",
+            BindingFlags.NonPublic | BindingFlags.Instance)!;
+        Assert.False(Assert.IsType<bool>(poolPredicate.Invoke(game, ["S01-0016", 1, ownEffect])));
+
+        var opponentEffect = AddEffect(game, "opponent-effect", "play", owner: 0);
+        opponentEffect.Negated = false;
+        Assert.Contains(absolute.InstanceId, LegalResponses(game, 1, opponentEffect));
+        Assert.True(Assert.IsType<bool>(poolPredicate.Invoke(game, ["S01-0016", 1, opponentEffect])));
     }
 
     [Fact]

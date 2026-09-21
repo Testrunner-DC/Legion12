@@ -83,7 +83,7 @@ $passedStatus = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('6YC
 $fixedCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($fixedStatus) + ' \|').Count
 $questionCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($questionStatus)).Count
 $passedCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($passedStatus) + ' \|').Count
-if ($fixedCount -ne 8 -or $questionCount -ne 0 -or $passedCount -ne 48) {
+if ($fixedCount -ne 9 -or $questionCount -ne 0 -or $passedCount -ne 47) {
     throw "Batch 6K-A status totals drifted (passed=$passedCount, fixed=$fixedCount, questions=$questionCount)."
 }
 Write-Host 'S01 universal + Heaven per-ability audit guard passed (56 cards / 94 abilities).'

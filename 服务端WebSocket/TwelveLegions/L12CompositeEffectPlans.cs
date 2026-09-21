@@ -393,7 +393,7 @@ internal static partial class L12CompositeEffectPlans
             ],
             ["active:S02-05M1:artemisBuff"] =
             [
-                new("artemis-grant", "阿尔忒弥斯：使已选择的费用3至6【奥林匹斯】军团本回合获得已声明能力",
+                new("artemis-grant", "阿尔忒弥斯：使已选择的【奥林匹斯】军团本回合获得已声明能力",
                     PublicTargetKeys: ["buffTarget"], RequiredDeclarationKey: "buffTarget"),
             ],
             ["active:S02-06M1:morriganReadyOnKill"] =

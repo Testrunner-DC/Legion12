@@ -291,6 +291,7 @@ public sealed class AtomicReviewBatch6LDRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "cards:S02-06S5,S02-0008")]
+    [Trait("L12Evidence", "invariant:fenianReady-unchanged-by-completion-trigger-errata")]
     public void FenianReadyIncludesARingUniversalLegionWithPrintedTroopsAtMostFourThousand()
     {
         var game = Create(8706);

@@ -71,7 +71,7 @@ public sealed partial class L12GameEngine
             new("divinityPower", "我方 回合1次 可消耗并翻转2神力：选择回收并登场，或对对方所有军团造成合计6000兵力的伤害。"),
             new("divinityFreePromotion", "主动休整：本回合我方下1张【奥林匹斯】军团「晋升登场」无需消耗并翻转神力。"),
         ],
-        "S02-05M1" => [new("artemisBuff", "我方 回合1次 可消耗并翻转1神力或弃置1张手牌：选择我方1张费用为3至6的【奥林匹斯】军团，本回合获得强攻或震击。")],
+        "S02-05M1" => [new("artemisBuff", "我方 回合1次 可消耗1神力或弃置1张手牌：选择我方1张【奥林匹斯】军团，本回合获得强攻或震击。")],
         "S02-0510" => [new("hippolytaRevive", "主动休整 消耗3士气并弃置1张手牌：选择墓地1张费用不高于4的【奥林匹斯】军团活跃登场。")],
         "S02-06D1" =>
         [
@@ -1187,8 +1187,20 @@ public sealed partial class L12GameEngine
                         if (lockedMorale is not null) lockedMorale.CannotUntapUntilRound = State.Round + 1;
                     }
                     else
+                    {
+                        var failedKaba = player.Hand.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId
+                            && card.CardId == "S01-0213");
+                        if (failedKaba is not null)
+                        {
+                            player.Hand.Remove(failedKaba);
+                            ResetCardAfterLeavingField(failedKaba);
+                            player.Graveyard.Add(failedKaba);
+                            AddEvent("move", item.Controller,
+                                "〈锡瓦的卡巴〉声明的登场位置在逆结算后被占用，按单卡裁定置入墓地", failedKaba);
+                        }
                         RecordResolutionFailure(item,
                             "来源已不在手牌区或预先选择的登场位置在响应逆结算后失效；不执行下个重置阶段的士气锁定");
+                    }
                     FinishStackItem(item); return;
                 }
                 FinishStackItem(item); return;

@@ -16,7 +16,7 @@
 | S02-0002 疯狂的爱丽丝 | 2 | 进攻无损走战斗数值层；回合1次击杀后转活跃为可选候选，拒绝释放 pending、提交才最终消费。 | `L12RuleKernelIntegration`、`L12PublicTriggerEffectPlans` | `AtomicReviewBatch6IBRegressionTests`、`S2FactionRegressionTests` | 通过 |
 | S02-0003 宫廷魔术师 | 3 | 远程静态正确；登场公开反击目标先声明；主动休整后直到下个己方回合开始前阻止全场反击战术发动。 | `L12EnterPublicTriggerPlans`、`L12S2UniversalEffects` | `AtomicReviewBatch6JARegressionTests`、`LatestBugRegressionTests` | 通过 |
 | S02-0004 路易芒德兰 | 2 | 前排时获得挑衅；仅对方回合获得+1000持续兵力层，不污染基础兵力。 | `L12RuleKernelIntegration`、`L12StructuredCardRules.S02HumanAssisted` | `AtomicReviewBatch3RegressionTests`、`S2UniversalEffectsTests` | 通过 |
-| S02-0005 戏法师的傀儡 | 2 | 无法进攻；对方进攻主宰时从私密手牌声明公开前排位置，效果成功才休整登场并改目标，被无效仍留手，位置失效不覆盖。 | `L12PromptsAndSetup`、`L12GameEngine` | `Bq20260830RegressionTests`、`S2UniversalEffectsTests` | 通过 |
+| S02-0005 戏法师的傀儡 | 2 | 无法进攻；对方进攻主宰时声明前排位置，冒号前Cost立即使自身从手牌休整登场，随后只把改目标入栈；被无效仍休整留场且不改目标，取消不支付。 | `L12PromptsAndSetup`、`L12GameEngine` | `StackResponseChoiceRegressionTests`、`S2UniversalEffectsTests` | 明确错误→已修复 |
 | S02-0006 信仰狂热者 | 2 | 牌库弃置或效果弃手的条件与每回合1次保持；狂热者本身完整离栈后才选择主宰效果，并生成独立可响应栈项；免费且不计主宰能力使用次数。 | `L12S2FactionEffects`、`L12PostResolutionGeneratedEffects`、`L12ActiveAbilities` | `Bq20260830RegressionTests`、`S2FactionRegressionTests`、`RulingClosureRegressionTests` | 通过 |
 | S02-0007 重装士兵 | 3 | 无法进攻且无法被远程进攻；前排挑衅及对方回合+1000均由结构化战斗规则派生。 | `L12GameEngine`、`L12RuleKernelIntegration` | `RuleKernelTests`、`S2UniversalEffectsTests` | 通过 |
 | S02-0008 万物统御之戒 | 2 | 圣物区内通用卡在所有权威区域按控制者主宰阵营判定；登场声明只看公开牌库数量，弃手费用私密预付，牌库检索身份与是否命中只在合法结算期读取并展示加入，随后重洗。 | `L12StructuredCardRules`、`L12EnterPublicTriggerPlans`、`L12EffectGeneratedPlay` | `AtomicReviewBatch6JARegressionTests`（含6M隐藏命中存在性回归）、`AtomicReviewBatch6KCRegressionTests` | 明确错误→已修复 |

@@ -195,10 +195,13 @@ public sealed class AtomicEffectsTests
     public void PreviouslyMissingPrintedCostsAreExplicitInTheCatalog(
         string cardId, string trigger, string expectedCostFragment)
     {
-        var ability = Assert.Single(Catalog.AtomicEffects.Find(cardId)!.Abilities,
-            candidate => candidate.Trigger == trigger
+        var matches = Catalog.AtomicEffects.Find(cardId)!.Abilities
+            .Where(candidate => candidate.Trigger == trigger
                 && candidate.Text.IndexOfAny(['：', ':']) > 0
                 && candidate.Text.Contains(expectedCostFragment, StringComparison.Ordinal));
+        var ability = cardId == "S02-06S5"
+            ? Assert.Single(matches, candidate => candidate.Text.Contains("本效果可重复发动", StringComparison.Ordinal))
+            : Assert.Single(matches);
         Assert.Contains(expectedCostFragment, ability.CostText, StringComparison.Ordinal);
         Assert.Contains(ability.Atoms, atom => atom.Stage == "cost");
     }

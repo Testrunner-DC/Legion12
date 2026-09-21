@@ -175,7 +175,7 @@ public sealed class AtomicReviewBatch6BRegressionTests
     [Fact]
     [Trait("L12Evidence", "card:S02-06S5")]
     [Trait("L12Evidence", "entry:trial-completion-no-colon-effect-chain")]
-    public void FenianTrialSpendsRunesAndAppliesRepeatableTargetsOnlyDuringResolution()
+    public void FenianTrialPaysOneRuneForOneTargetAndOffersRepeatOnlyAfterThatStackEnds()
     {
         var game = Create(7623);
         var player = game.State.Players[0];
@@ -185,26 +185,24 @@ public sealed class AtomicReviewBatch6BRegressionTests
 
         BeginCompletion(game, "S02-06S5", "batch6b-fenian");
         Resolve(game, "mode:use");
-        var amount = Assert.Single(game.State.PendingPrompts);
-        Assert.Contains("rune-count:3", amount.ValidChoices);
-        Resolve(game, "rune-count:3");
-        Resolve(game, enemy.InstanceId);
-        Resolve(game, enemy.InstanceId);
         Resolve(game, enemy.InstanceId);
 
-        Assert.Equal(3, player.SpecialZones.Runes);
+        Assert.Equal(2, player.SpecialZones.Runes);
         Assert.Single(game.State.EffectStack);
         game.State.EffectStack[0].Negated = true;
         PassResponses(game);
 
+        var repeat = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("mode:use", repeat.ValidChoices);
+        Resolve(game, "mode:none");
         Assert.Equal(enemy.BaseTroops, enemy.Troops);
-        Assert.Equal(3, player.SpecialZones.Runes);
+        Assert.Equal(2, player.SpecialZones.Runes);
     }
 
     [Fact]
     [Trait("L12Evidence", "card:S02-06S5")]
     [Trait("L12Evidence", "entry:trial-completion-source-snapshot-target-loss")]
-    public void FenianTargetLossCancelsTheWholeUnpaidEffectChain()
+    public void FenianTargetLossFailsOnlyThatAlreadyPaidUseAndMayThenDeclineTheRepeat()
     {
         var game = Create(76231);
         var player = game.State.Players[0];
@@ -216,20 +214,49 @@ public sealed class AtomicReviewBatch6BRegressionTests
 
         var trial = BeginCompletion(game, "S02-06S5", "batch6b-fenian-snapshot");
         Resolve(game, "mode:use");
-        Resolve(game, "rune-count:2");
         Resolve(game, first.InstanceId);
-        Resolve(game, second.InstanceId);
-        Assert.Equal(2, player.SpecialZones.Runes);
+        Assert.Equal(1, player.SpecialZones.Runes);
 
         player.SpecialZones.Trials.Remove(trial);
         game.State.Players[1].Field[0][0] = null;
         game.State.Players[1].Graveyard.Add(first);
         PassResponses(game);
+        Resolve(game, "mode:none");
 
         Assert.Equal(first.BaseTroops, first.Troops);
         Assert.Equal(second.BaseTroops, second.Troops);
-        Assert.Equal(2, player.SpecialZones.Runes);
-        Assert.Contains(game.State.Events, entry => entry.Text.Contains("消耗符文与全部兵力降低均不结算", StringComparison.Ordinal));
+        Assert.Equal(1, player.SpecialZones.Runes);
+        Assert.Contains(game.State.Events, entry => entry.Text.Contains("已支付符文不返还", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-06S5")]
+    [Trait("L12Evidence", "entry:fenian-repeat-separate-stacks-same-target")]
+    public void FenianRepeatMayChooseTheSameStillLegalTargetInASecondIndependentStack()
+    {
+        var game = Create(76233);
+        var player = game.State.Players[0];
+        var enemy = Card("S02-0302", "batch6b-repeat-same-target", 10000);
+        player.SpecialZones.Runes = 2;
+        game.State.Players[1].Field[0][0] = enemy;
+
+        BeginCompletion(game, "S02-06S5", "batch6b-fenian-repeat");
+        Resolve(game, "mode:use");
+        Resolve(game, enemy.InstanceId);
+        Assert.Equal(1, player.SpecialZones.Runes);
+        Assert.Single(game.State.EffectStack);
+        PassResponses(game);
+        Assert.Equal(7000, enemy.Troops);
+
+        Resolve(game, "mode:use");
+        Resolve(game, enemy.InstanceId);
+        Assert.Equal(0, player.SpecialZones.Runes);
+        Assert.Single(game.State.EffectStack);
+        PassResponses(game);
+
+        Assert.Equal(4000, enemy.Troops);
+        Assert.Equal(2, game.State.Events.Count(entry => entry.Type == "cost"
+            && entry.Text.Contains("芬尼亚传奇", StringComparison.Ordinal)));
     }
 
     [Fact]
