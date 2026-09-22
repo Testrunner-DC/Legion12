@@ -6,9 +6,10 @@ const read = path => readFile(resolve(root, path), 'utf8')
 const settings = await read('src/l12/site/L12SettingsModal.vue')
 const audioPreferences = await read('src/l12/audioPreferences.ts')
 const cardTile = await read('src/l12/CardTile.vue')
-const [viewportCss, viewportTs, app, archive, decks, deckBrowser, filterSheet, board, playerMat, prompt, shell, rules, profile, admin, news, home, feedback, battleHub, rankings, tournaments, recovery, globalCss] = await Promise.all([
+const [viewportCss, viewportTs, battleLayout, app, archive, decks, deckBrowser, filterSheet, board, playerMat, prompt, shell, rules, profile, admin, news, home, feedback, battleHub, rankings, tournaments, recovery, globalCss] = await Promise.all([
   read('src/l12/mobileViewport.css'),
   read('src/l12/mobileViewport.ts'),
+  read('src/l12/game/battleViewportLayout.ts'),
   read('src/App.vue'),
   read('src/l12/CardArchive.vue'),
   read('src/l12/site/DeckLibraryPage.vue'),
@@ -39,6 +40,7 @@ expect(!viewportCss.includes('body {\n  transform: rotate(90deg)') && viewportCs
 expect(viewportTs.includes('export function resolveViewportMode(') && !viewportTs.includes('(pointer: coarse)') && !viewportTs.includes('screen.orientation'), 'the viewport runtime must classify geometry without device identity or physical orientation')
 expect(viewportTs.includes("mobileLayout === 'on' ? true : mobileLayout === 'off' ? false : geometryMobile") && viewportTs.includes('watch([enabled, () => audioPreferences.mobileLayout], update)'), 'the user mobile-layout preference must override layout classification without taking over physical rotation')
 expect(viewportTs.includes('compactLandscape(rotatedWidth, rotatedHeight, previous.rotated)') && !viewportTs.includes('previous.rotated || previous.mobile'), 'forced mobile layout must not relax or couple the independent geometry rotation decision')
+expect(battleLayout.includes('export function resolveBattleViewportLayout(') && battleLayout.includes('scale: options.mobile ? 1 : desktopScale') && battleLayout.includes("window.addEventListener('l12-viewport-change', update)"), 'battle viewport classification, scaling and listeners must stay behind one testable layout boundary')
 expect(settings.includes('v-model="audioPreferences.mobileLayout"') && audioPreferences.includes("mobileLayout: 'auto' | 'on' | 'off'") && audioPreferences.includes('dataset.l12MobileLayoutPreference'), 'mobile layout choice must be exposed and persisted through the shared settings model')
 expect(cardTile.includes('container-type:inline-size') && cardTile.includes('--l12-card-stat-font:clamp(6px,11cqw,18px)') && board.includes('var(--l12-card-stat-font, 7px)'), 'card value badges must scale continuously from their own card container rather than viewport-specific fixed sizes')
 expect(app.includes('data-l12-landscape-canvas') && !app.includes('l12-rotate-device') && !app.includes('requestLandscapeExperience'), 'immersive compact routes must use the logical canvas without a rotate-device blocker')
@@ -48,6 +50,7 @@ expect(deckBrowser.includes('MobileFilterSheet') && deckBrowser.includes('constr
 expect(rules.includes('MobileFilterSheet') && rules.includes('rule-desktop-filter') && rules.includes('desktop-popular-keywords'), 'rule center must retain search while moving portrait categories and keyword helpers into a sheet')
 expect(filterSheet.includes('@keydown.esc="close"') && filterSheet.includes('env(safe-area-inset-left)') && filterSheet.includes('env(safe-area-inset-right)'), 'shared portrait filter sheet must close by keyboard and respect both horizontal safe areas')
 expect(board.includes("const mobileMoralePickerEnabled = computed(() => mobileLandscapeViewport.value)"), 'morale summary must open on mobile even outside a payment prompt')
+expect(board.includes(':data-l12-battle-layout="mobileLandscapeViewport ? \'mobile\' : \'desktop\'"') && !board.includes('function updateScale()'), 'the board tree must declare its active layout while delegating viewport math to the shared layout kernel')
 expect(board.includes('class="mobile-detail-handle-reservation" aria-hidden="true"') && board.includes('--l12-mobile-left-rail-w:clamp(88px,calc(var(--l12-viewport-height,100vh) * .22),118px)') && board.includes('grid-template-columns:var(--l12-mobile-left-rail-w) minmax(0,1fr) var(--l12-mobile-right-rail-w)') && board.includes('grid-template-rows:var(--l12-mobile-current-disaster-h) var(--l12-mobile-disaster-value-h) calc(var(--l12-mobile-disaster-orb) * 2'), 'the detail handle, current disaster, value, round-card pool and optional extra zones must share one logical-viewport rail allocation')
 expect(!board.includes('@media (max-height: 520px)') && !board.includes('@media (min-height: 521px)'), 'logical portrait rotation and physical landscape must not receive different card geometry from physical CSS media height')
 expect(board.includes('--l12-mobile-resource-w:clamp(74px,calc(var(--l12-viewport-width,100vw) * .09),92px)') && board.includes('--l12-mobile-hand-h:clamp(64px,calc(var(--l12-viewport-height,100vh) * .16),102px)') && board.includes('--l12-mobile-morale-orb:clamp(12px,calc(var(--l12-viewport-height,100vh) * .022),17px)'), 'live mobile card, hand, resource and morale dimensions must resolve from logical viewport tokens rather than physical vw/vh')

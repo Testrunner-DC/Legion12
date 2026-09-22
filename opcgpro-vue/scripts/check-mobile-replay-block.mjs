@@ -3,8 +3,9 @@ import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 const read = path => readFile(resolve(root, path), 'utf8')
-const [viewport, board, records, replay, prompt, hand, tile] = await Promise.all([
+const [viewport, battleLayout, board, records, replay, prompt, hand, tile] = await Promise.all([
   read('src/l12/mobileViewport.ts'),
+  read('src/l12/game/battleViewportLayout.ts'),
   read('src/l12/game/GameBoard.vue'),
   read('src/l12/MatchRecords.vue'),
   read('src/l12/ReplayPage.vue'),
@@ -19,7 +20,7 @@ const expect = (condition, message) => {
 expect(viewport.includes('export function resolveViewportMode('), 'viewport classification must have a deterministic shared entry')
 expect(viewport.includes('export function isMobileViewportExperience()'), 'mobile eligibility must read the shared viewport mode')
 expect(!viewport.includes('(pointer: coarse)') && !viewport.includes('screen.orientation'), 'viewport classification must not depend on device identity or physical orientation locks')
-expect(board.includes('mobileLandscapeViewport.value = isMobileViewportExperience()'), 'GameBoard must follow the current logical viewport mode')
+expect(battleLayout.includes('const mobile = isMobileViewportExperience()') && battleLayout.includes('mobileLandscapeViewport.value = resolved.mobile'), 'GameBoard must follow the current logical viewport mode through the shared battle layout boundary')
 expect(!board.includes('viewport.height >= 300 && viewport.height <= 430'), 'browser chrome height must not switch the board mode')
 for (const handler of ['selectHandFor', 'selectPublicCardFor', 'inspectActiveDisaster']) {
   const match = board.match(new RegExp(`function ${handler}[\\s\\S]*?\\n}`, 'm'))?.[0] ?? ''

@@ -25,7 +25,8 @@ import CardDetailContent from '../CardDetailContent.vue'
 import type { DeckCard } from '../decks'
 import RankedIdentityBadge from '../RankedIdentityBadge.vue'
 import { getFactionPresentation } from '../factionPresentation'
-import { isMobileViewportExperience, landscapeTeleportTarget, visibleViewport, viewportRect } from '../mobileViewport'
+import { landscapeTeleportTarget, viewportRect } from '../mobileViewport'
+import { useBattleViewportLayout } from './battleViewportLayout'
 
 type GmPlacementRequest = {
   type: 'placeCard' | 'playHandCard'
@@ -45,7 +46,6 @@ const props = withDefaults(defineProps<{
   gmPanelOpen?: boolean
 }>(), { readOnly: false, replayFocusCard: null, replayPlaybackSpeed: null, gmPlacement: null, gmPanelOpen: false })
 const emit = defineEmits<{ gmPlacementResolved: []; settings: []; replayPresentationChange: [busy: boolean] }>()
-const scale = ref(1)
 // Preserve the desktop hierarchy while allowing the whole board to become
 // genuinely denser on smaller canvases. Full inverse scaling made text remain
 // physically constant and therefore grow out of proportion to cards/zones.
@@ -60,10 +60,15 @@ const stageSize = computed(() => l12State.gmEnabled
   // after the felt's own border and padding.  Keep that room in the outer stage
   // rather than shrinking the six fixed battlefield cells.
   : { width: 2048, height: 1264 })
-const compactViewport = ref(false)
-// Kept deliberately separate from `compactViewport`: short desktop windows (1280×480)
-// must retain their established board. This flag is only for touch-phone landscape.
-const mobileLandscapeViewport = ref(false)
+const {
+  scale,
+  compactViewport,
+  mobileLandscapeViewport,
+} = useBattleViewportLayout({
+  stageSize,
+  gmPanelOpen: () => props.gmPanelOpen,
+  afterUpdate: () => window.requestAnimationFrame(updateInspectorFloatRect),
+})
 const mobileRecordOpen = ref(false)
 const mobileRecordMinimized = ref(false)
 const mobileMoralePickerOpen = ref(false)
@@ -695,35 +700,12 @@ const supportReady = computed(() => {
   return combat.value.targetValue >= combat.value.attackValue
 })
 
-function updateScale() {
-  const viewport = visibleViewport()
-  compactViewport.value = viewport.width < 820 || viewport.height < 600
-  mobileLandscapeViewport.value = isMobileViewportExperience()
-  // The hand fan and left utility dock paint about 42 logical pixels beyond the stage's
-  // nominal 16:9 box. Because the stage is vertically centered below the 52px site bar,
-  // reserve that overflow on both edges so every control stays visible at exact 16:9.
-  const availableHeight = Math.max(1, viewport.height - 124)
-  const availableWidth = Math.max(1, viewport.width - (props.gmPanelOpen && !compactViewport.value ? 344 : 0))
-  scale.value = mobileLandscapeViewport.value
-    ? 1
-    : Math.min(1, availableWidth / stageSize.value.width, availableHeight / stageSize.value.height)
-  window.requestAnimationFrame(updateInspectorFloatRect)
-}
-watch(stageSize, updateScale)
-watch(() => props.gmPanelOpen, updateScale)
 onMounted(() => {
   lastHiddenRevealSequence.value = Math.max(0, ...(props.game.recentEvents ?? []).map(event => event.sequence))
   lastPublicRevealSequence.value = lastHiddenRevealSequence.value
   lastDiceSequence.value = lastHiddenRevealSequence.value
-  updateScale()
-  window.addEventListener('resize', updateScale)
-  window.addEventListener('l12-viewport-change', updateScale)
-  window.visualViewport?.addEventListener('resize', updateScale)
 })
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', updateScale)
-  window.removeEventListener('l12-viewport-change', updateScale)
-  window.visualViewport?.removeEventListener('resize', updateScale)
   if (hiddenRevealTimer) clearTimeout(hiddenRevealTimer)
   if (publicRevealTimer) clearTimeout(publicRevealTimer)
   if (diceRollTimer) clearInterval(diceRollTimer)
@@ -1059,7 +1041,7 @@ function statusTexts(card: Card) {
 </script>
 
 <template>
-  <div class="board-viewport" :class="{ 'compact-viewport': compactViewport, 'mobile-landscape-board': mobileLandscapeViewport, 'read-only-board': readOnly, 'gm-panel-docked': gmPanelOpen && !compactViewport }" :data-l12-mobile-landscape="mobileLandscapeViewport ? 'true' : undefined">
+  <div class="board-viewport" :class="{ 'compact-viewport': compactViewport, 'mobile-landscape-board': mobileLandscapeViewport, 'read-only-board': readOnly, 'gm-panel-docked': gmPanelOpen && !compactViewport }" :data-l12-battle-layout="mobileLandscapeViewport ? 'mobile' : 'desktop'" :data-l12-mobile-landscape="mobileLandscapeViewport ? 'true' : undefined">
     <Teleport :to="landscapeTeleportTarget()">
       <button v-if="mobileLandscapeViewport" type="button" class="mobile-card-inspector-handle mobile-card-inspector-handle-global" :class="{ open: mobileInspectorOpen }" :aria-expanded="mobileInspectorOpen" @click="mobileInspectorOpen = !mobileInspectorOpen">{{ mobileInspectorOpen ? '收起详情' : '展开卡牌详情' }}</button>
     </Teleport>
