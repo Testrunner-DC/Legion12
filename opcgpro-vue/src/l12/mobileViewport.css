@@ -93,7 +93,7 @@ html[data-l12-viewport] #l12-landscape-teleports .l12-prompt-overlay.mobile-safe
   width: 100% !important;
   height: 100% !important;
 }
-html[data-l12-viewport] #l12-landscape-teleports .mobile-safe-overlay:not(.minimized) {
+html[data-l12-viewport] #l12-landscape-teleports .mobile-safe-overlay:not(.minimized):not(.mobile-card-inspector) {
   inset: 0 !important;
   width: 100% !important;
   height: 100% !important;
@@ -113,6 +113,56 @@ html[data-l12-viewport=landscape] .l12-prompt-overlay:not(.minimized) .prompt-pa
 }
 html[data-l12-viewport] .l12-prompt-overlay.inspector-active:not(.minimized) .prompt-panel {
   max-width: calc(var(--l12-viewport-width) - var(--inspector-safe-lane) - 18px) !important;
+}
+
+/* Mobile battle dialogs share one stable 16:9 reading frame. The full-screen
+   overlay remains responsible for focus and dimming, while the actual dialog
+   occupies at most 75% of the safe logical canvas and scrolls internally. */
+html[data-l12-mobile=true][data-l12-viewport] :is(
+  .prompt-panel,
+  .waiting-panel,
+  .graveyard-window,
+  .master-dialog,
+  .faction-effect-dialog,
+  .battle-dialog,
+  .l12-settings-modal
+) {
+  box-sizing: border-box !important;
+  width: var(--l12-mobile-dialog-width) !important;
+  height: var(--l12-mobile-dialog-height) !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: var(--l12-mobile-dialog-width) !important;
+  max-height: var(--l12-mobile-dialog-height) !important;
+  overflow: auto !important;
+}
+html[data-l12-mobile=true][data-l12-viewport=landscape] #l12-landscape-teleports .l12-prompt-overlay.mobile-safe-overlay:not(.minimized) :is(.prompt-panel,.waiting-panel) {
+  width: var(--l12-mobile-dialog-width) !important;
+  height: var(--l12-mobile-dialog-height) !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: var(--l12-mobile-dialog-width) !important;
+  max-height: var(--l12-mobile-dialog-height) !important;
+  overflow: auto !important;
+}
+html[data-l12-mobile=true][data-l12-viewport] #l12-landscape-teleports :is(
+  .mobile-record-overlay,
+  .mobile-morale-overlay
+).mobile-safe-overlay:not(.minimized) {
+  inset: auto !important;
+  top: calc(var(--l12-viewport-top, 0px) + (var(--l12-viewport-height, 100vh) / 2)) !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: calc(var(--l12-viewport-left, 0px) + (var(--l12-viewport-width, 100vw) / 2)) !important;
+  box-sizing: border-box !important;
+  width: var(--l12-mobile-dialog-width) !important;
+  height: var(--l12-mobile-dialog-height) !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: var(--l12-mobile-dialog-width) !important;
+  max-height: var(--l12-mobile-dialog-height) !important;
+  overflow: auto !important;
+  transform: translate(-50%, -50%) !important;
 }
 html[data-l12-viewport] .graveyard-window {
   width: min(680px,calc(var(--l12-viewport-width) - 64px));

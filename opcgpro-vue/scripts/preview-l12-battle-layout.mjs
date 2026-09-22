@@ -11,7 +11,7 @@ if (fixtureStart < 'const entry = `'.length || fixtureEnd < fixtureStart)
   throw new Error('Unable to locate the sanitized GamePage fixture in verify-batch253-visual.mjs')
 
 const fixtureSetup = fixtureSource.slice(fixtureStart, fixtureEnd)
-const entry = fixtureSetup + `
+const entry = "import '/src/l12/mobileViewport.css';\n" + fixtureSetup + `
 // Visual QA may run in a desktop browser with a phone-sized viewport.  This flag
 // only affects the synthetic preview, allowing it to exercise the production
 // touch-landscape branch without changing application runtime detection.
@@ -263,7 +263,7 @@ const server = await createServer({
       devServer.middlewares.use((request, response, next) => {
         if (!request.url?.match(/^\/__l12_battle_preview__(\?|$)/)) { next(); return }
         response.setHeader('Content-Type', 'text/html; charset=utf-8')
-        response.end('<div id="app"></div><script type="module" src="/@vite/client"></script><script type="module" src="/__l12_battle_preview__.js"></script>')
+        response.end('<div id="l12-landscape-teleports"></div><div id="app"></div><script type="module" src="/@vite/client"></script><script type="module" src="/__l12_battle_preview__.js"></script>')
       })
     },
   }],

@@ -1,5 +1,6 @@
 import { onBeforeUnmount, onMounted, watch, type Ref } from 'vue'
 import { audioPreferences, type L12AudioPreferences } from './audioPreferences'
+import { resolveMobileDialogFrame } from './mobileDialogLayout'
 
 type ViewportMode = {
   rotated: boolean
@@ -110,6 +111,8 @@ export function useLandscapeViewport(enabled: Ref<boolean>) {
     root.style.removeProperty('--l12-physical-height')
     root.style.removeProperty('--l12-viewport-left')
     root.style.removeProperty('--l12-viewport-top')
+    root.style.removeProperty('--l12-mobile-dialog-width')
+    root.style.removeProperty('--l12-mobile-dialog-height')
     document.body.removeAttribute('data-l12-rotated')
   }
 
@@ -154,6 +157,7 @@ export function useLandscapeViewport(enabled: Ref<boolean>) {
     const changed = JSON.stringify(layout) !== JSON.stringify(nextLayout)
     layout = nextLayout
     const root = document.documentElement
+    const dialogFrame = resolveMobileDialogFrame(mode.width, mode.height)
     root.dataset.l12Viewport = 'landscape'
     root.dataset.l12Compact = String(mode.mobile || mode.width < 820 || mode.height < 600)
     root.dataset.l12Mobile = String(mode.mobile)
@@ -164,6 +168,8 @@ export function useLandscapeViewport(enabled: Ref<boolean>) {
     root.style.setProperty('--l12-physical-height', `${physicalHeight}px`)
     root.style.setProperty('--l12-viewport-left', `${left}px`)
     root.style.setProperty('--l12-viewport-top', `${top}px`)
+    root.style.setProperty('--l12-mobile-dialog-width', `${dialogFrame.width}px`)
+    root.style.setProperty('--l12-mobile-dialog-height', `${dialogFrame.height}px`)
     if (changed) window.dispatchEvent(new Event('l12-viewport-change'))
   }
 

@@ -14,7 +14,8 @@ const fixedViewports = [
 const dialogViewports = [[667, 375], [844, 390], [932, 430], [1024, 768]].map(([width, height]) => ({ width, height }))
 const quick = process.env.L12_B3_QUICK === '1'
 const safeOnly = process.env.L12_B3_SAFE_ONLY === '1'
-const activeFixed = safeOnly ? [] : quick ? fixedViewports.slice(0, 1) : fixedViewports
+const dialogOnly = process.env.L12_B3_DIALOG_ONLY === '1'
+const activeFixed = safeOnly || dialogOnly ? [] : quick ? fixedViewports.slice(0, 1) : fixedViewports
 const activeDialogs = safeOnly ? [] : quick ? dialogViewports.slice(0, 1) : dialogViewports
 const safeAreaProfiles = [
   { name:'left-59-bottom-21', viewport:{ width:667,height:375 }, insets:{ top:0,right:0,bottom:21,left:59 } },
@@ -43,10 +44,10 @@ const criticalSelectors = [
   '.board-center > .l12-hand:last-child', '.combat-versus', '.resource-payment-controls', '.prompt-minimized-bar',
 ]
 const overlaySelectors = [
-  '[role="dialog"]', '[aria-modal="true"]', '.l12-prompt-overlay:not(.minimized)', '.prompt-panel', '.waiting-panel',
+  '.prompt-panel', '.waiting-panel',
   '.mobile-record-overlay', '.mobile-morale-overlay', '.mobile-card-inspector', '.game-over',
   '.master-dialog', '.graveyard-window', '.faction-effect-dialog', '.zone-card-movement',
-  '.battle-settings-mask', '.gm-panel',
+  '.battle-dialog', '.l12-settings-modal', '.gm-panel',
 ]
 const states = [
   ['empty', 'field=empty&markers=0&piles=0&hand=1'],
@@ -133,7 +134,8 @@ try {
       const probe=document.createElement('div'); probe.style.cssText='position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)'; document.body.append(probe)
       const style=getComputedStyle(probe); const value=property=>Math.max(0,parseFloat(style.getPropertyValue(property))||0); const vv=visualViewport
       const left=(vv?.offsetLeft??0)+value('padding-left'); const top=(vv?.offsetTop??0)+value('padding-top'); const width=Math.max(1,(vv?.width??innerWidth)-value('padding-left')-value('padding-right')); const height=Math.max(1,(vv?.height??innerHeight)-value('padding-top')-value('padding-bottom'))
-      const root=document.documentElement; root.style.setProperty('--l12-viewport-left',`${left}px`); root.style.setProperty('--l12-viewport-top',`${top}px`); root.style.setProperty('--l12-viewport-width',`${width}px`); root.style.setProperty('--l12-viewport-height',`${height}px`); probe.remove(); window.dispatchEvent(new Event('l12-viewport-change'))
+      const dialogWidth=Math.min(width*.75,height*.75*16/9),dialogHeight=dialogWidth*9/16
+      const root=document.documentElement; root.dataset.l12Viewport='landscape'; root.dataset.l12Mobile='true'; root.style.setProperty('--l12-viewport-left',`${left}px`); root.style.setProperty('--l12-viewport-top',`${top}px`); root.style.setProperty('--l12-viewport-width',`${width}px`); root.style.setProperty('--l12-viewport-height',`${height}px`); root.style.setProperty('--l12-mobile-dialog-width',`${dialogWidth}px`); root.style.setProperty('--l12-mobile-dialog-height',`${dialogHeight}px`); probe.remove(); window.dispatchEvent(new Event('l12-viewport-change'))
     })
     if (process.env.L12_B3_SAFE_DEBUG === '1') console.log(await page.evaluate(() => {
       const probe=document.createElement('div'); probe.style.cssText='position:fixed;visibility:hidden;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)'; document.body.append(probe)
@@ -382,10 +384,17 @@ try {
   }
   async function assertOverlay(label, selector, insets = zeroInsets) {
     await page.waitForTimeout(260)
-    const result = await page.locator(selector).evaluate(element => { const r=element.getBoundingClientRect(); return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height,scrollWidth:element.scrollWidth,clientWidth:element.clientWidth} })
+    const result = await page.locator(selector).evaluate(element => {
+      const r=element.getBoundingClientRect(), root=getComputedStyle(document.documentElement), number=name=>parseFloat(root.getPropertyValue(name))||0
+      return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height,scrollWidth:element.scrollWidth,clientWidth:element.clientWidth,expectedDialog:{width:number('--l12-mobile-dialog-width'),height:number('--l12-mobile-dialog-height')}}
+    })
     const viewport = await page.evaluate(() => ({width:innerWidth,height:innerHeight}))
     assert.ok(result.left>=insets.left+7&&result.top>=insets.top+7&&result.right<=viewport.width-insets.right-7&&result.bottom<=viewport.height-insets.bottom-7, `${label} lacks an 8px inset-aware safe boundary: ${JSON.stringify({ result, insets })}`)
     assert.ok(result.scrollWidth<=result.clientWidth+1, `${label} scrolls horizontally`)
+    if (['.prompt-panel','.waiting-panel','.master-dialog','.graveyard-window','.faction-effect-dialog','.mobile-record-overlay','.mobile-morale-overlay','.battle-dialog','.l12-settings-modal'].includes(selector)) {
+      assert.ok(Math.abs(result.width-result.expectedDialog.width)<=1.5&&Math.abs(result.height-result.expectedDialog.height)<=1.5,`${label} does not use the shared 75% dialog frame: ${JSON.stringify(result)}`)
+      assert.ok(Math.abs(result.width/result.height-16/9)<=.02,`${label} dialog aspect ratio drifted from 16:9: ${JSON.stringify(result)}`)
+    }
     const image = page.locator(selector).locator('.l12-card-image').first()
     if (await image.count() && await image.isVisible()) {
       const imageRect = await image.boundingBox(); const normalized=Math.min(imageRect.width,imageRect.height)/Math.max(imageRect.width,imageRect.height)
@@ -466,7 +475,7 @@ try {
     }
   }
 
-  for (const profile of safeAreaProfiles) {
+  for (const profile of dialogOnly ? [] : safeAreaProfiles) {
     await load(profile.viewport,'field=full&markers=5&piles=40&hand=20',zeroInsets)
     const baselineRatios=await layoutRatios()
     for (const [name,query,action] of safeAreaScenarios) {
@@ -507,7 +516,7 @@ try {
   }
   await cdp.send('Emulation.setSafeAreaInsetsOverride',{insets:zeroInsets})
 
-  if (!quick && !safeOnly) {
+  if (!quick && !safeOnly && !dialogOnly) {
     const random = []
     let seed = 73129
     // Random mobile-layout scans stay inside the same 4:3-or-wider aspect
@@ -531,7 +540,7 @@ try {
     }
   }
 
-  if (!safeOnly) {
+  if (!safeOnly && !dialogOnly) {
     const desktop = await browser.newContext()
     const desktopPage = await desktop.newPage()
     for (const viewport of [{width:1366,height:768},{width:1600,height:900},{width:1920,height:1080}]) {
