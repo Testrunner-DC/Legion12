@@ -386,7 +386,21 @@ try {
     await page.waitForTimeout(260)
     const result = await page.locator(selector).evaluate(element => {
       const r=element.getBoundingClientRect(), root=getComputedStyle(document.documentElement), number=name=>parseFloat(root.getPropertyValue(name))||0
-      return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height,scrollWidth:element.scrollWidth,clientWidth:element.clientWidth,expectedDialog:{width:number('--l12-mobile-dialog-width'),height:number('--l12-mobile-dialog-height')}}
+      const rect=node=>{const value=node.getBoundingClientRect();return{left:value.left,top:value.top,right:value.right,bottom:value.bottom,width:value.width,height:value.height}}
+      const within=(inner,outer,tolerance=1)=>inner.left>=outer.left-tolerance&&inner.top>=outer.top-tolerance&&inner.right<=outer.right+tolerance&&inner.bottom<=outer.bottom+tolerance
+      const cardEntries=[...element.querySelectorAll('.prompt-card-candidate,.graveyard-card-entry')].map(entry=>{
+        const outer=rect(entry),image=entry.querySelector('.l12-card-image,.card-tile'),name=entry.querySelector('.prompt-card-candidate__name,.graveyard-card-name'),imageRect=image?rect(image):null,nameRect=name?rect(name):null
+        return{text:name?.textContent?.trim()||'',nameClipped:Boolean(name&&(name.scrollWidth>name.clientWidth+1||name.scrollHeight>name.clientHeight+1)),imageContained:Boolean(imageRect&&within(imageRect,outer)),nameContained:Boolean(nameRect&&within(nameRect,outer)),outer,image:imageRect,name:nameRect}
+      })
+      const strips=[...element.querySelectorAll('.prompt-card-strip,.graveyard-cards')].map(strip=>{
+        const outer=rect(strip),items=[...strip.querySelectorAll(':scope > .prompt-card-candidate,:scope > .graveyard-card-entry')].map(rect),overflow=strip.scrollWidth>strip.clientWidth+1
+        const union=items.length?{left:Math.min(...items.map(item=>item.left)),right:Math.max(...items.map(item=>item.right))}:null
+        return{overflow,count:items.length,centreDelta:union?Math.abs((union.left+union.right-outer.left-outer.right)/2):0,width:outer.width}
+      })
+      const primary=[...element.children].filter(child=>child.matches?.('.l12-card-image,.master-content,.faction-effect-content')).map(rect)
+      const primaryUnion=primary.length?{left:Math.min(...primary.map(item=>item.left)),top:Math.min(...primary.map(item=>item.top)),right:Math.max(...primary.map(item=>item.right)),bottom:Math.max(...primary.map(item=>item.bottom))}:null
+      const distribution=primaryUnion?{horizontal:Math.abs((primaryUnion.left+primaryUnion.right-r.left-r.right)/2),vertical:Math.abs((primaryUnion.top+primaryUnion.bottom-r.top-r.bottom)/2)}:null
+      return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height,scrollWidth:element.scrollWidth,clientWidth:element.clientWidth,expectedDialog:{width:number('--l12-mobile-dialog-width'),height:number('--l12-mobile-dialog-height')},cardEntries,strips,distribution}
     })
     const viewport = await page.evaluate(() => ({width:innerWidth,height:innerHeight}))
     assert.ok(result.left>=insets.left+7&&result.top>=insets.top+7&&result.right<=viewport.width-insets.right-7&&result.bottom<=viewport.height-insets.bottom-7, `${label} lacks an 8px inset-aware safe boundary: ${JSON.stringify({ result, insets })}`)
@@ -395,6 +409,9 @@ try {
       assert.ok(Math.abs(result.width-result.expectedDialog.width)<=1.5&&Math.abs(result.height-result.expectedDialog.height)<=1.5,`${label} does not use the shared 75% dialog frame: ${JSON.stringify(result)}`)
       assert.ok(Math.abs(result.width/result.height-16/9)<=.02,`${label} dialog aspect ratio drifted from 16:9: ${JSON.stringify(result)}`)
     }
+    assert.equal(result.cardEntries.every(item=>item.text&&!item.nameClipped&&item.imageContained&&item.nameContained),true,`${label} must show every dialog card with complete art and a complete card name: ${JSON.stringify(result.cardEntries.filter(item=>!item.text||item.nameClipped||!item.imageContained||!item.nameContained))}`)
+    assert.equal(result.strips.filter(item=>!item.overflow&&item.count>0).every(item=>item.centreDelta<=Math.max(12,item.width*.05)),true,`${label} sparse card rows must be evenly centred: ${JSON.stringify(result.strips)}`)
+    if(result.distribution) assert.ok(result.distribution.horizontal<=result.width*.12&&result.distribution.vertical<=result.height*.15,`${label} primary dialog content is crowded to one side: ${JSON.stringify(result.distribution)}`)
     const image = page.locator(selector).locator('.l12-card-image').first()
     if (await image.count() && await image.isVisible()) {
       const imageRect = await image.boundingBox(); const normalized=Math.min(imageRect.width,imageRect.height)/Math.max(imageRect.width,imageRect.height)

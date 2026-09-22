@@ -477,7 +477,7 @@ function beginCardAbility(card: Card) {
         <button class="faction-close" aria-label="关闭" @click="factionOpen = false">×</button>
         <CardImage v-if="player.factionEffect" :card-id="player.factionEffect.cardId" :legacy-url="player.factionEffect.imageUrl" :alt="player.factionEffect.name" intent="detail" eager
           role="button" tabindex="0" aria-label="选择阵营效果卡牌" @click="focusPopupCard({ ...masterCard, instanceId: `faction-${player.playerIndex}`, cardId: player.factionEffect.cardId, name: player.factionEffect.name, cardType: 'faction', imageUrl: player.factionEffect.imageUrl, effectText: player.factionEffect.effectText })" />
-        <div>
+        <div class="faction-effect-content">
           <small>{{ side === 'my' ? '我方阵营效果' : '对方阵营效果' }}</small>
           <h2>{{ player.factionEffect?.name || '阵营效果' }}</h2>
           <p v-if="!factionActions.length" class="l12-effect-body">{{ player.factionEffect?.effectText || '暂无效果文字' }}</p>
@@ -504,7 +504,7 @@ function beginCardAbility(card: Card) {
         <button class="faction-minimize" aria-label="最小化弹框" @click="abilityCardMinimized = true">—</button>
         <button class="faction-close" aria-label="关闭" @click="abilityCardOpen = null">×</button>
         <CardImage :card-id="abilityCardOpen.cardId" :legacy-url="abilityCardOpen.imageUrl" :alt="abilityCardOpen.name" intent="detail" eager role="button" tabindex="0" aria-label="选择卡牌" @mouseenter="emit('focus', abilityCardOpen)" @click="focusPopupCard(abilityCardOpen)" />
-        <div>
+        <div class="faction-effect-content">
           <small>卡牌效果</small><h2>{{ abilityCardOpen.name }}</h2>
           <p v-if="!activeAbilities(abilityCardOpen).length" class="l12-effect-body">{{ abilityCardOpen.effectText || '暂无效果文字' }}</p>
           <div class="faction-effect-actions">

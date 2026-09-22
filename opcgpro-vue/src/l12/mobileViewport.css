@@ -127,6 +127,7 @@ html[data-l12-mobile=true][data-l12-viewport] :is(
   .battle-dialog,
   .l12-settings-modal
 ) {
+  container-type: size;
   box-sizing: border-box !important;
   width: var(--l12-mobile-dialog-width) !important;
   height: var(--l12-mobile-dialog-height) !important;
@@ -135,6 +136,170 @@ html[data-l12-mobile=true][data-l12-viewport] :is(
   max-width: var(--l12-mobile-dialog-width) !important;
   max-height: var(--l12-mobile-dialog-height) !important;
   overflow: auto !important;
+}
+
+/* The frame is stable; its contents adapt inside it.  Card candidates retain
+   their complete art and a real text label, sparse rows are centred, and dense
+   rows pan horizontally without moving the dialog footer off screen. */
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel {
+  display: flex !important;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: clamp(3px, 1cqh, 8px);
+  padding: clamp(8px, 3cqh, 13px) !important;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel > :is(.prompt-choices,.prompt-card-strip,.all-placement-workspace,.placement-workspace,.initiative-race,.disaster-preparation-history) {
+  min-height: 0;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel > :is(.prompt-choices.prompt-card-strip,.prompt-card-strip) {
+  flex: 1 1 auto;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel :is(.prompt-card-strip,.graveyard-cards) {
+  align-items: center !important;
+  justify-content: safe center !important;
+  gap: clamp(4px, 1.2cqw, 9px) !important;
+  padding: clamp(3px, 1.2cqh, 8px) 2px !important;
+  scrollbar-width: none;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel :is(.prompt-card-strip,.graveyard-cards)::-webkit-scrollbar {
+  display: none;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .prompt-action-footer {
+  flex: 0 0 auto;
+  justify-content: space-between;
+  margin-top: 0;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .prompt-card-candidate:not(.size-featured) {
+  flex-basis: clamp(70px, 15cqw, 102px) !important;
+  width: clamp(70px, 15cqw, 102px) !important;
+  min-width: clamp(70px, 15cqw, 102px) !important;
+  gap: 3px !important;
+  padding: 3px !important;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .prompt-card-candidate:not(.horizontal):not(.size-featured) .l12-card-image {
+  width: calc(100% - 4px) !important;
+  height: auto !important;
+  aspect-ratio: 5 / 7;
+  object-fit: contain;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .prompt-card-candidate.horizontal:not(.size-featured) {
+  flex-basis: clamp(108px, 24cqw, 164px) !important;
+  width: clamp(108px, 24cqw, 164px) !important;
+  min-width: clamp(108px, 24cqw, 164px) !important;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .prompt-card-candidate.horizontal:not(.size-featured) .l12-card-image {
+  width: calc(100% - 4px) !important;
+  height: auto !important;
+  aspect-ratio: 8 / 5;
+  object-fit: contain;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .prompt-card-candidate__name {
+  min-height: 2.5em !important;
+  font-size: clamp(9px, 1.8cqw, 12px) !important;
+  line-height: 1.25 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .prompt-card-candidate__meta {
+  font-size: clamp(8px, 1.5cqw, 11px) !important;
+  line-height: 1.15 !important;
+}
+html[data-l12-mobile=true][data-l12-viewport] :is(.master-dialog,.faction-effect-dialog) {
+  grid-template-columns: clamp(96px, 24cqw, 156px) minmax(0, 1fr) !important;
+  align-content: center;
+  align-items: center;
+  gap: clamp(12px, 3cqw, 24px) !important;
+  padding: clamp(12px, 3cqw, 22px) !important;
+  overflow: hidden !important;
+}
+html[data-l12-mobile=true][data-l12-viewport] :is(.master-dialog,.faction-effect-dialog) > .l12-card-image {
+  width: clamp(96px, 24cqw, 156px) !important;
+  height: auto !important;
+  max-height: calc(100cqh - 32px);
+  aspect-ratio: 5 / 7;
+  align-self: center !important;
+  justify-self: center;
+  object-fit: contain;
+}
+html[data-l12-mobile=true][data-l12-viewport] :is(.master-content,.faction-effect-content) {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  max-height: calc(100cqh - 32px);
+  align-content: center;
+  overflow: auto;
+  padding-right: clamp(34px, 7cqw, 58px);
+}
+html[data-l12-mobile=true][data-l12-viewport] .graveyard-window {
+  container-type: size;
+  overflow: hidden !important;
+}
+html[data-l12-mobile=true][data-l12-viewport] .graveyard-window > header {
+  flex: 0 0 auto;
+  padding: clamp(7px, 2cqh, 13px) clamp(10px, 2cqw, 18px);
+}
+html[data-l12-mobile=true][data-l12-viewport] .graveyard-columns {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: clamp(7px, 2cqh, 12px);
+}
+html[data-l12-mobile=true][data-l12-viewport] .graveyard-columns article {
+  justify-content: space-between;
+  padding: clamp(6px, 1.6cqh, 11px);
+  overflow: hidden;
+}
+html[data-l12-mobile=true][data-l12-viewport] .graveyard-cards {
+  display: flex !important;
+  flex-flow: row nowrap !important;
+  align-items: center !important;
+  justify-content: safe center !important;
+  gap: clamp(5px, 1.2cqw, 10px);
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: none;
+  touch-action: pan-x;
+}
+html[data-l12-mobile=true][data-l12-viewport] .graveyard-cards::-webkit-scrollbar {
+  display: none;
+}
+html[data-l12-mobile=true][data-l12-viewport] .graveyard-card-entry {
+  display: grid;
+  flex: 0 0 clamp(66px, 12cqw, 92px);
+  width: clamp(66px, 12cqw, 92px);
+  min-width: clamp(66px, 12cqw, 92px);
+  grid-template-rows: auto auto;
+  align-content: center;
+  gap: 3px;
+}
+html[data-l12-mobile=true][data-l12-viewport] .graveyard-cards .graveyard-card-entry .card-tile {
+  width: 100% !important;
+  height: auto !important;
+  aspect-ratio: 5 / 7;
+  flex-basis: auto !important;
+}
+html[data-l12-mobile=true][data-l12-viewport] .graveyard-card-name {
+  min-height: 2.5em;
+  font-size: clamp(9px, 1.55cqw, 12px) !important;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+html[data-l12-mobile=true][data-l12-viewport] .mobile-morale-picker {
+  flex: 1 1 auto;
+  grid-template-columns: repeat(auto-fit, minmax(clamp(110px, 24cqw, 170px), 1fr));
+  align-content: center;
+  justify-content: center;
+}
+html[data-l12-mobile=true][data-l12-viewport] .mobile-morale-actions {
+  flex: 0 0 auto;
+  margin-top: auto;
+}
+html[data-l12-mobile=true][data-l12-viewport] .mobile-resource-row {
+  grid-template-columns: repeat(auto-fit, 44px) !important;
+  justify-content: center;
+}
+html[data-l12-mobile=true][data-l12-viewport] .mobile-rune-row > div {
+  justify-content: safe center;
 }
 html[data-l12-mobile=true][data-l12-viewport=landscape] #l12-landscape-teleports .l12-prompt-overlay.mobile-safe-overlay:not(.minimized) :is(.prompt-panel,.waiting-panel) {
   width: var(--l12-mobile-dialog-width) !important;

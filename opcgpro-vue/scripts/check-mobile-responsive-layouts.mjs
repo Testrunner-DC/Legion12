@@ -6,6 +6,7 @@ const read = path => readFile(resolve(root, path), 'utf8')
 const settings = await read('src/l12/site/L12SettingsModal.vue')
 const audioPreferences = await read('src/l12/audioPreferences.ts')
 const cardTile = await read('src/l12/CardTile.vue')
+const graveyardOverlay = await read('src/l12/game/GraveyardOverlay.vue')
 const [viewportCss, viewportTs, battleLayout, mobileDialogLayout, app, archive, decks, deckBrowser, filterSheet, board, playerMat, prompt, shell, rules, profile, admin, news, home, feedback, battleHub, rankings, tournaments, recovery, globalCss] = await Promise.all([
   read('src/l12/mobileViewport.css'),
   read('src/l12/mobileViewport.ts'),
@@ -43,6 +44,7 @@ expect(viewportTs.includes("mobileLayout === 'on' ? true : mobileLayout === 'off
 expect(viewportTs.includes('compactLandscape(rotatedWidth, rotatedHeight, previous.rotated)') && !viewportTs.includes('previous.rotated || previous.mobile'), 'forced mobile layout must not relax or couple the independent geometry rotation decision')
 expect(battleLayout.includes('export function resolveBattleViewportLayout(') && battleLayout.includes('scale: options.mobile ? 1 : desktopScale') && battleLayout.includes("window.addEventListener('l12-viewport-change', update)"), 'battle viewport classification, scaling and listeners must stay behind one testable layout boundary')
 expect(mobileDialogLayout.includes('MOBILE_DIALOG_COVERAGE = 0.75') && mobileDialogLayout.includes('MOBILE_DIALOG_ASPECT_RATIO = 16 / 9') && viewportTs.includes("root.style.setProperty('--l12-mobile-dialog-width'") && viewportCss.includes('width: var(--l12-mobile-dialog-width) !important'), 'mobile dialogs must share a stable 16:9 frame capped to 75% of the safe logical canvas')
+expect(graveyardOverlay.includes('class="graveyard-card-name"') && viewportCss.includes('.prompt-card-candidate__name') && viewportCss.includes('.graveyard-card-name') && viewportCss.includes('justify-content: safe center !important'), 'mobile dialog card collections must retain explicit complete names and centre sparse content without stretching dense rows')
 expect(settings.includes('v-model="audioPreferences.mobileLayout"') && audioPreferences.includes("mobileLayout: 'auto' | 'on' | 'off'") && audioPreferences.includes('dataset.l12MobileLayoutPreference'), 'mobile layout choice must be exposed and persisted through the shared settings model')
 expect(cardTile.includes('container-type:inline-size') && cardTile.includes('--l12-card-stat-font:clamp(6px,11cqw,18px)') && board.includes('var(--l12-card-stat-font, 7px)'), 'card value badges must scale continuously from their own card container rather than viewport-specific fixed sizes')
 expect(app.includes('data-l12-landscape-canvas') && !app.includes('l12-rotate-device') && !app.includes('requestLandscapeExperience'), 'immersive compact routes must use the logical canvas without a rotate-device blocker')

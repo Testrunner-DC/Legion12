@@ -35,6 +35,7 @@ function selectCard(card: Card) {
             <div class="graveyard-cards">
               <div v-for="card in [...(player.graveyard || [])].reverse()" :key="card.instanceId" class="graveyard-card-entry">
                 <CardTile :card="card" @mouseenter="emit('focus', card)" @select="selectCard(card)" />
+                <span class="graveyard-card-name">{{ card.name }}</span>
                 <button v-if="!inspectionOnly && player.playerIndex === ownPlayerIndex && canActivateOsiris && card.cardId === 'S01-02M2'"
                   class="osiris-victory" @mouseenter="emit('focus', card)" @click.stop="emit('ability', card, 'isisVictory')">特殊胜利</button>
               </div>
@@ -48,7 +49,7 @@ function selectCard(card: Card) {
 </template>
 
 <style scoped>
-.graveyard-card-entry{position:relative}.osiris-victory{position:absolute;z-index:4;left:50%;bottom:5px;transform:translateX(-50%);padding:4px 7px;border:1px solid #79e2a2;background:#0a2f20;color:#ddffea;font-size:var(--l12-board-copy,13px);font-weight:900;white-space:nowrap;box-shadow:0 0 12px rgba(80,220,132,.6)}
+.graveyard-card-entry{position:relative}.graveyard-card-name{display:block;color:#f1f0e9;font-size:var(--l12-board-copy,13px);font-weight:900;line-height:1.3;text-align:center;overflow-wrap:anywhere}.osiris-victory{position:absolute;z-index:4;left:50%;bottom:30px;transform:translateX(-50%);padding:4px 7px;border:1px solid #79e2a2;background:#0a2f20;color:#ddffea;font-size:var(--l12-board-copy,13px);font-weight:900;white-space:nowrap;box-shadow:0 0 12px rgba(80,220,132,.6)}
 .graveyard-overlay.mobile-safe-overlay{z-index:2147483605;inset:var(--l12-viewport-top,0px) auto auto var(--l12-viewport-left,0px);box-sizing:border-box;width:var(--l12-viewport-width,100vw);height:var(--l12-viewport-height,100vh);padding:8px}.graveyard-overlay.mobile-safe-overlay .graveyard-window{box-sizing:border-box;width:100%;max-height:100%;overflow:auto}
 .graveyard-overlay.mobile-safe-overlay.minimized{inset:auto calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 110px) calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + var(--l12-mobile-hand-h,64px) + 5px) auto;width:auto;height:auto;padding:0;background:transparent;pointer-events:none}.graveyard-minimized{pointer-events:auto}.graveyard-minimized button{min-height:32px;padding:5px 10px;border:1px solid #70d7df;background:#174e54;color:#fff;font-weight:900;box-shadow:0 8px 24px #000}
 </style>
