@@ -8,7 +8,7 @@ const backendFiles = readdirSync(backendRoot)
   .map(name => ({ name, source: read(`../../服务端WebSocket/TwelveLegions/${name}`) }))
 const backend = backendFiles.map(file => file.source).join('\n')
 const admin = read('../src/l12/site/AdminPage.vue')
-const board = read('../src/l12/game/GameBoard.vue')
+const board = `${read('../src/l12/game/GameBoard.vue')}\n${read('../src/l12/game/GameBoard.mobile.css')}`
 const eventLog = read('../src/l12/game/BattleEventLog.vue')
 const actionLayer = read('../src/l12/game/ActionPresentationLayer.vue')
 const actionPresentation = read('../src/l12/game/actionPresentation.ts')

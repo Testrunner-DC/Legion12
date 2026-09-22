@@ -7,7 +7,7 @@ const settings = await read('src/l12/site/L12SettingsModal.vue')
 const audioPreferences = await read('src/l12/audioPreferences.ts')
 const cardTile = await read('src/l12/CardTile.vue')
 const graveyardOverlay = await read('src/l12/game/GraveyardOverlay.vue')
-const [viewportCss, viewportTs, battleLayout, mobileDialogLayout, app, archive, decks, deckBrowser, filterSheet, board, playerMat, prompt, shell, rules, profile, admin, news, home, feedback, battleHub, rankings, tournaments, recovery, globalCss] = await Promise.all([
+const [viewportCss, viewportTs, battleLayout, mobileDialogLayout, app, archive, decks, deckBrowser, filterSheet, boardComponent, boardMobileStyle, playerMat, prompt, shell, rules, profile, admin, news, home, feedback, battleHub, rankings, tournaments, recovery, globalCss] = await Promise.all([
   read('src/l12/mobileViewport.css'),
   read('src/l12/mobileViewport.ts'),
   read('src/l12/game/battleViewportLayout.ts'),
@@ -18,6 +18,7 @@ const [viewportCss, viewportTs, battleLayout, mobileDialogLayout, app, archive, 
   read('src/l12/site/DeckConstructionBrowser.vue'),
   read('src/l12/site/MobileFilterSheet.vue'),
   read('src/l12/game/GameBoard.vue'),
+  read('src/l12/game/GameBoard.mobile.css'),
   read('src/l12/game/PlayerMat.vue'),
   read('src/l12/game/PromptOverlay.vue'),
   read('src/l12/site/SiteShell.vue'),
@@ -33,12 +34,14 @@ const [viewportCss, viewportTs, battleLayout, mobileDialogLayout, app, archive, 
   read('src/l12/site/AccountRecoveryPage.vue'),
   read('src/style.css'),
 ])
+const board = `${boardComponent}\n${boardMobileStyle}`
 
 const expect = (condition, message) => {
   if (!condition) throw new Error(`mobile responsive contract: ${message}`)
 }
 
 expect(!viewportCss.includes('body {\n  transform: rotate(90deg)') && viewportCss.includes('.l12-landscape-surface,#l12-landscape-teleports'), 'only the opted-in route canvas and Teleport host may rotate')
+expect(boardComponent.includes('<style scoped src="./GameBoard.mobile.css"></style>') && !boardComponent.includes('.mobile-landscape-board{') && boardMobileStyle.includes('.mobile-landscape-board'), 'mobile battle CSS must remain physically isolated from the desktop component stylesheet')
 expect(viewportTs.includes('export function resolveViewportMode(') && !viewportTs.includes('(pointer: coarse)') && !viewportTs.includes('screen.orientation'), 'the viewport runtime must classify geometry without device identity or physical orientation')
 expect(viewportTs.includes("mobileLayout === 'on' ? true : mobileLayout === 'off' ? false : geometryMobile") && viewportTs.includes('watch([enabled, () => audioPreferences.mobileLayout], update)'), 'the user mobile-layout preference must override layout classification without taking over physical rotation')
 expect(viewportTs.includes('compactLandscape(rotatedWidth, rotatedHeight, previous.rotated)') && !viewportTs.includes('previous.rotated || previous.mobile'), 'forced mobile layout must not relax or couple the independent geometry rotation decision')

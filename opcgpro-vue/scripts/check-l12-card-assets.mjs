@@ -71,7 +71,7 @@ const cardAssets = read('../src/l12/cardAssets.ts')
 const cardImage = read('../src/l12/CardImage.vue')
 const cardPresentation = read('../src/l12/cardPresentation.ts')
 const specialAssets = read('../src/l12/specialAssets.ts')
-const gameBoard = read('../src/l12/game/GameBoard.vue')
+const gameBoard = `${read('../src/l12/game/GameBoard.vue')}\n${read('../src/l12/game/GameBoard.mobile.css')}`
 const serviceWorker = read('../public/sw.js')
 const generator = read('./build-l12-card-cdn.mjs')
 const auditor = read('./audit-l12-card-cdn.mjs')
@@ -100,6 +100,7 @@ const styledCardImageConsumers = [
   '../src/style.css',
   '../src/l12/L12DeckEditor.vue',
   '../src/l12/game/GameBoard.vue',
+  '../src/l12/game/GameBoard.mobile.css',
   '../src/l12/game/GmPanel.vue',
   '../src/l12/game/MasterOverlay.vue',
   '../src/l12/game/PlayerMat.vue',

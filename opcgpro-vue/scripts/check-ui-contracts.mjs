@@ -8,7 +8,9 @@ const shell = read('../src/l12/site/SiteShell.vue')
 const mainNav = shell.match(/const mainNav = \[[\s\S]*?\n\]/)?.[0] ?? ''
 const battleNav = shell.match(/const battleNav = \[[\s\S]*?\n\]/)?.[0] ?? ''
 const router = read('../src/router/index.ts')
-const board = read('../src/l12/game/GameBoard.vue')
+const boardComponent = read('../src/l12/game/GameBoard.vue')
+const boardMobileStyle = read('../src/l12/game/GameBoard.mobile.css')
+const board = `${boardComponent}\n${boardMobileStyle}`
 const battleViewportLayout = read('../src/l12/game/battleViewportLayout.ts')
 const mobileViewportStyle = read('../src/l12/mobileViewport.css')
 const mobileViewportCheck = read('./test-mobile-viewport.mjs')
