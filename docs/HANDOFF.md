@@ -2,7 +2,7 @@
 
 ## 当前状态（2026-09-22，覆盖下方过程记录）
 
-- 移动对战样式物理隔离已完成本机收口，待提交级Release与同步，未部署。`GameBoard.vue` 中1174行移动覆盖已按原有顺序迁入独立 `GameBoard.mobile.css`，宽屏基线留在组件内；所有尺寸和层叠保持不变。门禁现在会拒绝把 `.mobile-landscape-board` 重新写回宽屏组件。正式构建、固定状态555张、弹框48张、安全区18张、随机连续尺寸32组及桌面3档隔离全部通过；证据目录为 `artifacts/mobile-style-isolation-20260922`。
+- 移动对战样式物理隔离已由 `1224adaf7a5ab4504db2ca67540102b2d0f94bed` 推送 `origin/main`，未部署。`GameBoard.vue` 中1174行移动覆盖已按原有顺序迁入独立 `GameBoard.mobile.css`，宽屏基线留在组件内；所有尺寸和层叠保持不变。门禁现在会拒绝把 `.mobile-landscape-board` 重新写回宽屏组件。固定状态555张、弹框48张、安全区18张、随机连续尺寸32组及桌面3档隔离通过；提交级Release规则4432/4432、平台138/138、UI契约331项、卡图324张及隔离生产构建全部通过。证据目录为 `artifacts/mobile-style-isolation-20260922`，Release回执为 `D:/GPT/Legion12/artifacts/deploy/1224adaf7a5ab4504db2ca67540102b2d0f94bed/l12-release-1224adaf7a5ab4504db2ca67540102b2d0f94bed.json`。
 
 - 移动弹框内部自适应已由 `a53e7e2aa330b431151f06aa5e3b36d5625a00aa` 推送 `origin/main`，未部署。卡牌选择与墓地卡列现在保持完整卡图并显式显示完整卡名；单卡/少量卡在可用区居中，多卡自然横向滑动且不显示滚动条。主宰、阵营、卡牌效果的卡图与正文作为整体均匀分布，士气/符文选择在剩余内容区横纵居中，操作区稳定守底。四档12类共48张弹框截图、三组安全区18张和桌面3档隔离通过；提交级Release规则4432/4432、平台138/138、UI契约331项、卡图324张及隔离生产构建全部通过。证据目录为 `artifacts/mobile-dialog-content-adaptive-final3` 与 `artifacts/mobile-dialog-content-adaptive-final-safe`，Release回执为 `D:/GPT/Legion12/artifacts/deploy/a53e7e2aa330b431151f06aa5e3b36d5625a00aa/l12-release-a53e7e2aa330b431151f06aa5e3b36d5625a00aa.json`。
 
