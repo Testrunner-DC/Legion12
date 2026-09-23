@@ -241,5 +241,13 @@ function returnFromReplay() {
 .replay-controls button:disabled{cursor:not-allowed;opacity:.35}
 .replay-controls small{min-width:92px;padding:0 6px;color:#919b98;font-size:14px;text-align:center}
 .replay-loading{position:fixed;z-index:3300;inset:0;display:grid;place-content:center;justify-items:center;gap:14px;background:radial-gradient(circle,rgba(28,70,74,.28),transparent 40%),#050809;color:#e7e4da;font-weight:900}
+/* 回放层级边界：已有对局（非加载/非错误）时，左下播放器与右上返回区（z-index:3200）始终最高且可点击；
+   GameBoard 内任何全屏覆盖层在天灾准备提示、特殊胜利演出等状态下也不得压过播放器。 */
+.replay-page :deep(.prompt-overlay),
+.replay-page :deep(.osiris-victory-sequence),
+.replay-page :deep(.battle-modal-mask),
+.replay-page :deep(.picker-mask),
+.replay-page :deep(.master-overlay),
+.replay-page :deep(.faction-effect-overlay){z-index:3100!important}
 @media(max-width:760px){.replay-result{top:58px;bottom:auto;min-width:0}.replay-result>strong{display:none}.replay-route-controls span{display:none}.replay-controls{right:14px;justify-content:center}.replay-controls small{position:absolute;right:0;bottom:100%;padding:5px 7px;background:#080d11ed}}
 </style>

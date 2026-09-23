@@ -46,5 +46,13 @@ assert.match(zonePresentation, /if \(!props\.playbackSpeed\) return l12Animation
   'zone-card motion must preserve live timing and scale only in replay')
 assert.match(combatPresentation, /if \(!props\.playbackSpeed\) return l12AnimationDuration\(standardMs, liveMinimumMs\)[^]*l12AnimationDuration\(standardMs, replayMinimumMs\) \/ props\.playbackSpeed/,
   'combat-card motion must preserve live timing and scale only in replay')
+assert.match(replayPage, /\.replay-controls\{position:fixed;z-index:3200;left:14px;bottom:14px/,
+  'replay player controls must stay fixed at the left-bottom corner on the 3200 layer')
+assert.match(replayPage, /\.replay-page :deep\(\.prompt-overlay\),[^]*:deep\(\.faction-effect-overlay\)\{z-index:3100!important\}/,
+  'replay must cap every GameBoard fullscreen overlay (prompt, special victory, modals, pickers) below the player controls')
+assert.match(gameBoard, /\.public-reveal-animation\{z-index:903\}\.dice-reveal-animation\{z-index:904\}\.board-target-controls\{z-index:3000\}/,
+  'public reveal, dice and target prompts must stay below the replay controls layer')
+assert.match(replayPage, /\.replay-loading\{position:fixed;z-index:3300/,
+  'loading and error fullscreen layers may still cover the player controls')
 
-console.log('L12 replay-retention UI checks passed (18 assertions).')
+console.log('L12 replay-retention UI checks passed (22 assertions).')
