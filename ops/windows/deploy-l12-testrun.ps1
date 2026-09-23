@@ -196,42 +196,58 @@ try {
     $pathSnippet = Join-Path $repoRoot "ops\server\legion12-testrun-path.nginx"
     $serviceTemplate = Join-Path $repoRoot "ops\server\legion12-testrun.service"
     $incoming = "/opt/legion12-testrun-deployment/incoming"
-    $remoteTool = "/tmp/deploy-l12-testrun-release-$($artifact.Commit).sh"
-    $remoteVerifier = "/tmp/verify-l12-testrun-health-$($artifact.Commit).mjs"
-    $remoteActivator = "/tmp/activate-l12-testrun-path-$($artifact.Commit).sh"
-    $remoteSnippet = "/tmp/legion12-testrun-path-$($artifact.Commit).nginx"
-    $remoteService = "/tmp/legion12-testrun-$($artifact.Commit).service"
+    $remoteTransfer = "$incoming/transfer-$($artifact.Commit)"
+    $remoteTool = "$remoteTransfer/$(Split-Path $serverDeploy -Leaf)"
+    $remoteVerifier = "$remoteTransfer/$(Split-Path $healthVerifier -Leaf)"
+    $remoteActivator = "$remoteTransfer/$(Split-Path $pathActivator -Leaf)"
+    $remoteSnippet = "$remoteTransfer/$(Split-Path $pathSnippet -Leaf)"
+    $remoteService = "$remoteTransfer/$(Split-Path $serviceTemplate -Leaf)"
     $remoteRelease = "$incoming/l12-testrun-release-$($artifact.Commit).tar.gz"
     $remoteAssets = "$incoming/l12-testrun-card-assets-$($artifact.CardAssetsHash).tar.gz"
 
-    Invoke-External ssh @sshOptions $endpoint.Destination "mkdir -p '$incoming'"
-    Invoke-External scp @sshOptions $serverDeploy "$($endpoint.Destination):$remoteTool"
-    Invoke-External scp @sshOptions $healthVerifier "$($endpoint.Destination):$remoteVerifier"
-    Invoke-External scp @sshOptions $pathActivator "$($endpoint.Destination):$remoteActivator"
-    Invoke-External scp @sshOptions $pathSnippet "$($endpoint.Destination):$remoteSnippet"
-    Invoke-External scp @sshOptions $serviceTemplate "$($endpoint.Destination):$remoteService"
-    Invoke-External ssh @sshOptions $endpoint.Destination "sed -i 's/\r$//' '$remoteActivator' '$remoteSnippet' '$remoteService' && chmod 0755 '$remoteActivator' && '$remoteActivator' '$remoteSnippet' '$remoteService' && rm -f '$remoteActivator' '$remoteSnippet' '$remoteService'"
-    Invoke-External ssh @sshOptions $endpoint.Destination "sed -i 's/\r$//' '$remoteTool' && install -m 0755 '$remoteTool' /usr/local/sbin/deploy-legion12-testrun-release && install -m 0755 '$remoteVerifier' /usr/local/libexec/verify-legion12-testrun-health.mjs && rm -f '$remoteTool' '$remoteVerifier' && /usr/local/sbin/deploy-legion12-testrun-release self-test"
-    Invoke-External scp @sshOptions $artifact.ReleaseArchive "$($endpoint.Destination):$remoteRelease"
-
-    & ssh @sshOptions $endpoint.Destination "test -d '/opt/legion12-testrun-static/card-assets/$($artifact.CardAssetsHash)'"
-    $assetProbeExitCode = $LASTEXITCODE
-    if ($assetProbeExitCode -ne 0 -and $assetProbeExitCode -ne 1) {
-        throw "Card asset cache probe failed (exit code $assetProbeExitCode); refusing to treat a connection failure as a cache miss."
-    }
-    $assetsCached = $assetProbeExitCode -eq 0
+    $assetProbe = @(& ssh @sshOptions $endpoint.Destination "mkdir -p '$remoteTransfer' && if test -d '/opt/legion12-testrun-static/card-assets/$($artifact.CardAssetsHash)'; then printf cached; else printf missing; fi")
+    if ($LASTEXITCODE -ne 0) { throw "Card asset cache probe failed; refusing to treat a connection failure as a cache miss." }
+    $assetProbeResult = ($assetProbe -join '').Trim()
+    if ($assetProbeResult -ne 'cached' -and $assetProbeResult -ne 'missing') { throw "Card asset cache probe returned an invalid result." }
+    $assetsCached = $assetProbeResult -eq 'cached'
     $assetShaArgument = "-"
     $assetPathArgument = "-"
+    $uploadSources = [Collections.Generic.List[string]]::new()
+    foreach ($source in @($serverDeploy, $healthVerifier, $pathActivator, $pathSnippet, $serviceTemplate, $artifact.ReleaseArchive)) {
+        $uploadSources.Add($source)
+    }
     if (-not $assetsCached) {
-        Invoke-External scp @sshOptions $artifact.CardAssetsArchive "$($endpoint.Destination):$remoteAssets"
+        $uploadSources.Add($artifact.CardAssetsArchive)
         $assetShaArgument = $artifact.CardAssetsSha256
         $assetPathArgument = $remoteAssets
     }
     else {
         Write-Host "[L12 testrun deploy] Reusing content-addressed card asset cache: $($artifact.CardAssetsHash)"
     }
+    $uploadArguments = $uploadSources.ToArray()
+    & scp @sshOptions @uploadArguments "$($endpoint.Destination):$remoteTransfer/"
+    if ($LASTEXITCODE -ne 0) { throw "Batched testrun upload failed ($LASTEXITCODE)." }
+
     $mode = if ($DryRun) { "dry-run" } else { "deploy" }
-    Invoke-External ssh @sshOptions $endpoint.Destination "/usr/local/sbin/deploy-legion12-testrun-release $mode $($artifact.Commit) $($artifact.ReleaseSha256) $remoteRelease $($artifact.CardAssetsHash) $assetShaArgument $assetPathArgument"
+    $remoteReleaseSource = "$remoteTransfer/$(Split-Path $artifact.ReleaseArchive -Leaf)"
+    $remoteAssetMove = if ($assetsCached) { ":" } else {
+        "mv -f '$remoteTransfer/$(Split-Path $artifact.CardAssetsArchive -Leaf)' '$remoteAssets'"
+    }
+    $remoteCommand = @(
+        "set -eu",
+        "sed -i 's/\r$//' '$remoteActivator' '$remoteSnippet' '$remoteService' '$remoteTool'",
+        "chmod 0755 '$remoteActivator'",
+        "'$remoteActivator' '$remoteSnippet' '$remoteService'",
+        "install -m 0755 '$remoteTool' /usr/local/sbin/deploy-legion12-testrun-release",
+        "install -m 0755 '$remoteVerifier' /usr/local/libexec/verify-legion12-testrun-health.mjs",
+        "mv -f '$remoteReleaseSource' '$remoteRelease'",
+        $remoteAssetMove,
+        "rm -f '$remoteActivator' '$remoteSnippet' '$remoteService' '$remoteTool' '$remoteVerifier'",
+        "/usr/local/sbin/deploy-legion12-testrun-release self-test",
+        "/usr/local/sbin/deploy-legion12-testrun-release $mode $($artifact.Commit) $($artifact.ReleaseSha256) $remoteRelease $($artifact.CardAssetsHash) $assetShaArgument $assetPathArgument",
+        "rmdir '$remoteTransfer' 2>/dev/null || true"
+    ) -join " && "
+    Invoke-External ssh @sshOptions $endpoint.Destination $remoteCommand
     if ($DryRun) { Write-Host "[L12 testrun deploy] Dry-run passed; the active testrun release was unchanged." }
     else { Write-Host "[L12 testrun deploy] Deployment passed: https://legion-12.com/testrun/" }
 }
