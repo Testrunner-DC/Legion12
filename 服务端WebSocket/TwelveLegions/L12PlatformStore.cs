@@ -27,7 +27,8 @@ public sealed record L12AccountDeckView(string Name, string MasterId, IReadOnlyL
     IReadOnlyList<string> MoraleIds, IReadOnlyList<string> SpecialIds, DateTimeOffset UpdatedAt,
     IReadOnlyDictionary<string, string>? AlternateArtSelections = null);
 public sealed record L12PublishedDeckView(string Id, string OwnerId, string Author, L12AccountDeckView Deck,
-    int Views, int Likes, int Copies, bool Liked, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+    int Views, int Likes, int Copies, bool Liked, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
+    bool SeasonCompliant = true, string? SeasonComplianceReason = null);
 public sealed record L12BugDiagnosticView(DateTimeOffset CapturedAt, string? MatchId, string? RoomCode,
     string? Phase, int? Round, int? TurnSerial, int? ActivePlayer, long? Revision, long? CommandSequence,
     IReadOnlyList<string> Stack, IReadOnlyList<string> Prompts, IReadOnlyList<string> RecentEventTypes);

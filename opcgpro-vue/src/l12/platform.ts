@@ -46,7 +46,7 @@ export interface PlatformPresence {
 }
 export interface PublishedDeck {
   id: string; ownerId: string; author: string; deck: SavedL12Deck; views: number; likes: number; copies: number; liked: boolean
-  createdAt: string; updatedAt: string; official?: boolean
+  createdAt: string; updatedAt: string; seasonCompliant?: boolean; seasonComplianceReason?: string; official?: boolean
 }
 export interface BugReport {
   id: string; reporterName: string; title: string; description: string; page: string; roomCode?: string; matchId?: string
@@ -1019,7 +1019,7 @@ export const rankedApi = {
   leaderboard: (faction = '', range: '7d' | '30d' | 'season' = 'season') => {
     const params = new URLSearchParams({ range })
     if (faction) params.set('faction', faction)
-    return platformRequest<{ players: RankedLeaderboardEntry[]; masterChampions: RankedMasterChampion[]; analytics: RankedAnalytics }>(`/api/rankings?${params}`)
+    return platformRequest<{ players: RankedLeaderboardEntry[]; analytics: RankedAnalytics }>(`/api/rankings?${params}`)
   },
   history: (limit = 500) => platformRequest<RankedSeasonHonor[]>(`/api/rankings/history?limit=${limit}`),
   broadcasts: (limit = 30) => platformRequest<RankedBroadcast[]>(`/api/ranked/broadcasts?limit=${limit}`),
@@ -1130,7 +1130,13 @@ export const alternateArtApi = {
 }
 
 export const publicDeckApi = {
-  list: () => platformRequest<PublishedDeck[]>('/api/public-decks'),
+  list: (query: { sort?: 'copies' | 'likes' | 'views' | 'latest'; seasonCompliant?: boolean } = {}) => {
+    const params = new URLSearchParams()
+    if (query.sort) params.set('sort', query.sort)
+    if (query.seasonCompliant) params.set('seasonCompliant', 'true')
+    const suffix = params.size ? `?${params}` : ''
+    return platformRequest<PublishedDeck[]>(`/api/public-decks${suffix}`)
+  },
   publish: (deck: SavedL12Deck, publicationId?: string) => platformRequest<PublishedDeck>('/api/public-decks', {
     method: 'POST', body: JSON.stringify({ publicationId: publicationId || null, deck }),
   }),

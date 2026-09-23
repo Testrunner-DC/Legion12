@@ -354,11 +354,11 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 return ApiError(request, "invalid_analytics_query", error.Message, StatusCodes.Status400BadRequest);
             }
         });
-        _app.MapGet("/api/rankings", async (string? faction, int? limit, string? range) =>
+        _app.MapGet("/api/rankings", async (HttpRequest request, string? faction, string? range) =>
         {
+            var account = _platform.Authenticate(request.Headers.Authorization);
             var matches = await _recorder.ListRankedAnalyticsMatchesAsync(20_000);
-            return Results.Ok(new { players = _platform.RankedLeaderboard(faction, limit ?? 100),
-                masterChampions = _platform.RankedMasterChampions(),
+            return Results.Ok(new { players = _platform.RankedLeaderboard(faction, 50, account?.Id),
                 analytics = _platform.RankedAnalytics(matches, range) });
         });
         _app.MapGet("/api/rankings/history", (int? limit) =>
@@ -733,10 +733,41 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (account is null) return Results.Unauthorized();
             return _platform.DeleteDeck(account.Id, name) ? Results.Ok() : Results.NotFound();
         });
-        _app.MapGet("/api/public-decks", (HttpRequest request) =>
+        _app.MapGet("/api/public-decks", (HttpRequest request, string? sort, bool? seasonCompliant) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
-            return Results.Ok(_platform.PublishedDecks(account?.Id));
+            var policy = _platform.EffectiveOperationsPolicy();
+            var decks = _platform.PublishedDecks(account?.Id).Select(item =>
+            {
+                var preset = new L12PresetDeckDefinition
+                {
+                    Name = item.Deck.Name,
+                    MasterId = item.Deck.MasterId,
+                    CardIds = item.Deck.CardIds.ToList(),
+                    MoraleIds = item.Deck.MoraleIds.ToList(),
+                    SpecialIds = item.Deck.SpecialIds.ToList(),
+                };
+                var valid = L12DeckValidator.TryValidatePreset(_catalog, preset, out var error,
+                    policy.CardRestrictions);
+                return item with
+                {
+                    SeasonCompliant = valid,
+                    SeasonComplianceReason = valid ? null : error,
+                };
+            });
+            if (seasonCompliant == true) decks = decks.Where(item => item.SeasonCompliant);
+            decks = (sort ?? "copies").Trim().ToLowerInvariant() switch
+            {
+                "likes" => decks.OrderByDescending(item => item.Likes)
+                    .ThenByDescending(item => item.CreatedAt).ThenBy(item => item.Id, StringComparer.Ordinal),
+                "views" => decks.OrderByDescending(item => item.Views)
+                    .ThenByDescending(item => item.CreatedAt).ThenBy(item => item.Id, StringComparer.Ordinal),
+                "latest" => decks.OrderByDescending(item => item.CreatedAt)
+                    .ThenBy(item => item.Id, StringComparer.Ordinal),
+                _ => decks.OrderByDescending(item => item.Copies)
+                    .ThenByDescending(item => item.CreatedAt).ThenBy(item => item.Id, StringComparer.Ordinal),
+            };
+            return Results.Ok(decks.ToArray());
         });
         _app.MapPost("/api/public-decks", (HttpRequest request, PublishedDeckRequest body) =>
         {

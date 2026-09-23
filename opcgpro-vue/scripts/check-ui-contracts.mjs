@@ -815,13 +815,19 @@ const contracts = [
     && !battleLog.includes('{{ part.card.cardId }}') && battleLog.includes('width:2.8em')
     && battleLog.includes('white-space:normal'), '玩家战报必须保留天灾禁选、调度及有意义失败结果，隐藏内部初始化、洗牌与单一零变化；同类抽牌/位移结果统一精简但无事务关联不得相邻合并，只让本条公开文本已有的完整卡名可点击且不泄露隐藏卡或编号，四字类别按两字换行'],
   [platform.includes('views: number; likes: number; copies: number') && platform.includes('recordView: (id: string)')
+    && platform.includes("sort?: 'copies' | 'likes' | 'views' | 'latest'")
     && wsServer.includes('/api/public-decks/{id}/view') && deckLibrary.includes('publicDeckApi.recordView(entry.id)')
-    && deckLibrary.includes('(b.views ?? 0) - (a.views ?? 0)') && deckLibrary.includes('b.likes - a.likes')
-    && deckLibrary.includes('b.copies - a.copies') && deckLibrary.includes('b.updatedAt.localeCompare(a.updatedAt)')
+    && deckLibrary.includes('b.copies - a.copies') && deckLibrary.includes('b.likes - a.likes')
+    && deckLibrary.includes('(b.views ?? 0) - (a.views ?? 0)') && deckLibrary.includes('b.createdAt.localeCompare(a.createdAt)')
+    && deckLibrary.includes('<option value="copies">最多复制</option>')
+    && deckLibrary.includes('<option value="likes">最多点赞</option>')
+    && deckLibrary.includes('<option value="views">最多浏览</option>')
+    && deckLibrary.includes('<option value="latest">最新发布</option>')
+    && deckLibrary.includes('v-model="seasonOnly"') && deckLibrary.includes('entry.seasonCompliant')
     && deckLibrary.includes('浏览量 {{ entry.views ?? 0 }}') && deckLibrary.includes('符合本赛季')
     && deckLibrary.includes('不符合本赛季') && deckLibrary.includes('查看构筑')
     && deckLibrary.includes('--deck-faction:') && deckLibrary.includes('rgba(var(--deck-faction),.2)')
-    && deckLibrary.includes('color:#c7cecd;font-size:14px'), '公开牌库浏览量须持久化；热门排序固定为浏览量、点赞、复制、最新时间，信息条按浏览量/点赞/复制/赛季要求/查看构筑排列，并使用低亮度阵营底色与可读高对比文字'],
+    && deckLibrary.includes('color:#c7cecd;font-size:14px'), '公开牌库必须只提供最多复制、最多点赞、最多浏览、最新发布四项互斥排序，支持与本赛季合规筛选叠加，并保留浏览量/点赞/复制/赛季要求信息条与可读阵营底色'],
   [deckEditor.includes('masterProfileUrl(selectedMaster.id') && lobby.includes('border-radius:2px'), '主宰头像必须使用官方正方形资源'],
   [cardDetailContent.includes('trialValue') && cardDetailContent.includes('<dt>试炼值</dt>'), '卡牌档案必须展示试炼值'],
   [playerMat.includes('aria-disabled') && playerMat.includes('.morale-orb.active-morale[aria-disabled="true"]') && playerMat.includes('.morale-orb.active-god-power[aria-disabled="true"]'), '可用的活跃士气与神力必须始终高亮'],
