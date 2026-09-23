@@ -37,6 +37,7 @@ const [viewportCss, viewportTs, battleLayout, mobileDialogLayout, app, archive, 
 const board = `${boardComponent}\n${boardMobileStyle}`
 const matchRecords = await read('src/l12/MatchRecords.vue')
 const deckEditor = await read('src/l12/L12DeckEditor.vue')
+const mobileDeferredCardImage = await read('src/l12/MobileDeferredCardImage.vue')
 
 const expect = (condition, message) => {
   if (!condition) throw new Error(`mobile responsive contract: ${message}`)
@@ -82,7 +83,9 @@ expect(tournaments.includes('.tournament-page{padding:14px 10px 34px}') && tourn
 expect(tournaments.includes('class="site-toast"') && !tournaments.includes('class="toast"') && tournaments.includes('top:auto;right:22px;bottom:22px;left:auto;transform:none'), 'site notifications must be isolated from the battle toast positioning contract')
 expect(shell.includes('class="site-drawer-backdrop"') && shell.includes('aria-controls="site-mobile-drawer"') && shell.includes("event.key === 'Escape'") && shell.includes("document.body.style.overflow = 'hidden'"), 'mobile navigation must provide a modal backdrop, escape close, focus semantics and body scroll lock')
 expect(app.includes('maximum-scale=5, user-scalable=yes') && app.includes('locked ? lockedViewport : readableViewport'), 'reading routes must allow zoom while immersive battle and editor routes stay locked')
-expect(archive.includes('const renderLimit = ref(60)') && archive.includes('IntersectionObserver') && archive.includes('class="archive-group-nav"') && archive.includes('class="archive-back-to-top"'), 'the archive must group cards, cap its initial DOM, append on intersection and provide a back-to-top action')
+expect(archive.includes('MobileDeferredCardImage') && mobileDeferredCardImage.includes('IntersectionObserver')
+  && mobileDeferredCardImage.includes("window.matchMedia('(max-width: 900px), (pointer: coarse)').matches")
+  && !archive.includes('renderLimit') && !archive.includes('archive-group-nav') && !archive.includes('archive-back-to-top'), 'the archive must preserve its original continuous browsing UI while deferring off-screen card images only on mobile or coarse-pointer devices')
 expect(matchRecords.includes('class="record-summary-grid"') && matchRecords.includes('class="mobile-replay-inline"') && !matchRecords.includes('mobileReplayNotice'), 'mobile records must expose a complete inline summary without a blocking replay notice')
 expect(profile.includes('l12-profile-master-records') && profile.includes('l12-profile-sessions') && profile.includes('class="profile-quick-actions"'), 'mobile profile sections must be remembered and keep frequent actions near the identity summary')
 expect(deckEditor.includes('class="portrait-guide"') && deckEditor.includes('l12-deck-editor-portrait-guide'), 'portrait deck-editor entry must explain the landscape workspace without discarding edit state')

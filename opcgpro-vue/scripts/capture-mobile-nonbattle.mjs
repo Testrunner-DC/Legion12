@@ -196,7 +196,18 @@ try {
   await page.goto(`http://127.0.0.1:${port}/__mobile_review__?route=%2Fcards`)
   await page.locator('.archive-card').first().waitFor({ timeout: 15000 })
   const initialArchiveCards = await page.locator('.archive-card').count()
-  if (initialArchiveCards > 60) throw new Error(`archive initial DOM exceeds 60 cards: ${initialArchiveCards}`)
+  const initialArchiveImages = await page.locator('.archive-card .l12-card-image').count()
+  if (initialArchiveCards <= 60) throw new Error(`archive must preserve the complete continuous card list: ${initialArchiveCards}`)
+  if (initialArchiveImages >= initialArchiveCards) throw new Error(`mobile archive eagerly created every card image: ${initialArchiveImages}/${initialArchiveCards}`)
+  await page.evaluate(() => {
+    const scroller = document.querySelector('.site-content')
+    if (scroller instanceof HTMLElement) scroller.scrollTop = scroller.scrollHeight
+  })
+  await page.waitForTimeout(500)
+  const afterScrollArchiveImages = await page.locator('.archive-card .l12-card-image').count()
+  if (afterScrollArchiveImages <= initialArchiveImages) throw new Error(`mobile archive did not create more images while scrolling: ${initialArchiveImages} -> ${afterScrollArchiveImages}`)
+  if ((await page.locator('.archive-card .mobile-deferred-card-image').count()) !== initialArchiveCards)
+    throw new Error('mobile archive changed the original card-slot count while deferring images')
 
   await page.goto(`http://127.0.0.1:${port}/__mobile_review__?route=%2Fbattle%2Frankings`)
   await page.locator('.player-table .tr').first().waitFor({ timeout: 15000 })

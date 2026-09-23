@@ -64,6 +64,7 @@ const cardTile = read('../src/l12/CardTile.vue')
 const cardPresentation = read('../src/l12/cardPresentation.ts')
 const l12Types = read('../src/l12/types.ts')
 const cardArchive = read('../src/l12/CardArchive.vue')
+const mobileDeferredCardImage = read('../src/l12/MobileDeferredCardImage.vue')
 const cardDetailContent = read('../src/l12/CardDetailContent.vue')
 const cardArchiveVersions = read('../src/l12/cardArchiveVersions.ts')
 const galleryMarkup = cardArchive.match(/<template v-else>([\s\S]*?)<div v-if="!filteredGallery\.length"/)?.[1] ?? ''
@@ -200,8 +201,8 @@ const contracts = [
     && cardArchiveVersions.includes('rarityValue(a.rarity)') && cardArchiveVersions.includes("if (!rarity?.trim()) return 100")
     && cardArchiveVersions.includes('defaultVersion: versions[0]'), '逻辑卡默认版本必须先选无异画基底的规则卡，再稳定按最早产品、最低已知罕贵度及卡号排序；异画不得抢占默认卡图'],
   [cardArchive.includes('class="archive-card-image"') && cardArchive.includes('class="archive-version-arrow previous"')
-    && cardArchive.includes('class="archive-version-arrow next"') && cardArchive.includes('@click.stop="cycleVersion(row.entry, -1)"')
-    && cardArchive.includes('@click.stop="cycleVersion(row.entry, 1)"') && cardArchive.includes(':card-id="displayedVersion(row.entry).id"')
+    && cardArchive.includes('class="archive-version-arrow next"') && cardArchive.includes('@click.stop="cycleVersion(entry, -1)"')
+    && cardArchive.includes('@click.stop="cycleVersion(entry, 1)"') && cardArchive.includes(':card-id="displayedVersion(entry).id"')
     && cardArchive.includes(':card="selectedDetailCard"') && cardDetailContent.includes(':card-id="card.id"')
     && !cardDetailContent.includes('archive-version-arrow')
     && globalStyle.includes('.archive-version-arrow{') && globalStyle.includes('background:transparent'), '卡牌图鉴必须在中间结果卡图上以左右透明三角切换版本，并同步更新卡位与详情；详情区不得保留第二套切换按钮'],
@@ -211,8 +212,16 @@ const contracts = [
     && cardArchive.includes("card.id !== 'S02-05C1B'")
     && cardArchive.includes("Boolean(card.archiveBaseCardId) || card.id === 'S02-05C1A'")
     && cardArchive.includes('cards.value.filter(isGalleryVariant)')
-    && cardArchive.includes('v-for="row in visibleGalleryRows" :key="row.key"')
+    && cardArchive.includes('v-for="card in filteredGallery" :key="card.id"')
     && !galleryMarkup.includes('archive-version-arrow'), '画廊必须逐卡展示41张登记展示资源与S02-05C1A，共42张异画；主宰异画编号不得写死为M1A；S02-05C1A在图鉴并入默认士气S02-05C1的版本切换、在画廊独立展示，不得成为新规则身份，也不得误收规则独立的奥林匹斯神力B面'],
+  [cardArchive.includes("import MobileDeferredCardImage from './MobileDeferredCardImage.vue'")
+    && (cardArchive.match(/<MobileDeferredCardImage/g) ?? []).length === 2
+    && mobileDeferredCardImage.includes("window.matchMedia('(max-width: 900px), (pointer: coarse)').matches")
+    && mobileDeferredCardImage.includes("rootMargin: '640px 0px'")
+    && mobileDeferredCardImage.includes('const callbacks = new WeakMap<Element, () => void>()')
+    && !cardArchive.includes('visibleCatalogRows') && !cardArchive.includes('visibleGalleryRows')
+    && !cardArchive.includes('archive-group-nav') && !cardArchive.includes('renderLimit')
+    && cardArchive.includes('v-for="entry in filteredCatalog"') && cardArchive.includes('v-for="card in filteredGallery"'), '图鉴必须恢复原有连续卡位与交互，仅在移动/粗指针设备按可视区延迟创建卡图，不得用分组、分页或截断改变浏览体验'],
   [(cardArchive.match(/@dblclick\.stop="openDetail/g) ?? []).length === 2
     && (cardArchive.match(/class="archive-image-open"/g) ?? []).length === 2
     && !cardArchive.includes('<button class="archive-image-open"')
@@ -301,15 +310,17 @@ const contracts = [
     && playerTurnClock.includes("'untimed-clock': !clock") && playerTurnClock.includes('.player-turn-clock.untimed-clock{width:130px;min-height:0;padding:5px}')
     && !playerTurnClock.includes('无时限') && !playerTurnClock.includes('v-if="active"'), '双方回合玩家框必须常驻；排位显示总操作、本次操作或重连倒计时，无计时房间只保留回合玩家/等待回合并收缩'],
   [board.includes('data-ui-contract="complete-player-summary"') && board.includes('class="player-summary-primary"') && board.includes('class="player-summary-meta"') && board.includes('class="rank-number">第 {{ enemyBadge.rank }} 名') && board.includes('class="title-badge" variant="master-title"')
-    && board.includes('v-if="identityLabel(enemyBadge?.tier)"') && board.includes('v-if="identityLabel(enemyBadge?.placementTitle)"') && board.includes('v-if="identityLabel(enemyBadge?.masterTitle)"')
-    && board.includes('v-if="identityLabel(myBadge?.tier)"') && board.includes('v-if="identityLabel(myBadge?.placementTitle)"') && board.includes('v-if="identityLabel(myBadge?.masterTitle)"')
+    && board.includes('v-if="battleTierLabel(enemyBadge)"') && board.includes('v-if="identityLabel(enemyBadge?.placementTitle)"') && board.includes('v-if="identityLabel(enemyBadge?.masterTitle)"')
+    && board.includes('v-if="battleTierLabel(myBadge)"') && board.includes('v-if="identityLabel(myBadge?.placementTitle)"') && board.includes('v-if="identityLabel(myBadge?.masterTitle)"')
+    && board.includes("return badge?.rank && label === '冠冕' ? '' : label")
     && board.includes("absentIdentityLabels = new Set(['未定级', '暂无段位', '无段位', '未评级', '暂无称号', '无称号', '未获得称号', '暂无'])")
     && !board.includes("|| '未定级'") && !board.includes("|| '暂无称号'")
     && board.includes('connectionLabel(viewEnemy.playerIndex)') && board.includes('connectionLabel(viewMe.playerIndex)')
     && !board.includes('<dt>主宰</dt>') && !board.includes('<dt>血量</dt>')
-    && board.includes('.player-panel{box-sizing:border-box;height:auto!important;min-height:144px') && board.includes('.player-summary-meta{display:flex;')
-    && board.includes('.player-summary-meta>:is(.rank-badge,.placement-title-badge,.title-badge){min-width:max-content;max-width:none;flex:none}')
-    && board.includes('.player-summary-meta>.connection-state{min-width:0;max-width:100%!important;') && board.includes('margin-left:auto!important;')
+    && board.includes('.player-panel{box-sizing:border-box;height:auto!important;min-height:140px') && board.includes('.player-summary-meta{display:grid;')
+    && board.includes('grid-template-columns:minmax(0,1fr);justify-items:start')
+    && board.includes('.player-summary-meta>:is(.rank-badge,.placement-title-badge,.title-badge){width:max-content;min-width:0;max-width:100%}')
+    && board.includes('.player-summary-meta>.connection-state{min-width:0;max-width:100%!important;') && board.includes('margin-left:0!important;')
     && rankings.includes("import RankedIdentityBadge from '@/l12/RankedIdentityBadge.vue'") && rankings.includes('<RankedIdentityBadge v-for="title in row.titles"') && rankings.includes(':variant="titleVariant(title)"')
     && profilePage.includes("import RankedIdentityBadge from '@/l12/RankedIdentityBadge.vue'") && profilePage.includes(':variant="profileTitleVariant(title)"')
     && rankedIdentityBadge.includes("variant?: 'tier' | 'faction-title' | 'master-title'") && rankedIdentityBadge.includes('--ranked-tier-badge-font-size: 15px;') && rankedIdentityBadge.includes('--ranked-title-badge-font-size: 15px;')
@@ -646,7 +657,7 @@ const contracts = [
   [lobby.includes('.ranked-rules-modal{grid-template-rows:auto minmax(0,1fr) auto') && lobby.includes('.ranked-rules-scroll{min-height:0;align-content:start;overflow-x:hidden;overflow-y:scroll'), '排位规则正文必须拥有独立纵向滚动区，在小视口中也能阅读全部内容'],
   [shell.includes('<router-link class="site-brand" to="/"') && !shell.includes('<span>LEGION 12</span>') && !shell.includes('<small>十二军团</small>') && shell.includes('.site-brand img{width:44px;height:44px;border:0;border-radius:0;object-fit:contain'), '主页侧栏品牌区必须只显示无外框的白色 Logo-Mini，不得附带中英文文字'],
   [globalBugFeedback.includes('v-model="form.bugDescription"') && globalBugFeedback.includes('v-model="form.suggestion"') && globalBugFeedback.includes('if (!bugDescription && !suggestion)') && globalBugFeedback.includes('提及卡牌的时候请勿使用俗称，最好使用卡牌编号（例：S01-0001）') && globalBugFeedback.includes('描述你希望优化的Bug、操作体验或界面效果'), '全局反馈必须分为 Bug 提交与优化建议，任填一项即可提交并保留明确填写提示'],
-  [profilePage.includes('class="title-manager"') && profilePage.includes('ranked.profile.masterTitles') && profilePage.includes('saveRankedTitle') && platform.includes("'/api/ranked/title'") && board.includes('playerBadges') && board.includes('enemyBadge?.rank') && board.includes('enemyBadge?.tier') && board.includes('enemyBadge?.placementTitle') && board.includes('myBadge?.masterTitle'), '个人页必须可选择已获得的最强主宰称号，对战右上玩家框须依次显示权威全服名次、段位、派系段位称号与所选主宰称号'],
+  [profilePage.includes('class="title-manager"') && profilePage.includes('ranked.profile.masterTitles') && profilePage.includes('saveRankedTitle') && platform.includes("'/api/ranked/title'") && board.includes('playerBadges') && board.includes('enemyBadge?.rank') && board.includes('battleTierLabel(enemyBadge)') && board.includes('enemyBadge?.placementTitle') && board.includes('myBadge?.masterTitle'), '个人页必须可选择已获得的最强主宰称号，对战右上玩家框须依次显示权威全服名次、段位、派系段位称号与所选主宰称号'],
   [board.includes("choiceMode === 'mixed-board-payment'") && board.includes("? '确认费用' : '确认发动'") && board.includes('lockedChoices'), '混合场面费用必须在同一场面直选条选择，唯一资源自动锁定且与弃置对象一并确认'],
   [rankedTicker.includes('@animationend="complete"') && rankedTicker.includes('animation:ranked-message-once 16s linear 1 both') && rankedPlayback.includes('claimNextRankedBroadcast') && rankedPlayback.includes('completeCurrentRankedBroadcast') && rankedPlayback.includes('accountId'), '排位广播必须按账号领取，完整播放一次后确认，不得在页面内循环重播同一消息'],
   [adminOperations.includes('data-ui-contract="ranked-broadcast-config"') && adminOperations.includes('rankedConfig.broadcast.displaySeconds') && adminOperations.includes('rankedConfig.broadcast.minimumTierIndex'), '排位广播的时长、大厅延迟、间隔、门槛和类别开关必须由后台统一配置'],

@@ -173,6 +173,12 @@ function identityLabel(value: string | null | undefined) {
   const label = value?.trim() ?? ''
   return absentIdentityLabels.has(label) ? '' : label
 }
+function battleTierLabel(badge: { rank?: number | null; tier?: string | null } | null | undefined) {
+  const label = identityLabel(badge?.tier)
+  // Once an all-server rank is present, "冠冕" only repeats the meaning of
+  // that rank. Keep lower tiers visible because they still carry information.
+  return badge?.rank && label === '冠冕' ? '' : label
+}
 const playerConnection = (playerIndex: number) => {
   const timed = l12State.rankedClock?.players.find(player => player.playerIndex === playerIndex)
   if (timed) return timed.connected
@@ -1266,7 +1272,7 @@ function statusTexts(card: Card) {
               <div class="player-summary-primary"><b>对方</b><strong>{{ viewEnemy.name || '未命名玩家' }}</strong></div>
               <div class="player-summary-meta">
                 <span v-if="enemyBadge?.rank" class="rank-number">第 {{ enemyBadge.rank }} 名</span>
-                <RankedIdentityBadge v-if="identityLabel(enemyBadge?.tier)" class="rank-badge" variant="tier" :faction="enemyBadge?.faction" compact :label="identityLabel(enemyBadge?.tier)" />
+                <RankedIdentityBadge v-if="battleTierLabel(enemyBadge)" class="rank-badge" variant="tier" :faction="enemyBadge?.faction" compact :label="battleTierLabel(enemyBadge)" />
                 <RankedIdentityBadge v-if="identityLabel(enemyBadge?.placementTitle)" class="placement-title-badge" variant="faction-title" :faction="enemyBadge?.faction" compact :label="identityLabel(enemyBadge?.placementTitle)" />
                 <RankedIdentityBadge v-if="identityLabel(enemyBadge?.masterTitle)" class="title-badge" variant="master-title" :faction="enemyBadge?.faction" compact :label="identityLabel(enemyBadge?.masterTitle)" />
                 <span class="connection-state" :class="{ online: playerConnection(viewEnemy.playerIndex) }"><i/>{{ connectionLabel(viewEnemy.playerIndex) }}</span>
@@ -1277,7 +1283,7 @@ function statusTexts(card: Card) {
               <div class="player-summary-primary"><b>我方</b><strong class="mine">{{ viewMe.name || '未命名玩家' }}</strong></div>
               <div class="player-summary-meta">
                 <span v-if="myBadge?.rank" class="rank-number">第 {{ myBadge.rank }} 名</span>
-                <RankedIdentityBadge v-if="identityLabel(myBadge?.tier)" class="rank-badge" variant="tier" :faction="myBadge?.faction" compact :label="identityLabel(myBadge?.tier)" />
+                <RankedIdentityBadge v-if="battleTierLabel(myBadge)" class="rank-badge" variant="tier" :faction="myBadge?.faction" compact :label="battleTierLabel(myBadge)" />
                 <RankedIdentityBadge v-if="identityLabel(myBadge?.placementTitle)" class="placement-title-badge" variant="faction-title" :faction="myBadge?.faction" compact :label="identityLabel(myBadge?.placementTitle)" />
                 <RankedIdentityBadge v-if="identityLabel(myBadge?.masterTitle)" class="title-badge" variant="master-title" :faction="myBadge?.faction" compact :label="identityLabel(myBadge?.masterTitle)" />
                 <span class="connection-state" :class="{ online: playerConnection(viewMe.playerIndex) }"><i/>{{ connectionLabel(viewMe.playerIndex) }}</span>
@@ -1418,8 +1424,8 @@ function statusTexts(card: Card) {
   align-items:stretch;
 }
 .board-status-lane{position:relative;z-index:38;display:flex;box-sizing:border-box;height:70px;min-height:70px;justify-content:flex-end;overflow:visible;pointer-events:none}.board-player-clock{position:relative;right:auto;top:auto;bottom:auto}.opponent-status-lane{order:0;align-items:flex-end}.my-status-lane{order:0;align-items:flex-start}
-.player-panel{box-sizing:border-box;height:auto!important;min-height:144px;flex:none;overflow:hidden!important}
-.player-summary{display:grid;min-width:0;gap:7px}.player-summary-primary{display:grid;min-width:0;grid-template-columns:max-content minmax(0,1fr);align-items:center;column-gap:6px}.player-summary-primary>b{color:#d2525b;font-size:var(--l12-board-copy,13px);white-space:nowrap}.my-summary .player-summary-primary>b{color:#58bdc5}.player-summary-primary>strong{min-width:0;overflow:hidden!important;font-size:max(15px,var(--l12-board-copy,13px))!important;line-height:1.35!important;text-overflow:ellipsis!important;white-space:nowrap!important}.player-summary-meta{display:flex;min-width:0;align-items:center;flex-wrap:wrap;gap:4px;color:#aeb7b5;font-size:var(--l12-board-copy,13px);line-height:1.35}.player-summary-meta>.rank-number{box-sizing:border-box;flex:none;padding:2px 5px;border:1px solid #59666b;border-radius:3px;background:#11191d;color:#d8e0e2;font-size:var(--l12-board-copy,13px);font-weight:900;white-space:nowrap}.player-summary-meta>:is(.rank-badge,.placement-title-badge,.title-badge){min-width:max-content;max-width:none;flex:none}.player-summary-meta>.connection-state{min-width:0;max-width:100%!important;justify-content:flex-end;margin-left:auto!important;font-size:clamp(9px,var(--l12-board-micro,9px),11px)!important;overflow:hidden!important;text-overflow:ellipsis!important}
+.player-panel{box-sizing:border-box;height:auto!important;min-height:140px;flex:none;overflow:hidden!important}
+.player-summary{display:grid;min-width:0;gap:5px}.player-summary-primary{display:grid;min-width:0;grid-template-columns:max-content minmax(0,1fr);align-items:center;column-gap:5px}.player-summary-primary>b{color:#d2525b;font-size:calc(var(--l12-board-copy,13px) - 1px);white-space:nowrap}.my-summary .player-summary-primary>b{color:#58bdc5}.player-summary-primary>strong{min-width:0;overflow:hidden!important;font-size:max(14px,calc(var(--l12-board-copy,13px) - 1px))!important;line-height:1.25!important;text-overflow:ellipsis!important;white-space:nowrap!important}.player-summary-meta{display:grid;min-width:0;grid-template-columns:minmax(0,1fr);justify-items:start;align-items:start;gap:3px;color:#aeb7b5;font-size:calc(var(--l12-board-copy,13px) - 1px);line-height:1.2}.player-summary-meta>.rank-number{box-sizing:border-box;width:max-content;max-width:100%;padding:1px 4px;border:1px solid #59666b;border-radius:3px;background:#11191d;color:#d8e0e2;font-size:calc(var(--l12-board-copy,13px) - 1px);font-weight:900;white-space:nowrap}.player-summary-meta>:is(.rank-badge,.placement-title-badge,.title-badge){width:max-content;min-width:0;max-width:100%}.player-summary-meta>.connection-state{min-width:0;max-width:100%!important;justify-content:flex-start;margin-left:0!important;font-size:clamp(9px,var(--l12-board-micro,9px),10px)!important;overflow:hidden!important;text-overflow:ellipsis!important}
 .connection-state{display:flex!important;width:max-content;max-width:none!important;align-items:center;gap:4px;margin:0!important;color:#b76570!important;font-size:var(--l12-board-copy,13px)!important;font-weight:900;line-height:1!important;overflow:visible!important;white-space:nowrap!important;text-overflow:clip!important}.connection-state.online{color:#58c99a!important}.connection-state i{width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 6px currentColor}
 .player-panel>hr{margin:9px 0!important}
 .right-rail .record-log{min-height:120px;overflow:hidden}.right-rail .record-log>.event-list{min-height:0;overflow-y:auto}

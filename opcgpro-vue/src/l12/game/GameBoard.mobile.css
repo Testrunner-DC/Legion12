@@ -1280,27 +1280,34 @@
   font-size:7px !important;
 }
 .mobile-landscape-board .player-summary-primary>strong {
-  font-size:8px !important;
+  font-size:7.5px !important;
   line-height:1.05 !important;
 }
 .mobile-landscape-board .player-summary-meta {
+  display:grid !important;
+  grid-template-columns:minmax(0,1fr) !important;
+  justify-items:start !important;
   align-content:start;
-  gap:1px;
-  line-height:1;
-  --ranked-tier-badge-font-size:8px;
-  --ranked-title-badge-font-size:7px;
+  gap:0;
+  line-height:.95;
+  --ranked-tier-badge-font-size:7px;
+  --ranked-title-badge-font-size:6.5px;
 }
 .mobile-landscape-board .player-summary-meta>.rank-number {
-  padding:1px 2px;
-  font-size:8px;
-  line-height:1.1;
+  width:max-content;
+  max-width:100%;
+  padding:0 2px;
+  font-size:7px;
+  line-height:1;
 }
 .mobile-landscape-board .player-summary-meta :deep(.ranked-identity-badge.compact) {
-  --ranked-tier-badge-font-size:8px;
-  --ranked-title-badge-font-size:7px;
+  width:max-content;
+  max-width:100%;
+  --ranked-tier-badge-font-size:7px;
+  --ranked-title-badge-font-size:6.5px;
   gap:1px;
-  padding:1px 2px !important;
-  line-height:1.05;
+  padding:0 2px !important;
+  line-height:1;
 }
 .mobile-landscape-board .player-summary-meta :deep(.ranked-identity-badge.compact>i),
 .mobile-landscape-board .player-summary-meta :deep(.ranked-identity-badge.compact>.identity-brand-logo) {

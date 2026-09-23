@@ -12,7 +12,7 @@ const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 fs.mkdirSync(output, { recursive: true })
 
-const source = fs.readFileSync(path.join(root, 'scripts/capture-mobile-nonbattle.mjs'), 'utf8')
+const source = fs.readFileSync(path.join(root, 'scripts/capture-mobile-nonbattle.mjs'), 'utf8').replace(/\r\n?/g, '\n')
 const start = source.indexOf('const entry = `') + 'const entry = `'.length
 const end = source.indexOf('`\n\nlet browser')
 const entry = source.slice(start, end)

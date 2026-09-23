@@ -6,6 +6,7 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.L12_PLAYWRIGHT
   || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
+const sharp = require('sharp')
 const target = process.argv[2] || 'http://127.0.0.1:5174/__l12_battle_preview__'
 const output = process.env.L12_RANKED_IDENTITY_OUT
   || 'C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/ranked-battle-identity-20260924'
@@ -85,6 +86,10 @@ try {
           assert(item.top >= report.panel.top - 1 && item.bottom <= report.panel.bottom + 1,
             `${viewport.width}x${viewport.height}/${mode}: identity item was vertically clipped ${JSON.stringify({ item, panel: report.panel })}`)
         }
+        for (let index = 1; index < summary.items.length; index += 1) {
+          assert(summary.items[index].top >= summary.items[index - 1].bottom - 0.75,
+            `${viewport.width}x${viewport.height}/${mode}: identity items must occupy separate rows ${JSON.stringify(summary.items)}`)
+        }
       }
       assert(report.panelScrollHeight <= report.panelClientHeight + 1,
         `${viewport.width}x${viewport.height}/${mode}: player panel content was clipped`)
@@ -102,7 +107,7 @@ try {
       }
 
       const expected = mode === 'full'
-        ? ['第 128 名', '冠冕', '混沌先声', '最强阿斯加德']
+        ? ['第 128 名', '混沌先声', '最强阿斯加德']
         : mode === 'mixed' ? ['第 128 名', '统领']
           : mode === 'minimal' ? ['第 247 名', '进阶'] : ['定级 4/5']
       assert.deepEqual(report.summaries[0].labels, expected,
@@ -115,7 +120,24 @@ try {
   }
   assert.deepEqual(errors, [], 'ranked identity fixture must not throw page errors')
   fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify(reports, null, 2))
-  console.log(JSON.stringify({ output, screenshots: reports.length, errors }, null, 2))
+  const cellWidth = 400
+  const cellHeight = 252
+  const columns = 4
+  const rows = Math.ceil(reports.length / columns)
+  const contactLayers = []
+  for (const [index, report] of reports.entries()) {
+    const left = (index % columns) * cellWidth
+    const top = Math.floor(index / columns) * cellHeight
+    const thumbnail = await sharp(path.join(output, `${report.suffix}.png`))
+      .resize(380, 214, { fit: 'contain', background: '#070b0d' }).png().toBuffer()
+    const caption = Buffer.from(`<svg width="380" height="28" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#10191d"/><text x="8" y="19" fill="#e9e6dc" font-size="14" font-family="Microsoft YaHei, sans-serif">${report.suffix}</text></svg>`)
+    contactLayers.push({ input: caption, left: left + 10, top: top + 5 })
+    contactLayers.push({ input: thumbnail, left: left + 10, top: top + 33 })
+  }
+  const contactSheet = path.join(output, '各比例验收总览.png')
+  await sharp({ create: { width: columns * cellWidth, height: rows * cellHeight, channels: 4, background: '#06090b' } })
+    .composite(contactLayers).png().toFile(contactSheet)
+  console.log(JSON.stringify({ output, screenshots: reports.length, contactSheet, errors }, null, 2))
 } finally {
   await browser.close()
 }

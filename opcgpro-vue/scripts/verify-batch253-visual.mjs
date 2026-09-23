@@ -176,8 +176,8 @@ try {
  if(report.dock.y+report.dock.h>report.height+1)throw new Error('Utility dock leaves viewport at '+report.width+'x'+report.height)
  assert.deepEqual(report.artwork,{count:8,sameOrigin:8},'all visible face-up battle cards must use controlled real local artwork at '+report.width+'x'+report.height)
   assert.equal(report.opponentBadges,1,'opponent tier must remain visible when optional titles are absent at '+report.width+'x'+report.height)
-  assert.equal(report.myBadges,3,'tier, faction title and master title must remain separate at '+report.width+'x'+report.height)
-  assert(report.summaryText.includes('第 3 名')&&report.summaryText.includes('冠冕')&&report.summaryText.includes('秩序冠首')&&report.summaryText.includes('最强银臂努阿达'),'player summary must preserve rank/tier/faction-title/master-title order at '+report.width+'x'+report.height)
+  assert.equal(report.myBadges,2,'ranked Crown must be omitted while faction and master titles remain separate at '+report.width+'x'+report.height)
+  assert(report.summaryText.includes('第 3 名')&&!report.summaryText.includes('冠冕')&&report.summaryText.includes('秩序冠首')&&report.summaryText.includes('最强银臂努阿达'),'player summary must omit redundant Crown after rank while preserving the remaining identity order at '+report.width+'x'+report.height)
  }
  const logReports=[]
  for(const viewport of [{width:1920,height:1080},{width:1440,height:810},{width:1280,height:720}]){
