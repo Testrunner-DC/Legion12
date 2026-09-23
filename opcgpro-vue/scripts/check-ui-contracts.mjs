@@ -327,6 +327,8 @@ const contracts = [
     && nginxSharePages.includes('proxy_pass http://127.0.0.1:8083/_l12/share-page;')
     && nginxSite.includes('proxy_pass http://127.0.0.1:8084/_l12/share-page;')
     && nginxTestrunPath.includes('location ~ ^/testrun/news/[^/]+/?$')
+    && nginxTestrunPath.includes('rewrite ^ /_l12/share-page break;')
+    && nginxTestrunPath.includes('proxy_pass http://127.0.0.1:8084;')
     && activateSharePages.includes('include /etc/nginx/snippets/legion12-share-pages.conf;')
     && windowsDeploy.includes('$sharePageActivator') && windowsDeploy.includes('$sharePageSnippet'),
     '主页和资讯分享必须由服务端基于已发布快照注入完整OG信息，正式服与测试路径都要接入动态HTML且由部署流程启用'],

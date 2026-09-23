@@ -68,10 +68,12 @@ location = /testrun/news/ {
 }
 
 location ~ ^/testrun/news/[^/]+/?$ {
+    set $l12_share_path $uri;
+    rewrite ^ /_l12/share-page break;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header X-L12-Share-Path $uri;
-    proxy_pass http://127.0.0.1:8084/_l12/share-page;
+    proxy_set_header X-L12-Share-Path $l12_share_path;
+    proxy_pass http://127.0.0.1:8084;
 }
 
 location /testrun/ {
