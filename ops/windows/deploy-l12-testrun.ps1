@@ -245,7 +245,7 @@ try {
         "rm -f '$remoteActivator' '$remoteSnippet' '$remoteService' '$remoteTool' '$remoteVerifier'",
         "/usr/local/sbin/deploy-legion12-testrun-release self-test",
         "/usr/local/sbin/deploy-legion12-testrun-release $mode $($artifact.Commit) $($artifact.ReleaseSha256) $remoteRelease $($artifact.CardAssetsHash) $assetShaArgument $assetPathArgument",
-        "rmdir '$remoteTransfer' 2>/dev/null || true"
+        "(rmdir '$remoteTransfer' 2>/dev/null || true)"
     ) -join " && "
     Invoke-External ssh @sshOptions $endpoint.Destination $remoteCommand
     if ($DryRun) { Write-Host "[L12 testrun deploy] Dry-run passed; the active testrun release was unchanged." }

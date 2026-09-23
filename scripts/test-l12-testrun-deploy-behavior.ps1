@@ -75,6 +75,7 @@ try {
     $httpSource = Get-Content -LiteralPath $httpNginx -Raw
     $tlsSource = Get-Content -LiteralPath $tlsNginx -Raw
     $pathSource = Get-Content -LiteralPath $pathNginx -Raw
+    $activatorSource = Get-Content -LiteralPath (Join-Path $repoRoot "ops\server\activate-l12-testrun-path.sh") -Raw
     $envSource = Get-Content -LiteralPath $envExample -Raw
 
     foreach ($contract in @(
@@ -109,6 +110,7 @@ try {
     Assert-True (-not $httpSource.Contains('proxy_pass')) "HTTP bootstrap exposes the application over plaintext."
     Assert-True (-not $tlsSource.Contains('auth_basic')) "Public testrun TLS site enables Basic Auth."
     Assert-True (-not $pathSource.Contains('auth_basic') -and $pathSource.Contains('proxy_pass http://127.0.0.1:8084/ws;') -and $pathSource.Contains('dist-testrun')) "Mounted test path is not isolated or public."
+    Assert-True ($activatorSource.Contains('server_name legion-12.com;\n') -and -not $activatorSource.Contains('marker = "    location / {"')) "Path activator does not target the unique production HTTPS host block."
     Assert-True ($envSource.Contains('L12_EMAIL_FEATURE_ENABLED=false') -and $envSource.Contains('L12_PUBLIC_BASE_URL=https://legion-12.com/testrun') -and $envSource.Contains('L12_TESTRUN_MATCH_STORAGE=ephemeral')) "Environment example is not fail-closed."
     Assert-True ($windowsSource.Contains('StrictHostKeyChecking=yes') -and $windowsSource.Contains('HostName=$($Endpoint.Address)') -and $windowsSource.Contains('HostKeyAlias=$($Endpoint.HostKeyAlias)')) "Windows entry does not pin strict SSH trust."
 

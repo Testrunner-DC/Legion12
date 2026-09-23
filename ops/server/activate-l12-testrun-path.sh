@@ -89,12 +89,12 @@ include = sys.argv[2]
 text = path.read_text(encoding="utf-8")
 if include in text:
     raise SystemExit(0)
-marker = "    location / {"
+marker = "    server_name legion-12.com;\n"
 positions = [index for index in range(len(text)) if text.startswith(marker, index)]
 if len(positions) != 1:
-    raise SystemExit("production frontend location marker is not unique")
-index = positions[0]
-path.write_text(text[:index] + include + "\n\n" + text[index:], encoding="utf-8")
+    raise SystemExit("production HTTPS host marker is not unique")
+index = positions[0] + len(marker)
+path.write_text(text[:index] + "\n" + include + "\n" + text[index:], encoding="utf-8")
 PY
 
 systemctl daemon-reload
