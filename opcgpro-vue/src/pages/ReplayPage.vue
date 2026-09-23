@@ -2,6 +2,7 @@
 import { ref, watch, onMounted } from "vue";
 import { useRoute } from "vue-router";
 import { useGameStore } from "@/store/gameStore";
+import { deploymentPath } from "@/l12/deploymentBase";
 
 /**
  * 回放页面（M6 stub）
@@ -14,7 +15,7 @@ const idx = ref(0);
 
 onMounted(() => {
   if (!id) return;
-  fetch(`/api/replay/${id}`)
+  fetch(deploymentPath(`/api/replay/${id}`))
     .then((r) => (r.ok ? r.text() : Promise.reject(new Error("not found"))))
     .then((text) => {
       const lines = text.split("\n").filter(Boolean);

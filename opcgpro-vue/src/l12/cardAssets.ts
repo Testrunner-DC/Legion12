@@ -1,3 +1,5 @@
+import { deploymentPath } from './deploymentBase'
+
 export type CardImageIntent = 'thumb' | 'board' | 'detail'
 
 export interface CardAssetVariants {
@@ -154,7 +156,8 @@ function uniqueSources(sources: Array<CardAssetSource | null>) {
 function trustedSiteMediaSource(url: string | undefined): CardAssetSource | null {
   const normalized = url?.trim() ?? ''
   if (!normalized.startsWith('/api/site/media/')) return null
-  return { kind: 'sameOrigin', lowWebp: normalized, webp: normalized }
+  const deployed = deploymentPath(normalized)
+  return { kind: 'sameOrigin', lowWebp: deployed, webp: deployed }
 }
 
 function selectedManifestCardId(cardId: string, legacyUrl: string | undefined) {
@@ -232,4 +235,3 @@ export async function resolveCardAssetUrls(cardId: string, legacyUrl: string | u
   const resolved = await resolveCardAsset(cardId, legacyUrl, intent)
   return resolved.sources.flatMap(source => [source.avif, source.webp, source.lowWebp]).filter((url, index, urls): url is string => !!url && urls.indexOf(url) === index)
 }
-

@@ -137,8 +137,8 @@ public sealed partial class MatchRecorder
         Func<string,string> resolvePhysicalPath)
     {
         if (marker != "testrun" || !Uri.TryCreate(publicUrl, UriKind.Absolute, out var uri)
-            || uri.Scheme != "https" || uri.Host != "testrun.legion-12.com"
-            || !uri.IsDefaultPort || uri.AbsolutePath != "/" || uri.Query != ""
+            || uri.Scheme != "https" || uri.Host != "legion-12.com"
+            || !uri.IsDefaultPort || uri.AbsolutePath != "/testrun" || uri.Query != ""
             || uri.Fragment != "" || uri.UserInfo != "") return false;
         try
         {

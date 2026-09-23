@@ -156,6 +156,14 @@ async function loadPlatformModule() {
       const l12State = globalThis.__l12NetState
       const disconnect = () => { globalThis.__l12DisconnectCalls += 1 }
     `)
+    .replace("import { endpointHttpBase } from './deploymentBase'", `
+      const endpointHttpBase = endpoint => {
+        const url = new URL(endpoint)
+        url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:'
+        url.pathname = url.pathname.replace(/\\/ws\\/?$/, '').replace(/\\/$/, '')
+        return url.toString().replace(/\\/$/, '')
+      }
+    `)
   return importJavaScript(compile(source, filename), 'l12-platform-recovery-test')
 }
 
@@ -170,6 +178,15 @@ async function loadNetModule() {
         requestExit: async () => {},
         dispose: () => {},
       })
+    `)
+    .replace("import { deploymentWebSocketPath, endpointHttpBase } from './deploymentBase'", `
+      const deploymentWebSocketPath = () => '/ws'
+      const endpointHttpBase = endpoint => {
+        const url = new URL(endpoint)
+        url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:'
+        url.pathname = url.pathname.replace(/\\/ws\\/?$/, '').replace(/\\/$/, '')
+        return url.toString().replace(/\\/$/, '')
+      }
     `)
     .replaceAll('import.meta.env.VITE_WS_URL', 'globalThis.__viteEnv.VITE_WS_URL')
   return importJavaScript(compile(source, filename), 'l12-net-recovery-test')

@@ -50,6 +50,7 @@ $bootstrap = Join-Path $repoRoot "ops\server\bootstrap-l12-testrun.sh"
 $service = Join-Path $repoRoot "ops\server\legion12-testrun.service"
 $httpNginx = Join-Path $repoRoot "ops\server\legion12-testrun-http.nginx"
 $tlsNginx = Join-Path $repoRoot "ops\server\legion12-testrun.nginx"
+$pathNginx = Join-Path $repoRoot "ops\server\legion12-testrun-path.nginx"
 $envExample = Join-Path $repoRoot "ops\server\legion12-testrun.env.example"
 $healthVerifier = Join-Path $repoRoot "ops\server\verify-l12-health.mjs"
 $powerShell = Get-Command pwsh -ErrorAction SilentlyContinue
@@ -73,6 +74,7 @@ try {
     $serviceSource = Get-Content -LiteralPath $service -Raw
     $httpSource = Get-Content -LiteralPath $httpNginx -Raw
     $tlsSource = Get-Content -LiteralPath $tlsNginx -Raw
+    $pathSource = Get-Content -LiteralPath $pathNginx -Raw
     $envSource = Get-Content -LiteralPath $envExample -Raw
 
     foreach ($contract in @(
@@ -89,7 +91,7 @@ try {
     Assert-True ($bootstrapSource.Contains('L12_EMAIL_FEATURE_ENABLED=false')) "Bootstrap does not force email off."
     Assert-True ($bootstrapSource.Contains('L12_PUBLIC_BASE_URL=${public_base}')) "Bootstrap does not bind the testrun public base URL."
     Assert-True ($bootstrapSource.Contains('L12_TESTRUN_MATCH_STORAGE=ephemeral')) "Bootstrap does not enforce ephemeral match storage."
-    Assert-True ($dailySource.Contains('refusing HTTP downgrade')) "Daily deploy does not require the TLS site."
+    Assert-True ($dailySource.Contains('location = /testrun/ws') -and $dailySource.Contains('dist-testrun')) "Daily deploy does not require the mounted test path."
     Assert-True (-not $dailySource.Contains('systemctl reload nginx')) "Daily deploy reloads Nginx."
     Assert-True (-not $dailySource.Contains('legion12-testrun-http')) "Daily deploy references the bootstrap HTTP site."
     foreach ($source in @($bootstrapSource, $dailySource, $windowsSource)) {
@@ -106,7 +108,8 @@ try {
     Assert-True ($httpSource.Contains("return 503 'testrun TLS bootstrap in progress")) "HTTP bootstrap exposes more than ACME and a 503 guard."
     Assert-True (-not $httpSource.Contains('proxy_pass')) "HTTP bootstrap exposes the application over plaintext."
     Assert-True (-not $tlsSource.Contains('auth_basic')) "Public testrun TLS site enables Basic Auth."
-    Assert-True ($envSource.Contains('L12_EMAIL_FEATURE_ENABLED=false') -and $envSource.Contains('L12_PUBLIC_BASE_URL=https://testrun.legion-12.com') -and $envSource.Contains('L12_TESTRUN_MATCH_STORAGE=ephemeral')) "Environment example is not fail-closed."
+    Assert-True (-not $pathSource.Contains('auth_basic') -and $pathSource.Contains('proxy_pass http://127.0.0.1:8084/ws;') -and $pathSource.Contains('dist-testrun')) "Mounted test path is not isolated or public."
+    Assert-True ($envSource.Contains('L12_EMAIL_FEATURE_ENABLED=false') -and $envSource.Contains('L12_PUBLIC_BASE_URL=https://legion-12.com/testrun') -and $envSource.Contains('L12_TESTRUN_MATCH_STORAGE=ephemeral')) "Environment example is not fail-closed."
     Assert-True ($windowsSource.Contains('StrictHostKeyChecking=yes') -and $windowsSource.Contains('HostName=$($Endpoint.Address)') -and $windowsSource.Contains('HostKeyAlias=$($Endpoint.HostKeyAlias)')) "Windows entry does not pin strict SSH trust."
 
     $invalidTarget = Invoke-NativeCapture $powerShell.Source @("-NoProfile", "-File", $windowsDeploy, "-Server", "root@example.com", "-ArtifactManifest", (Join-Path $fixture "missing.json"), "-ValidateArtifactOnly")
@@ -118,10 +121,11 @@ try {
     $artifactRoot = Join-Path $fixture "artifacts"
     $releaseRoot = Join-Path $artifactRoot "release"
     $assetRoot = Join-Path $artifactRoot "assets"
-    New-Item -ItemType Directory -Path (Join-Path $releaseRoot "publish"), (Join-Path $releaseRoot "opcgpro-vue\dist"), (Join-Path $releaseRoot "scripts"), (Join-Path $assetRoot "cards") -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $releaseRoot "publish"), (Join-Path $releaseRoot "opcgpro-vue\dist"), (Join-Path $releaseRoot "opcgpro-vue\dist-testrun"), (Join-Path $releaseRoot "scripts"), (Join-Path $assetRoot "cards") -Force | Out-Null
     Write-Utf8NoBom (Join-Path $releaseRoot ".deployment-commit") $commitB
     Write-Utf8NoBom (Join-Path $releaseRoot "publish\GrandUMIServer.dll") "binary"
     Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist\index.html") "html"
+    Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist-testrun\index.html") "testrun html"
     Write-Utf8NoBom (Join-Path $releaseRoot "scripts\ws-smoke.mjs") "// probe"
     Write-Utf8NoBom (Join-Path $assetRoot "card-assets.manifest.json") "{}"
     Write-Utf8NoBom (Join-Path $assetRoot "card-assets.preload.json") "{}"
@@ -162,20 +166,17 @@ try {
     $incoming = Join-Path $root "opt\legion12-testrun-deployment\incoming"
     $fakeBin = Join-Path $root "fake-bin"
     $cachedAssets = Join-Path $root "opt\legion12-testrun-static\card-assets\$assetHash"
-    $tlsSite = Join-Path $root "etc\nginx\sites-available\legion12-testrun-tls"
-    $enabledSite = Join-Path $root "etc\nginx\sites-enabled\legion12-testrun"
-    New-Item -ItemType Directory -Path (Join-Path $oldRelease "publish"), (Join-Path $oldRelease "scripts"), $runtime, $incoming, $fakeBin, $cachedAssets, (Split-Path $tlsSite -Parent), (Split-Path $enabledSite -Parent), (Join-Path $root "usr\local\libexec"), (Join-Path $root "run\lock") -Force | Out-Null
+    $pathSite = Join-Path $root "etc\nginx\snippets\legion12-testrun-path.conf"
+    New-Item -ItemType Directory -Path (Join-Path $oldRelease "publish"), (Join-Path $oldRelease "scripts"), $runtime, $incoming, $fakeBin, $cachedAssets, (Split-Path $pathSite -Parent), (Join-Path $root "usr\local\libexec"), (Join-Path $root "run\lock") -Force | Out-Null
     $oldReleasePosix = ConvertTo-MsysPath $oldRelease
     $runtimePosix = ConvertTo-MsysPath $runtime
-    $tlsSitePosix = ConvertTo-MsysPath $tlsSite
     Write-Utf8NoBom (Join-Path $oldRelease ".deployment-commit") "$commitA`n"
     Write-Utf8NoBom (Join-Path $oldRelease "publish\runtime") "$runtimePosix`n"
     Write-Utf8NoBom (Join-Path $oldRelease "scripts\ws-smoke.mjs") "// old probe"
     Write-Utf8NoBom (Join-Path $root "opt\legion12-testrun") "$oldReleasePosix`n"
     Write-Utf8NoBom (Join-Path $cachedAssets "card-assets.manifest.json") "{}"
-    Write-Utf8NoBom $tlsSite "server_name testrun.legion-12.com;`nproxy_pass http://127.0.0.1:8084;`n"
-    Write-Utf8NoBom $enabledSite "$tlsSitePosix`n"
-    Write-Utf8NoBom (Join-Path $root "etc\legion12-testrun.env") ("L12_ADMIN_PASSWORD=" + ("e" * 64) + "`nL12_EMAIL_FEATURE_ENABLED=false`nL12_PUBLIC_BASE_URL=https://testrun.legion-12.com`nL12_TESTRUN_MATCH_STORAGE=ephemeral`nL12_SMTP_HOST=`nL12_SMTP_PORT=`nL12_SMTP_USERNAME=`nL12_SMTP_PASSWORD=`nL12_SMTP_FROM_ADDRESS=`nL12_SMTP_FROM_NAME=`nL12_SMTP_ENABLE_SSL=`nL12_ENABLE_SECOND_APPROVER_BOOTSTRAP=false`nL12_SECOND_APPROVER_BOOTSTRAP_TOKEN=`n")
+    Write-Utf8NoBom $pathSite "location = /testrun/ws {`nproxy_pass http://127.0.0.1:8084/ws;`n}`nlocation ^~ /testrun/ {`nalias /opt/legion12-testrun/opcgpro-vue/dist-testrun/;`n}`n"
+    Write-Utf8NoBom (Join-Path $root "etc\legion12-testrun.env") ("L12_ADMIN_PASSWORD=" + ("e" * 64) + "`nL12_EMAIL_FEATURE_ENABLED=false`nL12_PUBLIC_BASE_URL=https://legion-12.com/testrun`nL12_TESTRUN_MATCH_STORAGE=ephemeral`nL12_SMTP_HOST=`nL12_SMTP_PORT=`nL12_SMTP_USERNAME=`nL12_SMTP_PASSWORD=`nL12_SMTP_FROM_ADDRESS=`nL12_SMTP_FROM_NAME=`nL12_SMTP_ENABLE_SSL=`nL12_ENABLE_SECOND_APPROVER_BOOTSTRAP=false`nL12_SECOND_APPROVER_BOOTSTRAP_TOKEN=`n")
     Copy-Item $healthVerifier (Join-Path $root "usr\local\libexec\verify-legion12-testrun-health.mjs")
     Copy-Item $releaseArchive (Join-Path $incoming "l12-testrun-release-$commitB.tar.gz")
     Write-Utf8NoBom (Join-Path $root "service.state") "running`n"

@@ -1,3 +1,5 @@
+import { deploymentPath } from './deploymentBase'
+
 const assetRoot = '/assets/l12/special'
 // Public assets are served outside Vite's hashed bundle. Keep an explicit
 // revision so a previously cached 404 for a newly added Profile cannot survive
@@ -56,7 +58,7 @@ export function masterProfileUrl(masterId?: string, fallback?: string) {
 
 export function roundCardUrl(cardId?: string, fallback?: string) {
   // 玩家已装备的后台异画必须优先于少数规则卡的圆形展示素材。
-  if (fallback?.startsWith('/api/site/media/')) return fallback
+  if (fallback?.startsWith('/api/site/media/')) return deploymentPath(fallback)
   const asset = cardId ? roundCardAssets[cardId] : undefined
   return asset ? `${assetRoot}/round/${asset}` : fallback
 }

@@ -12,10 +12,10 @@ internal static class L12TestRunStorageProfile
             throw new InvalidOperationException($"{EnvironmentKey} 仅允许 {EphemeralValue}");
         if (!Uri.TryCreate(publicBaseUrl, UriKind.Absolute, out var uri)
             || uri.Scheme != Uri.UriSchemeHttps
-            || !string.Equals(uri.Host, "testrun.legion-12.com", StringComparison.OrdinalIgnoreCase)
-            || !uri.IsDefaultPort || uri.AbsolutePath != "/" || uri.Query != ""
+            || !string.Equals(uri.Host, "legion-12.com", StringComparison.OrdinalIgnoreCase)
+            || !uri.IsDefaultPort || uri.AbsolutePath != "/testrun" || uri.Query != ""
             || uri.Fragment != "" || uri.UserInfo != "")
-            throw new InvalidOperationException("临时对局存储仅允许用于隔离测试域");
+            throw new InvalidOperationException("临时对局存储仅允许用于隔离测试入口");
 
         var runtime = new DirectoryInfo(runtimePath);
         if (!runtime.Exists) throw new DirectoryNotFoundException(runtimePath);

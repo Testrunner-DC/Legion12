@@ -10,15 +10,16 @@ namespace TwelveLegions.Tests;
 public sealed class TestRunReplayRetentionTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 9, 20, 0, 0, TimeSpan.Zero);
-    private const string Url = "https://testrun.legion-12.com";
+    private const string Url = "https://legion-12.com/testrun";
 
     [Theory]
     [InlineData("production", Url)]
     [InlineData("", Url)]
     [InlineData("testrun", "https://legion-12.com")]
-    [InlineData("testrun", "https://testrun.legion-12.com.evil.test")]
-    [InlineData("testrun", "http://testrun.legion-12.com")]
-    [InlineData("testrun", "https://testrun.legion-12.com:8084")]
+    [InlineData("testrun", "https://legion-12.com.evil.test/testrun")]
+    [InlineData("testrun", "http://legion-12.com/testrun")]
+    [InlineData("testrun", "https://legion-12.com:8084/testrun")]
+    [InlineData("testrun", "https://legion-12.com/testrun/other")]
     public async Task WrongEnvironmentOrUrlNeverWrites(string marker, string url)
     {
         await using var fixture = await Fixture.Create();

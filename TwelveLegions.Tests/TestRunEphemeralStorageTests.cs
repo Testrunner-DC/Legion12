@@ -15,7 +15,7 @@ public sealed class TestRunEphemeralStorageTests
                 File.WriteAllText(Path.Combine(root, name), name);
 
             Assert.True(L12TestRunStorageProfile.Prepare(root, "ephemeral",
-                "https://testrun.legion-12.com"));
+                "https://legion-12.com/testrun"));
             Assert.False(File.Exists(Path.Combine(root, "matches.db")));
             Assert.False(File.Exists(Path.Combine(root, "matches.db-wal")));
             Assert.False(File.Exists(Path.Combine(root, "matches.db-shm")));
@@ -33,7 +33,7 @@ public sealed class TestRunEphemeralStorageTests
             var database = Path.Combine(root, "matches.db");
             File.WriteAllText(database, "keep");
             Assert.False(L12TestRunStorageProfile.Prepare(root, null,
-                "https://testrun.legion-12.com"));
+                "https://legion-12.com/testrun"));
             Assert.True(File.Exists(database));
         }
         finally { Directory.Delete(root, recursive: true); }
@@ -41,8 +41,9 @@ public sealed class TestRunEphemeralStorageTests
 
     [Theory]
     [InlineData("https://legion-12.com")]
-    [InlineData("http://testrun.legion-12.com")]
-    [InlineData("https://testrun.legion-12.com/other")]
+    [InlineData("http://legion-12.com/testrun")]
+    [InlineData("https://legion-12.com/other")]
+    [InlineData("https://legion-12.com/testrun/other")]
     public void EphemeralProfile_RejectsNonTestRunOrigin(string origin)
     {
         var root = CreateRuntime();
@@ -65,7 +66,7 @@ public sealed class TestRunEphemeralStorageTests
         try
         {
             Assert.Throws<InvalidOperationException>(() => L12TestRunStorageProfile.Prepare(root,
-                "ephemeral", "https://testrun.legion-12.com"));
+                "ephemeral", "https://legion-12.com/testrun"));
         }
         finally { Directory.Delete(Path.GetDirectoryName(root)!, recursive: true); }
     }

@@ -8,7 +8,8 @@ if [[ -n "$test_root" ]]; then
     || { printf '[L12 testrun deploy] ERROR: unsafe fixture root\n' >&2; exit 2; }
 fi
 
-readonly public_host="testrun.legion-12.com"
+readonly public_host="legion-12.com"
+readonly public_path="/testrun"
 readonly active_dir="${test_root}/opt/legion12-testrun"
 readonly releases_dir="${test_root}/opt/legion12-testrun-releases"
 readonly runtime_dir="${test_root}/opt/legion12-testrun-runtime"
@@ -18,21 +19,20 @@ readonly backup_dir="${deployment_dir}/runtime-backups"
 readonly failure_dir="${deployment_dir}/failures"
 readonly static_card_assets_dir="${test_root}/opt/legion12-testrun-static/card-assets"
 readonly environment_file="${test_root}/etc/legion12-testrun.env"
-readonly nginx_tls_site="${test_root}/etc/nginx/sites-available/legion12-testrun-tls"
-readonly nginx_enabled="${test_root}/etc/nginx/sites-enabled/legion12-testrun"
+readonly nginx_path_snippet="${test_root}/etc/nginx/snippets/legion12-testrun-path.conf"
 readonly service_name="legion12-testrun.service"
 readonly service_user="legion12"
 readonly web_user="www-data"
 readonly lock_file="${test_root}/run/lock/legion12-testrun-deploy.lock"
 if [[ -n "$test_root" ]]; then
   readonly local_base="${L12_TESTRUN_DEPLOY_LOCAL_BASE:-http://127.0.0.1:8084}"
-  readonly public_base="${L12_TESTRUN_DEPLOY_PUBLIC_BASE:-https://${public_host}}"
+  readonly public_base="${L12_TESTRUN_DEPLOY_PUBLIC_BASE:-https://${public_host}${public_path}}"
   readonly health_verifier="${L12_TESTRUN_DEPLOY_HEALTH_VERIFIER:-${test_root}/usr/local/libexec/verify-legion12-testrun-health.mjs}"
   readonly health_attempts="${L12_TESTRUN_DEPLOY_HEALTH_ATTEMPTS:-2}"
   readonly health_delay_seconds="${L12_TESTRUN_DEPLOY_HEALTH_DELAY_SECONDS:-0}"
 else
   readonly local_base="http://127.0.0.1:8084"
-  readonly public_base="https://${public_host}"
+  readonly public_base="https://${public_host}${public_path}"
   readonly health_verifier="/usr/local/libexec/verify-legion12-testrun-health.mjs"
   readonly health_attempts="30"
   readonly health_delay_seconds="1"
@@ -113,7 +113,7 @@ if not re.fullmatch(r"[0-9a-f]{64}", values["L12_ADMIN_PASSWORD"]):
     raise SystemExit("testrun admin password is not an independent 64-character hex secret")
 if values["L12_EMAIL_FEATURE_ENABLED"] != "false":
     raise SystemExit("email must remain disabled on testrun")
-if values["L12_PUBLIC_BASE_URL"] != "https://testrun.legion-12.com":
+if values["L12_PUBLIC_BASE_URL"] != "https://legion-12.com/testrun":
     raise SystemExit("testrun public base URL is invalid")
 for key in values:
     if key.startswith("L12_SMTP_") and values[key] != "":
@@ -144,7 +144,7 @@ allowed_roots = {
     "card-assets": ("card-assets.manifest.json", "card-assets.preload.json", "cards"),
 }[kind]
 required = {
-    "release": {".deployment-commit", "publish/GrandUMIServer.dll", "opcgpro-vue/dist/index.html", "scripts/ws-smoke.mjs"},
+    "release": {".deployment-commit", "publish/GrandUMIServer.dll", "opcgpro-vue/dist/index.html", "opcgpro-vue/dist-testrun/index.html", "scripts/ws-smoke.mjs"},
     "card-assets": {"card-assets.manifest.json", "card-assets.preload.json", "cards"},
 }[kind]
 seen = set()
@@ -287,7 +287,7 @@ verify_release() {
   curl -fsS --connect-timeout 5 --max-time 10 "${public_base}/" >/dev/null || return 1
   curl -fsS --connect-timeout 5 --max-time 10 "${public_base}/cards" >/dev/null || return 1
   timeout 15s node "${active_dir}/scripts/ws-smoke.mjs" "ws://127.0.0.1:8084/ws" || return 1
-  timeout 15s node "${active_dir}/scripts/ws-smoke.mjs" "wss://${public_host}/ws" || return 1
+  timeout 15s node "${active_dir}/scripts/ws-smoke.mjs" "wss://${public_host}${public_path}/ws" || return 1
   log "${label} HTTP and WebSocket checks passed"
 }
 
@@ -322,15 +322,11 @@ self_test() {
     [[ -e "${active_target}/publish/runtime" ]] || fail "fixture runtime link is missing"
   fi
   [[ "$(readlink -f "${active_target}/publish/runtime")" == "$runtime_dir" ]] || fail "active release runtime is not the isolated testrun runtime"
-  [[ -f "$nginx_tls_site" && ! -L "$nginx_tls_site" ]] || fail "testrun TLS site is missing or unsafe"
-  if [[ -z "$test_root" ]]; then
-    [[ -L "$nginx_enabled" && "$(readlink -f "$nginx_enabled")" == "$nginx_tls_site" ]] || fail "daily deploy requires the managed TLS site; refusing HTTP downgrade"
-  else
-    [[ -e "$nginx_enabled" && "$(readlink -f "$nginx_enabled")" == "$nginx_tls_site" ]] || fail "fixture TLS site is not active"
-  fi
-  grep -Fq 'server_name testrun.legion-12.com;' "$nginx_tls_site" || fail "TLS site host is invalid"
-  grep -Fq 'proxy_pass http://127.0.0.1:8084;' "$nginx_tls_site" || fail "TLS site backend is invalid"
-  if grep -Eq '^[[:space:]]*auth_basic([[:space:]]|;)' "$nginx_tls_site"; then fail "testrun must remain public without Basic Auth"; fi
+  [[ -f "$nginx_path_snippet" && ! -L "$nginx_path_snippet" ]] || fail "testrun path snippet is missing or unsafe"
+  grep -Fq 'location = /testrun/ws' "$nginx_path_snippet" || fail "testrun WebSocket path is missing"
+  grep -Fq 'proxy_pass http://127.0.0.1:8084/ws;' "$nginx_path_snippet" || fail "testrun path backend is invalid"
+  grep -Fq 'alias /opt/legion12-testrun/opcgpro-vue/dist-testrun/;' "$nginx_path_snippet" || fail "testrun frontend root is invalid"
+  if grep -Eq '^[[:space:]]*auth_basic([[:space:]]|;)' "$nginx_path_snippet"; then fail "testrun must remain public without Basic Auth"; fi
   nginx -t >/dev/null
   log "isolated daily deployment preflight passed"
 }
@@ -461,6 +457,7 @@ tar --no-same-owner --no-same-permissions -xzf "$release_archive" -C "$stage_dir
 [[ "$(tr -d '\r\n' < "${stage_dir}/.deployment-commit")" == "$commit" ]] || fail "release commit marker differs"
 [[ -f "${stage_dir}/publish/GrandUMIServer.dll" ]] || fail "backend entry is missing"
 [[ -f "${stage_dir}/opcgpro-vue/dist/index.html" ]] || fail "frontend entry is missing"
+[[ -f "${stage_dir}/opcgpro-vue/dist-testrun/index.html" ]] || fail "testrun frontend entry is missing"
 [[ -f "${stage_dir}/scripts/ws-smoke.mjs" ]] || fail "WebSocket probe is missing"
 [[ ! -e "${stage_dir}/publish/runtime" && ! -L "${stage_dir}/publish/runtime" ]] || fail "release archive contains runtime data"
 [[ ! -e "${stage_dir}/opcgpro-vue/dist/card-assets" && ! -L "${stage_dir}/opcgpro-vue/dist/card-assets" ]] || fail "release archive contains card asset data"
@@ -493,11 +490,12 @@ fi
 failure_stage="prepare-release"
 ln -s "$runtime_dir" "${stage_dir}/publish/runtime"
 ln -s "$card_assets_target" "${stage_dir}/opcgpro-vue/dist/card-assets"
-chmod 0755 "$stage_dir" "${stage_dir}/publish" "${stage_dir}/opcgpro-vue" "${stage_dir}/opcgpro-vue/dist"
-find "${stage_dir}/publish" "${stage_dir}/opcgpro-vue/dist" -type d -exec chmod 0755 {} +
-find "${stage_dir}/publish" "${stage_dir}/opcgpro-vue/dist" -type f -exec chmod 0644 {} +
+chmod 0755 "$stage_dir" "${stage_dir}/publish" "${stage_dir}/opcgpro-vue" "${stage_dir}/opcgpro-vue/dist" "${stage_dir}/opcgpro-vue/dist-testrun"
+find "${stage_dir}/publish" "${stage_dir}/opcgpro-vue/dist" "${stage_dir}/opcgpro-vue/dist-testrun" -type d -exec chmod 0755 {} +
+find "${stage_dir}/publish" "${stage_dir}/opcgpro-vue/dist" "${stage_dir}/opcgpro-vue/dist-testrun" -type f -exec chmod 0644 {} +
 runuser -u "$service_user" -- test -r "${stage_dir}/publish/GrandUMIServer.dll" || fail "service account cannot read the backend entry"
 runuser -u "$web_user" -- test -r "${stage_dir}/opcgpro-vue/dist/index.html" || fail "web account cannot read the frontend entry"
+runuser -u "$web_user" -- test -r "${stage_dir}/opcgpro-vue/dist-testrun/index.html" || fail "web account cannot read the testrun frontend entry"
 
 if [[ "$mode" == "dry-run" ]]; then
   log "dry-run passed; no service, runtime, active release, or Nginx state was changed"
@@ -542,7 +540,7 @@ activeRelease=${release_dir}
 previousRelease=${previous_target}
 runtime=${runtime_dir}
 runtimeBackup=${runtime_backup}
-publicHost=${public_host}
+publicBase=${public_base}
 deployedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
 chmod 0600 "${deployment_dir}/deployment-info.txt"

@@ -8,8 +8,8 @@ readonly release_archive="${3:-}"
 readonly card_assets_hash="${4:-}"
 readonly card_assets_sha256="${5:--}"
 readonly card_assets_archive="${6:--}"
-readonly public_host="testrun.legion-12.com"
-readonly public_base="https://${public_host}"
+readonly public_host="legion-12.com"
+readonly public_base="https://${public_host}/testrun"
 readonly local_base="http://127.0.0.1:8084"
 readonly service_name="legion12-testrun.service"
 readonly service_user="legion12"
@@ -22,16 +22,13 @@ readonly deployment_dir="/opt/legion12-testrun-deployment"
 readonly incoming_dir="${deployment_dir}/incoming"
 readonly static_card_assets_dir="/opt/legion12-testrun-static/card-assets"
 readonly service_template="/tmp/legion12-testrun.service"
-readonly nginx_http_template="/tmp/legion12-testrun-http.nginx"
-readonly nginx_tls_template="/tmp/legion12-testrun.nginx"
-readonly activate_tls_template="/tmp/activate-l12-testrun-tls.sh"
+readonly nginx_path_template="/tmp/legion12-testrun-path.nginx"
+readonly activate_path_template="/tmp/activate-l12-testrun-path.sh"
 readonly daily_deploy_template="/tmp/deploy-l12-testrun-release.sh"
 readonly health_verifier_template="/tmp/verify-l12-testrun-health.mjs"
 readonly environment_file="/etc/legion12-testrun.env"
 readonly service_unit="/etc/systemd/system/${service_name}"
-readonly nginx_http_site="/etc/nginx/sites-available/legion12-testrun-http"
-readonly nginx_tls_site="/etc/nginx/sites-available/legion12-testrun-tls"
-readonly nginx_enabled="/etc/nginx/sites-enabled/legion12-testrun"
+readonly nginx_path_snippet="/etc/nginx/snippets/legion12-testrun-path.conf"
 readonly stage_dir="/opt/legion12-testrun-staging-${commit:0:12}-$$"
 readonly stage_card_assets_dir="/opt/legion12-testrun-card-assets-staging-${card_assets_hash:0:12}-$$"
 readonly environment_temp="/etc/.legion12-testrun.env.$$"
@@ -92,7 +89,7 @@ allowed_roots = {
     "card-assets": ("card-assets.manifest.json", "card-assets.preload.json", "cards"),
 }[kind]
 required = {
-    "release": {".deployment-commit", "publish/GrandUMIServer.dll", "opcgpro-vue/dist/index.html", "scripts/ws-smoke.mjs"},
+    "release": {".deployment-commit", "publish/GrandUMIServer.dll", "opcgpro-vue/dist/index.html", "opcgpro-vue/dist-testrun/index.html", "scripts/ws-smoke.mjs"},
     "card-assets": {"card-assets.manifest.json", "card-assets.preload.json", "cards"},
 }[kind]
 seen = set()
@@ -168,7 +165,7 @@ if not re.fullmatch(r"[0-9a-f]{64}", values["L12_ADMIN_PASSWORD"]):
     raise SystemExit("testrun admin password must be an independent 64-character hex secret")
 if values["L12_EMAIL_FEATURE_ENABLED"] != "false":
     raise SystemExit("email must remain disabled on testrun")
-if values["L12_PUBLIC_BASE_URL"] != "https://testrun.legion-12.com":
+if values["L12_PUBLIC_BASE_URL"] != "https://legion-12.com/testrun":
     raise SystemExit("testrun public base URL is invalid")
 for key in values:
     if key.startswith("L12_SMTP_") and values[key] != "":
@@ -256,7 +253,7 @@ else
   [[ "$card_assets_archive" == "${incoming_dir}/l12-testrun-card-assets-${card_assets_hash}.tar.gz" ]] || fail "card asset archive path is not allowed"
 fi
 
-for template in "$service_template" "$nginx_http_template" "$nginx_tls_template" "$activate_tls_template" "$daily_deploy_template" "$health_verifier_template"; do
+for template in "$service_template" "$nginx_path_template" "$activate_path_template" "$daily_deploy_template" "$health_verifier_template"; do
   [[ -f "$template" && ! -L "$template" ]] || fail "bootstrap template is missing or unsafe: ${template}"
 done
 id "$service_user" >/dev/null 2>&1 || fail "service account is missing"
@@ -265,7 +262,7 @@ id "$web_user" >/dev/null 2>&1 || fail "web account is missing"
 [[ "$(sha256sum "$release_archive" | awk '{print $1}')" == "$release_sha256" ]] || fail "release archive SHA256 differs"
 validate_archive "$release_archive" release
 
-for forbidden in "$active_link" "$runtime_dir" "$release_root" "$environment_file" "$service_unit" "$nginx_http_site" "$nginx_tls_site" "$nginx_enabled"; do
+for forbidden in "$active_link" "$runtime_dir" "$release_root" "$environment_file" "$service_unit" "$nginx_path_snippet"; do
   [[ ! -e "$forbidden" && ! -L "$forbidden" ]] || fail "bootstrap is first-run only; managed path already exists: ${forbidden}"
 done
 if systemctl is-enabled --quiet "$service_name" >/dev/null 2>&1 || systemctl is-active --quiet "$service_name" >/dev/null 2>&1; then
@@ -277,6 +274,7 @@ tar --no-same-owner --no-same-permissions -xzf "$release_archive" -C "$stage_dir
 [[ "$(tr -d '\r\n' < "${stage_dir}/.deployment-commit")" == "$commit" ]] || fail "release commit marker differs"
 [[ -f "${stage_dir}/publish/GrandUMIServer.dll" ]] || fail "backend entry is missing"
 [[ -f "${stage_dir}/opcgpro-vue/dist/index.html" ]] || fail "frontend entry is missing"
+[[ -f "${stage_dir}/opcgpro-vue/dist-testrun/index.html" ]] || fail "testrun frontend entry is missing"
 [[ -f "${stage_dir}/scripts/ws-smoke.mjs" ]] || fail "WebSocket probe is missing"
 [[ ! -e "${stage_dir}/publish/runtime" && ! -L "${stage_dir}/publish/runtime" ]] || fail "release archive contains runtime data"
 [[ ! -e "${stage_dir}/opcgpro-vue/dist/card-assets" && ! -L "${stage_dir}/opcgpro-vue/dist/card-assets" ]] || fail "release archive contains card asset data"
@@ -322,13 +320,14 @@ chown root:root "$environment_temp"
 chmod 0600 "$environment_temp"
 validate_environment "$environment_temp"
 
-chmod 0755 "$stage_dir" "${stage_dir}/publish" "${stage_dir}/opcgpro-vue" "${stage_dir}/opcgpro-vue/dist"
-find "${stage_dir}/publish" "${stage_dir}/opcgpro-vue/dist" -type d -exec chmod 0755 {} +
-find "${stage_dir}/publish" "${stage_dir}/opcgpro-vue/dist" -type f -exec chmod 0644 {} +
+chmod 0755 "$stage_dir" "${stage_dir}/publish" "${stage_dir}/opcgpro-vue" "${stage_dir}/opcgpro-vue/dist" "${stage_dir}/opcgpro-vue/dist-testrun"
+find "${stage_dir}/publish" "${stage_dir}/opcgpro-vue/dist" "${stage_dir}/opcgpro-vue/dist-testrun" -type d -exec chmod 0755 {} +
+find "${stage_dir}/publish" "${stage_dir}/opcgpro-vue/dist" "${stage_dir}/opcgpro-vue/dist-testrun" -type f -exec chmod 0644 {} +
 ln -s "$runtime_dir" "${stage_dir}/publish/runtime"
 ln -s "$card_assets_target" "${stage_dir}/opcgpro-vue/dist/card-assets"
 runuser -u "$service_user" -- test -r "${stage_dir}/publish/GrandUMIServer.dll" || fail "service account cannot read the backend entry"
 runuser -u "$web_user" -- test -r "${stage_dir}/opcgpro-vue/dist/index.html" || fail "web account cannot read the frontend entry"
+runuser -u "$web_user" -- test -r "${stage_dir}/opcgpro-vue/dist-testrun/index.html" || fail "web account cannot read the testrun frontend entry"
 
 install -d -o root -g root -m 0755 "$release_root"
 install -d -o "$service_user" -g "$service_user" -m 0750 "$runtime_dir"
@@ -336,16 +335,13 @@ install -d -o root -g root -m 0700 "$deployment_dir"
 install -d -o root -g root -m 0755 /usr/local/libexec
 install -o root -g root -m 0600 "$environment_temp" "$environment_file"
 install -o root -g root -m 0644 "$service_template" "$service_unit"
-install -o root -g root -m 0644 "$nginx_http_template" "$nginx_http_site"
-install -o root -g root -m 0644 "$nginx_tls_template" "$nginx_tls_site"
-install -o root -g root -m 0755 "$activate_tls_template" /usr/local/sbin/activate-legion12-testrun-tls
+install -o root -g root -m 0755 "$activate_path_template" /usr/local/sbin/activate-legion12-testrun-path
 install -o root -g root -m 0755 "$daily_deploy_template" /usr/local/sbin/deploy-legion12-testrun-release
 install -o root -g root -m 0755 "$health_verifier_template" /usr/local/libexec/verify-legion12-testrun-health.mjs
 infrastructure_changed=1
 validate_environment "$environment_file"
 systemd-analyze verify "$service_unit"
-ln -s "$nginx_http_site" "$nginx_enabled"
-nginx -t
+/usr/local/sbin/activate-legion12-testrun-path "$nginx_path_template" "$service_template"
 
 mv "$stage_dir" "$release_dir"
 release_installed=1
@@ -353,7 +349,6 @@ next_link="/opt/.legion12-testrun-next-$$"
 ln -s "$release_dir" "$next_link"
 mv -Tf "$next_link" "$active_link"
 systemctl daemon-reload
-systemctl reload nginx
 service_start_attempted=1
 systemctl enable --now "$service_name"
 
@@ -374,8 +369,7 @@ Legion12 isolated testrun
 commit=${commit}
 activeRelease=${release_dir}
 runtime=${runtime_dir}
-publicHost=${public_host}
-tlsState=awaiting-activation
+publicBase=${public_base}
 deployedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
 chmod 0600 "${deployment_dir}/deployment-info.txt"

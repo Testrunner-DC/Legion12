@@ -1,66 +1,100 @@
 # Legion12 公网隔离验收站
 
-`testrun.legion-12.com` 是公开访问、无 Basic Auth 的验收环境。它与正式站只共用同一台主机，不共用服务、端口、活动版本或运行数据。卡图使用独立的测试缓存命名空间；当测试包与正式服引用同一个内容哈希时，可由 root 预置为只读硬链接，从而复用不可变数据块而不复制约 237 MB 文件。哈希不同则必须上传到独立测试缓存。
+测试服固定入口为 `https://legion-12.com/testrun/`。它复用正式域名和 HTTPS 证书，但不复用正式服务、端口、活动版本或运行数据；因此不需要新增 DNS、子域名或证书。
 
-| 边界 | 验收站固定值 |
+| 边界 | 测试服固定值 |
 | --- | --- |
+| 公网路径 | `https://legion-12.com/testrun/` |
 | 后端 | `127.0.0.1:8084` |
 | systemd | `legion12-testrun.service` |
 | 活动版本 | `/opt/legion12-testrun` |
 | 版本目录 | `/opt/legion12-testrun-releases` |
 | 运行数据 | `/opt/legion12-testrun-runtime` |
-| 内容寻址卡图 | `/opt/legion12-testrun-static/card-assets` |
 | 部署状态/归档 | `/opt/legion12-testrun-deployment` |
 | 环境文件 | `/etc/legion12-testrun.env` |
+| Nginx 路径片段 | `/etc/nginx/snippets/legion12-testrun-path.conf` |
 
-测试服务的 systemd 单元显式屏蔽正式活动目录、正式 runtime 和正式卡图目录，只给验收 runtime 写权限；`CPUWeight`/`IOWeight` 为 10、`Nice=10`、`OOMScoreAdjust=750`，以调度权重而不是半核硬限额让默认权重的正式服务优先。内存由原来的 512 MiB 调整为 `MemoryHigh=768M`、`MemoryMax=896M`，避免常规加载过早 OOM，同时仍低于正式服务现有 1 GiB 上限。测试服固定使用 `L12_TESTRUN_MATCH_STORAGE=ephemeral`：账号、构筑和必要站点配置继续保留，但服务每次启动都会在严格核验测试域和独立 runtime 后清空 `matches.db` 及其 WAL/SHM，不把测试对局、录像或分析事实作为长期数据保存。
+正式首页、正式 `/api`、正式 `/ws` 和正式 `/health` 仍按原配置工作；只有 `/testrun/`、`/testrun/api/`、`/testrun/ws` 与 `/testrun/health` 进入测试服务。测试服前端使用独立的 `dist-testrun`，构建资源路径固定带 `/testrun/` 前缀，避免刷新子路由或加载资源时落回正式站。
 
-## 首次 bootstrap（只执行一次）
+卡图等不可变资源继续使用正式站的内容寻址公开资源，不因测试服发版重复上传。发布包仍携带卡图版本清单用于一致性校验；服务器已有相同内容哈希时直接复用缓存，只有缺失的新哈希才上传。
 
-首次建站与日常发版是两条不同入口。`ops/server/bootstrap-l12-testrun.sh` 会拒绝任何已存在的验收站 service、env、runtime、release 或 Nginx enabled 链接，因此不能拿它重跑或“修复”已上线测试站。
+## 数据与资源隔离
 
-1. 由 DNS 管理者把 `testrun.legion-12.com` 指向当前源站；本仓库脚本不修改 DNS。
-2. 在干净提交上完成 Release，取得 schema 3 的 `l12-release-<commit>.json`、运行包和卡图包。不要用当前脏树或手工 tar 包。
-3. 通过已经人工核验的 `154.201.80.91` 主机指纹，把运行包上传为 `/opt/legion12-testrun-deployment/incoming/l12-testrun-release-<commit>.tar.gz`；卡图缓存缺失时上传为 `l12-testrun-card-assets-<assetHash>.tar.gz`。把以下仓库文件上传到同名 `/tmp` 路径：
-   - `bootstrap-l12-testrun.sh`
-   - `legion12-testrun.service`
-   - `legion12-testrun-http.nginx`
-   - `legion12-testrun.nginx`
-   - `activate-l12-testrun-tls.sh`
-   - `deploy-l12-testrun-release.sh`
-   - `verify-l12-health.mjs`（远端名为 `verify-l12-testrun-health.mjs`）
-4. 以 root 调用 bootstrap：`bootstrap-l12-testrun.sh <commit> <releaseSha256> <releaseArchive> <assetHash> <assetSha256|-> <assetArchive|->`。参数路径必须与上一步的固定路径完全一致。
+测试服务的 systemd 单元显式屏蔽正式活动目录和正式 runtime，只给测试 runtime 写权限；`CPUWeight`/`IOWeight` 为 10、`Nice=10`、`OOMScoreAdjust=750`，正式服务保持调度优先。内存使用 `MemoryHigh=768M`、`MemoryMax=896M`。
 
-Bootstrap 不读取、复制或解析任何正式环境文件。它创建随机 64 位十六进制管理员密码，并把唯一允许的键写入 root-only `0600` 环境文件；邮件功能固定关闭、所有 SMTP 值固定为空、`L12_PUBLIC_BASE_URL` 固定为 `https://testrun.legion-12.com`。`publish/runtime` 只能链接独立验收 runtime，内容寻址卡图只会使用 `/opt/legion12-testrun-static/card-assets` 下已经完整校验的目标。若用正式服同哈希卡图预置硬链接，必须保持 root 所有、目录 `0755`、文件 `0644`，并由 bootstrap 重新核对 manifest、文件长度和全树内容哈希；测试服务没有写卡图权限。归档内携带 runtime、卡图、链接、特殊文件、越界路径或额外顶层目录都会在切换前被拒绝。
+测试服固定使用 `L12_TESTRUN_MATCH_STORAGE=ephemeral`：账号、构筑和必要站点配置可以保留，但服务每次启动都会在严格核验公网基址与独立 runtime 后清空测试对局数据库及 WAL/SHM。测试对局、录像与分析事实不作为长期数据保存，也不会进入正式服统计。
 
-HTTP bootstrap vhost 只开放 ACME challenge，其他请求统一 503；它不会用明文 HTTP 暴露登录或后台。取得证书后，以 root 执行 `/usr/local/sbin/activate-legion12-testrun-tls`。激活器只把验收站 enabled 链接从受管 HTTP 配置切至受管 TLS 配置；Nginx 语法、HTTPS health、首页和公网 WebSocket 任一失败都会恢复 ACME-only HTTP 配置。不要在 TLS 激活前让测试人员登录。
+## 已有测试服务迁移到路径入口
 
-管理员密码只留在 `/etc/legion12-testrun.env`，不上传、不写入仓库或部署收据。需要首次登录时由有权读取该 root-only 文件的维护者线下取得并立即妥善保管。
+现有测试服务已经存在时，不重跑 bootstrap。日常部署入口会先执行受管路径激活器：
+
+1. 只接受正式站受管配置 `/etc/nginx/sites-available/legion12`，并核验其 enabled 链接和 `server_name legion-12.com`。
+2. 安装 `legion12-testrun-path.nginx` 与更新后的 `legion12-testrun.service`。
+3. 把测试环境中的 `L12_PUBLIC_BASE_URL` 从旧测试子域精确迁移为 `https://legion-12.com/testrun`；其他环境值不改。
+4. 在正式 TLS server 的唯一前端 `location /` 之前插入测试路径片段。
+5. 通过 `nginx -t` 后只 reload Nginx，不重启正式服务；任一步失败会恢复站点、服务、环境和片段备份。
+
+对应文件：
+
+- `ops/server/activate-l12-testrun-path.sh`
+- `ops/server/legion12-testrun-path.nginx`
+- `ops/server/legion12-testrun.service`
+
+旧 `testrun.legion-12.com` 配置不是新流程依赖。路径入口验收成功后可另行清理旧站点链接，但不得把清理与首次路径上线合并，避免扩大回滚范围。
+
+## 首次 bootstrap
+
+只有服务器上完全不存在测试 service、env、runtime、release 时才使用 `ops/server/bootstrap-l12-testrun.sh`。它会拒绝覆盖既有测试环境。
+
+在干净提交上生成 schema 3 Release 产物，将运行包和必要脚本上传到固定 incoming/`/tmp` 路径，再以 root 调用：
+
+```text
+bootstrap-l12-testrun.sh <commit> <releaseSha256> <releaseArchive> <assetHash> <assetSha256|-> <assetArchive|->
+```
+
+Bootstrap 创建独立管理员密钥和 root-only `0600` 环境文件；邮件、SMTP 与离线第二审批人引导固定关闭，`L12_PUBLIC_BASE_URL` 固定为 `https://legion-12.com/testrun`。管理员密钥不得写入仓库、日志或部署回执。
 
 ## 日常测试服发布
 
-日常只使用 Windows 专用入口，不再运行 bootstrap：
+先在干净提交上运行发布验证，获得 `l12-release-<commit>.json`。随后使用唯一 Windows 入口：
 
 ```powershell
 pwsh -NoProfile -File .\ops\windows\deploy-l12-testrun.ps1 `
   -ArtifactManifest D:\path\to\l12-release-<commit>.json `
-  -KnownHostsFile D:\secure\testrun_known_hosts `
-  -IdentityFile D:\secure\testrun_ed25519
+  -KnownHostsFile C:\Users\<user>\.ssh\known_hosts `
+  -IdentityFile C:\Users\<user>\.ssh\id_ed25519
 ```
 
-先增加 `-ValidateArtifactOnly` 可只检查目标和归档而不建立远程连接；增加 `-DryRun` 会上传到验收站 incoming 并执行服务器端只读/暂存验证，但不停止服务或切换版本。
+允许的目标仅为 `root@legion-12.com` 或已核验源站 IP；实际连接始终锁定核验过的 IP、主机指纹与显式私钥。增加 `-ValidateArtifactOnly` 只验证本地目标和发布包；增加 `-DryRun` 会上传并执行服务器端暂存验证，但不切换活动版本。
 
-入口只接受 `root@testrun.legion-12.com` 或 `root@154.201.80.91`，实际连接固定为 `154.201.80.91`，并强制 `StrictHostKeyChecking=yes`、该 IP 的 `HostKeyAlias` 及显式 known_hosts。它拒绝脏工作区、与 HEAD 不同的 manifest、错误 schema/文件名/SHA256/提交标记、链接或特殊成员、越界路径、runtime、内嵌卡图和额外顶层内容。
+部署入口会：
 
-服务器日常入口 `/usr/local/sbin/deploy-legion12-testrun-release` 只读取并校验现有 TLS vhost，不安装、替换或 reload Nginx，不修改 env/systemd，不使用正式服务、正式端口或正式 runtime。它停止验收服务后快照验收 runtime，以原子链接切换版本，并同时核验本机/公网提交身份、首页、卡牌页和 WebSocket。新版本失败时只恢复上一测试版本并重启验收服务，不自动用快照覆盖可能已产生的新测试数据；若旧版本也无法验证，则保持验收服务停止并写入 `deployment-blocked.txt` 等待人工对账。成功后只保留当前与上一测试程序、最新 1 份测试 runtime 快照、被这两个程序实际引用的卡图哈希，并删除超过 2 天的测试 incoming 文件；正式服任何目录都不在该清理范围。
+1. 拒绝脏工作区、与 HEAD 不同的 manifest、错误哈希、越界路径、链接、runtime、内嵌卡图或额外顶层成员。
+2. 安装/核验路径入口与测试 service，不停止或重启正式服务。
+3. 复用服务器已有内容寻址卡图缓存；没有变化时不上传卡图包。
+4. 停止测试服务、快照测试 runtime、原子切换测试版本并启动。
+5. 核验本机及公网提交身份、`/testrun/` 首页、`/testrun/health`、卡牌页和 `/testrun/ws`。
+6. 新版本失败时只恢复上一测试版本；旧版本也无法验证时保持测试服务停止并写入阻断标记，绝不切换正式版本。
 
-## 聚焦验证与激活后检查
+成功后只保留当前与上一测试程序、最新一份测试 runtime 快照、这两个版本实际引用的测试缓存，以及两天内 incoming 文件。正式服目录不在清理范围。
 
-本地修改部署链后运行：
+## 本地与上线验收
+
+部署链修改后至少运行：
 
 ```powershell
 pwsh -NoProfile -File .\scripts\test-l12-testrun-deploy-behavior.ps1
+node .\opcgpro-vue\scripts\check-testrun-base-path.mjs
 git diff --check
 ```
 
-测试覆盖任意主机拒绝、严格指纹参数、manifest/归档篡改和额外成员拒绝、邮件关闭与独立 env、只允许 8084/验收服务/验收 runtime/验收卡图缓存、HTTP 不暴露应用、TLS 不加 Basic Auth、日常不改 Nginx，以及新版本健康失败后旧测试版本仍为 active。此链不修改 DNS、不申请证书，也不在本地修改后自动部署；首次 DNS、上传/bootstrap、证书签发与 TLS 激活仍必须由主任务按授权逐步执行并留收据。
+正式切换测试版本前必须使用干净提交完成 Release 验证。上线验收标准：
+
+- `https://legion-12.com/testrun/` 返回测试服页面且静态资源从 `/testrun/assets/` 加载；
+- `https://legion-12.com/testrun/health` 返回目标测试提交；
+- `wss://legion-12.com/testrun/ws` 可建立测试连接；
+- 正式 `/health` 与正式 `/ws` 保持原版本和可用状态；
+- `legion12-testrun.service` 为 active，正式服务没有被重启；
+- 测试服维护状态与正式服维护状态互不连带。
+
+只有以上全部通过，才把“测试服地址可访问”标记为完成。

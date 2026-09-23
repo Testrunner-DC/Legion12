@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { gmAction, l12State } from '@/l12/net'
+import { endpointHttpBase } from '@/l12/deploymentBase'
 import type { Card, GameState } from '@/l12/types'
 import SandboxCardPicker, { type SandboxCatalogCard } from './SandboxCardPicker.vue'
 import CardImage from '../CardImage.vue'
@@ -93,8 +94,7 @@ function onKeydown(event: KeyboardEvent) {
 }
 async function exportRecord() {
   try {
-    const ws = new URL(l12State.endpoint)
-    const url = `${ws.protocol === 'wss:' ? 'https:' : 'http:'}//${ws.host}/api/matches/${props.game.matchId}`
+    const url = `${endpointHttpBase(l12State.endpoint)}/api/matches/${props.game.matchId}`
     const response = await fetch(url)
     if (!response.ok) throw new Error('读取对局记录失败')
     const data = await response.json()

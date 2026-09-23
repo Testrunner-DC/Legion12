@@ -1,0 +1,52 @@
+# Public acceptance environment mounted below the existing production host.
+# Keep this snippet inside the legion-12.com TLS server block.
+location = /testrun {
+    return 308 /testrun/;
+}
+
+location = /testrun/ws {
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    proxy_pass http://127.0.0.1:8084/ws;
+}
+
+location = /testrun/api/admin/site/media {
+    client_max_body_size 32m;
+    error_page 413 = @testrun_site_media_too_large;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_pass http://127.0.0.1:8084/api/admin/site/media;
+}
+
+location @testrun_site_media_too_large {
+    default_type application/json;
+    return 413 '{"code":"media_upload_too_large","message":"图片上传总量不能超过 32MB，请压缩原图后重试"}';
+}
+
+location ^~ /testrun/api/ {
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    rewrite ^/testrun(/api/.*)$ $1 break;
+    proxy_pass http://127.0.0.1:8084;
+}
+
+location = /testrun/health {
+    proxy_set_header Host $host;
+    proxy_pass http://127.0.0.1:8084/health;
+}
+
+location ^~ /testrun/ {
+    alias /opt/legion12-testrun/opcgpro-vue/dist-testrun/;
+    try_files $uri $uri/ /testrun/index.html;
+}

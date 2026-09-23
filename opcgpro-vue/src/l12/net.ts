@@ -4,6 +4,7 @@ import type { SavedL12Deck } from './decks'
 import type { EffectiveOperationsPolicy, RankedSettlement } from './platform'
 import type { MatchGovernanceResult } from './matchGovernance'
 import { createGameReentryController } from './gameReentry'
+import { deploymentWebSocketPath, endpointHttpBase } from './deploymentBase'
 
 export type L12RecoveryPhase = 'idle' | 'opening-websocket' | 'authenticating' | 'session-claimed'
   | 'snapshot-received' | 'snapshot-mismatch' | 'snapshot-acknowledged' | 'authentication-rejected'
@@ -36,7 +37,7 @@ function normalizeEndpoint(value: string) {
 
 const configuredEndpoint = String(import.meta.env.VITE_WS_URL || '').trim()
 const defaultEndpoint = configuredEndpoint || (location.protocol === 'https:'
-  ? `wss://${location.host}/ws`
+  ? `wss://${location.host}${deploymentWebSocketPath()}`
   : `ws://${location.hostname || 'localhost'}:8080/ws`)
 const storedEndpoint = localStorage.getItem('l12-endpoint') || ''
 // 正式 HTTPS 页面必须跟随当前域名，避免历史调试地址在部署后把玩家永久带到旧服务。
@@ -255,12 +256,7 @@ function socketReadyStateName(socket: WebSocket | null) {
 
 function httpEndpoint(path: string) {
   try {
-    const url = new URL(l12State.endpoint)
-    url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:'
-    url.pathname = path
-    url.search = ''
-    url.hash = ''
-    return url.toString()
+    return `${endpointHttpBase(l12State.endpoint)}${path}`
   } catch { return `${location.protocol}//${location.hostname}:8080${path}` }
 }
 

@@ -5,9 +5,10 @@ import tailwindcss from '@tailwindcss/vite'
 import { resolveClientReleaseVersion } from './scripts/client-release-version.mjs'
 
 // https://vite.dev/config/
-export default defineConfig(({ command }) => {
+export default defineConfig(({ command, mode }) => {
   const clientRelease = resolveClientReleaseVersion({ command, supplied: process.env.VITE_APP_VERSION })
   return {
+    base: mode === 'testrun' ? '/testrun/' : '/',
     // 本机可为并行任务指定独立缓存目录，避免预览、校验彼此锁住 node_modules/.vite。
     cacheDir: process.env.L12_VITE_CACHE_DIR || '.tmp/vite-cache',
     define: {

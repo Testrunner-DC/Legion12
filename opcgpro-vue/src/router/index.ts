@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { authState, canAccessAdmin, platformState, refreshCurrentAccount } from '@/l12/platform'
 
 export const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/', name: 'home', component: () => import('@/l12/site/OfficialHomePage.vue') },
     { path: '/news', name: 'news', component: () => import('@/l12/site/NewsPage.vue') },

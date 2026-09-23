@@ -1,5 +1,6 @@
 import { normalizeLookupCardType } from './cardPresentation'
 import { getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'
+import { deploymentPath } from './deploymentBase'
 import moraleIdentityData from '../../../服务端WebSocket/TwelveLegions/Data/morale-identities.json'
 import cardProductInclusionsData from '../../../服务端WebSocket/TwelveLegions/Data/card-product-inclusions.json'
 import cardArchiveAssetsData from '../../../服务端WebSocket/TwelveLegions/Data/card-archive-assets.json'
@@ -295,9 +296,9 @@ function visibleDecksAfterAsyncWork(context: ReturnType<typeof captureDeckStorag
 export function loadDeckCatalog(): Promise<DeckCard[]> {
   if (catalogPromise) return catalogPromise
   catalogPromise = Promise.all([
-    fetch('/data/l12/cards.s1.json', { cache: 'no-store' }),
-    fetch('/data/l12/cards.lookup.json', { cache: 'no-store' }),
-    fetch('/data/l12/cards.st.json', { cache: 'no-store' }),
+    fetch(deploymentPath('/data/l12/cards.s1.json'), { cache: 'no-store' }),
+    fetch(deploymentPath('/data/l12/cards.lookup.json'), { cache: 'no-store' }),
+    fetch(deploymentPath('/data/l12/cards.st.json'), { cache: 'no-store' }),
   ]).then(async ([s1Response, lookupResponse, stResponse]) => {
     if (!s1Response.ok || !lookupResponse.ok || !stResponse.ok) throw new Error('卡牌数据加载失败')
     const seasonOne: DeckCard[] = await s1Response.json()
@@ -337,8 +338,8 @@ export async function syncSavedDecksFromAccount(): Promise<Record<string, SavedL
 
 export async function loadOfficialPresetDecks(): Promise<OfficialL12PresetDeck[]> {
   const responses = await Promise.all([
-    fetch('/data/l12/preset-decks.s1.json'),
-    fetch('/data/l12/preset-decks.s2.json'),
+    fetch(deploymentPath('/data/l12/preset-decks.s1.json')),
+    fetch(deploymentPath('/data/l12/preset-decks.s2.json')),
   ])
   if (responses.some(response => !response.ok)) throw new Error('官方预组加载失败')
   const seasons = await Promise.all(responses.map(response => response.json() as Promise<OfficialL12PresetDeck[]>))
@@ -497,7 +498,7 @@ export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'car
 export async function loadCardArchiveCatalog(): Promise<DeckCard[]> {
   const [catalog, lookupResponse] = await Promise.all([
     loadDeckCatalog(),
-    fetch('/data/l12/cards.lookup.json', { cache: 'no-store' }),
+    fetch(deploymentPath('/data/l12/cards.lookup.json'), { cache: 'no-store' }),
   ])
   if (!lookupResponse.ok) throw new Error('卡牌版本数据加载失败')
   const lookup: LookupCard[] = await lookupResponse.json()

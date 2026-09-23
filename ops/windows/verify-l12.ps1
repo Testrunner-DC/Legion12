@@ -121,7 +121,7 @@ try {
     $robocopy = Get-Command "robocopy.exe" -ErrorAction SilentlyContinue
     if ($null -ne $robocopy) {
         & $robocopy.Source $frontendSourceRoot $frontendBuildDirectory /E `
-            /XD (Join-Path $frontendSourceRoot "node_modules") (Join-Path $frontendSourceRoot "dist") (Join-Path $frontendSourceRoot "public\cards") `
+            /XD (Join-Path $frontendSourceRoot "node_modules") (Join-Path $frontendSourceRoot "dist") (Join-Path $frontendSourceRoot "dist-testrun") (Join-Path $frontendSourceRoot "public\cards") `
             /NFL /NDL /NJH /NJS /NC /NS | Out-Null
         if ($LASTEXITCODE -ge 8) { throw "复制隔离前端构建目录失败（robocopy 退出码 $LASTEXITCODE）" }
     }
@@ -141,6 +141,7 @@ try {
         @{ Source = "ops\server\deploy-l12-release.sh"; Target = "ops\server\deploy-l12-release.sh" },
         @{ Source = "ops\server\legion12-testrun.nginx"; Target = "ops\server\legion12-testrun.nginx" },
         @{ Source = "ops\server\legion12-testrun-http.nginx"; Target = "ops\server\legion12-testrun-http.nginx" },
+        @{ Source = "ops\server\legion12-testrun-path.nginx"; Target = "ops\server\legion12-testrun-path.nginx" },
         @{ Source = "ops\server\nginx-l12-card-assets.conf"; Target = "ops\server\nginx-l12-card-assets.conf" },
         @{ Source = "服务端WebSocket\TwelveLegions\Data\cards.s1.json"; Target = "服务端WebSocket\TwelveLegions\Data\cards.s1.json" },
         @{ Source = "服务端WebSocket\TwelveLegions\Data\cards.s2.json"; Target = "服务端WebSocket\TwelveLegions\Data\cards.s2.json" },
@@ -176,9 +177,10 @@ try {
     $stagingDirectory = Join-Path $artifactDirectory "staging-$([Guid]::NewGuid().ToString('N'))"
     $releaseRoot = Join-Path $stagingDirectory "release"
     $webRoot = Join-Path $releaseRoot "opcgpro-vue\dist"
+    $testrunWebRoot = Join-Path $releaseRoot "opcgpro-vue\dist-testrun"
     $publishRoot = Join-Path $releaseRoot "publish"
     $scriptsRoot = Join-Path $releaseRoot "scripts"
-    New-Item -ItemType Directory -Path $webRoot, $publishRoot, $scriptsRoot -Force | Out-Null
+    New-Item -ItemType Directory -Path $webRoot, $testrunWebRoot, $publishRoot, $scriptsRoot -Force | Out-Null
 
     Write-Host "[L12 验证] 生成服务器兼容的框架依赖发布产物..."
     Invoke-External dotnet restore ".\服务端WebSocket\GrandUMIServer.csproj" --ignore-failed-sources
@@ -196,20 +198,32 @@ try {
     Write-Host "[L12 验证] 汇总前端运行产物（卡图单独缓存）..."
     $frontendDistRoot = (Resolve-Path (Join-Path $frontendBuildDirectory "dist")).Path
     $frontendCardsRoot = Join-Path $frontendDistRoot "cards"
+    $frontendTestrunDistRoot = (Resolve-Path (Join-Path $frontendBuildDirectory "dist-testrun")).Path
+    $frontendTestrunCardsRoot = Join-Path $frontendTestrunDistRoot "cards"
     $robocopy = Get-Command "robocopy.exe" -ErrorAction SilentlyContinue
     if ($null -ne $robocopy) {
         & $robocopy.Source $frontendDistRoot $webRoot /E /XD $frontendCardsRoot /NFL /NDL /NJH /NJS /NC /NS | Out-Null
         if ($LASTEXITCODE -ge 8) { throw "复制前端产物失败（robocopy 退出码 $LASTEXITCODE）" }
+        & $robocopy.Source $frontendTestrunDistRoot $testrunWebRoot /E /XD $frontendTestrunCardsRoot /NFL /NDL /NJH /NJS /NC /NS | Out-Null
+        if ($LASTEXITCODE -ge 8) { throw "复制测试服前端产物失败（robocopy 退出码 $LASTEXITCODE）" }
     }
     else {
         Copy-Item ".\opcgpro-vue\dist\*" $webRoot -Recurse -Force
         Remove-Item (Join-Path $webRoot "cards") -Recurse -Force -ErrorAction SilentlyContinue
+        Copy-Item ".\opcgpro-vue\dist-testrun\*" $testrunWebRoot -Recurse -Force
+        Remove-Item (Join-Path $testrunWebRoot "cards") -Recurse -Force -ErrorAction SilentlyContinue
     }
     if (Test-Path -LiteralPath (Join-Path $webRoot "cards")) {
         throw "运行包错误包含卡图目录"
     }
     if (Test-Path -LiteralPath (Join-Path $webRoot "card-assets")) {
         throw "运行包错误包含优化卡图目录"
+    }
+    if (Test-Path -LiteralPath (Join-Path $testrunWebRoot "cards")) {
+        throw "测试服运行包错误包含卡图目录"
+    }
+    if (Test-Path -LiteralPath (Join-Path $testrunWebRoot "card-assets")) {
+        throw "测试服运行包错误包含优化卡图目录"
     }
     Copy-Item ".\scripts\ws-smoke.mjs" (Join-Path $scriptsRoot "ws-smoke.mjs") -Force
     [IO.File]::WriteAllText((Join-Path $releaseRoot ".deployment-commit"), $commit, [Text.UTF8Encoding]::new($false))

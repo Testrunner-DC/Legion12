@@ -2,6 +2,7 @@ import { computed, reactive } from 'vue'
 import { disconnect, l12State, type BugClientConnectionDiagnostic } from './net'
 import type { SavedL12Deck } from './decks'
 import type { RecordedCommand } from './replayModel'
+import { endpointHttpBase } from './deploymentBase'
 
 export interface PlatformAccount {
   id: string; username: string; role: string; createdAt: string; publicHistory: boolean; permissions?: string[]
@@ -591,10 +592,7 @@ export const canAccessAdmin = computed(() => authState.verified && platformState
 
 export function apiBase() {
   try {
-    const url = new URL(l12State.endpoint)
-    url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:'
-    url.pathname = ''
-    return url.toString().replace(/\/$/, '')
+    return endpointHttpBase(l12State.endpoint)
   } catch { return `${location.protocol}//${location.hostname}:8080` }
 }
 
