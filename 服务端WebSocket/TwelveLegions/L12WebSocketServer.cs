@@ -1617,6 +1617,22 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _app.MapGet("/api/content/{key}", (string key) => Results.Ok(new { key, value = _platform.GetContent(key) }));
         _app.MapGet("/api/site/home", () => Results.Ok(_platform.PublicSiteHome()));
         _app.MapGet("/api/site/categories", (string? kind) => Results.Ok(_platform.PublicSiteCategories(kind)));
+        _app.MapGet(L12SharePage.Endpoint, (HttpRequest request) =>
+        {
+            var path = request.Headers[L12SharePage.OriginalPathHeader].FirstOrDefault()
+                ?? request.Query["path"].FirstOrDefault() ?? "/";
+            try
+            {
+                request.HttpContext.Response.Headers.CacheControl = "public,max-age=60,must-revalidate";
+                request.HttpContext.Response.Headers["X-Content-Type-Options"] = "nosniff";
+                return Results.Content(L12SharePage.RenderDeploymentPage(_platform, path),
+                    "text/html; charset=utf-8", Encoding.UTF8);
+            }
+            catch (IOException)
+            {
+                return Results.Problem("站点页面入口暂时不可用", statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+        });
         _app.MapGet("/api/site/media/{id}/{variant}/{fileName}", (HttpRequest request, string id,
             string variant, string fileName) =>
         {

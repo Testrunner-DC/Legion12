@@ -134,6 +134,9 @@ if (!windowsVerify.includes('Source = "ops\\windows\\L12DeployTarget.ps1"; Targe
 const serverDeploy = read('../../ops/server/deploy-l12-release.sh')
 const nginxSite = read('../../ops/server/legion12-testrun.nginx')
 const nginxHttpSite = read('../../ops/server/legion12-testrun-http.nginx')
+const nginxTestrunPath = read('../../ops/server/legion12-testrun-path.nginx')
+const nginxSharePages = read('../../ops/server/nginx-l12-share-pages.conf')
+const activateSharePages = read('../../ops/server/activate-l12-share-pages.sh')
 const bugQueue = read('../../ops/windows/Get-L12BugQueue.ps1')
 const s1Cards = JSON.parse(read('../public/data/l12/cards.s1.json'))
 const starterCards = JSON.parse(read('../public/data/l12/cards.st.json'))
@@ -299,6 +302,19 @@ const contracts = [
   [Object.entries(confirmedS1DisasterLevels).every(([id, level]) => s1Cards.find(card => card.id === id)?.disasterLevel === level), '第一季补充天灾等级必须进入前端卡牌目录'],
   [shell.includes("const siteBrandIcon = '/favicon.png'") && shell.includes('filter:brightness(0) invert(1)'), '主页入口必须复用标签页Logo并以白色显示'],
   [indexHtml.includes('<title>十二军团</title>') && !indexHtml.includes('十二军团 · 联网对战'), '网页标题必须统一为十二军团'],
+  [indexHtml.includes('<!-- l12-share-meta:start -->') && indexHtml.includes('<!-- l12-share-meta:end -->')
+    && indexHtml.includes('property="og:title"') && indexHtml.includes('property="og:description"')
+    && indexHtml.includes('property="og:image"') && indexHtml.includes('property="og:url"')
+    && l12ServerSources.includes('internal static partial class L12SharePage')
+    && l12ServerSources.includes('L12_PUBLIC_BASE_URL') && l12ServerSources.includes('PublicArticle(articleKey)')
+    && l12ServerSources.includes('article.BodyMedia?.FirstOrDefault()?.DesktopUrl')
+    && nginxSharePages.includes('location = /news')
+    && nginxSharePages.includes('proxy_pass http://127.0.0.1:8083/_l12/share-page;')
+    && nginxSite.includes('proxy_pass http://127.0.0.1:8084/_l12/share-page;')
+    && nginxTestrunPath.includes('location ~ ^/testrun/news/[^/]+/?$')
+    && activateSharePages.includes('include /etc/nginx/snippets/legion12-share-pages.conf;')
+    && windowsDeploy.includes('$sharePageActivator') && windowsDeploy.includes('$sharePageSnippet'),
+    '主页和资讯分享必须由服务端基于已发布快照注入完整OG信息，正式服与测试路径都要接入动态HTML且由部署流程启用'],
   [board.includes('data-ui-contract="opponent-status-safe-lane"') && board.includes('data-ui-contract="player-status-safe-lane"')
     && board.includes('opponent-player-clock') && board.includes('my-player-clock')
     && board.includes(':active="game.activePlayer === viewEnemy.playerIndex"') && board.includes(':active="game.activePlayer === viewMe.playerIndex"')

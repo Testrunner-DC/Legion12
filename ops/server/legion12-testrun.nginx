@@ -73,6 +73,34 @@ server {
         proxy_pass http://127.0.0.1:8084;
     }
 
+    location = / {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-L12-Share-Path $uri;
+        proxy_pass http://127.0.0.1:8084/_l12/share-page;
+    }
+
+    location = /news {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-L12-Share-Path $uri;
+        proxy_pass http://127.0.0.1:8084/_l12/share-page;
+    }
+
+    location = /news/ {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-L12-Share-Path $uri;
+        proxy_pass http://127.0.0.1:8084/_l12/share-page;
+    }
+
+    location ~ ^/news/[^/]+/?$ {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-L12-Share-Path $uri;
+        proxy_pass http://127.0.0.1:8084/_l12/share-page;
+    }
+
     location = /cards {
         root /opt/legion12-testrun/opcgpro-vue/dist;
         try_files /index.html =404;

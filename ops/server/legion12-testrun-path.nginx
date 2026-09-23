@@ -46,7 +46,35 @@ location = /testrun/health {
     proxy_pass http://127.0.0.1:8084/health;
 }
 
-location ^~ /testrun/ {
+location = /testrun/ {
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-L12-Share-Path $uri;
+    proxy_pass http://127.0.0.1:8084/_l12/share-page;
+}
+
+location = /testrun/news {
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-L12-Share-Path $uri;
+    proxy_pass http://127.0.0.1:8084/_l12/share-page;
+}
+
+location = /testrun/news/ {
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-L12-Share-Path $uri;
+    proxy_pass http://127.0.0.1:8084/_l12/share-page;
+}
+
+location ~ ^/testrun/news/[^/]+/?$ {
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-L12-Share-Path $uri;
+    proxy_pass http://127.0.0.1:8084/_l12/share-page;
+}
+
+location /testrun/ {
     alias /opt/legion12-testrun/opcgpro-vue/dist-testrun/;
     try_files $uri $uri/ /testrun/index.html;
 }

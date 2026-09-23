@@ -54,6 +54,8 @@ $cacheInitializer = Join-Path $PSScriptRoot "Initialize-L12BuildEnvironment.ps1"
 $resolvedCacheRoot = & $cacheInitializer -CacheRoot $CacheRoot | Select-Object -Last 1
 $serverScript = Join-Path $repoRoot "ops\server\deploy-l12-release.sh"
 $serverHealthVerifier = Join-Path $repoRoot "ops\server\verify-l12-health.mjs"
+$sharePageActivator = Join-Path $repoRoot "ops\server\activate-l12-share-pages.sh"
+$sharePageSnippet = Join-Path $repoRoot "ops\server\nginx-l12-share-pages.conf"
 $verifyScript = Join-Path $repoRoot "ops\windows\verify-l12.ps1"
 $originalLocation = Get-Location
 
@@ -144,11 +146,15 @@ try {
     }
     $remoteBootstrap = "/tmp/deploy-l12-release-$commit.sh"
     $remoteHealthVerifier = "/tmp/verify-l12-health-$commit.mjs"
+    $remoteSharePageActivator = "/tmp/activate-l12-share-pages-$commit.sh"
+    $remoteSharePageSnippet = "/tmp/nginx-l12-share-pages-$commit.conf"
     $remoteRelease = "$incoming/l12-release-$commit.tar.gz"
     $remoteCardAssets = if ($hasCardAssets) { "$incoming/l12-card-assets-$cardAssetsHashValue.tar.gz" } else { "-" }
     Write-Host "[L12 部署] 上传并安装经过本地验证的发布工具..."
     Invoke-External scp @sshOptions $serverScript "${Server}:$remoteBootstrap"
     Invoke-External scp @sshOptions $serverHealthVerifier "${Server}:$remoteHealthVerifier"
+    Invoke-External scp @sshOptions $sharePageActivator "${Server}:$remoteSharePageActivator"
+    Invoke-External scp @sshOptions $sharePageSnippet "${Server}:$remoteSharePageSnippet"
     Invoke-External ssh @sshOptions $Server "sed -i 's/\r$//' '$remoteBootstrap' && install -m 0755 '$remoteBootstrap' /usr/local/sbin/deploy-legion12-release && install -d -m 0755 /usr/local/libexec && install -m 0755 '$remoteHealthVerifier' /usr/local/libexec/verify-legion12-health.mjs && rm -f '$remoteBootstrap' '$remoteHealthVerifier'"
     Invoke-External ssh @sshOptions $Server "/usr/local/sbin/deploy-legion12-release prepare-storage '$ServerArtifactRoot'"
 
@@ -188,7 +194,15 @@ try {
     Write-Host "[L12 部署] 服务器执行快速 $mode（不重复构建和全量测试）..."
     Invoke-External ssh @sshOptions $Server "/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease - - - $cardAssetsHash $cardAssetsSha $cardAssetsPath '$ServerArtifactRoot'"
 
-    if ($DryRun) { Write-Host "[L12 部署] 干运行成功，线上版本未改变。" }
-    else { Write-Host "[L12 部署] 发布成功：https://legion-12.com/" }
+    if ($DryRun) {
+        Invoke-External ssh @sshOptions $Server "rm -f '$remoteSharePageActivator' '$remoteSharePageSnippet'"
+        Write-Host "[L12 部署] 干运行成功，线上版本未改变。"
+    }
+    else {
+        Write-Host "[L12 部署] 启用主页与资讯分享信息路由..."
+        Invoke-External ssh @sshOptions $Server "sed -i 's/\r$//' '$remoteSharePageActivator' && chmod 0755 '$remoteSharePageActivator' && '$remoteSharePageActivator' '$remoteSharePageSnippet' && rm -f '$remoteSharePageActivator'"
+        Invoke-External ssh @sshOptions $Server "curl -fsS --connect-timeout 5 --max-time 10 https://legion-12.com/ | grep -Fq 'property=\"og:title\"'"
+        Write-Host "[L12 部署] 发布成功：https://legion-12.com/"
+    }
 }
 finally { Set-Location $originalLocation }
