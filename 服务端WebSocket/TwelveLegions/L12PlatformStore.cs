@@ -275,6 +275,8 @@ public sealed partial class L12PlatformStore
         public List<SiteCategoryRow> SiteCategories { get; set; } = [];
         public List<EffectReviewRow> EffectReviews { get; set; } = [];
         public List<EffectPresentationOverrideRow> EffectPresentationOverrides { get; set; } = [];
+        public List<EffectWorkbenchRow> EffectWorkbenchDrafts { get; set; } = [];
+        public List<EffectWorkbenchVersionRow> EffectWorkbenchVersions { get; set; } = [];
         public List<AdminAuditRow> AdminAudit { get; set; } = [];
         public List<AdminCommandRow> AdminCommands { get; set; } = [];
         public List<AdminApprovalRow> AdminApprovals { get; set; } = [];

@@ -570,6 +570,8 @@ public sealed partial class L12PlatformStore
         foreach (var category in data.SiteCategories) NormalizeSiteCategory(category);
         data.EffectReviews ??= [];
         data.EffectPresentationOverrides ??= [];
+        data.EffectWorkbenchDrafts ??= [];
+        data.EffectWorkbenchVersions ??= [];
         data.AdminAudit ??= [];
         foreach (var audit in data.AdminAudit)
             if (string.IsNullOrWhiteSpace(audit.Outcome)) audit.Outcome = "succeeded";

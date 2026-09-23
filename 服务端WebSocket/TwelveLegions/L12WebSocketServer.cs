@@ -2006,6 +2006,55 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (effect is null) return Results.NotFound();
             return Results.Ok(_platform.ApplyEffectPresentationOverrides(_platform.ApplyEffectReviews(effect)));
         });
+        _app.MapGet("/api/admin/effect-workbench/styles", (HttpRequest request) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminEffectsRead, out _, out var failure)) return failure;
+            return Results.Ok(L12PlatformStore.EffectPresentationStyles);
+        });
+        _app.MapGet("/api/admin/effects/{cardId}/workbench", (HttpRequest request, string cardId) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminEffectsRead, out _, out var failure)) return failure;
+            var effect = _catalog.AtomicEffects.Find(cardId);
+            if (effect is null) return ApiError(request, "effect_not_found", "卡牌效果不存在",
+                StatusCodes.Status404NotFound);
+            return Results.Ok(_platform.EffectWorkbench(
+                _platform.ApplyEffectPresentationOverrides(_platform.ApplyEffectReviews(effect))));
+        });
+        _app.MapPut("/api/admin/effects/{cardId}/workbench/draft",
+            (HttpRequest request, string cardId, L12EffectWorkbenchSaveRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminEffectsReview;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var effect = _catalog.AtomicEffects.Find(cardId);
+            if (effect is null) return ApiError(request, "effect_not_found", "卡牌效果不存在",
+                StatusCodes.Status404NotFound);
+            try
+            {
+                return Results.Ok(_platform.SaveEffectWorkbenchDraft(authenticated.Account,
+                    _platform.ApplyEffectPresentationOverrides(_platform.ApplyEffectReviews(effect)), body,
+                    RequestAuditContext(request, permission)));
+            }
+            catch (InvalidOperationException error)
+            {
+                return ApiError(request, "effect_workbench_conflict", error.Message, StatusCodes.Status409Conflict);
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "invalid_effect_workbench", error.Message, StatusCodes.Status400BadRequest);
+            }
+        });
+        _app.MapPost("/api/admin/effects/{cardId}/workbench/validate",
+            (HttpRequest request, string cardId, L12EffectWorkbenchActionRequest body) =>
+            EffectWorkbenchAction(request, cardId, body, "validate"));
+        _app.MapPost("/api/admin/effects/{cardId}/workbench/review",
+            (HttpRequest request, string cardId, L12EffectWorkbenchActionRequest body) =>
+            EffectWorkbenchAction(request, cardId, body, "review"));
+        _app.MapPost("/api/admin/effects/{cardId}/workbench/publish",
+            (HttpRequest request, string cardId, L12EffectWorkbenchActionRequest body) =>
+            EffectWorkbenchAction(request, cardId, body, "publish"));
+        _app.MapPost("/api/admin/effects/{cardId}/workbench/rollback",
+            (HttpRequest request, string cardId, L12EffectWorkbenchActionRequest body) =>
+            EffectWorkbenchAction(request, cardId, body, "rollback"));
         _app.MapPut("/api/admin/effects/{cardId}/review", (HttpRequest request, string cardId, EffectReviewRequest body) =>
         {
             const L12Permission permission = L12Permission.AdminEffectsReview;
@@ -3621,6 +3670,42 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private L12AdminCommandResult<L12EffectReviewView> ExecuteEffectReview(
         L12AdminCommandEnvelope<EffectReviewCommandPayload> command)
         => ValidateEffectReview(command, true);
+
+    private IResult EffectWorkbenchAction(HttpRequest request, string cardId,
+        L12EffectWorkbenchActionRequest body, string action)
+    {
+        const L12Permission permission = L12Permission.AdminEffectsReview;
+        if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+        var source = _catalog.AtomicEffects.Find(cardId);
+        if (source is null) return ApiError(request, "effect_not_found", "卡牌效果不存在",
+            StatusCodes.Status404NotFound);
+        var effect = _platform.ApplyEffectPresentationOverrides(_platform.ApplyEffectReviews(source));
+        try
+        {
+            var context = RequestAuditContext(request, permission);
+            var result = action switch
+            {
+                "validate" => _platform.ValidateEffectWorkbenchDraft(authenticated.Account, effect, body, context),
+                "review" => _platform.ReviewEffectWorkbenchDraft(authenticated.Account, effect, body, context),
+                "publish" => _platform.PublishEffectWorkbenchDraft(authenticated.Account, effect, body, context),
+                "rollback" => _platform.RollbackEffectWorkbench(authenticated.Account, effect, body, context),
+                _ => throw new ArgumentOutOfRangeException(nameof(action)),
+            };
+            return Results.Ok(result);
+        }
+        catch (KeyNotFoundException error)
+        {
+            return ApiError(request, "effect_workbench_not_found", error.Message, StatusCodes.Status404NotFound);
+        }
+        catch (InvalidOperationException error)
+        {
+            return ApiError(request, "effect_workbench_conflict", error.Message, StatusCodes.Status409Conflict);
+        }
+        catch (ArgumentException error)
+        {
+            return ApiError(request, "invalid_effect_workbench", error.Message, StatusCodes.Status400BadRequest);
+        }
+    }
 
     private L12AdminCommandResult<L12EffectReviewView> ValidateEffectReview(
         L12AdminCommandEnvelope<EffectReviewCommandPayload> command, bool apply)

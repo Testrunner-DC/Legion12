@@ -94,6 +94,38 @@ export interface AtomicCoverage {
   verifiedAbilities: number; legacyBackedAbilities: number; byStatus: Record<string, number>; byAtomKind: Record<string, number>
 }
 export interface AtomicEffectPage { items: AtomicCardEffect[]; total: number; page: number; pageSize: number; coverage: AtomicCoverage }
+export interface EffectWorkbenchErrata {
+  id: string; previousText: string; correctedText: string; reason: string; effectiveVersion: string; products: string[]
+}
+export interface EffectWorkbenchAbilityDraft {
+  abilityId: string; structureHash: string; trigger: string; optional: boolean; costText: string; resolutionText: string
+  responseBoundary: string; targetSummary: string; branchSummary: string
+}
+export interface EffectWorkbenchSceneDraft { sceneId: string; text: string; styleId: string; publicLevel: string }
+export interface EffectWorkbenchDraft {
+  effectText: string; baseProduct: string; includedProducts: string[]; effectiveScope: string
+  styleId: string; publicLevel: string; errata: EffectWorkbenchErrata[]
+  abilities: EffectWorkbenchAbilityDraft[]; scenes: EffectWorkbenchSceneDraft[]
+}
+export interface EffectWorkbenchValidation {
+  valid: boolean; requiresDevelopment: boolean; errors: string[]; warnings: string[]
+}
+export interface EffectWorkbenchPreview {
+  channel: string; label: string; text: string; publicLevel: string; styleId: string
+}
+export interface EffectPresentationStyle {
+  id: string; name: string; description: string; applicableScenes: string; legendTitle: string; legendBody: string
+  legendTone: string; desktopPreview: string; mobilePreview: string
+}
+export interface EffectWorkbenchVersion {
+  id: string; version: number; status: string; publishedBy: string; publishedAt: string; reason: string; sourceStructureHash: string
+}
+export interface EffectWorkbenchView {
+  cardId: string; cardName: string; version: number; status: string; sourceStructureHash: string
+  draft: EffectWorkbenchDraft; validation: EffectWorkbenchValidation; previews: EffectWorkbenchPreview[]
+  updatedBy?: string; updatedAt?: string; reviewedBy?: string; reviewedAt?: string; publishedVersionId?: string
+  history: EffectWorkbenchVersion[]
+}
 export interface ContentEntry { key: string; draftValue: string; publishedValue: string; status: 'draft' | 'published'; updatedBy?: string; updatedAt?: string; publishedBy?: string; publishedAt?: string; version: number; publishedVersionId?: string; rollbackVersionId?: string }
 export type SiteContentKind = 'news' | 'video' | 'product'
 export type SiteMediaKind = 'hero' | 'article' | 'card-art' | SiteContentKind
@@ -999,6 +1031,23 @@ export const adminApi = {
     return platformRequest<AtomicEffectPage>(`/api/admin/effects${params.size ? `?${params}` : ''}`)
   },
   effect: (cardId: string) => platformRequest<AtomicCardEffect>(`/api/admin/effects/${encodeURIComponent(cardId)}`),
+  effectWorkbenchStyles: () => platformRequest<EffectPresentationStyle[]>('/api/admin/effect-workbench/styles'),
+  effectWorkbench: (cardId: string) => platformRequest<EffectWorkbenchView>(`/api/admin/effects/${encodeURIComponent(cardId)}/workbench`),
+  saveEffectWorkbench: (cardId: string, draft: EffectWorkbenchDraft, expectedVersion: number, reason: string) => platformRequest<EffectWorkbenchView>(`/api/admin/v1/effects/${encodeURIComponent(cardId)}/workbench/draft`, {
+    method: 'PUT', body: JSON.stringify({ draft, expectedVersion, reason }),
+  }),
+  validateEffectWorkbench: (cardId: string, expectedVersion: number) => platformRequest<EffectWorkbenchView>(`/api/admin/v1/effects/${encodeURIComponent(cardId)}/workbench/validate`, {
+    method: 'POST', body: JSON.stringify({ expectedVersion }),
+  }),
+  reviewEffectWorkbench: (cardId: string, expectedVersion: number, reason: string) => platformRequest<EffectWorkbenchView>(`/api/admin/v1/effects/${encodeURIComponent(cardId)}/workbench/review`, {
+    method: 'POST', body: JSON.stringify({ expectedVersion, reason }),
+  }),
+  publishEffectWorkbench: (cardId: string, expectedVersion: number, reason: string) => platformRequest<EffectWorkbenchView>(`/api/admin/v1/effects/${encodeURIComponent(cardId)}/workbench/publish`, {
+    method: 'POST', body: JSON.stringify({ expectedVersion, reason }),
+  }),
+  rollbackEffectWorkbench: (cardId: string, expectedVersion: number, versionId: string, reason: string) => platformRequest<EffectWorkbenchView>(`/api/admin/v1/effects/${encodeURIComponent(cardId)}/workbench/rollback`, {
+    method: 'POST', body: JSON.stringify({ expectedVersion, versionId, reason }),
+  }),
   reviewEffect: (cardId: string, body: { abilityId?: string; status: string; note?: string }) => platformRequest<EffectReview>(`/api/admin/v1/effects/${encodeURIComponent(cardId)}/review`, { method: 'PUT', body: JSON.stringify(commandBody('effect-review', body)) }),
   saveEffectPresentation: (cardId: string, sceneId: string, text: string) => platformRequest<EffectPresentationScene>(`/api/admin/v1/effects/${encodeURIComponent(cardId)}/presentations/${encodeURIComponent(sceneId)}`, {
     method: 'PUT', body: JSON.stringify(commandBody('effect-presentation', { text, reason: '更新卡牌动效文案' })),
