@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onBeforeUpdate, onMounted, onUpdated, ref, watch } from 'vue'
 import CardTile from '../CardTile.vue'
 import type { Card } from '../types'
 import { landscapeTeleportTarget } from '../mobileViewport'
+import { useFlip } from '../useFlip'
 
 const props = defineProps<{
   cards?: Card[]
@@ -18,6 +19,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ select: [card: Card]; focus: [card: Card]; play: [card: Card] }>()
 const handElement = ref<HTMLElement | null>(null)
+const flip = useFlip()
 const handWidth = ref(900)
 const moreAtStart = ref(false)
 const moreAtEnd = ref(false)
@@ -107,6 +109,8 @@ onMounted(() => {
   resizeObserver.observe(handElement.value)
   nextTick(updateOverflowEdges)
 })
+onBeforeUpdate(() => flip.capture(handElement.value))
+onUpdated(() => { void flip.play(handElement.value) })
 watch(() => `${props.mobileLayout}:${cardCount.value}`, () => nextTick(updateOverflowEdges))
 onBeforeUnmount(() => resizeObserver?.disconnect())
 </script>
@@ -117,9 +121,9 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
     @scroll="updateOverflowEdges" @wheel="onHandWheel" @pointerdown="onHandPointerDown" @pointermove="onHandPointerMove"
     @pointerup="endHandPointer" @pointercancel="endHandPointer" @click.capture="onHandClickCapture">
     <template v-if="hidden">
-      <div v-for="index in count || 0" :key="index" class="card-back" :style="fanStyle(index - 1, count || 0)"><i>XII</i></div>
+      <div v-for="index in count || 0" :key="index" class="card-back" :data-flip-id="`back-${index}`" :style="fanStyle(index - 1, count || 0)"><i>XII</i></div>
     </template>
-    <div v-for="(card, index) in cards" v-else :key="card.instanceId" class="hand-card-wrap" :style="fanStyle(index, cards?.length || 0)"
+    <div v-for="(card, index) in cards" v-else :key="card.instanceId" class="hand-card-wrap" :data-flip-id="card.instanceId" :style="fanStyle(index, cards?.length || 0)"
       :class="{ playable: playableIds?.includes(card.instanceId), selected: selectedIds?.includes(card.instanceId) }">
       <Teleport :to="landscapeTeleportTarget()" :disabled="!mobileLayout">
         <div v-if="showPlayAction && (confirmAllPlayable || card.cardType !== 'legion') && selectedIds?.includes(card.instanceId) && playableIds?.includes(card.instanceId)"
@@ -149,4 +153,6 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
 .l12-hand.mobile-layout[data-more-start="false"][data-more-end="true"]{box-shadow:inset -14px 0 12px -12px #75d5de}
 .l12-hand.mobile-layout[data-more-start="true"][data-more-end="false"]{box-shadow:inset 14px 0 12px -12px #75d5de}
 .l12-hand.mobile-layout[data-more-start="true"][data-more-end="true"]{box-shadow:inset 14px 0 12px -12px #75d5de,inset -14px 0 12px -12px #75d5de}
+.l12-hand>.hand-card-wrap,.l12-hand>.card-back{animation:l12-hand-enter var(--l12-dur-3) var(--l12-ease-standard) both;transition:transform var(--l12-dur-1) var(--l12-ease-standard),filter var(--l12-dur-1),opacity var(--l12-dur-1)}
+@keyframes l12-hand-enter{from{opacity:0;translate:0 var(--l12-dist-3)}to{opacity:1;translate:0 0}}
 </style>

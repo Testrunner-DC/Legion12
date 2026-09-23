@@ -15,7 +15,7 @@ const phases: Array<{ key: Phase; lines: string[] }> = [
     <span v-for="item in phases" :key="item.key" :class="{ active: phase === item.key }">
       <em v-for="line in item.lines" :key="line">{{ line }}</em>
     </span>
-    <span class="round"><em>TURN</em><b>{{ round }}</b></span>
+    <span class="round"><em>TURN</em><b :key="round" class="l12-swap-in">{{ round }}</b></span>
   </div>
 </template>
 

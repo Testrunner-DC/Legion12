@@ -1,0 +1,78 @@
+/* L12 motion tokens: one vocabulary for game and site feedback. */
+:root {
+  --l12-dur-1: calc(120ms * var(--l12-animation-scale, 1));
+  --l12-dur-2: calc(180ms * var(--l12-animation-scale, 1));
+  --l12-dur-3: calc(260ms * var(--l12-animation-scale, 1));
+  --l12-dur-4: calc(380ms * var(--l12-animation-scale, 1));
+  --l12-dur-5: calc(560ms * var(--l12-animation-scale, 1));
+  --l12-ease-standard: cubic-bezier(.22, 1, .36, 1);
+  --l12-ease-exit: cubic-bezier(.5, 0, .75, 0);
+  --l12-ease-pop: cubic-bezier(.34, 1.45, .64, 1);
+  --l12-dist-1: 4px;
+  --l12-dist-2: 8px;
+  --l12-dist-3: 16px;
+}
+
+.l12-pop { animation: l12-pop var(--l12-dur-3) var(--l12-ease-pop) both; }
+.l12-swap-out { animation: l12-swap-out var(--l12-dur-2) var(--l12-ease-exit) both; }
+.l12-swap-in { animation: l12-swap-in var(--l12-dur-2) var(--l12-ease-standard) both; }
+.l12-error-shake { animation: l12-error-shake calc(320ms * var(--l12-animation-scale, 1)) ease-out; }
+
+@keyframes l12-pop { from { transform: scale(.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes l12-swap-out { from { transform: translateY(0); opacity: 1; filter: blur(0); } to { transform: translateY(calc(-1 * var(--l12-dist-2))); opacity: 0; filter: blur(2px); } }
+@keyframes l12-swap-in { from { transform: translateY(var(--l12-dist-2)); opacity: 0; filter: blur(2px); } to { transform: translateY(0); opacity: 1; filter: blur(0); } }
+@keyframes l12-error-shake { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-6px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(3px); } }
+@keyframes l12-modal-in { from { transform: scale(.96) translateY(var(--l12-dist-2)); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
+@keyframes l12-modal-sheet-in { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes l12-toast-in { from { transform: translate(-50%, calc(-1 * var(--l12-dist-2))); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+@keyframes l12-site-toast-in { from { transform: translateY(var(--l12-dist-2)); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes l12-list-in { from { transform: translateY(var(--l12-dist-2)); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes l12-rest-settle { 0% { scale: 1; } 40% { scale: .94; } 100% { scale: 1; } }
+
+/* Shared interaction language. Geometry remains owned by each page. */
+.site-shell button:not(:disabled):active { transform: scale(.97); transition: transform var(--l12-dur-1) var(--l12-ease-standard); }
+.toast { animation: l12-toast-in var(--l12-dur-2) var(--l12-ease-standard) both; }
+.site-toast { animation: l12-site-toast-in var(--l12-dur-2) var(--l12-ease-standard) both; }
+.site-modal-mask { animation: l12-fade-in var(--l12-dur-2) linear both; }
+.site-modal-mask > .site-modal { animation: l12-modal-in var(--l12-dur-3) var(--l12-ease-standard) both; }
+.site-nav a { transition: background var(--l12-dur-2) linear, color var(--l12-dur-2) linear; }
+.site-nav a.router-link-active::before { transform-origin: center; animation: l12-nav-in var(--l12-dur-2) var(--l12-ease-standard) both; }
+.site-sidebar { transition-timing-function: var(--l12-ease-standard) !important; transition-duration: var(--l12-dur-3) !important; }
+.battle-settings-mask > *, .game-over { animation: l12-modal-in var(--l12-dur-3) var(--l12-ease-standard) both; }
+.l12-prompt-overlay, .graveyard-overlay, .master-overlay, .mobile-safe-overlay { animation: l12-fade-in var(--l12-dur-2) linear both; }
+.l12-prompt-overlay > .prompt-panel, .graveyard-overlay > .graveyard-window, .master-overlay > :not(button), .mobile-safe-overlay > :not(button) { animation: l12-modal-in var(--l12-dur-3) var(--l12-ease-standard) both; }
+.archive-card:nth-child(-n+12), .deck-card:nth-child(-n+12), .deck-entry-row, .online-entry { animation: l12-list-in var(--l12-dur-3) var(--l12-ease-standard) both; }
+.archive-card:nth-child(2), .deck-card:nth-child(2) { animation-delay: 25ms; }
+.archive-card:nth-child(3), .deck-card:nth-child(3) { animation-delay: 50ms; }
+.archive-card:nth-child(4), .deck-card:nth-child(4) { animation-delay: 75ms; }
+.archive-card:nth-child(5), .deck-card:nth-child(5) { animation-delay: 100ms; }
+.archive-card:nth-child(6), .deck-card:nth-child(6) { animation-delay: 125ms; }
+.archive-card:nth-child(7), .deck-card:nth-child(7) { animation-delay: 150ms; }
+.archive-card:nth-child(8), .deck-card:nth-child(8) { animation-delay: 175ms; }
+
+.formation-slot .card-tile,
+.mini-master,
+.relic-zone .card-tile { transform-origin: center; transition: transform var(--l12-dur-3) var(--l12-ease-standard); }
+.formation-slot .card-tile.tapped,
+.mini-master.tapped,
+.relic-zone .card-tile.tapped { animation: l12-rest-settle var(--l12-dur-3) var(--l12-ease-standard); }
+.l12-phase-track span { transition: background var(--l12-dur-3) var(--l12-ease-standard), color var(--l12-dur-3) linear, opacity var(--l12-dur-2) linear; }
+
+.page-fade-enter-active, .page-fade-leave-active { transition: opacity var(--l12-dur-1) linear; }
+.page-fade-enter-from, .page-fade-leave-to { opacity: 0; }
+.page-slide-enter-active { transition: opacity var(--l12-dur-3) var(--l12-ease-standard), transform var(--l12-dur-3) var(--l12-ease-standard); }
+.page-slide-leave-active { transition: opacity var(--l12-dur-2) var(--l12-ease-exit); }
+.page-slide-enter-from { opacity: 0; transform: translateX(var(--l12-dist-3)); }
+.page-slide-leave-to { opacity: 0; }
+@keyframes l12-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes l12-nav-in { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+
+@media (max-width: 700px) {
+  .site-modal-mask > .site-modal { animation-name: l12-modal-sheet-in; }
+  .site-toast { animation-name: l12-toast-in; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .l12-pop,.l12-swap-out,.l12-swap-in,.l12-error-shake,.toast,.site-toast,.site-modal-mask,.site-modal,
+  .archive-card,.deck-card,.deck-entry-row,.online-entry,.formation-slot .card-tile.tapped,.mini-master.tapped,.relic-zone .card-tile.tapped { animation-duration: .001ms !important; }
+  .page-fade-enter-active,.page-fade-leave-active,.page-slide-enter-active,.page-slide-leave-active { transition-duration: .001ms !important; }
+}

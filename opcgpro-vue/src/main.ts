@@ -1,5 +1,6 @@
 import { createApp } from 'vue'
 import './style.css'
+import './l12/motion.css'
 import './l12/site/uiSystem.css'
 import App from './App.vue'
 import { router } from './router'

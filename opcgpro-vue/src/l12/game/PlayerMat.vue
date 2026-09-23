@@ -423,7 +423,7 @@ function beginCardAbility(card: Card) {
           <CardImage v-if="topGraveyard" :card-id="topGraveyard.cardId" :legacy-url="topGraveyard.imageUrl" :alt="topGraveyard.name" intent="thumb" eager />
           <i v-else>墓</i>
         </div>
-        <b class="value-badge pile-count">{{ player.graveyard?.length ?? player.graveyardCount ?? 0 }}</b><span>墓地</span>
+        <b :key="player.graveyard?.length ?? player.graveyardCount ?? 0" class="value-badge pile-count l12-swap-in">{{ player.graveyard?.length ?? player.graveyardCount ?? 0 }}</b><span>墓地</span>
       </button>
     </div>
 
@@ -553,6 +553,9 @@ function beginCardAbility(card: Card) {
 .relic-zone{box-sizing:border-box;width:132.25px;height:185.15px;aspect-ratio:5/7;display:grid;place-items:center;overflow:hidden;container-type:size}.relic-zone :deep(.card-tile){width:127.65px;height:178.71px;flex-basis:127.65px;aspect-ratio:5/7}.relic-zone :deep(.card-tile.tapped){width:calc(100cqw * 5 / 7);height:100cqw;max-width:100cqh;max-height:100cqw;flex-basis:calc(100cqw * 5 / 7)}
 .special-lane{left:6px;width:152px;height:286px}.special-lane.visible{align-content:start}.side-opponent .special-lane{top:auto;bottom:calc(100% + 11px);align-content:end}.side-my .special-lane{left:6px;top:calc(100% + 11px);bottom:auto;width:152px;align-content:start}
 .trial-zone{flex-direction:column}.side-opponent .trial-zone{flex-direction:column-reverse}.trial-card,.side-my .trial-card{width:135.52px}
+.morale-orb{transition:filter var(--l12-dur-2),box-shadow var(--l12-dur-2),border-color var(--l12-dur-2),background var(--l12-dur-2)}
+.morale-orb.rested-morale,.morale-orb.rested-god-power{animation:l12-orb-rest var(--l12-dur-2) var(--l12-ease-standard)}
+@keyframes l12-orb-rest{0%{scale:1}45%{scale:.85}100%{scale:1}}
 </style>
 
 <style scoped>

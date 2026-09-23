@@ -84,13 +84,24 @@ function animateAttack(event: ActionEvent) {
   const dx = target.left + target.width / 2 - (source.left + source.width / 2)
   const dy = target.top + target.height / 2 - (source.top + source.height / 2)
   const distance = Math.max(1, Math.hypot(dx, dy))
-  const step = Math.min(18, distance * .09)
+  const step = Math.min(26, distance * .09)
+  const ux = dx / distance
+  const uy = dy / distance
   const animation = attacker.animate([
     { transform: 'translate3d(0,0,0)' },
-    { transform: `translate3d(${dx / distance * step}px,${dy / distance * step}px,0)`, offset: .48 },
+    { transform: `translate3d(${ux * step}px,${uy * step}px,0)`, offset: .42 },
+    { transform: `translate3d(${ux * step}px,${uy * step}px,0)`, offset: .58 },
     { transform: 'translate3d(0,0,0)' },
-  ], { duration: presentationDuration(360, 24, 80), easing: 'cubic-bezier(.25,.72,.35,1)' })
+  ], { duration: presentationDuration(360, 24, 80), easing: 'cubic-bezier(.22,1,.36,1)' })
   remember(animation)
+  if (targetElement instanceof HTMLElement) {
+    const impact = targetElement.animate([
+      { transform: 'translate3d(0,0,0)', filter: 'brightness(1)' },
+      { transform: `translate3d(${-ux * 4}px,${-uy * 4}px,0)`, filter: 'brightness(1.28)', offset: .5 },
+      { transform: 'translate3d(0,0,0)', filter: 'brightness(1)' },
+    ], { duration: presentationDuration(240, 24, 80), delay: presentationDuration(120, 0, 20), easing: 'ease-out' })
+    remember(impact)
+  }
 }
 
 function animatePowerBadge(element: HTMLElement) {

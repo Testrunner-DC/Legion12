@@ -191,9 +191,10 @@ function resolveRect(zone: Zone, playerIndex: number, instanceId?: string) {
 }
 
 function movementDuration(movement: Movement) {
-  if (!movement.sourceGhost) return replayDuration(440, 180, 100)
+  const queueScale = queue.length >= 2 ? .8 : 1
+  if (!movement.sourceGhost) return Math.round(replayDuration(440, 180, 100) * queueScale)
   const distance = Math.hypot(movement.toRect.x - movement.fromRect.x, movement.toRect.y - movement.fromRect.y)
-  return replayDuration(Math.round(Math.min(500, Math.max(340, 320 + distance * .16))), 180, 100)
+  return Math.round(replayDuration(Math.round(Math.min(500, Math.max(340, 320 + distance * .16))), 180, 100) * queueScale)
 }
 
 const motionStyle = computed(() => {
@@ -279,11 +280,15 @@ function showNext() {
     const dy = target.y - source.y
     const scaleX = Math.max(.45, Math.min(1.8, target.width / Math.max(1, source.width)))
     const scaleY = Math.max(.45, Math.min(1.8, target.height / Math.max(1, source.height)))
+    const lift = -Math.min(40, Math.hypot(dx, dy) * .08)
+    const tilt = Math.max(-3, Math.min(3, dx * .01))
     const duration = movementDuration(active.value)
     activeGhostAnimation = wrapper.animate([
-      { transform: 'translate3d(0,0,0) scale(1)', opacity: 1 },
-      { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX},${scaleY})`, opacity: 1 },
-    ], { duration, easing: 'cubic-bezier(.24,.72,.28,1)', fill: 'forwards' })
+      { transform: 'translate3d(0,0,0) scale(1) rotate(0deg)', opacity: 1 },
+      { transform: `translate3d(${dx / 2}px,${dy / 2 + lift}px,0) scale(${(1 + scaleX) / 2},${(1 + scaleY) / 2}) rotate(${tilt}deg)`, opacity: 1, offset: .5 },
+      { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX * 1.04},${scaleY * 1.04}) rotate(0deg)`, opacity: 1, offset: .85 },
+      { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX},${scaleY}) rotate(0deg)`, opacity: 1 },
+    ], { duration, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' })
     activeGhostAnimation.onfinish = finish
     activeGhostAnimation.oncancel = () => {
       activeGhostWrapper?.remove()
@@ -414,11 +419,11 @@ onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewpo
 </template>
 
 <style scoped>
-.zone-card-movement{position:fixed;z-index:2147482988;left:0;top:0;width:0;height:0;pointer-events:none}.moving-card{position:absolute;width:72px;height:101px;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0);animation:l12-zone-card-flight var(--move-duration,.44s) cubic-bezier(.24,.72,.28,1) both;filter:drop-shadow(0 8px 10px rgba(0,0,0,.72));will-change:transform,opacity}.moving-card>img,.moving-card :deep(.l12-card-image){width:100%;height:100%;object-fit:contain}.moving-card.concealed>img{object-fit:cover;border:1px solid #d6c488}
+.zone-card-movement{position:fixed;z-index:2147482988;left:0;top:0;width:0;height:0;pointer-events:none}.moving-card{position:absolute;width:72px;height:101px;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0);animation:l12-zone-card-flight var(--move-duration,.44s) var(--l12-ease-standard) both;filter:drop-shadow(0 8px 10px rgba(0,0,0,.72));will-change:transform,opacity}.moving-card>img,.moving-card :deep(.l12-card-image){width:100%;height:100%;object-fit:contain}.moving-card.concealed>img{object-fit:cover;border:1px solid #d6c488}
 .moving-card.covered:not(.concealed){filter:grayscale(.45) brightness(.72) drop-shadow(0 12px 14px #000)}
 .movement-caption{position:absolute;z-index:2;left:50%;bottom:calc(100% + 7px);width:max-content;max-width:240px;transform:translateX(-50%);padding:3px 7px;border:1px solid #8cc6d2;background:rgba(7,16,20,.94);color:#eef6f5;font-size:12px;line-height:1.35;text-align:center;white-space:normal;overflow-wrap:anywhere}
 .disaster-reveal-card{position:relative;display:block;width:100%;height:100%;perspective:800px;transform-style:preserve-3d}.disaster-reveal-card>img{position:absolute;inset:0;width:100%;height:100%;backface-visibility:hidden}.disaster-reveal-back{object-fit:cover;animation:l12-disaster-card-back var(--move-duration,.44s) ease-in both}.disaster-reveal-front{animation:l12-disaster-card-front var(--move-duration,.44s) ease-out both}
-@keyframes l12-zone-card-flight{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale))}}
+@keyframes l12-zone-card-flight{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale))}85%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(calc(var(--move-to-scale) * 1.04))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale))}}
 @keyframes l12-disaster-card-back{0%,42%{opacity:1;transform:rotateY(0)}58%,100%{opacity:0;transform:rotateY(90deg)}}
 @keyframes l12-disaster-card-front{0%,42%{opacity:0;transform:rotateY(-90deg)}58%,100%{opacity:1;transform:rotateY(0)}}
 @media(max-width:700px){.moving-card{width:56px;height:79px}.moving-card small{bottom:-18px;font-size:var(--l12-board-copy,13px)}}

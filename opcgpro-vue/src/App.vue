@@ -89,12 +89,12 @@ watch(() => [platformState.token, authState.verified] as const, ([token, verifie
 <template>
   <div id="l12-landscape-teleports" />
   <div v-if="landscapeExperience" class="l12-landscape-surface" data-l12-landscape-canvas>
-    <router-view v-if="immersive" />
-    <SiteShell v-else><router-view /></SiteShell>
+    <router-view v-if="immersive" v-slot="{ Component, route: viewRoute }"><Transition name="page-fade" mode="out-in"><component :is="Component" :key="viewRoute.path" /></Transition></router-view>
+    <SiteShell v-else><router-view v-slot="{ Component, route: viewRoute }"><Transition name="page-slide" mode="out-in"><component :is="Component" :key="viewRoute.path" /></Transition></router-view></SiteShell>
   </div>
   <template v-else>
-    <router-view v-if="immersive" />
-    <SiteShell v-else><router-view /></SiteShell>
+    <router-view v-if="immersive" v-slot="{ Component, route: viewRoute }"><Transition name="page-fade" mode="out-in"><component :is="Component" :key="viewRoute.path" /></Transition></router-view>
+    <SiteShell v-else><router-view v-slot="{ Component, route: viewRoute }"><Transition name="page-slide" mode="out-in"><component :is="Component" :key="viewRoute.path" /></Transition></router-view></SiteShell>
   </template>
   <GlobalBugFeedback />
   <FriendRequestNotifications />
@@ -130,7 +130,5 @@ watch(() => [platformState.token, authState.verified] as const, ([token, verifie
 :root[data-l12-card-size="small"] .formation-slot .card-tile{width:70px;height:98px;flex-basis:70px}
 :root[data-l12-card-size="medium"] .formation-slot .card-tile{width:82px;height:115px;flex-basis:82px}
 :root[data-l12-card-size="large"] .formation-slot .card-tile{width:92px;height:129px;flex-basis:92px}
-:root[data-l12-animation="fast"] *{--l12-motion-duration:.55s}
-:root[data-l12-animation="off"] *{--l12-motion-duration:0s}
 :root[data-l12-animation="off"] *:not([data-essential-motion]){animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
 </style>
