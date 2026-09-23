@@ -72,6 +72,7 @@ const gmPanel = read('../src/l12/game/GmPanel.vue')
 const sandboxPicker = read('../src/l12/game/SandboxCardPicker.vue')
 const l12Net = read('../src/l12/net.ts')
 const adminPage = read('../src/l12/site/AdminPage.vue')
+const adminAlternateArts = read('../src/l12/site/AdminAlternateArtsPanel.vue')
 const adminArticles = read('../src/l12/site/AdminArticlesPanel.vue')
 const adminSiteContent = read('../src/l12/site/AdminSiteContentPanel.vue')
 const mediaUploadField = read('../src/l12/site/MediaUploadField.vue')
@@ -1518,6 +1519,22 @@ contracts.push(
     && prompt.includes("'decline', 'cancel'")
     && prompt.includes("id === 'cancel' && p.data?.allowCancel === 'true'"),
     '打出前支付取消必须复用既有支付控制条与Prompt底部次级按钮，且取消值不得混入资源或卡牌选择'],
+  [adminAlternateArts.includes('查看已登记异画')
+    && adminAlternateArts.includes('adminApi.searchAlternateArts')
+    && adminAlternateArts.includes('registryFilters.baseCard')
+    && adminAlternateArts.includes('pageSize: registry.value.pageSize')
+    && !/async function load\(\)[\s\S]*?Promise\.all\(\[\s*adminApi\.alternateArts\(/.test(adminAlternateArts),
+    '异画后台初始加载不得拉取全量登记表，必须通过弹框按名称、编号、绑定卡查询并分页'],
+  [shell.includes('alternateArtApi.notifications()')
+    && shell.includes('alternateArtApi.acknowledgeNotification')
+    && shell.includes('“{{ currentAlternateArtNotification.reason }}”收到“{{ currentAlternateArtNotification.displayName }}·{{ currentAlternateArtNotification.artCode }}”的使用权')
+    && profilePage.includes('<h2>我的异画</h2>') && profilePage.includes('获得时间：')
+    && !profilePage.includes('<h2>数据与工具</h2>'),
+    '异画权益必须持久提示，个人页展示名称、编号、对应原画和获得时间，并完全移除数据与工具板块'],
+  [deckEditor.includes('alternateArtCopies') && deckEditor.includes('addAppearance(entry)')
+    && deckEditor.includes('removeAppearance(entry)') && deckEditor.includes('原画与异画合计最多')
+    && deckEditor.includes("entry.art?.artCode || entry.card.number"),
+    '牌库编辑器必须把已拥有异画与原画平行展示，以同一规则卡编号共享数量上限并保存逐副本卡图'],
 )
 
 const failures = contracts.filter(([ok]) => !ok).map(([, message]) => message)

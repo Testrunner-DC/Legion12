@@ -1975,6 +1975,18 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var account = _platform.Authenticate(request.Headers.Authorization);
             return account is null ? Results.Unauthorized() : Results.Ok(_platform.OwnedAlternateArts(account.Id));
         });
+        _app.MapGet("/api/me/alternate-art-grant-notifications", (HttpRequest request) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            return account is null ? Results.Unauthorized() : Results.Ok(_platform.PendingAlternateArtGrantNotifications(account.Id));
+        });
+        _app.MapPost("/api/me/alternate-art-grant-notifications/{id}/acknowledge", (HttpRequest request, string id) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            try { _platform.AcknowledgeAlternateArtGrantNotification(account.Id, id); return Results.NoContent(); }
+            catch (KeyNotFoundException error) { return ApiError(request, "alternate_art_grant_notification_missing", error.Message, StatusCodes.Status404NotFound); }
+        });
         // 画廊是公开展示；权益只在构筑选用和开局二次校验时生效。
         _app.MapGet("/api/alternate-arts", () => Results.Ok(_platform.AlternateArts()));
         _app.MapGet("/api/admin/alternate-art-products", (HttpRequest request, bool? includeInactive) =>
@@ -1993,6 +2005,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
             return Results.Ok(_platform.AlternateArts(includeInactive == true));
+        });
+        _app.MapGet("/api/admin/alternate-arts/search", (HttpRequest request, string? name, string? artCode,
+            string? baseCard, int? page, int? pageSize, bool? includeInactive) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            return Results.Ok(_platform.SearchAlternateArts(name, artCode, baseCard, page ?? 1, pageSize ?? 20,
+                includeInactive != false));
         });
         _app.MapGet("/api/admin/server-storage", (HttpRequest request) =>
         {

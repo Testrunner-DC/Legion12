@@ -2,7 +2,12 @@ namespace TwelveLegions.Server;
 
 public sealed record L12AlternateArtView(string Id, string ArtCode, string BaseCardId, string DisplayName, string MediaAssetId,
     string ImageUrl, string ThumbnailUrl, bool Active, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
-    string ProductId = "", string ProductName = "", string CardImageId = "", bool BuiltIn = false);
+    string ProductId = "", string ProductName = "", string CardImageId = "", bool BuiltIn = false,
+    string BaseCardName = "", DateTimeOffset? GrantedAt = null, string GrantReason = "");
+public sealed record L12AlternateArtSearchPage(IReadOnlyList<L12AlternateArtView> Items, int Total, int Page, int PageSize);
+public sealed record L12AlternateArtGrantNotificationView(string Id, string AlternateArtId, string DisplayName,
+    string ArtCode, string BaseCardId, string BaseCardName, string Reason, DateTimeOffset GrantedAt,
+    string ImageUrl, string ThumbnailUrl, string CardImageId, bool BuiltIn);
 public sealed record L12AlternateArtProductView(string Id, string Name, bool Active,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 public sealed record L12AlternateArtGrantView(string Id, string AccountId, string Username, string AlternateArtId,
@@ -65,16 +70,79 @@ public sealed partial class L12PlatformStore
             .OrderBy(row => row.ArtCode, StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
+    public L12AlternateArtSearchPage SearchAlternateArts(string? name, string? artCode, string? baseCard,
+        int page = 1, int pageSize = 20, bool includeInactive = true)
+    {
+        lock (_gate)
+        {
+            page = Math.Max(1, page);
+            pageSize = Math.Clamp(pageSize, 1, 100);
+            var nameTerm = LimitSiteText(name, 100);
+            var codeTerm = LimitSiteText(artCode, 80);
+            var baseTerm = LimitSiteText(baseCard, 100);
+            var query = _officialAlternateArts.Values.Select(ToAlternateArtView)
+                .Concat(_data.AlternateArts.Where(row => includeInactive || row.Active).Select(ToAlternateArtView));
+            if (!string.IsNullOrWhiteSpace(nameTerm))
+                query = query.Where(row => row.DisplayName.Contains(nameTerm, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(codeTerm))
+                query = query.Where(row => row.ArtCode.Contains(codeTerm, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(baseTerm))
+                query = query.Where(row => row.BaseCardId.Contains(baseTerm, StringComparison.OrdinalIgnoreCase)
+                    || row.BaseCardName.Contains(baseTerm, StringComparison.OrdinalIgnoreCase));
+            var ordered = query.OrderBy(row => row.ArtCode, StringComparer.OrdinalIgnoreCase).ToArray();
+            return new L12AlternateArtSearchPage(ordered.Skip((page - 1) * pageSize).Take(pageSize).ToArray(),
+                ordered.Length, page, pageSize);
+        }
+    }
+
     public IReadOnlyList<L12AlternateArtView> OwnedAlternateArts(string accountId)
     {
         lock (_gate)
         {
-            var ownedIds = _data.AlternateArtGrants.Where(row => row.AccountId == accountId && row.RevokedAt is null)
-                .Select(row => row.AlternateArtId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var grants = _data.AlternateArtGrants.Where(row => row.AccountId == accountId && row.RevokedAt is null)
+                .GroupBy(row => row.AlternateArtId, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.OrderBy(row => row.GrantedAt).First(),
+                    StringComparer.OrdinalIgnoreCase);
             return _officialAlternateArts.Values.Select(ToAlternateArtView)
                 .Concat(_data.AlternateArts.Where(row => row.Active).Select(ToAlternateArtView))
-                .Where(row => ownedIds.Contains(row.Id))
+                .Where(row => grants.ContainsKey(row.Id))
+                .Select(row => row with
+                {
+                    GrantedAt = grants[row.Id].GrantedAt,
+                    GrantReason = AlternateArtGrantReason(grants[row.Id]),
+                })
                 .OrderBy(row => row.ArtCode, StringComparer.OrdinalIgnoreCase).ToArray();
+        }
+    }
+
+    public IReadOnlyList<L12AlternateArtGrantNotificationView> PendingAlternateArtGrantNotifications(string accountId)
+    {
+        lock (_gate)
+        {
+            return _data.AlternateArtGrants.Where(row => row.AccountId == accountId && row.RevokedAt is null
+                    && row.NotificationSeenAt is null)
+                .OrderBy(row => row.GrantedAt).Take(20)
+                .Select(row =>
+                {
+                    var art = FindActiveAlternateArtLocked(row.AlternateArtId);
+                    return art is null ? null : new L12AlternateArtGrantNotificationView(row.Id, art.Id,
+                        art.DisplayName, art.ArtCode, art.BaseCardId, art.BaseCardName, AlternateArtGrantReason(row),
+                        row.GrantedAt, art.ImageUrl, art.ThumbnailUrl, art.CardImageId, art.BuiltIn);
+                })
+                .Where(row => row is not null).Cast<L12AlternateArtGrantNotificationView>().ToArray();
+        }
+    }
+
+    public void AcknowledgeAlternateArtGrantNotification(string accountId, string grantId)
+    {
+        lock (_gate)
+        {
+            var row = _data.AlternateArtGrants.FirstOrDefault(item => item.Id == grantId
+                && item.AccountId == accountId && item.RevokedAt is null)
+                ?? throw new KeyNotFoundException("异画权益提示不存在");
+            if (row.NotificationSeenAt is not null) return;
+            row.NotificationSeenAt = DateTimeOffset.UtcNow;
+            Save();
         }
     }
 
@@ -149,6 +217,7 @@ public sealed partial class L12PlatformStore
             row.SourceKind = source;
             row.SourceReference = reference;
             row.GrantedAt = DateTimeOffset.UtcNow;
+            row.NotificationSeenAt = null;
             row.RevokedAt = null;
             row.RevokedByAccountId = null;
             var view = ToAlternateArtGrantView(row);
@@ -359,15 +428,18 @@ public sealed partial class L12PlatformStore
     }
 
     internal IReadOnlyDictionary<string, string> ResolveOwnedAlternateArtUrls(string? accountId,
-        IReadOnlyDictionary<string, string>? selections)
+        IReadOnlyDictionary<string, string>? selections,
+        IReadOnlyDictionary<string, List<string>>? copies = null)
     {
-        if (string.IsNullOrWhiteSpace(accountId) || selections is null || selections.Count == 0) return new Dictionary<string, string>();
+        if (string.IsNullOrWhiteSpace(accountId)
+            || ((selections is null || selections.Count == 0) && (copies is null || copies.Count == 0)))
+            return new Dictionary<string, string>();
         lock (_gate)
         {
             var owned = _data.AlternateArtGrants.Where(row => row.AccountId == accountId && row.RevokedAt is null)
                 .Select(row => row.AlternateArtId).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var selection in selections.Take(128))
+            foreach (var selection in (selections ?? new Dictionary<string, string>()).Take(128))
             {
                 var art = FindActiveAlternateArtLocked(selection.Value);
                 if (art is not null && owned.Contains(art.Id)
@@ -375,6 +447,20 @@ public sealed partial class L12PlatformStore
                     result[art.BaseCardId] = art.BuiltIn
                         ? $"l12-card-id:{art.CardImageId}"
                         : SiteMediaUrl(art.MediaAssetId);
+            }
+            foreach (var group in (copies ?? new Dictionary<string, List<string>>()).Take(128))
+            {
+                for (var index = 0; index < group.Value.Count && index < 50; index++)
+                {
+                    var artId = group.Value[index];
+                    if (string.IsNullOrWhiteSpace(artId)) continue;
+                    var art = FindActiveAlternateArtLocked(artId);
+                    if (art is null || !owned.Contains(art.Id)
+                        || !string.Equals(art.BaseCardId, group.Key, StringComparison.OrdinalIgnoreCase)) continue;
+                    result[$"{art.BaseCardId}#{index + 1}"] = art.BuiltIn
+                        ? $"l12-card-id:{art.CardImageId}"
+                        : SiteMediaUrl(art.MediaAssetId);
+                }
             }
             return result;
         }
@@ -400,13 +486,42 @@ public sealed partial class L12PlatformStore
         return result;
     }
 
+    private Dictionary<string, List<string>> SanitizeOwnedAlternateArtCopies(string accountId,
+        IReadOnlyList<string> cardIds, IReadOnlyDictionary<string, List<string>>? copies)
+    {
+        if (copies is null || copies.Count == 0) return new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var owned = _data.AlternateArtGrants.Where(row => row.AccountId == accountId && row.RevokedAt is null)
+            .Select(row => row.AlternateArtId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var cardCounts = cardIds.GroupBy(id => id, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var group in copies.Take(128))
+        {
+            var cardId = group.Key?.Trim() ?? string.Empty;
+            if (!cardCounts.TryGetValue(cardId, out var count) || group.Value is null) continue;
+            var normalized = group.Value.Take(Math.Min(50, count)).Select(value =>
+            {
+                var artId = value?.Trim() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(artId)) return string.Empty;
+                var art = FindActiveAlternateArtLocked(artId);
+                return art is not null && owned.Contains(art.Id)
+                    && string.Equals(art.BaseCardId, cardId, StringComparison.OrdinalIgnoreCase) ? art.Id : string.Empty;
+            }).ToList();
+            while (normalized.Count < count) normalized.Add(string.Empty);
+            if (normalized.Any(value => !string.IsNullOrWhiteSpace(value))) result[cardId] = normalized;
+        }
+        return result;
+    }
+
     private L12AlternateArtView ToAlternateArtView(AlternateArtRow row) => new(row.Id, row.ArtCode, row.BaseCardId, row.DisplayName,
         row.MediaAssetId, SiteMediaUrl(row.MediaAssetId), SiteMediaUrl(row.MediaAssetId, "thumbnail"), row.Active,
         row.CreatedAt, row.UpdatedAt, row.ProductId,
-        _data.AlternateArtProducts.FirstOrDefault(item => item.Id == row.ProductId)?.Name ?? "");
-    private static L12AlternateArtView ToAlternateArtView(L12OfficialAlternateArtDefinition row)
+        _data.AlternateArtProducts.FirstOrDefault(item => item.Id == row.ProductId)?.Name ?? "", "", false,
+        _officialCards.TryGetValue(row.BaseCardId, out var baseCard) ? baseCard.NameZh : row.BaseCardId);
+    private L12AlternateArtView ToAlternateArtView(L12OfficialAlternateArtDefinition row)
         => new(row.Id, row.ArtCode, row.BaseCardId, row.DisplayName, "", "", "", true,
-            DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, "", row.ProductName, row.CardImageId, true);
+            DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, "", row.ProductName, row.CardImageId, true,
+            _officialCards.TryGetValue(row.BaseCardId, out var baseCard) ? baseCard.NameZh : row.BaseCardId);
     private L12AlternateArtView? FindAlternateArtLocked(string alternateArtId)
     {
         if (_officialAlternateArts.TryGetValue(alternateArtId, out var official))
@@ -426,6 +541,20 @@ public sealed partial class L12PlatformStore
     private L12AlternateArtGrantView ToAlternateArtGrantView(AlternateArtGrantRow row)
         => new(row.Id, row.AccountId, _data.Accounts.FirstOrDefault(account => account.Id == row.AccountId)?.Username ?? "已删除账号",
             row.AlternateArtId, row.SourceKind, row.SourceReference, row.GrantedAt, row.RevokedAt);
+
+    private static string AlternateArtGrantReason(AlternateArtGrantRow row)
+    {
+        var label = row.SourceKind switch
+        {
+            "rank-reached" => "赛季达到段位",
+            "season-final" => "赛季结算",
+            "master-champion-season-final" => "赛季最强主宰",
+            "event" => "活动派发",
+            "ranked-participants" => "赛季排位参与",
+            _ => "管理员派发",
+        };
+        return string.IsNullOrWhiteSpace(row.SourceReference) ? label : $"{label}（{row.SourceReference}）";
+    }
 
     private static L12AlternateArtAwardRuleView ToAlternateArtAwardRuleView(AlternateArtAwardRuleRow row)
         => new(row.Id, row.AlternateArtId, row.Kind, row.SeasonId, row.EventId, row.MinimumTierIndex,

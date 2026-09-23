@@ -25,7 +25,8 @@ public sealed record L12SessionRevocationResult(bool Found, string? SessionId, i
     bool AlreadyRevoked, IReadOnlyList<string> RevokedSessionIds);
 public sealed record L12AccountDeckView(string Name, string MasterId, IReadOnlyList<string> CardIds,
     IReadOnlyList<string> MoraleIds, IReadOnlyList<string> SpecialIds, DateTimeOffset UpdatedAt,
-    IReadOnlyDictionary<string, string>? AlternateArtSelections = null);
+    IReadOnlyDictionary<string, string>? AlternateArtSelections = null,
+    IReadOnlyDictionary<string, IReadOnlyList<string>>? AlternateArtCopies = null);
 public sealed record L12PublishedDeckView(string Id, string OwnerId, string Author, L12AccountDeckView Deck,
     int Views, int Likes, int Copies, bool Liked, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
     bool SeasonCompliant = true, string? SeasonComplianceReason = null);
@@ -213,6 +214,7 @@ public sealed partial class L12PlatformStore
         public List<string> MoraleIds { get; set; } = [];
         public List<string> SpecialIds { get; set; } = [];
         public Dictionary<string, string> AlternateArtSelections { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, List<string>> AlternateArtCopies { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
 
@@ -339,6 +341,7 @@ public sealed partial class L12PlatformStore
         public string SourceReference { get; set; } = string.Empty;
         public string GrantedByAccountId { get; set; } = string.Empty;
         public DateTimeOffset GrantedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset? NotificationSeenAt { get; set; }
         public DateTimeOffset? RevokedAt { get; set; }
         public string? RevokedByAccountId { get; set; }
     }
@@ -810,6 +813,7 @@ public sealed partial class L12PlatformStore
             row.MoraleIds = deck.MoraleIds.ToList();
             row.SpecialIds = deck.SpecialIds.ToList();
             row.AlternateArtSelections = SanitizeOwnedAlternateArtSelections(accountId, deck.AlternateArtSelections);
+            row.AlternateArtCopies = SanitizeOwnedAlternateArtCopies(accountId, deck.CardIds, deck.AlternateArtCopies);
             row.UpdatedAt = DateTimeOffset.UtcNow;
             Save();
             return ToView(row);
@@ -1488,7 +1492,9 @@ public sealed partial class L12PlatformStore
             || (row.RequesterId == secondAccountId && row.AddresseeId == firstAccountId));
     private static L12AccountDeckView ToView(DeckRow row) => new(row.Name, row.MasterId, row.CardIds.ToArray(),
         row.MoraleIds.ToArray(), row.SpecialIds.ToArray(), row.UpdatedAt,
-        new Dictionary<string, string>(row.AlternateArtSelections ?? [], StringComparer.OrdinalIgnoreCase));
+        new Dictionary<string, string>(row.AlternateArtSelections ?? [], StringComparer.OrdinalIgnoreCase),
+        (row.AlternateArtCopies ?? []).ToDictionary(item => item.Key,
+            item => (IReadOnlyList<string>)item.Value.ToArray(), StringComparer.OrdinalIgnoreCase));
     private L12PublishedDeckView ToView(PublishedDeckRow row, string? viewerAccountId)
     {
         var owner = _data.Accounts.FirstOrDefault(account => account.Id == row.OwnerId);

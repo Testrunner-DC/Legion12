@@ -181,7 +181,9 @@ export interface AdminAnalyticsCoverage {
   exactDeckSnapshots: number; inferredDeckSnapshots: number; privateDuringActiveMatch: boolean
   metrics: AdminAnalyticsMetricCoverage[]; limitations: string[]
 }
-export interface AlternateArt { id: string; artCode: string; baseCardId: string; displayName: string; mediaAssetId: string; imageUrl: string; thumbnailUrl: string; active: boolean; createdAt: string; updatedAt: string; productId?: string; productName?: string; cardImageId?: string; builtIn?: boolean }
+export interface AlternateArt { id: string; artCode: string; baseCardId: string; displayName: string; mediaAssetId: string; imageUrl: string; thumbnailUrl: string; active: boolean; createdAt: string; updatedAt: string; productId?: string; productName?: string; cardImageId?: string; builtIn?: boolean; baseCardName?: string; grantedAt?: string; grantReason?: string }
+export interface AlternateArtSearchPage { items: AlternateArt[]; total: number; page: number; pageSize: number }
+export interface AlternateArtGrantNotification { id: string; alternateArtId: string; displayName: string; artCode: string; baseCardId: string; baseCardName: string; reason: string; grantedAt: string; imageUrl: string; thumbnailUrl: string; cardImageId: string; builtIn: boolean }
 export interface AlternateArtProduct { id: string; name: string; active: boolean; createdAt: string; updatedAt: string }
 export interface AlternateArtRankedParticipantDispatchPreview { eligibleAccounts: number; alreadyGranted: number; toGrant: number; sourceReference: string; seasonId: string }
 export interface ServerStorageVolume { mountPoint: string; totalBytes: number; usedBytes: number; freeBytes: number }
@@ -907,6 +909,16 @@ export const adminApi = {
   uploadSiteMedia: (form: FormData) => platformRequest<SiteMedia>('/api/admin/site/media', { method: 'POST', body: form }),
   deleteSiteMedia: (id: string) => platformRequest<void>(`/api/admin/site/media/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   alternateArts: (includeInactive = true) => platformRequest<AlternateArt[]>(`/api/admin/alternate-arts?includeInactive=${includeInactive}`),
+  searchAlternateArts: (query: { name?: string; artCode?: string; baseCard?: string; page?: number; pageSize?: number; includeInactive?: boolean } = {}) => {
+    const params = new URLSearchParams()
+    if (query.name) params.set('name', query.name)
+    if (query.artCode) params.set('artCode', query.artCode)
+    if (query.baseCard) params.set('baseCard', query.baseCard)
+    params.set('page', String(query.page ?? 1))
+    params.set('pageSize', String(query.pageSize ?? 20))
+    params.set('includeInactive', String(query.includeInactive ?? true))
+    return platformRequest<AlternateArtSearchPage>(`/api/admin/alternate-arts/search?${params}`)
+  },
   serverStorage: () => platformRequest<ServerStorageStatus>('/api/admin/server-storage', { cache: 'no-store' }),
   alternateArtProducts: (includeInactive = true) => platformRequest<AlternateArtProduct[]>(`/api/admin/alternate-art-products?includeInactive=${includeInactive}`),
   saveAlternateArtProduct: (draft: Partial<AlternateArtProduct> & Pick<AlternateArtProduct, 'name'>) => platformRequest<AlternateArtProduct>('/api/admin/alternate-art-products', { method: 'PUT', body: JSON.stringify(draft) }),
@@ -1127,6 +1139,8 @@ export const friendApi = {
 export const alternateArtApi = {
   mine: () => platformRequest<AlternateArt[]>('/api/me/alternate-arts'),
   gallery: () => platformRequest<AlternateArt[]>('/api/alternate-arts'),
+  notifications: () => platformRequest<AlternateArtGrantNotification[]>('/api/me/alternate-art-grant-notifications'),
+  acknowledgeNotification: (id: string) => platformRequest<void>(`/api/me/alternate-art-grant-notifications/${encodeURIComponent(id)}/acknowledge`, { method: 'POST' }),
 }
 
 export const publicDeckApi = {

@@ -111,6 +111,105 @@ public sealed class SiteContentPlatformStoreTests
     }
 
     [Fact]
+    public void AlternateArtRegistrySearchIsFilteredAndPagedWithoutLoadingTheFullRegistry()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-alternate-art-search-{Guid.NewGuid():N}");
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts);
+            var expected = store.AlternateArts().First();
+
+            var byCode = store.SearchAlternateArts(null, expected.ArtCode, null, page: 1, pageSize: 5);
+            Assert.Equal(1, byCode.Page);
+            Assert.InRange(byCode.Items.Count, 1, 5);
+            Assert.Contains(byCode.Items, item => item.Id == expected.Id);
+
+            var byBaseCard = store.SearchAlternateArts(null, null, expected.BaseCardName, page: 1, pageSize: 5);
+            Assert.Contains(byBaseCard.Items, item => item.Id == expected.Id);
+            Assert.True(store.SearchAlternateArts(null, null, null, page: 2, pageSize: 5).Total > 5);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void AlternateArtGrantNotificationPersistsUntilAcknowledgedAndOwnedViewHasGrantFacts()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-alternate-art-notification-{Guid.NewGuid():N}");
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var player = store.Register("notify" + Guid.NewGuid().ToString("N")[..5], "Password123!").Account!;
+            var art = store.AlternateArts().First();
+            var grant = store.GrantAlternateArt(admin, new(art.Id, player.Username, "event", "测试活动"));
+
+            var notification = Assert.Single(store.PendingAlternateArtGrantNotifications(player.Id));
+            Assert.Equal(grant.Id, notification.Id);
+            Assert.Equal(art.ArtCode, notification.ArtCode);
+            Assert.Contains("测试活动", notification.Reason);
+            var owned = Assert.Single(store.OwnedAlternateArts(player.Id), item => item.Id == art.Id);
+            Assert.NotNull(owned.GrantedAt);
+            Assert.False(string.IsNullOrWhiteSpace(owned.BaseCardName));
+
+            var reloaded = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts);
+            Assert.Single(reloaded.PendingAlternateArtGrantNotifications(player.Id));
+            reloaded.AcknowledgeAlternateArtGrantNotification(player.Id, grant.Id);
+            Assert.Empty(reloaded.PendingAlternateArtGrantNotifications(player.Id));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void AlternateArtCopiesShareTheBaseCardCountAndResolvePerCopy()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-alternate-art-copies-{Guid.NewGuid():N}");
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var player = store.Register("copies" + Guid.NewGuid().ToString("N")[..5], "Password123!").Account!;
+            var art = store.AlternateArts().First();
+            store.GrantAlternateArt(admin, new(art.Id, player.Username, "manual", "混搭测试"));
+            var preset = catalog.PresetDecks[0];
+            var deck = new L12PresetDeckDefinition
+            {
+                Name = "原画异画混搭",
+                MasterId = preset.MasterId,
+                CardIds = [art.BaseCardId, art.BaseCardId],
+                MoraleIds = preset.MoraleIds.ToList(),
+                SpecialIds = preset.SpecialIds.ToList(),
+                AlternateArtCopies = new(StringComparer.OrdinalIgnoreCase)
+                {
+                    [art.BaseCardId] = [art.Id, string.Empty],
+                },
+            };
+
+            var saved = store.UpsertDeck(player.Id, deck);
+            Assert.Equal([art.Id, string.Empty], saved.AlternateArtCopies![art.BaseCardId]);
+            var urls = store.ResolveOwnedAlternateArtUrls(player.Id, null, deck.AlternateArtCopies);
+            Assert.True(urls.ContainsKey($"{art.BaseCardId}#1"));
+            Assert.False(urls.ContainsKey($"{art.BaseCardId}#2"));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void RuleRulingsPublishOnlyStructuredConfirmedEntries()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-rule-rulings-{Guid.NewGuid():N}");
