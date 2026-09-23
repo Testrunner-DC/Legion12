@@ -64,7 +64,8 @@ function Remove-DuplicateTestrunFiles {
         $sharedPaths.Add($relativePath)
     }
     $sharedPaths.Sort([StringComparer]::Ordinal)
-    [IO.File]::WriteAllLines($ManifestPath, $sharedPaths, [Text.UTF8Encoding]::new($false))
+    $manifestText = if ($sharedPaths.Count -eq 0) { "" } else { ($sharedPaths -join "`n") + "`n" }
+    [IO.File]::WriteAllText($ManifestPath, $manifestText, [Text.UTF8Encoding]::new($false))
     Write-Host "[L12 验证] 测试前端复用正式前端静态文件：$($sharedPaths.Count) 个"
 }
 

@@ -282,6 +282,7 @@ tar --no-same-owner --no-same-permissions -xzf "$release_archive" -C "$stage_dir
 [[ ! -e "${stage_dir}/opcgpro-vue/dist/cards" && ! -L "${stage_dir}/opcgpro-vue/dist/cards" ]] || fail "release archive contains retired card data"
 
 while IFS= read -r shared_path || [[ -n "$shared_path" ]]; do
+  shared_path="${shared_path%$'\r'}"
   [[ -n "$shared_path" && "$shared_path" != /* && "/${shared_path}/" != *"/../"* && "/${shared_path}/" != *"/./"* ]] \
     || fail "testrun shared-file manifest contains an unsafe path"
   shared_source="${stage_dir}/opcgpro-vue/dist/${shared_path}"
