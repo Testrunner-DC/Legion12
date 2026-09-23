@@ -21,6 +21,7 @@ type Movement = {
   sourceGhost?: HTMLElement
   preparedImageUrl?: string
   disasterReveal?: boolean
+  caption?: string
 }
 
 const props = withDefaults(defineProps<{
@@ -94,6 +95,16 @@ function isMovementIdentityConcealed(event: ActionEvent, card?: Card) {
   return card.hidden === true && card.identityKnown !== true
 }
 
+function publicHandAddCaption(event: ActionEvent, card: Card) {
+  const otherPublicCard = (event.cards ?? []).find(candidate => candidate !== card && !candidate.hidden && candidate.name)
+  const namedSources = [...`${event.text} ${event.effectText ?? ''}`.matchAll(/〈([^〉]+)〉/g)]
+    .map(match => match[1])
+    .filter(name => name !== card.name)
+  const plainSource = event.text.match(/^([^〈〉：]{1,24}?)(?:展示|确认|将)/)?.[1]?.trim()
+  const source = otherPublicCard?.name ?? namedSources[0] ?? plainSource
+  return source ? `〈${card.name}〉因〈${source}〉加入手牌` : `〈${card.name}〉加入手牌`
+}
+
 function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: AnchorRect): Movement | null {
   // Combat deaths already keep the exact battlefield visual until it reaches the
   // owner's graveyard. Do not create a second card when delayed death triggers finish.
@@ -106,6 +117,10 @@ function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: Anc
     // Keep it in the card-movement queue so it receives the same presentation
     // ordering as every other authoritative card action.
     from = 'disaster'; to = 'disaster'; label = '天灾翻开'
+  } else if (event.type === 'reveal' && /加入手牌/.test(event.text)) {
+    const revealed = (event.cards ?? []).find(card => !isMovementIdentityConcealed(event, card))
+    if (!revealed) return null
+    from = textSource(event.text); to = 'hand'; label = '加入手牌'
   } else if (event.type === 'counter-set') {
     from = 'hand'; to = 'field'; label = '盖伏'
   } else if (event.type === 'play') {
@@ -121,12 +136,12 @@ function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: Anc
     from = event.text.includes('从墓地') ? 'graveyard' : event.text.includes('从圣物区') ? 'relic' : 'field'
     to = event.text.includes('主宰区') ? 'master' : event.text.includes('手牌') ? 'hand' : event.text.includes('圣物区') ? 'relic' : 'library'
     label = '返回'
-  } else if (event.type === 'search') {
-    from = event.text.includes('墓地') ? 'graveyard' : 'library'; to = 'hand'; label = '加入手牌'
   } else return null
 
   const cards = event.cards ?? []
-  const card = event.type === 'move' ? cards.at(-1) : cards[0]
+  const card = event.type === 'move' ? cards.at(-1)
+    : event.type === 'reveal' ? cards.find(candidate => !isMovementIdentityConcealed(event, candidate))
+    : cards[0]
   const concealed = isMovementIdentityConcealed(event, card)
   return {
     sequence: event.sequence,
@@ -140,6 +155,7 @@ function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: Anc
     fromRect,
     toRect,
     disasterReveal: event.type === 'disaster-reveal',
+    caption: event.type === 'reveal' && card ? publicHandAddCaption(event, card) : undefined,
   }
 }
 
@@ -245,6 +261,18 @@ function showNext() {
     ghost.removeAttribute('id')
     ghost.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'))
     wrapper.appendChild(ghost)
+    if (active.value.caption) {
+      const caption = document.createElement('span')
+      caption.className = 'l12-zone-flight-caption'
+      caption.textContent = active.value.caption
+      Object.assign(caption.style, {
+        position: 'absolute', left: '50%', bottom: 'calc(100% + 7px)', transform: 'translateX(-50%)',
+        width: 'max-content', maxWidth: '240px', padding: '3px 7px', border: '1px solid #8cc6d2',
+        background: 'rgba(7,16,20,.94)', color: '#eef6f5', fontSize: '12px', lineHeight: '1.35',
+        whiteSpace: 'normal', textAlign: 'center', overflowWrap: 'anywhere',
+      })
+      wrapper.appendChild(caption)
+    }
     document.body.appendChild(wrapper)
     activeGhostWrapper = wrapper
     const dx = target.x - source.x
@@ -371,6 +399,7 @@ onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewpo
     <div v-if="active && !active.sourceGhost" :key="active.sequence" class="zone-card-movement" :style="motionStyle"
       data-ui-contract="authoritative-zone-card-movement" aria-hidden="true">
       <div class="moving-card" data-essential-motion :class="{ concealed: active.concealed, covered: active.covered, 'disaster-reveal': active.disasterReveal }">
+        <small v-if="active.caption" class="movement-caption">{{ active.caption }}</small>
         <template v-if="active.disasterReveal && active.preparedImageUrl">
           <span class="disaster-reveal-card">
             <img class="disaster-reveal-back" src="/assets/l12/card-back-disaster.png" alt="" />
@@ -387,6 +416,7 @@ onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewpo
 <style scoped>
 .zone-card-movement{position:fixed;z-index:2147482988;left:0;top:0;width:0;height:0;pointer-events:none}.moving-card{position:absolute;width:72px;height:101px;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0);animation:l12-zone-card-flight var(--move-duration,.44s) cubic-bezier(.24,.72,.28,1) both;filter:drop-shadow(0 8px 10px rgba(0,0,0,.72));will-change:transform,opacity}.moving-card>img,.moving-card :deep(.l12-card-image){width:100%;height:100%;object-fit:contain}.moving-card.concealed>img{object-fit:cover;border:1px solid #d6c488}
 .moving-card.covered:not(.concealed){filter:grayscale(.45) brightness(.72) drop-shadow(0 12px 14px #000)}
+.movement-caption{position:absolute;z-index:2;left:50%;bottom:calc(100% + 7px);width:max-content;max-width:240px;transform:translateX(-50%);padding:3px 7px;border:1px solid #8cc6d2;background:rgba(7,16,20,.94);color:#eef6f5;font-size:12px;line-height:1.35;text-align:center;white-space:normal;overflow-wrap:anywhere}
 .disaster-reveal-card{position:relative;display:block;width:100%;height:100%;perspective:800px;transform-style:preserve-3d}.disaster-reveal-card>img{position:absolute;inset:0;width:100%;height:100%;backface-visibility:hidden}.disaster-reveal-back{object-fit:cover;animation:l12-disaster-card-back var(--move-duration,.44s) ease-in both}.disaster-reveal-front{animation:l12-disaster-card-front var(--move-duration,.44s) ease-out both}
 @keyframes l12-zone-card-flight{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale))}}
 @keyframes l12-disaster-card-back{0%,42%{opacity:1;transform:rotateY(0)}58%,100%{opacity:0;transform:rotateY(90deg)}}

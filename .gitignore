@@ -1,4 +1,5 @@
 node_modules/
+opcgpro-vue/.tmp/
 dist/
 bin/
 obj/

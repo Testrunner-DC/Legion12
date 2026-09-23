@@ -10,6 +10,7 @@ const backend = backendFiles.map(file => file.source).join('\n')
 const admin = read('../src/l12/site/AdminPage.vue')
 const board = `${read('../src/l12/game/GameBoard.vue')}\n${read('../src/l12/game/GameBoard.mobile.css')}`
 const eventLog = read('../src/l12/game/BattleEventLog.vue')
+const eventLogViewModel = read('../src/l12/game/logViewModel.ts')
 const actionLayer = read('../src/l12/game/ActionPresentationLayer.vue')
 const actionPresentation = read('../src/l12/game/actionPresentation.ts')
 const zoneMovement = read('../src/l12/game/ZoneMovementPresentationLayer.vue')
@@ -66,8 +67,8 @@ assert(admin.includes('saveEffectPresentation(selectedEffect.value.cardId, scene
 assert([board, actionLayer, actionPresentation, zoneMovement, combatMotion, phasePlayback]
   .every(source => !source.includes('effect-announced')),
   'Recorded whole-effect announcements must not enter any frontend animation queue')
-assert(eventLog.includes("'effect-announced'"),
-  'Recorded whole-effect announcements must remain authoritative history without repeating in the player-facing log')
+assert(eventLogViewModel.includes("'effect-announced'") && eventLogViewModel.includes('PLAYER_LOG_HIDDEN_TYPES'),
+  'Recorded whole-effect announcements must remain authoritative history while the player projection explicitly hides them')
 
 const overrideGuard = board.indexOf('if (override) {')
 const oiranFallback = board.indexOf('/花魁的馈赠/.test(text)')
@@ -84,10 +85,9 @@ for (const contract of [
   "event.effectResultStatus === 'skipped'",
   "event.effectResultStatus === 'failed'",
 ]) assert(board.includes(contract), `Battle animation settlement projection is missing ${contract}`)
-assert(eventLog.includes("'effect-result': '结算'"),
-  'Battle log must identify the authoritative settlement result')
-assert(eventLog.includes("'effect-declined': '未发动'"),
-  'Battle log must distinguish a player decline from failure or negation')
+assert(eventLogViewModel.includes("'effect-result'") && eventLogViewModel.includes("'effect-declined'")
+  && eventLogViewModel.includes('PLAYER_LOG_HIDDEN_TYPES'),
+  'Player log must explicitly suppress settlement internals and declined effects while authority history remains intact')
 assert(backend.includes('"effect-declined" => "declined"'),
   'Backend event and stack projections must share the declined result status')
 const replay = read('../src/l12/replayModel.ts')

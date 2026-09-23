@@ -80,7 +80,7 @@ try {
     const record = page.locator('.mobile-record-overlay[aria-label="对局记录"]')
     await record.waitFor()
     const recordText = (await record.innerText()).replace(/\s+/g, '')
-    assert.match(recordText, /进攻值4500/, `record ${suffix} must keep player-facing attack value`)
+    assert.match(recordText, /4500/, `record ${suffix} must keep player-facing attack value`)
     assert.doesNotMatch(recordText, /冻结进攻值/, `record ${suffix} must hide implementation wording`)
     await inside('.mobile-record-overlay[aria-label="对局记录"]', `record ${suffix}`, 4)
     await page.screenshot({ path: path.join(output, `combat-record-${suffix}.png`) })

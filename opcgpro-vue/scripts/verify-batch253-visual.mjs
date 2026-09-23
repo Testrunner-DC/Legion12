@@ -86,15 +86,18 @@ if(logMode){
  const source=battleCard(battleArtwork[2],'log-source'),target=battleCard(battleArtwork[1],'log-target'),hidden={...battleCard(battleArtwork[0],'log-hidden'),name:'绝密手牌',hidden:true}
  l12State.game.recentEvents=[
   {sequence:1,type:'turn-start',playerIndex:0,text:'第 3 回合 · 回合开始',cards:[]},
-  {sequence:2,type:'draw',playerIndex:0,text:'〈迦具土〉使我方测试昵称抽取 1 张牌。',cards:[source]},
-  {sequence:3,type:'move',playerIndex:0,text:'战术调度使〈荷鲁斯〉位移 1 格。',cards:[target]},
-  {sequence:4,type:'draw',playerIndex:0,text:'我方测试昵称受到 1 点伤害并抽取 1 张牌。',cards:[]},
-  {sequence:5,type:'move',playerIndex:0,text:'〈荷鲁斯〉先转为活跃再位移 1 格。',cards:[target]},
-  {sequence:6,type:'draw',playerIndex:0,text:'恢复 0 点，但抽取 1 张牌。',cards:[]},
+  {sequence:2,type:'draw',playerIndex:0,text:'抽取 2 张牌。',cards:[hidden]},
+  {sequence:3,type:'move',playerIndex:0,text:'〈荷鲁斯〉位移 1 格。',cards:[target]},
+  {sequence:4,type:'cost',playerIndex:0,text:'消耗 2 士气。',cards:[]},
+  {sequence:5,type:'effect',playerIndex:0,text:'兵力增加 1000 点。',cards:[source]},
+  {sequence:6,type:'effect-failed',playerIndex:0,text:'重新校验失败，未生成空堆叠项。',cards:[source]},
   {sequence:7,type:'damage',playerIndex:0,text:'兵力增加 0 点。',cards:[]},
-  {sequence:8,type:'effect-failed',playerIndex:0,text:'未选择合法目标，兵力增加 0 点。',cards:[]},
-  {sequence:9,type:'reveal',playerIndex:0,text:'检视〈绝密手牌〉后放回。',cards:[hidden]},
-  {sequence:10,type:'effect',playerIndex:0,text:'仅结算公开效果。',cards:[source]},
+  {sequence:8,type:'reveal',playerIndex:0,text:'〈迦具土〉展示〈荷鲁斯〉并加入手牌。',cards:[target,source]},
+  {sequence:9,type:'reveal',playerIndex:0,text:'〈绝密手牌〉加入手牌。',cards:[hidden]},
+  {sequence:10,type:'attack',playerIndex:0,text:'〈迦具土〉6000 vs 〈荷鲁斯〉4000',cards:[source,target]},
+  {sequence:11,type:'defense',playerIndex:1,text:'〈荷鲁斯〉进行抵挡',cards:[target]},
+  {sequence:12,type:'damage',playerIndex:1,text:'〈荷鲁斯〉受到 2 点伤害',cards:[target]},
+  {sequence:13,type:'leave',playerIndex:1,text:'〈荷鲁斯〉离场',cards:[target]},
  ]
 }
 if(slotMode)l12State.game.prompts=[{promptId:'occupied-slot-prompt',playerIndex:0,kind:'slot',text:'选择支付后登场位置',validChoices:['0:0','1:1'],minChoose:1,maxChoose:1,data:{choiceMode:'board-slot',targetPlayerIndex:'0'},choiceLabels:{},createdRevision:1,controller:0},{promptId:'declared-cost-prompt',playerIndex:0,kind:'resource-payment',text:'已声明费用',validChoices:['0unit','0morale0'],minChoose:1,maxChoose:1,data:{choiceMode:'resource-payment'},choiceLabels:{},createdRevision:1,controller:0}]
@@ -166,7 +169,7 @@ try {
   reports.push(await page.evaluate(()=>{
    const box=s=>{const e=document.querySelector(s);if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,scroll:e.scrollHeight,client:e.clientHeight}}
    const artwork=[...document.querySelectorAll('.hand-card-wrap .l12-card-image,.formation-slot .l12-card-image')]
-   return {width:innerWidth,height:innerHeight,summary:box('.player-panel'),rail:box('.right-rail'),log:box('.event-list'),dock:box('.battle-utility-dock'),clock:box('.my-status-lane'),hand:box('.board-center>.l12-hand:last-child'),phase:box('.l12-phase-track'),seam:box('.board-seam'),font:getComputedStyle(document.querySelector('.event-message')).fontSize,artwork:{count:artwork.length,sameOrigin:artwork.filter(image=>image.dataset.source==='sameOrigin').length},opponentBadges:document.querySelectorAll('.opponent-summary .ranked-identity-badge').length,myBadges:document.querySelectorAll('.my-summary .ranked-identity-badge').length,summaryText:document.querySelector('.player-panel').textContent}
+   return {width:innerWidth,height:innerHeight,summary:box('.player-panel'),rail:box('.right-rail'),log:box('.event-list'),dock:box('.battle-utility-dock'),clock:box('.my-status-lane'),hand:box('.board-center>.l12-hand:last-child'),phase:box('.l12-phase-track'),seam:box('.board-seam'),font:getComputedStyle(document.querySelector('.event-message')??document.querySelector('.event-list')).fontSize,artwork:{count:artwork.length,sameOrigin:artwork.filter(image=>image.dataset.source==='sameOrigin').length},opponentBadges:document.querySelectorAll('.opponent-summary .ranked-identity-badge').length,myBadges:document.querySelectorAll('.my-summary .ranked-identity-badge').length,summaryText:document.querySelector('.player-panel').textContent}
   }))
  }
  for(const report of reports){
@@ -185,24 +188,27 @@ try {
   await page.goto('http://127.0.0.1:'+port+'/__qa__?log=1')
   await page.locator('[data-event-sequence="10"]').waitFor()
   const logResult=await page.evaluate(()=>{
-   const messages=Object.fromEntries([...document.querySelectorAll('[data-event-sequence]')].map(row=>[row.dataset.eventSequence,row.querySelector('.event-message')?.textContent?.trim()||'']))
+   const messages=Object.fromEntries([...document.querySelectorAll('[data-event-sequence]')].map(row=>[row.dataset.eventSequence,row.querySelector('.event-message,.combat-cards')?.textContent?.trim()||'']))
    const links=[...document.querySelectorAll('.log-card-link')].map(link=>link.textContent?.trim())
    const list=document.querySelector('.event-list')
    return {messages,links,rowCount:Object.keys(messages).length,scrollWidth:list.scrollWidth,clientWidth:list.clientWidth}
   })
-  assert.equal(logResult.rowCount,8,'only the standalone zero-change row may be omitted')
-  assert.equal(logResult.messages['2'],'我方迦具土：抽取1张牌。','simple draw must use the shared compact result format')
-  assert.equal(logResult.messages['3'],'我方战术调度：〈荷鲁斯〉位移1格。','simple movement must use the shared compact result format')
-  assert.equal(logResult.messages['4'],'我方受到1点伤害并抽取1张牌。','compound draw must preserve its preceding outcome')
-  assert.equal(logResult.messages['5'],'我方〈荷鲁斯〉先转为活跃再位移1格。','compound movement must preserve its preceding outcome')
-  assert.equal(logResult.messages['6'],'我方恢复0点，但抽取1张牌。','mixed zero and positive outcomes must remain visible')
-  assert.equal(logResult.messages['8'],'我方未选择合法目标，兵力增加0点。','meaningful failed outcomes must remain visible')
-  assert(!logResult.messages['7'],'standalone zero-change noise must be omitted')
-  assert(!logResult.messages['9'].includes('绝密手牌')&&logResult.messages['9'].includes('隐藏卡牌'),'hidden card identities must be redacted')
-  assert(!logResult.messages['10'].includes('迦具土'),'public card metadata absent from authoritative text must not be appended')
-  assert(logResult.links.includes('荷鲁斯')&&logResult.links.includes('迦具土'),'full public card names in the current event text must remain clickable')
+  assert.equal(logResult.rowCount,6,'whitelist projection must omit costs, failures, zero changes and private hand-adds')
+  assert(logResult.messages['2'].includes('抽取')&&logResult.messages['2'].includes('2张'),'ordinary draws must show count without card identity')
+  assert(logResult.messages['3'].includes('〈荷鲁斯〉')&&logResult.messages['3'].includes('1格'),'movement must use a focusable card and numeric badge')
+  assert(logResult.messages['5'].includes('发动效果')&&logResult.messages['5'].includes('士气 −2'),'cost must merge into the effect row')
+  assert(logResult.messages['8'].includes('〈迦具土〉')&&logResult.messages['8'].includes('〈荷鲁斯〉加入手牌'),'public hand-add must show source and selected card')
+  assert(!logResult.messages['6']&&!logResult.messages['7']&&!logResult.messages['9'],'failed, zero-change and private hand-add rows must be absent')
+  assert(logResult.messages['10'].includes('6000')&&logResult.messages['10'].includes('4000')&&logResult.messages['10'].includes('击破'),'combat chain must collapse into one summary')
+  assert(!JSON.stringify(logResult.messages).match(/入栈|堆叠|校验|声明|结算步骤|事务|派生|重新校验|空堆叠|失效/),'player log must contain no engine terminology')
+  assert(!JSON.stringify(logResult.messages).includes('绝密手牌'),'hidden card identities must never enter player rows')
+  assert(logResult.links.some(link=>link?.includes('荷鲁斯'))&&logResult.links.some(link=>link?.includes('迦具土')),'public cards must remain focusable')
   assert(logResult.links.every(link=>!/^S(?:T|0\d)-/.test(link||'')),'log links must not expose card IDs')
   assert(logResult.scrollWidth<=logResult.clientWidth+1,'battle log must not overflow horizontally at '+viewport.width+'x'+viewport.height)
+  await page.locator('.combat-toggle').click()
+  assert.equal(await page.locator('.combat-detail .battle-event').count(),3,'combat summary must expand to defense, damage and leave detail')
+  const expandedOverflow=await page.locator('.event-list').evaluate(list=>list.scrollWidth-list.clientWidth)
+  assert(expandedOverflow<=1,'expanded combat detail must not overflow horizontally at '+viewport.width+'x'+viewport.height)
   logReports.push({viewport,...logResult})
   await page.screenshot({path:path.join(out,'battle-log-'+viewport.width+'x'+viewport.height+'.png')})
  }

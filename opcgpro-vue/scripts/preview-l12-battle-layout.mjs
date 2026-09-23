@@ -108,7 +108,7 @@ if(params.has('combat-stage')){
  l12State.game.pendingDefense={attackerPlayer:1,attackerInstanceId:attacker.instanceId,target:{type:'legion',instanceId:target.instanceId},stage,attackValue:4500}
  const nextSequence=Math.max(0,...l12State.game.recentEvents.map(event=>event.sequence))+1
  l12State.game.recentEvents=[...l12State.game.recentEvents,
-  {sequence:nextSequence,type:'attack',playerIndex:1,text:'对方军团向我方军团宣告进攻',cards:[attacker,target]},
+  {sequence:nextSequence,type:'attack',playerIndex:1,text:'〈'+attacker.name+'〉4500 vs 〈'+target.name+'〉'+target.troops,cards:[attacker,target]},
   {sequence:nextSequence+1,type:'combat',playerIndex:1,text:'进攻者以冻结进攻值 4500 造成 4500 点战斗伤害',cards:[attacker,target]},
  ]
 }

@@ -16,6 +16,7 @@ const mobileViewportStyle = read('../src/l12/mobileViewport.css')
 const mobileViewportCheck = read('./test-mobile-viewport.mjs')
 const phaseTrack = read('../src/l12/game/PhaseTrack.vue')
 const battleLog = read('../src/l12/game/BattleEventLog.vue')
+const battleLogViewModel = read('../src/l12/game/logViewModel.ts')
 const battleDock = read('../src/l12/game/BattleUtilityDock.vue')
 const actionLayer = read('../src/l12/game/ActionPresentationLayer.vue')
 const actionPresentation = read('../src/l12/game/actionPresentation.ts')
@@ -702,12 +703,14 @@ const contracts = [
     && board.includes('const logicalWidth = inspectorAnchor.value.offsetWidth') && board.includes('transform: `scale(${floatScale})`')
     && board.includes('const adaptiveBoardToken = (base: number, currentScale: number)')
     && board.includes("'--l12-board-copy': `${adaptiveBoardToken(13, floatScale)}px`") && board.includes("'--l12-board-meta': `${adaptiveBoardToken(11, floatScale)}px`") && board.includes("'--l12-effect-copy': `${adaptiveBoardToken(13, floatScale)}px`") && board.includes('inspector-style-scope') && board.includes('overflow:auto!important'), '弹框期间原选中详情必须固定侧置并保持原容器的大小和位置，继承连续缩放的语义字号层级，为核心弹框保留安全区，在窄屏与缩放下也不得互相遮挡'],
-  [board.includes("event.type === 'disaster-reveal'") && board.includes("event.playerIndex === null") && battleLog.includes("'disaster-reveal': '本局天灾'") && battleLog.includes("'effect-response': '响应'") && battleLog.includes("'effect-activation': '发动'"), '天灾必须向双方播放，响应与发动动画必须进入可读日志'],
+  [board.includes("event.type === 'disaster-reveal'") && board.includes("event.playerIndex === null")
+    && battleLogViewModel.includes("case 'disaster':") && battleLogViewModel.includes("case 'disaster-active':")
+    && battleLogViewModel.includes("case 'effect':"), '天灾必须向双方播放，已发动效果必须进入玩家白名单日志；内部响应阶段不得直接暴露'],
   [board.includes('resolvedDisasterIds') && board.includes("return 'active'") && board.includes("return 'resolved'")
     && board.includes('.session-disaster-strip button.unrevealed')
     && board.includes('.session-disaster-strip button.resolved{border-color:#76508f')
     && board.includes('.session-disaster-strip button.active{border-color:#bc6cff'), '本局天灾圆形图必须区分未发动灰色、已发动暗紫色与当前生效亮紫色，并由权威天灾实例状态驱动'],
-  [board.includes('data-ui-contract="dice-event-animation"') && board.includes("event.type === 'dice'") && battleLog.includes("dice: '掷骰'") && board.includes('@keyframes l12-dice-roll') && board.includes('.dice-reveal-animation{z-index:904}'), '普通掷骰事件必须在交互层下方播放非阻塞动画并保留可读日志'],
+  [board.includes('data-ui-contract="dice-event-animation"') && board.includes("event.type === 'dice'") && battleLogViewModel.includes("case 'dice':") && board.includes('@keyframes l12-dice-roll') && board.includes('.dice-reveal-animation{z-index:904}'), '普通掷骰事件必须在交互层下方播放非阻塞动画并保留可读日志'],
   [prompt.includes("prompt.value?.kind === 'option'") && prompt.includes('effect-option-list')
     && prompt.includes('orderedEffectChoices') && prompt.includes('declineChoices')
     && prompt.includes('.prompt-choices.effect-option-list{display:grid')
@@ -848,14 +851,17 @@ const contracts = [
     && shell.includes('@click="cancelOutgoingInvitation"') && shell.includes('outgoingInvitationMinimized')
     && l12Net.includes("l12State.spectating && message.message === '观战者不能执行对局操作'")
     && l12Net.includes('if (l12State.spectating || l12State.pendingAction) return'), '好友邀请必须是右下角无背板可最小化通知，发起方按服务端返回的精确邀请编号撤回，接收方只按匹配邀请撤销；观战端不得发送对局命令或重复显示权限提示'],
-  [battleLog.includes("'disaster-banned': '天灾禁选'") && battleLog.includes("mulligan: '调度'")
-    && battleLog.includes("'match-created'") && battleLog.includes("'mulligan-start'") && battleLog.includes('onlyZeroChange')
-    && battleLog.includes('meaningfulFailure') && battleLog.includes('compoundOutcome') && battleLog.includes('compactDraw') && battleLog.includes('compactMove')
-    && !battleLog.includes('pendingDraw') && !battleLog.includes('faction-effect-summary') && !battleLog.includes('isGaotianyuan')
-    && battleLog.includes('redactHiddenCardNames') && battleLog.includes('filter(card => !card.hidden && Boolean(card.name))')
-    && !battleLog.includes("result.push({ text: ' · '")
-    && !battleLog.includes('{{ part.card.cardId }}') && battleLog.includes('width:2.8em')
-    && battleLog.includes('white-space:normal'), '玩家战报必须保留天灾禁选、调度及有意义失败结果，隐藏内部初始化、洗牌与单一零变化；同类抽牌/位移结果统一精简但无事务关联不得相邻合并，只让本条公开文本已有的完整卡名可点击且不泄露隐藏卡或编号，四字类别按两字换行'],
+  [battleLog.includes("import { projectLog } from './logViewModel'") && battleLog.includes('computed(() => projectLog(props.events, props.you, props.names))')
+    && battleLog.includes('class="combat-summary"') && battleLog.includes('class="combat-toggle"')
+    && battleLog.includes('event-badge') && battleLog.includes('data-event-sequence')
+    && battleLogViewModel.includes('PLAYER_LOG_VISIBLE_TYPES') && battleLogViewModel.includes('PLAYER_LOG_HIDDEN_TYPES')
+    && battleLogViewModel.includes('PLAYER_LOG_REDLINE_TERMS') && battleLogViewModel.includes('playerLogContainsForbiddenTerms')
+    && battleLogViewModel.includes("case 'reveal':") && battleLogViewModel.includes("'hand-add'")
+    && !battleLog.includes('event.text') && !battleLog.includes('omitted = new Set'), '玩家战报必须由白名单纯投影层生成，失败与内部流程默认隐藏；费用并入效果、进攻收拢为可展开小结，公开加入手牌可聚焦且玩家昵称、隐藏卡名和引擎原文不得直出'],
+  [zoneMovementLayer.includes("event.type === 'reveal' && /加入手牌/.test(event.text)")
+    && zoneMovementLayer.includes("to = 'hand'; label = '加入手牌'")
+    && zoneMovementLayer.includes('publicHandAddCaption') && zoneMovementLayer.includes('movement-caption')
+    && !zoneMovementLayer.includes("event.type === 'search'"), '公开展示并加入手牌必须进入统一区域移动队列并显示来源横幅，隐私入手不播放，历史 search 死分支不得恢复'],
   [platform.includes('views: number; likes: number; copies: number') && platform.includes('recordView: (id: string)')
     && platform.includes("sort?: 'copies' | 'likes' | 'views' | 'latest'")
     && wsServer.includes('/api/public-decks/{id}/view') && deckLibrary.includes('publicDeckApi.recordView(entry.id)')
@@ -1515,10 +1521,10 @@ contracts.push(
     && visualLayoutCheck.includes("throw new Error('Hand leaves viewport at '")
     && visualLayoutCheck.includes("throw new Error('Utility dock leaves viewport at '"),
     '16:9棋盘缩放必须为手牌扇面和左下工具保留绘制边界，视觉验收须阻止二者离开视口'],
-  [battleLog.includes('prompt-resolved') && battleLog.includes('turn-start')
+  [battleLogViewModel.includes("'turn-start'") && battleLogViewModel.includes("'prompt-resolved'") && battleLogViewModel.includes('PLAYER_LOG_HIDDEN_TYPES')
     && battleLog.includes('emit(') && battleDock.includes('L12Settings') === false
     && board.includes('BattleUtilityDock'),
-    '对局日志保留回合分组和公开选择，选中卡牌下方的独立工具坞通过现有设置入口工作'],
+    '对局日志保留回合分组并隐藏选择流程噪声，选中卡牌下方的独立工具坞通过现有设置入口工作'],
   [battleDock.includes('grid-template-columns:repeat(3,1fr)')
     && battleDock.includes('title="设置" aria-label="打开对局设置"')
     && battleDock.includes('title="好友" aria-label="打开好友功能"')
