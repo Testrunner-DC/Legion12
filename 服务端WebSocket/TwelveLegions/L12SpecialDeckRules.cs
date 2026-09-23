@@ -31,7 +31,8 @@ public static partial class L12SpecialDeckRules
     }
 
     public static bool DoesNotCountTowardMainDeck(L12CardDefinition card)
-        => L12StructuredCardSemantics.HasOutOfDeckGraveyardLifecycle(card.Id);
+        => L12StructuredCardSemantics.HasOutOfDeckGraveyardLifecycle(card.Id)
+           || L12StructuredCardSemantics.IsDerivedSpecialCard(card.Id);
 
     public static bool StartsInGraveyard(L12CardDefinition card)
         => L12StructuredCardSemantics.HasOutOfDeckGraveyardLifecycle(card.Id);
@@ -46,8 +47,19 @@ public static partial class L12SpecialDeckRules
     /// </summary>
     public static bool IsDerivedSpecialCard(L12CardInstance card)
         => card.CardType == "token"
-           || card.CardId == "S02-01S1"
+           || L12StructuredCardSemantics.IsDerivedSpecialCard(card.CardId)
            || card.Traits.Any(trait => trait.EndsWith("专属", StringComparison.Ordinal));
+
+    public static bool IsDerivedSpecialCard(L12CardDefinition card)
+        => card.CardType == "token"
+           || L12StructuredCardSemantics.IsDerivedSpecialCard(card.Id)
+           || card.Traits.Any(trait => trait.EndsWith("专属", StringComparison.Ordinal));
+
+    public static bool CanGenerateDerivedSpecialCard(string cardId, int existingInstances)
+    {
+        var limit = L12StructuredCardSemantics.DerivedSpecialCardLimit(cardId);
+        return limit > 0 && existingInstances < limit;
+    }
 
     /// <summary>
     /// 规则书“衍生卡/指示物”通则：衍生卡离开战场时直接消灭，

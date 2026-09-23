@@ -586,9 +586,8 @@ public sealed partial class L12GameEngine
                     return view with { Enabled = false, DisabledReason = "该军团因卡牌效果本回合无法再次发动试炼" };
             }
             if (L12StructuredCardRules.IsActiveRestAbility(cardId, view.Id)
-                && (FindOnField(player, sourceInstanceId, out _, out _) is { Tapped: true }
-                    || player.Relic is { Tapped: true } relic && relic.InstanceId == sourceInstanceId
-                    || player.ExtraRelics.Any(extraRelic => extraRelic.InstanceId == sourceInstanceId && extraRelic.Tapped)))
+                && availabilitySource is not null
+                && IsActiveRestSourceRested(player, availabilitySource))
                 return view with { Enabled = false, DisabledReason = $"{_catalog.Cards.GetValueOrDefault(cardId)?.NameZh ?? "该卡牌"}必须为活跃状态" };
             if (HasUsedLimitedActiveAbility(player, cardId, sourceInstanceId, view.Id))
                 return view with { Enabled = false, DisabledReason = "该效果本回合已经发动" };
@@ -606,10 +605,14 @@ public sealed partial class L12GameEngine
                 if (!TryGetIsisVictorySource(player, out _, out var error))
                     return view with { Enabled = false, DisabledReason = error };
             }
+            if (availabilitySource is not null
+                && L12StructuredCardSemantics.MasterAbilityGateFailureReason(
+                    player, availabilitySource.CardId, view.Id) is { } masterGateReason)
+                return view with { Enabled = false, DisabledReason = masterGateReason };
             if (view.Id == "thorHammerRevive")
             {
-                if (player.MasterId != "S02-03M1" || !player.Graveyard.Any(card => card.InstanceId == sourceInstanceId))
-                    return view with { Enabled = false, DisabledReason = "仅〈雷神索尔〉可发动墓地中〈雷神之锤〉的效果" };
+                if (!player.Graveyard.Any(card => card.InstanceId == sourceInstanceId))
+                    return view with { Enabled = false, DisabledReason = "〈雷神之锤〉必须位于我方墓地" };
                 if (player.Graveyard.Where(card => card.InstanceId != sourceInstanceId && CanEnterHandOrLibrary(card))
                     .Sum(L12StructuredCardRules.StarterGraveCardCopies) < 3)
                     return view with { Enabled = false, DisabledReason = "墓地中其他可返回牌库的卡牌需合计能视为3张" };
@@ -821,7 +824,7 @@ public sealed partial class L12GameEngine
         var keywords = new List<string>();
         if (L12StructuredCardSemantics.HasEffectiveStrongAttack(card)) keywords.Add("强攻");
         if (HasActiveImmortal(card, row)) keywords.Add("免死");
-        if (card.HasSureHit) keywords.Add("必中");
+        if (HasActiveSureHitKeyword(card)) keywords.Add("必中");
         if (L12StructuredCardRules.HasTaunt(card, row) && !IsTauntSuppressed(controller)) keywords.Add("挑衅");
         if (L12StructuredCardRules.HasCooperativeSupport(card, row)) keywords.Add("协防");
         if (card.HasCharge && card.SummonRound >= State.Round) keywords.Add("冲锋");
@@ -829,6 +832,9 @@ public sealed partial class L12GameEngine
         if (controller.UsedAbilities.Contains($"crusade-piercing:{card.InstanceId}:{State.TurnSerial}")) keywords.Add("贯穿");
         return keywords;
     }
+
+    private bool HasActiveSureHitKeyword(L12CardInstance card)
+        => card.HasSureHit || card.SureHitAgainstLegionsUntilTurn >= State.TurnSerial;
 
     private List<L12StatusEffectView> BuildStatusEffects(L12PlayerState controller, L12CardInstance card, int row)
     {

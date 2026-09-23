@@ -76,7 +76,7 @@ public sealed partial class L12GameEngine
             ?? player.ExtraRelics.FirstOrDefault(card => card.InstanceId == command.CardInstanceId)
             ?? player.SpecialZones.Trials.FirstOrDefault(card => card.InstanceId == command.CardInstanceId)
             ?? player.Graveyard.FirstOrDefault(card => card.InstanceId == command.CardInstanceId
-                && IsLegalGraveyardActiveAbilitySource(player, card, ability))
+                && IsRegisteredGraveyardActiveAbilitySource(card, ability))
             ?? player.Graveyard.FirstOrDefault(card => card.InstanceId == command.CardInstanceId
                 && card.CardId == "S01-02M2" && ability == "isisVictory");
         if (source is null && ability == "destroyInfiltrator"
@@ -120,6 +120,12 @@ public sealed partial class L12GameEngine
     private CommandResult BeginActiveAbilityWithSource(int playerIndex, L12PlayerState player,
         L12CardInstance source, string ability, L12Command command)
     {
+        if (L12StructuredCardSemantics.MasterAbilityGateFailureReason(
+                player, source.CardId, ability) is { } masterGateReason)
+            return CommandResult.Reject(masterGateReason);
+        if (L12StructuredCardRules.IsActiveRestAbility(source.CardId, ability)
+            && IsActiveRestSourceRested(player, source))
+            return CommandResult.Reject($"{source.Name}必须为活跃状态");
         if (ability != "discardHolyLock" && source.AttachedCards.Any(card => card.CardId == "S02-0013"))
             return CommandResult.Reject("该圣物被〈神圣伽锁〉叠放，当前无法使用");
         if (HasUsedLimitedActiveAbility(player, source.CardId, source.InstanceId, ability)
@@ -137,6 +143,12 @@ public sealed partial class L12GameEngine
                     ?? TryBeginS1ExtendedActiveAbility(playerIndex, source, ability)
                     ?? CommitActiveAbility(playerIndex, source, ability, command.CardInstanceIds?.FirstOrDefault());
     }
+
+    private static bool IsActiveRestSourceRested(L12PlayerState player, L12CardInstance source)
+        => source.CardType is "master" or "divinity"
+            || source.InstanceId.Equals($"master-{player.PlayerIndex}", StringComparison.OrdinalIgnoreCase)
+            ? player.MasterTapped
+            : source.Tapped;
 
     private CommandResult PromptActiveTarget(int playerIndex, L12CardInstance source, string ability, string[] choices, string text)
         => BeginPendingActivation(playerIndex, source, ability, choices, text);
@@ -190,8 +202,14 @@ public sealed partial class L12GameEngine
         if (!result.Accepted) AddEvent("ability-rejected", prompt.PlayerIndex, result.Error ?? "主动效果发动失败");
     }
 
-    private static bool IsLegalGraveyardActiveAbilitySource(L12PlayerState player, L12CardInstance card, string ability)
-        => card.CardId == "S02-0301" && ability == "thorHammerRevive" && player.MasterId == "S02-03M1";
+    private static bool IsRegisteredGraveyardActiveAbilitySource(L12CardInstance card, string ability)
+        => L12StructuredCardSemantics.MasterAbilityGate(card.CardId, ability) is not null;
+
+    private static bool IsLegalGraveyardActiveAbilitySource(L12PlayerState player, L12CardInstance card,
+        string ability)
+        => IsRegisteredGraveyardActiveAbilitySource(card, ability)
+            && L12StructuredCardSemantics.MasterAbilityGateFailureReason(
+                player, card.CardId, ability) is null;
 
     private static string ActiveAbilityUsageKey(string sourceInstanceId, string sourceCardId, string ability)
         => L12ActiveUsageRules.UsageKey(sourceInstanceId, sourceCardId, ability);

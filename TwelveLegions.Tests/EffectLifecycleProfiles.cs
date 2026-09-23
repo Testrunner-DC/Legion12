@@ -22,6 +22,7 @@ internal static class EffectLifecycleProfiles
             ["candidate-generation"] = "IsDesertHandSummonCandidate",
             ["cost-commit"] = "TryCommitCompositePreStackCosts",
             ["settlement-revalidation"] = "TryResolveS2FactionTactic",
+            ["presentation"] = "ResolveEffectPresentationSceneId",
         },
         new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
@@ -186,6 +187,7 @@ internal static class EffectLifecycleProfiles
             ["attack-candidates"] = "BuildLegalAttackTargets",
             ["attack-revalidation"] = "TryValidateAttackTarget",
             ["expiry"] = "ResetTemporaryCardState",
+            ["presentation"] = "ResolveEffectPresentationSceneId",
         },
         new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
@@ -237,7 +239,14 @@ internal static class EffectLifecycleProfiles
             ["cost-presentation"] = "AddActivePaidCostPresentation",
             ["response-stack"] = "PushEffect",
         },
-        new SortedDictionary<string, string>(StringComparer.Ordinal))
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["no-target"] = "本档案只验收主动休整的共用Cost；各父能力是否需要目标及无目标时能否发动由对应效果档案验收。",
+            ["target-invalidated"] = "来源休整在入栈前已经支付；效果对象逆结算失效由父能力档案验收，不改变共用Cost。",
+            ["payment-cancel"] = "对象或分支选择取消发生在PushEffect共用Cost边界之前，由父能力声明档案验收；未进入本边界即不得休整来源。",
+            ["single-candidate-choice"] = "主动休整Cost本身不选择效果对象；唯一候选仍选择属于父能力声明协议。",
+            ["multi-target-applicability"] = "主动休整Cost只改变能力来源状态，不处理父能力的多个效果对象。",
+        })
         { AdditionalChecks = ["active-rest-cost", "paid-cost-preserved", "readied-source-reuse", "runtime-branch-mapping"] };
 
     internal static readonly string[] SelfDamageEntryDiscountAbilityIds =
@@ -361,6 +370,8 @@ internal static class EffectLifecycleProfiles
             {
                 ["negated"] = "关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。",
                 ["payment-cancel"] = "关键词定义本身没有费用或支付Prompt；费用属于引用它的父能力。",
+                ["no-target"] = "关键词定义只描述共享规则语义，不独立生成对象候选；对象属于授予它的父能力或后续规则动作。",
+                ["target-invalidated"] = "关键词定义没有已声明对象；实际进攻、致命替代或状态检查均读取当前实例状态。",
                 ["single-candidate-choice"] = "关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。",
                 ["duplicate-submit"] = "关键词定义没有独立提交命令；重复读取规则语义必须无副作用。",
             }) { AdditionalChecks = ["parent-grant-boundary", "authoritative-consumer", "leave-or-turn-expiry", "reconnect-state"] };
@@ -442,6 +453,8 @@ internal static class EffectLifecycleProfiles
             {
                 ["negated"] = "授予形态的关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。",
                 ["payment-cancel"] = "关键词定义本身没有费用或支付Prompt；费用属于授予它的父能力。",
+                ["no-target"] = "授予形态的定义段只描述共享关键词，不独立生成对象候选；对象由父能力声明。",
+                ["target-invalidated"] = "定义段没有已声明对象；父能力结算及后续规则动作分别按当前实例复验。",
                 ["single-candidate-choice"] = "关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。",
                 ["duplicate-submit"] = "关键词定义没有独立提交命令；重复读取规则语义必须无副作用。",
             }) { AdditionalChecks = ["parent-grant-boundary", "authoritative-consumer", "leave-or-turn-expiry", "reconnect-state"] };
@@ -627,6 +640,7 @@ internal static class EffectLifecycleProfiles
         new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
             ["settlement"] = "L12S2ZoneOps.GainRunes",
+            ["presentation"] = "ResolveEffectPresentationSceneId",
         },
         new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
@@ -730,6 +744,7 @@ internal static class EffectLifecycleProfiles
             ["negated"] = "代替在阵亡处理内裁定，不创建可响应或无效的独立效果堆叠；授予它的登场效果另行验收。",
             ["payment-cancel"] = "本段没有费用或支付Prompt。",
             ["no-target"] = "本段的代替对象由授予它的登场效果选择；代替裁定本身不再选对象。",
+            ["target-invalidated"] = "代替在当前致命处理内读取仍位于战场的当前实例，不保存可被逆结算改变的对象声明。",
             ["duplicate-submit"] = "代替在致命裁定中按实例状态执行一次，没有独立提交命令。",
         })
     {
@@ -1029,6 +1044,7 @@ internal static class EffectLifecycleProfiles
             ["effective-faction"] = "L12StructuredCardRules.EffectiveFaction",
             ["effective-traits"] = "L12StructuredCardRules.EffectiveTraits",
             ["faction-check"] = "L12StructuredCardRules.HasFaction",
+            ["candidate-consumer"] = "IsDesertHandSummonCandidate",
         },
         RuleDeclarationExemptions("阵营映射声明不创建效果，只参与有效阵营/特征的统一计算。"));
 
@@ -1037,9 +1053,12 @@ internal static class EffectLifecycleProfiles
     private static readonly L12LifecycleProfile ThorHammerMasterGate = new("rule:thor-hammer-master-gate",
         new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
-            ["ability-gate"] = "BuildAbilityViews",
+            ["master-gate"] = "L12StructuredCardSemantics.MasterAbilityGate",
+            ["button-projection"] = "BuildAbilityViews",
+            ["declaration"] = "TryBeginS2RemainingAbility",
+            ["commit"] = "TryCommitS2RemainingAbility",
         },
-        RuleDeclarationExemptions("主宰条件声明不创建效果，只在能力按钮资格处统一判定。"));
+        RuleDeclarationExemptions("主宰条件声明不创建效果；按钮、声明与提交入口共读同一结构化门禁。"));
 
     internal static readonly string[] GameSetupRuleAbilityIds =
     [
@@ -1378,6 +1397,7 @@ internal static class EffectLifecycleProfiles
                 ["return-prompt"] = "CreateReturnMoralePrompt",
                 ["return-settlement"] = "ReturnMoraleCardToDestination",
                 ["snapshot-projection"] = "SnapshotMorale",
+                ["presentation-projection"] = "SnapshotMorale",
             },
             new SortedDictionary<string, string>(StringComparer.Ordinal)
             {
@@ -1403,7 +1423,7 @@ internal static class EffectLifecycleProfiles
         "S02-05C1:ability:active:1ae9b19504eac93a",
         "S02-05C1A:ability:active:1ae9b19504eac93a",
         "S02-05D1:ability:active:519ab3c1379a9256",
-        "S02-05M1:ability:friendly-ranged-death:ba2dac5cf1c08527",
+        "S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888",
         "ST05-C1:ability:static:6fe475d8923feb65",
         "ST05-M1:ability:active:b1f11ab05f68dda0",
     ];
@@ -1440,6 +1460,7 @@ internal static class EffectLifecycleProfiles
                 ["cost-derivation"] = "L12StructuredCardRules.OpponentTurnCostModifier",
                 ["front-troops-derivation"] = "L12StructuredCardRules.OpponentTurnFrontTroopsBonus",
                 ["authoritative-recalculation"] = "RecalculateContinuousTroops",
+                ["public-projection"] = "SnapshotField",
             },
             new SortedDictionary<string, string>(StringComparer.Ordinal)
             {
@@ -1447,12 +1468,40 @@ internal static class EffectLifecycleProfiles
                 ["negated"] = "持续能力不独立入栈，不能作为一次效果被无效。",
                 ["payment-cancel"] = "能力没有费用；衍生费用只供其他支付协议读取。",
                 ["target-invalidated"] = "没有效果目标；每次快照与结算前按当前回合、控制者和位置重算。",
+                ["duplicate-submit"] = "持续能力没有发动或选择提交；重复生成双方快照只重新计算当前衍生值且没有副作用。",
                 ["multi-target-applicability"] = "每个同名实例分别重算，不共享或累积到其他军团。",
             })
         {
             AdditionalChecks = ["exact-card-family", "opponent-turn", "controller-turn", "front-row",
                 "back-row", "current-controller", "cost-and-troops-same-definition", "leave-reset",
                 "reconnect-idempotence"],
+        };
+
+    internal const string TombGuardMasterAuraAbilityId =
+        "S01-02D1:ability:static:d1339da6822c9ae1";
+
+    private static readonly L12LifecycleProfile TombGuardMasterAura =
+        new("continuous:tomb-guard-master-aura",
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["definition"] = "L12StructuredCardSemantics.MasterFieldAuraRule",
+                ["current-cost"] = "RecalculateContinuousTroops",
+                ["current-troops"] = "GetTurnAndPositionContinuousTroops",
+                ["presentation"] = "SnapshotField",
+            },
+            new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["no-target"] = "持续能力按当前战场上的陵墓守卫逐张应用，不建立玩家目标选择。",
+                ["negated"] = "持续能力不独立入栈，不能作为一次效果被无效。",
+                ["payment-cancel"] = "本段没有费用或支付Prompt。",
+                ["target-invalidated"] = "没有声明对象；离场、控制权或主神变化后由共享重算立即撤销。",
+                ["duplicate-submit"] = "持续重算为幂等读取，不产生次数、日志或重复状态。",
+                ["single-candidate-choice"] = "持续能力没有选择步骤。",
+                ["multi-target-applicability"] = "我方战场每张陵墓守卫各自同时获得兵力与当前费用修正。",
+            })
+        {
+            AdditionalChecks = ["field-only", "cost-and-troops-same-definition", "current-controller",
+                "current-cost-consumers", "presentation-consumers", "reconnect-derived-state"],
         };
 
     internal static readonly string[] PureSummonTurnCounterProtectionAbilityIds =
@@ -1565,7 +1614,7 @@ internal static class EffectLifecycleProfiles
         ("S02-06S6:ability:after-attack:b158f5749a6c161e", "可消耗X符文"),
         ("S02-0404:ability:granted:2c2b9693ca8cf3b8", "骑兵位移"),
         ("S02-0404:ability:granted:e7c384ccba9ff2f3", "本回合位移过的军团"),
-        ("S02-05M1:ability:active:b2bece6897eb980b", "获得强攻或震击"),
+        ("S02-05M1:ability:active:6fe03f6c35407ac7", "获得强攻或震击"),
         ("S02-05M2:ability:active:e4b2c63a32960f8e", "查看牌库顶部3张牌"),
         ("S02-05D1:ability:active:1e9195c93dff4ee9", "可消耗并翻转2神力"),
         ("S02-0520:ability:mode-promotion-discount:98eb71c68928c091", "神力-1"),
@@ -1601,6 +1650,27 @@ internal static class EffectLifecycleProfiles
         })
     {
         AdditionalChecks = ["per-card-branch", "authoritative-consumer"],
+    };
+
+    internal static readonly string[] PaidSelfStateTriggerAbilityIds =
+    [
+        "S02-0602:ability:enter:1ec4fb001f87c88e",
+        "S02-0610:ability:after-trial:451b6d549a5c98c4",
+    ];
+
+    private static readonly L12LifecycleProfile PaidSelfStateTrigger = new("trigger:paid-self-state",
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["candidate"] = "CreateTriggerCandidate",
+            ["begin-declaration"] = "TryBeginTrialAdvanceTriggerDeclaration",
+            ["cost-commit"] = "TryCompleteTrialAdvanceTriggerDeclaration",
+            ["settlement"] = "TryResolveTrialAdvanceEffect",
+            ["source-failure"] = "RecordResolutionFailure",
+            ["presentation"] = "ResolveEffectPresentationSceneId",
+        },
+        new SortedDictionary<string, string>(StringComparer.Ordinal))
+    {
+        AdditionalChecks = ["paid-cost-preserved", "source-invalidated", "optional-decline"],
     };
 
     // B. 共享公开触发管线：候选入队 → 公开声明开始/完成 → 栈顶结算，批次规划由
@@ -1639,7 +1709,6 @@ internal static class EffectLifecycleProfiles
         ("S02-0608:ability:attack:0999d120e02e3c50", "侍从骑士"),
         ("S02-0612:ability:attack:c195f409c875e9eb", "进攻无损且兵力+2000"),
         ("S02-0617:ability:attack:c8dd6c6601a73ebb", "获得1符文"),
-        ("S02-0610:ability:after-trial:451b6d549a5c98c4", "无法再次发动试炼"),
         ("S02-0611:ability:enter:0cc32f023a1b4f11", "直到下个我方回合开始前"),
         ("S02-0614:ability:enter:601eddfb8abbb8d2", "可选择"),
         ("S02-0602:ability:after-kill:e290e1e434e45531", "击杀时"),
@@ -1818,7 +1887,14 @@ internal static class EffectLifecycleProfiles
         {
             ["turn-start"] = "ContinueAutomaticTurnStart",
         },
-        new SortedDictionary<string, string>(StringComparer.Ordinal))
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["no-target"] = "抽牌阶段替代按牌库当前顺序逐张弃置，不创建对象选择。",
+            ["negated"] = "阶段规则行动不入效果堆叠，不能被响应或无效。",
+            ["target-invalidated"] = "没有已声明效果对象；每次弃置只读取当时牌库顶。",
+            ["duplicate-submit"] = "没有玩家发动命令；同一回合的自动阶段推进由回合状态机执行一次。",
+            ["payment-cancel"] = "本段没有费用或支付Prompt。",
+        })
     {
         AdditionalChecks = ["authoritative-consumer"],
     };
@@ -1830,7 +1906,14 @@ internal static class EffectLifecycleProfiles
         {
             ["setup"] = "PrepareLibrariesAndHands",
         },
-        new SortedDictionary<string, string>(StringComparer.Ordinal))
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["no-target"] = "开局规则直接把固定的<复苏的奥西里斯>置入所属玩家墓地，不创建对象选择。",
+            ["negated"] = "开局规则行动不入效果堆叠，不能被响应或无效。",
+            ["target-invalidated"] = "没有已声明效果对象；所属玩家与固定卡身份在建局时已确定。",
+            ["duplicate-submit"] = "没有玩家提交命令；建局只构造一次初始状态，恢复读取持久化结果而不重复执行。",
+            ["payment-cancel"] = "本段没有费用或支付Prompt。",
+        })
     {
         AdditionalChecks = ["authoritative-consumer"],
     };
@@ -1843,7 +1926,14 @@ internal static class EffectLifecycleProfiles
             ["departure"] = "CompleteMasterLegionDeparture",
             ["morale-trigger"] = "TryResolveSimpleResourceTrigger",
         },
-        new SortedDictionary<string, string>(StringComparer.Ordinal))
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["no-target"] = "离场替代只在当前作为军团的孙悟空实际离场时执行，不存在独立发动或对象候选阶段。",
+            ["negated"] = "返回主宰区是离场规则替代，不能被响应或无效；返回后的士气追加才是独立可选效果。",
+            ["target-invalidated"] = "没有入栈后等待复验的已声明对象；离场动作持有当前实例并立即应用区域替代。",
+            ["duplicate-submit"] = "离场替代没有独立玩家提交；同一实例移出战场后不能再次执行同一次离场。",
+            ["payment-cancel"] = "离场替代没有费用；返回后的可选士气效果另由资源触发生命周期管理。",
+        })
     {
         AdditionalChecks = ["authoritative-consumer"],
     };
@@ -1855,7 +1945,14 @@ internal static class EffectLifecycleProfiles
         {
             ["discard"] = "DiscardAttachedCards",
         },
-        new SortedDictionary<string, string>(StringComparer.Ordinal))
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["no-target"] = "宿主圣物实际离开圣物区时按当前叠放关系自动弃置，不存在独立发动或对象候选阶段。",
+            ["negated"] = "宿主离场后的叠放卡清理是区域规则处理，不创建可响应或无效的效果。",
+            ["target-invalidated"] = "没有入栈后等待复验的对象；清理时枚举宿主当前仍叠放的卡牌实例。",
+            ["duplicate-submit"] = "清理没有独立玩家提交，完成后清空叠放集合，同一关系不能重复弃置。",
+            ["payment-cancel"] = "宿主离场清理没有费用或支付Prompt。",
+        })
     {
         AdditionalChecks = ["authoritative-consumer"],
     };
@@ -1867,7 +1964,14 @@ internal static class EffectLifecycleProfiles
         {
             ["damage-floor"] = "AdjustAnderstorpRingDamage",
         },
-        new SortedDictionary<string, string>(StringComparer.Ordinal))
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["no-target"] = "伤害替代只读取本回合主宰首次受伤事实，不创建对象选择。",
+            ["negated"] = "替代规则在伤害入口内裁定，不创建可响应或无效的独立效果。",
+            ["target-invalidated"] = "没有已声明效果对象；每次伤害按当前控制者回合与累计受伤事实复验。",
+            ["duplicate-submit"] = "替代规则没有独立提交命令；重复进攻或伤害由其原始动作协议处理。",
+            ["payment-cancel"] = "本段没有费用或支付Prompt。",
+        })
     {
         AdditionalChecks = ["authoritative-consumer"],
     };
@@ -1883,7 +1987,14 @@ internal static class EffectLifecycleProfiles
         {
             ["replacement"] = "TryApplyLakeLadySwordReplacement",
         },
-        new SortedDictionary<string, string>(StringComparer.Ordinal))
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["no-target"] = "持续替代只在已完成试炼、当前亚瑟王及其当前叠放王者之剑同时满足时同步应用，不建立对象候选。",
+            ["negated"] = "持续替代属于致命离场前的规则处理，不进入效果堆叠，不能被响应或无效。",
+            ["target-invalidated"] = "没有声明后等待结算的对象；每次致命检查都读取当前亚瑟王、试炼完成状态和当前叠放关系。",
+            ["duplicate-submit"] = "替代没有独立玩家提交；支付后王者之剑已离开叠放区，同一次致命检查由战斗决定表防止重复。",
+            ["payment-cancel"] = "移除当前唯一的王者之剑是必行费用，满足替代条件时自动支付且没有取消Prompt。",
+        })
     {
         AdditionalChecks = ["authoritative-consumer"],
     };
@@ -1966,8 +2077,12 @@ internal static class EffectLifecycleProfiles
         new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
             ["settle"] = "TryResolveTrialAdvanceEffect",
+            ["presentation"] = "ResolveEffectPresentationSceneId",
         },
-        new SortedDictionary<string, string>(StringComparer.Ordinal))
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["target-invalidated"] = "推进试炼是全局结算，不声明效果对象；来源离场不改变已公开选择。",
+        })
     {
         AdditionalChecks = ["authoritative-consumer"],
     };
@@ -1978,8 +2093,12 @@ internal static class EffectLifecycleProfiles
         new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
             ["settle"] = "TryResolveTrialAdvanceEffect",
+            ["presentation"] = "ResolveEffectPresentationSceneId",
         },
-        new SortedDictionary<string, string>(StringComparer.Ordinal))
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["target-invalidated"] = "推进试炼是全局结算，不声明效果对象；来源在声明时休整后不再作为结算目标。",
+        })
     {
         AdditionalChecks = ["authoritative-consumer"],
     };
@@ -1991,8 +2110,12 @@ internal static class EffectLifecycleProfiles
         {
             ["queue"] = "QueueAvalonTurnStart",
             ["settle"] = "TryResolveTrialAdvanceEffect",
+            ["presentation"] = "ResolveEffectPresentationSceneId",
         },
-        new SortedDictionary<string, string>(StringComparer.Ordinal))
+        new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["target-invalidated"] = "本段没有声明对象；结算时仅处理当前未完成试炼，并独立获得1符文。",
+        })
     {
         AdditionalChecks = ["authoritative-consumer"],
     };
@@ -2020,13 +2143,13 @@ internal static class EffectLifecycleProfiles
     };
 
     // 萨拉丁整行印刷声明：「回合1次位移」+「前排相邻太阳城进攻增益」复合行；
-    // 位移语义由共享位移命令承载，进攻被动由 S1 阵营攻击被动入口承载。
+    // 位移语义由共享骑兵位移规则动作承载，进攻被动由 S1 阵营攻击被动入口承载。
     internal const string SaladinLineAbilityId = "S01-0206:ability:static:cb39cf42a7feea7b";
 
     private static readonly L12LifecycleProfile SaladinLine = new("declaration:saladin-line",
         new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
-            ["move"] = "Move",
+            ["move"] = "CavalryMove",
             ["attack-passive"] = "ApplyS1FactionAttackPassives",
         },
         new SortedDictionary<string, string>(StringComparer.Ordinal)
@@ -2111,9 +2234,11 @@ internal static class EffectLifecycleProfiles
         ValidateOwners(MoraleZoneResource);
         ValidateOwners(MoraleFaceFlip);
         ValidateOwners(OpponentTurnFieldRule);
+        ValidateOwners(TombGuardMasterAura);
         ValidateOwners(SummonTurnCounterProtection);
         ValidateOwners(RamsesProtectionAndEntryCost);
         ValidateOwners(PipelineActiveEffect);
+        ValidateOwners(PaidSelfStateTrigger);
         ValidateOwners(PipelinePublicTrigger);
         ValidateOwners(PipelineHandPlay);
         ValidateOwners(PipelineResponse);
@@ -2733,6 +2858,11 @@ internal static class EffectLifecycleProfiles
             .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);
         if (!opponentTurnFieldRules.SetEquals([OpponentTurnFieldRuleAbilityId]))
             throw new InvalidOperationException("Opponent-turn field-rule family changed; review its per-ability bindings.");
+        if (!abilities.TryGetValue(TombGuardMasterAuraAbilityId, out var tombGuardMasterAura)
+            || tombGuardMasterAura.ExecutionModel != "continuous"
+            || L12StructuredCardSemantics.MasterFieldAuraRule(tombGuardMasterAura.CardId) is null)
+            throw new InvalidOperationException($"Stale reviewed tomb-guard master aura: {TombGuardMasterAuraAbilityId}");
+        bindings.Add(TombGuardMasterAuraAbilityId, TombGuardMasterAura);
         foreach (var id in PureSummonTurnCounterProtectionAbilityIds)
         {
             if (!abilities.TryGetValue(id, out var ability) || ability.ExecutionModel != "continuous"
@@ -2790,6 +2920,22 @@ internal static class EffectLifecycleProfiles
             .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);
         if (!pipelineActiveRescan.SetEquals(PipelineActiveEffectAbilityIds))
             throw new InvalidOperationException("Pipeline active-effect family changed; review its per-ability bindings.");
+        foreach (var id in PaidSelfStateTriggerAbilityIds)
+        {
+            if (!abilities.TryGetValue(id, out var ability)
+                || ability.ExecutionModel != "triggered"
+                || !ability.Atoms.Any(atom => atom.Stage == "cost")
+                || !ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.SetState
+                    || atom.Kind == L12AtomKinds.Ready))
+                throw new InvalidOperationException($"Stale reviewed paid self-state trigger binding: {id}");
+            bindings.Add(id, PaidSelfStateTrigger);
+        }
+        var paidSelfStateRescan = abilities.Values.Where(ability =>
+                ability.CardId == "S02-0602" && ability.Trigger == "enter"
+                || ability.CardId == "S02-0610" && ability.Trigger == "after-trial")
+            .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);
+        if (!paidSelfStateRescan.SetEquals(PaidSelfStateTriggerAbilityIds))
+            throw new InvalidOperationException("Paid self-state trigger family changed; review its per-ability bindings.");
         foreach (var (id, phrase) in PipelinePublicTriggerChecks)
         {
             if (!abilities.TryGetValue(id, out var ability)

@@ -279,7 +279,7 @@ public sealed class AtomicReviewBatch6GARegressionTests
     [Fact]
     [Trait("L12Evidence", "card:S02-05M1")]
     [Trait("L12Evidence", "entry:artemis-public-target-invalid-no-once-refund")]
-    public void ArtemisDeclaresTheExactMoraleAndTargetFailureDoesNotRefundOnce()
+    public void ArtemisDeclaresTheExactMoraleAndLeavingTheZoneDoesNotRefundOnce()
     {
         var game = Create(9202, "S02-05M1");
         var player = game.State.Players[0];
@@ -292,7 +292,7 @@ public sealed class AtomicReviewBatch6GARegressionTests
         ResolveOnlyPrompt(game, "batch6ga-artemis-morale");
 
         var morale = Assert.Single(player.Morale);
-        morale.Tapped = false;
+        player.Morale.Remove(morale);
         PassResponses(game);
 
         Assert.False(morale.IsGodPower);

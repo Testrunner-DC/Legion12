@@ -397,7 +397,7 @@ public sealed class FrontRowTauntAndTrialLifecycleProfileTests
     [L12AbilityEvidence("S02-0006:ability:continuous:7f3bdf9055e53845", "usage-commit", "authoritative-consumer")]
     [L12AbilityEvidence("S02-0306:ability:continuous:a5a8e191442bbfac", "usage-commit", "authoritative-consumer")]
     [L12AbilityEvidence("S02-0008:ability:continuous:766cca673a9815ad", "effective-faction", "authoritative-consumer")]
-    [L12AbilityEvidence("S02-0301:ability:continuous:e48cf407ce847427", "ability-gate", "authoritative-consumer")]
+    [L12AbilityEvidence("S02-0301:ability:continuous:e48cf407ce847427", "master-gate", "authoritative-consumer")]
     [L12AbilityEvidence("S02-0305:ability:game-setup:cf14affeb486a9f7", "setup-defaults", "authoritative-consumer")]
     [L12AbilityEvidence("S02-03M1:ability:game-setup:46b2a85c54cecc56", "setup-defaults", "authoritative-consumer")]
     [L12AbilityEvidence("S02-05D1:ability:setup:cb6a45eff0631d64", "setup-defaults", "authoritative-consumer")]

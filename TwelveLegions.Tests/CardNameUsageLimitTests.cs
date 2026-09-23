@@ -114,6 +114,32 @@ public sealed class CardNameUsageLimitTests
     }
 
     [Fact]
+    [L12AbilityEvidence("S02-0006:ability:continuous:7f3bdf9055e53845",
+        "normal", "reconnect", "presentation-consumers")]
+    public void FaithZealotSharedNameRuleSurvivesReconnectAndUsesItsPrintedPrompt()
+    {
+        var game = Create();
+        Discard(game, "faith-evidence-first");
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        var printed = Catalog.AtomicEffects.Find("S02-0006")!.Abilities
+            .Single(ability => ability.Trigger == "discarded").Text;
+        Assert.Contains(printed, prompt.Text, StringComparison.Ordinal);
+
+        game = Restore(game);
+        var restoredPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(prompt.PromptId, restoredPrompt.PromptId);
+        Assert.Contains(printed, restoredPrompt.Text, StringComparison.Ordinal);
+        Choose(game, restoredPrompt, "mode:use");
+
+        Assert.Contains(FaithKey, game.State.Players[0].UsedAbilities);
+        Assert.Single(game.State.EffectStack,
+            item => item.SourceInstanceId == "faith-evidence-first");
+        Discard(game, "faith-evidence-second");
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            candidate => candidate.Data.GetValueOrDefault("action") == "s2-faith-zealot");
+    }
+
+    [Fact]
     public void LegacyInstanceUsageAlsoBlocksAnotherCopyAfterRestore()
     {
         var game = Create();
@@ -191,6 +217,15 @@ public sealed class CardNameUsageLimitTests
     [InlineData(false)]
     [InlineData(true)]
     public void MimirUseLocksAllCopiesIncludingAfterNegationAndRestore(bool negated)
+        => AssertMimirUseLocksAllCopiesIncludingAfterNegationAndRestore(negated);
+
+    [Fact]
+    [L12AbilityEvidence("S02-0306:ability:continuous:a5a8e191442bbfac",
+        "normal", "reconnect", "presentation-consumers")]
+    public void MimirSharedNameRuleSurvivesReconnectAndExplainsTheLock()
+        => AssertMimirUseLocksAllCopiesIncludingAfterNegationAndRestore(negated: false);
+
+    private static void AssertMimirUseLocksAllCopiesIncludingAfterNegationAndRestore(bool negated)
     {
         var game = Create();
         var player = game.State.Players[0];

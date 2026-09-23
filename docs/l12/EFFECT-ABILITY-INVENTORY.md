@@ -5,14 +5,13 @@
 
 卡牌：324；能力段：681；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`8b685d8f045a25ed4cd75c0646c395e2f8fc47b71a5c06fae281a58a931c1d53`。
+内容指纹：`5fbd4bac929f6545df6d49fb2b184e93b77a0918b6e20348f4dbd1646773936c`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
-| composite-definition | 195 |
+| composite-definition | 194 |
 | fine-definition | 84 |
-| owner-unreviewed | 1 |
-| shared-rule-owner | 401 |
+| shared-rule-owner | 403 |
 
 fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；shared-rule-owner = 精确能力已绑定共用规则入口及适用性档案；owner-unreviewed = 还需定位实际入口。任何一种归属证据均不等于生命周期验收通过。
 同卡同触发只算候选，不能把另一能力的程序继承为本能力已覆盖。无能力卡单列，不能从分母中静默消失。
@@ -50,7 +49,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 ### active:paid-extended-range
 
-精确绑定能力数：2。运行入口：activation-eligibility = L12GameEngine.ExtendedRangeSourceUnavailableReason；attack-candidates = L12GameEngine.BuildLegalAttackTargets；attack-revalidation = L12GameEngine.TryValidateAttackTarget；cost-commit = L12GameEngine.TryCommitS1ExtendedActiveAbility；definition = L12StructuredCardSemantics.ExtendedRangeRule；expiry = L12GameEngine.ResetTemporaryCardState；response-stack = L12GameEngine.PushEffect；settlement = L12GameEngine.TryResolveS1ExtendedActive。
+精确绑定能力数：2。运行入口：activation-eligibility = L12GameEngine.ExtendedRangeSourceUnavailableReason；attack-candidates = L12GameEngine.BuildLegalAttackTargets；attack-revalidation = L12GameEngine.TryValidateAttackTarget；cost-commit = L12GameEngine.TryCommitS1ExtendedActiveAbility；definition = L12StructuredCardSemantics.ExtendedRangeRule；expiry = L12GameEngine.ResetTemporaryCardState；presentation = L12GameEngine.ResolveEffectPresentationSceneId；response-stack = L12GameEngine.PushEffect；settlement = L12GameEngine.TryResolveS1ExtendedActive。
 
 - multi-target-applicability：一次结算只更新来源军团的权限，不同时处理多个进攻对象。
 - no-target：本效果不选择进攻对象，只赋予来源本回合的进攻权限；即使当前没有对方对象也可支付并发动。
@@ -120,6 +119,11 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 精确绑定能力数：27。运行入口：button-eligibility = L12GameEngine.BuildAbilityViews；cost-commit = L12GameEngine.CommitStructuredActiveRestCost；cost-presentation = L12GameEngine.AddActivePaidCostPresentation；response-stack = L12GameEngine.PushEffect；runtime-identity = L12StructuredCardRules.IsActiveRestAbility。
 
+- multi-target-applicability：主动休整Cost只改变能力来源状态，不处理父能力的多个效果对象。
+- no-target：本档案只验收主动休整的共用Cost；各父能力是否需要目标及无目标时能否发动由对应效果档案验收。
+- payment-cancel：对象或分支选择取消发生在PushEffect共用Cost边界之前，由父能力声明档案验收；未进入本边界即不得休整来源。
+- single-candidate-choice：主动休整Cost本身不选择效果对象；唯一候选仍选择属于父能力声明协议。
+- target-invalidated：来源休整在入栈前已经支付；效果对象逆结算失效由父能力档案验收，不改变共用Cost。
 
 ### declaration:front-row-composite-line
 
@@ -150,7 +154,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 ### pipeline:public-trigger
 
-精确绑定能力数：40。运行入口：batch-plan = L12TriggerBatchPlanner.Plan；begin-declaration = L12GameEngine.TryBeginPublicTriggerDeclaration；candidates = L12GameEngine.QueueTriggerCandidates；complete-declaration = L12GameEngine.TryCompletePublicTriggerDeclaration；settle = L12GameEngine.ResolveTopStack。
+精确绑定能力数：39。运行入口：batch-plan = L12TriggerBatchPlanner.Plan；begin-declaration = L12GameEngine.TryBeginPublicTriggerDeclaration；candidates = L12GameEngine.QueueTriggerCandidates；complete-declaration = L12GameEngine.TryCompletePublicTriggerDeclaration；settle = L12GameEngine.ResolveTopStack。
 
 - duplicate-submit：重复提交由触发批次协议复验。
 
@@ -194,7 +198,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 ### declaration:saladin-line
 
-精确绑定能力数：1。运行入口：attack-passive = L12GameEngine.ApplyS1FactionAttackPassives；move = L12GameEngine.Move。
+精确绑定能力数：1。运行入口：attack-passive = L12GameEngine.ApplyS1FactionAttackPassives；move = L12GameEngine.CavalryMove。
 
 - duplicate-submit：持续声明读取无副作用；重复位移提交由公共动作协议复验。
 - negated：持续印刷声明不独立入栈，不能作为一次效果被无效。
@@ -224,8 +228,9 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 ### continuous:opponent-turn-field-rule
 
-精确绑定能力数：1。运行入口：authoritative-recalculation = L12GameEngine.RecalculateContinuousTroops；cost-derivation = L12StructuredCardRules.OpponentTurnCostModifier；definition = L12StructuredCardSemantics.OpponentTurnFieldRule；front-troops-derivation = L12StructuredCardRules.OpponentTurnFrontTroopsBonus。
+精确绑定能力数：1。运行入口：authoritative-recalculation = L12GameEngine.RecalculateContinuousTroops；cost-derivation = L12StructuredCardRules.OpponentTurnCostModifier；definition = L12StructuredCardSemantics.OpponentTurnFieldRule；front-troops-derivation = L12StructuredCardRules.OpponentTurnFrontTroopsBonus；public-projection = L12GameEngine.SnapshotField。
 
+- duplicate-submit：持续能力没有发动或选择提交；重复生成双方快照只重新计算当前衍生值且没有副作用。
 - multi-target-applicability：每个同名实例分别重算，不共享或累积到其他军团。
 - negated：持续能力不独立入栈，不能作为一次效果被无效。
 - no-target：持续能力只修改自身衍生数值，不创建对象选择。
@@ -250,11 +255,29 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 - negated：代替在阵亡处理内裁定，不创建可响应或无效的独立效果堆叠；授予它的登场效果另行验收。
 - no-target：本段的代替对象由授予它的登场效果选择；代替裁定本身不再选对象。
 - payment-cancel：本段没有费用或支付Prompt。
+- target-invalidated：代替在当前致命处理内读取仍位于战场的当前实例，不保存可被逆结算改变的对象声明。
+
+### continuous:tomb-guard-master-aura
+
+精确绑定能力数：1。运行入口：current-cost = L12GameEngine.RecalculateContinuousTroops；current-troops = L12GameEngine.GetTurnAndPositionContinuousTroops；definition = L12StructuredCardSemantics.MasterFieldAuraRule；presentation = L12GameEngine.SnapshotField。
+
+- duplicate-submit：持续重算为幂等读取，不产生次数、日志或重复状态。
+- multi-target-applicability：我方战场每张陵墓守卫各自同时获得兵力与当前费用修正。
+- negated：持续能力不独立入栈，不能作为一次效果被无效。
+- no-target：持续能力按当前战场上的陵墓守卫逐张应用，不建立玩家目标选择。
+- payment-cancel：本段没有费用或支付Prompt。
+- single-candidate-choice：持续能力没有选择步骤。
+- target-invalidated：没有声明对象；离场、控制权或主神变化后由共享重算立即撤销。
 
 ### rule:isis-setup
 
 精确绑定能力数：1。运行入口：setup = L12GameEngine.PrepareLibrariesAndHands。
 
+- duplicate-submit：没有玩家提交命令；建局只构造一次初始状态，恢复读取持久化结果而不重复执行。
+- negated：开局规则行动不入效果堆叠，不能被响应或无效。
+- no-target：开局规则直接把固定的<复苏的奥西里斯>置入所属玩家墓地，不创建对象选择。
+- payment-cancel：本段没有费用或支付Prompt。
+- target-invalidated：没有已声明效果对象；所属玩家与固定卡身份在建局时已确定。
 
 ### hand-play:self-damage-entry-discount
 
@@ -269,6 +292,11 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 精确绑定能力数：1。运行入口：turn-start = L12GameEngine.ContinueAutomaticTurnStart。
 
+- duplicate-submit：没有玩家发动命令；同一回合的自动阶段推进由回合状态机执行一次。
+- negated：阶段规则行动不入效果堆叠，不能被响应或无效。
+- no-target：抽牌阶段替代按牌库当前顺序逐张弃置，不创建对象选择。
+- payment-cancel：本段没有费用或支付Prompt。
+- target-invalidated：没有已声明效果对象；每次弃置只读取当时牌库顶。
 
 ### composite:counter-deployment
 
@@ -319,8 +347,10 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 - duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
 - negated：授予形态的关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：授予形态的定义段只描述共享关键词，不独立生成对象候选；对象由父能力声明。
 - payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于授予它的父能力。
 - single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：定义段没有已声明对象；父能力结算及后续规则动作分别按当前实例复验。
 
 ### pipeline:response
 
@@ -341,7 +371,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 ### rule:universal-faction-mapping
 
-精确绑定能力数：1。运行入口：effective-faction = L12StructuredCardRules.EffectiveFaction；effective-traits = L12StructuredCardRules.EffectiveTraits；faction-check = L12StructuredCardRules.HasFaction。
+精确绑定能力数：1。运行入口：candidate-consumer = L12GameEngine.IsDesertHandSummonCandidate；effective-faction = L12StructuredCardRules.EffectiveFaction；effective-traits = L12StructuredCardRules.EffectiveTraits；faction-check = L12StructuredCardRules.HasFaction。
 
 - duplicate-submit：规则判定读取无副作用。
 - negated：规则声明不入栈，不能被响应或无效。
@@ -352,7 +382,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 ### replacement:morale-zone-resource
 
-精确绑定能力数：1。运行入口：definition = L12StructuredCardSemantics.MoraleZoneResourceRule；payment-identity = L12GameEngine.OrdinaryPaymentSemanticKey；payment-prompt = L12GameEngine.CreateResourcePaymentPrompt；return-prompt = L12GameEngine.CreateReturnMoralePrompt；return-settlement = L12GameEngine.ReturnMoraleCardToDestination；snapshot-projection = L12GameEngine.SnapshotMorale。
+精确绑定能力数：1。运行入口：definition = L12StructuredCardSemantics.MoraleZoneResourceRule；payment-identity = L12GameEngine.OrdinaryPaymentSemanticKey；payment-prompt = L12GameEngine.CreateResourcePaymentPrompt；presentation-projection = L12GameEngine.SnapshotMorale；return-prompt = L12GameEngine.CreateReturnMoralePrompt；return-settlement = L12GameEngine.ReturnMoraleCardToDestination；snapshot-projection = L12GameEngine.SnapshotMorale。
 
 - multi-target-applicability：同批返还的每个资源分别按当前身份决定去向，不合并、不转移到其他实例。
 - negated：替代规则不独立入栈，不可单独响应或无效；已支付的返还费用不因后续效果无效而恢复。
@@ -376,6 +406,11 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 精确绑定能力数：1。运行入口：discard = L12GameEngine.DiscardAttachedCards。
 
+- duplicate-submit：清理没有独立玩家提交，完成后清空叠放集合，同一关系不能重复弃置。
+- negated：宿主离场后的叠放卡清理是区域规则处理，不创建可响应或无效的效果。
+- no-target：宿主圣物实际离开圣物区时按当前叠放关系自动弃置，不存在独立发动或对象候选阶段。
+- payment-cancel：宿主离场清理没有费用或支付Prompt。
+- target-invalidated：没有入栈后等待复验的对象；清理时枚举宿主当前仍叠放的卡牌实例。
 
 ### granted:ruined-ritual-modes
 
@@ -386,6 +421,11 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 精确绑定能力数：1。运行入口：departure = L12GameEngine.CompleteMasterLegionDeparture；morale-trigger = L12GameEngine.TryResolveSimpleResourceTrigger。
 
+- duplicate-submit：离场替代没有独立玩家提交；同一实例移出战场后不能再次执行同一次离场。
+- negated：返回主宰区是离场规则替代，不能被响应或无效；返回后的士气追加才是独立可选效果。
+- no-target：离场替代只在当前作为军团的孙悟空实际离场时执行，不存在独立发动或对象候选阶段。
+- payment-cancel：离场替代没有费用；返回后的可选士气效果另由资源触发生命周期管理。
+- target-invalidated：没有入栈后等待复验的已声明对象；离场动作持有当前实例并立即应用区域替代。
 
 ### hand-play:artifact-block
 
@@ -403,23 +443,25 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 - duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
 - negated：授予形态的关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：授予形态的定义段只描述共享关键词，不独立生成对象候选；对象由父能力声明。
 - payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于授予它的父能力。
 - single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：定义段没有已声明对象；父能力结算及后续规则动作分别按当前实例复验。
 
 ### composite:desert-hand-summon
 
-精确绑定能力数：1。运行入口：candidate-generation = L12GameEngine.IsDesertHandSummonCandidate；cost-commit = L12GameEngine.TryCommitCompositePreStackCosts；settlement-revalidation = L12GameEngine.TryResolveS2FactionTactic。
+精确绑定能力数：1。运行入口：candidate-generation = L12GameEngine.IsDesertHandSummonCandidate；cost-commit = L12GameEngine.TryCommitCompositePreStackCosts；presentation = L12GameEngine.ResolveEffectPresentationSceneId；settlement-revalidation = L12GameEngine.TryResolveS2FactionTactic。
 
 - no-target：本效果必须先声明1张合格手牌军团；不存在候选时不能发动，且尚未提交弃置费用。
 
 ### rule:thor-hammer-master-gate
 
-精确绑定能力数：1。运行入口：ability-gate = L12GameEngine.BuildAbilityViews。
+精确绑定能力数：1。运行入口：button-projection = L12GameEngine.BuildAbilityViews；commit = L12GameEngine.TryCommitS2RemainingAbility；declaration = L12GameEngine.TryBeginS2RemainingAbility；master-gate = L12StructuredCardSemantics.MasterAbilityGate。
 
 - duplicate-submit：规则判定读取无副作用。
 - negated：规则声明不入栈，不能被响应或无效。
 - no-target：规则声明不选择效果对象。
-- note：主宰条件声明不创建效果，只在能力按钮资格处统一判定。
+- note：主宰条件声明不创建效果；按钮、声明与提交入口共读同一结构化门禁。
 - payment-cancel：规则声明本身没有费用或支付Prompt。
 - target-invalidated：无效果对象；每次判定读取当前状态。
 
@@ -429,8 +471,10 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 - duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
 - negated：关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：关键词定义只描述共享规则语义，不独立生成对象候选；对象属于授予它的父能力或后续规则动作。
 - payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于引用它的父能力。
 - single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：关键词定义没有已声明对象；实际进攻、致命替代或状态检查均读取当前实例状态。
 
 ### rule:game-setup
 
@@ -447,6 +491,11 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 精确绑定能力数：1。运行入口：damage-floor = L12GameEngine.AdjustAnderstorpRingDamage。
 
+- duplicate-submit：替代规则没有独立提交命令；重复进攻或伤害由其原始动作协议处理。
+- negated：替代规则在伤害入口内裁定，不创建可响应或无效的独立效果。
+- no-target：伤害替代只读取本回合主宰首次受伤事实，不创建对象选择。
+- payment-cancel：本段没有费用或支付Prompt。
+- target-invalidated：没有已声明效果对象；每次伤害按当前控制者回合与累计受伤事实复验。
 
 ### keyword-granted:charge
 
@@ -454,8 +503,10 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 - duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
 - negated：授予形态的关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：授予形态的定义段只描述共享关键词，不独立生成对象候选；对象由父能力声明。
 - payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于授予它的父能力。
 - single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：定义段没有已声明对象；父能力结算及后续规则动作分别按当前实例复验。
 
 ### keyword-granted:death-immunity
 
@@ -463,8 +514,10 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 - duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
 - negated：授予形态的关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：授予形态的定义段只描述共享关键词，不独立生成对象候选；对象由父能力声明。
 - payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于授予它的父能力。
 - single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：定义段没有已声明对象；父能力结算及后续规则动作分别按当前实例复验。
 
 ### granted:tenka-modes
 
@@ -494,8 +547,10 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 - duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
 - negated：关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：关键词定义只描述共享规则语义，不独立生成对象候选；对象属于授予它的父能力或后续规则动作。
 - payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于引用它的父能力。
 - single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：关键词定义没有已声明对象；实际进攻、致命替代或状态检查均读取当前实例状态。
 
 ### resource:morale-face-flip
 
@@ -527,8 +582,10 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 - duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
 - negated：关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：关键词定义只描述共享规则语义，不独立生成对象候选；对象属于授予它的父能力或后续规则动作。
 - payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于引用它的父能力。
 - single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：关键词定义没有已声明对象；实际进攻、致命替代或状态检查均读取当前实例状态。
 
 ### continuous:front-row-keyword-grant
 
@@ -545,17 +602,25 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 - duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
 - negated：关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：关键词定义只描述共享规则语义，不独立生成对象候选；对象属于授予它的父能力或后续规则动作。
 - payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于引用它的父能力。
 - single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：关键词定义没有已声明对象；实际进攻、致命替代或状态检查均读取当前实例状态。
+
+### trigger:paid-self-state
+
+精确绑定能力数：2。运行入口：begin-declaration = L12GameEngine.TryBeginTrialAdvanceTriggerDeclaration；candidate = L12GameEngine.CreateTriggerCandidate；cost-commit = L12GameEngine.TryCompleteTrialAdvanceTriggerDeclaration；presentation = L12GameEngine.ResolveEffectPresentationSceneId；settlement = L12GameEngine.TryResolveTrialAdvanceEffect；source-failure = L12GameEngine.RecordResolutionFailure。
+
 
 ### granted:lancelot-kill-modes
 
-精确绑定能力数：1。运行入口：settle = L12GameEngine.TryResolveTrialAdvanceEffect。
+精确绑定能力数：1。运行入口：presentation = L12GameEngine.ResolveEffectPresentationSceneId；settle = L12GameEngine.TryResolveTrialAdvanceEffect。
 
+- target-invalidated：推进试炼是全局结算，不声明效果对象；来源离场不改变已公开选择。
 
 ### granted:gain-rune
 
-精确绑定能力数：2。运行入口：settlement = L12S2ZoneOps.GainRunes。
+精确绑定能力数：2。运行入口：presentation = L12GameEngine.ResolveEffectPresentationSceneId；settlement = L12S2ZoneOps.GainRunes。
 
 - duplicate-submit：本段没有独立提交命令；重复提交由父能力的计划/堆叠协议复验。
 - negated：granted 获得符文段不独立入栈；授予它的父能力是否被响应或无效另行验收。
@@ -588,8 +653,10 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 - duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
 - negated：关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：关键词定义只描述共享规则语义，不独立生成对象候选；对象属于授予它的父能力或后续规则动作。
 - payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于引用它的父能力。
 - single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：关键词定义没有已声明对象；实际进攻、致命替代或状态检查均读取当前实例状态。
 
 ### keyword:death-immunity
 
@@ -597,13 +664,16 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 - duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
 - negated：关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：关键词定义只描述共享规则语义，不独立生成对象候选；对象属于授予它的父能力或后续规则动作。
 - payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于引用它的父能力。
 - single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：关键词定义没有已声明对象；实际进攻、致命替代或状态检查均读取当前实例状态。
 
 ### granted:constance-modes
 
-精确绑定能力数：1。运行入口：settle = L12GameEngine.TryResolveTrialAdvanceEffect。
+精确绑定能力数：1。运行入口：presentation = L12GameEngine.ResolveEffectPresentationSceneId；settle = L12GameEngine.TryResolveTrialAdvanceEffect。
 
+- target-invalidated：推进试炼是全局结算，不声明效果对象；来源在声明时休整后不再作为结算目标。
 
 ### rule:trial-capacity
 
@@ -612,8 +682,9 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 ### turn-start:avalon
 
-精确绑定能力数：1。运行入口：queue = L12GameEngine.QueueAvalonTurnStart；settle = L12GameEngine.TryResolveTrialAdvanceEffect。
+精确绑定能力数：1。运行入口：presentation = L12GameEngine.ResolveEffectPresentationSceneId；queue = L12GameEngine.QueueAvalonTurnStart；settle = L12GameEngine.TryResolveTrialAdvanceEffect。
 
+- target-invalidated：本段没有声明对象；结算时仅处理当前未完成试炼，并独立获得1符文。
 
 ### continuous:kings-sword-attached
 
@@ -629,6 +700,11 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 精确绑定能力数：2。运行入口：replacement = L12GameEngine.TryApplyLakeLadySwordReplacement。
 
+- duplicate-submit：替代没有独立玩家提交；支付后王者之剑已离开叠放区，同一次致命检查由战斗决定表防止重复。
+- negated：持续替代属于致命离场前的规则处理，不进入效果堆叠，不能被响应或无效。
+- no-target：持续替代只在已完成试炼、当前亚瑟王及其当前叠放王者之剑同时满足时同步应用，不建立对象候选。
+- payment-cancel：移除当前唯一的王者之剑是必行费用，满足替代条件时自动支付且没有取消Prompt。
+- target-invalidated：没有声明后等待结算的对象；每次致命检查都读取当前亚瑟王、试炼完成状态和当前叠放关系。
 
 ### keyword-granted:piercing
 
@@ -636,8 +712,10 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 - duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
 - negated：授予形态的关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：授予形态的定义段只描述共享关键词，不独立生成对象候选；对象由父能力声明。
 - payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于授予它的父能力。
 - single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：定义段没有已声明对象；父能力结算及后续规则动作分别按当前实例复验。
 
 ### continuous:cooperative-support
 
@@ -658,15 +736,19 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0002:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / S01-0002 | button-rejection-consistency, timing |
 | S01-0002:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / S01-0002 | button-text, duplicate-submit, no-resource-cost, normal, presentation-event, reconnect-after-command, reconnect-before-command |
 | S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.SpecialResponseSegmentsReadTheSharedCapabilityRegistry / S01-0002 | authoritative-consumer, capability-registry, self-discard-cost |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.MercenaryHandBlockLifecycleProfileTests.MissingAttackStackTargetFailsBlockWithoutBindingAnotherItem / S01-0002 | target-invalidated |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.MercenaryHandBlockLifecycleProfileTests.NegatedBlockKeepsPaidDiscardAndAttackContinues / S01-0002 | negated |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.MercenaryHandBlockLifecycleProfileTests.PaidHandBlockSurvivesRestoreAndBlocksExactlyOnce / S01-0002 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.MercenaryHandBlockLifecycleProfileTests.PassingResponseWindowDoesNotPaySelfDiscardCost / S01-0002 | payment-cancel |
 | S01-0003:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0003 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0003:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.RepresentativeRangeConditionsActuallyPreventRetaliationAfterRestore / S01-0003 | duplicate-attack, normal-ranged-combat, reconnect-before-attack |
 | S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.ASecondActivationPaysAgainAndIgnoresLegacyOnceMarkers / S01-0003 | button-enabled, legacy-once-marker, payment-per-activation, repeat-activation |
-| S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.InvalidPaymentChoiceCanBeCancelledAfterRecoveryWithoutPaymentOrDeadlock / S01-0003 | duplicate-cancel, invalid-payment, payment-cancel, reconnect-payment |
+| S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.InvalidPaymentChoiceCanBeCancelledAfterRecoveryWithoutPaymentOrDeadlock / S01-0003 | duplicate-cancel, duplicate-submit, invalid-payment, payment-cancel, reconnect-payment |
 | S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.MissingOrNonLegionSourceFailsInsteadOfGrantingOutOfZone / S01-0003 | non-legion-state-fixture, reconnect-settlement, source-invalidated-settlement |
 | S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.NegationPreservesPaymentButDoesNotGrantRange / S01-0003 | negated-settlement, paid-cost-preserved, reconnect-settlement |
 | S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.NoEnemyIsNotAnActivationCostAndRangeExpiresAtTurnEnd / S01-0003 | no-enemy, turn-end-expiry |
 | S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.PaidRangeHasItsOwnActiveCostAndSingleResultScene / S01-0003 | cost-scope, presentation-identity |
-| S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.PaidRangeUsesOnlyItsPrintedTargetsAfterV2Recovery / S01-0003 | authoritative-attack, legal-targets, normal, reconnect-settlement |
+| S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.PaidRangeUsesOnlyItsPrintedTargetsAfterV2Recovery / S01-0003 | authoritative-attack, legal-targets, normal, presentation-consumers, reconnect-settlement |
 | S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.SourceRowIsCheckedBeforePaymentAndInsufficientCostDoesNotLockTheGame / S01-0003 | activation-row, insufficient-cost |
 | S01-0004:ability:static:1644ef88125b05c1 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S01-0004 | authoritative-consumer, candidate-and-submit-parity |
 | S01-0004:ability:active:6f9f6988e1ea4be0 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-0004 | authoritative-consumer, per-card-branch |
@@ -675,29 +757,35 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0020:ability:reaction:f099e096c2d7437b | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ConditionalResponseSegmentsReportActualOutcomesAfterRecovery / S01-0020 | conditional-settlement, declined-branch, empty-library, negated-settlement, no-target, reconnect-settlement |
 | S01-0020:ability:reaction:f099e096c2d7437b | TwelveLegions.Tests.StackResponseChoiceRegressionTests.PublicResponseDeclarationsRestoreAndRejectDuplicateFinalSubmission / S01-0020 | commit-declaration, duplicate-declaration, presentation-declaration, reconnect-declaration |
 | S01-00C1:ability:static:db1ae0a9efb4bff8 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleResourceIdentitySegmentIsStructurallySatisfied / S01-00C1 | authoritative-consumer, counts-as-morale-structural |
+| S01-0101:ability:static:b5c9e323c0a061cc | TwelveLegions.Tests.DuelCombatLineLifecycleProfileTests.LuBuNoLossAndRangedImmunityShareTheAuthoritativeCombatProfileAcrossRestore / S01-0101 | normal, presentation-consumers, reconnect |
 | S01-0101:ability:static:b5c9e323c0a061cc | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.DuelCombatLineSharesTheCombatProfileOutletWithItsStructuredSiblings / S01-0101 | authoritative-consumer, structured-split-siblings |
 | S01-0101:ability:static:1f027ad861ea0006 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S01-0101 | authoritative-consumer, combat-settlement |
 | S01-0101:ability:static:1041797d91099ae1 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S01-0101 | authoritative-consumer, combat-settlement |
 | S01-0104:ability:static:a91d7d481db612a9 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.PrintedEntryCostDefinitionsMatchTheReviewedCardFamily / S01-0104 | condition-false, display-and-payment-parity |
 | S01-0105:ability:active:0e81cd47a6221fd8 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-0105 | active-rest-cost, runtime-branch-mapping |
+| S01-0105:ability:active:0e81cd47a6221fd8 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S01-0105 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | S01-0106:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / S01-0106 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
 | S01-0106:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / S01-0106 | destination-invalidated, reconnect-before-command, source-invalidated |
 | S01-0106:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / S01-0106 | button-rejection-consistency, timing |
 | S01-0106:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / S01-0106 | button-text, duplicate-submit, no-resource-cost, normal, presentation-event, reconnect-after-command, reconnect-before-command |
+| S01-0107:ability:static:715fe715dcb8ea28 | TwelveLegions.Tests.FrontRowTauntOverlayLifecycleProfileTests.EveryOverlayTauntUsesCurrentRowInRulesAndPublicProjection / S01-0107 | normal, presentation-consumers, reconnect |
 | S01-0107:ability:static:715fe715dcb8ea28 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryFrontRowCompositeLineIsCarriedByItsStructuredSplitSiblings / S01-0107 | authoritative-consumer, row-condition-current, structured-split-siblings |
+| S01-0107:ability:static:715fe715dcb8ea28 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.MoraleComparisonIsReadFromTheCurrentPlayers / S01-0107 | entry-cost-condition-current, presentation-consumers |
 | S01-0107:ability:static:af427a4637e1c138 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryFrontRowTauntOverlaySegmentBindsToTheSharedCombatOutlet / S01-0107 | authoritative-consumer, closed-overlay-card-set, row-condition-current |
+| S01-0107:ability:static:af427a4637e1c138 | TwelveLegions.Tests.FrontRowTauntOverlayLifecycleProfileTests.EveryOverlayTauntUsesCurrentRowInRulesAndPublicProjection / S01-0107 | normal, presentation-consumers, reconnect |
 | S01-0109:ability:active:88c64e7a7e50fb25 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-0109 | active-rest-cost, runtime-branch-mapping |
+| S01-0109:ability:active:88c64e7a7e50fb25 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S01-0109 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | S01-0110:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0110 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0111:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0111 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0112:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0112 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0113:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0113 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.ASecondActivationPaysAgainAndIgnoresLegacyOnceMarkers / S01-0113 | button-enabled, legacy-once-marker, payment-per-activation, repeat-activation |
-| S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.InvalidPaymentChoiceCanBeCancelledAfterRecoveryWithoutPaymentOrDeadlock / S01-0113 | duplicate-cancel, invalid-payment, payment-cancel, reconnect-payment |
+| S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.InvalidPaymentChoiceCanBeCancelledAfterRecoveryWithoutPaymentOrDeadlock / S01-0113 | duplicate-cancel, duplicate-submit, invalid-payment, payment-cancel, reconnect-payment |
 | S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.MissingOrNonLegionSourceFailsInsteadOfGrantingOutOfZone / S01-0113 | non-legion-state-fixture, reconnect-settlement, source-invalidated-settlement |
 | S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.NegationPreservesPaymentButDoesNotGrantRange / S01-0113 | negated-settlement, paid-cost-preserved, reconnect-settlement |
 | S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.NoEnemyIsNotAnActivationCostAndRangeExpiresAtTurnEnd / S01-0113 | no-enemy, turn-end-expiry |
 | S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.PaidRangeHasItsOwnActiveCostAndSingleResultScene / S01-0113 | cost-scope, presentation-identity |
-| S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.PaidRangeUsesOnlyItsPrintedTargetsAfterV2Recovery / S01-0113 | authoritative-attack, legal-targets, normal, reconnect-settlement |
+| S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.PaidRangeUsesOnlyItsPrintedTargetsAfterV2Recovery / S01-0113 | authoritative-attack, legal-targets, normal, presentation-consumers, reconnect-settlement |
 | S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.SourceRowIsCheckedBeforePaymentAndInsufficientCostDoesNotLockTheGame / S01-0113 | activation-row, insufficient-cost |
 | S01-0114:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0114 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0114:ability:static:a91d7d481db612a9 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.PrintedEntryCostDefinitionsMatchTheReviewedCardFamily / S01-0114 | condition-false, display-and-payment-parity |
@@ -705,60 +793,83 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0115:ability:static:9ba2f4f5354a2a05 | TwelveLegions.Tests.PrintedRangedProfileTests.RepresentativeRangeConditionsActuallyPreventRetaliationAfterRestore / S01-0115 | duplicate-attack, normal-ranged-combat, reconnect-before-attack |
 | S01-0116:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0116 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0117:ability:active:ba48403c4da1e24c | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-0117 | active-rest-cost, runtime-branch-mapping |
+| S01-0117:ability:active:ba48403c4da1e24c | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S01-0117 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | S01-0120:ability:reaction:0865f062354681b2 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ConditionalResponseSegmentsReportActualOutcomesAfterRecovery / S01-0120 | conditional-settlement, declined-branch, empty-library, negated-settlement, reconnect-settlement, target-invalidated-settlement |
 | S01-0120:ability:reaction:0865f062354681b2 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.NestedResponseKeepsItsDeclaredRootWhenIntermediateStackChanges / S01-0120 | nested-authority, reconnect-settlement |
 | S01-0120:ability:reaction:0865f062354681b2 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.PublicResponseDeclarationsRestoreAndRejectDuplicateFinalSubmission / S01-0120 | commit-declaration, duplicate-declaration, presentation-declaration, reconnect-declaration |
 | S01-01C1:ability:active:3a8789b35c0c2be4 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / S01-01C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
 | S01-01D1:ability:static:103012fd4239104f | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-01D1 | authoritative-consumer, per-card-plan |
 | S01-01D1:ability:active:2b7ae6d9b09b600b | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-01D1 | active-rest-cost, runtime-branch-mapping |
+| S01-01D1:ability:active:2b7ae6d9b09b600b | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S01-01D1 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | S01-01M1:ability:static:c03878ecc263c0e6 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-01M1 | authoritative-consumer, per-card-branch |
 | S01-01M1:ability:static:d024f673ff236321 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-01M1 | authoritative-consumer, per-card-branch |
 | S01-01M1:ability:static:0924c3a5995ba164 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-01M1 | authoritative-consumer, per-card-plan |
 | S01-01M1:ability:death:ee5adb706424f233 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-01M1 | authoritative-consumer, per-card-plan |
 | S01-01M2:ability:static:f3ee48a69ee29306 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-01M2 | authoritative-consumer, per-card-branch |
 | S01-0201:ability:static:7d31de8999ce168a | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionExpiresBeforeALaterRoundAttackEffect / S01-0201 | expiry, summon-round |
-| S01-0201:ability:static:7d31de8999ce168a | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionOnlyBlocksResponsesThatAffectProtectedEffect / S01-0201 | anonymous-availability, four-response-types |
+| S01-0201:ability:static:7d31de8999ce168a | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionOnlyBlocksResponsesThatAffectProtectedEffect / S01-0201 | anonymous-availability, four-response-types, normal, presentation-consumers |
+| S01-0201:ability:static:7d31de8999ce168a | TwelveLegions.Tests.SummonTurnCounterProtectionLifecycleProfileTests.AllowedResponsePromptSurvivesRestoreAndCannotBeSubmittedTwice / S01-0201 | duplicate-submit, reconnect, reconnect-derived-state |
 | S01-0202:ability:static:76a4a87caae11a73 | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionExpiresBeforeALaterRoundAttackEffect / S01-0202 | expiry, summon-round |
-| S01-0202:ability:static:76a4a87caae11a73 | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionOnlyBlocksResponsesThatAffectProtectedEffect / S01-0202 | anonymous-availability, four-response-types |
+| S01-0202:ability:static:76a4a87caae11a73 | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionOnlyBlocksResponsesThatAffectProtectedEffect / S01-0202 | anonymous-availability, four-response-types, normal, presentation-consumers |
+| S01-0202:ability:static:76a4a87caae11a73 | TwelveLegions.Tests.SummonTurnCounterProtectionLifecycleProfileTests.AllowedResponsePromptSurvivesRestoreAndCannotBeSubmittedTwice / S01-0202 | duplicate-submit, reconnect, reconnect-derived-state |
 | S01-0203:ability:static:0a317a499dc4420e | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EverySimpleContinuousTroopsRuleFeedsTheSharedRecalcOutlet / S01-0203 | authoritative-consumer, condition-current, shared-recalc-outlet |
+| S01-0203:ability:static:0a317a499dc4420e | TwelveLegions.Tests.SimpleContinuousTroopsLifecycleProfileTests.ContinuousTroopsRulesRecalculateFromCurrentStateAfterReconnect / S01-0203 | normal, presentation-consumers, reconnect |
+| S01-0204:ability:static:4108715d77479b32 | TwelveLegions.Tests.FrontRowTauntOverlayLifecycleProfileTests.EveryOverlayTauntUsesCurrentRowInRulesAndPublicProjection / S01-0204 | normal, presentation-consumers, reconnect |
 | S01-0204:ability:static:4108715d77479b32 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryFrontRowCompositeLineIsCarriedByItsStructuredSplitSiblings / S01-0204 | authoritative-consumer, row-condition-current, structured-split-siblings |
 | S01-0204:ability:leave:a59801f7c2874f4a | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-0204 | authoritative-consumer, per-card-plan |
 | S01-0204:ability:static:af427a4637e1c138 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryFrontRowTauntOverlaySegmentBindsToTheSharedCombatOutlet / S01-0204 | authoritative-consumer, closed-overlay-card-set, row-condition-current |
+| S01-0204:ability:static:af427a4637e1c138 | TwelveLegions.Tests.FrontRowTauntOverlayLifecycleProfileTests.EveryOverlayTauntUsesCurrentRowInRulesAndPublicProjection / S01-0204 | normal, presentation-consumers, reconnect |
 | S01-0205:ability:death:7016351513168cdb | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryLethalReplacementSegmentSharesTheOfferPipeline / S01-0205 | authoritative-consumer, once-per-turn, substitution-kind |
 | S01-0206:ability:static:cb39cf42a7feea7b | TwelveLegions.Tests.PipelineLifecycleProfileTests.SaladinCompositeLineBindsToTheSharedMoveAndAttackPassiveOutlets / S01-0206 | authoritative-consumer, composite-line-declaration |
+| S01-0206:ability:static:cb39cf42a7feea7b | TwelveLegions.Tests.SaladinCompositeLineLifecycleProfileTests.CompositeLinePublishesAndExecutesSharedCavalryMoveAcrossRestore / S01-0206 | normal, presentation-consumers, reconnect |
+| S01-0206:ability:static:cb39cf42a7feea7b | TwelveLegions.Tests.SaladinCompositeLineLifecycleProfileTests.FrontRowAdjacencyBonusUsesCurrentPositionAndExpiresAfterAttackAcrossRestore / S01-0206 | normal, presentation-consumers, reconnect |
 | S01-0208:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0208 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0209:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0209 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0210:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0210 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0211:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0211 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0212:ability:static:6d8b57888db9839b | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.BothCardsAreExcludedFromDeckCountAndStartInGraveyard / S01-0212 | deck-count, opening-graveyard |
 | S01-0212:ability:static:6d8b57888db9839b | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.DerivedCardVanishRuleKeepsPriorityOverTheGraveyardLifecycle / S01-0212 | derived-card-precedence |
-| S01-0212:ability:static:6d8b57888db9839b | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.EveryFieldDepartureDestinationIsReplacedWithTheOwnersGraveyard / S01-0212 | all-departure-destinations, controller-owner-split, hand-filter, library-filter, owner-graveyard |
+| S01-0212:ability:static:6d8b57888db9839b | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.EveryFieldDepartureDestinationIsReplacedWithTheOwnersGraveyard / S01-0212 | all-departure-destinations, controller-owner-split, duplicate-submit, hand-filter, library-filter, normal, owner-graveyard, presentation-consumers |
+| S01-0212:ability:static:6d8b57888db9839b | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.OwnerGraveyardReplacementRemainsAuthoritativeAfterReconnect / S01-0212 | reconnect |
 | S01-0212:ability:static:6d8b57888db9839b | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.SpecialDeckAndDepartureDefinitionsMatchTheClosedFamilyWithoutReadingDisplayText / S01-0212 | exact-card-family, text-independent |
+| S01-0212:ability:static:025749085872cdff | TwelveLegions.Tests.FieldMoraleResourceLifecycleProfileTests.FieldMoralePaymentPromptRestoresItsExactResourceIdentityAndSelection / S01-0212 | reconnect |
+| S01-0212:ability:static:025749085872cdff | TwelveLegions.Tests.FieldMoraleResourceLifecycleProfileTests.ManualPaymentProjectsStructuredTypeAndCommitsTheSelectedInstanceOnlyOnce / S01-0212 | duplicate-submit, normal, presentation-consumers |
 | S01-0212:ability:static:2f33fb3652e7bd28 | TwelveLegions.Tests.OpponentTurnFieldRuleLifecycleProfileTests.LeavingTheFieldClearsBothDerivedValues / S01-0212 | leave-reset |
 | S01-0212:ability:static:2f33fb3652e7bd28 | TwelveLegions.Tests.OpponentTurnFieldRuleLifecycleProfileTests.OpponentTurnFieldRuleIsAClosedStructuredFamily / S01-0212 | cost-and-troops-same-definition, exact-card-family |
 | S01-0212:ability:static:2f33fb3652e7bd28 | TwelveLegions.Tests.OpponentTurnFieldRuleLifecycleProfileTests.OpponentTurnUsesCurrentControllerRatherThanPrintedOwner / S01-0212 | current-controller |
-| S01-0212:ability:static:2f33fb3652e7bd28 | TwelveLegions.Tests.OpponentTurnFieldRuleLifecycleProfileTests.RuntimeRecalculatesCostAndTroopsFromCurrentTurnAndRow / S01-0212 | back-row, controller-turn, front-row, opponent-turn, reconnect-idempotence |
+| S01-0212:ability:static:2f33fb3652e7bd28 | TwelveLegions.Tests.OpponentTurnFieldRuleLifecycleProfileTests.RuntimeRecalculatesCostAndTroopsFromCurrentTurnAndRow / S01-0212 | back-row, controller-turn, front-row, normal, opponent-turn, presentation-consumers, reconnect, reconnect-idempotence |
 | S01-0213:ability:static:9ba2f4f5354a2a05 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0213 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0214:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0214 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0214:ability:active:30e47404439f2371 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-0214 | active-rest-cost, runtime-branch-mapping |
+| S01-0214:ability:active:30e47404439f2371 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S01-0214 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | S01-0215:ability:active:6984859bdd4fa8b1 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-0215 | active-rest-cost, runtime-branch-mapping |
+| S01-0215:ability:active:6984859bdd4fa8b1 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S01-0215 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | S01-0215:ability:mode-ready-guard:3e3294affff84b58 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-0215 | authoritative-consumer, per-card-branch |
 | S01-0215:ability:mode-rest-and-draw:8c1a03af8e682c53 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-0215 | authoritative-consumer, per-card-branch |
 | S01-0216:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.ANameContainingCanopicDoesNotExemptAnUnrelatedArtifact / S01-0216 | ordinary-artifact-replaces |
 | S01-0216:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.EmptyPrimarySlotReceivesTheFirstExemptArtifact / S01-0216 | primary-empty |
+| S01-0216:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.HandPlayKeepsPrimaryRelicAndPlacesEveryExemptArtifactInExtraZone / S01-0216 | duplicate-submit, normal, presentation-consumers, reconnect |
 | S01-0216:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.RelicZoneLimitExemptDefinitionsMatchTheClosedFamily / S01-0216 | exact-card-family, primary-occupied |
+| S01-0217:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.HandPlayKeepsPrimaryRelicAndPlacesEveryExemptArtifactInExtraZone / S01-0217 | duplicate-submit, normal, presentation-consumers, reconnect |
 | S01-0217:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.RelicZoneLimitExemptDefinitionsMatchTheClosedFamily / S01-0217 | exact-card-family, primary-occupied |
 | S01-0217:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.ZhugeGeneratedArtifactPlayUsesTheSharedPlacementKernel / S01-0217 | zhuge-generated-play |
 | S01-0218:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.EffectGeneratedArtifactPlayUsesTheSameExemptionIdentity / S01-0218 | effect-generated-play |
+| S01-0218:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.HandPlayKeepsPrimaryRelicAndPlacesEveryExemptArtifactInExtraZone / S01-0218 | duplicate-submit, normal, presentation-consumers, reconnect |
 | S01-0218:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.RelicZoneLimitExemptDefinitionsMatchTheClosedFamily / S01-0218 | exact-card-family, primary-occupied |
 | S01-0219:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.GmPlacementUsesTheSharedArtifactZoneRule / S01-0219 | gm-play |
+| S01-0219:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.HandPlayKeepsPrimaryRelicAndPlacesEveryExemptArtifactInExtraZone / S01-0219 | duplicate-submit, normal, presentation-consumers, reconnect |
 | S01-0219:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.RelicZoneLimitExemptDefinitionsMatchTheClosedFamily / S01-0219 | exact-card-family, primary-occupied |
+| S01-0220:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.HandPlayKeepsPrimaryRelicAndPlacesEveryExemptArtifactInExtraZone / S01-0220 | duplicate-submit, normal, presentation-consumers, reconnect |
 | S01-0220:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.RelicZoneLimitExemptDefinitionsMatchTheClosedFamily / S01-0220 | exact-card-family, primary-occupied |
 | S01-0220:ability:death:00f139f8bc316591 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryImmortalReplacementSegmentSharesTheLethalReplacementPipeline / S01-0220 | authoritative-consumer, single-use, troops-set-to-1000 |
+| S01-0220:ability:death:00f139f8bc316591 | TwelveLegions.Tests.ImmortalReplacementLifecycleProfileTests.GrantedImmortalReplacementSurvivesRestoreThenReplacesExactlyOneLethalRemoval / S01-0220 | authoritative-consumer, normal, presentation-consumers, reconnect, single-use, troops-set-to-1000 |
 | S01-02C1:ability:static:91802cda49d575fb | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / S01-02C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
 | S01-02C1:ability:static:ddab147dd97c360f | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / S01-02C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
+| S01-02D1:ability:static:d1339da6822c9ae1 | TwelveLegions.Tests.TombGuardMasterAuraLifecycleProfileTests.AuraUsesTheCurrentBattlefieldControllerAndExactCardIdentity / S01-02D1 | current-controller, non-target-unaffected |
+| S01-02D1:ability:static:d1339da6822c9ae1 | TwelveLegions.Tests.TombGuardMasterAuraLifecycleProfileTests.GodsLandContinuouslyAddsOneCostAndOneThousandTroopsToFieldTombGuards / S01-02D1 | cost-and-troops-same-definition, current-cost-consumers, field-only, normal, presentation-consumers, reconnect, reconnect-derived-state |
 | S01-02D1:ability:static:dbf8222a61a31140 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-02D1 | authoritative-consumer, per-card-branch |
 | S01-02D1:ability:static:0c86a6851cf9d2ce | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-02D1 | authoritative-consumer, per-card-branch |
+| S01-02M1:ability:static:68187ab0edb25d9c | TwelveLegions.Tests.IsisSetupLifecycleProfileTests.IsisSetupCreatesExactlyOneOsirisInItsOwnersGraveyardAcrossRestore / S01-02M1 | normal, presentation-consumers, reconnect |
 | S01-02M1:ability:static:68187ab0edb25d9c | TwelveLegions.Tests.PipelineLifecycleProfileTests.IsisSetupSegmentBindsToTheSharedSetupOutlet / S01-02M1 | authoritative-consumer |
 | S01-02M1:ability:static:53475d8f080332f1 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-02M1 | authoritative-consumer, per-card-branch |
 | S01-02M2:ability:static:f3398615ac233d89 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-02M2 | authoritative-consumer, per-card-branch |
@@ -781,25 +892,32 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0310:ability:active:0a0575206e996652 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / S01-0310 | button-text, duplicate-submit, no-resource-cost, normal, presentation-event, reconnect-after-command, reconnect-before-command |
 | S01-0311:ability:static:3409dd9fa29f684f | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-0311 | authoritative-consumer, per-card-plan |
 | S01-0311:ability:after-attack:65ce2315ff4c0465 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-0311 | authoritative-consumer, per-card-plan |
+| S01-0312:ability:static:b2e1a67373ad69cc | TwelveLegions.Tests.FrontRowTauntOverlayLifecycleProfileTests.EveryOverlayTauntUsesCurrentRowInRulesAndPublicProjection / S01-0312 | normal, presentation-consumers, reconnect |
 | S01-0312:ability:static:b2e1a67373ad69cc | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryFrontRowCompositeLineIsCarriedByItsStructuredSplitSiblings / S01-0312 | authoritative-consumer, row-condition-current, structured-split-siblings |
 | S01-0312:ability:static:af427a4637e1c138 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryFrontRowTauntOverlaySegmentBindsToTheSharedCombatOutlet / S01-0312 | authoritative-consumer, closed-overlay-card-set, row-condition-current |
+| S01-0312:ability:static:af427a4637e1c138 | TwelveLegions.Tests.FrontRowTauntOverlayLifecycleProfileTests.EveryOverlayTauntUsesCurrentRowInRulesAndPublicProjection / S01-0312 | normal, presentation-consumers, reconnect |
 | S01-0313:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0313 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0314:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0314 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0314:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.EveryPrintedSelfDamageDiscountUsesOneHandPlayCostProtocol / S01-0314 | last-health-terminal, optional-choice, reconnect-payment |
 | S01-0314:ability:active:a923615d65edc8ea | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-0314 | authoritative-consumer, per-card-branch |
 | S01-0316:ability:static:9ba2f4f5354a2a05 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0316 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0317:ability:active:90c21e26f3d58b69 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-0317 | active-rest-cost, runtime-branch-mapping |
+| S01-0317:ability:active:90c21e26f3d58b69 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S01-0317 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | S01-03C1:ability:static:fa92f5d792a32bdc | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / S01-03C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
 | S01-03D1:ability:static:d89d0b3dade7b6c8 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-03D1 | authoritative-consumer, per-card-branch |
 | S01-03D1:ability:static:342ed2c72fcd22aa | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-03D1 | authoritative-consumer, per-card-branch |
 | S01-03D1:ability:active:79829ccbe13dcca0 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-03D1 | active-rest-cost, runtime-branch-mapping |
+| S01-03D1:ability:active:79829ccbe13dcca0 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S01-03D1 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | S01-03M1:ability:static:f1ba346550e4decc | TwelveLegions.Tests.PipelineLifecycleProfileTests.ValkyrieDrawPhaseSegmentBindsToTheTurnStartOutlet / S01-03M1 | authoritative-consumer |
+| S01-03M1:ability:static:f1ba346550e4decc | TwelveLegions.Tests.ValkyrieDrawPhaseLifecycleProfileTests.FirstTurnDrawPhaseMillsTwoSequentialCardsAndRestoresWithoutRepeating / S01-03M1 | normal, presentation-consumers, reconnect |
+| S01-03M1:ability:static:f1ba346550e4decc | TwelveLegions.Tests.ValkyrieDrawPhaseLifecycleProfileTests.OneCardLibraryDiscardsItsAvailableTopCardWithoutInventingASecondCard / S01-03M1 | short-library-sequential |
 | S01-03M1:ability:static:d047647f18d541e4 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-03M1 | authoritative-consumer, per-card-branch |
 | S01-03M2:ability:static:e3e85412fe04e44b | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-03M2 | authoritative-consumer, per-card-branch |
 | S01-0403:ability:death:c3e5fc27d01fe269 | TwelveLegions.Tests.AtomicReviewBatch6IBRegressionTests.UesugiCounterDeploymentDoesNotReplaceItsDeclaredHandCounterAfterResponse / S01-0403 | target-invalidated |
 | S01-0403:ability:death:c3e5fc27d01fe269 | TwelveLegions.Tests.AtomicReviewBatch6IBRegressionTests.UesugiCounterDeploymentSetsItsDeclaredHandCounterAfterResponses / S01-0403 | normal |
 | S01-0409:ability:static:6c03e83e9e18abb1 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0409 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0409:ability:static:6c03e83e9e18abb1 | TwelveLegions.Tests.PrintedRangedProfileTests.RepresentativeRangeConditionsActuallyPreventRetaliationAfterRestore / S01-0409 | duplicate-attack, normal-ranged-combat, reconnect-before-attack |
+| S01-0409:ability:attack:c900a6435336564c | TwelveLegions.Tests.BackRowAttackTroopsSetLifecycleProfileTests.BackRowAttackUsesItsDeclaredSetValueAndRevertsAfterSettlement / S01-0409 | normal, post-attack-revert, presentation-consumers, reconnect |
 | S01-0409:ability:attack:c900a6435336564c | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryBackRowTroopsSetSegmentSharesTheCombatProfileOutlet / S01-0409 | authoritative-consumer, row-condition-current, set-value-parameter |
 | S01-0409:ability:active:56a01edf47ee1225 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / S01-0409 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
 | S01-0409:ability:active:56a01edf47ee1225 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / S01-0409 | destination-invalidated, reconnect-before-command, source-invalidated |
@@ -808,6 +926,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0410:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0410 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0411:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0411 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0411:ability:death:00f139f8bc316591 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryImmortalReplacementSegmentSharesTheLethalReplacementPipeline / S01-0411 | authoritative-consumer, single-use, troops-set-to-1000 |
+| S01-0411:ability:death:00f139f8bc316591 | TwelveLegions.Tests.ImmortalReplacementLifecycleProfileTests.GrantedImmortalReplacementSurvivesRestoreThenReplacesExactlyOneLethalRemoval / S01-0411 | authoritative-consumer, normal, presentation-consumers, reconnect, single-use, troops-set-to-1000 |
 | S01-0413:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0413 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S01-0414:ability:static:e001b352b3693d93 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-0414 | authoritative-consumer, per-card-plan |
 | S01-0415:ability:static:9ba2f4f5354a2a05 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0415 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
@@ -817,6 +936,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-04D1:ability:static:fcd47c32a0a46e1a | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-04D1 | authoritative-consumer, per-card-branch |
 | S01-04D1:ability:static:3c467d3eba318af6 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-04D1 | authoritative-consumer, per-card-branch |
 | S01-04D1:ability:active:67457fb394219836 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-04D1 | active-rest-cost, runtime-branch-mapping |
+| S01-04D1:ability:active:67457fb394219836 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S01-04D1 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | S01-04M1:ability:static:2c285709f5669922 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-04M1 | authoritative-consumer, per-card-branch |
 | S01-04M1:ability:static:51c3f1e1976210f8 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-04M1 | authoritative-consumer, per-card-branch |
 | S01-04M2:ability:static:ce8699cac703af1c | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-04M2 | authoritative-consumer, per-card-branch |
@@ -835,15 +955,23 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0002:ability:continuous:5643b9f0c6e298e6 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0002 | authoritative-consumer, combat-settlement |
 | S02-0003:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0003 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0003:ability:active:484fb98a6af8df3f | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0003 | active-rest-cost, runtime-branch-mapping |
+| S02-0003:ability:active:484fb98a6af8df3f | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-0003 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S02-0004:ability:continuous:16dc08d7324d1649 | TwelveLegions.Tests.FrontRowKeywordTroopsLifecycleProfileTests.FrontRowTauntAndOpponentTurnTroopsAlwaysUseCurrentState / S02-0004 | normal, presentation-consumers, reconnect |
 | S02-0004:ability:continuous:16dc08d7324d1649 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryFrontRowKeywordTroopsLineSharesOneConditionChainAndBonusOutlet / S02-0004 | ability-ref-chain, authoritative-consumer, opponent-turn-troops, row-condition-current |
 | S02-0004:ability:granted:be3174252606645e | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryGrantedKeywordDefinitionHasOneStructuredSemanticOwner / S02-0004 | authoritative-consumer, parent-grant-boundary |
+| S02-0004:ability:granted:be3174252606645e | TwelveLegions.Tests.FrontRowKeywordTroopsLifecycleProfileTests.FrontRowTauntAndOpponentTurnTroopsAlwaysUseCurrentState / S02-0004 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-0005:ability:continuous:0663e3d5b31edc67 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0005 | authoritative-consumer, candidate-and-submit-parity |
 | S02-0005:ability:opponent-attacks-master:806afb384f303aee | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineResponseSegmentBindsToTheSharedResponsePipeline / S02-0005 | authoritative-consumer, capability-registry-pending |
+| S02-0006:ability:continuous:7f3bdf9055e53845 | TwelveLegions.Tests.CardNameUsageLimitTests.FaithZealotSharedNameRuleSurvivesReconnectAndUsesItsPrintedPrompt / S02-0006 | normal, presentation-consumers, reconnect |
 | S02-0006:ability:continuous:7f3bdf9055e53845 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S02-0006 | authoritative-consumer, usage-commit |
 | S02-0006:ability:discarded:89d3ee4207648aa1 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0006 | authoritative-consumer, per-card-plan |
 | S02-0007:ability:continuous:602cafbbc29faa3f | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0007 | authoritative-consumer, candidate-and-submit-parity |
+| S02-0007:ability:continuous:58ce6286f39b73ee | TwelveLegions.Tests.FrontRowKeywordTroopsLifecycleProfileTests.FrontRowTauntAndOpponentTurnTroopsAlwaysUseCurrentState / S02-0007 | normal, presentation-consumers, reconnect |
 | S02-0007:ability:continuous:58ce6286f39b73ee | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryFrontRowKeywordTroopsLineSharesOneConditionChainAndBonusOutlet / S02-0007 | ability-ref-chain, authoritative-consumer, opponent-turn-troops, row-condition-current |
 | S02-0007:ability:granted:be3174252606645e | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryGrantedKeywordDefinitionHasOneStructuredSemanticOwner / S02-0007 | authoritative-consumer, parent-grant-boundary |
+| S02-0007:ability:granted:be3174252606645e | TwelveLegions.Tests.FrontRowKeywordTroopsLifecycleProfileTests.FrontRowTauntAndOpponentTurnTroopsAlwaysUseCurrentState / S02-0007 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0008:ability:continuous:766cca673a9815ad | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleRestoresTheDeclaredHandSummonBeforeItsResponseWindowSettles / S02-0008 | reconnect |
+| S02-0008:ability:continuous:766cca673a9815ad | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleUsesEffectiveFactionForHandCandidateAndSettlement / S02-0008 | normal, presentation-consumers |
 | S02-0008:ability:continuous:766cca673a9815ad | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S02-0008 | authoritative-consumer, effective-faction |
 | S02-0009:ability:play:ff53cfd909161da1 | TwelveLegions.Tests.S2UniversalEffectsTests.DefenseDeploymentKeepsOneValidCounterAndItsIndependentDrawWhenAnotherDeclaredCounterExpires / S02-0009 | independent-target-settlement, slot-invalidated, target-invalidated |
 | S02-0009:ability:play:ff53cfd909161da1 | TwelveLegions.Tests.S2UniversalEffectsTests.DefenseDeploymentMayChooseZeroCountersAndStillResolvesItsIndependentDraw / S02-0009 | no-target |
@@ -851,13 +979,14 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0009:ability:play:ff53cfd909161da1 | TwelveLegions.Tests.S2UniversalEffectsTests.DefenseDeploymentSetsUpToTwoCounterTacticsWithoutTheirNormalSetCost / S02-0009 | multi-target-applicability, normal |
 | S02-0009:ability:play:ff53cfd909161da1 | TwelveLegions.Tests.S2UniversalEffectsTests.DefenseDeploymentStopsBeforeSettingTheDeclaredCounterWhenActuallyNegated / S02-0009 | negated |
 | S02-0010:ability:return-as-morale:9169de0e99d296e2 | TwelveLegions.Tests.BlackLotusMoraleResourceLifecycleProfileTests.BlackLotusOwnsTheOnlyStructuredMoraleZoneReplacement / S02-0010 | exact-card-family, runtime-branch-mapping |
-| S02-0010:ability:return-as-morale:9169de0e99d296e2 | TwelveLegions.Tests.BlackLotusMoraleResourceLifecycleProfileTests.EveryViewerReceivesTheSameAuthoritativeResourceIdentity / S02-0010 | frontend-structured-identity, reconnect, v2-snapshot |
+| S02-0010:ability:return-as-morale:9169de0e99d296e2 | TwelveLegions.Tests.BlackLotusMoraleResourceLifecycleProfileTests.EveryViewerReceivesTheSameAuthoritativeResourceIdentity / S02-0010 | frontend-structured-identity, presentation-consumers, reconnect, v2-snapshot |
 | S02-0010:ability:return-as-morale:9169de0e99d296e2 | TwelveLegions.Tests.BlackLotusMoraleResourceLifecycleProfileTests.OnlyEligibleBlackLotusReturnsAutomaticallyToOwnerGraveyard / S02-0010 | automatic-return, return-owner-graveyard |
 | S02-0010:ability:return-as-morale:9169de0e99d296e2 | TwelveLegions.Tests.BlackLotusMoraleResourceLifecycleProfileTests.PaymentPromptDistinguishesBlackLotusAndConsumesOnlyTheSelectedInstance / S02-0010 | duplicate-submit, normal, payment-distinct-identity |
 | S02-0010:ability:return-as-morale:9169de0e99d296e2 | TwelveLegions.Tests.BlackLotusMoraleResourceLifecycleProfileTests.ReturnPromptAndSettlementUseTheSameIdentityWithoutSecondMovement / S02-0010 | duplicate-submit, return-owner-graveyard, target-invalidated |
 | S02-0012:ability:play:bafe1ab6a18493c0 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0012 | authoritative-consumer, per-card-flow |
 | S02-0012:ability:granted:e5bb0cce96aba072 | TwelveLegions.Tests.PipelineLifecycleProfileTests.PrayerGrantedModesBindToTheUniversalTacticOutlets / S02-0012 | authoritative-consumer |
 | S02-0012:ability:granted:1c5ef0343f70615c | TwelveLegions.Tests.PipelineLifecycleProfileTests.PrayerGrantedModesBindToTheUniversalTacticOutlets / S02-0012 | authoritative-consumer |
+| S02-0013:ability:host-leaves-artifact:b2720c3b205be910 | TwelveLegions.Tests.LeaveReplacementLifecycleProfileTests.AttachedHolyLockFollowsRelicOwnerToGraveyardAcrossRestore / S02-0013 | normal, presentation-consumers, reconnect |
 | S02-0013:ability:host-leaves-artifact:b2720c3b205be910 | TwelveLegions.Tests.PipelineLifecycleProfileTests.AttachedTacticsDiscardSegmentBindsToTheSharedDiscardOutlet / S02-0013 | authoritative-consumer |
 | S02-0013:ability:active-while-attached:f64dc7647e481c5f | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-0013 | authoritative-consumer, per-card-branch |
 | S02-0016:ability:s2-reaction:37e38b08d365f0bb | TwelveLegions.Tests.StackResponseChoiceRegressionTests.NestedResponseKeepsItsDeclaredRootWhenIntermediateStackChanges / S02-0016 | nested-authority, reconnect-settlement |
@@ -873,60 +1002,79 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0101:ability:continuous:4cd3104ae17d316d | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0101 | authoritative-consumer, row-and-ready-condition |
 | S02-0103:ability:attack:607e6460eed6637b | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0103 | authoritative-consumer, per-card-plan |
 | S02-0104:ability:active:1687d445c6acc308 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0104 | active-rest-cost, runtime-branch-mapping |
+| S02-0104:ability:active:1687d445c6acc308 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-0104 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | S02-0106:ability:opponent-attack-or-effect:899eef6cc1186e9c | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineResponseSegmentBindsToTheSharedResponsePipeline / S02-0106 | authoritative-consumer, capability-registry-pending |
 | S02-01M1:ability:active:4834e3b50d036f27 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-01M1 | authoritative-consumer, per-card-branch |
+| S02-01M1:ability:leave:cf42cfffe1b9b9bc | TwelveLegions.Tests.LeaveReplacementLifecycleProfileTests.WukongLeaveReplacementAndOptionalMoraleSurviveRestoreWithoutOrdinaryDestination / S02-01M1 | normal, presentation-consumers, reconnect |
 | S02-01M1:ability:leave:cf42cfffe1b9b9bc | TwelveLegions.Tests.PipelineLifecycleProfileTests.WukongMasterLegionReturnSegmentBindsToTheDepartureOutlet / S02-01M1 | authoritative-consumer |
 | S02-01S1:ability:master-morale-return:8d098fe32e7b253b | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-01S1 | authoritative-consumer, per-card-plan |
 | S02-0201:ability:continuous:16b90b36ef8afe2c | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.BothCardsAreExcludedFromDeckCountAndStartInGraveyard / S02-0201 | deck-count, opening-graveyard |
-| S02-0201:ability:continuous:16b90b36ef8afe2c | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.EveryFieldDepartureDestinationIsReplacedWithTheOwnersGraveyard / S02-0201 | all-departure-destinations, controller-owner-split, hand-filter, library-filter, owner-graveyard |
+| S02-0201:ability:continuous:16b90b36ef8afe2c | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.EveryFieldDepartureDestinationIsReplacedWithTheOwnersGraveyard / S02-0201 | all-departure-destinations, controller-owner-split, duplicate-submit, hand-filter, library-filter, normal, owner-graveyard, presentation-consumers |
+| S02-0201:ability:continuous:16b90b36ef8afe2c | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.OwnerGraveyardReplacementRemainsAuthoritativeAfterReconnect / S02-0201 | reconnect |
 | S02-0201:ability:continuous:16b90b36ef8afe2c | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.SpecialDeckAndDepartureDefinitionsMatchTheClosedFamilyWithoutReadingDisplayText / S02-0201 | exact-card-family, text-independent |
 | S02-0201:ability:continuous:39b0b1524eaed536 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0201 | authoritative-consumer, candidate-and-submit-parity |
 | S02-0202:ability:continuous:94759febdd62fd32 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.PrintedEntryCostDefinitionsMatchTheReviewedCardFamily / S02-0202 | condition-false, display-and-payment-parity |
 | S02-0203:ability:continuous:418e71545576e12d | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.PrintedEntryCostDefinitionsMatchTheReviewedCardFamily / S02-0203 | condition-false, display-and-payment-parity |
 | S02-0204:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0204 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0204:ability:active:4257a82eec559a94 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0204 | active-rest-cost, runtime-branch-mapping |
+| S02-0204:ability:active:4257a82eec559a94 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-0204 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S02-0205:ability:continuous:44bfa636b58de089 | TwelveLegions.Tests.HandPlayBlockLifecycleProfileTests.CurrentArtifactBlockReasonSurvivesRestoreAndRejectsRepeatedSubmissionWithoutPayment / S02-0205 | duplicate-submit, normal, presentation-consumers, reconnect |
 | S02-0205:ability:continuous:44bfa636b58de089 | TwelveLegions.Tests.HandPlayBlockLifecycleProfileTests.HandPlayBlockDefinitionsMatchTheClosedFamily / S02-0205 | display-and-submit-parity, same-card-exception |
 | S02-0205:ability:active:8023ed21f8771697 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0205 | active-rest-cost, runtime-branch-mapping |
+| S02-0205:ability:active:8023ed21f8771697 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-0205 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | S02-0205:ability:active:bf422a987e0ab5de | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-0205 | authoritative-consumer, per-card-branch |
 | S02-0206:ability:play:ca021e5c16b59965 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0206 | authoritative-consumer, per-card-flow |
 | S02-0206:ability:granted:1aba3f5bd15a426d | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryGrantedKeywordDefinitionHasOneStructuredSemanticOwner / S02-0206 | authoritative-consumer, parent-grant-boundary |
+| S02-0206:ability:granted:1aba3f5bd15a426d | TwelveLegions.Tests.GrantedCombatKeywordLifecycleProfileTests.GrantedMustHitUsesOneCurrentStateForProjectionDefenseAndTurnExpiryAcrossRestore / S02-0206 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-0206:ability:play:bd784d08e38e0ed8 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0206 | authoritative-consumer, per-card-flow |
 | S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleCancellationBeforeCommitLeavesCostAndSourceUntouched / S02-0207 | payment-cancel |
 | S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleFailsWithoutSubstitutionWhenItsDeclaredHandLegionLeavesBeforeSettlement / S02-0207 | target-invalidated |
 | S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleNegationKeepsItsPreStackDiscardCostAndDoesNotSummon / S02-0207 | negated |
 | S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRulePrepaysDiscardCostBeforeResponseAndOccupiedSlotDoesNotRefundOrOverwrite / S02-0207 | cost-prepaid, settlement-slot-invalidated |
 | S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleRestoresTheDeclaredHandSummonBeforeItsResponseWindowSettles / S02-0207 | reconnect |
-| S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleUsesEffectiveFactionForHandCandidateAndSettlement / S02-0207 | candidate-effective-faction, duplicate-submit, normal, single-candidate-choice |
+| S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleUsesEffectiveFactionForHandCandidateAndSettlement / S02-0207 | candidate-effective-faction, duplicate-submit, normal, presentation-consumers, single-candidate-choice |
 | S02-02M1:ability:continuous:a83e1e0971bbe6f0 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-02M1 | authoritative-consumer, candidate-and-submit-parity |
 | S02-02M1:ability:active:014219b1c6c557fa | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-02M1 | authoritative-consumer, per-card-branch |
 | S02-02M1:ability:friendly-legion-death:a366c9a7f75b5f29 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-02M1 | authoritative-consumer, per-card-plan |
-| S02-0301:ability:continuous:e48cf407ce847427 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S02-0301 | ability-gate, authoritative-consumer |
+| S02-0301:ability:continuous:e48cf407ce847427 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.ThorHammerGraveyardActiveButtonStartsCostAndSlotDeclarationWithoutDuplicateConfirmation / S02-0301 | normal, presentation-consumers |
+| S02-0301:ability:continuous:e48cf407ce847427 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.ThorHammerMasterGateRemainsAuthoritativeAfterReconnect / S02-0301 | reconnect |
+| S02-0301:ability:continuous:e48cf407ce847427 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.ThorHammerMasterGateUsesTheSameReasonForButtonAndDirectSubmission / S02-0301 | master-gate-rejected |
+| S02-0301:ability:continuous:e48cf407ce847427 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S02-0301 | authoritative-consumer, master-gate |
 | S02-0301:ability:active:61c655977499e4be | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-0301 | authoritative-consumer, per-card-branch |
 | S02-0302:ability:hand-play:4e8ff9ea92325bac | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0302 | authoritative-consumer, per-card-flow |
 | S02-0302:ability:continuous:48719a94741bbf36 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0302 | authoritative-consumer, row-and-ready-condition |
 | S02-0302:ability:keyword-definition:eaba79729a9d7a65 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0302 | authoritative-consumer, parent-grant-boundary |
+| S02-0302:ability:keyword-definition:eaba79729a9d7a65 | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedTauntDefinitionsUseOneCurrentRowStateForProjectionAndAttackRestriction / S02-0302 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-0303:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.EveryPrintedSelfDamageDiscountUsesOneHandPlayCostProtocol / S02-0303 | last-health-terminal, optional-choice, reconnect-payment |
 | S02-0304:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0304 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0304 | authoritative-consumer, per-card-plan |
 | S02-0305:ability:game-setup:cf14affeb486a9f7 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S02-0305 | authoritative-consumer, setup-defaults |
+| S02-0305:ability:continuous:26b824128ffced1a | TwelveLegions.Tests.HandPlayBlockLifecycleProfileTests.CurrentArtifactBlockReasonSurvivesRestoreAndRejectsRepeatedSubmissionWithoutPayment / S02-0305 | duplicate-submit, normal, presentation-consumers, reconnect |
 | S02-0305:ability:continuous:26b824128ffced1a | TwelveLegions.Tests.HandPlayBlockLifecycleProfileTests.HandPlayBlockDefinitionsMatchTheClosedFamily / S02-0305 | display-and-submit-parity, priority |
 | S02-0305:ability:master-damaged:a4a2c92cad3ad28c | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0305 | authoritative-consumer, per-card-plan |
+| S02-0305:ability:master-damaged:4c8ce907eed1f778 | TwelveLegions.Tests.AnderstorpDamageFloorLifecycleProfileTests.OpponentTurnFirstMasterDamageBecomesTwoAndLaterDamageDoesNotAcrossRestore / S02-0305 | normal, presentation-consumers, reconnect |
 | S02-0305:ability:master-damaged:4c8ce907eed1f778 | TwelveLegions.Tests.PipelineLifecycleProfileTests.AnderstorpDamageFloorSegmentBindsToTheReplacementOutlet / S02-0305 | authoritative-consumer |
+| S02-0306:ability:continuous:a5a8e191442bbfac | TwelveLegions.Tests.CardNameUsageLimitTests.MimirSharedNameRuleSurvivesReconnectAndExplainsTheLock / S02-0306 | normal, presentation-consumers, reconnect |
 | S02-0306:ability:continuous:a5a8e191442bbfac | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S02-0306 | authoritative-consumer, usage-commit |
 | S02-0306:ability:master-effect-damage-threshold:978e2dc72d59418c | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0306 | authoritative-consumer, per-card-flow |
 | S02-0307:ability:play:f9b21f21c30d2eb3 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0307 | authoritative-consumer, per-card-flow |
 | S02-03M1:ability:game-setup:46b2a85c54cecc56 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S02-03M1 | authoritative-consumer, setup-defaults |
 | S02-03M1:ability:active:54e6f9c40764f804 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-03M1 | authoritative-consumer, per-card-branch |
 | S02-03M1:ability:granted:f4dd24f1fb07f3d5 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryGrantedKeywordDefinitionHasOneStructuredSemanticOwner / S02-03M1 | authoritative-consumer, parent-grant-boundary |
+| S02-03M1:ability:granted:f4dd24f1fb07f3d5 | TwelveLegions.Tests.GrantedChargeKeywordLifecycleProfileTests.GrantedChargeUsesOneCurrentFlagForProjectionAttackAndLeaveResetAcrossRestore / S02-03M1 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-0401:ability:continuous:9601da1d8445f865 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0401 | authoritative-consumer, per-card-plan |
 | S02-0403:ability:granted:f4dd24f1fb07f3d5 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryGrantedKeywordDefinitionHasOneStructuredSemanticOwner / S02-0403 | authoritative-consumer, parent-grant-boundary |
+| S02-0403:ability:granted:f4dd24f1fb07f3d5 | TwelveLegions.Tests.GrantedChargeKeywordLifecycleProfileTests.GrantedChargeUsesOneCurrentFlagForProjectionAttackAndLeaveResetAcrossRestore / S02-0403 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-0404:ability:active:b30de444d37a3b6e | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0404 | active-rest-cost, runtime-branch-mapping |
+| S02-0404:ability:active:b30de444d37a3b6e | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-0404 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | S02-0404:ability:granted:2c2b9693ca8cf3b8 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-0404 | authoritative-consumer, per-card-branch |
 | S02-0404:ability:granted:e7c384ccba9ff2f3 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-0404 | authoritative-consumer, per-card-branch |
 | S02-0404:ability:granted:e3ff02735b6b18f4 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryGrantedKeywordDefinitionHasOneStructuredSemanticOwner / S02-0404 | authoritative-consumer, parent-grant-boundary |
+| S02-0404:ability:granted:e3ff02735b6b18f4 | TwelveLegions.Tests.GrantedCombatKeywordLifecycleProfileTests.GrantedDeathImmunityUsesOneCurrentStateForProjectionLethalReplacementAndLeaveReset / S02-0404 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-0405:ability:play:0a13775c2081e642 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0405 | authoritative-consumer, per-card-flow |
 | S02-0405:ability:play:b03190adf1322a1a | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0405 | authoritative-consumer, per-card-flow |
 | S02-0405:ability:granted:f4dd24f1fb07f3d5 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryGrantedKeywordDefinitionHasOneStructuredSemanticOwner / S02-0405 | authoritative-consumer, parent-grant-boundary |
+| S02-0405:ability:granted:f4dd24f1fb07f3d5 | TwelveLegions.Tests.GrantedChargeKeywordLifecycleProfileTests.GrantedChargeUsesOneCurrentFlagForProjectionAttackAndLeaveResetAcrossRestore / S02-0405 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-0406:ability:play:35815c7115c7ce71 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0406 | authoritative-consumer, per-card-flow |
 | S02-0406:ability:granted:6aa04cbf27f6b4b7 | TwelveLegions.Tests.PipelineLifecycleProfileTests.TenkaGrantedModesBindToTheFactionTacticOutlets / S02-0406 | authoritative-consumer |
 | S02-0406:ability:granted:4f1f5a1d4791b5ef | TwelveLegions.Tests.PipelineLifecycleProfileTests.TenkaGrantedModesBindToTheFactionTacticOutlets / S02-0406 | authoritative-consumer |
@@ -939,7 +1087,9 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0503:ability:static:5e2fcb0f2798f57a | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0503 | authoritative-consumer, combat-settlement |
 | S02-0503:ability:after-attack:e3ced12ddde14fdb | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0503 | authoritative-consumer, per-card-plan |
 | S02-0503:ability:granted-static:e67d03cee97f98a6 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.FrontRowKeywordGrantLinesResolveThroughTheirDeclaredOutlets / S02-0503 | authoritative-consumer, front-row-required, parent-grant-boundary |
+| S02-0503:ability:granted-static:e67d03cee97f98a6 | TwelveLegions.Tests.GrantedFrontRowTauntOnKillLifecycleProfileTests.AchillesKillGrantSurvivesCombatRestoreAndStillRequiresTheCurrentFrontRow / S02-0503 | normal, presentation-consumers, reconnect, target-invalidated |
 | S02-0503:ability:keyword-definition:6692b63a59c971d0 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0503 | authoritative-consumer, parent-grant-boundary |
+| S02-0503:ability:keyword-definition:6692b63a59c971d0 | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedTauntDefinitionsUseOneCurrentRowStateForProjectionAndAttackRestriction / S02-0503 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-0504:ability:static:0ada28f438439ac2 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0504 | authoritative-consumer, row-and-ready-condition |
 | S02-0504:ability:lethal-replacement:3fb565d50830f260 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryLethalReplacementSegmentSharesTheOfferPipeline / S02-0504 | authoritative-consumer, front-row-required, once-per-turn |
 | S02-0505:ability:promotion:e890e8664470e824 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedPromotionSegmentMatchesItsGodPowerCostAndSharedEntry / S02-0505 | authoritative-consumer, god-power-consume-and-flip, single-candidate-choice |
@@ -948,9 +1098,11 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0505:ability:active:bac4cb5d348f29f1 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / S02-0505 | button-rejection-consistency, timing |
 | S02-0505:ability:active:bac4cb5d348f29f1 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / S02-0505 | button-text, duplicate-submit, no-resource-cost, normal, presentation-event, reconnect-after-command, reconnect-before-command |
 | S02-0505:ability:keyword-definition:cf232142ca7d10f9 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0505 | authoritative-consumer, parent-grant-boundary |
+| S02-0505:ability:keyword-definition:cf232142ca7d10f9 | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedChargeDefinitionUsesTheSharedFlagForProjectionAttackAndLeaveReset / S02-0505 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-0507:ability:promotion:e890e8664470e824 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedPromotionSegmentMatchesItsGodPowerCostAndSharedEntry / S02-0507 | authoritative-consumer, god-power-consume-and-flip, single-candidate-choice |
 | S02-0507:ability:static:3f520b391281b325 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0507 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0507:ability:static:3f520b391281b325 | TwelveLegions.Tests.PrintedRangedProfileTests.RepresentativeRangeConditionsActuallyPreventRetaliationAfterRestore / S02-0507 | duplicate-attack, normal-ranged-combat, reconnect-before-attack |
+| S02-0507:ability:attack:d20040947938d125 | TwelveLegions.Tests.BackRowAttackTroopsSetLifecycleProfileTests.BackRowAttackUsesItsDeclaredSetValueAndRevertsAfterSettlement / S02-0507 | normal, post-attack-revert, presentation-consumers, reconnect |
 | S02-0507:ability:attack:d20040947938d125 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryBackRowTroopsSetSegmentSharesTheCombatProfileOutlet / S02-0507 | authoritative-consumer, row-condition-current, set-value-parameter |
 | S02-0508:ability:static:aa41bff900061e1d | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0508 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0508:ability:death:9aea23b4138e399e | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-0508 | identity-definition, runtime-owner |
@@ -960,30 +1112,39 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0509:ability:static:fff4ed8e0ac25ed9 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / S02-0509 | condition-false, display-and-payment-parity |
 | S02-0510:ability:static:52b46f1b508e6aa1 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / S02-0510 | condition-false, display-and-payment-parity |
 | S02-0510:ability:static:5193793609facf70 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RestedFreeFrontBackMoveSegmentFeedsTheSharedMoveCommand / S02-0510 | authoritative-consumer, source-rested-current |
+| S02-0510:ability:static:5193793609facf70 | TwelveLegions.Tests.RestedFreeMoveLifecycleProfileTests.RestedHippolytaKeepsTheSharedFreeMoveRuleAfterReconnect / S02-0510 | normal, presentation-consumers, reconnect |
 | S02-0510:ability:active:2ee4c7f29b568e48 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0510 | active-rest-cost, runtime-branch-mapping |
+| S02-0510:ability:active:2ee4c7f29b568e48 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-0510 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | S02-0511:ability:attack:c367ee3457cbd5f4 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0511 | authoritative-consumer, per-card-plan |
 | S02-0511:ability:keyword-definition:96aa4e9504b12339 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0511 | authoritative-consumer, parent-grant-boundary |
+| S02-0511:ability:keyword-definition:96aa4e9504b12339 | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedShockDefinitionUsesTheSharedFlagForProjectionCollateralAndTurnExpiry / S02-0511 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-0512:ability:static:fff4ed8e0ac25ed9 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / S02-0512 | condition-false, display-and-payment-parity |
+| S02-0512:ability:static:e44e97f2fb745816 | TwelveLegions.Tests.FrontRowKeywordGrantLifecycleProfileTests.AeneasTauntAlwaysFollowsItsCurrentRowAcrossSnapshotAndRestore / S02-0512 | normal, presentation-consumers, reconnect, target-invalidated |
 | S02-0512:ability:static:e44e97f2fb745816 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.FrontRowKeywordGrantLinesResolveThroughTheirDeclaredOutlets / S02-0512 | ability-ref-chain, authoritative-consumer, row-condition-current |
 | S02-0512:ability:keyword-definition:6692b63a59c971d0 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0512 | authoritative-consumer, parent-grant-boundary |
+| S02-0512:ability:keyword-definition:6692b63a59c971d0 | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedTauntDefinitionsUseOneCurrentRowStateForProjectionAndAttackRestriction / S02-0512 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-0513:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0513 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0513:ability:enter:eef83ec51f2ef093 | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-0513 | identity-definition, runtime-owner |
 | S02-0513:ability:enter:eef83ec51f2ef093 | TwelveLegions.Tests.S2FactionRegressionTests.OlympusFlipEntryUsesOneCancellableTargetChoiceDuringResolution / S02-0513 | black-lotus-excluded, normal, single-candidate-choice |
 | S02-0513:ability:active:0b4d5245336709f8 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0513 | active-rest-cost, runtime-branch-mapping |
+| S02-0513:ability:active:0b4d5245336709f8 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-0513 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | S02-0514:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0514 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0515:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0515 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0515:ability:lethal-replacement:654c3040d6da8b4d | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryLethalReplacementSegmentSharesTheOfferPipeline / S02-0515 | authoritative-consumer, front-row-required, once-per-turn |
 | S02-0516:ability:static:17774ead9eb8ed69 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0516 | authoritative-consumer, row-and-ready-condition |
 | S02-0516:ability:static:a29458736f52d0a9 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EverySimpleContinuousTroopsRuleFeedsTheSharedRecalcOutlet / S02-0516 | authoritative-consumer, condition-current, shared-recalc-outlet |
+| S02-0516:ability:static:a29458736f52d0a9 | TwelveLegions.Tests.SimpleContinuousTroopsLifecycleProfileTests.ContinuousTroopsRulesRecalculateFromCurrentStateAfterReconnect / S02-0516 | normal, presentation-consumers, reconnect |
 | S02-0516:ability:attack:077dc7337586413c | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0516 | authoritative-consumer, per-card-plan |
 | S02-0517:ability:static:9ba2f4f5354a2a05 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0517 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0518:ability:static:fff4ed8e0ac25ed9 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / S02-0518 | condition-false, display-and-payment-parity |
 | S02-0518:ability:enter:6e9ddf89fefa712f | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-0518 | identity-definition, runtime-owner |
 | S02-0518:ability:enter:6e9ddf89fefa712f | TwelveLegions.Tests.S2FactionRegressionTests.OlympusFlipEntryUsesOneCancellableTargetChoiceDuringResolution / S02-0518 | black-lotus-excluded, normal, rested-only-filter, single-candidate-choice |
 | S02-0519:ability:static:2b21805b14115304 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EverySimpleContinuousTroopsRuleFeedsTheSharedRecalcOutlet / S02-0519 | authoritative-consumer, condition-current, shared-recalc-outlet |
+| S02-0519:ability:static:2b21805b14115304 | TwelveLegions.Tests.SimpleContinuousTroopsLifecycleProfileTests.ContinuousTroopsRulesRecalculateFromCurrentStateAfterReconnect / S02-0519 | normal, presentation-consumers, reconnect |
 | S02-0520:ability:enter:361ec387b847ecee | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-0520 | identity-definition, runtime-owner |
 | S02-0520:ability:enter:361ec387b847ecee | TwelveLegions.Tests.S2FactionRegressionTests.OlympusFlipEntryUsesOneCancellableTargetChoiceDuringResolution / S02-0520 | black-lotus-excluded, normal, single-candidate-choice |
 | S02-0520:ability:active:e4e320d416a9c103 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0520 | active-rest-cost, runtime-branch-mapping |
+| S02-0520:ability:active:e4e320d416a9c103 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-0520 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | S02-0520:ability:mode-promotion-discount:98eb71c68928c091 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-0520 | authoritative-consumer, per-card-branch |
 | S02-0520:ability:mode-ready-after-kill:927badbb354c7607 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-0520 | authoritative-consumer, per-card-branch |
 | S02-0521:ability:play:4ae24413479102d1 | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-0521 | identity-definition, runtime-owner |
@@ -994,6 +1155,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0522:ability:play-additional:49fb773d1512e5b3 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0522 | authoritative-consumer, per-card-flow |
 | S02-0523:ability:after-opponent-attack:5bff9b891b7b1cba | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0523 | authoritative-consumer, per-card-plan |
 | S02-0523:ability:static:05da64c53e8a7606 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EverySimpleContinuousTroopsRuleFeedsTheSharedRecalcOutlet / S02-0523 | authoritative-consumer, condition-current, shared-recalc-outlet |
+| S02-0523:ability:static:05da64c53e8a7606 | TwelveLegions.Tests.SimpleContinuousTroopsLifecycleProfileTests.ContinuousTroopsRulesRecalculateFromCurrentStateAfterReconnect / S02-0523 | normal, presentation-consumers, reconnect |
 | S02-05C1:ability:active:1ae9b19504eac93a | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-05C1 | identity-definition, runtime-owner |
 | S02-05C1:ability:active:1ae9b19504eac93a | TwelveLegions.Tests.MoraleFlipEffectLifecycleTests.NegatedOlympusMoraleFlipKeepsPaidMoraleAndCreatesNoTargetPrompt / S02-05C1 | negated, paid-cost-preserved |
 | S02-05C1:ability:active:1ae9b19504eac93a | TwelveLegions.Tests.MoraleFlipEffectLifecycleTests.OlympusMoraleFlipCannotStartWhenBlackLotusIsTheOnlyMoraleZoneResource / S02-05C1 | black-lotus-excluded, no-target |
@@ -1012,19 +1174,36 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-05D1:ability:active:519ab3c1379a9256 | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-05D1 | identity-definition, runtime-owner |
 | S02-05D1:ability:active:1e9195c93dff4ee9 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-05D1 | authoritative-consumer, per-card-branch |
 | S02-05D1:ability:active:f160e84288ecb28c | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-05D1 | active-rest-cost, runtime-branch-mapping |
+| S02-05D1:ability:active:f160e84288ecb28c | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-05D1 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | S02-05D1:ability:setup:cb6a45eff0631d64 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S02-05D1 | authoritative-consumer, setup-defaults |
-| S02-05M1:ability:friendly-ranged-death:ba2dac5cf1c08527 | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-05M1 | identity-definition, runtime-owner |
-| S02-05M1:ability:friendly-ranged-death:ba2dac5cf1c08527 | TwelveLegions.Tests.SimpleResourceTriggerConsistencyTests.EveryMoraleFlipFilterUsesTheSameGodPowerIdentityBoundary / S02-05M1 | black-lotus-excluded, candidate-generation, rested-only-filter |
-| S02-05M1:ability:active:b2bece6897eb980b | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-05M1 | authoritative-consumer, per-card-branch |
+| S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888 | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-05M1 | identity-definition, runtime-owner |
+| S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888 | TwelveLegions.Tests.SimpleResourceTriggerConsistencyTests.EveryMoraleFlipFilterUsesTheSameGodPowerIdentityBoundary / S02-05M1 | active-or-rested-morale, black-lotus-excluded, candidate-generation |
+| S02-05M1:ability:active:6fe03f6c35407ac7 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-05M1 | authoritative-consumer, per-card-branch |
 | S02-05M1:ability:keyword-definition:995c52041c470ca4 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-05M1 | authoritative-consumer, parent-grant-boundary |
+| S02-05M1:ability:keyword-definition:995c52041c470ca4 | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedStrongAttackDefinitionUsesTheSharedSemanticForProjectionDamageAndExpiry / S02-05M1 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-05M1:ability:keyword-definition:41657ed47ef085ae | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-05M1 | authoritative-consumer, parent-grant-boundary |
+| S02-05M1:ability:keyword-definition:41657ed47ef085ae | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedShockDefinitionUsesTheSharedFlagForProjectionCollateralAndTurnExpiry / S02-05M1 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-05M2:ability:active:e4b2c63a32960f8e | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-05M2 | authoritative-consumer, per-card-branch |
+| S02-0602:ability:enter:1ec4fb001f87c88e | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.DeclarationPromptSurvivesReconnectAndRejectsItsDuplicateSubmission / S02-0602 | duplicate-submit, reconnect |
+| S02-0602:ability:enter:1ec4fb001f87c88e | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.DecliningBeforePaymentConsumesNeitherRuneNorStackSlot / S02-0602 | payment-cancel |
+| S02-0602:ability:enter:1ec4fb001f87c88e | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.MissingRunePreventsEitherOptionalEffectFromEnteringTheStack / S02-0602 | no-target |
+| S02-0602:ability:enter:1ec4fb001f87c88e | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.NegationDoesNotRefundThePrepaidRuneOrApplyTheStateChange / S02-0602 | negated |
+| S02-0602:ability:enter:1ec4fb001f87c88e | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.PaidSelfStateEffectsResolveAndExposeTheirExactAbilityResult / S02-0602 | normal, presentation-consumers |
+| S02-0602:ability:enter:1ec4fb001f87c88e | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.SourceLeavingAfterPaymentIsFailedSettlementRatherThanCancellation / S02-0602 | target-invalidated |
 | S02-0602:ability:keyword-definition:beff9037e2c10a9d | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0602 | authoritative-consumer, parent-grant-boundary |
+| S02-0602:ability:keyword-definition:beff9037e2c10a9d | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedChargeDefinitionUsesTheSharedFlagForProjectionAttackAndLeaveReset / S02-0602 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-0602:ability:after-kill:e290e1e434e45531 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0602 | authoritative-consumer, per-card-plan |
 | S02-0602:ability:granted:7a7545729484412a | TwelveLegions.Tests.PipelineLifecycleProfileTests.LancelotKillGrantedModeBindsToTheTrialAdvanceOutlet / S02-0602 | authoritative-consumer |
+| S02-0602:ability:granted:7a7545729484412a | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.EachDeclaredModePublishesAndSettlesItsOwnGrantedAbility / S02-0602 | normal, presentation-consumers |
+| S02-0602:ability:granted:7a7545729484412a | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.ModeDeclarationSurvivesReconnectAndRejectsTheExpiredPrompt / S02-0602 | duplicate-submit, reconnect |
+| S02-0602:ability:granted:7a7545729484412a | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.NegatingTrialModeStopsProgressAndDoesNotUndoItsRuleActionCost / S02-0602 | negated |
+| S02-0602:ability:granted:7a7545729484412a | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.TrialModeIsNotOfferedWhenThereIsNoOpenTrial / S02-0602 | no-target |
 | S02-0602:ability:granted:6235a3f3a12afdbb | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryGrantedGainRuneSegmentSharesTheSingleRuneSettlement / S02-0602 | authoritative-consumer, parent-grant-boundary |
+| S02-0602:ability:granted:6235a3f3a12afdbb | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.EachDeclaredModePublishesAndSettlesItsOwnGrantedAbility / S02-0602 | normal, presentation-consumers |
+| S02-0602:ability:granted:6235a3f3a12afdbb | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.ModeDeclarationSurvivesReconnectAndRejectsTheExpiredPrompt / S02-0602 | reconnect |
 | S02-0603:ability:continuous:5e0d666ac6a386ba | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0603 | authoritative-consumer, candidate-and-submit-parity |
 | S02-0603:ability:active:8768d3f1fcb44728 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0603 | active-rest-cost, runtime-branch-mapping |
+| S02-0603:ability:active:8768d3f1fcb44728 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-0603 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | S02-0603:ability:granted:8cd73702b7db90b0 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-0603 | authoritative-consumer, per-card-branch |
 | S02-0603:ability:granted:ee3b46417c9fc4f7 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-0603 | authoritative-consumer, per-card-branch |
 | S02-0604:ability:trial:2117897dcefd3125 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedTrialValueSegmentMatchesCardDataAndBindsToTheRuleAction / S02-0604 | authoritative-consumer, trial-value-matches-card-data |
@@ -1032,35 +1211,59 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0605:ability:continuous:5ff487de55c0ca1d | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / S02-0605 | effective-faction, zero-floor |
 | S02-0605:ability:attack:82a5bf2622bf4d20 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0605 | authoritative-consumer, per-card-plan |
 | S02-0605:ability:keyword-definition:60bccaeb6d982ea8 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0605 | authoritative-consumer, parent-grant-boundary |
+| S02-0605:ability:keyword-definition:60bccaeb6d982ea8 | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedStrongAttackDefinitionUsesTheSharedSemanticForProjectionDamageAndExpiry / S02-0605 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-0606:ability:trial:bb29c925c9fcdc82 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedTrialValueSegmentMatchesCardDataAndBindsToTheRuleAction / S02-0606 | authoritative-consumer, trial-value-matches-card-data |
 | S02-0606:ability:after-kill:7680beaaf4313595 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryAfterKillPiercingSegmentSharesThePrintedPiercingOutlet / S02-0606 | authoritative-consumer, original-combat-kill-only |
+| S02-0606:ability:after-kill:7680beaaf4313595 | TwelveLegions.Tests.LatestBugRegressionTests.NativePiercingStartsMasterAttackWithRemainingTroopsAndNoAttackTrigger / S02-0606 | no-attack-trigger-on-generated, normal, presentation-consumers, reconnect |
+| S02-0606:ability:after-kill:7680beaaf4313595 | TwelveLegions.Tests.LatestBugRegressionTests.PiercingUsesTheSameMasterTargetRestrictionsAsAnOrdinaryAttack / S02-0606 | target-invalidated |
 | S02-0606:ability:keyword-definition:672734be0285300f | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0606 | authoritative-consumer, parent-grant-boundary |
+| S02-0606:ability:keyword-definition:672734be0285300f | TwelveLegions.Tests.LatestBugRegressionTests.NativePiercingStartsMasterAttackWithRemainingTroopsAndNoAttackTrigger / S02-0606 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-0607:ability:attack:25d5c998d14502d7 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0607 | authoritative-consumer, per-card-plan |
 | S02-0608:ability:keyword-definition:4d1e472a814a1e0b | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0608 | authoritative-consumer, parent-grant-boundary |
+| S02-0608:ability:keyword-definition:4d1e472a814a1e0b | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedDeathImmunityDefinitionUsesTheSharedReplacementAndTurnStartExpiry / S02-0608 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-0608:ability:attack:4581df1cc635dd68 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0608 | authoritative-consumer, per-card-plan |
 | S02-0608:ability:attack:0999d120e02e3c50 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0608 | authoritative-consumer, per-card-plan |
 | S02-0609:ability:trial:bb29c925c9fcdc82 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedTrialValueSegmentMatchesCardDataAndBindsToTheRuleAction / S02-0609 | authoritative-consumer, trial-value-matches-card-data |
 | S02-0609:ability:continuous:dc2aa603cc3d136c | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0609 | authoritative-consumer, candidate-and-submit-parity |
 | S02-0610:ability:trial:bb29c925c9fcdc82 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedTrialValueSegmentMatchesCardDataAndBindsToTheRuleAction / S02-0610 | authoritative-consumer, trial-value-matches-card-data |
-| S02-0610:ability:after-trial:451b6d549a5c98c4 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0610 | authoritative-consumer, per-card-plan |
+| S02-0610:ability:after-trial:451b6d549a5c98c4 | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.DeclarationPromptSurvivesReconnectAndRejectsItsDuplicateSubmission / S02-0610 | duplicate-submit, reconnect |
+| S02-0610:ability:after-trial:451b6d549a5c98c4 | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.DecliningBeforePaymentConsumesNeitherRuneNorStackSlot / S02-0610 | payment-cancel |
+| S02-0610:ability:after-trial:451b6d549a5c98c4 | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.MissingRunePreventsEitherOptionalEffectFromEnteringTheStack / S02-0610 | no-target |
+| S02-0610:ability:after-trial:451b6d549a5c98c4 | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.NegationDoesNotRefundThePrepaidRuneOrApplyTheStateChange / S02-0610 | negated |
+| S02-0610:ability:after-trial:451b6d549a5c98c4 | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.PaidSelfStateEffectsResolveAndExposeTheirExactAbilityResult / S02-0610 | normal, presentation-consumers |
+| S02-0610:ability:after-trial:451b6d549a5c98c4 | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.SourceLeavingAfterPaymentIsFailedSettlementRatherThanCancellation / S02-0610 | target-invalidated |
 | S02-0611:ability:continuous:5745356459e85080 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / S02-0611 | condition-false, source-still-in-hand |
 | S02-0611:ability:enter:0cc32f023a1b4f11 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0611 | authoritative-consumer, per-card-plan |
 | S02-0611:ability:keyword-definition:4d1e472a814a1e0b | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0611 | authoritative-consumer, parent-grant-boundary |
+| S02-0611:ability:keyword-definition:4d1e472a814a1e0b | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedDeathImmunityDefinitionUsesTheSharedReplacementAndTurnStartExpiry / S02-0611 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-0611:ability:after-kill:7680beaaf4313595 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryAfterKillPiercingSegmentSharesThePrintedPiercingOutlet / S02-0611 | authoritative-consumer, original-combat-kill-only |
+| S02-0611:ability:after-kill:7680beaaf4313595 | TwelveLegions.Tests.LatestBugRegressionTests.NativePiercingStartsMasterAttackWithRemainingTroopsAndNoAttackTrigger / S02-0611 | no-attack-trigger-on-generated, normal, presentation-consumers, reconnect |
+| S02-0611:ability:after-kill:7680beaaf4313595 | TwelveLegions.Tests.LatestBugRegressionTests.PiercingUsesTheSameMasterTargetRestrictionsAsAnOrdinaryAttack / S02-0611 | target-invalidated |
 | S02-0611:ability:keyword-definition:672734be0285300f | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0611 | authoritative-consumer, parent-grant-boundary |
+| S02-0611:ability:keyword-definition:672734be0285300f | TwelveLegions.Tests.LatestBugRegressionTests.NativePiercingStartsMasterAttackWithRemainingTroopsAndNoAttackTrigger / S02-0611 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-0612:ability:continuous:064a0a1c5382575c | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / S02-0612 | condition-false, source-still-in-hand |
 | S02-0612:ability:keyword-definition:beff9037e2c10a9d | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0612 | authoritative-consumer, parent-grant-boundary |
+| S02-0612:ability:keyword-definition:beff9037e2c10a9d | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedChargeDefinitionUsesTheSharedFlagForProjectionAttackAndLeaveReset / S02-0612 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-0612:ability:attack:c195f409c875e9eb | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0612 | authoritative-consumer, per-card-plan |
 | S02-0613:ability:trial:bb29c925c9fcdc82 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedTrialValueSegmentMatchesCardDataAndBindsToTheRuleAction / S02-0613 | authoritative-consumer, trial-value-matches-card-data |
 | S02-0614:ability:trial:bb29c925c9fcdc82 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedTrialValueSegmentMatchesCardDataAndBindsToTheRuleAction / S02-0614 | authoritative-consumer, trial-value-matches-card-data |
 | S02-0614:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0614 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0614:ability:enter:601eddfb8abbb8d2 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0614 | authoritative-consumer, per-card-plan |
 | S02-0614:ability:granted:6235a3f3a12afdbb | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryGrantedGainRuneSegmentSharesTheSingleRuneSettlement / S02-0614 | authoritative-consumer, parent-grant-boundary |
+| S02-0614:ability:granted:6235a3f3a12afdbb | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.EachDeclaredModePublishesAndSettlesItsOwnGrantedAbility / S02-0614 | normal, presentation-consumers |
+| S02-0614:ability:granted:6235a3f3a12afdbb | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.ModeDeclarationSurvivesReconnectAndRejectsTheExpiredPrompt / S02-0614 | reconnect |
 | S02-0614:ability:granted:45f31f84b8f800cd | TwelveLegions.Tests.PipelineLifecycleProfileTests.ConstanceGrantedModeBindsToTheTrialAdvanceOutlet / S02-0614 | authoritative-consumer |
+| S02-0614:ability:granted:45f31f84b8f800cd | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.EachDeclaredModePublishesAndSettlesItsOwnGrantedAbility / S02-0614 | normal, presentation-consumers |
+| S02-0614:ability:granted:45f31f84b8f800cd | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.ModeDeclarationSurvivesReconnectAndRejectsTheExpiredPrompt / S02-0614 | duplicate-submit, reconnect |
+| S02-0614:ability:granted:45f31f84b8f800cd | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.NegatingTrialModeStopsProgressAndDoesNotUndoItsRuleActionCost / S02-0614 | negated |
+| S02-0614:ability:granted:45f31f84b8f800cd | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.TrialModeIsNotOfferedWhenThereIsNoOpenTrial / S02-0614 | no-target |
+| S02-0615:ability:continuous:16dc08d7324d1649 | TwelveLegions.Tests.FrontRowKeywordTroopsLifecycleProfileTests.FrontRowTauntAndOpponentTurnTroopsAlwaysUseCurrentState / S02-0615 | normal, presentation-consumers, reconnect |
 | S02-0615:ability:continuous:16dc08d7324d1649 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryFrontRowKeywordTroopsLineSharesOneConditionChainAndBonusOutlet / S02-0615 | ability-ref-chain, authoritative-consumer, opponent-turn-troops, row-condition-current |
 | S02-0615:ability:keyword-definition:8a4c9aff096f6526 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0615 | authoritative-consumer, parent-grant-boundary |
+| S02-0615:ability:keyword-definition:8a4c9aff096f6526 | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedTauntDefinitionsUseOneCurrentRowStateForProjectionAndAttackRestriction / S02-0615 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-0616:ability:continuous:5afe2828d587391f | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0616 | authoritative-consumer, row-and-ready-condition |
 | S02-0616:ability:active:3616b237df312569 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0616 | active-rest-cost, runtime-branch-mapping |
+| S02-0616:ability:active:3616b237df312569 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-0616 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | S02-0617:ability:trial:bb29c925c9fcdc82 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedTrialValueSegmentMatchesCardDataAndBindsToTheRuleAction / S02-0617 | authoritative-consumer, trial-value-matches-card-data |
 | S02-0617:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0617 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | S02-0617:ability:attack:c8dd6c6601a73ebb | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0617 | authoritative-consumer, per-card-plan |
@@ -1075,16 +1278,24 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0622:ability:play:d5226a525c565d25 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0622 | authoritative-consumer, per-card-flow |
 | S02-06C1:ability:static:7339369656140c39 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / S02-06C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
 | S02-06D1:ability:static:b173428fa383ae26 | TwelveLegions.Tests.PipelineLifecycleProfileTests.TrialCapacitySegmentsBindToTheDeckRuleAndValidator / S02-06D1 | authoritative-consumer |
+| S02-06D1:ability:turn-start:97dca04b36fe51bf | TwelveLegions.Tests.AvalonTurnStartLifecycleTests.MissingOpenTrialSkipsOnlyTheAdvanceAndStillGainsTheRune / S02-06D1 | no-target |
+| S02-06D1:ability:turn-start:97dca04b36fe51bf | TwelveLegions.Tests.AvalonTurnStartLifecycleTests.NegatingTheCombinedEffectStopsBothAdvanceAndRuneGain / S02-06D1 | negated |
+| S02-06D1:ability:turn-start:97dca04b36fe51bf | TwelveLegions.Tests.AvalonTurnStartLifecycleTests.ResponseWindowSurvivesReconnectAndRejectsAnExpiredPass / S02-06D1 | duplicate-submit, reconnect |
+| S02-06D1:ability:turn-start:97dca04b36fe51bf | TwelveLegions.Tests.AvalonTurnStartLifecycleTests.TurnStartAdvancesTheOpenTrialAndGainsOneRuneAsOneEffect / S02-06D1 | normal, presentation-consumers |
 | S02-06D1:ability:turn-start:97dca04b36fe51bf | TwelveLegions.Tests.PipelineLifecycleProfileTests.AvalonTurnStartSegmentBindsToTheTrialAdvancePipeline / S02-06D1 | authoritative-consumer |
 | S02-06D1:ability:static:65b6607da57e5096 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-06D1 | authoritative-consumer, per-card-branch |
 | S02-06D1:ability:active:30a9d18991dc8481 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-06D1 | active-rest-cost, runtime-branch-mapping |
+| S02-06D1:ability:active:30a9d18991dc8481 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-06D1 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | S02-06M1:ability:active:08922e53e852b78f | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-06M1 | authoritative-consumer, per-card-branch |
 | S02-06M2:ability:rule:f86cd3914a10b001 | TwelveLegions.Tests.PipelineLifecycleProfileTests.TrialCapacitySegmentsBindToTheDeckRuleAndValidator / S02-06M2 | authoritative-consumer |
 | S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-06M2 | authoritative-consumer, per-card-plan |
 | S02-06S1:ability:static:75769d93e0ca669f | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-06S1 | authoritative-consumer, per-card-branch |
+| S02-06S2:ability:static:0f86ac377c8c63ee | TwelveLegions.Tests.KingsSwordAttachedLifecycleProfileTests.AttachedSwordProjectsTroopsAndStrongAttackFromTheSameCurrentRelationship / S02-06S2 | normal, presentation-consumers, reconnect |
 | S02-06S2:ability:static:0f86ac377c8c63ee | TwelveLegions.Tests.PipelineLifecycleProfileTests.KingsSwordAttachedSegmentBindsToTheContinuousTroopsAndStrongAttackOutlets / S02-06S2 | attached-source-current, authoritative-consumer |
 | S02-06S3:ability:static:3616e3ca17ffd729 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-06S3 | authoritative-consumer, per-card-plan |
+| S02-06S3:ability:static:f7e019a543066afd | TwelveLegions.Tests.LakeLadySwordReplacementLifecycleProfileTests.CompletedTrialAutomaticallyPaysCurrentSwordAndReplacesLethalEffectAcrossRestore / S02-06S3 | normal, presentation-consumers, reconnect |
 | S02-06S3:ability:static:f7e019a543066afd | TwelveLegions.Tests.PipelineLifecycleProfileTests.LakeLadySwordSegmentsBindToTheSwordReplacementPath / S02-06S3 | authoritative-consumer |
+| S02-06S3:ability:death:84330d935c195208 | TwelveLegions.Tests.LakeLadySwordReplacementLifecycleProfileTests.CompletedTrialAutomaticallyPaysCurrentSwordAndReplacesLethalEffectAcrossRestore / S02-06S3 | normal, presentation-consumers, reconnect |
 | S02-06S3:ability:death:84330d935c195208 | TwelveLegions.Tests.PipelineLifecycleProfileTests.LakeLadySwordSegmentsBindToTheSwordReplacementPath / S02-06S3 | authoritative-consumer |
 | S02-06S4:ability:trial-complete:f95fed6f3ff0efc0 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-06S4 | authoritative-consumer, per-card-plan |
 | S02-06S5:ability:static:1e799825eedf3331 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-06S5 | authoritative-consumer, per-card-plan |
@@ -1104,19 +1315,27 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | ST01-01:ability:active:69626894e55e27e5 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / ST01-01 | button-rejection-consistency, timing |
 | ST01-01:ability:active:69626894e55e27e5 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / ST01-01 | button-text, duplicate-submit, no-resource-cost, normal, presentation-event, reconnect-after-command, reconnect-before-command |
 | ST01-01:ability:granted:c502e9ac1489cd1a | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryGrantedKeywordDefinitionHasOneStructuredSemanticOwner / ST01-01 | authoritative-consumer, parent-grant-boundary |
+| ST01-01:ability:granted:c502e9ac1489cd1a | TwelveLegions.Tests.GrantedChargeKeywordLifecycleProfileTests.GrantedChargeUsesOneCurrentFlagForProjectionAttackAndLeaveResetAcrossRestore / ST01-01 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | ST01-01:ability:granted:6ec4b634ed12b206 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryGrantedKeywordDefinitionHasOneStructuredSemanticOwner / ST01-01 | authoritative-consumer, parent-grant-boundary |
+| ST01-01:ability:granted:6ec4b634ed12b206 | TwelveLegions.Tests.GrantedCombatKeywordLifecycleProfileTests.GrantedPiercingRestoresPaidStackAndGeneratesOneTriggerSuppressedMasterAttack / ST01-01 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | ST01-04:ability:static:af427a4637e1c138 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryFrontRowTauntOverlaySegmentBindsToTheSharedCombatOutlet / ST01-04 | authoritative-consumer, closed-overlay-card-set, row-condition-current |
+| ST01-04:ability:static:af427a4637e1c138 | TwelveLegions.Tests.FrontRowTauntOverlayLifecycleProfileTests.EveryOverlayTauntUsesCurrentRowInRulesAndPublicProjection / ST01-04 | normal, presentation-consumers, reconnect |
 | ST01-04:ability:keyword-definition:c24a6b9d8de8435a | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / ST01-04 | authoritative-consumer, parent-grant-boundary |
+| ST01-04:ability:keyword-definition:c24a6b9d8de8435a | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedTauntDefinitionsUseOneCurrentRowStateForProjectionAndAttackRestriction / ST01-04 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | ST01-07:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST01-07 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | ST01-08:ability:static:9ba2f4f5354a2a05 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST01-08 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | ST01-09:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST01-09 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | ST01-C1:ability:static:6907bfcf5dbbfeb4 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / ST01-C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
 | ST01-C1:ability:static:605b9aa3d8a1ed93 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / ST01-C1 | authoritative-consumer, per-card-plan |
 | ST02-01:ability:continuous:42ada4e462a2fb94 | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionExpiresBeforeALaterRoundAttackEffect / ST02-01 | expiry, summon-round |
-| ST02-01:ability:continuous:42ada4e462a2fb94 | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionOnlyBlocksResponsesThatAffectProtectedEffect / ST02-01 | anonymous-availability, four-response-types |
+| ST02-01:ability:continuous:42ada4e462a2fb94 | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionOnlyBlocksResponsesThatAffectProtectedEffect / ST02-01 | anonymous-availability, four-response-types, normal, presentation-consumers |
+| ST02-01:ability:continuous:42ada4e462a2fb94 | TwelveLegions.Tests.SummonTurnCounterProtectionLifecycleProfileTests.AllowedResponsePromptSurvivesRestoreAndCannotBeSubmittedTwice / ST02-01 | duplicate-submit, reconnect, reconnect-derived-state |
+| ST02-02:ability:continuous:c51a646e6338a9d1 | TwelveLegions.Tests.FrontRowKeywordTroopsLifecycleProfileTests.FrontRowTauntAndOpponentTurnTroopsAlwaysUseCurrentState / ST02-02 | normal, presentation-consumers, reconnect |
 | ST02-02:ability:continuous:c51a646e6338a9d1 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryFrontRowKeywordTroopsLineSharesOneConditionChainAndBonusOutlet / ST02-02 | ability-ref-chain, authoritative-consumer, opponent-turn-troops, row-condition-current |
 | ST02-02:ability:keyword-definition:c24a6b9d8de8435a | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / ST02-02 | authoritative-consumer, parent-grant-boundary |
+| ST02-02:ability:keyword-definition:c24a6b9d8de8435a | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedTauntDefinitionsUseOneCurrentRowStateForProjectionAndAttackRestriction / ST02-02 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | ST02-05:ability:active:80aa98cc24ef764e | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / ST02-05 | active-rest-cost, runtime-branch-mapping |
+| ST02-05:ability:active:80aa98cc24ef764e | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / ST02-05 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | ST02-08:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST02-08 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | ST02-C1:ability:static:f2b97501194b5c40 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / ST02-C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
 | ST02-C1:ability:static:29d1864e955f856e | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / ST02-C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
@@ -1124,22 +1343,29 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | ST03-02:ability:continuous:057a02a660ebfae1 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / ST03-02 | condition-false, source-still-in-hand |
 | ST03-05:ability:static:efd7771da618f0ac | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST03-05 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | ST03-05:ability:active:87d142bd0e12a218 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / ST03-05 | active-rest-cost, runtime-branch-mapping |
+| ST03-05:ability:active:87d142bd0e12a218 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / ST03-05 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | ST03-07:ability:active:0d4ebc1a2ab8b128 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / ST03-07 | active-rest-cost, runtime-branch-mapping |
+| ST03-07:ability:active:0d4ebc1a2ab8b128 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / ST03-07 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | ST03-C1:ability:static:36b1c5751cc508f9 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / ST03-C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
 | ST04-01:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / ST04-01 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
 | ST04-01:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / ST04-01 | destination-invalidated, reconnect-before-command, source-invalidated |
 | ST04-01:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / ST04-01 | button-rejection-consistency, timing |
 | ST04-01:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / ST04-01 | button-text, duplicate-submit, no-resource-cost, normal, presentation-event, reconnect-after-command, reconnect-before-command |
+| ST04-01:ability:continuous:59dd263106457575 | TwelveLegions.Tests.FrontRowKeywordTroopsLifecycleProfileTests.FrontRowTauntAndOpponentTurnTroopsAlwaysUseCurrentState / ST04-01 | normal, presentation-consumers, reconnect |
 | ST04-01:ability:continuous:59dd263106457575 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryFrontRowKeywordTroopsLineSharesOneConditionChainAndBonusOutlet / ST04-01 | ability-ref-chain, authoritative-consumer, opponent-turn-troops, row-condition-current |
 | ST04-01:ability:keyword-definition:c24a6b9d8de8435a | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / ST04-01 | authoritative-consumer, parent-grant-boundary |
+| ST04-01:ability:keyword-definition:c24a6b9d8de8435a | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedTauntDefinitionsUseOneCurrentRowStateForProjectionAndAttackRestriction / ST04-01 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | ST04-06:ability:active:8f6b1b9dfc246e36 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / ST04-06 | active-rest-cost, runtime-branch-mapping |
+| ST04-06:ability:active:8f6b1b9dfc246e36 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / ST04-06 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | ST04-07:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST04-07 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
+| ST04-07:ability:continuous:8f395636980d57ca | TwelveLegions.Tests.CombatTimelineRegressionTests.CooperativeSupportMayJoinTheDirectRearSupportWithoutReplacingIt / ST04-07 | normal, presentation-consumers, reconnect |
 | ST04-07:ability:continuous:8f395636980d57ca | TwelveLegions.Tests.PipelineLifecycleProfileTests.CooperativeSupportSegmentBindsToTheSharedSupportValidation / ST04-07 | authoritative-consumer, row-condition-current |
 | ST04-10:ability:continuous:2a1c905931cd7b32 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / ST04-10 | condition-false, source-still-in-hand |
 | ST04-C1:ability:static:d9cac21fb706e3c8 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / ST04-C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
 | ST05-03:ability:continuous:3119db9911c31cf3 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST05-03 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | ST05-04:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST05-04 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | ST05-06:ability:active:cc5d71f55d3a253f | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / ST05-06 | active-rest-cost, runtime-branch-mapping |
+| ST05-06:ability:active:cc5d71f55d3a253f | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / ST05-06 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | ST05-08:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST05-08 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | ST05-09:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST05-09 | attack-preview, conditional-profile, no-target-preview, reconnect-profile |
 | ST05-C1:ability:static:6fe475d8923feb65 | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / ST05-C1 | identity-definition, runtime-owner |
@@ -1147,13 +1373,16 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | ST05-M1:ability:active:b1f11ab05f68dda0 | TwelveLegions.Tests.StarterBatch3BRegressionTests.AthenaCannotStartWithOnlyBlackLotusAndDoesNotPayTheDiscardCost / ST05-M1 | black-lotus-excluded, no-payment-before-choice, no-target |
 | ST05-M1:ability:active:b1f11ab05f68dda0 | TwelveLegions.Tests.StarterBatch3BRegressionTests.AthenaFlipTargetUsesTheGodPowerIdentityInsteadOfEveryMoraleZoneResource / ST05-M1 | black-lotus-excluded, candidate-generation, single-candidate-choice |
 | ST06-01:ability:continuous:3ced1d4d38141877 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / ST06-01 | condition-false, source-still-in-hand |
+| ST06-02:ability:continuous:c51a646e6338a9d1 | TwelveLegions.Tests.FrontRowKeywordTroopsLifecycleProfileTests.FrontRowTauntAndOpponentTurnTroopsAlwaysUseCurrentState / ST06-02 | normal, presentation-consumers, reconnect |
 | ST06-02:ability:continuous:c51a646e6338a9d1 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryFrontRowKeywordTroopsLineSharesOneConditionChainAndBonusOutlet / ST06-02 | ability-ref-chain, authoritative-consumer, opponent-turn-troops, row-condition-current |
 | ST06-02:ability:keyword-definition:c24a6b9d8de8435a | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / ST06-02 | authoritative-consumer, parent-grant-boundary |
+| ST06-02:ability:keyword-definition:c24a6b9d8de8435a | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedTauntDefinitionsUseOneCurrentRowStateForProjectionAndAttackRestriction / ST06-02 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | ST06-04:ability:active:719cc1c7c1084fa0 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / ST06-04 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
 | ST06-04:ability:active:719cc1c7c1084fa0 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / ST06-04 | destination-invalidated, reconnect-before-command, source-invalidated |
 | ST06-04:ability:active:719cc1c7c1084fa0 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / ST06-04 | button-rejection-consistency, timing |
 | ST06-04:ability:active:719cc1c7c1084fa0 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / ST06-04 | button-text, duplicate-submit, no-resource-cost, normal, presentation-event, reconnect-after-command, reconnect-before-command |
 | ST06-09:ability:active:e533dbf15f08cea0 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / ST06-09 | active-rest-cost, runtime-branch-mapping |
+| ST06-09:ability:active:e533dbf15f08cea0 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / ST06-09 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
 | ST06-C1:ability:static:88a76dc195d499ee | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / ST06-C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
 
 ## 能力清单
@@ -1301,7 +1530,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0224 智慧法典 卷一 #1 | S01-0224:ability:reaction:70e8fadc486e1722 | reaction/reaction | composite-definition | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → cost:cost.discard → resolution:operation.draw → resolution:operation.composite-flow | 3 | 对方 发动战术效果或圣物效果时：对方必须弃置1张手牌才可发动本次效果，否则无效。<br>对方 若成功发动效果：我方抽取1张牌。随后可选择墓地1张&lt;智慧法典&gt;以外费用不高于3的&lt;战术&gt;或&lt;圣物&gt;回到手牌。 |
 | S01-02C1 士气·太阳城 #1 | S01-02C1:ability:static:91802cda49d575fb | static/continuous | shared-rule-owner | 我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → resolution:operation.move-zone → resolution:operation.ready → resolution:special.domain → resolution:legacy.resolve | 0 | 我方 回合1次 可消耗2士气：将1张&lt;陵墓守卫&gt;从我方墓地活跃登场 |
 | S01-02C1 士气·太阳城 #2 | S01-02C1:ability:static:ddab147dd97c360f | static/continuous | shared-rule-owner | 我方 回合1次 若我方手牌不高于3张，可消耗1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:cost.pay-morale → resolution:operation.draw | 0 | 我方 回合1次 若我方手牌不高于3张，可消耗1士气：抽取1张牌 |
-| S01-02D1 众神之乡 #1 | S01-02D1:ability:static:d1339da6822c9ae1 | static/continuous | owner-unreviewed | — | trigger:trigger.observe → resolution:operation.modify-troops → resolution:special.domain → resolution:legacy.resolve | 0 | 我方战场上所有&lt;陵墓守卫&gt;兵力+1000，费用+1 |
+| S01-02D1 众神之乡 #1 | S01-02D1:ability:static:d1339da6822c9ae1 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.modify-troops → resolution:special.domain → resolution:legacy.resolve | 0 | 我方战场上所有&lt;陵墓守卫&gt;兵力+1000，费用+1 |
 | S01-02D1 众神之乡 #2 | S01-02D1:ability:static:dbf8222a61a31140 | static/continuous | shared-rule-owner | 我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.pay-morale → resolution:operation.move-zone → resolution:visibility.policy | 4 | 我方 回合1次 可消耗2士气：公开牌库顶部3张牌，选择其中1张加入手牌，其余卡牌自选顺序返回牌库底部。随后可选择墓地1张【太阳城】卡牌加入手牌 |
 | S01-02D1 众神之乡 #3 | S01-02D1:ability:static:0c86a6851cf9d2ce | static/continuous | shared-rule-owner | 我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → cost:cost.pay-morale → resolution:operation.add-morale | 0 | 我方 回合1次 可消耗2士气：选择对方1张兵力不高于4000的军团，将其返回所有者牌库底部。主神开场即可追加2张额外士气 |
 | S01-02M1 伊西斯 #1 | S01-02M1:ability:static:68187ab0edb25d9c | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.move-zone | 2 | 游戏开始时，将&lt;复苏的奥西里斯&gt;置入墓地 |
@@ -1625,18 +1854,18 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-05D1 奥林匹斯 诸神巅 #2 | S02-05D1:ability:active:1e9195c93dff4ee9 | active/activated | shared-rule-owner | 我方 回合1次 可消耗并翻转2神力 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:special.domain → target:selection.mode → resolution:special.domain → duration:duration.apply → resolution:legacy.resolve | 5 | 我方 回合1次 可消耗并翻转2神力：选择回收并登场，或对对方所有军团造成合计6000兵力的伤害。 |
 | S02-05D1 奥林匹斯 诸神巅 #3 | S02-05D1:ability:active:f160e84288ecb28c | active/activated | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → cost:cost.rest-source → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 1 | 主动休整 本回合我方下1张【奥林匹斯】军团「晋升登场」无需消耗并翻转神力。 |
 | S02-05D1 奥林匹斯 诸神巅 #4 | S02-05D1:ability:setup:cb6a45eff0631d64 | setup/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.add-morale → resolution:legacy.resolve | 1 | 主神开场即可追加2张额外士气。 |
-| S02-05M1 阿尔忒弥斯 #1 | S02-05M1:ability:friendly-ranged-death:ba2dac5cf1c08527 | friendly-ranged-death/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.flip-morale | 1 | 回合1次 我方远程军团阵亡时，可翻转1张休整的士气。 |
-| S02-05M1 阿尔忒弥斯 #2 | S02-05M1:ability:active:b2bece6897eb980b | active/activated | shared-rule-owner | 我方 回合1次 可消耗1神力或弃置1张手牌 | trigger:trigger.observe → condition:condition.expression → cost:selection.mode → target:selection.target → target:selection.mode → duration:duration.apply → resolution:legacy.resolve | 3 | 我方 回合1次 可消耗1神力或弃置1张手牌：选择我方1张【奥林匹斯】军团，本回合获得强攻或震击。 |
+| S02-05M1 阿尔忒弥斯 #1 | S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888 | friendly-ranged-death/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.flip-morale | 1 | 回合1次 我方远程军团阵亡时，可翻转1张士气。 |
+| S02-05M1 阿尔忒弥斯 #2 | S02-05M1:ability:active:6fe03f6c35407ac7 | active/activated | shared-rule-owner | 我方 回合1次 可消耗1神力或弃置1张手牌 | trigger:trigger.observe → condition:condition.expression → cost:selection.mode → target:selection.target → target:selection.mode → duration:duration.apply → resolution:legacy.resolve | 3 | 我方 回合1次 可消耗1神力或弃置1张手牌：选择我方1张【奥林匹斯】军团，本回合获得强攻或震击。（进攻时对主宰造成额外1点伤害。）（被进攻军团的左右相邻军团本回合兵力-2000） |
 | S02-05M1 阿尔忒弥斯 #3 | S02-05M1:ability:keyword-definition:995c52041c470ca4 | keyword-definition/keyword-definition | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 强攻 进攻时对主宰造成额外1点伤害。 |
 | S02-05M1 阿尔忒弥斯 #4 | S02-05M1:ability:keyword-definition:41657ed47ef085ae | keyword-definition/keyword-definition | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → duration:duration.apply → resolution:legacy.resolve | 1 | 震击 被进攻军团的左右相邻军团本回合兵力-2000。 |
 | S02-05M2 普罗米修斯 #1 | S02-05M2:ability:active:e4b2c63a32960f8e | active/activated | shared-rule-owner | 我方 回合1次 消耗1神力 | trigger:trigger.observe → condition:condition.expression → cost:special.domain → resolution:special.domain → target:selection.target → resolution:visibility.policy → resolution:operation.move-zone → target:selection.target → target:selection.mode → resolution:operation.move-zone → duration:duration.apply → resolution:legacy.resolve | 3 | 我方 回合1次 消耗1神力：查看牌库顶部3张牌，选择其中1张【奥林匹斯】卡牌，展示并加入手牌，其余卡牌自选顺序返回牌库顶部或底部。 |
 | S02-0601 亚瑟王 #1 | S02-0601:ability:enter:d85ecd5fb722d62d | enter/triggered | composite-definition | 登场时 可消耗1符文 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.move-zone → resolution:special.domain → resolution:operation.composite-flow | 1 | 登场时 可消耗1符文：将1张&lt;王者之剑&gt;叠放至此军团下方。 |
 | S02-0601 亚瑟王 #2 | S02-0601:ability:death:85656f23e734439d | death/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 阵亡时 可将手牌中1张费用不高于4的【圆桌骑士】军团活跃登场。 |
-| S02-0602 兰斯洛特 #1 | S02-0602:ability:enter:1ec4fb001f87c88e | enter/triggered | composite-definition | 登场时 可消耗1符文 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.set-state → resolution:operation.composite-flow | 1 | 登场时 可消耗1符文：获得ABILITY 2。 |
+| S02-0602 兰斯洛特 #1 | S02-0602:ability:enter:1ec4fb001f87c88e | enter/triggered | shared-rule-owner | 登场时 可消耗1符文 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.set-state → resolution:operation.composite-flow | 2 | 登场时 可消耗1符文：获得ABILITY 2。 |
 | S02-0602 兰斯洛特 #2 | S02-0602:ability:keyword-definition:beff9037e2c10a9d | keyword-definition/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.keyword → resolution:legacy.resolve | 0 | 冲锋 在登场的回合即可进行进攻。 |
-| S02-0602 兰斯洛特 #3 | S02-0602:ability:after-kill:e290e1e434e45531 | after-kill/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.mode → target:selection.target → resolution:legacy.resolve | 3 | 击杀时 可选择ABILITY 4或ABILITY 5。 |
-| S02-0602 兰斯洛特 #4 | S02-0602:ability:granted:7a7545729484412a | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.advance-trial → resolution:legacy.resolve | 1 | 试炼+1。 |
-| S02-0602 兰斯洛特 #5 | S02-0602:ability:granted:6235a3f3a12afdbb | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.gain-rune → resolution:legacy.resolve | 1 | 获得1符文。 |
+| S02-0602 兰斯洛特 #3 | S02-0602:ability:after-kill:e290e1e434e45531 | after-kill/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.mode → target:selection.target → resolution:legacy.resolve | 1 | 击杀时 可选择ABILITY 4或ABILITY 5。 |
+| S02-0602 兰斯洛特 #4 | S02-0602:ability:granted:7a7545729484412a | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.advance-trial → resolution:legacy.resolve | 2 | 试炼+1。 |
+| S02-0602 兰斯洛特 #5 | S02-0602:ability:granted:6235a3f3a12afdbb | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.gain-rune → resolution:legacy.resolve | 2 | 获得1符文。 |
 | S02-0603 梅林 #1 | S02-0603:ability:continuous:5e0d666ac6a386ba | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 此军团无法进攻。 |
 | S02-0603 梅林 #2 | S02-0603:ability:enter:36ce19fd64a5ad8a | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.gain-rune | 1 | 登场时 获得1符文。 |
 | S02-0603 梅林 #3 | S02-0603:ability:active:8768d3f1fcb44728 | active/activated | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.mode → target:selection.target → cost:cost.rest-source → cost:special.domain → resolution:legacy.resolve | 5 | 主动休整 消耗1符文，可选择ABILITY 4或ABILITY 5。 |
@@ -1665,7 +1894,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0609 侍从骑士 #3 | S02-0609:ability:death:ce243cddf7b976d1 | death/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.advance-trial | 1 | 阵亡时 试炼+1。 |
 | S02-0610 芬恩 #1 | S02-0610:ability:trial:bb29c925c9fcdc82 | trial/rule | shared-rule-owner | — | trigger:trigger.observe → rule:special.domain → resolution:legacy.resolve | 1 | 试炼 1 |
 | S02-0610 芬恩 #2 | S02-0610:ability:enter:1ec0fc6825715f52 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.composite-flow | 1 | 登场时 可发动试炼。 |
-| S02-0610 芬恩 #3 | S02-0610:ability:after-trial:451b6d549a5c98c4 | after-trial/triggered | shared-rule-owner | 此军团发动试炼后可消耗1符文 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.ready → duration:duration.apply → resolution:operation.set-state → resolution:legacy.resolve | 1 | 此军团发动试炼后可消耗1符文：将此军团转为活跃，且本回合无法再次发动试炼。 |
+| S02-0610 芬恩 #3 | S02-0610:ability:after-trial:451b6d549a5c98c4 | after-trial/triggered | shared-rule-owner | 此军团发动试炼后可消耗1符文 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.ready → duration:duration.apply → resolution:operation.set-state → resolution:legacy.resolve | 2 | 此军团发动试炼后可消耗1符文：将此军团转为活跃，且本回合无法再次发动试炼。 |
 | S02-0611 库丘林 #1 | S02-0611:ability:continuous:5745356459e85080 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → resolution:legacy.resolve | 0 | 「位于手牌」我方战场上存在&lt;斯卡哈&gt;时，此军团登场费用-2。 |
 | S02-0611 库丘林 #2 | S02-0611:ability:enter:0cc32f023a1b4f11 | enter/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → resolution:legacy.resolve | 1 | 登场时 直到下个我方回合开始前，此军团「位于前排」获得ABILITY 3。 |
 | S02-0611 库丘林 #3 | S02-0611:ability:keyword-definition:4d1e472a814a1e0b | keyword-definition/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 0 | 免死 仅1次，即将阵亡时，将兵力在本回合变为1000作为代替。 |
@@ -1680,9 +1909,9 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0613 圣女贞德 #3 | S02-0613:ability:death:db3d0495e90b3dbd | death/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.heal-master | 1 | 阵亡时 双方主宰增加1点血量。 |
 | S02-0614 康斯坦丝 #1 | S02-0614:ability:trial:bb29c925c9fcdc82 | trial/rule | shared-rule-owner | — | trigger:trigger.observe → rule:special.domain → resolution:legacy.resolve | 1 | 试炼 1 |
 | S02-0614 康斯坦丝 #2 | S02-0614:ability:continuous:e9823ffd970d6ce6 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
-| S02-0614 康斯坦丝 #3 | S02-0614:ability:enter:601eddfb8abbb8d2 | enter/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.mode → target:selection.target → resolution:operation.composite-flow | 3 | 登场时 可选择ABILITY 4或ABILITY 5。 |
-| S02-0614 康斯坦丝 #4 | S02-0614:ability:granted:6235a3f3a12afdbb | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.gain-rune → resolution:legacy.resolve | 1 | 获得1符文。 |
-| S02-0614 康斯坦丝 #5 | S02-0614:ability:granted:45f31f84b8f800cd | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 1 | 发动试炼。 |
+| S02-0614 康斯坦丝 #3 | S02-0614:ability:enter:601eddfb8abbb8d2 | enter/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.mode → target:selection.target → resolution:operation.composite-flow | 1 | 登场时 可选择ABILITY 4或ABILITY 5。 |
+| S02-0614 康斯坦丝 #4 | S02-0614:ability:granted:6235a3f3a12afdbb | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.gain-rune → resolution:legacy.resolve | 2 | 获得1符文。 |
+| S02-0614 康斯坦丝 #5 | S02-0614:ability:granted:45f31f84b8f800cd | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 2 | 发动试炼。 |
 | S02-0615 格温莉安 #1 | S02-0615:ability:continuous:16dc08d7324d1649 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → resolution:operation.set-state → resolution:legacy.resolve | 0 | 「位于前排」获得ABILITY 2，且在对方回合此军团兵力+1000。 |
 | S02-0615 格温莉安 #2 | S02-0615:ability:keyword-definition:8a4c9aff096f6526 | keyword-definition/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.keyword → resolution:legacy.resolve | 0 | 挑衅 对方只可进攻拥有 挑衅 效果的军团，若有多个具有 挑衅效果的军团，则可以选择其中1个进行进攻。 |
 | S02-0615 格温莉安 #3 | S02-0615:ability:death:99b745c7faa9a5c9 | death/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw → resolution:operation.heal-master → condition:condition.expression → resolution:operation.composite-flow | 3 | 当此军团因效果阵亡时，我方主宰可增加1点血量或抽取1张牌。 |
@@ -1706,7 +1935,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0622 槲寄生符咒 #2 | S02-0622:ability:play:d5226a525c565d25 | play/spell | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 1 | 选择对方1张军团，本回合兵力-6000。 |
 | S02-06C1 士气·彼界 #1 | S02-06C1:ability:static:7339369656140c39 | static/continuous | shared-rule-owner | 阵营效果<br>我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → resolution:special.domain → resolution:legacy.resolve | 2 | 阵营效果<br>我方 回合1次 可消耗2士气：获得1符文。 |
 | S02-06D1 彼界 阿瓦隆 #1 | S02-06D1:ability:static:b173428fa383ae26 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:special.domain → resolution:legacy.resolve | 0 | 规则上，可携带1张已完成的试炼。我方 |
-| S02-06D1 彼界 阿瓦隆 #2 | S02-06D1:ability:turn-start:97dca04b36fe51bf | turn-start/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 1 | 回合开始时，试炼+1并获得1符文 |
+| S02-06D1 彼界 阿瓦隆 #2 | S02-06D1:ability:turn-start:97dca04b36fe51bf | turn-start/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 2 | 回合开始时，试炼+1并获得1符文 |
 | S02-06D1 彼界 阿瓦隆 #3 | S02-06D1:ability:static:65b6607da57e5096 | static/continuous | shared-rule-owner | 我方 回合1次 可消耗2符文 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:special.domain → resolution:operation.move-zone → duration:duration.apply → resolution:special.domain → resolution:legacy.resolve | 0 | 我方 回合1次 可消耗2符文：选择墓地中1张军团和1张战术加入手牌。随后，本回合从手牌中打出的下1张战术卡无需消耗费用 |
 | S02-06D1 彼界 阿瓦隆 #4 | S02-06D1:ability:active:30a9d18991dc8481 | active/activated | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → cost:cost.rest-source → resolution:operation.modify-troops → duration:duration.apply | 1 | 主动休整 选择对方1张军团，本回合兵力-4000 |
 | S02-06M1 莫瑞甘 #1 | S02-06M1:ability:morrigan-enemy-death:4d2e3aed72292122 | morrigan-enemy-death/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.gain-rune | 1 | 我方 回合1次 对方军团阵亡时，可获得1符文。 |

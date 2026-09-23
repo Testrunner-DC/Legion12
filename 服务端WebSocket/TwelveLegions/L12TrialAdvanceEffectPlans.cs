@@ -136,7 +136,7 @@ public sealed partial class L12GameEngine
         foreach (var pair in activation.DeclaredValues)
             candidate.Data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
         candidate.Data["trialAdvancePlan"] = plan;
-        if (plan is "lancelot-kill" or "constance-entry")
+        if (plan is "lancelot-entry" or "lancelot-kill" or "constance-entry" or "finn-ready" or "avalon")
         {
             candidate.Data["presentationFlow"] = $"trial-advance:{plan}";
             RefreshDeclaredPresentationSceneId(candidate, source
@@ -237,7 +237,7 @@ public sealed partial class L12GameEngine
                 break;
             case "lancelot-entry":
                 if (source is not null) source.HasCharge = true;
-                else AddEvent("effect-cancelled", item.Controller, "兰斯洛特已离场；获得冲锋段取消，已支付符文不返还");
+                else RecordResolutionFailure(item, "兰斯洛特已离场，无法获得冲锋；已支付符文不返还");
                 break;
             case "lancelot-kill":
                 if (mode == "mode:trial") _ = AdvanceTrial(item.Controller, 1, item.SourceSnapshot);
@@ -256,7 +256,7 @@ public sealed partial class L12GameEngine
                         "芬恩转为活跃，本回合不能再次发动试炼", item);
                     if (readyItem is not null) readyItem.Data["lockTrialCardUntilTurnEnd"] = "true";
                 }
-                else AddEvent("effect-cancelled", item.Controller, "芬恩已离场；转为活跃段取消，已支付符文不返还");
+                else RecordResolutionFailure(item, "芬恩已离场，无法转为活跃；已支付符文不返还");
                 break;
             case "angus":
                 _ = AdvanceTrial(item.Controller, 1, item.SourceSnapshot);

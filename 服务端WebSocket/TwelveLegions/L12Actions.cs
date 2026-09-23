@@ -828,7 +828,7 @@ public sealed partial class L12GameEngine
             RangedNoLoss = combatProfile.HasRangedNoLoss,
             AttackNoLoss = attackNoLoss,
             SureHit = attacker.HasSureHit
-                || (attackTarget is not null && attacker.SureHitAgainstLegionsUntilTurn >= State.TurnSerial),
+                || (attackTarget is not null && HasActiveSureHitKeyword(attacker)),
             MasterDamage = damage,
             TemporaryAttackerTroopsBonus = temporaryAttackerTroopsBonus,
         };

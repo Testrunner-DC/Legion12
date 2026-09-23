@@ -841,6 +841,9 @@ const contracts = [
   [decks.includes("'S01-02M1': ['S01-02M2']") && decks.includes('export function automaticExtraCardIdsForMaster')
     && deckEditor.includes('automaticExtraCardIdsForMaster(selectedMaster.value?.id)')
     && deckShare.includes('automaticExtraCardIdsForMaster(deck.masterId)'), '主宰自动额外卡映射必须由 decks.ts 公共函数统一提供给编辑器与牌库图导出'],
+  [decks.includes("card?.id === 'S02-01S1'") && decks.includes("card?.id === 'S02-06S2'")
+    && decks.includes('isDerivedSpecialCard(card)') && deckEditor.includes('!isDerivedSpecialCard(card)'),
+  '哮天犬与王者之剑必须共用衍生卡身份，不进入主牌库候选或保存校验'],
   [deckShare.includes('...(deck.specialIds ?? [])') && deckShare.includes('const extraIds = [...new Set([')
     && deckShare.includes("isHorizontalCardType(card?.cardType) ? 1752 / 1255 : 5 / 7")
     && deckShare.includes('extraBitmaps.forEach(bitmap => bitmap?.close())'), '牌库图必须包含显式试炼和主宰自动额外卡，且横版额外卡按正式横版比例绘制并释放位图'],

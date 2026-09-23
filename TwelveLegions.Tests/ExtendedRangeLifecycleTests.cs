@@ -62,14 +62,24 @@ public sealed class ExtendedRangeLifecycleTests
     [Theory]
     [InlineData("S01-0003", true)]
     [InlineData("S01-0113", false)]
-    [L12AbilityEvidence("S01-0003:ability:active:73c59f9367069790", "normal", "legal-targets", "authoritative-attack", "reconnect-settlement")]
-    [L12AbilityEvidence("S01-0113:ability:active:e1b5cdab435b4c1f", "normal", "legal-targets", "authoritative-attack", "reconnect-settlement")]
+    [L12AbilityEvidence("S01-0003:ability:active:73c59f9367069790", "normal", "legal-targets", "authoritative-attack", "reconnect-settlement", "presentation-consumers")]
+    [L12AbilityEvidence("S01-0113:ability:active:e1b5cdab435b4c1f", "normal", "legal-targets", "authoritative-attack", "reconnect-settlement", "presentation-consumers")]
     public void PaidRangeUsesOnlyItsPrintedTargetsAfterV2Recovery(string id, bool master)
     {
         var game = Create(id);
         ActivateAndChoosePayment(game);
         game = Restore(game);
         Resolve(game);
+        var abilityId = id == "S01-0003"
+            ? "S01-0003:ability:active:73c59f9367069790"
+            : "S01-0113:ability:active:e1b5cdab435b4c1f";
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectAbilityId == abilityId && entry.EffectResultStatus == "resolved");
+        Assert.False(string.IsNullOrWhiteSpace(result.EffectSceneId));
+        Assert.False(string.IsNullOrWhiteSpace(result.EffectText));
+        Assert.All(new[] { game.SnapshotFor(0), game.SnapshotFor(1) }, snapshot =>
+            Assert.Contains(snapshot.RecentEvents, entry => entry.EffectAbilityId == abilityId
+                && entry.EffectSceneId == result.EffectSceneId && entry.EffectText == result.EffectText));
         game = Restore(game);
         var targets = game.SnapshotFor(0).LegalAttackTargets[SourceId];
         Assert.Contains("back-target", targets);
@@ -190,8 +200,8 @@ public sealed class ExtendedRangeLifecycleTests
     [Theory]
     [InlineData("S01-0003", "resource-payment")]
     [InlineData("S01-0113", "resource-return")]
-    [L12AbilityEvidence("S01-0003:ability:active:73c59f9367069790", "invalid-payment", "payment-cancel", "duplicate-cancel", "reconnect-payment")]
-    [L12AbilityEvidence("S01-0113:ability:active:e1b5cdab435b4c1f", "invalid-payment", "payment-cancel", "duplicate-cancel", "reconnect-payment")]
+    [L12AbilityEvidence("S01-0003:ability:active:73c59f9367069790", "invalid-payment", "payment-cancel", "duplicate-cancel", "duplicate-submit", "reconnect-payment")]
+    [L12AbilityEvidence("S01-0113:ability:active:e1b5cdab435b4c1f", "invalid-payment", "payment-cancel", "duplicate-cancel", "duplicate-submit", "reconnect-payment")]
     public void InvalidPaymentChoiceCanBeCancelledAfterRecoveryWithoutPaymentOrDeadlock(string id, string kind)
     {
         var game = Create(id);

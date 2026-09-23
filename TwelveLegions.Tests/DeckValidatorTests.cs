@@ -97,8 +97,34 @@ public sealed class DeckValidatorTests
 
         Assert.Equal([
             "S01-0216", "S01-0217", "S01-0218", "S01-0219", "S01-0220",
-            "S02-0301", "S02-0305", "S02-06S2",
+            "S02-01S1", "S02-0301", "S02-0305", "S02-06S2",
         ], limited);
+    }
+
+    [Theory]
+    [InlineData("S02-01S1", "tianting")]
+    [InlineData("S02-06S2", "otherworld")]
+    public void LimitOneDerivedCardsAreGeneratedOutsideTheMainDeck(string cardId, string faction)
+    {
+        var definition = Catalog.Cards[cardId];
+        Assert.True(L12SpecialDeckRules.IsDerivedSpecialCard(definition));
+        Assert.True(L12SpecialDeckRules.DoesNotCountTowardMainDeck(definition));
+        Assert.Equal(1, definition.DeckLimit);
+        Assert.Equal(1, L12StructuredCardSemantics.DerivedSpecialCardLimit(cardId));
+
+        var preset = Catalog.PresetDecks.First(deck => Catalog.Cards[deck.MasterId].Faction == faction);
+        var submission = new L12CustomDeckSubmission
+        {
+            Name = $"衍生卡-{cardId}",
+            MasterId = preset.MasterId,
+            CardIds = [.. preset.CardIds, cardId],
+            MoraleIds = [.. preset.MoraleIds],
+            SpecialIds = [.. preset.SpecialIds],
+        };
+
+        Assert.False(L12DeckValidator.TryValidate(Catalog, submission, out _, out var error));
+        Assert.Contains("衍生卡", error);
+        Assert.Contains("Limit 1", error);
     }
 
     [Theory]

@@ -376,7 +376,11 @@ public sealed partial class L12GameEngine
         var planPrefix = string.IsNullOrWhiteSpace(compositePlan)
             ? null
             : L12EffectPresentationVariants.SceneKeyPrefix(compositePlan);
-        if (planPrefix is null)
+        // An explicit presentation flow is the authoritative public branch identity.  The
+        // runtime trigger may belong to the parent ability while the resolved branch belongs
+        // to a granted child segment (for example Constance's enter choice).  Restricting by
+        // the parent trigger here would make that child scene unreachable.
+        if (planPrefix is null && string.IsNullOrWhiteSpace(data.GetValueOrDefault("presentationFlow")))
         {
             var triggerScoped = card.Abilities.Where(ability => ability.Trigger.Equals(trigger,
                 StringComparison.OrdinalIgnoreCase)).ToArray();

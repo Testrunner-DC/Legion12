@@ -334,14 +334,23 @@ public sealed class EffectLifecycleInventoryTests
                 atom => atom.Kind == L12AtomKinds.RestSource && atom.Stage == "cost");
             Assert.Contains("normal", row.ReviewGaps);
             Assert.Contains("negated", row.ReviewGaps);
-            Assert.Contains("target-invalidated", row.ReviewGaps);
+            Assert.DoesNotContain("target-invalidated", row.ReviewGaps);
             Assert.Contains("reconnect", row.ReviewGaps);
-            var evidence = Assert.Single(row.TestReferences,
+            var mappingEvidence = Assert.Single(row.TestReferences,
                 reference => reference.TestMethod.EndsWith(
                     nameof(ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary),
                     StringComparison.Ordinal));
-            Assert.Contains("active-rest-cost", evidence.Scopes);
-            Assert.Equal("linked-not-execution-receipt", evidence.Status);
+            Assert.Contains("active-rest-cost", mappingEvidence.Scopes);
+            Assert.Equal("linked-not-execution-receipt", mappingEvidence.Status);
+            var runtimeEvidence = Assert.Single(row.TestReferences,
+                reference => reference.TestMethod.EndsWith(
+                    nameof(ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate),
+                    StringComparison.Ordinal));
+            Assert.Contains("normal", runtimeEvidence.Scopes);
+            Assert.Contains("negated", runtimeEvidence.Scopes);
+            Assert.Contains("duplicate-submit", runtimeEvidence.Scopes);
+            Assert.Contains("reconnect", runtimeEvidence.Scopes);
+            Assert.Contains("presentation-consumers", runtimeEvidence.Scopes);
         });
     }
 

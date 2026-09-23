@@ -9,8 +9,11 @@ public sealed partial class L12GameEngine
         {
             case "thorHammerRevive" when source.CardId == "S02-0301":
             {
-                if (player.MasterId != "S02-03M1" || !player.Graveyard.Contains(source))
-                    return CommandResult.Reject("仅〈雷神索尔〉可发动墓地中〈雷神之锤〉的效果");
+                if (L12StructuredCardSemantics.MasterAbilityGateFailureReason(
+                        player, source.CardId, ability) is { } masterGateReason)
+                    return CommandResult.Reject(masterGateReason);
+                if (!player.Graveyard.Contains(source))
+                    return CommandResult.Reject("〈雷神之锤〉必须位于我方墓地");
                 var otherGraveCards = player.Graveyard.Where(card => card.InstanceId != source.InstanceId && CanEnterHandOrLibrary(card))
                     .ToArray();
                 var slots = EmptySlots(player).ToList();
@@ -140,7 +143,9 @@ public sealed partial class L12GameEngine
             {
                 var declared = SplitDeclared(target);
                 var slot = declared.SingleOrDefault(value => EmptySlots(player).Contains(value));
-                if (player.MasterId != "S02-03M1" || !player.Graveyard.Contains(source) || slot is null
+                if (L12StructuredCardSemantics.MasterAbilityGateFailureReason(
+                        player, source.CardId, ability) is not null
+                    || !player.Graveyard.Contains(source) || slot is null
                     || !L12StructuredCardRules.TryResolveGraveCostDeclaration(player,
                         declared.Where(value => value != slot), 3, string.Empty, legionOnly: false,
                         out var costs, out _)
@@ -719,7 +724,7 @@ public sealed partial class L12GameEngine
         var key = L12MasterTriggeredUsageRules.Key("artemisDeathFlip", player.PlayerIndex, State.TurnSerial);
         var pendingKey = $"{key}:pending";
         if (player.MasterId != "S02-05M1" || !defeated.LastKnownWasRanged
-            || !player.Morale.Any(card => CanFlipMoraleToGodPower(card, onlyTapped: true))
+            || !player.Morale.Any(card => CanFlipMoraleToGodPower(card))
             || player.UsedAbilities.Contains(key) || !player.UsedAbilities.Add(pendingKey)) return null;
         var master = CreateCard("S02-05M1", $"master-{owner}");
         return CreateTriggerCandidate(owner, master, "friendly-ranged-death", "我方远程军团阵亡时效果",

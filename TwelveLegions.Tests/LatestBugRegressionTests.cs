@@ -16,6 +16,14 @@ public sealed class LatestBugRegressionTests
     private static L12GameEngine Create(int seed = 6401)
         => new(Catalog, "latest-regression", "LATEST", seed, ["甲", "乙"], [0, 0], skipPreparation: true);
 
+    private static L12GameEngine RestoreV2(L12GameEngine game)
+    {
+        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        return L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+    }
+
     private static L12GameEngine CreateWithFirstMaster(string masterId, int seed)
     {
         var baseDeck = Catalog.DeckAt(0);
@@ -1334,15 +1342,17 @@ public sealed class LatestBugRegressionTests
     [Theory]
     [InlineData("S02-0606")]
     [InlineData("S02-0611")]
+    [L12AbilityEvidence("S02-0606:ability:keyword-definition:672734be0285300f", "normal", "reconnect", "presentation-consumers", "leave-or-turn-expiry", "reconnect-state")]
+    [L12AbilityEvidence("S02-0611:ability:keyword-definition:672734be0285300f", "normal", "reconnect", "presentation-consumers", "leave-or-turn-expiry", "reconnect-state")]
+    [L12AbilityEvidence("S02-0606:ability:after-kill:7680beaaf4313595", "normal", "reconnect", "presentation-consumers", "no-attack-trigger-on-generated")]
+    [L12AbilityEvidence("S02-0611:ability:after-kill:7680beaaf4313595", "normal", "reconnect", "presentation-consumers", "no-attack-trigger-on-generated")]
     public void NativePiercingStartsMasterAttackWithRemainingTroopsAndNoAttackTrigger(string cardId)
     {
         var game = Create(6421);
         var attackerPlayer = game.State.Players[0];
         var defender = game.State.Players[1];
         var attacker = Card(cardId, $"piercing-{cardId}");
-        var target = Card("S01-0102", $"piercing-target-{cardId}");
-        attacker.Troops = 5000;
-        target.Troops = 1000;
+        var target = Card("S01-0004", $"piercing-target-{cardId}");
         attacker.SummonRound = target.SummonRound = 0;
         attackerPlayer.Field[0][0] = attacker;
         defender.Field[0][0] = target;
@@ -1352,10 +1362,18 @@ public sealed class LatestBugRegressionTests
         game.State.Round = 2;
         game.State.Phase = L12Phase.Main;
 
+        game = RestoreV2(game);
+        attackerPlayer = game.State.Players[0];
+        defender = game.State.Players[1];
+        attacker = attackerPlayer.Field[0][0]!;
+        target = defender.Field[0][0]!;
+        var expectedRemainingTroops = attacker.CurrentTroops - target.CurrentTroops;
+
         Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
             Target: new L12AttackTarget("legion", target.InstanceId))).Accepted);
-        for (var step = 0; step < 12 && (!defender.Resolving.Contains(target)
-                 || game.State.PendingDefense?.Target.Type != "master"); step++)
+        for (var step = 0; step < 30 && (!defender.Resolving.Contains(target)
+                 || game.State.PendingDefense?.Target.Type != "master"
+                 || game.State.PendingDefense.Stage != L12CombatStage.DefenseChoice); step++)
         {
             var prompt = game.State.PendingPrompts.FirstOrDefault();
             if (prompt is null) continue;
@@ -1372,19 +1390,24 @@ public sealed class LatestBugRegressionTests
         Assert.NotNull(game.State.PendingDefense);
         Assert.Equal("master", game.State.PendingDefense!.Target.Type);
         Assert.True(game.State.PendingDefense.SuppressAttackTriggers);
-        Assert.Equal(4000, game.State.PendingDefense.AttackValue);
-        Assert.Equal(4000, attacker.Troops);
+        Assert.Equal(expectedRemainingTroops, game.State.PendingDefense.AttackValue);
+        Assert.Equal(expectedRemainingTroops, attacker.Troops);
         Assert.Contains(game.State.Events, entry => entry.Type == "piercing"
-            && entry.Text.Contains("剩余兵力4000") && entry.Text.Contains("不触发【进攻时】效果"));
+            && entry.Text.Contains($"剩余兵力{expectedRemainingTroops}")
+            && entry.Text.Contains("不触发【进攻时】效果"));
     }
 
-    [Fact]
-    public void PiercingUsesTheSameMasterTargetRestrictionsAsAnOrdinaryAttack()
+    [Theory]
+    [InlineData("S02-0606")]
+    [InlineData("S02-0611")]
+    [L12AbilityEvidence("S02-0606:ability:after-kill:7680beaaf4313595", "target-invalidated")]
+    [L12AbilityEvidence("S02-0611:ability:after-kill:7680beaaf4313595", "target-invalidated")]
+    public void PiercingUsesTheSameMasterTargetRestrictionsAsAnOrdinaryAttack(string cardId)
     {
         var game = Create(6425);
         var attackerPlayer = game.State.Players[0];
         var defender = game.State.Players[1];
-        var attacker = Card("S02-0606", "piercing-shared-validation");
+        var attacker = Card(cardId, $"piercing-shared-validation-{cardId}");
         var killedTaunt = Card("S01-0107", "piercing-killed-taunt");
         var remainingTaunt = Card("S02-0004", "piercing-remaining-taunt");
         attacker.Troops = 5000;
@@ -1710,9 +1733,9 @@ public sealed class LatestBugRegressionTests
     [InlineData("ST02-01", "S01-0018", false)]
     [InlineData("ST02-01", "S01-0019", true)]
     [InlineData("ST02-01", "S02-0106", true)]
-    [L12AbilityEvidence("S01-0201:ability:static:7d31de8999ce168a", "four-response-types", "anonymous-availability")]
-    [L12AbilityEvidence("S01-0202:ability:static:76a4a87caae11a73", "four-response-types", "anonymous-availability")]
-    [L12AbilityEvidence("ST02-01:ability:continuous:42ada4e462a2fb94", "four-response-types", "anonymous-availability")]
+    [L12AbilityEvidence("S01-0201:ability:static:7d31de8999ce168a", "normal", "presentation-consumers", "four-response-types", "anonymous-availability")]
+    [L12AbilityEvidence("S01-0202:ability:static:76a4a87caae11a73", "normal", "presentation-consumers", "four-response-types", "anonymous-availability")]
+    [L12AbilityEvidence("ST02-01:ability:continuous:42ada4e462a2fb94", "normal", "presentation-consumers", "four-response-types", "anonymous-availability")]
     public void SummonTurnCounterTacticProtectionOnlyBlocksResponsesThatAffectProtectedEffect(
         string cardId, string responseCardId, bool expectedAvailable)
     {

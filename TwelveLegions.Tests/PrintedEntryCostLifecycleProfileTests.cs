@@ -34,6 +34,7 @@ public sealed class PrintedEntryCostLifecycleProfileTests
     [InlineData("S01-0104")]
     [InlineData("S01-0107")]
     [InlineData("S01-0114")]
+    [L12AbilityEvidence("S01-0107:ability:static:715fe715dcb8ea28", "entry-cost-condition-current", "presentation-consumers")]
     public void MoraleComparisonIsReadFromTheCurrentPlayers(string cardId)
     {
         var game = Create(70100 + cardId[^1]);

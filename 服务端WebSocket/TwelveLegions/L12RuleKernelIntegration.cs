@@ -2437,6 +2437,9 @@ public sealed partial class L12GameEngine
                 card.ContinuousCostModifier = State.ActivePlayer != player.PlayerIndex
                     ? L12StructuredCardRules.OpponentTurnCostModifier(card.CardId)
                     : 0;
+                var masterAura = L12StructuredCardSemantics.MasterFieldAuraRule(player.MasterId);
+                if (masterAura?.TargetCardId == card.CardId)
+                    card.ContinuousCostModifier += masterAura.CostAdjustment;
                 var bonus = GetTurnAndPositionContinuousTroops(player, card, row, slot);
                 L12DerivedStats.ApplyContinuousModifiers(card, bonus, globalModifier, State.TurnSerial);
             }
@@ -2479,8 +2482,9 @@ public sealed partial class L12GameEngine
                 Add($"self:{card.InstanceId}:no-tomb-guard", 1000);
         }
 
-        if (card.CardId == "S01-0212" && owner.MasterId == "S01-02D1")
-            Add($"master:{owner.MasterId}:tomb-guard", 1000);
+        var masterAura = L12StructuredCardSemantics.MasterFieldAuraRule(owner.MasterId);
+        if (masterAura?.TargetCardId == card.CardId)
+            Add($"master:{owner.MasterId}:{card.CardId}", masterAura.TroopsAdjustment);
 
         // 汉尼拔给予同排左右相邻军团的静态兵力修正；多个来源可以叠加。
         foreach (var adjacentSlot in new[] { slot - 1, slot + 1 })

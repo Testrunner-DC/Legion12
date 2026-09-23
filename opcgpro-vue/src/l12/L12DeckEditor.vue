@@ -6,7 +6,7 @@ import { masterProfileUrl } from './specialAssets'
 import { compareDeckCards } from './deckOrdering'
 import { createDeckImageBlob, downloadDeckImage } from './site/deckShare'
 import {
-  MAIN_DECK_TYPES, automaticExtraCardIdsForMaster, buildMoraleDeck, deckCountSummary, deleteDeck, doesNotCountTowardMainDeck, effectiveDeckLimit, ensureOfficialPrebuiltDecks, filterableCardCost, loadDeckCatalog, loadSavedDecks, trialCapacityForMaster,
+  MAIN_DECK_TYPES, automaticExtraCardIdsForMaster, buildMoraleDeck, deckCountSummary, deleteDeck, doesNotCountTowardMainDeck, effectiveDeckLimit, ensureOfficialPrebuiltDecks, filterableCardCost, isDerivedSpecialCard, loadDeckCatalog, loadSavedDecks, trialCapacityForMaster,
   saveDeck, validateDeck, type DeckCard, type SavedL12Deck,
 } from './decks'
 import { alternateArtApi, platformState, publicDeckApi, type AlternateArt } from './platform'
@@ -81,7 +81,8 @@ const masters = computed(() => catalog.value.filter(card => card.cardType === 'm
 const selectedMaster = computed(() => byId.value.get(masterId.value))
 const automaticExtraCards = computed(() => automaticExtraCardIdsForMaster(selectedMaster.value?.id)
   .map(id => byId.value.get(id)).filter(Boolean) as DeckCard[])
-const mainCards = computed(() => catalog.value.filter(card => MAIN_DECK_TYPES.has(card.cardType)))
+const mainCards = computed(() => catalog.value.filter(card => MAIN_DECK_TYPES.has(card.cardType)
+  && !isDerivedSpecialCard(card)))
 const countSummary = computed(() => deckCountSummary(
   Object.entries(counts.value).flatMap(([id, count]) => Array(count).fill(id)), byId.value))
 const totalCards = computed(() => countSummary.value.counted)

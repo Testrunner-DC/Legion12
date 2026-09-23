@@ -70,9 +70,11 @@ public sealed class OutOfDeckGraveyardLifecycleProfileTests
 
     [Theory]
     [L12AbilityEvidence("S01-0212:ability:static:6d8b57888db9839b", "hand-filter", "library-filter",
-        "owner-graveyard", "all-departure-destinations", "controller-owner-split")]
+        "owner-graveyard", "all-departure-destinations", "controller-owner-split",
+        "normal", "duplicate-submit", "presentation-consumers")]
     [L12AbilityEvidence("S02-0201:ability:continuous:16b90b36ef8afe2c", "hand-filter", "library-filter",
-        "owner-graveyard", "all-departure-destinations", "controller-owner-split")]
+        "owner-graveyard", "all-departure-destinations", "controller-owner-split",
+        "normal", "duplicate-submit", "presentation-consumers")]
     [InlineData("S01-0212", "hand")]
     [InlineData("S01-0212", "library-top")]
     [InlineData("S01-0212", "library-bottom")]
@@ -101,6 +103,40 @@ public sealed class OutOfDeckGraveyardLifecycleProfileTests
         Assert.Null(controller.Field[0][0]);
         Assert.Contains(game.State.Events, entry => entry.Type == "replacement"
             && entry.PlayerIndex == owner.PlayerIndex && entry.Cards.Any(snapshot => snapshot.InstanceId == card.InstanceId));
+        var ownerGraveyardProjection = Assert.IsType<L12CardInstance[]>(Invoke(game, "SnapshotGraveyard", owner));
+        Assert.Contains(ownerGraveyardProjection, snapshot => snapshot.InstanceId == card.InstanceId);
+
+        var duplicate = Assert.IsType<bool>(Invoke(game, "MoveFieldCardToZone",
+            controller, card, destination, "重复提交不得再次移动", true));
+        Assert.False(duplicate);
+        Assert.Single(owner.Graveyard, existing => existing.InstanceId == card.InstanceId);
+    }
+
+    [Theory]
+    [InlineData("S01-0212")]
+    [InlineData("S02-0201")]
+    [L12AbilityEvidence("S01-0212:ability:static:6d8b57888db9839b", "reconnect")]
+    [L12AbilityEvidence("S02-0201:ability:continuous:16b90b36ef8afe2c", "reconnect")]
+    public void OwnerGraveyardReplacementRemainsAuthoritativeAfterReconnect(string cardId)
+    {
+        var game = Create(721011, stateFormatVersion: 2);
+        var owner = game.State.Players[0];
+        var controller = game.State.Players[1];
+        var card = Card(cardId, $"restore-{cardId}", owner: 0);
+        controller.Field[1][2] = card;
+
+        Assert.True(Assert.IsType<bool>(Invoke(game, "MoveFieldCardToZone",
+            controller, card, "hand", "被测试效果移动", true)));
+        game = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(), game.RandomState!.Value,
+            game.CardFactSignalSequence, autoPassEmptyResponses: false,
+            concealHiddenResponseAvailability: false);
+
+        Assert.Contains(game.State.Players[0].Graveyard,
+            restored => restored.InstanceId == card.InstanceId);
+        Assert.DoesNotContain(game.State.Players[1].Graveyard,
+            restored => restored.InstanceId == card.InstanceId);
+        Assert.DoesNotContain(game.State.Players.SelectMany(player => player.Hand),
+            restored => restored.InstanceId == card.InstanceId);
     }
 
     [Fact]
@@ -122,11 +158,12 @@ public sealed class OutOfDeckGraveyardLifecycleProfileTests
             && entry.Cards.Any(snapshot => snapshot.InstanceId == derived.InstanceId));
     }
 
-    private static L12GameEngine Create(int seed)
+    private static L12GameEngine Create(int seed, int stateFormatVersion = 0)
     {
         var game = new L12GameEngine(Catalog, "out-of-deck-graveyard", "OUT-OF-DECK", seed,
             ["甲", "乙"], [0, 0], skipPreparation: true,
-            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false,
+            stateFormatVersion: stateFormatVersion);
         game.State.ActivePlayer = 0;
         game.State.FirstPlayer = 0;
         game.State.Round = 2;

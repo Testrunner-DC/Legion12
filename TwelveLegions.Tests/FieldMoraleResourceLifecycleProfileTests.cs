@@ -9,13 +9,15 @@ public sealed class FieldMoraleResourceLifecycleProfileTests
 {
     private static readonly L12Catalog Catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
 
-    private static L12GameEngine Create(int seed = 92601, bool autoPassEmptyResponses = true)
+    private static L12GameEngine Create(int seed = 92601, bool autoPassEmptyResponses = true,
+        int stateFormatVersion = 0)
     {
         var deck = Catalog.DeckAt(0);
         var game = new L12GameEngine(Catalog, "field-morale-resource", "FMR", seed,
             ["甲", "乙"], [deck, deck], skipPreparation: true,
             autoPassEmptyResponses: autoPassEmptyResponses,
-            concealHiddenResponseAvailability: false, disasterMode: "none");
+            concealHiddenResponseAvailability: false, disasterMode: "none",
+            stateFormatVersion: stateFormatVersion);
         game.State.Phase = L12Phase.Main;
         game.State.ActivePlayer = 0;
         game.State.Round = 3;
@@ -145,6 +147,8 @@ public sealed class FieldMoraleResourceLifecycleProfileTests
 
     [Fact]
     [Trait("L12Evidence", "card:S01-0212")]
+    [L12AbilityEvidence(EffectLifecycleProfiles.FieldMoraleResourceAbilityId,
+        "normal", "duplicate-submit", "presentation-consumers")]
     public void ManualPaymentProjectsStructuredTypeAndCommitsTheSelectedInstanceOnlyOnce()
     {
         var game = Create(92630);
@@ -176,6 +180,44 @@ public sealed class FieldMoraleResourceLifecycleProfileTests
         Assert.False(duplicate.Accepted);
         Assert.True(guard.Tapped);
         Assert.False(ordinary.Tapped);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0212")]
+    [L12AbilityEvidence(EffectLifecycleProfiles.FieldMoraleResourceAbilityId, "reconnect")]
+    public void FieldMoralePaymentPromptRestoresItsExactResourceIdentityAndSelection()
+    {
+        var game = Create(92631, stateFormatVersion: 2);
+        var player = game.State.Players[0];
+        var guard = Card("S01-0212", "restore-guard");
+        var legion = Card("S01-0116", "restore-payment-legion");
+        var ordinary = new L12MoraleCard
+            { CardId = "S01-01C1", InstanceId = "restore-ordinary-morale" };
+        player.Field[1][2] = guard;
+        player.Hand.Add(legion);
+        player.Morale.Add(ordinary);
+
+        var begin = game.Handle(0, new L12Command("playCard", CardInstanceId: legion.InstanceId,
+            Row: 0, Slot: 0));
+        Assert.True(begin.Accepted, begin.Error);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("tomb-guard", prompt.Data[$"{guard.InstanceId}:resourceType"]);
+
+        game = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(), game.RandomState!.Value,
+            game.CardFactSignalSequence, autoPassEmptyResponses: true,
+            concealHiddenResponseAvailability: false);
+        var restoredPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(prompt.PromptId, restoredPrompt.PromptId);
+        Assert.Equal("tomb-guard", restoredPrompt.Data[$"{guard.InstanceId}:resourceType"]);
+        Assert.Contains(guard.InstanceId, restoredPrompt.ValidChoices);
+
+        var paid = game.Handle(0, new L12Command("resolvePrompt", PromptId: restoredPrompt.PromptId,
+            CardInstanceIds: [guard.InstanceId]));
+        Assert.True(paid.Accepted, paid.Error);
+        Assert.True(Assert.Single(game.State.Players[0].Field[1], card => card?.InstanceId == guard.InstanceId)!.Tapped);
+        Assert.False(Assert.Single(game.State.Players[0].Morale,
+            card => card.InstanceId == ordinary.InstanceId).Tapped);
+        Assert.Equal(legion.InstanceId, game.State.Players[0].Field[0][0]?.InstanceId);
     }
 
     [Fact]

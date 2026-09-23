@@ -237,7 +237,10 @@ public sealed class AtomicReviewBatch6LBRegressionTests
     [Trait("L12Evidence", "card:S02-0207")]
     [Trait("L12Evidence", "entry:desert-effective-faction-settlement")]
     [L12AbilityEvidence(EffectLifecycleProfiles.DesertHandSummonAbilityId,
-        "normal", "candidate-effective-faction", "duplicate-submit", "single-candidate-choice")]
+        "normal", "candidate-effective-faction", "duplicate-submit", "single-candidate-choice",
+        "presentation-consumers")]
+    [L12AbilityEvidence(EffectLifecycleProfiles.UniversalFactionMappingAbilityId,
+        "normal", "presentation-consumers")]
     public void DesertRuleUsesEffectiveFactionForHandCandidateAndSettlement()
     {
         var game = Create(85041, "S02-02M1");
@@ -249,6 +252,10 @@ public sealed class AtomicReviewBatch6LBRegressionTests
         player.Hand.AddRange([universalSummon, tactic]);
         player.ExtraRelics.Add(Card("S02-0008", "batch6lb-desert-ring"));
         AddMorale(player, 4, "batch6lb-desert-ring-morale");
+
+        Assert.Equal(player.Faction, L12StructuredCardRules.EffectiveFaction(player, universalSummon));
+        Assert.True(L12StructuredCardRules.HasFaction(player, universalSummon, player.Faction));
+        Assert.Contains("太阳城", L12StructuredCardRules.EffectiveTraits(player, universalSummon));
 
         Assert.True(game.Handle(0, new L12Command("playCard", tactic.InstanceId)).Accepted);
         Resolve(game, cost.InstanceId);
@@ -262,21 +269,28 @@ public sealed class AtomicReviewBatch6LBRegressionTests
 
         Assert.Equal(universalSummon.InstanceId, player.Field[0][0]?.InstanceId);
         Assert.Contains(cost, player.Graveyard);
+        var effectResult = Assert.Single(game.State.Events, entry =>
+            entry.EffectAbilityId == EffectLifecycleProfiles.DesertHandSummonAbilityId
+            && entry.EffectResultStatus == "resolved");
+        Assert.False(string.IsNullOrWhiteSpace(effectResult.EffectSceneId));
+        Assert.False(string.IsNullOrWhiteSpace(effectResult.EffectText));
     }
 
     [Fact]
     [Trait("L12Evidence", "card:S02-0207")]
     [Trait("L12Evidence", "entry:desert-reconnect-settlement")]
     [L12AbilityEvidence(EffectLifecycleProfiles.DesertHandSummonAbilityId, "reconnect")]
+    [L12AbilityEvidence(EffectLifecycleProfiles.UniversalFactionMappingAbilityId, "reconnect")]
     public void DesertRuleRestoresTheDeclaredHandSummonBeforeItsResponseWindowSettles()
     {
         var game = Create(85042, "S02-02M1", stateFormatVersion: 2);
         var player = game.State.Players[0];
         var cost = PlainLegion("batch6lb-desert-restore-cost");
-        var summon = PlainLegion("batch6lb-desert-restore-summon", disasterLevel: 1);
+        var summon = PlainLegion("batch6lb-desert-restore-summon", faction: "universal", disasterLevel: 1);
         var tactic = Card("S02-0207", "batch6lb-desert-restore-tactic");
         player.Field[0][0] = cost;
         player.Hand.AddRange([summon, tactic]);
+        player.ExtraRelics.Add(Card("S02-0008", "batch6lb-desert-restore-ring"));
         AddMorale(player, 4, "batch6lb-desert-restore-morale");
 
         Assert.True(game.Handle(0, new L12Command("playCard", tactic.InstanceId)).Accepted);
@@ -285,6 +299,9 @@ public sealed class AtomicReviewBatch6LBRegressionTests
         Resolve(game, "0:0");
         game = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(), game.RandomState!.Value,
             game.CardFactSignalSequence, autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        Assert.Equal(game.State.Players[0].Faction,
+            L12StructuredCardRules.EffectiveFaction(game.State.Players[0],
+                Assert.Single(game.State.Players[0].Hand, card => card.InstanceId == summon.InstanceId)));
         PassResponses(game);
 
         Assert.Equal(summon.InstanceId, game.State.Players[0].Field[0][0]?.InstanceId);
@@ -394,6 +411,8 @@ public sealed class AtomicReviewBatch6LBRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S02-0301")]
+    [L12AbilityEvidence(EffectLifecycleProfiles.ThorHammerMasterGateAbilityId,
+        "normal", "presentation-consumers")]
     public void ThorHammerGraveyardActiveButtonStartsCostAndSlotDeclarationWithoutDuplicateConfirmation()
     {
         var game = Create(8505, "S02-03M1");
@@ -403,6 +422,12 @@ public sealed class AtomicReviewBatch6LBRegressionTests
             .ToArray();
         player.Graveyard.Add(hammer);
         player.Graveyard.AddRange(costs);
+
+        var abilityViews = (List<L12AbilityView>)Invoke(game, "BuildAbilityViews",
+            player, hammer.CardId, hammer.InstanceId)!;
+        Assert.True(Assert.Single(abilityViews, view => view.Id == "thorHammerRevive").Enabled);
+        Assert.Contains("\"Id\":\"thorHammerRevive\"",
+            System.Text.Json.JsonSerializer.Serialize(game.SnapshotFor(0)), StringComparison.Ordinal);
 
         var begin = game.Handle(0, new L12Command("activateAbility", hammer.InstanceId,
             Ability: "thorHammerRevive"));
@@ -414,6 +439,59 @@ public sealed class AtomicReviewBatch6LBRegressionTests
         Assert.DoesNotContain(hammer.InstanceId, costPrompt.ValidChoices);
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "graveyard-active-confirm");
         Assert.Empty(game.State.EffectStack);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0301")]
+    [L12AbilityEvidence(EffectLifecycleProfiles.ThorHammerMasterGateAbilityId, "master-gate-rejected")]
+    public void ThorHammerMasterGateUsesTheSameReasonForButtonAndDirectSubmission()
+    {
+        var game = Create(85051, "S01-02M1");
+        var player = game.State.Players[0];
+        var hammer = Card("S02-0301", "batch6lb-hammer-wrong-master");
+        player.Graveyard.Add(hammer);
+        player.Graveyard.AddRange(Enumerable.Range(0, 3)
+            .Select(index => Card("S02-0001", $"batch6lb-hammer-wrong-master-cost-{index}")));
+
+        var views = (List<L12AbilityView>)Invoke(game, "BuildAbilityViews",
+            player, hammer.CardId, hammer.InstanceId)!;
+        var button = Assert.Single(views, view => view.Id == "thorHammerRevive");
+        Assert.False(button.Enabled);
+        Assert.Equal("仅〈雷神索尔〉可发动墓地中〈雷神之锤〉的效果", button.DisabledReason);
+
+        var rejected = game.Handle(0, new L12Command("activateAbility", hammer.InstanceId,
+            Ability: "thorHammerRevive"));
+        Assert.False(rejected.Accepted);
+        Assert.Equal(button.DisabledReason, rejected.Error);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0301")]
+    [L12AbilityEvidence(EffectLifecycleProfiles.ThorHammerMasterGateAbilityId, "reconnect")]
+    public void ThorHammerMasterGateRemainsAuthoritativeAfterReconnect()
+    {
+        var game = Create(85052, "S02-03M1", stateFormatVersion: 2);
+        var player = game.State.Players[0];
+        var hammer = Card("S02-0301", "batch6lb-hammer-restore");
+        player.Graveyard.Add(hammer);
+        player.Graveyard.AddRange(Enumerable.Range(0, 3)
+            .Select(index => Card("S02-0001", $"batch6lb-hammer-restore-cost-{index}")));
+
+        game = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(), game.RandomState!.Value,
+            game.CardFactSignalSequence, autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        var restored = game.State.Players[0];
+        var restoredHammer = Assert.Single(restored.Graveyard,
+            card => card.InstanceId == hammer.InstanceId);
+        var views = (List<L12AbilityView>)Invoke(game, "BuildAbilityViews",
+            restored, restoredHammer.CardId, restoredHammer.InstanceId)!;
+
+        Assert.True(Assert.Single(views, view => view.Id == "thorHammerRevive").Enabled);
+        var begin = game.Handle(0, new L12Command("activateAbility", restoredHammer.InstanceId,
+            Ability: "thorHammerRevive"));
+        Assert.True(begin.Accepted, begin.Error);
+        Assert.Equal("order", Assert.Single(game.State.PendingPrompts).Kind);
     }
 
     [Fact]

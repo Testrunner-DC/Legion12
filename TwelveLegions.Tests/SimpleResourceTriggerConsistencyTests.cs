@@ -332,8 +332,8 @@ public sealed class SimpleResourceTriggerConsistencyTests
     [Fact]
     [L12AbilityEvidence("S02-0508:ability:death:9aea23b4138e399e",
         "candidate-generation", "candidate-settlement-parity")]
-    [L12AbilityEvidence("S02-05M1:ability:friendly-ranged-death:ba2dac5cf1c08527",
-        "candidate-generation", "black-lotus-excluded", "rested-only-filter")]
+    [L12AbilityEvidence("S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888",
+        "candidate-generation", "black-lotus-excluded", "active-or-rested-morale")]
     public void EveryMoraleFlipFilterUsesTheSameGodPowerIdentityBoundary()
     {
         var game = Create(110022);
@@ -344,16 +344,16 @@ public sealed class SimpleResourceTriggerConsistencyTests
         var restedLotus = Morale("flip-filter-rested-lotus", tapped: true, cardId: "S02-0010");
         player.Morale.AddRange([activeLotus, restedLotus, active, rested]);
         var anySpec = L12SimpleResourceTriggerEffects.Find("S02-0508", "death")!;
-        var restedSpec = L12SimpleResourceTriggerEffects.Find("S02-05M1", "friendly-ranged-death",
+        var artemisSpec = L12SimpleResourceTriggerEffects.Find("S02-05M1", "friendly-ranged-death",
             new Dictionary<string, string> { ["ability"] = "artemisDeathFlip" })!;
 
         var any = Assert.IsAssignableFrom<IEnumerable<string>>(
             Invoke(game, "SimpleResourceMoraleTargets", player, anySpec)).ToArray();
-        var onlyRested = Assert.IsAssignableFrom<IEnumerable<string>>(
-            Invoke(game, "SimpleResourceMoraleTargets", player, restedSpec)).ToArray();
+        var artemis = Assert.IsAssignableFrom<IEnumerable<string>>(
+            Invoke(game, "SimpleResourceMoraleTargets", player, artemisSpec)).ToArray();
 
         Assert.Equal([active.InstanceId, rested.InstanceId], any);
-        Assert.Equal([rested.InstanceId], onlyRested);
+        Assert.Equal([active.InstanceId, rested.InstanceId], artemis);
     }
 
     [Fact]

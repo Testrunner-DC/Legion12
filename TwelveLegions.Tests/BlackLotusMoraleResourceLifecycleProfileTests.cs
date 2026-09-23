@@ -74,7 +74,7 @@ public sealed class BlackLotusMoraleResourceLifecycleProfileTests
 
     [Fact]
     [L12AbilityEvidence(EffectLifecycleProfiles.BlackLotusMoraleReturnAbilityId,
-        "v2-snapshot", "reconnect", "frontend-structured-identity")]
+        "v2-snapshot", "reconnect", "frontend-structured-identity", "presentation-consumers")]
     public void EveryViewerReceivesTheSameAuthoritativeResourceIdentity()
     {
         var game = Create(92701);

@@ -39,9 +39,19 @@ public sealed class RelicZoneLimitLifecycleProfileTests
     [InlineData("S01-0218")]
     [InlineData("S01-0219")]
     [InlineData("S01-0220")]
+    [L12AbilityEvidence("S01-0216:ability:static:bf632dc8776cd134",
+        "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S01-0217:ability:static:bf632dc8776cd134",
+        "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S01-0218:ability:static:bf632dc8776cd134",
+        "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S01-0219:ability:static:bf632dc8776cd134",
+        "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S01-0220:ability:static:bf632dc8776cd134",
+        "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
     public void HandPlayKeepsPrimaryRelicAndPlacesEveryExemptArtifactInExtraZone(string cardId)
     {
-        var game = Create(71400);
+        var game = Create(71400, stateFormatVersion: 2);
         var player = game.State.Players[0];
         var primary = Card("S01-0215", "primary-relic");
         var canopic = Card(cardId, $"exempt-{cardId}", "名称已变化但身份不变");
@@ -54,6 +64,19 @@ public sealed class RelicZoneLimitLifecycleProfileTests
         Assert.Same(primary, player.Relic);
         Assert.Contains(canopic, player.ExtraRelics);
         Assert.DoesNotContain(primary, player.Graveyard);
+
+        var snapshotJson = System.Text.Json.JsonSerializer.Serialize(game.SnapshotFor(0));
+        Assert.Contains(canopic.InstanceId, snapshotJson, StringComparison.Ordinal);
+        game = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(), game.RandomState!.Value,
+            game.CardFactSignalSequence, autoPassEmptyResponses: false,
+            concealHiddenResponseAvailability: false);
+        var restored = game.State.Players[0];
+        Assert.Equal(primary.InstanceId, restored.Relic?.InstanceId);
+        Assert.Contains(restored.ExtraRelics, card => card.InstanceId == canopic.InstanceId);
+
+        var duplicate = game.Handle(0, new L12Command("playCard", canopic.InstanceId));
+        Assert.False(duplicate.Accepted);
+        Assert.Single(restored.ExtraRelics, card => card.InstanceId == canopic.InstanceId);
     }
 
     [Fact]
@@ -183,11 +206,12 @@ public sealed class RelicZoneLimitLifecycleProfileTests
         Assert.DoesNotContain(primary, player.Graveyard);
     }
 
-    private static L12GameEngine Create(int seed)
+    private static L12GameEngine Create(int seed, int stateFormatVersion = 0)
     {
         var game = new L12GameEngine(Catalog, "relic-zone-limit", "RELIC-LIMIT", seed,
             ["甲", "乙"], [0, 0], skipPreparation: true,
-            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false,
+            stateFormatVersion: stateFormatVersion);
         game.State.ActivePlayer = 0;
         game.State.FirstPlayer = 0;
         game.State.Round = 2;

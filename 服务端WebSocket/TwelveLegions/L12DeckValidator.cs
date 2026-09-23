@@ -96,6 +96,11 @@ public static class L12DeckValidator
                 error = $"牌库包含未知卡牌：{cardId}";
                 return false;
             }
+            if (L12SpecialDeckRules.IsDerivedSpecialCard(card))
+            {
+                error = $"{card.NameZh} 为 Limit {L12StructuredCardSemantics.DerivedSpecialCardLimit(card.Id)} 的衍生卡，不能放入主牌库";
+                return false;
+            }
             if (!MainDeckTypes.Contains(card.CardType))
             {
                 error = $"{card.NameZh} 不能放入主牌库";

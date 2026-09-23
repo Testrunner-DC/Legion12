@@ -16,7 +16,7 @@ public sealed class MoraleFaceLifecycleProfileTests
     [L12AbilityEvidence("S02-05C1:ability:active:1ae9b19504eac93a", "identity-definition", "runtime-owner")]
     [L12AbilityEvidence("S02-05C1A:ability:active:1ae9b19504eac93a", "identity-definition", "runtime-owner")]
     [L12AbilityEvidence("S02-05D1:ability:active:519ab3c1379a9256", "identity-definition", "runtime-owner")]
-    [L12AbilityEvidence("S02-05M1:ability:friendly-ranged-death:ba2dac5cf1c08527", "identity-definition", "runtime-owner")]
+    [L12AbilityEvidence("S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888", "identity-definition", "runtime-owner")]
     [L12AbilityEvidence("ST05-C1:ability:static:6fe475d8923feb65", "identity-definition", "runtime-owner")]
     [L12AbilityEvidence("ST05-M1:ability:active:b1f11ab05f68dda0", "identity-definition", "runtime-owner")]
     public void EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary()

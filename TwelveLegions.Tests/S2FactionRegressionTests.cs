@@ -4381,8 +4381,10 @@ public sealed class S2FactionRegressionTests
         Assert.True(moved.ImmortalUntilTurn >= game.State.TurnSerial);
     }
 
-    [Fact]
-    public void ArtemisMayFlipARestedMoraleWhenAnOwnRangedLegionIsDefeated()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ArtemisMayFlipAnActiveOrRestedMoraleWhenAnOwnRangedLegionIsDefeated(bool tapped)
     {
         var game = CreateWithFirstMaster("S02-05M1", 6336);
         var defender = game.State.Players[0];
@@ -4397,7 +4399,7 @@ public sealed class S2FactionRegressionTests
         defender.Morale.Clear();
         defender.Morale.Add(new L12MoraleCard
         {
-            CardId = "S02-05C1", InstanceId = "artemis-rested-morale", Tapped = true,
+            CardId = "S02-05C1", InstanceId = "artemis-morale", Tapped = tapped,
         });
         game.State.ActivePlayer = 1;
         game.State.Round = 2;
@@ -4418,7 +4420,7 @@ public sealed class S2FactionRegressionTests
             Choice: defender.Morale[0].InstanceId)).Accepted);
         PassResponses(game);
         Assert.True(defender.Morale[0].IsGodPower);
-        Assert.True(defender.Morale[0].Tapped);
+        Assert.Equal(tapped, defender.Morale[0].Tapped);
     }
 
     [Fact]

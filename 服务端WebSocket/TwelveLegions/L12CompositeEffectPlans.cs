@@ -1321,7 +1321,8 @@ public sealed partial class L12GameEngine
         var first = segments.FirstOrDefault(segment => CompositeSegmentEnabled(segment, declaration));
         if (preStackCosts.Length == 0 && first is not null
             && !TryPayCompositeDeclaredCost(controller, source, first, declaration)) return false;
-        if (source.CardId == "S02-0306") player.UsedAbilities.Add(L12CardNameUsageRules.Key(source.CardId));
+        if (source.CardId == "S02-0306" && !L12CardNameUsageRules.TryUse(player, source.CardId))
+            return false;
         return true;
     }
 
@@ -1371,6 +1372,15 @@ public sealed partial class L12GameEngine
         if (L12CompositeEffectPlans.UsesSingleResponseEffect(cardId))
             data["compositeResponseScope"] = "single-effect";
         foreach (var pair in declared) data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
+        // 沙漠君临的公开效果分支由“冒号前实际支付的弃置数量”决定；托勒密重复
+        // 效果则由玩家声明同一数量。两条入口必须投影为同一个公开分支身份，避免
+        // 结算器正确执行但按钮、动效、日志和回放无法定位到权威能力段。
+        if (cardId.Equals("S02-0207", StringComparison.OrdinalIgnoreCase)
+            && !data.ContainsKey("declared:desertRepeatCount"))
+        {
+            var discardCount = declared.GetValueOrDefault("discardTargets", []).Count;
+            data["declared:desertRepeatCount"] = $"count:{discardCount}";
+        }
         return data;
     }
 

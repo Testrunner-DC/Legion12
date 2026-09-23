@@ -126,7 +126,8 @@ public sealed partial class L12GameEngine
         if (master.CardId == "S01-01M1"
             && !player.UsedAbilities.Contains($"trigger:xiaotian-morale:{State.TurnSerial}")
             && player.Field[0].Any(card => card is null)
-            && PublicLegions(player).All(card => card.CardId != "S02-01S1"))
+            && L12SpecialDeckRules.CanGenerateDerivedSpecialCard("S02-01S1",
+                PublicLegions(player).Count(card => card.CardId == "S02-01S1")))
         {
             var xiaotian = CreateCard("S02-01S1", $"p{playerIndex}-xiaotian");
             candidates.Add(CreateTriggerCandidate(playerIndex, xiaotian, "master-morale-return", "【主宰效果返还士气时】效果",

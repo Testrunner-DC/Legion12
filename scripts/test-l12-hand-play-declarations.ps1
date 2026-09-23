@@ -125,7 +125,7 @@ Assert-Contains $plans 'new[] { handCard, bottomCard }.Any' 'Blood Eagle must pr
 Assert-Contains $plans 'HandPlayPlansWithoutControllerDeclaration' 'Affected-player-only composite plans must not create an empty controller declaration prompt.'
 Assert-Contains $plans '"moraleTarget"' 'Oiran Gift must retain the exact public morale target in immutable declaration data.'
 Assert-Contains $plans '"disasterValue"' 'Sacrifice to Heaven must retain its public disaster delta in immutable declaration data.'
-Assert-Contains $plans 'player.UsedAbilities.Add(L12CardNameUsageRules.Key(source.CardId))' 'Mimir name usage must be recorded when its declaration commits, before stack response.'
+Assert-Contains $plans 'L12CardNameUsageRules.TryUse(player, source.CardId)' 'Mimir name usage must be recorded through the shared card-name usage rule when its declaration commits, before stack response.'
 Assert-Contains $plans '!L12CardNameUsageRules.HasUsed(player, card.CardId)' 'Mimir declaration must revalidate the same name usage rule.'
 Assert-Contains $actions 'L12CardNameUsageRules.HasUsed(player, card.CardId)' 'Mimir play eligibility must use the same name usage rule.'
 Assert-Contains (Read-Source 'L12CardNameUsageRules.cs') '["S02-0306"] = "s2-mimir-used"' 'Mimir shared name usage must preserve the checkpoint key.'

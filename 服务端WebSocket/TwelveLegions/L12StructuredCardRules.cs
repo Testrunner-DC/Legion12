@@ -1643,14 +1643,14 @@ public static partial class L12StructuredCardRules
 
     private static IReadOnlyList<L12StructuredAbilityTemplate> ArtemisAbilities() => Assisted(
     [
-        new("friendly-ranged-death", "triggered", "回合1次 我方远程军团阵亡时，可翻转1张休整的士气。",
+        new("friendly-ranged-death", "triggered", "回合1次 我方远程军团阵亡时，可翻转1张士气。",
         [
             new(L12AtomKinds.Condition, "我方远程军团阵亡且本回合未发动", "condition", new() { ["expression"] = "friendly.ranged-legion-died;source.once-per-turn-unused=true" }),
             new(L12AtomKinds.Optional, "可发动", "condition", new()),
-            new(L12AtomKinds.Special, "翻转 1 张休整士气", "resolution", new() { ["domain"] = "morale", ["operation"] = "flip-rested", ["amount"] = "1" }),
+            new(L12AtomKinds.Special, "翻转 1 张士气", "resolution", new() { ["domain"] = "morale", ["operation"] = "flip", ["amount"] = "1" }),
             new(L12AtomKinds.Duration, "回合 1 次", "duration", new() { ["duration"] = "once-per-turn" }),
         ]),
-        new("active", "activated", "我方 回合1次 可消耗1神力或弃置1张手牌：选择我方1张【奥林匹斯】军团，本回合获得强攻或震击。",
+        new("active", "activated", "我方 回合1次 可消耗1神力或弃置1张手牌：选择我方1张【奥林匹斯】军团，本回合获得强攻或震击。（进攻时对主宰造成额外1点伤害。）（被进攻军团的左右相邻军团本回合兵力-2000）",
         [
             new(L12AtomKinds.Condition, "我方回合且本回合未发动", "condition", new() { ["expression"] = "controller.turn;source.once-per-turn-unused=true" }),
             new(L12AtomKinds.SelectMode, "选择消耗 1 神力或弃置 1 张手牌", "cost", new() { ["options"] = "god-power|discard-hand" }),

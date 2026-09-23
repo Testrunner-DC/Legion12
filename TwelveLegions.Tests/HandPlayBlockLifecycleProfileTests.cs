@@ -89,6 +89,45 @@ public sealed class HandPlayBlockLifecycleProfileTests
         Assert.Null(L12StructuredCardRules.HandPlayBlockReason(player, candidate));
     }
 
+    [Theory]
+    [InlineData("S02-0205", "S02-0520")]
+    [InlineData("S02-0305", "S02-0205")]
+    [L12AbilityEvidence("S02-0205:ability:continuous:44bfa636b58de089", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-0305:ability:continuous:26b824128ffced1a", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    public void CurrentArtifactBlockReasonSurvivesRestoreAndRejectsRepeatedSubmissionWithoutPayment(
+        string sourceCardId, string candidateCardId)
+    {
+        var game = Create(70310 + sourceCardId.Length + candidateCardId.Length);
+        var player = game.State.Players[0];
+        var source = Card(sourceCardId, $"block-source-{sourceCardId}");
+        var candidate = Card(candidateCardId, $"block-candidate-{candidateCardId}");
+        player.Relic = source;
+        player.Hand.Add(candidate);
+
+        game = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(),
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+            autoPassEmptyResponses: true, concealHiddenResponseAvailability: false);
+        player = game.State.Players[0];
+        source = Assert.IsType<L12CardInstance>(player.Relic);
+        candidate = Assert.Single(player.Hand, card => card.InstanceId == candidate.InstanceId);
+        var hand = Assert.IsType<L12CardInstance[]>(game.SnapshotFor(0).Players[0].GetType()
+            .GetProperty("hand")!.GetValue(game.SnapshotFor(0).Players[0]));
+        var reason = Assert.Single(hand, card => card.InstanceId == candidate.InstanceId).PlayBlockedReason;
+        Assert.StartsWith($"〈{source.Name}〉", reason);
+
+        var first = game.Handle(0, new L12Command("playCard", candidate.InstanceId));
+        var repeated = game.Handle(0, new L12Command("playCard", candidate.InstanceId));
+        Assert.False(first.Accepted);
+        Assert.False(repeated.Accepted);
+        Assert.Equal(first.Error, repeated.Error);
+        Assert.Contains(candidate, player.Hand);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+
+        player.Relic = null;
+        Assert.Null(L12StructuredCardRules.HandPlayBlockReason(player, candidate));
+    }
+
     private static void PlaceArtifactSource(L12PlayerState player, L12CardInstance source, bool useExtraRelic)
     {
         if (useExtraRelic) player.ExtraRelics.Add(source);
@@ -98,7 +137,7 @@ public sealed class HandPlayBlockLifecycleProfileTests
     private static L12GameEngine Create(int seed)
     {
         var game = new L12GameEngine(Catalog, "hand-play-block", "HAND-BLOCK", seed,
-            ["甲", "乙"], [0, 0], skipPreparation: true);
+            ["甲", "乙"], [0, 0], skipPreparation: true, stateFormatVersion: 2);
         game.State.ActivePlayer = 0;
         game.State.Phase = L12Phase.Main;
         return game;

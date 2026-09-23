@@ -8,9 +8,11 @@ public sealed class CombatTimelineRegressionTests
 {
     private static L12Catalog Catalog => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
 
-    private static L12GameEngine Create(int seed = 82801, bool autoPass = true)
+    private static L12GameEngine Create(int seed = 82801, bool autoPass = true,
+        int stateFormatVersion = 0)
         => new(Catalog, "combat-timeline", "COMBAT", seed, ["甲", "乙"], [0, 0], skipPreparation: true,
-            autoPassEmptyResponses: autoPass, concealHiddenResponseAvailability: false);
+            autoPassEmptyResponses: autoPass, concealHiddenResponseAvailability: false,
+            stateFormatVersion: stateFormatVersion);
 
     private static L12CardInstance Card(string cardId, string instanceId)
     {
@@ -285,9 +287,11 @@ public sealed class CombatTimelineRegressionTests
     }
 
     [Fact]
+    [L12AbilityEvidence(EffectLifecycleProfiles.CooperativeSupportAbilityId,
+        "normal", "reconnect", "presentation-consumers")]
     public void CooperativeSupportMayJoinTheDirectRearSupportWithoutReplacingIt()
     {
-        var game = Create(828031);
+        var game = Create(828031, stateFormatVersion: 2);
         ReadyForCombat(game);
         var attacker = PlainLegion("cooperative-attacker", 5000);
         var target = PlainLegion("cooperative-target", 1000);
@@ -300,14 +304,29 @@ public sealed class CombatTimelineRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
             Target: new L12AttackTarget("legion", target.InstanceId))).Accepted);
+        for (var safety = 0; safety < 8
+             && game.State.PendingDefense?.Stage != L12CombatStage.DefenseChoice
+             && game.State.PendingPrompts.Count > 0; safety++)
+            PassCurrentResponse(game);
+        Assert.Equal(L12CombatStage.DefenseChoice, game.State.PendingDefense?.Stage);
+
+        game = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(), game.RandomState!.Value,
+            game.CardFactSignalSequence, autoPassEmptyResponses: true,
+            concealHiddenResponseAvailability: false);
+        for (var safety = 0; safety < 8
+             && game.State.PendingDefense?.Stage != L12CombatStage.DefenseChoice
+             && game.State.PendingPrompts.Count > 0; safety++)
+            PassCurrentResponse(game);
         Assert.Equal(L12CombatStage.DefenseChoice, game.State.PendingDefense?.Stage);
         Assert.True(game.Handle(1, new L12Command("resolveDefense",
             CardInstanceIds: [directSupport.InstanceId, cooperativeSupport.InstanceId])).Accepted);
 
-        Assert.Same(target, game.State.Players[1].Field[0][0]);
-        Assert.Equal(1000, target.Troops);
-        Assert.Contains(directSupport, game.State.Players[1].Graveyard);
-        Assert.Contains(cooperativeSupport, game.State.Players[1].Graveyard);
+        Assert.Equal(target.InstanceId, game.State.Players[1].Field[0][0]?.InstanceId);
+        Assert.Equal(1000, game.State.Players[1].Field[0][0]?.Troops);
+        Assert.Contains(game.State.Players[1].Graveyard,
+            card => card.InstanceId == directSupport.InstanceId);
+        Assert.Contains(game.State.Players[1].Graveyard,
+            card => card.InstanceId == cooperativeSupport.InstanceId);
         Assert.Contains(game.State.Events, entry => entry.Text.Contains("联合支援", StringComparison.Ordinal));
     }
 

@@ -10,6 +10,9 @@ public sealed record L12FieldMoraleResourceRule(string ResourceType, string Disp
     bool ControllerTurnOnly, bool RequiresActive);
 public sealed record L12MoraleZoneResourceRule(string ResourceType, string DisplayName,
     bool ReturnsToOwnerGraveyard);
+public sealed record L12MasterAbilityGateRule(string AbilityId, string RequiredMasterId,
+    string DisabledReason);
+public sealed record L12MasterFieldAuraRule(string TargetCardId, int TroopsAdjustment, int CostAdjustment);
 
 /// <summary>
 /// Runtime identity predicates backed by the structured card rule layer.
@@ -91,6 +94,23 @@ public static class L12StructuredCardSemantics
         {
             ["S02-0010"] = new("black-lotus", "黑色莲花", ReturnsToOwnerGraveyard: true),
         };
+    private static readonly Dictionary<string, int> DerivedSpecialCardLimits =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["S02-01S1"] = 1,
+            [KingsSwordCardId] = 1,
+        };
+    private static readonly Dictionary<string, L12MasterFieldAuraRule> MasterFieldAuraRules =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["S01-02D1"] = new(TombGuardCardId, 1000, 1),
+        };
+    private static readonly Dictionary<string, L12MasterAbilityGateRule> MasterAbilityGateRules =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["S02-0301"] = new("thorHammerRevive", "S02-03M1",
+                "仅〈雷神索尔〉可发动墓地中〈雷神之锤〉的效果"),
+        };
     private static readonly HashSet<string> AttachedStrongAttackCards = new(StringComparer.OrdinalIgnoreCase)
     {
         KingsSwordCardId,
@@ -108,6 +128,15 @@ public static class L12StructuredCardSemantics
 
     public static bool IsKingsSword(string? cardId)
         => string.Equals(cardId, KingsSwordCardId, StringComparison.OrdinalIgnoreCase);
+
+    public static int DerivedSpecialCardLimit(string? cardId)
+        => cardId is null ? 0 : DerivedSpecialCardLimits.GetValueOrDefault(cardId);
+
+    public static bool IsDerivedSpecialCard(string? cardId)
+        => DerivedSpecialCardLimit(cardId) > 0;
+
+    public static L12MasterFieldAuraRule? MasterFieldAuraRule(string? masterId)
+        => masterId is null ? null : MasterFieldAuraRules.GetValueOrDefault(masterId);
 
     public static bool IsMedjed(string? cardId)
         => string.Equals(cardId, MedjedCardId, StringComparison.OrdinalIgnoreCase);
@@ -141,6 +170,25 @@ public static class L12StructuredCardSemantics
 
     public static L12MoraleZoneResourceRule? MoraleZoneResourceRule(string? cardId)
         => cardId is null ? null : MoraleZoneResourceRules.GetValueOrDefault(cardId);
+
+    public static L12MasterAbilityGateRule? MasterAbilityGate(string? cardId, string? abilityId)
+    {
+        if (cardId is null || abilityId is null
+            || !MasterAbilityGateRules.TryGetValue(cardId, out var rule)
+            || !string.Equals(rule.AbilityId, abilityId, StringComparison.OrdinalIgnoreCase))
+            return null;
+        return rule;
+    }
+
+    public static string? MasterAbilityGateFailureReason(L12PlayerState player, string? cardId,
+        string? abilityId)
+    {
+        var rule = MasterAbilityGate(cardId, abilityId);
+        return rule is not null
+            && !string.Equals(player.MasterId, rule.RequiredMasterId, StringComparison.OrdinalIgnoreCase)
+                ? rule.DisabledReason
+                : null;
+    }
 
     public static bool IsGram(string? cardId)
         => string.Equals(cardId, GramCardId, StringComparison.OrdinalIgnoreCase);

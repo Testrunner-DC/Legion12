@@ -154,7 +154,7 @@ public sealed class ExtendedCardEffectsTests
         guard.Tapped = false;
         var restedAttempt = game.Handle(0, new L12Command("activateAbility", ankh.InstanceId, Ability: "ankhDraw"));
         Assert.False(restedAttempt.Accepted);
-        Assert.Contains("休整", restedAttempt.Error);
+        Assert.Contains("必须为活跃状态", restedAttempt.Error);
         Assert.Empty(game.State.PendingPrompts);
 
         ankh.Tapped = false;

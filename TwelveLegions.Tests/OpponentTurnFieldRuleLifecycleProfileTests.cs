@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -25,8 +26,8 @@ public sealed class OpponentTurnFieldRuleLifecycleProfileTests
     }
 
     [Theory]
-    [L12AbilityEvidence(AbilityId, "opponent-turn", "controller-turn", "front-row", "back-row",
-        "reconnect-idempotence")]
+    [L12AbilityEvidence(AbilityId, "normal", "opponent-turn", "controller-turn", "front-row", "back-row",
+        "reconnect", "reconnect-idempotence", "presentation-consumers")]
     [InlineData("S01-0212", 1, 0, 1, 1000)]
     [InlineData("S01-0212", 1, 1, 1, 0)]
     [InlineData("S01-0212", 0, 0, 0, 0)]
@@ -40,15 +41,30 @@ public sealed class OpponentTurnFieldRuleLifecycleProfileTests
         player.Field[row][0] = guard;
         game.State.ActivePlayer = activePlayer;
 
-        game.SnapshotFor(0);
+        var ownerView = JsonSerializer.SerializeToElement(game.SnapshotFor(0),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
         var firstCost = guard.CurrentCost;
         var firstTroops = guard.Troops;
-        game.SnapshotFor(1);
+        var opponentView = JsonSerializer.SerializeToElement(game.SnapshotFor(1),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
         Assert.Equal(guard.Cost + expectedCostAdjustment, firstCost);
         Assert.Equal(guard.BaseTroops + expectedTroopsBonus, firstTroops);
         Assert.Equal(firstCost, guard.CurrentCost);
         Assert.Equal(firstTroops, guard.Troops);
+        Assert.All(new[] { ownerView, opponentView }, snapshot =>
+        {
+            var visible = snapshot.GetProperty("players")[0].GetProperty("field")[row][0];
+            Assert.Equal(firstCost, visible.GetProperty("currentCost").GetInt32());
+            Assert.Equal(firstTroops, visible.GetProperty("troops").GetInt32());
+        });
+
+        game = Restore(game);
+        var restored = Assert.IsType<L12CardInstance>(game.State.Players[0].Field[row][0]);
+        game.SnapshotFor(0);
+        game.SnapshotFor(1);
+        Assert.Equal(firstCost, restored.CurrentCost);
+        Assert.Equal(firstTroops, restored.Troops);
     }
 
     [Fact]
@@ -114,6 +130,12 @@ public sealed class OpponentTurnFieldRuleLifecycleProfileTests
         }
         return game;
     }
+
+    private static L12GameEngine Restore(L12GameEngine game)
+        => L12GameEngine.RestoreCheckpoint(Catalog,
+            game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,"),
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
 
     private static L12CardInstance Card(string cardId, string instanceId)
     {

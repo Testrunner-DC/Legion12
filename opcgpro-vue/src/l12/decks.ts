@@ -462,6 +462,7 @@ export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'car
   }
   for (const id of deck.cardIds) {
     const card = byId.get(id)
+    if (isDerivedSpecialCard(card)) return `${card?.nameZh ?? id}为 Limit ${card?.deckLimit ?? 1} 的衍生卡，不能放入主牌库`
     if (!card || !MAIN_DECK_TYPES.has(card.cardType)) return `无效主牌：${id}`
     if (card.faction !== 'universal' && card.faction !== master.faction) return `${card.nameZh} 与主宰阵营不符`
     const count = (counts.get(id) || 0) + 1
@@ -558,7 +559,11 @@ export function effectiveDeckLimit(card: DeckCard, masterId: string, restriction
 }
 
 export function doesNotCountTowardMainDeck(card: DeckCard | undefined) {
-  return !!card?.effect?.includes('构筑时不计入卡组数量')
+  return isDerivedSpecialCard(card) || !!card?.effect?.includes('构筑时不计入卡组数量')
+}
+
+export function isDerivedSpecialCard(card: DeckCard | undefined) {
+  return card?.cardType === 'token' || card?.id === 'S02-01S1' || card?.id === 'S02-06S2'
 }
 
 export function deckCountSummary(cardIds: readonly string[], cards: ReadonlyMap<string, DeckCard>) {
