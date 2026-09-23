@@ -16,6 +16,12 @@ const route = useRoute()
 const immersive = computed(() => route.meta.immersive === true)
 const landscapeExperience = computed(() => route.meta.landscapeCanvas === true)
 useLandscapeViewport(landscapeExperience)
+const lockedViewport = 'width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover'
+const readableViewport = 'width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover'
+watch(landscapeExperience, locked => {
+  const viewport = document.querySelector<HTMLMetaElement>('meta[name="viewport"]')
+  if (viewport) viewport.content = locked ? lockedViewport : readableViewport
+}, { immediate: true })
 const backgroundMusic = new BackgroundMusicController()
 let battleTrack = 0
 let primed = false

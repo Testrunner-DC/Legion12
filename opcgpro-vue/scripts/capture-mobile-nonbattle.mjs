@@ -6,6 +6,7 @@ import { createServer } from 'vite'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const output = process.env.L12_QA_OUT || path.resolve(root, '../artifacts/mobile-nonbattle-review')
+const assertionOnly = process.env.L12_QA_ASSERT_ONLY === '1'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 fs.mkdirSync(output, { recursive: true })
@@ -156,6 +157,15 @@ const routesToCapture = [
 const viewports = [
   { width: 390, height: 844, label: '390x844' },
   { width: 360, height: 780, label: '360x780' },
+  { width: 430, height: 932, label: '430x932' },
+  { width: 700, height: 900, label: '700x900' },
+  { width: 701, height: 900, label: '701x900' },
+  { width: 759, height: 900, label: '759x900' },
+  { width: 760, height: 900, label: '760x900' },
+  { width: 761, height: 900, label: '761x900' },
+  { width: 849, height: 900, label: '849x900' },
+  { width: 850, height: 900, label: '850x900' },
+  { width: 851, height: 900, label: '851x900' },
 ]
 
 try {
@@ -168,17 +178,51 @@ try {
   page.on('pageerror', error => errors.push(error.message))
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
 
-  for (const viewport of viewports) {
-    await page.setViewportSize({ width: viewport.width, height: viewport.height })
-    for (const item of routesToCapture) {
-      await page.goto(`http://127.0.0.1:${port}/__mobile_review__?route=${encodeURIComponent(item.route)}`)
-      try { await page.locator(item.wait).first().waitFor({ timeout: 9000 }) } catch { errors.push(`wait timeout: ${item.name}@${viewport.label}`) }
-      await page.waitForTimeout(1000)
-      const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)
-      await page.screenshot({ path: path.join(output, `${item.name}-${viewport.label}${overflow ? '-OVERFLOW' : ''}.png`), fullPage: true })
-      console.log(`captured ${item.name} @ ${viewport.label}${overflow ? ' (overflow)' : ''}`)
+  if (!assertionOnly) {
+    for (const viewport of viewports) {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height })
+      for (const item of routesToCapture) {
+        await page.goto(`http://127.0.0.1:${port}/__mobile_review__?route=${encodeURIComponent(item.route)}`)
+        try { await page.locator(item.wait).first().waitFor({ timeout: 9000 }) } catch { errors.push(`wait timeout: ${item.name}@${viewport.label}`) }
+        await page.waitForTimeout(1000)
+        const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)
+        await page.screenshot({ path: path.join(output, `${item.name}-${viewport.label}${overflow ? '-OVERFLOW' : ''}.png`), fullPage: true })
+        console.log(`captured ${item.name} @ ${viewport.label}${overflow ? ' (overflow)' : ''}`)
+      }
     }
   }
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`http://127.0.0.1:${port}/__mobile_review__?route=%2Fcards`)
+  await page.locator('.archive-card').first().waitFor({ timeout: 15000 })
+  const initialArchiveCards = await page.locator('.archive-card').count()
+  if (initialArchiveCards > 60) throw new Error(`archive initial DOM exceeds 60 cards: ${initialArchiveCards}`)
+
+  await page.goto(`http://127.0.0.1:${port}/__mobile_review__?route=%2Fbattle%2Frankings`)
+  await page.locator('.player-table .tr').first().waitFor({ timeout: 15000 })
+  await page.evaluate(() => {
+    const row = document.querySelector('.player-table .tr')
+    const scroller = document.querySelector('.site-content')
+    if (!(row instanceof HTMLElement) || !(scroller instanceof HTMLElement)) return
+    scroller.scrollTop += row.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 8
+  })
+  await page.waitForTimeout(150)
+  const visiblePlayerRows = await page.locator('.player-table .tr').evaluateAll(rows => rows.filter(row => {
+    const box = row.getBoundingClientRect()
+    const scroller = document.querySelector('.site-content')
+    const viewport = scroller?.getBoundingClientRect()
+    return box.top >= (viewport?.top ?? 0) && box.bottom <= (viewport?.bottom ?? innerHeight)
+  }).length)
+  if (visiblePlayerRows < 4) throw new Error(`compact ranking shows only ${visiblePlayerRows} complete player rows`)
+
+  await page.setViewportSize({ width: 700, height: 900 })
+  await page.goto(`http://127.0.0.1:${port}/__mobile_review__?route=%2Fdecks`)
+  await page.setViewportSize({ width: 700, height: 900 })
+  await page.waitForTimeout(100)
+  if ((await page.locator('.site-mobile-head:visible').count()) < 1) throw new Error('700px must use compact site navigation')
+  await page.setViewportSize({ width: 701, height: 900 })
+  await page.waitForTimeout(100)
+  if ((await page.locator('.site-mobile-head:visible').count()) > 0) throw new Error('701px must leave compact site navigation')
 
   // 交互状态：导航抽屉、设置弹窗、在线人数弹窗（390 宽）
   await page.setViewportSize({ width: 390, height: 844 })
@@ -191,6 +235,12 @@ try {
   await page.locator('.site-sidebar .site-utilities button').first().click()
   await page.waitForTimeout(500)
   await page.screenshot({ path: path.join(output, 'settings-modal-390x844.png'), fullPage: false })
+
+  await page.goto(`http://127.0.0.1:${port}/__mobile_review__?route=%2Fbattle%2Frecords`)
+  await page.locator('.records-list>button').first().waitFor({ timeout: 15000 })
+  await page.locator('.records-list>button').first().click()
+  await page.waitForTimeout(300)
+  await page.screenshot({ path: path.join(output, 'records-detail-390x844.png'), fullPage: true })
 
   console.log(JSON.stringify({ output, errors }, null, 2))
 } finally {

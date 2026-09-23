@@ -200,8 +200,8 @@ const contracts = [
     && cardArchiveVersions.includes('rarityValue(a.rarity)') && cardArchiveVersions.includes("if (!rarity?.trim()) return 100")
     && cardArchiveVersions.includes('defaultVersion: versions[0]'), '逻辑卡默认版本必须先选无异画基底的规则卡，再稳定按最早产品、最低已知罕贵度及卡号排序；异画不得抢占默认卡图'],
   [cardArchive.includes('class="archive-card-image"') && cardArchive.includes('class="archive-version-arrow previous"')
-    && cardArchive.includes('class="archive-version-arrow next"') && cardArchive.includes('@click.stop="cycleVersion(entry, -1)"')
-    && cardArchive.includes('@click.stop="cycleVersion(entry, 1)"') && cardArchive.includes(':card-id="displayedVersion(entry).id"')
+    && cardArchive.includes('class="archive-version-arrow next"') && cardArchive.includes('@click.stop="cycleVersion(row.entry, -1)"')
+    && cardArchive.includes('@click.stop="cycleVersion(row.entry, 1)"') && cardArchive.includes(':card-id="displayedVersion(row.entry).id"')
     && cardArchive.includes(':card="selectedDetailCard"') && cardDetailContent.includes(':card-id="card.id"')
     && !cardDetailContent.includes('archive-version-arrow')
     && globalStyle.includes('.archive-version-arrow{') && globalStyle.includes('background:transparent'), '卡牌图鉴必须在中间结果卡图上以左右透明三角切换版本，并同步更新卡位与详情；详情区不得保留第二套切换按钮'],
@@ -211,7 +211,7 @@ const contracts = [
     && cardArchive.includes("card.id !== 'S02-05C1B'")
     && cardArchive.includes("Boolean(card.archiveBaseCardId) || card.id === 'S02-05C1A'")
     && cardArchive.includes('cards.value.filter(isGalleryVariant)')
-    && cardArchive.includes('v-for="card in filteredGallery" :key="card.id"')
+    && cardArchive.includes('v-for="row in visibleGalleryRows" :key="row.key"')
     && !galleryMarkup.includes('archive-version-arrow'), '画廊必须逐卡展示41张登记展示资源与S02-05C1A，共42张异画；主宰异画编号不得写死为M1A；S02-05C1A在图鉴并入默认士气S02-05C1的版本切换、在画廊独立展示，不得成为新规则身份，也不得误收规则独立的奥林匹斯神力B面'],
   [(cardArchive.match(/@dblclick\.stop="openDetail/g) ?? []).length === 2
     && (cardArchive.match(/class="archive-image-open"/g) ?? []).length === 2

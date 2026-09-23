@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import { compareArchiveVersions, groupArchiveCards, type LogicalArchiveCard } from './cardArchiveVersions'
 import { cardArchiveProducts, displayCardNumber, filterableCardCost, loadCardArchiveCatalog, type DeckCard } from './decks'
@@ -51,7 +51,13 @@ const selectedGalleryId = ref('')
 const modalCard = ref<CatalogCard | null>(null)
 const modalVersions = ref<CatalogCard[]>([])
 const modalCloseButton = ref<HTMLButtonElement | null>(null)
+const archiveRoot = ref<HTMLElement | null>(null)
+const loadMoreSentinel = ref<HTMLElement | null>(null)
+const renderLimit = ref(60)
+const showBackToTop = ref(false)
 let modalTrigger: HTMLElement | null = null
+let loadMoreObserver: IntersectionObserver | null = null
+let scrollContainer: HTMLElement | null = null
 
 const logicalCards = computed(() => groupArchiveCards(cards.value))
 const galleryCards = computed(() => {
@@ -71,6 +77,35 @@ const productOptions = computed(() => [...new Set([
 ])].filter(value => cards.value.some(card => card.products?.includes(value))
   || galleryCards.value.some(card => card.products?.includes(value))))
 
+function cardGroupLabel(card: CatalogCard) {
+  return card.products?.[0] || typeLabels[cardTypeFilterKey(card.cardType)] || '其他卡牌'
+}
+
+function observeLoadMore() {
+  loadMoreObserver?.disconnect()
+  if (!loadMoreSentinel.value) return
+  loadMoreObserver = new IntersectionObserver(entries => {
+    if (entries.some(entry => entry.isIntersecting)) renderLimit.value += 60
+  }, { root: scrollContainer, rootMargin: '480px 0px' })
+  loadMoreObserver.observe(loadMoreSentinel.value)
+}
+
+function onArchiveScroll() {
+  showBackToTop.value = (scrollContainer?.scrollTop ?? window.scrollY) > window.innerHeight * 2
+}
+
+function backToTop() {
+  ;(scrollContainer ?? window).scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function openGroup(group: string) {
+  if (productOptions.value.includes(group)) product.value = group
+  else {
+    const key = Object.keys(typeLabels).find(candidate => typeLabels[candidate] === group)
+    if (key) type.value = key
+  }
+}
+
 onMounted(async () => {
   window.addEventListener('keydown', onWindowKeydown)
   try {
@@ -84,10 +119,18 @@ onMounted(async () => {
     loadError.value = error instanceof Error ? error.message : '卡牌图鉴加载失败'
   } finally {
     loading.value = false
+    await nextTick()
+    scrollContainer = archiveRoot.value?.closest<HTMLElement>('.site-content') ?? null
+    scrollContainer?.addEventListener('scroll', onArchiveScroll, { passive: true })
+    observeLoadMore()
   }
 })
 
-onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown))
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onWindowKeydown)
+  scrollContainer?.removeEventListener('scroll', onArchiveScroll)
+  loadMoreObserver?.disconnect()
+})
 
 function hasCostDimension(card: CatalogCard) {
   return card.cardType !== 'master' && card.cost !== undefined
@@ -137,6 +180,46 @@ const filteredCatalog = computed(() => {
 const filteredGallery = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
   return galleryCards.value.filter(card => matchesFilters(card, keyword)).sort(compareVisibleCards)
+})
+const groupedCatalog = computed(() => [...filteredCatalog.value].sort((left, right) =>
+  cardGroupLabel(left.defaultVersion).localeCompare(cardGroupLabel(right.defaultVersion), 'zh-CN')
+  || compareVisibleCards(left.defaultVersion, right.defaultVersion)))
+const groupedGallery = computed(() => [...filteredGallery.value].sort((left, right) =>
+  cardGroupLabel(left).localeCompare(cardGroupLabel(right), 'zh-CN') || compareVisibleCards(left, right)))
+const visibleCatalog = computed(() => groupedCatalog.value.slice(0, renderLimit.value))
+const visibleGallery = computed(() => groupedGallery.value.slice(0, renderLimit.value))
+const canLoadMore = computed(() => page.value === 'gallery'
+  ? visibleGallery.value.length < groupedGallery.value.length
+  : visibleCatalog.value.length < groupedCatalog.value.length)
+const visibleGroups = computed(() => [...new Set((page.value === 'gallery' ? groupedGallery.value : groupedCatalog.value.map(entry => entry.defaultVersion))
+  .map(cardGroupLabel))])
+const visibleCatalogRows = computed(() => {
+  let previous = ''
+  return visibleCatalog.value.flatMap(entry => {
+    const label = cardGroupLabel(entry.defaultVersion)
+    const rows: Array<{ kind: 'group'; key: string; label: string } | { kind: 'card'; key: string; entry: LogicalArchiveCard }> = []
+    if (label !== previous) rows.push({ kind: 'group', key: `group-${label}`, label })
+    previous = label
+    rows.push({ kind: 'card', key: entry.logicalId, entry })
+    return rows
+  })
+})
+const visibleGalleryRows = computed(() => {
+  let previous = ''
+  return visibleGallery.value.flatMap(card => {
+    const label = cardGroupLabel(card)
+    const rows: Array<{ kind: 'group'; key: string; label: string } | { kind: 'card'; key: string; card: CatalogCard }> = []
+    if (label !== previous) rows.push({ kind: 'group', key: `gallery-group-${label}`, label })
+    previous = label
+    rows.push({ kind: 'card', key: card.id, card })
+    return rows
+  })
+})
+watch([query, type, faction, cost, disaster, product, sort, page], async () => {
+  renderLimit.value = 60
+  if (scrollContainer) scrollContainer.scrollTo({ top: 0 })
+  await nextTick()
+  observeLoadMore()
 })
 
 const types = computed(() => [...new Set(cards.value.map(card => cardTypeFilterKey(card.cardType)))]
@@ -234,7 +317,7 @@ function resetFilters() {
 </script>
 
 <template>
-  <section class="card-archive grand-panel">
+  <section ref="archiveRoot" class="card-archive grand-panel">
     <i class="corner tl"/><i class="corner tr"/><i class="corner bl"/><i class="corner br"/>
     <header class="archive-header">
       <div><p class="kicker">CARD CATALOG · ART GALLERY</p><h1>卡牌图鉴</h1></div>
@@ -270,52 +353,63 @@ function resetFilters() {
       </div>
     </div>
     <button v-if="activeFilterCount" type="button" class="archive-filter-summary" @click="filtersOpen = true">{{ activeFilterSummary }}</button>
+    <nav v-if="visibleGroups.length > 1" class="archive-group-nav" aria-label="收录产品分组">
+      <button v-for="group in visibleGroups" :key="group" type="button" @click="openGroup(group)">{{ group }}</button>
+    </nav>
 
     <div v-if="loading" class="archive-empty">正在载入卡牌数据…</div>
     <div v-else-if="loadError" class="archive-empty error">{{ loadError }}</div>
     <div v-else class="archive-workspace">
       <div id="archive-results" class="archive-grid" role="list" :aria-labelledby="page === 'gallery' ? 'archive-gallery-tab' : 'archive-catalog-tab'">
         <template v-if="page === 'catalog'">
-          <article v-for="entry in filteredCatalog" :key="entry.logicalId" role="listitem" tabindex="0" class="archive-card"
-            :aria-label="`${displayedVersion(entry).nameZh}，按回车打开详情`"
-            :class="[{ selected: selectedLogicalId === entry.logicalId, 'landscape-thumbnail': isHorizontalCardType(displayedVersion(entry).cardType) }, `faction-${displayedVersion(entry).faction}`]"
-            @click="selectLogical(entry)" @keydown.enter.prevent="selectLogical(entry); openDetail(displayedVersion(entry), $event, entry.versions)" @keydown.space.prevent="selectLogical(entry)">
+          <template v-for="row in visibleCatalogRows" :key="row.key">
+          <h2 v-if="row.kind === 'group'" class="archive-group-heading">{{ row.label }}</h2>
+          <article v-else role="listitem" tabindex="0" class="archive-card"
+            :aria-label="`${displayedVersion(row.entry).nameZh}，按回车打开详情`"
+            :class="[{ selected: selectedLogicalId === row.entry.logicalId, 'landscape-thumbnail': isHorizontalCardType(displayedVersion(row.entry).cardType) }, `faction-${displayedVersion(row.entry).faction}`]"
+            @click="selectLogical(row.entry)" @keydown.enter.prevent="selectLogical(row.entry); openDetail(displayedVersion(row.entry), $event, row.entry.versions)" @keydown.space.prevent="selectLogical(row.entry)">
             <div class="archive-card-image">
-              <div class="archive-image-open" @dblclick.stop="openDetail(displayedVersion(entry), $event, entry.versions)">
-                <CardImage :card-id="displayedVersion(entry).id" :legacy-url="displayedVersion(entry).imageUrl" :alt="displayedVersion(entry).nameZh" intent="thumb"/>
+              <div class="archive-image-open" @dblclick.stop="openDetail(displayedVersion(row.entry), $event, row.entry.versions)">
+                <CardImage :card-id="displayedVersion(row.entry).id" :legacy-url="displayedVersion(row.entry).imageUrl" :alt="displayedVersion(row.entry).nameZh" intent="thumb"/>
               </div>
-              <b v-if="hasCostDimension(displayedVersion(entry))" class="archive-cost">{{ displayedVersion(entry).cost }}</b>
-              <b v-if="displayedVersion(entry).disasterLevel" class="archive-disaster">{{ displayedVersion(entry).disasterLevel }}</b>
-              <b v-if="displayedVersion(entry).troops" class="archive-troops">{{ displayedVersion(entry).troops }}</b>
-              <template v-if="entry.versions.length > 1">
-                <button class="archive-version-arrow previous" type="button" aria-label="上一版本" title="上一版本" @click.stop="cycleVersion(entry, -1)" @keydown.enter.stop @keydown.space.stop>‹</button>
-                <button class="archive-version-arrow next" type="button" aria-label="下一版本" title="下一版本" @click.stop="cycleVersion(entry, 1)" @keydown.enter.stop @keydown.space.stop>›</button>
-                <b class="archive-version-count">{{ displayedVersionIndex(entry) + 1 }}/{{ entry.versions.length }}</b>
+              <b v-if="hasCostDimension(displayedVersion(row.entry))" class="archive-cost">{{ displayedVersion(row.entry).cost }}</b>
+              <b v-if="displayedVersion(row.entry).disasterLevel" class="archive-disaster">{{ displayedVersion(row.entry).disasterLevel }}</b>
+              <b v-if="displayedVersion(row.entry).troops" class="archive-troops">{{ displayedVersion(row.entry).troops }}</b>
+              <template v-if="row.entry.versions.length > 1">
+                <button class="archive-version-arrow previous" type="button" aria-label="上一版本" title="上一版本" @click.stop="cycleVersion(row.entry, -1)" @keydown.enter.stop @keydown.space.stop>‹</button>
+                <button class="archive-version-arrow next" type="button" aria-label="下一版本" title="下一版本" @click.stop="cycleVersion(row.entry, 1)" @keydown.enter.stop @keydown.space.stop>›</button>
+                <b class="archive-version-count">{{ displayedVersionIndex(row.entry) + 1 }}/{{ row.entry.versions.length }}</b>
               </template>
             </div>
-            <span>{{ displayedVersion(entry).nameZh }}</span><small>{{ displayCardNumber(displayedVersion(entry)) }} · {{ cardTypeLabel(displayedVersion(entry).cardType, displayedVersion(entry).isCounterTactic) }}</small>
+            <span>{{ displayedVersion(row.entry).nameZh }}</span><small>{{ displayCardNumber(displayedVersion(row.entry)) }} · {{ cardTypeLabel(displayedVersion(row.entry).cardType, displayedVersion(row.entry).isCounterTactic) }}</small>
           </article>
+          </template>
           <div v-if="!filteredCatalog.length" class="archive-empty">没有符合条件的卡牌。</div>
         </template>
 
         <template v-else>
-          <article v-for="card in filteredGallery" :key="card.id" role="listitem" tabindex="0" class="archive-card archive-gallery-card"
-            :aria-label="`${card.nameZh}，按回车打开详情`"
-            :class="[{ selected: selectedGalleryId === card.id, 'landscape-thumbnail': isHorizontalCardType(card.cardType) }, `faction-${card.faction}`]"
-            @click="selectGallery(card)" @keydown.enter.prevent="selectGallery(card); openDetail(card, $event)" @keydown.space.prevent="selectGallery(card)">
+          <template v-for="row in visibleGalleryRows" :key="row.key">
+          <h2 v-if="row.kind === 'group'" class="archive-group-heading">{{ row.label }}</h2>
+          <article v-else role="listitem" tabindex="0" class="archive-card archive-gallery-card"
+            :aria-label="`${row.card.nameZh}，按回车打开详情`"
+            :class="[{ selected: selectedGalleryId === row.card.id, 'landscape-thumbnail': isHorizontalCardType(row.card.cardType) }, `faction-${row.card.faction}`]"
+            @click="selectGallery(row.card)" @keydown.enter.prevent="selectGallery(row.card); openDetail(row.card, $event)" @keydown.space.prevent="selectGallery(row.card)">
             <div class="archive-card-image">
-              <div class="archive-image-open" @dblclick.stop="openDetail(card, $event)">
-                <CardImage :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb"/>
+              <div class="archive-image-open" @dblclick.stop="openDetail(row.card, $event)">
+                <CardImage :card-id="row.card.id" :legacy-url="row.card.imageUrl" :alt="row.card.nameZh" intent="thumb"/>
               </div>
-              <b v-if="hasCostDimension(card)" class="archive-cost">{{ card.cost }}</b>
-              <b v-if="card.disasterLevel" class="archive-disaster">{{ card.disasterLevel }}</b>
-              <b v-if="card.troops" class="archive-troops">{{ card.troops }}</b>
+              <b v-if="hasCostDimension(row.card)" class="archive-cost">{{ row.card.cost }}</b>
+              <b v-if="row.card.disasterLevel" class="archive-disaster">{{ row.card.disasterLevel }}</b>
+              <b v-if="row.card.troops" class="archive-troops">{{ row.card.troops }}</b>
             </div>
-            <span>{{ card.nameZh }}</span><small>{{ displayCardNumber(card) }} · 异画 · {{ cardTypeLabel(card.cardType, card.isCounterTactic) }}</small>
+            <span>{{ row.card.nameZh }}</span><small>{{ displayCardNumber(row.card) }} · 异画 · {{ cardTypeLabel(row.card.cardType, row.card.isCounterTactic) }}</small>
           </article>
+          </template>
           <div v-if="!filteredGallery.length" class="archive-empty">没有符合条件的异画。</div>
         </template>
       </div>
+
+      <div v-if="canLoadMore" ref="loadMoreSentinel" class="archive-load-more" aria-live="polite">继续载入卡牌…</div>
 
       <aside v-if="selectedDetailCard" class="archive-detail">
         <CardDetailContent :card="selectedDetailCard">
@@ -330,6 +424,7 @@ function resetFilters() {
         </CardDetailContent>
       </aside>
     </div>
+    <button v-if="showBackToTop" class="archive-back-to-top" type="button" aria-label="回到图鉴顶部" @click="backToTop">↑</button>
 
     <Teleport to="body">
       <div v-if="modalCard" class="archive-modal-backdrop" @click.self="closeDetail">
@@ -363,8 +458,9 @@ function resetFilters() {
   box-sizing: border-box;
   overflow: hidden;
 }
+.archive-group-nav{display:flex;gap:7px;overflow-x:auto;padding:8px 0;scrollbar-width:none}.archive-group-nav button{min-height:var(--l12-site-hit,44px);flex:0 0 auto;padding:7px 11px;border:1px solid #49585e;background:#11191d;color:#d8ddd8;font-size:12px;font-weight:900}.archive-group-heading{position:sticky;z-index:2;top:0;grid-column:1/-1;margin:8px 0 0;padding:8px 10px;border-left:3px solid #d8b362;background:#0b1114e8;color:#e2c878;font-size:14px;backdrop-filter:blur(6px)}.archive-load-more{grid-column:1/-1;padding:22px;color:#778287;text-align:center}.archive-back-to-top{position:fixed;z-index:30;right:max(16px,env(safe-area-inset-right,0px));bottom:max(18px,calc(env(safe-area-inset-bottom,0px) + 12px));width:44px;height:44px;border:1px solid #d8b362;background:#18170f;color:#efd782;font-size:22px;font-weight:900;box-shadow:0 10px 28px #000}
 
-@media (max-width: 760px) {
+@media (max-width: 700px) {
   .archive-modal {
     grid-template-rows: auto minmax(0, 1fr);
     height: min(820px, calc(100dvh - 20px));

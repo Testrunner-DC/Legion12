@@ -30,7 +30,7 @@ expect(board.includes('class="mobile-card-inspector-handle mobile-card-inspector
 expect(board.includes(':mobile-layout="mobileLandscapeViewport"'), 'mobile-safe modal layout must be passed to board overlays')
 expect(prompt.includes("'mobile-safe-overlay': mobileLayout"), 'prompt overlay must receive the mobile safe rectangle')
 expect(records.includes("error.value = '请到电脑端查看回放'"), 'record actions must state the desktop-only replay notice')
-expect(records.includes('mobileReplayNotice.value = true') && records.includes('role="alertdialog"'), 'mobile replay actions must show an in-viewport dismissible notice')
+expect(records.includes('class="mobile-replay-inline"') && !records.includes('role="alertdialog"'), 'mobile replay actions must use an inline summary notice instead of a blocking modal')
 expect(records.includes('function openReplayImport()') && records.includes('if (mobileReplayBlocked) return blockMobileReplay()'), 'JSON replay import must be blocked before opening a picker')
 expect(replay.includes('const mobileReplayBlocked = isMobileDeviceExperience()'), 'direct replay route must detect mobile before loading')
 expect(replay.includes('if (!mobileReplayBlocked) void loadReplay()'), 'direct replay route must not request data on mobile')

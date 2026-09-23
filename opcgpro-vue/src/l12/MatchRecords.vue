@@ -13,14 +13,12 @@ const matches = ref<MatchSummary[]>([])
 const selected = ref<MatchSummary | null>(null)
 const loading = ref(false)
 const error = ref('')
-const mobileReplayNotice = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 const canUseSelectedReplay = computed(() => Boolean(selected.value?.endedUtc && selected.value.commandCount > 0))
 const mobileReplayBlocked = isMobileDeviceExperience()
 
 function blockMobileReplay() {
   error.value = '请到电脑端查看回放'
-  mobileReplayNotice.value = true
 }
 
 onMounted(async () => {
@@ -111,6 +109,15 @@ function dateLabel(raw: string) {
   }).format(date)
 }
 
+function durationLabel(match: MatchSummary) {
+  if (!match.endedUtc) return '进行中'
+  const duration = Math.max(0, new Date(match.endedUtc).getTime() - new Date(match.startedUtc).getTime())
+  if (!Number.isFinite(duration)) return '时长未知'
+  const seconds = Math.round(duration / 1000)
+  const minutes = Math.floor(seconds / 60)
+  return `${minutes}:${String(seconds % 60).padStart(2, '0')}`
+}
+
 function resultLabel(match: MatchSummary) {
   if (!match.endedUtc) return '进行中'
   if (match.winner === null || match.winner === undefined) return '已结束'
@@ -135,17 +142,14 @@ function resultLabel(match: MatchSummary) {
       </div>
     </header>
     <p v-if="error" class="records-error">{{ error }}</p>
-    <div v-if="mobileReplayNotice" class="mobile-replay-notice" role="alertdialog" aria-modal="true" aria-label="移动端回放提示">
-      <p>请到电脑端查看回放</p>
-      <button type="button" @click="mobileReplayNotice = false">知道了</button>
-    </div>
     <div class="records-workspace">
       <aside class="records-list">
         <button v-for="match in matches" :key="match.matchId"
           :class="{ selected: selected?.matchId === match.matchId }" @click="selectMatch(match)">
           <span><b>{{ match.player0 }}</b><em>VS</em><b>{{ match.player1 }}</b></span>
-          <small>{{ dateLabel(match.startedUtc) }} · {{ match.commandCount }} 次操作</small>
-          <i>{{ resultLabel(match) }}</i>
+          <small class="record-decks">{{ match.deck0 || '未命名牌库' }} · {{ match.deck1 || '未命名牌库' }}</small>
+          <small>{{ dateLabel(match.startedUtc) }} · {{ durationLabel(match) }} · {{ match.commandCount }} 次操作</small>
+          <i class="record-result">{{ resultLabel(match) }}</i>
         </button>
         <p v-if="!loading && !matches.length">尚无已记录对局。</p>
       </aside>
@@ -159,13 +163,18 @@ function resultLabel(match: MatchSummary) {
           <code>{{ selected.matchId.slice(0, 12) }}</code>
         </header>
         <section class="record-launch">
-          <div>
-            <span>{{ dateLabel(selected.startedUtc) }}</span>
-            <b>{{ resultLabel(selected) }}</b>
-            <small>{{ selected.commandCount }} 个回放步骤</small>
+          <div class="record-summary-grid">
+            <span><small>对局结果</small><b>{{ resultLabel(selected) }}</b></span>
+            <span><small>对局时长</small><b>{{ durationLabel(selected) }}</b></span>
+            <span><small>开始时间</small><b>{{ dateLabel(selected.startedUtc) }}</b></span>
+            <span><small>结束时间</small><b>{{ selected.endedUtc ? dateLabel(selected.endedUtc) : '进行中' }}</b></span>
+            <span><small>{{ selected.player0 }}</small><b>{{ selected.deck0 || '未命名牌库' }}</b></span>
+            <span><small>{{ selected.player1 }}</small><b>{{ selected.deck1 || '未命名牌库' }}</b></span>
+            <span><small>操作数</small><b>{{ selected.commandCount }}</b></span>
           </div>
           <p v-if="selected.commandCount === 0">这场对局的回放载荷已清理，摘要与结算结果仍保留。</p>
-          <p v-else>回放将在独立的完整对战界面中打开。进入播放器前不会加载或渲染棋盘。</p>
+          <p v-else-if="mobileReplayBlocked" class="mobile-replay-inline">移动端可查看完整摘要；请到电脑端播放回放。</p>
+          <p v-else>回放将在独立的完整对战界面中打开。</p>
           <button class="primary" :disabled="!canUseSelectedReplay" @click="playSelected">播放回放</button>
         </section>
       </main>
@@ -177,8 +186,7 @@ function resultLabel(match: MatchSummary) {
 <style scoped>
 .record-file-actions{display:flex;align-items:center;gap:8px}.record-file-actions input{display:none}
 .records-retention-note{display:block;margin-top:6px;color:#87918e;font-size:13px;line-height:1.5}
-.mobile-replay-notice{position:fixed;z-index:2147483600;left:50%;top:50%;display:grid;box-sizing:border-box;width:min(320px,calc(100vw - 24px));justify-items:center;gap:14px;padding:18px;border:1px solid #667276;background:#090e10;color:#eeeae0;box-shadow:0 0 0 100vmax rgba(0,0,0,.58),0 16px 40px #000;transform:translate(-50%,-50%)}.mobile-replay-notice p{margin:0;font-size:15px;font-weight:900}.mobile-replay-notice button{min-width:88px;min-height:36px;padding:7px 12px;border:1px solid #8a9692;background:#172021;color:#fff;font-weight:900}
 .record-launch{display:grid;min-height:360px;place-items:center;align-content:center;gap:24px;border:1px solid rgba(240,239,229,.16);background:radial-gradient(circle at 50% 42%,rgba(41,117,123,.13),transparent 45%),rgba(4,7,8,.48);text-align:center}
-.record-launch>div{display:flex;align-items:center;justify-content:center;gap:14px}.record-launch span,.record-launch small{color:#78817d;font-size:14px}.record-launch b{color:#ece9df;font-size:15px}.record-launch p{max-width:520px;margin:0;color:#8f9793;font-size:14px;line-height:1.8}.record-launch button{padding:13px 32px;border:1px solid #d7c06f;background:#2c2612;color:#f4dda0;font-weight:900;letter-spacing:.12em}.record-launch button:disabled{cursor:not-allowed;opacity:.35}
-@media(max-width:720px){.records-header{align-items:flex-start;gap:12px}.record-file-actions{flex-wrap:wrap}.record-launch>div{flex-direction:column;gap:6px}}
+.record-summary-grid{display:grid;width:min(680px,92%);grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;text-align:left}.record-summary-grid>span{display:grid;gap:4px;padding:10px;border:1px solid rgba(240,239,229,.13);background:#090d0e}.record-launch span,.record-launch small{color:#78817d;font-size:13px}.record-launch b{overflow-wrap:anywhere;color:#ece9df;font-size:14px}.record-launch p{max-width:520px;margin:0;color:#8f9793;font-size:14px;line-height:1.8}.record-launch button{min-height:var(--l12-site-hit,44px);padding:10px 32px;border:1px solid #d7c06f;background:#2c2612;color:#f4dda0;font-weight:900;letter-spacing:.12em}.record-launch button:disabled{cursor:not-allowed;opacity:.35}.mobile-replay-inline{padding:8px 12px;border-left:3px solid #d7c06f;background:#211c10;color:#d9c891!important}.record-decks{padding-right:72px;overflow-wrap:anywhere}.record-result{max-width:42%;text-align:right}
+@media(max-width:700px){.match-records{height:auto;min-height:100%;overflow:visible;padding:12px}.records-header{align-items:flex-start;flex-direction:column;gap:12px}.records-header h1{font-size:24px}.record-file-actions{display:grid;width:100%;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.record-file-actions button{min-height:var(--l12-site-hit,44px);padding:7px 5px;font-size:12px}.records-workspace{display:block;padding-top:10px}.records-list{max-height:none!important;padding-right:0;overflow:visible!important;border-right:0;border-bottom:1px solid rgba(240,239,229,.18)}.records-list>button{min-height:88px;padding:9px}.records-list>button span b{max-width:44%;white-space:normal}.records-list>button small{font-size:11px}.record-detail{margin-top:12px}.record-detail>header{gap:8px}.record-detail>header h2{font-size:18px}.record-launch{min-height:0;gap:14px;padding:14px 0}.record-summary-grid{width:calc(100% - 20px);grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.record-summary-grid>span{padding:8px}.record-launch>button{width:calc(100% - 20px)}.records-placeholder{min-height:150px}}
 </style>

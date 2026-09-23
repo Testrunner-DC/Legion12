@@ -14,6 +14,10 @@
   --ink-faint: #5b625f;
   --red: #a9453f;
   --green: #62b595;
+  --l12-site-hit: 44px;
+  --l12-site-copy: 13px;
+  --l12-site-meta: 11px;
+  --l12-site-eyebrow: 10.5px;
 }
 
 * { box-sizing: border-box; }

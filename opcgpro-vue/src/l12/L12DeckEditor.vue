@@ -45,6 +45,17 @@ const editorContentRevision = ref(0)
 const ownedAlternateArts = ref<AlternateArt[]>([])
 const alternateArtSelections = ref<Record<string, string>>({})
 const alternateArtCopies = ref<Record<string, string[]>>({})
+const portraitGuide = ref(false)
+
+function updatePortraitGuide() {
+  const mobilePointer = window.matchMedia('(pointer:coarse)').matches
+  const portrait = window.matchMedia('(orientation:portrait)').matches
+  portraitGuide.value = mobilePointer && portrait && sessionStorage.getItem('l12-deck-editor-portrait-guide') !== 'dismissed'
+}
+function dismissPortraitGuide() {
+  sessionStorage.setItem('l12-deck-editor-portrait-guide', 'dismissed')
+  portraitGuide.value = false
+}
 
 watch([deckName, masterId, counts, specialIds, alternateArtSelections, alternateArtCopies], () => editorContentRevision.value++, { deep: true, flush: 'sync' })
 
@@ -57,6 +68,8 @@ const typeLabels: Record<string, string> = {
 }
 
 onMounted(async () => {
+  updatePortraitGuide()
+  window.addEventListener('resize', updatePortraitGuide)
   try {
     const [loadedCatalog, loadedDecks, arts] = await Promise.all([
       loadDeckCatalog(),
@@ -445,11 +458,17 @@ async function saveGeneratedDeckImage() {
   await downloadDeckImage(currentDeck(), catalog.value, deckImageBlob.value)
 }
 
-onBeforeUnmount(closeDeckImage)
+onBeforeUnmount(() => {
+  closeDeckImage()
+  window.removeEventListener('resize', updatePortraitGuide)
+})
 </script>
 
 <template>
   <div class="deck-builder-shell">
+    <div v-if="portraitGuide" class="portrait-guide" role="dialog" aria-modal="true" aria-labelledby="portrait-guide-title">
+      <section><small>MOBILE DECK EDITOR</small><h2 id="portrait-guide-title">横屏编辑更完整</h2><p>旋转设备后会自动接管完整牌库编辑画面；当前编辑内容不会因横竖屏切换丢失。</p><button type="button" @click="dismissPortraitGuide">仍然继续</button></section>
+    </div>
     <header class="deck-builder-topbar">
       <button class="back-button" @click="router.push(returnTo)">← 返回上一级</button>
       <div><small>GRANDUMI FRAMEWORK · LEGION12 STYLE</small><h1>牌库编辑器</h1></div>
@@ -590,6 +609,7 @@ onBeforeUnmount(closeDeckImage)
 
 <style scoped>
 .selected-extra-cards{grid-template-rows:auto minmax(0,1fr)}
+.portrait-guide{position:fixed;z-index:3000;inset:0;display:grid;place-items:center;padding:max(18px,env(safe-area-inset-top)) max(18px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)) max(18px,env(safe-area-inset-left));background:#020609dd;backdrop-filter:blur(8px)}.portrait-guide section{box-sizing:border-box;width:min(420px,100%);padding:22px;border:1px solid #d2b25c;background:#11191d;box-shadow:0 20px 70px #000;text-align:center}.portrait-guide small{color:#62c7ce;font-size:11px;font-weight:900;letter-spacing:.15em}.portrait-guide h2{margin:8px 0;font-size:22px}.portrait-guide p{color:#9aa5a3;font-size:13px;line-height:1.7}.portrait-guide button{min-width:140px;min-height:44px;margin-top:8px;border:1px solid #d2b25c;background:#d2b25c;color:#101313;font-weight:900}
 .selected-extra-cards>header{flex-wrap:wrap;gap:6px}
 .deck-entry-row>strong{flex:none;white-space:nowrap}
 .deck-entry-row>div>small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

@@ -35,6 +35,8 @@ const [viewportCss, viewportTs, battleLayout, mobileDialogLayout, app, archive, 
   read('src/style.css'),
 ])
 const board = `${boardComponent}\n${boardMobileStyle}`
+const matchRecords = await read('src/l12/MatchRecords.vue')
+const deckEditor = await read('src/l12/L12DeckEditor.vue')
 
 const expect = (condition, message) => {
   if (!condition) throw new Error(`mobile responsive contract: ${message}`)
@@ -65,7 +67,7 @@ expect(board.includes('mobileMoraleInteractive'), 'morale viewing and payment se
 expect(board.includes('bottom:56px!important') && board.includes('min-height:42px'), 'selected-card actions must reserve the lane above end turn')
 expect(playerMat.includes('<Teleport :to="landscapeTeleportTarget()" :disabled="!mobileLayout">') && playerMat.includes("'mobile-action-dock': mobileLayout") && board.includes(':mobile-layout="mobileLandscapeViewport"') && board.includes(':global(.mobile-action-dock)'), 'field attack and active-ability actions must use the shared logical-canvas mobile action dock instead of remaining clipped inside the battlefield')
 expect(prompt.includes('@click="focusChoice(choice); toggle(choice)"') && !prompt.includes('class="response-target-detail"'), 'response-target rows must focus and select through one unobscured control, including Court Magician counter-tactic choices')
-expect(shell.includes('overflow-x:clip') && shell.includes('env(safe-area-inset-bottom)'), 'site shell must contain portrait content and reserve the home indicator area')
+expect(shell.includes('overflow-x:clip') && shell.includes('env(safe-area-inset-bottom)') && shell.includes('--mobile-head-h:calc(58px + env(safe-area-inset-top') && shell.includes('height:100dvh'), 'site shell must contain portrait content and reserve dynamic safe areas')
 expect(rules.includes('.rule-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow:visible}'), 'portrait rule tabs must wrap instead of requiring horizontal scrolling')
 expect(shell.includes('max-height:520px') && feedback.includes('.bug-feedback-trigger{display:none}'), 'compact landscape and portrait feedback must be available without covering page controls')
 expect(decks.includes('.page-head h1{font-size:25px}') && profile.includes('.profile-page>header h1{margin:3px 0;font-size:25px}'), 'portrait player pages must use compact heading density')
@@ -75,9 +77,20 @@ expect(decks.includes('.deck-notice{position:static;max-width:none'), 'portrait 
 expect(news.includes('.news-page h1{margin:4px 0;font-size:26px}') && home.includes('.hero-copy h1{font-size:26px;line-height:1.08}'), 'portrait editorial pages must use compact hero typography')
 expect(battleHub.includes('.battle-hub{padding:14px 10px 34px}') && battleHub.includes('.mode-panel{padding:14px}'), 'battle lobby must scale its panels and controls together on narrow phones')
 expect(rankings.includes('.ranking-page{--ranking-master-avatar:28px;padding:14px 10px 32px}') && rankings.includes('.matrix-grid{grid-auto-rows:52px}'), 'rankings must compact both table rows and matchup matrix cells')
-expect(rankings.includes('data-label="最擅长主宰"') && rankings.includes('data-label="最强玩家"') && rankings.includes('@media(max-width:850px)') && rankings.includes('.player-table,.master-table,.honor-table{overflow:visible'), 'portrait rankings must become labeled information cards instead of requiring horizontal table scrolling')
+expect(rankings.includes('data-label="最擅长主宰"') && rankings.includes('data-label="最强玩家"') && rankings.includes('@media(max-width:700px)') && rankings.includes('.player-mobile-meta') && rankings.includes('.player-table,.master-table,.honor-table{overflow:visible'), 'portrait rankings must become compact information cards instead of requiring horizontal table scrolling')
 expect(tournaments.includes('.tournament-page{padding:14px 10px 34px}') && tournaments.includes('.bracket>section{min-width:190px;padding:8px}'), 'tournament content must preserve bracket proportions while compacting its panels')
-expect(recovery.includes('.recovery-card{padding:18px}') && recovery.includes('.recovery-card button{min-height:42px'), 'recovery form must scale the card and primary control together')
+expect(tournaments.includes('class="site-toast"') && !tournaments.includes('class="toast"') && tournaments.includes('top:auto;right:22px;bottom:22px;left:auto;transform:none'), 'site notifications must be isolated from the battle toast positioning contract')
+expect(shell.includes('class="site-drawer-backdrop"') && shell.includes('aria-controls="site-mobile-drawer"') && shell.includes("event.key === 'Escape'") && shell.includes("document.body.style.overflow = 'hidden'"), 'mobile navigation must provide a modal backdrop, escape close, focus semantics and body scroll lock')
+expect(app.includes('maximum-scale=5, user-scalable=yes') && app.includes('locked ? lockedViewport : readableViewport'), 'reading routes must allow zoom while immersive battle and editor routes stay locked')
+expect(archive.includes('const renderLimit = ref(60)') && archive.includes('IntersectionObserver') && archive.includes('class="archive-group-nav"') && archive.includes('class="archive-back-to-top"'), 'the archive must group cards, cap its initial DOM, append on intersection and provide a back-to-top action')
+expect(matchRecords.includes('class="record-summary-grid"') && matchRecords.includes('class="mobile-replay-inline"') && !matchRecords.includes('mobileReplayNotice'), 'mobile records must expose a complete inline summary without a blocking replay notice')
+expect(profile.includes('l12-profile-master-records') && profile.includes('l12-profile-sessions') && profile.includes('class="profile-quick-actions"'), 'mobile profile sections must be remembered and keep frequent actions near the identity summary')
+expect(deckEditor.includes('class="portrait-guide"') && deckEditor.includes('l12-deck-editor-portrait-guide'), 'portrait deck-editor entry must explain the landscape workspace without discarding edit state')
+for (const [name, source] of [['shell', shell], ['news', news], ['home', home], ['rules', rules], ['rankings', rankings]]) {
+  expect(!/@media\s*\(max-width:\s*(720|760|850)px\)/.test(source), `${name} must use the shared 700px compact boundary rather than a legacy primary breakpoint`)
+}
+expect(recovery.includes('.recovery-card{padding:18px}') && recovery.includes('.recovery-card button{min-height:44px'), 'recovery form must scale the card and primary control together')
 expect(globalCss.includes('body .friends-page{padding:14px 10px 34px}') && globalCss.includes('body .friends-page .hero-avatar{width:56px;height:56px'), 'friends page must compact its container and visual anchors together')
 
 console.log('Mobile responsive layout contracts passed.')
+
