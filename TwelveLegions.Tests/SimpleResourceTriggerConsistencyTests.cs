@@ -251,6 +251,7 @@ public sealed class SimpleResourceTriggerConsistencyTests
     [Fact]
     [Trait("L12Evidence", "card:S02-0508")]
     [Trait("L12Evidence", "entry:simple-resource-trigger-required-target")]
+    [L12AbilityEvidence("S02-0508:ability:death:9aea23b4138e399e", "target-invalidated")]
     public void MandatorySingleMoraleTargetStillRequiresAPlayerClickAndRevalidatesOnSettlement()
     {
         var game = Create(11002);
@@ -277,6 +278,93 @@ public sealed class SimpleResourceTriggerConsistencyTests
         Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
             && entry.EffectResultStatus == "failed"
             && entry.Cards.Any(card => card.CardId == "S02-0508"));
+    }
+
+    [Theory]
+    [InlineData("S02-0508", "death", false)]
+    [InlineData("S02-05M1", "friendly-ranged-death", true)]
+    [L12AbilityEvidence("S02-0508:ability:death:9aea23b4138e399e",
+        "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888",
+        "normal", "duplicate-submit", "reconnect", "single-candidate-choice", "presentation-consumers")]
+    public void MoraleFlipTriggerRestoresChoiceAndResponseThenSettlesOnce(string cardId, string trigger,
+        bool optional)
+    {
+        var game = Create(110024 + cardId[^1]);
+        var target = Morale($"restored-trigger-target-{cardId}", tapped: false);
+        game.State.Players[0].Morale.Add(target);
+        Queue(game, cardId, trigger, optional ? ArtemisReservation(game, "restore") : null);
+        if (optional)
+        {
+            var mode = Assert.Single(game.State.PendingPrompts);
+            Resolve(game, mode, "mode:use");
+        }
+
+        var targetPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal([target.InstanceId], targetPrompt.ValidChoices.Where(choice => choice != "skip"));
+        var targetPromptId = targetPrompt.PromptId;
+        game = Restore(game);
+        Resolve(game, Assert.Single(game.State.PendingPrompts), target.InstanceId);
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        var responsePromptId = response.PromptId;
+        var declaration = Assert.Single(game.State.Events, entry => entry.EffectResultStatus == "declared"
+            && entry.EffectSceneId is not null
+            && entry.Cards.Any(card => card.CardId == cardId));
+        game = Restore(game);
+        PassResponses(game);
+
+        Assert.True(game.State.Players[0].Morale.Single(morale => morale.InstanceId == target.InstanceId).IsGodPower);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectSceneId == declaration.EffectSceneId);
+        Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.False(game.Handle(0, new L12Command("resolvePrompt", PromptId: targetPromptId,
+            Choice: target.InstanceId)).Accepted);
+        Assert.False(game.Handle(response.PlayerIndex, new L12Command("resolvePrompt",
+            PromptId: responsePromptId, Choice: "pass")).Accepted);
+    }
+
+    [Theory]
+    [InlineData("S02-0508", "death", false, true)]
+    [InlineData("S02-0508", "death", false, false)]
+    [InlineData("S02-05M1", "friendly-ranged-death", true, true)]
+    [InlineData("S02-05M1", "friendly-ranged-death", true, false)]
+    [L12AbilityEvidence("S02-0508:ability:death:9aea23b4138e399e", "negated", "target-invalidated")]
+    [L12AbilityEvidence("S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888", "negated", "target-invalidated")]
+    public void MoraleFlipTriggerDistinguishesNegationFromStaleDeclaredTarget(string cardId, string trigger,
+        bool optional, bool negate)
+    {
+        var game = Create(110026 + (negate ? 1 : 0));
+        var target = Morale($"trigger-outcome-target-{cardId}", tapped: false);
+        game.State.Players[0].Morale.Add(target);
+        Queue(game, cardId, trigger, optional
+            ? ArtemisReservation(game, $"outcome-{negate}") : null);
+        if (optional)
+            Resolve(game, Assert.Single(game.State.PendingPrompts), "mode:use");
+        Resolve(game, Assert.Single(game.State.PendingPrompts), target.InstanceId);
+        var item = Assert.Single(game.State.EffectStack);
+        if (negate) item.Negated = true;
+        else target.IsGodPower = true;
+        PassResponses(game);
+
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.CardId == cardId));
+        Assert.Equal(negate ? "negated" : "failed", result.EffectResultStatus);
+    }
+
+    [Fact]
+    [L12AbilityEvidence("S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888", "no-target")]
+    public void ArtemisMoraleFlipWithNoGodPowerFaceCandidateSilentlySkips()
+    {
+        var game = Create(110028);
+        game.State.Players[0].Morale.Add(Morale("artemis-only-lotus", tapped: false,
+            cardId: "S02-0010"));
+
+        Queue(game, "S02-05M1", "friendly-ranged-death",
+            ArtemisReservation(game, "no-target"));
+
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Empty(game.State.PendingActivations);
     }
 
     [Fact]
@@ -309,6 +397,25 @@ public sealed class SimpleResourceTriggerConsistencyTests
             && entry.Cards.Any(card => card.CardId == "S02-01S1"));
         Assert.False(game.Handle(oldResponse.PlayerIndex,
             new L12Command("resolvePrompt", PromptId: oldResponse.PromptId, Choice: "pass")).Accepted);
+    }
+
+    private static L12GameEngine Restore(L12GameEngine game)
+        => L12GameEngine.RestoreCheckpoint(Catalog,
+            game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,"),
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+
+    private static Dictionary<string, string> ArtemisReservation(L12GameEngine game, string suffix)
+    {
+        var onceKey = $"trigger:artemis-test:{suffix}";
+        var pendingKey = $"{onceKey}:pending";
+        game.State.Players[0].UsedAbilities.Add(pendingKey);
+        return new Dictionary<string, string>
+        {
+            ["ability"] = "artemisDeathFlip",
+            ["onceKey"] = onceKey,
+            ["cleanupReservation"] = pendingKey,
+        };
     }
 
     [Fact]

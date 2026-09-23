@@ -146,13 +146,107 @@ public sealed class StructuredHandCostLifecycleProfileTests
         Assert.Equal(staleDisplayedCost, stalePlayer.TemporaryMorale);
     }
 
+    [Theory]
+    [InlineData("S02-0509")]
+    [InlineData("S02-0510")]
+    [InlineData("S02-0512")]
+    [InlineData("S02-0518")]
+    [InlineData("S02-0605")]
+    [InlineData("S02-0611")]
+    [InlineData("S02-0612")]
+    [InlineData("ST03-02")]
+    [InlineData("ST04-10")]
+    [InlineData("ST06-01")]
+    [L12AbilityEvidence("S02-0509:ability:static:fff4ed8e0ac25ed9", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-0510:ability:static:52b46f1b508e6aa1", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-0512:ability:static:fff4ed8e0ac25ed9", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-0518:ability:static:fff4ed8e0ac25ed9", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-0605:ability:continuous:5ff487de55c0ca1d", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-0611:ability:continuous:5745356459e85080", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-0612:ability:continuous:064a0a1c5382575c", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("ST03-02:ability:continuous:057a02a660ebfae1", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("ST04-10:ability:continuous:2a1c905931cd7b32", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("ST06-01:ability:continuous:3ced1d4d38141877", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    public void DiscountedSnapshotCostSurvivesReconnectAndIsTheAuthoritativePayment(string cardId)
+    {
+        var game = Create(70250 + cardId[^1]);
+        game.State.ActiveDisaster = null;
+        var card = PutOnlyCardInHand(game, cardId);
+        SatisfyStructuredDiscountCondition(game, cardId);
+        var displayedCost = HandCost(game, card);
+        Assert.InRange(displayedCost, 0, Math.Max(0, card.Cost - 1));
+
+        var player = game.State.Players[0];
+        var paymentIds = new List<string>();
+        for (var index = 0; index < displayedCost; index++)
+        {
+            var morale = Morale($"payment-{cardId}-{index}");
+            player.Morale.Add(morale);
+            paymentIds.Add(morale.InstanceId);
+        }
+
+        var originalInstanceId = card.InstanceId;
+        game = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(), game.RandomState!.Value,
+            game.CardFactSignalSequence, autoPassEmptyResponses: true, concealHiddenResponseAvailability: false);
+        player = game.State.Players[0];
+        card = Assert.Single(player.Hand, candidate => candidate.InstanceId == originalInstanceId);
+        Assert.Equal(displayedCost, HandCost(game, card));
+        var command = new L12Command("playCard", card.InstanceId,
+            CardInstanceIds: paymentIds, Row: 0, Slot: 1);
+
+        var result = game.Handle(0, command);
+        Assert.True(result.Accepted, result.Error);
+        if (cardId == "ST04-10")
+        {
+            var prompt = Assert.Single(game.State.PendingPrompts);
+            var targetId = Assert.Single(prompt.ValidChoices,
+                choice => choice == "required-s01-0403");
+            var targetResult = game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: targetId));
+            Assert.True(targetResult.Accepted, targetResult.Error);
+        }
+        Assert.All(player.Morale.Where(morale => paymentIds.Contains(morale.InstanceId)), morale => Assert.True(morale.Tapped));
+        Assert.DoesNotContain(player.Hand, candidate => candidate.InstanceId == originalInstanceId);
+        Assert.False(game.Handle(0, command).Accepted);
+    }
+
     private static L12GameEngine Create(int seed)
     {
         var game = new L12GameEngine(Catalog, "structured-hand-cost", "HAND-COST", seed,
-            ["甲", "乙"], [0, 0], skipPreparation: true);
+            ["甲", "乙"], [0, 0], skipPreparation: true, stateFormatVersion: 2);
         game.State.ActivePlayer = 0;
         game.State.Phase = L12Phase.Main;
         return game;
+    }
+
+    private static void SatisfyStructuredDiscountCondition(L12GameEngine game, string cardId)
+    {
+        var player = game.State.Players[0];
+        switch (cardId)
+        {
+            case "S02-0510":
+                for (var index = 0; index < 5; index++)
+                    player.Morale.Add(GodPower($"god-{index}"));
+                break;
+            case "S02-0605":
+                player.Field[0][0] = Card("S02-0609", "required-otherworld");
+                break;
+            case "S02-0611":
+                player.Field[0][0] = Card("S02-0612", "required-s02-0612");
+                break;
+            case "S02-0612":
+                player.Field[0][0] = Card("S02-0611", "required-s02-0611");
+                break;
+            case "ST03-02":
+                player.Hp = 7;
+                break;
+            case "ST04-10":
+                player.Field[0][0] = Card("S01-0403", "required-s01-0403");
+                break;
+            case "ST06-01":
+                player.Field[0][0] = Card("S02-0618", "required-s02-0618");
+                break;
+        }
     }
 
     private static L12CardInstance PutOnlyCardInHand(L12GameEngine game, string cardId)
@@ -173,6 +267,9 @@ public sealed class StructuredHandCostLifecycleProfileTests
 
     private static L12MoraleCard GodPower(string id)
         => new() { InstanceId = id, CardId = "S02-05C1", IsGodPower = true };
+
+    private static L12MoraleCard Morale(string id)
+        => new() { InstanceId = id, CardId = "S01-00C1" };
 
     private static L12CardInstance Card(string cardId, string instanceId)
     {

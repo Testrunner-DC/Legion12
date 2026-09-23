@@ -97,11 +97,15 @@ public sealed class EffectPresentationBranchSegmentTests
             ("S01-0304", 3, "death"),
             ("S01-0307", 2, "death"),
             ("S01-0308", 3, "death"),
+            ("S01-0403", 2, "death"),
             ("S01-0407", 2, "death"),
             ("S02-0001", 1, "s2-after-opponent-tactic"),
             ("S02-0202", 2, "death"),
             ("S02-0305", 3, "master-damaged"),
+            ("S02-0513", 2, "enter"),
+            ("S02-0518", 2, "enter"),
             ("S02-0518", 3, "death"),
+            ("S02-0520", 1, "enter"),
             ("S02-0601", 2, "death"),
             ("S02-04M1", 1, "friendly-legion-moves"),
             ("S02-04M1", 2, "friendly-back-to-front"),
@@ -1264,9 +1268,23 @@ public sealed class EffectPresentationBranchSegmentTests
     }
 
     [Fact]
+    [L12AbilityEvidence("S02-0406:ability:granted:6aa04cbf27f6b4b7", "presentation-consumers")]
+    [L12AbilityEvidence("S02-0406:ability:granted:4f1f5a1d4791b5ef", "presentation-consumers")]
+    [L12AbilityEvidence("S02-0406:ability:granted:4f26e688b66affd4", "presentation-consumers")]
     public void BranchOverrideUsesTheExistingSaveFreezeAndRestorePipelineByExactSceneId()
     {
         var catalog = Catalog;
+        var tenkaAbilities = catalog.AtomicEffects.Find("S02-0406")!.Abilities
+            .Where(ability => ability.Trigger == "granted").ToArray();
+        Assert.Contains(tenkaAbilities, ability => ability.AbilityId == "S02-0406:ability:granted:6aa04cbf27f6b4b7"
+            && ability.Presentations.Any(candidate => candidate.Flow == "tenka-effect"
+                && candidate.RequiredChoices?.GetValueOrDefault("mode") == "mode:row-cost"));
+        Assert.Contains(tenkaAbilities, ability => ability.AbilityId == "S02-0406:ability:granted:4f1f5a1d4791b5ef"
+            && ability.Presentations.Any(candidate => candidate.Flow == "tenka-effect"
+                && candidate.RequiredChoices?.GetValueOrDefault("mode") == "mode:front-attack"));
+        Assert.Contains(tenkaAbilities, ability => ability.AbilityId == "S02-0406:ability:granted:4f26e688b66affd4"
+            && ability.Presentations.Any(candidate => candidate.Flow == "tenka-effect"
+                && candidate.RequiredChoices?.GetValueOrDefault("mode") == "mode:free-move"));
         var scene = Assert.Single(catalog.AtomicEffects.Find("S02-0406")!.Abilities
             .SelectMany(ability => ability.Presentations), candidate => candidate.Flow == "tenka-effect"
                 && candidate.RequiredChoices?.GetValueOrDefault("mode") == "mode:row-cost"

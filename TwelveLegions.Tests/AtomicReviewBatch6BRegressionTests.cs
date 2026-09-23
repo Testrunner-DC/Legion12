@@ -175,6 +175,8 @@ public sealed class AtomicReviewBatch6BRegressionTests
     [Fact]
     [Trait("L12Evidence", "card:S02-06S5")]
     [Trait("L12Evidence", "entry:trial-completion-no-colon-effect-chain")]
+    [L12AbilityEvidence("S02-06S5:ability:static:1e799825eedf3331",
+        "negated", "single-candidate-choice")]
     public void FenianTrialPaysOneRuneForOneTargetAndOffersRepeatOnlyAfterThatStackEnds()
     {
         var game = Create(7623);
@@ -202,6 +204,7 @@ public sealed class AtomicReviewBatch6BRegressionTests
     [Fact]
     [Trait("L12Evidence", "card:S02-06S5")]
     [Trait("L12Evidence", "entry:trial-completion-source-snapshot-target-loss")]
+    [L12AbilityEvidence("S02-06S5:ability:static:1e799825eedf3331", "target-invalidated")]
     public void FenianTargetLossFailsOnlyThatAlreadyPaidUseAndMayThenDeclineTheRepeat()
     {
         var game = Create(76231);
@@ -232,6 +235,7 @@ public sealed class AtomicReviewBatch6BRegressionTests
     [Fact]
     [Trait("L12Evidence", "card:S02-06S5")]
     [Trait("L12Evidence", "entry:fenian-repeat-separate-stacks-same-target")]
+    [L12AbilityEvidence("S02-06S5:ability:static:1e799825eedf3331", "normal")]
     public void FenianRepeatMayChooseTheSameStillLegalTargetInASecondIndependentStack()
     {
         var game = Create(76233);

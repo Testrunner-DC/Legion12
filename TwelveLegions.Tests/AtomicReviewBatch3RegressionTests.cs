@@ -153,6 +153,8 @@ public sealed class AtomicReviewBatch3RegressionTests
 
     [Fact]
     [Trait("L12Evidence", "ability:asgardDraw")]
+    [L12AbilityEvidence("S01-03C1:ability:static:fa92f5d792a32bdc", "normal", "presentation-consumers")]
+    [L12AbilityEvidence("ST03-C1:ability:static:36b1c5751cc508f9", "normal", "presentation-consumers")]
     public void AsgardDrawChecksAndPaysOptionalHealAfterTheDrawResolves()
     {
         var game = CreateWithFirstMaster("S01-03M2", 6901);
@@ -215,6 +217,8 @@ public sealed class AtomicReviewBatch3RegressionTests
 
     [Fact]
     [Trait("L12Evidence", "ability:factionDrawMove")]
+    [L12AbilityEvidence("S01-04C1:ability:static:7f60c31c00b0f718", "normal", "single-candidate-choice", "presentation-consumers")]
+    [L12AbilityEvidence("ST04-C1:ability:static:d9cac21fb706e3c8", "normal", "single-candidate-choice", "presentation-consumers")]
     public void GaotianyuanDrawsBeforeChoosingOptionalMoveTargetAndSlot()
     {
         var game = CreateWithFirstMaster("S01-04M2", 6902);
@@ -252,6 +256,8 @@ public sealed class AtomicReviewBatch3RegressionTests
 
     [Fact]
     [Trait("L12Evidence", "ability:factionDrawMove")]
+    [L12AbilityEvidence("S01-04C1:ability:static:7f60c31c00b0f718", "target-invalidated")]
+    [L12AbilityEvidence("ST04-C1:ability:static:d9cac21fb706e3c8", "target-invalidated")]
     public void GaotianyuanChosenMoverLeavingTheFieldIsFailedNotCancelled()
     {
         var game = CreateWithFirstMaster("S01-04M2", 69021);

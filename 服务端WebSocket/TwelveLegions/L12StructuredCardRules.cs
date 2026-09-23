@@ -28,6 +28,17 @@ public sealed record L12SelfDamageEntryDiscountRule(
 
 public static partial class L12StructuredCardRules
 {
+    internal const string SharedDivinitySetupText = "主神开场即可追加2张额外士气。";
+
+    internal static L12StructuredAbilityTemplate SharedDivinitySetupAbility()
+        => new("setup", "triggered", SharedDivinitySetupText,
+        [
+            new(L12AtomKinds.AddMorale, "主神开场追加 2 张额外士气", "resolution", new()
+            {
+                ["amount"] = "2", ["state"] = "ready", ["source"] = "morale-deck",
+            }),
+        ]) { RuntimeRouteOwner = false, ReviewStatus = "confirmed", ReviewSource = "user-20260924" };
+
     public static (string? CostText, string ResolutionText) SplitAbilityText(string text, bool hasCost)
     {
         if (!hasCost || !HasPrintedCostBoundary(text)) return (null, text);
@@ -694,6 +705,8 @@ public static partial class L12StructuredCardRules
             "S02-05C1A" => OlympusResourceAbilities(),
             "S02-05D1" => DivinityAbilities(),
             "S02-DS03" => SleeplessNightAbilities(),
+            "ST-DS01" => StarterMountainDisasterAbilities(),
+            "ST-DS03" => StarterEvilEyeDisasterAbilities(),
             "S02-01M1" => WukongAbilities(),
             "S01-01C1" => TiantingMoraleAbilities(),
             "S01-0409" => YoshitsuneAbilities(),
@@ -855,6 +868,40 @@ public static partial class L12StructuredCardRules
             }),
         ]) { RuntimeRouteOwner = false, ReviewStatus = "confirmed", ReviewSource = "user-20260913" },
     ];
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> StarterMountainDisasterAbilities() => Confirmed(
+    [
+        new("disaster", "triggered", "触发 将所有前排兵力不高于4000的军团置入所有者墓地。",
+        [
+            new(L12AtomKinds.Condition, "逐一检查前排军团的原本兵力不高于4000", "condition", new()
+            {
+                ["expression"] = "field.row=front;card-type=legion;printed-troops<=4000",
+            }),
+            new(L12AtomKinds.MoveZone, "将全部符合条件的军团置入所有者墓地", "resolution", new()
+            {
+                ["from"] = "both.field.front", ["to"] = "owner.grave", ["amount"] = "all-matching",
+                ["selection"] = "automatic", ["deathTriggers"] = "false",
+            }),
+        ], ReviewSource: "user-20260924-colon-cost-rule"),
+    ]);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> StarterEvilEyeDisasterAbilities() => Confirmed(
+    [
+        new("disaster", "triggered", "触发 双方弃置各自战场上1张军团。",
+        [
+            new(L12AtomKinds.SelectTarget, "双方各自选择战场上1张当前军团", "target", new()
+            {
+                ["zone"] = "each-player.field", ["filter"] = "current-card-type=legion",
+                ["min"] = "1", ["max"] = "1", ["selection"] = "simultaneous-private",
+                ["emptyPolicy"] = "skip-empty-player",
+            }),
+            new(L12AtomKinds.Discard, "弃置双方各自选择的军团", "resolution", new()
+            {
+                ["amount"] = "1-each", ["zone"] = "declared-targets.field",
+                ["deathTriggers"] = "false",
+            }),
+        ], ReviewSource: "user-20260924-colon-cost-rule"),
+    ]);
 
     private static L12StructuredAbilityTemplate SelfDamageEntryDiscountAbility(
         string reviewStatus = "confirmed", string reviewSource = "user-20260911") =>
@@ -1776,13 +1823,7 @@ public static partial class L12StructuredCardRules
                 ["duration"] = "this-turn-or-next-matching-consumption",
             }),
         ]) { RuntimeAbilityId = "divinityFreePromotion", ReviewStatus = "confirmed", ReviewSource = "user-20260913" },
-        new("setup", "triggered", "主神开场即可追加2张额外士气。",
-        [
-            new(L12AtomKinds.AddMorale, "主神开场追加 2 张额外士气", "resolution", new()
-            {
-                ["amount"] = "2", ["state"] = "rested", ["source"] = "morale-deck",
-            }),
-        ]) { RuntimeRouteOwner = false, ReviewStatus = "confirmed", ReviewSource = "user-20260913" },
+        SharedDivinitySetupAbility(),
     ];
 
     private static IReadOnlyList<L12StructuredAbilityTemplate> TheseusAbilities() => Assisted(

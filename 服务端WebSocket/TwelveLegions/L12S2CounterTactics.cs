@@ -4,7 +4,7 @@ public sealed partial class L12GameEngine
 {
     private bool CanUseS2CounterAtStack(string cardId, int playerIndex, L12StackItem top)
     {
-        if (cardId == "S02-0106")
+        if (L12StructuredCardSemantics.UsesSpecialResponsePlan(cardId, "s2-counter"))
             return top.Controller != playerIndex
                 && top.Trigger is not ("s2-reaction" or "disaster" or "authority-event");
         var timing = ResponseTimingContext(top);
@@ -61,7 +61,7 @@ public sealed partial class L12GameEngine
             else ResolveS2CosmosYinBuff(item);
             return;
         }
-        if (item.SourceCardId == "S02-0106")
+        if (L12StructuredCardSemantics.UsesSpecialResponsePlan(item.SourceCardId, "s2-counter"))
         {
             // Compatibility for a checkpoint created before the segmented response plan.
             ResolveS2CosmosYin(item);

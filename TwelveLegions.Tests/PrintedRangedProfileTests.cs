@@ -1,3 +1,4 @@
+using System.Reflection;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -31,6 +32,22 @@ public sealed class PrintedRangedProfileTests
         game.State.Players[1].Field[0][0] = Card("ST01-05", "front");
         game.State.Players[1].Field[1][0] = Card("ST01-05", "back");
         return game;
+    }
+
+    private static CommandResult ResolveCombatWithoutCardSpecificAttackTriggers(L12GameEngine game)
+    {
+        var pending = Assert.IsType<L12PendingDefense>(game.State.PendingDefense);
+        pending.Stage = L12CombatStage.DefenseChoice;
+        game.State.Phase = L12Phase.Defense;
+        game.State.PendingPrompts.Clear();
+        game.State.PendingActivations.Clear();
+        game.State.PendingTriggerStackCandidates.Clear();
+        game.State.PendingTriggerBatches.Clear();
+        game.State.EffectStack.Clear();
+        var method = typeof(L12GameEngine).GetMethod("ResolveDefenseCore",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        return Assert.IsType<CommandResult>(method.Invoke(game,
+            [1, Array.Empty<string>(), Array.Empty<string>(), false]));
     }
 
     // Row masks are reviewed expectations, not inferred from production atoms.
@@ -82,53 +99,100 @@ public sealed class PrintedRangedProfileTests
     [InlineData("ST05-04", "ST05-04:ability:static:e3471cd2a7042e59", 3)]
     [InlineData("ST05-08", "ST05-08:ability:static:e3471cd2a7042e59", 3)]
     [InlineData("ST05-09", "ST05-09:ability:static:e3471cd2a7042e59", 3)]
-    [L12AbilityEvidence("S01-0003:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0110:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0111:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0112:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0113:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0114:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0115:ability:static:9ba2f4f5354a2a05", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0116:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0208:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0209:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0210:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0211:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0213:ability:static:9ba2f4f5354a2a05", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0214:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0309:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0313:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0314:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0316:ability:static:9ba2f4f5354a2a05", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0409:ability:static:6c03e83e9e18abb1", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0410:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0411:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0413:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0415:ability:static:9ba2f4f5354a2a05", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S01-0416:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S02-0003:ability:continuous:e9823ffd970d6ce6", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S02-0204:ability:continuous:e9823ffd970d6ce6", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S02-0304:ability:continuous:e9823ffd970d6ce6", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S02-0507:ability:static:3f520b391281b325", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S02-0508:ability:static:aa41bff900061e1d", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S02-0513:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S02-0514:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S02-0515:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S02-0517:ability:static:9ba2f4f5354a2a05", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S02-0614:ability:continuous:e9823ffd970d6ce6", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S02-0617:ability:continuous:e9823ffd970d6ce6", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S02-0618:ability:continuous:e9823ffd970d6ce6", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("S02-0619:ability:continuous:f0839056592c5ee2", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("ST01-07:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("ST01-08:ability:static:9ba2f4f5354a2a05", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("ST01-09:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("ST02-08:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("ST03-05:ability:static:efd7771da618f0ac", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("ST04-07:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("ST05-03:ability:continuous:3119db9911c31cf3", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("ST05-04:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("ST05-08:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
-    [L12AbilityEvidence("ST05-09:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "reconnect-profile", "no-target-preview")]
+    [L12AbilityEvidence("S01-0003:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0110:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0111:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0112:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0113:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0114:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0115:ability:static:9ba2f4f5354a2a05", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0116:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0208:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0209:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0210:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0211:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0213:ability:static:9ba2f4f5354a2a05", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0214:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0309:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0313:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0314:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0316:ability:static:9ba2f4f5354a2a05", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0409:ability:static:6c03e83e9e18abb1", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0410:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0411:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0413:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0415:ability:static:9ba2f4f5354a2a05", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S01-0416:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S02-0003:ability:continuous:e9823ffd970d6ce6", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S02-0204:ability:continuous:e9823ffd970d6ce6", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S02-0304:ability:continuous:e9823ffd970d6ce6", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S02-0507:ability:static:3f520b391281b325", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S02-0508:ability:static:aa41bff900061e1d", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S02-0513:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S02-0514:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S02-0515:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S02-0517:ability:static:9ba2f4f5354a2a05", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S02-0614:ability:continuous:e9823ffd970d6ce6", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S02-0617:ability:continuous:e9823ffd970d6ce6", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S02-0618:ability:continuous:e9823ffd970d6ce6", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("S02-0619:ability:continuous:f0839056592c5ee2", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("ST01-07:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("ST01-08:ability:static:9ba2f4f5354a2a05", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("ST01-09:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("ST02-08:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("ST03-05:ability:static:efd7771da618f0ac", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("ST04-07:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("ST05-03:ability:continuous:3119db9911c31cf3", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("ST05-04:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("ST05-08:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
+    [L12AbilityEvidence("ST05-09:ability:static:e3471cd2a7042e59", "conditional-profile", "attack-preview", "no-target-preview",
+        "normal", "reconnect", "presentation-consumers", "ranged-no-loss", "source-row-change")]
     public void PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview(string cardId, string abilityId, int rows)
     {
         var ability = Assert.Single(Catalog.AtomicEffects.Find(cardId)!.Abilities, item => item.AbilityId == abilityId);
@@ -151,6 +215,31 @@ public sealed class PrintedRangedProfileTests
             game = L12GameEngine.RestoreCheckpoint(Catalog, before, game.RandomState!.Value,
                 game.CardFactSignalSequence, autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
             Assert.Equal(expected, game.SnapshotFor(0).LegalAttackTargets.GetValueOrDefault("source", []).Order());
+
+            if (expectedRange)
+            {
+                var targetId = row == 0 ? "back" : "front";
+                var targetRow = row == 0 ? 1 : 0;
+                game.State.Players[1].Field[1 - targetRow][0] = null;
+                var target = Assert.IsType<L12CardInstance>(game.State.Players[1].Field[targetRow][0]);
+                target.Troops = 10000;
+                var attacker = Assert.IsType<L12CardInstance>(game.State.Players[0].Field[row][0]);
+                var attack = game.Handle(0, new L12Command("attack", attacker.InstanceId,
+                    Target: new L12AttackTarget("legion", targetId)));
+                Assert.True(attack.Accepted, attack.Error);
+                var attackerBefore = attacker.CurrentTroops;
+                var pending = Assert.IsType<L12PendingDefense>(game.State.PendingDefense);
+                Assert.True(pending.IsRanged);
+                Assert.True(pending.RangedNoLoss);
+                var settlement = ResolveCombatWithoutCardSpecificAttackTriggers(game);
+                Assert.True(settlement.Accepted, settlement.Error);
+                Assert.Equal(attackerBefore, attacker.Troops);
+                Assert.True(target.Troops < 10000);
+                Assert.Contains(game.State.Events, entry => entry.Type == "combat"
+                    && entry.Text.Contains("进攻无损", StringComparison.Ordinal));
+            }
+
+            game = Create(cardId, row);
             foreach (var slots in game.State.Players[1].Field) Array.Clear(slots);
             var withoutLegions = game.SnapshotFor(0).LegalAttackTargets.GetValueOrDefault("source", []);
             Assert.Equal(row == 0 ? new[] { "master" } : [], withoutLegions);

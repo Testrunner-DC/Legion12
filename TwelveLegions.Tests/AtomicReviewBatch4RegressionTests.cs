@@ -139,6 +139,8 @@ public sealed class AtomicReviewBatch4RegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S02-0106")]
+    [L12AbilityEvidence("S02-0106:ability:opponent-attack-or-effect:cac751e0d790e16e",
+        "target-invalidated", "duplicate-submit", "reconnect")]
     public void CosmosYinKeepsTopCardHiddenUntilResolutionThenDeclaresPublicTarget()
     {
         var game = Create(7002);
@@ -225,6 +227,8 @@ public sealed class AtomicReviewBatch4RegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S02-0106")]
+    [L12AbilityEvidence("S02-0106:ability:opponent-attack-or-effect:cac751e0d790e16e",
+        "normal", "single-candidate-choice")]
     public void CosmosYinMatchingRevealSettlesBuffBeforeTheUnderlyingStackItem()
     {
         var game = Create(7003);
@@ -309,6 +313,7 @@ public sealed class AtomicReviewBatch4RegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S02-0106")]
+    [L12AbilityEvidence("S02-0106:ability:opponent-attack-or-effect:cac751e0d790e16e", "no-target")]
     public void CosmosYinMatchingRevealWithoutOwnLegionSkipsBuffBeforeUnderlyingSettlement()
     {
         var game = Create(7005);
@@ -353,6 +358,7 @@ public sealed class AtomicReviewBatch4RegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S02-0106")]
+    [L12AbilityEvidence("S02-0106:ability:opponent-attack-or-effect:cac751e0d790e16e", "negated")]
     public void NegatedCosmosYinDoesNotRevealTheLibraryOrStartItsLaterSegment()
     {
         var game = Create(7006);

@@ -61,22 +61,39 @@ internal static class EffectLifecycleCompletionMatrix
     private static bool ScopeCovers(string item, string scope)
         => scope == item || scope.StartsWith(item + "-", StringComparison.Ordinal);
 
-    private static MatrixItemCell Cell(EffectLifecycleInventoryTests.AbilityRow row, string item)
+    private static MatrixItemCell Cell(EffectLifecycleInventoryTests.AbilityRow row, string item,
+        IReadOnlyList<L12AbilityTestReference> sharedReferences)
     {
         var profile = row.Profile!;
+        if (profile.AbilityNotApplicable.TryGetValue(row.Definition.AbilityId, out var abilityExclusions)
+            && abilityExclusions.TryGetValue(item, out var abilityReason))
+            return new(MatrixItemStatus.NotApplicable, abilityReason);
         if (profile.NotApplicable.TryGetValue(item, out var reason))
             return new(MatrixItemStatus.NotApplicable, reason);
         var hasCost = row.Definition.Atoms.Any(atom => atom.Stage == "cost");
+        var declaredMoraleSelectionIsCost = row.Definition.Atoms.Any(atom => atom.Stage == "cost"
+            && atom.Parameters.GetValueOrDefault("selection") == "declared-targets");
         var targetMax = row.Definition.Atoms
-            .Where(atom => atom.Kind == L12AtomKinds.SelectTarget)
+            .Where(atom => atom.Kind == L12AtomKinds.SelectTarget
+                && atom.Stage != "cost"
+                && !(declaredMoraleSelectionIsCost
+                    && atom.Parameters.GetValueOrDefault("zone") == "controller.morale"))
             .Select(atom => int.TryParse(atom.Parameters.GetValueOrDefault("max"), out var max) ? max : 1)
             .DefaultIfEmpty(0).Max();
         if (item == "payment-cancel" && !hasCost)
             return new(MatrixItemStatus.NotApplicable, "本段没有费用原子，结构性不适用。");
+        if (item == "target-invalidated" && targetMax == 0)
+            return new(MatrixItemStatus.NotApplicable, "本段没有声明后等待逆结算复验的对象，结构性不适用。");
         if (item == "single-candidate-choice" && targetMax == 0)
             return new(MatrixItemStatus.NotApplicable, "本段没有对象选择原子，结构性不适用。");
         if (item == "multi-target-applicability" && targetMax <= 1)
             return new(MatrixItemStatus.NotApplicable, "本段最多选择1个对象，结构性不适用。");
+        if (profile.SharedProtocolScopes.Contains(item, StringComparer.Ordinal)
+            && sharedReferences.Any(reference => reference.Scopes.Any(scope => ScopeCovers(item, scope))))
+            return new(MatrixItemStatus.Evidenced, "共享协议代表证据：" + string.Join(", ",
+                sharedReferences.Where(reference => reference.Scopes.Any(scope => ScopeCovers(item, scope)))
+                    .Select(reference => reference.TestMethod).Distinct(StringComparer.Ordinal)
+                    .Order(StringComparer.Ordinal)));
         if (row.TestReferences.Any(reference => reference.Scopes.Any(scope => ScopeCovers(item, scope))))
             return new(MatrixItemStatus.Evidenced, string.Join(", ",
                 row.TestReferences.Where(reference => reference.Scopes.Any(scope => ScopeCovers(item, scope)))
@@ -92,10 +109,12 @@ internal static class EffectLifecycleCompletionMatrix
             .Select(group =>
             {
                 var profile = group.First().Profile!;
-                var abilityIds = group.Select(row => row.Definition.AbilityId)
-                    .Order(StringComparer.Ordinal).ToArray();
+                var rows = group.OrderBy(row => row.Definition.AbilityId, StringComparer.Ordinal).ToArray();
+                var abilityIds = rows.Select(row => row.Definition.AbilityId).ToArray();
+                var sharedReferences = rows.SelectMany(row => row.TestReferences)
+                    .Distinct().ToArray();
                 var cells = Items.ToDictionary(item => item,
-                    item => group.Select(row => Cell(row, item)).ToArray(), StringComparer.Ordinal);
+                    item => rows.Select(row => Cell(row, item, sharedReferences)).ToArray(), StringComparer.Ordinal);
                 var complete = cells.Values.All(column => column.All(cell => cell.Status != MatrixItemStatus.Missing));
                 return new ProfileMatrixRow(profile.Id, profile.RuntimeOwners, profile.AdditionalChecks,
                     abilityIds, cells, complete);

@@ -79,6 +79,22 @@ internal static class L12EffectPresentationVariants
             ["trigger:S02-0304:margaretMasterDamage"] = 1,
         });
 
+    // A card-level composite plan can select a printed granted child ability.  Keep the
+    // runtime plan/segment identity, but let each public branch own its presentation scene
+    // instead of attaching every branch to the parent selector line.
+    private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, int>> PlanBranchAbilitySequences =
+        new ReadOnlyDictionary<string, IReadOnlyDictionary<string, int>>(
+            new Dictionary<string, IReadOnlyDictionary<string, int>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["S02-0406"] = new ReadOnlyDictionary<string, int>(
+                    new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["mode:row-cost"] = 2,
+                        ["mode:front-attack"] = 3,
+                        ["mode:free-move"] = 4,
+                    }),
+            });
+
     private static readonly L12EffectPresentationBranch[] PublicBranches =
     [
         Branch("volley-effect", "对方前排兵力-2000", "对方前排所有军团本回合兵力-2000", "volleyMode", "mode:front"),
@@ -205,14 +221,23 @@ internal static class L12EffectPresentationVariants
         var result = abilities.ToArray();
         foreach (var plan in plans)
         {
-            var ownerIndex = ResolveOwnerIndex(result, plan);
-
-            var owner = result[ownerIndex];
-            var additions = BuildPlanScenes(owner, plan).ToArray();
-            result[ownerIndex] = owner with
+            var defaultOwnerIndex = ResolveOwnerIndex(result, plan);
+            var defaultOwner = result[defaultOwnerIndex];
+            var additions = BuildPlanScenes(defaultOwner, plan).ToArray();
+            foreach (var addition in additions)
             {
-                Presentations = owner.Presentations.Concat(additions).ToArray(),
-            };
+                var ownerIndex = ResolvePlanBranchOwnerIndex(result, plan, addition, defaultOwnerIndex);
+                var owner = result[ownerIndex];
+                var ownedScene = ownerIndex == defaultOwnerIndex ? addition : addition with
+                {
+                    SceneId = $"{owner.AbilityId}:presentation:{addition.Trigger}",
+                    AbilityId = owner.AbilityId,
+                };
+                result[ownerIndex] = owner with
+                {
+                    Presentations = owner.Presentations.Append(ownedScene).ToArray(),
+                };
+            }
         }
 
         foreach (var group in standalone.GroupBy(branch =>
@@ -237,6 +262,19 @@ internal static class L12EffectPresentationVariants
 
         ValidateConfiguration(result.SelectMany(ability => ability.Presentations));
         return result;
+    }
+
+    private static int ResolvePlanBranchOwnerIndex(IReadOnlyList<L12AtomicAbility> abilities,
+        L12EffectPresentationPlan plan, L12EffectPresentationScene scene, int defaultOwnerIndex)
+    {
+        if (!PlanBranchAbilitySequences.TryGetValue(plan.PlanId, out var branchOwners)
+            || scene.RequiredChoices?.GetValueOrDefault("mode") is not { } mode
+            || !branchOwners.TryGetValue(mode, out var sequence)) return defaultOwnerIndex;
+        var matches = abilities.Select((ability, index) => (ability, index))
+            .Where(item => item.ability.Sequence == sequence).Select(item => item.index).ToArray();
+        if (matches.Length == 1) return matches[0];
+        throw new InvalidOperationException(
+            $"动效计划 {plan.PlanId} 的分支 {mode} 无法唯一归属能力序号 {sequence}");
     }
 
     private static string StandaloneOwnerTrigger(L12StandaloneEffectPresentationBranch branch)

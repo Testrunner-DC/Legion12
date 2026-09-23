@@ -112,6 +112,8 @@ public sealed class TriggeredEffectPresentationTests
     }
 
     [Fact]
+    [L12AbilityEvidence("S02-0005:ability:opponent-attacks-master:806afb384f303aee", "presentation-consumers")]
+    [L12AbilityEvidence("S02-0106:ability:opponent-attack-or-effect:cac751e0d790e16e", "presentation-consumers")]
     public void EveryDirectResponseCardResolvesOnlyItsCurrentResponseAbilityBlock()
     {
         var responseMarkers = new Dictionary<string, string>

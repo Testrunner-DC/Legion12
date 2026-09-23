@@ -1085,8 +1085,14 @@ public sealed class StarterBatch3BRegressionTests
         player = game.State.Players[0];
         Assert.Contains(player.Graveyard, c => c.InstanceId == cost.InstanceId);
         Assert.True(player.Morale.Single().IsGodPower);
-        var buffResult = Assert.Single(game.State.Events, e => e.Type == "effect-result"
-            && e.EffectText?.Contains("对对方主宰造成的伤害+1", StringComparison.Ordinal) == true);
+        var results = game.State.Events.Where(e => e.Type == "effect-result"
+            && e.Cards.Any(card => card.CardId == "ST05-M1")).ToArray();
+        Assert.Equal(2, results.Length);
+        Assert.Equal(2, results.Select(result => result.EffectSceneId)
+            .Distinct(StringComparer.Ordinal).Count());
+        Assert.All(results, result => Assert.False(string.IsNullOrWhiteSpace(result.EffectText)));
+        var buffResult = Assert.Single(results, e =>
+            e.EffectText?.Contains("对对方主宰造成的伤害+1", StringComparison.Ordinal) == true);
         Assert.Equal(surviving == 0 ? "failed" : "resolved", buffResult.EffectResultStatus);
         foreach (var target in player.Field[0].Where(c => c is not null))
         {
@@ -1098,6 +1104,84 @@ public sealed class StarterBatch3BRegressionTests
         Assert.Empty(game.State.EffectStack);
         Assert.False(game.Handle(response.PlayerIndex,
             new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+    }
+
+    [Fact]
+    [L12AbilityEvidence("ST05-M1:ability:active:b1f11ab05f68dda0",
+        "normal", "target-invalidated", "duplicate-submit", "reconnect",
+        "multi-target-applicability", "presentation-consumers")]
+    public void AthenaLifecycleEvidenceCoversAllTargetSurvivalOutcomes()
+    {
+        AthenaDeclaredTargetsResolveActualSurvivorsAfterResponseAndRecovery(0);
+        AthenaDeclaredTargetsResolveActualSurvivorsAfterResponseAndRecovery(1);
+        AthenaDeclaredTargetsResolveActualSurvivorsAfterResponseAndRecovery(2);
+    }
+
+    [Fact]
+    [L12AbilityEvidence("ST05-M1:ability:active:b1f11ab05f68dda0", "payment-cancel")]
+    public void AthenaDiscardCostCanBeCancelledWithoutPayingOrUsingTheOncePerTurnAbility()
+    {
+        var game = Create(204176);
+        var player = game.State.Players[0];
+        SetMaster(player, "ST05-M1");
+        var discard = Card("ST01-01", "athena-cancel-cost");
+        player.Hand.Add(discard);
+        player.Morale.Add(new L12MoraleCard
+        {
+            CardId = "ST05-C1", InstanceId = "athena-cancel-morale",
+        });
+
+        Assert.True(game.Handle(0,
+            new L12Command("activateAbility", "master-0", Ability: "athenaFrontBuff")).Accepted);
+        var prompt = Prompt(game);
+        Assert.Contains("skip", prompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: "skip")).Accepted);
+
+        Assert.Contains(discard, player.Hand);
+        Assert.DoesNotContain(discard, player.Graveyard);
+        Assert.DoesNotContain(player.UsedAbilities,
+            key => key.Contains("athenaFrontBuff", StringComparison.Ordinal));
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+    }
+
+    [Fact]
+    [L12AbilityEvidence("ST05-M1:ability:active:b1f11ab05f68dda0", "negated")]
+    public void NegatingAthenaMoraleSegmentKeepsItsPaidCostButDoesNotBlockTheLaterBuffSegment()
+    {
+        var game = Create(204177, autoPassEmptyResponses: false);
+        var player = game.State.Players[0];
+        SetMaster(player, "ST05-M1");
+        var discard = Card("ST01-01", "athena-negated-cost");
+        var legion = Card("ST05-02", "athena-negated-buff-target");
+        var morale = new L12MoraleCard
+        {
+            CardId = "ST05-C1", InstanceId = "athena-negated-morale",
+        };
+        player.Hand.Add(discard);
+        player.Morale.Add(morale);
+        player.Field[0][0] = legion;
+
+        Assert.True(game.Handle(0,
+            new L12Command("activateAbility", "master-0", Ability: "athenaFrontBuff")).Accepted);
+        Choose(game, discard.InstanceId);
+        Choose(game, morale.InstanceId);
+        ChooseMany(game, legion.InstanceId);
+        Assert.Equal("response", Prompt(game).Kind);
+        Assert.Single(game.State.EffectStack).Negated = true;
+        PassResponses(game);
+
+        Assert.Contains(discard, player.Graveyard);
+        Assert.False(morale.IsGodPower);
+        Assert.Equal(legion.BaseTroops + 1000, legion.Troops);
+        Assert.Equal(1, legion.MasterAttackDamageBonus);
+        var results = game.State.Events.Where(entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.CardId == "ST05-M1")).ToArray();
+        Assert.Contains(results, result => result.EffectResultStatus == "negated"
+            && result.EffectText?.Contains("翻转", StringComparison.Ordinal) == true);
+        Assert.Contains(results, result => result.EffectResultStatus == "resolved"
+            && result.EffectText?.Contains("兵力+1000", StringComparison.Ordinal) == true);
     }
 
     [Fact]

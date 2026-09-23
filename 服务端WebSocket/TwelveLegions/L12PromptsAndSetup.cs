@@ -71,7 +71,7 @@ public sealed partial class L12GameEngine
             if (player.MasterId == "S02-03M1" && player.Hand.Any(card => card.CardId == "S02-0301")) startingHandSize--;
             ShuffleLibrary(player, "对局准备");
             Draw(player, startingHandSize);
-            if (player.MasterId is "S01-02D1" or "S01-03D1" or "S01-04D1" or "S02-05D1") AddMorale(player, 2);
+            if (_catalog.Cards.GetValueOrDefault(player.MasterId)?.CardType == "divinity") AddMorale(player, 2);
         }
     }
 
@@ -978,6 +978,7 @@ public sealed partial class L12GameEngine
             }
             case "s2-promotion-foundation":
             {
+                if (chosen[0] == "cancel") break;
                 var result = PlayCard(prompt.PlayerIndex, new L12Command(
                     "playCard", CardInstanceId: prompt.Data.GetValueOrDefault("cardInstanceId"),
                     Choice: $"promotion:{chosen[0]}"));
@@ -1495,7 +1496,8 @@ public sealed partial class L12GameEngine
         if (!protectedFromCounters && top.Trigger == "opponent-attack" && State.PendingDefense?.Target.Type == "master"
             && playerIndex == defendingPlayer
             && Enumerable.Range(0, 3).Any(slot => player.Field[0][slot] is null))
-            choices.AddRange(player.Hand.Where(card => card.CardId == "S02-0005").Select(card => card.InstanceId));
+            choices.AddRange(player.Hand.Where(card => L12StructuredCardSemantics.UsesSpecialResponsePlan(
+                card.CardId, "rest-enter-front-and-retarget")).Select(card => card.InstanceId));
         // The same physical response instance cannot be committed twice. Hand-entry costs such as
         // the puppet leave hand before their effect enters the stack, while older hand responses
         // are still protected by this identity guard.
@@ -1594,7 +1596,8 @@ public sealed partial class L12GameEngine
             return true;
         return State.PendingDefense?.Target.Type == "master"
             && Enumerable.Range(0, 3).Any(slot => player.Field[0][slot] is null)
-            && pool.Any(card => card.Id == "S02-0005");
+            && pool.Any(card => L12StructuredCardSemantics.UsesSpecialResponsePlan(
+                card.Id, "rest-enter-front-and-retarget"));
     }
 
     private bool IsPoolCounterResponseAtTiming(
@@ -1767,7 +1770,8 @@ public sealed partial class L12GameEngine
             CommitMercenaryResponse(playerIndex, response, targetStackItemId);
             return;
         }
-        if (response.CardId == "S02-0005")
+        if (L12StructuredCardSemantics.UsesSpecialResponsePlan(
+                response.CardId, "rest-enter-front-and-retarget"))
         {
             var frontSlots = Enumerable.Range(0, 3)
                 .Where(slot => player.Field[0][slot] is null)
@@ -1808,7 +1812,8 @@ public sealed partial class L12GameEngine
             CommitS1ReactionResponse(playerIndex, response, targetStackItemId);
             return;
         }
-        if (response.CardId is "S02-0015" or "S02-0018" or "S02-0106")
+        if (response.CardId is "S02-0015" or "S02-0018"
+            || L12StructuredCardSemantics.UsesSpecialResponsePlan(response.CardId, "s2-counter"))
         {
             var target = selected;
             var data = response.CardId == "S02-0018" ? DirectPublicResponseData(response, target) : null;
@@ -1849,7 +1854,8 @@ public sealed partial class L12GameEngine
         }
         var player = State.Players[playerIndex];
         var response = player.Hand.FirstOrDefault(card => card.InstanceId == prompt.Data.GetValueOrDefault("responseId")
-            && card.CardId == "S02-0005");
+            && L12StructuredCardSemantics.UsesSpecialResponsePlan(
+                card.CardId, "rest-enter-front-and-retarget"));
         var target = State.EffectStack.FirstOrDefault(item => item.StackItemId == prompt.StackItemId);
         if (response is null || target is null || !LegalResponseSources(playerIndex, target).Contains(response.InstanceId)
             || !Enumerable.Range(0, 3).Any(slot => slotChoice == $"0:{slot}" && player.Field[0][slot] is null))
@@ -2038,7 +2044,9 @@ public sealed partial class L12GameEngine
         var validSlot = slotParts is { Length: 2 }
             && int.TryParse(slotParts[0], out var row) && row == 0
             && int.TryParse(slotParts[1], out slot) && slot is >= 0 and <= 2;
-        var costStillPresent = card is { CardId: "S02-0005", Tapped: true }
+        var costStillPresent = card is { Tapped: true }
+            && L12StructuredCardSemantics.UsesSpecialResponsePlan(
+                card.CardId, "rest-enter-front-and-retarget")
             && cardRow == 0 && cardSlot == slot && player.Field[0][slot] == card;
         if (!costStillPresent || attackItem is null || State.PendingDefense?.Target.Type != "master" || !validSlot)
         {

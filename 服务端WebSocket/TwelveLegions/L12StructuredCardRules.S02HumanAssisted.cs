@@ -83,7 +83,8 @@ public static partial class L12StructuredCardRules
             "S02-0105" => HumanCard(
                 H("play", "spell", "击杀对方1张原本兵力不高于3000的军团。 可返还1士气：抽取1张牌。")),
             "S02-0106" => HumanCard(
-                H("opponent-attack-or-effect", "reaction", "对方 进攻或发动效果时：展示牌库顶部1张牌。若其为费用不高于3的【天廷】军团，将其弃置。随后选择我方1张军团，本回合增加因此效果弃置军团的费用和兵力，否则将其返回牌库底部。")),
+                HWithTarget("opponent-attack-or-effect", "reaction", "对方 进攻或发动效果时：展示牌库顶部1张牌。若其为费用不高于3的【天廷】军团，将其弃置。随后选择我方1张军团，本回合增加因此效果弃置军团的费用和兵力，否则将其返回牌库底部。",
+                    "controller.field", "card-type=legion;public=true")),
             "S02-01S1" => HumanCard(
                 H("master-morale-return", "triggered", "「主宰为杨戬时」我方 回合1次 我方士气因主宰效果返还4张及以上时，<哮天犬·稚>可在前排活跃登场，视为1张兵力2000的【特殊】军团。"),
                 H("death", "triggered", "阵亡时 可从士气牌库追加1张休整的士气。")),
@@ -107,9 +108,11 @@ public static partial class L12StructuredCardRules
                 H("continuous", "continuous", "若<黄金圣甲虫>位于我方圣物区，我方无法从手牌打出其他圣物。"),
                 H("enter", "triggered", "登场时 可将墓地1张<增殖的甲虫>活跃登场。"),
                 H("active", "activated", "主动休整 可将墓地1张<增殖的甲虫>活跃登场。"),
-                H("active", "activated", "我方 回合1次 可弃置1张手牌：选择对方最多2张军团，本回合兵力-1000。")),
+                HWithTarget("active", "activated", "我方 回合1次 可弃置1张手牌：选择对方最多2张军团，本回合兵力-1000。",
+                    "opponent.field", "card-type=legion;public=true")),
             "S02-0206" => HumanCard(
-                H("play", "spell", "选择我方前排1张【太阳城】军团，本回合兵力+3000，进攻对方军团时获得ABILITY 2。"),
+                HWithTarget("play", "spell", "选择我方前排1张【太阳城】军团，本回合兵力+3000，进攻对方军团时获得ABILITY 2。",
+                    "controller.field", "card-type=legion;faction=taiyangcheng;row=front;public=true"),
                 H("granted", "granted-continuous", "必中 进攻无法被抵挡/支援。"),
                 H("play", "spell", "本回合此军团无法因效果重置为活跃，回合结束时弃置此军团。")),
             "S02-0207" => HumanCard(
@@ -145,7 +148,8 @@ public static partial class L12StructuredCardRules
                 H("continuous", "rule", "<密米尔之泉>每回合只可使用1次。"),
                 H("master-effect-damage-threshold", "triggered", "若本回合我方主宰因效果受到累计2点及更多伤害：我方主宰可增加1点血量，抽取1张牌。随后可弃置我方牌库顶部2张牌。")),
             "S02-0307" => HumanCard(
-                H("play", "spell", "弃置我方牌库顶部1张牌：选择对方1张军团，本回合兵力-3000。")),
+                HWithTarget("play", "spell", "弃置我方牌库顶部1张牌：选择对方1张军团，本回合兵力-3000。",
+                    "opponent.field", "card-type=legion;public=true")),
             "S02-03M1" => HumanCard(
                 H("game-setup", "setup", "游戏开始时，可将1张<雷神之锤>加入手牌，其视为1张起始手牌。"),
                 H("active", "activated", "我方回合 当我方主宰血量不高于3时，可消耗2士气：本回合我方所有【阿斯加德】军团在登场时获得ABILITY 3。以上效果发动后，我方主宰本局游戏无法因任何效果增加血量。"),
@@ -199,6 +203,25 @@ public static partial class L12StructuredCardRules
         params L12StructuredAtomTemplate[] additionalAtoms)
     {
         var atoms = InferHumanAtoms(trigger, executionModel, text).Concat(additionalAtoms).ToArray();
+        return new(trigger, executionModel, text, atoms, "human-assisted", HumanS02ReviewSource);
+    }
+
+    // 同一句同时出现费用区与效果目标区时，通用词面推断不得让冒号前的费用对象污染
+    // 冒号后的目标区域。能力仍保留共用推断产生的条件、费用、结算与期限原子，只覆盖
+    // 已经人工确认的目标身份。
+    private static L12StructuredAbilityTemplate HWithTarget(string trigger, string executionModel, string text,
+        string zone, string filter)
+    {
+        var atoms = InferHumanAtoms(trigger, executionModel, text).Select(atom =>
+        {
+            if (atom.Kind != L12AtomKinds.SelectTarget) return atom;
+            var parameters = new Dictionary<string, string>(atom.Parameters, StringComparer.Ordinal)
+            {
+                ["zone"] = zone,
+                ["filter"] = filter,
+            };
+            return atom with { Parameters = parameters };
+        }).ToArray();
         return new(trigger, executionModel, text, atoms, "human-assisted", HumanS02ReviewSource);
     }
 

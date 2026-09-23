@@ -109,6 +109,7 @@ public sealed class SingleActiveTargetStatePresentationTests
 
     [Fact]
     [Trait("L12Evidence", "ability:scarabDebuff")]
+    [L12AbilityEvidence("S02-0205:ability:active:e33e843f8be8d5f6", "no-target")]
     public void ScarabWithNoTargetPaysItsCostAndPublishesSkipped()
     {
         var game = Create(91311);
@@ -123,6 +124,7 @@ public sealed class SingleActiveTargetStatePresentationTests
 
     [Fact]
     [Trait("L12Evidence", "ability:scarabDebuff")]
+    [L12AbilityEvidence("S02-0205:ability:active:e33e843f8be8d5f6", "target-invalidated")]
     public void ScarabFailsWhenEveryDeclaredTargetLeavesBeforeSettlement()
     {
         var game = Create(91312);
@@ -142,6 +144,7 @@ public sealed class SingleActiveTargetStatePresentationTests
 
     [Fact]
     [Trait("L12Evidence", "ability:scarabDebuff")]
+    [L12AbilityEvidence("S02-0205:ability:active:e33e843f8be8d5f6", "normal", "multi-target-applicability", "presentation-consumers")]
     public void ScarabKeepsValidTargetsWhenOnlyOneOfTwoDeclarationsBecomesInvalid()
     {
         var game = Create(91313);
@@ -166,6 +169,7 @@ public sealed class SingleActiveTargetStatePresentationTests
 
     [Fact]
     [Trait("L12Evidence", "ability:scarabDebuff")]
+    [L12AbilityEvidence("S02-0205:ability:active:e33e843f8be8d5f6", "negated", "single-candidate-choice")]
     public void NegatedScarabKeepsDiscardCostAndChangesNoTargets()
     {
         var game = Create(91314);

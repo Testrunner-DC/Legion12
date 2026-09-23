@@ -2093,6 +2093,8 @@ public sealed class NewSystemsTests
     }
 
     [Fact]
+    [L12AbilityEvidence("S01-01C1:ability:active:3a8789b35c0c2be4", "normal")]
+    [L12AbilityEvidence("ST01-C1:ability:static:6907bfcf5dbbfeb4", "normal")]
     public void TiantingFactionEffectsUseTheMoraleCardRules()
     {
         var game = Create(seed: 8861);

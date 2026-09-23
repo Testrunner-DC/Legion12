@@ -331,6 +331,88 @@ public sealed class S2UniversalEffectsTests
         Assert.Equal(1, result.EffectSegmentCount);
     }
 
+    [Fact]
+    [L12AbilityEvidence("S02-0005:ability:opponent-attacks-master:806afb384f303aee",
+        "normal", "reconnect", "duplicate-submit", "single-candidate-choice")]
+    public void MagiciansPuppetResponseRestoresAndStillRequiresItsOnlyLegalSlot()
+    {
+        var game = Create(seed: 62150);
+        var attacker = Instance("S02-0003", "puppet-lifecycle-attacker");
+        attacker.SummonRound = 0;
+        game.State.Players[0].Field[0][0] = attacker;
+        var puppet = TakeCard(game, 1, "S02-0005");
+        game.State.Players[1].Field[0][0] = Instance("S02-0003", "puppet-lifecycle-front-0");
+        game.State.Players[1].Field[0][1] = Instance("S02-0003", "puppet-lifecycle-front-1");
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        var responsePrompt = Assert.Single(game.State.PendingPrompts);
+        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence);
+        responsePrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(puppet.InstanceId, responsePrompt.ValidChoices);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: responsePrompt.PromptId,
+            Choice: puppet.InstanceId)).Accepted);
+
+        var slotPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(["0:2", "cancel"], slotPrompt.ValidChoices);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId,
+            Choice: "0:2")).Accepted);
+        Assert.False(game.Handle(1, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId,
+            Choice: "0:2")).Accepted);
+
+        var restoredPuppet = Assert.Single(game.State.Players[1].Graveyard,
+            card => card.InstanceId == puppet.InstanceId);
+        Assert.Equal(puppet.InstanceId, restoredPuppet.InstanceId);
+        Assert.Null(game.State.PendingDefense);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "resolved"
+            && entry.Cards.Any(card => card.InstanceId == restoredPuppet.InstanceId));
+    }
+
+    [Fact]
+    [L12AbilityEvidence("S02-0005:ability:opponent-attacks-master:806afb384f303aee", "target-invalidated")]
+    public void MagiciansPuppetRetargetFailsWhenItsPaidFieldStateLeavesBeforeSettlement()
+    {
+        var game = Create(seed: 62152);
+        var attacker = Instance("S02-0003", "puppet-stale-attacker");
+        attacker.SummonRound = 0;
+        game.State.Players[0].Field[0][0] = attacker;
+        var negate = SetCounter(game, 0, "S01-0016");
+        game.State.Players[0].Hand.Add(Instance("S02-0007", "puppet-stale-negate-cost"));
+        var puppet = TakeCard(game, 1, "S02-0005");
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        var responsePrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: responsePrompt.PromptId,
+            Choice: puppet.InstanceId)).Accepted);
+        var slotPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId,
+            Choice: "0:1")).Accepted);
+
+        var counterWindow = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(negate.InstanceId, counterWindow.ValidChoices);
+        var paidPuppet = Assert.IsType<L12CardInstance>(game.State.Players[1].Field[0][1]);
+        game.State.Players[1].Field[0][1] = null;
+        game.State.Players[1].Graveyard.Add(paidPuppet);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: counterWindow.PromptId,
+            Choice: "pass")).Accepted);
+        PassResponses(game);
+
+        Assert.Equal("master", game.State.PendingDefense?.Target.Type);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "failed"
+            && entry.Cards.Any(card => card.InstanceId == puppet.InstanceId));
+    }
+
     private static void PassResponses(L12GameEngine game)
     {
         while (game.State.PendingPrompts.FirstOrDefault()?.Kind == "response")
@@ -372,6 +454,7 @@ public sealed class S2UniversalEffectsTests
     }
 
     [Fact]
+    [L12AbilityEvidence("S02-0005:ability:opponent-attacks-master:806afb384f303aee", "no-target")]
     public void MagiciansPuppetIsNotOfferedWithoutAnEmptyFrontSlot()
     {
         var game = Create(seed: 6216);
@@ -394,6 +477,7 @@ public sealed class S2UniversalEffectsTests
     }
 
     [Fact]
+    [L12AbilityEvidence("S02-0005:ability:opponent-attacks-master:806afb384f303aee", "negated")]
     public void NegatedMagiciansPuppetKeepsItsPaidRestedEntryAndDoesNotRetarget()
     {
         var game = Create(seed: 6217);
@@ -1148,7 +1232,8 @@ public sealed class S2UniversalEffectsTests
     }
 
     [Fact]
-    [L12AbilityEvidence("S02-0009:ability:play:ff53cfd909161da1", "normal", "multi-target-applicability")]
+    [L12AbilityEvidence("S02-0009:ability:play:ff53cfd909161da1", "normal", "multi-target-applicability",
+        "presentation-consumers")]
     public void DefenseDeploymentSetsUpToTwoCounterTacticsWithoutTheirNormalSetCost()
     {
         var game = Create(seed: 6206);
@@ -1178,6 +1263,15 @@ public sealed class S2UniversalEffectsTests
         Assert.Contains(covered, card => card.InstanceId == firstCounter.InstanceId);
         Assert.Contains(covered, card => card.InstanceId == secondCounter.InstanceId);
         Assert.Contains(player.Graveyard, card => card.InstanceId == deployment.InstanceId);
+        var results = game.State.Events.Where(entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == deployment.InstanceId)).ToArray();
+        Assert.Equal(2, results.Length);
+        Assert.All(results, result =>
+        {
+            Assert.Equal("S02-0009:ability:play:ff53cfd909161da1", result.EffectAbilityId);
+            Assert.False(string.IsNullOrWhiteSpace(result.EffectSceneId));
+            Assert.Equal("resolved", result.EffectResultStatus);
+        });
     }
 
     [Fact]
@@ -1359,6 +1453,7 @@ public sealed class S2UniversalEffectsTests
     }
 
     [Fact]
+    [L12AbilityEvidence("S02-0012:ability:granted:e5bb0cce96aba072", "normal", "presentation-consumers")]
     public void PrayerRitualPublicRevealRequiresBothPlayersToAcknowledgeTheCard()
     {
         var game = Create(seed: 6207);
@@ -1392,6 +1487,7 @@ public sealed class S2UniversalEffectsTests
     }
 
     [Fact]
+    [L12AbilityEvidence("S02-0012:ability:granted:1c5ef0343f70615c", "normal", "presentation-consumers")]
     public void PrayerRitualCanSpendMoraleForAPrivatePreviewAfterRefusal()
     {
         var game = Create(seed: 6208);
@@ -1419,6 +1515,153 @@ public sealed class S2UniversalEffectsTests
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: preview.PromptId,
             CardInstanceIds: [])).Accepted);
         Assert.Contains(player.Graveyard, card => card.InstanceId == prayer.InstanceId);
+    }
+
+    [Fact]
+    [L12AbilityEvidence("S02-0012:ability:granted:e5bb0cce96aba072", "negated")]
+    public void PrayerRitualNegationStopsThePublicBranchBeforeConsentOrDisclosure()
+    {
+        var game = Create(seed: 62081, autoPassEmptyResponses: false);
+        var player = game.State.Players[0];
+        var prayer = TakeCard(game, 0, "S02-0012");
+        var disaster = Instance("S01-DS01", "prayer-negated-disaster");
+        game.State.DisasterDeck.Insert(0, disaster);
+        AddMorale(player, 1);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", prayer.InstanceId)).Accepted);
+        Assert.Single(game.State.EffectStack).Negated = true;
+        PassResponses(game);
+
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "reveal"
+            && entry.Cards.Any(card => card.InstanceId == disaster.InstanceId));
+        Assert.Same(disaster, game.State.DisasterDeck[0]);
+    }
+
+    [Fact]
+    [L12AbilityEvidence("S02-0012:ability:granted:e5bb0cce96aba072", "no-target")]
+    [L12AbilityEvidence("S02-0012:ability:granted:1c5ef0343f70615c", "no-target", "payment-cancel")]
+    public void PrayerRitualHandlesAnEmptyDisasterDeckAndDeclinedPrivatePaymentWithoutStalling()
+    {
+        var publicGame = Create(seed: 62082);
+        var publicPlayer = publicGame.State.Players[0];
+        var publicPrayer = TakeCard(publicGame, 0, "S02-0012");
+        publicGame.State.DisasterDeck.Clear();
+        AddMorale(publicPlayer, 1);
+        publicGame.State.ActivePlayer = 0;
+        publicGame.State.Phase = L12Phase.Main;
+
+        Assert.True(publicGame.Handle(0, new L12Command("playCard", publicPrayer.InstanceId)).Accepted);
+        var publicConsent = Assert.Single(publicGame.State.PendingPrompts);
+        Assert.True(publicGame.Handle(1, new L12Command("resolvePrompt",
+            PromptId: publicConsent.PromptId, Choice: "agree")).Accepted);
+        Assert.Empty(publicGame.State.PendingPrompts);
+        Assert.Empty(publicGame.State.EffectStack);
+
+        var noTargetGame = Create(seed: 62083);
+        var noTargetPlayer = noTargetGame.State.Players[0];
+        var noTargetPrayer = TakeCard(noTargetGame, 0, "S02-0012");
+        noTargetGame.State.DisasterDeck.Clear();
+        AddMorale(noTargetPlayer, 2);
+        noTargetGame.State.ActivePlayer = 0;
+        noTargetGame.State.Phase = L12Phase.Main;
+        Assert.True(noTargetGame.Handle(0, new L12Command("playCard", noTargetPrayer.InstanceId)).Accepted);
+        var refusal = Assert.Single(noTargetGame.State.PendingPrompts);
+        Assert.True(noTargetGame.Handle(1, new L12Command("resolvePrompt",
+            PromptId: refusal.PromptId, Choice: "refuse")).Accepted);
+        Assert.Empty(noTargetGame.State.PendingPrompts);
+        Assert.Empty(noTargetGame.State.PendingActivations);
+
+        var cancelGame = Create(seed: 62084);
+        var cancelPlayer = cancelGame.State.Players[0];
+        var cancelPrayer = TakeCard(cancelGame, 0, "S02-0012");
+        cancelGame.State.DisasterDeck.Insert(0, Instance("S01-DS02", "prayer-cancel-disaster"));
+        AddMorale(cancelPlayer, 2);
+        cancelGame.State.ActivePlayer = 0;
+        cancelGame.State.Phase = L12Phase.Main;
+        Assert.True(cancelGame.Handle(0, new L12Command("playCard", cancelPrayer.InstanceId)).Accepted);
+        var cancelConsent = Assert.Single(cancelGame.State.PendingPrompts);
+        Assert.True(cancelGame.Handle(1, new L12Command("resolvePrompt",
+            PromptId: cancelConsent.PromptId, Choice: "refuse")).Accepted);
+        var privateDeclaration = Assert.Single(cancelGame.State.PendingPrompts);
+        var tappedBeforeDecline = cancelPlayer.Morale.Count(card => card.Tapped);
+        Assert.True(cancelGame.Handle(0, new L12Command("resolvePrompt",
+            PromptId: privateDeclaration.PromptId, Choice: "mode:none")).Accepted);
+        Assert.Equal(tappedBeforeDecline, cancelPlayer.Morale.Count(card => card.Tapped));
+        Assert.Empty(cancelGame.State.PendingPrompts);
+        Assert.Empty(cancelGame.State.EffectStack);
+    }
+
+    [Fact]
+    [L12AbilityEvidence("S02-0012:ability:granted:e5bb0cce96aba072", "reconnect", "duplicate-submit")]
+    public void PrayerPublicAcknowledgementsSurviveRestoreAndRejectDuplicateConfirmation()
+    {
+        var game = Create(seed: 62085);
+        var player = game.State.Players[0];
+        var prayer = TakeCard(game, 0, "S02-0012");
+        game.State.DisasterDeck.Insert(0, Instance("S01-DS01", "prayer-public-restore"));
+        AddMorale(player, 1);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+        Assert.True(game.Handle(0, new L12Command("playCard", prayer.InstanceId)).Accepted);
+        var consent = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: consent.PromptId,
+            Choice: "agree")).Accepted);
+        Assert.Equal(2, game.State.PendingPrompts.Count);
+
+        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence);
+        var first = game.State.PendingPrompts.OrderBy(prompt => prompt.PlayerIndex).First();
+        Assert.True(game.Handle(first.PlayerIndex, new L12Command("resolvePrompt",
+            PromptId: first.PromptId, CardInstanceIds: [])).Accepted);
+        Assert.False(game.Handle(first.PlayerIndex, new L12Command("resolvePrompt",
+            PromptId: first.PromptId, CardInstanceIds: [])).Accepted);
+        var second = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(second.PlayerIndex, new L12Command("resolvePrompt",
+            PromptId: second.PromptId, CardInstanceIds: [])).Accepted);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+    }
+
+    [Fact]
+    [L12AbilityEvidence("S02-0012:ability:granted:1c5ef0343f70615c", "reconnect", "duplicate-submit")]
+    public void PrayerPrivateDeclarationAndPreviewSurviveRestoreAndRejectConsumedPrompts()
+    {
+        var game = Create(seed: 62086);
+        var player = game.State.Players[0];
+        var prayer = TakeCard(game, 0, "S02-0012");
+        game.State.DisasterDeck.Insert(0, Instance("S01-DS02", "prayer-private-restore"));
+        AddMorale(player, 2);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+        Assert.True(game.Handle(0, new L12Command("playCard", prayer.InstanceId)).Accepted);
+        var consent = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: consent.PromptId,
+            Choice: "refuse")).Accepted);
+
+        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "mode:use")).Accepted);
+        Assert.False(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "mode:use")).Accepted);
+        PassResponses(game);
+
+        var preview = Assert.Single(game.State.PendingPrompts);
+        var previewCheckpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        game = L12GameEngine.RestoreCheckpoint(Catalog, previewCheckpoint,
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: preview.PromptId,
+            CardInstanceIds: [])).Accepted);
+        Assert.False(game.Handle(0, new L12Command("resolvePrompt", PromptId: preview.PromptId,
+            CardInstanceIds: [])).Accepted);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
     }
 
     [Fact]

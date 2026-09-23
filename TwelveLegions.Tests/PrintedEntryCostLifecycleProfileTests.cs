@@ -32,6 +32,61 @@ public sealed class PrintedEntryCostLifecycleProfileTests
 
     [Theory]
     [InlineData("S01-0104")]
+    [InlineData("S01-0114")]
+    [InlineData("S01-0301")]
+    [InlineData("S01-0302")]
+    [InlineData("S01-0305")]
+    [InlineData("S01-0306")]
+    [InlineData("S02-0202")]
+    [InlineData("S02-0203")]
+    [L12AbilityEvidence("S01-0104:ability:static:a91d7d481db612a9", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S01-0114:ability:static:a91d7d481db612a9", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S01-0301:ability:static:71dd875155781eb0", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S01-0302:ability:static:acc29b0ca499d087", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S01-0305:ability:static:9ed1ca8df2e5f029", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S01-0306:ability:static:9ed1ca8df2e5f029", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-0202:ability:continuous:94759febdd62fd32", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-0203:ability:continuous:418e71545576e12d", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    public void DiscountedSnapshotCostIsTheRecoveredAuthoritativePayment(string cardId)
+    {
+        var game = Create(70160 + cardId[^1]);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+        game.State.ActiveDisaster = null;
+        var card = PutOnlyCardInHand(game, cardId);
+        SatisfyPrintedDiscountCondition(game, cardId);
+        var displayedCost = HandCost(game, card);
+        Assert.InRange(displayedCost, 0, Math.Max(0, card.Cost - 1));
+        var player = game.State.Players[0];
+        player.Morale.Clear();
+        for (var index = 0; index < displayedCost; index++)
+            player.Morale.Add(Morale($"payment-{cardId}-{index}"));
+        if (cardId is "S01-0104" or "S01-0114")
+        {
+            game.State.Players[1].Morale.Clear();
+            for (var index = 0; index <= displayedCost; index++)
+                game.State.Players[1].Morale.Add(Morale($"opponent-ahead-{index}"));
+        }
+
+        game = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(), game.RandomState!.Value,
+            game.CardFactSignalSequence, autoPassEmptyResponses: true, concealHiddenResponseAvailability: false);
+        player = game.State.Players[0];
+        card = Assert.Single(player.Hand, candidate => candidate.InstanceId == card.InstanceId);
+        Assert.Equal(displayedCost, HandCost(game, card));
+        var paymentIds = player.Morale.Where(morale => !morale.Tapped)
+            .Take(displayedCost).Select(morale => morale.InstanceId).ToList();
+        var command = new L12Command("playCard", card.InstanceId,
+            CardInstanceIds: paymentIds, Row: 0, Slot: 1);
+
+        var result = game.Handle(0, command);
+        Assert.True(result.Accepted, result.Error);
+        Assert.All(player.Morale.Where(morale => paymentIds.Contains(morale.InstanceId)), morale => Assert.True(morale.Tapped));
+        Assert.DoesNotContain(player.Hand, candidate => candidate.InstanceId == card.InstanceId);
+        Assert.False(game.Handle(0, command).Accepted);
+    }
+
+    [Theory]
+    [InlineData("S01-0104")]
     [InlineData("S01-0107")]
     [InlineData("S01-0114")]
     [L12AbilityEvidence("S01-0107:ability:static:715fe715dcb8ea28", "entry-cost-condition-current", "presentation-consumers")]
@@ -107,7 +162,35 @@ public sealed class PrintedEntryCostLifecycleProfileTests
     }
 
     private static L12GameEngine Create(int seed)
-        => new(Catalog, "printed-entry-cost", "ENTRY-COST", seed, ["甲", "乙"], [0, 0], skipPreparation: true);
+        => new(Catalog, "printed-entry-cost", "ENTRY-COST", seed, ["甲", "乙"], [0, 0],
+            skipPreparation: true, stateFormatVersion: 2);
+
+    private static void SatisfyPrintedDiscountCondition(L12GameEngine game, string cardId)
+    {
+        var player = game.State.Players[0];
+        switch (cardId)
+        {
+            case "S01-0104":
+            case "S01-0114":
+                game.State.Players[1].Morale.Add(Morale("opponent-ahead"));
+                break;
+            case "S01-0301":
+                for (var index = 0; index < 4; index++)
+                    player.Graveyard.Add(Card("S01-0309", $"asgard-grave-{index}"));
+                break;
+            case "S01-0302":
+                player.Field[0][0] = Card("S02-0004", "friendly-front");
+                player.Field[1][0] = Card("S02-0007", "friendly-back");
+                break;
+            case "S01-0305":
+            case "S01-0306":
+                player.Hp = 6;
+                break;
+            case "S02-0202":
+                player.TombNamedLegionsLeftThisTurn = 1;
+                break;
+        }
+    }
 
     private static L12CardInstance PutOnlyCardInHand(L12GameEngine game, string cardId)
     {

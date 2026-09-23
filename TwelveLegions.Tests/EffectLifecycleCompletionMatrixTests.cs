@@ -30,7 +30,7 @@ public sealed class EffectLifecycleCompletionMatrixTests
         var inventory = EffectLifecycleInventoryTests.Build(Catalog);
         var matrix = BuildMatrix();
         Assert.Equal(inventory.Abilities.Length, matrix.AbilityTotal);
-        Assert.Equal(681, matrix.AbilityTotal);
+        Assert.Equal(686, matrix.AbilityTotal);
         // 分母 = 档案绑定段 + 各未归属桶；互不重叠、合计全覆盖。
         var bound = matrix.Profiles.SelectMany(profile => profile.AbilityIds).ToArray();
         Assert.Equal(bound.Length, bound.Distinct(StringComparer.Ordinal).Count());
@@ -84,6 +84,73 @@ public sealed class EffectLifecycleCompletionMatrixTests
         var cell = costFreeMatrix.Profiles[0].CellsByItem["payment-cancel"][0];
         Assert.Equal(MatrixItemStatus.NotApplicable, cell.Status);
         Assert.False(string.IsNullOrWhiteSpace(cell.Reason));
+    }
+
+    [Fact]
+    public void AbilitySpecificNotApplicableDoesNotHideSiblingEvidenceGaps()
+    {
+        var abilities = Catalog.AtomicEffects.All.SelectMany(card => card.Abilities).Take(2)
+            .OrderByDescending(ability => ability.AbilityId, StringComparer.Ordinal).ToArray();
+        var specific = new L12LifecycleProfile("test:ability-specific",
+            new SortedDictionary<string, string>(StringComparer.Ordinal),
+            new SortedDictionary<string, string>(StringComparer.Ordinal))
+        {
+            AbilityNotApplicable = new SortedDictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.Ordinal)
+            {
+                [abilities[0].AbilityId] = new SortedDictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["no-target"] = "首段由固定规则对象承接，没有无对象分支。",
+                },
+            },
+        };
+        var rows = abilities.Select(ability => new EffectLifecycleInventoryTests.AbilityRow(
+            ability.CardId, "合成", ability, "shared-rule-owner", [], ["no-target"], [], specific)).ToArray();
+        var profile = Assert.Single(EffectLifecycleCompletionMatrix.Build(
+            new EffectLifecycleInventoryTests.Inventory(0, 1, [], rows)).Profiles);
+
+        var exemptIndex = Array.IndexOf(profile.AbilityIds, abilities[0].AbilityId);
+        var siblingIndex = Array.IndexOf(profile.AbilityIds, abilities[1].AbilityId);
+        Assert.Equal(MatrixItemStatus.NotApplicable,
+            profile.CellsByItem["no-target"][exemptIndex].Status);
+        Assert.Equal(MatrixItemStatus.Missing,
+            profile.CellsByItem["no-target"][siblingIndex].Status);
+    }
+
+    [Fact]
+    public void SharedProtocolEvidenceCoversOnlyAbilitiesInsideTheSameProfile()
+    {
+        var abilities = Catalog.AtomicEffects.All.SelectMany(card => card.Abilities).Take(3).ToArray();
+        var sharedProfile = new L12LifecycleProfile("test:shared-protocol",
+            new SortedDictionary<string, string>(StringComparer.Ordinal),
+            new SortedDictionary<string, string>(StringComparer.Ordinal))
+        {
+            SharedProtocolScopes = ["normal"],
+        };
+        var unrelatedProfile = new L12LifecycleProfile("test:unrelated-protocol",
+            new SortedDictionary<string, string>(StringComparer.Ordinal),
+            new SortedDictionary<string, string>(StringComparer.Ordinal))
+        {
+            SharedProtocolScopes = ["normal"],
+        };
+        var representative = new L12AbilityTestReference(abilities[0].AbilityId,
+            "Synthetic.SharedProtocolRepresentative", abilities[0].CardId, ["normal"]);
+        var rows = new[]
+        {
+            new EffectLifecycleInventoryTests.AbilityRow(abilities[0].CardId, "代表能力", abilities[0],
+                "shared-rule-owner", [], ["normal"], [representative], sharedProfile),
+            new EffectLifecycleInventoryTests.AbilityRow(abilities[1].CardId, "同族能力", abilities[1],
+                "shared-rule-owner", [], ["normal"], [], sharedProfile),
+            new EffectLifecycleInventoryTests.AbilityRow(abilities[2].CardId, "异族能力", abilities[2],
+                "shared-rule-owner", [], ["normal"], [], unrelatedProfile),
+        };
+        var profiles = EffectLifecycleCompletionMatrix.Build(
+            new EffectLifecycleInventoryTests.Inventory(0, 3, [], rows)).Profiles;
+
+        var shared = Assert.Single(profiles, profile => profile.ProfileId == sharedProfile.Id);
+        Assert.All(shared.CellsByItem["normal"],
+            cell => Assert.Equal(MatrixItemStatus.Evidenced, cell.Status));
+        var unrelated = Assert.Single(profiles, profile => profile.ProfileId == unrelatedProfile.Id);
+        Assert.Equal(MatrixItemStatus.Missing, unrelated.CellsByItem["normal"][0].Status);
     }
 
     [Fact]

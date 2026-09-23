@@ -496,6 +496,7 @@ public sealed class AtomicReviewBatch6LBRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S02-03M1")]
+    [L12AbilityEvidence("S02-03M1:ability:active:54e6f9c40764f804", "payment-cancel")]
     public void ThorChargePublicPaymentOffersGodPowerAndTombGuardResources()
     {
         var game = Create(8506, "S02-03M1");
@@ -523,5 +524,12 @@ public sealed class AtomicReviewBatch6LBRegressionTests
         Assert.Equal("resource-payment", payment.Kind);
         Assert.Contains(guard.InstanceId, payment.ValidChoices);
         Assert.Contains(godPower.InstanceId, payment.ValidChoices);
+        var cancelled = game.Handle(0,
+            new L12Command("resolvePrompt", PromptId: payment.PromptId, Choice: "cancel"));
+        Assert.True(cancelled.Accepted, cancelled.Error);
+        Assert.False(guard.Tapped);
+        Assert.False(godPower.Tapped);
+        Assert.False(Assert.Single(player.Morale, morale => morale.InstanceId == "batch6lb-thor-ordinary-morale").Tapped);
+        Assert.Empty(game.State.EffectStack);
     }
 }

@@ -88,6 +88,8 @@ public sealed class SingleActiveDrawPresentationTests
 
     [Fact]
     [Trait("L12Evidence", "ability:godPowerDraw")]
+    [L12AbilityEvidence("S02-05C1:ability:active:5dec5c18aaf62a03", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-05C1A:ability:active:5dec5c18aaf62a03", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
     public void GodPowerDrawPublishesResolvedAndUsesTheSameSegmentAfterCheckpoint()
     {
         var game = CreateWithFirstMaster("S02-05M1", 91321);
@@ -133,6 +135,8 @@ public sealed class SingleActiveDrawPresentationTests
 
     [Fact]
     [Trait("L12Evidence", "ability:godPowerDraw")]
+    [L12AbilityEvidence("S02-05C1:ability:active:5dec5c18aaf62a03", "negated")]
+    [L12AbilityEvidence("S02-05C1A:ability:active:5dec5c18aaf62a03", "negated")]
     public void NegatedGodPowerDrawKeepsItsPaidGodPowerAndDrawsNothing()
     {
         var game = CreateWithFirstMaster("S02-05M1", 91322);
@@ -159,6 +163,8 @@ public sealed class SingleActiveDrawPresentationTests
 
     [Fact]
     [Trait("L12Evidence", "ability:godPowerDraw")]
+    [L12AbilityEvidence("S02-05C1:ability:active:5dec5c18aaf62a03", "no-target")]
+    [L12AbilityEvidence("S02-05C1A:ability:active:5dec5c18aaf62a03", "no-target")]
     public void GodPowerDrawWithAnEmptyLibraryPublishesFailedInsteadOfResolved()
     {
         var game = CreateWithFirstMaster("S02-05M1", 91323);

@@ -242,6 +242,7 @@ public sealed partial class StackResponseChoiceRegressionTests
     }
 
     [Fact]
+    [L12AbilityEvidence("S01-0016:ability:reaction:eda8f9987e9ccfe3", "payment-cancel")]
     public void CancelRestoresSamePriorityWithoutRevealPaymentOrPassing()
     {
         var game = Create();
@@ -696,6 +697,10 @@ public sealed partial class StackResponseChoiceRegressionTests
     [InlineData("S02-0018", "negate-ready", "missing-event")]
     [InlineData("S02-0018", "negate-ready", "negated")]
     [L12AbilityEvidence("S02-0016:ability:s2-reaction:37e38b08d365f0bb", "normal-settlement", "negated-settlement", "target-invalidated-settlement", "reconnect-settlement", "duplicate-rejected")]
+    [L12AbilityEvidence("S02-0016:ability:granted:dfd998389876f15e",
+        "normal", "negated", "target-invalidated", "reconnect", "duplicate-submit", "presentation-consumers")]
+    [L12AbilityEvidence("S02-0016:ability:granted:df2c369f365d4497",
+        "normal", "negated", "target-invalidated", "reconnect", "duplicate-submit", "presentation-consumers")]
     [L12AbilityEvidence("S02-0017:ability:s2-reaction:0e0643c2b48ae93e", "normal-settlement", "negated-settlement", "target-invalidated-settlement", "reconnect-settlement", "duplicate-rejected", "success-dependency")]
     [L12AbilityEvidence("S02-0018:ability:s2-reaction:e0e92d0479a94844", "normal-settlement", "negated-settlement", "target-invalidated-settlement", "reconnect-settlement", "duplicate-rejected", "success-dependency")]
     public void ResponseSettlementRevalidatesObjectsAndSuccessDependenciesAfterRecovery(
@@ -834,6 +839,46 @@ public sealed partial class StackResponseChoiceRegressionTests
         Assert.DoesNotContain(game.State.EffectStack, item => item.SourceInstanceId == response.InstanceId);
         Assert.DoesNotContain(game.State.Players[0].Graveyard, card => card.InstanceId == hidden.InstanceId);
         Assert.Contains(game.State.Events, item => item.Type == "ability-rejected");
+    }
+
+    [Fact]
+    [L12AbilityEvidence("S02-0016:ability:granted:dfd998389876f15e", "no-target")]
+    [L12AbilityEvidence("S02-0016:ability:granted:df2c369f365d4497", "no-target")]
+    public void RuinedRitualOffersOnlyBranchesWhoseCurrentEffectObjectsExist()
+    {
+        var suppressOnly = Create();
+        var suppressRoot = AddEffect(suppressOnly, "ruined-suppress-only", "authority-event");
+        suppressRoot.Data["eventType"] = "non-hand-entry";
+        suppressOnly.State.Players[0].Field[0][0] = suppressRoot.SourceSnapshot;
+        var suppressCounter = Counter(suppressOnly, 0, "S02-0016");
+        Offer(suppressOnly);
+        Assert.Contains(suppressCounter.InstanceId, LegalResponses(suppressOnly, 1, suppressRoot));
+        Resolve(suppressOnly, suppressCounter.InstanceId);
+        var suppressMode = Assert.Single(suppressOnly.State.PendingPrompts);
+        Assert.Contains("mode:suppress", suppressMode.ValidChoices);
+        Assert.Contains("skip", suppressMode.ValidChoices);
+        Assert.DoesNotContain("mode:discard", suppressMode.ValidChoices);
+
+        var discardOnly = Create();
+        var discardRoot = AddEffect(discardOnly, "ruined-discard-only", "authority-event");
+        discardRoot.Data["eventType"] = "non-hand-entry";
+        discardOnly.State.Players[0].Hand.Add(Card("S01-0003", "ruined-only-hand", 0));
+        var discardCounter = Counter(discardOnly, 0, "S02-0016");
+        Offer(discardOnly);
+        Assert.Contains(discardCounter.InstanceId, LegalResponses(discardOnly, 1, discardRoot));
+        Resolve(discardOnly, discardCounter.InstanceId);
+        var discardMode = Assert.Single(discardOnly.State.PendingPrompts);
+        Assert.Contains("mode:discard", discardMode.ValidChoices);
+        Assert.Contains("skip", discardMode.ValidChoices);
+        Assert.DoesNotContain("mode:suppress", discardMode.ValidChoices);
+
+        var unavailable = Create();
+        var unavailableRoot = AddEffect(unavailable, "ruined-no-branch", "authority-event");
+        unavailableRoot.Data["eventType"] = "non-hand-entry";
+        var unavailableCounter = Counter(unavailable, 0, "S02-0016");
+        Offer(unavailable);
+        Assert.DoesNotContain(unavailableCounter.InstanceId,
+            LegalResponses(unavailable, 1, unavailableRoot));
     }
 
     [Theory]

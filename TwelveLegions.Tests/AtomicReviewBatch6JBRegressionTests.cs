@@ -497,6 +497,7 @@ public sealed class AtomicReviewBatch6JBRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "trigger:batch6jb-prayer-prepaid-hidden-no-refund")]
+    [L12AbilityEvidence("S02-0012:ability:granted:1c5ef0343f70615c", "negated")]
     public void PrayerPrivatePreviewPaysBeforeStackAndNegationKeepsTheCostWithoutRevealingTheTopCard()
     {
         var game = Create(10002);
@@ -530,6 +531,8 @@ public sealed class AtomicReviewBatch6JBRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "trigger:batch6jb-faction-once-decline-release")]
+    [L12AbilityEvidence("ST01-C1:ability:static:605b9aa3d8a1ed93",
+        "normal", "duplicate-submit", "presentation-consumers")]
     public void TiantingDeclineCreatesNoEmptyStackAndAcceptFinalizesOnceBeforeResponse()
     {
         var decline = Create(10003);

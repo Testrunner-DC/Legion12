@@ -222,9 +222,11 @@ public sealed class ActiveUsageLimitTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void ThorCanPayAgainAfterResolutionOrNegationAndV2Recovery(bool negateFirst)
+    [InlineData(false, "S02-03M1")]
+    [InlineData(true, "S02-03M1")]
+    [L12AbilityEvidence("S02-03M1:ability:active:54e6f9c40764f804", "normal", "negated", "no-target",
+        "duplicate-submit", "reconnect", "presentation-consumers")]
+    public void ThorCanPayAgainAfterResolutionOrNegationAndV2Recovery(bool negateFirst, string _)
     {
         var game = Create();
         var activate = new L12Command("activateAbility", "master-0", Ability: "thorCharge");

@@ -449,10 +449,12 @@ public sealed class FaithZealotMasterAuditRegressionTests
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
+    [InlineData(true, "S02-06C1")]
+    [InlineData(false, "ST06-C1")]
+    [L12AbilityEvidence("S02-06C1:ability:static:7339369656140c39", "normal", "presentation-consumers")]
+    [L12AbilityEvidence("ST06-C1:ability:static:88a76dc195d499ee", "normal", "presentation-consumers")]
     public void OtherworldFactionGainRuneRequiresAnExplicitTemporaryOrOrdinaryPaymentChoice(
-        bool payWithTemporaryMorale)
+        bool payWithTemporaryMorale, string _)
     {
         var game = Create(payWithTemporaryMorale ? 25330 : 25331, firstFactionIndex: 5);
         var player = game.State.Players[0];
@@ -496,6 +498,8 @@ public sealed class FaithZealotMasterAuditRegressionTests
     }
 
     [Fact]
+    [L12AbilityEvidence("S02-06C1:ability:static:7339369656140c39", "payment-cancel")]
+    [L12AbilityEvidence("ST06-C1:ability:static:88a76dc195d499ee", "payment-cancel")]
     public void OtherworldFactionGainRuneRejectsDuplicateTemporaryPaymentWithoutChargingAnything()
     {
         var game = Create(25332, firstFactionIndex: 5);

@@ -24,7 +24,7 @@ public sealed class DivinityEffectLifecycleTests
 
     [Fact]
     [L12AbilityEvidence("S02-05D1:ability:active:519ab3c1379a9256",
-        "normal", "v2-prompt-reconnect", "duplicate-submit")]
+        "normal", "v2-prompt-reconnect", "duplicate-submit", "reconnect", "presentation-consumers")]
     public void DivinityFlipRestoresItsSceneAndPublishesResolved()
     {
         var game = Create(91321, stateFormatVersion: 2);
@@ -115,6 +115,27 @@ public sealed class DivinityEffectLifecycleTests
         Assert.Empty(game.State.PendingPrompts);
         Assert.DoesNotContain(player.UsedAbilities,
             key => key.Contains("divinityFlipMorale", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [L12AbilityEvidence("S02-05D1:ability:active:519ab3c1379a9256", "negated")]
+    public void NegatedDivinityFlipConsumesItsUseButDoesNotChangeMoraleFace()
+    {
+        var game = Create(913223);
+        var morale = Morale("divinity-negated-flip");
+        game.State.Players[0].Morale.Add(morale);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "divinityFlipMorale")).Accepted);
+        Assert.Single(game.State.EffectStack).Negated = true;
+        PassResponses(game);
+
+        Assert.False(morale.IsGodPower);
+        Assert.Contains(game.State.Players[0].UsedAbilities,
+            key => key.Contains("divinityFlipMorale", StringComparison.Ordinal));
+        Assert.Equal("negated", Result(game, "master-0").EffectResultStatus);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
     }
 
     [Fact]

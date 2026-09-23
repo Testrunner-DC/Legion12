@@ -369,6 +369,8 @@ public sealed class ExtendedCardEffectsTests
     }
 
     [Fact]
+    [L12AbilityEvidence("S01-02C1:ability:static:ddab147dd97c360f", "normal", "presentation-consumers")]
+    [L12AbilityEvidence("ST02-C1:ability:static:29d1864e955f856e", "normal", "presentation-consumers")]
     public void SolarCityPlayerAlsoChoosesTombGuardPaymentForActiveAbilities()
     {
         var game = Create(2, 3);

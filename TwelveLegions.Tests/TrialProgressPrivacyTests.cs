@@ -71,6 +71,22 @@ public sealed class TrialProgressPrivacyTests
     [InlineData("S02-0614")]
     [InlineData("S02-0617")]
     [InlineData("S02-0610")]
+    [L12AbilityEvidence("S02-0604:ability:trial:2117897dcefd3125",
+        "normal", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-0606:ability:trial:bb29c925c9fcdc82",
+        "normal", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-0609:ability:trial:bb29c925c9fcdc82",
+        "normal", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-0610:ability:trial:bb29c925c9fcdc82",
+        "normal", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-0613:ability:trial:bb29c925c9fcdc82",
+        "normal", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-0614:ability:trial:bb29c925c9fcdc82",
+        "normal", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-0617:ability:trial:bb29c925c9fcdc82",
+        "normal", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-0618:ability:trial:2117897dcefd3125",
+        "normal", "reconnect", "presentation-consumers")]
     public void EveryUsualTrialSourcePublishesOnlyProgressForEveryHiddenTrial(string sourceId)
     {
         foreach (var definition in Catalog.Cards.Values.Where(card => card.CardType == "trial"))
@@ -92,6 +108,17 @@ public sealed class TrialProgressPrivacyTests
             {
                 AssertNoTrialDisclosure(snapshot.RecentEvents, trial);
                 AssertNoTrialDisclosure([snapshot.LastAction!], trial);
+            }
+
+            game = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(),
+                game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+                autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+            var restoredTrial = Assert.Single(game.State.Players[0].SpecialZones.Trials);
+            Assert.Equal(source.TrialValue, restoredTrial.TrialProgress);
+            foreach (var snapshot in new[] { game.SnapshotFor(0), game.SnapshotFor(1), game.SnapshotForSpectator() })
+            {
+                AssertNoTrialDisclosure(snapshot.RecentEvents, restoredTrial);
+                AssertNoTrialDisclosure([snapshot.LastAction!], restoredTrial);
             }
         }
     }

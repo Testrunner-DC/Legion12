@@ -13,6 +13,7 @@ public sealed record L12MoraleZoneResourceRule(string ResourceType, string Displ
 public sealed record L12MasterAbilityGateRule(string AbilityId, string RequiredMasterId,
     string DisabledReason);
 public sealed record L12MasterFieldAuraRule(string TargetCardId, int TroopsAdjustment, int CostAdjustment);
+public sealed record L12SpecialResponseCapability(string Timing, string SourceZone, string CommitPlan);
 
 /// <summary>
 /// Runtime identity predicates backed by the structured card rule layer.
@@ -72,6 +73,20 @@ public static class L12StructuredCardSemantics
             TombGuardCardId, ProliferatingScarabCardId,
         };
 
+    // Non-standard response identity shared by eligibility, anonymous availability,
+    // declaration, paid-state retention and settlement.
+    private static readonly Dictionary<string, L12SpecialResponseCapability> SpecialResponseCapabilities =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["S02-0005"] = new("opponent-attacks-master", "hand", "rest-enter-front-and-retarget"),
+            ["S02-0106"] = new("opponent-attack-or-effect", "covered-field", "s2-counter"),
+        };
+    private static readonly HashSet<string> CompletedTrialSetupCards =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "S02-06D1",
+        };
+
     // 特殊响应能力身份注册：绝对防御型（响应对方进攻/效果，抵挡或无效，弃置1手牌）、
     // 落穴型（无效对方军团登场效果）、佣兵部队型（对方进攻我方军团时从手牌弃置自身抵挡）。
     // 候选枚举、公开卡池判定、提交与费用分支全部改读此注册表；新增同型响应卡只在此登记，
@@ -79,6 +94,14 @@ public static class L12StructuredCardSemantics
     public static bool IsAbsoluteDefenseResponse(string cardId) => cardId == "S01-0016";
     public static bool IsPitfallEntryNegationResponse(string cardId) => cardId == "S01-0018";
     public static bool IsMercenaryHandBlockResponse(string cardId) => cardId == "S01-0002";
+    public static L12SpecialResponseCapability? SpecialResponseCapability(string cardId)
+        => SpecialResponseCapabilities.GetValueOrDefault(cardId);
+    public static bool UsesSpecialResponsePlan(string cardId, string commitPlan)
+        => SpecialResponseCapability(cardId)?.CommitPlan == commitPlan;
+    public static IReadOnlyCollection<string> SpecialResponseCardIds
+        => SpecialResponseCapabilities.Keys;
+    public static bool StartsWithCompletedTrials(string cardId)
+        => CompletedTrialSetupCards.Contains(cardId);
     private static readonly Dictionary<string, L12OpponentTurnFieldRule> OpponentTurnFieldRules =
         new(StringComparer.OrdinalIgnoreCase)
         {

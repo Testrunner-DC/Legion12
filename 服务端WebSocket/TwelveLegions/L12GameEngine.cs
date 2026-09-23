@@ -965,6 +965,11 @@ public sealed partial class L12GameEngine
         {
             var card = CreateCard(deck.SpecialIds[i], $"p{index}-special-{i + 1}");
             card.ImageUrl = ResolveAlternateArtUrl(card.CardId, card.ImageUrl, alternateArtUrls);
+            if (L12SpecialDeckRules.StartsTrialsCompleted(master))
+            {
+                card.TrialProgress = Math.Max(card.TrialProgress, 8);
+                card.TrialCompleted = true;
+            }
             player.SpecialZones.Trials.Add(card);
         }
         player.TrialOrderDone = player.SpecialZones.Trials.Count <= 1;

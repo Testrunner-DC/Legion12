@@ -79,6 +79,8 @@ public sealed class EffectLifecycleInventoryTests
             {
                 gaps.Remove("protocol-profile");
                 gaps.RemoveAll(profile.NotApplicable.ContainsKey);
+                if (profile.AbilityNotApplicable.TryGetValue(ability.AbilityId, out var abilityExclusions))
+                    gaps.RemoveAll(abilityExclusions.ContainsKey);
                 gaps.AddRange(profile.AdditionalChecks);
             }
             if (ability.Atoms.Any(atom => atom.Stage == "cost")) gaps.Add("payment-cancel");
@@ -124,6 +126,9 @@ public sealed class EffectLifecycleInventoryTests
                     + (owner.Value.Contains('.') ? owner.Value : $"L12GameEngine.{owner.Value}"))) + "。").AppendLine();
             foreach (var exclusion in profile.NotApplicable)
                 text.AppendLine($"- {exclusion.Key}：{exclusion.Value}");
+            foreach (var (abilityId, exclusions) in profile.AbilityNotApplicable)
+            foreach (var exclusion in exclusions)
+                text.AppendLine($"- {abilityId} / {exclusion.Key}：{exclusion.Value}");
             text.AppendLine();
         }
         text.AppendLine("## 已关联具名证据（不是整能力验收通过）").AppendLine();
@@ -260,7 +265,7 @@ public sealed class EffectLifecycleInventoryTests
     }
 
     [Fact]
-    public void PrintedRangeProfilesBindOnlyExactContinuousSegmentsAndDoNotClaimBattleCompletion()
+    public void PrintedRangeProfilesBindOnlyExactContinuousSegmentsAndCloseTheSharedBattleRule()
     {
         var inventory = Build(Catalog);
         var rows = inventory.Abilities.Where(row => row.Profile?.Id == "continuous:printed-range").ToArray();
@@ -271,18 +276,21 @@ public sealed class EffectLifecycleInventoryTests
             Assert.Equal("shared-rule-owner", row.EntryEvidence);
             Assert.Equal("L12StructuredCardRules.CombatProfile", row.Profile!.RuntimeOwners["condition-and-permission"]);
             Assert.Equal("TryValidateAttackTarget", row.Profile.RuntimeOwners["target-revalidation"]);
+            Assert.Equal("SnapshotFor", row.Profile.RuntimeOwners["presentation"]);
             Assert.All(row.Profile.NotApplicable, exclusion =>
             {
                 Assert.NotEmpty(exclusion.Value);
                 Assert.DoesNotContain(exclusion.Key, row.ReviewGaps);
             });
             Assert.DoesNotContain("destination-invalidated", row.ReviewGaps); // Not the cavalry protocol.
-            Assert.Contains("target-invalidated", row.ReviewGaps);
+            Assert.DoesNotContain("target-invalidated", row.ReviewGaps);
             Assert.Contains("ranged-no-loss", row.ReviewGaps); // Profile/preview checks are not damage tests.
             var evidence = Assert.Single(row.TestReferences, reference => reference.TestMethod.EndsWith(
                 nameof(PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview), StringComparison.Ordinal));
-            Assert.Contains("reconnect-profile", evidence.Scopes);
-            Assert.DoesNotContain("reconnect", evidence.Scopes);
+            Assert.Contains("normal", evidence.Scopes);
+            Assert.Contains("reconnect", evidence.Scopes);
+            Assert.Contains("presentation-consumers", evidence.Scopes);
+            Assert.Contains("ranged-no-loss", evidence.Scopes);
             Assert.Equal("linked-not-execution-receipt", evidence.Status);
         });
         Assert.Equal("active:paid-extended-range",
@@ -462,6 +470,7 @@ public sealed class EffectLifecycleInventoryTests
             Assert.Equal("shared-rule-owner", row.EntryEvidence);
             Assert.Equal("IsCounterDeploymentCandidate", row.Profile!.RuntimeOwners["candidate-generation"]);
             Assert.Equal("SetDeclaredCounterTactics", row.Profile.RuntimeOwners["settlement-revalidation"]);
+            Assert.Equal("ResolveEffectPresentationSceneId", row.Profile.RuntimeOwners["presentation"]);
             Assert.Contains("independent-target-settlement", row.ReviewGaps);
             Assert.Contains("no-target", row.ReviewGaps);
             Assert.Contains("negated", row.ReviewGaps);
@@ -474,9 +483,15 @@ public sealed class EffectLifecycleInventoryTests
         Assert.Contains(defense.TestReferences, reference => reference.Scopes.Contains("negated"));
         Assert.Contains(defense.TestReferences, reference => reference.Scopes.Contains("reconnect"));
         Assert.Contains(defense.TestReferences, reference => reference.Scopes.Contains("duplicate-submit"));
+        Assert.Contains(defense.TestReferences, reference => reference.Scopes.Contains("presentation-consumers"));
         var uesugi = Assert.Single(rows, row => row.CardId == "S01-0403");
         Assert.Contains(uesugi.TestReferences, reference => reference.Scopes.Contains("normal"));
         Assert.Contains(uesugi.TestReferences, reference => reference.Scopes.Contains("target-invalidated"));
+        Assert.Contains(uesugi.TestReferences, reference => reference.Scopes.Contains("no-target"));
+        Assert.Contains(uesugi.TestReferences, reference => reference.Scopes.Contains("negated"));
+        Assert.Contains(uesugi.TestReferences, reference => reference.Scopes.Contains("reconnect"));
+        Assert.Contains(uesugi.TestReferences, reference => reference.Scopes.Contains("duplicate-submit"));
+        Assert.Contains(uesugi.TestReferences, reference => reference.Scopes.Contains("presentation-consumers"));
     }
 
     [Fact]

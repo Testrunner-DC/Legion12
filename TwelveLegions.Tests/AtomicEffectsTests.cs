@@ -1,4 +1,5 @@
 using TwelveLegions.Server;
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace TwelveLegions.Tests;
@@ -219,6 +220,68 @@ public sealed class AtomicEffectsTests
             candidate => candidate.Trigger == trigger
                 && candidate.Text.Contains(textFragment, StringComparison.Ordinal));
         Assert.Null(ability.CostText);
+    }
+
+    [Fact]
+    public void DiscardIsACostOnlyWhenItAppearsBeforeThePrintedCostColon()
+    {
+        var evilEye = Assert.Single(Catalog.AtomicEffects.Find("ST-DS03")!.Abilities);
+        Assert.False(L12StructuredCardRules.HasPrintedCostBoundary(evilEye.Text));
+        Assert.Null(evilEye.CostText);
+        Assert.Contains(evilEye.Atoms, atom => atom.Kind == L12AtomKinds.Discard
+            && atom.Stage == "resolution");
+        Assert.DoesNotContain(evilEye.Atoms, atom => atom.Stage == "cost");
+
+        var yingzheng = Assert.Single(Catalog.AtomicEffects.Find("S02-0101")!.Abilities,
+            ability => ability.Trigger == "enter");
+        Assert.True(L12StructuredCardRules.HasPrintedCostBoundary(yingzheng.Text));
+        Assert.Contains("弃置手牌中1张费用为8的军团", yingzheng.CostText, StringComparison.Ordinal);
+        Assert.Contains(yingzheng.Atoms, atom => atom.Stage == "cost");
+    }
+
+    [Fact]
+    public void GoldenScarabDiscardCostDoesNotChangeItsEnemyFieldTargetIntoAHandTarget()
+    {
+        var ability = Assert.Single(Catalog.AtomicEffects.Find("S02-0205")!.Abilities,
+            candidate => candidate.Trigger == "active"
+                && candidate.Text.Contains("最多2张军团", StringComparison.Ordinal));
+        var target = Assert.Single(ability.Atoms, atom => atom.Kind == L12AtomKinds.SelectTarget);
+        Assert.Equal("opponent.field", target.Parameters["zone"]);
+        Assert.Equal("card-type=legion;public=true", target.Parameters["filter"]);
+        Assert.Contains(ability.Atoms, atom => atom.Kind == L12AtomKinds.Discard
+            && atom.Stage == "cost" && atom.Parameters["zone"] == "controller.hand");
+        Assert.Equal("S02-0205:ability:active:e33e843f8be8d5f6", ability.AbilityId);
+    }
+
+    [Fact]
+    public void HumanReviewedLegionSelectionsDoNotInheritAnUnrelatedPrivateCostZone()
+    {
+        static bool HasZone(L12AtomicAbility ability, string zone)
+            => ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.SelectTarget
+                && atom.Parameters.GetValueOrDefault("zone") == zone);
+
+        var abilities = Catalog.AtomicEffects.All.SelectMany(card => card.Abilities)
+            .Where(ability => ability.ReviewSource.Contains("user-20260829", StringComparison.Ordinal))
+            .ToArray();
+        var opponentOffenders = abilities.Where(ability =>
+                Regex.IsMatch(ability.Text, @"选择对方(?:(?!墓地|手牌|牌库|士气).){0,40}军团")
+                && !HasZone(ability, "opponent.field"))
+            .Select(ability => $"{ability.AbilityId}: {ability.Text}").ToArray();
+        var controllerOffenders = abilities.Where(ability =>
+                Regex.IsMatch(ability.Text, @"选择我方(?:(?!墓地|手牌|牌库|士气).){0,40}军团")
+                && !HasZone(ability, "controller.field"))
+            .Select(ability => $"{ability.AbilityId}: {ability.Text}").ToArray();
+
+        Assert.Empty(opponentOffenders);
+        Assert.Empty(controllerOffenders);
+
+        var asgardTactic = Assert.Single(Catalog.AtomicEffects.Find("S02-0307")!.Abilities);
+        Assert.Equal("S02-0307:ability:play:e2a8efcc4ba499ee", asgardTactic.AbilityId);
+        var qianKun = Assert.Single(Catalog.AtomicEffects.Find("S02-0106")!.Abilities);
+        Assert.Equal("S02-0106:ability:opponent-attack-or-effect:cac751e0d790e16e", qianKun.AbilityId);
+        var solarCharge = Assert.Single(Catalog.AtomicEffects.Find("S02-0206")!.Abilities,
+            ability => ability.Text.Contains("兵力+3000", StringComparison.Ordinal));
+        Assert.Equal("S02-0206:ability:play:f6c0e9a69b3184b7", solarCharge.AbilityId);
     }
 
     [Fact]

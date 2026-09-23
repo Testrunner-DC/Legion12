@@ -30,6 +30,9 @@ public static partial class L12SpecialDeckRules
         return capacity;
     }
 
+    public static bool StartsTrialsCompleted(L12CardDefinition master)
+        => L12StructuredCardSemantics.StartsWithCompletedTrials(master.Id);
+
     public static bool DoesNotCountTowardMainDeck(L12CardDefinition card)
         => L12StructuredCardSemantics.HasOutOfDeckGraveyardLifecycle(card.Id)
            || L12StructuredCardSemantics.IsDerivedSpecialCard(card.Id);

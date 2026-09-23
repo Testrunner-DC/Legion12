@@ -430,7 +430,7 @@ Assert-Contains $composite 'new("cosmos-yin-buff"' 'Cosmos Yin must declare its 
 Assert-Contains $composite 'DeclarationTiming: "post-hidden-reveal"' 'Cosmos Yin needs an explicit post-reveal timing declaration.'
 Assert-Contains $composite 'prompt.Data["declarationTiming"] = segment.DeclarationTiming' 'Delayed public resolution prompts must project their configured timing marker.'
 Assert-Contains $prompts 'data?.GetValueOrDefault("sameStackContinuation") == "true"' 'Response continuations must stay above their underlying stack item.'
-Assert-Contains $prompts 'or "S02-0106")' 'Cosmos Yin responses must route to their own effect instead of generic negate handling.'
+Assert-Contains $prompts 'UsesSpecialResponsePlan(response.CardId, "s2-counter")' 'Cosmos Yin responses must route through the structured special-response registry instead of generic negate handling.'
 if ($plans.IndexOf('"S02-0106"', [StringComparison]::Ordinal) -ge 0) {
     throw 'Cosmos Yin must not be placed in the pre-reveal public trigger planner.'
 }

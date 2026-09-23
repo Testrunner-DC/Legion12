@@ -2,14 +2,14 @@
 
 由 `scripts/export-l12-effect-lifecycle-inventory.ps1` 随台账同次生成；不要手工修改此表。
 只认精确能力 ID 绑定的具名证据 scope（完全匹配或 `矩阵项-子项` 前缀形式）；不适用必须给出理由；归属、运行入口与测试证据分别展示。
-能力段分母：681（含未归属段；档案外段不构成完成证据）。档案：78，已完成：52，未完成：26。
-内容指纹：`322b0b655a18ba1b9bf7a4b62f4d95a19dc4218f440bb8ca9847ca001b3b3ac0`。
+能力段分母：686（含未归属段；档案外段不构成完成证据）。档案：78，已完成：78，未完成：0。
+内容指纹：`436f9f90aa734a2402e582147d3be7d66337b76d8e4ee0e68050c3747a929c1e`。
 
 | 定义证据分桶 | 能力数 |
 | --- | ---: |
 | composite-definition | 194 |
 | fine-definition | 84 |
-| shared-rule-owner | 403 |
+| shared-rule-owner | 408 |
 
 ## 矩阵项
 
@@ -54,7 +54,7 @@
 | normal | 2 | 0 | 0 |
 | no-target | 0 | 0 | 2 |
 | negated | 0 | 0 | 2 |
-| target-invalidated | 2 | 0 | 0 |
+| target-invalidated | 0 | 0 | 2 |
 | duplicate-submit | 0 | 0 | 2 |
 | reconnect | 2 | 0 | 0 |
 | payment-cancel | 0 | 0 | 2 |
@@ -84,32 +84,25 @@
 
 展示消费者出口：档案未声明展示边界。
 
-## composite:counter-deployment（未完成）
+## composite:counter-deployment（已完成）
 
-绑定能力段：2。运行入口：candidate-generation = L12GameEngine.IsCounterDeploymentCandidate；settlement-revalidation = L12GameEngine.SetDeclaredCounterTactics；slot-declaration = L12GameEngine.CreateActivationStepPrompt。
+绑定能力段：2。运行入口：candidate-generation = L12GameEngine.IsCounterDeploymentCandidate；presentation = L12GameEngine.ResolveEffectPresentationSceneId；settlement-revalidation = L12GameEngine.SetDeclaredCounterTactics；slot-declaration = L12GameEngine.CreateActivationStepPrompt。
 档案附加检查：private-hand-redaction, independent-target-settlement, slot-invalidated。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
 | normal | 2 | 0 | 0 |
-| no-target | 1 | 1（S01-0403:ability:death:c3e5fc27d01fe269） | 0 |
-| negated | 1 | 1（S01-0403:ability:death:c3e5fc27d01fe269） | 0 |
-| target-invalidated | 2 | 0 | 0 |
-| duplicate-submit | 1 | 1（S01-0403:ability:death:c3e5fc27d01fe269） | 0 |
-| reconnect | 1 | 1（S01-0403:ability:death:c3e5fc27d01fe269） | 0 |
+| no-target | 2 | 0 | 0 |
+| negated | 2 | 0 | 0 |
+| target-invalidated | 0 | 0 | 2 |
+| duplicate-submit | 2 | 0 | 0 |
+| reconnect | 2 | 0 | 0 |
 | payment-cancel | 0 | 0 | 2 |
 | single-candidate-choice | 0 | 0 | 2 |
 | multi-target-applicability | 0 | 0 | 2 |
-| presentation-consumers | 0 | 2（S01-0403:ability:death:c3e5fc27d01fe269、S02-0009:ability:play:ff53cfd909161da1） | 0 |
+| presentation-consumers | 2 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `no-target`（无目标/不能发动）：S01-0403:ability:death:c3e5fc27d01fe269
-- `negated`（已支付后被无效）：S01-0403:ability:death:c3e5fc27d01fe269
-- `duplicate-submit`（重复或过期提交）：S01-0403:ability:death:c3e5fc27d01fe269
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S01-0403:ability:death:c3e5fc27d01fe269
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S01-0403:ability:death:c3e5fc27d01fe269、S02-0009:ability:play:ff53cfd909161da1
-
-展示消费者出口：档案未声明展示边界。
+展示消费者出口：ResolveEffectPresentationSceneId。
 
 ## composite:desert-hand-summon（已完成）
 
@@ -121,7 +114,7 @@
 | normal | 1 | 0 | 0 |
 | no-target | 0 | 0 | 1 |
 | negated | 1 | 0 | 0 |
-| target-invalidated | 1 | 0 | 0 |
+| target-invalidated | 0 | 0 | 1 |
 | duplicate-submit | 1 | 0 | 0 |
 | reconnect | 1 | 0 | 0 |
 | payment-cancel | 1 | 0 | 0 |
@@ -201,7 +194,7 @@
 | normal | 1 | 0 | 0 |
 | no-target | 0 | 0 | 1 |
 | negated | 0 | 0 | 1 |
-| target-invalidated | 1 | 0 | 0 |
+| target-invalidated | 0 | 0 | 1 |
 | duplicate-submit | 0 | 0 | 1 |
 | reconnect | 1 | 0 | 0 |
 | payment-cancel | 0 | 0 | 1 |
@@ -311,30 +304,25 @@
 
 展示消费者出口：档案未声明展示边界。
 
-## continuous:printed-range（未完成）
+## continuous:printed-range（已完成）
 
-绑定能力段：47。运行入口：candidate-generation = L12GameEngine.BuildLegalAttackTargets；combat-declaration = L12GameEngine.Attack；condition-and-permission = L12StructuredCardRules.CombatProfile；damage-settlement = L12GameEngine.ResolveDefenseCore；definition = L12StructuredCardRules.GetCombatRuleAbilities；source-row = L12GameEngine.CanAttackFromRow；target-revalidation = L12GameEngine.TryValidateAttackTarget。
+绑定能力段：47。运行入口：candidate-generation = L12GameEngine.BuildLegalAttackTargets；combat-declaration = L12GameEngine.Attack；condition-and-permission = L12StructuredCardRules.CombatProfile；damage-settlement = L12GameEngine.ResolveDefenseCore；definition = L12StructuredCardRules.GetCombatRuleAbilities；presentation = L12GameEngine.SnapshotFor；source-row = L12GameEngine.CanAttackFromRow；target-revalidation = L12GameEngine.TryValidateAttackTarget。
 档案附加检查：source-row-change, attack-preview, ranged-no-loss, profession-grant。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 4 | 43（S01-0110:ability:static:e3471cd2a7042e59、S01-0111:ability:static:e3471cd2a7042e59、S01-0112:ability:static:e3471cd2a7042e59、S01-0113:ability:static:e3471cd2a7042e59、S01-0114:ability:static:e3471cd2a7042e59、S01-0116:ability:static:e3471cd2a7042e59、S01-0208:ability:static:e3471cd2a7042e59、S01-0209:ability:static:e3471cd2a7042e59、S01-0210:ability:static:e3471cd2a7042e59、S01-0211:ability:static:e3471cd2a7042e59、S01-0213:ability:static:9ba2f4f5354a2a05、S01-0214:ability:static:e3471cd2a7042e59、S01-0309:ability:static:e3471cd2a7042e59、S01-0313:ability:static:e3471cd2a7042e59、S01-0314:ability:static:e3471cd2a7042e59、S01-0316:ability:static:9ba2f4f5354a2a05、S01-0410:ability:static:e3471cd2a7042e59、S01-0411:ability:static:e3471cd2a7042e59、S01-0413:ability:static:e3471cd2a7042e59、S01-0415:ability:static:9ba2f4f5354a2a05、S01-0416:ability:static:e3471cd2a7042e59、S02-0003:ability:continuous:e9823ffd970d6ce6、S02-0204:ability:continuous:e9823ffd970d6ce6、S02-0304:ability:continuous:e9823ffd970d6ce6、S02-0508:ability:static:aa41bff900061e1d、S02-0513:ability:static:e3471cd2a7042e59、S02-0514:ability:static:e3471cd2a7042e59、S02-0515:ability:static:e3471cd2a7042e59、S02-0517:ability:static:9ba2f4f5354a2a05、S02-0614:ability:continuous:e9823ffd970d6ce6、S02-0617:ability:continuous:e9823ffd970d6ce6、S02-0618:ability:continuous:e9823ffd970d6ce6、S02-0619:ability:continuous:f0839056592c5ee2、ST01-07:ability:static:e3471cd2a7042e59、ST01-08:ability:static:9ba2f4f5354a2a05、ST01-09:ability:static:e3471cd2a7042e59、ST02-08:ability:static:e3471cd2a7042e59、ST03-05:ability:static:efd7771da618f0ac、ST04-07:ability:static:e3471cd2a7042e59、ST05-03:ability:continuous:3119db9911c31cf3、ST05-04:ability:static:e3471cd2a7042e59、ST05-08:ability:static:e3471cd2a7042e59、ST05-09:ability:static:e3471cd2a7042e59） | 0 |
+| normal | 47 | 0 | 0 |
 | no-target | 47 | 0 | 0 |
 | negated | 0 | 0 | 47 |
-| target-invalidated | 0 | 47（S01-0003:ability:static:e3471cd2a7042e59、S01-0110:ability:static:e3471cd2a7042e59、S01-0111:ability:static:e3471cd2a7042e59、S01-0112:ability:static:e3471cd2a7042e59、S01-0113:ability:static:e3471cd2a7042e59、S01-0114:ability:static:e3471cd2a7042e59、S01-0115:ability:static:9ba2f4f5354a2a05、S01-0116:ability:static:e3471cd2a7042e59、S01-0208:ability:static:e3471cd2a7042e59、S01-0209:ability:static:e3471cd2a7042e59、S01-0210:ability:static:e3471cd2a7042e59、S01-0211:ability:static:e3471cd2a7042e59、S01-0213:ability:static:9ba2f4f5354a2a05、S01-0214:ability:static:e3471cd2a7042e59、S01-0309:ability:static:e3471cd2a7042e59、S01-0313:ability:static:e3471cd2a7042e59、S01-0314:ability:static:e3471cd2a7042e59、S01-0316:ability:static:9ba2f4f5354a2a05、S01-0409:ability:static:6c03e83e9e18abb1、S01-0410:ability:static:e3471cd2a7042e59、S01-0411:ability:static:e3471cd2a7042e59、S01-0413:ability:static:e3471cd2a7042e59、S01-0415:ability:static:9ba2f4f5354a2a05、S01-0416:ability:static:e3471cd2a7042e59、S02-0003:ability:continuous:e9823ffd970d6ce6、S02-0204:ability:continuous:e9823ffd970d6ce6、S02-0304:ability:continuous:e9823ffd970d6ce6、S02-0507:ability:static:3f520b391281b325、S02-0508:ability:static:aa41bff900061e1d、S02-0513:ability:static:e3471cd2a7042e59、S02-0514:ability:static:e3471cd2a7042e59、S02-0515:ability:static:e3471cd2a7042e59、S02-0517:ability:static:9ba2f4f5354a2a05、S02-0614:ability:continuous:e9823ffd970d6ce6、S02-0617:ability:continuous:e9823ffd970d6ce6、S02-0618:ability:continuous:e9823ffd970d6ce6、S02-0619:ability:continuous:f0839056592c5ee2、ST01-07:ability:static:e3471cd2a7042e59、ST01-08:ability:static:9ba2f4f5354a2a05、ST01-09:ability:static:e3471cd2a7042e59、ST02-08:ability:static:e3471cd2a7042e59、ST03-05:ability:static:efd7771da618f0ac、ST04-07:ability:static:e3471cd2a7042e59、ST05-03:ability:continuous:3119db9911c31cf3、ST05-04:ability:static:e3471cd2a7042e59、ST05-08:ability:static:e3471cd2a7042e59、ST05-09:ability:static:e3471cd2a7042e59） | 0 |
+| target-invalidated | 0 | 0 | 47 |
 | duplicate-submit | 0 | 0 | 47 |
 | reconnect | 47 | 0 | 0 |
 | payment-cancel | 0 | 0 | 47 |
 | single-candidate-choice | 0 | 0 | 47 |
 | multi-target-applicability | 0 | 0 | 47 |
-| presentation-consumers | 0 | 47（S01-0003:ability:static:e3471cd2a7042e59、S01-0110:ability:static:e3471cd2a7042e59、S01-0111:ability:static:e3471cd2a7042e59、S01-0112:ability:static:e3471cd2a7042e59、S01-0113:ability:static:e3471cd2a7042e59、S01-0114:ability:static:e3471cd2a7042e59、S01-0115:ability:static:9ba2f4f5354a2a05、S01-0116:ability:static:e3471cd2a7042e59、S01-0208:ability:static:e3471cd2a7042e59、S01-0209:ability:static:e3471cd2a7042e59、S01-0210:ability:static:e3471cd2a7042e59、S01-0211:ability:static:e3471cd2a7042e59、S01-0213:ability:static:9ba2f4f5354a2a05、S01-0214:ability:static:e3471cd2a7042e59、S01-0309:ability:static:e3471cd2a7042e59、S01-0313:ability:static:e3471cd2a7042e59、S01-0314:ability:static:e3471cd2a7042e59、S01-0316:ability:static:9ba2f4f5354a2a05、S01-0409:ability:static:6c03e83e9e18abb1、S01-0410:ability:static:e3471cd2a7042e59、S01-0411:ability:static:e3471cd2a7042e59、S01-0413:ability:static:e3471cd2a7042e59、S01-0415:ability:static:9ba2f4f5354a2a05、S01-0416:ability:static:e3471cd2a7042e59、S02-0003:ability:continuous:e9823ffd970d6ce6、S02-0204:ability:continuous:e9823ffd970d6ce6、S02-0304:ability:continuous:e9823ffd970d6ce6、S02-0507:ability:static:3f520b391281b325、S02-0508:ability:static:aa41bff900061e1d、S02-0513:ability:static:e3471cd2a7042e59、S02-0514:ability:static:e3471cd2a7042e59、S02-0515:ability:static:e3471cd2a7042e59、S02-0517:ability:static:9ba2f4f5354a2a05、S02-0614:ability:continuous:e9823ffd970d6ce6、S02-0617:ability:continuous:e9823ffd970d6ce6、S02-0618:ability:continuous:e9823ffd970d6ce6、S02-0619:ability:continuous:f0839056592c5ee2、ST01-07:ability:static:e3471cd2a7042e59、ST01-08:ability:static:9ba2f4f5354a2a05、ST01-09:ability:static:e3471cd2a7042e59、ST02-08:ability:static:e3471cd2a7042e59、ST03-05:ability:static:efd7771da618f0ac、ST04-07:ability:static:e3471cd2a7042e59、ST05-03:ability:continuous:3119db9911c31cf3、ST05-04:ability:static:e3471cd2a7042e59、ST05-08:ability:static:e3471cd2a7042e59、ST05-09:ability:static:e3471cd2a7042e59） | 0 |
+| presentation-consumers | 47 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S01-0110:ability:static:e3471cd2a7042e59、S01-0111:ability:static:e3471cd2a7042e59、S01-0112:ability:static:e3471cd2a7042e59、S01-0113:ability:static:e3471cd2a7042e59、S01-0114:ability:static:e3471cd2a7042e59、S01-0116:ability:static:e3471cd2a7042e59、S01-0208:ability:static:e3471cd2a7042e59、S01-0209:ability:static:e3471cd2a7042e59、S01-0210:ability:static:e3471cd2a7042e59、S01-0211:ability:static:e3471cd2a7042e59、S01-0213:ability:static:9ba2f4f5354a2a05、S01-0214:ability:static:e3471cd2a7042e59、S01-0309:ability:static:e3471cd2a7042e59、S01-0313:ability:static:e3471cd2a7042e59、S01-0314:ability:static:e3471cd2a7042e59、S01-0316:ability:static:9ba2f4f5354a2a05、S01-0410:ability:static:e3471cd2a7042e59、S01-0411:ability:static:e3471cd2a7042e59、S01-0413:ability:static:e3471cd2a7042e59、S01-0415:ability:static:9ba2f4f5354a2a05、S01-0416:ability:static:e3471cd2a7042e59、S02-0003:ability:continuous:e9823ffd970d6ce6、S02-0204:ability:continuous:e9823ffd970d6ce6、S02-0304:ability:continuous:e9823ffd970d6ce6、S02-0508:ability:static:aa41bff900061e1d、S02-0513:ability:static:e3471cd2a7042e59、S02-0514:ability:static:e3471cd2a7042e59、S02-0515:ability:static:e3471cd2a7042e59、S02-0517:ability:static:9ba2f4f5354a2a05、S02-0614:ability:continuous:e9823ffd970d6ce6、S02-0617:ability:continuous:e9823ffd970d6ce6、S02-0618:ability:continuous:e9823ffd970d6ce6、S02-0619:ability:continuous:f0839056592c5ee2、ST01-07:ability:static:e3471cd2a7042e59、ST01-08:ability:static:9ba2f4f5354a2a05、ST01-09:ability:static:e3471cd2a7042e59、ST02-08:ability:static:e3471cd2a7042e59、ST03-05:ability:static:efd7771da618f0ac、ST04-07:ability:static:e3471cd2a7042e59、ST05-03:ability:continuous:3119db9911c31cf3、ST05-04:ability:static:e3471cd2a7042e59、ST05-08:ability:static:e3471cd2a7042e59、ST05-09:ability:static:e3471cd2a7042e59
-- `target-invalidated`（已声明对象逆结算失效）：S01-0003:ability:static:e3471cd2a7042e59、S01-0110:ability:static:e3471cd2a7042e59、S01-0111:ability:static:e3471cd2a7042e59、S01-0112:ability:static:e3471cd2a7042e59、S01-0113:ability:static:e3471cd2a7042e59、S01-0114:ability:static:e3471cd2a7042e59、S01-0115:ability:static:9ba2f4f5354a2a05、S01-0116:ability:static:e3471cd2a7042e59、S01-0208:ability:static:e3471cd2a7042e59、S01-0209:ability:static:e3471cd2a7042e59、S01-0210:ability:static:e3471cd2a7042e59、S01-0211:ability:static:e3471cd2a7042e59、S01-0213:ability:static:9ba2f4f5354a2a05、S01-0214:ability:static:e3471cd2a7042e59、S01-0309:ability:static:e3471cd2a7042e59、S01-0313:ability:static:e3471cd2a7042e59、S01-0314:ability:static:e3471cd2a7042e59、S01-0316:ability:static:9ba2f4f5354a2a05、S01-0409:ability:static:6c03e83e9e18abb1、S01-0410:ability:static:e3471cd2a7042e59、S01-0411:ability:static:e3471cd2a7042e59、S01-0413:ability:static:e3471cd2a7042e59、S01-0415:ability:static:9ba2f4f5354a2a05、S01-0416:ability:static:e3471cd2a7042e59、S02-0003:ability:continuous:e9823ffd970d6ce6、S02-0204:ability:continuous:e9823ffd970d6ce6、S02-0304:ability:continuous:e9823ffd970d6ce6、S02-0507:ability:static:3f520b391281b325、S02-0508:ability:static:aa41bff900061e1d、S02-0513:ability:static:e3471cd2a7042e59、S02-0514:ability:static:e3471cd2a7042e59、S02-0515:ability:static:e3471cd2a7042e59、S02-0517:ability:static:9ba2f4f5354a2a05、S02-0614:ability:continuous:e9823ffd970d6ce6、S02-0617:ability:continuous:e9823ffd970d6ce6、S02-0618:ability:continuous:e9823ffd970d6ce6、S02-0619:ability:continuous:f0839056592c5ee2、ST01-07:ability:static:e3471cd2a7042e59、ST01-08:ability:static:9ba2f4f5354a2a05、ST01-09:ability:static:e3471cd2a7042e59、ST02-08:ability:static:e3471cd2a7042e59、ST03-05:ability:static:efd7771da618f0ac、ST04-07:ability:static:e3471cd2a7042e59、ST05-03:ability:continuous:3119db9911c31cf3、ST05-04:ability:static:e3471cd2a7042e59、ST05-08:ability:static:e3471cd2a7042e59、ST05-09:ability:static:e3471cd2a7042e59
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S01-0003:ability:static:e3471cd2a7042e59、S01-0110:ability:static:e3471cd2a7042e59、S01-0111:ability:static:e3471cd2a7042e59、S01-0112:ability:static:e3471cd2a7042e59、S01-0113:ability:static:e3471cd2a7042e59、S01-0114:ability:static:e3471cd2a7042e59、S01-0115:ability:static:9ba2f4f5354a2a05、S01-0116:ability:static:e3471cd2a7042e59、S01-0208:ability:static:e3471cd2a7042e59、S01-0209:ability:static:e3471cd2a7042e59、S01-0210:ability:static:e3471cd2a7042e59、S01-0211:ability:static:e3471cd2a7042e59、S01-0213:ability:static:9ba2f4f5354a2a05、S01-0214:ability:static:e3471cd2a7042e59、S01-0309:ability:static:e3471cd2a7042e59、S01-0313:ability:static:e3471cd2a7042e59、S01-0314:ability:static:e3471cd2a7042e59、S01-0316:ability:static:9ba2f4f5354a2a05、S01-0409:ability:static:6c03e83e9e18abb1、S01-0410:ability:static:e3471cd2a7042e59、S01-0411:ability:static:e3471cd2a7042e59、S01-0413:ability:static:e3471cd2a7042e59、S01-0415:ability:static:9ba2f4f5354a2a05、S01-0416:ability:static:e3471cd2a7042e59、S02-0003:ability:continuous:e9823ffd970d6ce6、S02-0204:ability:continuous:e9823ffd970d6ce6、S02-0304:ability:continuous:e9823ffd970d6ce6、S02-0507:ability:static:3f520b391281b325、S02-0508:ability:static:aa41bff900061e1d、S02-0513:ability:static:e3471cd2a7042e59、S02-0514:ability:static:e3471cd2a7042e59、S02-0515:ability:static:e3471cd2a7042e59、S02-0517:ability:static:9ba2f4f5354a2a05、S02-0614:ability:continuous:e9823ffd970d6ce6、S02-0617:ability:continuous:e9823ffd970d6ce6、S02-0618:ability:continuous:e9823ffd970d6ce6、S02-0619:ability:continuous:f0839056592c5ee2、ST01-07:ability:static:e3471cd2a7042e59、ST01-08:ability:static:9ba2f4f5354a2a05、ST01-09:ability:static:e3471cd2a7042e59、ST02-08:ability:static:e3471cd2a7042e59、ST03-05:ability:static:efd7771da618f0ac、ST04-07:ability:static:e3471cd2a7042e59、ST05-03:ability:continuous:3119db9911c31cf3、ST05-04:ability:static:e3471cd2a7042e59、ST05-08:ability:static:e3471cd2a7042e59、ST05-09:ability:static:e3471cd2a7042e59
-
-展示消费者出口：档案未声明展示边界。
+展示消费者出口：SnapshotFor。
 
 ## continuous:ramses-protection-and-entry-cost（已完成）
 
@@ -416,32 +404,25 @@
 
 展示消费者出口：档案未声明展示边界。
 
-## continuous:structured-combat-rule（未完成）
+## continuous:structured-combat-rule（已完成）
 
-绑定能力段：16。运行入口：attack-candidates = L12GameEngine.BuildLegalAttackTargets；attack-revalidation = L12GameEngine.TryValidateAttackTarget；combat-settlement = L12GameEngine.ResolveDefenseCore；condition-and-active-state = L12StructuredCardRules.CombatProfile；definition = L12StructuredCardRules.GetCombatRuleAbilities；master-protection = L12StructuredCardRules.ProtectsMasterFromTroops；support-source-revalidation = L12StructuredCardRules.CannotSupport；support-target-revalidation = L12StructuredCardRules.CannotReceiveBackRowSupport；trial-protection = L12StructuredCardRules.ProtectsActiveTrialLegions。
+绑定能力段：16。运行入口：attack-candidates = L12GameEngine.BuildLegalAttackTargets；attack-revalidation = L12GameEngine.TryValidateAttackTarget；combat-settlement = L12GameEngine.ResolveDefenseCore；condition-and-active-state = L12StructuredCardRules.CombatProfile；definition = L12StructuredCardRules.GetCombatRuleAbilities；master-protection = L12StructuredCardRules.ProtectsMasterFromTroops；presentation = L12GameEngine.SnapshotFor；support-source-revalidation = L12StructuredCardRules.CannotSupport；support-target-revalidation = L12StructuredCardRules.CannotReceiveBackRowSupport；trial-protection = L12StructuredCardRules.ProtectsActiveTrialLegions。
 档案附加检查：row-and-ready-condition, source-current-type, candidate-and-submit-parity, reconnect-derived-state。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 16（S01-0004:ability:static:1644ef88125b05c1、S01-0101:ability:static:1041797d91099ae1、S01-0101:ability:static:1f027ad861ea0006、S02-0002:ability:continuous:5643b9f0c6e298e6、S02-0005:ability:continuous:0663e3d5b31edc67、S02-0007:ability:continuous:602cafbbc29faa3f、S02-0101:ability:continuous:4cd3104ae17d316d、S02-0201:ability:continuous:39b0b1524eaed536、S02-02M1:ability:continuous:a83e1e0971bbe6f0、S02-0302:ability:continuous:48719a94741bbf36、S02-0503:ability:static:5e2fcb0f2798f57a、S02-0504:ability:static:0ada28f438439ac2、S02-0516:ability:static:17774ead9eb8ed69、S02-0603:ability:continuous:5e0d666ac6a386ba、S02-0609:ability:continuous:dc2aa603cc3d136c、S02-0616:ability:continuous:5afe2828d587391f） | 0 |
-| no-target | 0 | 16（S01-0004:ability:static:1644ef88125b05c1、S01-0101:ability:static:1041797d91099ae1、S01-0101:ability:static:1f027ad861ea0006、S02-0002:ability:continuous:5643b9f0c6e298e6、S02-0005:ability:continuous:0663e3d5b31edc67、S02-0007:ability:continuous:602cafbbc29faa3f、S02-0101:ability:continuous:4cd3104ae17d316d、S02-0201:ability:continuous:39b0b1524eaed536、S02-02M1:ability:continuous:a83e1e0971bbe6f0、S02-0302:ability:continuous:48719a94741bbf36、S02-0503:ability:static:5e2fcb0f2798f57a、S02-0504:ability:static:0ada28f438439ac2、S02-0516:ability:static:17774ead9eb8ed69、S02-0603:ability:continuous:5e0d666ac6a386ba、S02-0609:ability:continuous:dc2aa603cc3d136c、S02-0616:ability:continuous:5afe2828d587391f） | 0 |
+| normal | 16 | 0 | 0 |
+| no-target | 0 | 0 | 16 |
 | negated | 0 | 0 | 16 |
-| target-invalidated | 0 | 16（S01-0004:ability:static:1644ef88125b05c1、S01-0101:ability:static:1041797d91099ae1、S01-0101:ability:static:1f027ad861ea0006、S02-0002:ability:continuous:5643b9f0c6e298e6、S02-0005:ability:continuous:0663e3d5b31edc67、S02-0007:ability:continuous:602cafbbc29faa3f、S02-0101:ability:continuous:4cd3104ae17d316d、S02-0201:ability:continuous:39b0b1524eaed536、S02-02M1:ability:continuous:a83e1e0971bbe6f0、S02-0302:ability:continuous:48719a94741bbf36、S02-0503:ability:static:5e2fcb0f2798f57a、S02-0504:ability:static:0ada28f438439ac2、S02-0516:ability:static:17774ead9eb8ed69、S02-0603:ability:continuous:5e0d666ac6a386ba、S02-0609:ability:continuous:dc2aa603cc3d136c、S02-0616:ability:continuous:5afe2828d587391f） | 0 |
+| target-invalidated | 0 | 0 | 16 |
 | duplicate-submit | 0 | 0 | 16 |
-| reconnect | 0 | 16（S01-0004:ability:static:1644ef88125b05c1、S01-0101:ability:static:1041797d91099ae1、S01-0101:ability:static:1f027ad861ea0006、S02-0002:ability:continuous:5643b9f0c6e298e6、S02-0005:ability:continuous:0663e3d5b31edc67、S02-0007:ability:continuous:602cafbbc29faa3f、S02-0101:ability:continuous:4cd3104ae17d316d、S02-0201:ability:continuous:39b0b1524eaed536、S02-02M1:ability:continuous:a83e1e0971bbe6f0、S02-0302:ability:continuous:48719a94741bbf36、S02-0503:ability:static:5e2fcb0f2798f57a、S02-0504:ability:static:0ada28f438439ac2、S02-0516:ability:static:17774ead9eb8ed69、S02-0603:ability:continuous:5e0d666ac6a386ba、S02-0609:ability:continuous:dc2aa603cc3d136c、S02-0616:ability:continuous:5afe2828d587391f） | 0 |
+| reconnect | 16 | 0 | 0 |
 | payment-cancel | 0 | 0 | 16 |
 | single-candidate-choice | 0 | 0 | 16 |
 | multi-target-applicability | 0 | 0 | 16 |
-| presentation-consumers | 0 | 16（S01-0004:ability:static:1644ef88125b05c1、S01-0101:ability:static:1041797d91099ae1、S01-0101:ability:static:1f027ad861ea0006、S02-0002:ability:continuous:5643b9f0c6e298e6、S02-0005:ability:continuous:0663e3d5b31edc67、S02-0007:ability:continuous:602cafbbc29faa3f、S02-0101:ability:continuous:4cd3104ae17d316d、S02-0201:ability:continuous:39b0b1524eaed536、S02-02M1:ability:continuous:a83e1e0971bbe6f0、S02-0302:ability:continuous:48719a94741bbf36、S02-0503:ability:static:5e2fcb0f2798f57a、S02-0504:ability:static:0ada28f438439ac2、S02-0516:ability:static:17774ead9eb8ed69、S02-0603:ability:continuous:5e0d666ac6a386ba、S02-0609:ability:continuous:dc2aa603cc3d136c、S02-0616:ability:continuous:5afe2828d587391f） | 0 |
+| presentation-consumers | 16 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S01-0004:ability:static:1644ef88125b05c1、S01-0101:ability:static:1041797d91099ae1、S01-0101:ability:static:1f027ad861ea0006、S02-0002:ability:continuous:5643b9f0c6e298e6、S02-0005:ability:continuous:0663e3d5b31edc67、S02-0007:ability:continuous:602cafbbc29faa3f、S02-0101:ability:continuous:4cd3104ae17d316d、S02-0201:ability:continuous:39b0b1524eaed536、S02-02M1:ability:continuous:a83e1e0971bbe6f0、S02-0302:ability:continuous:48719a94741bbf36、S02-0503:ability:static:5e2fcb0f2798f57a、S02-0504:ability:static:0ada28f438439ac2、S02-0516:ability:static:17774ead9eb8ed69、S02-0603:ability:continuous:5e0d666ac6a386ba、S02-0609:ability:continuous:dc2aa603cc3d136c、S02-0616:ability:continuous:5afe2828d587391f
-- `no-target`（无目标/不能发动）：S01-0004:ability:static:1644ef88125b05c1、S01-0101:ability:static:1041797d91099ae1、S01-0101:ability:static:1f027ad861ea0006、S02-0002:ability:continuous:5643b9f0c6e298e6、S02-0005:ability:continuous:0663e3d5b31edc67、S02-0007:ability:continuous:602cafbbc29faa3f、S02-0101:ability:continuous:4cd3104ae17d316d、S02-0201:ability:continuous:39b0b1524eaed536、S02-02M1:ability:continuous:a83e1e0971bbe6f0、S02-0302:ability:continuous:48719a94741bbf36、S02-0503:ability:static:5e2fcb0f2798f57a、S02-0504:ability:static:0ada28f438439ac2、S02-0516:ability:static:17774ead9eb8ed69、S02-0603:ability:continuous:5e0d666ac6a386ba、S02-0609:ability:continuous:dc2aa603cc3d136c、S02-0616:ability:continuous:5afe2828d587391f
-- `target-invalidated`（已声明对象逆结算失效）：S01-0004:ability:static:1644ef88125b05c1、S01-0101:ability:static:1041797d91099ae1、S01-0101:ability:static:1f027ad861ea0006、S02-0002:ability:continuous:5643b9f0c6e298e6、S02-0005:ability:continuous:0663e3d5b31edc67、S02-0007:ability:continuous:602cafbbc29faa3f、S02-0101:ability:continuous:4cd3104ae17d316d、S02-0201:ability:continuous:39b0b1524eaed536、S02-02M1:ability:continuous:a83e1e0971bbe6f0、S02-0302:ability:continuous:48719a94741bbf36、S02-0503:ability:static:5e2fcb0f2798f57a、S02-0504:ability:static:0ada28f438439ac2、S02-0516:ability:static:17774ead9eb8ed69、S02-0603:ability:continuous:5e0d666ac6a386ba、S02-0609:ability:continuous:dc2aa603cc3d136c、S02-0616:ability:continuous:5afe2828d587391f
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S01-0004:ability:static:1644ef88125b05c1、S01-0101:ability:static:1041797d91099ae1、S01-0101:ability:static:1f027ad861ea0006、S02-0002:ability:continuous:5643b9f0c6e298e6、S02-0005:ability:continuous:0663e3d5b31edc67、S02-0007:ability:continuous:602cafbbc29faa3f、S02-0101:ability:continuous:4cd3104ae17d316d、S02-0201:ability:continuous:39b0b1524eaed536、S02-02M1:ability:continuous:a83e1e0971bbe6f0、S02-0302:ability:continuous:48719a94741bbf36、S02-0503:ability:static:5e2fcb0f2798f57a、S02-0504:ability:static:0ada28f438439ac2、S02-0516:ability:static:17774ead9eb8ed69、S02-0603:ability:continuous:5e0d666ac6a386ba、S02-0609:ability:continuous:dc2aa603cc3d136c、S02-0616:ability:continuous:5afe2828d587391f
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S01-0004:ability:static:1644ef88125b05c1、S01-0101:ability:static:1041797d91099ae1、S01-0101:ability:static:1f027ad861ea0006、S02-0002:ability:continuous:5643b9f0c6e298e6、S02-0005:ability:continuous:0663e3d5b31edc67、S02-0007:ability:continuous:602cafbbc29faa3f、S02-0101:ability:continuous:4cd3104ae17d316d、S02-0201:ability:continuous:39b0b1524eaed536、S02-02M1:ability:continuous:a83e1e0971bbe6f0、S02-0302:ability:continuous:48719a94741bbf36、S02-0503:ability:static:5e2fcb0f2798f57a、S02-0504:ability:static:0ada28f438439ac2、S02-0516:ability:static:17774ead9eb8ed69、S02-0603:ability:continuous:5e0d666ac6a386ba、S02-0609:ability:continuous:dc2aa603cc3d136c、S02-0616:ability:continuous:5afe2828d587391f
-
-展示消费者出口：档案未声明展示边界。
+展示消费者出口：SnapshotFor。
 
 ## continuous:summon-turn-counter-protection（已完成）
 
@@ -563,31 +544,25 @@
 
 展示消费者出口：档案未声明展示边界。
 
-## disaster:continuous-rule（未完成）
+## disaster:continuous-rule（已完成）
 
-绑定能力段：14。运行入口：attack-legion-validation = L12GameEngine.TryValidateAttackTarget；attack-master-validation = L12GameEngine.CanAttackMasterTarget；disaster-value = L12GameEngine.SetDisasterValue；effect-hook = L12GameEngine.PushEffect；hand-cost = L12GameEngine.GetPlayCostWithSigurdDiscount；main-phase-effect = L12GameEngine.BeginMainPhaseDisasterEffect；master-ability-quote = L12GameEngine.QuoteActiveMorale；placement-and-movement = L12GameEngine.PlayCard；rule-registry = L12ActiveDisasterRules.HasRegisteredContinuousRule。
+绑定能力段：14。运行入口：attack-legion-validation = L12GameEngine.TryValidateAttackTarget；attack-master-validation = L12GameEngine.CanAttackMasterTarget；disaster-value = L12GameEngine.SetDisasterValue；effect-hook = L12GameEngine.PushEffect；hand-cost = L12GameEngine.GetPlayCostWithSigurdDiscount；main-phase-effect = L12GameEngine.BeginMainPhaseDisasterEffect；master-ability-quote = L12GameEngine.QuoteActiveMorale；placement-and-movement = L12GameEngine.PlayCard；presentation = L12GameEngine.SnapshotFor；rule-registry = L12ActiveDisasterRules.HasRegisteredContinuousRule。
 档案附加检查：registry-closed-set, condition-current, authoritative-consumer。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 14（S01-DS01:ability:static:9d604388d9725837、S01-DS02:ability:static:4408d437a8ab5e5a、S01-DS03:ability:static:70004a014a03d2a0、S01-DS04:ability:attack:68f2ff0b600a41e8、S01-DS04:ability:static:017c7359962a2512、S01-DS08:ability:static:3e7cd5724f09420c、S01-DS10:ability:static:33501d2503c08b73、S02-DS01:ability:static:31558cb4f3e2c3da、S02-DS02:ability:static:01aeea1f7fc7e317、S02-DS03:ability:continuous:fed4f60f2af1523c、S02-DS04:ability:static:00575cc9fcb1aaaa、S02-DS05:ability:attack:4326fa5eef9e6e3a、S02-DS05:ability:static:335d304b639c5d3f、S02-DS06:ability:static:c1632b7b22b87c4f） | 0 |
+| normal | 14 | 0 | 0 |
 | no-target | 0 | 0 | 14 |
 | negated | 0 | 0 | 14 |
 | target-invalidated | 0 | 0 | 14 |
 | duplicate-submit | 0 | 0 | 14 |
-| reconnect | 0 | 14（S01-DS01:ability:static:9d604388d9725837、S01-DS02:ability:static:4408d437a8ab5e5a、S01-DS03:ability:static:70004a014a03d2a0、S01-DS04:ability:attack:68f2ff0b600a41e8、S01-DS04:ability:static:017c7359962a2512、S01-DS08:ability:static:3e7cd5724f09420c、S01-DS10:ability:static:33501d2503c08b73、S02-DS01:ability:static:31558cb4f3e2c3da、S02-DS02:ability:static:01aeea1f7fc7e317、S02-DS03:ability:continuous:fed4f60f2af1523c、S02-DS04:ability:static:00575cc9fcb1aaaa、S02-DS05:ability:attack:4326fa5eef9e6e3a、S02-DS05:ability:static:335d304b639c5d3f、S02-DS06:ability:static:c1632b7b22b87c4f） | 0 |
+| reconnect | 14 | 0 | 0 |
 | payment-cancel | 0 | 0 | 14 |
-| single-candidate-choice | 0 | 2（S01-DS01:ability:static:9d604388d9725837、S02-DS05:ability:static:335d304b639c5d3f） | 12 |
+| single-candidate-choice | 0 | 0 | 14 |
 | multi-target-applicability | 0 | 0 | 14 |
-| presentation-consumers | 0 | 14（S01-DS01:ability:static:9d604388d9725837、S01-DS02:ability:static:4408d437a8ab5e5a、S01-DS03:ability:static:70004a014a03d2a0、S01-DS04:ability:attack:68f2ff0b600a41e8、S01-DS04:ability:static:017c7359962a2512、S01-DS08:ability:static:3e7cd5724f09420c、S01-DS10:ability:static:33501d2503c08b73、S02-DS01:ability:static:31558cb4f3e2c3da、S02-DS02:ability:static:01aeea1f7fc7e317、S02-DS03:ability:continuous:fed4f60f2af1523c、S02-DS04:ability:static:00575cc9fcb1aaaa、S02-DS05:ability:attack:4326fa5eef9e6e3a、S02-DS05:ability:static:335d304b639c5d3f、S02-DS06:ability:static:c1632b7b22b87c4f） | 0 |
+| presentation-consumers | 14 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S01-DS01:ability:static:9d604388d9725837、S01-DS02:ability:static:4408d437a8ab5e5a、S01-DS03:ability:static:70004a014a03d2a0、S01-DS04:ability:attack:68f2ff0b600a41e8、S01-DS04:ability:static:017c7359962a2512、S01-DS08:ability:static:3e7cd5724f09420c、S01-DS10:ability:static:33501d2503c08b73、S02-DS01:ability:static:31558cb4f3e2c3da、S02-DS02:ability:static:01aeea1f7fc7e317、S02-DS03:ability:continuous:fed4f60f2af1523c、S02-DS04:ability:static:00575cc9fcb1aaaa、S02-DS05:ability:attack:4326fa5eef9e6e3a、S02-DS05:ability:static:335d304b639c5d3f、S02-DS06:ability:static:c1632b7b22b87c4f
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S01-DS01:ability:static:9d604388d9725837、S01-DS02:ability:static:4408d437a8ab5e5a、S01-DS03:ability:static:70004a014a03d2a0、S01-DS04:ability:attack:68f2ff0b600a41e8、S01-DS04:ability:static:017c7359962a2512、S01-DS08:ability:static:3e7cd5724f09420c、S01-DS10:ability:static:33501d2503c08b73、S02-DS01:ability:static:31558cb4f3e2c3da、S02-DS02:ability:static:01aeea1f7fc7e317、S02-DS03:ability:continuous:fed4f60f2af1523c、S02-DS04:ability:static:00575cc9fcb1aaaa、S02-DS05:ability:attack:4326fa5eef9e6e3a、S02-DS05:ability:static:335d304b639c5d3f、S02-DS06:ability:static:c1632b7b22b87c4f
-- `single-candidate-choice`（有对象选择时的唯一候选仍选择）：S01-DS01:ability:static:9d604388d9725837、S02-DS05:ability:static:335d304b639c5d3f
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S01-DS01:ability:static:9d604388d9725837、S01-DS02:ability:static:4408d437a8ab5e5a、S01-DS03:ability:static:70004a014a03d2a0、S01-DS04:ability:attack:68f2ff0b600a41e8、S01-DS04:ability:static:017c7359962a2512、S01-DS08:ability:static:3e7cd5724f09420c、S01-DS10:ability:static:33501d2503c08b73、S02-DS01:ability:static:31558cb4f3e2c3da、S02-DS02:ability:static:01aeea1f7fc7e317、S02-DS03:ability:continuous:fed4f60f2af1523c、S02-DS04:ability:static:00575cc9fcb1aaaa、S02-DS05:ability:attack:4326fa5eef9e6e3a、S02-DS05:ability:static:335d304b639c5d3f、S02-DS06:ability:static:c1632b7b22b87c4f
-
-展示消费者出口：档案未声明展示边界。
+展示消费者出口：SnapshotFor。
 
 ## granted-static:front-row-taunt-on-kill（已完成）
 
@@ -599,7 +574,7 @@
 | normal | 1 | 0 | 0 |
 | no-target | 0 | 0 | 1 |
 | negated | 0 | 0 | 1 |
-| target-invalidated | 1 | 0 | 0 |
+| target-invalidated | 0 | 0 | 1 |
 | duplicate-submit | 0 | 0 | 1 |
 | reconnect | 1 | 0 | 0 |
 | payment-cancel | 0 | 0 | 1 |
@@ -669,94 +644,65 @@
 
 展示消费者出口：ResolveEffectPresentationSceneId。
 
-## granted:prayer-modes（未完成）
+## granted:prayer-modes（已完成）
 
-绑定能力段：2。运行入口：preview = L12GameEngine.BeginPrayerPublicPreview；settle = L12GameEngine.TryResolveS2UniversalTactic。
+绑定能力段：2。运行入口：presentation = L12GameEngine.SnapshotFor；preview = L12GameEngine.BeginPrayerPublicPreview；private-preview = L12GameEngine.BeginPrayerPrivatePreview；settle = L12GameEngine.TryResolveS2UniversalTactic。
 档案附加检查：authoritative-consumer。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 2（S02-0012:ability:granted:1c5ef0343f70615c、S02-0012:ability:granted:e5bb0cce96aba072） | 0 |
-| no-target | 0 | 2（S02-0012:ability:granted:1c5ef0343f70615c、S02-0012:ability:granted:e5bb0cce96aba072） | 0 |
-| negated | 0 | 2（S02-0012:ability:granted:1c5ef0343f70615c、S02-0012:ability:granted:e5bb0cce96aba072） | 0 |
-| target-invalidated | 0 | 2（S02-0012:ability:granted:1c5ef0343f70615c、S02-0012:ability:granted:e5bb0cce96aba072） | 0 |
-| duplicate-submit | 0 | 2（S02-0012:ability:granted:1c5ef0343f70615c、S02-0012:ability:granted:e5bb0cce96aba072） | 0 |
-| reconnect | 0 | 2（S02-0012:ability:granted:1c5ef0343f70615c、S02-0012:ability:granted:e5bb0cce96aba072） | 0 |
-| payment-cancel | 0 | 1（S02-0012:ability:granted:e5bb0cce96aba072） | 1 |
+| normal | 2 | 0 | 0 |
+| no-target | 2 | 0 | 0 |
+| negated | 2 | 0 | 0 |
+| target-invalidated | 0 | 0 | 2 |
+| duplicate-submit | 2 | 0 | 0 |
+| reconnect | 2 | 0 | 0 |
+| payment-cancel | 1 | 0 | 1 |
 | single-candidate-choice | 0 | 0 | 2 |
 | multi-target-applicability | 0 | 0 | 2 |
-| presentation-consumers | 0 | 2（S02-0012:ability:granted:1c5ef0343f70615c、S02-0012:ability:granted:e5bb0cce96aba072） | 0 |
+| presentation-consumers | 2 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S02-0012:ability:granted:1c5ef0343f70615c、S02-0012:ability:granted:e5bb0cce96aba072
-- `no-target`（无目标/不能发动）：S02-0012:ability:granted:1c5ef0343f70615c、S02-0012:ability:granted:e5bb0cce96aba072
-- `negated`（已支付后被无效）：S02-0012:ability:granted:1c5ef0343f70615c、S02-0012:ability:granted:e5bb0cce96aba072
-- `target-invalidated`（已声明对象逆结算失效）：S02-0012:ability:granted:1c5ef0343f70615c、S02-0012:ability:granted:e5bb0cce96aba072
-- `duplicate-submit`（重复或过期提交）：S02-0012:ability:granted:1c5ef0343f70615c、S02-0012:ability:granted:e5bb0cce96aba072
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S02-0012:ability:granted:1c5ef0343f70615c、S02-0012:ability:granted:e5bb0cce96aba072
-- `payment-cancel`（有费用时的取消/支付失败兜底）：S02-0012:ability:granted:e5bb0cce96aba072
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S02-0012:ability:granted:1c5ef0343f70615c、S02-0012:ability:granted:e5bb0cce96aba072
+展示消费者出口：SnapshotFor。
 
-展示消费者出口：档案未声明展示边界。
+## granted:ruined-ritual-modes（已完成）
 
-## granted:ruined-ritual-modes（未完成）
-
-绑定能力段：2。运行入口：response-commit = L12GameEngine.CommitS2CounterResponse；settle = L12GameEngine.ResolveS2CounterEffect。
+绑定能力段：2。运行入口：presentation = L12GameEngine.SnapshotFor；response-commit = L12GameEngine.CommitS2CounterResponse；settle = L12GameEngine.ResolveS2CounterEffect。
 档案附加检查：authoritative-consumer。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 2（S02-0016:ability:granted:df2c369f365d4497、S02-0016:ability:granted:dfd998389876f15e） | 0 |
-| no-target | 0 | 2（S02-0016:ability:granted:df2c369f365d4497、S02-0016:ability:granted:dfd998389876f15e） | 0 |
-| negated | 0 | 2（S02-0016:ability:granted:df2c369f365d4497、S02-0016:ability:granted:dfd998389876f15e） | 0 |
-| target-invalidated | 0 | 2（S02-0016:ability:granted:df2c369f365d4497、S02-0016:ability:granted:dfd998389876f15e） | 0 |
-| duplicate-submit | 0 | 2（S02-0016:ability:granted:df2c369f365d4497、S02-0016:ability:granted:dfd998389876f15e） | 0 |
-| reconnect | 0 | 2（S02-0016:ability:granted:df2c369f365d4497、S02-0016:ability:granted:dfd998389876f15e） | 0 |
+| normal | 2 | 0 | 0 |
+| no-target | 2 | 0 | 0 |
+| negated | 2 | 0 | 0 |
+| target-invalidated | 0 | 0 | 2 |
+| duplicate-submit | 2 | 0 | 0 |
+| reconnect | 2 | 0 | 0 |
 | payment-cancel | 0 | 0 | 2 |
 | single-candidate-choice | 0 | 0 | 2 |
 | multi-target-applicability | 0 | 0 | 2 |
-| presentation-consumers | 0 | 2（S02-0016:ability:granted:df2c369f365d4497、S02-0016:ability:granted:dfd998389876f15e） | 0 |
+| presentation-consumers | 2 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S02-0016:ability:granted:df2c369f365d4497、S02-0016:ability:granted:dfd998389876f15e
-- `no-target`（无目标/不能发动）：S02-0016:ability:granted:df2c369f365d4497、S02-0016:ability:granted:dfd998389876f15e
-- `negated`（已支付后被无效）：S02-0016:ability:granted:df2c369f365d4497、S02-0016:ability:granted:dfd998389876f15e
-- `target-invalidated`（已声明对象逆结算失效）：S02-0016:ability:granted:df2c369f365d4497、S02-0016:ability:granted:dfd998389876f15e
-- `duplicate-submit`（重复或过期提交）：S02-0016:ability:granted:df2c369f365d4497、S02-0016:ability:granted:dfd998389876f15e
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S02-0016:ability:granted:df2c369f365d4497、S02-0016:ability:granted:dfd998389876f15e
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S02-0016:ability:granted:df2c369f365d4497、S02-0016:ability:granted:dfd998389876f15e
+展示消费者出口：SnapshotFor。
 
-展示消费者出口：档案未声明展示边界。
+## granted:tenka-modes（已完成）
 
-## granted:tenka-modes（未完成）
-
-绑定能力段：3。运行入口：attack-bonus = L12GameEngine.Attack；free-move = L12GameEngine.Move；settle = L12GameEngine.TryResolveS2FactionTactic。
+绑定能力段：3。运行入口：attack-bonus = L12GameEngine.Attack；free-move = L12GameEngine.Move；presentation = L12GameEngine.ResolveEffectPresentationSceneId；settle = L12GameEngine.TryResolveS2FactionTactic。
 档案附加检查：authoritative-consumer。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 3（S02-0406:ability:granted:4f1f5a1d4791b5ef、S02-0406:ability:granted:4f26e688b66affd4、S02-0406:ability:granted:6aa04cbf27f6b4b7） | 0 |
-| no-target | 0 | 3（S02-0406:ability:granted:4f1f5a1d4791b5ef、S02-0406:ability:granted:4f26e688b66affd4、S02-0406:ability:granted:6aa04cbf27f6b4b7） | 0 |
-| negated | 0 | 3（S02-0406:ability:granted:4f1f5a1d4791b5ef、S02-0406:ability:granted:4f26e688b66affd4、S02-0406:ability:granted:6aa04cbf27f6b4b7） | 0 |
-| target-invalidated | 0 | 3（S02-0406:ability:granted:4f1f5a1d4791b5ef、S02-0406:ability:granted:4f26e688b66affd4、S02-0406:ability:granted:6aa04cbf27f6b4b7） | 0 |
-| duplicate-submit | 0 | 3（S02-0406:ability:granted:4f1f5a1d4791b5ef、S02-0406:ability:granted:4f26e688b66affd4、S02-0406:ability:granted:6aa04cbf27f6b4b7） | 0 |
-| reconnect | 0 | 3（S02-0406:ability:granted:4f1f5a1d4791b5ef、S02-0406:ability:granted:4f26e688b66affd4、S02-0406:ability:granted:6aa04cbf27f6b4b7） | 0 |
+| normal | 3 | 0 | 0 |
+| no-target | 3 | 0 | 0 |
+| negated | 3 | 0 | 0 |
+| target-invalidated | 0 | 0 | 3 |
+| duplicate-submit | 3 | 0 | 0 |
+| reconnect | 3 | 0 | 0 |
 | payment-cancel | 0 | 0 | 3 |
-| single-candidate-choice | 0 | 1（S02-0406:ability:granted:4f1f5a1d4791b5ef） | 2 |
+| single-candidate-choice | 0 | 0 | 3 |
 | multi-target-applicability | 0 | 0 | 3 |
-| presentation-consumers | 0 | 3（S02-0406:ability:granted:4f1f5a1d4791b5ef、S02-0406:ability:granted:4f26e688b66affd4、S02-0406:ability:granted:6aa04cbf27f6b4b7） | 0 |
+| presentation-consumers | 3 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S02-0406:ability:granted:4f1f5a1d4791b5ef、S02-0406:ability:granted:4f26e688b66affd4、S02-0406:ability:granted:6aa04cbf27f6b4b7
-- `no-target`（无目标/不能发动）：S02-0406:ability:granted:4f1f5a1d4791b5ef、S02-0406:ability:granted:4f26e688b66affd4、S02-0406:ability:granted:6aa04cbf27f6b4b7
-- `negated`（已支付后被无效）：S02-0406:ability:granted:4f1f5a1d4791b5ef、S02-0406:ability:granted:4f26e688b66affd4、S02-0406:ability:granted:6aa04cbf27f6b4b7
-- `target-invalidated`（已声明对象逆结算失效）：S02-0406:ability:granted:4f1f5a1d4791b5ef、S02-0406:ability:granted:4f26e688b66affd4、S02-0406:ability:granted:6aa04cbf27f6b4b7
-- `duplicate-submit`（重复或过期提交）：S02-0406:ability:granted:4f1f5a1d4791b5ef、S02-0406:ability:granted:4f26e688b66affd4、S02-0406:ability:granted:6aa04cbf27f6b4b7
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S02-0406:ability:granted:4f1f5a1d4791b5ef、S02-0406:ability:granted:4f26e688b66affd4、S02-0406:ability:granted:6aa04cbf27f6b4b7
-- `single-candidate-choice`（有对象选择时的唯一候选仍选择）：S02-0406:ability:granted:4f1f5a1d4791b5ef
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S02-0406:ability:granted:4f1f5a1d4791b5ef、S02-0406:ability:granted:4f26e688b66affd4、S02-0406:ability:granted:6aa04cbf27f6b4b7
-
-展示消费者出口：档案未声明展示边界。
+展示消费者出口：ResolveEffectPresentationSceneId。
 
 ## hand-play:artifact-block（已完成）
 
@@ -778,81 +724,63 @@
 
 展示消费者出口：档案未声明展示边界。
 
-## hand-play:printed-entry-cost-condition（未完成）
+## hand-play:printed-entry-cost-condition（已完成）
 
-绑定能力段：8。运行入口：button-and-snapshot = L12GameEngine.SnapshotHand；combined-play-cost = L12GameEngine.GetPlayCostWithSigurdDiscount；condition-and-calculation = L12GameEngine.PrintedEntryCostModifier；definition = L12StructuredCardSemantics.PrintedEntryCostRule；resource-payment = L12GameEngine.EnsurePlayResourcePaymentChoice。
+绑定能力段：8。运行入口：button-and-snapshot = L12GameEngine.SnapshotHand；combined-play-cost = L12GameEngine.GetPlayCostWithSigurdDiscount；condition-and-calculation = L12GameEngine.PrintedEntryCostModifier；definition = L12StructuredCardSemantics.PrintedEntryCostRule；presentation = L12GameEngine.SnapshotHand；resource-payment = L12GameEngine.EnsurePlayResourcePaymentChoice。
 档案附加检查：condition-false, zero-floor, payment-cancel, reconnect-payment, display-and-payment-parity。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 8（S01-0104:ability:static:a91d7d481db612a9、S01-0114:ability:static:a91d7d481db612a9、S01-0301:ability:static:71dd875155781eb0、S01-0302:ability:static:acc29b0ca499d087、S01-0305:ability:static:9ed1ca8df2e5f029、S01-0306:ability:static:9ed1ca8df2e5f029、S02-0202:ability:continuous:94759febdd62fd32、S02-0203:ability:continuous:418e71545576e12d） | 0 |
+| normal | 8 | 0 | 0 |
 | no-target | 0 | 0 | 8 |
 | negated | 0 | 0 | 8 |
 | target-invalidated | 0 | 0 | 8 |
-| duplicate-submit | 0 | 8（S01-0104:ability:static:a91d7d481db612a9、S01-0114:ability:static:a91d7d481db612a9、S01-0301:ability:static:71dd875155781eb0、S01-0302:ability:static:acc29b0ca499d087、S01-0305:ability:static:9ed1ca8df2e5f029、S01-0306:ability:static:9ed1ca8df2e5f029、S02-0202:ability:continuous:94759febdd62fd32、S02-0203:ability:continuous:418e71545576e12d） | 0 |
-| reconnect | 0 | 8（S01-0104:ability:static:a91d7d481db612a9、S01-0114:ability:static:a91d7d481db612a9、S01-0301:ability:static:71dd875155781eb0、S01-0302:ability:static:acc29b0ca499d087、S01-0305:ability:static:9ed1ca8df2e5f029、S01-0306:ability:static:9ed1ca8df2e5f029、S02-0202:ability:continuous:94759febdd62fd32、S02-0203:ability:continuous:418e71545576e12d） | 0 |
+| duplicate-submit | 8 | 0 | 0 |
+| reconnect | 8 | 0 | 0 |
 | payment-cancel | 0 | 0 | 8 |
 | single-candidate-choice | 0 | 0 | 8 |
 | multi-target-applicability | 0 | 0 | 8 |
-| presentation-consumers | 0 | 8（S01-0104:ability:static:a91d7d481db612a9、S01-0114:ability:static:a91d7d481db612a9、S01-0301:ability:static:71dd875155781eb0、S01-0302:ability:static:acc29b0ca499d087、S01-0305:ability:static:9ed1ca8df2e5f029、S01-0306:ability:static:9ed1ca8df2e5f029、S02-0202:ability:continuous:94759febdd62fd32、S02-0203:ability:continuous:418e71545576e12d） | 0 |
+| presentation-consumers | 8 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S01-0104:ability:static:a91d7d481db612a9、S01-0114:ability:static:a91d7d481db612a9、S01-0301:ability:static:71dd875155781eb0、S01-0302:ability:static:acc29b0ca499d087、S01-0305:ability:static:9ed1ca8df2e5f029、S01-0306:ability:static:9ed1ca8df2e5f029、S02-0202:ability:continuous:94759febdd62fd32、S02-0203:ability:continuous:418e71545576e12d
-- `duplicate-submit`（重复或过期提交）：S01-0104:ability:static:a91d7d481db612a9、S01-0114:ability:static:a91d7d481db612a9、S01-0301:ability:static:71dd875155781eb0、S01-0302:ability:static:acc29b0ca499d087、S01-0305:ability:static:9ed1ca8df2e5f029、S01-0306:ability:static:9ed1ca8df2e5f029、S02-0202:ability:continuous:94759febdd62fd32、S02-0203:ability:continuous:418e71545576e12d
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S01-0104:ability:static:a91d7d481db612a9、S01-0114:ability:static:a91d7d481db612a9、S01-0301:ability:static:71dd875155781eb0、S01-0302:ability:static:acc29b0ca499d087、S01-0305:ability:static:9ed1ca8df2e5f029、S01-0306:ability:static:9ed1ca8df2e5f029、S02-0202:ability:continuous:94759febdd62fd32、S02-0203:ability:continuous:418e71545576e12d
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S01-0104:ability:static:a91d7d481db612a9、S01-0114:ability:static:a91d7d481db612a9、S01-0301:ability:static:71dd875155781eb0、S01-0302:ability:static:acc29b0ca499d087、S01-0305:ability:static:9ed1ca8df2e5f029、S01-0306:ability:static:9ed1ca8df2e5f029、S02-0202:ability:continuous:94759febdd62fd32、S02-0203:ability:continuous:418e71545576e12d
+展示消费者出口：SnapshotHand。
 
-展示消费者出口：档案未声明展示边界。
+## hand-play:self-damage-entry-discount（已完成）
 
-## hand-play:self-damage-entry-discount（未完成）
-
-绑定能力段：6。运行入口：cost-calculation = L12GameEngine.GetPlayCostWithSigurdDiscount；declaration-and-choice = L12GameEngine.PlayCard；definition = L12StructuredCardRules.SelfDamageEntryDiscount；resource-payment = L12GameEngine.EnsurePlayResourcePaymentChoice；self-damage-payment = L12GameEngine.PayMasterDamageCostAndCanContinue。
+绑定能力段：6。运行入口：cost-calculation = L12GameEngine.GetPlayCostWithSigurdDiscount；declaration-and-choice = L12GameEngine.PlayCard；definition = L12StructuredCardRules.SelfDamageEntryDiscount；presentation = L12GameEngine.SnapshotHand；resource-payment = L12GameEngine.EnsurePlayResourcePaymentChoice；self-damage-payment = L12GameEngine.PayMasterDamageCostAndCanContinue。
 档案附加检查：optional-choice, payment-cancel, last-health-terminal, reconnect-payment, card-remains-on-lethal-cost。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 6（S01-0303:ability:hand-play:5e06807975eda2b7、S01-0304:ability:hand-play:5e06807975eda2b7、S01-0308:ability:hand-play:5e06807975eda2b7、S01-0310:ability:hand-play:5e06807975eda2b7、S01-0314:ability:hand-play:5e06807975eda2b7、S02-0303:ability:hand-play:5e06807975eda2b7） | 0 |
+| normal | 6 | 0 | 0 |
 | no-target | 0 | 0 | 6 |
 | negated | 0 | 0 | 6 |
 | target-invalidated | 0 | 0 | 6 |
-| duplicate-submit | 0 | 6（S01-0303:ability:hand-play:5e06807975eda2b7、S01-0304:ability:hand-play:5e06807975eda2b7、S01-0308:ability:hand-play:5e06807975eda2b7、S01-0310:ability:hand-play:5e06807975eda2b7、S01-0314:ability:hand-play:5e06807975eda2b7、S02-0303:ability:hand-play:5e06807975eda2b7） | 0 |
+| duplicate-submit | 6 | 0 | 0 |
 | reconnect | 6 | 0 | 0 |
-| payment-cancel | 0 | 6（S01-0303:ability:hand-play:5e06807975eda2b7、S01-0304:ability:hand-play:5e06807975eda2b7、S01-0308:ability:hand-play:5e06807975eda2b7、S01-0310:ability:hand-play:5e06807975eda2b7、S01-0314:ability:hand-play:5e06807975eda2b7、S02-0303:ability:hand-play:5e06807975eda2b7） | 0 |
+| payment-cancel | 6 | 0 | 0 |
 | single-candidate-choice | 0 | 0 | 6 |
 | multi-target-applicability | 0 | 0 | 6 |
-| presentation-consumers | 0 | 6（S01-0303:ability:hand-play:5e06807975eda2b7、S01-0304:ability:hand-play:5e06807975eda2b7、S01-0308:ability:hand-play:5e06807975eda2b7、S01-0310:ability:hand-play:5e06807975eda2b7、S01-0314:ability:hand-play:5e06807975eda2b7、S02-0303:ability:hand-play:5e06807975eda2b7） | 0 |
+| presentation-consumers | 6 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S01-0303:ability:hand-play:5e06807975eda2b7、S01-0304:ability:hand-play:5e06807975eda2b7、S01-0308:ability:hand-play:5e06807975eda2b7、S01-0310:ability:hand-play:5e06807975eda2b7、S01-0314:ability:hand-play:5e06807975eda2b7、S02-0303:ability:hand-play:5e06807975eda2b7
-- `duplicate-submit`（重复或过期提交）：S01-0303:ability:hand-play:5e06807975eda2b7、S01-0304:ability:hand-play:5e06807975eda2b7、S01-0308:ability:hand-play:5e06807975eda2b7、S01-0310:ability:hand-play:5e06807975eda2b7、S01-0314:ability:hand-play:5e06807975eda2b7、S02-0303:ability:hand-play:5e06807975eda2b7
-- `payment-cancel`（有费用时的取消/支付失败兜底）：S01-0303:ability:hand-play:5e06807975eda2b7、S01-0304:ability:hand-play:5e06807975eda2b7、S01-0308:ability:hand-play:5e06807975eda2b7、S01-0310:ability:hand-play:5e06807975eda2b7、S01-0314:ability:hand-play:5e06807975eda2b7、S02-0303:ability:hand-play:5e06807975eda2b7
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S01-0303:ability:hand-play:5e06807975eda2b7、S01-0304:ability:hand-play:5e06807975eda2b7、S01-0308:ability:hand-play:5e06807975eda2b7、S01-0310:ability:hand-play:5e06807975eda2b7、S01-0314:ability:hand-play:5e06807975eda2b7、S02-0303:ability:hand-play:5e06807975eda2b7
+展示消费者出口：SnapshotHand。
 
-展示消费者出口：档案未声明展示边界。
-
-## hand-play:structured-hand-condition-cost（未完成）
+## hand-play:structured-hand-condition-cost（已完成）
 
 绑定能力段：10。运行入口：button-and-snapshot = L12GameEngine.SnapshotHand；combined-play-cost = L12GameEngine.GetPlayCostWithSigurdDiscount；condition-and-calculation = L12StructuredCardRules.HandPlayCostModifier；definition = L12StructuredCardRules.TryGetStructuredAbilities；resource-payment = L12GameEngine.EnsurePlayResourcePaymentChoice。
 档案附加检查：condition-false, source-still-in-hand, effective-faction, zero-floor, payment-cancel, reconnect-payment, display-and-payment-parity。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 10（S02-0509:ability:static:fff4ed8e0ac25ed9、S02-0510:ability:static:52b46f1b508e6aa1、S02-0512:ability:static:fff4ed8e0ac25ed9、S02-0518:ability:static:fff4ed8e0ac25ed9、S02-0605:ability:continuous:5ff487de55c0ca1d、S02-0611:ability:continuous:5745356459e85080、S02-0612:ability:continuous:064a0a1c5382575c、ST03-02:ability:continuous:057a02a660ebfae1、ST04-10:ability:continuous:2a1c905931cd7b32、ST06-01:ability:continuous:3ced1d4d38141877） | 0 |
+| normal | 10 | 0 | 0 |
 | no-target | 0 | 0 | 10 |
 | negated | 0 | 0 | 10 |
 | target-invalidated | 0 | 0 | 10 |
-| duplicate-submit | 0 | 10（S02-0509:ability:static:fff4ed8e0ac25ed9、S02-0510:ability:static:52b46f1b508e6aa1、S02-0512:ability:static:fff4ed8e0ac25ed9、S02-0518:ability:static:fff4ed8e0ac25ed9、S02-0605:ability:continuous:5ff487de55c0ca1d、S02-0611:ability:continuous:5745356459e85080、S02-0612:ability:continuous:064a0a1c5382575c、ST03-02:ability:continuous:057a02a660ebfae1、ST04-10:ability:continuous:2a1c905931cd7b32、ST06-01:ability:continuous:3ced1d4d38141877） | 0 |
-| reconnect | 0 | 10（S02-0509:ability:static:fff4ed8e0ac25ed9、S02-0510:ability:static:52b46f1b508e6aa1、S02-0512:ability:static:fff4ed8e0ac25ed9、S02-0518:ability:static:fff4ed8e0ac25ed9、S02-0605:ability:continuous:5ff487de55c0ca1d、S02-0611:ability:continuous:5745356459e85080、S02-0612:ability:continuous:064a0a1c5382575c、ST03-02:ability:continuous:057a02a660ebfae1、ST04-10:ability:continuous:2a1c905931cd7b32、ST06-01:ability:continuous:3ced1d4d38141877） | 0 |
+| duplicate-submit | 10 | 0 | 0 |
+| reconnect | 10 | 0 | 0 |
 | payment-cancel | 0 | 0 | 10 |
 | single-candidate-choice | 0 | 0 | 10 |
 | multi-target-applicability | 0 | 0 | 10 |
-| presentation-consumers | 0 | 10（S02-0509:ability:static:fff4ed8e0ac25ed9、S02-0510:ability:static:52b46f1b508e6aa1、S02-0512:ability:static:fff4ed8e0ac25ed9、S02-0518:ability:static:fff4ed8e0ac25ed9、S02-0605:ability:continuous:5ff487de55c0ca1d、S02-0611:ability:continuous:5745356459e85080、S02-0612:ability:continuous:064a0a1c5382575c、ST03-02:ability:continuous:057a02a660ebfae1、ST04-10:ability:continuous:2a1c905931cd7b32、ST06-01:ability:continuous:3ced1d4d38141877） | 0 |
-
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S02-0509:ability:static:fff4ed8e0ac25ed9、S02-0510:ability:static:52b46f1b508e6aa1、S02-0512:ability:static:fff4ed8e0ac25ed9、S02-0518:ability:static:fff4ed8e0ac25ed9、S02-0605:ability:continuous:5ff487de55c0ca1d、S02-0611:ability:continuous:5745356459e85080、S02-0612:ability:continuous:064a0a1c5382575c、ST03-02:ability:continuous:057a02a660ebfae1、ST04-10:ability:continuous:2a1c905931cd7b32、ST06-01:ability:continuous:3ced1d4d38141877
-- `duplicate-submit`（重复或过期提交）：S02-0509:ability:static:fff4ed8e0ac25ed9、S02-0510:ability:static:52b46f1b508e6aa1、S02-0512:ability:static:fff4ed8e0ac25ed9、S02-0518:ability:static:fff4ed8e0ac25ed9、S02-0605:ability:continuous:5ff487de55c0ca1d、S02-0611:ability:continuous:5745356459e85080、S02-0612:ability:continuous:064a0a1c5382575c、ST03-02:ability:continuous:057a02a660ebfae1、ST04-10:ability:continuous:2a1c905931cd7b32、ST06-01:ability:continuous:3ced1d4d38141877
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S02-0509:ability:static:fff4ed8e0ac25ed9、S02-0510:ability:static:52b46f1b508e6aa1、S02-0512:ability:static:fff4ed8e0ac25ed9、S02-0518:ability:static:fff4ed8e0ac25ed9、S02-0605:ability:continuous:5ff487de55c0ca1d、S02-0611:ability:continuous:5745356459e85080、S02-0612:ability:continuous:064a0a1c5382575c、ST03-02:ability:continuous:057a02a660ebfae1、ST04-10:ability:continuous:2a1c905931cd7b32、ST06-01:ability:continuous:3ced1d4d38141877
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S02-0509:ability:static:fff4ed8e0ac25ed9、S02-0510:ability:static:52b46f1b508e6aa1、S02-0512:ability:static:fff4ed8e0ac25ed9、S02-0518:ability:static:fff4ed8e0ac25ed9、S02-0605:ability:continuous:5ff487de55c0ca1d、S02-0611:ability:continuous:5745356459e85080、S02-0612:ability:continuous:064a0a1c5382575c、ST03-02:ability:continuous:057a02a660ebfae1、ST04-10:ability:continuous:2a1c905931cd7b32、ST06-01:ability:continuous:3ced1d4d38141877
+| presentation-consumers | 10 | 0 | 0 |
 
 展示消费者出口：档案未声明展示边界。
 
@@ -1116,263 +1044,185 @@
 
 展示消费者出口：档案未声明展示边界。
 
-## lethal-replacement:offer-pipeline（未完成）
+## lethal-replacement:offer-pipeline（已完成）
 
-绑定能力段：3。运行入口：apply = L12GameEngine.TryApplyCardLethalSubstitution；candidates = L12GameEngine.CardLethalSubstitutionCandidates；eligibility = L12GameEngine.CanUseAchillesLethalReplacement；offer = L12GameEngine.TryOfferEffectLethalReplacement；substitution-kind = L12GameEngine.CardLethalSubstitutionKind。
+绑定能力段：3。运行入口：apply = L12GameEngine.TryApplyCardLethalSubstitution；candidates = L12GameEngine.CardLethalSubstitutionCandidates；eligibility = L12GameEngine.CanUseAchillesLethalReplacement；offer = L12GameEngine.TryOfferEffectLethalReplacement；presentation = L12GameEngine.SnapshotFor；substitution-kind = L12GameEngine.CardLethalSubstitutionKind。
 档案附加检查：payment-cancel, once-per-turn, front-row-required, recovery-resume, authoritative-consumer。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 3（S01-0205:ability:death:7016351513168cdb、S02-0504:ability:lethal-replacement:3fb565d50830f260、S02-0515:ability:lethal-replacement:654c3040d6da8b4d） | 0 |
+| normal | 3 | 0 | 0 |
 | no-target | 0 | 0 | 3 |
 | negated | 0 | 0 | 3 |
-| target-invalidated | 0 | 3（S01-0205:ability:death:7016351513168cdb、S02-0504:ability:lethal-replacement:3fb565d50830f260、S02-0515:ability:lethal-replacement:654c3040d6da8b4d） | 0 |
-| duplicate-submit | 0 | 0 | 3 |
-| reconnect | 0 | 3（S01-0205:ability:death:7016351513168cdb、S02-0504:ability:lethal-replacement:3fb565d50830f260、S02-0515:ability:lethal-replacement:654c3040d6da8b4d） | 0 |
-| payment-cancel | 0 | 2（S02-0504:ability:lethal-replacement:3fb565d50830f260、S02-0515:ability:lethal-replacement:654c3040d6da8b4d） | 1 |
-| single-candidate-choice | 0 | 1（S02-0515:ability:lethal-replacement:654c3040d6da8b4d） | 2 |
+| target-invalidated | 1 | 0 | 2 |
+| duplicate-submit | 3 | 0 | 0 |
+| reconnect | 3 | 0 | 0 |
+| payment-cancel | 2 | 0 | 1 |
+| single-candidate-choice | 1 | 0 | 2 |
 | multi-target-applicability | 0 | 0 | 3 |
-| presentation-consumers | 0 | 3（S01-0205:ability:death:7016351513168cdb、S02-0504:ability:lethal-replacement:3fb565d50830f260、S02-0515:ability:lethal-replacement:654c3040d6da8b4d） | 0 |
+| presentation-consumers | 3 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S01-0205:ability:death:7016351513168cdb、S02-0504:ability:lethal-replacement:3fb565d50830f260、S02-0515:ability:lethal-replacement:654c3040d6da8b4d
-- `target-invalidated`（已声明对象逆结算失效）：S01-0205:ability:death:7016351513168cdb、S02-0504:ability:lethal-replacement:3fb565d50830f260、S02-0515:ability:lethal-replacement:654c3040d6da8b4d
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S01-0205:ability:death:7016351513168cdb、S02-0504:ability:lethal-replacement:3fb565d50830f260、S02-0515:ability:lethal-replacement:654c3040d6da8b4d
-- `payment-cancel`（有费用时的取消/支付失败兜底）：S02-0504:ability:lethal-replacement:3fb565d50830f260、S02-0515:ability:lethal-replacement:654c3040d6da8b4d
-- `single-candidate-choice`（有对象选择时的唯一候选仍选择）：S02-0515:ability:lethal-replacement:654c3040d6da8b4d
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S01-0205:ability:death:7016351513168cdb、S02-0504:ability:lethal-replacement:3fb565d50830f260、S02-0515:ability:lethal-replacement:654c3040d6da8b4d
+展示消费者出口：SnapshotFor。
 
-展示消费者出口：档案未声明展示边界。
+## morale:active-effect-pipeline（已完成）
 
-## morale:active-effect-pipeline（未完成）
-
-绑定能力段：14。运行入口：button = L12GameEngine.FactionEffectSnapshot；commit = L12GameEngine.CommitActiveAbilityCore；cost-table = L12GameEngine.GetActiveAbilityMoraleCost；eligibility = L12GameEngine.ActiveAbilityUnavailableReason；identity-normalization = L12MoraleIdentityCatalog.CanonicalEffectCardId；settlement-dispatch = L12GameEngine.ResolveActiveEffect；usage-rule = L12ActiveUsageRules.Find。
+绑定能力段：14。运行入口：button = L12GameEngine.FactionEffectSnapshot；commit = L12GameEngine.CommitActiveAbilityCore；cost-table = L12GameEngine.GetActiveAbilityMoraleCost；eligibility = L12GameEngine.ActiveAbilityUnavailableReason；identity-normalization = L12MoraleIdentityCatalog.CanonicalEffectCardId；presentation = L12GameEngine.SnapshotFor；settlement-dispatch = L12GameEngine.ResolveActiveEffect；usage-rule = L12ActiveUsageRules.Find。
 档案附加检查：canonical-version-parity, once-per-turn, morale-cost-table, authoritative-consumer。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 14（S01-01C1:ability:active:3a8789b35c0c2be4、S01-02C1:ability:static:91802cda49d575fb、S01-02C1:ability:static:ddab147dd97c360f、S01-03C1:ability:static:fa92f5d792a32bdc、S01-04C1:ability:static:7f60c31c00b0f718、S02-05C1:ability:active:5dec5c18aaf62a03、S02-05C1A:ability:active:5dec5c18aaf62a03、S02-06C1:ability:static:7339369656140c39、ST01-C1:ability:static:6907bfcf5dbbfeb4、ST02-C1:ability:static:29d1864e955f856e、ST02-C1:ability:static:f2b97501194b5c40、ST03-C1:ability:static:36b1c5751cc508f9、ST04-C1:ability:static:d9cac21fb706e3c8、ST06-C1:ability:static:88a76dc195d499ee） | 0 |
-| no-target | 0 | 14（S01-01C1:ability:active:3a8789b35c0c2be4、S01-02C1:ability:static:91802cda49d575fb、S01-02C1:ability:static:ddab147dd97c360f、S01-03C1:ability:static:fa92f5d792a32bdc、S01-04C1:ability:static:7f60c31c00b0f718、S02-05C1:ability:active:5dec5c18aaf62a03、S02-05C1A:ability:active:5dec5c18aaf62a03、S02-06C1:ability:static:7339369656140c39、ST01-C1:ability:static:6907bfcf5dbbfeb4、ST02-C1:ability:static:29d1864e955f856e、ST02-C1:ability:static:f2b97501194b5c40、ST03-C1:ability:static:36b1c5751cc508f9、ST04-C1:ability:static:d9cac21fb706e3c8、ST06-C1:ability:static:88a76dc195d499ee） | 0 |
-| negated | 0 | 14（S01-01C1:ability:active:3a8789b35c0c2be4、S01-02C1:ability:static:91802cda49d575fb、S01-02C1:ability:static:ddab147dd97c360f、S01-03C1:ability:static:fa92f5d792a32bdc、S01-04C1:ability:static:7f60c31c00b0f718、S02-05C1:ability:active:5dec5c18aaf62a03、S02-05C1A:ability:active:5dec5c18aaf62a03、S02-06C1:ability:static:7339369656140c39、ST01-C1:ability:static:6907bfcf5dbbfeb4、ST02-C1:ability:static:29d1864e955f856e、ST02-C1:ability:static:f2b97501194b5c40、ST03-C1:ability:static:36b1c5751cc508f9、ST04-C1:ability:static:d9cac21fb706e3c8、ST06-C1:ability:static:88a76dc195d499ee） | 0 |
-| target-invalidated | 0 | 14（S01-01C1:ability:active:3a8789b35c0c2be4、S01-02C1:ability:static:91802cda49d575fb、S01-02C1:ability:static:ddab147dd97c360f、S01-03C1:ability:static:fa92f5d792a32bdc、S01-04C1:ability:static:7f60c31c00b0f718、S02-05C1:ability:active:5dec5c18aaf62a03、S02-05C1A:ability:active:5dec5c18aaf62a03、S02-06C1:ability:static:7339369656140c39、ST01-C1:ability:static:6907bfcf5dbbfeb4、ST02-C1:ability:static:29d1864e955f856e、ST02-C1:ability:static:f2b97501194b5c40、ST03-C1:ability:static:36b1c5751cc508f9、ST04-C1:ability:static:d9cac21fb706e3c8、ST06-C1:ability:static:88a76dc195d499ee） | 0 |
-| duplicate-submit | 0 | 0 | 14 |
-| reconnect | 0 | 14（S01-01C1:ability:active:3a8789b35c0c2be4、S01-02C1:ability:static:91802cda49d575fb、S01-02C1:ability:static:ddab147dd97c360f、S01-03C1:ability:static:fa92f5d792a32bdc、S01-04C1:ability:static:7f60c31c00b0f718、S02-05C1:ability:active:5dec5c18aaf62a03、S02-05C1A:ability:active:5dec5c18aaf62a03、S02-06C1:ability:static:7339369656140c39、ST01-C1:ability:static:6907bfcf5dbbfeb4、ST02-C1:ability:static:29d1864e955f856e、ST02-C1:ability:static:f2b97501194b5c40、ST03-C1:ability:static:36b1c5751cc508f9、ST04-C1:ability:static:d9cac21fb706e3c8、ST06-C1:ability:static:88a76dc195d499ee） | 0 |
-| payment-cancel | 0 | 0 | 14 |
-| single-candidate-choice | 0 | 2（S01-04C1:ability:static:7f60c31c00b0f718、ST04-C1:ability:static:d9cac21fb706e3c8） | 12 |
+| normal | 14 | 0 | 0 |
+| no-target | 14 | 0 | 0 |
+| negated | 14 | 0 | 0 |
+| target-invalidated | 2 | 0 | 12 |
+| duplicate-submit | 14 | 0 | 0 |
+| reconnect | 14 | 0 | 0 |
+| payment-cancel | 12 | 0 | 2 |
+| single-candidate-choice | 2 | 0 | 12 |
 | multi-target-applicability | 0 | 0 | 14 |
-| presentation-consumers | 0 | 14（S01-01C1:ability:active:3a8789b35c0c2be4、S01-02C1:ability:static:91802cda49d575fb、S01-02C1:ability:static:ddab147dd97c360f、S01-03C1:ability:static:fa92f5d792a32bdc、S01-04C1:ability:static:7f60c31c00b0f718、S02-05C1:ability:active:5dec5c18aaf62a03、S02-05C1A:ability:active:5dec5c18aaf62a03、S02-06C1:ability:static:7339369656140c39、ST01-C1:ability:static:6907bfcf5dbbfeb4、ST02-C1:ability:static:29d1864e955f856e、ST02-C1:ability:static:f2b97501194b5c40、ST03-C1:ability:static:36b1c5751cc508f9、ST04-C1:ability:static:d9cac21fb706e3c8、ST06-C1:ability:static:88a76dc195d499ee） | 0 |
+| presentation-consumers | 14 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S01-01C1:ability:active:3a8789b35c0c2be4、S01-02C1:ability:static:91802cda49d575fb、S01-02C1:ability:static:ddab147dd97c360f、S01-03C1:ability:static:fa92f5d792a32bdc、S01-04C1:ability:static:7f60c31c00b0f718、S02-05C1:ability:active:5dec5c18aaf62a03、S02-05C1A:ability:active:5dec5c18aaf62a03、S02-06C1:ability:static:7339369656140c39、ST01-C1:ability:static:6907bfcf5dbbfeb4、ST02-C1:ability:static:29d1864e955f856e、ST02-C1:ability:static:f2b97501194b5c40、ST03-C1:ability:static:36b1c5751cc508f9、ST04-C1:ability:static:d9cac21fb706e3c8、ST06-C1:ability:static:88a76dc195d499ee
-- `no-target`（无目标/不能发动）：S01-01C1:ability:active:3a8789b35c0c2be4、S01-02C1:ability:static:91802cda49d575fb、S01-02C1:ability:static:ddab147dd97c360f、S01-03C1:ability:static:fa92f5d792a32bdc、S01-04C1:ability:static:7f60c31c00b0f718、S02-05C1:ability:active:5dec5c18aaf62a03、S02-05C1A:ability:active:5dec5c18aaf62a03、S02-06C1:ability:static:7339369656140c39、ST01-C1:ability:static:6907bfcf5dbbfeb4、ST02-C1:ability:static:29d1864e955f856e、ST02-C1:ability:static:f2b97501194b5c40、ST03-C1:ability:static:36b1c5751cc508f9、ST04-C1:ability:static:d9cac21fb706e3c8、ST06-C1:ability:static:88a76dc195d499ee
-- `negated`（已支付后被无效）：S01-01C1:ability:active:3a8789b35c0c2be4、S01-02C1:ability:static:91802cda49d575fb、S01-02C1:ability:static:ddab147dd97c360f、S01-03C1:ability:static:fa92f5d792a32bdc、S01-04C1:ability:static:7f60c31c00b0f718、S02-05C1:ability:active:5dec5c18aaf62a03、S02-05C1A:ability:active:5dec5c18aaf62a03、S02-06C1:ability:static:7339369656140c39、ST01-C1:ability:static:6907bfcf5dbbfeb4、ST02-C1:ability:static:29d1864e955f856e、ST02-C1:ability:static:f2b97501194b5c40、ST03-C1:ability:static:36b1c5751cc508f9、ST04-C1:ability:static:d9cac21fb706e3c8、ST06-C1:ability:static:88a76dc195d499ee
-- `target-invalidated`（已声明对象逆结算失效）：S01-01C1:ability:active:3a8789b35c0c2be4、S01-02C1:ability:static:91802cda49d575fb、S01-02C1:ability:static:ddab147dd97c360f、S01-03C1:ability:static:fa92f5d792a32bdc、S01-04C1:ability:static:7f60c31c00b0f718、S02-05C1:ability:active:5dec5c18aaf62a03、S02-05C1A:ability:active:5dec5c18aaf62a03、S02-06C1:ability:static:7339369656140c39、ST01-C1:ability:static:6907bfcf5dbbfeb4、ST02-C1:ability:static:29d1864e955f856e、ST02-C1:ability:static:f2b97501194b5c40、ST03-C1:ability:static:36b1c5751cc508f9、ST04-C1:ability:static:d9cac21fb706e3c8、ST06-C1:ability:static:88a76dc195d499ee
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S01-01C1:ability:active:3a8789b35c0c2be4、S01-02C1:ability:static:91802cda49d575fb、S01-02C1:ability:static:ddab147dd97c360f、S01-03C1:ability:static:fa92f5d792a32bdc、S01-04C1:ability:static:7f60c31c00b0f718、S02-05C1:ability:active:5dec5c18aaf62a03、S02-05C1A:ability:active:5dec5c18aaf62a03、S02-06C1:ability:static:7339369656140c39、ST01-C1:ability:static:6907bfcf5dbbfeb4、ST02-C1:ability:static:29d1864e955f856e、ST02-C1:ability:static:f2b97501194b5c40、ST03-C1:ability:static:36b1c5751cc508f9、ST04-C1:ability:static:d9cac21fb706e3c8、ST06-C1:ability:static:88a76dc195d499ee
-- `single-candidate-choice`（有对象选择时的唯一候选仍选择）：S01-04C1:ability:static:7f60c31c00b0f718、ST04-C1:ability:static:d9cac21fb706e3c8
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S01-01C1:ability:active:3a8789b35c0c2be4、S01-02C1:ability:static:91802cda49d575fb、S01-02C1:ability:static:ddab147dd97c360f、S01-03C1:ability:static:fa92f5d792a32bdc、S01-04C1:ability:static:7f60c31c00b0f718、S02-05C1:ability:active:5dec5c18aaf62a03、S02-05C1A:ability:active:5dec5c18aaf62a03、S02-06C1:ability:static:7339369656140c39、ST01-C1:ability:static:6907bfcf5dbbfeb4、ST02-C1:ability:static:29d1864e955f856e、ST02-C1:ability:static:f2b97501194b5c40、ST03-C1:ability:static:36b1c5751cc508f9、ST04-C1:ability:static:d9cac21fb706e3c8、ST06-C1:ability:static:88a76dc195d499ee
+展示消费者出口：SnapshotFor。
 
-展示消费者出口：档案未声明展示边界。
+## morale:resource-identity（已完成）
 
-## morale:resource-identity（未完成）
-
-绑定能力段：3。运行入口：manual-selection = L12GameEngine.CanConsumeSelectedResources；payment = L12GameEngine.TryConsumeMorale；resource-count = L12GameEngine.ActiveResourceCount。
+绑定能力段：3。运行入口：manual-selection = L12GameEngine.CanConsumeSelectedResources；payment = L12GameEngine.TryConsumeMorale；presentation = L12GameEngine.SnapshotMorale；resource-count = L12GameEngine.ActiveResourceCount。
 档案附加检查：counts-as-morale-structural, authoritative-consumer。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 3（S01-00C1:ability:static:db1ae0a9efb4bff8、S02-05C1:ability:static:5879d4c3fe97b3cf、S02-05C1A:ability:static:5879d4c3fe97b3cf） | 0 |
+| normal | 3 | 0 | 0 |
 | no-target | 0 | 0 | 3 |
 | negated | 0 | 0 | 3 |
 | target-invalidated | 0 | 0 | 3 |
 | duplicate-submit | 0 | 0 | 3 |
-| reconnect | 0 | 3（S01-00C1:ability:static:db1ae0a9efb4bff8、S02-05C1:ability:static:5879d4c3fe97b3cf、S02-05C1A:ability:static:5879d4c3fe97b3cf） | 0 |
+| reconnect | 3 | 0 | 0 |
 | payment-cancel | 0 | 0 | 3 |
 | single-candidate-choice | 0 | 0 | 3 |
 | multi-target-applicability | 0 | 0 | 3 |
-| presentation-consumers | 0 | 3（S01-00C1:ability:static:db1ae0a9efb4bff8、S02-05C1:ability:static:5879d4c3fe97b3cf、S02-05C1A:ability:static:5879d4c3fe97b3cf） | 0 |
+| presentation-consumers | 3 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S01-00C1:ability:static:db1ae0a9efb4bff8、S02-05C1:ability:static:5879d4c3fe97b3cf、S02-05C1A:ability:static:5879d4c3fe97b3cf
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S01-00C1:ability:static:db1ae0a9efb4bff8、S02-05C1:ability:static:5879d4c3fe97b3cf、S02-05C1A:ability:static:5879d4c3fe97b3cf
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S01-00C1:ability:static:db1ae0a9efb4bff8、S02-05C1:ability:static:5879d4c3fe97b3cf、S02-05C1A:ability:static:5879d4c3fe97b3cf
+展示消费者出口：SnapshotMorale。
 
-展示消费者出口：档案未声明展示边界。
+## pipeline:active-effect（已完成）
 
-## pipeline:active-effect（未完成）
-
-绑定能力段：45。运行入口：begin = L12GameEngine.BeginActiveAbility；commit = L12GameEngine.CommitActiveAbilityCore；settle = L12GameEngine.ResolveActiveEffect；stack = L12GameEngine.PushEffect；usage = L12ActiveUsageRules.Find；views = L12GameEngine.BuildAbilityViews。
+绑定能力段：45。运行入口：begin = L12GameEngine.BeginActiveAbility；commit = L12GameEngine.CommitActiveAbilityCore；presentation = L12GameEngine.ResolveEffectPresentationSceneId；settle = L12GameEngine.ResolveActiveEffect；stack = L12GameEngine.PushEffect；usage = L12ActiveUsageRules.Find；views = L12GameEngine.BuildAbilityViews。
 档案附加检查：per-card-branch, authoritative-consumer。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 45（S01-0004:ability:active:6f9f6988e1ea4be0、S01-01M1:ability:static:c03878ecc263c0e6、S01-01M1:ability:static:d024f673ff236321、S01-01M2:ability:static:f3ee48a69ee29306、S01-0215:ability:mode-ready-guard:3e3294affff84b58、S01-0215:ability:mode-rest-and-draw:8c1a03af8e682c53、S01-02D1:ability:static:0c86a6851cf9d2ce、S01-02D1:ability:static:dbf8222a61a31140、S01-02M1:ability:static:53475d8f080332f1、S01-02M2:ability:static:f3398615ac233d89、S01-02M3:ability:static:705baec08fc6bc02、S01-0307:ability:static:b89287bced985f8c、S01-0314:ability:active:a923615d65edc8ea、S01-03D1:ability:static:342ed2c72fcd22aa、S01-03D1:ability:static:d89d0b3dade7b6c8、S01-03M1:ability:static:d047647f18d541e4、S01-03M2:ability:static:e3e85412fe04e44b、S01-0417:ability:static:f10ff922d718f82e、S01-04D1:ability:static:3c467d3eba318af6、S01-04D1:ability:static:fcd47c32a0a46e1a、S01-04M1:ability:static:2c285709f5669922、S01-04M1:ability:static:51c3f1e1976210f8、S01-04M2:ability:attack:ebb2054e23f75cd1、S01-04M2:ability:static:ce8699cac703af1c、S02-0013:ability:active-while-attached:f64dc7647e481c5f、S02-01M1:ability:active:4834e3b50d036f27、S02-0205:ability:active:bf422a987e0ab5de、S02-02M1:ability:active:014219b1c6c557fa、S02-0301:ability:active:61c655977499e4be、S02-03M1:ability:active:54e6f9c40764f804、S02-0404:ability:granted:2c2b9693ca8cf3b8、S02-0404:ability:granted:e7c384ccba9ff2f3、S02-0520:ability:mode-promotion-discount:98eb71c68928c091、S02-0520:ability:mode-ready-after-kill:927badbb354c7607、S02-05D1:ability:active:1e9195c93dff4ee9、S02-05M1:ability:active:6fe03f6c35407ac7、S02-05M2:ability:active:e4b2c63a32960f8e、S02-0603:ability:granted:8cd73702b7db90b0、S02-0603:ability:granted:ee3b46417c9fc4f7、S02-0604:ability:trial-completed:9d25a05a194bedc1、S02-06D1:ability:static:65b6607da57e5096、S02-06M1:ability:active:08922e53e852b78f、S02-06S1:ability:static:75769d93e0ca669f、S02-06S5:ability:static:5444a7c87e0351bd、S02-06S6:ability:after-attack:b158f5749a6c161e） | 0 |
-| no-target | 0 | 45（S01-0004:ability:active:6f9f6988e1ea4be0、S01-01M1:ability:static:c03878ecc263c0e6、S01-01M1:ability:static:d024f673ff236321、S01-01M2:ability:static:f3ee48a69ee29306、S01-0215:ability:mode-ready-guard:3e3294affff84b58、S01-0215:ability:mode-rest-and-draw:8c1a03af8e682c53、S01-02D1:ability:static:0c86a6851cf9d2ce、S01-02D1:ability:static:dbf8222a61a31140、S01-02M1:ability:static:53475d8f080332f1、S01-02M2:ability:static:f3398615ac233d89、S01-02M3:ability:static:705baec08fc6bc02、S01-0307:ability:static:b89287bced985f8c、S01-0314:ability:active:a923615d65edc8ea、S01-03D1:ability:static:342ed2c72fcd22aa、S01-03D1:ability:static:d89d0b3dade7b6c8、S01-03M1:ability:static:d047647f18d541e4、S01-03M2:ability:static:e3e85412fe04e44b、S01-0417:ability:static:f10ff922d718f82e、S01-04D1:ability:static:3c467d3eba318af6、S01-04D1:ability:static:fcd47c32a0a46e1a、S01-04M1:ability:static:2c285709f5669922、S01-04M1:ability:static:51c3f1e1976210f8、S01-04M2:ability:attack:ebb2054e23f75cd1、S01-04M2:ability:static:ce8699cac703af1c、S02-0013:ability:active-while-attached:f64dc7647e481c5f、S02-01M1:ability:active:4834e3b50d036f27、S02-0205:ability:active:bf422a987e0ab5de、S02-02M1:ability:active:014219b1c6c557fa、S02-0301:ability:active:61c655977499e4be、S02-03M1:ability:active:54e6f9c40764f804、S02-0404:ability:granted:2c2b9693ca8cf3b8、S02-0404:ability:granted:e7c384ccba9ff2f3、S02-0520:ability:mode-promotion-discount:98eb71c68928c091、S02-0520:ability:mode-ready-after-kill:927badbb354c7607、S02-05D1:ability:active:1e9195c93dff4ee9、S02-05M1:ability:active:6fe03f6c35407ac7、S02-05M2:ability:active:e4b2c63a32960f8e、S02-0603:ability:granted:8cd73702b7db90b0、S02-0603:ability:granted:ee3b46417c9fc4f7、S02-0604:ability:trial-completed:9d25a05a194bedc1、S02-06D1:ability:static:65b6607da57e5096、S02-06M1:ability:active:08922e53e852b78f、S02-06S1:ability:static:75769d93e0ca669f、S02-06S5:ability:static:5444a7c87e0351bd、S02-06S6:ability:after-attack:b158f5749a6c161e） | 0 |
-| negated | 0 | 45（S01-0004:ability:active:6f9f6988e1ea4be0、S01-01M1:ability:static:c03878ecc263c0e6、S01-01M1:ability:static:d024f673ff236321、S01-01M2:ability:static:f3ee48a69ee29306、S01-0215:ability:mode-ready-guard:3e3294affff84b58、S01-0215:ability:mode-rest-and-draw:8c1a03af8e682c53、S01-02D1:ability:static:0c86a6851cf9d2ce、S01-02D1:ability:static:dbf8222a61a31140、S01-02M1:ability:static:53475d8f080332f1、S01-02M2:ability:static:f3398615ac233d89、S01-02M3:ability:static:705baec08fc6bc02、S01-0307:ability:static:b89287bced985f8c、S01-0314:ability:active:a923615d65edc8ea、S01-03D1:ability:static:342ed2c72fcd22aa、S01-03D1:ability:static:d89d0b3dade7b6c8、S01-03M1:ability:static:d047647f18d541e4、S01-03M2:ability:static:e3e85412fe04e44b、S01-0417:ability:static:f10ff922d718f82e、S01-04D1:ability:static:3c467d3eba318af6、S01-04D1:ability:static:fcd47c32a0a46e1a、S01-04M1:ability:static:2c285709f5669922、S01-04M1:ability:static:51c3f1e1976210f8、S01-04M2:ability:attack:ebb2054e23f75cd1、S01-04M2:ability:static:ce8699cac703af1c、S02-0013:ability:active-while-attached:f64dc7647e481c5f、S02-01M1:ability:active:4834e3b50d036f27、S02-0205:ability:active:bf422a987e0ab5de、S02-02M1:ability:active:014219b1c6c557fa、S02-0301:ability:active:61c655977499e4be、S02-03M1:ability:active:54e6f9c40764f804、S02-0404:ability:granted:2c2b9693ca8cf3b8、S02-0404:ability:granted:e7c384ccba9ff2f3、S02-0520:ability:mode-promotion-discount:98eb71c68928c091、S02-0520:ability:mode-ready-after-kill:927badbb354c7607、S02-05D1:ability:active:1e9195c93dff4ee9、S02-05M1:ability:active:6fe03f6c35407ac7、S02-05M2:ability:active:e4b2c63a32960f8e、S02-0603:ability:granted:8cd73702b7db90b0、S02-0603:ability:granted:ee3b46417c9fc4f7、S02-0604:ability:trial-completed:9d25a05a194bedc1、S02-06D1:ability:static:65b6607da57e5096、S02-06M1:ability:active:08922e53e852b78f、S02-06S1:ability:static:75769d93e0ca669f、S02-06S5:ability:static:5444a7c87e0351bd、S02-06S6:ability:after-attack:b158f5749a6c161e） | 0 |
-| target-invalidated | 0 | 45（S01-0004:ability:active:6f9f6988e1ea4be0、S01-01M1:ability:static:c03878ecc263c0e6、S01-01M1:ability:static:d024f673ff236321、S01-01M2:ability:static:f3ee48a69ee29306、S01-0215:ability:mode-ready-guard:3e3294affff84b58、S01-0215:ability:mode-rest-and-draw:8c1a03af8e682c53、S01-02D1:ability:static:0c86a6851cf9d2ce、S01-02D1:ability:static:dbf8222a61a31140、S01-02M1:ability:static:53475d8f080332f1、S01-02M2:ability:static:f3398615ac233d89、S01-02M3:ability:static:705baec08fc6bc02、S01-0307:ability:static:b89287bced985f8c、S01-0314:ability:active:a923615d65edc8ea、S01-03D1:ability:static:342ed2c72fcd22aa、S01-03D1:ability:static:d89d0b3dade7b6c8、S01-03M1:ability:static:d047647f18d541e4、S01-03M2:ability:static:e3e85412fe04e44b、S01-0417:ability:static:f10ff922d718f82e、S01-04D1:ability:static:3c467d3eba318af6、S01-04D1:ability:static:fcd47c32a0a46e1a、S01-04M1:ability:static:2c285709f5669922、S01-04M1:ability:static:51c3f1e1976210f8、S01-04M2:ability:attack:ebb2054e23f75cd1、S01-04M2:ability:static:ce8699cac703af1c、S02-0013:ability:active-while-attached:f64dc7647e481c5f、S02-01M1:ability:active:4834e3b50d036f27、S02-0205:ability:active:bf422a987e0ab5de、S02-02M1:ability:active:014219b1c6c557fa、S02-0301:ability:active:61c655977499e4be、S02-03M1:ability:active:54e6f9c40764f804、S02-0404:ability:granted:2c2b9693ca8cf3b8、S02-0404:ability:granted:e7c384ccba9ff2f3、S02-0520:ability:mode-promotion-discount:98eb71c68928c091、S02-0520:ability:mode-ready-after-kill:927badbb354c7607、S02-05D1:ability:active:1e9195c93dff4ee9、S02-05M1:ability:active:6fe03f6c35407ac7、S02-05M2:ability:active:e4b2c63a32960f8e、S02-0603:ability:granted:8cd73702b7db90b0、S02-0603:ability:granted:ee3b46417c9fc4f7、S02-0604:ability:trial-completed:9d25a05a194bedc1、S02-06D1:ability:static:65b6607da57e5096、S02-06M1:ability:active:08922e53e852b78f、S02-06S1:ability:static:75769d93e0ca669f、S02-06S5:ability:static:5444a7c87e0351bd、S02-06S6:ability:after-attack:b158f5749a6c161e） | 0 |
-| duplicate-submit | 0 | 0 | 45 |
-| reconnect | 0 | 45（S01-0004:ability:active:6f9f6988e1ea4be0、S01-01M1:ability:static:c03878ecc263c0e6、S01-01M1:ability:static:d024f673ff236321、S01-01M2:ability:static:f3ee48a69ee29306、S01-0215:ability:mode-ready-guard:3e3294affff84b58、S01-0215:ability:mode-rest-and-draw:8c1a03af8e682c53、S01-02D1:ability:static:0c86a6851cf9d2ce、S01-02D1:ability:static:dbf8222a61a31140、S01-02M1:ability:static:53475d8f080332f1、S01-02M2:ability:static:f3398615ac233d89、S01-02M3:ability:static:705baec08fc6bc02、S01-0307:ability:static:b89287bced985f8c、S01-0314:ability:active:a923615d65edc8ea、S01-03D1:ability:static:342ed2c72fcd22aa、S01-03D1:ability:static:d89d0b3dade7b6c8、S01-03M1:ability:static:d047647f18d541e4、S01-03M2:ability:static:e3e85412fe04e44b、S01-0417:ability:static:f10ff922d718f82e、S01-04D1:ability:static:3c467d3eba318af6、S01-04D1:ability:static:fcd47c32a0a46e1a、S01-04M1:ability:static:2c285709f5669922、S01-04M1:ability:static:51c3f1e1976210f8、S01-04M2:ability:attack:ebb2054e23f75cd1、S01-04M2:ability:static:ce8699cac703af1c、S02-0013:ability:active-while-attached:f64dc7647e481c5f、S02-01M1:ability:active:4834e3b50d036f27、S02-0205:ability:active:bf422a987e0ab5de、S02-02M1:ability:active:014219b1c6c557fa、S02-0301:ability:active:61c655977499e4be、S02-03M1:ability:active:54e6f9c40764f804、S02-0404:ability:granted:2c2b9693ca8cf3b8、S02-0404:ability:granted:e7c384ccba9ff2f3、S02-0520:ability:mode-promotion-discount:98eb71c68928c091、S02-0520:ability:mode-ready-after-kill:927badbb354c7607、S02-05D1:ability:active:1e9195c93dff4ee9、S02-05M1:ability:active:6fe03f6c35407ac7、S02-05M2:ability:active:e4b2c63a32960f8e、S02-0603:ability:granted:8cd73702b7db90b0、S02-0603:ability:granted:ee3b46417c9fc4f7、S02-0604:ability:trial-completed:9d25a05a194bedc1、S02-06D1:ability:static:65b6607da57e5096、S02-06M1:ability:active:08922e53e852b78f、S02-06S1:ability:static:75769d93e0ca669f、S02-06S5:ability:static:5444a7c87e0351bd、S02-06S6:ability:after-attack:b158f5749a6c161e） | 0 |
-| payment-cancel | 0 | 0 | 45 |
-| single-candidate-choice | 0 | 27（S01-01M2:ability:static:f3ee48a69ee29306、S01-0215:ability:mode-ready-guard:3e3294affff84b58、S01-0215:ability:mode-rest-and-draw:8c1a03af8e682c53、S01-02D1:ability:static:0c86a6851cf9d2ce、S01-02D1:ability:static:dbf8222a61a31140、S01-02M1:ability:static:53475d8f080332f1、S01-02M3:ability:static:705baec08fc6bc02、S01-0314:ability:active:a923615d65edc8ea、S01-03D1:ability:static:d89d0b3dade7b6c8、S01-03M1:ability:static:d047647f18d541e4、S01-03M2:ability:static:e3e85412fe04e44b、S01-0417:ability:static:f10ff922d718f82e、S01-04M1:ability:static:2c285709f5669922、S01-04M2:ability:attack:ebb2054e23f75cd1、S02-01M1:ability:active:4834e3b50d036f27、S02-0205:ability:active:bf422a987e0ab5de、S02-0404:ability:granted:2c2b9693ca8cf3b8、S02-0404:ability:granted:e7c384ccba9ff2f3、S02-0520:ability:mode-ready-after-kill:927badbb354c7607、S02-05M1:ability:active:6fe03f6c35407ac7、S02-05M2:ability:active:e4b2c63a32960f8e、S02-0603:ability:granted:8cd73702b7db90b0、S02-0603:ability:granted:ee3b46417c9fc4f7、S02-06D1:ability:static:65b6607da57e5096、S02-06M1:ability:active:08922e53e852b78f、S02-06S1:ability:static:75769d93e0ca669f、S02-06S6:ability:after-attack:b158f5749a6c161e） | 18 |
-| multi-target-applicability | 0 | 2（S02-01M1:ability:active:4834e3b50d036f27、S02-0205:ability:active:bf422a987e0ab5de） | 43 |
-| presentation-consumers | 0 | 45（S01-0004:ability:active:6f9f6988e1ea4be0、S01-01M1:ability:static:c03878ecc263c0e6、S01-01M1:ability:static:d024f673ff236321、S01-01M2:ability:static:f3ee48a69ee29306、S01-0215:ability:mode-ready-guard:3e3294affff84b58、S01-0215:ability:mode-rest-and-draw:8c1a03af8e682c53、S01-02D1:ability:static:0c86a6851cf9d2ce、S01-02D1:ability:static:dbf8222a61a31140、S01-02M1:ability:static:53475d8f080332f1、S01-02M2:ability:static:f3398615ac233d89、S01-02M3:ability:static:705baec08fc6bc02、S01-0307:ability:static:b89287bced985f8c、S01-0314:ability:active:a923615d65edc8ea、S01-03D1:ability:static:342ed2c72fcd22aa、S01-03D1:ability:static:d89d0b3dade7b6c8、S01-03M1:ability:static:d047647f18d541e4、S01-03M2:ability:static:e3e85412fe04e44b、S01-0417:ability:static:f10ff922d718f82e、S01-04D1:ability:static:3c467d3eba318af6、S01-04D1:ability:static:fcd47c32a0a46e1a、S01-04M1:ability:static:2c285709f5669922、S01-04M1:ability:static:51c3f1e1976210f8、S01-04M2:ability:attack:ebb2054e23f75cd1、S01-04M2:ability:static:ce8699cac703af1c、S02-0013:ability:active-while-attached:f64dc7647e481c5f、S02-01M1:ability:active:4834e3b50d036f27、S02-0205:ability:active:bf422a987e0ab5de、S02-02M1:ability:active:014219b1c6c557fa、S02-0301:ability:active:61c655977499e4be、S02-03M1:ability:active:54e6f9c40764f804、S02-0404:ability:granted:2c2b9693ca8cf3b8、S02-0404:ability:granted:e7c384ccba9ff2f3、S02-0520:ability:mode-promotion-discount:98eb71c68928c091、S02-0520:ability:mode-ready-after-kill:927badbb354c7607、S02-05D1:ability:active:1e9195c93dff4ee9、S02-05M1:ability:active:6fe03f6c35407ac7、S02-05M2:ability:active:e4b2c63a32960f8e、S02-0603:ability:granted:8cd73702b7db90b0、S02-0603:ability:granted:ee3b46417c9fc4f7、S02-0604:ability:trial-completed:9d25a05a194bedc1、S02-06D1:ability:static:65b6607da57e5096、S02-06M1:ability:active:08922e53e852b78f、S02-06S1:ability:static:75769d93e0ca669f、S02-06S5:ability:static:5444a7c87e0351bd、S02-06S6:ability:after-attack:b158f5749a6c161e） | 0 |
+| normal | 45 | 0 | 0 |
+| no-target | 45 | 0 | 0 |
+| negated | 45 | 0 | 0 |
+| target-invalidated | 26 | 0 | 19 |
+| duplicate-submit | 45 | 0 | 0 |
+| reconnect | 45 | 0 | 0 |
+| payment-cancel | 35 | 0 | 10 |
+| single-candidate-choice | 26 | 0 | 19 |
+| multi-target-applicability | 1 | 0 | 44 |
+| presentation-consumers | 45 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S01-0004:ability:active:6f9f6988e1ea4be0、S01-01M1:ability:static:c03878ecc263c0e6、S01-01M1:ability:static:d024f673ff236321、S01-01M2:ability:static:f3ee48a69ee29306、S01-0215:ability:mode-ready-guard:3e3294affff84b58、S01-0215:ability:mode-rest-and-draw:8c1a03af8e682c53、S01-02D1:ability:static:0c86a6851cf9d2ce、S01-02D1:ability:static:dbf8222a61a31140、S01-02M1:ability:static:53475d8f080332f1、S01-02M2:ability:static:f3398615ac233d89、S01-02M3:ability:static:705baec08fc6bc02、S01-0307:ability:static:b89287bced985f8c、S01-0314:ability:active:a923615d65edc8ea、S01-03D1:ability:static:342ed2c72fcd22aa、S01-03D1:ability:static:d89d0b3dade7b6c8、S01-03M1:ability:static:d047647f18d541e4、S01-03M2:ability:static:e3e85412fe04e44b、S01-0417:ability:static:f10ff922d718f82e、S01-04D1:ability:static:3c467d3eba318af6、S01-04D1:ability:static:fcd47c32a0a46e1a、S01-04M1:ability:static:2c285709f5669922、S01-04M1:ability:static:51c3f1e1976210f8、S01-04M2:ability:attack:ebb2054e23f75cd1、S01-04M2:ability:static:ce8699cac703af1c、S02-0013:ability:active-while-attached:f64dc7647e481c5f、S02-01M1:ability:active:4834e3b50d036f27、S02-0205:ability:active:bf422a987e0ab5de、S02-02M1:ability:active:014219b1c6c557fa、S02-0301:ability:active:61c655977499e4be、S02-03M1:ability:active:54e6f9c40764f804、S02-0404:ability:granted:2c2b9693ca8cf3b8、S02-0404:ability:granted:e7c384ccba9ff2f3、S02-0520:ability:mode-promotion-discount:98eb71c68928c091、S02-0520:ability:mode-ready-after-kill:927badbb354c7607、S02-05D1:ability:active:1e9195c93dff4ee9、S02-05M1:ability:active:6fe03f6c35407ac7、S02-05M2:ability:active:e4b2c63a32960f8e、S02-0603:ability:granted:8cd73702b7db90b0、S02-0603:ability:granted:ee3b46417c9fc4f7、S02-0604:ability:trial-completed:9d25a05a194bedc1、S02-06D1:ability:static:65b6607da57e5096、S02-06M1:ability:active:08922e53e852b78f、S02-06S1:ability:static:75769d93e0ca669f、S02-06S5:ability:static:5444a7c87e0351bd、S02-06S6:ability:after-attack:b158f5749a6c161e
-- `no-target`（无目标/不能发动）：S01-0004:ability:active:6f9f6988e1ea4be0、S01-01M1:ability:static:c03878ecc263c0e6、S01-01M1:ability:static:d024f673ff236321、S01-01M2:ability:static:f3ee48a69ee29306、S01-0215:ability:mode-ready-guard:3e3294affff84b58、S01-0215:ability:mode-rest-and-draw:8c1a03af8e682c53、S01-02D1:ability:static:0c86a6851cf9d2ce、S01-02D1:ability:static:dbf8222a61a31140、S01-02M1:ability:static:53475d8f080332f1、S01-02M2:ability:static:f3398615ac233d89、S01-02M3:ability:static:705baec08fc6bc02、S01-0307:ability:static:b89287bced985f8c、S01-0314:ability:active:a923615d65edc8ea、S01-03D1:ability:static:342ed2c72fcd22aa、S01-03D1:ability:static:d89d0b3dade7b6c8、S01-03M1:ability:static:d047647f18d541e4、S01-03M2:ability:static:e3e85412fe04e44b、S01-0417:ability:static:f10ff922d718f82e、S01-04D1:ability:static:3c467d3eba318af6、S01-04D1:ability:static:fcd47c32a0a46e1a、S01-04M1:ability:static:2c285709f5669922、S01-04M1:ability:static:51c3f1e1976210f8、S01-04M2:ability:attack:ebb2054e23f75cd1、S01-04M2:ability:static:ce8699cac703af1c、S02-0013:ability:active-while-attached:f64dc7647e481c5f、S02-01M1:ability:active:4834e3b50d036f27、S02-0205:ability:active:bf422a987e0ab5de、S02-02M1:ability:active:014219b1c6c557fa、S02-0301:ability:active:61c655977499e4be、S02-03M1:ability:active:54e6f9c40764f804、S02-0404:ability:granted:2c2b9693ca8cf3b8、S02-0404:ability:granted:e7c384ccba9ff2f3、S02-0520:ability:mode-promotion-discount:98eb71c68928c091、S02-0520:ability:mode-ready-after-kill:927badbb354c7607、S02-05D1:ability:active:1e9195c93dff4ee9、S02-05M1:ability:active:6fe03f6c35407ac7、S02-05M2:ability:active:e4b2c63a32960f8e、S02-0603:ability:granted:8cd73702b7db90b0、S02-0603:ability:granted:ee3b46417c9fc4f7、S02-0604:ability:trial-completed:9d25a05a194bedc1、S02-06D1:ability:static:65b6607da57e5096、S02-06M1:ability:active:08922e53e852b78f、S02-06S1:ability:static:75769d93e0ca669f、S02-06S5:ability:static:5444a7c87e0351bd、S02-06S6:ability:after-attack:b158f5749a6c161e
-- `negated`（已支付后被无效）：S01-0004:ability:active:6f9f6988e1ea4be0、S01-01M1:ability:static:c03878ecc263c0e6、S01-01M1:ability:static:d024f673ff236321、S01-01M2:ability:static:f3ee48a69ee29306、S01-0215:ability:mode-ready-guard:3e3294affff84b58、S01-0215:ability:mode-rest-and-draw:8c1a03af8e682c53、S01-02D1:ability:static:0c86a6851cf9d2ce、S01-02D1:ability:static:dbf8222a61a31140、S01-02M1:ability:static:53475d8f080332f1、S01-02M2:ability:static:f3398615ac233d89、S01-02M3:ability:static:705baec08fc6bc02、S01-0307:ability:static:b89287bced985f8c、S01-0314:ability:active:a923615d65edc8ea、S01-03D1:ability:static:342ed2c72fcd22aa、S01-03D1:ability:static:d89d0b3dade7b6c8、S01-03M1:ability:static:d047647f18d541e4、S01-03M2:ability:static:e3e85412fe04e44b、S01-0417:ability:static:f10ff922d718f82e、S01-04D1:ability:static:3c467d3eba318af6、S01-04D1:ability:static:fcd47c32a0a46e1a、S01-04M1:ability:static:2c285709f5669922、S01-04M1:ability:static:51c3f1e1976210f8、S01-04M2:ability:attack:ebb2054e23f75cd1、S01-04M2:ability:static:ce8699cac703af1c、S02-0013:ability:active-while-attached:f64dc7647e481c5f、S02-01M1:ability:active:4834e3b50d036f27、S02-0205:ability:active:bf422a987e0ab5de、S02-02M1:ability:active:014219b1c6c557fa、S02-0301:ability:active:61c655977499e4be、S02-03M1:ability:active:54e6f9c40764f804、S02-0404:ability:granted:2c2b9693ca8cf3b8、S02-0404:ability:granted:e7c384ccba9ff2f3、S02-0520:ability:mode-promotion-discount:98eb71c68928c091、S02-0520:ability:mode-ready-after-kill:927badbb354c7607、S02-05D1:ability:active:1e9195c93dff4ee9、S02-05M1:ability:active:6fe03f6c35407ac7、S02-05M2:ability:active:e4b2c63a32960f8e、S02-0603:ability:granted:8cd73702b7db90b0、S02-0603:ability:granted:ee3b46417c9fc4f7、S02-0604:ability:trial-completed:9d25a05a194bedc1、S02-06D1:ability:static:65b6607da57e5096、S02-06M1:ability:active:08922e53e852b78f、S02-06S1:ability:static:75769d93e0ca669f、S02-06S5:ability:static:5444a7c87e0351bd、S02-06S6:ability:after-attack:b158f5749a6c161e
-- `target-invalidated`（已声明对象逆结算失效）：S01-0004:ability:active:6f9f6988e1ea4be0、S01-01M1:ability:static:c03878ecc263c0e6、S01-01M1:ability:static:d024f673ff236321、S01-01M2:ability:static:f3ee48a69ee29306、S01-0215:ability:mode-ready-guard:3e3294affff84b58、S01-0215:ability:mode-rest-and-draw:8c1a03af8e682c53、S01-02D1:ability:static:0c86a6851cf9d2ce、S01-02D1:ability:static:dbf8222a61a31140、S01-02M1:ability:static:53475d8f080332f1、S01-02M2:ability:static:f3398615ac233d89、S01-02M3:ability:static:705baec08fc6bc02、S01-0307:ability:static:b89287bced985f8c、S01-0314:ability:active:a923615d65edc8ea、S01-03D1:ability:static:342ed2c72fcd22aa、S01-03D1:ability:static:d89d0b3dade7b6c8、S01-03M1:ability:static:d047647f18d541e4、S01-03M2:ability:static:e3e85412fe04e44b、S01-0417:ability:static:f10ff922d718f82e、S01-04D1:ability:static:3c467d3eba318af6、S01-04D1:ability:static:fcd47c32a0a46e1a、S01-04M1:ability:static:2c285709f5669922、S01-04M1:ability:static:51c3f1e1976210f8、S01-04M2:ability:attack:ebb2054e23f75cd1、S01-04M2:ability:static:ce8699cac703af1c、S02-0013:ability:active-while-attached:f64dc7647e481c5f、S02-01M1:ability:active:4834e3b50d036f27、S02-0205:ability:active:bf422a987e0ab5de、S02-02M1:ability:active:014219b1c6c557fa、S02-0301:ability:active:61c655977499e4be、S02-03M1:ability:active:54e6f9c40764f804、S02-0404:ability:granted:2c2b9693ca8cf3b8、S02-0404:ability:granted:e7c384ccba9ff2f3、S02-0520:ability:mode-promotion-discount:98eb71c68928c091、S02-0520:ability:mode-ready-after-kill:927badbb354c7607、S02-05D1:ability:active:1e9195c93dff4ee9、S02-05M1:ability:active:6fe03f6c35407ac7、S02-05M2:ability:active:e4b2c63a32960f8e、S02-0603:ability:granted:8cd73702b7db90b0、S02-0603:ability:granted:ee3b46417c9fc4f7、S02-0604:ability:trial-completed:9d25a05a194bedc1、S02-06D1:ability:static:65b6607da57e5096、S02-06M1:ability:active:08922e53e852b78f、S02-06S1:ability:static:75769d93e0ca669f、S02-06S5:ability:static:5444a7c87e0351bd、S02-06S6:ability:after-attack:b158f5749a6c161e
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S01-0004:ability:active:6f9f6988e1ea4be0、S01-01M1:ability:static:c03878ecc263c0e6、S01-01M1:ability:static:d024f673ff236321、S01-01M2:ability:static:f3ee48a69ee29306、S01-0215:ability:mode-ready-guard:3e3294affff84b58、S01-0215:ability:mode-rest-and-draw:8c1a03af8e682c53、S01-02D1:ability:static:0c86a6851cf9d2ce、S01-02D1:ability:static:dbf8222a61a31140、S01-02M1:ability:static:53475d8f080332f1、S01-02M2:ability:static:f3398615ac233d89、S01-02M3:ability:static:705baec08fc6bc02、S01-0307:ability:static:b89287bced985f8c、S01-0314:ability:active:a923615d65edc8ea、S01-03D1:ability:static:342ed2c72fcd22aa、S01-03D1:ability:static:d89d0b3dade7b6c8、S01-03M1:ability:static:d047647f18d541e4、S01-03M2:ability:static:e3e85412fe04e44b、S01-0417:ability:static:f10ff922d718f82e、S01-04D1:ability:static:3c467d3eba318af6、S01-04D1:ability:static:fcd47c32a0a46e1a、S01-04M1:ability:static:2c285709f5669922、S01-04M1:ability:static:51c3f1e1976210f8、S01-04M2:ability:attack:ebb2054e23f75cd1、S01-04M2:ability:static:ce8699cac703af1c、S02-0013:ability:active-while-attached:f64dc7647e481c5f、S02-01M1:ability:active:4834e3b50d036f27、S02-0205:ability:active:bf422a987e0ab5de、S02-02M1:ability:active:014219b1c6c557fa、S02-0301:ability:active:61c655977499e4be、S02-03M1:ability:active:54e6f9c40764f804、S02-0404:ability:granted:2c2b9693ca8cf3b8、S02-0404:ability:granted:e7c384ccba9ff2f3、S02-0520:ability:mode-promotion-discount:98eb71c68928c091、S02-0520:ability:mode-ready-after-kill:927badbb354c7607、S02-05D1:ability:active:1e9195c93dff4ee9、S02-05M1:ability:active:6fe03f6c35407ac7、S02-05M2:ability:active:e4b2c63a32960f8e、S02-0603:ability:granted:8cd73702b7db90b0、S02-0603:ability:granted:ee3b46417c9fc4f7、S02-0604:ability:trial-completed:9d25a05a194bedc1、S02-06D1:ability:static:65b6607da57e5096、S02-06M1:ability:active:08922e53e852b78f、S02-06S1:ability:static:75769d93e0ca669f、S02-06S5:ability:static:5444a7c87e0351bd、S02-06S6:ability:after-attack:b158f5749a6c161e
-- `single-candidate-choice`（有对象选择时的唯一候选仍选择）：S01-01M2:ability:static:f3ee48a69ee29306、S01-0215:ability:mode-ready-guard:3e3294affff84b58、S01-0215:ability:mode-rest-and-draw:8c1a03af8e682c53、S01-02D1:ability:static:0c86a6851cf9d2ce、S01-02D1:ability:static:dbf8222a61a31140、S01-02M1:ability:static:53475d8f080332f1、S01-02M3:ability:static:705baec08fc6bc02、S01-0314:ability:active:a923615d65edc8ea、S01-03D1:ability:static:d89d0b3dade7b6c8、S01-03M1:ability:static:d047647f18d541e4、S01-03M2:ability:static:e3e85412fe04e44b、S01-0417:ability:static:f10ff922d718f82e、S01-04M1:ability:static:2c285709f5669922、S01-04M2:ability:attack:ebb2054e23f75cd1、S02-01M1:ability:active:4834e3b50d036f27、S02-0205:ability:active:bf422a987e0ab5de、S02-0404:ability:granted:2c2b9693ca8cf3b8、S02-0404:ability:granted:e7c384ccba9ff2f3、S02-0520:ability:mode-ready-after-kill:927badbb354c7607、S02-05M1:ability:active:6fe03f6c35407ac7、S02-05M2:ability:active:e4b2c63a32960f8e、S02-0603:ability:granted:8cd73702b7db90b0、S02-0603:ability:granted:ee3b46417c9fc4f7、S02-06D1:ability:static:65b6607da57e5096、S02-06M1:ability:active:08922e53e852b78f、S02-06S1:ability:static:75769d93e0ca669f、S02-06S6:ability:after-attack:b158f5749a6c161e
-- `multi-target-applicability`（多目标协议的部分失效继续）：S02-01M1:ability:active:4834e3b50d036f27、S02-0205:ability:active:bf422a987e0ab5de
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S01-0004:ability:active:6f9f6988e1ea4be0、S01-01M1:ability:static:c03878ecc263c0e6、S01-01M1:ability:static:d024f673ff236321、S01-01M2:ability:static:f3ee48a69ee29306、S01-0215:ability:mode-ready-guard:3e3294affff84b58、S01-0215:ability:mode-rest-and-draw:8c1a03af8e682c53、S01-02D1:ability:static:0c86a6851cf9d2ce、S01-02D1:ability:static:dbf8222a61a31140、S01-02M1:ability:static:53475d8f080332f1、S01-02M2:ability:static:f3398615ac233d89、S01-02M3:ability:static:705baec08fc6bc02、S01-0307:ability:static:b89287bced985f8c、S01-0314:ability:active:a923615d65edc8ea、S01-03D1:ability:static:342ed2c72fcd22aa、S01-03D1:ability:static:d89d0b3dade7b6c8、S01-03M1:ability:static:d047647f18d541e4、S01-03M2:ability:static:e3e85412fe04e44b、S01-0417:ability:static:f10ff922d718f82e、S01-04D1:ability:static:3c467d3eba318af6、S01-04D1:ability:static:fcd47c32a0a46e1a、S01-04M1:ability:static:2c285709f5669922、S01-04M1:ability:static:51c3f1e1976210f8、S01-04M2:ability:attack:ebb2054e23f75cd1、S01-04M2:ability:static:ce8699cac703af1c、S02-0013:ability:active-while-attached:f64dc7647e481c5f、S02-01M1:ability:active:4834e3b50d036f27、S02-0205:ability:active:bf422a987e0ab5de、S02-02M1:ability:active:014219b1c6c557fa、S02-0301:ability:active:61c655977499e4be、S02-03M1:ability:active:54e6f9c40764f804、S02-0404:ability:granted:2c2b9693ca8cf3b8、S02-0404:ability:granted:e7c384ccba9ff2f3、S02-0520:ability:mode-promotion-discount:98eb71c68928c091、S02-0520:ability:mode-ready-after-kill:927badbb354c7607、S02-05D1:ability:active:1e9195c93dff4ee9、S02-05M1:ability:active:6fe03f6c35407ac7、S02-05M2:ability:active:e4b2c63a32960f8e、S02-0603:ability:granted:8cd73702b7db90b0、S02-0603:ability:granted:ee3b46417c9fc4f7、S02-0604:ability:trial-completed:9d25a05a194bedc1、S02-06D1:ability:static:65b6607da57e5096、S02-06M1:ability:active:08922e53e852b78f、S02-06S1:ability:static:75769d93e0ca669f、S02-06S5:ability:static:5444a7c87e0351bd、S02-06S6:ability:after-attack:b158f5749a6c161e
+展示消费者出口：ResolveEffectPresentationSceneId。
 
-展示消费者出口：档案未声明展示边界。
+## pipeline:disaster-authority（已完成）
 
-## pipeline:disaster-authority（未完成）
-
-绑定能力段：4。运行入口：damage = L12GameEngine.DamageMasterNonLethalFromDisaster；settle = L12GameEngine.ResolveDisasterEffect；trigger = L12GameEngine.BeginDisasterTrigger；turn-end = L12GameEngine.ResolveEndPhaseDisasterEffect；turn-start = L12GameEngine.ResolveTurnStartDisasterEffectIfNeeded。
+绑定能力段：4。运行入口：damage = L12GameEngine.DamageMasterNonLethalFromDisaster；presentation = L12GameEngine.SnapshotFor；settle = L12GameEngine.ResolveDisasterEffect；trigger = L12GameEngine.BeginDisasterTrigger；turn-end = L12GameEngine.ResolveEndPhaseDisasterEffect；turn-start = L12GameEngine.ResolveTurnStartDisasterEffectIfNeeded。
 档案附加检查：authoritative-consumer。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 4（S01-DS02:ability:turn-end:9d632a451357ff71、S01-DS10:ability:turn-start:a790e35d0012c86f、ST-DS01:ability:disaster:00612b44a6a3ac99、ST-DS03:ability:disaster:c974ef724419ccdf） | 0 |
-| no-target | 0 | 0 | 4 |
+| normal | 4 | 0 | 0 |
+| no-target | 3 | 0 | 1 |
 | negated | 0 | 0 | 4 |
-| target-invalidated | 0 | 4（S01-DS02:ability:turn-end:9d632a451357ff71、S01-DS10:ability:turn-start:a790e35d0012c86f、ST-DS01:ability:disaster:00612b44a6a3ac99、ST-DS03:ability:disaster:c974ef724419ccdf） | 0 |
-| duplicate-submit | 0 | 0 | 4 |
-| reconnect | 0 | 4（S01-DS02:ability:turn-end:9d632a451357ff71、S01-DS10:ability:turn-start:a790e35d0012c86f、ST-DS01:ability:disaster:00612b44a6a3ac99、ST-DS03:ability:disaster:c974ef724419ccdf） | 0 |
-| payment-cancel | 0 | 1（ST-DS03:ability:disaster:c974ef724419ccdf） | 3 |
-| single-candidate-choice | 0 | 0 | 4 |
+| target-invalidated | 1 | 0 | 3 |
+| duplicate-submit | 2 | 0 | 2 |
+| reconnect | 4 | 0 | 0 |
+| payment-cancel | 0 | 0 | 4 |
+| single-candidate-choice | 1 | 0 | 3 |
 | multi-target-applicability | 0 | 0 | 4 |
-| presentation-consumers | 0 | 4（S01-DS02:ability:turn-end:9d632a451357ff71、S01-DS10:ability:turn-start:a790e35d0012c86f、ST-DS01:ability:disaster:00612b44a6a3ac99、ST-DS03:ability:disaster:c974ef724419ccdf） | 0 |
+| presentation-consumers | 4 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S01-DS02:ability:turn-end:9d632a451357ff71、S01-DS10:ability:turn-start:a790e35d0012c86f、ST-DS01:ability:disaster:00612b44a6a3ac99、ST-DS03:ability:disaster:c974ef724419ccdf
-- `target-invalidated`（已声明对象逆结算失效）：S01-DS02:ability:turn-end:9d632a451357ff71、S01-DS10:ability:turn-start:a790e35d0012c86f、ST-DS01:ability:disaster:00612b44a6a3ac99、ST-DS03:ability:disaster:c974ef724419ccdf
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S01-DS02:ability:turn-end:9d632a451357ff71、S01-DS10:ability:turn-start:a790e35d0012c86f、ST-DS01:ability:disaster:00612b44a6a3ac99、ST-DS03:ability:disaster:c974ef724419ccdf
-- `payment-cancel`（有费用时的取消/支付失败兜底）：ST-DS03:ability:disaster:c974ef724419ccdf
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S01-DS02:ability:turn-end:9d632a451357ff71、S01-DS10:ability:turn-start:a790e35d0012c86f、ST-DS01:ability:disaster:00612b44a6a3ac99、ST-DS03:ability:disaster:c974ef724419ccdf
+展示消费者出口：SnapshotFor。
 
-展示消费者出口：档案未声明展示边界。
+## pipeline:hand-play（已完成）
 
-## pipeline:hand-play（未完成）
-
-绑定能力段：19。运行入口：composite-declaration = L12GameEngine.BeginCompositeHandPlayDeclaration；composite-validation = L12GameEngine.ValidateCompositeHandPlayDeclaration；cost = L12GameEngine.GetPlayCostWithSigurdDiscount；play = L12GameEngine.PlayCard；settle = L12GameEngine.ResolveTacticEffect。
+绑定能力段：19。运行入口：composite-declaration = L12GameEngine.BeginCompositeHandPlayDeclaration；composite-validation = L12GameEngine.ValidateCompositeHandPlayDeclaration；cost = L12GameEngine.GetPlayCostWithSigurdDiscount；play = L12GameEngine.PlayCard；presentation = L12GameEngine.ResolveEffectPresentationSceneId；settle = L12GameEngine.ResolveTacticEffect。
 档案附加检查：per-card-flow, authoritative-consumer。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 19（S02-0012:ability:play:bafe1ab6a18493c0、S02-0206:ability:play:bd784d08e38e0ed8、S02-0206:ability:play:ca021e5c16b59965、S02-0302:ability:hand-play:4e8ff9ea92325bac、S02-0306:ability:master-effect-damage-threshold:978e2dc72d59418c、S02-0307:ability:play:f9b21f21c30d2eb3、S02-0405:ability:play:0a13775c2081e642、S02-0405:ability:play:b03190adf1322a1a、S02-0406:ability:play:35815c7115c7ce71、S02-0521:ability:play-additional:2b5a094468a81a7a、S02-0522:ability:play-additional:49fb773d1512e5b3、S02-0522:ability:play:a09dadaebc5e13de、S02-0620:ability:play:ac4a80f231805917、S02-0620:ability:play:c2e3d34e7ac83c86、S02-0621:ability:play:9a7d744018bd9e66、S02-0621:ability:play:ecdfaa719e9112ba、S02-0622:ability:hand-play:5b5e4bf8f495f21a、S02-0622:ability:play:d5226a525c565d25、ST03-01:ability:entry-discount:373b8092202cdf17） | 0 |
-| no-target | 0 | 19（S02-0012:ability:play:bafe1ab6a18493c0、S02-0206:ability:play:bd784d08e38e0ed8、S02-0206:ability:play:ca021e5c16b59965、S02-0302:ability:hand-play:4e8ff9ea92325bac、S02-0306:ability:master-effect-damage-threshold:978e2dc72d59418c、S02-0307:ability:play:f9b21f21c30d2eb3、S02-0405:ability:play:0a13775c2081e642、S02-0405:ability:play:b03190adf1322a1a、S02-0406:ability:play:35815c7115c7ce71、S02-0521:ability:play-additional:2b5a094468a81a7a、S02-0522:ability:play-additional:49fb773d1512e5b3、S02-0522:ability:play:a09dadaebc5e13de、S02-0620:ability:play:ac4a80f231805917、S02-0620:ability:play:c2e3d34e7ac83c86、S02-0621:ability:play:9a7d744018bd9e66、S02-0621:ability:play:ecdfaa719e9112ba、S02-0622:ability:hand-play:5b5e4bf8f495f21a、S02-0622:ability:play:d5226a525c565d25、ST03-01:ability:entry-discount:373b8092202cdf17） | 0 |
-| negated | 0 | 19（S02-0012:ability:play:bafe1ab6a18493c0、S02-0206:ability:play:bd784d08e38e0ed8、S02-0206:ability:play:ca021e5c16b59965、S02-0302:ability:hand-play:4e8ff9ea92325bac、S02-0306:ability:master-effect-damage-threshold:978e2dc72d59418c、S02-0307:ability:play:f9b21f21c30d2eb3、S02-0405:ability:play:0a13775c2081e642、S02-0405:ability:play:b03190adf1322a1a、S02-0406:ability:play:35815c7115c7ce71、S02-0521:ability:play-additional:2b5a094468a81a7a、S02-0522:ability:play-additional:49fb773d1512e5b3、S02-0522:ability:play:a09dadaebc5e13de、S02-0620:ability:play:ac4a80f231805917、S02-0620:ability:play:c2e3d34e7ac83c86、S02-0621:ability:play:9a7d744018bd9e66、S02-0621:ability:play:ecdfaa719e9112ba、S02-0622:ability:hand-play:5b5e4bf8f495f21a、S02-0622:ability:play:d5226a525c565d25、ST03-01:ability:entry-discount:373b8092202cdf17） | 0 |
-| target-invalidated | 0 | 19（S02-0012:ability:play:bafe1ab6a18493c0、S02-0206:ability:play:bd784d08e38e0ed8、S02-0206:ability:play:ca021e5c16b59965、S02-0302:ability:hand-play:4e8ff9ea92325bac、S02-0306:ability:master-effect-damage-threshold:978e2dc72d59418c、S02-0307:ability:play:f9b21f21c30d2eb3、S02-0405:ability:play:0a13775c2081e642、S02-0405:ability:play:b03190adf1322a1a、S02-0406:ability:play:35815c7115c7ce71、S02-0521:ability:play-additional:2b5a094468a81a7a、S02-0522:ability:play-additional:49fb773d1512e5b3、S02-0522:ability:play:a09dadaebc5e13de、S02-0620:ability:play:ac4a80f231805917、S02-0620:ability:play:c2e3d34e7ac83c86、S02-0621:ability:play:9a7d744018bd9e66、S02-0621:ability:play:ecdfaa719e9112ba、S02-0622:ability:hand-play:5b5e4bf8f495f21a、S02-0622:ability:play:d5226a525c565d25、ST03-01:ability:entry-discount:373b8092202cdf17） | 0 |
-| duplicate-submit | 0 | 0 | 19 |
-| reconnect | 0 | 19（S02-0012:ability:play:bafe1ab6a18493c0、S02-0206:ability:play:bd784d08e38e0ed8、S02-0206:ability:play:ca021e5c16b59965、S02-0302:ability:hand-play:4e8ff9ea92325bac、S02-0306:ability:master-effect-damage-threshold:978e2dc72d59418c、S02-0307:ability:play:f9b21f21c30d2eb3、S02-0405:ability:play:0a13775c2081e642、S02-0405:ability:play:b03190adf1322a1a、S02-0406:ability:play:35815c7115c7ce71、S02-0521:ability:play-additional:2b5a094468a81a7a、S02-0522:ability:play-additional:49fb773d1512e5b3、S02-0522:ability:play:a09dadaebc5e13de、S02-0620:ability:play:ac4a80f231805917、S02-0620:ability:play:c2e3d34e7ac83c86、S02-0621:ability:play:9a7d744018bd9e66、S02-0621:ability:play:ecdfaa719e9112ba、S02-0622:ability:hand-play:5b5e4bf8f495f21a、S02-0622:ability:play:d5226a525c565d25、ST03-01:ability:entry-discount:373b8092202cdf17） | 0 |
-| payment-cancel | 0 | 0 | 19 |
-| single-candidate-choice | 0 | 12（S02-0206:ability:play:bd784d08e38e0ed8、S02-0307:ability:play:f9b21f21c30d2eb3、S02-0405:ability:play:0a13775c2081e642、S02-0406:ability:play:35815c7115c7ce71、S02-0521:ability:play-additional:2b5a094468a81a7a、S02-0522:ability:play-additional:49fb773d1512e5b3、S02-0522:ability:play:a09dadaebc5e13de、S02-0620:ability:play:c2e3d34e7ac83c86、S02-0621:ability:play:9a7d744018bd9e66、S02-0621:ability:play:ecdfaa719e9112ba、S02-0622:ability:play:d5226a525c565d25、ST03-01:ability:entry-discount:373b8092202cdf17） | 7 |
+| normal | 19 | 0 | 0 |
+| no-target | 19 | 0 | 0 |
+| negated | 19 | 0 | 0 |
+| target-invalidated | 12 | 0 | 7 |
+| duplicate-submit | 19 | 0 | 0 |
+| reconnect | 19 | 0 | 0 |
+| payment-cancel | 8 | 0 | 11 |
+| single-candidate-choice | 12 | 0 | 7 |
 | multi-target-applicability | 0 | 0 | 19 |
-| presentation-consumers | 0 | 19（S02-0012:ability:play:bafe1ab6a18493c0、S02-0206:ability:play:bd784d08e38e0ed8、S02-0206:ability:play:ca021e5c16b59965、S02-0302:ability:hand-play:4e8ff9ea92325bac、S02-0306:ability:master-effect-damage-threshold:978e2dc72d59418c、S02-0307:ability:play:f9b21f21c30d2eb3、S02-0405:ability:play:0a13775c2081e642、S02-0405:ability:play:b03190adf1322a1a、S02-0406:ability:play:35815c7115c7ce71、S02-0521:ability:play-additional:2b5a094468a81a7a、S02-0522:ability:play-additional:49fb773d1512e5b3、S02-0522:ability:play:a09dadaebc5e13de、S02-0620:ability:play:ac4a80f231805917、S02-0620:ability:play:c2e3d34e7ac83c86、S02-0621:ability:play:9a7d744018bd9e66、S02-0621:ability:play:ecdfaa719e9112ba、S02-0622:ability:hand-play:5b5e4bf8f495f21a、S02-0622:ability:play:d5226a525c565d25、ST03-01:ability:entry-discount:373b8092202cdf17） | 0 |
+| presentation-consumers | 19 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S02-0012:ability:play:bafe1ab6a18493c0、S02-0206:ability:play:bd784d08e38e0ed8、S02-0206:ability:play:ca021e5c16b59965、S02-0302:ability:hand-play:4e8ff9ea92325bac、S02-0306:ability:master-effect-damage-threshold:978e2dc72d59418c、S02-0307:ability:play:f9b21f21c30d2eb3、S02-0405:ability:play:0a13775c2081e642、S02-0405:ability:play:b03190adf1322a1a、S02-0406:ability:play:35815c7115c7ce71、S02-0521:ability:play-additional:2b5a094468a81a7a、S02-0522:ability:play-additional:49fb773d1512e5b3、S02-0522:ability:play:a09dadaebc5e13de、S02-0620:ability:play:ac4a80f231805917、S02-0620:ability:play:c2e3d34e7ac83c86、S02-0621:ability:play:9a7d744018bd9e66、S02-0621:ability:play:ecdfaa719e9112ba、S02-0622:ability:hand-play:5b5e4bf8f495f21a、S02-0622:ability:play:d5226a525c565d25、ST03-01:ability:entry-discount:373b8092202cdf17
-- `no-target`（无目标/不能发动）：S02-0012:ability:play:bafe1ab6a18493c0、S02-0206:ability:play:bd784d08e38e0ed8、S02-0206:ability:play:ca021e5c16b59965、S02-0302:ability:hand-play:4e8ff9ea92325bac、S02-0306:ability:master-effect-damage-threshold:978e2dc72d59418c、S02-0307:ability:play:f9b21f21c30d2eb3、S02-0405:ability:play:0a13775c2081e642、S02-0405:ability:play:b03190adf1322a1a、S02-0406:ability:play:35815c7115c7ce71、S02-0521:ability:play-additional:2b5a094468a81a7a、S02-0522:ability:play-additional:49fb773d1512e5b3、S02-0522:ability:play:a09dadaebc5e13de、S02-0620:ability:play:ac4a80f231805917、S02-0620:ability:play:c2e3d34e7ac83c86、S02-0621:ability:play:9a7d744018bd9e66、S02-0621:ability:play:ecdfaa719e9112ba、S02-0622:ability:hand-play:5b5e4bf8f495f21a、S02-0622:ability:play:d5226a525c565d25、ST03-01:ability:entry-discount:373b8092202cdf17
-- `negated`（已支付后被无效）：S02-0012:ability:play:bafe1ab6a18493c0、S02-0206:ability:play:bd784d08e38e0ed8、S02-0206:ability:play:ca021e5c16b59965、S02-0302:ability:hand-play:4e8ff9ea92325bac、S02-0306:ability:master-effect-damage-threshold:978e2dc72d59418c、S02-0307:ability:play:f9b21f21c30d2eb3、S02-0405:ability:play:0a13775c2081e642、S02-0405:ability:play:b03190adf1322a1a、S02-0406:ability:play:35815c7115c7ce71、S02-0521:ability:play-additional:2b5a094468a81a7a、S02-0522:ability:play-additional:49fb773d1512e5b3、S02-0522:ability:play:a09dadaebc5e13de、S02-0620:ability:play:ac4a80f231805917、S02-0620:ability:play:c2e3d34e7ac83c86、S02-0621:ability:play:9a7d744018bd9e66、S02-0621:ability:play:ecdfaa719e9112ba、S02-0622:ability:hand-play:5b5e4bf8f495f21a、S02-0622:ability:play:d5226a525c565d25、ST03-01:ability:entry-discount:373b8092202cdf17
-- `target-invalidated`（已声明对象逆结算失效）：S02-0012:ability:play:bafe1ab6a18493c0、S02-0206:ability:play:bd784d08e38e0ed8、S02-0206:ability:play:ca021e5c16b59965、S02-0302:ability:hand-play:4e8ff9ea92325bac、S02-0306:ability:master-effect-damage-threshold:978e2dc72d59418c、S02-0307:ability:play:f9b21f21c30d2eb3、S02-0405:ability:play:0a13775c2081e642、S02-0405:ability:play:b03190adf1322a1a、S02-0406:ability:play:35815c7115c7ce71、S02-0521:ability:play-additional:2b5a094468a81a7a、S02-0522:ability:play-additional:49fb773d1512e5b3、S02-0522:ability:play:a09dadaebc5e13de、S02-0620:ability:play:ac4a80f231805917、S02-0620:ability:play:c2e3d34e7ac83c86、S02-0621:ability:play:9a7d744018bd9e66、S02-0621:ability:play:ecdfaa719e9112ba、S02-0622:ability:hand-play:5b5e4bf8f495f21a、S02-0622:ability:play:d5226a525c565d25、ST03-01:ability:entry-discount:373b8092202cdf17
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S02-0012:ability:play:bafe1ab6a18493c0、S02-0206:ability:play:bd784d08e38e0ed8、S02-0206:ability:play:ca021e5c16b59965、S02-0302:ability:hand-play:4e8ff9ea92325bac、S02-0306:ability:master-effect-damage-threshold:978e2dc72d59418c、S02-0307:ability:play:f9b21f21c30d2eb3、S02-0405:ability:play:0a13775c2081e642、S02-0405:ability:play:b03190adf1322a1a、S02-0406:ability:play:35815c7115c7ce71、S02-0521:ability:play-additional:2b5a094468a81a7a、S02-0522:ability:play-additional:49fb773d1512e5b3、S02-0522:ability:play:a09dadaebc5e13de、S02-0620:ability:play:ac4a80f231805917、S02-0620:ability:play:c2e3d34e7ac83c86、S02-0621:ability:play:9a7d744018bd9e66、S02-0621:ability:play:ecdfaa719e9112ba、S02-0622:ability:hand-play:5b5e4bf8f495f21a、S02-0622:ability:play:d5226a525c565d25、ST03-01:ability:entry-discount:373b8092202cdf17
-- `single-candidate-choice`（有对象选择时的唯一候选仍选择）：S02-0206:ability:play:bd784d08e38e0ed8、S02-0307:ability:play:f9b21f21c30d2eb3、S02-0405:ability:play:0a13775c2081e642、S02-0406:ability:play:35815c7115c7ce71、S02-0521:ability:play-additional:2b5a094468a81a7a、S02-0522:ability:play-additional:49fb773d1512e5b3、S02-0522:ability:play:a09dadaebc5e13de、S02-0620:ability:play:c2e3d34e7ac83c86、S02-0621:ability:play:9a7d744018bd9e66、S02-0621:ability:play:ecdfaa719e9112ba、S02-0622:ability:play:d5226a525c565d25、ST03-01:ability:entry-discount:373b8092202cdf17
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S02-0012:ability:play:bafe1ab6a18493c0、S02-0206:ability:play:bd784d08e38e0ed8、S02-0206:ability:play:ca021e5c16b59965、S02-0302:ability:hand-play:4e8ff9ea92325bac、S02-0306:ability:master-effect-damage-threshold:978e2dc72d59418c、S02-0307:ability:play:f9b21f21c30d2eb3、S02-0405:ability:play:0a13775c2081e642、S02-0405:ability:play:b03190adf1322a1a、S02-0406:ability:play:35815c7115c7ce71、S02-0521:ability:play-additional:2b5a094468a81a7a、S02-0522:ability:play-additional:49fb773d1512e5b3、S02-0522:ability:play:a09dadaebc5e13de、S02-0620:ability:play:ac4a80f231805917、S02-0620:ability:play:c2e3d34e7ac83c86、S02-0621:ability:play:9a7d744018bd9e66、S02-0621:ability:play:ecdfaa719e9112ba、S02-0622:ability:hand-play:5b5e4bf8f495f21a、S02-0622:ability:play:d5226a525c565d25、ST03-01:ability:entry-discount:373b8092202cdf17
+展示消费者出口：ResolveEffectPresentationSceneId。
 
-展示消费者出口：档案未声明展示边界。
+## pipeline:public-trigger（已完成）
 
-## pipeline:public-trigger（未完成）
-
-绑定能力段：39。运行入口：batch-plan = L12TriggerBatchPlanner.Plan；begin-declaration = L12GameEngine.TryBeginPublicTriggerDeclaration；candidates = L12GameEngine.QueueTriggerCandidates；complete-declaration = L12GameEngine.TryCompletePublicTriggerDeclaration；settle = L12GameEngine.ResolveTopStack。
+绑定能力段：39。运行入口：batch-plan = L12TriggerBatchPlanner.Plan；begin-declaration = L12GameEngine.TryBeginPublicTriggerDeclaration；candidates = L12GameEngine.QueueTriggerCandidates；complete-declaration = L12GameEngine.TryCompletePublicTriggerDeclaration；presentation = L12GameEngine.ResolveTriggeredEffectDisplayText；settle = L12GameEngine.ResolveTopStack。
 档案附加检查：per-card-plan, authoritative-consumer。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 39（S01-01D1:ability:static:103012fd4239104f、S01-01M1:ability:death:ee5adb706424f233、S01-01M1:ability:static:0924c3a5995ba164、S01-0204:ability:leave:a59801f7c2874f4a、S01-02M3:ability:static:3a86c87f975d5851、S01-02M3:ability:static:c339139cc1c9b00c、S01-0311:ability:after-attack:65ce2315ff4c0465、S01-0311:ability:static:3409dd9fa29f684f、S01-0414:ability:static:e001b352b3693d93、S01-04M2:ability:leave:4e83a7191108369b、S02-0001:ability:after-opponent-tactic:6d30a9b672845491、S02-0006:ability:discarded:89d3ee4207648aa1、S02-0103:ability:attack:607e6460eed6637b、S02-01S1:ability:master-morale-return:8d098fe32e7b253b、S02-02M1:ability:friendly-legion-death:a366c9a7f75b5f29、S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b、S02-0305:ability:master-damaged:a4a2c92cad3ad28c、S02-0401:ability:continuous:9601da1d8445f865、S02-04M1:ability:friendly-back-to-front:03cb93e7e3eeedf3、S02-04M1:ability:friendly-front-to-back:e46218b2ac936410、S02-04M1:ability:friendly-legion-moves:654df25d049352f7、S02-0503:ability:after-attack:e3ced12ddde14fdb、S02-0511:ability:attack:c367ee3457cbd5f4、S02-0516:ability:attack:077dc7337586413c、S02-0523:ability:after-opponent-attack:5bff9b891b7b1cba、S02-0602:ability:after-kill:e290e1e434e45531、S02-0605:ability:attack:82a5bf2622bf4d20、S02-0607:ability:attack:25d5c998d14502d7、S02-0608:ability:attack:0999d120e02e3c50、S02-0608:ability:attack:4581df1cc635dd68、S02-0611:ability:enter:0cc32f023a1b4f11、S02-0612:ability:attack:c195f409c875e9eb、S02-0614:ability:enter:601eddfb8abbb8d2、S02-0617:ability:attack:c8dd6c6601a73ebb、S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92、S02-06S3:ability:static:3616e3ca17ffd729、S02-06S4:ability:trial-complete:f95fed6f3ff0efc0、S02-06S5:ability:static:1e799825eedf3331、ST01-C1:ability:static:605b9aa3d8a1ed93） | 0 |
-| no-target | 0 | 39（S01-01D1:ability:static:103012fd4239104f、S01-01M1:ability:death:ee5adb706424f233、S01-01M1:ability:static:0924c3a5995ba164、S01-0204:ability:leave:a59801f7c2874f4a、S01-02M3:ability:static:3a86c87f975d5851、S01-02M3:ability:static:c339139cc1c9b00c、S01-0311:ability:after-attack:65ce2315ff4c0465、S01-0311:ability:static:3409dd9fa29f684f、S01-0414:ability:static:e001b352b3693d93、S01-04M2:ability:leave:4e83a7191108369b、S02-0001:ability:after-opponent-tactic:6d30a9b672845491、S02-0006:ability:discarded:89d3ee4207648aa1、S02-0103:ability:attack:607e6460eed6637b、S02-01S1:ability:master-morale-return:8d098fe32e7b253b、S02-02M1:ability:friendly-legion-death:a366c9a7f75b5f29、S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b、S02-0305:ability:master-damaged:a4a2c92cad3ad28c、S02-0401:ability:continuous:9601da1d8445f865、S02-04M1:ability:friendly-back-to-front:03cb93e7e3eeedf3、S02-04M1:ability:friendly-front-to-back:e46218b2ac936410、S02-04M1:ability:friendly-legion-moves:654df25d049352f7、S02-0503:ability:after-attack:e3ced12ddde14fdb、S02-0511:ability:attack:c367ee3457cbd5f4、S02-0516:ability:attack:077dc7337586413c、S02-0523:ability:after-opponent-attack:5bff9b891b7b1cba、S02-0602:ability:after-kill:e290e1e434e45531、S02-0605:ability:attack:82a5bf2622bf4d20、S02-0607:ability:attack:25d5c998d14502d7、S02-0608:ability:attack:0999d120e02e3c50、S02-0608:ability:attack:4581df1cc635dd68、S02-0611:ability:enter:0cc32f023a1b4f11、S02-0612:ability:attack:c195f409c875e9eb、S02-0614:ability:enter:601eddfb8abbb8d2、S02-0617:ability:attack:c8dd6c6601a73ebb、S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92、S02-06S3:ability:static:3616e3ca17ffd729、S02-06S4:ability:trial-complete:f95fed6f3ff0efc0、S02-06S5:ability:static:1e799825eedf3331、ST01-C1:ability:static:605b9aa3d8a1ed93） | 0 |
-| negated | 0 | 39（S01-01D1:ability:static:103012fd4239104f、S01-01M1:ability:death:ee5adb706424f233、S01-01M1:ability:static:0924c3a5995ba164、S01-0204:ability:leave:a59801f7c2874f4a、S01-02M3:ability:static:3a86c87f975d5851、S01-02M3:ability:static:c339139cc1c9b00c、S01-0311:ability:after-attack:65ce2315ff4c0465、S01-0311:ability:static:3409dd9fa29f684f、S01-0414:ability:static:e001b352b3693d93、S01-04M2:ability:leave:4e83a7191108369b、S02-0001:ability:after-opponent-tactic:6d30a9b672845491、S02-0006:ability:discarded:89d3ee4207648aa1、S02-0103:ability:attack:607e6460eed6637b、S02-01S1:ability:master-morale-return:8d098fe32e7b253b、S02-02M1:ability:friendly-legion-death:a366c9a7f75b5f29、S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b、S02-0305:ability:master-damaged:a4a2c92cad3ad28c、S02-0401:ability:continuous:9601da1d8445f865、S02-04M1:ability:friendly-back-to-front:03cb93e7e3eeedf3、S02-04M1:ability:friendly-front-to-back:e46218b2ac936410、S02-04M1:ability:friendly-legion-moves:654df25d049352f7、S02-0503:ability:after-attack:e3ced12ddde14fdb、S02-0511:ability:attack:c367ee3457cbd5f4、S02-0516:ability:attack:077dc7337586413c、S02-0523:ability:after-opponent-attack:5bff9b891b7b1cba、S02-0602:ability:after-kill:e290e1e434e45531、S02-0605:ability:attack:82a5bf2622bf4d20、S02-0607:ability:attack:25d5c998d14502d7、S02-0608:ability:attack:0999d120e02e3c50、S02-0608:ability:attack:4581df1cc635dd68、S02-0611:ability:enter:0cc32f023a1b4f11、S02-0612:ability:attack:c195f409c875e9eb、S02-0614:ability:enter:601eddfb8abbb8d2、S02-0617:ability:attack:c8dd6c6601a73ebb、S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92、S02-06S3:ability:static:3616e3ca17ffd729、S02-06S4:ability:trial-complete:f95fed6f3ff0efc0、S02-06S5:ability:static:1e799825eedf3331、ST01-C1:ability:static:605b9aa3d8a1ed93） | 0 |
-| target-invalidated | 0 | 39（S01-01D1:ability:static:103012fd4239104f、S01-01M1:ability:death:ee5adb706424f233、S01-01M1:ability:static:0924c3a5995ba164、S01-0204:ability:leave:a59801f7c2874f4a、S01-02M3:ability:static:3a86c87f975d5851、S01-02M3:ability:static:c339139cc1c9b00c、S01-0311:ability:after-attack:65ce2315ff4c0465、S01-0311:ability:static:3409dd9fa29f684f、S01-0414:ability:static:e001b352b3693d93、S01-04M2:ability:leave:4e83a7191108369b、S02-0001:ability:after-opponent-tactic:6d30a9b672845491、S02-0006:ability:discarded:89d3ee4207648aa1、S02-0103:ability:attack:607e6460eed6637b、S02-01S1:ability:master-morale-return:8d098fe32e7b253b、S02-02M1:ability:friendly-legion-death:a366c9a7f75b5f29、S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b、S02-0305:ability:master-damaged:a4a2c92cad3ad28c、S02-0401:ability:continuous:9601da1d8445f865、S02-04M1:ability:friendly-back-to-front:03cb93e7e3eeedf3、S02-04M1:ability:friendly-front-to-back:e46218b2ac936410、S02-04M1:ability:friendly-legion-moves:654df25d049352f7、S02-0503:ability:after-attack:e3ced12ddde14fdb、S02-0511:ability:attack:c367ee3457cbd5f4、S02-0516:ability:attack:077dc7337586413c、S02-0523:ability:after-opponent-attack:5bff9b891b7b1cba、S02-0602:ability:after-kill:e290e1e434e45531、S02-0605:ability:attack:82a5bf2622bf4d20、S02-0607:ability:attack:25d5c998d14502d7、S02-0608:ability:attack:0999d120e02e3c50、S02-0608:ability:attack:4581df1cc635dd68、S02-0611:ability:enter:0cc32f023a1b4f11、S02-0612:ability:attack:c195f409c875e9eb、S02-0614:ability:enter:601eddfb8abbb8d2、S02-0617:ability:attack:c8dd6c6601a73ebb、S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92、S02-06S3:ability:static:3616e3ca17ffd729、S02-06S4:ability:trial-complete:f95fed6f3ff0efc0、S02-06S5:ability:static:1e799825eedf3331、ST01-C1:ability:static:605b9aa3d8a1ed93） | 0 |
-| duplicate-submit | 0 | 0 | 39 |
-| reconnect | 0 | 39（S01-01D1:ability:static:103012fd4239104f、S01-01M1:ability:death:ee5adb706424f233、S01-01M1:ability:static:0924c3a5995ba164、S01-0204:ability:leave:a59801f7c2874f4a、S01-02M3:ability:static:3a86c87f975d5851、S01-02M3:ability:static:c339139cc1c9b00c、S01-0311:ability:after-attack:65ce2315ff4c0465、S01-0311:ability:static:3409dd9fa29f684f、S01-0414:ability:static:e001b352b3693d93、S01-04M2:ability:leave:4e83a7191108369b、S02-0001:ability:after-opponent-tactic:6d30a9b672845491、S02-0006:ability:discarded:89d3ee4207648aa1、S02-0103:ability:attack:607e6460eed6637b、S02-01S1:ability:master-morale-return:8d098fe32e7b253b、S02-02M1:ability:friendly-legion-death:a366c9a7f75b5f29、S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b、S02-0305:ability:master-damaged:a4a2c92cad3ad28c、S02-0401:ability:continuous:9601da1d8445f865、S02-04M1:ability:friendly-back-to-front:03cb93e7e3eeedf3、S02-04M1:ability:friendly-front-to-back:e46218b2ac936410、S02-04M1:ability:friendly-legion-moves:654df25d049352f7、S02-0503:ability:after-attack:e3ced12ddde14fdb、S02-0511:ability:attack:c367ee3457cbd5f4、S02-0516:ability:attack:077dc7337586413c、S02-0523:ability:after-opponent-attack:5bff9b891b7b1cba、S02-0602:ability:after-kill:e290e1e434e45531、S02-0605:ability:attack:82a5bf2622bf4d20、S02-0607:ability:attack:25d5c998d14502d7、S02-0608:ability:attack:0999d120e02e3c50、S02-0608:ability:attack:4581df1cc635dd68、S02-0611:ability:enter:0cc32f023a1b4f11、S02-0612:ability:attack:c195f409c875e9eb、S02-0614:ability:enter:601eddfb8abbb8d2、S02-0617:ability:attack:c8dd6c6601a73ebb、S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92、S02-06S3:ability:static:3616e3ca17ffd729、S02-06S4:ability:trial-complete:f95fed6f3ff0efc0、S02-06S5:ability:static:1e799825eedf3331、ST01-C1:ability:static:605b9aa3d8a1ed93） | 0 |
-| payment-cancel | 0 | 12（S01-01D1:ability:static:103012fd4239104f、S01-01M1:ability:death:ee5adb706424f233、S01-0311:ability:static:3409dd9fa29f684f、S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b、S02-04M1:ability:friendly-back-to-front:03cb93e7e3eeedf3、S02-0511:ability:attack:c367ee3457cbd5f4、S02-0516:ability:attack:077dc7337586413c、S02-0605:ability:attack:82a5bf2622bf4d20、S02-0607:ability:attack:25d5c998d14502d7、S02-0608:ability:attack:4581df1cc635dd68、S02-0612:ability:attack:c195f409c875e9eb、S02-06S5:ability:static:1e799825eedf3331） | 27 |
-| single-candidate-choice | 0 | 9（S01-04M2:ability:leave:4e83a7191108369b、S02-0001:ability:after-opponent-tactic:6d30a9b672845491、S02-04M1:ability:friendly-back-to-front:03cb93e7e3eeedf3、S02-0516:ability:attack:077dc7337586413c、S02-0523:ability:after-opponent-attack:5bff9b891b7b1cba、S02-0602:ability:after-kill:e290e1e434e45531、S02-0614:ability:enter:601eddfb8abbb8d2、S02-06S4:ability:trial-complete:f95fed6f3ff0efc0、S02-06S5:ability:static:1e799825eedf3331） | 30 |
+| normal | 39 | 0 | 0 |
+| no-target | 39 | 0 | 0 |
+| negated | 39 | 0 | 0 |
+| target-invalidated | 9 | 0 | 30 |
+| duplicate-submit | 39 | 0 | 0 |
+| reconnect | 39 | 0 | 0 |
+| payment-cancel | 12 | 0 | 27 |
+| single-candidate-choice | 9 | 0 | 30 |
 | multi-target-applicability | 0 | 0 | 39 |
-| presentation-consumers | 0 | 39（S01-01D1:ability:static:103012fd4239104f、S01-01M1:ability:death:ee5adb706424f233、S01-01M1:ability:static:0924c3a5995ba164、S01-0204:ability:leave:a59801f7c2874f4a、S01-02M3:ability:static:3a86c87f975d5851、S01-02M3:ability:static:c339139cc1c9b00c、S01-0311:ability:after-attack:65ce2315ff4c0465、S01-0311:ability:static:3409dd9fa29f684f、S01-0414:ability:static:e001b352b3693d93、S01-04M2:ability:leave:4e83a7191108369b、S02-0001:ability:after-opponent-tactic:6d30a9b672845491、S02-0006:ability:discarded:89d3ee4207648aa1、S02-0103:ability:attack:607e6460eed6637b、S02-01S1:ability:master-morale-return:8d098fe32e7b253b、S02-02M1:ability:friendly-legion-death:a366c9a7f75b5f29、S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b、S02-0305:ability:master-damaged:a4a2c92cad3ad28c、S02-0401:ability:continuous:9601da1d8445f865、S02-04M1:ability:friendly-back-to-front:03cb93e7e3eeedf3、S02-04M1:ability:friendly-front-to-back:e46218b2ac936410、S02-04M1:ability:friendly-legion-moves:654df25d049352f7、S02-0503:ability:after-attack:e3ced12ddde14fdb、S02-0511:ability:attack:c367ee3457cbd5f4、S02-0516:ability:attack:077dc7337586413c、S02-0523:ability:after-opponent-attack:5bff9b891b7b1cba、S02-0602:ability:after-kill:e290e1e434e45531、S02-0605:ability:attack:82a5bf2622bf4d20、S02-0607:ability:attack:25d5c998d14502d7、S02-0608:ability:attack:0999d120e02e3c50、S02-0608:ability:attack:4581df1cc635dd68、S02-0611:ability:enter:0cc32f023a1b4f11、S02-0612:ability:attack:c195f409c875e9eb、S02-0614:ability:enter:601eddfb8abbb8d2、S02-0617:ability:attack:c8dd6c6601a73ebb、S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92、S02-06S3:ability:static:3616e3ca17ffd729、S02-06S4:ability:trial-complete:f95fed6f3ff0efc0、S02-06S5:ability:static:1e799825eedf3331、ST01-C1:ability:static:605b9aa3d8a1ed93） | 0 |
+| presentation-consumers | 39 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S01-01D1:ability:static:103012fd4239104f、S01-01M1:ability:death:ee5adb706424f233、S01-01M1:ability:static:0924c3a5995ba164、S01-0204:ability:leave:a59801f7c2874f4a、S01-02M3:ability:static:3a86c87f975d5851、S01-02M3:ability:static:c339139cc1c9b00c、S01-0311:ability:after-attack:65ce2315ff4c0465、S01-0311:ability:static:3409dd9fa29f684f、S01-0414:ability:static:e001b352b3693d93、S01-04M2:ability:leave:4e83a7191108369b、S02-0001:ability:after-opponent-tactic:6d30a9b672845491、S02-0006:ability:discarded:89d3ee4207648aa1、S02-0103:ability:attack:607e6460eed6637b、S02-01S1:ability:master-morale-return:8d098fe32e7b253b、S02-02M1:ability:friendly-legion-death:a366c9a7f75b5f29、S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b、S02-0305:ability:master-damaged:a4a2c92cad3ad28c、S02-0401:ability:continuous:9601da1d8445f865、S02-04M1:ability:friendly-back-to-front:03cb93e7e3eeedf3、S02-04M1:ability:friendly-front-to-back:e46218b2ac936410、S02-04M1:ability:friendly-legion-moves:654df25d049352f7、S02-0503:ability:after-attack:e3ced12ddde14fdb、S02-0511:ability:attack:c367ee3457cbd5f4、S02-0516:ability:attack:077dc7337586413c、S02-0523:ability:after-opponent-attack:5bff9b891b7b1cba、S02-0602:ability:after-kill:e290e1e434e45531、S02-0605:ability:attack:82a5bf2622bf4d20、S02-0607:ability:attack:25d5c998d14502d7、S02-0608:ability:attack:0999d120e02e3c50、S02-0608:ability:attack:4581df1cc635dd68、S02-0611:ability:enter:0cc32f023a1b4f11、S02-0612:ability:attack:c195f409c875e9eb、S02-0614:ability:enter:601eddfb8abbb8d2、S02-0617:ability:attack:c8dd6c6601a73ebb、S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92、S02-06S3:ability:static:3616e3ca17ffd729、S02-06S4:ability:trial-complete:f95fed6f3ff0efc0、S02-06S5:ability:static:1e799825eedf3331、ST01-C1:ability:static:605b9aa3d8a1ed93
-- `no-target`（无目标/不能发动）：S01-01D1:ability:static:103012fd4239104f、S01-01M1:ability:death:ee5adb706424f233、S01-01M1:ability:static:0924c3a5995ba164、S01-0204:ability:leave:a59801f7c2874f4a、S01-02M3:ability:static:3a86c87f975d5851、S01-02M3:ability:static:c339139cc1c9b00c、S01-0311:ability:after-attack:65ce2315ff4c0465、S01-0311:ability:static:3409dd9fa29f684f、S01-0414:ability:static:e001b352b3693d93、S01-04M2:ability:leave:4e83a7191108369b、S02-0001:ability:after-opponent-tactic:6d30a9b672845491、S02-0006:ability:discarded:89d3ee4207648aa1、S02-0103:ability:attack:607e6460eed6637b、S02-01S1:ability:master-morale-return:8d098fe32e7b253b、S02-02M1:ability:friendly-legion-death:a366c9a7f75b5f29、S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b、S02-0305:ability:master-damaged:a4a2c92cad3ad28c、S02-0401:ability:continuous:9601da1d8445f865、S02-04M1:ability:friendly-back-to-front:03cb93e7e3eeedf3、S02-04M1:ability:friendly-front-to-back:e46218b2ac936410、S02-04M1:ability:friendly-legion-moves:654df25d049352f7、S02-0503:ability:after-attack:e3ced12ddde14fdb、S02-0511:ability:attack:c367ee3457cbd5f4、S02-0516:ability:attack:077dc7337586413c、S02-0523:ability:after-opponent-attack:5bff9b891b7b1cba、S02-0602:ability:after-kill:e290e1e434e45531、S02-0605:ability:attack:82a5bf2622bf4d20、S02-0607:ability:attack:25d5c998d14502d7、S02-0608:ability:attack:0999d120e02e3c50、S02-0608:ability:attack:4581df1cc635dd68、S02-0611:ability:enter:0cc32f023a1b4f11、S02-0612:ability:attack:c195f409c875e9eb、S02-0614:ability:enter:601eddfb8abbb8d2、S02-0617:ability:attack:c8dd6c6601a73ebb、S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92、S02-06S3:ability:static:3616e3ca17ffd729、S02-06S4:ability:trial-complete:f95fed6f3ff0efc0、S02-06S5:ability:static:1e799825eedf3331、ST01-C1:ability:static:605b9aa3d8a1ed93
-- `negated`（已支付后被无效）：S01-01D1:ability:static:103012fd4239104f、S01-01M1:ability:death:ee5adb706424f233、S01-01M1:ability:static:0924c3a5995ba164、S01-0204:ability:leave:a59801f7c2874f4a、S01-02M3:ability:static:3a86c87f975d5851、S01-02M3:ability:static:c339139cc1c9b00c、S01-0311:ability:after-attack:65ce2315ff4c0465、S01-0311:ability:static:3409dd9fa29f684f、S01-0414:ability:static:e001b352b3693d93、S01-04M2:ability:leave:4e83a7191108369b、S02-0001:ability:after-opponent-tactic:6d30a9b672845491、S02-0006:ability:discarded:89d3ee4207648aa1、S02-0103:ability:attack:607e6460eed6637b、S02-01S1:ability:master-morale-return:8d098fe32e7b253b、S02-02M1:ability:friendly-legion-death:a366c9a7f75b5f29、S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b、S02-0305:ability:master-damaged:a4a2c92cad3ad28c、S02-0401:ability:continuous:9601da1d8445f865、S02-04M1:ability:friendly-back-to-front:03cb93e7e3eeedf3、S02-04M1:ability:friendly-front-to-back:e46218b2ac936410、S02-04M1:ability:friendly-legion-moves:654df25d049352f7、S02-0503:ability:after-attack:e3ced12ddde14fdb、S02-0511:ability:attack:c367ee3457cbd5f4、S02-0516:ability:attack:077dc7337586413c、S02-0523:ability:after-opponent-attack:5bff9b891b7b1cba、S02-0602:ability:after-kill:e290e1e434e45531、S02-0605:ability:attack:82a5bf2622bf4d20、S02-0607:ability:attack:25d5c998d14502d7、S02-0608:ability:attack:0999d120e02e3c50、S02-0608:ability:attack:4581df1cc635dd68、S02-0611:ability:enter:0cc32f023a1b4f11、S02-0612:ability:attack:c195f409c875e9eb、S02-0614:ability:enter:601eddfb8abbb8d2、S02-0617:ability:attack:c8dd6c6601a73ebb、S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92、S02-06S3:ability:static:3616e3ca17ffd729、S02-06S4:ability:trial-complete:f95fed6f3ff0efc0、S02-06S5:ability:static:1e799825eedf3331、ST01-C1:ability:static:605b9aa3d8a1ed93
-- `target-invalidated`（已声明对象逆结算失效）：S01-01D1:ability:static:103012fd4239104f、S01-01M1:ability:death:ee5adb706424f233、S01-01M1:ability:static:0924c3a5995ba164、S01-0204:ability:leave:a59801f7c2874f4a、S01-02M3:ability:static:3a86c87f975d5851、S01-02M3:ability:static:c339139cc1c9b00c、S01-0311:ability:after-attack:65ce2315ff4c0465、S01-0311:ability:static:3409dd9fa29f684f、S01-0414:ability:static:e001b352b3693d93、S01-04M2:ability:leave:4e83a7191108369b、S02-0001:ability:after-opponent-tactic:6d30a9b672845491、S02-0006:ability:discarded:89d3ee4207648aa1、S02-0103:ability:attack:607e6460eed6637b、S02-01S1:ability:master-morale-return:8d098fe32e7b253b、S02-02M1:ability:friendly-legion-death:a366c9a7f75b5f29、S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b、S02-0305:ability:master-damaged:a4a2c92cad3ad28c、S02-0401:ability:continuous:9601da1d8445f865、S02-04M1:ability:friendly-back-to-front:03cb93e7e3eeedf3、S02-04M1:ability:friendly-front-to-back:e46218b2ac936410、S02-04M1:ability:friendly-legion-moves:654df25d049352f7、S02-0503:ability:after-attack:e3ced12ddde14fdb、S02-0511:ability:attack:c367ee3457cbd5f4、S02-0516:ability:attack:077dc7337586413c、S02-0523:ability:after-opponent-attack:5bff9b891b7b1cba、S02-0602:ability:after-kill:e290e1e434e45531、S02-0605:ability:attack:82a5bf2622bf4d20、S02-0607:ability:attack:25d5c998d14502d7、S02-0608:ability:attack:0999d120e02e3c50、S02-0608:ability:attack:4581df1cc635dd68、S02-0611:ability:enter:0cc32f023a1b4f11、S02-0612:ability:attack:c195f409c875e9eb、S02-0614:ability:enter:601eddfb8abbb8d2、S02-0617:ability:attack:c8dd6c6601a73ebb、S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92、S02-06S3:ability:static:3616e3ca17ffd729、S02-06S4:ability:trial-complete:f95fed6f3ff0efc0、S02-06S5:ability:static:1e799825eedf3331、ST01-C1:ability:static:605b9aa3d8a1ed93
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S01-01D1:ability:static:103012fd4239104f、S01-01M1:ability:death:ee5adb706424f233、S01-01M1:ability:static:0924c3a5995ba164、S01-0204:ability:leave:a59801f7c2874f4a、S01-02M3:ability:static:3a86c87f975d5851、S01-02M3:ability:static:c339139cc1c9b00c、S01-0311:ability:after-attack:65ce2315ff4c0465、S01-0311:ability:static:3409dd9fa29f684f、S01-0414:ability:static:e001b352b3693d93、S01-04M2:ability:leave:4e83a7191108369b、S02-0001:ability:after-opponent-tactic:6d30a9b672845491、S02-0006:ability:discarded:89d3ee4207648aa1、S02-0103:ability:attack:607e6460eed6637b、S02-01S1:ability:master-morale-return:8d098fe32e7b253b、S02-02M1:ability:friendly-legion-death:a366c9a7f75b5f29、S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b、S02-0305:ability:master-damaged:a4a2c92cad3ad28c、S02-0401:ability:continuous:9601da1d8445f865、S02-04M1:ability:friendly-back-to-front:03cb93e7e3eeedf3、S02-04M1:ability:friendly-front-to-back:e46218b2ac936410、S02-04M1:ability:friendly-legion-moves:654df25d049352f7、S02-0503:ability:after-attack:e3ced12ddde14fdb、S02-0511:ability:attack:c367ee3457cbd5f4、S02-0516:ability:attack:077dc7337586413c、S02-0523:ability:after-opponent-attack:5bff9b891b7b1cba、S02-0602:ability:after-kill:e290e1e434e45531、S02-0605:ability:attack:82a5bf2622bf4d20、S02-0607:ability:attack:25d5c998d14502d7、S02-0608:ability:attack:0999d120e02e3c50、S02-0608:ability:attack:4581df1cc635dd68、S02-0611:ability:enter:0cc32f023a1b4f11、S02-0612:ability:attack:c195f409c875e9eb、S02-0614:ability:enter:601eddfb8abbb8d2、S02-0617:ability:attack:c8dd6c6601a73ebb、S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92、S02-06S3:ability:static:3616e3ca17ffd729、S02-06S4:ability:trial-complete:f95fed6f3ff0efc0、S02-06S5:ability:static:1e799825eedf3331、ST01-C1:ability:static:605b9aa3d8a1ed93
-- `payment-cancel`（有费用时的取消/支付失败兜底）：S01-01D1:ability:static:103012fd4239104f、S01-01M1:ability:death:ee5adb706424f233、S01-0311:ability:static:3409dd9fa29f684f、S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b、S02-04M1:ability:friendly-back-to-front:03cb93e7e3eeedf3、S02-0511:ability:attack:c367ee3457cbd5f4、S02-0516:ability:attack:077dc7337586413c、S02-0605:ability:attack:82a5bf2622bf4d20、S02-0607:ability:attack:25d5c998d14502d7、S02-0608:ability:attack:4581df1cc635dd68、S02-0612:ability:attack:c195f409c875e9eb、S02-06S5:ability:static:1e799825eedf3331
-- `single-candidate-choice`（有对象选择时的唯一候选仍选择）：S01-04M2:ability:leave:4e83a7191108369b、S02-0001:ability:after-opponent-tactic:6d30a9b672845491、S02-04M1:ability:friendly-back-to-front:03cb93e7e3eeedf3、S02-0516:ability:attack:077dc7337586413c、S02-0523:ability:after-opponent-attack:5bff9b891b7b1cba、S02-0602:ability:after-kill:e290e1e434e45531、S02-0614:ability:enter:601eddfb8abbb8d2、S02-06S4:ability:trial-complete:f95fed6f3ff0efc0、S02-06S5:ability:static:1e799825eedf3331
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S01-01D1:ability:static:103012fd4239104f、S01-01M1:ability:death:ee5adb706424f233、S01-01M1:ability:static:0924c3a5995ba164、S01-0204:ability:leave:a59801f7c2874f4a、S01-02M3:ability:static:3a86c87f975d5851、S01-02M3:ability:static:c339139cc1c9b00c、S01-0311:ability:after-attack:65ce2315ff4c0465、S01-0311:ability:static:3409dd9fa29f684f、S01-0414:ability:static:e001b352b3693d93、S01-04M2:ability:leave:4e83a7191108369b、S02-0001:ability:after-opponent-tactic:6d30a9b672845491、S02-0006:ability:discarded:89d3ee4207648aa1、S02-0103:ability:attack:607e6460eed6637b、S02-01S1:ability:master-morale-return:8d098fe32e7b253b、S02-02M1:ability:friendly-legion-death:a366c9a7f75b5f29、S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b、S02-0305:ability:master-damaged:a4a2c92cad3ad28c、S02-0401:ability:continuous:9601da1d8445f865、S02-04M1:ability:friendly-back-to-front:03cb93e7e3eeedf3、S02-04M1:ability:friendly-front-to-back:e46218b2ac936410、S02-04M1:ability:friendly-legion-moves:654df25d049352f7、S02-0503:ability:after-attack:e3ced12ddde14fdb、S02-0511:ability:attack:c367ee3457cbd5f4、S02-0516:ability:attack:077dc7337586413c、S02-0523:ability:after-opponent-attack:5bff9b891b7b1cba、S02-0602:ability:after-kill:e290e1e434e45531、S02-0605:ability:attack:82a5bf2622bf4d20、S02-0607:ability:attack:25d5c998d14502d7、S02-0608:ability:attack:0999d120e02e3c50、S02-0608:ability:attack:4581df1cc635dd68、S02-0611:ability:enter:0cc32f023a1b4f11、S02-0612:ability:attack:c195f409c875e9eb、S02-0614:ability:enter:601eddfb8abbb8d2、S02-0617:ability:attack:c8dd6c6601a73ebb、S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92、S02-06S3:ability:static:3616e3ca17ffd729、S02-06S4:ability:trial-complete:f95fed6f3ff0efc0、S02-06S5:ability:static:1e799825eedf3331、ST01-C1:ability:static:605b9aa3d8a1ed93
+展示消费者出口：ResolveTriggeredEffectDisplayText。
 
-展示消费者出口：档案未声明展示边界。
+## pipeline:response（已完成）
 
-## pipeline:response（未完成）
-
-绑定能力段：2。运行入口：candidates = L12GameEngine.LegalResponseSources；pool-timing = L12GameEngine.IsPoolCounterResponseAtTiming；settle = L12GameEngine.ResolveTopStack；submit = L12GameEngine.BeginSelectedStackResponse。
-档案附加检查：capability-registry-pending, authoritative-consumer。
+绑定能力段：2。运行入口：candidates = L12GameEngine.LegalResponseSources；capability = L12StructuredCardSemantics.SpecialResponseCapability；pool-timing = L12GameEngine.IsPoolCounterResponseAtTiming；presentation = L12GameEngine.ResolveResponseEffectDisplayText；settle = L12GameEngine.ResolveTopStack；submit = L12GameEngine.BeginSelectedStackResponse。
+档案附加检查：capability-registry, authoritative-consumer。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 2（S02-0005:ability:opponent-attacks-master:806afb384f303aee、S02-0106:ability:opponent-attack-or-effect:899eef6cc1186e9c） | 0 |
-| no-target | 0 | 2（S02-0005:ability:opponent-attacks-master:806afb384f303aee、S02-0106:ability:opponent-attack-or-effect:899eef6cc1186e9c） | 0 |
-| negated | 0 | 2（S02-0005:ability:opponent-attacks-master:806afb384f303aee、S02-0106:ability:opponent-attack-or-effect:899eef6cc1186e9c） | 0 |
-| target-invalidated | 0 | 2（S02-0005:ability:opponent-attacks-master:806afb384f303aee、S02-0106:ability:opponent-attack-or-effect:899eef6cc1186e9c） | 0 |
-| duplicate-submit | 0 | 0 | 2 |
-| reconnect | 0 | 2（S02-0005:ability:opponent-attacks-master:806afb384f303aee、S02-0106:ability:opponent-attack-or-effect:899eef6cc1186e9c） | 0 |
+| normal | 2 | 0 | 0 |
+| no-target | 2 | 0 | 0 |
+| negated | 2 | 0 | 0 |
+| target-invalidated | 1 | 0 | 1 |
+| duplicate-submit | 2 | 0 | 0 |
+| reconnect | 2 | 0 | 0 |
 | payment-cancel | 0 | 0 | 2 |
-| single-candidate-choice | 0 | 1（S02-0106:ability:opponent-attack-or-effect:899eef6cc1186e9c） | 1 |
+| single-candidate-choice | 1 | 0 | 1 |
 | multi-target-applicability | 0 | 0 | 2 |
-| presentation-consumers | 0 | 2（S02-0005:ability:opponent-attacks-master:806afb384f303aee、S02-0106:ability:opponent-attack-or-effect:899eef6cc1186e9c） | 0 |
+| presentation-consumers | 2 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S02-0005:ability:opponent-attacks-master:806afb384f303aee、S02-0106:ability:opponent-attack-or-effect:899eef6cc1186e9c
-- `no-target`（无目标/不能发动）：S02-0005:ability:opponent-attacks-master:806afb384f303aee、S02-0106:ability:opponent-attack-or-effect:899eef6cc1186e9c
-- `negated`（已支付后被无效）：S02-0005:ability:opponent-attacks-master:806afb384f303aee、S02-0106:ability:opponent-attack-or-effect:899eef6cc1186e9c
-- `target-invalidated`（已声明对象逆结算失效）：S02-0005:ability:opponent-attacks-master:806afb384f303aee、S02-0106:ability:opponent-attack-or-effect:899eef6cc1186e9c
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S02-0005:ability:opponent-attacks-master:806afb384f303aee、S02-0106:ability:opponent-attack-or-effect:899eef6cc1186e9c
-- `single-candidate-choice`（有对象选择时的唯一候选仍选择）：S02-0106:ability:opponent-attack-or-effect:899eef6cc1186e9c
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S02-0005:ability:opponent-attacks-master:806afb384f303aee、S02-0106:ability:opponent-attack-or-effect:899eef6cc1186e9c
+展示消费者出口：ResolveResponseEffectDisplayText。
 
-展示消费者出口：档案未声明展示边界。
+## private-zone:strict-hand-entry（已完成）
 
-## private-zone:strict-hand-entry（未完成）
-
-绑定能力段：3。运行入口：declaration = L12GameEngine.CreateActivationStepPrompt；dependent-continuation = L12GameEngine.QueueNextCompositeSegment；failed-settlement = L12GameEngine.RecordTargetSettlementFailure；settlement-revalidation = L12GameEngine.TrySummonFromHand；source-failure = L12GameEngine.RecordResolutionFailure。
+绑定能力段：3。运行入口：declaration = L12GameEngine.CreateActivationStepPrompt；dependent-continuation = L12GameEngine.QueueNextCompositeSegment；failed-settlement = L12GameEngine.RecordTargetSettlementFailure；presentation = L12GameEngine.SnapshotFor；settlement-revalidation = L12GameEngine.TrySummonFromHand；source-failure = L12GameEngine.RecordResolutionFailure。
 档案附加检查：private-hand-redaction, settlement-slot-invalidated, stale-instance-no-replacement, then-requires-success。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 3（S01-0105:ability:enter:ee4ec5ee9f9e1cce、S01-0116:ability:static:74c527aaab5e91cd、S01-0213:ability:after-attack:55cfe31dc7ed5969） | 0 |
-| no-target | 0 | 3（S01-0105:ability:enter:ee4ec5ee9f9e1cce、S01-0116:ability:static:74c527aaab5e91cd、S01-0213:ability:after-attack:55cfe31dc7ed5969） | 0 |
-| negated | 0 | 3（S01-0105:ability:enter:ee4ec5ee9f9e1cce、S01-0116:ability:static:74c527aaab5e91cd、S01-0213:ability:after-attack:55cfe31dc7ed5969） | 0 |
-| target-invalidated | 0 | 3（S01-0105:ability:enter:ee4ec5ee9f9e1cce、S01-0116:ability:static:74c527aaab5e91cd、S01-0213:ability:after-attack:55cfe31dc7ed5969） | 0 |
-| duplicate-submit | 0 | 3（S01-0105:ability:enter:ee4ec5ee9f9e1cce、S01-0116:ability:static:74c527aaab5e91cd、S01-0213:ability:after-attack:55cfe31dc7ed5969） | 0 |
-| reconnect | 0 | 3（S01-0105:ability:enter:ee4ec5ee9f9e1cce、S01-0116:ability:static:74c527aaab5e91cd、S01-0213:ability:after-attack:55cfe31dc7ed5969） | 0 |
-| payment-cancel | 0 | 3（S01-0105:ability:enter:ee4ec5ee9f9e1cce、S01-0116:ability:static:74c527aaab5e91cd、S01-0213:ability:after-attack:55cfe31dc7ed5969） | 0 |
-| single-candidate-choice | 0 | 2（S01-0105:ability:enter:ee4ec5ee9f9e1cce、S01-0116:ability:static:74c527aaab5e91cd） | 1 |
+| normal | 3 | 0 | 0 |
+| no-target | 3 | 0 | 0 |
+| negated | 3 | 0 | 0 |
+| target-invalidated | 2 | 0 | 1 |
+| duplicate-submit | 3 | 0 | 0 |
+| reconnect | 3 | 0 | 0 |
+| payment-cancel | 2 | 0 | 1 |
+| single-candidate-choice | 2 | 0 | 1 |
 | multi-target-applicability | 0 | 0 | 3 |
-| presentation-consumers | 0 | 3（S01-0105:ability:enter:ee4ec5ee9f9e1cce、S01-0116:ability:static:74c527aaab5e91cd、S01-0213:ability:after-attack:55cfe31dc7ed5969） | 0 |
+| presentation-consumers | 3 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S01-0105:ability:enter:ee4ec5ee9f9e1cce、S01-0116:ability:static:74c527aaab5e91cd、S01-0213:ability:after-attack:55cfe31dc7ed5969
-- `no-target`（无目标/不能发动）：S01-0105:ability:enter:ee4ec5ee9f9e1cce、S01-0116:ability:static:74c527aaab5e91cd、S01-0213:ability:after-attack:55cfe31dc7ed5969
-- `negated`（已支付后被无效）：S01-0105:ability:enter:ee4ec5ee9f9e1cce、S01-0116:ability:static:74c527aaab5e91cd、S01-0213:ability:after-attack:55cfe31dc7ed5969
-- `target-invalidated`（已声明对象逆结算失效）：S01-0105:ability:enter:ee4ec5ee9f9e1cce、S01-0116:ability:static:74c527aaab5e91cd、S01-0213:ability:after-attack:55cfe31dc7ed5969
-- `duplicate-submit`（重复或过期提交）：S01-0105:ability:enter:ee4ec5ee9f9e1cce、S01-0116:ability:static:74c527aaab5e91cd、S01-0213:ability:after-attack:55cfe31dc7ed5969
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S01-0105:ability:enter:ee4ec5ee9f9e1cce、S01-0116:ability:static:74c527aaab5e91cd、S01-0213:ability:after-attack:55cfe31dc7ed5969
-- `payment-cancel`（有费用时的取消/支付失败兜底）：S01-0105:ability:enter:ee4ec5ee9f9e1cce、S01-0116:ability:static:74c527aaab5e91cd、S01-0213:ability:after-attack:55cfe31dc7ed5969
-- `single-candidate-choice`（有对象选择时的唯一候选仍选择）：S01-0105:ability:enter:ee4ec5ee9f9e1cce、S01-0116:ability:static:74c527aaab5e91cd
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S01-0105:ability:enter:ee4ec5ee9f9e1cce、S01-0116:ability:static:74c527aaab5e91cd、S01-0213:ability:after-attack:55cfe31dc7ed5969
-
-展示消费者出口：档案未声明展示边界。
+展示消费者出口：SnapshotFor。
 
 ## reaction:hand-block（已完成）
 
@@ -1384,7 +1234,7 @@
 | normal | 1 | 0 | 0 |
 | no-target | 0 | 0 | 1 |
 | negated | 1 | 0 | 0 |
-| target-invalidated | 1 | 0 | 0 |
+| target-invalidated | 0 | 0 | 1 |
 | duplicate-submit | 0 | 0 | 1 |
 | reconnect | 1 | 0 | 0 |
 | payment-cancel | 1 | 0 | 0 |
@@ -1394,33 +1244,25 @@
 
 展示消费者出口：档案未声明展示边界。
 
-## reaction:negate-pipeline（未完成）
+## reaction:negate-pipeline（已完成）
 
-绑定能力段：2。运行入口：candidates = L12GameEngine.LegalResponseSources；commit = L12GameEngine.CommitNegateResponse；pool-timing = L12GameEngine.IsPoolCounterResponseAtTiming；settlement = L12GameEngine.ResolveTopStack；submit = L12GameEngine.BeginSelectedStackResponse。
+绑定能力段：2。运行入口：candidates = L12GameEngine.LegalResponseSources；commit = L12GameEngine.CommitNegateResponse；pool-timing = L12GameEngine.IsPoolCounterResponseAtTiming；presentation = L12GameEngine.ResolveEffectPresentationSceneId；settlement = L12GameEngine.ResolveTopStack；submit = L12GameEngine.BeginSelectedStackResponse。
 档案附加检查：payment-cancel, capability-registry, pool-parity, authoritative-consumer。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 2（S01-0016:ability:reaction:eda8f9987e9ccfe3、S01-0018:ability:reaction:248207b49df4bd77） | 0 |
+| normal | 2 | 0 | 0 |
 | no-target | 0 | 0 | 2 |
-| negated | 0 | 2（S01-0016:ability:reaction:eda8f9987e9ccfe3、S01-0018:ability:reaction:248207b49df4bd77） | 0 |
-| target-invalidated | 0 | 2（S01-0016:ability:reaction:eda8f9987e9ccfe3、S01-0018:ability:reaction:248207b49df4bd77） | 0 |
+| negated | 2 | 0 | 0 |
+| target-invalidated | 0 | 0 | 2 |
 | duplicate-submit | 0 | 0 | 2 |
-| reconnect | 0 | 2（S01-0016:ability:reaction:eda8f9987e9ccfe3、S01-0018:ability:reaction:248207b49df4bd77） | 0 |
-| payment-cancel | 0 | 1（S01-0016:ability:reaction:eda8f9987e9ccfe3） | 1 |
+| reconnect | 2 | 0 | 0 |
+| payment-cancel | 1 | 0 | 1 |
 | single-candidate-choice | 0 | 0 | 2 |
 | multi-target-applicability | 0 | 0 | 2 |
-| presentation-consumers | 0 | 2（S01-0016:ability:reaction:eda8f9987e9ccfe3、S01-0018:ability:reaction:248207b49df4bd77） | 0 |
+| presentation-consumers | 2 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S01-0016:ability:reaction:eda8f9987e9ccfe3、S01-0018:ability:reaction:248207b49df4bd77
-- `negated`（已支付后被无效）：S01-0016:ability:reaction:eda8f9987e9ccfe3、S01-0018:ability:reaction:248207b49df4bd77
-- `target-invalidated`（已声明对象逆结算失效）：S01-0016:ability:reaction:eda8f9987e9ccfe3、S01-0018:ability:reaction:248207b49df4bd77
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S01-0016:ability:reaction:eda8f9987e9ccfe3、S01-0018:ability:reaction:248207b49df4bd77
-- `payment-cancel`（有费用时的取消/支付失败兜底）：S01-0016:ability:reaction:eda8f9987e9ccfe3
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S01-0016:ability:reaction:eda8f9987e9ccfe3、S01-0018:ability:reaction:248207b49df4bd77
-
-展示消费者出口：档案未声明展示边界。
+展示消费者出口：ResolveEffectPresentationSceneId。
 
 ## replacement:anderstorp-damage-floor（已完成）
 
@@ -1482,39 +1324,27 @@
 
 展示消费者出口：SnapshotMorale。
 
-## resource:morale-face-flip（未完成）
+## resource:morale-face-flip（已完成）
 
-绑定能力段：11。运行入口：candidate-generation = L12GameEngine.CanFlipMoraleToGodPower；identity-definition = L12MoraleIdentityCatalog.CanUseGodPowerFace；resolution-prompt = L12GameEngine.PromptS2FlipMorale；settlement-mutation = L12S2ZoneOps.FlipMoraleFace；toggle-candidate-generation = L12GameEngine.CanToggleMoraleFace。
+绑定能力段：11。运行入口：candidate-generation = L12GameEngine.CanFlipMoraleToGodPower；identity-definition = L12MoraleIdentityCatalog.CanUseGodPowerFace；presentation = L12GameEngine.SnapshotMorale；resolution-prompt = L12GameEngine.PromptS2FlipMorale；settlement-mutation = L12S2ZoneOps.FlipMoraleFace；toggle-candidate-generation = L12GameEngine.CanToggleMoraleFace。
 档案附加检查：exact-printed-family, version-alias, black-lotus-excluded, candidate-settlement-parity, rested-only-filter, single-candidate-choice, multi-target-independent-revalidation, v2-prompt-reconnect。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 5 | 6（S02-0508:ability:death:9aea23b4138e399e、S02-0521:ability:play:4ae24413479102d1、S02-05C1A:ability:active:1ae9b19504eac93a、S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888、ST05-C1:ability:static:6fe475d8923feb65、ST05-M1:ability:active:b1f11ab05f68dda0） | 0 |
-| no-target | 4 | 7（S02-0513:ability:enter:eef83ec51f2ef093、S02-0518:ability:enter:6e9ddf89fefa712f、S02-0520:ability:enter:361ec387b847ecee、S02-0521:ability:play:4ae24413479102d1、S02-05C1A:ability:active:1ae9b19504eac93a、S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888、ST05-C1:ability:static:6fe475d8923feb65） | 0 |
-| negated | 1 | 10（S02-0508:ability:death:9aea23b4138e399e、S02-0513:ability:enter:eef83ec51f2ef093、S02-0518:ability:enter:6e9ddf89fefa712f、S02-0520:ability:enter:361ec387b847ecee、S02-0521:ability:play:4ae24413479102d1、S02-05C1A:ability:active:1ae9b19504eac93a、S02-05D1:ability:active:519ab3c1379a9256、S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888、ST05-C1:ability:static:6fe475d8923feb65、ST05-M1:ability:active:b1f11ab05f68dda0） | 0 |
-| target-invalidated | 3 | 8（S02-0508:ability:death:9aea23b4138e399e、S02-0513:ability:enter:eef83ec51f2ef093、S02-0518:ability:enter:6e9ddf89fefa712f、S02-0520:ability:enter:361ec387b847ecee、S02-05C1A:ability:active:1ae9b19504eac93a、S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888、ST05-C1:ability:static:6fe475d8923feb65、ST05-M1:ability:active:b1f11ab05f68dda0） | 0 |
-| duplicate-submit | 2 | 9（S02-0508:ability:death:9aea23b4138e399e、S02-0513:ability:enter:eef83ec51f2ef093、S02-0518:ability:enter:6e9ddf89fefa712f、S02-0520:ability:enter:361ec387b847ecee、S02-0521:ability:play:4ae24413479102d1、S02-05C1A:ability:active:1ae9b19504eac93a、S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888、ST05-C1:ability:static:6fe475d8923feb65、ST05-M1:ability:active:b1f11ab05f68dda0） | 0 |
-| reconnect | 0 | 11（S02-0508:ability:death:9aea23b4138e399e、S02-0513:ability:enter:eef83ec51f2ef093、S02-0518:ability:enter:6e9ddf89fefa712f、S02-0520:ability:enter:361ec387b847ecee、S02-0521:ability:play:4ae24413479102d1、S02-05C1:ability:active:1ae9b19504eac93a、S02-05C1A:ability:active:1ae9b19504eac93a、S02-05D1:ability:active:519ab3c1379a9256、S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888、ST05-C1:ability:static:6fe475d8923feb65、ST05-M1:ability:active:b1f11ab05f68dda0） | 0 |
-| payment-cancel | 0 | 4（S02-05C1:ability:active:1ae9b19504eac93a、S02-05C1A:ability:active:1ae9b19504eac93a、ST05-C1:ability:static:6fe475d8923feb65、ST05-M1:ability:active:b1f11ab05f68dda0） | 7 |
-| single-candidate-choice | 4 | 3（S02-0521:ability:play:4ae24413479102d1、S02-05C1A:ability:active:1ae9b19504eac93a、S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888） | 4 |
-| multi-target-applicability | 1 | 1（ST05-M1:ability:active:b1f11ab05f68dda0） | 9 |
-| presentation-consumers | 0 | 11（S02-0508:ability:death:9aea23b4138e399e、S02-0513:ability:enter:eef83ec51f2ef093、S02-0518:ability:enter:6e9ddf89fefa712f、S02-0520:ability:enter:361ec387b847ecee、S02-0521:ability:play:4ae24413479102d1、S02-05C1:ability:active:1ae9b19504eac93a、S02-05C1A:ability:active:1ae9b19504eac93a、S02-05D1:ability:active:519ab3c1379a9256、S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888、ST05-C1:ability:static:6fe475d8923feb65、ST05-M1:ability:active:b1f11ab05f68dda0） | 0 |
+| normal | 11 | 0 | 0 |
+| no-target | 11 | 0 | 0 |
+| negated | 11 | 0 | 0 |
+| target-invalidated | 7 | 0 | 4 |
+| duplicate-submit | 11 | 0 | 0 |
+| reconnect | 11 | 0 | 0 |
+| payment-cancel | 4 | 0 | 7 |
+| single-candidate-choice | 7 | 0 | 4 |
+| multi-target-applicability | 2 | 0 | 9 |
+| presentation-consumers | 11 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S02-0508:ability:death:9aea23b4138e399e、S02-0521:ability:play:4ae24413479102d1、S02-05C1A:ability:active:1ae9b19504eac93a、S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888、ST05-C1:ability:static:6fe475d8923feb65、ST05-M1:ability:active:b1f11ab05f68dda0
-- `no-target`（无目标/不能发动）：S02-0513:ability:enter:eef83ec51f2ef093、S02-0518:ability:enter:6e9ddf89fefa712f、S02-0520:ability:enter:361ec387b847ecee、S02-0521:ability:play:4ae24413479102d1、S02-05C1A:ability:active:1ae9b19504eac93a、S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888、ST05-C1:ability:static:6fe475d8923feb65
-- `negated`（已支付后被无效）：S02-0508:ability:death:9aea23b4138e399e、S02-0513:ability:enter:eef83ec51f2ef093、S02-0518:ability:enter:6e9ddf89fefa712f、S02-0520:ability:enter:361ec387b847ecee、S02-0521:ability:play:4ae24413479102d1、S02-05C1A:ability:active:1ae9b19504eac93a、S02-05D1:ability:active:519ab3c1379a9256、S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888、ST05-C1:ability:static:6fe475d8923feb65、ST05-M1:ability:active:b1f11ab05f68dda0
-- `target-invalidated`（已声明对象逆结算失效）：S02-0508:ability:death:9aea23b4138e399e、S02-0513:ability:enter:eef83ec51f2ef093、S02-0518:ability:enter:6e9ddf89fefa712f、S02-0520:ability:enter:361ec387b847ecee、S02-05C1A:ability:active:1ae9b19504eac93a、S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888、ST05-C1:ability:static:6fe475d8923feb65、ST05-M1:ability:active:b1f11ab05f68dda0
-- `duplicate-submit`（重复或过期提交）：S02-0508:ability:death:9aea23b4138e399e、S02-0513:ability:enter:eef83ec51f2ef093、S02-0518:ability:enter:6e9ddf89fefa712f、S02-0520:ability:enter:361ec387b847ecee、S02-0521:ability:play:4ae24413479102d1、S02-05C1A:ability:active:1ae9b19504eac93a、S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888、ST05-C1:ability:static:6fe475d8923feb65、ST05-M1:ability:active:b1f11ab05f68dda0
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S02-0508:ability:death:9aea23b4138e399e、S02-0513:ability:enter:eef83ec51f2ef093、S02-0518:ability:enter:6e9ddf89fefa712f、S02-0520:ability:enter:361ec387b847ecee、S02-0521:ability:play:4ae24413479102d1、S02-05C1:ability:active:1ae9b19504eac93a、S02-05C1A:ability:active:1ae9b19504eac93a、S02-05D1:ability:active:519ab3c1379a9256、S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888、ST05-C1:ability:static:6fe475d8923feb65、ST05-M1:ability:active:b1f11ab05f68dda0
-- `payment-cancel`（有费用时的取消/支付失败兜底）：S02-05C1:ability:active:1ae9b19504eac93a、S02-05C1A:ability:active:1ae9b19504eac93a、ST05-C1:ability:static:6fe475d8923feb65、ST05-M1:ability:active:b1f11ab05f68dda0
-- `single-candidate-choice`（有对象选择时的唯一候选仍选择）：S02-0521:ability:play:4ae24413479102d1、S02-05C1A:ability:active:1ae9b19504eac93a、S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888
-- `multi-target-applicability`（多目标协议的部分失效继续）：ST05-M1:ability:active:b1f11ab05f68dda0
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S02-0508:ability:death:9aea23b4138e399e、S02-0513:ability:enter:eef83ec51f2ef093、S02-0518:ability:enter:6e9ddf89fefa712f、S02-0520:ability:enter:361ec387b847ecee、S02-0521:ability:play:4ae24413479102d1、S02-05C1:ability:active:1ae9b19504eac93a、S02-05C1A:ability:active:1ae9b19504eac93a、S02-05D1:ability:active:519ab3c1379a9256、S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888、ST05-C1:ability:static:6fe475d8923feb65、ST05-M1:ability:active:b1f11ab05f68dda0
+展示消费者出口：SnapshotMorale。
 
-展示消费者出口：档案未声明展示边界。
-
-## rule-action:cavalry-move（未完成）
+## rule-action:cavalry-move（已完成）
 
 绑定能力段：8。运行入口：button = L12GameEngine.BuildRuleActionViews；candidate-generation = L12GameEngine.CavalryMoveDestinationKeys；command = L12GameEngine.CavalryMove；destination-revalidation = L12GameEngine.IsLegalCavalryMoveDestination；movement-event = L12GameEngine.RecordLegionMovement；presentation = L12GameEngine.NativeCavalryMovePresentation；source-eligibility = L12GameEngine.CavalryMoveSourceUnavailableReason；timing = L12GameEngine.CavalryMoveTimingUnavailableReason。
 档案附加检查：source-invalidated, destination-invalidated, single-candidate-choice。
@@ -1530,36 +1360,28 @@
 | payment-cancel | 0 | 0 | 8 |
 | single-candidate-choice | 0 | 0 | 8 |
 | multi-target-applicability | 0 | 0 | 8 |
-| presentation-consumers | 0 | 8（S01-0002:ability:active:2786430f57a9abaa、S01-0106:ability:active:2786430f57a9abaa、S01-0310:ability:active:0a0575206e996652、S01-0409:ability:active:56a01edf47ee1225、S02-0505:ability:active:bac4cb5d348f29f1、ST01-01:ability:active:69626894e55e27e5、ST04-01:ability:active:2786430f57a9abaa、ST06-04:ability:active:719cc1c7c1084fa0） | 0 |
-
-缺失明细与建议补测范围：
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S01-0002:ability:active:2786430f57a9abaa、S01-0106:ability:active:2786430f57a9abaa、S01-0310:ability:active:0a0575206e996652、S01-0409:ability:active:56a01edf47ee1225、S02-0505:ability:active:bac4cb5d348f29f1、ST01-01:ability:active:69626894e55e27e5、ST04-01:ability:active:2786430f57a9abaa、ST06-04:ability:active:719cc1c7c1084fa0
+| presentation-consumers | 8 | 0 | 0 |
 
 展示消费者出口：NativeCavalryMovePresentation。
 
-## rule:game-setup（未完成）
+## rule:game-setup（已完成）
 
-绑定能力段：3。运行入口：hand-preparation = L12GameEngine.PrepareLibrariesAndHands；setup-defaults = L12GameEngine.BeginOptionalS2Setup。
+绑定能力段：8。运行入口：hand-preparation = L12GameEngine.PrepareLibrariesAndHands；presentation = L12GameEngine.SnapshotFor；setup-defaults = L12GameEngine.BeginOptionalS2Setup。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 3（S02-0305:ability:game-setup:cf14affeb486a9f7、S02-03M1:ability:game-setup:46b2a85c54cecc56、S02-05D1:ability:setup:cb6a45eff0631d64） | 0 |
-| no-target | 0 | 0 | 3 |
-| negated | 0 | 0 | 3 |
-| target-invalidated | 0 | 0 | 3 |
-| duplicate-submit | 0 | 0 | 3 |
-| reconnect | 0 | 3（S02-0305:ability:game-setup:cf14affeb486a9f7、S02-03M1:ability:game-setup:46b2a85c54cecc56、S02-05D1:ability:setup:cb6a45eff0631d64） | 0 |
-| payment-cancel | 0 | 0 | 3 |
-| single-candidate-choice | 0 | 0 | 3 |
-| multi-target-applicability | 0 | 0 | 3 |
-| presentation-consumers | 0 | 3（S02-0305:ability:game-setup:cf14affeb486a9f7、S02-03M1:ability:game-setup:46b2a85c54cecc56、S02-05D1:ability:setup:cb6a45eff0631d64） | 0 |
+| normal | 8 | 0 | 0 |
+| no-target | 0 | 0 | 8 |
+| negated | 0 | 0 | 8 |
+| target-invalidated | 0 | 0 | 8 |
+| duplicate-submit | 2 | 0 | 6 |
+| reconnect | 8 | 0 | 0 |
+| payment-cancel | 0 | 0 | 8 |
+| single-candidate-choice | 0 | 0 | 8 |
+| multi-target-applicability | 0 | 0 | 8 |
+| presentation-consumers | 8 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S02-0305:ability:game-setup:cf14affeb486a9f7、S02-03M1:ability:game-setup:46b2a85c54cecc56、S02-05D1:ability:setup:cb6a45eff0631d64
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S02-0305:ability:game-setup:cf14affeb486a9f7、S02-03M1:ability:game-setup:46b2a85c54cecc56、S02-05D1:ability:setup:cb6a45eff0631d64
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S02-0305:ability:game-setup:cf14affeb486a9f7、S02-03M1:ability:game-setup:46b2a85c54cecc56、S02-05D1:ability:setup:cb6a45eff0631d64
-
-展示消费者出口：档案未声明展示边界。
+展示消费者出口：SnapshotFor。
 
 ## rule:isis-setup（已完成）
 
@@ -1619,60 +1441,45 @@
 
 展示消费者出口：档案未声明展示边界。
 
-## rule:trial-capacity（未完成）
+## rule:trial-capacity（已完成）
 
-绑定能力段：2。运行入口：capacity = L12SpecialDeckRules.TrialCapacity；validator = L12DeckValidator.TryValidate。
+绑定能力段：2。运行入口：capacity = L12SpecialDeckRules.TrialCapacity；completed-setup = L12SpecialDeckRules.StartsTrialsCompleted；presentation = L12GameEngine.SnapshotFor；validator = L12DeckValidator.TryValidate。
 档案附加检查：authoritative-consumer。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 2（S02-06D1:ability:static:b173428fa383ae26、S02-06M2:ability:rule:f86cd3914a10b001） | 0 |
-| no-target | 0 | 2（S02-06D1:ability:static:b173428fa383ae26、S02-06M2:ability:rule:f86cd3914a10b001） | 0 |
-| negated | 0 | 2（S02-06D1:ability:static:b173428fa383ae26、S02-06M2:ability:rule:f86cd3914a10b001） | 0 |
-| target-invalidated | 0 | 2（S02-06D1:ability:static:b173428fa383ae26、S02-06M2:ability:rule:f86cd3914a10b001） | 0 |
-| duplicate-submit | 0 | 2（S02-06D1:ability:static:b173428fa383ae26、S02-06M2:ability:rule:f86cd3914a10b001） | 0 |
-| reconnect | 0 | 2（S02-06D1:ability:static:b173428fa383ae26、S02-06M2:ability:rule:f86cd3914a10b001） | 0 |
+| normal | 2 | 0 | 0 |
+| no-target | 0 | 0 | 2 |
+| negated | 0 | 0 | 2 |
+| target-invalidated | 0 | 0 | 2 |
+| duplicate-submit | 0 | 0 | 2 |
+| reconnect | 2 | 0 | 0 |
 | payment-cancel | 0 | 0 | 2 |
 | single-candidate-choice | 0 | 0 | 2 |
 | multi-target-applicability | 0 | 0 | 2 |
-| presentation-consumers | 0 | 2（S02-06D1:ability:static:b173428fa383ae26、S02-06M2:ability:rule:f86cd3914a10b001） | 0 |
+| presentation-consumers | 2 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S02-06D1:ability:static:b173428fa383ae26、S02-06M2:ability:rule:f86cd3914a10b001
-- `no-target`（无目标/不能发动）：S02-06D1:ability:static:b173428fa383ae26、S02-06M2:ability:rule:f86cd3914a10b001
-- `negated`（已支付后被无效）：S02-06D1:ability:static:b173428fa383ae26、S02-06M2:ability:rule:f86cd3914a10b001
-- `target-invalidated`（已声明对象逆结算失效）：S02-06D1:ability:static:b173428fa383ae26、S02-06M2:ability:rule:f86cd3914a10b001
-- `duplicate-submit`（重复或过期提交）：S02-06D1:ability:static:b173428fa383ae26、S02-06M2:ability:rule:f86cd3914a10b001
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S02-06D1:ability:static:b173428fa383ae26、S02-06M2:ability:rule:f86cd3914a10b001
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S02-06D1:ability:static:b173428fa383ae26、S02-06M2:ability:rule:f86cd3914a10b001
+展示消费者出口：SnapshotFor。
 
-展示消费者出口：档案未声明展示边界。
+## rule:trial-value（已完成）
 
-## rule:trial-value（未完成）
-
-绑定能力段：8。运行入口：advance-core = L12GameEngine.AdvanceTrialCore；button = L12GameEngine.BuildAbilityViews；commit = L12GameEngine.TryCommitTrialAdvanceActivation；completion = L12GameEngine.CompleteTrialRuleAction；printed-identity = L12StructuredCardRules.IsTrialLegion；settlement = L12GameEngine.ResolveUsualTrialAdvance。
+绑定能力段：8。运行入口：advance-core = L12GameEngine.AdvanceTrialCore；button = L12GameEngine.BuildAbilityViews；commit = L12GameEngine.TryCommitTrialAdvanceActivation；completion = L12GameEngine.CompleteTrialRuleAction；presentation = L12GameEngine.SnapshotFor；printed-identity = L12StructuredCardRules.IsTrialLegion；settlement = L12GameEngine.ResolveUsualTrialAdvance。
 档案附加检查：trial-value-matches-card-data, summon-round-lock, completion-flip, st06-no-printed-segment。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 8（S02-0604:ability:trial:2117897dcefd3125、S02-0606:ability:trial:bb29c925c9fcdc82、S02-0609:ability:trial:bb29c925c9fcdc82、S02-0610:ability:trial:bb29c925c9fcdc82、S02-0613:ability:trial:bb29c925c9fcdc82、S02-0614:ability:trial:bb29c925c9fcdc82、S02-0617:ability:trial:bb29c925c9fcdc82、S02-0618:ability:trial:2117897dcefd3125） | 0 |
+| normal | 8 | 0 | 0 |
 | no-target | 0 | 0 | 8 |
 | negated | 0 | 0 | 8 |
-| target-invalidated | 0 | 8（S02-0604:ability:trial:2117897dcefd3125、S02-0606:ability:trial:bb29c925c9fcdc82、S02-0609:ability:trial:bb29c925c9fcdc82、S02-0610:ability:trial:bb29c925c9fcdc82、S02-0613:ability:trial:bb29c925c9fcdc82、S02-0614:ability:trial:bb29c925c9fcdc82、S02-0617:ability:trial:bb29c925c9fcdc82、S02-0618:ability:trial:2117897dcefd3125） | 0 |
+| target-invalidated | 0 | 0 | 8 |
 | duplicate-submit | 0 | 0 | 8 |
-| reconnect | 0 | 8（S02-0604:ability:trial:2117897dcefd3125、S02-0606:ability:trial:bb29c925c9fcdc82、S02-0609:ability:trial:bb29c925c9fcdc82、S02-0610:ability:trial:bb29c925c9fcdc82、S02-0613:ability:trial:bb29c925c9fcdc82、S02-0614:ability:trial:bb29c925c9fcdc82、S02-0617:ability:trial:bb29c925c9fcdc82、S02-0618:ability:trial:2117897dcefd3125） | 0 |
+| reconnect | 8 | 0 | 0 |
 | payment-cancel | 0 | 0 | 8 |
 | single-candidate-choice | 0 | 0 | 8 |
 | multi-target-applicability | 0 | 0 | 8 |
-| presentation-consumers | 0 | 8（S02-0604:ability:trial:2117897dcefd3125、S02-0606:ability:trial:bb29c925c9fcdc82、S02-0609:ability:trial:bb29c925c9fcdc82、S02-0610:ability:trial:bb29c925c9fcdc82、S02-0613:ability:trial:bb29c925c9fcdc82、S02-0614:ability:trial:bb29c925c9fcdc82、S02-0617:ability:trial:bb29c925c9fcdc82、S02-0618:ability:trial:2117897dcefd3125） | 0 |
+| presentation-consumers | 8 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S02-0604:ability:trial:2117897dcefd3125、S02-0606:ability:trial:bb29c925c9fcdc82、S02-0609:ability:trial:bb29c925c9fcdc82、S02-0610:ability:trial:bb29c925c9fcdc82、S02-0613:ability:trial:bb29c925c9fcdc82、S02-0614:ability:trial:bb29c925c9fcdc82、S02-0617:ability:trial:bb29c925c9fcdc82、S02-0618:ability:trial:2117897dcefd3125
-- `target-invalidated`（已声明对象逆结算失效）：S02-0604:ability:trial:2117897dcefd3125、S02-0606:ability:trial:bb29c925c9fcdc82、S02-0609:ability:trial:bb29c925c9fcdc82、S02-0610:ability:trial:bb29c925c9fcdc82、S02-0613:ability:trial:bb29c925c9fcdc82、S02-0614:ability:trial:bb29c925c9fcdc82、S02-0617:ability:trial:bb29c925c9fcdc82、S02-0618:ability:trial:2117897dcefd3125
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S02-0604:ability:trial:2117897dcefd3125、S02-0606:ability:trial:bb29c925c9fcdc82、S02-0609:ability:trial:bb29c925c9fcdc82、S02-0610:ability:trial:bb29c925c9fcdc82、S02-0613:ability:trial:bb29c925c9fcdc82、S02-0614:ability:trial:bb29c925c9fcdc82、S02-0617:ability:trial:bb29c925c9fcdc82、S02-0618:ability:trial:2117897dcefd3125
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S02-0604:ability:trial:2117897dcefd3125、S02-0606:ability:trial:bb29c925c9fcdc82、S02-0609:ability:trial:bb29c925c9fcdc82、S02-0610:ability:trial:bb29c925c9fcdc82、S02-0613:ability:trial:bb29c925c9fcdc82、S02-0614:ability:trial:bb29c925c9fcdc82、S02-0617:ability:trial:bb29c925c9fcdc82、S02-0618:ability:trial:2117897dcefd3125
-
-展示消费者出口：档案未声明展示边界。
+展示消费者出口：SnapshotFor。
 
 ## rule:universal-faction-mapping（已完成）
 
@@ -1713,33 +1520,25 @@
 
 展示消费者出口：档案未声明展示边界。
 
-## summon-flow:promotion-entry（未完成）
+## summon-flow:promotion-entry（已完成）
 
-绑定能力段：4。运行入口：commit = L12GameEngine.PlayS2Promotion；cost-calculation = L12GameEngine.S2PromotionGodPowerCost；entry = L12GameEngine.BeginS2PromotionEntry；foundation-candidates = L12GameEngine.S2PromotionFoundations；foundation-detach = L12GameEngine.DetachPromotionFoundations；identity = L12GameEngine.IsS2PromotionCard；options = L12GameEngine.BuildS2PromotionOptions；state-inheritance = L12S2ZoneOps.InheritPromotionState。
+绑定能力段：4。运行入口：commit = L12GameEngine.PlayS2Promotion；cost-calculation = L12GameEngine.S2PromotionGodPowerCost；entry = L12GameEngine.BeginS2PromotionEntry；foundation-candidates = L12GameEngine.S2PromotionFoundations；foundation-detach = L12GameEngine.DetachPromotionFoundations；identity = L12GameEngine.IsS2PromotionCard；options = L12GameEngine.BuildS2PromotionOptions；presentation = L12GameEngine.SnapshotFor；state-inheritance = L12S2ZoneOps.InheritPromotionState。
 档案附加检查：payment-cancel, foundation-invalidated, god-power-consume-and-flip, promotion-discount, single-candidate-choice。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |
-| normal | 0 | 4（S02-0501:ability:promotion:3eb467465ef47272、S02-0503:ability:promotion:3eb467465ef47272、S02-0505:ability:promotion:e890e8664470e824、S02-0507:ability:promotion:e890e8664470e824） | 0 |
-| no-target | 0 | 4（S02-0501:ability:promotion:3eb467465ef47272、S02-0503:ability:promotion:3eb467465ef47272、S02-0505:ability:promotion:e890e8664470e824、S02-0507:ability:promotion:e890e8664470e824） | 0 |
+| normal | 4 | 0 | 0 |
+| no-target | 4 | 0 | 0 |
 | negated | 0 | 0 | 4 |
-| target-invalidated | 0 | 4（S02-0501:ability:promotion:3eb467465ef47272、S02-0503:ability:promotion:3eb467465ef47272、S02-0505:ability:promotion:e890e8664470e824、S02-0507:ability:promotion:e890e8664470e824） | 0 |
+| target-invalidated | 4 | 0 | 0 |
 | duplicate-submit | 0 | 0 | 4 |
-| reconnect | 0 | 4（S02-0501:ability:promotion:3eb467465ef47272、S02-0503:ability:promotion:3eb467465ef47272、S02-0505:ability:promotion:e890e8664470e824、S02-0507:ability:promotion:e890e8664470e824） | 0 |
-| payment-cancel | 0 | 4（S02-0501:ability:promotion:3eb467465ef47272、S02-0503:ability:promotion:3eb467465ef47272、S02-0505:ability:promotion:e890e8664470e824、S02-0507:ability:promotion:e890e8664470e824） | 0 |
+| reconnect | 4 | 0 | 0 |
+| payment-cancel | 4 | 0 | 0 |
 | single-candidate-choice | 4 | 0 | 0 |
 | multi-target-applicability | 0 | 0 | 4 |
-| presentation-consumers | 0 | 4（S02-0501:ability:promotion:3eb467465ef47272、S02-0503:ability:promotion:3eb467465ef47272、S02-0505:ability:promotion:e890e8664470e824、S02-0507:ability:promotion:e890e8664470e824） | 0 |
+| presentation-consumers | 4 | 0 | 0 |
 
-缺失明细与建议补测范围：
-- `normal`（正常结算）：S02-0501:ability:promotion:3eb467465ef47272、S02-0503:ability:promotion:3eb467465ef47272、S02-0505:ability:promotion:e890e8664470e824、S02-0507:ability:promotion:e890e8664470e824
-- `no-target`（无目标/不能发动）：S02-0501:ability:promotion:3eb467465ef47272、S02-0503:ability:promotion:3eb467465ef47272、S02-0505:ability:promotion:e890e8664470e824、S02-0507:ability:promotion:e890e8664470e824
-- `target-invalidated`（已声明对象逆结算失效）：S02-0501:ability:promotion:3eb467465ef47272、S02-0503:ability:promotion:3eb467465ef47272、S02-0505:ability:promotion:e890e8664470e824、S02-0507:ability:promotion:e890e8664470e824
-- `reconnect`（Prompt/堆叠/选择阶段重连）：S02-0501:ability:promotion:3eb467465ef47272、S02-0503:ability:promotion:3eb467465ef47272、S02-0505:ability:promotion:e890e8664470e824、S02-0507:ability:promotion:e890e8664470e824
-- `payment-cancel`（有费用时的取消/支付失败兜底）：S02-0501:ability:promotion:3eb467465ef47272、S02-0503:ability:promotion:3eb467465ef47272、S02-0505:ability:promotion:e890e8664470e824、S02-0507:ability:promotion:e890e8664470e824
-- `presentation-consumers`（展示消费者覆盖（按钮/弹框/动效/日志/战报/回放））：S02-0501:ability:promotion:3eb467465ef47272、S02-0503:ability:promotion:3eb467465ef47272、S02-0505:ability:promotion:e890e8664470e824、S02-0507:ability:promotion:e890e8664470e824
-
-展示消费者出口：档案未声明展示边界。
+展示消费者出口：SnapshotFor。
 
 ## trigger:paid-self-state（已完成）
 
@@ -1751,7 +1550,7 @@
 | normal | 2 | 0 | 0 |
 | no-target | 2 | 0 | 0 |
 | negated | 2 | 0 | 0 |
-| target-invalidated | 2 | 0 | 0 |
+| target-invalidated | 0 | 0 | 2 |
 | duplicate-submit | 2 | 0 | 0 |
 | reconnect | 2 | 0 | 0 |
 | payment-cancel | 2 | 0 | 0 |

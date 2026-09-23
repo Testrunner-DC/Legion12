@@ -214,6 +214,7 @@ public sealed class AtomicReviewBatch6KBRegressionTests
     [Fact]
     [Trait("L12Evidence", "card:S01-0213")]
     [Trait("L12Evidence", "entry:siwa-kaba-occupied-slot-special-graveyard")]
+    [L12AbilityEvidence("S01-0213:ability:after-attack:bf52deb7316f89d3", "target-invalidated")]
     public void SiwaKabaMovesToGraveyardWhenItsDeclaredSlotIsOccupiedBeforeSettlement()
     {
         var game = Create(8221);
@@ -242,6 +243,7 @@ public sealed class AtomicReviewBatch6KBRegressionTests
     [Fact]
     [Trait("L12Evidence", "card:S01-0213")]
     [Trait("L12Evidence", "entry:siwa-kaba-negated-special-graveyard")]
+    [L12AbilityEvidence("S01-0213:ability:after-attack:bf52deb7316f89d3", "negated")]
     public void NegatedSiwaKabaHandEntryMovesItsSourceToGraveyard()
     {
         var game = Create(8222);

@@ -535,10 +535,12 @@ public sealed partial class L12GameEngine
             {
                 ["cardInstanceId"] = promoted.InstanceId,
                 ["choiceMode"] = "instant",
+                ["cancel"] = "取消晋升登场",
             };
             foreach (var candidate in foundations) AddPromptCardData(data, candidate);
             CreatePrompt(playerIndex, "friendly-target", $"{promoted.Name}：选择要叠放的同名非【晋升者】军团",
-                foundations.Select(card => card.InstanceId), 1, 1, "s2-promotion-foundation", isPrivate: true, data: data);
+                foundations.Select(card => card.InstanceId).Append("cancel"), 1, 1,
+                "s2-promotion-foundation", isPrivate: true, data: data);
             return CommandResult.Ok();
         }
 

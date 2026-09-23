@@ -6,7 +6,7 @@ namespace TwelveLegions.Tests;
 
 public sealed class ValkyrieDrawPhaseLifecycleProfileTests
 {
-    private const string AbilityId = "S01-03M1:ability:static:f1ba346550e4decc";
+    private const string AbilityId = "S01-03M1:ability:static:794dd14bacd363d7";
     private static readonly L12Catalog Catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
 
     [Fact]

@@ -330,6 +330,7 @@ public sealed class AtomicReviewBatch6KARegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S01-0116")]
+    [L12AbilityEvidence("S01-0116:ability:static:74c527aaab5e91cd", "no-target")]
     public void XishiWithNoDeclaredSummonStartsAtTheIndependentDrawSegment()
     {
         var game = Create(8104);
@@ -357,6 +358,7 @@ public sealed class AtomicReviewBatch6KARegressionTests
     [Fact]
     [Trait("L12Evidence", "card:S01-0116")]
     [Trait("L12Evidence", "entry:strict-hand-entry-settlement")]
+    [L12AbilityEvidence("S01-0116:ability:static:74c527aaab5e91cd", "target-invalidated")]
     public void XishiDoesNotReplaceAStaleDeclaredHandLegionAndStopsItsThenDraw()
     {
         var game = Create(8116);
@@ -394,6 +396,7 @@ public sealed class AtomicReviewBatch6KARegressionTests
     [Fact]
     [Trait("L12Evidence", "card:S01-0116")]
     [Trait("L12Evidence", "entry:strict-hand-entry-settlement")]
+    [L12AbilityEvidence("S01-0116:ability:static:74c527aaab5e91cd", "target-invalidated-current-condition")]
     public void XishiRevalidatesTheDeclaredLegionsTroopsBeforeEntry()
     {
         var game = Create(8117);

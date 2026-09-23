@@ -95,7 +95,11 @@ public sealed class MoraleFlipEffectLifecycleTests
     [Fact]
     [Trait("L12Evidence", "ability:olympusMoraleFlip")]
     [L12AbilityEvidence("S02-05C1:ability:active:1ae9b19504eac93a",
-        "normal", "payment-separate", "v2-prompt-reconnect", "duplicate-submit")]
+        "normal", "payment-separate", "v2-prompt-reconnect", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-05C1A:ability:active:1ae9b19504eac93a",
+        "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("ST05-C1:ability:static:6fe475d8923feb65",
+        "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
     public void OlympusMoraleFlipKeepsPaymentSeparateAndResolvesAfterCheckpoint()
     {
         var game = CreateWithFirstMaster("S02-05M1", 91331);
@@ -110,6 +114,9 @@ public sealed class MoraleFlipEffectLifecycleTests
         CommitOlympusFlip(game, payment.InstanceId);
         Assert.True(payment.Tapped);
         Assert.False(target.IsGodPower);
+        var declaredScene = Assert.Single(game.State.Events, entry => entry.EffectResultStatus == "declared"
+            && entry.Cards.Any(card => card.InstanceId == "faction-0")).EffectSceneId;
+        Assert.False(string.IsNullOrWhiteSpace(declaredScene));
         PassResponses(game);
         var targetPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-flip-morale", targetPrompt.Data["action"]);
@@ -125,6 +132,7 @@ public sealed class MoraleFlipEffectLifecycleTests
         Assert.True(game.State.Players[0].Morale.Single(card => card.InstanceId == target.InstanceId).IsGodPower);
         var result = Result(game, "faction-0");
         Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.Equal(declaredScene, result.EffectSceneId);
         Assert.Equal(1, result.EffectSegmentIndex);
         Assert.Equal(1, result.EffectSegmentCount);
         Assert.False(game.Handle(0, new L12Command("resolvePrompt", PromptId: targetPrompt.PromptId,
@@ -135,6 +143,8 @@ public sealed class MoraleFlipEffectLifecycleTests
     [Trait("L12Evidence", "ability:olympusMoraleFlip")]
     [L12AbilityEvidence("S02-05C1:ability:active:1ae9b19504eac93a",
         "negated", "paid-cost-preserved")]
+    [L12AbilityEvidence("S02-05C1A:ability:active:1ae9b19504eac93a", "negated")]
+    [L12AbilityEvidence("ST05-C1:ability:static:6fe475d8923feb65", "negated")]
     public void NegatedOlympusMoraleFlipKeepsPaidMoraleAndCreatesNoTargetPrompt()
     {
         var game = CreateWithFirstMaster("S02-05M1", 91332);
@@ -161,6 +171,8 @@ public sealed class MoraleFlipEffectLifecycleTests
     [Trait("L12Evidence", "ability:olympusMoraleFlip")]
     [L12AbilityEvidence("S02-05C1:ability:active:1ae9b19504eac93a",
         "target-invalidated", "candidate-settlement-parity")]
+    [L12AbilityEvidence("S02-05C1A:ability:active:1ae9b19504eac93a", "target-invalidated")]
+    [L12AbilityEvidence("ST05-C1:ability:static:6fe475d8923feb65", "target-invalidated")]
     public void OlympusMoraleFlipFailsWhenEverySettlementCandidateChangedFaceDuringResponses()
     {
         var game = CreateWithFirstMaster("S02-05M1", 91333);
@@ -188,6 +200,7 @@ public sealed class MoraleFlipEffectLifecycleTests
     [Trait("L12Evidence", "ability:olympusMoraleFlip")]
     [L12AbilityEvidence("S02-05C1:ability:active:1ae9b19504eac93a",
         "target-invalidated", "single-candidate-choice")]
+    [L12AbilityEvidence("S02-05C1A:ability:active:1ae9b19504eac93a", "single-candidate-choice")]
     public void OlympusMoraleFlipRevalidatesTheFrozenSelectionBeforeChangingItsFace()
     {
         var game = CreateWithFirstMaster("S02-05M1", 91334);
@@ -218,6 +231,8 @@ public sealed class MoraleFlipEffectLifecycleTests
     [Trait("L12Evidence", "ability:olympusMoraleFlip:god-power-identity")]
     [L12AbilityEvidence("S02-05C1:ability:active:1ae9b19504eac93a",
         "no-target", "black-lotus-excluded")]
+    [L12AbilityEvidence("S02-05C1A:ability:active:1ae9b19504eac93a", "no-target")]
+    [L12AbilityEvidence("ST05-C1:ability:static:6fe475d8923feb65", "no-target")]
     public void OlympusMoraleFlipCannotStartWhenBlackLotusIsTheOnlyMoraleZoneResource()
     {
         var game = CreateWithFirstMaster("S02-05M1", 913341);
@@ -262,6 +277,36 @@ public sealed class MoraleFlipEffectLifecycleTests
         Assert.True(lotus.Tapped);
         Assert.False(lotus.IsGodPower);
         Assert.True(target.IsGodPower);
+    }
+
+    [Fact]
+    [L12AbilityEvidence("S02-05C1:ability:active:1ae9b19504eac93a", "payment-cancel")]
+    [L12AbilityEvidence("S02-05C1A:ability:active:1ae9b19504eac93a", "payment-cancel")]
+    [L12AbilityEvidence("ST05-C1:ability:static:6fe475d8923feb65", "payment-cancel")]
+    public void OlympusMoraleFlipPaymentCanBeCancelledWithoutSpendingOrUsage()
+    {
+        var game = CreateWithFirstMaster("S02-05M1", 913343);
+        var player = game.State.Players[0];
+        PrepareMain(game);
+        player.Morale.Clear();
+        var payment = Morale("olympus-cancel-payment");
+        var target = Morale("olympus-cancel-target");
+        player.Morale.AddRange([payment, target]);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "faction-0",
+            Ability: "olympusMoraleFlip")).Accepted);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        var cancel = game.Handle(0,
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "cancel"));
+
+        Assert.True(cancel.Accepted, cancel.Error);
+        Assert.All(player.Morale, morale => Assert.False(morale.Tapped));
+        Assert.DoesNotContain(player.Morale, morale => morale.IsGodPower);
+        Assert.DoesNotContain(player.UsedAbilities,
+            key => key.Contains("olympusMoraleFlip", StringComparison.Ordinal));
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.False(game.Handle(0,
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "cancel")).Accepted);
     }
 
     [Fact]

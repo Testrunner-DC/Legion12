@@ -437,7 +437,9 @@ public sealed class L12AtomicEffectCatalog
             : L12StructuredCardRules.TryGetStructuredAbilities(card, out var structured)
                 ? structured.Select((ability, index) => BuildStructuredAbility(card, ability, index + 1)).ToList()
                 : SplitDatabaseAtomicReference(card.AtomicReference) is { Count: > 0 } databaseAbilities
-                    ? databaseAbilities.Select((clause, index) => BuildAbility(card, clause, index + 1) with
+                    ? databaseAbilities.Select(clause => RemoveSharedDivinitySetupText(card, clause))
+                        .Where(clause => !string.IsNullOrWhiteSpace(clause))
+                        .Select((clause, index) => BuildAbility(card, clause, index + 1) with
                     {
                         MappingSource = "database-atomic-reference+registry",
                         ReviewStatus = "human-assisted",
@@ -445,7 +447,10 @@ public sealed class L12AtomicEffectCatalog
                     }).ToList()
                     : L12CounterTacticRules.FallbackTrigger(card) is { } responseTrigger
                         ? [BuildAbility(card, text, 1, responseTrigger)]
-                        : BuildFallbackAbilities(card, text);
+                    : BuildFallbackAbilities(card, RemoveSharedDivinitySetupText(card, text));
+        if (card.CardType == "divinity" && sourceAbilities.All(ability => ability.Trigger != "setup"))
+            sourceAbilities.Add(BuildStructuredAbility(card, L12StructuredCardRules.SharedDivinitySetupAbility(),
+                sourceAbilities.Count + 1));
         foreach (var overlay in L12StructuredCardRules.GetCombatOverlayAbilities(card.Id))
         {
             if (sourceAbilities.Any(ability => ability.Trigger == overlay.Trigger && ability.Text == overlay.Text
@@ -627,10 +632,15 @@ public sealed class L12AtomicEffectCatalog
             Add(atoms, L12AtomKinds.SelectTarget, "声明合法对象", new() { ["text"] = text }, "inferred");
         if (ContainsAny(text, "选择以下", "选择1项", "选择一项", "或：", "或使"))
             Add(atoms, L12AtomKinds.SelectMode, "选择以下一项", new() { ["text"] = text }, "inferred");
-        if (text.Contains("消耗") && text.Contains("士气")) AddNumeric(atoms, L12AtomKinds.PayMorale, text, "支付士气");
+        // “无需消耗费用”描述的是费用豁免，不是 Cost。不能因为同一能力后文还出现
+        // “休整的士气”就跨句拼出一个不存在的支付士气原子。
+        if (text.Contains("消耗") && text.Contains("士气")
+            && !text.Contains("无需消耗费用", StringComparison.Ordinal))
+            AddNumeric(atoms, L12AtomKinds.PayMorale, text, "支付士气");
         if (text.Contains("返还") && text.Contains("士气")) AddNumeric(atoms, L12AtomKinds.ReturnMorale, text, "返还士气");
         if (text.Contains("主动休整")) Add(atoms, L12AtomKinds.RestSource, "休整能力来源", new(), "inferred");
-        if (text.Contains("弃置")) AddNumeric(atoms, L12AtomKinds.Discard, text, "弃置卡牌");
+        if (text.Contains("弃置")) AddNumeric(atoms, L12AtomKinds.Discard, text, "弃置卡牌",
+            PrintedOperationStage(text, "弃置"));
         if (text.Contains("抽") && text.Contains("牌")) AddNumeric(atoms, L12AtomKinds.Draw, text, "抽牌");
         if (ContainsAny(text, "受到伤害", "造成伤害", "对主宰造成")) AddNumeric(atoms, L12AtomKinds.DamageMaster, text, "主宰受到伤害");
         if (ContainsAny(text, "恢复", "生命+")) AddNumeric(atoms, L12AtomKinds.HealMaster, text, "恢复生命");
@@ -674,11 +684,12 @@ public sealed class L12AtomicEffectCatalog
             ExecutionModelFor(trigger, text));
     }
 
-    private static void Add(List<L12EffectAtom> atoms, string kind, string label, Dictionary<string, string> parameters, string source)
+    private static void Add(List<L12EffectAtom> atoms, string kind, string label, Dictionary<string, string> parameters,
+        string source, string? stage = null)
     {
         var descriptor = L12EffectAtomRegistry.Get(kind);
         atoms.Add(new L12EffectAtom($"atom-{atoms.Count + 1}", kind, label, atoms.Count + 1,
-            new ReadOnlyDictionary<string, string>(parameters), descriptor.RuntimeExecutable, source, StageFor(kind)));
+            new ReadOnlyDictionary<string, string>(parameters), descriptor.RuntimeExecutable, source, stage ?? StageFor(kind)));
     }
 
     private static void EnsurePrintedCostBoundaryAtom(List<L12EffectAtom> atoms, string text, string source)
@@ -700,7 +711,8 @@ public sealed class L12AtomicEffectCatalog
             atoms[index] = atoms[index] with { AtomId = $"atom-{index + 1}", Order = index + 1 };
     }
 
-    private static void AddNumeric(List<L12EffectAtom> atoms, string kind, string text, string label)
+    private static void AddNumeric(List<L12EffectAtom> atoms, string kind, string text, string label,
+        string? stage = null)
     {
         var pattern = kind switch
         {
@@ -717,7 +729,30 @@ public sealed class L12AtomicEffectCatalog
         var match = Regex.Match(text, pattern);
         var value = match.Groups["value"].Success ? match.Groups["value"].Value : match.Groups["value2"].Value;
         Add(atoms, kind, string.IsNullOrEmpty(value) ? label : $"{label} {value}",
-            new() { ["amount"] = string.IsNullOrEmpty(value) ? "dynamic" : value, ["text"] = text }, "inferred");
+            new() { ["amount"] = string.IsNullOrEmpty(value) ? "dynamic" : value, ["text"] = text }, "inferred", stage);
+    }
+
+    private static string RemoveSharedDivinitySetupText(L12CardDefinition card, string text)
+        => card.CardType == "divinity"
+            ? text.Replace(L12StructuredCardRules.SharedDivinitySetupText, string.Empty,
+                    StringComparison.Ordinal)
+                .Trim(' ', '\r', '\n', '。')
+            : text;
+
+    // 费用边界只由有效冒号决定。相同的“弃置/消耗/返还”动词位于冒号后或整段无冒号时，
+    // 是效果结算而不是 Cost；不能再由动词种类本身推导费用阶段。
+    private static string PrintedOperationStage(string text, params string[] requiredTokens)
+    {
+        for (var separator = 0; separator < text.Length; separator++)
+        {
+            if (text[separator] is not ('：' or ':')) continue;
+            var before = text[..separator];
+            var clauseStart = before.LastIndexOfAny(['。', '；', ';', '\n', '\r']) + 1;
+            var clause = text[clauseStart..separator].Trim(' ', '·', '-', '—');
+            if (!requiredTokens.All(token => clause.Contains(token, StringComparison.Ordinal))) continue;
+            if (L12StructuredCardRules.HasPrintedCostBoundary($"{clause}：执行效果")) return "cost";
+        }
+        return "resolution";
     }
 
     private static bool ContainsAny(string value, params string[] tokens) => tokens.Any(value.Contains);

@@ -125,6 +125,8 @@ public sealed class Bq20260907_263RegressionTests
     }
 
     [Fact]
+    [L12AbilityEvidence("S01-02C1:ability:static:91802cda49d575fb", "presentation-consumers")]
+    [L12AbilityEvidence("ST02-C1:ability:static:f2b97501194b5c40", "presentation-consumers")]
     public void SolarCityFactionPromptsAndPublicPresentationDoNotBorrowImmortalGiftText()
     {
         var game = Create(26301, firstMasterId: "S01-02M1");
@@ -145,6 +147,41 @@ public sealed class Bq20260907_263RegressionTests
 
         Assert.Contains(game.State.Events, actionEvent => actionEvent.Type == "effect-activation"
             && actionEvent.Text == "太阳城阵营效果：将1张<陵墓守卫>从我方墓地活跃登场。");
+    }
+
+    [Fact]
+    [L12AbilityEvidence("S01-02C1:ability:static:91802cda49d575fb", "target-invalidated")]
+    [L12AbilityEvidence("ST02-C1:ability:static:f2b97501194b5c40", "target-invalidated")]
+    public void SolarGuardDoesNotReplaceADeclaredGuardThatLeavesTheGraveBeforeSettlement()
+    {
+        var game = Create(263011, autoPassEmptyResponses: false, firstMasterId: "S01-02M1");
+        var player = game.State.Players[0];
+        var guard = Card("S01-0212", "bq263-stale-sun-guard");
+        guard.OwnerIndex = 0;
+        player.Graveyard.Add(guard);
+        player.TemporaryMorale = 2;
+        var opponent = game.State.Players[1];
+        var counter = Card("S01-0019", "bq263-stale-response");
+        counter.Hidden = true;
+        counter.SetRound = 0;
+        opponent.Field[1][2] = counter;
+        opponent.Field[0][2] = Card("S01-0004", "bq263-stale-response-target");
+
+        Assert.True(game.Handle(0,
+            new L12Command("activateAbility", "faction-0", Ability: "sunGuard")).Accepted);
+        Choose(game, guard.InstanceId);
+        Choose(game, "0:0");
+        Assert.Single(game.State.EffectStack);
+        player.Graveyard.Remove(guard);
+        player.Hand.Add(guard);
+
+        PassResponses(game);
+
+        Assert.Null(player.Field[0][0]);
+        Assert.Contains(guard, player.Hand);
+        Assert.Equal(0, player.TemporaryMorale);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("失效", StringComparison.Ordinal));
     }
 
     [Fact]

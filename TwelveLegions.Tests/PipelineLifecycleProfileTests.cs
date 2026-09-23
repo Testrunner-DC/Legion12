@@ -43,10 +43,10 @@ public sealed class PipelineLifecycleProfileTests
     [L12AbilityEvidence("S01-01M1:ability:static:c03878ecc263c0e6", "per-card-branch", "authoritative-consumer")]
     [L12AbilityEvidence("S01-01M1:ability:static:d024f673ff236321", "per-card-branch", "authoritative-consumer")]
     [L12AbilityEvidence("S01-02D1:ability:static:dbf8222a61a31140", "per-card-branch", "authoritative-consumer")]
-    [L12AbilityEvidence("S01-02D1:ability:static:0c86a6851cf9d2ce", "per-card-branch", "authoritative-consumer")]
+    [L12AbilityEvidence("S01-02D1:ability:static:f968b0d6950e6d13", "per-card-branch", "authoritative-consumer")]
     [L12AbilityEvidence("S01-02M3:ability:static:705baec08fc6bc02", "per-card-branch", "authoritative-consumer")]
     [L12AbilityEvidence("S01-03D1:ability:static:d89d0b3dade7b6c8", "per-card-branch", "authoritative-consumer")]
-    [L12AbilityEvidence("S01-03D1:ability:static:342ed2c72fcd22aa", "per-card-branch", "authoritative-consumer")]
+    [L12AbilityEvidence("S01-03D1:ability:static:d45b38f3f8bf48bc", "per-card-branch", "authoritative-consumer")]
     [L12AbilityEvidence("S01-03M1:ability:static:d047647f18d541e4", "per-card-branch", "authoritative-consumer")]
     [L12AbilityEvidence("S01-04D1:ability:static:fcd47c32a0a46e1a", "per-card-branch", "authoritative-consumer")]
     [L12AbilityEvidence("S01-04D1:ability:static:3c467d3eba318af6", "per-card-branch", "authoritative-consumer")]
@@ -63,12 +63,12 @@ public sealed class PipelineLifecycleProfileTests
     [L12AbilityEvidence("S02-0301:ability:active:61c655977499e4be", "per-card-branch", "authoritative-consumer")]
     [L12AbilityEvidence("S02-03M1:ability:active:54e6f9c40764f804", "per-card-branch", "authoritative-consumer")]
     [L12AbilityEvidence("S02-02M1:ability:active:014219b1c6c557fa", "per-card-branch", "authoritative-consumer")]
-    [L12AbilityEvidence("S02-0205:ability:active:bf422a987e0ab5de", "per-card-branch", "authoritative-consumer")]
+    [L12AbilityEvidence("S02-0205:ability:active:e33e843f8be8d5f6", "per-card-branch", "authoritative-consumer")]
     [L12AbilityEvidence("S02-06D1:ability:static:65b6607da57e5096", "per-card-branch", "authoritative-consumer")]
     [L12AbilityEvidence("S02-06M1:ability:active:08922e53e852b78f", "per-card-branch", "authoritative-consumer")]
     [L12AbilityEvidence("S02-06S1:ability:static:75769d93e0ca669f", "per-card-branch", "authoritative-consumer")]
     [L12AbilityEvidence("S02-06S5:ability:static:5444a7c87e0351bd", "per-card-branch", "authoritative-consumer")]
-    [L12AbilityEvidence("S02-06S6:ability:after-attack:b158f5749a6c161e", "per-card-branch", "authoritative-consumer")]
+    [L12AbilityEvidence("S02-06S6:ability:after-attack:54e87bc748d2e1f9", "per-card-branch", "authoritative-consumer")]
     [L12AbilityEvidence("S02-0404:ability:granted:2c2b9693ca8cf3b8", "per-card-branch", "authoritative-consumer")]
     [L12AbilityEvidence("S02-0404:ability:granted:e7c384ccba9ff2f3", "per-card-branch", "authoritative-consumer")]
     [L12AbilityEvidence("S02-05M1:ability:active:6fe03f6c35407ac7", "per-card-branch", "authoritative-consumer")]
@@ -82,7 +82,7 @@ public sealed class PipelineLifecycleProfileTests
     [L12AbilityEvidence("S02-0013:ability:active-while-attached:f64dc7647e481c5f", "per-card-branch", "authoritative-consumer")]
     [L12AbilityEvidence("S01-01M2:ability:static:f3ee48a69ee29306", "per-card-branch", "authoritative-consumer")]
     [L12AbilityEvidence("S01-0307:ability:static:b89287bced985f8c", "per-card-branch", "authoritative-consumer")]
-    [L12AbilityEvidence("S01-03M2:ability:static:e3e85412fe04e44b", "per-card-branch", "authoritative-consumer")]
+    [L12AbilityEvidence("S01-03M2:ability:static:ab4daf32452349c5", "per-card-branch", "authoritative-consumer")]
     [L12AbilityEvidence("S01-0215:ability:mode-ready-guard:3e3294affff84b58", "per-card-branch", "authoritative-consumer")]
     [L12AbilityEvidence("S01-0215:ability:mode-rest-and-draw:8c1a03af8e682c53", "per-card-branch", "authoritative-consumer")]
     public void EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline()
@@ -192,9 +192,9 @@ public sealed class PipelineLifecycleProfileTests
 
     [Fact]
     [L12AbilityEvidence("S02-0012:ability:play:bafe1ab6a18493c0", "per-card-flow", "authoritative-consumer")]
-    [L12AbilityEvidence("S02-0206:ability:play:ca021e5c16b59965", "per-card-flow", "authoritative-consumer")]
+    [L12AbilityEvidence("S02-0206:ability:play:f6c0e9a69b3184b7", "per-card-flow", "authoritative-consumer")]
     [L12AbilityEvidence("S02-0206:ability:play:bd784d08e38e0ed8", "per-card-flow", "authoritative-consumer")]
-    [L12AbilityEvidence("S02-0307:ability:play:f9b21f21c30d2eb3", "per-card-flow", "authoritative-consumer")]
+    [L12AbilityEvidence("S02-0307:ability:play:e2a8efcc4ba499ee", "per-card-flow", "authoritative-consumer")]
     [L12AbilityEvidence("S02-0306:ability:master-effect-damage-threshold:978e2dc72d59418c", "per-card-flow", "authoritative-consumer")]
     [L12AbilityEvidence("S02-0405:ability:play:0a13775c2081e642", "per-card-flow", "authoritative-consumer")]
     [L12AbilityEvidence("S02-0405:ability:play:b03190adf1322a1a", "per-card-flow", "authoritative-consumer")]
@@ -222,15 +222,20 @@ public sealed class PipelineLifecycleProfileTests
     }
 
     [Fact]
-    [L12AbilityEvidence("S02-0005:ability:opponent-attacks-master:806afb384f303aee", "capability-registry-pending", "authoritative-consumer")]
-    [L12AbilityEvidence("S02-0106:ability:opponent-attack-or-effect:899eef6cc1186e9c", "capability-registry-pending", "authoritative-consumer")]
+    [L12AbilityEvidence("S02-0005:ability:opponent-attacks-master:806afb384f303aee", "capability-registry", "authoritative-consumer")]
+    [L12AbilityEvidence("S02-0106:ability:opponent-attack-or-effect:cac751e0d790e16e", "capability-registry", "authoritative-consumer")]
     public void EveryPipelineResponseSegmentBindsToTheSharedResponsePipeline()
     {
         var rescan = AllAbilities().Where(ability => ability.CardId is "S02-0005" or "S02-0106"
             && ability.Trigger is "opponent-attacks-master" or "opponent-attack-or-effect");
         var segments = AssertClosedSet(EffectLifecycleProfiles.PipelineResponseAbilityIds, rescan);
-        // 两段的资格谓词仍逐卡（傀儡硬编码、乾坤·阴在 CanUseS2CounterAtStack），未纳入响应身份注册表。
         Assert.All(segments, ability => Assert.Equal("reaction", ability.ExecutionModel));
+        Assert.Equal(EffectLifecycleProfiles.PipelineResponseAbilityIds.Select(id => id.Split(':')[0]).Order(),
+            L12StructuredCardSemantics.SpecialResponseCardIds.Order());
+        Assert.Equal("rest-enter-front-and-retarget",
+            L12StructuredCardSemantics.SpecialResponseCapability("S02-0005")?.CommitPlan);
+        Assert.Equal("s2-counter",
+            L12StructuredCardSemantics.SpecialResponseCapability("S02-0106")?.CommitPlan);
     }
 
     [Fact]
@@ -257,8 +262,8 @@ public sealed class PipelineLifecycleProfileTests
     }
 
     [Fact]
-    [L12AbilityEvidence("ST-DS01:ability:disaster:00612b44a6a3ac99", "authoritative-consumer")]
-    [L12AbilityEvidence("ST-DS03:ability:disaster:c974ef724419ccdf", "authoritative-consumer")]
+    [L12AbilityEvidence("ST-DS01:ability:disaster:0c65265cbaf95168", "authoritative-consumer")]
+    [L12AbilityEvidence("ST-DS03:ability:disaster:e661737a9a1faebe", "authoritative-consumer")]
     [L12AbilityEvidence("S01-DS02:ability:turn-end:9d632a451357ff71", "authoritative-consumer")]
     [L12AbilityEvidence("S01-DS10:ability:turn-start:a790e35d0012c86f", "authoritative-consumer")]
     public void EveryDisasterAuthoritySegmentBindsToTheDisasterPipeline()
@@ -272,7 +277,7 @@ public sealed class PipelineLifecycleProfileTests
     }
 
     [Fact]
-    [L12AbilityEvidence("S01-03M1:ability:static:f1ba346550e4decc", "authoritative-consumer")]
+    [L12AbilityEvidence("S01-03M1:ability:static:794dd14bacd363d7", "authoritative-consumer")]
     public void ValkyrieDrawPhaseSegmentBindsToTheTurnStartOutlet()
     {
         var rescan = AllAbilities().Where(ability => ability.CardId == "S01-03M1"
@@ -330,7 +335,7 @@ public sealed class PipelineLifecycleProfileTests
     }
 
     [Fact]
-    [L12AbilityEvidence("S02-06D1:ability:static:b173428fa383ae26", "authoritative-consumer")]
+    [L12AbilityEvidence("S02-06D1:ability:static:b173428fa383ae26", "authoritative-consumer", "completed-setup")]
     [L12AbilityEvidence("S02-06M2:ability:rule:f86cd3914a10b001", "authoritative-consumer")]
     public void TrialCapacitySegmentsBindToTheDeckRuleAndValidator()
     {
@@ -339,6 +344,8 @@ public sealed class PipelineLifecycleProfileTests
                 && ability.Text.Contains("可携带", StringComparison.Ordinal))
             || (ability.CardId == "S02-06M2" && ability.Trigger == "rule"));
         AssertClosedSet(EffectLifecycleProfiles.TrialCapacityAbilityIds, rescan);
+        Assert.True(L12StructuredCardSemantics.StartsWithCompletedTrials("S02-06D1"));
+        Assert.False(L12StructuredCardSemantics.StartsWithCompletedTrials("S02-06M2"));
     }
 
     [Fact]

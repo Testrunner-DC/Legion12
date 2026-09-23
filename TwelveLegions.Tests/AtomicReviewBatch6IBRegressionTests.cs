@@ -99,6 +99,12 @@ public sealed class AtomicReviewBatch6IBRegressionTests
             ResolveChoice(game, "pass");
     }
 
+    private static L12GameEngine Restore(L12GameEngine game)
+        => L12GameEngine.RestoreCheckpoint(Catalog,
+            game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,"),
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+
     private static (L12CardInstance Source, Dictionary<string, L12CardInstance> Cards,
         Dictionary<string, L12MoraleCard> Morale) QueueReviewedTrigger(L12GameEngine game,
         string cardId, string trigger, bool withLegalChoices = true, string cause = "effect")
@@ -812,7 +818,7 @@ public sealed class AtomicReviewBatch6IBRegressionTests
     [Fact]
     [Trait("L12Evidence", "card:S01-0403")]
     [Trait("L12Evidence", "entry:uesugi-counter-deployment-normal")]
-    [L12AbilityEvidence("S01-0403:ability:death:c3e5fc27d01fe269", "normal")]
+    [L12AbilityEvidence("S01-0403:ability:death:c3e5fc27d01fe269", "normal", "presentation-consumers")]
     public void UesugiCounterDeploymentSetsItsDeclaredHandCounterAfterResponses()
     {
         var game = Create(98514);
@@ -823,11 +829,90 @@ public sealed class AtomicReviewBatch6IBRegressionTests
         ResolveChoice(game, "mode:use");
         ResolveCards(game, fixture.Cards["private"].InstanceId);
         ResolveChoice(game, "1:0");
+        var declaration = Assert.Single(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.InstanceId == fixture.Source.InstanceId));
+        Assert.Equal("S01-0403:ability:death:c3e5fc27d01fe269", declaration.EffectAbilityId);
+        Assert.False(string.IsNullOrWhiteSpace(declaration.EffectSceneId));
         PassResponses(game);
 
         Assert.Same(fixture.Cards["private"], player.Field[1][0]);
         Assert.True(fixture.Cards["private"].Hidden);
         Assert.Equal(game.State.Round, fixture.Cards["private"].SummonRound);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == fixture.Source.InstanceId));
+        Assert.Equal(declaration.EffectSceneId, result.EffectSceneId);
+        Assert.Equal(declaration.EffectAbilityId, result.EffectAbilityId);
+        Assert.Equal("resolved", result.EffectResultStatus);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0403")]
+    [Trait("L12Evidence", "entry:uesugi-counter-deployment-no-target")]
+    [L12AbilityEvidence("S01-0403:ability:death:c3e5fc27d01fe269", "no-target")]
+    public void UesugiCounterDeploymentWithNoHandCounterCreatesNoDeclarationOrStack()
+    {
+        var game = Create(98515);
+
+        QueueReviewedTrigger(game, "S01-0403", "death", withLegalChoices: false);
+
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.PendingTriggerStackCandidates);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0403")]
+    [Trait("L12Evidence", "entry:uesugi-counter-deployment-negated")]
+    [L12AbilityEvidence("S01-0403:ability:death:c3e5fc27d01fe269", "negated")]
+    public void UesugiCounterDeploymentStopsBeforeMovingItsDeclaredCounterWhenNegated()
+    {
+        var game = Create(98516);
+        var player = game.State.Players[0];
+        var fixture = QueueReviewedTrigger(game, "S01-0403", "death");
+
+        ResolveChoice(game, "mode:use");
+        ResolveCards(game, fixture.Cards["private"].InstanceId);
+        ResolveChoice(game, "1:0");
+        Assert.Single(game.State.EffectStack).Negated = true;
+        PassResponses(game);
+
+        Assert.Contains(fixture.Cards["private"], player.Hand);
+        Assert.DoesNotContain(fixture.Cards["private"], player.Field.SelectMany(row => row).OfType<L12CardInstance>());
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.CardId == "S01-0403"));
+        Assert.Equal("negated", result.EffectResultStatus);
+        Assert.Equal("S01-0403:ability:death:c3e5fc27d01fe269", result.EffectAbilityId);
+        Assert.False(string.IsNullOrWhiteSpace(result.EffectSceneId));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0403")]
+    [Trait("L12Evidence", "entry:uesugi-counter-deployment-reconnect-duplicate")]
+    [L12AbilityEvidence("S01-0403:ability:death:c3e5fc27d01fe269", "reconnect", "duplicate-submit")]
+    public void UesugiCounterDeploymentRestoresItsDeclarationAndRejectsAConsumedPrompt()
+    {
+        var game = Create(98517);
+        var fixture = QueueReviewedTrigger(game, "S01-0403", "death");
+
+        ResolveChoice(game, "mode:use");
+        var selection = OnlyPrompt(game);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: selection.PromptId,
+            CardInstanceIds: [fixture.Cards["private"].InstanceId])).Accepted);
+        Assert.False(game.Handle(0, new L12Command("resolvePrompt", PromptId: selection.PromptId,
+            CardInstanceIds: [fixture.Cards["private"].InstanceId])).Accepted);
+        ResolveChoice(game, "1:0");
+        var before = Assert.Single(game.State.EffectStack);
+        Assert.False(string.IsNullOrWhiteSpace(before.Data.GetValueOrDefault("presentationSceneId")));
+
+        game = Restore(game);
+        var restored = Assert.Single(game.State.EffectStack);
+        Assert.Equal(fixture.Cards["private"].InstanceId,
+            restored.Data.GetValueOrDefault("declared:entryCards")?.Split('|').Single());
+        Assert.False(string.IsNullOrWhiteSpace(restored.Data.GetValueOrDefault("presentationSceneId")));
+        PassResponses(game);
+
+        Assert.Equal(fixture.Cards["private"].InstanceId, game.State.Players[0].Field[1][0]?.InstanceId);
     }
 
     [Theory]

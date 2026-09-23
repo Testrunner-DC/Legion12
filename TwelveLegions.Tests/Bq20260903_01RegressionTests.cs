@@ -549,6 +549,8 @@ public sealed class Bq20260903_01RegressionTests
     }
 
     [Fact]
+    [L12AbilityEvidence("S01-02C1:ability:static:91802cda49d575fb", "normal", "single-candidate-choice")]
+    [L12AbilityEvidence("ST02-C1:ability:static:f2b97501194b5c40", "normal", "single-candidate-choice")]
     public void TemporaryMoraleCanPayTheFactionEffectThatSummonsATombGuard()
     {
         var game = Create(69038, "S01-02M1");

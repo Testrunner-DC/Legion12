@@ -89,7 +89,129 @@ public sealed class SingleActiveStatePresentationTests
             && entry.Cards.Any(card => card.CardId == cardId));
 
     [Fact]
+    [L12AbilityEvidence("S01-01C1:ability:active:3a8789b35c0c2be4", "no-target", "negated", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("ST01-C1:ability:static:6907bfcf5dbbfeb4", "no-target", "negated", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S01-02C1:ability:static:91802cda49d575fb", "no-target", "negated", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S01-02C1:ability:static:ddab147dd97c360f", "no-target", "negated", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("ST02-C1:ability:static:f2b97501194b5c40", "no-target", "negated", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("ST02-C1:ability:static:29d1864e955f856e", "no-target", "negated", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S01-03C1:ability:static:fa92f5d792a32bdc", "no-target", "negated", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("ST03-C1:ability:static:36b1c5751cc508f9", "no-target", "negated", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S01-04C1:ability:static:7f60c31c00b0f718", "no-target", "negated", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("ST04-C1:ability:static:d9cac21fb706e3c8", "no-target", "negated", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-05C1:ability:active:5dec5c18aaf62a03", "no-target", "negated", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-05C1A:ability:active:5dec5c18aaf62a03", "no-target", "negated", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S02-06C1:ability:static:7339369656140c39", "no-target", "negated", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("ST06-C1:ability:static:88a76dc195d499ee", "no-target", "negated", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("S01-01C1:ability:active:3a8789b35c0c2be4", "payment-cancel")]
+    [L12AbilityEvidence("ST01-C1:ability:static:6907bfcf5dbbfeb4", "payment-cancel")]
+    [L12AbilityEvidence("S01-02C1:ability:static:91802cda49d575fb", "payment-cancel")]
+    [L12AbilityEvidence("S01-02C1:ability:static:ddab147dd97c360f", "payment-cancel")]
+    [L12AbilityEvidence("ST02-C1:ability:static:f2b97501194b5c40", "payment-cancel")]
+    [L12AbilityEvidence("ST02-C1:ability:static:29d1864e955f856e", "payment-cancel")]
+    [L12AbilityEvidence("S01-03C1:ability:static:fa92f5d792a32bdc", "payment-cancel")]
+    [L12AbilityEvidence("ST03-C1:ability:static:36b1c5751cc508f9", "payment-cancel")]
+    [L12AbilityEvidence("S01-04C1:ability:static:7f60c31c00b0f718", "payment-cancel")]
+    [L12AbilityEvidence("ST04-C1:ability:static:d9cac21fb706e3c8", "payment-cancel")]
+    [L12AbilityEvidence("S02-06C1:ability:static:7339369656140c39", "payment-cancel")]
+    [L12AbilityEvidence("ST06-C1:ability:static:88a76dc195d499ee", "payment-cancel")]
+    public void MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol()
+    {
+        var bindings = EffectLifecycleProfiles.Read(Catalog);
+        foreach (var abilityId in EffectLifecycleProfiles.MoraleActiveEffectAbilityIds)
+        {
+            var profile = bindings[abilityId];
+            Assert.Equal("morale:active-effect-pipeline", profile.Id);
+            Assert.Equal("CommitActiveAbilityCore", profile.RuntimeOwners["commit"]);
+            Assert.Equal("ResolveActiveEffect", profile.RuntimeOwners["settlement-dispatch"]);
+            Assert.Equal("SnapshotFor", profile.RuntimeOwners["presentation"]);
+        }
+
+        var unavailable = Create(91309);
+        PrepareMain(unavailable);
+        unavailable.State.Players[0].Morale.Clear();
+        unavailable.State.Players[0].TemporaryMorale = 0;
+        var unavailableResult = unavailable.Handle(0,
+            new L12Command("activateAbility", "faction-0", Ability: "factionAddActive"));
+        Assert.False(unavailableResult.Accepted);
+        Assert.Empty(unavailable.State.EffectStack);
+        Assert.Empty(unavailable.State.PendingPrompts);
+
+        var game = Create(91310);
+        PrepareMain(game);
+        var player = game.State.Players[0];
+        player.Morale.Clear();
+        player.MoraleDeck.Clear();
+        AddReadyMorale(player, 2);
+        player.TemporaryMorale = 2;
+        player.MoraleDeck.Add(new L12MoraleCard
+        {
+            InstanceId = "shared-morale-result",
+            CardId = "S01-01C1",
+        });
+        HoldOpponentResponseWindow(game);
+
+        var activation = game.Handle(0,
+            new L12Command("activateAbility", "faction-0", Ability: "factionAddActive"));
+        Assert.True(activation.Accepted, activation.Error);
+        var originalPayment = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("resource-payment", originalPayment.Kind);
+        Assert.Equal("active-morale-choice", originalPayment.Continuation);
+        Assert.Contains("cancel", originalPayment.ValidChoices);
+        var ordinaryIds = player.Morale.Select(card => card.InstanceId).ToArray();
+
+        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        var restoredPayment = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(originalPayment.PromptId, restoredPayment.PromptId);
+
+        var cancelled = game.Handle(0,
+            new L12Command("resolvePrompt", PromptId: restoredPayment.PromptId, Choice: "cancel"));
+        Assert.True(cancelled.Accepted, cancelled.Error);
+        player = game.State.Players[0];
+        Assert.All(player.Morale, morale => Assert.False(morale.Tapped));
+        Assert.Equal(2, player.TemporaryMorale);
+        Assert.Empty(player.UsedAbilities);
+        Assert.Empty(game.State.EffectStack);
+        Assert.False(game.Handle(0,
+            new L12Command("resolvePrompt", PromptId: restoredPayment.PromptId, Choice: "cancel")).Accepted);
+
+        Assert.True(game.Handle(0,
+            new L12Command("activateAbility", "faction-0", Ability: "factionAddActive")).Accepted);
+        var payment = Assert.Single(game.State.PendingPrompts);
+        var paid = game.Handle(0,
+            new L12Command("resolvePrompt", PromptId: payment.PromptId, CardInstanceIds: ordinaryIds.ToList()));
+        Assert.True(paid.Accepted, paid.Error);
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        var item = Assert.Single(game.State.EffectStack);
+        Assert.False(string.IsNullOrWhiteSpace(item.Data.GetValueOrDefault("presentationSceneId")));
+        Assert.False(string.IsNullOrWhiteSpace(item.Data.GetValueOrDefault("paidCostSummary")));
+        item.Negated = true;
+
+        checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        Assert.Equal(response.PromptId,
+            Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response").PromptId);
+        PassResponses(game);
+
+        player = game.State.Players[0];
+        Assert.Equal(2, player.Morale.Count(morale => morale.Tapped));
+        Assert.Equal(2, player.TemporaryMorale);
+        Assert.Contains(player.UsedAbilities,
+            key => key.Contains("factionAddActive", StringComparison.Ordinal));
+        Assert.Equal("negated", Result(game, "S01-01C1").EffectResultStatus);
+        Assert.False(game.Handle(response.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+    }
+
+    [Fact]
     [Trait("L12Evidence", "ability:factionAddActive")]
+    [L12AbilityEvidence("S01-01C1:ability:active:3a8789b35c0c2be4", "presentation-consumers")]
+    [L12AbilityEvidence("ST01-C1:ability:static:6907bfcf5dbbfeb4", "presentation-consumers")]
     public void TiantingActiveMoraleUsesTheSingleActiveSettlementScene()
     {
         var game = Create(91300);

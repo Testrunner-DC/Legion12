@@ -321,7 +321,7 @@ public sealed class FrontRowTauntAndTrialLifecycleProfileTests
         => Directory.GetParent(Path.GetDirectoryName(sourcePath)!)!.FullName;
 
     [Fact]
-    [L12AbilityEvidence("S01-DS01:ability:static:9d604388d9725837", "registry-closed-set", "authoritative-consumer")]
+    [L12AbilityEvidence("S01-DS01:ability:static:9b5681c438931452", "registry-closed-set", "authoritative-consumer")]
     [L12AbilityEvidence("S01-DS02:ability:static:4408d437a8ab5e5a", "registry-closed-set", "authoritative-consumer")]
     [L12AbilityEvidence("S01-DS03:ability:static:70004a014a03d2a0", "registry-closed-set", "authoritative-consumer")]
     [L12AbilityEvidence("S01-DS04:ability:static:017c7359962a2512", "registry-closed-set", "authoritative-consumer")]
@@ -400,7 +400,12 @@ public sealed class FrontRowTauntAndTrialLifecycleProfileTests
     [L12AbilityEvidence("S02-0301:ability:continuous:e48cf407ce847427", "master-gate", "authoritative-consumer")]
     [L12AbilityEvidence("S02-0305:ability:game-setup:cf14affeb486a9f7", "setup-defaults", "authoritative-consumer")]
     [L12AbilityEvidence("S02-03M1:ability:game-setup:46b2a85c54cecc56", "setup-defaults", "authoritative-consumer")]
-    [L12AbilityEvidence("S02-05D1:ability:setup:cb6a45eff0631d64", "setup-defaults", "authoritative-consumer")]
+    [L12AbilityEvidence("S01-01D1:ability:setup:281db2829152b981", "setup-defaults", "authoritative-consumer")]
+    [L12AbilityEvidence("S01-02D1:ability:setup:281db2829152b981", "setup-defaults", "authoritative-consumer")]
+    [L12AbilityEvidence("S01-03D1:ability:setup:281db2829152b981", "setup-defaults", "authoritative-consumer")]
+    [L12AbilityEvidence("S01-04D1:ability:setup:281db2829152b981", "setup-defaults", "authoritative-consumer")]
+    [L12AbilityEvidence("S02-05D1:ability:setup:281db2829152b981", "setup-defaults", "authoritative-consumer")]
+    [L12AbilityEvidence("S02-06D1:ability:setup:281db2829152b981", "setup-defaults", "authoritative-consumer")]
     public void RuleDeclarationSegmentsBindToTheirSharedRegistries()
     {
         // 卡名共享次数族：信仰狂热者与密米尔之泉共读同一注册表键。
@@ -415,11 +420,11 @@ public sealed class FrontRowTauntAndTrialLifecycleProfileTests
             Catalog.AtomicEffects.All.SelectMany(card => card.Abilities)
                 .Where(ability => ability.Trigger == "game-setup")
                 .Select(ability => ability.AbilityId).Order(StringComparer.Ordinal).ToArray());
-        // 诸神巅开场追加士气段台账标 setup（自动追加，无选发窗口）：全池唯一 setup 段，同属开场管线档案。
-        Assert.Equal([EffectLifecycleProfiles.GameSetupAutoMoraleAbilityId],
+        // 六张主城开场追加士气段台账标 setup（自动追加，无选发窗口），同属开场管线档案。
+        Assert.Equal(EffectLifecycleProfiles.GameSetupAutoMoraleAbilityIds.Order(StringComparer.Ordinal),
             Catalog.AtomicEffects.All.SelectMany(card => card.Abilities)
                 .Where(ability => ability.Trigger == "setup")
-                .Select(ability => ability.AbilityId).ToArray());
+                .Select(ability => ability.AbilityId).Order(StringComparer.Ordinal).ToArray());
         // 阵营映射与主宰门槛各为全池唯一。
         Assert.Equal([EffectLifecycleProfiles.UniversalFactionMappingAbilityId],
             Catalog.AtomicEffects.All.SelectMany(card => card.Abilities)
