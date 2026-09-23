@@ -96,7 +96,7 @@ try {
     assert.match(gameOverText, /达成胜利条件/, `game over ${suffix} must retain the player-facing reason`)
     assert.equal(await page.locator('.battle-route-controls:visible').count(), 0, `game over ${suffix} must not retain duplicate route controls above the result`)
     assert.equal(await gameOver.evaluate(element => element.scrollWidth <= element.clientWidth + 1), true, `game over ${suffix} must not scroll horizontally`)
-    for (const selector of ['.game-over>p', '.game-over>strong', '.game-over>small', '.game-over>.ranked-result', '.game-over>button'])
+    for (const selector of ['.game-over>p', '.game-over>strong', '.game-over>small', '.game-over>.ranked-result', '.game-over>button:not(.game-over-minimize)'])
       await inside(selector, `${selector} ${suffix}`, 4)
     const details = gameOver.locator('details')
     await details.locator('summary').click()

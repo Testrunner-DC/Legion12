@@ -120,19 +120,30 @@ try {
   const context = await browser.newContext()
   const page = await context.newPage()
   const cdp = await context.newCDPSession(page)
+  // Older installed Edge channels may not expose the experimental safe-area
+  // CDP command. In that case apply the same logical viewport variables that
+  // the production hook derives from env(safe-area-inset-*).
+  let nativeSafeAreaOverride = true
   page.setDefaultTimeout(10_000)
   await installMobile(page)
   await page.route('**/*', route => ['127.0.0.1', 'localhost'].includes(new URL(route.request().url()).hostname) ? route.continue() : route.abort())
   async function load(viewport, query, insets = zeroInsets) {
     await page.setViewportSize(viewport)
-    await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets })
+    if (nativeSafeAreaOverride) {
+      try {
+        await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets })
+      } catch (error) {
+        if (!String(error).includes('setSafeAreaInsetsOverride')) throw error
+        nativeSafeAreaOverride = false
+      }
+    }
     await page.goto(`${target}?mobile=1&${query}`, { waitUntil: 'domcontentloaded' })
     await page.locator('[data-l12-mobile-landscape="true"]').waitFor()
     // The standalone fixture mounts GameBoard without App.vue, so mirror the
     // production viewport hook after CDP has populated env(safe-area-inset-*).
-    await page.evaluate(() => {
+    await page.evaluate(({ insets, nativeSafeAreaOverride }) => {
       const probe=document.createElement('div'); probe.style.cssText='position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)'; document.body.append(probe)
-      const style=getComputedStyle(probe); const value=property=>Math.max(0,parseFloat(style.getPropertyValue(property))||0); const vv=visualViewport
+      const style=getComputedStyle(probe); const envValue=property=>Math.max(0,parseFloat(style.getPropertyValue(property))||0); const value=property=>nativeSafeAreaOverride?envValue(property):insets[property.replace('padding-','')]; const vv=visualViewport
       const left=(vv?.offsetLeft??0)+value('padding-left'); const top=(vv?.offsetTop??0)+value('padding-top'); const width=Math.max(1,(vv?.width??innerWidth)-value('padding-left')-value('padding-right')); const height=Math.max(1,(vv?.height??innerHeight)-value('padding-top')-value('padding-bottom'))
       const dialogWidth=Math.min(width*.75,height*.75*16/9),dialogHeight=dialogWidth*9/16
       const root=document.documentElement; root.dataset.l12Viewport='landscape'; root.dataset.l12Mobile='true'; root.style.setProperty('--l12-viewport-left',`${left}px`); root.style.setProperty('--l12-viewport-top',`${top}px`); root.style.setProperty('--l12-viewport-width',`${width}px`); root.style.setProperty('--l12-viewport-height',`${height}px`); root.style.setProperty('--l12-mobile-dialog-width',`${dialogWidth}px`); root.style.setProperty('--l12-mobile-dialog-height',`${dialogHeight}px`); probe.remove(); window.dispatchEvent(new Event('l12-viewport-change'))
@@ -219,7 +230,7 @@ try {
       const rogueScroll=[...document.querySelectorAll('*')].filter(visible).filter(element=>element.scrollWidth>element.clientWidth+1&&['auto','scroll'].includes(getComputedStyle(element).overflowX)&&!element.matches(allowedScroll)).slice(0,10).map(element=>({tag:element.tagName,className:element.className,client:element.clientWidth,scroll:element.scrollWidth}))
       const overlaps=(a,b)=>a.left<b.right-.5&&a.right>b.left+.5&&a.top<b.bottom-.5&&a.bottom>b.top+.5
       const floatingEnemyCount=document.querySelectorAll('.mobile-enemy-hand-count').length
-      const handCounts=[...document.querySelectorAll('.battlefield-half .mobile-hand-count')].map(element=>{
+      const handCounts=[...document.querySelectorAll('.battlefield-half .mobile-hand-count')].filter(visible).map(element=>{
         const r=element.getBoundingClientRect(); const mat=element.closest('.l12-player-mat')
         const blockers=[...mat.querySelectorAll('.mini-master,.relic-zone,.master-marker-track .rune-orb,.master-marker-track .canopic-orb,.formation')].filter(visible).map(node=>{const box=node.getBoundingClientRect();return{className:node.className,left:box.left,top:box.top,right:box.right,bottom:box.bottom}})
         return { label:element.getAttribute('aria-label')??'', text:element.textContent?.replace(/\s+/g,''), left:r.left,top:r.top,right:r.right,bottom:r.bottom, clipped:element.scrollWidth>element.clientWidth+1, safe:r.left>=safe.left-1&&r.top>=safe.top-1&&r.right<=safe.right+1&&r.bottom<=safe.bottom+1, overlaps:blockers.filter(box=>overlaps(r,box)) }
@@ -227,7 +238,8 @@ try {
       const routeButton=document.querySelector('.battle-route-controls button[aria-label="返回大厅"]')
       const routeButtonRect=routeButton?rectOf(routeButton):null
       const routeLines=routeButton?[...routeButton.querySelectorAll('.route-label>span')].map(element=>({text:element.textContent??'',...rectOf(element)})):[]
-      return { safe, overflowX: document.documentElement.scrollWidth > innerWidth + 1, overflowY: document.documentElement.scrollHeight > innerHeight + 1, clipped, rogueScroll, floatingEnemyCount, handCounts, routeButtonRect, routeLines, audits:{ interactive:interactiveAudit, critical:criticalAudit, overlays:overlayAudit } }
+      const promptHandSummary=document.querySelector('.mobile-target-hand-counts')
+      return { safe, overflowX: document.documentElement.scrollWidth > innerWidth + 1, overflowY: document.documentElement.scrollHeight > innerHeight + 1, clipped, rogueScroll, floatingEnemyCount, handCounts, promptHandSummary:promptHandSummary?.getAttribute('aria-label')??'', routeButtonRect, routeLines, audits:{ interactive:interactiveAudit, critical:criticalAudit, overlays:overlayAudit } }
     }, { safeInsets:insets, auditSpec:{ interactiveSelector, criticalSelectors, overlaySelectors } })
     assert.equal(result.overflowX, false, `${label} has page horizontal overflow`)
     assert.equal(result.overflowY, false, `${label} has page vertical overflow`)
@@ -238,10 +250,15 @@ try {
     assert.deepEqual(result.audits.overlays.outside, [], `${label} places an overlay or dialog outside the safe viewport: ${JSON.stringify(result.audits.overlays.outside)}`)
     assert.deepEqual(result.rogueScroll, [], `${label} creates an undeclared horizontal scroll container: ${JSON.stringify(result.rogueScroll)}`)
     assert.equal(result.floatingEnemyCount, 0, `${label} retains the removed floating enemy hand counter`)
-    assert.equal(result.handCounts.length, 2, `${label} must render exactly two PlayerMat hand counters: ${JSON.stringify(result.handCounts)}`)
-    assert.equal(result.handCounts.filter(item=>/^对手手牌 \d+ 张$/.test(item.label)).length, 1, `${label} must render exactly one opponent hand counter`)
-    assert.equal(result.handCounts.filter(item=>/^我方手牌 \d+ 张$/.test(item.label)).length, 1, `${label} must render exactly one own hand counter`)
-    assert.equal(result.handCounts.every(item=>/^手牌\d+$/.test(item.text??'')&&!item.clipped&&item.safe&&item.overlaps.length===0), true, `${label} hand counter is clipped, unsafe, or overlaps protected board content: ${JSON.stringify(result.handCounts)}`)
+    if (result.promptHandSummary) {
+      assert.equal(result.handCounts.length, 0, `${label} target prompt must not leave a hand counter over a commander or relic: ${JSON.stringify(result.handCounts)}`)
+      assert.match(result.promptHandSummary, /^对手手牌 \d+ 张；我方手牌 \d+ 张$/, `${label} target prompt must retain both hand counts: ${result.promptHandSummary}`)
+    } else {
+      assert.equal(result.handCounts.length, 2, `${label} must render exactly two PlayerMat hand counters: ${JSON.stringify(result.handCounts)}`)
+      assert.equal(result.handCounts.filter(item=>/^对手手牌 \d+ 张$/.test(item.label)).length, 1, `${label} must render exactly one opponent hand counter`)
+      assert.equal(result.handCounts.filter(item=>/^我方手牌 \d+ 张$/.test(item.label)).length, 1, `${label} must render exactly one own hand counter`)
+      assert.equal(result.handCounts.every(item=>/^手牌\d+$/.test(item.text??'')&&!item.clipped&&item.safe&&item.overlaps.length===0), true, `${label} hand counter is clipped, unsafe, or overlaps protected board content: ${JSON.stringify(result.handCounts)}`)
+    }
     assert.deepEqual(result.routeLines.map(item=>item.text),['返回','大厅'],`${label} return button must use a balanced 2+2 line break`)
     assert.ok(result.routeButtonRect&&result.routeLines.every(item=>Math.abs((item.left+item.right-result.routeButtonRect.left-result.routeButtonRect.right)/2)<=1)&&result.routeLines[0].bottom<=result.routeLines[1].top+1,`${label} return button copy must be centered and vertically ordered: ${JSON.stringify({button:result.routeButtonRect,lines:result.routeLines})}`)
     return { safe:result.safe, audits:result.audits }
@@ -334,7 +351,7 @@ try {
       const actions=[...document.querySelectorAll('.card-context-actions button,.mobile-action-dock button,.right-rail .action-panel button')].filter(visible).map(button=>({rect:rect(button),font:parseFloat(getComputedStyle(button).fontSize)||0,text:button.textContent?.trim()||''}))
       const root=getComputedStyle(document.documentElement),logicalHeight=parseFloat(root.getPropertyValue('--l12-viewport-height'))||innerHeight
       return {cardDetails,masters,piles,resources,actions,logicalHeight}
-    })
+    }, { insets, nativeSafeAreaOverride })
     assert.ok(metrics.cardDetails.length>=2,`${label} must expose field cards for local-scale verification`)
     assert.equal(metrics.cardDetails.every(item=>item.contained),true,`${label} card badges/statuses/keywords leave their card: ${JSON.stringify(metrics.cardDetails.filter(item=>!item.contained))}`)
     for(const item of metrics.cardDetails){
@@ -531,7 +548,7 @@ try {
       manifest.safeArea.push({profile:profile.name,viewport:`${profile.viewport.width}x${profile.viewport.height}`,insets:profile.insets,state:name,file,ratios:insetRatios,baselineRatios,audit:audit.audits,gmPanelAudit:gmPanelAudit?.audits??null,assertions:'passed'})
     }
   }
-  await cdp.send('Emulation.setSafeAreaInsetsOverride',{insets:zeroInsets})
+  if (nativeSafeAreaOverride) await cdp.send('Emulation.setSafeAreaInsetsOverride',{insets:zeroInsets})
 
   if (!quick && !safeOnly && !dialogOnly) {
     const random = []

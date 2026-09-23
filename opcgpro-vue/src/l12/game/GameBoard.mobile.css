@@ -1172,3 +1172,62 @@
 .mobile-record-restore { top:calc(var(--l12-viewport-top,0px) + 6px); }
 .board-control-restore { bottom:calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + var(--l12-mobile-hand-h) + 5px); }
 .mobile-landscape-board .board-control-minimize { min-height:30px !important; padding:3px 6px !important; }
+
+/* Target and placement prompts reserve a real lane before the felt instead of
+   floating across the first legal cell. The existing continuous field
+   allocation absorbs the lane without stretching or hiding a click target. */
+.mobile-landscape-board.board-target-active { --l12-mobile-target-lane-h:56px; }
+.mobile-landscape-board.board-slot-active { --l12-mobile-target-lane-h:56px; }
+.mobile-landscape-board.board-target-active .board-center,
+.mobile-landscape-board.board-slot-active .board-center {
+  grid-template-rows:var(--l12-mobile-target-lane-h) 0 minmax(0,1fr) 0 var(--l12-mobile-hand-h) !important;
+}
+.mobile-landscape-board.board-target-active :deep(.battlefield-half .mobile-hand-count),
+.mobile-landscape-board.board-slot-active :deep(.battlefield-half .mobile-hand-count) { display:none !important; }
+.mobile-landscape-board .board-target-controls:not(.resource-payment-controls) {
+  position:fixed !important;
+  z-index:2147483500 !important;
+  top:calc(var(--l12-viewport-top,0px) + 4px) !important;
+  left:calc(var(--l12-viewport-left,0px) + var(--l12-mobile-left-rail-w) + 4px) !important;
+  display:grid !important;
+  box-sizing:border-box;
+  width:calc(var(--l12-viewport-width,100vw) - var(--l12-mobile-left-rail-w) - var(--l12-mobile-right-rail-w) - 8px) !important;
+  max-width:calc(var(--l12-viewport-width,100vw) - var(--l12-mobile-left-rail-w) - var(--l12-mobile-right-rail-w) - 8px) !important;
+  min-height:var(--l12-mobile-target-lane-h,56px) !important;
+  max-height:var(--l12-mobile-target-lane-h,56px) !important;
+  grid-template-columns:minmax(0,1fr) auto auto auto auto !important;
+  grid-template-rows:minmax(0,1fr) !important;
+  align-items:center;
+  gap:4px !important;
+  padding:3px 5px !important;
+  overflow:hidden;
+  transform:none !important;
+}
+.mobile-landscape-board .board-target-controls:not(.resource-payment-controls) strong {
+  display:-webkit-box;
+  max-width:none !important;
+  overflow:hidden;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+  font-size:10px !important;
+  line-height:1.15;
+}
+.mobile-landscape-board .board-target-controls:not(.resource-payment-controls) span { display:none !important; }
+.mobile-landscape-board .board-target-controls:not(.resource-payment-controls) .mobile-target-hand-counts {
+  display:block !important;
+  min-width:0;
+  color:#b8c8c2;
+  font-size:9px !important;
+  font-variant-numeric:tabular-nums;
+  line-height:1;
+  white-space:nowrap;
+}
+.mobile-landscape-board .board-target-controls:not(.resource-payment-controls) button {
+  min-width:0 !important;
+  min-height:32px !important;
+  padding:3px 5px !important;
+  font-size:10px !important;
+  line-height:1.1;
+  white-space:normal;
+}
+.mobile-landscape-board .board-slot-controls .l12-card-image { display:none !important; }

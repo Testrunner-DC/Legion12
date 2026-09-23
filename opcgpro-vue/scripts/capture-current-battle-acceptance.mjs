@@ -38,10 +38,12 @@ try {
   }
   const openAbilityDialog = async (selectedStatePath) => {
     await page.locator('.l12-player-mat.side-my .formation-slot .card-tile').first().click()
-    const activate = page.locator('.l12-player-mat.side-my .field-actions').getByRole('button', { name: '发动', exact: true })
+    const mobileActivate = page.locator('.mobile-action-dock').getByRole('button', { name: '发动', exact: true })
+    const fieldActivate = page.locator('.l12-player-mat.side-my .field-actions').getByRole('button', { name: '发动', exact: true })
+    const activate = await mobileActivate.count() ? mobileActivate : fieldActivate
     await activate.waitFor()
     const dock = await page.evaluate(() => {
-      const action = [...document.querySelectorAll('button')].find(button => button.textContent?.trim() === '发动' && button.closest('.field-actions'))
+      const action = [...document.querySelectorAll('button')].find(button => button.textContent?.trim() === '发动' && button.closest('.mobile-action-dock, .field-actions'))
       const endTurn = [...document.querySelectorAll('button')].find(button => button.textContent?.trim() === '结束回合')
       if (!action || !endTurn) return null
       const a = action.getBoundingClientRect()
@@ -110,7 +112,7 @@ try {
   const drawer = await page.evaluate(() => {
     const panel = document.querySelector('.mobile-card-inspector')
     const sharedDetail = panel?.querySelector('[data-card-detail-context="builder"]')
-    const handle = document.querySelector('.left-rail > .mobile-card-inspector-handle')
+    const handle = document.querySelector('.mobile-card-inspector-handle-global, .left-rail > .mobile-card-inspector-handle')
     const panelRect = panel?.getBoundingClientRect()
     const handleRect = handle?.getBoundingClientRect()
     const style = panel && getComputedStyle(panel)
