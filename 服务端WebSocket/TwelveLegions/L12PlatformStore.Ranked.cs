@@ -450,7 +450,8 @@ public sealed partial class L12PlatformStore
         }
     }
 
-    public IReadOnlyList<L12RankedLeaderboardEntry> RankedLeaderboard(string? faction = null, int limit = 100)
+    public IReadOnlyList<L12RankedLeaderboardEntry> RankedLeaderboard(string? faction = null, int limit = 50,
+        string? viewerAccountId = null)
     {
         lock (_gate)
         {
@@ -461,9 +462,18 @@ public sealed partial class L12PlatformStore
                     && IsActiveAccountLocked(row.AccountId)
                     && (string.IsNullOrWhiteSpace(faction) || string.Equals(row.Faction, faction, StringComparison.OrdinalIgnoreCase)))
                 .OrderByDescending(row => row.SevenValue).ThenByDescending(row => row.HiddenRating)
-                .ThenBy(row => AccountName(row.AccountId), StringComparer.OrdinalIgnoreCase).Take(Math.Clamp(limit, 1, 500)).ToArray();
+                .ThenBy(row => AccountName(row.AccountId), StringComparer.OrdinalIgnoreCase).ToArray();
             var champions = CurrentMasterChampions();
-            return rows.Select((row, index) => LeaderboardView(row, index + 1, champions)).ToArray();
+            var visibleLimit = Math.Clamp(limit, 1, 50);
+            var visible = rows.Take(visibleLimit).Select((row, index) => (Row: row, Rank: index + 1)).ToList();
+            if (!string.IsNullOrWhiteSpace(viewerAccountId))
+            {
+                var viewerIndex = Array.FindIndex(rows, row => string.Equals(row.AccountId, viewerAccountId,
+                    StringComparison.OrdinalIgnoreCase));
+                if (viewerIndex >= visibleLimit)
+                    visible.Add((rows[viewerIndex], viewerIndex + 1));
+            }
+            return visible.Select(item => LeaderboardView(item.Row, item.Rank, champions)).ToArray();
         }
     }
 

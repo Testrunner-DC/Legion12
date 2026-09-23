@@ -938,12 +938,16 @@ public sealed partial class L12GameEngine
         };
         player.SpecialZones.TrialCapacity = L12SpecialDeckRules.TrialCapacity(master);
         var mainDeckIndex = 0;
+        var cardAppearanceIndexes = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var startingGraveyardCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var cardId in deck.CardIds)
         {
             var definition = _catalog.Cards[cardId];
             var card = CreateCard(cardId, $"p{index}-c{++mainDeckIndex}");
-            card.ImageUrl = ResolveAlternateArtUrl(card.CardId, card.ImageUrl, alternateArtUrls);
+            var appearanceIndex = cardAppearanceIndexes.GetValueOrDefault(cardId) + 1;
+            cardAppearanceIndexes[cardId] = appearanceIndex;
+            card.ImageUrl = ResolveAlternateArtUrl($"{card.CardId}#{appearanceIndex}",
+                ResolveAlternateArtUrl(card.CardId, card.ImageUrl, alternateArtUrls), alternateArtUrls);
             if (L12SpecialDeckRules.StartsInGraveyard(definition))
             {
                 player.Graveyard.Add(card);

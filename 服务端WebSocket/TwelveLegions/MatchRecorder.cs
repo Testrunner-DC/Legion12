@@ -86,6 +86,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await InitializeRankedPersistenceSchemaAsync(connection);
         await InitializeSandboxRecordingSchemaAsync(connection, _utcNow());
         await InitializePlayerReplayRetentionSchemaAsync(connection, _utcNow());
+        await InitializeGlobalAnalyticsSchemaAsync(connection);
     }
 
     public Task StartAsync(L12GameState state, string modeId = "friendly",

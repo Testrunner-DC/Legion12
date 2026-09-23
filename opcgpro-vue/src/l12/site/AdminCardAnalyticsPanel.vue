@@ -4,6 +4,7 @@ import CardImage from '@/l12/CardImage.vue'
 import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import SandboxCardPicker, { type SandboxCatalogCard } from '@/l12/game/SandboxCardPicker.vue'
 import PagedCollection from './PagedCollection.vue'
+import AdminMasterAnalyticsPanel from './AdminMasterAnalyticsPanel.vue'
 import {
   adminApi,
   getEffectiveOperationsPolicy,
@@ -15,9 +16,9 @@ import {
   type AdminMatchSummary,
 } from '@/l12/platform'
 
-type AnalyticsTab = 'single' | 'list'
+type AnalyticsTab = 'single' | 'list' | 'master'
 type AnalyticsRange = 'all' | '7d' | '30d' | 'season'
-type AnalyticsSort = 'name' | 'sampleSize' | 'includedMatches' | 'inclusionRate' | 'winRate' | 'delta'
+type AnalyticsSort = 'name' | 'sampleSize' | 'inclusionRate' | 'winRate' | 'gih' | 'iwd'
 
 const emit = defineEmits<{ notice: [message: string]; openMatch: [matchId: string] }>()
 const page = ref<AdminCardAnalyticsPage>({ items: [], total: 0 })
@@ -30,7 +31,7 @@ const pickerOpen = ref(false)
 const selectedCardId = ref('')
 const listSearch = ref('')
 const listPage = ref(1)
-const listPageSize = 10
+const listPageSize = 20
 const sortKey = ref<AnalyticsSort>('sampleSize')
 const sortDirection = ref<'asc' | 'desc'>('desc')
 const loading = ref(false)
@@ -54,24 +55,7 @@ const masterOptions = computed(() => cards.value
   .sort((left, right) => left.nameZh.localeCompare(right.nameZh, 'zh-CN')))
 const selectedCatalogCard = computed(() => cardById.value.get(selectedCardId.value || detail.value?.summary.cardId || ''))
 const summaryMetrics = computed(() => page.value.summary || {})
-const sortedItems = computed(() => [...page.value.items].sort((left, right) => {
-  const leftName = cardById.value.get(left.cardId)?.nameZh || left.cardId
-  const rightName = cardById.value.get(right.cardId)?.nameZh || right.cardId
-  const values: Record<Exclude<AnalyticsSort, 'name'>, [number, number]> = {
-    sampleSize: [left.sampleSize, right.sampleSize],
-    includedMatches: [left.includedMatches, right.includedMatches],
-    inclusionRate: [left.inclusionRate, right.inclusionRate],
-    winRate: [left.winRate, right.winRate],
-    delta: [left.comparison?.delta ?? Number.NEGATIVE_INFINITY, right.comparison?.delta ?? Number.NEGATIVE_INFINITY],
-  }
-  const comparison = sortKey.value === 'name'
-    ? leftName.localeCompare(rightName, 'zh-CN')
-    : values[sortKey.value][0] - values[sortKey.value][1]
-  if (comparison !== 0) return sortDirection.value === 'asc' ? comparison : -comparison
-  return left.cardId.localeCompare(right.cardId)
-}))
-const listPageCount = computed(() => Math.max(1, Math.ceil(sortedItems.value.length / listPageSize)))
-const visibleListItems = computed(() => sortedItems.value.slice((listPage.value - 1) * listPageSize, listPage.value * listPageSize))
+const listPageCount = computed(() => Math.max(1, Math.ceil(page.value.total / listPageSize)))
 const maximumTiming = computed(() => Math.max(1, ...(detail.value?.turnDistribution || [])
   .flatMap(bucket => [bucket.firstDrawSamples, bucket.firstPlaySamples])))
 const maximumQuantity = computed(() => Math.max(1, ...(detail.value?.quantityDistribution || [])
@@ -123,6 +107,10 @@ function dateLabel(value?: string | null) {
 }
 function resultText(item: AdminCardAnalyticsItem) {
   if (isLowSample(item)) return '低样本，仅供参考'
+  if (item.gihSamples < 30 || item.gnsSamples < 30 || item.inHandWinRateDelta == null) return '精确上手对照不足，暂不判断单卡方向'
+  if (item.inHandWinRateDeltaConfidence?.low != null && item.inHandWinRateDeltaConfidence.low > 0) return '抽到后胜率高于未上手对照'
+  if (item.inHandWinRateDeltaConfidence?.high != null && item.inHandWinRateDeltaConfidence.high < 0) return '抽到后胜率低于未上手对照'
+  if (item.inHandWinRateDeltaConfidence) return '上手提升区间跨零，方向未确定'
   if (item.comparison?.delta == null) return '同条件对照不足，无法可靠比较'
   if (item.comparison.uncertainty?.status !== 'available') return '调整差值仅供描述，尚不能确认方向'
   const interval = item.comparison.uncertainty
@@ -135,6 +123,7 @@ function isLowSample(item: AdminCardAnalyticsItem) {
 }
 function resultTone(item: AdminCardAnalyticsItem) {
   if (isLowSample(item)) return 'neutral'
+  if (item.inHandWinRateDeltaConfidence) return deltaTone(item.inHandWinRateDeltaConfidence)
   const interval = item.comparison?.uncertainty
   if (interval?.status !== 'available' || interval.low == null || interval.high == null) return 'neutral'
   return deltaTone({ low: interval.low, high: interval.high })
@@ -167,9 +156,10 @@ function recentResult(match: AdminMatchSummary) {
 
 let listRequest = 0
 let detailRequest = 0
-const analyticsListLimit = 200
-const maximumAnalyticsListItems = 2000
 function analyticsQuery() { return { ...filters.value } }
+function serverSort() {
+  return ({ name: 'card', sampleSize: 'sample-size', inclusionRate: 'inclusion-rate', winRate: 'win-rate', gih: 'gih', iwd: 'iwd' } as Record<AnalyticsSort, string>)[sortKey.value]
+}
 function applyRange(next: AnalyticsRange) {
   range.value = next
   filters.value.seasonId = ''
@@ -198,6 +188,7 @@ function setSort(next: AnalyticsSort) {
     sortDirection.value = next === 'name' ? 'asc' : 'desc'
   }
   listPage.value = 1
+  void loadAnalytics()
 }
 function sortMarker(key: AnalyticsSort) { return sortKey.value === key ? (sortDirection.value === 'asc' ? ' ↑' : ' ↓') : '' }
 async function loadAnalytics() {
@@ -206,24 +197,11 @@ async function loadAnalytics() {
   const search = listSearch.value.trim()
   loading.value = true
   try {
-    const items: AdminCardAnalyticsItem[] = []
-    let cursor: string | undefined
-    let firstPage: AdminCardAnalyticsPage | null = null
-    do {
-      const next = await adminApi.cardAnalytics({ ...query, search, cursor, limit: analyticsListLimit })
-      if (request !== listRequest) return
-      firstPage ||= next
-      items.push(...next.items)
-      if (next.total > maximumAnalyticsListItems)
-        throw new Error(`当前筛选返回 ${next.total} 张卡，超过清单安全上限 ${maximumAnalyticsListItems}`)
-      cursor = next.nextCursor || undefined
-    } while (cursor && items.length < (firstPage?.total ?? 0))
-    if (firstPage && items.length < firstPage.total) {
-      throw new Error(`卡牌清单只读取到 ${items.length} / ${firstPage.total} 张，已停止显示不完整排序`)
-    }
-    page.value = firstPage ? { ...firstPage, items, nextCursor: null } : { items: [], total: 0 }
-    listPage.value = 1
-  } catch (error) { if (request === listRequest) emit('notice', error instanceof Error ? error.message : '单卡分析加载失败') }
+    const next = await adminApi.cardAnalytics({ ...query, search, page: listPage.value,
+      limit: listPageSize, sort: serverSort(), direction: sortDirection.value })
+    if (request !== listRequest) return
+    page.value = next
+  } catch (error) { if (request === listRequest) emit('notice', error instanceof Error ? error.message : '卡牌数据加载失败') }
   finally { if (request === listRequest) loading.value = false }
 }
 async function selectCard(cardId = selectedCardId.value) {
@@ -239,10 +217,11 @@ async function selectCard(cardId = selectedCardId.value) {
   catch (error) {
     if (request === detailRequest) {
       detail.value = null
-      emit('notice', error instanceof Error ? error.message : '单卡分析详情加载失败')
+      emit('notice', error instanceof Error ? error.message : '卡牌数据详情加载失败')
     }
   } finally { if (request === detailRequest) detailLoading.value = false }
 }
+function reloadList() { listPage.value = 1; void loadAnalytics() }
 
 watch(filters, () => {
   ++detailRequest
@@ -267,16 +246,18 @@ onMounted(async () => {
 <template>
   <section class="card-analytics">
     <header class="module-header">
-      <div><small>排位卡牌仪表盘</small><h2>单卡影响分析</h2><p>仅分析新统计格式的已结束排位对局；比较携带表现、使用情况与同条件关联。</p></div>
-      <button :disabled="loading || detailLoading || (activeTab === 'single' && !selectedCardId)" @click="activeTab === 'single' ? selectCard() : loadAnalytics()">刷新事实</button>
+      <div><small>排位卡牌仪表盘</small><h2>卡牌数据</h2><p>携带表现、精确上手表现与同条件构筑对照使用同一权威口径。</p></div>
+      <button v-if="activeTab !== 'master'" :disabled="loading || detailLoading || (activeTab === 'single' && !selectedCardId)" @click="activeTab === 'single' ? selectCard() : loadAnalytics()">刷新事实</button>
     </header>
 
-    <nav class="module-tabs" aria-label="单卡分析视图">
+    <nav class="module-tabs" aria-label="卡牌数据视图">
       <button :class="{ active: activeTab === 'single' }" @click="activeTab = 'single'">单卡仪表盘</button>
       <button :class="{ active: activeTab === 'list' }" @click="activeTab = 'list'; loadAnalytics()">卡牌数据清单</button>
+      <button :class="{ active: activeTab === 'master' }" @click="activeTab = 'master'">主宰</button>
     </nav>
 
-    <section class="filter-panel" aria-label="单卡分析筛选">
+    <AdminMasterAnalyticsPanel v-if="activeTab === 'master'" @notice="emit('notice', $event)"/>
+    <section v-else class="filter-panel" aria-label="卡牌数据筛选">
       <label v-if="activeTab === 'list'" class="search">清单搜索<input v-model="listSearch" type="search" placeholder="卡名、编号或 ID" @keyup.enter="loadAnalytics()"/></label>
       <label class="master-filter">1. 使用方主宰<select v-model="filters.masterId"><option value="">全部主宰（允许所有卡牌）</option><option v-for="master in masterOptions" :key="`mine-${master.id}`" :value="master.id">{{ master.nameZh }} · {{ master.id }}</option></select></label>
       <button v-if="activeTab === 'single'" class="card-choice" type="button" @click="pickerOpen = true">
@@ -289,9 +270,9 @@ onMounted(async () => {
       <label>先后手<select v-model="filters.initiative"><option value="">全部</option><option value="first">先手</option><option value="second">后手</option></select></label>
       <label>运营规则版本<input v-model.trim="filters.rulesVersion" placeholder="全部运营规则"/></label>
       <label>最小参赛方样本<input v-model.number="filters.minimumSample" type="number" min="1" max="1000"/></label>
-      <button class="query" :disabled="activeTab === 'single' ? (!selectedCardId || detailLoading) : loading" @click="activeTab === 'single' ? selectCard() : loadAnalytics()">{{ activeTab === 'single' ? '查询这张卡' : '刷新完整清单' }}</button>
+      <button class="query" :disabled="activeTab === 'single' ? (!selectedCardId || detailLoading) : loading" @click="activeTab === 'single' ? selectCard() : reloadList()">{{ activeTab === 'single' ? '查询这张卡' : '刷新卡牌清单' }}</button>
     </section>
-    <p class="sample-contract" data-ui-contract="card-analytics-low-sample-warning">统计单位为“参赛方 × 对局”；同一局双方与重复玩家并非独立样本。低于 {{ Math.max(filters.minimumSample, 30) }} 份仅供参考；没有未收录参赛方时基线显示“—”。只纳入具有明确卡效版本的新排位数据，旧记录不回填。统计缓存最多延迟30秒。</p>
+    <p v-if="activeTab !== 'master'" class="sample-contract" data-ui-contract="card-analytics-low-sample-warning">统计单位为“参赛方 × 对局”；低于 {{ Math.max(filters.minimumSample, 30) }} 份不判断方向。上手指标只使用精确事实；携带指标与上手指标回答不同问题。</p>
 
     <div v-if="activeTab === 'list'" class="scope-summary">
       <article><small>有效已结束排位</small><b>{{ summaryMetrics.eligibleMatches ?? 0 }}</b><span>排除非排位、旧统计记录、错误终局与无明确胜者记录</span></article>
@@ -301,52 +282,53 @@ onMounted(async () => {
     </div>
 
     <section v-if="activeTab === 'list'" class="card-list panel-shell">
-      <header><div><b>完整筛选清单</b><span>先读取全部 {{ page.total }} 张结果，再进行排序与分页</span></div><em>第 {{ listPage }} / {{ listPageCount }} 页</em></header>
+      <header><div><b>卡牌数据清单</b><span>筛选、排序与分页均由服务端执行</span></div><em>第 {{ listPage }} / {{ listPageCount }} 页</em></header>
       <div class="list-sort" aria-label="卡牌清单排序">
-        <button @click="setSort('name')">卡牌{{ sortMarker('name') }}</button><button @click="setSort('sampleSize')">参赛方样本{{ sortMarker('sampleSize') }}</button><button @click="setSort('includedMatches')">对局数{{ sortMarker('includedMatches') }}</button><button @click="setSort('inclusionRate')">收录率{{ sortMarker('inclusionRate') }}</button><button @click="setSort('winRate')">胜率{{ sortMarker('winRate') }}</button><button @click="setSort('delta')">调整差{{ sortMarker('delta') }}</button>
+        <button @click="setSort('name')">卡牌{{ sortMarker('name') }}</button><button @click="setSort('inclusionRate')">收录率{{ sortMarker('inclusionRate') }}</button><button @click="setSort('winRate')">携带胜率{{ sortMarker('winRate') }}</button><button @click="setSort('gih')">抽到胜率{{ sortMarker('gih') }}</button><button @click="setSort('iwd')">上手提升{{ sortMarker('iwd') }}</button><button @click="setSort('sampleSize')">参赛方样本{{ sortMarker('sampleSize') }}</button>
       </div>
-      <button v-for="item in visibleListItems" :key="item.cardId" class="card-row" :data-low-sample="isLowSample(item)" @click="activeTab = 'single'; selectCard(item.cardId)">
+      <button v-for="item in page.items" :key="item.cardId" class="card-row" :data-low-sample="isLowSample(item)" @click="activeTab = 'single'; selectCard(item.cardId)">
         <CardImage :card-id="item.cardId" :legacy-url="cardById.get(item.cardId)?.imageUrl" :alt="cardById.get(item.cardId)?.nameZh || item.cardId" intent="thumb"/>
         <span><b>{{ cardById.get(item.cardId)?.nameZh || item.cardId }}</b><small>{{ item.cardId }}</small></span>
-        <span>{{ item.sampleSize }}</span><span>{{ item.includedMatches }}</span><span>{{ percent(item.inclusionRate) }}</span><span>{{ percent(item.winRate) }}</span><span :data-tone="resultTone(item)">{{ signedPercent(item.comparison?.delta) }}</span>
+        <span>{{ percent(item.inclusionRate) }}</span><span>{{ percent(item.winRate) }}</span><span>{{ item.gihSamples >= 30 ? percent(item.gihWinRate) : '—' }}</span><span :data-tone="resultTone(item)">{{ item.gihSamples >= 30 && item.gnsSamples >= 30 ? signedPercent(item.inHandWinRateDelta) : '—' }}</span><span>{{ item.sampleSize }}</span>
       </button>
-      <div v-if="loading" class="empty">正在读取完整筛选清单…</div>
+      <div v-if="loading" class="empty">正在读取卡牌清单…</div>
       <div v-else-if="!page.items.length" class="empty">排位数据不足，尚无卡牌达到当前样本门槛</div>
-      <footer v-if="page.items.length" class="pagination"><button :disabled="listPage <= 1" @click="listPage--">上一页</button><span>{{ (listPage - 1) * listPageSize + 1 }}–{{ Math.min(listPage * listPageSize, page.items.length) }} / {{ page.items.length }}</span><button :disabled="listPage >= listPageCount" @click="listPage++">下一页</button></footer>
+      <footer v-if="page.items.length" class="pagination"><button :disabled="listPage <= 1" @click="listPage--; loadAnalytics()">上一页</button><span>{{ (listPage - 1) * listPageSize + 1 }}–{{ Math.min(listPage * listPageSize, page.total) }} / {{ page.total }}</span><button :disabled="listPage >= listPageCount" @click="listPage++; loadAnalytics()">下一页</button></footer>
     </section>
 
-      <main v-else class="analysis-detail panel-shell">
+      <main v-else-if="activeTab === 'single'" class="analysis-detail panel-shell">
         <div v-if="detailLoading" class="empty">正在读取分层事实…</div>
         <template v-else-if="detail">
           <header class="card-heading">
             <CardImage :card-id="detail.summary.cardId" :legacy-url="selectedCatalogCard?.imageUrl" :alt="selectedCatalogCard?.nameZh || detail.summary.cardId" intent="detail" eager/>
-            <div><small>{{ detail.summary.cardId }} · {{ selectedCatalogCard?.faction || '未知阵营' }}</small><h3>{{ selectedCatalogCard?.nameZh || detail.summary.cardId }}</h3><p>{{ coverageLabel(detail.coverage) }} · {{ detail.summary.sampleSize }} 份参赛方样本 / {{ detail.summary.includedMatches }} 场</p><em :data-tone="resultTone(detail.summary)">{{ resultText(detail.summary) }}</em></div>
+            <div><small>{{ detail.summary.cardId }} · {{ selectedCatalogCard?.faction || '未知阵营' }}</small><h3>{{ selectedCatalogCard?.nameZh || detail.summary.cardId }}</h3><p>{{ coverageLabel(detail.coverage) }} · {{ detail.summary.sampleSize }} 份参赛方样本 / {{ detail.summary.includedMatches }} 场</p><em class="conclusion-strip" :data-tone="resultTone(detail.summary)">{{ resultText(detail.summary) }}</em></div>
           </header>
 
           <section class="key-metrics" aria-label="核心指标">
             <article><small>构筑收录率</small><b>{{ percent(detail.summary.inclusionRate) }}</b><span>{{ detail.summary.sampleSize }} / {{ detail.summary.eligibleSampleSize }} 份参赛方</span></article>
-            <article><small>平均携带数量</small><b>{{ detail.summary.averageQuantity.toFixed(2) }}</b><span>每份收录构筑中的平均张数</span></article>
-            <article><small>原始携带胜率</small><b>{{ percent(detail.summary.winRate) }}</b><span>{{ detail.summary.wins }} 胜 / {{ detail.summary.sampleSize }} 份 · 区间 {{ confidenceLabel(detail.summary.winRateConfidence) }}</span></article>
-            <article><small>同条件未携带基线</small><b>{{ percent(detail.summary.comparison?.winRate) }}</b><span>同主宰、卡效版本、对方主宰与先后手分层；原始区间 {{ confidenceLabel(detail.summary.baselineWinRateConfidence) }}</span></article>
-            <article><small>调整后胜率差（百分点）</small><b :data-tone="resultTone(detail.summary)">{{ signedPercent(detail.summary.comparison?.delta) }}</b><span>仅比较双方均有样本的条件；不代表因果提升</span></article>
+            <article><small>携带胜率（GP WR）</small><b>{{ percent(detail.summary.winRate) }}</b><span>{{ detail.summary.wins }} 胜 / {{ detail.summary.sampleSize }} 份</span></article>
+            <article title="仅统计抽卡事实为精确覆盖的参赛方；初始手牌与后续抽到均计入，同局多次只计一次。"><small>抽到胜率（GIH WR）ⓘ</small><b>{{ detail.summary.gihSamples >= 30 ? percent(detail.summary.gihWinRate) : '—' }}</b><span>精确样本 {{ detail.summary.gihSamples }} 份</span></article>
+            <article title="上手提升 = 抽到胜率 − 未上手胜率；与携带者对未携带者的调整差不同。"><small>上手提升（IWD）ⓘ</small><b :data-tone="resultTone(detail.summary)">{{ detail.summary.gihSamples >= 30 && detail.summary.gnsSamples >= 30 ? signedPercent(detail.summary.inHandWinRateDelta) : '—' }}</b><span>未上手 {{ detail.summary.gnsSamples }} 份 · GNS {{ detail.summary.gnsSamples >= 30 ? percent(detail.summary.gnsWinRate) : '—' }}</span></article>
           </section>
 
           <section class="behavior-metrics" aria-label="真实使用指标">
+            <article title="只统计收录该卡的赛后构筑快照"><small>平均携带数量ⓘ</small><b>{{ detail.summary.averageQuantity.toFixed(2) }}</b><span>收录构筑中的平均张数</span></article>
+            <article title="同主宰、同卡效版本、同对方主宰、同先后手的未携带参赛方"><small>同条件未携带基线ⓘ</small><b>{{ percent(detail.summary.baselineWinRate) }}</b><span>调整差 {{ signedPercent(detail.summary.winRateDelta) }} · 不代表因果</span></article>
             <article><small>记录到抽取</small><b>{{ observedPercent('draw', detail.summary.drawnSamples, detail.summary.sampleSize) }}</b><span>{{ observedLabel('draw', detail.summary.drawnSamples) }} / 收录样本</span></article>
             <article><small>记录到手牌打出</small><b>{{ observedPercent('play', detail.summary.playedSamples, detail.summary.sampleSize) }}</b><span>{{ observedLabel('play', detail.summary.playedSamples) }} / 收录样本</span></article>
             <article><small>记录到效果发动</small><b>{{ observedPercent('activation', detail.summary.activatedSamples, detail.summary.sampleSize) }}</b><span>{{ observedLabel('activation', detail.summary.activatedSamples) }} / 收录样本</span></article>
             <article><small>记录到结算状态</small><b>{{ observedPercent('settlement', detail.summary.settledSamples, detail.summary.sampleSize) }}</b><span>{{ observedLabel('settlement', detail.summary.settledSamples) }} / 收录样本</span></article>
           </section>
 
-          <section class="dashboard-panel" aria-label="样本可靠性">
-            <header><div><h3>样本可靠性</h3><p>场次多不等于独立玩家多，少数玩家反复使用会影响代表性。</p></div></header>
+          <details class="dashboard-panel diagnostic-fold" aria-label="样本可靠性">
+            <summary><b>样本可靠性</b><span>展开查看玩家集中度与可比较样本</span></summary>
             <div class="coverage-grid">
               <article><b>独立对局</b><span>{{ detail.summary.sampleStructure?.distinctMatches ?? '—' }} 场</span></article>
               <article><b>可识别独立玩家</b><span>{{ detail.summary.sampleStructure?.distinctPlayers ?? '—' }} 人</span><small>身份缺失样本 {{ detail.summary.sampleStructure?.anonymousPlayerSamples ?? '—' }} 份</small></article>
               <article><b>最大单人样本占比</b><span>{{ percent(detail.summary.sampleStructure?.maximumPlayerContributionRate) }}</span></article>
               <article><b>可比较样本</b><span>携带 {{ detail.summary.comparison?.carriedSamples ?? 0 }} / 未携带 {{ detail.summary.comparison?.comparisonSamples ?? 0 }} 份</span><small>对照不足排除 {{ detail.summary.comparison?.excludedIncludedSamples ?? 0 }} 份携带样本</small></article>
             </div>
-          </section>
+          </details>
 
           <div class="dashboard-pair">
             <section class="dashboard-panel usage-panel">
@@ -388,35 +370,35 @@ onMounted(async () => {
             </section>
           </div>
 
-          <section class="dashboard-panel matchup-panel">
-            <header><div><h3>主宰对阵热图</h3><p>行是使用方主宰，列是对方主宰；格内显示收录方胜率与参赛方样本。</p></div></header>
+          <details class="dashboard-panel matchup-panel diagnostic-fold">
+            <summary><b>主宰对阵热图</b><span>展开查看使用方与对方主宰切片</span></summary>
             <div v-if="detail.matchups.length" class="heat-scroll">
               <table><thead><tr><th>使用方 ＼ 对方</th><th v-for="opponent in matchupColumns" :key="opponent">{{ masterLabel(opponent) }}</th></tr></thead><tbody><tr v-for="master in matchupRows" :key="master"><th>{{ masterLabel(master) }}</th><td v-for="opponent in matchupColumns" :key="`${master}-${opponent}`" :data-tone="deltaTone(matchupCell(master, opponent)?.winRateDeltaConfidence)"><template v-if="matchupCell(master, opponent)"><b>{{ percent(matchupCell(master, opponent)?.winRate) }}</b><span>{{ matchupCell(master, opponent)?.sampleSize }} 份</span><small>{{ signedPercent(matchupCell(master, opponent)?.winRateDelta) }} · CI {{ confidenceLabel(matchupCell(master, opponent)?.winRateDeltaConfidence, true) }}</small></template><span v-else>—</span></td></tr></tbody></table>
             </div>
             <div v-else class="empty compact">当前样本不足以形成对阵格</div>
-          </section>
+          </details>
 
-          <section class="dashboard-panel breakdowns">
-            <header><div><h3>条件切片与版本趋势</h3><p>排位内按双方主宰、先后手、卡效版本与赛季查看描述性结果；差值单位为百分点，调整后差值以上方同条件比较为准。</p></div></header>
+          <details class="dashboard-panel breakdowns diagnostic-fold">
+            <summary><b>条件切片与版本趋势</b><span>展开查看双方主宰、先后手、版本与赛季</span></summary>
             <div class="breakdown-head"><span>维度</span><span>条件</span><span>收录样本</span><span>层内总样本</span><span>胜率</span><span>基线</span><span>关联差</span></div>
             <PagedCollection :items="detail.breakdowns" :page-size="10" label="条件切片"><template #default="{ items }"><article v-for="row in items" :key="`${row.dimension}-${row.value}`"><small>{{ dimensionLabel(row.dimension) }}</small><b>{{ dimensionValue(row) }}</b><span>{{ row.sampleSize }}</span><span>{{ row.eligibleSampleSize }}</span><span>{{ percent(row.winRate) }}</span><span>{{ percent(row.baselineWinRate) }}</span><strong :data-tone="deltaTone(row.winRateDeltaConfidence)">{{ signedPercent(row.winRateDelta) }}<small>CI {{ confidenceLabel(row.winRateDeltaConfidence, true) }}</small></strong></article></template></PagedCollection>
             <div v-if="!detail.breakdowns.length" class="empty compact">样本尚不足以形成条件切片</div>
-          </section>
+          </details>
 
-          <section class="dashboard-panel quality-panel">
-            <header><div><h3>数据质量与覆盖</h3><p>按指标展示观察样本与事实覆盖；旧记录缺失不会被补成零。</p></div><strong>Schema v{{ detail.coverage.schemaVersion }}</strong></header>
+          <details class="dashboard-panel quality-panel diagnostic-fold">
+            <summary><b>数据质量与覆盖</b><span>Schema v{{ detail.coverage.schemaVersion }} · 展开查看精确／部分／推断事实</span></summary>
             <div class="coverage-grid">
               <article v-for="metric in detail.coverage.metrics" :key="metric.metric"><b>{{ metricLabel(metric.metric) }}</b><span>观察 {{ metric.observedSamples }} / 可用 {{ metric.eligibleSamples }} 份</span><small>精确 {{ metric.exactFacts }} · 部分 {{ metric.partialFacts }} · 推断 {{ metric.inferredFacts }}</small></article>
             </div>
             <p v-if="detail.summary.usage?.metrics.some(metric => metric.eligibleSamples == null)">部分指标的完整可观测样本数未知；这里只展示已记录事实，不计算缺乏可靠分母的成功率。</p>
             <details><summary>已知限制（{{ detail.coverage.limitations.length }}）</summary><ul><li v-for="limitation in detail.coverage.limitations" :key="limitation">{{ limitation }}</li></ul></details>
-          </section>
+          </details>
 
-          <section class="dashboard-panel recent-matches">
-            <header><div><h3>最近已结束对局</h3><p>只返回已完成记录；分析权限响应已去除账号、昵称和牌库名，下钻另受对局档案权限保护。</p></div></header>
+          <details class="dashboard-panel recent-matches diagnostic-fold">
+            <summary><b>最近已结束对局</b><span>展开下钻对局档案</span></summary>
             <button v-for="match in detail.recentMatches" :key="match.matchId" @click="emit('openMatch', match.matchId)"><span><b>{{ recentMatchup(match) }}</b><small>{{ modeLabel(match.modeId) }} · {{ dateLabel(match.endedUtc || match.startedUtc) }} · {{ recentResult(match) }}</small></span><span class="match-id">{{ match.matchId.slice(0, 12) }}</span><em>查看档案 →</em></button>
             <div v-if="!detail.recentMatches.length" class="empty compact">暂无符合当前切片的已结束对局</div>
-          </section>
+          </details>
         </template>
         <div v-else class="empty">选择一张卡查看事实仪表盘</div>
       </main>
@@ -426,18 +408,20 @@ onMounted(async () => {
 
 <style scoped>
 .card-analytics,.card-analytics :deep(*){font-family:'Microsoft YaHei','微软雅黑',system-ui,sans-serif}.card-analytics{--line:#33434d;--panel:#0e171f;--panel-2:#091117;--muted:#839198;--gold:#e0c46f;--cyan:#64c8ce;display:grid;gap:12px;color:#f1f3ef;color-scheme:dark}.module-header,.filter-panel,.scope-summary,.panel-shell{border:1px solid var(--line);background:var(--panel)}.module-header{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:19px 21px;background:linear-gradient(115deg,#101b24,#15160f)}.module-header small,.card-heading small{color:var(--gold);font-size:13px;font-weight:900;letter-spacing:.12em}.module-header h2{margin:4px 0;font-size:clamp(23px,2.2vw,30px)}.module-header p{max-width:850px;margin:0;color:#99a5a8;line-height:1.65}.module-header button,.filter-panel input,.filter-panel select,.filter-panel button{box-sizing:border-box;min-height:40px;border:1px solid #53636d;background:#060d12;color:#f4f3ed;padding:9px 10px;font-size:14px;font-weight:800}.module-header button{flex:none;color:var(--gold)}.filter-panel{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));align-items:end;gap:9px;padding:13px}.filter-panel .search{grid-column:span 2}.filter-panel label{display:flex;min-width:0;flex-direction:column;gap:6px;color:#aab4b7;font-size:13px;font-weight:900}.filter-panel input,.filter-panel select{width:100%;min-width:0}.filter-panel select option{background:#071016;color:#fff}.filter-panel input:focus,.filter-panel select:focus,.filter-panel button:focus-visible{border-color:var(--cyan);outline:2px solid #64c8ce55;outline-offset:1px}.filter-panel .query{border-color:#9a7c30;background:#31270e;color:#f4d77b}.sample-contract{margin:0;padding:10px 13px;border-left:3px solid var(--gold);background:#18170e;color:#b8beb7;font-size:13px;line-height:1.65}.scope-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line)}.scope-summary article{display:flex;min-height:92px;flex-direction:column;justify-content:flex-end;gap:4px;padding:14px;background:#0a131a}.scope-summary small{color:#8f9da2;font-size:13px;font-weight:900}.scope-summary b{font-size:23px}.scope-summary span{color:#74838a;font-size:13px;line-height:1.45}.analytics-workspace{display:grid;grid-template-columns:minmax(300px,.58fr) minmax(640px,1.42fr);align-items:start;gap:12px}.panel-shell{min-width:0}.card-list{max-height:calc(100vh - 160px);overflow:auto}.card-list>header{position:sticky;z-index:2;top:0;display:flex;align-items:center;justify-content:space-between;padding:13px;background:#081118;border-bottom:1px solid var(--line)}.card-list>header div{display:grid;gap:3px}.card-list>header span,.card-list>header em{color:#77878e;font-size:13px;font-style:normal}.card-row{display:grid;width:100%;grid-template-columns:45px minmax(0,1fr) 72px;align-items:center;gap:10px;padding:10px;border:0;border-bottom:1px solid #283740;background:transparent;color:#fff;text-align:left}.card-row:hover,.card-row.selected{background:#17242d}.card-row.selected{box-shadow:inset 3px 0 var(--gold)}.card-row[data-low-sample="true"]{border-left:3px solid #91772f}.card-row>.l12-card-image{width:45px;height:63px}.card-row>span{display:flex;min-width:0;flex-direction:column;gap:3px}.card-row span b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.card-row span small{color:#718189;font-size:12px;letter-spacing:.03em}.card-row span em{color:#78bdc1;font-size:12px;font-style:normal}.row-numbers{text-align:right}.row-numbers b{font-size:16px}.row-numbers small[data-tone="positive"],[data-tone="positive"]{color:#73ddb0!important}.row-numbers small[data-tone="negative"],[data-tone="negative"]{color:#ef8994!important}[data-tone="neutral"]{color:#e1c56e!important}[data-tone="unavailable"]{color:#73838a!important}.load-more{width:100%;padding:13px;border:0;background:#15222a;color:var(--gold);font-weight:900}.analysis-detail{padding:17px}.card-heading{display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:17px;padding-bottom:16px;border-bottom:1px solid var(--line)}.card-heading>.l12-card-image{width:112px;height:156px}.card-heading h3{margin:6px 0;font-size:clamp(22px,2vw,28px)}.card-heading p{margin:0;color:#8d9a9f;line-height:1.55}.card-heading em{display:inline-block;margin-top:10px;padding:6px 9px;border:1px solid currentColor;background:#071016;font-size:13px;font-style:normal;font-weight:900}.key-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.key-metrics article{display:flex;min-height:98px;flex-direction:column;justify-content:flex-end;gap:4px;padding:13px;border:1px solid var(--line);background:#071016}.key-metrics small{color:#84939a;font-size:13px;font-weight:900}.key-metrics b{font-size:22px}.key-metrics span{color:#77868c;font-size:12px;line-height:1.5}.dashboard-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}.dashboard-panel{min-width:0;margin-top:12px;padding:14px;border:1px solid var(--line);background:#071016}.dashboard-pair .dashboard-panel{margin-top:0}.dashboard-panel>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:10px;border-bottom:1px solid #2b3942}.dashboard-panel h3{margin:0;font-size:17px}.dashboard-panel p{margin:4px 0 0;color:#7d8c92;font-size:13px;line-height:1.55}.funnel{display:grid;gap:9px;margin-top:13px}.funnel article>span{display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px}.funnel article>span em{color:var(--gold);font-style:normal}.funnel i,.quantity-bars i{display:block;height:8px;overflow:hidden;background:#18262e}.funnel i b,.quantity-bars i span{display:block;height:100%;min-width:2px;background:linear-gradient(90deg,#32878e,var(--gold))}.settlement-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:13px}.settlement-grid article{display:grid;min-height:78px;align-content:end;gap:4px;padding:11px;border:1px solid #2c3c45;background:#0d1820}.settlement-grid small{color:#89979c;font-size:12px}.settlement-grid b{font-size:20px}.settlement-grid span{color:#6f8087;font-size:12px}.quantity-bars,.turn-chart{display:grid;gap:9px;margin-top:13px}.quantity-bars article{display:grid;grid-template-columns:48px minmax(80px,1fr) minmax(120px,auto);align-items:center;gap:9px;font-size:12px}.quantity-bars em{color:#89979c;font-style:normal;text-align:right}.turn-chart{max-height:320px;overflow:auto}.turn-chart article{display:grid;grid-template-columns:68px 1fr 1fr;align-items:center;gap:8px;font-size:12px}.turn-chart article>div{position:relative;display:flex;height:18px;align-items:center;background:#14222a}.turn-chart i{height:100%;min-width:1px}.turn-chart i.draw{background:#47aeb5}.turn-chart i.play{background:#d4b354}.turn-chart article span{position:absolute;right:5px;color:#fff;font-size:11px;font-weight:900}.legend{display:flex;gap:10px;color:#8d999e;font-size:12px}.legend span::before{content:'';display:inline-block;width:8px;height:8px;margin-right:5px}.legend .draw::before{background:#47aeb5}.legend .play::before{background:#d4b354}.heat-scroll{margin-top:12px;overflow:auto}.heat-scroll table{width:100%;min-width:620px;border-collapse:collapse;font-size:12px}.heat-scroll th,.heat-scroll td{min-width:100px;padding:9px;border:1px solid #2c3b44;text-align:center}.heat-scroll th{background:#101c24;color:#b9c3c5}.heat-scroll td{background:#0c171e}.heat-scroll td[data-tone="positive"]{background:#0d342c}.heat-scroll td[data-tone="negative"]{background:#35141c}.heat-scroll td[data-tone="neutral"]{background:#302c17}.heat-scroll td b,.heat-scroll td span,.heat-scroll td small{display:block}.heat-scroll td b{font-size:15px}.heat-scroll td span{margin-top:3px;color:#90a0a5}.heat-scroll td small{margin-top:3px;color:currentColor}.breakdown-head,.breakdowns>article{display:grid;grid-template-columns:105px minmax(150px,1.3fr) 80px 80px 70px 70px 75px;align-items:center;gap:8px;padding:9px}.breakdown-head{margin-top:8px;color:#74838a;font-size:12px;font-weight:900}.breakdowns>article{border-top:1px solid #293840;font-size:12px}.breakdowns>article small{color:#70c1c6;font-weight:900}.breakdowns>article strong{text-align:right}.quality-panel>header>strong{color:var(--gold);font-size:13px}.coverage-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-top:12px}.coverage-grid article{display:grid;gap:5px;padding:11px;border:1px solid #2d3c44;background:#0c171e}.coverage-grid b{font-size:13px}.coverage-grid span,.coverage-grid small{color:#829198;font-size:12px;line-height:1.45}.quality-panel details{margin-top:11px;border:1px solid #2c3b43;background:#0a141a}.quality-panel summary{padding:10px;color:#c6b777;font-size:13px;cursor:pointer}.quality-panel ul{margin:0;padding:0 28px 12px;color:#87969b;font-size:12px;line-height:1.65}.recent-matches>button{display:grid;width:100%;grid-template-columns:minmax(0,1fr) 108px auto;align-items:center;gap:9px;padding:10px;border:0;border-bottom:1px solid #293840;background:transparent;color:#fff;text-align:left}.recent-matches>button:hover,.recent-matches>button:focus-visible{background:#15232b;outline:1px solid var(--cyan);outline-offset:-1px}.recent-matches>button span:first-child{display:flex;min-width:0;flex-direction:column;gap:4px}.recent-matches>button small{color:#74858b;font-size:12px}.recent-matches .match-id{overflow:hidden;color:#75909b;font-size:12px;text-overflow:ellipsis}.recent-matches em{color:var(--gold);font-size:12px;font-style:normal}.empty{display:grid;min-height:170px;place-items:center;color:#718189;text-align:center}.empty.compact{min-height:80px}button:disabled{cursor:not-allowed;opacity:.5}
-.key-metrics{grid-template-columns:repeat(5,1fr)}
+.key-metrics{grid-template-columns:repeat(4,1fr)}
 .key-metrics article,.coverage-grid article{min-width:0;overflow-wrap:anywhere}
 .breakdowns>article>b{min-width:0;overflow-wrap:anywhere}
 .breakdown-head,.breakdowns>article{grid-template-columns:105px minmax(150px,1.3fr) 80px 80px 70px 70px 105px}
 .breakdowns>article strong{display:grid;gap:2px}.breakdowns>article strong small{font-size:10px;font-weight:700}
-.module-tabs{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);background:#081118}.module-tabs button{min-height:44px;border:0;border-right:1px solid var(--line);background:transparent;color:#85949a;font-size:14px;font-weight:900}.module-tabs button:last-child{border-right:0}.module-tabs button.active{background:#1b2a32;color:var(--gold);box-shadow:inset 0 -3px var(--gold)}.module-tabs button:focus-visible,.list-sort button:focus-visible,.pagination button:focus-visible{outline:2px solid var(--cyan);outline-offset:-2px}
+.module-tabs{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);background:#081118}.module-tabs button{min-height:44px;border:0;border-right:1px solid var(--line);background:transparent;color:#85949a;font-size:14px;font-weight:900}.module-tabs button:last-child{border-right:0}.module-tabs button.active{background:#1b2a32;color:var(--gold);box-shadow:inset 0 -3px var(--gold)}.module-tabs button:focus-visible,.list-sort button:focus-visible,.pagination button:focus-visible{outline:2px solid var(--cyan);outline-offset:-2px}
+.diagnostic-fold>summary{display:flex;justify-content:space-between;gap:12px;padding:2px 0;cursor:pointer;list-style:none}.diagnostic-fold>summary::-webkit-details-marker{display:none}.diagnostic-fold>summary::after{content:'＋';color:var(--gold)}.diagnostic-fold[open]>summary{padding-bottom:10px;border-bottom:1px solid #2b3942}.diagnostic-fold[open]>summary::after{content:'－'}.diagnostic-fold>summary span{color:#7d8c92;font-size:12px}.diagnostic-fold>.coverage-grid,.diagnostic-fold>.heat-scroll,.diagnostic-fold>.breakdown-head,.diagnostic-fold>button,.diagnostic-fold>.empty,.diagnostic-fold>p,.diagnostic-fold>details{margin-top:10px}
 .filter-panel .master-filter{grid-column:span 2}.filter-panel .card-choice{display:grid;grid-column:span 2;grid-template-columns:46px minmax(0,1fr);align-items:center;gap:10px;text-align:left}.card-choice>.l12-card-image{width:46px;height:64px}.card-choice>span{display:grid;min-width:0;gap:2px}.card-choice small{color:var(--gold);font-size:12px}.card-choice b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.card-choice em{color:#7f8d93;font-size:12px;font-style:normal}.range-filter{display:grid;grid-column:span 3;grid-template-columns:repeat(4,minmax(92px,1fr));gap:5px;min-width:0;margin:0;padding:6px 8px 8px;border:1px solid #40515b}.range-filter legend{padding:0 5px;color:#aab4b7;font-size:13px;font-weight:900}.range-filter button{min-height:34px;padding:6px}.range-filter button.active{border-color:var(--gold);background:#302710;color:#f2d77f}.behavior-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:8px}.behavior-metrics article{display:grid;min-width:0;gap:4px;padding:12px;border:1px solid #2c3c45;background:#0b1820}.behavior-metrics small,.behavior-metrics span{color:#829198;font-size:12px}.behavior-metrics b{font-size:19px}
-.card-list{max-height:none;overflow-x:auto}.card-list>header{position:static}.list-sort{display:grid;min-width:900px;grid-template-columns:minmax(285px,1fr) repeat(5,minmax(82px,.45fr));border-bottom:1px solid var(--line);background:#101c24}.list-sort button{min-height:39px;padding:7px;border:0;border-right:1px solid #293840;background:transparent;color:#aeb9bc;font-size:12px;font-weight:900;text-align:center}.list-sort button:first-child{text-align:left}.card-list .card-row{min-width:900px;grid-template-columns:45px minmax(220px,1fr) repeat(5,minmax(82px,.45fr))}.card-list .card-row>span:not(:nth-child(2)){display:block;text-align:center;font-size:13px;font-weight:900}.pagination{position:sticky;left:0;display:flex;align-items:center;justify-content:center;gap:14px;padding:10px;border-top:1px solid var(--line);background:#091218}.pagination button{min-height:34px;padding:6px 14px;border:1px solid #53636d;background:#111d24;color:#e6e8e4;font-weight:900}.pagination span{color:#829198;font-size:13px}
+.card-list{max-height:none;overflow:hidden}.card-list>header{position:static}.list-sort{display:grid;grid-template-columns:minmax(220px,1fr) repeat(5,minmax(74px,.5fr));border-bottom:1px solid var(--line);background:#101c24}.list-sort button{min-height:39px;padding:7px;border:0;border-right:1px solid #293840;background:transparent;color:#aeb9bc;font-size:12px;font-weight:900;text-align:center}.list-sort button:first-child{text-align:left}.card-list .card-row{grid-template-columns:45px minmax(150px,1fr) repeat(5,minmax(70px,.5fr))}.card-list .card-row>span:not(:nth-child(2)){display:block;text-align:center;font-size:13px;font-weight:900}.pagination{display:flex;align-items:center;justify-content:center;gap:14px;padding:10px;border-top:1px solid var(--line);background:#091218}.pagination button{min-height:34px;padding:6px 14px;border:1px solid #53636d;background:#111d24;color:#e6e8e4;font-weight:900}.pagination span{color:#829198;font-size:13px}
 @media(max-width:1500px){.analytics-workspace{grid-template-columns:minmax(290px,.52fr) minmax(600px,1.48fr)}.filter-panel{grid-template-columns:repeat(4,minmax(140px,1fr))}.filter-panel .search{grid-column:span 2}}
 @media(max-width:1120px){.analytics-workspace{grid-template-columns:1fr}.key-metrics,.behavior-metrics{grid-template-columns:1fr 1fr}.scope-summary{grid-template-columns:1fr 1fr}.range-filter{grid-column:span 2}}
 @media(max-width:820px){.dashboard-pair{grid-template-columns:1fr}.breakdowns{overflow:auto}.breakdown-head,.breakdowns>article{min-width:720px}.module-header{align-items:flex-start}.module-header button{margin-top:3px}}
 @media(max-width:650px){.filter-panel{grid-template-columns:1fr 1fr}.filter-panel .search,.filter-panel .master-filter,.filter-panel .card-choice,.range-filter{grid-column:1/-1}.range-filter{grid-template-columns:1fr 1fr}.scope-summary,.key-metrics,.behavior-metrics{grid-template-columns:1fr 1fr}.analysis-detail{padding:12px}.card-heading{grid-template-columns:84px minmax(0,1fr)}.card-heading>.l12-card-image{width:84px;height:117px}.settlement-grid{grid-template-columns:1fr 1fr}.quantity-bars article{grid-template-columns:44px 1fr}.quantity-bars em{grid-column:1/-1;text-align:left}.recent-matches>button{grid-template-columns:1fr auto}.recent-matches .match-id{display:none}}
+@media(max-width:650px){.list-sort{display:none}.card-list .card-row{grid-template-columns:42px minmax(0,1fr) repeat(2,minmax(58px,.42fr));gap:7px}.card-list .card-row>span:nth-child(5),.card-list .card-row>span:nth-child(6),.card-list .card-row>span:nth-child(7){grid-column:2/-1;display:flex!important;justify-content:space-between;text-align:left}.card-list .card-row>span:nth-child(5)::before{content:'抽到胜率'}.card-list .card-row>span:nth-child(6)::before{content:'上手提升'}.card-list .card-row>span:nth-child(7)::before{content:'参赛方样本'}.pagination{gap:8px}.pagination button{flex:1}.filter-panel{grid-template-columns:1fr 1fr}.filter-panel .search,.filter-panel .master-filter,.filter-panel .card-choice,.range-filter{grid-column:1/-1}.range-filter{grid-template-columns:1fr 1fr}.scope-summary,.key-metrics,.behavior-metrics{grid-template-columns:1fr 1fr}.analysis-detail{padding:12px}.card-heading{grid-template-columns:84px minmax(0,1fr)}.card-heading>.l12-card-image{width:84px;height:117px}.settlement-grid{grid-template-columns:1fr 1fr}.quantity-bars article{grid-template-columns:44px 1fr}.quantity-bars em{grid-column:1/-1;text-align:left}.recent-matches>button{grid-template-columns:1fr auto}.recent-matches .match-id{display:none}}
 @media(max-width:430px){.filter-panel,.scope-summary,.key-metrics,.behavior-metrics,.settlement-grid{grid-template-columns:1fr}.module-header{display:grid}.module-header button{width:100%}.turn-chart article{grid-template-columns:62px 1fr}.turn-chart article>div:last-child{grid-column:2}.card-heading{grid-template-columns:72px minmax(0,1fr)}.card-heading>.l12-card-image{width:72px;height:100px}}
 .heat-scroll{max-height:520px}.heat-scroll th{position:sticky;top:0;z-index:1}.breakdowns :deep(article){display:grid;grid-template-columns:105px minmax(150px,1.3fr) 80px 80px 70px 70px 105px;align-items:center;gap:8px;padding:9px;border-top:1px solid #293840;font-size:12px}.breakdowns :deep(article>b){min-width:0;overflow-wrap:anywhere}.breakdowns :deep(article small){color:#70c1c6;font-weight:900}.breakdowns :deep(article strong){display:grid;gap:2px;text-align:right}.breakdowns :deep(article strong small){font-size:10px;font-weight:700}@media(max-width:820px){.breakdowns :deep(article){min-width:720px}}
 </style>

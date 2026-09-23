@@ -15,17 +15,17 @@ for (const range of ["applyRange('all')", "applyRange('7d')", "applyRange('30d')
 assert.match(source, /currentSeason\.value\?\.id/,
   'current-season range must use the authoritative operations-policy season id')
 
-assert.match(source, /do \{[\s\S]*limit: analyticsListLimit[\s\S]*\} while \(cursor && items\.length < /,
-  'list view must drain bounded server cursor pages before sorting')
-assert.match(source, /items\.length < firstPage\.total/,
-  'list view must reject incomplete full-list retrieval')
-for (const key of ['name', 'sampleSize', 'includedMatches', 'inclusionRate', 'winRate', 'delta'])
+assert.match(source, /page: listPage\.value[\s\S]*limit: listPageSize[\s\S]*sort: serverSort\(\)[\s\S]*direction: sortDirection\.value/,
+  'list view must delegate sorting and bounded pagination to the server')
+assert.doesNotMatch(source, /2000|完整筛选清单|visibleListItems|analyticsListLimit/,
+  'list view must not restore full-list retrieval or local pagination')
+for (const key of ['name', 'sampleSize', 'inclusionRate', 'winRate', 'gih', 'iwd'])
   assert.ok(source.includes(`setSort('${key}')`), `missing sortable analytics column: ${key}`)
-assert.match(source, /visibleListItems[\s\S]*\.slice\(/,
-  'the fully sorted list must be paginated locally')
 
 assert.match(source, /activeTab === 'single'/, 'single-card dashboard must be the primary subtab')
 assert.match(source, /activeTab === 'list'/, 'sortable card list must be a separate subtab')
+assert.match(source, /activeTab === 'master'/, 'master analytics must be a separate subtab')
+assert.match(source, /AdminMasterAnalyticsPanel/, 'master analytics subtab must use its dedicated panel')
 assert.match(source, /import PagedCollection from '\.\/PagedCollection\.vue'/,
   'long detail breakdowns must use the shared bounded pagination component')
 assert.doesNotMatch(source, /onMounted\([\s\S]*await loadAnalytics\(\)/,

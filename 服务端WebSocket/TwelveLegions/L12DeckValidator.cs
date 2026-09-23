@@ -18,6 +18,8 @@ public static class L12DeckValidator
             MoraleIds = preset.MoraleIds.ToList(),
             SpecialIds = preset.SpecialIds.ToList(),
             AlternateArtSelections = new Dictionary<string, string>(preset.AlternateArtSelections, StringComparer.OrdinalIgnoreCase),
+            AlternateArtCopies = preset.AlternateArtCopies.ToDictionary(item => item.Key,
+                item => item.Value.ToList(), StringComparer.OrdinalIgnoreCase),
         }, out _, out error, cardRestrictions);
 
     public static bool TryValidate(
@@ -112,6 +114,22 @@ public static class L12DeckValidator
                 return false;
             }
         }
+        var submittedCardCounts = submission.CardIds.GroupBy(id => id, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+        foreach (var appearance in submission.AlternateArtCopies)
+        {
+            var cardId = appearance.Key?.Trim() ?? string.Empty;
+            if (!submittedCardCounts.TryGetValue(cardId, out var copies))
+            {
+                error = $"异画副本没有对应的主牌：{cardId}";
+                return false;
+            }
+            if (appearance.Value is null || appearance.Value.Count > copies)
+            {
+                error = $"{catalog.Cards[cardId].NameZh} 的原画与异画总数超过同编号投入数量";
+                return false;
+            }
+        }
 
         var requiredMorale = master.Faction == "taiyangcheng" ? 6 : 8;
         if (normalizedMoraleIds.Count != requiredMorale)
@@ -162,6 +180,10 @@ public static class L12DeckValidator
             AlternateArtSelections = submission.AlternateArtSelections
                 .Where(item => !string.IsNullOrWhiteSpace(item.Key) && !string.IsNullOrWhiteSpace(item.Value))
                 .Take(128).ToDictionary(item => item.Key.Trim(), item => item.Value.Trim(), StringComparer.OrdinalIgnoreCase),
+            AlternateArtCopies = submission.AlternateArtCopies
+                .Where(item => !string.IsNullOrWhiteSpace(item.Key) && item.Value is not null)
+                .Take(128).ToDictionary(item => item.Key.Trim(), item => item.Value.Take(50)
+                    .Select(value => value?.Trim() ?? string.Empty).ToList(), StringComparer.OrdinalIgnoreCase),
         };
         error = string.Empty;
         return true;

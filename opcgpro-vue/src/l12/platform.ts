@@ -46,7 +46,7 @@ export interface PlatformPresence {
 }
 export interface PublishedDeck {
   id: string; ownerId: string; author: string; deck: SavedL12Deck; views: number; likes: number; copies: number; liked: boolean
-  createdAt: string; updatedAt: string; official?: boolean
+  createdAt: string; updatedAt: string; seasonCompliant?: boolean; seasonComplianceReason?: string; official?: boolean
 }
 export interface BugReport {
   id: string; reporterName: string; title: string; description: string; page: string; roomCode?: string; matchId?: string
@@ -181,7 +181,9 @@ export interface AdminAnalyticsCoverage {
   exactDeckSnapshots: number; inferredDeckSnapshots: number; privateDuringActiveMatch: boolean
   metrics: AdminAnalyticsMetricCoverage[]; limitations: string[]
 }
-export interface AlternateArt { id: string; artCode: string; baseCardId: string; displayName: string; mediaAssetId: string; imageUrl: string; thumbnailUrl: string; active: boolean; createdAt: string; updatedAt: string; productId?: string; productName?: string; cardImageId?: string; builtIn?: boolean }
+export interface AlternateArt { id: string; artCode: string; baseCardId: string; displayName: string; mediaAssetId: string; imageUrl: string; thumbnailUrl: string; active: boolean; createdAt: string; updatedAt: string; productId?: string; productName?: string; cardImageId?: string; builtIn?: boolean; baseCardName?: string; grantedAt?: string; grantReason?: string }
+export interface AlternateArtSearchPage { items: AlternateArt[]; total: number; page: number; pageSize: number }
+export interface AlternateArtGrantNotification { id: string; alternateArtId: string; displayName: string; artCode: string; baseCardId: string; baseCardName: string; reason: string; grantedAt: string; imageUrl: string; thumbnailUrl: string; cardImageId: string; builtIn: boolean }
 export interface AlternateArtProduct { id: string; name: string; active: boolean; createdAt: string; updatedAt: string }
 export interface AlternateArtRankedParticipantDispatchPreview { eligibleAccounts: number; alreadyGranted: number; toGrant: number; sourceReference: string; seasonId: string }
 export interface ServerStorageVolume { mountPoint: string; totalBytes: number; usedBytes: number; freeBytes: number }
@@ -205,6 +207,9 @@ export interface AdminReplayPage {
 export interface AdminCardAnalyticsItem {
   cardId: string; sampleSize: number; eligibleSampleSize: number; includedMatches: number; averageQuantity: number; inclusionRate: number; wins: number; winRate: number
   winRateConfidence: AdminAnalyticsConfidenceInterval; baselineWinRate?: number | null; baselineWinRateConfidence?: AdminAnalyticsConfidenceInterval | null
+  exactDrawCoverageSamples: number; gihSamples: number; gihWins: number; gihWinRate?: number | null; gihWinRateConfidence?: AdminAnalyticsConfidenceInterval | null
+  gnsSamples: number; gnsWins: number; gnsWinRate?: number | null; gnsWinRateConfidence?: AdminAnalyticsConfidenceInterval | null
+  inHandWinRateDelta?: number | null; inHandWinRateDeltaConfidence?: AdminAnalyticsConfidenceInterval | null
   winRateDelta?: number | null; winRateDeltaConfidence?: AdminAnalyticsConfidenceInterval | null; drawnMatches: number; playedMatches: number
   drawnSamples: number; playedSamples: number; activatedSamples: number; settledSamples: number
   resolvedSamples: number; negatedSamples: number; fizzledSamples: number
@@ -235,6 +240,7 @@ export interface AdminAnalyticsStratifiedComparison {
 }
 export interface AdminCardAnalyticsPage {
   items: AdminCardAnalyticsItem[]; total: number; nextCursor?: string | null
+  page?: number; pageSize?: number
   summary?: { eligibleMatches?: number; sampleSize?: number; baselineWinRate?: number | null; minimumSampleSize?: number; statisticalUnit?: string; coverage?: AdminMatchDetail['coverage'] }
 }
 export interface AdminCardAnalyticsBreakdown {
@@ -248,6 +254,29 @@ export interface AdminCardAnalyticsDetail {
   turnDistribution: Array<{ turn: number; firstDrawSamples: number; firstPlaySamples: number }>
   matchups: Array<{ masterId: string; opponentMasterId: string; sampleSize: number; eligibleSampleSize: number; wins: number; winRate: number; winRateConfidence: AdminAnalyticsConfidenceInterval; baselineWinRate?: number | null; baselineWinRateConfidence?: AdminAnalyticsConfidenceInterval | null; winRateDelta?: number | null; winRateDeltaConfidence?: AdminAnalyticsConfidenceInterval | null }>
   recentMatches: AdminMatchSummary[]; coverage: AdminAnalyticsCoverage
+}
+export interface AdminMasterAnalyticsItem {
+  masterId: string; participantSamples: number; distinctMatches: number; distinctDecks: number
+  usageRate: number; deckShare: number; wins: number; winRate: number; winRateConfidence: AdminAnalyticsConfidenceInterval
+  averageDurationSeconds: number; firstSamples: number; firstWinRate?: number | null
+  secondSamples: number; secondWinRate?: number | null
+}
+export interface AdminMasterAnalyticsReport {
+  items: AdminMasterAnalyticsItem[]
+  matchups: Array<{ masterId: string; opponentMasterId: string; samples: number; wins: number; winRate?: number | null }>
+  trend: Array<{ date: string; samples: number; wins: number; winRate: number }>
+  selectedMasterId?: string | null
+  popularDecks: Array<{ signature: string; samples: number; wins: number; winRate: number; cards: Array<{ cardId: string; quantity: number; section: string }> }>
+  cards?: AdminCardAnalyticsPage | null
+}
+export interface AdminGlobalAnalyticsDay {
+  date: string; dailyActiveUsers: number; weeklyActiveUsers: number; monthlyActiveUsers: number
+  dailyMatches: number; weeklyMatches: number; monthlyMatches: number; averageOnline: number
+  peakOnline: number; peakOnlineAt?: string | null; newUsers: number; returningUsers: number; pageViews: number
+}
+export interface AdminGlobalAnalyticsReport {
+  fromDate: string; toDate: string; days: AdminGlobalAnalyticsDay[]
+  pageViews: Array<{ path: string; views: number }>
 }
 export interface AdminCommand {
   id: string; idempotencyKey?: string; type: string; actorId: string; actorName: string; requestedAt: string
@@ -840,7 +869,7 @@ export const adminApi = {
     Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
     return platformRequest<AdminMatchPage>(`/api/admin/players/${encodeURIComponent(accountId)}/matches${params.size ? `?${params}` : ''}`)
   },
-  cardAnalytics: (query: { cursor?: string; limit?: number; from?: string; to?: string; mode?: string; masterId?: string; opponentMasterId?: string; initiative?: string; rulesVersion?: string; effectVersion?: string; seasonId?: string; search?: string; minimumSample?: number } = {}) => {
+  cardAnalytics: (query: { cursor?: string; page?: number; limit?: number; sort?: string; direction?: 'asc'|'desc'; from?: string; to?: string; mode?: string; masterId?: string; opponentMasterId?: string; initiative?: string; rulesVersion?: string; effectVersion?: string; seasonId?: string; search?: string; minimumSample?: number } = {}) => {
     const params = new URLSearchParams()
     const mapped = { ...query, modeId: query.mode, fromUtc: localDateBoundary(query.from), toUtc: localDateBoundary(query.to, true), minimumSampleSize: query.minimumSample }
     ;['mode', 'from', 'to', 'minimumSample'].forEach(key => delete (mapped as Record<string, unknown>)[key])
@@ -853,6 +882,19 @@ export const adminApi = {
     ;['mode', 'from', 'to', 'minimumSample'].forEach(key => delete (mapped as Record<string, unknown>)[key])
     Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
     return platformRequest<AdminCardAnalyticsDetail>(`/api/admin/analytics/cards/${encodeURIComponent(cardId)}${params.size ? `?${params}` : ''}`)
+  },
+  masterAnalytics: (query: { from?: string; to?: string; masterId?: string; effectVersion?: string; seasonId?: string; minimumSample?: number; sort?: string } = {}) => {
+    const params = new URLSearchParams()
+    const mapped = { ...query, fromUtc: localDateBoundary(query.from), toUtc: localDateBoundary(query.to, true), minimumSampleSize: query.minimumSample }
+    ;['from', 'to', 'minimumSample'].forEach(key => delete (mapped as Record<string, unknown>)[key])
+    Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
+    return platformRequest<AdminMasterAnalyticsReport>(`/api/admin/analytics/masters${params.size ? `?${params}` : ''}`)
+  },
+  globalAnalytics: (query: { from?: string; to?: string } = {}) => {
+    const params = new URLSearchParams()
+    const from = localDateBoundary(query.from); const to = localDateBoundary(query.to)
+    if (from) params.set('fromUtc', from); if (to) params.set('toUtc', to)
+    return platformRequest<AdminGlobalAnalyticsReport>(`/api/admin/analytics/global${params.size ? `?${params}` : ''}`)
   },
   accounts: () => platformRequest<PlatformAccount[]>('/api/admin/accounts'),
   setRole: (id: string, role: 'player' | 'admin', expectedVersion?: number) => platformRequest<RoleCommandResult>(`/api/admin/accounts/${encodeURIComponent(id)}/role`, { method: 'PUT', body: JSON.stringify(commandBody('role', { role, expectedVersion })) }),
@@ -907,6 +949,16 @@ export const adminApi = {
   uploadSiteMedia: (form: FormData) => platformRequest<SiteMedia>('/api/admin/site/media', { method: 'POST', body: form }),
   deleteSiteMedia: (id: string) => platformRequest<void>(`/api/admin/site/media/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   alternateArts: (includeInactive = true) => platformRequest<AlternateArt[]>(`/api/admin/alternate-arts?includeInactive=${includeInactive}`),
+  searchAlternateArts: (query: { name?: string; artCode?: string; baseCard?: string; page?: number; pageSize?: number; includeInactive?: boolean } = {}) => {
+    const params = new URLSearchParams()
+    if (query.name) params.set('name', query.name)
+    if (query.artCode) params.set('artCode', query.artCode)
+    if (query.baseCard) params.set('baseCard', query.baseCard)
+    params.set('page', String(query.page ?? 1))
+    params.set('pageSize', String(query.pageSize ?? 20))
+    params.set('includeInactive', String(query.includeInactive ?? true))
+    return platformRequest<AlternateArtSearchPage>(`/api/admin/alternate-arts/search?${params}`)
+  },
   serverStorage: () => platformRequest<ServerStorageStatus>('/api/admin/server-storage', { cache: 'no-store' }),
   alternateArtProducts: (includeInactive = true) => platformRequest<AlternateArtProduct[]>(`/api/admin/alternate-art-products?includeInactive=${includeInactive}`),
   saveAlternateArtProduct: (draft: Partial<AlternateArtProduct> & Pick<AlternateArtProduct, 'name'>) => platformRequest<AlternateArtProduct>('/api/admin/alternate-art-products', { method: 'PUT', body: JSON.stringify(draft) }),
@@ -1019,7 +1071,7 @@ export const rankedApi = {
   leaderboard: (faction = '', range: '7d' | '30d' | 'season' = 'season') => {
     const params = new URLSearchParams({ range })
     if (faction) params.set('faction', faction)
-    return platformRequest<{ players: RankedLeaderboardEntry[]; masterChampions: RankedMasterChampion[]; analytics: RankedAnalytics }>(`/api/rankings?${params}`)
+    return platformRequest<{ players: RankedLeaderboardEntry[]; analytics: RankedAnalytics }>(`/api/rankings?${params}`)
   },
   history: (limit = 500) => platformRequest<RankedSeasonHonor[]>(`/api/rankings/history?limit=${limit}`),
   broadcasts: (limit = 30) => platformRequest<RankedBroadcast[]>(`/api/ranked/broadcasts?limit=${limit}`),
@@ -1123,14 +1175,28 @@ export const friendApi = {
   unblock: (accountId: string) => platformRequest<void>(`/api/friends/blocked/${encodeURIComponent(accountId)}`, { method: 'DELETE' }),
 }
 
+export const telemetryApi = {
+  pageView: (path: string) => platformRequest<void>('/api/telemetry/page-view', {
+    method: 'POST', body: JSON.stringify({ path }),
+  }),
+}
+
 /** 玩家自己的异画库存；卡图选择仍由服务端在开局时二次校验。 */
 export const alternateArtApi = {
   mine: () => platformRequest<AlternateArt[]>('/api/me/alternate-arts'),
   gallery: () => platformRequest<AlternateArt[]>('/api/alternate-arts'),
+  notifications: () => platformRequest<AlternateArtGrantNotification[]>('/api/me/alternate-art-grant-notifications'),
+  acknowledgeNotification: (id: string) => platformRequest<void>(`/api/me/alternate-art-grant-notifications/${encodeURIComponent(id)}/acknowledge`, { method: 'POST' }),
 }
 
 export const publicDeckApi = {
-  list: () => platformRequest<PublishedDeck[]>('/api/public-decks'),
+  list: (query: { sort?: 'copies' | 'likes' | 'views' | 'latest'; seasonCompliant?: boolean } = {}) => {
+    const params = new URLSearchParams()
+    if (query.sort) params.set('sort', query.sort)
+    if (query.seasonCompliant) params.set('seasonCompliant', 'true')
+    const suffix = params.size ? `?${params}` : ''
+    return platformRequest<PublishedDeck[]>(`/api/public-decks${suffix}`)
+  },
   publish: (deck: SavedL12Deck, publicationId?: string) => platformRequest<PublishedDeck>('/api/public-decks', {
     method: 'POST', body: JSON.stringify({ publicationId: publicationId || null, deck }),
   }),

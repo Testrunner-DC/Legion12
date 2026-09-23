@@ -72,6 +72,7 @@ const gmPanel = read('../src/l12/game/GmPanel.vue')
 const sandboxPicker = read('../src/l12/game/SandboxCardPicker.vue')
 const l12Net = read('../src/l12/net.ts')
 const adminPage = read('../src/l12/site/AdminPage.vue')
+const adminAlternateArts = read('../src/l12/site/AdminAlternateArtsPanel.vue')
 const adminArticles = read('../src/l12/site/AdminArticlesPanel.vue')
 const adminSiteContent = read('../src/l12/site/AdminSiteContentPanel.vue')
 const mediaUploadField = read('../src/l12/site/MediaUploadField.vue')
@@ -815,13 +816,19 @@ const contracts = [
     && !battleLog.includes('{{ part.card.cardId }}') && battleLog.includes('width:2.8em')
     && battleLog.includes('white-space:normal'), '玩家战报必须保留天灾禁选、调度及有意义失败结果，隐藏内部初始化、洗牌与单一零变化；同类抽牌/位移结果统一精简但无事务关联不得相邻合并，只让本条公开文本已有的完整卡名可点击且不泄露隐藏卡或编号，四字类别按两字换行'],
   [platform.includes('views: number; likes: number; copies: number') && platform.includes('recordView: (id: string)')
+    && platform.includes("sort?: 'copies' | 'likes' | 'views' | 'latest'")
     && wsServer.includes('/api/public-decks/{id}/view') && deckLibrary.includes('publicDeckApi.recordView(entry.id)')
-    && deckLibrary.includes('(b.views ?? 0) - (a.views ?? 0)') && deckLibrary.includes('b.likes - a.likes')
-    && deckLibrary.includes('b.copies - a.copies') && deckLibrary.includes('b.updatedAt.localeCompare(a.updatedAt)')
+    && deckLibrary.includes('b.copies - a.copies') && deckLibrary.includes('b.likes - a.likes')
+    && deckLibrary.includes('(b.views ?? 0) - (a.views ?? 0)') && deckLibrary.includes('b.createdAt.localeCompare(a.createdAt)')
+    && deckLibrary.includes('<option value="copies">最多复制</option>')
+    && deckLibrary.includes('<option value="likes">最多点赞</option>')
+    && deckLibrary.includes('<option value="views">最多浏览</option>')
+    && deckLibrary.includes('<option value="latest">最新发布</option>')
+    && deckLibrary.includes('v-model="seasonOnly"') && deckLibrary.includes('entry.seasonCompliant')
     && deckLibrary.includes('浏览量 {{ entry.views ?? 0 }}') && deckLibrary.includes('符合本赛季')
     && deckLibrary.includes('不符合本赛季') && deckLibrary.includes('查看构筑')
     && deckLibrary.includes('--deck-faction:') && deckLibrary.includes('rgba(var(--deck-faction),.2)')
-    && deckLibrary.includes('color:#c7cecd;font-size:14px'), '公开牌库浏览量须持久化；热门排序固定为浏览量、点赞、复制、最新时间，信息条按浏览量/点赞/复制/赛季要求/查看构筑排列，并使用低亮度阵营底色与可读高对比文字'],
+    && deckLibrary.includes('color:#c7cecd;font-size:14px'), '公开牌库必须只提供最多复制、最多点赞、最多浏览、最新发布四项互斥排序，支持与本赛季合规筛选叠加，并保留浏览量/点赞/复制/赛季要求信息条与可读阵营底色'],
   [deckEditor.includes('masterProfileUrl(selectedMaster.id') && lobby.includes('border-radius:2px'), '主宰头像必须使用官方正方形资源'],
   [cardDetailContent.includes('trialValue') && cardDetailContent.includes('<dt>试炼值</dt>'), '卡牌档案必须展示试炼值'],
   [playerMat.includes('aria-disabled') && playerMat.includes('.morale-orb.active-morale[aria-disabled="true"]') && playerMat.includes('.morale-orb.active-god-power[aria-disabled="true"]'), '可用的活跃士气与神力必须始终高亮'],
@@ -1092,9 +1099,9 @@ const contracts = [
   [!hasUndersizedSiteWorkbenchText && adminSiteContent.includes('font-size:14px')
     && adminArticles.includes('font-size:14px') && mediaUploadField.includes('font-size:14px')
     && articleDocumentEditor.includes('font-size:16px'), '站点内容工作台、素材上传与正文编辑器不得恢复 9–11px 密集排版；正文画布应为16px，控件与辅助文字至少12px并保留分组间距'],
-  [adminPage.includes('对局与数据') && adminPage.includes('AdminMatchesPanel') && adminPage.includes('AdminCardAnalyticsPanel')
+  [adminPage.includes('数据管理') && adminPage.includes('AdminMatchesPanel') && adminPage.includes('AdminGlobalDataPanel') && adminPage.includes('AdminCardAnalyticsPanel')
     && adminPage.includes("hasPermission('admin.matches.read')") && adminPage.includes("hasPermission('admin.analytics.read')")
-    && platform.includes('/api/admin/matches') && platform.includes('/api/admin/analytics/cards'), '后台必须以独立权限和正式模块提供对局档案与单卡分析，不得塞入 Bug 管理或复用玩家私有记录接口'],
+    && platform.includes('/api/admin/matches') && platform.includes('/api/admin/analytics/global') && platform.includes('/api/admin/analytics/cards'), '后台必须以独立权限和正式模块提供对局档案、全局数据与卡牌数据，不得塞入 Bug 管理或复用玩家私有记录接口'],
   [adminMatches.includes("type MatchView = 'recent' | 'player' | 'sandbox'") && adminMatches.includes("view === 'recent'") && adminMatches.includes("view === 'player'")
     && adminMatches.includes('participant.deckCards') && adminMatches.includes('结构化对局时间线')
     && adminMatches.includes('进行中对局不展示私有构筑')
@@ -1112,7 +1119,7 @@ const contracts = [
     && !adminMatches.includes('v-for="card in participant.deckCards"'), '对局档案必须以“查看构筑”打开不可变当局快照，复用牌库式搜索、分类、数量与卡牌详情，并可复制牌库码、导出牌库图或复制到我的牌库，档案正文不得继续平铺单卡'],
   [adminCardAnalytics.includes('实际使用情况') && adminCardAnalytics.includes('构筑收录') && adminCardAnalytics.includes('实际抽到')
     && adminCardAnalytics.includes('从手牌打出') && adminCardAnalytics.includes('效果发动') && adminCardAnalytics.includes('正常结算')
-    && adminCardAnalytics.includes('同条件未携带基线') && adminCardAnalytics.includes('不代表因果'), '单卡分析必须展示独立使用指标、公平对照、样本与相关性边界，禁止用裸胜率冒充卡牌因果影响'],
+    && adminCardAnalytics.includes('同条件未携带基线') && adminCardAnalytics.includes('不代表因果'), '卡牌数据必须展示独立使用指标、公平对照、样本与相关性边界，禁止用裸胜率冒充卡牌因果影响'],
   [adminCardAnalytics.includes('使用方主宰') && adminCardAnalytics.includes('对方主宰')
     && adminCardAnalytics.includes('function analyticsQuery() { return { ...filters.value } }')
     && adminCardAnalytics.includes('const query = analyticsQuery()')
@@ -1121,11 +1128,11 @@ const contracts = [
     && adminCardAnalytics.includes('request === detailRequest')
     && adminCardAnalytics.includes('data-ui-contract="card-analytics-low-sample-warning"')
     && adminCardAnalytics.includes("return '低样本，仅供参考'")
-    && platform.includes("opponentMasterId?: string") && l12ServerSources.includes('OpponentMasterId'), '单卡分析必须区分使用方/对方主宰，并让样本、入组率、基线与明细使用同一筛选，低样本必须明确警示'],
-  [adminCardAnalytics.includes('参赛方 × 对局') && adminCardAnalytics.includes('没有未收录参赛方时基线显示“—”')
+    && platform.includes("opponentMasterId?: string") && l12ServerSources.includes('OpponentMasterId'), '卡牌数据必须区分使用方/对方主宰，并让样本、入组率、基线与明细使用同一筛选，低样本必须明确警示'],
+  [adminCardAnalytics.includes('参赛方 × 对局') && adminCardAnalytics.includes('同条件未携带基线')
     && adminCardAnalytics.includes('detail.summary.drawnSamples') && adminCardAnalytics.includes('detail.summary.playedSamples')
     && adminCardAnalytics.includes('detail.summary.activatedSamples') && adminCardAnalytics.includes('detail.summary.settledSamples')
-    && platform.includes('drawnSamples: number') && platform.includes('settledSamples: number'), '单卡分析使用路径必须统一使用参赛方样本，不能混入事件次数；没有对照时必须显示空值，不能伪造0%基线'],
+    && platform.includes('drawnSamples: number') && platform.includes('settledSamples: number'), '卡牌数据使用路径必须统一使用参赛方样本，不能混入事件次数；没有对照时必须显示空值，不能伪造0%基线'],
   [adminCardAnalytics.includes('首次抽到／打出回合') && adminCardAnalytics.includes('携带数量分布')
     && adminCardAnalytics.includes('主宰对阵热图') && adminCardAnalytics.includes('数据质量与覆盖')
     && adminCardAnalytics.includes('最近已结束对局') && adminCardAnalytics.includes('规则版本')
@@ -1515,6 +1522,22 @@ contracts.push(
     && prompt.includes("'decline', 'cancel'")
     && prompt.includes("id === 'cancel' && p.data?.allowCancel === 'true'"),
     '打出前支付取消必须复用既有支付控制条与Prompt底部次级按钮，且取消值不得混入资源或卡牌选择'],
+  [adminAlternateArts.includes('查看已登记异画')
+    && adminAlternateArts.includes('adminApi.searchAlternateArts')
+    && adminAlternateArts.includes('registryFilters.baseCard')
+    && adminAlternateArts.includes('pageSize: registry.value.pageSize')
+    && !/async function load\(\)[\s\S]*?Promise\.all\(\[\s*adminApi\.alternateArts\(/.test(adminAlternateArts),
+    '异画后台初始加载不得拉取全量登记表，必须通过弹框按名称、编号、绑定卡查询并分页'],
+  [shell.includes('alternateArtApi.notifications()')
+    && shell.includes('alternateArtApi.acknowledgeNotification')
+    && shell.includes('“{{ currentAlternateArtNotification.reason }}”收到“{{ currentAlternateArtNotification.displayName }}·{{ currentAlternateArtNotification.artCode }}”的使用权')
+    && profilePage.includes('<h2>我的异画</h2>') && profilePage.includes('获得时间：')
+    && !profilePage.includes('<h2>数据与工具</h2>'),
+    '异画权益必须持久提示，个人页展示名称、编号、对应原画和获得时间，并完全移除数据与工具板块'],
+  [deckEditor.includes('alternateArtCopies') && deckEditor.includes('addAppearance(entry)')
+    && deckEditor.includes('removeAppearance(entry)') && deckEditor.includes('原画与异画合计最多')
+    && deckEditor.includes("entry.art?.artCode || entry.card.number"),
+    '牌库编辑器必须把已拥有异画与原画平行展示，以同一规则卡编号共享数量上限并保存逐副本卡图'],
 )
 
 const failures = contracts.filter(([ok]) => !ok).map(([, message]) => message)

@@ -82,6 +82,8 @@ public sealed class L12PresetDeckDefinition
     public List<string> SpecialIds { get; init; } = [];
     /// <summary>玩家选择的异画：规则卡牌编号 -> 已拥有的异画编号。服务端会再次校验权益。</summary>
     public Dictionary<string, string> AlternateArtSelections { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>主牌库每个同编号副本的卡图：规则卡牌编号 -> 按该卡在牌库中的出现次序登记异画编号；空值表示原画。</summary>
+    public Dictionary<string, List<string>> AlternateArtCopies { get; init; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class L12CustomDeckSubmission
@@ -92,6 +94,7 @@ public sealed class L12CustomDeckSubmission
     public List<string> MoraleIds { get; init; } = [];
     public List<string> SpecialIds { get; init; } = [];
     public Dictionary<string, string> AlternateArtSelections { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, List<string>> AlternateArtCopies { get; init; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class L12RoomOptions

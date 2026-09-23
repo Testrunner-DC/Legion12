@@ -1987,7 +1987,8 @@ public sealed partial class L12RoomManager
 
     private IReadOnlyDictionary<string, string>[] ResolveAlternateArtUrls(IEnumerable<Session> sessions)
         => sessions.Select(session => _platform?.ResolveOwnedAlternateArtUrls(session.AccountId,
-            SelectedDeck(session).AlternateArtSelections) ?? new Dictionary<string, string>()).ToArray();
+            SelectedDeck(session).AlternateArtSelections, SelectedDeck(session).AlternateArtCopies)
+            ?? new Dictionary<string, string>()).ToArray();
 
     private bool TryGetMembership(Guid sessionId, out Session session, out Room room, out string error)
     {

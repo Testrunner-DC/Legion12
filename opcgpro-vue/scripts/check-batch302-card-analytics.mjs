@@ -18,10 +18,10 @@ import { adminApi } from '/src/l12/platform.ts'
 import '/src/style.css'
 const coverage={schemaVersion:2,supportedKinds:[],exactFacts:90,inferredFacts:0,partialFacts:0,exactDeckSnapshots:40,inferredDeckSnapshots:0,privateDuringActiveMatch:false,metrics:[],limitations:['合成验证数据；描述性关联不代表因果。']}
 const uncertainty={status:'available',method:'wilson',low:.02,high:.14,reason:null}
-const makeItem=(cardId,index)=>({cardId,sampleSize:index,eligibleSampleSize:80,includedMatches:index,averageQuantity:2,inclusionRate:index/100,wins:Math.ceil(index/2),winRate:.5,winRateConfidence:{low:.35,high:.65},baselineWinRate:.42,baselineWinRateConfidence:{low:.3,high:.55},winRateDelta:.08,winRateDeltaConfidence:{low:.02,high:.14},drawnMatches:index,playedMatches:index,drawnSamples:index,playedSamples:index,activatedSamples:index,settledSamples:index,resolvedSamples:index,negatedSamples:0,fizzledSamples:0,activatedCount:index,resolvedCount:index,negatedCount:0,fizzledCount:0,coverage,sampleStructure:{participantSamples:index,distinctMatches:index,distinctPlayers:index,knownPlayerSamples:index,anonymousPlayerSamples:0,maximumPlayerContribution:1,maximumPlayerContributionRate:1/index,dependencyStatus:'available',uncertainty},comparison:{carriedSamples:index,comparisonSamples:index,insufficientStrata:0,excludedIncludedSamples:0,winRate:.42,delta:.08,weighting:'included-sample',uncertainty},usage:{metrics:['draw','play','activation','settlement'].map(metric=>({metric,observedParticipantSamples:index,eventCount:index,exactFacts:index,inferredFacts:0,partialFacts:0,eligibleSamples:index,coverageStatus:'complete'}))}})
-const listItems=Array.from({length:13},(_,index)=>makeItem('QA-'+String(index+1).padStart(3,'0'),index+31))
+const makeItem=(cardId,index)=>({cardId,sampleSize:index,eligibleSampleSize:80,includedMatches:index,averageQuantity:2,inclusionRate:index/100,wins:Math.ceil(index/2),winRate:.5,winRateConfidence:{low:.35,high:.65},exactDrawCoverageSamples:index*2,gihSamples:index,gihWins:Math.ceil(index*.6),gihWinRate:.6,gihWinRateConfidence:{low:.45,high:.72},gnsSamples:index,gnsWins:Math.ceil(index*.48),gnsWinRate:.48,gnsWinRateConfidence:{low:.34,high:.62},inHandWinRateDelta:.12,inHandWinRateDeltaConfidence:{low:.02,high:.22},baselineWinRate:.42,baselineWinRateConfidence:{low:.3,high:.55},winRateDelta:.08,winRateDeltaConfidence:{low:.02,high:.14},drawnMatches:index,playedMatches:index,drawnSamples:index,playedSamples:index,activatedSamples:index,settledSamples:index,resolvedSamples:index,negatedSamples:0,fizzledSamples:0,activatedCount:index,resolvedCount:index,negatedCount:0,fizzledCount:0,coverage,sampleStructure:{participantSamples:index,distinctMatches:index,distinctPlayers:index,knownPlayerSamples:index,anonymousPlayerSamples:0,maximumPlayerContribution:1,maximumPlayerContributionRate:1/index,dependencyStatus:'available',uncertainty},comparison:{carriedSamples:index,comparisonSamples:index,insufficientStrata:0,excludedIncludedSamples:0,winRate:.42,delta:.08,weighting:'included-sample',uncertainty},usage:{metrics:['draw','play','activation','settlement'].map(metric=>({metric,observedParticipantSamples:index,eventCount:index,exactFacts:index,inferredFacts:0,partialFacts:0,eligibleSamples:index,coverageStatus:'complete'}))}})
+const listItems=Array.from({length:23},(_,index)=>makeItem('QA-'+String(index+1).padStart(3,'0'),index+31))
 window.listCalls=[];window.detailCalls=[]
-adminApi.cardAnalytics=async query=>{window.listCalls.push({...query});const offset=query.cursor?7:0;return {items:listItems.slice(offset,query.cursor?13:7),total:13,nextCursor:query.cursor?null:'page-2',summary:{eligibleMatches:80,sampleSize:80,coverage}}}
+adminApi.cardAnalytics=async query=>{window.listCalls.push({...query});const offset=((query.page||1)-1)*(query.limit||20);return {items:listItems.slice(offset,offset+(query.limit||20)),total:listItems.length,page:query.page||1,pageSize:query.limit||20,summary:{eligibleMatches:80,sampleSize:80,coverage}}}
 adminApi.cardAnalyticsDetail=async(cardId,query)=>{window.detailCalls.push({cardId,...query});const item=makeItem(cardId,40);return {summary:item,breakdowns:[{dimension:'season',value:query.seasonId||'all',sampleSize:40,eligibleSampleSize:80,wins:20,winRate:.5,winRateConfidence:{low:.35,high:.65},baselineWinRate:.42,baselineWinRateConfidence:{low:.3,high:.55},winRateDelta:.08,winRateDeltaConfidence:{low:.02,high:.14}}],quantityDistribution:[{quantity:2,sampleSize:40,wins:20,winRate:.5}],turnDistribution:[{turn:2,firstDrawSamples:20,firstPlaySamples:10}],matchups:[],recentMatches:[],coverage}}
 createApp({render:()=>h('main',{class:'fixture',style:{width:'100%',minHeight:'100vh'}},[h(Panel)])}).mount('#app')
 `
@@ -62,20 +62,20 @@ try {
   await page.getByRole('button', { name: /从 GM 卡牌图鉴选择/ }).click()
   await page.getByRole('dialog', { name: '选择要分析的卡牌' }).waitFor()
   await page.locator('.picker-card-actions').first().getByRole('button', { name: '选择', exact: true }).click()
-  await page.getByRole('heading', { name: '样本可靠性', exact: true }).waitFor()
+  await page.getByText('样本可靠性', { exact: true }).waitFor()
   await page.screenshot({ path: path.join(out, 'single-desktop.png'), fullPage: true })
 
   const master = page.getByLabel('1. 使用方主宰')
   await master.selectOption({ index: 1 })
   await page.getByText('选择一张卡查看事实仪表盘').waitFor()
   await page.getByRole('button', { name: '查询这张卡' }).click()
-  await page.getByRole('heading', { name: '样本可靠性', exact: true }).waitFor()
+  await page.getByText('样本可靠性', { exact: true }).waitFor()
 
   await page.getByRole('button', { name: '全部', exact: true }).click()
   await page.getByText('选择一张卡查看事实仪表盘').waitFor()
   await page.getByRole('button', { name: /本赛季 · 合成赛季/ }).click()
   await page.getByRole('button', { name: '查询这张卡' }).click()
-  await page.getByRole('heading', { name: '样本可靠性', exact: true }).waitFor()
+  await page.getByText('样本可靠性', { exact: true }).waitFor()
   const seasonCall = await page.evaluate(() => window.detailCalls.at(-1))
   assert.equal(seasonCall.seasonId, 'S302')
   assert.equal(seasonCall.from, '')
@@ -83,27 +83,28 @@ try {
 
   await page.getByRole('button', { name: '近 7 天', exact: true }).click()
   await page.getByRole('button', { name: '查询这张卡' }).click()
-  await page.getByRole('heading', { name: '样本可靠性', exact: true }).waitFor()
+  await page.getByText('样本可靠性', { exact: true }).waitFor()
   const sevenDayCall = await page.evaluate(() => window.detailCalls.at(-1))
   assert.equal((new Date(sevenDayCall.to + 'T00:00:00') - new Date(sevenDayCall.from + 'T00:00:00')) / 86400000, 6)
   assert.equal(sevenDayCall.seasonId, '')
 
   await page.getByRole('button', { name: '卡牌数据清单', exact: true }).click()
-  await page.getByText('完整筛选清单').waitFor()
-  await page.waitForFunction(() => window.listCalls.length >= 2)
-  const listCalls = await page.evaluate(() => window.listCalls.slice(-2))
-  assert.equal(listCalls[0].cursor, undefined)
-  assert.equal(listCalls[1].cursor, 'page-2')
-  assert.match(await page.locator('.card-row').first().innerText(), /QA-013/, 'default sort must cover the complete two-page result')
-  assert.equal(await page.locator('.card-row').count(), 10)
+  await page.getByText('筛选、排序与分页均由服务端执行').waitFor()
+  await page.waitForFunction(() => window.listCalls.length >= 1)
+  const firstListCall = await page.evaluate(() => window.listCalls.at(-1))
+  assert.equal(firstListCall.page, 1)
+  assert.equal(firstListCall.limit, 20)
+  assert.equal(firstListCall.sort, 'sample-size')
+  assert.equal(await page.locator('.card-row').count(), 20)
   await page.getByRole('button', { name: '下一页', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.listCalls.at(-1).page), 2)
   assert.equal(await page.locator('.card-row').count(), 3)
   await page.screenshot({ path: path.join(out, 'list-desktop.png'), fullPage: true })
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('button', { name: '单卡仪表盘', exact: true }).click()
   await page.getByRole('button', { name: '查询这张卡' }).click()
-  await page.getByRole('heading', { name: '样本可靠性', exact: true }).waitFor()
+  await page.getByText('样本可靠性', { exact: true }).waitFor()
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2)
   assert.equal(overflow, false, 'narrow single-card dashboard must not overflow the page')
   await page.screenshot({ path: path.join(out, 'single-narrow.png'), fullPage: true })

@@ -2,10 +2,11 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { cancelFriendInvitation, inviteFriend, l12State, resolveFriendInvitation, spectateRoom } from '@/l12/net'
-import { friendApi, login, platformState, register, type PlatformPresence } from '@/l12/platform'
+import { alternateArtApi, friendApi, login, platformState, register, telemetryApi, type AlternateArtGrantNotification, type PlatformPresence } from '@/l12/platform'
 import SiteIcon from './SiteIcon.vue'
 import L12SettingsModal from './L12SettingsModal.vue'
 import MaintenanceTicker from './MaintenanceTicker.vue'
+import CardImage from '@/l12/CardImage.vue'
 
 const siteBrandIcon = '/favicon.png'
 const releaseVersion = String(import.meta.env.VITE_APP_VERSION || 'dev')
@@ -536,6 +537,19 @@ const onlineCount = computed(() => onlinePlayers.value.length)
 const incomingRequestCount = computed(() => onlinePlayers.value.filter(player => player.friendStatus === 'pending' && player.friendDirection === 'incoming').length)
 const onlineActionBusy = ref('')
 const onlineNotice = ref('')
+const alternateArtNotifications = ref<AlternateArtGrantNotification[]>([])
+const currentAlternateArtNotification = computed(() => alternateArtNotifications.value[0] ?? null)
+async function refreshAlternateArtNotifications() {
+  if (!platformState.account || !platformState.token) { alternateArtNotifications.value = []; return }
+  try { alternateArtNotifications.value = await alternateArtApi.notifications() }
+  catch { alternateArtNotifications.value = [] }
+}
+async function closeAlternateArtNotification() {
+  const current = currentAlternateArtNotification.value
+  if (!current) return
+  alternateArtNotifications.value = alternateArtNotifications.value.filter(item => item.id !== current.id)
+  try { await alternateArtApi.acknowledgeNotification(current.id) } catch { /* 下次登录再次提示，避免静默丢失权益通知。 */ }
+}
 const connectionLabel = computed(() => {
   if (l12State.connectionIssue === 'authentication') return '登录状态失效'
   if (l12State.connectionIssue === 'superseded') return '已由其他页面接管'
@@ -550,7 +564,10 @@ function openBugFeedback() {
   window.dispatchEvent(new Event('l12-open-bug-feedback'))
 }
 
-watch(() => route.fullPath, () => { mobileOpen.value = false })
+watch(() => route.fullPath, () => {
+  mobileOpen.value = false
+  void telemetryApi.pageView(route.path).catch(() => { /* 统计失败不阻断玩家访问。 */ })
+}, { immediate: true })
 function enterFriendRoom() { void router.push('/battle') }
 let presenceTimer = 0
 async function refreshPresence() {
@@ -605,11 +622,12 @@ function cancelOutgoingInvitation() {
   const invitationId = l12State.outgoingFriendInvitation?.invitationId
   if (invitationId) cancelFriendInvitation(invitationId)
 }
-watch(() => platformState.account?.id, () => void refreshPresence())
+watch(() => platformState.account?.id, () => { void refreshPresence(); void refreshAlternateArtNotifications() })
 onMounted(() => {
   window.addEventListener('l12-friend-room-created', enterFriendRoom)
   void refreshPresence()
-  presenceTimer = window.setInterval(() => void refreshPresence(), 15_000)
+  void refreshAlternateArtNotifications()
+  presenceTimer = window.setInterval(() => { void refreshPresence(); void refreshAlternateArtNotifications() }, 15_000)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('l12-friend-room-created', enterFriendRoom)
@@ -697,6 +715,14 @@ onBeforeUnmount(() => {
       </section>
     </div>
 
+    <div v-if="currentAlternateArtNotification" class="site-modal-mask alternate-art-notification-mask">
+      <section class="site-modal alternate-art-notification" role="dialog" aria-modal="true" aria-labelledby="alternate-art-notification-title">
+        <header><div><small>NEW ALTERNATE ART</small><h2 id="alternate-art-notification-title">获得异画使用权</h2></div></header>
+        <div class="alternate-art-reward"><CardImage :card-id="currentAlternateArtNotification.cardImageId || currentAlternateArtNotification.baseCardId" :legacy-url="currentAlternateArtNotification.builtIn ? undefined : (currentAlternateArtNotification.imageUrl || currentAlternateArtNotification.thumbnailUrl)" :alt="currentAlternateArtNotification.displayName" intent="detail"/><div><p>“{{ currentAlternateArtNotification.reason }}”收到“{{ currentAlternateArtNotification.displayName }}·{{ currentAlternateArtNotification.artCode }}”的使用权</p><span>对应原画：{{ currentAlternateArtNotification.baseCardName || currentAlternateArtNotification.baseCardId }}</span><small>可在牌库编辑器中选用</small></div></div>
+        <button class="alternate-art-confirm" type="button" @click="closeAlternateArtNotification">确认</button>
+      </section>
+    </div>
+
     <div v-if="l12State.friendInvitation || l12State.outgoingFriendInvitation" class="invitation-stack">
       <div v-if="l12State.outgoingFriendInvitation" class="outgoing-invitation-gate" :class="{ minimized: outgoingInvitationMinimized }">
         <button v-if="outgoingInvitationMinimized" class="invitation-minimized" @click="outgoingInvitationMinimized = false">已发送对战邀请 · 展开</button>
@@ -733,6 +759,7 @@ onBeforeUnmount(() => {
 .audio-setting{display:flex;align-items:center;gap:12px}.audio-setting input{width:150px}
 @media(max-width:760px){.mobile-brand img{width:30px;height:30px;border:0;border-radius:0;object-fit:contain;filter:brightness(0) invert(1)}.mobile-brand b{display:none}}
 .auth-modal>p{color:#87939a;font-size:14px;line-height:1.7}.auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:18px 0}.auth-tabs button,.auth-home{padding:11px;border:1px solid #46535b;background:#080e13;color:#9aa3a7;font-weight:900}.auth-tabs button.active{border-color:#e1c16c;background:#2a2414;color:#f2d985}.auth-modal label{display:block;margin:13px 0;color:#abb3b6;font-size:14px;font-weight:900}.auth-modal input{display:block;width:100%;margin-top:7px;padding:12px;border:1px solid #4b5860;background:#080e13;color:#fff}.auth-submit{width:100%;margin-top:16px;padding:12px;border:1px solid #e1c16c;background:#e1c16c;color:#080b0d;font-weight:900}.auth-submit:disabled{opacity:.45}.auth-home{width:100%;margin-top:8px}.auth-notice{padding:9px!important;border-left:3px solid #a72e39;background:#291016;color:#e5aab0!important}.account-gate{z-index:140}
+.alternate-art-notification-mask{z-index:180}.alternate-art-notification{width:min(660px,92vw)}.alternate-art-reward{display:grid;grid-template-columns:minmax(150px,220px) minmax(0,1fr);align-items:center;gap:24px;margin-top:18px}.alternate-art-reward>img,.alternate-art-reward>:deep(.l12-card-image){width:100%;max-height:330px;object-fit:contain;background:#050708}.alternate-art-reward p{margin:0;color:#f2d77e;font-size:18px;font-weight:900;line-height:1.75}.alternate-art-reward span,.alternate-art-reward small{display:block;margin-top:10px;color:#8e9ba0}.alternate-art-confirm{width:100%;margin-top:20px;padding:12px;border:1px solid #e1c16c;background:#e1c16c;color:#080b0d;font-weight:900}@media(max-width:760px){.alternate-art-notification-mask{align-items:center;padding:max(14px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) max(14px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left))}.alternate-art-notification{width:min(520px,100%);border:1px solid #526067}.alternate-art-reward{grid-template-columns:110px minmax(0,1fr);gap:14px}.alternate-art-reward p{font-size:15px}.alternate-art-reward>img,.alternate-art-reward>:deep(.l12-card-image){max-height:190px}}
 .invitation-stack{position:fixed;z-index:160;right:18px;bottom:18px;display:flex;width:min(430px,calc(100vw - 36px));max-height:calc(100vh - 36px);flex-direction:column;gap:10px;overflow:auto;pointer-events:none}.invitation-gate,.outgoing-invitation-gate{width:100%;flex:0 0 auto;pointer-events:none}.invitation-modal{box-sizing:border-box;width:100%;max-height:min(620px,calc(100vh - 36px));padding:20px;pointer-events:auto}.invitation-modal>p{color:#aeb6ba;line-height:1.7}.invitation-minimized{padding:10px 14px;border:1px solid #e1c16c;background:#231c0d;color:#f0d478;box-shadow:0 12px 34px #000;font-weight:900;pointer-events:auto}.invite-code{display:flex;align-items:center;justify-content:space-between;margin:18px 0;padding:14px;border:1px solid #4e5b63;background:#080e13}.invite-code span{color:#79868d;font-size:14px}.invite-code strong{color:#f0d478;font:900 22px monospace;letter-spacing:.18em}.invite-note{font-size:14px}.invite-actions{display:grid;grid-template-columns:1fr 1.7fr;gap:10px;margin-top:20px}.invite-actions button{padding:12px;border:1px solid #e1c16c;background:#e1c16c;color:#080b0d;font-weight:900}.invite-actions button.quiet{border-color:#4a565e;background:#0a1117;color:#929da2}.outgoing-invitation-modal{border-color:rgba(81,197,204,.42)}.outgoing-invite-actions{grid-template-columns:1fr}
 .online-actions button.quiet{border-color:#4b565c;background:#0b1217;color:#9ba5aa}
 .update-modal{width:min(680px,94vw)}
