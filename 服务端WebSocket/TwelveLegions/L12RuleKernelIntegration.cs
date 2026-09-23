@@ -460,7 +460,7 @@ public sealed partial class L12GameEngine
             var slot = -1;
             var moving = movingId is null ? null : FindOnField(opponent, movingId, out row, out slot);
             var destination = moving is null || opponent.Field[1 - row][slot] is not null
-                || State.ActiveDisaster?.CardId == "S01-DS03" && 1 - row == 1
+                || L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && 1 - row == 1
                 ? null : $"{1 - row}:{slot}";
             step.ValidChoices.Clear();
             if (destination is not null) step.ValidChoices.Add(destination);
@@ -985,7 +985,7 @@ public sealed partial class L12GameEngine
     private IEnumerable<string> AdjacentEmptySlots(L12PlayerState player, int row, int slot)
         => new[] { (row - 1, slot), (row + 1, slot), (row, slot - 1), (row, slot + 1) }
             .Where(position => position.Item1 is >= 0 and < 2 && position.Item2 is >= 0 and < 3
-                && !(State.ActiveDisaster?.CardId == "S01-DS03" && position.Item1 == 1)
+                && !(L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && position.Item1 == 1)
                 && player.Field[position.Item1][position.Item2] is null)
             .Select(position => $"{position.Item1}:{position.Item2}");
 
@@ -1409,14 +1409,14 @@ public sealed partial class L12GameEngine
         if (step.IncludeSourceSlotAfterCost && targetPlayerIndex == activation.Controller
             && SourceSlotAfterCost(activation.Controller, activation.SourceInstanceId) is { } sourceSlot)
             choices.Add(sourceSlot);
-        if (State.ActiveDisaster?.CardId == "S01-DS03")
+        if (L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId))
             choices.RemoveWhere(choice => choice.StartsWith("1:", StringComparison.Ordinal));
         return choices;
     }
 
     private string? SourceSlotAfterCost(int controller, string sourceInstanceId)
         => FindOnField(State.Players[controller], sourceInstanceId, out var row, out var slot) is not null
-            && (State.ActiveDisaster?.CardId != "S01-DS03" || row == 0) ? $"{row}:{slot}" : null;
+            && (!L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) || row == 0) ? $"{row}:{slot}" : null;
 
     private L12CardInstance? DeclaredEnemyTarget(int controller, string? instanceId,
         Func<L12CardInstance, bool>? predicate = null)
@@ -2417,7 +2417,7 @@ public sealed partial class L12GameEngine
     }
 
     private bool RequiresPrideMasterSurcharge(int controller, L12CardInstance source)
-        => State.ActiveDisaster?.CardId == "S02-DS06"
+        => L12ActiveDisasterRules.MasterEffectCostsExtraMorale(State.ActiveDisaster?.CardId)
            && source.CardType == "master"
            && !source.IsMasterLegion
            && source.CardId == State.Players[controller].MasterId;

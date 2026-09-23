@@ -15,7 +15,7 @@ public sealed class AtomicReviewBatch6LDRegressionTests
             ["S02-0609"] = 3, ["S02-0610"] = 3, ["S02-0611"] = 5, ["S02-0612"] = 4,
             ["S02-0613"] = 3, ["S02-0614"] = 5, ["S02-0615"] = 3, ["S02-0616"] = 3,
             ["S02-0617"] = 4, ["S02-0618"] = 3, ["S02-0619"] = 2, ["S02-0620"] = 2,
-            ["S02-0621"] = 2, ["S02-0622"] = 2, ["S02-06C1"] = 2, ["S02-06D1"] = 4,
+            ["S02-0621"] = 2, ["S02-0622"] = 2, ["S02-06C1"] = 1, ["S02-06D1"] = 4,
             ["S02-06M1"] = 2, ["S02-06M2"] = 3, ["S02-06S1"] = 1, ["S02-06S2"] = 1,
             ["S02-06S3"] = 3, ["S02-06S4"] = 2, ["S02-06S5"] = 2, ["S02-06S6"] = 1,
             ["S02-DS01"] = 1, ["S02-DS02"] = 2, ["S02-DS03"] = 2, ["S02-DS04"] = 2,
@@ -126,7 +126,8 @@ public sealed class AtomicReviewBatch6LDRegressionTests
     {
         Assert.Equal(38, AuditedAbilityCounts.Count);
         // Preserve Angus's two distinct triggers, Morrigan's two printed effects, and Sleepless Night's two segments.
-        Assert.Equal(107, AuditedAbilityCounts.Values.Sum());
+        // S02-06C1 的「阵营效果」裸标签段已并入真实能力段（atomicReference 分段修正），段数 2→1。
+        Assert.Equal(106, AuditedAbilityCounts.Values.Sum());
         Assert.All(AuditedAbilityCounts, pair =>
         {
             var card = Assert.Contains(pair.Key, Catalog.Cards);

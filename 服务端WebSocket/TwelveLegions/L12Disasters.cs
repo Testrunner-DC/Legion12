@@ -8,10 +8,11 @@ public sealed partial class L12GameEngine
             ? DisasterTriggerSourceTurnPhase
             : triggerSource == DisasterTriggerSourceGm ? DisasterTriggerSourceGm : DisasterTriggerSourceCardEffect;
         if (!DisastersEnabled) { SetDisasterValue(0); return; }
-        if (State.ActiveDisaster?.CardId == "S01-DS10" && State.DisasterDeck.Count == 0)
+        if (State.ActiveDisaster is { } lockedDisaster
+            && L12ActiveDisasterRules.DisasterValueLocked(lockedDisaster.CardId) && State.DisasterDeck.Count == 0)
         {
             State.DisasterValue = 0;
-            AddEvent("disaster", State.ActivePlayer, "最终天灾〈堙灭〉持续生效，天灾值保持为 0", State.ActiveDisaster);
+            AddEvent("disaster", State.ActivePlayer, "最终天灾〈堙灭〉持续生效，天灾值保持为 0", lockedDisaster);
             return;
         }
         if (State.DisasterDeck.Count == 0)
@@ -55,15 +56,16 @@ public sealed partial class L12GameEngine
 
     private void ResolveTurnStartDisasterEffectIfNeeded()
     {
-        if (!DisastersEnabled || State.ActiveDisaster is not { CardId: "S01-DS10" } disaster) return;
+        if (!DisastersEnabled || State.ActiveDisaster is not { } disaster
+            || !L12ActiveDisasterRules.DisasterValueLocked(disaster.CardId)) return;
         if (State.LastTurnStartDisasterEffectTurn == State.TurnSerial
             && State.LastTurnStartDisasterEffectInstanceId == disaster.InstanceId)
             return;
 
         State.LastTurnStartDisasterEffectTurn = State.TurnSerial;
         State.LastTurnStartDisasterEffectInstanceId = disaster.InstanceId;
-        DamageMasterNonLethalWithoutDamageTriggeredRelics(0, 1, "〈堙灭〉", neutralSource: true);
-        DamageMasterNonLethalWithoutDamageTriggeredRelics(1, 1, "〈堙灭〉", neutralSource: true);
+        DamageMasterNonLethalFromDisaster(0, 1, "〈堙灭〉");
+        DamageMasterNonLethalFromDisaster(1, 1, "〈堙灭〉");
     }
 
     private void ResolveDisasterEffect(L12StackItem item)
@@ -285,7 +287,7 @@ public sealed partial class L12GameEngine
 
     private void BeginMainPhaseDisasterEffect()
     {
-        if (State.ActiveDisaster?.CardId != "S01-DS01") return;
+        if (State.ActiveDisaster?.CardId != L12ActiveDisasterRules.DarkMorningStarCardId) return;
         PushEffect(State.ActivePlayer, State.ActiveDisaster, "disaster", "主要阶段开始时效果",
             data: new Dictionary<string, string> { ["subkind"] = "main" });
     }

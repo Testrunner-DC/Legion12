@@ -26,7 +26,7 @@ public sealed partial class L12GameEngine
         var reason = CavalryMoveTimingUnavailableReason(player.PlayerIndex)
             ?? CavalryMoveSourceUnavailableReason(player, card, row)
                 ?? (targetKeys.Count == 0
-                    ? State.ActiveDisaster?.CardId == "S01-DS03"
+                    ? L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId)
                         ? "〈腐秽大地〉持续期间没有可位移的前排空位"
                         : "战场没有可位移的空位"
                     : null);
@@ -57,5 +57,5 @@ public sealed partial class L12GameEngine
     private bool IsLegalCavalryMoveDestination(L12PlayerState player, int row, int slot)
         => row is >= 0 and <= 1 && slot is >= 0 and <= 2
             && player.Field[row][slot] is null
-            && (State.ActiveDisaster?.CardId != "S01-DS03" || row == 0);
+            && (!L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) || row == 0);
 }

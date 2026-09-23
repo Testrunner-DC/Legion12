@@ -12,6 +12,6 @@ public sealed partial class L12GameEngine
     private ActiveMoraleQuote QuoteActiveMorale(L12PlayerState player,
         L12CardInstance source, string ability, string? target = null)
         => new(GetActiveAbilityMoraleCost(source, ability, target),
-            State.ActiveDisaster?.CardId == "S02-DS06" && source.CardId == player.MasterId ? 1 : 0,
+            L12ActiveDisasterRules.MasterEffectCostsExtraMorale(State.ActiveDisaster?.CardId) && source.CardId == player.MasterId ? 1 : 0,
             source.CardId == player.MasterId && player.MasterMoraleWaiverUntilTurn >= State.TurnSerial);
 }

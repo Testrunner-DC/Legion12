@@ -1332,21 +1332,21 @@ public sealed partial class L12GameEngine
             AddActivePaidCostPresentation(controller, source, data);
         }
         var sourceAbilities = GetAbilities(source.CardId);
-        if (trigger == "active" && State.ActiveDisaster?.CardId == "S02-DS03"
+        if (trigger == "active" && L12ActiveDisasterRules.ActiveRestUseDamagesMaster(State.ActiveDisaster?.CardId)
             && sourceAbilities.Any(ability => ability.Id == data?.GetValueOrDefault("ability")
                 && (ability.Label.Contains("主动休整", StringComparison.Ordinal)
                     || sourceAbilities.Count == 1
                     && L12StructuredCardRules.HasActiveRestAbility(source.CardId))))
         {
-            DamageMasterNonLethal(controller, 1, "〈无眠之夜〉的持续效果", neutralSource: true);
+            DamageMasterNonLethalFromDisaster(controller, 1, "〈无眠之夜〉的持续效果");
         }
         // 〈虚构的圣杯〉监听“圣物效果发动”这一公共事件，而不是只挂在主动效果按钮上。
         // PushEffect 是登场时、主动、触发式圣物效果共同经过的唯一入口；持续效果不会入栈，
         // 因而不会在这里被误计为一次发动。
-        if (State.ActiveDisaster?.CardId == "S01-DS08" && source.CardType == "artifact"
+        if (L12ActiveDisasterRules.RelicEffectUseDamagesMaster(State.ActiveDisaster?.CardId) && source.CardType == "artifact"
             && trigger is not "disaster")
         {
-            DamageMasterNonLethal(controller, 1, "〈虚构的圣杯〉：发动圣物效果", neutralSource: true);
+            DamageMasterNonLethalFromDisaster(controller, 1, "〈虚构的圣杯〉：发动圣物效果");
         }
         var presentationText = ResolveEffectPresentationText(source, trigger, text, data);
         var stackText = data?.GetValueOrDefault("stackText");
@@ -1474,11 +1474,11 @@ public sealed partial class L12GameEngine
         {
             if (protectedFromCounters && CounterTacticAffectsRespondedEffect(card.CardId)) continue;
             if (!ResponseCardMayRespondToSelectedEffect(card.CardId, top)) continue;
-            if (card.CardId == "S01-0016" && CanAbsoluteDefenseRespondTo(playerIndex, top))
+            if (L12StructuredCardSemantics.IsAbsoluteDefenseResponse(card.CardId) && CanAbsoluteDefenseRespondTo(playerIndex, top))
                 choices.Add(card.InstanceId);
             // “晋升登场”属于军团登场效果家族中的独立时点。落穴只检查它实际将要无效的
             // 当前堆叠项目，不能沿响应链借用更早的登场时点去无效绝对防御等反击效果。
-            if (!defenderAttackTimingRoot && card.CardId == "S01-0018"
+            if (!defenderAttackTimingRoot && L12StructuredCardSemantics.IsPitfallEntryNegationResponse(card.CardId)
                 && CanPitfallRespondToCurrentEffect(playerIndex, top))
                 choices.Add(card.InstanceId);
             if (CanUseS1ResponseAtCurrentEffect(card.CardId, playerIndex, top)
@@ -1489,8 +1489,9 @@ public sealed partial class L12GameEngine
                 choices.Add(card.InstanceId);
         }
         if (!protectedFromCounters && top.Trigger == "opponent-attack" && State.PendingDefense?.Target.Type == "legion"
-            && ResponseCardMayRespondToSelectedEffect("S01-0002", top) && playerIndex == defendingPlayer)
-            choices.AddRange(player.Hand.Where(card => card.CardId == "S01-0002").Select(card => card.InstanceId));
+            && playerIndex == defendingPlayer)
+            choices.AddRange(player.Hand.Where(card => L12StructuredCardSemantics.IsMercenaryHandBlockResponse(card.CardId)
+                && ResponseCardMayRespondToSelectedEffect(card.CardId, top)).Select(card => card.InstanceId));
         if (!protectedFromCounters && top.Trigger == "opponent-attack" && State.PendingDefense?.Target.Type == "master"
             && playerIndex == defendingPlayer
             && Enumerable.Range(0, 3).Any(slot => player.Field[0][slot] is null))
@@ -1588,8 +1589,8 @@ public sealed partial class L12GameEngine
         var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
         if (playerIndex != defendingPlayer || player.Hand.Count == 0 || top.Trigger != "opponent-attack") return false;
         if (State.PendingDefense?.Target.Type == "legion"
-            && ResponseCardMayRespondToSelectedEffect("S01-0002", top)
-            && pool.Any(card => card.Id == "S01-0002"))
+            && pool.Any(card => L12StructuredCardSemantics.IsMercenaryHandBlockResponse(card.Id)
+                && ResponseCardMayRespondToSelectedEffect(card.Id, top)))
             return true;
         return State.PendingDefense?.Target.Type == "master"
             && Enumerable.Range(0, 3).Any(slot => player.Field[0][slot] is null)
@@ -1603,7 +1604,7 @@ public sealed partial class L12GameEngine
     {
         if (!IsCounterTactic(cardId)) return false;
         if (!ResponseCardMayRespondToSelectedEffect(cardId, top)) return false;
-        if (cardId == "S01-0016")
+        if (L12StructuredCardSemantics.IsAbsoluteDefenseResponse(cardId))
             return CanAbsoluteDefenseRespondTo(playerIndex, top);
         if (top.Trigger == "opponent-attack")
         {
@@ -1611,7 +1612,7 @@ public sealed partial class L12GameEngine
             return CanUseS1ResponseAtCurrentEffect(cardId, playerIndex, top)
                 && HasAvailablePublicResponseDeclaration(playerIndex, cardId, top);
         }
-        if (cardId == "S01-0018")
+        if (L12StructuredCardSemantics.IsPitfallEntryNegationResponse(cardId))
             return CanPitfallRespondToCurrentEffect(playerIndex, top);
         return (CanUseS1ResponseAtCurrentEffect(cardId, playerIndex, top)
                 || CanUseS2CounterAtStack(cardId, playerIndex, top))
@@ -1761,7 +1762,7 @@ public sealed partial class L12GameEngine
             OfferResponse();
             return;
         }
-        if (response.CardId == "S01-0002")
+        if (L12StructuredCardSemantics.IsMercenaryHandBlockResponse(response.CardId))
         {
             CommitMercenaryResponse(playerIndex, response, targetStackItemId);
             return;
@@ -1784,7 +1785,7 @@ public sealed partial class L12GameEngine
                 });
             return;
         }
-        if (response.CardId == "S01-0016")
+        if (L12StructuredCardSemantics.IsAbsoluteDefenseResponse(response.CardId))
         {
             var discards = player.Hand.Select(card => card.InstanceId).ToArray();
             CreatePrompt(playerIndex, "discard-cost", "弃置 1 张手牌作为〈绝对防御〉的费用", discards,
@@ -1895,7 +1896,7 @@ public sealed partial class L12GameEngine
         // 绝对防御响应的是玩家实际选中的当前堆叠项目：直接响应进攻宣言时是“抵挡”，
         // 响应进攻链上的某个效果时则是“无效该效果”。不能沿响应链借用根时点，
         // 否则无效一张反击战术也会被错误展示成抵挡进攻。
-        var absoluteDefenseMode = response.CardId == "S01-0016"
+        var absoluteDefenseMode = L12StructuredCardSemantics.IsAbsoluteDefenseResponse(response.CardId)
             ? target?.Trigger == "opponent-attack" ? "mode:block" : "mode:negate"
             : null;
         if (FindOnField(player, response.InstanceId, out var row, out var slot) is not null) player.Field[row][slot] = null;

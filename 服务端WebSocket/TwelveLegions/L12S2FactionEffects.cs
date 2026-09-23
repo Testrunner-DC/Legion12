@@ -85,6 +85,8 @@ public sealed partial class L12GameEngine
     /// </summary>
     private void NotifyCardDiscarded(L12PlayerState player, L12CardInstance card, string originZone, bool causedByEffect)
     {
+        // 裁定（2026-09-23）：天灾导致的弃置不触发弃置时效果。
+        if (IsDisasterAuthorityActive()) return;
         if (card.CardId != "S02-0006" || State.ActivePlayer != player.PlayerIndex) return;
         if (originZone != "library" && !(originZone == "hand" && causedByEffect)) return;
 

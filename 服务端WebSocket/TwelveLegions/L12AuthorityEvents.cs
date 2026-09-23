@@ -286,6 +286,8 @@ public sealed partial class L12GameEngine
 
     private void NotifyCardAddedToHandByEffect(L12PlayerState player, L12CardInstance card, string originZone, string reason)
     {
+        // 裁定（2026-09-23）：天灾导致的回手/抽牌不产生入手响应窗。
+        if (IsDisasterAuthorityActive()) return;
         QueueAuthorityEvent("effect-hand-add", player.PlayerIndex, card, $"{player.Name}因效果将1张牌加入手牌", subjectPlayer: player.PlayerIndex,
             targetInstanceId: card.InstanceId, originZone: originZone, destinationZone: "hand", causedByEffect: true,
             publicSource: false);

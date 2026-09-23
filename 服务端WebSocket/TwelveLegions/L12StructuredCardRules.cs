@@ -103,7 +103,6 @@ public static partial class L12StructuredCardRules
     private static readonly HashSet<string> FrontRowTauntOverlayCards = new(StringComparer.Ordinal)
     {
         "S01-0107", "S01-0204", "S01-0312",
-        "ST01-04", "ST02-02", "ST04-01", "ST06-02",
     };
 
     private static readonly HashSet<string> AlwaysAttackNoLossCards = new(StringComparer.Ordinal)
@@ -650,11 +649,14 @@ public static partial class L12StructuredCardRules
         if (TryGetStarterTargetedBatch2BAbilities(cardId, out abilities)) return true;
         if (TryGetStarterBatch3AAbilities(cardId, out abilities)) return true;
         if (TryGetStarterBatch3BAbilities(cardId, out abilities)) return true;
+        if (TryGetStarterBatch4Abilities(cardId, out abilities)) return true;
         if (TryGetHumanAssistedS02BatchAbilities(cardId, out abilities)) return true;
         if (TryGetHumanAssistedOtherworldAbilities(cardId, out abilities)) return true;
         abilities = cardId switch
         {
+            "S01-0002" => MercenaryCompanyAbilities(),
             "S01-0004" => InfiltratorAbilities(),
+            "S01-0106" => GuanYuAbilities(),
             "S01-0110" => MoziAbilities(),
             "S01-0215" => AnkhSteleAbilities(),
             "S01-0303" => RagnarAbilities(),
@@ -930,6 +932,45 @@ public static partial class L12StructuredCardRules
             }),
             new(L12AtomKinds.MoveZone, "将所选军团活跃登场", "resolution", new() { ["from"] = "controller.grave", ["to"] = "controller.field", ["state"] = "ready" }),
         ], "confirmed", "user-20260911"),
+    ];
+
+    // 佣兵部队与关羽：位移段按共享骑兵位移规则行动模板结构化（运行时由【骑兵】职介驱动，
+    // 段为声明）；佣兵部队抵挡段的运行时资格/提交仍是卡号入口，待反应族资格收敛后归属；
+    // 关羽进攻时段引用既有"关羽"复合路由，复合定义层级不变。
+    private static L12StructuredAbilityTemplate StarterCavalryMoveRuleAction() =>
+        new("active", "rule-action", "我方 回合1次 可进行1次位移。",
+        [
+            new(L12AtomKinds.Condition, "我方回合且本回合未发动", "condition", new()
+            {
+                ["expression"] = "controller.turn;source.once-per-turn-unused=true",
+            }),
+            new(L12AtomKinds.Move, "进行 1 次位移", "resolution", new() { ["operation"] = "cavalry-move", ["amount"] = "1" }),
+            new(L12AtomKinds.Duration, "回合 1 次", "duration", new() { ["duration"] = "once-per-turn" }),
+        ], "human-assisted", "product-database");
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> MercenaryCompanyAbilities() =>
+    [
+        StarterCavalryMoveRuleAction(),
+        new("reaction", "reaction", "对方 进攻我方军团时，可从手牌中弃置此军团：抵挡本次进攻。",
+        [
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.Discard, "从手牌中弃置此军团", "cost", new() { ["target"] = "source", ["from"] = "controller.hand" }),
+            new(L12AtomKinds.AttackRule, "抵挡本次进攻", "resolution", new() { ["responseBlock"] = "true" }),
+        ], "human-assisted", "product-database"),
+    ];
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> GuanYuAbilities() =>
+    [
+        StarterCavalryMoveRuleAction(),
+        new("attack", "triggered", "进攻时 可返还1士气：此军团本回合兵力+1000，并获得必中。（进攻无法被抵挡/支援）。",
+        [
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.ReturnMorale, "返还 1 士气", "cost", new() { ["amount"] = "1" }),
+            new(L12AtomKinds.ModifyTroops, "本回合兵力 +1000", "resolution", new() { ["operation"] = "add", ["value"] = "1000", ["target"] = "source" }),
+            new(L12AtomKinds.Keyword, "获得【必中】", "resolution", new() { ["keywordRef"] = "must-hit" }),
+            new(L12AtomKinds.Duration, "持续至本回合结束", "duration", new() { ["duration"] = "this-turn" }),
+            new(L12AtomKinds.CompositeFlow, "关羽进攻时流程", "resolution", new() { ["flow"] = "关羽" }),
+        ], "human-assisted", "product-database"),
     ];
 
     private static IReadOnlyList<L12StructuredAbilityTemplate> SigurdAbilities() =>

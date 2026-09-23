@@ -254,7 +254,7 @@ public sealed partial class L12GameEngine
                 player.PlayerIndex, player.Name, player.DeckName, player.Faction,
                 master = MasterSnapshot(player),
                 factionEffect = FactionEffectSnapshot(player),
-                libraryCount = player.Library.Count, libraryTop = State.ActiveDisaster?.CardId == "S02-DS01" ? player.Library.FirstOrDefault() : null,
+                libraryCount = player.Library.Count, libraryTop = L12ActiveDisasterRules.LibraryFlipped(State.ActiveDisaster?.CardId) ? player.Library.FirstOrDefault() : null,
                 hand = SnapshotHand(index), promotionOptions = BuildS2PromotionOptions(player), player.MoraleDeck,
                 morale = SnapshotMorale(player),
                 field = SnapshotField(player, viewer, revealAllHands), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), player.Removed, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters),
@@ -265,7 +265,7 @@ public sealed partial class L12GameEngine
                 player.PlayerIndex, player.Name, player.DeckName, player.Faction,
                 master = MasterSnapshot(player),
                 factionEffect = FactionEffectSnapshot(player),
-                libraryCount = player.Library.Count, libraryTop = State.ActiveDisaster?.CardId == "S02-DS01" ? player.Library.FirstOrDefault() : null,
+                libraryCount = player.Library.Count, libraryTop = L12ActiveDisasterRules.LibraryFlipped(State.ActiveDisaster?.CardId) ? player.Library.FirstOrDefault() : null,
                 handCount = player.Hand.Count,
                 moraleDeckCount = player.MoraleDeck.Count, morale = SnapshotMorale(player),
                 field = SnapshotField(player, viewer, revealAllHands), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), graveyardCount = player.Graveyard.Count,
@@ -874,7 +874,7 @@ public sealed partial class L12GameEngine
     }
 
     private bool IsTauntSuppressed(L12PlayerState controller)
-        => State.ActiveDisaster?.CardId == "S02-DS02"
+        => L12ActiveDisasterRules.TauntSuppressed(State.ActiveDisaster?.CardId)
             || controller.UsedAbilities.Contains($"starter-taunt-disabled:{State.TurnSerial}");
 
     public string SerializeFullState()
@@ -992,7 +992,7 @@ public sealed partial class L12GameEngine
 
     private void SetDisasterValue(int value, int? playerIndex = null, string? text = null)
     {
-        State.DisasterValue = !DisastersEnabled || State.ActiveDisaster?.CardId == "S01-DS10"
+        State.DisasterValue = !DisastersEnabled || L12ActiveDisasterRules.DisasterValueLocked(State.ActiveDisaster?.CardId)
             ? 0
             : Math.Max(0, value);
         if (!string.IsNullOrWhiteSpace(text))
@@ -1194,7 +1194,7 @@ public sealed partial class L12GameEngine
             ResetTemporaryCardState(player, State.TurnSerial, playerIndex);
             player.UsedAbilities.Clear();
         }
-        if (!DisastersEnabled || State.ActiveDisaster?.CardId == "S01-DS10")
+        if (!DisastersEnabled || L12ActiveDisasterRules.DisasterValueLocked(State.ActiveDisaster?.CardId))
             SetDisasterValue(0);
         else
         {
@@ -1731,8 +1731,7 @@ public sealed partial class L12GameEngine
     private bool TryOfferEffectLethalReplacement(L12PlayerState controller, L12CardInstance card, string reason)
     {
         // 天灾结算拥有最高优先级，不建立通常的替代/阵亡/离场响应窗口。
-        if (State.Phase == L12Phase.Disaster
-            || State.EffectStack.Any(item => item.Trigger == "disaster")) return false;
+        if (IsDisasterAuthorityActive()) return false;
         if (TryOfferCardLethalSubstitution(controller, card, "effect-lethal-replacement", reason))
             return true;
         if (!CanUseAchillesLethalReplacement(controller, card))
@@ -2121,6 +2120,11 @@ public sealed partial class L12GameEngine
         }
     }
 
+    /// 裁定（2026-09-23）：天灾不会触发任何效果。天灾结算或天灾持续规则生效期间，
+    /// 伤害与卡牌移动不得排队任何卡牌触发、替代弹框或响应窗。
+    private bool IsDisasterAuthorityActive()
+        => State.Phase == L12Phase.Disaster || State.EffectStack.Any(item => item.Trigger == "disaster");
+
     private void DamageMasterNonLethal(int playerIndex, int amount, string source, int? sourcePlayer = null,
         bool neutralSource = false)
         => DamageMasterNonLethalCore(playerIndex, amount, source, sourcePlayer, neutralSource, null,
@@ -2135,8 +2139,13 @@ public sealed partial class L12GameEngine
         => DamageMasterNonLethalCore(playerIndex, amount, source, sourceItem.Controller,
             neutralSource: false, sourceItem, allowDamageTriggeredRelicEffects: true);
 
+    private void DamageMasterNonLethalFromDisaster(int playerIndex, int amount, string source)
+        => DamageMasterNonLethalCore(playerIndex, amount, source, null, neutralSource: true, null,
+            allowDamageTriggeredRelicEffects: false, fromDisaster: true);
+
     private void DamageMasterNonLethalCore(int playerIndex, int amount, string source, int? sourcePlayer,
-        bool neutralSource, L12StackItem? declaredSourceItem, bool allowDamageTriggeredRelicEffects)
+        bool neutralSource, L12StackItem? declaredSourceItem, bool allowDamageTriggeredRelicEffects,
+        bool fromDisaster = false)
     {
         var player = State.Players[playerIndex];
         amount = ApplyOutgoingMasterDamageOverride(playerIndex, amount, sourcePlayer, neutralSource,
@@ -2150,8 +2159,9 @@ public sealed partial class L12GameEngine
         TrackMasterDamageFact(playerIndex, actual, sourcePlayer, neutralSource, combatDamage: false,
             declaredSourceItem);
         AddEvent("damage", playerIndex, $"{player.Name} 的主宰因{source}失去 {actual} 点非致命伤害");
-        QueueS1MasterDamageReactionCore(playerIndex, ResolveDamageSourcePlayer(sourcePlayer, neutralSource),
-            effectDamage: true, allowDamageTriggeredRelicEffects);
+        if (!fromDisaster && !IsDisasterAuthorityActive())
+            QueueS1MasterDamageReactionCore(playerIndex, ResolveDamageSourcePlayer(sourcePlayer, neutralSource),
+                effectDamage: true, allowDamageTriggeredRelicEffects);
     }
 
     private void HealMaster(int playerIndex, int amount, string source, bool legionEffect = false)

@@ -369,7 +369,7 @@ public sealed partial class L12GameEngine
         if (legion is null || !IsFieldLegion(legion) || legion.Tapped || legion.Hidden
             || targetRow is < 0 or > 1 || targetSlot is < 0 or > 2
             || Math.Abs(row - targetRow) + Math.Abs(slot - targetSlot) != 1
-            || State.ActiveDisaster?.CardId == "S01-DS03" && targetRow == 1
+            || L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && targetRow == 1
             || player.Field[targetRow][targetSlot] is not null)
         {
             RecordPromptContinuationFailure(item, "高天原阵营效果选择的位移位置已失效");
@@ -457,7 +457,7 @@ public sealed partial class L12GameEngine
     {
         for (var row = 0; row < 2; row++)
             for (var slot = 0; slot < 3; slot++)
-                if (player.Field[row][slot] is null && !(State.ActiveDisaster?.CardId == "S01-DS03" && row == 1))
+                if (player.Field[row][slot] is null && !(L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && row == 1))
                     yield return $"{row}:{slot}";
     }
 

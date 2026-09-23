@@ -359,6 +359,75 @@ public sealed class NewSystemsTests
     }
 
     [Fact]
+    public void StormDisorderBlocksOnlyRangedIdentityLegionsFromRangedAttacks()
+    {
+        // 2026-09-22 裁定：风暴乱象的正确持续效果是“远程军团无法发动远程进攻”（印刷卡文带远程图标）。
+        // 远程身份军团（术师）前排攻后排被阻断；非远程身份的前排限定远程卡（刺客荆轲）
+        // 以前排射程进攻后排不受阻断；预览与正式提交一致。
+        var game = Create(seed: 5542);
+        var rangedAttacker = CreateInstance("S02-0003", "storm-ranged-caster");
+        var assassin = CreateInstance("S01-0115", "storm-front-ranged-assassin");
+        rangedAttacker.SummonRound = -1;
+        assassin.SummonRound = -1;
+        game.State.Players[0].Field[0][0] = rangedAttacker;
+        game.State.Players[0].Field[0][1] = assassin;
+        game.State.Players[1].Field[1][0] = CreateInstance("S02-0003", "storm-back-target");
+        game.State.Players[1].Field[0][0] = CreateInstance("S02-0003", "storm-front-target");
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+        game.State.ActiveDisaster = CreateInstance("S02-DS04", "storm-disorder");
+        var backTarget = game.State.Players[1].Field[1][0]!;
+        var frontTarget = game.State.Players[1].Field[0][0]!;
+
+        var legal = game.SnapshotFor(0).LegalAttackTargets;
+        Assert.DoesNotContain(backTarget.InstanceId, legal.GetValueOrDefault(rangedAttacker.InstanceId) ?? []);
+        Assert.Contains(backTarget.InstanceId, legal.GetValueOrDefault(assassin.InstanceId) ?? []);
+        Assert.Contains(frontTarget.InstanceId, legal.GetValueOrDefault(rangedAttacker.InstanceId) ?? []);
+
+        var blocked = game.Handle(0, new L12Command("attack", rangedAttacker.InstanceId,
+            Target: new L12AttackTarget("legion", backTarget.InstanceId)));
+        Assert.False(blocked.Accepted);
+        Assert.Contains("风暴乱象", blocked.Error);
+        Assert.Contains("远程军团", blocked.Error);
+
+        var allowed = game.Handle(0, new L12Command("attack", assassin.InstanceId,
+            Target: new L12AttackTarget("legion", backTarget.InstanceId)));
+        Assert.True(allowed.Accepted);
+    }
+
+    [Fact]
+    public void StormDisorderBlocksGrantedBackRowMasterAttacksForRangedLegions()
+    {
+        // 2026-09-22 裁定补充：后排军团经效果许可（扩展射程/天灾许可）远程攻击主宰时，
+        // 风暴乱象仍需阻断。能从后排进攻的军团必然具备远程能力（行位门禁要求当前位置有射程），
+        // 即均为远程身份；非远程身份的前排限定射程放行已由同族前排攻后排用例覆盖。
+        var game = Create(seed: 5543);
+        var rangedCaster = CreateInstance("S02-0003", "storm-granted-caster");
+        rangedCaster.SummonRound = -1;
+        game.State.Players[0].Field[1][0] = rangedCaster;
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+        game.State.ActiveDisaster = CreateInstance("S02-DS04", "storm-disorder-master");
+        rangedCaster.CanAttackBackAndMasterUntilTurn = game.State.TurnSerial;
+
+        var blocked = game.Handle(0, new L12Command("attack", rangedCaster.InstanceId,
+            Target: new L12AttackTarget("master", null)));
+        Assert.False(blocked.Accepted);
+        Assert.Contains("风暴乱象", blocked.Error);
+
+        // 对照组：无风暴乱象时同一许可下的后排攻主宰保持合法。
+        var control = Create(seed: 5544);
+        var caster = CreateInstance("S02-0003", "control-caster");
+        caster.SummonRound = -1;
+        control.State.Players[0].Field[1][0] = caster;
+        control.State.ActivePlayer = 0;
+        control.State.Phase = L12Phase.Main;
+        caster.CanAttackBackAndMasterUntilTurn = control.State.TurnSerial;
+        Assert.True(control.Handle(0, new L12Command("attack", caster.InstanceId,
+            Target: new L12AttackTarget("master", null))).Accepted);
+    }
+
+    [Fact]
     public void DivineBalanceLetsBothPlayersDiscardSimultaneously()
     {
         var game = Create(seed: 5528);

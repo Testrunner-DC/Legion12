@@ -25,8 +25,8 @@ public sealed class EffectPresentationBranchSegmentTests
 
         var expectedActions = new[]
         {
-            "S01-0310|2", "S01-0409|3",
-            "S02-0505|3", "ST01-01|1", "ST06-04|1",
+            "S01-0002|1", "S01-0106|1", "S01-0310|2", "S01-0409|3",
+            "S02-0505|3", "ST01-01|1", "ST04-01|1", "ST06-04|1",
         };
         var actions = Catalog.AtomicEffects.All
             .SelectMany(card => card.Abilities

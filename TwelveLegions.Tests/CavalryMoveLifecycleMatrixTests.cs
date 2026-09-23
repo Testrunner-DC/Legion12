@@ -14,15 +14,23 @@ public sealed partial class CavalryMoveRuleActionTests
         .Single(ability => ability.ExecutionModel == "rule-action");
 
     [Theory]
+    [InlineData("S01-0002")]
+    [InlineData("S01-0106")]
     [InlineData("S01-0310")]
     [InlineData("S01-0409")]
     [InlineData("S02-0505")]
     [InlineData("ST01-01")]
+    [InlineData("ST04-01")]
     [InlineData("ST06-04")]
+    [L12AbilityEvidence("S01-0002:ability:active:2786430f57a9abaa", "normal", "presentation-event", "button-text", "no-resource-cost", "reconnect-before-command", "reconnect-after-command", "duplicate-submit")]
+
+    [L12AbilityEvidence("S01-0106:ability:active:2786430f57a9abaa", "normal", "presentation-event", "button-text", "no-resource-cost", "reconnect-before-command", "reconnect-after-command", "duplicate-submit")]
+
     [L12AbilityEvidence("S01-0310:ability:active:0a0575206e996652", "normal", "presentation-event", "button-text", "no-resource-cost", "reconnect-before-command", "reconnect-after-command", "duplicate-submit")]
     [L12AbilityEvidence("S01-0409:ability:active:56a01edf47ee1225", "normal", "presentation-event", "button-text", "no-resource-cost", "reconnect-before-command", "reconnect-after-command", "duplicate-submit")]
     [L12AbilityEvidence("S02-0505:ability:active:bac4cb5d348f29f1", "normal", "presentation-event", "button-text", "no-resource-cost", "reconnect-before-command", "reconnect-after-command", "duplicate-submit")]
     [L12AbilityEvidence("ST01-01:ability:active:69626894e55e27e5", "normal", "presentation-event", "button-text", "no-resource-cost", "reconnect-before-command", "reconnect-after-command", "duplicate-submit")]
+    [L12AbilityEvidence("ST04-01:ability:active:2786430f57a9abaa", "normal", "presentation-event", "button-text", "no-resource-cost", "reconnect-before-command", "reconnect-after-command", "duplicate-submit")]
     [L12AbilityEvidence("ST06-04:ability:active:719cc1c7c1084fa0", "normal", "presentation-event", "button-text", "no-resource-cost", "reconnect-before-command", "reconnect-after-command", "duplicate-submit")]
     public void NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery(string cardId)
     {
@@ -58,15 +66,23 @@ public sealed partial class CavalryMoveRuleActionTests
     }
 
     [Theory]
+    [InlineData("S01-0002")]
+    [InlineData("S01-0106")]
     [InlineData("S01-0310")]
     [InlineData("S01-0409")]
     [InlineData("S02-0505")]
     [InlineData("ST01-01")]
+    [InlineData("ST04-01")]
     [InlineData("ST06-04")]
+    [L12AbilityEvidence("S01-0002:ability:active:2786430f57a9abaa", "source-invalidated", "destination-invalidated", "reconnect-before-command")]
+
+    [L12AbilityEvidence("S01-0106:ability:active:2786430f57a9abaa", "source-invalidated", "destination-invalidated", "reconnect-before-command")]
+
     [L12AbilityEvidence("S01-0310:ability:active:0a0575206e996652", "source-invalidated", "destination-invalidated", "reconnect-before-command")]
     [L12AbilityEvidence("S01-0409:ability:active:56a01edf47ee1225", "source-invalidated", "destination-invalidated", "reconnect-before-command")]
     [L12AbilityEvidence("S02-0505:ability:active:bac4cb5d348f29f1", "source-invalidated", "destination-invalidated", "reconnect-before-command")]
     [L12AbilityEvidence("ST01-01:ability:active:69626894e55e27e5", "source-invalidated", "destination-invalidated", "reconnect-before-command")]
+    [L12AbilityEvidence("ST04-01:ability:active:2786430f57a9abaa", "source-invalidated", "destination-invalidated", "reconnect-before-command")]
     [L12AbilityEvidence("ST06-04:ability:active:719cc1c7c1084fa0", "source-invalidated", "destination-invalidated", "reconnect-before-command")]
     public void NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery(string cardId)
     {
@@ -101,15 +117,23 @@ public sealed partial class CavalryMoveRuleActionTests
     }
 
     [Theory]
+    [InlineData("S01-0002")]
+    [InlineData("S01-0106")]
     [InlineData("S01-0310")]
     [InlineData("S01-0409")]
     [InlineData("S02-0505")]
     [InlineData("ST01-01")]
+    [InlineData("ST04-01")]
     [InlineData("ST06-04")]
+    [L12AbilityEvidence("S01-0002:ability:active:2786430f57a9abaa", "timing", "button-rejection-consistency")]
+
+    [L12AbilityEvidence("S01-0106:ability:active:2786430f57a9abaa", "timing", "button-rejection-consistency")]
+
     [L12AbilityEvidence("S01-0310:ability:active:0a0575206e996652", "timing", "button-rejection-consistency")]
     [L12AbilityEvidence("S01-0409:ability:active:56a01edf47ee1225", "timing", "button-rejection-consistency")]
     [L12AbilityEvidence("S02-0505:ability:active:bac4cb5d348f29f1", "timing", "button-rejection-consistency")]
     [L12AbilityEvidence("ST01-01:ability:active:69626894e55e27e5", "timing", "button-rejection-consistency")]
+    [L12AbilityEvidence("ST04-01:ability:active:2786430f57a9abaa", "timing", "button-rejection-consistency")]
     [L12AbilityEvidence("ST06-04:ability:active:719cc1c7c1084fa0", "timing", "button-rejection-consistency")]
     public void NativeMovementTimingRejectionMatchesTheDisabledButton(string cardId)
     {
@@ -131,15 +155,23 @@ public sealed partial class CavalryMoveRuleActionTests
     }
 
     [Theory]
+    [InlineData("S01-0002")]
+    [InlineData("S01-0106")]
     [InlineData("S01-0310")]
     [InlineData("S01-0409")]
     [InlineData("S02-0505")]
     [InlineData("ST01-01")]
+    [InlineData("ST04-01")]
     [InlineData("ST06-04")]
+    [L12AbilityEvidence("S01-0002:ability:active:2786430f57a9abaa", "single-candidate-choice", "no-target", "missing-choice", "no-payment-before-choice")]
+
+    [L12AbilityEvidence("S01-0106:ability:active:2786430f57a9abaa", "single-candidate-choice", "no-target", "missing-choice", "no-payment-before-choice")]
+
     [L12AbilityEvidence("S01-0310:ability:active:0a0575206e996652", "single-candidate-choice", "no-target", "missing-choice", "no-payment-before-choice")]
     [L12AbilityEvidence("S01-0409:ability:active:56a01edf47ee1225", "single-candidate-choice", "no-target", "missing-choice", "no-payment-before-choice")]
     [L12AbilityEvidence("S02-0505:ability:active:bac4cb5d348f29f1", "single-candidate-choice", "no-target", "missing-choice", "no-payment-before-choice")]
     [L12AbilityEvidence("ST01-01:ability:active:69626894e55e27e5", "single-candidate-choice", "no-target", "missing-choice", "no-payment-before-choice")]
+    [L12AbilityEvidence("ST04-01:ability:active:2786430f57a9abaa", "single-candidate-choice", "no-target", "missing-choice", "no-payment-before-choice")]
     [L12AbilityEvidence("ST06-04:ability:active:719cc1c7c1084fa0", "single-candidate-choice", "no-target", "missing-choice", "no-payment-before-choice")]
     public void NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal(string cardId)
     {

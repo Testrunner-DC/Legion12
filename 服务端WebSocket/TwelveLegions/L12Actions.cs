@@ -98,7 +98,7 @@ public sealed partial class L12GameEngine
         var targetBattlefield = State.Players[targetPlayerIndex];
         if (L12StructuredCardRules.HandPlayBlockReason(player, card) is { } playBlockReason)
             return CommandResult.Reject(playBlockReason);
-        if (State.ActiveDisaster?.CardId == "S02-DS01" && card.CardType == "legion"
+        if (L12ActiveDisasterRules.HandLegionBlockedMatchingLibraryTop(State.ActiveDisaster?.CardId) && card.CardType == "legion"
             && player.Library.FirstOrDefault() is { } visibleTop
             && !string.IsNullOrWhiteSpace(card.Profession)
             && card.Profession == visibleTop.Profession)
@@ -138,7 +138,7 @@ public sealed partial class L12GameEngine
             return BeginS2PromotionEntry(playerIndex, card, command);
         if (card.CardType == "legion" && (command.Row is null or < 0 or > 1 || command.Slot is null or < 0 or > 2))
             return CommandResult.Reject("请选择合法阵地");
-        if (card.CardType == "legion" && State.ActiveDisaster?.CardId == "S01-DS03" && command.Row == 1)
+        if (card.CardType == "legion" && L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && command.Row == 1)
             return CommandResult.Reject("《腐秽大地》持续期间后排无法放置军团");
         if (card.CardType == "legion" && targetBattlefield.Field[command.Row!.Value][command.Slot!.Value] is { } occupant)
         {
@@ -310,7 +310,7 @@ public sealed partial class L12GameEngine
                 return CommandResult.Reject("请选择合法阵地");
             var row = command.Row.GetValueOrDefault();
             var slot = command.Slot.GetValueOrDefault();
-            if (State.ActiveDisaster?.CardId == "S01-DS03" && row == 1)
+            if (L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && row == 1)
                 return CommandResult.Reject("〈腐秽大地〉持续期间后排无法放置军团");
             var occupyingCard = targetBattlefield.Field[row][slot];
             var displacesOwnCounter = targetPlayerIndex == playerIndex && row == 1 && occupyingCard is not null && IsCounterTactic(occupyingCard.CardId);
@@ -576,7 +576,7 @@ public sealed partial class L12GameEngine
     {
         ResolveEntryContinuousEffects(playerIndex, card);
         if (!DisastersEnabled || card.CardType != "legion" || card.DisasterLevel <= 0) return;
-        if (State.ActiveDisaster?.CardId == "S01-DS10")
+        if (L12ActiveDisasterRules.DisasterValueLocked(State.ActiveDisaster?.CardId))
         {
             SetDisasterValue(0);
             return;
@@ -638,7 +638,7 @@ public sealed partial class L12GameEngine
             modifier -= player.NextS2OlympusLegionDiscount;
         if (card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "otherworld"))
             modifier -= player.NextOtherworldLegionEntryDiscount;
-        if (card.CardType == "legion" && State.ActiveDisaster?.CardId == "S02-DS06")
+        if (card.CardType == "legion" && L12ActiveDisasterRules.HandLegionEntryCostsExtra(State.ActiveDisaster?.CardId))
             modifier++;
         if (card.CardId == "S02-0622") modifier -= Math.Max(0, spentRunes) * 2;
         if (card.CardId == "S02-0302") modifier -= Math.Clamp(rolloReturnCount, 0, 8) / 2;
@@ -672,7 +672,7 @@ public sealed partial class L12GameEngine
         var player = State.Players[playerIndex];
         var slot = command.Slot.Value;
         if (player.Field[1][slot] is { CardType: not "tactic" }) return CommandResult.Reject("该后排阵地已有军团");
-        var freeFromDisaster = State.ActiveDisaster?.CardId == "S01-DS03";
+        var freeFromDisaster = L12ActiveDisasterRules.CounterTacticsAreFree(State.ActiveDisaster?.CardId);
         var freeFromEffect = !freeFromDisaster && player.FreeTacticCount > 0;
         var cost = CounterTacticPlacementCost(player);
         if (ActiveResourceCount(player) < cost) return CommandResult.Reject("覆盖反击战术需要消耗 2 张活跃士气");
@@ -750,7 +750,7 @@ public sealed partial class L12GameEngine
             AddEvent("cost", playerIndex, "色欲之罪使进攻方弃置1张手牌", attacker, discarded);
         }
 
-        if (State.ActiveDisaster?.CardId == "S01-DS04" && attacker.Troops > 2000)
+        if (L12ActiveDisasterRules.HighTroopsAttackRollsDice(State.ActiveDisaster?.CardId) && attacker.Troops > 2000)
         {
             var thunderRoll = _random.Next(1, 7);
             AddEvent("dice", playerIndex, $"〈雷霆天怒〉：{attacker.Name}进攻时掷骰结果为 {thunderRoll}", attacker);
@@ -812,7 +812,7 @@ public sealed partial class L12GameEngine
             damage += attacker.GawainMasterDamageBonus;
         if (attacker.MasterAttackDamageBonusUntilTurn == State.TurnSerial)
             damage += attacker.MasterAttackDamageBonus;
-        if (State.ActiveDisaster?.CardId == "S01-DS02" && attacker.DisasterLevel > 0) damage++;
+        if (L12ActiveDisasterRules.DisasterLegionMasterDamageBonus(State.ActiveDisaster?.CardId) && attacker.DisasterLevel > 0) damage++;
         var kagutsuchiCandidate = BuildStarterKagutsuchiCandidate(playerIndex, attacker);
         var hasPrintedAttackerAttackTiming = HasImmediateEffect(attacker, "attack");
         var hasAttackerAttackTiming = hasPrintedAttackerAttackTiming || kagutsuchiCandidate is not null;
@@ -888,7 +888,7 @@ public sealed partial class L12GameEngine
         var card = FindOnField(defender, target.InstanceId, out var targetRow, out _);
         if (card is null || card.Hidden || !IsFieldLegion(card)) error = "目标不是可进攻军团";
         else if (L12StructuredCardRules.CannotBeAttacked(card, targetRow)) error = $"活跃的〈{card.Name}〉无法被进攻";
-        else if (State.ActiveDisaster?.CardId == "S02-DS02" && targetRow == 0 && !card.Tapped)
+        else if (L12ActiveDisasterRules.ActiveFrontRowUnattackable(State.ActiveDisaster?.CardId) && targetRow == 0 && !card.Tapped)
             error = "〈迷雾绝境〉生效时不可进攻处于活跃状态的前排军团";
         else if (IsProtectedByRestedAmakine(defender, card)) error = "休整的阿麦金使活跃的试炼军团不可被进攻";
         else if (row == 1 && targetRow != 0 && !CanAttackBackFromBackRow(attacker))
@@ -898,13 +898,16 @@ public sealed partial class L12GameEngine
         else
         {
             isRanged = row == 1 || targetRow == 1;
-            if (isRanged && State.ActiveDisaster?.CardId == "S02-DS04")
-                error = "〈风暴乱象〉生效时军团无法发动远程进攻";
+            // 〈风暴乱象〉的正确持续效果只限制远程军团：非远程身份的军团经临时/前排限定射程
+            // 发起的远程进攻不受阻断（2026-09-22 用户裁定，印刷卡文带远程图标）。
+            if (isRanged && L12ActiveDisasterRules.RangedLegionsCannotRangedAttack(State.ActiveDisaster?.CardId)
+                && L12StructuredCardRules.IsRangedLegion(attacker, row))
+                error = "〈风暴乱象〉生效时远程军团无法发动远程进攻";
             else if (isRanged && L12StructuredCardRules.CombatProfile(card, targetRow).CannotBeRanged)
                 error = "目标无法被远程进攻";
             else
             {
-                var taunts = State.ActiveDisaster?.CardId == "S02-DS02"
+                var taunts = L12ActiveDisasterRules.TauntSuppressed(State.ActiveDisaster?.CardId)
                     || defender.UsedAbilities.Contains($"starter-taunt-disabled:{State.TurnSerial}") ? []
                     : defender.Field[0].Where(candidate => candidate is not null
                         && HasS1Taunt(candidate, 0) && !candidate.Hidden).ToArray();
@@ -933,11 +936,12 @@ public sealed partial class L12GameEngine
         {
             var target = defender.Field[targetRow][slot];
             if (target is null || target.Hidden || !IsFieldLegion(target)) continue;
-            if (State.ActiveDisaster?.CardId == "S02-DS02" && targetRow == 0 && !target.Tapped) continue;
+            if (L12ActiveDisasterRules.ActiveFrontRowUnattackable(State.ActiveDisaster?.CardId) && targetRow == 0 && !target.Tapped) continue;
             if (row == 1 && targetRow != 0 && !CanAttackBackFromBackRow(attacker)) continue;
             if (row == 0 && targetRow == 1 && !HasRangeInPosition(attacker, row)) continue;
             var ranged = row == 1 || targetRow == 1;
-            if (ranged && State.ActiveDisaster?.CardId == "S02-DS04") continue;
+            if (ranged && L12ActiveDisasterRules.RangedLegionsCannotRangedAttack(State.ActiveDisaster?.CardId)
+                && L12StructuredCardRules.IsRangedLegion(attacker, row)) continue;
             if (ranged && L12StructuredCardRules.CombatProfile(target, targetRow).CannotBeRanged) continue;
             return true;
         }
@@ -959,13 +963,17 @@ public sealed partial class L12GameEngine
             error = "奈芙蒂斯使我方陵墓守卫无法进攻主宰";
         else if (HasFrontRowLowTroopMasterProtection(defender, attacker.Troops))
             error = "对方前排军团使主宰无法被兵力不高于2000的军团进攻";
-        else if (State.ActiveDisaster?.CardId == "S02-DS02" && attacker.Troops <= 2000)
+        else if (L12ActiveDisasterRules.MasterUnattackableByTroopsAtMost2000(State.ActiveDisaster?.CardId) && attacker.Troops <= 2000)
             error = "〈迷雾绝境〉生效时兵力不高于2000的军团无法进攻主宰";
         // 〈暴怒之罪〉只约束玩家声明的普通进攻目标。贯穿已经由“击杀所进攻军团”
         // 这一事实生成对主宰的专属进攻，不能再次被普通目标优先规则改写或阻断。
-        else if (!isPiercingAttack && State.ActiveDisaster?.CardId == "S02-DS05"
+        else if (!isPiercingAttack && L12ActiveDisasterRules.MustAttackLegionBeforeMaster(State.ActiveDisaster?.CardId)
                  && HasMandatoryDisasterLegionTarget(attacker, row, defender))
             error = "〈暴怒之罪〉生效时必须优先进攻范围内的对方军团";
+        // 〈风暴乱象〉同样阻断远程军团经效果许可（扩展射程/天灾许可）从后排对主宰的远程进攻。
+        else if (row != 0 && L12ActiveDisasterRules.RangedLegionsCannotRangedAttack(State.ActiveDisaster?.CardId)
+                 && L12StructuredCardRules.IsRangedLegion(attacker, row))
+            error = "〈风暴乱象〉生效时远程军团无法发动远程进攻";
         else
         {
             var disasterAllowsBackMaster = State.Players[playerIndex].UsedAbilities.Contains("ds01-back-master")
@@ -976,7 +984,7 @@ public sealed partial class L12GameEngine
                 error = "后排远程军团不能进攻主宰";
             else
             {
-                var taunts = State.ActiveDisaster?.CardId == "S02-DS02"
+                var taunts = L12ActiveDisasterRules.TauntSuppressed(State.ActiveDisaster?.CardId)
                     || defender.UsedAbilities.Contains($"starter-taunt-disabled:{State.TurnSerial}") ? []
                     : defender.Field[0].Where(card => card is not null && HasS1Taunt(card, 0) && !card.Hidden).ToArray();
                 if (taunts.Length > 0) error = "对方前排存在带有挑衅的军团";
@@ -1354,7 +1362,7 @@ public sealed partial class L12GameEngine
         if (card is null || !IsFieldLegion(card) || card.Tapped || card.Hidden) return CommandResult.Reject("只能移动活跃且未覆盖的军团");
         var targetRow = command.Row.GetValueOrDefault();
         var targetSlot = command.Slot.GetValueOrDefault();
-        if (State.ActiveDisaster?.CardId == "S01-DS03" && targetRow == 1)
+        if (L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && targetRow == 1)
             return CommandResult.Reject("〈腐秽大地〉持续期间无法位移至后排");
         if (Math.Abs(sourceRow - targetRow) + Math.Abs(sourceSlot - targetSlot) != 1)
             return CommandResult.Reject("规则位移每次只能移动至相邻空格");
@@ -1399,7 +1407,7 @@ public sealed partial class L12GameEngine
         var targetRow = command.Row.Value;
         var targetSlot = command.Slot.Value;
         if (!IsLegalCavalryMoveDestination(player, targetRow, targetSlot))
-            return CommandResult.Reject(State.ActiveDisaster?.CardId == "S01-DS03" && targetRow == 1
+            return CommandResult.Reject(L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && targetRow == 1
                 ? "〈腐秽大地〉持续期间无法位移至后排"
                 : "目标阵地已占用");
         player.Field[sourceRow][sourceSlot] = null;

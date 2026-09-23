@@ -418,7 +418,7 @@ public sealed partial class L12GameEngine
     private CommandResult GmTriggerDisaster()
     {
         if (!DisastersEnabled) return CommandResult.Reject("当前沙盒未启用天灾");
-        if (State.ActiveDisaster?.CardId == "S01-DS10") return CommandResult.Reject("最终天灾〈堙灭〉已触发");
+        if (L12ActiveDisasterRules.DisasterValueLocked(State.ActiveDisaster?.CardId)) return CommandResult.Reject("最终天灾〈堙灭〉已触发");
         if (State.DisasterDeck.Count == 0) return CommandResult.Reject("天灾牌库为空");
         SetDisasterValue(9, null, "[GM] 将天灾值设为触发阈值 9");
         BeginDisasterTrigger(DisasterTriggerSourceGm);

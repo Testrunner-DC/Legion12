@@ -746,7 +746,7 @@ public sealed partial class L12GameEngine
                 {
                     if (FindOnField(opponent, card.InstanceId, out var row, out var slot) is null) return false;
                     return opponent.Field[1 - row][slot] is null
-                        && !(State.ActiveDisaster?.CardId == "S01-DS03" && 1 - row == 1);
+                        && !(L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && 1 - row == 1);
                 }).Select(card => card.InstanceId);
                 steps.Add(CompositeStep("enemy-legion", "moveTargets", "伪造密令：预先选择最多2张要位移的对方军团",
                     movable, 1, 2));
@@ -1264,7 +1264,7 @@ public sealed partial class L12GameEngine
             var declaredSlot = declared.GetValueOrDefault($"moveSlot{index + 1}", []).SingleOrDefault();
             if (target is null || target.Hidden || !IsFieldLegion(target) || declaredSlot != $"{1 - row}:{slot}"
                 || opponent.Field[1 - row][slot] is not null
-                || State.ActiveDisaster?.CardId == "S01-DS03" && 1 - row == 1) return false;
+                || L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && 1 - row == 1) return false;
         }
         return true;
     }

@@ -14,7 +14,7 @@ public sealed partial class L12GameEngine
         for (var row = 0; row < 2; row++)
         for (var slot = 0; slot < 3; slot++)
         {
-            if (State.ActiveDisaster?.CardId == "S01-DS03" && row == 1) continue;
+            if (L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && row == 1) continue;
             var occupant = player.Field[row][slot];
             if (occupant is null || row == 1 && IsCounterTactic(occupant.CardId))
                 yield return $"{row}:{slot}";

@@ -798,6 +798,8 @@ public sealed partial class L12GameEngine
     private void RecordLegionMovement(int playerIndex, L12CardInstance moved, int fromRow, int toRow)
     {
         moved.LastMovedTurn = State.TurnSerial;
+        // 裁定（2026-09-23）：天灾导致的位移不触发任何效果；只保留位移事实簿记。
+        if (IsDisasterAuthorityActive()) return;
         var player = State.Players[playerIndex];
         if (fromRow == 1 && toRow == 0)
         {
@@ -871,6 +873,9 @@ public sealed partial class L12GameEngine
         var returnedSnapshot = CaptureLastKnownSourceSnapshot(card);
         ResetCardAfterLeavingField(card);
         AddEvent("return", owner.PlayerIndex, $"孙悟空在{timing}返回主宰区", card);
+        // 上位规则：主宰变为军团后任何情况下离场都返回主宰区（不因天灾改变）；
+        // 天灾只抑制其离场时效果（追加士气）的触发排队。
+        if (IsDisasterAuthorityActive()) return;
         if (owner.Morale.Count >= State.Players[1 - owner.PlayerIndex].Morale.Count
             || owner.MoraleDeck.Count == 0) return;
         QueueTriggerCandidates([

@@ -291,7 +291,7 @@ public sealed partial class L12GameEngine
                     if (target is null || destination?.Split(':') is not [var rowText, var slotText]
                         || !int.TryParse(rowText, out var nextRow) || !int.TryParse(slotText, out var nextSlot)
                         || nextRow != 1 - row || nextSlot != slot || enemy.Field[nextRow][nextSlot] is not null
-                        || State.ActiveDisaster?.CardId == "S01-DS03" && nextRow == 1) continue;
+                        || L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && nextRow == 1) continue;
                     enemy.Field[row][slot] = null;
                     enemy.Field[nextRow][nextSlot] = target;
                     RecordLegionMovement(1 - item.Controller, target, row, nextRow);

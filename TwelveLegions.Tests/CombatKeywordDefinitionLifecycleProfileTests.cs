@@ -23,6 +23,10 @@ public sealed class CombatKeywordDefinitionLifecycleProfileTests
     [L12AbilityEvidence("S02-0611:ability:keyword-definition:672734be0285300f", "parent-grant-boundary", "authoritative-consumer")]
     [L12AbilityEvidence("S02-0608:ability:keyword-definition:4d1e472a814a1e0b", "parent-grant-boundary", "authoritative-consumer")]
     [L12AbilityEvidence("S02-0611:ability:keyword-definition:4d1e472a814a1e0b", "parent-grant-boundary", "authoritative-consumer")]
+    [L12AbilityEvidence("ST01-04:ability:keyword-definition:c24a6b9d8de8435a", "parent-grant-boundary", "authoritative-consumer")]
+    [L12AbilityEvidence("ST02-02:ability:keyword-definition:c24a6b9d8de8435a", "parent-grant-boundary", "authoritative-consumer")]
+    [L12AbilityEvidence("ST04-01:ability:keyword-definition:c24a6b9d8de8435a", "parent-grant-boundary", "authoritative-consumer")]
+    [L12AbilityEvidence("ST06-02:ability:keyword-definition:c24a6b9d8de8435a", "parent-grant-boundary", "authoritative-consumer")]
     public void EveryKeywordDefinitionHasOneStructuredSemanticOwner()
     {
         var expected = EffectLifecycleProfiles.CombatKeywordDefinitionAbilityIds
@@ -38,6 +42,36 @@ public sealed class CombatKeywordDefinitionLifecycleProfileTests
         {
             var cardId = entry.Id[..entry.Id.IndexOf(":ability:", StringComparison.Ordinal)];
             Assert.True(L12StructuredCardRules.HasKeywordDefinition(cardId, entry.Keyword));
+        });
+    }
+
+    [Fact]
+    [L12AbilityEvidence("S02-0004:ability:granted:be3174252606645e", "parent-grant-boundary", "authoritative-consumer")]
+    [L12AbilityEvidence("S02-0007:ability:granted:be3174252606645e", "parent-grant-boundary", "authoritative-consumer")]
+    [L12AbilityEvidence("S02-03M1:ability:granted:f4dd24f1fb07f3d5", "parent-grant-boundary", "authoritative-consumer")]
+    [L12AbilityEvidence("S02-0403:ability:granted:f4dd24f1fb07f3d5", "parent-grant-boundary", "authoritative-consumer")]
+    [L12AbilityEvidence("S02-0405:ability:granted:f4dd24f1fb07f3d5", "parent-grant-boundary", "authoritative-consumer")]
+    [L12AbilityEvidence("ST01-01:ability:granted:c502e9ac1489cd1a", "parent-grant-boundary", "authoritative-consumer")]
+    [L12AbilityEvidence("S02-0206:ability:granted:1aba3f5bd15a426d", "parent-grant-boundary", "authoritative-consumer")]
+    [L12AbilityEvidence("S02-0404:ability:granted:e3ff02735b6b18f4", "parent-grant-boundary", "authoritative-consumer")]
+    [L12AbilityEvidence("ST01-01:ability:granted:6ec4b634ed12b206", "parent-grant-boundary", "authoritative-consumer")]
+    public void EveryGrantedKeywordDefinitionHasOneStructuredSemanticOwner()
+    {
+        var expected = EffectLifecycleProfiles.GrantedKeywordDefinitionAbilityIds
+            .SelectMany(pair => pair.Value.Select(id => (Id: id, Keyword: pair.Key)))
+            .OrderBy(entry => entry.Id).ToArray();
+        var actual = Catalog.AtomicEffects.All.SelectMany(card => card.Abilities)
+            .Where(ability => ability.Trigger == "granted"
+                && ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.Keyword))
+            .Select(ability => (Id: ability.AbilityId, Keyword: Assert.Single(ability.Atoms,
+                atom => atom.Kind == L12AtomKinds.Keyword).Parameters["keywordRef"]))
+            .OrderBy(entry => entry.Id).ToArray();
+        Assert.Equal(expected, actual);
+        Assert.All(actual, entry =>
+        {
+            var cardId = entry.Id[..entry.Id.IndexOf(":ability:", StringComparison.Ordinal)];
+            Assert.True(L12StructuredCardRules.HasPrintedKeywordReference(cardId, entry.Keyword));
+            Assert.False(L12StructuredCardRules.HasKeywordDefinition(cardId, entry.Keyword));
         });
     }
 

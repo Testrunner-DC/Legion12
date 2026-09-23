@@ -68,6 +68,14 @@ public static class L12StructuredCardSemantics
         {
             TombGuardCardId, ProliferatingScarabCardId,
         };
+
+    // 特殊响应能力身份注册：绝对防御型（响应对方进攻/效果，抵挡或无效，弃置1手牌）、
+    // 落穴型（无效对方军团登场效果）、佣兵部队型（对方进攻我方军团时从手牌弃置自身抵挡）。
+    // 候选枚举、公开卡池判定、提交与费用分支全部改读此注册表；新增同型响应卡只在此登记，
+    // 禁止在引擎中新增卡号分支。
+    public static bool IsAbsoluteDefenseResponse(string cardId) => cardId == "S01-0016";
+    public static bool IsPitfallEntryNegationResponse(string cardId) => cardId == "S01-0018";
+    public static bool IsMercenaryHandBlockResponse(string cardId) => cardId == "S01-0002";
     private static readonly Dictionary<string, L12OpponentTurnFieldRule> OpponentTurnFieldRules =
         new(StringComparer.OrdinalIgnoreCase)
         {
