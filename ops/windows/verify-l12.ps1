@@ -44,6 +44,30 @@ function Assert-CleanCommit {
     }
 }
 
+function Remove-DuplicateTestrunFiles {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProductionRoot,
+        [Parameter(Mandatory = $true)][string]$TestrunRoot,
+        [Parameter(Mandatory = $true)][string]$ManifestPath
+    )
+
+    $sharedPaths = [Collections.Generic.List[string]]::new()
+    foreach ($testrunFile in Get-ChildItem -LiteralPath $TestrunRoot -Recurse -File) {
+        $relativePath = [IO.Path]::GetRelativePath($TestrunRoot, $testrunFile.FullName).Replace('\', '/')
+        $productionFile = Join-Path $ProductionRoot $relativePath
+        if (-not (Test-Path -LiteralPath $productionFile -PathType Leaf)) { continue }
+        if ((Get-Item -LiteralPath $productionFile).Length -ne $testrunFile.Length) { continue }
+        $productionHash = (Get-FileHash -LiteralPath $productionFile -Algorithm SHA256).Hash
+        $testrunHash = (Get-FileHash -LiteralPath $testrunFile.FullName -Algorithm SHA256).Hash
+        if ($productionHash -ne $testrunHash) { continue }
+        Remove-Item -LiteralPath $testrunFile.FullName -Force
+        $sharedPaths.Add($relativePath)
+    }
+    $sharedPaths.Sort([StringComparer]::Ordinal)
+    [IO.File]::WriteAllLines($ManifestPath, $sharedPaths, [Text.UTF8Encoding]::new($false))
+    Write-Host "[L12 验证] 测试前端复用正式前端静态文件：$($sharedPaths.Count) 个"
+}
+
 function Test-CachedArtifact {
     param([Parameter(Mandatory = $true)][string]$ManifestPath)
     if (-not (Test-Path -LiteralPath $ManifestPath)) { return $false }
@@ -225,6 +249,10 @@ try {
     if (Test-Path -LiteralPath (Join-Path $testrunWebRoot "card-assets")) {
         throw "测试服运行包错误包含优化卡图目录"
     }
+    Remove-DuplicateTestrunFiles `
+        -ProductionRoot $webRoot `
+        -TestrunRoot $testrunWebRoot `
+        -ManifestPath (Join-Path $releaseRoot "opcgpro-vue\testrun-shared-files.txt")
     Copy-Item ".\scripts\ws-smoke.mjs" (Join-Path $scriptsRoot "ws-smoke.mjs") -Force
     [IO.File]::WriteAllText((Join-Path $releaseRoot ".deployment-commit"), $commit, [Text.UTF8Encoding]::new($false))
 

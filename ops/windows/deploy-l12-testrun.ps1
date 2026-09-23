@@ -146,7 +146,7 @@ function Read-ValidatedArtifact {
     if ((Get-FileHash -LiteralPath $releaseArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $releaseHash) { throw "Release archive SHA256 differs." }
     if ((Get-FileHash -LiteralPath $assetArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $assetArchiveHash) { throw "Card asset archive SHA256 differs." }
     $releaseMembers = @(Get-NormalizedTarMembers -Archive $releaseArchive -Kind release)
-    foreach ($required in @(".deployment-commit", "publish/GrandUMIServer.dll", "opcgpro-vue/dist/index.html", "opcgpro-vue/dist-testrun/index.html", "scripts/ws-smoke.mjs")) {
+    foreach ($required in @(".deployment-commit", "publish/GrandUMIServer.dll", "opcgpro-vue/dist/index.html", "opcgpro-vue/dist-testrun/index.html", "opcgpro-vue/testrun-shared-files.txt", "scripts/ws-smoke.mjs")) {
         if ($releaseMembers -notcontains $required) { throw "Release archive is incomplete: $required" }
     }
     foreach ($forbidden in @("publish/runtime", "opcgpro-vue/dist/card-assets", "opcgpro-vue/dist/cards")) {

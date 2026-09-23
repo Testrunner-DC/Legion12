@@ -89,7 +89,7 @@ allowed_roots = {
     "card-assets": ("card-assets.manifest.json", "card-assets.preload.json", "cards"),
 }[kind]
 required = {
-    "release": {".deployment-commit", "publish/GrandUMIServer.dll", "opcgpro-vue/dist/index.html", "opcgpro-vue/dist-testrun/index.html", "scripts/ws-smoke.mjs"},
+    "release": {".deployment-commit", "publish/GrandUMIServer.dll", "opcgpro-vue/dist/index.html", "opcgpro-vue/dist-testrun/index.html", "opcgpro-vue/testrun-shared-files.txt", "scripts/ws-smoke.mjs"},
     "card-assets": {"card-assets.manifest.json", "card-assets.preload.json", "cards"},
 }[kind]
 seen = set()
@@ -275,10 +275,22 @@ tar --no-same-owner --no-same-permissions -xzf "$release_archive" -C "$stage_dir
 [[ -f "${stage_dir}/publish/GrandUMIServer.dll" ]] || fail "backend entry is missing"
 [[ -f "${stage_dir}/opcgpro-vue/dist/index.html" ]] || fail "frontend entry is missing"
 [[ -f "${stage_dir}/opcgpro-vue/dist-testrun/index.html" ]] || fail "testrun frontend entry is missing"
+[[ -f "${stage_dir}/opcgpro-vue/testrun-shared-files.txt" && ! -L "${stage_dir}/opcgpro-vue/testrun-shared-files.txt" ]] || fail "testrun shared-file manifest is missing or unsafe"
 [[ -f "${stage_dir}/scripts/ws-smoke.mjs" ]] || fail "WebSocket probe is missing"
 [[ ! -e "${stage_dir}/publish/runtime" && ! -L "${stage_dir}/publish/runtime" ]] || fail "release archive contains runtime data"
 [[ ! -e "${stage_dir}/opcgpro-vue/dist/card-assets" && ! -L "${stage_dir}/opcgpro-vue/dist/card-assets" ]] || fail "release archive contains card asset data"
 [[ ! -e "${stage_dir}/opcgpro-vue/dist/cards" && ! -L "${stage_dir}/opcgpro-vue/dist/cards" ]] || fail "release archive contains retired card data"
+
+while IFS= read -r shared_path || [[ -n "$shared_path" ]]; do
+  [[ -n "$shared_path" && "$shared_path" != /* && "/${shared_path}/" != *"/../"* && "/${shared_path}/" != *"/./"* ]] \
+    || fail "testrun shared-file manifest contains an unsafe path"
+  shared_source="${stage_dir}/opcgpro-vue/dist/${shared_path}"
+  shared_target="${stage_dir}/opcgpro-vue/dist-testrun/${shared_path}"
+  [[ -f "$shared_source" && ! -L "$shared_source" ]] || fail "testrun shared source is missing or unsafe: ${shared_path}"
+  [[ ! -e "$shared_target" && ! -L "$shared_target" ]] || fail "testrun shared target already exists: ${shared_path}"
+  mkdir -p "$(dirname "$shared_target")"
+  ln "$shared_source" "$shared_target"
+done < "${stage_dir}/opcgpro-vue/testrun-shared-files.txt"
 
 mkdir -p "$static_card_assets_dir"
 card_assets_target="${static_card_assets_dir}/${card_assets_hash}"

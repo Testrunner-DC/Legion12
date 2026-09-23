@@ -125,7 +125,10 @@ try {
     Write-Utf8NoBom (Join-Path $releaseRoot ".deployment-commit") $commitB
     Write-Utf8NoBom (Join-Path $releaseRoot "publish\GrandUMIServer.dll") "binary"
     Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist\index.html") "html"
+    New-Item -ItemType Directory -Path (Join-Path $releaseRoot "opcgpro-vue\dist\assets") -Force | Out-Null
+    Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist\assets\shared.txt") "shared static asset"
     Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist-testrun\index.html") "testrun html"
+    Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\testrun-shared-files.txt") "assets/shared.txt`n"
     Write-Utf8NoBom (Join-Path $releaseRoot "scripts\ws-smoke.mjs") "// probe"
     Write-Utf8NoBom (Join-Path $assetRoot "card-assets.manifest.json") "{}"
     Write-Utf8NoBom (Join-Path $assetRoot "card-assets.preload.json") "{}"
@@ -203,7 +206,7 @@ exit 0
     New-FakeCommand $fakeBin "runuser" 'exit 0'
     New-FakeCommand $fakeBin "chmod" 'exit 0'
     New-FakeCommand $fakeBin "chown" 'exit 0'
-    New-FakeCommand $fakeBin "ln" 'target="$2"; link="$3"; printf "%s\n" "$target" > "$link"'
+    New-FakeCommand $fakeBin "ln" 'if [ "${1:-}" = "-s" ]; then target="$2"; link="$3"; printf "%s\n" "$target" > "$link"; else cp "$1" "$2"; fi'
     New-FakeCommand $fakeBin "readlink" @'
 for last; do :; done
 if [ -f "$last" ]; then tr -d '\r\n' < "$last"; else exit 1; fi
