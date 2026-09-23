@@ -300,15 +300,15 @@ const contracts = [
     && playerTurnClock.includes('.player-turn-clock{box-sizing:border-box;display:grid;width:138px;')
     && playerTurnClock.includes("'untimed-clock': !clock") && playerTurnClock.includes('.player-turn-clock.untimed-clock{width:130px;min-height:0;padding:5px}')
     && !playerTurnClock.includes('无时限') && !playerTurnClock.includes('v-if="active"'), '双方回合玩家框必须常驻；排位显示总操作、本次操作或重连倒计时，无计时房间只保留回合玩家/等待回合并收缩'],
-  [board.includes('data-ui-contract="complete-player-summary"') && board.includes('class="player-summary-primary"') && board.includes('class="player-summary-meta"') && board.includes(":variant=\"enemyBadge?.rankIsTitle ? 'faction-title' : 'tier'\"") && board.includes('class="title-badge" variant="master-title"')
-    && board.includes('v-if="identityLabel(enemyBadge?.rankLabel)"') && board.includes('v-if="identityLabel(enemyBadge?.masterTitle)"')
-    && board.includes('v-if="identityLabel(myBadge?.rankLabel)"') && board.includes('v-if="identityLabel(myBadge?.masterTitle)"')
+  [board.includes('data-ui-contract="complete-player-summary"') && board.includes('class="player-summary-primary"') && board.includes('class="player-summary-meta"') && board.includes('class="rank-number">第 {{ enemyBadge.rank }} 名') && board.includes('class="title-badge" variant="master-title"')
+    && board.includes('v-if="identityLabel(enemyBadge?.tier)"') && board.includes('v-if="identityLabel(enemyBadge?.placementTitle)"') && board.includes('v-if="identityLabel(enemyBadge?.masterTitle)"')
+    && board.includes('v-if="identityLabel(myBadge?.tier)"') && board.includes('v-if="identityLabel(myBadge?.placementTitle)"') && board.includes('v-if="identityLabel(myBadge?.masterTitle)"')
     && board.includes("absentIdentityLabels = new Set(['未定级', '暂无段位', '无段位', '未评级', '暂无称号', '无称号', '未获得称号', '暂无'])")
     && !board.includes("|| '未定级'") && !board.includes("|| '暂无称号'")
     && board.includes('connectionLabel(viewEnemy.playerIndex)') && board.includes('connectionLabel(viewMe.playerIndex)')
     && !board.includes('<dt>主宰</dt>') && !board.includes('<dt>血量</dt>')
     && board.includes('.player-panel{box-sizing:border-box;height:auto!important;min-height:144px') && board.includes('.player-summary-meta{display:flex;')
-    && board.includes('.player-summary-meta>.rank-badge,.player-summary-meta>.title-badge{min-width:max-content;max-width:none;flex:none}')
+    && board.includes('.player-summary-meta>:is(.rank-badge,.placement-title-badge,.title-badge){min-width:max-content;max-width:none;flex:none}')
     && board.includes('.player-summary-meta>.connection-state{min-width:0;max-width:100%!important;') && board.includes('margin-left:auto!important;')
     && rankings.includes("import RankedIdentityBadge from '@/l12/RankedIdentityBadge.vue'") && rankings.includes('<RankedIdentityBadge v-for="title in row.titles"') && rankings.includes(':variant="titleVariant(title)"')
     && profilePage.includes("import RankedIdentityBadge from '@/l12/RankedIdentityBadge.vue'") && profilePage.includes(':variant="profileTitleVariant(title)"')
@@ -316,7 +316,7 @@ const contracts = [
     && rankedIdentityBadge.includes('faction-order') && rankedIdentityBadge.includes('faction-chaos') && rankedIdentityBadge.includes('faction-fate')
     && rankedIdentityBadge.includes("const siteBrandIcon = '/favicon.png'") && rankedIdentityBadge.includes('class="identity-brand-logo"') && rankedIdentityBadge.includes("props.variant === 'faction-title' ? '◆'")
     && rankedIdentityBadge.includes('linear-gradient(135deg, #b47716 0%, #6f3d08 48%, #3a1d02 100%)')
-    && rankedIdentityBadge.includes('color: inherit !important;') && rankedIdentityBadge.includes('max-width: none;') && rankedIdentityBadge.includes('text-overflow: clip;'), '排行榜、个人页和对战摘要必须复用同一排位身份徽章：三派系段位与派系称号使用各自主题色，最强主宰称号使用独立金色冠冕；无数据时不伪造占位'],
+    && rankedIdentityBadge.includes('color: inherit !important;') && rankedIdentityBadge.includes('max-width: none;') && rankedIdentityBadge.includes('text-overflow: clip;'), '排行榜、个人页和对战摘要必须复用同一排位身份徽章；对战摘要按全服名次、段位、派系段位称号、主宰称号分字段显示，缺失项不伪造占位'],
   [adminIntegrity.includes('data-ui-contract="ranked-integrity-review"') && adminIntegrity.includes('不自动扣减七曜') && adminIntegrity.includes('建议人工核对'), '防刷分信号必须只进入管理员人工复核，不得自动惩罚正常重复对局'],
   [shell.includes('friendApi.request(player.accountId)') && shell.includes('inviteFriend(player.accountId)') && shell.includes('spectateRoom(player.roomCode)')
     && shell.includes("player.activity === 'playing'") && shell.includes(':disabled="!player.canSpectate"')
@@ -646,7 +646,7 @@ const contracts = [
   [lobby.includes('.ranked-rules-modal{grid-template-rows:auto minmax(0,1fr) auto') && lobby.includes('.ranked-rules-scroll{min-height:0;align-content:start;overflow-x:hidden;overflow-y:scroll'), '排位规则正文必须拥有独立纵向滚动区，在小视口中也能阅读全部内容'],
   [shell.includes('<router-link class="site-brand" to="/"') && !shell.includes('<span>LEGION 12</span>') && !shell.includes('<small>十二军团</small>') && shell.includes('.site-brand img{width:44px;height:44px;border:0;border-radius:0;object-fit:contain'), '主页侧栏品牌区必须只显示无外框的白色 Logo-Mini，不得附带中英文文字'],
   [globalBugFeedback.includes('v-model="form.bugDescription"') && globalBugFeedback.includes('v-model="form.suggestion"') && globalBugFeedback.includes('if (!bugDescription && !suggestion)') && globalBugFeedback.includes('提及卡牌的时候请勿使用俗称，最好使用卡牌编号（例：S01-0001）') && globalBugFeedback.includes('描述你希望优化的Bug、操作体验或界面效果'), '全局反馈必须分为 Bug 提交与优化建议，任填一项即可提交并保留明确填写提示'],
-  [profilePage.includes('class="title-manager"') && profilePage.includes('ranked.profile.masterTitles') && profilePage.includes('saveRankedTitle') && platform.includes("'/api/ranked/title'") && board.includes('playerBadges') && board.includes('enemyBadge?.rankLabel') && board.includes('myBadge?.masterTitle'), '个人页必须可选择已获得的最强主宰称号，对战右上玩家框须显示权威段位/派系排名称号与所选主宰称号'],
+  [profilePage.includes('class="title-manager"') && profilePage.includes('ranked.profile.masterTitles') && profilePage.includes('saveRankedTitle') && platform.includes("'/api/ranked/title'") && board.includes('playerBadges') && board.includes('enemyBadge?.rank') && board.includes('enemyBadge?.tier') && board.includes('enemyBadge?.placementTitle') && board.includes('myBadge?.masterTitle'), '个人页必须可选择已获得的最强主宰称号，对战右上玩家框须依次显示权威全服名次、段位、派系段位称号与所选主宰称号'],
   [board.includes("choiceMode === 'mixed-board-payment'") && board.includes("? '确认费用' : '确认发动'") && board.includes('lockedChoices'), '混合场面费用必须在同一场面直选条选择，唯一资源自动锁定且与弃置对象一并确认'],
   [rankedTicker.includes('@animationend="complete"') && rankedTicker.includes('animation:ranked-message-once 16s linear 1 both') && rankedPlayback.includes('claimNextRankedBroadcast') && rankedPlayback.includes('completeCurrentRankedBroadcast') && rankedPlayback.includes('accountId'), '排位广播必须按账号领取，完整播放一次后确认，不得在页面内循环重播同一消息'],
   [adminOperations.includes('data-ui-contract="ranked-broadcast-config"') && adminOperations.includes('rankedConfig.broadcast.displaySeconds') && adminOperations.includes('rankedConfig.broadcast.minimumTierIndex'), '排位广播的时长、大厅延迟、间隔、门槛和类别开关必须由后台统一配置'],
@@ -1530,10 +1530,12 @@ contracts.push(
     '异画后台初始加载不得拉取全量登记表，必须通过弹框按名称、编号、绑定卡查询并分页'],
   [shell.includes('alternateArtApi.notifications()')
     && shell.includes('alternateArtApi.acknowledgeNotification')
+    && shell.includes('<h2 id="alternate-art-notification-title">获得异画！</h2>')
+    && !shell.includes('<h2 id="alternate-art-notification-title">获得异画使用权</h2>')
     && shell.includes('“{{ currentAlternateArtNotification.reason }}”收到“{{ currentAlternateArtNotification.displayName }}·{{ currentAlternateArtNotification.artCode }}”的使用权')
     && profilePage.includes('<h2>我的异画</h2>') && profilePage.includes('获得时间：')
     && !profilePage.includes('<h2>数据与工具</h2>'),
-    '异画权益必须持久提示，个人页展示名称、编号、对应原画和获得时间，并完全移除数据与工具板块'],
+    '异画到账标题必须为获得异画；权益必须持久提示，个人页展示名称、编号、对应原画和获得时间，并完全移除数据与工具板块'],
   [deckEditor.includes('alternateArtCopies') && deckEditor.includes('addAppearance(entry)')
     && deckEditor.includes('removeAppearance(entry)') && deckEditor.includes('原画与异画合计最多')
     && deckEditor.includes("entry.art?.artCode || entry.card.number"),

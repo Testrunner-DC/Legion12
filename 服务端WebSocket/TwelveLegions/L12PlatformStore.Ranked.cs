@@ -1,7 +1,12 @@
 namespace TwelveLegions.Server;
 
 public sealed record L12RankedTierConfig(string Name, int Minimum, int BaseDelta,
-    int WinStreakCap, int LossProtectionCap, int RatingGapCap, string Color, string Icon);
+    int WinStreakCap, int LossProtectionCap, int RatingGapCap, int StreakTerminationReward,
+    string Color, string Icon);
+public sealed record L12RankedTierGradientConfig(string Name, int Minimum, int BaseDelta,
+    int WinStreakCap, int LossProtectionCap, int RatingGapCap, int StreakTerminationReward);
+public sealed record L12RankedPendingGradientConfig(string AfterSeasonId,
+    IReadOnlyList<L12RankedTierGradientConfig> Tiers);
 public sealed record L12RankedMasterTitleConfig(string MasterId, string MasterName, string Title);
 public sealed record L12RankedFactionConfig(string Id, string Name, string Color, string Icon,
     string FirstTitle, string TopFiveTitle, IReadOnlyList<L12RankedTierConfig> Tiers);
@@ -27,15 +32,16 @@ public sealed record L12RankedConfigView(int PlacementMatches, int PlacementMaxi
     bool BroadcastEnabled, IReadOnlyList<L12RankedFactionConfig> Factions,
     IReadOnlyList<L12RankedMasterTitleConfig> MasterTitles,
     L12RankedTimeControlConfig? TimeControl = null,
-    L12RankedBroadcastConfig? Broadcast = null);
+    L12RankedBroadcastConfig? Broadcast = null,
+    L12RankedPendingGradientConfig? PendingGradient = null);
 public sealed record L12RankedProfileView(string AccountId, string Username, string SeasonId,
     string? Faction, int SevenValue, string DisplayValue, int PlacementPlayed, int PlacementWins,
     bool Placed, int Wins, int Losses, int WinStreak, int LossStreak, string Tier,
     int TierIndex, int FactionRank, string? Title, IReadOnlyList<string> Titles,
     string RankLabel, string? PlacementTitle, string? SelectedMasterTitle,
     IReadOnlyList<string> MasterTitles);
-public sealed record L12RankedBattleIdentityView(int PlayerIndex, string Faction, string RankLabel,
-    bool RankIsTitle, string? MasterTitle);
+public sealed record L12RankedBattleIdentityView(int PlayerIndex, string Faction, int? Rank,
+    string Tier, string? PlacementTitle, string? MasterTitle);
 public sealed record L12RankedProfileHistoryView(string SeasonId, string Faction, int SevenValue,
     int PlacementPlayed, int PlacementWins, int Wins, int Losses, int WinStreak,
     DateTimeOffset ArchivedAt);
@@ -88,6 +94,7 @@ public sealed partial class L12PlatformStore
         public int WinStreakCap { get; set; }
         public int LossProtectionCap { get; set; }
         public int RatingGapCap { get; set; }
+        public int StreakTerminationReward { get; set; }
         public string Color { get; set; } = "#d5b85c";
         public string Icon { get; set; } = string.Empty;
     }
@@ -110,6 +117,22 @@ public sealed partial class L12PlatformStore
         public L12RankedBroadcastConfig? Broadcast { get; set; }
         public List<RankedFactionRow> Factions { get; set; } = [];
         public List<RankedMasterTitleRow> MasterTitles { get; set; } = [];
+    }
+    private sealed class RankedPendingGradientRow
+    {
+        public string AfterSeasonId { get; set; } = string.Empty;
+        public int Version { get; set; } = 2;
+        public List<RankedTierGradientRow> Tiers { get; set; } = [];
+    }
+    private sealed class RankedTierGradientRow
+    {
+        public string Name { get; set; } = string.Empty;
+        public int Minimum { get; set; }
+        public int BaseDelta { get; set; }
+        public int WinStreakCap { get; set; }
+        public int LossProtectionCap { get; set; }
+        public int RatingGapCap { get; set; }
+        public int StreakTerminationReward { get; set; }
     }
     private sealed class RankedMasterTitleRow
     {
@@ -233,6 +256,20 @@ public sealed partial class L12PlatformStore
                 _data.RankedConfig = DefaultRankedConfig();
                 changed = true;
             }
+            if (_data.RankedGradientVersion <= 0)
+            {
+                _data.RankedGradientVersion = 1;
+                foreach (var faction in _data.RankedConfig.Factions)
+                    for (var index = 0; index < faction.Tiers.Count; index++)
+                        faction.Tiers[index].StreakTerminationReward = LegacyStreakTerminationReward(index);
+                changed = true;
+            }
+            if (_data.RankedGradientVersion < 2 && _data.RankedPendingGradient is null)
+            {
+                _data.RankedPendingGradient = DefaultPendingRankedGradient(
+                    RequireOperationsConfig().Season.Id);
+                changed = true;
+            }
             _data.RankedProfiles ??= [];
             _data.RankedProfileHistory ??= [];
             foreach (var history in _data.RankedProfileHistory) history.Titles ??= [];
@@ -290,11 +327,11 @@ public sealed partial class L12PlatformStore
     {
         static List<RankedTierRow> Tiers() =>
         [
-            new() { Name = "初阶", Minimum = 0, BaseDelta = 200, WinStreakCap = 100, LossProtectionCap = 50, RatingGapCap = 50, Color = "#87959c" },
-            new() { Name = "进阶", Minimum = 15000, BaseDelta = 400, WinStreakCap = 200, LossProtectionCap = 100, RatingGapCap = 100, Color = "#67a7b7" },
-            new() { Name = "精英", Minimum = 30000, BaseDelta = 800, WinStreakCap = 400, LossProtectionCap = 200, RatingGapCap = 200, Color = "#8d73c7" },
-            new() { Name = "统领", Minimum = 60000, BaseDelta = 1500, WinStreakCap = 750, LossProtectionCap = 380, RatingGapCap = 380, Color = "#d5904b" },
-            new() { Name = "冠冕", Minimum = 100000, BaseDelta = 2500, WinStreakCap = 1250, LossProtectionCap = 630, RatingGapCap = 630, Color = "#e4c15e" },
+            new() { Name = "初阶", Minimum = 0, BaseDelta = 200, WinStreakCap = 100, LossProtectionCap = 50, RatingGapCap = 50, StreakTerminationReward = 0, Color = "#87959c" },
+            new() { Name = "进阶", Minimum = 15000, BaseDelta = 400, WinStreakCap = 200, LossProtectionCap = 100, RatingGapCap = 100, StreakTerminationReward = 200, Color = "#67a7b7" },
+            new() { Name = "精英", Minimum = 30000, BaseDelta = 800, WinStreakCap = 400, LossProtectionCap = 200, RatingGapCap = 200, StreakTerminationReward = 400, Color = "#8d73c7" },
+            new() { Name = "统领", Minimum = 60000, BaseDelta = 1500, WinStreakCap = 750, LossProtectionCap = 380, RatingGapCap = 380, StreakTerminationReward = 750, Color = "#d5904b" },
+            new() { Name = "冠冕", Minimum = 100000, BaseDelta = 2500, WinStreakCap = 1250, LossProtectionCap = 630, RatingGapCap = 630, StreakTerminationReward = 1250, Color = "#e4c15e" },
         ];
         return new RankedConfigRow
         {
@@ -308,6 +345,21 @@ public sealed partial class L12PlatformStore
             ],
         };
     }
+
+    private static RankedPendingGradientRow DefaultPendingRankedGradient(string afterSeasonId)
+        => new()
+        {
+            AfterSeasonId = afterSeasonId,
+            Version = 2,
+            Tiers =
+            [
+                new() { Name = "初阶", Minimum = 0, BaseDelta = 3800, WinStreakCap = 3300, LossProtectionCap = 3500, RatingGapCap = 600, StreakTerminationReward = 100 },
+                new() { Name = "进阶", Minimum = 15000, BaseDelta = 4000, WinStreakCap = 2900, LossProtectionCap = 3400, RatingGapCap = 500, StreakTerminationReward = 150 },
+                new() { Name = "精英", Minimum = 30000, BaseDelta = 4200, WinStreakCap = 2400, LossProtectionCap = 3100, RatingGapCap = 400, StreakTerminationReward = 200 },
+                new() { Name = "统领", Minimum = 60000, BaseDelta = 4700, WinStreakCap = 1600, LossProtectionCap = 2400, RatingGapCap = 250, StreakTerminationReward = 300 },
+                new() { Name = "冠冕", Minimum = 100000, BaseDelta = 1200, WinStreakCap = 100, LossProtectionCap = 0, RatingGapCap = 120, StreakTerminationReward = 400 },
+            ],
+        };
 
     public L12RankedConfigView RankedConfig(L12AccountView? actor = null)
     {
@@ -395,17 +447,18 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var row = RequireRankedProfile(accountId);
-            var rank = FactionRank(row);
-            var placementTitle = FactionPlacementTitle(row, rank);
-            var rankLabel = string.IsNullOrWhiteSpace(row.Faction) ? string.Empty
-                : placementTitle ?? (row.PlacementPlayed >= _data.RankedConfig!.PlacementMatches
-                    ? TierFor(row).Name
-                    : $"定级 {row.PlacementPlayed}/{_data.RankedConfig.PlacementMatches}");
+            var factionRank = FactionRank(row);
+            var placementTitle = FactionPlacementTitle(row, factionRank);
+            var placed = row.PlacementPlayed >= _data.RankedConfig!.PlacementMatches;
+            var tier = string.IsNullOrWhiteSpace(row.Faction) ? string.Empty
+                : placed ? TierFor(row).Name
+                : $"定级 {row.PlacementPlayed}/{_data.RankedConfig.PlacementMatches}";
+            var overallRank = placed ? OverallRank(row) : 0;
             var masterTitles = PlayerMasterTitles(row, CurrentMasterChampions());
             var selected = SelectedMasterTitle(row, masterTitles);
             var faction = string.IsNullOrWhiteSpace(row.Faction) ? string.Empty : FactionFor(row.Faction).Name;
-            return new L12RankedBattleIdentityView(playerIndex, faction, rankLabel,
-                placementTitle is not null, selected);
+            return new L12RankedBattleIdentityView(playerIndex, faction,
+                overallRank > 0 ? overallRank : null, tier, placementTitle, selected);
         }
     }
 
@@ -925,7 +978,8 @@ public sealed partial class L12PlatformStore
             var protectionStep = tier.LossProtectionCap / 5d;
             var lossProtection = !won ? Math.Min(tier.LossProtectionCap, (int)Math.Round(Math.Max(0, player.LossStreak - 1) * protectionStep)) : 0;
             if (lossProtection != 0) components.Add(new("loss-protection", "连败保护", lossProtection));
-            var terminate = won && opponentWinStreakBefore >= 5 ? StreakTerminationReward(opponentSevenBefore) : 0;
+            var terminate = won && opponentWinStreakBefore >= 5
+                ? StreakTerminationReward(opponentSevenBefore) : 0;
             if (terminate != 0) components.Add(new("streak-termination", "终结连胜", terminate));
             var rawAfter = before + components.Sum(item => item.Value);
             var protectedAfter = Math.Max(player.HighestFloor, Math.Max(0, rawAfter));
@@ -1063,6 +1117,38 @@ public sealed partial class L12PlatformStore
         ApplyMasterChampionSeasonFinalAlternateArtAwardsLocked(champions, outgoingSeasonId);
     }
 
+    private void ActivatePendingRankedGradient(string outgoingSeasonId, string incomingSeasonId,
+        L12AccountView actor, L12AdminAuditContext context)
+    {
+        var pending = _data.RankedPendingGradient;
+        if (pending is null || string.Equals(outgoingSeasonId, incomingSeasonId,
+                StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(pending.AfterSeasonId, outgoingSeasonId,
+                StringComparison.OrdinalIgnoreCase)) return;
+        if (pending.Tiers.Count != 5 || _data.RankedConfig!.Factions.Any(faction => faction.Tiers.Count != 5))
+            throw new InvalidDataException("下赛季排位梯度不完整，已拒绝切换赛季");
+
+        foreach (var faction in _data.RankedConfig.Factions)
+        {
+            for (var index = 0; index < pending.Tiers.Count; index++)
+            {
+                var source = pending.Tiers[index];
+                var target = faction.Tiers[index];
+                target.Minimum = source.Minimum;
+                target.BaseDelta = source.BaseDelta;
+                target.WinStreakCap = source.WinStreakCap;
+                target.LossProtectionCap = source.LossProtectionCap;
+                target.RatingGapCap = source.RatingGapCap;
+                target.StreakTerminationReward = source.StreakTerminationReward;
+            }
+        }
+        _data.RankedGradientVersion = pending.Version;
+        _data.RankedPendingGradient = null;
+        AddAdminAudit(actor, "operations", "ranked-gradient-activate", "ranked:gradient",
+            outgoingSeasonId, incomingSeasonId, $"排位梯度 v{pending.Version} 随新赛季生效",
+            context with { Outcome = "succeeded" });
+    }
+
     private L12RankedProfileView ProfileView(RankedProfileRow row)
     {
         var tier = TierFor(row);
@@ -1074,9 +1160,9 @@ public sealed partial class L12PlatformStore
         var placementTitle = FactionPlacementTitle(row, rank);
         var masterTitles = PlayerMasterTitles(row, champions);
         var selectedMasterTitle = SelectedMasterTitle(row, masterTitles);
-        var rankLabel = placementTitle ?? (row.PlacementPlayed >= _data.RankedConfig!.PlacementMatches
+        var rankLabel = row.PlacementPlayed >= _data.RankedConfig!.PlacementMatches
             ? tier.Name
-            : $"定级 {row.PlacementPlayed}/{_data.RankedConfig.PlacementMatches}");
+            : $"定级 {row.PlacementPlayed}/{_data.RankedConfig.PlacementMatches}";
         return new(row.AccountId, AccountName(row.AccountId), row.SeasonId, faction?.Name,
             row.SevenValue, $"七曜值 {row.SevenValue:N0}", row.PlacementPlayed, row.PlacementWins,
             row.PlacementPlayed >= _data.RankedConfig!.PlacementMatches, row.Wins, row.Losses,
@@ -1194,6 +1280,19 @@ public sealed partial class L12PlatformStore
             .ThenBy(item => AccountName(item.AccountId), StringComparer.OrdinalIgnoreCase).ToList().IndexOf(row) + 1;
     }
 
+    private int OverallRank(RankedProfileRow row)
+    {
+        if (string.IsNullOrWhiteSpace(row.Faction)
+            || row.PlacementPlayed < _data.RankedConfig!.PlacementMatches) return 0;
+        return _data.RankedProfiles.Where(item => item.SeasonId == row.SeasonId
+                && !string.IsNullOrWhiteSpace(item.Faction)
+                && item.PlacementPlayed >= _data.RankedConfig.PlacementMatches
+                && IsActiveAccountLocked(item.AccountId))
+            .OrderByDescending(item => item.SevenValue).ThenByDescending(item => item.HiddenRating)
+            .ThenBy(item => AccountName(item.AccountId), StringComparer.OrdinalIgnoreCase)
+            .ToList().IndexOf(row) + 1;
+    }
+
     private Dictionary<string, string> CurrentFactionTitleAssignments()
     {
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -1232,7 +1331,10 @@ public sealed partial class L12PlatformStore
         return result;
     }
     private int FloorFor(int value) => _data.RankedConfig!.Factions[0].Tiers.Where(tier => value >= tier.Minimum).Max(tier => tier.Minimum);
-    private int StreakTerminationReward(int opponentValue) => RankedTierIndex(opponentValue) switch
+    private int StreakTerminationReward(int opponentValue)
+        => _data.RankedConfig!.Factions[0].Tiers[RankedTierIndex(opponentValue)]
+            .StreakTerminationReward;
+    private static int LegacyStreakTerminationReward(int tierIndex) => tierIndex switch
     {
         4 => 1250, 3 => 750, 2 => 400, 1 => 200, _ => 0,
     };
@@ -1242,13 +1344,19 @@ public sealed partial class L12PlatformStore
         return account is null ? "已注销玩家" : PublicUsername(account);
     }
 
-    private static L12RankedConfigView ToView(RankedConfigRow row) => new(row.PlacementMatches,
+    private L12RankedConfigView ToView(RankedConfigRow row) => new(row.PlacementMatches,
         row.PlacementMaximum, row.BroadcastEnabled, row.Factions.Select(faction => new L12RankedFactionConfig(
             faction.Id, faction.Name, faction.Color, faction.Icon, faction.FirstTitle, faction.TopFiveTitle,
             faction.Tiers.Select(tier => new L12RankedTierConfig(tier.Name, tier.Minimum, tier.BaseDelta,
-                tier.WinStreakCap, tier.LossProtectionCap, tier.RatingGapCap, tier.Color, tier.Icon)).ToArray())).ToArray(),
+                tier.WinStreakCap, tier.LossProtectionCap, tier.RatingGapCap,
+                tier.StreakTerminationReward, tier.Color, tier.Icon)).ToArray())).ToArray(),
         row.MasterTitles.Select(item => new L12RankedMasterTitleConfig(item.MasterId, item.MasterName, item.Title)).ToArray(),
-        NormalizeRankedTimeControl(row.TimeControl), NormalizeRankedBroadcastConfig(row.Broadcast));
+        NormalizeRankedTimeControl(row.TimeControl), NormalizeRankedBroadcastConfig(row.Broadcast),
+        _data.RankedPendingGradient is null ? null : new L12RankedPendingGradientConfig(
+            _data.RankedPendingGradient.AfterSeasonId,
+            _data.RankedPendingGradient.Tiers.Select(tier => new L12RankedTierGradientConfig(
+                tier.Name, tier.Minimum, tier.BaseDelta, tier.WinStreakCap, tier.LossProtectionCap,
+                tier.RatingGapCap, tier.StreakTerminationReward)).ToArray()));
     private L12RankedSettlementView ToView(RankedSettlementRow row)
     {
         var rewardStatus = RankedRewardStatusLocked(row.MatchId);
@@ -1283,18 +1391,22 @@ public sealed partial class L12PlatformStore
                 throw new L12OperationsConfigException("invalid_ranked_config", "定级七曜上限必须低于第三段位门槛（不超过第二段位）");
             if (tiers.Any(tier => tier.BaseDelta is < 0 or > 1_000_000
                 || tier.WinStreakCap is < 0 or > 1_000_000 || tier.LossProtectionCap is < 0 or > 1_000_000
-                || tier.RatingGapCap is < 0 or > 1_000_000))
+                || tier.RatingGapCap is < 0 or > 1_000_000
+                || tier.StreakTerminationReward is < 0 or > 1_000_000))
                 throw new L12OperationsConfigException("invalid_ranked_tier_values", "段位各项分值须为0至100万之间的整数");
             row.Factions.Add(new RankedFactionRow { Id = faction.Id.ToLowerInvariant(), Name = faction.Name.Trim(),
                 Color = faction.Color.Trim(), Icon = faction.Icon.Trim(), FirstTitle = faction.FirstTitle.Trim(),
                 TopFiveTitle = faction.TopFiveTitle.Trim(), Tiers = tiers.Select(tier => new RankedTierRow
                 { Name = tier.Name.Trim(), Minimum = tier.Minimum, BaseDelta = Math.Max(0, tier.BaseDelta),
                     WinStreakCap = Math.Max(0, tier.WinStreakCap), LossProtectionCap = Math.Max(0, tier.LossProtectionCap),
-                    RatingGapCap = Math.Max(0, tier.RatingGapCap), Color = tier.Color.Trim(), Icon = tier.Icon.Trim() }).ToList() });
+                    RatingGapCap = Math.Max(0, tier.RatingGapCap),
+                    StreakTerminationReward = Math.Max(0, tier.StreakTerminationReward),
+                    Color = tier.Color.Trim(), Icon = tier.Icon.Trim() }).ToList() });
         }
         var sharedTierValues = value.Factions.Select(faction => faction.Tiers
             .Select(tier => (tier.Minimum, tier.BaseDelta, tier.WinStreakCap,
-                tier.LossProtectionCap, tier.RatingGapCap)).ToArray()).ToArray();
+                tier.LossProtectionCap, tier.RatingGapCap,
+                tier.StreakTerminationReward)).ToArray()).ToArray();
         if (sharedTierValues.Skip(1).Any(tiers => !tiers.SequenceEqual(sharedTierValues[0])))
             throw new L12OperationsConfigException("inconsistent_ranked_tier_values",
                 "同一段位的阈值、基础分、连胜上限、连败保护上限与分差修正上限必须在三个派系中保持一致");

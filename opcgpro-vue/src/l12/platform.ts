@@ -335,7 +335,9 @@ export interface EffectiveOperationsPolicy {
   maintenance: { enabled: boolean; active: boolean; entryBlocked: boolean; status: 'open'|'upcoming'|'maintenance'; message: string; broadcastMessage: string; startsAt?: string; endsAt?: string; advanceBroadcastHours: number; expectedDurationHours: number; immediateActive?: boolean; immediateStartedAt?: string; immediateExpectedDurationHours?: number }
   announcements: Array<{ id: string; content: string; sortOrder: number; startsAt?: string; endsAt?: string }>
 }
-export interface RankedTierConfig { name: string; minimum: number; baseDelta: number; winStreakCap: number; lossProtectionCap: number; ratingGapCap: number; color: string; icon: string }
+export interface RankedTierConfig { name: string; minimum: number; baseDelta: number; winStreakCap: number; lossProtectionCap: number; ratingGapCap: number; streakTerminationReward: number; color: string; icon: string }
+export interface RankedTierGradientConfig { name: string; minimum: number; baseDelta: number; winStreakCap: number; lossProtectionCap: number; ratingGapCap: number; streakTerminationReward: number }
+export interface RankedPendingGradientConfig { afterSeasonId: string; tiers: RankedTierGradientConfig[] }
 export interface RankedFactionConfig { id: 'order' | 'chaos' | 'fate'; name: string; color: string; icon: string; firstTitle: string; topFiveTitle: string; tiers: RankedTierConfig[] }
 export interface RankedMasterTitleConfig { masterId: string; masterName: string; title: string }
 export interface RankedTimeControlConfig {
@@ -378,7 +380,7 @@ export const DEFAULT_RANKED_BROADCAST_CONFIG: RankedBroadcastConfig = {
   factionTitleEnabled: true,
   masterTitleEnabled: true,
 }
-export interface RankedConfig { placementMatches: number; placementMaximum: number; broadcastEnabled: boolean; factions: RankedFactionConfig[]; masterTitles: RankedMasterTitleConfig[]; timeControl: RankedTimeControlConfig; broadcast: RankedBroadcastConfig }
+export interface RankedConfig { placementMatches: number; placementMaximum: number; broadcastEnabled: boolean; factions: RankedFactionConfig[]; masterTitles: RankedMasterTitleConfig[]; timeControl: RankedTimeControlConfig; broadcast: RankedBroadcastConfig; pendingGradient?: RankedPendingGradientConfig }
 export function normalizeRankedConfig(config: Omit<RankedConfig, 'timeControl'|'broadcast'> & { timeControl?: Partial<RankedTimeControlConfig>; broadcast?: Partial<RankedBroadcastConfig> }): RankedConfig {
   return { ...config,
     timeControl: { ...DEFAULT_RANKED_TIME_CONTROL, ...(config.timeControl ?? {}) },

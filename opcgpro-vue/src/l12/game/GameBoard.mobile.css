@@ -1231,3 +1231,87 @@
   white-space:normal;
 }
 .mobile-landscape-board .board-slot-controls .l12-card-image { display:none !important; }
+.mobile-landscape-board .player-summary-meta {
+  --ranked-tier-badge-font-size:9px;
+  --ranked-title-badge-font-size:9px;
+}
+.mobile-landscape-board .player-summary-meta>.rank-number {
+  padding:1px 3px;
+  font-size:9px;
+}
+
+/* Mobile keeps the same authoritative identity order as desktop in a compact,
+   dedicated safe-area panel above the record and clock controls. */
+.mobile-landscape-board .right-rail .player-panel {
+  position:fixed !important;
+  z-index:1600;
+  top:calc(var(--l12-viewport-top,0px) + 6px) !important;
+  right:calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 6px) !important;
+  display:grid !important;
+  box-sizing:border-box;
+  width:104px !important;
+  height:96px !important;
+  max-height:96px;
+  grid-template-rows:minmax(0,1fr) 1px minmax(0,1fr);
+  gap:2px;
+  padding:3px !important;
+  overflow:hidden !important;
+  border:1px solid rgba(102,132,132,.72) !important;
+  background:rgba(7,12,13,.94) !important;
+  box-shadow:0 3px 8px rgba(0,0,0,.62) !important;
+}
+.mobile-landscape-board .right-rail .player-panel>.player-summary {
+  display:grid !important;
+  min-height:0;
+  align-content:center;
+  gap:1px;
+}
+.mobile-landscape-board .right-rail .player-panel>hr {
+  display:block !important;
+  width:100%;
+  margin:0 !important;
+  border:0;
+  border-top:1px solid rgba(117,139,136,.5);
+}
+.mobile-landscape-board .player-summary-primary {
+  column-gap:2px;
+}
+.mobile-landscape-board .player-summary-primary>b {
+  font-size:7px !important;
+}
+.mobile-landscape-board .player-summary-primary>strong {
+  font-size:8px !important;
+  line-height:1.05 !important;
+}
+.mobile-landscape-board .player-summary-meta {
+  align-content:start;
+  gap:1px;
+  line-height:1;
+  --ranked-tier-badge-font-size:8px;
+  --ranked-title-badge-font-size:7px;
+}
+.mobile-landscape-board .player-summary-meta>.rank-number {
+  padding:1px 2px;
+  font-size:8px;
+  line-height:1.1;
+}
+.mobile-landscape-board .player-summary-meta :deep(.ranked-identity-badge.compact) {
+  --ranked-tier-badge-font-size:8px;
+  --ranked-title-badge-font-size:7px;
+  gap:1px;
+  padding:1px 2px !important;
+  line-height:1.05;
+}
+.mobile-landscape-board .player-summary-meta :deep(.ranked-identity-badge.compact>i),
+.mobile-landscape-board .player-summary-meta :deep(.ranked-identity-badge.compact>.identity-brand-logo) {
+  display:none;
+}
+.mobile-landscape-board .player-summary-meta .connection-state {
+  display:none !important;
+}
+.mobile-landscape-board .mobile-record-trigger {
+  top:calc(var(--l12-viewport-top,0px) + 150px) !important;
+}
+.mobile-landscape-board .mobile-timed-clocks {
+  top:calc(var(--l12-viewport-top,0px) + 184px) !important;
+}

@@ -409,6 +409,7 @@ public sealed partial class L12PlatformStore
             var changes = DescribeOperationsChanges(ToPayload(current), normalized);
             var next = ToRow(normalized, current.Version + 1, actor.Username, current.ImmediateMaintenance);
             FinalizeOutgoingRankedSeason(current.Season.Id, current.Season.Name, next.Season.Id);
+            ActivatePendingRankedGradient(current.Season.Id, next.Season.Id, actor, context);
             _data.OperationsConfig = next;
             var history = NewOperationsHistory(next, "apply", actor, normalizedReason);
             _data.OperationsConfigHistory.Add(history);
@@ -437,6 +438,7 @@ public sealed partial class L12PlatformStore
             var changes = DescribeOperationsChanges(ToPayload(current), targetPayload);
             var next = ToRow(targetPayload, current.Version + 1, actor.Username, current.ImmediateMaintenance);
             FinalizeOutgoingRankedSeason(current.Season.Id, current.Season.Name, next.Season.Id);
+            ActivatePendingRankedGradient(current.Season.Id, next.Season.Id, actor, context);
             _data.OperationsConfig = next;
             var history = NewOperationsHistory(next, $"rollback:{target.Id}", actor, normalizedReason);
             _data.OperationsConfigHistory.Add(history);
