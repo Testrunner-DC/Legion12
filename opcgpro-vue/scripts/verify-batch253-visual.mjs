@@ -19,7 +19,7 @@ const entry = `
 import {createApp,h} from 'vue'
 import {createRouter,createMemoryHistory} from 'vue-router'
 import GamePage from '/src/l12/GamePage.vue'
-import SandboxCardPicker from '/src/l12/game/SandboxCardPicker.vue'
+import SingleCardPicker from '/src/l12/SingleCardPicker.vue'
 import RankingsPage from '/src/l12/site/RankingsPage.vue'
 import DeckConstructionBrowser from '/src/l12/site/DeckConstructionBrowser.vue'
 import SiteShell from '/src/l12/site/SiteShell.vue'
@@ -133,7 +133,7 @@ if(isOnlineFixture){
 const masterRows=masters.map((m,i)=>({rank:100+i,masterId:m.id,masterName:m.nameZh,games:999,wins:999,losses:0,winRate:100,usageRate:50,firstWinRate:100,secondWinRate:100,firstWins:500,firstGames:500,secondWins:499,secondGames:499,strongestPlayer:'合成测试玩家',title:'最强'+m.nameZh}))
 rankedApi.leaderboard=async()=>({players:Array.from({length:4},(_,i)=>({rank:i+1,username:'合成测试长昵称'+i,faction:'命运',tier:'迷雾旅人',titles:['最强银臂努阿达','最强雷神索尔'],favoriteMasterId:masters[0].id,favoriteMasterName:masters[0].nameZh,displayValue:'七曜值 21,945',wins:999,losses:888})),analytics:{range:'season',summary:{matches:999,placedPlayers:4,activeMasters:2},masters:masterRows,matchups:masterRows.flatMap(a=>masterRows.map(b=>({masterId:a.masterId,opponentMasterId:b.masterId,games:999,wins:999,winRate:100,firstWins:500,firstGames:500,secondWins:499,secondGames:499})))}})
 rankedApi.history=async()=>[]
-const app=createApp({render:()=>isPicker?h(SandboxCardPicker,{title:'GM横卡验收',allowedTypes:['destruction']}):isRanking?h(RankingsPage):isDeckViewer?h(DeckConstructionBrowser,{entries:deckEntries,catalog:deckCatalog,title:'公开牌库完整构筑'}):(isInviteFixture||isOutgoingInviteFixture||isOnlineFixture)?h(SiteShell,null,{default:()=>h('div',{style:'padding:40px'},'非阻塞页面内容仍可见')}):h(GamePage)})
+const app=createApp({render:()=>isPicker?h(SingleCardPicker,{title:'GM横卡验收',allowedTypes:['destruction']}):isRanking?h(RankingsPage):isDeckViewer?h(DeckConstructionBrowser,{entries:deckEntries,catalog:deckCatalog,title:'公开牌库完整构筑'}):(isInviteFixture||isOutgoingInviteFixture||isOnlineFixture)?h(SiteShell,null,{default:()=>h('div',{style:'padding:40px'},'非阻塞页面内容仍可见')}):h(GamePage)})
 app.use(createRouter({history:createMemoryHistory(),routes:[]}));app.mount('#app')
 `
 let browser
@@ -525,8 +525,8 @@ try {
  assert.deepEqual(scoutSent?.command?.cardInstanceIds,['confirm'],'scout acknowledgement must submit only the authoritative confirm choice')
  await page.setViewportSize({width:770,height:850})
  await page.goto('http://127.0.0.1:'+port+'/__qa__?picker=1')
- await page.locator('.picker-card.horizontal').first().waitFor()
- await page.locator('.picker-image').first().click()
+ await page.locator('.single-card-result-card.horizontal').first().waitFor()
+ await page.locator('.single-card-image').first().click()
  await page.locator('.catalog-detail-mask').waitFor({timeout:3000})
  await page.screenshot({path:path.join(out,'sandbox-landscape.png')})
  fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({errors,reports,logReports},null,2))

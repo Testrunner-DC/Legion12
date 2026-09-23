@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import CardImage from '@/l12/CardImage.vue'
 import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
-import SandboxCardPicker, { type SandboxCatalogCard } from '@/l12/game/SandboxCardPicker.vue'
+import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
 import PagedCollection from './PagedCollection.vue'
 import AdminMasterAnalyticsPanel from './AdminMasterAnalyticsPanel.vue'
 import {
@@ -175,7 +175,7 @@ function applyRange(next: AnalyticsRange) {
   filters.value.from = localDateInput(new Date(now.getFullYear(), now.getMonth(), now.getDate() - days + 1))
   filters.value.to = localDateInput(now)
 }
-function chooseCard(card: SandboxCatalogCard) {
+function chooseCard(card: SingleCardPickerItem) {
   pickerOpen.value = false
   selectedCardId.value = card.id
   detail.value = null
@@ -402,7 +402,7 @@ onMounted(async () => {
         </template>
         <div v-else class="empty">选择一张卡查看事实仪表盘</div>
       </main>
-    <SandboxCardPicker v-if="pickerOpen" title="选择要分析的卡牌" @select="chooseCard" @close="pickerOpen = false"/>
+    <SingleCardPicker v-if="pickerOpen" title="选择要分析的卡牌" @select="chooseCard" @close="pickerOpen = false"/>
   </section>
 </template>
 

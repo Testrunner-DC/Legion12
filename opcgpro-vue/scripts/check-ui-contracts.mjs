@@ -27,6 +27,7 @@ const indexHtml = read('../index.html')
 const faviconPath = new URL('../public/favicon.png', import.meta.url)
 const blackLotusPath = new URL('../public/assets/l12/special/logo/black-lotus.png', import.meta.url)
 const globalStyle = read('../src/style.css')
+const siteUiSystem = read('../src/l12/site/uiSystem.css')
 const prompt = read('../src/l12/game/PromptOverlay.vue')
 const promptCardCandidate = read('../src/l12/game/PromptCardCandidate.vue')
 const matchRecords = read('../src/l12/MatchRecords.vue')
@@ -70,10 +71,11 @@ const cardArchiveVersions = read('../src/l12/cardArchiveVersions.ts')
 const galleryMarkup = cardArchive.match(/<template v-else>([\s\S]*?)<div v-if="!filteredGallery\.length"/)?.[1] ?? ''
 const sandbox = read('../src/l12/site/SandboxPage.vue')
 const gmPanel = read('../src/l12/game/GmPanel.vue')
-const sandboxPicker = read('../src/l12/game/SandboxCardPicker.vue')
+const sandboxPicker = read('../src/l12/SingleCardPicker.vue')
 const l12Net = read('../src/l12/net.ts')
 const adminPage = read('../src/l12/site/AdminPage.vue')
 const adminAlternateArts = read('../src/l12/site/AdminAlternateArtsPanel.vue')
+const constructionRuleEditor = read('../src/l12/site/ConstructionRuleEditor.vue')
 const adminArticles = read('../src/l12/site/AdminArticlesPanel.vue')
 const adminSiteContent = read('../src/l12/site/AdminSiteContentPanel.vue')
 const mediaUploadField = read('../src/l12/site/MediaUploadField.vue')
@@ -166,6 +168,18 @@ const endingMaintenance = maintenanceCountdown({ enabled: true, message: '维护
 const openEndedMaintenance = maintenanceCountdown({ enabled: true, message: '维护提示', broadcastMessage: '' }, maintenanceNow)
 
 const contracts = [
+  [mainEntry.includes("import './l12/site/uiSystem.css'")
+    && shell.includes('data-l12-ui-system="site-v1"')
+    && siteUiSystem.includes('--l12-ui-panel:') && siteUiSystem.includes('--l12-ui-control:')
+    && siteUiSystem.includes('--l12-ui-radius-lg:') && siteUiSystem.includes('--l12-ui-shadow-dialog:')
+    && siteUiSystem.includes('Immersive battle/replay and deck-editor'),
+  '普通站点页面必须共用图鉴/主页基准的颜色、面板、控件、圆角、间距与弹框令牌，并与沉浸式对战/回放/构筑几何隔离'],
+  [gmPanel.includes('SingleCardPicker') && adminCardAnalytics.includes('SingleCardPicker')
+    && adminAlternateArts.includes('SingleCardPicker') && constructionRuleEditor.includes('SingleCardPicker')
+    && boardComponent.includes('SingleCardPicker')
+    && ![gmPanel, adminCardAnalytics, adminAlternateArts, constructionRuleEditor, boardComponent]
+      .some(source => source.includes('SandboxCardPicker') || source.includes('FilteredSingleCardPicker')),
+  'GM、单卡分析、异画、构筑规则和自定天灾必须复用唯一共享单卡选择器'],
   [scheduledMaintenance?.phase === 'scheduled' && scheduledMaintenance.countdown === '距离维护开始 01:01:01'
     && scheduledMaintenance.message === '维护提示'
     && endingMaintenance?.phase === 'active' && endingMaintenance.countdown === '距离维护结束 00:01:01'
@@ -256,7 +270,7 @@ const contracts = [
   [naturalGift && naturalGift.cardType === 'tactic' && naturalGift.cost == null
     && decks.includes('export function filterableCardCost') && decks.includes("card.cardType === 'master' ? null : (card.cost ?? 0)")
     && cardArchive.includes('filterableCardCost(card)') && deckEditor.includes('filterableCardCost(card)')
-    && sandboxPicker.includes('filterableCardCost(card)'), '没有印刷费用的非主宰卡必须统一归入0费筛选；自然馈赠须能在图鉴、构筑与沙盒的0费条件中被找到'],
+    && sandboxPicker.includes('filterableCardCost(card.detailCard)'), '没有印刷费用的非主宰卡必须统一归入0费筛选；自然馈赠须能在图鉴、构筑与共享单卡卡查的0费条件中被找到'],
   [cardArchiveVersions.includes('identity.versionCardIds.map')
     && cardArchiveVersions.includes("if (card.id === 'S02-05C1B') return `rules:${ruleIdentity(card)}`")
     && moraleIdentities.find(identity => identity.faction === 'olympus')?.versionCardIds.includes('S02-05C1')
@@ -887,7 +901,7 @@ const contracts = [
     && !deckEditor.includes('activeRestrictions') && !deckLibrary.includes('activeRestrictions')
     && decks.includes('rule.masterId === masterId') && decks.includes('rule.masterId === deck.masterId'),
   '通用牌库编辑、保存、导入与公开不得全局应用运营禁限卡；显式规则作用域仍保留主宰专属解析能力'],
-  [cardArchive.includes('const productOptions = computed(') && cardArchive.includes('<option value="all">全部产品</option><option v-for="value in productOptions"') && sandboxPicker.includes('<option value="all">全部卡池</option><option v-for="value in products"'), '卡牌档案必须按权威收录产品筛选，沙盒选择器仍从完整可玩目录动态列出卡池，不得回退为旧双卡池硬编码'],
+  [cardArchive.includes('const productOptions = computed(') && cardArchive.includes('<option value="all">全部产品</option><option v-for="value in productOptions"') && sandboxPicker.includes('<option value="all">全部产品</option><option v-for="value in products"'), '卡牌图鉴与共享单卡选择器必须从权威完整目录动态列出产品，不得回退为旧双卡池硬编码'],
   [deckEditor.indexOf('生成牌库图') > deckEditor.indexOf('另存为牌库') && deckEditor.indexOf('生成牌库图') < deckEditor.indexOf('删除牌库'), '生成牌库图必须位于另存为牌库与删除牌库之间'],
   [deckEditor.includes('createDeckImageBlob') && deckEditor.includes('deck-image-dialog') && deckEditor.includes('下载牌库图'), '牌库编辑器必须提供可预览、下载的真实牌库图生成流程'],
   [deckOrdering.includes('TYPE_PRIORITY') && deckOrdering.includes('Number.NEGATIVE_INFINITY') && deckEditor.includes('compareDeckCards') && deckShare.includes('compareDeckCardIds') && deckLibrary.includes('compareDeckCardIds'), '牌库默认顺序必须统一为类型、本阵营/中立、费用高至低和编号前至后，并由编辑器、详情与牌库图复用'],
@@ -906,7 +920,7 @@ const contracts = [
   [gmPanel.includes('导出可复现 JSON') && gmPanel.includes('/api/matches/'), 'GM 面板必须保留可复现记录导出入口'],
   [gmPanel.includes("run('setTroops'") && gmPanel.includes("run('startAttack'") && gmPanel.includes('发起规则内测试进攻'), 'GM 面板必须保留兵力设置与规则内测试进攻闭环'],
   [gmPanel.includes("run('addCard'") && gmPanel.includes('value: count.value') && gmPanel.includes('连续放置'), 'GM 卡牌区域操作必须支持连续构造同卡场景'],
-  [gmPanel.includes('SandboxCardPicker') && gmPanel.includes('选择卡片') && !gmPanel.includes('卡号，例如'), 'GM 卡牌与区域必须复用可筛选卡牌选择器，不得恢复卡号输入框'],
+  [gmPanel.includes('SingleCardPicker') && gmPanel.includes('选择卡片') && !gmPanel.includes('卡号，例如'), 'GM 卡牌与区域必须复用共享单卡选择器，不得恢复卡号输入框'],
   [gmPanel.includes('targetHand') && gmPanel.includes("run('moveHandCard'") && gmPanel.includes("run('playHandCard'"), 'GM 必须能查看并操作双方真实手牌实例'],
   [gmPanel.indexOf('主宰、天灾与阶段') < gmPanel.indexOf('卡牌与区域') && gmPanel.includes("run('nextPhase')"), 'GM 主宰、天灾与阶段必须位于卡牌与区域上方并可进入下一阶段'],
   [gmPanel.includes("run('returnCardToHand'") && gmPanel.includes('返回手牌'), 'GM 场上卡牌必须提供返回所有者手牌的操作'],
@@ -1011,7 +1025,7 @@ const contracts = [
     && prompt.includes('activationId: p.activationId') && board.includes('activationId: prompt.activationId'),
   '任意 Prompt（包括最小化状态）出现时必须清空并封锁普通手牌/战场操作；resolvePrompt 必须回传服务端下发的不可变事务绑定'],
   [graveyardOverlay.includes('function selectCard(card: Card)') && graveyardOverlay.includes("enabledAbilities.length === 1") && !graveyardOverlay.includes('graveyard-abilities'), '墓地主动效果必须点击卡牌本身进入是否发动流程，卡面不得重新覆盖效果文字按钮'],
-  [sandboxPicker.includes('loadDeckCatalog') && !sandboxPicker.includes("fetch('/data/l12/cards.s1.json')") && sandboxPicker.includes('搜索卡名、编号或效果文字') && sandboxPicker.includes('全部阵营'), '沙盒卡牌选择器必须复用卡牌档案的完整卡池搜索与筛选逻辑'],
+  [sandboxPicker.includes('loadDeckCatalog') && !sandboxPicker.includes("fetch('/data/l12/cards.s1.json')") && sandboxPicker.includes('搜索卡名、编号或效果文字') && sandboxPicker.includes('全部阵营'), '共享单卡选择器必须复用卡牌图鉴的完整卡池搜索与筛选逻辑'],
   [starterCards.length === 76 && starterCards.some(card => card.id === 'ST06-01' && card.nameZh === '伊丽莎白一世'), '前端权威目录必须收录 76 张 ST 产品卡，并以数据库中的伊丽莎白一世为准'],
   [sandbox.includes('<option value="custom">自定天灾（四张始终公开）</option>') && board.includes("type: 'replaceDisaster'") && board.includes('index < 3'), '自定天灾必须四张公开、前三槽可更换且第四槽堙灭锁定'],
   [adminPage.includes('卡效原子化') && adminPage.includes('atom-flow') && adminPage.includes('原子定义 JSON'), '管理后台必须保留卡效原子组合、流程图与原始定义视图'],
@@ -1023,8 +1037,8 @@ const contracts = [
   [adminPage.includes('站点内容工作台') && adminSiteContent.includes('<AdminArticlesPanel') && adminSiteContent.includes('kind="news"') && adminArticles.includes('class="article-editor') && adminArticles.includes('保存草稿') && adminArticles.includes('发布 / 安排发布') && adminArticles.includes('历史版本') && adminArticles.includes('MediaUploadField') && adminArticles.includes('v-model="selected.link"'), '后台资讯发布必须提供独立列表、完整稿件编辑、封面与链接、发布状态和历史版本恢复'],
   [mediaUploadField.includes('ORIGINAL_MAX_BYTES = 16 * 1024 * 1024')
     && mediaUploadField.includes('REQUEST_MAX_BYTES = 32 * 1024 * 1024')
-    && mediaUploadField.includes('class="media-spec" aria-label="图片上传尺寸参考"')
-    && mediaUploadField.includes('用途：') && mediaUploadField.includes('安全区与裁切：')
+    && mediaUploadField.includes('class="media-ratio-hint"')
+    && !mediaUploadField.includes('上传尺寸参考') && !mediaUploadField.includes('安全区与裁切：')
     && platform.includes("response.status === 413 && path === '/api/admin/site/media'")
     && wsServer.includes('IHttpMaxRequestBodySizeFeature') && wsServer.includes('SiteMediaRequestMaxBytes')
     && nginxSite.includes('client_max_body_size 1m;')
@@ -1033,12 +1047,12 @@ const contracts = [
     && !nginxHttpSite.includes('location = /api/admin/site/media') && !nginxHttpSite.includes('proxy_pass')
     && nginxHttpSite.includes("return 503 'testrun TLS bootstrap in progress")
     && serverDeploy.includes("grep -Fq 'location = /api/admin/site/media'")
-    && serverDeploy.includes("grep -Fq 'client_max_body_size 32m'"), '站点图片上传必须在浏览器、TLS Nginx 精确路由和 ASP.NET 端统一执行 16MB 原图/32MB 请求边界，HTTP 引导不得暴露应用，并在控件近旁显示用途、比例、像素和裁切安全区'],
+    && serverDeploy.includes("grep -Fq 'client_max_body_size 32m'"), '站点图片上传必须只在浏览器、TLS Nginx 精确路由和 ASP.NET 端保留格式与体积安全边界；界面只显示一行建议比例'],
   [mediaUploadField.includes("createImageBitmap(source, { imageOrientation: 'from-image' })")
     && mediaUploadField.includes('v-if="isHero" class="hero-upload-field"')
     && mediaUploadField.includes("type HeroVariantKey = 'desktop' | 'mobile' | 'thumbnail'")
-    && mediaUploadField.includes('heroStatuses[spec.key].startsWith(\'已通过\')')
-    && mediaUploadField.includes('三个版本均为必填') && mediaUploadField.includes('仅缩放、不裁切')
+    && mediaUploadField.includes('heroStatuses[spec.key].startsWith(\'已选择\')')
+    && mediaUploadField.includes('renderIndependentVariant') && mediaUploadField.includes('renderFlexibleVariant')
     && mediaUploadField.includes("form.append('independentVariants', 'true')")
     && mediaUploadField.includes("form.append('desktopAltText'") && mediaUploadField.includes("form.append('mobileAltText'")
     && mediaUploadField.includes("form.append('thumbnailAltText'")
@@ -1071,11 +1085,11 @@ const contracts = [
     && articleDocumentEditor.includes('historyTimer = setTimeout(flushHistory, HISTORY_DEBOUNCE_MS)')
     && articleDocumentEditor.includes('@blur="flushHistory"') && articleDocumentEditor.includes('function syncCanvas()')
     && articleDocumentEditor.includes('点击图片可再次编辑'), '正文编辑器必须提供非浏览器prompt的链接/图片面板、快捷键、合并式输入历史及正文图片就地再编辑'],
-  [mediaUploadField.includes('current.flexibleDimensions') && mediaUploadField.includes('renderFlexibleVariant')
-    && mediaUploadField.includes('正文插图不限制像素尺寸和长宽比') && mediaUploadField.includes('不裁切、不拉伸')
+  [mediaUploadField.includes('renderFlexibleVariant') && !mediaUploadField.includes('validateIndependentSource')
+    && !mediaUploadField.includes('原图方向归一后至少') && !mediaUploadField.includes('必须使用')
     && platform.includes('flexibleDimensions: boolean')
-    && siteContentStore.includes('FlexibleDimensions = false') && siteContentStore.includes('"article", "资讯正文图片", 0, 0, 0, 0, 0, 0')
-    && siteContentStore.includes('policy.FlexibleDimensions ? null'), '资讯正文插图必须允许任意像素与长宽比，完整保留构图并仅等比例生成交付WebP；封面和轮播继续执行各自固定规格'],
+    && siteContentStore.includes('Upload safety is deliberately limited')
+    && !siteContentStore.includes('policy.FlexibleDimensions ? null'), '全部站点图片入口必须允许任意像素与长宽比，完整保留构图并仅等比例生成交付WebP；服务端只保留格式与体积安全校验'],
   [router.includes("path: '/news/:articleId'") && newsPage.includes('showingNewsDetail')
     && newsPage.includes('← 返回资讯一览') && newsPage.includes(':to="kind === \'news\' ? `/news/${entry.id}`')
     && !newsPage.includes('<details v-if="entry.body"') && officialHome.includes("fallback === '/news' ? `/news/${article.id}`")
@@ -1468,7 +1482,7 @@ contracts.push(
     && titleRules.includes('15场') && titleRules.includes('镜像局'),
     '排行榜和称号管理必须提供同一完整最强称号说明，搜索框独立收窄'],
   [sandboxPicker.includes('native-orientation') && sandboxPicker.includes('CatalogCardDetails')
-    && sandboxPicker.includes('max-width:800px') && catalogDetails.includes('effect'),
+    && sandboxPicker.includes('max-width:760px') && catalogDetails.includes('effect'),
     'GM选牌必须保留横卡自然方向、可查看详情且窄桌面筛选不越界'],
   [app.includes('FriendRequestNotifications') && friendNotifications.includes("resolve('block')")
     && friendNotifications.includes("resolve('reject')") && friendNotifications.includes("resolve('accept')")

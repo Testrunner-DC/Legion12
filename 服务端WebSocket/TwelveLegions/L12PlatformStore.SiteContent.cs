@@ -161,10 +161,10 @@ public sealed partial class L12PlatformStore
         {
             ["hero"] = new("hero", "首页轮播", 2460, 1440, 1080, 1440, 600, 351,
                 "桌面中央 70% × 70%；移动端中央 76% × 78%，标题与人物主体不得贴边",
-                ["image/jpeg", "image/png", "image/webp", "image/avif"]),
+                ["image/jpeg", "image/png", "image/webp", "image/avif"], true),
             ["news"] = new("news", "资讯封面", 1600, 900, 1280, 720, 480, 270,
                 "全端固定 16:9；建议原图 1600×900 或更高同等比例，标题与主体保持在中央 76% × 76%",
-                ["image/jpeg", "image/png", "image/webp", "image/avif"]),
+                ["image/jpeg", "image/png", "image/webp", "image/avif"], true),
             ["article"] = new("article", "资讯正文图片", 0, 0, 0, 0, 0, 0,
                 "不限固定尺寸与长宽比；生成交付图时完整保留原图构图，不裁切、不拉伸",
                 ["image/jpeg", "image/png", "image/webp", "image/avif"], true),
@@ -173,10 +173,10 @@ public sealed partial class L12PlatformStore
                 ["image/jpeg", "image/png", "image/webp", "image/avif"], true),
             ["video"] = new("video", "视频封面", 1280, 720, 1280, 720, 480, 270,
                 "全端固定 16:9；建议原图 1280×720 或更高同等比例，播放主体避开四角控件区域",
-                ["image/jpeg", "image/png", "image/webp", "image/avif"]),
+                ["image/jpeg", "image/png", "image/webp", "image/avif"], true),
             ["product"] = new("product", "商品图片", 1600, 1200, 1200, 900, 480, 360,
                 "全端固定 4:3；建议原图 1600×1200 或更高同等比例，商品主体保持在中央 78% × 78%，包装文字不得贴边",
-                ["image/jpeg", "image/png", "image/webp", "image/avif"]),
+                ["image/jpeg", "image/png", "image/webp", "image/avif"], true),
         };
 
     private static readonly (string Kind, string Name, string Slug)[] DefaultSiteCategories =
@@ -385,18 +385,12 @@ public sealed partial class L12PlatformStore
         var originalFormat = DetectImageFormat(upload.Original);
         if (!policy.AcceptedOriginalFormats.Contains(originalFormat, StringComparer.OrdinalIgnoreCase))
             throw new ArgumentException("原图只允许 JPEG、PNG、WebP 或 AVIF，禁止 SVG 与其他主动内容格式");
-        int? expectedDesktopWidth = policy.FlexibleDimensions ? null : policy.DesktopWidth;
-        int? expectedDesktopHeight = policy.FlexibleDimensions ? null : policy.DesktopHeight;
-        int? expectedMobileWidth = policy.FlexibleDimensions ? null : policy.MobileWidth;
-        int? expectedMobileHeight = policy.FlexibleDimensions ? null : policy.MobileHeight;
-        int? expectedThumbnailWidth = policy.FlexibleDimensions ? null : policy.ThumbnailWidth;
-        int? expectedThumbnailHeight = policy.FlexibleDimensions ? null : policy.ThumbnailHeight;
-        var desktopWebp = SanitizeDeliveryWebp(upload.DesktopWebp, expectedDesktopWidth, expectedDesktopHeight,
-            "桌面 WebP");
-        var mobileWebp = SanitizeDeliveryWebp(upload.MobileWebp, expectedMobileWidth, expectedMobileHeight,
-            "移动 WebP");
-        var thumbnailWebp = SanitizeDeliveryWebp(upload.ThumbnailWebp, expectedThumbnailWidth,
-            expectedThumbnailHeight, "缩略图 WebP");
+        // Display surfaces crop or contain images as needed. Upload safety is deliberately limited to
+        // trusted formats and byte ceilings so an editor is never blocked by source pixel dimensions
+        // or aspect ratio.
+        var desktopWebp = SanitizeDeliveryWebp(upload.DesktopWebp, null, null, "桌面 WebP");
+        var mobileWebp = SanitizeDeliveryWebp(upload.MobileWebp, null, null, "移动 WebP");
+        var thumbnailWebp = SanitizeDeliveryWebp(upload.ThumbnailWebp, null, null, "缩略图 WebP");
         var desktopDimensions = ReadWebpDimensions(desktopWebp);
         var mobileDimensions = ReadWebpDimensions(mobileWebp);
         var thumbnailDimensions = ReadWebpDimensions(thumbnailWebp);

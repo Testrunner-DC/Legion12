@@ -1,0 +1,129 @@
+/*
+ * Legion12 site UI system.
+ *
+ * This layer is intentionally scoped to SiteShell. Immersive battle/replay and deck-editor
+ * geometry keep their own responsive tokens and cannot be changed by this stylesheet.
+ */
+:root{
+  --l12-ui-page:#060a0d;
+  --l12-ui-panel:#0b1218;
+  --l12-ui-panel-raised:#101a21;
+  --l12-ui-control:#070d12;
+  --l12-ui-line:rgba(221,226,220,.18);
+  --l12-ui-line-strong:#526068;
+  --l12-ui-accent:#e0c26b;
+  --l12-ui-accent-line:#9c813d;
+  --l12-ui-info:#55c7ce;
+  --l12-ui-danger:#d46b74;
+  --l12-ui-success:#72ca9f;
+  --l12-ui-text:#f0eee7;
+  --l12-ui-text-soft:#c4cbcc;
+  --l12-ui-text-muted:#89969c;
+  --l12-ui-radius-sm:3px;
+  --l12-ui-radius-md:6px;
+  --l12-ui-radius-lg:9px;
+  --l12-ui-space-1:6px;
+  --l12-ui-space-2:10px;
+  --l12-ui-space-3:14px;
+  --l12-ui-space-4:20px;
+  --l12-ui-shadow-panel:0 14px 38px rgba(0,0,0,.24);
+  --l12-ui-shadow-dialog:0 30px 100px rgba(0,0,0,.72);
+}
+
+.site-shell{
+  color:var(--l12-ui-text);
+  background:
+    radial-gradient(circle at 80% 10%,rgba(18,101,108,.12),transparent 34%),
+    radial-gradient(circle at 12% 84%,rgba(121,22,32,.13),transparent 35%),
+    var(--l12-ui-page);
+}
+
+.site-shell .site-content{
+  color:var(--l12-ui-text);
+}
+
+.site-shell .site-content :is(input:not([type='checkbox']):not([type='radio']),select,textarea),
+.site-shell .site-modal :is(input:not([type='checkbox']):not([type='radio']),select,textarea){
+  box-sizing:border-box;
+  min-width:0;
+  max-width:100%;
+  border:1px solid var(--l12-ui-line-strong);
+  border-radius:var(--l12-ui-radius-sm);
+  outline:none;
+  background:var(--l12-ui-control);
+  color:var(--l12-ui-text);
+}
+
+.site-shell .site-content :is(input,select,textarea):focus-visible,
+.site-shell .site-modal :is(input,select,textarea):focus-visible{
+  border-color:var(--l12-ui-info);
+  box-shadow:0 0 0 2px rgba(85,199,206,.2);
+}
+
+.site-shell .site-content :is(.page-head,.detail-page-head){
+  border-color:var(--l12-ui-line);
+}
+
+.site-shell .site-content :is(.page-head,.detail-page-head)>div>small{
+  color:var(--l12-ui-info);
+  font-weight:900;
+  letter-spacing:.16em;
+}
+
+.site-shell .site-content :is(.panel,.admin-content>section,.art-editor,.art-list,.grant-panel,.grant-list,.product-editor,.award-rules,.event-dispatch,.analysis-detail,.filter-panel,.recovery-card){
+  border-color:var(--l12-ui-line);
+  border-radius:var(--l12-ui-radius-md);
+  background:linear-gradient(145deg,var(--l12-ui-panel-raised),var(--l12-ui-panel));
+  box-shadow:var(--l12-ui-shadow-panel);
+}
+
+.site-shell .site-content :is(button,a[role='button'],.back-to-list):focus-visible,
+.site-shell .site-modal button:focus-visible{
+  outline:2px solid var(--l12-ui-info);
+  outline-offset:2px;
+}
+
+.site-shell .site-content :is(.primary,.gold,.confirm),
+.site-shell .site-modal :is(.auth-submit,.alternate-art-confirm){
+  border-color:var(--l12-ui-accent-line)!important;
+  background:linear-gradient(135deg,#b99648,var(--l12-ui-accent))!important;
+  color:#0b0d0e!important;
+  font-weight:900;
+}
+
+.site-shell .site-content :is(.danger,[data-tone='danger']){
+  border-color:#8f4049!important;
+  background:#2b1218!important;
+  color:#efb1b7!important;
+}
+
+.site-shell .site-modal{
+  border-color:var(--l12-ui-line);
+  border-radius:var(--l12-ui-radius-lg);
+  background:linear-gradient(145deg,var(--l12-ui-panel-raised),var(--l12-ui-panel));
+  color:var(--l12-ui-text);
+  box-shadow:var(--l12-ui-shadow-dialog);
+}
+
+.site-shell .site-modal>header{
+  border-color:var(--l12-ui-line);
+}
+
+.site-shell .site-modal header small{
+  color:var(--l12-ui-info);
+}
+
+@media(max-width:700px){
+  .site-shell .site-content{
+    overflow-x:clip;
+  }
+
+  .site-shell .site-content :is(.panel,.admin-content>section,.art-editor,.art-list,.grant-panel,.grant-list,.product-editor,.award-rules,.event-dispatch,.analysis-detail,.filter-panel,.recovery-card){
+    border-radius:var(--l12-ui-radius-sm);
+    box-shadow:none;
+  }
+
+  .site-shell .site-modal{
+    border-radius:var(--l12-ui-radius-lg) var(--l12-ui-radius-lg) 0 0;
+  }
+}

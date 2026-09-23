@@ -22,7 +22,7 @@ const checks = [
   [admin.includes("tab === 'rules'") && admin.includes('§ 规则中心审核')
     && !siteContent.includes("section === 'rules'") && !siteContent.includes("id: 'rules'"),
   '规则中心审核必须与站点内容工作台平级'],
-  [alternateArts.includes('FilteredSingleCardPicker') && alternateArts.includes("openArtPicker('base')")
+  [alternateArts.includes('SingleCardPicker') && alternateArts.includes("openArtPicker('base')")
     && !alternateArts.includes('<label>原卡<select') && alternateArts.includes('卡名（随原卡，不可单独修改）'),
   '原卡与异画选择必须复用筛选单卡组件，异画卡名不可单独编辑'],
   [ruleReview.includes('publishRuleItem') && ruleReview.includes('审核并发布此项')

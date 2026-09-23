@@ -669,7 +669,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="site-shell">
+  <div class="site-shell" data-l12-ui-system="site-v1">
     <header class="site-mobile-head">
       <router-link class="mobile-brand" to="/" title="返回主页"><img :src="siteBrandIcon" alt="十二军团"/></router-link>
       <button ref="mobileMenuButton" :aria-expanded="mobileOpen" aria-controls="site-mobile-drawer" :aria-label="mobileOpen ? '关闭导航' : '打开导航'" @click="toggleMobileNav">{{ mobileOpen ? '×' : '☰' }}</button>

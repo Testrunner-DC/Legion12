@@ -19,7 +19,7 @@ import PlayerMat from './PlayerMat.vue'
 import PlayerTurnClock from './PlayerTurnClock.vue'
 import PhasePlayback from './PhasePlayback.vue'
 import PromptOverlay from './PromptOverlay.vue'
-import SandboxCardPicker, { type SandboxCatalogCard } from './SandboxCardPicker.vue'
+import SingleCardPicker, { type SingleCardPickerItem } from '../SingleCardPicker.vue'
 import CardImage from '../CardImage.vue'
 import CardDetailContent from '../CardDetailContent.vue'
 import type { DeckCard } from '../decks'
@@ -410,7 +410,7 @@ function focusSessionDisaster(card: DisasterCardView, index?: number) {
   if (index !== undefined && props.game.disasterMode === 'custom' && l12State.gmEnabled && !props.readOnly && index < 3)
     customDisasterSlot.value = index
 }
-function replaceCustomDisaster(card: SandboxCatalogCard) {
+function replaceCustomDisaster(card: SingleCardPickerItem) {
   if (customDisasterSlot.value === null) return
   gmAction({ type: 'replaceDisaster', targetPlayer: controlledPlayerIndex.value, slot: customDisasterSlot.value, cardId: card.id })
   customDisasterSlot.value = null
@@ -1396,7 +1396,7 @@ function statusTexts(card: Card) {
         @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" @minimized-change="promptMinimized = $event" @response-targets-change="responseTargetIds = $event" />
     </div>
   </div>
-  <SandboxCardPicker v-if="customDisasterSlot !== null" title="更换自定天灾（第四槽堙灭固定）" :allowed-types="['destruction']" @select="replaceCustomDisaster" @close="customDisasterSlot = null"/>
+  <SingleCardPicker v-if="customDisasterSlot !== null" title="更换自定天灾（第四槽堙灭固定）" :allowed-types="['destruction']" @select="replaceCustomDisaster" @close="customDisasterSlot = null"/>
 </template>
 
 <style scoped>

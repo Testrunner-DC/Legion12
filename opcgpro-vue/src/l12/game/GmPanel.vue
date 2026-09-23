@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { gmAction, l12State } from '@/l12/net'
 import { endpointHttpBase } from '@/l12/deploymentBase'
 import type { Card, GameState } from '@/l12/types'
-import SandboxCardPicker, { type SandboxCatalogCard } from './SandboxCardPicker.vue'
+import SingleCardPicker, { type SingleCardPickerItem } from '../SingleCardPicker.vue'
 import CardImage from '../CardImage.vue'
 
 const props = defineProps<{ game: GameState }>()
@@ -22,7 +22,7 @@ const emit = defineEmits<{
 const open = ref(true)
 watch(open, value => emit('openChange', value), { immediate: true })
 const targetMode = ref<'self' | 'opponent'>('self')
-const selectedCatalogCard = ref<SandboxCatalogCard | null>(null)
+const selectedCatalogCard = ref<SingleCardPickerItem | null>(null)
 const pickerOpen = ref(false)
 const destination = ref('hand')
 const handDestination = ref('graveyard')
@@ -86,7 +86,7 @@ function playHandCard() {
   }
   run('playHandCard', { cardInstanceId: card.instanceId, triggerEffects: triggerEffects.value })
 }
-function selectCatalogCard(card: SandboxCatalogCard) { selectedCatalogCard.value = card; pickerOpen.value = false }
+function selectCatalogCard(card: SingleCardPickerItem) { selectedCatalogCard.value = card; pickerOpen.value = false }
 function onKeydown(event: KeyboardEvent) {
   if (event.key.toLowerCase() !== 't' || event.ctrlKey || event.metaKey || event.altKey) return
   if ((event.target as HTMLElement | null)?.closest('input,select,textarea,button')) return
@@ -138,7 +138,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
     <footer><button @click="exportRecord">导出可复现 JSON</button><span>快捷键 T</span></footer>
   </aside>
-  <SandboxCardPicker v-if="pickerOpen" title="选择要执行 GM 操作的卡片" @select="selectCatalogCard" @close="pickerOpen = false"/>
+  <SingleCardPicker v-if="pickerOpen" title="选择要执行 GM 操作的卡片" @select="selectCatalogCard" @close="pickerOpen = false"/>
 </template>
 
 <style scoped>

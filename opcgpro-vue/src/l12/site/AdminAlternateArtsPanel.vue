@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { adminApi, hasPermission, type AlternateArt, type AlternateArtAwardRule, type AlternateArtGrant, type AlternateArtProduct, type AlternateArtRankedParticipantDispatchPreview, type AlternateArtSearchPage, type SiteMedia } from '@/l12/platform'
 import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import MediaUploadField from './MediaUploadField.vue'
-import FilteredSingleCardPicker, { type FilteredSingleCardItem } from './FilteredSingleCardPicker.vue'
+import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
 import CardImage from '@/l12/CardImage.vue'
 
 const emit = defineEmits<{ notice: [value: string] }>()
@@ -33,14 +33,16 @@ const cardById = computed(() => new Map(catalog.value.map(card => [card.id, card
 const selectedArt = computed(() => arts.value.find(item => item.id === grantForm.alternateArtId))
 const selectedParticipantArt = computed(() => arts.value.find(item => item.id === betaGrantForm.alternateArtId))
 const selectedRuleArt = computed(() => arts.value.find(item => item.id === ruleForm.alternateArtId))
-const basePickerItems = computed<FilteredSingleCardItem[]>(() => catalog.value.map(card => ({ id: card.id, cardId: card.id,
-  number: card.number, name: card.nameZh, cardImageId: card.id, cardType: card.cardType, faction: card.faction,
-  product: card.product, cost: card.cost })))
-const artPickerItems = computed<FilteredSingleCardItem[]>(() => arts.value.filter(art => art.active).map(art => {
+const basePickerItems = computed<SingleCardPickerItem[]>(() => catalog.value.map(card => ({ id: card.id, cardId: card.id,
+  number: card.number, name: card.nameZh, nameZh: card.nameZh, cardImageId: card.id, cardType: card.cardType,
+  faction: card.faction, product: card.product, cost: card.cost, disasterLevel: card.disasterLevel,
+  effect: card.effect, detailCard: card })))
+const artPickerItems = computed<SingleCardPickerItem[]>(() => arts.value.filter(art => art.active).map(art => {
   const card = cardById.value.get(art.baseCardId)
-  return { id: art.id, cardId: art.baseCardId, number: art.artCode, name: art.displayName,
+  return { id: art.id, cardId: art.baseCardId, number: art.artCode, name: art.displayName, nameZh: art.displayName,
     imageUrl: art.builtIn ? undefined : art.thumbnailUrl, cardImageId: art.builtIn ? art.cardImageId : undefined,
-    cardType: card?.cardType, faction: card?.faction, product: art.productName || card?.product,
+    cardType: card?.cardType || 'alternate-art', faction: card?.faction, product: art.productName || card?.product,
+    cost: card?.cost, disasterLevel: card?.disasterLevel, effect: card?.effect, detailCard: card,
     subtitle: `${art.artCode} · ${card?.nameZh || art.baseCardId}` }
 }))
 const selectedBaseCard = computed(() => cardById.value.get(artForm.baseCardId))
@@ -66,7 +68,7 @@ async function searchRegistry(page = 1) {
 }
 async function openRegistry() { registryOpen.value = true; await searchRegistry(1) }
 function resetRegistryFilters() { Object.assign(registryFilters, { name: '', artCode: '', baseCard: '' }); void searchRegistry(1) }
-function choosePickerItem(item: FilteredSingleCardItem) {
+function choosePickerItem(item: SingleCardPickerItem) {
   if (artPickerTarget.value === 'base') {
     artForm.baseCardId = item.cardId; artForm.displayName = item.name; artPickerTarget.value = null; return
   }
@@ -196,7 +198,7 @@ onMounted(load)
           <footer><span>共 {{ registry.total }} 项 · 第 {{ registry.page }} / {{ registryPages }} 页</span><div><button type="button" :disabled="registryBusy || registry.page <= 1" @click="searchRegistry(registry.page - 1)">上一页</button><button type="button" :disabled="registryBusy || registry.page >= registryPages" @click="searchRegistry(registry.page + 1)">下一页</button></div></footer>
         </section>
       </div>
-      <FilteredSingleCardPicker v-if="artPickerTarget" :title="artPickerTarget === 'base' ? '选择异画绑定的原卡' : '选择异画'" :items="artPickerTarget === 'base' ? basePickerItems : artPickerItems" @select="choosePickerItem" @close="artPickerTarget = null"/>
+      <SingleCardPicker v-if="artPickerTarget" :title="artPickerTarget === 'base' ? '选择异画绑定的原卡' : '选择异画'" :items="artPickerTarget === 'base' ? basePickerItems : artPickerItems" @select="choosePickerItem" @close="artPickerTarget = null"/>
     </Teleport>
   </section>
 </template>

@@ -3,11 +3,11 @@ import { readFileSync } from 'node:fs'
 
 const source = readFileSync(new URL('../src/l12/site/AdminCardAnalyticsPanel.vue', import.meta.url), 'utf8')
 
-assert.match(source, /import SandboxCardPicker,[\s\S]*from '@\/l12\/game\/SandboxCardPicker\.vue'/,
-  'analytics must reuse the GM card picker')
-assert.match(source, /<SandboxCardPicker v-if="pickerOpen"[^>]*@select="chooseCard"/,
+assert.match(source, /import SingleCardPicker,[\s\S]*from '@\/l12\/SingleCardPicker\.vue'/,
+  'analytics must reuse the shared card picker')
+assert.match(source, /<SingleCardPicker v-if="pickerOpen"[^>]*@select="chooseCard"/,
   'single-card selection must be wired to the shared picker')
-assert.doesNotMatch(source, /<SandboxCardPicker[^>]*allowed-types/,
+assert.doesNotMatch(source, /<SingleCardPicker[^>]*allowed-types/,
   'analytics must allow the full catalog rather than narrowing picker card types')
 
 for (const range of ["applyRange('all')", "applyRange('7d')", "applyRange('30d')", "applyRange('season')"])

@@ -475,12 +475,14 @@ public sealed class SiteContentPlatformStoreTests
                 Webp(policy.ThumbnailWidth, policy.ThumbnailHeight), "封面", .5, .5);
             Assert.Throws<ArgumentException>(() => store.UploadSiteMedia(admin, invalidOriginal));
 
-            var wrongDesktop = invalidOriginal with
+            var arbitraryDimensions = invalidOriginal with
             {
                 OriginalFileName = "cover.webp", OriginalContentType = "image/webp",
                 Original = Webp(800, 600), DesktopWebp = Webp(800, 600),
             };
-            Assert.Throws<ArgumentException>(() => store.UploadSiteMedia(admin, wrongDesktop));
+            var arbitraryMedia = store.UploadSiteMedia(admin, arbitraryDimensions);
+            Assert.Equal((800, 600), (arbitraryMedia.DesktopWidth, arbitraryMedia.DesktopHeight));
+            Assert.All(policies, item => Assert.True(item.FlexibleDimensions));
 
             var articlePolicy = policies.Single(item => item.Kind == "article");
             Assert.True(articlePolicy.FlexibleDimensions);
@@ -535,7 +537,7 @@ public sealed class SiteContentPlatformStoreTests
     }
 
     [Fact]
-    public void HeroRequiresThreeIndependentVariantsAndCreatesOneAtomicMediaGroup()
+    public void HeroRequiresThreeIndependentVariantsAllowsArbitraryDimensionsAndCreatesOneAtomicMediaGroup()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-site-hero-group-{Guid.NewGuid():N}");
         try
@@ -550,26 +552,18 @@ public sealed class SiteContentPlatformStoreTests
             Assert.Throws<ArgumentException>(() => store.UploadSiteMedia(admin, legacyStyleUpload));
             Assert.Empty(store.AdminSiteMedia("hero"));
 
-            var invalidThirdVariant = legacyStyleUpload with
+            var arbitraryThirdVariant = legacyStyleUpload with
             {
                 IndependentVariants = true,
                 DesktopAltText = "桌面独立构图", MobileAltText = "移动独立构图", ThumbnailAltText = "缩略独立构图",
                 ThumbnailWebp = Webp(320, 180),
             };
-            Assert.Throws<ArgumentException>(() => store.UploadSiteMedia(admin, invalidThirdVariant));
-            Assert.Empty(store.AdminSiteMedia("hero"));
-            Assert.False(Directory.Exists(Path.Combine(root, "site-media")) &&
-                Directory.EnumerateFiles(Path.Combine(root, "site-media")).Any());
-
-            var upload = invalidThirdVariant with
-            {
-                ThumbnailWebp = Webp(policy.ThumbnailWidth, policy.ThumbnailHeight),
-            };
-            var media = store.UploadSiteMedia(admin, upload);
+            var media = store.UploadSiteMedia(admin, arbitraryThirdVariant);
             Assert.True(media.IndependentVariants);
             Assert.Equal("桌面独立构图", media.DesktopAltText);
             Assert.Equal("移动独立构图", media.MobileAltText);
             Assert.Equal("缩略独立构图", media.ThumbnailAltText);
+            Assert.Equal((320, 180), (media.ThumbnailWidth, media.ThumbnailHeight));
             Assert.Equal(media.Id, Assert.Single(store.AdminSiteMedia("hero")).Id);
             Assert.NotNull(store.ResolveSiteMediaFile(media.Id, "desktop", media.DesktopUrl.Split('/').Last()));
             Assert.NotNull(store.ResolveSiteMediaFile(media.Id, "mobile", media.MobileUrl.Split('/').Last()));
@@ -829,7 +823,11 @@ public sealed class SiteContentPlatformStoreTests
                        Webp(800, 600), Webp(newsPolicy.MobileWidth, newsPolicy.MobileHeight),
                        Webp(newsPolicy.ThumbnailWidth, newsPolicy.ThumbnailHeight))))
             using (var response = await client.SendAsync(request))
-                Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var payload = await response.Content.ReadFromJsonAsync<L12SiteMediaView>();
+                Assert.Equal((800, 600), (payload!.DesktopWidth, payload.DesktopHeight));
+            }
 
             var oversizedOriginal = Pad(Webp(1600, 900), L12PlatformStore.SiteMediaOriginalMaxBytes + 1);
             using (var request = AuthorizedMedia(admin.Token!, MediaForm("news", oversizedOriginal,

@@ -47,7 +47,7 @@
 | D11 | 主宰详情弹框 | 主宰信息和合法能力 | MasterOverlay |
 | D12 | 阵营效果详情弹框 | 阵营卡文、动作、最小化 | PlayerMat |
 | D13 | 沙盒控制面板 | GM卡牌、阶段与数值控制 | GmPanel |
-| D14 | 沙盒选卡弹框 | 加卡或更换自定天灾 | SandboxCardPicker |
+| D14 | 沙盒选卡弹框 | 加卡或更换自定天灾 | SingleCardPicker |
 | D15 | 设置弹框 | 对战中设置入口打开的配置 | L12SettingsModal |
 | D16 | 好友邀请卡片 | 右下局部邀请、撤回与最小化 | SiteShell |
 | D17 | 胜负结算界面 | 结果展示、玩家确认返回 | GamePage |

@@ -89,7 +89,7 @@ const consumers = [
   '../src/l12/game/PlayerMat.vue',
   '../src/l12/game/PromptOverlay.vue',
   '../src/l12/game/GmPanel.vue',
-  '../src/l12/game/SandboxCardPicker.vue',
+  '../src/l12/SingleCardPicker.vue',
   '../src/l12/game/MasterOverlay.vue',
   '../src/l12/site/AdminPage.vue',
   '../src/l12/site/DeckConstructionBrowser.vue',
@@ -105,7 +105,7 @@ const styledCardImageConsumers = [
   '../src/l12/game/MasterOverlay.vue',
   '../src/l12/game/PlayerMat.vue',
   '../src/l12/game/PromptOverlay.vue',
-  '../src/l12/game/SandboxCardPicker.vue',
+  '../src/l12/SingleCardPicker.vue',
   '../src/l12/site/AdminPage.vue',
   '../src/l12/site/DeckLibraryPage.vue',
 ]
