@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { cancelFriendInvitation, inviteFriend, l12State, resolveFriendInvitation, spectateRoom } from '@/l12/net'
-import { alternateArtApi, friendApi, login, platformState, register, type AlternateArtGrantNotification, type PlatformPresence } from '@/l12/platform'
+import { alternateArtApi, friendApi, login, platformState, register, telemetryApi, type AlternateArtGrantNotification, type PlatformPresence } from '@/l12/platform'
 import SiteIcon from './SiteIcon.vue'
 import L12SettingsModal from './L12SettingsModal.vue'
 import MaintenanceTicker from './MaintenanceTicker.vue'
@@ -564,7 +564,10 @@ function openBugFeedback() {
   window.dispatchEvent(new Event('l12-open-bug-feedback'))
 }
 
-watch(() => route.fullPath, () => { mobileOpen.value = false })
+watch(() => route.fullPath, () => {
+  mobileOpen.value = false
+  void telemetryApi.pageView(route.path).catch(() => { /* 统计失败不阻断玩家访问。 */ })
+}, { immediate: true })
 function enterFriendRoom() { void router.push('/battle') }
 let presenceTimer = 0
 async function refreshPresence() {

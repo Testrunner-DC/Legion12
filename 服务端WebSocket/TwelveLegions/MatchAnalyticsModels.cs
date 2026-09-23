@@ -57,6 +57,9 @@ public sealed record L12AdminMatchQuery(
 public sealed record L12CardAnalyticsQuery(
     string? Cursor = null,
     int Limit = 50,
+    int Page = 1,
+    string Sort = "sample-size",
+    string Direction = "desc",
     int MinimumSampleSize = 5,
     string? Search = null,
     IReadOnlyList<string>? CandidateCardIds = null,
@@ -220,6 +223,17 @@ public sealed record L12CardAnalyticsItem(
     long Wins,
     double WinRate,
     L12AnalyticsConfidenceInterval WinRateConfidence,
+    long ExactDrawCoverageSamples,
+    long GihSamples,
+    long GihWins,
+    double? GihWinRate,
+    L12AnalyticsConfidenceInterval? GihWinRateConfidence,
+    long GnsSamples,
+    long GnsWins,
+    double? GnsWinRate,
+    L12AnalyticsConfidenceInterval? GnsWinRateConfidence,
+    double? InHandWinRateDelta,
+    L12AnalyticsConfidenceInterval? InHandWinRateDeltaConfidence,
     double? BaselineWinRate,
     L12AnalyticsConfidenceInterval? BaselineWinRateConfidence,
     double? WinRateDelta,
@@ -254,7 +268,9 @@ public sealed record L12CardAnalyticsPage(
     IReadOnlyList<L12CardAnalyticsItem> Items,
     long Total,
     string? NextCursor,
-    L12CardAnalyticsPageSummary Summary);
+    L12CardAnalyticsPageSummary Summary,
+    int Page = 1,
+    int PageSize = 50);
 
 public sealed record L12CardAnalyticsBreakdown(
     string Dimension,
@@ -302,3 +318,70 @@ public sealed record L12CardAnalyticsDetail(
     IReadOnlyList<L12CardAnalyticsMatchup> Matchups,
     IReadOnlyList<L12AdminMatchSummary> RecentMatches,
     L12AnalyticsCoverage Coverage);
+
+public sealed record L12MasterAnalyticsItem(
+    string MasterId,
+    long ParticipantSamples,
+    long DistinctMatches,
+    long DistinctDecks,
+    double UsageRate,
+    double DeckShare,
+    long Wins,
+    double WinRate,
+    L12AnalyticsConfidenceInterval WinRateConfidence,
+    double AverageDurationSeconds,
+    long FirstSamples,
+    double? FirstWinRate,
+    long SecondSamples,
+    double? SecondWinRate);
+
+public sealed record L12MasterAnalyticsTrend(
+    string Date,
+    long Samples,
+    long Wins,
+    double WinRate);
+
+public sealed record L12MasterMatchup(
+    string MasterId,
+    string OpponentMasterId,
+    long Samples,
+    long Wins,
+    double? WinRate);
+
+public sealed record L12PopularMasterDeck(
+    string Signature,
+    long Samples,
+    long Wins,
+    double WinRate,
+    IReadOnlyList<L12DeckCardSnapshot> Cards);
+
+public sealed record L12MasterAnalyticsReport(
+    IReadOnlyList<L12MasterAnalyticsItem> Items,
+    IReadOnlyList<L12MasterMatchup> Matchups,
+    IReadOnlyList<L12MasterAnalyticsTrend> Trend,
+    string? SelectedMasterId,
+    IReadOnlyList<L12PopularMasterDeck> PopularDecks,
+    L12CardAnalyticsPage? Cards);
+
+public sealed record L12GlobalAnalyticsDay(
+    string Date,
+    long DailyActiveUsers,
+    long WeeklyActiveUsers,
+    long MonthlyActiveUsers,
+    long DailyMatches,
+    long WeeklyMatches,
+    long MonthlyMatches,
+    double AverageOnline,
+    int PeakOnline,
+    string? PeakOnlineAt,
+    long NewUsers,
+    long ReturningUsers,
+    long PageViews);
+
+public sealed record L12GlobalPageView(string Path, long Views);
+
+public sealed record L12GlobalAnalyticsReport(
+    string FromDate,
+    string ToDate,
+    IReadOnlyList<L12GlobalAnalyticsDay> Days,
+    IReadOnlyList<L12GlobalPageView> PageViews);

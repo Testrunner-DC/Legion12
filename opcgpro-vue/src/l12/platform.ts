@@ -207,6 +207,9 @@ export interface AdminReplayPage {
 export interface AdminCardAnalyticsItem {
   cardId: string; sampleSize: number; eligibleSampleSize: number; includedMatches: number; averageQuantity: number; inclusionRate: number; wins: number; winRate: number
   winRateConfidence: AdminAnalyticsConfidenceInterval; baselineWinRate?: number | null; baselineWinRateConfidence?: AdminAnalyticsConfidenceInterval | null
+  exactDrawCoverageSamples: number; gihSamples: number; gihWins: number; gihWinRate?: number | null; gihWinRateConfidence?: AdminAnalyticsConfidenceInterval | null
+  gnsSamples: number; gnsWins: number; gnsWinRate?: number | null; gnsWinRateConfidence?: AdminAnalyticsConfidenceInterval | null
+  inHandWinRateDelta?: number | null; inHandWinRateDeltaConfidence?: AdminAnalyticsConfidenceInterval | null
   winRateDelta?: number | null; winRateDeltaConfidence?: AdminAnalyticsConfidenceInterval | null; drawnMatches: number; playedMatches: number
   drawnSamples: number; playedSamples: number; activatedSamples: number; settledSamples: number
   resolvedSamples: number; negatedSamples: number; fizzledSamples: number
@@ -237,6 +240,7 @@ export interface AdminAnalyticsStratifiedComparison {
 }
 export interface AdminCardAnalyticsPage {
   items: AdminCardAnalyticsItem[]; total: number; nextCursor?: string | null
+  page?: number; pageSize?: number
   summary?: { eligibleMatches?: number; sampleSize?: number; baselineWinRate?: number | null; minimumSampleSize?: number; statisticalUnit?: string; coverage?: AdminMatchDetail['coverage'] }
 }
 export interface AdminCardAnalyticsBreakdown {
@@ -250,6 +254,29 @@ export interface AdminCardAnalyticsDetail {
   turnDistribution: Array<{ turn: number; firstDrawSamples: number; firstPlaySamples: number }>
   matchups: Array<{ masterId: string; opponentMasterId: string; sampleSize: number; eligibleSampleSize: number; wins: number; winRate: number; winRateConfidence: AdminAnalyticsConfidenceInterval; baselineWinRate?: number | null; baselineWinRateConfidence?: AdminAnalyticsConfidenceInterval | null; winRateDelta?: number | null; winRateDeltaConfidence?: AdminAnalyticsConfidenceInterval | null }>
   recentMatches: AdminMatchSummary[]; coverage: AdminAnalyticsCoverage
+}
+export interface AdminMasterAnalyticsItem {
+  masterId: string; participantSamples: number; distinctMatches: number; distinctDecks: number
+  usageRate: number; deckShare: number; wins: number; winRate: number; winRateConfidence: AdminAnalyticsConfidenceInterval
+  averageDurationSeconds: number; firstSamples: number; firstWinRate?: number | null
+  secondSamples: number; secondWinRate?: number | null
+}
+export interface AdminMasterAnalyticsReport {
+  items: AdminMasterAnalyticsItem[]
+  matchups: Array<{ masterId: string; opponentMasterId: string; samples: number; wins: number; winRate?: number | null }>
+  trend: Array<{ date: string; samples: number; wins: number; winRate: number }>
+  selectedMasterId?: string | null
+  popularDecks: Array<{ signature: string; samples: number; wins: number; winRate: number; cards: Array<{ cardId: string; quantity: number; section: string }> }>
+  cards?: AdminCardAnalyticsPage | null
+}
+export interface AdminGlobalAnalyticsDay {
+  date: string; dailyActiveUsers: number; weeklyActiveUsers: number; monthlyActiveUsers: number
+  dailyMatches: number; weeklyMatches: number; monthlyMatches: number; averageOnline: number
+  peakOnline: number; peakOnlineAt?: string | null; newUsers: number; returningUsers: number; pageViews: number
+}
+export interface AdminGlobalAnalyticsReport {
+  fromDate: string; toDate: string; days: AdminGlobalAnalyticsDay[]
+  pageViews: Array<{ path: string; views: number }>
 }
 export interface AdminCommand {
   id: string; idempotencyKey?: string; type: string; actorId: string; actorName: string; requestedAt: string
@@ -842,7 +869,7 @@ export const adminApi = {
     Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
     return platformRequest<AdminMatchPage>(`/api/admin/players/${encodeURIComponent(accountId)}/matches${params.size ? `?${params}` : ''}`)
   },
-  cardAnalytics: (query: { cursor?: string; limit?: number; from?: string; to?: string; mode?: string; masterId?: string; opponentMasterId?: string; initiative?: string; rulesVersion?: string; effectVersion?: string; seasonId?: string; search?: string; minimumSample?: number } = {}) => {
+  cardAnalytics: (query: { cursor?: string; page?: number; limit?: number; sort?: string; direction?: 'asc'|'desc'; from?: string; to?: string; mode?: string; masterId?: string; opponentMasterId?: string; initiative?: string; rulesVersion?: string; effectVersion?: string; seasonId?: string; search?: string; minimumSample?: number } = {}) => {
     const params = new URLSearchParams()
     const mapped = { ...query, modeId: query.mode, fromUtc: localDateBoundary(query.from), toUtc: localDateBoundary(query.to, true), minimumSampleSize: query.minimumSample }
     ;['mode', 'from', 'to', 'minimumSample'].forEach(key => delete (mapped as Record<string, unknown>)[key])
@@ -855,6 +882,19 @@ export const adminApi = {
     ;['mode', 'from', 'to', 'minimumSample'].forEach(key => delete (mapped as Record<string, unknown>)[key])
     Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
     return platformRequest<AdminCardAnalyticsDetail>(`/api/admin/analytics/cards/${encodeURIComponent(cardId)}${params.size ? `?${params}` : ''}`)
+  },
+  masterAnalytics: (query: { from?: string; to?: string; masterId?: string; effectVersion?: string; seasonId?: string; minimumSample?: number; sort?: string } = {}) => {
+    const params = new URLSearchParams()
+    const mapped = { ...query, fromUtc: localDateBoundary(query.from), toUtc: localDateBoundary(query.to, true), minimumSampleSize: query.minimumSample }
+    ;['from', 'to', 'minimumSample'].forEach(key => delete (mapped as Record<string, unknown>)[key])
+    Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
+    return platformRequest<AdminMasterAnalyticsReport>(`/api/admin/analytics/masters${params.size ? `?${params}` : ''}`)
+  },
+  globalAnalytics: (query: { from?: string; to?: string } = {}) => {
+    const params = new URLSearchParams()
+    const from = localDateBoundary(query.from); const to = localDateBoundary(query.to)
+    if (from) params.set('fromUtc', from); if (to) params.set('toUtc', to)
+    return platformRequest<AdminGlobalAnalyticsReport>(`/api/admin/analytics/global${params.size ? `?${params}` : ''}`)
   },
   accounts: () => platformRequest<PlatformAccount[]>('/api/admin/accounts'),
   setRole: (id: string, role: 'player' | 'admin', expectedVersion?: number) => platformRequest<RoleCommandResult>(`/api/admin/accounts/${encodeURIComponent(id)}/role`, { method: 'PUT', body: JSON.stringify(commandBody('role', { role, expectedVersion })) }),
@@ -1133,6 +1173,12 @@ export const friendApi = {
     method: 'POST', body: JSON.stringify({ accountId }),
   }),
   unblock: (accountId: string) => platformRequest<void>(`/api/friends/blocked/${encodeURIComponent(accountId)}`, { method: 'DELETE' }),
+}
+
+export const telemetryApi = {
+  pageView: (path: string) => platformRequest<void>('/api/telemetry/page-view', {
+    method: 'POST', body: JSON.stringify({ path }),
+  }),
 }
 
 /** 玩家自己的异画库存；卡图选择仍由服务端在开局时二次校验。 */

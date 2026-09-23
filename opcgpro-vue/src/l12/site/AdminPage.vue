@@ -11,13 +11,14 @@ import AdminOperationsPanel from './AdminOperationsPanel.vue'
 import AdminRankedIntegrityPanel from './AdminRankedIntegrityPanel.vue'
 import AdminMatchesPanel from './AdminMatchesPanel.vue'
 import AdminCardAnalyticsPanel from './AdminCardAnalyticsPanel.vue'
+import AdminGlobalDataPanel from './AdminGlobalDataPanel.vue'
 import AdminMatchGovernancePanel from './AdminMatchGovernancePanel.vue'
 import AdminUsernameChangeRequestsPanel from './AdminUsernameChangeRequestsPanel.vue'
 import AdminAlternateArtsPanel from './AdminAlternateArtsPanel.vue'
 import AdminServerStoragePanel from './AdminServerStoragePanel.vue'
 import TournamentCenterPage from './TournamentCenterPage.vue'
 
-type AdminTab = 'overview' | 'bugs' | 'accounts' | 'username-requests' | 'matches' | 'match-governance' | 'card-analytics' | 'content' | 'rules' | 'alternate-arts' | 'effects' | 'releases' | 'commands' | 'audit' | 'integrity' | 'security' | 'storage' | 'operations' | 'tournaments'
+type AdminTab = 'overview' | 'bugs' | 'accounts' | 'username-requests' | 'matches' | 'match-governance' | 'global-data' | 'card-analytics' | 'content' | 'rules' | 'alternate-arts' | 'effects' | 'releases' | 'commands' | 'audit' | 'integrity' | 'security' | 'storage' | 'operations' | 'tournaments'
 const route = useRoute()
 const tab = ref<AdminTab>(route.query.section === 'matches' ? 'matches' : 'overview')
 const availableAdminTabs = computed<Array<{ id: AdminTab; label: string }>>(() => [
@@ -26,7 +27,7 @@ const availableAdminTabs = computed<Array<{ id: AdminTab; label: string }>>(() =
   ...(hasPermission('admin.bugs.read') ? [{ id: 'bugs' as const, label: 'Bug 管理' }] : []),
   ...(hasPermission('admin.matches.read') ? [{ id: 'matches' as const, label: '对局档案' }] : []),
   ...(hasPermission('admin.match-governance.read') ? [{ id: 'match-governance' as const, label: '对局治理' }] : []),
-  ...(hasPermission('admin.analytics.read') ? [{ id: 'card-analytics' as const, label: '单卡分析' }] : []),
+  ...(hasPermission('admin.analytics.read') ? [{ id: 'global-data' as const, label: '全局数据' }, { id: 'card-analytics' as const, label: '卡牌数据' }] : []),
   ...(hasPermission('admin.content.read') ? [{ id: 'content' as const, label: '站点内容工作台' }, { id: 'rules' as const, label: '规则中心审核' }, { id: 'alternate-arts' as const, label: '异画管理与权益' }] : []),
   ...(hasPermission('admin.operations.read') ? [{ id: 'operations' as const, label: '游戏运营配置' }] : []),
   ...(hasPermission('tournaments.manage') || hasPermission('tournaments.rulings.write') ? [{ id: 'tournaments' as const, label: '赛事管理' }] : []),
@@ -327,7 +328,7 @@ onMounted(() => { void initializeAdminPage() })
       <aside class="admin-sidebar">
         <nav><small>总览</small><button :class="{ active: tab === 'overview' }" @click="switchAdminTab('overview')">▦ 后台概览</button></nav>
         <nav><small>用户与反馈</small><button v-if="hasPermission('admin.accounts.read')" :class="{ active: tab === 'accounts' }" @click="switchAdminTab('accounts')">♙ 账号与会话</button><button v-if="hasPermission('admin.accounts.read')" :class="{ active: tab === 'username-requests' }" @click="switchAdminTab('username-requests')">✎ 改名审核</button><button v-if="hasPermission('admin.bugs.read')" :class="{ active: tab === 'bugs' }" @click="switchAdminTab('bugs')">⚑ Bug 管理</button></nav>
-        <nav><small>对局与数据</small><button v-if="hasPermission('admin.matches.read')" :class="{ active: tab === 'matches' }" @click="switchAdminTab('matches')">▣ 对局档案</button><button v-if="hasPermission('admin.match-governance.read')" :class="{ active: tab === 'match-governance' }" @click="switchAdminTab('match-governance')">⚖ 对局治理</button><button v-if="hasPermission('admin.analytics.read')" :class="{ active: tab === 'card-analytics' }" @click="switchAdminTab('card-analytics')">◈ 单卡分析</button></nav>
+        <nav><small>数据管理</small><button v-if="hasPermission('admin.matches.read')" :class="{ active: tab === 'matches' }" @click="switchAdminTab('matches')">▣ 对局档案</button><button v-if="hasPermission('admin.match-governance.read')" :class="{ active: tab === 'match-governance' }" @click="switchAdminTab('match-governance')">⚖ 对局治理</button><button v-if="hasPermission('admin.analytics.read')" :class="{ active: tab === 'global-data' }" @click="switchAdminTab('global-data')">⌁ 全局数据</button><button v-if="hasPermission('admin.analytics.read')" :class="{ active: tab === 'card-analytics' }" @click="switchAdminTab('card-analytics')">◈ 卡牌数据</button></nav>
         <nav><small>站点内容</small><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'content' }" @click="switchAdminTab('content')">▤ 站点内容工作台</button><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'rules' }" @click="switchAdminTab('rules')">§ 规则中心审核</button></nav>
         <nav><small>收藏与权益</small><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'alternate-arts' }" @click="switchAdminTab('alternate-arts')">✦ 异画管理与权益</button></nav>
         <nav><small>游戏与赛事运营</small><button v-if="hasPermission('admin.operations.read')" :class="{ active: tab === 'operations' }" @click="switchAdminTab('operations')">⚙ 游戏运营配置</button><button v-if="hasPermission('tournaments.manage') || hasPermission('tournaments.rulings.write')" :class="{ active: tab === 'tournaments' }" @click="switchAdminTab('tournaments')">♜ 赛事管理</button><button v-if="hasPermission('admin.commands.read')" :class="{ active: tab === 'commands' }" @click="switchAdminTab('commands')">⌁ 管理操作记录</button></nav>
@@ -339,9 +340,10 @@ onMounted(() => { void initializeAdminPage() })
         <header class="panel"><div><small>CONTROL CENTER</small><h2>运营总览</h2><p>这里只显示摘要和入口；配置编辑只在对应模块内进行。</p></div></header>
         <button class="overview-card" @click="switchAdminTab('bugs')"><small>用户与反馈</small><b>{{ bugs.filter(item => item.status !== 'resolved' && item.status !== 'closed').length }}</b><span>未闭环 Bug</span></button>
         <button class="overview-card" @click="switchAdminTab('accounts')"><small>账号与会话</small><b>{{ accounts.length }}</b><span>平台账号</span></button>
-        <button v-if="hasPermission('admin.matches.read')" class="overview-card" @click="adminMatchId=''; tab='matches'"><small>对局与数据</small><b>档案</b><span>最近对局、玩家与构筑联查</span></button>
+        <button v-if="hasPermission('admin.matches.read')" class="overview-card" @click="adminMatchId=''; tab='matches'"><small>数据管理</small><b>档案</b><span>最近对局、玩家与构筑联查</span></button>
         <button v-if="hasPermission('admin.match-governance.read')" class="overview-card" @click="tab='match-governance'"><small>对局治理</small><b>双账本</b><span>平局申请与玩家举报独立处置</span></button>
-        <button v-if="hasPermission('admin.analytics.read')" class="overview-card" @click="tab='card-analytics'"><small>平衡分析</small><b>单卡</b><span>入组、使用、结算与胜负关联</span></button>
+        <button v-if="hasPermission('admin.analytics.read')" class="overview-card" @click="tab='global-data'"><small>数据管理</small><b>趋势</b><span>活跃、对局、在线与页面访问</span></button>
+        <button v-if="hasPermission('admin.analytics.read')" class="overview-card" @click="tab='card-analytics'"><small>平衡分析</small><b>卡牌</b><span>主宰、收录、上手与胜负关联</span></button>
         <button class="overview-card" @click="tab='content'"><small>站点内容</small><b>7 模块</b><span>素材、首页、资讯、视频、商品、分类与法务</span></button>
         <button class="overview-card" @click="tab='operations'"><small>游戏运营</small><b>版本化</b><span>赛季、天灾、禁限卡、模式与维护</span></button>
         <button v-if="hasPermission('tournaments.manage') || hasPermission('tournaments.rulings.write')" class="overview-card" @click="tab='tournaments'"><small>赛事运营</small><b>玩家赛事</b><span>查看、轮次控制、判罚与归档</span></button>
@@ -356,6 +358,7 @@ onMounted(() => { void initializeAdminPage() })
       </section>
       <AdminMatchesPanel v-else-if="tab === 'matches' && hasPermission('admin.matches.read')" :initial-match-id="adminMatchId" @notice="notice = $event"/>
       <AdminMatchGovernancePanel v-else-if="tab === 'match-governance' && hasPermission('admin.match-governance.read')" @notice="notice = $event"/>
+      <AdminGlobalDataPanel v-else-if="tab === 'global-data' && hasPermission('admin.analytics.read')" @notice="notice = $event"/>
       <AdminCardAnalyticsPanel v-else-if="tab === 'card-analytics' && hasPermission('admin.analytics.read')" @notice="notice = $event" @open-match="openAdminMatch"/>
       <AdminUsernameChangeRequestsPanel v-else-if="tab === 'username-requests' && hasPermission('admin.accounts.read')" @notice="notice = $event"/>
       <AdminAlternateArtsPanel v-else-if="tab === 'alternate-arts' && hasPermission('admin.content.read')" @notice="notice = $event"/>

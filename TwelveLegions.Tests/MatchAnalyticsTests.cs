@@ -360,6 +360,86 @@ public sealed class MatchAnalyticsTests
     }
 
     [Fact]
+    public async Task CardAnalyticsSeparatesExactDrawnAndNotDrawnParticipantWinRates()
+    {
+        var directory = TestDirectory("gih-gns-iwd");
+        var path = Path.Combine(directory, "matches.db");
+        var catalog = Catalog();
+        var deck = catalog.DeckAt(0);
+        var targetCard = deck.CardIds[0];
+        await using var recorder = new MatchRecorder(path);
+        await recorder.InitializeAsync();
+        var game = new L12GameEngine(catalog, "gih-gns-iwd", "GIHGNS", 556,
+            ["胜方", "负方"], [deck, deck], skipPreparation: true);
+        await recorder.StartAsync(game, "ranked", "gih-winner", "gns-loser", [deck, deck]);
+        await using (var connection = new SqliteConnection($"Data Source={path}"))
+        {
+            await connection.OpenAsync();
+            await InsertCardFactAsync(connection, "gih-gns-iwd", "winner-draw",
+                "draw", 0, targetCard, turn: 2, coverage: "exact");
+        }
+        game.ConcludeByAuthority(0, "GIH/GNS 统计口径测试结束");
+        await recorder.AppendAuthorityAsync(game, 1, "GIH/GNS 统计口径测试结束");
+        await recorder.CompleteAsync(game);
+
+        var item = Assert.Single((await recorder.ListCardAnalyticsAsync(new L12CardAnalyticsQuery(
+            MinimumSampleSize: 1, CandidateCardIds: [targetCard]))).Items);
+        Assert.Equal(2, item.ExactDrawCoverageSamples);
+        Assert.Equal(1, item.GihSamples);
+        Assert.Equal(1, item.GihWins);
+        Assert.Equal(1, item.GihWinRate);
+        Assert.Equal(1, item.GnsSamples);
+        Assert.Equal(0, item.GnsWins);
+        Assert.Equal(0, item.GnsWinRate);
+        Assert.Equal(1, item.InHandWinRateDelta);
+        Assert.NotNull(item.InHandWinRateDeltaConfidence);
+
+        var masters = await recorder.ReadMasterAnalyticsAsync(new L12CardAnalyticsQuery(
+            MinimumSampleSize: 1, MasterId: deck.MasterId));
+        var master = Assert.Single(masters.Items);
+        Assert.Equal(deck.MasterId, master.MasterId);
+        Assert.Equal(2, master.ParticipantSamples);
+        Assert.Equal(0.5, master.WinRate);
+        Assert.Single(masters.Matchups);
+        Assert.Single(masters.Trend);
+        Assert.NotEmpty(masters.PopularDecks);
+        Assert.NotNull(masters.Cards);
+        Assert.Contains(masters.Cards!.Items, card => card.CardId == targetCard);
+    }
+
+    [Fact]
+    public async Task GlobalAnalyticsPersistsDailyActivityOnlineAndPageHistory()
+    {
+        var directory = TestDirectory("global-analytics");
+        var path = Path.Combine(directory, "matches.db");
+        var now = new DateTimeOffset(2026, 9, 20, 8, 0, 0, TimeSpan.Zero);
+        await using var recorder = new MatchRecorder(path, () => now);
+        await recorder.InitializeAsync();
+        await recorder.RecordSiteActivityAsync("returning", "/cards?ignored=1", 2);
+        now = new DateTimeOffset(2026, 9, 21, 9, 0, 0, TimeSpan.Zero);
+        await recorder.RecordSiteActivityAsync("returning", "/cards", 3);
+        await recorder.RecordSiteActivityAsync("new-player", "/battle", 4);
+        var accounts = new[]
+        {
+            new L12AccountView("returning", "老玩家", "player", now.AddDays(-10), true),
+            new L12AccountView("new-player", "新玩家", "player", now, true),
+        };
+
+        var report = await recorder.ReadGlobalAnalyticsAsync(new DateOnly(2026, 9, 20),
+            new DateOnly(2026, 9, 21), accounts);
+        Assert.Equal(2, report.Days.Count);
+        var latest = report.Days[1];
+        Assert.Equal(2, latest.DailyActiveUsers);
+        Assert.Equal(2, latest.WeeklyActiveUsers);
+        Assert.Equal(1, latest.NewUsers);
+        Assert.Equal(1, latest.ReturningUsers);
+        Assert.Equal(2, latest.PageViews);
+        Assert.Equal(4, latest.PeakOnline);
+        Assert.Contains(report.PageViews, row => row.Path == "/cards" && row.Views == 2);
+        Assert.Contains(report.PageViews, row => row.Path == "/battle" && row.Views == 1);
+    }
+
+    [Fact]
     public async Task CardAnalyticsFiltersEveryAdvertisedSliceAndOnlyReturnsCompletedRecentMatches()
     {
         var directory = TestDirectory("all-slices");

@@ -21,6 +21,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private sealed record SocketPlatformBinding(string PlatformSessionId, string AccountId,
         long ConnectionGeneration);
     private sealed record ProtocolCapabilities(bool RequestIds, bool DeltaGameState);
+    private sealed record TelemetryPageViewRequest(string? Path);
 
     private static readonly JsonSerializerOptions CommandJsonOptions = new(JsonSerializerDefaults.Web);
     private readonly L12RoomManager _rooms;
@@ -354,6 +355,46 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 return ApiError(request, "invalid_analytics_query", error.Message, StatusCodes.Status400BadRequest);
             }
         });
+        _app.MapGet("/api/admin/analytics/masters", async (HttpRequest request) =>
+        {
+            const L12Permission permission = L12Permission.AdminAnalyticsRead;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            try
+            {
+                var report = await _recorder.ReadMasterAnalyticsAsync(CardAnalyticsQuery(request));
+                _platform.RecordAdminRead(authenticated.Account, permission, "analytics", "read-master-report",
+                    report.SelectedMasterId ?? "masters", AuditContext(request, permission));
+                return Results.Ok(report);
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "invalid_analytics_query", error.Message, StatusCodes.Status400BadRequest);
+            }
+        });
+        _app.MapGet("/api/admin/analytics/global", async (HttpRequest request) =>
+        {
+            const L12Permission permission = L12Permission.AdminAnalyticsRead;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            try
+            {
+                var today = DateOnly.FromDateTime(DateTime.UtcNow);
+                var from = QueryDate(request, "fromUtc", "from") is { } parsedFrom
+                    ? DateOnly.FromDateTime(parsedFrom.UtcDateTime) : today.AddDays(-29);
+                var to = QueryDate(request, "toUtc", "to") is { } parsedTo
+                    ? DateOnly.FromDateTime(parsedTo.UtcDateTime) : today;
+                var report = await _recorder.ReadGlobalAnalyticsAsync(from, to, _platform.Accounts(),
+                    request.HttpContext.RequestAborted);
+                _platform.RecordAdminRead(authenticated.Account, permission, "analytics", "read-global-report",
+                    $"{from:yyyy-MM-dd}:{to:yyyy-MM-dd}", AuditContext(request, permission));
+                return Results.Ok(report);
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "invalid_analytics_query", error.Message, StatusCodes.Status400BadRequest);
+            }
+        });
         _app.MapGet("/api/rankings", async (HttpRequest request, string? faction, string? range) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
@@ -633,10 +674,12 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 .Select(player => new { player.AccountId, player.Username, player.Status, player.Direction,
                     player.CreatedAt, online = _rooms.IsAccountOnline(player.AccountId) }));
         });
-        _app.MapGet("/api/presence", (HttpRequest request) =>
+        _app.MapGet("/api/presence", async (HttpRequest request) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
+            await _recorder.RecordSiteActivityAsync(account.Id, null, _rooms.RuntimeStats().OnlineAccountCount,
+                request.HttpContext.RequestAborted);
             var presence = _rooms.DescribeOnlinePresence(account.Id);
             var friends = _platform.Friends(account.Id)
                 .ToDictionary(player => player.AccountId, player => player, StringComparer.OrdinalIgnoreCase);
@@ -663,6 +706,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                         friendDirection = relationship?.Direction ?? "none",
                     };
                 }));
+        });
+        _app.MapPost("/api/telemetry/page-view", async (HttpRequest request, TelemetryPageViewRequest body) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            await _recorder.RecordSiteActivityAsync(account?.Id, body.Path,
+                _rooms.RuntimeStats().OnlineAccountCount, request.HttpContext.RequestAborted);
+            return Results.NoContent();
         });
         _app.MapGet("/api/friends", (HttpRequest request) =>
         {
@@ -2860,6 +2910,9 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         return new L12CardAnalyticsQuery(
             Cursor: QueryValue(request, "cursor"),
             Limit: QueryInt(request, 50, "limit"),
+            Page: QueryInt(request, 1, "page"),
+            Sort: QueryValue(request, "sort") ?? "sample-size",
+            Direction: QueryValue(request, "direction") ?? "desc",
             MinimumSampleSize: QueryInt(request, 5, "minimumSampleSize", "minimumSample"),
             Search: search,
             CandidateCardIds: candidates,

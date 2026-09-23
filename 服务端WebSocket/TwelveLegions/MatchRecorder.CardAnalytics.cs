@@ -38,6 +38,10 @@ public sealed partial class MatchRecorder
         long InferredFacts,
         long PartialFacts,
         long TotalQuantity,
+        long ExactDrawCoverageSamples,
+        long GihWins,
+        long GnsSamples,
+        long GnsWins,
         MetricCoverageCounts DrawCoverage,
         MetricCoverageCounts PlayCoverage,
         MetricCoverageCounts ActivationCoverage,
@@ -51,12 +55,9 @@ public sealed partial class MatchRecorder
         var cacheEpoch = AnalyticsCacheEpoch;
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
-        await PrepareAnalyticsScopeAsync(connection, normalized, includeFacts: false);
+        await PrepareAnalyticsScopeAsync(connection, normalized, includeFacts: true);
         var population = await ReadAnalyticsPopulationAsync(connection, normalized);
-        var rows = await ReadCardAnalyticsRowsAsync(connection, normalized, includeCursor: true,
-            normalized.Limit + 1);
-        var hasMore = rows.Count > normalized.Limit;
-        if (hasMore) rows.RemoveAt(rows.Count - 1);
+        var rows = await ReadCardAnalyticsRowsAsync(connection, normalized, normalized.Limit);
         var cardIds = rows.Select(row => row.CardId).ToArray();
         var structures = await ReadAnalyticsSampleStructuresAsync(connection, cardIds);
         var comparisons = await ReadStratifiedComparisonsAsync(connection, cardIds);
@@ -66,10 +67,10 @@ public sealed partial class MatchRecorder
         var total = await CountCardAnalyticsRowsAsync(connection, normalized);
         var coverage = await ReadAnalyticsCoverageAsync(connection, normalized, population.SampleSize,
             factsLoaded: false);
-        var result = new L12CardAnalyticsPage(items, total,
-            hasMore && rows.Count > 0 ? Base64UrlEncode(rows[^1].CardId) : null,
+        var result = new L12CardAnalyticsPage(items, total, null,
             new L12CardAnalyticsPageSummary(population.EligibleMatches, population.SampleSize,
-                population.BaselineWinRate, normalized.MinimumSampleSize, "participant", coverage));
+                population.BaselineWinRate, normalized.MinimumSampleSize, "participant", coverage),
+            normalized.Page, normalized.Limit);
         StoreAnalyticsResultCache(cacheKey, result, cacheEpoch);
         return result;
     }
@@ -153,6 +154,13 @@ public sealed partial class MatchRecorder
         var normalized = query with
         {
             Limit = Math.Clamp(query.Limit, 1, 200),
+            Page = Math.Clamp(query.Page, 1, 100_000),
+            Sort = (query.Sort ?? string.Empty).Trim().ToLowerInvariant() switch
+            {
+                "card" or "sample-size" or "inclusion-rate" or "win-rate" or "gih" or "iwd" => (query.Sort ?? string.Empty).Trim().ToLowerInvariant(),
+                _ => "sample-size",
+            },
+            Direction = string.Equals(query.Direction, "asc", StringComparison.OrdinalIgnoreCase) ? "asc" : "desc",
             MinimumSampleSize = Math.Clamp(query.MinimumSampleSize, 1, 1000),
             ExcludedMatchIds = query.ExcludedMatchIds?.Where(id => !string.IsNullOrWhiteSpace(id))
                 .Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray(),
@@ -385,25 +393,29 @@ public sealed partial class MatchRecorder
     }
 
     private static async Task<List<CardAnalyticsRow>> ReadCardAnalyticsRowsAsync(SqliteConnection connection,
-        L12CardAnalyticsQuery query, bool includeCursor, int take)
+        L12CardAnalyticsQuery query, int take)
     {
         var cte = MaterializedAnalyticsCte;
         var parameters = new Dictionary<string, object>(StringComparer.Ordinal);
         var filters = new List<string>();
-        if (query.Search is not null) filters.Add(CardSearchPredicate("i", query, parameters));
-        if (includeCursor && query.Cursor is not null)
-        {
-            string cursor;
-            try { cursor = Base64UrlDecode(query.Cursor); }
-            catch (Exception error) when (error is FormatException or ArgumentException)
-            {
-                throw new ArgumentException("分页游标无效", nameof(query));
-            }
-            filters.Add("i.card_id > $cursor");
-            parameters["$cursor"] = cursor;
-        }
+        if (query.Search is not null || query.CandidateCardIds is not null)
+            filters.Add(CardSearchPredicate("i", query, parameters));
         parameters["$minimum"] = query.MinimumSampleSize;
         parameters["$take"] = take;
+        parameters["$offset"] = checked((query.Page - 1) * query.Limit);
+        var exactDraw = "COALESCE(f.draw_inferred,0)=0 AND COALESCE(f.draw_partial,0)=0";
+        var gihRate = $"(1.0*SUM(CASE WHEN COALESCE(f.drawn,0)=1 AND {exactDraw} AND e.winner=e.player_index THEN 1 ELSE 0 END)/NULLIF(SUM(CASE WHEN COALESCE(f.drawn,0)=1 AND {exactDraw} THEN 1 ELSE 0 END),0))";
+        var gnsRate = $"(1.0*SUM(CASE WHEN COALESCE(f.drawn,0)=0 AND {exactDraw} AND e.winner=e.player_index THEN 1 ELSE 0 END)/NULLIF(SUM(CASE WHEN COALESCE(f.drawn,0)=0 AND {exactDraw} THEN 1 ELSE 0 END),0))";
+        var sortExpression = query.Sort switch
+        {
+            "card" => "i.card_id",
+            "inclusion-rate" or "sample-size" => "COUNT(*)",
+            "win-rate" => "(1.0*SUM(CASE WHEN e.winner=e.player_index THEN 1 ELSE 0 END)/COUNT(*))",
+            "gih" => gihRate,
+            "iwd" => $"({gihRate}-{gnsRate})",
+            _ => "COUNT(*)",
+        };
+        var order = query.Direction == "asc" ? "ASC" : "DESC";
         var command = connection.CreateCommand();
         command.CommandText = $"""
             {cte}
@@ -422,7 +434,11 @@ public sealed partial class MatchRecorder
                    SUM(COALESCE(f.play_exact,0)),SUM(COALESCE(f.play_inferred,0)),SUM(COALESCE(f.play_partial,0)),
                    SUM(COALESCE(f.activation_exact,0)),SUM(COALESCE(f.activation_inferred,0)),SUM(COALESCE(f.activation_partial,0)),
                    SUM(COALESCE(f.settlement_exact,0)),SUM(COALESCE(f.settlement_inferred,0)),SUM(COALESCE(f.settlement_partial,0)),
-                   SUM(i.quantity)
+                   SUM(i.quantity),
+                   SUM(CASE WHEN {exactDraw} THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN COALESCE(f.drawn,0)=1 AND {exactDraw} AND e.winner=e.player_index THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN COALESCE(f.drawn,0)=0 AND {exactDraw} THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN COALESCE(f.drawn,0)=0 AND {exactDraw} AND e.winner=e.player_index THEN 1 ELSE 0 END)
             FROM inclusions i
             JOIN eligible e ON e.match_id=i.match_id AND e.player_index=i.player_index
             LEFT JOIN fact_stats f ON f.match_id=i.match_id AND f.player_index=i.player_index
@@ -430,8 +446,8 @@ public sealed partial class MatchRecorder
             {(filters.Count == 0 ? string.Empty : $"WHERE {string.Join(" AND ", filters)}")}
             GROUP BY i.card_id
             HAVING COUNT(*) >= $minimum
-            ORDER BY i.card_id
-            LIMIT $take;
+            ORDER BY ({sortExpression}) IS NULL, {sortExpression} {order}, i.card_id
+            LIMIT $take OFFSET $offset;
             """;
         AddParameters(command, parameters);
         var rows = new List<CardAnalyticsRow>();
@@ -446,7 +462,8 @@ public sealed partial class MatchRecorder
         var cte = MaterializedAnalyticsCte;
         var parameters = new Dictionary<string, object>(StringComparer.Ordinal);
         var search = string.Empty;
-        if (query.Search is not null) search = $"WHERE {CardSearchPredicate("i", query, parameters)}";
+        if (query.Search is not null || query.CandidateCardIds is not null)
+            search = $"WHERE {CardSearchPredicate("i", query, parameters)}";
         parameters["$minimum"] = query.MinimumSampleSize;
         var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -484,7 +501,11 @@ public sealed partial class MatchRecorder
                    SUM(COALESCE(f.play_exact,0)),SUM(COALESCE(f.play_inferred,0)),SUM(COALESCE(f.play_partial,0)),
                    SUM(COALESCE(f.activation_exact,0)),SUM(COALESCE(f.activation_inferred,0)),SUM(COALESCE(f.activation_partial,0)),
                    SUM(COALESCE(f.settlement_exact,0)),SUM(COALESCE(f.settlement_inferred,0)),SUM(COALESCE(f.settlement_partial,0)),
-                   SUM(i.quantity)
+                   SUM(i.quantity),
+                   SUM(CASE WHEN COALESCE(f.draw_inferred,0)=0 AND COALESCE(f.draw_partial,0)=0 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN COALESCE(f.drawn,0)=1 AND COALESCE(f.draw_inferred,0)=0 AND COALESCE(f.draw_partial,0)=0 AND e.winner=e.player_index THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN COALESCE(f.drawn,0)=0 AND COALESCE(f.draw_inferred,0)=0 AND COALESCE(f.draw_partial,0)=0 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN COALESCE(f.drawn,0)=0 AND COALESCE(f.draw_inferred,0)=0 AND COALESCE(f.draw_partial,0)=0 AND e.winner=e.player_index THEN 1 ELSE 0 END)
             FROM inclusions i
             JOIN eligible e ON e.match_id=i.match_id AND e.player_index=i.player_index
             LEFT JOIN fact_stats f ON f.match_id=i.match_id AND f.player_index=i.player_index
@@ -503,7 +524,7 @@ public sealed partial class MatchRecorder
             ReadLong(reader, 8), ReadLong(reader, 9), ReadLong(reader, 10), ReadLong(reader, 11),
             ReadLong(reader, 12), ReadLong(reader, 13), ReadLong(reader, 14), ReadLong(reader, 15),
             ReadLong(reader, 16), ReadLong(reader, 17), ReadLong(reader, 18), ReadLong(reader, 19),
-            ReadLong(reader, 32),
+            ReadLong(reader, 32), ReadLong(reader, 33), ReadLong(reader, 34), ReadLong(reader, 35), ReadLong(reader, 36),
             new MetricCoverageCounts(ReadLong(reader, 20), ReadLong(reader, 21), ReadLong(reader, 22)),
             new MetricCoverageCounts(ReadLong(reader, 23), ReadLong(reader, 24), ReadLong(reader, 25)),
             new MetricCoverageCounts(ReadLong(reader, 26), ReadLong(reader, 27), ReadLong(reader, 28)),
@@ -563,6 +584,15 @@ public sealed partial class MatchRecorder
     {
         var winRate = Rate(row.Wins, row.IncludedSamples);
         var winRateConfidence = WilsonInterval(row.Wins, row.IncludedSamples);
+        var gihRate = RateOrNull(row.GihWins, row.DrawnSamples);
+        var gnsRate = RateOrNull(row.GnsWins, row.GnsSamples);
+        var gihConfidence = row.DrawnSamples > 0 ? WilsonInterval(row.GihWins, row.DrawnSamples) : null;
+        var gnsConfidence = row.GnsSamples > 0 ? WilsonInterval(row.GnsWins, row.GnsSamples) : null;
+        double? iwd = gihRate is not null && gnsRate is not null
+            ? RoundRate(gihRate.Value - gnsRate.Value) : null;
+        var iwdConfidence = gihConfidence is not null && gnsConfidence is not null
+            ? new L12AnalyticsConfidenceInterval(RoundRate(gihConfidence.Low - gnsConfidence.High),
+                RoundRate(gihConfidence.High - gnsConfidence.Low)) : null;
         var metrics = new List<L12AnalyticsMetricCoverage>
         {
             new L12AnalyticsMetricCoverage("inclusion", "participant", population.SampleSize,
@@ -574,6 +604,8 @@ public sealed partial class MatchRecorder
         return new L12CardAnalyticsItem(row.CardId, row.IncludedSamples, population.SampleSize,
             row.IncludedMatches, Rate(row.TotalQuantity, row.IncludedSamples),
             Rate(row.IncludedSamples, population.SampleSize), row.Wins, winRate, winRateConfidence,
+            row.ExactDrawCoverageSamples, row.DrawnSamples, row.GihWins, gihRate, gihConfidence,
+            row.GnsSamples, row.GnsWins, gnsRate, gnsConfidence, iwd, iwdConfidence,
             comparison?.WinRate, null, comparison?.Delta, null,
             row.DrawnMatches, row.PlayedMatches, row.DrawnSamples, row.PlayedSamples,
             row.ActivatedSamples, row.SettledSamples, row.ResolvedSamples, row.NegatedSamples,
@@ -780,8 +812,12 @@ public sealed partial class MatchRecorder
     private static string CardSearchPredicate(string alias, L12CardAnalyticsQuery query,
         Dictionary<string, object> parameters)
     {
-        parameters["$search"] = $"%{EscapeLike(query.Search!)}%";
-        var predicates = new List<string> { $"{alias}.card_id LIKE $search ESCAPE '\\'" };
+        var predicates = new List<string>();
+        if (query.Search is not null)
+        {
+            parameters["$search"] = $"%{EscapeLike(query.Search)}%";
+            predicates.Add($"{alias}.card_id LIKE $search ESCAPE '\\'");
+        }
         var candidateIds = query.CandidateCardIds ?? [];
         if (candidateIds.Count > 0)
         {
@@ -794,6 +830,6 @@ public sealed partial class MatchRecorder
             }
             predicates.Add($"{alias}.card_id IN ({string.Join(',', names)})");
         }
-        return $"({string.Join(" OR ", predicates)})";
+        return predicates.Count == 0 ? "0=1" : $"({string.Join(" OR ", predicates)})";
     }
 }

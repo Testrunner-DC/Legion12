@@ -1096,9 +1096,9 @@ const contracts = [
   [!hasUndersizedSiteWorkbenchText && adminSiteContent.includes('font-size:14px')
     && adminArticles.includes('font-size:14px') && mediaUploadField.includes('font-size:14px')
     && articleDocumentEditor.includes('font-size:16px'), '站点内容工作台、素材上传与正文编辑器不得恢复 9–11px 密集排版；正文画布应为16px，控件与辅助文字至少12px并保留分组间距'],
-  [adminPage.includes('对局与数据') && adminPage.includes('AdminMatchesPanel') && adminPage.includes('AdminCardAnalyticsPanel')
+  [adminPage.includes('数据管理') && adminPage.includes('AdminMatchesPanel') && adminPage.includes('AdminGlobalDataPanel') && adminPage.includes('AdminCardAnalyticsPanel')
     && adminPage.includes("hasPermission('admin.matches.read')") && adminPage.includes("hasPermission('admin.analytics.read')")
-    && platform.includes('/api/admin/matches') && platform.includes('/api/admin/analytics/cards'), '后台必须以独立权限和正式模块提供对局档案与单卡分析，不得塞入 Bug 管理或复用玩家私有记录接口'],
+    && platform.includes('/api/admin/matches') && platform.includes('/api/admin/analytics/global') && platform.includes('/api/admin/analytics/cards'), '后台必须以独立权限和正式模块提供对局档案、全局数据与卡牌数据，不得塞入 Bug 管理或复用玩家私有记录接口'],
   [adminMatches.includes("type MatchView = 'recent' | 'player' | 'sandbox'") && adminMatches.includes("view === 'recent'") && adminMatches.includes("view === 'player'")
     && adminMatches.includes('participant.deckCards') && adminMatches.includes('结构化对局时间线')
     && adminMatches.includes('进行中对局不展示私有构筑')
@@ -1116,7 +1116,7 @@ const contracts = [
     && !adminMatches.includes('v-for="card in participant.deckCards"'), '对局档案必须以“查看构筑”打开不可变当局快照，复用牌库式搜索、分类、数量与卡牌详情，并可复制牌库码、导出牌库图或复制到我的牌库，档案正文不得继续平铺单卡'],
   [adminCardAnalytics.includes('实际使用情况') && adminCardAnalytics.includes('构筑收录') && adminCardAnalytics.includes('实际抽到')
     && adminCardAnalytics.includes('从手牌打出') && adminCardAnalytics.includes('效果发动') && adminCardAnalytics.includes('正常结算')
-    && adminCardAnalytics.includes('同条件未携带基线') && adminCardAnalytics.includes('不代表因果'), '单卡分析必须展示独立使用指标、公平对照、样本与相关性边界，禁止用裸胜率冒充卡牌因果影响'],
+    && adminCardAnalytics.includes('同条件未携带基线') && adminCardAnalytics.includes('不代表因果'), '卡牌数据必须展示独立使用指标、公平对照、样本与相关性边界，禁止用裸胜率冒充卡牌因果影响'],
   [adminCardAnalytics.includes('使用方主宰') && adminCardAnalytics.includes('对方主宰')
     && adminCardAnalytics.includes('function analyticsQuery() { return { ...filters.value } }')
     && adminCardAnalytics.includes('const query = analyticsQuery()')
@@ -1125,11 +1125,11 @@ const contracts = [
     && adminCardAnalytics.includes('request === detailRequest')
     && adminCardAnalytics.includes('data-ui-contract="card-analytics-low-sample-warning"')
     && adminCardAnalytics.includes("return '低样本，仅供参考'")
-    && platform.includes("opponentMasterId?: string") && l12ServerSources.includes('OpponentMasterId'), '单卡分析必须区分使用方/对方主宰，并让样本、入组率、基线与明细使用同一筛选，低样本必须明确警示'],
-  [adminCardAnalytics.includes('参赛方 × 对局') && adminCardAnalytics.includes('没有未收录参赛方时基线显示“—”')
+    && platform.includes("opponentMasterId?: string") && l12ServerSources.includes('OpponentMasterId'), '卡牌数据必须区分使用方/对方主宰，并让样本、入组率、基线与明细使用同一筛选，低样本必须明确警示'],
+  [adminCardAnalytics.includes('参赛方 × 对局') && adminCardAnalytics.includes('同条件未携带基线')
     && adminCardAnalytics.includes('detail.summary.drawnSamples') && adminCardAnalytics.includes('detail.summary.playedSamples')
     && adminCardAnalytics.includes('detail.summary.activatedSamples') && adminCardAnalytics.includes('detail.summary.settledSamples')
-    && platform.includes('drawnSamples: number') && platform.includes('settledSamples: number'), '单卡分析使用路径必须统一使用参赛方样本，不能混入事件次数；没有对照时必须显示空值，不能伪造0%基线'],
+    && platform.includes('drawnSamples: number') && platform.includes('settledSamples: number'), '卡牌数据使用路径必须统一使用参赛方样本，不能混入事件次数；没有对照时必须显示空值，不能伪造0%基线'],
   [adminCardAnalytics.includes('首次抽到／打出回合') && adminCardAnalytics.includes('携带数量分布')
     && adminCardAnalytics.includes('主宰对阵热图') && adminCardAnalytics.includes('数据质量与覆盖')
     && adminCardAnalytics.includes('最近已结束对局') && adminCardAnalytics.includes('规则版本')
