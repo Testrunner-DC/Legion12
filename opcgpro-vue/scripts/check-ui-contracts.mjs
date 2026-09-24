@@ -1526,8 +1526,8 @@ contracts.push(
     && titleRules.includes('20场') && titleRules.includes('10名') && titleRules.includes('UTC+8')
     && titleRules.includes('15场') && titleRules.includes('镜像局'),
     '排行榜和称号管理必须提供同一完整最强称号说明，搜索框独立收窄'],
-  [sandboxPicker.includes('native-orientation') && sandboxPicker.includes('CatalogCardDetails')
-    && sandboxPicker.includes('max-width:760px') && catalogDetails.includes('effect'),
+  [sandboxPicker.includes('CatalogCardDetails') && sandboxPicker.includes('max-width:760px')
+    && catalogDetails.includes('CardDetailContent') && !catalogDetails.includes('cardTypeLabel'),
     'GM选牌必须保留横卡自然方向、可查看详情且窄桌面筛选不越界'],
   [app.includes('FriendRequestNotifications') && friendNotifications.includes("resolve('block')")
     && friendNotifications.includes("resolve('reject')") && friendNotifications.includes("resolve('accept')")

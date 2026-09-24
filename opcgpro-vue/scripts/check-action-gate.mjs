@@ -81,12 +81,14 @@ assert(deckLibrary.includes('runAction(`public-deck:publish:${deck.name}`')); ch
 assert(deckLibrary.includes("actionPending(`public-deck:publish:${publishName}`)")); checks += 1
 
 const publicDeck = fs.readFileSync(new URL('../src/l12/site/PublicDeckDetailPage.vue', import.meta.url), 'utf8')
+const publicDeckContent = fs.readFileSync(new URL('../src/l12/site/PublicDeckContentEditor.vue', import.meta.url), 'utf8')
 assert(publicDeck.includes('useActionGate()')); checks += 1
 assert(publicDeck.includes('publicDeckActionKey')); checks += 1
-assert((publicDeck.match(/runAction\(publicDeckActionKey\(id, accountId\)/g) ?? []).length === 4); checks += 1
+assert((publicDeck.match(/runAction\(publicDeckActionKey\(id, accountId\)/g) ?? []).length === 3); checks += 1
 assert((publicDeck.match(/actionPending\(publicDeckActionKey\(entry.id\)\)/g) ?? []).length >= 6); checks += 1
 assert(publicDeck.includes("accountId === platformState.account?.id")); checks += 1
-assert(publicDeck.includes(':disabled="savingContent"')); checks += 1
+assert(publicDeckContent.includes('useActionGate()') && publicDeckContent.includes('run(actionKey.value')); checks += 1
+assert(publicDeckContent.includes(':disabled="isPending(actionKey)"')); checks += 1
 
 const shell = fs.readFileSync(new URL('../src/l12/site/SiteShell.vue', import.meta.url), 'utf8')
 assert(shell.includes('runOnlineAction(onlineFriendActionKey(player.accountId, accountId)')); checks += 1

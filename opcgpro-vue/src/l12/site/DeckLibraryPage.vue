@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { createDeckImageBlob, decodeDeckCode, downloadDeckImage, encodeDeckCode } from './deckShare'
-import { deckCountSummary, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, saveDeck, validateDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
+import { deckCountSummary, deleteDeck as deleteSavedDeck, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, saveDeck, validateDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
 import { getEffectiveOperationsPolicy, platformState, publicDeckApi, type EffectiveOperationsPolicy, type PublishedDeck } from '@/l12/platform'
 import { useRoute, useRouter } from 'vue-router'
 import DeckProfile from '@/l12/DeckProfile.vue'
@@ -26,6 +26,7 @@ const updatedFilter = ref<'all' | '1' | '7' | '30' | '90' | '365'>('all')
 const sortMode = ref<'trend' | 'copies' | 'likes' | 'views' | 'latest' | 'name'>('trend')
 const plazaFiltersOpen = ref(false)
 const imagePreview = ref<{ deck: SavedL12Deck; blob: Blob; url: string } | null>(null)
+const deletingMine = ref('')
 const route = useRoute()
 const router = useRouter()
 const { pending: actionBusy, isPending: actionPending, run: runAction } = useActionGate()
@@ -130,6 +131,27 @@ async function copyToMine(entry: PublishedDeck) {
 function updatePublished(entry: PublishedDeck) {
   const index = published.value.findIndex(item => item.id === entry.id)
   if (index >= 0) published.value[index] = entry
+}
+function publishedCopyFor(deck: SavedL12Deck) {
+  return published.value.find(item => !item.official && item.ownerId === platformState.account?.id && item.deck.name === deck.name)
+}
+async function deleteMine(deck: SavedL12Deck) {
+  if (deletingMine.value) return
+  const stillPublic = publishedCopyFor(deck)
+  const message = stillPublic
+    ? `确定删除我的牌库《${deck.name}》？公开版本仍会长期保留，并继续显示在公开牌库。`
+    : `确定删除我的牌库《${deck.name}》？此操作不会删除任何公开版本。`
+  if (!window.confirm(message)) return
+  deletingMine.value = deck.name
+  try {
+    await deleteSavedDeck(deck.name)
+    saved.value = loadSavedDecks()
+    notice.value = stillPublic ? `已删除本地牌库《${deck.name}》，公开版本保持不变` : `已删除《${deck.name}》`
+  } catch (error) {
+    notice.value = error instanceof Error ? error.message : '删除牌库失败'
+  } finally {
+    deletingMine.value = ''
+  }
 }
 function openDeck(entry: PublishedDeck) {
   sessionStorage.setItem(`l12:deck-library:scroll:${route.fullPath}`, String(window.scrollY))
@@ -276,7 +298,7 @@ watch(() => route.query, restoreFiltersFromRoute, { deep: true })
 
     <template v-if="tab === 'mine'">
       <section class="import-panel"><input v-model="importCode" placeholder="粘贴 L12D1 开头的牌库码"/><button :disabled="!importCode.trim()" @click="importFromCode">导入牌库码</button><button :disabled="!mine.length" @click="showPublish = true">公开牌库</button></section>
-      <section v-if="mine.length" class="mine-grid"><article v-for="deck in mine" :key="deck.name"><DeckProfile :master-id="deck.masterId" :master-name="byId.get(deck.masterId)?.nameZh" :fallback-url="byId.get(deck.masterId)?.imageUrl" :name="deck.name" :meta="`${deckCountSummary(deck.cardIds, byId).label} 张主牌 · ${deck.moraleIds.length} 张士气`"/><div><router-link :to="editorLink(deck.name)">编辑</router-link><button @click="copyCode(deck)">复制牌库码</button><button @click="previewImage(deck)">生成牌库图</button></div></article></section>
+      <section v-if="mine.length" class="mine-grid"><article v-for="deck in mine" :key="deck.name"><DeckProfile :master-id="deck.masterId" :master-name="byId.get(deck.masterId)?.nameZh" :fallback-url="byId.get(deck.masterId)?.imageUrl" :name="deck.name" :meta="`${deckCountSummary(deck.cardIds, byId).label} 张主牌 · ${deck.moraleIds.length} 张士气`"/><small v-if="publishedCopyFor(deck)" class="mine-public-state">已公开 · 删除本地牌库不会删除公开版本</small><div><router-link :to="editorLink(deck.name, publishedCopyFor(deck)?.id)">编辑</router-link><button @click="copyCode(deck)">复制牌库码</button><button @click="previewImage(deck)">生成牌库图</button><button class="danger" :disabled="deletingMine === deck.name" @click="deleteMine(deck)">{{ deletingMine === deck.name ? '删除中…' : '删除' }}</button></div></article></section>
       <div v-else class="empty-state"><b>还没有自定义牌库</b><p>从编辑器新建牌库，或粘贴其他玩家分享的牌库码。</p><router-link :to="editorLink()">打开牌库编辑器</router-link></div>
     </template>
 
@@ -306,6 +328,7 @@ watch(() => route.query, restoreFiltersFromRoute, { deep: true })
 @media(max-width:700px){.plaza-toolbar{grid-template-columns:minmax(0,1fr) auto!important;align-items:stretch}.plaza-toolbar>input{min-width:0}.plaza-desktop-filters{display:none}.plaza-toolbar>button:last-child{grid-column:1/-1;min-height:44px}.plaza-filter-summary{display:block;width:100%;margin:-6px 0 12px;padding:8px 10px;border:1px solid #52636a;background:#101a20;color:#c7d8d6;font-size:12px;font-weight:800;text-align:left}.deck-page{overflow-x:clip}.plaza-grid footer{row-gap:7px}.deck-detail,.image-preview{width:100%;max-height:100dvh;border:0}.deck-detail>header,.image-preview header{padding:14px}.deck-detail>footer,.image-preview footer{padding:12px;gap:7px}.deck-detail h2,.image-preview h2{font-size:20px}}
 @media(max-width:520px){.deck-page{padding:14px 12px 42px}.page-head{gap:8px;margin-bottom:12px}.page-head small{font-size:11px}.page-head h1{font-size:25px}.page-head p{font-size:12px}.page-head>a{padding:9px 12px;font-size:13px}.deck-tabs{margin-bottom:10px}.deck-tabs button{min-height:44px;padding:9px;font-size:13px}.deck-notice{position:static;max-width:none;margin:0 0 10px;padding:9px 10px;font-size:12px;box-shadow:none}.import-panel,.plaza-toolbar{gap:7px;margin-bottom:10px;padding:9px}.import-panel input,.plaza-toolbar input{padding:10px;font-size:12px}.import-panel button,.plaza-toolbar button{min-height:44px;padding:9px 11px;font-size:13px}.mine-grid,.plaza-grid{gap:9px}.mine-grid>article{padding:11px}.deck-banner{height:96px}.mine-grid h2,.plaza-summary h2{font-size:15px}.mine-grid p,.plaza-summary p,.plaza-summary span,.plaza-grid footer button,.plaza-grid footer span{font-size:12px}.empty-state{min-height:280px}.empty-state p,.empty-state a{font-size:12px}.plaza-filter-summary{margin:-3px 0 9px}}
 .plaza-toolbar{grid-template-columns:minmax(220px,1fr) repeat(6,minmax(108px,auto)) auto}.plaza-result-line{display:flex;align-items:center;gap:5px;margin:-4px 0 12px;color:#7d8a8f;font-size:13px}.plaza-result-line b{color:#e8e4da}.plaza-result-line button{margin-left:auto;border:0;background:transparent;color:#75cdd2;font-weight:900}.plaza-filter-fields select{color-scheme:dark}
+.mine-public-state{display:block;margin-top:8px;color:#79cfc9;font-size:12px}.mine-grid button.danger{border-color:#8f3d47;background:#2e1519;color:#f2a4ac}
 @media(max-width:1180px) and (min-width:701px){.plaza-toolbar{grid-template-columns:minmax(220px,1fr) repeat(3,minmax(110px,1fr))}.plaza-toolbar>button:last-child{grid-column:4}.plaza-desktop-filters{display:contents}}
 @media(max-width:700px){.plaza-toolbar{grid-template-columns:minmax(0,1fr) auto!important}.plaza-result-line{font-size:12px}}
 </style>

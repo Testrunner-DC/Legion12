@@ -14,6 +14,8 @@ import { alternateArtApi, getEffectiveOperationsPolicy, platformState, publicDec
 import CardImage from './CardImage.vue'
 import CardDetailContent from './CardDetailContent.vue'
 import DeckProfile from './DeckProfile.vue'
+import MobileFilterSheet from './site/MobileFilterSheet.vue'
+import PublicDeckContentEditor from './site/PublicDeckContentEditor.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -51,7 +53,7 @@ const ownedAlternateArts = ref<AlternateArt[]>([])
 const alternateArtSelections = ref<Record<string, string>>({})
 const alternateArtCopies = ref<Record<string, string[]>>({})
 const operationsRestrictions = ref<OperationsCardRestriction[]>([])
-const workspace = ref<'gallery' | 'stats' | 'hand'>('gallery')
+const workspace = ref<'gallery' | 'stats' | 'hand' | 'content'>('gallery')
 const mobilePane = ref<'pool' | 'deck' | 'insights'>('pool')
 const mobileFiltersOpen = ref(false)
 const mobileDetailOpen = ref(false)
@@ -213,11 +215,27 @@ const openingHand = computed(() => openingHandIds.value.map(id => byId.value.get
 const activeFilterCount = computed(() => [query.value.trim(), typeFilter.value !== 'all', factionFilter.value !== 'all',
   productFilters.value.length > 0, costFilter.value !== 'all', troopsFilter.value !== 'all', disasterFilter.value !== 'all',
   legalityFilter.value !== 'all', sortMode.value !== 'number'].filter(Boolean).length)
+const activeFilterSummary = computed(() => [
+  query.value.trim() ? `搜索“${query.value.trim()}”` : '',
+  typeFilter.value === 'all' ? '' : typeLabels[typeFilter.value],
+  factionFilter.value === 'all' ? '' : factionLabels[factionFilter.value],
+  productFilters.value.length ? `${productFilters.value.length} 个卡池` : '',
+  costFilter.value === 'all' ? '' : `${costFilter.value}费`,
+  troopsFilter.value === 'all' ? '' : `兵力 ${troopsFilter.value}`,
+  disasterFilter.value === 'all' ? '' : disasterFilter.value === 'none' ? '无天灾等级' : `天灾 ${disasterFilter.value}`,
+  legalityFilter.value === 'all' ? '' : ({ allowed: '可用', restricted: '受限', banned: '禁用' } as Record<string,string>)[legalityFilter.value],
+  sortMode.value === 'number' ? '' : `按${({ cost: '费用', troops: '兵力', name: '名称' } as Record<string,string>)[sortMode.value]}排序`,
+].filter(Boolean).join(' · '))
 
-function setWorkspace(next: 'gallery' | 'stats' | 'hand') {
+function setWorkspace(next: 'gallery' | 'stats' | 'hand' | 'content') {
   workspace.value = next
   mobilePane.value = next === 'gallery' ? 'pool' : 'insights'
   if (next === 'hand' && !openingHandIds.value.length) redrawOpeningHand()
+}
+
+function publicDeckUrl(id = publicationId.value) {
+  if (!id || typeof window === 'undefined') return ''
+  return new URL(router.resolve({ name: 'public-deck-detail', params: { deckId: id } }).href, window.location.origin).href
 }
 function setMobilePane(next: 'pool' | 'deck' | 'insights') {
   mobilePane.value = next
@@ -575,7 +593,7 @@ async function generateDeckImage() {
   generatingDeckImage.value = true
   closeDeckImage()
   try {
-    deckImageBlob.value = await createDeckImageBlob(currentDeck(), catalog.value)
+    deckImageBlob.value = await createDeckImageBlob(currentDeck(), catalog.value, { publicUrl: publicDeckUrl() })
     deckImageUrl.value = URL.createObjectURL(deckImageBlob.value)
   } catch (error) {
     notice.value = error instanceof Error ? error.message : '牌库图生成失败'
@@ -615,7 +633,8 @@ onBeforeUnmount(() => {
     <nav class="deck-mobile-nav" aria-label="移动端牌库编辑工作区">
       <button :class="{ active: mobilePane === 'pool' }" @click="setMobilePane('pool')">卡池</button>
       <button :class="{ active: mobilePane === 'deck' }" @click="setMobilePane('deck')">牌表 · {{ totalCards }}</button>
-      <button :class="{ active: mobilePane === 'insights' }" @click="setMobilePane('insights')">统计 / 起手</button>
+      <button :class="{ active: mobilePane === 'insights' && workspace !== 'content' }" @click="setMobilePane('insights')">统计 / 起手</button>
+      <button v-if="publicationId" :class="{ active: workspace === 'content' }" @click="setWorkspace('content')">公开内容</button>
     </nav>
 
     <main v-if="loading" class="deck-loading">正在载入卡牌数据…</main>
@@ -647,6 +666,7 @@ onBeforeUnmount(() => {
         <button :class="{ active: workspace === 'gallery' }" @click="setWorkspace('gallery')">Gallery 卡池</button>
         <button :class="{ active: workspace === 'stats' }" @click="setWorkspace('stats')">Stats 统计</button>
         <button :class="{ active: workspace === 'hand' }" @click="setWorkspace('hand')">Hand 起手</button>
+        <button v-if="publicationId" :class="{ active: workspace === 'content' }" @click="setWorkspace('content')">公开内容</button>
       </nav>
       <section v-show="workspace === 'gallery'" class="deck-catalog grand-panel">
         <article v-if="selectedMaster" class="current-deck-summary" aria-label="当前牌库主宰信息">
@@ -659,9 +679,9 @@ onBeforeUnmount(() => {
           <button :class="{ active: catalogTab === 'main' }" @click="catalogTab = 'main'">主牌库</button>
           <button :class="{ active: catalogTab === 'extra' }" @click="catalogTab = 'extra'">额外卡牌</button>
         </nav>
-        <button v-if="catalogTab === 'main'" class="mobile-filter-trigger" @click="mobileFiltersOpen = true">筛选<span v-if="activeFilterCount">{{ activeFilterCount }}</span></button>
-        <section v-if="catalogTab === 'main'" class="catalog-filter-bar" :class="{ 'mobile-open': mobileFiltersOpen }" aria-label="主牌库筛选">
-          <header class="mobile-filter-header"><b>筛选卡池</b><button aria-label="关闭筛选" @click="mobileFiltersOpen = false">×</button></header>
+        <div v-if="catalogTab === 'main'" class="catalog-filter-controls">
+          <MobileFilterSheet v-model="mobileFiltersOpen" title="筛选卡池" :active-count="activeFilterCount" always-visible @reset="resetFilters">
+          <section class="catalog-filter-bar" aria-label="主牌库筛选">
           <label class="filter-search">搜索<input v-model="query" placeholder="卡名、编号、效果"/></label>
           <label>类型<select v-model="typeFilter"><option value="all">全部主牌</option><option v-for="(label,key) in typeLabels" :key="key" :value="key">{{ label }}</option></select></label>
           <label>阵营<select v-model="factionFilter"><option value="all">全部阵营</option><option v-for="(label,key) in factionLabels" :key="key" :value="key">{{ label }}</option></select></label>
@@ -676,8 +696,12 @@ onBeforeUnmount(() => {
           <label>可用状态<select v-model="legalityFilter"><option value="all">全部</option><option value="allowed">可用</option><option value="restricted">受限</option><option value="banned">禁用</option></select></label>
           <label>排序<select v-model="sortMode"><option value="number">编号</option><option value="cost">费用</option><option value="troops">兵力</option><option value="name">名称</option></select></label>
           <button class="filter-reset" @click="resetFilters">清除筛选</button>
-          <button class="mobile-filter-apply" @click="mobileFiltersOpen = false">查看 {{ filtered.length }} 张结果</button>
-        </section>
+          </section>
+          <template #apply-label>查看 {{ filtered.length }} 张结果</template>
+          </MobileFilterSheet>
+          <button v-if="activeFilterCount" class="catalog-filter-summary" type="button" @click="mobileFiltersOpen = true">{{ activeFilterSummary }}</button>
+          <button v-if="activeFilterCount" class="catalog-filter-clear" type="button" @click="resetFilters">清除</button>
+        </div>
         <div v-if="catalogTab === 'master'" class="deck-card-grid">
           <article v-for="master in masters" :key="master.id" class="deck-card" :class="{ chosen: master.id === masterId }" @click="selectCard(master)">
             <button class="card-image" @dblclick.stop="chooseMaster(master.id)"><CardImage :card-id="master.id" :legacy-url="master.imageUrl" :alt="master.nameZh" intent="thumb" fit="cover"/></button>
@@ -728,6 +752,7 @@ onBeforeUnmount(() => {
         <header><div><p class="kicker">OPENING HAND</p><h2>当前构筑试抽</h2><p>从尚未保存的当前主牌中随机抽取 6 张；不会修改牌库或生成对局记录。</p></div><button @click="redrawOpeningHand">重新试抽</button></header>
         <div class="editor-opening-hand"><article v-for="(card,index) in openingHand" :key="`${card.id}-${index}`" @click="selectCard(card)"><CardImage :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb"/><b>{{ card.nameZh }}</b><small>{{ card.number }}</small></article><p v-if="!openingHand.length">当前主牌为空，先返回 Gallery 加入卡牌。</p></div>
       </section>
+      <PublicDeckContentEditor v-if="publicationId" v-show="workspace === 'content'" :publication-id="publicationId" :catalog="catalog" @saved="notice = $event"/>
       </div>
 
       <aside class="deck-list grand-panel">
@@ -774,7 +799,7 @@ onBeforeUnmount(() => {
 .deck-builder-topbar>div:nth-child(2){margin-right:auto}.deck-builder-topbar small,.kicker{color:#c7a85d;font-size:14px;font-weight:900;letter-spacing:.18em}.deck-builder-topbar h1{margin:2px 0 0;font-size:23px}.deck-builder-topbar label{display:grid;gap:4px;color:#b6bab6;font-size:14px;font-weight:900}.deck-builder-topbar input{width:260px;min-height:38px;padding:8px 11px;font-size:15px;font-weight:900}.deck-builder-topbar button{padding:9px 14px}.deck-builder-topbar .primary{border-color:#e4dfd0;background:#e4dfd0;color:#111;font-weight:900}.deck-builder-topbar .primary:disabled{opacity:.3}.deck-total{display:flex;align-items:baseline;gap:4px;color:#bc5961}.deck-total.valid{color:#5cc1b8}.deck-total b{font-size:25px}.deck-total span{font-size:14px}
 .deck-loading{display:grid;flex:1;place-items:center;color:#b7b9b5}.deck-builder-grid{display:grid;grid-template-columns:260px minmax(480px,1fr) 330px;gap:10px;min-height:0;padding:10px}.deck-builder-grid .grand-panel{min-height:0;padding:13px;border-radius:2px}.deck-builder-grid h2{margin:3px 0 12px;font-size:18px}.deck-side-column{display:grid;grid-template-rows:minmax(280px,1fr) minmax(160px,.72fr);gap:10px;min-height:0}.deck-detail-panel,.saved-decks-panel{display:flex;min-height:0;flex-direction:column;overflow:hidden}.empty-detail{color:#7f8985;font-size:14px;line-height:1.6}.saved-list{display:grid;gap:5px;overflow-y:auto;overscroll-behavior:contain;padding-right:3px}.saved-list article{border:1px solid #353c3e;background:#111619}.saved-list article>button:first-child{display:grid;width:100%;grid-template-columns:34px minmax(0,1fr);align-items:center;gap:7px;padding:7px;text-align:left}.saved-list article>button:first-child>img{width:34px;height:34px;object-fit:cover;border:1px solid #535e5b;border-radius:2px}.saved-deck-copy{display:grid;min-width:0;gap:2px}.saved-deck-copy b,.saved-deck-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.saved-deck-copy small{color:#89938f;font-size:14px}.saved-list span{color:#737d79;font-size:14px}.saved-list article{display:flex}.saved-list .delete{width:32px;border:0;border-left:1px solid #353c3e;color:#bd5961}.saved-list p{color:#666;font-size:14px}
 .deck-catalog{display:flex;flex-direction:column;overflow:hidden}.current-deck-summary{display:flex;flex:none;align-items:center;align-self:flex-start;min-width:250px;gap:10px;margin:0 0 10px;padding:8px 12px 8px 8px;border-left:2px solid #42abb3;background:#10191b;text-align:left}.current-deck-summary img{width:52px;height:52px;object-fit:cover;border-radius:2px}.current-deck-summary div{display:grid;gap:2px}.current-deck-summary small{color:#6bc5ca;font-size:14px;font-weight:900;letter-spacing:.12em}.current-deck-summary b{font-size:14px}.current-deck-summary span{color:#9aa5a1;font-size:14px}.deck-catalog>header,.deck-list>header{display:flex;align-items:center;justify-content:space-between;flex:none}.deck-catalog>header span{color:#7f8985;font-size:14px}.catalog-filter-bar{display:grid;grid-template-columns:minmax(180px,1.6fr) minmax(150px,1.2fr) repeat(4,minmax(86px,.75fr)) 62px;gap:7px;align-items:end;margin:0 0 10px;padding:9px;border:1px solid #354041;background:#0b1112}.catalog-filter-bar label{display:grid;gap:4px;min-width:0;color:#959f9b;font-size:14px;font-weight:900}.catalog-filter-bar input,.catalog-filter-bar select{width:100%;min-width:0;height:32px}.catalog-filter-bar .filter-reset{height:32px;min-height:32px}.product-filter{display:flex;min-width:0;flex-wrap:wrap;gap:3px;margin:0;padding:0;border:0}.product-filter legend{width:100%;margin-bottom:1px;color:#959f9b;font-size:14px;font-weight:900}.product-filter button{min-height:28px;padding:3px 7px;border:1px solid #4a5552;background:#141a1b;color:#b8bfbb;font-size:12px;font-weight:900}.product-filter button.active{border-color:#70d7df;background:#174e54;color:#fff}.deck-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:9px;overflow:auto;padding:3px 4px 20px}.deck-card{min-width:0;border:1px solid #303638;background:#101416;box-shadow:3px 3px 0 #050607}.deck-card.chosen{border-color:#c5a456}.deck-card.alternate-art-card{border-color:#5c4d2d;background:#17140e}.card-image{position:relative;display:block;width:100%;aspect-ratio:5/7;overflow:hidden;border:0;background:#171d1f}.card-image>.l12-card-image,.card-image>img{width:100%;height:100%;object-fit:cover}.card-image>span{display:grid;height:100%;place-items:center;font-size:24px}.copy-count{position:absolute;right:4px;top:4px;padding:3px 6px;background:#07181a;color:#71d1d0}.deck-card>div{display:grid;gap:2px;padding:7px}.deck-card>div b{overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.deck-card>div b em{margin-left:5px;padding:1px 4px;border:1px solid #a9883c;color:#dfc66f;font-size:11px;font-style:normal}.deck-card>div small{color:#757d79;font-size:14px}.add-card{width:100%;padding:6px;border:0;border-top:1px solid #303638;color:#cdbb89;font-size:14px}.add-card:disabled{color:#4d5351}
-.deck-card.landscape-thumbnail .card-image>.l12-card-image:not(.landscape-thumbnail-image){position:absolute;left:50%;top:50%;width:140%;height:71.43%;transform:translate(-50%,-50%) rotate(90deg);transform-origin:center}
+.deck-card.landscape-thumbnail .card-image>.l12-card-image{width:100%;height:100%;transform:none}
 .deck-list{display:flex;flex-direction:column;overflow:hidden}.deck-list>header>b{font-size:27px;color:#65c4c3}.cost-curve{display:flex;height:88px;align-items:end;gap:5px;padding:8px 4px;border-top:1px solid #333;border-bottom:1px solid #333}.cost-curve i{display:grid;flex:1;align-items:end;justify-items:center;height:68px;font-style:normal}.cost-curve i span{width:100%;max-width:22px;background:linear-gradient(#d2b560,#7f6530)}.cost-curve i b,.cost-curve i small{font-size:14px}.cost-curve i small{color:#777}.deck-entries{flex:1;overflow:auto;padding:7px 0}.deck-entry-row{display:flex;position:relative;isolation:isolate;align-items:center;gap:7px;margin-bottom:5px;padding:6px;overflow:hidden;border:1px solid #354041;border-left:2px solid #3da4ad;background:#111719}.deck-entry-row>span{display:grid;width:27px;height:27px;flex:none;place-items:center;background:#080a0b;color:#eee;font-weight:900}.deck-entry-row>div{display:grid;min-width:0;flex:1}.deck-entry-row>div b{overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.deck-entry-row small{color:#d0d5d1;font-size:14px}.deck-entry-row strong{color:#f0d98e}.deck-entry-row button{width:27px;height:27px;flex:none;border:1px solid #5c6461;background:#101516;color:#eee;font-size:15px;font-weight:900}.deck-entry-row button:hover:not(:disabled){border-color:#70d7df;background:#1b565b}.deck-entry-row button:disabled{color:#9a8b64;opacity:.78}.deck-entries>p{color:#69716e;font-size:14px;line-height:1.6}.builder-card-detail.archive-detail{display:block;min-height:0;flex:1;margin:0 -1px;padding-top:8px;border-top:1px solid #3d4241;border-left:0;overflow-x:hidden;overflow-y:auto;background:#0b0f10}.builder-card-detail :deep(.card-detail-copy){min-width:0}.builder-card-detail :deep(.archive-tags){flex-wrap:wrap}.builder-card-detail :deep(.archive-effect p){white-space:pre-line;overflow-wrap:anywhere}.deck-list footer{min-height:32px;padding:8px;border-top:1px solid #315854;color:#72c8bd;font-size:14px}.deck-list footer.error{border-color:#673a3d;color:#d2757b}
 @media(max-width:1180px){.deck-builder-grid{grid-template-columns:210px minmax(420px,1fr) 290px}.deck-builder-topbar label:not(.saved-deck-switcher){display:none}}
 @media(max-width:820px){
@@ -787,7 +812,7 @@ onBeforeUnmount(() => {
 .deck-entry-banner{position:absolute;z-index:-2;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 28%;opacity:.56;filter:saturate(.9) contrast(1.12)}.deck-entry-row::after{content:'';position:absolute;z-index:-1;inset:0;background:linear-gradient(90deg,rgba(5,8,9,.91),rgba(9,13,14,.48) 48%,rgba(5,8,9,.88))}.deck-extra-entries :deep(.deck-entry-banner.landscape-thumbnail-image){left:0;top:0;width:100%;height:100%;transform:none}
 @media(max-width:1180px){.deck-file-actions button{padding:7px 8px;font-size:14px}}
 @media(max-width:820px){.deck-builder-topbar{height:auto;min-height:64px;flex-wrap:wrap}.deck-file-actions{order:5;width:100%;display:grid;grid-template-columns:repeat(3,1fr)}}
-.trial-builder{margin:12px 0;padding:10px;border:1px solid #42605a;background:#0a1212}.trial-builder>header,.selected-trials>header{display:flex;align-items:center;justify-content:space-between}.trial-builder>header span,.selected-trials>header span{color:#78d2be;font-size:14px;font-weight:900}.trial-builder>p{margin:5px 0 9px;color:#84918c;font-size:14px;line-height:1.5}.trial-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.trial-options button{min-width:0;padding:6px;border:1px solid #384744;background:#101817;color:#e9e5dc;text-align:left}.trial-options button.selected{border-color:#6cd5b4;background:#17332c}.trial-options b,.trial-options small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}.trial-options small{margin-top:3px;color:#85908c;font-size:14px}.trial-thumb{position:relative;display:block;width:100%;aspect-ratio:5/7;margin-bottom:5px;overflow:hidden;background:#080b0b}.trial-thumb img{position:absolute;left:50%;top:50%;width:140%;height:71.43%;object-fit:contain;transform:translate(-50%,-50%) rotate(90deg)}
+.trial-builder{margin:12px 0;padding:10px;border:1px solid #42605a;background:#0a1212}.trial-builder>header,.selected-trials>header{display:flex;align-items:center;justify-content:space-between}.trial-builder>header span,.selected-trials>header span{color:#78d2be;font-size:14px;font-weight:900}.trial-builder>p{margin:5px 0 9px;color:#84918c;font-size:14px;line-height:1.5}.trial-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.trial-options button{min-width:0;padding:6px;border:1px solid #384744;background:#101817;color:#e9e5dc;text-align:left}.trial-options button.selected{border-color:#6cd5b4;background:#17332c}.trial-options b,.trial-options small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}.trial-options small{margin-top:3px;color:#85908c;font-size:14px}.trial-thumb{display:block;width:100%;aspect-ratio:8/5;margin-bottom:5px;overflow:hidden;background:#080b0b}.trial-thumb img{width:100%;height:100%;object-fit:contain}
 .selected-extra-cards{flex:none;display:grid;gap:4px;max-height:150px;padding:8px 0;border-top:1px solid #3d4241}.selected-extra-cards>header{display:flex;align-items:center;justify-content:space-between}.selected-extra-cards>header span{color:#78d2be;font-size:14px;font-weight:900}.deck-extra-entries{overflow-y:auto;overscroll-behavior:contain}
 .trial-thumb.upright img{width:100%;height:100%;object-fit:cover;transform:translate(-50%,-50%)}.automatic-extra-builder{border-color:#8a6a3d}
 .catalog-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin:0 0 10px}.catalog-tabs button,.choose-special{min-height:32px;border:1px solid #48504e;background:#101617;color:#c8cfcb;font-weight:900}.catalog-tabs button.active,.choose-special:hover:not(:disabled){border-color:#73d4d8;background:#194b50;color:#fff}.choose-special{width:100%;border-width:1px 0 0}.empty-extra{grid-column:1/-1;padding:32px;color:#8b9490;text-align:center}
@@ -802,4 +827,10 @@ onBeforeUnmount(() => {
 }
 @media(min-width:821px) and (max-width:1439px){.deck-builder-grid{grid-template-columns:210px minmax(420px,1fr) 300px}.editor-opening-hand{grid-template-columns:repeat(3,1fr)}.stats-summary{grid-template-columns:repeat(2,1fr)}}
 @media(max-height:520px) and (min-width:821px) and (max-width:900px){.deck-builder-topbar{height:auto;min-height:58px;padding:6px 8px;gap:7px}.deck-builder-topbar>div:nth-child(2),.deck-total{display:none}.deck-builder-topbar .saved-deck-switcher{display:grid!important}.deck-file-actions{min-width:0;overflow-x:auto}.deck-builder-grid{grid-template-columns:minmax(0,1fr) 280px;padding:6px}.deck-side-column{display:none}.workspace-tabs button{min-height:30px}.deck-card-grid{grid-template-columns:repeat(auto-fill,minmax(94px,1fr))}.catalog-filter-bar{grid-template-columns:repeat(4,minmax(76px,1fr));max-height:118px;overflow:auto}.deck-list>.cost-curve{display:none}}
+.deck-builder-grid{grid-template-columns:calc(var(--l12-card-detail-sidebar-width,274px) - 56px) minmax(480px,1fr) var(--l12-card-detail-sidebar-width,274px)}
+.workspace-tabs{grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
+.catalog-filter-controls{display:flex;align-items:center;gap:8px;margin-bottom:10px;min-width:0}.catalog-filter-controls :deep(.mobile-filter-trigger){display:inline-flex}.catalog-filter-summary{min-width:0;overflow:hidden;border:0;background:transparent;color:#b9c6c4;font-size:12px;text-align:left;text-overflow:ellipsis;white-space:nowrap}.catalog-filter-clear{flex:none;border:0;background:transparent;color:#74d1d6;font-weight:900}.catalog-filter-bar{grid-template-columns:repeat(2,minmax(0,1fr));margin:0;padding:0;border:0;background:transparent}.catalog-filter-bar .filter-search,.catalog-filter-bar .product-filter{grid-column:1/-1}.deck-card-grid{grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:10px}.deck-card.landscape-thumbnail .card-image{aspect-ratio:8/5}.deck-card.landscape-thumbnail .card-image>.l12-card-image{position:static;width:100%;height:100%;transform:none}.deck-card>div b,.deck-card>div small{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.trial-thumb img{position:static;width:100%;height:100%;transform:none}.trial-thumb{aspect-ratio:8/5}
+@media(max-width:1180px) and (min-width:821px){.deck-builder-grid{grid-template-columns:200px minmax(420px,1fr) 260px}}
+@media(max-width:820px){.deck-mobile-nav{grid-template-columns:repeat(auto-fit,minmax(86px,1fr))}.catalog-filter-bar{display:grid;position:static;max-height:none;padding:0;overflow:visible;border:0;box-shadow:none}.deck-card-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.catalog-filter-controls{align-items:stretch}.catalog-filter-summary{flex:1}.deck-builder-grid[data-mobile-pane="insights"] .deck-center-column{display:flex}.deck-builder-grid[data-mobile-pane="insights"] .deck-catalog{display:none}}
+@media(max-height:520px) and (min-width:821px) and (max-width:900px){.deck-builder-grid{grid-template-columns:minmax(0,1fr) 260px}.deck-card-grid{grid-template-columns:repeat(auto-fill,minmax(108px,1fr))}}
 </style>

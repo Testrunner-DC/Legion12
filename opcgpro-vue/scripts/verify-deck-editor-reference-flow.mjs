@@ -3,6 +3,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { createServer } from 'vite'
+import jsQR from 'jsqr'
+import sharp from 'sharp'
 
 const root = path.resolve(import.meta.dirname, '..')
 const { chromium } = createRequire(import.meta.url)(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
@@ -13,15 +15,25 @@ import {createApp} from 'vue'
 import {createRouter,createMemoryHistory} from 'vue-router'
 import Editor from '/src/l12/L12DeckEditor.vue'
 import {loadDeckCatalog,loadOfficialPresetDecks} from '/src/l12/decks.ts'
+import {platformState,publicDeckApi,alternateArtApi} from '/src/l12/platform.ts'
 import '/src/style.css'
 const [cards,presets]=await Promise.all([loadDeckCatalog(),loadOfficialPresetDecks()])
 const deck=presets.find(item=>item.cardIds.length>=40)
 if(!deck)throw Error('fixture deck missing')
+const fixtureMaster=cards.find(item=>item.id===deck.masterId)
+const fixtureTrial=cards.find(item=>item.cardType==='trial')
+if(fixtureMaster&&fixtureTrial)fixtureTrial.faction=fixtureMaster.faction
 const bench=deck.cardIds.slice(0,2)
-localStorage.setItem('l12-custom-decks-v1',JSON.stringify({'编辑流程验收':{...deck,name:'编辑流程验收',benchIds:bench,updatedAt:new Date().toISOString()}}))
-localStorage.setItem('l12:official-presets:guest-seeded:v1','true')
-const router=createRouter({history:createMemoryHistory(),routes:[{path:'/:all(.*)',component:Editor}]})
-await router.push('/deck-editor?deck=编辑流程验收')
+const saved={...deck,name:'含超长名称与编号截断验收的编辑流程牌库',benchIds:bench,updatedAt:new Date().toISOString()}
+platformState.account={id:'author',username:'验收作者',role:'player',createdAt:'2026-09-24',publicHistory:true}
+alternateArtApi.mine=async()=>[]
+const initialDetails={guide:{buildIdea:'这是一段用于验证宽屏与移动端长内容输入的构筑思路。'.repeat(10),opening:'优先保留低费军团与互动战术。',keyCards:'关键牌与配合说明。',commonSequence:'第一回合建立前排，随后根据对手资源调整。',substitutions:'环境变化时替换对应功能牌。'},matchups:[],contentRevision:4,contentUpdatedAt:'2026-09-24T08:00:00Z',versions:[],matches:[],matchBindingStatus:'unavailable',matchBindingMessage:'暂无关联对局'}
+let details=JSON.parse(localStorage.getItem('qa-public-details')||JSON.stringify(initialDetails))
+publicDeckApi.get=async()=>({id:'qa-public',ownerId:'author',author:'验收作者',deck:saved,views:1,likes:0,copies:0,liked:false,createdAt:'',updatedAt:'',details})
+publicDeckApi.updateContent=async(_id,guide,matchups)=>{details={...details,guide,matchups,contentRevision:details.contentRevision+1,contentUpdatedAt:new Date().toISOString()};localStorage.setItem('qa-public-details',JSON.stringify(details));return details}
+localStorage.setItem('l12-custom-decks-v1:author',JSON.stringify({[saved.name]:saved}))
+const router=createRouter({history:createMemoryHistory(),routes:[{path:'/deck-editor',component:Editor},{name:'public-deck-detail',path:'/decks/:deckId',component:{template:'<div></div>'}}]})
+await router.push('/deck-editor?deck='+encodeURIComponent(saved.name)+'&published=qa-public')
 createApp(Editor).use(router).mount('#app')
 `
 
@@ -74,8 +86,15 @@ try {
       await page.getByRole('button', { name: '卡池' }).click()
       await page.locator('.catalog-tabs').getByRole('button', { name: '主牌库' }).click()
       await page.getByRole('button', { name: /^筛选/ }).click()
-      const sheet = await page.locator('.catalog-filter-bar.mobile-open').boundingBox()
+      const filterSheet = page.locator('.mobile-filter-sheet')
+      await filterSheet.locator('select').nth(0).selectOption({ index: 1 })
+      await filterSheet.locator('select').nth(1).selectOption({ index: 1 })
+      await filterSheet.locator('select').nth(2).selectOption('2')
+      const productButton = filterSheet.getByRole('button', { name: 'S01', exact: true })
+      if (await productButton.count()) await productButton.click()
+      const sheet = await page.locator('.mobile-filter-sheet').boundingBox()
       assert.ok(sheet && sheet.y >= 0 && sheet.y + sheet.height <= height + 1, `${name} 筛选面板越界`)
+      await page.screenshot({ path: path.join(out, `${name}-filters.png`), fullPage: true })
       await page.getByRole('button', { name: '关闭筛选' }).click()
     } else {
       await page.getByRole('button', { name: 'Stats 统计' }).click()
@@ -85,12 +104,45 @@ try {
       await page.getByRole('button', { name: 'Hand 起手' }).click()
       assert.equal(await page.locator('.editor-opening-hand article').count(), 6)
       await page.screenshot({ path: path.join(out, `${name}-hand.png`), fullPage: true })
+      if (name === 'wide-1440') {
+        await page.getByRole('button', { name: 'Gallery 卡池', exact: true }).click()
+        await page.locator('.catalog-tabs').getByRole('button', { name: '额外卡牌', exact: true }).click()
+        const horizontalCard = page.locator('.deck-card.landscape-thumbnail').first()
+        if (await horizontalCard.count()) {
+          const imageBox = await horizontalCard.locator('.card-image').boundingBox()
+          assert.ok(imageBox && imageBox.width > imageBox.height, '横置卡牌缩略图没有保持自然横向')
+          await page.screenshot({ path: path.join(out, `${name}-horizontal.png`), fullPage: true })
+        }
+      }
+    }
+    await page.getByRole('button', { name: '公开内容', exact: true }).first().click()
+    await page.locator('[data-editor-workspace="public-content"]').waitFor()
+    await page.screenshot({ path: path.join(out, `${name}-content.png`), fullPage: true })
+    if (name === 'wide-1440') {
+      const savedBuildIdea = '保存闭环：修改公开内容后重新打开编辑器仍然保留。'
+      const revisionBeforeSave = await page.locator('.content-status b').textContent()
+      await page.getByLabel('构筑思路').fill(savedBuildIdea)
+      await page.getByRole('button', { name: '保存公开内容', exact: true }).click()
+      await page.waitForFunction(previous => document.querySelector('.content-status b')?.textContent !== previous, revisionBeforeSave)
+      await page.reload()
+      await page.locator('.deck-builder-grid').waitFor()
+      await page.getByRole('button', { name: '公开内容', exact: true }).first().click()
+      await page.locator('[data-editor-workspace="public-content"]').waitFor()
+      assert.equal(await page.getByLabel('构筑思路').inputValue(), savedBuildIdea, '公开内容保存后重开未恢复')
+      await page.getByRole('button', { name: '生成牌库图', exact: true }).click()
+      await page.locator('.deck-image-dialog').waitFor({ timeout: 15000 })
+      await page.screenshot({ path: path.join(out, `${name}-public-qr.png`), fullPage: true })
+      await page.locator('.deck-image-dialog footer').getByRole('button', { name: '关闭', exact: true }).click()
     }
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)
     assert.equal(overflow, false, `${name} 出现页面级横向溢出`)
   }
+  const qrScreenshot = path.join(out, 'wide-1440-public-qr.png')
+  const qrPixels = await sharp(qrScreenshot).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  const decodedQr = jsQR(new Uint8ClampedArray(qrPixels.data), qrPixels.info.width, qrPixels.info.height)
+  assert.equal(decodedQr?.data, `http://127.0.0.1:${port}/decks/qa-public`, '牌库图内嵌二维码无法从最终截图扫描')
   assert.deepEqual(errors, [])
-  console.log(JSON.stringify({ status: 'passed', viewports: profiles.length, screenshots: profiles.length * 2, output: out }))
+  console.log(JSON.stringify({ status: 'passed', viewports: profiles.length, screenshots: fs.readdirSync(out).filter(name => name.endsWith('.png')).length, output: out }))
 } finally {
   await browser?.close()
   await server.close()

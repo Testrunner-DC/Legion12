@@ -2,6 +2,7 @@ import { automaticExtraCardIdsForMaster, deckCountSummary, type DeckCard, type S
 import { compareDeckCardIds } from '@/l12/deckOrdering'
 import { resolveCardAssetUrls } from '@/l12/cardAssets'
 import { isHorizontalCardType } from '@/l12/cardPresentation'
+import QRCode from 'qrcode'
 
 interface DeckCodePayload { v: 1; n: string; m: string; c: string[]; r: string[]; s?: string[] }
 
@@ -45,8 +46,20 @@ function roundedRect(context: CanvasRenderingContext2D, x: number, y: number, wi
   context.fill()
 }
 
-export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[]) {
+function loadDataImage(url: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('二维码图像生成失败'))
+    image.src = url
+  })
+}
+
+export interface DeckImageOptions { publicUrl?: string }
+
+export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[], options: DeckImageOptions = {}) {
   const byId = new Map(catalog.map(card => [card.id, card]))
+  const publicUrl = /^https?:\/\//i.test(options.publicUrl?.trim() ?? '') ? options.publicUrl!.trim() : ''
   const masterFaction = byId.get(deck.masterId)?.faction
   const groups = [...deck.cardIds.reduce((map, id) => map.set(id, (map.get(id) || 0) + 1), new Map<string, number>())]
     .sort(([left], [right]) => compareDeckCardIds(left, right, byId, masterFaction))
@@ -54,7 +67,9 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
     ...(deck.specialIds ?? []),
     ...automaticExtraCardIdsForMaster(deck.masterId),
   ])]
-  const columns = Math.min(10, Math.max(5, Math.ceil(groups.length / 2)))
+  const qrColumnWidth = publicUrl ? 220 : 0
+  const mainAreaWidth = 1464 - qrColumnWidth
+  const columns = Math.min(publicUrl ? 8 : 10, Math.max(5, Math.ceil(groups.length / 2)))
   const rows = Math.max(1, Math.ceil(groups.length / columns))
   const canvas = document.createElement('canvas')
   canvas.width = 1920
@@ -81,6 +96,10 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
   const masterBitmap = loadedBitmaps[0]
   const bitmaps = loadedBitmaps.slice(1, 1 + groups.length)
   const extraBitmaps = loadedBitmaps.slice(1 + groups.length)
+  const qrImage = publicUrl
+    ? await QRCode.toDataURL(publicUrl, { errorCorrectionLevel: 'M', margin: 4, width: 220, color: { dark: '#050708', light: '#ffffff' } })
+      .then(loadDataImage)
+    : null
   context.fillStyle = '#10171b'; roundedRect(context, 74, 104, 254, 356, 4)
   if (masterBitmap) context.drawImage(masterBitmap, 74, 104, 254, 356)
   else { context.fillStyle = '#263139'; context.fillRect(74, 104, 254, 356) }
@@ -119,7 +138,7 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
     context.textAlign = 'left'
   }
 
-  const areaX = 410; const areaY = 198; const areaWidth = 1464; const areaHeight = 784
+  const areaX = 410; const areaY = 198; const areaWidth = mainAreaWidth; const areaHeight = 784
   const gapX = 13
   const rowPitch = areaHeight / rows
   const cardWidth = Math.min(162, (areaWidth - gapX * (columns - 1)) / columns, (rowPitch - 42) / 1.4)
@@ -141,6 +160,16 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
     context.beginPath(); context.arc(badgeX, y + 16, 16, 0, Math.PI * 2); context.fill()
     context.fillStyle = '#0b0e10'; context.font = '900 15px Microsoft YaHei'; context.textAlign = 'center'; context.fillText(`×${count}`, badgeX, y + 21); context.textAlign = 'left'
   })
+  if (qrImage && publicUrl) {
+    const qrSize = 190
+    const qrX = 1874 - qrSize
+    const qrY = 770
+    context.fillStyle = '#ffffff'; roundedRect(context, qrX - 6, qrY - 42, qrSize + 12, qrSize + 48, 4)
+    context.fillStyle = '#111820'; context.font = '900 14px Microsoft YaHei'; context.textAlign = 'center'
+    context.fillText('扫码查看公开牌库', qrX + qrSize / 2, qrY - 17)
+    context.drawImage(qrImage, qrX, qrY, qrSize, qrSize)
+    context.textAlign = 'left'
+  }
   context.fillStyle = '#7f8b90'; context.font = '700 14px Microsoft YaHei'; context.fillText('由十二军团网页平台生成 · 可使用牌库码导入', 74, canvas.height - 70)
   context.fillStyle = '#e1bf6d'; context.font = '900 19px Microsoft YaHei'; context.fillText('LEGION12', 74, canvas.height - 42)
   masterBitmap?.close()
@@ -149,8 +178,8 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
   return await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('牌库图生成失败')), 'image/png'))
 }
 
-export async function downloadDeckImage(deck: SavedL12Deck, catalog: DeckCard[], existingBlob?: Blob) {
-  const blob = existingBlob || await createDeckImageBlob(deck, catalog)
+export async function downloadDeckImage(deck: SavedL12Deck, catalog: DeckCard[], existingBlob?: Blob, options: DeckImageOptions = {}) {
+  const blob = existingBlob || await createDeckImageBlob(deck, catalog, options)
   const anchor = document.createElement('a')
   anchor.href = URL.createObjectURL(blob)
   anchor.download = `${deck.name.replace(/[\\/:*?"<>|]/g, '_')}-牌库图.png`
