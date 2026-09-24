@@ -58,6 +58,7 @@ public sealed partial class L12PlatformStore
                 publication_id TEXT NOT NULL REFERENCES published_decks(publication_id),
                 version INTEGER NOT NULL,
                 payload_hash TEXT NOT NULL REFERENCES deck_payloads(payload_hash),
+                name TEXT NOT NULL DEFAULT '',
                 created_utc TEXT NOT NULL,
                 PRIMARY KEY(publication_id,version)
             );
@@ -79,8 +80,51 @@ public sealed partial class L12PlatformStore
             );
             CREATE INDEX IF NOT EXISTS ix_tournament_deck_refs_payload
                 ON tournament_deck_refs(payload_hash);
+            CREATE TABLE IF NOT EXISTS published_deck_content_payloads (
+                content_hash TEXT PRIMARY KEY,
+                guide_json TEXT NOT NULL,
+                matchups_json TEXT NOT NULL,
+                created_utc TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS published_deck_content_heads (
+                publication_id TEXT PRIMARY KEY REFERENCES published_decks(publication_id),
+                revision INTEGER NOT NULL,
+                content_hash TEXT NOT NULL REFERENCES published_deck_content_payloads(content_hash),
+                updated_utc TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS published_deck_content_revisions (
+                publication_id TEXT NOT NULL REFERENCES published_decks(publication_id),
+                revision INTEGER NOT NULL,
+                content_hash TEXT NOT NULL REFERENCES published_deck_content_payloads(content_hash),
+                author_id TEXT NOT NULL,
+                created_utc TEXT NOT NULL,
+                PRIMARY KEY(publication_id,revision)
+            );
+            CREATE INDEX IF NOT EXISTS ix_published_deck_content_revisions_hash
+                ON published_deck_content_revisions(content_hash);
             """;
         command.ExecuteNonQuery();
+        EnsureDeckColumn(connection, "published_deck_versions", "name", "TEXT NOT NULL DEFAULT ''");
+        using var backfill = connection.CreateCommand();
+        backfill.CommandText = """
+            UPDATE published_deck_versions
+            SET name=COALESCE((SELECT name FROM published_decks
+                WHERE published_decks.publication_id=published_deck_versions.publication_id),'')
+            WHERE name='';
+            """;
+        backfill.ExecuteNonQuery();
+    }
+
+    private static void EnsureDeckColumn(SqliteConnection connection, string table, string column, string declaration)
+    {
+        using var query = connection.CreateCommand();
+        query.CommandText = $"PRAGMA table_info({table});";
+        using var reader = query.ExecuteReader();
+        while (reader.Read()) if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase)) return;
+        reader.Close();
+        using var alter = connection.CreateCommand();
+        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {declaration};";
+        alter.ExecuteNonQuery();
     }
 
     private void EnsureAndHydrateDeckDomainStorage(SqliteConnection connection, DataFile data)
@@ -241,7 +285,7 @@ public sealed partial class L12PlatformStore
         {
             var payload = NormalizeDeckPayload(deck.MasterId, deck.CardIds, deck.MoraleIds, deck.SpecialIds);
             PersistPayload(connection, transaction, payload, deck.CreatedAt);
-            var version = CurrentPublishedDeckVersion(connection, transaction, deck.Id, payload.Hash);
+            var version = CurrentPublishedDeckVersion(connection, transaction, deck.Id, payload.Hash, deck.Name);
             using (var command = connection.CreateCommand())
             {
                 command.Transaction = transaction;
@@ -269,12 +313,13 @@ public sealed partial class L12PlatformStore
             {
                 versionCommand.Transaction = transaction;
                 versionCommand.CommandText = """
-                    INSERT OR IGNORE INTO published_deck_versions(publication_id,version,payload_hash,created_utc)
-                    VALUES($id,$version,$payload,$created);
+                    INSERT OR IGNORE INTO published_deck_versions(publication_id,version,payload_hash,name,created_utc)
+                    VALUES($id,$version,$payload,$name,$created);
                     """;
                 versionCommand.Parameters.AddWithValue("$id", deck.Id);
                 versionCommand.Parameters.AddWithValue("$version", version);
                 versionCommand.Parameters.AddWithValue("$payload", payload.Hash);
+                versionCommand.Parameters.AddWithValue("$name", deck.Name);
                 versionCommand.Parameters.AddWithValue("$created", deck.UpdatedAt.ToString("O"));
                 versionCommand.ExecuteNonQuery();
             }
@@ -446,18 +491,20 @@ public sealed partial class L12PlatformStore
     }
 
     private static int CurrentPublishedDeckVersion(SqliteConnection connection, SqliteTransaction transaction,
-        string publicationId, string payloadHash)
+        string publicationId, string payloadHash, string name)
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT current_version,current_payload_hash FROM published_decks WHERE publication_id=$id;
+            SELECT current_version,current_payload_hash,name FROM published_decks WHERE publication_id=$id;
             """;
         command.Parameters.AddWithValue("$id", publicationId);
         using var reader = command.ExecuteReader();
         if (!reader.Read()) return 1;
         var current = reader.GetInt32(0);
-        return string.Equals(reader.GetString(1), payloadHash, StringComparison.Ordinal) ? current : current + 1;
+        return string.Equals(reader.GetString(1), payloadHash, StringComparison.Ordinal)
+               && string.Equals(reader.GetString(2), name, StringComparison.Ordinal)
+            ? current : current + 1;
     }
 
     private static string DeckNameKey(string value) => (value ?? string.Empty).Trim().ToUpperInvariant();
@@ -586,6 +633,8 @@ public sealed partial class L12PlatformStore
             Count(connection, "SELECT COUNT(*) FROM published_deck_versions;"),
             Count(connection, "SELECT COUNT(*) FROM published_deck_likes;"),
             Count(connection, "SELECT COUNT(*) FROM tournament_deck_refs;"),
+            Count(connection, "SELECT COUNT(*) FROM published_deck_content_payloads;"),
+            Count(connection, "SELECT COUNT(*) FROM published_deck_content_revisions;"),
             File.Exists(_databasePath) ? new FileInfo(_databasePath).Length : 0,
             File.Exists(_databasePath + "-wal") ? new FileInfo(_databasePath + "-wal").Length : 0);
     }

@@ -833,6 +833,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             {
                 SeasonCompliant = valid,
                 SeasonComplianceReason = valid ? null : error,
+                Details = _platform.PublicDeckDetails(id),
             });
         });
         _app.MapPost("/api/public-decks", (HttpRequest request, PublishedDeckRequest body) =>
@@ -844,6 +845,25 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 return Results.BadRequest(new { message = error });
             var published = _platform.PublishDeck(account.Id, deck, body.PublicationId);
             return published is null ? Results.NotFound() : Results.Ok(published);
+        });
+        _app.MapPut("/api/public-decks/{id}/content", (HttpRequest request, string id,
+            L12PublicDeckContentInput body) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            try
+            {
+                var details = _platform.UpdatePublicDeckContent(account.Id, id, body);
+                return details is null ? Results.NotFound() : Results.Ok(details);
+            }
+            catch (UnauthorizedAccessException error)
+            {
+                return Results.Json(new { message = error.Message }, statusCode: StatusCodes.Status403Forbidden);
+            }
+            catch (ArgumentException error)
+            {
+                return Results.BadRequest(new { message = error.Message });
+            }
         });
         _app.MapDelete("/api/public-decks/{id}", (HttpRequest request, string id) =>
         {

@@ -9,6 +9,7 @@ const browser = read('src/l12/site/DeckConstructionBrowser.vue')
 const router = read('src/router/index.ts')
 const platform = read('src/l12/platform.ts')
 const server = read('../服务端WebSocket/TwelveLegions/L12WebSocketServer.cs')
+const detailsStore = read('../服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckDetails.cs')
 
 const checks = [
   ['公开牌库详情具备独立路由', router.includes("path: '/decks/:deckId'") && router.includes('PublicDeckDetailPage.vue')],
@@ -22,6 +23,10 @@ const checks = [
   ['详情页保留核心操作', ['toggleLike', 'copyToMine', 'copyCode', 'previewImage', 'editDeck', 'deleteDeck'].every(key => detail.includes(key))],
   ['构筑详情复用共享卡牌详情', browser.includes('CardDetailContent') && browser.includes(':show-catalog-only="false"')],
   ['窄屏详情使用安全区', browser.includes('construction-detail-mask') && browser.includes('safe-area-inset')],
+  ['详情内容覆盖指南与对局建议', ['data-detail-section="guide"', 'data-detail-section="matchups"', 'updateContent'].every(key => detail.includes(key))],
+  ['详情内容覆盖长期版本、准确对局与随机起手', ['data-detail-section="versions"', 'data-detail-section="matches"', 'data-detail-section="hands"'].every(key => detail.includes(key))],
+  ['对局记录不拿作者总战绩替代', detailsStore.includes('不会用作者总战绩替代') && detailsStore.includes('"unavailable"')],
+  ['移动端回放保持电脑端提示', detail.includes('mobile-replay') && detail.includes('请使用电脑端查看回放')],
 ]
 
 for (const [label, passed] of checks) if (!passed) throw new Error(`公开牌库浏览合同失败：${label}`)

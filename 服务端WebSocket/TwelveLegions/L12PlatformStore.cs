@@ -29,7 +29,24 @@ public sealed record L12AccountDeckView(string Name, string MasterId, IReadOnlyL
     IReadOnlyDictionary<string, IReadOnlyList<string>>? AlternateArtCopies = null);
 public sealed record L12PublishedDeckView(string Id, string OwnerId, string Author, L12AccountDeckView Deck,
     int Views, int Likes, int Copies, bool Liked, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
-    bool SeasonCompliant = true, string? SeasonComplianceReason = null);
+    bool SeasonCompliant = true, string? SeasonComplianceReason = null,
+    L12PublicDeckDetailsView? Details = null);
+public sealed record L12PublicDeckGuideView(string BuildIdea, string Opening, string KeyCards,
+    string CommonSequence, string Substitutions);
+public sealed record L12PublicDeckMatchupView(string OpponentMasterId, string Notes, string KeyCards,
+    string SuggestedSwaps);
+public sealed record L12PublicDeckVersionChangeView(string Section, string CardId, int PreviousQuantity,
+    int CurrentQuantity);
+public sealed record L12PublicDeckVersionView(int Version, string Name, L12AccountDeckView Deck,
+    DateTimeOffset CreatedAt, IReadOnlyList<L12PublicDeckVersionChangeView> Changes);
+public sealed record L12PublicDeckMatchView(string MatchId, int Version, DateTimeOffset PlayedAt,
+    string OpponentMasterId, string Result, string ReplayPath);
+public sealed record L12PublicDeckDetailsView(L12PublicDeckGuideView Guide,
+    IReadOnlyList<L12PublicDeckMatchupView> Matchups, int ContentRevision, DateTimeOffset? ContentUpdatedAt,
+    IReadOnlyList<L12PublicDeckVersionView> Versions, IReadOnlyList<L12PublicDeckMatchView> Matches,
+    string MatchBindingStatus, string MatchBindingMessage);
+public sealed record L12PublicDeckContentInput(L12PublicDeckGuideView? Guide,
+    IReadOnlyList<L12PublicDeckMatchupView>? Matchups);
 public sealed record L12BugDiagnosticView(DateTimeOffset CapturedAt, string? MatchId, string? RoomCode,
     string? Phase, int? Round, int? TurnSerial, int? ActivePlayer, long? Revision, long? CommandSequence,
     IReadOnlyList<string> Stack, IReadOnlyList<string> Prompts, IReadOnlyList<string> RecentEventTypes);

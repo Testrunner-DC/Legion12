@@ -29,6 +29,8 @@ public sealed record L12DeckStorageStatusView(
     long PublishedVersions,
     long Likes,
     long TournamentReferences,
+    long ContentPayloads,
+    long ContentRevisions,
     long DatabaseBytes,
     long WalBytes);
 
@@ -49,7 +51,7 @@ public sealed class L12PlatformStorageUnavailableException : IOException
 
 public sealed partial class L12PlatformStore
 {
-    private const int PlatformStorageSchemaVersion = 4;
+    private const int PlatformStorageSchemaVersion = 5;
     private static readonly JsonSerializerOptions PlatformSnapshotJsonOptions = CreatePlatformJsonOptions(false);
     private static readonly JsonSerializerOptions PlatformMirrorJsonOptions = CreatePlatformJsonOptions(true);
     private static readonly JsonSerializerOptions PlatformMigrationJsonOptions = new()

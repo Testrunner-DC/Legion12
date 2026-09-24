@@ -50,6 +50,26 @@ export interface FriendOverview {
 export interface PublishedDeck {
   id: string; ownerId: string; author: string; deck: SavedL12Deck; views: number; likes: number; copies: number; liked: boolean
   createdAt: string; updatedAt: string; seasonCompliant?: boolean; seasonComplianceReason?: string; official?: boolean
+  details?: PublicDeckDetails
+}
+export interface PublicDeckGuide {
+  buildIdea: string; opening: string; keyCards: string; commonSequence: string; substitutions: string
+}
+export interface PublicDeckMatchup {
+  opponentMasterId: string; notes: string; keyCards: string; suggestedSwaps: string
+}
+export interface PublicDeckVersionChange {
+  section: 'master' | 'main' | 'morale' | 'special'; cardId: string; previousQuantity: number; currentQuantity: number
+}
+export interface PublicDeckVersion {
+  version: number; name: string; deck: SavedL12Deck; createdAt: string; changes: PublicDeckVersionChange[]
+}
+export interface PublicDeckMatch {
+  matchId: string; version: number; playedAt: string; opponentMasterId: string; result: string; replayPath: string
+}
+export interface PublicDeckDetails {
+  guide: PublicDeckGuide; matchups: PublicDeckMatchup[]; contentRevision: number; contentUpdatedAt?: string
+  versions: PublicDeckVersion[]; matches: PublicDeckMatch[]; matchBindingStatus: string; matchBindingMessage: string
 }
 export interface BugReport {
   id: string; reporterName: string; title: string; description: string; page: string; roomCode?: string; matchId?: string
@@ -1256,6 +1276,10 @@ export const publicDeckApi = {
   publish: (deck: SavedL12Deck, publicationId?: string) => platformRequest<PublishedDeck>('/api/public-decks', {
     method: 'POST', body: JSON.stringify({ publicationId: publicationId || null, deck }),
   }),
+  updateContent: (id: string, guide: PublicDeckGuide, matchups: PublicDeckMatchup[]) => platformRequest<PublicDeckDetails>(
+    `/api/public-decks/${encodeURIComponent(id)}/content`, {
+      method: 'PUT', body: JSON.stringify({ guide, matchups }),
+    }),
   delete: (id: string) => platformRequest<void>(`/api/public-decks/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   toggleLike: (id: string) => platformRequest<PublishedDeck>(`/api/public-decks/${encodeURIComponent(id)}/like`, { method: 'POST' }),
   recordView: (id: string) => platformRequest<PublishedDeck>(`/api/public-decks/${encodeURIComponent(id)}/view`, { method: 'POST' }),
