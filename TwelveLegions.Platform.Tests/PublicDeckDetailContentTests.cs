@@ -164,7 +164,9 @@ public sealed class PublicDeckDetailContentTests
                 change => change.CardId == "C24" && change.PreviousQuantity == 0 && change.CurrentQuantity == 1);
             Assert.Contains(details.Versions[0].Changes,
                 change => change.CardId == "C23" && change.PreviousQuantity == 1 && change.CurrentQuantity == 0);
-            Assert.Empty(details.Matches);
+            Assert.Equal(0, details.MatchStatistics.Games);
+            Assert.Equal("empty", details.MatchStatistics.SampleStatus);
+            Assert.Empty(details.MatchStatistics.Groups);
             Assert.Equal("unavailable", details.MatchBindingStatus);
             Assert.Contains("不会用作者总战绩替代", details.MatchBindingMessage);
         }

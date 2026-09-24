@@ -18,7 +18,8 @@ const removedDetailCopy = [
 
 const checks = [
   ['详情页移除面向存储与实现的说明', removedDetailCopy.every(value => !detail.includes(value))],
-  ['详情页保留版本日期、赛果和不可用原因', detail.includes('formatTime(version.createdAt)') && detail.includes('match.result') && detail.includes('details.matchBindingMessage') && detail.includes('回放不可用')],
+  ['详情页保留版本日期、匿名聚合统计和不可用原因', detail.includes('formatTime(version.createdAt)') && detail.includes('details.matchStatistics.groups') && detail.includes('stat.games') && detail.includes('formatRate(stat.winRate)') && detail.includes('details.matchBindingMessage')],
+  ['详情页不再展示单局或回放入口', !detail.includes('match.matchId') && !detail.includes('match.playedAt') && !detail.includes('match.result') && !detail.includes('replayPath')],
   ['编辑器与我的牌库复用同一公开实体核验', entry.includes('matchesPublishedDeckReference') && editor.includes('matchesPublishedDeckReference(currentDeck()') && library.includes('matchesPublishedDeckReference(deck, publishedDeck')],
   ['公开实体核验同时匹配ID、版本与作者', ['published.id === publicationId', 'published.deck.publicationVersion === publicationVersion', 'published.ownerId === ownerId'].every(value => entry.includes(value))],
   ['我的牌库分享图仅在核验后传入稳定公开链接', library.includes('const publicUrl = await verifiedPublicDeckUrl(deck)') && library.includes('{ publicUrl, alternateArts: ownedAlternateArts.value }')],

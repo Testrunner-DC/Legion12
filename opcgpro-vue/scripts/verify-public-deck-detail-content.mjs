@@ -28,7 +28,14 @@ changed.splice(0,1,changed.find(id=>id!==changed[0])||changed[0])
 const masters=catalog.filter(card=>card.cardType==='master')
 const now='2026-09-24T06:00:00Z'
 const fixture={id:'qa',ownerId:'author',author:'用于验证长作者名称不会破坏版式的示例牌库作者',deck:{...preset,name:'用于验证超长公开牌库标题在宽屏与移动端都不会裁切的构筑方案',specialIds:preset.specialIds||[],updatedAt:now},views:128,likes:32,copies:19,liked:false,createdAt:'2026-09-20T06:00:00Z',updatedAt:now,seasonCompliant:true,details:{guide:{buildIdea:'通过低费军团建立前排，再利用关键战术保护核心单位并逐步扩大资源差。',opening:'优先保留两张低费军团与一张可互动战术；缺少前排时应积极调度。',keyCards:'核心主宰能力负责资源转换，关键军团提供持续站场，反制牌留给对手的主要展开。',commonSequence:'第一回合建立前排，第二回合补充资源并保留响应窗口，第三回合根据对手区域决定推进或控场。',substitutions:'环境偏快时增加低费军团；控制较多时替换为具备进场价值或墓地价值的牌。'},matchups:masters.slice(0,3).map((master,index)=>({opponentMasterId:master.id,notes:'观察对手第 '+(index+1)+' 回合资源，避免把全部单位投入同一轮交换。',keyCards:'保留即时互动与能跨过主战线的关键牌。',suggestedSwaps:'后手可减少一张高费牌，换入低费保护。'})),contentRevision:3,contentUpdatedAt:now,versions:[{version:3,name:preset.name,deck:{...preset,specialIds:preset.specialIds||[],updatedAt:now},createdAt:now,changes:[{section:'main',cardId:preset.cardIds[0],previousQuantity:1,currentQuantity:2}]},{version:2,name:preset.name,deck:{...preset,cardIds:changed,specialIds:preset.specialIds||[],updatedAt:'2026-09-22T06:00:00Z'},createdAt:'2026-09-22T06:00:00Z',changes:[{section:'main',cardId:preset.cardIds[0],previousQuantity:0,currentQuantity:1}]},{version:1,name:preset.name,deck:{...preset,specialIds:preset.specialIds||[],updatedAt:'2026-09-20T06:00:00Z'},createdAt:'2026-09-20T06:00:00Z',changes:[]}],matches:[],matchBindingStatus:'unavailable',matchBindingMessage:'尚无可证明绑定到该公开牌库版本的对局记录；不会用作者总战绩替代。'}}
-if(new URL(location.href).searchParams.has('empty')){fixture.details.guide={buildIdea:'',opening:'',keyCards:'',commonSequence:'',substitutions:''};fixture.details.matchups=[];fixture.details.contentRevision=0;delete fixture.details.contentUpdatedAt}
+fixture.details.matchStatistics={from:'2026-06-26T06:00:00Z',to:now,recentDays:90,games:18,sampleStatus:'available',groups:[{version:3,masterId:preset.masterId,opponentMasterId:masters[0].id,games:12,wins:7,losses:4,draws:1,winRate:0.5833},{version:2,masterId:preset.masterId,opponentMasterId:masters[1].id,games:6,wins:3,losses:3,draws:0,winRate:0.5}]}
+fixture.details.matchBindingStatus='available'
+fixture.details.matchBindingMessage='过去 90 天，仅展示开局时已绑定公开版本的匿名聚合统计。'
+delete fixture.details.matches
+const fixtureQuery=new URL(location.href).searchParams
+if(fixtureQuery.has('empty')){fixture.details.guide={buildIdea:'',opening:'',keyCards:'',commonSequence:'',substitutions:''};fixture.details.matchups=[];fixture.details.contentRevision=0;delete fixture.details.contentUpdatedAt}
+if(fixtureQuery.has('emptyStats')){fixture.details.matchStatistics={from:'2026-06-26T06:00:00Z',to:now,recentDays:90,games:0,sampleStatus:'empty',groups:[]};fixture.details.matchBindingStatus='empty';fixture.details.matchBindingMessage='过去 90 天暂无可核验的公开版本对局统计。'}
+if(fixtureQuery.has('smallStats')){fixture.details.matchStatistics={from:'2026-06-26T06:00:00Z',to:now,recentDays:90,games:0,sampleStatus:'insufficient',groups:[]};fixture.details.matchBindingStatus='insufficient';fixture.details.matchBindingMessage='样本不足：过去 90 天各主宰组合均不足 3 场，暂不展示胜率。'}
 publicDeckApi.get=async()=>fixture
 publicDeckApi.recordView=async()=>fixture
 const router=createRouter({history:createMemoryHistory(),routes:[{path:'/decks/:deckId',component:PublicDeckDetailPage},{path:'/decks',component:{template:'<div>decks</div>'}}]})
@@ -118,6 +125,13 @@ try {
     await page.getByRole('button', { name: '对局建议', exact: true }).click()
     assert.equal(await page.locator('.matchup-city .deck-profile__portrait').count(), 3, `matchup avatar count mismatch at ${suffix(viewport)}`)
     await page.screenshot({ path: path.join(output, `guide-${suffix(viewport)}.png`), fullPage: true })
+    await page.getByRole('button', { name: '对局', exact: true }).click()
+    const statistics = await page.locator('[data-detail-section="matches"]').innerText()
+    assert.match(statistics, /最近 90 天[\s\S]*版本 3[\s\S]*场次[\s\S]*12[\s\S]*胜率[\s\S]*58\.3%/)
+    assert.equal(await page.locator('.match-stat-list article').count(), 2)
+    assert.equal(await page.locator('[data-detail-section="matches"] a').count(), 0, '匿名统计不得提供单局或录像入口')
+    assert.doesNotMatch(statistics, /match-|bind|author|验收作者|账号|录像|回放/)
+    await page.screenshot({ path: path.join(output, `statistics-${suffix(viewport)}.png`), fullPage: true })
     await page.getByRole('button', { name: '起手', exact: true }).click()
     assert.equal(await page.locator('.opening-hand article').count(), 6, `opening hand count mismatch at ${suffix(viewport)}`)
     await page.screenshot({ path: path.join(output, `hands-${suffix(viewport)}.png`), fullPage: true })
@@ -132,6 +146,18 @@ try {
     assert.equal(await page.locator('[data-detail-section="guide"]').count(), 0, '空指南不应生成内容区')
     assert.equal(await page.locator('[data-detail-section="matchups"]').count(), 0, '空对局建议不应生成内容区')
     await page.screenshot({ path: path.join(output, `empty-${suffix(viewport)}.png`), fullPage: true })
+  }
+  for (const scenario of ['emptyStats', 'smallStats']) {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(`http://127.0.0.1:${port}/__public_deck_detail__?${scenario}=1`)
+    await page.getByRole('button', { name: '对局', exact: true }).click()
+    const statistics = page.locator('[data-detail-section="matches"]')
+    assert.equal(await statistics.locator('.match-stat-list article').count(), 0)
+    const copy = await statistics.innerText()
+    if (scenario === 'smallStats') assert.match(copy, /样本不足[\s\S]*不足 3 场/)
+    else assert.match(copy, /过去 90 天暂无可核验/)
+    assert.equal(await statistics.locator('a').count(), 0)
+    await page.screenshot({ path: path.join(output, `statistics-${scenario}-390x844.png`), fullPage: true })
   }
   assert.equal(errors.length, 0, `page errors: ${errors.join(' | ')}`)
   fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ status: 'passed', viewports, report, errors }, null, 2))

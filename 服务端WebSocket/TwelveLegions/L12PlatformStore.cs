@@ -40,11 +40,13 @@ public sealed record L12PublicDeckVersionChangeView(string Section, string CardI
     int CurrentQuantity);
 public sealed record L12PublicDeckVersionView(int Version, string Name, L12AccountDeckView Deck,
     DateTimeOffset CreatedAt, IReadOnlyList<L12PublicDeckVersionChangeView> Changes);
-public sealed record L12PublicDeckMatchView(string MatchId, int Version, DateTimeOffset PlayedAt,
-    string OpponentMasterId, string Result, string? ReplayPath);
+public sealed record L12PublicDeckVersionStatisticView(int Version, string MasterId, string OpponentMasterId,
+    int Games, int Wins, int Losses, int Draws, double WinRate);
+public sealed record L12PublicDeckMatchStatisticsView(DateTimeOffset From, DateTimeOffset To, int RecentDays,
+    int Games, string SampleStatus, IReadOnlyList<L12PublicDeckVersionStatisticView> Groups);
 public sealed record L12PublicDeckDetailsView(L12PublicDeckGuideView Guide,
     IReadOnlyList<L12PublicDeckMatchupView> Matchups, int ContentRevision, DateTimeOffset? ContentUpdatedAt,
-    IReadOnlyList<L12PublicDeckVersionView> Versions, IReadOnlyList<L12PublicDeckMatchView> Matches,
+    IReadOnlyList<L12PublicDeckVersionView> Versions, L12PublicDeckMatchStatisticsView MatchStatistics,
     string MatchBindingStatus, string MatchBindingMessage);
 public sealed record L12PublicDeckContentInput(L12PublicDeckGuideView? Guide,
     IReadOnlyList<L12PublicDeckMatchupView>? Matchups);

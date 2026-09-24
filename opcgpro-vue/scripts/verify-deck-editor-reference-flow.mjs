@@ -27,7 +27,7 @@ const bench=deck.cardIds.slice(0,2)
 const saved={...deck,publicationId:'qa-public',publicationVersion:1,name:'含超长名称与编号截断验收的编辑流程牌库',benchIds:bench,updatedAt:new Date().toISOString()}
 platformState.account={id:'author',username:'验收作者',role:'player',createdAt:'2026-09-24',publicHistory:true}
 alternateArtApi.mine=async()=>[]
-const initialDetails={guide:{buildIdea:'这是一段用于验证宽屏与移动端长内容输入的构筑思路。'.repeat(10),opening:'优先保留低费军团与互动战术。',keyCards:'关键牌与配合说明。',commonSequence:'第一回合建立前排，随后根据对手资源调整。',substitutions:'环境变化时替换对应功能牌。'},matchups:[],contentRevision:4,contentUpdatedAt:'2026-09-24T08:00:00Z',versions:[],matches:[],matchBindingStatus:'unavailable',matchBindingMessage:'暂无关联对局'}
+const initialDetails={guide:{buildIdea:'这是一段用于验证宽屏与移动端长内容输入的构筑思路。'.repeat(10),opening:'优先保留低费军团与互动战术。',keyCards:'关键牌与配合说明。',commonSequence:'第一回合建立前排，随后根据对手资源调整。',substitutions:'环境变化时替换对应功能牌。'},matchups:[],contentRevision:4,contentUpdatedAt:'2026-09-24T08:00:00Z',versions:[],matchStatistics:{from:'',to:'',recentDays:90,games:0,sampleStatus:'empty',groups:[]},matchBindingStatus:'empty',matchBindingMessage:'暂无关联对局统计'}
 let details=JSON.parse(localStorage.getItem('qa-public-details')||JSON.stringify(initialDetails))
 publicDeckApi.get=async()=>({id:'qa-public',ownerId:'author',author:'验收作者',deck:saved,views:1,likes:0,copies:0,liked:false,createdAt:'',updatedAt:'',details})
 publicDeckApi.updateContent=async(_id,guide,matchups)=>{details={...details,guide,matchups,contentRevision:details.contentRevision+1,contentUpdatedAt:new Date().toISOString()};localStorage.setItem('qa-public-details',JSON.stringify(details));return details}

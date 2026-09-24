@@ -15,7 +15,7 @@ const checks = [
   ['公开内容进入编辑器子页', editor.includes('PublicDeckContentEditor') && editor.includes("workspace === 'content'")],
   ['指南与对局建议保存闭环', content.includes('publicDeckApi.updateContent') && content.includes('publicDeckApi.get')],
   ['空指南与空对局建议不生成内容和锚点', detail.includes('const hasGuide = computed') && detail.includes('const hasMatchups = computed') && detail.includes('v-if="hasGuide" id="public-deck-guide"') && detail.includes('v-if="hasMatchups" id="public-deck-matchups"') && detail.includes('v-for="tab in sectionTabs"')],
-  ['对局建议显示主宰头像且统一主宰用语', detail.includes('class="matchup-city"') && detail.includes('<DeckProfile compact :master-id="row.opponentMasterId"') && detail.includes('对阵 ${homeCityName(row.opponentMasterId)}') && content.includes('添加对方主宰')],
+  ['对局建议显示主宰头像且统一主宰用语', detail.includes('class="matchup-city"') && detail.includes('<DeckProfile compact :master-id="row.opponentMasterId"') && detail.includes('对阵 ${masterName(row.opponentMasterId)}') && !detail.includes('homeCityName') && content.includes('添加对方主宰')],
   ['导航与操作同栏', detail.includes('class="detail-toolbar"')],
   ['编辑器只收纳产品卡池筛选，其余筛选常驻', editor.includes('class="pool-selector-trigger"') && editor.includes('class="catalog-filter-bar"') && !editor.includes('卡池（可多选）') && !editor.includes('mobileFiltersOpen')],
   ['编辑器只有一个牌库切换入口且详情可折叠', editor.includes('class="saved-decks-panel"') && editor.includes('<label>已保存牌库<select') && editor.includes('detailCollapsed') && !editor.includes('class="saved-decks-panel grand-panel"') && !editor.includes('class="saved-deck-switcher"')],

@@ -56,6 +56,15 @@ const curveMax = computed(() => Math.max(1, ...curve.value))
 const details = computed(() => entry.value?.details ?? emptyDetails())
 const hasGuide = computed(() => Object.values(details.value.guide).some(value => value.trim()))
 const hasMatchups = computed(() => details.value.matchups.length > 0)
+const matchStatisticsRange = computed(() => {
+  const statistics = details.value.matchStatistics
+  const from = new Date(statistics.from)
+  const to = new Date(statistics.to)
+  if (!Number.isFinite(from.valueOf()) || !Number.isFinite(to.valueOf()) || from.getUTCFullYear() < 2000)
+    return `统计最近 ${statistics.recentDays} 天`
+  const format = (value: Date) => value.toLocaleDateString('zh-CN', { timeZone: 'UTC' })
+  return `统计最近 ${statistics.recentDays} 天（${format(from)} 至 ${format(to)}）`
+})
 const sectionTabs = computed(() => [
   { id: 'construction', label: '构筑', visible: true },
   { id: 'guide', label: '指南', visible: hasGuide.value },
@@ -190,7 +199,7 @@ function emptyGuide(): PublicDeckGuide {
   return { buildIdea: '', opening: '', keyCards: '', commonSequence: '', substitutions: '' }
 }
 function emptyDetails(): PublicDeckDetails {
-  return { guide: emptyGuide(), matchups: [], contentRevision: 0, versions: [], matches: [], matchBindingStatus: 'unavailable', matchBindingMessage: '这个牌库暂无可核验的版本对局记录。' }
+  return { guide: emptyGuide(), matchups: [], contentRevision: 0, versions: [], matchStatistics: { from: '', to: '', recentDays: 90, games: 0, sampleStatus: 'empty', groups: [] }, matchBindingStatus: 'empty', matchBindingMessage: '这个牌库暂无可核验的版本对局统计。' }
 }
 function scrollToSection(section: string) {
   document.getElementById(`public-deck-${section}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -204,7 +213,7 @@ function redrawOpeningHand() {
   openingHandIds.value = samplePublicDeckOpeningHand(deckCopies.value.map(copy => copy.key))
 }
 function cardName(cardId: string) { return byId.value.get(cardId)?.nameZh || cardId }
-function homeCityName(homeCityId: string) { return byId.value.get(homeCityId)?.nameZh || homeCityId }
+function masterName(masterId: string) { return byId.value.get(masterId)?.nameZh || masterId }
 function changeLabel(change: PublicDeckVersionChange) {
   const section = { master: '主宰', main: '主牌', morale: '士气', special: '试炼/额外' }[change.section]
   if (change.section === 'master') return `${section}改为 ${cardName(change.cardId)}`
@@ -216,6 +225,7 @@ function formatTime(value?: string) {
   if (!value) return '—'
   return new Date(value).toLocaleString('zh-CN', { hour12: false })
 }
+function formatRate(value: number) { return `${(value * 100).toFixed(1)}%` }
 </script>
 
 <template>
@@ -249,7 +259,7 @@ function formatTime(value?: string) {
       </section>
       <section v-if="hasMatchups" id="public-deck-matchups" class="content-panel detail-anchor-section" data-detail-section="matchups">
         <header><div><h2>对局建议</h2><p>按对方主宰查看作者提供的思路、关键牌与换牌建议。</p></div></header>
-        <div class="matchup-list"><article v-for="row in details.matchups" :key="row.opponentMasterId"><header class="matchup-city"><DeckProfile compact :master-id="row.opponentMasterId" :master-name="homeCityName(row.opponentMasterId)" :name="`对阵 ${homeCityName(row.opponentMasterId)}`"/></header><p v-if="row.notes"><b>思路</b>{{ row.notes }}</p><p v-if="row.keyCards"><b>关键牌</b>{{ row.keyCards }}</p><p v-if="row.suggestedSwaps"><b>换牌</b>{{ row.suggestedSwaps }}</p></article></div>
+        <div class="matchup-list"><article v-for="row in details.matchups" :key="row.opponentMasterId"><header class="matchup-city"><DeckProfile compact :master-id="row.opponentMasterId" :master-name="masterName(row.opponentMasterId)" :name="`对阵 ${masterName(row.opponentMasterId)}`"/></header><p v-if="row.notes"><b>思路</b>{{ row.notes }}</p><p v-if="row.keyCards"><b>关键牌</b>{{ row.keyCards }}</p><p v-if="row.suggestedSwaps"><b>换牌</b>{{ row.suggestedSwaps }}</p></article></div>
       </section>
       <section id="public-deck-versions" class="content-panel detail-anchor-section" data-detail-section="versions">
         <header><div><h2>全部公开版本</h2></div></header>
@@ -257,8 +267,8 @@ function formatTime(value?: string) {
         <p v-else class="empty-copy">尚无可读取的公开版本。</p>
       </section>
       <section id="public-deck-matches" class="content-panel detail-anchor-section" data-detail-section="matches">
-        <header><div><h2>版本对局</h2></div></header>
-        <div v-if="details.matches.length" class="match-list"><article v-for="match in details.matches" :key="match.matchId"><b>{{ match.result }}</b><span>版本 {{ match.version }} · 对阵 {{ homeCityName(match.opponentMasterId) }}</span><time>{{ formatTime(match.playedAt) }}</time><router-link v-if="match.replayPath" class="desktop-replay" :to="match.replayPath">查看回放</router-link><span v-if="match.replayPath" class="mobile-replay">请使用电脑端查看回放</span><span v-else>回放不可用</span></article></div>
+        <header><div><h2>版本对局</h2><p>{{ matchStatisticsRange }}</p></div></header>
+        <div v-if="details.matchStatistics.groups.length" class="match-stat-list"><article v-for="stat in details.matchStatistics.groups" :key="`${stat.version}-${stat.masterId}-${stat.opponentMasterId}`"><header><b>版本 {{ stat.version }}</b><span>{{ masterName(stat.masterId) }} 对阵 {{ masterName(stat.opponentMasterId) }}</span></header><dl><div><dt>场次</dt><dd>{{ stat.games }}</dd></div><div><dt>胜率</dt><dd>{{ formatRate(stat.winRate) }}</dd></div><div><dt>胜 / 负 / 平</dt><dd>{{ stat.wins }} / {{ stat.losses }} / {{ stat.draws }}</dd></div></dl></article></div>
         <p v-else class="empty-copy">{{ details.matchBindingMessage }}</p>
       </section>
       <section id="public-deck-hands" class="content-panel detail-anchor-section" data-detail-section="hands">
@@ -282,5 +292,7 @@ function formatTime(value?: string) {
 @media(max-width:440px){.deck-layout>aside{grid-template-columns:1fr}.metrics span{font-size:11px}.actions button{font-size:12px}}
 .detail-toolbar{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-top:14px}.detail-toolbar .detail-tabs{flex:1;flex-wrap:wrap;margin-top:0;overflow:visible}.detail-toolbar .actions{display:flex;flex:1;flex-wrap:wrap;justify-content:flex-end;margin:0;padding:0;border:0}.detail-anchor-section{scroll-margin-top:16px}.deck-layout.detail-anchor-section{margin-top:14px}
 .opening-hand :deep(.l12-card-image){display:block;width:100%;aspect-ratio:5/7;background:#050708}.opening-hand small{display:block;overflow-wrap:anywhere;margin-top:4px;color:#cdbb7d;font-size:11px;text-align:center;line-height:1.35}
+.match-stat-list{display:grid;gap:10px}.match-stat-list article{padding:12px;border:1px solid #35434c;background:#101820}.match-stat-list article>header{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px}.match-stat-list article>header span{color:#bac4c5}.match-stat-list dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0 0}.match-stat-list dl div{padding:8px;border:1px solid #34434a;background:#0a1117}.match-stat-list dt{color:#8c999d;font-size:12px}.match-stat-list dd{margin:4px 0 0;color:#f0d47c;font-size:18px;font-weight:900}
+@media(max-width:700px){.match-stat-list dl{grid-template-columns:1fr}}
 @media(max-width:900px){.detail-toolbar{flex-direction:column}.detail-toolbar .detail-tabs,.detail-toolbar .actions{width:100%;justify-content:flex-start}.detail-toolbar .actions button{flex:1 1 auto}}
 </style>

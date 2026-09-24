@@ -69,12 +69,17 @@ export interface PublicDeckVersionChange {
 export interface PublicDeckVersion {
   version: number; name: string; deck: SavedL12Deck; createdAt: string; changes: PublicDeckVersionChange[]
 }
-export interface PublicDeckMatch {
-  matchId: string; version: number; playedAt: string; opponentMasterId: string; result: string; replayPath: string | null
+export interface PublicDeckVersionStatistic {
+  version: number; masterId: string; opponentMasterId: string
+  games: number; wins: number; losses: number; draws: number; winRate: number
+}
+export interface PublicDeckMatchStatistics {
+  from: string; to: string; recentDays: number; games: number; sampleStatus: 'empty' | 'insufficient' | 'available'; groups: PublicDeckVersionStatistic[]
 }
 export interface PublicDeckDetails {
   guide: PublicDeckGuide; matchups: PublicDeckMatchup[]; contentRevision: number; contentUpdatedAt?: string
-  versions: PublicDeckVersion[]; matches: PublicDeckMatch[]; matchBindingStatus: string; matchBindingMessage: string
+  versions: PublicDeckVersion[]; matchStatistics: PublicDeckMatchStatistics
+  matchBindingStatus: string; matchBindingMessage: string
 }
 export interface BugReport {
   id: string; reporterName: string; title: string; description: string; page: string; roomCode?: string; matchId?: string

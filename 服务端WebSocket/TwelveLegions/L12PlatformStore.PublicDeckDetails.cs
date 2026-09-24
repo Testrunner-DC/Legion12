@@ -7,6 +7,8 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12PlatformStore
 {
+    private static readonly L12PublicDeckMatchStatisticsView EmptyPublicDeckMatchStatistics =
+        new(DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, 90, 0, "empty", []);
     private const int PublicDeckGuideSectionLimit = 1200;
     private const int PublicDeckMatchupSectionLimit = 800;
     private const int PublicDeckMatchupLimit = 64;
@@ -23,7 +25,7 @@ public sealed partial class L12PlatformStore
             using var connection = OpenDatabase(_databasePath, readOnly: true);
             var content = ReadPublicDeckContent(connection, publicationId);
             return new(content.Guide, content.Matchups, content.Revision, content.UpdatedAt,
-                ReadPublicDeckVersions(connection, published), [], "unavailable",
+                ReadPublicDeckVersions(connection, published), EmptyPublicDeckMatchStatistics, "unavailable",
                 "尚无可证明绑定到该公开牌库版本的对局记录；不会用作者总战绩替代。" );
         }
     }
@@ -60,7 +62,7 @@ public sealed partial class L12PlatformStore
             {
                 transaction.Commit();
                 return new(current.Guide, current.Matchups, current.Revision, current.UpdatedAt,
-                    ReadPublicDeckVersions(connection, published), [], "unavailable",
+                    ReadPublicDeckVersions(connection, published), EmptyPublicDeckMatchStatistics, "unavailable",
                     "尚无可证明绑定到该公开牌库版本的对局记录；不会用作者总战绩替代。");
             }
             using (var payload = connection.CreateCommand())
@@ -98,7 +100,8 @@ public sealed partial class L12PlatformStore
                 revisionCommand.ExecuteNonQuery();
             }
             transaction.Commit();
-            return new(guide, matchups, revision, now, ReadPublicDeckVersions(connection, published), [],
+            return new(guide, matchups, revision, now, ReadPublicDeckVersions(connection, published),
+                EmptyPublicDeckMatchStatistics,
                 "unavailable", "尚无可证明绑定到该公开牌库版本的对局记录；不会用作者总战绩替代。");
         }
     }

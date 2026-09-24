@@ -41,33 +41,59 @@ public sealed class PublicDeckMatchBindingTests
             await recorder.StartAsync(engine, "friendly", owner.Id, other.Id, [deck, catalog.PresetDecks[1]],
                 [binding, store.ResolvePublicDeckBinding(other.Id, catalog.PresetDecks[1], second.Id, 2)]);
             store.PublishDeck(owner.Id, catalog.PresetDecks[1], publication.Id);
-            Assert.Empty(await recorder.PublicDeckMatchesAsync(publication.Id));
+            var beforeCompletion = await recorder.PublicDeckVersionStatisticsAsync(publication.Id);
+            Assert.Equal("empty", beforeCompletion.SampleStatus);
+            Assert.Equal(0, beforeCompletion.Games);
             engine.State.Phase = L12Phase.GameOver;
             engine.State.Winner = 0;
             await recorder.CompleteAsync(engine);
-            var match = Assert.Single(await recorder.PublicDeckMatchesAsync(publication.Id));
+            var smallSample = await recorder.PublicDeckVersionStatisticsAsync(publication.Id);
+            Assert.Equal("insufficient", smallSample.SampleStatus);
+            Assert.Equal(0, smallSample.Games);
+            Assert.Empty(smallSample.Groups);
+            for (var index = 2; index <= 3; index++)
+            {
+                var additional = new L12GameEngine(catalog, $"bound-match-{index}", "BIND", 42, ["甲", "乙"],
+                    [deck, catalog.PresetDecks[1]], skipPreparation: true);
+                await recorder.StartAsync(additional, "friendly", owner.Id, other.Id,
+                    [deck, catalog.PresetDecks[1]],
+                    [binding, store.ResolvePublicDeckBinding(other.Id, catalog.PresetDecks[1], second.Id, 2)]);
+                additional.State.Phase = L12Phase.GameOver;
+                additional.State.Winner = 0;
+                await recorder.CompleteAsync(additional);
+            }
+            var statistics = await recorder.PublicDeckVersionStatisticsAsync(publication.Id);
+            Assert.Equal("available", statistics.SampleStatus);
+            var match = Assert.Single(statistics.Groups);
             Assert.Equal(1, match.Version);
-            Assert.Equal("胜", match.Result);
+            Assert.Equal(deck.MasterId, match.MasterId);
             Assert.Equal(catalog.PresetDecks[1].MasterId, match.OpponentMasterId);
-            Assert.Equal("负", Assert.Single(await recorder.PublicDeckMatchesAsync(second.Id)).Result);
-            Assert.Equal(2, Assert.Single(await recorder.PublicDeckMatchesAsync(second.Id)).Version);
-            Assert.NotNull(Assert.Single(await recorder.PublicDeckMatchesAsync(publication.Id,
-                viewerAccountId: owner.Id, viewerName: owner.Username)).ReplayPath);
-            Assert.Null(Assert.Single(await recorder.PublicDeckMatchesAsync(publication.Id,
-                viewerAccountId: "stranger")).ReplayPath);
-            Assert.Empty(await recorder.PublicDeckMatchesAsync(publication.Id, ["bound-match"]));
-            Assert.Empty(await recorder.PublicDeckMatchesAsync(publication.Id, excludedAccountIds: [other.Id]));
-            Assert.Equal(1, (await recorder.PlayerStatisticsAsync(owner.Id, owner.Username)).Overall.Games);
+            Assert.Equal((3, 3, 0, 0, 1d),
+                (match.Games, match.Wins, match.Losses, match.Draws, match.WinRate));
+            var opponent = Assert.Single((await recorder.PublicDeckVersionStatisticsAsync(second.Id)).Groups);
+            Assert.Equal(2, opponent.Version);
+            Assert.Equal((3, 0, 3, 0, 0d),
+                (opponent.Games, opponent.Wins, opponent.Losses, opponent.Draws, opponent.WinRate));
+            Assert.Equal(0, (await recorder.PublicDeckVersionStatisticsAsync(publication.Id,
+                ["bound-match"])).Games);
+            Assert.Equal(0, (await recorder.PublicDeckVersionStatisticsAsync(publication.Id,
+                excludedAccountIds: [other.Id])).Games);
+            Assert.Equal(3, (await recorder.PlayerStatisticsAsync(owner.Id, owner.Username)).Overall.Games);
             now = now.AddDays(9);
             await recorder.RunPlayerReplayCleanupIfDueAsync(utcNow: now);
         }
         await using (var restored = new MatchRecorder(path, () => now))
         {
             await restored.InitializeAsync();
-            var match = Assert.Single(await restored.PublicDeckMatchesAsync(publication.Id));
+            var match = Assert.Single((await restored.PublicDeckVersionStatisticsAsync(publication.Id)).Groups);
             Assert.Equal(1, match.Version);
-            Assert.Null(match.ReplayPath);
-            Assert.Equal(1, (await restored.PlayerStatisticsAsync(owner.Id, owner.Username)).Overall.Games);
+            Assert.Equal(3, (await restored.PlayerStatisticsAsync(owner.Id, owner.Username)).Overall.Games);
+            now = now.AddDays(82);
+            var expired = await restored.PublicDeckVersionStatisticsAsync(publication.Id);
+            Assert.Equal(90, expired.RecentDays);
+            Assert.Equal("empty", expired.SampleStatus);
+            Assert.Equal(0, expired.Games);
+            Assert.Empty(expired.Groups);
         }
     }
 
@@ -160,7 +186,7 @@ public sealed class PublicDeckMatchBindingTests
             command.CommandText = "DROP TABLE match_public_deck_bindings;"; command.ExecuteNonQuery();
         }
         await recorder.InitializeAsync();
-        Assert.Empty(await recorder.PublicDeckMatchesAsync(publication.Id));
+        Assert.Equal(0, (await recorder.PublicDeckVersionStatisticsAsync(publication.Id)).Games);
         var invalid = new L12GameEngine(catalog, "invalid", "ERR", 42, ["甲", "乙"], [deck, deck], skipPreparation: true);
         await recorder.StartAsync(invalid, "friendly", owner.Id, "opponent", [deck, deck],
             [store.ResolvePublicDeckBinding(owner.Id, deck, publication.Id, 1), null]);
@@ -171,12 +197,12 @@ public sealed class PublicDeckMatchBindingTests
             connection.Open(); using var command = connection.CreateCommand();
             command.CommandText = "UPDATE matches SET error='invalidated' WHERE match_id='invalid';"; command.ExecuteNonQuery();
         }
-        Assert.Empty(await recorder.PublicDeckMatchesAsync(publication.Id));
+        Assert.Equal(0, (await recorder.PublicDeckVersionStatisticsAsync(publication.Id)).Games);
         Assert.Equal(2, (await recorder.PlayerStatisticsAsync(owner.Id, owner.Username)).Overall.Games);
     }
 
     [Fact]
-    public async Task DetailEndpointUsesLiveAccountExclusionsAndContentSaveKeepsMatches()
+    public async Task DetailEndpointUsesLiveExclusionsAndContentSaveKeepsAnonymousStatistics()
     {
         var (root, catalog, store) = Setup();
         var owner = store.Register("bindapi", "password-123");
@@ -185,11 +211,16 @@ public sealed class PublicDeckMatchBindingTests
         var published = store.PublishDeck(owner.Account!.Id, deck, null)!;
         await using var recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
         await recorder.InitializeAsync();
-        var game = new L12GameEngine(catalog, "api-bound", "API", 42, [owner.Account.Username, opponent.Username], [deck, deck], skipPreparation: true);
-        await recorder.StartAsync(game, "friendly", owner.Account.Id, opponent.Id, [deck, deck],
-            [store.ResolvePublicDeckBinding(owner.Account.Id, deck, published.Id, 1), null]);
-        game.State.Phase = L12Phase.GameOver;
-        await recorder.CompleteAsync(game);
+        for (var index = 0; index < 3; index++)
+        {
+            var game = new L12GameEngine(catalog, $"api-bound-{index}", "API", 42,
+                [owner.Account.Username, opponent.Username], [deck, deck], skipPreparation: true);
+            await recorder.StartAsync(game, "friendly", owner.Account.Id, opponent.Id, [deck, deck],
+                [store.ResolvePublicDeckBinding(owner.Account.Id, deck, published.Id, 1), null]);
+            game.State.Phase = L12Phase.GameOver;
+            game.State.Winner = index == 2 ? 1 : 0;
+            await recorder.CompleteAsync(game);
+        }
         var host = Environment.GetEnvironmentVariable("L12_LISTEN_HOST");
         Environment.SetEnvironmentVariable("L12_LISTEN_HOST", "127.0.0.1");
         await using var server = new L12WebSocketServer(new L12RoomManager(catalog, recorder, store), recorder, store, catalog);
@@ -197,18 +228,29 @@ public sealed class PublicDeckMatchBindingTests
         {
             await server.StartAsync(0);
             using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
-            var anonymous = await client.GetFromJsonAsync<L12PublishedDeckView>($"/api/public-decks/{published.Id}");
-            Assert.Null(Assert.Single(anonymous!.Details!.Matches).ReplayPath);
+            var anonymousJson = await client.GetStringAsync($"/api/public-decks/{published.Id}");
+            var anonymous = JsonSerializer.Deserialize<L12PublishedDeckView>(anonymousJson,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            Assert.Equal(3, anonymous!.Details!.MatchStatistics.Games);
+            using (var document = JsonDocument.Parse(anonymousJson))
+                AssertPublicStatisticsAreAnonymous(document.RootElement.GetProperty("details")
+                    .GetProperty("matchStatistics").GetRawText());
             client.DefaultRequestHeaders.Authorization = new("Bearer", owner.Token);
             using var update = await client.PutAsJsonAsync($"/api/public-decks/{published.Id}/content",
                 new L12PublicDeckContentInput(new("指南", "", "", "", ""), []));
             update.EnsureSuccessStatusCode();
-            Assert.NotNull(Assert.Single((await update.Content.ReadFromJsonAsync<L12PublicDeckDetailsView>())!.Matches).ReplayPath);
+            var updatedJson = await update.Content.ReadAsStringAsync();
+            Assert.Equal(3, JsonSerializer.Deserialize<L12PublicDeckDetailsView>(updatedJson,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web))!.MatchStatistics.Games);
+            using (var document = JsonDocument.Parse(updatedJson))
+                AssertPublicStatisticsAreAnonymous(document.RootElement.GetProperty("matchStatistics").GetRawText());
             var admin = store.Login("Admin", "L12master").Account!;
             store.SetAccountDisabled(admin, opponent.Id, true, "测试统计排除", new("disable-bind"), true);
-            Assert.Empty((await client.GetFromJsonAsync<L12PublishedDeckView>($"/api/public-decks/{published.Id}"))!.Details!.Matches);
+            Assert.Equal(0, (await client.GetFromJsonAsync<L12PublishedDeckView>(
+                $"/api/public-decks/{published.Id}"))!.Details!.MatchStatistics.Games);
             store.SetAccountDisabled(admin, opponent.Id, false, "测试恢复统计", new("restore-bind"), true);
-            Assert.Single((await client.GetFromJsonAsync<L12PublishedDeckView>($"/api/public-decks/{published.Id}"))!.Details!.Matches);
+            Assert.Equal(3, (await client.GetFromJsonAsync<L12PublishedDeckView>(
+                $"/api/public-decks/{published.Id}"))!.Details!.MatchStatistics.Games);
         }
         finally { await server.StopAsync(); Environment.SetEnvironmentVariable("L12_LISTEN_HOST", host); }
     }
@@ -267,13 +309,82 @@ public sealed class PublicDeckMatchBindingTests
         }
         var excluded = store.RankedIntegrityExcludedMatchIds();
         Assert.Contains("held-bind-2", excluded);
-        var matches = await recorder.PublicDeckMatchesAsync(publication.Id, excluded, store.StatisticsExcludedAccountIds());
-        Assert.Equal(2, matches.Count);
-        Assert.DoesNotContain(matches, match => match.MatchId == "held-bind-2");
+        Assert.Equal(3, (await recorder.PublicDeckVersionStatisticsAsync(publication.Id)).Games);
+        var statistics = await recorder.PublicDeckVersionStatisticsAsync(publication.Id, excluded,
+            store.StatisticsExcludedAccountIds());
+        Assert.Equal("insufficient", statistics.SampleStatus);
+        Assert.Equal(0, statistics.Games);
+        Assert.Empty(statistics.Groups);
         Assert.Equal(2, (await recorder.PlayerStatisticsAsync(owner.Id, owner.Username, excluded)).Overall.Games);
     }
 
     private static L12PresetDeckDefinition WithBinding(L12PresetDeckDefinition deck, string id, int version)
         => new() { Name = deck.Name, MasterId = deck.MasterId, CardIds = deck.CardIds, MoraleIds = deck.MoraleIds,
             SpecialIds = deck.SpecialIds, PublicationId = id, PublicationVersion = version };
+
+    private static void AssertPublicStatisticsAreAnonymous(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        var names = new List<string>();
+        Collect(document.RootElement);
+        foreach (var forbidden in new[] { "matchId", "playedAt", "replayPath", "accountId", "username",
+                     "displayName", "playerId", "playerName", "ownerId", "author" })
+            Assert.DoesNotContain(names, name => string.Equals(name, forbidden, StringComparison.OrdinalIgnoreCase));
+
+        void Collect(JsonElement element)
+        {
+            if (element.ValueKind == JsonValueKind.Object)
+                foreach (var property in element.EnumerateObject())
+                {
+                    names.Add(property.Name);
+                    Collect(property.Value);
+                }
+            else if (element.ValueKind == JsonValueKind.Array)
+                foreach (var item in element.EnumerateArray()) Collect(item);
+        }
+    }
+
+    [Fact]
+    public async Task StatisticsSeparateMultipleOpponentMastersWithoutExposingSmallGroups()
+    {
+        var (root, catalog, store) = Setup();
+        var owner = store.Register("bindmulti", "password-123").Account!;
+        var opponent = store.Register("bindmopp", "password-123").Account!;
+        var deck = catalog.PresetDecks[0];
+        var opponentMasterIds = catalog.Cards.Values.Where(card => card.CardType == "master"
+                && card.Id != deck.MasterId).Select(card => card.Id).Take(2).ToArray();
+        Assert.Equal(2, opponentMasterIds.Length);
+        var publication = store.PublishDeck(owner.Id, deck, null)!;
+        await using var recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+        await recorder.InitializeAsync();
+        for (var group = 0; group < opponentMasterIds.Length; group++)
+            for (var index = 0; index < 3; index++)
+            {
+                var game = new L12GameEngine(catalog, $"multi-{group}-{index}", "MULTI", 42,
+                    [owner.Username, opponent.Username], [deck, deck], skipPreparation: true);
+                await recorder.StartAsync(game, "friendly", owner.Id, opponent.Id, [deck, deck],
+                    [store.ResolvePublicDeckBinding(owner.Id, deck, publication.Id, 1), null]);
+                game.State.Phase = L12Phase.GameOver;
+                game.State.Winner = index <= group ? 0 : 1;
+                await recorder.CompleteAsync(game);
+                using var connection = new SqliteConnection($"Data Source={Path.Combine(root, "matches.db")}");
+                connection.Open();
+                using var command = connection.CreateCommand();
+                command.CommandText = "UPDATE match_participants SET master_id=$master WHERE match_id=$match AND player_index=1;";
+                command.Parameters.AddWithValue("$master", opponentMasterIds[group]);
+                command.Parameters.AddWithValue("$match", game.State.MatchId);
+                command.ExecuteNonQuery();
+            }
+        var statistics = await recorder.PublicDeckVersionStatisticsAsync(publication.Id);
+        Assert.Equal("available", statistics.SampleStatus);
+        Assert.Equal(6, statistics.Games);
+        Assert.Equal(2, statistics.Groups.Count);
+        Assert.Equal(opponentMasterIds.OrderBy(id => id),
+            statistics.Groups.Select(item => item.OpponentMasterId).OrderBy(id => id));
+        Assert.All(statistics.Groups, group => Assert.Equal(deck.MasterId, group.MasterId));
+        Assert.Contains(statistics.Groups, group => group.Wins == 1 && group.Losses == 2
+            && group.WinRate == 0.3333);
+        Assert.Contains(statistics.Groups, group => group.Wins == 2 && group.Losses == 1
+            && group.WinRate == 0.6667);
+    }
 }

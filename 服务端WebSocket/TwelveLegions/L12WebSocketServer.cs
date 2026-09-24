@@ -868,7 +868,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             {
                 SeasonCompliant = valid,
                 SeasonComplianceReason = valid ? null : error,
-                Details = await PublicDeckDetailsWithMatchesAsync(id, account),
+                Details = await PublicDeckDetailsWithStatisticsAsync(id),
             });
         });
         _app.MapPost("/api/public-decks", (HttpRequest request, PublishedDeckRequest body) =>
@@ -889,7 +889,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             try
             {
                 var details = _platform.UpdatePublicDeckContent(account.Id, id, body);
-                return details is null ? Results.NotFound() : Results.Ok(await PublicDeckDetailsWithMatchesAsync(id, account));
+                return details is null ? Results.NotFound() : Results.Ok(await PublicDeckDetailsWithStatisticsAsync(id));
             }
             catch (UnauthorizedAccessException error)
             {
@@ -2461,17 +2461,21 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         if (_app is not null) await _app.StopAsync();
     }
 
-    private async Task<L12PublicDeckDetailsView?> PublicDeckDetailsWithMatchesAsync(string id, L12AccountView? account)
+    private async Task<L12PublicDeckDetailsView?> PublicDeckDetailsWithStatisticsAsync(string id)
     {
         var details = _platform.PublicDeckDetails(id);
         if (details is null) return null;
-        var matches = await _recorder.PublicDeckMatchesAsync(id, _platform.RankedIntegrityExcludedMatchIds(),
-            _platform.StatisticsExcludedAccountIds(), account?.Id, account?.Username);
+        var statistics = await _recorder.PublicDeckVersionStatisticsAsync(id,
+            _platform.RankedIntegrityExcludedMatchIds(), _platform.StatisticsExcludedAccountIds());
         return details with
         {
-            Matches = matches,
-            MatchBindingStatus = matches.Count > 0 ? "available" : "unavailable",
-            MatchBindingMessage = matches.Count > 0 ? "仅展示开局时已绑定的公开版本对局。" : details.MatchBindingMessage,
+            MatchStatistics = statistics,
+            MatchBindingStatus = statistics.SampleStatus,
+            MatchBindingMessage = statistics.SampleStatus == "available"
+                ? $"过去 {statistics.RecentDays} 天，仅展示开局时已绑定公开版本且同组至少 3 场的匿名聚合统计。"
+                : statistics.SampleStatus == "insufficient"
+                    ? $"样本不足：过去 {statistics.RecentDays} 天各主宰组合均不足 3 场，暂不展示胜率。"
+                    : $"过去 {statistics.RecentDays} 天暂无可核验的公开版本对局统计。",
         };
     }
 
