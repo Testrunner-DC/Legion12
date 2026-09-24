@@ -73,4 +73,47 @@ assert((friends.match(/:disabled="actionPending\(actionKey\(/g) ?? []).length >=
 assert(!friends.includes('busy || actionBusy')); checks += 1
 assert(friends.includes(':aria-busy="actionBusy"')); checks += 1
 
+const deckLibrary = fs.readFileSync(new URL('../src/l12/site/DeckLibraryPage.vue', import.meta.url), 'utf8')
+assert(deckLibrary.includes('useActionGate()')); checks += 1
+assert(deckLibrary.includes('publicDeckActionKey') && deckLibrary.includes('runAction(publicDeckActionKey(entry.id')); checks += 1
+assert(deckLibrary.includes('actionPending(publicDeckActionKey(entry.id))')); checks += 1
+assert(deckLibrary.includes('runAction(`public-deck:publish:${deck.name}`')); checks += 1
+assert(deckLibrary.includes("actionPending(`public-deck:publish:${publishName}`)")); checks += 1
+
+const publicDeck = fs.readFileSync(new URL('../src/l12/site/PublicDeckDetailPage.vue', import.meta.url), 'utf8')
+assert(publicDeck.includes('useActionGate()')); checks += 1
+assert(publicDeck.includes('publicDeckActionKey')); checks += 1
+assert((publicDeck.match(/runAction\(publicDeckActionKey\(id, accountId\)/g) ?? []).length === 4); checks += 1
+assert((publicDeck.match(/actionPending\(publicDeckActionKey\(entry.id\)\)/g) ?? []).length >= 6); checks += 1
+assert(publicDeck.includes("accountId === platformState.account?.id")); checks += 1
+assert(publicDeck.includes(':disabled="savingContent"')); checks += 1
+
+const shell = fs.readFileSync(new URL('../src/l12/site/SiteShell.vue', import.meta.url), 'utf8')
+assert(shell.includes('runOnlineAction(onlineFriendActionKey(player.accountId, accountId)')); checks += 1
+assert(shell.includes('onlineActionPending(onlineFriendActionKey(player.accountId))')); checks += 1
+assert(shell.includes("`online-friend:${accountId}:${playerId}`")); checks += 1
+assert(!shell.includes('onlineActionBusy')); checks += 1
+
+const tournaments = fs.readFileSync(new URL('../src/l12/site/TournamentCenterPage.vue', import.meta.url), 'utf8')
+assert(tournaments.includes('runGatedAction(key')); checks += 1
+assert((tournaments.match(/runAction\(tournamentActionKey\(item\)/g) ?? []).length >= 13); checks += 1
+assert(tournaments.includes(':disabled="actionPending(tournamentActionKey(item))')); checks += 1
+assert(!tournaments.includes('if (busy.value)')); checks += 1
+assert(!tournaments.includes('Promise.all([refreshTournaments(), loadFriends(), loadDeckCatalog(), getEffectiveOperationsPolicy(), syncSavedDecksFromAccount()])')); checks += 1
+assert(tournaments.includes('mergeTournamentSnapshot(result.items, tournaments.value, baselineVersions)')); checks += 1
+assert(!tournaments.includes('if (!incoming || current.version > incoming.version)')); checks += 1
+
+const mergeFilename = new URL('../src/l12/tournamentSnapshotMerge.ts', import.meta.url)
+const mergeJavascript = ts.transpileModule(fs.readFileSync(mergeFilename, 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+}).outputText
+const { mergeTournamentSnapshot } = await import(`data:text/javascript;base64,${Buffer.from(mergeJavascript).toString('base64')}`)
+const baseline = new Map([['kept', 1], ['deleted', 4], ['advanced', 2]])
+const merged = mergeTournamentSnapshot(
+  [{ id: 'kept', version: 1 }, { id: 'advanced', version: 2 }],
+  [{ id: 'kept', version: 1 }, { id: 'deleted', version: 4 }, { id: 'advanced', version: 3 }, { id: 'created', version: 1 }],
+  baseline,
+)
+assert.deepEqual(merged.map(item => `${item.id}:${item.version}`).sort(), ['advanced:3', 'created:1', 'kept:1']); checks += 1
+
 console.log(`Player action gate: ${checks}/${checks} checks passed`)

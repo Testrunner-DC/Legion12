@@ -5,6 +5,8 @@ import { loadDeckCatalog, syncSavedDecksFromAccount, type DeckCard, type SavedL1
 import { connect, enterTournamentMatch, l12State, spectateTournamentMatch } from '@/l12/net'
 import ConstructionRuleEditor from './ConstructionRuleEditor.vue'
 import DisasterPoolPicker from './DisasterPoolPicker.vue'
+import { useActionGate } from '@/l12/useActionGate'
+import { mergeTournamentSnapshot } from '@/l12/tournamentSnapshotMerge'
 import {
   friendApi, getEffectiveOperationsPolicy, hasPermission, platformState, tournamentApi,
   type LegacyTournamentInput, type PlatformFriend,
@@ -25,7 +27,7 @@ const tab = ref<'current' | 'completed' | 'mine' | 'create'>('current')
 const search = ref('')
 const detailId = ref<string | null>(null)
 const notice = ref('')
-const busy = ref(false)
+const { pending: actionBusy, isPending: actionPending, run: runGatedAction } = useActionGate()
 const loading = ref(false)
 const platformVersion = ref(0)
 const tournaments = ref<Tournament[]>([])
@@ -95,23 +97,30 @@ function hydrateDrafts(items: Tournament[]) {
 }
 async function refreshTournaments() {
   if (!platformState.account) return
+  const baselineVersions = new Map(tournaments.value.map(item => [item.id, item.version]))
   loading.value = true
   try {
     const result = await tournamentApi.list()
-    platformVersion.value = result.platformVersion
-    tournaments.value = result.items
-    hydrateDrafts(result.items)
-    if (detailId.value && !result.items.some(item => item.id === detailId.value)) detailId.value = null
+    platformVersion.value = Math.max(platformVersion.value, result.platformVersion)
+    tournaments.value = mergeTournamentSnapshot(result.items, tournaments.value, baselineVersions)
+    hydrateDrafts(tournaments.value)
+    if (detailId.value && !tournaments.value.some(item => item.id === detailId.value)) detailId.value = null
   } finally { loading.value = false }
 }
-async function syncAfterWrite(_result: Tournament, success: string) {
+async function syncAfterWrite(result: Tournament, success: string) {
+  const index = tournaments.value.findIndex(item => item.id === result.id)
+  if (index >= 0) tournaments.value[index] = result
+  else tournaments.value.push(result)
+  hydrateDrafts([result])
   notice.value = success
   await refreshTournaments()
 }
-async function runAction(work: () => Promise<void>) {
-  if (busy.value) return
-  busy.value = true
-  try { await work() } catch (error) { notice.value = errorText(error) } finally { busy.value = false }
+const tournamentActionKey = (item: Tournament) => `tournament:${item.id}`
+const busy = computed(() => detail.value ? actionPending(tournamentActionKey(detail.value)) : actionBusy.value)
+async function runAction(key: string, work: () => Promise<void>) {
+  await runGatedAction(key, async () => {
+    try { await work() } catch (error) { notice.value = errorText(error) }
+  })
 }
 async function loadFriends() {
   if (!platformState.account) return
@@ -139,7 +148,7 @@ function toggleStaffDraft(account: PlatformFriend) {
   if (index >= 0) staffDraft.value.splice(index, 1); else staffDraft.value.push(account.accountId)
 }
 
-function createTournament() { void runAction(async () => {
+function createTournament() { void runAction('tournament:create', async () => {
   if (!form.name.trim()) throw new Error('请输入赛事名称')
   const tournament: TournamentCreateInput = {
     name: form.name.trim(), format: form.format, visibility: form.visibility,
@@ -161,7 +170,7 @@ function createTournament() { void runAction(async () => {
   tab.value = 'mine'
   await syncAfterWrite(created, `赛事 ${created.code} 已建立，请提交参赛牌库快照`)
 }) }
-function join(item: Tournament) { void runAction(async () => {
+function join(item: Tournament) { void runAction(tournamentActionKey(item), async () => {
   const existing = item.participants.find(person => person.accountId === accountId.value)
   const draft = deckDrafts[item.id] ?? { name: '', code: '' }
   if (!draft.name || !savedDecks.value.some(deck => deck.name === draft.name)) throw new Error('请先从账号牌库选择报名牌库')
@@ -170,25 +179,25 @@ function join(item: Tournament) { void runAction(async () => {
     : await tournamentApi.register(item.id, item.version, draft.name, draft.code)
   await syncAfterWrite(updated, `已报名「${item.name}」，请在详情中确认牌库快照`)
 }) }
-function saveDeck(item: Tournament, person: TournamentParticipant) { void runAction(async () => {
+function saveDeck(item: Tournament, person: TournamentParticipant) { void runAction(tournamentActionKey(item), async () => {
   if (person.accountId !== accountId.value) throw new Error('只能提交自己的牌库快照')
   const draft = deckDrafts[item.id] ?? { name: '', code: '' }
   if (!draft.name || !savedDecks.value.some(deck => deck.name === draft.name)) throw new Error('请从账号牌库选择牌库')
   const updated = await tournamentApi.updateRegistration(item.id, item.version, draft.name, '')
   await syncAfterWrite(updated, '牌库快照已更新')
 }) }
-function dropRegistration(item: Tournament) { void runAction(async () => {
+function dropRegistration(item: Tournament) { void runAction(tournamentActionKey(item), async () => {
   if (item.status === 'running' && !window.confirm('退赛后不会进入后续配对；当前桌仍需由裁判记录赛果。确定退赛吗？')) return
   await syncAfterWrite(await tournamentApi.drop(item.id, item.version), '已退出该赛事')
 }) }
-function saveStaff(item: Tournament) { void runAction(async () => {
+function saveStaff(item: Tournament) { void runAction(tournamentActionKey(item), async () => {
   if (!staffReason.value.trim()) throw new Error('请填写工作人员变更理由')
   await syncAfterWrite(await tournamentApi.setStaff(item.id, item.version, staffDraft.value, staffReason.value.trim()), '工作人员已更新')
 }) }
-function startTournament(item: Tournament) { void runAction(async () => {
+function startTournament(item: Tournament) { void runAction(tournamentActionKey(item), async () => {
   await syncAfterWrite(await tournamentApi.start(item.id, item.version, '主办者请求正式开启赛事'), '赛事已开启')
 }) }
-function toggleReady(item: Tournament, round: TournamentRound, match: TournamentMatch, side: 'A' | 'B') { void runAction(async () => {
+function toggleReady(item: Tournament, round: TournamentRound, match: TournamentMatch, side: 'A' | 'B') { void runAction(tournamentActionKey(item), async () => {
   const targetId = side === 'A' ? match.playerAAccountId : match.playerBAccountId
   const ready = side === 'A' ? match.readyA : match.readyB
   if (!targetId) return
@@ -197,24 +206,24 @@ function toggleReady(item: Tournament, round: TournamentRound, match: Tournament
     targetId === accountId.value ? undefined : targetId, !ready)
   await syncAfterWrite(updated, !ready ? '已完成本轮签到' : '已取消本轮签到')
 }) }
-function startRound(item: Tournament, round: TournamentRound) { void runAction(async () => {
+function startRound(item: Tournament, round: TournamentRound) { void runAction(tournamentActionKey(item), async () => {
   const reason = roundReason.value.trim() || `第 ${round.number} 轮已核对签到与房间准备`
   await syncAfterWrite(await tournamentApi.startRound(item.id, round.number, item.version, reason), `第 ${round.number} 轮已开始`)
 }) }
-function pauseRound(item: Tournament, round: TournamentRound) { void runAction(async () => {
+function pauseRound(item: Tournament, round: TournamentRound) { void runAction(tournamentActionKey(item), async () => {
   if (!roundReason.value.trim()) throw new Error('暂停或恢复计时必须填写理由')
   const updated = await tournamentApi.pauseRound(item.id, round.number, item.version, !round.paused, roundReason.value.trim())
   await syncAfterWrite(updated, round.paused ? '本轮计时已恢复' : '本轮计时已暂停')
 }) }
-function nextRound(item: Tournament) { void runAction(async () => {
+function nextRound(item: Tournament) { void runAction(tournamentActionKey(item), async () => {
   await syncAfterWrite(await tournamentApi.nextRound(item.id, item.version, roundReason.value.trim() || '上一轮结果已复核'), '下一轮配对已建立')
 }) }
-function addTime(item: Tournament, match: TournamentMatch, minutes: number) { void runAction(async () => {
+function addTime(item: Tournament, match: TournamentMatch, minutes: number) { void runAction(tournamentActionKey(item), async () => {
   const reason = rulingReasons[match.id]?.trim()
   if (!reason) throw new Error('补时必须填写裁判理由')
   await syncAfterWrite(await tournamentApi.extendMatch(item.id, match.id, item.version, minutes, reason), `本桌已补时 ${minutes} 分钟`)
 }) }
-function ruleMatch(item: Tournament, match: TournamentMatch, kind: 'result' | 'penalty' | 'no-show', decision: string, targetAccountId?: string) { void runAction(async () => {
+function ruleMatch(item: Tournament, match: TournamentMatch, kind: 'result' | 'penalty' | 'no-show', decision: string, targetAccountId?: string) { void runAction(tournamentActionKey(item), async () => {
   const reason = rulingReasons[match.id]?.trim()
   if (!reason) throw new Error('赛果与判罚必须填写裁判理由')
   const result = await tournamentApi.ruleMatch(item.id, match.id, item.version, { kind, decision, targetAccountId, reason })
@@ -225,12 +234,12 @@ function noShowLoss(item: Tournament, match: TournamentMatch) {
   else if (match.readyA && !match.readyB && match.playerBAccountId) ruleMatch(item, match, 'no-show', 'no-show-b', match.playerBAccountId)
   else notice.value = '仅有一方未准备时才可提交未入场判负'
 }
-function requestRematch(item: Tournament, match: TournamentMatch) { void runAction(async () => {
+function requestRematch(item: Tournament, match: TournamentMatch) { void runAction(tournamentActionKey(item), async () => {
   const reason = rulingReasons[match.id]?.trim()
   if (!reason) throw new Error('重赛必须填写裁判理由')
   await syncAfterWrite(await tournamentApi.rematch(item.id, match.id, item.version, reason), '重赛已记录，本桌需重新签到')
 }) }
-function finishTournament(item: Tournament) { void runAction(async () => {
+function finishTournament(item: Tournament) { void runAction(tournamentActionKey(item), async () => {
   await syncAfterWrite(await tournamentApi.complete(item.id, item.version, '全部轮次与赛果已复核，结束并归档'), '赛事已结束并归档')
 }) }
 
@@ -252,13 +261,13 @@ function readLegacyCandidates(): LegacyTournamentInput[] {
   }
   return []
 }
-function previewLegacyImport() { void runAction(async () => {
+function previewLegacyImport() { void runAction('tournament:legacy-import', async () => {
   if (legacyCandidates.value.length > 20) throw new Error('一次最多导入 20 个旧赛事，请先在本机整理旧数据')
   legacyPreview.value = await tournamentApi.importLegacy(legacyCandidates.value, platformVersion.value, undefined, true)
   await refreshTournaments()
   notice.value = `预览完成：服务端可接收 ${legacyPreview.value.tournaments.length} 个赛事，尚未写入`
 }) }
-function confirmLegacyImport() { void runAction(async () => {
+function confirmLegacyImport() { void runAction('tournament:legacy-import', async () => {
   if (!legacyPreview.value) throw new Error('请先生成导入预览')
   const imported = await tournamentApi.importLegacy(legacyCandidates.value, platformVersion.value, legacyPreview.value.previewHash, false)
   if (!imported.applied) throw new Error('服务端未确认导入')
@@ -274,7 +283,7 @@ async function copyShareLink(item: Tournament) {
   await navigator.clipboard.writeText(link.toString())
   notice.value = '赛事分享链接已复制；登录后会自动打开该赛事'
 }
-function enterMatch(item: Tournament, match: TournamentMatch, spectate = false) { void runAction(async () => {
+function enterMatch(item: Tournament, match: TournamentMatch, spectate = false) { void runAction(tournamentActionKey(item), async () => {
   await connect()
   if (spectate) spectateTournamentMatch(item.id, match.id)
   else enterTournamentMatch(item.id, match.id)
@@ -291,7 +300,8 @@ onMounted(async () => {
   }
   legacyCandidates.value = readLegacyCandidates()
   try {
-    const [, , cards, policy, decks] = await Promise.all([refreshTournaments(), loadFriends(), loadDeckCatalog(), getEffectiveOperationsPolicy(), syncSavedDecksFromAccount()])
+    const [, cards, decks] = await Promise.all([refreshTournaments(), loadDeckCatalog(), syncSavedDecksFromAccount()])
+    const [, policy] = await Promise.all([loadFriends(), getEffectiveOperationsPolicy()])
     catalog.value = cards
     savedDecks.value = Object.values(decks)
     hydrateDrafts(tournaments.value)
@@ -309,16 +319,16 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="tournament-page" :class="{ embedded: props.embedded }">
+  <div class="tournament-page" :class="{ embedded: props.embedded }" :aria-busy="actionBusy">
     <header class="page-head"><div><small>TOURNAMENT OPERATIONS</small><h1>{{ props.adminMode ? '赛事管理' : '赛事中心' }}</h1><p>{{ props.adminMode ? '查看并管理玩家创建的全部赛事；全局管理操作保留版本校验、理由与审计记录。' : '服务端保存报名、牌库可见性快照、配对、判罚与审计记录；主办者与裁判权限仅在当前赛事内生效。' }}</p></div><button v-if="!props.adminMode && hasPermission('tournaments.create')" class="gold" @click="tab = 'create'">举办赛事</button></header>
-    <section v-if="!props.adminMode && legacyCandidates.length" class="migration"><div><b>检测到 {{ legacyCandidates.length }} 个本机旧赛事</b><p>旧 localStorage 仅作为待导入来源，不再参与赛事展示或写入。必须先预览，再明确确认导入。</p></div><button v-if="canImportLegacy" :disabled="busy" @click="previewLegacyImport">预览导入（dry-run）</button><button v-if="legacyPreview" class="gold" :disabled="busy" @click="confirmLegacyImport">确认导入 {{ legacyPreview.tournaments.length }} 个赛事</button><span v-else-if="!canImportLegacy">当前账号没有旧赛事导入权限</span></section>
+    <section v-if="!props.adminMode && legacyCandidates.length" class="migration"><div><b>检测到 {{ legacyCandidates.length }} 个本机旧赛事</b><p>旧 localStorage 仅作为待导入来源，不再参与赛事展示或写入。必须先预览，再明确确认导入。</p></div><button v-if="canImportLegacy" :disabled="actionPending('tournament:legacy-import')" @click="previewLegacyImport">预览导入（dry-run）</button><button v-if="legacyPreview" class="gold" :disabled="actionPending('tournament:legacy-import')" @click="confirmLegacyImport">确认导入 {{ legacyPreview.tournaments.length }} 个赛事</button><span v-else-if="!canImportLegacy">当前账号没有旧赛事导入权限</span></section>
     <section v-if="!props.adminMode && legacyPreview" class="migration-preview"><b>导入预览未写入</b><span>摘要 {{ legacyPreview.previewHash }}</span><span v-for="item in legacyPreview.tournaments" :key="item.id">{{ item.code }} · {{ item.name }} · {{ item.participants.length }} 人</span></section>
     <nav class="tabs" :class="{ 'admin-tabs': props.adminMode }"><button :class="{active:tab==='current'}" @click="tab='current'">当前赛事</button><button :class="{active:tab==='completed'}" @click="tab='completed'">结束赛事</button><button v-if="!props.adminMode" :class="{active:tab==='mine'}" @click="tab='mine'">我的赛程</button><button v-if="!props.adminMode" :class="{active:tab==='create'}" @click="tab='create'">创建向导</button></nav>
 
     <section v-if="tab !== 'create'" class="registry">
       <input v-model="search" placeholder="搜索赛事名称、主办者或赛事代码"/>
       <div v-if="loading" class="empty">正在从服务端读取赛事…</div>
-      <article v-for="item in visibleTournaments" v-else :key="item.id"><div><small>{{ item.code }}</small><h2>{{ item.name }}</h2><p>{{ item.description || '赛事方尚未发布说明。' }}</p></div><dl><div><dt>状态</dt><dd>{{ statusText(item.status) }}</dd></div><div><dt>赛制</dt><dd>{{ formatText(item.format) }}</dd></div><div><dt>人数</dt><dd>{{ item.participants.filter(person=>!person.dropped).length }}/{{ item.maxPlayers }}</dd></div><div><dt>主办者</dt><dd>{{ item.organizerName }}</dd></div></dl><div class="actions"><button @click="openDetail(item)">赛事详情</button><template v-if="!props.adminMode&&item.status==='registration'&&!isParticipant(item)"><select v-if="deckDrafts[item.id]" v-model="deckDrafts[item.id].name"><option disabled value="">选择账号牌库</option><option v-for="deck in savedDecks" :key="deck.name" :value="deck.name">{{ deck.name }}</option></select><button class="gold" :disabled="busy||!deckDrafts[item.id]?.name" @click="join(item)">报名参赛</button></template><button @click="copyShareLink(item)">复制分享链接</button></div></article>
+      <article v-for="item in visibleTournaments" v-else :key="item.id"><div><small>{{ item.code }}</small><h2>{{ item.name }}</h2><p>{{ item.description || '赛事方尚未发布说明。' }}</p></div><dl><div><dt>状态</dt><dd>{{ statusText(item.status) }}</dd></div><div><dt>赛制</dt><dd>{{ formatText(item.format) }}</dd></div><div><dt>人数</dt><dd>{{ item.participants.filter(person=>!person.dropped).length }}/{{ item.maxPlayers }}</dd></div><div><dt>主办者</dt><dd>{{ item.organizerName }}</dd></div></dl><div class="actions"><button @click="openDetail(item)">赛事详情</button><template v-if="!props.adminMode&&item.status==='registration'&&!isParticipant(item)"><select v-if="deckDrafts[item.id]" v-model="deckDrafts[item.id].name"><option disabled value="">选择账号牌库</option><option v-for="deck in savedDecks" :key="deck.name" :value="deck.name">{{ deck.name }}</option></select><button class="gold" :disabled="actionPending(tournamentActionKey(item))||!deckDrafts[item.id]?.name" @click="join(item)">报名参赛</button></template><button @click="copyShareLink(item)">复制分享链接</button></div></article>
       <div v-if="!loading&&!visibleTournaments.length" class="empty">暂无符合条件的服务端赛事</div>
     </section>
 
@@ -327,13 +337,13 @@ onMounted(async () => {
       <div class="form-grid">
         <label class="wide">赛事名称<input v-model="form.name" maxlength="40"/></label><label>赛制<select v-model="form.format"><option value="swiss">纯瑞士轮</option><option value="single">纯单败淘汰</option><option value="swiss-cut">瑞士后 Cut 淘汰</option></select></label><label>人数上限<input v-model.number="form.maxPlayers" type="number" min="2" max="256"/></label><label v-if="form.format!=='single'">瑞士轮数<input v-model.number="form.swissRounds" type="number" min="1" max="20"/></label><label v-if="form.format==='swiss-cut'">Cut 人数<input v-model.number="form.cutSize" type="number" min="2" :max="form.maxPlayers"/></label><label>加入方式<select v-model="form.visibility"><option value="public">公开发现或分享链接</option><option value="code">仅分享链接</option></select></label><label>报名名单<select v-model="form.registrationVisibility"><option value="public">公开报名名单</option><option value="staff">仅工作人员与本人</option></select></label><label>计划时间<input v-model="form.startAt" type="datetime-local"/></label><label>每轮分钟<input v-model.number="form.roundMinutes" type="number" min="5" max="240"/></label><label>每轮签到窗口<input v-model.number="form.checkInMinutes" type="number" min="1" max="60"/></label><label>迟到宽限分钟<input v-model.number="form.lateGraceMinutes" type="number" min="0" max="60"/></label><label>天灾模式<select v-model="form.disasterMode"><option value="all">全部天灾</option><option value="random">随机天灾</option><option value="season">赛季天灾</option><option value="none">不使用天灾</option></select></label><label>牌库公开<select v-model="form.deckVisibility"><option value="always">全程公开牌库</option><option value="after">赛后公开牌库</option><option value="private">不公开牌库</option></select></label><label class="wide">规则版本<input v-model="form.ruleset"/></label><fieldset v-if="form.disasterMode !== 'none'" class="wide"><legend>本场天灾池</legend><DisasterPoolPicker v-model="form.disasterCardIds" :cards="catalog" locked-id="S01-DS10"/></fieldset><fieldset class="wide"><legend>本场构筑规则</legend><ConstructionRuleEditor v-model="form.cardRestrictions" :cards="catalog"/></fieldset><label class="wide">补充规则说明<textarea v-model="form.banList" rows="2" placeholder="结构化规则以外的说明（可留空）"/></label>
         <fieldset class="wide"><legend>从好友中选择本场裁判</legend><button v-for="friend in friends" :key="friend.accountId" type="button" :class="{selected:form.referees.includes(friend.accountId)}" @click="toggleReferee(friend)">{{ friend.username }}</button><span v-if="!friends.length">暂无可选好友；可先到好友页面添加裁判。</span></fieldset><label class="wide">赛事说明<textarea v-model="form.description" rows="4"/></label>
-      </div><button class="gold create-action" :disabled="busy||!hasPermission('tournaments.create')" @click="createTournament">建立服务端赛事</button>
+      </div><button class="gold create-action" :disabled="actionPending('tournament:create')||!hasPermission('tournaments.create')" @click="createTournament">{{ actionPending('tournament:create') ? '建立中…' : '建立服务端赛事' }}</button>
     </section>
 
     <div v-if="detail" class="mask" @click.self="detailId=null"><section class="detail">
       <header><div><small>{{ detail.code }} · v{{ detail.version }}</small><h2>{{ detail.name }}</h2></div><button @click="detailId=null">×</button></header><div class="summary"><span>{{ statusText(detail.status) }}</span><span>{{ formatText(detail.format) }}</span><span v-if="detail.swissRounds">计划 {{ detail.swissRounds }} 轮瑞士</span><span v-if="detail.cutSize">Cut {{ detail.cutSize }}</span><span>{{ disasterText(detail.rules.disasterMode) }}</span><span>{{ deckVisibilityText(detail.rules.deckVisibility) }}</span><span>{{ detail.registrationVisibility==='public'?'报名公开':'报名名单限定' }}</span><span>每轮 {{ detail.roundMinutes }} 分钟 · 迟到宽限 {{ detail.lateGraceMinutes }} 分钟</span><span v-if="detail.legacyImported">已导入旧赛事</span></div><p>{{ detail.description || '赛事方尚未发布说明。' }}</p><section class="rules"><b>规则快照：{{ detail.rules.ruleset }}</b><span>天灾池 {{ detail.rules.disasterCardIds.length }} 张</span><span>构筑规则 {{ detail.rules.cardRestrictions.length }} 条（含通用/主宰专属）</span><span>补充说明：{{ detail.rules.banList || '无' }}</span><span>快照 {{ detail.rules.hash.slice(0,12) }}</span><span>计划开始：{{ detail.startAt ? new Date(detail.startAt).toLocaleString() : '由主办者通知' }}</span></section>
-      <h3>本场工作人员</h3><div class="chips"><span>主办者 · {{ detail.organizerName }}</span><span v-for="person in detail.referees" :key="person.accountId">裁判 · {{ person.username }}</span></div><section v-if="detail.status !== 'completed' && isOrganizer(detail)" class="staff-editor"><button v-for="friend in friends" :key="friend.accountId" type="button" :class="{selected:staffDraft.includes(friend.accountId)}" @click="toggleStaffDraft(friend)">{{ friend.username }}</button><input v-model="staffReason" placeholder="本场裁判变更理由（写入审计）"/><button :disabled="busy" @click="saveStaff(detail)">保存本场裁判</button></section>
-      <h3>参赛人员与牌库快照</h3><div class="participants"><div v-for="person in detail.participants" :key="person.accountId"><b>#{{ person.seed || '—' }} · {{ person.username }}<em v-if="person.dropped"> · 已退赛</em><em v-else-if="person.eliminated"> · 已淘汰</em></b><span>{{ person.checkedIn ? '已准备' : '未准备' }}</span><template v-if="!props.adminMode&&person.accountId===accountId&&detail.status==='registration'&&deckDrafts[detail.id]"><select v-model="deckDrafts[detail.id].name"><option disabled value="">选择账号牌库</option><option v-for="deck in savedDecks" :key="deck.name" :value="deck.name">{{ deck.name }}</option></select><button :disabled="busy||!deckDrafts[detail.id].name" @click="saveDeck(detail,person)">保存报名快照</button></template><template v-else-if="person.deck"><span>{{ person.deck.name }}</span><code>{{ person.deck.masterId }} · {{ person.deck.hash.slice(0,12) }}</code></template><em v-else>牌库未公开或尚未提交</em></div></div>
+      <h3>本场工作人员</h3><div class="chips"><span>主办者 · {{ detail.organizerName }}</span><span v-for="person in detail.referees" :key="person.accountId">裁判 · {{ person.username }}</span></div><section v-if="detail.status !== 'completed' && isOrganizer(detail)" class="staff-editor"><button v-for="friend in friends" :key="friend.accountId" type="button" :class="{selected:staffDraft.includes(friend.accountId)}" @click="toggleStaffDraft(friend)">{{ friend.username }}</button><input v-model="staffReason" placeholder="本场裁判变更理由（写入审计）"/><button :disabled="actionPending(tournamentActionKey(detail))" @click="saveStaff(detail)">保存本场裁判</button></section>
+      <h3>参赛人员与牌库快照</h3><div class="participants"><div v-for="person in detail.participants" :key="person.accountId"><b>#{{ person.seed || '—' }} · {{ person.username }}<em v-if="person.dropped"> · 已退赛</em><em v-else-if="person.eliminated"> · 已淘汰</em></b><span>{{ person.checkedIn ? '已准备' : '未准备' }}</span><template v-if="!props.adminMode&&person.accountId===accountId&&detail.status==='registration'&&deckDrafts[detail.id]"><select v-model="deckDrafts[detail.id].name"><option disabled value="">选择账号牌库</option><option v-for="deck in savedDecks" :key="deck.name" :value="deck.name">{{ deck.name }}</option></select><button :disabled="actionPending(tournamentActionKey(detail))||!deckDrafts[detail.id].name" @click="saveDeck(detail,person)">保存报名快照</button></template><template v-else-if="person.deck"><span>{{ person.deck.name }}</span><code>{{ person.deck.masterId }} · {{ person.deck.hash.slice(0,12) }}</code></template><em v-else>牌库未公开或尚未提交</em></div></div>
       <template v-if="standingSnapshots.length"><h3>瑞士排名快照</h3><details v-for="snapshotRound in standingSnapshots" :key="snapshotRound.id" class="standing-snapshot" :open="snapshotRound.number===standingSnapshots.at(-1)?.number"><summary>第 {{ snapshotRound.number }} 轮排名 · {{ snapshotRound.standingsCapturedAt ? new Date(snapshotRound.standingsCapturedAt).toLocaleString() : '已存档' }}<b v-if="detail.finalSwissStandings.length&&snapshotRound.number===standingSnapshots.at(-1)?.number"> · 最终瑞士排名</b></summary><div class="standings"><div class="standing-head"><b>名次</b><b>玩家</b><b>胜-负-和</b><b>对手分</b><b>对手的对手分</b><b>种子</b></div><div v-for="entry in snapshotRound.standings" :key="entry.accountId"><b>#{{ entry.rank }}</b><span>{{ entry.username }}</span><span>{{ entry.wins }}-{{ entry.losses }}-{{ entry.draws }}<small v-if="entry.byes"> · 轮空 {{ entry.byes }}</small></span><span>{{ entry.opponentScore }}</span><span>{{ entry.opponentsOpponentScore }}</span><span>{{ entry.seed }}</span></div></div></details></template>
       <template v-if="detail.eliminationBracket.length"><h3>淘汰树</h3><div class="bracket"><section v-for="round in detail.eliminationBracket" :key="round.number"><b>淘汰第 {{ round.number }} 轮</b><article v-for="match in round.matches" :key="match.id"><span>{{ match.playerAName }}</span><i>VS</i><span>{{ match.playerBName }}</span><em>{{ resultText(match.result) || '待定' }}</em></article></section></div></template>
       <template v-if="currentRound"><h3>第 {{ currentRound.number }} 轮 · {{ currentRound.stage==='elimination'?'淘汰赛':'瑞士轮' }} · {{ currentRound.status==='checkin'?'签到/准备':currentRound.status==='running'?'对局中':'已完成' }}</h3><div class="round-controls" v-if="canManageTournament(detail)&&detail.status!=='completed'"><input v-model="roundReason" placeholder="开轮、暂停或下一轮的操作理由（写入审计）"/><button v-if="currentRound.status==='checkin'" class="gold" :disabled="busy" @click="startRound(detail,currentRound)">开始本轮（已准备桌启动）</button><button v-if="currentRound.status==='running'" :disabled="busy" @click="pauseRound(detail,currentRound)">{{ currentRound.paused?'恢复计时':'暂停计时' }}</button><button v-if="currentRound.status==='completed'&&canCreateNextRound(detail,currentRound)" :disabled="busy" @click="nextRound(detail)">生成下一轮配对</button></div>

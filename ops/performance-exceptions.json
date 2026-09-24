@@ -29,15 +29,6 @@
       "expiresAt": "2026-10-15"
     },
     {
-      "id": "PERF-FANOUT-002",
-      "rule": "parallel-page-load",
-      "path": "src/l12/site/TournamentCenterPage.vue",
-      "allowedValue": 5,
-      "owner": "赛事中心",
-      "reason": "历史首屏读取锁定现状，后续按可见区域拆分",
-      "expiresAt": "2026-12-31"
-    },
-    {
       "id": "PERF-FANOUT-003",
       "rule": "parallel-page-load",
       "path": "src/l12/site/AdminAlternateArtsPanel.vue",

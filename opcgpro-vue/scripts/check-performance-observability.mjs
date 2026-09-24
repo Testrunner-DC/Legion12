@@ -63,5 +63,10 @@ assert(verifier.includes('insufficient samples') && verifier.includes('--expecte
 const testrunVerifier = read('ops/windows/verify-l12-testrun-performance.ps1')
 assert(testrunVerifier.includes('ExpectedCommit') && testrunVerifier.includes('--receipt')
   && testrunVerifier.includes('Refusing to overwrite')); checks += 1
+const releaseVerifier = read('ops/windows/verify-l12.ps1')
+assert(releaseVerifier.includes('@{ Source = "ops\\windows\\verify-l12-testrun-performance.ps1"; Target = "ops\\windows\\verify-l12-testrun-performance.ps1" }')); checks += 1
+assert(!releaseVerifier.includes('[IO.Path]::GetRelativePath')
+  && releaseVerifier.includes('$testrunFile.FullName.Substring($testrunRootPrefix.Length)'),
+  'release packaging must remain compatible with Windows PowerShell 5.1'); checks += 1
 
 console.log(`Performance observability architecture passed: ${checks}/${checks}`)
