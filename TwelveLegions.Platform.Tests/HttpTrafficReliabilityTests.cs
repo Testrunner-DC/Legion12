@@ -97,6 +97,105 @@ public sealed class HttpTrafficReliabilityTests
     }
 
     [Fact]
+    public void PerformanceWindowIsBoundedAndReportsBudgetFailuresOnlyWithEnoughSamples()
+    {
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 9, 24, 0, 0, 0, TimeSpan.Zero));
+        var monitor = new L12HttpPerformanceMonitor(clock);
+        for (var i = 0; i < L12HttpPerformanceMonitor.MinimumSamples - 2; i++)
+            monitor.Record(TimeSpan.FromMilliseconds(50), StatusCodes.Status200OK, 2);
+        monitor.Record(TimeSpan.FromMilliseconds(50), StatusCodes.Status200OK, 2, mutation: true);
+
+        var insufficient = monitor.Snapshot();
+        Assert.False(insufficient.SampleSufficient);
+        Assert.Null(insufficient.WithinBudget);
+        Assert.Empty(insufficient.BudgetFailures);
+
+        monitor.Record(TimeSpan.FromMilliseconds(50), StatusCodes.Status200OK, 3, mutation: true);
+        var healthy = monitor.Snapshot();
+        Assert.True(healthy.SampleSufficient);
+        Assert.True(healthy.WithinBudget);
+        Assert.Equal("<=100ms", healthy.P95LatencyBand);
+        Assert.Equal(3, healthy.PeakInFlight);
+        Assert.Equal(18, healthy.ReadSampleCount);
+        Assert.Equal(2, healthy.MutationSampleCount);
+
+        monitor.Record(TimeSpan.FromMilliseconds(1_001), StatusCodes.Status429TooManyRequests);
+        monitor.Record(TimeSpan.FromMilliseconds(1_001), StatusCodes.Status500InternalServerError);
+        var degraded = monitor.Snapshot();
+        Assert.False(degraded.WithinBudget);
+        Assert.Contains("slow_request_rate", degraded.BudgetFailures);
+        Assert.Contains("server_error_rate", degraded.BudgetFailures);
+        Assert.Equal(1, degraded.RateLimitedCount);
+        Assert.Equal(">1000ms", degraded.P95LatencyBand);
+
+        clock.Advance(TimeSpan.FromSeconds(L12HttpPerformanceMonitor.WindowSeconds + 1));
+        var expired = monitor.Snapshot();
+        Assert.Equal(0, expired.SampleCount);
+        Assert.False(expired.SampleSufficient);
+    }
+
+    [Fact]
+    public async Task ConcurrentSnapshotNeverObservesTornSampleComposition()
+    {
+        var monitor = new L12HttpPerformanceMonitor();
+        var writers = Enumerable.Range(0, 8).Select(worker => Task.Run(() =>
+        {
+            for (var index = 0; index < 2_000; index++)
+                monitor.Record(TimeSpan.FromMilliseconds(index % 1_100), StatusCodes.Status200OK,
+                    worker + 1, mutation: (index & 1) == 0);
+        })).ToArray();
+        while (writers.Any(task => !task.IsCompleted))
+        {
+            var snapshot = monitor.Snapshot();
+            Assert.Equal(snapshot.SampleCount, snapshot.ReadSampleCount + snapshot.MutationSampleCount);
+            Assert.InRange(snapshot.SlowRequestCount, 0, snapshot.SampleCount);
+            await Task.Yield();
+        }
+        await Task.WhenAll(writers);
+        var final = monitor.Snapshot();
+        Assert.Equal(16_000, final.SampleCount);
+        Assert.Equal(final.SampleCount, final.ReadSampleCount + final.MutationSampleCount);
+    }
+
+    [Fact]
+    public void DiagnosticRefreshCannotDiluteRepresentativeSamplesAndExpectedOutcomesStaySeparate()
+    {
+        var monitor = new L12HttpPerformanceMonitor();
+        for (var index = 0; index < 100; index++)
+            monitor.Record(TimeSpan.FromMilliseconds(1), StatusCodes.Status200OK, diagnostic: true);
+        monitor.Record(TimeSpan.FromMilliseconds(20), StatusCodes.Status503ServiceUnavailable,
+            expectedUnavailable: true);
+        monitor.Record(TimeSpan.FromMilliseconds(20), L12HttpExceptionBoundary.ClientClosedRequestStatusCode);
+
+        var snapshot = monitor.Snapshot();
+        Assert.Equal(2, snapshot.SampleCount);
+        Assert.Equal(100, snapshot.DiagnosticRequestCount);
+        Assert.Equal(1, snapshot.ExpectedUnavailableCount);
+        Assert.Equal(1, snapshot.ClientCancelledCount);
+        Assert.Equal(0, snapshot.ServerErrorCount);
+    }
+
+    [Fact]
+    public async Task PerformanceMiddlewareRecordsFinalStatusWithoutPerRequestStorage()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/test";
+        context.Response.Body = new MemoryStream();
+        var monitor = new L12HttpPerformanceMonitor();
+
+        await monitor.InvokeAsync(context, async () =>
+        {
+            context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+            await context.Response.WriteAsync("{}");
+        });
+
+        var snapshot = monitor.Snapshot();
+        Assert.Equal(1, snapshot.SampleCount);
+        Assert.Equal(1, snapshot.RateLimitedCount);
+        Assert.Equal(0, snapshot.InFlight);
+    }
+
+    [Fact]
     public async Task ExceptionBoundaryReturnsOpaqueCorrelatedJson()
     {
         var context = new DefaultHttpContext();
@@ -143,6 +242,27 @@ public sealed class HttpTrafficReliabilityTests
     }
 
     [Fact]
+    public async Task CancellationAfterResponseStartedIsStillClassifiedAs499()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var context = new DefaultHttpContext { RequestAborted = cancellation.Token };
+        context.Request.Path = "/api/test";
+        context.Response.Body = new MemoryStream();
+        var monitor = new L12HttpPerformanceMonitor();
+
+        await monitor.InvokeAsync(context, () => L12HttpExceptionBoundary.InvokeAsync(context, async () =>
+        {
+            await context.Response.StartAsync();
+            throw new OperationCanceledException(cancellation.Token);
+        }));
+
+        var snapshot = monitor.Snapshot();
+        Assert.Equal(1, snapshot.ClientCancelledCount);
+        Assert.Equal(0, snapshot.ServerErrorCount);
+    }
+
+    [Fact]
     public async Task LivePipelineReturnsRetryMetadataAndCorrelationId()
     {
         var root = Path.Combine(Path.GetTempPath(), "l12-http-traffic-" + Guid.NewGuid().ToString("N"));
@@ -167,6 +287,8 @@ public sealed class HttpTrafficReliabilityTests
 
             using var denied = await client.GetAsync("/api/operations/effective-policy");
             Assert.Equal(HttpStatusCode.TooManyRequests, denied.StatusCode);
+            Assert.StartsWith("app;dur=", Assert.Single(denied.Headers.GetValues("Server-Timing")),
+                StringComparison.Ordinal);
             Assert.NotNull(denied.Headers.RetryAfter);
             Assert.Equal("0", Assert.Single(denied.Headers.GetValues("RateLimit-Remaining")));
             Assert.True(denied.Headers.Contains(L12CorrelationIds.HeaderName));

@@ -78,6 +78,19 @@ export function evaluateArchitecture({ budgets, exceptionDocument, findings, tod
   if (defaults.maximumMutationRequestsPerAction !== 1) issues.push('one action must remain limited to one mutation request')
   if (!Number.isInteger(defaults.maximumParallelPageLoads) || defaults.maximumParallelPageLoads > 3)
     issues.push('default parallel page-load budget must be an integer no greater than 3')
+  const runtime = budgets?.runtimeAcceptance ?? {}
+  if (runtime.windowSeconds !== 60) issues.push('runtime acceptance window must remain 60 seconds')
+  if (!Number.isInteger(runtime.minimumSamples) || runtime.minimumSamples < 20)
+    issues.push('runtime acceptance must require at least 20 samples')
+  if (!Number.isInteger(runtime.slowRequestThresholdMilliseconds) || runtime.slowRequestThresholdMilliseconds > 1000)
+    issues.push('slow-request threshold must be an integer no greater than 1000ms')
+  const cappedPercent = (name, value, maximum) => {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > maximum)
+      issues.push(`${name} budget must be a percentage no greater than ${maximum}%`)
+  }
+  cappedPercent('slow-request', runtime.maximumSlowRequestPercent, 5)
+  cappedPercent('server-error', runtime.maximumServerErrorPercent, 1)
+  cappedPercent('rate-limited', runtime.maximumRateLimitedPercent, 20)
   for (const [route, budget] of Object.entries(budgets?.routes ?? {})) {
     if (!route.startsWith('/')) issues.push(`route budget must use an absolute route: ${route}`)
     if ((budget.maximumInitialApiRequests ?? defaults.maximumInitialApiRequests) > defaults.maximumInitialApiRequests)

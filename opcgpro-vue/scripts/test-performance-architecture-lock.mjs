@@ -13,6 +13,7 @@ assert(packageDocument.scripts.build.includes('npm run check:performance-archite
 assert(packageDocument.scripts['check:performance-architecture'].includes('check-platform-request-reliability.mjs'))
 assert(packageDocument.scripts['check:performance-architecture'].includes('check-action-gate.mjs'))
 assert(packageDocument.scripts['check:performance-architecture'].includes('check-http-traffic-guard.mjs'))
+assert(packageDocument.scripts['check:performance-architecture'].includes('check-performance-observability.mjs'))
 assert(changeGate.includes('npm.cmd" @("run", "check:performance-architecture")'))
 assert.equal((workflow.match(/npm run check:performance-architecture/g) ?? []).length, 1)
 
@@ -33,6 +34,10 @@ const budgets = {
   },
   approvedRawFetchModules: [],
   approvedIntervalModules: [],
+  runtimeAcceptance: {
+    windowSeconds: 60, minimumSamples: 20, slowRequestThresholdMilliseconds: 1000,
+    maximumSlowRequestPercent: 5, maximumServerErrorPercent: 1, maximumRateLimitedPercent: 20,
+  },
   routes: {},
 }
 

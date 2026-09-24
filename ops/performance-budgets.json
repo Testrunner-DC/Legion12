@@ -9,6 +9,17 @@
     "maximumMutationRequestsPerAction": 1,
     "maximumParallelPageLoads": 3
   },
+  "runtimeAcceptance": {
+    "windowSeconds": 60,
+    "minimumSamples": 20,
+    "minimumReadSamples": 10,
+    "minimumMutationSamples": 2,
+    "maximumSnapshotAgeSeconds": 75,
+    "slowRequestThresholdMilliseconds": 1000,
+    "maximumSlowRequestPercent": 5,
+    "maximumServerErrorPercent": 1,
+    "maximumRateLimitedPercent": 20
+  },
   "approvedRawFetchModules": [
     { "path": "src/data/CardLoader.ts", "maximumCalls": 3, "purpose": "版本化静态卡牌数据加载器" },
     { "path": "src/l12/cardAssets.ts", "maximumCalls": 1, "purpose": "内容寻址卡图清单加载器" },
