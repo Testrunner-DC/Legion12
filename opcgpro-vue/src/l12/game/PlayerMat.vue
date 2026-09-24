@@ -178,6 +178,15 @@ function isPlacementDestination(row: number, card: Card | null) {
   if (!props.placementMode || (props.placementRow !== null && props.placementRow !== undefined && props.placementRow !== row)) return false
   return !card || Boolean(props.placementCanReplaceCounter && row === 1 && isCounterTactic(card))
 }
+function isResponseTarget(card: Card | null) {
+  // Empty slots have no response identity. Never coerce a missing instanceId to
+  // an empty-string target: optional response metadata may itself contain an
+  // empty value while an attack/defense prompt is changing stages.
+  return Boolean(card && !card.hidden && card.instanceId && props.responseTargetIds?.includes(card.instanceId))
+}
+function isCombatCard(card: Card | null, instanceId?: string | null) {
+  return Boolean(card && instanceId && card.instanceId === instanceId)
+}
 function canMove(card: Card, row: number, slot: number) {
   if (!props.controllable || !props.actionsEnabled || card.tapped || card.hidden || spendableMorale.value < 1) return false
   return [[row - 1, slot], [row + 1, slot], [row, slot - 1], [row, slot + 1]]
@@ -370,11 +379,11 @@ function beginCardAbility(card: Card) {
             :class="{
               targetable: Boolean(player.field[row][slot]) && targetableIds?.includes(player.field[row][slot]!.instanceId) && (selectionMode || (!controllable && attackMode)),
               'prompt-selected': selectedTargetIds?.includes(player.field[row][slot]?.instanceId ?? ''),
-              available: promptSlotIds?.includes(`${row}:${slot}`) || isPlacementDestination(row, player.field[row][slot]) || (controllable && isMoveTarget(row, slot)),
+              available: promptSlotIds?.includes(`${row}:${slot}`) || (placementMode && isPlacementDestination(row, player.field[row][slot])) || (controllable && isMoveTarget(row, slot)),
               source: isSelected(player.field[row][slot]?.instanceId),
-              'combat-attacker': combatAttackerId === player.field[row][slot]?.instanceId,
-              'combat-target': combatTargetId === player.field[row][slot]?.instanceId,
-              'response-target': !player.field[row][slot]?.hidden && responseTargetIds?.includes(player.field[row][slot]?.instanceId ?? ''),
+              'combat-attacker': isCombatCard(player.field[row][slot], combatAttackerId),
+              'combat-target': isCombatCard(player.field[row][slot], combatTargetId),
+              'response-target': isResponseTarget(player.field[row][slot]),
               'payment-resource': paymentChoiceIds?.includes(player.field[row][slot]?.instanceId ?? ''),
               'payment-selected': paymentSelectedIds?.includes(player.field[row][slot]?.instanceId ?? ''),
               'resource-ready': controllable && Boolean(player.field[row][slot]?.spendableResourceType),

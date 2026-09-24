@@ -467,7 +467,15 @@ const contracts = [
   [playerMat.includes('data-ui-contract="actual-combat-target-only"')
     && playerMat.includes('.formation-slot.combat-attacker{box-shadow:none!important}')
     && playerMat.includes('.formation-slot.combat-target,.mini-master.combat-target')
-    && playerMat.includes('@keyframes l12-combat-target-cue'), '进攻结算中的发光动画只能落在真实被攻击对象；进攻来源、支援候选及其他可交互对象不得复用目标发光'],
+    && playerMat.includes('@keyframes l12-combat-target-cue')
+    && playerMat.includes("function isResponseTarget(card: Card | null)")
+    && playerMat.includes("Boolean(card && !card.hidden && card.instanceId && props.responseTargetIds?.includes(card.instanceId))")
+    && playerMat.includes("function isCombatCard(card: Card | null, instanceId?: string | null)")
+    && playerMat.includes("Boolean(card && instanceId && card.instanceId === instanceId)")
+    && playerMat.includes("'combat-target': isCombatCard(player.field[row][slot], combatTargetId)")
+    && playerMat.includes("available: promptSlotIds?.includes(`${row}:${slot}`) || (placementMode && isPlacementDestination")
+    && (boardComponent.match(/\(!combat && isMyMain && isControlledPlayer/g) ?? []).length === 2
+    && boardComponent.includes('if (props.game.pendingDefense) playArmed.value = false'), '进攻结算中的发光动画只能落在真实被攻击对象；进攻来源、空格、支援候选及其他可交互对象不得复用目标发光；战斗期间必须关闭普通布阵高亮'],
   [playerMat.includes('temporaryMoraleCount') && playerMat.includes('data-ui-contract="temporary-morale-selectable-site-logo"')
     && (playerMat.match(/data-ui-contract="temporary-morale-selectable-site-logo"/g) ?? []).length === 1
     && playerMat.includes('props.player.spendableResourceCount ??')
@@ -552,7 +560,7 @@ const contracts = [
     && board.includes('mobileRuneChoices') && board.includes("state: 'rune'"), '阵营效果、同行士气标题/计数和士气堆在桌面共用156px边界并保留文字内距；手机横屏整个士气区可打开图标化大面板查看，彼界符文置于首排；不可用资源仍可点出弹框级原因，支付类提示复用原确认、取消与支付交互'],
   [playerMat.includes("if (props.promptSlotIds?.includes(`${row}:${slot}`))")
     && playerMat.indexOf("if (props.promptSlotIds?.includes(`${row}:${slot}`))") < playerMat.indexOf("if (card && props.paymentChoiceIds?.includes(card.instanceId))")
-    && playerMat.includes("available: promptSlotIds?.includes(`${row}:${slot}`) || isPlacementDestination")
+    && playerMat.includes("available: promptSlotIds?.includes(`${row}:${slot}`) || (placementMode && isPlacementDestination")
     && board.includes('function resolveBoardSlotPrompt(playerIndex: number, row: number, slot: number)')
     && board.includes("if (prompt.validChoices.includes(choice)) command('resolvePrompt', { promptId: prompt.promptId, choice })")
     && board.includes('if (resolveBoardSlotPrompt(me.value.playerIndex, row, slot)) return')

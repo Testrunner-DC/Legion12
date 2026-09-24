@@ -338,6 +338,7 @@ const activeBoardPromptId = computed(() => activeBoardPromptIds.value[0] ?? null
 watch(activeBoardPromptId, () => { boardControlMinimized.value = false })
 watch(() => [props.game.phase, props.game.pendingDefense?.stage, props.game.turnSerial], () => {
   combatDecisionMinimized.value = false
+  if (props.game.pendingDefense) playArmed.value = false
 })
 const modalInspectorVisible = computed(() => Boolean(!mobileLandscapeViewport.value && focusCard.value && (
   graveyardPlayer.value !== null || !promptMinimized.value && (
@@ -1149,7 +1150,7 @@ function statusTexts(card: Card) {
               :mobile-layout="mobileLandscapeViewport"
               :active="game.activePlayer === viewEnemy.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
               :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!hasBlockingPrompt && !readOnly && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
-              :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewEnemy.playerIndex) || (isControlledPlayer(viewEnemy.playerIndex) && mode === 'play' && playArmed && (isInfiltrator(selectedHandCard) || selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))))"
+              :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewEnemy.playerIndex) || (!combat && isMyMain && isControlledPlayer(viewEnemy.playerIndex) && mode === 'play' && playArmed && (isInfiltrator(selectedHandCard) || selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))))"
               :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="isCounter(selectedHandCard) ? 1 : null"
               :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard" :interaction-prompt-active="Boolean(hasBlockingPrompt)"
               :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)"
@@ -1230,7 +1231,7 @@ function statusTexts(card: Card) {
               :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard" :interaction-prompt-active="Boolean(hasBlockingPrompt)"
               :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!hasBlockingPrompt && !readOnly && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
               :move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'move'" :free-move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'freeMove'" :cavalry-move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'cavalryMove'"
-              :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewMe.playerIndex) || (isControlledPlayer(viewMe.playerIndex) && mode === 'play' && playArmed && (selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))))"
+              :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewMe.playerIndex) || (!combat && isMyMain && isControlledPlayer(viewMe.playerIndex) && mode === 'play' && playArmed && (selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))))"
               :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="isCounter(selectedHandCard) ? 1 : null"
               :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)"
               :selection-mode="selectionModeFor(viewMe.playerIndex)" :targetable-ids="targetableIdsFor(viewMe.playerIndex)"
