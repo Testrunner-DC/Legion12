@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useMobileBattleDock } from './mobileBattleDock'
+const mobileDock = useMobileBattleDock()
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { Card, DisasterCardView, GameState, Prompt } from '../types'
 import { isHorizontalCardType } from '../cardPresentation'
@@ -588,7 +590,7 @@ function kindLabel() {
 </script>
 
 <template>
-  <Teleport :to="landscapeTeleportTarget()">
+  <Teleport :to="mobileLayout && minimized && mobileDock?.context ? mobileDock.context : landscapeTeleportTarget()">
     <div v-if="visible" class="l12-prompt-overlay" @scroll.capture="onCardStripScroll" @wheel="onCardStripWheel"
       @pointerdown="onCardStripPointerDown" @pointermove="onCardStripPointerMove" @pointerup="endCardStripPointer" @pointercancel="endCardStripPointer"
       :class="{ preparation: isPreparation, initiative: isInitiative, 'disaster-choice': isDisasterChoice, 'information-confirm': isInfoConfirm, waiting: waitingPrompt || (isMulliganPhase && !isMulligan), minimized, 'inspector-active': inspectorVisible, 'mobile-safe-overlay': mobileLayout }">

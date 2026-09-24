@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useMobileBattleDock } from './mobileBattleDock'
+const mobileDock = useMobileBattleDock()
 import { computed, ref, watch } from 'vue'
 import type { PlayerView } from '../types'
 import CardImage from '../CardImage.vue'
@@ -26,7 +28,7 @@ const abilities = computed<AbilityEntry[]>(() => {
 </script>
 
 <template>
-  <Teleport :to="landscapeTeleportTarget()">
+  <Teleport :to="mobileLayout && minimized && mobileDock?.context ? mobileDock.context : landscapeTeleportTarget()">
     <div class="master-overlay" :class="{ minimized, 'mobile-safe-overlay': mobileLayout }" @click.self="emit('close')">
       <section v-if="minimized" class="master-minimized">
         <button :aria-label="`展开：${player.master.masterName} · 主宰效果`" :title="`${player.master.masterName} · 主宰效果`" @click="minimized = false">展开</button>

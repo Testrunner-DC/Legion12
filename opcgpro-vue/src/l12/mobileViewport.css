@@ -31,7 +31,7 @@ html[data-l12-rotated=true] :is(.l12-landscape-surface,#l12-landscape-teleports)
 /* Teleported battle UI uses the same safe logical canvas as the table.  Once
    the host is a containing block, child coordinates are local: never apply
    visualViewport/safe-area offsets a second time. */
-html[data-l12-viewport] #l12-landscape-teleports > .mobile-safe-overlay:not(.minimized) {
+html[data-l12-viewport] #l12-landscape-teleports > .mobile-safe-overlay:not(.minimized):not(.mobile-card-inspector) {
   inset: 0 !important;
   width: 100% !important;
   height: 100% !important;
