@@ -44,6 +44,9 @@ export interface PlatformPresence {
   canInvite: boolean; canSpectate: boolean; actionReason?: string
   friendStatus: 'self' | 'none' | 'pending' | 'accepted'; friendDirection: 'none' | 'incoming' | 'outgoing'
 }
+export interface FriendOverview {
+  friends: PlatformFriend[]; requests: PlatformFriend[]; blocked: PlatformFriend[]
+}
 export interface PublishedDeck {
   id: string; ownerId: string; author: string; deck: SavedL12Deck; views: number; likes: number; copies: number; liked: boolean
   createdAt: string; updatedAt: string; seasonCompliant?: boolean; seasonComplianceReason?: string; official?: boolean
@@ -1209,6 +1212,7 @@ export const tournamentApi = {
 
 export const friendApi = {
   presence: () => platformRequest<PlatformPresence[]>('/api/presence'),
+  overview: () => platformRequest<FriendOverview>('/api/friends/overview'),
   players: (search = '') => platformRequest<PlatformFriend[]>(`/api/players${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   friends: () => platformRequest<PlatformFriend[]>('/api/friends'),
   requests: () => platformRequest<PlatformFriend[]>('/api/friends/requests'),

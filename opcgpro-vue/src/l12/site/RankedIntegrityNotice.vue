@@ -7,16 +7,21 @@ import { landscapeTeleportTarget } from '../mobileViewport'
 const items = ref<IntegrityNotification[]>([])
 const current = computed(() => items.value[0])
 const busy = ref(false); const error = ref(''); const appealing = ref(false)
-let generation = 0; let reading = false; let timer = 0
+let generation = 0; let reading = false; let dirty = false
 async function refresh() {
   const account = platformState.account?.id
-  if (!account || platformState.account?.mustChangePassword || platformState.account?.mustChangeUsername || reading || busy.value || document.hidden) return
+  if (!account || platformState.account?.mustChangePassword || platformState.account?.mustChangeUsername || busy.value || document.hidden) return
+  if (reading) { dirty = true; return }
   const version = generation; reading = true
+  dirty = false
   try {
     const page = await integrityApi.notifications(undefined, true)
     if (version === generation && account === platformState.account?.id) items.value = page.items
   } catch { /* Preserve unacknowledged notice on transient failures. */ }
-  finally { reading = false }
+  finally {
+    reading = false
+    if (dirty && version === generation && account === platformState.account?.id && !document.hidden) void refresh()
+  }
 }
 async function acknowledge() {
   const item = current.value; const account = platformState.account?.id; const version = generation
@@ -33,8 +38,8 @@ async function acknowledge() {
 watch(() => platformState.account?.id, () => { generation++; items.value = []; error.value = ''; appealing.value = false; void refresh() })
 watch(() => current.value?.id, () => { appealing.value = false })
 function changed() { void refresh() }
-onMounted(() => { void refresh(); timer = window.setInterval(changed, 20000); window.addEventListener('focus', changed); document.addEventListener('visibilitychange', changed); window.addEventListener('l12-integrity-changed', changed) })
-onBeforeUnmount(() => { generation++; window.clearInterval(timer); window.removeEventListener('focus', changed); document.removeEventListener('visibilitychange', changed); window.removeEventListener('l12-integrity-changed', changed) })
+onMounted(() => { void refresh(); window.addEventListener('l12-resource-rankedIntegrity', changed); window.addEventListener('l12-integrity-changed', changed) })
+onBeforeUnmount(() => { generation++; window.removeEventListener('l12-resource-rankedIntegrity', changed); window.removeEventListener('l12-integrity-changed', changed) })
 </script>
 <template>
   <Teleport :to="landscapeTeleportTarget()"><section v-if="current" class="integrity-notice" role="dialog" aria-modal="false" aria-labelledby="integrity-notice-title" data-ui-contract="ranked-integrity-result-notice">

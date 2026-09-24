@@ -680,32 +680,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (account is null) return Results.Unauthorized();
             await _recorder.RecordSiteActivityAsync(account.Id, null, _rooms.RuntimeStats().OnlineAccountCount,
                 request.HttpContext.RequestAborted);
-            var presence = _rooms.DescribeOnlinePresence(account.Id);
-            var friends = _platform.Friends(account.Id)
-                .ToDictionary(player => player.AccountId, player => player, StringComparer.OrdinalIgnoreCase);
-            var pending = _platform.FriendRequests(account.Id)
-                .ToDictionary(player => player.AccountId, player => player, StringComparer.OrdinalIgnoreCase);
-            return Results.Ok(_platform.Accounts()
-                .Where(player => presence.ContainsKey(player.Id))
-                .OrderBy(player => player.Username)
-                .Select(player =>
-                {
-                    var state = presence[player.Id];
-                    var relationship = friends.GetValueOrDefault(player.Id) ?? pending.GetValueOrDefault(player.Id);
-                    return new
-                    {
-                        accountId = player.Id,
-                        player.Username,
-                        online = true,
-                        state.Activity,
-                        state.RoomCode,
-                        state.CanInvite,
-                        state.CanSpectate,
-                        state.ActionReason,
-                        friendStatus = player.Id == account.Id ? "self" : relationship?.Status ?? "none",
-                        friendDirection = relationship?.Direction ?? "none",
-                    };
-                }));
+            return Results.Ok(PresenceFor(account.Id));
         });
         _app.MapPost("/api/telemetry/page-view", async (HttpRequest request, TelemetryPageViewRequest body) =>
         {
@@ -726,11 +701,24 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var account = _platform.Authenticate(request.Headers.Authorization);
             return account is null ? Results.Unauthorized() : Results.Ok(_platform.FriendRequests(account.Id));
         });
+        _app.MapGet("/api/friends/overview", (HttpRequest request) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            return account is null ? Results.Unauthorized() : Results.Ok(new
+            {
+                friends = _platform.Friends(account.Id)
+                    .Select(player => new { player.AccountId, player.Username, player.Status, player.Direction,
+                        player.CreatedAt, online = _rooms.IsAccountOnline(player.AccountId) }),
+                requests = _platform.FriendRequests(account.Id),
+                blocked = _platform.BlockedAccounts(account.Id),
+            });
+        });
         _app.MapPost("/api/friends/requests", (HttpRequest request, FriendRequest body) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
             var result = _platform.SendFriendRequest(account.Id, body.AccountId ?? string.Empty);
+            if (result.Success) NotifyFriendsChanged(account.Id, body.AccountId ?? string.Empty);
             return result.Success ? Results.Ok(new { result.Message }) : Results.BadRequest(new { result.Message });
         });
         _app.MapPost("/api/friends/requests/{requesterId}/resolve", (HttpRequest request, string requesterId, FriendResolveRequest body) =>
@@ -738,13 +726,16 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
             var result = _platform.ResolveFriendRequest(account.Id, requesterId, body.Accept);
+            if (result.Success) NotifyFriendsChanged(account.Id, requesterId);
             return result.Success ? Results.Ok(new { result.Message }) : Results.BadRequest(new { result.Message });
         });
         _app.MapDelete("/api/friends/{friendId}", (HttpRequest request, string friendId) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
-            return _platform.RemoveFriend(account.Id, friendId) ? Results.Ok() : Results.NotFound();
+            var removed = _platform.RemoveFriend(account.Id, friendId);
+            if (removed) NotifyFriendsChanged(account.Id, friendId);
+            return removed ? Results.Ok() : Results.NotFound();
         });
         _app.MapGet("/api/friends/blocked", (HttpRequest request) =>
         {
@@ -756,13 +747,16 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
             var result = _platform.BlockAccount(account.Id, body.AccountId ?? string.Empty);
+            if (result.Success) NotifyFriendsChanged(account.Id, body.AccountId ?? string.Empty);
             return result.Success ? Results.Ok(new { result.Message }) : Results.BadRequest(new { result.Message });
         });
         _app.MapDelete("/api/friends/blocked/{accountId}", (HttpRequest request, string accountId) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
-            return _platform.UnblockAccount(account.Id, accountId) ? Results.Ok() : Results.NotFound();
+            var removed = _platform.UnblockAccount(account.Id, accountId);
+            if (removed) NotifyFriendsChanged(account.Id, accountId);
+            return removed ? Results.Ok() : Results.NotFound();
         });
         _app.MapGet("/api/decks", (HttpRequest request) =>
         {
@@ -1413,6 +1407,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var outcome = _adminCommands.Execute(command, permission,
                 current => ExecuteOperationsConfig(() => _platform.ApplyOperationsConfig(current.Actor,
                     current.Payload, expected, current.Reason, current.AuditContext)));
+            if (outcome.Success) NotifyOperationsPolicyChanged();
             var response = AdminCommandResponse(request, command, outcome);
             request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
             return response;
@@ -1430,6 +1425,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var outcome = _adminCommands.Execute(command, permission,
                 current => ExecuteOperationsConfig(() => _platform.RollbackOperationsConfig(current.Actor,
                     current.Payload.VersionId, expected, current.Reason, current.AuditContext)));
+            if (outcome.Success) NotifyOperationsPolicyChanged();
             var response = AdminCommandResponse(request, command, outcome);
             request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
             return response;
@@ -1452,6 +1448,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 current => ExecuteOperationsConfig(() => _platform.StartServer(current.Actor,
                     current.Payload.ExpectedVersion,
                     current.Reason, current.AuditContext)));
+            if (outcome.Success) NotifyOperationsPolicyChanged();
             var response = AdminCommandResponse(request, command, outcome);
             request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
             return response;
@@ -1472,6 +1469,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 current => ExecuteOperationsConfig(() => _platform.BeginImmediateMaintenance(current.Actor,
                     current.Payload.ExpectedDurationHours, current.Payload.ExpectedVersion,
                     current.Reason, current.AuditContext)));
+            if (outcome.Success) NotifyOperationsPolicyChanged();
             var response = AdminCommandResponse(request, command, outcome);
             request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
             return response;
@@ -1489,6 +1487,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var outcome = _adminCommands.Execute(command, permission,
                 current => ExecuteOperationsConfig(() => _platform.EndImmediateMaintenance(current.Actor,
                     current.Payload.ExpectedVersion, current.Reason, current.AuditContext)));
+            if (outcome.Success) NotifyOperationsPolicyChanged();
             var response = AdminCommandResponse(request, command, outcome);
             request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
             return response;
@@ -2171,7 +2170,12 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             const L12Permission permission = L12Permission.AdminContentDraft;
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
-            try { return Results.Ok(_platform.GrantAlternateArt(authenticated.Account, draft, RequestAuditContext(request, permission))); }
+            try
+            {
+                var grant = _platform.GrantAlternateArt(authenticated.Account, draft, RequestAuditContext(request, permission));
+                NotifyAlternateArtNotificationsChanged([grant.AccountId]);
+                return Results.Ok(grant);
+            }
             catch (KeyNotFoundException error) { return ApiError(request, "alternate_art_target_missing", error.Message, StatusCodes.Status404NotFound); }
             catch (ArgumentException error) { return ApiError(request, "alternate_art_grant_invalid", error.Message, StatusCodes.Status400BadRequest); }
         });
@@ -2199,7 +2203,12 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             const L12Permission permission = L12Permission.AdminContentDraft;
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
-            try { return Results.Ok(_platform.DispatchAlternateArtEvent(authenticated.Account, draft, RequestAuditContext(request, permission))); }
+            try
+            {
+                var grants = _platform.DispatchAlternateArtEvent(authenticated.Account, draft, RequestAuditContext(request, permission));
+                NotifyAlternateArtNotificationsChanged(grants.Select(grant => grant.AccountId));
+                return Results.Ok(grants);
+            }
             catch (KeyNotFoundException error) { return ApiError(request, "alternate_art_event_target_missing", error.Message, StatusCodes.Status404NotFound); }
             catch (ArgumentException error) { return ApiError(request, "alternate_art_event_invalid", error.Message, StatusCodes.Status400BadRequest); }
         });
@@ -2213,7 +2222,12 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             const L12Permission permission = L12Permission.AdminContentDraft;
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
-            try { return Results.Ok(_platform.DispatchRankedParticipantAlternateArt(authenticated.Account, draft, RequestAuditContext(request, permission))); }
+            try
+            {
+                var grants = _platform.DispatchRankedParticipantAlternateArt(authenticated.Account, draft, RequestAuditContext(request, permission));
+                NotifyAlternateArtNotificationsChanged(grants.Select(grant => grant.AccountId));
+                return Results.Ok(grants);
+            }
             catch (KeyNotFoundException error) { return ApiError(request, "alternate_art_missing", error.Message, StatusCodes.Status404NotFound); }
         });
         _app.MapPut("/api/admin/effects/{cardId}/presentations/{sceneId}",
@@ -2343,11 +2357,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _sandboxReplayMaintenanceCancellation = new CancellationTokenSource();
         _sandboxReplayMaintenanceTask = RunSandboxReplayMaintenanceAsync(
             _sandboxReplayMaintenanceCancellation.Token);
+        ScheduleNextOperationsTransition();
         Console.WriteLine($"HTTP: http://{host}:{port}  WebSocket: /ws");
     }
 
     public async Task StopAsync()
     {
+        await StopOperationsTransitionAsync();
         await StopSandboxReplayMaintenanceAsync();
         await StopRankedClockWatchdogAsync();
         foreach (var outbound in _outboundConnections.Values)
@@ -2399,11 +2415,16 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         finally
         {
             _sockets.TryRemove(sessionId, out _);
+            string? disconnectedAccountId = null;
             if (_socketPlatformSessions.TryRemove(sessionId, out var binding)
                 && _activeAccountSockets.TryGetValue(binding.AccountId, out var active)
                 && active == sessionId)
+            {
+                disconnectedAccountId = binding.AccountId;
                 _activeAccountSockets.TryRemove(binding.AccountId, out _);
+            }
             await SendManyAsync(_rooms.Disconnect(sessionId), CancellationToken.None);
+            if (disconnectedAccountId is not null) NotifyPresenceChanged();
             _socketRankedNetworkFingerprints.TryRemove(sessionId, out _);
             _socketRankedDevices.TryRemove(sessionId, out _);
             _socketCapabilities.TryRemove(sessionId, out _);
@@ -2516,6 +2537,10 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     _ => [new OutgoingMessage(sessionId, new { type = "error", message = "未知消息类型" })],
                 };
                 await SendManyAsync(outgoing, cancellationToken);
+                if (messageType is "hello" or "createRoom" or "createSandbox" or "joinMatchmaking"
+                    or "cancelMatchmaking" or "joinRoom" or "enterTournamentMatch" or "spectateRoom"
+                    or "spectateTournamentMatch" or "leaveRoom" or "ready" or "resolveFriendInvitation")
+                    NotifyPresenceChanged();
             }
             catch (Exception error) when (error is not OperationCanceledException)
             {
@@ -2606,7 +2631,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
 
         var session = new OutgoingMessage(sessionId, new
         {
-            type = "session", sessionId, name = claim.Name, claim.Recovered, claim.RoomCode,
+            type = "session", sessionId, accountId = authenticated.Account.Id, name = claim.Name,
+            claim.Recovered, claim.RoomCode,
             claim.ConnectionGeneration, claim.ClaimDecision, claim.PreviousConnectionGeneration,
             claim.RecoveryRevision,
             protocolVersion = 2,
@@ -2616,7 +2642,14 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 deltaGameState = capabilities.DeltaGameState,
             },
         });
-        return new[] { session, EffectiveOperationsPolicyMessage(sessionId) }.Concat(recovery).ToArray();
+        var presenceRevision = Interlocked.Read(ref _presenceResourceRevision);
+        return new[]
+        {
+            session,
+            EffectiveOperationsPolicyMessage(sessionId),
+            new OutgoingMessage(sessionId, ResourceVersionsPayload(authenticated.Account.Id)),
+            PresenceSnapshotMessage(sessionId, authenticated.Account.Id, presenceRevision),
+        }.Concat(recovery).ToArray();
     }
 
     private async Task SupersedeSocketAsync(Guid sessionId, string accountId,
@@ -2660,6 +2693,9 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         => new(sessionId, new
         {
             type = "effectiveOperationsPolicy",
+            resource = OperationsPolicyResource,
+            epoch = _resourceEpoch,
+            revision = Interlocked.Read(ref _operationsResourceRevision),
             policy = _platform.EffectiveOperationsPolicy(),
         });
 

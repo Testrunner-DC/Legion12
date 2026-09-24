@@ -535,17 +535,28 @@ async function submitAuth() {
   } finally { authBusy.value = false }
 }
 
-const onlinePlayers = ref<PlatformPresence[]>([])
+const onlinePlayers = computed(() => l12State.presence as PlatformPresence[])
 const onlineCount = computed(() => onlinePlayers.value.length)
 const incomingRequestCount = computed(() => onlinePlayers.value.filter(player => player.friendStatus === 'pending' && player.friendDirection === 'incoming').length)
 const onlineActionBusy = ref('')
 const onlineNotice = ref('')
 const alternateArtNotifications = ref<AlternateArtGrantNotification[]>([])
 const currentAlternateArtNotification = computed(() => alternateArtNotifications.value[0] ?? null)
+let alternateArtReading = false
+let alternateArtDirty = false
 async function refreshAlternateArtNotifications() {
   if (!platformState.account || !platformState.token) { alternateArtNotifications.value = []; return }
+  if (alternateArtReading) { alternateArtDirty = true; return }
+  const accountId = platformState.account.id
+  alternateArtReading = true
+  alternateArtDirty = false
   try { alternateArtNotifications.value = await alternateArtApi.notifications() }
-  catch { alternateArtNotifications.value = [] }
+  catch { /* Preserve the last confirmed notifications on a transient failure. */ }
+  finally {
+    alternateArtReading = false
+    if (alternateArtDirty && accountId === platformState.account?.id && !document.hidden)
+      void refreshAlternateArtNotifications()
+  }
 }
 async function closeAlternateArtNotification() {
   const current = currentAlternateArtNotification.value
@@ -599,13 +610,12 @@ watch(() => route.fullPath, () => {
   void telemetryApi.pageView(route.path).catch(() => { /* 统计失败不阻断玩家访问。 */ })
 }, { immediate: true })
 function enterFriendRoom() { void router.push('/battle') }
-let presenceTimer = 0
 async function refreshPresence() {
   if (!platformState.account || !platformState.token) {
-    onlinePlayers.value = []
+    l12State.presence = []
     return
   }
-  try { onlinePlayers.value = await friendApi.presence() } catch { onlinePlayers.value = [] }
+  try { l12State.presence = await friendApi.presence() } catch { /* Keep the last confirmed presence snapshot. */ }
 }
 const activityLabel = (player: PlatformPresence) => ({ idle: '在线 · 空闲', inRoom: '在线 · 房间中', playing: '在线 · 对局中', spectating: '在线 · 观战中' }[player.activity])
 async function addOnlineFriend(player: PlatformPresence) {
@@ -614,7 +624,6 @@ async function addOnlineFriend(player: PlatformPresence) {
   try {
     const result = await friendApi.request(player.accountId)
     onlineNotice.value = result.message
-    await refreshPresence()
   } catch (error) { onlineNotice.value = error instanceof Error ? error.message : '好友申请发送失败' }
   finally { onlineActionBusy.value = '' }
 }
@@ -624,7 +633,6 @@ async function resolveOnlineFriend(player: PlatformPresence, accept: boolean) {
   try {
     const result = await friendApi.resolve(player.accountId, accept)
     onlineNotice.value = result.message
-    await refreshPresence()
   } catch (error) { onlineNotice.value = error instanceof Error ? error.message : '好友申请处理失败' }
   finally { onlineActionBusy.value = '' }
 }
@@ -652,19 +660,27 @@ function cancelOutgoingInvitation() {
   const invitationId = l12State.outgoingFriendInvitation?.invitationId
   if (invitationId) cancelFriendInvitation(invitationId)
 }
-watch(() => platformState.account?.id, () => { void refreshPresence(); void refreshAlternateArtNotifications() })
+function onPresenceResource(event: Event) {
+  if ((event as CustomEvent).detail?.fallback === true && l12State.status !== 'online') void refreshPresence()
+}
+function onAlternateArtResource() { void refreshAlternateArtNotifications() }
+watch(() => platformState.account?.id, () => {
+  alternateArtNotifications.value = []
+  void refreshAlternateArtNotifications()
+})
 onMounted(() => {
   window.addEventListener('keydown', onMobileNavKeydown)
   window.addEventListener('l12-friend-room-created', enterFriendRoom)
-  void refreshPresence()
   void refreshAlternateArtNotifications()
-  presenceTimer = window.setInterval(() => { void refreshPresence(); void refreshAlternateArtNotifications() }, 15_000)
+  window.addEventListener('l12-resource-presence', onPresenceResource)
+  window.addEventListener('l12-resource-alternateArtNotifications', onAlternateArtResource)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onMobileNavKeydown)
   document.body.style.overflow = bodyOverflowBeforeDrawer
   window.removeEventListener('l12-friend-room-created', enterFriendRoom)
-  window.clearInterval(presenceTimer)
+  window.removeEventListener('l12-resource-presence', onPresenceResource)
+  window.removeEventListener('l12-resource-alternateArtNotifications', onAlternateArtResource)
 })
 </script>
 

@@ -34,6 +34,7 @@ public sealed partial class L12WebSocketServer
                     body.ExpectedRevision, RequestAuditContext(request,
                         L12Permission.AdminMatchGovernanceWrite));
                 _recorder.InvalidateAnalyticsCache();
+                NotifyIntegrityChanged(decision.AccountEffects.Select(effect => effect.AccountId));
                 return decision;
             });
         });
@@ -74,8 +75,13 @@ public sealed partial class L12WebSocketServer
         app.MapPost("/api/admin/ranked/integrity/appeals/{id}/review", (HttpRequest request, string id, L12RankedIntegrityAppealReviewInput body) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminMatchGovernanceWrite, out var auth, out var failure)) return failure;
-            return IntegrityRequest(request, () => _platform.ReviewRankedIntegrityAppeal(auth.Account, id, body,
-                RequestAuditContext(request, L12Permission.AdminMatchGovernanceWrite)));
+            return IntegrityRequest(request, () =>
+            {
+                var appeal = _platform.ReviewRankedIntegrityAppeal(auth.Account, id, body,
+                    RequestAuditContext(request, L12Permission.AdminMatchGovernanceWrite));
+                NotifyIntegrityChanged([appeal.AccountId]);
+                return appeal;
+            });
         });
     }
 }

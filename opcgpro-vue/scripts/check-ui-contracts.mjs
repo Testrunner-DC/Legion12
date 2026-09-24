@@ -89,6 +89,8 @@ const adminCardAnalytics = read('../src/l12/site/AdminCardAnalyticsPanel.vue')
 const matchGovernance = read('../src/l12/matchGovernance.ts')
 const adminMatchGovernance = read('../src/l12/site/AdminMatchGovernancePanel.vue')
 const friendsPage = read('../src/l12/site/FriendsPage.vue')
+const friendResource = read('../src/l12/friendResource.ts')
+const maintenanceTicker = read('../src/l12/site/MaintenanceTicker.vue')
 const officialHome = read('../src/l12/site/OfficialHomePage.vue')
 const newsPage = read('../src/l12/site/NewsPage.vue')
 const homeContent = read('../src/l12/site/homeContent.ts')
@@ -597,13 +599,18 @@ const contracts = [
   [lobby.includes('maintenance.entryBlocked') && lobby.includes('维护即将开始/维护中，对局功能已关闭。')
     && lobby.includes('maintenanceCountdown(operationsPolicy.value.maintenance, policyNow.value)')
     && lobby.includes('watch(() => l12State.operationsPolicy') && lobby.includes('getEffectiveOperationsPolicy()')
-    && lobby.includes('window.setInterval(() => void refreshOperationsPolicy(), 15_000)')
-    && lobby.includes('window.clearInterval(maintenanceClockTimer)') && lobby.includes('window.clearInterval(operationsRefreshTimer)')
+    && lobby.includes("window.addEventListener('l12-resource-operationsPolicy', onOperationsResource)")
+    && lobby.includes("detail?.fallback === true && l12State.status !== 'online'")
+    && lobby.includes('window.setInterval(() => { policyNow.value = Date.now() }, 1_000)')
+    && lobby.includes('window.clearInterval(maintenanceClockTimer)')
+    && !lobby.includes('operationsRefreshTimer')
+    && maintenanceTicker.includes('l12State.operationsPolicy?.maintenance')
     && lobby.includes('v-if="maintenanceView"') && platform.includes('maintenance: { enabled: boolean; active: boolean')
     && platform.includes("platformRequest<EffectiveOperationsPolicy>('/api/operations/effective-policy', { cache: 'no-store' })")
+    && l12Net.includes("dispatchResourceChange('operationsPolicy'") && l12Net.includes('resourceFallbackTimer')
     && l12OperationsStore.includes('public sealed record L12EffectiveMaintenanceView(\n    bool Enabled,')
     && adminOperations.includes('提前广播（小时）') && adminOperations.includes('预计维护时长（小时）'),
-    '维护计划必须公开启用态，消费HTTP与WebSocket快照并持续刷新倒计时，失败保留快照且权威入口门禁不变'],
+    '维护计划必须公开启用态，消费首次HTTP与WebSocket变化推送并仅在断线时低频兜底；本地倒计时、最后快照和权威入口门禁保持不变'],
   [app.includes('/audio/legion12-site.mp3') && app.includes('/audio/legion12-battle-1.mp3')
     && app.includes('/audio/legion12-battle-2.mp3') && settingsModal.includes('v-model.number="audioPreferences.musicVolume"')
     && settingsModal.includes('v-model.number="audioPreferences.sfxVolume"') && settingsModal.includes('v-model="audioPreferences.cardSize"')
@@ -1248,7 +1255,11 @@ const contracts = [
   [profilePage.includes('<p v-if="notice" class="notice" role="status" aria-live="polite" aria-atomic="true">')
     && profilePage.indexOf('<p v-if="notice" class="notice"') < profilePage.indexOf('<section v-if="ranked"')
     && profilePage.includes('.notice{position:fixed;') && profilePage.includes('z-index:90;'), '个人中心的称号、改密、邮箱与会话操作必须共用当前视口可见的状态播报，不得再把唯一反馈放到整页内容末尾'],
-  [friendsPage.includes("tab === 'blocked'") && friendsPage.includes('friendApi.blocked()') && friendsPage.includes('selectedPresence?.canInvite') && friendsPage.includes('selectedPresence?.canSpectate'), '好友中心须支持申请、屏蔽，并按在线状态在邀请对战与观战之间切换'],
+  [friendsPage.includes("tab === 'blocked'") && friendsPage.includes('refreshFriendResource()')
+    && friendsPage.includes('l12State.presence') && friendsPage.includes('selectedPresence?.canInvite')
+    && friendsPage.includes('selectedPresence?.canSpectate')
+    && friendResource.includes('if (pending) return pending') && friendResource.includes('friendApi.overview()')
+    && friendResource.includes('expected !== generation'), '好友中心须支持申请、屏蔽，聚合并去重好友读取，拒绝跨账号迟到响应，并按推送在线状态切换邀请与观战'],
   [platform.includes('permissions?: string[]') && adminPage.includes("hasPermission('admin.bugs.read')") && adminPage.includes("hasPermission('admin.accounts.read')") && adminPage.includes("hasPermission('admin.operations.read')"), '后台前端入口必须消费服务端权限矩阵，不得只依赖散落角色字符串'],
   [platform.includes('let authRefreshPromise: Promise<PlatformAccount | null> | null = null')
     && platform.includes('if (authRefreshPromise) return authRefreshPromise')

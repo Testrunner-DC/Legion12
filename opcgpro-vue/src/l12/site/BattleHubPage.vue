@@ -112,7 +112,6 @@ const optionLabels = {
 } as const
 
 let maintenanceClockTimer = 0
-let operationsRefreshTimer = 0
 let refreshingOperationsPolicy = false
 let roomDefaultsHydrated = false
 
@@ -162,7 +161,7 @@ watch(() => l12State.room?.options, options => {
 
 onMounted(async () => {
   maintenanceClockTimer = window.setInterval(() => { policyNow.value = Date.now() }, 1_000)
-  operationsRefreshTimer = window.setInterval(() => void refreshOperationsPolicy(), 15_000)
+  window.addEventListener('l12-resource-operationsPolicy', onOperationsResource)
   ;[customDecks.value, catalog.value] = await Promise.all([ensureOfficialPrebuiltDecks(), loadDeckCatalog()])
   hydrateDeckSelections()
   await refreshOperationsPolicy()
@@ -175,8 +174,13 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.clearInterval(maintenanceClockTimer)
-  window.clearInterval(operationsRefreshTimer)
+  window.removeEventListener('l12-resource-operationsPolicy', onOperationsResource)
 })
+
+function onOperationsResource(event: Event) {
+  if ((event as CustomEvent).detail?.fallback === true && l12State.status !== 'online')
+    void refreshOperationsPolicy()
+}
 
 // 创建、加入或恢复好友房时，把该模式已确认的牌库同步到房间；选择器取消不会触发这里。
 watch(() => [l12State.room?.roomCode, currentDeck.value?.name, currentDeckError.value] as const, ([roomCode]) => {

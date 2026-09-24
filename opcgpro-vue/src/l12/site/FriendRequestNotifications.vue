@@ -1,35 +1,31 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { friendApi, platformState, type PlatformFriend } from '../platform'
+import { friendApi, platformState } from '../platform'
+import { friendResource, refreshFriendResource, resetFriendResource } from '../friendResource'
 import { playL12FriendRequestSound, primeL12ActionAudio } from '../game/useL12ActionAudio'
 import { landscapeTeleportTarget } from '../mobileViewport'
 
-const requests = ref<PlatformFriend[]>([])
+const requests = computed(() => friendResource.requests.filter(item => item.direction === 'incoming')
+  .sort((a, b) => a.createdAt.localeCompare(b.createdAt)))
 const current = computed(() => requests.value[0])
 const busy = ref(false)
 const notice = ref('')
 const sounded = new Set<string>()
 let generation = 0
-let timer = 0
-let reading = false
 async function refresh() {
   const accountId = platformState.account?.id
-  if (!accountId || reading || busy.value) return
+  if (!accountId || busy.value) return
   const expected = generation
-  reading = true
   try {
-    const next = (await friendApi.requests()).filter(item => item.direction === 'incoming')
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    await refreshFriendResource()
     if (expected !== generation || accountId !== platformState.account?.id) return
-    requests.value = next
     let newRequest = false
-    for (const item of next) {
+    for (const item of requests.value) {
       const key = `${accountId}:${item.accountId}:${item.createdAt}`
       if (!sounded.has(key)) { sounded.add(key); newRequest = true }
     }
     if (newRequest) playL12FriendRequestSound()
   } catch { /* Retry preserves the pending dialog without inventing a rejection. */ }
-  finally { reading = false }
 }
 async function resolve(action: 'accept' | 'reject' | 'block') {
   const request = current.value
@@ -42,24 +38,23 @@ async function resolve(action: 'accept' | 'reject' | 'block') {
     if (action === 'block') await friendApi.block(request.accountId)
     else await friendApi.resolve(request.accountId, action === 'accept')
     if (expected !== generation || accountId !== platformState.account?.id) return
-    requests.value = requests.value.filter(item => item.accountId !== request.accountId)
+    friendResource.requests = friendResource.requests.filter(item => item.accountId !== request.accountId)
     window.dispatchEvent(new Event('l12-friends-changed'))
   } catch (error) { if (expected === generation) notice.value = error instanceof Error ? error.message : '处理失败，请重试' }
   finally { busy.value = false; void refresh() }
 }
-watch(() => platformState.account?.id, () => { generation++; requests.value = []; notice.value = ''; void refresh() })
-function focus() { void refresh() }
+watch(() => platformState.account?.id, accountId => { generation++; resetFriendResource(accountId); notice.value = ''; void refresh() })
+function changed() { void refresh() }
 onMounted(() => {
   void refresh()
-  timer = window.setInterval(() => void refresh(), 4000)
-  window.addEventListener('focus', focus)
-  window.addEventListener('l12-friends-changed', focus)
+  window.addEventListener('l12-resource-friends', changed)
+  window.addEventListener('l12-friends-changed', changed)
   window.addEventListener('pointerdown', primeL12ActionAudio, { once: true })
 })
 onBeforeUnmount(() => {
-  generation++; window.clearInterval(timer)
-  window.removeEventListener('focus', focus)
-  window.removeEventListener('l12-friends-changed', focus)
+  generation++
+  window.removeEventListener('l12-resource-friends', changed)
+  window.removeEventListener('l12-friends-changed', changed)
   window.removeEventListener('pointerdown', primeL12ActionAudio)
 })
 </script>

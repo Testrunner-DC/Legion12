@@ -1,19 +1,19 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { connect, inviteFriend, l12State, spectateRoom } from '@/l12/net'
-import { friendApi, type PlatformFriend, type PlatformPresence } from '@/l12/platform'
+import { friendApi, platformState, type PlatformFriend } from '@/l12/platform'
+import { friendResource, refreshFriendResource, resetFriendResource } from '@/l12/friendResource'
 
 const tab = ref<'friends' | 'requests' | 'add' | 'blocked'>('friends')
 const query = ref('')
-const friends = ref<PlatformFriend[]>([])
-const requests = ref<PlatformFriend[]>([])
+const friends = computed(() => friendResource.friends)
+const requests = computed(() => friendResource.requests)
 const results = ref<PlatformFriend[]>([])
-const blocked = ref<PlatformFriend[]>([])
-const presence = ref<PlatformPresence[]>([])
+const blocked = computed(() => friendResource.blocked)
+const presence = computed(() => l12State.presence)
 const selectedId = ref('')
 const busy = ref(false)
 const notice = ref('')
-let refreshTimer: number | null = null
 const incoming = computed(() => requests.value.filter(item => item.direction === 'incoming'))
 const outgoing = computed(() => requests.value.filter(item => item.direction === 'outgoing'))
 const presenceById = computed(() => new Map(presence.value.map(item => [item.accountId, item])))
@@ -23,7 +23,7 @@ const selectedPresence = computed(() => selected.value ? presenceById.value.get(
 
 async function refresh() {
   try {
-    ;[friends.value, requests.value, blocked.value, presence.value] = await Promise.all([friendApi.friends(), friendApi.requests(), friendApi.blocked(), friendApi.presence()])
+    await refreshFriendResource()
     if (!friends.value.some(item => item.accountId === selectedId.value)) selectedId.value = friends.value[0]?.accountId ?? ''
   }
   catch (error) { notice.value = error instanceof Error ? error.message : '好友数据读取失败' }
@@ -61,8 +61,17 @@ async function spectate(player: PlatformFriend) {
   catch (error) { notice.value = error instanceof Error ? error.message : '进入观战失败' }
 }
 function externalChange() { void refresh() }
-onMounted(async () => { window.addEventListener('l12-friends-changed', externalChange); await refresh(); if (l12State.status === 'offline') void connect().catch(() => undefined); refreshTimer = window.setInterval(() => void refresh(), 15_000) })
-onBeforeUnmount(() => { window.removeEventListener('l12-friends-changed', externalChange); if (refreshTimer !== null) window.clearInterval(refreshTimer) })
+watch(() => platformState.account?.id, accountId => { resetFriendResource(accountId); void refresh() })
+onMounted(async () => {
+  window.addEventListener('l12-friends-changed', externalChange)
+  window.addEventListener('l12-resource-friends', externalChange)
+  await refresh()
+  if (l12State.status === 'offline') void connect().catch(() => undefined)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('l12-friends-changed', externalChange)
+  window.removeEventListener('l12-resource-friends', externalChange)
+})
 </script>
 
 <template>

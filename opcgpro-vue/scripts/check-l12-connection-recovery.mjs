@@ -99,6 +99,7 @@ class FakeWebSocket {
 function installBrowserEnvironment(initialStorage = {}) {
   const timers = new FakeTimers()
   const storage = new MemoryStorage(initialStorage)
+  const events = []
   globalThis.localStorage = storage
   globalThis.location = { protocol: 'https:', host: 'legion-12.com', hostname: 'legion-12.com' }
   globalThis.window = {
@@ -108,7 +109,7 @@ function installBrowserEnvironment(initialStorage = {}) {
     clearInterval: timers.clearInterval,
     addEventListener() {},
     removeEventListener() {},
-    dispatchEvent() {},
+    dispatchEvent(event) { events.push(event) },
   }
   globalThis.CustomEvent = class { constructor(type, options) { this.type = type; this.detail = options?.detail } }
   globalThis.__viteEnv = {}
@@ -116,7 +117,7 @@ function installBrowserEnvironment(initialStorage = {}) {
   globalThis.__l12NetState = { endpoint: 'wss://legion-12.com/ws', nickname: '' }
   FakeWebSocket.instances = []
   globalThis.WebSocket = FakeWebSocket
-  return { timers, storage }
+  return { timers, storage, events }
 }
 
 async function flushPromises(turns = 12) {
@@ -737,6 +738,50 @@ const tests = [
       changes: [{ path: ['state', 'revision'], value: 6, remove: false }] })
     assert.equal(net.l12State.game.revision, 5)
     assert.equal(socket.sent.filter(item => JSON.parse(item).type === 'syncState').length, syncBefore + 1)
+    net.disconnect()
+  }],
+
+  ['resource revisions reject stale messages and a new server epoch accepts a lower revision', async () => {
+    const { events } = installBrowserEnvironment({ 'l12-auth-token': 'resource-token' })
+    const net = await loadNetModule()
+    const connected = net.connect()
+    const socket = FakeWebSocket.instances[0]
+    socket.open()
+    socket.receive({ type: 'session', sessionId: 'resource-session', accountId: 'account-1', name: '测试玩家', connectionGeneration: 91 })
+    socket.receive({ type: 'resourceVersions', epoch: 'epoch-a', revisions: { friends: 5, presence: 2, rankedIntegrity: 1,
+      alternateArtNotifications: 3, operationsPolicy: 4 } })
+    socket.receive({ type: 'presenceSnapshot', epoch: 'epoch-a', revision: 2,
+      items: [{ accountId: 'account-1', username: '测试玩家', online: true }] })
+    socket.receive({ type: 'resourceChanged', resource: 'friends', epoch: 'epoch-a', revision: 6 })
+    const friendEvents = () => events.filter(event => event.type === 'l12-resource-friends').length
+    const afterCurrent = friendEvents()
+    socket.receive({ type: 'resourceChanged', resource: 'friends', epoch: 'epoch-a', revision: 5 })
+    socket.receive({ type: 'presenceSnapshot', epoch: 'epoch-a', revision: 1, items: [] })
+    assert.equal(friendEvents(), afterCurrent, 'a stale resource event must not trigger a read')
+    assert.equal(net.l12State.presence.length, 1, 'an older presence snapshot must not erase confirmed state')
+    socket.receive({ type: 'resourceChanged', resource: 'friends', epoch: 'epoch-b', revision: 1 })
+    assert.equal(friendEvents(), afterCurrent + 1, 'a restarted server epoch must accept its lower revision')
+    socket.receive({ type: 'recoveryComplete', connectionGeneration: 91 })
+    await connected
+    net.disconnect()
+  }],
+
+  ['resource fallback stays silent online and starts only after the WebSocket is unavailable for 60 seconds', async () => {
+    const { timers, events } = installBrowserEnvironment({ 'l12-auth-token': 'fallback-token' })
+    const net = await loadNetModule()
+    const connected = net.connect()
+    const socket = FakeWebSocket.instances[0]
+    sendSuccessfulHandshake(socket, 92)
+    await connected
+    await timers.advance(50_000)
+    const fallbackEvents = () => events.filter(event => event.type === 'l12-resource-changed' && event.detail?.fallback).length
+    assert.equal(fallbackEvents(), 0, 'online steady state must not poll HTTP resources')
+    socket.emitClose(1006, 'network unavailable')
+    await timers.advance(59_999)
+    assert.equal(fallbackEvents(), 0)
+    await timers.advance(1)
+    assert.equal(fallbackEvents(), 5,
+      'offline fallback must coalesce to one signal per resource after 60 seconds')
     net.disconnect()
   }],
 ]

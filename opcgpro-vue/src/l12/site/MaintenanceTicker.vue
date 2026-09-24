@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted } from 'vue'
-import { getEffectiveOperationsPolicy } from '@/l12/platform'
+import { computed } from 'vue'
 import { l12State } from '@/l12/net'
 
 // Mounted only in the shared battle section: every battle subpage keeps receiving
@@ -9,31 +8,6 @@ const message = computed(() => {
   const maintenance = l12State.operationsPolicy?.maintenance
   if (!maintenance) return ''
   return maintenance.broadcastMessage || (maintenance.active ? maintenance.message : '')
-})
-let disposed = false
-let refreshing = false
-let timer = 0
-async function refresh() {
-  if (disposed || refreshing || document.hidden) return
-  refreshing = true
-  try {
-    const policy = await getEffectiveOperationsPolicy()
-    if (!disposed && policy.version >= (l12State.operationsPolicy?.version ?? 0))
-      l12State.operationsPolicy = policy
-  } catch {
-    // A transient failure must not erase an already confirmed maintenance notice.
-  } finally { refreshing = false }
-}
-function onVisibility() { if (!document.hidden) void refresh() }
-onMounted(() => {
-  void refresh()
-  timer = window.setInterval(() => void refresh(), 5000)
-  document.addEventListener('visibilitychange', onVisibility)
-})
-onBeforeUnmount(() => {
-  disposed = true
-  window.clearInterval(timer)
-  document.removeEventListener('visibilitychange', onVisibility)
 })
 </script>
 
