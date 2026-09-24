@@ -1103,7 +1103,8 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var entry = _data.ContentEntries.FirstOrDefault(row => string.Equals(row.Key, key, StringComparison.OrdinalIgnoreCase));
-            return entry?.PublishedValue ?? _data.Content.GetValueOrDefault(key, fallback);
+            var stored = entry?.PublishedValue ?? _data.Content.GetValueOrDefault(key, fallback);
+            return ProjectEffectiveRuleContent(key, stored, DateTimeOffset.UtcNow);
         }
     }
 

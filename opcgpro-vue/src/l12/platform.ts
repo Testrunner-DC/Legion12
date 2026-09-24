@@ -526,7 +526,7 @@ export interface AuditArchiveRecovery {
 }
 export interface AdminCommandAccepted { commandId: string; status: 'requested'; message: string; command: AdminCommand }
 export interface ContentBatchItem { key: string; previousValue: string; publishedValue: string; previousVersionId?: string; publishedVersionId: string }
-export interface ContentBatch { id: string; action: 'publish' | 'rollback'; sourceBatchId?: string; status: string; actorId: string; actorName: string; createdAt: string; items: ContentBatchItem[] }
+export interface ContentBatch { id: string; action: 'publish' | 'rollback' | 'rule-item-publish'; sourceBatchId?: string; status: string; actorId: string; actorName: string; createdAt: string; items: ContentBatchItem[] }
 export interface ContentPreviewItem { key: string; draftValue: string; publishedValue: string; entryVersion: number; wouldChange: boolean }
 export interface ContentBatchPreview { action: 'publish' | 'rollback'; sourceBatchId?: string; items: ContentPreviewItem[] }
 export interface ContentBatchOperation { applied: boolean; batch?: ContentBatch; preview?: ContentBatchPreview }
@@ -980,13 +980,13 @@ export async function submitBug(input: { title: string; description: string; pag
 }
 
 export async function getPublicContent(key: string) {
-  return platformRequest<{ key: string; value: string }>(`/api/content/${encodeURIComponent(key)}`)
+  return platformRequest<{ key: string; value: string; observedAt?: string; nextRuleTransitionAt?: string | null }>(`/api/content/${encodeURIComponent(key)}`)
 }
 
 export async function getPublicContentBatch(keys: string[]) {
   const params = new URLSearchParams()
   keys.forEach(key => params.append('key', key))
-  return platformRequest<{ values: Record<string, string> }>(`/api/content?${params}`)
+  return platformRequest<{ values: Record<string, string>; observedAt: string; nextRuleTransitionAt?: string | null }>(`/api/content?${params}`)
 }
 
 export const getEffectiveOperationsPolicy = () =>
@@ -1153,7 +1153,9 @@ export const adminApi = {
   saveContentDraft: (key: string, value: string) => platformRequest<ContentEntry>(`/api/admin/v1/content/${encodeURIComponent(key)}/draft`, { method: 'PUT', body: JSON.stringify(commandBody('draft', { value })) }),
   previewContent: (keys: string[]) => platformRequest<ContentBatchPreview>('/api/admin/v1/content/preview', { method: 'POST', body: JSON.stringify({ keys }) }),
   publishContent: (keys: string[], dryRun = false) => platformRequest<AdminCommandAccepted | ContentBatchOperation>('/api/admin/v1/content/publish', { method: 'POST', body: JSON.stringify(commandBody('content-publish', { keys, dryRun })) }),
-  publishRuleItem: (key: 'rules.rulings' | 'rules.center', collection: string, itemId: string) => platformRequest<ContentEntry>('/api/admin/rule-items/publish', { method: 'POST', body: JSON.stringify({ key, collection, itemId }) }),
+  publishRuleItem: (key: 'rules.rulings' | 'rules.center', collection: string, itemId: string, expectedVersion?: number) => platformRequest<ContentEntry>('/api/admin/rule-items/publish', {
+    method: 'POST', body: JSON.stringify(commandBody('rule-item-publish', { key, collection, itemId, expectedVersion })),
+  }),
   contentBatches: () => platformRequest<ContentBatch[]>('/api/admin/v1/content/batches'),
   rollbackContent: (batchId: string, dryRun = false) => platformRequest<AdminCommandAccepted | ContentBatchOperation>('/api/admin/v1/content/rollback', { method: 'POST', body: JSON.stringify(commandBody('content-rollback', { batchId, dryRun })) }),
   effectAtoms: () => platformRequest<EffectAtomDescriptor[]>('/api/admin/effect-atoms'),

@@ -80,6 +80,89 @@ public sealed class ResourceChangeNotificationTests
         }
     }
 
+    [Fact]
+    public async Task RuleItemPublishIsAuthorizedIdempotentIsolatedAndPushesRulesContentChange()
+    {
+        var root = TempRoot();
+        var previousHost = Environment.GetEnvironmentVariable("L12_LISTEN_HOST");
+        L12WebSocketServer? server = null;
+        MatchRecorder? recorder = null;
+        using var adminSocket = new ClientWebSocket();
+        try
+        {
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", "127.0.0.1");
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks);
+            var admin = store.Login("Admin", "L12master");
+            var player = store.Register("rulepublishplayer", "password-123");
+            var draft = JsonSerializer.Serialize(new
+            {
+                schemaVersion = 2,
+                entries = new[]
+                {
+                    Ruling("RULING-PUSH-A", "第一条裁定？"),
+                    Ruling("RULING-PUSH-B", "第二条仍为草稿？"),
+                },
+            });
+            var saved = store.SaveContentDraft(admin.Account!, "rules.rulings", draft);
+
+            server = new L12WebSocketServer(new L12RoomManager(catalog, recorder, store), recorder, store, catalog);
+            await server.StartAsync(0);
+            var address = Assert.Single(server.Addresses);
+            var socketUri = new UriBuilder(address) { Scheme = "ws", Path = "/ws" }.Uri;
+            await ConnectAsync(adminSocket, socketUri, admin.Token!);
+            using var client = new HttpClient { BaseAddress = new Uri(address) };
+            var idempotencyKey = $"rule-publish-{Guid.NewGuid():N}";
+            var body = new { key = "rules.rulings", collection = "entries", itemId = "RULING-PUSH-A",
+                expectedVersion = saved.Version, idempotencyKey };
+
+            using (var denied = Authorized(HttpMethod.Post, "/api/admin/rule-items/publish", player.Token!, body))
+            using (var deniedResponse = await client.SendAsync(denied))
+                Assert.Equal(HttpStatusCode.Unauthorized, deniedResponse.StatusCode);
+
+            using (var publish = Authorized(HttpMethod.Post, "/api/admin/rule-items/publish", admin.Token!, body))
+            using (var publishResponse = await client.SendAsync(publish))
+                Assert.Equal(HttpStatusCode.OK, publishResponse.StatusCode);
+            var change = await ReceiveUntilAsync(adminSocket, "resourceChanged", "rulesContent");
+            Assert.True(change["revision"]!.GetValue<long>() > 0);
+
+            using (var replay = Authorized(HttpMethod.Post, "/api/admin/rule-items/publish", admin.Token!, body))
+            using (var replayResponse = await client.SendAsync(replay))
+            {
+                Assert.Equal(HttpStatusCode.OK, replayResponse.StatusCode);
+                Assert.Equal("true", replayResponse.Headers.GetValues("X-Idempotent-Replay").Single());
+            }
+
+            var batch = await client.GetFromJsonAsync<JsonObject>("/api/content?key=rules.rulings");
+            var publicValue = batch!["values"]!["rules.rulings"]!.GetValue<string>();
+            Assert.Contains("RULING-PUSH-A", publicValue);
+            Assert.DoesNotContain("RULING-PUSH-B", publicValue);
+        }
+        finally
+        {
+            adminSocket.Abort();
+            if (server is not null)
+            {
+                await server.StopAsync();
+                await server.DisposeAsync();
+            }
+            if (recorder is not null) await recorder.DisposeAsync();
+            SqliteConnection.ClearAllPools();
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previousHost);
+            Directory.Delete(root, true);
+        }
+    }
+
+    private static object Ruling(string id, string question) => new
+    {
+        id, scope = "general", question, answer = "已确认答案。", category = "效果与响应",
+        sourceKind = "user-ruling", sourceRef = "测试来源", recordedAt = "2026-09-25", status = "pending",
+        cardIds = Array.Empty<string>(), productIds = Array.Empty<string>(), tags = Array.Empty<string>(),
+        topics = new[] { "effects-stack" }, sourceIds = Array.Empty<string>(), supersedes = Array.Empty<string>(),
+    };
+
     private static async Task ConnectAsync(ClientWebSocket socket, Uri uri, string token)
     {
         await socket.ConnectAsync(uri, CancellationToken.None);

@@ -37,8 +37,9 @@ const ruleCenter = requireFile('opcgpro-vue/src/l12/site/RuleCenterPage.vue')
 for (const tab of ['core', 'quick-start', 'terms', 'faq', 'construction', 'tournament', 'versions']) {
   assert(ruleCenter.includes(`id: '${tab}'`), `rule center tab ${tab} must remain available`)
 }
-assert(ruleCenter.includes("getPublicContent('rules.center')") && ruleCenter.includes('parsePublishedRuleCenter'),
-  'the player rule center must continue consuming the published projection')
+assert(ruleCenter.includes('getPublicContentBatch') && ruleCenter.includes("['rules.notice', 'rules.center', 'rules.rulings']")
+  && ruleCenter.includes('parsePublishedRuleCenter'),
+  'the player rule center must continue consuming the published projection through one batch')
 
 const router = requireFile('opcgpro-vue/src/router/index.ts')
 const app = requireFile('opcgpro-vue/src/App.vue')

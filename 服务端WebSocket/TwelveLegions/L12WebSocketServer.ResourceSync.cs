@@ -9,15 +9,20 @@ public sealed partial class L12WebSocketServer
     private const string IntegrityResource = "rankedIntegrity";
     private const string AlternateArtNotificationsResource = "alternateArtNotifications";
     private const string OperationsPolicyResource = "operationsPolicy";
+    private const string RulesContentResource = "rulesContent";
 
     private readonly string _resourceEpoch = Guid.NewGuid().ToString("N");
     private readonly ConcurrentDictionary<string, long> _accountResourceRevisions =
         new(StringComparer.OrdinalIgnoreCase);
     private long _presenceResourceRevision;
     private long _operationsResourceRevision;
+    private long _rulesContentResourceRevision;
     private readonly object _operationsTransitionGate = new();
     private CancellationTokenSource? _operationsTransitionCancellation;
     private Task? _operationsTransitionTask;
+    private readonly object _rulesContentTransitionGate = new();
+    private CancellationTokenSource? _rulesContentTransitionCancellation;
+    private Task? _rulesContentTransitionTask;
 
     private string AccountResourceKey(string accountId, string resource)
         => $"{accountId.Trim().ToLowerInvariant()}:{resource}";
@@ -39,6 +44,7 @@ public sealed partial class L12WebSocketServer
             [IntegrityResource] = AccountResourceRevision(accountId, IntegrityResource),
             [AlternateArtNotificationsResource] = AccountResourceRevision(accountId, AlternateArtNotificationsResource),
             [OperationsPolicyResource] = Interlocked.Read(ref _operationsResourceRevision),
+            [RulesContentResource] = Interlocked.Read(ref _rulesContentResourceRevision),
         },
     };
 
@@ -140,6 +146,67 @@ public sealed partial class L12WebSocketServer
         })).ToArray();
         _ = SendManyAsync(messages, CancellationToken.None);
         if (reschedule) ScheduleNextOperationsTransition();
+    }
+
+    private void NotifyRulesContentChanged(bool reschedule = true)
+    {
+        var revision = Interlocked.Increment(ref _rulesContentResourceRevision);
+        var messages = _activeAccountSockets.Values.Select(sessionId => new OutgoingMessage(sessionId, new
+        {
+            type = "resourceChanged",
+            resource = RulesContentResource,
+            epoch = _resourceEpoch,
+            revision,
+        })).ToArray();
+        _ = SendManyAsync(messages, CancellationToken.None);
+        if (reschedule) ScheduleNextRulesContentTransition();
+    }
+
+    private void ScheduleNextRulesContentTransition()
+    {
+        var next = _platform.NextRuleContentTransition();
+        lock (_rulesContentTransitionGate)
+        {
+            _rulesContentTransitionCancellation?.Cancel();
+            _rulesContentTransitionCancellation?.Dispose();
+            _rulesContentTransitionCancellation = null;
+            _rulesContentTransitionTask = null;
+            if (!next.HasValue) return;
+            var cancellation = new CancellationTokenSource();
+            _rulesContentTransitionCancellation = cancellation;
+            _rulesContentTransitionTask = RunRulesContentTransitionAsync(next.Value, cancellation.Token);
+        }
+    }
+
+    private async Task RunRulesContentTransitionAsync(DateTimeOffset transitionAt, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var delay = transitionAt - DateTimeOffset.UtcNow;
+            if (delay > TimeSpan.Zero) await Task.Delay(delay, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            NotifyRulesContentChanged();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+    }
+
+    private async Task StopRulesContentTransitionAsync()
+    {
+        CancellationTokenSource? cancellation;
+        Task? task;
+        lock (_rulesContentTransitionGate)
+        {
+            cancellation = _rulesContentTransitionCancellation;
+            task = _rulesContentTransitionTask;
+            _rulesContentTransitionCancellation = null;
+            _rulesContentTransitionTask = null;
+        }
+        if (cancellation is null) return;
+        cancellation.Cancel();
+        if (task is not null)
+            try { await task; }
+            catch (OperationCanceledException) { }
+        cancellation.Dispose();
     }
 
     private void ScheduleNextOperationsTransition()

@@ -72,11 +72,15 @@ platform.publicDeckApi.list=async()=>[]
 platform.alternateArtApi.gallery=async()=>[]
 
 const {createRuleCenterDraft,createRulingsDraft}=await import('/src/l12/data/ruleCenterData.ts')
+const publishedRuleCenter=createRuleCenterDraft()
+for(const collection of ['coreBlocks','quickStart','terms','tournament','versions'])for(const item of publishedRuleCenter[collection])item.status='published'
+const publishedRulings=createRulingsDraft().map(item=>({...item,status:'published'}))
 const sampleMatches=Array.from({length:6},(_,i)=>({matchId:'MATCH-QA-2026092'+i+'-LONG-IDENTIFIER',roomCode:'QA00'+i,player0:'移动端验收玩家',player1:'对手长昵称玩家'+i,deck0:'秩序梅杰德控制长名称构筑',deck1:'混沌阿斯加德快攻长名称构筑',startedUtc:'2026-09-2'+i+'T10:00:00Z',endedUtc:'2026-09-2'+i+'T10:32:00Z',winner:i%2,finalHash:'hash',commandCount:182}))
 const originalFetch=window.fetch.bind(window)
 window.fetch=async(input,init)=>{
  const url=String(typeof input==='string'?input:input.url)
  const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json'}})
+ if(url.includes('/api/content?'))return json({values:{'rules.notice':'','rules.center':JSON.stringify(publishedRuleCenter),'rules.rulings':JSON.stringify({schemaVersion:2,entries:publishedRulings})},observedAt:new Date().toISOString(),nextRuleTransitionAt:null})
  if(url.includes('/api/content/rules.center'))return json({key:'rules.center',value:JSON.stringify(createRuleCenterDraft())})
  if(url.includes('/api/content/rules.rulings'))return json({key:'rules.rulings',value:JSON.stringify(createRulingsDraft())})
  if(url.includes('/api/content/rules.notice'))return json({key:'rules.notice',value:''})

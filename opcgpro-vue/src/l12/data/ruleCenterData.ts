@@ -2,9 +2,24 @@ export type RuleCenterSection = 'quick-start' | 'term' | 'construction' | 'tourn
 export type RuleRulingScope = 'general' | 'card' | 'errata' | 'construction' | 'tournament'
 export type RuleRulingStatus = 'published' | 'pending' | 'superseded'
 import { QA_ENTRIES } from './officialFaq'
-import { RULE_BLOCKS, type RuleBlock } from './officialRules'
+import { RULE_BLOCKS } from './officialRules'
 
 export type RuleRulingSourceKind = 'rulebook' | 'official-faq' | 'user-ruling' | 'designer-ruling'
+export type RuleTopicId = 'game-setup' | 'turn-flow' | 'battle' | 'effects-stack' | 'costs-resources'
+  | 'zones-state' | 'disaster-trial' | 'deck-construction' | 'tournament'
+
+export const RULE_TOPIC_DEFINITIONS: ReadonlyArray<{ id: RuleTopicId; label: string }> = [
+  { id: 'game-setup', label: '对局准备' },
+  { id: 'turn-flow', label: '回合流程' },
+  { id: 'battle', label: '进攻与战斗' },
+  { id: 'effects-stack', label: '效果与响应' },
+  { id: 'costs-resources', label: '费用与资源' },
+  { id: 'zones-state', label: '区域与状态' },
+  { id: 'disaster-trial', label: '天灾与试炼' },
+  { id: 'deck-construction', label: '构筑与限制' },
+  { id: 'tournament', label: '赛事规则' },
+]
+const topicIds = new Set<RuleTopicId>(RULE_TOPIC_DEFINITIONS.map(item => item.id))
 
 export interface RuleRuling {
   id: string
@@ -20,6 +35,7 @@ export interface RuleRuling {
   cardIds: string[]
   productIds: string[]
   tags: string[]
+  topics: RuleTopicId[]
   /** 原始资料条目的稳定编号；仅用于追溯与后台复核，不向玩家展示原文。 */
   sourceIds: string[]
   supersedes: string[]
@@ -41,7 +57,8 @@ export interface RuleCenterEntry {
   body: string
   sourceRef: string
   tags: string[]
-  status?: 'published' | 'pending'
+  status?: 'published' | 'pending' | 'superseded'
+  effectiveAt?: string
 }
 
 export interface RuleCenterVersion {
@@ -56,9 +73,20 @@ export interface RuleCenterVersion {
   summary: string
 }
 
+export interface RuleCenterCoreBlock {
+  id: string
+  page: string
+  topic?: string
+  chapter?: string
+  text: string
+  status?: 'published' | 'pending' | 'superseded'
+  effectiveAt?: string
+}
+
 /** The player page only accepts this document from the published content store. */
 export interface RuleCenterDocument {
-  coreBlocks: RuleBlock[]
+  schemaVersion?: number
+  coreBlocks: RuleCenterCoreBlock[]
   quickStart: RuleCenterEntry[]
   terms: RuleCenterEntry[]
   tournament: RuleCenterEntry[]
@@ -98,16 +126,16 @@ export const VERSION_ENTRIES: RuleCenterVersion[] = [
 ]
 
 export const BUILT_IN_RULINGS: RuleRuling[] = [
-  { id: 'RULING-20260922-FENIAN-REPEAT', scope: 'card', question: '〈芬尼亚传奇〉的完成触发如何重复发动？', answer: '待审核草稿：每次只消耗1符文、选择对方1张军团并生成一个独立响应堆叠；该堆叠完整结算后，若仍有符文和合法目标，再询问是否重复发动。可再次选择同一张仍合法的军团。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-22', recordedAt: '2026-09-22', status: 'pending', cardIds: ['S02-06S5'], productIds: ['S02'], tags: ['芬尼亚传奇', '符文', '重复发动', '独立堆叠'], sourceIds: [], supersedes: [] },
-  { id: 'RULING-20260922-SIWA-KABA', scope: 'card', question: '〈锡瓦的卡巴〉从手牌发动登场效果后被无效，或登场位置失效时如何处理？', answer: '待审核草稿：这是〈锡瓦的卡巴〉的单卡特例。该手牌登场效果被无效时，将它从手牌置入墓地；若声明的登场位置在逆结算后已被占用，也将它置入墓地，且不执行后续士气锁定。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-22', recordedAt: '2026-09-22', status: 'pending', cardIds: ['S01-0213'], productIds: ['S01'], tags: ['锡瓦的卡巴', '无效', '登场位置', '墓地'], sourceIds: [], supersedes: [] },
-  { id: 'RULING-20260917-LIVE-COST', scope: 'card', question: '奈芙蒂斯、不朽之礼等效果引用费用时，如何判断费用？', answer: '裁定：按该效果适用时的实时费用判断。除非卡牌文字明确要求印刷费用，否则不以卡牌上印刷的费用数值作为判断依据。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-17', recordedAt: '2026-09-17', status: 'published', cardIds: [], productIds: [], tags: ['奈芙蒂斯', '不朽之礼', '实时费用', '费用判断'], sourceIds: ['LEGACY-FAQ-47'], supersedes: ['LEGACY-FAQ-47'] },
-  { id: 'RULING-20260902-HOREMHEB', scope: 'card', question: '霍列姆赫布的致命替代如何处理？', answer: '裁定：作为替代结果离场的〈陵墓守卫〉，承受被保护军团原本的致命结果，并按其所有者进入对应区域。〈霍列姆赫布〉不因该替代先离场或重新登场。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-02', recordedAt: '2026-09-02', status: 'published', cardIds: [], productIds: [], tags: ['霍列姆赫布', '陵墓守卫', '致命替代', '阵亡'], sourceIds: [], supersedes: [] },
-  { id: 'RULING-20260902-HELEN', scope: 'card', question: '海伦弃置手牌中的军团卡是否视为阵亡或离场？', answer: '裁定：该军团卡从手牌进入其所有者的墓地，属于弃置；这次区域变更不视为战场上的阵亡或离场，因此不触发【阵亡时】或【离场时】。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-02', recordedAt: '2026-09-02', status: 'published', cardIds: [], productIds: [], tags: ['海伦', '弃牌', '阵亡', '离场'], sourceIds: [], supersedes: [] },
-  { id: 'RULING-20260902-PTOLEMY', scope: 'card', question: '托勒密十三世再次发动主动战术时，原费用与原战术卡如何处理？', answer: '裁定：只再次发动上一张主动战术的效果；不再次支付该战术原本的打出费用或冒号前费用，原战术卡仍留在原本所在区域，不作为这次效果的一部分再次处理。重复效果所需的公开信息仍须在其进入效果堆叠前声明。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-02', recordedAt: '2026-09-02', status: 'published', cardIds: [], productIds: [], tags: ['托勒密十三世', '主动战术', '费用', '效果堆叠'], sourceIds: [], supersedes: [] },
-  { id: 'RULING-20260902-FAITH-ZEALOT', scope: 'card', question: '信仰狂热者选择主宰效果时如何进入效果堆叠？', answer: '裁定：先完成〈信仰狂热者〉自身效果的结算。其后选择的主宰效果作为新的独立效果进入效果堆叠，并依其自身时序声明目标与模式。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-02', recordedAt: '2026-09-02', status: 'published', cardIds: [], productIds: [], tags: ['信仰狂热者', '主宰', '效果堆叠', '费用'], sourceIds: [], supersedes: [] },
-  { id: 'RULING-20260902-LI-JING', scope: 'card', question: '李靖的展示与后续引用是否拆分为多个可响应效果？', answer: '裁定：展示与引用“其”的后续处理构成同一次隐藏信息处理，不拆分为多个可响应效果。该展示被无效时，不查看牌库顶牌，也不执行依赖该信息的后续处理。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-02', recordedAt: '2026-09-02', status: 'published', cardIds: [], productIds: [], tags: ['李靖', '展示', '隐藏信息', '响应'], sourceIds: [], supersedes: [] },
-  { id: 'RULING-20260902-THUNDER', scope: 'card', question: '雷霆天怒出现并列最低点时如何处理？', answer: '裁定：所有并列最低点的玩家均为输家。先由当前回合玩家处理，再由另一名玩家处理；每名玩家只能选择自己当前控制的军团，使其返回其所有者手牌。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-02', recordedAt: '2026-09-02', status: 'published', cardIds: [], productIds: [], tags: ['雷霆天怒', '天灾', '控制者', '所有者'], sourceIds: [], supersedes: [] },
-  { id: 'RULING-20260828-TROOP-LAYER', scope: 'general', question: '临时兵力修正受到伤害后如何记录？', answer: '裁定：临时正兵力修正可被伤害消耗。该修正结束时，只移除尚未被消耗的部分；不得因重算原本兵力而消除已经承受的伤害。', category: '进攻与战斗', sourceKind: 'designer-ruling', sourceRef: '设计者确认裁定 · 2026-08-28', recordedAt: '2026-08-28', status: 'published', cardIds: [], productIds: [], tags: ['兵力', '伤害', '持续效果'], sourceIds: ['LEGACY-FAQ-16'], supersedes: ['LEGACY-FAQ-16'] },
+  { id: 'RULING-20260922-FENIAN-REPEAT', scope: 'card', question: '〈芬尼亚传奇〉的完成触发如何重复发动？', answer: '待审核草稿：每次只消耗1符文、选择对方1张军团并生成一个独立响应堆叠；该堆叠完整结算后，若仍有符文和合法目标，再询问是否重复发动。可再次选择同一张仍合法的军团。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-22', recordedAt: '2026-09-22', status: 'pending', cardIds: ['S02-06S5'], productIds: ['S02'], tags: ['芬尼亚传奇', '符文', '重复发动', '独立堆叠'], topics: ['effects-stack'], sourceIds: [], supersedes: [] },
+  { id: 'RULING-20260922-SIWA-KABA', scope: 'card', question: '〈锡瓦的卡巴〉从手牌发动登场效果后被无效，或登场位置失效时如何处理？', answer: '待审核草稿：这是〈锡瓦的卡巴〉的单卡特例。该手牌登场效果被无效时，将它从手牌置入墓地；若声明的登场位置在逆结算后已被占用，也将它置入墓地，且不执行后续士气锁定。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-22', recordedAt: '2026-09-22', status: 'pending', cardIds: ['S01-0213'], productIds: ['S01'], tags: ['锡瓦的卡巴', '无效', '登场位置', '墓地'], topics: ['zones-state'], sourceIds: [], supersedes: [] },
+  { id: 'RULING-20260917-LIVE-COST', scope: 'card', question: '奈芙蒂斯、不朽之礼等效果引用费用时，如何判断费用？', answer: '裁定：按该效果适用时的实时费用判断。除非卡牌文字明确要求印刷费用，否则不以卡牌上印刷的费用数值作为判断依据。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-17', recordedAt: '2026-09-17', status: 'published', cardIds: [], productIds: [], tags: ['奈芙蒂斯', '不朽之礼', '实时费用', '费用判断'], topics: ['costs-resources'], sourceIds: ['LEGACY-FAQ-47'], supersedes: ['LEGACY-FAQ-47'] },
+  { id: 'RULING-20260902-HOREMHEB', scope: 'card', question: '霍列姆赫布的致命替代如何处理？', answer: '裁定：作为替代结果离场的〈陵墓守卫〉，承受被保护军团原本的致命结果，并按其所有者进入对应区域。〈霍列姆赫布〉不因该替代先离场或重新登场。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-02', recordedAt: '2026-09-02', status: 'published', cardIds: [], productIds: [], tags: ['霍列姆赫布', '陵墓守卫', '致命替代', '阵亡'], topics: ['battle', 'zones-state'], sourceIds: [], supersedes: [] },
+  { id: 'RULING-20260902-HELEN', scope: 'card', question: '海伦弃置手牌中的军团卡是否视为阵亡或离场？', answer: '裁定：该军团卡从手牌进入其所有者的墓地，属于弃置；这次区域变更不视为战场上的阵亡或离场，因此不触发【阵亡时】或【离场时】。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-02', recordedAt: '2026-09-02', status: 'published', cardIds: [], productIds: [], tags: ['海伦', '弃牌', '阵亡', '离场'], topics: ['zones-state'], sourceIds: [], supersedes: [] },
+  { id: 'RULING-20260902-PTOLEMY', scope: 'card', question: '托勒密十三世再次发动主动战术时，原费用与原战术卡如何处理？', answer: '裁定：只再次发动上一张主动战术的效果；不再次支付该战术原本的打出费用或冒号前费用，原战术卡仍留在原本所在区域，不作为这次效果的一部分再次处理。重复效果所需的公开信息仍须在其进入效果堆叠前声明。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-02', recordedAt: '2026-09-02', status: 'published', cardIds: [], productIds: [], tags: ['托勒密十三世', '主动战术', '费用', '效果堆叠'], topics: ['costs-resources', 'effects-stack'], sourceIds: [], supersedes: [] },
+  { id: 'RULING-20260902-FAITH-ZEALOT', scope: 'card', question: '信仰狂热者选择主宰效果时如何进入效果堆叠？', answer: '裁定：先完成〈信仰狂热者〉自身效果的结算。其后选择的主宰效果作为新的独立效果进入效果堆叠，并依其自身时序声明目标与模式。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-02', recordedAt: '2026-09-02', status: 'published', cardIds: [], productIds: [], tags: ['信仰狂热者', '主宰', '效果堆叠', '费用'], topics: ['effects-stack'], sourceIds: [], supersedes: [] },
+  { id: 'RULING-20260902-LI-JING', scope: 'card', question: '李靖的展示与后续引用是否拆分为多个可响应效果？', answer: '裁定：展示与引用“其”的后续处理构成同一次隐藏信息处理，不拆分为多个可响应效果。该展示被无效时，不查看牌库顶牌，也不执行依赖该信息的后续处理。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-02', recordedAt: '2026-09-02', status: 'published', cardIds: [], productIds: [], tags: ['李靖', '展示', '隐藏信息', '响应'], topics: ['effects-stack', 'zones-state'], sourceIds: [], supersedes: [] },
+  { id: 'RULING-20260902-THUNDER', scope: 'card', question: '雷霆天怒出现并列最低点时如何处理？', answer: '裁定：所有并列最低点的玩家均为输家。先由当前回合玩家处理，再由另一名玩家处理；每名玩家只能选择自己当前控制的军团，使其返回其所有者手牌。', category: '单卡裁定', sourceKind: 'user-ruling', sourceRef: '用户确认裁定 · 2026-09-02', recordedAt: '2026-09-02', status: 'published', cardIds: [], productIds: [], tags: ['雷霆天怒', '天灾', '控制者', '所有者'], topics: ['disaster-trial', 'battle'], sourceIds: [], supersedes: [] },
+  { id: 'RULING-20260828-TROOP-LAYER', scope: 'general', question: '临时兵力修正受到伤害后如何记录？', answer: '裁定：临时正兵力修正可被伤害消耗。该修正结束时，只移除尚未被消耗的部分；不得因重算原本兵力而消除已经承受的伤害。', category: '进攻与战斗', sourceKind: 'designer-ruling', sourceRef: '设计者确认裁定 · 2026-08-28', recordedAt: '2026-08-28', status: 'published', cardIds: [], productIds: [], tags: ['兵力', '伤害', '持续效果'], topics: ['battle'], sourceIds: ['LEGACY-FAQ-16'], supersedes: ['LEGACY-FAQ-16'] },
 ]
 
 /**
@@ -116,16 +144,25 @@ export const BUILT_IN_RULINGS: RuleRuling[] = [
  */
 export function createRuleCenterDraft(): RuleCenterDocument {
   return JSON.parse(JSON.stringify({
-    coreBlocks: RULE_BLOCKS,
-    quickStart: QUICK_START_ENTRIES,
-    terms: TERM_ENTRIES,
-    tournament: TOURNAMENT_ENTRIES,
+    schemaVersion: 2,
+    coreBlocks: RULE_BLOCKS.map((block, index) => ({
+      ...block,
+      id: coreRuleBlockId(index),
+      status: 'pending',
+    })),
+    quickStart: QUICK_START_ENTRIES.map(item => ({ ...item, status: item.status ?? 'pending' })),
+    terms: TERM_ENTRIES.map(item => ({ ...item, status: item.status ?? 'pending' })),
+    tournament: TOURNAMENT_ENTRIES.map(item => ({ ...item, status: item.status ?? 'pending' })),
     versions: VERSION_ENTRIES,
   })) as RuleCenterDocument
 }
 
 export function createRulingsDraft(): RuleRuling[] {
   return JSON.parse(JSON.stringify(BUILT_IN_RULINGS)) as RuleRuling[]
+}
+
+export function serializeRulingDocument(entries: RuleRuling[]) {
+  return JSON.stringify({ schemaVersion: 2, entries }, null, 2)
 }
 
 /** Add newly shipped pending-review seeds without replacing an administrator's existing draft. */
@@ -158,6 +195,20 @@ function strings(value: unknown, maximumItems: number, maximumLength: number) {
   return result.every(Boolean) ? result as string[] : undefined
 }
 
+function legacyTopics(category: string, scope: RuleRulingScope): RuleTopicId[] {
+  if (scope === 'construction') return ['deck-construction']
+  if (scope === 'tournament') return ['tournament']
+  const mapped: Record<string, RuleTopicId> = {
+    '进攻与战斗': 'battle',
+    '效果与响应': 'effects-stack',
+    '区域与状态': 'zones-state',
+    '构筑与限制': 'deck-construction',
+    '赛事规则': 'tournament',
+    '单卡裁定': 'effects-stack',
+  }
+  return [mapped[category] ?? 'effects-stack']
+}
+
 function ruling(value: unknown): RuleRuling | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
   const row = value as Record<string, unknown>
@@ -172,7 +223,10 @@ function ruling(value: unknown): RuleRuling | undefined {
     || !scopes.has(scope) || !statuses.has(status) || !sourceKinds.has(sourceKind)
     || !cardIds || !productIds || !tags || !sourceIds || !supersedes) return undefined
   const effectiveAt = row.effectiveAt === undefined || row.effectiveAt === null ? undefined : text(row.effectiveAt, 40)
-  return { id, scope, question, answer, category, sourceKind, sourceRef, recordedAt, effectiveAt, status, cardIds, productIds, tags, sourceIds, supersedes }
+  const parsedTopics = row.topics === undefined ? legacyTopics(category, scope) : strings(row.topics, 9, 40)
+  const topics = parsedTopics?.filter((item): item is RuleTopicId => topicIds.has(item as RuleTopicId))
+  if (!topics?.length || topics.length !== parsedTopics?.length) return undefined
+  return { id, scope, question, answer, category, sourceKind, sourceRef, recordedAt, effectiveAt, status, cardIds, productIds, tags, topics, sourceIds, supersedes }
 }
 
 export function parseRulingDocument(value: string): RuleRuling[] {
@@ -197,12 +251,21 @@ export function mergedRulings(dynamicRulings: RuleRuling[]) {
     .sort((left, right) => right.recordedAt.localeCompare(left.recordedAt) || left.id.localeCompare(right.id))
 }
 
-function ruleBlock(value: unknown): RuleBlock | undefined {
+export function coreRuleBlockId(index: number) {
+  return `core-rule-${String(index + 1).padStart(3, '0')}`
+}
+
+function ruleBlock(value: unknown, index: number): RuleCenterCoreBlock | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
   const row = value as Record<string, unknown>
-  const page = text(row.page, 20); const topic = row.topic === undefined ? undefined : text(row.topic, 100)
+  const id = text(row.id, 100) ?? coreRuleBlockId(index)
+  const page = typeof row.page === 'string' && row.page.trim().length <= 20 ? row.page.trim() : undefined
+  const topic = row.topic === undefined ? undefined : text(row.topic, 100)
   const chapter = row.chapter === undefined ? undefined : text(row.chapter, 100); const blockText = text(row.text, 12_000)
-  return page && blockText ? { page, ...(topic ? { topic } : {}), ...(chapter ? { chapter } : {}), text: blockText } : undefined
+  const status = row.status === undefined ? undefined : text(row.status, 30) as RuleCenterCoreBlock['status']
+  const effectiveAt = row.effectiveAt === undefined || row.effectiveAt === null ? undefined : text(row.effectiveAt, 40)
+  if (page === undefined || !blockText || (status && status !== 'published')) return undefined
+  return { id, page, ...(topic ? { topic } : {}), ...(chapter ? { chapter } : {}), text: blockText, ...(status ? { status } : {}), ...(effectiveAt ? { effectiveAt } : {}) }
 }
 
 function centerEntry(value: unknown, section: RuleCenterSection): RuleCenterEntry | undefined {
@@ -210,8 +273,9 @@ function centerEntry(value: unknown, section: RuleCenterSection): RuleCenterEntr
   const row = value as Record<string, unknown>
   const id = text(row.id, 100); const title = text(row.title, 300); const body = text(row.body, 12_000); const sourceRef = text(row.sourceRef, 300)
   const tags = strings(row.tags, 32, 80); const status = row.status === undefined ? undefined : text(row.status, 30)
+  const effectiveAt = row.effectiveAt === undefined || row.effectiveAt === null ? undefined : text(row.effectiveAt, 40)
   if (status && status !== 'published') return undefined
-  return id && title && body && sourceRef && tags ? { id, section, title, body, sourceRef, tags } : undefined
+  return id && title && body && sourceRef && tags ? { id, section, title, body, sourceRef, tags, ...(effectiveAt ? { effectiveAt } : {}) } : undefined
 }
 
 function centerVersion(value: unknown): RuleCenterVersion | undefined {
@@ -234,11 +298,13 @@ export function parsePublishedRuleCenter(value: string): RuleCenterDocument {
     const list = <T>(key: string, parse: (value: unknown) => T | undefined) => Array.isArray(parsed[key])
       ? parsed[key].map(parse).filter((item): item is T => Boolean(item)) : []
     return {
-      coreBlocks: list('coreBlocks', ruleBlock),
+      schemaVersion: typeof parsed.schemaVersion === 'number' ? parsed.schemaVersion : 1,
+      coreBlocks: Array.isArray(parsed.coreBlocks)
+        ? parsed.coreBlocks.map(ruleBlock).filter((item): item is RuleCenterCoreBlock => Boolean(item)) : [],
       quickStart: list('quickStart', value => centerEntry(value, 'quick-start')),
       terms: list('terms', value => centerEntry(value, 'term')),
       tournament: list('tournament', value => centerEntry(value, 'tournament')),
       versions: list('versions', centerVersion),
     }
-  } catch { return { coreBlocks: [], quickStart: [], terms: [], tournament: [], versions: [] } }
+  } catch { return { schemaVersion: 2, coreBlocks: [], quickStart: [], terms: [], tournament: [], versions: [] } }
 }

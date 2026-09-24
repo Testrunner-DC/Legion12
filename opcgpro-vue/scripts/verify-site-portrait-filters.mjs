@@ -21,9 +21,13 @@ import {loadDeckCatalog} from '/src/l12/decks.ts'
 import {createRuleCenterDraft,createRulingsDraft} from '/src/l12/data/ruleCenterData.ts'
 import {rankedApi} from '/src/l12/platform.ts'
 import '/src/style.css'
+const publishedRuleCenter=createRuleCenterDraft()
+for(const collection of ['coreBlocks','quickStart','terms','tournament','versions'])for(const item of publishedRuleCenter[collection])item.status='published'
+const publishedRulings=createRulingsDraft().map(item=>({...item,status:'published'}))
 const originalFetch=window.fetch.bind(window)
 window.fetch=async(input,init)=>{
  const url=String(typeof input==='string'?input:input.url)
+ if(url.includes('/api/content?'))return new Response(JSON.stringify({values:{'rules.notice':'','rules.center':JSON.stringify(publishedRuleCenter),'rules.rulings':JSON.stringify({schemaVersion:2,entries:publishedRulings})},observedAt:new Date().toISOString(),nextRuleTransitionAt:null}),{status:200,headers:{'Content-Type':'application/json'}})
  if(url.includes('/api/content/rules.center'))return new Response(JSON.stringify({key:'rules.center',value:JSON.stringify(createRuleCenterDraft())}),{status:200,headers:{'Content-Type':'application/json'}})
  if(url.includes('/api/content/rules.rulings'))return new Response(JSON.stringify({key:'rules.rulings',value:JSON.stringify(createRulingsDraft())}),{status:200,headers:{'Content-Type':'application/json'}})
  if(url.includes('/api/content/rules.notice'))return new Response(JSON.stringify({key:'rules.notice',value:''}),{status:200,headers:{'Content-Type':'application/json'}})
@@ -123,6 +127,7 @@ try {
 
     await page.goto(`http://127.0.0.1:${port}/__site_portrait__?mode=rules`)
     await page.locator('.rule-tools input').waitFor()
+    await page.locator('.rule-layout article').first().waitFor()
     const rulesBase = await page.evaluate(() => ({
       overflow: document.documentElement.scrollWidth > innerWidth + 1,
       triggerVisible: getComputedStyle(document.querySelector('.rule-tools .mobile-filter-trigger')).display !== 'none',
@@ -145,7 +150,7 @@ try {
       await page.locator('.faq-search-row input').waitFor()
       assert.equal(await page.locator('.desktop-popular-keywords').isVisible(), false, `FAQ keywords must collapse at ${suffix(viewport)}`)
       await page.locator('.faq-search-row .mobile-filter-trigger').click()
-      const faqDialog = page.getByRole('dialog', { name: '裁定筛选' })
+      const faqDialog = page.getByRole('dialog', { name: '规则主题筛选' })
       await faqDialog.waitFor()
       assert.equal(await faqDialog.locator('.mobile-popular-keywords').isVisible(), true, `FAQ keywords missing from filter sheet at ${suffix(viewport)}`)
       assert.equal(await faqDialog.evaluate(element => element.scrollWidth > element.clientWidth + 1), false, `FAQ filter sheet overflows at ${suffix(viewport)}`)

@@ -1690,9 +1690,19 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _app.MapGet("/api/content", (HttpRequest request) =>
         {
             var keys = request.Query["key"].Where(key => _platform.IsContentKeyAllowed(key)).Distinct(StringComparer.OrdinalIgnoreCase);
-            return Results.Ok(new { values = keys.ToDictionary(key => key!, key => _platform.GetContent(key!), StringComparer.OrdinalIgnoreCase) });
+            return Results.Ok(_platform.PublicContents(keys!));
         });
-        _app.MapGet("/api/content/{key}", (string key) => Results.Ok(new { key, value = _platform.GetContent(key) }));
+        _app.MapGet("/api/content/{key}", (string key) =>
+        {
+            var content = _platform.PublicContents([key]);
+            return Results.Ok(new
+            {
+                key,
+                value = content.Values.GetValueOrDefault(key, string.Empty),
+                content.ObservedAt,
+                content.NextRuleTransitionAt,
+            });
+        });
         _app.MapGet("/api/site/home", () => Results.Ok(_platform.PublicSiteHome()));
         _app.MapGet("/api/site/categories", (string? kind) => Results.Ok(_platform.PublicSiteCategories(kind)));
         _app.MapGet(L12SharePage.Endpoint, (HttpRequest request) =>
@@ -2149,19 +2159,34 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             const L12Permission permission = L12Permission.AdminContentPublish;
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
-            try
+            var command = CommandEnvelope(request, authenticated.Account, permission, "rule-item.publish",
+                $"content:{body.Key}/{body.Collection}/{body.ItemId}", body, body.IdempotencyKey, null,
+                body.DryRun, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission, current =>
             {
-                return Results.Ok(_platform.PublishRuleItem(authenticated.Account, body,
-                    AuditContext(request, permission)));
-            }
-            catch (KeyNotFoundException error)
-            {
-                return ApiError(request, "rule_item_not_found", error.Message, StatusCodes.Status404NotFound);
-            }
-            catch (ArgumentException error)
-            {
-                return ApiError(request, "invalid_rule_item", error.Message, StatusCodes.Status400BadRequest);
-            }
+                try
+                {
+                    var entry = _platform.PublishRuleItem(current.Actor, current.Payload, current.AuditContext);
+                    NotifyRulesContentChanged();
+                    return L12AdminCommandResult<L12ContentEntryView>.Ok(entry, "规则条目已发布");
+                }
+                catch (KeyNotFoundException error)
+                {
+                    return L12AdminCommandResult<L12ContentEntryView>.Fail("rule_item_not_found", error.Message,
+                        StatusCodes.Status404NotFound);
+                }
+                catch (L12ContentStateConflictException error)
+                {
+                    return L12AdminCommandResult<L12ContentEntryView>.Fail("content_version_conflict", error.Message,
+                        StatusCodes.Status409Conflict);
+                }
+                catch (ArgumentException error)
+                {
+                    return L12AdminCommandResult<L12ContentEntryView>.Fail("invalid_rule_item", error.Message,
+                        StatusCodes.Status400BadRequest);
+                }
+            });
+            return AdminCommandResponse(request, command, outcome);
         });
         _app.MapGet("/api/me/alternate-arts", (HttpRequest request) =>
         {
@@ -2415,11 +2440,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _sandboxReplayMaintenanceTask = RunSandboxReplayMaintenanceAsync(
             _sandboxReplayMaintenanceCancellation.Token);
         ScheduleNextOperationsTransition();
+        ScheduleNextRulesContentTransition();
         Console.WriteLine($"HTTP: http://{host}:{port}  WebSocket: /ws");
     }
 
     public async Task StopAsync()
     {
+        await StopRulesContentTransitionAsync();
         await StopOperationsTransitionAsync();
         await StopSandboxReplayMaintenanceAsync();
         await StopRankedClockWatchdogAsync();
@@ -3723,6 +3750,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             try
             {
                 var batch = _platform.PublishContentBatch(current.Actor, current.Payload, current.AuditContext);
+                if (batch.Items.Any(item => item.Key is "rules.center" or "rules.rulings"))
+                    NotifyRulesContentChanged();
                 return L12AdminCommandResult<L12ContentBatchOperationView>.Ok(
                     new L12ContentBatchOperationView(true, batch, null), "内容批次已发布");
             }
@@ -3763,6 +3792,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             try
             {
                 var batch = _platform.RollbackContentBatch(current.Actor, current.Payload, current.AuditContext);
+                if (batch.Items.Any(item => item.Key is "rules.center" or "rules.rulings"))
+                    NotifyRulesContentChanged();
                 return L12AdminCommandResult<L12ContentBatchOperationView>.Ok(
                     new L12ContentBatchOperationView(true, batch, null), "内容批次已回滚");
             }
@@ -4047,6 +4078,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _platform.SessionsRevoked -= HandlePlatformSessionsRevoked;
+        await StopRulesContentTransitionAsync();
         await StopSandboxReplayMaintenanceAsync();
         await StopRankedClockWatchdogAsync();
         _modianImports.Dispose();

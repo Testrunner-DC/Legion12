@@ -64,7 +64,8 @@ let pendingActionResentAttempt = -1
 let lastGameStateEnvelope: any = null
 let resourceFallbackTimer: ReturnType<typeof setTimeout> | null = null
 let resourceFallbackLastAt = 0
-const resourceNames = ['friends', 'rankedIntegrity', 'alternateArtNotifications', 'operationsPolicy', 'presence'] as const
+const resourceNames = ['friends', 'rankedIntegrity', 'alternateArtNotifications', 'operationsPolicy', 'presence', 'rulesContent'] as const
+const fallbackResourceNames = resourceNames.filter(resource => resource !== 'rulesContent')
 
 function dispatchResourceChange(resource: string, detail: Record<string, unknown> = {}) {
   const eventDetail = { resource, ...detail }
@@ -98,7 +99,7 @@ function scheduleResourceFallback() {
     if (l12State.status === 'online' || !automaticConnectionEnabled) return
     if (typeof document === 'undefined' || !document.hidden) {
       resourceFallbackLastAt = Date.now()
-      resourceNames.forEach(resource => dispatchResourceChange(resource, { fallback: true }))
+      fallbackResourceNames.forEach(resource => dispatchResourceChange(resource, { fallback: true }))
     }
     scheduleResourceFallback()
   }, 60_000)
@@ -107,7 +108,7 @@ function scheduleResourceFallback() {
 if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => {
   if (!document.hidden && l12State.status !== 'online' && Date.now() - resourceFallbackLastAt >= 60_000) {
     resourceFallbackLastAt = Date.now()
-    resourceNames.forEach(resource => dispatchResourceChange(resource, { fallback: true }))
+    fallbackResourceNames.forEach(resource => dispatchResourceChange(resource, { fallback: true }))
   }
 })
 

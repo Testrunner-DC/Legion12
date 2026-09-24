@@ -297,6 +297,192 @@ public sealed class SiteContentPlatformStoreTests
     }
 
     [Fact]
+    public void RuleCenterSchemaV2PreservesAllCoreBlocksWhenPageNumbersAreBlank()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-rule-center-v2-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var coreBlocks = Enumerable.Range(1, 123).Select(index => new
+            {
+                id = $"core-rule-{index:000}",
+                page = index <= 98 ? string.Empty : index.ToString(),
+                topic = index == 1 ? "介绍" : null,
+                chapter = $"章节 {index}",
+                text = $"规则正文 {index}",
+                status = "published",
+            }).ToArray();
+            var draft = JsonSerializer.Serialize(new
+            {
+                schemaVersion = 2,
+                coreBlocks,
+                quickStart = Array.Empty<object>(),
+                terms = Array.Empty<object>(),
+                tournament = Array.Empty<object>(),
+                versions = Array.Empty<object>(),
+            });
+
+            store.SaveContentDraft(admin, "rules.center", draft);
+            store.PublishContent(admin, "rules.center");
+
+            using var published = JsonDocument.Parse(store.GetContent("rules.center"));
+            var rows = published.RootElement.GetProperty("coreBlocks").EnumerateArray().ToArray();
+            Assert.Equal(123, rows.Length);
+            Assert.Equal(98, rows.Count(row => row.GetProperty("page").GetString() == string.Empty));
+            Assert.Equal("core-rule-001", rows[0].GetProperty("id").GetString());
+            Assert.Equal("core-rule-123", rows[^1].GetProperty("id").GetString());
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void RuleCenterSchemaV2RejectsDuplicateCoreBlockIds()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-rule-center-duplicate-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var draft = JsonSerializer.Serialize(new
+            {
+                schemaVersion = 2,
+                coreBlocks = new[]
+                {
+                    new { id = "core-rule-001", page = "", text = "第一段", status = "pending" },
+                    new { id = "core-rule-001", page = "", text = "第二段", status = "pending" },
+                },
+                quickStart = Array.Empty<object>(), terms = Array.Empty<object>(),
+                tournament = Array.Empty<object>(), versions = Array.Empty<object>(),
+            });
+
+            var error = Assert.Throws<ArgumentException>(() => store.SaveContentDraft(admin, "rules.center", draft));
+            Assert.Contains("核心规则块 id 重复", error.Message);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void RuleRulingsSchemaV2RequiresControlledTopics()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-rule-topics-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var draft = JsonSerializer.Serialize(new
+            {
+                schemaVersion = 2,
+                entries = new[]
+                {
+                    new { id = "RULING-TOPIC", scope = "general", question = "测试问题？", answer = "测试答案。",
+                        category = "效果与响应", sourceKind = "user-ruling", sourceRef = "测试来源",
+                        recordedAt = "2026-09-25", status = "pending", cardIds = Array.Empty<string>(),
+                        productIds = Array.Empty<string>(), tags = Array.Empty<string>(), topics = new[] { "自由文本主题" },
+                        sourceIds = Array.Empty<string>(), supersedes = Array.Empty<string>() },
+                },
+            });
+
+            var error = Assert.Throws<ArgumentException>(() => store.SaveContentDraft(admin, "rules.rulings", draft));
+            Assert.Contains("topics 含无效主题", error.Message);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void FutureRuleRulingIsAbsentFromPublicProjectionUntilItsEffectiveBoundary()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-rule-effective-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var transition = new DateTimeOffset(2026, 10, 1, 12, 0, 0, TimeSpan.FromHours(8));
+            var draft = JsonSerializer.Serialize(new
+            {
+                schemaVersion = 2,
+                entries = new object[]
+                {
+                    new { id = "RULING-OLD", scope = "general", question = "当前问题？", answer = "当前答案。",
+                        category = "效果与响应", sourceKind = "user-ruling", sourceRef = "当前来源",
+                        recordedAt = "2026-09-25", status = "published", cardIds = Array.Empty<string>(),
+                        productIds = Array.Empty<string>(), tags = new[] { "当前标签" }, topics = new[] { "effects-stack" },
+                        sourceIds = Array.Empty<string>(), supersedes = Array.Empty<string>() },
+                    new { id = "RULING-FUTURE", scope = "general", question = "FUTURE-SECRET-QUESTION？",
+                        answer = "FUTURE-SECRET-ANSWER。", category = "效果与响应", sourceKind = "user-ruling",
+                        sourceRef = "FUTURE-SECRET-SOURCE", recordedAt = "2026-09-25",
+                        effectiveAt = transition.ToString("O"), status = "published", cardIds = new[] { "FUTURE-CARD" },
+                        productIds = new[] { "FUTURE-PRODUCT" }, tags = new[] { "FUTURE-TAG" },
+                        topics = new[] { "effects-stack" }, sourceIds = Array.Empty<string>(), supersedes = new[] { "RULING-OLD" } },
+                },
+            });
+            store.SaveContentDraft(admin, "rules.rulings", draft);
+            store.PublishContent(admin, "rules.rulings");
+
+            var before = store.PublicContents(["rules.rulings"], transition.AddMilliseconds(-1));
+            Assert.Contains("RULING-OLD", before.Values["rules.rulings"]);
+            Assert.DoesNotContain("FUTURE-SECRET", before.Values["rules.rulings"]);
+            Assert.DoesNotContain("FUTURE-CARD", before.Values["rules.rulings"]);
+            Assert.Equal(transition, before.NextRuleTransitionAt);
+
+            var atBoundary = store.PublicContents(["rules.rulings"], transition);
+            Assert.Contains("RULING-FUTURE", atBoundary.Values["rules.rulings"]);
+            Assert.Contains("RULING-OLD", atBoundary.Values["rules.rulings"]);
+            Assert.Null(atBoundary.NextRuleTransitionAt);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void RuleItemPublicationCreatesReadableContentHistory()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-rule-history-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var draft = JsonSerializer.Serialize(new
+            {
+                schemaVersion = 2,
+                entries = new[]
+                {
+                    new { id = "RULING-HISTORY", scope = "card", question = "历史问题？", answer = "历史答案。",
+                        category = "单卡裁定", sourceKind = "user-ruling", sourceRef = "管理员复核",
+                        recordedAt = "2026-09-25", status = "pending", cardIds = Array.Empty<string>(),
+                        productIds = Array.Empty<string>(), tags = Array.Empty<string>(), topics = new[] { "effects-stack" },
+                        sourceIds = Array.Empty<string>(), supersedes = Array.Empty<string>() },
+                },
+            });
+            var saved = store.SaveContentDraft(admin, "rules.rulings", draft);
+            store.PublishRuleItem(admin, new("rules.rulings", "entries", "RULING-HISTORY",
+                ExpectedVersion: saved.Version));
+
+            var batch = Assert.Single(store.ContentBatches().Where(item => item.Action == "rule-item-publish"));
+            Assert.Equal("rules.rulings/entries/RULING-HISTORY", batch.SourceBatchId);
+            var item = Assert.Single(batch.Items);
+            Assert.Equal("rules.rulings", item.Key);
+            Assert.Contains("RULING-HISTORY", item.PublishedValue);
+            Assert.False(string.IsNullOrWhiteSpace(item.PublishedVersionId));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void RuleItemPublicationDoesNotPublishSiblingDrafts()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-rule-item-{Guid.NewGuid():N}");
