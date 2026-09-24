@@ -73,6 +73,7 @@ public sealed partial class L12RoomManager
         public string? TournamentCode { get; init; }
         public string? TournamentMatchId { get; init; }
         public string? TournamentRulesHash { get; init; }
+        public L12RankedTimeControlConfig? TournamentTimeControl { get; init; }
         public bool TournamentResultReported { get; set; }
         public bool IsMatchmaking { get; init; }
         public bool RankedResultReported { get; set; }
@@ -221,6 +222,11 @@ public sealed partial class L12RoomManager
                 };
                 if (source.RoomCode is not null && _rooms.TryGetValue(source.RoomCode, out var recoveredRoom))
                 {
+                    if (recoveredRoom.TournamentId is not null && recoveredRoom.TournamentMatchId is not null)
+                    {
+                        _ = _platform?.TournamentRoomAssignment(accountId, recoveredRoom.TournamentId,
+                            recoveredRoom.TournamentMatchId, source.IsSpectator);
+                    }
                     await recoveredRoom.Gate.WaitAsync();
                     try
                     {
@@ -1204,6 +1210,7 @@ public sealed partial class L12RoomManager
             TournamentCode = assignment.TournamentCode,
             TournamentMatchId = assignment.MatchId,
             TournamentRulesHash = assignment.RulesHash,
+            TournamentTimeControl = assignment.TimeControl,
             OperationsPolicy = assignment.OperationsPolicy,
             Options = new L12RoomOptions
             {
@@ -1247,10 +1254,10 @@ public sealed partial class L12RoomManager
             operationsPolicy: room.OperationsPolicy,
             stateFormatVersion: L12PersistenceContract.CurrentStateFormatVersion,
             effectPresentationSnapshot: CaptureEffectPresentationSnapshot(), alternateArtUrls: ResolveAlternateArtUrls(members));
-        // 只有对局记录成功落库后才发布可操作引擎；失败时下一次进入/恢复可安全重试。
-        await _recorder.StartAsync(game, "tournament", members[0].AccountId, members[1].AccountId,
-            members.Select(SelectedDeck).ToArray());
         room.Game = game;
+        InitializeRankedClock(room);
+        // 只有对局记录与权威计时初始快照在同一事务落库后才发布可操作引擎。
+        await StartRecordedGameAsync(room, members, members.Select(SelectedDeck).ToArray());
         return false;
     }
 
@@ -1340,6 +1347,21 @@ public sealed partial class L12RoomManager
         try
         {
             if (room.Game is null) return Error(sessionId, "对局尚未开始", requestId: requestId);
+            if (room.TournamentId is not null && room.TournamentMatchId is not null
+                && session.AccountId is not null)
+            {
+                try
+                {
+                    _ = _platform?.TournamentRoomAssignment(session.AccountId, room.TournamentId,
+                        room.TournamentMatchId, spectate: false);
+                }
+                catch (Exception eligibilityError) when (eligibilityError is L12TournamentScopeException
+                                                         or L12TournamentVersionConflictException
+                                                         or KeyNotFoundException)
+                {
+                    return Error(sessionId, eligibilityError.Message, "tournamentRoomRejected", requestId);
+                }
+            }
             var actorIndex = session.PlayerIndex!.Value;
             if (room.TryGetProcessedActionRequest(actorIndex, requestId, out var duplicate))
             {
@@ -1381,15 +1403,16 @@ public sealed partial class L12RoomManager
             var result = room.Game.Handle(session.PlayerIndex!.Value, command);
             L12PerformanceMetrics.Duration("action.engine", engineStartedAt);
             room.CommandSequence++;
-            var ranked = room.RankedClock is not null;
+            var timed = room.RankedClock is not null;
+            var ranked = string.Equals(room.Options.MatchModeId, "ranked", StringComparison.OrdinalIgnoreCase);
             try
             {
-                if (ranked)
+                if (timed)
                 {
                     if (result.Accepted && meaningful) room.MeaningfulCommandCount++;
                     if (result.Accepted)
                         RefreshRankedClockActorsLocked(room, _utcNow(), session.PlayerIndex.Value);
-                    var settlement = room.Game.State.Phase == L12Phase.GameOver
+                    var settlement = ranked && room.Game.State.Phase == L12Phase.GameOver
                         ? BuildRankedSettlementEnvelope(room, _utcNow()) : null;
                     await _recorder.AppendRankedAsync(room.Game, room.CommandSequence,
                         session.PlayerIndex.Value, commandElement.GetRawText(), result,
@@ -1406,7 +1429,7 @@ public sealed partial class L12RoomManager
             }
             catch (Exception)
             {
-                var restored = ranked
+                var restored = timed
                     ? await ReloadRankedRoomFromRecorderAsync(room)
                     : await ReloadJournalRoomFromRecorderAsync(room);
                 if (!restored) room.Closed = true;
@@ -1430,7 +1453,7 @@ public sealed partial class L12RoomManager
             }
             room.RememberProcessedActionRequest(actorIndex, requestId, true, null,
                 room.Game.State.Revision);
-            if (!ranked)
+            if (!timed)
             {
                 if (meaningful) room.MeaningfulCommandCount++;
                 RefreshRankedClockActorsLocked(room, _utcNow(), session.PlayerIndex.Value);
@@ -1844,8 +1867,27 @@ public sealed partial class L12RoomManager
                 state = L12KernelProjection.ForSpectator(room.Game!),
             };
             foreach (var id in spectators)
+            {
+                if (room.TournamentId is not null && room.TournamentMatchId is not null
+                    && _sessions.TryGetValue(id, out var spectator) && spectator.AccountId is not null)
+                {
+                    try
+                    {
+                        _ = _platform?.TournamentRoomAssignment(spectator.AccountId, room.TournamentId,
+                            room.TournamentMatchId, spectate: true);
+                    }
+                    catch (Exception error) when (error is L12TournamentScopeException
+                                                  or L12TournamentVersionConflictException
+                                                  or KeyNotFoundException)
+                    {
+                        lock (room.Spectators) room.Spectators.Remove(id);
+                        ClearRoomMembership(spectator);
+                        continue;
+                    }
+                }
                 yield return new OutgoingMessage(id, payload, replaceable, IsGameState: true,
                     ForceFullGameState: forceCritical || state.Phase == L12Phase.GameOver);
+            }
         }
     }
 
@@ -1930,7 +1972,7 @@ public sealed partial class L12RoomManager
                 return "排位最终事件尚未原子写入，已冻结结算并等待重试";
             try
             {
-                await _recorder.CompleteAsync(room.Game);
+                await _recorder.CompleteAsync(room.Game, room.TournamentId, room.TournamentMatchId);
                 room.CompletionRecorded = true;
             }
             catch (Exception error)
@@ -1958,8 +2000,8 @@ public sealed partial class L12RoomManager
         if (room.Game.State.Winner is not { } winner) return "对局已结束但缺少胜者，已保留记录待裁决";
         try
         {
-            _platform.RecordTournamentGameResult(room.TournamentId, room.TournamentMatchId,
-                room.Game.State.MatchId, winner);
+            var drained = await DrainTournamentResultOutboxAsync(room.Game.State.MatchId);
+            if (drained.Failed != 0) return "赛果回写待重试：持久化 outbox 尚未完成";
             room.TournamentResultReported = true;
             return null;
         }

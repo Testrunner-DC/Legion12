@@ -362,13 +362,16 @@ public sealed class ControlPlaneImmediateMaintenanceOperationsTests
                     string.Empty, 50, 5, RegistrationVisibility: "public", LateGraceMinutes: 5),
                 TournamentContext("create"), true);
             var organizerDeck = store.Decks(organizer.Id)[0];
-            tournament = store.UpdateTournamentRegistration(organizer, tournament.Id,
-                new L12TournamentRegistrationPayload(organizerDeck.Name, string.Empty), tournament.Version,
+            tournament = store.PreCheckInTournament(organizer, tournament.Id,
+                new L12TournamentPreCheckInPayload(organizerDeck.Name, string.Empty), tournament.Version,
                 TournamentContext("organizer-deck"), true);
             var playerDeck = store.Decks(player.Id)[0];
             tournament = store.RegisterTournament(player, tournament.Id,
-                new L12TournamentRegistrationPayload(playerDeck.Name, string.Empty), tournament.Version,
+                new L12TournamentRegistrationPayload(), tournament.Version,
                 TournamentContext("player-deck"), true);
+            tournament = store.PreCheckInTournament(player, tournament.Id,
+                new L12TournamentPreCheckInPayload(playerDeck.Name, string.Empty), tournament.Version,
+                TournamentContext("player-check-in"), true);
             tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
                 TournamentContext("start"), true);
             var match = Assert.Single(tournament.Rounds[0].Matches);

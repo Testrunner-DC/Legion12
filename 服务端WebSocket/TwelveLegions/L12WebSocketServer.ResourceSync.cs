@@ -10,6 +10,7 @@ public sealed partial class L12WebSocketServer
     private const string AlternateArtNotificationsResource = "alternateArtNotifications";
     private const string OperationsPolicyResource = "operationsPolicy";
     private const string RulesContentResource = "rulesContent";
+    private const string TournamentsResource = "tournaments";
 
     private readonly string _resourceEpoch = Guid.NewGuid().ToString("N");
     private readonly ConcurrentDictionary<string, long> _accountResourceRevisions =
@@ -17,6 +18,7 @@ public sealed partial class L12WebSocketServer
     private long _presenceResourceRevision;
     private long _operationsResourceRevision;
     private long _rulesContentResourceRevision;
+    private long _tournamentsResourceRevision;
     private readonly object _operationsTransitionGate = new();
     private CancellationTokenSource? _operationsTransitionCancellation;
     private Task? _operationsTransitionTask;
@@ -45,6 +47,7 @@ public sealed partial class L12WebSocketServer
             [AlternateArtNotificationsResource] = AccountResourceRevision(accountId, AlternateArtNotificationsResource),
             [OperationsPolicyResource] = Interlocked.Read(ref _operationsResourceRevision),
             [RulesContentResource] = Interlocked.Read(ref _rulesContentResourceRevision),
+            [TournamentsResource] = Interlocked.Read(ref _tournamentsResourceRevision),
         },
     };
 
@@ -160,6 +163,19 @@ public sealed partial class L12WebSocketServer
         })).ToArray();
         _ = SendManyAsync(messages, CancellationToken.None);
         if (reschedule) ScheduleNextRulesContentTransition();
+    }
+
+    private void NotifyTournamentsChanged()
+    {
+        var revision = Interlocked.Increment(ref _tournamentsResourceRevision);
+        var messages = _activeAccountSockets.Values.Select(sessionId => new OutgoingMessage(sessionId, new
+        {
+            type = "resourceChanged",
+            resource = TournamentsResource,
+            epoch = _resourceEpoch,
+            revision,
+        })).ToArray();
+        _ = SendManyAsync(messages, CancellationToken.None);
     }
 
     private void ScheduleNextRulesContentTransition()

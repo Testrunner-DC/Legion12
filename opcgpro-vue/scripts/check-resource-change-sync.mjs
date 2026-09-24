@@ -101,6 +101,13 @@ assert.equal((source('opcgpro-vue/src/l12/site/BattleHubPage.vue').match(/setInt
 assert.ok(source('服务端WebSocket/TwelveLegions/L12WebSocketServer.cs').includes('/api/friends/overview'))
 assert.ok(source('服务端WebSocket/TwelveLegions/L12WebSocketServer.ResourceSync.cs').includes('resourceChanged'))
 assert.ok(source('opcgpro-vue/src/l12/net.ts').includes("60_000"), 'offline fallback must stay low-frequency')
-checks += pollingFiles.length + 4
+const resourceSyncServer = source('服务端WebSocket/TwelveLegions/L12WebSocketServer.ResourceSync.cs')
+const tournamentPage = source('opcgpro-vue/src/l12/site/TournamentCenterPage.vue')
+assert.ok(resourceSyncServer.includes('[TournamentsResource]'), 'server snapshot must expose the tournament revision')
+assert.ok(resourceSyncServer.includes('NotifyTournamentsChanged()'),
+  'successful tournament mutations must broadcast their revision')
+assert.ok(tournamentPage.includes("'l12-resource-tournaments'"),
+  'the tournament center must react to tournament resource changes')
+checks += pollingFiles.length + 7
 
 console.log(`Resource change synchronization: ${checks}/${checks} checks passed`)

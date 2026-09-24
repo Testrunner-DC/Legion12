@@ -563,7 +563,8 @@ export type TournamentDisasterMode = 'all' | 'random' | 'season' | 'none'
 export interface TournamentRulesSnapshot {
   ruleset: string; disasterMode: TournamentDisasterMode; banList: string
   disasterCardIds: string[]; cardRestrictions: OperationsCardRestriction[]
-  deckVisibility: TournamentDeckVisibility; hash: string; capturedAt: string
+  deckVisibility: TournamentDeckVisibility; ruleContentVersionId?: string; ruleContentHash: string
+  hash: string; capturedAt: string
 }
 export interface TournamentDeckSnapshot {
   name: string; code?: string; hash: string; submittedAt: string; lockedAt?: string
@@ -571,8 +572,18 @@ export interface TournamentDeckSnapshot {
 }
 export interface TournamentStaff { accountId: string; username: string }
 export interface TournamentParticipant {
-  accountId: string; username: string; checkedIn: boolean; dropped: boolean; eliminated: boolean; seed: number
+  accountId: string; username: string; checkedIn: boolean; dropped: boolean; eliminated: boolean
+  removed: boolean; registrationBanned: boolean; removalReason?: string; tournamentCheckedInAt?: string; seed: number
   deck?: TournamentDeckSnapshot
+}
+export interface TournamentCounts {
+  registered: number; pendingCheckIn: number; checkedIn: number; active: number
+  dropped: number; removed: number; registrationBanned: number
+}
+export interface TournamentOrganizerTransfer {
+  id: string; fromAccountId: string; fromUsername: string; toAccountId: string; toUsername: string
+  status: 'pending' | 'accepted' | 'declined' | 'superseded' | 'expired'; reason: string
+  requestedAt: string; expiresAt: string; resolvedAt?: string
 }
 export interface TournamentStanding {
   roundNumber: number; rank: number; accountId: string; username: string; wins: number; losses: number
@@ -607,6 +618,8 @@ export interface Tournament {
   id: string; code: string; name: string; organizerAccountId: string; organizerName: string; referees: TournamentStaff[]
   status: TournamentStatus; format: 'single' | 'swiss' | 'swiss-cut' | 'league'; visibility: 'public' | 'code'; maxPlayers: number
   startAt?: string; description: string; rules: TournamentRulesSnapshot; roundMinutes: number; checkInMinutes: number
+  timeControl: RankedTimeControlConfig; usesLegacyRoundClock: boolean; counts: TournamentCounts
+  pendingOrganizerTransfer?: TournamentOrganizerTransfer; organizerTransferHistory: TournamentOrganizerTransfer[]
   participants: TournamentParticipant[]; rounds: TournamentRound[]; version: number; legacyImported: boolean
   createdAt: string; updatedAt: string; completedAt?: string; swissRounds: number; cutSize?: number
   registrationVisibility: 'public' | 'staff'; lateGraceMinutes: number
@@ -617,7 +630,8 @@ export interface TournamentCreateInput {
   name: string; format: Tournament['format']; visibility: Tournament['visibility']; maxPlayers: number; startAt?: string
   ruleset: string; description: string; deckVisibility: TournamentDeckVisibility; disasterMode: TournamentDisasterMode
   banList: string; disasterCardIds: string[]; cardRestrictions: OperationsCardRestriction[]
-  roundMinutes: number; checkInMinutes: number; refereeAccountIds: string[]; swissRounds: number; cutSize?: number
+  roundMinutes: number; checkInMinutes: number; timeControl: RankedTimeControlConfig
+  refereeAccountIds: string[]; swissRounds: number; cutSize?: number
   registrationVisibility: 'public' | 'staff'; lateGraceMinutes: number
 }
 export interface LegacyTournamentParticipantInput {
@@ -1303,11 +1317,26 @@ export const tournamentApi = {
   importLegacy: (tournaments: LegacyTournamentInput[], expectedVersion: number, previewHash?: string, dryRun = true) => platformRequest<TournamentLegacyImport>('/api/tournaments/import-legacy', {
     method: 'POST', body: JSON.stringify(commandBody('tournament-import', { tournaments, expectedVersion, previewHash, dryRun })),
   }),
-  register: (id: string, expectedVersion: number, deckName: string, deckCode: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/registrations`, {
-    method: 'POST', body: JSON.stringify(commandBody('tournament-register', { expectedVersion, deckName, deckCode })),
+  register: (id: string, expectedVersion: number) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/registrations`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-register', { expectedVersion })),
   }),
   updateRegistration: (id: string, expectedVersion: number, deckName: string, deckCode: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/registration`, {
     method: 'PUT', body: JSON.stringify(commandBody('tournament-registration', { expectedVersion, deckName, deckCode })),
+  }),
+  preCheckIn: (id: string, expectedVersion: number, deckName: string, deckCode = '') => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/pre-check-in`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-pre-check-in', { expectedVersion, deckName, deckCode })),
+  }),
+  removeParticipant: (id: string, expectedVersion: number, accountId: string, banRegistration: boolean, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/participants/remove`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-participant-remove', { expectedVersion, accountId, banRegistration, reason })),
+  }),
+  setRegistrationBan: (id: string, expectedVersion: number, accountId: string, banned: boolean, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/registration-ban`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-registration-ban', { expectedVersion, accountId, banned, reason })),
+  }),
+  requestOrganizerTransfer: (id: string, expectedVersion: number, accountId: string, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/organizer-transfer`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-organizer-transfer', { expectedVersion, accountId, reason })),
+  }),
+  decideOrganizerTransfer: (id: string, expectedVersion: number, requestId: string, accept: boolean) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/organizer-transfer/decision`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-organizer-transfer-decision', { expectedVersion, requestId, accept, reason: accept ? '接任者确认承接主办职责' : '接任者拒绝交接' })),
   }),
   drop: (id: string, expectedVersion: number) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/registration`, {
     method: 'DELETE', body: JSON.stringify(commandBody('tournament-drop', { expectedVersion })),

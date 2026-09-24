@@ -24,7 +24,7 @@ public sealed partial class L12RoomManager
 
     private sealed class RankedClockState
     {
-        public required L12RankedTimeControlConfig TimeControl { get; init; }
+        public required L12RankedTimeControlConfig TimeControl { get; set; }
         public required long[] TotalRemainingMs { get; init; }
         public required long[] OperationRemainingMs { get; init; }
         public bool[] Acting { get; } = [false, false];
@@ -42,12 +42,16 @@ public sealed partial class L12RoomManager
         room.MeaningfulCommandCount = 0;
         room.CompletionRecorded = false;
         room.RankedResultReported = false;
-        if (!string.Equals(room.Options.MatchModeId, "ranked", StringComparison.OrdinalIgnoreCase))
+        var ranked = string.Equals(room.Options.MatchModeId, "ranked", StringComparison.OrdinalIgnoreCase);
+        var tournament = string.Equals(room.Options.MatchModeId, "tournament", StringComparison.OrdinalIgnoreCase);
+        if (!ranked && !tournament)
         {
             room.RankedClock = null;
             return;
         }
-        var timeControl = _platform?.RankedTimeControl() ?? L12PlatformStore.DefaultRankedTimeControl();
+        var timeControl = tournament
+            ? L12PlatformStore.NormalizeRankedTimeControl(room.TournamentTimeControl)
+            : _platform?.RankedTimeControl() ?? L12PlatformStore.DefaultRankedTimeControl();
         room.RankedClock = new RankedClockState
         {
             TimeControl = timeControl,
@@ -309,11 +313,12 @@ public sealed partial class L12RoomManager
             {
                 room.CommandSequence++;
                 clock.AuthorityEventRecorded = true;
-                var settlement = BuildRankedSettlementEnvelope(room, now);
+                var settlement = string.Equals(room.Options.MatchModeId, "ranked", StringComparison.OrdinalIgnoreCase)
+                    ? BuildRankedSettlementEnvelope(room, now) : null;
                 await _recorder.AppendRankedAuthorityAsync(room.Game, room.CommandSequence,
                     room.Game.State.WinnerReason ?? "排位权威裁决",
                     CaptureRankedRuntime(room, now, "completed"), settlement);
-                room.CompletionRecorded = true;
+                room.CompletionRecorded = settlement is not null;
             }
             catch (Exception error)
             {
@@ -372,6 +377,7 @@ public sealed partial class L12RoomManager
         }
         await TickMaintenanceLockedRoomsAsync(now, messages);
         await TickSettlementRoomsAsync(now, messages);
+        await DrainTournamentResultOutboxAsync();
         return messages;
     }
 
@@ -468,6 +474,31 @@ public sealed partial class L12RoomManager
             preparation ? (timedPreparation ? SetupDecisionLimit(room.Game!, clock.TimeControl).TotalMillisecondsAsLong() : 0L)
                 : clock.TimeControl.OperationTimeSeconds * 1000L,
             clock.TimeControl.ReconnectGraceSeconds * 1000L, players, clock.TimeControl);
+    }
+
+    public async Task ExtendTournamentClockAsync(string tournamentId, string matchId, int minutes)
+    {
+        var room = _rooms.Values.FirstOrDefault(item => item.TournamentId == tournamentId
+            && item.TournamentMatchId == matchId);
+        if (room?.RankedClock is null || room.Game is null || room.Game.State.Phase == L12Phase.GameOver) return;
+        await room.Gate.WaitAsync();
+        try
+        {
+            var now = _utcNow();
+            SettleRankedClockLocked(room, now);
+            var addedSeconds = Math.Min(checked(minutes * 60),
+                7200 - room.RankedClock.TimeControl.TotalTimeSeconds);
+            if (addedSeconds <= 0) return;
+            room.RankedClock.TimeControl = room.RankedClock.TimeControl with
+            {
+                TotalTimeSeconds = checked(room.RankedClock.TimeControl.TotalTimeSeconds + addedSeconds),
+            };
+            for (var index = 0; index < 2; index++)
+                room.RankedClock.TotalRemainingMs[index] = checked(room.RankedClock.TotalRemainingMs[index]
+                    + addedSeconds * 1000L);
+            await _recorder.PersistRankedRuntimeBatchAsync([CaptureRankedRuntime(room, now)]);
+        }
+        finally { room.Gate.Release(); }
     }
 }
 

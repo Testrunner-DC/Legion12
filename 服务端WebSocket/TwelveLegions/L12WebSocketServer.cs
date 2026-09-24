@@ -1014,6 +1014,23 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     expected, current.AuditContext, apply));
             return TournamentCommandResponse(request, command, outcome, id);
         });
+        _app.MapPost("/api/tournaments/{id}/pre-check-in", (HttpRequest request, string id,
+            TournamentPreCheckInRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentsRegister;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentPreCheckInPayload(body.DeckName ?? string.Empty,
+                body.DeckCode ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.pre-check-in",
+                $"tournament:{id}/registration:{authenticated.Account.Id}", payload, key, expected,
+                body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.PreCheckInTournament(current.Actor, id, current.Payload,
+                    expected, current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
         _app.MapDelete("/api/tournaments/{id}/registration", (HttpRequest request, string id,
             [Microsoft.AspNetCore.Mvc.FromBody] TournamentActionRequest body) =>
         {
@@ -1044,6 +1061,70 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 (current, apply) => _platform.SetTournamentStaff(current.Actor, current.Payload.TournamentId,
                     current.Payload.Staff, expected,
                     current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
+        _app.MapPost("/api/tournaments/{id}/participants/remove", (HttpRequest request, string id,
+            TournamentRemoveParticipantRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentsManage;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentRemoveParticipantPayload(body.AccountId ?? string.Empty,
+                body.BanRegistration, body.Reason ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.participant.remove",
+                $"tournament:{id}/participant:{body.AccountId}", payload, key, expected, body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.RemoveTournamentParticipant(current.Actor, id, current.Payload,
+                    expected, current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
+        _app.MapPost("/api/tournaments/{id}/registration-ban", (HttpRequest request, string id,
+            TournamentRegistrationBanRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentsManage;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentRegistrationBanPayload(body.AccountId ?? string.Empty,
+                body.Banned, body.Reason ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.registration-ban",
+                $"tournament:{id}/registration-ban:{body.AccountId}", payload, key, expected, body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.SetTournamentRegistrationBan(current.Actor, id, current.Payload,
+                    expected, current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
+        _app.MapPost("/api/tournaments/{id}/organizer-transfer", (HttpRequest request, string id,
+            TournamentOrganizerTransferRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentsManage;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentOrganizerTransferRequestPayload(body.AccountId ?? string.Empty,
+                body.Reason ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.organizer-transfer.request",
+                $"tournament:{id}/organizer-transfer", payload, key, expected, body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.RequestTournamentOrganizerTransfer(current.Actor, id, current.Payload,
+                    expected, current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
+        _app.MapPost("/api/tournaments/{id}/organizer-transfer/decision", (HttpRequest request, string id,
+            TournamentOrganizerTransferDecisionRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentsRegister;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentOrganizerTransferDecisionPayload(body.RequestId ?? string.Empty,
+                body.Accept);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.organizer-transfer.decision",
+                $"tournament:{id}/organizer-transfer", payload, key, expected, body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.DecideTournamentOrganizerTransfer(current.Actor, id, current.Payload,
+                    expected, current.AuditContext, apply));
             return TournamentCommandResponse(request, command, outcome, id);
         });
         _app.MapPost("/api/tournaments/{id}/start", (HttpRequest request, string id, TournamentActionRequest body) =>
@@ -1120,7 +1201,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             return TournamentCommandResponse(request, command, outcome, id);
         });
         _app.MapPost("/api/tournaments/{id}/matches/{matchId}/time-extension",
-            (HttpRequest request, string id, string matchId, TournamentTimeExtensionRequest body) =>
+            async (HttpRequest request, string id, string matchId, TournamentTimeExtensionRequest body) =>
         {
             const L12Permission permission = L12Permission.TournamentsManage;
             if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
@@ -1132,6 +1213,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var outcome = ExecuteTournamentCommand(command, permission,
                 (current, apply) => _platform.ExtendTournamentMatch(current.Actor, id, matchId, current.Payload,
                     expected, current.AuditContext, apply));
+            if (outcome.Success && !outcome.Replayed && !body.DryRun)
+                await _rooms.ExtendTournamentClockAsync(id, matchId, body.Minutes);
             return TournamentCommandResponse(request, command, outcome, id);
         });
         _app.MapPost("/api/tournaments/{id}/matches/{matchId}/rulings",
@@ -3460,6 +3543,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         L12AdminCommandEnvelope<TPayload> command, L12AdminCommandResult<T> outcome, string? tournamentId = null)
     {
         var result = AdminCommandResponse(request, command, outcome);
+        if (outcome.Success && !outcome.Replayed && !command.DryRun) NotifyTournamentsChanged();
         var version = tournamentId is null
             ? _platform.Version
             : _platform.AdminCommandResourceVersion("tournament.read", $"tournament:{tournamentId}")
@@ -4172,6 +4256,16 @@ public sealed record TournamentLegacyImportRequest(IReadOnlyList<L12LegacyTourna
     bool DryRun = false, string? Reason = null);
 public sealed record TournamentRegistrationRequest(string? DeckName, string? DeckCode,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
+public sealed record TournamentPreCheckInRequest(string? DeckName, string? DeckCode,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
+public sealed record TournamentRemoveParticipantRequest(string? AccountId, bool BanRegistration, string? Reason,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
+public sealed record TournamentRegistrationBanRequest(string? AccountId, bool Banned, string? Reason,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
+public sealed record TournamentOrganizerTransferRequest(string? AccountId, string? Reason,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
+public sealed record TournamentOrganizerTransferDecisionRequest(string? RequestId, bool Accept, string? Reason,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
 public sealed record TournamentActionRequest(string? IdempotencyKey = null, long? ExpectedVersion = null,
     bool DryRun = false, string? Reason = null);
 public sealed record TournamentStaffRequest(IReadOnlyList<string>? RefereeAccountIds,

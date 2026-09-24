@@ -117,12 +117,15 @@ public sealed class DeckDomainStorageTests
                     DateTimeOffset.UtcNow.AddHours(1), "S01/S02", "storage", "after", "season", string.Empty,
                     50, 5, RegistrationVisibility: "public", LateGraceMinutes: 5),
                 Context("create-storage-tournament"), true);
-            tournament = store.UpdateTournamentRegistration(organizer, tournament.Id,
-                new L12TournamentRegistrationPayload(first.Name, string.Empty), tournament.Version,
+            tournament = store.PreCheckInTournament(organizer, tournament.Id,
+                new L12TournamentPreCheckInPayload(first.Name, string.Empty), tournament.Version,
                 Context("organizer-deck"), true);
             tournament = store.RegisterTournament(player, tournament.Id,
-                new L12TournamentRegistrationPayload(second.Name, string.Empty), tournament.Version,
+                new L12TournamentRegistrationPayload(), tournament.Version,
                 Context("player-deck"), true);
+            tournament = store.PreCheckInTournament(player, tournament.Id,
+                new L12TournamentPreCheckInPayload(second.Name, string.Empty), tournament.Version,
+                Context("player-check-in"), true);
 
             using var connection = Open(store.TransactionalStoragePath);
             var accountHash = Scalar(connection,

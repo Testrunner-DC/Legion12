@@ -19,12 +19,15 @@ public sealed class TournamentGlobalAdministrationTests
             var outsider = store.Register("tgloba8c792", "password-123").Account!;
             var tournament = store.CreateTournament(organizer, Payload(), Context("create"), true);
 
-            tournament = store.UpdateTournamentRegistration(organizer, tournament.Id,
-                new L12TournamentRegistrationPayload("Organizer Deck", "ORGANIZER"), tournament.Version,
-                Context("organizer-deck"), true);
             tournament = store.RegisterTournament(player, tournament.Id,
-                new L12TournamentRegistrationPayload("Player Deck", "PLAYER"), tournament.Version,
-                Context("player-deck"), true);
+                new L12TournamentRegistrationPayload(), tournament.Version,
+                Context("player-registration"), true);
+            tournament = store.PreCheckInTournament(organizer, tournament.Id,
+                new L12TournamentPreCheckInPayload("Organizer Deck", "ORGANIZER"),
+                tournament.Version, Context("organizer-deck-lock"), true);
+            tournament = store.PreCheckInTournament(player, tournament.Id,
+                new L12TournamentPreCheckInPayload("Player Deck", "PLAYER"),
+                tournament.Version, Context("player-deck-lock"), true);
 
             Assert.DoesNotContain(store.Tournaments(outsider).Items, item => item.Id == tournament.Id);
             Assert.Null(store.Tournament(outsider, tournament.Id));

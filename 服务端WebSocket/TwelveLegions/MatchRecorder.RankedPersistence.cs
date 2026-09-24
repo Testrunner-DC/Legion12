@@ -31,7 +31,7 @@ internal sealed record L12RankedRecoverySource(
     string InitialStateJson, string StartedUtc, L12PresetDeckDefinition[] Decks,
     IReadOnlyList<L12RankedReplayCommand> Commands, L12RankedRuntimeCheckpoint? Runtime,
     string? LoadError, int StorageVersion = 1, L12PersistedCheckpoint? StateCheckpoint = null,
-    IReadOnlyList<L12PersistedActionRequest>? ProcessedRequests = null);
+    IReadOnlyList<L12PersistedActionRequest>? ProcessedRequests = null, string ModeId = "ranked");
 
 internal sealed record L12RankedReplayCommand(
     long Sequence, int PlayerIndex, string CommandJson, string CommandType, bool Accepted, long Revision,
@@ -549,7 +549,7 @@ public sealed partial class MatchRecorder
         var command = connection.CreateCommand();
         command.CommandText = """
             SELECT match_id FROM matches
-            WHERE mode_id='ranked' AND ended_utc IS NULL
+            WHERE mode_id IN ('ranked','tournament') AND ended_utc IS NULL
             ORDER BY started_utc,match_id;
             """;
         var result = new List<string>();
@@ -582,16 +582,16 @@ public sealed partial class MatchRecorder
         command.CommandText = """
             SELECT m.match_id,m.room_code,m.seed,m.player_0,m.player_1,m.account_0,m.account_1,
                    COALESCE(m.initial_state_json,''),m.started_utc,
-                   r.checkpoint_json,r.checkpoint_hash,r.checkpoint_generation,m.storage_version
+                   r.checkpoint_json,r.checkpoint_hash,r.checkpoint_generation,m.storage_version,m.mode_id
             FROM matches m
             LEFT JOIN ranked_match_runtime r ON r.match_id=m.match_id AND r.status='active'
-            WHERE m.match_id=$match AND m.mode_id='ranked' AND m.ended_utc IS NULL
+            WHERE m.match_id=$match AND m.mode_id IN ('ranked','tournament') AND m.ended_utc IS NULL
             LIMIT 1;
             """;
         command.Parameters.AddWithValue("$match", matchId);
         (string MatchId, string RoomCode, int Seed, string[] Names, string[] Accounts,
             string Initial, string Started, string? RuntimeJson, string? RuntimeHash,
-            long? RuntimeGeneration, int StorageVersion) row;
+            long? RuntimeGeneration, int StorageVersion, string ModeId) row;
         await using (var reader = await command.ExecuteReaderAsync())
         {
             if (!await reader.ReadAsync()) return null;
@@ -602,7 +602,7 @@ public sealed partial class MatchRecorder
                 reader.GetString(7), reader.GetString(8),
                 reader.IsDBNull(9) ? null : reader.GetString(9),
                 reader.IsDBNull(10) ? null : reader.GetString(10),
-                reader.IsDBNull(11) ? null : reader.GetInt64(11), reader.GetInt32(12));
+                reader.IsDBNull(11) ? null : reader.GetInt64(11), reader.GetInt32(12), reader.GetString(13));
         }
         L12PresetDeckDefinition[] decks = [];
         IReadOnlyList<L12RankedReplayCommand> events = [];
@@ -661,7 +661,7 @@ public sealed partial class MatchRecorder
         }
         return new L12RankedRecoverySource(row.MatchId, row.RoomCode, row.Seed, row.Names,
             row.Accounts, recoveryInitialStateJson, row.Started, decks, events, runtime, error,
-            row.StorageVersion, stateCheckpoint, processedRequests);
+            row.StorageVersion, stateCheckpoint, processedRequests, row.ModeId);
     }
 
     private static async Task<L12PersistedCheckpoint?> LoadInitialStateCheckpointAsync(

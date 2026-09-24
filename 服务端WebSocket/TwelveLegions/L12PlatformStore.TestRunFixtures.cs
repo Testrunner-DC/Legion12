@@ -1,7 +1,8 @@
 namespace TwelveLegions.Server;
 
 public sealed record L12TestRunAcceptanceFixtureSummary(string Owner, int Decks, int PublicDecks,
-    int GuidedDecks, int RankedPlayers, int RankedMatches, int ActiveMasters, int HistoricalHonors);
+    int GuidedDecks, int RankedPlayers, int RankedMatches, int ActiveMasters, int HistoricalHonors,
+    int Tournaments);
 
 public sealed partial class L12PlatformStore
 {
@@ -18,7 +19,7 @@ public sealed partial class L12PlatformStore
             .Select(group => group.First())
             .ToArray();
         if (templates.Length == 0)
-            return new L12TestRunAcceptanceFixtureSummary("unavailable", 0, 0, 0, 0, 0, 0, 0);
+            return new L12TestRunAcceptanceFixtureSummary("unavailable", 0, 0, 0, 0, 0, 0, 0, 0);
 
         var horizontal = templates.FirstOrDefault(deck => deck.SpecialIds.Count > 0) ?? templates[0];
         var standard = templates.FirstOrDefault(deck => !string.Equals(deck.MasterId, horizontal.MasterId,
@@ -108,11 +109,48 @@ public sealed partial class L12PlatformStore
         }
 
         var ranking = EnsureTestRunRankingFixtures(ownerId, templates);
+        var tournaments = EnsureTestRunTournamentFixtures(ownerId, standard);
         return new L12TestRunAcceptanceFixtureSummary(ownerName,
             Decks(ownerId).Count(deck => deck.Name.StartsWith(AcceptanceDeckPrefix, StringComparison.Ordinal)),
             PublishedDecks(ownerId).Count(deck => deck.Deck.Name.StartsWith(AcceptanceDeckPrefix,
                 StringComparison.Ordinal)), guided, ranking.Players, ranking.Matches,
-            ranking.Masters, ranking.Honors);
+            ranking.Masters, ranking.Honors, tournaments);
+    }
+
+    private int EnsureTestRunTournamentFixtures(string ownerId, L12PresetDeckDefinition template)
+    {
+        const string name = "[验收] 赛事中心报名与锁牌流程";
+        var owner = Account(ownerId) ?? throw new InvalidOperationException("验收赛事主办账号不存在");
+        var playerRow = _data.Accounts.FirstOrDefault(item => item.Username == $"{AcceptancePlayerPrefix}01")
+            ?? throw new InvalidOperationException("验收赛事选手账号不存在");
+        var player = Account(playerRow.Id)!;
+        var ownerDeckName = $"{AcceptanceDeckPrefix}横卡与超长名称牌库用于编号卡名截断验收";
+        var playerDeckName = $"{AcceptanceDeckPrefix}赛事签到锁牌";
+        if (!Decks(player.Id).Any(item => item.Name == playerDeckName))
+            UpsertDeck(player.Id, FixtureDeck(template, playerDeckName));
+
+        var existing = Tournaments(owner, null, name, mine: false).Items.FirstOrDefault(item => item.Name == name);
+        if (existing is null)
+        {
+            var policy = CaptureOperationsPolicy();
+            var context = new L12AdminAuditContext("testrun-tournament-fixture", "tournaments.manage",
+                RequestMethod: "FIXTURE", RequestPath: "/testrun/tournaments");
+            var tournament = CreateTournament(owner, new L12TournamentCreatePayload(name, "single", "public", 8,
+                DateTimeOffset.UtcNow.AddDays(2), "测试服验收规则", "用于验收无牌库报名、赛前签到锁牌、主办交接与移除玩家。",
+                "after", "season", string.Empty, 50, 5,
+                DisasterCardIds: policy.DisasterCardIds, CardRestrictions: policy.CardRestrictions,
+                RegistrationVisibility: "public", LateGraceMinutes: 5,
+                TimeControl: new L12RankedTimeControlConfig(1500, 240, 240, 60, 60)), context, true);
+            tournament = PreCheckInTournament(owner, tournament.Id,
+                new L12TournamentPreCheckInPayload(ownerDeckName, string.Empty), tournament.Version,
+                context with { CorrelationId = "testrun-tournament-owner-check-in" }, true);
+            tournament = RegisterTournament(player, tournament.Id, new L12TournamentRegistrationPayload(),
+                tournament.Version, context with { CorrelationId = "testrun-tournament-register" }, true);
+            _ = PreCheckInTournament(player, tournament.Id,
+                new L12TournamentPreCheckInPayload(playerDeckName, string.Empty), tournament.Version,
+                context with { CorrelationId = "testrun-tournament-player-check-in" }, true);
+        }
+        return Tournaments(owner, null, "[验收] 赛事中心", mine: false).Items.Count;
     }
 
     internal IReadOnlyList<L12RankingMatch> TestRunAcceptanceRankedMatches()

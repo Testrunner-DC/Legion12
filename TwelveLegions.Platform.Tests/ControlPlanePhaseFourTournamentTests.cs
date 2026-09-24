@@ -40,8 +40,8 @@ public sealed class ControlPlanePhaseFourTournamentTests
             });
             var deckCode = "L12D1." + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(payloadJson))
                 .TrimEnd('=').Replace('+', '-').Replace('/', '_');
-            Assert.Throws<ArgumentException>(() => store.UpdateTournamentRegistration(organizer, tournament.Id,
-                new L12TournamentRegistrationPayload("违规赛事牌库", deckCode), tournament.Version,
+            Assert.Throws<ArgumentException>(() => store.PreCheckInTournament(organizer, tournament.Id,
+                new L12TournamentPreCheckInPayload("违规赛事牌库", deckCode), tournament.Version,
                 Context("rules-deck-reject"), true));
         }
         finally { Directory.Delete(root, true); }
@@ -91,33 +91,33 @@ public sealed class ControlPlanePhaseFourTournamentTests
             var tournamentVersion = tournament.Version;
             store.Register("tunrela63e4", "password-123");
 
-            var payload = new L12TournamentRegistrationPayload("版本牌库", "DECK-V1");
-            var command = Envelope("tournament.registration.update", organizer,
+            var payload = new L12TournamentPreCheckInPayload("版本牌库", "DECK-V1");
+            var command = Envelope("tournament.pre-check-in", organizer,
                 $"tournament:{tournament.Id}/registration:{organizer.Id}", tournamentVersion, payload,
                 "tournament-version-1", false);
             var result = new L12AdminCommandBus(store).Execute(command, L12Permission.TournamentsRegister,
-                current => L12AdminCommandResult<L12TournamentView>.Ok(store.UpdateTournamentRegistration(
+                current => L12AdminCommandResult<L12TournamentView>.Ok(store.PreCheckInTournament(
                     current.Actor, tournament.Id, current.Payload, tournamentVersion, current.AuditContext, true)),
-                current => L12AdminCommandResult<L12TournamentView>.Ok(store.UpdateTournamentRegistration(
+                current => L12AdminCommandResult<L12TournamentView>.Ok(store.PreCheckInTournament(
                     current.Actor, tournament.Id, current.Payload, tournamentVersion, current.AuditContext, false)));
 
             Assert.True(result.Success);
             Assert.Equal(tournamentVersion + 1, result.Value!.Version);
 
             var beforeDryRun = result.Value;
-            var dry = Envelope("tournament.registration.update", organizer,
+            var dry = Envelope("tournament.pre-check-in", organizer,
                 $"tournament:{tournament.Id}/registration:{organizer.Id}", beforeDryRun.Version,
-                new L12TournamentRegistrationPayload("只预览", "DRY-RUN"), "tournament-version-dry", true);
+                new L12TournamentPreCheckInPayload("版本牌库", "DECK-V1"), "tournament-version-dry", true);
             var dryResult = new L12AdminCommandBus(store).Execute(dry, L12Permission.TournamentsRegister,
-                current => L12AdminCommandResult<L12TournamentView>.Ok(store.UpdateTournamentRegistration(
+                current => L12AdminCommandResult<L12TournamentView>.Ok(store.PreCheckInTournament(
                     current.Actor, tournament.Id, current.Payload, beforeDryRun.Version,
                     current.AuditContext, true)),
-                current => L12AdminCommandResult<L12TournamentView>.Ok(store.UpdateTournamentRegistration(
+                current => L12AdminCommandResult<L12TournamentView>.Ok(store.PreCheckInTournament(
                     current.Actor, tournament.Id, current.Payload, beforeDryRun.Version,
                     current.AuditContext, false)));
 
             Assert.True(dryResult.Success);
-            Assert.Equal("只预览", dryResult.Value!.Participants.Single().Deck!.Name);
+            Assert.Equal("版本牌库", dryResult.Value!.Participants.Single().Deck!.Name);
             Assert.Equal("版本牌库", store.Tournament(organizer, tournament.Id)!.Participants.Single().Deck!.Name);
             Assert.Equal(beforeDryRun.Version, store.Tournament(organizer, tournament.Id)!.Version);
         }
@@ -139,12 +139,15 @@ public sealed class ControlPlanePhaseFourTournamentTests
             MakeFriends(store, organizer, reviewer);
             var tournament = store.CreateTournament(organizer, CreatePayload([reviewer.Id]),
                 Context("approval-create"), true);
-            tournament = store.UpdateTournamentRegistration(organizer, tournament.Id,
-                new L12TournamentRegistrationPayload("Organizer Deck", "ORG"), tournament.Version,
+            tournament = store.PreCheckInTournament(organizer, tournament.Id,
+                new L12TournamentPreCheckInPayload("Organizer Deck", "ORG"), tournament.Version,
                 Context("approval-deck-owner"), true);
             tournament = store.RegisterTournament(player, tournament.Id,
-                new L12TournamentRegistrationPayload("Player Deck", "PLAYER"), tournament.Version,
+                new L12TournamentRegistrationPayload(), tournament.Version,
                 Context("approval-register"), true);
+            tournament = store.PreCheckInTournament(player, tournament.Id,
+                new L12TournamentPreCheckInPayload("Player Deck", "PLAYER"), tournament.Version,
+                Context("approval-player-check-in"), true);
 
             var payload = new TournamentTargetCommandPayload(tournament.Id);
             var command = Envelope("tournament.start", organizer, $"tournament:{tournament.Id}",
@@ -184,12 +187,15 @@ public sealed class ControlPlanePhaseFourTournamentTests
             var player = store.Register("FlowPlayer", "password-123").Account!;
             var tournament = store.CreateTournament(organizer, CreatePayload(deckVisibility: "after"),
                 Context("flow-create"), true);
-            tournament = store.UpdateTournamentRegistration(organizer, tournament.Id,
-                new L12TournamentRegistrationPayload("Secret A", "CODE-A"), tournament.Version,
+            tournament = store.PreCheckInTournament(organizer, tournament.Id,
+                new L12TournamentPreCheckInPayload("Secret A", "CODE-A"), tournament.Version,
                 Context("flow-deck-a"), true);
             tournament = store.RegisterTournament(player, tournament.Id,
-                new L12TournamentRegistrationPayload("Secret B", "CODE-B"), tournament.Version,
+                new L12TournamentRegistrationPayload(), tournament.Version,
                 Context("flow-deck-b"), true);
+            tournament = store.PreCheckInTournament(player, tournament.Id,
+                new L12TournamentPreCheckInPayload("Secret B", "CODE-B"), tournament.Version,
+                Context("flow-check-in-b"), true);
 
             var playerBefore = store.Tournament(player, tournament.Id)!;
             Assert.Null(playerBefore.Participants.Single(item => item.AccountId == organizer.Id).Deck);

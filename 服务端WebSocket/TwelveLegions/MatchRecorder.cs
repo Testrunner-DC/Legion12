@@ -88,6 +88,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await InitializePlayerReplayRetentionSchemaAsync(connection, _utcNow());
         await InitializeGlobalAnalyticsSchemaAsync(connection);
         await InitializePublicDeckBindingsAsync(connection);
+        await InitializeTournamentResultOutboxAsync(connection);
     }
 
     public Task StartAsync(L12GameState state, string modeId = "friendly",
@@ -104,6 +105,12 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         IReadOnlyList<L12PresetDeckDefinition> decks, L12RankedRuntimeCheckpoint runtime,
         IReadOnlyList<L12PublicDeckBinding?>? bindings = null)
         => StartCoreAsync(engine.State, "ranked", account0, account1, decks, engine.CardFactSignals, runtime, engine, bindings);
+
+    internal Task StartTimedAsync(L12GameEngine engine, string modeId, string account0, string account1,
+        IReadOnlyList<L12PresetDeckDefinition> decks, L12RankedRuntimeCheckpoint runtime,
+        IReadOnlyList<L12PublicDeckBinding?>? bindings = null)
+        => StartCoreAsync(engine.State, modeId, account0, account1, decks, engine.CardFactSignals,
+            runtime, engine, bindings);
 
     private async Task StartCoreAsync(L12GameState state, string modeId,
         string? account0, string? account1,
@@ -209,7 +216,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             }), CommandResult.Ok());
 
     internal Task AppendRankedAuthorityAsync(L12GameEngine engine, long sequence, string reason,
-        L12RankedRuntimeCheckpoint runtime, L12RankedSettlementEnvelope settlement)
+        L12RankedRuntimeCheckpoint runtime, L12RankedSettlementEnvelope? settlement)
         => AppendRankedAsync(engine, sequence, -1,
             JsonSerializer.Serialize(new
             {
@@ -218,7 +225,8 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             }), CommandResult.Ok(),
             runtime, settlement);
 
-    public async Task<bool> CompleteAsync(L12GameEngine engine)
+    public async Task<bool> CompleteAsync(L12GameEngine engine, string? tournamentId = null,
+        string? tournamentMatchId = null)
     {
         if (engine.State.Phase != L12Phase.GameOver)
             throw new InvalidOperationException("只能结束已经进入 GameOver 的正式对局记录");
@@ -255,6 +263,10 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         }
         if (changed || !await HasCardFactCompactionAsync(connection, transaction, engine.State.MatchId))
             await CompactCardFactsForMatchAsync(connection, transaction, engine.State.MatchId, completedUtc);
+        if (!string.IsNullOrWhiteSpace(tournamentId) && !string.IsNullOrWhiteSpace(tournamentMatchId)
+            && engine.State.Winner is { } tournamentWinner)
+            await UpsertTournamentResultOutboxAsync(connection, transaction, engine.State.MatchId,
+                tournamentId, tournamentMatchId, tournamentWinner, completedUtc);
         StorageFailureInjector?.Invoke("before-match-complete-commit");
         await transaction.CommitAsync();
         _factLocationBaselines.TryRemove(engine.State.MatchId, out _);

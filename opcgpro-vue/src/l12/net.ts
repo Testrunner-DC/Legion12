@@ -64,7 +64,7 @@ let pendingActionResentAttempt = -1
 let lastGameStateEnvelope: any = null
 let resourceFallbackTimer: ReturnType<typeof setTimeout> | null = null
 let resourceFallbackLastAt = 0
-const resourceNames = ['friends', 'rankedIntegrity', 'alternateArtNotifications', 'operationsPolicy', 'presence', 'rulesContent'] as const
+const resourceNames = ['friends', 'rankedIntegrity', 'alternateArtNotifications', 'operationsPolicy', 'presence', 'rulesContent', 'tournaments'] as const
 const fallbackResourceNames = resourceNames.filter(resource => resource !== 'rulesContent')
 
 function dispatchResourceChange(resource: string, detail: Record<string, unknown> = {}) {

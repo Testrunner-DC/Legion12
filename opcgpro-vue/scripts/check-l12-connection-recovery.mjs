@@ -786,7 +786,7 @@ const tests = [
     await timers.advance(59_999)
     assert.equal(fallbackEvents(), 0)
     await timers.advance(1)
-    assert.equal(fallbackEvents(), 5,
+    assert.equal(fallbackEvents(), 6,
       'offline fallback must coalesce to one signal per resource after 60 seconds')
     net.disconnect()
   }],
