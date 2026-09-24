@@ -249,7 +249,7 @@ try {
     }
 
     if ($deploymentBehaviorChanged) {
-        $deploymentFixtureBase = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) "Temp"
+        $deploymentFixtureBase = Join-Path $env:L12_WORK_CACHE "temp"
         Invoke-Checked "Deployment target, health and failure-preservation behavior" "pwsh" @(
             "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
             (Join-Path $repoRoot "scripts\test-l12-deploy-behavior.ps1"),

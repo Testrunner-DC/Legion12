@@ -137,6 +137,7 @@ const playerChoiceLabelLiterals = [...l12ServerSources.matchAll(/\["(?:mode:[a-z
 const inventedChoiceLabel = /(?:普通模式|强模式|选择效果模式|追加第二段效果|发动追加效果|不发动追加效果|只(?:结算|执行)|追加消耗|并强化军团|抽牌段)/
 const cacheEnvironment = read('../../ops/windows/Initialize-L12BuildEnvironment.ps1')
 const windowsVerify = read('../../ops/windows/verify-l12.ps1')
+const changeGate = read('../../scripts/verify-l12-change.ps1')
 const windowsDeploy = read('../../ops/windows/deploy-l12.ps1')
 const deployTarget = read('../../ops/windows/L12DeployTarget.ps1')
 if (!windowsVerify.includes('Source = "ops\\windows\\L12DeployTarget.ps1"; Target = "ops\\windows\\L12DeployTarget.ps1"')) {
@@ -1046,6 +1047,7 @@ const contracts = [
   [playerChoiceLabelLiterals.length > 0 && playerChoiceLabelLiterals.every(label => !inventedChoiceLabel.test(label)), '玩家效果选项必须使用卡面效果原文或准确费用动作，不得显示普通/强模式、追加效果、只结算等程序概括'],
   [windowsVerify.includes('Get-ChildItem -LiteralPath (Join-Path $repoRoot "服务端WebSocket\\TwelveLegions") -File -Filter "*.cs"') && windowsVerify.includes('Copy-Item -Destination $isolatedServerSourceRoot -Force'), '提交级隔离前端构建必须复制全部服务端 Prompt 定义，玩家文案全量扫描不得因缺文件失败或产生局部扫描假阳性'],
   [windowsVerify.includes('TwelveLegions.Platform.Tests\\PublicDeckMatchBindingTests.cs'), '隔离前端发布验证必须携带公开牌库版本对局的后端绑定测试证据，避免只在开发工作树通过'],
+  [changeGate.includes('Join-Path $env:L12_WORK_CACHE "temp"') && !changeGate.includes("GetFolderPath('LocalApplicationData')"), '部署故障注入门禁必须复用既定构建缓存，避免回退到受限的系统盘临时目录'],
   [windowsVerify.includes('ops\\performance-budgets.json') && windowsVerify.includes('ops\\performance-exceptions.json')
     && windowsVerify.includes('scripts\\verify-l12-change.ps1') && windowsVerify.includes('.github\\workflows\\verify-release.yml'), '提交级隔离前端构建必须复制性能预算、例外清单与发布接线，性能架构门禁不得依赖开发工作树中的根级配置'],
   [board.includes('const modalPresentationPaused = computed') && board.includes('hasBlockingPrompt.value && !promptMinimized.value') && board.includes(':paused="passivePresentationPaused"') && board.includes('v-if="publicReveal && !activeBoardPromptId"') && board.includes('v-if="diceReveal && !activeBoardPromptId"') && board.includes('v-if="combat && !activeBoardPromptId"') && board.split(':interaction-prompt-active="Boolean(hasBlockingPrompt)"').length === 3 && playerMat.includes('watch(() => props.interactionPromptActive') && prompt.includes('.l12-prompt-overlay,.l12-prompt-overlay.minimized{z-index:3000!important}') && board.includes('.board-target-controls{z-index:3000}') && board.includes('.card-inspector-floating{z-index:3100!important}') && actionLayer.includes('.l12-action-presentation{z-index:900}') && zoneMovementLayer.includes('.zone-card-movement{z-index:902}') && board.includes('watch(activeBoardPromptId, promptId => {') && zoneMovementLayer.includes('if (paused && active.value) cancelActiveMovement()') && !zoneMovementLayer.includes('queue.unshift(interrupted)'), '展开的 Prompt、墓地、主宰及移动端弹框必须暂停尚未开始的卡面动画；已开始的动画应立即结束且不重播，交互层仍保持最高层级'],
