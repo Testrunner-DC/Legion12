@@ -554,14 +554,24 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             return result.Success ? Results.Ok(new { result.Message, result.Account })
                 : Results.BadRequest(new { result.Message });
         });
-        _app.MapGet("/api/me/statistics", async (HttpRequest request) =>
+        _app.MapGet("/api/me/statistics", async (HttpRequest request, string? range) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
             request.HttpContext.Response.Headers.CacheControl = "no-store";
-            var recorded = await _recorder.PlayerStatisticsAsync(account.Id, account.Username,
-                _platform.RankedIntegrityExcludedMatchIds(), _platform.StatisticsExcludedAccountIds());
-            return Results.Ok(_platform.MergeTestRunAcceptanceStatistics(account.Id, recorded));
+            try
+            {
+                var recorded = await _recorder.PlayerStatisticsAsync(account.Id, account.Username,
+                    _platform.RankedIntegrityExcludedMatchIds(), _platform.StatisticsExcludedAccountIds(),
+                    range ?? "season", _platform.CaptureOperationsPolicy().Season,
+                    request.HttpContext.RequestAborted);
+                return Results.Ok(_platform.MergeTestRunAcceptanceStatistics(account.Id, recorded));
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "invalid_statistics_range", error.Message,
+                    StatusCodes.Status400BadRequest);
+            }
         });
         _app.MapGet("/api/auth/username-change-status", (HttpRequest request) =>
         {

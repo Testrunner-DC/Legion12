@@ -23,7 +23,11 @@ export interface UsernameChangeRequest {
 export interface UsernameChangeStatus { freeRenameAvailable: boolean; freeRenameUsed: number; latestRequest?: UsernameChangeRequest }
 export interface PlayerStatLine { games: number; wins: number; losses: number; draws: number; firstGames: number; firstWins: number; secondGames: number; secondWins: number }
 export interface PlayerMasterStatistics { masterId: string; masterName: string; overall: PlayerStatLine; ranked: PlayerStatLine }
-export interface PlayerStatistics { overall: PlayerStatLine; ranked: PlayerStatLine; masters: PlayerMasterStatistics[]; updatedAt?: string }
+export type PlayerStatisticsRange = '7d' | '30d' | 'season'
+export interface PlayerStatistics {
+  overall: PlayerStatLine; ranked: PlayerStatLine; masters: PlayerMasterStatistics[]; updatedAt?: string
+  range: PlayerStatisticsRange; fromUtc?: string; untilUtc: string; seasonId?: string
+}
 export interface SessionRevocation { sessionId?: string; revokedCount: number; alreadyRevoked: boolean }
 export interface EmailStatus {
   bound: boolean; verified: boolean; maskedEmail?: string; pendingMaskedEmail?: string
@@ -940,7 +944,8 @@ export const usernameChangeApi = {
 }
 
 export const playerApi = {
-  statistics: () => platformRequest<PlayerStatistics>('/api/me/statistics'),
+  statistics: (range: PlayerStatisticsRange = 'season') =>
+    platformRequest<PlayerStatistics>(`/api/me/statistics?range=${encodeURIComponent(range)}`),
 }
 
 export const updateAudioPreferences = (value: NonNullable<PlatformAccount['audioPreferences']>) =>

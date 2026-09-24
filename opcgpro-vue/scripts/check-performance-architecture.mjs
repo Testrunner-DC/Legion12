@@ -28,14 +28,87 @@ export function analyzeSource(source, filename = 'fixture.ts') {
     filename.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
   const result = { rawFetch: 0, interval: 0, maximumParallelPageLoad: 0 }
 
+  const bindings = new Map()
+  const asyncNames = new Set()
+  function collect(node) {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) bindings.set(node.name.text, node.initializer)
+    if (ts.isFunctionDeclaration(node) && node.name && node.modifiers?.some(item => item.kind === ts.SyntaxKind.AsyncKeyword)) asyncNames.add(node.name.text)
+    ts.forEachChild(node, collect)
+  }
+  collect(sourceFile)
+  const unwrap = node => {
+    while (node && (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isNonNullExpression(node))) node = node.expression
+    return node
+  }
+  function arraySize(node, seen = new Set()) {
+    node = unwrap(node)
+    if (!node) return 0
+    if (ts.isIdentifier(node) && bindings.has(node.text) && !seen.has(node.text)) return arraySize(bindings.get(node.text), new Set([...seen, node.text]))
+    if (ts.isArrayLiteralExpression(node)) return node.elements.reduce((sum, item) => sum + (ts.isSpreadElement(item) ? arraySize(item.expression, seen) || 1 : 1), 0)
+    // Count statically known mapped batches; dynamic collection sizes need runtime evidence.
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'map') return arraySize(node.expression.expression, seen)
+    return 0
+  }
+  function requestWeight(node, seen = new Set()) {
+    node = unwrap(node)
+    if (!node) return 0
+    if (ts.isVoidExpression(node) || ts.isAwaitExpression(node)) return requestWeight(node.expression, seen)
+    if (ts.isCallExpression(node)) {
+      const name = calledName(node.expression)
+      if (['Promise.all', 'Promise.allSettled'].includes(name)) return arraySize(node.arguments[0])
+      if (ts.isPropertyAccessExpression(node.expression) && ['then', 'catch', 'finally'].includes(node.expression.name.text)) return requestWeight(node.expression.expression, seen)
+      if (asyncNames.has(name) || /^(?:load|refresh|fetch)[A-Z_]/.test(name) || /(?:Api\.|api\.|platformRequest$)/.test(name)) return 1
+      if (ts.isIdentifier(node.expression) && bindings.has(name) && !seen.has(name)) {
+        const target = unwrap(bindings.get(name))
+        if (target && (ts.isArrowFunction(target) || ts.isFunctionExpression(target))) return requestWeight(target.body, new Set([...seen, name]))
+        if (target && ts.isPropertyAccessExpression(target)) return /Api$|api$/.test(calledName(target.expression)) ? 1 : 0
+      }
+    }
+    return 0
+  }
+  function scanStatements(statements, initial = 0) {
+    let pending = initial
+    const started = new Map()
+    for (const statement of statements) {
+      if (ts.isIfStatement(statement)) {
+        const branch = node => ts.isBlock(node) ? node.statements : [node]
+        pending = Math.max(scanStatements(branch(statement.thenStatement), pending), statement.elseStatement ? scanStatements(branch(statement.elseStatement), pending) : pending)
+      } else if (ts.isTryStatement(statement)) {
+        pending = Math.max(scanStatements(statement.tryBlock.statements, pending), statement.catchClause ? scanStatements(statement.catchClause.block.statements, pending) : pending)
+        if (statement.finallyBlock) pending = scanStatements(statement.finallyBlock.statements, pending)
+      } else {
+        const expressions = ts.isExpressionStatement(statement) ? [statement.expression]
+          : ts.isVariableStatement(statement) ? statement.declarationList.declarations.map(item => item.initializer).filter(Boolean) : []
+        for (const expression of expressions) {
+          const value = unwrap(expression)
+          if (ts.isAwaitExpression(value)) {
+            const operand = unwrap(value.expression)
+            const existing = ts.isIdentifier(operand) ? started.get(operand.text) || 0 : 0
+            result.maximumParallelPageLoad = Math.max(result.maximumParallelPageLoad, pending + (existing ? 0 : requestWeight(operand)))
+            pending = Math.max(0, pending - existing)
+          } else {
+            const count = requestWeight(value)
+            pending += count
+            if (ts.isVariableStatement(statement)) {
+              const declaration = statement.declarationList.declarations.find(item => item.initializer === expression)
+              if (declaration && ts.isIdentifier(declaration.name)) started.set(declaration.name.text, count)
+            }
+          }
+        }
+      }
+      result.maximumParallelPageLoad = Math.max(result.maximumParallelPageLoad, pending)
+    }
+    return pending
+  }
   function visit(node) {
     if (ts.isCallExpression(node)) {
       const name = calledName(node.expression)
       if (name === 'fetch' || name.endsWith('.fetch')) result.rawFetch += 1
       if (name === 'setInterval' || name.endsWith('.setInterval')) result.interval += 1
-      if (name === 'Promise.all' && node.arguments[0] && ts.isArrayLiteralExpression(node.arguments[0]))
-        result.maximumParallelPageLoad = Math.max(result.maximumParallelPageLoad, node.arguments[0].elements.length)
+      if (['Promise.all', 'Promise.allSettled'].includes(name))
+        result.maximumParallelPageLoad = Math.max(result.maximumParallelPageLoad, arraySize(node.arguments[0]))
     }
+    if (ts.isBlock(node) && (ts.isFunctionLike(node.parent) || ts.isSourceFile(node.parent))) scanStatements(node.statements)
     ts.forEachChild(node, visit)
   }
   visit(sourceFile)

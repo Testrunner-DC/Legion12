@@ -4,15 +4,14 @@ import { useRoute, useRouter } from 'vue-router'
 import { l12State } from '@/l12/net'
 import RankedIdentityBadge from '@/l12/RankedIdentityBadge.vue'
 import RankedPenaltyHistory from './RankedPenaltyHistory.vue'
-import { alternateArtApi, canAccessAdmin, changePassword, changeUsername, emailApi, login, logout, mfaCapability as loadMfaCapability, PlatformRequestError, platformRequest, platformState, playerApi, rankedApi, refreshCurrentAccount, register, sessionApi, usernameChangeApi, type AlternateArt, type EmailStatus, type MfaCapability, type PlatformSession, type PlayerStatLine, type PlayerStatistics, type RankedOverview, type UsernameChangeStatus } from '@/l12/platform'
+import { alternateArtApi, canAccessAdmin, changePassword, changeUsername, emailApi, login, logout, mfaCapability as loadMfaCapability, PlatformRequestError, platformState, playerApi, rankedApi, refreshCurrentAccount, register, sessionApi, usernameChangeApi, type AlternateArt, type EmailStatus, type MfaCapability, type PlatformSession, type PlayerStatLine, type PlayerStatistics, type PlayerStatisticsRange, type RankedOverview, type UsernameChangeStatus } from '@/l12/platform'
 import { ensureOfficialPrebuiltDecks } from '@/l12/decks'
 import RankedMasterTitleRulesModal from './RankedMasterTitleRulesModal.vue'
 import { masterProfileUrl } from '@/l12/specialAssets'
 import CardImage from '@/l12/CardImage.vue'
+import { useSectionScroll } from './useSectionScroll'
 
-interface Match { player0: string; player1: string; winner?: number | null; endedUtc?: string | null; startedUtc: string }
 const publicHistory = ref(localStorage.getItem('l12-public-history') === 'true')
-const matches = ref<Match[]>([])
 const notice = ref('')
 const authNotice = ref('')
 const authMode = ref<'login' | 'register'>('login')
@@ -26,6 +25,28 @@ const emailForm = reactive({ email: '', currentPassword: '' })
 const authBusy = ref(false)
 const route = useRoute()
 const router = useRouter()
+const profileNavigation = [
+  { id: 'overview', label: '总览' }, { id: 'performance', label: '战绩' },
+  { id: 'collection', label: '收藏与偏好' }, { id: 'security', label: '账号与安全' },
+] as const
+const statisticsRanges: Array<{ id: PlayerStatisticsRange; label: string }> = [
+  { id: '7d', label: '近 7 天' }, { id: '30d', label: '近 30 天' }, { id: 'season', label: '本赛季' },
+]
+const section = computed(() => platformState.account?.mustChangePassword ? 'security'
+  : profileNavigation.find(item => item.id === route.query.section)?.id ?? 'overview')
+const statisticsRange = computed<PlayerStatisticsRange>(() =>
+  statisticsRanges.some(item => item.id === route.query.range) ? route.query.range as PlayerStatisticsRange : 'season')
+const statisticsRangeLabel = computed(() => statisticsRanges.find(item => item.id === statisticsRange.value)?.label ?? '本赛季')
+const visitedPerformance = ref(false)
+const sectionLoading = ref(false)
+const sectionError = ref('')
+useSectionScroll(() => platformState.account?.id ?? 'guest', () => !sectionLoading.value)
+function switchProfileSection(next: string) {
+  void router.push({ path: '/me', query: { ...route.query, section: next } })
+}
+function switchStatisticsRange(next: PlayerStatisticsRange) {
+  void router.push({ path: '/me', query: { ...route.query, section: 'performance', range: next } })
+}
 const sessions = ref<PlatformSession[]>([])
 const mfa = ref<MfaCapability | null>(null)
 const emailStatus = ref<EmailStatus | null>(null)
@@ -48,23 +69,68 @@ function rememberProfileSection(key: keyof typeof profileSections, event: Event)
   sessionStorage.setItem(`l12-profile-${key === 'masterRecords' ? 'master-records' : 'sessions'}`, profileSections[key] ? 'open' : 'closed')
 }
 
-async function loadAccountData() {
-  if (!platformState.account || platformState.account.mustChangePassword || platformState.account.mustChangeUsername) return
-  const [matchResult, sessionResult, rankedResult, statisticsResult, alternateArtsResult] = await Promise.allSettled([
-    platformRequest<Match[]>('/api/matches?limit=10'), sessionApi.list(), rankedApi.overview(), playerApi.statistics(), alternateArtApi.mine(),
-  ])
-  if (matchResult.status === 'fulfilled') matches.value = matchResult.value
-  if (sessionResult.status === 'fulfilled') sessions.value = sessionResult.value
-  if (rankedResult.status === 'fulfilled') {
-    ranked.value = rankedResult.value
-    selectedMasterTitle.value = rankedResult.value.profile.selectedMasterTitle || ''
-  }
-  if (statisticsResult.status === 'fulfilled') playerStatistics.value = statisticsResult.value
-  if (alternateArtsResult.status === 'fulfilled') ownedAlternateArts.value = alternateArtsResult.value
+let accountGeneration = 0
+let sectionGeneration = 0
+let pendingSection = Promise.resolve()
+const loadedResources = new Set<string>()
+const statisticsCache = new Map<PlayerStatisticsRange, PlayerStatistics>()
+async function finishProfileReads(reads: Promise<PromiseSettledResult<unknown>[]>) {
+  const results = await reads
+  const failure = results.find(item => item.status === 'rejected')
+  if (failure?.status === 'rejected') throw failure.reason
+}
+async function profileResource<T>(key: string, read: () => Promise<T>, apply: (value: T) => void) {
+  if (loadedResources.has(key)) return
+  const generation = accountGeneration
+  const accountId = platformState.account?.id
+  const value = await read()
+  if (generation !== accountGeneration || accountId !== platformState.account?.id) return
+  apply(value); loadedResources.add(key)
+}
+const loadRanked = () => profileResource('ranked', () => rankedApi.overview(), value => {
+  ranked.value = value; selectedMasterTitle.value = value.profile.selectedMasterTitle || ''
+})
+async function loadStatistics(range = statisticsRange.value) {
+  const cached = statisticsCache.get(range)
+  if (cached) { playerStatistics.value = cached; return }
+  await profileResource(`statistics:${range}`, () => playerApi.statistics(range), value => {
+    statisticsCache.set(range, value)
+    if (statisticsRange.value === range) playerStatistics.value = value
+  })
 }
 async function loadRenameStatus() {
   if (!platformState.account || platformState.account.mustChangeUsername) { renameStatus.value = null; return }
-  try { renameStatus.value = await usernameChangeApi.status() } catch { renameStatus.value = null }
+  loadedResources.delete('rename')
+  await profileResource('rename', () => usernameChangeApi.status(), value => { renameStatus.value = value })
+}
+async function loadAccountData() {
+  const request = ++sectionGeneration
+  const current = section.value
+  // Serialize transitions so a rapid section switch cannot exceed the three-read budget.
+  pendingSection = pendingSection.catch(() => {}).then(async () => {
+    if (request !== sectionGeneration || !platformState.account || platformState.account.mustChangePassword || platformState.account.mustChangeUsername) return
+    sectionLoading.value = true; sectionError.value = ''
+    try {
+      if (current === 'overview') { await finishProfileReads(Promise.allSettled([
+        loadRanked(), loadStatistics(statisticsRange.value),
+      ])) }
+      else if (current === 'performance') { await loadStatistics(statisticsRange.value); if (request === sectionGeneration) visitedPerformance.value = true }
+      else if (current === 'collection') await finishProfileReads(Promise.allSettled([
+        profileResource('arts', () => alternateArtApi.mine(), value => { ownedAlternateArts.value = value }), loadRanked(),
+      ]))
+      else if (current === 'security') { await finishProfileReads(Promise.allSettled([
+        profileResource('sessions', () => sessionApi.list(), value => { sessions.value = value }),
+        profileResource('rename', () => usernameChangeApi.status(), value => { renameStatus.value = value }),
+      ])); if (request === sectionGeneration) await profileResource('mfa', () => loadMfaCapability(), value => { mfa.value = value }) }
+    } catch (error) { if (request === sectionGeneration) sectionError.value = error instanceof Error ? error.message : '资料加载失败，请重试' }
+    finally { if (request === sectionGeneration) sectionLoading.value = false }
+  })
+  await pendingSection
+}
+function resetProfileAccountData() {
+  accountGeneration++; sectionGeneration++; loadedResources.clear(); statisticsCache.clear(); visitedPerformance.value = false
+  sessions.value = []; renameStatus.value = null; playerStatistics.value = null; ranked.value = null
+  ownedAlternateArts.value = []; mfa.value = null; sectionError.value = ''; sectionLoading.value = false
 }
 
 async function saveRankedTitle() {
@@ -88,9 +154,13 @@ async function loadEmailCapability() {
     await loadEmailStatus()
   } catch { emailFeatureEnabled.value = false; emailStatus.value = null }
 }
-onMounted(() => { updateProfileViewport(); window.addEventListener('resize', updateProfileViewport); loadAccountData(); loadEmailCapability(); loadRenameStatus(); loadMfaCapability().then(value => { mfa.value = value }).catch(() => {}) })
-onBeforeUnmount(() => window.removeEventListener('resize', updateProfileViewport))
-watch(() => platformState.account?.id, () => loadRenameStatus())
+onMounted(() => { updateProfileViewport(); window.addEventListener('resize', updateProfileViewport) })
+onBeforeUnmount(() => { accountGeneration++; sectionGeneration++; window.removeEventListener('resize', updateProfileViewport) })
+watch(() => platformState.account?.id, () => { resetProfileAccountData(); void loadAccountData() }, { immediate: true })
+watch([section, statisticsRange], ([, range], [, previousRange]) => {
+  if (range !== previousRange) playerStatistics.value = statisticsCache.get(range) ?? null
+  void loadAccountData()
+})
 watch(publicHistory, value => localStorage.setItem('l12-public-history', String(value)))
 const authSubmitLabel = computed(() => authBusy.value
   ? (authMode.value === 'login' ? '登录中…' : '正在建立账号…')
@@ -138,8 +208,6 @@ async function submitAuth() {
       return
     }
     await loadAccountData()
-    await loadEmailCapability()
-    await loadRenameStatus()
     notice.value = authMode.value === 'login' ? '登录成功' : '账号建立成功，六阵营预组会自动加入牌库'
     auth.password = ''
   } catch (error) {
@@ -159,7 +227,6 @@ async function submitUsernameChange() {
     if (!platformState.account?.mustChangePassword) {
       await ensureOfficialPrebuiltDecks()
       await loadAccountData()
-      await loadEmailCapability()
       const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
         && !route.query.redirect.startsWith('//') ? route.query.redirect : ''
       if (redirect) await router.replace(redirect)
@@ -199,7 +266,7 @@ async function signOut() {
   authBusy.value = true; notice.value = ''
   try { await logout(); notice.value = '当前设备已退出，服务器会话已撤销' }
   catch (error) { notice.value = `本机已退出；服务器会话撤销失败：${error instanceof Error ? error.message : '未知错误'}` }
-  finally { sessions.value = []; renameStatus.value = null; playerStatistics.value = null; ranked.value = null; matches.value = []; ownedAlternateArts.value = []; authBusy.value = false }
+  finally { sessions.value = []; renameStatus.value = null; playerStatistics.value = null; ranked.value = null; ownedAlternateArts.value = []; authBusy.value = false }
 }
 async function submitEmailBinding() {
   authBusy.value = true; notice.value = ''
@@ -247,10 +314,9 @@ async function revokeAllSessions() {
   catch (error) { notice.value = error instanceof Error ? error.message : '撤销失败' }
   finally { await logout({ revokeServer: false }); sessions.value = []; authBusy.value = false }
 }
-const myMatches = computed(() => matches.value)
 const wins = computed(() => playerStatistics.value?.overall.wins ?? 0)
 const losses = computed(() => playerStatistics.value?.overall.losses ?? 0)
-const overallGames = computed(() => playerStatistics.value?.overall.games ?? myMatches.value.length)
+const overallGames = computed(() => playerStatistics.value?.overall.games ?? 0)
 function winRate(line?: PlayerStatLine) { return line && line.games ? `${(line.wins * 100 / line.games).toFixed(1)}%` : '0.0%' }
 function sideWinRate(winsValue: number, games: number) { return games ? `${(winsValue * 100 / games).toFixed(1)}%` : '—' }
 const rankedWinRate = computed(() => {
@@ -263,14 +329,21 @@ function openBugFeedback() { (document.querySelector('.bug-feedback-trigger') as
 <template>
   <div class="profile-page">
     <header><small>PROFILE</small><h1>我的</h1><p>管理账号身份、牌库、战绩公开范围与个人收藏。</p></header>
-    <section class="identity"><div class="avatar">{{ (platformState.account?.username || '游').slice(0,1) }}</div><div><small>当前玩家</small><h2>{{ platformState.account?.username || '游客' }}</h2><span>{{ platformState.account ? `${platformState.account.role === 'admin' ? '管理员' : '玩家'} · ${l12State.status === 'online' ? '服务器在线' : '尚未连接对战服务'}` : '登录后同步牌库并进入对战' }}</span></div><div class="record-chip"><b>{{ ranked?.profile.placed ? ranked.profile.tier : overallGames }}</b><span>{{ ranked?.profile.placed ? `七曜值 ${ranked.profile.sevenValue.toLocaleString()}` : '累计对局' }}</span></div><router-link v-if="canAccessAdmin" class="admin-button" to="/admin">⚙ 管理后台</router-link></section>
-    <nav class="profile-quick-actions" aria-label="我的常用操作"><button type="button" @click="openBugFeedback">反馈问题</button><router-link to="/battle/rankings">查看排行榜</router-link><button type="button" :class="{ on: publicHistory }" @click="publicHistory = !publicHistory">{{ publicHistory ? '战绩已公开' : '战绩不公开' }}</button></nav>
-    <button class="feedback-banner" type="button" @click="openBugFeedback"><span><b>反馈 Bug 和建议</b><small>将当前页面与对局环境一并提交，方便准确复现问题。</small></span><i>进入反馈 →</i></button>
+    <nav v-if="platformState.account" class="profile-section-nav" aria-label="个人中心分区"><button v-for="item in profileNavigation" :key="item.id" :aria-current="section === item.id ? 'page' : undefined" @click="switchProfileSection(item.id)">{{ item.label }}</button></nav>
+    <p v-if="sectionLoading" role="status">正在加载当前分区…</p>
+    <p v-if="sectionError" role="alert">{{ sectionError }} <button @click="loadAccountData">重试</button></p>
+    <section v-if="platformState.account" class="identity"><div class="avatar">{{ (platformState.account?.username || '游').slice(0,1) }}</div><div><small>当前玩家</small><h2>{{ platformState.account?.username || '游客' }}</h2><span>{{ platformState.account ? `${platformState.account.role === 'admin' ? '管理员' : '玩家'} · ${l12State.status === 'online' ? '服务器在线' : '尚未连接对战服务'}` : '登录后同步牌库并进入对战' }}</span></div><div v-if="ranked || playerStatistics" class="record-chip"><b>{{ ranked?.profile.placed ? ranked.profile.tier : overallGames }}</b><span>{{ ranked?.profile.placed ? `七曜值 ${ranked.profile.sevenValue.toLocaleString()}` : `${statisticsRangeLabel}对局` }}</span></div><router-link v-if="canAccessAdmin" class="admin-button" to="/admin">⚙ 管理后台</router-link></section>
+    <nav v-if="platformState.account && section === 'overview'" class="profile-quick-actions" aria-label="我的常用操作"><button type="button" @click="openBugFeedback">反馈问题</button><router-link to="/battle/rankings">查看排行榜</router-link><button type="button" :class="{ on: publicHistory }" @click="publicHistory = !publicHistory">{{ publicHistory ? '战绩已公开' : '战绩不公开' }}</button></nav>
+    <button v-if="platformState.account && section === 'overview'" class="feedback-banner" type="button" @click="openBugFeedback"><span><b>反馈 Bug 和建议</b><small>将当前页面与对局环境一并提交，方便准确复现问题。</small></span><i>进入反馈 →</i></button>
     <p v-if="notice" class="notice" role="status" aria-live="polite" aria-atomic="true">{{ notice }}</p>
-    <section v-if="ranked" class="rank-overview"><header><div><small>RANKED PROFILE</small><h2>本赛季排位</h2></div><div class="rank-links"><router-link to="/battle/rankings">查看排行榜 →</router-link></div></header><div class="rank-body"><article><span>派系</span><b>{{ ranked.profile.faction || '尚未选择' }}</b></article><article><span>段位</span><RankedIdentityBadge variant="tier" :faction="ranked.profile.faction" :label="ranked.profile.rankLabel"/></article><article><span>七曜值</span><b>{{ ranked.profile.sevenValue.toLocaleString() }}</b></article><article><span>排位胜率</span><b>{{ rankedWinRate }}</b></article></div><div v-if="ranked.profile.titles.length" class="profile-titles"><RankedIdentityBadge v-for="title in ranked.profile.titles" :key="title" :variant="profileTitleVariant(title)" :faction="ranked.profile.faction" :label="title"/></div><p v-else>达到称号条件后会在这里展示派系与最强主宰称号。</p><section class="title-manager"><div class="title-manager-heading"><b>最强称号管理</b><button type="button" @click="masterTitleRulesOpen = true">最强称号规则</button></div><span class="title-manager-description">对战中依次显示全服名次、段位、已获得的派系段位称号和1个已选择的最强主宰称号；没有的称号不会显示。</span><div v-if="ranked.profile.masterTitles.length" class="title-manager-controls"><select v-model="selectedMasterTitle"><option v-for="title in ranked.profile.masterTitles" :key="title" :value="title">{{ title }}</option></select><button :disabled="authBusy || selectedMasterTitle === (ranked.profile.selectedMasterTitle || '')" @click="saveRankedTitle">保存称号</button></div><em v-else>近 30 日尚未获得最强主宰称号</em></section></section>
-    <section class="stats"><article><span>总场次</span><b>{{ overallGames }}</b></article><article><span>胜 / 负 / 平</span><b>{{ wins }} / {{ losses }} / {{ playerStatistics?.overall.draws ?? 0 }}</b></article><article><span>总胜率</span><b>{{ winRate(playerStatistics?.overall) }}</b></article><article><span>排位场次</span><b>{{ playerStatistics?.ranked.games ?? 0 }}</b></article></section>
-    <section v-if="playerStatistics" class="performance-panel"><header><div><small>PLAYER PERFORMANCE</small><h2>战绩</h2></div><span>你的对局表现</span></header><div class="side-stats"><article><span>先手</span><b>{{ playerStatistics.overall.firstGames }} 场 · {{ sideWinRate(playerStatistics.overall.firstWins, playerStatistics.overall.firstGames) }}</b></article><article><span>后手</span><b>{{ playerStatistics.overall.secondGames }} 场 · {{ sideWinRate(playerStatistics.overall.secondWins, playerStatistics.overall.secondGames) }}</b></article><article><span>排位胜率</span><b>{{ winRate(playerStatistics.ranked) }}</b></article><article><span>最近统计</span><b>{{ playerStatistics.updatedAt ? new Date(playerStatistics.updatedAt).toLocaleDateString() : '暂无' }}</b></article></div><details class="master-records" :open="!compactProfile || profileSections.masterRecords" @toggle="rememberProfileSection('masterRecords', $event)"><summary><b>主宰战绩</b><span>按主宰查看胜负与先后手表现 · 展开 / 收起</span></summary><div class="master-records-head"><span>主宰</span><span>总体战绩</span><span>排位表现</span><span>先后手胜率</span></div><article v-for="master in playerStatistics.masters" :key="master.masterId"><div class="master-record"><img :src="masterProfileUrl(master.masterId)" :alt="`${master.masterName}头像`"><span><b>{{ master.masterName }}</b><small>{{ master.masterId }}</small></span></div><span>整体 {{ master.overall.wins }}胜 {{ master.overall.losses }}负 {{ master.overall.draws }}平 · <b>{{ winRate(master.overall) }}</b></span><span>排位 {{ master.ranked.games }} 场 · <b>{{ winRate(master.ranked) }}</b></span><span>先手 {{ sideWinRate(master.overall.firstWins, master.overall.firstGames) }} / 后手 {{ sideWinRate(master.overall.secondWins, master.overall.secondGames) }}</span></article><p v-if="!playerStatistics.masters.length">完成对局后，这里会按主宰展示战绩。</p></details></section>
-    <details class="panel account-panel" :open="!platformState.account">
+    <section v-if="platformState.account && ranked && (section === 'overview' || section === 'collection')" class="rank-overview"><header><div><small>RANKED PROFILE</small><h2>本赛季排位</h2></div><div class="rank-links"><router-link to="/battle/rankings">查看排行榜 →</router-link></div></header><div class="rank-body"><article><span>派系</span><b>{{ ranked.profile.faction || '尚未选择' }}</b></article><article><span>段位</span><RankedIdentityBadge variant="tier" :faction="ranked.profile.faction" :label="ranked.profile.rankLabel"/></article><article><span>七曜值</span><b>{{ ranked.profile.sevenValue.toLocaleString() }}</b></article><article><span>排位胜率</span><b>{{ rankedWinRate }}</b></article></div><div v-if="ranked.profile.titles.length" class="profile-titles"><RankedIdentityBadge v-for="title in ranked.profile.titles" :key="title" :variant="profileTitleVariant(title)" :faction="ranked.profile.faction" :label="title"/></div><p v-else>达到称号条件后会在这里展示派系与最强主宰称号。</p><section class="title-manager"><div class="title-manager-heading"><b>最强称号管理</b><button type="button" @click="masterTitleRulesOpen = true">最强称号规则</button></div><span class="title-manager-description">对战中依次显示全服名次、段位、已获得的派系段位称号和1个已选择的最强主宰称号；没有的称号不会显示。</span><div v-if="ranked.profile.masterTitles.length" class="title-manager-controls"><select v-model="selectedMasterTitle"><option v-for="title in ranked.profile.masterTitles" :key="title" :value="title">{{ title }}</option></select><button :disabled="authBusy || selectedMasterTitle === (ranked.profile.selectedMasterTitle || '')" @click="saveRankedTitle">保存称号</button></div><em v-else>近 30 日尚未获得最强主宰称号</em></section></section>
+    <section v-if="platformState.account && section === 'performance'" class="statistics-range-panel">
+      <div><small>PERFORMANCE RANGE</small><h2>总体战绩</h2><p>选择要查看的战绩时间范围。</p></div>
+      <nav aria-label="战绩时间范围"><button v-for="item in statisticsRanges" :key="item.id" type="button" :aria-pressed="statisticsRange === item.id" @click="switchStatisticsRange(item.id)">{{ item.label }}</button></nav>
+    </section>
+    <section v-if="platformState.account && playerStatistics && (section === 'overview' || section === 'performance')" class="stats"><article><span>总场次</span><b>{{ overallGames }}</b></article><article><span>胜 / 负 / 平</span><b>{{ wins }} / {{ losses }} / {{ playerStatistics?.overall.draws ?? 0 }}</b></article><article><span>总胜率</span><b>{{ winRate(playerStatistics?.overall) }}</b></article><article><span>排位场次</span><b>{{ playerStatistics?.ranked.games ?? 0 }}</b></article></section>
+    <section v-if="platformState.account && section === 'performance' && playerStatistics" class="performance-panel"><header><div><small>PLAYER PERFORMANCE</small><h2>战绩</h2></div><span>你的对局表现</span></header><div class="side-stats"><article><span>先手</span><b>{{ playerStatistics.overall.firstGames }} 场 · {{ sideWinRate(playerStatistics.overall.firstWins, playerStatistics.overall.firstGames) }}</b></article><article><span>后手</span><b>{{ playerStatistics.overall.secondGames }} 场 · {{ sideWinRate(playerStatistics.overall.secondWins, playerStatistics.overall.secondGames) }}</b></article><article><span>排位胜率</span><b>{{ winRate(playerStatistics.ranked) }}</b></article><article><span>最近统计</span><b>{{ playerStatistics.updatedAt ? new Date(playerStatistics.updatedAt).toLocaleDateString() : '暂无' }}</b></article></div><details class="master-records" :open="!compactProfile || profileSections.masterRecords" @toggle="rememberProfileSection('masterRecords', $event)"><summary><b>主宰战绩</b><span>按主宰查看胜负与先后手表现 · 展开 / 收起</span></summary><div class="master-records-head"><span>主宰</span><span>总体战绩</span><span>排位表现</span><span>先后手胜率</span></div><article v-for="master in playerStatistics.masters" :key="master.masterId"><div class="master-record"><img :src="masterProfileUrl(master.masterId)" :alt="`${master.masterName}头像`"><span><b>{{ master.masterName }}</b><small>{{ master.masterId }}</small></span></div><span>整体 {{ master.overall.wins }}胜 {{ master.overall.losses }}负 {{ master.overall.draws }}平 · <b>{{ winRate(master.overall) }}</b></span><span>排位 {{ master.ranked.games }} 场 · <b>{{ winRate(master.ranked) }}</b></span><span>先手 {{ sideWinRate(master.overall.firstWins, master.overall.firstGames) }} / 后手 {{ sideWinRate(master.overall.secondWins, master.overall.secondGames) }}</span></article><p v-if="!playerStatistics.masters.length">完成对局后，这里会按主宰展示战绩。</p></details></section>
+    <details v-if="!platformState.account || section === 'security'" class="panel account-panel" open>
       <summary><span><b>账号与安全</b><small>{{ platformState.account ? `${platformState.account.username} · 点击展开管理` : '登录或建立账号' }}</small></span><i>展开 / 收起</i></summary>
       <template v-if="!platformState.account">
         <div class="auth-tabs"><button type="button" :disabled="authBusy" :class="{ active: authMode === 'login' }" @click="selectAuthMode('login')">登录</button><button type="button" :disabled="authBusy" :class="{ active: authMode === 'register' }" @click="selectAuthMode('register')">注册</button></div>
@@ -304,8 +377,8 @@ function openBugFeedback() { (document.querySelector('.bug-feedback-trigger') as
         </details>
       </template>
     </details>
-    <div class="profile-grid"><section class="panel public-settings"><header><h2>公开设置</h2><span>账号偏好</span></header><div class="switch-row"><div><b>公开我的战绩</b><span>关闭后，其他玩家的个人页和公开榜单不展示你的个人对局列表。</span></div><button :class="{ on: publicHistory }" @click="publicHistory = !publicHistory">{{ publicHistory ? '已公开' : '不公开' }}</button></div></section><section class="panel alternate-art-collection"><header><h2>我的异画</h2><span>{{ ownedAlternateArts.length }} 项使用权</span></header><div v-if="ownedAlternateArts.length" class="alternate-art-grid"><article v-for="art in ownedAlternateArts" :key="art.id"><CardImage v-if="art.builtIn" :card-id="art.cardImageId" :alt="art.displayName" intent="thumb"/><img v-else :src="art.thumbnailUrl || art.imageUrl" :alt="art.displayName"><div><b>{{ art.displayName }} · {{ art.artCode }}</b><span>对应原画：{{ art.baseCardName || art.baseCardId }}</span><small>获得时间：{{ art.grantedAt ? new Date(art.grantedAt).toLocaleString() : '历史权益' }}</small></div></article></div><p v-else class="alternate-art-empty">{{ platformState.account ? '尚未获得异画使用权。' : '登录后查看已获得的异画使用权。' }}</p></section></div>
-    <RankedPenaltyHistory />
+    <div v-if="platformState.account && section === 'collection'" class="profile-grid"><section class="panel public-settings"><header><h2>公开设置</h2><span>账号偏好</span></header><div class="switch-row"><div><b>公开我的战绩</b><span>关闭后，其他玩家的个人页和公开榜单不展示你的个人对局列表。</span></div><button :class="{ on: publicHistory }" @click="publicHistory = !publicHistory">{{ publicHistory ? '已公开' : '不公开' }}</button></div></section><section class="panel alternate-art-collection"><header><h2>我的异画</h2><span>{{ ownedAlternateArts.length }} 项使用权</span></header><div v-if="ownedAlternateArts.length" class="alternate-art-grid"><article v-for="art in ownedAlternateArts" :key="art.id"><CardImage v-if="art.builtIn" :card-id="art.cardImageId" :alt="art.displayName" intent="thumb"/><img v-else :src="art.thumbnailUrl || art.imageUrl" :alt="art.displayName"><div><b>{{ art.displayName }} · {{ art.artCode }}</b><span>对应原画：{{ art.baseCardName || art.baseCardId }}</span><small>获得时间：{{ art.grantedAt ? new Date(art.grantedAt).toLocaleString() : '历史权益' }}</small></div></article></div><p v-else class="alternate-art-empty">{{ platformState.account ? '尚未获得异画使用权。' : '登录后查看已获得的异画使用权。' }}</p></section></div>
+    <div v-if="platformState.account && visitedPerformance" v-show="section === 'performance'"><RankedPenaltyHistory /></div>
     <RankedMasterTitleRulesModal v-model="masterTitleRulesOpen"/>
     <div v-if="platformState.account?.mustChangeUsername" class="username-change-gate" role="dialog" aria-modal="true" aria-labelledby="username-change-title">
       <form class="username-change-card" @submit.prevent="submitUsernameChange">
@@ -323,8 +396,11 @@ function openBugFeedback() { (document.querySelector('.bug-feedback-trigger') as
 </template>
 
 <style scoped>
+.profile-section-nav{position:sticky;top:0;z-index:5;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:8px 0;background:#0b1219}.profile-section-nav button{min-width:0;min-height:44px;padding:8px;border:1px solid #43525a;background:#0d161c;color:#dce2df;font:inherit}.profile-section-nav button[aria-current=page]{border-color:#d6b563;background:#2b2414;color:#f0d478}.profile-section-nav button:focus-visible{outline:2px solid #54c5cc;outline-offset:2px}@media(max-width:520px){.profile-section-nav button{font-size:12px;padding:6px 2px}}
+.statistics-range-panel{display:flex;align-items:end;justify-content:space-between;gap:18px;margin-top:12px;padding:16px;border:1px solid #35424a;background:#101821}.statistics-range-panel small{color:#52c3ca;font-weight:900;letter-spacing:.12em}.statistics-range-panel h2{margin:3px 0;font-size:20px}.statistics-range-panel p{margin:0;color:#819095;font-size:13px}.statistics-range-panel nav{display:flex;flex-wrap:wrap;gap:8px}.statistics-range-panel button{min-height:44px;padding:9px 14px;border:1px solid #536068;background:#0b1218;color:#aab4b8;font:inherit;font-weight:900}.statistics-range-panel button[aria-pressed=true]{border-color:#e1c16c;background:#2b2414;color:#f0d478}.statistics-range-panel button:focus-visible{outline:2px solid #54c5cc;outline-offset:2px}
+
 .profile-page{min-height:100%;padding:30px clamp(18px,3vw,46px) 56px;font-family:'Microsoft YaHei','微软雅黑',sans-serif}.profile-page>header small{color:#52c3ca;font:900 14px monospace;letter-spacing:.18em}.profile-page>header h1{margin:5px 0;font-size:30px}.profile-page>header p{margin:0;color:#77858b;font-size:14px}.identity{display:grid;grid-template-columns:72px 1fr 160px auto;align-items:center;gap:18px;margin-top:22px;padding:22px;border:1px solid rgba(226,191,105,.35);background:linear-gradient(120deg,#111a24,#251318)}.avatar{display:grid;width:64px;height:64px;place-items:center;border:1px solid #e1c16c;border-radius:50%;background:#172831;color:#e4c674;font-size:25px;font-weight:900}.identity small,.identity h2,.identity span{display:block}.identity small{color:#78858b;font-size:14px}.identity h2{margin:5px 0;font-size:22px}.identity span{color:#8a969b;font-size:14px}.record-chip{padding:14px;border-left:1px solid #48545b}.record-chip b,.record-chip span{display:block}.record-chip b{font-size:21px;color:#e2c372}.admin-button{padding:11px 16px;border:1px solid #e1c16c;background:#e1c16c;color:#101214;font-size:14px;font-weight:900;text-decoration:none;white-space:nowrap}.feedback-banner{display:flex;width:100%;align-items:center;justify-content:space-between;margin-top:12px;padding:16px 20px;border:1px solid #8e2543;background:linear-gradient(90deg,#2a0e1a,#15121d);color:#fff;text-align:left}.feedback-banner span,.feedback-banner b,.feedback-banner small{display:block}.feedback-banner b{color:#ff87a8;font-size:14px}.feedback-banner small{margin-top:4px;color:#987987;font-size:14px}.feedback-banner i{color:#ef9fb6;font-size:14px;font-style:normal;font-weight:900}.rank-overview{margin-top:12px;padding:20px;border:1px solid #6330a0;background:linear-gradient(135deg,#151027,#20113a)}.rank-overview>header{display:flex;align-items:flex-end;justify-content:space-between;border-bottom:1px solid #503078;padding-bottom:12px}.rank-overview h2{margin:4px 0 0}.rank-overview header small{color:#9b6ce0;font:900 14px monospace;letter-spacing:.16em}.rank-overview a{color:#cba6ff;font-size:14px;font-weight:900;text-decoration:none}.rank-body{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.rank-body article{padding:13px;border:1px solid #4d3470;background:#100c1c}.rank-body span,.rank-body b{display:block}.rank-body span{color:#8f80a2;font-size:14px}.rank-body b{margin-top:5px;color:#eadbff;font-size:16px}.profile-titles{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.profile-titles span{padding:6px 10px;border:1px solid #e4ad3f;border-radius:4px;background:linear-gradient(135deg,#a56b13,#3e2204);color:#fff1a8;font-size:14px;font-weight:900;box-shadow:0 0 12px #d98d2f55}.rank-overview>p{margin:12px 0 0;color:#8c7d9d;font-size:14px}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}.stats article{padding:16px;border:1px solid #35424a;background:#101821}.stats span,.stats b{display:block}.stats span{color:#748188;font-size:14px}.stats b{margin-top:5px;font-size:21px}.stats article:last-child{border-color:#7d2530;background:#241318}.stats article:last-child b{color:#e4c06d}.profile-grid{display:grid;grid-template-columns:minmax(250px,.65fr) minmax(0,1.35fr);align-items:start;gap:12px}.panel{padding:20px;border:1px solid #35424a;background:#101821}.panel>header{display:flex;align-items:center;justify-content:space-between;padding-bottom:13px;border-bottom:1px solid #35424a}.panel h2{margin:0;font-size:18px}.panel header span{color:#69767d;font-size:14px}.panel label{display:block;margin:18px 0;color:#aab2b5;font-size:14px;font-weight:900}.panel input{display:block;width:100%;margin-top:8px;padding:11px;border:1px solid #4b5860;background:#080e13;color:#fff}.public-settings{padding:16px}.public-settings .switch-row{align-items:flex-start;flex-direction:column;gap:12px;padding-bottom:0;border-bottom:0}.public-settings .switch-row button{width:100%}.switch-row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 0;border-top:1px solid rgba(235,230,216,.08);border-bottom:1px solid rgba(235,230,216,.08)}.switch-row b,.switch-row span{display:block}.switch-row span{max-width:430px;margin-top:4px;color:#748087;font-size:14px;line-height:1.6}.switch-row button{min-width:100px;padding:9px;border:1px solid #536068;background:#0b1218;color:#90999e;font-weight:900}.switch-row button.on{border-color:#58c398;color:#7ae0b5}.primary{display:block;margin:16px 0 0 auto;padding:10px 18px;border:1px solid #e1c16c;background:#e1c16c;color:#080b0d;font-weight:900}.alternate-art-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:12px}.alternate-art-grid article{display:grid;grid-template-columns:52px minmax(0,1fr);align-items:center;gap:10px;padding:9px;border:1px solid #35424a;background:#0a1117}.alternate-art-grid img,.alternate-art-grid :deep(.l12-card-image){width:52px;height:72px;object-fit:cover}.alternate-art-grid article>div{display:grid;min-width:0;gap:4px}.alternate-art-grid b,.alternate-art-grid span,.alternate-art-grid small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.alternate-art-grid b{color:#f0d479;font-size:14px}.alternate-art-grid span,.alternate-art-grid small{color:#819095;font-size:12px}.alternate-art-empty{margin:16px 0 0;color:#7b888e;font-size:13px}.notice{position:fixed;right:24px;bottom:24px;z-index:90;max-width:min(520px,calc(100vw - 32px));margin:0;padding:12px 14px;border:1px solid #765f28;border-left:3px solid #d1b25c;background:#241c0a;color:#edd584;font-size:14px;box-shadow:0 12px 32px #000a}
-@media(max-width:700px){.profile-page{padding:20px 12px 48px}.identity{grid-template-columns:60px 1fr}.record-chip{grid-column:1/-1;border-left:0;border-top:1px solid #48545b}.admin-button{grid-column:1/-1;text-align:center}.rank-body,.stats{grid-template-columns:1fr 1fr}.profile-grid{grid-template-columns:1fr}.switch-row{align-items:flex-start;flex-direction:column}.switch-row button{width:100%}.feedback-banner{align-items:flex-start;flex-direction:column;gap:9px}}
+@media(max-width:700px){.profile-page{padding:20px 12px 48px}.identity{grid-template-columns:60px 1fr}.record-chip{grid-column:1/-1;border-left:0;border-top:1px solid #48545b}.admin-button{grid-column:1/-1;text-align:center}.statistics-range-panel{align-items:stretch;flex-direction:column}.statistics-range-panel nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.statistics-range-panel button{padding:8px 4px}.rank-body,.stats{grid-template-columns:1fr 1fr}.profile-grid{grid-template-columns:1fr}.switch-row{align-items:flex-start;flex-direction:column}.switch-row button{width:100%}.feedback-banner{align-items:flex-start;flex-direction:column;gap:9px}}
 @media(max-width:520px){.alternate-art-grid{grid-template-columns:1fr}.alternate-art-collection{padding:14px}}
 .account-panel{margin-bottom:12px}.account-panel>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;list-style:none}.account-panel>summary::-webkit-details-marker{display:none}.account-panel>summary span,.account-panel>summary b,.account-panel>summary small{display:block}.account-panel>summary b{font-size:18px}.account-panel>summary small{margin-top:4px;color:#748188;font-size:12px}.account-panel>summary i{color:#d8bc69;font-size:12px;font-style:normal}.account-panel[open]>summary{padding-bottom:13px;border-bottom:1px solid #35424a}.auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:16px}.auth-tabs button{padding:10px;border:1px solid #46535b;background:#080e13;color:#879197;font-weight:900}.auth-tabs button.active{border-color:#e1c16c;background:#2a2414;color:#f2d985}.auth-tabs button:disabled{cursor:not-allowed;opacity:.58}.account-form{display:grid;grid-template-columns:1fr 1fr auto auto;align-items:end;gap:10px}.account-form label{margin:14px 0 0}.account-form .primary{margin:0}.auth-form .auth-notice{grid-column:1/-1;margin:2px 0 0;padding:10px;border-left:3px solid #d96b72;background:#281217;color:#f0a4aa;line-height:1.55}.logout{padding:10px 16px;border:1px solid #7e3c45;background:#2b1116;color:#eab5bb;font-weight:900}.admin-link{align-self:center;color:#e1c16c;font-size:14px;font-weight:900;text-decoration:none}@media(max-width:900px){.account-form{grid-template-columns:1fr 1fr}.account-form .primary,.account-form .logout,.account-form .admin-link{width:100%}}
 .session-manager{grid-column:1/-1;margin-top:18px;border-top:1px solid #35424a;padding-top:16px}.session-manager>header{display:flex;align-items:center;justify-content:space-between;gap:12px}.session-manager h3{margin:0;font-size:14px}.session-manager p{margin:4px 0 0;color:#748188;font-size:14px}.session-actions{display:flex;gap:7px}.session-manager button{padding:8px 11px;border:1px solid #4b5960;background:#0a1117;color:#d8deda;font-weight:900}.session-manager button.danger,.session-row>button{border-color:#7e3c45;background:#2b1116;color:#eab5bb}.session-manager button:disabled{cursor:not-allowed;opacity:.42}.session-row{display:grid;grid-template-columns:minmax(180px,.8fr) 1fr auto;align-items:center;gap:12px;margin-top:8px;padding:10px;border:1px solid #303d44;background:#0a1117}.session-row b,.session-row code,.session-row small{display:block}.session-row code{margin-top:3px;color:#8e9ba0;font-size:14px;overflow-wrap:anywhere}.session-row span{color:#c0c8c7;font-size:14px}.session-row small{margin-top:3px;color:#718087}.session-empty{text-align:center}@media(max-width:700px){.session-manager>header{align-items:flex-start;flex-direction:column}.session-actions{width:100%}.session-actions button{flex:1}.session-row{grid-template-columns:1fr auto}.session-row>span{grid-column:1/-1;grid-row:2}}

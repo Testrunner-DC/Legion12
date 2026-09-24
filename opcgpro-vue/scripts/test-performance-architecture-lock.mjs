@@ -70,3 +70,14 @@ assert(evaluate([['src/legacy.ts', { rawFetch: 0, interval: 2, maximumParallelPa
   .some(message => message.includes('above allowed')))
 
 console.log('Performance architecture lock regression passed: 15/15')
+
+for (const expression of [
+  'Promise.allSettled([one(),two(),three(),four()])',
+  'const tasks=[one(),two(),three(),four()]; Promise.allSettled(tasks)',
+  'async function init(){ void loadOne(); loadTwo().catch(()=>{}); loadThree(); void loadFour() }',
+  'onMounted(()=>{ loadOne(); loadTwo(); loadThree(); loadFour() })',
+  'async function init(){const first=loadOne();const second=loadTwo();const third=loadThree();await loadFour()}',
+]) assert(analyzeSource(expression).maximumParallelPageLoad >= 4, expression)
+assert.equal(analyzeSource('async function init(){await loadOne();await loadTwo();await loadThree();await loadFour()}').maximumParallelPageLoad, 1)
+assert.equal(analyzeSource('async function init(){if(ok){loadOne();loadTwo()}else{loadThree();loadFour()}}').maximumParallelPageLoad, 2)
+console.log('Settled/background fan-out regression passed: 7/7')

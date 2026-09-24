@@ -1,43 +1,36 @@
 <script setup lang="ts">
 import PagedCollection from './PagedCollection.vue'
-import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, defineAsyncComponent, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { adminApi, authState, canAccessAdmin, hasPermission, platformState, refreshCurrentAccount, type AdminAudit, type AdminCommand, type AtomicAbility, type AtomicCardEffect, type AtomicCoverage, type AuditArchiveOperation, type AuditArchiveRecovery, type AuditArchiveSegment, type BugReport, type EffectAtomDescriptor, type EffectPresentationScene, type PlatformAccount, type ReleaseEnvironment, type ReleaseOperation, type ReleaseRun, type SecurityStatus, type VerifiedReleaseArtifact } from '@/l12/platform'
 import CardImage from '@/l12/CardImage.vue'
 import { cardTypeLabel } from '@/l12/cardPresentation'
-import AdminSiteContentPanel from './AdminSiteContentPanel.vue'
-import AdminRuleRulingsPanel from './AdminRuleRulingsPanel.vue'
-import AdminOperationsPanel from './AdminOperationsPanel.vue'
-import AdminRankedIntegrityPanel from './AdminRankedIntegrityPanel.vue'
-import AdminMatchesPanel from './AdminMatchesPanel.vue'
-import AdminCardAnalyticsPanel from './AdminCardAnalyticsPanel.vue'
-import AdminGlobalDataPanel from './AdminGlobalDataPanel.vue'
-import AdminMatchGovernancePanel from './AdminMatchGovernancePanel.vue'
-import AdminUsernameChangeRequestsPanel from './AdminUsernameChangeRequestsPanel.vue'
-import AdminAlternateArtsPanel from './AdminAlternateArtsPanel.vue'
-import AdminServerStoragePanel from './AdminServerStoragePanel.vue'
-import TournamentCenterPage from './TournamentCenterPage.vue'
-import AdminEffectWorkbenchPanel from './AdminEffectWorkbenchPanel.vue'
+const AdminSiteContentPanel = defineAsyncComponent(() => import('./AdminSiteContentPanel.vue'))
+const AdminRuleRulingsPanel = defineAsyncComponent(() => import('./AdminRuleRulingsPanel.vue'))
+const AdminOperationsPanel = defineAsyncComponent(() => import('./AdminOperationsPanel.vue'))
+const AdminRankedIntegrityPanel = defineAsyncComponent(() => import('./AdminRankedIntegrityPanel.vue'))
+const AdminMatchesPanel = defineAsyncComponent(() => import('./AdminMatchesPanel.vue'))
+const AdminCardAnalyticsPanel = defineAsyncComponent(() => import('./AdminCardAnalyticsPanel.vue'))
+const AdminGlobalDataPanel = defineAsyncComponent(() => import('./AdminGlobalDataPanel.vue'))
+const AdminMatchGovernancePanel = defineAsyncComponent(() => import('./AdminMatchGovernancePanel.vue'))
+const AdminUsernameChangeRequestsPanel = defineAsyncComponent(() => import('./AdminUsernameChangeRequestsPanel.vue'))
+const AdminAlternateArtsPanel = defineAsyncComponent(() => import('./AdminAlternateArtsPanel.vue'))
+const AdminServerStoragePanel = defineAsyncComponent(() => import('./AdminServerStoragePanel.vue'))
+const TournamentCenterPage = defineAsyncComponent(() => import('./TournamentCenterPage.vue'))
+const AdminEffectWorkbenchPanel = defineAsyncComponent(() => import('./AdminEffectWorkbenchPanel.vue'))
 
-type AdminTab = 'overview' | 'bugs' | 'accounts' | 'username-requests' | 'matches' | 'match-governance' | 'global-data' | 'card-analytics' | 'content' | 'rules' | 'alternate-arts' | 'effects' | 'releases' | 'commands' | 'audit' | 'integrity' | 'security' | 'storage' | 'operations' | 'tournaments'
+import { adminSections, visibleAdminSections, type AdminTab } from './adminSections'
+import { useSectionScroll } from './useSectionScroll'
+import AdminRiskActionDialog from './AdminRiskActionDialog.vue'
 const route = useRoute()
-const tab = ref<AdminTab>(route.query.section === 'matches' ? 'matches' : 'overview')
-const availableAdminTabs = computed<Array<{ id: AdminTab; label: string }>>(() => [
-  { id: 'overview', label: '后台概览' },
-  ...(hasPermission('admin.accounts.read') ? [{ id: 'accounts' as const, label: '账号与会话' }, { id: 'username-requests' as const, label: '改名审核' }] : []),
-  ...(hasPermission('admin.bugs.read') ? [{ id: 'bugs' as const, label: 'Bug 管理' }] : []),
-  ...(hasPermission('admin.matches.read') ? [{ id: 'matches' as const, label: '对局档案' }] : []),
-  ...(hasPermission('admin.match-governance.read') ? [{ id: 'match-governance' as const, label: '对局治理' }] : []),
-  ...(hasPermission('admin.analytics.read') ? [{ id: 'global-data' as const, label: '全局数据' }, { id: 'card-analytics' as const, label: '卡牌数据' }] : []),
-  ...(hasPermission('admin.content.read') ? [{ id: 'content' as const, label: '站点内容工作台' }, { id: 'rules' as const, label: '规则中心审核' }, { id: 'alternate-arts' as const, label: '异画管理与权益' }] : []),
-  ...(hasPermission('admin.operations.read') ? [{ id: 'operations' as const, label: '游戏运营配置' }] : []),
-  ...(hasPermission('tournaments.manage') || hasPermission('tournaments.rulings.write') ? [{ id: 'tournaments' as const, label: '赛事管理' }] : []),
-  ...(hasPermission('admin.commands.read') ? [{ id: 'commands' as const, label: '管理操作记录' }] : []),
-  ...(hasPermission('admin.effects.read') ? [{ id: 'effects' as const, label: '卡效统一工作台' }] : []),
-  ...(hasPermission('releases.read') || hasPermission('releases.runtime.read') ? [{ id: 'releases' as const, label: '软件发布' }] : []),
-  ...(hasPermission('admin.security.read') ? [{ id: 'security' as const, label: '安全状态' }, { id: 'storage' as const, label: '服务器存储' }] : []),
-  ...(hasPermission('admin.audit.read') ? [{ id: 'integrity' as const, label: '排位完整性' }, { id: 'audit' as const, label: '审计日志' }] : []),
-])
+const router = useRouter()
+const availableAdminTabs = computed(() => visibleAdminSections(hasPermission))
+const adminGroups = computed(() => [...new Set(availableAdminTabs.value.map(item => item.group))])
+const requestedTab = computed(() => typeof route.query.section === 'string' ? route.query.section : 'overview')
+const selectedSection = computed(() => availableAdminTabs.value.find(item => item.id === requestedTab.value))
+const tab = computed(() => selectedSection.value?.id)
+const loadedTabs = new Set<AdminTab>()
+useSectionScroll(() => platformState.account?.id ?? 'guest')
 const adminMatchId = ref(typeof route.query.matchId === 'string' ? route.query.matchId : '')
 const bugs = ref<BugReport[]>([])
 const accounts = ref<PlatformAccount[]>([])
@@ -94,27 +87,62 @@ const auditRetentionDays = ref(365)
 const auditArchiveReason = ref('定期安全审计归档')
 const accountStatusReasons = reactive<Record<string, string>>({})
 
-async function loadBugs() { try { bugs.value = await adminApi.bugs({ status: statusFilter.value, priority: priorityFilter.value, search: bugSearch.value }) } catch (error) { notice.value = error instanceof Error ? error.message : '加载失败' } }
-async function loadAccounts() { try { accounts.value = await adminApi.accounts() } catch (error) { notice.value = error instanceof Error ? error.message : '加载失败' } }
+let adminGeneration = 0
+let adminReadFailed = false
+async function readAdminResource<T>(read: () => Promise<T>, apply: (value: T) => void) {
+  const generation = adminGeneration
+  const accountId = platformState.account?.id
+  const section = tab.value
+  if (!authState.verified || !canAccessAdmin.value || !section) return false
+  try {
+    const value = await read()
+    if (generation !== adminGeneration || accountId !== platformState.account?.id || section !== tab.value || !selectedSection.value) return false
+    apply(value); return true
+  } catch (error) {
+    if (generation === adminGeneration && section === tab.value) {
+      adminReadFailed = true
+      notice.value = error instanceof Error ? error.message : '加载失败，请重试'
+    }
+    return false
+  }
+}
+async function loadBugs() {
+  if (tab.value !== 'bugs') { loadedTabs.delete('bugs'); return }
+  await readAdminResource(() => adminApi.bugs({ status: statusFilter.value, priority: priorityFilter.value, search: bugSearch.value }), value => { bugs.value = value })
+}
+async function loadAccounts() {
+  if (tab.value !== 'accounts') { loadedTabs.delete('accounts'); return }
+  await readAdminResource(() => adminApi.accounts(), value => { accounts.value = value })
+}
 async function updateBug(item: BugReport) { try { const updated = await adminApi.updateBug(item.id, { status: item.status, priority: item.priority, assignee: item.assignee, adminNotes: item.adminNotes, comment: bugComments[item.id] }); bugs.value = bugs.value.map(bug => bug.id === updated.id ? updated : bug); bugComments[item.id] = ''; notice.value = `${item.id} 已更新并写入审计记录` } catch (error) { notice.value = error instanceof Error ? error.message : '更新失败' } }
 function bugActionLabel(action: string) { return ({ created: '建立反馈', status: '状态变更', priority: '优先级变更', assignee: '负责人变更', notes: '处理摘要变更', comment: '追加处理记录' } as Record<string, string>)[action] || action }
 function switchAdminTab(next: AdminTab) {
-  if (next === 'matches') adminMatchId.value = ''
-  tab.value = next
-  if (next === 'accounts') void loadAccounts()
-  else if (next === 'bugs') void loadBugs()
-  else if (next === 'effects') void loadEffects()
-  else if (next === 'releases') void loadReleases()
-  else if (next === 'commands') void loadControlPlane()
-  else if (next === 'security') void loadSecurity()
-  else if (next === 'audit') void loadAudit()
+  if (!availableAdminTabs.value.some(item => item.id === next)) return
+  void router.push({ path: '/admin', query: { section: next } })
 }
 function onMobileAdminTabChange(event: Event) { switchAdminTab((event.target as HTMLSelectElement).value as AdminTab) }
-function openAdminMatch(matchId: string) { adminMatchId.value = matchId; tab.value = 'matches' }
+function openAdminMatch(matchId: string) {
+  if (!hasPermission('admin.matches.read')) return
+  void router.push({ path: '/admin', query: { section: 'matches', matchId } })
+}
+const sessionRiskTarget = ref<PlatformAccount | null>(null)
+const sessionRiskBusy = ref(false)
+const sessionRiskError = ref('')
 async function setRole(account: PlatformAccount) { try { const result = await adminApi.setRole(account.id, account.role as 'player' | 'admin', account.permissionVersion); notice.value = result.changed ? `${account.username} 的角色已更新为${result.role === 'admin' ? '管理员' : '玩家'}并写入审计` : '角色没有变化'; await loadAccounts() } catch (error) { notice.value = error instanceof Error ? error.message : '更新失败' } }
-async function revokeAccountSessions(account: PlatformAccount) {
-  try { const result = await adminApi.revokeSessions(account.id); notice.value = `${account.username} 已撤销 ${result.revokedCount} 个会话` }
-  catch (error) { notice.value = error instanceof Error ? error.message : '撤销会话失败' }
+function revokeAccountSessions(account: PlatformAccount) {
+  sessionRiskError.value = ''
+  sessionRiskTarget.value = account
+}
+async function confirmRevokeAccountSessions() {
+  const account = sessionRiskTarget.value
+  if (!account || sessionRiskBusy.value) return
+  sessionRiskBusy.value = true; sessionRiskError.value = ''
+  try {
+    const result = await adminApi.revokeSessions(account.id)
+    notice.value = `${account.username} 已撤销 ${result.revokedCount} 个会话`
+    sessionRiskTarget.value = null
+  } catch (error) { sessionRiskError.value = error instanceof Error ? error.message : '撤销会话失败，请重试' }
+  finally { sessionRiskBusy.value = false }
 }
 async function setAccountStatus(account: PlatformAccount) {
   const reason = accountStatusReasons[account.id]?.trim()
@@ -127,11 +155,13 @@ async function setAccountStatus(account: PlatformAccount) {
   } catch (error) { notice.value = error instanceof Error ? error.message : '账号状态命令提交失败' }
 }
 async function reviewAbility(ability: AtomicAbility, status: string, note = '') { if (!selectedEffect.value) return; try { await adminApi.reviewEffect(selectedEffect.value.cardId, { abilityId: ability.abilityId, status, note }); selectedEffect.value = await adminApi.effect(selectedEffect.value.cardId); effectCards.value = effectCards.value.map(card => card.cardId === selectedEffect.value?.cardId ? selectedEffect.value : card); notice.value = `${selectedEffect.value.cardId} ABILITY ${ability.sequence} 审查状态已记录` } catch (error) { notice.value = error instanceof Error ? error.message : '审查记录失败' } }
-async function loadAudit() { try { audits.value = await adminApi.audit({ category: auditCategory.value, outcome: auditOutcome.value, actorId: auditActorId.value, commandId: auditCommandId.value, correlationId: auditCorrelationId.value }) } catch (error) { notice.value = error instanceof Error ? error.message : '审计日志加载失败' } }
+async function loadAudit() {
+  if (tab.value !== 'audit') { loadedTabs.delete('audit'); return }
+  await readAdminResource(() => adminApi.audit({ category: auditCategory.value, outcome: auditOutcome.value, actorId: auditActorId.value, commandId: auditCommandId.value, correlationId: auditCorrelationId.value }), value => { audits.value = value })
+}
 async function loadControlPlane() {
-  try {
-    if (hasPermission('admin.commands.read')) commands.value = await adminApi.commands({ status: commandStatus.value })
-  } catch (error) { notice.value = error instanceof Error ? error.message : '管理操作记录加载失败' }
+  if (tab.value !== 'commands') { loadedTabs.delete('commands'); return }
+  await readAdminResource(() => adminApi.commands({ status: commandStatus.value }), value => { commands.value = value })
 }
 async function resetAccountPassword(account: PlatformAccount) {
   const reason = accountStatusReasons[account.id]?.trim()
@@ -160,17 +190,17 @@ function ensureReleaseArtifact() {
   if (!availableReleaseArtifacts().some(item => item.id === selectedReleaseArtifact.value)) selectedReleaseArtifact.value = availableReleaseArtifacts()[0]?.id || ''
 }
 async function loadReleases() {
+  if (tab.value !== 'releases') { loadedTabs.delete('releases'); return }
   releaseLoading.value = true
   try {
     if (hasPermission('releases.read')) {
-      releaseArtifacts.value = await adminApi.releaseArtifacts()
-      releaseRuns.value = await adminApi.releaseRuns()
+      if (!await readAdminResource(() => adminApi.releaseArtifacts(), value => { releaseArtifacts.value = value })) return
+      if (!await readAdminResource(() => adminApi.releaseRuns(), value => { releaseRuns.value = value })) return
     }
-    if (hasPermission('releases.runtime.read')) releaseEnvironments.value = await adminApi.releaseEnvironments()
+    if (hasPermission('releases.runtime.read')) await readAdminResource(() => adminApi.releaseEnvironments(), value => { releaseEnvironments.value = value })
     if (!releaseEnvironments.value.some(item => item.environment === selectedReleaseEnvironment.value)) selectedReleaseEnvironment.value = releaseEnvironments.value[0]?.environment || 'staging'
     ensureReleaseArtifact()
-  } catch (error) { notice.value = error instanceof Error ? error.message : '发布控制面加载失败' }
-  finally { releaseLoading.value = false }
+  } finally { releaseLoading.value = false }
 }
 async function submitRelease(dryRun: boolean) {
   const environment = selectedEnvironment()
@@ -195,10 +225,11 @@ async function rollbackRelease(run: ReleaseRun, dryRun: boolean) {
   } catch (error) { notice.value = error instanceof Error ? error.message : '回滚命令提交失败' }
 }
 async function loadSecurity() {
-  try {
-    const [status, archives] = await Promise.all([adminApi.securityStatus(), adminApi.auditArchives()])
-    securityStatus.value = status; auditArchives.value = archives; auditRetentionDays.value = status.auditRetentionDays
-  } catch (error) { notice.value = error instanceof Error ? error.message : '安全治理状态加载失败' }
+  if (tab.value !== 'security') { loadedTabs.delete('security'); return }
+  await Promise.all([
+    readAdminResource(() => adminApi.securityStatus(), value => { securityStatus.value = value }),
+    readAdminResource(() => adminApi.auditArchives(), value => { auditArchives.value = value }),
+  ])
 }
 async function archiveAudit(dryRun: boolean) {
   if (!securityStatus.value) { notice.value = '请先刷新安全状态'; return }
@@ -303,23 +334,45 @@ function reviewLabel(status: string) { return ({ confirmed: '人工确认', 'hum
 function atomDescriptor(kind: string) { return effectAtoms.value.find(atom => atom.kind === kind) }
 function previousEffectsPage() { if (effectPage.value > 1) { effectPage.value--; loadEffects() } }
 function nextEffectsPage() { if (effectPage.value * 50 < effectTotal.value) { effectPage.value++; loadEffects() } }
-async function initializeAdminPage() {
-  try { await refreshCurrentAccount() }
-  catch { return }
-  if (!canAccessAdmin.value) return
-  if (hasPermission('admin.effects.read')) loadEffects()
-  if (hasPermission('admin.bugs.read')) loadBugs()
-  if (hasPermission('admin.accounts.read')) loadAccounts()
-  if (hasPermission('admin.audit.read')) loadAudit()
-  if (hasPermission('admin.security.read')) loadSecurity()
-  if (hasPermission('admin.commands.read')) loadControlPlane()
-  if (hasPermission('releases.read') || hasPermission('releases.runtime.read')) loadReleases()
+let pendingAdminSection = Promise.resolve()
+async function loadCurrentAdminSection() {
+  const current = tab.value
+  const generation = adminGeneration
+  pendingAdminSection = pendingAdminSection.catch(() => {}).then(async () => {
+    if (generation !== adminGeneration || current !== tab.value || !authState.verified || !canAccessAdmin.value || !current || loadedTabs.has(current)) return
+    adminReadFailed = false
+    if (current === 'accounts') await loadAccounts()
+    else if (current === 'bugs') await loadBugs()
+    else if (current === 'releases') await loadReleases()
+    else if (current === 'commands') await loadControlPlane()
+    else if (current === 'security') await loadSecurity()
+    else if (current === 'audit') await loadAudit()
+    if (!adminReadFailed && generation === adminGeneration && current === tab.value) loadedTabs.add(current)
+    // Child panels own their reads after lazy mounting; never preload them here.
+  })
+  await pendingAdminSection
 }
+async function initializeAdminPage() {
+  try { await refreshCurrentAccount(); await loadCurrentAdminSection() } catch { /* Fail closed. */ }
+}
+watch(() => [platformState.account?.id, platformState.account?.permissionVersion], () => {
+  adminGeneration++; loadedTabs.clear()
+  accounts.value = []; bugs.value = []; audits.value = []; commands.value = []
+  releaseArtifacts.value = []; releaseEnvironments.value = []; releaseRuns.value = []
+  securityStatus.value = null; auditArchives.value = []; selectedCommand.value = null
+  sessionRiskTarget.value = null; notice.value = ''
+})
+watch(() => [route.query.section, route.query.matchId, authState.verified, platformState.account?.id, platformState.account?.permissionVersion], () => {
+  adminGeneration++
+  adminMatchId.value = typeof route.query.matchId === 'string' ? route.query.matchId : ''
+  void loadCurrentAdminSection()
+})
 onMounted(() => { void initializeAdminPage() })
 </script>
 
 <template>
   <div class="admin-page">
+    <AdminRiskActionDialog v-if="sessionRiskTarget" title="撤销全部会话" :target="sessionRiskTarget.username" impact="该账号在所有设备上的登录会话将立即失效，需重新登录。已撤销的会话无法恢复。" :busy="sessionRiskBusy" :error="sessionRiskError" @cancel="sessionRiskTarget = null" @confirm="confirmRevokeAccountSessions"/>
     <header><div><small>ADMINISTRATION</small><h1>管理后台</h1><p>账号权限、Bug 闭环、官网内容与运营配置。</p></div><router-link to="/me">← 返回我的</router-link></header>
     <section v-if="!authState.initialized || authState.refreshing" class="denied"><b>正在验证管理员权限</b><span>管理数据只会在服务端身份确认后加载。</span></section>
     <section v-else-if="!canAccessAdmin" class="denied"><b>需要管理员权限</b><span>请先在“我的”页面登录管理员账号。</span></section>
@@ -327,30 +380,14 @@ onMounted(() => { void initializeAdminPage() })
       <div class="admin-shell">
       <label class="admin-mobile-navigation"><span>后台模块</span><select :value="tab" aria-label="选择后台模块" @change="onMobileAdminTabChange"><option v-for="item in availableAdminTabs" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
       <aside class="admin-sidebar">
-        <nav><small>总览</small><button :class="{ active: tab === 'overview' }" @click="switchAdminTab('overview')">▦ 后台概览</button></nav>
-        <nav><small>用户与反馈</small><button v-if="hasPermission('admin.accounts.read')" :class="{ active: tab === 'accounts' }" @click="switchAdminTab('accounts')">♙ 账号与会话</button><button v-if="hasPermission('admin.accounts.read')" :class="{ active: tab === 'username-requests' }" @click="switchAdminTab('username-requests')">✎ 改名审核</button><button v-if="hasPermission('admin.bugs.read')" :class="{ active: tab === 'bugs' }" @click="switchAdminTab('bugs')">⚑ Bug 管理</button></nav>
-        <nav><small>数据管理</small><button v-if="hasPermission('admin.matches.read')" :class="{ active: tab === 'matches' }" @click="switchAdminTab('matches')">▣ 对局档案</button><button v-if="hasPermission('admin.match-governance.read')" :class="{ active: tab === 'match-governance' }" @click="switchAdminTab('match-governance')">⚖ 对局治理</button><button v-if="hasPermission('admin.analytics.read')" :class="{ active: tab === 'global-data' }" @click="switchAdminTab('global-data')">⌁ 全局数据</button><button v-if="hasPermission('admin.analytics.read')" :class="{ active: tab === 'card-analytics' }" @click="switchAdminTab('card-analytics')">◈ 卡牌数据</button></nav>
-        <nav><small>站点内容</small><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'content' }" @click="switchAdminTab('content')">▤ 站点内容工作台</button><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'rules' }" @click="switchAdminTab('rules')">§ 规则中心审核</button></nav>
-        <nav><small>收藏与权益</small><button v-if="hasPermission('admin.content.read')" :class="{ active: tab === 'alternate-arts' }" @click="switchAdminTab('alternate-arts')">✦ 异画管理与权益</button></nav>
-        <nav><small>游戏与赛事运营</small><button v-if="hasPermission('admin.operations.read')" :class="{ active: tab === 'operations' }" @click="switchAdminTab('operations')">⚙ 游戏运营配置</button><button v-if="hasPermission('tournaments.manage') || hasPermission('tournaments.rulings.write')" :class="{ active: tab === 'tournaments' }" @click="switchAdminTab('tournaments')">♜ 赛事管理</button><button v-if="hasPermission('admin.commands.read')" :class="{ active: tab === 'commands' }" @click="switchAdminTab('commands')">⌁ 管理操作记录</button></nav>
-        <nav><small>卡牌与规则</small><button v-if="hasPermission('admin.effects.read')" :class="{ active: tab === 'effects' }" @click="switchAdminTab('effects')">◇ 卡效统一工作台</button></nav>
-        <nav><small>系统与治理</small><button v-if="hasPermission('releases.read') || hasPermission('releases.runtime.read')" :class="{ active: tab === 'releases' }" @click="switchAdminTab('releases')">⇧ 软件发布</button><button v-if="hasPermission('admin.security.read')" :class="{ active: tab === 'security' }" @click="switchAdminTab('security')">◆ 安全状态</button><button v-if="hasPermission('admin.security.read')" :class="{ active: tab === 'storage' }" @click="switchAdminTab('storage')">▤ 服务器存储</button><button v-if="hasPermission('admin.audit.read')" :class="{ active: tab === 'integrity' }" @click="switchAdminTab('integrity')">⚖ 排位完整性</button><button v-if="hasPermission('admin.audit.read')" :class="{ active: tab === 'audit' }" @click="switchAdminTab('audit')">≡ 审计日志</button></nav>
+        <nav v-for="group in adminGroups" :key="group"><small>{{ group }}</small><button v-for="item in availableAdminTabs.filter(item => item.group === group)" :key="item.id" :class="{ active: tab === item.id }" :aria-current="tab === item.id ? 'page' : undefined" @click="switchAdminTab(item.id)">{{ item.icon }} {{ item.label }}</button></nav>
       </aside>
       <main class="admin-content">
+      <section v-if="!selectedSection" class="denied" role="alert"><b>{{ adminSections.some(item => item.id === requestedTab) ? '无权访问此模块' : '此模块不存在' }}</b><span>请选择可访问的后台模块。</span></section>
+      <header v-else class="section-heading"><span>管理后台 / {{ selectedSection.group }}</span><h2>{{ selectedSection.label }}</h2></header>
       <section v-if="tab === 'overview'" class="overview-grid">
         <header class="panel"><div><small>CONTROL CENTER</small><h2>运营总览</h2><p>这里只显示摘要和入口；配置编辑只在对应模块内进行。</p></div></header>
-        <button class="overview-card" @click="switchAdminTab('bugs')"><small>用户与反馈</small><b>{{ bugs.filter(item => item.status !== 'resolved' && item.status !== 'closed').length }}</b><span>未闭环 Bug</span></button>
-        <button class="overview-card" @click="switchAdminTab('accounts')"><small>账号与会话</small><b>{{ accounts.length }}</b><span>平台账号</span></button>
-        <button v-if="hasPermission('admin.matches.read')" class="overview-card" @click="adminMatchId=''; tab='matches'"><small>数据管理</small><b>档案</b><span>最近对局、玩家与构筑联查</span></button>
-        <button v-if="hasPermission('admin.match-governance.read')" class="overview-card" @click="tab='match-governance'"><small>对局治理</small><b>双账本</b><span>平局申请与玩家举报独立处置</span></button>
-        <button v-if="hasPermission('admin.analytics.read')" class="overview-card" @click="tab='global-data'"><small>数据管理</small><b>趋势</b><span>活跃、对局、在线与页面访问</span></button>
-        <button v-if="hasPermission('admin.analytics.read')" class="overview-card" @click="tab='card-analytics'"><small>平衡分析</small><b>卡牌</b><span>主宰、收录、上手与胜负关联</span></button>
-        <button class="overview-card" @click="tab='content'"><small>站点内容</small><b>7 模块</b><span>素材、首页、资讯、视频、商品、分类与法务</span></button>
-        <button class="overview-card" @click="tab='operations'"><small>游戏运营</small><b>版本化</b><span>赛季、天灾、禁限卡、模式与维护</span></button>
-        <button v-if="hasPermission('tournaments.manage') || hasPermission('tournaments.rulings.write')" class="overview-card" @click="tab='tournaments'"><small>赛事运营</small><b>玩家赛事</b><span>查看、轮次控制、判罚与归档</span></button>
-        <button class="overview-card" @click="tab='effects'; loadEffects()"><small>卡牌与规则</small><b>{{ effectCoverage?.verifiedAbilities ?? 0 }}</b><span>已验证原子能力</span></button>
-        <button class="overview-card" @click="tab='releases'; loadReleases()"><small>系统与发布</small><b>{{ releaseEnvironments.length }}</b><span>受监控环境</span></button>
-        <button class="overview-card" @click="tab='audit'; loadAudit()"><small>安全与审计</small><b>{{ audits.length }}</b><span>当前查询记录</span></button>
+        <button v-for="item in availableAdminTabs.filter(item => item.id !== 'overview')" :key="item.id" class="overview-card" @click="switchAdminTab(item.id)"><small>{{ item.group }}</small><b>{{ item.icon }}</b><span>{{ item.label }}</span></button>
       </section>
       <section v-else-if="tab === 'bugs'" class="panel">
         <header><h2>Bug 反馈</h2><div class="bug-filters"><input v-model="bugSearch" placeholder="编号 / 标题 / 玩家 / 房间 / 对局" @keyup.enter="loadBugs"><select v-model="statusFilter" @change="loadBugs"><option value="">全部状态</option><option value="new">新反馈</option><option value="confirmed">已确认</option><option value="in-progress">处理中</option><option value="resolved">已解决</option><option value="closed">已关闭</option></select><select v-model="priorityFilter" @change="loadBugs"><option value="">全部优先级</option><option value="low">低</option><option value="normal">普通</option><option value="high">高</option><option value="critical">紧急</option></select><button @click="loadBugs">查询</button></div></header>
@@ -530,6 +567,7 @@ onMounted(() => { void initializeAdminPage() })
 </template>
 
 <style scoped>
+.section-heading{margin-bottom:16px}.section-heading span{color:#9aa7ae;font-size:13px}.section-heading h2{margin:6px 0;font-size:22px}
 .admin-page{min-height:100%;padding:30px clamp(18px,3vw,46px) 70px;font-family:'Microsoft YaHei','微软雅黑',sans-serif}.admin-page>header{display:flex;align-items:flex-start;justify-content:space-between}.admin-page small{color:#d5b85e;font:900 14px monospace;letter-spacing:.16em}.admin-page h1{margin:5px 0;font-size:30px}.admin-page p{color:#7d898e;font-size:14px;line-height:1.7}.admin-page>header a{color:#e1c36e;text-decoration:none;font-size:14px;font-weight:900}.admin-shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:16px;margin-top:22px}.admin-sidebar{align-self:start;position:sticky;top:16px;display:grid;gap:5px;padding:12px;border:1px solid #35424a;background:#0b1218}.admin-sidebar nav{display:grid;gap:4px;padding:9px 0;border-bottom:1px solid #26323a}.admin-sidebar nav:last-child{border-bottom:0}.admin-sidebar nav small{padding:0 8px 5px;color:#68757b}.admin-sidebar button,.admin-sidebar a{box-sizing:border-box;width:100%;padding:10px;border:1px solid transparent;background:transparent;color:#9da8ad;text-align:left;text-decoration:none;font:900 14px 'Microsoft YaHei'}.admin-sidebar button:hover,.admin-sidebar a:hover,.admin-sidebar button.active{border-color:#6d5d31;background:#211b0e;color:#f0d579}.admin-content{min-width:0}.overview-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.overview-grid>header{grid-column:1/-1}.overview-card{display:flex;min-height:130px;flex-direction:column;align-items:flex-start;justify-content:flex-end;gap:7px;padding:17px;border:1px solid #35424a;background:#101821;color:#fff;text-align:left;text-decoration:none}.overview-card:hover{border-color:#c1a44e;background:#171b1d}.overview-card b{font-size:22px}.overview-card span{color:#87949a;font-size:14px}.panel,.denied{border:1px solid #35424a;background:#101821;padding:20px}.panel>header{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #36434a;padding-bottom:13px}.panel h2{margin:0}.panel button,.panel select,.panel input,.panel textarea{border:1px solid #4c5961;background:#080e13;color:#fff;font:700 14px 'Microsoft YaHei';padding:9px}.bug-row{display:grid;grid-template-columns:1fr 280px;gap:18px;padding:18px 0;border-bottom:1px solid #303c43}.bug-summary code{color:#dfc36f}.bug-summary b,.bug-summary span,.bug-summary small{display:block}.bug-summary b{margin:7px 0;font-size:16px}.bug-summary span,.bug-summary small{color:#718087;font-size:14px}.bug-summary p{color:#c7ccca;white-space:pre-wrap;overflow-wrap:anywhere}.bug-admin{display:grid;grid-template-columns:1fr 1fr;gap:7px}.bug-admin input,.bug-admin textarea,.bug-admin button{grid-column:1/-1}.account-row{display:grid;grid-template-columns:1fr 1.5fr 180px 90px minmax(320px,1fr);align-items:center;gap:10px;padding:12px;border-bottom:1px solid #303c43}.account-row.head{color:#7e8a90;font-size:14px}.content-editor label{display:block;margin-top:16px;color:#b8c0c1;font-size:14px;font-weight:900}.content-editor input,.content-editor textarea{box-sizing:border-box;width:100%;margin-top:7px}.denied{display:flex;flex-direction:column;gap:7px;margin-top:22px}.denied span,.empty{color:#7e8a90}.notice{position:sticky;z-index:20;bottom:12px;margin-top:12px;padding:10px;border-left:3px solid #d1b25c;background:#241c0a;color:#edd584!important}
 .bug-filters{display:flex;flex-wrap:wrap;gap:7px}.bug-filters input{min-width:240px}.bug-summary a{color:#83d5e4}.bug-summary .match-link{margin-left:4px;padding:0;border:0;background:transparent;color:#83d5e4;font:inherit;text-decoration:underline;cursor:pointer}.bug-history{margin-top:14px;border-top:1px solid #2e3b42;padding-top:10px}.bug-history summary{cursor:pointer;color:#d6bd70;font-size:14px;font-weight:900}.bug-history ol{max-height:220px;overflow:auto;padding-left:20px}.bug-history li{margin:8px 0}.bug-history li b,.bug-history li span{display:inline;margin-right:7px}.bug-history li p{margin:3px 0}.bug-history li code{display:block;color:#a8b3b5}
 .bug-diagnostics{margin-top:12px;padding:10px;border:1px solid #34444d;background:#091116}.bug-diagnostics summary{cursor:pointer;color:#83d5e4;font-size:14px;font-weight:900}.bug-diagnostics dl{display:grid;grid-template-columns:110px minmax(0,1fr);gap:5px 10px;margin:9px 0 0;font-size:14px}.bug-diagnostics dt{color:#718087}.bug-diagnostics dd{margin:0;color:#b8c4c6;overflow-wrap:anywhere}

@@ -13,7 +13,7 @@ fs.mkdirSync(output, { recursive: true })
 
 const entry = `
 import {createApp,h} from 'vue'
-import {createMemoryHistory,createRouter} from 'vue-router'
+import {createMemoryHistory,createRouter,RouterView} from 'vue-router'
 import '/src/style.css'
 
 const permissions=['admin.accounts.read','admin.accounts.status.write','admin.bugs.read','admin.effects.read','admin.effects.review']
@@ -27,10 +27,17 @@ platform.authState.verified=true
 platform.authState.refreshing=false
 
 const stat=(games,wins,losses,draws,firstGames,firstWins,secondGames,secondWins)=>({games,wins,losses,draws,firstGames,firstWins,secondGames,secondWins})
-platform.playerApi.statistics=async()=>({
- overall:stat(128,77,48,3,65,41,63,36),ranked:stat(86,52,33,1,43,28,43,24),updatedAt:'2026-09-21T08:00:00Z',
- masters:['梅杰德','阿斯加德','西芙','太阳城'].map((masterName,index)=>({masterId:['S01-01M1','S01-02M1','S01-03M1','S01-04M1'][index],masterName,overall:stat(32-index*2,20-index,11,1,16,10,16-index*2,10-index),ranked:stat(22-index,14-index,8,0,11,7,11-index,7-index)}))
-})
+platform.playerApi.statistics=async(range='season')=>{
+ const empty=new URLSearchParams(location.search).get('qaEmpty')==='1'
+ const values=empty?{games:0,wins:0,ranked:0,masterGames:[]}:
+  range==='7d'?{games:7,wins:4,ranked:5,masterGames:[4,3]}:
+  range==='30d'?{games:30,wins:18,ranked:21,masterGames:[16,14]}:
+  {games:128,wins:77,ranked:86,masterGames:[65,63]}
+ const overall=stat(values.games,values.wins,Math.max(0,values.games-values.wins),0,Math.ceil(values.games/2),Math.ceil(values.wins/2),Math.floor(values.games/2),Math.floor(values.wins/2))
+ return {range,fromUtc:range==='7d'?'2026-09-18T08:00:00Z':range==='30d'?'2026-08-26T08:00:00Z':'2026-07-01T00:00:00Z',untilUtc:'2026-09-25T08:00:00Z',seasonId:range==='season'?'S2026-2':undefined,
+  overall,ranked:stat(values.ranked,Math.min(values.wins,values.ranked),Math.max(0,values.ranked-values.wins),0,Math.ceil(values.ranked/2),Math.ceil(Math.min(values.wins,values.ranked)/2),Math.floor(values.ranked/2),Math.floor(Math.min(values.wins,values.ranked)/2)),updatedAt:'2026-09-21T08:00:00Z',
+  masters:values.masterGames.map((games,index)=>({masterId:['S01-01M1','S01-02M1'][index],masterName:['梅杰德','阿斯加德'][index],overall:stat(games,Math.ceil(games*.6),Math.floor(games*.4),0,Math.ceil(games/2),Math.ceil(games*.3),Math.floor(games/2),Math.floor(games*.3)),ranked:stat(Math.max(0,games-1),Math.ceil(games*.5),Math.max(0,Math.floor(games*.5)-1),0,Math.ceil(games/2),Math.ceil(games*.25),Math.floor(games/2),Math.floor(games*.25))}))}
+}
 platform.rankedApi.overview=async()=>({
  profile:{accountId:'qa-admin',username:'移动端验收管理员',seasonId:'S2026-2',faction:'秩序',sevenValue:2380,displayValue:'七曜值 2380',placementPlayed:10,placementWins:7,placed:true,wins:52,losses:33,winStreak:3,lossStreak:0,tier:'璀璨群星',tierIndex:6,factionRank:3,titles:['秩序先锋','最强梅杰德'],rankLabel:'璀璨群星 · 秩序第 3',selectedMasterTitle:'最强梅杰德',masterTitles:['最强梅杰德','最强阿斯加德']},
  factionTotals:{秩序:36},config:{placementMatches:10,placementMaximum:10,broadcastEnabled:true,factions:[],masterTitles:[],timeControl:{totalTimeSeconds:1500,operationTimeSeconds:240,reconnectGraceSeconds:240,disasterDecisionSeconds:60,mulliganDecisionSeconds:60},broadcast:{displaySeconds:16,lobbyDelaySeconds:3,intervalSeconds:15,winStreakThreshold:5,streakEndedThreshold:5,minimumTierIndex:0,winStreakEnabled:true,streakEndedEnabled:true,highestTierEnabled:true,factionTitleEnabled:true,masterTitleEnabled:true}},history:[]
@@ -52,8 +59,8 @@ platform.adminApi.effectAtoms=async()=>[]
 
 const mode=new URLSearchParams(location.search).get('mode')||'profile'
 const component=mode==='admin'?(await import('/src/l12/site/AdminPage.vue')).default:(await import('/src/l12/site/ProfilePage.vue')).default
-const router=createRouter({history:createMemoryHistory(),routes:[{path:'/:pathMatch(.*)*',component:{render:()=>null}}]})
-createApp({render:()=>h(component)}).use(router).mount('#app')
+const router=createRouter({history:createMemoryHistory(),routes:[{path:'/:pathMatch(.*)*',component}]})
+const app=createApp({render:()=>h(RouterView)});app.use(router);await router.push(mode==='admin'?'/admin?section=overview':'/me?section=performance');await router.isReady();app.mount('#app')
 `
 
 let browser
@@ -106,11 +113,15 @@ try {
     const compactAdmin = viewport.width <= 850
 
     await page.goto(`http://127.0.0.1:${port}/__profile_admin__?mode=profile`)
+    await page.locator('.master-records').waitFor()
+    await page.locator('.master-records').evaluate(element => { element.open = true })
     await page.locator('.master-records article').first().waitFor()
     assert.equal(await overflow(page), false, `profile page overflows at ${suffix(viewport)}`)
     assert.equal(await page.locator('.master-records').evaluate(element => element.scrollWidth > element.clientWidth + 1), false, `profile master records overflow at ${suffix(viewport)}`)
     await page.screenshot({ path: path.join(output, `profile-${suffix(viewport)}.png`), fullPage: true })
-    await page.locator('.account-panel>summary').click()
+    await page.getByRole('button',{name:'账号与安全',exact:true}).click()
+    await page.locator('.session-manager').waitFor()
+    await page.locator('.session-manager').evaluate(element => { element.open = true })
     await page.locator('.session-row').first().waitFor()
     assert.equal(await overflow(page), false, `profile account controls overflow at ${suffix(viewport)}`)
     await page.screenshot({ path: path.join(output, `profile-account-${suffix(viewport)}.png`), fullPage: true })

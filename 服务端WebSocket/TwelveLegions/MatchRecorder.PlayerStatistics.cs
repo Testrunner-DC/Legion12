@@ -7,7 +7,9 @@ public sealed record L12PlayerStatLine(int Games, int Wins, int Losses, int Draw
 public sealed record L12PlayerMasterStatistics(string MasterId, string MasterName,
     L12PlayerStatLine Overall, L12PlayerStatLine Ranked);
 public sealed record L12PlayerStatisticsView(L12PlayerStatLine Overall, L12PlayerStatLine Ranked,
-    IReadOnlyList<L12PlayerMasterStatistics> Masters, DateTimeOffset? UpdatedAt);
+    IReadOnlyList<L12PlayerMasterStatistics> Masters, DateTimeOffset? UpdatedAt,
+    string Range = "all", DateTimeOffset? FromUtc = null, DateTimeOffset? UntilUtc = null,
+    string? SeasonId = null);
 
 public sealed partial class MatchRecorder
 {
@@ -38,8 +40,30 @@ public sealed partial class MatchRecorder
     public async Task<L12PlayerStatisticsView> PlayerStatisticsAsync(string accountId, string legacyPlayerName,
         IReadOnlyCollection<string>? excludedMatchIds = null,
         IReadOnlyCollection<string>? excludedAccountIds = null,
+        string range = "all",
+        L12SeasonConfig? currentSeason = null,
         CancellationToken cancellationToken = default)
     {
+        var normalizedRange = string.IsNullOrWhiteSpace(range) ? "all" : range.Trim().ToLowerInvariant();
+        var now = _utcNow().ToUniversalTime();
+        DateTimeOffset? fromUtc = null;
+        DateTimeOffset? untilUtc = null;
+        string? seasonId = null;
+        switch (normalizedRange)
+        {
+            case "all": break;
+            case "7d": fromUtc = now.AddDays(-7); untilUtc = now; break;
+            case "30d": fromUtc = now.AddDays(-30); untilUtc = now; break;
+            case "season":
+                if (currentSeason is null || string.IsNullOrWhiteSpace(currentSeason.Id))
+                    throw new ArgumentException("当前赛季定义不可用", nameof(currentSeason));
+                seasonId = currentSeason.Id;
+                fromUtc = currentSeason.StartsAt?.ToUniversalTime();
+                var seasonEnd = currentSeason.EndsAt?.ToUniversalTime();
+                untilUtc = seasonEnd.HasValue && seasonEnd.Value < now ? seasonEnd : now;
+                break;
+            default: throw new ArgumentException("战绩时间范围只支持 7d、30d 或 season", nameof(range));
+        }
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         var command = connection.CreateCommand();
@@ -56,6 +80,21 @@ public sealed partial class MatchRecorder
                 + "WHERE excluded.value=m.account_0 OR excluded.value=m.account_1)";
             command.Parameters.AddWithValue("$excludedAccounts", System.Text.Json.JsonSerializer.Serialize(
                 excludedAccountIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal)));
+        }
+        if (fromUtc.HasValue)
+        {
+            exclusions += "\n  AND julianday(m.ended_utc)>=julianday($fromUtc)";
+            command.Parameters.AddWithValue("$fromUtc", fromUtc.Value.ToString("O"));
+        }
+        if (untilUtc.HasValue)
+        {
+            exclusions += "\n  AND julianday(m.ended_utc)<=julianday($untilUtc)";
+            command.Parameters.AddWithValue("$untilUtc", untilUtc.Value.ToString("O"));
+        }
+        if (!string.IsNullOrWhiteSpace(seasonId))
+        {
+            exclusions += "\n  AND m.season_id=$seasonId";
+            command.Parameters.AddWithValue("$seasonId", seasonId);
         }
         command.CommandText = """
             SELECT m.mode_id,m.winner,m.first_player,m.ended_utc,
@@ -97,6 +136,7 @@ public sealed partial class MatchRecorder
         }
         return new(overall.View(), ranked.View(), masters.Select(pair => new L12PlayerMasterStatistics(pair.Key,
                 pair.Value.Name, pair.Value.Overall.View(), pair.Value.Ranked.View()))
-            .OrderByDescending(item => item.Ranked.Games).ThenByDescending(item => item.Overall.Games).ToArray(), updatedAt);
+            .OrderByDescending(item => item.Ranked.Games).ThenByDescending(item => item.Overall.Games).ToArray(),
+            updatedAt, normalizedRange, fromUtc, untilUtc, seasonId);
     }
 }

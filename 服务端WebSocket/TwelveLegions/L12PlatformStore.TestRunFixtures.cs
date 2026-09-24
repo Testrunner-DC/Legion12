@@ -128,6 +128,9 @@ public sealed partial class L12PlatformStore
             var source = _testRunAcceptanceRankedMatches.Where(match =>
                     string.Equals(match.AccountId0, accountId, StringComparison.OrdinalIgnoreCase)
                     || string.Equals(match.AccountId1, accountId, StringComparison.OrdinalIgnoreCase))
+                .Where(match => DateTimeOffset.TryParse(match.EndedUtc, out var ended)
+                    && (!recorded.FromUtc.HasValue || ended >= recorded.FromUtc.Value)
+                    && (!recorded.UntilUtc.HasValue || ended <= recorded.UntilUtc.Value))
                 .ToArray();
             if (source.Length == 0) return recorded;
 
@@ -161,7 +164,8 @@ public sealed partial class L12PlatformStore
             }
             return new L12PlayerStatisticsView(overall, ranked,
                 masters.Values.OrderByDescending(item => item.Ranked.Games)
-                    .ThenByDescending(item => item.Overall.Games).ToArray(), updatedAt);
+                    .ThenByDescending(item => item.Overall.Games).ToArray(), updatedAt,
+                recorded.Range, recorded.FromUtc, recorded.UntilUtc, recorded.SeasonId);
         }
     }
 
