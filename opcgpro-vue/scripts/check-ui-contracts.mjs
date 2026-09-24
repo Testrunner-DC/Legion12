@@ -1405,6 +1405,10 @@ contracts.push([
 ])
 
 const latestReleaseEntry = shell.slice(
+  shell.indexOf("date: '2026-09-25'"),
+  shell.indexOf("date: '2026-09-22'"),
+)
+const productionBaselineEntry = shell.slice(
   shell.indexOf("date: '2026-09-22'"),
   shell.indexOf("date: '2026-09-14'"),
 )
@@ -1423,23 +1427,34 @@ const migratedReleaseEntry = shell.slice(
 const internalReleaseTerms = ['后台', '管理员', '审计', '存储维护', '处置', '处罚']
 contracts.push([
   latestReleaseEntry.includes('version: releaseVersion')
-    && latestReleaseEntry.includes("title: '移动端横屏与对局操作'")
-    && latestReleaseEntry.includes("title: '天灾与卡面呈现'")
-    && latestReleaseEntry.includes("title: '卡牌效果与结算'")
-    && latestReleaseEntry.includes("title: '规则中心与卡牌收藏'")
-    && latestReleaseEntry.includes("title: '反击、试炼与战斗限制'")
-    && latestReleaseEntry.includes("title: '账号、战绩、回放与个人页面'")
-    && latestReleaseEntry.includes("title: '排位战绩与数据一致性'")
-    && latestReleaseEntry.includes("title: '历史排位结果'")
-    && ['确认抵挡／不抵挡', '确认支援／不支援', '没有额外触发效果的天灾公开', '诸神黄昏',
-      '贝奥武夫', '尼托克丽丝', '梅林', '洛基', '猎杀时刻', '魔龙降世', '野外扎营',
-      '山河社稷图', '观星', '法老王的庆典', '众神之乡', '无骨者伊瓦尔', '花魁的馈赠',
-      '武运在天 铠甲在前', '柏拉图', '普罗米修斯', '符文之力', '特勒马科斯', '卡牌详情抽屉',
-      '对手手牌数', '宫廷魔术师', '试炼军团', '7天内最近10场', '异画', '昵称修改',
-      '个人战绩、主宰战绩、排行榜、胜率与先后手数据中同步剔除', '历史对局会以结算当时保存的结果为准']
+    && latestReleaseEntry.includes("title: '移动端与自适应布局'")
+    && latestReleaseEntry.includes("title: '对战操作与玩家信息'")
+    && latestReleaseEntry.includes("title: '牌库编辑器与我的牌库'")
+    && latestReleaseEntry.includes("title: '公开牌库与构筑内容'")
+    && latestReleaseEntry.includes("title: '异画、画廊与获得提示'")
+    && latestReleaseEntry.includes("title: '排位、战绩与称号'")
+    && latestReleaseEntry.includes("title: '对局记录与回放'")
+    && latestReleaseEntry.includes("title: '卡牌结算与规则一致性'")
+    && latestReleaseEntry.includes("title: '页面体验与连接稳定性'")
+    && ['实际可用画面比例', '当前天灾值', '确认抵挡／不抵挡', '确认支援／不支援',
+      '复制牌库码', '未公开牌库不会生成无效二维码', '右侧图鉴同源详情栏', 'Profile 头像',
+      '获得异画！', '主宰战绩', '导入本地 JSON', '全卡池']
       .every(detail => latestReleaseEntry.includes(detail))
     && internalReleaseTerms.every(term => !latestReleaseEntry.includes(term)),
-  '最新玩家更新日志必须覆盖本期移动端、天灾卡面、牌库整理、卡效结算、规则中心、异画与改名功能，并排除后台和内部治理内容',
+  '最新玩家更新日志必须覆盖本期自适应布局、对战操作、牌库社区、异画、排位、回放、卡效和连接变化，并排除后台和内部治理内容',
+])
+contracts.push([
+  productionBaselineEntry.includes("version: 'fd0d602eee5baef29adcae07b42e45b1ae274b36'")
+    && productionBaselineEntry.includes("title: '移动端横屏与对局操作'")
+    && productionBaselineEntry.includes("title: '天灾与卡面呈现'")
+    && productionBaselineEntry.includes("title: '卡牌效果与结算'")
+    && productionBaselineEntry.includes("title: '规则中心与卡牌收藏'")
+    && productionBaselineEntry.includes("title: '反击、试炼与战斗限制'")
+    && productionBaselineEntry.includes("title: '账号、战绩、回放与个人页面'")
+    && productionBaselineEntry.includes("title: '排位战绩与数据一致性'")
+    && productionBaselineEntry.includes("title: '历史排位结果'")
+    && internalReleaseTerms.every(term => !productionBaselineEntry.includes(term)),
+  '上一正式版本的玩家更新日志必须保持其真实版本号和完整内容，不能随新发布漂移',
 ])
 contracts.push([
   currentReleaseEntry.includes("version: '815771d6d204651076a9db77bc68b0dad52d276a'")
