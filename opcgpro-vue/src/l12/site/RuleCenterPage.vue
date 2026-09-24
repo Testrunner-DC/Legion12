@@ -52,12 +52,15 @@ const faqResults = computed(() => allRulings.value.filter(item => {
 }))
 const categoryCards = computed(() => categoryDefinitions.map(category => ({ ...category, count: allRulings.value.filter(item => rulingCategory(item) === category.id && (faqMode.value === 'general' ? item.scope === 'general' : item.scope === 'card' || item.scope === 'errata')).length })))
 async function loadDynamicContent() {
-  const [notice, center, rulings, operations] = await Promise.allSettled([getPublicContent('rules.notice'), getPublicContent('rules.center'), getPublicContent('rules.rulings'), getEffectiveOperationsPolicy()])
+  const [notice, center, rulings] = await Promise.allSettled([getPublicContent('rules.notice'), getPublicContent('rules.center'), getPublicContent('rules.rulings')])
   if (notice.status === 'fulfilled') ruleNotice.value = notice.value.value.trim()
   if (center.status === 'fulfilled') ruleCenter.value = parsePublishedRuleCenter(center.value.value)
   if (rulings.status === 'fulfilled') dynamicRulings.value = parsePublishedRulings(rulings.value.value)
-  if (operations.status === 'fulfilled') policy.value = operations.value
-  else policyError.value = '当前运营限制暂时无法读取；请以稍后重新加载的公开版本为准。'
+  try {
+    policy.value = await getEffectiveOperationsPolicy()
+  } catch {
+    policyError.value = '当前运营限制暂时无法读取；请以稍后重新加载的公开版本为准。'
+  }
 }
 function switchTab(next: MainTab) { tab.value = next; query.value = ''; topic.value = 'all'; faqCategory.value = 'all'; openIds.value = new Set() }
 function toggleEntry(id: string) { const next = new Set(openIds.value); next.has(id) ? next.delete(id) : next.add(id); openIds.value = next }
