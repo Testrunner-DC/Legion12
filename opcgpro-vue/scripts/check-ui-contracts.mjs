@@ -1263,9 +1263,10 @@ const contracts = [
   [platform.includes('permissions?: string[]') && adminPage.includes("hasPermission('admin.bugs.read')") && adminPage.includes("hasPermission('admin.accounts.read')") && adminPage.includes("hasPermission('admin.operations.read')"), '后台前端入口必须消费服务端权限矩阵，不得只依赖散落角色字符串'],
   [platform.includes('let authRefreshPromise: Promise<PlatformAccount | null> | null = null')
     && platform.includes('if (authRefreshPromise) return authRefreshPromise')
-    && platform.includes("platformRequest<PlatformAccount>('/api/auth/me', { signal: controller.signal })")
+    && platform.includes("platformRequest<PlatformAccount>('/api/auth/me', {")
+    && platform.includes('signal: controller.signal') && platform.includes('reliability: { maxAttempts: 1 }')
     && platform.includes('const requestToken = platformState.token') && platform.includes('if (platformState.token !== requestToken) return platformState.account')
-    && platform.includes('remember(account, requestToken)') && platform.includes('AUTH_REFRESH_REQUEST_TIMEOUT_MS'), '账号初始化与权限刷新必须去重、有界读取 /api/auth/me，按请求令牌防竞态并以权威响应覆盖本地缓存'],
+    && platform.includes('remember(account, requestToken)') && platform.includes('AUTH_REFRESH_REQUEST_TIMEOUT_MS'), '账号初始化与权限刷新必须去重、有界且禁止嵌套重试地读取 /api/auth/me，按请求令牌防竞态并以权威响应覆盖本地缓存'],
   [platform.includes('response.status === 401 && requestToken && platformState.token === requestToken') && platform.includes('forgetAccount(requestToken)') && platform.includes('error instanceof PlatformRequestError && error.status === 401') && platform.includes('throw error'), '任意携带当前令牌的 401 必须按请求令牌防竞态清理，网络与 5xx 则保留令牌并保持未验证'],
   [platform.includes('response.status === 403 && requestToken && platformState.token === requestToken') && platform.includes('authState.verified = false') && platform.includes('refreshCurrentAccount({ force: true })') && platform.includes('if (!authState.verified) return false'), '403 必须使权限 UI 立即失败关闭并触发去重身份刷新，缓存身份不得直接授予权限'],
   [router.includes("meta: { requiresAdmin: true }") && router.includes('router.beforeEach(async to =>') && router.includes('refreshCurrentAccount()') && router.includes('!authState.verified || !platformState.account') && router.includes("return { name: 'me', query: { redirect: to.fullPath } }") && adminPage.includes('await refreshCurrentAccount()') && adminPage.includes('if (!canAccessAdmin.value) return') && adminPage.includes('!authState.initialized || authState.refreshing'), '路由复用已验证身份以保持连接；首次身份验证、管理数据及未验证/非管理员访问仍必须失败关闭'],

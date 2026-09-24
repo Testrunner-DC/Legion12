@@ -3,6 +3,7 @@ import { disconnect, l12State, type BugClientConnectionDiagnostic } from './net'
 import type { SavedL12Deck } from './decks'
 import type { RecordedCommand } from './replayModel'
 import { endpointHttpBase } from './deploymentBase'
+import { createRequestCoordinator, RequestDeadlineError } from './platformRequestReliability'
 
 export interface PlatformAccount {
   id: string; username: string; role: string; createdAt: string; publicHistory: boolean; permissions?: string[]
@@ -598,8 +599,23 @@ export interface LegacyTournamentInput {
 }
 export interface TournamentLegacyImport { previewHash: string; applied: boolean; tournaments: Tournament[] }
 export class PlatformRequestError extends Error {
-  constructor(message: string, public readonly status: number, public readonly code: string, public readonly correlationId: string) { super(message) }
+  constructor(message: string, public readonly status: number, public readonly code: string,
+    public readonly correlationId: string, public readonly retryAfterMs = 0) { super(message) }
 }
+
+export const PLATFORM_MAX_CONCURRENT_REQUESTS = 4
+export const PLATFORM_READ_TIMEOUT_MS = 10_000
+export const PLATFORM_MUTATION_TIMEOUT_MS = 20_000
+export const PLATFORM_UPLOAD_TIMEOUT_MS = 60_000
+export const PLATFORM_READ_MAX_ATTEMPTS = 2
+
+interface PlatformRequestReliabilityOptions {
+  timeoutMs?: number
+  maxAttempts?: number
+}
+
+type PlatformRequestInit = RequestInit & { reliability?: PlatformRequestReliabilityOptions }
+const platformRequestCoordinator = createRequestCoordinator(PLATFORM_MAX_CONCURRENT_REQUESTS)
 
 function loadAccount(): PlatformAccount | null {
   try { return JSON.parse(localStorage.getItem('l12-account') || 'null') as PlatformAccount | null } catch { return null }
@@ -630,7 +646,8 @@ function clearAuthRefreshRetry(resetAttempts = false) {
 }
 
 function isTemporaryAuthFailure(error: unknown) {
-  if (error instanceof PlatformRequestError) return error.status >= 500
+  if (error instanceof PlatformRequestError)
+    return error.status >= 500 || error.code === 'network_error' || error.code === 'request_timeout'
   return error instanceof TypeError
     || (typeof DOMException !== 'undefined' && error instanceof DOMException && error.name === 'AbortError')
 }
@@ -662,35 +679,102 @@ export function apiBase() {
   } catch { return `${location.protocol}//${location.hostname}:8080` }
 }
 
-export async function platformRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers)
-  if (!(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
-  headers.set('X-Correlation-ID', globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`)
+function retryAfterMilliseconds(response: Response) {
+  const raw = response.headers.get('Retry-After')?.trim()
+  if (!raw) return 0
+  const seconds = Number(raw)
+  if (Number.isFinite(seconds)) return Math.max(0, Math.min(seconds * 1_000, 5_000))
+  const at = Date.parse(raw)
+  return Number.isFinite(at) ? Math.max(0, Math.min(at - Date.now(), 5_000)) : 0
+}
+
+function retryableReadFailure(error: unknown) {
+  if (error instanceof RequestDeadlineError || error instanceof TypeError) return true
+  return error instanceof PlatformRequestError
+    && [408, 425, 429, 500, 502, 503, 504].includes(error.status)
+}
+
+function requestBodyKey(body: BodyInit | null | undefined) {
+  if (body == null) return ''
+  if (typeof body === 'string' && body.length <= 64 * 1024) return body
+  if (body instanceof URLSearchParams) return body.toString()
+  return null
+}
+
+export async function platformRequest<T>(path: string, init: PlatformRequestInit = {}): Promise<T> {
+  const { reliability = {}, ...fetchInit } = init
+  const method = String(fetchInit.method || 'GET').toUpperCase()
+  const safeRead = method === 'GET' || method === 'HEAD'
   // 登录和注册是匿名凭据交换；不能让旧会话的迟到 401 清掉一次新的登录。
   const anonymousCredentialRequest = path === '/api/auth/login' || path === '/api/auth/register'
     || path === '/api/auth/email/capability'
     || path === '/api/auth/email/verify' || path === '/api/auth/password/forgot'
     || path === '/api/auth/password/reset'
   const requestToken = anonymousCredentialRequest ? '' : platformState.token
-  if (requestToken) headers.set('Authorization', `Bearer ${requestToken}`)
-  const response = await fetch(`${apiBase()}${path}`, { ...init, headers })
-  const payload = await response.json().catch(() => ({}))
-  if (!response.ok) {
-    const correlationId = String(payload.correlationId || response.headers.get('X-Correlation-ID') || '')
-    const fallbackMessage = response.status === 413 && path === '/api/admin/site/media'
-      ? '图片上传总量超过 32MB，请压缩原图后重试'
-      : `请求失败（${response.status}）`
-    const message = `${payload.message || fallbackMessage}${correlationId ? `（关联 ID：${correlationId}）` : ''}`
-    // 某些旧端点返回无 JSON body 的裸 401；只要本次确实携带当前 token，就必须失效本机会话。
-    if (response.status === 401 && requestToken && platformState.token === requestToken) forgetAccount(requestToken)
-    // 403 代表会话仍可能有效但权限已变化。立即让权限 UI 失败关闭，并去重刷新权威账号。
-    if (response.status === 403 && requestToken && platformState.token === requestToken && path !== '/api/auth/me') {
-      authState.verified = false
-      void refreshCurrentAccount({ force: true }).catch(() => undefined)
-    }
-    throw new PlatformRequestError(message, response.status, String(payload.code || 'request_failed'), correlationId)
+  const bodyKey = requestBodyKey(fetchInit.body)
+  const headerKey = Array.from(new Headers(fetchInit.headers).entries())
+    .filter(([name]) => name.toLowerCase() !== 'x-correlation-id')
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, value]) => `${name}:${value}`).join('\n')
+  const requestKey = fetchInit.signal || (!safeRead && bodyKey === null)
+    ? undefined
+    : `${requestToken || 'anonymous'}\n${method}\n${path}\n${headerKey}\n${safeRead ? '' : bodyKey}`
+  const maximumTimeoutMs = path === '/api/admin/site/media'
+    ? PLATFORM_UPLOAD_TIMEOUT_MS : safeRead ? PLATFORM_READ_TIMEOUT_MS : PLATFORM_MUTATION_TIMEOUT_MS
+  const timeoutMs = Math.max(1, Math.min(reliability.timeoutMs ?? maximumTimeoutMs, maximumTimeoutMs))
+  // 写入即使调用方误配 maxAttempts 也只执行一次；只有 GET/HEAD 允许有限重试。
+  const maxAttempts = safeRead
+    ? Math.max(1, Math.min(reliability.maxAttempts ?? PLATFORM_READ_MAX_ATTEMPTS, PLATFORM_READ_MAX_ATTEMPTS))
+    : 1
+
+  try {
+    return await platformRequestCoordinator.execute<T>({
+      key: requestKey,
+      method,
+      signal: fetchInit.signal,
+      timeoutMs,
+      maxAttempts,
+      shouldRetry: error => safeRead && retryableReadFailure(error),
+      retryDelayMs: (error, attempt) => error instanceof PlatformRequestError && error.retryAfterMs > 0
+        ? error.retryAfterMs : Math.min(250 * (2 ** (attempt - 1)), 2_000),
+      run: async signal => {
+        if (requestToken && platformState.token !== requestToken)
+          throw new PlatformRequestError('账号已切换，已忽略旧请求', 0, 'stale_session', '')
+        const headers = new Headers(fetchInit.headers)
+        if (!(fetchInit.body instanceof FormData)) headers.set('Content-Type', 'application/json')
+        headers.set('X-Correlation-ID', globalThis.crypto?.randomUUID?.()
+          ?? `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`)
+        if (requestToken) headers.set('Authorization', `Bearer ${requestToken}`)
+        const response = await fetch(`${apiBase()}${path}`, { ...fetchInit, signal, headers })
+        const payload = await response.json().catch(() => ({}))
+        if (requestToken && platformState.token !== requestToken)
+          throw new PlatformRequestError('账号已切换，已忽略旧响应', 0, 'stale_session', '')
+        if (!response.ok) {
+          const correlationId = String(payload.correlationId || response.headers.get('X-Correlation-ID') || '')
+          const fallbackMessage = response.status === 413 && path === '/api/admin/site/media'
+            ? '图片上传总量超过 32MB，请压缩原图后重试'
+            : `请求失败（${response.status}）`
+          const message = `${payload.message || fallbackMessage}${correlationId ? `（关联 ID：${correlationId}）` : ''}`
+          // 某些旧端点返回无 JSON body 的裸 401；只要本次确实携带当前 token，就必须失效本机会话。
+          if (response.status === 401 && requestToken && platformState.token === requestToken) forgetAccount(requestToken)
+          // 403 代表会话仍可能有效但权限已变化。立即让权限 UI 失败关闭，并去重刷新权威账号。
+          if (response.status === 403 && requestToken && platformState.token === requestToken && path !== '/api/auth/me') {
+            authState.verified = false
+            void refreshCurrentAccount({ force: true }).catch(() => undefined)
+          }
+          throw new PlatformRequestError(message, response.status, String(payload.code || 'request_failed'),
+            correlationId, retryAfterMilliseconds(response))
+        }
+        return payload as T
+      },
+    })
+  } catch (error) {
+    if (error instanceof RequestDeadlineError)
+      throw new PlatformRequestError('请求超时，请稍后重试', 0, 'request_timeout', '')
+    if (error instanceof TypeError)
+      throw new PlatformRequestError('网络连接不稳定，请检查网络后重试', 0, 'network_error', '')
+    throw error
   }
-  return payload as T
 }
 
 function remember(account: PlatformAccount, token: string) {
@@ -722,7 +806,11 @@ export function refreshCurrentAccount(options: { force?: boolean } = {}): Promis
   authState.verified = false
   const pending = (async () => {
     try {
-      const account = await platformRequest<PlatformAccount>('/api/auth/me', { signal: controller.signal })
+      // 认证刷新已有独立的指数退避调度；这里禁用通用 GET 重试，避免两层重试相乘。
+      const account = await platformRequest<PlatformAccount>('/api/auth/me', {
+        signal: controller.signal,
+        reliability: { maxAttempts: 1 },
+      })
       if (platformState.token !== requestToken) return platformState.account
       remember(account, requestToken)
       return account
