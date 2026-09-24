@@ -5,7 +5,7 @@ import GameBoard from './game/GameBoard.vue'
 import { loadDeckCatalog, type DeckCard } from './decks'
 import { adminApi, PlatformRequestError, platformRequest } from './platform'
 import { adminReplayDetail, consumeImportedReplay, replayFocusCardAt, replayGameAt, type MatchDetail } from './replayModel'
-import { isMobileDeviceExperience } from './mobileViewport'
+import { isMobileDeviceExperience, landscapeTeleportTarget } from './mobileViewport'
 
 const route = useRoute()
 const router = useRouter()
@@ -198,30 +198,32 @@ function returnFromReplay() {
     <GameBoard v-else-if="currentGame" :game="currentGame" :replay-focus-card="replayFocusCard"
       :replay-playback-speed="playbackSpeed" read-only @replay-presentation-change="replayPresentationBusy = $event" />
 
-    <div v-if="!mobileReplayBlocked" class="replay-route-controls">
-      <span v-if="detail">{{ detail.match.player0 }} VS {{ detail.match.player1 }}</span>
-      <button @click="returnFromReplay">{{ returnLabel }}</button>
-    </div>
+    <Teleport v-if="!mobileReplayBlocked" :to="landscapeTeleportTarget()">
+      <div class="replay-route-controls">
+        <span v-if="detail">{{ detail.match.player0 }} VS {{ detail.match.player1 }}</span>
+        <button @click="returnFromReplay">{{ returnLabel }}</button>
+      </div>
 
-    <p v-if="!mobileReplayBlocked && catalogWarning" class="replay-catalog-warning" role="status">{{ catalogWarning }}</p>
+      <p v-if="catalogWarning" class="replay-catalog-warning" role="status">{{ catalogWarning }}</p>
 
-    <div v-if="!mobileReplayBlocked && replayResult" class="replay-result" :data-state="replayResult.state" aria-live="polite">
-      <strong>对局结束</strong>
-      <span v-for="(player, index) in replayResult.players" :key="index" :data-result="player.result"><b>{{ player.name }}</b><em>{{ player.result }}</em></span>
-    </div>
+      <div v-if="replayResult" class="replay-result" :data-state="replayResult.state" aria-live="polite">
+        <strong>对局结束</strong>
+        <span v-for="(player, index) in replayResult.players" :key="index" :data-result="player.result"><b>{{ player.name }}</b><em>{{ player.result }}</em></span>
+      </div>
 
-    <div v-if="!mobileReplayBlocked && currentGame" class="replay-controls" aria-label="回放控制">
-      <button :disabled="atFirst || replayPresentationBusy" @click="previous">上一步</button>
-      <button class="play" @click="toggle">{{ playing ? '暂停' : '播放' }}</button>
-      <button v-for="speed in ([1, 2, 3] as const)" :key="speed" class="speed" :class="{ active: playbackSpeed === speed }" :aria-pressed="playbackSpeed === speed" @click="setPlaybackSpeed(speed)">{{ speed.toFixed(1) }}</button>
-      <button :disabled="atLast || loadingReplayPage || replayPresentationBusy" @click="next">{{ loadingReplayPage ? '加载中' : '下一步' }}</button>
-      <small>步骤 {{ selectedStep + 1 }} / {{ totalSteps }}<template v-if="isAdminReplay"> · 分页</template></small>
-    </div>
+      <div v-if="currentGame" class="replay-controls" aria-label="回放控制">
+        <button :disabled="atFirst || replayPresentationBusy" @click="previous">上一步</button>
+        <button class="play" @click="toggle">{{ playing ? '暂停' : '播放' }}</button>
+        <button v-for="speed in ([1, 2, 3] as const)" :key="speed" class="speed" :class="{ active: playbackSpeed === speed }" :aria-pressed="playbackSpeed === speed" @click="setPlaybackSpeed(speed)">{{ speed.toFixed(1) }}</button>
+        <button :disabled="atLast || loadingReplayPage || replayPresentationBusy" @click="next">{{ loadingReplayPage ? '加载中' : '下一步' }}</button>
+        <small>步骤 {{ selectedStep + 1 }} / {{ totalSteps }}<template v-if="isAdminReplay"> · 分页</template></small>
+      </div>
 
-    <main v-if="!mobileReplayBlocked && (loading || error)" class="replay-loading">
-      <p>{{ loading ? '正在加载回放…' : error }}</p>
-      <button v-if="error" @click="returnFromReplay">{{ returnLabel }}</button>
-    </main>
+      <main v-if="loading || error" class="replay-loading">
+        <p>{{ loading ? '正在加载回放…' : error }}</p>
+        <button v-if="error" @click="returnFromReplay">{{ returnLabel }}</button>
+      </main>
+    </Teleport>
   </div>
 </template>
 
@@ -241,13 +243,5 @@ function returnFromReplay() {
 .replay-controls button:disabled{cursor:not-allowed;opacity:.35}
 .replay-controls small{min-width:92px;padding:0 6px;color:#919b98;font-size:14px;text-align:center}
 .replay-loading{position:fixed;z-index:3300;inset:0;display:grid;place-content:center;justify-items:center;gap:14px;background:radial-gradient(circle,rgba(28,70,74,.28),transparent 40%),#050809;color:#e7e4da;font-weight:900}
-/* 回放层级边界：已有对局（非加载/非错误）时，左下播放器与右上返回区（z-index:3200）始终最高且可点击；
-   GameBoard 内任何全屏覆盖层在天灾准备提示、特殊胜利演出等状态下也不得压过播放器。 */
-.replay-page :deep(.prompt-overlay),
-.replay-page :deep(.osiris-victory-sequence),
-.replay-page :deep(.battle-modal-mask),
-.replay-page :deep(.picker-mask),
-.replay-page :deep(.master-overlay),
-.replay-page :deep(.faction-effect-overlay){z-index:3100!important}
 @media(max-width:760px){.replay-result{top:58px;bottom:auto;min-width:0}.replay-result>strong{display:none}.replay-route-controls span{display:none}.replay-controls{right:14px;justify-content:center}.replay-controls small{position:absolute;right:0;bottom:100%;padding:5px 7px;background:#080d11ed}}
 </style>

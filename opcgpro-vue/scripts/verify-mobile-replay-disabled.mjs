@@ -48,12 +48,11 @@ try {
 
   await page.goto(`${origin}/battle/records?selected=${match.matchId}`, { waitUntil: 'domcontentloaded' })
   await page.getByRole('button', { name: '播放回放', exact: true }).click()
-  const notice = page.getByRole('alertdialog', { name: '移动端回放提示' })
+  const notice = page.locator('.records-error').getByText('请到电脑端查看回放', { exact: true })
   await notice.waitFor()
   assert.equal(new URL(page.url()).pathname, '/battle/records', 'mobile play must not navigate')
   assert.equal(requests.some(url => url.startsWith(`/api/matches/${match.matchId}`)), false, 'mobile play must not fetch replay detail')
   await page.screenshot({ path: path.join(output, 'mobile-records-blocked-844x390.png') })
-  await notice.getByRole('button', { name: '知道了', exact: true }).click()
 
   let chooserOpened = false
   page.once('filechooser', () => { chooserOpened = true })

@@ -8,6 +8,7 @@ const replayModel = readFileSync(fileURLToPath(new URL('../src/l12/replayModel.t
 const gameBoard = readFileSync(fileURLToPath(new URL('../src/l12/game/GameBoard.vue', import.meta.url)), 'utf8')
 const zonePresentation = readFileSync(fileURLToPath(new URL('../src/l12/game/ZoneMovementPresentationLayer.vue', import.meta.url)), 'utf8')
 const combatPresentation = readFileSync(fileURLToPath(new URL('../src/l12/game/CombatMotionPresentationLayer.vue', import.meta.url)), 'utf8')
+const battleUtility = readFileSync(fileURLToPath(new URL('../src/l12/game/BattleUtilityDock.vue', import.meta.url)), 'utf8')
 
 assert.match(source,
   /selected\.value\?\.endedUtc\s*&&\s*selected\.value\.commandCount\s*>\s*0/,
@@ -48,11 +49,15 @@ assert.match(combatPresentation, /if \(!props\.playbackSpeed\) return l12Animati
   'combat-card motion must preserve live timing and scale only in replay')
 assert.match(replayPage, /\.replay-controls\{position:fixed;z-index:3200;left:14px;bottom:14px/,
   'replay player controls must stay fixed at the left-bottom corner on the 3200 layer')
-assert.match(replayPage, /\.replay-page :deep\(\.prompt-overlay\),[^]*:deep\(\.faction-effect-overlay\)\{z-index:3100!important\}/,
-  'replay must cap every GameBoard fullscreen overlay (prompt, special victory, modals, pickers) below the player controls')
+assert.match(replayPage, /import \{ isMobileDeviceExperience, landscapeTeleportTarget \}[^]*<Teleport v-if="!mobileReplayBlocked" :to="landscapeTeleportTarget\(\)">[^]*class="replay-controls"/,
+  'replay controls must share the dedicated overlay host with teleported board presentation layers')
+assert.doesNotMatch(replayPage, /:deep\(\.(?:prompt-overlay|battle-modal-mask|picker-mask|master-overlay|faction-effect-overlay)\)/,
+  'replay must not use scoped descendant selectors that cannot reach teleported overlays')
+assert.match(battleUtility, /\.battle-modal-mask\{position:fixed;z-index:4700/,
+  'true blocking battle dialogs must remain above the replay controls')
 assert.match(gameBoard, /\.public-reveal-animation\{z-index:903\}\.dice-reveal-animation\{z-index:904\}\.board-target-controls\{z-index:3000\}/,
   'public reveal, dice and target prompts must stay below the replay controls layer')
 assert.match(replayPage, /\.replay-loading\{position:fixed;z-index:3300/,
   'loading and error fullscreen layers may still cover the player controls')
 
-console.log('L12 replay-retention UI checks passed (22 assertions).')
+console.log('L12 replay-retention UI checks passed (24 assertions).')
