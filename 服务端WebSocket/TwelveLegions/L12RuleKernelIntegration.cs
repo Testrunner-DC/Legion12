@@ -436,6 +436,17 @@ public sealed partial class L12GameEngine
         else if (step.Kind == "composite-defense-slot")
         {
             var player = State.Players[activation.Controller];
+            var selectedCards = step.ReferenceDeclarationKey is { } referenceKey
+                ? activation.DeclaredValues.GetValueOrDefault(referenceKey, []) : [];
+            var selectedCardId = selectedCards.ElementAtOrDefault(step.ReferenceChoiceIndex);
+            var selectedCard = selectedCardId is null ? null
+                : player.Hand.FirstOrDefault(card => card.InstanceId.Equals(selectedCardId,
+                    StringComparison.OrdinalIgnoreCase));
+            if (selectedCard is null)
+            {
+                RejectPendingActivation(activation, "防御部署所选反击战术已不在手牌；效果未入栈");
+                return;
+            }
             var choices = Enumerable.Range(0, 3).Where(slot => player.Field[1][slot] is null)
                 .Select(slot => $"1:{slot}")
                 .Except(activation.DeclaredValues.Values.SelectMany(values => values), StringComparer.OrdinalIgnoreCase)
@@ -448,6 +459,7 @@ public sealed partial class L12GameEngine
                 return;
             }
             promptKind = "slot";
+            promptText = $"防御部署：请选择〈{selectedCard.Name}〉的后排位置";
             targetPlayerIndex = activation.Controller;
         }
         else if (step.Kind == "composite-opposite-slot")

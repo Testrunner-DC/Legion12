@@ -501,7 +501,9 @@ const contracts = [
     && gamePage.includes('<span class="route-label" aria-hidden="true"><span>返回</span><span>大厅</span></span>')
     && gamePage.includes('.battle-route-controls button{display:grid;min-width:0;min-height:32px;place-items:center')
     && gamePage.includes('.battle-route-controls .route-label>span{display:block;min-width:2em')
-    && gamePage.includes('right:calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 6px)')
+    && gamePage.includes('.battle-route-controls{top:106px;right:6px')
+    && mobileViewportStyle.includes('transform: translateZ(0)')
+    && mobileViewportStyle.includes('#l12-landscape-teleports > .mobile-safe-overlay:not(.minimized)')
     && gamePage.includes('height:calc(var(--l12-viewport-height,100vh) - 16px)')
     && board.includes('text-align:center; text-wrap:balance; overflow-wrap:anywhere;')
     && prompt.includes('--inspector-safe-lane:clamp(118px,19vw,258px)'), '移动专用手牌计数、阵营标识和路由换行不得泄漏到桌面；临时士气始终使用网站图标，桌面弹框安全区必须使用经验证的窄侧栏比例'],
@@ -526,9 +528,9 @@ const contracts = [
     && prompt.includes(':data-ui-contract="isDeclineChoice(choice) ? \'minimum-decline-action\' : undefined"')
     && prompt.includes('min-width:112px!important;min-height:44px!important'), '所有“不响应”选项必须走统一拒绝动作识别，并保持至少112×44像素的可操作尺寸'],
   [prompt.includes("prompt.value?.kind === 'trigger-order'")
-    && prompt.includes('第${declarationOrder}个发动 · 第${resolutionOrder}个结算')
+    && prompt.includes('return `结算 ${resolutionOrder}`')
     && prompt.includes('data-ui-contract="trigger-order-lifo-hint"')
-    && prompt.includes('后发动的先结算'), '同一时点触发排序必须同时显示发动顺序与逆序结算顺序，避免把点击序号误读为结算序号'],
+    && prompt.includes('后选择的效果先结算'), '同一时点触发排序必须在选项角标显示真实逆序结算顺序，避免把点击序号误读为结算序号'],
   [gamePage.includes('data-ui-contract="manual-game-over-exit"')
     && gamePage.includes('<button @click="returnToLobby">返回大厅</button>')
     && !gamePage.includes('点击返回后才离开本局')
@@ -663,7 +665,7 @@ const contracts = [
   [l12Net.includes("export type SandboxDisasterMode = 'all' | 'random' | 'custom' | 'none'") && sandbox.includes('<option value="custom"') && !sandbox.includes('<option value="season"'), '沙盒只能使用全部、随机、自定或无天灾，不得接入赛季天灾池'],
   [lobby.includes('joinMatchmaking') && lobby.includes('七曜值') && lobby.includes('选择本赛季派系') && l12Net.includes("type: 'joinMatchmaking'") && l12Net.includes("type: 'pollMatchmaking'") && l12Net.includes("message.type === 'matchmakingRejected'") && l12Net.includes('startMatchmakingPolling()'), '公开匹配必须使用服务端权威队列、保留等待扩圈轮询并清理拒绝状态，在排位前选择赛季派系'],
   [lobby.includes('data-ui-contract="faction-totals-above-public-match"') && lobby.indexOf('data-ui-contract="faction-totals-above-public-match"') < lobby.indexOf('<section v-if="tab === \'match\'" class="mode-panel panel">'), '三派系七曜总量必须位于顶部模式标签之后、公开匹配面板之前，不能埋在公开匹配内容框内'],
-  [rankings.includes("type RankingTab = 'players' | 'masters' | 'matchups' | 'history'") && rankings.includes('主宰对阵一览') && rankings.includes('历史荣誉') && rankings.includes('row.titles') && rankings.includes('title-badge') && rankings.includes('champion-title') && adminOperations.includes('最高段位第一名称号') && adminOperations.includes('主宰最强玩家称号') && adminOperations.includes('rankedConfig.masterTitles'), '派系前五称号必须标明最高段位门槛，排行榜必须支持玩家榜、主宰榜、对阵一览、历史荣誉及醒目的多称号展示，后台必须支持逐主宰最强玩家称号'],
+  [rankings.includes("type RankingTab = 'players' | 'masters' | 'matchups' | 'history'") && rankings.includes('主宰对阵一览') && rankings.includes('历史荣誉') && rankings.includes('row.titles') && rankings.includes('title-badge') && rankings.includes('champion-title') && rankings.includes("type MasterSort = 'games' | 'winRate' | 'firstWinRate' | 'secondWinRate' | 'usageRate'") && rankings.includes('v-model="masterSort"') && rankings.includes('right[masterSort.value] - left[masterSort.value]') && adminOperations.includes('最高段位第一名称号') && adminOperations.includes('主宰最强玩家称号') && adminOperations.includes('rankedConfig.masterTitles'), '派系前五称号必须标明最高段位门槛，排行榜必须支持玩家榜、主宰榜、多维主宰排序、对阵一览、历史荣誉及醒目的多称号展示，后台必须支持逐主宰最强玩家称号'],
   [rankings.includes('<h1>排行榜</h1>') && !rankings.includes('<h1>排位排行榜</h1>')
     && rankings.includes("import { masterProfileUrl } from '@/l12/specialAssets'")
     && (rankings.match(/data-ui-contract="ranking-master-avatar"/g) ?? []).length >= 3
@@ -907,7 +909,11 @@ const contracts = [
   [deckShare.includes('...(deck.specialIds ?? [])') && deckShare.includes('const extraIds = [...new Set([')
     && deckShare.includes("isHorizontalCardType(card?.cardType) ? 1752 / 1255 : 5 / 7")
     && deckShare.includes('extraBitmaps.forEach(bitmap => bitmap?.close())'), '牌库图必须包含显式试炼和主宰自动额外卡，且横版额外卡按正式横版比例绘制并释放位图'],
-  [deckEditor.includes('const productOptions = computed(') && deckEditor.includes('<option value="all">全部卡池</option><option v-for="value in productOptions"'), '牌库编辑器卡池筛选必须使用全部卡池并从完整目录动态列出 S01、S02 与 ST 产品'],
+  [deckEditor.includes('const productOptions = computed(')
+    && deckEditor.includes('const productFilters = ref<string[]>([])')
+    && deckEditor.includes('v-for="value in productOptions"')
+    && deckEditor.includes('productFilters.includes(value)')
+    && deckEditor.includes('卡池（可多选）'), '牌库编辑器卡池筛选必须支持从完整目录动态列出并组合选择 S01、S02 与 ST 产品'],
   [deckEditor.includes('effectiveDeckLimit(card, masterId.value)')
     && deckEditor.includes('effectiveDeckLimit(entry.card, masterId)')
     && !deckEditor.includes('activeRestrictions') && !deckLibrary.includes('activeRestrictions')

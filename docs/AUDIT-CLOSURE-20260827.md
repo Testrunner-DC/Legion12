@@ -20,7 +20,7 @@
 | 12 | 黄金圣甲虫第二效果不休整、独立回合次数、兵力归零阵亡 | 已修复 | `GoldenScarabDebuffDoesNotRestTheArtifactUsesItsOwnTurnKeyAndKillsAtZero` |
 | 13 | 鲍斯阵亡效果不被进攻响应链吞掉 | 已修复 | 进攻触发批次/响应上下文公共修复；完整规则测试覆盖 |
 | 14 | 双方佣兵部队不会形成重复询问 | 已修复 | 正式响应优先权专项与 `MercenaryResponseDoesNotSwallowOkitasAttackTrigger` |
-| 15 | 〈猎杀时刻〉墓地不足 4 张不可打出 | 规则正确 | `HuntingMomentCannotBePlayedBeforeItsFourCardGraveyardCostIsLegal`；不足时灰置且不支付 |
+| 15 | 〈猎杀时刻〉墓地不足 4 张不可打出 | 历史结论已被最新裁定覆盖 | 回库是效果而非费用；不足4张时跳过回库并继续合法击杀段。最终确认前可取消，确认入栈后不可撤回；以 `Bq20260907_266RegressionTests`、`LatestBugRegressionTests` 为准。 |
 | 16 | 天灾检查等待当前堆叠和衍生触发全部关闭 | 已修复 | `DisasterWaitsForRoundTableEntryTriggerToFullyClose` |
 | 17 | 图特摩斯三世进攻时效果不被响应链吞掉 | 已修复 | 与冲田/鲍斯共用进攻触发批次和响应恢复入口 |
 | 18 | 傲慢之罪附加费用覆盖主宰效果且不重复返还士气 | 已修复 | `PrideDisasterAddsOneMoraleToMasterEffectCost`、`PrideMasterEffectStagesReturnAndPaymentWithoutDoubleCharging` |

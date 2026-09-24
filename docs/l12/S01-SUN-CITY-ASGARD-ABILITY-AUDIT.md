@@ -64,7 +64,7 @@
 | S01-0316 夺命诗人埃吉尔 | 2 | 前排远程静态；登场自伤+弃顶2冒号费用及公开敌军目标入栈前完整提交，费用不因无效返还。 | `L12EnterPublicTriggerPlans`、`L12S1FactionEffects` | `AtomicReviewBatch6JARegressionTests` | 通过 |
 | S01-0317 神剑格拉墨 | 3 | 登场弃顶2费用与公开置底目标前置；主动休整的4张墓地军团有序费用预付；2资源转活跃独立。 | `L12EnterPublicTriggerPlans`、`L12PublicActiveEffectPlans` | `AtomicReviewBatch6JARegressionTests`、`ExtendedCardEffectsTests` | 通过 |
 | S01-0318 女武神的召唤 | 1 | 自伤条件费用与墓地军团/公开位置出牌前声明；低血免伤只修正该费用，位置失效不退款。 | `L12CompositeEffectPlans`、`L12S1FactionEffects` | `AtomicReviewBatch6ARegressionTests` | 通过 |
-| S01-0319 猎杀时刻 | 1 | 有序4张墓地费用与公开击杀目标出牌前声明并原子支付；无效/目标失效不恢复费用。 | `L12CompositeEffectPlans`、`L12S1FactionEffects` | `AtomicReviewBatch6ARegressionTests` | 通过 |
+| S01-0319 猎杀时刻 | 1 | 有序4张墓地回库属于效果而非费用；最终确认前可取消且不支付士气、不移动卡牌，确认入栈后不可撤回。墓地不足4张时不回牌，仍继续合法击杀段。 | `L12CompositeEffectPlans`、`L12S1FactionEffects` | `Bq20260907_266RegressionTests`、`LatestBugRegressionTests` | 通过 |
 | S01-0320 复仇血鹰 | 1 | 军团阵亡时全体-1000与随后两张公开墓地分配分别响应；后段部分目标失效不吞前段。 | `L12PublicTriggerEffectPlans`、`L12CompositeEffectPlans` | `AtomicReviewBatch5RegressionTests`、`LatestBugRegressionTests` | 通过 |
 | S01-03C1 士气·阿斯加德 | 1 | 回合1次消耗2抽牌；低血时额外1资源/治疗模式在入栈前声明并一起支付，两个按钮不产生额外次数。 | `L12PublicActiveEffectPlans`、`L12ActiveAbilities` | `ExtendedCardEffectsTests`、`RuleKernelTests` | 通过 |
 | S01-03D1 英灵殿 | 4 | 自伤减费、主动双击杀及开场士气按各自时点；弃顶2与随后公开墓地回收分别响应，目标前置且前段无效不吞后段。 | `L12PublicActiveEffectPlans`、`L12CompositeEffectPlans`、`L12S1FactionEffects` | `AtomicReviewBatch3RegressionTests`、`AtomicReviewBatch6KBRegressionTests` | 明确错误→已修复 |

@@ -45,7 +45,7 @@ public sealed class ImmortalityRegressionTests
     }
 
     [Fact]
-    public void DefeatImmortalitySetsOneThousandReappliesContinuousAndPreservesFieldState()
+    public void DefeatImmortalityClearsDamageSetsCurrentTroopsToOneThousandAndPreservesFieldState()
     {
         var game = Create();
         var player = game.State.Players[0];
@@ -55,6 +55,8 @@ public sealed class ImmortalityRegressionTests
         target.ImmortalUses = 1;
         target.ImmortalUntilTurn = game.State.TurnSerial;
         target.AttachedCards.Add(Card("S02-06S2", "attached-king-sword"));
+        L12DerivedStats.ApplyContinuousModifiers(target,
+            new Dictionary<string, int> { ["test:sword"] = 1000 }, 0, game.State.TurnSerial);
         player.Field[0][0] = target;
 
         var result = game.HandleGm(new L12GmCommand("destroyCard", 0,
@@ -66,32 +68,33 @@ public sealed class ImmortalityRegressionTests
         Assert.True(target.HasSureHit);
         Assert.Single(target.AttachedCards);
         Assert.Equal(0, target.ImmortalUses);
-        Assert.Equal(1000, target.SetTroopsValue);
-        Assert.Equal(2000, target.Troops);
-        Assert.Contains(game.State.Events, entry => entry.Text.Contains("设定为 1000 后重算持续修正"));
+        Assert.Equal(0, target.SetTroopsValue);
+        Assert.Equal(1000, target.Troops);
+        Assert.Contains(game.State.Events, entry => entry.Text.Contains("清除本次伤害并将当前兵力设为 1000"));
     }
 
     [Fact]
-    public void DefeatStillRemovesCardWhenContinuousModifierLeavesImmortalAtZero()
+    public void DefeatImmortalityDoesNotReapplyTheSameContinuousPenalty()
     {
         var game = Create(6511);
         var player = game.State.Players[0];
         var target = Card("S01-0002", "immortal-zero");
         target.ImmortalUses = 1;
         target.ImmortalUntilTurn = game.State.TurnSerial;
+        L12DerivedStats.ApplyContinuousModifiers(target, null, -1000, game.State.TurnSerial);
         player.Field[0][0] = target;
         player.Field[1][0] = Card("S02-0523", "trojan-horse");
 
         var result = game.HandleGm(new L12GmCommand("destroyCard", 0,
             CardInstanceId: target.InstanceId));
 
-        Assert.True(result.Accepted, result.Error);
-        Assert.Null(player.Field[0][0]);
-        Assert.Contains(target, player.Graveyard);
+        Assert.False(result.Accepted);
+        Assert.Same(target, player.Field[0][0]);
+        Assert.DoesNotContain(target, player.Graveyard);
         Assert.Equal(0, target.ImmortalUses);
-        Assert.Equal(-1, target.ImmortalUntilTurn);
-        Assert.Equal(target.BaseTroops, target.Troops);
-        Assert.Contains(game.State.Events, entry => entry.Text.Contains("持续兵力修正重算后兵力仍不高于 0"));
+        Assert.Equal(2000, target.SetTroopsValue);
+        Assert.Equal(1000, target.Troops);
+        Assert.Contains(game.State.Events, entry => entry.Text.Contains("清除本次伤害并将当前兵力设为 1000"));
     }
 
     [Fact]

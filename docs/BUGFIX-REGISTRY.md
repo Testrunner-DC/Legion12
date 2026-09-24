@@ -1,6 +1,15 @@
 # Legion12 Bug 修复记录
 
-## BUG-20260924-PLAYER-LOG-ESSENTIAL-STATE｜强过滤后必要状态变化缺失（本地验证通过，待 L12-main 提交）
+## BUG-20260924-PRODUCTION-FEEDBACK-RULINGS｜正式服反馈裁定批次（本地实施中）
+
+- **交互根因**：提示最小化后只投影响应元数据，普通已选公开战场对象没有进入高亮集合；同一时点排序同时显示“发动/结算”两套序号，无法让玩家一眼确认真实后发先至顺序；〈防御部署〉位置步骤只写“第1/第2张”，没有绑定已选卡名。
+- **统一修复**：最小化提示时把当前已选且仍在公开战场的实例并入只读高亮，不扩大合法选择权；触发排序选项角标只显示真实结算序号；防御部署的位置提示从声明引用中解析实际手牌并显示卡名。
+- **移动端共享原因**：安全逻辑画布已经扣除刘海/灵动岛，但右侧按钮和传送弹框再次叠加物理视口偏移，造成双重避让及点击区域漂移。现让桌面式宽屏保持原路径，仅移动布局把页面、战场和传送层统一为一个含安全区的局部坐标系。
+- **规则与功能**：免死按最新裁定清除本次伤害并将当前兵力设为1000，同一事件不重复施加原伤害或既有持续减益；〈猎杀时刻〉回库保持效果段并允许最终确认前取消；主宰榜增加五种前端排序；牌库编辑卡池筛选改为可组合多选。
+- **同类扫描**：核验〈图特摩斯三世〉既有流程确为先全体-1000再进入击杀段；检索全部持续兵力与免死入口，致命替代仍只通过 `RemoveFromField`；目标高亮仍只接纳公开场上实例。
+- **回归守卫**：`ImmortalityRegressionTests`、`S2UniversalEffectsTests`、`Bq20260907_266RegressionTests`、`AtomicReviewBatch6KBRegressionTests`及前端提示/移动视口契约共同覆盖。
+
+## BUG-20260924-PLAYER-LOG-ESSENTIAL-STATE｜强过滤后必要状态变化缺失（已由 L12-main 统一推送）
 
 - **现象与根因**：批次 G 将玩家记录改为白名单投影时，`trial`、`trial-action`、`cost`、`enter`、`attach`、`counter-displaced`、`counter-replaced`、`mill`、`library`、`continuous`、`extra-turn`、`disaster-value` 等实际状态事件一并列入隐藏集合；`effect` 又只显示“发动效果”，丢弃具体结果。因此彼界获得符文、通常试炼推进以及多类公开区域变化没有玩家记录。
 - **共享修复**：继续使用白名单纯投影，不直出服务端原文。资源、状态、公开区域及效果目标按固定短文本和徽标投影；费用与紧随效果合并，公开费用卡也保留在同一行；通常试炼行动与紧随进度合并；战场军团移动仅显示“已移动”，不显示格数、起止位置或坐标。隐私入手仅保留数量，公开入手与后续权威时点去重，失败/取消/堆叠/响应/校验仍保持隐藏。
@@ -8,7 +17,7 @@
 - **同类扫描**：以 `rg -n --glob '*.cs' 'AddEvent\("cost"'` 扫描 40 个费用出口，并以 `rg -n --glob '*.cs' 'AddEvent\("(trial|trial-action|enter|attach|counter-displaced|counter-replaced|mill|library|reorder|continuous|extra-turn|disaster-value)"'` 扫描全部必要状态事件；公开卡牌费用在合并时不再丢失。`replacement`、`derived-vanished` 等内部事务仍由已有 `discard/grave/leave` 公开结果承载，不重复显示。
 - **回滚守卫**：`test-battle-log-view-model.mjs` 覆盖彼界符文、试炼合并、资源费用、公开费用卡、隐私/公开入手、场上目标状态、公开区域、牌库、天灾值与额外回合；`check-ui-contracts.mjs` 要求这些入口继续存在且禁止恢复引擎原文直出。`OtherworldFactionGainRuneRequiresAnExplicitTemporaryOrOrdinaryPaymentChoice` 锁定彼界权威事件。
 - **验证**：Vue 类型检查通过；完整 `check:ui-contracts` 通过（日志投影 63 行、UI 契约 340 项）；彼界定向 2/2、完整规则 4742/4742 通过。NuGet 仅报告漏洞源网络不可达的 `NU1900`，无编译或测试失败。
-- **交付状态**：未提交、未推送、未部署；按用户指示交由 **L12-main 对话**统一复核与提交。
+- **交付状态**：已由 **L12-main 对话**统一复核并以提交 `d50a3d6` 推送至 `origin/main`；未部署。
 
 ## EFFECT-20260924-WORKBENCH-SINGLE-SOURCE｜卡效维护从零散覆盖收口为版本化统一工作台
 

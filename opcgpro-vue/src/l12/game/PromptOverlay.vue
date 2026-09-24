@@ -112,6 +112,9 @@ const responseTargetIds = computed(() => {
       if (Array.isArray(parsed)) for (const id of parsed) if (typeof id === 'string') ids.add(id)
     } catch { /* Malformed optional presentation metadata grants no highlight. */ }
   }
+  // 普通目标选择也必须在最小化弹框后保留场面定位；这里只接纳当前
+  // 公开战场上真实存在的 instanceId，不扩大任何可选择权限。
+  for (const id of selected.value) ids.add(id)
   return props.game.players.flatMap(player => player.field.flat())
     .filter((card): card is Card => Boolean(card && !card.hidden && ids.has(card.instanceId)))
     .map(card => card.instanceId)
@@ -232,9 +235,8 @@ function triggerOrderHint(id: string) {
   if (!isTriggerOrder.value) return ''
   const declarationIndex = selected.value.indexOf(id)
   if (declarationIndex < 0) return ''
-  const declarationOrder = declarationIndex + 1
   const resolutionOrder = (prompt.value?.maxChoose ?? selected.value.length) - declarationIndex
-  return `第${declarationOrder}个发动 · 第${resolutionOrder}个结算`
+  return `结算 ${resolutionOrder}`
 }
 function cardMeta(id: string) {
   return naturalChoiceLabel(prompt.value?.data?.[`${id}:zone`], id)
@@ -739,7 +741,7 @@ function kindLabel() {
             <span>点击选项后立即结算</span>
           </template>
           <template v-else-if="isTriggerOrder">
-            <span data-ui-contract="trigger-order-lifo-hint">按点击顺序发动；后发动的先结算。每项会同时标注发动序号与结算序号。</span>
+            <span data-ui-contract="trigger-order-lifo-hint">后选择的效果先结算；每个选项角标显示实际结算顺序。</span>
             <button class="primary prompt-confirm-choice" :disabled="l12State.pendingAction || selected.length !== prompt.maxChoose" @click="confirm">
               {{ l12State.pendingAction ? '处理中…' : '确认发动顺序' }}
             </button>
@@ -812,7 +814,7 @@ function kindLabel() {
 .l12-prompt-overlay.initiative .prompt-panel{width:min(480px,calc(100vw - 32px));padding:24px}.l12-prompt-overlay.initiative .prompt-choices{display:grid;grid-template-columns:1fr 1fr;min-height:112px;align-items:stretch}.l12-prompt-overlay.initiative .prompt-choices>button{width:100%;max-width:none;min-height:92px;border:2px solid #eeeadf;background:#121718;color:#fff;font-size:max(18px,var(--l12-board-copy,13px))}.l12-prompt-overlay.initiative .prompt-choices>button:hover,.l12-prompt-overlay.initiative .prompt-choices>button.selected{border-color:#7de1e7;background:#1b6f77;color:#fff}
 .prompt-panel.has-card-choices{width:min(920px,calc(100vw - 36px))}.prompt-card-strip{display:flex;min-width:0;max-width:100%;flex-wrap:nowrap;align-items:flex-start;justify-content:flex-start;gap:8px;padding:10px 3px;overflow-x:auto;overflow-y:hidden;scrollbar-color:#65706d #111516;scrollbar-width:thin}.prompt-choices.prompt-card-strip{max-height:none}.featured-card-strip{justify-content:center;margin:2px auto}
 .prompt-choices.effect-option-list{display:grid;max-width:100%;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));align-items:stretch;gap:8px;margin:12px auto;padding:2px 1px 8px;overflow:visible}.prompt-choices.effect-option-list>button{width:100%;min-width:0;max-width:none;min-height:54px;padding:10px 16px;border:2px solid #d9d8cf;background:#101516;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;line-height:1.55;text-align:left;white-space:normal}.prompt-choices.effect-option-list>button:hover,.prompt-choices.effect-option-list>button.selected{border-color:#70d7df;background:#174e54;color:#fff}
-.trigger-order-hint{display:block;margin-top:5px;color:#ffe78d;font-size:var(--l12-board-micro,9px);font-weight:900;line-height:1.35}
+.prompt-choices.effect-option-list>button{position:relative}.trigger-order-hint{position:absolute;left:4px;top:4px;display:block;margin:0;padding:2px 5px;border:1px solid #f2d56d;background:#241b07;color:#ffe78d;font-size:var(--l12-board-micro,9px);font-weight:900;line-height:1.2}
 .prompt-choices>button.decline-action,.prompt-action-footer>button.decline-action{box-sizing:border-box;min-width:112px!important;min-height:44px!important;padding:9px 16px!important;font-size:var(--l12-board-copy,13px)!important;line-height:1.35}
 .effect-decision-header h2{margin-bottom:8px}.effect-decision-text{margin:0;padding:11px 13px;border:1px solid #3b4542;background:#0b1011;color:#eef0eb;font-size:var(--l12-board-copy,13px);line-height:1.75;white-space:pre-wrap}.prompt-panel.effect-decision .prompt-choices.effect-option-list{max-width:520px}.prompt-panel.effect-decision .prompt-choices.effect-option-list>button{text-align:center;font-size:var(--l12-board-copy,13px)}
 .prompt-panel.single-card-row{width:min(920px,calc(100vw - 36px))}.l12-prompt-overlay.information-confirm .prompt-panel{width:min(850px,calc(100vw - 36px));overflow-y:auto}.l12-prompt-overlay.information-confirm .prompt-card-strip{justify-content:center}.mulligan-panel{width:min(920px,calc(100vw - 36px))!important}.l12-prompt-overlay.disaster-choice .prompt-panel{width:min(980px,calc(100vw - 36px))}

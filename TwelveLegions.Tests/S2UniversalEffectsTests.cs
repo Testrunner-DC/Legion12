@@ -1251,9 +1251,13 @@ public sealed class S2UniversalEffectsTests
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
             CardInstanceIds: [firstCounter.InstanceId, secondCounter.InstanceId])).Accepted);
         var firstSlot = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains($"〈{firstCounter.Name}〉", firstSlot.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("第1张", firstSlot.Text, StringComparison.Ordinal);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: firstSlot.PromptId,
             Choice: "1:0")).Accepted);
         var secondSlot = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains($"〈{secondCounter.Name}〉", secondSlot.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("第2张", secondSlot.Text, StringComparison.Ordinal);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: secondSlot.PromptId,
             Choice: "1:1")).Accepted);
 

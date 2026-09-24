@@ -1641,12 +1641,10 @@ public sealed partial class L12GameEngine
         if (isDefeat && HasActiveImmortal(card, row))
         {
             card.ImmortalUses--;
-            L12DerivedStats.SetUntilTurnEnd(card, 1000, State.TurnSerial);
-            RecalculateContinuousTroops();
+            L12DerivedStats.ClearDamageAndSetCurrentUntilTurnEnd(card, 1000, State.TurnSerial);
             AddEvent("effect", player.PlayerIndex,
-                $"{card.Name} 的免死生效，兵力设定为 1000 后重算持续修正，当前为 {card.CurrentTroops}", card);
-            if (card.Troops > 0) return false;
-            AddEvent("effect", player.PlayerIndex, $"{card.Name} 在持续兵力修正重算后兵力仍不高于 0", card);
+                $"{card.Name} 的免死生效，清除本次伤害并将当前兵力设为 1000", card);
+            return false;
         }
         CaptureLastKnownFieldState(card, row);
         var sourceSnapshot = CaptureLastKnownSourceSnapshot(card);

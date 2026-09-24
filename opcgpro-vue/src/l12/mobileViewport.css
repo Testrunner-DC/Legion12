@@ -17,13 +17,28 @@ html[data-l12-viewport] :is(.l12-landscape-surface,#l12-landscape-teleports) {
   height: var(--l12-viewport-height);
   transform-origin: top left;
 }
+html[data-l12-viewport][data-l12-rotated=false] :is(.l12-landscape-surface,#l12-landscape-teleports) {
+  transform: translateZ(0);
+}
 html[data-l12-rotated=true] :is(.l12-landscape-surface,#l12-landscape-teleports) {
   transform: translateX(var(--l12-physical-width)) rotate(90deg);
 }
 .l12-landscape-surface { overflow: hidden; }
 .l12-landscape-surface .site-shell { width:100%;height:100%; }
-#l12-landscape-teleports { position:fixed;z-index:100000;inset:0;width:100%;height:100%;pointer-events:none; }
+#l12-landscape-teleports { position:fixed;z-index:100000;pointer-events:none;overflow:visible; }
 #l12-landscape-teleports > * { pointer-events: auto; }
+
+/* Teleported battle UI uses the same safe logical canvas as the table.  Once
+   the host is a containing block, child coordinates are local: never apply
+   visualViewport/safe-area offsets a second time. */
+html[data-l12-viewport] #l12-landscape-teleports > .mobile-safe-overlay:not(.minimized) {
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+html[data-l12-viewport] #l12-landscape-teleports > .mobile-safe-overlay.minimized {
+  inset: auto 110px calc(var(--l12-mobile-hand-h,64px) + 5px) auto !important;
+}
 
 /* The battle table always fits the logical landscape viewport in one screen.
    Text tokens compensate for the stage scale, so compact phones stay readable
@@ -315,10 +330,10 @@ html[data-l12-mobile=true][data-l12-viewport] #l12-landscape-teleports :is(
   .mobile-morale-overlay
 ).mobile-safe-overlay:not(.minimized) {
   inset: auto !important;
-  top: calc(var(--l12-viewport-top, 0px) + (var(--l12-viewport-height, 100vh) / 2)) !important;
+  top: 50% !important;
   right: auto !important;
   bottom: auto !important;
-  left: calc(var(--l12-viewport-left, 0px) + (var(--l12-viewport-width, 100vw) / 2)) !important;
+  left: 50% !important;
   box-sizing: border-box !important;
   width: var(--l12-mobile-dialog-width) !important;
   height: var(--l12-mobile-dialog-height) !important;

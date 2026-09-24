@@ -43,6 +43,9 @@ assert.equal(minimized.value, false); assert.deepEqual(selected.value, []); asse
 prompt.value = { promptId: 'fee', kind: 'effect-decision', data: { responseTargetIds: '["same-a"]' } }; await next()
 minimized.value = true; await next(); assert.deepEqual(highlights(), ['same-a'])
 prompt.value.data.responseTargetIds = '{broken'; await next(); assert.deepEqual(highlights(), [])
+prompt.value = { promptId: 'ordinary-target', kind: 'field-target', validChoices: ['same-a', 'same-b'], data: {} }; await next()
+minimized.value = true; selected.value = ['same-b', 'hand', 'secret']; await next()
+assert.deepEqual(highlights(), ['same-b'], 'ordinary selected targets highlight only visible battlefield instances')
 prompt.value = null; await next(); assert.deepEqual(highlights(), [])
 unmount.forEach(fn => fn()); scope.stop(); assert.deepEqual(highlights(), [])
 
@@ -51,7 +54,7 @@ const board = readFileSync(new URL('../src/l12/game/GameBoard.vue', import.meta.
 assert.equal((mat.match(/responseTargetIds/g) ?? []).length, 2, 'highlight prop is declaration and visual binding only, never permission')
 assert.match(mat, /'response-target': !player.field\[row\]\[slot\]\?\.hidden && responseTargetIds\?\.includes/)
 assert.equal((board.match(/:response-target-ids="promptMinimized \? responseTargetIds : \[\]"/g) ?? []).length, 2)
-assert.equal((board.match(/@graveyard="\(!hasBlockingPrompt \|\| promptMinimized\) && \(graveyardPlayer = \$event\)"/g) ?? []).length, 2,
+assert.equal((board.match(/@graveyard="\(!hasBlockingPrompt \|\| inspectionLayerMinimized\) && \(graveyardPlayer = \$event\)"/g) ?? []).length, 2,
   'both public graveyards must remain inspectable while a blocking prompt is minimized')
 assert.match(board, /:inspection-only="hasBlockingPrompt"/,
   'graveyard opened during a prompt must expose information without enabling grave abilities')

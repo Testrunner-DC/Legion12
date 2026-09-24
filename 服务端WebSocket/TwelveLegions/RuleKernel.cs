@@ -103,6 +103,18 @@ public static class L12DerivedStats
         card.Troops = value + card.ContinuousTroopsModifier;
     }
 
+    /// <summary>
+    /// 清除已经结算到当前兵力上的伤害，并把军团的当前兵力固定为指定值。
+    /// 设定值会抵消此刻仍然存在的持续修正，保证同一结算事件不会再次套用伤害或修正。
+    /// 后续持续修正发生变化时，仍会以这次固定后的当前兵力为基准正常增减。
+    /// </summary>
+    public static void ClearDamageAndSetCurrentUntilTurnEnd(L12CardInstance card, int value, int turnSerial)
+    {
+        card.SetTroopsValue = value - card.ContinuousTroopsModifier;
+        card.SetTroopsUntilTurn = turnSerial;
+        card.Troops = value;
+    }
+
     public static void ApplyContinuousModifier(L12CardInstance card, int modifier, int turnSerial)
         => ApplyContinuousModifiers(card, Math.Max(0, modifier), Math.Min(0, modifier), turnSerial);
 

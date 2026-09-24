@@ -15,6 +15,7 @@ import {
 
 type RankingTab = 'players' | 'masters' | 'matchups' | 'history'
 type RankingRange = '7d' | '30d' | 'season'
+type MasterSort = 'games' | 'winRate' | 'firstWinRate' | 'secondWinRate' | 'usageRate'
 type PlayerLeaderboardEntry = RankedLeaderboardEntry & {
   favoriteMasterId?: string | null
   favoriteMasterName?: string | null
@@ -24,6 +25,7 @@ const faction = ref('')
 const range = ref<RankingRange>('season')
 const tab = ref<RankingTab>('players')
 const search = ref('')
+const masterSort = ref<MasterSort>('games')
 const players = ref<PlayerLeaderboardEntry[]>([])
 const honors = ref<RankedSeasonHonor[]>([])
 const analytics = ref<RankedAnalytics>({
@@ -78,9 +80,15 @@ const query = computed(() => search.value.trim().toLocaleLowerCase())
 const visiblePlayers = computed(() => query.value
   ? players.value.filter(row => `${row.username} ${row.faction} ${row.tier} ${row.titles.join(' ')} ${row.favoriteMasterName ?? ''}`.toLocaleLowerCase().includes(query.value))
   : players.value)
-const visibleMasters = computed(() => query.value
-  ? analytics.value.masters.filter(row => `${row.masterName} ${row.masterId} ${row.strongestPlayer ?? ''} ${row.title ?? ''}`.toLocaleLowerCase().includes(query.value))
-  : analytics.value.masters)
+const visibleMasters = computed(() => {
+  const rows = query.value
+    ? analytics.value.masters.filter(row => `${row.masterName} ${row.masterId} ${row.strongestPlayer ?? ''} ${row.title ?? ''}`.toLocaleLowerCase().includes(query.value))
+    : analytics.value.masters
+  return [...rows].sort((left, right) => right[masterSort.value] - left[masterSort.value]
+    || right.games - left.games
+    || right.winRate - left.winRate
+    || left.masterName.localeCompare(right.masterName, 'zh-CN'))
+})
 const currentMasterTitles = computed(() => new Set(analytics.value.masters.flatMap(row => row.title ? [row.title] : [])))
 const titleVariant = (title: string) => title.startsWith('最强') || currentMasterTitles.value.has(title) ? 'master-title' as const : 'faction-title' as const
 const matrixMasters = computed(() => visibleMasters.value)
@@ -135,6 +143,13 @@ onBeforeUnmount(() => {
       <div class="tabs"><button :class="{ active: tab === 'players' }" @click="tab = 'players'">玩家榜</button><button :class="{ active: tab === 'masters' }" @click="tab = 'masters'">主宰榜</button><button :class="{ active: tab === 'matchups' }" @click="tab = 'matchups'">对阵一览</button><button :class="{ active: tab === 'history' }" @click="tab = 'history'">历史荣誉</button></div>
       <div class="ranges"><button v-for="item in ranges" :key="item.id" :class="{ active: range === item.id }" :disabled="tab === 'history'" @click="range = item.id">{{ item.name }}</button></div>
       <button class="master-title-rules-button" type="button" @click="masterTitleRulesOpen = true">最强称号规则</button>
+      <label v-if="tab === 'masters'" class="master-sort">主宰排序
+        <select v-model="masterSort">
+          <option value="games">总场次</option><option value="winRate">总胜率</option>
+          <option value="firstWinRate">先手胜率</option><option value="secondWinRate">后手胜率</option>
+          <option value="usageRate">使用率</option>
+        </select>
+      </label>
       <input v-model="search" class="ranking-search" :placeholder="tab === 'players' ? '搜索玩家、段位或称号' : tab === 'history' ? '搜索赛季、玩家或称号' : '搜索主宰或最强玩家'">
     </section>
 
@@ -162,8 +177,8 @@ onBeforeUnmount(() => {
 
     <section v-else-if="tab === 'masters'" class="rank-panel master-table">
       <div class="thead"><span>排名</span><span>主宰</span><span>最强玩家</span><span>场次</span><span>战绩</span><span>胜率</span><span>使用率</span><span>先手</span><span>后手</span></div>
-      <div v-for="row in visibleMasters" :key="row.masterId" class="tr" :class="`rank-${Math.min(row.rank, 4)}`">
-        <b data-label="排名">#{{ row.rank }}</b>
+      <div v-for="(row, index) in visibleMasters" :key="row.masterId" class="tr" :class="`rank-${Math.min(index + 1, 4)}`">
+        <b data-label="排名">#{{ index + 1 }}</b>
         <span class="master-card" data-label="主宰"><img class="master-avatar" data-ui-contract="ranking-master-avatar" :src="masterProfileUrl(row.masterId)" :alt="`${row.masterName}头像`"/><strong>{{ row.masterName }}<small>{{ row.masterId }}</small></strong></span>
         <span class="champion" data-label="最强玩家"><RankedIdentityBadge v-if="row.title" variant="master-title" :label="row.title"/><strong>{{ row.strongestPlayer || '尚未产生' }}</strong></span>
         <strong data-label="场次">{{ row.games }}</strong><span data-label="战绩"><i>{{ row.wins }}</i>胜 <em>{{ row.losses }}</em>负</span><b class="rate" data-label="胜率">{{ percent(row.winRate) }}</b><span data-label="使用率">{{ percent(row.usageRate) }}</span>
