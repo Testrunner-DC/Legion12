@@ -10,6 +10,7 @@ const packageDocument = JSON.parse(fs.readFileSync(path.join(frontendRoot, 'pack
 const changeGate = fs.readFileSync(path.join(repositoryRoot, 'scripts', 'verify-l12-change.ps1'), 'utf8')
 const workflow = fs.readFileSync(path.join(repositoryRoot, '.github', 'workflows', 'verify-release.yml'), 'utf8')
 assert(packageDocument.scripts.build.includes('npm run check:performance-architecture'))
+assert(packageDocument.scripts['check:performance-architecture'].includes('check-platform-request-reliability.mjs'))
 assert(changeGate.includes('npm.cmd" @("run", "check:performance-architecture")'))
 assert.equal((workflow.match(/npm run check:performance-architecture/g) ?? []).length, 1)
 
@@ -61,4 +62,4 @@ assert(evaluate([['src/legacy.ts', { rawFetch: 0, interval: 1, maximumParallelPa
 assert(evaluate([['src/legacy.ts', { rawFetch: 0, interval: 2, maximumParallelPageLoad: 0 }]], [exception])
   .some(message => message.includes('above allowed')))
 
-console.log('Performance architecture lock regression passed: 12/12')
+console.log('Performance architecture lock regression passed: 13/13')

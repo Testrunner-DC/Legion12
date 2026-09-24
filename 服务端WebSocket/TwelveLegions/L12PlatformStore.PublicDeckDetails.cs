@@ -110,7 +110,7 @@ public sealed partial class L12PlatformStore
             NormalizePublicDeckText(input?.CommonSequence, PublicDeckGuideSectionLimit, "常见展开"),
             NormalizePublicDeckText(input?.Substitutions, PublicDeckGuideSectionLimit, "替换建议"));
 
-    private static IReadOnlyList<L12PublicDeckMatchupView> NormalizeMatchups(
+    private IReadOnlyList<L12PublicDeckMatchupView> NormalizeMatchups(
         IReadOnlyList<L12PublicDeckMatchupView>? input)
     {
         var submitted = input ?? [];
@@ -126,6 +126,9 @@ public sealed partial class L12PlatformStore
         {
             var masterId = row.OpponentMasterId.Trim().ToUpperInvariant();
             if (masterId.Length > 64 || !seen.Add(masterId)) throw new ArgumentException("对局建议中的敌方主宰无效或重复");
+            if (!_officialCards.TryGetValue(masterId, out var master)
+                || master.CardType is not ("master" or "divinity"))
+                throw new ArgumentException($"对局建议中的敌方主宰不存在或不是可用主宰：{masterId}");
             result.Add(new(masterId,
                 NormalizePublicDeckText(row.Notes, PublicDeckMatchupSectionLimit, "对局思路"),
                 NormalizePublicDeckText(row.KeyCards, PublicDeckMatchupSectionLimit, "对局关键牌"),

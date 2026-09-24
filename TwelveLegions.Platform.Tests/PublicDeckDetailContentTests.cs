@@ -37,7 +37,7 @@ public sealed class PublicDeckDetailContentTests
             await server.StartAsync(0);
             using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
 
-            var body = Content("接口保存", "M2");
+            var body = Content("接口保存", MasterId(catalog, "master"));
             using (var anonymous = await client.PutAsJsonAsync($"/api/public-decks/{published.Id}/content", body))
                 Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
             using (var forbiddenRequest = new HttpRequestMessage(HttpMethod.Put,
@@ -72,12 +72,14 @@ public sealed class PublicDeckDetailContentTests
         try
         {
             var path = Path.Combine(root, "platform.json");
-            var store = new L12PlatformStore(path);
+            var catalog = Catalog();
+            var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
             var owner = store.Register("tdetowner", "password-123").Account!;
             var published = store.PublishDeck(owner.Id, Deck("长期详情", "C1", "C2"), null)!;
-            var first = store.UpdatePublicDeckContent(owner.Id, published.Id, Content("先手保留低费", "M2"))!;
-            var unchanged = store.UpdatePublicDeckContent(owner.Id, published.Id, Content("先手保留低费", "M2"))!;
-            var second = store.UpdatePublicDeckContent(owner.Id, published.Id, Content("后手也保留低费", "M2"))!;
+            var matchupMaster = MasterId(catalog, "master");
+            var first = store.UpdatePublicDeckContent(owner.Id, published.Id, Content("先手保留低费", matchupMaster))!;
+            var unchanged = store.UpdatePublicDeckContent(owner.Id, published.Id, Content("先手保留低费", matchupMaster))!;
+            var second = store.UpdatePublicDeckContent(owner.Id, published.Id, Content("后手也保留低费", matchupMaster))!;
 
             Assert.Equal(1, first.ContentRevision);
             Assert.Equal(1, unchanged.ContentRevision);
@@ -89,10 +91,10 @@ public sealed class PublicDeckDetailContentTests
                 Assert.Equal("2", Scalar(connection, "SELECT COUNT(*) FROM published_deck_content_payloads;"));
             }
 
-            var reloaded = new L12PlatformStore(path);
+            var reloaded = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
             var restored = reloaded.PublicDeckDetails(published.Id)!;
             Assert.Equal("后手也保留低费", restored.Guide.Opening);
-            Assert.Equal("M2", Assert.Single(restored.Matchups).OpponentMasterId);
+            Assert.Equal(matchupMaster, Assert.Single(restored.Matchups).OpponentMasterId);
             Assert.Equal(2, restored.ContentRevision);
             Assert.Equal(2, reloaded.StorageStatus().DeckStorage!.ContentPayloads);
             Assert.Equal(2, reloaded.StorageStatus().DeckStorage!.ContentRevisions);
@@ -106,23 +108,35 @@ public sealed class PublicDeckDetailContentTests
         var root = TempRoot();
         try
         {
-            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var catalog = Catalog();
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards);
             var owner = store.Register("tdetauth", "password-123").Account!;
             var stranger = store.Register("tdetother", "password-123").Account!;
             var published = store.PublishDeck(owner.Id, Deck("权限牌库", "C1"), null)!;
+            var masterId = MasterId(catalog, "master");
+            var divinityId = MasterId(catalog, "divinity");
+            var nonMasterId = catalog.Cards.Values.First(card => card.CardType == "legion").Id;
 
             Assert.Throws<UnauthorizedAccessException>(() =>
-                store.UpdatePublicDeckContent(stranger.Id, published.Id, Content("越权", "M2")));
+                store.UpdatePublicDeckContent(stranger.Id, published.Id, Content("越权", masterId)));
             Assert.Throws<ArgumentException>(() => store.UpdatePublicDeckContent(owner.Id, published.Id,
-                Content("<script>alert(1)</script>", "M2")));
+                Content("<script>alert(1)</script>", masterId)));
             Assert.Throws<ArgumentException>(() => store.UpdatePublicDeckContent(owner.Id, published.Id,
-                Content(new string('a', 1201), "M2")));
+                Content(new string('a', 1201), masterId)));
             Assert.Throws<ArgumentException>(() => store.UpdatePublicDeckContent(owner.Id, published.Id,
                 new L12PublicDeckContentInput(new("", "", "", "", ""),
-                    [new("M2", "", "", ""), new("m2", "", "", "")])));
+                    [new(masterId, "", "", ""), new(masterId.ToLowerInvariant(), "", "", "")])));
             Assert.Throws<ArgumentException>(() => store.UpdatePublicDeckContent(owner.Id, published.Id,
                 new L12PublicDeckContentInput(new("", "", "", "", ""),
                     [new("", "不能缺少主宰", "", "")])));
+            Assert.Throws<ArgumentException>(() => store.UpdatePublicDeckContent(owner.Id, published.Id,
+                Content("未知编号", "NOT-A-MASTER")));
+            Assert.Throws<ArgumentException>(() => store.UpdatePublicDeckContent(owner.Id, published.Id,
+                Content("错误卡种", nonMasterId)));
+            var divinity = store.UpdatePublicDeckContent(owner.Id, published.Id,
+                Content("神祇主宰合法", divinityId))!;
+            Assert.Equal(divinityId, Assert.Single(divinity.Matchups).OpponentMasterId);
             var cleared = store.UpdatePublicDeckContent(owner.Id, published.Id,
                 new L12PublicDeckContentInput(new("   ", "", "", "", ""), []))!;
             Assert.Equal(string.Empty, cleared.Guide.BuildIdea);
@@ -165,6 +179,12 @@ public sealed class PublicDeckDetailContentTests
     private static L12PublicDeckContentInput Content(string opening, string opponent) => new(
         new("强调曲线", opening, "关键牌", "常见展开", "替换建议"),
         [new(opponent, "对局思路", "关键牌", "建议换牌")]);
+
+    private static L12Catalog Catalog()
+        => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+
+    private static string MasterId(L12Catalog catalog, string cardType)
+        => catalog.Cards.Values.First(card => card.CardType == cardType).Id;
 
     private static SqliteConnection Open(string path)
     {

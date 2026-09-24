@@ -27,6 +27,8 @@ const checks = [
   ['详情内容覆盖长期版本、准确对局与随机起手', ['data-detail-section="versions"', 'data-detail-section="matches"', 'data-detail-section="hands"'].every(key => detail.includes(key))],
   ['对局记录不拿作者总战绩替代', detailsStore.includes('不会用作者总战绩替代') && detailsStore.includes('"unavailable"')],
   ['移动端回放保持电脑端提示', detail.includes('mobile-replay') && detail.includes('请使用电脑端查看回放')],
+  ['点赞复制与浏览计数更新不会清空已加载详情', detail.includes('preservePublicDeckDetails(entry.value, value)') && detail.includes('preservePublicDeckDetails(entry.value, await publicDeckApi.recordCopy') && detail.includes('preservePublicDeckDetails(entry.value, await publicDeckApi.toggleLike')],
+  ['前后端同认普通主宰与神祇主宰', detail.includes("card.cardType === 'master' || card.cardType === 'divinity'") && detailsStore.includes('master.CardType is not ("master" or "divinity")')],
 ]
 
 for (const [label, passed] of checks) if (!passed) throw new Error(`公开牌库浏览合同失败：${label}`)

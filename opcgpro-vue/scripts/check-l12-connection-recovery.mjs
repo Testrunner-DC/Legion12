@@ -147,6 +147,8 @@ async function importJavaScript(source, label) {
 
 async function loadPlatformModule() {
   const filename = join(sourceRoot, 'platform.ts')
+  const reliabilityFilename = join(sourceRoot, 'platformRequestReliability.ts')
+  const reliabilitySource = compile(readFileSync(reliabilityFilename, 'utf8'), reliabilityFilename)
   let source = readFileSync(filename, 'utf8')
   source = source
     .replace("import { computed, reactive } from 'vue'", `
@@ -165,6 +167,10 @@ async function loadPlatformModule() {
         return url.toString().replace(/\\/$/, '')
       }
     `)
+  source = source.replace(
+    "import { createRequestCoordinator, RequestDeadlineError } from './platformRequestReliability'",
+    reliabilitySource,
+  )
   return importJavaScript(compile(source, filename), 'l12-platform-recovery-test')
 }
 
@@ -417,7 +423,7 @@ const tests = [
       () => response(200, account),
     ])
     const platform = await loadPlatformModule()
-    await assert.rejects(platform.initializeAuth(), /simulated offline network/)
+    await assert.rejects(platform.initializeAuth(), error => error.code === 'network_error')
     assert.equal(platform.authState.initialized, true)
     assert.equal(platform.authState.verified, false)
     assert.equal(storage.getItem('l12-auth-token'), 'retry-token', 'a network failure must preserve the retryable token')
@@ -437,7 +443,7 @@ const tests = [
       () => response(200, account),
     ])
     const platform = await loadPlatformModule()
-    await assert.rejects(platform.initializeAuth(), /first request failed/)
+    await assert.rejects(platform.initializeAuth(), error => error.code === 'network_error')
     await platform.initializeAuth()
     assert.equal(calls.length, 2, 'initialized=false must not be the only path that can verify a retained token')
     assert.equal(platform.authState.verified, true)
@@ -490,7 +496,7 @@ const tests = [
       () => response(401, { message: 'expired' }),
     ])
     const platform = await loadPlatformModule()
-    await assert.rejects(platform.initializeAuth(), /temporary network failure/)
+    await assert.rejects(platform.initializeAuth(), error => error.code === 'network_error')
     await timers.advance(platform.AUTH_REFRESH_RETRY_BASE_MS)
     assert.equal(storage.getItem('l12-auth-token'), null)
     assert.equal(platform.authState.verified, false)

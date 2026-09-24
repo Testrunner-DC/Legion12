@@ -7,6 +7,7 @@ import { platformState, publicDeckApi, type PublishedDeck, type PublicDeckDetail
 import DeckProfile from '@/l12/DeckProfile.vue'
 import DeckConstructionBrowser, { type ConstructionEntry } from './DeckConstructionBrowser.vue'
 import { samplePublicDeckOpeningHand } from './publicDeckHands'
+import { preservePublicDeckDetails } from './publicDeckEntry'
 
 const route = useRoute()
 const router = useRouter()
@@ -49,7 +50,7 @@ const curve = computed(() => {
 })
 const curveMax = computed(() => Math.max(1, ...curve.value))
 const details = computed(() => entry.value?.details ?? emptyDetails())
-const masters = computed(() => catalog.value.filter(card => card.cardType === 'master'))
+const masters = computed(() => catalog.value.filter(card => card.cardType === 'master' || card.cardType === 'divinity'))
 const openingHand = computed(() => openingHandIds.value.map(id => byId.value.get(id)).filter((card): card is DeckCard => Boolean(card)))
 const isOwner = computed(() => Boolean(entry.value && entry.value.ownerId === platformState.account?.id && !entry.value.official))
 
@@ -68,7 +69,7 @@ onMounted(async () => {
       if (!sessionStorage.getItem(viewedKey)) {
         sessionStorage.setItem(viewedKey, '1')
         void publicDeckApi.recordView(id).then(value => {
-          entry.value = { ...value, details: entry.value?.details }
+          entry.value = preservePublicDeckDetails(entry.value, value)
         }).catch(() => sessionStorage.removeItem(viewedKey))
       }
     }
@@ -90,13 +91,13 @@ async function copyToMine() {
     const deck = { ...entry.value.deck, name: uniqueName(entry.value.deck.name), cardIds: [...entry.value.deck.cardIds], moraleIds: [...entry.value.deck.moraleIds], specialIds: [...(entry.value.deck.specialIds ?? [])], updatedAt: new Date().toISOString() }
     const saved = await saveDeck(deck)
     notice.value = `已复制《${saved.name}》到我的牌库`
-    if (!entry.value.official) entry.value = await publicDeckApi.recordCopy(entry.value.id)
+    if (!entry.value.official) entry.value = preservePublicDeckDetails(entry.value, await publicDeckApi.recordCopy(entry.value.id))
   } catch (error) { notice.value = error instanceof Error ? error.message : '复制到我的牌库失败' }
 }
 async function toggleLike() {
   if (!entry.value || entry.value.official) return
   if (!platformState.account) { notice.value = '请先登录账号再点赞'; return }
-  try { entry.value = await publicDeckApi.toggleLike(entry.value.id) }
+  try { entry.value = preservePublicDeckDetails(entry.value, await publicDeckApi.toggleLike(entry.value.id)) }
   catch (error) { notice.value = error instanceof Error ? error.message : '点赞失败' }
 }
 async function copyCode() {
