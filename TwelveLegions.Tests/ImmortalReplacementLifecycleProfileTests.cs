@@ -34,7 +34,7 @@ public sealed class ImmortalReplacementLifecycleProfileTests
             Assert.Equal(1000, target.SetTroopsValue);
             Assert.Equal(1000, target.CurrentTroops);
             Assert.Contains(game.State.Events, entry => entry.Type == "effect"
-                && entry.Text.Contains("兵力设定为 1000", StringComparison.Ordinal));
+                && entry.Text.Contains("清除本次伤害并将当前兵力设为 1000", StringComparison.Ordinal));
 
             var second = game.HandleGm(new L12GmCommand("destroyCard", 0,
                 CardInstanceId: target.InstanceId));
