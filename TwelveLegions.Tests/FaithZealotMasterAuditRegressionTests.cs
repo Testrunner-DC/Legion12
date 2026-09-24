@@ -495,6 +495,9 @@ public sealed class FaithZealotMasterAuditRegressionTests
         Assert.Equal(!payWithTemporaryMorale, ordinaryOne.Tapped);
         Assert.Equal(!payWithTemporaryMorale, ordinaryTwo.Tapped);
         Assert.Contains("active:faction-0:factionGainRune", player.UsedAbilities);
+        Assert.Contains(game.State.Events, entry => entry.Type == "runes"
+            && entry.Text == "彼界阵营效果使我方获得1符文"
+            && entry.Cards.Any(card => card.CardId == "S02-06C1"));
     }
 
     [Fact]

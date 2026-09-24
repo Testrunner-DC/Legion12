@@ -1,5 +1,15 @@
 # Legion12 Bug 修复记录
 
+## BUG-20260924-PLAYER-LOG-ESSENTIAL-STATE｜强过滤后必要状态变化缺失（本地验证通过，待 L12-main 提交）
+
+- **现象与根因**：批次 G 将玩家记录改为白名单投影时，`trial`、`trial-action`、`cost`、`enter`、`attach`、`counter-displaced`、`counter-replaced`、`mill`、`library`、`continuous`、`extra-turn`、`disaster-value` 等实际状态事件一并列入隐藏集合；`effect` 又只显示“发动效果”，丢弃具体结果。因此彼界获得符文、通常试炼推进以及多类公开区域变化没有玩家记录。
+- **共享修复**：继续使用白名单纯投影，不直出服务端原文。资源、状态、公开区域及效果目标按固定短文本和徽标投影；费用与紧随效果合并，公开费用卡也保留在同一行；通常试炼行动与紧随进度合并；战场军团移动仅显示“已移动”，不显示格数、起止位置或坐标。隐私入手仅保留数量，公开入手与后续权威时点去重，失败/取消/堆叠/响应/校验仍保持隐藏。
+- **彼界事件修复**：`S02-06C1` 的阵营结果由泛化 `effect` 改为 `runes` 权威事件 `彼界阵营效果使我方获得1符文`，并携带来源卡；后端回归同时锁定资源状态与事件类型/文本/来源。
+- **同类扫描**：以 `rg -n --glob '*.cs' 'AddEvent\("cost"'` 扫描 40 个费用出口，并以 `rg -n --glob '*.cs' 'AddEvent\("(trial|trial-action|enter|attach|counter-displaced|counter-replaced|mill|library|reorder|continuous|extra-turn|disaster-value)"'` 扫描全部必要状态事件；公开卡牌费用在合并时不再丢失。`replacement`、`derived-vanished` 等内部事务仍由已有 `discard/grave/leave` 公开结果承载，不重复显示。
+- **回滚守卫**：`test-battle-log-view-model.mjs` 覆盖彼界符文、试炼合并、资源费用、公开费用卡、隐私/公开入手、场上目标状态、公开区域、牌库、天灾值与额外回合；`check-ui-contracts.mjs` 要求这些入口继续存在且禁止恢复引擎原文直出。`OtherworldFactionGainRuneRequiresAnExplicitTemporaryOrOrdinaryPaymentChoice` 锁定彼界权威事件。
+- **验证**：Vue 类型检查通过；完整 `check:ui-contracts` 通过（日志投影 63 行、UI 契约 340 项）；彼界定向 2/2、完整规则 4742/4742 通过。NuGet 仅报告漏洞源网络不可达的 `NU1900`，无编译或测试失败。
+- **交付状态**：未提交、未推送、未部署；按用户指示交由 **L12-main 对话**统一复核与提交。
+
 ## EFFECT-20260924-WORKBENCH-SINGLE-SOURCE｜卡效维护从零散覆盖收口为版本化统一工作台
 
 - **原问题**：后台只能分别查看原子、记录审查状态和逐场景覆盖动效文案；卡文、勘误、产品、Cost/响应边界、公开等级和多端呈现缺少同一版本链，管理员无法在一次发布前同时检查图鉴、按钮、弹框、动画、日志和回放。

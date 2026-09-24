@@ -859,7 +859,11 @@ const contracts = [
     && battleLogViewModel.includes('PLAYER_LOG_VISIBLE_TYPES') && battleLogViewModel.includes('PLAYER_LOG_HIDDEN_TYPES')
     && battleLogViewModel.includes('PLAYER_LOG_REDLINE_TERMS') && battleLogViewModel.includes('playerLogContainsForbiddenTerms')
     && battleLogViewModel.includes("case 'reveal':") && battleLogViewModel.includes("'hand-add'")
-    && !battleLog.includes('event.text') && !battleLog.includes('omitted = new Set'), '玩家战报必须由白名单纯投影层生成，失败与内部流程默认隐藏；费用并入效果、进攻收拢为可展开小结，公开加入手牌可聚焦且玩家昵称、隐藏卡名和引擎原文不得直出'],
+    && battleLogViewModel.includes("case 'trial':") && battleLogViewModel.includes("case 'cost':")
+    && battleLogViewModel.includes("case 'attach':") && battleLogViewModel.includes("case 'disaster-value':")
+    && battleLogViewModel.includes('effectOutcomeBadges') && battleLogViewModel.includes('costMergesIntoFollowingResult')
+    && battleLogViewModel.includes('isPrivateHandAddEvent') && battleLogViewModel.includes('precedingPublicAdd')
+    && !battleLog.includes('event.text') && !battleLog.includes('omitted = new Set'), '玩家战报必须由白名单纯投影层生成，失败与内部流程默认隐藏；费用并入效果、进攻收拢为可展开小结，但符文、士气、试炼、公开区域与效果目标的实际变化不得被压缩丢失；玩家昵称、隐藏卡名和引擎原文不得直出'],
   [zoneMovementLayer.includes("event.type === 'reveal' && /加入手牌/.test(event.text)")
     && zoneMovementLayer.includes("to = 'hand'; label = '加入手牌'")
     && zoneMovementLayer.includes('publicHandAddCaption') && zoneMovementLayer.includes('movement-caption')

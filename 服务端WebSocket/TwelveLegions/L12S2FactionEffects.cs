@@ -1727,7 +1727,7 @@ public sealed partial class L12GameEngine
         if (ability == "factionGainRune" && source?.CardId == "S02-06C1")
         {
             L12S2ZoneOps.GainRunes(player, 1);
-            AddEvent("effect", item.Controller, "获得1枚符文", source);
+            AddEvent("runes", item.Controller, "彼界阵营效果使我方获得1符文", source);
             FinishStackItem(item);
             return true;
         }
