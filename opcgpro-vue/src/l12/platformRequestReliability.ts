@@ -50,7 +50,6 @@ function delay(milliseconds: number, signal?: AbortSignal | null) {
 export function createRequestCoordinator(maximumConcurrentRequests: number) {
   const maximum = Math.max(1, Math.floor(maximumConcurrentRequests))
   const reads = new Map<string, Promise<unknown>>()
-  const mutations = new Map<string, Promise<unknown>>()
   const queue: QueueEntry[] = []
   let active = 0
 
@@ -87,59 +86,59 @@ export function createRequestCoordinator(maximumConcurrentRequests: number) {
     })
   }
 
-  async function runAttempt<T>(request: CoordinatedRequest<T>, attempt: number) {
+  async function runWithRetries<T>(request: CoordinatedRequest<T>) {
     const controller = new AbortController()
     let deadlineExpired = false
-    let release: (() => void) | null = null
     const onAbort = () => controller.abort()
-    request.signal?.addEventListener('abort', onAbort, { once: true })
+    if (request.signal?.aborted) controller.abort()
+    else request.signal?.addEventListener('abort', onAbort, { once: true })
     const timeout = setTimeout(() => {
       deadlineExpired = true
       controller.abort()
     }, Math.max(1, request.timeoutMs))
     try {
-      release = await acquireSlot(controller.signal)
-      return await request.run(controller.signal, attempt)
+      const attempts = Math.max(1, Math.floor(request.maxAttempts))
+      for (let attempt = 1; ; attempt += 1) {
+        let release: (() => void) | null = null
+        try {
+          release = await acquireSlot(controller.signal)
+          return await request.run(controller.signal, attempt)
+        } catch (error) {
+          if (deadlineExpired) throw new RequestDeadlineError()
+          if (controller.signal.aborted || attempt >= attempts || !request.shouldRetry(error, attempt)) throw error
+          await delay(Math.max(0, request.retryDelayMs(error, attempt)), controller.signal)
+        } finally {
+          release?.()
+        }
+      }
     } catch (error) {
       if (deadlineExpired) throw new RequestDeadlineError()
       throw error
     } finally {
       clearTimeout(timeout)
       request.signal?.removeEventListener('abort', onAbort)
-      release?.()
-    }
-  }
-
-  async function runWithRetries<T>(request: CoordinatedRequest<T>) {
-    const attempts = Math.max(1, Math.floor(request.maxAttempts))
-    for (let attempt = 1; ; attempt += 1) {
-      try {
-        return await runAttempt(request, attempt)
-      } catch (error) {
-        if (attempt >= attempts || !request.shouldRetry(error, attempt)) throw error
-        await delay(Math.max(0, request.retryDelayMs(error, attempt)), request.signal)
-      }
     }
   }
 
   function execute<T>(request: CoordinatedRequest<T>): Promise<T> {
     const method = request.method.toUpperCase()
-    const flights = method === 'GET' || method === 'HEAD' ? reads : mutations
-    if (request.key) {
-      const current = flights.get(request.key)
+    const safeRead = method === 'GET' || method === 'HEAD'
+    if (safeRead && request.key) {
+      const current = reads.get(request.key)
       if (current) return current as Promise<T>
     }
     const pending = runWithRetries(request)
-    if (!request.key) return pending
-    flights.set(request.key, pending)
+    // 写操作即使内容完全相同也可能代表用户的两次真实意图，默认绝不合并。
+    if (!safeRead || !request.key) return pending
+    reads.set(request.key, pending)
     void pending.finally(() => {
-      if (flights.get(request.key!) === pending) flights.delete(request.key!)
+      if (reads.get(request.key!) === pending) reads.delete(request.key!)
     }).catch(() => undefined)
     return pending
   }
 
   return {
     execute,
-    snapshot: () => ({ active, queued: queue.length, reads: reads.size, mutations: mutations.size }),
+    snapshot: () => ({ active, queued: queue.length, reads: reads.size, mutations: 0 }),
   }
 }

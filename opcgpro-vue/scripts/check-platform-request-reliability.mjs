@@ -59,17 +59,17 @@ let checks = 0
 {
   const coordinator = createRequestCoordinator(4)
   let writes = 0
-  let finish
+  const finishes = []
   const request = {
     key: 'account-a\nPOST\n/api/action\n{"value":1}', method: 'POST', timeoutMs: 1_000, maxAttempts: 1,
     shouldRetry: () => true, retryDelayMs: () => 0,
-    run: async () => { writes += 1; await new Promise(resolve => { finish = resolve }); return 'done' },
+    run: async () => { writes += 1; await new Promise(resolve => { finishes.push(resolve) }); return 'done' },
   }
   const first = coordinator.execute(request)
   const second = coordinator.execute(request)
   await tick()
-  assert.equal(writes, 1); checks += 1
-  finish()
+  assert.equal(writes, 2); checks += 1
+  finishes.splice(0).forEach(resolve => resolve())
   assert.equal(await first, 'done'); checks += 1
   assert.equal(await second, 'done'); checks += 1
 }
@@ -153,6 +153,19 @@ let checks = 0
 
 {
   const coordinator = createRequestCoordinator(1)
+  let attempts = 0
+  const startedAt = Date.now()
+  await assert.rejects(coordinator.execute({
+    key: 'total-deadline', method: 'GET', timeoutMs: 35, maxAttempts: 3,
+    shouldRetry: () => true, retryDelayMs: () => 30,
+    run: async () => { attempts += 1; throw new TypeError('offline') },
+  }), RequestDeadlineError)
+  assert.equal(attempts, 2); checks += 1
+  assert(Date.now() - startedAt < 80); checks += 1
+}
+
+{
+  const coordinator = createRequestCoordinator(1)
   let calls = 0
   const request = {
     key: 'cleared-after-failure', method: 'GET', timeoutMs: 1_000, maxAttempts: 1,
@@ -171,6 +184,8 @@ assert(platform.includes('Math.min(reliability.timeoutMs ?? maximumTimeoutMs, ma
 assert(!platform.includes('dedupe?: boolean')); checks += 1
 assert(platform.includes("'stale_session'")); checks += 1
 assert(platform.includes('retryAfterMilliseconds(response)')); checks += 1
-assert(platform.includes('requestBodyKey(fetchInit.body)')); checks += 1
+assert(platform.includes("subtle.digest('SHA-256'")); checks += 1
+assert(platform.includes('safeRead && !fetchInit.signal')); checks += 1
+assert(!platform.includes('requestBodyKey(fetchInit.body)')); checks += 1
 
 console.log(`Platform request reliability: ${checks}/${checks} checks passed`)

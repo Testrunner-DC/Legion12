@@ -616,6 +616,7 @@ interface PlatformRequestReliabilityOptions {
 
 type PlatformRequestInit = RequestInit & { reliability?: PlatformRequestReliabilityOptions }
 const platformRequestCoordinator = createRequestCoordinator(PLATFORM_MAX_CONCURRENT_REQUESTS)
+let platformSessionVersion = 0
 
 function loadAccount(): PlatformAccount | null {
   try { return JSON.parse(localStorage.getItem('l12-account') || 'null') as PlatformAccount | null } catch { return null }
@@ -694,11 +695,11 @@ function retryableReadFailure(error: unknown) {
     && [408, 425, 429, 500, 502, 503, 504].includes(error.status)
 }
 
-function requestBodyKey(body: BodyInit | null | undefined) {
-  if (body == null) return ''
-  if (typeof body === 'string' && body.length <= 64 * 1024) return body
-  if (body instanceof URLSearchParams) return body.toString()
-  return null
+async function requestFingerprint(value: string) {
+  const subtle = globalThis.crypto?.subtle
+  if (!subtle) return undefined
+  const digest = await subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
 export async function platformRequest<T>(path: string, init: PlatformRequestInit = {}): Promise<T> {
@@ -711,14 +712,15 @@ export async function platformRequest<T>(path: string, init: PlatformRequestInit
     || path === '/api/auth/email/verify' || path === '/api/auth/password/forgot'
     || path === '/api/auth/password/reset'
   const requestToken = anonymousCredentialRequest ? '' : platformState.token
-  const bodyKey = requestBodyKey(fetchInit.body)
+  const requestSessionVersion = platformSessionVersion
   const headerKey = Array.from(new Headers(fetchInit.headers).entries())
     .filter(([name]) => name.toLowerCase() !== 'x-correlation-id')
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([name, value]) => `${name}:${value}`).join('\n')
-  const requestKey = fetchInit.signal || (!safeRead && bodyKey === null)
-    ? undefined
-    : `${requestToken || 'anonymous'}\n${method}\n${path}\n${headerKey}\n${safeRead ? '' : bodyKey}`
+  // 仅合并无独立取消语义的安全读取；Map 中只保留摘要，不驻留令牌、查询参数或业务头原文。
+  const requestKey = safeRead && !fetchInit.signal
+    ? await requestFingerprint(`${requestToken ? `session:${requestSessionVersion}` : 'anonymous'}\n${method}\n${path}\n${headerKey}`)
+    : undefined
   const maximumTimeoutMs = path === '/api/admin/site/media'
     ? PLATFORM_UPLOAD_TIMEOUT_MS : safeRead ? PLATFORM_READ_TIMEOUT_MS : PLATFORM_MUTATION_TIMEOUT_MS
   const timeoutMs = Math.max(1, Math.min(reliability.timeoutMs ?? maximumTimeoutMs, maximumTimeoutMs))
@@ -779,6 +781,7 @@ export async function platformRequest<T>(path: string, init: PlatformRequestInit
 
 function remember(account: PlatformAccount, token: string) {
   clearAuthRefreshRetry(true)
+  if (platformState.token !== token) platformSessionVersion += 1
   platformState.account = account
   platformState.token = token
   authState.initialized = true
@@ -853,6 +856,7 @@ function forgetAccount(expectedToken?: string) {
   if (expectedToken !== undefined && platformState.token !== expectedToken) return
   clearAuthRefreshRetry(true)
   disconnect()
+  if (platformState.token) platformSessionVersion += 1
   platformState.account = null
   platformState.token = ''
   authState.initialized = true
