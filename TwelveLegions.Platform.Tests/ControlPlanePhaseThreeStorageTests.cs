@@ -41,7 +41,7 @@ public sealed class ControlPlanePhaseThreeStorageTests
             {
                 Assert.Equal("ok", Scalar(connection, "PRAGMA quick_check;"));
                 Assert.Equal("1", Scalar(connection, "SELECT COUNT(*) FROM platform_state;"));
-                Assert.Equal("3", Scalar(connection, "SELECT value FROM storage_meta WHERE key='schema_version';"));
+                Assert.Equal("4", Scalar(connection, "SELECT value FROM storage_meta WHERE key='schema_version';"));
             }
 
             var rehearsal = store.RehearseStorageRecovery();
@@ -83,8 +83,8 @@ public sealed class ControlPlanePhaseThreeStorageTests
             Assert.Equal("schema-upgrade-preserved",
                 reloaded.OperationsConfig(reloadedAdmin).Config.Maintenance.Message);
             using var upgraded = Open(reloaded.TransactionalStoragePath);
-            Assert.Equal("3", Scalar(upgraded, "SELECT value FROM storage_meta WHERE key='schema_version';"));
-            Assert.Equal("3", Scalar(upgraded, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
+            Assert.Equal("4", Scalar(upgraded, "SELECT value FROM storage_meta WHERE key='schema_version';"));
+            Assert.Equal("4", Scalar(upgraded, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
         }
         finally { Directory.Delete(root, true); }
     }

@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Microsoft.Data.Sqlite;
 
 namespace TwelveLegions.Server;
@@ -17,7 +18,19 @@ public sealed record L12PlatformStorageStatusView(
     long StorageRevision,
     long BusinessVersion,
     long RetainedAuditEvents,
-    string? Issue);
+    string? Issue,
+    L12DeckStorageStatusView? DeckStorage = null);
+
+public sealed record L12DeckStorageStatusView(
+    long Payloads,
+    long ActiveAccountDecks,
+    long RetainedDeletedAccountDecks,
+    long ActivePublishedDecks,
+    long PublishedVersions,
+    long Likes,
+    long TournamentReferences,
+    long DatabaseBytes,
+    long WalBytes);
 
 public sealed record L12PlatformRecoveryRehearsalView(
     bool Success,
@@ -36,14 +49,12 @@ public sealed class L12PlatformStorageUnavailableException : IOException
 
 public sealed partial class L12PlatformStore
 {
-    private const int PlatformStorageSchemaVersion = 3;
-    private static readonly JsonSerializerOptions PlatformSnapshotJsonOptions = new()
+    private const int PlatformStorageSchemaVersion = 4;
+    private static readonly JsonSerializerOptions PlatformSnapshotJsonOptions = CreatePlatformJsonOptions(false);
+    private static readonly JsonSerializerOptions PlatformMirrorJsonOptions = CreatePlatformJsonOptions(true);
+    private static readonly JsonSerializerOptions PlatformMigrationJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
-    };
-    private static readonly JsonSerializerOptions PlatformMirrorJsonOptions = new()
-    {
-        WriteIndented = true,
     };
 
     private string _databasePath = string.Empty;
@@ -64,10 +75,11 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var auditCount = _storageWritable ? CountRetainedAuditEvents() : _data.AdminAudit.Count;
+            var deckStorage = _storageWritable ? ReadDeckStorageStatus() : null;
             return new L12PlatformStorageStatusView(_storageMode, _databasePath, _path, _migrationBackupPath,
                 PlatformStorageSchemaVersion, _databaseIntegrityValid, _snapshotChecksumValid,
                 _fallbackMirrorHealthy, _data.Version, _data.BusinessVersion ?? _data.Version, auditCount,
-                _storageIssue);
+                _storageIssue, deckStorage);
         }
     }
 
@@ -139,6 +151,7 @@ public sealed partial class L12PlatformStore
                 data = ImportChangedLegacyMirrorIfNeeded(connection, data);
             }
 
+            EnsureAndHydrateDeckDomainStorage(connection, data);
             MergeIndependentAudit(connection, data);
             _lastCommittedSnapshot = SerializeSnapshot(data);
             _storageMode = "sqlite";
@@ -232,11 +245,12 @@ public sealed partial class L12PlatformStore
             _data.BusinessVersion ??= _data.Version;
             _data.Version++;
             if (businessChange) _data.BusinessVersion++;
+            using var transaction = connection.BeginTransaction();
+            PersistDeckDomainSnapshot(connection, transaction, _data);
             var snapshotJson = SerializeSnapshot(_data);
             mirrorJson = JsonSerializer.Serialize(_data, PlatformMirrorJsonOptions);
             var snapshotChecksum = Sha256(snapshotJson);
             var mirrorChecksum = Sha256(mirrorJson);
-            using var transaction = connection.BeginTransaction();
             UpsertSnapshot(connection, transaction, snapshotJson, snapshotChecksum, mirrorChecksum, _data);
             AppendIndependentAudit(connection, transaction, _data.AdminAudit);
             StorageFailureInjector?.Invoke("before-commit");
@@ -266,9 +280,13 @@ public sealed partial class L12PlatformStore
     private void PersistInitialSnapshot(SqliteConnection connection, DataFile data)
     {
         FilterMigratedAuditSnapshot(connection, data);
+        WriteDeckMigrationBackup(data);
+        using var transaction = connection.BeginTransaction();
+        PersistDeckDomainSnapshot(connection, transaction, data);
+        VerifyDeckDomainSnapshot(connection, transaction, data);
+        SetStorageMeta(connection, transaction, DeckDomainStateKey, DeckDomainActiveState);
         var snapshotJson = SerializeSnapshot(data);
         var mirrorJson = JsonSerializer.Serialize(data, PlatformMirrorJsonOptions);
-        using var transaction = connection.BeginTransaction();
         UpsertSnapshot(connection, transaction, snapshotJson, Sha256(snapshotJson), Sha256(mirrorJson), data);
         AppendIndependentAudit(connection, transaction, data.AdminAudit);
         transaction.Commit();
@@ -462,7 +480,35 @@ public sealed partial class L12PlatformStore
             """;
         command.Parameters.AddWithValue("$schema", PlatformStorageSchemaVersion);
         command.ExecuteNonQuery();
+        InitializeDeckDomainSchema(connection);
         InitializeAuditLifecycleSchema(connection);
+    }
+
+    private static JsonSerializerOptions CreatePlatformJsonOptions(bool writeIndented)
+    {
+        var resolver = new DefaultJsonTypeInfoResolver();
+        resolver.Modifiers.Add(typeInfo =>
+        {
+            if (typeInfo.Type == typeof(DataFile))
+            {
+                foreach (var property in typeInfo.Properties.Where(property => property.Name is nameof(DataFile.Decks)
+                             or nameof(DataFile.PublishedDecks)))
+                    property.ShouldSerialize = static (_, _) => false;
+            }
+            else if (typeInfo.Type == typeof(TournamentDeckSnapshotRow))
+            {
+                foreach (var property in typeInfo.Properties.Where(property => property.Name is
+                             nameof(TournamentDeckSnapshotRow.CardIds) or nameof(TournamentDeckSnapshotRow.MoraleIds)
+                             or nameof(TournamentDeckSnapshotRow.SpecialIds)))
+                    property.ShouldSerialize = static (_, _) => false;
+            }
+        });
+        return new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            WriteIndented = writeIndented,
+            TypeInfoResolver = resolver,
+        };
     }
 
     private static SqliteConnection OpenDatabase(string path, bool readOnly, bool initialize = true)
@@ -725,7 +771,14 @@ public sealed partial class L12PlatformStore
     private void RestoreLastCommittedSnapshot()
     {
         if (!string.IsNullOrWhiteSpace(_lastCommittedSnapshot))
+        {
             _data = DeserializeData(_lastCommittedSnapshot);
+            if (_storageWritable && File.Exists(_databasePath))
+            {
+                using var connection = OpenDatabase(_databasePath, readOnly: true);
+                HydrateDeckDomain(connection, _data);
+            }
+        }
     }
 
     private void WriteFallbackMirror(string json)

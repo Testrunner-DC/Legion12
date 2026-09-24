@@ -305,6 +305,7 @@ public sealed partial class L12PlatformStore
         public string Hash { get; set; } = string.Empty;
         public DateTimeOffset SubmittedAt { get; set; } = DateTimeOffset.UtcNow;
         public DateTimeOffset? LockedAt { get; set; }
+        public string PayloadHash { get; set; } = string.Empty;
         public string MasterId { get; set; } = string.Empty;
         public List<string> CardIds { get; set; } = [];
         public List<string> MoraleIds { get; set; } = [];

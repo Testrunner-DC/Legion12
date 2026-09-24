@@ -830,7 +830,10 @@ public sealed partial class L12PlatformStore
         {
             var removed = _data.Decks.RemoveAll(row => row.AccountId == accountId
                 && string.Equals(row.Name, name, StringComparison.OrdinalIgnoreCase)) > 0;
-            if (removed) Save();
+            if (removed)
+            {
+                Save();
+            }
             return removed;
         }
     }
@@ -920,7 +923,10 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var removed = _data.PublishedDecks.RemoveAll(row => row.Id == publicationId && row.OwnerId == accountId) > 0;
-            if (removed) Save();
+            if (removed)
+            {
+                Save();
+            }
             return removed;
         }
     }
@@ -931,8 +937,12 @@ public sealed partial class L12PlatformStore
         {
             var row = _data.PublishedDecks.FirstOrDefault(item => item.Id == publicationId);
             if (row is null) return null;
-            if (!row.LikedByAccountIds.Remove(accountId)) row.LikedByAccountIds.Add(accountId);
-            Save();
+            var liked = ToggleStoredPublishedDeckLike(accountId, publicationId);
+            if (liked)
+            {
+                if (!row.LikedByAccountIds.Contains(accountId)) row.LikedByAccountIds.Add(accountId);
+            }
+            else row.LikedByAccountIds.Remove(accountId);
             return ToView(row, accountId);
         }
     }
@@ -943,8 +953,7 @@ public sealed partial class L12PlatformStore
         {
             var row = _data.PublishedDecks.FirstOrDefault(item => item.Id == publicationId);
             if (row is null) return null;
-            row.Copies++;
-            Save();
+            row.Copies = IncrementStoredPublishedDeckCounter(publicationId, "copies");
             return ToView(row, viewerAccountId);
         }
     }
@@ -955,8 +964,7 @@ public sealed partial class L12PlatformStore
         {
             var row = _data.PublishedDecks.FirstOrDefault(item => item.Id == publicationId);
             if (row is null) return null;
-            if (row.Views < int.MaxValue) row.Views++;
-            Save();
+            row.Views = IncrementStoredPublishedDeckCounter(publicationId, "views");
             return ToView(row, viewerAccountId);
         }
     }
