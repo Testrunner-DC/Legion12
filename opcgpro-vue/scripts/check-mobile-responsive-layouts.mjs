@@ -88,7 +88,9 @@ expect(archive.includes('MobileDeferredCardImage') && mobileDeferredCardImage.in
   && !archive.includes('renderLimit') && !archive.includes('archive-group-nav') && !archive.includes('archive-back-to-top'), 'the archive must preserve its original continuous browsing UI while deferring off-screen card images only on mobile or coarse-pointer devices')
 expect(matchRecords.includes('class="record-summary-grid"') && matchRecords.includes('class="mobile-replay-inline"') && !matchRecords.includes('mobileReplayNotice'), 'mobile records must expose a complete inline summary without a blocking replay notice')
 expect(profile.includes('l12-profile-master-records') && profile.includes('l12-profile-sessions') && profile.includes('class="profile-quick-actions"'), 'mobile profile sections must be remembered and keep frequent actions near the identity summary')
-expect(deckEditor.includes('class="portrait-guide"') && deckEditor.includes('l12-deck-editor-portrait-guide'), 'portrait deck-editor entry must explain the landscape workspace without discarding edit state')
+expect(deckEditor.includes('class="deck-mobile-nav"') && deckEditor.includes("setMobilePane('pool')")
+  && deckEditor.includes("setMobilePane('deck')") && deckEditor.includes("setMobilePane('insights')")
+  && !deckEditor.includes('class="portrait-guide"'), 'portrait deck editor must offer complete single-task navigation without forcing rotation or discarding edit state')
 for (const [name, source] of [['shell', shell], ['news', news], ['home', home], ['rules', rules], ['rankings', rankings]]) {
   expect(!/@media\s*\(max-width:\s*(720|760|850)px\)/.test(source), `${name} must use the shared 700px compact boundary rather than a legacy primary breakpoint`)
 }

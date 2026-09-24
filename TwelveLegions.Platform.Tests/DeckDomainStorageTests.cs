@@ -158,6 +158,53 @@ public sealed class DeckDomainStorageTests
     }
 
     [Fact]
+    public void PrivateBenchUsesCompactCountsAndDoesNotEnterPublishedPayload()
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var owner = store.Register("tdeckbench", "password-123").Account!;
+            var source = catalog.PresetDecks[0];
+            var benchCard = source.CardIds[0];
+            var deck = new L12PresetDeckDefinition
+            {
+                Name = "带备选区牌库", MasterId = source.MasterId, CardIds = [.. source.CardIds],
+                MoraleIds = [.. source.MoraleIds], SpecialIds = [.. source.SpecialIds],
+                BenchIds = [benchCard, benchCard],
+            };
+
+            var saved = store.UpsertDeck(owner.Id, deck);
+            Assert.Equal([benchCard, benchCard], saved.BenchIds);
+            var published = store.PublishDeck(owner.Id, deck, null)!;
+            Assert.Null(published.Deck.BenchIds);
+
+            using (var connection = Open(store.TransactionalStoragePath))
+            {
+                var compact = Scalar(connection,
+                    $"SELECT bench_cards_json FROM account_decks WHERE account_id='{owner.Id}' AND name='带备选区牌库';");
+                Assert.Contains($"\"CardId\":\"{benchCard}\"", compact, StringComparison.Ordinal);
+                Assert.Contains("\"Quantity\":2", compact, StringComparison.Ordinal);
+                Assert.Equal(1, compact.Split(benchCard, StringSplitOptions.None).Length - 1);
+                var accountHash = Scalar(connection,
+                    $"SELECT payload_hash FROM account_decks WHERE account_id='{owner.Id}' AND name='带备选区牌库';");
+                Assert.Equal(accountHash, Scalar(connection,
+                    $"SELECT current_payload_hash FROM published_decks WHERE publication_id='{published.Id}';"));
+                Assert.Equal("1", Scalar(connection,
+                    $"SELECT COUNT(*) FROM deck_payloads WHERE payload_hash='{accountHash}';"));
+            }
+
+            var reloaded = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            Assert.Equal([benchCard, benchCard], Assert.Single(reloaded.Decks(owner.Id)
+                .Where(item => item.Name == deck.Name)).BenchIds);
+            Assert.Null(Assert.Single(reloaded.PublishedDecks(owner.Id)).Deck.BenchIds);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public void PublicCountersAreAtomicAndDoNotRewritePlatformSnapshotOrMirror()
     {
         var root = TempRoot();

@@ -26,6 +26,35 @@ public sealed class DeckValidatorTests
     }
 
     [Fact]
+    public void BenchIsPrivateWorkingStateAndValidatesWithoutAffectingConstruction()
+    {
+        var preset = Catalog.PresetDecks.First(deck => Catalog.Cards[deck.MasterId].Faction == "tianting");
+        var benchCard = preset.CardIds[0];
+        L12CustomDeckSubmission Submission(params string[] benchIds) => new()
+        {
+            Name = "备选区验证", MasterId = preset.MasterId, CardIds = [.. preset.CardIds],
+            MoraleIds = [.. preset.MoraleIds], SpecialIds = [.. preset.SpecialIds], BenchIds = [.. benchIds],
+        };
+
+        Assert.True(L12DeckValidator.TryValidate(Catalog, Submission(benchCard), out var accepted, out var error), error);
+        Assert.Equal([benchCard], accepted.BenchIds);
+        Assert.Equal(preset.CardIds.Count, accepted.CardIds.Count);
+
+        Assert.False(L12DeckValidator.TryValidate(Catalog, Submission("UNKNOWN"), out _, out var unknown));
+        Assert.Contains("未知卡牌", unknown);
+        Assert.False(L12DeckValidator.TryValidate(Catalog, Submission(preset.MoraleIds[0]), out _, out var nonMain));
+        Assert.Contains("不能放入备选区", nonMain);
+        var crossFaction = Catalog.Cards.Values.First(card => card.CardType == "legion"
+            && card.Faction is not "universal" and not "tianting");
+        Assert.False(L12DeckValidator.TryValidate(Catalog, Submission(crossFaction.Id), out _, out var faction));
+        Assert.Contains("阵营不符", faction);
+        Assert.False(L12DeckValidator.TryValidate(Catalog,
+            Submission(Enumerable.Repeat(benchCard, Catalog.Cards[benchCard].DeckLimit + 1).ToArray()),
+            out _, out var copies));
+        Assert.Contains("备选区同编号卡牌最多", copies);
+    }
+
+    [Fact]
     public void RejectsTooManyCopiesAndCrossFactionCards()
     {
         var preset = Catalog.PresetDecks.First(deck => Catalog.Cards[deck.MasterId].Faction == "tianting");

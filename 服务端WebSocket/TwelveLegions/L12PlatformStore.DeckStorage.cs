@@ -35,6 +35,7 @@ public sealed partial class L12PlatformStore
                 payload_hash TEXT NOT NULL REFERENCES deck_payloads(payload_hash),
                 alternate_art_selections_json TEXT NOT NULL,
                 alternate_art_copies_json TEXT NOT NULL,
+                bench_cards_json TEXT NOT NULL DEFAULT '[]',
                 updated_utc TEXT NOT NULL,
                 is_deleted INTEGER NOT NULL DEFAULT 0 CHECK(is_deleted IN (0,1)),
                 PRIMARY KEY(account_id,name_key)
@@ -104,6 +105,7 @@ public sealed partial class L12PlatformStore
                 ON published_deck_content_revisions(content_hash);
             """;
         command.ExecuteNonQuery();
+        EnsureDeckColumn(connection, "account_decks", "bench_cards_json", "TEXT NOT NULL DEFAULT '[]'");
         EnsureDeckColumn(connection, "published_deck_versions", "name", "TEXT NOT NULL DEFAULT ''");
         using var backfill = connection.CreateCommand();
         backfill.CommandText = """
@@ -198,24 +200,28 @@ public sealed partial class L12PlatformStore
         command.ExecuteNonQuery();
     }
 
+    private static IReadOnlyList<DeckCardCount> NormalizeDeckCardCounts(IEnumerable<string> values) => values
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .Select(value => value.Trim().ToUpperInvariant())
+        .GroupBy(value => value, StringComparer.Ordinal)
+        .OrderBy(group => group.Key, StringComparer.Ordinal)
+        .Select(group => new DeckCardCount(group.Key, group.Count()))
+        .ToArray();
+
+    private static string CompactDeckCardsJson(IEnumerable<string> values)
+        => JsonSerializer.Serialize(NormalizeDeckCardCounts(values));
+
     private static NormalizedDeckPayload NormalizeDeckPayload(string masterId, IEnumerable<string> cardIds,
         IEnumerable<string> moraleIds, IEnumerable<string> specialIds)
     {
-        static IReadOnlyList<DeckCardCount> Counts(IEnumerable<string> values) => values
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Select(value => value.Trim().ToUpperInvariant())
-            .GroupBy(value => value, StringComparer.Ordinal)
-            .OrderBy(group => group.Key, StringComparer.Ordinal)
-            .Select(group => new DeckCardCount(group.Key, group.Count()))
-            .ToArray();
         static string CardsJson(IReadOnlyList<DeckCardCount> cards) => JsonSerializer.Serialize(cards);
         static IReadOnlyList<string> Expand(IReadOnlyList<DeckCardCount> cards) => cards
             .SelectMany(card => Enumerable.Repeat(card.CardId, card.Quantity)).ToArray();
 
         var normalizedMaster = (masterId ?? string.Empty).Trim().ToUpperInvariant();
-        var main = Counts(cardIds);
-        var morale = Counts(moraleIds);
-        var special = Counts(specialIds);
+        var main = NormalizeDeckCardCounts(cardIds);
+        var morale = NormalizeDeckCardCounts(moraleIds);
+        var special = NormalizeDeckCardCounts(specialIds);
         var mainJson = CardsJson(main);
         var moraleJson = CardsJson(morale);
         var specialJson = CardsJson(special);
@@ -263,12 +269,13 @@ public sealed partial class L12PlatformStore
             command.Transaction = transaction;
             command.CommandText = """
                 INSERT INTO account_decks(account_id,name_key,name,payload_hash,
-                    alternate_art_selections_json,alternate_art_copies_json,updated_utc,is_deleted)
-                VALUES($account,$key,$name,$payload,$selections,$copies,$updated,0)
+                    alternate_art_selections_json,alternate_art_copies_json,bench_cards_json,updated_utc,is_deleted)
+                VALUES($account,$key,$name,$payload,$selections,$copies,$bench,$updated,0)
                 ON CONFLICT(account_id,name_key) DO UPDATE SET
                     name=excluded.name,payload_hash=excluded.payload_hash,
                     alternate_art_selections_json=excluded.alternate_art_selections_json,
-                    alternate_art_copies_json=excluded.alternate_art_copies_json,updated_utc=excluded.updated_utc,
+                    alternate_art_copies_json=excluded.alternate_art_copies_json,
+                    bench_cards_json=excluded.bench_cards_json,updated_utc=excluded.updated_utc,
                     is_deleted=0;
                 """;
             command.Parameters.AddWithValue("$account", deck.AccountId);
@@ -277,6 +284,7 @@ public sealed partial class L12PlatformStore
             command.Parameters.AddWithValue("$payload", payload.Hash);
             command.Parameters.AddWithValue("$selections", JsonSerializer.Serialize(deck.AlternateArtSelections));
             command.Parameters.AddWithValue("$copies", JsonSerializer.Serialize(deck.AlternateArtCopies));
+            command.Parameters.AddWithValue("$bench", CompactDeckCardsJson(deck.BenchIds));
             command.Parameters.AddWithValue("$updated", deck.UpdatedAt.ToString("O"));
             command.ExecuteNonQuery();
         }
@@ -517,7 +525,7 @@ public sealed partial class L12PlatformStore
         {
             command.CommandText = """
                 SELECT account_id,name,payload_hash,alternate_art_selections_json,
-                       alternate_art_copies_json,updated_utc
+                       alternate_art_copies_json,bench_cards_json,updated_utc
                 FROM account_decks WHERE is_deleted=0 ORDER BY updated_utc DESC;
                 """;
             using var reader = command.ExecuteReader();
@@ -532,7 +540,8 @@ public sealed partial class L12PlatformStore
                     SpecialIds = payload.SpecialCards.ToList(),
                     AlternateArtSelections = DeserializeDictionary(reader.GetString(3)),
                     AlternateArtCopies = DeserializeDictionaryOfLists(reader.GetString(4)),
-                    UpdatedAt = DateTimeOffset.Parse(reader.GetString(5)),
+                    BenchIds = ExpandCards(reader.GetString(5)).ToList(),
+                    UpdatedAt = DateTimeOffset.Parse(reader.GetString(6)),
                 });
             }
         }
