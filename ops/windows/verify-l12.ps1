@@ -157,8 +157,10 @@ try {
     # 前端契约检查会读取仓库根级的网络冒烟脚本、服务端入口和发布脚本。
     # 隔离工作区必须保留相同的相对目录结构，避免构建依赖开发工作树。
     $contractFiles = @(
+        @{ Source = ".github\workflows\verify-release.yml"; Target = ".github\workflows\verify-release.yml" },
         @{ Source = "ops\performance-budgets.json"; Target = "ops\performance-budgets.json" },
         @{ Source = "ops\performance-exceptions.json"; Target = "ops\performance-exceptions.json" },
+        @{ Source = "scripts\verify-l12-change.ps1"; Target = "scripts\verify-l12-change.ps1" },
         @{ Source = "scripts\ws-smoke.mjs"; Target = "scripts\ws-smoke.mjs" },
         @{ Source = "服务端WebSocket\TwelveLegions\L12WebSocketServer.cs"; Target = "服务端WebSocket\TwelveLegions\L12WebSocketServer.cs" },
         @{ Source = "ops\windows\Initialize-L12BuildEnvironment.ps1"; Target = "ops\windows\Initialize-L12BuildEnvironment.ps1" },
