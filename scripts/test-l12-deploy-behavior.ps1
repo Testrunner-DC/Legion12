@@ -90,6 +90,7 @@ New-Item -ItemType Directory -Path $fixtureRoot -Force | Out-Null
 try {
     . $targetHelper
 
+    $serverDeploySource = Get-Content -LiteralPath $serverDeploy -Raw
     $webAssetsNginxSource = Get-Content -LiteralPath $webAssetsNginx -Raw
     $sharePagesNginxSource = Get-Content -LiteralPath $sharePagesNginx -Raw
     Assert-True ($webAssetsNginxSource.Contains('location ^~ /assets/') -and $webAssetsNginxSource.Contains('root /opt/legion12-web-assets;')) `
@@ -99,6 +100,8 @@ try {
         "正式 /assets 缺失资源仍可能回退到 HTML。"
     Assert-True ($webAssetsNginxSource.Contains('max-age=31536000, immutable') -and $webAssetsNginxSource.Contains('location = /index.html') -and $webAssetsNginxSource.Contains('Cache-Control "no-cache"')) `
         "正式哈希资源或 HTML 缓存策略不符合兼容边界。"
+    Assert-True ($serverDeploySource.Contains('find "${static_web_assets_dir}/${public_prefix}" -type d -exec chmod 0755 {} +')) `
+        "正式发布没有规范多级 UTF-8 前端资源目录的 Web 读取权限。"
     Assert-True (([regex]::Matches($sharePagesNginxSource, 'proxy_hide_header Cache-Control;')).Count -eq 4 -and ([regex]::Matches($sharePagesNginxSource, 'add_header Cache-Control "no-cache" always;')).Count -eq 4) `
         "正式分享页 HTML 没有统一覆盖为 no-cache。"
 

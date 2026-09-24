@@ -99,6 +99,8 @@ install_web_assets_tree() {
       rm -f -- "$temporary"
     fi
   done < <(find "$source_root" -type f -print0)
+  find "${static_web_assets_dir}/${public_prefix}" -type d -exec chmod 0755 {} + \
+    || { fail "cannot normalize shared web asset directory permissions: ${public_prefix}"; return 1; }
 }
 
 ensure_web_assets_entry() {

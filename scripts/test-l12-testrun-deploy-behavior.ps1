@@ -87,6 +87,7 @@ try {
         'storage cleanup retained releases:',
         'storage cleanup kept unproven incoming artifact:',
         'card asset cleanup skipped:'
+        'find "${static_web_assets_dir}/${public_prefix}" -type d -exec chmod 0755 {} +'
     )) {
         Assert-True ($dailySource.Contains($contract)) "Missing minimal testrun retention contract: $contract"
     }

@@ -279,6 +279,8 @@ install_web_assets_tree() {
       rm -f -- "$temporary"
     fi
   done < <(find "$source_root" -type f -print0)
+  find "${static_web_assets_dir}/${public_prefix}" -type d -exec chmod 0755 {} + \
+    || { fail "无法规范共享前端哈希资源目录权限：${public_prefix}"; return 1; }
 }
 
 ensure_web_assets_entry() {
