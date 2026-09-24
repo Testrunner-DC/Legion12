@@ -315,6 +315,8 @@ try {
         Write-Utf8NoBom (Join-Path $package "opcgpro-vue\dist\index.html") "new"
         Write-Utf8NoBom (Join-Path $package "opcgpro-vue\dist\assets\Page-new.js") "export const release = 'new'"
         Write-Utf8NoBom (Join-Path $package "opcgpro-vue\dist\assets\Page-new.css") ".new{display:block}"
+        New-Item -ItemType Directory -Path (Join-Path $package "opcgpro-vue\dist\assets\l12\special\round") -Force | Out-Null
+        Write-Utf8NoBom (Join-Path $package "opcgpro-vue\dist\assets\l12\special\round\Round_S01-0216-卡诺匹斯箱.png") "unicode asset"
         Write-Utf8NoBom (Join-Path $package "scripts\ws-smoke.mjs") "// probe"
 
         New-Item -ItemType Directory -Path (Join-Path $staticWebAssets "assets") -Force | Out-Null

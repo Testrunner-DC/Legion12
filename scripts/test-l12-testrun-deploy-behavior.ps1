@@ -141,9 +141,13 @@ try {
     Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist\assets\shared.txt") "shared static asset"
     Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist\assets\Page-new.js") "export const release = 'new'"
     Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist\assets\Page-new.css") ".new{display:block}"
+    New-Item -ItemType Directory -Path (Join-Path $releaseRoot "opcgpro-vue\dist\assets\l12\special\round") -Force | Out-Null
+    Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist\assets\l12\special\round\Round_S01-0216-卡诺匹斯箱.png") "unicode asset"
     Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist-testrun\index.html") "testrun html"
     Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist-testrun\assets\Page-new.js") "export const release = 'testrun-new'"
     Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist-testrun\assets\Page-new.css") ".testrun-new{display:block}"
+    New-Item -ItemType Directory -Path (Join-Path $releaseRoot "opcgpro-vue\dist-testrun\assets\l12\special\round") -Force | Out-Null
+    Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist-testrun\assets\l12\special\round\Round_S01-0216-卡诺匹斯箱.png") "unicode testrun asset"
     Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\testrun-shared-files.txt") "assets/shared.txt`n"
     Write-Utf8NoBom (Join-Path $releaseRoot "scripts\ws-smoke.mjs") "// probe"
     Write-Utf8NoBom (Join-Path $assetRoot "card-assets.manifest.json") "{}"
@@ -278,6 +282,7 @@ exit 0
     Assert-True ((Get-Content -LiteralPath (Join-Path $sharedWebAssets "assets\Page-old.js") -Raw) -eq "export const release = 'old'") "Rollback path did not preserve the previous standalone JS asset."
     Assert-True ((Get-Content -LiteralPath (Join-Path $sharedWebAssets "testrun\assets\Page-old.css") -Raw) -eq ".testrun-old{display:block}") "Rollback path did not preserve the previous mounted CSS asset."
     Assert-True ((Get-Content -LiteralPath (Join-Path $sharedWebAssets "testrun\assets\Page-new.js") -Raw) -eq "export const release = 'testrun-new'") "New mounted JS asset was not atomically staged before the switch."
+    Assert-True (Test-Path -LiteralPath (Join-Path $sharedWebAssets "testrun\assets\l12\special\round\Round_S01-0216-卡诺匹斯箱.png") -PathType Leaf) "Unicode web asset path was not installed safely."
     Assert-True (Test-Path -LiteralPath $commandLog -PathType Leaf) "Server rollback fixture did not reach command execution: $($rollback.Output)"
     $commands = Get-Content -LiteralPath $commandLog -Raw
     Assert-True (-not $commands.Contains('reload nginx')) "Daily rollback touched Nginx state."

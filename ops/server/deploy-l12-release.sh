@@ -236,6 +236,14 @@ validate_web_assets_tree() {
   [[ -n "$sample" ]] || { fail "前端哈希资源目录为空：${source_root}"; return 1; }
 }
 
+validate_relative_web_asset_path() {
+  local relative="$1"
+  [[ -n "$relative" && "$relative" != /* && "$relative" != *\\* && "$relative" != *"//"* ]] || return 1
+  [[ "$relative" != "." && "$relative" != ".." && "/${relative}/" != *"/./"* && "/${relative}/" != *"/../"* ]] || return 1
+  if printf '%s' "$relative" | LC_ALL=C grep -q '[[:cntrl:]]'; then return 1; fi
+  return 0
+}
+
 install_web_assets_tree() {
   local source_root="$1"
   local public_prefix="$2"
@@ -251,7 +259,7 @@ install_web_assets_tree() {
   fi
   while IFS= read -r -d '' source; do
     relative="${source#${source_root}/}"
-    [[ "$relative" =~ ^[A-Za-z0-9._/-]+$ && "/${relative}/" != *"/../"* ]] \
+    validate_relative_web_asset_path "$relative" \
       || { fail "前端哈希资源路径无效：${relative}"; return 1; }
     target="${static_web_assets_dir}/${public_prefix}/${relative}"
     target_parent="${target%/*}"
