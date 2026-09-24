@@ -25,7 +25,9 @@ const mobile = [
 ]
 const modes = ['full', 'mixed', 'minimal', 'placement']
 
-const browser = await chromium.launch({ headless: true, channel: 'msedge' })
+const browser = await chromium.launch(process.env.L12_CHROMIUM_EXECUTABLE
+  ? { headless: true, executablePath: process.env.L12_CHROMIUM_EXECUTABLE }
+  : { headless: true, channel: 'msedge' })
 const reports = []
 try {
   const page = await browser.newPage()
@@ -39,31 +41,38 @@ try {
       await page.setViewportSize(viewport)
       const isMobile = mobile.some(item => item.width === viewport.width && item.height === viewport.height)
       const query = new URLSearchParams({ identity: mode, hand: '8', rankedClock: '1' })
-      if (isMobile) query.set('mobile', '1')
+      if (isMobile) { query.set('mobile', '1'); query.set('canvas', '1') }
       await page.goto(`${target}?${query}`, { waitUntil: 'domcontentloaded' })
       await page.locator('.player-panel').waitFor()
       if (isMobile) await page.locator('[data-l12-mobile-landscape="true"]').waitFor()
       await page.waitForTimeout(120)
 
-      const report = await page.evaluate(() => {
+      if (isMobile) {
+        assert.equal(await page.locator('.mobile-player-name').count(), 2,
+          `${viewport.width}x${viewport.height}/${mode}: persistent full-name strip is missing`)
+        await page.locator('.mobile-player-name').first().evaluate(element => element.click())
+        await page.locator('.mobile-player-details-dialog').waitFor()
+      }
+
+      const report = await page.evaluate(isMobileCanvas => {
         const bounds = element => {
           const box = element.getBoundingClientRect()
           return { left: box.left, right: box.right, top: box.top, bottom: box.bottom,
             width: box.width, height: box.height }
         }
         const panel = document.querySelector('.player-panel')
-        const summaries = [...document.querySelectorAll('.player-summary')].map(summary => ({
-          bounds: bounds(summary),
-          scrollWidth: summary.scrollWidth,
-          clientWidth: summary.clientWidth,
-          scrollHeight: summary.scrollHeight,
-          clientHeight: summary.clientHeight,
-          labels: [...summary.querySelectorAll('.rank-number,.ranked-identity-badge')]
-            .filter(element => { const box = element.getBoundingClientRect(); return box.width > 0 && box.height > 0 })
-            .map(element => element.classList.contains('rank-number')
-              ? element.textContent?.trim() || ''
-              : element.querySelector(':scope>span')?.textContent?.trim() || ''),
-          items: [...summary.querySelectorAll('.rank-number,.ranked-identity-badge,.connection-state')]
+        const identityRoot = isMobileCanvas
+          ? document.querySelector('.mobile-player-details-dialog') : panel
+        const identities = [...identityRoot.querySelectorAll('.battle-player-identity')].map(identity => ({
+          bounds:bounds(identity), scrollWidth:identity.scrollWidth, clientWidth:identity.clientWidth,
+          scrollHeight:identity.scrollHeight, clientHeight:identity.clientHeight,
+          name:identity.querySelector('.battle-player-identity__name strong')?.textContent?.trim() || '',
+          rank:identity.querySelector('.identity-rank-row dd')?.textContent?.trim() || '',
+          tier:identity.querySelector('.identity-tier-row dd')?.textContent?.trim() || '',
+          masterTitle:identity.querySelector('.identity-master-title-row dd')?.textContent?.trim() || '',
+          master:identity.querySelector('.identity-master-row dd')?.textContent?.trim() || '',
+          connection:identity.querySelector('.identity-connection-row dd')?.textContent?.trim() || '',
+          rows:[...identity.querySelectorAll('.battle-player-identity__facts>div')]
             .map(bounds).filter(box => box.width > 0 && box.height > 0),
         }))
         const optionalBounds = selector => {
@@ -71,47 +80,65 @@ try {
           return element ? bounds(element) : null
         }
         return { viewport: { width: innerWidth, height: innerHeight }, panel: bounds(panel),
-          panelScrollHeight: panel.scrollHeight, panelClientHeight: panel.clientHeight, summaries,
+          panelScrollHeight: panel.scrollHeight, panelClientHeight: panel.clientHeight, identities,
+          identityRoot:bounds(identityRoot),
+          names:[...document.querySelectorAll('.mobile-player-name')].map(item => ({
+            text:item.textContent?.trim() || '', bounds:bounds(item),
+            fits:item.scrollWidth <= item.clientWidth + 1 && item.scrollHeight <= item.clientHeight + 1,
+          })),
           routeControls: optionalBounds('.battle-route-controls'),
           recordTrigger: optionalBounds('.mobile-record-trigger'),
           timedClocks: optionalBounds('.mobile-timed-clocks') }
-      })
+      }, isMobile)
 
-      for (const summary of report.summaries) {
-        assert(summary.scrollWidth <= summary.clientWidth + 1,
-          `${viewport.width}x${viewport.height}/${mode}: player identity must not overflow horizontally ${JSON.stringify(summary)}`)
-        for (const item of summary.items) {
-          assert(item.left >= report.panel.left - 1 && item.right <= report.panel.right + 1,
-            `${viewport.width}x${viewport.height}/${mode}: identity item left the player panel ${JSON.stringify({ item, panel: report.panel })}`)
-          assert(item.top >= report.panel.top - 1 && item.bottom <= report.panel.bottom + 1,
-            `${viewport.width}x${viewport.height}/${mode}: identity item was vertically clipped ${JSON.stringify({ item, panel: report.panel })}`)
+      assert.equal(report.identities.length, 2,
+        `${viewport.width}x${viewport.height}/${mode}: both player identities must be present`)
+      for (const identity of report.identities) {
+        assert(identity.scrollWidth <= identity.clientWidth + 1,
+          `${viewport.width}x${viewport.height}/${mode}: player identity must not overflow horizontally ${JSON.stringify(identity)}`)
+        assert(identity.name && identity.master && identity.connection,
+          `${viewport.width}x${viewport.height}/${mode}: lawful player fields are incomplete ${JSON.stringify(identity)}`)
+        for (const row of identity.rows) {
+          assert(row.left >= report.identityRoot.left - 1 && row.right <= report.identityRoot.right + 1,
+            `${viewport.width}x${viewport.height}/${mode}: identity row left its host ${JSON.stringify({ row, host: report.identityRoot })}`)
+          assert(row.top >= report.identityRoot.top - 1 && row.bottom <= report.identityRoot.bottom + 1,
+            `${viewport.width}x${viewport.height}/${mode}: identity row was clipped ${JSON.stringify({ row, host: report.identityRoot })}`)
         }
-        for (let index = 1; index < summary.items.length; index += 1) {
-          assert(summary.items[index].top >= summary.items[index - 1].bottom - 0.75,
-            `${viewport.width}x${viewport.height}/${mode}: identity items must occupy separate rows ${JSON.stringify(summary.items)}`)
+        for (let index = 1; index < identity.rows.length; index += 1) {
+          assert(identity.rows[index].top >= identity.rows[index - 1].bottom - 0.75,
+            `${viewport.width}x${viewport.height}/${mode}: identity facts must occupy separate rows ${JSON.stringify(identity.rows)}`)
         }
       }
-      assert(report.panelScrollHeight <= report.panelClientHeight + 1,
-        `${viewport.width}x${viewport.height}/${mode}: player panel content was clipped`)
       if (isMobile) {
-        assert(report.routeControls && report.recordTrigger && report.timedClocks,
-          `${viewport.width}x${viewport.height}/${mode}: complete mobile route dock must be visible`)
-        assert(report.routeControls.top >= report.panel.bottom + 3,
-          `${viewport.width}x${viewport.height}/${mode}: route controls overlap the identity panel`)
-        assert(report.recordTrigger.top >= report.routeControls.bottom + 3,
-          `${viewport.width}x${viewport.height}/${mode}: match record overlaps route controls`)
-        assert(report.timedClocks.top >= report.recordTrigger.bottom + 3,
-          `${viewport.width}x${viewport.height}/${mode}: clocks overlap the match record`)
-        assert(report.timedClocks.bottom <= viewport.height - 48,
-          `${viewport.width}x${viewport.height}/${mode}: clocks invade the bottom action dock`)
+        assert.equal(report.names.length, 2,
+          `${viewport.width}x${viewport.height}/${mode}: both persistent names must be present`)
+        assert.equal(report.names.every(item => item.text && item.fits), true,
+          `${viewport.width}x${viewport.height}/${mode}: persistent name was clipped ${JSON.stringify(report.names)}`)
+        assert.equal(report.names.every(item => item.bounds.left >= -1 && item.bounds.top >= -1
+          && item.bounds.right <= viewport.width + 1 && item.bounds.bottom <= viewport.height + 1), true,
+        `${viewport.width}x${viewport.height}/${mode}: persistent name left the viewport ${JSON.stringify(report.names)}`)
+        assert(report.recordTrigger && report.names.every(item => item.bounds.bottom <= report.recordTrigger.top + 1),
+          `${viewport.width}x${viewport.height}/${mode}: player names must remain above match record`)
+        assert(report.identityRoot.left >= -1 && report.identityRoot.top >= -1
+          && report.identityRoot.right <= viewport.width + 1 && report.identityRoot.bottom <= viewport.height + 1,
+        `${viewport.width}x${viewport.height}/${mode}: detail dialog escaped viewport`)
+      } else {
+        assert(report.panelScrollHeight <= report.panelClientHeight + 1,
+          `${viewport.width}x${viewport.height}/${mode}: desktop player panel content was clipped`)
       }
 
-      const expected = mode === 'full'
-        ? ['第 128 名', '混沌先声', '最强阿斯加德']
-        : mode === 'mixed' ? ['第 128 名', '统领']
-          : mode === 'minimal' ? ['第 247 名', '进阶'] : ['定级 4/5']
-      assert.deepEqual(report.summaries[0].labels, expected,
-        `${viewport.width}x${viewport.height}/${mode}: opponent identity order changed`)
+      for (const identity of report.identities) {
+        if (mode === 'placement') {
+          assert.equal(identity.rank, '', `${viewport.width}x${viewport.height}/${mode}: unavailable rank must be omitted`)
+          assert.match(identity.tier, /定级/, `${viewport.width}x${viewport.height}/${mode}: placement title missing`)
+          assert.equal(identity.masterTitle, '', `${viewport.width}x${viewport.height}/${mode}: unavailable master title must be omitted`)
+        } else {
+          assert.match(identity.rank, /^第 \d+ 名$/, `${viewport.width}x${viewport.height}/${mode}: authoritative rank missing`)
+          assert.ok(identity.tier, `${viewport.width}x${viewport.height}/${mode}: tier/title row missing`)
+          assert.equal(Boolean(identity.masterTitle), mode === 'full' || (mode === 'mixed' && identity.rank === '第 3 名'),
+            `${viewport.width}x${viewport.height}/${mode}: master title availability changed`)
+        }
+      }
 
       const suffix = `${isMobile ? 'mobile' : 'desktop'}-${viewport.width}x${viewport.height}-${mode}`
       await page.screenshot({ path: path.join(output, `${suffix}.png`) })

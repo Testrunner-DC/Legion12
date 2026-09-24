@@ -21,13 +21,13 @@ import MasterOverlay from './MasterOverlay.vue'
 import PhaseTrack from './PhaseTrack.vue'
 import PlayerMat from './PlayerMat.vue'
 import PlayerTurnClock from './PlayerTurnClock.vue'
+import BattlePlayerIdentity from './BattlePlayerIdentity.vue'
 import PhasePlayback from './PhasePlayback.vue'
 import PromptOverlay from './PromptOverlay.vue'
 import SingleCardPicker, { type SingleCardPickerItem } from '../SingleCardPicker.vue'
 import CardImage from '../CardImage.vue'
 import CardDetailContent from '../CardDetailContent.vue'
 import type { DeckCard } from '../decks'
-import RankedIdentityBadge from '../RankedIdentityBadge.vue'
 import { getFactionPresentation } from '../factionPresentation'
 import { landscapeTeleportTarget, viewportRect } from '../mobileViewport'
 import { useBattleViewportLayout } from './battleViewportLayout'
@@ -75,6 +75,8 @@ const {
 })
 const mobileRecordOpen = ref(false)
 const mobileRecordMinimized = ref(false)
+const mobilePlayerDetailsOpen = ref(false)
+const mobilePlayerDetailsFocus = ref<number | null>(null)
 const mobileMoralePickerOpen = ref(false)
 const mobileMoralePickerMinimized = ref(false)
 const mobileMoraleReason = ref('')
@@ -193,6 +195,10 @@ const connectionLabel = (playerIndex: number) => {
   return connected === null ? (props.readOnly ? '记录快照' : '状态同步中') : connected ? '在线' : '已断开'
 }
 const factionLabel = (faction: string) => getFactionPresentation(faction).label
+function openMobilePlayerDetails(playerIndex: number) {
+  mobilePlayerDetailsFocus.value = playerIndex
+  mobilePlayerDetailsOpen.value = true
+}
 function isControlledPlayer(playerIndex: number) { return playerIndex === controlledPlayerIndex.value }
 const defenseTargetType = computed(() => props.game.pendingDefense?.stage === 'DefenseChoice'
   ? props.game.pendingDefense.target.type : null)
@@ -1273,28 +1279,20 @@ function statusTexts(card: Card) {
                match instead receives its own reserved pair of compact clocks in
                this otherwise unused section of the right rail. -->
           <BattleDockPortal lane="tools"><section class="grand-panel player-panel" data-ui-contract="complete-player-summary">
+            <div v-if="mobileLandscapeViewport" class="mobile-player-name-strip" aria-label="双方玩家">
+              <button type="button" class="mobile-player-name opponent" :aria-label="`查看对方玩家详情：${viewEnemy.name || '未命名玩家'}`" @click="openMobilePlayerDetails(viewEnemy.playerIndex)"><b>对方</b><strong>{{ viewEnemy.name || '未命名玩家' }}</strong></button>
+              <button type="button" class="mobile-player-name mine" :aria-label="`查看我方玩家详情：${viewMe.name || '未命名玩家'}`" @click="openMobilePlayerDetails(viewMe.playerIndex)"><b>我方</b><strong>{{ viewMe.name || '未命名玩家' }}</strong></button>
+            </div>
+            <template v-else>
+              <BattlePlayerIdentity side-label="对方" :player="viewEnemy" :rank="enemyBadge?.rank" :tier-label="battleTierLabel(enemyBadge)"
+                :placement-title="identityLabel(enemyBadge?.placementTitle)" :master-title="identityLabel(enemyBadge?.masterTitle)"
+                :faction="viewEnemy.faction" :faction-label="factionLabel(viewEnemy.faction)" :connection-label="connectionLabel(viewEnemy.playerIndex)" :connected="playerConnection(viewEnemy.playerIndex)" />
+              <hr/>
+              <BattlePlayerIdentity side-label="我方" :player="viewMe" :rank="myBadge?.rank" :tier-label="battleTierLabel(myBadge)"
+                :placement-title="identityLabel(myBadge?.placementTitle)" :master-title="identityLabel(myBadge?.masterTitle)"
+                :faction="viewMe.faction" :faction-label="factionLabel(viewMe.faction)" :connection-label="connectionLabel(viewMe.playerIndex)" :connected="playerConnection(viewMe.playerIndex)" />
+            </template>
             <button v-if="mobileLandscapeViewport" type="button" class="mobile-record-trigger" @click="mobileRecordOpen = true; mobileRecordMinimized = false">对局记录</button>
-            <article class="player-summary opponent-summary">
-              <div class="player-summary-primary"><b>对方</b><strong>{{ viewEnemy.name || '未命名玩家' }}</strong></div>
-              <div class="player-summary-meta">
-                <span v-if="enemyBadge?.rank" class="rank-number">第 {{ enemyBadge.rank }} 名</span>
-                <RankedIdentityBadge v-if="battleTierLabel(enemyBadge)" class="rank-badge" variant="tier" :faction="enemyBadge?.faction" compact :label="battleTierLabel(enemyBadge)" />
-                <RankedIdentityBadge v-if="identityLabel(enemyBadge?.placementTitle)" class="placement-title-badge" variant="faction-title" :faction="enemyBadge?.faction" compact :label="identityLabel(enemyBadge?.placementTitle)" />
-                <RankedIdentityBadge v-if="identityLabel(enemyBadge?.masterTitle)" class="title-badge" variant="master-title" :faction="enemyBadge?.faction" compact :label="identityLabel(enemyBadge?.masterTitle)" />
-                <span class="connection-state" :class="{ online: playerConnection(viewEnemy.playerIndex) }"><i/>{{ connectionLabel(viewEnemy.playerIndex) }}</span>
-              </div>
-            </article>
-            <hr/>
-            <article class="player-summary my-summary">
-              <div class="player-summary-primary"><b>我方</b><strong class="mine">{{ viewMe.name || '未命名玩家' }}</strong></div>
-              <div class="player-summary-meta">
-                <span v-if="myBadge?.rank" class="rank-number">第 {{ myBadge.rank }} 名</span>
-                <RankedIdentityBadge v-if="battleTierLabel(myBadge)" class="rank-badge" variant="tier" :faction="myBadge?.faction" compact :label="battleTierLabel(myBadge)" />
-                <RankedIdentityBadge v-if="identityLabel(myBadge?.placementTitle)" class="placement-title-badge" variant="faction-title" :faction="myBadge?.faction" compact :label="identityLabel(myBadge?.placementTitle)" />
-                <RankedIdentityBadge v-if="identityLabel(myBadge?.masterTitle)" class="title-badge" variant="master-title" :faction="myBadge?.faction" compact :label="identityLabel(myBadge?.masterTitle)" />
-                <span class="connection-state" :class="{ online: playerConnection(viewMe.playerIndex) }"><i/>{{ connectionLabel(viewMe.playerIndex) }}</span>
-              </div>
-            </article>
           </section></BattleDockPortal>
           <BattleDockPortal lane="tools"><section v-if="mobileLandscapeViewport && l12State.rankedClock" class="mobile-timed-clocks" aria-label="双方对局计时">
             <PlayerTurnClock class="mobile-rail-clock opponent-player-clock" :player-index="viewEnemy.playerIndex" side="opponent"
@@ -1311,6 +1309,21 @@ function statusTexts(card: Card) {
         </aside>
       </div>
       <Teleport :to="landscapeTeleportTarget()">
+        <section v-if="mobileLandscapeViewport && mobilePlayerDetailsOpen" class="mobile-player-details-overlay mobile-safe-overlay" role="dialog" aria-modal="true" aria-label="双方玩家详情" @click.self="mobilePlayerDetailsOpen = false">
+          <div class="mobile-player-details-dialog">
+            <header><div><small>PLAYER DETAILS</small><h2>双方玩家信息</h2></div><button type="button" aria-label="关闭双方玩家详情" @click="mobilePlayerDetailsOpen = false">×</button></header>
+            <div class="mobile-player-details-list">
+              <BattlePlayerIdentity side-label="对方" :player="viewEnemy" :rank="enemyBadge?.rank" :tier-label="battleTierLabel(enemyBadge)"
+                :placement-title="identityLabel(enemyBadge?.placementTitle)" :master-title="identityLabel(enemyBadge?.masterTitle)"
+                :faction="viewEnemy.faction" :faction-label="factionLabel(viewEnemy.faction)" :connection-label="connectionLabel(viewEnemy.playerIndex)" :connected="playerConnection(viewEnemy.playerIndex)"
+                :class="{ focused: mobilePlayerDetailsFocus === viewEnemy.playerIndex }" />
+              <BattlePlayerIdentity side-label="我方" :player="viewMe" :rank="myBadge?.rank" :tier-label="battleTierLabel(myBadge)"
+                :placement-title="identityLabel(myBadge?.placementTitle)" :master-title="identityLabel(myBadge?.masterTitle)"
+                :faction="viewMe.faction" :faction-label="factionLabel(viewMe.faction)" :connection-label="connectionLabel(viewMe.playerIndex)" :connected="playerConnection(viewMe.playerIndex)"
+                :class="{ focused: mobilePlayerDetailsFocus === viewMe.playerIndex }" />
+            </div>
+          </div>
+        </section>
         <section v-if="mobileLandscapeViewport && mobileRecordOpen" class="mobile-record-overlay mobile-safe-overlay" role="dialog" aria-modal="true" aria-label="对局记录">
           <header><h2>对局记录</h2><div class="mobile-record-actions"><button type="button" @click="mobileRecordOpen = false; mobileRecordMinimized = true">最小化</button><button type="button" @click="mobileRecordOpen = false; mobileRecordMinimized = false">关闭</button></div></header>
           <BattleEventLog :events="game.recentEvents ?? []" :you="game.you" :names="game.players.map(player => player.name)" @focus="focusCard = $event" />
@@ -1430,9 +1443,7 @@ function statusTexts(card: Card) {
   align-items:stretch;
 }
 .board-status-lane{position:relative;z-index:38;display:flex;box-sizing:border-box;height:70px;min-height:70px;justify-content:flex-end;overflow:visible;pointer-events:none}.board-player-clock{position:relative;right:auto;top:auto;bottom:auto}.opponent-status-lane{order:0;align-items:flex-end}.my-status-lane{order:0;align-items:flex-start}
-.player-panel{box-sizing:border-box;height:auto!important;min-height:140px;flex:none;overflow:hidden!important}
-.player-summary{display:grid;min-width:0;gap:5px}.player-summary-primary{display:grid;min-width:0;grid-template-columns:max-content minmax(0,1fr);align-items:center;column-gap:5px}.player-summary-primary>b{color:#d2525b;font-size:calc(var(--l12-board-copy,13px) - 1px);white-space:nowrap}.my-summary .player-summary-primary>b{color:#58bdc5}.player-summary-primary>strong{min-width:0;overflow:hidden!important;font-size:max(14px,calc(var(--l12-board-copy,13px) - 1px))!important;line-height:1.25!important;text-overflow:ellipsis!important;white-space:nowrap!important}.player-summary-meta{display:grid;min-width:0;grid-template-columns:minmax(0,1fr);justify-items:start;align-items:start;gap:3px;color:#aeb7b5;font-size:calc(var(--l12-board-copy,13px) - 1px);line-height:1.2}.player-summary-meta>.rank-number{box-sizing:border-box;width:max-content;max-width:100%;padding:1px 4px;border:1px solid #59666b;border-radius:3px;background:#11191d;color:#d8e0e2;font-size:calc(var(--l12-board-copy,13px) - 1px);font-weight:900;white-space:nowrap}.player-summary-meta>:is(.rank-badge,.placement-title-badge,.title-badge){width:max-content;min-width:0;max-width:100%}.player-summary-meta>.connection-state{min-width:0;max-width:100%!important;justify-content:flex-start;margin-left:0!important;font-size:clamp(9px,var(--l12-board-micro,9px),10px)!important;overflow:hidden!important;text-overflow:ellipsis!important}
-.connection-state{display:flex!important;width:max-content;max-width:none!important;align-items:center;gap:4px;margin:0!important;color:#b76570!important;font-size:var(--l12-board-copy,13px)!important;font-weight:900;line-height:1!important;overflow:visible!important;white-space:nowrap!important;text-overflow:clip!important}.connection-state.online{color:#58c99a!important}.connection-state i{width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 6px currentColor}
+.player-panel{display:grid;box-sizing:border-box;height:auto!important;min-height:0;flex:none;gap:8px;overflow:hidden!important}.player-panel :deep(.battle-player-identity){padding:2px}.player-panel :deep(.battle-player-identity__facts>div){grid-template-columns:64px minmax(0,1fr)}.player-panel :deep(.battle-player-identity__name>strong){font-size:max(14px,calc(var(--l12-board-copy,13px) - 1px))}.player-panel :deep(.battle-player-identity dd){font-size:calc(var(--l12-board-copy,13px) - 1px)}.player-panel :deep(.battle-player-identity .ranked-identity-badge){max-width:100%}.player-panel :deep(.battle-player-identity .ranked-identity-badge>span){min-width:0;overflow-wrap:anywhere;white-space:normal}
 .player-panel>hr{margin:9px 0!important}
 .right-rail .record-log{min-height:120px;overflow:hidden}.right-rail .record-log>.event-list{min-height:0;overflow-y:auto}
 .battlefield-half{position:relative;box-sizing:border-box;width:100%;min-height:0;align-self:stretch;justify-self:center}

@@ -87,3 +87,4 @@ async function startSandbox() {
 .sandbox-grid{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.sandbox-grid label{box-sizing:border-box;min-height:0}.sandbox-grid input,.sandbox-grid select{box-sizing:border-box}
 @media(max-width:700px){.sandbox-grid{grid-template-columns:1fr}}
 </style>
+<style src="./SandboxPage.mobile.css"></style>

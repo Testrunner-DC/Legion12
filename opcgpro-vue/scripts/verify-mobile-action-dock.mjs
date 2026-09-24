@@ -57,8 +57,9 @@ async function geometry(name) {
       pileRatio: (pile.right - pile.left) / (master.right - master.left),
       handCountRatio: (handCount.right - handCount.left) / (master.right - master.left),
       markerRatio: marker ? (r(marker).right - r(marker).left) / (master.right - master.left) : null,
-      identityExpanded: dock.querySelectorAll('.player-summary').length === 2 && [...dock.querySelectorAll('.player-summary')].every(e => getComputedStyle(e).display !== 'none'),
-      identityToggleCount: [...dock.querySelectorAll('button')].filter(e => e.textContent.trim() === '双方信息').length,
+      playerNames: [...dock.querySelectorAll('.mobile-player-name')].map(e => ({ text:e.textContent.trim(), box:r(e), fits:e.scrollWidth <= e.clientWidth + 1 && e.scrollHeight <= e.clientHeight + 1 })),
+      playerNamesAboveRecord: (() => { const names=dock.querySelector('.mobile-player-name-strip')?.getBoundingClientRect(), record=dock.querySelector('.mobile-record-trigger')?.getBoundingClientRect(); return Boolean(names && record && names.bottom <= record.top + 1) })(),
+      moraleLabels: [...document.querySelectorAll('.resource-morale-label')].map(e => ({ text:e.textContent.trim(), images:e.querySelectorAll('img').length, fits:e.scrollWidth <= e.clientWidth + 1 && e.scrollHeight <= e.clientHeight + 1 })),
       currentActionCount: dock.querySelectorAll('.card-context-actions button').length,
       lanes: [...dock.children].map(e => ({ class: e.className, height: e.clientHeight, scrollHeight: e.scrollHeight })),
     }
@@ -75,9 +76,68 @@ async function geometry(name) {
   assert.ok(Math.abs(report.pileRatio - .7) <= .035, `${label}/${name}: pile/master ratio drift ${JSON.stringify(report)}`)
   assert.ok(report.handCountRatio >= .75, `${label}/${name}: hand count did not scale with master ${JSON.stringify(report)}`)
   if (report.markerRatio !== null) assert.ok(report.markerRatio >= .3, `${label}/${name}: master marker did not scale ${JSON.stringify(report)}`)
-  assert.equal(report.identityExpanded, true, `${label}/${name}: player identities collapsed`)
-  assert.equal(report.identityToggleCount, 0, `${label}/${name}: player identity collapse control remained`)
+  assert.equal(report.playerNames.length, 2, `${label}/${name}: persistent player names missing`)
+  assert.equal(report.playerNames.every(item => item.fits), true, `${label}/${name}: player name clipped ${JSON.stringify(report.playerNames)}`)
+  assert.equal(report.playerNamesAboveRecord, true, `${label}/${name}: player names are not above record`)
+  assert.equal(report.moraleLabels.length, 2, `${label}/${name}: morale labels missing`)
+  assert.equal(report.moraleLabels.every(item => item.text === '士气' && item.images === 0 && item.fits), true, `${label}/${name}: legacy faction icon still crowds morale label ${JSON.stringify(report.moraleLabels)}`)
   manifest.cases.push({ label, name, ...report })
+}
+async function playerDetailsVisible() {
+  await page.locator('.mobile-player-name').first().click()
+  const report = await page.locator('.mobile-player-details-dialog').evaluate(dialog => {
+    const host=document.querySelector('#l12-landscape-teleports').getBoundingClientRect(), box=dialog.getBoundingClientRect()
+    const identities=[...dialog.querySelectorAll('.battle-player-identity')]
+    const text=dialog.textContent || ''
+    return {
+      inside:box.left>=host.left-1&&box.top>=host.top-1&&box.right<=host.right+1&&box.bottom<=host.bottom+1,
+      identities:identities.length,
+      names:identities.map(item=>item.querySelector('.battle-player-identity__name strong')?.textContent?.trim()),
+      rankRows:dialog.querySelectorAll('.identity-rank-row').length,
+      tierRows:dialog.querySelectorAll('.identity-tier-row').length,
+      masterRows:dialog.querySelectorAll('.identity-master-row').length,
+      masterTitleRows:dialog.querySelectorAll('.identity-master-title-row').length,
+      text,
+    }
+  })
+  assert.equal(report.inside,true,`${label}: player details outside safe area ${JSON.stringify(report)}`)
+  assert.equal(report.identities,2,`${label}: player details must show both players`)
+  assert.equal(report.names.every(Boolean),true,`${label}: player detail names missing`)
+  assert.equal(report.rankRows,2,`${label}: authoritative ranks missing`)
+  assert.equal(report.tierRows,2,`${label}: authoritative tiers missing`)
+  assert.equal(report.masterRows,2,`${label}: lawful master information missing`)
+  assert.ok(report.masterTitleRows>=1,`${label}: available master title missing`)
+  assert.ok(report.text.includes('连接')&&report.text.includes('主宰'),`${label}: player details incomplete`)
+  await reachable(page.locator('.mobile-player-details-dialog button'))
+  await shot('player-details')
+  await page.getByRole('button',{name:'关闭双方玩家详情'}).click()
+  assert.equal(await page.locator('.mobile-player-details-overlay').count(),0,`${label}: player details did not close`)
+}
+
+async function markerGeometry(expectedCount) {
+  const reports=await page.locator('.battlefield-half').evaluateAll((halves,count)=>halves.map(half=>{
+    const commander=half.querySelector('.commander-zone')?.getBoundingClientRect()
+    const track=half.querySelector('.master-marker-track')?.getBoundingClientRect()
+    const markers=[...half.querySelectorAll('.master-marker-track :is(.rune-orb,.canopic-orb)')].map(marker=>{
+      const box=marker.getBoundingClientRect(), image=marker.querySelector('img'), imageBox=image?.getBoundingClientRect(), style=image?getComputedStyle(image):null
+      return {box:box.toJSON(),image:imageBox?.toJSON(),fit:style?.objectFit,transform:style?.transform,
+        centerDelta:imageBox?Math.max(Math.abs((imageBox.left+imageBox.width/2)-(box.left+box.width/2)),Math.abs((imageBox.top+imageBox.height/2)-(box.top+box.height/2))):99}
+    })
+    return {commander:commander?.toJSON(),track:track?.toJSON(),markers}
+  }),expectedCount)
+  for(const report of reports){
+    assert.equal(report.markers.length,expectedCount,`${label}: marker count mismatch ${JSON.stringify(report)}`)
+    if(!expectedCount){assert.equal(report.track,undefined,`${label}: empty marker track remained`);continue}
+    assert.ok(report.track.left>=report.commander.left-1&&report.track.right<=report.commander.right+1&&report.track.top>=report.commander.top-1&&report.track.bottom<=report.commander.bottom+1,`${label}: marker track escaped commander ${JSON.stringify(report)}`)
+    const centers=report.markers.map(item=>item.box.top+item.box.height/2)
+    assert.ok(Math.max(...centers)-Math.min(...centers)<=1,`${label}: marker centres are not aligned ${JSON.stringify(report)}`)
+    for(const marker of report.markers){
+      assert.ok(Math.abs(marker.box.width-marker.box.height)<=1,`${label}: marker is not circular ${JSON.stringify(marker)}`)
+      assert.equal(marker.fit,'contain',`${label}: marker image must use contain`)
+      assert.equal(marker.transform,'none',`${label}: marker image transform remained`)
+      assert.ok(marker.centerDelta<=1,`${label}: marker image is not centred ${JSON.stringify(marker)}`)
+    }
+  }
 }
 // Scroll each real action into its own lane, then check hit testing at centre
 // and four inset corners. Trial clicks use the browser's actionability checks.
@@ -122,6 +182,7 @@ try {
     label = size.join('x')
     await load(size, 'field=full&action-fixture=1')
     await geometry('minimum')
+    await playerDetailsVisible()
     await reachable(page.locator('.formation-slot,.mini-master,.pile,.resource-morale-summary,.resource-faction-action,.session-disaster-strip button'))
     await reachable(page.locator('.mobile-battle-dock button'))
     await shot('minimum')
@@ -209,7 +270,13 @@ try {
   for (const safe of [{top:0,right:0,bottom:21,left:59},{top:0,right:59,bottom:21,left:0},{top:8,right:44,bottom:21,left:44}]) {
     label = `safe-${safe.left}-${safe.right}`
     await load([844,390], 'field=full&action-fixture=1', safe)
-    await selectedFixture(); await geometry('safe-area'); await reachable(page.locator('.mobile-battle-dock button')); await shot('selected')
+    await selectedFixture(); await geometry('safe-area'); await playerDetailsVisible(); await reachable(page.locator('.mobile-battle-dock button')); await shot('selected')
+  }
+  for(const size of [[844,390],[740,360],[1024,600]]) for(let count=0;count<=5;count++) {
+    label=`markers-${size.join('x')}-${count}`
+    await load(size,`field=full&markers=${count}`)
+    await markerGeometry(count)
+    if(count===0||count===5)await shot(`markers-${count}`)
   }
   // Resize without reload: state, target registration and focus must survive.
   label = 'continuous'

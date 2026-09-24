@@ -444,7 +444,6 @@ function beginCardAbility(card: Card) {
         @click.stop="factionOpen = true; factionMinimized = false">阵营效果</button>
       <component :is="mobileMoralePicker ? 'button' : 'div'" :type="mobileMoralePicker ? 'button' : undefined" class="resource-morale-summary" data-ui-contract="resource-morale-summary" :aria-disabled="mobileMoralePicker ? false : undefined" @click.stop="mobileMoralePicker && openMoralePanel()">
         <span class="resource-morale-label" data-ui-contract="resource-morale-label">
-          <img v-if="mobileMoralePicker && factionLogoUrls[player.faction]" :src="factionLogoUrls[player.faction]" :alt="`${player.faction}士气`" />
           <span>士气</span>
         </span>
         <b class="morale-count resource-morale-count" data-ui-contract="resource-morale-count"
