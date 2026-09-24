@@ -1434,12 +1434,19 @@ contracts.push([
     && latestReleaseEntry.includes("title: '异画、画廊与获得提示'")
     && latestReleaseEntry.includes("title: '排位、战绩与称号'")
     && latestReleaseEntry.includes("title: '对局记录与回放'")
-    && latestReleaseEntry.includes("title: '卡牌结算与规则一致性'")
+    && latestReleaseEntry.includes("title: '天灾与持续规则'")
+    && latestReleaseEntry.includes("title: '开场、衍生卡与状态'")
+    && latestReleaseEntry.includes("title: '发动、目标与位置'")
+    && latestReleaseEntry.includes("title: '实际分支与公开信息'")
     && latestReleaseEntry.includes("title: '页面体验与连接稳定性'")
     && ['实际可用画面比例', '当前天灾值', '确认抵挡／不抵挡', '确认支援／不支援',
       '复制牌库码', '未公开牌库不会生成无效二维码', '右侧图鉴同源详情栏', 'Profile 头像',
-      '获得异画！', '主宰战绩', '导入本地 JSON', '全卡池']
+      '获得异画！', '主宰战绩', '导入本地 JSON', '天灾造成的伤害、弃置、位移、加入手牌',
+      '风暴乱象', '众神之乡', '哮天犬·稚', '阿尔忒弥斯', '任意主神', '彼界 阿瓦隆',
+      '太阳城阵营效果', '晋升登场', '主动休整', '雷神之锤', '黄金圣甲虫', '防御部署',
+      '天下布武', '议和谈判', '后选择的效果先结算']
       .every(detail => latestReleaseEntry.includes(detail))
+    && !['全卡池的发动声明', '统一使用同一生命周期', '墨子、拉美西斯', '佣兵部队、绝对防御'].some(detail => latestReleaseEntry.includes(detail))
     && internalReleaseTerms.every(term => !latestReleaseEntry.includes(term)),
   '最新玩家更新日志必须覆盖本期自适应布局、对战操作、牌库社区、异画、排位、回放、卡效和连接变化，并排除后台和内部治理内容',
 ])
