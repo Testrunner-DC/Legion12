@@ -1,4 +1,10 @@
-html[data-l12-mobile=true] { --l12-mobile-dock-width:clamp(104px,calc(var(--l12-viewport-height,100vh) * .26),132px); }
+html[data-l12-mobile=true] {
+  --l12-mobile-hand-h:clamp(64px,calc(var(--l12-viewport-height,100vh) * .16),102px);
+  --l12-mobile-master-w:clamp(38px,min(calc((var(--l12-viewport-height,100vh) - var(--l12-mobile-hand-h) - 68px) * 5 / 28),calc((var(--l12-viewport-width,100vw) - 70px) / 10.38)),84px);
+  --l12-mobile-left-rail-w:max(78px,calc(var(--l12-mobile-master-w) * 1.3));
+  --l12-mobile-dock-width:max(60px,calc(var(--l12-mobile-master-w) * 1.18));
+  --l12-mobile-utility-h:34px;
+}
 /* One flow owns mobile controls. This sheet never selects desktop content.
    The host already applies visualViewport + safe-area, so offsets are local. */
 #l12-landscape-teleports .mobile-battle-dock {
@@ -9,10 +15,15 @@ html[data-l12-mobile=true] { --l12-mobile-dock-width:clamp(104px,calc(var(--l12-
   color:#edf1ec; font:11px/1.25 'Microsoft YaHei','微软雅黑',sans-serif;
   pointer-events:auto; isolation:isolate;
 }
+#l12-landscape-teleports .mobile-battle-dock__utility {
+  position:absolute; z-index:2200; left:4px; bottom:4px;
+  box-sizing:border-box; width:var(--l12-mobile-left-rail-w,64px); height:var(--l12-mobile-utility-h,34px);
+  min-width:0; min-height:0; overflow:hidden; pointer-events:auto;
+}
 #l12-landscape-teleports .mobile-battle-dock > div { min-width:0; min-height:0; }
 .mobile-battle-dock__tools { flex:0 1 auto; max-height:42%; overflow:auto; }
 .mobile-battle-dock__context { flex:1 1 0; overflow:auto; }
-.mobile-battle-dock__primary,.mobile-battle-dock__utility { flex:0 0 auto; }
+.mobile-battle-dock__primary { flex:0 0 auto; }
 .mobile-battle-dock__tools,.mobile-battle-dock__context {
   display:flex; flex-direction:column; gap:4px; overscroll-behavior:contain;
   scrollbar-width:thin; scrollbar-color:#638480 #0a1113; touch-action:pan-y;
@@ -37,6 +48,8 @@ html[data-l12-mobile=true] { --l12-mobile-dock-width:clamp(104px,calc(var(--l12-
 #l12-landscape-teleports .mobile-battle-dock :is(.battle-route-controls,.card-context-actions,.board-target-controls,.board-mode-hint,.l12-actions) {
   display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px !important;
 }
+#l12-landscape-teleports .mobile-battle-dock .mobile-battle-dock__context > :first-child { margin-top:auto !important; }
+#l12-landscape-teleports .mobile-battle-dock :is(.battle-route-controls,.card-context-actions,.l12-actions) { grid-template-columns:minmax(0,1fr); }
 #l12-landscape-teleports .mobile-battle-dock :is(.board-target-controls,.board-mode-hint) { grid-template-columns:minmax(0,1fr); }
 #l12-landscape-teleports .mobile-battle-dock :is(.card-context-actions,.l12-actions) > button:last-child { grid-column:1/-1; }
 #l12-landscape-teleports .mobile-battle-dock :is(.action-panel > h3,.l12-actions > p,.battle-route-controls > span,.combat-trace,.board-slot-controls > .l12-card-image) { display:none !important; }
@@ -47,8 +60,8 @@ html[data-l12-mobile=true] { --l12-mobile-dock-width:clamp(104px,calc(var(--l12-
 #l12-landscape-teleports .mobile-battle-dock .board-target-controls strong { max-width:none !important; font-size:11px; overflow-wrap:anywhere; }
 #l12-landscape-teleports .mobile-battle-dock .board-target-controls :is(span,small) { font-size:10px; }
 #l12-landscape-teleports .mobile-battle-dock .player-panel { display:flex; flex-direction:column; gap:3px; border:0; background:none; }
-#l12-landscape-teleports .mobile-battle-dock .player-summary { display:none; }
-#l12-landscape-teleports .mobile-battle-dock .player-panel hr { display:none; }
+#l12-landscape-teleports .mobile-battle-dock .player-summary { display:grid; gap:2px; }
+#l12-landscape-teleports .mobile-battle-dock .player-panel hr { display:block; width:100%; margin:1px 0; border:0; border-top:1px solid #526563; }
 #l12-landscape-teleports .mobile-battle-dock .mobile-record-trigger { min-height:32px !important; }
 #l12-landscape-teleports .mobile-battle-dock .mobile-timed-clocks { display:grid; gap:3px; }
 #l12-landscape-teleports .mobile-battle-dock .mobile-rail-clock { width:100%; min-width:0; font-size:10px; }
@@ -57,9 +70,9 @@ html[data-l12-mobile=true] { --l12-mobile-dock-width:clamp(104px,calc(var(--l12-
 #l12-landscape-teleports .mobile-battle-dock .combat-versus span { max-width:100%; }
 #l12-landscape-teleports .mobile-battle-dock .combat-versus em { font-size:12px; }
 #l12-landscape-teleports .mobile-battle-dock .combat-decision-minimize { position:static; width:100%; margin-bottom:4px; }
-#l12-landscape-teleports .mobile-battle-dock .battle-utility-dock { width:100%; height:34px; box-shadow:none; }
-#l12-landscape-teleports .mobile-battle-dock .battle-utility-dock button { height:32px; min-height:32px; padding:4px; }
-#l12-landscape-teleports .mobile-battle-dock .battle-utility-dock svg { width:16px; height:16px; }
+#l12-landscape-teleports .mobile-battle-dock__utility .battle-utility-dock { width:100%; height:var(--l12-mobile-utility-h,34px); box-shadow:none; }
+#l12-landscape-teleports .mobile-battle-dock__utility .battle-utility-dock button { height:32px; min-height:32px; padding:3px; }
+#l12-landscape-teleports .mobile-battle-dock__utility .battle-utility-dock svg { width:16px; height:16px; }
 /* A minimized prompt is a real row, not a transparent viewport-size hitbox. */
 html[data-l12-viewport] #l12-landscape-teleports .mobile-battle-dock .mobile-safe-overlay.minimized {
   position:static !important; inset:auto !important; width:100% !important; height:auto !important;
@@ -71,7 +84,6 @@ html[data-l12-viewport] #l12-landscape-teleports .mobile-battle-dock .mobile-saf
    remains available while ordinary prompts are minimized. */
 html[data-l12-mobile=true] #l12-landscape-teleports .battle-modal-mask { z-index:2147483620; }
 
-#l12-landscape-teleports .mobile-battle-dock .player-panel.identity-expanded .player-summary { display:grid; gap:2px; }
 #l12-landscape-teleports .mobile-battle-dock .player-panel .player-summary-primary > strong { font-size:10px; }
 #l12-landscape-teleports .mobile-battle-dock .player-summary-meta { font-size:9px; display:flex; flex-wrap:wrap; gap:2px; }
 

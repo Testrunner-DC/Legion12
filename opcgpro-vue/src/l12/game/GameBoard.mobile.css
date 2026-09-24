@@ -642,7 +642,7 @@
   left:4px !important;
   top:8px !important;
   box-sizing:border-box;
-  width:clamp(88px,calc(var(--l12-viewport-height,100vh) * .22),118px);
+  width:var(--l12-mobile-left-rail-w);
   height:clamp(24px,calc(var(--l12-viewport-height,100vh) * .07),30px);
   min-height:0;
   padding:3px 5px;
@@ -821,28 +821,28 @@
      the remaining felt between two players and two square formation rows.
      This keeps every card-bearing zone on one scale instead of capping tall
      screens at the old 90px tablet value. */
-  --l12-mobile-left-rail-w:clamp(88px,calc(var(--l12-viewport-height,100vh) * .22),118px);
   --l12-mobile-right-rail-w:calc(var(--l12-mobile-dock-width) + 8px);
-  --l12-mobile-outer-reserve:calc(var(--l12-mobile-left-rail-w) + var(--l12-mobile-right-rail-w) + clamp(132px,calc(var(--l12-viewport-height,100vh) * .195),150px));
-  /* The width equation also reserves the three inter-group gaps and the
-     player's inner frame. Without this fixed reserve, mid-size 4:3 canvases
-     centered an over-wide group and leaked a few pixels through both sides. */
-  --l12-mobile-card-h:clamp(46px,min(calc((var(--l12-viewport-width,100vw) - var(--l12-mobile-outer-reserve) - 16px) / 5.15),calc((var(--l12-viewport-height,100vh) - var(--l12-mobile-hand-h) - 60px) / 4 - 2px)),166px);
-  --l12-mobile-card-w:calc(var(--l12-mobile-card-h) * 5 / 7);
+  /* Every mobile zone derives from the master width.  Side rails and the
+     board no longer grow on unrelated viewport formulas. */
+  --l12-mobile-card-w:var(--l12-mobile-master-w);
+  --l12-mobile-card-h:calc(var(--l12-mobile-master-w) * 7 / 5);
+  --l12-mobile-relic-w:calc(var(--l12-mobile-master-w) * .9);
+  --l12-mobile-relic-h:calc(var(--l12-mobile-relic-w) * 7 / 5);
+  --l12-mobile-pile-w:calc(var(--l12-mobile-master-w) * .7);
+  --l12-mobile-pile-h:calc(var(--l12-mobile-pile-w) * 7 / 5);
   --l12-mobile-slot:calc(var(--l12-mobile-card-h) + 2px);
   --l12-mobile-formation-w:calc(var(--l12-mobile-slot) * 3 + 4px);
-  --l12-mobile-commander-w:calc(var(--l12-mobile-card-w) * 2 + 4px);
-  --l12-mobile-resource-w:clamp(74px,calc(var(--l12-viewport-width,100vw) * .09),92px);
-  --l12-mobile-marker:min(19px,calc((var(--l12-mobile-commander-w) - 12px) / 5));
+  --l12-mobile-commander-w:calc(var(--l12-mobile-master-w) + var(--l12-mobile-relic-w) + 4px);
+  --l12-mobile-resource-w:clamp(74px,calc(var(--l12-mobile-master-w) * 1.1),92px);
+  --l12-mobile-marker:clamp(14px,calc(var(--l12-mobile-master-w) * .34),29px);
   --l12-mobile-marker-gap:clamp(1px,calc(var(--l12-viewport-height,100vh) * .004),4px);
-  --l12-mobile-hand-count-w:clamp(36px,calc(var(--l12-mobile-card-w) * .72),48px);
-  --l12-mobile-hand-count-h:clamp(14px,calc(var(--l12-viewport-height,100vh) * .033),24px);
-  --l12-mobile-hand-h:clamp(64px,calc(var(--l12-viewport-height,100vh) * .16),102px);
-  --l12-mobile-hand-card-h:calc(var(--l12-mobile-hand-h) - 6px);
-  --l12-mobile-morale-orb:clamp(12px,calc(var(--l12-viewport-height,100vh) * .022),17px);
+  --l12-mobile-hand-count-w:clamp(38px,calc(var(--l12-mobile-master-w) * .9),66px);
+  --l12-mobile-hand-count-h:clamp(18px,calc(var(--l12-mobile-master-w) * .42),32px);
+  --l12-mobile-hand-card-h:calc(var(--l12-mobile-hand-h) - 8px);
+  --l12-mobile-morale-orb:clamp(14px,calc(var(--l12-mobile-master-w) * .28),22px);
   --l12-mobile-hand-card-w:calc(var(--l12-mobile-hand-card-h) * 5 / 7);
   --l12-mobile-player-w:calc(var(--l12-viewport-width,100vw) - var(--l12-mobile-left-rail-w) - var(--l12-mobile-right-rail-w) - 38px);
-  --l12-mobile-player-track-w:calc(var(--l12-mobile-commander-w) + var(--l12-mobile-formation-w) + var(--l12-mobile-card-w) + var(--l12-mobile-resource-w));
+  --l12-mobile-player-track-w:calc(var(--l12-mobile-commander-w) + var(--l12-mobile-formation-w) + var(--l12-mobile-pile-w) + var(--l12-mobile-resource-w));
   --l12-mobile-group-gap:clamp(2px,calc((var(--l12-mobile-player-w) - var(--l12-mobile-player-track-w) - 4px) / 3),calc(var(--l12-mobile-card-w) * 1.5));
   --l12-mobile-rail-gap:clamp(3px,calc(var(--l12-viewport-height,100vh) * .012),5px);
   --l12-mobile-detail-handle-h:clamp(24px,calc(var(--l12-viewport-height,100vh) * .07),30px);
@@ -869,7 +869,7 @@
 .mobile-landscape-board .left-rail,.mobile-landscape-board .left-disaster-row,.mobile-landscape-board .left-disaster-row>.grand-panel { box-sizing:border-box; width:var(--l12-mobile-left-rail-w) !important; min-width:var(--l12-mobile-left-rail-w) !important; }
 .mobile-landscape-board :deep(.battlefield-half.l12-player-mat) {
   box-sizing:border-box !important;
-  grid-template-columns:var(--l12-mobile-commander-w) var(--l12-mobile-formation-w) var(--l12-mobile-card-w) var(--l12-mobile-resource-w) !important;
+  grid-template-columns:var(--l12-mobile-commander-w) var(--l12-mobile-formation-w) var(--l12-mobile-pile-w) var(--l12-mobile-resource-w) !important;
   gap:var(--l12-mobile-group-gap) !important;
   justify-content:center !important;
   padding-inline:2px !important;
@@ -877,7 +877,7 @@
 .mobile-landscape-board :deep(.battlefield-half .commander-zone) {
   width:var(--l12-mobile-commander-w) !important;
   min-width:var(--l12-mobile-commander-w) !important;
-  grid-template-columns:repeat(2,var(--l12-mobile-card-w)) !important;
+  grid-template-columns:var(--l12-mobile-master-w) var(--l12-mobile-relic-w) !important;
   grid-template-rows:minmax(0,1fr) calc(var(--l12-mobile-marker) + 2px) !important;
   gap:2px 4px !important;
 }
@@ -903,24 +903,34 @@
   line-height:1;
   white-space:nowrap;
 }
-.mobile-landscape-board :deep(.battlefield-half .mobile-hand-count i) { color:#aebdb9; font-size:clamp(7px,calc(var(--l12-viewport-height,100vh) * .0135),9px); font-style:normal; }
-.mobile-landscape-board :deep(.battlefield-half .mobile-hand-count b) { color:#fff; font-size:clamp(8px,calc(var(--l12-viewport-height,100vh) * .0155),11px); font-variant-numeric:tabular-nums; }
+.mobile-landscape-board :deep(.battlefield-half .mobile-hand-count i) { color:#aebdb9; font-size:clamp(8px,calc(var(--l12-mobile-master-w) * .16),12px); font-style:normal; }
+.mobile-landscape-board :deep(.battlefield-half .mobile-hand-count b) { color:#fff; font-size:clamp(11px,calc(var(--l12-mobile-master-w) * .24),18px); font-variant-numeric:tabular-nums; }
 .mobile-landscape-board :deep(.battlefield-half .master-column),
-.mobile-landscape-board :deep(.battlefield-half .relic-zone),
-.mobile-landscape-board :deep(.battlefield-half .mini-master),
-.mobile-landscape-board :deep(.battlefield-half .relic-zone .card-tile),
-.mobile-landscape-board :deep(.battlefield-half .relic-zone .card-tile.tapped) {
+.mobile-landscape-board :deep(.battlefield-half .mini-master) {
   box-sizing:border-box !important;
-  width:var(--l12-mobile-card-w) !important;
-  min-width:var(--l12-mobile-card-w) !important;
-  max-width:var(--l12-mobile-card-w) !important;
+  width:var(--l12-mobile-master-w) !important;
+  min-width:var(--l12-mobile-master-w) !important;
+  max-width:var(--l12-mobile-master-w) !important;
   height:var(--l12-mobile-card-h) !important;
   min-height:var(--l12-mobile-card-h) !important;
   max-height:var(--l12-mobile-card-h) !important;
-  flex-basis:var(--l12-mobile-card-w) !important;
+  flex-basis:var(--l12-mobile-master-w) !important;
   aspect-ratio:5/7 !important;
 }
-.mobile-landscape-board :deep(.battlefield-half .extra-relic) { width:var(--l12-mobile-card-w) !important; height:var(--l12-mobile-card-h) !important; max-width:var(--l12-mobile-card-w) !important; max-height:var(--l12-mobile-card-h) !important; }
+.mobile-landscape-board :deep(.battlefield-half .relic-zone),
+.mobile-landscape-board :deep(.battlefield-half .relic-zone .card-tile),
+.mobile-landscape-board :deep(.battlefield-half .relic-zone .card-tile.tapped) {
+  box-sizing:border-box !important;
+  width:var(--l12-mobile-relic-w) !important;
+  min-width:var(--l12-mobile-relic-w) !important;
+  max-width:var(--l12-mobile-relic-w) !important;
+  height:var(--l12-mobile-relic-h) !important;
+  min-height:var(--l12-mobile-relic-h) !important;
+  max-height:var(--l12-mobile-relic-h) !important;
+  flex-basis:var(--l12-mobile-relic-w) !important;
+  aspect-ratio:5/7 !important;
+}
+.mobile-landscape-board :deep(.battlefield-half .extra-relic) { width:var(--l12-mobile-relic-w) !important; height:var(--l12-mobile-relic-h) !important; max-width:var(--l12-mobile-relic-w) !important; max-height:var(--l12-mobile-relic-h) !important; }
 .mobile-landscape-board :deep(.battlefield-half .mini-master>span:not(.master-away)) { right:var(--l12-card-edge,1px) !important; bottom:var(--l12-card-edge,1px) !important; left:var(--l12-card-edge,1px) !important; font-size:var(--l12-mobile-master-name-font) !important; }
 .mobile-landscape-board :deep(.battlefield-half .master-health) { right:var(--l12-card-edge,1px) !important; bottom:var(--l12-mobile-master-health-h) !important; min-width:0 !important; height:var(--l12-mobile-master-health-h) !important; padding:0 var(--l12-card-stat-pad-x,1px) !important; font-size:var(--l12-mobile-master-health-font) !important; line-height:var(--l12-mobile-master-health-h) !important; }
 .mobile-landscape-board :deep(.battlefield-half .master-health small) { font-size:var(--l12-mobile-master-health-small) !important; }
@@ -955,10 +965,10 @@
   aspect-ratio:5/7 !important;
 }
 .mobile-landscape-board :deep(.battlefield-half .mat-piles) {
-  width:var(--l12-mobile-card-w) !important;
-  min-width:var(--l12-mobile-card-w) !important;
-  height:calc(var(--l12-mobile-card-h) * 2 + 2px) !important;
-  grid-template-rows:repeat(2,var(--l12-mobile-card-h)) !important;
+  width:var(--l12-mobile-pile-w) !important;
+  min-width:var(--l12-mobile-pile-w) !important;
+  height:calc(var(--l12-mobile-pile-h) * 2 + 2px) !important;
+  grid-template-rows:repeat(2,var(--l12-mobile-pile-h)) !important;
   gap:2px !important;
   align-content:center !important;
 }
@@ -966,10 +976,10 @@
 .mobile-landscape-board :deep(.battlefield-half .mat-piles .pile.deck),
 .mobile-landscape-board :deep(.battlefield-half .mat-piles .pile-card) {
   box-sizing:border-box !important;
-  width:var(--l12-mobile-card-w) !important;
-  min-width:var(--l12-mobile-card-w) !important;
-  height:var(--l12-mobile-card-h) !important;
-  min-height:var(--l12-mobile-card-h) !important;
+  width:var(--l12-mobile-pile-w) !important;
+  min-width:var(--l12-mobile-pile-w) !important;
+  height:var(--l12-mobile-pile-h) !important;
+  min-height:var(--l12-mobile-pile-h) !important;
   aspect-ratio:5/7 !important;
 }
 .mobile-landscape-board :deep(.battlefield-half .mat-piles .pile .pile-count) { right:var(--l12-card-edge,1px) !important; top:var(--l12-card-edge,1px) !important; min-width:var(--l12-mobile-pile-badge-h) !important; height:var(--l12-mobile-pile-badge-h) !important; padding:0 var(--l12-card-stat-pad-x,1px) !important; font-size:var(--l12-mobile-pile-count-font) !important; line-height:var(--l12-mobile-pile-badge-h) !important; }
@@ -991,16 +1001,18 @@
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb) { width:var(--l12-mobile-morale-orb) !important; min-width:var(--l12-mobile-morale-orb) !important; height:var(--l12-mobile-morale-orb) !important; min-height:var(--l12-mobile-morale-orb) !important; }
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb img) { width:calc(var(--l12-mobile-morale-orb) - 4px) !important; height:calc(var(--l12-mobile-morale-orb) - 4px) !important; }
 .mobile-landscape-board .board-center { grid-template-rows:0 0 minmax(0,1fr) 0 var(--l12-mobile-hand-h) !important; }
-.mobile-landscape-board .board-center > .l12-hand:last-child { box-sizing:border-box; height:var(--l12-mobile-hand-h) !important; min-height:var(--l12-mobile-hand-h) !important; margin-top:0 !important; padding:2px 4px !important; align-items:flex-start !important; overflow-x:auto !important; overflow-y:hidden !important; }
+.mobile-landscape-board .board-center > .l12-hand:last-child { box-sizing:border-box; height:var(--l12-mobile-hand-h) !important; min-height:var(--l12-mobile-hand-h) !important; margin-top:0 !important; padding:4px 4px 2px !important; align-items:flex-start !important; overflow-x:auto !important; overflow-y:hidden !important; }
 .mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap),
 .mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back),
 .mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-tile) { box-sizing:border-box !important; top:0 !important; bottom:auto !important; width:var(--l12-mobile-hand-card-w) !important; min-width:var(--l12-mobile-hand-card-w) !important; height:var(--l12-mobile-hand-card-h) !important; min-height:var(--l12-mobile-hand-card-h) !important; flex:0 0 var(--l12-mobile-hand-card-w) !important; aspect-ratio:5/7 !important; }
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap.selected) { transform:none !important; }
+.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap.selected .card-tile) { position:relative; z-index:2; outline-offset:-2px !important; }
 
 /* The complete left rail participates in one allocation model. The persistent
    detail handle is a real first row, never a fixed overlay. Current disaster,
    value and the four round cards each own a non-overlapping rectangle; optional
    opponent/my extra zones share only the remaining height. */
-.mobile-landscape-board .left-rail { box-sizing:border-box !important; gap:var(--l12-mobile-rail-gap) !important; overflow:hidden !important; }
+.mobile-landscape-board .left-rail { box-sizing:border-box !important; gap:var(--l12-mobile-rail-gap) !important; padding-bottom:calc(var(--l12-mobile-utility-h,34px) + 4px) !important; overflow:hidden !important; }
 .mobile-landscape-board .mobile-detail-handle-reservation { display:block; box-sizing:border-box; width:100%; height:var(--l12-mobile-detail-handle-h); min-height:var(--l12-mobile-detail-handle-h); flex:0 0 var(--l12-mobile-detail-handle-h); pointer-events:none; }
 .mobile-landscape-board .left-disaster-row { display:grid !important; width:100% !important; height:auto !important; min-height:0 !important; flex:0 0 auto !important; grid-template-rows:var(--l12-mobile-current-disaster-h) var(--l12-mobile-disaster-value-h) calc(var(--l12-mobile-disaster-orb) * 2 + var(--l12-mobile-rail-gap) + 8px) !important; gap:var(--l12-mobile-rail-gap) !important; }
 .mobile-landscape-board .left-disaster-row>.current-disaster-panel { box-sizing:border-box !important; min-height:var(--l12-mobile-current-disaster-h) !important; height:var(--l12-mobile-current-disaster-h) !important; padding:2px !important; overflow:hidden !important; }

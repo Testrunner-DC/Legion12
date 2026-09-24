@@ -15,8 +15,8 @@ onBeforeUnmount(() => { for (const lane of ['tools', 'context', 'primary', 'util
       <div :ref="element => bind('tools', element)" class="mobile-battle-dock__tools" aria-label="对局辅助功能" />
       <div :ref="element => bind('context', element)" class="mobile-battle-dock__context" aria-label="当前操作" aria-live="polite" />
       <div :ref="element => bind('primary', element)" class="mobile-battle-dock__primary" />
-      <div :ref="element => bind('utility', element)" class="mobile-battle-dock__utility" />
     </aside>
+    <div :ref="element => bind('utility', element)" class="mobile-battle-dock__utility" aria-label="对局通用功能" />
   </Teleport>
 </template>
 

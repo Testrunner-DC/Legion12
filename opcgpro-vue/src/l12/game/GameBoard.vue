@@ -81,7 +81,6 @@ const mobileMoraleReason = ref('')
 // On phones the card face stays intentionally compact. The independent left
 // drawer is opened only through its persistent handle, keeping a card tap safe.
 const mobileInspectorOpen = ref(false)
-const mobileIdentityOpen = ref(false)
 const selectedId = ref<string | null>(null)
 const focusCard = ref<Card | null>(null)
 const focusDetailCard = computed<DeckCard | null>(() => {
@@ -1273,8 +1272,7 @@ function statusTexts(card: Card) {
           <!-- Phone status lanes are intentionally not over the hands.  A timed
                match instead receives its own reserved pair of compact clocks in
                this otherwise unused section of the right rail. -->
-          <BattleDockPortal lane="tools"><section class="grand-panel player-panel" data-ui-contract="complete-player-summary" :class="{ 'identity-expanded': mobileIdentityOpen }">
-            <button v-if="mobileLandscapeViewport" type="button" :aria-expanded="mobileIdentityOpen" @click="mobileIdentityOpen = !mobileIdentityOpen">双方信息</button>
+          <BattleDockPortal lane="tools"><section class="grand-panel player-panel" data-ui-contract="complete-player-summary">
             <button v-if="mobileLandscapeViewport" type="button" class="mobile-record-trigger" @click="mobileRecordOpen = true; mobileRecordMinimized = false">对局记录</button>
             <article class="player-summary opponent-summary">
               <div class="player-summary-primary"><b>对方</b><strong>{{ viewEnemy.name || '未命名玩家' }}</strong></div>
@@ -1318,7 +1316,7 @@ function statusTexts(card: Card) {
           <BattleEventLog :events="game.recentEvents ?? []" :you="game.you" :names="game.players.map(player => player.name)" @focus="focusCard = $event" />
         </section>
       </Teleport>
-      <BattleDockPortal lane="tools"><button v-if="mobileLandscapeViewport && mobileRecordMinimized" class="mobile-record-restore" type="button" @click="mobileRecordOpen = true; mobileRecordMinimized = false">恢复对局记录</button></BattleDockPortal>
+      <BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport && mobileRecordMinimized" class="mobile-record-restore" type="button" @click="mobileRecordOpen = true; mobileRecordMinimized = false">恢复对局记录</button></BattleDockPortal>
       <Teleport :to="landscapeTeleportTarget()">
         <Transition name="mobile-card-inspector">
           <aside v-if="mobileLandscapeViewport && mobileInspectorOpen" class="mobile-card-inspector mobile-safe-overlay" role="dialog" aria-modal="false" aria-label="卡牌详情">

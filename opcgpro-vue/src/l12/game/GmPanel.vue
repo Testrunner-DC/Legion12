@@ -117,7 +117,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <BattleDockPortal lane="tools"><button v-if="!open" class="gm-open" title="打开 GM 面板（T）" @click="open = true">GM</button></BattleDockPortal>
+  <BattleDockPortal lane="context"><button v-if="!open" class="gm-open" title="打开 GM 面板（T）" @click="open = true">GM</button></BattleDockPortal>
   <BattleOverlayPortal><aside v-if="open" class="gm-panel">
     <header><div><small>TEST AUTHORITY</small><b>GM 调试面板</b></div><button @click="open = false">×</button></header>
     <p class="security">仅本次单人沙盒有效 · 所有操作由服务端校验并记录</p>
