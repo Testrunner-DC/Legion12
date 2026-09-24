@@ -910,14 +910,15 @@ const contracts = [
   [board.includes('promotionFoundationTargetIds') && board.includes('promotionOptions')
     && l12ServerSources.includes('NextS2PromotionGodPowerDiscount'), '晋升登场必须高亮服务端权威合法基底并纳入锻造炉减免'],
   [deckEditor.includes('主宰') && deckEditor.includes('主牌库') && deckEditor.includes('额外卡牌') && !deckEditor.includes('可用卡牌'), '牌库编辑器中区必须保持主宰/主牌库/额外卡牌三标签'],
-  [deckEditor.includes('class="catalog-filter-bar" aria-label="主牌库筛选"') && !deckEditor.includes('<h2>构筑设定</h2>') && deckEditor.includes('costFilter') && deckEditor.includes('disasterFilter') && deckEditor.includes('sortMode'), '牌库编辑器必须把卡牌档案式筛选放在主牌库卡池上方，并保留搜索、类型、卡池、费用、天灾等级与排序（不含阵营）'],
+  [deckEditor.includes('class="catalog-filter-bar"') && deckEditor.includes('aria-label="主牌库筛选"') && !deckEditor.includes('<h2>构筑设定</h2>')
+    && ['factionFilter', 'costFilter', 'troopsFilter', 'disasterFilter', 'legalityFilter', 'sortMode'].every(value => deckEditor.includes(value)), '牌库编辑器必须把完整卡池筛选放在主牌库卡池上方，并保留阵营、类型、卡池、费用、兵力、天灾、禁限与排序'],
   [deckEditor.includes('class="deck-detail-panel grand-panel"') && deckEditor.includes('class="saved-decks-panel grand-panel"') && deckEditor.includes('.saved-list{display:grid;gap:5px;overflow-y:auto'), '牌库编辑器卡牌详情与已保存牌库必须使用独立盒子，且已保存牌库可独立纵向滚动'],
   [deckEditor.indexOf('class="current-deck-summary"') > deckEditor.indexOf('class="deck-catalog grand-panel"')
     && deckEditor.indexOf('class="current-deck-summary"') < deckEditor.indexOf('<p class="kicker">CARD POOL</p>')
     && deckEditor.includes('masterProfileUrl(selectedMaster.id') && deckEditor.includes('士气 {{ moraleIds.length }} 张')
     && !deckEditor.includes('class="master-preview"'), '当前主宰头像、名称、阵营与士气数必须左对齐置于中间卡池盒顶部，左栏只保留选中卡牌详情'],
   [(deckEditor.match(/class="deck-entry-row"/g)?.length ?? 0) >= 3
-    && deckEditor.includes('class="selected-extra-cards"') && deckEditor.includes('v-for="trial in selectedTrials"')
+    && deckEditor.includes('data-deck-section="extra"') && deckEditor.includes('v-for="trial in selectedTrials"')
     && deckEditor.includes('v-for="card in automaticExtraCards"'), '右下显式试炼与主宰自动额外卡必须复用主牌库横向条目视觉'],
   [decks.includes("'S01-02M1': ['S01-02M2']") && decks.includes('export function automaticExtraCardIdsForMaster')
     && deckEditor.includes('automaticExtraCardIdsForMaster(selectedMaster.value?.id)')
@@ -1525,8 +1526,8 @@ contracts.push(
     && titleRules.includes('20场') && titleRules.includes('10名') && titleRules.includes('UTC+8')
     && titleRules.includes('15场') && titleRules.includes('镜像局'),
     '排行榜和称号管理必须提供同一完整最强称号说明，搜索框独立收窄'],
-  [sandboxPicker.includes('native-orientation') && sandboxPicker.includes('CatalogCardDetails')
-    && sandboxPicker.includes('max-width:760px') && catalogDetails.includes('effect'),
+  [sandboxPicker.includes('CatalogCardDetails') && sandboxPicker.includes('max-width:760px')
+    && catalogDetails.includes('CardDetailContent') && !catalogDetails.includes('cardTypeLabel'),
     'GM选牌必须保留横卡自然方向、可查看详情且窄桌面筛选不越界'],
   [app.includes('FriendRequestNotifications') && friendNotifications.includes("resolve('block')")
     && friendNotifications.includes("resolve('reject')") && friendNotifications.includes("resolve('accept')")

@@ -47,6 +47,7 @@ export interface SavedL12Deck {
   cardIds: string[]
   moraleIds: string[]
   specialIds: string[]
+  benchIds?: string[]
   alternateArtSelections?: Record<string, string>
   alternateArtCopies?: Record<string, string[]>
   updatedAt: string
@@ -234,6 +235,8 @@ function normalizeSavedDeck(deck: SavedL12Deck): SavedL12Deck {
     cardIds: [...deck.cardIds],
     moraleIds: (deck.moraleIds ?? []).map(canonicalMoraleCardId),
     specialIds: [...(deck.specialIds ?? [])],
+    benchIds: (deck.benchIds ?? []).filter(id => typeof id === 'string' && id.trim())
+      .slice(0, 200).map(id => id.trim()),
     alternateArtSelections,
     alternateArtCopies,
   }

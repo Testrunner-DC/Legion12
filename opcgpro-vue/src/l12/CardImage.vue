@@ -45,7 +45,7 @@ const activeSource = computed(() => resolved.value.sources[sourceIndex.value]
 const useHigh = computed(() => props.intent === 'detail' && highRequested.value)
 const imageUrl = computed(() => useHigh.value ? activeSource.value.webp : activeSource.value.lowWebp)
 const avifUrl = computed(() => useHigh.value && !avifDisabled.value ? activeSource.value.avif : undefined)
-const landscapeThumbnail = computed(() => !props.nativeOrientation && props.intent === 'thumb' && resolved.value.orientation === 'landscape')
+const landscapeImage = computed(() => resolved.value.orientation === 'landscape')
 const imageReady = computed(() => resolutionComplete.value || activeSource.value.kind !== 'placeholder')
 
 async function refresh() {
@@ -121,7 +121,7 @@ onMounted(refresh)
 <template>
   <picture
     class="l12-card-image"
-    :class="{ 'landscape-thumbnail-image': landscapeThumbnail }"
+    :class="{ 'l12-card-image--landscape': landscapeImage }"
     :data-source="activeSource.kind"
     :data-orientation="resolved.orientation || 'unknown'"
     @mouseenter="requestHighResolution"
@@ -149,5 +149,6 @@ onMounted(refresh)
 .l12-card-image{display:block;width:100%;height:100%;overflow:hidden;background:#090d0e;line-height:0}
 .l12-card-image__img{display:block;width:100%;height:100%;background:#090d0e}
 .l12-card-image__resolving{display:block;width:100%;height:100%;background:#090d0e}
-.l12-card-image.landscape-thumbnail-image{position:relative;left:50%;top:50%;width:140%;height:71.43%;transform:translate(-50%,-50%) rotate(90deg);transform-origin:center}
+.l12-card-image--landscape{position:static!important;left:auto!important;top:auto!important;width:100%!important;height:100%!important;transform:none!important}
+.l12-card-image--landscape .l12-card-image__img{object-position:center}
 </style>

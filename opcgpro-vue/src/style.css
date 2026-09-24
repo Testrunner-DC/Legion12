@@ -1,4 +1,5 @@
 :root {
+  --l12-card-detail-sidebar-width: 274px;
   font-family: 'Noto Sans SC', system-ui, sans-serif;
   color: #eee8d9;
   background: #080c0f;
@@ -235,7 +236,7 @@ body::before{opacity:.56;background-image:repeating-radial-gradient(ellipse at 2
 .archive-version-count{position:absolute;right:3px;bottom:3px;z-index:2;display:grid;min-width:20px;height:20px;padding:0 5px;place-items:center;border:1px solid rgba(255,255,255,.72);border-radius:999px;background:rgba(5,9,10,.78);color:#fff;font:900 var(--l12-board-copy,13px) 'Microsoft YaHei','微软雅黑',sans-serif}
 .archive-version-arrow{position:absolute;top:0;bottom:0;z-index:3;width:34px;padding:0;border:0;background:transparent;color:rgba(255,255,255,.72);font:300 max(32px,var(--l12-board-copy,13px))/1 Georgia,serif;text-shadow:0 1px 5px #000;opacity:.72;cursor:pointer;transition:color .15s,opacity .15s,background .15s}
 .archive-version-arrow.previous{left:0}.archive-version-arrow.next{right:0}.archive-version-arrow:hover,.archive-version-arrow:focus-visible{background:rgba(0,0,0,.22);color:#fff;opacity:1;outline:0}
-.archive-card.landscape-thumbnail .archive-image-open>.l12-card-image:not(.landscape-thumbnail-image){position:absolute;left:50%;top:50%;width:140%;height:71.43%;transform:translate(-50%,-50%) rotate(90deg);transform-origin:center}
+.archive-card.landscape-thumbnail .archive-card-image{aspect-ratio:8/5}.archive-card.landscape-thumbnail .archive-image-open>.l12-card-image{width:100%;height:100%;transform:none}
 .archive-detail-image.horizontal{width:250px;aspect-ratio:8/5}
 .card-tile.horizontal-card{height:auto;aspect-ratio:8/5}
 .card-inspector>.card-tile.horizontal-card{width:100%;max-width:238px;height:auto;flex:0 0 auto;aspect-ratio:8/5}

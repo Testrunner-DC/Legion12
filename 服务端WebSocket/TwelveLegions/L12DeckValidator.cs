@@ -17,6 +17,7 @@ public static class L12DeckValidator
             CardIds = preset.CardIds.ToList(),
             MoraleIds = preset.MoraleIds.ToList(),
             SpecialIds = preset.SpecialIds.ToList(),
+            BenchIds = preset.BenchIds.ToList(),
             AlternateArtSelections = new Dictionary<string, string>(preset.AlternateArtSelections, StringComparer.OrdinalIgnoreCase),
             AlternateArtCopies = preset.AlternateArtCopies.ToDictionary(item => item.Key,
                 item => item.Value.ToList(), StringComparer.OrdinalIgnoreCase),
@@ -170,6 +171,36 @@ public static class L12DeckValidator
             }
         }
 
+        var benchIds = submission.BenchIds ?? [];
+        if (benchIds.Count > 200)
+        {
+            error = "备选区最多保存 200 张卡牌";
+            return false;
+        }
+        foreach (var group in benchIds.GroupBy(id => id, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!catalog.Cards.TryGetValue(group.Key, out var card))
+            {
+                error = $"备选区包含未知卡牌：{group.Key}";
+                return false;
+            }
+            if (L12SpecialDeckRules.IsDerivedSpecialCard(card) || !MainDeckTypes.Contains(card.CardType))
+            {
+                error = $"{card.NameZh} 不能放入备选区";
+                return false;
+            }
+            if (card.Faction != "universal" && card.Faction != master.Faction)
+            {
+                error = $"备选区中的 {card.NameZh} 与主宰阵营不符";
+                return false;
+            }
+            if (group.Count() > Math.Min(card.DeckLimit, 50))
+            {
+                error = $"备选区同编号卡牌最多 {card.DeckLimit} 张：{card.Id}";
+                return false;
+            }
+        }
+
         deck = new L12PresetDeckDefinition
         {
             Name = name,
@@ -177,6 +208,7 @@ public static class L12DeckValidator
             CardIds = submission.CardIds.ToList(),
             MoraleIds = normalizedMoraleIds,
             SpecialIds = submission.SpecialIds.ToList(),
+            BenchIds = benchIds.Select(id => id.Trim()).ToList(),
             AlternateArtSelections = submission.AlternateArtSelections
                 .Where(item => !string.IsNullOrWhiteSpace(item.Key) && !string.IsNullOrWhiteSpace(item.Value))
                 .Take(128).ToDictionary(item => item.Key.Trim(), item => item.Value.Trim(), StringComparer.OrdinalIgnoreCase),

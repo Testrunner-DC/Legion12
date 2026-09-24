@@ -11,7 +11,7 @@ assert.equal(maintenanceCountdown({ ...config, immediateActive: true }, start - 
 const read = name => fs.readFileSync(new URL(`../src/l12/site/${name}`, import.meta.url), 'utf8')
 const editor = fs.readFileSync(new URL('../src/l12/L12DeckEditor.vue', import.meta.url), 'utf8')
 const banners = editor.match(/<CardImage class="deck-entry-banner"[^>]+>/g) || []
-assert.equal(banners.length, 3)
+assert.equal(banners.length, 6)
 assert.ok(banners.every(banner => banner.includes('native-orientation')))
 assert.match(read('SiteShell.vue'), /entry in updateEntries\.slice\(0, 10\)/)
 const lobby = read('BattleHubPage.vue')

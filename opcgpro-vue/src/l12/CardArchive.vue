@@ -357,6 +357,8 @@ function resetFilters() {
 </template>
 
 <style scoped>
+.archive-workspace{grid-template-columns:minmax(0,1fr) var(--l12-card-detail-sidebar-width,274px)}
+:global(.archive-card.landscape-thumbnail .archive-card-image){aspect-ratio:8/5}
 .archive-modal {
   box-sizing: border-box;
   overflow: hidden;

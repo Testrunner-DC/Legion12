@@ -26,7 +26,8 @@ public sealed record L12SessionRevocationResult(bool Found, string? SessionId, i
 public sealed record L12AccountDeckView(string Name, string MasterId, IReadOnlyList<string> CardIds,
     IReadOnlyList<string> MoraleIds, IReadOnlyList<string> SpecialIds, DateTimeOffset UpdatedAt,
     IReadOnlyDictionary<string, string>? AlternateArtSelections = null,
-    IReadOnlyDictionary<string, IReadOnlyList<string>>? AlternateArtCopies = null);
+    IReadOnlyDictionary<string, IReadOnlyList<string>>? AlternateArtCopies = null,
+    IReadOnlyList<string>? BenchIds = null);
 public sealed record L12PublishedDeckView(string Id, string OwnerId, string Author, L12AccountDeckView Deck,
     int Views, int Likes, int Copies, bool Liked, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
     bool SeasonCompliant = true, string? SeasonComplianceReason = null,
@@ -230,6 +231,7 @@ public sealed partial class L12PlatformStore
         public List<string> CardIds { get; set; } = [];
         public List<string> MoraleIds { get; set; } = [];
         public List<string> SpecialIds { get; set; } = [];
+        public List<string> BenchIds { get; set; } = [];
         public Dictionary<string, string> AlternateArtSelections { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, List<string>> AlternateArtCopies { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -833,6 +835,7 @@ public sealed partial class L12PlatformStore
             row.CardIds = deck.CardIds.ToList();
             row.MoraleIds = deck.MoraleIds.ToList();
             row.SpecialIds = deck.SpecialIds.ToList();
+            row.BenchIds = deck.BenchIds.ToList();
             row.AlternateArtSelections = SanitizeOwnedAlternateArtSelections(accountId, deck.AlternateArtSelections);
             row.AlternateArtCopies = SanitizeOwnedAlternateArtCopies(accountId, deck.CardIds, deck.AlternateArtCopies);
             row.UpdatedAt = DateTimeOffset.UtcNow;
@@ -1532,7 +1535,8 @@ public sealed partial class L12PlatformStore
         row.MoraleIds.ToArray(), row.SpecialIds.ToArray(), row.UpdatedAt,
         new Dictionary<string, string>(row.AlternateArtSelections ?? [], StringComparer.OrdinalIgnoreCase),
         (row.AlternateArtCopies ?? []).ToDictionary(item => item.Key,
-            item => (IReadOnlyList<string>)item.Value.ToArray(), StringComparer.OrdinalIgnoreCase));
+            item => (IReadOnlyList<string>)item.Value.ToArray(), StringComparer.OrdinalIgnoreCase),
+        row.BenchIds.ToArray());
     private L12PublishedDeckView ToView(PublishedDeckRow row, string? viewerAccountId)
     {
         var owner = _data.Accounts.FirstOrDefault(account => account.Id == row.OwnerId);
