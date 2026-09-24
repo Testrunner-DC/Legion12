@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { connect, inviteFriend, l12State, spectateRoom } from '@/l12/net'
 import { friendApi, platformState, type PlatformFriend } from '@/l12/platform'
 import { friendResource, refreshFriendResource, resetFriendResource } from '@/l12/friendResource'
+import { useActionGate } from '@/l12/useActionGate'
 
 const tab = ref<'friends' | 'requests' | 'add' | 'blocked'>('friends')
 const query = ref('')
@@ -13,6 +14,7 @@ const blocked = computed(() => friendResource.blocked)
 const presence = computed(() => l12State.presence)
 const selectedId = ref('')
 const busy = ref(false)
+const { pending: actionBusy, isPending: actionPending, run: runAction } = useActionGate()
 const notice = ref('')
 const incoming = computed(() => requests.value.filter(item => item.direction === 'incoming'))
 const outgoing = computed(() => requests.value.filter(item => item.direction === 'outgoing'))
@@ -20,6 +22,7 @@ const presenceById = computed(() => new Map(presence.value.map(item => [item.acc
 const onlineFriends = computed(() => friends.value.filter(item => presenceById.value.get(item.accountId)?.online ?? item.online))
 const selected = computed(() => friends.value.find(item => item.accountId === selectedId.value) ?? friends.value[0])
 const selectedPresence = computed(() => selected.value ? presenceById.value.get(selected.value.accountId) : undefined)
+const actionKey = (player: PlatformFriend) => `friend:${player.accountId}`
 
 async function refresh() {
   try {
@@ -35,30 +38,52 @@ async function search() {
   finally { busy.value = false }
 }
 async function add(player: PlatformFriend) {
-  try { notice.value = (await friendApi.request(player.accountId)).message; await refresh(); await search() }
-  catch (error) { notice.value = error instanceof Error ? error.message : '申请发送失败' }
+  await runAction(actionKey(player), async () => {
+    try { notice.value = (await friendApi.request(player.accountId)).message; await refresh(); await search() }
+    catch (error) { notice.value = error instanceof Error ? error.message : '申请发送失败' }
+  })
 }
 async function resolve(player: PlatformFriend, accept: boolean) {
-  try { notice.value = (await friendApi.resolve(player.accountId, accept)).message; await refresh() }
-  catch (error) { notice.value = error instanceof Error ? error.message : '申请处理失败' }
+  await runAction(actionKey(player), async () => {
+    try { notice.value = (await friendApi.resolve(player.accountId, accept)).message; await refresh() }
+    catch (error) { notice.value = error instanceof Error ? error.message : '申请处理失败' }
+  })
 }
-async function remove(player: PlatformFriend) { await friendApi.remove(player.accountId); notice.value = `已删除好友 ${player.username}`; await refresh() }
+async function remove(player: PlatformFriend) {
+  await runAction(actionKey(player), async () => {
+    try { await friendApi.remove(player.accountId); notice.value = `已删除好友 ${player.username}`; await refresh() }
+    catch (error) { notice.value = error instanceof Error ? error.message : '删除好友失败' }
+  })
+}
 async function blockPlayer(player: PlatformFriend) {
   if (!window.confirm(`屏蔽后双方将解除好友关系，确定屏蔽「${player.username}」吗？`)) return
-  notice.value = (await friendApi.block(player.accountId)).message; tab.value = 'blocked'; await refresh()
+  await runAction(actionKey(player), async () => {
+    try { notice.value = (await friendApi.block(player.accountId)).message; tab.value = 'blocked'; await refresh() }
+    catch (error) { notice.value = error instanceof Error ? error.message : '屏蔽失败' }
+  })
 }
-async function unblock(player: PlatformFriend) { await friendApi.unblock(player.accountId); notice.value = `已取消屏蔽 ${player.username}`; await refresh() }
+async function unblock(player: PlatformFriend) {
+  await runAction(actionKey(player), async () => {
+    try { await friendApi.unblock(player.accountId); notice.value = `已取消屏蔽 ${player.username}`; await refresh() }
+    catch (error) { notice.value = error instanceof Error ? error.message : '取消屏蔽失败' }
+  })
+}
 async function invite(player: PlatformFriend) {
   const state = presenceById.value.get(player.accountId)
   if (!state?.online || !state.canInvite) { notice.value = state?.actionReason || '该好友当前无法接受邀请'; return }
-  try { if (l12State.status !== 'online') await connect(); inviteFriend(player.accountId); notice.value = `正在向 ${player.username} 发送对战邀请…` }
-  catch (error) { notice.value = error instanceof Error ? error.message : '邀请发送失败' }
+  await runAction(actionKey(player), async () => {
+    try { if (l12State.status !== 'online') await connect(); inviteFriend(player.accountId); notice.value = `正在向 ${player.username} 发送对战邀请…` }
+    catch (error) { notice.value = error instanceof Error ? error.message : '邀请发送失败' }
+  })
 }
 async function spectate(player: PlatformFriend) {
   const state = presenceById.value.get(player.accountId)
   if (!state?.canSpectate || !state.roomCode) { notice.value = state?.actionReason || '当前房间不可观战'; return }
-  try { if (l12State.status !== 'online') await connect(); spectateRoom(state.roomCode); notice.value = `正在进入 ${player.username} 的对局…` }
-  catch (error) { notice.value = error instanceof Error ? error.message : '进入观战失败' }
+  const roomCode = state.roomCode
+  await runAction(actionKey(player), async () => {
+    try { if (l12State.status !== 'online') await connect(); spectateRoom(roomCode); notice.value = `正在进入 ${player.username} 的对局…` }
+    catch (error) { notice.value = error instanceof Error ? error.message : '进入观战失败' }
+  })
 }
 function externalChange() { void refresh() }
 watch(() => platformState.account?.id, accountId => { resetFriendResource(accountId); void refresh() })
@@ -75,24 +100,24 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="friends-page">
+  <div class="friends-page" :aria-busy="actionBusy">
     <header><small>FRIENDS & PRESENCE</small><h1>好友</h1><p>管理好友申请、查看在线状态并直接邀请对战。</p></header>
     <div class="tabs"><button :class="{ active: tab === 'friends' }" @click="tab = 'friends'">好友 ({{ friends.length }})</button><button :class="{ active: tab === 'requests' }" @click="tab = 'requests'">申请 {{ incoming.length }}</button><button :class="{ active: tab === 'add' }" @click="tab = 'add'">添加好友</button><button :class="{ active: tab === 'blocked' }" @click="tab = 'blocked'">屏蔽</button></div>
     <p v-if="notice || l12State.notice" class="notice">{{ notice || l12State.notice }}</p>
     <section v-if="tab === 'friends'" class="panel friend-center">
       <aside><div class="toolbar"><b>好友消息</b><span>{{ onlineFriends.length }} 位在线</span></div><button v-for="friend in friends" :key="friend.accountId" :class="{ active: selected?.accountId === friend.accountId }" @click="selectedId = friend.accountId"><div class="avatar">{{ friend.username.slice(0, 1) }}</div><span><b>{{ friend.username }}</b><small><i :class="{ online: presenceById.get(friend.accountId)?.online }"/>{{ presenceById.get(friend.accountId)?.activity === 'playing' ? '对局中' : presenceById.get(friend.accountId)?.online ? '在线' : '离线' }}</small></span></button><p v-if="!friends.length">暂无好友</p></aside>
-      <main v-if="selected"><div class="hero-avatar">{{ selected.username.slice(0, 1) }}</div><h2>{{ selected.username }}</h2><p>{{ selectedPresence?.online ? selectedPresence.activity === 'playing' ? '正在对局' : '当前在线' : '当前离线' }}</p><div><button v-if="selectedPresence?.canInvite" @click="invite(selected)">邀请对战</button><button v-else-if="selectedPresence?.canSpectate" @click="spectate(selected)">进入观战</button><button v-else disabled>{{ selectedPresence?.actionReason || '暂不可操作' }}</button><button class="quiet" @click="remove(selected)">删除好友</button><button class="danger" @click="blockPlayer(selected)">屏蔽</button></div></main>
+      <main v-if="selected"><div class="hero-avatar">{{ selected.username.slice(0, 1) }}</div><h2>{{ selected.username }}</h2><p>{{ selectedPresence?.online ? selectedPresence.activity === 'playing' ? '正在对局' : '当前在线' : '当前离线' }}</p><div><button v-if="selectedPresence?.canInvite" :disabled="actionPending(actionKey(selected))" @click="invite(selected)">邀请对战</button><button v-else-if="selectedPresence?.canSpectate" :disabled="actionPending(actionKey(selected))" @click="spectate(selected)">进入观战</button><button v-else disabled>{{ selectedPresence?.actionReason || '暂不可操作' }}</button><button class="quiet" :disabled="actionPending(actionKey(selected))" @click="remove(selected)">删除好友</button><button class="danger" :disabled="actionPending(actionKey(selected))" @click="blockPlayer(selected)">屏蔽</button></div></main>
       <div v-else class="empty">选择一位好友<br/>查看状态并发起对战。</div>
     </section>
     <section v-else-if="tab === 'requests'" class="panel request-panel">
-      <h2>收到的申请</h2><article v-for="player in incoming" :key="player.accountId"><b>{{ player.username }}</b><div><button class="danger" @click="blockPlayer(player)">屏蔽</button><button class="quiet" @click="resolve(player, false)">拒绝</button><button @click="resolve(player, true)">接受</button></div></article><p v-if="!incoming.length" class="empty compact">暂无待处理申请</p>
+      <h2>收到的申请</h2><article v-for="player in incoming" :key="player.accountId"><b>{{ player.username }}</b><div><button class="danger" :disabled="actionPending(actionKey(player))" @click="blockPlayer(player)">屏蔽</button><button class="quiet" :disabled="actionPending(actionKey(player))" @click="resolve(player, false)">拒绝</button><button :disabled="actionPending(actionKey(player))" @click="resolve(player, true)">接受</button></div></article><p v-if="!incoming.length" class="empty compact">暂无待处理申请</p>
       <h2>已发送</h2><article v-for="player in outgoing" :key="player.accountId"><b>{{ player.username }}</b><span>等待对方处理</span></article><p v-if="!outgoing.length" class="empty compact">暂无已发送申请</p>
     </section>
     <section v-else-if="tab === 'add'" class="panel add-panel">
       <label>搜索用户名<input v-model="query" placeholder="输入完整或部分用户名" @keyup.enter="search"/></label><button :disabled="busy || !query.trim()" @click="search">{{ busy ? '搜索中…' : '搜索玩家' }}</button>
-      <div class="search-results"><article v-for="player in results" :key="player.accountId"><div><b>{{ player.username }}</b><span>{{ player.online ? '在线' : '离线' }}</span></div><button v-if="player.status === 'none'" @click="add(player)">申请好友</button><span v-else-if="player.status === 'accepted'">已是好友</span><span v-else>{{ player.direction === 'incoming' ? '对方已申请你' : '申请已发送' }}</span></article></div>
+      <div class="search-results"><article v-for="player in results" :key="player.accountId"><div><b>{{ player.username }}</b><span>{{ player.online ? '在线' : '离线' }}</span></div><button v-if="player.status === 'none'" :disabled="actionPending(actionKey(player))" @click="add(player)">申请好友</button><span v-else-if="player.status === 'accepted'">已是好友</span><span v-else>{{ player.direction === 'incoming' ? '对方已申请你' : '申请已发送' }}</span></article></div>
     </section>
-    <section v-else class="panel blocked-panel"><header><div><h2>已屏蔽玩家</h2><p>不会再收到该玩家的好友申请，对方不会收到屏蔽通知；取消屏蔽后可重新申请。</p></div><b>{{ blocked.length }}</b></header><article v-for="player in blocked" :key="player.accountId"><div><b>{{ player.username }}</b><span>已屏蔽</span></div><button class="quiet" @click="unblock(player)">取消屏蔽</button></article><div v-if="!blocked.length" class="empty">暂无已屏蔽玩家</div></section>
+    <section v-else class="panel blocked-panel"><header><div><h2>已屏蔽玩家</h2><p>不会再收到该玩家的好友申请，对方不会收到屏蔽通知；取消屏蔽后可重新申请。</p></div><b>{{ blocked.length }}</b></header><article v-for="player in blocked" :key="player.accountId"><div><b>{{ player.username }}</b><span>已屏蔽</span></div><button class="quiet" :disabled="actionPending(actionKey(player))" @click="unblock(player)">取消屏蔽</button></article><div v-if="!blocked.length" class="empty">暂无已屏蔽玩家</div></section>
   </div>
 </template>
 

@@ -30,6 +30,8 @@ public sealed partial class L12GameEngine
     {
         var plan = TrialAdvanceTriggerPlan(candidate.SourceCardId, candidate.Trigger, candidate.Data);
         if (plan is null) return false;
+        candidate.Data.TryAdd("playerLogGroupId", $"effect:{candidate.CandidateId}");
+        candidate.Data.TryAdd("playerLogTiming", candidate.Trigger);
 
         var player = State.Players[candidate.Controller];
         var hasOpenTrial = player.SpecialZones.Trials.Any(card => !card.TrialCompleted
@@ -107,7 +109,11 @@ public sealed partial class L12GameEngine
                 else
                 {
                     L12S2ZoneOps.SpendRunes(player, 1);
-                    AddEvent("cost", candidate.Controller, $"〈{candidate.SourceName}〉入栈前消耗1符文", source);
+                    AddPlayerLogEvent("cost", candidate.Controller,
+                        $"〈{candidate.SourceName}〉入栈前消耗1符文",
+                        candidate.Data.GetValueOrDefault("playerLogGroupId"),
+                        candidate.Data.GetValueOrDefault("playerLogTiming") ?? candidate.Trigger,
+                        cards: source);
                 }
                 break;
             case "galahad-entry":
@@ -118,7 +124,11 @@ public sealed partial class L12GameEngine
                 else
                 {
                     source.Tapped = true;
-                    AddEvent("cost", candidate.Controller, $"〈{candidate.SourceName}〉入栈前休整以发动试炼", source);
+                    AddPlayerLogEvent("cost", candidate.Controller,
+                        $"〈{candidate.SourceName}〉入栈前休整以发动试炼",
+                        candidate.Data.GetValueOrDefault("playerLogGroupId"),
+                        candidate.Data.GetValueOrDefault("playerLogTiming") ?? candidate.Trigger,
+                        cards: source);
                 }
                 break;
             case "lancelot-kill" when mode == "mode:trial":

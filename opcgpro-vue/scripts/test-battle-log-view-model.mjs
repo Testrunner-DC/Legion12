@@ -80,6 +80,142 @@ assert(trial[0].kind === 'line' && trial[0].badges.some(item => item.value === '
 assert(trial[0].kind === 'line' && trial[0].badges.some(item => item.value === '试炼 0→2'),
   'trial progress must remain visible after compact projection')
 
+const automaticTurn = projectLog([
+  event(1, 'turn-start', '第 2 回合', [], 0, { playerLogGroupId: 'turn:2', playerLogTiming: 'turn-start' }),
+  event(2, 'draw', '回合开始时抽取1张牌', [], 0, { playerLogGroupId: 'turn:2', playerLogTiming: 'turn-start' }),
+  event(3, 'morale', '回合开始时追加2张士气', [], 0, { playerLogGroupId: 'turn:2', playerLogTiming: 'turn-start' }),
+], 0, [])
+assert.equal(automaticTurn.length, 2, 'turn divider and automatic public changes must remain visible without phase noise')
+assert.equal(automaticTurn[1].kind, 'line')
+assert.notEqual(automaticTurn[0].sequence, automaticTurn[1].sequence,
+  'turn divider and automatic changes must keep unique render keys')
+assert.deepEqual(automaticTurn[1].parts.map(part => part.text), ['回合开始，抽取1张牌，追加2张士气'])
+
+const peace = { ...card('议和谈判', 'peace'), cardType: 'tactic' }
+const peaceAgreed = projectLog([
+  event(1, 'play', '我方打出议和谈判', [peace], 0, { playerLogGroupId: 'play:peace', playerLogTiming: 'play' }),
+  event(2, 'draw', '议和谈判使我方抽取1张牌', [peace], 0, { playerLogGroupId: 'play:peace', playerLogTiming: 'play' }),
+  event(3, 'effect-decision', '对方同意议和', [peace], 1, {
+    playerLogGroupId: 'play:peace', playerLogTiming: 'play', playerLogDecisionLabel: '同意议和',
+  }),
+  event(4, 'draw', '议和谈判使我方额外抽取1张牌', [peace], 0, { playerLogGroupId: 'play:peace', playerLogTiming: 'play' }),
+  event(5, 'draw', '议和谈判使对方抽取1张牌', [peace], 1, { playerLogGroupId: 'play:peace', playerLogTiming: 'play' }),
+  event(6, 'effect-result', '议和谈判效果结算完成', [peace], 0, {
+    playerLogGroupId: 'play:peace', playerLogTiming: 'play', effectResultStatus: 'resolved',
+  }),
+], 0, [])
+assert.equal(peaceAgreed.length, 1, 'a played tactic and its public choice/results must collapse into one readable action')
+assert.equal(peaceAgreed[0].kind, 'line')
+assert.deepEqual(peaceAgreed[0].parts.map(part => part.text), [
+  '打出', '〈议和谈判〉', '，对方同意议和，我方抽取2张牌，对方抽取1张牌',
+])
+const reconnectedPeace = projectLog([
+  event(6, 'effect-result', '议和谈判效果结算完成', [peace], 0, {
+    playerLogGroupId: 'play:peace-reconnect', playerLogTiming: 'play', effectResultStatus: 'resolved',
+  }),
+  event(1, 'play', '我方打出议和谈判', [peace], 0, { playerLogGroupId: 'play:peace-reconnect', playerLogTiming: 'play' }),
+  event(2, 'draw', '议和谈判使我方抽取1张牌', [peace], 0, { playerLogGroupId: 'play:peace-reconnect', playerLogTiming: 'play' }),
+  event(3, 'effect-decision', '对方同意议和', [peace], 1, {
+    playerLogGroupId: 'play:peace-reconnect', playerLogTiming: 'play', playerLogDecisionLabel: '同意议和',
+  }),
+  event(4, 'draw', '议和谈判使我方额外抽取1张牌', [peace], 0, { playerLogGroupId: 'play:peace-reconnect', playerLogTiming: 'play' }),
+  event(5, 'draw', '议和谈判使对方抽取1张牌', [peace], 1, { playerLogGroupId: 'play:peace-reconnect', playerLogTiming: 'play' }),
+], 0, [])
+assert.equal(reconnectedPeace.length, 1, 'out-of-order replay events must regroup deterministically')
+const duplicatedReconnect = projectLog([
+  event(1, 'play', '我方打出议和谈判', [peace], 0),
+  event(1, 'play', '我方打出议和谈判', [peace], 0, { playerLogGroupId: 'play:dedupe', playerLogTiming: 'play' }),
+  event(2, 'effect-decision', '对方不同意议和', [peace], 1, {
+    playerLogGroupId: 'play:dedupe', playerLogTiming: 'play', playerLogDecisionLabel: '不同意议和',
+  }),
+], 0, [])
+assert.equal(duplicatedReconnect.length, 1, 'reconnect delivery must deduplicate a repeated event sequence')
+assert(duplicatedReconnect[0].kind === 'line'
+  && duplicatedReconnect[0].parts.some(part => part.text.includes('不同意议和')),
+'reconnect deduplication must prefer the enriched copy of an event sequence')
+const hiddenGroupedSource = projectLog([
+  event(1, 'effect-announced', '对方声明一张尚未公开的响应卡', [{ ...peace, hidden: true }], 1, {
+    playerLogGroupId: 'effect:hidden-response', playerLogTiming: 'response',
+  }),
+], 0, [])
+assert.equal(hiddenGroupedSource.length, 0,
+  'group metadata must not make a deliberately hidden response source visible in the player log')
+
+const peaceRefused = projectLog([
+  event(1, 'play', '我方打出议和谈判', [peace], 0, { playerLogGroupId: 'play:peace-refused', playerLogTiming: 'play' }),
+  event(2, 'draw', '议和谈判使我方抽取1张牌', [peace], 0, { playerLogGroupId: 'play:peace-refused', playerLogTiming: 'play' }),
+  event(3, 'effect-decision', '对方不同意议和', [peace], 1, {
+    playerLogGroupId: 'play:peace-refused', playerLogTiming: 'play', playerLogDecisionLabel: '不同意议和',
+  }),
+  event(4, 'effect-result', '议和谈判效果结算完成', [peace], 0, {
+    playerLogGroupId: 'play:peace-refused', playerLogTiming: 'play', effectResultStatus: 'resolved',
+  }),
+], 0, [])
+assert.equal(peaceRefused.length, 1)
+assert.deepEqual(peaceRefused[0].parts.map(part => part.text), [
+  '打出', '〈议和谈判〉', '，对方不同意议和，我方抽取1张牌',
+])
+
+const galahad = card('加拉哈德', 'galahad')
+const galahadResolved = projectLog([
+  event(1, 'play', '我方打出加拉哈德', [galahad], 0, { playerLogGroupId: 'play:galahad-ok', playerLogTiming: 'enter' }),
+  event(2, 'cost', '加拉哈德入栈前休整以发动试炼', [galahad], 0, { playerLogGroupId: 'play:galahad-ok', playerLogTiming: 'enter' }),
+  event(3, 'trial', '试炼进度 0 → 2', [galahad], 0, { playerLogGroupId: 'play:galahad-ok', playerLogTiming: 'enter' }),
+  event(4, 'effect-result', '加拉哈德的效果结算完成', [galahad], 0, {
+    playerLogGroupId: 'play:galahad-ok', playerLogTiming: 'enter', effectResultStatus: 'resolved',
+  }),
+], 0, [])
+assert.equal(galahadResolved.length, 1)
+assert.deepEqual(galahadResolved[0].parts.map(part => part.text), [
+  '打出', '〈加拉哈德〉', '并发动登场时效果，推进试炼 0→2',
+])
+
+const galahadNegated = projectLog([
+  event(1, 'play', '我方打出加拉哈德', [galahad], 0, { playerLogGroupId: 'play:galahad', playerLogTiming: 'enter' }),
+  event(2, 'cost', '加拉哈德入栈前休整以发动试炼', [galahad], 0, { playerLogGroupId: 'play:galahad', playerLogTiming: 'enter' }),
+  event(3, 'effect-result', '加拉哈德的效果被无效', [galahad], 0, {
+    playerLogGroupId: 'play:galahad', playerLogTiming: 'enter', effectResultStatus: 'negated',
+  }),
+], 0, [])
+assert.equal(galahadNegated.length, 1)
+assert.deepEqual(galahadNegated[0].parts.map(part => part.text), [
+  '打出', '〈加拉哈德〉', '，休整该军团并发动登场时效果；登场时效果被无效',
+])
+const unrelated = card('其他军团', 'unrelated')
+const unrelatedRest = projectLog([
+  event(1, 'play', '我方打出加拉哈德', [galahad], 0, { playerLogGroupId: 'play:unrelated-rest', playerLogTiming: 'enter' }),
+  event(2, 'cost', '休整其他军团支付费用', [unrelated], 0, { playerLogGroupId: 'play:unrelated-rest', playerLogTiming: 'enter' }),
+  event(3, 'effect-result', '加拉哈德的效果被无效', [galahad], 0, {
+    playerLogGroupId: 'play:unrelated-rest', playerLogTiming: 'enter', effectResultStatus: 'negated',
+  }),
+], 0, [])
+assert(unrelatedRest[0].kind === 'line'
+  && !unrelatedRest[0].parts.some(part => part.text.includes('休整该军团')),
+'an unrelated rested card must not be described as resting the source legion')
+
+const allOut = { ...card('全军出击', 'all-out'), cardType: 'tactic' }
+const activeTacticNegated = projectLog([
+  event(1, 'play', '我方打出全军出击', [allOut], 0, { playerLogGroupId: 'play:all-out', playerLogTiming: 'play' }),
+  event(2, 'effect-result', '全军出击的效果被无效', [allOut], 0, {
+    playerLogGroupId: 'play:all-out', playerLogTiming: 'play', effectResultStatus: 'negated',
+  }),
+], 0, [])
+assert.equal(activeTacticNegated.length, 1)
+assert.deepEqual(activeTacticNegated[0].parts.map(part => part.text), [
+  '打出', '〈全军出击〉', '；该战术的效果被无效',
+])
+
+const sharedDisasterChange = projectLog([
+  event(1, 'play', '我方打出来源卡', [source], 0, { playerLogGroupId: 'play:disaster', playerLogTiming: 'play' }),
+  event(2, 'disaster-value', '来源卡调整天灾值；天灾值 4 → 6', [source], undefined, {
+    playerLogGroupId: 'play:disaster', playerLogTiming: 'play',
+  }),
+], 0, [])
+assert.equal(sharedDisasterChange.length, 1)
+assert.deepEqual(sharedDisasterChange[0].parts.map(part => part.text), [
+  '打出', '〈来源卡〉', '，天灾值 4→6',
+])
+
 const target = card('目标军团', 'target')
 const stateChanges = projectLog([
   event(1, 'enter', '〈甲军团〉在前排休整登场', [a]),
@@ -94,6 +230,11 @@ const stateChanges = projectLog([
 assert.equal(stateChanges.length, 8, 'public zone, deck, disaster and turn changes must each keep one compact row')
 assert(stateChanges.every(row => row.kind === 'line'))
 assert(stateChanges.some(row => row.kind === 'line' && row.badges.some(item => item.value === '天灾值 4')))
+const publicDisasterValue = projectLog([
+  event(1, 'disaster-value', '天灾值 3 → 4', [source], 0),
+], 1, [])[0]
+assert(publicDisasterValue.kind === 'line' && publicDisasterValue.actor === null,
+  'the shared disaster value must never be attributed to either player')
 
 const standaloneCost = projectLog([event(1, 'cost', '弃置1张手牌作为费用', [a])], 0, [])
 assert.equal(standaloneCost.length, 1, 'a paid cost without a mergeable result must not disappear')

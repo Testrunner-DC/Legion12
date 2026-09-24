@@ -7,6 +7,34 @@ public sealed record L12RuntimeDependencyView(
     string? Detail,
     DateTimeOffset ObservedAt);
 
+public sealed record L12HttpPerformanceView(
+    int WindowSeconds,
+    int SlowRequestThresholdMilliseconds,
+    int MinimumSamples,
+    int MinimumReadSamples,
+    int MinimumMutationSamples,
+    long SampleCount,
+    long ReadSampleCount,
+    long MutationSampleCount,
+    long DiagnosticRequestCount,
+    long InFlight,
+    long PeakInFlight,
+    double AverageDurationMilliseconds,
+    string P95LatencyBand,
+    long SlowRequestCount,
+    double SlowRequestPercent,
+    long RateLimitedCount,
+    double RateLimitedPercent,
+    long ServerErrorCount,
+    double ServerErrorPercent,
+    long ExpectedUnavailableCount,
+    double ExpectedUnavailablePercent,
+    long ClientCancelledCount,
+    double ClientCancelledPercent,
+    bool SampleSufficient,
+    bool? WithinBudget,
+    IReadOnlyList<string> BudgetFailures);
+
 public sealed record L12RuntimeStatusView(
     DateTimeOffset ObservedAt,
     string ServiceVersion,
@@ -16,4 +44,5 @@ public sealed record L12RuntimeStatusView(
     int RoomCount,
     int ActiveGameCount,
     IReadOnlyList<L12ReleaseEnvironmentView> ReleaseEnvironments,
-    L12RuntimeDependencyView Cdn);
+    L12RuntimeDependencyView Cdn,
+    L12HttpPerformanceView HttpPerformance);

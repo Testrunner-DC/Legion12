@@ -494,10 +494,21 @@ export interface ImmediateMaintenanceOperation { applied: boolean; alreadyApplie
 export interface RuntimeDependencyStatus {
   name: string; configured: boolean; state: string; detail?: string; observedAt: string
 }
+export interface HttpPerformanceStatus {
+  windowSeconds: number; slowRequestThresholdMilliseconds: number; minimumSamples: number
+  minimumReadSamples: number; minimumMutationSamples: number
+  sampleCount: number; readSampleCount: number; mutationSampleCount: number; diagnosticRequestCount: number
+  inFlight: number; peakInFlight: number; averageDurationMilliseconds: number
+  p95LatencyBand: string; slowRequestCount: number; slowRequestPercent: number
+  rateLimitedCount: number; rateLimitedPercent: number; serverErrorCount: number; serverErrorPercent: number
+  expectedUnavailableCount: number; expectedUnavailablePercent: number
+  clientCancelledCount: number; clientCancelledPercent: number
+  sampleSufficient: boolean; withinBudget: boolean | null; budgetFailures: string[]
+}
 export interface RuntimeStatus {
   observedAt: string; serviceVersion: string; cardCount: number; onlineAccountCount: number
   webSocketConnectionCount: number; roomCount: number; activeGameCount: number
-  releaseEnvironments: ReleaseEnvironment[]; cdn: RuntimeDependencyStatus
+  releaseEnvironments: ReleaseEnvironment[]; cdn: RuntimeDependencyStatus; httpPerformance: HttpPerformanceStatus
 }
 export interface AuditArchiveSegment {
   id: string; from: string; until: string; eventCount: number; sha256: string; createdAt: string
@@ -712,7 +723,9 @@ function retryAfterMilliseconds(response: Response) {
 function retryableReadFailure(error: unknown) {
   if (error instanceof RequestDeadlineError || error instanceof TypeError) return true
   return error instanceof PlatformRequestError
-    && [408, 425, 429, 500, 502, 503, 504].includes(error.status)
+    // 429 is a deliberate admission decision. Retrying it here would amplify traffic precisely
+    // while the server is asking this client to stop; surface it to the caller immediately.
+    && [408, 425, 500, 502, 503, 504].includes(error.status)
 }
 
 async function requestFingerprint(value: string) {

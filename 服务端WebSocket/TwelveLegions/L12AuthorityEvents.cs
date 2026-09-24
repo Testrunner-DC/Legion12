@@ -313,6 +313,29 @@ public sealed partial class L12GameEngine
         AddCardToHandByEffect(player, card, originZone, handAddReason);
     }
 
+    /// <summary>
+    /// 复合流程中的公开区域/条件检索统一出口。公开对象复用当前效果段的呈现场景
+    /// 形成 reveal 权威事件，再进入 effect-hand-add；前端、回放与后台共用同一事件链。
+    /// </summary>
+    private void PubliclyRevealThenAddCardToHandByEffect(L12PlayerState player, L12CardInstance card,
+        string originZone, string revealText, string handAddReason, L12StackItem item)
+    {
+        var source = FindSource(item) ?? item.SourceSnapshot;
+        var sceneId = item.Data.GetValueOrDefault("presentationSceneId");
+        if (string.IsNullOrWhiteSpace(sceneId) && source is not null)
+            sceneId = ResolveEffectPresentationSceneId(source, item.Trigger, item.Data, item.Text);
+        AddPresentationEventByProducerIdWithPlayerLog("reveal", player.PlayerIndex, revealText,
+            item.SourceCardId, sceneId, null, card);
+        AddCardToHandByEffect(player, card, originZone, handAddReason);
+    }
+
+    /// <summary>
+    /// 对象已由上一步权威 reveal 公开时只收敛入手出口，避免重复卡面动画。
+    /// </summary>
+    private void AddPreviouslyRevealedCardToHandByEffect(L12PlayerState player, L12CardInstance card,
+        string originZone, string handAddReason)
+        => AddCardToHandByEffect(player, card, originZone, handAddReason);
+
     private bool MoveLibraryCardToHandByEffect(L12PlayerState player, string instanceId, string reason)
     {
         var index = player.Library.FindIndex(card => card.InstanceId == instanceId);

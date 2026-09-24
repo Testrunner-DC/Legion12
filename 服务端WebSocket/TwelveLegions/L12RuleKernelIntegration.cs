@@ -1972,7 +1972,7 @@ public sealed partial class L12GameEngine
         var sceneId = ResolveEffectPresentationSceneId(source, trigger, data, text);
         if (!string.IsNullOrWhiteSpace(sceneId) && data is not null)
             data["presentationSceneId"] = sceneId;
-        AddPresentationEventById(eventType, controller, text, sceneId, source);
+        AddPresentationEventByIdWithPlayerLog(eventType, controller, text, sceneId, data, source);
     }
 
     private bool HasDeathTrigger(L12CardInstance card)

@@ -459,7 +459,7 @@ public sealed partial class L12GameEngine
             case "阿尔维达":
                 if (item.Data.TryGetValue("declaredTargets", out var alvidaDeclared))
                 {
-                    if (!string.IsNullOrWhiteSpace(alvidaDeclared)) MoveGraveToHand(player, alvidaDeclared);
+                    if (!string.IsNullOrWhiteSpace(alvidaDeclared)) MoveGraveToHand(player, alvidaDeclared, item);
                     FinishStackItem(item); return true;
                 }
                 RecoverAsgard(item, 3, legionOnly: false); return true;
@@ -599,7 +599,7 @@ public sealed partial class L12GameEngine
             case "faction-summon-slot": SummonFromAnyPrivateZone(player, item.Data["faction-summon"], chosen[0], false); FinishStackItem(item); return true;
             case "death-cycle-discard": MoveHandToGrave(player, chosen[0], causedByEffect: true,
                 FindSource(item) ?? item.SourceSnapshot); FinishStackItem(item); return true;
-            case "recover-asgard": if (chosen[0] != "skip") MoveGraveToHand(player, chosen[0]); FinishStackItem(item); return true;
+            case "recover-asgard": if (chosen[0] != "skip") MoveGraveToHand(player, chosen[0], item); FinishStackItem(item); return true;
             case "summon-asgard": if (chosen[0] == "skip") FinishStackItem(item); else { item.Data["faction-summon"] = chosen[0]; PromptFirstEmptySlot(item, "faction-summon-slot", "选择军团活跃登场的位置"); } return true;
             case "erik-discard": MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true); FinishStackItem(item); return true;
             case "queued-summon-slot": CompleteQueuedSummon(item, chosen[0]); return true;
@@ -1461,7 +1461,8 @@ public sealed partial class L12GameEngine
                 if (recover is not null)
                 {
                     player.Graveyard.Remove(recover);
-                    AddCardToHandByEffect(player, recover, "graveyard", "黄泉之门回收高天原卡牌");
+                    PubliclyRevealThenAddCardToHandByEffect(player, recover, "graveyard",
+                        $"黄泉之门公开墓地的〈{recover.Name}〉", "黄泉之门回收高天原卡牌", item);
                 }
                 else RecordTargetSettlementFailure(item, targetId,
                     "所选墓地【高天原】卡牌已离开墓地、失去有效特征或不能进入手牌");
@@ -1669,13 +1670,21 @@ public sealed partial class L12GameEngine
     }
 
     private void Mill(L12PlayerState player, int count, string source)
+        => MillWithPlayerLog(player, count, source);
+
+    private void MillWithPlayerLog(L12PlayerState player, int count, string source,
+        string? playerLogGroupId = null, string? playerLogTiming = null)
     {
         if (State.Phase == L12Phase.GameOver) return;
         var origin = State.IsResolvingStack ? State.EffectStack.LastOrDefault() : null;
         var result = L12LibraryOps.Mill(player, count, card =>
             NotifyCardDiscarded(player, card, "library", causedByEffect: true));
         if (result.Cards.Count > 0)
-            AddEvent("mill", player.PlayerIndex, $"{source}弃置牌库顶部{result.Cards.Count}张牌", result.Cards.ToArray());
+            AddPlayerLogEvent("mill", player.PlayerIndex,
+                $"{source}弃置牌库顶部{result.Cards.Count}张牌",
+                playerLogGroupId ?? origin?.Data.GetValueOrDefault("playerLogGroupId"),
+                playerLogTiming ?? origin?.Data.GetValueOrDefault("playerLogTiming") ?? origin?.Trigger,
+                cards: result.Cards.ToArray());
         CompleteLibrarySequence(player, result, count, origin, source);
     }
 

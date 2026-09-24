@@ -181,6 +181,41 @@ public sealed class AtomicReviewBatch6CRegressionTests
         Assert.Equal(1, decision.PlayerIndex);
         Assert.Contains("agree", decision.ValidChoices);
         Assert.Contains("refuse", decision.ValidChoices);
+
+        Resolve(game, "agree");
+        var play = Assert.Single(game.State.Events, entry => entry.Type == "play"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId));
+        var choice = Assert.Single(game.State.Events, entry => entry.Type == "effect-decision"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal(1, choice.PlayerIndex);
+        Assert.Equal("同意议和", choice.PlayerLogDecisionLabel);
+        Assert.False(string.IsNullOrWhiteSpace(play.PlayerLogGroupId));
+        Assert.Equal(play.PlayerLogGroupId, choice.PlayerLogGroupId);
+        Assert.All(game.State.Events.Where(entry => entry.Type == "draw"
+                && entry.Cards.Any(card => card.InstanceId == source.InstanceId)),
+            entry => Assert.Equal(play.PlayerLogGroupId, entry.PlayerLogGroupId));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0012")]
+    [Trait("L12Evidence", "entry:player-log-negated-play")]
+    public void NegatedPlayedTacticKeepsPlayAndResultInOnePlayerLogGroup()
+    {
+        var game = Create(77031);
+        var source = ArrangePlay(game, "S01-0012");
+
+        Assert.True(game.Handle(0, new L12Command("playCard", source.InstanceId)).Accepted);
+        Assert.Single(game.State.EffectStack).Negated = true;
+        PassResponses(game);
+
+        var play = Assert.Single(game.State.Events, entry => entry.Type == "play"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId));
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("play", play.PlayerLogTiming);
+        Assert.Equal("negated", result.EffectResultStatus);
+        Assert.False(string.IsNullOrWhiteSpace(play.PlayerLogGroupId));
+        Assert.Equal(play.PlayerLogGroupId, result.PlayerLogGroupId);
     }
 
     [Fact]

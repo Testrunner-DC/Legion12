@@ -204,6 +204,9 @@ public sealed class ApprovedTriggerBoundaryRegressionTests
 
         Invoke(game, "AdjustDisasterValue", 2, 0, "测试调整至 {value}");
         Assert.Equal(9, game.State.DisasterValue);
+        var valueEvent = Assert.Single(game.State.Events, entry => entry.Type == "disaster-value");
+        Assert.Null(valueEvent.PlayerIndex);
+        Assert.Contains("天灾值 7 → 9", valueEvent.Text, StringComparison.Ordinal);
         Assert.True(game.State.CheckDisasterAfterStack);
         Invoke(game, "AfterStackSettled");
         Assert.Null(game.State.ActiveDisaster);

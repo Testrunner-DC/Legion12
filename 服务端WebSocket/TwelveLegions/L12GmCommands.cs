@@ -541,6 +541,7 @@ public sealed partial class L12GameEngine
 
         var playerIndex = State.ActivePlayer;
         var player = State.Players[playerIndex];
+        var playerLogGroupId = $"turn:{State.TurnSerial}";
         switch (State.Phase)
         {
             case L12Phase.Disaster:
@@ -564,22 +565,32 @@ public sealed partial class L12GameEngine
                 AddEvent("phase", playerIndex, "执行抽牌阶段");
                 if (player.MasterId == "S01-03M1")
                 {
-                    Mill(player, 2, "瓦尔基里的抽牌阶段替代效果");
+                    MillWithPlayerLog(player, 2, "瓦尔基里的抽牌阶段替代效果",
+                        playerLogGroupId, "turn-start");
                     AddEvent("phase-detail", playerIndex, "瓦尔基里将抽牌阶段改为弃置牌库顶部2张牌");
                 }
                 else if (State.Round == 1 && playerIndex == State.FirstPlayer)
-                    AddEvent("draw-skipped", playerIndex, "先手玩家首回合不抽牌");
+                    AddPlayerLogEvent("draw-skipped", playerIndex, "先手玩家首回合不抽牌",
+                        playerLogGroupId, "turn-start");
                 else if (!Draw(player, 1))
                 {
                     SetWinner(1 - playerIndex, "抽牌阶段牌库为空");
                 }
-                else AddEvent("phase-detail", playerIndex, "从牌库抽取 1 张牌");
+                else
+                {
+                    AddEvent("phase-detail", playerIndex, "从牌库抽取 1 张牌");
+                    AddPlayerLogEvent("draw", playerIndex, "回合开始时抽取 1 张牌",
+                        playerLogGroupId, "turn-start");
+                }
                 break;
             case L12Phase.Draw:
                 State.Phase = L12Phase.Morale;
                 AddEvent("phase", playerIndex, "执行士气阶段");
                 var moraleAdded = AddMorale(player, State.Round == 1 && playerIndex == State.FirstPlayer ? 1 : 2);
                 AddEvent("phase-detail", playerIndex, $"从士气牌库追加 {moraleAdded} 张士气");
+                if (moraleAdded > 0)
+                    AddPlayerLogEvent("morale", playerIndex, $"回合开始时追加 {moraleAdded} 张士气",
+                        playerLogGroupId, "turn-start");
                 break;
             case L12Phase.Morale:
                 State.Phase = L12Phase.Main;

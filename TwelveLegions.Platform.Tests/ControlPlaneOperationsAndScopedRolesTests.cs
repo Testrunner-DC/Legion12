@@ -241,7 +241,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             var moved = current.Config with
             {
                 DisasterPool = new L12SeasonDisasterPoolConfig(
-                    [L12PlatformStore.AnnihilationCardId, "S01-DS01"], true),
+                    [L12ActiveDisasterRules.AnnihilationCardId, "S01-DS01"], true),
             };
 
             Assert.Equal("annihilation_locked", Assert.Throws<L12OperationsConfigException>(() =>
@@ -266,13 +266,13 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             var admin = store.Login("Admin", "L12master").Account!;
             var current = store.OperationsConfig(admin);
             var ordinary = current.Config.DisasterPool.CardIds
-                .Where(id => !id.Equals(L12PlatformStore.AnnihilationCardId, StringComparison.OrdinalIgnoreCase))
+                .Where(id => !id.Equals(L12ActiveDisasterRules.AnnihilationCardId, StringComparison.OrdinalIgnoreCase))
                 .Take(8).ToArray();
             Assert.Equal(8, ordinary.Length);
             var valid = current.Config with
             {
                 DisasterPool = new L12SeasonDisasterPoolConfig(
-                    ordinary.Append(L12PlatformStore.AnnihilationCardId).ToArray(), true),
+                    ordinary.Append(L12ActiveDisasterRules.AnnihilationCardId).ToArray(), true),
             };
 
             var preview = store.PreviewOperationsConfig(admin, valid, current.Version, Context("nine-disasters"));
@@ -281,7 +281,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             var invalid = valid with
             {
                 DisasterPool = new L12SeasonDisasterPoolConfig(
-                    ordinary.Take(7).Append(L12PlatformStore.AnnihilationCardId).ToArray(), true),
+                    ordinary.Take(7).Append(L12ActiveDisasterRules.AnnihilationCardId).ToArray(), true),
             };
             Assert.Equal("invalid_disaster_pool", Assert.Throws<L12OperationsConfigException>(() =>
                 store.PreviewOperationsConfig(admin, invalid, current.Version, Context("eight-disasters"))).Code);
@@ -580,7 +580,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
 
             var mixedPool = Enumerable.Range(1, 6).Select(number => $"S02-DS{number:00}")
                 .Concat(Enumerable.Range(1, 3).Select(number => $"S01-DS{number:00}"))
-                .Append(L12PlatformStore.AnnihilationCardId).ToArray();
+                .Append(L12ActiveDisasterRules.AnnihilationCardId).ToArray();
             var live = store.ApplyOperationsConfig(admin, maintenance.Config with
             {
                 DisasterPool = new L12SeasonDisasterPoolConfig(mixedPool),

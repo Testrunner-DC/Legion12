@@ -7,6 +7,7 @@ import SiteIcon from './SiteIcon.vue'
 import L12SettingsModal from './L12SettingsModal.vue'
 import MaintenanceTicker from './MaintenanceTicker.vue'
 import CardImage from '@/l12/CardImage.vue'
+import { useActionGate } from '@/l12/useActionGate'
 
 const siteBrandIcon = '/favicon.png'
 const releaseVersion = String(import.meta.env.VITE_APP_VERSION || 'dev')
@@ -538,8 +539,10 @@ async function submitAuth() {
 const onlinePlayers = computed(() => l12State.presence as PlatformPresence[])
 const onlineCount = computed(() => onlinePlayers.value.length)
 const incomingRequestCount = computed(() => onlinePlayers.value.filter(player => player.friendStatus === 'pending' && player.friendDirection === 'incoming').length)
-const onlineActionBusy = ref('')
+const { isPending: onlineActionPending, run: runOnlineAction } = useActionGate()
 const onlineNotice = ref('')
+const onlineFriendActionKey = (playerId: string, accountId = platformState.account?.id ?? 'anonymous') =>
+  `online-friend:${accountId}:${playerId}`
 const alternateArtNotifications = ref<AlternateArtGrantNotification[]>([])
 const currentAlternateArtNotification = computed(() => alternateArtNotifications.value[0] ?? null)
 let alternateArtReading = false
@@ -619,22 +622,24 @@ async function refreshPresence() {
 }
 const activityLabel = (player: PlatformPresence) => ({ idle: '在线 · 空闲', inRoom: '在线 · 房间中', playing: '在线 · 对局中', spectating: '在线 · 观战中' }[player.activity])
 async function addOnlineFriend(player: PlatformPresence) {
-  onlineActionBusy.value = player.accountId
-  onlineNotice.value = ''
-  try {
-    const result = await friendApi.request(player.accountId)
-    onlineNotice.value = result.message
-  } catch (error) { onlineNotice.value = error instanceof Error ? error.message : '好友申请发送失败' }
-  finally { onlineActionBusy.value = '' }
+  const accountId = platformState.account?.id
+  await runOnlineAction(onlineFriendActionKey(player.accountId, accountId), async () => {
+    onlineNotice.value = ''
+    try {
+      const result = await friendApi.request(player.accountId)
+      if (accountId === platformState.account?.id) onlineNotice.value = result.message
+    } catch (error) { if (accountId === platformState.account?.id) onlineNotice.value = error instanceof Error ? error.message : '好友申请发送失败' }
+  })
 }
 async function resolveOnlineFriend(player: PlatformPresence, accept: boolean) {
-  onlineActionBusy.value = player.accountId
-  onlineNotice.value = ''
-  try {
-    const result = await friendApi.resolve(player.accountId, accept)
-    onlineNotice.value = result.message
-  } catch (error) { onlineNotice.value = error instanceof Error ? error.message : '好友申请处理失败' }
-  finally { onlineActionBusy.value = '' }
+  const accountId = platformState.account?.id
+  await runOnlineAction(onlineFriendActionKey(player.accountId, accountId), async () => {
+    onlineNotice.value = ''
+    try {
+      const result = await friendApi.resolve(player.accountId, accept)
+      if (accountId === platformState.account?.id) onlineNotice.value = result.message
+    } catch (error) { if (accountId === platformState.account?.id) onlineNotice.value = error instanceof Error ? error.message : '好友申请处理失败' }
+  })
 }
 function inviteOnlinePlayer(player: PlatformPresence) {
   onlineNotice.value = ''
@@ -665,6 +670,7 @@ function onPresenceResource(event: Event) {
 }
 function onAlternateArtResource() { void refreshAlternateArtNotifications() }
 watch(() => platformState.account?.id, () => {
+  onlineNotice.value = ''
   alternateArtNotifications.value = []
   void refreshAlternateArtNotifications()
 })
@@ -736,13 +742,13 @@ onBeforeUnmount(() => {
           <i/><div class="online-identity"><b>{{ player.username }}</b><span>{{ player.accountId === platformState.account?.id ? '在线 · 当前账号' : activityLabel(player) }}</span><em v-if="player.friendStatus === 'pending' && player.friendDirection === 'incoming'" class="online-unread">新好友申请</em></div>
           <div v-if="player.friendStatus !== 'self'" class="online-actions">
             <template v-if="player.friendStatus === 'pending' && player.friendDirection === 'incoming'">
-              <button class="quiet" :disabled="onlineActionBusy === player.accountId" @click="resolveOnlineFriend(player, false)">拒绝</button>
-              <button :disabled="onlineActionBusy === player.accountId" @click="resolveOnlineFriend(player, true)">{{ onlineActionBusy === player.accountId ? '处理中' : '接受' }}</button>
+              <button class="quiet" :disabled="onlineActionPending(onlineFriendActionKey(player.accountId))" @click="resolveOnlineFriend(player, false)">拒绝</button>
+              <button :disabled="onlineActionPending(onlineFriendActionKey(player.accountId))" @click="resolveOnlineFriend(player, true)">{{ onlineActionPending(onlineFriendActionKey(player.accountId)) ? '处理中' : '接受' }}</button>
             </template>
             <template v-else>
               <button v-if="player.friendStatus === 'accepted'" class="quiet" :disabled="!player.canInvite" :title="player.actionReason || '邀请好友直接建立房间'" @click="inviteOnlinePlayer(player)">好友 · 邀战</button>
               <button v-else-if="player.friendStatus === 'pending'" disabled>好友 · 已申请</button>
-              <button v-else :disabled="onlineActionBusy === player.accountId" @click="addOnlineFriend(player)">{{ onlineActionBusy === player.accountId ? '发送中' : '添加好友' }}</button>
+              <button v-else :disabled="onlineActionPending(onlineFriendActionKey(player.accountId))" @click="addOnlineFriend(player)">{{ onlineActionPending(onlineFriendActionKey(player.accountId)) ? '发送中' : '添加好友' }}</button>
             </template>
             <button v-if="player.activity === 'playing'" :disabled="!player.canSpectate" :title="player.actionReason || '进入该玩家的对局观战'" @click="watchOnlinePlayer(player)">观战</button>
           </div>

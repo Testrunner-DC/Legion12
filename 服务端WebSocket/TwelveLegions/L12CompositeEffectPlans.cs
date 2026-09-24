@@ -670,6 +670,10 @@ public sealed partial class L12GameEngine
     private CommandResult BeginCommittedCompositeEffectDeclaration(int playerIndex, L12CardInstance source,
         L12StackItem parent, string completion)
     {
+        var playerLogGroupId = State.LastAction is { Type: "play" } play
+            && play.Cards.Any(card => card.InstanceId == source.InstanceId)
+            ? play.PlayerLogGroupId
+            : null;
         if (!L12CompositeEffectPlans.RequiresHandPlayDeclaration(source.CardId))
         {
             var direct = new L12PendingActivation
@@ -684,6 +688,7 @@ public sealed partial class L12GameEngine
                 PlayCardInstanceId = source.InstanceId,
                 CommittedParentStackItemId = parent.StackItemId,
                 CommittedCompletion = completion,
+                PlayerLogGroupId = playerLogGroupId,
             };
             CompleteCommittedCompositeEffectDeclaration(direct);
             return CommandResult.Ok();
@@ -695,6 +700,7 @@ public sealed partial class L12GameEngine
             && candidate.Ability == "composite-committed-play");
         activation.CommittedParentStackItemId = parent.StackItemId;
         activation.CommittedCompletion = completion;
+        activation.PlayerLogGroupId = playerLogGroupId;
         return result;
     }
 
@@ -1069,6 +1075,11 @@ public sealed partial class L12GameEngine
         RecordCompositePreResponseCosts(source.CardId, activation.DeclaredValues, data);
         data["effectGeneratedPlay"] = "free";
         data["originZone"] = "library";
+        if (!string.IsNullOrWhiteSpace(activation.PlayerLogGroupId))
+        {
+            data["playerLogGroupId"] = activation.PlayerLogGroupId;
+            data["playerLogTiming"] = "play";
+        }
         PushEffect(activation.Controller, source, "play", $"由其他效果免费打出的〈{source.Name}〉战术效果",
             CompositeFirstSegmentTargets(source.CardId, activation.DeclaredValues), data);
         ResumeCommittedCompositeParent(activation);

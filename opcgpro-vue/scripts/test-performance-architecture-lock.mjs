@@ -11,6 +11,9 @@ const changeGate = fs.readFileSync(path.join(repositoryRoot, 'scripts', 'verify-
 const workflow = fs.readFileSync(path.join(repositoryRoot, '.github', 'workflows', 'verify-release.yml'), 'utf8')
 assert(packageDocument.scripts.build.includes('npm run check:performance-architecture'))
 assert(packageDocument.scripts['check:performance-architecture'].includes('check-platform-request-reliability.mjs'))
+assert(packageDocument.scripts['check:performance-architecture'].includes('check-action-gate.mjs'))
+assert(packageDocument.scripts['check:performance-architecture'].includes('check-http-traffic-guard.mjs'))
+assert(packageDocument.scripts['check:performance-architecture'].includes('check-performance-observability.mjs'))
 assert(changeGate.includes('npm.cmd" @("run", "check:performance-architecture")'))
 assert.equal((workflow.match(/npm run check:performance-architecture/g) ?? []).length, 1)
 
@@ -31,6 +34,10 @@ const budgets = {
   },
   approvedRawFetchModules: [],
   approvedIntervalModules: [],
+  runtimeAcceptance: {
+    windowSeconds: 60, minimumSamples: 20, slowRequestThresholdMilliseconds: 1000,
+    maximumSlowRequestPercent: 5, maximumServerErrorPercent: 1, maximumRateLimitedPercent: 20,
+  },
   routes: {},
 }
 
@@ -62,4 +69,4 @@ assert(evaluate([['src/legacy.ts', { rawFetch: 0, interval: 1, maximumParallelPa
 assert(evaluate([['src/legacy.ts', { rawFetch: 0, interval: 2, maximumParallelPageLoad: 0 }]], [exception])
   .some(message => message.includes('above allowed')))
 
-console.log('Performance architecture lock regression passed: 13/13')
+console.log('Performance architecture lock regression passed: 15/15')

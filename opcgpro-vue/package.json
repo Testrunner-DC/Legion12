@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --configLoader runner",
-    "check:performance-architecture": "node scripts/check-performance-architecture.mjs && node scripts/test-performance-architecture-lock.mjs && node scripts/check-resource-change-sync.mjs && node scripts/check-platform-request-reliability.mjs",
+    "check:performance-architecture": "node scripts/check-performance-architecture.mjs && node scripts/test-performance-architecture-lock.mjs && node scripts/check-resource-change-sync.mjs && node scripts/check-platform-request-reliability.mjs && node scripts/check-action-gate.mjs && node scripts/check-http-traffic-guard.mjs && node scripts/check-performance-observability.mjs && node scripts/test-performance-snapshot.mjs",
     "check:deck-sync": "node scripts/test-deck-sync-authority.mjs && node scripts/test-public-deck-hands.mjs && node scripts/check-deck-editor-reference-flow.mjs",
     "check:ranked-broadcast": "node scripts/check-ranked-broadcast-playback.mjs && node scripts/test-ranked-broadcast-playback.mjs && node scripts/test-ranking-refresh.mjs",
     "check:defense-actions": "node scripts/test-defense-action-owner.mjs && node scripts/test-action-resource-projection.mjs",

@@ -231,7 +231,8 @@ public sealed partial class L12GameEngine
                 }
                 else
                 {
-                    AddCardToHandByEffect(player, top, "library", $"诸葛亮将{top.Name}加入手牌");
+                    AddPreviouslyRevealedCardToHandByEffect(player, top, "library",
+                        $"诸葛亮将{top.Name}加入手牌");
                     FinishStackItem(item);
                 }
                 break;

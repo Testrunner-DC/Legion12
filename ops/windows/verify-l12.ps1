@@ -52,8 +52,12 @@ function Remove-DuplicateTestrunFiles {
     )
 
     $sharedPaths = [Collections.Generic.List[string]]::new()
+    $testrunRootPrefix = $TestrunRoot.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
     foreach ($testrunFile in Get-ChildItem -LiteralPath $TestrunRoot -Recurse -File) {
-        $relativePath = [IO.Path]::GetRelativePath($TestrunRoot, $testrunFile.FullName).Replace('\', '/')
+        if (-not $testrunFile.FullName.StartsWith($testrunRootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "测试服产物不在预期根目录内：$($testrunFile.FullName)"
+        }
+        $relativePath = $testrunFile.FullName.Substring($testrunRootPrefix.Length).Replace('\', '/')
         $productionFile = Join-Path $ProductionRoot $relativePath
         if (-not (Test-Path -LiteralPath $productionFile -PathType Leaf)) { continue }
         if ((Get-Item -LiteralPath $productionFile).Length -ne $testrunFile.Length) { continue }
@@ -165,6 +169,7 @@ try {
         @{ Source = "服务端WebSocket\TwelveLegions\L12WebSocketServer.cs"; Target = "服务端WebSocket\TwelveLegions\L12WebSocketServer.cs" },
         @{ Source = "ops\windows\Initialize-L12BuildEnvironment.ps1"; Target = "ops\windows\Initialize-L12BuildEnvironment.ps1" },
         @{ Source = "ops\windows\verify-l12.ps1"; Target = "ops\windows\verify-l12.ps1" },
+        @{ Source = "ops\windows\verify-l12-testrun-performance.ps1"; Target = "ops\windows\verify-l12-testrun-performance.ps1" },
         @{ Source = "ops\windows\deploy-l12.ps1"; Target = "ops\windows\deploy-l12.ps1" },
         @{ Source = "ops\windows\L12DeployTarget.ps1"; Target = "ops\windows\L12DeployTarget.ps1" },
         @{ Source = "ops\server\deploy-l12-release.sh"; Target = "ops\server\deploy-l12-release.sh" },

@@ -7,7 +7,7 @@ const settings = await read('src/l12/site/L12SettingsModal.vue')
 const audioPreferences = await read('src/l12/audioPreferences.ts')
 const cardTile = await read('src/l12/CardTile.vue')
 const graveyardOverlay = await read('src/l12/game/GraveyardOverlay.vue')
-const [viewportCss, viewportTs, battleLayout, mobileDialogLayout, app, archive, decks, deckBrowser, filterSheet, boardComponent, boardMobileStyle, playerMat, prompt, shell, rules, profile, admin, news, home, feedback, battleHub, rankings, tournaments, recovery, globalCss] = await Promise.all([
+const [viewportCss, viewportTs, battleLayout, mobileDialogLayout, app, archive, decks, deckBrowser, filterSheet, boardComponent, boardMobileStyle, mobileDockStyle, playerMat, prompt, shell, rules, profile, admin, news, home, feedback, battleHub, rankings, tournaments, recovery, globalCss] = await Promise.all([
   read('src/l12/mobileViewport.css'),
   read('src/l12/mobileViewport.ts'),
   read('src/l12/game/battleViewportLayout.ts'),
@@ -19,6 +19,7 @@ const [viewportCss, viewportTs, battleLayout, mobileDialogLayout, app, archive, 
   read('src/l12/site/MobileFilterSheet.vue'),
   read('src/l12/game/GameBoard.vue'),
   read('src/l12/game/GameBoard.mobile.css'),
+  read('src/l12/game/MobileBattleDock.css'),
   read('src/l12/game/PlayerMat.vue'),
   read('src/l12/game/PromptOverlay.vue'),
   read('src/l12/site/SiteShell.vue'),
@@ -61,9 +62,9 @@ expect(rules.includes('MobileFilterSheet') && rules.includes('rule-desktop-filte
 expect(filterSheet.includes('@keydown.esc="close"') && filterSheet.includes('env(safe-area-inset-left)') && filterSheet.includes('env(safe-area-inset-right)'), 'shared portrait filter sheet must close by keyboard and respect both horizontal safe areas')
 expect(board.includes("const mobileMoralePickerEnabled = computed(() => mobileLandscapeViewport.value)"), 'morale summary must open on mobile even outside a payment prompt')
 expect(board.includes(':data-l12-battle-layout="mobileLandscapeViewport ? \'mobile\' : \'desktop\'"') && !board.includes('function updateScale()'), 'the board tree must declare its active layout while delegating viewport math to the shared layout kernel')
-expect(board.includes('class="mobile-detail-handle-reservation" aria-hidden="true"') && board.includes('--l12-mobile-left-rail-w:clamp(88px,calc(var(--l12-viewport-height,100vh) * .22),118px)') && board.includes('grid-template-columns:var(--l12-mobile-left-rail-w) minmax(0,1fr) var(--l12-mobile-right-rail-w)') && board.includes('grid-template-rows:var(--l12-mobile-current-disaster-h) var(--l12-mobile-disaster-value-h) calc(var(--l12-mobile-disaster-orb) * 2'), 'the detail handle, current disaster, value, round-card pool and optional extra zones must share one logical-viewport rail allocation')
+expect(board.includes('class="mobile-detail-handle-reservation" aria-hidden="true"') && mobileDockStyle.includes('--l12-mobile-left-rail-w:max(78px,calc(var(--l12-mobile-master-w) * 1.3))') && board.includes('grid-template-columns:var(--l12-mobile-left-rail-w) minmax(0,1fr) var(--l12-mobile-right-rail-w)') && board.includes('grid-template-rows:var(--l12-mobile-current-disaster-h) var(--l12-mobile-disaster-value-h) calc(var(--l12-mobile-disaster-orb) * 2'), 'the detail handle, current disaster, value, round-card pool, bottom utility row and optional extra zones must share one master-proportional rail allocation')
 expect(!board.includes('@media (max-height: 520px)') && !board.includes('@media (min-height: 521px)'), 'logical portrait rotation and physical landscape must not receive different card geometry from physical CSS media height')
-expect(board.includes('--l12-mobile-resource-w:clamp(74px,calc(var(--l12-viewport-width,100vw) * .09),92px)') && board.includes('--l12-mobile-hand-h:clamp(64px,calc(var(--l12-viewport-height,100vh) * .16),102px)') && board.includes('--l12-mobile-morale-orb:clamp(12px,calc(var(--l12-viewport-height,100vh) * .022),17px)'), 'live mobile card, hand, resource and morale dimensions must resolve from logical viewport tokens rather than physical vw/vh')
+expect(board.includes('--l12-mobile-resource-w:clamp(74px,calc(var(--l12-mobile-master-w) * 1.1),92px)') && mobileDockStyle.includes('--l12-mobile-hand-h:clamp(64px,calc(var(--l12-viewport-height,100vh) * .16),102px)') && board.includes('--l12-mobile-morale-orb:clamp(14px,calc(var(--l12-mobile-master-w) * .28),22px)'), 'live mobile card, hand, resource and morale dimensions must resolve from the logical master/viewport tokens rather than unrelated physical vw/vh scales')
 expect(board.includes('mobileMoraleInteractive'), 'morale viewing and payment selection must remain distinct')
 expect(board.includes('<BattleDockPortal lane="primary">') && board.includes('<MobileBattleDock v-if="mobileLandscapeViewport" />'), 'mobile actions must reserve independent current/primary lanes')
 expect(playerMat.includes('<BattleDockPortal lane="context">') && playerMat.includes("'mobile-action-dock': mobileLayout") && board.includes(':mobile-layout="mobileLandscapeViewport"') && board.includes('provideMobileBattleDock()'), 'field attack and active-ability actions must use the shared logical-canvas mobile action dock instead of remaining clipped inside the battlefield')

@@ -32,7 +32,7 @@ watch(() => visible.value.at(-1)?.sequence, async () => { if (followLatest.value
 <template>
   <div class="battle-event-log" data-ui-contract="perspective-battle-log">
     <div ref="list" class="event-list" @scroll="onScroll">
-      <template v-for="row in visible" :key="row.sequence">
+      <template v-for="row in visible" :key="`${row.kind}:${row.sequence}`">
         <h4 v-if="row.kind === 'turn'" class="turn-divider" :data-event-sequence="row.sequence">
           {{ row.round ? `第 ${row.round} 回合` : '回合开始' }} · {{ row.side }}回合
         </h4>

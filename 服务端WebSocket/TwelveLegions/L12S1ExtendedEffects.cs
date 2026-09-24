@@ -435,7 +435,7 @@ public sealed partial class L12GameEngine
                 var target = PublicTriggerDeclared(item, "recoverTarget");
                 if (State.DisasterValue <= 4 && player.Graveyard.Any(candidate => candidate.InstanceId == target
                         && candidate.CardType == "tactic" && L12StructuredCardRules.CurrentCostAtMost(candidate, 4)))
-                    MoveGraveToHand(player, target);
+                    MoveGraveToHand(player, target, item);
                 FinishStackItem(item); return true;
             }
             case "荆轲":
@@ -533,7 +533,8 @@ public sealed partial class L12GameEngine
                     if (HasImmediateEffect(artifact, "enter"))
                         QueueOrPushTriggeredEffect(item.Controller, artifact, "enter", "【登场时】效果");
                 }
-                else AddCardToHandByEffect(player, artifact, "library", $"诸葛亮将{artifact.Name}加入手牌");
+                else AddPreviouslyRevealedCardToHandByEffect(player, artifact, "library",
+                    $"诸葛亮将{artifact.Name}加入手牌");
                 FinishStackItem(item); return true;
             }
             case "sunwu-free-tactic":
@@ -865,12 +866,15 @@ public sealed partial class L12GameEngine
         return true;
     }
 
-    private void MoveGraveToHand(L12PlayerState player, string instanceId)
+    private void MoveGraveToHand(L12PlayerState player, string instanceId, L12StackItem item)
     {
         var card = player.Graveyard.FirstOrDefault(candidate => candidate.InstanceId == instanceId);
         if (card is null) return;
         if (!CanEnterHandOrLibrary(card)) { AddEvent("replacement", player.PlayerIndex, $"{card.Name}不能进入手牌，仍置于墓地", card); return; }
-        player.Graveyard.Remove(card); AddCardToHandByEffect(player, card, "graveyard", $"{card.Name}从墓地回到手牌"); AddEvent("return", player.PlayerIndex, $"{card.Name}从墓地回到手牌", card);
+        player.Graveyard.Remove(card);
+        PubliclyRevealThenAddCardToHandByEffect(player, card, "graveyard",
+            $"〈{card.Name}〉从墓地公开加入手牌", $"{card.Name}从墓地回到手牌", item);
+        AddEvent("return", player.PlayerIndex, $"{card.Name}从墓地回到手牌", card);
     }
 
     private int ExpiryAtNextOwnEnd(int controller) => State.TurnSerial + (State.ActivePlayer == controller ? 0 : 1);

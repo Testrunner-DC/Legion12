@@ -775,7 +775,13 @@ public sealed partial class L12GameEngine
             case "perseus":
             {
                 var target = player.Graveyard.FirstOrDefault(card => card.InstanceId == One("target"));
-                if (target is not null) { player.Graveyard.Remove(target); AddCardToHandByEffect(player, target, "graveyard", $"{source.Name}将{target.Name}加入手牌"); }
+                if (target is not null)
+                {
+                    player.Graveyard.Remove(target);
+                    PubliclyRevealThenAddCardToHandByEffect(player, target, "graveyard",
+                        $"{source.Name}公开墓地的〈{target.Name}〉",
+                        $"{source.Name}将{target.Name}加入手牌", item);
+                }
                 break;
             }
             case "heracles-promotion":

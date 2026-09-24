@@ -152,7 +152,7 @@ public sealed record L12OperationsPolicySnapshot(
            && (Season.StartsAt is null || Season.StartsAt <= now)
            && (Season.EndsAt is null || Season.EndsAt > now)
            && DisasterCardIds.Count >= 9
-           && string.Equals(DisasterCardIds[^1], L12PlatformStore.AnnihilationCardId,
+           && string.Equals(DisasterCardIds[^1], L12ActiveDisasterRules.AnnihilationCardId,
                StringComparison.OrdinalIgnoreCase);
 
     public L12OperationsPolicySnapshot ForRankedMatch()
@@ -259,7 +259,6 @@ public sealed class L12OperationsConfigException : InvalidOperationException
 
 public sealed partial class L12PlatformStore
 {
-    internal const string AnnihilationCardId = "S01-DS10";
     private const int OperationsHistoryLimit = 200;
     private static readonly Regex OperationsIdPattern = new("^[a-zA-Z0-9_.-]{1,64}$", RegexOptions.Compiled);
 
@@ -697,8 +696,9 @@ public sealed partial class L12PlatformStore
         var disasterIds = payload.DisasterPool.CardIds.Select(id => RequireCardId(id, "天灾卡号"))
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (disasterIds.Length == 0
-            || !string.Equals(disasterIds[^1], AnnihilationCardId, StringComparison.OrdinalIgnoreCase)
-            || disasterIds.Count(id => string.Equals(id, AnnihilationCardId,
+            || !string.Equals(disasterIds[^1], L12ActiveDisasterRules.AnnihilationCardId,
+                StringComparison.OrdinalIgnoreCase)
+            || disasterIds.Count(id => string.Equals(id, L12ActiveDisasterRules.AnnihilationCardId,
                 StringComparison.OrdinalIgnoreCase)) != 1)
             throw new L12OperationsConfigException("annihilation_locked", "最终天灾〈堙灭〉必须唯一且固定在天灾池末尾");
         if (disasterIds.Length is < 9 or > 64 || disasterIds.Length != payload.DisasterPool.CardIds.Count)

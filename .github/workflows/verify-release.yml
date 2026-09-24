@@ -35,6 +35,9 @@ jobs:
           cache: npm
           cache-dependency-path: opcgpro-vue/package-lock.json
 
+      - name: P0-P4 架构退出锁
+        run: node scripts/check-l12-architecture-lock.mjs
+
       - name: L12 规则测试
         run: dotnet test ./TwelveLegions.Tests/TwelveLegions.Tests.csproj --configuration Release
 

@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 
 namespace TwelveLegions.Server;
 
-public sealed partial class L12GameEngine
+public sealed partial class L12GameEngine : IL12MatchKernel
 {
     internal const int MaximumSnapshotEvents = 128;
 
@@ -93,7 +93,7 @@ public sealed partial class L12GameEngine
         if (playerNames.Length != 2 || decks.Length != 2)
             throw new ArgumentException("十二军团对战需要两名玩家和两副牌库");
         _catalog = catalog;
-        _random = stateFormatVersion >= 2
+        _random = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion
             ? new L12DeterministicRandom(seed)
             : new Random(seed);
         _autoPassEmptyResponses = autoPassEmptyResponses ?? AutoPassEmptyResponsesByDefault;
@@ -159,8 +159,7 @@ public sealed partial class L12GameEngine
             PropertyNameCaseInsensitive = true,
             PreferredObjectCreationHandling = JsonObjectCreationHandling.Populate,
         }) ?? throw new InvalidDataException("对局检查点状态为空");
-        if (state.StateFormatVersion < 2)
-            throw new InvalidDataException("历史状态不能绕过命令重放直接恢复");
+        L12PersistenceContract.EnsureCheckpointRecoverySupported(state.StateFormatVersion);
         if (state.Players is null || state.Players.Length != 2 || state.Players.Any(player => player is null
             || player.Field is null || player.Field.Length != 2
             || player.Field.Any(row => row is null || row.Length != 3)))
@@ -174,7 +173,7 @@ public sealed partial class L12GameEngine
 
     internal void MarkCardFactsPersisted(long throughSequence)
     {
-        if (State.StateFormatVersion < 2) return;
+        if (State.StateFormatVersion < L12PersistenceContract.MinimumCheckpointRecoveryVersion) return;
         _cardFactSignals.RemoveAll(item => item.Sequence <= throughSequence);
     }
 
@@ -246,7 +245,8 @@ public sealed partial class L12GameEngine
     private L12GameSnapshot SnapshotForInternal(int viewer, bool spectator, bool revealAllDisasters, bool revealAllHands)
     {
         if (ReconcilePendingActivationTransactions()) State.Revision++;
-        if (State.StateFormatVersion < 2) RecalculateContinuousTroops();
+        if (State.StateFormatVersion < L12PersistenceContract.MinimumCheckpointRecoveryVersion)
+            RecalculateContinuousTroops();
         else PrepareV2ProjectionState();
         var players = State.Players.Select((player, index) => !spectator && (index == viewer || revealAllHands)
             ? (object)new
@@ -908,13 +908,13 @@ public sealed partial class L12GameEngine
 
     private void PrepareV2ProjectionState()
     {
-        if (State.StateFormatVersion < 2 || _preparedProjectionRevision == State.Revision) return;
+        if (State.StateFormatVersion < L12PersistenceContract.MinimumCheckpointRecoveryVersion
+            || _preparedProjectionRevision == State.Revision) return;
         RecalculateContinuousTroops();
         _preparedProjectionRevision = State.Revision;
         // 持续修正可能在该 revision 第一次序列化前才物化；之后的持久化和所有视角复用同一哈希。
         _cachedStateHash = null;
     }
-
     private L12PlayerState BuildPlayer(int index, string name, L12PresetDeckDefinition deck,
         IReadOnlyDictionary<string, string>? alternateArtUrls = null)
     {
@@ -1007,11 +1007,18 @@ public sealed partial class L12GameEngine
 
     private void SetDisasterValue(int value, int? playerIndex = null, string? text = null)
     {
+        var before = State.DisasterValue;
         State.DisasterValue = !DisastersEnabled || L12ActiveDisasterRules.DisasterValueLocked(State.ActiveDisaster?.CardId)
             ? 0
             : Math.Max(0, value);
-        if (!string.IsNullOrWhiteSpace(text))
-            AddEvent("disaster-value", playerIndex, text.Replace("{value}", State.DisasterValue.ToString(), StringComparison.Ordinal));
+        if (!string.IsNullOrWhiteSpace(text) && before != State.DisasterValue)
+        {
+            var item = State.IsResolvingStack ? State.EffectStack.LastOrDefault() : null;
+            var reason = text.Replace("{value}", State.DisasterValue.ToString(), StringComparison.Ordinal);
+            AddPlayerLogEvent("disaster-value", null, $"{reason}；天灾值 {before} → {State.DisasterValue}",
+                item?.Data.GetValueOrDefault("playerLogGroupId"),
+                item?.Data.GetValueOrDefault("playerLogTiming") ?? item?.Trigger);
+        }
     }
 
     private void AdjustDisasterValue(int delta, int? playerIndex = null, string? text = null)
@@ -1084,8 +1091,10 @@ public sealed partial class L12GameEngine
     {
         var playerIndex = State.ActivePlayer;
         var player = State.Players[playerIndex];
+        var playerLogGroupId = $"turn:{State.TurnSerial}";
         ExpireEffectsAtPlayerTurnStart(playerIndex);
-        AddEvent("turn-start", playerIndex, $"第 {State.Round} 回合 · {player.Name} 回合");
+        AddPlayerLogEvent("turn-start", playerIndex, $"第 {State.Round} 回合 · {player.Name} 回合",
+            playerLogGroupId, "turn-start");
 
         State.Phase = L12Phase.Disaster;
         AddEvent("phase", playerIndex, "执行触发天灾");
@@ -1115,6 +1124,7 @@ public sealed partial class L12GameEngine
     {
         var playerIndex = State.ActivePlayer;
         var player = State.Players[playerIndex];
+        var playerLogGroupId = $"turn:{State.TurnSerial}";
         if (State.Phase == L12Phase.GameOver) return;
 
         State.Phase = L12Phase.Reset;
@@ -1137,22 +1147,32 @@ public sealed partial class L12GameEngine
         AddEvent("phase", playerIndex, "执行抽牌阶段");
         if (player.MasterId == "S01-03M1")
         {
-            Mill(player, 2, "瓦尔基里的抽牌阶段替代效果");
+            MillWithPlayerLog(player, 2, "瓦尔基里的抽牌阶段替代效果",
+                playerLogGroupId, "turn-start");
             AddEvent("phase-detail", playerIndex, "瓦尔基里将抽牌阶段改为弃置牌库顶部2张牌");
         }
         else if (State.Round == 1 && playerIndex == State.FirstPlayer)
-            AddEvent("draw-skipped", playerIndex, "先手玩家首回合不抽牌");
+            AddPlayerLogEvent("draw-skipped", playerIndex, "先手玩家首回合不抽牌",
+                playerLogGroupId, "turn-start");
         else if (!Draw(player, 1))
         {
             SetWinner(1 - playerIndex, "抽牌阶段牌库为空");
             return;
         }
-        else AddEvent("phase-detail", playerIndex, "从牌库抽取 1 张牌");
+        else
+        {
+            AddEvent("phase-detail", playerIndex, "从牌库抽取 1 张牌");
+            AddPlayerLogEvent("draw", playerIndex, "回合开始时抽取 1 张牌",
+                playerLogGroupId, "turn-start");
+        }
 
         State.Phase = L12Phase.Morale;
         AddEvent("phase", playerIndex, "执行士气阶段");
         var moraleAdded = AddMorale(player, State.Round == 1 && playerIndex == State.FirstPlayer ? 1 : 2);
         AddEvent("phase-detail", playerIndex, $"从士气牌库追加 {moraleAdded} 张士气");
+        if (moraleAdded > 0)
+            AddPlayerLogEvent("morale", playerIndex, $"回合开始时追加 {moraleAdded} 张士气",
+                playerLogGroupId, "turn-start");
 
         State.Phase = L12Phase.Main;
         AddEvent("phase", playerIndex, "进入主要阶段");
@@ -1253,8 +1273,10 @@ public sealed partial class L12GameEngine
         if (origin is not null && logEffectDraw && result.Cards.Count > 0)
         {
             var source = FindSource(origin);
-            AddEvent("draw", player.PlayerIndex,
+            AddPlayerLogEvent("draw", player.PlayerIndex,
                 $"〈{origin.SourceName}〉使{player.Name}抽取 {result.Cards.Count} 张牌",
+                origin.Data.GetValueOrDefault("playerLogGroupId"),
+                origin.Data.GetValueOrDefault("playerLogTiming") ?? origin.Trigger, null,
                 source is null ? [] : [source]);
         }
         return CompleteLibrarySequence(player, result, count, origin, origin?.SourceName ?? "抽牌");
@@ -2199,12 +2221,24 @@ public sealed partial class L12GameEngine
     private void AddEvent(string type, int? playerIndex, string text, params L12CardInstance[] cards)
         => AddEventCore(type, playerIndex, text, null, cards);
 
+    private void AddPlayerLogEvent(string type, int? playerIndex, string text,
+        string? playerLogGroupId, string? playerLogTiming = null, string? playerLogDecisionLabel = null,
+        params L12CardInstance[] cards)
+        => AddEventCoreWithPlayerLog(type, playerIndex, text, null, null,
+            playerLogGroupId, playerLogTiming, playerLogDecisionLabel, cards);
+
     private void AddEventCore(string type, int? playerIndex, string text, string? effectText,
         params L12CardInstance[] cards)
         => AddEventCoreWithEffectMetadata(type, playerIndex, text, effectText, null, cards);
 
     private void AddEventCoreWithEffectMetadata(string type, int? playerIndex, string text, string? effectText,
         L12EffectEventMetadata? effectMetadata, params L12CardInstance[] cards)
+        => AddEventCoreWithPlayerLog(type, playerIndex, text, effectText, effectMetadata,
+            null, null, null, cards);
+
+    private void AddEventCoreWithPlayerLog(string type, int? playerIndex, string text, string? effectText,
+        L12EffectEventMetadata? effectMetadata, string? playerLogGroupId, string? playerLogTiming,
+        string? playerLogDecisionLabel, params L12CardInstance[] cards)
     {
         State.EventSequence++;
         State.LastAction = new L12ActionEvent(State.EventSequence, type, playerIndex, text,
@@ -2233,9 +2267,12 @@ public sealed partial class L12GameEngine
                 "effect-failed" => "failed",
                 _ => null,
             },
+            PlayerLogGroupId = playerLogGroupId,
+            PlayerLogTiming = playerLogTiming,
+            PlayerLogDecisionLabel = playerLogDecisionLabel,
         };
         State.Events.Add(State.LastAction);
-        if (State.StateFormatVersion >= 2)
+        if (State.StateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion)
         {
             _unpersistedEvents.Add(State.LastAction);
             if (State.Events.Count > MaximumSnapshotEvents) State.Events.RemoveAt(0);

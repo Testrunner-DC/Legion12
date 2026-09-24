@@ -6,6 +6,7 @@ import { getEffectiveOperationsPolicy, platformState, publicDeckApi, type Effect
 import { useRoute, useRouter } from 'vue-router'
 import DeckProfile from '@/l12/DeckProfile.vue'
 import MobileFilterSheet from './MobileFilterSheet.vue'
+import { useActionGate } from '@/l12/useActionGate'
 
 const tab = ref<'mine' | 'plaza'>('mine')
 const catalog = ref<DeckCard[]>([])
@@ -27,6 +28,9 @@ const plazaFiltersOpen = ref(false)
 const imagePreview = ref<{ deck: SavedL12Deck; blob: Blob; url: string } | null>(null)
 const route = useRoute()
 const router = useRouter()
+const { pending: actionBusy, isPending: actionPending, run: runAction } = useActionGate()
+const publicDeckActionKey = (deckId: string, accountId = platformState.account?.id ?? 'anonymous') =>
+  `public-deck:${accountId}:${deckId}`
 const returnTo = computed(() => typeof route.query.from === 'string' && route.query.from.startsWith('/') ? route.query.from : '/decks')
 const editorLink = (deckName?: string, publicationId?: string) => ({ path: '/deck-editor', query: { ...(deckName ? { deck: deckName } : {}), ...(publicationId ? { published: publicationId } : {}), returnTo: returnTo.value } })
 
@@ -104,12 +108,24 @@ function uniqueName(base: string) {
   return value
 }
 async function copyToMine(entry: PublishedDeck) {
-  const deck = { ...entry.deck, name: uniqueName(entry.deck.name), cardIds: [...entry.deck.cardIds], moraleIds: [...entry.deck.moraleIds], specialIds: [...(entry.deck.specialIds ?? [])], updatedAt: new Date().toISOString() }
-  try {
-    const confirmed = await saveDeck(deck)
-    saved.value = loadSavedDecks(); notice.value = `已复制《${confirmed.name}》到我的牌库`
-    if (!entry.official) void publicDeckApi.recordCopy(entry.id).then(updatePublished).catch(() => undefined)
-  } catch (error) { notice.value = error instanceof Error ? error.message : '复制到我的牌库失败' }
+  const accountId = platformState.account?.id
+  await runAction(publicDeckActionKey(entry.id, accountId), async () => {
+    const deck = { ...entry.deck, name: uniqueName(entry.deck.name), cardIds: [...entry.deck.cardIds], moraleIds: [...entry.deck.moraleIds], specialIds: [...(entry.deck.specialIds ?? [])], updatedAt: new Date().toISOString() }
+    try {
+      const confirmed = await saveDeck(deck)
+      if (accountId === platformState.account?.id) {
+        saved.value = loadSavedDecks()
+        notice.value = `已复制《${confirmed.name}》到我的牌库`
+      }
+      if (!entry.official) {
+        const updated = await publicDeckApi.recordCopy(entry.id).catch(() => null)
+        if (updated && accountId === platformState.account?.id) updatePublished(updated)
+      }
+    } catch (error) {
+      if (accountId === platformState.account?.id)
+        notice.value = error instanceof Error ? error.message : '复制到我的牌库失败'
+    }
+  })
 }
 function updatePublished(entry: PublishedDeck) {
   const index = published.value.findIndex(item => item.id === entry.id)
@@ -135,8 +151,17 @@ function deckFaction(entry: PublishedDeck) {
 async function toggleLike(entry: PublishedDeck) {
   if (entry.official) return
   if (!platformState.account) { notice.value = '请先登录账号再点赞'; return }
-  try { updatePublished(await publicDeckApi.toggleLike(entry.id)) }
-  catch (error) { notice.value = error instanceof Error ? error.message : '点赞失败' }
+  const accountId = platformState.account.id
+  await runAction(publicDeckActionKey(entry.id, accountId), async () => {
+    try {
+      const updated = await publicDeckApi.toggleLike(entry.id)
+      if (accountId === platformState.account?.id) updatePublished(updated)
+    }
+    catch (error) {
+      if (accountId === platformState.account?.id)
+        notice.value = error instanceof Error ? error.message : '点赞失败'
+    }
+  })
 }
 async function publishDeck() {
   const deck = saved.value[publishName.value]
@@ -144,12 +169,14 @@ async function publishDeck() {
   if (!platformState.account) { notice.value = '请先登录账号再公开牌库'; return }
   const error = validateDeck(deck, catalog.value)
   if (error) { notice.value = error; return }
-  try {
-    const entry = await publicDeckApi.publish(deck)
-    if (published.value.some(item => item.id === entry.id)) updatePublished(entry)
-    else published.value.push(entry)
-    showPublish.value = false; tab.value = 'plaza'; notice.value = '牌库已公开到公开牌库'
-  } catch (error) { notice.value = error instanceof Error ? error.message : '公开牌库失败' }
+  await runAction(`public-deck:publish:${deck.name}`, async () => {
+    try {
+      const entry = await publicDeckApi.publish(deck)
+      if (published.value.some(item => item.id === entry.id)) updatePublished(entry)
+      else published.value.push(entry)
+      showPublish.value = false; tab.value = 'plaza'; notice.value = '牌库已公开到公开牌库'
+    } catch (error) { notice.value = error instanceof Error ? error.message : '公开牌库失败' }
+  })
 }
 async function editPublished(entry: PublishedDeck) {
   const deck = { ...entry.deck, cardIds: [...entry.deck.cardIds], moraleIds: [...entry.deck.moraleIds], specialIds: [...entry.deck.specialIds] }
@@ -161,11 +188,19 @@ async function editPublished(entry: PublishedDeck) {
 }
 async function deletePublished(entry: PublishedDeck) {
   if (!window.confirm('确定删除这个公开牌库？删除后将不再显示在公开牌库。')) return
-  try {
-    await publicDeckApi.delete(entry.id)
-    published.value = published.value.filter(item => item.id !== entry.id)
-    notice.value = `已从公开牌库删除《${entry.deck.name}》`
-  } catch (error) { notice.value = error instanceof Error ? error.message : '删除公开牌库失败' }
+  const accountId = platformState.account?.id
+  await runAction(publicDeckActionKey(entry.id, accountId), async () => {
+    try {
+      await publicDeckApi.delete(entry.id)
+      if (accountId === platformState.account?.id) {
+        published.value = published.value.filter(item => item.id !== entry.id)
+        notice.value = `已从公开牌库删除《${entry.deck.name}》`
+      }
+    } catch (error) {
+      if (accountId === platformState.account?.id)
+        notice.value = error instanceof Error ? error.message : '删除公开牌库失败'
+    }
+  })
 }
 async function copyCode(deck: SavedL12Deck) { await navigator.clipboard.writeText(encodeDeckCode(deck)); notice.value = '牌库码已复制' }
 async function previewImage(deck: SavedL12Deck) {
@@ -234,7 +269,7 @@ watch(() => route.query, restoreFiltersFromRoute, { deep: true })
 </script>
 
 <template>
-  <div class="deck-page">
+  <div class="deck-page" :aria-busy="actionBusy">
     <header class="page-head"><div><small>DECK LIBRARY</small><h1>牌库</h1><p>构筑、保存、分享并发现公开牌库。</p></div><router-link :to="editorLink()">＋ 新建牌库</router-link></header>
     <div class="deck-tabs"><button :class="{ active: tab === 'mine' }" @click="tab = 'mine'">我的牌库</button><button :class="{ active: tab === 'plaza' }" @click="tab = 'plaza'">公开牌库</button></div>
     <p v-if="notice" class="deck-notice">{{ notice }}</p>
@@ -249,9 +284,9 @@ watch(() => route.query, restoreFiltersFromRoute, { deep: true })
       <section class="plaza-toolbar"><input v-model="query" placeholder="搜索牌库名称、作者或主宰"/><MobileFilterSheet v-model="plazaFiltersOpen" title="牌库筛选与排序" :active-count="plazaFilterCount" @reset="resetPlazaFilters"><div class="plaza-filter-fields"><label>主宰<select v-model="masterFilter"><option value="all">全部主宰</option><option v-for="master in plazaMasters" :key="master.id" :value="master.id">{{ master.nameZh }}</option></select></label><label>阵营<select v-model="factionFilter"><option value="all">全部阵营</option><option v-for="faction in plazaFactions" :key="faction" :value="faction">{{ factionLabels[faction] || faction }}</option></select></label><label>赛季合法性<select v-model="legalFilter"><option value="all">全部</option><option value="legal">符合本赛季</option><option value="illegal">不符合本赛季</option></select></label><label>包含卡牌<select v-model="cardFilter"><option value="">不限卡牌</option><option v-for="card in plazaCards" :key="card.id" :value="card.id">{{ card.nameZh }} · {{ card.number }}</option></select></label><label>更新时间<select v-model="updatedFilter"><option value="all">不限时间</option><option value="1">1天内</option><option value="7">7天内</option><option value="30">30天内</option><option value="90">90天内</option><option value="365">365天内</option></select></label><label>排序<select v-model="sortMode"><option value="trend">综合热度</option><option value="copies">最多复制</option><option value="likes">最多点赞</option><option value="views">最多浏览</option><option value="latest">最新发布</option><option value="name">按名称</option></select></label></div><template #apply-label>查看 {{ filteredPublished.length }} 个牌库</template></MobileFilterSheet><div class="plaza-desktop-filters"><select v-model="masterFilter" aria-label="按主宰筛选"><option value="all">全部主宰</option><option v-for="master in plazaMasters" :key="master.id" :value="master.id">{{ master.nameZh }}</option></select><select v-model="factionFilter" aria-label="按阵营筛选"><option value="all">全部阵营</option><option v-for="faction in plazaFactions" :key="faction" :value="faction">{{ factionLabels[faction] || faction }}</option></select><select v-model="legalFilter" aria-label="按合法性筛选"><option value="all">全部合法性</option><option value="legal">符合本赛季</option><option value="illegal">不符合本赛季</option></select><select v-model="cardFilter" aria-label="按包含卡牌筛选"><option value="">不限卡牌</option><option v-for="card in plazaCards" :key="card.id" :value="card.id">{{ card.nameZh }}</option></select><select v-model="updatedFilter" aria-label="按更新时间筛选"><option value="all">不限时间</option><option value="1">1天内</option><option value="7">7天内</option><option value="30">30天内</option><option value="90">90天内</option><option value="365">365天内</option></select><select v-model="sortMode" aria-label="排序"><option value="trend">综合热度</option><option value="copies">最多复制</option><option value="likes">最多点赞</option><option value="views">最多浏览</option><option value="latest">最新发布</option><option value="name">按名称</option></select></div><button :disabled="!mine.length" @click="showPublish = true">发布我的牌库</button></section>
       <button v-if="plazaFilterCount" type="button" class="plaza-filter-summary" @click="plazaFiltersOpen = true">{{ plazaFilterSummary }}</button>
       <div class="plaza-result-line"><b>{{ filteredPublished.length }}</b> 个牌库<span v-if="plazaFilterCount"> · 已启用 {{ plazaFilterCount }} 项筛选</span><button v-if="plazaFilterCount" @click="resetPlazaFilters">清除筛选</button></div>
-      <section class="plaza-grid"><article v-for="entry in filteredPublished" :key="entry.id" :class="`faction-${deckFaction(entry)}`"><button class="plaza-summary" @click="openDeck(entry)"><DeckProfile :master-id="entry.deck.masterId" :master-name="byId.get(entry.deck.masterId)?.nameZh" :fallback-url="byId.get(entry.deck.masterId)?.imageUrl" :name="entry.deck.name" :context="entry.author" :meta="`${deckCountSummary(entry.deck.cardIds, byId).label} 主牌 · ${entry.deck.moraleIds.length} 士气`"/></button><footer><span>浏览量 {{ entry.views ?? 0 }}</span><button :class="{ liked: entry.liked }" :disabled="entry.official" @click="toggleLike(entry)">♡ {{ entry.likes }}</button><span>复制 {{ entry.copies }}</span><span class="season-compliance" :class="{ compliant: seasonRequirement(entry).compliant }" :title="seasonRequirement(entry).reason">{{ seasonRequirement(entry).label }}</span><button @click="openDeck(entry)">查看构筑</button></footer></article></section>
+      <section class="plaza-grid"><article v-for="entry in filteredPublished" :key="entry.id" :class="`faction-${deckFaction(entry)}`"><button class="plaza-summary" @click="openDeck(entry)"><DeckProfile :master-id="entry.deck.masterId" :master-name="byId.get(entry.deck.masterId)?.nameZh" :fallback-url="byId.get(entry.deck.masterId)?.imageUrl" :name="entry.deck.name" :context="entry.author" :meta="`${deckCountSummary(entry.deck.cardIds, byId).label} 主牌 · ${entry.deck.moraleIds.length} 士气`"/></button><footer><span>浏览量 {{ entry.views ?? 0 }}</span><button :class="{ liked: entry.liked }" :disabled="entry.official || actionPending(publicDeckActionKey(entry.id))" @click="toggleLike(entry)">♡ {{ entry.likes }}</button><span>复制 {{ entry.copies }}</span><span class="season-compliance" :class="{ compliant: seasonRequirement(entry).compliant }" :title="seasonRequirement(entry).reason">{{ seasonRequirement(entry).label }}</span><button @click="openDeck(entry)">查看构筑</button></footer></article></section>
     </template>
-    <div v-if="showPublish" class="modal-mask" @click.self="showPublish = false"><section class="publish-modal"><header><h2>公开牌库</h2><button @click="showPublish = false">×</button></header><p>选择一个已保存且合法的牌库公开展示。公开后可由作者继续编辑或删除。</p><select v-model="publishName"><option value="">选择牌库</option><option v-for="deck in mine" :key="deck.name" :value="deck.name">{{ deck.name }}</option></select><button class="primary" :disabled="!publishName || !platformState.account" @click="publishDeck">确认公开</button></section></div>
+    <div v-if="showPublish" class="modal-mask" @click.self="showPublish = false"><section class="publish-modal"><header><h2>公开牌库</h2><button @click="showPublish = false">×</button></header><p>选择一个已保存且合法的牌库公开展示。公开后可由作者继续编辑或删除。</p><select v-model="publishName"><option value="">选择牌库</option><option v-for="deck in mine" :key="deck.name" :value="deck.name">{{ deck.name }}</option></select><button class="primary" :disabled="!publishName || !platformState.account || actionPending(`public-deck:publish:${publishName}`)" @click="publishDeck">{{ actionPending(`public-deck:publish:${publishName}`) ? '公开中…' : '确认公开' }}</button></section></div>
     <div v-if="imagePreview" class="modal-mask image-mask" @click.self="closeImagePreview"><section class="image-preview"><header><div><small>16:9 SHARE IMAGE</small><h2>{{ imagePreview.deck.name }} · 牌库图</h2></div><button @click="closeImagePreview">×</button></header><img :src="imagePreview.url" alt="牌库图预览"/><footer><button @click="copyPreviewImage">复制图片</button><button class="primary" @click="downloadDeckImage(imagePreview.deck,catalog,imagePreview.blob)">下载 PNG</button></footer></section></div>
   </div>
 </template>

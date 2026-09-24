@@ -32,6 +32,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private readonly IL12ReleaseControlAdapter _releaseControl;
     private readonly L12Catalog _catalog;
     private readonly int _cardCount;
+    private readonly L12HttpPerformanceMonitor _httpPerformance = new();
     private readonly ConcurrentDictionary<Guid, WebSocket> _sockets = new();
     private readonly ConcurrentDictionary<Guid, L12OutboundConnection> _outboundConnections = new();
     private readonly ConcurrentDictionary<Guid, L12SnapshotWireCodec> _snapshotCodecs = new();
@@ -89,7 +90,10 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         builder.WebHost.UseUrls($"http://{host}:{port}");
         builder.Services.AddRouting();
         _app = builder.Build();
+        var trafficGuard = new L12HttpTrafficGuard();
         MapRankedIntegrityEndpoints();
+        _app.Use((context, next) => _httpPerformance.InvokeAsync(context, next));
+        _app.Use((context, next) => L12HttpExceptionBoundary.InvokeAsync(context, next));
         _app.Use(async (context, next) =>
         {
             // Authentication, mail throttles and privacy-preserving ranked network keys
@@ -109,10 +113,26 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 $"Content-Type, Authorization, {L12CorrelationIds.HeaderName}, Idempotency-Key, If-Match, X-Admin-Reason";
             context.Response.Headers.AccessControlAllowMethods = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
             context.Response.Headers.AccessControlExposeHeaders =
-                $"{L12CorrelationIds.HeaderName}, X-Command-ID, X-Idempotent-Replay, ETag";
+                $"{L12CorrelationIds.HeaderName}, X-Command-ID, X-Idempotent-Replay, ETag, Retry-After, RateLimit-Limit, RateLimit-Remaining, Server-Timing";
             if (HttpMethods.IsOptions(context.Request.Method)) { context.Response.StatusCode = StatusCodes.Status204NoContent; return; }
             var restrictedAccount = context.Request.Path.StartsWithSegments("/api")
                 ? _platform.Authenticate(context.Request.Headers.Authorization) : null;
+            var rate = trafficGuard.Acquire(context.Request,
+                context.Connection.RemoteIpAddress?.ToString() ?? "unknown", restrictedAccount?.Id);
+            if (rate.Limit != int.MaxValue)
+            {
+                context.Response.Headers["RateLimit-Limit"] = rate.Limit.ToString();
+                context.Response.Headers["RateLimit-Remaining"] = rate.Remaining.ToString();
+            }
+            if (!rate.Allowed)
+            {
+                context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+                context.Response.Headers.RetryAfter = rate.RetryAfterSeconds.ToString();
+                context.Response.Headers.CacheControl = "no-store";
+                await context.Response.WriteAsJsonAsync(new L12ApiError("rate_limited",
+                    "请求过于频繁，请稍后重试", correlationId));
+                return;
+            }
             var accountRecoveryPathAllowed = context.Request.Path == "/api/auth/me"
                 || context.Request.Path == "/api/auth/change-password"
                 || context.Request.Path == "/api/auth/change-username"
@@ -137,6 +157,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 : null;
             if (featureId is not null && !_platform.CaptureOperationsPolicy().IsFeatureEnabled(featureId))
             {
+                context.Items[L12HttpPerformanceMonitor.ExpectedUnavailableItemName] = true;
                 context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
                 await context.Response.WriteAsJsonAsync(new
                 {
@@ -1517,14 +1538,16 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             const L12Permission permission = L12Permission.AdminRuntimeRead;
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
             var observedAt = DateTimeOffset.UtcNow;
+            var build = L12RuntimeBuildVersion.Capture();
             var rooms = _rooms.RuntimeStats();
             var releases = _platform.ReleaseEnvironments(authenticated.Account, _releaseControl);
             var status = new L12RuntimeStatusView(observedAt,
-                typeof(L12WebSocketServer).Assembly.GetName().Version?.ToString() ?? "unknown",
+                build.ServerRelease,
                 _cardCount, rooms.OnlineAccountCount, _sockets.Count, rooms.RoomCount,
                 rooms.ActiveGameCount, releases,
                 new L12RuntimeDependencyView("cdn", false, "unavailable",
-                    "no-authoritative-source", observedAt));
+                    "no-authoritative-source", observedAt),
+                _httpPerformance.Snapshot());
             return Results.Ok(status);
         });
         _app.MapGet("/api/admin/accounts/{accountId}/sessions", (HttpRequest request, string accountId) =>
@@ -3130,7 +3153,12 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         => request.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown-client";
 
     private static IResult ApiError(HttpRequest request, string code, string message, int statusCode)
-        => Results.Json(new L12ApiError(code, message, CorrelationId(request)), statusCode: statusCode);
+    {
+        if (statusCode == StatusCodes.Status503ServiceUnavailable
+            && code is "feature_disabled" or "email_feature_disabled")
+            request.HttpContext.Items[L12HttpPerformanceMonitor.ExpectedUnavailableItemName] = true;
+        return Results.Json(new L12ApiError(code, message, CorrelationId(request)), statusCode: statusCode);
+    }
 
     private static IResult SessionRevocationResponse(HttpRequest request, L12SessionRevocationResult result)
         => result.Found

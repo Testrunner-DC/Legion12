@@ -7,6 +7,9 @@ namespace TwelveLegions.Server;
 /// </summary>
 public static class L12ActiveDisasterRules
 {
+    // 最终天灾是规则内容身份，不属于平台存储配置。
+    public const string AnnihilationCardId = "S01-DS10";
+
     // S01-DS01 黯陨晨星：主要阶段开始时回合玩家掷骰（由天灾管线 BeginMainPhaseDisasterEffect 承载）。
     public const string DarkMorningStarCardId = "S01-DS01";
 
@@ -32,7 +35,7 @@ public static class L12ActiveDisasterRules
 
     // S01-DS10 堙灭：天灾值锁定为0、不再推进，最终天灾不再触发。
     public static bool DisasterValueLocked(string? activeDisasterId)
-        => activeDisasterId == "S01-DS10";
+        => activeDisasterId == AnnihilationCardId;
 
     // S02-DS01 天地异变：牌库翻转进行游戏。
     public static bool LibraryFlipped(string? activeDisasterId)
