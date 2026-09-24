@@ -872,6 +872,8 @@ const contracts = [
     && battleLogViewModel.includes("case 'trial':") && battleLogViewModel.includes("case 'cost':")
     && battleLogViewModel.includes("case 'attach':") && battleLogViewModel.includes("case 'disaster-value':")
     && battleLogViewModel.includes('effectOutcomeBadges') && battleLogViewModel.includes('costMergesIntoFollowingResult')
+    && battleLogViewModel.includes('isInvalidDefenseEvent') && battleLogViewModel.includes('isSuccessfulDefenseEvent')
+    && battleLogViewModel.includes("'attack-ended'") && battleLogViewModel.includes("{ text: '未抵挡' }")
     && battleLogViewModel.includes('isPrivateHandAddEvent') && battleLogViewModel.includes('precedingPublicAdd')
     && !battleLog.includes('event.text') && !battleLog.includes('omitted = new Set'), '玩家战报必须由白名单纯投影层生成，失败与内部流程默认隐藏；费用并入效果、进攻收拢为可展开小结，但符文、士气、试炼、公开区域与效果目标的实际变化不得被压缩丢失；玩家昵称、隐藏卡名和引擎原文不得直出'],
   [zoneMovementLayer.includes("event.type === 'reveal' && /加入手牌/.test(event.text)")

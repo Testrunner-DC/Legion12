@@ -9,6 +9,15 @@
 - **同类扫描**：核验〈图特摩斯三世〉既有流程确为先全体-1000再进入击杀段；检索全部持续兵力与免死入口，致命替代仍只通过 `RemoveFromField`；目标高亮仍只接纳公开场上实例。
 - **回归守卫**：`ImmortalityRegressionTests`、`S2UniversalEffectsTests`、`Bq20260907_266RegressionTests`、`AtomicReviewBatch6KBRegressionTests`及前端提示/移动视口契约共同覆盖。
 
+## BUG-20260924-COMBAT-LOG-DEFENSE-SEMANTICS｜战斗小结把未抵挡与无效抵挡显示为成功（本地验证通过，待 L12-main 提交）
+
+- **现象与根因**：主宰未被抵挡并受到伤害时，展开明细仍显示“对方抵挡”。服务端为保持权威交战记录，会以 `defense` 同时表达“弃置军团成功抵挡”和“未抵挡、主宰受到伤害”；玩家投影此前仅按事件类型判断，把所有 `defense` 都写为“抵挡”，并将其一律计入 `defended=true`。
+- **同类扫描**：扫描全部 `AddEvent("defense"` / `AddEvent("support"` 出口，确认普通主宰抵挡、佣兵部队响应抵挡、狮心王理查额外费用导致抵挡/支援无效及正常支援均进入同一前端收拢器。进一步发现任意 `leave/grave` 都会把结果设为“击破”，会把支援者或进攻者离场误认成防守目标阵亡；收拢也未在 `attack-ended` 停止，可能吞入后续无关事件。
+- **共享修复**：新增统一的成功/无效防御判定。未抵挡显示“未抵挡”，费用或复验失败显示一次“抵挡/支援无效”，只有实际弃置军团、佣兵抵挡或成功支援才显示“完成抵挡/支援”并把结果标为“被抵挡”。多张公开抵挡卡全部保留。只有防守目标同一实例离场才判“击破”，主宰伤害只读取防守方主宰伤害事件，且 `attack-ended` 成为硬边界。
+- **回滚守卫**：`test-battle-log-view-model.mjs` 新增未抵挡主宰受伤、两张军团成功抵挡、抵挡无效去重、支援者离场、进攻者离场及结束后无关墓地事件六组回归；`check-ui-contracts.mjs` 锁定成功/无效判定与战斗结束边界。
+- **验证**：日志投影 69 行、UI 契约 340 项、Vue 类型检查、完整生产与 `/testrun` 前端构建均通过；本批不改服务端规则，未重跑后端规则程序集。
+- **交付状态**：已由 **L12-main 对话**统一复核并接收整合；本批统一推送后生效，未部署。
+
 ## BUG-20260924-PLAYER-LOG-ESSENTIAL-STATE｜强过滤后必要状态变化缺失（已由 L12-main 统一推送）
 
 - **现象与根因**：批次 G 将玩家记录改为白名单投影时，`trial`、`trial-action`、`cost`、`enter`、`attach`、`counter-displaced`、`counter-replaced`、`mill`、`library`、`continuous`、`extra-turn`、`disaster-value` 等实际状态事件一并列入隐藏集合；`effect` 又只显示“发动效果”，丢弃具体结果。因此彼界获得符文、通常试炼推进以及多类公开区域变化没有玩家记录。

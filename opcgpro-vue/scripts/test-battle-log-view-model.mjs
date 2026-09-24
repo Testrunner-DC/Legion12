@@ -108,14 +108,70 @@ assert(fieldEffect[0].kind === 'line' && fieldEffect[0].badges.some(item => item
 
 const combat = projectLog([
   event(1, 'attack', '〈甲军团〉6000 vs 〈乙军团〉4000', [a, b], 0),
-  event(2, 'defense', '乙军团进行抵挡', [b], 1),
-  event(3, 'damage', '乙军团受到2点伤害', [b], 1),
-  event(4, 'leave', '乙军团离场', [b], 1),
+  event(2, 'leave', '乙军团离场', [b], 1),
 ], 0, [])
 assert.equal(combat.length, 1, 'a contiguous attack chain must collapse into one combat summary')
 assert.equal(combat[0].kind, 'combat')
 assert.equal(combat[0].result, '击破')
-assert.equal(combat[0].detail.length, 3, 'combat detail must retain defense, damage and leave')
+assert.equal(combat[0].detail.length, 1, 'combat detail must retain the defeated target departure')
+
+const masterNotDefended = projectLog([
+  event(1, 'attack', '〈甲军团〉2000 vs 主宰', [a], 0),
+  event(2, 'damage', '对方主宰受到1点伤害', [], 1),
+  event(3, 'defense', '对方的主宰受到1点伤害', [], 1),
+], 0, [])
+assert.equal(masterNotDefended[0].kind, 'combat')
+assert.equal(masterNotDefended[0].result, '造成伤害')
+assert(masterNotDefended[0].kind === 'combat'
+  && masterNotDefended[0].detail.some(row => row.parts.some(part => part.text === '未抵挡')),
+  'an unblocked master attack must say the opponent did not block')
+assert.equal(JSON.stringify(masterNotDefended).includes('完成抵挡'), false)
+
+const blockOne = card('抵挡军团甲', 'block-a')
+const blockTwo = card('抵挡军团乙', 'block-b')
+const masterDefended = projectLog([
+  event(1, 'attack', '〈甲军团〉6000 vs 主宰', [a], 0),
+  event(2, 'defense', '对方弃置2张军团抵挡', [blockOne, blockTwo], 1),
+], 0, [])
+assert.equal(masterDefended[0].kind, 'combat')
+assert.equal(masterDefended[0].result, '被抵挡')
+assert(masterDefended[0].kind === 'combat'
+  && [blockOne, blockTwo].every(card => masterDefended[0].detail[0].parts.some(part => part.card?.instanceId === card.instanceId)),
+  'all public blocking cards must remain visible in the compact defense detail')
+
+const invalidDefense = projectLog([
+  event(1, 'attack', '〈甲军团〉6000 vs 〈乙军团〉4000', [a, b], 0),
+  event(2, 'defense-invalid', '防御结算前重新校验失败，本次抵挡/支援无效', [], 1),
+  event(3, 'defense', '未支付额外弃牌费用，本次抵挡/支援无效', [], 1),
+], 0, [])
+assert.equal(invalidDefense[0].kind, 'combat')
+assert.notEqual(invalidDefense[0].result, '被抵挡')
+assert(invalidDefense[0].kind === 'combat'
+  && invalidDefense[0].detail.filter(row => row.parts.some(part => part.text === '抵挡/支援无效')).length === 1,
+  'invalid defense events must collapse to one compact invalid result')
+
+const supporter = card('支援军团', 'supporter')
+const supported = projectLog([
+  event(1, 'attack', '〈甲军团〉6000 vs 〈乙军团〉4000', [a, b], 0),
+  event(2, 'leave', '支援军团作为支援军团阵亡', [supporter], 1),
+  event(3, 'support', '支援军团联合支援乙军团，支援者阵亡', [supporter, b, a], 1),
+], 0, [])
+assert.equal(supported[0].kind, 'combat')
+assert.equal(supported[0].result, '被抵挡', 'a supporter leaving must not be mistaken for the target being defeated')
+assert(supported[0].kind === 'combat'
+  && supported[0].detail.at(-1)?.parts.filter(part => part.card).every(part => part.card?.instanceId === supporter.instanceId),
+  'support detail must list supporters without mislabeling the attacker or target as support cards')
+
+const attackerDeparture = projectLog([
+  event(1, 'attack', '〈甲军团〉2000 vs 〈乙军团〉4000', [a, b], 0),
+  event(2, 'leave', '甲军团离场', [a], 0),
+  event(3, 'attack-ended', '本次进攻结束', [], 0),
+  event(4, 'grave', '乙军团因后续效果进入墓地', [b], 1),
+], 0, [])
+assert.equal(attackerDeparture.length, 2, 'events after attack-ended must remain outside the previous combat summary')
+assert.equal(attackerDeparture[0].kind, 'combat')
+assert.notEqual(attackerDeparture[0].result, '击破', 'attacker departure must not count as defeating the defender')
+assert.equal(attackerDeparture[1].kind, 'line')
 
 assert.equal(projectLog([event(1, 'damage', '兵力增加0点')], 0, []).length, 0, 'standalone zero change must disappear')
 assert.equal(projectLog([event(1, 'effect-failed', '校验失败')], 0, []).length, 0, 'failed effects must disappear')
@@ -154,4 +210,4 @@ const safeRows = projectLog([
 assert.deepEqual(playerLogContainsForbiddenTerms(safeRows), [], 'player projection must not contain engine terminology')
 assert.equal(JSON.stringify(safeRows).includes('测试甲'), false, 'player nicknames must never enter projected rows')
 
-console.log(`battle log view model: ${rows.length + cancelled.length + otherworldRune.length + effectWithCardCost.length + trial.length + stateChanges.length + standaloneCost.length + fieldEffect.length + combat.length + publicHandAdd.length + privateHandAdd.length + deduplicatedPublicHandAdd.length + safeRows.length} projected rows verified`)
+console.log(`battle log view model: ${rows.length + cancelled.length + otherworldRune.length + effectWithCardCost.length + trial.length + stateChanges.length + standaloneCost.length + fieldEffect.length + combat.length + masterNotDefended.length + masterDefended.length + invalidDefense.length + supported.length + attackerDeparture.length + publicHandAdd.length + privateHandAdd.length + deduplicatedPublicHandAdd.length + safeRows.length} projected rows verified`)

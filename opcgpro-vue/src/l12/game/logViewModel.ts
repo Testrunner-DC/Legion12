@@ -169,6 +169,23 @@ function effectOutcomeBadges(event: ActionEvent) {
   return badges
 }
 
+function isInvalidDefenseEvent(event: ActionEvent) {
+  return event.type === 'defense-invalid' || /抵挡(?:\/支援)?无效|抵挡或支援无效|本次抵挡.*无效|本次支援.*无效/.test(event.text)
+}
+
+function isSuccessfulDefenseEvent(event: ActionEvent) {
+  if (event.type === 'support') return true
+  if (event.type !== 'defense' || isInvalidDefenseEvent(event)) return false
+  return publicCards(event).length > 0 || /弃置\s*\d+\s*张军团抵挡|抵挡本次进攻/.test(event.text)
+}
+
+function supportingCards(event: ActionEvent) {
+  const cards = publicCards(event)
+  const names = event.text.match(/^(.+?)联合支援/)?.[1]?.split('、').map(name => name.trim()) ?? []
+  const named = cards.filter(card => names.includes(card.name))
+  return named.length ? named : cards.slice(0, Math.max(1, cards.length - 2))
+}
+
 function costBadges(events: ActionEvent[], index: number, event: ActionEvent) {
   const found: LogBadge[] = []
   for (let cursor = index - 1; cursor >= 0 && index - cursor <= 8; cursor--) {
@@ -357,8 +374,18 @@ function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], co
       return line(event.sequence, 'disaster', actor, card ? [cardPart(card), { text: '：天灾值变化' }] : [{ text: '天灾值变化' }],
         value ? [{ value: `天灾值 ${value}`, tone: 'info' }] : [])
     }
-    case 'defense': return line(event.sequence, 'defense', actor, card ? [cardPart(card), { text: '进行抵挡' }] : [{ text: '抵挡' }])
-    case 'support': return line(event.sequence, 'support', actor, card ? [cardPart(card), { text: '进行支援' }] : [{ text: '支援' }])
+    case 'defense': {
+      if (isInvalidDefenseEvent(event)) return line(event.sequence, 'defense', actor, [{ text: '抵挡/支援无效' }])
+      const cards = publicCards(event)
+      if (!isSuccessfulDefenseEvent(event)) return line(event.sequence, 'defense', actor, [{ text: '未抵挡' }])
+      return line(event.sequence, 'defense', actor,
+        cards.length ? [{ text: '弃置' }, ...cardParts(cards), { text: '完成抵挡' }] : [{ text: '完成抵挡' }])
+    }
+    case 'support': {
+      const supporters = supportingCards(event)
+      return line(event.sequence, 'support', actor,
+        supporters.length ? [...cardParts(supporters), { text: '完成支援' }] : [{ text: '完成支援' }])
+    }
     case 'initiative-choice': return line(event.sequence, 'info', actor, [{ text: `选择${/后手/.test(event.text) ? '后手' : '先手'}` }])
     case 'mulligan': return line(event.sequence, 'info', actor, [{ text: '调度手牌' }], [{ value: `${countFrom(event.text)}张`, tone: 'info' }])
     case 'disaster':
@@ -385,15 +412,24 @@ function projectCombat(events: ActionEvent[], start: number, you: number) {
   let damage: number | undefined
   let defended = false
   let defeated = false
+  let invalidDefenseShown = false
   for (let index = start + 1; index < events.length; index++) {
     const event = events[index]
-    if (event.type === 'attack' || event.type === 'turn-start' || event.type === 'game-over') break
-    if (!['defense', 'support', 'damage', 'leave', 'grave'].includes(event.type)) continue
-    if (event.type === 'defense' || event.type === 'support') defended = true
-    if (event.type === 'leave' || event.type === 'grave') defeated = true
-    if (event.type === 'damage') damage = Math.abs(numberAfter(event.text, /(?:受到|失去|伤害)\s*(\d+)\s*点/, countFrom(event.text)))
+    if (['attack', 'attack-ended', 'turn-start', 'game-over'].includes(event.type)) break
+    if (!['defense', 'defense-invalid', 'support', 'damage', 'leave', 'grave'].includes(event.type)) continue
+    if (event.type === 'defense-invalid' || isInvalidDefenseEvent(event)) {
+      if (!invalidDefenseShown) detail.push(line(event.sequence, 'defense', side(event.playerIndex, you), [{ text: '抵挡/支援无效' }]))
+      invalidDefenseShown = true
+      consumed.add(index)
+      continue
+    }
+    if (isSuccessfulDefenseEvent(event)) defended = true
+    if ((event.type === 'leave' || event.type === 'grave') && defender !== '主宰')
+      defeated ||= publicCards(event).some(card => card.instanceId === defender.instanceId)
+    if (event.type === 'damage' && defenderIsMaster && event.playerIndex !== attack.playerIndex && /主宰/.test(event.text))
+      damage = Math.abs(numberAfter(event.text, /(?:受到|失去|伤害)\s*(\d+)\s*点/, countFrom(event.text)))
     const row = projectLine(event, you)
-    if (row) detail.push(row)
+    if (row && !(invalidDefenseShown && event.type === 'defense' && !isSuccessfulDefenseEvent(event))) detail.push(row)
     consumed.add(index)
   }
   const result: LogCombatRow['result'] = defenderIsMaster && damage ? '造成伤害' : defeated ? '击破' : defended ? '被抵挡' : '未击破'
