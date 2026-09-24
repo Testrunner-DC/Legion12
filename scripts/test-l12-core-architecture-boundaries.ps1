@@ -46,11 +46,8 @@ foreach ($file in $engineFiles) {
         }
     }
 }
-$acceptedPlatformReference = @($platformReferences | Where-Object {
-    $_ -match '^L12PromptsAndSetup\.cs:\d+:!string\.Equals\(id, L12PlatformStore\.AnnihilationCardId,$'
-})
-if ($platformReferences.Count -ne 1 -or $acceptedPlatformReference.Count -ne 1) {
-    throw "The frozen P1 dependency baseline changed. Review and remove platform dependencies before updating the baseline:`n$($platformReferences -join "`n")"
+if ($platformReferences.Count -ne 0) {
+    throw "L12GameEngine acquired a platform-store dependency:`n$($platformReferences -join "`n")"
 }
 
-Write-Host "L12 core architecture boundary passed: $($engineFiles.Count) engine sources; no transport, room, persistence, recorder, or file-system dependencies; 1 recorded legacy constant dependency."
+Write-Host "L12 core architecture boundary passed: $($engineFiles.Count) engine sources; no transport, room, persistence, recorder, file-system, or platform-store dependencies."

@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 
 namespace TwelveLegions.Server;
 
-public sealed partial class L12GameEngine
+public sealed partial class L12GameEngine : IL12MatchKernel
 {
     internal const int MaximumSnapshotEvents = 128;
 
@@ -93,7 +93,7 @@ public sealed partial class L12GameEngine
         if (playerNames.Length != 2 || decks.Length != 2)
             throw new ArgumentException("十二军团对战需要两名玩家和两副牌库");
         _catalog = catalog;
-        _random = stateFormatVersion >= 2
+        _random = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion
             ? new L12DeterministicRandom(seed)
             : new Random(seed);
         _autoPassEmptyResponses = autoPassEmptyResponses ?? AutoPassEmptyResponsesByDefault;
@@ -159,8 +159,7 @@ public sealed partial class L12GameEngine
             PropertyNameCaseInsensitive = true,
             PreferredObjectCreationHandling = JsonObjectCreationHandling.Populate,
         }) ?? throw new InvalidDataException("对局检查点状态为空");
-        if (state.StateFormatVersion < 2)
-            throw new InvalidDataException("历史状态不能绕过命令重放直接恢复");
+        L12PersistenceContract.EnsureCheckpointRecoverySupported(state.StateFormatVersion);
         if (state.Players is null || state.Players.Length != 2 || state.Players.Any(player => player is null
             || player.Field is null || player.Field.Length != 2
             || player.Field.Any(row => row is null || row.Length != 3)))
@@ -174,7 +173,7 @@ public sealed partial class L12GameEngine
 
     internal void MarkCardFactsPersisted(long throughSequence)
     {
-        if (State.StateFormatVersion < 2) return;
+        if (State.StateFormatVersion < L12PersistenceContract.MinimumCheckpointRecoveryVersion) return;
         _cardFactSignals.RemoveAll(item => item.Sequence <= throughSequence);
     }
 
@@ -246,7 +245,8 @@ public sealed partial class L12GameEngine
     private L12GameSnapshot SnapshotForInternal(int viewer, bool spectator, bool revealAllDisasters, bool revealAllHands)
     {
         if (ReconcilePendingActivationTransactions()) State.Revision++;
-        if (State.StateFormatVersion < 2) RecalculateContinuousTroops();
+        if (State.StateFormatVersion < L12PersistenceContract.MinimumCheckpointRecoveryVersion)
+            RecalculateContinuousTroops();
         else PrepareV2ProjectionState();
         var players = State.Players.Select((player, index) => !spectator && (index == viewer || revealAllHands)
             ? (object)new
@@ -908,13 +908,13 @@ public sealed partial class L12GameEngine
 
     private void PrepareV2ProjectionState()
     {
-        if (State.StateFormatVersion < 2 || _preparedProjectionRevision == State.Revision) return;
+        if (State.StateFormatVersion < L12PersistenceContract.MinimumCheckpointRecoveryVersion
+            || _preparedProjectionRevision == State.Revision) return;
         RecalculateContinuousTroops();
         _preparedProjectionRevision = State.Revision;
         // 持续修正可能在该 revision 第一次序列化前才物化；之后的持久化和所有视角复用同一哈希。
         _cachedStateHash = null;
     }
-
     private L12PlayerState BuildPlayer(int index, string name, L12PresetDeckDefinition deck,
         IReadOnlyDictionary<string, string>? alternateArtUrls = null)
     {
@@ -2272,7 +2272,7 @@ public sealed partial class L12GameEngine
             PlayerLogDecisionLabel = playerLogDecisionLabel,
         };
         State.Events.Add(State.LastAction);
-        if (State.StateFormatVersion >= 2)
+        if (State.StateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion)
         {
             _unpersistedEvents.Add(State.LastAction);
             if (State.Events.Count > MaximumSnapshotEvents) State.Events.RemoveAt(0);

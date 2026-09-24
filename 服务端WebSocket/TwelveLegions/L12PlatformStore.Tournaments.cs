@@ -1751,7 +1751,8 @@ public sealed partial class L12PlatformStore
         var normalizedDisasters = normalizedDisaster == "none" ? [] : disasterCardIds
             .Select(id => RequireCardId(id, "赛事天灾卡号")).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (normalizedDisaster != "none" && (normalizedDisasters.Length is < 9 or > 64
-            || !string.Equals(normalizedDisasters[^1], AnnihilationCardId, StringComparison.OrdinalIgnoreCase)))
+            || !string.Equals(normalizedDisasters[^1], L12ActiveDisasterRules.AnnihilationCardId,
+                StringComparison.OrdinalIgnoreCase)))
             throw new ArgumentException("赛事天灾池须为 9–64 张（含堙灭），且堙灭固定在最后一张");
         if (_officialCards.Count > 0 && normalizedDisasters.Any(id => !_officialCards.TryGetValue(id, out var card)
                 || card.CardType != "destruction"))

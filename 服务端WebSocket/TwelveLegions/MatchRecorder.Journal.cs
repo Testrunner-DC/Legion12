@@ -24,7 +24,7 @@ internal sealed record L12JournalRecoveryState(
 
 public sealed partial class MatchRecorder
 {
-    internal const int JournalStorageVersion = 2;
+    internal const int JournalStorageVersion = L12PersistenceContract.CurrentJournalStorageVersion;
     internal const int CheckpointInterval = 32;
     private readonly object _journalCatalogGate = new();
     private L12Catalog? _journalCatalog;

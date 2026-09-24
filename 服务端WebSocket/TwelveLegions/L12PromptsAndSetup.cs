@@ -23,7 +23,7 @@ public sealed partial class L12GameEngine
         {
             var index = 0;
             foreach (var id in State.OperationsPolicy.DisasterCardIds.Where(id =>
-                         !string.Equals(id, L12PlatformStore.AnnihilationCardId,
+                         !string.Equals(id, L12ActiveDisasterRules.AnnihilationCardId,
                              StringComparison.OrdinalIgnoreCase)))
             {
                 if (_catalog.Cards.TryGetValue(id, out var card)

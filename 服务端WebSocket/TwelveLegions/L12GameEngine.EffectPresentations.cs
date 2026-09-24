@@ -37,8 +37,14 @@ public sealed partial class L12GameEngine
     private void AddPresentationEventByIdWithPlayerLog(string type, int? playerIndex, string text,
         string? sceneId, IReadOnlyDictionary<string, string>? playerLogData,
         params L12CardInstance[] cards)
+        => AddPresentationEventByProducerIdWithPlayerLog(type, playerIndex, text,
+            cards.FirstOrDefault()?.CardId, sceneId, playerLogData, cards);
+
+    private void AddPresentationEventByProducerIdWithPlayerLog(string type, int? playerIndex, string text,
+        string? producerCardId, string? sceneId, IReadOnlyDictionary<string, string>? playerLogData,
+        params L12CardInstance[] cards)
     {
-        var configured = FindEffectPresentationScene(cards.FirstOrDefault()?.CardId, sceneId);
+        var configured = FindEffectPresentationScene(producerCardId, sceneId);
         var frozen = string.IsNullOrWhiteSpace(sceneId)
             ? null
             : State.EffectPresentationSnapshot?.FirstOrDefault(scene =>
@@ -209,7 +215,8 @@ public sealed partial class L12GameEngine
             if (toHand)
             {
                 player.Graveyard.Remove(card);
-                AddCardToHandByEffect(player, card, "graveyard", $"{card.Name}从墓地加入手牌");
+                PubliclyRevealThenAddCardToHandByEffect(player, card, "graveyard",
+                    $"〈{card.Name}〉从墓地公开加入手牌", $"{card.Name}从墓地加入手牌", item);
             }
             else
             {
@@ -239,7 +246,8 @@ public sealed partial class L12GameEngine
         }
 
         player.Graveyard.Remove(target);
-        AddCardToHandByEffect(player, target, "graveyard", successText);
+        PubliclyRevealThenAddCardToHandByEffect(player, target, "graveyard",
+            $"〈{target.Name}〉从墓地公开加入手牌", successText, item);
         return true;
     }
 

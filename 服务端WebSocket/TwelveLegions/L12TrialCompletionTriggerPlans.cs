@@ -234,7 +234,9 @@ public sealed partial class L12GameEngine
                     else
                     {
                         player.Graveyard.Remove(arthur);
-                        AddCardToHandByEffect(player, arthur, "graveyard", "湖中仙女的馈赠将亚瑟王加入手牌");
+                        PubliclyRevealThenAddCardToHandByEffect(player, arthur, "graveyard",
+                            "湖中仙女的馈赠公开墓地的〈亚瑟王〉",
+                            "湖中仙女的馈赠将亚瑟王加入手牌", item);
                     }
                     FinishStackItem(item);
                     return;
@@ -328,8 +330,9 @@ public sealed partial class L12GameEngine
                     if (selected is not null)
                     {
                         player.Library.Remove(selected);
-                        AddCardToHandByEffect(player, selected, "library",
-                            "湖中仙女的馈赠将亚瑟王加入手牌");
+                        PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
+                            "湖中仙女的馈赠公开牌库中的〈亚瑟王〉",
+                            "湖中仙女的馈赠将亚瑟王加入手牌", item);
                     }
                 }
                 FinishStackItem(item);

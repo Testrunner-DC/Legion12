@@ -1660,7 +1660,9 @@ public sealed partial class L12GameEngine
                 var card = player.Graveyard.FirstOrDefault(candidate => candidate.InstanceId == id);
                 if (card is null) continue;
                 player.Graveyard.Remove(card);
-                AddCardToHandByEffect(player, card, "graveyard", $"彼界 阿瓦隆将{card.Name}加入手牌");
+                PubliclyRevealThenAddCardToHandByEffect(player, card, "graveyard",
+                    $"彼界 阿瓦隆公开墓地的〈{card.Name}〉",
+                    $"彼界 阿瓦隆将{card.Name}加入手牌", item);
                 recovered.Add(card);
             }
             player.FreeTacticCount++;
@@ -2009,7 +2011,8 @@ public sealed partial class L12GameEngine
                 if (recover is not null)
                 {
                     player.Graveyard.Remove(recover);
-                    AddCardToHandByEffect(player, recover, "graveyard", "十字军东征回收彼界卡牌");
+                    PubliclyRevealThenAddCardToHandByEffect(player, recover, "graveyard",
+                        $"十字军东征公开墓地的〈{recover.Name}〉", "十字军东征回收彼界卡牌", item);
                 }
                 else RecordTargetSettlementFailure(item, declared[1],
                     "十字军东征所选墓地卡牌已离开墓地或不再只有【彼界】特征");
@@ -2206,7 +2209,8 @@ public sealed partial class L12GameEngine
                 {
                     if (L12StructuredCardRules.HasOnlyEffectiveFactionTrait(player, top, "otherworld"))
                     {
-                        _ = MoveLibraryCardToHandByEffect(player, top.InstanceId,
+                        player.Library.Remove(top);
+                        AddPreviouslyRevealedCardToHandByEffect(player, top, "library",
                             "阿麦金将牌库顶部的彼界卡牌加入手牌");
                     }
                     else
@@ -2269,7 +2273,9 @@ public sealed partial class L12GameEngine
                 {
                     MoveHandToGrave(player, discarded.InstanceId, causedByEffect: false);
                     player.Graveyard.Remove(promotion);
-                    AddCardToHandByEffect(player, promotion, "graveyard", "珀尔修斯将〈珀尔修斯·晋升〉加入手牌");
+                    PubliclyRevealThenAddCardToHandByEffect(player, promotion, "graveyard",
+                        "珀尔修斯公开墓地的〈珀尔修斯·晋升〉",
+                        "珀尔修斯将〈珀尔修斯·晋升〉加入手牌", item);
                     AddEvent("effect", item.Controller, "珀尔修斯弃置1张手牌，将墓地的〈珀尔修斯·晋升〉加入手牌", promotion, discarded);
                 }
                 else RecordTargetSettlementFailure(item, chosen[0],
@@ -2603,7 +2609,7 @@ public sealed partial class L12GameEngine
                 return true;
             }
             case "s2-imhotep-recover":
-                if (chosen[0] != "skip") MoveGraveToHand(player, chosen[0]);
+                if (chosen[0] != "skip") MoveGraveToHand(player, chosen[0], item);
                 FinishStackItem(item);
                 return true;
             default:
@@ -3013,7 +3019,8 @@ public sealed partial class L12GameEngine
         if (card is not null)
         {
             player.Library.Remove(card);
-            AddCardToHandByEffect(player, card, "library", $"冲田总司将〈{card.Name}〉加入手牌");
+            AddPreviouslyRevealedCardToHandByEffect(player, card, "library",
+                $"冲田总司将〈{card.Name}〉加入手牌");
         }
         FinishStackItem(item);
     }
