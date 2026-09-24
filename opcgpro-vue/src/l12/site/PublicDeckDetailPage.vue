@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createDeckImageBlob, downloadDeckImage, encodeDeckCode } from './deckShare'
+import { createDeckImageBlob, deckImageGroups, downloadDeckImage, encodeDeckCode } from './deckShare'
 import { automaticExtraCardIdsForMaster, deckCountSummary, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, saveDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
-import { platformState, publicDeckApi, type PublishedDeck, type PublicDeckDetails, type PublicDeckGuide, type PublicDeckVersionChange } from '@/l12/platform'
+import { alternateArtApi, platformState, publicDeckApi, type AlternateArt, type PublishedDeck, type PublicDeckDetails, type PublicDeckGuide, type PublicDeckVersionChange } from '@/l12/platform'
 import DeckProfile from '@/l12/DeckProfile.vue'
 import CatalogCardDetails from '@/l12/CatalogCardDetails.vue'
 import CardDetailContent from '@/l12/CardDetailContent.vue'
+import CardImage from '@/l12/CardImage.vue'
 import DeckConstructionBrowser, { type ConstructionEntry } from './DeckConstructionBrowser.vue'
 import { samplePublicDeckOpeningHand } from './publicDeckHands'
 import { preservePublicDeckDetails } from './publicDeckEntry'
@@ -18,6 +19,7 @@ const { pending: actionBusy, isPending: actionPending, run: runAction } = useAct
 const publicDeckActionKey = (deckId: string, accountId = platformState.account?.id ?? 'anonymous') =>
   `public-deck:${accountId}:${deckId}`
 const catalog = ref<DeckCard[]>([])
+const alternateArts = ref<AlternateArt[]>([])
 const entry = ref<PublishedDeck | null>(null)
 const notice = ref('')
 const loading = ref(true)
@@ -62,11 +64,26 @@ const sectionTabs = computed(() => [
   { id: 'matches', label: '对局', visible: true },
   { id: 'hands', label: '起手', visible: true },
 ].filter(item => item.visible))
-const openingHand = computed(() => openingHandIds.value.map(id => byId.value.get(id)).filter((card): card is DeckCard => Boolean(card)))
+const deckCopies = computed(() => entry.value ? deckImageGroups(entry.value.deck, catalog.value, alternateArts.value)
+  .flatMap(group => Array.from({ length: group.count }, (_, index) => ({
+    ...group,
+    key: `${group.cardId}:${group.artId || 'original'}:${index}`,
+    card: byId.value.get(group.cardId),
+  }))).filter(copy => Boolean(copy.card)) : [])
+const openingHand = computed(() => {
+  const copies = new Map(deckCopies.value.map(copy => [copy.key, copy]))
+  return openingHandIds.value.flatMap(key => {
+    const copy = copies.get(key)
+    return copy ? [copy] : []
+  })
+})
 
 onMounted(async () => {
   try {
-    catalog.value = await loadDeckCatalog()
+    ;[catalog.value, alternateArts.value] = await Promise.all([
+      loadDeckCatalog(),
+      alternateArtApi.gallery().catch(() => [] as AlternateArt[]),
+    ])
     const id = String(route.params.deckId || '')
     if (id.startsWith('official-')) {
       const index = Number(id.slice('official-'.length))
@@ -147,7 +164,7 @@ async function copyCode() {
 async function previewImage() {
   if (!entry.value) return
   if (imagePreview.value) URL.revokeObjectURL(imagePreview.value.url)
-  const blob = await createDeckImageBlob(entry.value.deck, catalog.value, { publicUrl: publicDeckUrl() })
+  const blob = await createDeckImageBlob(entry.value.deck, catalog.value, { publicUrl: publicDeckUrl(), alternateArts: alternateArts.value })
   imagePreview.value = { blob, url: URL.createObjectURL(blob) }
 }
 async function editDeck() {
@@ -184,7 +201,7 @@ function publicDeckUrl() {
 }
 function redrawOpeningHand() {
   if (!entry.value) return
-  openingHandIds.value = samplePublicDeckOpeningHand(entry.value.deck.cardIds)
+  openingHandIds.value = samplePublicDeckOpeningHand(deckCopies.value.map(copy => copy.key))
 }
 function cardName(cardId: string) { return byId.value.get(cardId)?.nameZh || cardId }
 function homeCityName(homeCityId: string) { return byId.value.get(homeCityId)?.nameZh || homeCityId }
@@ -235,19 +252,18 @@ function formatTime(value?: string) {
         <div class="matchup-list"><article v-for="row in details.matchups" :key="row.opponentMasterId"><header class="matchup-city"><DeckProfile compact :master-id="row.opponentMasterId" :master-name="homeCityName(row.opponentMasterId)" :name="`对阵 ${homeCityName(row.opponentMasterId)}`"/></header><p v-if="row.notes"><b>思路</b>{{ row.notes }}</p><p v-if="row.keyCards"><b>关键牌</b>{{ row.keyCards }}</p><p v-if="row.suggestedSwaps"><b>换牌</b>{{ row.suggestedSwaps }}</p></article></div>
       </section>
       <section id="public-deck-versions" class="content-panel detail-anchor-section" data-detail-section="versions">
-        <header><div><h2>全部公开版本</h2><p>版本永久保存；相同构筑重复发布不会制造新版本。</p></div></header>
+        <header><div><h2>全部公开版本</h2></div></header>
         <div v-if="details.versions.length" class="version-list"><details v-for="version in details.versions" :key="version.version" :open="version.version === details.versions[0]?.version"><summary><b>版本 {{ version.version }}</b><span>{{ version.name }}</span><time>{{ formatTime(version.createdAt) }}</time></summary><p v-if="version.version === 1">首次发布</p><ul v-else-if="version.changes.length"><li v-for="change in version.changes" :key="`${change.section}-${change.cardId}`">{{ changeLabel(change) }}</li></ul><p v-else>构筑正文未变化。</p></details></div>
         <p v-else class="empty-copy">尚无可读取的公开版本。</p>
       </section>
       <section id="public-deck-matches" class="content-panel detail-anchor-section" data-detail-section="matches">
-        <header><div><h2>版本对局</h2><p>这里只展示能由权威记录证明属于具体公开版本的对局。</p></div></header>
+        <header><div><h2>版本对局</h2></div></header>
         <div v-if="details.matches.length" class="match-list"><article v-for="match in details.matches" :key="match.matchId"><b>{{ match.result }}</b><span>版本 {{ match.version }} · 对阵 {{ homeCityName(match.opponentMasterId) }}</span><time>{{ formatTime(match.playedAt) }}</time><router-link v-if="match.replayPath" class="desktop-replay" :to="match.replayPath">查看回放</router-link><span v-if="match.replayPath" class="mobile-replay">请使用电脑端查看回放</span><span v-else>回放不可用</span></article></div>
         <p v-else class="empty-copy">{{ details.matchBindingMessage }}</p>
       </section>
       <section id="public-deck-hands" class="content-panel detail-anchor-section" data-detail-section="hands">
-        <header><div><h2>随机起手</h2><p>从当前公开版本主牌随机抽取 6 张；不会保存结果或生成真实对局记录。</p></div><button @click="redrawOpeningHand">重新抽取</button></header>
-        <div class="opening-hand"><article v-for="(card,index) in openingHand" :key="`${card.id}-${index}`"><button class="hand-card" :aria-label="`查看${card.nameZh}详情`" @click="selectCard(card)"><img v-if="card.imageUrl" :src="card.imageUrl" :alt="card.nameZh"/><b>{{ card.nameZh }}</b></button></article></div>
-        <p class="hand-note">实战中的可选开局效果、调度和特殊规则仍以对局服务端结算为准。</p>
+        <header><div><h2>随机起手</h2><p>随机展示当前构筑中的 6 张主牌。</p></div><button @click="redrawOpeningHand">重新抽取</button></header>
+        <div class="opening-hand"><article v-for="copy in openingHand" :key="copy.key"><button class="hand-card" :aria-label="`查看${copy.card!.nameZh}详情，${copy.label}`" @click="selectCard(copy.card!)"><CardImage :card-id="copy.cardImageId" :legacy-url="copy.legacyUrl" :alt="`${copy.card!.nameZh} · ${copy.label}`" intent="thumb" fit="contain"/><b>{{ copy.card!.nameZh }}</b><small>{{ copy.label }}</small></button></article></div>
       </section>
         </div>
         <aside class="archive-detail public-card-detail" aria-label="卡牌详情"><CardDetailContent v-if="selectedCard" :card="selectedCard" :show-catalog-only="false"/></aside>
@@ -265,5 +281,6 @@ function formatTime(value?: string) {
 @media(max-width:700px){.public-deck-detail{padding:14px 11px 44px}.detail-head{grid-template-columns:1fr;align-items:start}.metrics{justify-content:flex-start}.detail-tabs{margin-inline:-11px;padding-inline:11px}.deck-layout{grid-template-columns:1fr}.deck-layout>aside{grid-template-columns:1fr 1fr}.content-panel{padding:12px}.content-panel>header{align-items:stretch;flex-direction:column}.editor-actions{flex-wrap:wrap}.editor-actions button{flex:1}.version-list summary{grid-template-columns:auto 1fr}.version-list summary time{grid-column:1/-1}.match-list article{grid-template-columns:1fr}.desktop-replay{display:none}.mobile-replay{display:inline;color:#8c999d}.opening-hand{display:flex;overflow-x:auto;padding-bottom:8px}.opening-hand article{flex:0 0 112px}.actions button{flex:1 1 42%}.notice{position:static}.preview-mask{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}}
 @media(max-width:440px){.deck-layout>aside{grid-template-columns:1fr}.metrics span{font-size:11px}.actions button{font-size:12px}}
 .detail-toolbar{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-top:14px}.detail-toolbar .detail-tabs{flex:1;flex-wrap:wrap;margin-top:0;overflow:visible}.detail-toolbar .actions{display:flex;flex:1;flex-wrap:wrap;justify-content:flex-end;margin:0;padding:0;border:0}.detail-anchor-section{scroll-margin-top:16px}.deck-layout.detail-anchor-section{margin-top:14px}
+.opening-hand :deep(.l12-card-image){display:block;width:100%;aspect-ratio:5/7;background:#050708}.opening-hand small{display:block;overflow-wrap:anywhere;margin-top:4px;color:#cdbb7d;font-size:11px;text-align:center;line-height:1.35}
 @media(max-width:900px){.detail-toolbar{flex-direction:column}.detail-toolbar .detail-tabs,.detail-toolbar .actions{width:100%;justify-content:flex-start}.detail-toolbar .actions button{flex:1 1 auto}}
 </style>

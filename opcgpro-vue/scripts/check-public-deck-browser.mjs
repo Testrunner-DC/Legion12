@@ -19,7 +19,7 @@ const checks = [
   ['组合筛选完整', ['masterFilter', 'factionFilter', 'legalFilter', 'cardFilter', 'updatedFilter'].every(key => library.includes(key))],
   ['筛选状态写入URL', ['tab', 'q', 'master', 'faction', 'legal', 'card', 'updated', 'sort'].every(key => library.includes(`'${key}'`))],
   ['浏览器前进后退恢复筛选', library.includes('watch(() => route.query, restoreFiltersFromRoute')],
-  ['列表返回位置可恢复', library.includes('l12:deck-library:scroll:') && library.includes('window.scrollTo')],
+  ['列表返回位置可恢复', library.includes('l12:deck-library:scroll:') && library.includes('listScrollHost()?.scrollTo') && library.includes("closest('.site-content')")],
   ['移动端使用筛选抽屉且详情不再嵌套列表', library.includes('MobileFilterSheet') && !library.includes('class="deck-detail"')],
   ['详情页展示完整构筑和摘要', detail.includes('DeckConstructionBrowser') && detail.includes('费用曲线') && detail.includes('构筑摘要')],
   ['详情页保留核心操作', ['toggleLike', 'copyToMine', 'copyCode', 'previewImage', 'editDeck', 'deleteDeck'].every(key => detail.includes(key))],

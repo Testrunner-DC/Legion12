@@ -2,20 +2,23 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { createDeckImageBlob, decodeDeckCode, downloadDeckImage, encodeDeckCode } from './deckShare'
 import { deckCountSummary, deleteDeck as deleteSavedDeck, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, saveDeck, validateDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
-import { getEffectiveOperationsPolicy, platformState, publicDeckApi, type EffectiveOperationsPolicy, type PublishedDeck, type PublicDeckGuide, type PublicDeckMatchup } from '@/l12/platform'
+import { alternateArtApi, getEffectiveOperationsPolicy, platformState, publicDeckApi, type AlternateArt, type EffectiveOperationsPolicy, type PublishedDeck, type PublicDeckGuide, type PublicDeckMatchup } from '@/l12/platform'
 import { useRoute, useRouter } from 'vue-router'
 import DeckProfile from '@/l12/DeckProfile.vue'
 import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
 import MobileFilterSheet from './MobileFilterSheet.vue'
 import { useActionGate } from '@/l12/useActionGate'
+import { matchesPublishedDeckReference } from './publicDeckEntry'
 
 const tab = ref<'mine' | 'plaza'>('mine')
+const pageRoot = ref<HTMLElement | null>(null)
 const actionViewport = window.matchMedia('(min-width:701px)')
 const desktopActions = ref(actionViewport.matches)
 function updateActionViewport() { desktopActions.value = actionViewport.matches }
 actionViewport.addEventListener('change', updateActionViewport)
 onBeforeUnmount(() => actionViewport.removeEventListener('change', updateActionViewport))
 const catalog = ref<DeckCard[]>([])
+const ownedAlternateArts = ref<AlternateArt[]>([])
 const saved = ref<Record<string, SavedL12Deck>>({})
 const published = ref<PublishedDeck[]>([])
 const operationsPolicy = ref<EffectiveOperationsPolicy | null>(null)
@@ -55,9 +58,10 @@ const factionLabels: Record<string, string> = {
 onMounted(async () => {
   restoreFiltersFromRoute()
   try {
-    ;[catalog.value, saved.value] = await Promise.all([
+    ;[catalog.value, saved.value, ownedAlternateArts.value] = await Promise.all([
       loadDeckCatalog(),
       ensureOfficialPrebuiltDecks(),
+      platformState.account ? alternateArtApi.mine().catch(() => [] as AlternateArt[]) : Promise.resolve([] as AlternateArt[]),
     ])
     const [presets, community, policy] = await Promise.all([
       loadOfficialPresetDecks(), publicDeckApi.list(), getEffectiveOperationsPolicy().catch(() => null),
@@ -69,7 +73,7 @@ onMounted(async () => {
     ]
     await nextTick()
     const savedScroll = sessionStorage.getItem(`l12:deck-library:scroll:${route.fullPath}`)
-    if (savedScroll) window.scrollTo({ top: Number(savedScroll) || 0 })
+    if (savedScroll) listScrollHost()?.scrollTo({ top: Number(savedScroll) || 0 })
   } catch (error) {
     notice.value = error instanceof Error ? error.message : '牌库页面加载失败'
   }
@@ -197,8 +201,11 @@ async function duplicateMine(deck: SavedL12Deck) {
   } catch (error) { notice.value = error instanceof Error ? error.message : '复制牌库失败' }
 }
 function openDeck(entry: PublishedDeck) {
-  sessionStorage.setItem(`l12:deck-library:scroll:${route.fullPath}`, String(window.scrollY))
+  sessionStorage.setItem(`l12:deck-library:scroll:${route.fullPath}`, String(listScrollHost()?.scrollTop ?? window.scrollY))
   void router.push({ name: 'public-deck-detail', params: { deckId: entry.id }, query: { from: route.fullPath } })
+}
+function listScrollHost(): HTMLElement | null {
+  return pageRoot.value?.closest<HTMLElement>('.site-content') ?? document.scrollingElement as HTMLElement | null
 }
 function seasonRequirement(entry: PublishedDeck) {
   if (!entry.official && entry.seasonCompliant !== undefined) return entry.seasonCompliant
@@ -272,9 +279,21 @@ async function deletePublished(entry: PublishedDeck) {
   })
 }
 async function copyCode(deck: SavedL12Deck) { await navigator.clipboard.writeText(encodeDeckCode(deck)); notice.value = '牌库码已复制' }
+function publicDeckUrl(id: string) {
+  return new URL(router.resolve({ name: 'public-deck-detail', params: { deckId: id } }).href, window.location.origin).href
+}
+async function verifiedPublicDeckUrl(deck: SavedL12Deck) {
+  const id = deck.publicationId?.trim()
+  if (!id || !deck.publicationVersion) return ''
+  try {
+    const publishedDeck = await publicDeckApi.get(id)
+    return matchesPublishedDeckReference(deck, publishedDeck, platformState.account?.id) ? publicDeckUrl(id) : ''
+  } catch { return '' }
+}
 async function previewImage(deck: SavedL12Deck) {
   if (imagePreview.value) URL.revokeObjectURL(imagePreview.value.url)
-  const blob = await createDeckImageBlob(deck, catalog.value)
+  const publicUrl = await verifiedPublicDeckUrl(deck)
+  const blob = await createDeckImageBlob(deck, catalog.value, { publicUrl, alternateArts: ownedAlternateArts.value })
   imagePreview.value = { deck, blob, url: URL.createObjectURL(blob) }
 }
 function closeImagePreview() {
@@ -350,7 +369,7 @@ watch(() => route.query, restoreFiltersFromRoute, { deep: true })
 </script>
 
 <template>
-  <div class="deck-page" :aria-busy="actionBusy">
+  <div ref="pageRoot" class="deck-page" :aria-busy="actionBusy">
     <header class="page-head"><div><small>牌库管理</small><h1>牌库</h1><p>构筑、保存、分享并发现公开牌库。</p></div><router-link :to="editorLink()">＋ 新建牌库</router-link></header>
     <div class="deck-tabs"><button :class="{ active: tab === 'mine' }" @click="tab = 'mine'">我的牌库</button><button :class="{ active: tab === 'plaza' }" @click="tab = 'plaza'">公开牌库</button></div>
     <p v-if="notice" class="deck-notice">{{ notice }}</p>

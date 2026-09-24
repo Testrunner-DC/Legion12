@@ -55,14 +55,68 @@ function loadDataImage(url: string) {
   })
 }
 
-export interface DeckImageOptions { publicUrl?: string }
+export interface DeckImageAlternateArt {
+  id: string
+  artCode?: string
+  displayName?: string
+  imageUrl?: string
+  thumbnailUrl?: string
+  cardImageId?: string
+  builtIn?: boolean
+}
+
+export interface DeckImageOptions {
+  publicUrl?: string
+  alternateArts?: readonly DeckImageAlternateArt[]
+}
+
+export interface DeckImageAppearance {
+  artId: string
+  label: string
+  cardImageId: string
+  legacyUrl?: string
+}
+
+export interface DeckImageGroup extends DeckImageAppearance {
+  cardId: string
+  count: number
+}
+
+function appearanceFor(cardId: string, artId: string, arts: ReadonlyMap<string, DeckImageAlternateArt>, byId: ReadonlyMap<string, DeckCard>): DeckImageAppearance {
+  const art = artId ? arts.get(artId) : undefined
+  return {
+    artId,
+    label: art ? [art.artCode, art.displayName].filter(Boolean).join(' · ') : artId ? `异画 · ${artId}` : '原画',
+    cardImageId: art?.cardImageId || (artId || cardId),
+    legacyUrl: art ? (art.builtIn ? undefined : art.thumbnailUrl || art.imageUrl) : artId ? undefined : byId.get(cardId)?.imageUrl,
+  }
+}
+
+export function deckImageGroups(deck: SavedL12Deck, catalog: DeckCard[], alternateArts: readonly DeckImageAlternateArt[] = []): DeckImageGroup[] {
+  const byId = new Map(catalog.map(card => [card.id, card]))
+  const arts = new Map(alternateArts.map(art => [art.id, art]))
+  const masterFaction = byId.get(deck.masterId)?.faction
+  const totals = deck.cardIds.reduce((map, id) => map.set(id, (map.get(id) || 0) + 1), new Map<string, number>())
+  return [...totals.keys()].sort((left, right) => compareDeckCardIds(left, right, byId, masterFaction)).flatMap(cardId => {
+    const count = totals.get(cardId) ?? 0
+    const explicit = [...(deck.alternateArtCopies?.[cardId] ?? [])].slice(0, count)
+    const appearances = explicit.length ? explicit : Array(count).fill(deck.alternateArtSelections?.[cardId] ?? '') as string[]
+    while (appearances.length < count) appearances.push('')
+    const grouped = new Map<string, number>()
+    appearances.forEach(artId => grouped.set(artId, (grouped.get(artId) ?? 0) + 1))
+    return [...grouped].map(([artId, appearanceCount]) => ({
+      cardId,
+      count: appearanceCount,
+      ...appearanceFor(cardId, artId, arts, byId),
+    }))
+  })
+}
 
 export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[], options: DeckImageOptions = {}) {
   const byId = new Map(catalog.map(card => [card.id, card]))
   const publicUrl = /^https?:\/\//i.test(options.publicUrl?.trim() ?? '') ? options.publicUrl!.trim() : ''
-  const masterFaction = byId.get(deck.masterId)?.faction
-  const groups = [...deck.cardIds.reduce((map, id) => map.set(id, (map.get(id) || 0) + 1), new Map<string, number>())]
-    .sort(([left], [right]) => compareDeckCardIds(left, right, byId, masterFaction))
+  const alternateArts = new Map((options.alternateArts ?? []).map(art => [art.id, art]))
+  const groups = deckImageGroups(deck, catalog, options.alternateArts)
   const extraIds = [...new Set([
     ...(deck.specialIds ?? []),
     ...automaticExtraCardIdsForMaster(deck.masterId),
@@ -87,9 +141,9 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
   context.fillStyle = '#e1bf6d'; context.fillRect(410, 168, 1464, 3)
 
   const loadedBitmaps = await Promise.all([
-    loadImage(master?.id, master?.imageUrl),
-    ...groups.map(([id]) => loadImage(id, byId.get(id)?.imageUrl)),
-    ...extraIds.map(id => loadImage(id, byId.get(id)?.imageUrl)),
+    (() => { const appearance = appearanceFor(deck.masterId, deck.alternateArtSelections?.[deck.masterId] ?? '', alternateArts, byId); return loadImage(appearance.cardImageId, appearance.legacyUrl) })(),
+    ...groups.map(group => loadImage(group.cardImageId, group.legacyUrl)),
+    ...extraIds.map(id => { const appearance = appearanceFor(id, deck.alternateArtSelections?.[id] ?? '', alternateArts, byId); return loadImage(appearance.cardImageId, appearance.legacyUrl) }),
   ])
   const masterBitmap = loadedBitmaps[0]
   const bitmaps = loadedBitmaps.slice(1, 1 + groups.length)
@@ -141,8 +195,8 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
   const rowPitch = areaHeight / rows
   const cardWidth = Math.min(162, (areaWidth - gapX * (columns - 1)) / columns, (rowPitch - 42) / 1.4)
   const cardHeight = cardWidth * 1.4
-  groups.forEach(([id, count], index) => {
-    const card = byId.get(id)
+  groups.forEach((group, index) => {
+    const card = byId.get(group.cardId)
     const col = index % columns
     const row = Math.floor(index / columns)
     const x = areaX + col * (cardWidth + gapX)
@@ -151,12 +205,12 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
     const bitmap = bitmaps[index]
     if (bitmap) context.drawImage(bitmap, x, y, cardWidth, cardHeight)
     else { context.fillStyle = '#263139'; context.fillRect(x, y, cardWidth, cardHeight); context.fillStyle = '#77858c'; context.font = '900 13px Microsoft YaHei'; context.fillText('暂无卡图', x + 25, y + cardHeight / 2) }
-    context.fillStyle = '#f1ede3'; context.font = '900 13px Microsoft YaHei'; context.fillText((card?.nameZh || id).slice(0, 10), x + 2, y + cardHeight + 18)
-    context.fillStyle = '#7f8b90'; context.font = '700 10px Microsoft YaHei'; context.fillText(card?.number || id, x + 2, y + cardHeight + 33)
+    context.fillStyle = '#f1ede3'; context.font = '900 13px Microsoft YaHei'; context.fillText((card?.nameZh || group.cardId).slice(0, 10), x + 2, y + cardHeight + 18)
+    context.fillStyle = '#7f8b90'; context.font = '700 10px Microsoft YaHei'; context.fillText(group.label.slice(0, 18), x + 2, y + cardHeight + 33)
     context.fillStyle = '#e1bf6d'
     const badgeX = x + cardWidth - 16
     context.beginPath(); context.arc(badgeX, y + 16, 16, 0, Math.PI * 2); context.fill()
-    context.fillStyle = '#0b0e10'; context.font = '900 15px Microsoft YaHei'; context.textAlign = 'center'; context.fillText(`×${count}`, badgeX, y + 21); context.textAlign = 'left'
+    context.fillStyle = '#0b0e10'; context.font = '900 15px Microsoft YaHei'; context.textAlign = 'center'; context.fillText(`×${group.count}`, badgeX, y + 21); context.textAlign = 'left'
   })
   if (qrImage && publicUrl) {
     const qrSize = 132
