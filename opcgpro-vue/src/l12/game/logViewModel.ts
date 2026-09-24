@@ -124,6 +124,23 @@ function groupedIndexes(events: ActionEvent[], groupId: string) {
   return indexes
 }
 
+function playerLogMetadataScore(event: ActionEvent) {
+  return Number(Boolean(event.playerLogGroupId))
+    + Number(Boolean(event.playerLogTiming))
+    + Number(Boolean(event.playerLogDecisionLabel))
+    + Number(Boolean(event.effectResultStatus))
+}
+
+function orderedUniqueEvents(events: ActionEvent[]) {
+  const bySequence = new Map<number, ActionEvent>()
+  for (const event of [...events].sort((left, right) => left.sequence - right.sequence)) {
+    const existing = bySequence.get(event.sequence)
+    if (!existing || playerLogMetadataScore(event) > playerLogMetadataScore(existing))
+      bySequence.set(event.sequence, event)
+  }
+  return [...bySequence.values()]
+}
+
 function timingLabel(timing: string | undefined) {
   if (timing === 'enter' || timing === 'promotion-enter') return '登场时效果'
   if (timing === 'active') return '主动效果'
@@ -152,17 +169,23 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
     if (milled) changes.push(`弃置牌库顶部${milled}张牌`)
     if (morale) changes.push(`追加${morale}张士气`)
     if (!changes.length) return null
-    return line(first.sequence, 'info', side(first.playerIndex, you),
+    const changeSequence = group.find(event => event.type !== 'turn-start')?.sequence ?? first.sequence
+    return line(changeSequence, 'info', side(first.playerIndex, you),
       [{ text: `回合开始，${changes.join('，')}` }])
   }
 
   const source = firstPublicCard(play ?? first)
+  // Group metadata must never turn a deliberately hidden source into a new public log row.
+  // Once the card is publicly revealed, the authoritative event carries a public card copy and
+  // the same group can be rendered normally.
+  if (!source) return null
   const parts: LogPart[] = play
     ? [{ text: '打出' }, cardPart(source)]
     : [cardPart(source), { text: `发动${timingLabel(first.playerLogTiming)}` }]
   let suffix = ''
   const decision = group.find(event => event.type === 'effect-decision' && event.playerLogDecisionLabel)
-  const restPaid = group.some(event => event.type === 'cost' && /休整|横置/.test(event.text))
+  const restPaid = group.some(event => event.type === 'cost' && /休整|横置/.test(event.text)
+    && publicCards(event).some(card => card.instanceId === source?.instanceId))
   const trial = group.find(event => event.type === 'trial')
   const results = group.filter(event => event.type === 'effect-result')
   const result = results.length === 1 ? results[0] : results.at(-1)
@@ -199,7 +222,7 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
   if (trial) {
     const progress = trial.text.match(/(?:《([^》]+)》)?试炼进度\s*(\d+)\s*→\s*(\d+)/)
     suffix += progress
-      ? `，推进试炼${progress[1] ? `《${progress[1]}》` : ''} 试炼${progress[2]}→${progress[3]}`
+      ? `，推进${progress[1] ? `《${progress[1]}》` : ''}试炼 ${progress[2]}→${progress[3]}`
       : '，推进试炼'
   }
 
@@ -537,8 +560,7 @@ function projectCombat(events: ActionEvent[], start: number, you: number) {
 }
 
 export function projectLog(events: ActionEvent[], you: number, _names: string[]): LogRow[] {
-  const ordered = [...events].sort((a, b) => a.sequence - b.sequence)
-    .filter((event, index, sorted) => index === 0 || sorted[index - 1].sequence !== event.sequence)
+  const ordered = orderedUniqueEvents(events)
   const consumed = new Set<number>()
   const rows: LogRow[] = []
   for (let index = 0; index < ordered.length; index++) {

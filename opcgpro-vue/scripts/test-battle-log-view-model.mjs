@@ -87,6 +87,8 @@ const automaticTurn = projectLog([
 ], 0, [])
 assert.equal(automaticTurn.length, 2, 'turn divider and automatic public changes must remain visible without phase noise')
 assert.equal(automaticTurn[1].kind, 'line')
+assert.notEqual(automaticTurn[0].sequence, automaticTurn[1].sequence,
+  'turn divider and automatic changes must keep unique render keys')
 assert.deepEqual(automaticTurn[1].parts.map(part => part.text), ['回合开始，抽取1张牌，追加2张士气'])
 
 const peace = { ...card('议和谈判', 'peace'), cardType: 'tactic' }
@@ -121,10 +123,23 @@ const reconnectedPeace = projectLog([
 ], 0, [])
 assert.equal(reconnectedPeace.length, 1, 'out-of-order replay events must regroup deterministically')
 const duplicatedReconnect = projectLog([
+  event(1, 'play', '我方打出议和谈判', [peace], 0),
   event(1, 'play', '我方打出议和谈判', [peace], 0, { playerLogGroupId: 'play:dedupe', playerLogTiming: 'play' }),
-  event(1, 'play', '我方打出议和谈判', [peace], 0, { playerLogGroupId: 'play:dedupe', playerLogTiming: 'play' }),
+  event(2, 'effect-decision', '对方不同意议和', [peace], 1, {
+    playerLogGroupId: 'play:dedupe', playerLogTiming: 'play', playerLogDecisionLabel: '不同意议和',
+  }),
 ], 0, [])
 assert.equal(duplicatedReconnect.length, 1, 'reconnect delivery must deduplicate a repeated event sequence')
+assert(duplicatedReconnect[0].kind === 'line'
+  && duplicatedReconnect[0].parts.some(part => part.text.includes('不同意议和')),
+'reconnect deduplication must prefer the enriched copy of an event sequence')
+const hiddenGroupedSource = projectLog([
+  event(1, 'effect-announced', '对方声明一张尚未公开的响应卡', [{ ...peace, hidden: true }], 1, {
+    playerLogGroupId: 'effect:hidden-response', playerLogTiming: 'response',
+  }),
+], 0, [])
+assert.equal(hiddenGroupedSource.length, 0,
+  'group metadata must not make a deliberately hidden response source visible in the player log')
 
 const peaceRefused = projectLog([
   event(1, 'play', '我方打出议和谈判', [peace], 0, { playerLogGroupId: 'play:peace-refused', playerLogTiming: 'play' }),
@@ -152,7 +167,7 @@ const galahadResolved = projectLog([
 ], 0, [])
 assert.equal(galahadResolved.length, 1)
 assert.deepEqual(galahadResolved[0].parts.map(part => part.text), [
-  '打出', '〈加拉哈德〉', '并发动登场时效果，推进试炼 试炼0→2',
+  '打出', '〈加拉哈德〉', '并发动登场时效果，推进试炼 0→2',
 ])
 
 const galahadNegated = projectLog([
@@ -166,6 +181,17 @@ assert.equal(galahadNegated.length, 1)
 assert.deepEqual(galahadNegated[0].parts.map(part => part.text), [
   '打出', '〈加拉哈德〉', '，休整该军团并发动登场时效果；登场时效果被无效',
 ])
+const unrelated = card('其他军团', 'unrelated')
+const unrelatedRest = projectLog([
+  event(1, 'play', '我方打出加拉哈德', [galahad], 0, { playerLogGroupId: 'play:unrelated-rest', playerLogTiming: 'enter' }),
+  event(2, 'cost', '休整其他军团支付费用', [unrelated], 0, { playerLogGroupId: 'play:unrelated-rest', playerLogTiming: 'enter' }),
+  event(3, 'effect-result', '加拉哈德的效果被无效', [galahad], 0, {
+    playerLogGroupId: 'play:unrelated-rest', playerLogTiming: 'enter', effectResultStatus: 'negated',
+  }),
+], 0, [])
+assert(unrelatedRest[0].kind === 'line'
+  && !unrelatedRest[0].parts.some(part => part.text.includes('休整该军团')),
+'an unrelated rested card must not be described as resting the source legion')
 
 const allOut = { ...card('全军出击', 'all-out'), cardType: 'tactic' }
 const activeTacticNegated = projectLog([

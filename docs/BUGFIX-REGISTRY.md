@@ -4798,3 +4798,4 @@
 - 天灾值：`SetDisasterValue` 只在数值实际变化时发布公共事件，`PlayerIndex=null`，文本包含 `旧值 → 新值`；前端即使读取旧回放中带玩家编号的事件也强制显示为公共记录。
 - 同类扫描：`rg -n 'AddEvent\("play"|PushEffect\(|Draw\(|Mill\(|AdvanceTrial|SetDisasterValue|effect-result|peace-talk' 服务端WebSocket/TwelveLegions TwelveLegions.Tests opcgpro-vue/src`。覆盖普通打出、效果生成圣物/战术、全部入栈效果、复合段、通常/卡效试炼、回合自动流程与 GM 分阶段流程；非打出类登场仍由自身权威事件记录，不伪装为手牌打出。
 - 回归守卫：前端覆盖议和同意/拒绝、加拉哈德成功/无效、主动战术无效、自动回合合并、公共天灾值、乱序回放和重连重复序号；服务端覆盖实际议和选择与抽牌分组、加拉哈德预付休整后无效、战术无效、自动抽牌/士气分组、天灾公共归属及 journal 字段保留。Batch 静态卡池/原子审计、Release 规则 4743/4743、UI 契约 341 项、Vue TypeScript、正式与测试服前端构建全部通过。
+- Main 对抗复核：回合分隔与自动变化行改用不同序号，避免 Vue 重复键；重连同序号存在新旧副本时优先保留含权威分组元数据的副本；“休整该军团”只在来源军团确为费用对象时显示；仍处于隐藏状态的响应来源不会因分组元数据提前出现在玩家日志。
