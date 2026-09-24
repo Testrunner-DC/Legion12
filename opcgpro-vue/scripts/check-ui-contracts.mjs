@@ -720,7 +720,7 @@ const contracts = [
   [adminOperations.includes('data-ui-contract="ranked-broadcast-config"') && adminOperations.includes('rankedConfig.broadcast.displaySeconds') && adminOperations.includes('rankedConfig.broadcast.minimumTierIndex'), '排位广播的时长、大厅延迟、间隔、门槛和类别开关必须由后台统一配置'],
   [board.includes('selected-card-inspector-anchor') && board.includes(':style="modalInspectorVisible ? inspectorFloatStyle : undefined"'), '弹框期间详情必须由原选中卡牌框锚点定位'],
   [!board.includes('.modal-card-inspector') && !prompt.includes('.prompt-card-inspector'), '不得保留第二套弹框详情框样式'],
-  [deckEditor.includes("deck.name === activeDeckName") && deckEditor.includes('.saved-list b{color:#f1eee5}') && deckEditor.includes('.saved-list span{color:#aab4b0}') && deckEditor.includes('.saved-list article.active{border-color:#86e8ee;background:#123e42'), '牌库编辑器左下牌库列表及当前牌库状态必须保持高对比'],
+  [deckEditor.includes('class="saved-decks-panel"') && deckEditor.includes(':value="activeDeckName') && deckEditor.includes('background:#0b1218;border:1px solid #5b676b;color:#eee'), '已保存牌库必须常驻唯一可见选择区，选中状态和深色对比必须明确'],
   [board.includes('card.playCost ?? card.currentCost ?? card.cost'), '手牌可打出校验必须使用服务端动态费用'],
   [battleLog.includes('class="event-message"') && battleLog.includes('overflow-wrap:anywhere'), '对局记录必须使用可换行的独立消息容器'],
   [board.includes('<Teleport :to="landscapeTeleportTarget()">') && board.includes('public-card-reveal-animation') && board.includes('.public-reveal-animation{z-index:903}') && board.includes("event.type === 'effect-trigger'") && board.includes("event.type === 'effect-response'") && board.includes("event.type === 'effect-activation'") && board.includes("event.type === 'reveal'") && board.includes("event.playerIndex !== props.game.you") && board.includes("event.type === 'effect-trigger' && /展示|公开/.test(event.text)") && board.includes("event.type === 'search' && /展示|加入手牌/") && board.includes('text: publicRevealText(event)') && board.includes('const override = event.effectText?.trim()') && board.indexOf('if (override) return override') < board.indexOf('/花魁的馈赠/.test(text)') && board.includes('花魁的馈赠将〈${card.name}〉加入手牌') && board.includes('l12AnimationDuration(3000, 700)') && !board.includes('reveal-confirm') && !board.includes('public-reveal-mask'), '公开展示、检索加入手牌、触发、响应与发动效果必须只向非发动方播放无蒙版非阻塞动画；标准三秒且关闭动画时仍保留可读下限，只呈现事件单条效果文本和涉及卡图，后台覆盖优先于花魁兼容文案'],
@@ -908,22 +908,22 @@ const contracts = [
     && deckLibrary.includes('不符合本赛季') && deckLibrary.includes('查看构筑')
     && deckLibrary.includes('--deck-faction:') && deckLibrary.includes('rgba(var(--deck-faction),.2)')
     && deckLibrary.includes('color:#c7cecd;font-size:14px'), '公开牌库必须保留复制、点赞、浏览、最新发布排序并支持组合筛选，保留浏览量/点赞/复制/赛季要求信息条与可读阵营底色'],
-  [deckEditor.includes('masterProfileUrl(selectedMaster.id') && lobby.includes('border-radius:2px'), '主宰头像必须使用官方正方形资源'],
+  [deckEditor.includes('<DeckProfile compact :master-id="selectedMaster.id"') && deckProfile.includes('masterProfileUrl(masterId, fallbackUrl)') && deckProfile.includes('aspect-ratio:1') && lobby.includes('border-radius:2px'), '主宰头像必须通过共享 Profile 使用官方正方形资源'],
   [cardDetailContent.includes('trialValue') && cardDetailContent.includes('<dt>试炼值</dt>'), '卡牌档案必须展示试炼值'],
   [playerMat.includes('aria-disabled') && playerMat.includes('.morale-orb.active-morale[aria-disabled="true"]') && playerMat.includes('.morale-orb.active-god-power[aria-disabled="true"]'), '可用的活跃士气与神力必须始终高亮'],
   [playerMat.includes('class="morale-count resource-morale-count"') && playerMat.match(/resource-morale-count/g)?.length >= 2, '双方士气数量必须共用不溢出的独立计数器单元'],
   [board.includes('promotionFoundationTargetIds') && board.includes('promotionOptions')
     && l12ServerSources.includes('NextS2PromotionGodPowerDiscount'), '晋升登场必须高亮服务端权威合法基底并纳入锻造炉减免'],
-  [deckEditor.includes('>主城</button>') && deckEditor.includes('主牌库') && deckEditor.includes('额外卡牌') && !deckEditor.includes('可用卡牌'), '牌库编辑器中区必须保持主城/主牌库/额外卡牌三标签'],
+  [deckEditor.includes('>主宰</button>') && deckEditor.includes('主牌库') && deckEditor.includes('额外卡牌') && !deckEditor.includes('可用卡牌'), '牌库编辑器中区必须保持主宰/主牌库/额外卡牌三标签'],
   [deckEditor.includes('class="catalog-filter-bar"') && deckEditor.includes('aria-label="主牌库筛选"') && !deckEditor.includes('<h2>构筑设定</h2>')
     && ['factionFilter', 'costFilter', 'troopsFilter', 'disasterFilter', 'legalityFilter', 'sortMode'].every(value => deckEditor.includes(value)), '牌库编辑器必须把完整卡池筛选放在主牌库卡池上方，并保留阵营、类型、卡池、费用、兵力、天灾、禁限与排序'],
   [deckEditor.includes('class="deck-detail-panel grand-panel"') && deckEditor.includes('detailCollapsed')
-    && deckEditor.includes('class="saved-decks-dialog"') && deckEditor.includes('@click="savedDecksOpen = true">切换牌库')
-    && !deckEditor.includes('class="saved-decks-panel grand-panel"') && !deckEditor.includes('class="saved-deck-switcher"'), '牌库编辑器详情必须可折叠，已保存牌库必须只通过唯一切换入口打开，不得常驻重复面板或选择器'],
+    && deckEditor.includes('class="saved-decks-panel"') && deckEditor.includes('<label>已保存牌库<select') && !deckEditor.includes('savedDecksOpen')
+    && !deckEditor.includes('class="saved-decks-panel grand-panel"') && !deckEditor.includes('class="saved-deck-switcher"'), '牌库编辑器详情必须可折叠，已保存牌库常驻且只保留唯一明确选择区'],
   [deckEditor.indexOf('class="current-deck-summary"') > deckEditor.indexOf('class="deck-catalog grand-panel"')
     && deckEditor.indexOf('class="current-deck-summary"') < deckEditor.indexOf('<p class="kicker">构筑卡池</p>')
-    && deckEditor.includes('masterProfileUrl(selectedMaster.id') && deckEditor.includes('士气 {{ moraleIds.length }} 张')
-    && deckEditor.includes('当前主城') && !deckEditor.includes('class="master-preview"'), '当前主城头像、名称、阵营与士气数必须左对齐置于中间卡池盒顶部，左栏只保留选中卡牌详情'],
+    && deckEditor.includes('<DeckProfile compact :master-id="selectedMaster.id"') && deckEditor.includes('士气 ${moraleIds.length} 张')
+    && deckEditor.includes('当前主宰') && !deckEditor.includes('class="master-preview"'), '当前主宰头像、名称、阵营与士气数必须左对齐置于中间卡池盒顶部，左栏只保留选中卡牌详情'],
   [(deckEditor.match(/class="deck-entry-row"/g)?.length ?? 0) >= 3
     && deckEditor.includes('data-deck-section="extra"') && deckEditor.includes('v-for="trial in selectedTrials"')
     && deckEditor.includes('v-for="card in automaticExtraCards"'), '右下显式试炼与主宰自动额外卡必须复用主牌库横向条目视觉'],

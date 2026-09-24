@@ -27,7 +27,7 @@ public sealed record L12AccountDeckView(string Name, string MasterId, IReadOnlyL
     IReadOnlyList<string> MoraleIds, IReadOnlyList<string> SpecialIds, DateTimeOffset UpdatedAt,
     IReadOnlyDictionary<string, string>? AlternateArtSelections = null,
     IReadOnlyDictionary<string, IReadOnlyList<string>>? AlternateArtCopies = null,
-    IReadOnlyList<string>? BenchIds = null);
+    IReadOnlyList<string>? BenchIds = null, string? PublicationId = null, int? PublicationVersion = null);
 public sealed record L12PublishedDeckView(string Id, string OwnerId, string Author, L12AccountDeckView Deck,
     int Views, int Likes, int Copies, bool Liked, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
     bool SeasonCompliant = true, string? SeasonComplianceReason = null,
@@ -41,7 +41,7 @@ public sealed record L12PublicDeckVersionChangeView(string Section, string CardI
 public sealed record L12PublicDeckVersionView(int Version, string Name, L12AccountDeckView Deck,
     DateTimeOffset CreatedAt, IReadOnlyList<L12PublicDeckVersionChangeView> Changes);
 public sealed record L12PublicDeckMatchView(string MatchId, int Version, DateTimeOffset PlayedAt,
-    string OpponentMasterId, string Result, string ReplayPath);
+    string OpponentMasterId, string Result, string? ReplayPath);
 public sealed record L12PublicDeckDetailsView(L12PublicDeckGuideView Guide,
     IReadOnlyList<L12PublicDeckMatchupView> Matchups, int ContentRevision, DateTimeOffset? ContentUpdatedAt,
     IReadOnlyList<L12PublicDeckVersionView> Versions, IReadOnlyList<L12PublicDeckMatchView> Matches,
@@ -225,6 +225,8 @@ public sealed partial class L12PlatformStore
 
     private sealed class DeckRow
     {
+        public string? PublicationId { get; set; }
+        public int? PublicationVersion { get; set; }
         public string AccountId { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string MasterId { get; set; } = string.Empty;
@@ -239,6 +241,7 @@ public sealed partial class L12PlatformStore
 
     private sealed class PublishedDeckRow
     {
+        public int Version { get; set; }
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public string OwnerId { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
@@ -836,6 +839,9 @@ public sealed partial class L12PlatformStore
             row.MoraleIds = deck.MoraleIds.ToList();
             row.SpecialIds = deck.SpecialIds.ToList();
             row.BenchIds = deck.BenchIds.ToList();
+            var binding = ResolvePublicDeckBinding(accountId, deck, deck.PublicationId, deck.PublicationVersion);
+            row.PublicationId = binding?.PublicationId;
+            row.PublicationVersion = binding?.Version;
             row.AlternateArtSelections = SanitizeOwnedAlternateArtSelections(accountId, deck.AlternateArtSelections);
             row.AlternateArtCopies = SanitizeOwnedAlternateArtCopies(accountId, deck.CardIds, deck.AlternateArtCopies);
             row.UpdatedAt = DateTimeOffset.UtcNow;
@@ -1536,13 +1542,15 @@ public sealed partial class L12PlatformStore
         new Dictionary<string, string>(row.AlternateArtSelections ?? [], StringComparer.OrdinalIgnoreCase),
         (row.AlternateArtCopies ?? []).ToDictionary(item => item.Key,
             item => (IReadOnlyList<string>)item.Value.ToArray(), StringComparer.OrdinalIgnoreCase),
-        row.BenchIds.ToArray());
+        row.BenchIds.ToArray(), row.PublicationId, row.PublicationVersion);
     private L12PublishedDeckView ToView(PublishedDeckRow row, string? viewerAccountId)
     {
         var owner = _data.Accounts.FirstOrDefault(account => account.Id == row.OwnerId);
         var author = owner is null ? "已注销玩家" : PublicUsername(owner);
         var deck = new L12AccountDeckView(row.Name, row.MasterId, row.CardIds.ToArray(), row.MoraleIds.ToArray(),
-            row.SpecialIds.ToArray(), row.UpdatedAt);
+            row.SpecialIds.ToArray(), row.UpdatedAt,
+            PublicationId: viewerAccountId == row.OwnerId ? row.Id : null,
+            PublicationVersion: viewerAccountId == row.OwnerId ? row.Version : null);
         return new L12PublishedDeckView(row.Id, row.OwnerId, author, deck, row.Views, row.LikedByAccountIds.Count, row.Copies,
             viewerAccountId is not null && row.LikedByAccountIds.Contains(viewerAccountId), row.CreatedAt, row.UpdatedAt);
     }

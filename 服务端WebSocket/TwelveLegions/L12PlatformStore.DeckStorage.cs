@@ -106,6 +106,8 @@ public sealed partial class L12PlatformStore
             """;
         command.ExecuteNonQuery();
         EnsureDeckColumn(connection, "account_decks", "bench_cards_json", "TEXT NOT NULL DEFAULT '[]'");
+        EnsureDeckColumn(connection, "account_decks", "publication_id", "TEXT");
+        EnsureDeckColumn(connection, "account_decks", "publication_version", "INTEGER");
         EnsureDeckColumn(connection, "published_deck_versions", "name", "TEXT NOT NULL DEFAULT ''");
         using var backfill = connection.CreateCommand();
         backfill.CommandText = """
@@ -269,14 +271,15 @@ public sealed partial class L12PlatformStore
             command.Transaction = transaction;
             command.CommandText = """
                 INSERT INTO account_decks(account_id,name_key,name,payload_hash,
-                    alternate_art_selections_json,alternate_art_copies_json,bench_cards_json,updated_utc,is_deleted)
-                VALUES($account,$key,$name,$payload,$selections,$copies,$bench,$updated,0)
+                    alternate_art_selections_json,alternate_art_copies_json,bench_cards_json,updated_utc,is_deleted,
+                    publication_id,publication_version)
+                VALUES($account,$key,$name,$payload,$selections,$copies,$bench,$updated,0,$publication,$version)
                 ON CONFLICT(account_id,name_key) DO UPDATE SET
                     name=excluded.name,payload_hash=excluded.payload_hash,
                     alternate_art_selections_json=excluded.alternate_art_selections_json,
                     alternate_art_copies_json=excluded.alternate_art_copies_json,
                     bench_cards_json=excluded.bench_cards_json,updated_utc=excluded.updated_utc,
-                    is_deleted=0;
+                    publication_id=excluded.publication_id,publication_version=excluded.publication_version,is_deleted=0;
                 """;
             command.Parameters.AddWithValue("$account", deck.AccountId);
             command.Parameters.AddWithValue("$key", DeckNameKey(deck.Name));
@@ -285,6 +288,8 @@ public sealed partial class L12PlatformStore
             command.Parameters.AddWithValue("$selections", JsonSerializer.Serialize(deck.AlternateArtSelections));
             command.Parameters.AddWithValue("$copies", JsonSerializer.Serialize(deck.AlternateArtCopies));
             command.Parameters.AddWithValue("$bench", CompactDeckCardsJson(deck.BenchIds));
+            command.Parameters.AddWithValue("$publication", (object?)deck.PublicationId ?? DBNull.Value);
+            command.Parameters.AddWithValue("$version", (object?)deck.PublicationVersion ?? DBNull.Value);
             command.Parameters.AddWithValue("$updated", deck.UpdatedAt.ToString("O"));
             command.ExecuteNonQuery();
         }
@@ -294,6 +299,7 @@ public sealed partial class L12PlatformStore
             var payload = NormalizeDeckPayload(deck.MasterId, deck.CardIds, deck.MoraleIds, deck.SpecialIds);
             PersistPayload(connection, transaction, payload, deck.CreatedAt);
             var version = CurrentPublishedDeckVersion(connection, transaction, deck.Id, payload.Hash, deck.Name);
+            deck.Version = version;
             using (var command = connection.CreateCommand())
             {
                 command.Transaction = transaction;
@@ -525,7 +531,7 @@ public sealed partial class L12PlatformStore
         {
             command.CommandText = """
                 SELECT account_id,name,payload_hash,alternate_art_selections_json,
-                       alternate_art_copies_json,bench_cards_json,updated_utc
+                       alternate_art_copies_json,bench_cards_json,updated_utc,publication_id,publication_version
                 FROM account_decks WHERE is_deleted=0 ORDER BY updated_utc DESC;
                 """;
             using var reader = command.ExecuteReader();
@@ -542,6 +548,8 @@ public sealed partial class L12PlatformStore
                     AlternateArtCopies = DeserializeDictionaryOfLists(reader.GetString(4)),
                     BenchIds = ExpandCards(reader.GetString(5)).ToList(),
                     UpdatedAt = DateTimeOffset.Parse(reader.GetString(6)),
+                    PublicationId = reader.IsDBNull(7) ? null : reader.GetString(7),
+                    PublicationVersion = reader.IsDBNull(8) ? null : reader.GetInt32(8),
                 });
             }
         }
@@ -562,7 +570,7 @@ public sealed partial class L12PlatformStore
         using (var command = connection.CreateCommand())
         {
             command.CommandText = """
-                SELECT publication_id,owner_id,name,current_payload_hash,views,copies,created_utc,updated_utc
+                SELECT publication_id,owner_id,name,current_payload_hash,views,copies,created_utc,updated_utc,current_version
                 FROM published_decks WHERE is_deleted=0 ORDER BY updated_utc DESC;
                 """;
             using var reader = command.ExecuteReader();
@@ -578,6 +586,7 @@ public sealed partial class L12PlatformStore
                     Views = reader.GetInt32(4), Copies = reader.GetInt32(5),
                     CreatedAt = DateTimeOffset.Parse(reader.GetString(6)),
                     UpdatedAt = DateTimeOffset.Parse(reader.GetString(7)),
+                    Version = reader.GetInt32(8),
                     LikedByAccountIds = likes.GetValueOrDefault(reader.GetString(0)) ?? [],
                 });
             }

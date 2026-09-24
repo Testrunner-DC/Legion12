@@ -15,17 +15,19 @@ public sealed partial class L12RoomManager
         IReadOnlyList<L12PresetDeckDefinition> decks)
     {
         if (room.Game is null) throw new InvalidOperationException("对局尚未建立");
+        var bindings = decks.Select((deck, index) => _platform?.ResolvePublicDeckBinding(
+            members[index].AccountId, deck, deck.PublicationId, deck.PublicationVersion)).ToArray();
         if (!string.Equals(room.Options.MatchModeId, "ranked", StringComparison.OrdinalIgnoreCase))
         {
             await _recorder.StartAsync(room.Game, room.Options.MatchModeId,
-                members[0].AccountId, members[1].AccountId, decks);
+                members[0].AccountId, members[1].AccountId, decks, bindings);
             return;
         }
         if (members.Count != 2 || decks.Count != 2
             || members.Any(member => string.IsNullOrWhiteSpace(member.AccountId)))
             throw new InvalidOperationException("排位持久化缺少双席账号或牌库");
         await _recorder.StartRankedAsync(room.Game, members[0].AccountId!, members[1].AccountId!,
-            decks, CaptureRankedRuntime(room, _utcNow()));
+            decks, CaptureRankedRuntime(room, _utcNow()), bindings);
     }
 
     private L12RankedSettlementEnvelope BuildRankedSettlementEnvelope(Room room, DateTimeOffset endedAt)

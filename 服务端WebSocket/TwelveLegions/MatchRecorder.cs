@@ -87,28 +87,30 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await InitializeSandboxRecordingSchemaAsync(connection, _utcNow());
         await InitializePlayerReplayRetentionSchemaAsync(connection, _utcNow());
         await InitializeGlobalAnalyticsSchemaAsync(connection);
+        await InitializePublicDeckBindingsAsync(connection);
     }
 
     public Task StartAsync(L12GameState state, string modeId = "friendly",
         string? account0 = null, string? account1 = null,
-        IReadOnlyList<L12PresetDeckDefinition>? decks = null)
-        => StartCoreAsync(state, modeId, account0, account1, decks, [], null, null);
+        IReadOnlyList<L12PresetDeckDefinition>? decks = null, IReadOnlyList<L12PublicDeckBinding?>? bindings = null)
+        => StartCoreAsync(state, modeId, account0, account1, decks, [], null, null, bindings);
 
     public Task StartAsync(L12GameEngine engine, string modeId = "friendly",
         string? account0 = null, string? account1 = null,
-        IReadOnlyList<L12PresetDeckDefinition>? decks = null)
-        => StartCoreAsync(engine.State, modeId, account0, account1, decks, engine.CardFactSignals, null, engine);
+        IReadOnlyList<L12PresetDeckDefinition>? decks = null, IReadOnlyList<L12PublicDeckBinding?>? bindings = null)
+        => StartCoreAsync(engine.State, modeId, account0, account1, decks, engine.CardFactSignals, null, engine, bindings);
 
     internal Task StartRankedAsync(L12GameEngine engine, string account0, string account1,
-        IReadOnlyList<L12PresetDeckDefinition> decks, L12RankedRuntimeCheckpoint runtime)
-        => StartCoreAsync(engine.State, "ranked", account0, account1, decks, engine.CardFactSignals, runtime, engine);
+        IReadOnlyList<L12PresetDeckDefinition> decks, L12RankedRuntimeCheckpoint runtime,
+        IReadOnlyList<L12PublicDeckBinding?>? bindings = null)
+        => StartCoreAsync(engine.State, "ranked", account0, account1, decks, engine.CardFactSignals, runtime, engine, bindings);
 
     private async Task StartCoreAsync(L12GameState state, string modeId,
         string? account0, string? account1,
         IReadOnlyList<L12PresetDeckDefinition>? decks,
         IReadOnlyList<L12CardFactSignal> initialSignals,
         L12RankedRuntimeCheckpoint? rankedRuntime,
-        L12GameEngine? engine)
+        L12GameEngine? engine, IReadOnlyList<L12PublicDeckBinding?>? bindings)
     {
         if (decks is not null && decks.Count != 2)
             throw new ArgumentException("正式对局构筑快照必须恰好包含两名玩家", nameof(decks));
@@ -162,6 +164,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await command.ExecuteNonQueryAsync();
         await PersistMatchStartAnalyticsAsync(connection, transaction, state, decks, account0, account1,
             startedUtc, initialSignals);
+        await PersistPublicDeckBindingsAsync(connection, transaction, state.MatchId, bindings);
         if (normalizedMode == "sandbox")
             await InsertSandboxRecordingAsync(connection, transaction, state.MatchId, startedUtc);
         if (rankedRuntime is not null)

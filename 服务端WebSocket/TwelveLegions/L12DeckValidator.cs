@@ -203,6 +203,8 @@ public static class L12DeckValidator
 
         deck = new L12PresetDeckDefinition
         {
+            PublicationId = submission.PublicationId,
+            PublicationVersion = submission.PublicationVersion,
             Name = name,
             MasterId = master.Id,
             CardIds = submission.CardIds.ToList(),

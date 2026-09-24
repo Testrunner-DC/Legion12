@@ -66,7 +66,7 @@ export interface PublicDeckVersion {
   version: number; name: string; deck: SavedL12Deck; createdAt: string; changes: PublicDeckVersionChange[]
 }
 export interface PublicDeckMatch {
-  matchId: string; version: number; playedAt: string; opponentMasterId: string; result: string; replayPath: string
+  matchId: string; version: number; playedAt: string; opponentMasterId: string; result: string; replayPath: string | null
 }
 export interface PublicDeckDetails {
   guide: PublicDeckGuide; matchups: PublicDeckMatchup[]; contentRevision: number; contentUpdatedAt?: string

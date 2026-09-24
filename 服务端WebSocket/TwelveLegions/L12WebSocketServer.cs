@@ -838,7 +838,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             };
             return Results.Ok(decks.ToArray());
         });
-        _app.MapGet("/api/public-decks/{id}", (HttpRequest request, string id) =>
+        _app.MapGet("/api/public-decks/{id}", async (HttpRequest request, string id) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             var item = _platform.PublishedDeck(id, account?.Id);
@@ -858,7 +858,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             {
                 SeasonCompliant = valid,
                 SeasonComplianceReason = valid ? null : error,
-                Details = _platform.PublicDeckDetails(id),
+                Details = await PublicDeckDetailsWithMatchesAsync(id, account),
             });
         });
         _app.MapPost("/api/public-decks", (HttpRequest request, PublishedDeckRequest body) =>
@@ -871,7 +871,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var published = _platform.PublishDeck(account.Id, deck, body.PublicationId);
             return published is null ? Results.NotFound() : Results.Ok(published);
         });
-        _app.MapPut("/api/public-decks/{id}/content", (HttpRequest request, string id,
+        _app.MapPut("/api/public-decks/{id}/content", async (HttpRequest request, string id,
             L12PublicDeckContentInput body) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
@@ -879,7 +879,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             try
             {
                 var details = _platform.UpdatePublicDeckContent(account.Id, id, body);
-                return details is null ? Results.NotFound() : Results.Ok(details);
+                return details is null ? Results.NotFound() : Results.Ok(await PublicDeckDetailsWithMatchesAsync(id, account));
             }
             catch (UnauthorizedAccessException error)
             {
@@ -2422,6 +2422,20 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             socket.Dispose();
         }
         if (_app is not null) await _app.StopAsync();
+    }
+
+    private async Task<L12PublicDeckDetailsView?> PublicDeckDetailsWithMatchesAsync(string id, L12AccountView? account)
+    {
+        var details = _platform.PublicDeckDetails(id);
+        if (details is null) return null;
+        var matches = await _recorder.PublicDeckMatchesAsync(id, _platform.RankedIntegrityExcludedMatchIds(),
+            _platform.StatisticsExcludedAccountIds(), account?.Id, account?.Username);
+        return details with
+        {
+            Matches = matches,
+            MatchBindingStatus = matches.Count > 0 ? "available" : "unavailable",
+            MatchBindingMessage = matches.Count > 0 ? "仅展示开局时已绑定的公开版本对局。" : details.MatchBindingMessage,
+        };
     }
 
     private async Task HandleConnectionAsync(HttpContext context, CancellationToken cancellationToken)

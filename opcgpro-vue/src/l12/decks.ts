@@ -42,6 +42,8 @@ export interface MoraleIdentity {
 }
 
 export interface SavedL12Deck {
+  publicationId?: string | null
+  publicationVersion?: number | null
   name: string
   masterId: string
   cardIds: string[]

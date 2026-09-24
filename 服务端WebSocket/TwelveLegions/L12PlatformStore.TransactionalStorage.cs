@@ -51,7 +51,7 @@ public sealed class L12PlatformStorageUnavailableException : IOException
 
 public sealed partial class L12PlatformStore
 {
-    private const int PlatformStorageSchemaVersion = 5;
+    private const int PlatformStorageSchemaVersion = 6;
     private static readonly JsonSerializerOptions PlatformSnapshotJsonOptions = CreatePlatformJsonOptions(false);
     private static readonly JsonSerializerOptions PlatformMirrorJsonOptions = CreatePlatformJsonOptions(true);
     private static readonly JsonSerializerOptions PlatformMigrationJsonOptions = new()

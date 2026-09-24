@@ -5,7 +5,8 @@ import { createDeckImageBlob, downloadDeckImage, encodeDeckCode } from './deckSh
 import { automaticExtraCardIdsForMaster, deckCountSummary, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, saveDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
 import { platformState, publicDeckApi, type PublishedDeck, type PublicDeckDetails, type PublicDeckGuide, type PublicDeckVersionChange } from '@/l12/platform'
 import DeckProfile from '@/l12/DeckProfile.vue'
-import CardImage from '@/l12/CardImage.vue'
+import CatalogCardDetails from '@/l12/CatalogCardDetails.vue'
+import CardDetailContent from '@/l12/CardDetailContent.vue'
 import DeckConstructionBrowser, { type ConstructionEntry } from './DeckConstructionBrowser.vue'
 import { samplePublicDeckOpeningHand } from './publicDeckHands'
 import { preservePublicDeckDetails } from './publicDeckEntry'
@@ -22,6 +23,12 @@ const notice = ref('')
 const loading = ref(true)
 const imagePreview = ref<{ blob: Blob; url: string } | null>(null)
 const openingHandIds = ref<string[]>([])
+const selectedCard = ref<DeckCard | null>(null)
+const mobileDetailsOpen = ref(false)
+function selectCard(card: DeckCard) {
+  selectedCard.value = card
+  mobileDetailsOpen.value = window.matchMedia('(max-width:1000px)').matches
+}
 const byId = computed(() => new Map(catalog.value.map(card => [card.id, card])))
 const master = computed(() => entry.value ? byId.value.get(entry.value.deck.masterId) : undefined)
 const backTo = computed(() => typeof route.query.from === 'string' && route.query.from.startsWith('/decks') ? route.query.from : '/decks?tab=plaza')
@@ -76,6 +83,7 @@ onMounted(async () => {
         }).catch(() => sessionStorage.removeItem(viewedKey))
       }
     }
+    selectedCard.value = master.value ?? byId.value.get(entry.value.deck.cardIds[0] || '') ?? null
     redrawOpeningHand()
   } catch (error) { notice.value = error instanceof Error ? error.message : '公开牌库加载失败' }
   finally { loading.value = false }
@@ -83,10 +91,14 @@ onMounted(async () => {
 
 function uniqueName(base: string) {
   const saved = loadSavedDecks()
-  if (!saved[base]) return base.slice(0, 24)
+  const truncated = base.slice(0, 24)
+  if (!saved[truncated]) return truncated
   let index = 2
-  while (saved[`${base} ${index}`.slice(0, 24)]) index += 1
-  return `${base} ${index}`.slice(0, 24)
+  for (;;) {
+    const suffix = ` ${index++}`
+    const name = `${base.slice(0, 24 - suffix.length)}${suffix}`
+    if (!saved[name]) return name
+  }
 }
 async function copyToMine() {
   if (!entry.value) return
@@ -95,7 +107,7 @@ async function copyToMine() {
   await runAction(publicDeckActionKey(id, accountId), async () => {
     try {
       if (!entry.value || entry.value.id !== id) return
-      const deck = { ...entry.value.deck, name: uniqueName(entry.value.deck.name), cardIds: [...entry.value.deck.cardIds], moraleIds: [...entry.value.deck.moraleIds], specialIds: [...(entry.value.deck.specialIds ?? [])], updatedAt: new Date().toISOString() }
+      const deck = { ...entry.value.deck, name: uniqueName(entry.value.deck.name), publicationId: null, publicationVersion: null, cardIds: [...entry.value.deck.cardIds], moraleIds: [...entry.value.deck.moraleIds], specialIds: [...(entry.value.deck.specialIds ?? [])], updatedAt: new Date().toISOString() }
       const saved = await saveDeck(deck)
       if (accountId === platformState.account?.id && entry.value?.id === id)
         notice.value = `已复制《${saved.name}》到我的牌库`
@@ -177,7 +189,7 @@ function redrawOpeningHand() {
 function cardName(cardId: string) { return byId.value.get(cardId)?.nameZh || cardId }
 function homeCityName(homeCityId: string) { return byId.value.get(homeCityId)?.nameZh || homeCityId }
 function changeLabel(change: PublicDeckVersionChange) {
-  const section = { master: '主城', main: '主牌', morale: '士气', special: '试炼/额外' }[change.section]
+  const section = { master: '主宰', main: '主牌', morale: '士气', special: '试炼/额外' }[change.section]
   if (change.section === 'master') return `${section}改为 ${cardName(change.cardId)}`
   if (change.previousQuantity === 0) return `${section}新增 ${cardName(change.cardId)} ×${change.currentQuantity}`
   if (change.currentQuantity === 0) return `${section}移除 ${cardName(change.cardId)} ×${change.previousQuantity}`
@@ -203,15 +215,15 @@ function formatTime(value?: string) {
         <nav class="detail-tabs" aria-label="公开牌库详情内容">
           <button v-for="tab in sectionTabs" :key="tab.id" @click="scrollToSection(tab.id)">{{ tab.label }}</button>
         </nav>
-        <div class="actions"><button v-if="!entry.official" :disabled="!platformState.account || actionPending(publicDeckActionKey(entry.id))" @click="toggleLike">♡ {{ actionPending(publicDeckActionKey(entry.id)) ? '处理中…' : entry.liked ? '取消点赞' : '点赞' }}</button><button @click="copyCode">复制牌库码</button><button @click="previewImage">生成牌库图</button><button v-if="entry.ownerId === platformState.account?.id" @click="editDeck">编辑构筑与公开内容</button><button v-if="entry.ownerId === platformState.account?.id" class="danger" :disabled="actionPending(publicDeckActionKey(entry.id))" @click="deleteDeck">{{ actionPending(publicDeckActionKey(entry.id)) ? '处理中…' : '删除公开牌库' }}</button><button class="primary" :disabled="actionPending(publicDeckActionKey(entry.id))" @click="copyToMine">{{ actionPending(publicDeckActionKey(entry.id)) ? '处理中…' : '复制到我的牌库' }}</button></div>
+        <div class="actions"><button v-if="!entry.official" :disabled="!platformState.account || actionPending(publicDeckActionKey(entry.id))" @click="toggleLike">♡ {{ actionPending(publicDeckActionKey(entry.id)) ? '处理中…' : entry.liked ? '取消点赞' : '点赞' }}</button><button @click="copyCode">复制牌库码</button><button @click="previewImage">生成牌库图</button><button v-if="entry.ownerId === platformState.account?.id" @click="editDeck">编辑牌库</button><button v-if="entry.ownerId === platformState.account?.id" class="danger" :disabled="actionPending(publicDeckActionKey(entry.id))" @click="deleteDeck">{{ actionPending(publicDeckActionKey(entry.id)) ? '处理中…' : '删除公开牌库' }}</button><button class="primary" :disabled="actionPending(publicDeckActionKey(entry.id))" @click="copyToMine">{{ actionPending(publicDeckActionKey(entry.id)) ? '处理中…' : '复制到我的牌库' }}</button></div>
       </div>
       <section id="public-deck-construction" class="deck-layout detail-anchor-section">
         <aside>
           <section><b>费用曲线</b><div class="curve"><i v-for="(value,index) in curve" :key="index"><span :style="{ height: `${Math.max(4, value / curveMax * 72)}px` }"></span><small>{{ index === 8 ? '8+' : index }}</small><em>{{ value }}</em></i></div></section>
           <section><b>构筑摘要</b><p>主牌<strong>{{ entry.deck.cardIds.length }}</strong></p><p>士气<strong>{{ entry.deck.moraleIds.length }}</strong></p><p>试炼/额外<strong>{{ entry.deck.specialIds?.length || 0 }}</strong></p><p>自动额外<strong>{{ automaticExtraCardIdsForMaster(entry.deck.masterId).length }}</strong></p></section>
         </aside>
-        <DeckConstructionBrowser :entries="entries" :catalog="catalog" :master-faction="master?.faction" :title="`${entry.deck.name} · 全部构筑`"/>
-      </section>
+        <div class="public-deck-main"><DeckConstructionBrowser :entries="entries" :catalog="catalog" :master-faction="master?.faction" :title="`${entry.deck.name} · 全部构筑`" external-details @select="selectCard"/>
+
       <section v-if="hasGuide" id="public-deck-guide" class="content-panel detail-anchor-section" data-detail-section="guide">
         <header><div><h2>牌库指南</h2><p v-if="details.contentUpdatedAt">作者更新于 {{ formatTime(details.contentUpdatedAt) }} · 修订 {{ details.contentRevision }}</p></div></header>
         <div class="reading-sections">
@@ -219,8 +231,8 @@ function formatTime(value?: string) {
         </div>
       </section>
       <section v-if="hasMatchups" id="public-deck-matchups" class="content-panel detail-anchor-section" data-detail-section="matchups">
-        <header><div><h2>对局建议</h2><p>按对方主城查看作者提供的思路、关键牌与换牌建议。</p></div></header>
-        <div class="matchup-list"><article v-for="row in details.matchups" :key="row.opponentMasterId"><header class="matchup-city"><CardImage :card-id="row.opponentMasterId" :legacy-url="byId.get(row.opponentMasterId)?.imageUrl" :alt="homeCityName(row.opponentMasterId)" intent="thumb"/><h3>对阵 {{ homeCityName(row.opponentMasterId) }}</h3></header><p v-if="row.notes"><b>思路</b>{{ row.notes }}</p><p v-if="row.keyCards"><b>关键牌</b>{{ row.keyCards }}</p><p v-if="row.suggestedSwaps"><b>换牌</b>{{ row.suggestedSwaps }}</p></article></div>
+        <header><div><h2>对局建议</h2><p>按对方主宰查看作者提供的思路、关键牌与换牌建议。</p></div></header>
+        <div class="matchup-list"><article v-for="row in details.matchups" :key="row.opponentMasterId"><header class="matchup-city"><DeckProfile compact :master-id="row.opponentMasterId" :master-name="homeCityName(row.opponentMasterId)" :name="`对阵 ${homeCityName(row.opponentMasterId)}`"/></header><p v-if="row.notes"><b>思路</b>{{ row.notes }}</p><p v-if="row.keyCards"><b>关键牌</b>{{ row.keyCards }}</p><p v-if="row.suggestedSwaps"><b>换牌</b>{{ row.suggestedSwaps }}</p></article></div>
       </section>
       <section id="public-deck-versions" class="content-panel detail-anchor-section" data-detail-section="versions">
         <header><div><h2>全部公开版本</h2><p>版本永久保存；相同构筑重复发布不会制造新版本。</p></div></header>
@@ -229,22 +241,27 @@ function formatTime(value?: string) {
       </section>
       <section id="public-deck-matches" class="content-panel detail-anchor-section" data-detail-section="matches">
         <header><div><h2>版本对局</h2><p>这里只展示能由权威记录证明属于具体公开版本的对局。</p></div></header>
-        <div v-if="details.matches.length" class="match-list"><article v-for="match in details.matches" :key="match.matchId"><b>{{ match.result }}</b><span>版本 {{ match.version }} · 对阵 {{ homeCityName(match.opponentMasterId) }}</span><time>{{ formatTime(match.playedAt) }}</time><router-link class="desktop-replay" :to="match.replayPath">查看回放</router-link><span class="mobile-replay">请使用电脑端查看回放</span></article></div>
+        <div v-if="details.matches.length" class="match-list"><article v-for="match in details.matches" :key="match.matchId"><b>{{ match.result }}</b><span>版本 {{ match.version }} · 对阵 {{ homeCityName(match.opponentMasterId) }}</span><time>{{ formatTime(match.playedAt) }}</time><router-link v-if="match.replayPath" class="desktop-replay" :to="match.replayPath">查看回放</router-link><span v-if="match.replayPath" class="mobile-replay">请使用电脑端查看回放</span><span v-else>回放不可用</span></article></div>
         <p v-else class="empty-copy">{{ details.matchBindingMessage }}</p>
       </section>
       <section id="public-deck-hands" class="content-panel detail-anchor-section" data-detail-section="hands">
         <header><div><h2>随机起手</h2><p>从当前公开版本主牌随机抽取 6 张；不会保存结果或生成真实对局记录。</p></div><button @click="redrawOpeningHand">重新抽取</button></header>
-        <div class="opening-hand"><article v-for="(card,index) in openingHand" :key="`${card.id}-${index}`"><img v-if="card.imageUrl" :src="card.imageUrl" :alt="card.nameZh"/><b>{{ card.nameZh }}</b></article></div>
+        <div class="opening-hand"><article v-for="(card,index) in openingHand" :key="`${card.id}-${index}`"><button class="hand-card" :aria-label="`查看${card.nameZh}详情`" @click="selectCard(card)"><img v-if="card.imageUrl" :src="card.imageUrl" :alt="card.nameZh"/><b>{{ card.nameZh }}</b></button></article></div>
         <p class="hand-note">实战中的可选开局效果、调度和特殊规则仍以对局服务端结算为准。</p>
       </section>
-    </template>
+        </div>
+        <aside class="archive-detail public-card-detail" aria-label="卡牌详情"><CardDetailContent v-if="selectedCard" :card="selectedCard" :show-catalog-only="false"/></aside>
+      </section>
+</template>
     <p v-if="notice && entry" class="notice">{{ notice }}</p>
     <div v-if="imagePreview && entry" class="preview-mask" @click.self="imagePreview = null"><section><button class="close" @click="imagePreview = null">×</button><img :src="imagePreview.url" alt="牌库图预览"/><footer><button class="primary" @click="downloadDeckImage(entry.deck,catalog,imagePreview.blob)">下载 PNG</button></footer></section></div>
   </main>
+  <CatalogCardDetails v-if="mobileDetailsOpen && selectedCard" :card="selectedCard" :show-catalog-only="false" @close="mobileDetailsOpen = false"/>
 </template>
 
 <style scoped>
-.public-deck-detail{box-sizing:border-box;min-height:100%;padding:24px clamp(14px,3vw,48px) 56px;color:#eee;font-family:'Microsoft YaHei','微软雅黑',sans-serif}.back-link{display:inline-block;margin-bottom:14px;color:#80d8dc;text-decoration:none}.detail-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:end;padding:14px;border:1px solid #35434c;background:#101820}.detail-head :deep(.deck-profile){border:0;background:transparent}.metrics{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px}.metrics span{padding:6px 8px;border:1px solid #43515a;background:#0a1117;color:#bac4c5;font-size:12px}.detail-tabs{display:flex;gap:6px;margin-top:14px;overflow-x:auto;padding-bottom:2px}.detail-tabs button,.content-panel button,.content-panel select{min-height:38px;padding:7px 11px;border:1px solid #59666e;background:#15202a;color:#fff;font-weight:800;white-space:nowrap}.detail-tabs button.active{border-color:#e0bf6d;color:#f4d980}.deck-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:14px;margin-top:14px}.deck-layout>aside{display:grid;align-content:start;gap:10px}.deck-layout>aside section{padding:12px;border:1px solid #35434c;background:#0c141a}.deck-layout>aside p{display:flex;justify-content:space-between;color:#8c999d;font-size:13px}.deck-layout>aside strong{color:#eee}.curve{display:flex;height:105px;align-items:end;gap:3px;margin-top:8px}.curve i{display:grid;flex:1;align-items:end;justify-items:center;font-style:normal}.curve i>span{width:100%;max-width:16px;background:linear-gradient(#e1bf6d,#8c6a29)}.curve small,.curve em{font-size:11px;font-style:normal}.content-panel{margin-top:14px;padding:16px;border:1px solid #35434c;background:#0c141a}.content-panel>header{display:flex;justify-content:space-between;gap:12px;align-items:start;margin-bottom:14px}.content-panel h2,.content-panel h3,.content-panel p{margin:0}.content-panel header p,.empty-copy,.hand-note{margin-top:5px;color:#8c999d}.content-panel label{display:grid;gap:6px;margin:12px 0;color:#bac4c5;font-weight:700}.content-panel textarea{box-sizing:border-box;width:100%;padding:10px;border:1px solid #4c5a62;background:#081015;color:#eee;font:inherit;line-height:1.6;resize:vertical}.reading-sections,.matchup-list,.version-list,.match-list{display:grid;gap:10px}.reading-sections article,.matchup-list article,.matchup-editor,.version-list details,.match-list article{padding:12px;border:1px solid #35434c;background:#101820}.reading-sections p,.matchup-list p{margin-top:6px;white-space:pre-wrap;line-height:1.65}.matchup-list p b{display:inline-block;min-width:64px;color:#d8c07b}.matchup-city{display:flex;align-items:center;gap:10px;margin-bottom:10px}.matchup-city :deep(.l12-card-image){width:54px;height:54px;flex:none;object-fit:cover;object-position:center 24%;border:1px solid #536169}.matchup-editor{margin-top:10px}.editor-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}.content-panel .primary{border-color:#e0bf6d;background:#e0bf6d;color:#090c0e}.content-panel .danger{border-color:#9e3944;background:#4d171d}.version-list summary{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;cursor:pointer}.version-list time,.match-list time{color:#8c999d}.version-list ul{margin:10px 0 0;padding-left:22px}.version-list details>p{margin-top:10px;color:#bac4c5}.match-list article{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:10px;align-items:center}.mobile-replay{display:none}.opening-hand{display:grid;grid-template-columns:repeat(6,minmax(90px,1fr));gap:10px}.opening-hand article{min-width:0}.opening-hand img{display:block;width:100%;aspect-ratio:5/7;object-fit:contain;background:#050708}.opening-hand b{display:block;overflow-wrap:anywhere;margin-top:5px;text-align:center;line-height:1.4}.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid #35434c}.actions button,.preview-mask button{min-height:40px;padding:8px 12px;border:1px solid #59666e;background:#15202a;color:#fff;font-weight:900}.actions .primary,.preview-mask .primary{border-color:#e0bf6d;background:#e0bf6d;color:#090c0e}.actions .danger{border-color:#9e3944;background:#4d171d}.notice{position:fixed;right:18px;bottom:18px;padding:10px 13px;border:1px solid #d5b45f;background:#251b08;color:#f4d980}.state{display:grid;min-height:45vh;place-items:center;color:#89969a}.state.error{color:#e3a8ad}.preview-mask{position:fixed;z-index:100;inset:0;display:grid;place-items:center;padding:20px;background:#010406d9}.preview-mask>section{position:relative;width:min(1100px,94vw);max-height:90vh;border:1px solid #52606a;background:#111923}.preview-mask img{display:block;width:100%;max-height:78vh;object-fit:contain}.preview-mask .close{position:absolute;right:8px;top:8px}.preview-mask footer{display:flex;justify-content:flex-end;padding:10px}
+.deck-layout{grid-template-columns:180px minmax(0,1fr) var(--l12-card-detail-sidebar-width,274px)!important;align-items:start}.public-deck-main{min-width:0}.public-card-detail{position:sticky;top:14px;min-width:0;max-height:calc(100dvh - 28px);overflow:auto}.opening-hand .hand-card{width:100%;min-width:0;padding:0;white-space:normal;border:0;background:transparent}.matchup-city :deep(.deck-profile){width:100%;border:0;background:transparent}@media(max-width:1000px){.deck-layout{grid-template-columns:1fr!important}.public-card-detail{display:none!important}.deck-layout>aside:first-child{grid-template-columns:1fr 1fr}}
+.public-deck-detail{box-sizing:border-box;min-height:100%;padding:24px clamp(14px,3vw,48px) 56px;color:#eee;font-family:'Microsoft YaHei','微软雅黑',sans-serif}.back-link{display:inline-block;margin-bottom:14px;color:#80d8dc;text-decoration:none}.detail-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:end;padding:14px;border:1px solid #35434c;background:#101820}.detail-head :deep(.deck-profile){border:0;background:transparent}.metrics{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px}.metrics span{padding:6px 8px;border:1px solid #43515a;background:#0a1117;color:#bac4c5;font-size:12px}.detail-tabs{display:flex;gap:6px;margin-top:14px;overflow-x:auto;padding-bottom:2px}.detail-tabs button,.content-panel button,.content-panel select{min-height:38px;padding:7px 11px;border:1px solid #59666e;background:#15202a;color:#fff;font-weight:800;white-space:nowrap}.detail-tabs button.active{border-color:#e0bf6d;color:#f4d980}.deck-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:14px;margin-top:14px}.deck-layout>aside{display:grid;align-content:start;gap:10px}.deck-layout>aside:first-child section{padding:12px;border:1px solid #35434c;background:#0c141a}.deck-layout>aside:first-child p{display:flex;justify-content:space-between;color:#8c999d;font-size:13px}.deck-layout>aside:first-child strong{color:#eee}.curve{display:flex;height:105px;align-items:end;gap:3px;margin-top:8px}.curve i{display:grid;flex:1;align-items:end;justify-items:center;font-style:normal}.curve i>span{width:100%;max-width:16px;background:linear-gradient(#e1bf6d,#8c6a29)}.curve small,.curve em{font-size:11px;font-style:normal}.content-panel{margin-top:14px;padding:16px;border:1px solid #35434c;background:#0c141a}.content-panel>header{display:flex;justify-content:space-between;gap:12px;align-items:start;margin-bottom:14px}.content-panel h2,.content-panel h3,.content-panel p{margin:0}.content-panel header p,.empty-copy,.hand-note{margin-top:5px;color:#8c999d}.content-panel label{display:grid;gap:6px;margin:12px 0;color:#bac4c5;font-weight:700}.content-panel textarea{box-sizing:border-box;width:100%;padding:10px;border:1px solid #4c5a62;background:#081015;color:#eee;font:inherit;line-height:1.6;resize:vertical}.reading-sections,.matchup-list,.version-list,.match-list{display:grid;gap:10px}.reading-sections article,.matchup-list article,.matchup-editor,.version-list details,.match-list article{padding:12px;border:1px solid #35434c;background:#101820}.reading-sections p,.matchup-list p{margin-top:6px;white-space:pre-wrap;line-height:1.65}.matchup-list p b{display:inline-block;min-width:64px;color:#d8c07b}.matchup-city{display:flex;align-items:center;gap:10px;margin-bottom:10px}.matchup-city :deep(.l12-card-image){width:54px;height:54px;flex:none;object-fit:cover;object-position:center 24%;border:1px solid #536169}.matchup-editor{margin-top:10px}.editor-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}.content-panel .primary{border-color:#e0bf6d;background:#e0bf6d;color:#090c0e}.content-panel .danger{border-color:#9e3944;background:#4d171d}.version-list summary{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;cursor:pointer}.version-list time,.match-list time{color:#8c999d}.version-list ul{margin:10px 0 0;padding-left:22px}.version-list details>p{margin-top:10px;color:#bac4c5}.match-list article{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:10px;align-items:center}.mobile-replay{display:none}.opening-hand{display:grid;grid-template-columns:repeat(6,minmax(90px,1fr));gap:10px}.opening-hand article{min-width:0}.opening-hand img{display:block;width:100%;aspect-ratio:5/7;object-fit:contain;background:#050708}.opening-hand b{display:block;overflow-wrap:anywhere;margin-top:5px;text-align:center;line-height:1.4}.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid #35434c}.actions button,.preview-mask button{min-height:40px;padding:8px 12px;border:1px solid #59666e;background:#15202a;color:#fff;font-weight:900}.actions .primary,.preview-mask .primary{border-color:#e0bf6d;background:#e0bf6d;color:#090c0e}.actions .danger{border-color:#9e3944;background:#4d171d}.notice{position:fixed;right:18px;bottom:18px;padding:10px 13px;border:1px solid #d5b45f;background:#251b08;color:#f4d980}.state{display:grid;min-height:45vh;place-items:center;color:#89969a}.state.error{color:#e3a8ad}.preview-mask{position:fixed;z-index:100;inset:0;display:grid;place-items:center;padding:20px;background:#010406d9}.preview-mask>section{position:relative;width:min(1100px,94vw);max-height:90vh;border:1px solid #52606a;background:#111923}.preview-mask img{display:block;width:100%;max-height:78vh;object-fit:contain}.preview-mask .close{position:absolute;right:8px;top:8px}.preview-mask footer{display:flex;justify-content:flex-end;padding:10px}
 @media(max-width:700px){.public-deck-detail{padding:14px 11px 44px}.detail-head{grid-template-columns:1fr;align-items:start}.metrics{justify-content:flex-start}.detail-tabs{margin-inline:-11px;padding-inline:11px}.deck-layout{grid-template-columns:1fr}.deck-layout>aside{grid-template-columns:1fr 1fr}.content-panel{padding:12px}.content-panel>header{align-items:stretch;flex-direction:column}.editor-actions{flex-wrap:wrap}.editor-actions button{flex:1}.version-list summary{grid-template-columns:auto 1fr}.version-list summary time{grid-column:1/-1}.match-list article{grid-template-columns:1fr}.desktop-replay{display:none}.mobile-replay{display:inline;color:#8c999d}.opening-hand{display:flex;overflow-x:auto;padding-bottom:8px}.opening-hand article{flex:0 0 112px}.actions button{flex:1 1 42%}.notice{position:static}.preview-mask{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}}
 @media(max-width:440px){.deck-layout>aside{grid-template-columns:1fr}.metrics span{font-size:11px}.actions button{font-size:12px}}
 .detail-toolbar{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-top:14px}.detail-toolbar .detail-tabs{flex:1;flex-wrap:wrap;margin-top:0;overflow:visible}.detail-toolbar .actions{display:flex;flex:1;flex-wrap:wrap;justify-content:flex-end;margin:0;padding:0;border:0}.detail-anchor-section{scroll-margin-top:16px}.deck-layout.detail-anchor-section{margin-top:14px}

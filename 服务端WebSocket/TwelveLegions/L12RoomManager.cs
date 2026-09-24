@@ -522,6 +522,8 @@ public sealed partial class L12RoomManager
                     message = "当前不在匹配队列" })]);
         var deck = new L12CustomDeckSubmission
         {
+            PublicationId = existing.Deck.PublicationId,
+            PublicationVersion = existing.Deck.PublicationVersion,
             Name = existing.Deck.Name,
             MasterId = existing.Deck.MasterId,
             CardIds = [.. existing.Deck.CardIds],

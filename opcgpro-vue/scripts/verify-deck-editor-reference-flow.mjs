@@ -24,7 +24,7 @@ const fixtureMaster=cards.find(item=>item.id===deck.masterId)
 const fixtureTrial=cards.find(item=>item.cardType==='trial')
 if(fixtureMaster&&fixtureTrial)fixtureTrial.faction=fixtureMaster.faction
 const bench=deck.cardIds.slice(0,2)
-const saved={...deck,name:'含超长名称与编号截断验收的编辑流程牌库',benchIds:bench,updatedAt:new Date().toISOString()}
+const saved={...deck,publicationId:'qa-public',publicationVersion:1,name:'含超长名称与编号截断验收的编辑流程牌库',benchIds:bench,updatedAt:new Date().toISOString()}
 platformState.account={id:'author',username:'验收作者',role:'player',createdAt:'2026-09-24',publicHistory:true}
 alternateArtApi.mine=async()=>[]
 const initialDetails={guide:{buildIdea:'这是一段用于验证宽屏与移动端长内容输入的构筑思路。'.repeat(10),opening:'优先保留低费军团与互动战术。',keyCards:'关键牌与配合说明。',commonSequence:'第一回合建立前排，随后根据对手资源调整。',substitutions:'环境变化时替换对应功能牌。'},matchups:[],contentRevision:4,contentUpdatedAt:'2026-09-24T08:00:00Z',versions:[],matches:[],matchBindingStatus:'unavailable',matchBindingMessage:'暂无关联对局'}
@@ -32,6 +32,7 @@ let details=JSON.parse(localStorage.getItem('qa-public-details')||JSON.stringify
 publicDeckApi.get=async()=>({id:'qa-public',ownerId:'author',author:'验收作者',deck:saved,views:1,likes:0,copies:0,liked:false,createdAt:'',updatedAt:'',details})
 publicDeckApi.updateContent=async(_id,guide,matchups)=>{details={...details,guide,matchups,contentRevision:details.contentRevision+1,contentUpdatedAt:new Date().toISOString()};localStorage.setItem('qa-public-details',JSON.stringify(details));return details}
 localStorage.setItem('l12-custom-decks-v1:author',JSON.stringify({[saved.name]:saved}))
+if(new URL(location.href).searchParams.has('private')){delete saved.publicationId;delete saved.publicationVersion;localStorage.setItem('l12-custom-decks-v1:author',JSON.stringify({[saved.name]:saved}))}
 const router=createRouter({history:createMemoryHistory(),routes:[{path:'/deck-editor',component:Editor},{name:'public-deck-detail',path:'/decks/:deckId',component:{template:'<div></div>'}}]})
 await router.push('/deck-editor?deck='+encodeURIComponent(saved.name)+'&published=qa-public')
 createApp(Editor).use(router).mount('#app')
@@ -42,7 +43,7 @@ const server = await createServer({ root, server: { host: '127.0.0.1', port: 0 }
   resolveId(id) { if (id === '/__deck_editor_reference__.js') return id },
   load(id) { if (id === '/__deck_editor_reference__.js') return entry },
   configureServer(vite) { vite.middlewares.use((request, response, next) => {
-    if (request.url === '/__deck_editor_reference__') {
+    if (request.url?.startsWith('/__deck_editor_reference__') && !request.url.includes('.js')) {
       response.setHeader('Content-Type', 'text/html')
       response.end('<div id="app"></div><script type="module" src="/__deck_editor_reference__.js"></script>')
       return
@@ -73,6 +74,9 @@ try {
     await page.setViewportSize({ width, height })
     await page.goto(`http://127.0.0.1:${port}/__deck_editor_reference__`)
     await page.locator('.deck-builder-grid').waitFor()
+    assert.equal(await page.locator('.saved-decks-panel').count(), 1)
+    assert.equal(await page.locator('.saved-decks-panel select').isVisible(), true)
+    await page.screenshot({ path: path.join(out, `${name}-saved-decks.png`), fullPage: true })
     const narrow = width <= 820
     if (narrow) {
       await page.getByRole('button', { name: '更多操作', exact: true }).click()
@@ -119,10 +123,9 @@ try {
           assert.ok(imageBox && imageBox.width > imageBox.height, '横置卡牌缩略图没有保持自然横向')
           await page.screenshot({ path: path.join(out, `${name}-horizontal.png`), fullPage: true })
         }
-        await page.getByRole('button', { name: '切换牌库', exact: true }).click()
-        assert.equal(await page.locator('.saved-decks-dialog').count(), 1, '已保存牌库切换弹窗必须唯一')
+        assert.equal(await page.locator('.saved-decks-panel').count(), 1, '已保存牌库区必须唯一')
+        assert.equal(await page.locator('.saved-decks-panel').isVisible(), true)
         await page.screenshot({ path: path.join(out, `${name}-saved-decks.png`), fullPage: true })
-        await page.locator('.saved-decks-dialog>header').getByRole('button').click()
         await page.locator('.detail-panel-heading').getByRole('button', { name: '收起', exact: true }).click()
         assert.equal(await page.locator('.deck-builder-grid').getAttribute('class').then(value => value?.includes('detail-collapsed')), true)
         await page.locator('.detail-panel-heading').getByRole('button', { name: '展开', exact: true }).click()
@@ -154,6 +157,21 @@ try {
   const qrPixels = await sharp(qrScreenshot).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
   const decodedQr = jsQR(new Uint8ClampedArray(qrPixels.data), qrPixels.info.width, qrPixels.info.height)
   assert.equal(decodedQr?.data, `http://127.0.0.1:${port}/decks/qa-public`, '牌库图内嵌二维码无法从最终截图扫描')
+  await page.setViewportSize({width:1440,height:900})
+  await page.goto(`http://127.0.0.1:${port}/__deck_editor_reference__`)
+  await page.locator('.deck-builder-grid').waitFor()
+  // A copied/local deck has no publication provenance even if the route still contains a publication id.
+  await page.evaluate(() => { const key='l12-custom-decks-v1:author'; const rows=JSON.parse(localStorage.getItem(key)); Object.values(rows).forEach(deck=>{delete deck.publicationId;delete deck.publicationVersion});localStorage.setItem(key,JSON.stringify(rows)); window.__qaPrivate=true })
+  await page.locator('.saved-decks-panel select').selectOption({index:1})
+  // Reload the fixture in explicitly private mode so its local seed cannot add provenance back.
+  await page.goto(`http://127.0.0.1:${port}/__deck_editor_reference__?private=1`)
+  await page.locator('.deck-builder-grid').waitFor()
+  await page.getByRole('button', {name:'生成牌库图',exact:true}).click()
+  await page.locator('.deck-image-dialog').waitFor()
+  const privateShot=path.join(out,'wide-1440-private-no-qr.png')
+  await page.screenshot({path:privateShot,fullPage:true})
+  const raw=await sharp(privateShot).ensureAlpha().raw().toBuffer({resolveWithObject:true})
+  assert.equal(jsQR(new Uint8ClampedArray(raw.data),raw.info.width,raw.info.height),null,'未公开牌库不得含二维码')
   assert.deepEqual(errors, [])
   console.log(JSON.stringify({ status: 'passed', viewports: profiles.length, screenshots: fs.readdirSync(out).filter(name => name.endsWith('.png')).length, output: out }))
 } finally {

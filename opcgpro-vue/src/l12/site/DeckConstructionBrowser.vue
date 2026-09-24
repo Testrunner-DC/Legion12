@@ -14,9 +14,11 @@ const props = withDefaults(defineProps<{
   catalog: DeckCard[]
   title?: string
   masterFaction?: string
+  externalDetails?: boolean
 }>(), { title: '构筑快照' })
 
 const query = ref('')
+const emit = defineEmits<{ select: [card: DeckCard] }>()
 const type = ref('all')
 const section = ref('all')
 const filtersOpen = ref(false)
@@ -54,6 +56,8 @@ const sectionLabel = (value?: string) => sectionLabels[value || 'main'] || value
 function resetFilters() { type.value = 'all'; section.value = 'all' }
 function selectCard(cardId: string) {
   selectedId.value = cardId
+  const card = byId.value.get(cardId)
+  if (card) emit('select', card)
 }
 watch(visible, values => {
   if (selectedId.value && !values.some(entry => entry.cardId === selectedId.value)) selectedId.value = ''
@@ -84,7 +88,7 @@ watch(visible, values => {
         </button>
         <p v-if="!visible.length">没有符合筛选条件的卡牌</p>
     </div>
-    <CatalogCardDetails v-if="selected" :card="selected" :show-catalog-only="false" @close="selectedId = ''"/>
+    <CatalogCardDetails v-if="selected && !externalDetails" :card="selected" :show-catalog-only="false" @close="selectedId = ''"/>
   </section>
 </template>
 
