@@ -712,7 +712,9 @@ function retryAfterMilliseconds(response: Response) {
 function retryableReadFailure(error: unknown) {
   if (error instanceof RequestDeadlineError || error instanceof TypeError) return true
   return error instanceof PlatformRequestError
-    && [408, 425, 429, 500, 502, 503, 504].includes(error.status)
+    // 429 is a deliberate admission decision. Retrying it here would amplify traffic precisely
+    // while the server is asking this client to stop; surface it to the caller immediately.
+    && [408, 425, 500, 502, 503, 504].includes(error.status)
 }
 
 async function requestFingerprint(value: string) {

@@ -23,6 +23,11 @@ internal sealed class L12HttpTrafficGuard
     internal const int AuthenticationLimit = 30;
     internal const int TelemetryLimit = 30;
     internal const int ExpensiveLimit = 10;
+    // Authenticated requests keep their account-level allowance, while a deliberately high
+    // client aggregate prevents account rotation from bypassing admission control. The aggregate
+    // is high enough that ordinary households and shared networks are governed by account limits.
+    internal const int AuthenticatedClientReadLimit = 1_200;
+    internal const int AuthenticatedClientMutationLimit = 300;
     internal static readonly TimeSpan WindowLength = TimeSpan.FromMinutes(1);
 
     private readonly object _gate = new();
@@ -49,9 +54,18 @@ internal sealed class L12HttpTrafficGuard
         if (limit == int.MaxValue)
             return new(true, policy, limit, int.MaxValue, 0);
 
-        var subject = !forceClientPartition && !string.IsNullOrWhiteSpace(accountId)
-            ? $"account:{accountId}" : $"client:{clientIdentity}";
-        var key = $"{policy}|{subject}";
+        var authenticatedAccount = !forceClientPartition && !string.IsNullOrWhiteSpace(accountId);
+        var subject = authenticatedAccount ? $"account:{accountId}" : $"client:{clientIdentity}";
+        var buckets = new List<(string Key, string Policy, int Limit)>
+        {
+            ($"{policy}|{subject}", policy, limit),
+        };
+        if (authenticatedAccount)
+        {
+            var aggregatePolicy = policy == "read" ? "authenticated-client-read" : "authenticated-client-mutation";
+            var aggregateLimit = policy == "read" ? AuthenticatedClientReadLimit : AuthenticatedClientMutationLimit;
+            buckets.Add(($"{aggregatePolicy}|client:{clientIdentity}", aggregatePolicy, aggregateLimit));
+        }
         var now = _timeProvider.GetUtcNow();
         lock (_gate)
         {
@@ -59,26 +73,41 @@ internal sealed class L12HttpTrafficGuard
             if ((_acquisitions & 255) == 0 || _windows.Count >= _maximumPartitions)
                 RemoveExpired(now);
 
-            if (!_windows.TryGetValue(key, out var window))
+            var missing = buckets.Count(bucket => !_windows.ContainsKey(bucket.Key));
+            if (_windows.Count + missing > _maximumPartitions)
             {
                 // Stay memory-bounded under a client-identity spray. A new partition is rejected
                 // instead of evicting an active limiter and silently granting a fresh allowance.
-                if (_windows.Count >= _maximumPartitions)
-                    return new(false, policy, limit, 0, (int)WindowLength.TotalSeconds);
-                window = new Window { ResetAt = now + WindowLength };
-                _windows.Add(key, window);
+                var earliestReset = _windows.Count == 0 ? now + WindowLength : _windows.Values.Min(window => window.ResetAt);
+                return new(false, policy, limit, 0, RetryAfter(now, earliestReset));
             }
-            else if (now >= window.ResetAt)
+
+            foreach (var bucket in buckets)
             {
-                window.ResetAt = now + WindowLength;
-                window.Count = 0;
+                if (_windows.TryGetValue(bucket.Key, out var window) && now >= window.ResetAt)
+                {
+                    window.ResetAt = now + WindowLength;
+                    window.Count = 0;
+                }
             }
 
-            if (window.Count >= limit)
-                return new(false, policy, limit, 0, RetryAfter(now, window.ResetAt));
+            foreach (var bucket in buckets)
+            {
+                if (_windows.TryGetValue(bucket.Key, out var window) && window.Count >= bucket.Limit)
+                    return new(false, bucket.Policy, bucket.Limit, 0, RetryAfter(now, window.ResetAt));
+            }
 
-            window.Count += 1;
-            return new(true, policy, limit, Math.Max(0, limit - window.Count), 0);
+            foreach (var bucket in buckets)
+            {
+                if (!_windows.ContainsKey(bucket.Key))
+                    _windows.Add(bucket.Key, new Window { ResetAt = now + WindowLength });
+                _windows[bucket.Key].Count += 1;
+            }
+            var tightest = buckets
+                .Select(bucket => (Bucket: bucket, Remaining: Math.Max(0, bucket.Limit - _windows[bucket.Key].Count)))
+                .OrderBy(candidate => candidate.Remaining)
+                .First();
+            return new(true, tightest.Bucket.Policy, tightest.Bucket.Limit, tightest.Remaining, 0);
         }
     }
 
@@ -100,19 +129,20 @@ internal sealed class L12HttpTrafficGuard
         if (path == "/api/auth/login" || path == "/api/auth/register"
             || path.StartsWithSegments("/api/auth/password") || path.StartsWithSegments("/api/auth/email"))
             return ("authentication", AuthenticationLimit, true);
-        if (IsExpensive(path))
+        if (IsExpensive(method, path))
             return ("expensive", ExpensiveLimit, false);
         if (!HttpMethods.IsGet(method) && !HttpMethods.IsHead(method))
             return ("mutation", MutationLimit, false);
         return ("read", AccountReadLimit, false);
     }
 
-    private static bool IsExpensive(PathString path)
-        => path == "/api/admin/site/media"
-           || path.StartsWithSegments("/api/admin/articles/modian/import")
-           || path.StartsWithSegments("/api/admin/releases/deploy")
-           || path.StartsWithSegments("/api/admin/releases/rollback")
-           || path.StartsWithSegments("/api/admin/security/audit-archives");
+    private static bool IsExpensive(string method, PathString path)
+        => (HttpMethods.IsPost(method) && path == "/api/admin/site/media")
+           || (HttpMethods.IsGet(method) && path.StartsWithSegments("/api/admin/articles/modian/preview"))
+           || (HttpMethods.IsPost(method) && path.StartsWithSegments("/api/admin/articles/modian/import"))
+           || (HttpMethods.IsPost(method) && path.StartsWithSegments("/api/admin/releases/deploy"))
+           || (HttpMethods.IsPost(method) && path.StartsWithSegments("/api/admin/releases/rollback"))
+           || (HttpMethods.IsPost(method) && path.StartsWithSegments("/api/admin/security/audit-archives"));
 }
 
 internal static class L12HttpExceptionBoundary
@@ -143,7 +173,8 @@ internal static class L12HttpExceptionBoundary
             var correlationId = CorrelationId(context);
             var path = context.Items.TryGetValue(L12CorrelationIds.OriginalPathItemName, out var original)
                 ? original?.ToString() : context.Request.Path.Value;
-            Console.Error.WriteLine($"[{correlationId}] HTTP request failed: method={context.Request.Method}, path={path}\n{error}");
+            Console.Error.WriteLine($"[{correlationId}] HTTP request failed: method={context.Request.Method}, path={path}, "
+                + $"errorType={error.GetType().FullName}\n{error.StackTrace}");
             if (context.Response.HasStarted) throw;
             await WriteErrorAsync(context, "internal_error", "服务器暂时无法处理该请求", StatusCodes.Status500InternalServerError);
         }

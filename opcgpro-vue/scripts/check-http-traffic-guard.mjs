@@ -17,7 +17,10 @@ assert(server.includes('Retry-After, RateLimit-Limit, RateLimit-Remaining')); ch
 assert(reliability.includes('maximumPartitions = 8_192') && reliability.includes('_windows.Count >= _maximumPartitions')); checks += 1
 assert(reliability.includes('path.StartsWithSegments("/api")') && reliability.includes('HttpMethods.IsOptions(method)')); checks += 1
 assert(reliability.includes('AuthenticationLimit') && reliability.includes('MutationLimit') && reliability.includes('ExpensiveLimit')); checks += 1
+assert(reliability.includes('AuthenticatedClientReadLimit') && reliability.includes('AuthenticatedClientMutationLimit')); checks += 1
+assert(reliability.includes('IsExpensive(method, path)')); checks += 1
 assert(reliability.includes('context.Response.HasStarted') && reliability.includes('"internal_error"')); checks += 1
+assert(!reliability.includes('{error}"')); checks += 1
 assert(reliability.includes('RetryAfter(now, window.ResetAt)') && reliability.includes('RemoveExpired(now)')); checks += 1
 
 console.log(`HTTP traffic reliability architecture: ${checks}/${checks} checks passed`)

@@ -4,9 +4,11 @@ import ts from 'typescript'
 
 const filename = new URL('../src/l12/useActionGate.ts', import.meta.url)
 let source = fs.readFileSync(filename, 'utf8')
-source = source.replace("import { computed, reactive } from 'vue'", `
+source = source.replace("import { computed, getCurrentScope, onScopeDispose, reactive } from 'vue'", `
   const reactive = value => value
   const computed = getter => ({ get value() { return getter() } })
+  const getCurrentScope = () => ({})
+  const onScopeDispose = callback => { globalThis.__disposeActionGate = callback }
 `)
 const javascript = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
@@ -33,6 +35,18 @@ let checks = 0
 
 {
   const gate = useActionGate()
+  const first = gate.run('left-player', async () => 'left', 40)
+  await Promise.resolve()
+  assert.equal(gate.isPending('left-player'), true); checks += 1
+  assert.equal(await gate.run('right-player', async () => 'right', 0), 'right'); checks += 1
+  globalThis.__disposeActionGate()
+  assert.equal(await first, 'left'); checks += 1
+  assert.equal(gate.pending.value, false); checks += 1
+  assert.equal(await gate.run('after-dispose', async () => 'unexpected', 0), undefined); checks += 1
+}
+
+{
+  const gate = useActionGate()
   const results = await Promise.all([
     gate.run('left', async () => 'left', 0),
     gate.run('right', async () => 'right', 0),
@@ -53,8 +67,10 @@ let checks = 0
 
 const friends = fs.readFileSync(new URL('../src/l12/site/FriendsPage.vue', import.meta.url), 'utf8')
 assert(friends.includes("useActionGate()")); checks += 1
-assert(friends.includes("runAction('friends-write'")); checks += 1
-assert((friends.match(/:disabled="actionBusy"/g) ?? []).length >= 8); checks += 1
+assert(friends.includes('runAction(actionKey(player)')); checks += 1
+assert(!friends.includes("runAction('friends-write'")); checks += 1
+assert((friends.match(/:disabled="actionPending\(actionKey\(/g) ?? []).length >= 8); checks += 1
+assert(!friends.includes('busy || actionBusy')); checks += 1
 assert(friends.includes(':aria-busy="actionBusy"')); checks += 1
 
 console.log(`Player action gate: ${checks}/${checks} checks passed`)

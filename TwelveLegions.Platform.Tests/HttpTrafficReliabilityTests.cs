@@ -43,7 +43,44 @@ public sealed class HttpTrafficReliabilityTests
         Assert.Equal("authentication", guard.Acquire(Request(HttpMethods.Post, "/api/auth/login"), "client", null).Policy);
         Assert.Equal("telemetry", guard.Acquire(Request(HttpMethods.Post, "/api/telemetry/page-view"), "client", null).Policy);
         Assert.Equal("expensive", guard.Acquire(Request(HttpMethods.Post, "/api/admin/site/media"), "client", "admin").Policy);
+        Assert.Equal("read", guard.Acquire(Request(HttpMethods.Get, "/api/admin/site/media"), "client", "admin").Policy);
+        Assert.Equal("read", guard.Acquire(Request(HttpMethods.Get, "/api/admin/security/audit-archives"), "client", "admin").Policy);
+        Assert.Equal("expensive", guard.Acquire(Request(HttpMethods.Post, "/api/admin/security/audit-archives"), "client", "admin").Policy);
+        Assert.Equal("expensive", guard.Acquire(Request(HttpMethods.Get, "/api/admin/articles/modian/preview"), "client", "admin").Policy);
         Assert.Equal("unlimited", guard.Acquire(Request(HttpMethods.Get, "/health"), "client", null).Policy);
+    }
+
+    [Fact]
+    public void AuthenticatedClientAggregateStopsAccountRotationWithoutSharingAcrossClients()
+    {
+        var guard = new L12HttpTrafficGuard();
+        var request = Request(HttpMethods.Get, "/api/operations/effective-policy");
+        L12HttpRateDecision lastAllowed = default;
+        for (var i = 0; i < L12HttpTrafficGuard.AuthenticatedClientReadLimit; i++)
+        {
+            lastAllowed = guard.Acquire(request, "shared-client", $"account-{i}");
+            Assert.True(lastAllowed.Allowed);
+        }
+        Assert.Equal("authenticated-client-read", lastAllowed.Policy);
+        Assert.Equal(0, lastAllowed.Remaining);
+
+        var denied = guard.Acquire(request, "shared-client", "rotated-account");
+        Assert.False(denied.Allowed);
+        Assert.Equal("authenticated-client-read", denied.Policy);
+        Assert.Equal(L12HttpTrafficGuard.AuthenticatedClientReadLimit, denied.Limit);
+        Assert.True(guard.Acquire(request, "other-client", "rotated-account").Allowed);
+    }
+
+    [Fact]
+    public void AggregateAdmissionIsAtomicWhenPartitionCapacityIsExhausted()
+    {
+        var guard = new L12HttpTrafficGuard(maximumPartitions: 1);
+        var denied = guard.Acquire(Request(HttpMethods.Get, "/api/me"), "client", "account");
+        Assert.False(denied.Allowed);
+
+        // A failed two-partition acquisition must not leave a half-created account or client bucket.
+        var anonymous = guard.Acquire(Request(HttpMethods.Get, "/api/me"), "anonymous", null);
+        Assert.True(anonymous.Allowed);
     }
 
     [Fact]
@@ -67,8 +104,18 @@ public sealed class HttpTrafficReliabilityTests
         context.Request.Method = HttpMethods.Post;
         context.Request.Path = "/api/test";
         context.Items[L12CorrelationIds.ContextItemName] = "test-correlation-1";
-        await L12HttpExceptionBoundary.InvokeAsync(context,
-            () => throw new InvalidOperationException("private database detail"));
+        var previousError = Console.Error;
+        using var capturedError = new StringWriter();
+        try
+        {
+            Console.SetError(capturedError);
+            await L12HttpExceptionBoundary.InvokeAsync(context,
+                () => throw new InvalidOperationException("private database detail"));
+        }
+        finally
+        {
+            Console.SetError(previousError);
+        }
 
         Assert.Equal(StatusCodes.Status500InternalServerError, context.Response.StatusCode);
         Assert.Equal("test-correlation-1", context.Response.Headers[L12CorrelationIds.HeaderName]);
@@ -77,6 +124,9 @@ public sealed class HttpTrafficReliabilityTests
         Assert.Equal("internal_error", document.RootElement.GetProperty("code").GetString());
         Assert.Equal("test-correlation-1", document.RootElement.GetProperty("correlationId").GetString());
         Assert.DoesNotContain("database", document.RootElement.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("private database detail", capturedError.ToString(), StringComparison.Ordinal);
+        Assert.Contains("System.InvalidOperationException", capturedError.ToString(), StringComparison.Ordinal);
+        Assert.Contains("test-correlation-1", capturedError.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -123,6 +173,11 @@ public sealed class HttpTrafficReliabilityTests
             var error = await denied.Content.ReadFromJsonAsync<L12ApiError>();
             Assert.Equal("rate_limited", error!.Code);
             Assert.Equal(Assert.Single(denied.Headers.GetValues(L12CorrelationIds.HeaderName)), error.CorrelationId);
+
+            // These routes are mapped before middleware registration. They must still pass through
+            // the same guard rather than bypassing it because of source-order placement.
+            using var preMappedRoute = await client.GetAsync("/api/ranked/integrity/notifications");
+            Assert.Equal(HttpStatusCode.TooManyRequests, preMappedRoute.StatusCode);
             await server.StopAsync();
         }
         finally

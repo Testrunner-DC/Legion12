@@ -184,6 +184,8 @@ assert(platform.includes('Math.min(reliability.timeoutMs ?? maximumTimeoutMs, ma
 assert(!platform.includes('dedupe?: boolean')); checks += 1
 assert(platform.includes("'stale_session'")); checks += 1
 assert(platform.includes('retryAfterMilliseconds(response)')); checks += 1
+assert(!/\[408, 425, 429, 500, 502, 503, 504\]/.test(platform)); checks += 1
+assert(/\[408, 425, 500, 502, 503, 504\]/.test(platform)); checks += 1
 assert(platform.includes("subtle.digest('SHA-256'")); checks += 1
 assert(platform.includes('safeRead && !fetchInit.signal')); checks += 1
 assert(!platform.includes('requestBodyKey(fetchInit.body)')); checks += 1
