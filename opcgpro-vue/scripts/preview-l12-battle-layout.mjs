@@ -11,7 +11,7 @@ if (fixtureStart < 'const entry = `'.length || fixtureEnd < fixtureStart)
   throw new Error('Unable to locate the sanitized GamePage fixture in verify-batch253-visual.mjs')
 
 const fixtureSetup = fixtureSource.slice(fixtureStart, fixtureEnd)
-const entry = "import '/src/l12/mobileViewport.css';\n" + fixtureSetup + `
+const entry = "import '/src/l12/mobileViewport.css';\nimport GlobalBugFeedback from '/src/l12/site/GlobalBugFeedback.vue';\nimport { useLandscapeViewport } from '/src/l12/mobileViewport.ts';\nimport { ref as viewportRef } from 'vue';\n" + fixtureSetup + `
 // Visual QA may run in a desktop browser with a phone-sized viewport.  This flag
 // only affects the synthetic preview, allowing it to exercise the production
 // touch-landscape branch without changing application runtime detection.
@@ -218,6 +218,7 @@ if(deathMode!==null)setTimeout(()=>{
  if(deathMode!=='effect')events.push({sequence:102,type:'combat',playerIndex:0,text:'进攻者以冻结进攻值 3000 造成 3000 点战斗伤害；防守军团以当前兵力 2000 反击',cards:[attacker,defeated]})
  l12State.game.recentEvents=[...l12State.game.recentEvents,...events]
 },800)
+if(params.has('canvas'))window.__battleDockFixture={state:l12State}
 const previewState={game:l12State.game,room:l12State.room,socket:l12State.socket,rankedClock:l12State.rankedClock}
 if(import.meta.hot){
  let previewReloadScheduled=false
@@ -240,7 +241,7 @@ window.setInterval(()=>{
   l12State.rankedClock=previewState.rankedClock
  }
 },200)
-const app=createApp({render:()=>h(GamePage)})
+const app=createApp({setup(){ if(params.has('canvas'))useLandscapeViewport(viewportRef(true)); return ()=>params.has('canvas')?h('div',{class:'l12-landscape-surface'},[h(GamePage),h(GlobalBugFeedback)]):h(GamePage) }})
 app.use(createRouter({history:createMemoryHistory(),routes:[]}))
 app.mount('#app')
 `

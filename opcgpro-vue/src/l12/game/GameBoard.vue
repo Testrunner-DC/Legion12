@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import MobileBattleDock from './MobileBattleDock.vue'
+import BattleDockPortal from './BattleDockPortal.vue'
+import { provideMobileBattleDock } from './mobileBattleDock'
+provideMobileBattleDock()
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ActionEvent, Card, DisasterCardView, GameState, Phase } from '../types'
 import { isCounterTacticCard, isHorizontalCardType } from '../cardPresentation'
@@ -77,6 +81,7 @@ const mobileMoraleReason = ref('')
 // On phones the card face stays intentionally compact. The independent left
 // drawer is opened only through its persistent handle, keeping a card tap safe.
 const mobileInspectorOpen = ref(false)
+const mobileIdentityOpen = ref(false)
 const selectedId = ref<string | null>(null)
 const focusCard = ref<Card | null>(null)
 const focusDetailCard = computed<DeckCard | null>(() => {
@@ -596,7 +601,7 @@ function chooseMobileMorale(choice:MobileMoraleCandidate){
 }
 function inspectDialogCard(card: Card) {
   focusCard.value = card
-  if (mobileLandscapeViewport.value) mobileInspectorOpen.value = true
+  // Selecting an object only updates the persistent inspector content.
 }
 function inspectMasterCard(playerIndex: number) {
   const player = props.game.players[playerIndex]
@@ -1049,6 +1054,7 @@ function statusTexts(card: Card) {
 
 <template>
   <div class="board-viewport" :class="{ 'compact-viewport': compactViewport, 'mobile-landscape-board': mobileLandscapeViewport, 'read-only-board': readOnly, 'gm-panel-docked': gmPanelOpen && !compactViewport, 'board-target-active': Boolean(gmPlacement || boardTargetPrompt), 'board-slot-active': Boolean(boardSlotPrompt) }" :data-l12-battle-layout="mobileLandscapeViewport ? 'mobile' : 'desktop'" :data-l12-mobile-landscape="mobileLandscapeViewport ? 'true' : undefined">
+    <MobileBattleDock v-if="mobileLandscapeViewport" />
     <Teleport :to="landscapeTeleportTarget()">
       <button v-if="mobileLandscapeViewport" type="button" class="mobile-card-inspector-handle mobile-card-inspector-handle-global" :class="{ open: mobileInspectorOpen }" :aria-expanded="mobileInspectorOpen" @click="mobileInspectorOpen = !mobileInspectorOpen">{{ mobileInspectorOpen ? '收起详情' : '展开卡牌详情' }}</button>
     </Teleport>
@@ -1123,7 +1129,7 @@ function statusTexts(card: Card) {
               </Teleport>
               </div>
               <div class="selected-card-utility-slot" data-ui-contract="selected-card-utility-dock">
-                <BattleUtilityDock @settings="emit('settings')" />
+                <BattleDockPortal lane="utility"><BattleUtilityDock @settings="emit('settings')" /></BattleDockPortal>
               </div>
             </div>
           </div>
@@ -1203,10 +1209,10 @@ function statusTexts(card: Card) {
                 </div>
               </Transition>
             </Teleport>
-            <div v-if="mode === 'attack' && selectedId && !combat && !hasBlockingPrompt" class="board-mode-hint" data-ui-contract="cancel-local-attack-selection">
+            <BattleDockPortal lane="context"><div v-if="mode === 'attack' && selectedId && !combat && !hasBlockingPrompt" class="board-mode-hint" data-ui-contract="cancel-local-attack-selection">
               <span>请选择进攻对象</span><button type="button" @click="cancelLocalAttackSelection">取消</button>
-            </div>
-            <div v-if="combat && !activeBoardPromptId" class="combat-presentation" :class="{ 'combat-presentation--passive': game.pendingDefense?.stage !== 'DefenseChoice' }">
+            </div></BattleDockPortal>
+            <BattleDockPortal lane="context"><div v-if="combat && !activeBoardPromptId" class="combat-presentation" :class="{ 'combat-presentation--passive': game.pendingDefense?.stage !== 'DefenseChoice' }">
               <i class="combat-trace"/>
               <div class="combat-versus">
                 <small v-if="mobileLandscapeViewport" class="combat-stage-label">{{ combatStageLabel }}</small>
@@ -1222,9 +1228,9 @@ function statusTexts(card: Card) {
                   :mulligan-count="mulliganIds.length" :defense-count="defenseIds.length" :defense-target-type="defenseTargetType"
                   :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="l12State.pendingAction" @command="command" />
               </div>
-            </div>
-            <button v-if="mobileLandscapeViewport && combat && game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && combatDecisionMinimized"
-              class="combat-decision-restore" type="button" @click="combatDecisionMinimized = false">恢复支援/抵挡</button>
+            </div></BattleDockPortal>
+            <BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport && combat && game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && combatDecisionMinimized"
+              class="combat-decision-restore" type="button" @click="combatDecisionMinimized = false">恢复支援/抵挡</button></BattleDockPortal>
             <PlayerMat class="battlefield-half my-half" :player="viewMe" side="my" :controllable="isControlledPlayer(viewMe.playerIndex)"
               :mobile-layout="mobileLandscapeViewport"
               :active="game.activePlayer === viewMe.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
@@ -1267,7 +1273,8 @@ function statusTexts(card: Card) {
           <!-- Phone status lanes are intentionally not over the hands.  A timed
                match instead receives its own reserved pair of compact clocks in
                this otherwise unused section of the right rail. -->
-          <section class="grand-panel player-panel" data-ui-contract="complete-player-summary">
+          <BattleDockPortal lane="tools"><section class="grand-panel player-panel" data-ui-contract="complete-player-summary" :class="{ 'identity-expanded': mobileIdentityOpen }">
+            <button v-if="mobileLandscapeViewport" type="button" :aria-expanded="mobileIdentityOpen" @click="mobileIdentityOpen = !mobileIdentityOpen">双方信息</button>
             <button v-if="mobileLandscapeViewport" type="button" class="mobile-record-trigger" @click="mobileRecordOpen = true; mobileRecordMinimized = false">对局记录</button>
             <article class="player-summary opponent-summary">
               <div class="player-summary-primary"><b>对方</b><strong>{{ viewEnemy.name || '未命名玩家' }}</strong></div>
@@ -1290,19 +1297,19 @@ function statusTexts(card: Card) {
                 <span class="connection-state" :class="{ online: playerConnection(viewMe.playerIndex) }"><i/>{{ connectionLabel(viewMe.playerIndex) }}</span>
               </div>
             </article>
-          </section>
-          <section v-if="mobileLandscapeViewport && l12State.rankedClock" class="mobile-timed-clocks" aria-label="双方对局计时">
+          </section></BattleDockPortal>
+          <BattleDockPortal lane="tools"><section v-if="mobileLandscapeViewport && l12State.rankedClock" class="mobile-timed-clocks" aria-label="双方对局计时">
             <PlayerTurnClock class="mobile-rail-clock opponent-player-clock" :player-index="viewEnemy.playerIndex" side="opponent"
               :active="game.activePlayer === viewEnemy.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
             <PlayerTurnClock class="mobile-rail-clock my-player-clock" :player-index="viewMe.playerIndex" side="my"
               :active="game.activePlayer === viewMe.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
-          </section>
+          </section></BattleDockPortal>
           <section class="grand-panel log-panel record-log"><h3>对局记录</h3>
             <BattleEventLog :events="game.recentEvents ?? []" :you="game.you" :names="game.players.map(player => player.name)" @focus="focusCard = $event" />
           </section>
-          <section v-if="!combat && !readOnly" class="grand-panel action-panel" :class="{ 'mobile-context-actions': mobileLandscapeViewport }"><h3>操作</h3><GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
+          <BattleDockPortal lane="primary"><section v-if="!combat && !readOnly" class="grand-panel action-panel" :class="{ 'mobile-context-actions': mobileLandscapeViewport }"><h3>操作</h3><GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
             :mulligan-count="mulliganIds.length" :defense-count="defenseIds.length" :defense-target-type="defenseTargetType"
-            :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="l12State.pendingAction" @command="command" /></section>
+            :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="l12State.pendingAction" @command="command" /></section></BattleDockPortal>
         </aside>
       </div>
       <Teleport :to="landscapeTeleportTarget()">
@@ -1311,7 +1318,7 @@ function statusTexts(card: Card) {
           <BattleEventLog :events="game.recentEvents ?? []" :you="game.you" :names="game.players.map(player => player.name)" @focus="focusCard = $event" />
         </section>
       </Teleport>
-      <button v-if="mobileLandscapeViewport && mobileRecordMinimized" class="mobile-record-restore" type="button" @click="mobileRecordOpen = true; mobileRecordMinimized = false">恢复对局记录</button>
+      <BattleDockPortal lane="tools"><button v-if="mobileLandscapeViewport && mobileRecordMinimized" class="mobile-record-restore" type="button" @click="mobileRecordOpen = true; mobileRecordMinimized = false">恢复对局记录</button></BattleDockPortal>
       <Teleport :to="landscapeTeleportTarget()">
         <Transition name="mobile-card-inspector">
           <aside v-if="mobileLandscapeViewport && mobileInspectorOpen" class="mobile-card-inspector mobile-safe-overlay" role="dialog" aria-modal="false" aria-label="卡牌详情">
@@ -1351,27 +1358,27 @@ function statusTexts(card: Card) {
           </footer>
         </section>
       </Teleport>
-      <button v-if="mobileMoralePickerEnabled && mobileMoralePickerMinimized" class="mobile-morale-restore" type="button" @click="openMobileMoralePicker">恢复士气选择</button>
+      <BattleDockPortal lane="context"><button v-if="mobileMoralePickerEnabled && mobileMoralePickerMinimized" class="mobile-morale-restore" type="button" @click="openMobileMoralePicker">恢复士气选择</button></BattleDockPortal>
       <GraveyardOverlay v-if="graveyardPlayer !== null" :players="[viewMe, viewEnemy]" :initial-player="graveyardPlayer"
         :own-player-index="game.you" :can-activate-osiris="canActivateOsiris" :inspection-only="hasBlockingPrompt"
         :mobile-layout="mobileLandscapeViewport"
         @close="graveyardPlayer = null" @focus="focusCard = $event" @inspect="inspectDialogCard" @ability="activateAbility" />
       <MasterOverlay v-if="masterPlayerIndex !== null" :player="game.players[masterPlayerIndex]" :mine="masterPlayerIndex === controlledPlayerIndex"
         :can-activate="!readOnly && masterPlayerIndex === controlledPlayerIndex && isMyMain" :busy="l12State.pendingAction" :mobile-layout="mobileLandscapeViewport" @close="masterPlayerIndex = null" @activate="activateMaster" @focus="focusMasterCard(masterPlayerIndex)" @inspect="inspectMasterCard(masterPlayerIndex)" />
-      <div v-if="gmPlacement && !readOnly && !boardControlMinimized" class="board-target-controls gm-placement-controls">
+      <BattleDockPortal lane="context"><div v-if="gmPlacement && !readOnly && !boardControlMinimized" class="board-target-controls gm-placement-controls">
         <strong>GM：请选择〈{{ gmPlacement.cardName }}〉的登场位置</strong><span>直接点击目标玩家的绿色高亮空位</span>
         <small v-if="mobileLandscapeViewport" class="mobile-target-hand-counts" :aria-label="`对手手牌 ${viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0} 张；我方手牌 ${viewMe.handCount ?? viewMe.hand?.length ?? 0} 张`">对{{ viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0 }}·我{{ viewMe.handCount ?? viewMe.hand?.length ?? 0 }}</small>
         <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
         <button @click="emit('gmPlacementResolved')">取消</button>
-      </div>
-      <div v-if="boardTargetPrompt && !readOnly && !boardControlMinimized" class="board-target-controls">
+      </div></BattleDockPortal>
+      <BattleDockPortal lane="context"><div v-if="boardTargetPrompt && !readOnly && !boardControlMinimized" class="board-target-controls">
         <strong>{{ boardTargetPrompt.text }}</strong><span>已选择 {{ boardTargetIds.length }}/{{ boardTargetPrompt.maxChoose }}</span>
         <small v-if="mobileLandscapeViewport" class="mobile-target-hand-counts" :aria-label="`对手手牌 ${viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0} 张；我方手牌 ${viewMe.handCount ?? viewMe.hand?.length ?? 0} 张`">对{{ viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0 }}·我{{ viewMe.handCount ?? viewMe.hand?.length ?? 0 }}</small>
         <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
         <button v-if="boardTargetPrompt.validChoices.includes('skip')" @click="resolveBoardTarget(true)">不发动</button>
         <button class="primary" :disabled="boardTargetIds.length < boardTargetPrompt.minChoose" @click="resolveBoardTarget(false)">{{ boardTargetPrompt.data?.choiceMode === 'mixed-board-payment' ? '确认费用' : '确认发动' }}</button>
-      </div>
-      <div v-if="boardSlotPrompt && !readOnly && !boardControlMinimized" class="board-target-controls board-slot-controls">
+      </div></BattleDockPortal>
+      <BattleDockPortal lane="context"><div v-if="boardSlotPrompt && !readOnly && !boardControlMinimized" class="board-target-controls board-slot-controls">
         <CardImage v-if="boardSlotPreview" :card-id="boardSlotPreview.cardId" :legacy-url="boardSlotPreview.imageUrl" :alt="boardSlotPreview.name" intent="board" eager
           @mouseenter="focusCard = boardSlotPreview" @click="focusCard = boardSlotPreview" />
         <strong>{{ boardSlotPrompt.text }}</strong><span>直接点击绿色高亮空位</span>
@@ -1379,8 +1386,8 @@ function statusTexts(card: Card) {
         <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
         <button v-if="boardSlotPrompt.validChoices.includes('skip')"
           @click="command('resolvePrompt', { promptId: boardSlotPrompt.promptId, cardInstanceIds: ['skip'] })">取消</button>
-      </div>
-      <div v-if="resourceSelectionPrompt && !readOnly && !boardControlMinimized" class="board-target-controls resource-payment-controls">
+      </div></BattleDockPortal>
+      <BattleDockPortal lane="context"><div v-if="resourceSelectionPrompt && !readOnly && !boardControlMinimized" class="board-target-controls resource-payment-controls">
         <strong>{{ resourceSelectionPrompt.text }}</strong>
         <span>已选择 {{ paymentResourceIds.length }}/{{ resourceSelectionPrompt.maxChoose }}</span>
         <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
@@ -1391,8 +1398,8 @@ function statusTexts(card: Card) {
             ? '确认返还'
             : resourceSelectionPrompt.kind === 'resource-payment' || resourceSelectionPrompt.data?.choiceMode === 'resource-payment'
               ? '确认支付' : '确认选择' }}</button>
-      </div>
-      <button v-if="mobileLandscapeViewport && boardControlMinimized && (gmPlacement || boardTargetPrompt || boardSlotPrompt || resourceSelectionPrompt)" class="board-control-restore" type="button" @click="boardControlMinimized = false">恢复当前选择</button>
+      </div></BattleDockPortal>
+      <BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport && boardControlMinimized && (gmPlacement || boardTargetPrompt || boardSlotPrompt || resourceSelectionPrompt)" class="board-control-restore" type="button" @click="boardControlMinimized = false">恢复当前选择</button></BattleDockPortal>
       <PromptOverlay v-if="!readOnly || game.phase === 'DisasterPreparation'" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppressed-prompt-ids="activeBoardPromptIds" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction" :inspector-visible="modalInspectorVisible" :mobile-layout="mobileLandscapeViewport"
         @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" @minimized-change="promptMinimized = $event" @response-targets-change="responseTargetIds = $event" />
     </div>

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useMobileBattleDock } from './mobileBattleDock'
+const mobileDock = useMobileBattleDock()
 import { computed, ref } from 'vue'
 import CardTile from '../CardTile.vue'
 import type { Card, PlayerView } from '../types'
@@ -20,7 +22,7 @@ function selectCard(card: Card) {
 </script>
 
 <template>
-  <Teleport :to="landscapeTeleportTarget()">
+  <Teleport :to="mobileLayout && minimized && mobileDock?.context ? mobileDock.context : landscapeTeleportTarget()">
     <div class="graveyard-overlay" :class="{ minimized, 'mobile-safe-overlay': mobileLayout }" @click.self="emit('close')">
       <section v-if="minimized" class="graveyard-minimized"><button type="button" @click="minimized = false">恢复墓地</button></section>
       <section v-else class="graveyard-window">

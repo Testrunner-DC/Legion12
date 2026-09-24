@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useMobileBattleDock } from './mobileBattleDock'
+const mobileDock = useMobileBattleDock()
+import BattleDockPortal from './BattleDockPortal.vue'
 defineOptions({ inheritAttrs: false })
 import { computed, ref, watch } from 'vue'
 import CardTile from '../CardTile.vue'
@@ -391,7 +394,7 @@ function beginCardAbility(card: Card) {
             }"
             @click="handleSlot(row, slot, player.field[row][slot])" @keyup.enter="handleSlot(row, slot, player.field[row][slot])">
             <template v-if="player.field[row][slot]">
-              <Teleport :to="landscapeTeleportTarget()" :disabled="!mobileLayout">
+              <BattleDockPortal lane="context">
               <div v-if="selectedId === player.field[row][slot]!.instanceId && actionsEnabled && !attackMode && !moveMode && !freeMoveMode && !cavalryMoveMode && (canUseAbilities(player.field[row][slot]!) || canTrial(player.field[row][slot]!))"
                 class="card-context-actions field-actions" :class="{ 'mobile-action-dock': mobileLayout }">
                 <button v-if="canUseAbilities(player.field[row][slot]!) && canAttack(player.field[row][slot]!, row)" :class="{ active: attackMode }"
@@ -409,7 +412,7 @@ function beginCardAbility(card: Card) {
                 <button v-if="canTrial(player.field[row][slot]!)" type="button" data-ui-contract="independent-trial-action"
                   @click.stop="emit('ability', player.field[row][slot]!, 'trialAdvance')">试炼</button>
               </div>
-              </Teleport>
+              </BattleDockPortal>
               <CardTile :card="hiddenRevealCard?.instanceId === player.field[row][slot]!.instanceId ? hiddenRevealCard : player.field[row][slot]!"
                 :class="{ 'battlefield-legion-card': isBattlefieldLegionCard(player.field[row][slot]!) }"
                 :selected="isSelected(player.field[row][slot]!.instanceId)"
@@ -476,7 +479,7 @@ function beginCardAbility(card: Card) {
     </div>
   </section>
 
-  <Teleport :to="landscapeTeleportTarget()">
+  <Teleport :to="mobileLayout && factionMinimized && mobileDock?.context ? mobileDock.context : landscapeTeleportTarget()">
     <div v-if="factionOpen" class="faction-effect-overlay" :class="{ minimized: factionMinimized, 'mobile-safe-overlay': mobileLayout }" @click.self="factionOpen = false">
       <section v-if="factionMinimized" class="faction-minimized-bar">
         <button :aria-label="`展开：${player.factionEffect?.name || '阵营效果'}`" :title="player.factionEffect?.name || '阵营效果'" @click="factionMinimized = false">展开</button>
@@ -504,7 +507,7 @@ function beginCardAbility(card: Card) {
     </div>
   </Teleport>
 
-  <Teleport :to="landscapeTeleportTarget()">
+  <Teleport :to="mobileLayout && abilityCardMinimized && mobileDock?.context ? mobileDock.context : landscapeTeleportTarget()">
     <div v-if="abilityCardOpen" class="faction-effect-overlay" :class="{ minimized: abilityCardMinimized, 'mobile-safe-overlay': mobileLayout }" @click.self="abilityCardOpen = null">
       <section v-if="abilityCardMinimized" class="faction-minimized-bar">
         <button :aria-label="`展开：${abilityCardOpen.name}`" :title="abilityCardOpen.name" @click="abilityCardMinimized = false">展开</button>

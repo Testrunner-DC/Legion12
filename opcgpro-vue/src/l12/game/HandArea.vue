@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BattleDockPortal from './BattleDockPortal.vue'
 import { computed, nextTick, onBeforeUnmount, onBeforeUpdate, onMounted, onUpdated, ref, watch } from 'vue'
 import CardTile from '../CardTile.vue'
 import type { Card } from '../types'
@@ -125,12 +126,12 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
     </template>
     <div v-for="(card, index) in cards" v-else :key="card.instanceId" class="hand-card-wrap" :data-flip-id="card.instanceId" :style="fanStyle(index, cards?.length || 0)"
       :class="{ playable: playableIds?.includes(card.instanceId), selected: selectedIds?.includes(card.instanceId) }">
-      <Teleport :to="landscapeTeleportTarget()" :disabled="!mobileLayout">
+      <BattleDockPortal lane="context">
         <div v-if="showPlayAction && (confirmAllPlayable || card.cardType !== 'legion') && selectedIds?.includes(card.instanceId) && playableIds?.includes(card.instanceId)"
           class="card-context-actions hand-actions" :class="{ 'mobile-action-dock': mobileLayout }">
           <button @click.stop="emit('play', card)">打出</button>
         </div>
-      </Teleport>
+      </BattleDockPortal>
       <CardTile :card="card" :selected="selectedIds?.includes(card.instanceId)"
         @select="emit('select', card)" @mouseenter="emit('focus', card)" />
     </div>

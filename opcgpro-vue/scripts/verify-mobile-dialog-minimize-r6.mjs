@@ -66,15 +66,8 @@ try {
   async function load(viewport, query, insets=zeroInsets) {
     await page.setViewportSize(viewport)
     await cdp.send('Emulation.setSafeAreaInsetsOverride',{insets})
-    await page.goto(`${target}?mobile=1&${query}`, { waitUntil:'domcontentloaded' })
+    await page.goto(`${target}?canvas=1&mobile=1&${query}`, { waitUntil:'domcontentloaded' })
     await page.locator('[data-l12-mobile-landscape="true"]').waitFor()
-    await page.evaluate(() => {
-      const probe=document.createElement('div'); probe.style.cssText='position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)'; document.body.append(probe)
-      const style=getComputedStyle(probe), value=property=>Math.max(0,parseFloat(style.getPropertyValue(property))||0), vv=visualViewport
-      const left=(vv?.offsetLeft??0)+value('padding-left'), top=(vv?.offsetTop??0)+value('padding-top')
-      const width=Math.max(1,(vv?.width??innerWidth)-value('padding-left')-value('padding-right')), height=Math.max(1,(vv?.height??innerHeight)-value('padding-top')-value('padding-bottom'))
-      const root=document.documentElement; root.style.setProperty('--l12-viewport-left',`${left}px`); root.style.setProperty('--l12-viewport-top',`${top}px`); root.style.setProperty('--l12-viewport-width',`${width}px`); root.style.setProperty('--l12-viewport-height',`${height}px`); probe.remove(); window.dispatchEvent(new Event('l12-viewport-change'))
-    })
     await page.waitForTimeout(80)
   }
   async function snap(file) { await page.screenshot({ path:path.join(output,file) }) }
