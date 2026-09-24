@@ -22,5 +22,8 @@ if ($text -notmatch '::error::release archive is larger') { throw 'Release archi
 if (([regex]::Matches($text, 'npm run check:performance-architecture')).Count -ne 1) {
     throw 'GitHub main verification must run the low-latency performance architecture lock exactly once.'
 }
+if (([regex]::Matches($text, 'node scripts/check-l12-architecture-lock\.mjs')).Count -ne 1) {
+    throw 'GitHub main verification must run the P0-P4 architecture exit lock exactly once.'
+}
 
-Write-Host '[L12 workflow] ordinary pushes run performance and release verification; manual/tag runs package and upload.'
+Write-Host '[L12 workflow] ordinary pushes run architecture, performance and release verification; manual/tag runs package and upload.'

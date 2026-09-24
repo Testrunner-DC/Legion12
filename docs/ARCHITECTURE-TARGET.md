@@ -139,6 +139,8 @@
 - [卡效统一出口集成门槛](CARD-EFFECT-OUTLET-INTEGRATION-GATE.md)
 - [效果一致性实施计划](EFFECT-LIFECYCLE-ROADMAP.md)
 - [工作流协作协议](WORKSTREAM-COORDINATION.md)
+- [架构锁](ARCHITECTURE-LOCK.md)
+- [当前任务进度与排期](CURRENT-DELIVERY-PLAN.md)
 - [规则中心 FAQ 信息架构](l12/FAQ-INFORMATION-ARCHITECTURE.md)
 - [移动端横屏可用性需求](TASK-LEDGER.md)
 

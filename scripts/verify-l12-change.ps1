@@ -119,6 +119,7 @@ try {
     # 性能架构锁是所有功能的上线前置条件，而不只是前端改动时的可选检查。
     # 它扫描完整前端源码并拒绝新增轮询、裸业务 fetch、无预算扇出和过期例外。
     Invoke-Checked "Low-latency performance architecture lock" "npm.cmd" @("run", "check:performance-architecture") (Join-Path $repoRoot "opcgpro-vue")
+    Invoke-Checked "P0-P4 architecture exit lock" "node" @((Join-Path $repoRoot "scripts\check-l12-architecture-lock.mjs"))
     Invoke-CheckedPowerShellScript "P1 kernel dependency boundary" `
         (Join-Path $repoRoot "scripts\test-l12-core-architecture-boundaries.ps1")
 
@@ -170,7 +171,7 @@ try {
     $platformChanged = Test-AnyPath @('^service-tests-never-match$')
     $frontendChanged = Test-AnyPath @('^opcgpro-vue/', '^scripts/(ws-smoke|ws-ui-peer)')
     $cardEffectChanged = $runtimeEvidenceChanged -or $publicActiveChanged -or $publicTriggerChanged -or $publicResponseChanged -or $publicHandPlayChanged -or (Test-AnyPath @('^TwelveLegions\.Tests/'))
-    $workflowChanged = Test-AnyPath @('^\.github/workflows/verify-release\.yml$', '^scripts/verify-l12-github-workflow\.ps1$')
+    $workflowChanged = Test-AnyPath @('^\.github/workflows/verify-release\.yml$', '^scripts/(check-l12-architecture-lock\.mjs|verify-l12-github-workflow\.ps1)$')
     $storageChanged = Test-AnyPath @('^scripts/(audit-l12-storage|clean-l12-generated|test-l12-cleanup)\.ps1$', '^ops/windows/(watch-l12-network|finalize-l12-codex-session-move)\.ps1$', '^docs/STORAGE-(GOVERNANCE|MAINTENANCE)\.md$')
     $releaseGateChanged = Test-AnyPath @('^ops/windows/verify-l12\.ps1$', '^scripts/verify-l12-change\.ps1$', '^scripts/test-l12-release-gate\.ps1$')
     $deploymentBehaviorChanged = Test-AnyPath @('^ops/windows/(deploy-l12|L12DeployTarget)\.ps1$', '^ops/server/(deploy-l12-release\.sh|verify-l12-health\.mjs)$', '^scripts/(test-l12-deploy-behavior|verify-l12-change)\.ps1$')
