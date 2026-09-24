@@ -103,7 +103,7 @@ Assert-True (([regex]::Matches($verifySource, 'Invoke-External dotnet test "\.\\
 Assert-True (([regex]::Matches($verifySource, 'Invoke-External \$npmExecutable ci')).Count -eq 1) "Commit-level verifier must install the isolated frontend exactly once."
 Assert-True (([regex]::Matches($verifySource, 'Invoke-External \$npmExecutable run build')).Count -eq 1) "Commit-level verifier must build the isolated frontend exactly once."
 Assert-True ($deploySource.Contains('$cardAssetsProbe = if ($ServerArtifactRoot -eq "/www/legion12")')) "Deployment must probe the server content-addressed card cache before upload."
-Assert-True ($deploySource.Contains('if ($cardAssetsCached)') -and $deploySource.Contains('服务器复用优化卡图缓存')) "Deployment must explicitly reuse a matching card asset hash."
+Assert-True (([regex]::Matches($deploySource, 'if \(\$cardAssetsCached\)')).Count -eq 1 -and $deploySource.Contains('$cardAssetsHash')) "Deployment must explicitly reuse a matching card asset hash."
 Assert-True ($deploySource.IndexOf('Invoke-External scp @sshOptions $cardAssetsArchive') -gt $deploySource.IndexOf('else {', $deploySource.IndexOf('if ($cardAssetsCached)'))) "Card asset upload must remain confined to the remote-cache-miss branch."
 
 $fixtureBase = if (Test-Path -LiteralPath "D:\GPT\Legion12") { "D:\GPT\Legion12\temp" } else { [IO.Path]::GetTempPath() }

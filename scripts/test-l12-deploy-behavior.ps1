@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param([string]$FixtureBase = "")
 
 $ErrorActionPreference = "Stop"
@@ -495,7 +495,14 @@ exit 64
         New-FakeCommand $fakeBin "ln" @'
 printf 'ln %s\n' "$*" >> "$L12_TEST_COMMAND_LOG"
 if [ "${1:-}" != "-s" ]; then exit 64; fi
-node -e "require('node:fs').symlinkSync(process.argv[1],process.argv[2],'junction')" "$2" "$3"
+# The fixture materializes successful directory links because unprivileged
+# Windows runners cannot create or atomically rename Unix-equivalent links.
+# Adversarial symlink/escape cases still use real NTFS junctions above.
+node -e "const fs=require('node:fs');const source=process.argv[1],target=process.argv[2];if(!fs.statSync(source).isDirectory())process.exit(64);fs.cpSync(source,target,{recursive:true,errorOnExist:true,force:false})" "$2" "$3"
+'@ | Out-Null
+        New-FakeCommand $fakeBin "mv" @'
+printf 'mv %s\n' "$*" >> "$L12_TEST_COMMAND_LOG"
+node -e "const fs=require('node:fs');const args=process.argv.slice(1);const flag=args[0].startsWith('-')?args.shift():'';if(args.length!==2)process.exit(64);const [source,target]=args;if(flag.includes('n')&&fs.existsSync(target))process.exit(0);if(flag.includes('f')&&fs.existsSync(target))fs.rmSync(target,{recursive:true,force:true});fs.renameSync(source,target)" -- "$@"
 '@ | Out-Null
         New-FakeCommand $fakeBin "install" @'
 if [ "${1:-}" = "-m" ]; then shift 2; fi
@@ -703,7 +710,16 @@ exec "$L12_TEST_REAL_TAR" "$@"
         "非法服务器制品根在参数绑定拒绝前已进入发布流程。"
 
     $success = Invoke-ServerScenario -Name "success"
-    Assert-True ($success.ExitCode -eq 0) "精确版本部署行为夹具失败：$($success.Output)"
+    $successFailureDetails = if ($success.ExitCode -eq 0) {
+        ""
+    }
+    else {
+        $successFailureRecord = Get-ChildItem -LiteralPath (Join-Path $success.Root "opt\legion12-deployment\failures") `
+            -Filter "deploy-*.txt" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -eq $successFailureRecord) { "（无失败现场文件）" }
+        else { Get-Content -LiteralPath $successFailureRecord.FullName -Raw }
+    }
+    Assert-True ($success.ExitCode -eq 0) "精确版本部署行为夹具失败：$($success.Output)`n失败现场：$successFailureDetails`n命令轨迹：$($success.Commands)"
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $success.Root "opt\legion12-runtime\.maintenance-sandbox-drain"))) "成功发布后没有仅解除临时沙盒围栏。"
     Assert-True ($success.Commands.Contains("curl http://127.0.0.1:8083/health")) "成功路径没有核验目标机本地健康身份。"
     Assert-True ($success.Commands.Contains("curl https://legion-12.com/health")) "成功路径没有核验公网健康身份。"

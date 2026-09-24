@@ -119,6 +119,8 @@ try {
     # 性能架构锁是所有功能的上线前置条件，而不只是前端改动时的可选检查。
     # 它扫描完整前端源码并拒绝新增轮询、裸业务 fetch、无预算扇出和过期例外。
     Invoke-Checked "Low-latency performance architecture lock" "npm.cmd" @("run", "check:performance-architecture") (Join-Path $repoRoot "opcgpro-vue")
+    Invoke-CheckedPowerShellScript "P1 kernel dependency boundary" `
+        (Join-Path $repoRoot "scripts\test-l12-core-architecture-boundaries.ps1")
 
     $configChanged = Test-AnyPath @('^\.codex/', '(^|/)AGENTS\.md$', '^scripts/verify-l12-change\.ps1$', '^scripts/verify-l12-codex-routing\.ps1$', '^docs/(TASK-LEDGER|CHANGE-BATCH-WORKFLOW|REGRESSION-FIXTURES)\.md$')
     $runtimeEvidenceChanged = Test-AnyPath @('^scripts/lib/l12-card-runtime-evidence\.ps1$', '^scripts/test-l12-card-runtime-evidence\.ps1$', '^scripts/export-l12-card-effect-review-matrix\.ps1$')
@@ -246,8 +248,12 @@ try {
     }
 
     if ($deploymentBehaviorChanged) {
-        Invoke-CheckedPowerShellScript "Deployment target, health and failure-preservation behavior" `
-            (Join-Path $repoRoot "scripts\test-l12-deploy-behavior.ps1")
+        $deploymentFixtureBase = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) "Temp"
+        Invoke-Checked "Deployment target, health and failure-preservation behavior" "pwsh" @(
+            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+            (Join-Path $repoRoot "scripts\test-l12-deploy-behavior.ps1"),
+            "-FixtureBase", $deploymentFixtureBase
+        )
     }
 
     if ($Level -eq "Focused") {
