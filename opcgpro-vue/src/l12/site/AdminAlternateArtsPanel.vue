@@ -5,6 +5,8 @@ import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import MediaUploadField from './MediaUploadField.vue'
 import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
 import CardImage from '@/l12/CardImage.vue'
+import AdminRiskActionDialog from './AdminRiskActionDialog.vue'
+import { useAdminRiskAction } from './useAdminRiskAction'
 
 const emit = defineEmits<{ notice: [value: string] }>()
 const arts = ref<AlternateArt[]>([])
@@ -29,6 +31,8 @@ const betaGrantForm = reactive({ alternateArtId: '', seasonId: '' })
 const betaGrantPreview = ref<AlternateArtRankedParticipantDispatchPreview | null>(null)
 const rankedParticipantScope = ref<'current' | 'specified'>('current')
 const artPickerTarget = ref<'base' | 'grant' | 'participants' | 'rule' | null>(null)
+const canWrite = computed(() => hasPermission('admin.content.draft'))
+const { riskAction, riskBusy, riskError, requestRiskAction, cancelRiskAction, confirmRiskAction } = useAdminRiskAction()
 const cardById = computed(() => new Map(catalog.value.map(card => [card.id, card])))
 const selectedArt = computed(() => arts.value.find(item => item.id === grantForm.alternateArtId))
 const selectedParticipantArt = computed(() => arts.value.find(item => item.id === betaGrantForm.alternateArtId))
@@ -107,7 +111,7 @@ async function saveProduct() {
     notice('异画归属产品已保存，可在异画登记时选用')
   } catch (error) { notice(error instanceof Error ? error.message : '异画归属产品保存失败') }
 }
-async function saveArt() {
+async function performSaveArt() {
   try {
     const base = cardById.value.get(artForm.baseCardId)
     if (!base) { notice('请先通过单卡筛选选择原卡'); return }
@@ -118,37 +122,59 @@ async function saveArt() {
     notice(saved.active ? '异画已保存并立即进入画廊；获得权益的玩家可在构筑中选用' : '异画已保存为停用状态，不会在画廊展示')
     resetArt()
     if (registryOpen.value) await searchRegistry(registry.value.page)
-  } catch (error) { notice(error instanceof Error ? error.message : '异画保存失败') }
+  } catch (error) { notice(error instanceof Error ? error.message : '异画保存失败'); throw error }
 }
-async function grant() {
+function saveArt() {
+  if (!canWrite.value) return
+  const base = cardById.value.get(artForm.baseCardId)
+  if (!base) { notice('请先通过单卡筛选选择原卡'); return }
+  if (!artForm.active) { void performSaveArt().catch(() => {}); return }
+  requestRiskAction({ title: '确认启用异画并同步画廊', target: `${artForm.artCode || '未编号'} · ${base.nameZh}`, impact: '保存后会立即进入玩家画廊；已有权益的玩家可在构筑中选用。', confirmLabel: '保存并同步画廊', severity: 'warning', run: performSaveArt })
+}
+async function performGrant() {
   if (!grantForm.alternateArtId || !grantForm.username.trim()) { notice('请选择异画并填写玩家账号'); return }
   try { const saved = await adminApi.grantAlternateArt(grantForm); grants.value = [saved, ...grants.value.filter(item => item.id !== saved.id)]; notice('异画权益已派发，玩家下次刷新构筑即可选用') }
-  catch (error) { notice(error instanceof Error ? error.message : '异画权益派发失败') }
+  catch (error) { notice(error instanceof Error ? error.message : '异画权益派发失败'); throw error }
 }
-async function revoke(grant: AlternateArtGrant) {
-  if (!window.confirm(`撤回 ${grant.username} 的异画权益？现有构筑将自动回退为原卡图。`)) return
+function grant() {
+  if (!canWrite.value) return
+  if (!grantForm.alternateArtId || !grantForm.username.trim()) { notice('请选择异画并填写玩家账号'); return }
+  requestRiskAction({ title: '确认直接派发异画权益', target: grantForm.username.trim(), impact: '该玩家刷新构筑后即可选用所选异画；操作会写入权益与审计记录。', confirmLabel: '派发权益', severity: 'warning', run: performGrant })
+}
+async function performRevoke(grant: AlternateArtGrant) {
   try { await adminApi.revokeAlternateArtGrant(grant.id); grants.value = grants.value.map(item => item.id === grant.id ? { ...item, revokedAt: new Date().toISOString() } : item); notice('异画权益已撤回') }
-  catch (error) { notice(error instanceof Error ? error.message : '撤回失败') }
+  catch (error) { notice(error instanceof Error ? error.message : '撤回失败'); throw error }
 }
-async function saveRule() {
+function revoke(grant: AlternateArtGrant) {
+  if (!canWrite.value) return
+  requestRiskAction({ title: '确认撤回异画权益', target: grant.username, impact: '该玩家现有构筑中的异画会自动回退为原卡图。', confirmLabel: '撤回权益', severity: 'danger', run: () => performRevoke(grant) })
+}
+async function performSaveRule() {
   if (!ruleForm.alternateArtId) { notice('请先选择要派发的异画'); return }
   try {
     const saved = await adminApi.saveAlternateArtAwardRule({ ...ruleForm, id: ruleForm.id || undefined })
     awardRules.value = [saved, ...awardRules.value.filter(rule => rule.id !== saved.id)]
     notice(saved.kind === 'event' ? '活动异画规则已保存，可在下方粘贴玩家名单执行派发' : '赛季异画规则已保存，将由结算自动派发')
     resetRule()
-  } catch (error) { notice(error instanceof Error ? error.message : '异画规则保存失败') }
+  } catch (error) { notice(error instanceof Error ? error.message : '异画规则保存失败'); throw error }
 }
-async function dispatchEvent(rule: AlternateArtAwardRule) {
-  const usernames = eventUsernames.value.split(/[\s,，;；]+/).map(value => value.trim()).filter(Boolean)
-  if (!usernames.length) { notice('请先填写活动获奖玩家账号，每行一个或用逗号分隔'); return }
-  if (!window.confirm(`向 ${usernames.length} 名玩家派发活动异画？`)) return
+function saveRule() {
+  if (!canWrite.value || !ruleForm.alternateArtId) { if (!ruleForm.alternateArtId) notice('请先选择要派发的异画'); return }
+  requestRiskAction({ title: '确认保存自动派发规则', target: selectedRuleArt.value?.displayName || ruleForm.alternateArtId, impact: ruleForm.active ? '规则启用后会在对应赛季、结算或活动流程中自动授予玩家权益。' : '规则将以停用状态保存，不会自动派发。', confirmLabel: '保存规则', severity: ruleForm.active ? 'danger' : 'warning', run: performSaveRule })
+}
+async function performDispatchEvent(rule: AlternateArtAwardRule, usernames: string[]) {
   try {
     const created = await adminApi.dispatchAlternateArtEvent(rule.id, usernames)
     grants.value = [...created, ...grants.value.filter(item => !created.some(saved => saved.id === item.id))]
     eventUsernames.value = ''
     notice(`已完成活动派发：${created.length} 名玩家`)
-  } catch (error) { notice(error instanceof Error ? error.message : '活动异画派发失败') }
+  } catch (error) { notice(error instanceof Error ? error.message : '活动异画派发失败'); throw error }
+}
+function dispatchEvent(rule: AlternateArtAwardRule) {
+  if (!canWrite.value) return
+  const usernames = eventUsernames.value.split(/[\s,，;；]+/).map(value => value.trim()).filter(Boolean)
+  if (!usernames.length) { notice('请先填写活动获奖玩家账号，每行一个或用逗号分隔'); return }
+  requestRiskAction({ title: '确认执行活动名单派发', target: `${rule.eventId || '活动'} · ${usernames.length} 名玩家`, impact: '系统会逐名校验账号、授予异画权益并写入派发记录。', confirmLabel: '执行活动派发', severity: 'danger', run: () => performDispatchEvent(rule, usernames) })
 }
 async function previewBetaGrant() {
   if (!betaGrantForm.alternateArtId) { notice('请先选择要派发的异画'); return }
@@ -159,9 +185,8 @@ async function previewBetaGrant() {
   }) }
   catch (error) { notice(error instanceof Error ? error.message : '排位参与者预览失败') }
 }
-async function dispatchBetaGrant() {
+async function performDispatchBetaGrant() {
   if (!betaGrantPreview.value || !betaGrantForm.alternateArtId) { notice('请先执行预览并核对人数'); return }
-  if (!window.confirm(`将向 ${betaGrantPreview.value.toGrant} 名排位参与者派发异画；已拥有同来源权益的 ${betaGrantPreview.value.alreadyGranted} 人不会重复派发。确认继续？`)) return
   try {
     const saved = await adminApi.dispatchAlternateArtRankedParticipants({
       alternateArtId: betaGrantForm.alternateArtId,
@@ -170,13 +195,19 @@ async function dispatchBetaGrant() {
     grants.value = [...saved, ...grants.value.filter(item => !saved.some(row => row.id === item.id))]
     notice(`已完成 ${betaGrantPreview.value.seasonId} 赛季排位参与者派发：${betaGrantPreview.value.toGrant} 名新增权益`)
     betaGrantPreview.value = null
-  } catch (error) { notice(error instanceof Error ? error.message : '排位参与者派发失败') }
+  } catch (error) { notice(error instanceof Error ? error.message : '排位参与者派发失败'); throw error }
+}
+function dispatchBetaGrant() {
+  if (!canWrite.value || !betaGrantPreview.value || !betaGrantForm.alternateArtId) return
+  const preview = betaGrantPreview.value
+  requestRiskAction({ title: '确认向排位参与者派发异画', target: `${preview.seasonId} · ${preview.toGrant} 名玩家`, impact: `将新增 ${preview.toGrant} 条权益；已拥有同来源权益的 ${preview.alreadyGranted} 人不会重复派发。`, confirmLabel: '确认派发', severity: 'danger', run: performDispatchBetaGrant })
 }
 onMounted(load)
 </script>
 
 <template>
   <section class="alternate-admin">
+    <AdminRiskActionDialog v-if="riskAction" :title="riskAction.title" :target="riskAction.target" :impact="riskAction.impact" :confirm-label="riskAction.confirmLabel" :severity="riskAction.severity" :busy="riskBusy" :error="riskError" @cancel="cancelRiskAction" @confirm="confirmRiskAction"/>
     <header><div><small>ALTERNATE ART</small><h3>异画与玩家权益</h3><p>异画不改变卡牌编号、效果或构筑合法性。先上传并绑定原卡，再授予玩家；派发来源会写入审计记录。</p></div><button @click="load">{{ busy ? '读取中…' : '刷新' }}</button></header>
     <section class="product-editor"><h4>异画归属产品</h4><p>产品独立于站点商品，可先在此新建，再绑定一张或多张异画。</p><div class="form-grid"><label>产品名称<input v-model.trim="productForm.name" maxlength="100" placeholder="例如：S01 赛季典藏"></label><label class="check"><input v-model="productForm.active" type="checkbox">可继续绑定</label></div><div class="actions"><button @click="resetProduct">清空</button><button v-if="hasPermission('admin.content.draft')" class="primary" @click="saveProduct">保存归属产品</button></div><article v-for="product in products" :key="product.id"><span>{{ product.name }} · {{ product.active ? '可用' : '已停用' }}</span><button @click="editProduct(product)">编辑</button></article></section>
     <section class="art-editor"><h4>{{ artForm.id ? '编辑异画' : '新建异画' }}</h4><p>异画卡名始终沿用原卡；启用后保存即进入玩家画廊，不需要再走资讯或站点内容发布。</p><div class="form-grid"><label>异画编号<input v-model.trim="artForm.artCode" maxlength="80" placeholder="例如：ALT-S01-001"></label><label>绑定原卡<button class="art-choice" type="button" @click="openArtPicker('base')">{{ selectedBaseCard ? `${selectedBaseCard.number} · ${selectedBaseCard.nameZh}` : '打开单卡筛选选择原卡' }}</button></label><label>卡名（随原卡，不可单独修改）<input :value="selectedBaseCard?.nameZh || '选择原卡后自动带入'" disabled></label><label>归属产品（复用已有）<select v-model="artForm.productId"><option value="">暂不归属产品</option><option v-for="item in products.filter(product => product.active || product.id === artForm.productId)" :key="item.id" :value="item.id">{{ item.name }}</option></select></label><label>异画素材<select v-model="artForm.mediaAssetId"><option value="">先上传或选择素材</option><option v-for="item in media" :key="item.id" :value="item.id">{{ item.altText || item.contentHash.slice(0, 12) }}</option></select></label><label class="check"><input v-model="artForm.active" type="checkbox">启用并在画廊展示</label></div><MediaUploadField v-if="hasPermission('admin.content.draft')" kind="card-art" :initial-alt="selectedBaseCard?.nameZh || '异画卡图'" @uploaded="uploaded" @notice="notice"/><div class="actions"><button @click="resetArt">清空</button><button v-if="hasPermission('admin.content.draft')" class="primary" @click="saveArt">保存并同步画廊</button></div></section>

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { adminApi, getEffectiveOperationsPolicy, type OperationsConfigView } from '@/l12/platform'
+import { adminApi, getEffectiveOperationsPolicy, hasPermission, type OperationsConfigView } from '@/l12/platform'
 import { l12State } from '@/l12/net'
+import AdminRiskActionDialog from './AdminRiskActionDialog.vue'
+import { useAdminRiskAction } from './useAdminRiskAction'
 
 const current = ref<OperationsConfigView | null>(null)
 const hours = ref(2)
@@ -11,6 +13,8 @@ const failed = ref(false)
 const active = computed(() => current.value?.immediateMaintenance?.enabled === true)
 const supported = computed(() => current.value?.immediateMaintenance !== undefined)
 const validHours = computed(() => Number.isInteger(hours.value) && hours.value >= 1 && hours.value <= 168)
+const canWrite = computed(() => hasPermission('admin.operations.write'))
+const { riskAction, riskBusy, riskError, requestRiskAction, cancelRiskAction, confirmRiskAction } = useAdminRiskAction()
 
 async function refresh() {
   if (busy.value) return
@@ -24,8 +28,8 @@ async function refresh() {
     notice.value = error instanceof Error ? error.message : '维护状态读取失败，请刷新后重试'
   } finally { busy.value = false }
 }
-async function changeMaintenance(begin: boolean) {
-  if (busy.value || !current.value || !supported.value || (begin && !validHours.value)) return
+async function performMaintenanceChange(begin: boolean) {
+  if (busy.value || !current.value || !supported.value || !canWrite.value || (begin && !validHours.value)) return
   busy.value = true
   notice.value = ''
   failed.value = false
@@ -47,20 +51,31 @@ async function changeMaintenance(begin: boolean) {
   } catch (error) {
     failed.value = true
     notice.value = `${error instanceof Error ? error.message : '维护操作失败'}；请刷新状态后再操作。`
+    throw error
   } finally { busy.value = false }
+}
+function changeMaintenance(begin: boolean) {
+  if (busy.value || !current.value || !supported.value || !canWrite.value || (begin && !validHours.value)) return
+  requestRiskAction({
+    title: begin ? '立即进入维护' : '结束即时维护', target: begin ? `预计 ${hours.value} 小时` : '当前即时维护', targetLabel: '维护状态',
+    impact: begin ? '所有新对局入口会立即关闭，进行中对局仍可完成与重连。预计时长只用于广播，不会自动结束维护。' : '即时维护门禁会解除；若预约维护仍在生效，新对局仍不会开放。',
+    confirmLabel: begin ? '确认进入维护' : '确认结束即时维护', severity: begin ? 'danger' : 'warning',
+    run: () => performMaintenanceChange(begin),
+  })
 }
 onMounted(refresh)
 </script>
 
 <template>
   <section class="immediate-maintenance" data-ui-contract="immediate-maintenance-independent">
+    <AdminRiskActionDialog v-if="riskAction" :title="riskAction.title" :target="riskAction.target" :target-label="riskAction.targetLabel" :impact="riskAction.impact" :confirm-label="riskAction.confirmLabel" :severity="riskAction.severity" :busy="riskBusy" :error="riskError" @cancel="cancelRiskAction" @confirm="confirmRiskAction"/>
     <header><div><h3>立即维护</h3><p>只关闭新开对局，现有对局可继续和重连；网站、后台保持可用。</p></div><button type="button" :disabled="busy" @click="refresh">刷新状态</button></header>
     <p class="maintenance-state">当前状态：{{ !current ? '正在读取' : active ? '即时维护中 · 新对局已关闭' : '即时维护未开启' }}</p>
     <p v-if="current && !supported" class="maintenance-note">当前后端尚不支持即时维护，请先部署匹配版本。</p>
     <div class="immediate-maintenance-actions">
       <label>预计维护时长（小时）<input v-model.number="hours" type="number" min="1" max="168" step="1" :disabled="busy || active"/></label>
-      <button type="button" class="maintenance-begin" :disabled="busy || !current || !supported || active || !validHours" @click="changeMaintenance(true)">{{ busy ? '处理中…' : '维护服务器' }}</button>
-      <button type="button" :disabled="busy || !supported || !active" @click="changeMaintenance(false)">结束即时维护</button>
+      <button type="button" class="maintenance-begin" :disabled="busy || !canWrite || !current || !supported || active || !validHours" @click="changeMaintenance(true)">{{ busy ? '处理中…' : '维护服务器' }}</button>
+      <button type="button" :disabled="busy || !canWrite || !supported || !active" @click="changeMaintenance(false)">结束即时维护</button>
     </div>
     <p class="maintenance-note">预计时长仅用于广播，到时不会自动开放。与下方预约维护独立，不保存或覆盖本页其他编辑；结束即时维护不会取消预约计划。操作后保存预约区时如提示版本已变化，请先刷新配置。</p>
     <p v-if="notice" class="maintenance-result" :class="{ failed }" role="status" aria-live="polite">{{ notice }}</p>

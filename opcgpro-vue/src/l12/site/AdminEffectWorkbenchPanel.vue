@@ -9,6 +9,8 @@ import {
   type EffectWorkbenchErrata,
   type EffectWorkbenchView,
 } from '@/l12/platform'
+import AdminRiskActionDialog from './AdminRiskActionDialog.vue'
+import { useAdminRiskAction } from './useAdminRiskAction'
 
 const props = defineProps<{ effect: AtomicCardEffect }>()
 const emit = defineEmits<{ notice: [message: string] }>()
@@ -21,6 +23,7 @@ const errataProducts = ref<Record<string, string>>({})
 const reason = ref('')
 const busy = ref('')
 const showHistory = ref(false)
+const { riskAction, riskBusy, riskError, requestRiskAction, cancelRiskAction, confirmRiskAction } = useAdminRiskAction()
 
 const canWrite = computed(() => hasPermission('admin.effects.review'))
 const livePreviews = computed(() => {
@@ -83,7 +86,7 @@ async function save() {
   finally { busy.value = '' }
 }
 
-async function action(kind: 'validate' | 'review' | 'publish') {
+async function performAction(kind: 'validate' | 'review' | 'publish') {
   if (!workbench.value) return
   busy.value = kind
   try {
@@ -94,18 +97,27 @@ async function action(kind: 'validate' | 'review' | 'publish') {
         : await adminApi.publishEffectWorkbench(props.effect.cardId, workbench.value.version, reason.value)
     accept(result)
     emit('notice', kind === 'validate' ? '结构校验完成' : kind === 'review' ? '人工复核已记录' : '卡效版本已发布；新建对局将使用本次呈现文本')
-  } catch (error) { emit('notice', error instanceof Error ? error.message : '卡效工作流操作失败') }
+  } catch (error) { emit('notice', error instanceof Error ? error.message : '卡效工作流操作失败'); throw error }
   finally { busy.value = '' }
 }
+function action(kind: 'validate' | 'review' | 'publish') {
+  if (!canWrite.value) return
+  if (kind !== 'publish') { void performAction(kind).catch(() => {}); return }
+  requestRiskAction({ title: '确认发布卡效版本', target: `${props.effect.cardId} · ${props.effect.name}`, impact: '新建对局将使用当前复核后的呈现文本；现有历史版本保留。', confirmLabel: '发布卡效版本', severity: 'danger', run: () => performAction(kind) })
+}
 
-async function rollback(versionId: string) {
+async function performRollback(versionId: string) {
   if (!workbench.value) return
   busy.value = `rollback:${versionId}`
   try {
     accept(await adminApi.rollbackEffectWorkbench(props.effect.cardId, workbench.value.version, versionId, reason.value))
     emit('notice', '已生成并发布一个新的回退版本，历史版本未被覆盖')
-  } catch (error) { emit('notice', error instanceof Error ? error.message : '卡效版本回退失败') }
+  } catch (error) { emit('notice', error instanceof Error ? error.message : '卡效版本回退失败'); throw error }
   finally { busy.value = '' }
+}
+function rollback(versionId: string) {
+  if (!canWrite.value || !workbench.value) return
+  requestRiskAction({ title: '确认生成卡效回退版本', target: `${props.effect.name} · ${versionId}`, impact: '所选历史版本会复制为新的已发布版本，新建对局随即采用；历史不会被覆盖。', confirmLabel: '生成并发布回退版本', severity: 'danger', run: () => performRollback(versionId) })
 }
 
 function addErrata() {
@@ -135,6 +147,7 @@ watch(() => props.effect.cardId, load, { immediate: true })
 </script>
 
 <template>
+  <AdminRiskActionDialog v-if="riskAction" :title="riskAction.title" :target="riskAction.target" :impact="riskAction.impact" :confirm-label="riskAction.confirmLabel" :severity="riskAction.severity" :busy="riskBusy" :error="riskError" @cancel="cancelRiskAction" @confirm="confirmRiskAction"/>
   <section class="effect-maintenance" data-ui-contract="effect-workbench">
     <header>
       <div><small>STRUCTURED EFFECT WORKBENCH</small><h3>卡效统一工作台</h3><p>卡文、勘误、产品、Cost/响应边界与全部呈现场景在同一版本中维护；原子身份和生命周期保持只读。</p></div>

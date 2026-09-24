@@ -22,6 +22,7 @@ const AdminEffectWorkbenchPanel = defineAsyncComponent(() => import('./AdminEffe
 import { adminSections, visibleAdminSections, type AdminTab } from './adminSections'
 import { useSectionScroll } from './useSectionScroll'
 import AdminRiskActionDialog from './AdminRiskActionDialog.vue'
+import { useAdminRiskAction } from './useAdminRiskAction'
 const route = useRoute()
 const router = useRouter()
 const availableAdminTabs = computed(() => visibleAdminSections(hasPermission))
@@ -86,6 +87,9 @@ const auditRecovery = ref<AuditArchiveRecovery | null>(null)
 const auditRetentionDays = ref(365)
 const auditArchiveReason = ref('定期安全审计归档')
 const accountStatusReasons = reactive<Record<string, string>>({})
+const { riskAction, riskBusy, riskError, requestRiskAction, cancelRiskAction, confirmRiskAction } = useAdminRiskAction()
+const temporaryPassword = ref('')
+const temporaryPasswordAccount = ref('')
 
 let adminGeneration = 0
 let adminReadFailed = false
@@ -114,7 +118,10 @@ async function loadAccounts() {
   if (tab.value !== 'accounts') { loadedTabs.delete('accounts'); return }
   await readAdminResource(() => adminApi.accounts(), value => { accounts.value = value })
 }
-async function updateBug(item: BugReport) { try { const updated = await adminApi.updateBug(item.id, { status: item.status, priority: item.priority, assignee: item.assignee, adminNotes: item.adminNotes, comment: bugComments[item.id] }); bugs.value = bugs.value.map(bug => bug.id === updated.id ? updated : bug); bugComments[item.id] = ''; notice.value = `${item.id} 已更新并写入审计记录` } catch (error) { notice.value = error instanceof Error ? error.message : '更新失败' } }
+async function updateBug(item: BugReport) {
+  if (!hasPermission('admin.bugs.write')) return
+  try { const updated = await adminApi.updateBug(item.id, { status: item.status, priority: item.priority, assignee: item.assignee, adminNotes: item.adminNotes, comment: bugComments[item.id] }); bugs.value = bugs.value.map(bug => bug.id === updated.id ? updated : bug); bugComments[item.id] = ''; notice.value = `${item.id} 已更新并写入审计记录` } catch (error) { notice.value = error instanceof Error ? error.message : '更新失败' }
+}
 function bugActionLabel(action: string) { return ({ created: '建立反馈', status: '状态变更', priority: '优先级变更', assignee: '负责人变更', notes: '处理摘要变更', comment: '追加处理记录' } as Record<string, string>)[action] || action }
 function switchAdminTab(next: AdminTab) {
   if (!availableAdminTabs.value.some(item => item.id === next)) return
@@ -125,36 +132,37 @@ function openAdminMatch(matchId: string) {
   if (!hasPermission('admin.matches.read')) return
   void router.push({ path: '/admin', query: { section: 'matches', matchId } })
 }
-const sessionRiskTarget = ref<PlatformAccount | null>(null)
-const sessionRiskBusy = ref(false)
-const sessionRiskError = ref('')
-async function setRole(account: PlatformAccount) { try { const result = await adminApi.setRole(account.id, account.role as 'player' | 'admin', account.permissionVersion); notice.value = result.changed ? `${account.username} 的角色已更新为${result.role === 'admin' ? '管理员' : '玩家'}并写入审计` : '角色没有变化'; await loadAccounts() } catch (error) { notice.value = error instanceof Error ? error.message : '更新失败' } }
+function setRole(account: PlatformAccount) {
+  if (!hasPermission('admin.accounts.roles.write')) return
+  const nextRole = account.role as 'player' | 'admin'
+  requestRiskAction({
+    title: '确认账号身份变更', target: account.username, targetLabel: '账号',
+    impact: nextRole === 'admin' ? '该账号将立即获得全部管理员权限。' : '该账号将立即失去管理员权限，现有会话会在权限版本更新后重新校验。',
+    confirmLabel: nextRole === 'admin' ? '授予管理员身份' : '改为玩家身份',
+    run: async () => { const result = await adminApi.setRole(account.id, nextRole, account.permissionVersion); notice.value = result.changed ? `${account.username} 的角色已更新为${result.role === 'admin' ? '管理员' : '玩家'}并写入审计` : '角色没有变化'; await loadAccounts() },
+  })
+}
 function revokeAccountSessions(account: PlatformAccount) {
-  sessionRiskError.value = ''
-  sessionRiskTarget.value = account
+  if (!hasPermission('admin.sessions.revoke')) return
+  requestRiskAction({
+    title: '撤销全部会话', target: account.username, targetLabel: '账号',
+    impact: '该账号在所有设备上的登录会话将立即失效，需重新登录。已撤销的会话无法恢复。',
+    run: async () => { const result = await adminApi.revokeSessions(account.id); notice.value = `${account.username} 已撤销 ${result.revokedCount} 个会话` },
+  })
 }
-async function confirmRevokeAccountSessions() {
-  const account = sessionRiskTarget.value
-  if (!account || sessionRiskBusy.value) return
-  sessionRiskBusy.value = true; sessionRiskError.value = ''
-  try {
-    const result = await adminApi.revokeSessions(account.id)
-    notice.value = `${account.username} 已撤销 ${result.revokedCount} 个会话`
-    sessionRiskTarget.value = null
-  } catch (error) { sessionRiskError.value = error instanceof Error ? error.message : '撤销会话失败，请重试' }
-  finally { sessionRiskBusy.value = false }
-}
-async function setAccountStatus(account: PlatformAccount) {
+function setAccountStatus(account: PlatformAccount) {
+  if (!hasPermission('admin.accounts.status.write')) return
   const reason = accountStatusReasons[account.id]?.trim()
   if (!reason) { notice.value = '请先填写账号状态变更理由'; return }
-  try {
-    const result = await adminApi.setAccountStatus(account.id, !account.disabled, reason, account.permissionVersion)
-    notice.value = `${result.account.username} 已${result.account.disabled ? '禁用' : '启用'}；撤销 ${result.revokedSessions} 个会话并写入审计`
-    accountStatusReasons[account.id] = ''
-    await loadAccounts(); await loadSecurity()
-  } catch (error) { notice.value = error instanceof Error ? error.message : '账号状态命令提交失败' }
+  const disable = !account.disabled
+  requestRiskAction({
+    title: disable ? '禁用账号' : '重新启用账号', target: account.username, targetLabel: '账号',
+    impact: disable ? '账号将立即禁止登录，全部有效会话会被撤销。' : '账号将恢复登录资格，原有会话不会恢复。',
+    confirmLabel: disable ? '确认禁用' : '确认启用', severity: disable ? 'danger' : 'warning',
+    run: async () => { const result = await adminApi.setAccountStatus(account.id, disable, reason, account.permissionVersion); notice.value = `${result.account.username} 已${result.account.disabled ? '禁用' : '启用'}；撤销 ${result.revokedSessions} 个会话并写入审计`; accountStatusReasons[account.id] = ''; await loadAccounts(); await loadSecurity() },
+  })
 }
-async function reviewAbility(ability: AtomicAbility, status: string, note = '') { if (!selectedEffect.value) return; try { await adminApi.reviewEffect(selectedEffect.value.cardId, { abilityId: ability.abilityId, status, note }); selectedEffect.value = await adminApi.effect(selectedEffect.value.cardId); effectCards.value = effectCards.value.map(card => card.cardId === selectedEffect.value?.cardId ? selectedEffect.value : card); notice.value = `${selectedEffect.value.cardId} ABILITY ${ability.sequence} 审查状态已记录` } catch (error) { notice.value = error instanceof Error ? error.message : '审查记录失败' } }
+async function reviewAbility(ability: AtomicAbility, status: string, note = '') { if (!selectedEffect.value || !hasPermission('admin.effects.review')) return; try { await adminApi.reviewEffect(selectedEffect.value.cardId, { abilityId: ability.abilityId, status, note }); selectedEffect.value = await adminApi.effect(selectedEffect.value.cardId); effectCards.value = effectCards.value.map(card => card.cardId === selectedEffect.value?.cardId ? selectedEffect.value : card); notice.value = `${selectedEffect.value.cardId} ABILITY ${ability.sequence} 审查状态已记录` } catch (error) { notice.value = error instanceof Error ? error.message : '审查记录失败' } }
 async function loadAudit() {
   if (tab.value !== 'audit') { loadedTabs.delete('audit'); return }
   await readAdminResource(() => adminApi.audit({ category: auditCategory.value, outcome: auditOutcome.value, actorId: auditActorId.value, commandId: auditCommandId.value, correlationId: auditCorrelationId.value }), value => { audits.value = value })
@@ -163,26 +171,42 @@ async function loadControlPlane() {
   if (tab.value !== 'commands') { loadedTabs.delete('commands'); return }
   await readAdminResource(() => adminApi.commands({ status: commandStatus.value }), value => { commands.value = value })
 }
-async function resetAccountPassword(account: PlatformAccount) {
+function resetAccountPassword(account: PlatformAccount) {
+  if (!hasPermission('admin.accounts.status.write')) return
   const reason = accountStatusReasons[account.id]?.trim()
   if (!reason) { notice.value = '请先填写账号安全操作理由'; return }
-  if (!window.confirm(`确认将 ${account.username} 的密码重置为临时密码 123456，并撤销全部会话？`)) return
-  try {
-    const result = await adminApi.resetAccountPassword(account.id, reason, account.permissionVersion)
-    notice.value = `${result.account.username} 已重置为临时密码 123456，已撤销 ${result.revokedSessions} 个会话；下次登录必须修改密码`
-    accountStatusReasons[account.id] = ''; await loadAccounts(); await loadSecurity()
-  } catch (error) { notice.value = error instanceof Error ? error.message : '管理员密码重置失败' }
+  requestRiskAction({
+    title: '生成一次性临时密码', target: account.username, targetLabel: '账号',
+    impact: '系统会生成唯一的高强度临时密码并只显示一次，同时撤销该账号全部会话。玩家下次登录后必须立即修改密码。',
+    confirmLabel: '生成并撤销会话',
+    run: async () => {
+      const result = await adminApi.resetAccountPassword(account.id, reason, account.permissionVersion)
+      if (!result.temporaryPassword) throw new Error('服务端未返回一次性临时密码；请勿重复操作，先刷新命令记录确认结果')
+      notice.value = `${result.account.username} 已生成一次性临时密码并撤销 ${result.revokedSessions} 个会话`
+      accountStatusReasons[account.id] = ''; await loadAccounts(); await loadSecurity()
+      globalThis.setTimeout(() => {
+        temporaryPassword.value = result.temporaryPassword || ''
+        temporaryPasswordAccount.value = result.account.username
+      }, 0)
+    },
+  })
 }
-async function deleteAccount(account: PlatformAccount) {
+function deleteAccount(account: PlatformAccount) {
+  if (!hasPermission('admin.accounts.status.write')) return
   const reason = accountStatusReasons[account.id]?.trim()
   if (!reason) { notice.value = '请先填写账号删除与数据清理理由'; return }
-  if (!window.confirm(`确认逻辑删除 ${account.username} 并清理其邮箱、牌库、好友等个人数据？此操作不能在后台恢复。`)) return
-  try {
-    const result = await adminApi.deleteAccount(account.id, reason, account.permissionVersion)
-    notice.value = `账号已逻辑删除；撤销 ${result.revokedSessions} 个会话，清理 ${result.removedPrivateRecords} 条私有记录与 ${result.cleanedMatchRecords ?? 0} 场对局身份，并保留脱敏审计`
-    accountStatusReasons[account.id] = ''; await loadAccounts(); await loadSecurity()
-  } catch (error) { notice.value = error instanceof Error ? error.message : '账号删除失败' }
+  requestRiskAction({
+    title: '删除账号与清理数据', target: account.username, targetLabel: '账号',
+    impact: '账号将被逻辑删除，邮箱、牌库、好友等个人数据会被清理，全部会话立即撤销。后台不提供恢复。',
+    confirmLabel: '确认删除与清理',
+    run: async () => { const result = await adminApi.deleteAccount(account.id, reason, account.permissionVersion); notice.value = `账号已逻辑删除；撤销 ${result.revokedSessions} 个会话，清理 ${result.removedPrivateRecords} 条私有记录与 ${result.cleanedMatchRecords ?? 0} 场对局身份，并保留脱敏审计`; accountStatusReasons[account.id] = ''; await loadAccounts(); await loadSecurity() },
+  })
 }
+async function copyTemporaryPassword() {
+  try { await navigator.clipboard.writeText(temporaryPassword.value); notice.value = '一次性临时密码已复制' }
+  catch { notice.value = '复制失败，请手动选择临时密码' }
+}
+function clearTemporaryPassword() { temporaryPassword.value = ''; temporaryPasswordAccount.value = '' }
 async function showCommand(id: string) { try { selectedCommand.value = await adminApi.command(id) } catch (error) { notice.value = error instanceof Error ? error.message : '命令详情加载失败' } }
 function availableReleaseArtifacts() { return releaseArtifacts.value.filter(item => item.environments.includes(selectedReleaseEnvironment.value)) }
 function selectedEnvironment() { return releaseEnvironments.value.find(item => item.environment === selectedReleaseEnvironment.value) }
@@ -202,7 +226,7 @@ async function loadReleases() {
     ensureReleaseArtifact()
   } finally { releaseLoading.value = false }
 }
-async function submitRelease(dryRun: boolean) {
+async function performSubmitRelease(dryRun: boolean) {
   const environment = selectedEnvironment()
   if (!environment || !selectedReleaseArtifact.value) { notice.value = '请选择目标环境和已验证工件'; return }
   if (!releaseReason.value.trim()) { notice.value = '请填写发布理由'; return }
@@ -211,9 +235,23 @@ async function submitRelease(dryRun: boolean) {
     if ('commandId' in result) notice.value = `发布操作已提交（命令 ${result.commandId}）`
     else { releasePreview.value = result; notice.value = result.applied ? '发布已执行并写入审计' : '发布预演完成，未执行激活' }
     await loadControlPlane(); await loadReleases()
-  } catch (error) { notice.value = error instanceof Error ? error.message : '发布命令提交失败' }
+  } catch (error) { notice.value = error instanceof Error ? error.message : '发布命令提交失败'; throw error }
 }
-async function rollbackRelease(run: ReleaseRun, dryRun: boolean) {
+function submitRelease(dryRun: boolean) {
+  if (dryRun) { void performSubmitRelease(true).catch(() => {}); return }
+  const environment = selectedEnvironment()
+  if (!hasPermission('releases.execute') || !environment || !selectedReleaseArtifact.value || !releaseReason.value.trim()) {
+    notice.value = !releaseReason.value.trim() ? '请填写发布理由' : '请选择目标环境和已验证工件'; return
+  }
+  const artifact = selectedReleaseArtifact.value
+  requestRiskAction({
+    title: '执行版本发布', target: `${environment.environment} · ${artifact}`, targetLabel: '环境与工件',
+    impact: '该操作会激活已验证工件并执行健康与 WebSocket 检查。请确认 dry-run 计划、目标环境和版本理由均已核对。',
+    confirmLabel: '确认执行发布',
+    run: () => performSubmitRelease(false),
+  })
+}
+async function performRollbackRelease(run: ReleaseRun, dryRun: boolean) {
   const environment = releaseEnvironments.value.find(item => item.environment === run.environment)
   if (!environment) { notice.value = '目标环境运行态不可用，请刷新'; return }
   if (!releaseReason.value.trim()) { notice.value = '请填写回滚理由'; return }
@@ -222,7 +260,18 @@ async function rollbackRelease(run: ReleaseRun, dryRun: boolean) {
     if ('commandId' in result) notice.value = `回滚操作已提交（命令 ${result.commandId}）`
     else { releasePreview.value = result; notice.value = result.applied ? '回滚已执行并写入审计' : '回滚预演完成，未执行激活' }
     await loadControlPlane(); await loadReleases()
-  } catch (error) { notice.value = error instanceof Error ? error.message : '回滚命令提交失败' }
+  } catch (error) { notice.value = error instanceof Error ? error.message : '回滚命令提交失败'; throw error }
+}
+function rollbackRelease(run: ReleaseRun, dryRun: boolean) {
+  if (dryRun) { void performRollbackRelease(run, true).catch(() => {}); return }
+  if (!hasPermission('releases.execute')) return
+  if (!releaseReason.value.trim()) { notice.value = '请填写回滚理由'; return }
+  requestRiskAction({
+    title: '执行版本回滚', target: `${run.environment} · ${run.artifactId}`, targetLabel: '运行记录',
+    impact: '目标环境将切换离开当前版本并执行回滚后的健康与 WebSocket 检查。',
+    confirmLabel: '确认执行回滚',
+    run: () => performRollbackRelease(run, false),
+  })
 }
 async function loadSecurity() {
   if (tab.value !== 'security') { loadedTabs.delete('security'); return }
@@ -231,7 +280,7 @@ async function loadSecurity() {
     readAdminResource(() => adminApi.auditArchives(), value => { auditArchives.value = value }),
   ])
 }
-async function archiveAudit(dryRun: boolean) {
+async function performArchiveAudit(dryRun: boolean) {
   if (!securityStatus.value) { notice.value = '请先刷新安全状态'; return }
   if (!auditArchiveReason.value.trim()) { notice.value = '请填写审计归档理由'; return }
   try {
@@ -242,7 +291,19 @@ async function archiveAudit(dryRun: boolean) {
       ? `审计归档已执行：${result.segment?.eventCount ?? result.eligibleEvents} 条事件已归档，源事件保留`
       : `归档预演完成：${result.eligibleEvents} 条可归档事件，未写文件` }
     await loadControlPlane(); await loadSecurity()
-  } catch (error) { notice.value = error instanceof Error ? error.message : '审计归档命令失败' }
+  } catch (error) { notice.value = error instanceof Error ? error.message : '审计归档命令失败'; throw error }
+}
+function archiveAudit(dryRun: boolean) {
+  if (dryRun) { void performArchiveAudit(true).catch(() => {}); return }
+  if (!hasPermission('admin.audit.archive')) return
+  if (!securityStatus.value) { notice.value = '请先刷新安全状态'; return }
+  if (!auditArchiveReason.value.trim()) { notice.value = '请填写审计归档理由'; return }
+  requestRiskAction({
+    title: '执行审计归档', target: `保留 ${auditRetentionDays.value} 天`, targetLabel: '归档范围',
+    impact: '系统会生成独立校验归档段。源审计事件仍会保留，但归档写入会被记录为高风险管理操作。',
+    confirmLabel: '确认执行归档', severity: 'warning',
+    run: () => performArchiveAudit(false),
+  })
 }
 async function rehearseAuditRecovery() {
   try { auditRecovery.value = await adminApi.rehearseAuditRecovery(); notice.value = auditRecovery.value.success ? '审计归档恢复演练通过' : `恢复演练失败：${auditRecovery.value.error || '未知错误'}` }
@@ -280,7 +341,7 @@ async function refreshSelectedEffect(cardId: string) {
   hydratePresentationDrafts(detail)
 }
 async function savePresentation(scene: EffectPresentationScene) {
-  if (!selectedEffect.value || presentationSaving.value) return
+  if (!selectedEffect.value || presentationSaving.value || !hasPermission('admin.effects.review')) return
   const text = presentationDrafts[scene.sceneId] ?? ''
   if (!text.trim() || text.length > 2000) { notice.value = '动效文案须为 1 至 2000 个字符'; return }
   presentationSaving.value = scene.sceneId
@@ -291,15 +352,15 @@ async function savePresentation(scene: EffectPresentationScene) {
   } catch (error) { notice.value = error instanceof Error ? error.message : '动效文案保存失败' }
   finally { presentationSaving.value = '' }
 }
-async function restorePresentation(scene: EffectPresentationScene) {
-  if (!selectedEffect.value || presentationSaving.value) return
-  presentationSaving.value = scene.sceneId
-  try {
-    await adminApi.restoreEffectPresentation(selectedEffect.value.cardId, scene.sceneId)
-    await refreshSelectedEffect(selectedEffect.value.cardId)
-    notice.value = `${presentationSceneName(scene)} 已恢复默认文案并写入审计；进行中对局不受影响`
-  } catch (error) { notice.value = error instanceof Error ? error.message : '恢复默认文案失败' }
-  finally { presentationSaving.value = '' }
+function restorePresentation(scene: EffectPresentationScene) {
+  const effect = selectedEffect.value
+  if (!effect || presentationSaving.value || !hasPermission('admin.effects.review')) return
+  requestRiskAction({
+    title: '恢复默认动效文案', target: `${effect.cardId} · ${presentationSceneName(scene)}`, targetLabel: '卡牌场景',
+    impact: '人工覆盖文案将被移除；之后新建的对局会使用系统默认文案，进行中对局不受影响。',
+    confirmLabel: '确认恢复默认', severity: 'warning',
+    run: async () => { presentationSaving.value = scene.sceneId; try { await adminApi.restoreEffectPresentation(effect.cardId, scene.sceneId); await refreshSelectedEffect(effect.cardId); notice.value = `${presentationSceneName(scene)} 已恢复默认文案并写入审计；进行中对局不受影响` } finally { presentationSaving.value = '' } },
+  })
 }
 function validPresentationSegment(scene: EffectPresentationScene) {
   return typeof scene.segmentIndex === 'number' && Number.isInteger(scene.segmentIndex)
@@ -360,7 +421,7 @@ watch(() => [platformState.account?.id, platformState.account?.permissionVersion
   accounts.value = []; bugs.value = []; audits.value = []; commands.value = []
   releaseArtifacts.value = []; releaseEnvironments.value = []; releaseRuns.value = []
   securityStatus.value = null; auditArchives.value = []; selectedCommand.value = null
-  sessionRiskTarget.value = null; notice.value = ''
+  cancelRiskAction(); clearTemporaryPassword(); notice.value = ''
 })
 watch(() => [route.query.section, route.query.matchId, authState.verified, platformState.account?.id, platformState.account?.permissionVersion], () => {
   adminGeneration++
@@ -372,7 +433,10 @@ onMounted(() => { void initializeAdminPage() })
 
 <template>
   <div class="admin-page">
-    <AdminRiskActionDialog v-if="sessionRiskTarget" title="撤销全部会话" :target="sessionRiskTarget.username" impact="该账号在所有设备上的登录会话将立即失效，需重新登录。已撤销的会话无法恢复。" :busy="sessionRiskBusy" :error="sessionRiskError" @cancel="sessionRiskTarget = null" @confirm="confirmRevokeAccountSessions"/>
+    <AdminRiskActionDialog v-if="riskAction" :title="riskAction.title" :target="riskAction.target" :target-label="riskAction.targetLabel" :impact="riskAction.impact" :confirm-label="riskAction.confirmLabel" :severity="riskAction.severity" :busy="riskBusy" :error="riskError" @cancel="cancelRiskAction" @confirm="confirmRiskAction"/>
+    <AdminRiskActionDialog v-if="temporaryPassword" title="一次性临时密码已生成" :target="temporaryPasswordAccount" target-label="账号" impact="该密码只显示这一次。请通过受控渠道交给账号本人；关闭后后台无法再次查看。" confirm-label="我已安全保存" severity="warning" :allow-cancel="false" :busy="false" @confirm="clearTemporaryPassword">
+      <div class="one-time-secret"><code>{{ temporaryPassword }}</code><button type="button" @click="copyTemporaryPassword">复制临时密码</button></div>
+    </AdminRiskActionDialog>
     <header><div><small>ADMINISTRATION</small><h1>管理后台</h1><p>账号权限、Bug 闭环、官网内容与运营配置。</p></div><router-link to="/me">← 返回我的</router-link></header>
     <section v-if="!authState.initialized || authState.refreshing" class="denied"><b>正在验证管理员权限</b><span>管理数据只会在服务端身份确认后加载。</span></section>
     <section v-else-if="!canAccessAdmin" class="denied"><b>需要管理员权限</b><span>请先在“我的”页面登录管理员账号。</span></section>
@@ -391,7 +455,7 @@ onMounted(() => { void initializeAdminPage() })
       </section>
       <section v-else-if="tab === 'bugs'" class="panel">
         <header><h2>Bug 反馈</h2><div class="bug-filters"><input v-model="bugSearch" placeholder="编号 / 标题 / 玩家 / 房间 / 对局" @keyup.enter="loadBugs"><select v-model="statusFilter" @change="loadBugs"><option value="">全部状态</option><option value="new">新反馈</option><option value="confirmed">已确认</option><option value="in-progress">处理中</option><option value="resolved">已解决</option><option value="closed">已关闭</option></select><select v-model="priorityFilter" @change="loadBugs"><option value="">全部优先级</option><option value="low">低</option><option value="normal">普通</option><option value="high">高</option><option value="critical">紧急</option></select><button @click="loadBugs">查询</button></div></header>
-        <PagedCollection :items="bugs" v-slot="{ items: paged25637 }"><article v-for="item in paged25637" :key="item.id" class="bug-row"><div class="bug-summary"><code>{{ item.id }}</code><b>{{ item.title }}</b><span>{{ item.reporterName }} · {{ new Date(item.createdAt).toLocaleString() }}</span><span>客户端 {{ item.clientVersion || item.version || 'unknown-client' }} · 服务端 {{ item.serverVersion || 'legacy-unknown' }} · 引擎 {{ item.engineVersion || 'legacy-unknown' }}</span><p>{{ item.description }}</p><small>{{ item.page }}<template v-if="item.roomCode"> · 房间 {{ item.roomCode }}</template><template v-if="item.matchId"> · <button class="match-link" @click="openAdminMatch(item.matchId)">在对局档案查看 {{ item.matchId }}</button></template></small><details v-if="item.clientDiagnostic || item.connectionDiagnostic || item.diagnostic" class="bug-diagnostics"><summary>自动诊断</summary><dl v-if="item.clientDiagnostic"><dt>HTTP / API</dt><dd>{{ item.clientDiagnostic.httpStatus }} {{ item.clientDiagnostic.httpStatusCode || '' }} / {{ item.clientDiagnostic.apiStatus }} {{ item.clientDiagnostic.apiStatusCode || '' }}</dd><dt>WebSocket</dt><dd>{{ item.clientDiagnostic.webSocketReadyState }} · close {{ item.clientDiagnostic.closeCode || '-' }} {{ item.clientDiagnostic.closeReason || '' }}</dd><dt>恢复</dt><dd>{{ item.clientDiagnostic.recoveryPhase }} · generation {{ item.clientDiagnostic.connectionGeneration || '-' }} · retry {{ item.clientDiagnostic.retryCount }}</dd><dt>心跳</dt><dd>sent {{ item.clientDiagnostic.lastHeartbeatAt || '-' }} · pong {{ item.clientDiagnostic.lastPongAt || '-' }}</dd><dt>认证 / 维护</dt><dd>{{ item.clientDiagnostic.authenticationState }} / {{ item.clientDiagnostic.maintenanceState }}</dd></dl><dl v-if="item.connectionDiagnostic"><dt>服务端认领</dt><dd>{{ item.connectionDiagnostic.decision }} · {{ item.connectionDiagnostic.previousConnectionGeneration ?? '-' }} → {{ item.connectionDiagnostic.connectionGeneration }} · revision {{ item.connectionDiagnostic.recoveryRevision ?? '-' }}</dd><dt v-if="item.connectionDiagnostic.rejectionReason">拒绝原因</dt><dd v-if="item.connectionDiagnostic.rejectionReason">{{ item.connectionDiagnostic.rejectionReason }}</dd></dl><dl v-if="item.diagnostic"><dt>权威对局</dt><dd>{{ item.diagnostic.phase || '-' }} · round {{ item.diagnostic.round ?? '-' }} · revision {{ item.diagnostic.revision ?? '-' }} · prompts {{ item.diagnostic.prompts.length }}</dd></dl></details><details class="bug-history"><summary>处理记录（{{ item.history.length }}）</summary><ol><PagedCollection :items="item.history" :page-size="5" v-slot="{ items: nestedPage }"><li v-for="audit in nestedPage" :key="audit.id"><b>{{ bugActionLabel(audit.action) }}</b><span>{{ audit.actorName }} · {{ new Date(audit.createdAt).toLocaleString() }}</span><p v-if="audit.comment">{{ audit.comment }}</p><code v-else-if="audit.fromValue !== audit.toValue">{{ audit.fromValue || '无' }} → {{ audit.toValue || '无' }}</code></li></PagedCollection></ol></details></div><div class="bug-admin"><select v-model="item.status"><option value="new">新反馈</option><option value="confirmed">已确认</option><option value="in-progress">处理中</option><option value="resolved">已解决</option><option value="closed">已关闭</option></select><select v-model="item.priority"><option value="low">低</option><option value="normal">普通</option><option value="high">高</option><option value="critical">紧急</option></select><input v-model="item.assignee" placeholder="负责人"/><textarea v-model="item.adminNotes" rows="3" placeholder="当前处理摘要"/><textarea v-model="bugComments[item.id]" rows="3" placeholder="追加处理记录（保存后进入时间线）"/><button @click="updateBug(item)">保存并记录</button></div></article></PagedCollection>
+        <PagedCollection :items="bugs" v-slot="{ items: paged25637 }"><article v-for="item in paged25637" :key="item.id" class="bug-row"><div class="bug-summary"><code>{{ item.id }}</code><b>{{ item.title }}</b><span>{{ item.reporterName }} · {{ new Date(item.createdAt).toLocaleString() }}</span><span>客户端 {{ item.clientVersion || item.version || 'unknown-client' }} · 服务端 {{ item.serverVersion || 'legacy-unknown' }} · 引擎 {{ item.engineVersion || 'legacy-unknown' }}</span><p>{{ item.description }}</p><small>{{ item.page }}<template v-if="item.roomCode"> · 房间 {{ item.roomCode }}</template><template v-if="item.matchId"> · <button class="match-link" @click="openAdminMatch(item.matchId)">在对局档案查看 {{ item.matchId }}</button></template></small><details v-if="item.clientDiagnostic || item.connectionDiagnostic || item.diagnostic" class="bug-diagnostics"><summary>自动诊断</summary><dl v-if="item.clientDiagnostic"><dt>HTTP / API</dt><dd>{{ item.clientDiagnostic.httpStatus }} {{ item.clientDiagnostic.httpStatusCode || '' }} / {{ item.clientDiagnostic.apiStatus }} {{ item.clientDiagnostic.apiStatusCode || '' }}</dd><dt>WebSocket</dt><dd>{{ item.clientDiagnostic.webSocketReadyState }} · close {{ item.clientDiagnostic.closeCode || '-' }} {{ item.clientDiagnostic.closeReason || '' }}</dd><dt>恢复</dt><dd>{{ item.clientDiagnostic.recoveryPhase }} · generation {{ item.clientDiagnostic.connectionGeneration || '-' }} · retry {{ item.clientDiagnostic.retryCount }}</dd><dt>心跳</dt><dd>sent {{ item.clientDiagnostic.lastHeartbeatAt || '-' }} · pong {{ item.clientDiagnostic.lastPongAt || '-' }}</dd><dt>认证 / 维护</dt><dd>{{ item.clientDiagnostic.authenticationState }} / {{ item.clientDiagnostic.maintenanceState }}</dd></dl><dl v-if="item.connectionDiagnostic"><dt>服务端认领</dt><dd>{{ item.connectionDiagnostic.decision }} · {{ item.connectionDiagnostic.previousConnectionGeneration ?? '-' }} → {{ item.connectionDiagnostic.connectionGeneration }} · revision {{ item.connectionDiagnostic.recoveryRevision ?? '-' }}</dd><dt v-if="item.connectionDiagnostic.rejectionReason">拒绝原因</dt><dd v-if="item.connectionDiagnostic.rejectionReason">{{ item.connectionDiagnostic.rejectionReason }}</dd></dl><dl v-if="item.diagnostic"><dt>权威对局</dt><dd>{{ item.diagnostic.phase || '-' }} · round {{ item.diagnostic.round ?? '-' }} · revision {{ item.diagnostic.revision ?? '-' }} · prompts {{ item.diagnostic.prompts.length }}</dd></dl></details><details class="bug-history"><summary>处理记录（{{ item.history.length }}）</summary><ol><PagedCollection :items="item.history" :page-size="5" v-slot="{ items: nestedPage }"><li v-for="audit in nestedPage" :key="audit.id"><b>{{ bugActionLabel(audit.action) }}</b><span>{{ audit.actorName }} · {{ new Date(audit.createdAt).toLocaleString() }}</span><p v-if="audit.comment">{{ audit.comment }}</p><code v-else-if="audit.fromValue !== audit.toValue">{{ audit.fromValue || '无' }} → {{ audit.toValue || '无' }}</code></li></PagedCollection></ol></details></div><div v-if="hasPermission('admin.bugs.write')" class="bug-admin"><select v-model="item.status"><option value="new">新反馈</option><option value="confirmed">已确认</option><option value="in-progress">处理中</option><option value="resolved">已解决</option><option value="closed">已关闭</option></select><select v-model="item.priority"><option value="low">低</option><option value="normal">普通</option><option value="high">高</option><option value="critical">紧急</option></select><input v-model="item.assignee" placeholder="负责人"/><textarea v-model="item.adminNotes" rows="3" placeholder="当前处理摘要"/><textarea v-model="bugComments[item.id]" rows="3" placeholder="追加处理记录（保存后进入时间线）"/><button @click="updateBug(item)">保存并记录</button></div><div v-else class="read-only-note">当前账号只有 Bug 读取权限。</div></article></PagedCollection>
         <div v-if="!bugs.length" class="empty">暂无符合筛选条件的反馈</div>
       </section>
       <AdminMatchesPanel v-else-if="tab === 'matches' && hasPermission('admin.matches.read')" :initial-match-id="adminMatchId" @notice="notice = $event"/>
@@ -416,9 +480,9 @@ onMounted(() => { void initializeAdminPage() })
         <PagedCollection :items="activeAccounts" v-slot="{ items: paged30632 }"><div v-for="account in paged30632" :key="account.id" class="account-row">
           <b>{{ account.username }}<small :data-disabled="account.disabled">{{ account.disabled ? '已禁用' : '正常' }}<template v-if="account.mustChangeUsername"> · 待修改用户名</template><template v-if="account.mustChangePassword"> · 必须修改密码</template><template v-if="account.emailVerified"> · 邮箱 {{ account.emailMasked }}</template><template v-if="account.disabledReason"> · {{ account.disabledReason }}</template></small></b>
           <span class="account-created" data-label="建立时间">{{ new Date(account.createdAt).toLocaleString() }}</span>
-          <label class="account-role"><span>长期身份</span><select v-model="account.role" :disabled="account.username === 'Admin'"><option value="player">玩家</option><option value="admin">管理员</option></select></label>
+          <label class="account-role"><span>长期身份</span><select v-model="account.role" :disabled="account.username === 'Admin' || !hasPermission('admin.accounts.roles.write')"><option value="player">玩家</option><option value="admin">管理员</option></select></label>
           <small class="account-permissions" data-label="有效权限" :title="account.permissions?.join('\n')">{{ account.permissions?.length ?? 0 }} 项</small>
-          <span class="account-actions"><input v-if="hasPermission('admin.accounts.status.write')" v-model="accountStatusReasons[account.id]" placeholder="状态 / 重置 / 删除理由"/><button :disabled="account.username === 'Admin'" @click="setRole(account)">保存身份</button><button v-if="hasPermission('admin.accounts.status.write')" class="status" :data-disabled="account.disabled" :disabled="account.username === 'Admin' || account.id === platformState.account?.id" @click="setAccountStatus(account)">{{ account.disabled ? '启用账号' : '禁用账号' }}</button><button class="revoke" @click="revokeAccountSessions(account)">撤销会话</button><button v-if="hasPermission('admin.accounts.status.write')" class="reset" :disabled="account.username === 'Admin' || account.id === platformState.account?.id" @click="resetAccountPassword(account)">重置密码</button><button v-if="hasPermission('admin.accounts.status.write')" class="delete" :disabled="account.username === 'Admin' || account.id === platformState.account?.id" @click="deleteAccount(account)">删除与清理</button></span>
+          <span class="account-actions"><input v-if="hasPermission('admin.accounts.status.write')" v-model="accountStatusReasons[account.id]" placeholder="状态 / 重置 / 删除理由"/><button v-if="hasPermission('admin.accounts.roles.write')" :disabled="account.username === 'Admin'" @click="setRole(account)">保存身份</button><button v-if="hasPermission('admin.accounts.status.write')" class="status" :data-disabled="account.disabled" :disabled="account.username === 'Admin' || account.id === platformState.account?.id" @click="setAccountStatus(account)">{{ account.disabled ? '启用账号' : '禁用账号' }}</button><button v-if="hasPermission('admin.sessions.revoke')" class="revoke" @click="revokeAccountSessions(account)">撤销会话</button><button v-if="hasPermission('admin.accounts.status.write')" class="reset" :disabled="account.username === 'Admin' || account.id === platformState.account?.id" @click="resetAccountPassword(account)">重置密码</button><button v-if="hasPermission('admin.accounts.status.write')" class="delete" :disabled="account.username === 'Admin' || account.id === platformState.account?.id" @click="deleteAccount(account)">删除与清理</button></span>
         </div></PagedCollection>
         <div v-if="!activeAccounts.length" class="empty">没有符合条件的有效账号</div>
         <Teleport to="body">
@@ -513,7 +577,7 @@ onMounted(() => { void initializeAdminPage() })
                     </article><span v-if="index < ability.atoms.length - 1" class="flow-arrow">→</span>
                   </template>
                 </div>
-                <div class="ability-review"><textarea v-model="reviewNotes[ability.abilityId]" rows="2" placeholder="人工核对备注（规则书、FAQ、测试证据）"/><button @click="reviewAbility(ability, 'human-assisted', reviewNotes[ability.abilityId])">标记人工辅助</button><button class="confirm" @click="reviewAbility(ability, 'confirmed', reviewNotes[ability.abilityId])">确认拆分</button><button class="reject" @click="reviewAbility(ability, 'rejected', reviewNotes[ability.abilityId])">退回修正</button></div>
+                <div v-if="hasPermission('admin.effects.review')" class="ability-review"><textarea v-model="reviewNotes[ability.abilityId]" rows="2" placeholder="人工核对备注（规则书、FAQ、测试证据）"/><button @click="reviewAbility(ability, 'human-assisted', reviewNotes[ability.abilityId])">标记人工辅助</button><button class="confirm" @click="reviewAbility(ability, 'confirmed', reviewNotes[ability.abilityId])">确认拆分</button><button class="reject" @click="reviewAbility(ability, 'rejected', reviewNotes[ability.abilityId])">退回修正</button></div>
                 <details><summary>线性执行与迁移守卫</summary><ol><li v-for="atom in ability.atoms" :key="`trace-${atom.atomId}`"><b>{{ atom.order }}. {{ atom.label }}</b><span>{{ atomDescriptor(atom.kind)?.kernelContract }}</span></li></ol><p v-if="ability.hasLegacyFallback" class="legacy-note">执行到 <code>legacy.resolve</code> 时只调用旧权威分支；新旧实现不会同时结算。</p></details>
               </article>
               <details class="raw-definition"><summary>查看原子定义 JSON</summary><pre>{{ JSON.stringify(selectedEffect, null, 2) }}</pre></details>
@@ -582,6 +646,7 @@ onMounted(() => { void initializeAdminPage() })
 @media(max-width:1300px){.admin-shell{grid-template-columns:190px minmax(0,1fr)}.overview-grid{grid-template-columns:repeat(2,1fr)}.effects-layout,.command-workbench,.release-workbench,.security-workbench{grid-template-columns:1fr}.coverage-strip{grid-template-columns:repeat(3,1fr)}.release-compose,.security-summary,.security-archive{grid-column:auto}.release-form{grid-template-columns:1fr 1fr}.account-actions{grid-template-columns:1fr 1fr}}@media(max-width:850px){.admin-shell{grid-template-columns:1fr}.admin-sidebar{position:static;grid-template-columns:1fr 1fr}.admin-sidebar nav{align-content:start;border-right:1px solid #26323a;border-bottom:0;padding:7px}.admin-sidebar nav:nth-child(even){border-right:0}.overview-grid{grid-template-columns:1fr}.bug-row{grid-template-columns:1fr}.account-row{grid-template-columns:1fr}.coverage-strip,.release-environments,.security-metrics{grid-template-columns:1fr 1fr}.effect-filters{grid-template-columns:1fr 1fr}.effect-table-head,.effect-row{grid-template-columns:minmax(180px,1fr) 110px}.effect-table-head span:last-child,.effect-row>.status-pill{display:none}.approval-row,.command-row,.content-preview>span,.release-form,.release-artifacts article,.release-runs article,.archive-form,.archive-row{grid-template-columns:1fr}.audit-filters input{width:100%}}@media(max-width:560px){.admin-sidebar{grid-template-columns:1fr}.admin-sidebar nav{border-right:0;border-bottom:1px solid #26323a}.coverage-strip,.release-environments,.security-metrics,.effect-segments{grid-template-columns:1fr}}
 .account-panel>header{gap:18px}.account-toolbar{display:flex;align-items:center;justify-content:flex-end;gap:7px}.account-toolbar input{box-sizing:border-box;width:min(300px,32vw)}.deleted-accounts-trigger{border-color:#796330!important;background:#241d0c!important;color:#e4c96f!important}.deleted-accounts-overlay{position:fixed;z-index:4100;inset:0;display:grid;place-items:center;padding:20px;background:rgba(1,4,6,.82);backdrop-filter:blur(6px)}.deleted-accounts-dialog{box-sizing:border-box;width:min(1040px,calc(100vw - 32px));max-height:calc(100vh - 40px);overflow:hidden;border:1px solid #65737a;background:#0b1218;box-shadow:0 28px 80px #000}.deleted-accounts-dialog>header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:18px;border-bottom:1px solid #35424a}.deleted-accounts-dialog h2{margin:4px 0}.deleted-accounts-dialog p{margin:0}.deleted-accounts-dialog>header>button{flex:0 0 34px;width:34px;height:34px;padding:0;border:1px solid #65737a;background:#111a20;color:#fff;font-size:20px}.deleted-account-list{max-height:calc(100vh - 180px);overflow:auto;padding:8px 18px 18px}.deleted-account-list article{display:grid;grid-template-columns:minmax(190px,1.2fr) repeat(4,minmax(140px,1fr));align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid #2e3a41}.deleted-account-list article>span{display:flex;min-width:0;flex-direction:column;gap:4px}.deleted-account-list code{overflow:hidden;color:#d8bd6a;text-overflow:ellipsis;white-space:nowrap}.deleted-account-list small{color:#77858b!important;letter-spacing:0!important}.deleted-account-list b{overflow-wrap:anywhere;font-size:14px}
 .account-role{display:contents}.account-role>span{display:none}
+.one-time-secret{display:grid;gap:10px;margin:14px 0;padding:12px;border:1px solid #9d7c36;background:#080e13}.one-time-secret code{user-select:all;color:#ffe09a;font-size:18px;letter-spacing:.08em;overflow-wrap:anywhere}.one-time-secret button{justify-self:start}.read-only-note{align-self:start;padding:10px;border:1px solid #35424a;color:#8d9ba0;font-size:14px}
 @media(max-width:850px){.account-panel>header,.account-toolbar{align-items:stretch;flex-direction:column}.account-toolbar input{width:100%}.deleted-account-list article{grid-template-columns:1fr 1fr}.command-workbench{grid-template-columns:1fr}}@media(max-width:560px){.deleted-account-list article{grid-template-columns:1fr}}
 .admin-mobile-navigation{display:none}
 @media(max-width:850px){

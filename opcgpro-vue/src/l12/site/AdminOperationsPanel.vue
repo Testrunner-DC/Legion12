@@ -5,8 +5,11 @@ import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import ConstructionRuleEditor from './ConstructionRuleEditor.vue'
 import DisasterPoolPicker from './DisasterPoolPicker.vue'
 import ImmediateMaintenancePanel from './ImmediateMaintenancePanel.vue'
+import AdminRiskActionDialog from './AdminRiskActionDialog.vue'
+import { useAdminRiskAction } from './useAdminRiskAction'
 import {
   adminApi,
+  hasPermission,
   rankedApi,
   type OperationsConfigPayload,
   type OperationsConfigPreview,
@@ -24,6 +27,7 @@ const versionId = ref('')
 const updatedBy = ref('')
 const updatedAt = ref('')
 const preview = ref<OperationsConfigPreview | null>(null)
+const previewFingerprint = ref('')
 const history = ref<OperationsConfigVersion[]>([])
 const runtime = ref<RuntimeStatus | null>(null)
 const reason = ref('')
@@ -76,7 +80,7 @@ function updateTier(index: number, key: SharedTierKey, event: Event) {
 }
 function normalizeTiers(sourceIndex: number) {
   const config = rankedConfig.value
-  if (!config || !window.confirm('仅统一同等级数值，保留各派系名称。确认继续？')) return
+  if (!config || !canWrite.value) return
   const source = config.factions[sourceIndex]?.tiers
   if (!source || config.factions.some(faction => faction.tiers.length !== source.length)) {
     emit('notice', '段位数量不一致，请先修正旧配置'); return
@@ -89,6 +93,8 @@ const rankedBroadcasts = ref<RankedBroadcast[]>([])
 const rankedReason = ref('')
 const startingServer = ref(false)
 const loadedMaintenanceEnabled = ref(false)
+const canWrite = computed(() => hasPermission('admin.operations.write'))
+const { riskAction, riskBusy, riskError, requestRiskAction, cancelRiskAction, confirmRiskAction } = useAdminRiskAction()
 
 const observedAt = computed(() => runtime.value ? new Date(runtime.value.observedAt).toLocaleString() : '未加载')
 const httpBudgetState = computed(() => {
@@ -205,7 +211,8 @@ function moveAnnouncement(index: number, direction: -1 | 1) {
   if (item) form.announcements.splice(target, 0, item)
 }
 function removeAnnouncement(index: number) { form.announcements.splice(index, 1) }
-async function startServer() {
+async function performStartServer() {
+  if (!canWrite.value) return
   if (!reason.value.trim()) { emit('notice', '启服前请填写变更理由'); return }
   startingServer.value = true
   try {
@@ -215,27 +222,47 @@ async function startServer() {
       : result.alreadyStarted ? '预约维护未开启，未重复变更配置' : '预约维护已解除，新对局门禁已开放')
     reason.value = ''
     await load()
-  } catch (error) { emit('notice', error instanceof Error ? error.message : '启服失败') }
+  } catch (error) { emit('notice', error instanceof Error ? error.message : '启服失败'); throw error }
   finally { startingServer.value = false }
 }
+function startServer() {
+  if (!canWrite.value) return
+  if (!reason.value.trim()) { emit('notice', '启服前请填写变更理由'); return }
+  requestRiskAction({ title: '解除预约维护', target: `运营配置 v${version.value}`, targetLabel: '当前版本', impact: '预约维护门禁会被解除；若即时维护未开启，新对局入口将立即恢复。', confirmLabel: '确认启动服务器', severity: 'warning', run: performStartServer })
+}
 async function previewChanges() {
+  if (!canWrite.value) return
   try {
     preview.value = await adminApi.previewOperationsConfig(serialize(), version.value)
     if (preview.value.valid) hydrate(preview.value.normalized)
+    previewFingerprint.value = preview.value.valid ? JSON.stringify(serialize()) : ''
     emit('notice', preview.value.valid ? `预览通过：${preview.value.changes.length} 项变更` : '预览未通过，请检查警告')
   } catch (error) { emit('notice', error instanceof Error ? error.message : '运营配置预览失败') }
 }
-async function applyChanges() {
+async function performApplyChanges() {
+  if (!canWrite.value) return
   if (!reason.value.trim()) { emit('notice', '应用配置前请填写变更理由'); return }
+  if (!preview.value?.valid || previewFingerprint.value !== JSON.stringify(serialize())) {
+    emit('notice', '配置已变化或尚未通过预览，请重新预览后再应用'); return
+  }
   try {
     const result = await adminApi.applyOperationsConfig(serialize(), reason.value.trim(), version.value)
     emit('notice', result.applied ? `运营配置 v${result.current.version} 已保存并写入审计` : '运营配置未发生变更')
     reason.value = ''
     preview.value = null
     await load()
-  } catch (error) { emit('notice', error instanceof Error ? error.message : '运营配置应用失败') }
+  } catch (error) { emit('notice', error instanceof Error ? error.message : '运营配置应用失败'); throw error }
 }
-async function rollback(target: OperationsConfigVersion) {
+function applyChanges() {
+  if (!canWrite.value) return
+  if (!reason.value.trim()) { emit('notice', '应用配置前请填写变更理由'); return }
+  if (!preview.value?.valid || previewFingerprint.value !== JSON.stringify(serialize())) {
+    emit('notice', '配置已变化或尚未通过预览，请重新预览后再应用'); return
+  }
+  requestRiskAction({ title: '应用运营配置', target: `v${version.value} → v${preview.value.nextVersion}`, targetLabel: '配置版本', impact: `${preview.value.changes.length} 项已冻结预览将立即生效；进行中对局继续使用创建时规则。`, confirmLabel: '确认应用配置', run: performApplyChanges })
+}
+async function performRollback(target: OperationsConfigVersion) {
+  if (!canWrite.value) return
   if (!reason.value.trim()) { emit('notice', '回滚配置前请填写变更理由'); return }
   try {
     await adminApi.rollbackOperationsConfig(target.id, reason.value.trim(), version.value)
@@ -243,15 +270,29 @@ async function rollback(target: OperationsConfigVersion) {
     reason.value = ''
     preview.value = null
     await load()
-  } catch (error) { emit('notice', error instanceof Error ? error.message : '运营配置回滚失败') }
+  } catch (error) { emit('notice', error instanceof Error ? error.message : '运营配置回滚失败'); throw error }
 }
-async function saveRanked() {
+function rollback(target: OperationsConfigVersion) {
+  if (!canWrite.value) return
+  if (!reason.value.trim()) { emit('notice', '回滚配置前请填写变更理由'); return }
+  requestRiskAction({ title: '回滚运营配置', target: `v${target.version} · ${target.id}`, targetLabel: '目标版本', impact: '系统将以该历史快照生成新的生效版本，不会覆盖历史记录。', confirmLabel: '确认回滚', run: () => performRollback(target) })
+}
+async function performSaveRanked() {
+  if (!canWrite.value) return
   if (tierMismatch.value) { emit('notice', '请先确认并统一同等级段位数值'); return }
   if (!rankedConfig.value || !rankedReason.value.trim()) { emit('notice', '保存排位配置前请填写变更理由'); return }
   const timingError = validateRankedTimeControl(rankedConfig.value)
   if (timingError) { emit('notice', timingError); return }
   try { rankedConfig.value = normalizeRankedConfig(await adminApi.saveRankedConfig(rankedConfig.value, rankedReason.value.trim())); rankedReason.value = ''; emit('notice', '排位与七曜配置已保存并写入审计；新时限仅用于之后创建的排位对局') }
-  catch (error) { emit('notice', error instanceof Error ? error.message : '排位配置保存失败') }
+  catch (error) { emit('notice', error instanceof Error ? error.message : '排位配置保存失败'); throw error }
+}
+function saveRanked() {
+  if (!canWrite.value || !rankedConfig.value) return
+  if (tierMismatch.value) { emit('notice', '请先确认并统一同等级段位数值'); return }
+  if (!rankedReason.value.trim()) { emit('notice', '保存排位配置前请填写变更理由'); return }
+  const timingError = validateRankedTimeControl(rankedConfig.value)
+  if (timingError) { emit('notice', timingError); return }
+  requestRiskAction({ title: '保存排位与七曜配置', target: form.season.id || '当前赛季', targetLabel: '赛季', impact: '段位、七曜结算、称号、广播及时限配置会立即用于之后创建的排位对局。', confirmLabel: '确认保存排位配置', run: performSaveRanked })
 }
 function validateRankedTimeControl(config: RankedConfig) {
   const timing = config.timeControl
@@ -265,13 +306,18 @@ function validateRankedTimeControl(config: RankedConfig) {
     return '天灾选择与手牌调度时限均需为 10–300 秒'
   return ''
 }
-async function deleteBroadcast(id: string) { try { await adminApi.deleteRankedBroadcast(id); rankedBroadcasts.value = rankedBroadcasts.value.filter(item => item.id !== id) } catch (error) { emit('notice', error instanceof Error ? error.message : '广播删除失败') } }
+function deleteBroadcast(id: string) {
+  if (!canWrite.value) return
+  const broadcast = rankedBroadcasts.value.find(item => item.id === id)
+  requestRiskAction({ title: '删除排位快讯', target: broadcast?.message || id, targetLabel: '快讯', impact: '该快讯会从待播放与历史展示中删除，不能在后台恢复。', confirmLabel: '确认删除', run: async () => { await adminApi.deleteRankedBroadcast(id); rankedBroadcasts.value = rankedBroadcasts.value.filter(item => item.id !== id) } })
+}
 
 onMounted(load)
 </script>
 
 <template>
   <div class="operations-workbench">
+    <AdminRiskActionDialog v-if="riskAction" :title="riskAction.title" :target="riskAction.target" :target-label="riskAction.targetLabel" :impact="riskAction.impact" :confirm-label="riskAction.confirmLabel" :severity="riskAction.severity" :busy="riskBusy" :error="riskError" @cancel="cancelRiskAction" @confirm="confirmRiskAction"/>
     <header class="operations-header">
       <div><small>GAME OPERATIONS</small><h2>游戏运营</h2><p>配置保存后由构筑、房间与对战服务按版本读取。进行中的对局保持创建时规则。</p></div>
       <div class="operations-version"><span>当前生效</span><b>v{{ version }}</b><small>{{ versionId || '等待加载' }}</small><button :disabled="loading" @click="load">{{ loading ? '加载中' : '刷新' }}</button></div>
@@ -283,6 +329,7 @@ onMounted(load)
 
     <section v-if="activeSection !== 'versions'" class="panel config-panel">
       <header><div><h2>{{ currentSection.title }}</h2><p>{{ currentSection.summary }}</p></div><span class="version-badge">配置 v{{ version }}</span></header>
+      <fieldset class="operations-write-scope" :disabled="!canWrite">
       <ImmediateMaintenancePanel v-if="activeSection === 'maintenance'"/>
       <div class="config-grid section-grid">
         <template v-if="activeSection === 'ranked' && rankedConfig">
@@ -322,6 +369,7 @@ onMounted(load)
       <footer v-if="activeSection === 'ranked'" class="config-actions"><input v-model="rankedReason" placeholder="排位配置变更理由（必填）"/><button class="confirm" @click="saveRanked">保存排位配置</button></footer>
       <footer v-else class="config-actions"><input v-model="reason" placeholder="变更或回滚理由（必填）"/><button @click="previewChanges">预览差异</button><button class="confirm" @click="applyChanges">保存配置</button></footer>
       <div v-if="preview" class="preview-box"><b>{{ preview.valid ? '预览通过' : '预览未通过' }} · v{{ preview.currentVersion }} → v{{ preview.nextVersion }}</b><ul><li v-for="item in preview.changes" :key="item">{{ item }}</li></ul><p v-for="item in preview.warnings" :key="item">警告：{{ item }}</p></div>
+      </fieldset>
     </section>
 
     <template v-else>
@@ -331,7 +379,7 @@ onMounted(load)
       </section>
       <section class="panel history-panel">
         <header><div><h2>配置版本历史</h2><p>当前由 {{ updatedBy || '系统' }} 于 {{ updatedAt ? new Date(updatedAt).toLocaleString() : '未知时间' }} 更新。每次应用和回滚均保存完整快照。</p></div></header>
-        <PagedCollection :items="history" v-slot="{ items: paged27988 }"><article v-for="item in paged27988" :key="item.id"><span><b>v{{ item.version }} · {{ item.action }}</b><small>{{ item.actorName }} · {{ new Date(item.createdAt).toLocaleString() }}</small></span><p>{{ item.reason || '无备注' }}</p><button :disabled="item.version === version" @click="rollback(item)">回滚到此版本</button></article></PagedCollection>
+        <PagedCollection :items="history" v-slot="{ items: paged27988 }"><article v-for="item in paged27988" :key="item.id"><span><b>v{{ item.version }} · {{ item.action }}</b><small>{{ item.actorName }} · {{ new Date(item.createdAt).toLocaleString() }}</small></span><p>{{ item.reason || '无备注' }}</p><button :disabled="!canWrite || item.version === version" @click="rollback(item)">回滚到此版本</button></article></PagedCollection>
         <span v-if="!history.length">暂无配置历史</span>
       </section>
     </template>
@@ -339,6 +387,7 @@ onMounted(load)
 </template>
 
 <style scoped>
+.operations-write-scope{min-width:0;margin:0;padding:0;border:0}.operations-write-scope:disabled{opacity:.72}
 .ranked-shared-tiers{display:grid;grid-template-columns:1fr;gap:16px}.ranked-shared-tiers article{min-width:0;padding:18px;border:1px solid #44515b;background:#0a1117}.ranked-shared-tiers h3{margin:0 0 14px;font-size:18px}.tier-name-fields,.tier-number-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:12px}.ranked-shared-tiers input{width:100%;min-width:0}
 .operations-workbench{display:grid;grid-template-columns:1fr;gap:14px}.operations-header{display:flex;align-items:flex-end;justify-content:space-between;border:1px solid #4a4030;background:linear-gradient(110deg,#14130f,#171b1f);padding:20px}.operations-header h2{margin:3px 0;font-size:24px}.operations-header p{margin:0;color:#8d989e;font-size:14px}.operations-header>div>small{color:#c8a84f;letter-spacing:.16em}.operations-version{display:grid;grid-template-columns:auto auto;gap:3px 10px;align-items:center;text-align:right}.operations-version span,.operations-version small{color:#89959a;font-size:14px}.operations-version b{color:#efd16f;font-size:20px}.operations-version button{grid-column:1/-1}.load-error{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;margin:0;border:1px solid #9c3e47;background:#2a1014;padding:12px;color:#ffc8ce}.load-error span{font-size:14px}.operations-nav{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.operations-nav button{display:flex;min-height:66px;flex-direction:column;gap:5px;align-items:flex-start;border:1px solid #354249;background:#0c1318;padding:12px;color:#d8e0e2;text-align:left}.operations-nav button small{color:#77858b;font-size:14px}.operations-nav button.active{border-color:#c29c3d;background:linear-gradient(120deg,#2c2512,#13191d);color:#f5d775}.panel{border:1px solid #35424a;background:#101821;padding:20px}.panel>header{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #36434a;padding-bottom:13px}.panel h2{margin:0}.panel p,.panel span{color:#87949a;font-size:14px}.panel button,.panel select,.panel input,.panel textarea,.operations-header button,.load-error button{box-sizing:border-box;border:1px solid #4c5961;background:#080e13;color:#fff;font:700 14px 'Microsoft YaHei';padding:9px}.runtime-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-top:14px}.runtime-grid article{display:flex;flex-direction:column;gap:5px;padding:13px;border:1px solid #34424a;background:#0b1218}.runtime-grid small{color:#8c999f}.runtime-grid b{font-size:18px}.version-badge{padding:6px 9px;border:1px solid #b7953f;color:#e6ca77!important}.config-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}.config-grid fieldset{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:start;border:1px solid #334049;padding:14px}.config-grid legend{padding:0 6px;color:#e0c36e;font-weight:900}.config-grid label{display:flex;flex-direction:column;gap:6px;color:#b5bfc3;font-size:14px}.config-grid .wide{grid-column:1/-1}.locked-note{color:#e3c76e!important}.field-help,.contract-note{margin:0;color:#8f9da3!important}.toggle-row{display:flex!important;flex-direction:row!important;align-items:center;justify-content:space-between;padding:8px;border:1px solid #2f3b42}.toggle-row span{display:flex;flex-direction:column}.toggle-row input{width:auto}.config-actions{display:grid;grid-template-columns:1fr auto auto;gap:8px;margin-top:14px}.confirm{border-color:#b9953f!important;background:#2c2411!important;color:#f0d582!important}.preview-box{margin-top:12px;padding:12px;border:1px solid #866f35;background:#1f1a0d}.preview-box li,.preview-box p{font-size:14px}.history-panel>article{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px 0;border-bottom:1px solid #303c43}.history-panel>article span{display:flex;flex-direction:column}.history-panel>article p{grid-column:1/-1;margin:0}.history-panel button{grid-row:1;grid-column:2}.history-panel small{color:#748087}.panel button:disabled{cursor:not-allowed;opacity:.45}
 @media(max-width:1100px){.operations-nav,.config-grid{grid-template-columns:1fr 1fr}.runtime-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:650px){.operations-header{align-items:flex-start;flex-direction:column;gap:12px}.operations-version{text-align:left}.operations-nav,.runtime-grid,.config-grid,.config-grid fieldset,.config-actions{grid-template-columns:1fr}.config-grid .wide{grid-column:auto}.load-error{grid-template-columns:1fr}.operations-nav button{min-height:56px}}

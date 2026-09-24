@@ -2409,7 +2409,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 L12AdminCommandRisk.High);
             return AdminCommandResponse(request, command, outcome);
         });
-        _app.MapGet("/api/admin/security/audit-recovery-rehearsal", (HttpRequest request) =>
+        _app.MapPost("/api/admin/security/audit-recovery-rehearsal", (HttpRequest request) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminSecurityRead, out var authenticated, out var failure))
                 return failure;

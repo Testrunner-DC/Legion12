@@ -243,13 +243,22 @@ public sealed class EmailAuthAndAccountLifecycleTests
             var reset = store.AdminResetPassword(admin, player.Account!.Id, "support-reset", context, true);
             Assert.True(reset.Applied);
             Assert.True(reset.Account.MustChangePassword);
+            Assert.NotNull(reset.TemporaryPassword);
+            Assert.Equal(32, reset.TemporaryPassword!.Length);
+            Assert.NotEqual("123456", reset.TemporaryPassword);
             Assert.Null(store.AuthenticateToken(player.Token));
-            Assert.True(store.Login("tprivaba758", "123456").Success);
+            Assert.False(store.Login("tprivaba758", "123456").Success);
+            Assert.True(store.Login("tprivaba758", reset.TemporaryPassword).Success);
+            var secondReset = store.AdminResetPassword(admin, player.Account.Id, "second-support-reset", context, true);
+            Assert.NotNull(secondReset.TemporaryPassword);
+            Assert.NotEqual(reset.TemporaryPassword, secondReset.TemporaryPassword);
+            Assert.False(store.Login("tprivaba758", reset.TemporaryPassword).Success);
+            Assert.True(store.Login("tprivaba758", secondReset.TemporaryPassword!).Success);
 
             var deleted = store.DeleteAccountPersonalData(admin, player.Account.Id, "user-request", context, true);
             Assert.True(deleted.Applied);
             Assert.True(deleted.Account.Deleted);
-            Assert.False(store.Login("tprivaba758", "123456").Success);
+            Assert.False(store.Login("tprivaba758", secondReset.TemporaryPassword!).Success);
             Assert.DoesNotContain(store.Bugs(null), bug => bug.ReporterName == "tprivaba758");
             Assert.Equal($"deleted-{player.Account.Id}", store.Account(player.Account.Id)!.Username);
             Assert.Throws<L12SecurityPolicyException>(() =>
@@ -314,6 +323,7 @@ public sealed class EmailAuthAndAccountLifecycleTests
             Assert.Equal(HttpStatusCode.BadRequest, replay.StatusCode);
 
             var admin = store.Login("Admin", "L12master");
+            string? temporaryPassword = null;
             using (var adminReset = new HttpRequestMessage(HttpMethod.Post,
                        $"/api/admin/accounts/{registered.Account!.Id}/reset-password"))
             {
@@ -326,9 +336,33 @@ public sealed class EmailAuthAndAccountLifecycleTests
                 });
                 using var response = await client.SendAsync(adminReset);
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var adminResetJson = await response.Content.ReadFromJsonAsync<JsonElement>();
+                temporaryPassword = adminResetJson.GetProperty("temporaryPassword").GetString();
+            }
+            Assert.NotNull(temporaryPassword);
+            Assert.Equal(32, temporaryPassword!.Length);
+            Assert.NotEqual("123456", temporaryPassword);
+            Assert.DoesNotContain(temporaryPassword,
+                JsonSerializer.Serialize(store.AdminCommands(type: "account.password-admin-reset")));
+            Assert.DoesNotContain(temporaryPassword, File.ReadAllText(platformPath), StringComparison.Ordinal);
+            using (var adminResetReplay = new HttpRequestMessage(HttpMethod.Post,
+                       $"/api/admin/accounts/{registered.Account.Id}/reset-password"))
+            {
+                adminResetReplay.Headers.Authorization = new("Bearer", admin.Token);
+                adminResetReplay.Content = JsonContent.Create(new
+                {
+                    reason = "support-reset",
+                    idempotencyKey = "http-admin-reset",
+                    expectedVersion = registered.Account.PermissionVersion,
+                });
+                using var response = await client.SendAsync(adminResetReplay);
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                Assert.Equal("true", response.Headers.GetValues("X-Idempotent-Replay").Single());
+                var replayJson = await response.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.Equal(JsonValueKind.Null, replayJson.GetProperty("temporaryPassword").ValueKind);
             }
             using var temporaryLogin = await client.PostAsJsonAsync("/api/auth/login",
-                new { username = "u5736ee80f6", password = "123456" });
+                new { username = "u5736ee80f6", password = temporaryPassword });
             var loginJson = await temporaryLogin.Content.ReadFromJsonAsync<JsonElement>();
             var temporaryToken = loginJson.GetProperty("token").GetString()!;
             Assert.True(loginJson.GetProperty("account").GetProperty("mustChangePassword").GetBoolean());
@@ -343,7 +377,7 @@ public sealed class EmailAuthAndAccountLifecycleTests
             using (var change = new HttpRequestMessage(HttpMethod.Post, "/api/auth/change-password"))
             {
                 change.Headers.Authorization = new("Bearer", temporaryToken);
-                change.Content = JsonContent.Create(new { currentPassword = "123456", newPassword = "final-password-123" });
+                change.Content = JsonContent.Create(new { currentPassword = temporaryPassword, newPassword = "final-password-123" });
                 using var response = await client.SendAsync(change);
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             }

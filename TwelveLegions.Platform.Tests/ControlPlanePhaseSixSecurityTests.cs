@@ -84,6 +84,19 @@ public sealed class ControlPlanePhaseSixSecurityTests
                 var operation = await response.Content.ReadFromJsonAsync<L12AuditArchiveOperationView>();
                 Assert.False(operation!.Applied);
             }
+            using (var legacyGet = Authorized(HttpMethod.Get,
+                       "/api/admin/v1/security/audit-recovery-rehearsal", admin.Token!,
+                       "security-rehearsal-get-rejected"))
+            using (var response = await client.SendAsync(legacyGet))
+                Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
+            using (var rehearsal = Authorized(HttpMethod.Post,
+                       "/api/admin/v1/security/audit-recovery-rehearsal", admin.Token!,
+                       "security-rehearsal-post", new { }))
+            using (var response = await client.SendAsync(rehearsal))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                Assert.NotNull(await response.Content.ReadFromJsonAsync<L12AuditArchiveRecoveryView>());
+            }
             socket = new ClientWebSocket();
             var socketUri = new UriBuilder(address) { Scheme = "ws", Path = "/ws" }.Uri;
             await socket.ConnectAsync(socketUri, CancellationToken.None);

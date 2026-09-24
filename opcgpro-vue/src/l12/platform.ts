@@ -35,7 +35,7 @@ export interface EmailStatus {
 }
 export interface EmailCapability { enabled: boolean; mailConfigured: boolean }
 export interface AuthOperation { code: string; message: string }
-export interface AdminPasswordReset { applied: boolean; account: PlatformAccount; revokedSessions: number }
+export interface AdminPasswordReset { applied: boolean; account: PlatformAccount; revokedSessions: number; temporaryPassword?: string | null }
 export interface AccountDeletion {
   applied: boolean; account: PlatformAccount; revokedSessions: number; removedPrivateRecords: number; cleanedMatchRecords?: number
 }
@@ -1222,7 +1222,7 @@ export const adminApi = {
   archiveAudit: (retentionDays: number, expectedVersion: number, dryRun: boolean, reason: string) => platformRequest<AdminCommandAccepted | AuditArchiveOperation>('/api/admin/v1/security/audit-archives', {
     method: 'POST', body: JSON.stringify(commandBody('audit-archive', { retentionDays, expectedVersion, dryRun, reason })),
   }),
-  rehearseAuditRecovery: () => platformRequest<AuditArchiveRecovery>('/api/admin/v1/security/audit-recovery-rehearsal'),
+  rehearseAuditRecovery: () => platformRequest<AuditArchiveRecovery>('/api/admin/v1/security/audit-recovery-rehearsal', { method: 'POST' }),
   audit: (query: string | { category?: string; outcome?: string; actorId?: string; commandId?: string; correlationId?: string } = '') => {
     const filters = typeof query === 'string' ? { category: query } : query
     const params = new URLSearchParams()

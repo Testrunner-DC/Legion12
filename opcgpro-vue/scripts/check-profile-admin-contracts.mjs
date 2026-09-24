@@ -11,6 +11,7 @@ const alternateArts = read('../src/l12/site/AdminAlternateArtsPanel.vue')
 const ruleReview = read('../src/l12/site/AdminRuleRulingsPanel.vue')
 const ruleData = read('../src/l12/data/ruleCenterData.ts')
 const riskDialog = read('../src/l12/site/AdminRiskActionDialog.vue')
+const riskAction = read('../src/l12/site/useAdminRiskAction.ts')
 const sectionScroll = read('../src/l12/site/useSectionScroll.ts')
 const ruleCenter = read('../src/l12/site/RuleCenterPage.vue')
 
@@ -27,7 +28,7 @@ const checks = [
   [admin.includes('visibleAdminSections(hasPermission)') && admin.includes('v-for="group in adminGroups"') && admin.includes('availableAdminTabs.filter(item => item.id !==') && admin.includes('无权访问此模块'), '后台桌面、手机、概览入口必须同源权限裁剪，拒绝越权深链接'],
   [admin.includes('defineAsyncComponent(() => import(') && !admin.match(/if \(hasPermission[^\n]+\) load(?:Accounts|Bugs|Effects|Audit|Security)/) && admin.includes('loadedTabs.has(current)'), '后台不得首屏全域预载，业务组件必须延迟加载'],
   [sectionScroll.includes("querySelector<HTMLElement>('.site-content')") && sectionScroll.includes('onBeforeRouteUpdate(save)') && sectionScroll.includes('ResizeObserver') && sectionScroll.includes('onBeforeRouteLeave(save)'), '分区回退必须恢复真正站点滚动容器并等待延迟内容'],
-  [admin.includes('<AdminRiskActionDialog') && admin.includes('sessionRiskBusy.value') && admin.includes('adminApi.revokeSessions(account.id)') && riskDialog.includes('showModal()') && riskDialog.includes('trapFocus') && riskDialog.includes('trigger.focus()') && riskDialog.includes('@cancel="cancel"'), '全部会话撤销试点必须共用确认框、锁定重复提交并支持焦点/Esc/失败重试'],
+  [admin.includes('<AdminRiskActionDialog') && admin.includes('useAdminRiskAction()') && admin.includes('adminApi.revokeSessions(account.id)') && riskAction.includes('if (!action || riskBusy.value) return') && riskAction.includes('riskError.value = error instanceof Error') && riskDialog.includes('showModal()') && riskDialog.includes('trapFocus') && riskDialog.includes('trigger.focus()') && riskDialog.includes('@cancel="cancel"'), '后台风险操作必须共用确认框、锁定重复提交并支持焦点/Esc/失败重试'],
 
   [profile.includes("watch(() => platformState.account?.id, () => { resetProfileAccountData(); void loadAccountData() }")
     && profile.includes('await loadRenameStatus()') && profile.includes('renameStatus.value = null'),

@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { adminApi, hasPermission, type UsernameChangeRequest } from '@/l12/platform'
+import AdminRiskActionDialog from './AdminRiskActionDialog.vue'
+import { useAdminRiskAction } from './useAdminRiskAction'
 
 const emit = defineEmits<{ notice: [value: string] }>()
 const requests = ref<UsernameChangeRequest[]>([])
 const filter = ref('pending')
 const busy = ref(false)
 const notes = reactive<Record<string, string>>({})
+const { riskAction, riskBusy, riskError, requestRiskAction, cancelRiskAction, confirmRiskAction } = useAdminRiskAction()
 
 function notice(value: string) { emit('notice', value) }
 async function load() {
@@ -15,22 +18,28 @@ async function load() {
   catch (error) { notice(error instanceof Error ? error.message : '改名申请读取失败') }
   finally { busy.value = false }
 }
-async function review(request: UsernameChangeRequest, approve: boolean) {
+function review(request: UsernameChangeRequest, approve: boolean) {
+  if (!hasPermission('admin.accounts.status.write')) return
   if (!approve && !notes[request.id]?.trim()) { notice('驳回时请填写处理说明'); return }
   const action = approve ? '通过' : '驳回'
-  if (!window.confirm(`确认${action} ${request.currentUsername} → ${request.requestedUsername} 的改名申请？`)) return
-  try {
-    const updated = await adminApi.reviewUsernameChangeRequest(request.id, approve, notes[request.id] || '')
-    requests.value = requests.value.map(item => item.id === updated.id ? updated : item)
-    notes[request.id] = ''
-    notice(approve ? `已通过 ${updated.requestedUsername} 的改名申请` : '已驳回改名申请')
-  } catch (error) { notice(error instanceof Error ? error.message : '改名申请处理失败') }
+  requestRiskAction({
+    title: `${action}改名申请`, target: `${request.currentUsername} → ${request.requestedUsername}`, targetLabel: '用户名',
+    impact: approve ? '通过后用户名立即变更，目标名称会再次检查占用情况并写入审计。' : '驳回后本次申请结束，处理说明会对审核记录永久留痕。',
+    confirmLabel: `确认${action}`, severity: approve ? 'warning' : 'danger',
+    run: async () => {
+      const updated = await adminApi.reviewUsernameChangeRequest(request.id, approve, notes[request.id] || '')
+      requests.value = requests.value.map(item => item.id === updated.id ? updated : item)
+      notes[request.id] = ''
+      notice(approve ? `已通过 ${updated.requestedUsername} 的改名申请` : '已驳回改名申请')
+    },
+  })
 }
 onMounted(load)
 </script>
 
 <template>
   <section class="username-request-admin">
+    <AdminRiskActionDialog v-if="riskAction" :title="riskAction.title" :target="riskAction.target" :target-label="riskAction.targetLabel" :impact="riskAction.impact" :confirm-label="riskAction.confirmLabel" :severity="riskAction.severity" :busy="riskBusy" :error="riskError" @cancel="cancelRiskAction" @confirm="confirmRiskAction"/>
     <header><div><small>USERNAME REVIEW</small><h2>改名审核</h2><p>玩家首次自助改名后，才可在“我的”提交再次改名申请。通过前会再次确认目标用户名未被占用；所有决定均写入审计记录。</p></div><div><select v-model="filter" @change="load"><option value="pending">待审核</option><option value="approved">已通过</option><option value="rejected">已驳回</option><option value="">全部</option></select><button @click="load">{{ busy ? '读取中…' : '刷新' }}</button></div></header>
     <article v-for="request in requests" :key="request.id" :class="request.status"><div class="request-main"><b>{{ request.currentUsername }} <i>→</i> {{ request.requestedUsername }}</b><span>申请人 ID：{{ request.accountId }}</span><p>{{ request.reason }}</p><small>提交于 {{ new Date(request.createdAt).toLocaleString() }}<template v-if="request.reviewedAt"> · {{ request.reviewedByUsername || '管理员' }} 于 {{ new Date(request.reviewedAt).toLocaleString() }}处理</template></small><em v-if="request.reviewNote">处理说明：{{ request.reviewNote }}</em></div><div v-if="request.status === 'pending' && hasPermission('admin.accounts.status.write')" class="review-actions"><textarea v-model.trim="notes[request.id]" rows="3" maxlength="400" placeholder="处理说明；驳回时必填"></textarea><div><button class="reject" @click="review(request, false)">驳回</button><button class="approve" @click="review(request, true)">通过并改名</button></div></div><strong v-else>{{ request.status === 'approved' ? '已通过' : '已驳回' }}</strong></article>
     <p v-if="!requests.length" class="empty">暂无符合当前筛选条件的改名申请。</p>

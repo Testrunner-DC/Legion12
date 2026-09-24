@@ -53,6 +53,7 @@ const sampleAccount=(id,username,disabled=false,deleted=false)=>({id,username,ro
 platform.adminApi.accounts=async()=>[
  sampleAccount('account-001','长昵称玩家一号'),sampleAccount('account-002','长昵称玩家二号',true),sampleAccount('account-003','已删除玩家',false,true)
 ]
+platform.adminApi.resetAccountPassword=async()=>({applied:true,account:{...sampleAccount('account-001','长昵称玩家一号'),mustChangePassword:true},revokedSessions:2,temporaryPassword:'7F1A5C9E2D4B8A6031CE97B5420D8F6A'})
 platform.adminApi.bugs=async()=>[{id:'BUG-20260921-001',reporterName:'验收玩家',title:'移动端弹框在极窄屏幕下信息显示不完整',description:'用于验证较长问题标题、描述与管理操作在窄屏不会互相侵入。',page:'/battle/room/qa',roomCode:'QA001',version:'2026.09.21',status:'open',priority:'high',assignee:'',adminNotes:'',history:[],createdAt:'2026-09-21T08:00:00Z',updatedAt:'2026-09-21T08:00:00Z'}]
 platform.adminApi.effects=async()=>({items:[{cardId:'S01-02C1',name:'移动端长名称卡效验收卡牌',product:'第一弹',faction:'秩序',cardType:'legion',isCounterTactic:false,effectText:'我方 回合1次：支付1士气，执行一项移动端验收效果。',abilities:[],migrationStatus:'declarative-ready',atomCount:3,executableAtomCount:3,legacyAtomCount:0,atomKinds:['cost.morale'],reviewStatus:'confirmed',reviewSource:'qa'}],total:1,page:1,pageSize:50,coverage:{totalCards:324,cardsWithText:280,totalAbilities:510,totalAtoms:1160,declarativeReadyAbilities:480,verifiedAbilities:420,legacyBackedAbilities:12,byStatus:{},byAtomKind:{}}})
 platform.adminApi.effectAtoms=async()=>[]
@@ -90,10 +91,13 @@ const viewports = [
   { width: 320, height: 700 },
   { width: 360, height: 780 },
   { width: 390, height: 844 },
+  { width: 844, height: 390 },
   { width: 430, height: 932 },
   { width: 768, height: 1024 },
   { width: 851, height: 900 },
   { width: 1280, height: 800 },
+  { width: 1280, height: 720 },
+  { width: 1440, height: 900 },
 ]
 const suffix = viewport => `${viewport.width}x${viewport.height}`
 const overflow = page => page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)
@@ -149,6 +153,12 @@ try {
       await page.getByRole('heading', { name: '账号、权限与会话' }).waitFor()
       assert.equal(await overflow(page), false, `admin accounts overflow at ${suffix(viewport)}`)
       await page.screenshot({ path: path.join(output, `admin-accounts-${suffix(viewport)}.png`), fullPage: true })
+      await page.locator('.account-actions input').first().fill('浏览器安全验收')
+      await page.locator('.account-actions .reset').first().click()
+      await page.getByRole('dialog').getByRole('button', { name: '生成并撤销会话' }).click()
+      await page.locator('.one-time-secret code').waitFor()
+      assert.equal((await page.locator('.one-time-secret code').textContent())?.length, 32, `temporary password length mismatch at ${suffix(viewport)}`)
+      await page.getByRole('dialog').getByRole('button', { name: '我已安全保存' }).click()
       await picker.selectOption('bugs')
       await page.getByRole('heading', { name: 'Bug 反馈' }).waitFor()
       assert.equal(await overflow(page), false, `admin bugs overflow at ${suffix(viewport)}`)

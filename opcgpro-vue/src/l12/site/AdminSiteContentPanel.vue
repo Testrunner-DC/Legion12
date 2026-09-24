@@ -4,6 +4,8 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { adminApi, hasPermission, type Article, type ContentBatch, type ContentEntry, type SiteCategory, type SiteContentKind, type SiteMedia, type SiteMediaKind } from '@/l12/platform'
 import AdminArticlesPanel from './AdminArticlesPanel.vue'
 import MediaUploadField from './MediaUploadField.vue'
+import AdminRiskActionDialog from './AdminRiskActionDialog.vue'
+import { useAdminRiskAction } from './useAdminRiskAction'
 import { createHomeHeroSlide, createHomeNotice, defaultHomeComposition, defaultSiteLegal, homeCompositionKey, parseHomeComposition, parseSiteLegal, serializeHomeComposition, serializeSiteLegal, siteLegalKey, type HomeComposition, type HomeNotice, type SiteLegalContent } from './homeContent'
 
 type SiteSection = 'media' | 'hero' | 'notices' | 'home-news' | 'home-product' | 'home-video' | 'news' | 'video' | 'product' | 'categories' | 'legal'
@@ -22,6 +24,9 @@ const categoryKind = ref<SiteContentKind>('news')
 const categoryMigration = reactive<Record<string, string>>({})
 const newCategory = reactive({ name: '', slug: '', active: true })
 const busy = ref(false)
+const canDraft = computed(() => hasPermission('admin.content.draft'))
+const canPublish = computed(() => hasPermission('admin.content.publish'))
+const { riskAction, riskBusy, riskError, requestRiskAction, cancelRiskAction, confirmRiskAction } = useAdminRiskAction()
 
 const sections: { id: SiteSection; label: string }[] = [
   { id: 'media', label: '素材库' }, { id: 'hero', label: '轮播图' }, { id: 'notices', label: '通知按钮' },
@@ -82,6 +87,7 @@ async function load() {
   finally { busy.value = false }
 }
 async function saveHome(show = true) {
+  if (!canDraft.value) { showNotice('当前账号没有保存内容草稿的权限'); return false }
   try {
     const entry = await adminApi.saveContentDraft(homeCompositionKey, serializeHomeComposition(composition))
     contentEntries[homeCompositionKey] = entry
@@ -90,6 +96,7 @@ async function saveHome(show = true) {
   } catch (error) { showNotice(error instanceof Error ? error.message : '首页编排保存失败'); return false }
 }
 async function saveLegal(show = true) {
+  if (!canDraft.value) { showNotice('当前账号没有保存内容草稿的权限'); return false }
   try {
     const [footer, rules] = await Promise.all([
       adminApi.saveContentDraft(siteLegalKey, serializeSiteLegal(legal)),
@@ -101,32 +108,45 @@ async function saveLegal(show = true) {
   } catch (error) { showNotice(error instanceof Error ? error.message : '页尾与法务保存失败'); return false }
 }
 async function preview(keys: string[], saver: (show?: boolean) => Promise<boolean>) {
+  if (!canDraft.value) { showNotice('当前账号没有预览内容变更的权限'); return }
   if (!(await saver(false))) return
   try {
     const result = await adminApi.previewContent(keys)
     showNotice(`发布预览完成：${result.items.filter(item => item.wouldChange).length} 项将更新，未写入线上内容`)
   } catch (error) { showNotice(error instanceof Error ? error.message : '发布预览失败') }
 }
-async function publish(keys: string[], saver: (show?: boolean) => Promise<boolean>) {
+async function performPublish(keys: string[], saver: (show?: boolean) => Promise<boolean>) {
   if (!(await saver(false))) return
   try {
     await adminApi.publishContent(keys)
     showNotice('站点内容已正式发布')
     contentBatches.value = await adminApi.contentBatches()
-  } catch (error) { showNotice(error instanceof Error ? error.message : '内容发布失败') }
+  } catch (error) { showNotice(error instanceof Error ? error.message : '内容发布失败'); throw error }
 }
-async function rollback(batch: ContentBatch) {
+function publish(keys: string[], saver: (show?: boolean) => Promise<boolean>) {
+  if (!canPublish.value) return
+  requestRiskAction({ title: '确认正式发布站点内容', target: `${keys.length} 项内容`, impact: '草稿会替换对应线上内容，并生成可审计的发布批次。', confirmLabel: '正式发布', severity: 'danger', run: () => performPublish(keys, saver) })
+}
+async function performRollback(batch: ContentBatch) {
   try {
     await adminApi.rollbackContent(batch.id)
     showNotice('内容已回滚')
-  } catch (error) { showNotice(error instanceof Error ? error.message : '回滚失败') }
+  } catch (error) { showNotice(error instanceof Error ? error.message : '回滚失败'); throw error }
 }
-async function deleteMedia(item: SiteMedia) {
-  if (!window.confirm(`删除素材“${item.altText || item.contentHash.slice(0, 12)}”？内容寻址文件会保留用于恢复。`)) return
+function rollback(batch: ContentBatch) {
+  if (!hasPermission('admin.content.rollback')) return
+  requestRiskAction({ title: '确认回滚发布批次', target: batch.id, impact: `将恢复该批次涉及的 ${batch.items.length} 项历史内容，并生成新的审计记录。`, confirmLabel: '执行回滚', severity: 'danger', run: () => performRollback(batch) })
+}
+async function performDeleteMedia(item: SiteMedia) {
   try { await adminApi.deleteSiteMedia(item.id); media.value = media.value.filter(row => row.id !== item.id); showNotice('素材记录已软删除') }
-  catch (error) { showNotice(error instanceof Error ? error.message : '素材删除失败') }
+  catch (error) { showNotice(error instanceof Error ? error.message : '素材删除失败'); throw error }
+}
+function deleteMedia(item: SiteMedia) {
+  if (!canDraft.value || item.referenceCount > 0) return
+  requestRiskAction({ title: '确认软删除素材组', target: item.altText || item.contentHash.slice(0, 12), impact: '素材记录将从可选素材库中移除；内容寻址文件保留用于恢复。', confirmLabel: '软删除素材', severity: 'danger', run: () => performDeleteMedia(item) })
 }
 async function createCategory() {
+  if (!canDraft.value) return
   if (!newCategory.name.trim()) return
   try {
     const saved = await adminApi.saveSiteCategory({ kind: categoryKind.value, name: newCategory.name, slug: newCategory.slug, sortOrder: categoriesByKind.value.length, active: true })
@@ -134,6 +154,7 @@ async function createCategory() {
   } catch (error) { showNotice(error instanceof Error ? error.message : '分类新增失败') }
 }
 async function saveCategory(item: SiteCategory) {
+  if (!canDraft.value) return
   try {
     const saved = await adminApi.saveSiteCategory(item)
     categories.value = categories.value.map(row => row.id === saved.id ? saved : row)
@@ -141,6 +162,7 @@ async function saveCategory(item: SiteCategory) {
   } catch (error) { showNotice(error instanceof Error ? error.message : '分类保存失败') }
 }
 async function reorderCategory(index: number, direction: -1 | 1) {
+  if (!canDraft.value) return
   const rows = [...categoriesByKind.value]
   move(rows, index, direction)
   try {
@@ -148,14 +170,18 @@ async function reorderCategory(index: number, direction: -1 | 1) {
     categories.value = [...categories.value.filter(item => item.kind !== categoryKind.value), ...reordered]
   } catch (error) { showNotice(error instanceof Error ? error.message : '分类排序失败') }
 }
-async function deleteCategory(item: SiteCategory) {
-  const target = categoryMigration[item.id] || undefined
-  if (!window.confirm(item.itemCount ? `该分类有 ${item.itemCount} 个内容快照，将迁移后删除，确认继续？` : '确认删除空分类？')) return
+async function performDeleteCategory(item: SiteCategory, target?: string) {
   try {
     await adminApi.deleteSiteCategory(item.id, target)
     categories.value = categories.value.filter(row => row.id !== item.id)
     showNotice(item.itemCount ? '分类引用已原子迁移并删除' : '空分类已删除')
-  } catch (error) { showNotice(error instanceof Error ? error.message : '分类删除失败') }
+  } catch (error) { showNotice(error instanceof Error ? error.message : '分类删除失败'); throw error }
+}
+function deleteCategory(item: SiteCategory) {
+  if (!canDraft.value) return
+  const target = categoryMigration[item.id] || undefined
+  if (item.itemCount > 0 && !target) return
+  requestRiskAction({ title: '确认删除内容分类', target: item.name, impact: item.itemCount ? `${item.itemCount} 个内容快照会先原子迁移到所选分类，再删除此分类。` : '空分类会被永久删除。', confirmLabel: '删除分类', severity: 'danger', run: () => performDeleteCategory(item, target) })
 }
 
 onMounted(load)
@@ -163,17 +189,18 @@ onMounted(load)
 
 <template>
   <section class="site-content-admin">
+    <AdminRiskActionDialog v-if="riskAction" :title="riskAction.title" :target="riskAction.target" :impact="riskAction.impact" :confirm-label="riskAction.confirmLabel" :severity="riskAction.severity" :busy="riskBusy" :error="riskError" @cancel="cancelRiskAction" @confirm="confirmRiskAction"/>
     <header class="site-content-head"><div><small>SITE CONTENT</small><h2>站点内容</h2><p>素材、首页、资讯、视频、商品、分类与法务由管理员直接维护，并保留权限、审计和持久化边界。</p></div><button @click="load">{{ busy ? '读取中…' : '刷新全部' }}</button></header>
     <nav class="site-content-nav" aria-label="站点内容模块"><button v-for="item in sections" :key="item.id" :class="{ active: section === item.id }" @click="section = item.id">{{ item.label }}</button></nav>
 
     <section v-if="section === 'media'" class="content-panel media-library">
       <header><div><h3>素材库</h3><p>原图仅归档；公开端只提供内容哈希 URL 的桌面、移动 WebP 与缩略图，删除前检查全部草稿和历史引用。</p></div><select v-model="mediaKind"><option value="hero">首页轮播</option><option value="news">资讯封面</option><option value="article">资讯正文图片</option><option value="video">视频封面 16:9</option><option value="product">商品图片</option></select></header>
-      <MediaUploadField :kind="mediaKind" @uploaded="mediaUploaded" @notice="showNotice"/>
+      <MediaUploadField v-if="canDraft" :kind="mediaKind" @uploaded="mediaUploaded" @notice="showNotice"/>
       <div class="media-grid"><PagedCollection :items="mediaByKind" v-slot="{ items: paged9983 }"><article v-for="item in paged9983" :key="item.id" :data-kind="item.kind"><img :src="item.thumbnailUrl" :alt="item.thumbnailAltText || item.altText"><div><b>{{ item.altText || '未填写替代文字' }}</b><code>{{ item.contentHash }}</code><small>{{ item.originalFormat }} · 原图 {{ Math.ceil(item.originalBytes / 1024) }}KB · 交付 {{ Math.ceil(item.deliveryBytes / 1024) }}KB</small><small v-if="item.kind === 'hero' && item.independentVariants">独立三版本 · 桌面：{{ item.desktopAltText }} · 移动：{{ item.mobileAltText }} · 缩略：{{ item.thumbnailAltText }}</small><small v-else>焦点 {{ Math.round(item.focalX * 100) }}% / {{ Math.round(item.focalY * 100) }}% · 引用 {{ item.referenceCount }}</small><small v-if="item.kind === 'hero' && item.independentVariants">素材组引用 {{ item.referenceCount }}；三个版本统一保护、统一软删除</small><button :disabled="item.referenceCount > 0" @click="deleteMedia(item)">{{ item.referenceCount ? '被引用，禁止删除' : '软删除素材组' }}</button></div></article></PagedCollection><p v-if="!mediaByKind.length" class="empty">此类型尚无上传素材。</p></div>
     </section>
 
     <section v-else-if="section === 'hero'" class="content-panel home-compose">
-      <header><div><h3>首页轮播图</h3><p>每张轮播分别维护图片、可选文本与整图点击链接；启用项发布前必须绑定后台上传素材。</p></div><div class="panel-actions"><button @click="addSlide">＋ 轮播</button><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">直接发布</button></div></header>
+      <header><div><h3>首页轮播图</h3><p>每张轮播分别维护图片、可选文本与整图点击链接；启用项发布前必须绑定后台上传素材。</p></div><div class="panel-actions"><button v-if="canDraft" @click="addSlide">＋ 轮播</button><button v-if="canDraft" @click="saveHome()">保存草稿</button><button v-if="canDraft" @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="canPublish" class="publish" @click="publish([homeCompositionKey], saveHome)">直接发布</button></div></header>
       <h4>轮播主视觉 <em :data-status="contentEntries[homeCompositionKey]?.status">{{ contentEntries[homeCompositionKey]?.status === 'draft' ? '有未发布草稿' : '已发布' }}</em></h4>
       <article v-for="(slide, index) in composition.heroSlides" :key="slide.id" class="compose-row hero-compose-row">
         <div class="compose-order"><button @click="move(composition.heroSlides, index, -1)">↑</button><b>{{ index + 1 }}</b><button @click="move(composition.heroSlides, index, 1)">↓</button></div>
@@ -190,23 +217,23 @@ onMounted(load)
     </section>
 
     <section v-else-if="section === 'notices'" class="content-panel home-compose">
-      <header><div><h3>首页通知按钮</h3><p>通知按钮数量、内容、链接、颜色、排序和启停均独立维护。</p></div><div class="panel-actions"><button @click="addNotice">＋ 通知按钮</button><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">直接发布</button></div></header>
+      <header><div><h3>首页通知按钮</h3><p>通知按钮数量、内容、链接、颜色、排序和启停均独立维护。</p></div><div class="panel-actions"><button v-if="canDraft" @click="addNotice">＋ 通知按钮</button><button v-if="canDraft" @click="saveHome()">保存草稿</button><button v-if="canDraft" @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="canPublish" class="publish" @click="publish([homeCompositionKey], saveHome)">直接发布</button></div></header>
       <article v-for="(item, index) in composition.notices" :key="item.id" class="notice-compose-row"><b>{{ index + 1 }}</b><input v-model="item.label" maxlength="80" placeholder="通知显示文字"><select v-model="item.href" @change="syncNoticeLabel(item)"><option value="">选择一篇已发布资讯</option><option v-for="article in publishedNews" :key="article.id" :value="`/news/${article.id}`">{{ article.title }}</option></select><select v-model="item.tone"><option value="light">浅色</option><option value="dark">深色</option><option value="accent">强调</option></select><label><input v-model="item.enabled" type="checkbox">启用</label><button @click="move(composition.notices, index, -1)">↑</button><button @click="move(composition.notices, index, 1)">↓</button><button class="danger" @click="removeNotice(index)">删除</button></article>
       <p v-if="!composition.notices.length" class="empty">暂无通知按钮；点击“＋ 通知按钮”新增。</p>
     </section>
 
     <section v-else-if="section === 'home-news'" class="content-panel home-compose">
-      <header><div><h3>资讯区外观</h3><p>只控制主页资讯区标题与说明；已发布资讯在“资讯稿件”独立维护。</p></div><div class="panel-actions"><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">直接发布</button></div></header>
+      <header><div><h3>资讯区外观</h3><p>只控制主页资讯区标题与说明；已发布资讯在“资讯稿件”独立维护。</p></div><div class="panel-actions"><button v-if="canDraft" @click="saveHome()">保存草稿</button><button v-if="canDraft" @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="canPublish" class="publish" @click="publish([homeCompositionKey], saveHome)">直接发布</button></div></header>
       <div class="section-copy-grid"><label>英文标题<input v-model="composition.newsEyebrow"></label><label>中文标题<input v-model="composition.newsTitle"></label></div>
     </section>
 
     <section v-else-if="section === 'home-product'" class="content-panel home-compose">
-      <header><div><h3>产品上新区外观</h3><p>只控制主页产品上新区标题与说明；已发布产品在“产品稿件”独立维护。</p></div><div class="panel-actions"><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">直接发布</button></div></header>
+      <header><div><h3>产品上新区外观</h3><p>只控制主页产品上新区标题与说明；已发布产品在“产品稿件”独立维护。</p></div><div class="panel-actions"><button v-if="canDraft" @click="saveHome()">保存草稿</button><button v-if="canDraft" @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="canPublish" class="publish" @click="publish([homeCompositionKey], saveHome)">直接发布</button></div></header>
       <div class="section-copy-grid"><label>英文标题<input v-model="composition.productEyebrow"></label><label>中文标题<input v-model="composition.productTitle"></label></div>
     </section>
 
     <section v-else-if="section === 'home-video'" class="content-panel home-compose">
-      <header><div><h3>最新视频区外观</h3><p>只控制主页视频区标题与说明；已发布视频在“视频稿件”独立维护。</p></div><div class="panel-actions"><button v-if="hasPermission('admin.content.draft')" @click="saveHome()">保存草稿</button><button @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([homeCompositionKey], saveHome)">直接发布</button></div></header>
+      <header><div><h3>最新视频区外观</h3><p>只控制主页视频区标题与说明；已发布视频在“视频稿件”独立维护。</p></div><div class="panel-actions"><button v-if="canDraft" @click="saveHome()">保存草稿</button><button v-if="canDraft" @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="canPublish" class="publish" @click="publish([homeCompositionKey], saveHome)">直接发布</button></div></header>
       <div class="section-copy-grid"><label>英文标题<input v-model="composition.videoEyebrow"></label><label>中文标题<input v-model="composition.videoTitle"></label></div>
     </section>
 
@@ -220,7 +247,7 @@ onMounted(load)
     </section>
 
     <section v-else class="content-panel legal-editor">
-      <header><div><h3>页尾与法务</h3><p>版权、商标、备案与联系信息独立于首页结构；与规则页公告同批预览并直接发布。</p></div><div class="panel-actions"><button v-if="hasPermission('admin.content.draft')" @click="saveLegal()">保存草稿</button><button @click="preview([siteLegalKey, 'rules.notice'], saveLegal)">预览</button><button v-if="hasPermission('admin.content.publish')" class="publish" @click="publish([siteLegalKey, 'rules.notice'], saveLegal)">直接发布</button></div></header>
+      <header><div><h3>页尾与法务</h3><p>版权、商标、备案与联系信息独立于首页结构；与规则页公告同批预览并直接发布。</p></div><div class="panel-actions"><button v-if="canDraft" @click="saveLegal()">保存草稿</button><button v-if="canDraft" @click="preview([siteLegalKey, 'rules.notice'], saveLegal)">预览</button><button v-if="canPublish" class="publish" @click="publish([siteLegalKey, 'rules.notice'], saveLegal)">直接发布</button></div></header>
       <label>版权行<input v-model="legal.copyright" maxlength="300"></label><label>商标与权利声明<textarea v-model="legal.trademark" rows="5" maxlength="1200"></textarea></label><label>备案 / 登记信息<input v-model="legal.registration" maxlength="200"></label><label>联系标签<input v-model="legal.contactLabel" maxlength="100"></label><label>联系链接<input v-model="legal.contactHref" maxlength="2000" placeholder="mailto: 不允许；使用站内页或 https://"></label><label>规则页公告<textarea v-model="ruleNotice" rows="5"></textarea></label>
       <details class="batch-history"><summary>发布与回滚批次（{{ contentBatches.length }}）</summary><PagedCollection :items="contentBatches" v-slot="{ items: paged20499 }"><article v-for="batch in paged20499" :key="batch.id"><span><code>{{ batch.id }}</code><b>{{ batch.action }} · {{ batch.status }}</b><small>{{ batch.actorName }} · {{ new Date(batch.createdAt).toLocaleString() }} · {{ batch.items.length }} 项</small></span><button v-if="batch.action === 'publish' && batch.status === 'published' && hasPermission('admin.content.rollback')" @click="rollback(batch)">直接回滚</button></article></PagedCollection></details>
     </section>

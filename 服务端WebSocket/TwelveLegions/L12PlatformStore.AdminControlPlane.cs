@@ -259,10 +259,13 @@ public sealed partial class L12PlatformStore
         {
             var row = _data.AdminCommands.First(item => item.Id == commandId);
             row.Status = status;
-            row.ResultJson = result.Value is null
-                || result.Value is JsonElement element && element.ValueKind == JsonValueKind.Undefined
+            object? persistedValue = result.Value;
+            if (persistedValue is L12AdminPasswordResetView passwordReset)
+                persistedValue = passwordReset with { TemporaryPassword = null };
+            row.ResultJson = persistedValue is null
+                || persistedValue is JsonElement element && element.ValueKind == JsonValueKind.Undefined
                 ? null
-                : JsonSerializer.Serialize(result.Value, AdminJsonOptions);
+                : JsonSerializer.Serialize(persistedValue, persistedValue.GetType(), AdminJsonOptions);
             row.ResultCode = result.Code;
             row.ResultMessage = result.Message;
             row.ResultStatusCode = result.StatusCode;

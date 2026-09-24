@@ -116,7 +116,7 @@ public sealed record L12EmailStatusView(bool Bound, bool Verified, string? Maske
 public sealed record L12AuthOperationResult(bool Success, string Code, string Message,
     int RetryAfterSeconds = 0);
 public sealed record L12AdminPasswordResetView(bool Applied, L12AccountView Account,
-    int RevokedSessions);
+    int RevokedSessions, string? TemporaryPassword = null);
 public sealed record L12AccountDeletionView(bool Applied, L12AccountView Account,
     int RevokedSessions, int RemovedPrivateRecords, int CleanedMatchRecords = 0);
 
@@ -351,7 +351,10 @@ public sealed partial class L12PlatformStore
                 }
                 return new(false, ToView(account) with { MustChangePassword = true }, 0);
             }
-            SetPassword(account, "123456");
+            // Return a unique high-entropy one-time credential only in this successful response.
+            // Only its salted hash is persisted. The command layer keeps retries idempotent.
+            var temporaryPassword = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+            SetPassword(account, temporaryPassword);
             account.MustChangePassword = true;
             account.PermissionVersion++;
             revokedIds = RevokeActiveSessions(account.Id, DateTimeOffset.UtcNow);
@@ -359,7 +362,7 @@ public sealed partial class L12PlatformStore
             AddAdminAudit(actor, "account", "password-admin-reset", account.Username, null,
                 "temporary-password-required", reason.Trim(), context with { Reason = reason.Trim() });
             Save();
-            result = new(true, ToView(account), revokedIds.Length);
+            result = new(true, ToView(account), revokedIds.Length, temporaryPassword);
         }
         NotifySessionsRevoked(revokedIds);
         return result;

@@ -15,7 +15,8 @@ const contracts = [
     && !panel.includes('<label v-for="item in modianPreview.items"'),
   '同步条目不得用嵌套 label；主选择框必须有独立可访问名称'],
   [panel.includes("item.state === 'remote-changed'") && panel.includes('允许重导')
-    && panel.includes('覆盖本地草稿') && panel.includes('window.confirm'),
+    && panel.includes('覆盖本地草稿') && panel.includes("title: overwrite.length ? '确认覆盖本地草稿'")
+    && panel.includes('run: () => performImportModianUpdates(reimport, overwrite)') && !panel.includes('window.confirm'),
   '远端变化与覆盖本地编辑必须经过分层显式确认'],
   [platform.includes("'/api/admin/articles/modian/preview'")
     && platform.includes("'/api/admin/articles/modian/import'")
