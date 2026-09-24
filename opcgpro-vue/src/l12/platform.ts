@@ -1248,6 +1248,7 @@ export const publicDeckApi = {
     const suffix = params.size ? `?${params}` : ''
     return platformRequest<PublishedDeck[]>(`/api/public-decks${suffix}`)
   },
+  get: (id: string) => platformRequest<PublishedDeck>(`/api/public-decks/${encodeURIComponent(id)}`),
   publish: (deck: SavedL12Deck, publicationId?: string) => platformRequest<PublishedDeck>('/api/public-decks', {
     method: 'POST', body: JSON.stringify({ publicationId: publicationId || null, deck }),
   }),

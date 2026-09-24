@@ -893,6 +893,15 @@ public sealed partial class L12PlatformStore
             .Select(row => ToView(row, viewerAccountId)).ToArray();
     }
 
+    public L12PublishedDeckView? PublishedDeck(string publicationId, string? viewerAccountId)
+    {
+        lock (_gate)
+        {
+            var row = _data.PublishedDecks.FirstOrDefault(item => item.Id == publicationId);
+            return row is null ? null : ToView(row, viewerAccountId);
+        }
+    }
+
     public L12PublishedDeckView? PublishDeck(string accountId, L12PresetDeckDefinition deck, string? publicationId)
     {
         lock (_gate)

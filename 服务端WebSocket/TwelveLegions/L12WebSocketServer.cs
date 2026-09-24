@@ -819,6 +819,28 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             };
             return Results.Ok(decks.ToArray());
         });
+        _app.MapGet("/api/public-decks/{id}", (HttpRequest request, string id) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            var item = _platform.PublishedDeck(id, account?.Id);
+            if (item is null) return Results.NotFound();
+            var policy = _platform.EffectiveOperationsPolicy();
+            var preset = new L12PresetDeckDefinition
+            {
+                Name = item.Deck.Name,
+                MasterId = item.Deck.MasterId,
+                CardIds = item.Deck.CardIds.ToList(),
+                MoraleIds = item.Deck.MoraleIds.ToList(),
+                SpecialIds = item.Deck.SpecialIds.ToList(),
+            };
+            var valid = L12DeckValidator.TryValidatePreset(_catalog, preset, out var error,
+                policy.CardRestrictions);
+            return Results.Ok(item with
+            {
+                SeasonCompliant = valid,
+                SeasonComplianceReason = valid ? null : error,
+            });
+        });
         _app.MapPost("/api/public-decks", (HttpRequest request, PublishedDeckRequest body) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);

@@ -14,6 +14,7 @@ export const router = createRouter({
     { path: '/battle/lobby', redirect: '/battle' },
     { path: '/battle/tournaments', name: 'tournaments', component: () => import('@/l12/site/TournamentCenterPage.vue'), meta: { section: 'battle', requiresAccount: true } },
     { path: '/decks', name: 'decks', component: () => import('@/l12/site/DeckLibraryPage.vue') },
+    { path: '/decks/:deckId', name: 'public-deck-detail', component: () => import('@/l12/site/PublicDeckDetailPage.vue') },
     { path: '/battle/friends', name: 'friends', component: () => import('@/l12/site/FriendsPage.vue'), meta: { section: 'battle', requiresAccount: true } },
     { path: '/cards', name: 'cards', component: () => import('@/l12/CardArchive.vue') },
     { path: '/battle/rankings', name: 'rankings', component: () => import('@/l12/site/RankingsPage.vue'), meta: { section: 'battle', requiresAccount: true } },

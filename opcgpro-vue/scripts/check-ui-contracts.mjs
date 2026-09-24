@@ -102,6 +102,7 @@ const decks = read('../src/l12/decks.ts')
 const deckOrdering = read('../src/l12/deckOrdering.ts')
 const deckShare = read('../src/l12/site/deckShare.ts')
 const deckLibrary = read('../src/l12/site/DeckLibraryPage.vue')
+const publicDeckDetail = read('../src/l12/site/PublicDeckDetailPage.vue')
 const deckProfile = read('../src/l12/DeckProfile.vue')
 const legacyLobby = read('../src/l12/LobbyPage.vue')
 const tournamentCenter = read('../src/l12/site/TournamentCenterPage.vue')
@@ -843,10 +844,10 @@ const contracts = [
   [lobby.includes('visibleDeckLabel') && lobby.includes('player.playerIndex === l12State.room?.yourPlayerIndex'), '房间内不得向对手公开牌库名称'],
   [decks.includes("构筑时不计入卡组数量") && decks.includes("`${counted}${uncounted ? `(${uncounted})` : ''}`"), '不计入构筑上下限的卡牌必须使用通用规则识别，并以 40(3) 形式单列数量'],
   [deckEditor.includes('publicDeckApi.publish') && deckEditor.includes("publicationId.value = ''") && deckEditor.includes("preservePublication = false"), '牌库编辑器须支持公开/更新公开牌库，并在新建、另存或切换本地牌库时隔离公开版本身份'],
-  [deckLibrary.includes('publicDeckApi.list') && deckLibrary.includes('编辑公开牌库') && deckLibrary.includes('删除公开牌库') && deckLibrary.includes('ownerId === platformState.account?.id'), '公开牌库必须由服务端持久化，且仅作者显示编辑与删除入口'],
-  [deckLibrary.includes('<DeckConstructionBrowser :entries="selectedEntries"')
-    && deckLibrary.includes("add(deck.cardIds, 'main')") && deckLibrary.includes("add(deck.moraleIds, 'morale')")
-    && deckLibrary.includes("add(deck.specialIds ?? [], 'special')") && deckLibrary.includes('automaticExtraCardIdsForMaster')
+  [deckLibrary.includes('publicDeckApi.list') && publicDeckDetail.includes('编辑') && publicDeckDetail.includes('删除') && publicDeckDetail.includes('ownerId === platformState.account?.id'), '公开牌库必须由服务端持久化，且仅作者显示编辑与删除入口'],
+  [publicDeckDetail.includes('<DeckConstructionBrowser :entries="entries"')
+    && publicDeckDetail.includes("add(entry.value.deck.cardIds, 'main')") && publicDeckDetail.includes("add(entry.value.deck.moraleIds, 'morale')")
+    && publicDeckDetail.includes("add(entry.value.deck.specialIds ?? [], 'special')") && publicDeckDetail.includes('automaticExtraCardIdsForMaster')
     && deckConstructionBrowser.includes('grid-template-rows:auto minmax(2.8em,auto) auto')
     && deckConstructionBrowser.includes('overflow-wrap:anywhere') && deckConstructionBrowser.includes('white-space:normal'), '公开牌库详情必须复用对局档案构筑查看器，展示主牌、士气与全部额外卡，卡框稳定且完整卡名不被裁切'],
   [prompt.includes('const displayCardIds = computed') && prompt.includes('if (displayCardIds.value.length) return displayCardIds.value')
@@ -882,18 +883,18 @@ const contracts = [
     && !zoneMovementLayer.includes("event.type === 'search'"), '公开展示并加入手牌必须进入统一区域移动队列并显示来源横幅，隐私入手不播放，历史 search 死分支不得恢复'],
   [platform.includes('views: number; likes: number; copies: number') && platform.includes('recordView: (id: string)')
     && platform.includes("sort?: 'copies' | 'likes' | 'views' | 'latest'")
-    && wsServer.includes('/api/public-decks/{id}/view') && deckLibrary.includes('publicDeckApi.recordView(entry.id)')
+    && wsServer.includes('/api/public-decks/{id}/view') && publicDeckDetail.includes('publicDeckApi.recordView(id)')
     && deckLibrary.includes('b.copies - a.copies') && deckLibrary.includes('b.likes - a.likes')
     && deckLibrary.includes('(b.views ?? 0) - (a.views ?? 0)') && deckLibrary.includes('b.createdAt.localeCompare(a.createdAt)')
     && deckLibrary.includes('<option value="copies">最多复制</option>')
     && deckLibrary.includes('<option value="likes">最多点赞</option>')
     && deckLibrary.includes('<option value="views">最多浏览</option>')
     && deckLibrary.includes('<option value="latest">最新发布</option>')
-    && deckLibrary.includes('v-model="seasonOnly"') && deckLibrary.includes('entry.seasonCompliant')
+    && deckLibrary.includes('v-model="legalFilter"') && deckLibrary.includes('seasonRequirement(entry).compliant')
     && deckLibrary.includes('浏览量 {{ entry.views ?? 0 }}') && deckLibrary.includes('符合本赛季')
     && deckLibrary.includes('不符合本赛季') && deckLibrary.includes('查看构筑')
     && deckLibrary.includes('--deck-faction:') && deckLibrary.includes('rgba(var(--deck-faction),.2)')
-    && deckLibrary.includes('color:#c7cecd;font-size:14px'), '公开牌库必须只提供最多复制、最多点赞、最多浏览、最新发布四项互斥排序，支持与本赛季合规筛选叠加，并保留浏览量/点赞/复制/赛季要求信息条与可读阵营底色'],
+    && deckLibrary.includes('color:#c7cecd;font-size:14px'), '公开牌库必须保留复制、点赞、浏览、最新发布排序并支持组合筛选，保留浏览量/点赞/复制/赛季要求信息条与可读阵营底色'],
   [deckEditor.includes('masterProfileUrl(selectedMaster.id') && lobby.includes('border-radius:2px'), '主宰头像必须使用官方正方形资源'],
   [cardDetailContent.includes('trialValue') && cardDetailContent.includes('<dt>试炼值</dt>'), '卡牌档案必须展示试炼值'],
   [playerMat.includes('aria-disabled') && playerMat.includes('.morale-orb.active-morale[aria-disabled="true"]') && playerMat.includes('.morale-orb.active-god-power[aria-disabled="true"]'), '可用的活跃士气与神力必须始终高亮'],
@@ -932,7 +933,7 @@ const contracts = [
   [cardArchive.includes('const productOptions = computed(') && cardArchive.includes('<option value="all">全部产品</option><option v-for="value in productOptions"') && sandboxPicker.includes('<option value="all">全部产品</option><option v-for="value in products"'), '卡牌图鉴与共享单卡选择器必须从权威完整目录动态列出产品，不得回退为旧双卡池硬编码'],
   [deckEditor.indexOf('生成牌库图') > deckEditor.indexOf('另存为牌库') && deckEditor.indexOf('生成牌库图') < deckEditor.indexOf('删除牌库'), '生成牌库图必须位于另存为牌库与删除牌库之间'],
   [deckEditor.includes('createDeckImageBlob') && deckEditor.includes('deck-image-dialog') && deckEditor.includes('下载牌库图'), '牌库编辑器必须提供可预览、下载的真实牌库图生成流程'],
-  [deckOrdering.includes('TYPE_PRIORITY') && deckOrdering.includes('Number.NEGATIVE_INFINITY') && deckEditor.includes('compareDeckCards') && deckShare.includes('compareDeckCardIds') && deckLibrary.includes('compareDeckCardIds'), '牌库默认顺序必须统一为类型、本阵营/中立、费用高至低和编号前至后，并由编辑器、详情与牌库图复用'],
+  [deckOrdering.includes('TYPE_PRIORITY') && deckOrdering.includes('Number.NEGATIVE_INFINITY') && deckEditor.includes('compareDeckCards') && deckShare.includes('compareDeckCardIds') && deckConstructionBrowser.includes('compareDeckCardIds'), '牌库默认顺序必须统一为类型、本阵营/中立、费用高至低和编号前至后，并由编辑器、详情与牌库图复用'],
   [deckEditor.includes('牌库删除后不可找回') && deckEditor.includes('继续删除') && deckEditor.includes('pendingDeleteName') && !deckEditor.includes('@click="onDelete'), '全部牌库删除入口必须先经过统一确认弹框'],
   [gamePage.includes("import { gameAction, l12State, leaveRoom } from './net'") && gamePage.includes("game.value?.phase === 'GameOver'") && gamePage.includes('leaveRoom()') && gamePage.includes("router.push('/lobby')") && !gamePage.includes('returnToRoom'), '所有对局结算必须停留到玩家主动返回；返回后退出权威房间并进入对战大厅'],
   [l12Net.includes('leavingRoom: false') && l12Net.includes("if (l12State.leavingRoom) return") && l12Net.includes("socket.send(JSON.stringify({ type: 'leaveRoom' }))")
@@ -979,7 +980,7 @@ const contracts = [
     && board.includes('isCounterTacticCard(card)') && !board.includes('counterIds = new Set')
     && playerMat.includes('isCounterTacticCard(card)') && !playerMat.includes("['S01-0016'")
     && l12PromptSetup.includes('isCounterTactic')
-    && deckConstructionBrowser.includes('cardTypeLabel(selected.cardType, selected.isCounterTactic)')
+    && deckConstructionBrowser.includes('CardDetailContent') && cardDetailContent.includes('cardTypeLabel(card.cardType, card.isCounterTactic)')
     && adminPage.includes('cardTypeLabel(card.cardType, card.isCounterTactic)')
     && adminPage.includes('cardTypeLabel(selectedEffect.cardType, selectedEffect.isCounterTactic)'), '主动/反击战术必须共用tactic类型并由独立属性贯穿目录、对战、弹框与后台；不得保留卡号清单或显示内部英文类型'],
   [l12PromptSetup.includes('"discard-or-decline", "optional-card", "search"') && l12PromptSetup.includes('data.TryAdd("layout", "single-row")') && l12PromptSetup.includes('data["displayCardIds"]') && prompt.includes("prompt.value?.data?.layout === 'single-row'") && prompt.includes('displayCardIds') && prompt.includes('unavailable'), '弃牌及查看多张选择部分必须使用横向全卡图列表，并将不合法卡灰置不可选'],

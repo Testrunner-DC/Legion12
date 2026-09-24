@@ -147,6 +147,12 @@ public sealed class PublicDeckAndLeaderboardVisibilityTests
             var banned = Assert.Single(all.AsArray(), row => row!["id"]!.GetValue<string>() == copies.Id)!;
             Assert.False(banned["seasonCompliant"]!.GetValue<bool>());
             Assert.Contains("本赛季禁用", banned["seasonComplianceReason"]!.GetValue<string>());
+            var direct = await Json(client, Get($"/api/public-decks/{copies.Id}"));
+            Assert.Equal(copies.Id, direct["id"]!.GetValue<string>());
+            Assert.Equal("最多复制牌库", direct["deck"]!["name"]!.GetValue<string>());
+            Assert.False(direct["seasonCompliant"]!.GetValue<bool>());
+            using (var missing = await client.GetAsync("/api/public-decks/not-found"))
+                Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
             var compliant = await Json(client, Get("/api/public-decks?sort=copies&seasonCompliant=true"));
             Assert.DoesNotContain(compliant.AsArray(), row => row!["id"]!.GetValue<string>() == copies.Id);
             Assert.All(compliant.AsArray(), row => Assert.True(row!["seasonCompliant"]!.GetValue<bool>()));

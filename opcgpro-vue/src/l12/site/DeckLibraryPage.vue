@@ -1,13 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { createDeckImageBlob, decodeDeckCode, downloadDeckImage, encodeDeckCode } from './deckShare'
-import { cardTypeFilterKey, cardTypeLabel } from '../cardPresentation'
-import { compareDeckCardIds } from '../deckOrdering'
-import { automaticExtraCardIdsForMaster, deckCountSummary, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, saveDeck, validateDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
+import { deckCountSummary, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, saveDeck, validateDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
 import { getEffectiveOperationsPolicy, platformState, publicDeckApi, type EffectiveOperationsPolicy, type PublishedDeck } from '@/l12/platform'
 import { useRoute, useRouter } from 'vue-router'
 import DeckProfile from '@/l12/DeckProfile.vue'
-import DeckConstructionBrowser, { type ConstructionEntry } from './DeckConstructionBrowser.vue'
 import MobileFilterSheet from './MobileFilterSheet.vue'
 
 const tab = ref<'mine' | 'plaza'>('mine')
@@ -15,20 +12,21 @@ const catalog = ref<DeckCard[]>([])
 const saved = ref<Record<string, SavedL12Deck>>({})
 const published = ref<PublishedDeck[]>([])
 const operationsPolicy = ref<EffectiveOperationsPolicy | null>(null)
-const selected = ref<PublishedDeck | null>(null)
 const query = ref('')
 const importCode = ref('')
 const notice = ref('')
 const publishName = ref('')
 const showPublish = ref(false)
 const factionFilter = ref('all')
-const sortMode = ref<'copies' | 'likes' | 'views' | 'latest'>('copies')
-const seasonOnly = ref(false)
+const masterFilter = ref('all')
+const legalFilter = ref<'all' | 'legal' | 'illegal'>('all')
+const cardFilter = ref('')
+const updatedFilter = ref<'all' | '1' | '7' | '30' | '90' | '365'>('all')
+const sortMode = ref<'trend' | 'copies' | 'likes' | 'views' | 'latest' | 'name'>('trend')
 const plazaFiltersOpen = ref(false)
 const imagePreview = ref<{ deck: SavedL12Deck; blob: Blob; url: string } | null>(null)
 const route = useRoute()
 const router = useRouter()
-const viewedDeckIds = new Set<string>()
 const returnTo = computed(() => typeof route.query.from === 'string' && route.query.from.startsWith('/') ? route.query.from : '/decks')
 const editorLink = (deckName?: string, publicationId?: string) => ({ path: '/deck-editor', query: { ...(deckName ? { deck: deckName } : {}), ...(publicationId ? { published: publicationId } : {}), returnTo: returnTo.value } })
 
@@ -37,6 +35,7 @@ const factionLabels: Record<string, string> = {
   taiyangcheng: '太阳城', olympus: '奥林匹斯', otherworld: '彼界',
 }
 onMounted(async () => {
+  restoreFiltersFromRoute()
   try {
     ;[catalog.value, saved.value] = await Promise.all([
       loadDeckCatalog(),
@@ -50,6 +49,9 @@ onMounted(async () => {
       ...presets.map((deck, index) => ({ id: `official-${index}`, ownerId: 'official', deck: { ...deck, specialIds: deck.specialIds ?? [], updatedAt: '' }, author: '十二军团官方预组', views: 0, likes: 0, copies: 0, liked: false, official: true, createdAt: '', updatedAt: '' })),
       ...community,
     ]
+    await nextTick()
+    const savedScroll = sessionStorage.getItem(`l12:deck-library:scroll:${route.fullPath}`)
+    if (savedScroll) window.scrollTo({ top: Number(savedScroll) || 0 })
   } catch (error) {
     notice.value = error instanceof Error ? error.message : '牌库页面加载失败'
   }
@@ -58,15 +60,25 @@ onMounted(async () => {
 const byId = computed(() => new Map(catalog.value.map(card => [card.id, card])))
 const mine = computed(() => Object.values(saved.value).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
 const plazaFactions = computed(() => [...new Set(published.value.map(entry => byId.value.get(entry.deck.masterId)?.faction).filter(Boolean) as string[])])
+const plazaMasters = computed(() => [...new Set(published.value.map(entry => entry.deck.masterId))].map(id => byId.value.get(id)).filter(Boolean) as DeckCard[])
+const plazaCards = computed(() => [...new Set(published.value.flatMap(entry => [...entry.deck.cardIds, ...entry.deck.moraleIds, ...(entry.deck.specialIds ?? [])]))].map(id => byId.value.get(id)).filter(Boolean) as DeckCard[])
 const filteredPublished = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
+  const updatedAfter = updatedFilter.value === 'all' ? 0 : Date.now() - Number(updatedFilter.value) * 86400000
   const values = published.value.filter(entry => {
     const master = byId.value.get(entry.deck.masterId)
     return (factionFilter.value === 'all' || master?.faction === factionFilter.value)
-      && (!seasonOnly.value || seasonRequirement(entry).compliant)
+      && (masterFilter.value === 'all' || entry.deck.masterId === masterFilter.value)
+      && (legalFilter.value === 'all' || seasonRequirement(entry).compliant === (legalFilter.value === 'legal'))
+      && (!cardFilter.value || [...entry.deck.cardIds, ...entry.deck.moraleIds, ...(entry.deck.specialIds ?? [])].includes(cardFilter.value))
+      && (!updatedAfter || !entry.updatedAt || Date.parse(entry.updatedAt) >= updatedAfter)
       && (!keyword || [entry.deck.name, entry.author, master?.nameZh].some(value => value?.toLocaleLowerCase('zh-CN').includes(keyword)))
   })
-  return [...values].sort((a, b) => sortMode.value === 'latest'
+  return [...values].sort((a, b) => sortMode.value === 'name'
+    ? a.deck.name.localeCompare(b.deck.name, 'zh-CN')
+    : sortMode.value === 'trend'
+      ? (b.copies * 4 + b.likes * 3 + (b.views ?? 0)) - (a.copies * 4 + a.likes * 3 + (a.views ?? 0)) || b.updatedAt.localeCompare(a.updatedAt)
+      : sortMode.value === 'latest'
     ? b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id)
     : sortMode.value === 'likes'
       ? b.likes - a.likes || b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id)
@@ -74,41 +86,15 @@ const filteredPublished = computed(() => {
         ? (b.views ?? 0) - (a.views ?? 0) || b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id)
         : b.copies - a.copies || b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id))
 })
-const selectedGroups = computed(() => selected.value ? [...selected.value.deck.cardIds.reduce((map, id) => map.set(id, (map.get(id) || 0) + 1), new Map<string, number>())]
-  .sort(([left], [right]) => compareDeckCardIds(left, right, byId.value, byId.value.get(selected.value!.deck.masterId)?.faction)) : [])
-const selectedCurve = computed(() => {
-  const curve = Array(9).fill(0) as number[]
-  selectedGroups.value.forEach(([id, count]) => curve[Math.min(8, byId.value.get(id)?.cost ?? 0)] += count)
-  return curve
-})
-const selectedCurveMax = computed(() => Math.max(1, ...selectedCurve.value))
-const selectedTypes = computed(() => {
-  const totals = new Map<string, number>()
-  selectedGroups.value.forEach(([id, count]) => {
-    const type = cardTypeFilterKey(byId.value.get(id)?.cardType || 'unknown'); totals.set(type, (totals.get(type) || 0) + count)
-  })
-  return [...totals].map(([type, count]) => [cardTypeLabel(type), count] as const)
-})
-const plazaFilterCount = computed(() => (factionFilter.value === 'all' ? 0 : 1) + (sortMode.value === 'copies' ? 0 : 1) + (seasonOnly.value ? 1 : 0))
+const plazaFilterCount = computed(() => [factionFilter.value !== 'all', masterFilter.value !== 'all', legalFilter.value !== 'all', !!cardFilter.value, updatedFilter.value !== 'all', sortMode.value !== 'trend'].filter(Boolean).length)
 const plazaFilterSummary = computed(() => [
   factionFilter.value === 'all' ? '' : (factionLabels[factionFilter.value] || factionFilter.value),
-  sortMode.value === 'copies' ? '' : ({ likes: '最多点赞', views: '最多浏览', latest: '最新发布' } as const)[sortMode.value],
-  seasonOnly.value ? '仅看符合本赛季' : '',
+  masterFilter.value === 'all' ? '' : byId.value.get(masterFilter.value)?.nameZh,
+  legalFilter.value === 'all' ? '' : legalFilter.value === 'legal' ? '符合本赛季' : '不符合本赛季',
+  cardFilter.value ? `含${byId.value.get(cardFilter.value)?.nameZh || cardFilter.value}` : '',
+  updatedFilter.value === 'all' ? '' : `${updatedFilter.value}天内更新`,
+  sortMode.value === 'trend' ? '' : ({ copies: '最多复制', likes: '最多点赞', views: '最多浏览', latest: '最新发布', name: '按名称' } as const)[sortMode.value],
 ].filter(Boolean).join(' · '))
-const selectedEntries = computed<ConstructionEntry[]>(() => {
-  if (!selected.value) return []
-  const deck = selected.value.deck
-  const entries: ConstructionEntry[] = []
-  const add = (cardIds: string[], section: string) => {
-    const quantities = cardIds.reduce((map, id) => map.set(id, (map.get(id) || 0) + 1), new Map<string, number>())
-    quantities.forEach((quantity, cardId) => entries.push({ cardId, quantity, section }))
-  }
-  add(deck.cardIds, 'main')
-  add(deck.moraleIds, 'morale')
-  add(deck.specialIds ?? [], 'special')
-  add(automaticExtraCardIdsForMaster(deck.masterId), 'automatic')
-  return entries
-})
 
 function uniqueName(base: string) {
   if (!saved.value[base]) return base.slice(0, 24)
@@ -128,13 +114,10 @@ async function copyToMine(entry: PublishedDeck) {
 function updatePublished(entry: PublishedDeck) {
   const index = published.value.findIndex(item => item.id === entry.id)
   if (index >= 0) published.value[index] = entry
-  if (selected.value?.id === entry.id) selected.value = entry
 }
 function openDeck(entry: PublishedDeck) {
-  selected.value = entry
-  if (entry.official || viewedDeckIds.has(entry.id)) return
-  viewedDeckIds.add(entry.id)
-  void publicDeckApi.recordView(entry.id).then(updatePublished).catch(() => viewedDeckIds.delete(entry.id))
+  sessionStorage.setItem(`l12:deck-library:scroll:${route.fullPath}`, String(window.scrollY))
+  void router.push({ name: 'public-deck-detail', params: { deckId: entry.id }, query: { from: route.fullPath } })
 }
 function seasonRequirement(entry: PublishedDeck) {
   if (!entry.official && entry.seasonCompliant !== undefined) return entry.seasonCompliant
@@ -165,14 +148,14 @@ async function publishDeck() {
     const entry = await publicDeckApi.publish(deck)
     if (published.value.some(item => item.id === entry.id)) updatePublished(entry)
     else published.value.push(entry)
-    showPublish.value = false; tab.value = 'plaza'; selected.value = entry; notice.value = '牌库已公开到公开牌库'
+    showPublish.value = false; tab.value = 'plaza'; notice.value = '牌库已公开到公开牌库'
   } catch (error) { notice.value = error instanceof Error ? error.message : '公开牌库失败' }
 }
 async function editPublished(entry: PublishedDeck) {
   const deck = { ...entry.deck, cardIds: [...entry.deck.cardIds], moraleIds: [...entry.deck.moraleIds], specialIds: [...entry.deck.specialIds] }
   try {
     const confirmed = await saveDeck(deck)
-    saved.value = loadSavedDecks(); selected.value = null
+    saved.value = loadSavedDecks()
     await router.push(editorLink(confirmed.name, entry.id))
   } catch (error) { notice.value = error instanceof Error ? error.message : '牌库保存失败' }
 }
@@ -181,7 +164,6 @@ async function deletePublished(entry: PublishedDeck) {
   try {
     await publicDeckApi.delete(entry.id)
     published.value = published.value.filter(item => item.id !== entry.id)
-    if (selected.value?.id === entry.id) selected.value = null
     notice.value = `已从公开牌库删除《${entry.deck.name}》`
   } catch (error) { notice.value = error instanceof Error ? error.message : '删除公开牌库失败' }
 }
@@ -212,7 +194,43 @@ async function importFromCode() {
     saved.value = loadSavedDecks(); importCode.value = ''; notice.value = `已导入《${confirmed.name}》`
   } catch (error) { notice.value = error instanceof Error ? error.message : '牌库码导入失败' }
 }
-function resetPlazaFilters() { factionFilter.value = 'all'; sortMode.value = 'copies'; seasonOnly.value = false }
+function resetPlazaFilters() {
+  factionFilter.value = 'all'; masterFilter.value = 'all'; legalFilter.value = 'all'; cardFilter.value = ''; updatedFilter.value = 'all'; sortMode.value = 'trend'
+}
+function routeValue(key: string, fallback = '') {
+  const value = route.query[key]
+  return typeof value === 'string' ? value : fallback
+}
+function restoreFiltersFromRoute() {
+  const requestedTab = routeValue('tab', 'mine')
+  tab.value = requestedTab === 'plaza' ? 'plaza' : 'mine'
+  query.value = routeValue('q')
+  masterFilter.value = routeValue('master', 'all')
+  factionFilter.value = routeValue('faction', 'all')
+  legalFilter.value = ['legal', 'illegal'].includes(routeValue('legal')) ? routeValue('legal') as 'legal' | 'illegal' : 'all'
+  cardFilter.value = routeValue('card')
+  updatedFilter.value = ['1', '7', '30', '90', '365'].includes(routeValue('updated')) ? routeValue('updated') as typeof updatedFilter.value : 'all'
+  sortMode.value = ['copies', 'likes', 'views', 'latest', 'name'].includes(routeValue('sort')) ? routeValue('sort') as typeof sortMode.value : 'trend'
+}
+function setQueryValue(next: Record<string, string>, key: string, value: string, fallback = '') {
+  if (value && value !== fallback) next[key] = value
+  else delete next[key]
+}
+watch([tab, query, masterFilter, factionFilter, legalFilter, cardFilter, updatedFilter, sortMode], () => {
+  const next: Record<string, string> = {}
+  setQueryValue(next, 'tab', tab.value, 'mine')
+  setQueryValue(next, 'q', query.value.trim())
+  setQueryValue(next, 'master', masterFilter.value, 'all')
+  setQueryValue(next, 'faction', factionFilter.value, 'all')
+  setQueryValue(next, 'legal', legalFilter.value, 'all')
+  setQueryValue(next, 'card', cardFilter.value)
+  setQueryValue(next, 'updated', updatedFilter.value, 'all')
+  setQueryValue(next, 'sort', sortMode.value, 'trend')
+  const current = new URLSearchParams(Object.entries(route.query).flatMap(([key, value]) => typeof value === 'string' ? [[key, value]] : [])).toString()
+  const target = new URLSearchParams(next).toString()
+  if (current !== target) void router.replace({ path: '/decks', query: next })
+})
+watch(() => route.query, restoreFiltersFromRoute, { deep: true })
 </script>
 
 <template>
@@ -228,11 +246,11 @@ function resetPlazaFilters() { factionFilter.value = 'all'; sortMode.value = 'co
     </template>
 
     <template v-else>
-      <section class="plaza-toolbar"><input v-model="query" placeholder="搜索牌库名称、作者或主宰"/><MobileFilterSheet v-model="plazaFiltersOpen" title="牌库筛选与排序" :active-count="plazaFilterCount" @reset="resetPlazaFilters"><div class="plaza-filter-fields"><label>阵营<select v-model="factionFilter"><option value="all">全部阵营</option><option v-for="faction in plazaFactions" :key="faction" :value="faction">{{ factionLabels[faction] || faction }}</option></select></label><label>排序<select v-model="sortMode"><option value="copies">最多复制</option><option value="likes">最多点赞</option><option value="views">最多浏览</option><option value="latest">最新发布</option></select></label><label class="season-only"><input v-model="seasonOnly" type="checkbox"/>仅看符合本赛季</label></div><template #apply-label>查看 {{ filteredPublished.length }} 个牌库</template></MobileFilterSheet><div class="plaza-desktop-filters"><select v-model="factionFilter"><option value="all">全部阵营</option><option v-for="faction in plazaFactions" :key="faction" :value="faction">{{ factionLabels[faction] || faction }}</option></select><select v-model="sortMode"><option value="copies">最多复制</option><option value="likes">最多点赞</option><option value="views">最多浏览</option><option value="latest">最新发布</option></select><label class="season-only"><input v-model="seasonOnly" type="checkbox"/>仅看符合本赛季</label></div><button :disabled="!mine.length" @click="showPublish = true">发布我的牌库</button></section>
+      <section class="plaza-toolbar"><input v-model="query" placeholder="搜索牌库名称、作者或主宰"/><MobileFilterSheet v-model="plazaFiltersOpen" title="牌库筛选与排序" :active-count="plazaFilterCount" @reset="resetPlazaFilters"><div class="plaza-filter-fields"><label>主宰<select v-model="masterFilter"><option value="all">全部主宰</option><option v-for="master in plazaMasters" :key="master.id" :value="master.id">{{ master.nameZh }}</option></select></label><label>阵营<select v-model="factionFilter"><option value="all">全部阵营</option><option v-for="faction in plazaFactions" :key="faction" :value="faction">{{ factionLabels[faction] || faction }}</option></select></label><label>赛季合法性<select v-model="legalFilter"><option value="all">全部</option><option value="legal">符合本赛季</option><option value="illegal">不符合本赛季</option></select></label><label>包含卡牌<select v-model="cardFilter"><option value="">不限卡牌</option><option v-for="card in plazaCards" :key="card.id" :value="card.id">{{ card.nameZh }} · {{ card.number }}</option></select></label><label>更新时间<select v-model="updatedFilter"><option value="all">不限时间</option><option value="1">1天内</option><option value="7">7天内</option><option value="30">30天内</option><option value="90">90天内</option><option value="365">365天内</option></select></label><label>排序<select v-model="sortMode"><option value="trend">综合热度</option><option value="copies">最多复制</option><option value="likes">最多点赞</option><option value="views">最多浏览</option><option value="latest">最新发布</option><option value="name">按名称</option></select></label></div><template #apply-label>查看 {{ filteredPublished.length }} 个牌库</template></MobileFilterSheet><div class="plaza-desktop-filters"><select v-model="masterFilter" aria-label="按主宰筛选"><option value="all">全部主宰</option><option v-for="master in plazaMasters" :key="master.id" :value="master.id">{{ master.nameZh }}</option></select><select v-model="factionFilter" aria-label="按阵营筛选"><option value="all">全部阵营</option><option v-for="faction in plazaFactions" :key="faction" :value="faction">{{ factionLabels[faction] || faction }}</option></select><select v-model="legalFilter" aria-label="按合法性筛选"><option value="all">全部合法性</option><option value="legal">符合本赛季</option><option value="illegal">不符合本赛季</option></select><select v-model="cardFilter" aria-label="按包含卡牌筛选"><option value="">不限卡牌</option><option v-for="card in plazaCards" :key="card.id" :value="card.id">{{ card.nameZh }}</option></select><select v-model="updatedFilter" aria-label="按更新时间筛选"><option value="all">不限时间</option><option value="1">1天内</option><option value="7">7天内</option><option value="30">30天内</option><option value="90">90天内</option><option value="365">365天内</option></select><select v-model="sortMode" aria-label="排序"><option value="trend">综合热度</option><option value="copies">最多复制</option><option value="likes">最多点赞</option><option value="views">最多浏览</option><option value="latest">最新发布</option><option value="name">按名称</option></select></div><button :disabled="!mine.length" @click="showPublish = true">发布我的牌库</button></section>
       <button v-if="plazaFilterCount" type="button" class="plaza-filter-summary" @click="plazaFiltersOpen = true">{{ plazaFilterSummary }}</button>
+      <div class="plaza-result-line"><b>{{ filteredPublished.length }}</b> 个牌库<span v-if="plazaFilterCount"> · 已启用 {{ plazaFilterCount }} 项筛选</span><button v-if="plazaFilterCount" @click="resetPlazaFilters">清除筛选</button></div>
       <section class="plaza-grid"><article v-for="entry in filteredPublished" :key="entry.id" :class="`faction-${deckFaction(entry)}`"><button class="plaza-summary" @click="openDeck(entry)"><DeckProfile :master-id="entry.deck.masterId" :master-name="byId.get(entry.deck.masterId)?.nameZh" :fallback-url="byId.get(entry.deck.masterId)?.imageUrl" :name="entry.deck.name" :context="entry.author" :meta="`${deckCountSummary(entry.deck.cardIds, byId).label} 主牌 · ${entry.deck.moraleIds.length} 士气`"/></button><footer><span>浏览量 {{ entry.views ?? 0 }}</span><button :class="{ liked: entry.liked }" :disabled="entry.official" @click="toggleLike(entry)">♡ {{ entry.likes }}</button><span>复制 {{ entry.copies }}</span><span class="season-compliance" :class="{ compliant: seasonRequirement(entry).compliant }" :title="seasonRequirement(entry).reason">{{ seasonRequirement(entry).label }}</span><button @click="openDeck(entry)">查看构筑</button></footer></article></section>
     </template>
-    <div v-if="selected" class="modal-mask" @click.self="selected = null"><section class="deck-detail"><header><div><small>{{ selected.author }}</small><h2>{{ selected.deck.name }}</h2><p>{{ byId.get(selected.deck.masterId)?.nameZh }} · {{ factionLabels[byId.get(selected.deck.masterId)?.faction || ''] }} · {{ deckCountSummary(selected.deck.cardIds, byId).label }} 张主牌</p></div><button @click="selected = null">×</button></header><div class="deck-analysis"><aside><DeckProfile :master-id="selected.deck.masterId" :master-name="byId.get(selected.deck.masterId)?.nameZh" :fallback-url="byId.get(selected.deck.masterId)?.imageUrl" :name="selected.deck.name" context="主宰" :meta="`${selected.deck.moraleIds.length} 张士气`"/><section><b>费用曲线</b><div class="detail-curve"><i v-for="(value,index) in selectedCurve" :key="index"><span :style="{height:`${Math.max(4,value/selectedCurveMax*62)}px`}"></span><small>{{ index === 8 ? '8+' : index }}</small><em>{{ value }}</em></i></div></section><section><b>卡牌类型</b><p v-for="[type,count] in selectedTypes" :key="type"><span>{{ type }}</span><strong>{{ count }}</strong></p></section></aside><DeckConstructionBrowser :entries="selectedEntries" :catalog="catalog" :title="`${selected.deck.name} · 全部构筑`"/></div><footer><button v-if="!selected.official" :disabled="!platformState.account" @click="toggleLike(selected)">♡ 点赞 {{ selected.likes }}</button><button @click="copyCode(selected.deck)">复制牌库码</button><button @click="previewImage(selected.deck)">生成牌库图</button><button v-if="selected.ownerId === platformState.account?.id" @click="editPublished(selected)">编辑公开牌库</button><button v-if="selected.ownerId === platformState.account?.id" class="danger" @click="deletePublished(selected)">删除公开牌库</button><button class="primary" @click="copyToMine(selected)">复制到我的牌库</button></footer></section></div>
     <div v-if="showPublish" class="modal-mask" @click.self="showPublish = false"><section class="publish-modal"><header><h2>公开牌库</h2><button @click="showPublish = false">×</button></header><p>选择一个已保存且合法的牌库公开展示。公开后可由作者继续编辑或删除。</p><select v-model="publishName"><option value="">选择牌库</option><option v-for="deck in mine" :key="deck.name" :value="deck.name">{{ deck.name }}</option></select><button class="primary" :disabled="!publishName || !platformState.account" @click="publishDeck">确认公开</button></section></div>
     <div v-if="imagePreview" class="modal-mask image-mask" @click.self="closeImagePreview"><section class="image-preview"><header><div><small>16:9 SHARE IMAGE</small><h2>{{ imagePreview.deck.name }} · 牌库图</h2></div><button @click="closeImagePreview">×</button></header><img :src="imagePreview.url" alt="牌库图预览"/><footer><button @click="copyPreviewImage">复制图片</button><button class="primary" @click="downloadDeckImage(imagePreview.deck,catalog,imagePreview.blob)">下载 PNG</button></footer></section></div>
   </div>
@@ -252,5 +270,8 @@ function resetPlazaFilters() { factionFilter.value = 'all'; sortMode.value = 'co
 .plaza-filter-fields{display:grid;gap:14px}.plaza-filter-fields label{display:grid;gap:6px;color:#b9c2c4;font-size:13px;font-weight:900}.plaza-filter-fields select{width:100%;padding:10px;border:1px solid #46545d;background:#070d12;color:#fff}.plaza-desktop-filters{display:contents}.season-only{display:flex!important;align-items:center;gap:7px!important;color:#c9d0d0;font-size:13px;font-weight:900;white-space:nowrap}.season-only input{width:17px;height:17px;min-height:0;padding:0;accent-color:#d1ad50}.plaza-filter-summary{display:none}
 @media(max-width:700px){.plaza-toolbar{grid-template-columns:minmax(0,1fr) auto!important;align-items:stretch}.plaza-toolbar>input{min-width:0}.plaza-desktop-filters{display:none}.plaza-toolbar>button:last-child{grid-column:1/-1;min-height:44px}.plaza-filter-summary{display:block;width:100%;margin:-6px 0 12px;padding:8px 10px;border:1px solid #52636a;background:#101a20;color:#c7d8d6;font-size:12px;font-weight:800;text-align:left}.deck-page{overflow-x:clip}.plaza-grid footer{row-gap:7px}.deck-detail,.image-preview{width:100%;max-height:100dvh;border:0}.deck-detail>header,.image-preview header{padding:14px}.deck-detail>footer,.image-preview footer{padding:12px;gap:7px}.deck-detail h2,.image-preview h2{font-size:20px}}
 @media(max-width:520px){.deck-page{padding:14px 12px 42px}.page-head{gap:8px;margin-bottom:12px}.page-head small{font-size:11px}.page-head h1{font-size:25px}.page-head p{font-size:12px}.page-head>a{padding:9px 12px;font-size:13px}.deck-tabs{margin-bottom:10px}.deck-tabs button{min-height:44px;padding:9px;font-size:13px}.deck-notice{position:static;max-width:none;margin:0 0 10px;padding:9px 10px;font-size:12px;box-shadow:none}.import-panel,.plaza-toolbar{gap:7px;margin-bottom:10px;padding:9px}.import-panel input,.plaza-toolbar input{padding:10px;font-size:12px}.import-panel button,.plaza-toolbar button{min-height:44px;padding:9px 11px;font-size:13px}.mine-grid,.plaza-grid{gap:9px}.mine-grid>article{padding:11px}.deck-banner{height:96px}.mine-grid h2,.plaza-summary h2{font-size:15px}.mine-grid p,.plaza-summary p,.plaza-summary span,.plaza-grid footer button,.plaza-grid footer span{font-size:12px}.empty-state{min-height:280px}.empty-state p,.empty-state a{font-size:12px}.plaza-filter-summary{margin:-3px 0 9px}}
+.plaza-toolbar{grid-template-columns:minmax(220px,1fr) repeat(6,minmax(108px,auto)) auto}.plaza-result-line{display:flex;align-items:center;gap:5px;margin:-4px 0 12px;color:#7d8a8f;font-size:13px}.plaza-result-line b{color:#e8e4da}.plaza-result-line button{margin-left:auto;border:0;background:transparent;color:#75cdd2;font-weight:900}.plaza-filter-fields select{color-scheme:dark}
+@media(max-width:1180px) and (min-width:701px){.plaza-toolbar{grid-template-columns:minmax(220px,1fr) repeat(3,minmax(110px,1fr))}.plaza-toolbar>button:last-child{grid-column:4}.plaza-desktop-filters{display:contents}}
+@media(max-width:700px){.plaza-toolbar{grid-template-columns:minmax(0,1fr) auto!important}.plaza-result-line{font-size:12px}}
 </style>
 
