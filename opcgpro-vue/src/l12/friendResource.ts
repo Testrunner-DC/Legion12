@@ -34,18 +34,21 @@ export function refreshFriendResource() {
   if (pending) return pending
   const expected = generation
   dirty = false
-  pending = friendApi.overview().then(overview => {
+  let request: Promise<void>
+  request = friendApi.overview().then(overview => {
     if (expected !== generation || accountId !== platformState.account?.id) return
     friendResource.friends = overview.friends
     friendResource.requests = overview.requests
     friendResource.blocked = overview.blocked
     friendResource.loaded = true
   }).finally(() => {
+    if (pending !== request) return
     pending = null
     if (dirty && expected === generation && accountId === platformState.account?.id && !document.hidden)
       void refreshFriendResource()
   })
-  return pending
+  pending = request
+  return request
 }
 
 export function invalidateFriendResource() {

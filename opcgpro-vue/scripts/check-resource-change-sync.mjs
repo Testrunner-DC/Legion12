@@ -57,10 +57,19 @@ globalThis.__friendPlans.push(stale)
 const staleRead = resource.refreshFriendResource()
 globalThis.__friendPlatformState.account = { id: 'account-b' }
 resource.resetFriendResource('account-b')
+const fresh = deferred()
+globalThis.__friendPlans.push(fresh)
+const freshRead = resource.refreshFriendResource()
 stale.resolve({ friends: [{ accountId: 'wrong-account' }], requests: [], blocked: [] })
 await staleRead
 assert.deepEqual(resource.friendResource.friends, [], 'an old account response must not overwrite the new account')
-checks += 1
+const duplicateFreshRead = resource.refreshFriendResource()
+assert.strictEqual(freshRead, duplicateFreshRead, 'an old finally block must not detach the new account request')
+assert.equal(globalThis.__friendCalls, 3, 'account switch may start one new request but not duplicate it')
+fresh.resolve({ friends: [{ accountId: 'account-b-friend' }], requests: [], blocked: [] })
+await freshRead
+assert.equal(resource.friendResource.friends[0].accountId, 'account-b-friend')
+checks += 4
 
 const burstOne = deferred()
 const burstTwo = deferred()
@@ -68,11 +77,11 @@ globalThis.__friendPlans.push(burstOne, burstTwo)
 const burstRead = resource.refreshFriendResource()
 resource.invalidateFriendResource()
 resource.invalidateFriendResource()
-assert.equal(globalThis.__friendCalls, 3, 'a burst during an in-flight request must not start parallel reads')
+assert.equal(globalThis.__friendCalls, 4, 'a burst during an in-flight request must not start parallel reads')
 burstOne.resolve({ friends: [{ accountId: 'intermediate' }], requests: [], blocked: [] })
 await burstRead
 await Promise.resolve()
-assert.equal(globalThis.__friendCalls, 4, 'a dirty in-flight read must replay exactly once')
+assert.equal(globalThis.__friendCalls, 5, 'a dirty in-flight read must replay exactly once')
 burstTwo.resolve({ friends: [{ accountId: 'latest' }], requests: [], blocked: [] })
 await Promise.resolve()
 await Promise.resolve()
