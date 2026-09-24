@@ -143,6 +143,34 @@ public sealed partial class MatchRecorder
     {
         foreach (var actionEvent in engine.UnpersistedEvents)
         {
+            var journalEvent = new Dictionary<string, object?>
+            {
+                ["Sequence"] = actionEvent.Sequence,
+                ["Type"] = actionEvent.Type,
+                ["PlayerIndex"] = actionEvent.PlayerIndex,
+                ["Text"] = actionEvent.Text,
+                ["Cards"] = actionEvent.Cards.Select(card => new
+                {
+                    card.CardId,
+                    card.InstanceId,
+                }).ToArray(),
+            };
+            static void AddOptional(Dictionary<string, object?> values, string key, object? value)
+            {
+                if (value is not null) values[key] = value;
+            }
+            AddOptional(journalEvent, "EffectText", actionEvent.EffectText);
+            AddOptional(journalEvent, "EffectSceneId", actionEvent.EffectSceneId);
+            AddOptional(journalEvent, "EffectAbilityId", actionEvent.EffectAbilityId);
+            AddOptional(journalEvent, "EffectSegmentId", actionEvent.EffectSegmentId);
+            AddOptional(journalEvent, "EffectSegmentIndex", actionEvent.EffectSegmentIndex);
+            AddOptional(journalEvent, "EffectSegmentCount", actionEvent.EffectSegmentCount);
+            AddOptional(journalEvent, "EffectBranchId", actionEvent.EffectBranchId);
+            AddOptional(journalEvent, "EffectBranchLabel", actionEvent.EffectBranchLabel);
+            AddOptional(journalEvent, "EffectResultStatus", actionEvent.EffectResultStatus);
+            AddOptional(journalEvent, "PlayerLogGroupId", actionEvent.PlayerLogGroupId);
+            AddOptional(journalEvent, "PlayerLogTiming", actionEvent.PlayerLogTiming);
+            AddOptional(journalEvent, "PlayerLogDecisionLabel", actionEvent.PlayerLogDecisionLabel);
             var insert = connection.CreateCommand();
             insert.Transaction = transaction;
             insert.CommandText = """
@@ -155,19 +183,7 @@ public sealed partial class MatchRecorder
             insert.Parameters.AddWithValue("$command", commandSequence);
             insert.Parameters.AddWithValue("$revision", engine.State.Revision);
             insert.Parameters.AddWithValue("$json", ApplyIdentityReplacements(
-                JsonSerializer.Serialize(new
-                {
-                    actionEvent.Sequence,
-                    actionEvent.Type,
-                    actionEvent.PlayerIndex,
-                    actionEvent.Text,
-                    Cards = actionEvent.Cards.Select(card => new
-                    {
-                        card.CardId,
-                        card.InstanceId,
-                    }).ToArray(),
-                    actionEvent.EffectText,
-                }), identityReplacements));
+                JsonSerializer.Serialize(journalEvent), identityReplacements));
             insert.Parameters.AddWithValue("$utc", occurredUtc);
             await insert.ExecuteNonQueryAsync();
         }

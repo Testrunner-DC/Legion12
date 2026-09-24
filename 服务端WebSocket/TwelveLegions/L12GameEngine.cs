@@ -1007,11 +1007,18 @@ public sealed partial class L12GameEngine
 
     private void SetDisasterValue(int value, int? playerIndex = null, string? text = null)
     {
+        var before = State.DisasterValue;
         State.DisasterValue = !DisastersEnabled || L12ActiveDisasterRules.DisasterValueLocked(State.ActiveDisaster?.CardId)
             ? 0
             : Math.Max(0, value);
-        if (!string.IsNullOrWhiteSpace(text))
-            AddEvent("disaster-value", playerIndex, text.Replace("{value}", State.DisasterValue.ToString(), StringComparison.Ordinal));
+        if (!string.IsNullOrWhiteSpace(text) && before != State.DisasterValue)
+        {
+            var item = State.IsResolvingStack ? State.EffectStack.LastOrDefault() : null;
+            var reason = text.Replace("{value}", State.DisasterValue.ToString(), StringComparison.Ordinal);
+            AddPlayerLogEvent("disaster-value", null, $"{reason}；天灾值 {before} → {State.DisasterValue}",
+                item?.Data.GetValueOrDefault("playerLogGroupId"),
+                item?.Data.GetValueOrDefault("playerLogTiming") ?? item?.Trigger);
+        }
     }
 
     private void AdjustDisasterValue(int delta, int? playerIndex = null, string? text = null)
@@ -1084,8 +1091,10 @@ public sealed partial class L12GameEngine
     {
         var playerIndex = State.ActivePlayer;
         var player = State.Players[playerIndex];
+        var playerLogGroupId = $"turn:{State.TurnSerial}";
         ExpireEffectsAtPlayerTurnStart(playerIndex);
-        AddEvent("turn-start", playerIndex, $"第 {State.Round} 回合 · {player.Name} 回合");
+        AddPlayerLogEvent("turn-start", playerIndex, $"第 {State.Round} 回合 · {player.Name} 回合",
+            playerLogGroupId, "turn-start");
 
         State.Phase = L12Phase.Disaster;
         AddEvent("phase", playerIndex, "执行触发天灾");
@@ -1115,6 +1124,7 @@ public sealed partial class L12GameEngine
     {
         var playerIndex = State.ActivePlayer;
         var player = State.Players[playerIndex];
+        var playerLogGroupId = $"turn:{State.TurnSerial}";
         if (State.Phase == L12Phase.GameOver) return;
 
         State.Phase = L12Phase.Reset;
@@ -1137,22 +1147,32 @@ public sealed partial class L12GameEngine
         AddEvent("phase", playerIndex, "执行抽牌阶段");
         if (player.MasterId == "S01-03M1")
         {
-            Mill(player, 2, "瓦尔基里的抽牌阶段替代效果");
+            MillWithPlayerLog(player, 2, "瓦尔基里的抽牌阶段替代效果",
+                playerLogGroupId, "turn-start");
             AddEvent("phase-detail", playerIndex, "瓦尔基里将抽牌阶段改为弃置牌库顶部2张牌");
         }
         else if (State.Round == 1 && playerIndex == State.FirstPlayer)
-            AddEvent("draw-skipped", playerIndex, "先手玩家首回合不抽牌");
+            AddPlayerLogEvent("draw-skipped", playerIndex, "先手玩家首回合不抽牌",
+                playerLogGroupId, "turn-start");
         else if (!Draw(player, 1))
         {
             SetWinner(1 - playerIndex, "抽牌阶段牌库为空");
             return;
         }
-        else AddEvent("phase-detail", playerIndex, "从牌库抽取 1 张牌");
+        else
+        {
+            AddEvent("phase-detail", playerIndex, "从牌库抽取 1 张牌");
+            AddPlayerLogEvent("draw", playerIndex, "回合开始时抽取 1 张牌",
+                playerLogGroupId, "turn-start");
+        }
 
         State.Phase = L12Phase.Morale;
         AddEvent("phase", playerIndex, "执行士气阶段");
         var moraleAdded = AddMorale(player, State.Round == 1 && playerIndex == State.FirstPlayer ? 1 : 2);
         AddEvent("phase-detail", playerIndex, $"从士气牌库追加 {moraleAdded} 张士气");
+        if (moraleAdded > 0)
+            AddPlayerLogEvent("morale", playerIndex, $"回合开始时追加 {moraleAdded} 张士气",
+                playerLogGroupId, "turn-start");
 
         State.Phase = L12Phase.Main;
         AddEvent("phase", playerIndex, "进入主要阶段");
@@ -1253,8 +1273,10 @@ public sealed partial class L12GameEngine
         if (origin is not null && logEffectDraw && result.Cards.Count > 0)
         {
             var source = FindSource(origin);
-            AddEvent("draw", player.PlayerIndex,
+            AddPlayerLogEvent("draw", player.PlayerIndex,
                 $"〈{origin.SourceName}〉使{player.Name}抽取 {result.Cards.Count} 张牌",
+                origin.Data.GetValueOrDefault("playerLogGroupId"),
+                origin.Data.GetValueOrDefault("playerLogTiming") ?? origin.Trigger, null,
                 source is null ? [] : [source]);
         }
         return CompleteLibrarySequence(player, result, count, origin, origin?.SourceName ?? "抽牌");
@@ -2199,12 +2221,24 @@ public sealed partial class L12GameEngine
     private void AddEvent(string type, int? playerIndex, string text, params L12CardInstance[] cards)
         => AddEventCore(type, playerIndex, text, null, cards);
 
+    private void AddPlayerLogEvent(string type, int? playerIndex, string text,
+        string? playerLogGroupId, string? playerLogTiming = null, string? playerLogDecisionLabel = null,
+        params L12CardInstance[] cards)
+        => AddEventCoreWithPlayerLog(type, playerIndex, text, null, null,
+            playerLogGroupId, playerLogTiming, playerLogDecisionLabel, cards);
+
     private void AddEventCore(string type, int? playerIndex, string text, string? effectText,
         params L12CardInstance[] cards)
         => AddEventCoreWithEffectMetadata(type, playerIndex, text, effectText, null, cards);
 
     private void AddEventCoreWithEffectMetadata(string type, int? playerIndex, string text, string? effectText,
         L12EffectEventMetadata? effectMetadata, params L12CardInstance[] cards)
+        => AddEventCoreWithPlayerLog(type, playerIndex, text, effectText, effectMetadata,
+            null, null, null, cards);
+
+    private void AddEventCoreWithPlayerLog(string type, int? playerIndex, string text, string? effectText,
+        L12EffectEventMetadata? effectMetadata, string? playerLogGroupId, string? playerLogTiming,
+        string? playerLogDecisionLabel, params L12CardInstance[] cards)
     {
         State.EventSequence++;
         State.LastAction = new L12ActionEvent(State.EventSequence, type, playerIndex, text,
@@ -2233,6 +2267,9 @@ public sealed partial class L12GameEngine
                 "effect-failed" => "failed",
                 _ => null,
             },
+            PlayerLogGroupId = playerLogGroupId,
+            PlayerLogTiming = playerLogTiming,
+            PlayerLogDecisionLabel = playerLogDecisionLabel,
         };
         State.Events.Add(State.LastAction);
         if (State.StateFormatVersion >= 2)

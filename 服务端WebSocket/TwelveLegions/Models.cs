@@ -516,6 +516,7 @@ public sealed class L12PendingActivation
     /// </summary>
     public string? CommittedOriginZone { get; set; }
     public string? CommittedReason { get; set; }
+    public string? PlayerLogGroupId { get; set; }
     /// <summary>非空时表示这是尚未揭示、尚未入栈的响应卡目标声明。</summary>
     public string? ResponseTargetStackItemId { get; init; }
 }
@@ -693,6 +694,12 @@ public sealed record L12ActionEvent(
     public string? EffectBranchLabel { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? EffectResultStatus { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PlayerLogGroupId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PlayerLogTiming { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PlayerLogDecisionLabel { get; init; }
 }
 
 public sealed class L12GameState

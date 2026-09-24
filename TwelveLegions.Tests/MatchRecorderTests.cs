@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using System.Reflection;
 using System.Text.Json;
 using TwelveLegions.Server;
 using Xunit;
@@ -229,6 +230,10 @@ public sealed class MatchRecorderTests
             TriggerEffects: false);
         var result = game.HandleGm(gm);
         Assert.True(result.Accepted, result.Error);
+        typeof(L12GameEngine).GetMethod("AddPlayerLogEvent",
+                BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(game, ["draw", 0, "回合开始时抽取 1 张牌", "turn:2", "turn-start", null,
+                Array.Empty<L12CardInstance>()]);
         await recorder.AppendAsync(game, 1, -1, JsonSerializer.Serialize(gm), result);
 
         await using var connection = new SqliteConnection($"Data Source={path}");
@@ -247,5 +252,15 @@ public sealed class MatchRecorderTests
         Assert.False(card.TryGetProperty("Troops", out _));
         Assert.False(card.TryGetProperty("EffectText", out _));
         Assert.True(json.Length < 512, $"紧凑动作事件不应重复持久化整张卡牌：{json.Length} bytes");
+
+        command.CommandText = """
+            SELECT event_json FROM match_action_events
+            WHERE match_id='compact-events' AND json_extract(event_json,'$.Type')='draw'
+            ORDER BY event_sequence DESC LIMIT 1;
+            """;
+        var groupedJson = Assert.IsType<string>(await command.ExecuteScalarAsync());
+        using var groupedDocument = JsonDocument.Parse(groupedJson);
+        Assert.Equal("turn:2", groupedDocument.RootElement.GetProperty("PlayerLogGroupId").GetString());
+        Assert.Equal("turn-start", groupedDocument.RootElement.GetProperty("PlayerLogTiming").GetString());
     }
 }

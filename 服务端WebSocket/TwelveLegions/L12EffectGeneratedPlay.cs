@@ -155,11 +155,18 @@ public sealed partial class L12GameEngine
         {
             PlaceArtifactInRelicZone(activation.Controller, card);
             ApplyDisasterLevelOnEntry(activation.Controller, card, deferTriggerUntilStackSettles: true);
-            AddEvent("play", activation.Controller, $"{reason}使〈{card.Name}〉无需消耗费用打出", card);
+            var playerLogGroupId = $"play:{State.EventSequence + 1}";
+            AddPlayerLogEvent("play", activation.Controller, $"{reason}使〈{card.Name}〉无需消耗费用打出",
+                playerLogGroupId, "enter", cards: card);
             ResolveOnPlayContinuousEffects(activation.Controller, card);
             RecalculateContinuousTroops();
             if (HasImmediateEffect(card, "enter"))
-                QueueOrPushTriggeredEffect(activation.Controller, card, "enter", "【登场时】效果");
+                QueueOrPushTriggeredEffect(activation.Controller, card, "enter", "【登场时】效果",
+                    data: new Dictionary<string, string>
+                    {
+                        ["playerLogGroupId"] = playerLogGroupId,
+                        ["playerLogTiming"] = "enter",
+                    });
             FinishStackItem(parent);
             return;
         }
@@ -178,7 +185,9 @@ public sealed partial class L12GameEngine
         player.LastActiveTacticCardId = card.CardId;
         player.LastActiveTacticTurnSerial = State.TurnSerial;
         ApplyDisasterLevelOnEntry(activation.Controller, card, deferTriggerUntilStackSettles: true);
-        AddEvent("play", activation.Controller, $"{reason}使〈{card.Name}〉无需消耗费用打出", card);
+        var tacticPlayerLogGroupId = $"play:{State.EventSequence + 1}";
+        AddPlayerLogEvent("play", activation.Controller, $"{reason}使〈{card.Name}〉无需消耗费用打出",
+            tacticPlayerLogGroupId, "play", cards: card);
         ResolveOnPlayContinuousEffects(activation.Controller, card);
         RecalculateContinuousTroops();
         if (!HasImmediateEffect(card, "play"))
@@ -207,6 +216,8 @@ public sealed partial class L12GameEngine
             {
                 ["effectGeneratedPlay"] = "free",
                 ["originZone"] = originZone,
+                ["playerLogGroupId"] = tacticPlayerLogGroupId,
+                ["playerLogTiming"] = "play",
             });
         FinishStackItem(parent);
     }

@@ -1,8 +1,8 @@
 namespace TwelveLegions.Server;
 
 internal sealed record L12EffectEventMetadata(
-    string SceneId,
-    string AbilityId,
+    string? SceneId,
+    string? AbilityId,
     string? SegmentId,
     int? SegmentIndex,
     int? SegmentCount,
@@ -34,8 +34,9 @@ public sealed partial class L12GameEngine
         AddPresentationEvent(type, playerIndex, text, producerCardId, sceneKey, values, cards);
     }
 
-    private void AddPresentationEventById(string type, int? playerIndex, string text,
-        string? sceneId, params L12CardInstance[] cards)
+    private void AddPresentationEventByIdWithPlayerLog(string type, int? playerIndex, string text,
+        string? sceneId, IReadOnlyDictionary<string, string>? playerLogData,
+        params L12CardInstance[] cards)
     {
         var configured = FindEffectPresentationScene(cards.FirstOrDefault()?.CardId, sceneId);
         var frozen = string.IsNullOrWhiteSpace(sceneId)
@@ -60,9 +61,15 @@ public sealed partial class L12GameEngine
             // chosen branch may enter the card animation queue.
             type = "effect-announced";
         }
-        AddEventCoreWithEffectMetadata(type, playerIndex, text, effectText,
-            BuildEffectEventMetadata(configured, DeclaredStatus(type)), cards);
+        AddEventCoreWithPlayerLog(type, playerIndex, text, effectText,
+            BuildEffectEventMetadata(configured, DeclaredStatus(type)),
+            playerLogData?.GetValueOrDefault("playerLogGroupId"),
+            playerLogData?.GetValueOrDefault("playerLogTiming"), null, cards);
     }
+
+    private void AddPresentationEventById(string type, int? playerIndex, string text,
+        string? sceneId, params L12CardInstance[] cards)
+        => AddPresentationEventByIdWithPlayerLog(type, playerIndex, text, sceneId, null, cards);
 
     private void AddEffectResultEvent(L12StackItem item, string resultStatus)
     {
@@ -76,14 +83,15 @@ public sealed partial class L12GameEngine
             sceneId = ResolveEffectPresentationSceneId(source, item.Trigger, item.Data, fallback);
         }
         var configured = FindEffectPresentationScene(source.CardId, sceneId);
-        // Result events are introduced only for structurally identified segments/branches.
-        // Legacy whole-card scenes keep their existing event stream until migrated.
-        if (configured is null || configured.Flow is null) return;
+        // Successful legacy effects already have public outcome events.  Unsuccessful effects
+        // still need one authoritative terminal fact so the player log can explain why the
+        // declared action produced no result.
+        if ((configured is null || configured.Flow is null) && resultStatus == "resolved") return;
         item.Data["effectResultPublished"] = "true";
         item.Data["effectResultStatus"] = resultStatus;
         var effectText = State.EffectPresentationSnapshot?.FirstOrDefault(scene =>
                 string.Equals(scene.SceneId, sceneId, StringComparison.Ordinal))?.Text
-            ?? configured.DefaultText;
+            ?? configured?.DefaultText;
         var summary = resultStatus switch
         {
             "negated" => $"〈{item.SourceName}〉的效果被无效",
@@ -92,8 +100,11 @@ public sealed partial class L12GameEngine
             "declined" => $"〈{item.SourceName}〉的效果选择不发动",
             _ => $"〈{item.SourceName}〉的效果结算完成",
         };
-        AddEventCoreWithEffectMetadata("effect-result", item.Controller, summary, effectText,
-            BuildEffectEventMetadata(configured, resultStatus), source);
+        AddEventCoreWithPlayerLog("effect-result", item.Controller, summary, effectText,
+            BuildEffectEventMetadata(configured, resultStatus)
+                ?? new L12EffectEventMetadata(null, null, null, null, null, null, null, resultStatus),
+            item.Data.GetValueOrDefault("playerLogGroupId"),
+            item.Data.GetValueOrDefault("playerLogTiming") ?? item.Trigger, null, source);
     }
 
     /// <summary>

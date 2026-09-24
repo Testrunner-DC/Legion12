@@ -1378,6 +1378,8 @@ public sealed partial class L12GameEngine
         if (targets is not null) item.Targets.AddRange(targets);
         if (data is not null)
             foreach (var pair in data) item.Data[pair.Key] = pair.Value;
+        item.Data.TryAdd("playerLogGroupId", item.StackItemId);
+        item.Data.TryAdd("playerLogTiming", trigger);
         if (trigger is "active" or "play")
             PublishEffectPresentation("effect-activation", controller, source, trigger, text, item.Data);
         else if (IsDirectTriggeredEffect(trigger, source, text))

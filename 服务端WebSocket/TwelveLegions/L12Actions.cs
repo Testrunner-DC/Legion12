@@ -347,7 +347,10 @@ public sealed partial class L12GameEngine
         }
 
         ApplyDisasterLevelOnEntry(playerIndex, card, deferTriggerUntilStackSettles: true);
-        AddEvent("play", playerIndex, $"{player.Name} 打出 {card.Name}", card);
+        var trigger = card.CardType is "legion" or "artifact" ? "enter" : "play";
+        var playerLogGroupId = $"play:{State.EventSequence + 1}";
+        AddPlayerLogEvent("play", playerIndex, $"{player.Name} 打出 {card.Name}",
+            playerLogGroupId, trigger, cards: card);
         if (card.CardId == "S01-0004" && targetPlayerIndex != playerIndex)
             AddEvent("put", targetPlayerIndex, $"{card.Name}置入{targetBattlefield.Name}的战场，由{targetBattlefield.Name}控制，所有者仍为{player.Name}", card);
         if (card.CardType == "tactic" && !IsCounterTactic(card.CardId))
@@ -378,7 +381,6 @@ public sealed partial class L12GameEngine
             player.FreeTacticCount--;
         // 黯陨晨星的免费分支持续整个回合，由回合切换统一清除。
 
-        var trigger = card.CardType is "legion" or "artifact" ? "enter" : "play";
         var grailEntryCandidate = card.CardType == "legion"
             ? BuildS2GrailRoundTableEntryCandidate(playerIndex, card)
             : null;
@@ -391,6 +393,9 @@ public sealed partial class L12GameEngine
                     && command.Target is { Type: "legion" }
                     ? new Dictionary<string, string> { ["target"] = command.Target.InstanceId ?? string.Empty }
                     : null;
+            declaredData ??= new Dictionary<string, string>();
+            declaredData["playerLogGroupId"] = playerLogGroupId;
+            declaredData["playerLogTiming"] = trigger;
             if (compositeDeclaration is not null && declaredData is not null)
                 RecordCompositePreResponseCosts(card.CardId, compositeDeclaration, declaredData);
             var declaredTargets = compositeDeclaration is null

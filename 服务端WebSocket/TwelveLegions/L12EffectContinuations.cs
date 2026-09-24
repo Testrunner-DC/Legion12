@@ -63,13 +63,28 @@ public sealed partial class L12GameEngine
                     KillTarget(item, chosen[0], $"被{item.SourceName}击杀");
                 FinishStackItem(item); break;
             case "peace-talk":
+                var playerLogGroupId = item.Data.GetValueOrDefault("playerLogGroupId");
+                var playerLogTiming = item.Data.GetValueOrDefault("playerLogTiming") ?? item.Trigger;
+                var decisionLabel = chosen[0] == "agree" ? "同意议和" : "不同意议和";
+                AddPlayerLogEvent("effect-decision", prompt.PlayerIndex,
+                    $"{State.Players[prompt.PlayerIndex].Name}{decisionLabel}",
+                    playerLogGroupId, playerLogTiming, decisionLabel,
+                    source is null ? [] : [source]);
                 if (chosen[0] == "agree")
                 {
                     for (var index = 0; index < 2; index++)
-                        if (!Draw(State.Players[index], 1, logEffectDraw: false)) SetWinner(1 - index, "议和谈判抽牌时牌库为空");
-                    AddEvent("effect", prompt.PlayerIndex, "双方同意议和谈判并各抽取 1 张牌", source is null ? [] : [source]);
+                    {
+                        if (!Draw(State.Players[index], 1, logEffectDraw: false))
+                        {
+                            SetWinner(1 - index, "议和谈判抽牌时牌库为空");
+                            continue;
+                        }
+                        AddPlayerLogEvent("draw", index,
+                            $"〈{item.SourceName}〉使{State.Players[index].Name}抽取 1 张牌",
+                            playerLogGroupId, playerLogTiming, null,
+                            source is null ? [] : [source]);
+                    }
                 }
-                else AddEvent("effect", prompt.PlayerIndex, "对方不同意议和谈判，双方不额外抽牌");
                 FinishStackItem(item); break;
             case "inaihime-buff":
             {

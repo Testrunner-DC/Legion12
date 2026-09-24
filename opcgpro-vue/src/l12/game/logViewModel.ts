@@ -115,6 +115,104 @@ function sourceNameFromText(text: string, target?: Card) {
 function line(sequence: number, icon: IconKind, actor: LogLineRow['actor'], parts: LogPart[], badges: LogBadge[] = [], effectText?: string): LogLineRow {
   return { kind: 'line', sequence, icon, actor, parts, badges, effectText }
 }
+
+function groupedIndexes(events: ActionEvent[], groupId: string) {
+  const indexes: number[] = []
+  events.forEach((event, index) => {
+    if (event.playerLogGroupId === groupId) indexes.push(index)
+  })
+  return indexes
+}
+
+function timingLabel(timing: string | undefined) {
+  if (timing === 'enter' || timing === 'promotion-enter') return '登场时效果'
+  if (timing === 'active') return '主动效果'
+  if (timing === 'attack') return '进攻时效果'
+  if (timing === 'death') return '阵亡时效果'
+  if (timing === 'leave') return '离场时效果'
+  return '效果'
+}
+
+function projectGroupedAction(events: ActionEvent[], indexes: number[], you: number): LogLineRow | null {
+  const group = indexes.map(index => events[index])
+  const play = group.find(event => event.type === 'play')
+  const first = play ?? group[0]
+  if (!first) return null
+
+  if (first.playerLogTiming === 'turn-start' || first.playerLogGroupId?.startsWith('turn:')) {
+    const changes: string[] = []
+    const draw = group.filter(event => event.type === 'draw')
+      .reduce((sum, event) => sum + numberAfter(event.text, /抽取\s*(\d+)\s*张/, countFrom(event.text)), 0)
+    const morale = group.filter(event => event.type === 'morale')
+      .reduce((sum, event) => sum + Math.abs(numberAfter(event.text, /追加\s*(\d+)\s*张/, countFrom(event.text))), 0)
+    const milled = group.filter(event => event.type === 'mill')
+      .reduce((sum, event) => sum + numberAfter(event.text, /牌库顶部\s*(\d+)\s*张/, countFrom(event.text)), 0)
+    if (group.some(event => event.type === 'draw-skipped')) changes.push('先手首回合不抽牌')
+    if (draw) changes.push(`抽取${draw}张牌`)
+    if (milled) changes.push(`弃置牌库顶部${milled}张牌`)
+    if (morale) changes.push(`追加${morale}张士气`)
+    if (!changes.length) return null
+    return line(first.sequence, 'info', side(first.playerIndex, you),
+      [{ text: `回合开始，${changes.join('，')}` }])
+  }
+
+  const source = firstPublicCard(play ?? first)
+  const parts: LogPart[] = play
+    ? [{ text: '打出' }, cardPart(source)]
+    : [cardPart(source), { text: `发动${timingLabel(first.playerLogTiming)}` }]
+  let suffix = ''
+  const decision = group.find(event => event.type === 'effect-decision' && event.playerLogDecisionLabel)
+  const restPaid = group.some(event => event.type === 'cost' && /休整|横置/.test(event.text))
+  const trial = group.find(event => event.type === 'trial')
+  const results = group.filter(event => event.type === 'effect-result')
+  const result = results.length === 1 ? results[0] : results.at(-1)
+
+  if (play && restPaid && result?.effectResultStatus === 'negated'
+    && timingLabel(first.playerLogTiming) === '登场时效果')
+    suffix += '，休整该军团并发动登场时效果'
+  else if (play && trial && timingLabel(first.playerLogTiming) === '登场时效果')
+    suffix += '并发动登场时效果'
+
+  if (decision) suffix += `，${side(decision.playerIndex, you) ?? ''}${decision.playerLogDecisionLabel}`
+
+  const drawCounts = new Map<'我方' | '对方', number>()
+  for (const event of group.filter(candidate => candidate.type === 'draw')) {
+    const eventSide = side(event.playerIndex, you)
+    if (!eventSide) continue
+    const amount = numberAfter(event.text, /抽取\s*(\d+)\s*张/, countFrom(event.text))
+    drawCounts.set(eventSide, (drawCounts.get(eventSide) ?? 0) + amount)
+  }
+  for (const eventSide of ['我方', '对方'] as const) {
+    const amount = drawCounts.get(eventSide)
+    if (amount) suffix += `，${eventSide}抽取${amount}张牌`
+  }
+
+  const milled = group.filter(event => event.type === 'mill')
+    .reduce((sum, event) => sum + numberAfter(event.text, /牌库顶部\s*(\d+)\s*张/, countFrom(event.text)), 0)
+  if (milled) suffix += `，弃置牌库顶部${milled}张牌`
+
+  for (const disaster of group.filter(event => event.type === 'disaster-value')) {
+    const progress = disaster.text.match(/天灾值\s*(\d+)\s*→\s*(\d+)/)
+    if (progress) suffix += `，天灾值 ${progress[1]}→${progress[2]}`
+  }
+
+  if (trial) {
+    const progress = trial.text.match(/(?:《([^》]+)》)?试炼进度\s*(\d+)\s*→\s*(\d+)/)
+    suffix += progress
+      ? `，推进试炼${progress[1] ? `《${progress[1]}》` : ''} 试炼${progress[2]}→${progress[3]}`
+      : '，推进试炼'
+  }
+
+  if (result?.effectResultStatus === 'negated') {
+    suffix += play && source?.cardType === 'tactic' && first.playerLogTiming === 'play'
+      ? '；该战术的效果被无效'
+      : `；${timingLabel(first.playerLogTiming)}被无效`
+  } else if (result?.effectResultStatus === 'failed') suffix += `；${timingLabel(first.playerLogTiming)}未能完成`
+  else if (result?.effectResultStatus === 'declined') suffix += `；未发动${timingLabel(first.playerLogTiming)}`
+
+  if (suffix) parts.push({ text: suffix })
+  return line(first.sequence, play ? 'play' : 'effect', side(first.playerIndex, you), parts, [], safeEffectText(first))
+}
 function isPrivateHandAddEvent(event: ActionEvent) {
   return event.type === 'authority-event' && /因效果将\s*\d+\s*张牌加入手牌/.test(event.text)
 }
@@ -370,9 +468,11 @@ function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], co
       [{ value: /陵墓/.test(event.text) ? `陵墓离场 ${countFrom(event.text)}张` : `${countFrom(event.text)}张`, tone: 'info' }])
     case 'extra-turn': return line(event.sequence, 'effect', actor, [{ text: '获得额外回合' }], [{ value: '+1回合', tone: 'pos' }])
     case 'disaster-value': {
+      const progress = event.text.match(/天灾值\s*(\d+)\s*→\s*(\d+)/)
       const value = [...event.text.matchAll(/\d+/g)].at(-1)?.[0]
-      return line(event.sequence, 'disaster', actor, card ? [cardPart(card), { text: '：天灾值变化' }] : [{ text: '天灾值变化' }],
-        value ? [{ value: `天灾值 ${value}`, tone: 'info' }] : [])
+      return line(event.sequence, 'disaster', null, card ? [cardPart(card), { text: '：天灾值变化' }] : [{ text: '天灾值变化' }],
+        progress ? [{ value: `天灾值 ${progress[1]}→${progress[2]}`, tone: 'info' }]
+          : value ? [{ value: `天灾值 ${value}`, tone: 'info' }] : [])
     }
     case 'defense': {
       if (isInvalidDefenseEvent(event)) return line(event.sequence, 'defense', actor, [{ text: '抵挡/支援无效' }])
@@ -438,6 +538,7 @@ function projectCombat(events: ActionEvent[], start: number, you: number) {
 
 export function projectLog(events: ActionEvent[], you: number, _names: string[]): LogRow[] {
   const ordered = [...events].sort((a, b) => a.sequence - b.sequence)
+    .filter((event, index, sorted) => index === 0 || sorted[index - 1].sequence !== event.sequence)
   const consumed = new Set<number>()
   const rows: LogRow[] = []
   for (let index = 0; index < ordered.length; index++) {
@@ -445,6 +546,20 @@ export function projectLog(events: ActionEvent[], you: number, _names: string[])
     const event = ordered[index]
     if (event.type === 'turn-start') {
       rows.push({ kind: 'turn', sequence: event.sequence, round: numberAfter(event.text, /第\s*(\d+)\s*回合/, 0), side: side(event.playerIndex, you) ?? '对方' })
+      if (event.playerLogGroupId) {
+        const indexes = groupedIndexes(ordered, event.playerLogGroupId)
+        const row = projectGroupedAction(ordered, indexes, you)
+        indexes.forEach(item => consumed.add(item))
+        if (row) rows.push(row)
+      }
+      continue
+    }
+    if (event.playerLogGroupId) {
+      const indexes = groupedIndexes(ordered, event.playerLogGroupId)
+      if (indexes[0] !== index) continue
+      const row = projectGroupedAction(ordered, indexes, you)
+      indexes.forEach(item => consumed.add(item))
+      if (row) rows.push(row)
       continue
     }
     if (event.type === 'attack') {

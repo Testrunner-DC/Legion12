@@ -1669,13 +1669,21 @@ public sealed partial class L12GameEngine
     }
 
     private void Mill(L12PlayerState player, int count, string source)
+        => MillWithPlayerLog(player, count, source);
+
+    private void MillWithPlayerLog(L12PlayerState player, int count, string source,
+        string? playerLogGroupId = null, string? playerLogTiming = null)
     {
         if (State.Phase == L12Phase.GameOver) return;
         var origin = State.IsResolvingStack ? State.EffectStack.LastOrDefault() : null;
         var result = L12LibraryOps.Mill(player, count, card =>
             NotifyCardDiscarded(player, card, "library", causedByEffect: true));
         if (result.Cards.Count > 0)
-            AddEvent("mill", player.PlayerIndex, $"{source}弃置牌库顶部{result.Cards.Count}张牌", result.Cards.ToArray());
+            AddPlayerLogEvent("mill", player.PlayerIndex,
+                $"{source}弃置牌库顶部{result.Cards.Count}张牌",
+                playerLogGroupId ?? origin?.Data.GetValueOrDefault("playerLogGroupId"),
+                playerLogTiming ?? origin?.Data.GetValueOrDefault("playerLogTiming") ?? origin?.Trigger,
+                cards: result.Cards.ToArray());
         CompleteLibrarySequence(player, result, count, origin, source);
     }
 

@@ -309,6 +309,17 @@ public sealed class GameEngineTests
         Assert.Equal(second, game.State.ActivePlayer);
         Assert.Equal(secondHandBefore + 1, game.State.Players[second].Hand.Count);
         Assert.Equal(secondLibraryBefore - 1, game.State.Players[second].Library.Count);
+        var secondTurn = Assert.Single(game.State.Events, item =>
+            item.Type == "turn-start" && item.PlayerIndex == second);
+        var automaticDraw = Assert.Single(game.State.Events, item =>
+            item.Type == "draw" && item.PlayerIndex == second
+            && item.Text.Contains("回合开始", StringComparison.Ordinal));
+        var automaticMorale = Assert.Single(game.State.Events, item =>
+            item.Type == "morale" && item.PlayerIndex == second
+            && item.Text.Contains("回合开始", StringComparison.Ordinal));
+        Assert.False(string.IsNullOrWhiteSpace(secondTurn.PlayerLogGroupId));
+        Assert.Equal(secondTurn.PlayerLogGroupId, automaticDraw.PlayerLogGroupId);
+        Assert.Equal(secondTurn.PlayerLogGroupId, automaticMorale.PlayerLogGroupId);
     }
 
     [Fact]
@@ -755,12 +766,12 @@ public sealed class GameEngineTests
         for (var turn = 0; turn < 15; turn++)
             await ApplyAsync(game.State.ActivePlayer, new L12Command("endTurn"));
 
-        Assert.Equal(211, game.State.EventSequence);
+        Assert.Equal(235, game.State.EventSequence);
         Assert.Equal(L12GameEngine.MaximumSnapshotEvents, game.State.Events.Count);
         var snapshot = game.SnapshotFor(0);
         Assert.Equal(L12GameEngine.MaximumSnapshotEvents, snapshot.RecentEvents.Length);
-        Assert.Equal(84, snapshot.RecentEvents[0].Sequence);
-        Assert.Equal(211, snapshot.RecentEvents[^1].Sequence);
+        Assert.Equal(108, snapshot.RecentEvents[0].Sequence);
+        Assert.Equal(235, snapshot.RecentEvents[^1].Sequence);
         Assert.Equal(snapshot.RecentEvents[^1].Sequence, snapshot.LastAction?.Sequence);
         Assert.DoesNotContain(snapshot.RecentEvents, actionEvent => actionEvent.Sequence == 1);
 
@@ -769,13 +780,13 @@ public sealed class GameEngineTests
             await connection.OpenAsync();
             var count = connection.CreateCommand();
             count.CommandText = "SELECT COUNT(*) FROM match_action_events WHERE match_id='complete-events';";
-            Assert.Equal(211L, (long)(await count.ExecuteScalarAsync())!);
+            Assert.Equal(235L, (long)(await count.ExecuteScalarAsync())!);
         }
 
         var recovery = Assert.IsType<L12JournalRecoveryState>(
             await recorder.LoadJournalEngineAsync("complete-events"));
         Assert.Equal(commandSequence, recovery.CommandSequence);
-        Assert.Equal(211, recovery.Engine.State.EventSequence);
+        Assert.Equal(235, recovery.Engine.State.EventSequence);
         Assert.Equal(game.State.LastAction?.Sequence, recovery.Engine.State.LastAction?.Sequence);
         Assert.Equal(game.ComputeStateHash(), recovery.Engine.ComputeStateHash());
     }

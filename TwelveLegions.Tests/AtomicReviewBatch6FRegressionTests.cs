@@ -275,6 +275,14 @@ public sealed class AtomicReviewBatch6FRegressionTests
         PassResponses(game);
         Assert.True(galahad.Tapped);
         Assert.Equal(0, trial.TrialProgress);
+        var cost = Assert.Single(game.State.Events, entry => entry.Type == "cost"
+            && entry.Cards.Any(card => card.InstanceId == galahad.InstanceId));
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == galahad.InstanceId));
+        Assert.Equal("enter", cost.PlayerLogTiming);
+        Assert.Equal("negated", result.EffectResultStatus);
+        Assert.False(string.IsNullOrWhiteSpace(cost.PlayerLogGroupId));
+        Assert.Equal(cost.PlayerLogGroupId, result.PlayerLogGroupId);
     }
 
     [Fact]
