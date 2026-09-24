@@ -13,6 +13,7 @@ defineProps<{
   factionLabel: string
   connectionLabel: string
   connected: boolean | null
+  showMasterDetails?: boolean
 }>()
 </script>
 
@@ -35,7 +36,7 @@ defineProps<{
         <dt>主宰称号</dt>
         <dd><RankedIdentityBadge variant="master-title" :faction="faction" :label="masterTitle" compact /></dd>
       </div>
-      <div class="identity-master-row">
+      <div v-if="showMasterDetails" class="identity-master-row">
         <dt>主宰</dt>
         <dd><strong>{{ player.master.masterName || '未知主宰' }}</strong><span>{{ factionLabel }} · {{ player.master.hp }}/{{ player.master.maxHp }}</span></dd>
       </div>

@@ -14,7 +14,6 @@ import { alternateArtApi, getEffectiveOperationsPolicy, platformState, publicDec
 import CardImage from './CardImage.vue'
 import CardDetailContent from './CardDetailContent.vue'
 import DeckProfile from './DeckProfile.vue'
-import MobileFilterSheet from './site/MobileFilterSheet.vue'
 import PublicDeckContentEditor from './site/PublicDeckContentEditor.vue'
 
 const router = useRouter()
@@ -55,8 +54,11 @@ const alternateArtCopies = ref<Record<string, string[]>>({})
 const operationsRestrictions = ref<OperationsCardRestriction[]>([])
 const workspace = ref<'gallery' | 'stats' | 'hand' | 'content'>('gallery')
 const mobilePane = ref<'pool' | 'deck' | 'insights'>('pool')
-const mobileFiltersOpen = ref(false)
 const mobileDetailOpen = ref(false)
+const poolSelectorOpen = ref(false)
+const savedDecksOpen = ref(false)
+const secondaryActionsOpen = ref(false)
+const detailCollapsed = ref(false)
 const openingHandIds = ref<string[]>([])
 type DeckSection = 'master' | 'main' | 'morale' | 'extra' | 'bench'
 const SECTION_STORAGE_KEY = 'l12-deck-editor-sections-v1'
@@ -101,7 +103,8 @@ onMounted(async () => {
 
 const byId = computed(() => new Map(catalog.value.map(card => [card.id, card])))
 const productOptions = computed(() => [...new Set(catalog.value.map(card => card.product))].sort())
-const masters = computed(() => catalog.value.filter(card => (card.cardType === 'master' || card.cardType === 'divinity') && card.id !== 'S01-02M2'))
+// masterId/cardType=master 是既有存储契约；当前牌库界面对玩家统一呈现为“主城”，并排除未实装模式的 divinity 卡。
+const masters = computed(() => catalog.value.filter(card => card.cardType === 'master' && card.id !== 'S01-02M2'))
 const selectedMaster = computed(() => byId.value.get(masterId.value))
 const automaticExtraCards = computed(() => automaticExtraCardIdsForMaster(selectedMaster.value?.id)
   .map(id => byId.value.get(id)).filter(Boolean) as DeckCard[])
@@ -144,7 +147,7 @@ function cardLegality(card: DeckCard) {
   return restriction.maxCopies <= 0 ? 'banned' : 'restricted'
 }
 function entryIssue(card: DeckCard, count: number) {
-  if (selectedMaster.value && card.faction !== 'universal' && card.faction !== selectedMaster.value.faction) return '与当前主宰阵营不符'
+  if (selectedMaster.value && card.faction !== 'universal' && card.faction !== selectedMaster.value.faction) return '与当前主城阵营不符'
   const restriction = restrictionFor(card.id)
   const limit = allowedCopies(card)
   if (count > limit) return restriction?.reason ? `超过上限 ${limit}（${restriction.reason}）` : `超过上限 ${limit}`
@@ -194,7 +197,7 @@ const validation = computed(() => validateDeck({
   cardIds: entries.value.flatMap(entry => Array(entry.count).fill(entry.card.id)),
   moraleIds: moraleIds.value,
   specialIds: specialIds.value,
-}, catalog.value, operationsRestrictions.value))
+}, catalog.value, operationsRestrictions.value).replaceAll('主宰', '主城'))
 const curve = computed(() => {
   const values = Array(9).fill(0) as number[]
   entries.value.forEach(({ card, count }) => values[Math.min(8, card.cost ?? 0)] += count)
@@ -212,6 +215,11 @@ const factionStats = computed(() => Object.entries(entries.value.reduce<Record<s
   return result
 }, {})).sort((a, b) => b[1] - a[1]))
 const openingHand = computed(() => openingHandIds.value.map(id => byId.value.get(id)).filter((card): card is DeckCard => Boolean(card)))
+const openingHandTotal = computed(() => Math.max(1, entries.value.reduce((sum, entry) => sum + entry.count, 0)))
+function openingHandMeta(card: DeckCard, index: number) {
+  const deckCopies = counts.value[card.id] ?? 0
+  return `第 ${index + 1} 张 · 牌库 ${deckCopies} 张 · 单次约 ${Math.round(deckCopies / openingHandTotal.value * 100)}%`
+}
 const activeFilterCount = computed(() => [query.value.trim(), typeFilter.value !== 'all', factionFilter.value !== 'all',
   productFilters.value.length > 0, costFilter.value !== 'all', troopsFilter.value !== 'all', disasterFilter.value !== 'all',
   legalityFilter.value !== 'all', sortMode.value !== 'number'].filter(Boolean).length)
@@ -285,7 +293,7 @@ function toggleTrial(card: DeckCard) {
     return
   }
   if (specialIds.value.length >= trialCapacity.value) {
-    notice.value = `该主宰的试炼区只能携带 ${trialCapacity.value} 张`
+    notice.value = `该主城的试炼区只能携带 ${trialCapacity.value} 张`
     return
   }
   specialIds.value = [...specialIds.value, card.id]
@@ -306,7 +314,7 @@ function appearanceCount(entry: PoolCardAppearance) {
 }
 
 function addCardAppearance(card: DeckCard, artId = '') {
-  if (!selectedMaster.value) { notice.value = '请先选择主宰'; return }
+  if (!selectedMaster.value) { notice.value = '请先选择主城'; return }
   const count = counts.value[card.id] || 0
   const limit = allowedCopies(card)
   if (count >= limit) { notice.value = `${card.nameZh} 的原画与异画合计最多 ${limit} 张`; return }
@@ -340,8 +348,8 @@ function remove(id: string) {
 }
 
 function addToBench(card: DeckCard) {
-  if (!selectedMaster.value) { notice.value = '请先选择主宰'; return }
-  if (card.faction !== 'universal' && card.faction !== selectedMaster.value.faction) { notice.value = `${card.nameZh} 与当前主宰阵营不符`; return }
+  if (!selectedMaster.value) { notice.value = '请先选择主城'; return }
+  if (card.faction !== 'universal' && card.faction !== selectedMaster.value.faction) { notice.value = `${card.nameZh} 与当前主城阵营不符`; return }
   const count = benchCounts.value[card.id] ?? 0
   const limit = effectiveDeckLimit(card, masterId.value)
   if (count >= limit) { notice.value = `${card.nameZh} 的备选区最多保存 ${limit} 张`; return }
@@ -616,17 +624,20 @@ onBeforeUnmount(() => {
   <div class="deck-builder-shell">
     <header class="deck-builder-topbar">
       <button class="back-button" @click="router.push(returnTo)">← 返回上一级</button>
-      <div><small>GRANDUMI FRAMEWORK · LEGION12 STYLE</small><h1>牌库编辑器</h1></div>
+      <div><small>DECK EDITOR</small><h1>牌库编辑器</h1></div>
       <label>牌库名称<input v-model="deckName" maxlength="24"/></label>
-      <label class="saved-deck-switcher">已保存牌库<select :value="activeDeckName ?? ''" @change="savedDecks[($event.target as HTMLSelectElement).value] && loadDeck(savedDecks[($event.target as HTMLSelectElement).value])"><option value="">新牌库</option><option v-for="deck in savedDecks" :key="deck.name" :value="deck.name">{{ deck.name }}</option></select></label>
       <div class="deck-total" :class="{ valid: !validation }"><b>{{ countSummary.label }}</b><span>/ 40–50<span v-if="uncountedCards">（括号内不计构筑）</span></span></div>
       <div class="deck-file-actions">
-        <button @click="newDeck">新建牌库</button>
+        <button @click="savedDecksOpen = true">切换牌库</button>
         <button class="primary" :disabled="!!validation || deckMutationBusy || deletingDeck" @click="onSave">{{ deckMutationBusy ? '保存中…' : '保存牌库' }}</button>
-        <button :disabled="!!validation || deckMutationBusy || deletingDeck" @click="onSaveAs">另存为牌库</button>
-        <button :disabled="!!validation || generatingDeckImage" @click="generateDeckImage">{{ generatingDeckImage ? '生成中…' : '生成牌库图' }}</button>
-        <button :disabled="!!validation || deckMutationBusy || deletingDeck" @click="publishCurrentDeck">{{ publicationId ? '更新公开牌库' : '公开牌库' }}</button>
-        <button class="delete-deck" :disabled="!activeDeckName || deckMutationBusy || deletingDeck" @click="requestDelete()">删除牌库</button>
+        <button class="more-actions-trigger" @click="secondaryActionsOpen = !secondaryActionsOpen">更多操作</button>
+        <div class="secondary-actions" :class="{ open: secondaryActionsOpen }">
+          <button @click="newDeck(); secondaryActionsOpen = false">新建牌库</button>
+          <button :disabled="!!validation || deckMutationBusy || deletingDeck" @click="onSaveAs">另存为牌库</button>
+          <button :disabled="!!validation || generatingDeckImage" @click="generateDeckImage">{{ generatingDeckImage ? '生成中…' : '生成牌库图' }}</button>
+          <button :disabled="!!validation || deckMutationBusy || deletingDeck" @click="publishCurrentDeck">{{ publicationId ? '更新公开牌库' : '公开牌库' }}</button>
+          <button class="delete-deck" :disabled="!activeDeckName || deckMutationBusy || deletingDeck" @click="requestDelete()">删除牌库</button>
+        </div>
       </div>
     </header>
 
@@ -638,11 +649,11 @@ onBeforeUnmount(() => {
     </nav>
 
     <main v-if="loading" class="deck-loading">正在载入卡牌数据…</main>
-    <main v-else class="deck-builder-grid" :data-mobile-pane="mobilePane">
+    <main v-else class="deck-builder-grid" :class="{ 'detail-collapsed': detailCollapsed }" :data-mobile-pane="mobilePane">
       <div class="deck-side-column">
-      <aside class="deck-detail-panel grand-panel">
-        <p class="kicker">CARD DETAIL</p><h2>卡牌详情</h2>
-        <section v-if="selected" class="builder-card-detail archive-detail">
+      <aside class="deck-detail-panel grand-panel" :class="{ collapsed: detailCollapsed }">
+        <header class="detail-panel-heading"><div><p class="kicker">卡牌信息</p><h2>卡牌详情</h2></div><button @click="detailCollapsed = !detailCollapsed">{{ detailCollapsed ? '展开' : '收起' }}</button></header>
+        <section v-if="selected && !detailCollapsed" class="builder-card-detail archive-detail">
           <CardDetailContent :card="selected" :show-catalog-only="false"/>
           <label v-if="selectedAlternateArts.length && !MAIN_DECK_TYPES.has(selected.cardType)" class="alternate-art-selector">
             <span>对局卡图</span>
@@ -653,60 +664,58 @@ onBeforeUnmount(() => {
             <small>已选择的异画只改变本人的对局显示，不改变卡牌规则。</small>
           </label>
         </section>
-        <p v-else class="empty-detail">选择卡牌后在此查看详情。</p>
-      </aside>
-      <aside class="saved-decks-panel grand-panel">
-        <p class="kicker">SAVED DECKS</p><h2>已保存牌库</h2>
-        <div class="saved-list"><article v-for="deck in savedDecks" :key="deck.name" :class="{ active: deck.name === activeDeckName }"><button @click="loadDeck(deck)"><DeckProfile compact :master-id="deck.masterId" :master-name="byId.get(deck.masterId)?.nameZh" :name="deck.name" :meta="`${deckCountSummary(deck.cardIds, byId).label} 张`"/></button><button class="delete" @click="requestDelete(deck.name)">×</button></article><p v-if="!Object.keys(savedDecks).length">暂无本地牌库</p></div>
+        <p v-else-if="!detailCollapsed" class="empty-detail">选择卡牌后在此查看详情。</p>
       </aside>
       </div>
 
       <div class="deck-center-column">
       <nav class="workspace-tabs" aria-label="牌库编辑器工作区">
-        <button :class="{ active: workspace === 'gallery' }" @click="setWorkspace('gallery')">Gallery 卡池</button>
-        <button :class="{ active: workspace === 'stats' }" @click="setWorkspace('stats')">Stats 统计</button>
-        <button :class="{ active: workspace === 'hand' }" @click="setWorkspace('hand')">Hand 起手</button>
+        <button :class="{ active: workspace === 'gallery' }" @click="setWorkspace('gallery')">卡池</button>
+        <button :class="{ active: workspace === 'stats' }" @click="setWorkspace('stats')">统计</button>
+        <button :class="{ active: workspace === 'hand' }" @click="setWorkspace('hand')">起手</button>
         <button v-if="publicationId" :class="{ active: workspace === 'content' }" @click="setWorkspace('content')">公开内容</button>
       </nav>
       <section v-show="workspace === 'gallery'" class="deck-catalog grand-panel">
-        <article v-if="selectedMaster" class="current-deck-summary" aria-label="当前牌库主宰信息">
+        <article v-if="selectedMaster" class="current-deck-summary" aria-label="当前牌库主城信息">
           <img :src="masterProfileUrl(selectedMaster.id, selectedMaster.imageUrl)" :alt="selectedMaster.nameZh"/>
-          <div><small>当前主宰</small><b>{{ selectedMaster.nameZh }}</b><span>{{ factionLabels[selectedMaster.faction] }} · 士气 {{ moraleIds.length }} 张</span></div>
+          <div><small>当前主城</small><b>{{ selectedMaster.nameZh }}</b><span>{{ factionLabels[selectedMaster.faction] }} · 士气 {{ moraleIds.length }} 张</span></div>
         </article>
-        <header><div><p class="kicker">CARD POOL</p><h2>{{ catalogTab === 'master' ? '主宰' : catalogTab === 'main' ? '主牌库' : '额外卡牌' }}</h2></div><span>{{ catalogTab === 'master' ? masters.length : catalogTab === 'main' ? filtered.length : availableTrials.length + automaticExtraCards.length }} 张结果</span></header>
+        <header><div><p class="kicker">构筑卡池</p><h2>{{ catalogTab === 'master' ? '主城' : catalogTab === 'main' ? '主牌库' : '额外卡牌' }}</h2></div><span>{{ catalogTab === 'master' ? masters.length : catalogTab === 'main' ? filtered.length : availableTrials.length + automaticExtraCards.length }} 张结果</span></header>
         <nav class="catalog-tabs" aria-label="牌库构筑卡池分类">
-          <button :class="{ active: catalogTab === 'master' }" @click="catalogTab = 'master'">主宰</button>
+          <button :class="{ active: catalogTab === 'master' }" @click="catalogTab = 'master'">主城</button>
           <button :class="{ active: catalogTab === 'main' }" @click="catalogTab = 'main'">主牌库</button>
           <button :class="{ active: catalogTab === 'extra' }" @click="catalogTab = 'extra'">额外卡牌</button>
         </nav>
         <div v-if="catalogTab === 'main'" class="catalog-filter-controls">
-          <MobileFilterSheet v-model="mobileFiltersOpen" title="筛选卡池" :active-count="activeFilterCount" always-visible @reset="resetFilters">
-          <section class="catalog-filter-bar" aria-label="主牌库筛选">
+          <div class="product-filter-control">
+            <button type="button" class="pool-selector-trigger" @click="poolSelectorOpen = !poolSelectorOpen">卡池{{ productFilters.length ? ` · ${productFilters.length}` : '' }}</button>
+            <fieldset v-if="poolSelectorOpen" class="product-filter" aria-label="卡池">
+              <legend>选择卡池</legend>
+              <button type="button" :class="{ active: !productFilters.length }" @click="productFilters = []">全部</button>
+              <button v-for="value in productOptions" :key="value" type="button" :class="{ active: productFilters.includes(value) }" :aria-pressed="productFilters.includes(value)" @click="toggleProductFilter(value)">{{ value }}</button>
+              <button type="button" class="pool-selector-close" @click="poolSelectorOpen = false">完成</button>
+            </fieldset>
+          </div>
+          <span class="catalog-filter-count">{{ filtered.length }} 张结果</span>
+          <button v-if="activeFilterCount" class="catalog-filter-summary" type="button">{{ activeFilterSummary }}</button>
+          <button v-if="activeFilterCount" class="catalog-filter-clear" type="button" @click="resetFilters">清除</button>
+        </div>
+        <section v-if="catalogTab === 'main'" class="catalog-filter-bar" aria-label="主牌库筛选">
           <label class="filter-search">搜索<input v-model="query" placeholder="卡名、编号、效果"/></label>
           <label>类型<select v-model="typeFilter"><option value="all">全部主牌</option><option v-for="(label,key) in typeLabels" :key="key" :value="key">{{ label }}</option></select></label>
           <label>阵营<select v-model="factionFilter"><option value="all">全部阵营</option><option v-for="(label,key) in factionLabels" :key="key" :value="key">{{ label }}</option></select></label>
-          <fieldset class="product-filter" aria-label="卡池（可多选）">
-            <legend>卡池（可多选）</legend>
-            <button type="button" :class="{ active: !productFilters.length }" @click="productFilters = []">全部</button>
-            <button v-for="value in productOptions" :key="value" type="button" :class="{ active: productFilters.includes(value) }" :aria-pressed="productFilters.includes(value)" @click="toggleProductFilter(value)">{{ value }}</button>
-          </fieldset>
           <label>费用<select v-model="costFilter"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value" :value="value">{{ value }}</option></select></label>
           <label>兵力<select v-model="troopsFilter"><option value="all">全部兵力</option><option value="0-999">0–999</option><option value="1000-1999">1000–1999</option><option value="2000-2999">2000–2999</option><option value="3000+">3000+</option></select></label>
           <label>天灾等级<select v-model="disasterFilter"><option value="all">全部</option><option value="none">无</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select></label>
           <label>可用状态<select v-model="legalityFilter"><option value="all">全部</option><option value="allowed">可用</option><option value="restricted">受限</option><option value="banned">禁用</option></select></label>
           <label>排序<select v-model="sortMode"><option value="number">编号</option><option value="cost">费用</option><option value="troops">兵力</option><option value="name">名称</option></select></label>
           <button class="filter-reset" @click="resetFilters">清除筛选</button>
-          </section>
-          <template #apply-label>查看 {{ filtered.length }} 张结果</template>
-          </MobileFilterSheet>
-          <button v-if="activeFilterCount" class="catalog-filter-summary" type="button" @click="mobileFiltersOpen = true">{{ activeFilterSummary }}</button>
-          <button v-if="activeFilterCount" class="catalog-filter-clear" type="button" @click="resetFilters">清除</button>
-        </div>
+        </section>
         <div v-if="catalogTab === 'master'" class="deck-card-grid">
           <article v-for="master in masters" :key="master.id" class="deck-card" :class="{ chosen: master.id === masterId }" @click="selectCard(master)">
             <button class="card-image" @dblclick.stop="chooseMaster(master.id)"><CardImage :card-id="master.id" :legacy-url="master.imageUrl" :alt="master.nameZh" intent="thumb" fit="cover"/></button>
             <div><b>{{ master.nameZh }}</b><small>{{ master.number }} · {{ factionLabels[master.faction] }}</small></div>
-            <button class="choose-special" @click.stop="chooseMaster(master.id)">{{ master.id === masterId ? '已选择' : '选择主宰' }}</button>
+            <button class="choose-special" @click.stop="chooseMaster(master.id)">{{ master.id === masterId ? '已选择' : '选择主城' }}</button>
           </article>
         </div>
         <div v-else-if="catalogTab === 'main'" class="deck-card-grid">
@@ -732,16 +741,16 @@ onBeforeUnmount(() => {
           </article>
           <article v-for="card in automaticExtraCards" :key="card.id" class="deck-card chosen" @click="selectCard(card)">
             <button class="card-image"><CardImage :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb" fit="cover"/></button>
-            <div><b>{{ card.nameZh }}</b><small>{{ card.number }} · 主宰专属</small></div><button class="choose-special" disabled>自动配置</button>
+            <div><b>{{ card.nameZh }}</b><small>{{ card.number }} · 主城专属</small></div><button class="choose-special" disabled>自动配置</button>
           </article>
-          <p v-if="!availableTrials.length && !automaticExtraCards.length" class="empty-extra">当前主宰没有可配置的额外卡牌。</p>
+          <p v-if="!availableTrials.length && !automaticExtraCards.length" class="empty-extra">当前主城没有可配置的额外卡牌。</p>
         </div>
       </section>
       <section v-show="workspace === 'stats'" class="deck-insight-panel grand-panel" data-editor-workspace="stats">
-        <header><div><p class="kicker">DECK STATS</p><h2>当前构筑统计</h2></div><strong :class="{ valid: !validation }">{{ validation || '构筑合法' }}</strong></header>
+        <header><div><p class="kicker">构筑统计</p><h2>当前构筑统计</h2></div><strong :class="{ valid: !validation }">{{ validation || '构筑合法' }}</strong></header>
         <div class="stats-summary">
           <article><small>主牌</small><b>{{ totalCards }}</b><span v-if="uncountedCards">其中 {{ uncountedCards }} 张不计构筑</span></article>
-          <article><small>士气</small><b>{{ moraleIds.length }}</b><span>{{ selectedMaster ? factionLabels[selectedMaster.faction] : '未选择主宰' }}</span></article>
+          <article><small>士气</small><b>{{ moraleIds.length }}</b><span>{{ selectedMaster ? factionLabels[selectedMaster.faction] : '未选择主城' }}</span></article>
           <article><small>额外区</small><b>{{ selectedTrials.length + automaticExtraCards.length }}</b><span>试炼 {{ selectedTrials.length }} · 自动 {{ automaticExtraCards.length }}</span></article>
           <article><small>备选区</small><b>{{ benchTotal }}</b><span>不计入合法性</span></article>
         </div>
@@ -749,27 +758,34 @@ onBeforeUnmount(() => {
         <div class="stats-columns"><section class="stats-block"><h3>卡牌类型</h3><article v-for="[label,value] in typeStats" :key="label"><span>{{ label }}</span><b>{{ value }}</b></article></section><section class="stats-block"><h3>阵营分布</h3><article v-for="[label,value] in factionStats" :key="label"><span>{{ label }}</span><b>{{ value }}</b></article></section></div>
       </section>
       <section v-show="workspace === 'hand'" class="deck-insight-panel hand-workspace grand-panel" data-editor-workspace="hand">
-        <header><div><p class="kicker">OPENING HAND</p><h2>当前构筑试抽</h2><p>从尚未保存的当前主牌中随机抽取 6 张；不会修改牌库或生成对局记录。</p></div><button @click="redrawOpeningHand">重新试抽</button></header>
-        <div class="editor-opening-hand"><article v-for="(card,index) in openingHand" :key="`${card.id}-${index}`" @click="selectCard(card)"><CardImage :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb"/><b>{{ card.nameZh }}</b><small>{{ card.number }}</small></article><p v-if="!openingHand.length">当前主牌为空，先返回 Gallery 加入卡牌。</p></div>
+        <header><div><p class="kicker">起手试抽</p><h2>当前构筑试抽</h2><p>从当前 {{ totalCards }} 张主牌中等概率、不放回抽取 6 张；按抽取顺序完整展示，不修改牌库或生成对局记录。</p></div><button @click="redrawOpeningHand">重新试抽</button></header>
+        <div class="editor-opening-hand"><article v-for="(card,index) in openingHand" :key="`${card.id}-${index}`" @click="selectCard(card)"><CardImage :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb" fit="contain"/><b>{{ card.nameZh }}</b><small>{{ card.number }}</small><em>{{ openingHandMeta(card,index) }}</em></article><p v-if="!openingHand.length">当前主牌为空，先返回卡池加入卡牌。</p></div>
       </section>
       <PublicDeckContentEditor v-if="publicationId" v-show="workspace === 'content'" :publication-id="publicationId" :catalog="catalog" @saved="notice = $event"/>
       </div>
 
       <aside class="deck-list grand-panel">
-        <header><div><p class="kicker">DECK LIST</p><h2>{{ selectedMaster?.nameZh || '未选择主宰' }}</h2></div><b>{{ countSummary.label }}</b></header>
+        <header><div><p class="kicker">当前牌表</p><h2>{{ selectedMaster?.nameZh || '未选择主城' }}</h2></div><b>{{ countSummary.label }}</b></header>
         <div class="cost-curve"><i v-for="(value,index) in curve" :key="index"><span :style="{height:`${Math.max(4, value / maxCurve * 56)}px`}"></span><b>{{ index === 8 ? '8+' : index }}</b><small>{{ value }}</small></i></div>
         <div class="deck-sections">
-          <section class="deck-zone" data-deck-section="master"><header><button @click="toggleSection('master')"><span>主宰</span><b>{{ selectedMaster ? '1/1' : '0/1' }}</b><i>{{ collapsedSections.master ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.master" class="deck-zone-body"><article v-if="selectedMaster" class="deck-entry-row" @click="selectCard(selectedMaster)"><CardImage class="deck-entry-banner" :card-id="selectedMaster.id" :legacy-url="selectedMaster.imageUrl" :alt="selectedMaster.nameZh" intent="thumb" fit="cover" native-orientation/><span>主</span><div><b>{{ selectedMaster.nameZh }}</b><small>{{ factionLabels[selectedMaster.faction] }}</small></div><strong>×1</strong></article><p v-else>请从卡池选择主宰。</p></div></section>
-          <section class="deck-zone" data-deck-section="main"><header><button @click="toggleSection('main')"><span>主牌库</span><b>{{ totalCards }}/40–50</b><i>{{ collapsedSections.main ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.main" class="deck-zone-body"><article v-for="entry in entries" :key="entry.card.id" class="deck-entry-row" :class="{ invalid: entryIssue(entry.card, entry.count) }" @click="selectCard(entry.card)"><CardImage class="deck-entry-banner" :card-id="entry.card.id" :legacy-url="entry.card.imageUrl" :alt="entry.card.nameZh" intent="thumb" fit="cover" native-orientation object-position="center 28%"/><span>{{ entry.card.cost ?? '—' }}</span><div><b>{{ entry.card.nameZh }}</b><small>{{ entry.card.number }}</small><em v-if="entryIssue(entry.card, entry.count)">{{ entryIssue(entry.card, entry.count) }}</em></div><strong>×{{ entry.count }}</strong><button aria-label="增加一张" :disabled="entry.count >= allowedCopies(entry.card) || (!doesNotCountTowardMainDeck(entry.card) && totalCards >= 50)" @click.stop="add(entry.card)">＋</button><button title="移入备选区" aria-label="移入备选区" @click.stop="moveMainToBench(entry.card)">备</button><button aria-label="减少一张" @click.stop="remove(entry.card.id)">−</button></article><p v-if="!entries.length">从 Gallery 加入卡牌，或从备选区移回主牌。</p></div></section>
-          <section class="deck-zone" data-deck-section="morale"><header><button @click="toggleSection('morale')"><span>士气</span><b>{{ moraleIds.length }}/{{ selectedMaster?.faction === 'taiyangcheng' ? 6 : 8 }}</b><i>{{ collapsedSections.morale ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.morale" class="deck-zone-body"><article v-for="(card,index) in moraleCards" :key="`${card.id}-${index}`" class="deck-entry-row" @click="selectCard(card)"><CardImage class="deck-entry-banner" :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb" fit="cover" native-orientation/><span>士</span><div><b>{{ card.nameZh }}</b><small>{{ card.number }}</small></div><strong>×1</strong></article><p v-if="!moraleCards.length">选择主宰后自动配置士气。</p></div></section>
-          <section class="deck-zone" data-deck-section="extra"><header><button @click="toggleSection('extra')"><span>额外区</span><b>{{ selectedTrials.length }}/{{ trialCapacity }}<span v-if="automaticExtraCards.length"> + {{ automaticExtraCards.length }} 自动</span></b><i>{{ collapsedSections.extra ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.extra" class="deck-zone-body"><article v-for="trial in selectedTrials" :key="trial.id" class="deck-entry-row" @click="selectCard(trial)"><CardImage class="deck-entry-banner" :card-id="trial.id" :legacy-url="trial.imageUrl" :alt="trial.nameZh" intent="thumb" fit="cover" native-orientation/><span>{{ trial.trialValue ?? '试' }}</span><div><b>{{ trial.nameZh }}</b><small>{{ trial.number }} · 试炼</small></div><strong>×1</strong><button aria-label="移出额外区" @click.stop="toggleTrial(trial)">−</button></article><article v-for="card in automaticExtraCards" :key="card.id" class="deck-entry-row" @click="selectCard(card)"><CardImage class="deck-entry-banner" :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb" fit="cover" native-orientation/><span>专</span><div><b>{{ card.nameZh }}</b><small>{{ card.number }} · 自动配置</small></div><strong>×1</strong><button aria-label="主宰自动配置" disabled>锁</button></article><p v-if="!selectedTrials.length && !automaticExtraCards.length">当前没有额外区卡牌。</p></div></section>
-          <section class="deck-zone" data-deck-section="bench"><header><button @click="toggleSection('bench')"><span>备选区</span><b>{{ benchTotal }} 张</b><i>{{ collapsedSections.bench ? '展开' : '折叠' }}</i></button><small>不计入主牌数量与合法性</small></header><div v-if="!collapsedSections.bench" class="deck-zone-body"><article v-for="entry in benchEntries" :key="entry.card.id" class="deck-entry-row" @click="selectCard(entry.card)"><CardImage class="deck-entry-banner" :card-id="entry.card.id" :legacy-url="entry.card.imageUrl" :alt="entry.card.nameZh" intent="thumb" fit="cover" native-orientation/><span>{{ entry.card.cost ?? '—' }}</span><div><b>{{ entry.card.nameZh }}</b><small>{{ entry.card.number }}</small></div><strong>×{{ entry.count }}</strong><button title="加入主牌库" aria-label="加入主牌库" :disabled="(counts[entry.card.id] || 0) >= allowedCopies(entry.card) || (!doesNotCountTowardMainDeck(entry.card) && totalCards >= 50)" @click.stop="moveBenchToMain(entry.card)">＋主</button><button aria-label="移出备选区" @click.stop="removeFromBench(entry.card.id)">−</button></article><p v-if="!benchEntries.length">从 Gallery 加入暂不采用的卡牌。</p></div></section>
+          <section class="deck-zone" data-deck-section="master"><header><button @click="toggleSection('master')"><span>主城</span><b>{{ selectedMaster ? '1/1' : '0/1' }}</b><i>{{ collapsedSections.master ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.master" class="deck-zone-body"><article v-if="selectedMaster" class="deck-entry-row" @click="selectCard(selectedMaster)"><CardImage class="deck-entry-banner" :card-id="selectedMaster.id" :legacy-url="selectedMaster.imageUrl" :alt="selectedMaster.nameZh" intent="thumb" fit="cover" native-orientation/><span>城</span><div><b>{{ selectedMaster.nameZh }}</b><small>{{ factionLabels[selectedMaster.faction] }}</small></div><strong>×1</strong></article><p v-else>请从卡池选择主城。</p></div></section>
+          <section class="deck-zone" data-deck-section="main"><header><button @click="toggleSection('main')"><span>主牌库</span><b>{{ totalCards }}/40–50</b><i>{{ collapsedSections.main ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.main" class="deck-zone-body"><article v-for="entry in entries" :key="entry.card.id" class="deck-entry-row" :class="{ invalid: entryIssue(entry.card, entry.count) }" @click="selectCard(entry.card)"><CardImage class="deck-entry-banner" :card-id="entry.card.id" :legacy-url="entry.card.imageUrl" :alt="entry.card.nameZh" intent="thumb" fit="cover" native-orientation object-position="center 28%"/><span>{{ entry.card.cost ?? '—' }}</span><div><b>{{ entry.card.nameZh }}</b><small>{{ entry.card.number }}</small><em v-if="entryIssue(entry.card, entry.count)">{{ entryIssue(entry.card, entry.count) }}</em></div><strong>×{{ entry.count }}</strong><button aria-label="增加一张" :disabled="entry.count >= allowedCopies(entry.card) || (!doesNotCountTowardMainDeck(entry.card) && totalCards >= 50)" @click.stop="add(entry.card)">＋</button><button title="移入备选区" aria-label="移入备选区" @click.stop="moveMainToBench(entry.card)">备</button><button aria-label="减少一张" @click.stop="remove(entry.card.id)">−</button></article><p v-if="!entries.length">从卡池加入卡牌，或从备选区移回主牌。</p></div></section>
+          <section class="deck-zone" data-deck-section="morale"><header><button @click="toggleSection('morale')"><span>士气</span><b>{{ moraleIds.length }}/{{ selectedMaster?.faction === 'taiyangcheng' ? 6 : 8 }}</b><i>{{ collapsedSections.morale ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.morale" class="deck-zone-body"><article v-for="(card,index) in moraleCards" :key="`${card.id}-${index}`" class="deck-entry-row" @click="selectCard(card)"><CardImage class="deck-entry-banner" :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb" fit="cover" native-orientation/><span>士</span><div><b>{{ card.nameZh }}</b><small>{{ card.number }}</small></div><strong>×1</strong></article><p v-if="!moraleCards.length">选择主城后自动配置士气。</p></div></section>
+          <section class="deck-zone" data-deck-section="extra"><header><button @click="toggleSection('extra')"><span>额外区</span><b>{{ selectedTrials.length }}/{{ trialCapacity }}<span v-if="automaticExtraCards.length"> + {{ automaticExtraCards.length }} 自动</span></b><i>{{ collapsedSections.extra ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.extra" class="deck-zone-body"><article v-for="trial in selectedTrials" :key="trial.id" class="deck-entry-row" @click="selectCard(trial)"><CardImage class="deck-entry-banner" :card-id="trial.id" :legacy-url="trial.imageUrl" :alt="trial.nameZh" intent="thumb" fit="cover" native-orientation/><span>{{ trial.trialValue ?? '试' }}</span><div><b>{{ trial.nameZh }}</b><small>{{ trial.number }} · 试炼</small></div><strong>×1</strong><button aria-label="移出额外区" @click.stop="toggleTrial(trial)">−</button></article><article v-for="card in automaticExtraCards" :key="card.id" class="deck-entry-row" @click="selectCard(card)"><CardImage class="deck-entry-banner" :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb" fit="cover" native-orientation/><span>专</span><div><b>{{ card.nameZh }}</b><small>{{ card.number }} · 自动配置</small></div><strong>×1</strong><button aria-label="主城自动配置" disabled>锁</button></article><p v-if="!selectedTrials.length && !automaticExtraCards.length">当前没有额外区卡牌。</p></div></section>
+          <section class="deck-zone" data-deck-section="bench"><header><button @click="toggleSection('bench')"><span>备选区</span><b>{{ benchTotal }} 张</b><i>{{ collapsedSections.bench ? '展开' : '折叠' }}</i></button><small>不计入主牌数量与合法性</small></header><div v-if="!collapsedSections.bench" class="deck-zone-body"><article v-for="entry in benchEntries" :key="entry.card.id" class="deck-entry-row" @click="selectCard(entry.card)"><CardImage class="deck-entry-banner" :card-id="entry.card.id" :legacy-url="entry.card.imageUrl" :alt="entry.card.nameZh" intent="thumb" fit="cover" native-orientation/><span>{{ entry.card.cost ?? '—' }}</span><div><b>{{ entry.card.nameZh }}</b><small>{{ entry.card.number }}</small></div><strong>×{{ entry.count }}</strong><button title="加入主牌库" aria-label="加入主牌库" :disabled="(counts[entry.card.id] || 0) >= allowedCopies(entry.card) || (!doesNotCountTowardMainDeck(entry.card) && totalCards >= 50)" @click.stop="moveBenchToMain(entry.card)">＋主</button><button aria-label="移出备选区" @click.stop="removeFromBench(entry.card.id)">−</button></article><p v-if="!benchEntries.length">从卡池加入暂不采用的卡牌。</p></div></section>
         </div>
         <footer :class="{ error: validation }">{{ notice || validation || '牌库合法，可以保存并用于房间对战' }}</footer>
       </aside>
     </main>
     <div v-if="mobileDetailOpen && selected" class="builder-modal-mask mobile-card-detail-mask" @click.self="mobileDetailOpen = false">
       <section class="mobile-card-detail" role="dialog" aria-modal="true" aria-label="卡牌详情"><header><b>{{ selected.nameZh }}</b><button aria-label="关闭卡牌详情" @click="mobileDetailOpen = false">×</button></header><CardDetailContent :card="selected" :show-catalog-only="false"/></section>
+    </div>
+    <div v-if="savedDecksOpen" class="builder-modal-mask" @click.self="savedDecksOpen = false">
+      <section class="saved-decks-dialog" role="dialog" aria-modal="true" aria-label="切换已保存牌库">
+        <header><div><p class="kicker">已保存牌库</p><h2>选择要编辑的牌库</h2></div><button aria-label="关闭已保存牌库" @click="savedDecksOpen = false">×</button></header>
+        <button class="new-deck-option" @click="newDeck(); savedDecksOpen = false">＋ 新建空白牌库</button>
+        <div class="saved-deck-options"><button v-for="deck in savedDecks" :key="deck.name" :class="{ active: deck.name === activeDeckName }" @click="loadDeck(deck); savedDecksOpen = false"><DeckProfile compact :master-id="deck.masterId" :master-name="byId.get(deck.masterId)?.nameZh" :name="deck.name" :meta="`${deckCountSummary(deck.cardIds, byId).label} 张`"/></button><p v-if="!Object.keys(savedDecks).length">暂无已保存牌库</p></div>
+      </section>
     </div>
     <div v-if="pendingDeleteName" class="builder-modal-mask" @click.self="deletingDeck ? undefined : pendingDeleteName = ''">
       <section class="delete-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-deck-title">
@@ -829,8 +845,12 @@ onBeforeUnmount(() => {
 @media(max-height:520px) and (min-width:821px) and (max-width:900px){.deck-builder-topbar{height:auto;min-height:58px;padding:6px 8px;gap:7px}.deck-builder-topbar>div:nth-child(2),.deck-total{display:none}.deck-builder-topbar .saved-deck-switcher{display:grid!important}.deck-file-actions{min-width:0;overflow-x:auto}.deck-builder-grid{grid-template-columns:minmax(0,1fr) 280px;padding:6px}.deck-side-column{display:none}.workspace-tabs button{min-height:30px}.deck-card-grid{grid-template-columns:repeat(auto-fill,minmax(94px,1fr))}.catalog-filter-bar{grid-template-columns:repeat(4,minmax(76px,1fr));max-height:118px;overflow:auto}.deck-list>.cost-curve{display:none}}
 .deck-builder-grid{grid-template-columns:calc(var(--l12-card-detail-sidebar-width,274px) - 56px) minmax(480px,1fr) var(--l12-card-detail-sidebar-width,274px)}
 .workspace-tabs{grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
-.catalog-filter-controls{display:flex;align-items:center;gap:8px;margin-bottom:10px;min-width:0}.catalog-filter-controls :deep(.mobile-filter-trigger){display:inline-flex}.catalog-filter-summary{min-width:0;overflow:hidden;border:0;background:transparent;color:#b9c6c4;font-size:12px;text-align:left;text-overflow:ellipsis;white-space:nowrap}.catalog-filter-clear{flex:none;border:0;background:transparent;color:#74d1d6;font-weight:900}.catalog-filter-bar{grid-template-columns:repeat(2,minmax(0,1fr));margin:0;padding:0;border:0;background:transparent}.catalog-filter-bar .filter-search,.catalog-filter-bar .product-filter{grid-column:1/-1}.deck-card-grid{grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:10px}.deck-card.landscape-thumbnail .card-image{aspect-ratio:8/5}.deck-card.landscape-thumbnail .card-image>.l12-card-image{position:static;width:100%;height:100%;transform:none}.deck-card>div b,.deck-card>div small{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.trial-thumb img{position:static;width:100%;height:100%;transform:none}.trial-thumb{aspect-ratio:8/5}
+.catalog-filter-controls{display:flex;align-items:center;gap:8px;margin-bottom:10px;min-width:0}.catalog-filter-controls :deep(.mobile-filter-trigger){display:inline-flex}.catalog-filter-summary{min-width:0;overflow:hidden;border:0;background:transparent;color:#b9c6c4;font-size:12px;text-align:left;text-overflow:ellipsis;white-space:nowrap}.catalog-filter-clear{flex:none;border:0;background:transparent;color:#74d1d6;font-weight:900}.catalog-filter-bar{position:static;z-index:auto;grid-template-columns:repeat(2,minmax(0,1fr));margin:0;padding:0;border:0;background:transparent}.catalog-filter-bar .filter-search,.catalog-filter-bar .product-filter{grid-column:1/-1}.deck-card-grid{grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:10px}.deck-card.landscape-thumbnail .card-image{aspect-ratio:8/5}.deck-card.landscape-thumbnail .card-image>.l12-card-image{position:static;width:100%;height:100%;transform:none}.deck-card>div b,.deck-card>div small{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.trial-thumb img{position:static;width:100%;height:100%;transform:none}.trial-thumb{aspect-ratio:8/5}
 @media(max-width:1180px) and (min-width:821px){.deck-builder-grid{grid-template-columns:200px minmax(420px,1fr) 260px}}
 @media(max-width:820px){.deck-mobile-nav{grid-template-columns:repeat(auto-fit,minmax(86px,1fr))}.catalog-filter-bar{display:grid;position:static;max-height:none;padding:0;overflow:visible;border:0;box-shadow:none}.deck-card-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.catalog-filter-controls{align-items:stretch}.catalog-filter-summary{flex:1}.deck-builder-grid[data-mobile-pane="insights"] .deck-center-column{display:flex}.deck-builder-grid[data-mobile-pane="insights"] .deck-catalog{display:none}}
 @media(max-height:520px) and (min-width:821px) and (max-width:900px){.deck-builder-grid{grid-template-columns:minmax(0,1fr) 260px}.deck-card-grid{grid-template-columns:repeat(auto-fill,minmax(108px,1fr))}}
+.deck-builder-shell button{line-height:1.25;text-align:center;text-wrap:balance;white-space:normal}.deck-builder-topbar{height:auto;min-height:74px}.deck-builder-topbar>div:nth-child(2) small{font-size:clamp(11px,.8vw,14px)}.deck-builder-topbar h1{font-size:clamp(18px,1.35vw,23px)}.deck-builder-topbar button{min-height:42px;min-width:0;padding-inline:clamp(8px,.8vw,14px)}.deck-file-actions{position:relative;align-items:stretch}.more-actions-trigger{display:none}.secondary-actions{display:contents}.deck-side-column{grid-template-rows:minmax(0,1fr)}.deck-detail-panel.collapsed{padding:6px}.detail-panel-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.detail-panel-heading h2{margin-bottom:0}.detail-panel-heading button{min-height:34px;padding:5px 8px;border:1px solid #59666e;background:#11191c;color:#eee}.deck-builder-grid.detail-collapsed{grid-template-columns:52px minmax(480px,1fr) var(--l12-card-detail-sidebar-width,274px)}.deck-detail-panel.collapsed .detail-panel-heading>div{display:none}.deck-detail-panel.collapsed .detail-panel-heading{height:100%;align-items:center;justify-content:center}.deck-detail-panel.collapsed .detail-panel-heading button{writing-mode:vertical-rl}.product-filter-control{position:relative;z-index:31;flex:none}.pool-selector-trigger{min-width:96px;min-height:38px;border:1px solid #5d6865;background:#161c1d;color:#eee;font-weight:900}.product-filter-control .product-filter{position:absolute;z-index:30;top:calc(100% + 6px);left:0;display:flex;width:min(430px,72vw);flex-wrap:wrap;gap:6px;margin:0;padding:12px;border:1px solid #63716e;background:#0b1112;box-shadow:0 18px 50px #000}.product-filter-control .product-filter legend{padding:0 5px;color:#c8d0cd;font-weight:900}.product-filter-control .pool-selector-close{margin-left:auto}.catalog-filter-count{align-self:center;color:#8f9b98;font-size:12px;white-space:nowrap}.catalog-filter-summary{pointer-events:none}.catalog-filter-bar{display:grid;grid-template-columns:minmax(180px,2fr) repeat(7,minmax(86px,1fr)) auto;gap:7px;margin-bottom:10px}.catalog-filter-bar label{min-width:0}.catalog-filter-bar .filter-search{grid-column:auto}.catalog-filter-bar input,.catalog-filter-bar select{min-width:0;width:100%}.editor-opening-hand{grid-template-columns:repeat(auto-fit,minmax(135px,1fr));align-items:start}.editor-opening-hand article{grid-template-rows:auto auto auto auto}.editor-opening-hand :deep(.l12-card-image){display:block;width:100%;height:auto;aspect-ratio:5/7;object-fit:contain;background:#050708}.editor-opening-hand b{overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere;line-height:1.35}.editor-opening-hand em{color:#7f8b88;font-size:11px;font-style:normal;line-height:1.35;overflow-wrap:anywhere}.saved-decks-dialog{display:grid;width:min(760px,94vw);max-height:88dvh;grid-template-rows:auto auto minmax(0,1fr);gap:12px;padding:18px;border:1px solid #8b7650;background:#111719;color:#f4f0e6}.saved-decks-dialog>header{display:flex;align-items:flex-start;justify-content:space-between}.saved-decks-dialog h2{margin:3px 0}.saved-decks-dialog>header button{width:40px;height:40px}.new-deck-option{min-height:44px;border:1px solid #d1b35f;background:#d1b35f;color:#111;font-weight:900}.saved-deck-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;overflow:auto}.saved-deck-options>button{min-width:0;padding:0;border:1px solid #3d4849;background:#0d1416;color:#eee;text-align:left}.saved-deck-options>button.active{border-color:#7bd3d3}.saved-deck-options :deep(.deck-profile){border:0;background:transparent}.saved-deck-options>p{grid-column:1/-1;color:#8e9995;text-align:center}
+@media(max-width:1180px) and (min-width:821px){.deck-builder-grid.detail-collapsed{grid-template-columns:48px minmax(420px,1fr) 260px}.catalog-filter-bar{grid-template-columns:repeat(4,minmax(0,1fr))}.catalog-filter-bar .filter-search{grid-column:span 2}}
+@media(max-width:820px){.deck-builder-topbar{align-items:center}.deck-builder-topbar>label{display:grid!important;order:4;width:100%}.deck-builder-topbar>label input{box-sizing:border-box;width:100%}.deck-file-actions{grid-template-columns:repeat(3,minmax(0,1fr))}.more-actions-trigger{display:block}.secondary-actions{display:none}.secondary-actions.open{position:absolute;z-index:80;right:0;top:calc(100% + 5px);display:grid;width:min(250px,86vw);gap:5px;padding:8px;border:1px solid #65716e;background:#0d1416;box-shadow:0 18px 50px #000}.secondary-actions.open button{min-height:44px}.catalog-filter-controls{flex-wrap:wrap}.catalog-filter-summary{order:4;width:100%}.catalog-filter-bar{grid-template-columns:repeat(2,minmax(0,1fr));max-height:none;overflow:visible}.catalog-filter-bar .filter-search{grid-column:1/-1}.editor-opening-hand{grid-template-columns:repeat(2,minmax(0,1fr))}.saved-deck-options{grid-template-columns:1fr}}
+@media(max-height:520px) and (min-width:821px) and (max-width:900px){.catalog-filter-bar{grid-template-columns:repeat(4,minmax(76px,1fr));max-height:none;overflow:visible}.editor-opening-hand{grid-template-columns:repeat(3,minmax(120px,1fr))}}
 </style>

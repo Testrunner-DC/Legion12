@@ -26,6 +26,8 @@ assert.ok(!board.includes('mobileInspectorOpen.value = true'), 'selecting an obj
 assert.ok(!board.includes('mobileIdentityOpen'), 'mobile identity must stay expanded')
 assert.ok(!board.includes('>双方信息</button>'), 'mobile identity must not expose a collapse control')
 assert.ok(board.includes('class="mobile-player-name-strip"') && board.includes('class="mobile-player-details-overlay mobile-safe-overlay"'), 'mobile player names and details must have separate persistent/dialog surfaces')
+assert.ok(identity.includes('showMasterDetails?: boolean') && identity.includes('v-if="showMasterDetails" class="identity-master-row"'), 'current master details must be opt-in so desktop identity stays concise')
+assert.equal((board.match(/show-master-details/g) || []).length, 2, 'current master details must appear only in the two mobile detail cards')
 assert.ok(identity.includes('identity-rank-row') && identity.includes('identity-tier-row') && identity.includes('identity-master-title-row'), 'player identity must preserve authoritative rank, tier and master-title fields')
 assert.ok(!playerMat.includes('<img v-if="mobileMoralePicker && factionLogoUrls[player.faction]"'), 'legacy mobile faction icon cannot remain inside the morale label')
 assert.ok(!legacy.includes(':global(.mobile-action-dock)'), 'old independent fixed dock cannot reappear')

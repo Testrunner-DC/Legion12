@@ -11,7 +11,7 @@ public sealed class TestRunAcceptanceFixtureTests
         Assert.False(L12TestRunStorageProfile.AcceptanceDataEnabled(false,
             L12TestRunStorageProfile.AcceptanceDataValue));
         Assert.False(L12TestRunStorageProfile.AcceptanceDataEnabled(true, null));
-        Assert.False(L12TestRunStorageProfile.AcceptanceDataEnabled(true, "acceptance-v2"));
+        Assert.False(L12TestRunStorageProfile.AcceptanceDataEnabled(true, "acceptance-v1"));
         Assert.True(L12TestRunStorageProfile.AcceptanceDataEnabled(true,
             L12TestRunStorageProfile.AcceptanceDataValue));
     }
@@ -38,6 +38,23 @@ public sealed class TestRunAcceptanceFixtureTests
             Assert.Equal(first, second);
             Assert.Equal(3, decks.Length);
             Assert.Equal(2, published.Length);
+            Assert.Equal(18, first.RankedPlayers);
+            Assert.True(first.RankedMatches >= 100);
+            Assert.True(first.ActiveMasters >= 2);
+            Assert.Equal(9, first.HistoricalHonors);
+            Assert.True(store.RankedLeaderboard(limit: 50).Count >= 18);
+            Assert.NotEmpty(store.RankedSeasonHonors());
+            var analytics = store.RankedAnalytics(store.TestRunAcceptanceRankedMatches(), "season");
+            Assert.Equal(first.RankedMatches, analytics.Summary.Matches);
+            Assert.Equal(first.ActiveMasters, analytics.Summary.ActiveMasters);
+            Assert.NotEmpty(analytics.Masters);
+            Assert.NotEmpty(analytics.Matchups);
+            Assert.True(store.RankedMasterChampions().Count >= 3);
+            var statistics = store.MergeTestRunAcceptanceStatistics(admin.Id,
+                new L12PlayerStatisticsView(new(0, 0, 0, 0, 0, 0, 0, 0),
+                    new(0, 0, 0, 0, 0, 0, 0, 0), [], null));
+            Assert.True(statistics.Ranked.Games >= 20);
+            Assert.NotEmpty(statistics.Masters);
             Assert.Contains(published, deck => deck.Deck.SpecialIds.Count > 0);
             Assert.All(published, deck =>
             {

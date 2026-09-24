@@ -53,6 +53,7 @@ const gameReentry = read('../src/l12/gameReentry.ts')
 const backgroundMusic = read('../src/l12/backgroundMusic.ts')
 const settingsModal = read('../src/l12/site/L12SettingsModal.vue')
 const deckConstructionBrowser = read('../src/l12/site/DeckConstructionBrowser.vue')
+const catalogCardDetails = read('../src/l12/CatalogCardDetails.vue')
 const homePublishedCache = read('../src/l12/site/homePublishedCache.ts')
 const mainEntry = read('../src/main.ts')
 const playerMat = read('../src/l12/game/PlayerMat.vue')
@@ -913,14 +914,16 @@ const contracts = [
   [playerMat.includes('class="morale-count resource-morale-count"') && playerMat.match(/resource-morale-count/g)?.length >= 2, '双方士气数量必须共用不溢出的独立计数器单元'],
   [board.includes('promotionFoundationTargetIds') && board.includes('promotionOptions')
     && l12ServerSources.includes('NextS2PromotionGodPowerDiscount'), '晋升登场必须高亮服务端权威合法基底并纳入锻造炉减免'],
-  [deckEditor.includes('主宰') && deckEditor.includes('主牌库') && deckEditor.includes('额外卡牌') && !deckEditor.includes('可用卡牌'), '牌库编辑器中区必须保持主宰/主牌库/额外卡牌三标签'],
+  [deckEditor.includes('>主城</button>') && deckEditor.includes('主牌库') && deckEditor.includes('额外卡牌') && !deckEditor.includes('可用卡牌'), '牌库编辑器中区必须保持主城/主牌库/额外卡牌三标签'],
   [deckEditor.includes('class="catalog-filter-bar"') && deckEditor.includes('aria-label="主牌库筛选"') && !deckEditor.includes('<h2>构筑设定</h2>')
     && ['factionFilter', 'costFilter', 'troopsFilter', 'disasterFilter', 'legalityFilter', 'sortMode'].every(value => deckEditor.includes(value)), '牌库编辑器必须把完整卡池筛选放在主牌库卡池上方，并保留阵营、类型、卡池、费用、兵力、天灾、禁限与排序'],
-  [deckEditor.includes('class="deck-detail-panel grand-panel"') && deckEditor.includes('class="saved-decks-panel grand-panel"') && deckEditor.includes('.saved-list{display:grid;gap:5px;overflow-y:auto'), '牌库编辑器卡牌详情与已保存牌库必须使用独立盒子，且已保存牌库可独立纵向滚动'],
+  [deckEditor.includes('class="deck-detail-panel grand-panel"') && deckEditor.includes('detailCollapsed')
+    && deckEditor.includes('class="saved-decks-dialog"') && deckEditor.includes('@click="savedDecksOpen = true">切换牌库')
+    && !deckEditor.includes('class="saved-decks-panel grand-panel"') && !deckEditor.includes('class="saved-deck-switcher"'), '牌库编辑器详情必须可折叠，已保存牌库必须只通过唯一切换入口打开，不得常驻重复面板或选择器'],
   [deckEditor.indexOf('class="current-deck-summary"') > deckEditor.indexOf('class="deck-catalog grand-panel"')
-    && deckEditor.indexOf('class="current-deck-summary"') < deckEditor.indexOf('<p class="kicker">CARD POOL</p>')
+    && deckEditor.indexOf('class="current-deck-summary"') < deckEditor.indexOf('<p class="kicker">构筑卡池</p>')
     && deckEditor.includes('masterProfileUrl(selectedMaster.id') && deckEditor.includes('士气 {{ moraleIds.length }} 张')
-    && !deckEditor.includes('class="master-preview"'), '当前主宰头像、名称、阵营与士气数必须左对齐置于中间卡池盒顶部，左栏只保留选中卡牌详情'],
+    && deckEditor.includes('当前主城') && !deckEditor.includes('class="master-preview"'), '当前主城头像、名称、阵营与士气数必须左对齐置于中间卡池盒顶部，左栏只保留选中卡牌详情'],
   [(deckEditor.match(/class="deck-entry-row"/g)?.length ?? 0) >= 3
     && deckEditor.includes('data-deck-section="extra"') && deckEditor.includes('v-for="trial in selectedTrials"')
     && deckEditor.includes('v-for="card in automaticExtraCards"'), '右下显式试炼与主宰自动额外卡必须复用主牌库横向条目视觉'],
@@ -937,7 +940,8 @@ const contracts = [
     && deckEditor.includes('const productFilters = ref<string[]>([])')
     && deckEditor.includes('v-for="value in productOptions"')
     && deckEditor.includes('productFilters.includes(value)')
-    && deckEditor.includes('卡池（可多选）'), '牌库编辑器卡池筛选必须支持从完整目录动态列出并组合选择 S01、S02 与 ST 产品'],
+    && deckEditor.includes('class="pool-selector-trigger"') && deckEditor.includes('v-if="poolSelectorOpen" class="product-filter"')
+    && deckEditor.includes('class="catalog-filter-bar"') && !deckEditor.includes('卡池（可多选）'), '牌库编辑器必须仅将产品卡池收进按钮弹层，并让其他筛选常驻；产品仍须从完整目录动态列出并支持组合选择'],
   [deckEditor.includes('effectiveDeckLimit(card, masterId.value)')
     && deckEditor.includes('effectiveDeckLimit(entry.card, masterId)')
     && !deckEditor.includes('activeRestrictions') && !deckLibrary.includes('activeRestrictions')
@@ -993,7 +997,7 @@ const contracts = [
     && board.includes('isCounterTacticCard(card)') && !board.includes('counterIds = new Set')
     && playerMat.includes('isCounterTacticCard(card)') && !playerMat.includes("['S01-0016'")
     && l12PromptSetup.includes('isCounterTactic')
-    && deckConstructionBrowser.includes('CardDetailContent') && cardDetailContent.includes('cardTypeLabel(card.cardType, card.isCounterTactic)')
+    && deckConstructionBrowser.includes('CatalogCardDetails') && catalogCardDetails.includes('CardDetailContent') && cardDetailContent.includes('cardTypeLabel(card.cardType, card.isCounterTactic)')
     && adminPage.includes('cardTypeLabel(card.cardType, card.isCounterTactic)')
     && adminPage.includes('cardTypeLabel(selectedEffect.cardType, selectedEffect.isCounterTactic)'), '主动/反击战术必须共用tactic类型并由独立属性贯穿目录、对战、弹框与后台；不得保留卡号清单或显示内部英文类型'],
   [l12PromptSetup.includes('"discard-or-decline", "optional-card", "search"') && l12PromptSetup.includes('data.TryAdd("layout", "single-row")') && l12PromptSetup.includes('data["displayCardIds"]') && prompt.includes("prompt.value?.data?.layout === 'single-row'") && prompt.includes('displayCardIds') && prompt.includes('unavailable'), '弃牌及查看多张选择部分必须使用横向全卡图列表，并将不合法卡灰置不可选'],

@@ -91,7 +91,7 @@ const filtered = computed(() => {
   <Teleport :to="landscapeTeleportTarget()">
     <div class="single-card-picker-mask" @click.self="emit('close')">
       <section class="single-card-picker" role="dialog" aria-modal="true" :aria-label="title">
-        <header><div><small>SINGLE CARD SEARCH</small><h2>{{ title }}</h2></div><button type="button" aria-label="关闭" @click="emit('close')">×</button></header>
+        <header><div><small>单卡查找</small><h2>{{ title }}</h2></div><button type="button" aria-label="关闭" @click="emit('close')">×</button></header>
         <div class="single-card-filters">
           <input v-model="query" type="search" placeholder="搜索卡名、编号或效果文字" autofocus>
           <select v-model="type"><option value="all">全部类型</option><option v-for="key in types" :key="key" :value="key">{{ cardTypeLabel(key) }}</option></select>

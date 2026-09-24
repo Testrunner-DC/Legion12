@@ -1316,10 +1316,12 @@ function statusTexts(card: Card) {
               <BattlePlayerIdentity side-label="对方" :player="viewEnemy" :rank="enemyBadge?.rank" :tier-label="battleTierLabel(enemyBadge)"
                 :placement-title="identityLabel(enemyBadge?.placementTitle)" :master-title="identityLabel(enemyBadge?.masterTitle)"
                 :faction="viewEnemy.faction" :faction-label="factionLabel(viewEnemy.faction)" :connection-label="connectionLabel(viewEnemy.playerIndex)" :connected="playerConnection(viewEnemy.playerIndex)"
+                show-master-details
                 :class="{ focused: mobilePlayerDetailsFocus === viewEnemy.playerIndex }" />
               <BattlePlayerIdentity side-label="我方" :player="viewMe" :rank="myBadge?.rank" :tier-label="battleTierLabel(myBadge)"
                 :placement-title="identityLabel(myBadge?.placementTitle)" :master-title="identityLabel(myBadge?.masterTitle)"
                 :faction="viewMe.faction" :faction-label="factionLabel(viewMe.faction)" :connection-label="connectionLabel(viewMe.playerIndex)" :connected="playerConnection(viewMe.playerIndex)"
+                show-master-details
                 :class="{ focused: mobilePlayerDetailsFocus === viewMe.playerIndex }" />
             </div>
           </div>

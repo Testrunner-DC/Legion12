@@ -67,9 +67,7 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
     ...(deck.specialIds ?? []),
     ...automaticExtraCardIdsForMaster(deck.masterId),
   ])]
-  const qrColumnWidth = publicUrl ? 220 : 0
-  const mainAreaWidth = 1464 - qrColumnWidth
-  const columns = Math.min(publicUrl ? 8 : 10, Math.max(5, Math.ceil(groups.length / 2)))
+  const columns = Math.min(10, Math.max(5, Math.ceil(groups.length / 2)))
   const rows = Math.max(1, Math.ceil(groups.length / columns))
   const canvas = document.createElement('canvas')
   canvas.width = 1920
@@ -97,7 +95,7 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
   const bitmaps = loadedBitmaps.slice(1, 1 + groups.length)
   const extraBitmaps = loadedBitmaps.slice(1 + groups.length)
   const qrImage = publicUrl
-    ? await QRCode.toDataURL(publicUrl, { errorCorrectionLevel: 'M', margin: 4, width: 220, color: { dark: '#050708', light: '#ffffff' } })
+    ? await QRCode.toDataURL(publicUrl, { errorCorrectionLevel: 'M', margin: 3, width: 180, color: { dark: '#050708', light: '#ffffff' } })
       .then(loadDataImage)
     : null
   context.fillStyle = '#10171b'; roundedRect(context, 74, 104, 254, 356, 4)
@@ -138,7 +136,7 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
     context.textAlign = 'left'
   }
 
-  const areaX = 410; const areaY = 198; const areaWidth = mainAreaWidth; const areaHeight = 784
+  const areaX = 410; const areaY = 198; const areaWidth = 1464; const areaHeight = publicUrl ? 650 : 784
   const gapX = 13
   const rowPitch = areaHeight / rows
   const cardWidth = Math.min(162, (areaWidth - gapX * (columns - 1)) / columns, (rowPitch - 42) / 1.4)
@@ -161,14 +159,11 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
     context.fillStyle = '#0b0e10'; context.font = '900 15px Microsoft YaHei'; context.textAlign = 'center'; context.fillText(`×${count}`, badgeX, y + 21); context.textAlign = 'left'
   })
   if (qrImage && publicUrl) {
-    const qrSize = 190
-    const qrX = 1874 - qrSize
-    const qrY = 770
-    context.fillStyle = '#ffffff'; roundedRect(context, qrX - 6, qrY - 42, qrSize + 12, qrSize + 48, 4)
-    context.fillStyle = '#111820'; context.font = '900 14px Microsoft YaHei'; context.textAlign = 'center'
-    context.fillText('扫码查看公开牌库', qrX + qrSize / 2, qrY - 17)
+    const qrSize = 132
+    const qrX = 1860 - qrSize
+    const qrY = 864
+    context.fillStyle = '#ffffff'; context.fillRect(qrX - 6, qrY - 6, qrSize + 12, qrSize + 12)
     context.drawImage(qrImage, qrX, qrY, qrSize, qrSize)
-    context.textAlign = 'left'
   }
   context.fillStyle = '#7f8b90'; context.font = '700 14px Microsoft YaHei'; context.fillText('由十二军团网页平台生成 · 可使用牌库码导入', 74, canvas.height - 70)
   context.fillStyle = '#e1bf6d'; context.font = '900 19px Microsoft YaHei'; context.fillText('LEGION12', 74, canvas.height - 42)

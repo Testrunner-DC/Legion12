@@ -419,7 +419,10 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _app.MapGet("/api/rankings", async (HttpRequest request, string? faction, string? range) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
-            var matches = await _recorder.ListRankedAnalyticsMatchesAsync(20_000);
+            var matches = (await _recorder.ListRankedAnalyticsMatchesAsync(20_000))
+                .Concat(_platform.TestRunAcceptanceRankedMatches())
+                .DistinctBy(item => item.MatchId, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
             return Results.Ok(new { players = _platform.RankedLeaderboard(faction, 50, account?.Id),
                 analytics = _platform.RankedAnalytics(matches, range) });
         });
@@ -556,8 +559,9 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
             request.HttpContext.Response.Headers.CacheControl = "no-store";
-            return Results.Ok(await _recorder.PlayerStatisticsAsync(account.Id, account.Username,
-                _platform.RankedIntegrityExcludedMatchIds(), _platform.StatisticsExcludedAccountIds()));
+            var recorded = await _recorder.PlayerStatisticsAsync(account.Id, account.Username,
+                _platform.RankedIntegrityExcludedMatchIds(), _platform.StatisticsExcludedAccountIds());
+            return Results.Ok(_platform.MergeTestRunAcceptanceStatistics(account.Id, recorded));
         });
         _app.MapGet("/api/auth/username-change-status", (HttpRequest request) =>
         {

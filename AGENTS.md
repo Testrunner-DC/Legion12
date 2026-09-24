@@ -58,6 +58,7 @@ The user approved this operating model on 2026-09-09 for immediate use, without 
    - `Focused` while implementing;
    - `Batch` after the independent feature or Bug is complete;
    - `Release` only before an authorized synchronization or deployment.
+   - The project intentionally places build caches under `D:\GPT\Legion12\cache\primary`. In a filesystem-restricted Codex session, start `Batch` and `Release` with the already approved scoped permission for this verification script; do not first run the same command in the restricted sandbox just to rediscover the known MSBuild temp-directory denial. Lightweight checks that do not write this cache may remain sandboxed.
 4. Prefer deterministic engine scenarios or saved sanitized replay/state fixtures over manually recreating a board. Follow `docs/REGRESSION-FIXTURES.md` and never commit passwords, tokens, room secrets, private hands from real matches, or player identifiers.
 5. Before final handoff, compare the final diff with the pre-change baseline and run the rollback-guard checks. Previously fixed UI contracts and rule invariants may not disappear from the same batch.
 

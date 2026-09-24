@@ -10,6 +10,8 @@ const router = read('src/router/index.ts')
 const platform = read('src/l12/platform.ts')
 const server = read('../服务端WebSocket/TwelveLegions/L12WebSocketServer.cs')
 const detailsStore = read('../服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckDetails.cs')
+const content = read('src/l12/site/PublicDeckContentEditor.vue')
+const catalogDetails = read('src/l12/CatalogCardDetails.vue')
 
 const checks = [
   ['公开牌库详情具备独立路由', router.includes("path: '/decks/:deckId'") && router.includes('PublicDeckDetailPage.vue')],
@@ -21,14 +23,14 @@ const checks = [
   ['移动端使用筛选抽屉且详情不再嵌套列表', library.includes('MobileFilterSheet') && !library.includes('class="deck-detail"')],
   ['详情页展示完整构筑和摘要', detail.includes('DeckConstructionBrowser') && detail.includes('费用曲线') && detail.includes('构筑摘要')],
   ['详情页保留核心操作', ['toggleLike', 'copyToMine', 'copyCode', 'previewImage', 'editDeck', 'deleteDeck'].every(key => detail.includes(key))],
-  ['构筑详情复用共享卡牌详情', browser.includes('CardDetailContent') && browser.includes(':show-catalog-only="false"')],
-  ['窄屏详情使用安全区', browser.includes('construction-detail-mask') && browser.includes('safe-area-inset')],
-  ['详情内容覆盖指南与对局建议', ['data-detail-section="guide"', 'data-detail-section="matchups"', 'updateContent'].every(key => detail.includes(key))],
+  ['构筑详情复用图鉴卡牌详情', browser.includes('CatalogCardDetails') && browser.includes(':show-catalog-only="false"')],
+  ['窄屏详情使用安全区', catalogDetails.includes('safe-area-inset') && catalogDetails.includes('max-height:100%')],
+  ['详情内容覆盖非空指南与对局建议', ['data-detail-section="guide"', 'data-detail-section="matchups"', 'hasGuide', 'hasMatchups'].every(key => detail.includes(key)) && content.includes('updateContent')],
   ['详情内容覆盖长期版本、准确对局与随机起手', ['data-detail-section="versions"', 'data-detail-section="matches"', 'data-detail-section="hands"'].every(key => detail.includes(key))],
   ['对局记录不拿作者总战绩替代', detailsStore.includes('不会用作者总战绩替代') && detailsStore.includes('"unavailable"')],
   ['移动端回放保持电脑端提示', detail.includes('mobile-replay') && detail.includes('请使用电脑端查看回放')],
-  ['点赞复制与浏览计数更新不会清空已加载详情', detail.includes('preservePublicDeckDetails(entry.value, value)') && detail.includes('preservePublicDeckDetails(entry.value, await publicDeckApi.recordCopy') && detail.includes('preservePublicDeckDetails(entry.value, await publicDeckApi.toggleLike')],
-  ['前后端同认普通主宰与神祇主宰', detail.includes("card.cardType === 'master' || card.cardType === 'divinity'") && detailsStore.includes('master.CardType is not ("master" or "divinity")')],
+  ['点赞复制与浏览计数更新不会清空已加载详情', detail.includes('preservePublicDeckDetails(entry.value, value)') && (detail.match(/preservePublicDeckDetails\(entry\.value, updated\)/g)?.length ?? 0) >= 2],
+  ['牌库界面对玩家只提供已实装主城，不开放 divinity 模式', content.includes("card.cardType === 'master'") && !content.includes("card.cardType === 'master' || card.cardType === 'divinity'")],
 ]
 
 for (const [label, passed] of checks) if (!passed) throw new Error(`公开牌库浏览合同失败：${label}`)

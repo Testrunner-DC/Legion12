@@ -25,7 +25,9 @@ if (L12TestRunStorageProfile.AcceptanceDataEnabled(ephemeralTestMatches,
     var fixtures = platform.EnsureTestRunAcceptanceFixtures();
     Console.WriteLine($"Test-run acceptance data: owner={fixtures.Owner}; "
                       + $"decks={fixtures.Decks}; publicDecks={fixtures.PublicDecks}; "
-                      + $"guidedDecks={fixtures.GuidedDecks}.");
+                      + $"guidedDecks={fixtures.GuidedDecks}; rankedPlayers={fixtures.RankedPlayers}; "
+                      + $"rankedMatches={fixtures.RankedMatches}; activeMasters={fixtures.ActiveMasters}; "
+                      + $"historicalHonors={fixtures.HistoricalHonors}.");
 }
 
 var bootstrapIndex = Array.FindIndex(args,

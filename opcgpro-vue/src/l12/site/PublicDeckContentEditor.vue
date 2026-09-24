@@ -13,7 +13,7 @@ const loading = ref(false)
 const error = ref('')
 const revision = ref(0)
 const updatedAt = ref('')
-const masters = computed(() => props.catalog.filter(card => card.cardType === 'master' || card.cardType === 'divinity'))
+const homeCities = computed(() => props.catalog.filter(card => card.cardType === 'master'))
 const actionKey = computed(() => `public-deck:${platformState.account?.id ?? 'anonymous'}:${props.publicationId}`)
 
 function emptyGuide(): PublicDeckGuide {
@@ -40,7 +40,7 @@ async function loadContent() {
 
 function addMatchup() {
   const selected = new Set(matchups.value.map(item => item.opponentMasterId))
-  const opponentMasterId = masters.value.find(item => !selected.has(item.id))?.id ?? ''
+  const opponentMasterId = homeCities.value.find(item => !selected.has(item.id))?.id ?? ''
   matchups.value.push({ opponentMasterId, notes: '', keyCards: '', suggestedSwaps: '' })
 }
 
@@ -74,7 +74,7 @@ watch(() => props.publicationId, loadContent, { immediate: true })
 <template>
   <section class="public-content-editor grand-panel" data-editor-workspace="public-content">
     <header>
-      <div><p class="kicker">PUBLIC CONTENT</p><h2>公开牌库内容</h2><p>编辑公开详情中的指南和对局建议；构筑版本仍由“更新公开牌库”保存。</p></div>
+      <div><p class="kicker">公开内容</p><h2>公开牌库内容</h2><p>编辑公开详情中的指南和对局建议；构筑版本仍由“更新公开牌库”保存。</p></div>
       <div class="content-status"><b>修订 {{ revision }}</b><small>{{ formatTime(updatedAt) }}</small></div>
     </header>
     <p v-if="loading" class="content-state">正在载入公开内容……</p>
@@ -91,15 +91,15 @@ watch(() => props.publicationId, loadContent, { immediate: true })
         </div>
       </section>
       <section class="content-block">
-        <header><div><h3>对局建议</h3><p>按敌方主宰分别填写；空字段会在详情中明确显示为暂未填写。</p></div><button type="button" @click="addMatchup">添加主宰</button></header>
+        <header><div><h3>对局建议</h3><p>按对方主城分别填写；完全留空的内容不会出现在公开详情中。</p></div><button type="button" @click="addMatchup">添加主城</button></header>
         <article v-for="(row,index) in matchups" :key="`${row.opponentMasterId}-${index}`" class="matchup-row">
-          <label>敌方主宰<select v-model="row.opponentMasterId"><option value="" disabled>请选择</option><option v-for="candidate in masters" :key="candidate.id" :value="candidate.id">{{ candidate.nameZh }}</option></select></label>
+          <label>对方主城<select v-model="row.opponentMasterId"><option value="" disabled>请选择</option><option v-for="candidate in homeCities" :key="candidate.id" :value="candidate.id">{{ candidate.nameZh }}</option></select></label>
           <label>对局思路<textarea v-model="row.notes" rows="3" maxlength="800"/></label>
           <label>关键牌<textarea v-model="row.keyCards" rows="2" maxlength="800"/></label>
           <label>建议换牌<textarea v-model="row.suggestedSwaps" rows="2" maxlength="800"/></label>
           <button type="button" class="danger" @click="matchups.splice(index,1)">移除此项</button>
         </article>
-        <p v-if="!matchups.length" class="content-state">还没有对局建议，可按需要添加敌方主宰。</p>
+        <p v-if="!matchups.length" class="content-state">还没有对局建议，可按需要添加对方主城。</p>
       </section>
       <footer><button type="button" class="primary" :disabled="isPending(actionKey)" @click="saveContent">{{ isPending(actionKey) ? '保存中…' : '保存公开内容' }}</button></footer>
     </template>
