@@ -16,11 +16,13 @@ const actionPresentation = read('../src/l12/game/actionPresentation.ts')
 const zoneMovement = read('../src/l12/game/ZoneMovementPresentationLayer.vue')
 const combatMotion = read('../src/l12/game/CombatMotionPresentationLayer.vue')
 const phasePlayback = read('../src/l12/game/PhasePlayback.vue')
+const visualTransitionProjection = read('../src/l12/game/visualTransitionProjection.ts')
 const platform = read('../src/l12/platform.ts')
 const store = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.EffectPresentations.cs')
 const model = read('../../服务端WebSocket/TwelveLegions/EffectPresentationTexts.cs')
 const operations = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.Operations.cs')
 
+const runtimePresentation = `${board}\n${visualTransitionProjection}`
 for (const contract of [
   'data-ui-contract="effect-presentation-editor"',
   'data-ui-contract="effect-presentation-segment"',
@@ -84,7 +86,7 @@ for (const contract of [
   "event.effectResultStatus === 'negated'",
   "event.effectResultStatus === 'skipped'",
   "event.effectResultStatus === 'failed'",
-]) assert(board.includes(contract), `Battle animation settlement projection is missing ${contract}`)
+]) assert(runtimePresentation.includes(contract), `Battle animation settlement projection is missing ${contract}`)
 assert(eventLogViewModel.includes("'effect-result'") && eventLogViewModel.includes("'effect-declined'")
   && eventLogViewModel.includes('PLAYER_LOG_HIDDEN_TYPES'),
   'Player log must explicitly suppress settlement internals and declined effects while authority history remains intact')

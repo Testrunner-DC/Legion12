@@ -127,6 +127,7 @@ const keywordRows = computed(() => {
     <span v-if="showFace && card.disasterLevel" class="card-disaster">{{ card.disasterLevel }}</span>
     <span v-if="showFace && attachedGroups.length" class="attached-card-orbs" aria-label="叠放卡牌">
       <span v-for="group in attachedGroups" :key="group.card.cardId" class="attached-card-orb" role="button" tabindex="0"
+        :data-attached-card-instance-ids="(card.attachedCards ?? []).filter(item => item.cardId === group.card.cardId).map(item => item.instanceId).join(' ')"
         :title="`${group.card.name}${group.count > 1 ? ` ×${group.count}` : ''}`"
         @mouseenter.stop="$emit('focusCard', group.card)" @focus.stop="$emit('focusCard', group.card)"
         @click.stop="$emit('focusCard', group.card)" @keyup.enter.stop="$emit('focusCard', group.card)">

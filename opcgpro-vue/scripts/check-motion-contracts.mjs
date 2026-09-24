@@ -9,6 +9,10 @@ const app = read('src/App.vue')
 const hand = read('src/l12/game/HandArea.vue')
 const movement = read('src/l12/game/ZoneMovementPresentationLayer.vue')
 const combat = read('src/l12/game/CombatMotionPresentationLayer.vue')
+const stateTransition = read('src/l12/game/CardStateTransitionLayer.vue')
+const visualProjection = read('src/l12/game/visualTransitionProjection.ts')
+const board = read('src/l12/game/GameBoard.vue')
+const tile = read('src/l12/CardTile.vue')
 
 const checks = [
   ['motion tokens imported once', main.includes("import './l12/motion.css'")],
@@ -22,6 +26,13 @@ const checks = [
   ['zone flight arc and settle', movement.includes('const lift =') && movement.includes('offset: .85')],
   ['attack hit pause and impact', combat.includes('offset: .58') && combat.includes('const impact = targetElement.animate')],
   ['site and battle modal language', motion.includes('.site-modal-mask > .site-modal') && motion.includes('.l12-prompt-overlay > .prompt-panel')],
+  ['ready and rest snapshot handoff', board.includes('<CardStateTransitionLayer') && stateTransition.includes("flush: 'pre', immediate: true") && stateTransition.includes('hiddenTarget.style.visibility')],
+  ['ready and rest use global timing language', stateTransition.includes('l12AnimationDuration') && stateTransition.includes("cubic-bezier(.22,1,.36,1)") && stateTransition.includes('prefers-reduced-motion: reduce')],
+  ['multi-card movement stays per instance', movement.includes('movementCardsForEvent(event)') && visualProjection.includes("event.type === 'move' || event.type === 'attach'")],
+  ['attachment target uses stable instance identity', tile.includes('data-attached-card-instance-ids') && movement.includes('attachmentElement') && movement.includes('draft.attachment && !destination')],
+  ['private-zone source hints survive prompt removal', movement.includes('sourceZoneHints') && movement.includes('collectPromptSourceZoneHints') && visualProjection.includes("key.endsWith(':zone')")],
+  ['effect card art includes authority source only', board.includes('isCardEffectPresentationEvent(event)') && board.includes('presentationCards(event)') && visualProjection.includes('event.effectSceneId') && visualProjection.includes('event.cards?.slice(0, 1)')],
+  ['blocking prompt cancels only active presentation', stateTransition.includes('if (paused && active.value) cancelActive()') && movement.includes('if (paused && active.value) cancelActiveMovement()')],
 ]
 
 const failures = checks.filter(([, ok]) => !ok)

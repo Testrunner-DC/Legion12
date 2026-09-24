@@ -13,6 +13,8 @@ import BattleEventLog from './BattleEventLog.vue'
 import BattleUtilityDock from './BattleUtilityDock.vue'
 import ActionPresentationLayer from './ActionPresentationLayer.vue'
 import ZoneMovementPresentationLayer from './ZoneMovementPresentationLayer.vue'
+import CardStateTransitionLayer from './CardStateTransitionLayer.vue'
+import { cardEffectPresentationCards, isCardEffectPresentationEvent } from './visualTransitionProjection'
 import CombatMotionPresentationLayer from './CombatMotionPresentationLayer.vue'
 import GraveyardOverlay from './GraveyardOverlay.vue'
 import HandArea from './HandArea.vue'
@@ -541,6 +543,9 @@ function publicRevealText(event: ActionEvent) {
 // them out of the secondary public-card overlay so the two animations cannot
 // cover or cancel each other.
 function isDisasterRevealEvent(event: ActionEvent) { return event.type === 'disaster-reveal' }
+function presentationCards(event: ActionEvent) {
+  return cardEffectPresentationCards(event)
+}
 function diceValuesFromEvent(event: ActionEvent) {
   const result = event.text.match(/结果为\s*([1-6])/)?.[1]
   if (result) return [Number(result)]
@@ -573,18 +578,16 @@ function showNextDiceReveal() {
 watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
   const fresh = (props.game.recentEvents ?? [])
     .filter(event => !isDisasterRevealEvent(event) && event.cards?.length && event.sequence > lastPublicRevealSequence.value
-      && (event.playerIndex === null || event.playerIndex !== props.game.you)
-      && (event.type === 'effect-result'
-        || (event.effectResultStatus !== 'declared'
-          && (event.type === 'effect-trigger' || event.type === 'effect-response' || event.type === 'effect-activation'))
-        || event.type === 'reveal' || event.text.includes('展示')
-        || (event.type === 'search' && /展示|加入手牌/.test(event.effectText || event.text)))
+      && (isCardEffectPresentationEvent(event)
+        || ((event.playerIndex === null || event.playerIndex !== props.game.you)
+          && (event.type === 'reveal' || event.text.includes('展示')
+            || (event.type === 'search' && /展示|加入手牌/.test(event.effectText || event.text)))))
       && !(event.type === 'effect-trigger' && /展示|公开/.test(event.text)))
     .sort((left, right) => left.sequence - right.sequence)
   for (const event of fresh) {
     publicRevealQueue.push({
       sequence: event.sequence,
-      cards: event.cards ?? [],
+      cards: presentationCards(event),
       text: publicRevealText(event),
     })
     lastPublicRevealSequence.value = Math.max(lastPublicRevealSequence.value, event.sequence)
@@ -1157,6 +1160,7 @@ function statusTexts(card: Card) {
               :active="game.activePlayer === viewEnemy.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
           </div>
           <div class="felt-board" data-l12-game-board data-ui-contract="persistent-board-safe-layout">
+            <span class="presentation-zone-anchor" data-l12-zone="resolving" aria-hidden="true" />
             <PlayerMat class="battlefield-half opponent-half" :player="viewEnemy" side="opponent" :controllable="isControlledPlayer(viewEnemy.playerIndex)"
               :mobile-layout="mobileLandscapeViewport"
               :active="game.activePlayer === viewEnemy.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
@@ -1191,8 +1195,11 @@ function statusTexts(card: Card) {
             <ActionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId" :player-names="game.players.map(player => player.name)"
               :paused="passivePresentationPaused" />
             <ZoneMovementPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
+              :players="game.players" :prompts="game.prompts ?? []"
               :viewer-player-index="game.you" :paused="passivePresentationPaused" :playback-speed="replayPlaybackSpeed"
               @busy-change="replayZonePresentationBusy = $event" />
+            <CardStateTransitionLayer :players="game.players" :match-id="game.matchId"
+              :paused="modalPresentationPaused" :playback-speed="replayPlaybackSpeed" />
             <CombatMotionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
               :playback-speed="replayPlaybackSpeed" @busy-change="replayCombatPresentationBusy = $event" />
             <Teleport :to="landscapeTeleportTarget()">
@@ -1444,6 +1451,7 @@ function statusTexts(card: Card) {
   justify-self:center;
   align-items:stretch;
 }
+.presentation-zone-anchor{position:absolute;z-index:-1;left:50%;top:50%;width:72px;height:101px;transform:translate(-50%,-50%);visibility:hidden;pointer-events:none}
 .board-status-lane{position:relative;z-index:38;display:flex;box-sizing:border-box;height:70px;min-height:70px;justify-content:flex-end;overflow:visible;pointer-events:none}.board-player-clock{position:relative;right:auto;top:auto;bottom:auto}.opponent-status-lane{order:0;align-items:flex-end}.my-status-lane{order:0;align-items:flex-start}
 .player-panel{display:grid;box-sizing:border-box;height:auto!important;min-height:0;flex:none;gap:8px;overflow:hidden!important}.player-panel :deep(.battle-player-identity){padding:2px}.player-panel :deep(.battle-player-identity__facts>div){grid-template-columns:64px minmax(0,1fr)}.player-panel :deep(.battle-player-identity__name>strong){font-size:max(14px,calc(var(--l12-board-copy,13px) - 1px))}.player-panel :deep(.battle-player-identity dd){font-size:calc(var(--l12-board-copy,13px) - 1px)}.player-panel :deep(.battle-player-identity .ranked-identity-badge){max-width:100%}.player-panel :deep(.battle-player-identity .ranked-identity-badge>span){min-width:0;overflow-wrap:anywhere;white-space:normal}
 .player-panel>hr{margin:9px 0!important}

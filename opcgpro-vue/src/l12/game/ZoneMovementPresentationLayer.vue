@@ -3,9 +3,10 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { l12AnimationDuration } from '../audioPreferences'
 import { landscapeTeleportTarget, visibleViewport, viewportRect } from '../mobileViewport'
 import { CARD_IMAGE_PLACEHOLDER, resolveCardAssetUrls } from '../cardAssets'
-import type { ActionEvent, Card } from '../types'
+import type { ActionEvent, Card, PlayerView, Prompt } from '../types'
+import { collectKnownCardZones, collectPromptSourceZoneHints, movementCardsForEvent, type VisualZone } from './visualTransitionProjection'
 
-type Zone = 'hand' | 'library' | 'field' | 'graveyard' | 'relic' | 'master' | 'center' | 'disaster'
+type Zone = VisualZone
 type AnchorRect = { x: number; y: number; width: number; height: number }
 type Movement = {
   sequence: number
@@ -18,14 +19,19 @@ type Movement = {
   covered: boolean
   fromRect: AnchorRect
   toRect: AnchorRect
+  fromRotation?: number
+  toRotation?: number
   sourceGhost?: HTMLElement
   preparedImageUrl?: string
   disasterReveal?: boolean
   caption?: string
+  attachment?: boolean
 }
 
 const props = withDefaults(defineProps<{
   events: ActionEvent[]
+  players: PlayerView[]
+  prompts: Prompt[]
   matchId: string
   viewerPlayerIndex: number
   paused?: boolean
@@ -40,6 +46,17 @@ let lastSequence = 0
 let timer: ReturnType<typeof setTimeout> | null = null
 let preparationCount = 0
 const preparedImageUrls = new Map<string, string>()
+const sourceZoneHints = new Map<string, Zone>()
+
+watch(() => props.prompts, prompts => {
+  // 私密区域身份只在选择期间可见。保留本次选择的区域锚点，供紧随其后的权威移动事件使用。
+  for (const [instanceId, zone] of collectPromptSourceZoneHints(prompts)) sourceZoneHints.set(instanceId, zone)
+}, { deep: true, immediate: true })
+watch(() => collectKnownCardZones(props.players), (next, previous) => {
+  // Capture the authoritative pre-update zone while its DOM still exists. This
+  // also covers same-name copies because instance identity, not card name, is used.
+  for (const [instanceId, zone] of previous ?? next) sourceZoneHints.set(instanceId, zone)
+}, { flush: 'pre', immediate: true })
 
 function notifyBusy() {
   // The parent also coordinates live card reveals with modal prompts.  Report
@@ -105,7 +122,7 @@ function publicHandAddCaption(event: ActionEvent, card: Card) {
   return source ? `〈${card.name}〉因〈${source}〉加入手牌` : `〈${card.name}〉加入手牌`
 }
 
-function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: AnchorRect): Movement | null {
+function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: AnchorRect, selectedCard?: Card): Movement | null {
   // Combat deaths already keep the exact battlefield visual until it reaches the
   // owner's graveyard. Do not create a second card when delayed death triggers finish.
   if (event.type === 'grave' && event.text.includes('阵亡触发已完成')) return null
@@ -127,9 +144,11 @@ function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: Anc
     from = 'hand'; to = event.cards?.[0]?.cardType === 'artifact' ? 'relic'
       : event.cards?.[0]?.cardType === 'legion' ? 'field' : 'center'; label = '打出'
   } else if (event.type === 'put' || event.type === 'enter') {
-    from = textSource(event.text); to = 'field'; label = '登场'
+    from = selectedCard && sourceZoneHints.get(selectedCard.instanceId) || textSource(event.text); to = 'field'; label = '登场'
   } else if (event.type === 'move') {
     from = 'field'; to = 'field'; label = '位移'
+  } else if (event.type === 'attach') {
+    from = selectedCard && sourceZoneHints.get(selectedCard.instanceId) || 'resolving'; to = 'attached'; label = '叠放'
   } else if (event.type === 'grave' || event.type === 'discard') {
     from = textSource(event.text); to = 'graveyard'; label = event.type === 'discard' ? '弃置' : '入墓'
   } else if (event.type === 'return') {
@@ -139,9 +158,9 @@ function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: Anc
   } else return null
 
   const cards = event.cards ?? []
-  const card = event.type === 'move' ? cards.at(-1)
+  const card = selectedCard ?? (event.type === 'move' ? cards.at(-1)
     : event.type === 'reveal' ? cards.find(candidate => !isMovementIdentityConcealed(event, candidate))
-    : cards[0]
+    : cards[0])
   const concealed = isMovementIdentityConcealed(event, card)
   return {
     sequence: event.sequence,
@@ -156,6 +175,7 @@ function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: Anc
     toRect,
     disasterReveal: event.type === 'disaster-reveal',
     caption: event.type === 'reveal' && card ? publicHandAddCaption(event, card) : undefined,
+    attachment: event.type === 'attach',
   }
 }
 
@@ -170,8 +190,20 @@ function cardElement(instanceId?: string) {
   const root = document.querySelector('[data-l12-game-stage]')
   return root?.querySelector(`[data-card-instance-id="${CSS.escape(instanceId)}"]`) ?? null
 }
+function attachmentElement(instanceId?: string) {
+  if (!instanceId) return null
+  const root = document.querySelector('[data-l12-game-stage]')
+  return [...(root?.querySelectorAll<HTMLElement>('[data-attached-card-instance-ids]') ?? [])]
+    .find(element => (element.dataset.attachedCardInstanceIds ?? '').split(/\s+/).includes(instanceId)) ?? null
+}
+function destinationElement(movement: Movement) {
+  return movement.attachment ? attachmentElement(movement.card?.instanceId) : cardElement(movement.card?.instanceId)
+}
+function elementRotation(element: Element | null) {
+  return element?.classList.contains('tapped') ? 90 : 0
+}
 function zoneElement(zone: Zone, playerIndex: number) {
-  if (zone === 'center') return null
+  if (zone === 'center' || zone === 'attached') return null
   const root = document.querySelector('[data-l12-game-stage]')
   if (zone === 'disaster') return root?.querySelector('[data-l12-zone="disaster"]') ?? null
   return root?.querySelector(`[data-player-index="${playerIndex}"][data-l12-zone="${zone}"]`)
@@ -187,7 +219,8 @@ function fallbackRect(zone: Zone, playerIndex: number): AnchorRect {
   return { x, y, width: 72, height: 101 }
 }
 function resolveRect(zone: Zone, playerIndex: number, instanceId?: string) {
-  return elementRect(cardElement(instanceId)) ?? elementRect(zoneElement(zone, playerIndex)) ?? fallbackRect(zone, playerIndex)
+  return elementRect(zone === 'attached' ? attachmentElement(instanceId) : cardElement(instanceId))
+    ?? elementRect(zoneElement(zone, playerIndex)) ?? fallbackRect(zone, playerIndex)
 }
 
 function movementDuration(movement: Movement) {
@@ -209,6 +242,8 @@ const motionStyle = computed(() => {
     '--move-from-scale': `${Math.max(.55, Math.min(1.45, start.width / 72))}`,
     '--move-to-scale': `${Math.max(.55, Math.min(1.45, finish.width / 72))}`,
     '--move-duration': `${movementDuration(active.value)}ms`,
+    '--move-from-rotation': `${active.value.fromRotation ?? 0}deg`,
+    '--move-to-rotation': `${active.value.toRotation ?? 0}deg`,
   }
 })
 
@@ -228,7 +263,7 @@ function showNext() {
   active.value = queue.shift() ?? null
   if (!active.value) return
   notifyBusy()
-  const destination = cardElement(active.value.card?.instanceId)
+  const destination = destinationElement(active.value)
   if (destination instanceof HTMLElement) {
     hiddenTarget = destination
     hiddenTargetVisibility = destination.style.visibility
@@ -258,9 +293,12 @@ function showNext() {
       transformOrigin: 'left top', willChange: 'transform, opacity', filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))',
     })
     const ghost = active.value.sourceGhost
-    Object.assign(ghost.style, { width: '100%', height: '100%', margin: '0', pointerEvents: 'none' })
+    ghost.classList.remove('tapped', 'selected')
+    Object.assign(ghost.style, { width: '100%', height: '100%', margin: '0', transform: 'none', transition: 'none', pointerEvents: 'none' })
     ghost.removeAttribute('id')
+    ghost.removeAttribute('data-card-instance-id')
     ghost.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'))
+    ghost.querySelectorAll('[data-card-instance-id]').forEach(node => node.removeAttribute('data-card-instance-id'))
     wrapper.appendChild(ghost)
     if (active.value.caption) {
       const caption = document.createElement('span')
@@ -284,10 +322,10 @@ function showNext() {
     const tilt = Math.max(-3, Math.min(3, dx * .01))
     const duration = movementDuration(active.value)
     activeGhostAnimation = wrapper.animate([
-      { transform: 'translate3d(0,0,0) scale(1) rotate(0deg)', opacity: 1 },
-      { transform: `translate3d(${dx / 2}px,${dy / 2 + lift}px,0) scale(${(1 + scaleX) / 2},${(1 + scaleY) / 2}) rotate(${tilt}deg)`, opacity: 1, offset: .5 },
-      { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX * 1.04},${scaleY * 1.04}) rotate(0deg)`, opacity: 1, offset: .85 },
-      { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX},${scaleY}) rotate(0deg)`, opacity: 1 },
+      { transform: `translate3d(0,0,0) scale(1) rotate(${active.value.fromRotation ?? 0}deg)`, opacity: 1 },
+      { transform: `translate3d(${dx / 2}px,${dy / 2 + lift}px,0) scale(${(1 + scaleX) / 2},${(1 + scaleY) / 2}) rotate(${((active.value.fromRotation ?? 0) + (active.value.toRotation ?? 0)) / 2 + tilt}deg)`, opacity: 1, offset: .5 },
+      { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX * 1.04},${scaleY * 1.04}) rotate(${active.value.toRotation ?? 0}deg)`, opacity: 1, offset: .85 },
+      { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX},${scaleY}) rotate(${active.value.toRotation ?? 0}deg)`, opacity: 1 },
     ], { duration, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' })
     activeGhostAnimation.onfinish = finish
     activeGhostAnimation.oncancel = () => {
@@ -327,6 +365,9 @@ function reset() {
   queue.length = 0
   initialized = false
   lastSequence = 0
+  sourceZoneHints.clear()
+  for (const [instanceId, zone] of collectKnownCardZones(props.players)) sourceZoneHints.set(instanceId, zone)
+  for (const [instanceId, zone] of collectPromptSourceZoneHints(props.prompts)) sourceZoneHints.set(instanceId, zone)
   notifyBusy()
 }
 
@@ -339,15 +380,18 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
     return
   }
   const fresh = props.events.filter(item => item.sequence > lastSequence).sort((a, b) => a.sequence - b.sequence)
-  const hasMovement = fresh.some(event => movementFromEvent(event, fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex)))
+  const drafts = fresh.flatMap(event => movementCardsForEvent(event)
+    .filter(card => event.type !== 'reveal' || !isMovementIdentityConcealed(event, card)).map(card => ({
+    event,
+    draft: movementFromEvent(event, fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), card),
+  }))).filter((item): item is { event: ActionEvent; draft: Movement } => Boolean(item.draft))
+  const hasMovement = drafts.length > 0
   if (hasMovement) {
     preparationCount++
     notifyBusy()
   }
   const generation = viewportGeneration
-  const starts = fresh.map(event => {
-    const draft = movementFromEvent(event, fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex))
-    if (!draft) return null
+  const starts = drafts.map(({ draft }) => {
     // A disaster is revealed from its dedicated deck/active-disaster anchor,
     // not cloned from the newly visible session thumbnail.  Using that
     // thumbnail as a source would skip the card-back/front flip entirely.
@@ -355,6 +399,7 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
     return {
       rect: elementRect(source) ?? resolveRect(draft.from, draft.playerIndex, draft.disasterReveal ? undefined : draft.card?.instanceId),
       ghost: source instanceof HTMLElement ? source.cloneNode(true) as HTMLElement : undefined,
+      rotation: elementRotation(source),
     }
   })
   await nextTick()
@@ -363,12 +408,20 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
     notifyBusy()
     return
   }
-  for (const [index, event] of fresh.entries()) {
-    const draft = movementFromEvent(event, fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex))
-    const movement = draft && starts[index]
-      ? movementFromEvent(event, starts[index]!.rect, resolveRect(draft.to, draft.playerIndex, draft.disasterReveal ? undefined : draft.card?.instanceId))
+  for (const [index, { event, draft }] of drafts.entries()) {
+    const destination = destinationElement(draft)
+    // An attach event may contain host and source in either order. Only cards that
+    // actually became attached receive a movement; the host keeps its stable DOM.
+    if (draft.attachment && !destination) continue
+    const movement = starts[index]
+      ? movementFromEvent(event, starts[index]!.rect, elementRect(destination)
+        ?? resolveRect(draft.to, draft.playerIndex, draft.disasterReveal ? undefined : draft.card?.instanceId), draft.card)
       : null
     if (movement) movement.sourceGhost = starts[index]?.ghost
+    if (movement) {
+      movement.fromRotation = starts[index]?.rotation ?? 0
+      movement.toRotation = elementRotation(destination)
+    }
     if (movement && !movement.sourceGhost && !movement.concealed && movement.card) {
       movement.preparedImageUrl = await prepareMovementImage(movement.card)
     }
@@ -383,8 +436,9 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
       && movement.sequence - previous.sequence <= 2
       && movement.to === previous.to
     if (movement && !repeated) queue.push(movement)
-    lastSequence = Math.max(lastSequence, event.sequence)
+    if (movement?.card?.instanceId) sourceZoneHints.delete(movement.card.instanceId)
   }
+  for (const event of fresh) lastSequence = Math.max(lastSequence, event.sequence)
   if (hasMovement) preparationCount--
   notifyBusy()
   showNext()
@@ -423,7 +477,7 @@ onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewpo
 .moving-card.covered:not(.concealed){filter:grayscale(.45) brightness(.72) drop-shadow(0 12px 14px #000)}
 .movement-caption{position:absolute;z-index:2;left:50%;bottom:calc(100% + 7px);width:max-content;max-width:240px;transform:translateX(-50%);padding:3px 7px;border:1px solid #8cc6d2;background:rgba(7,16,20,.94);color:#eef6f5;font-size:12px;line-height:1.35;text-align:center;white-space:normal;overflow-wrap:anywhere}
 .disaster-reveal-card{position:relative;display:block;width:100%;height:100%;perspective:800px;transform-style:preserve-3d}.disaster-reveal-card>img{position:absolute;inset:0;width:100%;height:100%;backface-visibility:hidden}.disaster-reveal-back{object-fit:cover;animation:l12-disaster-card-back var(--move-duration,.44s) ease-in both}.disaster-reveal-front{animation:l12-disaster-card-front var(--move-duration,.44s) ease-out both}
-@keyframes l12-zone-card-flight{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale))}85%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(calc(var(--move-to-scale) * 1.04))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale))}}
+@keyframes l12-zone-card-flight{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale)) rotate(var(--move-from-rotation,0deg))}85%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(calc(var(--move-to-scale) * 1.04)) rotate(var(--move-to-rotation,0deg))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale)) rotate(var(--move-to-rotation,0deg))}}
 @keyframes l12-disaster-card-back{0%,42%{opacity:1;transform:rotateY(0)}58%,100%{opacity:0;transform:rotateY(90deg)}}
 @keyframes l12-disaster-card-front{0%,42%{opacity:0;transform:rotateY(-90deg)}58%,100%{opacity:1;transform:rotateY(0)}}
 @media(max-width:700px){.moving-card{width:56px;height:79px}.moving-card small{bottom:-18px;font-size:var(--l12-board-copy,13px)}}

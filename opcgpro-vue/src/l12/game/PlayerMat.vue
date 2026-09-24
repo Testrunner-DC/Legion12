@@ -340,7 +340,7 @@ function beginCardAbility(card: Card) {
         </template>
       </div>
       <div class="master-column" data-l12-zone="master">
-        <button class="mini-master" :class="{ targetable: !controllable && attackMode && masterTargetable, tapped: player.master.tapped, 'combat-target': combatTargetMaster }"
+        <button class="mini-master" :data-card-instance-id="`master-${player.playerIndex}`" :class="{ targetable: !controllable && attackMode && masterTargetable, tapped: player.master.tapped, 'combat-target': combatTargetMaster }"
           @mouseenter="emit('focus', masterCard)" @focus="emit('focus', masterCard)" @click="emit('master')">
           <CardImage v-if="!player.master.deployedAsLegion" :card-id="player.master.masterId" :legacy-url="player.master.masterImageUrl" :alt="player.master.masterName" intent="board" eager />
           <span v-else class="master-away" aria-label="主宰当前作为军团位于战场">主宰已登场</span>
