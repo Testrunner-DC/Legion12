@@ -6,7 +6,9 @@ import App from './App.vue'
 import { router } from './router'
 import { primeCardAssetManifest } from './l12/cardAssets'
 import { initializeAuth } from './l12/platform'
+import { installChunkRecovery } from './chunkRecovery'
 
+installChunkRecovery()
 primeCardAssetManifest()
 
 // 优先刷新服务端权威身份，同时给公共站点设置上限：认证服务不可达时也必须按时挂载。

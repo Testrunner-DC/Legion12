@@ -69,6 +69,8 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $windowsDeploy = Join-Path $repoRoot "ops\windows\deploy-l12.ps1"
 $targetHelper = Join-Path $repoRoot "ops\windows\L12DeployTarget.ps1"
 $serverDeploy = Join-Path $repoRoot "ops\server\deploy-l12-release.sh"
+$webAssetsNginx = Join-Path $repoRoot "ops\server\nginx-l12-web-assets.conf"
+$sharePagesNginx = Join-Path $repoRoot "ops\server\nginx-l12-share-pages.conf"
 $healthVerifier = Join-Path $repoRoot "ops\server\verify-l12-health.mjs"
 $bashPath = Get-BashPath
 $nodePath = (Get-Command node -ErrorAction Stop).Source
@@ -87,6 +89,18 @@ New-Item -ItemType Directory -Path $fixtureRoot -Force | Out-Null
 
 try {
     . $targetHelper
+
+    $webAssetsNginxSource = Get-Content -LiteralPath $webAssetsNginx -Raw
+    $sharePagesNginxSource = Get-Content -LiteralPath $sharePagesNginx -Raw
+    Assert-True ($webAssetsNginxSource.Contains('location ^~ /assets/') -and $webAssetsNginxSource.Contains('root /opt/legion12-web-assets;')) `
+        "正式 Nginx 未使用共享前端哈希资源入口。"
+    $webAssetLocation = [regex]::Match($webAssetsNginxSource, 'location\s+\^~\s+/assets/\s*\{(?<body>.*?)\}', [Text.RegularExpressions.RegexOptions]::Singleline)
+    Assert-True ($webAssetLocation.Success -and $webAssetLocation.Groups['body'].Value.Contains('try_files $uri =404;') -and -not $webAssetLocation.Groups['body'].Value.Contains('index.html')) `
+        "正式 /assets 缺失资源仍可能回退到 HTML。"
+    Assert-True ($webAssetsNginxSource.Contains('max-age=31536000, immutable') -and $webAssetsNginxSource.Contains('location = /index.html') -and $webAssetsNginxSource.Contains('Cache-Control "no-cache"')) `
+        "正式哈希资源或 HTML 缓存策略不符合兼容边界。"
+    Assert-True (([regex]::Matches($sharePagesNginxSource, 'proxy_hide_header Cache-Control;')).Count -eq 4 -and ([regex]::Matches($sharePagesNginxSource, 'add_header Cache-Control "no-cache" always;')).Count -eq 4) `
+        "正式分享页 HTML 没有统一覆盖为 no-cache。"
 
     foreach ($accepted in @("root@legion-12.com", "root@154.201.80.91")) {
         $endpoint = Resolve-L12ProductionEndpoint -RemoteServer $accepted
@@ -238,7 +252,8 @@ try {
             [ValidateSet("", "directory", "symlink")][string]$ExistingStageTarget = "",
             [switch]$ExistingReleaseTarget,
             [switch]$ExternalCardTargetSymlink,
-            [switch]$OmitArtifactRootArgument
+            [switch]$OmitArtifactRootArgument,
+            [switch]$SeedStorageCleanup
         )
 
         $script:serverScenarioCount += 1
@@ -256,6 +271,12 @@ try {
             New-Item -ItemType Directory -Path $externalMount -Force | Out-Null
         }
         $externalArtifactRoot = Join-Path $externalMount "legion12"
+        $staticWebAssets = if ($ArtifactRoot -eq "/www/legion12") {
+            Join-Path $externalArtifactRoot "web-assets"
+        }
+        else {
+            Join-Path $root "opt\legion12-static\web-assets"
+        }
         $incoming = if ($ArtifactRoot -eq "/www/legion12") {
             Join-Path $externalArtifactRoot "incoming"
         }
@@ -267,6 +288,7 @@ try {
         New-Item -ItemType Directory -Path `
             (Join-Path $active "publish"), `
             (Join-Path $active "opcgpro-vue\dist"), `
+            (Join-Path $active "opcgpro-vue\dist\assets"), `
             (Join-Path $active "scripts"), `
             $runtime, $incoming, $package, $fakeBin, `
             (Join-Path $root "etc") -Force | Out-Null
@@ -274,6 +296,8 @@ try {
         Write-Utf8NoBom (Join-Path $active ".deployment-commit") "$commitA`n"
         Write-Utf8NoBom (Join-Path $active "publish\GrandUMIServer.dll") "old"
         Write-Utf8NoBom (Join-Path $active "opcgpro-vue\dist\index.html") "old"
+        Write-Utf8NoBom (Join-Path $active "opcgpro-vue\dist\assets\Page-old.js") "export const release = 'old'"
+        Write-Utf8NoBom (Join-Path $active "opcgpro-vue\dist\assets\Page-old.css") ".old{display:block}"
         Write-Utf8NoBom (Join-Path $active "scripts\ws-smoke.mjs") "// old"
         Write-Utf8NoBom (Join-Path $runtime "authoritative-before.txt") "preserve"
         Write-Utf8NoBom (Join-Path $root "etc\legion12-test.env") "fixture=1`n"
@@ -284,11 +308,22 @@ try {
         New-Item -ItemType Directory -Path `
             (Join-Path $package "publish"), `
             (Join-Path $package "opcgpro-vue\dist"), `
+            (Join-Path $package "opcgpro-vue\dist\assets"), `
             (Join-Path $package "scripts") -Force | Out-Null
         Write-Utf8NoBom (Join-Path $package ".deployment-commit") "$commitB`n"
         Write-Utf8NoBom (Join-Path $package "publish\GrandUMIServer.dll") "new"
         Write-Utf8NoBom (Join-Path $package "opcgpro-vue\dist\index.html") "new"
+        Write-Utf8NoBom (Join-Path $package "opcgpro-vue\dist\assets\Page-new.js") "export const release = 'new'"
+        Write-Utf8NoBom (Join-Path $package "opcgpro-vue\dist\assets\Page-new.css") ".new{display:block}"
         Write-Utf8NoBom (Join-Path $package "scripts\ws-smoke.mjs") "// probe"
+
+        New-Item -ItemType Directory -Path (Join-Path $staticWebAssets "assets") -Force | Out-Null
+        $expiredOrphan = Join-Path $staticWebAssets "assets\expired-orphan.js"
+        $recentOrphan = Join-Path $staticWebAssets "assets\recent-orphan.js"
+        Write-Utf8NoBom $expiredOrphan "expired"
+        Write-Utf8NoBom $recentOrphan "recent"
+        (Get-Item -LiteralPath $expiredOrphan).LastWriteTimeUtc = [DateTime]::UtcNow.AddHours(-49)
+        (Get-Item -LiteralPath $recentOrphan).LastWriteTimeUtc = [DateTime]::UtcNow.AddHours(-23)
 
         $archive = Join-Path $incoming "l12-release-$commitB.tar.gz"
         $tarResult = Invoke-NativeCapture -Executable (Get-Command tar -ErrorAction Stop).Source -Arguments @(
@@ -410,6 +445,44 @@ try {
             New-Item -ItemType Junction -Path $externalCardTarget -Target $externalCardBacking | Out-Null
         }
 
+        $seededRetainedRelease = ""
+        $seededRemovedRelease = ""
+        $seededRuntimeBackup = ""
+        $seededConsumedIncoming = ""
+        $seededUnprovenIncoming = ""
+        $seededStaging = ""
+        $seededOrphanCardAssets = ""
+        if ($SeedStorageCleanup) {
+            $rollbackCommit = "c" * 40
+            $expiredCommit = "d" * 40
+            $unprovenCommit = "e" * 40
+            $seededRetainedRelease = Join-Path $managedReleasesDirectory "$rollbackCommit-retained"
+            $seededRemovedRelease = Join-Path $managedReleasesDirectory "$expiredCommit-expired"
+            foreach ($seed in @(
+                @{ Path = $seededRetainedRelease; Commit = $rollbackCommit; Asset = "rollback-retained.js"; Stamp = [DateTime]::UtcNow.AddHours(-2) },
+                @{ Path = $seededRemovedRelease; Commit = $expiredCommit; Asset = "rollback-expired.js"; Stamp = [DateTime]::UtcNow.AddHours(-4) }
+            )) {
+                New-Item -ItemType Directory -Path (Join-Path $seed.Path "opcgpro-vue\dist\assets") -Force | Out-Null
+                Write-Utf8NoBom (Join-Path $seed.Path ".deployment-commit") "$($seed.Commit)`n"
+                Write-Utf8NoBom (Join-Path $seed.Path "opcgpro-vue\dist\assets\$($seed.Asset)") "seed"
+                (Get-Item -LiteralPath $seed.Path).LastWriteTimeUtc = $seed.Stamp
+            }
+            New-Item -ItemType Directory -Path $managedRuntimeBackupDirectory -Force | Out-Null
+            $seededRuntimeBackup = Join-Path $managedRuntimeBackupDirectory "runtime-before-seeded-old.tar.gz"
+            Write-Utf8NoBom $seededRuntimeBackup "snapshot"
+            Write-Utf8NoBom "$seededRuntimeBackup.sha256" "fixture checksum sidecar"
+            $seededConsumedIncoming = Join-Path $incoming "l12-release-$expiredCommit.tar.gz"
+            $seededUnprovenIncoming = Join-Path $incoming "l12-release-$unprovenCommit.tar.gz"
+            Write-Utf8NoBom $seededConsumedIncoming "consumed"
+            Write-Utf8NoBom $seededUnprovenIncoming "unproven"
+            $seededStaging = Join-Path $managedStageParent "legion12-staging-seeded-expired"
+            New-Item -ItemType Directory -Path $seededStaging -Force | Out-Null
+            Write-Utf8NoBom (Join-Path $seededStaging "stale.txt") "stale"
+            $seededOrphanCardAssets = Join-Path $(if ($ArtifactRoot -eq "/www/legion12") { $externalArtifactRoot } else { Join-Path $root "opt\legion12-static" }) ("card-assets\" + ("f" * 64))
+            New-Item -ItemType Directory -Path $seededOrphanCardAssets -Force | Out-Null
+            Write-Utf8NoBom (Join-Path $seededOrphanCardAssets "orphan.txt") "orphan"
+        }
+
         New-FakeCommand $fakeBin "systemctl" @'
 printf 'systemctl %s\n' "$*" >> "$L12_TEST_COMMAND_LOG"
 case "${1:-}" in
@@ -430,7 +503,7 @@ exit 0
 '@ | Out-Null
         New-FakeCommand $fakeBin "nginx" @'
 if [ "${1:-}" = "-T" ]; then
-  printf '%s\n' 'location = /api/admin/site/media' 'client_max_body_size 32m' 'media_upload_too_large' 'location = /card-assets/card-assets.manifest.json' 'max-age=31536000, immutable'
+  printf '%s\n' 'location = /api/admin/site/media' 'client_max_body_size 32m' 'media_upload_too_large' 'location = /card-assets/card-assets.manifest.json' 'location ^~ /assets/' 'root /opt/legion12-web-assets;' 'try_files $uri =404;' 'max-age=31536000, immutable'
 fi
 exit 0
 '@ | Out-Null
@@ -611,6 +684,14 @@ exec "$L12_TEST_REAL_TAR" "$@"
             CardAssetsHash = $cardAssetsHash
             CardAssetsFixture = $cardAssetsFixture
             RootBackupSentinels = $rootBackupSentinels
+            StaticWebAssets = $staticWebAssets
+            SeededRetainedRelease = $seededRetainedRelease
+            SeededRemovedRelease = $seededRemovedRelease
+            SeededRuntimeBackup = $seededRuntimeBackup
+            SeededConsumedIncoming = $seededConsumedIncoming
+            SeededUnprovenIncoming = $seededUnprovenIncoming
+            SeededStaging = $seededStaging
+            SeededOrphanCardAssets = $seededOrphanCardAssets
         }
     }
 
@@ -709,7 +790,7 @@ exec "$L12_TEST_REAL_TAR" "$@"
     Assert-True (-not $invalidArtifactRootEntrypoint.Output.Contains("同步并核对 GitHub main")) `
         "非法服务器制品根在参数绑定拒绝前已进入发布流程。"
 
-    $success = Invoke-ServerScenario -Name "success"
+    $success = Invoke-ServerScenario -Name "success" -SeedStorageCleanup
     $successFailureDetails = if ($success.ExitCode -eq 0) {
         ""
     }
@@ -733,6 +814,36 @@ exec "$L12_TEST_REAL_TAR" "$@"
     Assert-True (Test-Path -LiteralPath $success.ExpectedRelease -PathType Container) "默认发布没有落入既有 /opt release 布局。"
     $successBackupSha = Assert-BackupReceipt $success
     Assert-True ($successInfo.Contains("部署前运行数据快照SHA256：$successBackupSha")) "默认发布元数据与最终备份 SHA256 不一致。"
+    Assert-True ((Get-Content -LiteralPath (Join-Path $success.StaticWebAssets "assets\Page-old.js") -Raw) -eq "export const release = 'old'") `
+        "上一版 JS 未进入兼容资源池或内容被改写。"
+    Assert-True ((Get-Content -LiteralPath (Join-Path $success.StaticWebAssets "assets\Page-old.css") -Raw) -eq ".old{display:block}") `
+        "上一版 CSS 未进入兼容资源池或内容被改写。"
+    Assert-True ((Get-Content -LiteralPath (Join-Path $success.StaticWebAssets "assets\Page-new.js") -Raw) -eq "export const release = 'new'") `
+        "当前版 JS 未进入兼容资源池。"
+    Assert-True (-not (Test-Path -LiteralPath (Join-Path $success.StaticWebAssets "assets\expired-orphan.js"))) `
+        "超过 48 小时且不属于 current/previous 的资源未清理。"
+    Assert-True (Test-Path -LiteralPath (Join-Path $success.StaticWebAssets "assets\recent-orphan.js") -PathType Leaf) `
+        "未满 24 小时的资源被提前清理。"
+    Assert-True (Test-Path -LiteralPath $success.SeededRetainedRelease -PathType Container) `
+        "最近第二个可回滚 release 被误删。"
+    Assert-True (-not (Test-Path -LiteralPath $success.SeededRemovedRelease)) `
+        "超出 current + 两个回滚版本边界的旧 release 未清理。"
+    Assert-True (Test-Path -LiteralPath $success.SeededRuntimeBackup -PathType Leaf) `
+        "默认关闭的 runtime 快照删除策略误删旧快照。"
+    Assert-True (Test-Path -LiteralPath "$($success.SeededRuntimeBackup).sha256" -PathType Leaf) `
+        "runtime 快照保留时误删对应 SHA256 sidecar。"
+    Assert-True (-not (Test-Path -LiteralPath $success.SeededConsumedIncoming)) `
+        "可证明已消费的 incoming 制品未清理。"
+    Assert-True (Test-Path -LiteralPath $success.SeededUnprovenIncoming -PathType Leaf) `
+        "无法证明已消费的 incoming 制品被误删。"
+    Assert-True (-not (Test-Path -LiteralPath $success.SeededStaging)) `
+        "废弃受管 staging 目录未清理。"
+    Assert-True (-not (Test-Path -LiteralPath $success.SeededOrphanCardAssets)) `
+        "无 retained release 引用的内容寻址卡图版本未清理。"
+    Assert-True ($success.Output.Contains("runtime 快照默认仅统计不删除")) `
+        "成功部署没有明确报告 runtime 快照默认不删除。"
+    Assert-True ($success.Output.Contains("部署后存储收口：清理前=") -and $success.Output.Contains("释放=")) `
+        "成功部署没有报告收口前后空间统计。"
 
     $legacyDefaultRoot = Invoke-ServerScenario -Name "legacy-default-root" -Mode "dry-run" -OmitArtifactRootArgument
     Assert-True ($legacyDefaultRoot.ExitCode -eq 0) "省略新增位置参数的旧服务器调用不再默认使用 /opt：$($legacyDefaultRoot.Output)"
@@ -760,14 +871,15 @@ exec "$L12_TEST_REAL_TAR" "$@"
     $externalStageParentPosix = "$externalRootPosix/staging"
     $externalReleaseParentPosix = "$externalRootPosix/releases"
     $externalCardParentPosix = "$externalRootPosix/card-assets"
-    Assert-True ($externalSuccess.Commands.Contains("chmod 0755 $externalRootPosix $externalCardParentPosix $externalStageParentPosix $externalReleaseParentPosix")) `
-        "外置 staging/release/card 根没有以 0755 建立真实账号穿越边界。"
+    $externalWebParentPosix = "$externalRootPosix/web-assets"
+    Assert-True ($externalSuccess.Commands.Contains("chmod 0755 $externalRootPosix $externalCardParentPosix $externalWebParentPosix $externalWebParentPosix/assets $externalStageParentPosix $externalReleaseParentPosix")) `
+        "外置 staging/release/card/web-assets 根没有以 0755 建立真实账号穿越边界。"
     Assert-True ($externalSuccess.Commands.Contains("chmod 0700 $externalRootPosix/incoming $externalRootPosix/runtime-backups")) `
         "外置 incoming/runtime-backups 没有保持 0700。"
     Assert-True ($externalSuccess.Commands.Contains("runuser -u legion12 -- test -x $externalRootPosix -a -x $externalStageParentPosix -a -x $externalReleaseParentPosix")) `
         "发布前没有以服务账号验证外置 staging/release 穿越权限。"
-    Assert-True ($externalSuccess.Commands.Contains("runuser -u www-data -- test -x $externalRootPosix -a -x $externalStageParentPosix -a -x $externalCardParentPosix")) `
-        "发布前没有以 Nginx 账号验证外置 staging/card 权限。"
+    Assert-True ($externalSuccess.Commands.Contains("runuser -u www-data -- test -x $externalRootPosix -a -x $externalStageParentPosix -a -x $externalCardParentPosix -a -x $externalWebParentPosix")) `
+        "发布前没有以 Nginx 账号验证外置 staging/card/web-assets 权限。"
     Assert-True ($externalSuccess.Commands.Contains("runuser -u legion12 -- test -r $externalStageParentPosix/legion12-staging-")) `
         "解包后没有以服务账号验证外置 staging 文件读取。"
     Assert-True ($externalSuccess.Commands.Contains("runuser -u www-data -- test -r $externalStageParentPosix/legion12-staging-")) `

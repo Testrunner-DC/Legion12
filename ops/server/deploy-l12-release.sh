@@ -37,6 +37,8 @@ readonly default_releases_dir="${test_root}/opt/legion12-releases"
 readonly default_incoming_dir="${deployment_dir}/incoming"
 readonly default_runtime_backup_dir="${deployment_dir}/runtime-backups"
 readonly default_static_card_assets_dir="${test_root}/opt/legion12-static/card-assets"
+readonly default_static_web_assets_dir="${test_root}/opt/legion12-static/web-assets"
+readonly web_assets_entry="${test_root}/opt/legion12-web-assets"
 readonly external_mount="${test_root}/www"
 readonly external_artifact_root="${external_mount}/legion12"
 if [[ "$external_artifact_mode" == "1" ]]; then
@@ -45,6 +47,7 @@ if [[ "$external_artifact_mode" == "1" ]]; then
   readonly incoming_dir="${artifact_root}/incoming"
   readonly runtime_backup_dir="${artifact_root}/runtime-backups"
   readonly static_card_assets_dir="${artifact_root}/card-assets"
+  readonly static_web_assets_dir="${artifact_root}/web-assets"
   readonly stage_parent="${artifact_root}/staging"
 else
   readonly artifact_root="${test_root}/opt"
@@ -52,6 +55,7 @@ else
   readonly incoming_dir="$default_incoming_dir"
   readonly runtime_backup_dir="$default_runtime_backup_dir"
   readonly static_card_assets_dir="$default_static_card_assets_dir"
+  readonly static_web_assets_dir="$default_static_web_assets_dir"
   readonly stage_parent="${test_root}/opt"
 fi
 readonly external_prepare_min_bytes=$((14 * 1024 * 1024 * 1024))
@@ -59,6 +63,16 @@ readonly external_backup_max_bytes=$((4 * 1024 * 1024 * 1024))
 readonly external_reserve_bytes=$((8 * 1024 * 1024 * 1024))
 readonly external_release_unpacked_max_bytes=$((1 * 1024 * 1024 * 1024))
 readonly external_card_unpacked_max_bytes=$((512 * 1024 * 1024))
+readonly prune_runtime_backups_enabled="${L12_PRUNE_RUNTIME_BACKUPS:-0}"
+readonly runtime_backup_keep_groups="${L12_RUNTIME_BACKUP_KEEP_GROUPS:-2}"
+[[ "$prune_runtime_backups_enabled" =~ ^[01]$ ]] \
+  || { fail "runtime 快照自动删除开关只允许 0 或 1"; exit 2; }
+[[ "$runtime_backup_keep_groups" =~ ^[1-9][0-9]*$ ]] \
+  || { fail "runtime 快照保留组数必须为正整数"; exit 2; }
+readonly web_asset_retention_minutes="${L12_WEB_ASSET_RETENTION_MINUTES:-2880}"
+[[ "$web_asset_retention_minutes" =~ ^[0-9]+$ ]] \
+  && (( web_asset_retention_minutes >= 1440 && web_asset_retention_minutes <= 2880 )) \
+  || { fail "前端哈希资源保留窗口只允许 1440—2880 分钟"; exit 2; }
 if [[ -n "$test_root" ]]; then
   readonly public_base="${L12_DEPLOY_PUBLIC_BASE:-https://${public_host}}"
   readonly local_base="${L12_DEPLOY_LOCAL_BASE:-http://127.0.0.1:8083}"
@@ -177,19 +191,20 @@ prepare_storage_paths() {
     if ! validate_external_mount; then return 1; fi
     if ! validate_external_prepare_capacity; then return 1; fi
     if ! assert_existing_directories_plain \
-      "$artifact_root" "$incoming_dir" "$runtime_backup_dir" "$static_card_assets_dir" "$stage_parent" "$releases_dir"; then return 1; fi
-    if ! mkdir -p "$artifact_root" "$incoming_dir" "$runtime_backup_dir" "$static_card_assets_dir" "$stage_parent" "$releases_dir"; then return 1; fi
-    if ! chmod 0755 "$artifact_root" "$static_card_assets_dir" "$stage_parent" "$releases_dir"; then return 1; fi
+      "$artifact_root" "$incoming_dir" "$runtime_backup_dir" "$static_card_assets_dir" "$static_web_assets_dir" "$stage_parent" "$releases_dir"; then return 1; fi
+    if ! mkdir -p "$artifact_root" "$incoming_dir" "$runtime_backup_dir" "$static_card_assets_dir" "$static_web_assets_dir/assets" "$stage_parent" "$releases_dir"; then return 1; fi
+    if ! chmod 0755 "$artifact_root" "$static_card_assets_dir" "$static_web_assets_dir" "$static_web_assets_dir/assets" "$stage_parent" "$releases_dir"; then return 1; fi
     if ! chmod 0700 "$incoming_dir" "$runtime_backup_dir"; then return 1; fi
     if ! assert_plain_directory "$artifact_root"; then return 1; fi
     if ! assert_plain_directory "$incoming_dir"; then return 1; fi
     if ! assert_plain_directory "$runtime_backup_dir"; then return 1; fi
     if ! assert_plain_directory "$static_card_assets_dir"; then return 1; fi
+    if ! assert_plain_directory "$static_web_assets_dir"; then return 1; fi
     if ! assert_plain_directory "$stage_parent"; then return 1; fi
     if ! assert_plain_directory "$releases_dir"; then return 1; fi
     if [[ -z "$test_root" ]]; then
       if [[ "$(stat -c '%a' "$artifact_root")" != "755" || "$(stat -c '%a' "$stage_parent")" != "755" ||
-            "$(stat -c '%a' "$releases_dir")" != "755" || "$(stat -c '%a' "$static_card_assets_dir")" != "755" ||
+            "$(stat -c '%a' "$releases_dir")" != "755" || "$(stat -c '%a' "$static_card_assets_dir")" != "755" || "$(stat -c '%a' "$static_web_assets_dir")" != "755" ||
             "$(stat -c '%a' "$incoming_dir")" != "700" || "$(stat -c '%a' "$runtime_backup_dir")" != "700" ]]; then
         fail "外置制品目录权限不符合发布边界"
         return 1
@@ -199,16 +214,111 @@ prepare_storage_paths() {
       fail "服务账号无法穿越外置 release/staging 路径"
       return 1
     fi
-    if ! runuser -u "$web_user" -- test -x "$artifact_root" -a -x "$stage_parent" -a -x "$static_card_assets_dir"; then
-      fail "Nginx 账号无法穿越外置 release/card-assets 路径"
+    if ! runuser -u "$web_user" -- test -x "$artifact_root" -a -x "$stage_parent" -a -x "$static_card_assets_dir" -a -x "$static_web_assets_dir"; then
+      fail "Nginx 账号无法穿越外置 release/card-assets/web-assets 路径"
       return 1
     fi
   else
-    if ! mkdir -p "$incoming_dir" "$releases_dir" "$static_card_assets_dir"; then return 1; fi
-    if ! chmod 0755 "$(dirname "$static_card_assets_dir")" "$static_card_assets_dir" "$releases_dir"; then return 1; fi
+    if ! mkdir -p "$incoming_dir" "$releases_dir" "$static_card_assets_dir" "$static_web_assets_dir/assets"; then return 1; fi
+    if ! chmod 0755 "$(dirname "$static_card_assets_dir")" "$static_card_assets_dir" "$static_web_assets_dir" "$static_web_assets_dir/assets" "$releases_dir"; then return 1; fi
   fi
   if ! mkdir -p "$deployment_dir"; then return 1; fi
   return 0
+}
+
+validate_web_assets_tree() {
+  local source_root="$1"
+  local invalid_path sample
+  [[ -d "$source_root" && ! -L "$source_root" ]] || { fail "前端哈希资源根不是普通目录：${source_root}"; return 1; }
+  invalid_path="$(find "$source_root" -mindepth 1 ! -type d ! -type f -print -quit)"
+  [[ -z "$invalid_path" ]] || { fail "前端哈希资源包含链接或特殊文件：${invalid_path}"; return 1; }
+  sample="$(find "$source_root" -type f -print -quit)"
+  [[ -n "$sample" ]] || { fail "前端哈希资源目录为空：${source_root}"; return 1; }
+}
+
+install_web_assets_tree() {
+  local source_root="$1"
+  local public_prefix="$2"
+  local source relative target target_parent temporary
+  validate_web_assets_tree "$source_root" || return 1
+  log "安装前端兼容资源：${source_root} -> ${public_prefix}"
+  [[ "$public_prefix" =~ ^[A-Za-z0-9._/-]+$ && "$public_prefix" != /* && "/${public_prefix}/" != *"/../"* ]] \
+    || { fail "前端哈希资源公开前缀无效"; return 1; }
+  [[ -d "${static_web_assets_dir}/${public_prefix}" ]] || mkdir -p "${static_web_assets_dir}/${public_prefix}"
+  if [[ -n "$(find "$static_web_assets_dir" -type l -print -quit)" ]]; then
+    fail "共享前端哈希资源目录包含符号链接"
+    return 1
+  fi
+  while IFS= read -r -d '' source; do
+    relative="${source#${source_root}/}"
+    [[ "$relative" =~ ^[A-Za-z0-9._/-]+$ && "/${relative}/" != *"/../"* ]] \
+      || { fail "前端哈希资源路径无效：${relative}"; return 1; }
+    target="${static_web_assets_dir}/${public_prefix}/${relative}"
+    target_parent="${target%/*}"
+    if [[ ! -d "$target_parent" ]]; then log "创建前端兼容资源目录：${target_parent}"; mkdir -p "$target_parent"; fi
+    if [[ -e "$target" || -L "$target" ]]; then
+      [[ -f "$target" && ! -L "$target" ]] || { fail "共享前端哈希资源目标不是普通文件：${target}"; return 1; }
+      cmp -s "$source" "$target" || { fail "相同哈希资源路径出现不同内容：${public_prefix}/${relative}"; return 1; }
+      continue
+    fi
+    temporary="${target}.install-${short_commit}-$$"
+    [[ ! -e "$temporary" && ! -L "$temporary" ]] || { fail "前端哈希资源临时目标已存在：${temporary}"; return 1; }
+    install -m 0644 "$source" "$temporary"
+    mv -Tn "$temporary" "$target"
+    if [[ -e "$temporary" ]]; then
+      [[ -f "$target" && ! -L "$target" ]] && cmp -s "$source" "$target" \
+        || { fail "前端哈希资源原子安装发生内容冲突：${public_prefix}/${relative}"; return 1; }
+      rm -f -- "$temporary"
+    fi
+  done < <(find "$source_root" -type f -print0)
+}
+
+ensure_web_assets_entry() {
+  local current_target next_link
+  if [[ -L "$web_assets_entry" ]]; then
+    current_target="$(readlink -f "$web_assets_entry")"
+    [[ "$current_target" == "$static_web_assets_dir" ]] && return 0
+  elif [[ -e "$web_assets_entry" ]]; then
+    if [[ -n "$test_root" && -d "$web_assets_entry" ]]; then return 0; fi
+    fail "前端哈希资源入口不是受管符号链接：${web_assets_entry}"
+    return 1
+  fi
+  next_link="${test_root}/opt/.legion12-web-assets-next-${timestamp}"
+  [[ ! -e "$next_link" && ! -L "$next_link" ]] || { fail "前端哈希资源入口临时路径已存在"; return 1; }
+  ln -s "$static_web_assets_dir" "$next_link"
+  mv -Tf "$next_link" "$web_assets_entry"
+}
+
+append_web_asset_keep_set() {
+  local release_root="$1"
+  local source_relative="$2"
+  local public_prefix="$3"
+  local source_root source relative
+  source_root="${release_root}/${source_relative}"
+  validate_web_assets_tree "$source_root" || return 1
+  while IFS= read -r -d '' source; do
+    relative="${source#${source_root}/}"
+    printf '%s\n' "${public_prefix}/${relative}"
+  done < <(find "$source_root" -type f -print0)
+}
+
+prune_web_assets() {
+  local keep_file candidate relative keep_release
+  keep_file="${deployment_dir}/.web-assets-keep-${short_commit}-${timestamp}-$$"
+  [[ ! -e "$keep_file" && ! -L "$keep_file" ]] || { fail "前端哈希资源保留清单临时路径已存在"; return 1; }
+  : > "$keep_file"
+  for keep_release in "$@"; do
+    append_web_asset_keep_set "$keep_release" "opcgpro-vue/dist/assets" "assets" >> "$keep_file" || return 1
+  done
+  sort -u -o "$keep_file" "$keep_file"
+  while IFS= read -r -d '' candidate; do
+    relative="${candidate#${static_web_assets_dir}/}"
+    if ! grep -Fxq "$relative" "$keep_file"; then
+      if ! rm -f -- "$candidate"; then rm -f -- "$keep_file"; return 1; fi
+    fi
+  done < <(find "${static_web_assets_dir}/assets" -type f -mmin +"$web_asset_retention_minutes" -print0)
+  find "${static_web_assets_dir}/assets" -depth -type d -empty ! -path "${static_web_assets_dir}/assets" -delete || { rm -f -- "$keep_file"; return 1; }
+  rm -f -- "$keep_file"
 }
 
 archive_unpacked_bytes() {
@@ -309,7 +419,7 @@ assert_deployment_unblocked() {
 
 self_test() {
   test "$(id -u)" -eq 0 || fail "必须以 root 身份执行"
-  for command_name in id flock sha256sum tar curl systemctl nginx runuser node find readlink ln mv install awk grep tr chmod chown sort timeout date seq head stat dirname basename; do
+  for command_name in id flock sha256sum tar curl systemctl nginx runuser node find readlink ln mv install cmp awk grep tr chmod chown sort timeout date seq head stat dirname basename; do
     require_command "$command_name"
   done
   test -e "$active_dir" || fail "当前部署入口不存在：${active_dir}"
@@ -327,6 +437,9 @@ self_test() {
   grep -Fq 'location = /api/admin/site/media' <<<"$nginx_dump" || fail "Nginx 未为站点素材上传配置精确路由"
   grep -Fq 'client_max_body_size 32m' <<<"$nginx_dump" || fail "Nginx 站点素材上传上限不是 32m"
   grep -Fq 'media_upload_too_large' <<<"$nginx_dump" || fail "Nginx 站点素材 413 未返回可识别 JSON"
+  grep -Fq 'location ^~ /assets/' <<<"$nginx_dump" || fail "Nginx 未为前端哈希资源配置严格静态路由"
+  grep -Fq 'root /opt/legion12-web-assets;' <<<"$nginx_dump" || fail "Nginx 前端哈希资源未使用兼容资源入口"
+  grep -Fq 'try_files $uri =404;' <<<"$nginx_dump" || fail "Nginx 前端哈希资源缺失时未严格返回 404"
   log "服务器快速发布环境检查通过"
 }
 
@@ -655,17 +768,231 @@ restore_runtime_backup() {
 }
 
 prune_runtime_backups() {
-  if [[ "$external_artifact_mode" == "1" ]]; then
-    log "外置 runtime 快照不自动删除；长期总数由人工存储治理处理"
+  local row backup checksum index=0
+  local rows=() complete_rows=()
+  assert_cleanup_root "$runtime_backup_dir" || return 1
+  mapfile -t rows < <(find "$runtime_backup_dir" -maxdepth 1 -type f -name 'runtime-before-*.tar.gz' -printf '%T@:%p\n' | sort -rn)
+  if [[ "$prune_runtime_backups_enabled" != "1" ]]; then
+    local paired=0
+    for row in "${rows[@]}"; do
+      backup="${row#*:}"; checksum="${backup}.sha256"
+      [[ -f "$checksum" && ! -L "$checksum" ]] && paired=$((paired + 1))
+    done
+    log "部署后收口统计到 ${paired} 组带校验文件的 runtime 快照；自动删除开关=0，配置保留=${runtime_backup_keep_groups} 组"
+    log "runtime 快照默认仅统计不删除；需 Main 获得明确授权后启用"
     return 0
   fi
-  local rows=()
-  local index old_backup
-  mapfile -t rows < <(find "$runtime_backup_dir" -maxdepth 1 -type f -name 'runtime-before-*.tar.gz' -printf '%T@:%p\n' | sort -rn)
-  for ((index=5; index<${#rows[@]}; index+=1)); do
-    old_backup="${rows[$index]#*:}"
-    rm -f -- "$old_backup" "${old_backup}.sha256"
+  for row in "${rows[@]}"; do
+    backup="${row#*:}"; checksum="${backup}.sha256"
+    if [[ ! -f "$checksum" || -L "$checksum" ]] || ! (cd "$runtime_backup_dir" && sha256sum -c "$(basename "$checksum")" >/dev/null 2>&1); then
+      log "部署后收口保留不完整或无法校验的 runtime 快照：${backup}"
+      continue
+    fi
+    complete_rows+=("$row")
   done
+  log "部署后收口统计到 ${#complete_rows[@]} 组完整 runtime 快照；自动删除开关=${prune_runtime_backups_enabled}，配置保留=${runtime_backup_keep_groups} 组"
+  for row in "${complete_rows[@]}"; do
+    backup="${row#*:}"; checksum="${backup}.sha256"
+    if (( index < runtime_backup_keep_groups )); then
+      log "部署后收口保留 runtime 快照：${backup}"
+    else
+      assert_cleanup_child "$backup" "$runtime_backup_dir" && assert_cleanup_child "$checksum" "$runtime_backup_dir" || continue
+      if ! rm -f -- "$backup" "$checksum"; then log "部署后收口无法删除 runtime 快照，保守保留：${backup}"; continue; fi
+      log "部署后收口删除旧 runtime 快照：${backup}"
+    fi
+    index=$((index + 1))
+  done
+  while IFS= read -r -d '' backup; do
+    assert_cleanup_child "$backup" "$runtime_backup_dir" || continue
+    if ! rm -f -- "$backup"; then log "部署后收口无法删除快照临时文件，保守保留：${backup}"; continue; fi
+    log "部署后收口删除废弃快照临时文件：${backup}"
+  done < <(find "$runtime_backup_dir" -maxdepth 1 -type f -name 'runtime-before-*.partial' -print0)
+}
+
+tree_bytes() {
+  local root file total=0 size
+  for root in "$@"; do
+    [[ -d "$root" && ! -L "$root" ]] || continue
+    while IFS= read -r -d '' file; do
+      size="$(stat -c '%s' "$file")" || return 1
+      total=$((total + size))
+    done < <(find "$root" -type f -print0)
+  done
+  printf '%s' "$total"
+}
+
+assert_cleanup_root() {
+  local root="$1" canonical
+  [[ -d "$root" && ! -L "$root" ]] || { log "部署后收口跳过不安全根目录：${root}"; return 1; }
+  canonical="$(readlink -f "$root")" || return 1
+  [[ "$canonical" == "$root" ]] || { log "部署后收口跳过非规范根目录：${root}"; return 1; }
+}
+
+assert_cleanup_child() {
+  local candidate="$1" root="$2" parent
+  assert_cleanup_root "$root" || return 1
+  [[ "$candidate" == "${root}/"* && "$candidate" != "$root" ]] || return 1
+  [[ ! -L "$candidate" ]] || { log "部署后收口跳过符号链接：${candidate}"; return 1; }
+  parent="$(readlink -f "$(dirname "$candidate")")" || return 1
+  [[ "$parent" == "$root" || "$parent" == "${root}/"* ]] || return 1
+}
+
+select_retained_releases() {
+  local active_target="$1" previous_release="${2:-}" row candidate marker release_commit rollback_count=0
+  retained_releases=("$active_target")
+  assert_cleanup_child "$active_target" "$releases_dir" || return 1
+  [[ -d "$active_target" ]] || return 1
+  if [[ -n "$previous_release" && "$previous_release" != "$active_target" && "$previous_release" == "${test_root}/opt/legion12-legacy-"* ]]; then
+    marker="${previous_release}/.deployment-commit"
+    if assert_cleanup_child "$previous_release" "${test_root}/opt" && [[ -f "$marker" && ! -L "$marker" ]]; then
+      release_commit="$(tr -d '\r\n' < "$marker")"
+      if [[ "$release_commit" =~ ^[0-9a-f]{40}$ ]]; then
+        retained_releases+=("$previous_release")
+        rollback_count=1
+      else
+        log "部署后收口保留但不清理身份无效的 legacy release：${previous_release}"
+      fi
+    else
+      log "部署后收口无法验证 legacy 回滚版本，保守保留：${previous_release}"
+    fi
+  fi
+  mapfile -t release_rows < <(find "$releases_dir" -mindepth 1 -maxdepth 1 -type d -printf '%T@:%p\n' | sort -rn)
+  for row in "${release_rows[@]}"; do
+    candidate="${row#*:}"
+    [[ "$candidate" == "$active_target" ]] && continue
+    marker="${candidate}/.deployment-commit"
+    if ! assert_cleanup_child "$candidate" "$releases_dir" || [[ ! -f "$marker" || -L "$marker" ]]; then
+      log "部署后收口保留无法验证的 release：${candidate}"
+      continue
+    fi
+    release_commit="$(tr -d '\r\n' < "$marker")"
+    if [[ ! "$release_commit" =~ ^[0-9a-f]{40}$ ]]; then
+      log "部署后收口保留身份无效的 release：${candidate}"
+      continue
+    fi
+    if (( rollback_count < 2 )); then
+      retained_releases+=("$candidate")
+      rollback_count=$((rollback_count + 1))
+    fi
+  done
+  log "部署后收口保留 release：${retained_releases[*]}"
+}
+
+prune_legacy_releases() {
+  local candidate keep retained marker release_commit
+  assert_cleanup_root "${test_root}/opt" || return 1
+  while IFS= read -r -d '' candidate; do
+    keep=0
+    for retained in "${retained_releases[@]}"; do [[ "$candidate" == "$retained" ]] && keep=1; done
+    (( keep == 1 )) && continue
+    assert_cleanup_child "$candidate" "${test_root}/opt" || continue
+    marker="${candidate}/.deployment-commit"
+    [[ -f "$marker" && ! -L "$marker" ]] || { log "部署后收口跳过无法验证的 legacy release：${candidate}"; continue; }
+    release_commit="$(tr -d '\r\n' < "$marker")"
+    [[ "$release_commit" =~ ^[0-9a-f]{40}$ ]] || { log "部署后收口跳过身份无效的 legacy release：${candidate}"; continue; }
+    if ! rm -rf -- "$candidate"; then log "部署后收口无法删除旧 legacy release，保守保留：${candidate}"; continue; fi
+    log "部署后收口删除旧 legacy release：${candidate}"
+  done < <(find "${test_root}/opt" -mindepth 1 -maxdepth 1 -type d -name 'legion12-legacy-*' -print0)
+}
+
+prune_release_set() {
+  local row candidate keep retained marker release_commit
+  for row in "${release_rows[@]}"; do
+    candidate="${row#*:}"; keep=0
+    for retained in "${retained_releases[@]}"; do [[ "$candidate" == "$retained" ]] && keep=1; done
+    (( keep == 1 )) && continue
+    assert_cleanup_child "$candidate" "$releases_dir" || continue
+    marker="${candidate}/.deployment-commit"
+    [[ -f "$marker" && ! -L "$marker" ]] || { log "部署后收口跳过无法验证的 release：${candidate}"; continue; }
+    release_commit="$(tr -d '\r\n' < "$marker")"
+    [[ "$release_commit" =~ ^[0-9a-f]{40}$ ]] || { log "部署后收口跳过身份无效的 release：${candidate}"; continue; }
+    if ! rm -rf -- "$candidate"; then log "部署后收口无法删除旧 release，保守保留：${candidate}"; continue; fi
+    log "部署后收口删除旧 release：${candidate}"
+  done
+}
+
+prune_card_asset_versions() {
+  local release link target candidate retained keep expected_hash
+  local referenced_assets=()
+  assert_cleanup_root "$static_card_assets_dir" || return 1
+  for release in "${retained_releases[@]}"; do
+    link="${release}/opcgpro-vue/dist/card-assets"
+    if [[ ! -e "$link" && ! -L "$link" ]]; then continue; fi
+    if [[ ! -L "$link" ]]; then
+      log "优化卡图清理跳过：保留 release 的 card-assets 不是可信链接：${release}"
+      return 0
+    fi
+    target="$(readlink -f "$link")"
+    if [[ "$target" != "${static_card_assets_dir}/"* && "$target" != "${default_static_card_assets_dir}/"* ]]; then
+      log "优化卡图清理跳过：保留 release 引用越界：${release}"
+      return 0
+    fi
+    [[ -d "$target" && ! -L "$target" ]] || { log "优化卡图清理跳过：引用目标不可验证：${target}"; return 0; }
+    expected_hash="$(basename "$target")"
+    validate_card_assets_tree "$target" "$expected_hash" || { log "优化卡图清理跳过：manifest 无法验证：${target}"; return 0; }
+    referenced_assets+=("$target")
+  done
+  log "部署后收口保留优化卡图：${referenced_assets[*]:-(无)}"
+  while IFS= read -r -d '' candidate; do
+    keep=0
+    for retained in "${referenced_assets[@]}"; do [[ "$candidate" == "$retained" ]] && keep=1; done
+    (( keep == 1 )) && continue
+    if [[ ! "$(basename "$candidate")" =~ ^[0-9a-f]{64}$ ]]; then log "优化卡图清理跳过非受管版本：${candidate}"; continue; fi
+    assert_cleanup_child "$candidate" "$static_card_assets_dir" || continue
+    if ! rm -rf -- "$candidate"; then log "部署后收口无法删除无引用优化卡图，保守保留：${candidate}"; continue; fi
+    log "部署后收口删除无引用优化卡图：${candidate}"
+  done < <(find "$static_card_assets_dir" -mindepth 1 -maxdepth 1 -type d -print0)
+}
+
+prune_consumed_incoming() {
+  local candidate name identity release marker proven
+  assert_cleanup_root "$incoming_dir" || return 1
+  while IFS= read -r -d '' candidate; do
+    name="$(basename "$candidate")"; proven=0
+    if [[ "$name" =~ ^l12-release-([0-9a-f]{40})\.tar\.gz$ ]]; then
+      identity="${BASH_REMATCH[1]}"
+      while IFS= read -r -d '' release; do
+        marker="${release}/.deployment-commit"
+        [[ -f "$marker" && ! -L "$marker" && "$(tr -d '\r\n' < "$marker")" == "$identity" ]] && proven=1
+      done < <(find "$releases_dir" -mindepth 1 -maxdepth 1 -type d -print0)
+    elif [[ "$name" =~ ^l12-card-assets-([0-9a-f]{64})\.tar\.gz$ ]]; then
+      identity="${BASH_REMATCH[1]}"
+      [[ -d "${static_card_assets_dir}/${identity}" && ! -L "${static_card_assets_dir}/${identity}" ]] && proven=1
+    fi
+    if (( proven == 1 )); then
+      assert_cleanup_child "$candidate" "$incoming_dir" || continue
+      if ! rm -f -- "$candidate"; then log "部署后收口无法删除已消费 incoming，保守保留：${candidate}"; continue; fi
+      log "部署后收口删除已消费 incoming：${candidate}"
+    else
+      log "部署后收口保留无法证明已消费的 incoming：${candidate}"
+    fi
+  done < <(find "$incoming_dir" -mindepth 1 -maxdepth 1 -type f -print0)
+}
+
+prune_managed_staging() {
+  local candidate
+  assert_cleanup_root "$stage_parent" || return 1
+  while IFS= read -r -d '' candidate; do
+    assert_cleanup_child "$candidate" "$stage_parent" || continue
+    if ! rm -rf -- "$candidate"; then log "部署后收口无法删除废弃 staging，保守保留：${candidate}"; continue; fi
+    log "部署后收口删除废弃 staging：${candidate}"
+  done < <(find "$stage_parent" -mindepth 1 -maxdepth 1 -type d \( -name 'legion12-staging-*' -o -name 'legion12-card-assets-staging-*' \) -print0)
+}
+
+converge_deployment_storage() {
+  local before after released
+  before="$(tree_bytes "$releases_dir" "$runtime_backup_dir" "$incoming_dir" "$static_card_assets_dir" "$static_web_assets_dir")" || before=0
+  select_retained_releases "$1" "${2:-}" || { log "部署后存储收口跳过：无法证明 release 保留边界"; return 0; }
+  prune_runtime_backups || log "runtime 快照统计/清理跳过"
+  prune_card_asset_versions || log "优化卡图清理跳过"
+  prune_consumed_incoming || log "incoming 清理跳过"
+  prune_managed_staging || log "staging 清理跳过"
+  if ! prune_web_assets "${retained_releases[@]}"; then log "共享前端哈希资源清理跳过，保留全部兼容资源"; fi
+  prune_release_set
+  prune_legacy_releases || log "legacy release 清理跳过"
+  after="$(tree_bytes "$releases_dir" "$runtime_backup_dir" "$incoming_dir" "$static_card_assets_dir" "$static_web_assets_dir")" || after="$before"
+  released=$((before > after ? before - after : 0))
+  log "部署后存储收口：清理前=${before} 字节，清理后=${after} 字节，释放=${released} 字节"
 }
 
 restore_previous() {
@@ -809,6 +1136,7 @@ test -f "${stage_dir}/.deployment-commit" || fail "运行包缺少提交标记"
 [[ "$(tr -d '\r\n' < "${stage_dir}/.deployment-commit")" == "$commit" ]] || fail "运行包提交标记不匹配"
 test -r "${stage_dir}/publish/GrandUMIServer.dll" || fail "运行包缺少后端入口"
 test -r "${stage_dir}/opcgpro-vue/dist/index.html" || fail "运行包缺少前端首页"
+validate_web_assets_tree "${stage_dir}/opcgpro-vue/dist/assets"
 test -r "${stage_dir}/scripts/ws-smoke.mjs" || fail "运行包缺少 WebSocket 冒烟脚本"
 test ! -e "${stage_dir}/opcgpro-vue/dist/cards" || fail "运行包不应重复携带卡图缓存"
 
@@ -865,6 +1193,14 @@ else
   previous_target="$active_dir"
 fi
 previous_commit="$(read_release_commit "$previous_target")"
+
+failure_stage="install-compatible-web-assets"
+install_web_assets_tree "${previous_target}/opcgpro-vue/dist/assets" "assets"
+install_web_assets_tree "${stage_dir}/opcgpro-vue/dist/assets" "assets"
+ensure_web_assets_entry
+sample_web_asset="$(find "${static_web_assets_dir}/assets" -type f -print -quit)"
+test -n "$sample_web_asset" || fail "共享前端哈希资源池为空"
+runuser -u "$web_user" -- test -r "$sample_web_asset" || fail "Nginx 账号无法读取共享前端哈希资源"
 
 # This deployment fence is independent of the saved operations maintenance plan.
 # Keep it on failure; only a completely verified release may remove it.
@@ -973,8 +1309,10 @@ Legion12 正式服
 部署日期：$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
 
-failure_stage="prune-runtime-backups"
-prune_runtime_backups
+failure_stage="post-success-storage-cleanup"
+if ! converge_deployment_storage "$release_dir" "$previous_target"; then
+  log "部署后存储收口未全部完成；已验证的新版本保持运行，未删除项将在下次安全收口重试"
+fi
 
 # Do not call any maintenance-end/server-start operation or mutate its plan.
 rm -f -- "$sandbox_fence"

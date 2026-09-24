@@ -79,10 +79,14 @@ try {
     $envSource = Get-Content -LiteralPath $envExample -Raw
 
     foreach ($contract in @(
-        'prune_testrun_storage "$release_dir" "$previous_target"',
-        'for ((index=1; index<${#backups[@]}; index+=1))',
-        'find "$incoming_dir" -mindepth 1 -maxdepth 1 -type f -mtime +2 -delete',
-        'find "$releases_dir" -mindepth 1 -maxdepth 1 -type d -print0'
+        'failure_stage="post-success-storage-cleanup"',
+        'converge_testrun_storage "$release_dir"',
+        'rollback_count < 2',
+        'L12_TESTRUN_PRUNE_RUNTIME_BACKUPS:-0',
+        'runtime_backup_checksum="${runtime_backup}.sha256"',
+        'storage cleanup retained releases:',
+        'storage cleanup kept unproven incoming artifact:',
+        'card asset cleanup skipped:'
     )) {
         Assert-True ($dailySource.Contains($contract)) "Missing minimal testrun retention contract: $contract"
     }
@@ -109,7 +113,10 @@ try {
     Assert-True ($httpSource.Contains("return 503 'testrun TLS bootstrap in progress")) "HTTP bootstrap exposes more than ACME and a 503 guard."
     Assert-True (-not $httpSource.Contains('proxy_pass')) "HTTP bootstrap exposes the application over plaintext."
     Assert-True (-not $tlsSource.Contains('auth_basic')) "Public testrun TLS site enables Basic Auth."
+    Assert-True ($tlsSource.Contains('location ^~ /assets/') -and $tlsSource.Contains('try_files $uri =404;') -and $tlsSource.Contains('max-age=31536000, immutable')) "Standalone testrun assets are not immutable strict-404 resources."
     Assert-True (-not $pathSource.Contains('auth_basic') -and $pathSource.Contains('proxy_pass http://127.0.0.1:8084/ws;') -and $pathSource.Contains('dist-testrun')) "Mounted test path is not isolated or public."
+    Assert-True ($pathSource.Contains('location ^~ /testrun/assets/') -and $pathSource.Contains('root /opt/legion12-testrun-web-assets;') -and $pathSource.Contains('try_files $uri =404;')) "Mounted testrun assets can still fall back to HTML."
+    Assert-True ($pathSource.Contains('location = /testrun/index.html') -and $pathSource.Contains('Cache-Control "no-cache"')) "Mounted testrun HTML is not revalidated."
     $pathNewsRegex = [regex]::Match($pathSource, 'location\s+~\s+\^/testrun/news/\[\^/\]\+/\?\$\s*\{(?<body>.*?)\}', [Text.RegularExpressions.RegexOptions]::Singleline)
     Assert-True ($pathNewsRegex.Success) "Mounted test path lacks the article share route."
     Assert-True ($pathNewsRegex.Groups['body'].Value.Contains('rewrite ^ /_l12/share-page break;') -and $pathNewsRegex.Groups['body'].Value.Contains('proxy_pass http://127.0.0.1:8084;') -and -not $pathNewsRegex.Groups['body'].Value.Contains('proxy_pass http://127.0.0.1:8084/_l12/share-page;')) "Regex article route uses an invalid proxy_pass URI."
@@ -126,13 +133,17 @@ try {
     $artifactRoot = Join-Path $fixture "artifacts"
     $releaseRoot = Join-Path $artifactRoot "release"
     $assetRoot = Join-Path $artifactRoot "assets"
-    New-Item -ItemType Directory -Path (Join-Path $releaseRoot "publish"), (Join-Path $releaseRoot "opcgpro-vue\dist"), (Join-Path $releaseRoot "opcgpro-vue\dist-testrun"), (Join-Path $releaseRoot "scripts"), (Join-Path $assetRoot "cards") -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $releaseRoot "publish"), (Join-Path $releaseRoot "opcgpro-vue\dist"), (Join-Path $releaseRoot "opcgpro-vue\dist\assets"), (Join-Path $releaseRoot "opcgpro-vue\dist-testrun"), (Join-Path $releaseRoot "opcgpro-vue\dist-testrun\assets"), (Join-Path $releaseRoot "scripts"), (Join-Path $assetRoot "cards") -Force | Out-Null
     Write-Utf8NoBom (Join-Path $releaseRoot ".deployment-commit") $commitB
     Write-Utf8NoBom (Join-Path $releaseRoot "publish\GrandUMIServer.dll") "binary"
     Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist\index.html") "html"
     New-Item -ItemType Directory -Path (Join-Path $releaseRoot "opcgpro-vue\dist\assets") -Force | Out-Null
     Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist\assets\shared.txt") "shared static asset"
+    Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist\assets\Page-new.js") "export const release = 'new'"
+    Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist\assets\Page-new.css") ".new{display:block}"
     Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist-testrun\index.html") "testrun html"
+    Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist-testrun\assets\Page-new.js") "export const release = 'testrun-new'"
+    Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist-testrun\assets\Page-new.css") ".testrun-new{display:block}"
     Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\testrun-shared-files.txt") "assets/shared.txt`n"
     Write-Utf8NoBom (Join-Path $releaseRoot "scripts\ws-smoke.mjs") "// probe"
     Write-Utf8NoBom (Join-Path $assetRoot "card-assets.manifest.json") "{}"
@@ -175,15 +186,19 @@ try {
     $fakeBin = Join-Path $root "fake-bin"
     $cachedAssets = Join-Path $root "opt\legion12-testrun-static\card-assets\$assetHash"
     $pathSite = Join-Path $root "etc\nginx\snippets\legion12-testrun-path.conf"
-    New-Item -ItemType Directory -Path (Join-Path $oldRelease "publish"), (Join-Path $oldRelease "scripts"), $runtime, $incoming, $fakeBin, $cachedAssets, (Split-Path $pathSite -Parent), (Join-Path $root "usr\local\libexec"), (Join-Path $root "run\lock") -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $oldRelease "publish"), (Join-Path $oldRelease "opcgpro-vue\dist\assets"), (Join-Path $oldRelease "opcgpro-vue\dist-testrun\assets"), (Join-Path $oldRelease "scripts"), $runtime, $incoming, $fakeBin, $cachedAssets, (Split-Path $pathSite -Parent), (Join-Path $root "usr\local\libexec"), (Join-Path $root "run\lock") -Force | Out-Null
     $oldReleasePosix = ConvertTo-MsysPath $oldRelease
     $runtimePosix = ConvertTo-MsysPath $runtime
     Write-Utf8NoBom (Join-Path $oldRelease ".deployment-commit") "$commitA`n"
     Write-Utf8NoBom (Join-Path $oldRelease "publish\runtime") "$runtimePosix`n"
     Write-Utf8NoBom (Join-Path $oldRelease "scripts\ws-smoke.mjs") "// old probe"
+    Write-Utf8NoBom (Join-Path $oldRelease "opcgpro-vue\dist\assets\Page-old.js") "export const release = 'old'"
+    Write-Utf8NoBom (Join-Path $oldRelease "opcgpro-vue\dist\assets\Page-old.css") ".old{display:block}"
+    Write-Utf8NoBom (Join-Path $oldRelease "opcgpro-vue\dist-testrun\assets\Page-old.js") "export const release = 'testrun-old'"
+    Write-Utf8NoBom (Join-Path $oldRelease "opcgpro-vue\dist-testrun\assets\Page-old.css") ".testrun-old{display:block}"
     Write-Utf8NoBom (Join-Path $root "opt\legion12-testrun") "$oldReleasePosix`n"
     Write-Utf8NoBom (Join-Path $cachedAssets "card-assets.manifest.json") "{}"
-    Write-Utf8NoBom $pathSite "location = /testrun/ws {`nproxy_pass http://127.0.0.1:8084/ws;`n}`nlocation ^~ /testrun/ {`nalias /opt/legion12-testrun/opcgpro-vue/dist-testrun/;`n}`n"
+    Write-Utf8NoBom $pathSite "location = /testrun/ws {`nproxy_pass http://127.0.0.1:8084/ws;`n}`nlocation ^~ /testrun/assets/ {`nroot /opt/legion12-testrun-web-assets;`ntry_files `$uri =404;`n}`nlocation /testrun/ {`nalias /opt/legion12-testrun/opcgpro-vue/dist-testrun/;`n}`n"
     Write-Utf8NoBom (Join-Path $root "etc\legion12-testrun.env") ("L12_ADMIN_PASSWORD=" + ("e" * 64) + "`nL12_EMAIL_FEATURE_ENABLED=false`nL12_PUBLIC_BASE_URL=https://legion-12.com/testrun`nL12_TESTRUN_MATCH_STORAGE=ephemeral`nL12_SMTP_HOST=`nL12_SMTP_PORT=`nL12_SMTP_USERNAME=`nL12_SMTP_PASSWORD=`nL12_SMTP_FROM_ADDRESS=`nL12_SMTP_FROM_NAME=`nL12_SMTP_ENABLE_SSL=`nL12_ENABLE_SECOND_APPROVER_BOOTSTRAP=false`nL12_SECOND_APPROVER_BOOTSTRAP_TOKEN=`n")
     Copy-Item $healthVerifier (Join-Path $root "usr\local\libexec\verify-legion12-testrun-health.mjs")
     Copy-Item $releaseArchive (Join-Path $incoming "l12-testrun-release-$commitB.tar.gz")
@@ -194,7 +209,9 @@ try {
     New-FakeCommand $fakeBin "flock" 'exit 0'
     New-FakeCommand $fakeBin "seq" 'exit 0'
     New-FakeCommand $fakeBin "python3" 'exec "$L12_TEST_PYTHON" "$@"'
-    New-FakeCommand $fakeBin "sha256sum" 'node -e "const fs=require('"'"'node:fs'"'"'),crypto=require('"'"'node:crypto'"'"');const p=process.argv[1];process.stdout.write(crypto.createHash('"'"'sha256'"'"').update(fs.readFileSync(p)).digest('"'"'hex'"'"')+'"'"'  '"'"'+p+'"'"'\n'"'"')" "$1"'
+    New-FakeCommand $fakeBin "sha256sum" @'
+node -e "const fs=require('node:fs'),crypto=require('node:crypto');const p=process.argv[1];process.stdout.write(crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex')+'  '+p+'\n')" "$1"
+'@
     New-FakeCommand $fakeBin "tar" 'exec "$L12_TEST_TAR" "$@"'
     New-FakeCommand $fakeBin "install" 'if [ "${1:-}" = "-m" ]; then shift 2; fi; if [ "$#" -eq 2 ]; then cp "$1" "$2"; fi; exit 0'
     New-FakeCommand $fakeBin "systemctl" @'
@@ -211,10 +228,11 @@ exit 0
     New-FakeCommand $fakeBin "runuser" 'exit 0'
     New-FakeCommand $fakeBin "chmod" 'exit 0'
     New-FakeCommand $fakeBin "chown" 'exit 0'
+    New-FakeCommand $fakeBin "stat" 'if [ "${1:-}" = "-c" ] && [ "${2:-}" = "%s" ]; then wc -c < "$3" | tr -d " "; exit 0; fi; exit 2'
     New-FakeCommand $fakeBin "ln" 'if [ "${1:-}" = "-s" ]; then target="$2"; link="$3"; printf "%s\n" "$target" > "$link"; else cp "$1" "$2"; fi'
     New-FakeCommand $fakeBin "readlink" @'
 for last; do :; done
-if [ -f "$last" ]; then tr -d '\r\n' < "$last"; else exit 1; fi
+if [ -d "$last" ]; then printf '%s\n' "$last"; elif [ -f "$last" ]; then tr -d '\r\n' < "$last"; else exit 1; fi
 '@
     New-FakeCommand $fakeBin "timeout" 'printf "timeout %s\n" "$*" >> "$L12_TEST_COMMAND_LOG"; exit 0'
     New-FakeCommand $fakeBin "curl" @'
@@ -225,7 +243,7 @@ case "$url" in
     target="$(tr -d '\r\n' < "$L12_TEST_ACTIVE")"
     served="$(tr -d '\r\n' < "$target/.deployment-commit")"
     status=ok
-    if [ "$served" = "$L12_TEST_NEW_COMMIT" ]; then status=degraded; fi
+    if [ "$served" = "$L12_TEST_NEW_COMMIT" ] && [ "${L12_TEST_FORCE_NEW_HEALTH_OK:-0}" != "1" ]; then status=degraded; fi
     printf '{"status":"%s","maintenance":false,"service":"twelve-legions","serverVersion":"%s","engineVersion":"l12-engine/%s"}\n' "$status" "$served" "$served" ;;
 esac
 exit 0
@@ -241,6 +259,7 @@ exit 0
         L12_TEST_TAR = (ConvertTo-MsysPath $tar)
         L12_TEST_COMMAND_LOG = (ConvertTo-MsysPath $commandLog); L12_TEST_SERVICE_STATE = (ConvertTo-MsysPath (Join-Path $root "service.state"))
         L12_TEST_ACTIVE = "$rootPosix/opt/legion12-testrun"; L12_TEST_NEW_COMMIT = $commitB
+        L12_TEST_FORCE_NEW_HEALTH_OK = "0"
     }
     $saved = @{}
     foreach ($entry in $environment.GetEnumerator()) { $saved[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key, "Process"); [Environment]::SetEnvironmentVariable($entry.Key, [string]$entry.Value, "Process") }
@@ -254,12 +273,90 @@ exit 0
     Assert-True ((Get-Content -LiteralPath (Join-Path $root "opt\legion12-testrun") -Raw).Trim() -eq $oldReleasePosix) "Failure did not restore the old testrun release."
     Assert-True ((Get-Content -LiteralPath (Join-Path $root "service.state") -Raw).Trim() -eq "running") "Verified old testrun release was not restarted."
     Assert-True ((Get-Content -LiteralPath (Join-Path $runtime "sentinel.txt") -Raw) -eq "preserve") "Failure changed existing testrun runtime data."
+    $sharedWebAssets = Join-Path $root "opt\legion12-testrun-static\web-assets"
+    Assert-True (Test-Path -LiteralPath (Join-Path $sharedWebAssets "assets\Page-old.js") -PathType Leaf) "Rollback path did not stage the previous standalone JS asset: $($rollback.Output)"
+    Assert-True ((Get-Content -LiteralPath (Join-Path $sharedWebAssets "assets\Page-old.js") -Raw) -eq "export const release = 'old'") "Rollback path did not preserve the previous standalone JS asset."
+    Assert-True ((Get-Content -LiteralPath (Join-Path $sharedWebAssets "testrun\assets\Page-old.css") -Raw) -eq ".testrun-old{display:block}") "Rollback path did not preserve the previous mounted CSS asset."
+    Assert-True ((Get-Content -LiteralPath (Join-Path $sharedWebAssets "testrun\assets\Page-new.js") -Raw) -eq "export const release = 'testrun-new'") "New mounted JS asset was not atomically staged before the switch."
     Assert-True (Test-Path -LiteralPath $commandLog -PathType Leaf) "Server rollback fixture did not reach command execution: $($rollback.Output)"
     $commands = Get-Content -LiteralPath $commandLog -Raw
     Assert-True (-not $commands.Contains('reload nginx')) "Daily rollback touched Nginx state."
     Assert-True (-not $commands.Contains('8083') -and -not $commands.Contains('legion12-test.service')) "Daily rollback touched a production port or service."
 
-    Write-Host "[L12 testrun deploy behavior] isolation, target pinning, archive rejection, and old-release rollback passed."
+    $commitC = "c" * 40
+    Write-Utf8NoBom (Join-Path $releaseRoot ".deployment-commit") "$commitC`n"
+    $successArchive = Join-Path $incoming "l12-testrun-release-$commitC.tar.gz"
+    & $tar -czf $successArchive -C $releaseRoot .
+    $releaseBase = Join-Path $root "opt\legion12-testrun-releases"
+    $expiredCommit = "d" * 40
+    $expiredRelease = Join-Path $releaseBase "$expiredCommit-expired"
+    New-Item -ItemType Directory -Path (Join-Path $expiredRelease "opcgpro-vue\dist\assets"), (Join-Path $expiredRelease "opcgpro-vue\dist-testrun\assets") -Force | Out-Null
+    Write-Utf8NoBom (Join-Path $expiredRelease ".deployment-commit") "$expiredCommit`n"
+    Write-Utf8NoBom (Join-Path $expiredRelease "opcgpro-vue\dist\assets\expired.js") "expired"
+    Write-Utf8NoBom (Join-Path $expiredRelease "opcgpro-vue\dist-testrun\assets\expired.js") "expired"
+    (Get-Item -LiteralPath $expiredRelease).LastWriteTimeUtc = [DateTime]::UtcNow.AddDays(-10)
+    $runtimeBackups = Join-Path $root "opt\legion12-testrun-deployment\runtime-backups"
+    $seededBackup = Join-Path $runtimeBackups "runtime-before-seeded-old.tar.gz"
+    Write-Utf8NoBom $seededBackup "snapshot"
+    Write-Utf8NoBom "$seededBackup.sha256" "fixture checksum sidecar"
+    $consumedIncoming = Join-Path $incoming "l12-testrun-release-$expiredCommit.tar.gz"
+    $unprovenIncoming = Join-Path $incoming ("l12-testrun-release-" + ("e" * 40) + ".tar.gz")
+    Write-Utf8NoBom $consumedIncoming "consumed"
+    Write-Utf8NoBom $unprovenIncoming "unproven"
+    $staleStaging = Join-Path $root "opt\legion12-testrun-staging-seeded-expired"
+    New-Item -ItemType Directory -Path $staleStaging -Force | Out-Null
+    Write-Utf8NoBom (Join-Path $staleStaging "stale.txt") "stale"
+    $unverifiableCardAssets = Join-Path $root ("opt\legion12-testrun-static\card-assets\" + ("f" * 64))
+    New-Item -ItemType Directory -Path $unverifiableCardAssets -Force | Out-Null
+    Write-Utf8NoBom (Join-Path $unverifiableCardAssets "orphan.txt") "orphan"
+
+    $successEnvironment = $environment.Clone()
+    $successEnvironment["L12_TEST_NEW_COMMIT"] = $commitC
+    $successEnvironment["L12_TEST_FORCE_NEW_HEALTH_OK"] = "1"
+    $successSaved = @{}
+    foreach ($entry in $successEnvironment.GetEnumerator()) { $successSaved[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key, "Process"); [Environment]::SetEnvironmentVariable($entry.Key, [string]$entry.Value, "Process") }
+    try {
+        $successArchiveServerPath = "$rootPosix/opt/legion12-testrun-deployment/incoming/l12-testrun-release-$commitC.tar.gz"
+        $successDeploy = Invoke-NativeCapture $shell @("-c", $launcher, "testrun-success", (ConvertTo-MsysPath $serverDeploy), "deploy", $commitC, (Get-FileHash $successArchive -Algorithm SHA256).Hash.ToLowerInvariant(), $successArchiveServerPath, $assetHash, "-", "-")
+    }
+    finally { foreach ($entry in $successSaved.GetEnumerator()) { [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, "Process") } }
+    Assert-True ($successDeploy.ExitCode -eq 0) "Successful storage-convergence fixture failed: $($successDeploy.Output)"
+    Assert-True ((Get-Content -LiteralPath (Join-Path $root "opt\legion12-testrun") -Raw).Contains($commitC)) "Successful deploy did not activate the expected commit."
+    Assert-True (@(Get-ChildItem -LiteralPath $releaseBase -Directory).Count -eq 3) "Release retention did not converge to current plus two rollback releases."
+    Assert-True (-not (Test-Path -LiteralPath $expiredRelease)) "Release outside the current + two rollback boundary was retained."
+    Assert-True (Test-Path -LiteralPath $seededBackup -PathType Leaf) "Default-off runtime snapshot policy deleted a snapshot."
+    Assert-True (Test-Path -LiteralPath "$seededBackup.sha256" -PathType Leaf) "Default-off runtime snapshot policy deleted a checksum sidecar."
+    Assert-True (-not (Test-Path -LiteralPath $consumedIncoming)) "Proven consumed incoming artifact was retained."
+    Assert-True (Test-Path -LiteralPath $unprovenIncoming -PathType Leaf) "Unproven incoming artifact was deleted."
+    Assert-True (-not (Test-Path -LiteralPath $staleStaging)) "Managed stale staging directory was retained."
+    Assert-True (Test-Path -LiteralPath $unverifiableCardAssets -PathType Container) "Card assets were deleted despite an unverifiable retained reference."
+    Assert-True ($successDeploy.Output.Contains("runtime snapshot deletion skipped by default")) "Default-off runtime snapshot policy was not reported."
+    Assert-True ($successDeploy.Output.Contains("card asset cleanup skipped")) "Conservative card-asset skip reason was not reported."
+    Assert-True ($successDeploy.Output.Contains("post-deploy storage cleanup: before=") -and $successDeploy.Output.Contains("released=")) "Storage before/after/released metrics were not reported."
+    foreach ($snapshot in Get-ChildItem -LiteralPath $runtimeBackups -Filter "runtime-before-*.tar.gz" -File) {
+        Assert-True (Test-Path -LiteralPath "$($snapshot.FullName).sha256" -PathType Leaf) "Runtime snapshot is missing its SHA256 sidecar: $($snapshot.FullName)"
+    }
+
+    $commitD = "6" * 40
+    Write-Utf8NoBom (Join-Path $releaseRoot ".deployment-commit") "$commitD`n"
+    $repeatArchive = Join-Path $incoming "l12-testrun-release-$commitD.tar.gz"
+    & $tar -czf $repeatArchive -C $releaseRoot .
+    $repeatEnvironment = $environment.Clone()
+    $repeatEnvironment["L12_TEST_NEW_COMMIT"] = $commitD
+    $repeatEnvironment["L12_TEST_FORCE_NEW_HEALTH_OK"] = "1"
+    $repeatSaved = @{}
+    foreach ($entry in $repeatEnvironment.GetEnumerator()) { $repeatSaved[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key, "Process"); [Environment]::SetEnvironmentVariable($entry.Key, [string]$entry.Value, "Process") }
+    try {
+        $repeatArchiveServerPath = "$rootPosix/opt/legion12-testrun-deployment/incoming/l12-testrun-release-$commitD.tar.gz"
+        $repeatDeploy = Invoke-NativeCapture $shell @("-c", $launcher, "testrun-repeat", (ConvertTo-MsysPath $serverDeploy), "deploy", $commitD, (Get-FileHash $repeatArchive -Algorithm SHA256).Hash.ToLowerInvariant(), $repeatArchiveServerPath, $assetHash, "-", "-")
+    }
+    finally { foreach ($entry in $repeatSaved.GetEnumerator()) { [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, "Process") } }
+    Assert-True ($repeatDeploy.ExitCode -eq 0) "Repeated storage-convergence run was not idempotent: $($repeatDeploy.Output)"
+    Assert-True (@(Get-ChildItem -LiteralPath $releaseBase -Directory).Count -eq 3) "Repeated cleanup did not preserve the same three-release boundary."
+    Assert-True ($null -ne (Get-ChildItem -LiteralPath $releaseBase -Directory | Where-Object Name -Like "$commitC-*" | Select-Object -First 1)) "Repeated cleanup removed the immediately previous release."
+    Assert-True (Test-Path -LiteralPath $unprovenIncoming -PathType Leaf) "Repeated cleanup deleted an unproven incoming artifact."
+
+    Write-Host "[L12 testrun deploy behavior] isolation, target pinning, rollback safety, and post-success storage convergence passed."
 }
 finally {
     if (Test-Path -LiteralPath $fixture) {
