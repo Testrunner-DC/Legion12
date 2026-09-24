@@ -19,6 +19,14 @@ if (ephemeralTestMatches)
 var catalog = L12Catalog.Load(dataPath);
 var platform = new L12PlatformStore(Path.Combine(runtimePath, "platform.json"), catalog.PresetDecks,
     officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts);
+if (L12TestRunStorageProfile.AcceptanceDataEnabled(ephemeralTestMatches,
+        Environment.GetEnvironmentVariable(L12TestRunStorageProfile.AcceptanceDataEnvironmentKey)))
+{
+    var fixtures = platform.EnsureTestRunAcceptanceFixtures();
+    Console.WriteLine($"Test-run acceptance data: owner={fixtures.Owner}; "
+                      + $"decks={fixtures.Decks}; publicDecks={fixtures.PublicDecks}; "
+                      + $"guidedDecks={fixtures.GuidedDecks}.");
+}
 
 var bootstrapIndex = Array.FindIndex(args,
     argument => string.Equals(argument, "--bootstrap-second-approver", StringComparison.Ordinal));

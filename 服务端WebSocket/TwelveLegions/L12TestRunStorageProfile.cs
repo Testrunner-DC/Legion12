@@ -4,6 +4,11 @@ internal static class L12TestRunStorageProfile
 {
     internal const string EnvironmentKey = "L12_TESTRUN_MATCH_STORAGE";
     internal const string EphemeralValue = "ephemeral";
+    internal const string AcceptanceDataEnvironmentKey = "L12_TESTRUN_ACCEPTANCE_DATA";
+    internal const string AcceptanceDataValue = "acceptance-v1";
+
+    internal static bool AcceptanceDataEnabled(bool isolatedTestRun, string? profile)
+        => isolatedTestRun && string.Equals(profile, AcceptanceDataValue, StringComparison.Ordinal);
 
     internal static bool Prepare(string runtimePath, string? profile, string? publicBaseUrl)
     {

@@ -17,6 +17,7 @@ TimeoutStopSec=20
 Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
 Environment=L12_LISTEN_HOST=127.0.0.1
 Environment=L12_ALLOWED_ORIGINS=https://legion-12.com
+Environment=L12_TESTRUN_ACCEPTANCE_DATA=acceptance-v1
 EnvironmentFile=/etc/legion12-testrun.env
 Nice=10
 CPUWeight=10
