@@ -19,5 +19,8 @@ if ($text -notmatch "tags:\s*\['v\*'\]") { throw 'Release tag trigger v* is miss
 if ($text -notmatch 'if \[\[ -d "\$\{root\}/publish/runtimes" \]\]; then') { throw 'Optional runtimes directory guard is missing.' }
 if ($text -notmatch 'archive_bytes > 157286400') { throw '150 MiB release archive budget is missing.' }
 if ($text -notmatch '::error::release archive is larger') { throw 'Release archive diagnostic is missing.' }
+if (([regex]::Matches($text, 'npm run check:performance-architecture')).Count -ne 1) {
+    throw 'GitHub main verification must run the low-latency performance architecture lock exactly once.'
+}
 
-Write-Host '[L12 workflow] ordinary pushes verify only; manual/tag runs package and upload.'
+Write-Host '[L12 workflow] ordinary pushes run performance and release verification; manual/tag runs package and upload.'

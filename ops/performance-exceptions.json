@@ -1,0 +1,131 @@
+{
+  "schema": 1,
+  "exceptions": [
+    {
+      "id": "PERF-LEGACY-FETCH-001",
+      "rule": "raw-fetch",
+      "path": "src/pages/ReplayPage.vue",
+      "allowedValue": 1,
+      "owner": "旧回放入口",
+      "reason": "旧M6回放页仍直接读取jsonl，迁移到统一下载出口前锁定现状，禁止增加第二处",
+      "expiresAt": "2026-10-31"
+    },
+    {
+      "id": "PERF-LEGACY-FETCH-002",
+      "rule": "raw-fetch",
+      "path": "src/l12/game/GmPanel.vue",
+      "allowedValue": 1,
+      "owner": "沙盒记录导出",
+      "reason": "JSON文件下载尚未进入统一请求层，迁移前锁定单一出口",
+      "expiresAt": "2026-10-31"
+    },
+    {
+      "id": "PERF-POLL-001",
+      "rule": "interval",
+      "path": "src/components/home/PlayerListPanel.vue",
+      "allowedValue": 1,
+      "owner": "遗留在线玩家面板",
+      "reason": "4秒玩家列表轮询待事件驱动同步批次移除",
+      "expiresAt": "2026-10-15"
+    },
+    {
+      "id": "PERF-POLL-002",
+      "rule": "interval",
+      "path": "src/l12/site/FriendRequestNotifications.vue",
+      "allowedValue": 1,
+      "owner": "好友申请通知",
+      "reason": "4秒好友申请轮询待资源变化推送替代",
+      "expiresAt": "2026-10-15"
+    },
+    {
+      "id": "PERF-POLL-003",
+      "rule": "interval",
+      "path": "src/l12/site/FriendsPage.vue",
+      "allowedValue": 1,
+      "owner": "好友页",
+      "reason": "15秒四接口刷新待好友汇总快照与资源变化推送替代",
+      "expiresAt": "2026-10-15"
+    },
+    {
+      "id": "PERF-POLL-004",
+      "rule": "interval",
+      "path": "src/l12/site/BattleHubPage.vue",
+      "allowedValue": 2,
+      "owner": "对战大厅运营策略",
+      "reason": "第二个定时器为15秒运营策略轮询，保留一个本地倒计时时钟",
+      "expiresAt": "2026-10-15"
+    },
+    {
+      "id": "PERF-POLL-005",
+      "rule": "interval",
+      "path": "src/l12/site/MaintenanceTicker.vue",
+      "allowedValue": 1,
+      "owner": "维护公告",
+      "reason": "5秒运营策略轮询待WebSocket策略广播替代",
+      "expiresAt": "2026-10-15"
+    },
+    {
+      "id": "PERF-POLL-006",
+      "rule": "interval",
+      "path": "src/l12/site/RankedIntegrityNotice.vue",
+      "allowedValue": 1,
+      "owner": "排位处理通知",
+      "reason": "20秒通知轮询待账号定向资源变化推送替代",
+      "expiresAt": "2026-10-15"
+    },
+    {
+      "id": "PERF-POLL-007",
+      "rule": "interval",
+      "path": "src/l12/site/SiteShell.vue",
+      "allowedValue": 1,
+      "owner": "全站在线状态与异画通知",
+      "reason": "15秒合并轮询待在线状态与账号通知事件替代",
+      "expiresAt": "2026-10-15"
+    },
+    {
+      "id": "PERF-FANOUT-001",
+      "rule": "parallel-page-load",
+      "path": "src/l12/site/FriendsPage.vue",
+      "allowedValue": 4,
+      "owner": "好友页",
+      "reason": "四接口首屏读取待单一好友汇总快照替代",
+      "expiresAt": "2026-10-15"
+    },
+    {
+      "id": "PERF-FANOUT-002",
+      "rule": "parallel-page-load",
+      "path": "src/l12/site/TournamentCenterPage.vue",
+      "allowedValue": 5,
+      "owner": "赛事中心",
+      "reason": "历史首屏读取锁定现状，后续按可见区域拆分",
+      "expiresAt": "2026-12-31"
+    },
+    {
+      "id": "PERF-FANOUT-003",
+      "rule": "parallel-page-load",
+      "path": "src/l12/site/AdminAlternateArtsPanel.vue",
+      "allowedValue": 5,
+      "owner": "后台异画",
+      "reason": "后台历史首屏读取锁定现状，禁止继续扩大",
+      "expiresAt": "2026-12-31"
+    },
+    {
+      "id": "PERF-FANOUT-004",
+      "rule": "parallel-page-load",
+      "path": "src/l12/site/AdminSiteContentPanel.vue",
+      "allowedValue": 7,
+      "owner": "后台站点内容",
+      "reason": "后台历史首屏读取锁定现状，后续改为选项卡按需加载",
+      "expiresAt": "2026-12-31"
+    },
+    {
+      "id": "PERF-FANOUT-005",
+      "rule": "parallel-page-load",
+      "path": "src/l12/site/AdminOperationsPanel.vue",
+      "allowedValue": 6,
+      "owner": "后台运营",
+      "reason": "后台历史首屏读取锁定现状，后续按折叠区域延迟加载",
+      "expiresAt": "2026-12-31"
+    }
+  ]
+}

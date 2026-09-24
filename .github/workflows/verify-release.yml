@@ -42,13 +42,19 @@ jobs:
         # 邮箱能力已退出产品范围，相关历史测试不再作为发布门禁。
         run: dotnet test ./TwelveLegions.Platform.Tests/TwelveLegions.Platform.Tests.csproj --configuration Release --filter "FullyQualifiedName!~EmailAuthAndAccountLifecycleTests"
 
+      - name: 安装前端依赖
+        working-directory: opcgpro-vue
+        run: npm ci --prefer-offline --no-audit
+
+      - name: 低卡顿性能架构锁
+        working-directory: opcgpro-vue
+        run: npm run check:performance-architecture
+
       - name: 前端生产构建
         working-directory: opcgpro-vue
         env:
           VITE_APP_VERSION: ${{ github.sha }}
-        run: |
-          npm ci --prefer-offline --no-audit
-          npm run build
+        run: npm run build
 
       - name: 生成 Linux 运行包
         if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')

@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "defaults": {
+    "steadyStateHttpRequestsPerMinute": 0,
+    "hiddenTabRequestsPerMinute": 0,
+    "maximumConcurrentRequests": 4,
+    "maximumInitialApiRequests": 3,
+    "maximumInitialJsonBytes": 262144,
+    "maximumMutationRequestsPerAction": 1,
+    "maximumParallelPageLoads": 3
+  },
+  "approvedRawFetchModules": [
+    { "path": "src/data/CardLoader.ts", "maximumCalls": 3, "purpose": "版本化静态卡牌数据加载器" },
+    { "path": "src/l12/cardAssets.ts", "maximumCalls": 1, "purpose": "内容寻址卡图清单加载器" },
+    { "path": "src/l12/decks.ts", "maximumCalls": 6, "purpose": "版本化静态牌库目录加载器" },
+    { "path": "src/l12/net.ts", "maximumCalls": 1, "purpose": "连接诊断探针；业务 API 不得进入此出口" },
+    { "path": "src/l12/platform.ts", "maximumCalls": 1, "purpose": "平台 HTTP 唯一业务请求出口" },
+    { "path": "src/l12/site/deckShare.ts", "maximumCalls": 1, "purpose": "牌库图片合成本地图片读取" }
+  ],
+  "approvedIntervalModules": [
+    { "path": "src/net/NetManager.ts", "maximumCalls": 1, "purpose": "遗留协议心跳" },
+    { "path": "src/l12/backgroundMusic.ts", "maximumCalls": 1, "purpose": "本地音频渐变时钟" },
+    { "path": "src/l12/net.ts", "maximumCalls": 2, "purpose": "WebSocket 心跳与匹配恢复" },
+    { "path": "src/l12/game/GameBoard.vue", "maximumCalls": 1, "purpose": "本地骰子动画" },
+    { "path": "src/components/game/OpponentDisconnectBanner.vue", "maximumCalls": 1, "purpose": "本地倒计时显示" },
+    { "path": "src/components/game/ReconnectOverlay.vue", "maximumCalls": 1, "purpose": "本地倒计时显示" },
+    { "path": "src/l12/game/SetupDecisionClock.vue", "maximumCalls": 1, "purpose": "本地决定时钟显示" },
+    { "path": "src/l12/game/PromptOverlay.vue", "maximumCalls": 1, "purpose": "本地骰子动画" },
+    { "path": "src/l12/game/PlayerTurnClock.vue", "maximumCalls": 1, "purpose": "本地回合时钟显示" },
+    { "path": "src/l12/site/BattleHubPage.vue", "maximumCalls": 1, "purpose": "本地维护倒计时显示" }
+  ],
+  "routes": {
+    "/friends": { "maximumInitialApiRequests": 1 },
+    "/battle": { "maximumInitialApiRequests": 3 }
+  }
+}
