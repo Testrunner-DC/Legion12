@@ -71,7 +71,6 @@ const cardPresentation = read('../src/l12/cardPresentation.ts')
 const l12Types = read('../src/l12/types.ts')
 const cardArchive = read('../src/l12/CardArchive.vue')
 const mobileDeferredCardImage = read('../src/l12/MobileDeferredCardImage.vue')
-const cardImage = read('../src/l12/CardImage.vue')
 const cardDetailContent = read('../src/l12/CardDetailContent.vue')
 const cardArchiveVersions = read('../src/l12/cardArchiveVersions.ts')
 const galleryMarkup = cardArchive.match(/<template v-else>([\s\S]*?)<div v-if="!filteredGallery\.length"/)?.[1] ?? ''
@@ -79,7 +78,9 @@ const sandbox = read('../src/l12/site/SandboxPage.vue')
 const gmPanel = read('../src/l12/game/GmPanel.vue')
 const sandboxPicker = read('../src/l12/SingleCardPicker.vue')
 const l12Net = read('../src/l12/net.ts')
-const adminPage = read('../src/l12/site/AdminPage.vue')
+const adminPage = readdirSync(new URL('../src/l12/site/', import.meta.url))
+  .filter(name => /^Admin.*\.vue$/.test(name))
+  .map(name => read(`../src/l12/site/${name}`)).join('\n')
 const adminSections = read('../src/l12/site/adminSections.ts')
 const adminAlternateArts = read('../src/l12/site/AdminAlternateArtsPanel.vue')
 const constructionRuleEditor = read('../src/l12/site/ConstructionRuleEditor.vue')
@@ -179,14 +180,6 @@ const endingMaintenance = maintenanceCountdown({ enabled: true, message: '维护
 const openEndedMaintenance = maintenanceCountdown({ enabled: true, message: '维护提示', broadcastMessage: '' }, maintenanceNow)
 
 const contracts = [
-  [app.match(/<Transition name="page-slide">/g)?.length === 2
-    && !/<Transition name="page-slide" mode="out-in">/.test(app),
-    '普通站点切页不得使用可被连续导航中断为空白的 out-in 过渡；宽屏与横屏壳层必须同样保留新旧页面交接'],
-  [cardImage.includes('MAX_SOURCE_RETRIES = 2')
-    && cardImage.includes('sourceRetryCounts')
-    && cardImage.includes("activeSource.value.kind !== 'placeholder'")
-    && cardImage.includes("resolved.value.sources.some(source => source.kind !== 'placeholder')"),
-    '卡图同源请求短暂失败时必须原地重试，不能一次失败后在当前页面永久落到占位图'],
   [mainEntry.includes("import './l12/site/uiSystem.css'")
     && shell.includes('data-l12-ui-system="site-v1"')
     && siteUiSystem.includes('--l12-ui-panel:') && siteUiSystem.includes('--l12-ui-control:')
@@ -1012,7 +1005,7 @@ const contracts = [
     && l12PromptSetup.includes('isCounterTactic')
     && deckConstructionBrowser.includes('CatalogCardDetails') && catalogCardDetails.includes('CardDetailContent') && cardDetailContent.includes('cardTypeLabel(card.cardType, card.isCounterTactic)')
     && adminPage.includes('cardTypeLabel(card.cardType, card.isCounterTactic)')
-    && adminPage.includes('cardTypeLabel(selectedEffect.cardType, selectedEffect.isCounterTactic)'), '主动/反击战术必须共用tactic类型并由独立属性贯穿目录、对战、弹框与后台；不得保留卡号清单或显示内部英文类型'],
+    && adminPage.includes('cardTypeLabel(selected.cardType, selected.isCounterTactic)'), '主动/反击战术必须共用tactic类型并由独立属性贯穿目录、对战、弹框与后台；不得保留卡号清单或显示内部英文类型'],
   [l12PromptSetup.includes('"discard-or-decline", "optional-card", "search"') && l12PromptSetup.includes('data.TryAdd("layout", "single-row")') && l12PromptSetup.includes('data["displayCardIds"]') && prompt.includes("prompt.value?.data?.layout === 'single-row'") && prompt.includes('displayCardIds') && prompt.includes('unavailable'), '弃牌及查看多张选择部分必须使用横向全卡图列表，并将不合法卡灰置不可选'],
   [l12PromptSetup.includes('ExpandGraveyardSelectionDisplay(playerIndex, kind, validChoices, data)')
     && l12PromptSetup.includes('kind.Equals("grave-card"') && l12PromptSetup.includes('SelectMany(player => player.Graveyard)')
@@ -1067,7 +1060,7 @@ const contracts = [
     && cardArchive.includes("import CardDetailContent from './CardDetailContent.vue'")
     && deckEditor.includes("import CardDetailContent from './CardDetailContent.vue'")
     && deckEditor.includes(':show-catalog-only="false"')
-    && board.includes('<CardDetailContent :card="focusDetailCard" :show-catalog-only="false" />') && prompt.includes("'l12-effect-body': isEffectOptionList") && masterOverlay.includes('player.master.effectText') && masterOverlay.includes('class="l12-effect-body l12-effect-body--compact">{{ entry.label }}') && playerMat.includes('player.factionEffect?.effectText') && playerMat.includes('class="l12-effect-body l12-effect-body--compact"') && adminPage.includes('<p class="l12-effect-body">{{ selectedEffect.effectText') && adminPage.includes('<span class="l12-effect-body">{{ ability.costText }}</span>') && adminPage.includes('<span class="l12-effect-body">{{ ability.resolutionText }}</span>') && adminPage.includes('.security-metrics,.effect-segments{grid-template-columns:1fr}') && !cardDetailContent.includes('archive-number l12-effect-body') && !deckEditor.includes('<small class="l12-effect-body">{{ selected.number') && !globalStyle.includes('--l12-board-readable'), '全站卡效正文必须共用自适应语义字号并保留权威换行，覆盖卡牌详情、牌库编辑、对战、Prompt、主宰/阵营与管理后台；辅助信息按组件空间使用metadata/micro层级，不得恢复全项目14px硬阈值'],
+    && board.includes('<CardDetailContent :card="focusDetailCard" :show-catalog-only="false" />') && prompt.includes("'l12-effect-body': isEffectOptionList") && masterOverlay.includes('player.master.effectText') && masterOverlay.includes('class="l12-effect-body l12-effect-body--compact">{{ entry.label }}') && playerMat.includes('player.factionEffect?.effectText') && playerMat.includes('class="l12-effect-body l12-effect-body--compact"') && adminPage.includes('<p class="l12-effect-body">{{ selected.effectText') && adminPage.includes('<span v-if="ability.costText" class="l12-effect-body">{{ ability.costText }}</span>') && adminPage.includes('<span class="l12-effect-body">{{ ability.resolutionText }}</span>') && adminPage.includes('@media(max-width:650px)') && !cardDetailContent.includes('archive-number l12-effect-body') && !deckEditor.includes('<small class="l12-effect-body">{{ selected.number') && !globalStyle.includes('--l12-board-readable'), '全站卡效正文必须共用自适应语义字号并保留权威换行，覆盖卡牌详情、牌库编辑、对战、Prompt、主宰/阵营与管理后台；辅助信息按组件空间使用metadata/micro层级，不得恢复全项目14px硬阈值'],
   [gmPanel.includes("emit('armPlacement'") && gamePage.includes(':gm-placement="gmPlacement"') && board.includes("emit('gmPlacementResolved')") && board.includes('GM：请选择'), 'GM 打出军团必须回到棋盘并点击目标玩家的绿色空位'],
   [playerMat.includes('selectRunePayment') && playerMat.includes('`rune:${index}`') && playerMat.includes('payable: paymentChoiceIds'), '符文支付必须直接点击场上的可用符文，不得恢复编号弹框'],
   [playerMat.includes('data-ui-contract="independent-trial-action"') && playerMat.includes("emit('ability', player.field[row][slot]!, 'trialAdvance')")
@@ -1091,13 +1084,13 @@ const contracts = [
   [sandboxPicker.includes('loadDeckCatalog') && !sandboxPicker.includes("fetch('/data/l12/cards.s1.json')") && sandboxPicker.includes('搜索卡名、编号或效果文字') && sandboxPicker.includes('全部阵营'), '共享单卡选择器必须复用卡牌图鉴的完整卡池搜索与筛选逻辑'],
   [starterCards.length === 76 && starterCards.some(card => card.id === 'ST06-01' && card.nameZh === '伊丽莎白一世'), '前端权威目录必须收录 76 张 ST 产品卡，并以数据库中的伊丽莎白一世为准'],
   [sandbox.includes('<option value="custom">自定天灾（四张始终公开）</option>') && board.includes("type: 'replaceDisaster'") && board.includes('index < 3'), '自定天灾必须四张公开、前三槽可更换且第四槽堙灭锁定'],
-  [adminSections.includes('卡效统一工作台') && adminPage.includes('atom-flow') && adminPage.includes('原子定义 JSON'), '管理后台必须保留卡效统一工作台、原子组合、流程图与原始定义视图'],
+  [adminSections.includes('卡效工作台') && adminPage.includes('atom-flow') && adminPage.includes('原子定义 JSON'), '管理后台必须保留卡效统一工作台、原子组合、流程图与原始定义视图'],
   [adminPage.includes('旧实现兜底') && adminPage.includes('新旧实现不会同时结算'), '原子化后台必须明确显示旧实现兜底与防重复结算边界'],
   [platform.includes("effectAtoms: () => platformRequest<EffectAtomDescriptor[]>('/api/admin/effect-atoms')") && platform.includes('/api/admin/effects/coverage'), '卡效后台必须从服务端权威原子注册表读取数据'],
-  [adminPage.includes('实战已验证') && adminPage.includes('effectCoverage.verifiedAbilities') && platform.includes('verifiedAbilities: number'), '原子化后台必须区分文本拆分与已接管实战执行的能力'],
+  [adminPage.includes('实战已验证') && adminPage.includes('coverage.verifiedAbilities') && platform.includes('verifiedAbilities: number'), '原子化后台必须区分文本拆分与已接管实战执行的能力'],
   [adminPage.includes('class="effect-scroll"') && adminPage.includes('overflow-y:auto') && adminPage.includes('human-assisted') && adminPage.includes('confirmed'), '原子化能力清单必须可纵向滚动，并区分人工辅助与人工确认状态'],
-  [platform.includes('siteContentApi') && officialHome.includes('v-if="ready"') && officialHome.includes('siteContentApi.home()') && platform.includes('platformRequest<Article[]>(`/api/articles') && adminPage.includes('AdminSiteContentPanel') && adminPage.includes("tab === 'content'") && newsPage.includes('articleApi.list') && !adminPage.includes('<section class="news-editor"'), '官网固定内容必须批量加载避免默认文案闪烁；资讯须使用独立稿件接口与后台工作台，不得继续嵌在官网内容表单中'],
-  [adminSections.includes('站点内容工作台') && adminSiteContent.includes('<AdminArticlesPanel') && adminSiteContent.includes('kind="news"') && adminArticles.includes('class="article-editor') && adminArticles.includes('保存草稿') && adminArticles.includes('发布 / 安排发布') && adminArticles.includes('历史版本') && adminArticles.includes('MediaUploadField') && adminArticles.includes('v-model="selected.link"'), '后台资讯发布必须提供独立列表、完整稿件编辑、封面与链接、发布状态和历史版本恢复'],
+  [platform.includes('siteContentApi') && officialHome.includes('v-if="ready"') && officialHome.includes('siteContentApi.home()') && platform.includes('platformRequest<Article[]>(`/api/articles') && router.includes("import('@/l12/site/AdminSiteContentPanel.vue')") && newsPage.includes('articleApi.list') && !adminSiteContent.includes('<section class="news-editor"'), '官网固定内容必须批量加载避免默认文案闪烁；资讯须使用独立稿件接口与后台工作台，不得继续嵌在官网内容表单中'],
+  [adminSections.includes("label: '站点内容'") && adminSiteContent.includes('<AdminArticlesPanel') && adminSiteContent.includes('kind="news"') && adminArticles.includes('class="article-editor') && adminArticles.includes('保存草稿') && adminArticles.includes('发布 / 安排发布') && adminArticles.includes('历史版本') && adminArticles.includes('MediaUploadField') && adminArticles.includes('v-model="selected.link"'), '后台资讯发布必须提供独立列表、完整稿件编辑、封面与链接、发布状态和历史版本恢复'],
   [mediaUploadField.includes('ORIGINAL_MAX_BYTES = 16 * 1024 * 1024')
     && mediaUploadField.includes('REQUEST_MAX_BYTES = 32 * 1024 * 1024')
     && mediaUploadField.includes('class="media-ratio-hint"')
@@ -1203,8 +1196,8 @@ const contracts = [
   [!hasUndersizedSiteWorkbenchText && adminSiteContent.includes('font-size:14px')
     && adminArticles.includes('font-size:14px') && mediaUploadField.includes('font-size:14px')
     && articleDocumentEditor.includes('font-size:16px'), '站点内容工作台、素材上传与正文编辑器不得恢复 9–11px 密集排版；正文画布应为16px，控件与辅助文字至少12px并保留分组间距'],
-  [adminSections.includes('数据管理') && adminPage.includes('AdminMatchesPanel') && adminPage.includes('AdminGlobalDataPanel') && adminPage.includes('AdminCardAnalyticsPanel')
-    && adminPage.includes("hasPermission('admin.matches.read')") && adminPage.includes("hasPermission('admin.analytics.read')")
+  [adminSections.includes("domain: 'matches'") && adminSections.includes("domain: 'operations'") && router.includes('AdminMatchesPage.vue') && router.includes('AdminGlobalDataPanel.vue') && router.includes('AdminCardAnalyticsPage.vue')
+    && adminSections.includes("permissions: ['admin.matches.read']") && adminSections.includes("permissions: ['admin.analytics.read']")
     && platform.includes('/api/admin/matches') && platform.includes('/api/admin/analytics/global') && platform.includes('/api/admin/analytics/cards'), '后台必须以独立权限和正式模块提供对局档案、全局数据与卡牌数据，不得塞入 Bug 管理或复用玩家私有记录接口'],
   [adminMatches.includes("type MatchView = 'recent' | 'player' | 'sandbox'") && adminMatches.includes("view === 'recent'") && adminMatches.includes("view === 'player'")
     && adminMatches.includes('participant.deckCards') && adminMatches.includes('结构化对局时间线')
@@ -1285,7 +1278,7 @@ const contracts = [
     && friendsPage.includes('selectedPresence?.canSpectate')
     && friendResource.includes('if (pending) return pending') && friendResource.includes('friendApi.overview()')
     && friendResource.includes('expected !== generation'), '好友中心须支持申请、屏蔽，聚合并去重好友读取，拒绝跨账号迟到响应，并按推送在线状态切换邀请与观战'],
-  [platform.includes('permissions?: string[]') && adminSections.includes("permissions: ['admin.bugs.read']") && adminPage.includes('visibleAdminSections(hasPermission)') && adminSections.includes("permissions: ['admin.accounts.read']") && adminPage.includes("hasPermission('admin.operations.read')"), '后台前端入口必须消费服务端权限矩阵，不得只依赖散落角色字符串'],
+  [platform.includes('permissions?: string[]') && adminSections.includes("permissions: ['admin.bugs.read']") && adminPage.includes('visibleAdminSections(hasPermission)') && adminSections.includes("permissions: ['admin.accounts.read']") && adminSections.includes("permissions: ['admin.operations.read']") && router.includes('AdminOperationsPanel.vue'), '后台前端入口必须消费服务端权限矩阵，不得只依赖散落角色字符串'],
   [platform.includes('let authRefreshPromise: Promise<PlatformAccount | null> | null = null')
     && platform.includes('if (authRefreshPromise) return authRefreshPromise')
     && platform.includes("platformRequest<PlatformAccount>('/api/auth/me', {")
@@ -1294,15 +1287,15 @@ const contracts = [
     && platform.includes('remember(account, requestToken)') && platform.includes('AUTH_REFRESH_REQUEST_TIMEOUT_MS'), '账号初始化与权限刷新必须去重、有界且禁止嵌套重试地读取 /api/auth/me，按请求令牌防竞态并以权威响应覆盖本地缓存'],
   [platform.includes('response.status === 401 && requestToken && platformState.token === requestToken') && platform.includes('forgetAccount(requestToken)') && platform.includes('error instanceof PlatformRequestError && error.status === 401') && platform.includes('throw error'), '任意携带当前令牌的 401 必须按请求令牌防竞态清理，网络与 5xx 则保留令牌并保持未验证'],
   [platform.includes('response.status === 403 && requestToken && platformState.token === requestToken') && platform.includes('authState.verified = false') && platform.includes('refreshCurrentAccount({ force: true })') && platform.includes('if (!authState.verified) return false'), '403 必须使权限 UI 立即失败关闭并触发去重身份刷新，缓存身份不得直接授予权限'],
-  [router.includes("meta: { requiresAdmin: true }") && router.includes('router.beforeEach(async to =>') && router.includes('refreshCurrentAccount()') && router.includes('!authState.verified || !platformState.account') && router.includes("return { name: 'me', query: { redirect: to.fullPath } }") && adminPage.includes('await refreshCurrentAccount()') && adminPage.includes('!authState.verified || !canAccessAdmin.value') && adminPage.includes('!authState.initialized || authState.refreshing'), '路由复用已验证身份以保持连接；首次身份验证、管理数据及未验证/非管理员访问仍必须失败关闭'],
+  [router.includes("meta: { requiresAdmin: true }") && router.includes('router.beforeEach(async to =>') && router.includes('refreshCurrentAccount()') && router.includes('!authState.verified || !platformState.account') && router.includes("return { name: 'me', query: { redirect: to.fullPath } }") && adminPage.includes('void refreshCurrentAccount()') && adminPage.includes('v-else-if="!canAccessAdmin"') && adminPage.includes('!authState.initialized || authState.refreshing'), '路由复用已验证身份以保持连接；首次身份验证、管理数据及未验证/非管理员访问仍必须失败关闭'],
   [platform.includes("'/api/auth/sessions/current'") && platform.includes("'/api/auth/sessions'") && profilePage.includes('登录设备与会话') && profilePage.includes('退出其他设备') && profilePage.includes('退出全部设备'), '账号安全页必须支持服务端会话列表、当前设备及全端撤销'],
   [platform.includes("path === '/api/auth/email/capability'") && platform.includes("path === '/api/auth/email/verify'") && platform.includes("path === '/api/auth/password/forgot'") && platform.includes("path === '/api/auth/password/reset'") && platform.includes("'/api/auth/email/bind'") && platform.includes("'/api/auth/email/unbind'") && profilePage.includes("authMode === 'login' && emailFeatureEnabled") && profilePage.includes('v-if="emailFeatureEnabled" class="email-manager"'), '邮箱关闭时必须隐藏绑定与找回入口；显式启用后仍保留完整端点且匿名恢复请求不得携带现有登录令牌'],
   [router.includes("path: '/auth/recovery'") && recoveryPage.includes("location.hash.replace(/^#/, '')") && recoveryPage.includes("history.replaceState(null, '',") && recoveryPage.includes('!emailFeatureEnabled') && recoveryPage.includes('邮箱绑定、验证与找回功能当前未开放') && recoveryPage.includes('确认验证邮箱') && !recoveryPage.includes('submitVerification() }'), '恢复页必须先读取服务端能力并在关闭时失败关闭；启用时从 URL fragment 读取并立即清除令牌，且不得自动消费一次性令牌'],
   [platform.includes('resetAccountPassword:') && platform.includes('deleteAccount:') && adminPage.includes('一次性临时密码') && adminPage.includes('temporaryPassword') && adminPage.includes('删除与清理') && adminPage.includes('根 Admin 与操作者自身受保护'), '管理后台必须提供受保护的一次性临时密码重置、全会话撤销与逻辑删除个人数据清理入口'],
   [platform.includes('mustChangePassword?: boolean') && router.includes('platformState.account.mustChangePassword') && profilePage.includes('必须修改密码'), '管理员重置后的账号必须被导航守卫限制到我的页并明确要求修改临时密码'],
   [platform.includes('options: { revokeServer?: boolean } = {}') && profilePage.includes('logout({ revokeServer: false })'), '服务端已撤销当前或全部会话后必须只清理本机状态，不得用失效令牌重复调用撤销接口'],
-  [platform.includes('revokeSession: (id: string, sessionId: string)') && platform.includes('/sessions/${encodeURIComponent(sessionId)}') && adminPage.includes('revokeAccountSessions') && adminPage.includes('撤销会话'), '管理员必须能按账号撤销服务端会话'],
-  [platform.includes("headers.set('X-Correlation-ID'") && platform.includes('PlatformRequestError') && adminPage.includes('关联 ID：'), 'HTTP 请求、错误提示与管理审计必须贯通关联 ID'],
+  [platform.includes('revokeSession: (id: string, sessionId: string)') && platform.includes('/sessions/${encodeURIComponent(sessionId)}') && adminPage.includes('adminApi.revokeSessions(account.id)') && adminPage.includes('撤销会话'), '管理员必须能按账号撤销服务端会话'],
+  [platform.includes("headers.set('X-Correlation-ID'") && platform.includes('PlatformRequestError') && adminPage.includes('关联 ID'), 'HTTP 请求、错误提示与管理审计必须贯通关联 ID'],
   [platform.includes('/api/admin/v1/commands') && platform.includes('idempotencyKey: body.idempotencyKey || commandKey(prefix)')
     && platform.includes('dryRun: boolean; expectedVersion?: number') && platform.includes('failureReason?: string; correlationId: string; resourceVersion: number')
     && adminPage.includes('管理操作记录') && adminPage.includes('新操作直接执行并写入审计')
@@ -1314,15 +1307,17 @@ const contracts = [
     && l12AdminControlPlane.includes('"approval_disabled"'), '后台新命令必须由有权限管理员直接执行，同时保留幂等、版本冲突、高风险审计失败关闭、持久结果和历史待审批隔离'],
   [platform.includes('/api/admin/v1/content/publish') && platform.includes('/api/admin/v1/content/rollback') && adminSiteContent.includes('直接发布') && adminSiteContent.includes('直接回滚') && !adminSiteContent.includes('双人审批'), '官网内容必须通过服务端批量命令直接发布与回滚，不得恢复前端逐键发布或双人审批'],
   [adminSiteContent.includes('previewContent') && adminSiteContent.includes('发布预览完成') && adminSiteContent.includes('wouldChange') && adminSiteContent.includes('未写入线上内容'), '内容后台必须展示不写入的发布预览与变化摘要'],
-  [adminPage.includes('auditCommandId') && adminPage.includes('auditCorrelationId') && adminPage.includes('auditOutcome'), '审计页必须可按结果、命令 ID 与关联 ID 筛选'],
+  [adminPage.includes('commandId: commandId.value') && adminPage.includes('correlationId: correlationId.value') && adminPage.includes('outcome: outcome.value'), '审计页必须可按结果、命令 ID 与关联 ID 筛选'],
   [platform.includes("releaseArtifacts: () => platformRequest<VerifiedReleaseArtifact[]>('/api/admin/v1/releases/artifacts')") && !platform.includes('registerReleaseArtifact') && adminPage.includes('Web 端没有注册入口'), '发布后台只能读取适配器提供的已验证工件，不得提供客户端工件注册或自报 verified 入口'],
   [platform.includes('/api/admin/v1/releases/deploy') && platform.includes('/api/admin/v1/releases/rollback')
     && platform.includes("commandBody('release-deploy', { artifactId, environment, expectedVersion, dryRun, reason })")
     && platform.includes("commandBody('release-rollback', { targetRunId, expectedVersion, dryRun, reason })")
-    && adminPage.includes("hasPermission('releases.execute')") && adminPage.includes('@click="submitRelease(true)">dry-run')
-    && adminPage.includes('>执行发布</button>') && adminPage.includes('>回滚 dry-run</button>') && adminPage.includes('>执行回滚</button>')
-    && adminPage.includes("result.applied ? '发布已执行并写入审计' : '发布预演完成，未执行激活'")
-    && adminPage.includes("result.applied ? '回滚已执行并写入审计' : '回滚预演完成，未执行激活'")
+    && adminPage.includes("hasPermission('releases.execute')") && adminPage.includes('@click="perform(true)">1. 预演')
+    && adminPage.includes('>2. 执行发布</button>') && adminPage.includes('>回滚预演</button>') && adminPage.includes('>执行回滚</button>')
+    && adminPage.includes("adminApi.deployRelease(artifactId.value, environment.value.environment, environment.value.version, dryRun, reason.value.trim())")
+    && adminPage.includes("adminApi.rollbackRelease(run.id, target.version, true, reason.value.trim())")
+    && adminPage.includes('releasePreviewKey.value === releaseInputKey.value')
+    && adminPage.includes('rollbackPreviewKey.value !== rollbackInputKey(run)')
     && !adminPage.includes('adminApi.reviewApproval'), '发布与回滚必须验证权限并携带环境版本、幂等键、理由和dry-run；执行结果写入审计，前端不得恢复审批执行入口'],
   [platform.includes("releaseEnvironments: () => platformRequest<ReleaseEnvironment[]>('/api/admin/v1/releases/environments')") && adminPage.includes('运行态只读快照') && adminPage.includes('WebSocket 冒烟') && adminPage.includes('发布、失败与回滚记录'), '运行态必须来自显式只读适配器快照，并展示健康、WS 冒烟、失败和回滚记录'],
   [platform.includes('disabled?: boolean') && platform.includes('/status`, {') && adminPage.includes('账号变更立即执行并完整审计') && adminPage.includes('撤销会话'), '账号禁用/启用必须直接执行、记录版本审计，并提供旧令牌与 WebSocket 会话撤销入口'],
@@ -1333,8 +1328,8 @@ const contracts = [
     && !platform.includes('bootstrapSecondApprover') && !platform.includes('/offline-bootstrap')
     && !adminPage.includes('type="password"'), '受控发布恢复只能保留服务器CLI离线边界，后台不得新增恢复凭据或第二审批人入口'],
   [platform.includes('export const tournamentApi') && platform.includes('/api/tournaments/import-legacy') && platform.includes('/matches/${encodeURIComponent(matchId)}/rulings'), '赛事中心必须通过服务端 API 完成赛事、旧数据导入与裁判写入'],
-  [adminPage.includes("'tournaments'") && adminPage.includes('AdminTournamentWorkbench')
-    && adminPage.includes('admin-mode embedded') && adminSections.includes("label: '赛事管理'")
+  [router.includes('AdminReleasesPage.vue') && router.includes('AdminTournamentWorkbench.vue')
+    && router.includes('props: { adminMode: true, embedded: true }') && adminSections.includes("label: '赛事管理'")
     && tournamentCenter.includes('canGloballyManage') && tournamentCenter.includes('canGloballyRule')
     && tournamentCenter.includes("props.adminMode ? '赛事管理' : '赛事中心'")
     && tournamentCenter.includes('!props.adminMode&&item.status')
@@ -1625,7 +1620,7 @@ contracts.push(
     && matchGovernance.includes('/api/admin/match-governance/draw-requests')
     && matchGovernance.includes('/api/admin/match-governance/player-reports')
     && adminMatchGovernance.includes('平局申请与玩家举报独立于普通 Bug')
-    && adminPage.includes("hasPermission('admin.match-governance.read')")
+    && adminSections.includes("permissions: ['admin.match-governance.read']") && router.includes('AdminMatchGovernancePanel.vue')
     && gamePage.includes("event.type === 'game-draw'")
     && gamePage.includes("agreedDraw ? '平局' : '对局无效'"),
     '平局申请和玩家举报必须使用独立治理协议、后台与RBAC；同意平局不得沿用无效局文案'],

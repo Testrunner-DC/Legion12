@@ -334,6 +334,7 @@ public sealed class ControlPlanePlatformStoreTests
             }
 
             var admin = store.Login("Admin", "L12master");
+            var workbenchBug = store.AddBug(admin.Account, "工作台待办", "验证聚合摘要", "/admin", null, null, "test");
             using (var supportBugs = Authorized(HttpMethod.Get, "/api/admin/bugs", owner.Token!, "support-bugs-1"))
             using (var response = await client.SendAsync(supportBugs))
                 Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -341,6 +342,51 @@ public sealed class ControlPlanePlatformStoreTests
                        "support-accounts-1"))
             using (var response = await client.SendAsync(supportAccounts))
                 Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+            using (var supportWorkbench = Authorized(HttpMethod.Get, "/api/admin/workbench/summary", owner.Token!,
+                       "support-workbench-1"))
+            using (var response = await client.SendAsync(supportWorkbench))
+                Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+            using (var accountDetail = Authorized(HttpMethod.Get,
+                       $"/api/admin/accounts/{owner.Account!.Id}", admin.Token!, "account-detail-1"))
+            using (var response = await client.SendAsync(accountDetail))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var detail = await response.Content.ReadFromJsonAsync<L12AccountView>();
+                Assert.Equal(owner.Account.Id, detail!.Id);
+                Assert.Equal(owner.Account.Username, detail.Username);
+            }
+
+            using (var missingAccount = Authorized(HttpMethod.Get,
+                       "/api/admin/accounts/missing-account", admin.Token!, "account-detail-missing-1"))
+            using (var response = await client.SendAsync(missingAccount))
+                Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+
+            using (var workbench = Authorized(HttpMethod.Get, "/api/admin/workbench/summary", admin.Token!,
+                       "workbench-summary-1"))
+            using (var response = await client.SendAsync(workbench))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var summary = await response.Content.ReadFromJsonAsync<L12AdminWorkbenchSummaryView>();
+                Assert.NotNull(summary);
+                Assert.True(summary!.SampledAt <= DateTimeOffset.UtcNow);
+                Assert.Contains(summary.Pending, item => item.Id == "bugs" && item.Count >= 1);
+                Assert.Contains(summary.Anomalies, item => item.Id == "runtime");
+                Assert.Contains(summary.Anomalies, item => item.Id == "storage");
+                Assert.NotEmpty(summary.RecentActivities);
+                Assert.All(summary.RecentActivities, item => Assert.Equal("/admin/system/audit", item.Path));
+            }
+
+            using (var storage = Authorized(HttpMethod.Get, "/api/admin/server-storage", admin.Token!,
+                       "storage-trend-scope-1"))
+            using (var response = await client.SendAsync(storage))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var status = await response.Content.ReadFromJsonAsync<L12ServerStorageView>();
+                Assert.Equal("current-process", status!.TrendScope);
+                Assert.Contains("重启后重新累计", status.TrendDescription);
+            }
 
             using (var adminRevoke = Authorized(HttpMethod.Delete,
                        $"/api/admin/accounts/{outsider.Account!.Id}/sessions/{outsiderSession}", admin.Token!,

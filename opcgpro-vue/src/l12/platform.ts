@@ -253,7 +253,8 @@ export interface AlternateArtProduct { id: string; name: string; active: boolean
 export interface AlternateArtRankedParticipantDispatchPreview { eligibleAccounts: number; alreadyGranted: number; toGrant: number; sourceReference: string; seasonId: string }
 export interface ServerStorageVolume { mountPoint: string; totalBytes: number; usedBytes: number; freeBytes: number }
 export interface ServerStorageCategory { id: string; label: string; path: string; bytes: number; available: boolean }
-export interface ServerStorageStatus { observedAt: string; processId: number; workingSetBytes: number; volumes: ServerStorageVolume[]; categories: ServerStorageCategory[] }
+export interface ServerStorageTrendPoint { observedAt: string; workingSetBytes: number; volumeUsedPercent: Record<string, number> }
+export interface ServerStorageStatus { observedAt: string; processId: number; workingSetBytes: number; volumes: ServerStorageVolume[]; categories: ServerStorageCategory[]; health: 'healthy'|'warning'|'critical'; conclusion: string; impact: string; recommendedAction: string; thresholds: { warningPercent: number; criticalPercent: number; source: string }; trend: ServerStorageTrendPoint[]; trendScope: 'current-process'; trendDescription: string }
 export interface AlternateArtGrant { id: string; accountId: string; username: string; alternateArtId: string; sourceKind: 'manual' | 'rank-reached' | 'season-final' | 'master-champion-season-final' | 'event' | 'ranked-participants'; sourceReference: string; grantedAt: string; revokedAt?: string }
 export interface AlternateArtAwardRule { id: string; alternateArtId: string; kind: 'rank-reached' | 'season-final' | 'master-champion-season-final' | 'event'; seasonId: string; eventId: string; minimumTierIndex: number; active: boolean; createdAt: string; updatedAt: string; masterId?: string }
 export interface AdminAnalyticsMetricCoverage {
@@ -518,6 +519,13 @@ export interface RuntimeStatus {
   observedAt: string; serviceVersion: string; cardCount: number; onlineAccountCount: number
   webSocketConnectionCount: number; roomCount: number; activeGameCount: number
   releaseEnvironments: ReleaseEnvironment[]; cdn: RuntimeDependencyStatus; httpPerformance: HttpPerformanceStatus
+}
+export interface AdminWorkbenchItem {
+  id: string; kind: string; label: string; detail: string; path: string
+  severity: 'ok'|'neutral'|'attention'|'warning'|'critical'; count?: number; occurredAt?: string
+}
+export interface AdminWorkbenchSummary {
+  sampledAt: string; pending: AdminWorkbenchItem[]; anomalies: AdminWorkbenchItem[]; recentActivities: AdminWorkbenchItem[]
 }
 export interface AuditArchiveSegment {
   id: string; from: string; until: string; eventCount: number; sha256: string; createdAt: string
@@ -1113,6 +1121,7 @@ export const adminApi = {
     return platformRequest<AdminGlobalAnalyticsReport>(`/api/admin/analytics/global${params.size ? `?${params}` : ''}`)
   },
   accounts: () => platformRequest<PlatformAccount[]>('/api/admin/accounts'),
+  account: (id: string) => platformRequest<PlatformAccount>(`/api/admin/accounts/${encodeURIComponent(id)}`),
   setRole: (id: string, role: 'player' | 'admin', expectedVersion?: number) => platformRequest<RoleCommandResult>(`/api/admin/accounts/${encodeURIComponent(id)}/role`, { method: 'PUT', body: JSON.stringify(commandBody('role', { role, expectedVersion })) }),
   setAccountStatus: (id: string, disabled: boolean, reason: string, expectedVersion?: number) => platformRequest<AccountStatusOperation>(`/api/admin/accounts/${encodeURIComponent(id)}/status`, {
     method: 'PUT', body: JSON.stringify(commandBody('account-status', { disabled, reason, expectedVersion })),
@@ -1176,6 +1185,7 @@ export const adminApi = {
     return platformRequest<AlternateArtSearchPage>(`/api/admin/alternate-arts/search?${params}`)
   },
   serverStorage: () => platformRequest<ServerStorageStatus>('/api/admin/server-storage', { cache: 'no-store' }),
+  workbenchSummary: () => platformRequest<AdminWorkbenchSummary>('/api/admin/workbench/summary', { cache: 'no-store' }),
   alternateArtProducts: (includeInactive = true) => platformRequest<AlternateArtProduct[]>(`/api/admin/alternate-art-products?includeInactive=${includeInactive}`),
   saveAlternateArtProduct: (draft: Partial<AlternateArtProduct> & Pick<AlternateArtProduct, 'name'>) => platformRequest<AlternateArtProduct>('/api/admin/alternate-art-products', { method: 'PUT', body: JSON.stringify(draft) }),
   saveAlternateArt: (draft: Partial<AlternateArt> & Pick<AlternateArt, 'artCode' | 'baseCardId' | 'displayName' | 'mediaAssetId'>) => platformRequest<AlternateArt>('/api/admin/alternate-arts', { method: 'PUT', body: JSON.stringify(draft) }),

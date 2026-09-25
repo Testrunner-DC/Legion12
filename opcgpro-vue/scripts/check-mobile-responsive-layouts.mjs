@@ -40,6 +40,7 @@ const [viewportCss, viewportTs, battleLayout, mobileDialogLayout, app, archive, 
   read('src/style.css'),
 ])
 const board = `${boardComponent}\n${boardMobileStyle}`
+const adminModule = await read('src/l12/site/AdminAccountsPage.vue') + await read('src/l12/site/AdminBugsPage.vue') + await read('src/l12/site/AdminEffectsPage.vue')
 const matchRecords = await read('src/l12/MatchRecords.vue')
 const deckEditor = await read('src/l12/L12DeckEditor.vue')
 const mobileDeferredCardImage = await read('src/l12/MobileDeferredCardImage.vue')
@@ -77,8 +78,8 @@ expect(shell.includes('overflow-x:clip') && shell.includes('env(safe-area-inset-
 expect(rules.includes('.rule-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow:visible}'), 'portrait rule tabs must wrap instead of requiring horizontal scrolling')
 expect(shell.includes('max-height:520px') && feedback.includes('.bug-feedback-trigger{display:none}'), 'compact landscape and portrait feedback must be available without covering page controls')
 expect(decks.includes('.page-head h1{font-size:25px}') && profile.includes('.profile-page>header h1{margin:3px 0;font-size:25px}'), 'portrait player pages must use compact heading density')
-expect(admin.includes('class="admin-mobile-navigation"') && admin.includes("switchAdminTab((event.target as HTMLSelectElement).value as AdminTab)") && admin.includes('.admin-mobile-navigation{display:none}') && admin.includes('.admin-sidebar{display:none}'), 'portrait administration must use one compact functional module picker while preserving the desktop sidebar')
-expect(admin.includes('.account-row.head{display:none}') && admin.includes('data-label="建立时间"') && admin.includes('.effect-filters{display:grid'), 'portrait administration must label stacked account fields and reflow dense workbench filters without horizontal overflow')
+expect(admin.includes('class="admin-mobile-navigation"') && admin.includes('function navigate(event: Event)') && admin.includes('.admin-mobile-navigation{display:none}') && admin.includes('.admin-sidebar{display:none}'), 'portrait administration must use one compact functional module picker while preserving the desktop sidebar')
+expect(adminModule.includes('.account-row{grid-template-columns:1fr}') && adminModule.includes('<label>长期身份') && adminModule.includes('.filters{grid-template-columns:1fr}'), 'portrait administration must label stacked account fields and reflow dense workbench filters without horizontal overflow')
 expect(decks.includes('.deck-notice{position:static;max-width:none'), 'portrait notices must not cover deck actions')
 expect(news.includes('.news-page h1{margin:4px 0;font-size:26px}') && home.includes('.hero-copy h1{font-size:26px;line-height:1.08}'), 'portrait editorial pages must use compact hero typography')
 expect(battleHub.includes('.battle-hub{padding:14px 10px 34px}') && battleHub.includes('.mode-panel{padding:14px}'), 'battle lobby must scale its panels and controls together on narrow phones')

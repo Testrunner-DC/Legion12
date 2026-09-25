@@ -46,3 +46,19 @@ public sealed record L12RuntimeStatusView(
     IReadOnlyList<L12ReleaseEnvironmentView> ReleaseEnvironments,
     L12RuntimeDependencyView Cdn,
     L12HttpPerformanceView HttpPerformance);
+
+public sealed record L12AdminWorkbenchItemView(
+    string Id,
+    string Kind,
+    string Label,
+    string Detail,
+    string Path,
+    string Severity,
+    int? Count = null,
+    DateTimeOffset? OccurredAt = null);
+
+public sealed record L12AdminWorkbenchSummaryView(
+    DateTimeOffset SampledAt,
+    IReadOnlyList<L12AdminWorkbenchItemView> Pending,
+    IReadOnlyList<L12AdminWorkbenchItemView> Anomalies,
+    IReadOnlyList<L12AdminWorkbenchItemView> RecentActivities);

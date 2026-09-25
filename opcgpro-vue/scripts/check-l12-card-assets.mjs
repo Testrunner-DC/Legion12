@@ -91,7 +91,7 @@ const consumers = [
   '../src/l12/game/GmPanel.vue',
   '../src/l12/SingleCardPicker.vue',
   '../src/l12/game/MasterOverlay.vue',
-  '../src/l12/site/AdminPage.vue',
+  '../src/l12/site/AdminEffectsPage.vue',
   '../src/l12/site/DeckConstructionBrowser.vue',
 ]
 const consumerSource = consumers.map(read).join('\n')
@@ -106,7 +106,7 @@ const styledCardImageConsumers = [
   '../src/l12/game/PlayerMat.vue',
   '../src/l12/game/PromptOverlay.vue',
   '../src/l12/SingleCardPicker.vue',
-  '../src/l12/site/AdminPage.vue',
+  '../src/l12/site/AdminEffectsPage.vue',
   '../src/l12/site/DeckLibraryPage.vue',
 ]
 const disasterRoundIds = [

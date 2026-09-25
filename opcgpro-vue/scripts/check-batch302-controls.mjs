@@ -21,7 +21,7 @@ assert.doesNotMatch(lobby, /ranked\.profile\.faction = undefined/)
 assert.match(lobby, /确认清零并更改/)
 assert.match(lobby, /取消，保留当前派系/)
 assert.match(lobby, /返回，不更改/)
-for (const panel of ['AdminPage.vue','AdminArticlesPanel.vue','AdminMatchesPanel.vue','AdminMatchGovernancePanel.vue','AdminRankedIntegrityPanel.vue','AdminSiteContentPanel.vue','AdminOperationsPanel.vue'])
+for (const panel of ['AdminAccountsPage.vue','AdminBugsPage.vue','AdminCommandsPage.vue','AdminAuditPage.vue','AdminArticlesPanel.vue','AdminMatchesPanel.vue','AdminMatchGovernancePanel.vue','AdminRankedIntegrityPanel.vue','AdminSiteContentPanel.vue','AdminOperationsPanel.vue'])
   assert.match(read(panel), /<PagedCollection/)
 console.log('BATCH302 控件约束通过：广播边界、日志10份、派系确认、7类后台分页')
 import './check-ranked-integrity-contracts.mjs'
