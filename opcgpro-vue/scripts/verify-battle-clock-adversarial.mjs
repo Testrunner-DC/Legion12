@@ -55,12 +55,14 @@ try {
     ok(value.clocks.every(r => r.left >= value.safe.left-1 && r.top >= value.safe.top-1 && r.right <= value.safe.right+1 && r.bottom <= value.safe.bottom+1), `${label}: clock leaves safe viewport ${JSON.stringify(value)}`)
     if (!mobileMode) {
       ok(value.tracks.length === 2 && value.hands.length === 2, `${label}: expected two desktop tracks and hand lanes ${JSON.stringify(value)}`)
-      ok(Math.abs(value.tracks[0].left-value.tracks[1].left)<=1 && Math.abs(value.tracks[0].width-value.tracks[1].width)<=1, `${label}: opponent/my clock tracks are not geometrically identical ${JSON.stringify(value.tracks)}`)
+      ok(Math.abs(value.tracks[0].left-value.tracks[1].left)<=1 && Math.abs(value.tracks[0].width-value.tracks[1].width)<=1 && Math.abs(value.tracks[0].height-value.tracks[1].height)<=1, `${label}: opponent/my clock tracks are not geometrically identical ${JSON.stringify(value.tracks)}`)
       ok(value.clocks.every((clock,index)=>clock.left>=value.tracks[index].left-1 && clock.right<=value.tracks[index].right+1 && clock.top>=value.tracks[index].top-1 && clock.bottom<=value.tracks[index].bottom+1), `${label}: a clock escapes its external track ${JSON.stringify(value)}`)
-      ok(value.clocks.every((clock,index)=>clock.right<=value.hands[index].left-3), `${label}: clock track intrudes into its peer hand lane ${JSON.stringify(value)}`)
+      ok(Math.abs(value.clocks[0].left-value.clocks[1].left)<=1 && Math.abs(value.clocks[0].width-value.clocks[1].width)<=1, `${label}: my clock is not aligned to the opponent clock reference ${JSON.stringify(value.clocks)}`)
+      ok(value.tracks[0].top>=value.hands[0].top-1 && value.tracks[0].bottom<=value.hands[0].bottom+1, `${label}: opponent clock left its reference hand row ${JSON.stringify(value)}`)
+      ok(value.tracks[1].top>=value.hands[1].top-1 && value.tracks[1].bottom<=value.hands[1].bottom+1, `${label}: my clock is not mirrored into the matching hand row ${JSON.stringify(value)}`)
       ok(value.felt && value.clocks.every(clock=>!intersects(clock,value.felt)), `${label}: clock enters battlefield felt ${JSON.stringify(value)}`)
     }
-    if(!value.modal) ok(value.overlaps.length === 0, `${label}: clock intrudes into hand/log/action/dialog lane ${JSON.stringify(value.overlaps)}`)
+    if(!value.modal) ok(value.overlaps.length === 0, `${label}: clock intrudes into hand/log/action/dialog lane ${JSON.stringify(value)}`)
     ok(!value.overflow.x && !value.overflow.y, `${label}: document overflow ${JSON.stringify(value.overflow)}`)
     if(!value.modal) ok(value.blocked.length === 0, `${label}: visible buttons lose their centre hit target ${JSON.stringify(value.blocked)}`)
     return value
@@ -111,7 +113,7 @@ try {
   }
 
   // Desktop boundary sweep catches regressions caused by a single exact media
-  // query: both clocks must stay on one shared external track while width and
+  // query: both clocks must stay in mirrored external rows while width and
   // height cross the common laptop and ultrawide thresholds continuously.
   await page.goto(`${target}?field=full&markers=5&piles=40&hand=20&rankedClock=1&totalMs=3599999&operationMs=599999`, { waitUntil:'domcontentloaded' })
   for (const viewport of [

@@ -131,6 +131,10 @@ if(params.has('option-fixture')){
  const choices=['short','long','disabled','skip']
  l12State.game.prompts=[{promptId:'fixture-equal-options',playerIndex:0,kind:'option',text:'请选择一个语义平行的处理方式',validChoices:choices,minChoose:0,maxChoose:1,choiceLabels:{short:'发动',long:'发动这项文字明显更长但仍然属于同级的效果选项',disabled:'当前条件不足的同级选项',skip:'不发动'},data:{uiPattern:'effect-options','disabledChoice:disabled':'当前条件不足，保持尺寸但不可选择'},createdRevision:1,controller:0}]
 }
+if(params.has('opponent-confirm-fixture')){
+ const choices=['yes','refuse']
+ l12State.game.prompts=[{promptId:'fixture-opponent-confirm',playerIndex:0,kind:'opponent-confirm',text:'是否同意《议和谈判》？',validChoices:choices,minChoose:1,maxChoose:1,choiceLabels:{yes:'同意',refuse:'不同意'},data:{},createdRevision:1,controller:0}]
+}
 if(params.has('response-fixture')){
  const choices=['stack-a','stack-b','stack-c']
  l12State.game.prompts=[{promptId:'fixture-response-targets',playerIndex:0,kind:'response-target',text:'选择要响应的效果',validChoices:choices,minChoose:1,maxChoose:1,choiceLabels:{},data:{'stack-a':'短来源','stack-b':'同名来源：第二段\\n公开目标：长名称军团与附加状态','stack-c':'第三个来源：包含更多语义说明但尺寸必须一致'},createdRevision:1,controller:0}]

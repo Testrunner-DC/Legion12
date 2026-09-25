@@ -351,9 +351,10 @@ const contracts = [
     && board.includes(':active="game.activePlayer === viewEnemy.playerIndex"') && board.includes(':active="game.activePlayer === viewMe.playerIndex"')
     && board.includes('--l12-clock-track-width:196px')
     && board.includes('.board-player-clock{position:relative;right:auto;top:auto;bottom:auto;width:100%;max-width:var(--l12-clock-track-width);transform:none}')
-    && board.includes('justify-self:start;overflow:hidden;pointer-events:none')
+    && board.includes('justify-self:end;overflow:hidden;pointer-events:none')
     && board.includes("'timed-board': Boolean(l12State.rankedClock)") && board.includes('.board-center>.l12-hand{position:relative;z-index:40;box-sizing:border-box;width:calc(100% - 400px)')
-    && !globalStyle.includes("content:'回合玩家'"), '双方回合标识与常驻计时必须位于棋盘上下的普通流安全轨道，避开双方手牌和操作条，当前回合只能控制高亮'],
+    && board.includes('.board-center.timed-board>.l12-hand{width:calc(100% - 560px);transform:none}')
+    && !globalStyle.includes("content:'回合玩家'"), '双方回合标识与常驻计时必须位于各自手牌行右侧的同一镜像安全轨，避开对战垫、双方手牌和操作条，当前回合只能控制高亮'],
   [playerTurnClock.includes('data-ui-contract="persistent-player-turn-clock"') && playerTurnClock.includes('总时') && playerTurnClock.includes('本次') && playerTurnClock.includes('重连')
     && playerTurnClock.includes('.player-turn-clock{box-sizing:border-box;display:grid;width:196px;')
     && playerTurnClock.includes('grid-template-columns:repeat(2,minmax(0,1fr))')
@@ -764,6 +765,9 @@ const contracts = [
     && prompt.includes('grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr))')
     && prompt.includes('grid-auto-rows:82px')
     && prompt.includes('overflow:visible'), '效果/费用分支必须按原顺序自适应同屏排列，三项不得依赖横向拖动，且不发动固定在最后'],
+  [prompt.includes('isUniformTextOptionList') && prompt.includes('uniform-text-option-list')
+    && prompt.includes('.prompt-choices.uniform-text-option-list>button,.prompt-choices.uniform-text-option-list>button.decline-action')
+    && prompt.includes('height:82px;min-height:82px!important;max-height:82px'), '所有非卡牌同级选项必须共享固定几何尺寸，拒绝、选中、禁用和长文本状态不得改变按钮大小'],
   [prompt.includes("booleanData(id, 'hasPrintedCost')") && prompt.includes('hasPrintedCost: detail.hasPrintedCost') && replayModel.includes("trait.endsWith('专属')"), '衍生卡在弹框与历史回放中不得伪造不存在的印刷费用'],
   [cardTile.includes('Math.max(0, props.card.playCost')
     && cardTile.includes('Math.max(0, props.card.troops)')
@@ -871,7 +875,7 @@ const contracts = [
     && handArea.includes('width:114.4px;height:160.6px;flex-basis:114.4px')
     && board.includes('.formation-slot .card-tile.tapped){width:114.4px;height:160.6px;flex-basis:114.4px}')
     && board.includes('.board-center{--l12-hand-lane-height:160px;--l12-clock-track-width:196px;display:grid;min-height:0;')
-    && board.includes('width:calc(100% - 400px)') && board.includes('z-index:40')
+    && board.includes('width:calc(100% - 400px)') && board.includes('.board-center.timed-board>.l12-hand{width:calc(100% - 560px);transform:none}') && board.includes('z-index:40')
     && handArea.includes('overflow-x:auto') && handArea.includes('ResizeObserver'), '双方手牌必须与场上军团同尺寸，限制在计时框与额外区之间并高于场面可点击，多数量时按实测宽度扇形收拢或横向滚动'],
   [board.includes('v-if="l12State.spectating" class="spectator-hand" hidden :count="viewMe.handCount || 0"')
     && board.includes('class="opponent-hand" hidden :count="viewEnemy.handCount || 0"')

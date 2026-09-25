@@ -47,7 +47,8 @@ public sealed class SiteContentPlatformStoreTests
             var admin = store.Login("Admin", "L12master").Account!;
             var media = Upload(store, admin, "card-art");
             var product = store.SaveAlternateArtProduct(admin, new(null, "活动典藏"));
-            var baseCard = catalog.Cards.Values.First();
+            var preset = catalog.PresetDecks.First();
+            var baseCard = catalog.Cards[preset.CardIds.First()];
 
             var saved = store.SaveAlternateArt(admin, new(null, "ALT-TEST-001", baseCard.Id,
                 "不应采用的自定义卡名", media.Id, Active: true, ProductId: product.Id));
@@ -55,6 +56,29 @@ public sealed class SiteContentPlatformStoreTests
             Assert.Equal(baseCard.NameZh, saved.DisplayName);
             Assert.Equal(product.Id, saved.ProductId);
             Assert.Contains(store.AlternateArts(), item => item.Id == saved.Id && item.Active);
+
+            var owned = Assert.Single(store.OwnedAlternateArts(admin.Id), item => item.Id == saved.Id);
+            Assert.Equal("自主上传", owned.GrantReason);
+            var copies = preset.CardIds.ToList();
+            var deck = new L12PresetDeckDefinition
+            {
+                Name = "自主上传异画构筑",
+                MasterId = preset.MasterId,
+                CardIds = copies,
+                MoraleIds = preset.MoraleIds.ToList(),
+                SpecialIds = preset.SpecialIds.ToList(),
+                AlternateArtCopies = new(StringComparer.OrdinalIgnoreCase)
+                {
+                    [baseCard.Id] = Enumerable.Range(0, copies.Count(id => id == baseCard.Id))
+                        .Select(index => index == 0 ? saved.Id : string.Empty).ToList(),
+                },
+            };
+            var storedDeck = store.UpsertDeck(admin.Id, deck);
+            Assert.Equal(saved.Id, storedDeck.AlternateArtCopies![baseCard.Id][0]);
+            var storedCopies = storedDeck.AlternateArtCopies.ToDictionary(pair => pair.Key,
+                pair => pair.Value.ToList(), StringComparer.OrdinalIgnoreCase);
+            Assert.Equal(saved.ImageUrl,
+                store.ResolveOwnedAlternateArtUrls(admin.Id, null, storedCopies)[$"{baseCard.Id}#1"]);
         }
         finally
         {

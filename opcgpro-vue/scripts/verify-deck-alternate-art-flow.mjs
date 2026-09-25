@@ -3,13 +3,15 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { createServer } from 'vite'
-import sharp from 'sharp'
+
+const require=createRequire(import.meta.url)
+const sharp=require(process.env.L12_SHARP||'sharp')
 
 const root=path.resolve(import.meta.dirname,'..')
 const out=path.resolve(root,'../artifacts/deck-alternate-art-flow')
 fs.mkdirSync(out,{recursive:true})
 const alternateArtPng=await sharp({create:{width:500,height:700,channels:4,background:{r:255,g:0,b:204,alpha:1}}}).png().toBuffer()
-const {chromium}=createRequire(import.meta.url)(process.env.L12_PLAYWRIGHT||'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
+const {chromium}=require(process.env.L12_PLAYWRIGHT||'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 const entry=`
 import {createApp} from 'vue'
 import {createRouter,createMemoryHistory} from 'vue-router'
@@ -47,11 +49,29 @@ try{
  await page.route('**/*',route=>{const url=new URL(route.request().url());if(url.hostname!=='127.0.0.1')return route.abort();if(url.pathname.endsWith('card-assets.manifest.json'))return route.fulfill({json:{schemaVersion:3,catalogVersion:'qa',assetVersion:'qa',basePath:'/',cards:{}}});return route.continue()})
  await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__alternate_art_flow`)
  await page.locator('.deck-builder-grid').waitFor()
+ await page.locator('.catalog-tabs').getByRole('button',{name:'主牌库',exact:true}).click()
  const total=await page.evaluate(()=>window.__qa.total)
- assert.equal(await page.locator('[data-deck-section="main"] .deck-copy-art').count(),total,'当前牌表没有逐副本显示卡图')
- const mixedLabels=page.locator('[data-deck-section="main"] .deck-entry-row').filter({has:page.locator('.deck-copy-labels').filter({hasText:'原画'})}).first()
- assert.equal(await mixedLabels.count(),1,'同卡混用没有同时显示原画事实')
- assert.match(await mixedLabels.locator('.deck-copy-labels').innerText(),/验收异画/,'同卡混用没有显示异画事实')
+ const customPoolCard=page.locator('.deck-card.alternate-art-card').first()
+ await customPoolCard.waitFor()
+ await customPoolCard.locator('.l12-card-image[data-source="sameOrigin"] img').waitFor()
+ assert.match(await customPoolCard.locator('img').getAttribute('src'),/\/api\/site\/media\/qa-alt\.png/,'自主上传异画仍未在完整卡池使用媒体图')
+ const mixedId=await page.evaluate(()=>window.__qa.mixedId)
+ const originalPool=page.locator(`.deck-card[data-card-id="${mixedId}"][data-appearance-id="original"]`)
+ const customPool=page.locator(`.deck-card[data-card-id="${mixedId}"][data-appearance-id="qa-art-${mixedId}"]`)
+ const beforeOriginal=Number(await originalPool.locator('.pool-count-controls strong').innerText())
+ const beforeCustom=Number(await customPool.locator('.pool-count-controls strong').innerText())
+ await customPool.getByRole('button',{name:'减少一张'}).click()
+ await originalPool.getByRole('button',{name:'增加一张'}).click()
+ assert.equal(Number(await originalPool.locator('.pool-count-controls strong').innerText()),beforeOriginal+1,'切回原画没有更新逐副本数量')
+ assert.equal(Number(await customPool.locator('.pool-count-controls strong').innerText()),beforeCustom-1,'自主上传异画减少没有更新逐副本数量')
+ await originalPool.getByRole('button',{name:'减少一张'}).click()
+ await customPool.getByRole('button',{name:'增加一张'}).click()
+ assert.equal(Number(await customPool.locator('.pool-count-controls strong').innerText()),beforeCustom,'切回自主上传异画失败')
+ assert.match(await page.locator('[data-deck-section="main"]>header').innerText(),new RegExp(`${total}\\/40`),'当前牌表总数错误')
+ assert.ok(await page.locator('[data-deck-section="main"] .alternate-art-banner').count()>0,'当前牌表没有异画横幅')
+ const customBanner=page.locator('[data-deck-section="main"] .alternate-art-banner').first()
+ await customBanner.locator('.l12-card-image[data-source="sameOrigin"] img').waitFor()
+ assert.match(await customBanner.locator('img').getAttribute('src'),/\/api\/site\/media\/qa-alt\.png/,'牌表横幅没有显示自主上传异画')
  await page.screenshot({path:path.join(out,'deck-list-mixed-art-1440x900.png'),fullPage:true})
  await page.getByRole('button',{name:'起手',exact:true}).click()
  await page.locator('.editor-opening-hand article').first().waitFor()

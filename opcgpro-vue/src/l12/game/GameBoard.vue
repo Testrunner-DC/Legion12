@@ -1468,6 +1468,7 @@ function statusTexts(card: Card) {
 .board-center{--l12-hand-lane-height:160px;--l12-clock-track-width:196px;display:grid;min-height:0;grid-template-rows:var(--l12-hand-lane-height) minmax(0,1fr) var(--l12-hand-lane-height);align-items:stretch;gap:6px}
 .board-center>.l12-hand,.board-center>.board-status-lane,.board-center>.felt-board{grid-column:1}
 .board-center>.l12-hand{position:relative;z-index:40;box-sizing:border-box;width:calc(100% - 400px);height:var(--l12-hand-lane-height)!important;min-height:var(--l12-hand-lane-height);padding-right:0;align-self:stretch;justify-self:center;transform:translateX(64px)}
+.board-center.timed-board>.l12-hand{width:calc(100% - 560px);transform:none}
 .board-center>.opponent-hand,.opponent-status-lane{grid-row:1}.felt-board{grid-row:2}.my-status-lane,.board-center>.l12-hand:last-child{grid-row:3}
 .board-viewport{top:52px}.player-summary :is(.player-summary-primary,.player-summary-meta,.connection-state){font-size:var(--l12-board-copy,13px)!important}
 .right-rail{width:auto}.right-rail .record-log{display:flex;flex:1;flex-direction:column;min-height:150px}.right-rail .action-panel{max-height:300px;overflow:auto}.right-rail .action-panel :deep(.l12-actions>p){display:none}.board-rail .card-inspector{overflow:auto}.session-disaster-strip span{white-space:normal!important;overflow-wrap:anywhere}
@@ -1484,7 +1485,7 @@ function statusTexts(card: Card) {
   align-items:stretch;
 }
 .presentation-zone-anchor{position:absolute;z-index:-1;left:50%;top:50%;width:72px;height:101px;transform:translate(-50%,-50%);visibility:hidden;pointer-events:none}
-.board-status-lane{position:relative;z-index:38;display:flex;box-sizing:border-box;width:var(--l12-clock-track-width);height:100%;min-height:0;align-items:center;justify-content:flex-start;align-self:stretch;justify-self:start;overflow:hidden;pointer-events:none}.board-player-clock{position:relative;right:auto;top:auto;bottom:auto;width:100%;max-width:var(--l12-clock-track-width);transform:none}.opponent-status-lane,.my-status-lane{order:0}
+.board-status-lane{position:relative;z-index:38;display:flex;box-sizing:border-box;width:var(--l12-clock-track-width);height:100%;min-height:0;align-items:center;justify-content:flex-end;align-self:stretch;justify-self:end;overflow:hidden;pointer-events:none}.board-player-clock{position:relative;right:auto;top:auto;bottom:auto;width:100%;max-width:var(--l12-clock-track-width);transform:none}.opponent-status-lane,.my-status-lane{order:0}
 .player-panel{display:grid;box-sizing:border-box;height:auto!important;min-height:0;flex:none;gap:8px;overflow:hidden!important}.player-panel :deep(.battle-player-identity){padding:2px}.player-panel :deep(.battle-player-identity__facts>div){grid-template-columns:64px minmax(0,1fr)}.player-panel :deep(.battle-player-identity__name>strong){font-size:max(14px,calc(var(--l12-board-copy,13px) - 1px))}.player-panel :deep(.battle-player-identity dd){font-size:calc(var(--l12-board-copy,13px) - 1px)}.player-panel :deep(.battle-player-identity .ranked-identity-badge){max-width:100%}.player-panel :deep(.battle-player-identity .ranked-identity-badge>span){min-width:0;overflow-wrap:anywhere;white-space:normal}
 .player-panel>hr{margin:9px 0!important}
 .right-rail .record-log{min-height:120px;overflow:hidden}.right-rail .record-log>.event-list{min-height:0;overflow-y:auto}

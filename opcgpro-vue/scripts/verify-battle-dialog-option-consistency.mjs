@@ -57,6 +57,18 @@ try {
   }
 
   for (const viewport of viewports) {
+    await load(viewport, 'opponent-confirm-fixture=1')
+    const confirmBefore=await assertEqualGroup(`${viewport.name} opponent confirm`, '.uniform-text-option-list>button', 2)
+    ok(confirmBefore.some(item=>item.text==='同意')&&confirmBefore.some(item=>item.text==='不同意'), `${viewport.name}: opponent confirmation fixture missing`)
+    await page.locator('.uniform-text-option-list>button').first().click()
+    const confirmAfter=await assertEqualGroup(`${viewport.name} selected opponent confirm`, '.uniform-text-option-list>button', 2)
+    ok(confirmAfter.some(item=>item.selected), `${viewport.name}: opponent confirmation selected state missing`)
+    if (['desktop-1280x720','mobile-667x375'].includes(viewport.name)) {
+      const file=`${viewport.name}-opponent-confirm.png`
+      await page.screenshot({path:path.join(output,file)})
+      report.screenshots.push(file)
+    }
+
     await load(viewport, 'option-fixture=1')
     const optionsBefore=await assertEqualGroup(`${viewport.name} text options`, '.effect-option-list>button', 4)
     ok(optionsBefore.some(item=>item.disabled), `${viewport.name}: disabled peer fixture missing`)
@@ -119,7 +131,7 @@ try {
   ].join('\n')
   for (const contract of ['equal-card-option-group','equal-option-group','equal-action-group','equal-combat-action-group'])
     ok(sources.includes(contract), `static contract missing: ${contract}`)
-  for (const token of ['.placement-buttons button{box-sizing:border-box;height:44px','.faction-effect-actions{grid-auto-rows:96px','.master-abilities{grid-auto-rows:96px','.board-target-controls button{box-sizing:border-box;width:112px'])
+  for (const token of ['.placement-buttons button{box-sizing:border-box;height:44px','.faction-effect-actions{grid-auto-rows:96px','.master-abilities{grid-auto-rows:96px','.board-target-controls button{box-sizing:border-box;width:112px','.prompt-choices.uniform-text-option-list>button,.prompt-choices.uniform-text-option-list>button.decline-action'])
     ok(sources.includes(token), `static equal-size rule missing: ${token}`)
 
   report.status='passed'

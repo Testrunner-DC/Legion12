@@ -776,7 +776,7 @@ onBeforeUnmount(() => {
           </article>
         </div>
         <div v-else-if="catalogTab === 'main'" class="deck-card-grid">
-          <article v-for="entry in filtered" :key="entry.key" class="deck-card" :class="{ chosen: appearanceCount(entry), 'alternate-art-card': entry.art, 'landscape-thumbnail': isHorizontalCardType(entry.card.cardType), invalid: entryIssue(entry.card, counts[entry.card.id] || 0) }" @click="selectCard(entry.card)">
+          <article v-for="entry in filtered" :key="entry.key" class="deck-card" :data-card-id="entry.card.id" :data-appearance-id="entry.art?.id || 'original'" :class="{ chosen: appearanceCount(entry), 'alternate-art-card': entry.art, 'landscape-thumbnail': isHorizontalCardType(entry.card.cardType), invalid: entryIssue(entry.card, counts[entry.card.id] || 0) }" @click="selectCard(entry.card)">
             <button class="card-image" @dblclick.stop="addAppearance(entry)">
               <CardImage :card-id="entry.art ? (entry.art.cardImageId || entry.art.id) : entry.card.id" :legacy-url="entry.art && !entry.art.builtIn ? (entry.art.thumbnailUrl || entry.art.imageUrl) : entry.card.imageUrl" :alt="entry.art?.displayName || entry.card.nameZh" intent="thumb" :fit="isHorizontalCardType(entry.card.cardType) ? 'contain' : 'cover'"/>
               <b v-if="appearanceCount(entry)" class="copy-count">×{{ appearanceCount(entry) }}</b>

@@ -437,6 +437,8 @@ const hasCardChoices = computed(() => displayCardIds.value.length > 0 || (!isEff
 )
 const isEffectOptionList = computed(() => (isEffectDecision.value || prompt.value?.kind === 'option')
   && !hasCardChoices.value && !isInitiative.value)
+const isUniformTextOptionList = computed(() => !hasCardChoices.value && !isInitiative.value
+  && prompt.value?.kind !== 'response-target')
 const displayedCardsAreAllFromHand = computed(() => {
   const handIds = new Set(props.game.players.flatMap(player => (player.hand ?? []).map(card => card.instanceId)))
   const cards = displayedChoices.value.filter(id => Boolean(detailFor(id)))
@@ -709,7 +711,7 @@ function kindLabel() {
             </div>
           </section>
         </div>
-        <div v-else class="prompt-choices" :class="{ 'prompt-card-strip': hasCardChoices, 'effect-option-list': isEffectOptionList, 'response-target-list': prompt.kind === 'response-target' }"
+        <div v-else class="prompt-choices" :class="{ 'prompt-card-strip': hasCardChoices, 'effect-option-list': isEffectOptionList, 'uniform-text-option-list': isUniformTextOptionList, 'response-target-list': prompt.kind === 'response-target' }"
           :data-ui-contract="hasCardChoices ? 'equal-card-option-group' : 'equal-option-group'">
           <template v-for="choice in primaryChoices" :key="choice">
             <article v-if="prompt.kind === 'response-target'" class="response-target-row" :class="{ selected: activeSelected.includes(choice) }">
@@ -873,6 +875,9 @@ function kindLabel() {
 .prompt-choices.effect-option-list>button{box-sizing:border-box;width:100%;height:82px;min-height:82px!important;max-height:82px;overflow:hidden;text-align:center}
 .prompt-choices.effect-option-list>button>span{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:3}
 .prompt-choices.effect-option-list>button.decline-action{height:82px;min-height:82px!important;max-height:82px}
+.prompt-choices.uniform-text-option-list{display:grid;width:100%;max-width:520px;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));grid-auto-rows:82px;align-items:stretch;justify-content:center;gap:8px;margin:12px auto;padding:2px 1px 8px;overflow:visible}
+.prompt-choices.uniform-text-option-list>button,.prompt-choices.uniform-text-option-list>button.decline-action{box-sizing:border-box;width:100%;min-width:0!important;max-width:none;height:82px;min-height:82px!important;max-height:82px;padding:10px 16px!important;overflow:hidden;font-size:var(--l12-board-copy,13px)!important;line-height:1.45;text-align:center;white-space:normal;text-wrap:balance}
+.prompt-choices.uniform-text-option-list>button>span{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:3}
 .prompt-choices.effect-option-list>button.unavailable-choice{border-color:#4b504e;background:#202423;color:#858b88;cursor:not-allowed;opacity:.72}.prompt-choices.effect-option-list>button.unavailable-choice small{display:block;margin-top:5px;color:#a56f73;font-size:var(--l12-board-micro,9px)}
 .prompt-panel .prompt-action-footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px}
 .prompt-action-footer>span{order:-1;flex:1 1 160px;min-width:0;overflow-wrap:anywhere}

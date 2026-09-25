@@ -103,13 +103,18 @@ public sealed partial class L12PlatformStore
                 .GroupBy(row => row.AlternateArtId, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(group => group.Key, group => group.OrderBy(row => row.GrantedAt).First(),
                     StringComparer.OrdinalIgnoreCase);
+            var owned = OwnedAlternateArtIdsLocked(accountId);
             return _officialAlternateArts.Values.Select(ToAlternateArtView)
                 .Concat(_data.AlternateArts.Where(row => row.Active).Select(ToAlternateArtView))
-                .Where(row => grants.ContainsKey(row.Id))
-                .Select(row => row with
+                .Where(row => owned.Contains(row.Id))
+                .Select(row =>
                 {
-                    GrantedAt = grants[row.Id].GrantedAt,
-                    GrantReason = AlternateArtGrantReason(grants[row.Id]),
+                    var hasGrant = grants.TryGetValue(row.Id, out var grant);
+                    return row with
+                    {
+                        GrantedAt = hasGrant ? grant!.GrantedAt : row.CreatedAt,
+                        GrantReason = hasGrant ? AlternateArtGrantReason(grant!) : "自主上传",
+                    };
                 })
                 .OrderBy(row => row.ArtCode, StringComparer.OrdinalIgnoreCase).ToArray();
         }
@@ -436,8 +441,7 @@ public sealed partial class L12PlatformStore
             return new Dictionary<string, string>();
         lock (_gate)
         {
-            var owned = _data.AlternateArtGrants.Where(row => row.AccountId == accountId && row.RevokedAt is null)
-                .Select(row => row.AlternateArtId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var owned = OwnedAlternateArtIdsLocked(accountId);
             var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var selection in (selections ?? new Dictionary<string, string>()).Take(128))
             {
@@ -470,8 +474,7 @@ public sealed partial class L12PlatformStore
         IReadOnlyDictionary<string, string>? selections)
     {
         if (selections is null || selections.Count == 0) return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var owned = _data.AlternateArtGrants.Where(row => row.AccountId == accountId && row.RevokedAt is null)
-            .Select(row => row.AlternateArtId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var owned = OwnedAlternateArtIdsLocked(accountId);
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var selection in selections.Take(128))
         {
@@ -490,8 +493,7 @@ public sealed partial class L12PlatformStore
         IReadOnlyList<string> cardIds, IReadOnlyDictionary<string, List<string>>? copies)
     {
         if (copies is null || copies.Count == 0) return new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-        var owned = _data.AlternateArtGrants.Where(row => row.AccountId == accountId && row.RevokedAt is null)
-            .Select(row => row.AlternateArtId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var owned = OwnedAlternateArtIdsLocked(accountId);
         var cardCounts = cardIds.GroupBy(id => id, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
         var result = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
@@ -511,6 +513,17 @@ public sealed partial class L12PlatformStore
             if (normalized.Any(value => !string.IsNullOrWhiteSpace(value))) result[cardId] = normalized;
         }
         return result;
+    }
+
+    private HashSet<string> OwnedAlternateArtIdsLocked(string accountId)
+    {
+        var owned = _data.AlternateArtGrants
+            .Where(row => row.AccountId == accountId && row.RevokedAt is null)
+            .Select(row => row.AlternateArtId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in _data.AlternateArts.Where(row => row.Active && row.CreatedByAccountId == accountId))
+            owned.Add(row.Id);
+        return owned;
     }
 
     private L12AlternateArtView ToAlternateArtView(AlternateArtRow row) => new(row.Id, row.ArtCode, row.BaseCardId, row.DisplayName,
