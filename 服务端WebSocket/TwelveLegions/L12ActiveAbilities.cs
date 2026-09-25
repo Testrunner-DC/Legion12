@@ -873,7 +873,7 @@ public sealed partial class L12GameEngine
                     return;
                 }
                 item.Data["shanhe-top"] = string.Join('|', top.Select(card => card.InstanceId));
-                var choices = top.Where(card => card.Faction == "tianting").Select(card => card.InstanceId).ToArray();
+                var choices = top.Where(IsShanheSearchCandidate).Select(card => card.InstanceId).ToArray();
                 if (choices.Length == 0)
                 {
                     AddPresentationEvent("reveal", item.Controller,
@@ -963,7 +963,9 @@ public sealed partial class L12GameEngine
     private void CompleteShanheSearch(L12StackItem item, string cardId)
     {
         var player = State.Players[item.Controller];
-        var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == cardId);
+        var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == cardId
+            && IsStillInInspectedLibrarySet(item, "shanhe-top", candidate)
+            && IsShanheSearchCandidate(candidate));
         if (card is null)
         {
             item.Data["effectResultStatus"] = "failed";

@@ -22,6 +22,7 @@ public sealed partial class L12GameEngine
             data[$"{morale.InstanceId}:resourceType"] = L12StructuredCardSemantics
                 .MoraleZoneResourceRule(morale.CardId)?.ResourceType
                 ?? (morale.IsGodPower ? "god-power" : morale.Tapped ? "rested-morale" : "active-morale");
+            data[$"{morale.InstanceId}:activityState"] = morale.Tapped ? "rested" : "active";
         }
         CreatePrompt(playerIndex, "resource-return", "请选择返还的士气", choices, count, count,
             continuation, stackItemId, isPrivate: true, data: data);

@@ -151,14 +151,23 @@ public sealed partial class L12GameEngine
         data["visibleCost"] = totalCost.ToString();
         data["choiceMode"] = "resource-payment";
         foreach (var choiceId in availableTemporaryMorale)
+        {
             data[$"{choiceId}:resourceType"] = "temporary-morale";
+            data[$"{choiceId}:activityState"] = "active";
+        }
         foreach (var morale in availableMorale)
+        {
             data[$"{morale.InstanceId}:resourceType"] = L12StructuredCardSemantics
                 .MoraleZoneResourceRule(morale.CardId)?.ResourceType
                 ?? (morale.IsGodPower ? "god-power" : "morale");
+            data[$"{morale.InstanceId}:activityState"] = "active";
+        }
         foreach (var guard in availableGuards)
+        {
             data[$"{guard.InstanceId}:resourceType"] = L12StructuredCardSemantics
                 .FieldMoraleResourceRule(guard.CardId)!.ResourceType;
+            data[$"{guard.InstanceId}:activityState"] = guard.Tapped ? "rested" : "active";
+        }
         var resourceNames = new List<string>();
         if (availableTemporaryMorale.Length > 0) resourceNames.Add("临时士气");
         if (availableMorale.Any(card => !card.IsGodPower

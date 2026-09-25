@@ -56,6 +56,8 @@ public sealed class MoraleReturnSelectionTests
         Assert.Equal("resource-return", prompt.Kind);
         Assert.Equal("resource-return", prompt.Data["choiceMode"]);
         Assert.Equal("请选择返还的士气", prompt.Text);
+        Assert.Equal("active", prompt.Data["ready:activityState"]);
+        Assert.Equal("rested", prompt.Data["rested:activityState"]);
         Assert.Equal(2, player.Morale.Count);
 
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,

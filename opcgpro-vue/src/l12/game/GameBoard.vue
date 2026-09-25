@@ -286,6 +286,7 @@ type MobileMoraleCandidate = {
   detail: string
   iconUrl: string
   state: 'rune' | 'morale' | 'god-power' | 'black-lotus' | 'temporary'
+  activity: 'active' | 'rested' | 'fixed'
   selectable: boolean
   disabledReason: string
 }
@@ -306,6 +307,7 @@ const mobileRuneChoices = computed<MobileMoraleCandidate[]>(() => {
       detail: selectable ? '可用于当前选择' : !owned ? '尚未获得这枚符文' : mobileMoraleInteractive.value ? '当前支付不能使用这枚符文' : '当前拥有；需要符文时可选择',
       iconUrl: roundCardUrl('S02-06S1') ?? '',
       state: 'rune' as const,
+      activity: 'fixed' as const,
       selectable,
       disabledReason: selectable ? '' : !owned ? '尚未获得这枚符文' : mobileMoraleInteractive.value ? '当前支付不能使用这枚符文' : '查看状态时无需选择',
     }
@@ -322,6 +324,7 @@ const mobileMoraleChoices = computed<MobileMoraleCandidate[]>(() => {
     detail: '休整时消失',
      iconUrl: siteBrandIconUrl,
      state: 'temporary' as const,
+     activity: 'active' as const,
      selectable: mobileMoraleInteractive.value && paymentChoiceIds.value.includes(id),
      disabledReason: mobileMoraleInteractive.value && paymentChoiceIds.value.includes(id) ? '' : mobileMoraleInteractive.value ? '当前支付不能使用这枚临时士气' : '查看状态时无需选择',
   }]
@@ -336,6 +339,7 @@ const mobileMoraleChoices = computed<MobileMoraleCandidate[]>(() => {
     detail: `${blackLotus ? '专属士气' : getFactionPresentation(owner.faction).label} · ${resource.tapped ? '休整' : '活跃'}`,
      iconUrl: godPower ? godPowerLogoUrl : blackLotus ? blackLotusLogoUrl : (factionLogoUrls[owner.faction] ?? ''),
      state: godPower ? 'god-power' as const : blackLotus ? 'black-lotus' as const : 'morale' as const,
+     activity: resource.tapped ? 'rested' as const : 'active' as const,
      selectable: mobileMoraleInteractive.value && paymentChoiceIds.value.includes(id),
      disabledReason: mobileMoraleInteractive.value && paymentChoiceIds.value.includes(id) ? '' : mobileMoraleInteractive.value ? (resource.tapped ? '这枚士气正在休整' : '当前支付不能使用这枚士气') : '查看状态时无需选择',
   }]
@@ -1358,13 +1362,13 @@ function statusTexts(card: Card) {
           <div class="mobile-morale-picker" aria-label="可选择的士气与符文">
             <section v-if="viewMe.faction === 'otherworld'" class="mobile-rune-row" aria-label="彼界阵营符文">
               <div v-if="mobileRuneChoices.length">
-                <button v-for="choice in mobileRuneChoices" :key="choice.id" type="button" :class="['mobile-morale-choice', choice.state, { selected: paymentResourceIds.includes(choice.id), unavailable: !choice.selectable }]" :aria-pressed="paymentResourceIds.includes(choice.id)" :aria-disabled="!choice.selectable" :aria-label="`${choice.label}${choice.disabledReason ? `：${choice.disabledReason}` : ''}`" :title="choice.disabledReason || choice.label" @click="chooseMobileMorale(choice)">
+                <button v-for="choice in mobileRuneChoices" :key="choice.id" type="button" :class="['mobile-morale-choice', choice.state, `activity-${choice.activity}`, { selected: paymentResourceIds.includes(choice.id), unavailable: !choice.selectable }]" :aria-pressed="paymentResourceIds.includes(choice.id)" :aria-disabled="!choice.selectable" :aria-label="`${choice.label}${choice.disabledReason ? `：${choice.disabledReason}` : ''}`" :title="choice.disabledReason || choice.label" @click="chooseMobileMorale(choice)">
                   <img :src="choice.iconUrl" alt="" />
                 </button>
               </div>
             </section>
             <section class="mobile-resource-row" aria-label="普通士气与特殊士气">
-              <button v-for="choice in mobileMoraleChoices" :key="choice.id" type="button" :class="['mobile-morale-choice', choice.state, { selected: paymentResourceIds.includes(choice.id), unavailable: !choice.selectable }]" :aria-pressed="paymentResourceIds.includes(choice.id)" :aria-disabled="!choice.selectable" :aria-label="`${choice.label}${choice.disabledReason ? `：${choice.disabledReason}` : ''}`" :title="choice.disabledReason || choice.label" @click="chooseMobileMorale(choice)">
+              <button v-for="choice in mobileMoraleChoices" :key="choice.id" type="button" :class="['mobile-morale-choice', choice.state, `activity-${choice.activity}`, { selected: paymentResourceIds.includes(choice.id), unavailable: !choice.selectable }]" :aria-pressed="paymentResourceIds.includes(choice.id)" :aria-disabled="!choice.selectable" :aria-label="`${choice.label}${choice.disabledReason ? `：${choice.disabledReason}` : ''}`" :title="choice.disabledReason || choice.label" @click="chooseMobileMorale(choice)">
                 <img :src="choice.iconUrl" alt="" />
               </button>
             </section>

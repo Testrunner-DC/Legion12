@@ -532,8 +532,7 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         var top = player.Library.Take(3).ToArray();
         item.Data["oiran-cards"] = string.Join('|', top.Select(card => card.InstanceId));
-        var choices = top.Where(card => card.CardId != "S01-0419"
-                && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan"))
+        var choices = top.Where(card => IsOiranGiftSearchCandidate(player, card))
             .Select(card => card.InstanceId).ToList();
         if (top.Length == 0)
         {
@@ -563,7 +562,9 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         if (choice != "skip")
         {
-            var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == choice);
+            var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == choice
+                && IsStillInInspectedLibrarySet(item, "oiran-cards", candidate)
+                && IsOiranGiftSearchCandidate(player, candidate));
             if (card is null)
             {
                 item.Data["effectResultStatus"] = "failed";
@@ -584,8 +585,7 @@ public sealed partial class L12GameEngine
             var frozen = item.Data.GetValueOrDefault("oiran-cards", string.Empty)
                 .Split('|', StringSplitOptions.RemoveEmptyEntries);
             var stillHasRequiredChoice = frozen.Any(id => player.Library.Any(card =>
-                card.InstanceId == id && card.CardId != "S01-0419"
-                    && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")));
+                card.InstanceId == id && IsOiranGiftSearchCandidate(player, card)));
             if (stillHasRequiredChoice)
             {
                 item.Data["effectResultStatus"] = "failed";

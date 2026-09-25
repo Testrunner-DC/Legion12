@@ -314,8 +314,7 @@ public sealed partial class L12GameEngine
             {
                 var top = player.Library.Take(3).ToArray();
                 item.Data["camp-top"] = string.Join('|', top.Select(candidate => candidate.InstanceId));
-                var choices = top.Where(candidate => candidate.CardType == "legion"
-                        && L12StructuredCardRules.HasFaction(player, candidate, player.Faction))
+                var choices = top.Where(candidate => IsCampSearchCandidate(player, candidate))
                     .Select(candidate => candidate.InstanceId).ToList();
                 if (top.Length == 0)
                 {
@@ -892,7 +891,9 @@ public sealed partial class L12GameEngine
         var topIds = item.Data["camp-top"].Split('|', StringSplitOptions.RemoveEmptyEntries);
         if (choice != "skip")
         {
-            var selected = player.Library.FirstOrDefault(card => card.InstanceId == choice);
+            var selected = player.Library.FirstOrDefault(card => card.InstanceId == choice
+                && IsStillInInspectedLibrarySet(item, "camp-top", card)
+                && IsCampSearchCandidate(player, card));
             if (selected is null)
             {
                 item.Data["effectResultStatus"] = "failed";
@@ -907,8 +908,7 @@ public sealed partial class L12GameEngine
             }
         }
         else if (topIds.Any(id => player.Library.Any(card => card.InstanceId == id
-                     && card.CardType == "legion"
-                     && L12StructuredCardRules.HasFaction(player, card, player.Faction))))
+                     && IsCampSearchCandidate(player, card))))
         {
             item.Data["effectResultStatus"] = "failed";
             AddEvent("effect-failed", item.Controller,

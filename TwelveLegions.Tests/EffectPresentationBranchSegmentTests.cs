@@ -1660,7 +1660,7 @@ public sealed class EffectPresentationBranchSegmentTests
 
     [Theory]
     [InlineData("liubei", "S01-0105", "S01-0106")]
-    [InlineData("faction-top", "S01-02D1", "S01-0106")]
+    [InlineData("faction-top", "S01-02D1", "S01-0201")]
     [Trait("L12Evidence", "legacy-search:library-current-state")]
     public void LegacyLibrarySearchFailsSafelyWhenItsDeclaredCardLeavesTheLibrary(
         string action, string sourceCardId, string targetCardId)
@@ -1680,7 +1680,7 @@ public sealed class EffectPresentationBranchSegmentTests
 
     [Theory]
     [InlineData("liubei", "S01-0105", "S01-0106")]
-    [InlineData("faction-top", "S01-02D1", "S01-0106")]
+    [InlineData("faction-top", "S01-02D1", "S01-0201")]
     [Trait("L12Evidence", "legacy-search:library-repeat")]
     public void LegacyLibrarySearchRejectsTheSameCardAfterItHasAlreadyResolved(
         string action, string sourceCardId, string targetCardId)
@@ -1691,7 +1691,11 @@ public sealed class EffectPresentationBranchSegmentTests
         var player = game.State.Players[0];
         player.Resolving.Add(source); player.Library.Add(target);
         var item = new L12StackItem { StackItemId = $"legacy-library-repeat-stack-{action}", Controller = 0, SourceInstanceId = source.InstanceId, SourceCardId = source.CardId, SourceName = source.Name, SourceSnapshot = source.Clone(), Trigger = "active", Text = source.EffectText ?? source.Name };
-        if (action == "faction-top") item.Data["faction-search-top"] = target.InstanceId;
+        if (action == "faction-top")
+        {
+            item.Data["faction-search-top"] = target.InstanceId;
+            item.Data["faction-search-context"] = "sun-divinity";
+        }
         if (action == "liubei") Invoke(game, "CompleteLiuBeiSearch", item, target.InstanceId);
         else Invoke(game, "CompleteFactionTopSearch", item, new List<string> { target.InstanceId });
         Assert.Contains(target, player.Hand);

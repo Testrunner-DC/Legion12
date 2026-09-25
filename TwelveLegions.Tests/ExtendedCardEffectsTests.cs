@@ -410,6 +410,7 @@ public sealed class ExtendedCardEffectsTests
         Assert.Equal("resource-payment", paymentPrompt.Kind);
         Assert.Equal("play-morale-choice", paymentPrompt.Continuation);
         Assert.Equal("god-power", paymentPrompt.Data[$"{godPower.InstanceId}:resourceType"]);
+        Assert.Equal("active", paymentPrompt.Data[$"{godPower.InstanceId}:activityState"]);
 
         var selected = payWithGodPower ? godPower : ordinaryMorale;
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: paymentPrompt.PromptId,
@@ -447,6 +448,7 @@ public sealed class ExtendedCardEffectsTests
         Assert.Contains("temporary-morale:1", payment.ValidChoices);
         Assert.Contains(ordinaryMorale.InstanceId, payment.ValidChoices);
         Assert.Equal("temporary-morale", payment.Data["temporary-morale:1:resourceType"]);
+        Assert.Equal("active", payment.Data["temporary-morale:1:activityState"]);
         var choice = payWithTemporaryMorale ? "temporary-morale:1" : ordinaryMorale.InstanceId;
 
         var paid = game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,

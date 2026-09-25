@@ -1789,12 +1789,14 @@ public sealed partial class L12GameEngine
     private void BeginFactionTopSearch(L12StackItem item, int count, string faction, string excluded, string context)
     {
         var player = State.Players[item.Controller]; var top = player.Library.Take(count).ToArray(); item.Data["faction-search-top"] = string.Join('|', top.Select(card => card.InstanceId)); item.Data["faction-search-context"] = context;
+        item.Data["faction-search-faction"] = faction;
+        item.Data["faction-search-excluded"] = excluded;
         if (context == "sun-divinity" && top.Length > 0)
             AddPresentationEvent("reveal", item.Controller, "众神之乡公开牌库顶部3张牌",
                 "S01-02D1", "top-three", top);
         const int max = 1;
-        var choices = top.Where(card => L12StructuredCardRules.HasFaction(player, card, faction)
-            && card.CardId != excluded).Select(card => card.InstanceId).ToArray();
+        var choices = top.Where(card => IsFactionTopSearchCandidate(player, card, faction, excluded))
+            .Select(card => card.InstanceId).ToArray();
         if (choices.Length == 0)
         {
             PromptFactionSearchOrder(item, top.Select(card => card.InstanceId).ToList());
@@ -1812,12 +1814,15 @@ public sealed partial class L12GameEngine
     private void CompleteFactionTopSearch(L12StackItem item, List<string> chosen)
     {
         var player = State.Players[item.Controller];
+        var (faction, excluded) = FactionTopSearchConstraints(item);
         foreach (var id in chosen)
         {
-            var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == id);
+            var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == id
+                && IsStillInInspectedLibrarySet(item, "faction-search-top", candidate)
+                && IsFactionTopSearchCandidate(player, candidate, faction, excluded));
             if (card is null)
             {
-                RecordTargetSettlementFailure(item, id, "所选牌库卡牌已离开牌库");
+                RecordTargetSettlementFailure(item, id, "所选牌库卡牌已离开查看范围或不再符合检索条件");
                 FinishStackItem(item);
                 return;
             }

@@ -2426,7 +2426,9 @@ public sealed partial class L12GameEngine
             {
                 var ids = item.Data.GetValueOrDefault("rune-power-top", string.Empty)
                     .Split('|', StringSplitOptions.RemoveEmptyEntries);
-                var selected = chosen[0] == "skip" ? null : player.Library.FirstOrDefault(card => card.InstanceId == chosen[0]);
+                var selected = chosen[0] == "skip" ? null : player.Library.FirstOrDefault(card => card.InstanceId == chosen[0]
+                    && IsStillInInspectedLibrarySet(item, "rune-power-top", card)
+                    && IsRunePowerSearchCandidate(player, card));
                 if (selected is not null)
                 {
                     player.Library.Remove(selected);
@@ -2792,8 +2794,7 @@ public sealed partial class L12GameEngine
         var top = player.Library.Take(3).ToArray();
         item.Data["rune-power-top"] = string.Join('|', top.Select(card => card.InstanceId));
         if (top.Length == 0) { FinishStackItem(item); return; }
-        var choices = top.Where(card => card.CardId != "S02-0620"
-                && L12StructuredCardRules.HasFaction(player, card, "otherworld"))
+        var choices = top.Where(card => IsRunePowerSearchCandidate(player, card))
             .Select(card => card.InstanceId).Append("skip").ToArray();
         var data = new Dictionary<string, string>
         {
@@ -3097,11 +3098,6 @@ public sealed partial class L12GameEngine
 
     private static bool IsYingzhengEnterCostCandidate(L12CardInstance card)
         => card.CardType == "legion" && L12StructuredCardRules.CurrentCostEquals(card, 8);
-
-    private bool IsMerlinSearchCandidate(L12CardInstance card)
-        => card.CardType == "tactic"
-            && L12StructuredCardRules.SearchCostAtMost(card, 4)
-            && !IsCounterTactic(card.CardId);
 
     private static L12CardInstance[] YingzhengEnterCostCandidates(L12PlayerState player)
         => player.Hand.Where(IsYingzhengEnterCostCandidate).ToArray();

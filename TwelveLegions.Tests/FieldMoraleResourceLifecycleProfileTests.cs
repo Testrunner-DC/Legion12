@@ -165,6 +165,7 @@ public sealed class FieldMoraleResourceLifecycleProfileTests
         var prompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("resource-payment", prompt.Kind);
         Assert.Equal("tomb-guard", prompt.Data[$"{guard.InstanceId}:resourceType"]);
+        Assert.Equal("active", prompt.Data[$"{guard.InstanceId}:activityState"]);
         Assert.Contains(guard.InstanceId, prompt.ValidChoices);
         Assert.Contains(ordinary.InstanceId, prompt.ValidChoices);
 
