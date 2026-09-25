@@ -828,7 +828,10 @@ const contracts = [
   [!deckLibrary.includes('<div class="banner-strip">') && !lobby.includes('<div class="deck-thumb">库</div>') && !legacyLobby.includes('class="commander-glyph">{{ deck.'), '牌库框不得恢复多卡裁切条或“库”占位图替代已选择主宰 Profile'],
   [playerMat.includes('const displayMoraleSlots = computed') && playerMat.includes('payable(right.resource) - payable(left.resource)') && playerMat.includes('rank(left.resource) - rank(right.resource)') && playerMat.includes("isGodPower ? (tapped ? 2 : 0) : (tapped ? 3 : 1)") && playerMat.includes(':key="morale.instanceId"') && playerMat.includes('inspectOrSelectMorale(morale.instanceId)') && board.includes(':key="choice.id"') && board.includes('togglePaymentResource(choice.id)'), '费用资源必须优先展示当前可支付实例，再按状态排序，桌面与大面板均必须保留真实士气实例 ID 作为支付与返还目标'],
   [playerMat.includes('class="god-power-logo"') && playerMat.includes('sepia(1) saturate(3.2)') && playerMat.includes('border-color:#f4dda1'), '神力必须使用淡黄色 Logo 与独立描边，不能继续与白色士气图标混淆'],
-  [cardTile.includes('attachedGroups') && cardTile.includes('attached-card-orbs') && cardTile.includes("$emit('focusCard', group.card)"), '叠放卡牌必须由公共卡牌组件合并为圆形卡图，并可进入统一详情'],
+  [cardTile.includes('attachedGroups') && cardTile.includes('attached-card-orbs') && cardTile.includes("$emit('focusCard', group.card)")
+    && cardTile.includes('|| CARD_IMAGE_PLACEHOLDER') && cardTile.includes('@error="useAttachedCardBack"')
+    && cardTile.includes('alt=""') && cardTile.includes('<b v-if="group.count > 1">{{ group.count }}</b>')
+    && !cardTile.includes('<i v-else>{{ group.card.name.slice(0, 1) }}</i>'), '叠放卡牌必须以圆形卡图与数量表达，图片失败时改用主牌库卡背，不得把卡名或浏览器 alt 文字绘制在圆图上'],
   [l12StructuredSemantics.includes('GrantsStrongAttackWhileAttached')
     && l12StructuredSemantics.includes('HasEffectiveStrongAttack')
     && l12GameEngine.includes('HasEffectiveStrongAttack(card)'), '王者之剑、侵掠如火、自身与临时强攻必须共用同一有效关键词查询'],
