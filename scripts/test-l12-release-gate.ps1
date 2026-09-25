@@ -9,6 +9,9 @@ $verifyScript = Join-Path $repoRoot "ops\windows\verify-l12.ps1"
 $deployScript = Join-Path $repoRoot "ops\windows\deploy-l12.ps1"
 $changeGateScript = Join-Path $repoRoot "scripts\verify-l12-change.ps1"
 $cacheInitializer = Join-Path $repoRoot "ops\windows\Initialize-L12BuildEnvironment.ps1"
+$releaseLedgerScript = Join-Path $repoRoot "scripts\release-ledger.mjs"
+$releaseLedgerRoot = Join-Path $repoRoot "release-ledger"
+$generatedPlayerRelease = Join-Path $repoRoot "opcgpro-vue\src\l12\site\generatedPlayerRelease.ts"
 $powerShellHost = Get-Command "pwsh" -ErrorAction SilentlyContinue
 if ($null -eq $powerShellHost) { $powerShellHost = Get-Command "powershell" -ErrorAction Stop }
 
@@ -105,6 +108,9 @@ Assert-True (([regex]::Matches($verifySource, 'Invoke-External \$npmExecutable r
 Assert-True ($deploySource.Contains('$cardAssetsProbe = if ($ServerArtifactRoot -eq "/www/legion12")')) "Deployment must probe the server content-addressed card cache before upload."
 Assert-True (([regex]::Matches($deploySource, 'if \(\$cardAssetsCached\)')).Count -eq 1 -and $deploySource.Contains('$cardAssetsHash')) "Deployment must explicitly reuse a matching card asset hash."
 Assert-True ($deploySource.IndexOf('Invoke-External scp @sshOptions $cardAssetsArchive') -gt $deploySource.IndexOf('else {', $deploySource.IndexOf('if ($cardAssetsCached)'))) "Card asset upload must remain confined to the remote-cache-miss branch."
+Assert-True ($deploySource.Contains('Resolve-L12ProductionBaseCommit')) "Production deployment must read the live production commit before aggregating player notes."
+Assert-True ($deploySource.Contains('"-ProductionBaseCommit", $productionBaseCommit')) "Production deployment must bind release verification to the live production commit."
+Assert-True ($deploySource.Contains('发布包的更新日志基线不是当前正式服提交')) "A stale or prebuilt manifest must not bypass the production changelog range gate."
 
 $fixtureBase = if (Test-Path -LiteralPath "D:\GPT\Legion12") { "D:\GPT\Legion12\temp" } else { [IO.Path]::GetTempPath() }
 New-Item -ItemType Directory -Path $fixtureBase -Force | Out-Null
@@ -119,10 +125,13 @@ $originalPath = $env:PATH
 $originalCommandLog = $env:L12_TEST_COMMAND_LOG
 
 try {
-    New-Item -ItemType Directory -Path (Join-Path $fixtureRepo "ops\windows"), (Join-Path $fixtureRepo "scripts"), (Join-Path $fixtureRepo "TwelveLegions.Tests"), $fixtureOutput, $fixtureCardAssets, $fakeBin -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $fixtureRepo "ops\windows"), (Join-Path $fixtureRepo "scripts"), (Join-Path $fixtureRepo "TwelveLegions.Tests"), (Join-Path $fixtureRepo "opcgpro-vue\src\l12\site"), $fixtureOutput, $fixtureCardAssets, $fakeBin -Force | Out-Null
     Copy-Item -LiteralPath $verifyScript -Destination (Join-Path $fixtureRepo "ops\windows\verify-l12.ps1") -Force
     Copy-Item -LiteralPath $cacheInitializer -Destination (Join-Path $fixtureRepo "ops\windows\Initialize-L12BuildEnvironment.ps1") -Force
     Copy-Item -LiteralPath $changeGateScript -Destination (Join-Path $fixtureRepo "scripts\verify-l12-change.ps1") -Force
+    Copy-Item -LiteralPath $releaseLedgerScript -Destination (Join-Path $fixtureRepo "scripts\release-ledger.mjs") -Force
+    Copy-Item -LiteralPath $releaseLedgerRoot -Destination (Join-Path $fixtureRepo "release-ledger") -Recurse -Force
+    Copy-Item -LiteralPath $generatedPlayerRelease -Destination (Join-Path $fixtureRepo "opcgpro-vue\src\l12\site\generatedPlayerRelease.ts") -Force
     [IO.File]::WriteAllText((Join-Path $fixtureRepo "tracked.txt"), "clean fixture`n", [Text.Encoding]::ASCII)
 
     Invoke-GitChecked $fixtureRepo @("init", "--quiet")
@@ -192,6 +201,7 @@ try {
     $releaseSha = (Get-FileHash -LiteralPath $releaseArchive -Algorithm SHA256).Hash.ToLowerInvariant()
     $cardSha = (Get-FileHash -LiteralPath $cardArchive -Algorithm SHA256).Hash.ToLowerInvariant()
     $cachedManifest = Join-Path $artifactDirectory "l12-release-$fixtureCommit.json"
+    $fixtureNotesHash = (Get-FileHash -LiteralPath (Join-Path $fixtureRepo "opcgpro-vue\src\l12\site\generatedPlayerRelease.ts") -Algorithm SHA256).Hash.ToLowerInvariant()
     [ordered]@{
         schema = 3
         commit = $fixtureCommit
@@ -201,6 +211,8 @@ try {
         cardAssetsHash = $assetVersionA
         cardAssetsArchive = $cardArchive
         cardAssetsSha256 = $cardSha
+        releaseBaseCommit = ""
+        playerReleaseNotesSha256 = $fixtureNotesHash
     } | ConvertTo-Json | Set-Content -LiteralPath $cachedManifest -Encoding utf8
 
     Remove-Item -LiteralPath $commandLog -Force -ErrorAction SilentlyContinue

@@ -3,6 +3,7 @@ param(
     [string]$OutputDirectory = $(if ($env:L12_DEPLOY_CACHE) { $env:L12_DEPLOY_CACHE } elseif (Test-Path "D:\GPT\Legion12") { "D:\GPT\Legion12\artifacts\deploy" } else { Join-Path ([IO.Path]::GetTempPath()) "l12-deploy-artifacts" }),
     [string]$CacheRoot = "",
     [string]$CardAssetDirectory = $(if ($env:L12_CARD_ASSET_ROOT) { $env:L12_CARD_ASSET_ROOT } else { "D:\L12-assets\published\current" }),
+    [string]$ProductionBaseCommit = "",
     [switch]$Force
 )
 
@@ -81,6 +82,10 @@ function Test-CachedArtifact {
         if ($manifest.schema -ne 3) { return $false }
         if ($manifest.commit -ne $commit) { return $false }
         if ($manifest.cardAssetsHash -ne $cardAssetsHash) { return $false }
+        $cachedReleaseBase = if ($manifest.PSObject.Properties['releaseBaseCommit']) { [string]$manifest.releaseBaseCommit } else { "" }
+        $cachedNotesHash = if ($manifest.PSObject.Properties['playerReleaseNotesSha256']) { [string]$manifest.playerReleaseNotesSha256 } else { "" }
+        if ($cachedReleaseBase -ne $effectiveReleaseBaseCommit) { return $false }
+        if ($cachedNotesHash -ne $playerReleaseNotesSha256) { return $false }
         foreach ($entry in @(
             @{ Path = $manifest.releaseArchive; Hash = $manifest.releaseSha256 },
             @{ Path = $manifest.cardAssetsArchive; Hash = $manifest.cardAssetsSha256 }
@@ -109,6 +114,7 @@ try {
     $commit = (& git rev-parse HEAD).Trim()
     if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') { throw "无法读取当前提交" }
     Assert-CleanCommit -ExpectedCommit $commit -Operation "验证或复用发布包"
+    Invoke-External node ".\scripts\release-ledger.mjs" validate --repo $repoRoot
     $CardAssetDirectory = (Resolve-Path -LiteralPath $CardAssetDirectory).Path
     $cardAssetManifestPath = Join-Path $CardAssetDirectory "card-assets.manifest.json"
     if (-not (Test-Path -LiteralPath $cardAssetManifestPath -PathType Leaf)) { throw "优化卡图目录缺少发布清单：$cardAssetManifestPath" }
@@ -125,6 +131,19 @@ try {
     New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
     $artifactDirectory = Join-Path $OutputDirectory $commit
     New-Item -ItemType Directory -Path $artifactDirectory -Force | Out-Null
+    $effectiveReleaseBaseCommit = ""
+    $generatedPlayerRelease = Join-Path $artifactDirectory "generatedPlayerRelease.ts"
+    if (-not [string]::IsNullOrWhiteSpace($ProductionBaseCommit)) {
+        if ($ProductionBaseCommit -notmatch '^[0-9a-f]{40}$') { throw "正式服基线提交格式错误：$ProductionBaseCommit" }
+        $effectiveReleaseBaseCommit = $ProductionBaseCommit.ToLowerInvariant()
+        $releaseSummary = Join-Path $artifactDirectory "player-release-$effectiveReleaseBaseCommit-$commit.json"
+        Invoke-External node ".\scripts\release-ledger.mjs" release --repo $repoRoot `
+            --from $effectiveReleaseBaseCommit --to $commit --output $generatedPlayerRelease --summary $releaseSummary
+    }
+    else {
+        Copy-Item -LiteralPath ".\opcgpro-vue\src\l12\site\generatedPlayerRelease.ts" -Destination $generatedPlayerRelease -Force
+    }
+    $playerReleaseNotesSha256 = (Get-FileHash -LiteralPath $generatedPlayerRelease -Algorithm SHA256).Hash.ToLowerInvariant()
     $manifestPath = Join-Path $artifactDirectory "l12-release-$commit.json"
     if (-not $Force -and (Test-CachedArtifact $manifestPath)) {
         Assert-CleanCommit -ExpectedCommit $commit -Operation "复用发布包"
@@ -165,6 +184,7 @@ try {
         @{ Source = "ops\performance-budgets.json"; Target = "ops\performance-budgets.json" },
         @{ Source = "ops\performance-exceptions.json"; Target = "ops\performance-exceptions.json" },
         @{ Source = "scripts\verify-l12-change.ps1"; Target = "scripts\verify-l12-change.ps1" },
+        @{ Source = "scripts\release-ledger.mjs"; Target = "scripts\release-ledger.mjs" },
         @{ Source = "scripts\ws-smoke.mjs"; Target = "scripts\ws-smoke.mjs" },
         @{ Source = "服务端WebSocket\TwelveLegions\L12WebSocketServer.cs"; Target = "服务端WebSocket\TwelveLegions\L12WebSocketServer.cs" },
         @{ Source = "ops\windows\Initialize-L12BuildEnvironment.ps1"; Target = "ops\windows\Initialize-L12BuildEnvironment.ps1" },
@@ -195,6 +215,10 @@ try {
         New-Item -ItemType Directory -Path (Split-Path -Parent $targetPath) -Force | Out-Null
         Copy-Item -LiteralPath (Join-Path $repoRoot $contractFile.Source) -Destination $targetPath -Force
     }
+    Copy-Item -LiteralPath (Join-Path $repoRoot "release-ledger") `
+        -Destination (Join-Path $frontendWorkspaceDirectory "release-ledger") -Recurse -Force
+    Copy-Item -LiteralPath $generatedPlayerRelease `
+        -Destination (Join-Path $frontendBuildDirectory "src\l12\site\generatedPlayerRelease.ts") -Force
     # UI 的玩家文案门禁会全量扫描服务端 Prompt 协议值；隔离构建必须复制全部 C# 定义，
     # 否则门禁会因为缺文件失败，或只扫描局部文件而产生“缺失标签为 0”的假阳性。
     $isolatedServerSourceRoot = Join-Path $frontendWorkspaceDirectory "服务端WebSocket\TwelveLegions"
@@ -295,6 +319,8 @@ try {
         cardAssetsHash = $cardAssetsHash
         cardAssetsArchive = $cardAssetsArchive
         cardAssetsSha256 = $cardAssetsSha256
+        releaseBaseCommit = $effectiveReleaseBaseCommit
+        playerReleaseNotesSha256 = $playerReleaseNotesSha256
     } | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding utf8
 
     Write-Host "[L12 验证] 完整验证与发布包构建通过：$commit"

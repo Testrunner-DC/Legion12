@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "baselineCommit": "97cc764b9a567449489e6a26cc819859766beb90",
+  "defaultReleaseTitle": "版本更新",
+  "categories": {
+    "card-effects": "卡牌效果",
+    "battle": "对局与房间",
+    "ui": "界面与体验",
+    "rules": "规则中心",
+    "tournaments": "赛事中心",
+    "decks": "牌库与公开构筑",
+    "replays": "对局记录与回放",
+    "ranking": "排位、战绩与称号",
+    "accounts": "账号与玩家权益",
+    "content": "图鉴、资讯与内容",
+    "other": "其他玩家变化"
+  },
+  "playerFacingRoots": [
+    "opcgpro-vue/src/",
+    "服务端WebSocket/TwelveLegions/"
+  ],
+  "ignoredPlayerFacingSuffixes": [
+    ".Tests.cs"
+  ],
+  "forbiddenPlayerTerms": [
+    "后台实现",
+    "数据库表",
+    "SQLite",
+    "审计日志",
+    "内部路由",
+    "存储路径",
+    "部署脚本",
+    "服务器路径",
+    "管理员接口",
+    "IP地址",
+    "风控阈值"
+  ]
+}

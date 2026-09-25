@@ -52,6 +52,20 @@ function Invoke-GitFetchWithRetry {
     }
 }
 
+function Resolve-L12ProductionBaseCommit {
+    try {
+        $health = Invoke-RestMethod -Uri "https://legion-12.com/health" -Method Get -TimeoutSec 15
+    }
+    catch {
+        throw "无法读取当前正式服版本，不能确定玩家更新日志区间：$($_.Exception.Message)"
+    }
+    $baseCommit = [string]$health.serverVersion
+    if ($baseCommit -notmatch '^[0-9a-f]{40}$') {
+        throw "正式服 /health 未返回完整 serverVersion，拒绝靠人工回忆生成更新日志。"
+    }
+    return $baseCommit.ToLowerInvariant()
+}
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $targetHelper = Join-Path $PSScriptRoot "L12DeployTarget.ps1"
 . $targetHelper
@@ -109,9 +123,16 @@ try {
     $commit = (& git rev-parse HEAD).Trim()
     $remoteCommit = (& git rev-parse origin/main).Trim()
     if ($commit -ne $remoteCommit) { throw "本地提交与 origin/main 不一致，拒绝部署。" }
+    $productionBaseCommit = Resolve-L12ProductionBaseCommit
+    & git merge-base --is-ancestor $productionBaseCommit $commit
+    if ($LASTEXITCODE -ne 0) {
+        throw "当前正式服提交 $productionBaseCommit 不是待部署提交 $commit 的祖先；拒绝错误聚合更新日志。"
+    }
+    Write-Host "[L12 部署] 玩家更新日志区间：$productionBaseCommit -> $commit"
 
     if ([string]::IsNullOrWhiteSpace($ArtifactManifest)) {
-        $arguments = @("-ExecutionPolicy", "Bypass", "-File", $verifyScript, "-CacheRoot", $resolvedCacheRoot)
+        $arguments = @("-ExecutionPolicy", "Bypass", "-File", $verifyScript, "-CacheRoot", $resolvedCacheRoot,
+            "-ProductionBaseCommit", $productionBaseCommit)
         if ($ForceVerification) { $arguments += "-Force" }
         $verificationHost = Get-Command "pwsh" -ErrorAction SilentlyContinue
         if (-not $verificationHost) { $verificationHost = Get-Command "powershell" -ErrorAction Stop }
@@ -124,6 +145,14 @@ try {
     $manifestDirectory = Split-Path -Parent $ArtifactManifest
     $manifest = Get-Content -LiteralPath $ArtifactManifest -Raw | ConvertFrom-Json
     if ($manifest.commit -ne $commit) { throw "发布包提交与当前 main 不一致" }
+    $manifestReleaseBase = if ($manifest.PSObject.Properties['releaseBaseCommit']) { [string]$manifest.releaseBaseCommit } else { "" }
+    $manifestNotesHash = if ($manifest.PSObject.Properties['playerReleaseNotesSha256']) { [string]$manifest.playerReleaseNotesSha256 } else { "" }
+    if ($manifestReleaseBase -ne $productionBaseCommit) {
+        throw "发布包的更新日志基线不是当前正式服提交；请重新生成发布包。"
+    }
+    if ($manifestNotesHash -notmatch '^[0-9a-f]{64}$') {
+        throw "发布包缺少经过门禁生成的玩家更新日志摘要。"
+    }
     $releaseArchive = if ([IO.Path]::IsPathRooted([string]$manifest.releaseArchive)) {
         [string]$manifest.releaseArchive
     } else { Join-Path $manifestDirectory ([string]$manifest.releaseArchive) }

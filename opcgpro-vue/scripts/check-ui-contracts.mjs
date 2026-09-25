@@ -5,6 +5,8 @@ import { maintenanceCountdown } from '../src/l12/site/maintenanceCountdown.ts'
 // Git 在 Windows 工作区可能检出 CRLF；契约按语义比较换行，不改写被检查的源文件。
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
 const shell = read('../src/l12/site/SiteShell.vue')
+const generatedPlayerRelease = read('../src/l12/site/generatedPlayerRelease.ts')
+const releaseLedgerScript = read('../../scripts/release-ledger.mjs')
 const mainNav = shell.match(/const mainNav = \[[\s\S]*?\n\]/)?.[0] ?? ''
 const battleNav = shell.match(/const battleNav = \[[\s\S]*?\n\]/)?.[0] ?? ''
 const router = read('../src/router/index.ts')
@@ -1414,7 +1416,7 @@ contracts.push([
 
 contracts.push([
   shell.includes("title: '卡牌结算、账号治理、对战界面与长局稳定性更新'")
-    && shell.match(/version: releaseVersion/g)?.length === 1
+    && shell.includes("version: 'eac1ec9'")
     && shell.includes("title: '操作响应与连接稳定性'")
     && shell.includes("title: '快照、观战与回放'")
     && shell.includes('稳定请求标识')
@@ -1445,7 +1447,7 @@ const migratedReleaseEntry = shell.slice(
 )
 const internalReleaseTerms = ['后台', '管理员', '审计', '存储维护', '处置', '处罚']
 contracts.push([
-  latestReleaseEntry.includes('version: releaseVersion')
+  latestReleaseEntry.includes("version: '97cc764b9a567449489e6a26cc819859766beb90'")
     && latestReleaseEntry.includes("title: '移动端与自适应布局'")
     && latestReleaseEntry.includes("title: '对战操作与玩家信息'")
     && latestReleaseEntry.includes("title: '牌库编辑器与我的牌库'")
@@ -1468,6 +1470,14 @@ contracts.push([
     && !['全卡池的发动声明', '统一使用同一生命周期', '墨子、拉美西斯', '佣兵部队、绝对防御'].some(detail => latestReleaseEntry.includes(detail))
     && internalReleaseTerms.every(term => !latestReleaseEntry.includes(term)),
   '最新玩家更新日志必须覆盖本期自适应布局、对战操作、牌库社区、异画、排位、回放、卡效和连接变化，并排除后台和内部治理内容',
+])
+contracts.push([
+  shell.includes("import { generatedPlayerRelease } from './generatedPlayerRelease'")
+    && shell.includes('[generatedPlayerRelease, ...legacyUpdateEntries]')
+    && generatedPlayerRelease.includes('GeneratedPlayerReleaseEntry | null = null')
+    && releaseLedgerScript.includes('正式发布区间存在未登记的玩家相关源码')
+    && releaseLedgerScript.includes('forbiddenPlayerTerms'),
+  '正式更新日志必须由结构化账本按线上版本区间注入，缺失登记和内部说明必须在发布前失败',
 ])
 contracts.push([
   productionBaselineEntry.includes("version: 'fd0d602eee5baef29adcae07b42e45b1ae274b36'")

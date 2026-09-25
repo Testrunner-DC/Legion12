@@ -8,12 +8,12 @@ import L12SettingsModal from './L12SettingsModal.vue'
 import MaintenanceTicker from './MaintenanceTicker.vue'
 import CardImage from '@/l12/CardImage.vue'
 import { useActionGate } from '@/l12/useActionGate'
+import { generatedPlayerRelease } from './generatedPlayerRelease'
 
 const siteBrandIcon = '/favicon.png'
-const releaseVersion = String(import.meta.env.VITE_APP_VERSION || 'dev')
-const updateEntries = [
+const legacyUpdateEntries = [
   {
-    date: '2026-09-25', title: '移动端对战、牌库社区、排位展示与对局记录更新', version: releaseVersion,
+    date: '2026-09-25', title: '移动端对战、牌库社区、排位展示与对局记录更新', version: '97cc764b9a567449489e6a26cc819859766beb90',
     sections: [
       { title: '移动端与自适应布局', items: [
         '对战和牌库编辑器会按实际可用画面比例判断是否使用移动布局，不再依赖手机是否物理横屏；设置中可选择自动、始终启用或关闭移动布局，桌面宽屏继续使用独立布局。',
@@ -584,6 +584,10 @@ const updateEntries = [
     ],
   },
 ]
+
+const updateEntries = generatedPlayerRelease
+  ? [generatedPlayerRelease, ...legacyUpdateEntries]
+  : legacyUpdateEntries
 
 const route = useRoute()
 const router = useRouter()

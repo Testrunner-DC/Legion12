@@ -173,7 +173,7 @@ try {
     $cardEffectChanged = $runtimeEvidenceChanged -or $publicActiveChanged -or $publicTriggerChanged -or $publicResponseChanged -or $publicHandPlayChanged -or (Test-AnyPath @('^TwelveLegions\.Tests/'))
     $workflowChanged = Test-AnyPath @('^\.github/workflows/verify-release\.yml$', '^scripts/(check-l12-architecture-lock\.mjs|verify-l12-github-workflow\.ps1)$')
     $storageChanged = Test-AnyPath @('^scripts/(audit-l12-storage|clean-l12-generated|test-l12-cleanup)\.ps1$', '^ops/windows/(watch-l12-network|finalize-l12-codex-session-move)\.ps1$', '^docs/STORAGE-(GOVERNANCE|MAINTENANCE)\.md$')
-    $releaseGateChanged = Test-AnyPath @('^ops/windows/verify-l12\.ps1$', '^scripts/verify-l12-change\.ps1$', '^scripts/test-l12-release-gate\.ps1$')
+    $releaseGateChanged = Test-AnyPath @('^ops/windows/verify-l12\.ps1$', '^ops/windows/deploy-l12\.ps1$', '^scripts/verify-l12-change\.ps1$', '^scripts/(test-l12-release-gate|release-ledger|test-release-ledger)\.mjs?$', '^release-ledger/')
     $deploymentBehaviorChanged = Test-AnyPath @('^ops/windows/(deploy-l12|L12DeployTarget)\.ps1$', '^ops/server/(deploy-l12-release\.sh|verify-l12-health\.mjs)$', '^scripts/(test-l12-deploy-behavior|verify-l12-change)\.ps1$')
 
     # Add non-ASCII service paths without embedding them in this Windows PowerShell 5 compatible source file.
@@ -244,6 +244,7 @@ try {
     }
 
     if ($releaseGateChanged) {
+        Invoke-Checked "Player release ledger regression" "node" @(".\scripts\test-release-ledger.mjs")
         Invoke-CheckedPowerShellScript "Release verification gate regression" `
             (Join-Path $repoRoot "scripts\test-l12-release-gate.ps1")
     }

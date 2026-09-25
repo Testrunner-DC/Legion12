@@ -109,7 +109,8 @@ powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 -DryRun
 - `wss://legion-12.com/ws` 的 WebSocket 探针通过。
 - 新服务器上的 `legion12-test.service` 为 `active/running`，且没有异常重启；服务名虽含 `test`，验收对象仍是正式服。
 - 线上版本、卡图/静态资源和关键页面符合本批范围；失败时保留现场，不以手工覆盖目录修复。
-- 发布成功后写入面向玩家的更新日志，并在任务交接中分别记录开发提交、远端提交和已部署提交。关联 Bug 只有在具名回归测试和线上版本均已验证后才能关闭。
+- 玩家可见变化必须在开发批次内登记到 `release-ledger/entries/`，不得等到部署前临时回忆。正式部署入口会以现场 `/health.serverVersion` 为基线自动聚合，并在未登记玩家相关源码、玩家分类无效或文案包含内部实现说明时失败；完整写法见 [玩家更新日志账本](PLAYER-CHANGELOG-LEDGER.md)。
+- 发布成功后核对左侧“更新日志”已经显示该正式版本的自动聚合结果，并在任务交接中分别记录开发提交、远端提交和已部署提交。关联 Bug 只有在具名回归测试和线上版本均已验证后才能关闭。
 
 可以在部署电脑执行以下只读核验：
 
