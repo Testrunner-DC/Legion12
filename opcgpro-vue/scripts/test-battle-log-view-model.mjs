@@ -51,6 +51,80 @@ const cancelled = projectLog([
 assert.equal(cancelled.length, 1, 'effect mother event must remain while cancellation noise is hidden')
 assert(cancelled[0].kind === 'line' && cancelled[0].badges.some(item => item.value === '士气 −2'), 'cost must merge into its effect row')
 
+const immortal = card('免死军团', 'immortal')
+const immortalTriggered = projectLog([
+  event(1, 'effect', '免死生效并将当前兵力设为1000', [immortal], 0, {
+    playerLogSemantic: {
+      sourceInstanceId: immortal.instanceId,
+      sourceName: immortal.name,
+      targetInstanceId: immortal.instanceId,
+      targetName: immortal.name,
+      actionLabel: '触发 免死',
+      outcomeLabel: '兵力变为1000',
+    },
+  }),
+], 0, [])
+assert.equal(immortalTriggered.length, 1)
+assert.deepEqual(immortalTriggered[0].parts.map(part => part.text), [
+  '〈免死军团〉', '触发 免死', '，兵力变为1000',
+])
+assert.equal(immortalTriggered[0].badges.length, 0,
+  'an authoritative set operation must not be presented as a positive troop delta')
+
+const lethalReplacement = projectLog([
+  event(1, 'replacement', '内部致命替代审计文本', [immortal], 0, {
+    playerLogSemantic: {
+      sourceInstanceId: immortal.instanceId,
+      sourceName: immortal.name,
+      targetInstanceId: immortal.instanceId,
+      targetName: immortal.name,
+      actionLabel: '触发 致命代替',
+      outcomeLabel: '未阵亡且保持原状态',
+    },
+  }),
+], 0, [])
+assert.equal(lethalReplacement.length, 1, 'a semantic lethal replacement must remain visible although raw replacement events are hidden')
+assert.deepEqual(lethalReplacement[0].parts.map(part => part.text), [
+  '〈免死军团〉', '触发 致命代替', '，未阵亡且保持原状态',
+])
+
+const masterDamageReplacement = projectLog([
+  event(1, 'effect', '内部伤害替换审计文本', [], 0, {
+    playerLogSemantic: {
+      sourceName: '平阳昭公主',
+      targetName: '杨戬',
+      actionLabel: '触发 主宰效果',
+      outcomeLabel: '〈杨戬〉受到的本次伤害变为2',
+    },
+  }),
+], 0, [])
+assert.deepEqual(masterDamageReplacement[0].parts.map(part => part.text), [
+  '〈平阳昭公主〉', '触发 主宰效果', '，〈杨戬〉受到的本次伤害变为2',
+])
+const hiddenSemanticSource = projectLog([
+  event(1, 'effect', '隐藏来源不得公开', [card('未公开响应卡', 'secret-source', true)], 0, {
+    playerLogSemantic: {
+      sourceInstanceId: 'secret-source',
+      sourceName: '未公开响应卡',
+      actionLabel: '触发 效果',
+      outcomeLabel: '状态改变',
+    },
+  }),
+], 0, [])
+assert.equal(hiddenSemanticSource.length, 0, 'semantic metadata must not reveal a source that is still hidden')
+
+const legacySet = projectLog([
+  event(1, 'effect', '旧回放：本次进攻兵力视为3000', [source], 0),
+], 0, [])
+assert.equal(legacySet.length, 1)
+assert(legacySet[0].kind === 'line' && !legacySet[0].badges.some(item => item.value === '+3000兵力'),
+  'a legacy set-value sentence must never be guessed as a troop increase')
+const additiveTroops = projectLog([
+  event(1, 'effect', '本回合兵力+1000', [source], 0),
+], 0, [])
+assert(additiveTroops[0].kind === 'line' && additiveTroops[0].badges.some(item => item.value === '+1000兵力'),
+  'an explicit signed troop delta remains an additive change')
+
 const otherworldRune = projectLog([
   event(1, 'cost', '消耗2士气', [], 0),
   event(2, 'runes', '彼界阵营效果使我方获得1符文', [source], 0),

@@ -111,7 +111,7 @@ public sealed class LethalReplacementLifecycleProfileTests
     {
         Assert.Contains(cardId, abilityId, StringComparison.Ordinal);
         var game = Create(93001 + cardId[^1]);
-        var (_, choice) = ArrangeReplacement(game, cardId, cardId);
+        var (protectedCard, choice) = ArrangeReplacement(game, cardId, cardId);
         var prompt = BeginEffectLethalReplacement(game, game.State.Players[0].Field[0][0]!);
 
         Assert.Contains("即将阵亡", prompt.Text, StringComparison.Ordinal);
@@ -132,7 +132,11 @@ public sealed class LethalReplacementLifecycleProfileTests
         Assert.True(resolved.Accepted, resolved.Error);
         Assert.Equal(cardId, game.State.Players[0].Field[0][0]!.CardId);
         Assert.Empty(game.State.PendingPrompts);
-        Assert.Contains(game.State.Events, entry => entry.Type == "replacement");
+        var playerLog = Assert.Single(game.State.Events, entry => entry.Type == "replacement");
+        Assert.Equal("触发 致命代替", playerLog.PlayerLogSemantic?.ActionLabel);
+        Assert.Contains("未阵亡", playerLog.PlayerLogSemantic?.OutcomeLabel, StringComparison.Ordinal);
+        Assert.Equal(protectedCard.InstanceId, playerLog.PlayerLogSemantic?.SourceInstanceId);
+        Assert.Equal(protectedCard.InstanceId, playerLog.PlayerLogSemantic?.TargetInstanceId);
 
         var duplicate = game.Handle(0,
             new L12Command("resolvePrompt", PromptId: restoredPrompt.PromptId, Choice: choice));

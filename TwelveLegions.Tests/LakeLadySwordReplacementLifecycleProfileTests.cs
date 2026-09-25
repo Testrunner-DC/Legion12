@@ -38,9 +38,13 @@ public sealed class LakeLadySwordReplacementLifecycleProfileTests
         Assert.Empty(arthur.AttachedCards);
         Assert.Contains(player.Graveyard, card => card.InstanceId == sword.InstanceId);
         Assert.DoesNotContain(player.Graveyard, card => card.InstanceId == arthur.InstanceId);
-        Assert.Single(game.State.Events, entry => entry.Type == "replacement"
+        var playerLog = Assert.Single(game.State.Events, entry => entry.Type == "replacement"
             && entry.Cards.Any(card => card.InstanceId == arthur.InstanceId)
             && entry.Text.Contains("王者之剑", StringComparison.Ordinal));
+        Assert.Equal("触发 致命代替", playerLog.PlayerLogSemantic?.ActionLabel);
+        Assert.Equal($"移除〈{sword.Name}〉，〈{arthur.Name}〉未阵亡", playerLog.PlayerLogSemantic?.OutcomeLabel);
+        Assert.Equal("lake-profile-trial", playerLog.PlayerLogSemantic?.SourceInstanceId);
+        Assert.Equal(arthur.InstanceId, playerLog.PlayerLogSemantic?.TargetInstanceId);
 
         result = game.HandleGm(new L12GmCommand("destroyCard", 0, CardInstanceId: arthur.InstanceId));
         Assert.True(result.Accepted, result.Error);

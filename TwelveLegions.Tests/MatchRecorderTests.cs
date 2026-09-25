@@ -234,6 +234,11 @@ public sealed class MatchRecorderTests
                 BindingFlags.Instance | BindingFlags.NonPublic)!
             .Invoke(game, ["draw", 0, "回合开始时抽取 1 张牌", "turn:2", "turn-start", null,
                 Array.Empty<L12CardInstance>()]);
+        typeof(L12GameEngine).GetMethod("AddSemanticPlayerLogEvent",
+                BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(game, ["effect", 0, "免死权威事件",
+                new L12PlayerLogSemantic("触发 免死", "兵力变为1000", SourceName: "测试军团"),
+                Array.Empty<L12CardInstance>()]);
         await recorder.AppendAsync(game, 1, -1, JsonSerializer.Serialize(gm), result);
 
         await using var connection = new SqliteConnection($"Data Source={path}");
@@ -262,5 +267,17 @@ public sealed class MatchRecorderTests
         using var groupedDocument = JsonDocument.Parse(groupedJson);
         Assert.Equal("turn:2", groupedDocument.RootElement.GetProperty("PlayerLogGroupId").GetString());
         Assert.Equal("turn-start", groupedDocument.RootElement.GetProperty("PlayerLogTiming").GetString());
+
+        command.CommandText = """
+            SELECT event_json FROM match_action_events
+            WHERE match_id='compact-events' AND json_extract(event_json,'$.Type')='effect'
+            ORDER BY event_sequence DESC LIMIT 1;
+            """;
+        var semanticJson = Assert.IsType<string>(await command.ExecuteScalarAsync());
+        using var semanticDocument = JsonDocument.Parse(semanticJson);
+        var semantic = semanticDocument.RootElement.GetProperty("PlayerLogSemantic");
+        Assert.Equal("触发 免死", semantic.GetProperty("ActionLabel").GetString());
+        Assert.Equal("兵力变为1000", semantic.GetProperty("OutcomeLabel").GetString());
+        Assert.Equal("测试军团", semantic.GetProperty("SourceName").GetString());
     }
 }

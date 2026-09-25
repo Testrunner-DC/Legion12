@@ -677,6 +677,18 @@ public sealed class L12ResponseWindow
     public int ConsecutivePasses { get; set; }
 }
 
+/// <summary>
+/// 玩家日志使用的权威公开语义。规则入口在状态实际改变时同时声明来源、动作、对象和终态，
+/// 客户端只负责组合卡牌链接与这些公开短语，不得再从审计文本或数值结果反推动作含义。
+/// </summary>
+public sealed record L12PlayerLogSemantic(
+    string ActionLabel,
+    string OutcomeLabel,
+    string? SourceInstanceId = null,
+    string? SourceName = null,
+    string? TargetInstanceId = null,
+    string? TargetName = null);
+
 public sealed record L12ActionEvent(
     long Sequence,
     string Type,
@@ -708,6 +720,8 @@ public sealed record L12ActionEvent(
     public string? PlayerLogTiming { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? PlayerLogDecisionLabel { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12PlayerLogSemantic? PlayerLogSemantic { get; init; }
 }
 
 public sealed class L12GameState

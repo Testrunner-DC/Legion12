@@ -19,7 +19,17 @@ export interface ActionEvent {
   playerLogGroupId?: string
   playerLogTiming?: string
   playerLogDecisionLabel?: string
+  playerLogSemantic?: PlayerLogSemantic
   cards?: Card[]
+}
+
+export interface PlayerLogSemantic {
+  actionLabel: string
+  outcomeLabel: string
+  sourceInstanceId?: string
+  sourceName?: string
+  targetInstanceId?: string
+  targetName?: string
 }
 
 export type CardStatusIconKind = 'lock' | 'power-up' | 'power-down' | 'disabled' | 'shield' | 'discard-end' | 'extra-attack'

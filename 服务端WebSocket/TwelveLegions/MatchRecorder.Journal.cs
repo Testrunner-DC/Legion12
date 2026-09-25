@@ -171,6 +171,7 @@ public sealed partial class MatchRecorder
             AddOptional(journalEvent, "PlayerLogGroupId", actionEvent.PlayerLogGroupId);
             AddOptional(journalEvent, "PlayerLogTiming", actionEvent.PlayerLogTiming);
             AddOptional(journalEvent, "PlayerLogDecisionLabel", actionEvent.PlayerLogDecisionLabel);
+            AddOptional(journalEvent, "PlayerLogSemantic", actionEvent.PlayerLogSemantic);
             var insert = connection.CreateCommand();
             insert.Transaction = transaction;
             insert.CommandText = """

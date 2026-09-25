@@ -33,8 +33,12 @@ public sealed class BackRowAttackTroopsSetLifecycleProfileTests
 
         Assert.Equal(baseTroops, game.State.Players[0].Field[1][0]!.Troops);
         Assert.Equal(5000 - setValue, game.State.Players[1].Field[0][0]!.Troops);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect"
+        var playerLog = Assert.Single(game.State.Events, entry => entry.Type == "effect"
             && entry.Text.Contains($"兵力视为{setValue}", StringComparison.Ordinal));
+        Assert.Equal("触发 进攻时效果", playerLog.PlayerLogSemantic?.ActionLabel);
+        Assert.Equal($"本次进攻兵力变为{setValue}", playerLog.PlayerLogSemantic?.OutcomeLabel);
+        Assert.Equal(restoredAttacker.InstanceId, playerLog.PlayerLogSemantic?.SourceInstanceId);
+        Assert.Equal(restoredAttacker.InstanceId, playerLog.PlayerLogSemantic?.TargetInstanceId);
     }
 
     private static void ResolveAllPrompts(L12GameEngine game)

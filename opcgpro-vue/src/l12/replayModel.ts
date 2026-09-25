@@ -262,7 +262,9 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
   const rawPhase = value<any>(raw, 'Phase', 'phase', 'Main')
   const defense = value<any>(raw, 'PendingDefense', 'pendingDefense', null)
   const activeDisaster = replayActiveDisasterAt(detail, step, raw)
-  const events: ActionEvent[] = value<any[]>(raw, 'Events', 'events', []).map(event => ({
+  const events: ActionEvent[] = value<any[]>(raw, 'Events', 'events', []).map(event => {
+    const semantic = value<any>(event, 'PlayerLogSemantic', 'playerLogSemantic', undefined)
+    return ({
     sequence: value(event, 'Sequence', 'sequence', 0), type: value(event, 'Type', 'type', ''),
     playerIndex: value(event, 'PlayerIndex', 'playerIndex', undefined), text: value(event, 'Text', 'text', ''),
     effectText: value(event, 'EffectText', 'effectText', undefined),
@@ -277,8 +279,17 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
     playerLogGroupId: value(event, 'PlayerLogGroupId', 'playerLogGroupId', undefined),
     playerLogTiming: value(event, 'PlayerLogTiming', 'playerLogTiming', undefined),
     playerLogDecisionLabel: value(event, 'PlayerLogDecisionLabel', 'playerLogDecisionLabel', undefined),
+    playerLogSemantic: semantic ? {
+      actionLabel: value(semantic, 'ActionLabel', 'actionLabel', ''),
+      outcomeLabel: value(semantic, 'OutcomeLabel', 'outcomeLabel', ''),
+      sourceInstanceId: value(semantic, 'SourceInstanceId', 'sourceInstanceId', undefined),
+      sourceName: value(semantic, 'SourceName', 'sourceName', undefined),
+      targetInstanceId: value(semantic, 'TargetInstanceId', 'targetInstanceId', undefined),
+      targetName: value(semantic, 'TargetName', 'targetName', undefined),
+    } : undefined,
     cards: value<any[]>(event, 'Cards', 'cards', []).map(replayCard).filter(Boolean) as Card[],
-  }))
+    })
+  })
   return {
     matchId: value(raw, 'MatchId', 'matchId', detail.match.matchId),
     roomCode: value(raw, 'RoomCode', 'roomCode', detail.match.roomCode),

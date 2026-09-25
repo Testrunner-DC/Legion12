@@ -129,6 +129,7 @@ function playerLogMetadataScore(event: ActionEvent) {
     + Number(Boolean(event.playerLogTiming))
     + Number(Boolean(event.playerLogDecisionLabel))
     + Number(Boolean(event.effectResultStatus))
+    + Number(Boolean(event.playerLogSemantic))
 }
 
 function orderedUniqueEvents(events: ActionEvent[]) {
@@ -290,6 +291,23 @@ function effectOutcomeBadges(event: ActionEvent) {
   return badges
 }
 
+function projectSemanticPlayerLog(event: ActionEvent, you: number): LogLineRow | null {
+  const semantic = event.playerLogSemantic
+  if (!semantic?.actionLabel || !semantic.outcomeLabel) return null
+  const source = publicCards(event)
+    .find(card => card.instanceId === semantic.sourceInstanceId)
+  if (semantic.sourceInstanceId && !source) return null
+  const sourcePart = source
+    ? cardPart(source)
+    : semantic.sourceName ? { text: `〈${semantic.sourceName}〉` } satisfies LogPart : null
+  if (!sourcePart) return null
+  return line(event.sequence, 'effect', side(event.playerIndex, you), [
+    sourcePart,
+    { text: semantic.actionLabel },
+    { text: `，${semantic.outcomeLabel}` },
+  ])
+}
+
 function isInvalidDefenseEvent(event: ActionEvent) {
   return event.type === 'defense-invalid' || /抵挡(?:\/支援)?无效|抵挡或支援无效|本次抵挡.*无效|本次支援.*无效/.test(event.text)
 }
@@ -364,6 +382,7 @@ function costMergesIntoFollowingResult(events: ActionEvent[], index: number) {
 }
 
 function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], costDetails: LogPart[] = []): LogLineRow | null {
+  if (event.playerLogSemantic) return projectSemanticPlayerLog(event, you)
   if ((!PLAYER_LOG_VISIBLE_TYPES.has(event.type) && !isPrivateHandAddEvent(event)) || containsOnlyZeroChange(event)) return null
   const actor = side(event.playerIndex, you)
   const card = firstPublicCard(event)
@@ -472,7 +491,7 @@ function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], co
       if (cards.length > 1) parts.push({ text: '：' }, ...cardParts(cards.slice(1)))
       parts.push(...costDetails)
       const badges = [...costs]
-      const troop = event.text.match(/兵力[^-+\d]*([+-]?\d+)/)?.[1]
+      const troop = event.text.match(/兵力[^-+\d]*([+-]\d+)/)?.[1]
       const movement = event.text.match(/位移\s*(\d+)\s*格/)?.[1]
       const draw = event.text.match(/抽取\s*(\d+)\s*张/)?.[1]
       if (troop && Number(troop)) badges.unshift(badge(Number(troop), '兵力'))
@@ -611,7 +630,7 @@ export function projectLog(events: ActionEvent[], you: number, _names: string[])
         && /加入手牌|返回手牌|回到手牌/.test(candidate.text))
       if (precedingPublicAdd) continue
     }
-    if (PLAYER_LOG_HIDDEN_TYPES.has(event.type) && !isPrivateHandAddEvent(event)) continue
+    if (PLAYER_LOG_HIDDEN_TYPES.has(event.type) && !isPrivateHandAddEvent(event) && !event.playerLogSemantic) continue
     const receivesCost = COST_MERGE_RESULT_TYPES.has(event.type)
     const row = projectLine(event, you,
       receivesCost ? costBadges(ordered, index, event) : [],

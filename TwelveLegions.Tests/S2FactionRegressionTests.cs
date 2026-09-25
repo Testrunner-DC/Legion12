@@ -5757,6 +5757,10 @@ public sealed class S2FactionRegressionTests
 
         Assert.Equal(beforeMasterDamage - 2, opponent.Hp);
         Assert.Equal(-1, player.NextMasterDamageToOpponentBecomesTwoUntilTurn);
+        var playerLog = Assert.Single(game.State.Events, entry => entry.PlayerLogSemantic?.SourceName == "平阳昭公主");
+        Assert.Equal("触发 主宰效果", playerLog.PlayerLogSemantic?.ActionLabel);
+        Assert.Equal($"〈{opponent.MasterName}〉受到的本次伤害变为2", playerLog.PlayerLogSemantic?.OutcomeLabel);
+        Assert.Equal(opponent.MasterName, playerLog.PlayerLogSemantic?.TargetName);
     }
 
     [Fact]

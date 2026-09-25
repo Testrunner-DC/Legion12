@@ -70,7 +70,12 @@ public sealed class ImmortalityRegressionTests
         Assert.Equal(0, target.ImmortalUses);
         Assert.Equal(0, target.SetTroopsValue);
         Assert.Equal(1000, target.Troops);
-        Assert.Contains(game.State.Events, entry => entry.Text.Contains("清除本次伤害并将当前兵力设为 1000"));
+        var playerLog = Assert.Single(game.State.Events,
+            entry => entry.Text.Contains("清除本次伤害并将当前兵力设为 1000"));
+        Assert.Equal("触发 免死", playerLog.PlayerLogSemantic?.ActionLabel);
+        Assert.Equal("兵力变为1000", playerLog.PlayerLogSemantic?.OutcomeLabel);
+        Assert.Equal(target.InstanceId, playerLog.PlayerLogSemantic?.SourceInstanceId);
+        Assert.Equal(target.InstanceId, playerLog.PlayerLogSemantic?.TargetInstanceId);
     }
 
     [Fact]
@@ -94,7 +99,10 @@ public sealed class ImmortalityRegressionTests
         Assert.Equal(0, target.ImmortalUses);
         Assert.Equal(2000, target.SetTroopsValue);
         Assert.Equal(1000, target.Troops);
-        Assert.Contains(game.State.Events, entry => entry.Text.Contains("清除本次伤害并将当前兵力设为 1000"));
+        var playerLog = Assert.Single(game.State.Events,
+            entry => entry.Text.Contains("清除本次伤害并将当前兵力设为 1000"));
+        Assert.Equal("触发 免死", playerLog.PlayerLogSemantic?.ActionLabel);
+        Assert.Equal("兵力变为1000", playerLog.PlayerLogSemantic?.OutcomeLabel);
     }
 
     [Fact]

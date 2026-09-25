@@ -76,7 +76,7 @@ assert(backend.includes('"effect-declined" => "declined"'),
 const replay = read('../src/l12/replayModel.ts')
 for (const field of [
   'EffectText', 'EffectSceneId', 'EffectAbilityId', 'EffectSegmentId', 'EffectSegmentIndex',
-  'EffectSegmentCount', 'EffectBranchId', 'EffectBranchLabel', 'EffectResultStatus',
+  'EffectSegmentCount', 'EffectBranchId', 'EffectBranchLabel', 'EffectResultStatus', 'PlayerLogSemantic',
 ]) assert(replay.includes(field), `Replay projection is missing ${field}`)
 for (const contract of [
   'AddEffectResultEvent(item, resultStatus)',

@@ -782,8 +782,10 @@ public sealed partial class L12GameEngine
         {
             temporaryAttackerTroopsBonus = setAttackTroops - attacker.Troops;
             attacker.Troops = setAttackTroops;
-            AddEvent("effect", playerIndex,
-                $"{attacker.Name}位于后排，本次进攻兵力视为{setAttackTroops}", attacker);
+            AddSemanticPlayerLogEvent("effect", playerIndex,
+                $"{attacker.Name}位于后排，本次进攻兵力视为{setAttackTroops}",
+                new("触发 进攻时效果", $"本次进攻兵力变为{setAttackTroops}",
+                    attacker.InstanceId, attacker.Name, attacker.InstanceId, attacker.Name), attacker);
         }
         temporaryAttackerTroopsBonus += ApplyS1FactionAttackPassives(playerIndex, attacker, row);
         attacker.AttacksThisTurn++;
@@ -1200,11 +1202,15 @@ public sealed partial class L12GameEngine
             : 0;
         var defenderDamage = Math.Max(0, attackValue + rangedDamageAdjustment);
         if (defenderDamage < attackValue)
-            AddEvent("effect", defender.PlayerIndex,
-                $"{target.Name}受到远程进攻，使最终战斗伤害由 {attackValue} 降为 {defenderDamage}", target, attacker);
+            AddSemanticPlayerLogEvent("effect", defender.PlayerIndex,
+                $"{target.Name}受到远程进攻，使最终战斗伤害由 {attackValue} 降为 {defenderDamage}",
+                new("触发 远程伤害修正", $"受到的本次战斗伤害 {attackValue}→{defenderDamage}",
+                    target.InstanceId, target.Name, target.InstanceId, target.Name), target, attacker);
         else if (defenderDamage > attackValue)
-            AddEvent("effect", defender.PlayerIndex,
-                $"{target.Name}受到远程进攻，使最终战斗伤害由 {attackValue} 增为 {defenderDamage}", target, attacker);
+            AddSemanticPlayerLogEvent("effect", defender.PlayerIndex,
+                $"{target.Name}受到远程进攻，使最终战斗伤害由 {attackValue} 增为 {defenderDamage}",
+                new("触发 远程伤害修正", $"受到的本次战斗伤害 {attackValue}→{defenderDamage}",
+                    target.InstanceId, target.Name, target.InstanceId, target.Name), target, attacker);
         var attackerTakesDamage = !pending.AttackNoLoss && !(pending.IsRanged && pending.RangedNoLoss);
         if (targetTroops - defenderDamage <= 0
             && TryOfferCombatLethalReplacement(defender, target, pending)) return CommandResult.Ok();
@@ -1322,8 +1328,10 @@ public sealed partial class L12GameEngine
             player.UsedAbilities.Add(AchillesReplacementKey(card));
             card.Troops = int.Parse(prompt.Data["preservedTroops"]);
             card.Tapped = prompt.Data["preservedTapped"] == "true";
-            AddEvent("replacement", playerIndex,
-                $"{card.Name}消耗并翻转1神力，代替承受致命进攻并保持当时状态", card);
+            AddSemanticPlayerLogEvent("replacement", playerIndex,
+                $"{card.Name}消耗并翻转1神力，代替承受致命进攻并保持当时状态",
+                new("触发 致命代替", "消耗并翻转1神力，未阵亡且保持原状态",
+                    card.InstanceId, card.Name, card.InstanceId, card.Name), card);
         }
         ResolveDefenseCore(1 - pending.AttackerPlayer, pending.DeclaredBlockIds,
             pending.DeclaredSupportIds, pending.ForceInvalidDefense);

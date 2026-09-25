@@ -197,8 +197,10 @@ public sealed partial class L12GameEngine
                 leaveKind: L12FieldLeaveKind.Defeat, bypassLethalReplacement: true,
                 deferGraveyard: deferFieldDeath);
             if (removed) defeatedInstanceId = substitute.InstanceId;
-            AddEvent("replacement", controller.PlayerIndex,
+            AddSemanticPlayerLogEvent("replacement", controller.PlayerIndex,
                 $"〈{substitute.Name}〉代替〈{protectedCard.Name}〉承受原致命结果，并沿原阵亡动作进入所有者目的区",
+                new("触发 致命代替", $"〈{substitute.Name}〉代替阵亡，〈{protectedCard.Name}〉未阵亡",
+                    protectedCard.InstanceId, protectedCard.Name, protectedCard.InstanceId, protectedCard.Name),
                 protectedCard, substitute);
             return true;
         }
@@ -214,8 +216,10 @@ public sealed partial class L12GameEngine
             AddEvent("discard", controller.PlayerIndex,
                 $"〈{protectedCard.Name}〉弃置手牌中的〈{substitute.Name}〉代替承受致命结果", substitute);
             NotifyCardDiscarded(controller, substitute, "hand", causedByEffect: true);
-            AddEvent("replacement", controller.PlayerIndex,
+            AddSemanticPlayerLogEvent("replacement", controller.PlayerIndex,
                 $"〈{substitute.Name}〉按卡面从手牌弃置并进入所有者墓地，代替〈{protectedCard.Name}〉承受致命结果",
+                new("触发 致命代替", $"弃置〈{substitute.Name}〉，〈{protectedCard.Name}〉未阵亡",
+                    protectedCard.InstanceId, protectedCard.Name, protectedCard.InstanceId, protectedCard.Name),
                 protectedCard, substitute);
             return true;
         }
@@ -229,9 +233,11 @@ public sealed partial class L12GameEngine
                     $"作为费用弃置，代替〈{protectedCard.Name}〉承受{reason}",
                     queueDeathTrigger: !deferFieldDeath, leaveKind: L12FieldLeaveKind.Discard,
                     bypassLethalReplacement: true)) return false;
-            AddEvent("replacement", controller.PlayerIndex,
+            AddSemanticPlayerLogEvent("replacement", controller.PlayerIndex,
                 $"〈{substitute.Name}〉作为费用弃置，代替〈{protectedCard.Name}〉承受原致命结果",
-                protectedCard, substitute);
+                new("触发 致命代替", $"自身弃置，〈{protectedCard.Name}〉未阵亡",
+                    substitute.InstanceId, substitute.Name, protectedCard.InstanceId, protectedCard.Name),
+                substitute, protectedCard);
             return true;
         }
 

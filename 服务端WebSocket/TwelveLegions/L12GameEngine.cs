@@ -1664,8 +1664,10 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         {
             card.ImmortalUses--;
             L12DerivedStats.ClearDamageAndSetCurrentUntilTurnEnd(card, 1000, State.TurnSerial);
-            AddEvent("effect", player.PlayerIndex,
-                $"{card.Name} 的免死生效，清除本次伤害并将当前兵力设为 1000", card);
+            AddSemanticPlayerLogEvent("effect", player.PlayerIndex,
+                $"{card.Name} 的免死生效，清除本次伤害并将当前兵力设为 1000",
+                new("触发 免死", "兵力变为1000", card.InstanceId, card.Name,
+                    card.InstanceId, card.Name), card);
             return false;
         }
         CaptureLastKnownFieldState(card, row);
@@ -1735,8 +1737,9 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     /// </summary>
     private bool TryApplyLakeLadySwordReplacement(L12PlayerState controller, L12CardInstance card, string reason)
     {
-        if (card.CardId != "S02-0601"
-            || !controller.SpecialZones.Trials.Any(trial => trial.CardId == "S02-06S3" && trial.TrialCompleted))
+        var trial = controller.SpecialZones.Trials
+            .FirstOrDefault(candidate => candidate.CardId == "S02-06S3" && candidate.TrialCompleted);
+        if (card.CardId != "S02-0601" || trial is null)
             return false;
         var sword = card.AttachedCards.FirstOrDefault(attached => attached.CardId == "S02-06S2");
         if (sword is null) return false;
@@ -1746,9 +1749,10 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         ResetCardAfterLeavingField(sword);
         owner.Graveyard.Add(sword);
         RecalculateContinuousTroops();
-        AddEvent("replacement", controller.PlayerIndex,
+        AddSemanticPlayerLogEvent("replacement", controller.PlayerIndex,
             $"《湖中仙女的馈赠》的持续效果移除《王者之剑》，代替〈{card.Name}〉承受本次致命{(reason.Contains("进攻", StringComparison.Ordinal) ? "进攻" : "效果")}",
-            card, sword);
+            new("触发 致命代替", $"移除〈{sword.Name}〉，〈{card.Name}〉未阵亡",
+                trial.InstanceId, trial.Name, card.InstanceId, card.Name), trial, card, sword);
         return true;
     }
 
@@ -1816,8 +1820,10 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             player.UsedAbilities.Add(AchillesReplacementKey(card));
             card.Troops = int.Parse(prompt.Data["preservedTroops"]);
             card.Tapped = prompt.Data["preservedTapped"] == "true";
-            AddEvent("replacement", playerIndex,
-                $"{card.Name}消耗并翻转1神力，代替承受致命效果并保持当时状态", card);
+            AddSemanticPlayerLogEvent("replacement", playerIndex,
+                $"{card.Name}消耗并翻转1神力，代替承受致命效果并保持当时状态",
+                new("触发 致命代替", "消耗并翻转1神力，未阵亡且保持原状态",
+                    card.InstanceId, card.Name, card.InstanceId, card.Name), card);
             ResumeEffectKillContinuation(prompt);
             return;
         }
@@ -2130,8 +2136,11 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             return amount;
 
         source.NextMasterDamageToOpponentBecomesTwoUntilTurn = -1;
-        AddEvent("effect", resolvedSourcePlayer,
-            "平阳昭公主使主宰对对方主宰造成的这次伤害变为2");
+        var target = State.Players[targetPlayerIndex];
+        AddSemanticPlayerLogEvent("effect", resolvedSourcePlayer,
+            "平阳昭公主使主宰对对方主宰造成的这次伤害变为2",
+            new("触发 主宰效果", $"〈{target.MasterName}〉受到的本次伤害变为2",
+                SourceName: "平阳昭公主", TargetName: target.MasterName));
         return 2;
     }
 
@@ -2227,6 +2236,11 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         => AddEventCoreWithPlayerLog(type, playerIndex, text, null, null,
             playerLogGroupId, playerLogTiming, playerLogDecisionLabel, cards);
 
+    private void AddSemanticPlayerLogEvent(string type, int? playerIndex, string text,
+        L12PlayerLogSemantic playerLogSemantic, params L12CardInstance[] cards)
+        => AddEventCoreWithPlayerLogSemantic(type, playerIndex, text, null, null,
+            null, null, null, playerLogSemantic, cards);
+
     private void AddEventCore(string type, int? playerIndex, string text, string? effectText,
         params L12CardInstance[] cards)
         => AddEventCoreWithEffectMetadata(type, playerIndex, text, effectText, null, cards);
@@ -2239,6 +2253,13 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     private void AddEventCoreWithPlayerLog(string type, int? playerIndex, string text, string? effectText,
         L12EffectEventMetadata? effectMetadata, string? playerLogGroupId, string? playerLogTiming,
         string? playerLogDecisionLabel, params L12CardInstance[] cards)
+        => AddEventCoreWithPlayerLogSemantic(type, playerIndex, text, effectText, effectMetadata,
+            playerLogGroupId, playerLogTiming, playerLogDecisionLabel, null, cards);
+
+    private void AddEventCoreWithPlayerLogSemantic(string type, int? playerIndex, string text, string? effectText,
+        L12EffectEventMetadata? effectMetadata, string? playerLogGroupId, string? playerLogTiming,
+        string? playerLogDecisionLabel, L12PlayerLogSemantic? playerLogSemantic,
+        params L12CardInstance[] cards)
     {
         State.EventSequence++;
         State.LastAction = new L12ActionEvent(State.EventSequence, type, playerIndex, text,
@@ -2270,6 +2291,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             PlayerLogGroupId = playerLogGroupId,
             PlayerLogTiming = playerLogTiming,
             PlayerLogDecisionLabel = playerLogDecisionLabel,
+            PlayerLogSemantic = playerLogSemantic,
         };
         State.Events.Add(State.LastAction);
         if (State.StateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion)
