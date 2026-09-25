@@ -803,7 +803,8 @@ exec "$L12_TEST_REAL_TAR" "$@"
     Assert-True ($prepareStorageIndex -ge 0 -and $prepareStorageIndex -lt $releaseUploadIndex) `
         "Windows 发布入口没有在大运行包上传前完成外置挂载/容量预检。"
     Assert-True ($windowsDeployText.Contains('''$remoteSharePageActivator'' ''$remoteSharePageSnippet''') -and
-        $windowsDeployText.Contains('rmdir ''$remoteToolDir/ops/server'' ''$remoteToolDir/ops'' ''$remoteToolDir''')) `
+        $windowsDeployText.Contains('rmdir ''$remoteToolDir/ops/server'' ''$remoteToolDir/ops'' ''$remoteToolDir''') -and
+        $windowsDeployText.Contains("grep -Fq 'og:title'")) `
         "Windows 正式部署入口没有在最终发布连接内激活分享路由并清理远端工具目录。"
     Assert-True ($windowsDeployText.Contains('''$ServerArtifactRoot''')) `
         "Windows 发布入口没有把固定制品根传给最终服务器发布命令。"
