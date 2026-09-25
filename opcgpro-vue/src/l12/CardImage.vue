@@ -60,7 +60,7 @@ async function refresh() {
     resolutionComplete.value = true
   } else {
     // 外部旧图地址不会被信任为展示源；清单仍在读取时只保留稳定卡位，
-    // 不先闪出 XII 占位图，也不在组件复用时短暂显示上一张卡。
+    // 不先闪出卡背，也不在组件复用时短暂显示上一张卡。
     resolved.value = fallbackCardAsset(props.cardId, props.legacyUrl, props.intent)
     resolutionComplete.value = resolved.value.sources.some(source => source.kind !== 'placeholder')
   }

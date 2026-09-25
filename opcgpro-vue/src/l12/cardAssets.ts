@@ -47,14 +47,9 @@ const SAME_ORIGIN_ROOT = '/card-assets'
 const RETRY_COOLDOWN_MS = 15_000
 const CARD_IMAGE_ID_MARKER = 'l12-card-id:'
 
-export const CARD_IMAGE_PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 336">
-    <rect width="240" height="336" fill="#090d0e"/>
-    <rect x="7" y="7" width="226" height="322" rx="5" fill="none" stroke="#59625f" stroke-width="2"/>
-    <text x="120" y="160" fill="#d5bc70" font-family="Georgia,serif" font-size="36" text-anchor="middle">XII</text>
-    <text x="120" y="190" fill="#78817e" font-family="sans-serif" font-size="12" text-anchor="middle">CARD IMAGE</text>
-  </svg>
-`)}`
+// Missing assets and deliberately concealed cards share the official main-deck
+// back. Never expose a diagnostic image in player-facing card slots.
+export const CARD_IMAGE_PLACEHOLDER = deploymentPath('/assets/l12/card-back-official.png')
 
 let manifestPromise: Promise<CardAssetManifest | null> | null = null
 let manifestValue: CardAssetManifest | null = null

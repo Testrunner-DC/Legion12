@@ -465,7 +465,7 @@ onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewpo
             <img class="disaster-reveal-front" :src="active.preparedImageUrl" :alt="active.card?.name || ''" />
           </span>
         </template>
-        <img v-else-if="active.concealed" src="/assets/l12/card-back-official.png" alt="" />
+        <img v-else-if="active.concealed" :src="CARD_IMAGE_PLACEHOLDER" alt="" />
         <img v-else-if="active.preparedImageUrl" :src="active.preparedImageUrl" :alt="active.card?.name || ''" />
       </div>
     </div>

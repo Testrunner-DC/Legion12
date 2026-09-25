@@ -4,6 +4,7 @@ import type { Card, CardStatusEffect, CardStatusIconKind } from './types'
 import { isHorizontalCardType } from './cardPresentation'
 import { roundCardUrl } from './specialAssets'
 import CardImage from './CardImage.vue'
+import { CARD_IMAGE_PLACEHOLDER } from './cardAssets'
 const props = defineProps<{ card: Card; selected?: boolean; compact?: boolean }>()
 defineEmits<{ select: []; focusCard: [card: Card] }>()
 const displayCost = computed(() => Math.max(0, props.card.playCost ?? props.card.currentCost ?? props.card.cost))
@@ -105,7 +106,7 @@ const keywordRows = computed(() => {
 <template>
   <button class="card-tile" :data-card-instance-id="card.instanceId" :class="[{ selected, tapped: card.tapped, compact, 'horizontal-card': isHorizontalCardType(card.cardType), 'has-status-effects': statusIndicators.length }, `type-${card.cardType}`]" @click="$emit('select')">
     <CardImage v-if="showFace" :card-id="card.cardId" :legacy-url="card.imageUrl" :alt="card.name" intent="board" eager />
-    <img v-else class="covered-card-back" src="/assets/l12/card-back-official.png" alt="盖伏卡牌" />
+    <img v-else class="covered-card-back" :src="CARD_IMAGE_PLACEHOLDER" alt="盖伏卡牌" />
     <span v-if="showFace && card.hasPrintedCost !== false" class="card-cost" :class="costState" :title="displayCost === card.cost ? `印刷费用 ${card.cost}` : `当前费用 ${displayCost}；印刷费用 ${card.cost}`">{{ displayCost }}</span>
     <span v-if="showFace && statusIndicators.length" class="card-status-icons" data-ui-contract="status-icons-wrap-down" aria-label="当前结构化状态">
       <i v-for="status in statusIndicators" :key="`${status.kind}:${status.label}`" class="card-status-icon" :class="`status-${status.kind}`"

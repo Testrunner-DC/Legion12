@@ -135,6 +135,8 @@ const contracts = [
   [s1.length === 133 && s2.length === 115 && st.length === 76 && cards.length === 324 && ids.size === 324, 'S01/S02/ST 必须保持 133+115+76=324 张唯一卡号'],
   [cardAssets.includes('card-assets.manifest.json') && cardAssets.includes('resolveCardAsset') && !cardAssets.includes("kind: 'legacy'") && !cardAssets.includes("{ kind: 'legacy'"), '必须按逻辑卡号解析完整内容寻址图库，且不得重新请求已退役的 /cards 旧卡图'],
   [cardAssets.includes('missingEntryRefreshAfter') && cardAssets.includes('loadCardAssetManifest(true)') && cardAssets.includes("cache: force ? 'reload' : 'no-cache'") && cardAssets.includes('if (manifestPromise)'), '已加载旧清单但缺少新卡号时必须共享一次强制刷新，避免旧页面永久显示占位图或并发重复请求'],
+  [cardAssets.includes("CARD_IMAGE_PLACEHOLDER = deploymentPath('/assets/l12/card-back-official.png')")
+    && !cardAssets.includes('CARD IMAGE') && !cardAssets.includes('data:image/svg+xml'), '缺图与隐藏卡的唯一降级图必须是主牌库官方卡背，不得向玩家显示 XII/CARD IMAGE 诊断占位图'],
   [cardAssets.includes('explicitCdnBaseUrl') && cardAssets.includes('manifestCdnBaseUrl') && cardAssets.indexOf("sourceFor('sameOrigin'") < cardAssets.indexOf("!explicitCdnBaseUrl && manifestCdnBaseUrl") && cardAssets.includes('placeholder'), '未显式启用 CDN 时必须优先使用同源优化资源，清单 CDN 仅作后备'],
   [cardImage.includes('<picture') && cardAssets.includes('detailAvif') && cardAssets.includes('thumbWebp') && cardAssets.includes('boardWebp'), '公共卡图组件必须支持 240/480/960 WebP 与详情 AVIF'],
   [cardImage.includes("resolved.value.orientation === 'landscape'") && cardImage.includes("'l12-card-image--landscape': landscapeImage") && cardImage.includes(":data-orientation=\"resolved.orientation || 'unknown'\"") && !cardImage.includes('rotate(90deg)'), '横版资源必须由公共卡图组件按清单方向保持自然横向，缩略图与详情不得各自旋转'],
@@ -142,7 +144,7 @@ const contracts = [
   [[['ST06-S1', 'trial'], ['ST-DS01', 'destruction'], ['ST-DS02', 'destruction'], ['ST-DS03', 'destruction']].every(([id, type]) => st.some(card => card.id === id && card.cardType === type)) && cardPresentation.includes("'destruction'") && cardPresentation.includes("'trial'"), '四张 ST 横版卡必须进入统一横卡类型规则'],
   [cardImage.includes(":loading=\"eager ? 'eager' : 'lazy'\"") && cardImage.includes('decoding="async"') && cardImage.includes('@error'), '公共卡图组件必须懒加载、异步解码并处理失败降级'],
   [cardImage.includes('failedUrl') && cardImage.includes('activeUrls.includes(failedUrl)') && !cardImage.includes('type="image/webp" :srcset="imageUrl"'), '失败降级必须忽略旧图片节点的迟到事件，且不得用重复 WebP source 跳过同源候选'],
-  [cardAssets.includes('peekCardAsset') && cardImage.includes('resolutionComplete') && cardImage.includes('v-if="imageReady"') && cardImage.includes('l12-card-image__resolving'), 'manifest 已缓存时必须同步使用真实卡图；未解析时只保留稳定暗色框，不得先闪现 XII 占位图'],
+  [cardAssets.includes('peekCardAsset') && cardImage.includes('resolutionComplete') && cardImage.includes('v-if="imageReady"') && cardImage.includes('l12-card-image__resolving'), 'manifest 已缓存时必须同步使用真实卡图；未解析时只保留稳定暗色框，不得先闪现卡背'],
   [consumers.every(path => read(path).includes('CardImage')), '全部 L12 卡图消费入口必须迁移到公共 CardImage'],
   [styledCardImageConsumers.every(path => read(path).includes('.l12-card-image')), '迁移后的 scoped/global 尺寸、横卡旋转与状态滤镜必须命中 CardImage 根节点'],
   [!read('../src/l12/L12DeckEditor.vue').includes('<span v-else>XII</span>'), '牌库编辑器迁移 CardImage 后不得残留失去相邻 v-if 的旧图片兜底分支'],
