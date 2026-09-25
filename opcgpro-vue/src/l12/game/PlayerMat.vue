@@ -497,7 +497,7 @@ function beginCardAbility(card: Card) {
           <small>{{ side === 'my' ? '我方阵营效果' : '对方阵营效果' }}</small>
           <h2>{{ player.factionEffect?.name || '阵营效果' }}</h2>
           <p v-if="!factionActions.length" class="l12-effect-body">{{ player.factionEffect?.effectText || '暂无效果文字' }}</p>
-          <div v-if="factionActions.length" class="faction-effect-actions">
+          <div v-if="factionActions.length" class="faction-effect-actions" data-ui-contract="equal-option-group">
             <button v-for="entry in factionActions" :key="entry.id" class="l12-effect-body l12-effect-body--compact"
               :disabled="!controllable || !actionsEnabled || entry.enabled === false || entry.triggerOnly"
               :title="entry.disabledReason || (entry.triggerOnly ? '仅在触发时点发动' : '')"
@@ -523,7 +523,7 @@ function beginCardAbility(card: Card) {
         <div class="faction-effect-content">
           <small>卡牌效果</small><h2>{{ abilityCardOpen.name }}</h2>
           <p v-if="!activeAbilities(abilityCardOpen).length" class="l12-effect-body">{{ abilityCardOpen.effectText || '暂无效果文字' }}</p>
-          <div class="faction-effect-actions">
+          <div class="faction-effect-actions" data-ui-contract="equal-option-group">
             <button v-for="entry in activeAbilities(abilityCardOpen)" :key="entry.id" class="l12-effect-body l12-effect-body--compact"
               :disabled="!actionsEnabled || entry.enabled === false || entry.triggerOnly"
               :title="entry.disabledReason || (entry.triggerOnly ? '仅在触发时点发动' : '')"
@@ -572,6 +572,7 @@ function beginCardAbility(card: Card) {
 .morale-orb{transition:filter var(--l12-dur-2),box-shadow var(--l12-dur-2),border-color var(--l12-dur-2),background var(--l12-dur-2)}
 .morale-orb.rested-morale,.morale-orb.rested-god-power{animation:l12-orb-rest var(--l12-dur-2) var(--l12-ease-standard)}
 @keyframes l12-orb-rest{0%{scale:1}45%{scale:.85}100%{scale:1}}
+.faction-effect-actions{grid-auto-rows:96px}.faction-effect-actions button{box-sizing:border-box;height:96px;min-height:96px;max-height:96px;overflow:hidden}.faction-effect-actions button :is(strong,span){overflow:hidden}.faction-effect-actions button strong{display:block;text-overflow:ellipsis;white-space:nowrap}.faction-effect-actions button span{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3}
 </style>
 
 <style scoped>

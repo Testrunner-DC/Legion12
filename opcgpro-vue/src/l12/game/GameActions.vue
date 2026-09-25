@@ -18,7 +18,7 @@ function rankedSetupLimitLabel() {
 </script>
 
 <template>
-  <div class="l12-actions">
+  <div class="l12-actions" data-ui-contract="equal-combat-action-group">
     <template v-if="game.phase === 'Mulligan'">
       <p class="mulligan-role">你是{{ game.firstPlayer === me.playerIndex ? '先攻' : '后攻' }}玩家</p>
       <p>
@@ -50,4 +50,5 @@ function rankedSetupLimitLabel() {
 
 <style scoped>
 .mulligan-role{color:#f0d274;font-size:var(--l12-board-copy,13px);font-weight:900}
+.l12-actions>button{box-sizing:border-box;min-width:132px;height:48px;min-height:48px;max-height:48px;padding:7px 10px;line-height:1.25;text-align:center;white-space:normal;overflow:hidden;text-wrap:balance}
 </style>

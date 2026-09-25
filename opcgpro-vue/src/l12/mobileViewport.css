@@ -195,6 +195,7 @@ html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel :is(.prompt-c
 html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel :is(.prompt-card-strip,.graveyard-cards)::-webkit-scrollbar {
   display: none;
 }
+html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-card-strip { padding-block: 2px !important; }
 html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-action-footer {
   flex: 0 0 auto;
   justify-content: space-between;
@@ -204,30 +205,36 @@ html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-actio
 }
 html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-card-candidate:not(.size-featured) {
   display: grid !important;
-  flex-basis: clamp(70px, 15cqw, 102px) !important;
-  width: clamp(70px, 15cqw, 102px) !important;
-  min-width: clamp(70px, 15cqw, 102px) !important;
+  box-sizing: border-box;
+  flex-basis: clamp(78px, 17cqw, 108px) !important;
+  width: clamp(78px, 17cqw, 108px) !important;
+  min-width: clamp(78px, 17cqw, 108px) !important;
+  height: clamp(128px, 46cqh, 190px) !important;
+  min-height: clamp(128px, 46cqh, 190px) !important;
+  max-height: clamp(128px, 46cqh, 190px) !important;
   gap: 3px !important;
   padding: 3px !important;
-  grid-template-rows: auto minmax(2.5em, max-content) minmax(1.45em, max-content);
+  grid-template-rows: minmax(0, 1fr) minmax(2.5em, max-content) minmax(1.45em, max-content);
   align-content: start;
-  align-self: stretch;
+  align-self: start;
+  overflow: hidden;
 }
-html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-card-candidate:not(.horizontal):not(.size-featured) .l12-card-image {
+html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-card-candidate:not(.size-featured) .l12-card-image {
   width: calc(100% - 4px) !important;
-  height: auto !important;
-  aspect-ratio: 5 / 7;
+  height: 100% !important;
+  min-height: 0;
+  aspect-ratio: auto;
   object-fit: contain;
 }
 html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-card-candidate.horizontal:not(.size-featured) {
-  flex-basis: clamp(92px, 20cqw, 108px) !important;
-  width: clamp(92px, 20cqw, 108px) !important;
-  min-width: clamp(92px, 20cqw, 108px) !important;
+  flex-basis: clamp(78px, 17cqw, 108px) !important;
+  width: clamp(78px, 17cqw, 108px) !important;
+  min-width: clamp(78px, 17cqw, 108px) !important;
 }
 html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-card-candidate.horizontal:not(.size-featured) .l12-card-image {
   width: calc(100% - 4px) !important;
-  height: auto !important;
-  aspect-ratio: 8 / 5;
+  height: 100% !important;
+  aspect-ratio: auto;
   object-fit: contain;
 }
 html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-card-candidate__name {

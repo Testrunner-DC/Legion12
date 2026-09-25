@@ -46,7 +46,7 @@ const abilities = computed<AbilityEntry[]>(() => {
             <CardImage card-id="S02-01S1" legacy-url="/cards/faces/天廷/哮天犬·稚.png" alt="哮天犬·稚" intent="board" eager />
             <div><strong>【杨戬专属】哮天犬·稚</strong><p class="l12-effect-body l12-effect-body--compact">我方 回合1次 我方士气因主宰效果返还4张及以上时，&lt;哮天犬·稚&gt;可在前排活跃登场，视为1张兵力2000的【特殊】军团。\n阵亡时 可从士气牌库追加1张休整的士气。</p></div>
           </article>
-          <div v-if="abilities.length" class="master-abilities">
+          <div v-if="abilities.length" class="master-abilities" data-ui-contract="equal-option-group">
             <button v-for="entry in abilities" :key="entry.id"
               :disabled="!canActivate || busy || entry.enabled === false || entry.triggerOnly"
               :title="entry.disabledReason || (entry.triggerOnly ? '仅在触发时点发动' : '')"
@@ -68,4 +68,5 @@ const abilities = computed<AbilityEntry[]>(() => {
 @media(max-width:650px){.master-dialog{grid-template-columns:1fr;overflow:auto}.master-dialog>.l12-card-image{width:140px;height:196px;margin:auto}.master-overlay.minimized{right:10px;bottom:60px}}
 .master-overlay.mobile-safe-overlay{z-index:2147483605;inset:var(--l12-viewport-top,0px) auto auto var(--l12-viewport-left,0px);box-sizing:border-box;width:var(--l12-viewport-width,100vw);height:var(--l12-viewport-height,100vh);padding:8px}.master-overlay.mobile-safe-overlay .master-dialog{width:min(560px,100%);max-height:100%;grid-template-columns:118px minmax(0,1fr);gap:12px;padding:13px;overflow:auto}.master-overlay.mobile-safe-overlay .master-dialog>.l12-card-image{width:118px;height:165px}.master-overlay.mobile-safe-overlay.minimized{inset:auto calc(var(--l12-viewport-left,0px) + 8px) calc(var(--l12-viewport-top,0px) + 8px) auto;width:auto;height:auto;padding:0}
 .master-overlay.mobile-safe-overlay.minimized{inset:auto calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 110px) calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + var(--l12-mobile-hand-h,64px) + 5px) auto}
+.master-abilities{grid-auto-rows:96px}.master-abilities button{box-sizing:border-box;height:96px;min-height:96px;max-height:96px;overflow:hidden}.master-abilities strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.master-abilities span{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:3}
 </style>

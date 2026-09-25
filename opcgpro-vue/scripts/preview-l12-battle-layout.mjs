@@ -119,13 +119,21 @@ if(params.has('game-over')){
 }
 if(params.has('card-choice')){
  const choiceCount=Math.max(1,Math.min(20,Number(params.get('choice-count')||6)))
- const choiceCards=Array.from({length:choiceCount},(_,index)=>legions[index%legions.length])
+ const choiceCards=Array.from({length:choiceCount},(_,index)=>params.has('mixed-orientation')&&index%2===1?disasters[index%disasters.length]:legions[index%legions.length])
  const choices=choiceCards.map((cardDefinition,index)=>'choice-'+index)
  const mixedAvailability=params.has('mixed-availability')
  const data={uiPattern:'card-choice',...(mixedAvailability?{cardSelection:'true',displayCardIds:choices.join('|')}:{})}
  for(const [index,cardDefinition] of choiceCards.entries()){const key='choice-'+index;data[key+':cardId']=cardDefinition.id;data[key+':name']=(index%3===0?'完整长卡名·': '')+cardDefinition.nameZh;data[key+':cardType']=cardDefinition.cardType;data[key+':effect']=cardDefinition.effect||''}
  const validChoices=mixedAvailability?choices.filter((_,index)=>index%3!==1):choices
  l12State.game.prompts=[{promptId:'fixture-card-choice',playerIndex:0,kind:'option',text:'从候选卡牌中选择 1 张',validChoices,minChoose:1,maxChoose:1,choiceLabels:Object.fromEntries(choices.map((choice,index)=>[choice,choiceCards[index].nameZh])),data,createdRevision:1,controller:0}]
+}
+if(params.has('option-fixture')){
+ const choices=['short','long','disabled','skip']
+ l12State.game.prompts=[{promptId:'fixture-equal-options',playerIndex:0,kind:'option',text:'请选择一个语义平行的处理方式',validChoices:choices,minChoose:0,maxChoose:1,choiceLabels:{short:'发动',long:'发动这项文字明显更长但仍然属于同级的效果选项',disabled:'当前条件不足的同级选项',skip:'不发动'},data:{uiPattern:'effect-options','disabledChoice:disabled':'当前条件不足，保持尺寸但不可选择'},createdRevision:1,controller:0}]
+}
+if(params.has('response-fixture')){
+ const choices=['stack-a','stack-b','stack-c']
+ l12State.game.prompts=[{promptId:'fixture-response-targets',playerIndex:0,kind:'response-target',text:'选择要响应的效果',validChoices:choices,minChoose:1,maxChoose:1,choiceLabels:{},data:{'stack-a':'短来源','stack-b':'同名来源：第二段\\n公开目标：长名称军团与附加状态','stack-c':'第三个来源：包含更多语义说明但尺寸必须一致'},createdRevision:1,controller:0}]
 }
 if(params.has('disaster-choice')){
  const choiceCount=Math.max(1,Math.min(20,Number(params.get('choice-count')||8)))
@@ -141,7 +149,7 @@ if(params.has('disaster-choice')){
 }
 if(params.has('morale-payment')){
  const runeChoices=Array.from({length:Math.max(0,Math.min(players[0].specialZones.runes||0,Number(params.get('rune-usable')||0)))},(_,index)=>'rune:'+(index+1))
- const validChoices=[...runeChoices,...players[0].morale.slice(0,5).map(item=>item.instanceId)]
+ const validChoices=[...runeChoices,...players[0].morale.slice(0,5).map(item=>item.instanceId),...(params.has('payment-actions')?['skip','cancel']:[])]
  l12State.game.prompts=[{promptId:'fixture-morale-payment',playerIndex:0,kind:'resource-payment',text:'选择2枚士气支付',validChoices,minChoose:2,maxChoose:2,choiceLabels:{},data:{choiceMode:'resource-payment'},createdRevision:1,controller:0}]
 }
 if(params.has('action-fixture')){

@@ -346,12 +346,12 @@ const contracts = [
     && activateSharePages.includes('include /etc/nginx/snippets/legion12-share-pages.conf;')
     && windowsDeploy.includes('$sharePageActivator') && windowsDeploy.includes('$sharePageSnippet'),
     '主页和资讯分享必须由服务端基于已发布快照注入完整OG信息，正式服与测试路径都要接入动态HTML且由部署流程启用'],
-  [board.includes('data-ui-contract="opponent-status-safe-lane"') && board.includes('data-ui-contract="player-status-safe-lane"')
+  [(board.match(/data-ui-contract="shared-external-clock-track"/g) ?? []).length === 2
     && board.includes('opponent-player-clock') && board.includes('my-player-clock')
     && board.includes(':active="game.activePlayer === viewEnemy.playerIndex"') && board.includes(':active="game.activePlayer === viewMe.playerIndex"')
-    && board.includes('--l12-clock-lane-height:112px')
-    && board.includes('.board-player-clock{position:relative;right:auto;top:auto;bottom:auto;transform:none}')
-    && board.includes('height:var(--l12-clock-lane-height)!important') && board.includes('overflow:hidden;pointer-events:none')
+    && board.includes('--l12-clock-track-width:196px')
+    && board.includes('.board-player-clock{position:relative;right:auto;top:auto;bottom:auto;width:100%;max-width:var(--l12-clock-track-width);transform:none}')
+    && board.includes('justify-self:start;overflow:hidden;pointer-events:none')
     && board.includes("'timed-board': Boolean(l12State.rankedClock)") && board.includes('.board-center>.l12-hand{position:relative;z-index:40;box-sizing:border-box;width:calc(100% - 400px)')
     && !globalStyle.includes("content:'回合玩家'"), '双方回合标识与常驻计时必须位于棋盘上下的普通流安全轨道，避开双方手牌和操作条，当前回合只能控制高亮'],
   [playerTurnClock.includes('data-ui-contract="persistent-player-turn-clock"') && playerTurnClock.includes('总时') && playerTurnClock.includes('本次') && playerTurnClock.includes('重连')
@@ -405,17 +405,20 @@ const contracts = [
     && board.includes('grid-template-columns:340px 92px minmax(0,1fr) 320px')
     && board.includes('.right-rail{display:grid;grid-template-rows:auto minmax(0,1fr) auto')
     && board.includes('.right-rail .action-panel{max-height:300px;overflow:auto}')
-    && board.includes('grid-template-rows:var(--l12-hand-lane-height) var(--l12-clock-lane-height) minmax(0,1fr) var(--l12-clock-lane-height) var(--l12-hand-lane-height)')
+    && board.includes('--l12-clock-track-width:196px')
+    && board.includes('grid-template-rows:var(--l12-hand-lane-height) minmax(0,1fr) var(--l12-hand-lane-height)')
+    && board.includes('.board-center>.l12-hand,.board-center>.board-status-lane,.board-center>.felt-board{grid-column:1}')
+    && (board.match(/data-ui-contract="shared-external-clock-track"/g) ?? []).length === 2
     && (board.match(/class="opponent-hand"/g) ?? []).length === 2
     && handArea.includes('const cardWidth = computed(() => 114.4)') && handArea.includes('.l12-hand .hand-card-wrap .card-tile{width:114.4px;height:160.6px;flex-basis:114.4px;border:1px solid transparent')
     && handArea.includes('.l12-hand.hidden .card-back{box-sizing:border-box;width:114.4px;height:160.6px}')
     && board.includes('align-self:stretch;justify-self:center;transform:translateX(64px)')
-    && board.includes('.board-center>.opponent-hand{grid-row:1}') && board.includes('.board-center>.l12-hand:last-child{grid-row:5}')
+    && board.includes('.board-center>.opponent-hand,.opponent-status-lane{grid-row:1}') && board.includes('.my-status-lane,.board-center>.l12-hand:last-child{grid-row:3}')
     && !board.includes('.battlefield-half.opponent-half{transform:rotate(180deg)')
     && !board.includes('.opponent-hand{transform:rotate(180deg)'), '对局舞台必须保持16:9主布局；独立窄阶段列与左、中、右区不得互相侵入，双方手牌和文字不得倒置'],
   [board.includes('data-ui-contract="left-current-disaster"') && !board.includes('<h3>当前天灾</h3>')
     && board.includes('class="left-card-column"') && board.includes('class="grand-panel phase-column"')
-    && board.includes('.phase-column{display:flex;min-width:0;min-height:0;margin-block:242px;')
+    && board.includes('.phase-column{display:flex;min-width:0;min-height:0;margin-block:166px;')
     && board.indexOf('data-ui-contract="left-current-disaster"') < board.indexOf('data-ui-contract="selected-card-inspector-anchor"')
     && board.includes('data-ui-contract="phase-disaster-value"') && !board.includes('<h3>阶段条</h3>')
     && board.includes('<PhaseTrack vertical ') && board.includes('<span class="board-midline-anchor" aria-hidden="true" />')
@@ -758,7 +761,8 @@ const contracts = [
   [prompt.includes("prompt.value?.kind === 'option'") && prompt.includes('effect-option-list')
     && prompt.includes('orderedEffectChoices') && prompt.includes('declineChoices')
     && prompt.includes('.prompt-choices.effect-option-list{display:grid')
-    && prompt.includes('grid-template-columns:repeat(auto-fit,minmax(150px,1fr))')
+    && prompt.includes('grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr))')
+    && prompt.includes('grid-auto-rows:82px')
     && prompt.includes('overflow:visible'), '效果/费用分支必须按原顺序自适应同屏排列，三项不得依赖横向拖动，且不发动固定在最后'],
   [prompt.includes("booleanData(id, 'hasPrintedCost')") && prompt.includes('hasPrintedCost: detail.hasPrintedCost') && replayModel.includes("trait.endsWith('专属')"), '衍生卡在弹框与历史回放中不得伪造不存在的印刷费用'],
   [cardTile.includes('Math.max(0, props.card.playCost')
@@ -866,7 +870,7 @@ const contracts = [
   [handArea.includes('data-ui-contract="field-sized-safe-hand"') && handArea.includes('const cardWidth = computed(() => 114.4)')
     && handArea.includes('width:114.4px;height:160.6px;flex-basis:114.4px')
     && board.includes('.formation-slot .card-tile.tapped){width:114.4px;height:160.6px;flex-basis:114.4px}')
-    && board.includes('.board-center{--l12-hand-lane-height:160px;--l12-clock-lane-height:112px;display:grid;min-height:0;')
+    && board.includes('.board-center{--l12-hand-lane-height:160px;--l12-clock-track-width:196px;display:grid;min-height:0;')
     && board.includes('width:calc(100% - 400px)') && board.includes('z-index:40')
     && handArea.includes('overflow-x:auto') && handArea.includes('ResizeObserver'), '双方手牌必须与场上军团同尺寸，限制在计时框与额外区之间并高于场面可点击，多数量时按实测宽度扇形收拢或横向滚动'],
   [board.includes('v-if="l12State.spectating" class="spectator-hand" hidden :count="viewMe.handCount || 0"')

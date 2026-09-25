@@ -1016,6 +1016,10 @@
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb) { width:var(--l12-mobile-morale-orb) !important; min-width:var(--l12-mobile-morale-orb) !important; height:var(--l12-mobile-morale-orb) !important; min-height:var(--l12-mobile-morale-orb) !important; }
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb img) { width:calc(var(--l12-mobile-morale-orb) - 4px) !important; height:calc(var(--l12-mobile-morale-orb) - 4px) !important; }
 .mobile-landscape-board .board-center { grid-template-rows:0 0 minmax(0,1fr) 0 var(--l12-mobile-hand-h) !important; }
+.mobile-landscape-board .board-center>.opponent-hand,.mobile-landscape-board .opponent-status-lane { grid-row:1 !important; }
+.mobile-landscape-board .felt-board { grid-row:3 !important; }
+.mobile-landscape-board .my-status-lane { grid-row:4 !important; }
+.mobile-landscape-board .board-center>.l12-hand:last-child { grid-row:5 !important; }
 .mobile-landscape-board .board-center > .l12-hand:last-child { box-sizing:border-box; height:var(--l12-mobile-hand-h) !important; min-height:var(--l12-mobile-hand-h) !important; margin-top:0 !important; padding:4px 4px 2px !important; align-items:flex-start !important; overflow-x:auto !important; overflow-y:hidden !important; }
 .mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap),
 .mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back),
@@ -1116,3 +1120,8 @@
 .mobile-player-details-list :deep(.battle-player-identity dd) { font-size:10px; }
 .mobile-player-details-list :deep(.ranked-identity-badge.compact) { --ranked-tier-badge-font-size:9px; --ranked-title-badge-font-size:9px; max-width:100%; }
 .mobile-player-details-list :deep(.ranked-identity-badge.compact>span) { min-width:0; overflow-wrap:anywhere; white-space:normal; }
+
+/* Every peer in a payment/choice group owns the same hit box. State and copy
+   may change its paint, never its geometry. */
+.mobile-morale-choice { box-sizing:border-box; height:66px; min-height:66px; max-height:66px; overflow:hidden; }
+.mobile-morale-actions>button { box-sizing:border-box; width:112px; min-width:112px; max-width:112px; height:44px; min-height:44px; max-height:44px; padding:6px 8px; line-height:1.2; text-align:center; white-space:normal; overflow:hidden; text-wrap:balance; }

@@ -169,7 +169,7 @@ function answerDraw(accept: boolean) {
         <header><div><small>MATCH TOOLS</small><h2 id="battle-tools-title">对局工具</h2></div><button type="button" aria-label="关闭对局工具" @click="showTools = false">×</button></header>
         <p class="connection" role="status"><i :class="l12State.status"/>{{ connection }}</p>
 
-        <div v-if="toolView === 'menu'" class="tool-menu">
+        <div v-if="toolView === 'menu'" class="tool-menu" data-ui-contract="equal-option-group">
           <button type="button" @click="openBugFeedback">Bug反馈<span>打开普通反馈入口</span></button>
           <button type="button" :disabled="!governance?.canRequestDraw || busy" @click="toolView = 'draw'; notice = ''">申请平局<span>{{ governance?.drawUnavailableReason || '本局双方合计仅可申请一次' }}</span></button>
           <button type="button" :disabled="!governance?.opponentAccountId || busy" @click="blockOpponent">屏蔽对手<span>仅屏蔽好友申请，不影响本局或匹配</span></button>
@@ -181,13 +181,13 @@ function answerDraw(accept: boolean) {
         <form v-else-if="toolView === 'draw'" @submit.prevent="submitDrawRequest">
           <label>申请原因<textarea v-model="drawReason" maxlength="1000" rows="5" placeholder="输入所出现的Bug给对手申请平局"/></label>
           <p>真实双人进行中对局可申请，排位同样允许；每场对局双方合计仅可发起一次，无论接受或拒绝都不能再次申请。对方仍可响应已经收到的申请。</p>
-          <footer><button type="button" @click="toolView = 'menu'">返回</button><button class="primary" :disabled="busy || !drawReason.trim()" type="submit">{{ busy ? '提交中…' : '发送申请' }}</button></footer>
+          <footer data-ui-contract="equal-action-group"><button type="button" @click="toolView = 'menu'">返回</button><button class="primary" :disabled="busy || !drawReason.trim()" type="submit">{{ busy ? '提交中…' : '发送申请' }}</button></footer>
         </form>
 
         <form v-else @submit.prevent="submitPlayerReport">
           <label>举报内容<textarea v-model="reportDescription" maxlength="5000" rows="7" placeholder="请描述对手行为、发生时间与可核查细节" required/></label>
           <p>举报将独立进入“对局治理”，不会混入普通Bug反馈。</p>
-          <footer><button type="button" @click="toolView = 'menu'">返回</button><button class="primary" :disabled="busy || !reportDescription.trim()" type="submit">{{ busy ? '提交中…' : '提交举报' }}</button></footer>
+          <footer data-ui-contract="equal-action-group"><button type="button" @click="toolView = 'menu'">返回</button><button class="primary" :disabled="busy || !reportDescription.trim()" type="submit">{{ busy ? '提交中…' : '提交举报' }}</button></footer>
         </form>
         <p v-if="notice" class="notice" role="status">{{ notice }}</p>
       </section>
@@ -198,7 +198,7 @@ function answerDraw(accept: boolean) {
         <header><div><small>DRAW REQUEST</small><h2 id="draw-response-title">{{ drawRequest.requesterName }} 申请平局</h2></div><button type="button" aria-label="暂时关闭平局申请" @click="responseOpen = false">×</button></header>
         <p id="draw-response-reason" class="draw-reason">{{ drawRequest.reason }}</p>
         <p>接受后服务器将权威结束本局为平局；拒绝则继续对局。</p>
-        <footer><button type="button" :disabled="busy" @click="answerDraw(false)">拒绝并继续</button><button type="button" class="primary" :disabled="busy" @click="answerDraw(true)">接受平局</button></footer>
+        <footer data-ui-contract="equal-action-group"><button type="button" :disabled="busy" @click="answerDraw(false)">拒绝并继续</button><button type="button" class="primary" :disabled="busy" @click="answerDraw(true)">接受平局</button></footer>
         <p v-if="notice" class="notice" role="status">{{ notice }}</p>
       </section>
     </div>
@@ -214,4 +214,6 @@ function answerDraw(accept: boolean) {
 .tool-menu>button span{display:block;line-height:1.45;text-align:left;overflow-wrap:anywhere}
 .tool-menu>button.attention,.tool-menu>p{grid-column:1/-1}
 @media(max-width:700px){.tool-menu{grid-template-columns:1fr}.tool-menu>button.attention,.tool-menu>p{grid-column:auto}}
+.tool-menu>button{box-sizing:border-box;height:86px;min-height:86px;max-height:86px;overflow:hidden}.tool-menu>button span{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2}.tool-menu>button.attention{grid-column:auto}.tool-menu>p{grid-column:1/-1}
+.battle-dialog footer button{box-sizing:border-box;width:132px;min-width:132px;max-width:132px;height:48px;min-height:48px;max-height:48px;padding:7px 10px;line-height:1.25;text-align:center;white-space:normal;overflow:hidden;text-wrap:balance}
 </style>
