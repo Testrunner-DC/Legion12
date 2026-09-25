@@ -2293,7 +2293,11 @@ public sealed partial class L12GameEngine
                     && card.InstanceId != source.InstanceId).ToArray();
                 if (costs.Length != segment.Cost || costs.Select(card => card.InstanceId)
                         .Distinct(StringComparer.OrdinalIgnoreCase).Count() != segment.Cost) return false;
-                foreach (var cost in costs) MoveHandToGrave(player, cost.InstanceId, causedByEffect: false);
+                // 费用在入栈前支付，此时还没有可供 MoveHandToGrave 反查的结算堆叠。
+                // 必须显式携带来源，才能让“本回合因主宰弃置过手牌”这类条件读取到
+                // 阿尔忒弥斯等经公共复合费用协议支付的真实主宰弃牌。
+                foreach (var cost in costs)
+                    MoveHandToGrave(player, cost.InstanceId, causedByEffect: false, source);
                 AddEvent("cost", controller, $"〈{source.Name}〉弃置{segment.Cost}张手牌作为发动费用",
                     [source, .. costs]);
                 return true;

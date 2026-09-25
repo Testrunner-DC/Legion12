@@ -71,6 +71,7 @@ const cardPresentation = read('../src/l12/cardPresentation.ts')
 const l12Types = read('../src/l12/types.ts')
 const cardArchive = read('../src/l12/CardArchive.vue')
 const mobileDeferredCardImage = read('../src/l12/MobileDeferredCardImage.vue')
+const cardImage = read('../src/l12/CardImage.vue')
 const cardDetailContent = read('../src/l12/CardDetailContent.vue')
 const cardArchiveVersions = read('../src/l12/cardArchiveVersions.ts')
 const galleryMarkup = cardArchive.match(/<template v-else>([\s\S]*?)<div v-if="!filteredGallery\.length"/)?.[1] ?? ''
@@ -178,6 +179,14 @@ const endingMaintenance = maintenanceCountdown({ enabled: true, message: '维护
 const openEndedMaintenance = maintenanceCountdown({ enabled: true, message: '维护提示', broadcastMessage: '' }, maintenanceNow)
 
 const contracts = [
+  [app.match(/<Transition name="page-slide">/g)?.length === 2
+    && !/<Transition name="page-slide" mode="out-in">/.test(app),
+    '普通站点切页不得使用可被连续导航中断为空白的 out-in 过渡；宽屏与横屏壳层必须同样保留新旧页面交接'],
+  [cardImage.includes('MAX_SOURCE_RETRIES = 2')
+    && cardImage.includes('sourceRetryCounts')
+    && cardImage.includes("activeSource.value.kind !== 'placeholder'")
+    && cardImage.includes("resolved.value.sources.some(source => source.kind !== 'placeholder')"),
+    '卡图同源请求短暂失败时必须原地重试，不能一次失败后在当前页面永久落到占位图'],
   [mainEntry.includes("import './l12/site/uiSystem.css'")
     && shell.includes('data-l12-ui-system="site-v1"')
     && siteUiSystem.includes('--l12-ui-panel:') && siteUiSystem.includes('--l12-ui-control:')

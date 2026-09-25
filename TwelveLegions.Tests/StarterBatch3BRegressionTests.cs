@@ -954,6 +954,7 @@ public sealed class StarterBatch3BRegressionTests
 
         Assert.True(player.Morale[0].Tapped);
         Assert.Contains(discard, player.Graveyard);
+        Assert.True(player.HandDiscardedByMasterThisTurn);
         Assert.Equal(attacker.BaseTroops + 2000, attacker.Troops);
         Assert.Contains(game.State.Events, entry => entry.Type == "cost"
             && entry.Text.Contains("傲慢之罪", StringComparison.Ordinal));

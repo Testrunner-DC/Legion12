@@ -340,8 +340,7 @@ public sealed partial class L12GameEngine
                 break;
             case "athenaFrontBuff":
                 var discard = player.Hand.First(card => card.InstanceId == values[0]);
-                MoveHandToGrave(player, discard.InstanceId, causedByEffect: false);
-                player.HandDiscardedByMasterThisTurn = true;
+                MoveHandToGrave(player, discard.InstanceId, causedByEffect: false, source);
                 AddEvent("cost", controller, "雅典娜弃置1张手牌", source, discard);
                 break;
             case "nuadaReadyMorale":
@@ -919,7 +918,7 @@ public sealed partial class L12GameEngine
             {
                 var discard = player.Hand.First(card => card.InstanceId ==
                     activation.DeclaredValues.GetValueOrDefault("discardCost", []).Single());
-                MoveHandToGrave(player, discard.InstanceId, causedByEffect: false);
+                MoveHandToGrave(player, discard.InstanceId, causedByEffect: false, source);
             }
             AddEvent("cost", candidate.Controller,
                 mode == "mode:morale"
@@ -929,7 +928,7 @@ public sealed partial class L12GameEngine
         else if (plan == "akhenaten-death-heal")
         {
             var discard = activation.DeclaredValues.GetValueOrDefault("discardCost", []).Single();
-            MoveHandToGrave(player, discard, causedByEffect: false);
+            MoveHandToGrave(player, discard, causedByEffect: false, source);
             AddEvent("cost", candidate.Controller, "阿肯那顿弃置1张手牌", source);
         }
         else if (plan == "hidden-pass-summon")

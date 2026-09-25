@@ -1791,8 +1791,7 @@ public sealed partial class L12GameEngine
             }
             else
             {
-                var choices = player.Library.Where(card => card.CardType == "tactic"
-                        && L12StructuredCardRules.SearchCostAtMost(card, 4) && !IsCounterTactic(card.CardId))
+                var choices = player.Library.Where(IsMerlinSearchCandidate)
                     .Select(card => card.InstanceId).ToList();
                 if (choices.Count == 0)
                 {
@@ -2032,7 +2031,7 @@ public sealed partial class L12GameEngine
             case "s2-merlin-search":
             {
                 var selected = player.Library.FirstOrDefault(card => card.InstanceId == chosen[0]
-                    && card.CardType == "tactic" && L12StructuredCardRules.CurrentCostAtMost(card, 4) && !IsCounterTactic(card.CardId));
+                    && IsMerlinSearchCandidate(card));
                 if (selected is not null)
                 {
                     player.Library.Remove(selected);
@@ -3098,6 +3097,11 @@ public sealed partial class L12GameEngine
 
     private static bool IsYingzhengEnterCostCandidate(L12CardInstance card)
         => card.CardType == "legion" && L12StructuredCardRules.CurrentCostEquals(card, 8);
+
+    private bool IsMerlinSearchCandidate(L12CardInstance card)
+        => card.CardType == "tactic"
+            && L12StructuredCardRules.SearchCostAtMost(card, 4)
+            && !IsCounterTactic(card.CardId);
 
     private static L12CardInstance[] YingzhengEnterCostCandidates(L12PlayerState player)
         => player.Hand.Where(IsYingzhengEnterCostCandidate).ToArray();

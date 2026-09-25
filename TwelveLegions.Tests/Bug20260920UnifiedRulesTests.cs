@@ -163,6 +163,13 @@ public sealed class Bug20260920UnifiedRulesTests
         Assert.Equal("s2-merlin-search", search.Data["action"]);
         Assert.Contains(gift.InstanceId, search.ValidChoices);
         Assert.False(gift.HasPrintedCost);
+
+        Resolve(game, gift.InstanceId);
+
+        Assert.Contains(gift, player.Hand);
+        Assert.DoesNotContain(gift, player.Library);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Contains(game.State.Events, entry => entry.Text.Contains("梅林展示〈自然馈赠〉并加入手牌", StringComparison.Ordinal));
     }
 
     [Fact]

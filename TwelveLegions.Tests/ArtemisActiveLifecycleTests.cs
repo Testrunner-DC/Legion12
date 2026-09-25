@@ -1,3 +1,4 @@
+using System.Reflection;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -87,6 +88,49 @@ public sealed class ArtemisActiveLifecycleTests
     private static L12ActionEvent Result(L12GameEngine game)
         => Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
             && entry.Cards.Any(card => card.CardId == "S02-05M1"));
+
+    private static object? Invoke(L12GameEngine game, string method, params object?[] args)
+        => typeof(L12GameEngine).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(game, args);
+
+    private static void QueueTrigger(L12GameEngine game, L12CardInstance source, string trigger = "enter")
+        => Invoke(game, "QueueOrPushTriggeredEffect", 0, source, trigger, $"【{trigger}】效果", null,
+            new Dictionary<string, string>());
+
+    [Fact]
+    [Trait("L12Evidence", "cards:S02-05M1,ST05-07")]
+    [Trait("L12Bug", "BUG-20260925-ANTINOUS-MASTER-DISCARD")]
+    public void ArtemisDiscardPaymentEnablesAntinousInTheSameTurn()
+    {
+        var game = Create(92501);
+        var player = game.State.Players[0];
+        var buffTarget = Card("S02-0502", "artemis-antinous-buff-target", 3);
+        var discard = Card("S02-0001", "artemis-antinous-discard");
+        player.Field[0][0] = buffTarget;
+        player.Hand.Add(discard);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "artemisBuff")).Accepted);
+        ResolveOnly(game, "pay:discard");
+        ResolveOnly(game, discard.InstanceId);
+        ResolveOnly(game, buffTarget.InstanceId);
+        ResolveOnly(game, "buff:strong");
+        PassResponses(game);
+
+        Assert.True(player.HandDiscardedByMasterThisTurn);
+
+        var antinous = Card("ST05-07", "artemis-antinous-source");
+        var restedOlympus = Card("ST05-01", "artemis-antinous-rested");
+        restedOlympus.Tapped = true;
+        player.Field[0][1] = antinous;
+        player.Field[0][2] = restedOlympus;
+        QueueTrigger(game, antinous);
+        ResolveOnly(game, "mode:use");
+        ResolveOnly(game, restedOlympus.InstanceId);
+        PassResponses(game);
+
+        Assert.False(restedOlympus.Tapped);
+    }
 
     [Fact]
     public void PrintedSecondAbilityUsesOneStructuredSceneWithTwoActualResultBranches()

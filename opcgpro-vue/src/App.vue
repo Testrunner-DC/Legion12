@@ -90,11 +90,11 @@ watch(() => [platformState.token, authState.verified] as const, ([token, verifie
   <div id="l12-landscape-teleports" />
   <div v-if="landscapeExperience" class="l12-landscape-surface" data-l12-landscape-canvas>
     <router-view v-if="immersive" v-slot="{ Component, route: viewRoute }"><Transition name="page-fade" mode="out-in"><component :is="Component" :key="viewRoute.path" /></Transition></router-view>
-    <SiteShell v-else><router-view v-slot="{ Component, route: viewRoute }"><Transition name="page-slide" mode="out-in"><component :is="Component" :key="viewRoute.path" /></Transition></router-view></SiteShell>
+    <SiteShell v-else><router-view v-slot="{ Component, route: viewRoute }"><Transition name="page-slide"><component :is="Component" :key="viewRoute.path" /></Transition></router-view></SiteShell>
   </div>
   <template v-else>
     <router-view v-if="immersive" v-slot="{ Component, route: viewRoute }"><Transition name="page-fade" mode="out-in"><component :is="Component" :key="viewRoute.path" /></Transition></router-view>
-    <SiteShell v-else><router-view v-slot="{ Component, route: viewRoute }"><Transition name="page-slide" mode="out-in"><component :is="Component" :key="viewRoute.path" /></Transition></router-view></SiteShell>
+    <SiteShell v-else><router-view v-slot="{ Component, route: viewRoute }"><Transition name="page-slide"><component :is="Component" :key="viewRoute.path" /></Transition></router-view></SiteShell>
   </template>
   <GlobalBugFeedback />
   <FriendRequestNotifications />

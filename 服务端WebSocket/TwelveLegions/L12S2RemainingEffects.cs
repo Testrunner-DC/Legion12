@@ -287,7 +287,8 @@ public sealed partial class L12GameEngine
                 {
                     discarded = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == discardId);
                     if (discarded is null) return CommandResult.Reject("弃置的手牌已失效");
-                    player.Hand.Remove(discarded); player.Graveyard.Add(discarded);
+                    if (!MoveHandToGrave(player, discarded.InstanceId, causedByEffect: false, source))
+                        return CommandResult.Reject("弃置的手牌已失效");
                 }
                 else return CommandResult.Reject("支付方式不合法");
                 RecordLimitedActiveAbilityUse(player, source, ability);

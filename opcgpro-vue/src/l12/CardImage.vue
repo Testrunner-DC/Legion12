@@ -34,11 +34,15 @@ const emit = defineEmits<{
 
 const cachedAsset = peekCardAsset(props.cardId, props.legacyUrl, props.intent)
 const resolved = ref(cachedAsset ?? fallbackCardAsset(props.cardId, props.legacyUrl, props.intent))
-const resolutionComplete = ref(Boolean(cachedAsset || props.legacyUrl))
+const resolutionComplete = ref(Boolean(cachedAsset
+  || resolved.value.sources.some(source => source.kind !== 'placeholder')))
 const sourceIndex = ref(0)
 const highRequested = ref(false)
 const avifDisabled = ref(false)
 const renderKey = ref(0)
+const sourceRetryCounts = new Map<string, number>()
+const MAX_SOURCE_RETRIES = 2
+const SOURCE_RETRY_DELAY_MS = 300
 
 const activeSource = computed(() => resolved.value.sources[sourceIndex.value]
   ?? { kind: 'placeholder', lowWebp: CARD_IMAGE_PLACEHOLDER, webp: CARD_IMAGE_PLACEHOLDER } as CardAssetSource)
@@ -54,10 +58,11 @@ async function refresh() {
   if (cached) {
     resolved.value = cached
     resolutionComplete.value = true
-  } else if (!props.legacyUrl) {
-    // Keep the stable card-sized shell, but never expose the XII placeholder
-    // while a real manifest-backed image is still resolving.
-    resolutionComplete.value = false
+  } else {
+    // 外部旧图地址不会被信任为展示源；清单仍在读取时只保留稳定卡位，
+    // 不先闪出 XII 占位图，也不在组件复用时短暂显示上一张卡。
+    resolved.value = fallbackCardAsset(props.cardId, props.legacyUrl, props.intent)
+    resolutionComplete.value = resolved.value.sources.some(source => source.kind !== 'placeholder')
   }
   const next = await resolveCardAsset(props.cardId, props.legacyUrl, props.intent)
   if (expected !== `${props.cardId}\n${props.legacyUrl ?? ''}\n${props.intent}`) return
@@ -66,6 +71,7 @@ async function refresh() {
   sourceIndex.value = 0
   highRequested.value = false
   avifDisabled.value = false
+  sourceRetryCounts.clear()
   renderKey.value += 1
 }
 
@@ -104,6 +110,17 @@ function onError(event: Event) {
   if (avifUrl.value) {
     avifDisabled.value = true
     renderKey.value += 1
+    return
+  }
+  const retryKey = `${activeSource.value.kind}\n${imageUrl.value}`
+  const retryCount = sourceRetryCounts.get(retryKey) ?? 0
+  if (activeSource.value.kind !== 'placeholder' && retryCount < MAX_SOURCE_RETRIES) {
+    sourceRetryCounts.set(retryKey, retryCount + 1)
+    const expectedUrl = imageUrl.value
+    window.setTimeout(() => {
+      if (imageUrl.value !== expectedUrl) return
+      renderKey.value += 1
+    }, SOURCE_RETRY_DELAY_MS * (retryCount + 1))
     return
   }
   if (sourceIndex.value < resolved.value.sources.length - 1) {
