@@ -284,6 +284,69 @@ public sealed class AtomicReviewBatch6ERegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S01-0305")]
+    [Trait("L12Evidence", "entry:death-colon-cost-revival-resolution")]
+    public void BjornRevivesRestedAfterItsPrepaidCostsResolve()
+    {
+        var game = Create(79111);
+        var player = game.State.Players[0];
+        var bjorn = Card("S01-0305", "batch6e-bjorn-resolve");
+        var costs = Enumerable.Range(1, 4)
+            .Select(index => Card($"S01-000{index}", $"batch6e-bjorn-resolve-cost-{index}"))
+            .ToArray();
+        player.Field[0][0] = bjorn;
+        player.Graveyard.AddRange(costs);
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: bjorn.InstanceId)).Accepted);
+        ResolveMany(game, costs.Select(card => card.InstanceId).ToArray());
+        Resolve(game, "0:1");
+        PassResponses(game);
+
+        Assert.Same(bjorn, player.Field[0][1]);
+        Assert.True(bjorn.Tapped);
+        Assert.DoesNotContain(bjorn, player.Graveyard);
+        Assert.Equal(1, CountInstance(game, bjorn.InstanceId));
+        Assert.Contains(game.State.Events, entry => entry.Type == "put"
+            && entry.Cards.Any(card => card.InstanceId == bjorn.InstanceId));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0305")]
+    [Trait("L12Evidence", "entry:weighted-grave-cost-revival-resolution")]
+    public void BjornWeightedGraveCostKeepsPhysicalOrderAndStillRevives()
+    {
+        var game = Create(79112);
+        var player = game.State.Players[0];
+        var bjorn = Card("S01-0305", "batch6e-bjorn-weighted");
+        var warrior = Card("ST03-08", "batch6e-bjorn-weighted-warrior");
+        var ordinary = Card("S01-0001", "batch6e-bjorn-weighted-ordinary");
+        player.Field[0][0] = bjorn;
+        player.Graveyard.AddRange([warrior, ordinary]);
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: bjorn.InstanceId)).Accepted);
+        var graveChoice = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(2, graveChoice.MinChoose);
+        Assert.Equal(2, graveChoice.MaxChoose);
+        ResolveMany(game, warrior.InstanceId, ordinary.InstanceId);
+
+        var representedCount = Assert.Single(game.State.PendingPrompts);
+        var asThree = Assert.Single(representedCount.ValidChoices,
+            choice => representedCount.ChoiceLabels[choice].Contains("视为3张", StringComparison.Ordinal));
+        Resolve(game, asThree);
+        Resolve(game, "0:1");
+        PassResponses(game);
+
+        Assert.Equal([warrior.InstanceId, ordinary.InstanceId],
+            player.Library.Select(card => card.InstanceId));
+        Assert.Same(bjorn, player.Field[0][1]);
+        Assert.True(bjorn.Tapped);
+        Assert.DoesNotContain(bjorn, player.Graveyard);
+        Assert.Equal(1, CountInstance(game, bjorn.InstanceId));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0305")]
     [Trait("L12Evidence", "entry:death-slot-invalid-no-cost-refund")]
     public void BjornSlotInvalidationDoesNotOverwriteOrRefundItsPrepaidCosts()
     {
@@ -309,8 +372,10 @@ public sealed class AtomicReviewBatch6ERegressionTests
         Assert.Contains(bjorn, player.Graveyard);
         Assert.Equal(hpBefore - 1, player.Hp);
         Assert.Equal(costs, player.Library);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
-            && entry.Text.Contains("位置", StringComparison.Ordinal));
+        Assert.True(game.State.Events.Any(entry => entry.Type == "effect-failed"
+                && entry.Text.Contains("位置不再为空", StringComparison.Ordinal)
+                && entry.Text.Contains("费用不返还", StringComparison.Ordinal)),
+            string.Join(Environment.NewLine, game.State.Events.Select(entry => $"{entry.Type}: {entry.Text}")));
     }
 
     [Fact]

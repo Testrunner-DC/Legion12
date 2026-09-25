@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-26-weighted-grave-selection",
+  "date": "2026-09-26",
+  "audience": "players",
+  "title": "墓地多选与勇士比约恩效果修正",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "修正墓地多选中“不发动”错误占用一个选择数量、导致第一张牌从2开始计数且无法选满的问题；勇士比约恩支付费用后可按声明正确休整登场，声明位置后来被占用时会留在墓地且不返还已支付费用。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/PromptOverlay.vue",
+        "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs"
+      ]
+    }
+  ]
+}

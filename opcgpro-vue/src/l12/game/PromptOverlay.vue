@@ -59,6 +59,11 @@ const isInitiative = computed(() => displayKind.value === 'initiative')
 const isDisasterChoice = computed(() => ['disaster-ban', 'disaster-pick'].includes(prompt.value?.kind ?? ''))
 const visible = computed(() => Boolean(prompt.value || waitingPrompt.value || waitingDefense.value || isMulliganPhase.value || isDisasterPreparation.value))
 const selected = ref<string[]>([])
+function currentValidSelection(values = selected.value) {
+  const valid = new Set(prompt.value?.validChoices ?? [])
+  return values.filter((choice, index) => valid.has(choice) && values.indexOf(choice) === index)
+}
+const activeSelected = computed(() => currentValidSelection())
 const hoveredChoice = ref<string | null>(null)
 const minimized = ref(false)
 const placementTop = ref<string[]>([])
@@ -90,7 +95,15 @@ watch(() => `${isInitiative.value}:${props.game.matchId}:${props.game.initiative
 }, { immediate: true })
 onBeforeUnmount(() => { if (diceTimer) clearInterval(diceTimer); if (diceSettleTimer) clearTimeout(diceSettleTimer) })
 
-watch(() => `${prompt.value?.promptId ?? ''}:${props.game.phase}:${me.value.mulliganDone}`, () => {
+watch(() => JSON.stringify([
+  prompt.value?.promptId ?? '',
+  prompt.value?.activationId ?? '',
+  prompt.value?.step ?? -1,
+  prompt.value?.createdRevision ?? -1,
+  prompt.value?.validChoices ?? [],
+  props.game.phase,
+  me.value.mulliganDone,
+]), () => {
   selected.value = []
   hoveredChoice.value = null
   minimized.value = false
@@ -105,7 +118,7 @@ const responseTargetIds = computed(() => {
   if (!minimized.value || !visible.value || !prompt.value) return []
   const data = prompt.value.data
   const keys = prompt.value.kind === 'response-target'
-    ? (selected.value.length ? selected.value : prompt.value.validChoices).map(id => `${id}:responseTargetIds`)
+    ? (activeSelected.value.length ? activeSelected.value : prompt.value.validChoices).map(id => `${id}:responseTargetIds`)
     : ['responseTargetIds']
   const ids = new Set<string>()
   for (const key of keys) {
@@ -116,7 +129,7 @@ const responseTargetIds = computed(() => {
   }
   // 普通目标选择也必须在最小化弹框后保留场面定位；这里只接纳当前
   // 公开战场上真实存在的 instanceId，不扩大任何可选择权限。
-  for (const id of selected.value) ids.add(id)
+  for (const id of activeSelected.value) ids.add(id)
   return props.game.players.flatMap(player => player.field.flat())
     .filter((card): card is Card => Boolean(card && !card.hidden && ids.has(card.instanceId)))
     .map(card => card.instanceId)
@@ -235,9 +248,9 @@ const isTriggerOrder = computed(() => prompt.value?.kind === 'trigger-order'
   && prompt.value?.data?.choiceMode === 'ordered')
 function triggerOrderHint(id: string) {
   if (!isTriggerOrder.value) return ''
-  const declarationIndex = selected.value.indexOf(id)
+  const declarationIndex = activeSelected.value.indexOf(id)
   if (declarationIndex < 0) return ''
-  const resolutionOrder = (prompt.value?.maxChoose ?? selected.value.length) - declarationIndex
+  const resolutionOrder = (prompt.value?.maxChoose ?? activeSelected.value.length) - declarationIndex
   return `结算 ${resolutionOrder}`
 }
 function cardMeta(id: string) {
@@ -325,6 +338,7 @@ const previewPresentation = computed(() => prompt.value?.data?.previewPresentati
 const showPreviewCard = computed(() => Boolean(previewCardId.value)
   && ['handled-card', 'information-card'].includes(previewPresentation.value))
 const declineChoices = new Set(['no', 'mode:none', 'skip', 'pass', 'decline', 'cancel'])
+declineChoices.add('refuse')
 function isDeclineChoice(choice: string) {
   const explicitLabel = naturalChoiceLabel(prompt.value?.choiceLabels?.[choice], choice)?.trim()
   return declineChoices.has(choice.trim().toLowerCase()) || explicitLabel === '不响应' || explicitLabel === '不发动'
@@ -334,6 +348,7 @@ function isDirectActivationChoice(choice: string) {
   const explicitLabel = naturalChoiceLabel(prompt.value?.choiceLabels?.[choice], choice)?.trim()
   return directActivationChoices.has(choice.trim().toLowerCase()) || explicitLabel === '发动'
 }
+const selectedActionChoices = computed(() => activeSelected.value.filter(choice => !isDeclineChoice(choice)))
 const orderedEffectChoices = computed(() => [
   ...currentChoices.value.filter(choice => !isDeclineChoice(choice)),
   ...currentChoices.value.filter(isDeclineChoice),
@@ -416,7 +431,7 @@ const supplementalChoices = computed(() => currentChoices.value
   .filter(id => !primaryChoices.value.includes(id)))
 const isCardSelectionPrompt = computed(() => prompt.value?.data?.cardSelection === 'true')
 const placementMode = computed(() => prompt.value?.data?.placementMode ?? '')
-const currentSelected = computed(() => isMulligan.value ? props.mulliganSelectedIds : ['split-top-bottom', 'all-top-bottom', 'all-bottom'].includes(placementMode.value) ? (placementSelected.value ? [placementSelected.value] : []) : selected.value)
+const currentSelected = computed(() => isMulligan.value ? props.mulliganSelectedIds : ['split-top-bottom', 'all-top-bottom', 'all-bottom'].includes(placementMode.value) ? (placementSelected.value ? [placementSelected.value] : []) : activeSelected.value)
 const hasCardChoices = computed(() => displayCardIds.value.length > 0 || (!isEffectDecision.value
   && (showPreviewCard.value || displayedChoices.value.some(id => Boolean(detailFor(id)))))
 )
@@ -461,10 +476,15 @@ function toggle(id: string) {
   if (!p || !p.validChoices.includes(id)) return
   if (id === 'cancel' && p.data?.allowCancel === 'true') { resolveChoice(id); return }
   if (p.data?.choiceMode === 'instant' || isPureEffectDecision.value) { resolveChoice(id); return }
+  selected.value = currentValidSelection()
   const index = selected.value.indexOf(id)
   if (index >= 0) { selected.value.splice(index, 1); return }
-  if (p.maxChoose === 1) selected.value = [id]
-  else if (selected.value.length < p.maxChoose) selected.value.push(id)
+  if (isDeclineChoice(id) || p.maxChoose === 1) {
+    selected.value = [id]
+    return
+  }
+  selected.value = selected.value.filter(choice => !isDeclineChoice(choice))
+  if (selected.value.length < p.maxChoose) selected.value.push(id)
 }
 function resolveChoice(choice: string) {
   const p = prompt.value
@@ -473,13 +493,16 @@ function resolveChoice(choice: string) {
 }
 function confirm() {
   const p = prompt.value
-  if (!p || selected.value.length < p.minChoose || selected.value.length > p.maxChoose) return
-  sendAction(withPromptBinding(p, { cardInstanceIds: [...selected.value] }), p.playerIndex)
+  if (!p) return
+  const choices = currentValidSelection()
+  if (choices.length < p.minChoose || choices.length > p.maxChoose
+      || choices.some(isDeclineChoice) && choices.length > 1) return
+  sendAction(withPromptBinding(p, { cardInstanceIds: choices }), p.playerIndex)
 }
 function resolveSinglePlacement(destination: 'top' | 'bottom') {
   const p = prompt.value
-  if (!p || selected.value.length !== 1) return
-  sendAction(withPromptBinding(p, { cardInstanceIds: [...selected.value], destination }), p.playerIndex)
+  if (!p || activeSelected.value.length !== 1) return
+  sendAction(withPromptBinding(p, { cardInstanceIds: [...activeSelected.value], destination }), p.playerIndex)
 }
 function removePlacement(id: string) {
   placementTop.value = placementTop.value.filter(choice => choice !== id)
@@ -686,18 +709,18 @@ function kindLabel() {
         </div>
         <div v-else class="prompt-choices" :class="{ 'prompt-card-strip': hasCardChoices, 'effect-option-list': isEffectOptionList, 'response-target-list': prompt.kind === 'response-target' }">
           <template v-for="choice in primaryChoices" :key="choice">
-            <article v-if="prompt.kind === 'response-target'" class="response-target-row" :class="{ selected: selected.includes(choice) }">
-              <button class="response-target-select l12-effect-body" :aria-pressed="selected.includes(choice)" :disabled="l12State.pendingAction" @click="focusChoice(choice); toggle(choice)">{{ label(choice) }}</button>
+            <article v-if="prompt.kind === 'response-target'" class="response-target-row" :class="{ selected: activeSelected.includes(choice) }">
+              <button class="response-target-select l12-effect-body" :aria-pressed="activeSelected.includes(choice)" :disabled="l12State.pendingAction" @click="focusChoice(choice); toggle(choice)">{{ label(choice) }}</button>
             </article>
             <PromptCardCandidate v-else-if="detailFor(choice)"
               :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :name="cardName(choice)" :meta="cardMeta(choice)"
               :badge="selectionHint(choice)"
-              :horizontal="isHorizontalCardType(detailFor(choice)?.cardType)" :selected="selected.includes(choice)"
+              :horizontal="isHorizontalCardType(detailFor(choice)?.cardType)" :selected="activeSelected.includes(choice)"
               :unavailable="isCardSelectionPrompt && !prompt.validChoices.includes(choice)"
               :intent="usesDetailCardImages ? 'detail' : 'thumb'" :size="isInfoConfirm ? 'featured' : 'standard'"
-              :selection-order="!isTriggerOrder && selected.includes(choice) && prompt.maxChoose > 1 ? selected.indexOf(choice) + 1 : undefined"
+              :selection-order="!isTriggerOrder && selectedActionChoices.includes(choice) && prompt.maxChoose > 1 ? selectedActionChoices.indexOf(choice) + 1 : undefined"
               @focus="focusChoice(choice)" @select="toggle(choice)"/>
-            <button v-else :class="{ selected: selected.includes(choice), 'decline-action': isDeclineChoice(choice), 'unavailable-choice': Boolean(disabledChoiceReason(choice)) }"
+            <button v-else :class="{ selected: activeSelected.includes(choice), 'decline-action': isDeclineChoice(choice), 'unavailable-choice': Boolean(disabledChoiceReason(choice)) }"
               :disabled="l12State.pendingAction || Boolean(disabledChoiceReason(choice))" :title="disabledChoiceReason(choice)"
               :data-ui-contract="isDeclineChoice(choice) ? 'minimum-decline-action' : undefined" @click="toggle(choice)">
               <span :class="{ 'l12-effect-body': isEffectOptionList, 'l12-effect-body--compact': isEffectOptionList }">{{ label(choice) }}</span>
@@ -709,15 +732,15 @@ function kindLabel() {
         <footer v-if="!isPureEffectDecision" class="prompt-action-footer">
           <template v-if="prompt.data?.choiceMode !== 'optional-add'">
             <button v-for="choice in supplementalChoices" :key="choice" class="prompt-footer-choice"
-              :class="{ selected: selected.includes(choice), 'decline-action': isDeclineChoice(choice) }"
+              :class="{ selected: activeSelected.includes(choice), 'decline-action': isDeclineChoice(choice) }"
               :disabled="l12State.pendingAction"
               :data-ui-contract="isDeclineChoice(choice) ? 'minimum-decline-action' : undefined"
               @click="toggle(choice)">{{ label(choice) }}</button>
           </template>
           <template v-if="placementMode === 'single-top-bottom'">
             <span>先选择 1 张手牌，再决定放回位置</span>
-            <button :disabled="l12State.pendingAction || selected.length !== 1" @click="resolveSinglePlacement('top')">放回顶部</button>
-            <button class="primary" :disabled="l12State.pendingAction || selected.length !== 1" @click="resolveSinglePlacement('bottom')">放回底部</button>
+            <button :disabled="l12State.pendingAction || activeSelected.length !== 1" @click="resolveSinglePlacement('top')">放回顶部</button>
+            <button class="primary" :disabled="l12State.pendingAction || activeSelected.length !== 1" @click="resolveSinglePlacement('bottom')">放回底部</button>
           </template>
           <template v-else-if="placementMode === 'split-top-bottom'">
             <span>靠顶 {{ placementTop.length }} / 靠底 {{ placementBottom.length }} / 待安排 {{ unassignedChoices.length }}；已安排的牌可依次点击两张交换位置</span>
@@ -737,21 +760,21 @@ function kindLabel() {
           <template v-else-if="prompt.data?.choiceMode === 'optional-add'">
             <span>选择后，将在下一步排列其余展示牌返回牌库底部的顺序</span>
             <button :disabled="l12State.pendingAction" @click="resolveChoice('skip')">不加入手牌</button>
-            <button class="primary" :disabled="l12State.pendingAction || selected.length !== 1" @click="resolveChoice(selected[0])">加入手牌</button>
+            <button class="primary" :disabled="l12State.pendingAction || activeSelected.length !== 1" @click="resolveChoice(activeSelected[0])">加入手牌</button>
           </template>
           <template v-else-if="prompt.data?.choiceMode === 'instant'">
             <span>点击选项后立即结算</span>
           </template>
           <template v-else-if="isTriggerOrder">
             <span data-ui-contract="trigger-order-lifo-hint">后选择的效果先结算；每个选项角标显示实际结算顺序。</span>
-            <button class="primary prompt-confirm-choice" :disabled="l12State.pendingAction || selected.length !== prompt.maxChoose" @click="confirm">
+            <button class="primary prompt-confirm-choice" :disabled="l12State.pendingAction || activeSelected.length !== prompt.maxChoose" @click="confirm">
               {{ l12State.pendingAction ? '处理中…' : '确认发动顺序' }}
             </button>
           </template>
           <template v-else>
             <span>{{ isEffectDecision ? '请选择是否发动本次效果' : isInfoConfirm ? '双方均确认后继续' : `选择 ${prompt.minChoose}–${prompt.maxChoose} 项` }}</span>
             <button v-if="prompt.minChoose === 0 && !isInfoConfirm" :disabled="l12State.pendingAction" @click="selected = []; confirm()">不选择</button>
-            <button class="primary prompt-confirm-choice" :disabled="l12State.pendingAction || selected.length < prompt.minChoose || selected.length > prompt.maxChoose" @click="confirm">
+            <button class="primary prompt-confirm-choice" :disabled="l12State.pendingAction || activeSelected.length < prompt.minChoose || activeSelected.length > prompt.maxChoose || (activeSelected.some(isDeclineChoice) && activeSelected.length > 1)" @click="confirm">
               {{ l12State.pendingAction ? '处理中…' : (isInfoConfirm ? '确认信息' : '确认选择') }}
             </button>
           </template>

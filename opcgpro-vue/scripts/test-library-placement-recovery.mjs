@@ -5,7 +5,7 @@ import ts from 'typescript'
 
 // Execute the real component watcher and submit function, with reactive Vue state.
 const source = readFileSync(new URL('../src/l12/game/PromptOverlay.vue', import.meta.url), 'utf8')
-const start = source.indexOf('watch(() => `${prompt.value?.promptId')
+const start = source.indexOf('watch(() => JSON.stringify([')
 const end = source.indexOf('watch(minimized,', start)
 assert(start >= 0 && end > start)
 const submitStart = source.indexOf('function confirmAllPlacement(')

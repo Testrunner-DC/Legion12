@@ -446,8 +446,15 @@ public sealed partial class L12GameEngine
                         }
                     }
                     if (costsPaid)
-                        _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, card.InstanceId,
-                            declaredBjornSlot, tapped: true);
+                    {
+                        if (!EmptySlots(player).Contains(declaredBjornSlot, StringComparer.OrdinalIgnoreCase))
+                            RecordTargetSettlementFailure(item, declaredBjornSlot,
+                                "勇士比约恩已声明的休整登场位置不再为空；已支付的主宰伤害与墓地费用不返还");
+                        else if (!TrySummonFromAnyPrivateZone(player, player.PlayerIndex, card.InstanceId,
+                                     declaredBjornSlot, tapped: true))
+                            RecordTargetSettlementFailure(item, card.InstanceId,
+                                "勇士比约恩已离开可登场区域或位置在最终区域事务中失效；已支付的主宰伤害与墓地费用不返还");
+                    }
                     FinishStackItem(item); return true;
                 }
                 AddEvent("effect-cancelled", item.Controller,

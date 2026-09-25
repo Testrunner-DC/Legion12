@@ -93,6 +93,46 @@ try{
  await set({kind:'option',text:'墓地费用：第2张《渴求死亡的勇士》本次视为几张卡牌',validChoices:['one','two','three'],choiceLabels:{one:'视为1张',two:'视为2张',three:'视为3张'}})
  assert(await confirm.isDisabled(),'New entity prompt must not reuse the preceding selection')
  await page.screenshot({path:path.join(out,'individual-count-desktop.png')})
+ const graveCards=cards(4),graveIds=graveCards.map(card=>card.instanceId)
+ await set({kind:'grave-card',text:'选择合计视为4张的墓地卡牌',validChoices:[...graveIds,'skip'],minChoose:4,maxChoose:4,
+  choiceLabels:{skip:'不发动'},data:{displayCardIds:graveIds.join('|'),cardSelection:'true',selectionConstraint:'grave-faction-exact',representedCount:'4'}},graveCards)
+ const declineCost=page.getByRole('button',{name:'不发动',exact:true})
+ await declineCost.click()
+ assert((await declineCost.getAttribute('class')).includes('selected'),'Decline is visibly selected before choosing a card')
+ await page.locator('.prompt-card-candidate').first().click()
+ assert(!(await declineCost.getAttribute('class')).includes('selected'),'Choosing a real card must clear the mutually exclusive decline choice')
+ assert.equal((await page.locator('.prompt-card-candidate__order').first().textContent()).trim(),'1','The first physical card must be numbered 1 rather than inherit decline as item 1')
+ for(let i=1;i<graveIds.length;i++)await page.locator('.prompt-card-candidate').nth(i).click()
+ assert(!(await confirm.isDisabled()),'All four physical cards must remain selectable after replacing decline')
+ await confirm.click()
+ assert.deepEqual(await page.evaluate(()=>window.__sent.at(-1).command.cardInstanceIds),graveIds)
+ await set({kind:'grave-card',text:'选择合计视为4张的墓地卡牌',validChoices:[...graveIds,'skip'],minChoose:4,maxChoose:4,
+  choiceLabels:{skip:'不发动'},data:{displayCardIds:graveIds.join('|'),cardSelection:'true'}},graveCards)
+ await page.locator('.prompt-card-candidate').first().click();await declineCost.click()
+ assert.equal(await page.locator('.prompt-card-candidate.selected').count(),0,'Choosing decline must clear all real-card selections')
+ assert((await declineCost.getAttribute('class')).includes('selected'))
+ await page.screenshot({path:path.join(out,'grave-decline-exclusive-desktop.png')})
+ for(const declineId of ['no','mode:none','skip','pass','decline','refuse','cancel']){
+  await set({kind:'grave-card',text:'共享多选拒绝分支',validChoices:[...graveIds,declineId],minChoose:1,maxChoose:4,
+   choiceLabels:{[declineId]:'放弃本次选择'},data:{displayCardIds:graveIds.join('|'),cardSelection:'true'}},graveCards)
+  const supplemental=page.getByRole('button',{name:'放弃本次选择',exact:true})
+  await supplemental.click();await page.locator('.prompt-card-candidate').first().click()
+  assert(!(await supplemental.getAttribute('class')).includes('selected'),`${declineId}: choosing a card must clear the decline sentinel`)
+  assert.equal((await page.locator('.prompt-card-candidate__order').first().textContent()).trim(),'1',`${declineId}: decline must not consume a selection index`)
+  await supplemental.click()
+  assert.equal(await page.locator('.prompt-card-candidate.selected').count(),0,`${declineId}: choosing decline must clear real cards`)
+ }
+ await set({promptId:'fixture-reused',step:1,validChoices:graveIds.slice(0,2),minChoose:1,maxChoose:2,
+  data:{displayCardIds:graveIds.slice(0,2).join('|'),cardSelection:'true'}},graveCards)
+ await page.locator('.prompt-card-candidate').first().click()
+ await set({promptId:'fixture-reused',step:2,validChoices:graveIds.slice(2),minChoose:1,maxChoose:2,
+  data:{displayCardIds:graveIds.slice(2).join('|'),cardSelection:'true'}},graveCards)
+ assert.equal(await page.locator('.prompt-card-candidate.selected').count(),0,'A changed activation step must clear stale selection even if a restored prompt id is reused')
+ assert(await confirm.isDisabled())
+ await set({kind:'grave-card',text:'可选择任意墓地卡牌',validChoices:graveIds.slice(0,2),minChoose:0,maxChoose:2,
+  data:{displayCardIds:graveIds.slice(0,2).join('|'),cardSelection:'true'}},graveCards)
+ await page.getByRole('button',{name:'不选择',exact:true}).click()
+ assert.deepEqual(await page.evaluate(()=>window.__sent.at(-1).command.cardInstanceIds),[],'A legitimate min=0 empty selection must still submit unchanged')
  for(const width of [760,390]){
   await page.setViewportSize({width,height:900})
   await set({validChoices:[...ids,'no'],choiceLabels:{no:'不发动'},data:{displayCardIds:ids.join('|'),cardSelection:'true'}},c)
@@ -121,5 +161,5 @@ try{
  }
  assert.deepEqual(errors,[])
  fs.writeFileSync(path.join(out,'result.json'),JSON.stringify({passed:true,views:[1280,760,390],errors},null,2))
- console.log('Prompt UI passed: candidate centering, safe overflow, equal footer actions, bound commands, pending lock, response, full text, per-entity reset, minimize, narrow/short viewport and inspector layouts.')
+ console.log('Prompt UI passed: candidate centering, safe overflow, mutually exclusive decline/card selection, activation-step reset, equal footer actions, bound commands, pending lock, response, full text, per-entity reset, minimize, narrow/short viewport and inspector layouts.')
 }finally{await browser?.close();await server.close()}
