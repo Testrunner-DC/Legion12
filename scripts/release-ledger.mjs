@@ -11,7 +11,10 @@ function fail(message) {
 }
 
 function runGit(repo, args, allowFailure = false) {
-  const result = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' })
+  // Git quotes non-ASCII paths by default. The project keeps player-facing
+  // server sources below a Chinese directory name, so quoted octal paths would
+  // evade both root classification and exact ledger coverage on Windows/CI.
+  const result = spawnSync('git', ['-C', repo, '-c', 'core.quotepath=false', ...args], { encoding: 'utf8' })
   if (result.status !== 0 && !allowFailure)
     fail(`Git 命令失败：git ${args.join(' ')}\n${result.stderr || result.stdout}`)
   return result

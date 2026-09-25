@@ -76,6 +76,7 @@ try {
   const internalCommit = commit('internal declaration')
   const internal = evaluateRelease(temp, coveredCommit, internalCommit)
   assert.equal(internal.release, null)
+  assert.deepEqual(internal.productFiles, ['服务端WebSocket/TwelveLegions/Internal.cs'], '中文服务端路径必须被账本扫描与覆盖，不得被 Git quotepath 转义绕过')
 
   const output = path.join(temp, 'generated.ts')
   const summary = path.join(temp, 'summary.json')
@@ -89,7 +90,7 @@ try {
   write('release-ledger/entries/player-ui.json', invalid)
   assert.throws(() => loadLedger(temp), /包含内部术语/)
 
-  console.log('[玩家更新日志账本] 回归测试通过：缺失登记、分类聚合、内部声明、生成结果与禁用术语。')
+  console.log('[玩家更新日志账本] 回归测试通过：缺失登记、分类聚合、中文路径覆盖、内部声明、生成结果与禁用术语。')
 } finally {
   fs.rmSync(temp, { recursive: true, force: true })
 }
