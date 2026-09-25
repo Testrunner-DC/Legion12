@@ -10,7 +10,6 @@ const summary = read('src/l12/site/TournamentSummaryList.vue')
 const wizard = read('src/l12/site/TournamentCreateWizard.vue')
 const hub = read('src/l12/site/TournamentHubPage.vue')
 const platform = read('src/l12/platform.ts')
-const admin = read('src/l12/site/AdminPage.vue')
 const router = read('src/router/index.ts')
 
 const checks = [
@@ -23,7 +22,7 @@ const checks = [
   ['conflicted staff are excluded from assignment choices', judge.includes("person.accountId !== match?.playerAAccountId")],
   ['player-facing enums use shared Chinese labels', detail.includes("@/l12/tournamentLabels") && judge.includes("@/l12/tournamentLabels") && summary.includes('tournamentViewerRoleText')],
   ['check-in range matches server authority', wizard.includes('v-model.number="form.checkInMinutes" type="number" min="1" max="60"')],
-  ['admin tournament workbench has an explicit admin-only name', admin.includes("import('./AdminTournamentWorkbench.vue')") && !admin.includes('TournamentCenterPage')],
+  ['admin tournament workbench has an explicit admin-only name', router.includes("import('@/l12/site/AdminTournamentWorkbench.vue')") && !router.includes('TournamentCenterPage')],
   ['player route uses hub and stable detail routes', router.includes("component: () => import('@/l12/site/TournamentHubPage.vue')") && router.includes("path: '/battle/tournaments/:code'")],
   ['pre-check-in selects an account deck', detail.includes('syncSavedDecksFromAccount') && detail.includes('选择账号牌组') && detail.includes("preCheckIn(item.id, item.version, deckName.value, '')")],
   ['critical tournament actions use inline reasons', !detail.includes('prompt(') && !judge.includes('prompt(') && !management.includes('confirm(') && detail.includes('participantReasons[person.accountId]') && judge.includes('appealReasons[item.id]')],

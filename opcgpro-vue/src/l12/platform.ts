@@ -87,6 +87,7 @@ export interface BugReport {
   status: string; priority: string; assignee?: string; adminNotes?: string; history: BugAudit[]; createdAt: string; updatedAt: string
   diagnostic?: BugRuntimeDiagnostic; clientDiagnostic?: BugClientConnectionDiagnostic
   connectionDiagnostic?: BugConnectionClaimDiagnostic
+  fixCommit?: string; regressionTest?: string; deployedVersion?: string; verifiedBy?: string; verifiedAt?: string; duplicateOf?: string
 }
 export interface BugRuntimeDiagnostic {
   capturedAt: string; matchId?: string; roomCode?: string; phase?: string; round?: number; turnSerial?: number
@@ -974,6 +975,7 @@ export const sessionApi = {
   list: () => platformRequest<PlatformSession[]>('/api/auth/sessions'),
   revoke: (sessionId: string) => platformRequest<SessionRevocation>(`/api/auth/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
   revokeAll: () => platformRequest<SessionRevocation>('/api/auth/sessions', { method: 'DELETE' }),
+  revokeOthers: () => platformRequest<SessionRevocation>('/api/auth/sessions/others', { method: 'DELETE' }),
 }
 
 export async function changePassword(currentPassword: string, newPassword: string) {
@@ -1140,7 +1142,7 @@ export const adminApi = {
     Object.entries(query).forEach(([key, value]) => { if (value) params.set(key, value) })
     return platformRequest<BugReport[]>(`/api/admin/bugs${params.size ? `?${params}` : ''}`)
   },
-  updateBug: (id: string, body: Partial<Pick<BugReport, 'status' | 'priority' | 'assignee' | 'adminNotes'>> & { comment?: string }) => platformRequest<BugReport>(`/api/admin/v1/bugs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(commandBody('bug', body)) }),
+  updateBug: (id: string, body: Partial<Pick<BugReport, 'status' | 'priority' | 'assignee' | 'adminNotes' | 'fixCommit' | 'regressionTest' | 'deployedVersion' | 'verifiedBy' | 'verifiedAt' | 'duplicateOf'>> & { comment?: string }) => platformRequest<BugReport>(`/api/admin/bugs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(commandBody('bug', body)) }),
   getContent: (key: string) => platformRequest<ContentEntry>(`/api/admin/content/${encodeURIComponent(key)}`),
   articles: (query: { status?: string; category?: string; search?: string; kind?: SiteContentKind } = {}) => {
     const params = new URLSearchParams()
