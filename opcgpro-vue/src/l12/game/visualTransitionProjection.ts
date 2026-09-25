@@ -20,6 +20,29 @@ export function movementCardsForEvent(event: ActionEvent) {
   return (event.cards ?? []).slice(0, 1)
 }
 
+export function isCombatDefeatLeaveEvent(event: ActionEvent) {
+  return event.type === 'leave' && /阵亡|击杀|兵力不高于0|承受.*致命/.test(event.text)
+}
+
+export function isSupersededLeaveEvent(event: ActionEvent, batchEvents: ActionEvent[]) {
+  if (event.type !== 'leave') return false
+  const instanceIds = new Set((event.cards ?? []).map(card => card.instanceId))
+  return batchEvents.some(candidate => candidate !== event
+    && ['grave', 'discard', 'return', 'move', 'derived-vanished'].includes(candidate.type)
+    && (candidate.cards ?? []).some(card => instanceIds.has(card.instanceId)))
+}
+
+export function leaveMovementDestination(event: ActionEvent): VisualZone {
+  if (event.cards?.[0]?.isMasterLegion || /返回.*主宰区/.test(event.text)) return 'master'
+  if (/返回.*手牌|加入.*手牌/.test(event.text)) return 'hand'
+  if (/返回.*牌库|牌库顶|牌库底/.test(event.text)) return 'library'
+  // A card that is explicitly removed/vanished has no graveyard destination.
+  // Let it leave toward the neutral presentation anchor instead of implying a
+  // graveyard move that never happened in the authoritative state.
+  if (/移出|移除|消灭|不进入其他区域/.test(event.text)) return 'center'
+  return 'graveyard'
+}
+
 function promptZone(value: string | undefined): VisualZone | null {
   if (value === '手牌') return 'hand'
   if (value === '牌库') return 'library'

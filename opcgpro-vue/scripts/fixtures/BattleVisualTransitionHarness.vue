@@ -74,6 +74,23 @@ const api = {
   triggerNuada() {
     publish({ type: 'effect-trigger', playerIndex: 0, text: '银臂努阿达因我方消耗符文触发', effectText: '选择我方1张【彼界】军团，本回合兵力+1000。', effectSceneId: 'nuada-rune-buff', effectResultStatus: 'resolved', cards: [nuada, mover] })
   },
+  effectThenMove() {
+    const source = game.players[0].field.flat().find(item => item?.instanceId === swapper.instanceId) ?? swapper
+    const first = ++sequence
+    const second = ++sequence
+    replaceField([[source, null, host], [null, mover, null]])
+    game.recentEvents = [...(game.recentEvents ?? []),
+      { sequence:first, type:'effect-trigger', playerIndex:0, text:'银臂努阿达先触发', effectText:'先展示效果来源。', effectSceneId:'ordered-source', effectResultStatus:'resolved', cards:[nuada] },
+      { sequence:second, type:'move', playerIndex:0, text:'罗宾汉随后移动', cards:[source] },
+    ]
+  },
+  costLeave() {
+    const leaving = game.players[0].field.flat().find(item => item?.instanceId === swapper.instanceId) ?? swapper
+    replaceField(game.players[0].field.map(row => row.map(item => item?.instanceId === leaving.instanceId ? null : item)))
+    game.players[0].graveyard = [...(game.players[0].graveyard ?? []), leaving]
+    game.players[0].graveyardCount = game.players[0].graveyard.length
+    publish({ type:'leave', playerIndex:0, text:'加拉哈德作为主动效果的费用被弃置', cards:[leaving] })
+  },
   openPrompt() { game.prompts = [prompt(`blocking-${game.revision}`)]; game.revision += 1 },
   closePrompt() { game.prompts = []; game.revision += 1 },
   setReplay(speed: number | null) { playbackSpeed.value = speed },

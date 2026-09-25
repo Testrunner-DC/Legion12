@@ -97,6 +97,9 @@ const dialogCases = [
   ['card-choice-6', 'field=full&markers=5&piles=40&hand=10&card-choice=1&choice-count=6', 'prompt'],
   ['card-choice-12', 'field=full&markers=5&piles=40&hand=10&card-choice=1&choice-count=12', 'prompt'],
   ['card-choice-20', 'field=full&markers=5&piles=40&hand=10&card-choice=1&choice-count=20', 'prompt'],
+  ['card-choice-mixed-12', 'field=full&markers=5&piles=40&hand=10&card-choice=1&choice-count=12&mixed-availability=1', 'prompt'],
+  ['disaster-ban-mixed-12', 'field=full&markers=5&piles=40&hand=10&disaster-choice=1&choice-count=12&mixed-availability=1', 'prompt'],
+  ['disaster-pick-20', 'field=full&markers=5&piles=40&hand=10&disaster-choice=1&disaster-pick=1&choice-count=20', 'prompt'],
   ['disaster-card', 'field=full&markers=5&piles=40&hand=10&disaster-chain=1', 'disaster'],
   ['morale-payment', 'field=full&markers=5&piles=40&hand=10&morale-payment=1', 'morale'],
 ]
@@ -421,18 +424,20 @@ try {
       const rect=node=>{const value=node.getBoundingClientRect();return{left:value.left,top:value.top,right:value.right,bottom:value.bottom,width:value.width,height:value.height}}
       const within=(inner,outer,tolerance=1)=>inner.left>=outer.left-tolerance&&inner.top>=outer.top-tolerance&&inner.right<=outer.right+tolerance&&inner.bottom<=outer.bottom+tolerance
       const cardEntries=[...element.querySelectorAll('.prompt-card-candidate,.graveyard-card-entry')].map(entry=>{
-        const outer=rect(entry),image=entry.querySelector('.l12-card-image,.card-tile'),name=entry.querySelector('.prompt-card-candidate__name,.graveyard-card-name'),imageRect=image?rect(image):null,nameRect=name?rect(name):null
-        return{text:name?.textContent?.trim()||'',nameClipped:Boolean(name&&(name.scrollWidth>name.clientWidth+1||name.scrollHeight>name.clientHeight+1)),imageContained:Boolean(imageRect&&within(imageRect,outer)),nameContained:Boolean(nameRect&&within(nameRect,outer)),outer,image:imageRect,name:nameRect}
+        const outer=rect(entry),image=entry.querySelector('.l12-card-image,.card-tile'),name=entry.querySelector('.prompt-card-candidate__name,.graveyard-card-name'),state=entry.querySelector('.prompt-card-candidate__state'),strip=entry.closest('.prompt-card-strip,.graveyard-cards'),imageRect=image?rect(image):null,nameRect=name?rect(name):null,stateRect=state&&state.textContent?.trim()?rect(state):null,stripRect=strip?rect(strip):null
+        return{text:name?.textContent?.trim()||'',nameClipped:Boolean(name&&(name.scrollWidth>name.clientWidth+1||name.scrollHeight>name.clientHeight+1)),imageContained:Boolean(imageRect&&within(imageRect,outer)),nameContained:Boolean(nameRect&&within(nameRect,outer)),stateContained:!stateRect||(within(stateRect,outer)&&Boolean(stripRect&&stateRect.top>=stripRect.top-1&&stateRect.bottom<=stripRect.bottom+1)),outer,image:imageRect,name:nameRect,state:stateRect}
       })
       const strips=[...element.querySelectorAll('.prompt-card-strip,.graveyard-cards')].map(strip=>{
         const outer=rect(strip),items=[...strip.querySelectorAll(':scope > .prompt-card-candidate,:scope > .graveyard-card-entry')].map(rect),overflow=strip.scrollWidth>strip.clientWidth+1
         const union=items.length?{left:Math.min(...items.map(item=>item.left)),right:Math.max(...items.map(item=>item.right))}:null
-        return{overflow,count:items.length,centreDelta:union?Math.abs((union.left+union.right-outer.left-outer.right)/2):0,width:outer.width}
+        return{overflow,count:items.length,centreDelta:union?Math.abs((union.left+union.right-outer.left-outer.right)/2):0,width:outer.width,choiceStrip:strip.classList.contains('prompt-card-strip'),heightSpread:items.length?Math.max(...items.map(item=>item.height))-Math.min(...items.map(item=>item.height)):0}
       })
+      const footer=element.querySelector('.prompt-action-footer,footer'),body=element.querySelector('[data-ui-contract="mobile-choice-scroll-body"]')
+      const choiceStates=[...element.querySelectorAll('.prompt-card-candidate')].map(candidate=>({selected:candidate.classList.contains('selected'),unavailable:candidate.classList.contains('unavailable'),state:candidate.querySelector('.prompt-card-candidate__state')?.textContent?.trim()||'',pressed:candidate.getAttribute('aria-pressed'),disabled:candidate.getAttribute('aria-disabled')}))
       const primary=[...element.children].filter(child=>child.matches?.('.l12-card-image,.master-content,.faction-effect-content')).map(rect)
       const primaryUnion=primary.length?{left:Math.min(...primary.map(item=>item.left)),top:Math.min(...primary.map(item=>item.top)),right:Math.max(...primary.map(item=>item.right)),bottom:Math.max(...primary.map(item=>item.bottom))}:null
       const distribution=primaryUnion?{horizontal:Math.abs((primaryUnion.left+primaryUnion.right-r.left-r.right)/2),vertical:Math.abs((primaryUnion.top+primaryUnion.bottom-r.top-r.bottom)/2)}:null
-      return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height,scrollWidth:element.scrollWidth,clientWidth:element.clientWidth,expectedDialog:{width:number('--l12-mobile-dialog-width'),height:number('--l12-mobile-dialog-height')},cardEntries,strips,distribution}
+      return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height,scrollWidth:element.scrollWidth,clientWidth:element.clientWidth,expectedDialog:{width:number('--l12-mobile-dialog-width'),height:number('--l12-mobile-dialog-height')},cardEntries,strips,choiceStates,footer:footer?rect(footer):null,body:body?rect(body):null,distribution}
     })
     const viewport = await page.evaluate(() => ({width:innerWidth,height:innerHeight}))
     assert.ok(result.left>=insets.left+7&&result.top>=insets.top+7&&result.right<=viewport.width-insets.right-7&&result.bottom<=viewport.height-insets.bottom-7, `${label} lacks an 8px inset-aware safe boundary: ${JSON.stringify({ result, insets })}`)
@@ -441,8 +446,11 @@ try {
       assert.ok(Math.abs(result.width-result.expectedDialog.width)<=1.5&&Math.abs(result.height-result.expectedDialog.height)<=1.5,`${label} does not use the shared 75% dialog frame: ${JSON.stringify(result)}`)
       assert.ok(Math.abs(result.width/result.height-16/9)<=.02,`${label} dialog aspect ratio drifted from 16:9: ${JSON.stringify(result)}`)
     }
-    assert.equal(result.cardEntries.every(item=>item.text&&!item.nameClipped&&item.imageContained&&item.nameContained),true,`${label} must show every dialog card with complete art and a complete card name: ${JSON.stringify(result.cardEntries.filter(item=>!item.text||item.nameClipped||!item.imageContained||!item.nameContained))}`)
+    assert.equal(result.cardEntries.every(item=>item.text&&!item.nameClipped&&item.imageContained&&item.nameContained&&item.stateContained),true,`${label} must show every dialog card with complete art, name and state label: ${JSON.stringify(result.cardEntries.filter(item=>!item.text||item.nameClipped||!item.imageContained||!item.nameContained||!item.stateContained))}`)
     assert.equal(result.strips.filter(item=>!item.overflow&&item.count>0).every(item=>item.centreDelta<=Math.max(12,item.width*.05)),true,`${label} sparse card rows must be evenly centred: ${JSON.stringify(result.strips)}`)
+    assert.equal(result.strips.filter(item=>item.choiceStrip&&item.count>1).every(item=>item.heightSpread<=1),true,`${label} choice cards must retain one aligned row height despite long names or state labels: ${JSON.stringify(result.strips)}`)
+    if(result.footer&&result.body){assert.ok(result.body.bottom<=result.footer.top+1,`${label} scroll body overlaps the protected confirmation footer`);assert.ok(result.footer.bottom<=result.bottom+1,`${label} confirmation footer leaves the dialog`) }
+    if(result.choiceStates.length){assert.equal(result.choiceStates.every(item=>item.pressed==='true'||item.pressed==='false'),true,`${label} choice cards must expose aria-pressed`);assert.equal(result.choiceStates.filter(item=>item.unavailable).every(item=>item.state.includes('不可选择')&&item.disabled==='true'),true,`${label} unavailable cards need an explicit state label`) }
     if(result.distribution) assert.ok(result.distribution.horizontal<=result.width*.12&&result.distribution.vertical<=result.height*.15,`${label} primary dialog content is crowded to one side: ${JSON.stringify(result.distribution)}`)
     const image = page.locator(selector).locator('.l12-card-image').first()
     if (await image.count() && await image.isVisible()) {

@@ -121,9 +121,23 @@ if(params.has('card-choice')){
  const choiceCount=Math.max(1,Math.min(20,Number(params.get('choice-count')||6)))
  const choiceCards=Array.from({length:choiceCount},(_,index)=>legions[index%legions.length])
  const choices=choiceCards.map((cardDefinition,index)=>'choice-'+index)
- const data={uiPattern:'card-choice'}
+ const mixedAvailability=params.has('mixed-availability')
+ const data={uiPattern:'card-choice',...(mixedAvailability?{cardSelection:'true',displayCardIds:choices.join('|')}:{})}
  for(const [index,cardDefinition] of choiceCards.entries()){const key='choice-'+index;data[key+':cardId']=cardDefinition.id;data[key+':name']=(index%3===0?'完整长卡名·': '')+cardDefinition.nameZh;data[key+':cardType']=cardDefinition.cardType;data[key+':effect']=cardDefinition.effect||''}
- l12State.game.prompts=[{promptId:'fixture-card-choice',playerIndex:0,kind:'option',text:'从候选卡牌中选择 1 张',validChoices:choices,minChoose:1,maxChoose:1,choiceLabels:Object.fromEntries(choices.map((choice,index)=>[choice,choiceCards[index].nameZh])),data,createdRevision:1,controller:0}]
+ const validChoices=mixedAvailability?choices.filter((_,index)=>index%3!==1):choices
+ l12State.game.prompts=[{promptId:'fixture-card-choice',playerIndex:0,kind:'option',text:'从候选卡牌中选择 1 张',validChoices,minChoose:1,maxChoose:1,choiceLabels:Object.fromEntries(choices.map((choice,index)=>[choice,choiceCards[index].nameZh])),data,createdRevision:1,controller:0}]
+}
+if(params.has('disaster-choice')){
+ const choiceCount=Math.max(1,Math.min(20,Number(params.get('choice-count')||8)))
+ const choiceCards=Array.from({length:choiceCount},(_,index)=>disasters[index%disasters.length])
+ const choices=choiceCards.map((_,index)=>'disaster-choice-'+index)
+ const mixedAvailability=params.has('mixed-availability')
+ const kind=params.has('disaster-pick')?'disaster-pick':'disaster-ban'
+ const data={uiPattern:'card-choice',cardSelection:'true',displayCardIds:choices.join('|')}
+ for(const [index,cardDefinition] of choiceCards.entries()){const key=choices[index];data[key+':cardId']=cardDefinition.id;data[key+':name']=(index%3===0?'完整长天灾名称·': '')+cardDefinition.nameZh;data[key+':cardType']=cardDefinition.cardType;data[key+':effect']=cardDefinition.effect||''}
+ const validChoices=mixedAvailability?choices.filter((_,index)=>index%3!==1):choices
+ const action=kind==='disaster-ban'?'禁用':'选择'
+ l12State.game.prompts=[{promptId:'fixture-'+kind,playerIndex:0,kind,text:'从候选天灾中'+action+' 1 张',validChoices,minChoose:1,maxChoose:1,choiceLabels:Object.fromEntries(choices.map((choice,index)=>[choice,choiceCards[index].nameZh])),data,createdRevision:1,controller:0}]
 }
 if(params.has('morale-payment')){
  const runeChoices=Array.from({length:Math.max(0,Math.min(players[0].specialZones.runes||0,Number(params.get('rune-usable')||0)))},(_,index)=>'rune:'+(index+1))
@@ -195,6 +209,13 @@ if(params.has('fieldIndicators')){
 }
 if(params.has('rankedClock')){
  const receivedAtMs=Date.now()
+ const totalMs=Math.max(0,Number(params.get('totalMs')||754000))
+ const operationMs=Math.max(0,Number(params.get('operationMs')||68000))
+ const reconnectMs=Math.max(0,Number(params.get('reconnectMs')||119000))
+ const disconnectedPlayer=params.get('disconnected')===null?-1:Number(params.get('disconnected'))
+ const clockPhase=params.get('clockPhase')
+ if(clockPhase)l12State.game.phase=clockPhase
+ if(params.get('activePlayer')!==null)l12State.game.activePlayer=Number(params.get('activePlayer'))||0
  l12State.rankedClock={
   serverUtcMs:receivedAtMs,
   receivedAtMs,
@@ -202,9 +223,15 @@ if(params.has('rankedClock')){
   operationLimitMs:90000,
   reconnectLimitMs:120000,
   players:[
-   {playerIndex:0,totalRemainingMs:754000,operationRemainingMs:68000,acting:true,connected:true},
-   {playerIndex:1,totalRemainingMs:821000,operationRemainingMs:90000,acting:false,connected:true},
+   {playerIndex:0,totalRemainingMs:totalMs,operationRemainingMs:operationMs,reconnectRemainingMs:disconnectedPlayer===0?reconnectMs:null,acting:l12State.game.activePlayer===0,connected:disconnectedPlayer!==0},
+   {playerIndex:1,totalRemainingMs:Math.max(totalMs,821000),operationRemainingMs:90000,reconnectRemainingMs:disconnectedPlayer===1?reconnectMs:null,acting:l12State.game.activePlayer===1,connected:disconnectedPlayer!==1},
   ],
+ }
+ window.__clockFixture={
+  setPhase(phase,activePlayer=0){l12State.game.phase=phase;l12State.game.activePlayer=activePlayer;for(const player of l12State.rankedClock.players)player.acting=player.playerIndex===activePlayer;l12State.rankedClock.receivedAtMs=Date.now()},
+  disconnect(playerIndex,reconnectRemainingMs=119000){const player=l12State.rankedClock.players.find(item=>item.playerIndex===playerIndex);if(player){player.connected=false;player.reconnectRemainingMs=reconnectRemainingMs;l12State.rankedClock.receivedAtMs=Date.now()}},
+  reconnect(playerIndex){const player=l12State.rankedClock.players.find(item=>item.playerIndex===playerIndex);if(player){player.connected=true;player.reconnectRemainingMs=null;l12State.rankedClock.receivedAtMs=Date.now()}},
+  setDurations(totalRemainingMs,operationRemainingMs){const player=l12State.rankedClock.players[0];player.totalRemainingMs=totalRemainingMs;player.operationRemainingMs=operationRemainingMs;l12State.rankedClock.receivedAtMs=Date.now()},
  }
 }
 const deathMode=params.get('death')
@@ -235,9 +262,6 @@ window.setInterval(()=>{
  l12State.status='online'
  l12State.pendingAction=false
  if(previewState.rankedClock){
-  const now=Date.now()
-  previewState.rankedClock.receivedAtMs=now
-  previewState.rankedClock.serverUtcMs=now
   l12State.rankedClock=previewState.rankedClock
  }
 },200)

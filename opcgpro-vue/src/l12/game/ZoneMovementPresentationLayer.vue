@@ -4,7 +4,8 @@ import { l12AnimationDuration } from '../audioPreferences'
 import { landscapeTeleportTarget, visibleViewport, viewportRect } from '../mobileViewport'
 import { CARD_IMAGE_PLACEHOLDER, resolveCardAssetUrls } from '../cardAssets'
 import type { ActionEvent, Card, PlayerView, Prompt } from '../types'
-import { collectKnownCardZones, collectPromptSourceZoneHints, movementCardsForEvent, type VisualZone } from './visualTransitionProjection'
+import { collectKnownCardZones, collectPromptSourceZoneHints, isCombatDefeatLeaveEvent, isSupersededLeaveEvent, leaveMovementDestination, movementCardsForEvent, type VisualZone } from './visualTransitionProjection'
+import type { PresentationReservation, PresentationSequenceCoordinator } from './presentationSequenceCoordinator'
 
 type Zone = VisualZone
 type AnchorRect = { x: number; y: number; width: number; height: number }
@@ -26,6 +27,7 @@ type Movement = {
   disasterReveal?: boolean
   caption?: string
   attachment?: boolean
+  presentationRelease?: () => void
 }
 
 const props = withDefaults(defineProps<{
@@ -36,6 +38,7 @@ const props = withDefaults(defineProps<{
   viewerPlayerIndex: number
   paused?: boolean
   playbackSpeed?: number | null
+  sequenceCoordinator: PresentationSequenceCoordinator
 }>(), { paused: false, playbackSpeed: null })
 const emit = defineEmits<{ busyChange: [busy: boolean] }>()
 
@@ -47,6 +50,7 @@ let timer: ReturnType<typeof setTimeout> | null = null
 let preparationCount = 0
 const preparedImageUrls = new Map<string, string>()
 const sourceZoneHints = new Map<string, Zone>()
+const pendingReservations = new Set<PresentationReservation>()
 
 watch(() => props.prompts, prompts => {
   // 私密区域身份只在选择期间可见。保留本次选择的区域锚点，供紧随其后的权威移动事件使用。
@@ -155,6 +159,13 @@ function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: Anc
     from = event.text.includes('从墓地') ? 'graveyard' : event.text.includes('从圣物区') ? 'relic' : 'field'
     to = event.text.includes('主宰区') ? 'master' : event.text.includes('手牌') ? 'hand' : event.text.includes('圣物区') ? 'relic' : 'library'
     label = '返回'
+  } else if (event.type === 'leave') {
+    // Ordinary authoritative field departures used to disappear between two
+    // snapshots. Combat defeat owns its own motion layer; non-defeat costs,
+    // discards, removals and replacements use this shared zone lane.
+    from = selectedCard && sourceZoneHints.get(selectedCard.instanceId) || 'field'
+    to = leaveMovementDestination(event)
+    label = /费用/.test(event.text) ? '支付费用' : '离场'
   } else return null
 
   const cards = event.cards ?? []
@@ -277,8 +288,10 @@ function showNext() {
     activeGhostWrapper?.remove()
     activeGhostWrapper = null
     revealTarget()
+    const release = active.value.presentationRelease
     active.value = null
     timer = null
+    release?.()
     showNext()
     notifyBusy()
   }
@@ -347,7 +360,9 @@ function cancelActiveMovement() {
   activeGhostWrapper?.remove()
   activeGhostWrapper = null
   revealTarget()
+  const release = active.value?.presentationRelease
   active.value = null
+  release?.()
   notifyBusy()
 }
 
@@ -355,6 +370,7 @@ let viewportGeneration = 0
 function viewportChanged() {
   viewportGeneration++
   cancelActiveMovement()
+  for (const movement of queue) movement.presentationRelease?.()
   queue.length = 0
   notifyBusy()
   lastSequence = Math.max(lastSequence, ...props.events.map(event => event.sequence))
@@ -362,10 +378,13 @@ function viewportChanged() {
 function reset() {
   viewportGeneration++
   cancelActiveMovement()
+  for (const movement of queue) movement.presentationRelease?.()
   queue.length = 0
   initialized = false
   lastSequence = 0
   sourceZoneHints.clear()
+  for (const reservation of pendingReservations) reservation.cancel()
+  pendingReservations.clear()
   for (const [instanceId, zone] of collectKnownCardZones(props.players)) sourceZoneHints.set(instanceId, zone)
   for (const [instanceId, zone] of collectPromptSourceZoneHints(props.prompts)) sourceZoneHints.set(instanceId, zone)
   notifyBusy()
@@ -380,11 +399,20 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
     return
   }
   const fresh = props.events.filter(item => item.sequence > lastSequence).sort((a, b) => a.sequence - b.sequence)
-  const drafts = fresh.flatMap(event => movementCardsForEvent(event)
+  const drafts = fresh.flatMap(event => {
+    if (isSupersededLeaveEvent(event, fresh) || isCombatDefeatLeaveEvent(event)) return []
+    return movementCardsForEvent(event)
     .filter(card => event.type !== 'reveal' || !isMovementIdentityConcealed(event, card)).map(card => ({
     event,
     draft: movementFromEvent(event, fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), card),
-  }))).filter((item): item is { event: ActionEvent; draft: Movement } => Boolean(item.draft))
+    }))
+  }).filter((item): item is { event: ActionEvent; draft: Movement } => Boolean(item.draft))
+  const reservations = drafts.map(({ event }) => {
+    const reservation = props.sequenceCoordinator.reserve(event.sequence, 20)
+    reservation.setPaused(props.paused)
+    pendingReservations.add(reservation)
+    return reservation
+  })
   const hasMovement = drafts.length > 0
   if (hasMovement) {
     preparationCount++
@@ -404,6 +432,10 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
   })
   await nextTick()
   if (generation !== viewportGeneration) {
+    for (const reservation of reservations) {
+      reservation.cancel()
+      pendingReservations.delete(reservation)
+    }
     if (hasMovement) preparationCount--
     notifyBusy()
     return
@@ -412,7 +444,11 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
     const destination = destinationElement(draft)
     // An attach event may contain host and source in either order. Only cards that
     // actually became attached receive a movement; the host keeps its stable DOM.
-    if (draft.attachment && !destination) continue
+    if (draft.attachment && !destination) {
+      reservations[index]?.cancel()
+      if (reservations[index]) pendingReservations.delete(reservations[index]!)
+      continue
+    }
     const movement = starts[index]
       ? movementFromEvent(event, starts[index]!.rect, elementRect(destination)
         ?? resolveRect(draft.to, draft.playerIndex, draft.disasterReveal ? undefined : draft.card?.instanceId), draft.card)
@@ -426,6 +462,10 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
       movement.preparedImageUrl = await prepareMovementImage(movement.card)
     }
     if (generation !== viewportGeneration) {
+      for (const reservation of reservations.slice(index)) {
+        reservation.cancel()
+        pendingReservations.delete(reservation)
+      }
       if (hasMovement) preparationCount--
       notifyBusy()
       return
@@ -435,7 +475,20 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
       && movement.card.instanceId === previous.card?.instanceId
       && movement.sequence - previous.sequence <= 2
       && movement.to === previous.to
-    if (movement && !repeated) queue.push(movement)
+    if (movement && !repeated) {
+      const reservation = reservations[index]!
+      const release = await reservation.waitUntilGranted()
+      pendingReservations.delete(reservation)
+      if (generation !== viewportGeneration) release()
+      else {
+        movement.presentationRelease = release
+        queue.push(movement)
+        showNext()
+      }
+    } else {
+      reservations[index]?.cancel()
+      if (reservations[index]) pendingReservations.delete(reservations[index]!)
+    }
     if (movement?.card?.instanceId) sourceZoneHints.delete(movement.card.instanceId)
   }
   for (const event of fresh) lastSequence = Math.max(lastSequence, event.sequence)
@@ -447,6 +500,7 @@ watch(() => props.paused, paused => {
   // An animation that has already become visible must yield to a newly opened
   // modal. It is presentation only, so do not replay it after the modal closes.
   if (paused && active.value) cancelActiveMovement()
+  for (const reservation of pendingReservations) reservation.setPaused(paused)
   if (!paused) showNext()
 })
 onMounted(() => window.addEventListener('l12-viewport-change', viewportChanged))

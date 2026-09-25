@@ -57,8 +57,8 @@ function formatClock(value: number) {
 </template>
 
 <style scoped>
-.player-turn-clock{box-sizing:border-box;display:grid;width:138px;min-height:96px;align-content:center;gap:5px;padding:7px 8px;border:1px solid #505b5f;background:rgba(5,9,11,.94);box-shadow:0 7px 18px rgba(0,0,0,.72);color:#aeb6b7;pointer-events:none}
-.player-turn-clock strong{display:block;padding:3px 5px;border:1px solid #4c5558;color:#8d9697;font-size:var(--l12-board-copy,13px);letter-spacing:.04em;text-align:center;white-space:nowrap}
+.player-turn-clock{box-sizing:border-box;display:grid;width:196px;min-height:96px;grid-template-columns:repeat(2,minmax(0,1fr));align-content:center;gap:5px 8px;padding:7px 8px;border:1px solid #505b5f;background:rgba(5,9,11,.94);box-shadow:0 7px 18px rgba(0,0,0,.72);color:#aeb6b7;pointer-events:none}
+.player-turn-clock strong{display:block;grid-column:1/-1;padding:3px 5px;border:1px solid #4c5558;color:#8d9697;font-size:var(--l12-board-copy,13px);letter-spacing:.04em;text-align:center;white-space:nowrap}
 .player-turn-clock span{display:grid;min-width:0;justify-items:center;gap:1px;text-align:center}
 .player-turn-clock small{color:#879092;font-size:var(--l12-board-copy,13px);font-weight:900;white-space:nowrap}
 .player-turn-clock b{color:#f2eee2;font-family:monospace;font-size:var(--l12-board-copy,13px);font-weight:900;letter-spacing:.02em;white-space:nowrap}
@@ -67,5 +67,5 @@ function formatClock(value: number) {
 .player-turn-clock.side-opponent.active{border-color:#c9505a}.player-turn-clock.side-opponent.active strong,.player-turn-clock.side-opponent.active b{border-color:#c9505a;color:#f28e96}
 .player-turn-clock.side-my.active{border-color:#53bdc5}.player-turn-clock.side-my.active strong,.player-turn-clock.side-my.active b{border-color:#53bdc5;color:#7adce3}
 .player-turn-clock.disconnected{border-color:#9b3e49;background:rgba(38,10,14,.95)}.player-turn-clock.disconnected b{color:#f1959e}
-.player-turn-clock.untimed-clock{width:130px;min-height:0;padding:5px}
+.player-turn-clock.untimed-clock{width:130px;min-height:0;padding:5px}.player-turn-clock.untimed-clock strong{grid-column:1/-1}
 </style>

@@ -26,6 +26,18 @@ assert.equal(model.isCardEffectPresentationEvent({ ...event, type: 'effect-annou
 assert.deepEqual(model.cardEffectPresentationCards(event).map(item => item.instanceId), ['nuada'], 'only the source card is presented')
 assert.deepEqual(model.movementCardsForEvent({ ...event, type: 'move', cards: [sourceCard, targetCard] }).map(item => item.instanceId), ['nuada', 'target'], 'every card in a swap/multi-move is retained')
 assert.deepEqual(model.movementCardsForEvent({ ...event, type: 'attach', cards: [targetCard, sourceCard] }).map(item => item.instanceId), ['target', 'nuada'], 'attach host/source order is not guessed in the projection model')
+const costLeave = { ...event, type:'leave', text:'加拉哈德作为主动效果的费用被弃置', cards:[sourceCard] }
+assert.equal(model.isCombatDefeatLeaveEvent(costLeave), false, 'ordinary field costs must not be swallowed by combat defeat motion')
+assert.equal(model.leaveMovementDestination(costLeave), 'graveyard', 'ordinary field costs must animate toward graveyard')
+assert.equal(model.leaveMovementDestination({ ...costLeave, text:'返回所有者手牌' }), 'hand')
+assert.equal(model.leaveMovementDestination({ ...costLeave, text:'返回所有者牌库顶部' }), 'library')
+assert.equal(model.leaveMovementDestination({ ...costLeave, cards:[{ ...sourceCard, isMasterLegion:true }] }), 'master', 'master legions return to the master anchor')
+assert.equal(model.leaveMovementDestination({ ...costLeave, text:'被效果移出游戏' }), 'center', 'explicit removals must not falsely fly to the graveyard')
+assert.equal(model.isCombatDefeatLeaveEvent({ ...costLeave, text:'因兵力不高于0阵亡' }), true)
+assert.equal(model.isSupersededLeaveEvent(costLeave, [{ ...event, type:'return', sequence:11, cards:[sourceCard] }]), true, 'paired authoritative destination event must own the movement once')
+assert.equal(model.isSupersededLeaveEvent(costLeave, [{ ...event, type:'grave', sequence:9, cards:[sourceCard] }]), true, 'a dedicated destination event emitted before leave must still own the movement')
+assert.equal(model.isSupersededLeaveEvent(costLeave, [{ ...event, type:'derived-vanished', sequence:9, cards:[sourceCard] }]), true, 'derived cards vanish instead of flying to graveyard')
+assert.equal(model.isSupersededLeaveEvent(costLeave, [{ ...event, type:'return', sequence:11, cards:[targetCard] }]), false, 'different card movement must not suppress the leave visual')
 
 const hints = model.collectPromptSourceZoneHints([{
   promptId: 'p1', playerIndex: 0, kind: 'optional-card', text: '', validChoices: [], minChoose: 1, maxChoose: 1,
@@ -50,4 +62,4 @@ assert.equal(knownZones.get('grave-copy'), 'graveyard')
 assert.equal(knownZones.get('field-copy'), 'field')
 assert.equal(knownZones.get('resolving-copy'), 'resolving')
 
-console.log('Battle visual transition projection passed: 17/17 assertions')
+console.log('Battle visual transition projection passed: 28/28 assertions')

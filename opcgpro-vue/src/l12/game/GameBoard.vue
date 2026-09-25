@@ -33,6 +33,7 @@ import type { DeckCard } from '../decks'
 import { getFactionPresentation } from '../factionPresentation'
 import { landscapeTeleportTarget, viewportRect } from '../mobileViewport'
 import { useBattleViewportLayout } from './battleViewportLayout'
+import { createPresentationSequenceCoordinator, type PresentationReservation } from './presentationSequenceCoordinator'
 
 type GmPlacementRequest = {
   type: 'placeCard' | 'playHandCard'
@@ -141,17 +142,22 @@ const hasBlockingPrompt = computed(() => Boolean((props.game.prompts?.length ?? 
 const lastHiddenRevealSequence = ref(0)
 const lastPublicRevealSequence = ref(0)
 const lastDiceSequence = ref(0)
-const publicRevealQueue: Array<{ sequence: number; cards: Card[]; text: string }> = []
+const publicRevealQueue: Array<{ sequence: number; cards: Card[]; text: string; reservation: PresentationReservation }> = []
 const diceRevealQueue: Array<{ sequence: number; values: number[]; text: string }> = []
 const replayZonePresentationBusy = ref(false)
+const replaySequencePresentationBusy = ref(false)
 const replayCombatPresentationBusy = ref(false)
+const cardPresentationCoordinator = createPresentationSequenceCoordinator(busy => { replaySequencePresentationBusy.value = busy })
+let publicRevealWaiting = false
+let publicRevealWaitingReservation: PresentationReservation | null = null
+let publicRevealRelease: (() => void) | null = null
 let hiddenRevealTimer: ReturnType<typeof setTimeout> | null = null
 let publicRevealTimer: ReturnType<typeof setTimeout> | null = null
 let diceRollTimer: ReturnType<typeof setInterval> | null = null
 let diceSettleTimer: ReturnType<typeof setTimeout> | null = null
 let diceHideTimer: ReturnType<typeof setTimeout> | null = null
 const replayCardPresentationBusy = computed(() => Boolean(props.replayPlaybackSpeed && (
-  hiddenRevealCard.value || publicReveal.value || replayZonePresentationBusy.value || replayCombatPresentationBusy.value
+  hiddenRevealCard.value || publicReveal.value || replayZonePresentationBusy.value || replaySequencePresentationBusy.value || replayCombatPresentationBusy.value
 )))
 watch(replayCardPresentationBusy, busy => emit('replayPresentationChange', busy), { immediate: true })
 
@@ -517,17 +523,25 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
   focusCard.value = null
   promptMinimized.value = false
 })
-function showNextPublicReveal() {
-  // A modal owns the screen, and an authoritative zone movement owns the card
-  // presentation lane.  Do not start the secondary reveal until both yield.
-  if (publicReveal.value || !publicRevealQueue.length || modalPresentationPaused.value || replayZonePresentationBusy.value) return
-  publicReveal.value = publicRevealQueue.shift() ?? null
-  if (!publicReveal.value) return
+async function showNextPublicReveal() {
+  if (publicReveal.value || publicRevealWaiting || !publicRevealQueue.length || modalPresentationPaused.value) return
+  const next = publicRevealQueue.shift()
+  if (!next) return
+  publicRevealWaiting = true
+  publicRevealWaitingReservation = next.reservation
+  next.reservation.setPaused(modalPresentationPaused.value)
+  const release = await next.reservation.waitUntilGranted()
+  publicRevealWaiting = false
+  publicRevealWaitingReservation = null
+  publicRevealRelease = release
+  publicReveal.value = next
   if (publicRevealTimer) clearTimeout(publicRevealTimer)
   publicRevealTimer = setTimeout(() => {
     publicReveal.value = null
     publicRevealTimer = null
-    showNextPublicReveal()
+    publicRevealRelease?.()
+    publicRevealRelease = null
+    void showNextPublicReveal()
   }, cardRevealDuration())
 }
 function publicRevealText(event: ActionEvent) {
@@ -589,17 +603,17 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
       && !(event.type === 'effect-trigger' && /展示|公开/.test(event.text)))
     .sort((left, right) => left.sequence - right.sequence)
   for (const event of fresh) {
+    const reservation = cardPresentationCoordinator.reserve(event.sequence, 10)
+    reservation.setPaused(modalPresentationPaused.value)
     publicRevealQueue.push({
       sequence: event.sequence,
       cards: presentationCards(event),
       text: publicRevealText(event),
+      reservation,
     })
     lastPublicRevealSequence.value = Math.max(lastPublicRevealSequence.value, event.sequence)
   }
-  // Let ZoneMovementPresentationLayer observe the same authoritative batch
-  // first.  A disaster-reveal owns the flip animation; its following effect
-  // presentation waits for that movement instead of cancelling it.
-  void nextTick(showNextPublicReveal)
+  void showNextPublicReveal()
 })
 function openMobileMoralePicker() {
   mobileMoralePickerMinimized.value = false
@@ -642,12 +656,16 @@ function focusMasterCard(playerIndex:number){
   focusCard.value={instanceId:`master-${playerIndex}`,cardId:player.master.masterId,name:player.master.masterName,cardType:'master',faction:player.faction,imageUrl:player.master.masterImageUrl,effectText:player.master.effectText,cost:0,baseTroops:0,troops:0,disasterLevel:0,tapped:Boolean(player.master.tapped),summonRound:0,abilities:player.master.abilities}
 }
 watch([modalPresentationPaused, replayZonePresentationBusy], ([modalPaused, zoneBusy], [wasModalPaused]) => {
+  for (const item of publicRevealQueue) item.reservation.setPaused(modalPaused)
+  publicRevealWaitingReservation?.setPaused(modalPaused)
   if (modalPaused && !wasModalPaused) {
     // A presentation that was already visible yields permanently to a newly
     // opened modal.  It is never pushed back into the queue for replay.
     if (publicRevealTimer) clearTimeout(publicRevealTimer)
     publicRevealTimer = null
     publicReveal.value = null
+    publicRevealRelease?.()
+    publicRevealRelease = null
     if (diceRollTimer) clearInterval(diceRollTimer)
     if (diceSettleTimer) clearTimeout(diceSettleTimer)
     if (diceHideTimer) clearTimeout(diceHideTimer)
@@ -656,9 +674,9 @@ watch([modalPresentationPaused, replayZonePresentationBusy], ([modalPaused, zone
     diceHideTimer = null
     diceReveal.value = null
   }
-  if (!modalPaused && !zoneBusy) {
-    showNextPublicReveal()
-    showNextDiceReveal()
+  if (!modalPaused) {
+    void showNextPublicReveal()
+    if (!zoneBusy) showNextDiceReveal()
   }
 })
 watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
@@ -735,6 +753,13 @@ onBeforeUnmount(() => {
   if (diceRollTimer) clearInterval(diceRollTimer)
   if (diceSettleTimer) clearTimeout(diceSettleTimer)
   if (diceHideTimer) clearTimeout(diceHideTimer)
+  publicRevealRelease?.()
+  publicRevealRelease = null
+  publicRevealWaitingReservation?.cancel()
+  publicRevealWaitingReservation = null
+  for (const item of publicRevealQueue) item.reservation.cancel()
+  publicRevealQueue.length = 0
+  cardPresentationCoordinator.reset()
   emit('replayPresentationChange', false)
 })
 
@@ -1201,6 +1226,7 @@ function statusTexts(card: Card) {
             <ZoneMovementPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
               :players="game.players" :prompts="game.prompts ?? []"
               :viewer-player-index="game.you" :paused="passivePresentationPaused" :playback-speed="replayPlaybackSpeed"
+              :sequence-coordinator="cardPresentationCoordinator"
               @busy-change="replayZonePresentationBusy = $event" />
             <CardStateTransitionLayer :players="game.players" :match-id="game.matchId"
               :paused="modalPresentationPaused" :playback-speed="replayPlaybackSpeed" />
@@ -1439,10 +1465,10 @@ function statusTexts(card: Card) {
 .stage-layout>.board-rail{width:auto;min-width:0}
 .left-rail{display:flex}.left-detail-layout{display:flex;min-height:0;flex:1}.left-card-column{display:flex;width:100%;min-width:0;min-height:0;flex-direction:column;gap:10px}.left-rail>.grand-panel,.left-card-column>.grand-panel,.left-card-column>.card-inspector-anchor{box-sizing:border-box;width:100%}.right-rail{display:grid;grid-template-rows:auto minmax(0,1fr) auto;align-items:stretch}
 .current-disaster-panel{display:grid;flex:none;grid-template-columns:minmax(0,1fr);align-items:center;padding:10px!important}.current-disaster-card{width:100%;padding:0;overflow:hidden;border:1px solid rgba(240,239,229,.72);background:#080a0b}.current-disaster-card:disabled{cursor:default}.current-disaster-card img,.current-disaster-card :deep(.l12-card-image){display:block;width:100%;height:auto;aspect-ratio:8/5;object-fit:contain}.phase-column{display:flex;min-width:0;min-height:0;margin-block:242px;flex-direction:column;gap:8px;padding:8px 5px!important;overflow:hidden}.phase-disaster-value{display:flex;min-height:64px;align-items:center;justify-content:center;gap:6px;padding:5px 3px;border:1px solid rgba(238,238,228,.34);background:rgba(7,10,11,.68);color:#fff}.phase-disaster-value img{width:30px;height:32px;object-fit:contain;filter:invert(1)}.phase-disaster-value b{font-size:max(30px,var(--l12-board-copy,13px));line-height:1}.phase-column :deep(.l12-phase-track.vertical){flex:1;min-height:0}
-.board-center{--l12-hand-lane-height:160px;display:grid;min-height:0;grid-template-rows:var(--l12-hand-lane-height) 70px minmax(0,1fr) 70px var(--l12-hand-lane-height);align-items:stretch;gap:6px}
+.board-center{--l12-hand-lane-height:160px;--l12-clock-lane-height:112px;display:grid;min-height:0;grid-template-rows:var(--l12-hand-lane-height) var(--l12-clock-lane-height) minmax(0,1fr) var(--l12-clock-lane-height) var(--l12-hand-lane-height);align-items:stretch;gap:6px}
 .board-center>.l12-hand{position:relative;z-index:40;box-sizing:border-box;width:calc(100% - 400px);height:var(--l12-hand-lane-height)!important;min-height:var(--l12-hand-lane-height);padding-right:0;align-self:stretch;justify-self:center;transform:translateX(64px)}
 .board-center>.opponent-hand{grid-row:1}.opponent-status-lane{grid-row:2}.felt-board{grid-row:3}.my-status-lane{grid-row:4}.board-center>.l12-hand:last-child{grid-row:5}
-.board-viewport{top:52px}.board-status-lane{height:70px!important;min-height:70px!important;flex-shrink:0}.player-summary :is(.player-summary-primary,.player-summary-meta,.connection-state){font-size:var(--l12-board-copy,13px)!important}
+.board-viewport{top:52px}.board-status-lane{height:var(--l12-clock-lane-height)!important;min-height:var(--l12-clock-lane-height)!important;flex-shrink:0}.player-summary :is(.player-summary-primary,.player-summary-meta,.connection-state){font-size:var(--l12-board-copy,13px)!important}
 .right-rail{width:auto}.right-rail .record-log{display:flex;flex:1;flex-direction:column;min-height:150px}.right-rail .action-panel{max-height:300px;overflow:auto}.right-rail .action-panel :deep(.l12-actions>p){display:none}.board-rail .card-inspector{overflow:auto}.session-disaster-strip span{white-space:normal!important;overflow-wrap:anywhere}
 .card-inspector.archive-detail{display:block;box-sizing:border-box;border-left:1px solid rgba(240,239,229,.2)}.card-inspector :deep(.card-detail-copy){min-width:0}.card-inspector :deep(.archive-tags){flex-wrap:wrap}.card-inspector :deep(.archive-effect p){white-space:pre-wrap;overflow-wrap:anywhere}.battle-card-status{margin-top:2px}.battle-card-status>ul{margin-top:7px}
 .felt-board{
@@ -1457,7 +1483,7 @@ function statusTexts(card: Card) {
   align-items:stretch;
 }
 .presentation-zone-anchor{position:absolute;z-index:-1;left:50%;top:50%;width:72px;height:101px;transform:translate(-50%,-50%);visibility:hidden;pointer-events:none}
-.board-status-lane{position:relative;z-index:38;display:flex;box-sizing:border-box;height:70px;min-height:70px;justify-content:flex-end;overflow:visible;pointer-events:none}.board-player-clock{position:relative;right:auto;top:auto;bottom:auto;transform:translateX(74px)}.opponent-status-lane{order:0;align-items:flex-end}.my-status-lane{order:0;align-items:flex-start}
+.board-status-lane{position:relative;z-index:38;display:flex;box-sizing:border-box;height:var(--l12-clock-lane-height);min-height:var(--l12-clock-lane-height);justify-content:flex-end;overflow:hidden;pointer-events:none}.board-player-clock{position:relative;right:auto;top:auto;bottom:auto;transform:none}.opponent-status-lane{order:0;align-items:flex-end}.my-status-lane{order:0;align-items:flex-start}
 .player-panel{display:grid;box-sizing:border-box;height:auto!important;min-height:0;flex:none;gap:8px;overflow:hidden!important}.player-panel :deep(.battle-player-identity){padding:2px}.player-panel :deep(.battle-player-identity__facts>div){grid-template-columns:64px minmax(0,1fr)}.player-panel :deep(.battle-player-identity__name>strong){font-size:max(14px,calc(var(--l12-board-copy,13px) - 1px))}.player-panel :deep(.battle-player-identity dd){font-size:calc(var(--l12-board-copy,13px) - 1px)}.player-panel :deep(.battle-player-identity .ranked-identity-badge){max-width:100%}.player-panel :deep(.battle-player-identity .ranked-identity-badge>span){min-width:0;overflow-wrap:anywhere;white-space:normal}
 .player-panel>hr{margin:9px 0!important}
 .right-rail .record-log{min-height:120px;overflow:hidden}.right-rail .record-log>.event-list{min-height:0;overflow-y:auto}

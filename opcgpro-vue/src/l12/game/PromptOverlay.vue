@@ -623,7 +623,7 @@ function kindLabel() {
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
       </section>
 
-      <section v-else-if="prompt" class="prompt-panel" :class="{ 'has-card-choices': hasCardChoices, 'single-card-row': isSingleCardRow, 'effect-decision': isEffectDecision }" role="dialog" aria-modal="true" :aria-label="prompt.text">
+      <section v-else-if="prompt" class="prompt-panel prompt-choice-panel" :class="{ 'has-card-choices': hasCardChoices, 'single-card-row': isSingleCardRow, 'effect-decision': isEffectDecision }" role="dialog" aria-modal="true" :aria-label="prompt.text">
         <header :class="{ 'effect-decision-header': isEffectDecision }">
           <small v-if="!isPureEffectDecision">{{ kindLabel() }}</small><h2>{{ isEffectDecision ? (prompt.data?.sourceName || prompt.text) : prompt.text }}</h2>
           <p v-if="isEffectDecision" class="effect-decision-text l12-effect-body">{{ decisionEffectText }}</p>
@@ -631,6 +631,7 @@ function kindLabel() {
         </header>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
+        <main class="prompt-choice-body" data-ui-contract="mobile-choice-scroll-body">
         <div v-if="isInitiative" class="initiative-race" :class="{ settled: diceSettled }">
           <article v-for="player in initiativePlayers" :key="player.playerIndex" :class="{ winner: diceSettled && game.diceWinner === player.playerIndex }">
             <img :src="masterProfileUrl(player.master.masterId, player.master.masterImageUrl)" :alt="player.master.masterName" />
@@ -642,9 +643,10 @@ function kindLabel() {
           <section v-for="group in disasterHistory" :key="group.key" :class="group.key">
             <header><b>{{ group.label }}</b><span>{{ group.entries.length }}</span></header>
             <div><button v-for="entry in group.entries" :key="entry.card.instanceId" :class="{ hidden: entry.card.hidden }"
+              :aria-label="`${entry.card.name || '未揭示天灾'}，${group.label}，${entry.note}`"
               @click="focusHistoryCard(entry.card)" @mouseenter="focusHistoryCard(entry.card)">
               <img v-if="entry.card.hidden" src="/assets/l12/card-back-disaster.png" alt="未揭示天灾"/>
-               <CardImage v-else :card-id="entry.card.cardId || ''" :legacy-url="entry.card.imageUrl" :alt="entry.card.name || '天灾'" intent="detail" eager/><span>{{ entry.card.name || '未揭示天灾' }}</span><small>{{ entry.note }}</small>
+               <CardImage v-else :card-id="entry.card.cardId || ''" :legacy-url="entry.card.imageUrl" :alt="entry.card.name || '天灾'" intent="detail" eager/><em>{{ group.label }}</em><span>{{ entry.card.name || '未揭示天灾' }}</span><small>{{ entry.note }}</small>
             </button><p v-if="!group.entries.length">等待本阶段结果</p></div>
           </section>
         </div>
@@ -729,6 +731,7 @@ function kindLabel() {
             </button>
           </template>
         </div>
+        </main>
         <footer v-if="!isPureEffectDecision" class="prompt-action-footer">
           <template v-if="prompt.data?.choiceMode !== 'optional-add'">
             <button v-for="choice in supplementalChoices" :key="choice" class="prompt-footer-choice"
@@ -781,19 +784,21 @@ function kindLabel() {
         </footer>
       </section>
 
-      <section v-else-if="isMulligan" class="prompt-panel mulligan-panel has-card-choices" role="dialog" aria-modal="true" aria-label="起始手牌调度">
+      <section v-else-if="isMulligan" class="prompt-panel prompt-choice-panel mulligan-panel has-card-choices" role="dialog" aria-modal="true" aria-label="起始手牌调度">
         <header>
           <small>调度 · {{ game.firstPlayer === me.playerIndex ? '先攻' : '后攻' }}玩家</small><h2>选择需要调度的起始手牌</h2>
           <button class="prompt-minimize" aria-label="最小化弹框" title="最小化以查看场面" @click="minimized = true">—</button>
         </header>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
-        <div class="prompt-choices prompt-card-strip">
+        <main class="prompt-choice-body" data-ui-contract="mobile-choice-scroll-body">
+          <div class="prompt-choices prompt-card-strip">
           <PromptCardCandidate v-for="card in me.hand" :key="card.instanceId"
             :card-id="card.cardId" :legacy-url="card.imageUrl" :name="card.name" meta="手牌"
             :horizontal="isHorizontalCardType(card.cardType)" :selected="mulliganSelectedIds.includes(card.instanceId)"
             @focus="focusChoice(card.instanceId)" @select="emit('mulliganToggle', card.instanceId)"/>
-        </div>
+          </div>
+        </main>
         <footer><span>已选择 {{ mulliganSelectedIds.length }} 张</span><button class="primary" :disabled="busy" @click="emit('mulliganConfirm')">{{ busy ? '处理中…' : '确认调度' }}</button></footer>
       </section>
 

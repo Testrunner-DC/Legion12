@@ -44,6 +44,7 @@ const adminModule = await read('src/l12/site/AdminAccountsPage.vue') + await rea
 const matchRecords = await read('src/l12/MatchRecords.vue')
 const deckEditor = await read('src/l12/L12DeckEditor.vue')
 const mobileDeferredCardImage = await read('src/l12/MobileDeferredCardImage.vue')
+const promptCardCandidate = await read('src/l12/game/PromptCardCandidate.vue')
 
 const expect = (condition, message) => {
   if (!condition) throw new Error(`mobile responsive contract: ${message}`)
@@ -57,6 +58,11 @@ expect(viewportTs.includes('compactLandscape(rotatedWidth, rotatedHeight, previo
 expect(battleLayout.includes('export function resolveBattleViewportLayout(') && battleLayout.includes('scale: options.mobile ? 1 : desktopScale') && battleLayout.includes("window.addEventListener('l12-viewport-change', update)"), 'battle viewport classification, scaling and listeners must stay behind one testable layout boundary')
 expect(mobileDialogLayout.includes('MOBILE_DIALOG_COVERAGE = 0.75') && mobileDialogLayout.includes('MOBILE_DIALOG_ASPECT_RATIO = 16 / 9') && viewportTs.includes("root.style.setProperty('--l12-mobile-dialog-width'") && viewportCss.includes('width: var(--l12-mobile-dialog-width) !important'), 'mobile dialogs must share a stable 16:9 frame capped to 75% of the safe logical canvas')
 expect(graveyardOverlay.includes('class="graveyard-card-name"') && viewportCss.includes('.prompt-card-candidate__name') && viewportCss.includes('.graveyard-card-name') && viewportCss.includes('justify-content: safe center !important'), 'mobile dialog card collections must retain explicit complete names and centre sparse content without stretching dense rows')
+expect(prompt.includes('class="prompt-panel prompt-choice-panel"') && prompt.includes('class="prompt-choice-body"') && prompt.includes('data-ui-contract="mobile-choice-scroll-body"') && viewportCss.includes('.prompt-choice-body') && viewportCss.includes('overflow: hidden !important'), 'mobile choice dialogs must reserve the confirmation footer and constrain overflow to their own scroll body')
+expect(promptCardCandidate.includes("'已选择'") && promptCardCandidate.includes("'当前不可选择'") && promptCardCandidate.includes(':aria-pressed="selected"') && promptCardCandidate.includes('prompt-card-candidate__state') && promptCardCandidate.includes('{ empty: !stateLabel }'), 'card choices must expose an explicit selected/unavailable state instead of relying on dimming alone')
+expect(viewportCss.includes('align-items: stretch !important') && viewportCss.includes('grid-template-rows: auto minmax(2.5em, max-content)'), 'mobile choice rows must reserve equal metadata and state lanes so long names do not make card bottoms uneven')
+expect(viewportCss.includes('touch-action: pan-x') && viewportCss.includes('.disaster-preparation-history button span') && viewportCss.includes('text-overflow: clip !important'), 'dense choice and disaster-history card collections must pan horizontally without clipping full card names')
+expect(prompt.includes("'disaster-ban': '正在禁用天灾'") && prompt.includes("'disaster-pick': '正在选择天灾'"), 'disaster ban and pick prompts must retain player-readable action labels')
 expect(settings.includes('v-model="audioPreferences.mobileLayout"') && audioPreferences.includes("mobileLayout: 'auto' | 'on' | 'off'") && audioPreferences.includes('dataset.l12MobileLayoutPreference'), 'mobile layout choice must be exposed and persisted through the shared settings model')
 expect(cardTile.includes('container-type:inline-size') && cardTile.includes('--l12-card-stat-font:clamp(6px,11cqw,18px)') && board.includes('var(--l12-card-stat-font, 7px)'), 'card value badges must scale continuously from their own card container rather than viewport-specific fixed sizes')
 expect(app.includes('data-l12-landscape-canvas') && !app.includes('l12-rotate-device') && !app.includes('requestLandscapeExperience'), 'immersive compact routes must use the logical canvas without a rotate-device blocker')

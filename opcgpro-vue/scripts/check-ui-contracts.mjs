@@ -349,11 +349,14 @@ const contracts = [
   [board.includes('data-ui-contract="opponent-status-safe-lane"') && board.includes('data-ui-contract="player-status-safe-lane"')
     && board.includes('opponent-player-clock') && board.includes('my-player-clock')
     && board.includes(':active="game.activePlayer === viewEnemy.playerIndex"') && board.includes(':active="game.activePlayer === viewMe.playerIndex"')
-    && board.includes('.board-player-clock{position:relative;right:auto;top:auto;bottom:auto;transform:translateX(74px)}')
+    && board.includes('--l12-clock-lane-height:112px')
+    && board.includes('.board-player-clock{position:relative;right:auto;top:auto;bottom:auto;transform:none}')
+    && board.includes('height:var(--l12-clock-lane-height)!important') && board.includes('overflow:hidden;pointer-events:none')
     && board.includes("'timed-board': Boolean(l12State.rankedClock)") && board.includes('.board-center>.l12-hand{position:relative;z-index:40;box-sizing:border-box;width:calc(100% - 400px)')
     && !globalStyle.includes("content:'回合玩家'"), '双方回合标识与常驻计时必须位于棋盘上下的普通流安全轨道，避开双方手牌和操作条，当前回合只能控制高亮'],
   [playerTurnClock.includes('data-ui-contract="persistent-player-turn-clock"') && playerTurnClock.includes('总时') && playerTurnClock.includes('本次') && playerTurnClock.includes('重连')
-    && playerTurnClock.includes('.player-turn-clock{box-sizing:border-box;display:grid;width:138px;')
+    && playerTurnClock.includes('.player-turn-clock{box-sizing:border-box;display:grid;width:196px;')
+    && playerTurnClock.includes('grid-template-columns:repeat(2,minmax(0,1fr))')
     && playerTurnClock.includes("'untimed-clock': !clock") && playerTurnClock.includes('.player-turn-clock.untimed-clock{width:130px;min-height:0;padding:5px}')
     && !playerTurnClock.includes('无时限') && !playerTurnClock.includes('v-if="active"'), '双方回合玩家框必须常驻；排位显示总操作、本次操作或重连倒计时，无计时房间只保留回合玩家/等待回合并收缩'],
   [board.includes('data-ui-contract="complete-player-summary"')
@@ -402,7 +405,7 @@ const contracts = [
     && board.includes('grid-template-columns:340px 92px minmax(0,1fr) 320px')
     && board.includes('.right-rail{display:grid;grid-template-rows:auto minmax(0,1fr) auto')
     && board.includes('.right-rail .action-panel{max-height:300px;overflow:auto}')
-    && board.includes('grid-template-rows:var(--l12-hand-lane-height) 70px minmax(0,1fr) 70px var(--l12-hand-lane-height)')
+    && board.includes('grid-template-rows:var(--l12-hand-lane-height) var(--l12-clock-lane-height) minmax(0,1fr) var(--l12-clock-lane-height) var(--l12-hand-lane-height)')
     && (board.match(/class="opponent-hand"/g) ?? []).length === 2
     && handArea.includes('const cardWidth = computed(() => 114.4)') && handArea.includes('.l12-hand .hand-card-wrap .card-tile{width:114.4px;height:160.6px;flex-basis:114.4px;border:1px solid transparent')
     && handArea.includes('.l12-hand.hidden .card-back{box-sizing:border-box;width:114.4px;height:160.6px}')
@@ -863,7 +866,7 @@ const contracts = [
   [handArea.includes('data-ui-contract="field-sized-safe-hand"') && handArea.includes('const cardWidth = computed(() => 114.4)')
     && handArea.includes('width:114.4px;height:160.6px;flex-basis:114.4px')
     && board.includes('.formation-slot .card-tile.tapped){width:114.4px;height:160.6px;flex-basis:114.4px}')
-    && board.includes('.board-center{--l12-hand-lane-height:160px;display:grid;min-height:0;')
+    && board.includes('.board-center{--l12-hand-lane-height:160px;--l12-clock-lane-height:112px;display:grid;min-height:0;')
     && board.includes('width:calc(100% - 400px)') && board.includes('z-index:40')
     && handArea.includes('overflow-x:auto') && handArea.includes('ResizeObserver'), '双方手牌必须与场上军团同尺寸，限制在计时框与额外区之间并高于场面可点击，多数量时按实测宽度扇形收拢或横向滚动'],
   [board.includes('v-if="l12State.spectating" class="spectator-hand" hidden :count="viewMe.handCount || 0"')
