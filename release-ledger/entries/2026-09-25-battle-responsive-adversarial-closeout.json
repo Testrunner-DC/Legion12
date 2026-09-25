@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-25-battle-responsive-adversarial-closeout",
+  "date": "2026-09-25",
+  "audience": "players",
+  "title": "对战界面跨比例显示修正",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "对战界面会按实际画面比例等比利用空间；宽屏、超宽屏、短屏和横屏平板中的主宰、战场、牌堆、手牌、计时与操作区不再互相侵入或留出异常大块空白。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/PlayerMat.vue",
+        "opcgpro-vue/src/l12/game/HandArea.vue",
+        "opcgpro-vue/src/l12/game/battleViewportLayout.ts"
+      ]
+    },
+    {
+      "category": "battle",
+      "text": "移动对战的主宰信息、圆形标记和右侧互动按钮会在安全区内分区显示；支援、抵挡、目标选择和对局结束等状态仍可完整查看和点击。",
+      "paths": [
+        "opcgpro-vue/src/l12/GamePage.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.mobile.css",
+        "opcgpro-vue/src/l12/game/MobileBattleDock.css"
+      ]
+    }
+  ]
+}

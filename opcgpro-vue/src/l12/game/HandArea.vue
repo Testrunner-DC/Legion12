@@ -155,5 +155,7 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
 .l12-hand.mobile-layout[data-more-start="true"][data-more-end="false"]{box-shadow:inset 14px 0 12px -12px #75d5de}
 .l12-hand.mobile-layout[data-more-start="true"][data-more-end="true"]{box-shadow:inset 14px 0 12px -12px #75d5de,inset -14px 0 12px -12px #75d5de}
 .l12-hand>.hand-card-wrap,.l12-hand>.card-back{animation:l12-hand-enter var(--l12-dur-3) var(--l12-ease-standard) both;transition:transform var(--l12-dur-1) var(--l12-ease-standard),filter var(--l12-dur-1),opacity var(--l12-dur-1)}
-@keyframes l12-hand-enter{from{opacity:0;translate:0 var(--l12-dist-3)}to{opacity:1;translate:0 0}}
+/* Cold mounting a full bottom hand must never place its numeric badges below the
+   visual viewport. Keep the entrance cue local to the final card rectangle. */
+@keyframes l12-hand-enter{from{opacity:0;translate:0 4px}to{opacity:1;translate:0 0}}
 </style>

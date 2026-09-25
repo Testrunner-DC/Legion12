@@ -1065,7 +1065,7 @@ function statusTexts(card: Card) {
 </script>
 
 <template>
-  <div class="board-viewport" :class="{ 'compact-viewport': compactViewport, 'mobile-landscape-board': mobileLandscapeViewport, 'read-only-board': readOnly, 'gm-panel-docked': gmPanelOpen && !compactViewport, 'board-target-active': Boolean(gmPlacement || boardTargetPrompt), 'board-slot-active': Boolean(boardSlotPrompt) }" :data-l12-battle-layout="mobileLandscapeViewport ? 'mobile' : 'desktop'" :data-l12-mobile-landscape="mobileLandscapeViewport ? 'true' : undefined">
+  <div class="board-viewport" :class="{ 'compact-viewport': compactViewport, 'mobile-landscape-board': mobileLandscapeViewport, 'read-only-board': readOnly, 'gm-panel-docked': gmPanelOpen && !compactViewport, 'board-target-active': Boolean(gmPlacement || boardTargetPrompt), 'board-slot-active': Boolean(boardSlotPrompt), 'board-control-expanded': !boardControlMinimized && Boolean(gmPlacement || boardTargetPrompt || boardSlotPrompt) }" :data-l12-battle-layout="mobileLandscapeViewport ? 'mobile' : 'desktop'" :data-l12-mobile-landscape="mobileLandscapeViewport ? 'true' : undefined">
     <MobileBattleDock v-if="mobileLandscapeViewport" />
     <Teleport :to="landscapeTeleportTarget()">
       <button v-if="mobileLandscapeViewport" type="button" class="mobile-card-inspector-handle mobile-card-inspector-handle-global" :class="{ open: mobileInspectorOpen }" :aria-expanded="mobileInspectorOpen" @click="mobileInspectorOpen = !mobileInspectorOpen">{{ mobileInspectorOpen ? '收起详情' : '展开卡牌详情' }}</button>
@@ -1238,12 +1238,13 @@ function statusTexts(card: Card) {
                 <span :class="combat.targetOwner.playerIndex === game.you ? 'mine' : 'opponent'">{{ combat.targetOwner.playerIndex === game.you ? '我方' : '对手' }} · {{ combat.targetName }}</span>
                 <b>{{ combat.targetValue }}<small>{{ combat.targetUnit }}</small></b>
               </div>
-              <div v-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && !readOnly && !combatDecisionMinimized" class="combat-resolution-panel">
-                <button v-if="mobileLandscapeViewport" class="combat-decision-minimize" type="button" aria-label="最小化支援或抵挡选择" @click="combatDecisionMinimized = true">−</button>
-                <GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
-                  :mulligan-count="mulliganIds.length" :defense-count="defenseIds.length" :defense-target-type="defenseTargetType"
-                  :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="l12State.pendingAction" @command="command" />
-              </div>
+              <button v-if="mobileLandscapeViewport && game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && !readOnly && !combatDecisionMinimized"
+                class="combat-decision-minimize" type="button" aria-label="最小化支援或抵挡选择" @click="combatDecisionMinimized = true">−</button>
+              <BattleDockPortal lane="primary"><div v-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && !readOnly && !combatDecisionMinimized" class="combat-resolution-panel">
+                  <GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
+                    :mulligan-count="mulliganIds.length" :defense-count="defenseIds.length" :defense-target-type="defenseTargetType"
+                    :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="l12State.pendingAction" @command="command" />
+                </div></BattleDockPortal>
             </div></BattleDockPortal>
             <BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport && combat && game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && combatDecisionMinimized"
               class="combat-decision-restore" type="button" @click="combatDecisionMinimized = false">恢复支援/抵挡</button></BattleDockPortal>
@@ -1439,7 +1440,7 @@ function statusTexts(card: Card) {
 .left-rail{display:flex}.left-detail-layout{display:flex;min-height:0;flex:1}.left-card-column{display:flex;width:100%;min-width:0;min-height:0;flex-direction:column;gap:10px}.left-rail>.grand-panel,.left-card-column>.grand-panel,.left-card-column>.card-inspector-anchor{box-sizing:border-box;width:100%}.right-rail{display:grid;grid-template-rows:auto minmax(0,1fr) auto;align-items:stretch}
 .current-disaster-panel{display:grid;flex:none;grid-template-columns:minmax(0,1fr);align-items:center;padding:10px!important}.current-disaster-card{width:100%;padding:0;overflow:hidden;border:1px solid rgba(240,239,229,.72);background:#080a0b}.current-disaster-card:disabled{cursor:default}.current-disaster-card img,.current-disaster-card :deep(.l12-card-image){display:block;width:100%;height:auto;aspect-ratio:8/5;object-fit:contain}.phase-column{display:flex;min-width:0;min-height:0;margin-block:242px;flex-direction:column;gap:8px;padding:8px 5px!important;overflow:hidden}.phase-disaster-value{display:flex;min-height:64px;align-items:center;justify-content:center;gap:6px;padding:5px 3px;border:1px solid rgba(238,238,228,.34);background:rgba(7,10,11,.68);color:#fff}.phase-disaster-value img{width:30px;height:32px;object-fit:contain;filter:invert(1)}.phase-disaster-value b{font-size:max(30px,var(--l12-board-copy,13px));line-height:1}.phase-column :deep(.l12-phase-track.vertical){flex:1;min-height:0}
 .board-center{--l12-hand-lane-height:160px;display:grid;min-height:0;grid-template-rows:var(--l12-hand-lane-height) 70px minmax(0,1fr) 70px var(--l12-hand-lane-height);align-items:stretch;gap:6px}
-.board-center>.l12-hand{position:relative;z-index:40;box-sizing:border-box;width:calc(100% - 400px);height:var(--l12-hand-lane-height)!important;min-height:var(--l12-hand-lane-height);padding-right:0;align-self:stretch;justify-self:center;transform:translateX(-10px)}
+.board-center>.l12-hand{position:relative;z-index:40;box-sizing:border-box;width:calc(100% - 400px);height:var(--l12-hand-lane-height)!important;min-height:var(--l12-hand-lane-height);padding-right:0;align-self:stretch;justify-self:center;transform:translateX(64px)}
 .board-center>.opponent-hand{grid-row:1}.opponent-status-lane{grid-row:2}.felt-board{grid-row:3}.my-status-lane{grid-row:4}.board-center>.l12-hand:last-child{grid-row:5}
 .board-viewport{top:52px}.board-status-lane{height:70px!important;min-height:70px!important;flex-shrink:0}.player-summary :is(.player-summary-primary,.player-summary-meta,.connection-state){font-size:var(--l12-board-copy,13px)!important}
 .right-rail{width:auto}.right-rail .record-log{display:flex;flex:1;flex-direction:column;min-height:150px}.right-rail .action-panel{max-height:300px;overflow:auto}.right-rail .action-panel :deep(.l12-actions>p){display:none}.board-rail .card-inspector{overflow:auto}.session-disaster-strip span{white-space:normal!important;overflow-wrap:anywhere}
@@ -1456,7 +1457,7 @@ function statusTexts(card: Card) {
   align-items:stretch;
 }
 .presentation-zone-anchor{position:absolute;z-index:-1;left:50%;top:50%;width:72px;height:101px;transform:translate(-50%,-50%);visibility:hidden;pointer-events:none}
-.board-status-lane{position:relative;z-index:38;display:flex;box-sizing:border-box;height:70px;min-height:70px;justify-content:flex-end;overflow:visible;pointer-events:none}.board-player-clock{position:relative;right:auto;top:auto;bottom:auto}.opponent-status-lane{order:0;align-items:flex-end}.my-status-lane{order:0;align-items:flex-start}
+.board-status-lane{position:relative;z-index:38;display:flex;box-sizing:border-box;height:70px;min-height:70px;justify-content:flex-end;overflow:visible;pointer-events:none}.board-player-clock{position:relative;right:auto;top:auto;bottom:auto;transform:translateX(74px)}.opponent-status-lane{order:0;align-items:flex-end}.my-status-lane{order:0;align-items:flex-start}
 .player-panel{display:grid;box-sizing:border-box;height:auto!important;min-height:0;flex:none;gap:8px;overflow:hidden!important}.player-panel :deep(.battle-player-identity){padding:2px}.player-panel :deep(.battle-player-identity__facts>div){grid-template-columns:64px minmax(0,1fr)}.player-panel :deep(.battle-player-identity__name>strong){font-size:max(14px,calc(var(--l12-board-copy,13px) - 1px))}.player-panel :deep(.battle-player-identity dd){font-size:calc(var(--l12-board-copy,13px) - 1px)}.player-panel :deep(.battle-player-identity .ranked-identity-badge){max-width:100%}.player-panel :deep(.battle-player-identity .ranked-identity-badge>span){min-width:0;overflow-wrap:anywhere;white-space:normal}
 .player-panel>hr{margin:9px 0!important}
 .right-rail .record-log{min-height:120px;overflow:hidden}.right-rail .record-log>.event-list{min-height:0;overflow-y:auto}

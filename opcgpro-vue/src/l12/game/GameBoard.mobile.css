@@ -848,7 +848,10 @@
   --l12-mobile-detail-handle-h:clamp(24px,calc(var(--l12-viewport-height,100vh) * .07),30px);
   --l12-mobile-current-disaster-h:clamp(48px,calc(var(--l12-viewport-height,100vh) * .14),66px);
   --l12-mobile-disaster-value-h:clamp(24px,calc(var(--l12-viewport-height,100vh) * .07),30px);
-  --l12-mobile-disaster-orb:clamp(28px,calc(var(--l12-viewport-height,100vh) * .09),42px);
+  /* The two-column disaster grid is constrained by both viewport height and
+     the actual left rail. This prevents tall-but-narrow ratios from growing
+     42px circles beyond a 78px rail. */
+  --l12-mobile-disaster-orb:clamp(28px,min(calc(var(--l12-viewport-height,100vh) * .09),calc((var(--l12-mobile-left-rail-w) - var(--l12-mobile-rail-gap) - 8px) / 2)),42px);
   --l12-mobile-extra-zone-h:clamp(48px,calc(var(--l12-viewport-height,100vh) * .18),90px);
   --l12-mobile-master-name-font:clamp(7px,calc(var(--l12-mobile-card-w) * .18),10px);
   --l12-mobile-master-health-h:clamp(13px,calc(var(--l12-mobile-card-w) * .34),22px);
@@ -878,18 +881,24 @@
   box-sizing:border-box !important;
   width:var(--l12-mobile-commander-w) !important;
   min-width:var(--l12-mobile-commander-w) !important;
+  min-height:0 !important;
+  height:calc(var(--l12-mobile-hand-count-h) + var(--l12-mobile-card-h) + var(--l12-mobile-marker) + 8px) !important;
   padding:0 !important;
   grid-template-columns:var(--l12-mobile-master-w) var(--l12-mobile-relic-w) !important;
-  grid-template-rows:minmax(0,1fr) calc(var(--l12-mobile-marker) + 2px) !important;
+  grid-template-rows:var(--l12-mobile-hand-count-h) var(--l12-mobile-card-h) calc(var(--l12-mobile-marker) + 2px) !important;
+  align-content:center !important;
   gap:2px 4px !important;
 }
 .mobile-landscape-board :deep(.battlefield-half .mobile-hand-count) {
-  position:absolute !important;
+  position:relative !important;
   z-index:22;
-  left:4px !important;
-  top:1px !important;
+  inset:auto !important;
   display:flex !important;
   box-sizing:border-box;
+  grid-column:1/-1 !important;
+  grid-row:1 !important;
+  align-self:center !important;
+  justify-self:center !important;
   width:var(--l12-mobile-hand-count-w) !important;
   min-width:var(--l12-mobile-hand-count-w) !important;
   height:var(--l12-mobile-hand-count-h) !important;
@@ -907,6 +916,7 @@
 }
 .mobile-landscape-board :deep(.battlefield-half .mobile-hand-count i) { color:#aebdb9; font-size:clamp(8px,calc(var(--l12-mobile-master-w) * .16),12px); font-style:normal; }
 .mobile-landscape-board :deep(.battlefield-half .mobile-hand-count b) { color:#fff; font-size:clamp(11px,calc(var(--l12-mobile-master-w) * .24),18px); font-variant-numeric:tabular-nums; }
+.mobile-landscape-board.board-control-expanded :deep(.battlefield-half .mobile-hand-count) { display:none !important; }
 .mobile-landscape-board :deep(.battlefield-half .master-column),
 .mobile-landscape-board :deep(.battlefield-half .mini-master) {
   box-sizing:border-box !important;
@@ -919,6 +929,7 @@
   flex-basis:var(--l12-mobile-master-w) !important;
   aspect-ratio:5/7 !important;
 }
+.mobile-landscape-board :deep(.battlefield-half .master-column) { grid-column:1 !important; grid-row:2 !important; }
 .mobile-landscape-board :deep(.battlefield-half .relic-zone),
 .mobile-landscape-board :deep(.battlefield-half .relic-zone .card-tile),
 .mobile-landscape-board :deep(.battlefield-half .relic-zone .card-tile.tapped) {
@@ -932,6 +943,7 @@
   flex-basis:var(--l12-mobile-relic-w) !important;
   aspect-ratio:5/7 !important;
 }
+.mobile-landscape-board :deep(.battlefield-half .relic-zone) { grid-column:2 !important; grid-row:2 !important; }
 .mobile-landscape-board :deep(.battlefield-half .extra-relic) { width:var(--l12-mobile-relic-w) !important; height:var(--l12-mobile-relic-h) !important; max-width:var(--l12-mobile-relic-w) !important; max-height:var(--l12-mobile-relic-h) !important; }
 .mobile-landscape-board :deep(.battlefield-half .mini-master>span:not(.master-away)) { right:var(--l12-card-edge,1px) !important; bottom:var(--l12-card-edge,1px) !important; left:var(--l12-card-edge,1px) !important; font-size:var(--l12-mobile-master-name-font) !important; }
 .mobile-landscape-board :deep(.battlefield-half .master-health) { right:var(--l12-card-edge,1px) !important; bottom:var(--l12-mobile-master-health-h) !important; min-width:0 !important; height:var(--l12-mobile-master-health-h) !important; padding:0 var(--l12-card-stat-pad-x,1px) !important; font-size:var(--l12-mobile-master-health-font) !important; line-height:var(--l12-mobile-master-health-h) !important; }
@@ -986,7 +998,7 @@
 }
 .mobile-landscape-board :deep(.battlefield-half .mat-piles .pile .pile-count) { right:var(--l12-card-edge,1px) !important; top:var(--l12-card-edge,1px) !important; min-width:var(--l12-mobile-pile-badge-h) !important; height:var(--l12-mobile-pile-badge-h) !important; padding:0 var(--l12-card-stat-pad-x,1px) !important; font-size:var(--l12-mobile-pile-count-font) !important; line-height:var(--l12-mobile-pile-badge-h) !important; }
 .mobile-landscape-board :deep(.battlefield-half .mat-piles .pile>span) { left:var(--l12-card-edge,1px) !important; bottom:var(--l12-card-edge,1px) !important; padding:var(--l12-card-stat-pad-y,0) var(--l12-card-stat-pad-x,1px) !important; font-size:var(--l12-mobile-pile-label-font) !important; }
-.mobile-landscape-board :deep(.battlefield-half .master-marker-track) { position:relative !important; inset:auto !important; grid-column:1/-1 !important; grid-row:2 !important; align-self:center !important; justify-self:center !important; box-sizing:border-box !important; width:100% !important; max-width:100% !important; height:calc(var(--l12-mobile-marker) + 2px) !important; min-height:calc(var(--l12-mobile-marker) + 2px) !important; align-items:center !important; justify-content:center !important; gap:var(--l12-mobile-marker-gap) !important; padding-inline:2px !important; overflow:visible !important; }
+.mobile-landscape-board :deep(.battlefield-half .master-marker-track) { position:relative !important; inset:auto !important; grid-column:1/-1 !important; grid-row:3 !important; align-self:center !important; justify-self:center !important; box-sizing:border-box !important; width:100% !important; max-width:100% !important; height:calc(var(--l12-mobile-marker) + 2px) !important; min-height:calc(var(--l12-mobile-marker) + 2px) !important; align-items:center !important; justify-content:center !important; gap:var(--l12-mobile-marker-gap) !important; padding-inline:2px !important; overflow:visible !important; }
 .mobile-landscape-board :deep(.battlefield-half .master-marker-track.canopic) { justify-content:center !important; }
 .mobile-landscape-board :deep(.battlefield-half .master-marker-track .rune-orb),
 .mobile-landscape-board :deep(.battlefield-half .master-marker-track .canopic-orb) { display:grid !important; box-sizing:border-box !important; width:var(--l12-mobile-marker) !important; min-width:var(--l12-mobile-marker) !important; height:var(--l12-mobile-marker) !important; min-height:var(--l12-mobile-marker) !important; flex:0 0 var(--l12-mobile-marker) !important; place-items:center !important; padding:2px !important; overflow:hidden !important; border-radius:50% !important; }

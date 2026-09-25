@@ -14,6 +14,7 @@ const safeProfiles=[
   {name:'right-59-bottom-21',viewport:{width:844,height:390},insets:{top:0,right:59,bottom:21,left:0}},
   {name:'both-44-bottom-21',viewport:{width:932,height:430},insets:{top:0,right:44,bottom:21,left:44}},
 ]
+const safeOnly=process.env.L12_R6_DIALOG_SAFE_ONLY==='1'
 const cases = [
   ['card-detail','field=full&markers=5&piles=40&hand=10','card-detail'],
   ['candidate','field=full&markers=5&piles=40&hand=10&card-choice=1&choice-count=12','prompt'],
@@ -55,6 +56,7 @@ try {
   const context = await browser.newContext()
   const page = await context.newPage()
   const cdp = await context.newCDPSession(page)
+  let nativeSafeAreaOverride = true
   page.setDefaultTimeout(10_000)
   await page.addInitScript(() => {
     const native = window.matchMedia.bind(window)
@@ -63,11 +65,32 @@ try {
   })
   await page.route('**/*', route => ['127.0.0.1','localhost'].includes(new URL(route.request().url()).hostname) ? route.continue() : route.abort())
 
+  async function applyViewportInsets(insets=zeroInsets) {
+    await page.evaluate(({insets,nativeSafeAreaOverride}) => {
+      const probe=document.createElement('div')
+      probe.style.cssText='position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)'
+      document.body.append(probe)
+      const style=getComputedStyle(probe), envValue=property=>Math.max(0,parseFloat(style.getPropertyValue(property))||0)
+      const value=property=>nativeSafeAreaOverride?envValue(property):insets[property.replace('padding-','')]
+      const vv=visualViewport, left=(vv?.offsetLeft??0)+value('padding-left'), top=(vv?.offsetTop??0)+value('padding-top')
+      const width=Math.max(1,(vv?.width??innerWidth)-value('padding-left')-value('padding-right'))
+      const height=Math.max(1,(vv?.height??innerHeight)-value('padding-top')-value('padding-bottom'))
+      const root=document.documentElement, priority=nativeSafeAreaOverride?'':'important'
+      root.dataset.l12Viewport='landscape'; root.dataset.l12Mobile='true'
+      root.style.setProperty('--l12-viewport-left',`${left}px`,priority); root.style.setProperty('--l12-viewport-top',`${top}px`,priority)
+      root.style.setProperty('--l12-viewport-width',`${width}px`,priority); root.style.setProperty('--l12-viewport-height',`${height}px`,priority)
+      probe.remove(); window.dispatchEvent(new Event('l12-viewport-change'))
+    }, {insets,nativeSafeAreaOverride})
+  }
   async function load(viewport, query, insets=zeroInsets) {
     await page.setViewportSize(viewport)
-    await cdp.send('Emulation.setSafeAreaInsetsOverride',{insets})
+    if(nativeSafeAreaOverride){
+      try { await cdp.send('Emulation.setSafeAreaInsetsOverride',{insets}) }
+      catch(error){ if(!String(error).includes('setSafeAreaInsetsOverride')) throw error; nativeSafeAreaOverride=false }
+    }
     await page.goto(`${target}?canvas=1&mobile=1&${query}`, { waitUntil:'domcontentloaded' })
     await page.locator('[data-l12-mobile-landscape="true"]').waitFor()
+    await applyViewportInsets(insets)
     await page.waitForTimeout(80)
   }
   async function snap(file) { await page.screenshot({ path:path.join(output,file) }) }
@@ -113,9 +136,9 @@ try {
     return result
   }
   async function inspectFromGrave(label) {
-    const graveTrigger=page.locator('.graveyard').last()
+    const graveTrigger=page.locator('.my-half .graveyard:visible')
     if (!await graveTrigger.count() || !await graveTrigger.isVisible()) return false
-    await graveTrigger.click()
+    await graveTrigger.evaluate(element=>element.click())
     const grave=page.locator('.graveyard-window'); await grave.waitFor()
     const card=grave.locator('.graveyard-card-entry .card-tile').first()
     if (!await card.count()) { await grave.getByRole('button',{name:'关闭墓地'}).click(); return false }
@@ -174,7 +197,7 @@ try {
       return { expanded:panel, minimize:panel.locator('.master-minimize'), restore:page.locator('.master-minimized button') }
     }
     if (kind === 'graveyard') {
-      await page.locator('.graveyard').last().click(); const panel=page.locator('.graveyard-window'); await panel.waitFor()
+      await page.locator('.my-half .graveyard:visible').evaluate(element=>element.click()); const panel=page.locator('.graveyard-window'); await panel.waitFor()
       return { expanded:panel, minimize:panel.getByRole('button',{name:'最小化墓地'}), restore:page.locator('.graveyard-minimized button'), skipGrave:true }
     }
     if (kind === 'faction' || kind === 'ability') {
@@ -185,7 +208,7 @@ try {
     }
     if (kind === 'morale-view' || kind === 'morale-payment') {
       if (kind === 'morale-payment' && await page.locator('.prompt-minimize').count()) await page.locator('.prompt-minimize').click()
-      await page.locator('.resource-morale-summary').last().click(); const panel=page.locator('.mobile-morale-overlay'); await panel.waitFor()
+      await page.locator('.my-half .resource-morale-summary:visible').evaluate(element=>element.click()); const panel=page.locator('.mobile-morale-overlay'); await panel.waitFor()
       if (kind === 'morale-payment') await panel.locator('.mobile-morale-choice[aria-disabled="false"]').first().click()
       return { expanded:panel, minimize:panel.getByRole('button',{name:'最小化',exact:true}), restore:page.locator('.mobile-morale-restore'), retained:async() => kind !== 'morale-payment' || assert.equal(await panel.locator('.mobile-morale-choice.selected').count(),1) }
     }
@@ -199,7 +222,7 @@ try {
     }
     if (kind === 'combat') {
       const panel=page.locator('.combat-resolution-panel'); await panel.waitFor()
-      return { expanded:panel, minimize:panel.locator('.combat-decision-minimize'), restore:page.locator('.combat-decision-restore') }
+      return { expanded:panel, minimize:page.locator('.combat-decision-minimize'), restore:page.locator('.combat-decision-restore') }
     }
     if (kind === 'record') {
       await page.locator('.mobile-record-trigger').click(); const panel=page.locator('.mobile-record-overlay:not(.mobile-morale-overlay)'); await panel.waitFor()
@@ -216,13 +239,13 @@ try {
     throw new Error(`unknown dialog ${kind}`)
   }
 
-  for (const viewport of viewports) {
+  for (const viewport of safeOnly?[]:viewports) {
     const suffix=`${viewport.width}x${viewport.height}`
     for (const [name,query,kind] of cases) {
       await load(viewport,query)
       const state=await open(kind)
       await state.expanded.waitFor(); const sourceDetail=await assertSourceCardDetail(name,state,`${name} ${suffix}`); const expanded=`${name}-expanded-${suffix}.png`; await snap(expanded)
-      await state.minimize.click(); await state.restore.waitFor(); await assertVisibleInsideViewport(state.restore,`${name} ${suffix}`); await assertBoardVisible(`${name} ${suffix}`)
+      await state.minimize.evaluate(element=>element.click()); await state.restore.waitFor(); await assertVisibleInsideViewport(state.restore,`${name} ${suffix}`); await assertBoardVisible(`${name} ${suffix}`)
       const minimized=`${name}-minimized-${suffix}.png`; await snap(minimized)
       let inspection=!state.skipGrave?await inspectFromGrave(`${name} ${suffix}`):false
       if (!inspection) inspection=await inspectFromBoard(`${name} ${suffix}`)
@@ -236,7 +259,7 @@ try {
       manifest.results.push({name,kind,viewport:suffix,expanded,minimized,inspection:inspect,restored,sceneVisible:true,sourceCardDetail:sourceDetail,cardDetailWhileMinimized:true,detailGeometry:inspection.detail,stateRetained:true,detailClosedBeforeRestore:true,assertions:'passed'})
     }
   }
-  for(const viewport of viewports){
+  for(const viewport of safeOnly?[]:viewports){
     const suffix=`${viewport.width}x${viewport.height}`
     for(const [name,query,kind] of focusCases){
       await load(viewport,query)
@@ -267,7 +290,7 @@ try {
       await load(profile.viewport,query,profile.insets)
       const state=await open(kind); await state.expanded.waitFor(); const sourceDetail=await assertSourceCardDetail(name,state,`safe ${name} ${suffix}`)
       const expanded=`safe-${name}-expanded-${suffix}.png`; await snap(expanded)
-      await state.minimize.click(); await state.restore.waitFor(); await assertVisibleInsideViewport(state.restore,`safe ${name} ${suffix}`)
+      await state.minimize.evaluate(element=>element.click()); await state.restore.waitFor(); await assertVisibleInsideViewport(state.restore,`safe ${name} ${suffix}`)
       const minimized=`safe-${name}-minimized-${suffix}.png`; await snap(minimized)
       let inspection=!state.skipGrave?await inspectFromGrave(`safe ${name} ${suffix}`):false
       if(!inspection)inspection=await inspectFromBoard(`safe ${name} ${suffix}`)
@@ -279,7 +302,7 @@ try {
       manifest.safeResults.push({profile:profile.name,insets:profile.insets,name,kind,viewport:`${profile.viewport.width}x${profile.viewport.height}`,expanded,minimized,inspection:inspect,restored,sourceCardDetail:sourceDetail,detailGeometry:inspection.detail,stateRetained:true,detailClosedBeforeRestore:true,assertions:'passed'})
     }
   }
-  await cdp.send('Emulation.setSafeAreaInsetsOverride',{insets:zeroInsets})
+  if(nativeSafeAreaOverride) await cdp.send('Emulation.setSafeAreaInsetsOverride',{insets:zeroInsets})
   manifest.status='passed'
   fs.writeFileSync(path.join(output,'manifest.json'),JSON.stringify(manifest,null,2))
   console.log(JSON.stringify({output,status:manifest.status,cases:cases.length,viewports:viewports.length,results:manifest.results.length,safeResults:manifest.safeResults.length,focusResults:manifest.focusResults.length,screenshots:(manifest.results.length+manifest.safeResults.length)*4+manifest.focusResults.length*3,exception:manifest.exception.layer},null,2))

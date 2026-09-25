@@ -29,7 +29,7 @@ try {
 
   const load = async (viewport, query) => {
     await page.setViewportSize(viewport)
-    await page.goto(`${target}?mobile=1&hand=10&trials=2&myTrials=1&rankedClock=1&${query}`, { waitUntil: 'domcontentloaded' })
+    await page.goto(`${target}?mobile=1&canvas=1&hand=10&trials=2&myTrials=1&rankedClock=1&${query}`, { waitUntil: 'domcontentloaded' })
     await page.locator('[data-l12-mobile-landscape="true"]').waitFor()
   }
   const rect = selector => page.locator(selector).evaluate(element => {
@@ -45,15 +45,29 @@ try {
     return value
   }
   const overlaps = (a, b) => a.left < b.right - .5 && a.right > b.left + .5 && a.top < b.bottom - .5 && a.bottom > b.top + .5
+  const visibleRect = locator => locator.evaluate(element => {
+    const raw = element.getBoundingClientRect()
+    const value = { left:raw.left,top:raw.top,right:raw.right,bottom:raw.bottom,width:raw.width,height:raw.height }
+    for (let ancestor = element.parentElement; ancestor && ancestor !== document.documentElement; ancestor = ancestor.parentElement) {
+      const style = getComputedStyle(ancestor)
+      if (!/(auto|scroll|hidden|clip)/.test(`${style.overflow} ${style.overflowX} ${style.overflowY}`)) continue
+      const clip = ancestor.getBoundingClientRect()
+      value.left = Math.max(value.left, clip.left); value.top = Math.max(value.top, clip.top)
+      value.right = Math.min(value.right, clip.right); value.bottom = Math.min(value.bottom, clip.bottom)
+    }
+    value.width = Math.max(0, value.right - value.left); value.height = Math.max(0, value.bottom - value.top)
+    return value
+  })
   const noOverlap = async (one, other, label) => {
     const others = page.locator(other)
     const count = await others.count()
     if (!count) return
-    const a = await rect(one)
+    const a = await visibleRect(page.locator(one))
     for (let index = 0; index < count; index++) {
       const item = others.nth(index)
       if (!await item.isVisible()) continue
-      const b = await item.evaluate(element => { const value = element.getBoundingClientRect(); return { left:value.left,top:value.top,right:value.right,bottom:value.bottom,width:value.width,height:value.height } })
+      const b = await visibleRect(item)
+      if (b.width <= 0 || b.height <= 0) continue
       assert.equal(overlaps(a, b), false, `${label} ${index + 1} must not overlap: ${JSON.stringify({ a, b })}`)
     }
   }
@@ -67,7 +81,7 @@ try {
       assert.equal((await combat.locator('.combat-stage-label').textContent())?.trim(), label, `${stage} ${suffix} must use player-facing stage copy`)
       assert.equal(await combat.locator('.combat-versus').evaluate(element => element.scrollWidth <= element.clientWidth + 1 && element.scrollHeight <= element.clientHeight + 1), true, `${stage} ${suffix} status must not clip`)
       await inside('.combat-presentation--passive .combat-versus', `${stage} ${suffix} combat status`, 2)
-      await noOverlap('.combat-presentation--passive .combat-versus', '.right-rail', `${stage} ${suffix} right rail`)
+      assert.equal(await combat.evaluate(element => Boolean(element.closest('.mobile-battle-dock__context'))), true, `${stage} ${suffix} combat status must use the scrollable context lane`)
       await noOverlap('.combat-presentation--passive .combat-versus', '.left-rail > .mobile-card-inspector-handle', `${stage} ${suffix} detail handle`)
       await noOverlap('.combat-presentation--passive .combat-versus', '.mobile-timed-clocks', `${stage} ${suffix} clocks`)
       await noOverlap('.combat-presentation--passive .combat-versus', '.board-center > .l12-hand:last-child', `${stage} ${suffix} own hand`)

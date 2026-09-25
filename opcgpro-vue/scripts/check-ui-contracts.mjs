@@ -349,7 +349,7 @@ const contracts = [
   [board.includes('data-ui-contract="opponent-status-safe-lane"') && board.includes('data-ui-contract="player-status-safe-lane"')
     && board.includes('opponent-player-clock') && board.includes('my-player-clock')
     && board.includes(':active="game.activePlayer === viewEnemy.playerIndex"') && board.includes(':active="game.activePlayer === viewMe.playerIndex"')
-    && board.includes('.board-player-clock{position:relative;right:auto;top:auto;bottom:auto}')
+    && board.includes('.board-player-clock{position:relative;right:auto;top:auto;bottom:auto;transform:translateX(74px)}')
     && board.includes("'timed-board': Boolean(l12State.rankedClock)") && board.includes('.board-center>.l12-hand{position:relative;z-index:40;box-sizing:border-box;width:calc(100% - 400px)')
     && !globalStyle.includes("content:'回合玩家'"), '双方回合标识与常驻计时必须位于棋盘上下的普通流安全轨道，避开双方手牌和操作条，当前回合只能控制高亮'],
   [playerTurnClock.includes('data-ui-contract="persistent-player-turn-clock"') && playerTurnClock.includes('总时') && playerTurnClock.includes('本次') && playerTurnClock.includes('重连')
@@ -406,7 +406,7 @@ const contracts = [
     && (board.match(/class="opponent-hand"/g) ?? []).length === 2
     && handArea.includes('const cardWidth = computed(() => 114.4)') && handArea.includes('.l12-hand .hand-card-wrap .card-tile{width:114.4px;height:160.6px;flex-basis:114.4px;border:1px solid transparent')
     && handArea.includes('.l12-hand.hidden .card-back{box-sizing:border-box;width:114.4px;height:160.6px}')
-    && board.includes('align-self:stretch;justify-self:center;transform:translateX(-10px)')
+    && board.includes('align-self:stretch;justify-self:center;transform:translateX(64px)')
     && board.includes('.board-center>.opponent-hand{grid-row:1}') && board.includes('.board-center>.l12-hand:last-child{grid-row:5}')
     && !board.includes('.battlefield-half.opponent-half{transform:rotate(180deg)')
     && !board.includes('.opponent-hand{transform:rotate(180deg)'), '对局舞台必须保持16:9主布局；独立窄阶段列与左、中、右区不得互相侵入，双方手牌和文字不得倒置'],
@@ -441,7 +441,7 @@ const contracts = [
     && board.includes('box-sizing:border-box;width:100%') && board.includes('justify-self:center')
     && playerMat.includes('width:min(100%,1320px);margin-inline:auto')
     && playerMat.includes('.l12-player-mat{grid-template-columns:minmax(270px,300px) minmax(500px,1fr) 100px 156px}')
-    && playerMat.includes('.battle-zone{transform:translateX(-74px)}')
+    && playerMat.includes('.battle-zone{transform:none}.mat-piles{transform:none}')
     && board.includes('.felt-board :deep(.battlefield-half.opponent-half){grid-row:1}')
     && board.includes('.felt-board :deep(.battlefield-half.my-half){grid-row:3}'), '双方战场外框及指挥官圣物、六格、牌堆、状态列整组必须在中央可用区居中，不得只居中六格或挤压常驻UI'],
   [playerMat.includes('grid-template-columns:140px 100px') && playerMat.includes('.master-column .mini-master{width:140px;height:196px}')
@@ -459,7 +459,7 @@ const contracts = [
     && playerMat.includes('.relic-zone{box-sizing:border-box;width:132.25px;height:185.15px;aspect-ratio:5/7;display:grid;place-items:center;overflow:hidden;container-type:size}')
     && playerMat.includes('.relic-zone :deep(.card-tile){width:127.65px;height:178.71px;flex-basis:127.65px;aspect-ratio:5/7}')
     && playerMat.includes('.relic-zone :deep(.card-tile.tapped){width:calc(100cqw * 5 / 7);height:100cqw;max-width:100cqh;max-height:100cqw;flex-basis:calc(100cqw * 5 / 7)}')
-    && playerMat.includes('.mat-piles{transform:translateX(-24px)}')
+    && playerMat.includes('.mat-piles{transform:none}')
     && playerMat.includes('.mat-piles .pile span{left:5px;bottom:5px;padding:3px 6px')
     && playerMat.includes('.mat-piles .pile .pile-count{right:5px;top:5px;min-width:34px!important;height:28px!important;padding:0 8px!important'), '圣物区及内部卡面必须保持5:7卡牌比例；牌库和墓地名称与留有内边距的计数盒必须完整收在各自容器内'],
   [handArea.includes('.hand-card-wrap .card-tile{width:114.4px;height:160.6px;flex-basis:114.4px;border:1px solid transparent;border-radius:0;box-shadow:none}')
@@ -527,10 +527,10 @@ const contracts = [
     && gamePage.includes('<span class="route-label" aria-hidden="true"><span>返回</span><span>大厅</span></span>')
     && mobileActionDockStyle.includes('.mobile-battle-dock button {') && mobileActionDockStyle.includes('min-height:32px')
     && mobileActionDockStyle.includes('.battle-route-controls .route-label>span { display:block; min-width:2em; text-align:center; }')
-    && gamePage.includes('<BattleDockPortal lane="tools"><div class="battle-route-controls">')
+    && gamePage.includes('<BattleDockPortal lane="tools"><div v-if="game.phase !== \'GameOver\' || gameOverMinimized" class="battle-route-controls">')
     && mobileViewportStyle.includes('transform: translateZ(0)')
     && mobileViewportStyle.includes('#l12-landscape-teleports > .mobile-safe-overlay:not(.minimized)')
-    && mobileActionDockStyle.includes('height:calc(var(--l12-viewport-height,100vh) - 16px)')
+    && mobileActionDockStyle.includes('inset:4px 4px 4px auto')
     && mobileActionDockStyle.includes('white-space:normal; overflow-wrap:anywhere;')
     && prompt.includes('--inspector-safe-lane:clamp(118px,19vw,258px)'), '移动专用手牌计数、阵营标识和路由换行不得泄漏到桌面；临时士气始终使用网站图标，桌面弹框安全区必须使用经验证的窄侧栏比例'],
   [board.includes('--l12-mobile-master-health-h:clamp(13px,calc(var(--l12-mobile-card-w) * .34),22px)')
@@ -1656,7 +1656,7 @@ contracts.push(
     && responsiveTypeCheck.includes('{ width: 390, height: 844 }') && responsiveTypeCheck.includes('[data-card-detail-context="builder"] .archive-effect .l12-effect-body')
     && responsiveTypeCheck.includes('selected-card effect prose must wrap without horizontal overflow'),
     '响应式字号专项必须覆盖三档16:9桌面、760与390窄宽，并实际选中卡牌验证正文和标签而非只检查空详情'],
-  [battleViewportLayout.includes('Math.min(1, availableWidth / stageWidth, availableHeight / stageHeight)')
+  [battleViewportLayout.includes('Math.min(availableWidth / stageWidth, availableHeight / stageHeight)')
     && battleViewportLayout.includes('scale: options.mobile ? 1 : desktopScale')
     && !battleViewportLayout.includes('Math.max(.7')
     && mobileViewportStyle.includes('.board-viewport.compact-viewport')

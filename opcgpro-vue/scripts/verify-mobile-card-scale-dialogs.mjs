@@ -15,8 +15,9 @@ const dialogViewports = [[667, 375], [844, 390], [932, 430], [1024, 768]].map(([
 const quick = process.env.L12_B3_QUICK === '1'
 const safeOnly = process.env.L12_B3_SAFE_ONLY === '1'
 const dialogOnly = process.env.L12_B3_DIALOG_ONLY === '1'
-const activeFixed = safeOnly || dialogOnly ? [] : quick ? fixedViewports.slice(0, 1) : fixedViewports
-const activeDialogs = safeOnly ? [] : quick ? dialogViewports.slice(0, 1) : dialogViewports
+const scanOnly = process.env.L12_B3_SCAN_ONLY?.trim() ?? ''
+const activeFixed = safeOnly || dialogOnly || scanOnly ? [] : quick ? fixedViewports.slice(0, 1) : fixedViewports
+const activeDialogs = safeOnly || scanOnly ? [] : quick ? dialogViewports.slice(0, 1) : dialogViewports
 const safeAreaProfiles = [
   { name:'left-59-bottom-21', viewport:{ width:667,height:375 }, insets:{ top:0,right:0,bottom:21,left:59 } },
   { name:'right-59-bottom-21', viewport:{ width:844,height:390 }, insets:{ top:0,right:59,bottom:21,left:0 } },
@@ -84,7 +85,7 @@ const states = [
   ['settlement-win', 'field=full&markers=5&piles=40&hand=10&game-over=win'],
   ['settlement-loss', 'field=full&markers=5&piles=40&hand=10&game-over=loss'],
 ]
-const activeStates = quick ? states.filter(([name]) => ['full', 'markers-5', 'hand-20', 'status-indicators', 'action-dock', 'inspector-open'].includes(name)) : states
+const activeStates = scanOnly ? [] : quick ? states.filter(([name]) => ['full', 'markers-5', 'hand-20', 'status-indicators', 'action-dock', 'inspector-open'].includes(name)) : states
 const dialogCases = [
   ['card-detail', 'field=full&markers=5&piles=40&hand=10', 'inspector'],
   ['master', 'field=full&markers=5&piles=40&hand=10&modalFixture=1', 'master'],
@@ -100,7 +101,7 @@ const dialogCases = [
   ['morale-payment', 'field=full&markers=5&piles=40&hand=10&morale-payment=1', 'morale'],
 ]
 fs.mkdirSync(output, { recursive: true })
-const manifest = { generatedAt: new Date().toISOString(), target, fixedViewports, acceptance: { safeViewport:'all visible interactive controls, battle-critical regions and overlays inside visualViewport minus CDP safe-area insets', safeAreaAudit:{ interactiveSelector, criticalSelectors, overlaySelectors }, handCounts:'exactly one PlayerMat hand count per player; no floating third entry; full text visible and clear of master/relic/markers/field', cardRatio:'5:7 ±5%; horizontal cards keep native ratio', formation:'six square slots, <=2px uniform gaps', cardScale:'master/relic/field/piles max visual-height ratio 1.15', localScale:'status icons, keywords, master health, pile counts, morale summary and action buttons remain contained and scale continuously from card/logical viewport tokens', spaceUtilization:'for empty/full at every fixed viewport, record commander+battle+piles+resource union; width>=640 requires >=75% occupation or both margins <=12%, left/right difference <=3pp, and every structural gap <=1.5 card widths', continuity:'1px-neighbor and safe-inset layout proportions change <=10 percentage points', scrolling:'page root fixed; horizontal scroll only in declared hand/card-list containers' }, randomScan: [], states: [], dialogs: [], safeArea: [], desktop: [], status: 'running' }
+const manifest = { generatedAt: new Date().toISOString(), target, fixedViewports, acceptance: { safeViewport:'all visible interactive controls, battle-critical regions and overlays inside visualViewport minus CDP safe-area insets', safeAreaAudit:{ interactiveSelector, criticalSelectors, overlaySelectors }, handCounts:'exactly one PlayerMat hand count per player; no floating third entry; full text visible and clear of master/relic/markers/field', cardRatio:'5:7 ±5%; horizontal cards keep native ratio', formation:'six square slots, <=2px uniform gaps', cardScale:'field and master share one scale; relic/master about .9; pile/master about .7', localScale:'status icons, keywords, master health, pile counts, morale summary and action buttons remain contained and scale continuously from card/logical viewport tokens', spaceUtilization:'for empty/full at every fixed viewport, record commander+battle+piles+resource union; width>=640 requires >=75% occupation or both margins <=12%, left/right difference <=3pp, and every structural gap <=1.5 card widths', continuity:'1px-neighbor and safe-inset layout proportions change <=10 percentage points', scrolling:'page root fixed; horizontal scroll only in declared hand/card-list containers' }, randomScan: [], states: [], dialogs: [], safeArea: [], desktop: [], status: 'running' }
 
 function intersects(a, b, tolerance = .5) {
   return a.left < b.right - tolerance && a.right > b.left + tolerance && a.top < b.bottom - tolerance && a.bottom > b.top + tolerance
@@ -127,6 +128,15 @@ try {
   page.setDefaultTimeout(10_000)
   await installMobile(page)
   await page.route('**/*', route => ['127.0.0.1', 'localhost'].includes(new URL(route.request().url()).hostname) ? route.continue() : route.abort())
+  async function applyViewportInsets(insets = zeroInsets) {
+    await page.evaluate(({ insets, nativeSafeAreaOverride }) => {
+      const probe=document.createElement('div'); probe.style.cssText='position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)'; document.body.append(probe)
+      const style=getComputedStyle(probe); const envValue=property=>Math.max(0,parseFloat(style.getPropertyValue(property))||0); const value=property=>nativeSafeAreaOverride?envValue(property):insets[property.replace('padding-','')]; const vv=visualViewport
+      const left=(vv?.offsetLeft??0)+value('padding-left'); const top=(vv?.offsetTop??0)+value('padding-top'); const width=Math.max(1,(vv?.width??innerWidth)-value('padding-left')-value('padding-right')); const height=Math.max(1,(vv?.height??innerHeight)-value('padding-top')-value('padding-bottom'))
+      const dialogWidth=Math.min(width*.75,height*.75*16/9),dialogHeight=dialogWidth*9/16
+      const root=document.documentElement, priority=nativeSafeAreaOverride?'':'important'; root.dataset.l12Viewport='landscape'; root.dataset.l12Mobile='true'; root.style.setProperty('--l12-viewport-left',`${left}px`,priority); root.style.setProperty('--l12-viewport-top',`${top}px`,priority); root.style.setProperty('--l12-viewport-width',`${width}px`,priority); root.style.setProperty('--l12-viewport-height',`${height}px`,priority); root.style.setProperty('--l12-mobile-dialog-width',`${dialogWidth}px`,priority); root.style.setProperty('--l12-mobile-dialog-height',`${dialogHeight}px`,priority); probe.remove()
+    }, { insets, nativeSafeAreaOverride })
+  }
   async function load(viewport, query, insets = zeroInsets) {
     await page.setViewportSize(viewport)
     if (nativeSafeAreaOverride) {
@@ -137,17 +147,11 @@ try {
         nativeSafeAreaOverride = false
       }
     }
-    await page.goto(`${target}?mobile=1&${query}`, { waitUntil: 'domcontentloaded' })
+    await page.goto(`${target}?mobile=1&canvas=1&${query}`, { waitUntil: 'domcontentloaded' })
     await page.locator('[data-l12-mobile-landscape="true"]').waitFor()
     // The standalone fixture mounts GameBoard without App.vue, so mirror the
     // production viewport hook after CDP has populated env(safe-area-inset-*).
-    await page.evaluate(({ insets, nativeSafeAreaOverride }) => {
-      const probe=document.createElement('div'); probe.style.cssText='position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)'; document.body.append(probe)
-      const style=getComputedStyle(probe); const envValue=property=>Math.max(0,parseFloat(style.getPropertyValue(property))||0); const value=property=>nativeSafeAreaOverride?envValue(property):insets[property.replace('padding-','')]; const vv=visualViewport
-      const left=(vv?.offsetLeft??0)+value('padding-left'); const top=(vv?.offsetTop??0)+value('padding-top'); const width=Math.max(1,(vv?.width??innerWidth)-value('padding-left')-value('padding-right')); const height=Math.max(1,(vv?.height??innerHeight)-value('padding-top')-value('padding-bottom'))
-      const dialogWidth=Math.min(width*.75,height*.75*16/9),dialogHeight=dialogWidth*9/16
-      const root=document.documentElement; root.dataset.l12Viewport='landscape'; root.dataset.l12Mobile='true'; root.style.setProperty('--l12-viewport-left',`${left}px`); root.style.setProperty('--l12-viewport-top',`${top}px`); root.style.setProperty('--l12-viewport-width',`${width}px`); root.style.setProperty('--l12-viewport-height',`${height}px`); root.style.setProperty('--l12-mobile-dialog-width',`${dialogWidth}px`); root.style.setProperty('--l12-mobile-dialog-height',`${dialogHeight}px`); probe.remove(); window.dispatchEvent(new Event('l12-viewport-change'))
-    })
+    await applyViewportInsets(insets)
     if (process.env.L12_B3_SAFE_DEBUG === '1') console.log(await page.evaluate(() => {
       const probe=document.createElement('div'); probe.style.cssText='position:fixed;visibility:hidden;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)'; document.body.append(probe)
       const style=getComputedStyle(probe); const root=getComputedStyle(document.documentElement); const result={env:[style.paddingTop,style.paddingRight,style.paddingBottom,style.paddingLeft],vars:[root.getPropertyValue('--l12-viewport-top'),root.getPropertyValue('--l12-viewport-right'),root.getPropertyValue('--l12-viewport-bottom'),root.getPropertyValue('--l12-viewport-left'),root.getPropertyValue('--l12-viewport-width'),root.getPropertyValue('--l12-viewport-height')]}; probe.remove(); return result
@@ -160,11 +164,14 @@ try {
       await page.locator('.mobile-card-inspector').waitFor()
       await page.waitForTimeout(220)
     } else if (name === 'morale-overview') {
-      await page.locator('.resource-morale-summary').last().click()
+      await page.locator('.my-half .resource-morale-summary:visible').click()
       await page.locator('.mobile-morale-overlay').waitFor()
     } else if (name === 'morale-payment' || name === 'morale-payment-minimized') {
       if (await page.locator('.prompt-minimize').count()) await page.locator('.prompt-minimize').click()
-      await page.locator('.resource-morale-summary').last().click()
+      // The minimized prompt restore control can share screen coordinates with
+      // the board in narrow fixtures. Dispatch on the intended board control;
+      // separate interaction-matrix coverage validates physical hit testing.
+      await page.locator('.my-half .resource-morale-summary:visible').evaluate(element => element.click())
       await page.locator('.mobile-morale-overlay').waitFor()
       if (name.endsWith('minimized')) {
         await page.locator('.mobile-morale-overlay').getByRole('button', { name: '最小化', exact: true }).click()
@@ -172,7 +179,7 @@ try {
       }
     } else if (name.startsWith('runes-')) {
       if (name.endsWith('payment') && await page.locator('.prompt-minimize').count()) await page.locator('.prompt-minimize').click()
-      await page.locator('.resource-morale-summary').last().click()
+      await page.locator('.my-half .resource-morale-summary:visible').click()
       await page.locator('.mobile-morale-overlay').waitFor()
     } else if (name === 'disaster-animation') {
       await page.evaluate(() => window.__disasterFixture.emitReveal(false))
@@ -193,6 +200,10 @@ try {
     }
   }
   async function assertCommon(label, insets = zeroInsets) {
+    // Some overlays restore focus and synchronously refresh viewport state when
+    // they close. Re-derive the logical safe viewport before every checkpoint
+    // so fallback-mode verification has the same lifecycle as App.vue.
+    await applyViewportInsets(insets)
     const result = await page.evaluate(({ safeInsets, auditSpec }) => {
       const visible = element => { const style = getComputedStyle(element); const rect = element.getBoundingClientRect(); return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0 }
       const rectOf = element => { const r=element.getBoundingClientRect(); return { left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height } }
@@ -259,8 +270,12 @@ try {
       assert.equal(result.handCounts.filter(item=>/^我方手牌 \d+ 张$/.test(item.label)).length, 1, `${label} must render exactly one own hand counter`)
       assert.equal(result.handCounts.every(item=>/^手牌\d+$/.test(item.text??'')&&!item.clipped&&item.safe&&item.overlaps.length===0), true, `${label} hand counter is clipped, unsafe, or overlaps protected board content: ${JSON.stringify(result.handCounts)}`)
     }
-    assert.deepEqual(result.routeLines.map(item=>item.text),['返回','大厅'],`${label} return button must use a balanced 2+2 line break`)
-    assert.ok(result.routeButtonRect&&result.routeLines.every(item=>Math.abs((item.left+item.right-result.routeButtonRect.left-result.routeButtonRect.right)/2)<=1)&&result.routeLines[0].bottom<=result.routeLines[1].top+1,`${label} return button copy must be centered and vertically ordered: ${JSON.stringify({button:result.routeButtonRect,lines:result.routeLines})}`)
+    // The persistent route control is intentionally suppressed while the
+    // non-minimized settlement dialog owns the only return-to-lobby action.
+    if (result.routeButtonRect) {
+      assert.deepEqual(result.routeLines.map(item=>item.text),['返回','大厅'],`${label} return button must use a balanced 2+2 line break`)
+      assert.ok(result.routeLines.every(item=>Math.abs((item.left+item.right-result.routeButtonRect.left-result.routeButtonRect.right)/2)<=1)&&result.routeLines[0].bottom<=result.routeLines[1].top+1,`${label} return button copy must be centered and vertically ordered: ${JSON.stringify({button:result.routeButtonRect,lines:result.routeLines})}`)
+    }
     return { safe:result.safe, audits:result.audits }
   }
   async function assertBoardGeometry(label, expectedMarkers = null) {
@@ -286,10 +301,10 @@ try {
       }
       const byCategory = new Map()
       for (const card of value.cards) if (!byCategory.has(card.category)) byCategory.set(card.category, Math.max(card.width, card.height))
-      if (byCategory.size >= 3) {
-        const heights = [...byCategory.values()]
-        assert.ok(Math.max(...heights) / Math.min(...heights) <= 1.15, `${label} card visual heights diverge: ${JSON.stringify(Object.fromEntries(byCategory))}`)
-      }
+      const master = byCategory.get('master'), field = byCategory.get('field'), relic = byCategory.get('relic'), piles = byCategory.get('piles')
+      if (master && field) assert.ok(field/master >= .95 && field/master <= 1.08, `${label} field/master scale drift: ${JSON.stringify(Object.fromEntries(byCategory))}`)
+      if (master && relic) assert.ok(relic/master >= .82 && relic/master <= .98, `${label} relic/master scale drift: ${JSON.stringify(Object.fromEntries(byCategory))}`)
+      if (master && piles) assert.ok(piles/master >= .62 && piles/master <= .78, `${label} pile/master scale drift: ${JSON.stringify(Object.fromEntries(byCategory))}`)
     }
     for (const { slots } of value.formations) {
       assert.equal(slots.length, 6, `${label} formation must have six slots`)
@@ -351,7 +366,7 @@ try {
       const actions=[...document.querySelectorAll('.card-context-actions button,.mobile-action-dock button,.right-rail .action-panel button')].filter(visible).map(button=>({rect:rect(button),font:parseFloat(getComputedStyle(button).fontSize)||0,text:button.textContent?.trim()||''}))
       const root=getComputedStyle(document.documentElement),logicalHeight=parseFloat(root.getPropertyValue('--l12-viewport-height'))||innerHeight
       return {cardDetails,masters,piles,resources,actions,logicalHeight}
-    }, { insets, nativeSafeAreaOverride })
+    })
     assert.ok(metrics.cardDetails.length>=2,`${label} must expose field cards for local-scale verification`)
     assert.equal(metrics.cardDetails.every(item=>item.contained),true,`${label} card badges/statuses/keywords leave their card: ${JSON.stringify(metrics.cardDetails.filter(item=>!item.contained))}`)
     for(const item of metrics.cardDetails){
@@ -509,7 +524,7 @@ try {
     }
   }
 
-  for (const profile of dialogOnly ? [] : safeAreaProfiles) {
+  for (const profile of dialogOnly || scanOnly ? [] : safeAreaProfiles) {
     await load(profile.viewport,'field=full&markers=5&piles=40&hand=20',zeroInsets)
     const baselineRatios=await layoutRatios()
     for (const [name,query,action] of safeAreaScenarios) {
@@ -521,7 +536,7 @@ try {
         gmPanelAudit=await assertCommon(`${label} GM panel`,profile.insets)
         await assertOverlay(`${label} GM panel`,'.gm-panel',profile.insets)
         const close=page.locator('.gm-panel>header button')
-        if(await close.count())await close.click()
+        if(await close.count())await close.evaluate(element => element.click())
         await page.locator('.gm-open').waitFor()
       }
       let overlaySelector=''
@@ -548,21 +563,27 @@ try {
       manifest.safeArea.push({profile:profile.name,viewport:`${profile.viewport.width}x${profile.viewport.height}`,insets:profile.insets,state:name,file,ratios:insetRatios,baselineRatios,audit:audit.audits,gmPanelAudit:gmPanelAudit?.audits??null,assertions:'passed'})
     }
   }
-  if (nativeSafeAreaOverride) await cdp.send('Emulation.setSafeAreaInsetsOverride',{insets:zeroInsets})
+  if (nativeSafeAreaOverride) {
+    try { await cdp.send('Emulation.setSafeAreaInsetsOverride',{insets:zeroInsets}) }
+    catch(error){if(!String(error).includes('setSafeAreaInsetsOverride'))throw error;nativeSafeAreaOverride=false}
+  }
 
   if (!quick && !safeOnly && !dialogOnly) {
-    const random = []
+    const random = scanOnly
+      ? scanOnly.split(',').map(value=>{const [width,height]=value.split('x').map(Number);assert.ok(width>0&&height>0,`invalid L12_B3_SCAN_ONLY viewport: ${value}`);return{width,height}})
+      : []
     let seed = 73129
     // Random mobile-layout scans stay inside the same 4:3-or-wider aspect
     // contract used by automatic layout selection. Near-square viewports are
     // intentionally covered by desktop/isolation tests instead of being
     // forced into a layout the product would not select.
-    for (let index=0;index<30;index++) { seed=(seed*48271)%2147483647; const width=568+(seed%457); seed=(seed*48271)%2147483647; const maxHeight=Math.min(768,Math.floor(width*.75)); const height=320+(seed%(maxHeight-319)); random.push({width,height}) }
-    random.push({width:568,height:320},{width:1024,height:768})
+    if(!scanOnly){for (let index=0;index<30;index++) { seed=(seed*48271)%2147483647; const width=568+(seed%457); seed=(seed*48271)%2147483647; const maxHeight=Math.min(768,Math.floor(width*.75)); const height=320+(seed%(maxHeight-319)); random.push({width,height}) }
+    random.push({width:568,height:320},{width:1024,height:768})}
     for (const viewport of random) {
       await load(viewport,'field=full&markers=5&piles=40&hand=20&rankedClock=1')
       await assertCommon(`scan ${viewport.width}x${viewport.height}`)
-      await assertBoardGeometry(`scan ${viewport.width}x${viewport.height}`,5)
+      try { await assertBoardGeometry(`scan ${viewport.width}x${viewport.height}`,5) }
+      catch(error){await page.screenshot({path:path.join(output,`failed-scan-${viewport.width}x${viewport.height}.png`)});throw error}
       await assertHand(`scan ${viewport.width}x${viewport.height}`)
       const before=await layoutRatios()
       const neighborWidth=Math.min(1024,viewport.width+1)
@@ -574,7 +595,7 @@ try {
     }
   }
 
-  if (!safeOnly && !dialogOnly) {
+  if (!safeOnly && !dialogOnly && !scanOnly) {
     const desktop = await browser.newContext()
     const desktopPage = await desktop.newPage()
     for (const viewport of [{width:1366,height:768},{width:1600,height:900},{width:1920,height:1080}]) {

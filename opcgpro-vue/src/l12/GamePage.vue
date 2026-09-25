@@ -89,7 +89,7 @@ function returnToLobby() {
 <template>
   <div v-if="game" class="game-page">
     <RankedBroadcastTicker class="battle-ranked-ticker" />
-    <BattleDockPortal lane="tools"><div class="battle-route-controls">
+    <BattleDockPortal lane="tools"><div v-if="game.phase !== 'GameOver' || gameOverMinimized" class="battle-route-controls">
       <span :class="{ online: opponent?.connected }"><i/>对方{{ opponent?.connected ? '在线' : '已断开' }}</span>
       <button class="balanced-copy-button" aria-label="返回大厅" @click="returnToLobby"><span class="route-label" aria-hidden="true"><span>返回</span><span>大厅</span></span></button>
       <button v-if="!l12State.spectating && game.phase !== 'GameOver'" class="surrender" @click="surrender">投降</button>

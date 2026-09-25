@@ -1,8 +1,13 @@
 html[data-l12-mobile=true] {
   --l12-mobile-hand-h:clamp(64px,calc(var(--l12-viewport-height,100vh) * .16),102px);
-  --l12-mobile-master-w:clamp(38px,min(calc((var(--l12-viewport-height,100vh) - var(--l12-mobile-hand-h) - 68px) * 5 / 28),calc((var(--l12-viewport-width,100vw) - 70px) / 10.38)),84px);
+  /* Solve card width from both axes and from the complete horizontal track.
+     The third term reserves the minimum left rail, action dock, resource lane,
+     three inter-group gaps and padding before distributing the remainder over
+     commander/formation/piles. It is what keeps tall 4:3 phones from pushing
+     master markers underneath the left rail. */
+  --l12-mobile-master-w:clamp(38px,min(calc((var(--l12-viewport-height,100vh) - var(--l12-mobile-hand-h) - 68px) * 5 / 28),calc((var(--l12-viewport-width,100vw) - 70px) / 10.38),calc((var(--l12-viewport-width,100vw) - 314px) / 6.8)),84px);
   --l12-mobile-left-rail-w:max(78px,calc(var(--l12-mobile-master-w) * 1.3));
-  --l12-mobile-dock-width:max(60px,calc(var(--l12-mobile-master-w) * 1.18));
+  --l12-mobile-dock-width:clamp(92px,calc(var(--l12-mobile-master-w) * 1.18),108px);
   --l12-mobile-utility-h:34px;
 }
 /* One flow owns mobile controls. This sheet never selects desktop content.
@@ -41,15 +46,15 @@ html[data-l12-mobile=true] {
 #l12-landscape-teleports .mobile-battle-dock :is(.battle-route-controls,.player-panel,.mobile-timed-clocks,.action-panel,.card-context-actions,.board-target-controls,.board-mode-hint,.combat-presentation,.combat-resolution-panel,.combat-versus,.gm-open,.mobile-record-trigger,.mobile-record-restore,.mobile-morale-restore,.board-control-restore,.combat-decision-restore) {
   position:static !important; inset:auto !important; transform:none !important;
   box-sizing:border-box; width:100% !important; min-width:0 !important; max-width:100% !important;
-  height:auto !important; min-height:0 !important; max-height:none !important;
-  margin:0 !important; padding:3px !important; overflow:visible !important;
+  height:auto !important; min-height:0 !important; max-height:100% !important;
+  margin:0 !important; padding:3px !important; overflow:hidden !important;
   z-index:auto !important; pointer-events:auto !important; box-shadow:none !important;
 }
 #l12-landscape-teleports .mobile-battle-dock :is(.battle-route-controls,.card-context-actions,.board-target-controls,.board-mode-hint,.l12-actions) {
   display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px !important;
 }
-#l12-landscape-teleports .mobile-battle-dock .mobile-battle-dock__context > :first-child { margin-top:auto !important; }
-#l12-landscape-teleports .mobile-battle-dock :is(.battle-route-controls,.card-context-actions,.l12-actions) { grid-template-columns:minmax(0,1fr); }
+#l12-landscape-teleports .mobile-battle-dock__context > :is(.card-context-actions,.board-target-controls,.board-mode-hint,.combat-decision-restore) { margin-top:auto !important; }
+#l12-landscape-teleports .mobile-battle-dock :is(.card-context-actions,.l12-actions) { grid-template-columns:minmax(0,1fr); }
 #l12-landscape-teleports .mobile-battle-dock :is(.board-target-controls,.board-mode-hint) { grid-template-columns:minmax(0,1fr); }
 #l12-landscape-teleports .mobile-battle-dock :is(.card-context-actions,.l12-actions) > button:last-child { grid-column:1/-1; }
 #l12-landscape-teleports .mobile-battle-dock :is(.action-panel > h3,.l12-actions > p,.battle-route-controls > span,.combat-trace,.board-slot-controls > .l12-card-image) { display:none !important; }
@@ -67,12 +72,28 @@ html[data-l12-mobile=true] {
 #l12-landscape-teleports .mobile-battle-dock .mobile-player-name>strong { min-width:0; color:#f1eee6; font-size:10px; line-height:1.25; overflow-wrap:anywhere; white-space:normal; }
 #l12-landscape-teleports .mobile-battle-dock .mobile-record-trigger { min-height:32px !important; }
 #l12-landscape-teleports .mobile-battle-dock .mobile-timed-clocks { display:grid; gap:3px; }
-#l12-landscape-teleports .mobile-battle-dock .mobile-rail-clock { width:100%; min-width:0; font-size:10px; }
+#l12-landscape-teleports .mobile-battle-dock .mobile-rail-clock { width:100%; min-width:0; font-size:10px; transform:none; }
 #l12-landscape-teleports .mobile-battle-dock .combat-presentation { display:grid; gap:4px; }
 #l12-landscape-teleports .mobile-battle-dock .combat-versus { display:flex; flex-wrap:wrap; gap:3px; font-size:10px; }
 #l12-landscape-teleports .mobile-battle-dock .combat-versus span { max-width:100%; }
 #l12-landscape-teleports .mobile-battle-dock .combat-versus em { font-size:12px; }
-#l12-landscape-teleports .mobile-battle-dock .combat-decision-minimize { position:static; width:100%; margin-bottom:4px; }
+#l12-landscape-teleports .mobile-battle-dock .combat-decision-minimize {
+  position:static !important; inset:auto !important; display:block; flex:none;
+  width:100%; min-height:24px; height:24px; margin:0 0 4px; padding:0;
+}
+#l12-landscape-teleports .mobile-battle-dock__primary .combat-resolution-panel {
+  position:relative !important; height:42px !important; max-height:42px !important;
+  padding:2px !important; overflow:hidden !important;
+}
+#l12-landscape-teleports .mobile-battle-dock__primary .combat-resolution-panel .l12-actions {
+  display:grid !important; box-sizing:border-box; height:36px !important;
+  grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:4px !important; padding:0 !important;
+}
+#l12-landscape-teleports .mobile-battle-dock__primary .combat-resolution-panel .l12-actions > button {
+  grid-column:auto !important; width:auto !important; min-height:36px !important; height:36px !important;
+  padding:2px !important; font-size:10px !important; line-height:1.05 !important;
+  white-space:normal !important; word-break:break-all; text-wrap:balance;
+}
 #l12-landscape-teleports .mobile-battle-dock__utility .battle-utility-dock { width:100%; height:var(--l12-mobile-utility-h,34px); box-shadow:none; }
 #l12-landscape-teleports .mobile-battle-dock__utility .battle-utility-dock button { height:32px; min-height:32px; padding:3px; }
 #l12-landscape-teleports .mobile-battle-dock__utility .battle-utility-dock svg { width:16px; height:16px; }

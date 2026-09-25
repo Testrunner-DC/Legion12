@@ -8,21 +8,32 @@ const target = process.argv[2] || 'http://127.0.0.1:5197/__l12_battle_preview__'
 const out = path.resolve(process.env.L12_DOCK_OUT || '../artifacts/mobile-action-dock/acceptance')
 fs.mkdirSync(out, { recursive: true })
 const manifest = { target, status: 'running', cases: [], screenshots: [], errors: [] }
-const browser = await chromium.launch(process.env.L12_CHROMIUM_EXECUTABLE ? { headless: true, executablePath: process.env.L12_CHROMIUM_EXECUTABLE } : { headless: true })
+const browser = await chromium.launch(process.env.L12_CHROMIUM_EXECUTABLE ? { headless: true, executablePath: process.env.L12_CHROMIUM_EXECUTABLE } : { headless: true, channel: 'msedge' })
 const page = await browser.newPage()
 const cdp = await page.context().newCDPSession(page)
 page.setDefaultTimeout(7000)
 page.on('pageerror', error => manifest.errors.push(error.message))
 await page.route('**/*', route => ['127.0.0.1', 'localhost'].includes(new URL(route.request().url()).hostname) ? route.continue() : route.abort())
 const zero = { top: 0, right: 0, bottom: 0, left: 0 }
-let label = '', insets = zero
+let label = '', insets = zero, nativeSafeAreaOverride = true
 async function load(size, query = '', safe = zero) {
   insets = safe
   await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: 1 })
   await page.setViewportSize({ width: size[0], height: size[1] })
-  await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: safe })
+  if (nativeSafeAreaOverride) {
+    try { await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: safe }) }
+    catch (error) {
+      if (!String(error).includes('setSafeAreaInsetsOverride')) throw error
+      nativeSafeAreaOverride = false
+    }
+  }
   await page.goto(`${target}?canvas=1&mobile=1&hand=10&rankedClock=1&${query}`, { waitUntil: 'domcontentloaded' })
   await page.locator('.mobile-battle-dock').waitFor()
+  if (!nativeSafeAreaOverride) await page.evaluate(safeInsets => {
+    const root=document.documentElement, width=Math.max(1,innerWidth-safeInsets.left-safeInsets.right), height=Math.max(1,innerHeight-safeInsets.top-safeInsets.bottom)
+    root.style.setProperty('--l12-viewport-left',`${safeInsets.left}px`,'important'); root.style.setProperty('--l12-viewport-top',`${safeInsets.top}px`,'important')
+    root.style.setProperty('--l12-viewport-width',`${width}px`,'important'); root.style.setProperty('--l12-viewport-height',`${height}px`,'important')
+  }, safe)
   await page.waitForTimeout(80)
 }
 async function shot(name) {
@@ -56,6 +67,7 @@ async function geometry(name) {
       relicRatio: (relic.right - relic.left) / (master.right - master.left),
       pileRatio: (pile.right - pile.left) / (master.right - master.left),
       handCountRatio: (handCount.right - handCount.left) / (master.right - master.left),
+      compactHandSummary: Boolean(dock.querySelector('.mobile-target-hand-counts')),
       markerRatio: marker ? (r(marker).right - r(marker).left) / (master.right - master.left) : null,
       playerNames: [...dock.querySelectorAll('.mobile-player-name')].map(e => ({ text:e.textContent.trim(), box:r(e), fits:e.scrollWidth <= e.clientWidth + 1 && e.scrollHeight <= e.clientHeight + 1 })),
       playerNamesAboveRecord: (() => { const names=dock.querySelector('.mobile-player-name-strip')?.getBoundingClientRect(), record=dock.querySelector('.mobile-record-trigger')?.getBoundingClientRect(); return Boolean(names && record && names.bottom <= record.top + 1) })(),
@@ -74,7 +86,8 @@ async function geometry(name) {
   assert.ok(report.rightRatio > 1.08, `${label}/${name}: right rail is not wider than master ${JSON.stringify(report)}`)
   assert.ok(Math.abs(report.relicRatio - .9) <= .035, `${label}/${name}: relic/master ratio drift ${JSON.stringify(report)}`)
   assert.ok(Math.abs(report.pileRatio - .7) <= .035, `${label}/${name}: pile/master ratio drift ${JSON.stringify(report)}`)
-  assert.ok(report.handCountRatio >= .75, `${label}/${name}: hand count did not scale with master ${JSON.stringify(report)}`)
+  if (report.compactHandSummary) assert.equal(report.handCountRatio,0,`${label}/${name}: expanded board control must replace duplicate PlayerMat hand counters ${JSON.stringify(report)}`)
+  else assert.ok(report.handCountRatio >= .75, `${label}/${name}: hand count did not scale with master ${JSON.stringify(report)}`)
   if (report.markerRatio !== null) assert.ok(report.markerRatio >= .3, `${label}/${name}: master marker did not scale ${JSON.stringify(report)}`)
   assert.equal(report.playerNames.length, 2, `${label}/${name}: persistent player names missing`)
   assert.equal(report.playerNames.every(item => item.fits), true, `${label}/${name}: player name clipped ${JSON.stringify(report.playerNames)}`)
@@ -177,7 +190,7 @@ async function handSelectionVisible() {
   assert.equal(report.hit, true, `${label}: selected hand card is covered ${JSON.stringify(report)}`)
 }
 try {
-  const sizes = [[844,390],[780,360],[740,360],[915,412],[932,430],[1024,600],[1024,768],[800,600],[667,320]]
+  const sizes = [[844,390],[780,360],[740,360],[667,375],[915,412],[932,430],[1024,600],[1024,768],[800,600],[667,320]]
   for (const size of sizes) {
     label = size.join('x')
     await load(size, 'field=full&action-fixture=1')

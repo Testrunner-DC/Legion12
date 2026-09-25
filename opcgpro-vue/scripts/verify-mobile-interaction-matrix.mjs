@@ -8,7 +8,7 @@ const { chromium } = require(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cach
 const target = process.argv[2] || 'http://127.0.0.1:5186/__l12_battle_preview__'
 const output = process.env.L12_MOBILE_INTERACTION_OUT || path.resolve('..', 'artifacts', 'mobile-interaction-matrix')
 const viewports = [{ width: 667, height: 375 }, { width: 844, height: 390 }, { width: 932, height: 430 }, { width: 1024, height: 768 }]
-const baseQuery = 'mobile=1&hand=12&trials=2&myTrials=1&fieldIndicators=1&rankedClock=1'
+const baseQuery = 'mobile=1&canvas=1&hand=12&trials=2&myTrials=1&fieldIndicators=1&rankedClock=1'
 fs.mkdirSync(output, { recursive: true })
 
 const browser = await chromium.launch({ headless: true, channel: 'msedge' })

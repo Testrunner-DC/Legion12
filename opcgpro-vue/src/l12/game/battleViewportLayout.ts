@@ -42,7 +42,10 @@ export function resolveBattleViewportLayout(options: ResolveBattleViewportLayout
   const compact = viewportWidth < 820 || viewportHeight < 600
   const availableHeight = Math.max(1, viewportHeight - SITE_AND_OVERFLOW_RESERVE)
   const availableWidth = Math.max(1, viewportWidth - (options.gmPanelOpen && !compact ? GM_PANEL_RESERVE : 0))
-  const desktopScale = Math.min(1, availableWidth / stageWidth, availableHeight / stageHeight)
+  // Desktop also scales upward. A hard cap at 1 left the 2048px design stage
+  // stranded inside large and ultrawide viewports, making cards and labels
+  // disproportionately small while wasting most of the available height.
+  const desktopScale = Math.min(availableWidth / stageWidth, availableHeight / stageHeight)
 
   return {
     compact,
