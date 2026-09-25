@@ -556,7 +556,7 @@ export interface ReleasePlan {
   targetArtifact: VerifiedReleaseArtifact; rollbackTargetRunId?: string; steps: string[]; willExecute: boolean
 }
 export interface ReleaseOperation { applied: boolean; plan: ReleasePlan; run?: ReleaseRun }
-export type TournamentStatus = 'registration' | 'running' | 'completed'
+export type TournamentStatus = 'registration' | 'running' | 'completed' | 'canceled'
 export type TournamentRoundStatus = 'pending' | 'checkin' | 'running' | 'completed'
 export type TournamentDeckVisibility = 'always' | 'after' | 'private'
 export type TournamentDisasterMode = 'all' | 'random' | 'season' | 'none'
@@ -574,10 +574,10 @@ export interface TournamentStaff { accountId: string; username: string }
 export interface TournamentParticipant {
   accountId: string; username: string; checkedIn: boolean; dropped: boolean; eliminated: boolean
   removed: boolean; registrationBanned: boolean; removalReason?: string; tournamentCheckedInAt?: string; seed: number
-  deck?: TournamentDeckSnapshot
+  deck?: TournamentDeckSnapshot; waitlisted: boolean; waitlistPosition?: number; promotedAt?: string
 }
 export interface TournamentCounts {
-  registered: number; pendingCheckIn: number; checkedIn: number; active: number
+  registered: number; pendingCheckIn: number; checkedIn: number; active: number; waitlisted: number
   dropped: number; removed: number; registrationBanned: number
 }
 export interface TournamentOrganizerTransfer {
@@ -602,7 +602,15 @@ export interface TournamentMatch {
   result?: string; timeExtensionMinutes: number; startedAt?: string; deadline?: string; recordedMatchId?: string
   rulings: TournamentRuling[]; graceDeadline?: string; sourceMatchIds: string[]; rulesHash: string
   playerADeckHash?: string; playerBDeckHash?: string; replayNumber: number; canEnter: boolean; canSpectate: boolean
-  events: TournamentMatchEvent[]
+  events: TournamentMatchEvent[]; paused: boolean; pauseReason?: string; pausedAt?: string; totalPausedSeconds: number
+}
+export interface TournamentPostponement {
+  id: string; previousStartAt?: string; newStartAt: string; reason: string; actorId: string; actorName: string; createdAt: string
+}
+export interface TournamentJudgeCase {
+  id: string; roundNumber: number; matchId: string; table: number; category: string; urgency: string; status: string
+  requesterAccountId: string; requesterName: string; playerMessage: string; assigneeAccountId?: string; assigneeName?: string
+  staffNote?: string; resolution?: string; createdAt: string; updatedAt: string; appealedAt?: string; appealReason?: string; canManage: boolean
 }
 export interface TournamentRound {
   id: string; number: number; status: TournamentRoundStatus; paused: boolean; startedAt?: string; pausedAt?: string
@@ -624,8 +632,29 @@ export interface Tournament {
   createdAt: string; updatedAt: string; completedAt?: string; swissRounds: number; cutSize?: number
   registrationVisibility: 'public' | 'staff'; lateGraceMinutes: number
   finalSwissStandings: TournamentStanding[]; eliminationBracket: TournamentBracketRound[]
+  phase: string; registrationOpen: boolean; canceledAt?: string; cancellationReason?: string
+  postponements: TournamentPostponement[]; judgeCases: TournamentJudgeCase[]
 }
 export interface TournamentList { platformVersion: number; items: Tournament[] }
+export interface TournamentSummary {
+  id: string; code: string; name: string; organizerName: string; status: TournamentStatus; phase: string
+  format: Tournament['format']; visibility: Tournament['visibility']; maxPlayers: number; startAt?: string
+  counts: TournamentCounts; viewerRole: string; requiresAction: boolean; version: number; updatedAt: string
+}
+export interface TournamentSummaryPage {
+  platformVersion: number; items: TournamentSummary[]; page: number; pageSize: number; total: number; totalPages: number
+}
+export interface TournamentStartCheck {
+  canStart: boolean; blockers: string[]; warnings: string[]; eligiblePlayers: number; waitlistedPlayers: number; openJudgeCases: number
+}
+export interface TournamentCareerEntry {
+  tournamentId: string; code: string; name: string; status: TournamentStatus; format: Tournament['format']; completedAt?: string
+  finalRank?: number; wins: number; losses: number; draws: number; organized: boolean; refereed: boolean
+}
+export interface TournamentCareer {
+  accountId: string; participated: number; organized: number; refereed: number; wins: number; losses: number; draws: number
+  items: TournamentCareerEntry[]; page: number; pageSize: number; total: number; totalPages: number
+}
 export interface TournamentCreateInput {
   name: string; format: Tournament['format']; visibility: Tournament['visibility']; maxPlayers: number; startAt?: string
   ruleset: string; description: string; deckVisibility: TournamentDeckVisibility; disasterMode: TournamentDisasterMode
@@ -668,7 +697,7 @@ interface PlatformRequestReliabilityOptions {
   maxAttempts?: number
 }
 
-type PlatformRequestInit = RequestInit & { reliability?: PlatformRequestReliabilityOptions }
+type PlatformRequestInit = RequestInit & { reliability?: PlatformRequestReliabilityOptions; responseType?: 'json' | 'blob' }
 const platformRequestCoordinator = createRequestCoordinator(PLATFORM_MAX_CONCURRENT_REQUESTS)
 let platformSessionVersion = 0
 
@@ -759,7 +788,7 @@ async function requestFingerprint(value: string) {
 }
 
 export async function platformRequest<T>(path: string, init: PlatformRequestInit = {}): Promise<T> {
-  const { reliability = {}, ...fetchInit } = init
+  const { reliability = {}, responseType = 'json', ...fetchInit } = init
   const method = String(fetchInit.method || 'GET').toUpperCase()
   const safeRead = method === 'GET' || method === 'HEAD'
   // 登录和注册是匿名凭据交换；不能让旧会话的迟到 401 清掉一次新的登录。
@@ -804,7 +833,8 @@ export async function platformRequest<T>(path: string, init: PlatformRequestInit
           ?? `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`)
         if (requestToken) headers.set('Authorization', `Bearer ${requestToken}`)
         const response = await fetch(`${apiBase()}${path}`, { ...fetchInit, signal, headers })
-        const payload = await response.json().catch(() => ({}))
+        const payload = responseType === 'blob' && response.ok
+          ? await response.blob() : await response.json().catch(() => ({}))
         if (requestToken && platformState.token !== requestToken)
           throw new PlatformRequestError('账号已切换，已忽略旧响应', 0, 'stale_session', '')
         if (!response.ok) {
@@ -1311,6 +1341,19 @@ export const tournamentApi = {
   },
   get: (id: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}`),
   getByCode: (code: string) => platformRequest<Tournament>(`/api/tournaments/code/${encodeURIComponent(code)}`),
+  summaries: (query: { section?: string; format?: string; search?: string; page?: number; pageSize?: number; startFrom?: string; startTo?: string } = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
+    return platformRequest<TournamentSummaryPage>(`/api/tournaments/summaries${params.size ? `?${params}` : ''}`)
+  },
+  career: (query: { page?: number; pageSize?: number } = {}) => {
+    const params = new URLSearchParams()
+    if (query.page) params.set('page', String(query.page))
+    if (query.pageSize) params.set('pageSize', String(query.pageSize))
+    return platformRequest<TournamentCareer>(`/api/tournaments/career${params.size ? `?${params}` : ''}`)
+  },
+  startCheck: (id: string) => platformRequest<TournamentStartCheck>(`/api/tournaments/${encodeURIComponent(id)}/start-check`),
+  exportCsv: (id: string) => platformRequest<Blob>(`/api/tournaments/${encodeURIComponent(id)}/export.csv`, { responseType: 'blob' }),
   create: (tournament: TournamentCreateInput, expectedVersion: number, dryRun = false) => platformRequest<Tournament>('/api/tournaments', {
     method: 'POST', body: JSON.stringify(commandBody('tournament-create', { tournament, expectedVersion, dryRun })),
   }),
@@ -1347,6 +1390,15 @@ export const tournamentApi = {
   start: (id: string, expectedVersion: number, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/start`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-start', { expectedVersion, reason })),
   }),
+  setPhase: (id: string, expectedVersion: number, phase: 'registration-open' | 'registration-closed' | 'pre-check-in' | 'result-confirmation' | 'running', reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/phase`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-phase', { expectedVersion, phase, reason })),
+  }),
+  postpone: (id: string, expectedVersion: number, newStartAt: string, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/postpone`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-postpone', { expectedVersion, newStartAt, reason })),
+  }),
+  cancel: (id: string, expectedVersion: number, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/cancel`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-cancel', { expectedVersion, reason })),
+  }),
   nextRound: (id: string, expectedVersion: number, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/rounds`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-round', { expectedVersion, reason })),
   }),
@@ -1361,6 +1413,21 @@ export const tournamentApi = {
   }),
   extendMatch: (id: string, matchId: string, expectedVersion: number, minutes: number, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/matches/${encodeURIComponent(matchId)}/time-extension`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-extension', { expectedVersion, minutes, reason })),
+  }),
+  pauseMatch: (id: string, matchId: string, expectedVersion: number, paused: boolean, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/matches/${encodeURIComponent(matchId)}/pause`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-match-pause', { expectedVersion, paused, reason })),
+  }),
+  createJudgeCase: (id: string, expectedVersion: number, body: { matchId: string; category: string; urgency: string; message: string }) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/judge-cases`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-judge-case', { expectedVersion, ...body })),
+  }),
+  assignJudgeCase: (id: string, expectedVersion: number, caseId: string, assigneeAccountId: string, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/judge-cases/assign`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-judge-assign', { expectedVersion, caseId, assigneeAccountId, reason })),
+  }),
+  resolveJudgeCase: (id: string, expectedVersion: number, caseId: string, status: string, resolution: string, staffNote = '') => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/judge-cases/resolve`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-judge-resolve', { expectedVersion, caseId, status, resolution, staffNote })),
+  }),
+  appealJudgeCase: (id: string, expectedVersion: number, caseId: string, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/judge-cases/appeal`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-judge-appeal', { expectedVersion, caseId, reason })),
   }),
   ruleMatch: (id: string, matchId: string, expectedVersion: number, body: { kind: 'result' | 'penalty' | 'no-show'; targetAccountId?: string; decision: string; reason: string }) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/matches/${encodeURIComponent(matchId)}/rulings`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-ruling', { expectedVersion, ...body })),

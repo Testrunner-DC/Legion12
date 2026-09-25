@@ -13,7 +13,8 @@ internal sealed record L12RankedRuntimeCheckpoint(
     DateTimeOffset LastSettledAt, string? ConclusionKind, bool AuthorityEventRecorded,
     bool[] Connected, DateTimeOffset?[] DisconnectedAt,
     string[] IntegrityClientKeys, long[] ConnectionGenerations, DateTimeOffset UpdatedAt,
-    L12RankedTimeControlConfig? TimeControl = null, string[]? RankedBrowserKeys = null);
+    L12RankedTimeControlConfig? TimeControl = null, string[]? RankedBrowserKeys = null,
+    bool Paused = false, string? PauseReason = null, DateTimeOffset? PausedAt = null);
 
 internal sealed record L12RankedSettlementEnvelope(
     int Version, string MatchId, string FirstAccountId, string SecondAccountId,

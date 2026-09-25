@@ -16,7 +16,7 @@ const AdminMatchGovernancePanel = defineAsyncComponent(() => import('./AdminMatc
 const AdminUsernameChangeRequestsPanel = defineAsyncComponent(() => import('./AdminUsernameChangeRequestsPanel.vue'))
 const AdminAlternateArtsPanel = defineAsyncComponent(() => import('./AdminAlternateArtsPanel.vue'))
 const AdminServerStoragePanel = defineAsyncComponent(() => import('./AdminServerStoragePanel.vue'))
-const TournamentCenterPage = defineAsyncComponent(() => import('./TournamentCenterPage.vue'))
+const AdminTournamentWorkbench = defineAsyncComponent(() => import('./AdminTournamentWorkbench.vue'))
 const AdminEffectWorkbenchPanel = defineAsyncComponent(() => import('./AdminEffectWorkbenchPanel.vue'))
 
 import { adminSections, visibleAdminSections, type AdminTab } from './adminSections'
@@ -466,7 +466,7 @@ onMounted(() => { void initializeAdminPage() })
       <AdminAlternateArtsPanel v-else-if="tab === 'alternate-arts' && hasPermission('admin.content.read')" @notice="notice = $event"/>
       <AdminRuleRulingsPanel v-else-if="tab === 'rules' && hasPermission('admin.content.read')" @notice="notice = $event"/>
       <AdminServerStoragePanel v-else-if="tab === 'storage' && hasPermission('admin.security.read')" @notice="notice = $event"/>
-      <TournamentCenterPage v-else-if="tab === 'tournaments' && (hasPermission('tournaments.manage') || hasPermission('tournaments.rulings.write'))" admin-mode embedded/>
+      <AdminTournamentWorkbench v-else-if="tab === 'tournaments' && (hasPermission('tournaments.manage') || hasPermission('tournaments.rulings.write'))" admin-mode embedded/>
       <section v-else-if="tab === 'accounts'" class="panel account-panel">
         <header>
           <div><h2>账号、权限与会话</h2><p>账号变更立即执行并完整审计；状态、密码重置与逻辑删除均撤销相关会话，根 Admin 与操作者自身受保护。</p></div>

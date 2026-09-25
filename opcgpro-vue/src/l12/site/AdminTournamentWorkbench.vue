@@ -75,7 +75,7 @@ const isOrganizer = (item: Tournament) => item.organizerAccountId === accountId.
 const canManageTournament = (item: Tournament) => isStaff(item) || canGloballyManage.value
 const canRuleTournament = (item: Tournament) => isStaff(item) || canGloballyRule.value
 const isParticipant = (item: Tournament) => item.participants.some(person => person.accountId === accountId.value && !person.dropped && !person.removed)
-const statusText = (status: TournamentStatus) => ({ registration: '报名中', running: '进行中', completed: '已结束' }[status])
+const statusText = (status: TournamentStatus) => ({ registration: '报名中', running: '进行中', completed: '已结束', canceled: '已取消' }[status])
 const formatText = (format: Tournament['format']) => ({ single: '单败淘汰', swiss: '纯瑞士轮', 'swiss-cut': '瑞士后 Cut 淘汰', league: '旧版循环赛' }[format])
 const disasterText = (mode: TournamentDisasterMode) => ({ all: '全部天灾', random: '随机天灾', season: '赛季天灾', none: '不使用天灾' }[mode])
 const deckVisibilityText = (mode: TournamentDeckVisibility) => ({ always: '全程公开牌库', after: '赛后公开牌库', private: '不公开牌库' }[mode])
@@ -198,7 +198,6 @@ function saveDeck(item: Tournament, person: TournamentParticipant) { void runAct
   await syncAfterWrite(updated, '赛前签到完成，牌库已校验并锁定')
 }) }
 function dropRegistration(item: Tournament) { void runAction(tournamentActionKey(item), async () => {
-  if (item.status === 'running' && !window.confirm('退赛后不会进入后续配对；当前桌仍需由裁判记录赛果。确定退赛吗？')) return
   await syncAfterWrite(await tournamentApi.drop(item.id, item.version), '已退出该赛事')
 }) }
 function saveStaff(item: Tournament) { void runAction(tournamentActionKey(item), async () => {

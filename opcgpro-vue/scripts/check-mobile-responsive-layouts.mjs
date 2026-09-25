@@ -31,7 +31,11 @@ const [viewportCss, viewportTs, battleLayout, mobileDialogLayout, app, archive, 
   read('src/l12/site/GlobalBugFeedback.vue'),
   read('src/l12/site/BattleHubPage.vue'),
   read('src/l12/site/RankingsPage.vue'),
-  read('src/l12/site/TournamentCenterPage.vue'),
+  Promise.all([
+    read('src/l12/site/TournamentHubPage.vue'),
+    read('src/l12/site/TournamentDetailPage.vue'),
+    read('src/l12/site/AdminTournamentWorkbench.vue'),
+  ]).then(parts => parts.join('\n')),
   read('src/l12/site/AccountRecoveryPage.vue'),
   read('src/style.css'),
 ])

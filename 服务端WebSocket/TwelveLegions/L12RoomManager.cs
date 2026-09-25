@@ -74,6 +74,8 @@ public sealed partial class L12RoomManager
         public string? TournamentMatchId { get; init; }
         public string? TournamentRulesHash { get; init; }
         public L12RankedTimeControlConfig? TournamentTimeControl { get; init; }
+        public bool TournamentClockPaused { get; init; }
+        public string? TournamentClockPauseReason { get; init; }
         public bool TournamentResultReported { get; set; }
         public bool IsMatchmaking { get; init; }
         public bool RankedResultReported { get; set; }
@@ -1211,6 +1213,8 @@ public sealed partial class L12RoomManager
             TournamentMatchId = assignment.MatchId,
             TournamentRulesHash = assignment.RulesHash,
             TournamentTimeControl = assignment.TimeControl,
+            TournamentClockPaused = assignment.Paused,
+            TournamentClockPauseReason = assignment.PauseReason,
             OperationsPolicy = assignment.OperationsPolicy,
             Options = new L12RoomOptions
             {
@@ -1362,6 +1366,9 @@ public sealed partial class L12RoomManager
                     return Error(sessionId, eligibilityError.Message, "tournamentRoomRejected", requestId);
                 }
             }
+            if (room.RankedClock is { Paused: true } pausedClock)
+                return Error(sessionId, pausedClock.PauseReason ?? "裁判已暂停本桌对局",
+                    "tournamentMatchPaused", requestId);
             var actorIndex = session.PlayerIndex!.Value;
             if (room.TryGetProcessedActionRequest(actorIndex, requestId, out var duplicate))
             {

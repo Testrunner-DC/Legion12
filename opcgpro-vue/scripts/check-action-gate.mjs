@@ -96,7 +96,7 @@ assert(shell.includes('onlineActionPending(onlineFriendActionKey(player.accountI
 assert(shell.includes("`online-friend:${accountId}:${playerId}`")); checks += 1
 assert(!shell.includes('onlineActionBusy')); checks += 1
 
-const tournaments = fs.readFileSync(new URL('../src/l12/site/TournamentCenterPage.vue', import.meta.url), 'utf8')
+const tournaments = fs.readFileSync(new URL('../src/l12/site/AdminTournamentWorkbench.vue', import.meta.url), 'utf8')
 assert(tournaments.includes('runGatedAction(key')); checks += 1
 assert((tournaments.match(/runAction\(tournamentActionKey\(item\)/g) ?? []).length >= 13); checks += 1
 assert(tournaments.includes(':disabled="actionPending(tournamentActionKey(item))')); checks += 1

@@ -82,7 +82,7 @@ function returnToLobby() {
     return
   }
   if (l12State.spectating || l12State.room?.sandbox || tournamentCode) leaveRoom()
-  router.push(tournamentCode ? `/battle/tournaments?code=${encodeURIComponent(tournamentCode)}` : '/lobby')
+  router.push(tournamentCode ? `/battle/tournaments/${encodeURIComponent(tournamentCode)}` : '/lobby')
 }
 </script>
 

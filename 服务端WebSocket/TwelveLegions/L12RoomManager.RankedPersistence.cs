@@ -102,8 +102,9 @@ public sealed partial class L12RoomManager
             }
         }
         var afterRestore = await DrainRankedSettlementOutboxAsync();
+        var tournamentRoomCommands = await DrainTournamentRoomCommandsAsync();
         return new L12RankedRecoverySummary(settlementResult.Applied + afterRestore.Applied,
-            restored, invalidated, failed + afterRestore.Failed);
+            restored, invalidated, failed + afterRestore.Failed + tournamentRoomCommands.Failed);
     }
 
     private Room BuildRestoredRankedRoom(L12RankedRecoverySource source)

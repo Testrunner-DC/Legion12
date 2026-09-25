@@ -357,6 +357,24 @@ public sealed class ControlPlanePhaseFourTournamentTests
                 Assert.Equal("true", Assert.Single(response.Headers.GetValues("X-Idempotent-Replay")));
             }
 
+            Assert.False(L12Authorization.HasPermission(organizerLogin.Account!,
+                L12Permission.TournamentsManage));
+            using (var organizerStartCheck = Authorized(HttpMethod.Get,
+                       $"/api/tournaments/{created.Id}/start-check", organizerLogin.Token!,
+                       "tour-start-check-organizer"))
+            using (var response = await client.SendAsync(organizerStartCheck))
+            {
+                var responseText = await response.Content.ReadAsStringAsync();
+                Assert.True(response.IsSuccessStatusCode, $"{response.StatusCode}: {responseText}");
+                Assert.NotNull(JsonSerializer.Deserialize<L12TournamentStartCheckView>(responseText,
+                    new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+            }
+            using (var outsiderStartCheck = Authorized(HttpMethod.Get,
+                       $"/api/tournaments/{created.Id}/start-check", player.Token!,
+                       "tour-start-check-outsider"))
+            using (var response = await client.SendAsync(outsiderStartCheck))
+                Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
             using (var missingVersion = Authorized(HttpMethod.Post, $"/api/tournaments/{created.Id}/start",
                        organizerLogin.Token!, "tour-missing-version", new TournamentActionRequest("missing-version")))
             using (var response = await client.SendAsync(missingVersion))

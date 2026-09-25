@@ -113,7 +113,7 @@ const deckLibrary = read('../src/l12/site/DeckLibraryPage.vue')
 const publicDeckDetail = read('../src/l12/site/PublicDeckDetailPage.vue')
 const deckProfile = read('../src/l12/DeckProfile.vue')
 const legacyLobby = read('../src/l12/LobbyPage.vue')
-const tournamentCenter = read('../src/l12/site/TournamentCenterPage.vue')
+const tournamentCenter = read('../src/l12/site/AdminTournamentWorkbench.vue')
 const wsSmoke = read('../../scripts/ws-smoke.mjs')
 const wsServer = read('../../服务端WebSocket/TwelveLegions/L12WebSocketServer.cs')
 const siteContentStore = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs')
@@ -1333,7 +1333,7 @@ const contracts = [
     && !platform.includes('bootstrapSecondApprover') && !platform.includes('/offline-bootstrap')
     && !adminPage.includes('type="password"'), '受控发布恢复只能保留服务器CLI离线边界，后台不得新增恢复凭据或第二审批人入口'],
   [platform.includes('export const tournamentApi') && platform.includes('/api/tournaments/import-legacy') && platform.includes('/matches/${encodeURIComponent(matchId)}/rulings'), '赛事中心必须通过服务端 API 完成赛事、旧数据导入与裁判写入'],
-  [adminPage.includes("'tournaments'") && adminPage.includes('TournamentCenterPage')
+  [adminPage.includes("'tournaments'") && adminPage.includes('AdminTournamentWorkbench')
     && adminPage.includes('admin-mode embedded') && adminSections.includes("label: '赛事管理'")
     && tournamentCenter.includes('canGloballyManage') && tournamentCenter.includes('canGloballyRule')
     && tournamentCenter.includes("props.adminMode ? '赛事管理' : '赛事中心'")

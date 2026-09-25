@@ -92,12 +92,12 @@ window.fetch=async(input,init)=>{
 const [
  {default:SiteShell},
  {default:OfficialHomePage},{default:NewsPage},{default:RuleCenterPage},{default:BattleHubPage},
- {default:TournamentCenterPage},{default:DeckLibraryPage},{default:FriendsPage},{default:RankingsPage},
+ {default:TournamentHubPage},{default:DeckLibraryPage},{default:FriendsPage},{default:RankingsPage},
  {default:ProfilePage},{default:CardArchive},{default:MatchRecords},
 ]=await Promise.all([
  import('/src/l12/site/SiteShell.vue'),
  import('/src/l12/site/OfficialHomePage.vue'),import('/src/l12/site/NewsPage.vue'),import('/src/l12/site/RuleCenterPage.vue'),import('/src/l12/site/BattleHubPage.vue'),
- import('/src/l12/site/TournamentCenterPage.vue'),import('/src/l12/site/DeckLibraryPage.vue'),import('/src/l12/site/FriendsPage.vue'),import('/src/l12/site/RankingsPage.vue'),
+ import('/src/l12/site/TournamentHubPage.vue'),import('/src/l12/site/DeckLibraryPage.vue'),import('/src/l12/site/FriendsPage.vue'),import('/src/l12/site/RankingsPage.vue'),
  import('/src/l12/site/ProfilePage.vue'),import('/src/l12/CardArchive.vue'),import('/src/l12/MatchRecords.vue'),
 ])
 const routes=[
@@ -105,7 +105,7 @@ const routes=[
  {path:'/news',component:NewsPage},
  {path:'/rules',component:RuleCenterPage},
  {path:'/battle',component:BattleHubPage,meta:{section:'battle'}},
- {path:'/battle/tournaments',component:TournamentCenterPage,meta:{section:'battle'}},
+ {path:'/battle/tournaments',component:TournamentHubPage,meta:{section:'battle'}},
  {path:'/decks',component:DeckLibraryPage},
  {path:'/battle/friends',component:FriendsPage,meta:{section:'battle'}},
  {path:'/cards',component:CardArchive},
