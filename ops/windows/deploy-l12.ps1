@@ -68,10 +68,11 @@ $webAssetsActivator = Join-Path $repoRoot "ops\server\activate-l12-web-assets.sh
 $webAssetsSnippet = Join-Path $repoRoot "ops\server\nginx-l12-web-assets.conf"
 $verifyScript = Join-Path $repoRoot "ops\windows\verify-l12.ps1"
 $originalLocation = Get-Location
+$toolBundle = ""
 
 try {
     Set-Location $repoRoot
-    foreach ($commandName in @("git", "ssh", "scp", "ssh-keygen", "powershell")) { Require-Command $commandName }
+    foreach ($commandName in @("git", "ssh", "scp", "ssh-keygen", "powershell", "tar")) { Require-Command $commandName }
     $sshOptions = @(Resolve-L12SshOptions -RepositoryRoot $repoRoot -RemoteServer $Server `
         -KnownHostsFile $KnownHostsFile -IdentityFile $IdentityFile)
     $remoteHost = $productionEndpoint.Host
@@ -154,22 +155,27 @@ try {
     else {
         "/opt/legion12-deployment/incoming"
     }
-    $remoteBootstrap = "/tmp/deploy-l12-release-$commit.sh"
-    $remoteHealthVerifier = "/tmp/verify-l12-health-$commit.mjs"
-    $remoteSharePageActivator = "/tmp/activate-l12-share-pages-$commit.sh"
-    $remoteSharePageSnippet = "/tmp/nginx-l12-share-pages-$commit.conf"
-    $remoteWebAssetsActivator = "/tmp/activate-l12-web-assets-$commit.sh"
-    $remoteWebAssetsSnippet = "/tmp/nginx-l12-web-assets-$commit.conf"
+    $remoteToolDir = "/tmp/l12-deploy-tools-$commit"
+    $remoteToolBundle = "/tmp/l12-deploy-tools-$commit.tar"
+    $remoteBootstrap = "$remoteToolDir/ops/server/deploy-l12-release.sh"
+    $remoteHealthVerifier = "$remoteToolDir/ops/server/verify-l12-health.mjs"
+    $remoteSharePageActivator = "$remoteToolDir/ops/server/activate-l12-share-pages.sh"
+    $remoteSharePageSnippet = "$remoteToolDir/ops/server/nginx-l12-share-pages.conf"
+    $remoteWebAssetsActivator = "$remoteToolDir/ops/server/activate-l12-web-assets.sh"
+    $remoteWebAssetsSnippet = "$remoteToolDir/ops/server/nginx-l12-web-assets.conf"
     $remoteRelease = "$incoming/l12-release-$commit.tar.gz"
     $remoteCardAssets = if ($hasCardAssets) { "$incoming/l12-card-assets-$cardAssetsHashValue.tar.gz" } else { "-" }
     Write-Host "[L12 部署] 上传并安装经过本地验证的发布工具..."
-    Invoke-External scp @sshOptions $serverScript "${Server}:$remoteBootstrap"
-    Invoke-External scp @sshOptions $serverHealthVerifier "${Server}:$remoteHealthVerifier"
-    Invoke-External scp @sshOptions $sharePageActivator "${Server}:$remoteSharePageActivator"
-    Invoke-External scp @sshOptions $sharePageSnippet "${Server}:$remoteSharePageSnippet"
-    Invoke-External scp @sshOptions $webAssetsActivator "${Server}:$remoteWebAssetsActivator"
-    Invoke-External scp @sshOptions $webAssetsSnippet "${Server}:$remoteWebAssetsSnippet"
-    Invoke-External ssh @sshOptions $Server "sed -i 's/\r$//' '$remoteBootstrap' '$remoteWebAssetsActivator' && install -m 0755 '$remoteBootstrap' /usr/local/sbin/deploy-legion12-release && install -d -m 0755 /usr/local/libexec && install -m 0755 '$remoteHealthVerifier' /usr/local/libexec/verify-legion12-health.mjs && chmod 0755 '$remoteWebAssetsActivator' && '$remoteWebAssetsActivator' '$remoteWebAssetsSnippet' && rm -f '$remoteBootstrap' '$remoteHealthVerifier' '$remoteWebAssetsActivator' && /usr/local/sbin/deploy-legion12-release prepare-storage '$ServerArtifactRoot'"
+    $toolBundle = Join-Path $resolvedCacheRoot "temp\l12-deploy-tools-$commit-$([Guid]::NewGuid().ToString('N')).tar"
+    Invoke-External tar -cf $toolBundle `
+        "ops/server/deploy-l12-release.sh" `
+        "ops/server/verify-l12-health.mjs" `
+        "ops/server/activate-l12-share-pages.sh" `
+        "ops/server/nginx-l12-share-pages.conf" `
+        "ops/server/activate-l12-web-assets.sh" `
+        "ops/server/nginx-l12-web-assets.conf"
+    Invoke-External scp @sshOptions $toolBundle "${Server}:$remoteToolBundle"
+    Invoke-External ssh @sshOptions $Server "install -d -m 0700 '$remoteToolDir' && tar -xf '$remoteToolBundle' -C '$remoteToolDir' && rm -f '$remoteToolBundle' && sed -i 's/\r$//' '$remoteBootstrap' '$remoteWebAssetsActivator' && install -m 0755 '$remoteBootstrap' /usr/local/sbin/deploy-legion12-release && install -d -m 0755 /usr/local/libexec && install -m 0755 '$remoteHealthVerifier' /usr/local/libexec/verify-legion12-health.mjs && chmod 0755 '$remoteWebAssetsActivator' && '$remoteWebAssetsActivator' '$remoteWebAssetsSnippet' && rm -f '$remoteBootstrap' '$remoteHealthVerifier' '$remoteWebAssetsActivator' && /usr/local/sbin/deploy-legion12-release prepare-storage '$ServerArtifactRoot'"
 
     Write-Host "[L12 部署] 上传预构建运行包..."
     Invoke-External scp @sshOptions $releaseArchive "${Server}:$remoteRelease"
@@ -214,17 +220,19 @@ try {
 
     $mode = if ($DryRun) { "dry-run" } else { "deploy" }
     Write-Host "[L12 部署] 服务器执行快速 $mode（不重复构建和全量测试）..."
-    Invoke-External ssh @sshOptions $Server "/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease - - - $cardAssetsHash $cardAssetsSha $cardAssetsPath '$ServerArtifactRoot'"
-
     if ($DryRun) {
-        Invoke-External ssh @sshOptions $Server "rm -f '$remoteSharePageActivator' '$remoteSharePageSnippet' '$remoteWebAssetsActivator' '$remoteWebAssetsSnippet'"
+        Invoke-External ssh @sshOptions $Server "/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease - - - $cardAssetsHash $cardAssetsSha $cardAssetsPath '$ServerArtifactRoot' && rm -f '$remoteSharePageActivator' '$remoteSharePageSnippet' '$remoteWebAssetsActivator' '$remoteWebAssetsSnippet' && rmdir '$remoteToolDir/ops/server' '$remoteToolDir/ops' '$remoteToolDir'"
         Write-Host "[L12 部署] 干运行成功，线上版本未改变。"
     }
     else {
         Write-Host "[L12 部署] 启用主页与资讯分享信息路由..."
-        Invoke-External ssh @sshOptions $Server "sed -i 's/\r$//' '$remoteSharePageActivator' && chmod 0755 '$remoteSharePageActivator' && '$remoteSharePageActivator' '$remoteSharePageSnippet' && rm -f '$remoteSharePageActivator'"
-        Invoke-External ssh @sshOptions $Server "curl -fsS --connect-timeout 5 --max-time 10 https://legion-12.com/ | grep -Fq 'property=\"og:title\"'"
+        Invoke-External ssh @sshOptions $Server "/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease - - - $cardAssetsHash $cardAssetsSha $cardAssetsPath '$ServerArtifactRoot' && sed -i 's/\r$//' '$remoteSharePageActivator' && chmod 0755 '$remoteSharePageActivator' && '$remoteSharePageActivator' '$remoteSharePageSnippet' && rm -f '$remoteSharePageActivator' && rmdir '$remoteToolDir/ops/server' '$remoteToolDir/ops' '$remoteToolDir' && curl -fsS --connect-timeout 5 --max-time 10 https://legion-12.com/ | grep -Fq 'property=\"og:title\"'"
         Write-Host "[L12 部署] 发布成功：https://legion-12.com/"
     }
 }
-finally { Set-Location $originalLocation }
+finally {
+    if (-not [string]::IsNullOrWhiteSpace($toolBundle) -and (Test-Path -LiteralPath $toolBundle -PathType Leaf)) {
+        Remove-Item -LiteralPath $toolBundle -Force
+    }
+    Set-Location $originalLocation
+}

@@ -790,6 +790,11 @@ exec "$L12_TEST_REAL_TAR" "$@"
         $windowsDeployText.Contains('SSH 连接暂时不可用') -and
         $windowsDeployText.Contains('卡图缓存探测连接暂时不可用')) `
         "Windows 正式部署入口没有为短时 SSH 限流提供有边界退避重试。"
+    Assert-True ($windowsDeployText.Contains('Invoke-External tar -cf $toolBundle') -and
+        $windowsDeployText.Contains('Invoke-External scp @sshOptions $toolBundle') -and
+        -not $windowsDeployText.Contains('Invoke-External scp @sshOptions $serverScript') -and
+        $windowsDeployText.Contains('Remove-Item -LiteralPath $toolBundle -Force')) `
+        "Windows 正式部署入口没有把前置工具合并为单次上传并清理本地临时包。"
     $webRouteActivationIndex = $windowsDeployText.IndexOf('''$remoteWebAssetsActivator'' ''$remoteWebAssetsSnippet''', [StringComparison]::Ordinal)
     $prepareStorageIndex = $windowsDeployText.IndexOf('/usr/local/sbin/deploy-legion12-release prepare-storage ''$ServerArtifactRoot''', [StringComparison]::Ordinal)
     $releaseUploadIndex = $windowsDeployText.IndexOf('Invoke-External scp @sshOptions $releaseArchive', [StringComparison]::Ordinal)
@@ -797,6 +802,9 @@ exec "$L12_TEST_REAL_TAR" "$@"
         "Windows 正式部署入口没有在存储预检前激活严格前端资源路由。"
     Assert-True ($prepareStorageIndex -ge 0 -and $prepareStorageIndex -lt $releaseUploadIndex) `
         "Windows 发布入口没有在大运行包上传前完成外置挂载/容量预检。"
+    Assert-True ($windowsDeployText.Contains('''$remoteSharePageActivator'' ''$remoteSharePageSnippet''') -and
+        $windowsDeployText.Contains('rmdir ''$remoteToolDir/ops/server'' ''$remoteToolDir/ops'' ''$remoteToolDir''')) `
+        "Windows 正式部署入口没有在最终发布连接内激活分享路由并清理远端工具目录。"
     Assert-True ($windowsDeployText.Contains('''$ServerArtifactRoot''')) `
         "Windows 发布入口没有把固定制品根传给最终服务器发布命令。"
     $artifactRootAst = $deployCommand.ScriptBlock.Ast.ParamBlock.Parameters |
