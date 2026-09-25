@@ -4,6 +4,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import CardImage from '@/l12/CardImage.vue'
 import DeckConstructionBrowser from './DeckConstructionBrowser.vue'
+import AdminMatchContextLinks from './AdminMatchContextLinks.vue'
 import { encodeDeckCode, downloadDeckImage } from './deckShare'
 import { loadDeckCatalog, loadSavedDecks, saveDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
 import {
@@ -274,6 +275,7 @@ onMounted(async () => {
         <div v-else-if="expiredReplayId" class="empty expired-replay"><b>回放已过期</b><span>该沙盒记录已超过保留期限，无法继续读取详情或播放回放。</span><code>{{ expiredReplayId }}</code></div>
         <template v-else-if="detail">
           <header class="detail-header"><div><small>{{ modeLabel(detail.summary.modeId) }} · {{ coverageLabel(detail.coverage) }}</small><h3>{{ detail.summary.players.map(player => player.displayName).join(' VS ') }}</h3><p>{{ dateLabel(detail.summary.startedUtc) }} · {{ durationLabel(detail.summary.durationSeconds) }} · {{ statusLabel(detail.summary) }}</p></div><code>{{ detail.summary.matchId }}</code></header>
+          <AdminMatchContextLinks :match-id="detail.summary.matchId" :account-id="detail.participants[0]?.accountId || undefined"/>
 
           <section class="participant-grid">
             <article v-for="participant in detail.participants" :key="participant.playerIndex" class="participant-card">

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import PagedCollection from './PagedCollection.vue'
 import { onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
+import AdminMatchContextLinks from './AdminMatchContextLinks.vue'
 import { hasPermission } from '@/l12/platform'
 import {
   matchGovernanceAdminApi,
@@ -9,11 +11,12 @@ import {
 } from '@/l12/matchGovernance'
 
 const emit = defineEmits<{ notice: [message: string] }>()
+const route = useRoute()
 const view = ref<'draws' | 'reports'>('draws')
 const draws = ref<MatchDrawRecord[]>([])
 const reports = ref<PlayerMatchReport[]>([])
 const status = ref('')
-const search = ref('')
+const search = ref(typeof route.query.search === 'string' ? route.query.search : '')
 const loading = ref(false)
 const notes = reactive<Record<string, string>>({})
 const comments = reactive<Record<string, string>>({})
@@ -81,6 +84,7 @@ onMounted(load)
     <div v-if="view === 'draws'" class="records">
       <PagedCollection :items="draws" v-slot="{ items: paged3919 }"><article v-for="row in paged3919" :key="row.id">
         <div class="summary"><code>{{ row.id }}</code><h3>{{ row.requesterName }} → {{ row.responderName }}</h3><p>{{ row.reason }}</p><small>对局 {{ row.matchId }} · 房间 {{ row.roomCode }} · {{ row.modeId }}</small><small>申请 {{ new Date(row.requestedAt).toLocaleString() }}<template v-if="row.respondedAt"> · 处理 {{ new Date(row.respondedAt).toLocaleString() }}</template></small><span>{{ statusLabel(row.status) }}</span>
+          <AdminMatchContextLinks :match-id="row.matchId"/>
           <details><summary>审计记录（{{ row.history.length }}）</summary><ol><PagedCollection :items="row.history" v-slot="{ items: paged4517 }"><li v-for="audit in paged4517" :key="audit.id"><b>{{ audit.action }}</b> · {{ audit.actorName }} · {{ new Date(audit.createdAt).toLocaleString() }}<p v-if="audit.comment">{{ audit.comment }}</p></li></PagedCollection></ol></details>
         </div>
         <form @submit.prevent="saveDraw(row)"><label>管理状态<select v-model="row.adminStatus" :disabled="!canWrite"><option value="new">新记录</option><option value="reviewing">处理中</option><option value="resolved">已处理</option><option value="closed">已关闭</option></select></label><label>管理备注<textarea v-model="notes[row.id]" :disabled="!canWrite" rows="3" maxlength="5000"/></label><label>本次审计说明<textarea v-model="comments[row.id]" :disabled="!canWrite" rows="2" maxlength="2000"/></label><button v-if="canWrite" type="submit">保存并审计</button></form>
@@ -91,6 +95,7 @@ onMounted(load)
     <div v-else class="records">
       <PagedCollection :items="reports" v-slot="{ items: paged5457 }"><article v-for="row in paged5457" :key="row.id">
         <div class="summary"><code>{{ row.id }}</code><h3>{{ row.reporterName }} 举报 {{ row.reportedName }}</h3><p>{{ row.description }}</p><small>对局 {{ row.matchId }} · 房间 {{ row.roomCode }} · {{ row.modeId }}</small><small>提交 {{ new Date(row.createdAt).toLocaleString() }} · 更新 {{ new Date(row.updatedAt).toLocaleString() }}</small><span>{{ statusLabel(row.status) }}</span>
+          <AdminMatchContextLinks :match-id="row.matchId" :account-id="row.reporterId || undefined"/>
           <details><summary>审计记录（{{ row.history.length }}）</summary><ol><PagedCollection :items="row.history" v-slot="{ items: paged6097 }"><li v-for="audit in paged6097" :key="audit.id"><b>{{ audit.action }}</b> · {{ audit.actorName }} · {{ new Date(audit.createdAt).toLocaleString() }}<p v-if="audit.comment">{{ audit.comment }}</p></li></PagedCollection></ol></details>
         </div>
         <form @submit.prevent="saveReport(row)"><label>处理状态<select v-model="row.status" :disabled="!canWrite"><option value="new">新记录</option><option value="reviewing">处理中</option><option value="resolved">已处理</option><option value="closed">已关闭</option></select></label><label>管理备注<textarea v-model="notes[row.id]" :disabled="!canWrite" rows="3" maxlength="5000"/></label><label>本次审计说明<textarea v-model="comments[row.id]" :disabled="!canWrite" rows="2" maxlength="2000"/></label><button v-if="canWrite" type="submit">保存并审计</button></form>

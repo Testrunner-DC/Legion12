@@ -95,8 +95,11 @@ function editRule(rule: AlternateArtAwardRule) { Object.assign(ruleForm, rule) }
 async function load() {
   busy.value = true
   try {
-    const [nextGrants, nextCatalog, nextMedia, nextRules, nextProducts] = await Promise.all([
-      adminApi.alternateArtGrants(), loadDeckCatalog(), adminApi.siteMedia('card-art'), adminApi.alternateArtAwardRules(), adminApi.alternateArtProducts(),
+    const [nextGrants, nextCatalog, nextMedia] = await Promise.all([
+      adminApi.alternateArtGrants(), loadDeckCatalog(), adminApi.siteMedia('card-art'),
+    ])
+    const [nextRules, nextProducts] = await Promise.all([
+      adminApi.alternateArtAwardRules(), adminApi.alternateArtProducts(),
     ])
     grants.value = nextGrants; catalog.value = nextCatalog; media.value = nextMedia; awardRules.value = nextRules; products.value = nextProducts
   } catch (error) { notice(error instanceof Error ? error.message : '异画资料读取失败') }

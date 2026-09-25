@@ -702,6 +702,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 AuditContext(request, L12Permission.SessionsRevokeOwn));
             return SessionRevocationResponse(request, result);
         });
+        _app.MapDelete("/api/auth/sessions/others", (HttpRequest request) =>
+        {
+            if (!TryAuthorize(request, L12Permission.SessionsRevokeOwn, out var authenticated, out var failure)) return failure;
+            var result = _platform.RevokeOtherOwnSessions(authenticated,
+                AuditContext(request, L12Permission.SessionsRevokeOwn));
+            return SessionRevocationResponse(request, result);
+        });
         _app.MapGet("/api/players", (HttpRequest request, string? search) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
@@ -1942,15 +1949,32 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             const L12Permission permission = L12Permission.AdminBugsWrite;
             if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (string.Equals(body.Status, "closed", StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(body.DuplicateOf)
+                && (string.IsNullOrWhiteSpace(body.FixCommit) || string.IsNullOrWhiteSpace(body.RegressionTest)
+                    || string.IsNullOrWhiteSpace(body.DeployedVersion) || string.IsNullOrWhiteSpace(body.VerifiedBy)
+                    || body.VerifiedAt is null))
+                return ApiError(request, "bug_closure_evidence_required",
+                    "关闭 Bug 前必须填写修复提交、回归测试、部署版本、复测人与复测时间；重复问题可改填关联编号。",
+                    StatusCodes.Status400BadRequest);
+            if (!string.IsNullOrWhiteSpace(body.DuplicateOf)
+                && (string.Equals(body.DuplicateOf.Trim(), id, StringComparison.OrdinalIgnoreCase)
+                    || !_platform.Bugs(null).Any(item => string.Equals(item.Id, body.DuplicateOf.Trim(),
+                        StringComparison.OrdinalIgnoreCase))))
+                return ApiError(request, "bug_duplicate_target_invalid", "重复问题必须关联到另一个真实存在的 Bug 编号。",
+                    StatusCodes.Status400BadRequest);
             var payload = new BugUpdateCommandPayload(id, body.Status, body.Priority, body.Assignee,
-                body.AdminNotes, body.Comment);
+                body.AdminNotes, body.Comment, body.FixCommit, body.RegressionTest, body.DeployedVersion,
+                body.VerifiedBy, body.VerifiedAt, body.DuplicateOf);
             var command = CommandEnvelope(request, authenticated.Account, permission, "bug.update", $"bug:{id}",
                 payload, body.IdempotencyKey, body.ExpectedVersion, body.DryRun, body.Reason);
             var outcome = _adminCommands.Execute(command, permission, current =>
             {
                 var updated = _platform.UpdateBug(current.Actor, current.Payload.Id, current.Payload.Status,
                     current.Payload.Priority, current.Payload.Assignee, current.Payload.AdminNotes,
-                    current.Payload.Comment, current.AuditContext);
+                    current.Payload.Comment, current.AuditContext, current.Payload.FixCommit,
+                    current.Payload.RegressionTest, current.Payload.DeployedVersion, current.Payload.VerifiedBy,
+                    current.Payload.VerifiedAt, current.Payload.DuplicateOf);
                 return updated is null
                     ? L12AdminCommandResult<L12BugReportView>.Fail("bug_not_found", "Bug 不存在",
                         StatusCodes.Status404NotFound)
@@ -4495,10 +4519,13 @@ public sealed record EffectPresentationCommandPayload(string CardId, string Scen
 public sealed record BugRequest(string? Title, string Description, string? Page, string? RoomCode,
     string? MatchId, string? Version, L12ClientConnectionDiagnosticView? ClientDiagnostic = null);
 public sealed record BugUpdateRequest(string? Status, string? Priority, string? Assignee, string? AdminNotes,
-    string? Comment, string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false,
-    string? Reason = null);
+    string? Comment, string? FixCommit = null, string? RegressionTest = null, string? DeployedVersion = null,
+    string? VerifiedBy = null, DateTimeOffset? VerifiedAt = null, string? DuplicateOf = null,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
 public sealed record BugUpdateCommandPayload(string Id, string? Status, string? Priority, string? Assignee,
-    string? AdminNotes, string? Comment);
+    string? AdminNotes, string? Comment, string? FixCommit = null, string? RegressionTest = null,
+    string? DeployedVersion = null, string? VerifiedBy = null, DateTimeOffset? VerifiedAt = null,
+    string? DuplicateOf = null);
 public sealed record PublishedDeckRequest(string? PublicationId, L12CustomDeckSubmission? Deck);
 public sealed record TournamentCreateRequest(L12TournamentCreatePayload Tournament, string? IdempotencyKey = null,
     long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);

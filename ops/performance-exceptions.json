@@ -27,33 +27,6 @@
       "owner": "遗留在线玩家面板",
       "reason": "4秒玩家列表轮询待事件驱动同步批次移除",
       "expiresAt": "2026-10-15"
-    },
-    {
-      "id": "PERF-FANOUT-003",
-      "rule": "parallel-page-load",
-      "path": "src/l12/site/AdminAlternateArtsPanel.vue",
-      "allowedValue": 5,
-      "owner": "后台异画",
-      "reason": "后台历史首屏读取锁定现状，禁止继续扩大",
-      "expiresAt": "2026-12-31"
-    },
-    {
-      "id": "PERF-FANOUT-004",
-      "rule": "parallel-page-load",
-      "path": "src/l12/site/AdminSiteContentPanel.vue",
-      "allowedValue": 7,
-      "owner": "后台站点内容",
-      "reason": "后台历史首屏读取锁定现状，后续改为选项卡按需加载",
-      "expiresAt": "2026-12-31"
-    },
-    {
-      "id": "PERF-FANOUT-005",
-      "rule": "parallel-page-load",
-      "path": "src/l12/site/AdminOperationsPanel.vue",
-      "allowedValue": 6,
-      "owner": "后台运营",
-      "reason": "后台历史首屏读取锁定现状，后续按折叠区域延迟加载",
-      "expiresAt": "2026-12-31"
     }
   ]
 }

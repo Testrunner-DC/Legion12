@@ -169,9 +169,11 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    const [current, versions, status, cards, ranked, broadcasts] = await Promise.all([
-      adminApi.operationsConfig(), adminApi.operationsHistory(), adminApi.runtimeStatus(), loadDeckCatalog(),
-      adminApi.rankedConfig(), rankedApi.broadcasts(30),
+    const [current, versions, status] = await Promise.all([
+      adminApi.operationsConfig(), adminApi.operationsHistory(), adminApi.runtimeStatus(),
+    ])
+    const [cards, ranked, broadcasts] = await Promise.all([
+      loadDeckCatalog(), adminApi.rankedConfig(), rankedApi.broadcasts(30),
     ])
     version.value = current.version
     versionId.value = current.versionId

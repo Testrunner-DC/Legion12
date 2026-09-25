@@ -302,7 +302,7 @@ async function revokeSession(session: PlatformSession) {
 async function revokeOtherSessions() {
   authBusy.value = true; notice.value = ''
   try {
-    for (const session of sessions.value.filter(item => !item.current)) await sessionApi.revoke(session.id)
+    await sessionApi.revokeOthers()
     sessions.value = sessions.value.filter(item => item.current)
     notice.value = '其他设备会话已全部撤销'
   } catch (error) { notice.value = error instanceof Error ? error.message : '撤销失败' }

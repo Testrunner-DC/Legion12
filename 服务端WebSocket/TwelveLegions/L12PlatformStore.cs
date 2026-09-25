@@ -66,7 +66,9 @@ public sealed record L12BugReportView(string Id, string? ReporterId, string Repo
     string? AdminNotes, IReadOnlyList<L12BugAuditView> History, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
     L12BugDiagnosticView? Diagnostic = null, string? ClientVersion = null, string? ServerVersion = null,
     string? EngineVersion = null, L12ClientConnectionDiagnosticView? ClientDiagnostic = null,
-    L12ConnectionClaimDiagnosticView? ConnectionDiagnostic = null);
+    L12ConnectionClaimDiagnosticView? ConnectionDiagnostic = null, string? FixCommit = null,
+    string? RegressionTest = null, string? DeployedVersion = null, string? VerifiedBy = null,
+    DateTimeOffset? VerifiedAt = null, string? DuplicateOf = null);
 public sealed record L12BugAuditView(string Id, string? ActorId, string ActorName, string Action,
     string? FromValue, string? ToValue, string? Comment, DateTimeOffset CreatedAt);
 public sealed record L12AdminAuditView(string Id, string ActorId, string ActorName, string Category, string Action,
@@ -133,6 +135,12 @@ public sealed partial class L12PlatformStore
         public string Priority { get; set; } = "normal";
         public string? Assignee { get; set; }
         public string? AdminNotes { get; set; }
+        public string? FixCommit { get; set; }
+        public string? RegressionTest { get; set; }
+        public string? DeployedVersion { get; set; }
+        public string? VerifiedBy { get; set; }
+        public DateTimeOffset? VerifiedAt { get; set; }
+        public string? DuplicateOf { get; set; }
         public L12BugDiagnosticView? Diagnostic { get; set; }
         public L12ClientConnectionDiagnosticView? ClientDiagnostic { get; set; }
         public L12ConnectionClaimDiagnosticView? ConnectionDiagnostic { get; set; }
@@ -577,6 +585,10 @@ public sealed partial class L12PlatformStore
     public L12SessionRevocationResult RevokeOwnSessions(L12AuthenticatedSession actor,
         L12AdminAuditContext? context = null, bool dryRun = false)
         => RevokeSessionsCore(actor.Account, actor.Account.Id, context, dryRun);
+
+    public L12SessionRevocationResult RevokeOtherOwnSessions(L12AuthenticatedSession actor,
+        L12AdminAuditContext? context = null, bool dryRun = false)
+        => RevokeSessionsCore(actor.Account, actor.Account.Id, context, dryRun, actor.SessionId);
 
     public L12SessionRevocationResult RevokeAccountSession(L12AccountView actor, string accountId, string sessionId,
         L12AdminAuditContext? context = null, bool dryRun = false)
@@ -1050,14 +1062,17 @@ public sealed partial class L12PlatformStore
     }
 
     public L12BugReportView? UpdateBug(L12AccountView actor, string id, string? status, string? priority,
-        string? assignee, string? notes, string? comment = null, L12AdminAuditContext? context = null)
+        string? assignee, string? notes, string? comment = null, L12AdminAuditContext? context = null,
+        string? fixCommit = null, string? regressionTest = null, string? deployedVersion = null,
+        string? verifiedBy = null, DateTimeOffset? verifiedAt = null, string? duplicateOf = null)
     {
         lock (_gate)
         {
             var row = _data.BugReports.FirstOrDefault(item => item.Id == id);
             if (row is null) return null;
             var changed = false;
-            if (status is "new" or "confirmed" or "in-progress" or "resolved" or "closed"
+            if (status is "new" or "decision" or "implementation" or "retest" or "deploy" or "closed"
+                or "confirmed" or "in-progress" or "resolved"
                 && row.Status != status)
             {
                 row.History.Add(NewBugAudit(actor, "status", row.Status, status, null));
@@ -1091,6 +1106,18 @@ public sealed partial class L12PlatformStore
                     comment.Trim()[..Math.Min(comment.Trim().Length, 2000)]));
                 changed = true;
             }
+            changed |= UpdateBugEvidence(row, actor, "fix-commit", row.FixCommit, fixCommit, value => row.FixCommit = value);
+            changed |= UpdateBugEvidence(row, actor, "regression-test", row.RegressionTest, regressionTest, value => row.RegressionTest = value);
+            changed |= UpdateBugEvidence(row, actor, "deployed-version", row.DeployedVersion, deployedVersion, value => row.DeployedVersion = value);
+            changed |= UpdateBugEvidence(row, actor, "verified-by", row.VerifiedBy, verifiedBy, value => row.VerifiedBy = value);
+            changed |= UpdateBugEvidence(row, actor, "duplicate-of", row.DuplicateOf, duplicateOf, value => row.DuplicateOf = value);
+            if (verifiedAt is not null && row.VerifiedAt != verifiedAt)
+            {
+                row.History.Add(NewBugAudit(actor, "verified-at", row.VerifiedAt?.ToString("O"),
+                    verifiedAt.Value.ToString("O"), null));
+                row.VerifiedAt = verifiedAt;
+                changed = true;
+            }
             if (!changed) return ToView(row);
             row.UpdatedAt = DateTimeOffset.UtcNow;
             AddAdminAudit(actor, "bug", "update", row.Id, null, row.Status,
@@ -1098,6 +1125,17 @@ public sealed partial class L12PlatformStore
             Save();
             return ToView(row);
         }
+    }
+
+    private static bool UpdateBugEvidence(BugRow row, L12AccountView actor, string action,
+        string? current, string? requested, Action<string?> apply)
+    {
+        if (requested is null) return false;
+        var next = string.IsNullOrWhiteSpace(requested) ? null : requested.Trim()[..Math.Min(requested.Trim().Length, 500)];
+        if (string.Equals(current, next, StringComparison.Ordinal)) return false;
+        row.History.Add(NewBugAudit(actor, action, current, next, null));
+        apply(next);
+        return true;
     }
 
     public string GetContent(string key, string fallback = "")
@@ -1441,7 +1479,7 @@ public sealed partial class L12PlatformStore
     }
 
     private L12SessionRevocationResult RevokeSessionsCore(L12AccountView actor, string accountId,
-        L12AdminAuditContext? context, bool dryRun)
+        L12AdminAuditContext? context, bool dryRun, string? excludedSessionId = null)
     {
         L12SessionRevocationResult result;
         lock (_gate)
@@ -1461,6 +1499,7 @@ public sealed partial class L12PlatformStore
 
             var now = DateTimeOffset.UtcNow;
             var active = _data.Sessions.Where(row => row.AccountId == accountId
+                && (excludedSessionId is null || row.Id != excludedSessionId)
                 && row.RevokedAt is null && row.ExpiresAt > now).ToArray();
             if (dryRun)
             {
@@ -1472,7 +1511,8 @@ public sealed partial class L12PlatformStore
 
             foreach (var session in active) session.RevokedAt = now;
             var revokedIds = active.Select(row => row.Id).ToArray();
-            AddAdminAudit(actor, "session", "revoke-all", account.Username, active.Length.ToString(), "0",
+            var action = excludedSessionId is null ? "revoke-all" : "revoke-others";
+            AddAdminAudit(actor, "session", action, account.Username, active.Length.ToString(), "0",
                 active.Length == 0 ? "already-revoked" : context?.Reason,
                 active.Length == 0 ? audit with { Reason = "already-revoked" } : audit);
             Save();
@@ -1561,7 +1601,8 @@ public sealed partial class L12PlatformStore
         row.Page, row.RoomCode, row.MatchId, row.Version, row.Status, row.Priority, row.Assignee, row.AdminNotes,
         row.History.OrderByDescending(item => item.CreatedAt).Select(ToView).ToArray(), row.CreatedAt, row.UpdatedAt,
         row.Diagnostic, row.ClientVersion ?? row.Version, row.ServerVersion ?? "legacy-unknown",
-        row.EngineVersion ?? "legacy-unknown", row.ClientDiagnostic, row.ConnectionDiagnostic);
+        row.EngineVersion ?? "legacy-unknown", row.ClientDiagnostic, row.ConnectionDiagnostic, row.FixCommit,
+        row.RegressionTest, row.DeployedVersion, row.VerifiedBy, row.VerifiedAt, row.DuplicateOf);
 
     private static L12ClientConnectionDiagnosticView? NormalizeClientDiagnostic(
         L12ClientConnectionDiagnosticView? value, string page, string? roomCode, string? matchId)

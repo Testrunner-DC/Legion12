@@ -86,6 +86,17 @@ public sealed class ControlPlanePlatformStoreTests
             var allDuplicate = store.RevokeOwnSessions(allAuthentication);
             Assert.True(allDuplicate.AlreadyRevoked);
             Assert.Equal(0, allDuplicate.RevokedCount);
+
+            var othersFirst = store.Register("SessOthers", "password-789");
+            var othersSecond = store.Login("SessOthers", "password-789");
+            var othersThird = store.Login("SessOthers", "password-789");
+            var othersAuthentication = store.AuthenticateTokenSession(othersThird.Token)!;
+            var othersRevoked = store.RevokeOtherOwnSessions(othersAuthentication);
+            Assert.Equal(2, othersRevoked.RevokedCount);
+            Assert.Null(store.AuthenticateToken(othersFirst.Token));
+            Assert.Null(store.AuthenticateToken(othersSecond.Token));
+            Assert.NotNull(store.AuthenticateToken(othersThird.Token));
+            Assert.True(store.RevokeOtherOwnSessions(othersAuthentication).AlreadyRevoked);
         }
         finally { Directory.Delete(root, true); }
     }
@@ -109,6 +120,33 @@ public sealed class ControlPlanePlatformStoreTests
             Assert.Null(store.AuthenticateToken(oldDevice.Token));
             Assert.False(store.Login("tpassw6ab37", "password-123").Success);
             Assert.True(store.Login("tpassw6ab37", "new-password-456").Success);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void BugResolutionEvidenceIsStructuredAndAudited()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var bug = store.AddBug(admin, "回归问题", "用于验证证据链", "/battle", null, null, "test");
+            var verifiedAt = DateTimeOffset.UtcNow;
+            var updated = store.UpdateBug(admin, bug.Id, "closed", "high", "maintainer", "已完成",
+                "关闭验证", fixCommit: "abc1234", regressionTest: "BattleReconnectRegression",
+                deployedVersion: "2026.09.25", verifiedBy: "qa-admin", verifiedAt: verifiedAt);
+
+            Assert.NotNull(updated);
+            Assert.Equal("abc1234", updated!.FixCommit);
+            Assert.Equal("BattleReconnectRegression", updated.RegressionTest);
+            Assert.Equal("2026.09.25", updated.DeployedVersion);
+            Assert.Equal("qa-admin", updated.VerifiedBy);
+            Assert.Equal(verifiedAt, updated.VerifiedAt);
+            Assert.Contains(updated.History, item => item.Action == "fix-commit");
+            Assert.Contains(updated.History, item => item.Action == "regression-test");
+            Assert.Contains(updated.History, item => item.Action == "verified-at");
         }
         finally { Directory.Delete(root, true); }
     }
@@ -332,6 +370,18 @@ public sealed class ControlPlanePlatformStoreTests
                 Assert.True(result!.AlreadyRevoked);
                 Assert.Equal(0, result.RevokedCount);
             }
+
+            var atomicOther = store.Login(owner.Account!.Username, "password-123");
+            using (var revokeOthers = Authorized(HttpMethod.Delete, "/api/auth/sessions/others", owner.Token!,
+                       "revoke-others-1"))
+            using (var response = await client.SendAsync(revokeOthers))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var result = await response.Content.ReadFromJsonAsync<RevocationResponse>();
+                Assert.Equal(1, result!.RevokedCount);
+            }
+            Assert.NotNull(store.AuthenticateToken(owner.Token));
+            Assert.Null(store.AuthenticateToken(atomicOther.Token));
 
             var admin = store.Login("Admin", "L12master");
             var workbenchBug = store.AddBug(admin.Account, "工作台待办", "验证聚合摘要", "/admin", null, null, "test");

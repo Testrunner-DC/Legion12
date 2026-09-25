@@ -74,10 +74,13 @@ function mediaUploaded(item: SiteMedia, targetSlide?: number) {
 async function load() {
   busy.value = true
   try {
-    const [home, footer, rules, nextMedia, nextCategories, batches, nextPublishedNews] = await Promise.all([
+    const [home, footer, rules] = await Promise.all([
       adminApi.getContent(homeCompositionKey), adminApi.getContent(siteLegalKey), adminApi.getContent('rules.notice'),
-      adminApi.siteMedia(), adminApi.siteCategories(), adminApi.contentBatches(), adminApi.articles({ status: 'published', kind: 'news' }),
     ])
+    const [nextMedia, nextCategories, batches] = await Promise.all([
+      adminApi.siteMedia(), adminApi.siteCategories(), adminApi.contentBatches(),
+    ])
+    const nextPublishedNews = await adminApi.articles({ status: 'published', kind: 'news' })
     contentEntries[homeCompositionKey] = home; contentEntries[siteLegalKey] = footer; contentEntries['rules.notice'] = rules
     Object.assign(composition, parseHomeComposition(home.draftValue))
     Object.assign(legal, parseSiteLegal(footer.draftValue))
