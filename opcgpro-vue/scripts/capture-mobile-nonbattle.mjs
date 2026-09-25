@@ -26,6 +26,8 @@ platform.platformState.account={id:'qa-player',username:'移动端验收玩家',
 platform.authState.initialized=true
 platform.authState.verified=true
 platform.authState.refreshing=false
+const routeRecovery=await import('/src/chunkRecovery.ts')
+window.__qaRouteRecovery={begin:routeRecovery.beginRouteNavigation,finish:routeRecovery.finishRouteNavigation,fail:routeRecovery.showRouteNavigationError}
 
 const net=await import('/src/l12/net.ts')
 net.l12State.status='online'
@@ -53,7 +55,8 @@ platform.sessionApi.list=async()=>[
 platform.usernameChangeApi.status=async()=>({freeRenameAvailable:true,freeRenameUsed:0})
 platform.emailApi.capability=async()=>({enabled:false,mailConfigured:false})
 
-const article=(id,kind,index)=>({id,title:'第一弹补充包「诸神黄昏」发售公告与移动端长标题换行验收 '+index,summary:'这是一段用于验收移动端换行与截断的资讯摘要，长度 deliberately 拉长以观察两行以上的排布效果。',body:'正文',category:'公告',coverUrl:'',link:'',slug:id,pinned:index===0,status:'published',hasUnpublishedChanges:false,createdAt:'2026-09-01T08:00:00Z',updatedAt:'2026-09-01T08:00:00Z',publishedAt:'2026-09-0'+index+'T08:00:00Z',author:'十二军团官方',updatedBy:'admin',revision:1,kind,sortOrder:index})
+const coverData='data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"%3E%3Crect width="400" height="300" fill="%230b2830"/%3E%3Ccircle cx="35" cy="150" r="28" fill="%23d9b65f"/%3E%3Ccircle cx="365" cy="150" r="28" fill="%2352c4cb"/%3E%3C/svg%3E'
+const article=(id,kind,index)=>({id,title:'第一弹补充包「诸神黄昏」发售公告与移动端长标题换行验收 '+index,summary:'这是一段用于验收移动端换行与截断的资讯摘要，长度 deliberately 拉长以观察两行以上的排布效果。',body:'正文',category:'公告',coverUrl:coverData,link:'',slug:id,pinned:index===0,status:'published',hasUnpublishedChanges:false,createdAt:'2026-09-01T08:00:00Z',updatedAt:'2026-09-01T08:00:00Z',publishedAt:'2026-09-0'+index+'T08:00:00Z',author:'十二军团官方',updatedBy:'admin',revision:1,kind,sortOrder:index})
 const newsArticles=Array.from({length:6},(_,i)=>article('news-'+i,'news',i+1))
 platform.articleApi.list=async({kind}={})=>kind==='news'?newsArticles:Array.from({length:3},(_,i)=>article(kind+'-'+i,kind,i+1))
 platform.siteContentApi.categories=async()=>['公告','活动','攻略']
@@ -103,6 +106,7 @@ const [
 const routes=[
  {path:'/',component:OfficialHomePage},
  {path:'/news',component:NewsPage},
+ {path:'/news/:articleId',component:NewsPage},
  {path:'/rules',component:RuleCenterPage},
  {path:'/battle',component:BattleHubPage,meta:{section:'battle'}},
  {path:'/battle/tournaments',component:TournamentHubPage,meta:{section:'battle'}},
@@ -153,7 +157,7 @@ const routesToCapture = [
   { route: '/battle', name: 'battle-hub', wait: '.battle-hub' },
   { route: '/battle/rankings', name: 'rankings', wait: '.rankings-page, main' },
   { route: '/battle/friends', name: 'friends', wait: '.friends-page' },
-  { route: '/battle/tournaments', name: 'tournaments', wait: '.tournament-page' },
+  { route: '/battle/tournaments', name: 'tournaments', wait: '.hub-page' },
   { route: '/battle/records', name: 'records', wait: '.match-records, .records-header, main' },
   { route: '/me', name: 'profile', wait: '.profile-page, main' },
 ]
@@ -181,6 +185,93 @@ try {
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
+
+  const assertMounted = async (selector, label) => {
+    await page.locator(selector).first().waitFor({ timeout: 15000 })
+    const mounted = await page.locator('.site-content').evaluate(element => {
+      const box = element.getBoundingClientRect()
+      const visibleChild = [...element.children].some(child => {
+        const childBox = child.getBoundingClientRect()
+        const style = getComputedStyle(child)
+        return style.display !== 'none' && style.visibility !== 'hidden' && childBox.width > 0 && childBox.height > 0
+      })
+      return box.width > 0 && box.height > 0 && visibleChild
+    })
+    if (!mounted) throw new Error(`${label}: route left an empty site content surface`)
+  }
+  const clickNavigation = async (label, selector) => {
+    const link = page.locator('.site-sidebar .site-nav a').filter({ hasText: label }).first()
+    await link.waitFor({ state: 'visible', timeout: 5000 })
+    await link.click()
+    await assertMounted(selector, label)
+  }
+
+  // 同一标签页连续点击真实侧边栏，覆盖组件卸载/重挂载与导航状态；不得依赖刷新恢复。
+  await page.setViewportSize({ width: 1366, height: 768 })
+  await page.goto(`http://127.0.0.1:${port}/__mobile_review__?route=%2F`)
+  await assertMounted('.official-home', '主页')
+  await page.evaluate(() => window.__qaRouteRecovery.begin('/news'))
+  await page.locator('#l12-route-navigation').waitFor({ timeout: 2000 })
+  if (!(await page.locator('#l12-route-navigation').innerText()).includes('正在打开页面'))
+    throw new Error('slow route did not expose a visible loading state')
+  await page.evaluate(() => window.__qaRouteRecovery.finish('/news'))
+  if (await page.locator('#l12-route-navigation').count()) throw new Error('completed route retained its loading surface')
+  await page.evaluate(() => window.__qaRouteRecovery.fail('/decks'))
+  const failureText = await page.locator('#l12-route-navigation').innerText()
+  if (!failureText.includes('页面未能打开') || !failureText.includes('重新加载') || !failureText.includes('返回主页'))
+    throw new Error('failed route did not expose retry and home actions')
+  await page.evaluate(() => { window.__qaRouteRecovery.begin('/'); window.__qaRouteRecovery.finish('/') })
+  const mainNavigation = [
+    ['资讯', '.news-page'], ['对战', '.battle-hub'], ['牌库', '.deck-page'],
+    ['图鉴', '.archive-grid, .card-archive'], ['规则', '.rule-tools input'], ['我的', '.profile-page, main'],
+  ]
+  for (const [label, selector] of mainNavigation) {
+    await clickNavigation('主页', '.official-home')
+    await clickNavigation(label, selector)
+  }
+  await clickNavigation('主页', '.official-home')
+  await clickNavigation('对战', '.battle-hub')
+  for (const [label, selector] of [
+    ['赛事', '.hub-page'], ['排行', '.rankings-page, main'],
+    ['好友', '.friends-page'], ['对局', '.match-records, .records-header, main'],
+  ]) await clickNavigation(label, selector)
+
+  // 4:3 边缘标记封面在各档窄屏的一览与详情均必须保留自然比例和左右两端。
+  const assertNaturalImageRatio = async (selector, label) => {
+    const image = page.locator(selector).first()
+    await image.waitFor({ timeout: 15000 })
+    await image.evaluate(element => element.complete && element.naturalWidth > 0
+      ? true
+      : new Promise(resolve => element.addEventListener('load', () => resolve(true), { once: true })))
+    const result = await image.evaluate(element => {
+      const box = element.getBoundingClientRect()
+      const naturalRatio = element.naturalWidth / element.naturalHeight
+      const renderedRatio = box.width / box.height
+      return {
+        fits: box.left >= -1 && box.right <= document.documentElement.clientWidth + 1,
+        ratioError: Math.abs(renderedRatio - naturalRatio) / naturalRatio,
+      }
+    })
+    if (!result.fits || result.ratioError > 0.03)
+      throw new Error(`${label}: cover was clipped or distorted (${JSON.stringify(result)})`)
+  }
+  for (const viewport of [
+    { width: 320, height: 568, label: '320x568' },
+    { width: 360, height: 780, label: '360x780' },
+    { width: 390, height: 844, label: '390x844' },
+    { width: 430, height: 932, label: '430x932' },
+    { width: 700, height: 900, label: '700x900' },
+  ]) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+    await page.goto(`http://127.0.0.1:${port}/__mobile_review__?route=%2Fnews`)
+    await assertNaturalImageRatio('.news-list .list-entry>img', `移动资讯一览封面 ${viewport.label}`)
+    if (viewport.width === 390)
+      await page.screenshot({ path: path.join(output, 'news-list-no-crop-390x844.png'), fullPage: true })
+    await page.locator('.news-list .list-entry').first().click()
+    await assertNaturalImageRatio('.news-detail .detail-cover', `移动资讯详情封面 ${viewport.label}`)
+    if (viewport.width === 390)
+      await page.screenshot({ path: path.join(output, 'news-detail-no-crop-390x844.png'), fullPage: true })
+  }
 
   if (!assertionOnly) {
     for (const viewport of viewports) {
@@ -257,6 +348,7 @@ try {
   await page.waitForTimeout(300)
   await page.screenshot({ path: path.join(output, 'records-detail-390x844.png'), fullPage: true })
 
+  if (errors.length) throw new Error(`mobile nonbattle page errors: ${errors.join(' | ')}`)
   console.log(JSON.stringify({ output, errors }, null, 2))
 } finally {
   await browser?.close()

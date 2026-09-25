@@ -1,6 +1,11 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { authState, canAccessAdmin, platformState, refreshCurrentAccount } from '@/l12/platform'
-import { handleChunkLoadError } from '@/chunkRecovery'
+import {
+  beginRouteNavigation,
+  finishRouteNavigation,
+  handleChunkLoadError,
+  showRouteNavigationError,
+} from '@/chunkRecovery'
 import { adminSections } from '@/l12/site/adminSections'
 
 export const router = createRouter({
@@ -65,9 +70,15 @@ export const router = createRouter({
   ],
 })
 
-router.onError((error, to) => { handleChunkLoadError(error, 'router', to.fullPath) })
+router.onError((error, to) => {
+  finishRouteNavigation(to.fullPath)
+  if (!handleChunkLoadError(error, 'router', to.fullPath)) showRouteNavigationError(to.fullPath)
+})
+
+router.afterEach(to => { finishRouteNavigation(to.fullPath) })
 
 router.beforeEach(async to => {
+  beginRouteNavigation(to.fullPath)
   if (to.name === 'admin' && typeof to.query.section === 'string') {
     const legacy = adminSections.find(item => item.id === to.query.section)
     if (legacy) {

@@ -10,16 +10,28 @@ type PreloadErrorEvent = Event & { payload?: unknown }
 
 const releaseVersion = import.meta.env.VITE_APP_VERSION || 'unknown'
 const overlayId = 'l12-chunk-recovery'
+const routeOverlayId = 'l12-route-navigation'
 const windowMarkerPrefix = 'l12:chunk-recovery-window:'
 let recoveryScheduled = false
 let recoveryDestination = ''
 let installed = false
+let activeRouteDestination = ''
+let routeErrorDestination = ''
+let routeLoadingTimer = 0
+let routeTimeoutTimer = 0
+
+function deploymentTarget(targetPath: string) {
+  const base = import.meta.env.BASE_URL || '/'
+  if (base === '/' || !targetPath.startsWith('/') || targetPath.startsWith('//') || targetPath.startsWith(base))
+    return targetPath
+  return `${base.replace(/\/$/, '')}${targetPath}`
+}
 
 function recoveryContext(targetPath?: string) {
   let target = new URL(window.location.href)
   if (targetPath) {
     try {
-      const candidate = new URL(targetPath, window.location.href)
+      const candidate = new URL(deploymentTarget(targetPath), window.location.href)
       if (candidate.origin === window.location.origin) target = candidate
     } catch { /* 非法目标保持当前页面。 */ }
   }
@@ -46,12 +58,12 @@ function baseHomePath() {
   return base.endsWith('/') ? base : `${base}/`
 }
 
-function createOverlay(title: string, message: string, stable: boolean) {
-  const existing = document.getElementById(overlayId)
+function createOverlay(title: string, message: string, stable: boolean, id = overlayId, retryDestination = '') {
+  const existing = document.getElementById(id)
   if (existing) existing.remove()
 
   const overlay = document.createElement('section')
-  overlay.id = overlayId
+  overlay.id = id
   overlay.setAttribute('role', stable ? 'alertdialog' : 'status')
   overlay.setAttribute('aria-live', 'assertive')
   Object.assign(overlay.style, {
@@ -83,7 +95,10 @@ function createOverlay(title: string, message: string, stable: boolean) {
       minHeight: '44px', padding: '9px 18px', border: '1px solid #d1ad54',
       background: '#29220f', color: '#f0d478', font: 'inherit', fontWeight: '900', cursor: 'pointer',
     })
-    reload.addEventListener('click', () => window.location.reload())
+    reload.addEventListener('click', () => {
+      if (retryDestination) window.location.replace(retryDestination)
+      else window.location.reload()
+    })
     const home = document.createElement('a')
     home.href = baseHomePath()
     home.textContent = '返回主页'
@@ -98,6 +113,51 @@ function createOverlay(title: string, message: string, stable: boolean) {
 
   overlay.append(panel)
   document.body.append(overlay)
+}
+
+function clearRouteTimers() {
+  window.clearTimeout(routeLoadingTimer)
+  window.clearTimeout(routeTimeoutTimer)
+  routeLoadingTimer = 0
+  routeTimeoutTimer = 0
+}
+
+/**
+ * Route navigation remains observable even while a lazy page is downloading.
+ * A slow request first gets a non-blocking status surface; a genuinely stalled
+ * route gets explicit retry/home actions instead of leaving an empty shell.
+ */
+export function beginRouteNavigation(targetPath: string) {
+  const { destination } = recoveryContext(targetPath)
+  clearRouteTimers()
+  document.getElementById(routeOverlayId)?.remove()
+  activeRouteDestination = destination
+  routeErrorDestination = ''
+  routeLoadingTimer = window.setTimeout(() => {
+    if (activeRouteDestination !== destination) return
+    createOverlay('正在打开页面', '正在读取页面内容，请稍候。', false, routeOverlayId)
+  }, 350)
+  routeTimeoutTimer = window.setTimeout(() => {
+    if (activeRouteDestination !== destination) return
+    createOverlay('页面加载时间过长', '当前页面未能及时完成加载，可以重试本页或先返回主页。', true, routeOverlayId, destination)
+  }, 10_000)
+}
+
+export function finishRouteNavigation(targetPath: string) {
+  const { destination } = recoveryContext(targetPath)
+  if (activeRouteDestination && activeRouteDestination !== destination) return
+  clearRouteTimers()
+  activeRouteDestination = ''
+  if (routeErrorDestination === destination) return
+  document.getElementById(routeOverlayId)?.remove()
+}
+
+export function showRouteNavigationError(targetPath: string) {
+  const { destination } = recoveryContext(targetPath)
+  clearRouteTimers()
+  activeRouteDestination = ''
+  routeErrorDestination = destination
+  createOverlay('页面未能打开', '页面组件加载失败，可以重试本页或先返回主页。', true, routeOverlayId, destination)
 }
 
 function applyDecision(decision: ChunkRecoveryDecision, key: string, destination: string) {

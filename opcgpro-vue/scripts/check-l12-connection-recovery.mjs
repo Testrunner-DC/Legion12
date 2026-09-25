@@ -207,6 +207,7 @@ async function loadRouteGuard(platform) {
   globalThis.__l12Guard = null
   await importJavaScript(compile(`
     const { canAccessAdmin, platformState, authState, refreshCurrentAccount } = globalThis.__l12GuardPlatform
+    const beginRouteNavigation = () => {}
     const router = { beforeEach: guard => { globalThis.__l12Guard = guard } }
     ${body}
   `, filename), 'l12-route-guard')

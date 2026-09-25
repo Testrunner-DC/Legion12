@@ -1164,6 +1164,11 @@ const contracts = [
     && newsPage.includes('← 返回资讯一览') && newsPage.includes(':to="kind === \'news\' ? `/news/${entry.id}`')
     && !newsPage.includes('<details v-if="entry.body"') && officialHome.includes("fallback === '/news' ? `/news/${article.id}`")
     && adminSiteContent.includes(':value="`/news/${article.id}`"'), '每篇资讯必须从一览页或首页进入独立详情页，详情页右上角可返回资讯一览；通知按钮新建链接也必须指向单篇详情'],
+  [newsPage.includes('.news-list:not(.product-list) .list-entry>img{align-self:start;width:100%;height:auto;max-width:100%;max-height:none;object-fit:contain')
+    && newsPage.includes('.detail-cover{display:block;width:100%;height:auto;max-width:100%;max-height:none;object-fit:contain')
+    && articleRenderer.includes('.article-content img{width:100%;height:auto}')
+    && articleRenderer.includes('.article-image-zoom__img{display:block;width:auto;height:auto;max-inline-size:100%;max-block-size:calc(100dvh - 96px);object-fit:contain')
+    && !newsPage.includes('.detail-cover{display:block;width:100%;aspect-ratio:16/9;object-fit:cover'), '资讯一览封面、详情封面和正文插图必须在移动端完整等比显示，不得以固定比例裁掉左右构图；放大查看同样必须完整 contain'],
   [articleStore.includes('row.Summary = kind == "video" ? string.Empty')
     && articleStore.includes('row.Body = kind == "video" ? string.Empty')
     && articleStore.includes('VideoAuthorRequired') && articleStore.includes('新视频发布前必须填写作者名')
@@ -1188,7 +1193,7 @@ const contracts = [
     && officialHome.includes('@media(max-width:650px){.featured-editorial-layout,.featured-editorial-support{grid-template-columns:1fr')
     && !officialHome.includes('.home-editorial-card:hover{border-color:')
     && officialHome.includes('aspect-ratio:16/9') && officialHome.includes('aspect-ratio:4/3')
-    && newsPage.includes("'product-list': kind === 'product'") && newsPage.includes('.news-list.product-list article>img{aspect-ratio:4/3}')
+    && newsPage.includes("'product-list': kind === 'product'") && newsPage.includes('.news-list.product-list article>img{aspect-ratio:4/3;object-fit:cover}')
     && newsPage.includes('grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr))'), '首页资讯与视频必须共用开放式 16:9 一主四辅响应式布局，不得恢复卡片套盒；资讯/视频/商品衍生图和列表分别稳定为 16:9、16:9、4:3，窄宽度自动换列且不挤压'],
   [articleStore.includes('.OrderByDescending(row => row.Published!.Pinned)\n                .ThenByDescending(row => row.Published!.PublishedAt)\n                .ThenBy(row => row.Id)')
     && !articleStore.includes('.ThenBy(row => row.Published!.SortOrder)')
