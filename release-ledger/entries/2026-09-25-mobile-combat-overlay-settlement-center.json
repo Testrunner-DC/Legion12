@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-25-mobile-combat-overlay-settlement-center",
+  "date": "2026-09-25",
+  "audience": "players",
+  "title": "移动短屏对战信息与结算显示修正",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "移动端短屏中的临时交战信息改为覆盖显示，不再挤压对局记录与操作区域；记录入口在战况显示期间仍可使用。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/MobileBattleDock.css"
+      ]
+    },
+    {
+      "category": "ui",
+      "text": "胜负结算页的结果、原因、排位变化、结算明细和返回操作统一居中，并隐藏无需向玩家展示的内部对局编号。",
+      "paths": [
+        "opcgpro-vue/src/l12/GamePage.vue",
+        "opcgpro-vue/src/l12/game/MobileBattleDock.css"
+      ]
+    }
+  ]
+}

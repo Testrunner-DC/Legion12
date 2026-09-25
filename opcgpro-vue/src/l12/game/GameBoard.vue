@@ -1304,8 +1304,8 @@ function statusTexts(card: Card) {
                 :placement-title="identityLabel(myBadge?.placementTitle)" :master-title="identityLabel(myBadge?.masterTitle)"
                 :faction="viewMe.faction" :faction-label="factionLabel(viewMe.faction)" :connection-label="connectionLabel(viewMe.playerIndex)" :connected="playerConnection(viewMe.playerIndex)" />
             </template>
-            <button v-if="mobileLandscapeViewport" type="button" class="mobile-record-trigger" @click="mobileRecordOpen = true; mobileRecordMinimized = false">对局记录</button>
           </section></BattleDockPortal>
+          <BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport" type="button" class="mobile-record-trigger" @click="mobileRecordOpen = true; mobileRecordMinimized = false">对局记录</button></BattleDockPortal>
           <BattleDockPortal lane="tools"><section v-if="mobileLandscapeViewport && l12State.rankedClock" class="mobile-timed-clocks" aria-label="双方对局计时">
             <PlayerTurnClock class="mobile-rail-clock opponent-player-clock" :player-index="viewEnemy.playerIndex" side="opponent"
               :active="game.activePlayer === viewEnemy.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />

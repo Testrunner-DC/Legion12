@@ -70,7 +70,11 @@ async function geometry(name) {
       compactHandSummary: Boolean(dock.querySelector('.mobile-target-hand-counts')),
       markerRatio: marker ? (r(marker).right - r(marker).left) / (master.right - master.left) : null,
       playerNames: [...dock.querySelectorAll('.mobile-player-name')].map(e => ({ text:e.textContent.trim(), box:r(e), fits:e.scrollWidth <= e.clientWidth + 1 && e.scrollHeight <= e.clientHeight + 1 })),
-      playerNamesAboveRecord: (() => { const names=dock.querySelector('.mobile-player-name-strip')?.getBoundingClientRect(), record=dock.querySelector('.mobile-record-trigger')?.getBoundingClientRect(); return Boolean(names && record && names.bottom <= record.top + 1) })(),
+      playerNamesAboveRecord: (() => {
+        const names=dock.querySelector('.mobile-player-name-strip')?.getBoundingClientRect(), entry=dock.querySelector('.mobile-record-trigger')
+        const record=entry?.getBoundingClientRect(), visible=entry && getComputedStyle(entry).visibility !== 'hidden' && record.width > 0 && record.height > 0
+        return Boolean(names && record && (!visible || names.bottom <= record.top + 1))
+      })(),
       moraleLabels: [...document.querySelectorAll('.resource-morale-label')].map(e => ({ text:e.textContent.trim(), images:e.querySelectorAll('img').length, fits:e.scrollWidth <= e.clientWidth + 1 && e.scrollHeight <= e.clientHeight + 1 })),
       currentActionCount: dock.querySelectorAll('.card-context-actions button').length,
       lanes: [...dock.children].map(e => ({ class: e.className, height: e.clientHeight, scrollHeight: e.scrollHeight })),
@@ -242,7 +246,7 @@ try {
     assert.equal(await page.locator('.mobile-card-inspector').count(), 0)
     await page.locator('.prompt-minimize').click()
     await geometry('prompt-minimized')
-    await reachable(page.locator('.mobile-battle-dock button'))
+    await reachable(page.locator('.mobile-battle-dock button:not(.mobile-record-trigger)'))
     await shot('prompt-minimized')
     await page.locator('.prompt-minimized-bar button').click()
     assert.equal(await page.locator('.prompt-card-candidate.selected').count(), 1)
@@ -263,7 +267,7 @@ try {
     await shot('rune-payment')
     await page.locator('.mobile-morale-overlay').getByRole('button',{name:'最小化',exact:true}).click()
     await geometry('payment-minimized')
-    await reachable(page.locator('.mobile-battle-dock__context button'))
+    await reachable(page.locator('.mobile-battle-dock__context button:not(.mobile-record-trigger)'))
     await page.locator('.mobile-morale-restore').click()
     assert.equal(await page.locator('.mobile-rune-row .selected').count(), 2)
     await page.locator('.mobile-morale-overlay').getByRole('button',{name:'确认支付',exact:true}).click()

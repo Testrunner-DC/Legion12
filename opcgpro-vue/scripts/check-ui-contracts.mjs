@@ -560,7 +560,11 @@ const contracts = [
   [gamePage.includes('data-ui-contract="manual-game-over-exit"')
     && gamePage.includes('<button @click="returnToLobby">返回大厅</button>')
     && !gamePage.includes('点击返回后才离开本局')
-    && !gamePage.includes('双方都离开后关闭房间'), '胜负结算必须保持在结果页并保留明确返回按钮，不对玩家暴露房间保留机制'],
+    && !gamePage.includes('双方都离开后关闭房间')
+    && !gamePage.includes('对局编号')
+    && gamePage.includes('align-items:center')
+    && gamePage.includes('.ranked-result details span{display:block')
+    && gamePage.includes('text-align:center'), '胜负结算必须整体居中、保留明确返回按钮，并且不对玩家暴露房间保留机制或内部对局编号'],
   [playerMat.includes('data-ui-contract="resource-faction-action"') && playerMat.includes('data-ui-contract="resource-morale-summary"') && playerMat.includes('data-ui-contract="resource-morale-label"')
     && playerMat.includes('data-ui-contract="resource-morale-count"') && playerMat.includes('data-ui-contract="resource-morale-stack"')
     && playerMat.indexOf('data-ui-contract="resource-faction-action"') > playerMat.indexOf('<div class="mat-piles">')

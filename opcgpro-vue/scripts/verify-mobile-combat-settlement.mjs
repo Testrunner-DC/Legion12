@@ -7,7 +7,14 @@ const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 const target = process.argv[2] || 'http://127.0.0.1:5190/__l12_battle_preview__'
 const output = process.env.L12_MOBILE_COMBAT_OUT || path.resolve('..', 'artifacts', 'batch-mobile-combat-settlement-b2b-c')
-const viewports = [{ width: 667, height: 375 }, { width: 844, height: 390 }, { width: 932, height: 430 }, { width: 1024, height: 768 }]
+const viewports = [
+  { width: 568, height: 320 },
+  { width: 640, height: 360 },
+  { width: 667, height: 375 },
+  { width: 844, height: 390 },
+  { width: 932, height: 430 },
+  { width: 1024, height: 768 },
+]
 const stageCases = [
   ['AttackerAttackTiming', '进攻宣告', 'declaration'],
   ['CombatDamage', '伤害结算', 'damage'],
@@ -82,6 +89,11 @@ try {
       assert.equal(await combat.locator('.combat-versus').evaluate(element => element.scrollWidth <= element.clientWidth + 1 && element.scrollHeight <= element.clientHeight + 1), true, `${stage} ${suffix} status must not clip`)
       await inside('.combat-presentation--passive .combat-versus', `${stage} ${suffix} combat status`, 2)
       assert.equal(await combat.evaluate(element => Boolean(element.closest('.mobile-battle-dock__context'))), true, `${stage} ${suffix} combat status must use the scrollable context lane`)
+      assert.equal(await combat.evaluate(element => getComputedStyle(element).position), 'absolute', `${stage} ${suffix} combat status must overlay rather than reserve vertical space`)
+      const recordTrigger = page.locator('.mobile-record-trigger')
+      await recordTrigger.waitFor()
+      assert.equal(overlaps(await rect('.combat-presentation--passive'), await rect('.mobile-record-trigger')), true, `${stage} ${suffix} transient combat status must overlay the stable record entry`)
+      assert.equal(await page.locator('.mobile-battle-dock__context').evaluate(element => element.scrollHeight <= element.clientHeight + 1), true, `${stage} ${suffix} transient combat status must not add context-lane scroll height`)
       await noOverlap('.combat-presentation--passive .combat-versus', '.left-rail > .mobile-card-inspector-handle', `${stage} ${suffix} detail handle`)
       await noOverlap('.combat-presentation--passive .combat-versus', '.mobile-timed-clocks', `${stage} ${suffix} clocks`)
       await noOverlap('.combat-presentation--passive .combat-versus', '.board-center > .l12-hand:last-child', `${stage} ${suffix} own hand`)
@@ -107,11 +119,16 @@ try {
     const gameOverText = (await gameOver.innerText()).replace(/\s+/g, '')
     for (const forbidden of ['双方都离开后关闭房间', '最长保留30分钟', '点击返回后才离开本局', '服务器保留', '结果将保留在此处', 'REV'])
       assert.equal(gameOverText.includes(forbidden), false, `game over ${suffix} must hide ${forbidden}`)
+    assert.equal(gameOverText.includes('对局编号'), false, `game over ${suffix} must hide the internal match id`)
     assert.match(gameOverText, /达成胜利条件/, `game over ${suffix} must retain the player-facing reason`)
     assert.equal(await page.locator('.battle-route-controls:visible').count(), 0, `game over ${suffix} must not retain duplicate route controls above the result`)
     assert.equal(await gameOver.evaluate(element => element.scrollWidth <= element.clientWidth + 1), true, `game over ${suffix} must not scroll horizontally`)
-    for (const selector of ['.game-over>p', '.game-over>strong', '.game-over>small', '.game-over>.ranked-result', '.game-over>button:not(.game-over-minimize)'])
+    for (const selector of ['.game-over>p', '.game-over>strong', '.game-over>.ranked-result', '.game-over>button:not(.game-over-minimize)'])
       await inside(selector, `${selector} ${suffix}`, 4)
+    for (const selector of ['.game-over>p', '.game-over>strong', '.game-over>.ranked-result', '.game-over>.ranked-result>b', '.game-over>.ranked-result>strong', '.game-over>.ranked-result summary', '.game-over>button:not(.game-over-minimize)']) {
+      const alignment = await gameOver.locator(selector.replace('.game-over>', ':scope>')).evaluate(element => getComputedStyle(element).textAlign)
+      assert.equal(alignment, 'center', `${selector} ${suffix} must remain centered`)
+    }
     const details = gameOver.locator('details')
     await details.locator('summary').click()
     assert.equal(await details.evaluate(element => element.scrollWidth <= element.clientWidth + 1 && element.scrollHeight <= element.clientHeight + 1), true, `settlement details ${suffix} must remain readable`)
