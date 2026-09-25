@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-25-deck-publishing-tournament-cards",
+  "date": "2026-09-25",
+  "audience": "players",
+  "title": "牌库、异画与界面体验更新",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "牌库编辑器恢复已保存牌库区，合并重复信息并统一卡池筛选、费用曲线、卡牌详情和对局建议的布局与操作。",
+      "paths": [
+        "opcgpro-vue/src/l12/DeckCostCurve.vue",
+        "opcgpro-vue/src/l12/L12DeckEditor.vue",
+        "opcgpro-vue/src/l12/site/DeckConstructionBrowser.vue",
+        "opcgpro-vue/src/l12/site/DeckLibraryPage.vue",
+        "opcgpro-vue/src/l12/site/PublicDeckContentEditor.vue",
+        "opcgpro-vue/src/l12/site/PublicDeckDetailPage.vue"
+      ]
+    },
+    {
+      "category": "decks",
+      "text": "公开牌库使用更短的专属页面编码与牌库码；公开展示统一使用原画，异画选择仍保留在拥有权限玩家的构筑与实际对战中。",
+      "paths": [
+        "opcgpro-vue/src/l12/platform.ts",
+        "opcgpro-vue/src/l12/site/deckShare.ts",
+        "opcgpro-vue/src/l12/site/publicDeckEntry.ts",
+        "服务端WebSocket/TwelveLegions/L12DeckCodeCodec.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckStorage.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckDetails.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+      ]
+    },
+    {
+      "category": "content",
+      "text": "玩家获准使用的自主上传异画现在可在完整卡池中正确预览和切换。",
+      "paths": [
+        "opcgpro-vue/src/l12/L12DeckEditor.vue"
+      ]
+    },
+    {
+      "category": "tournaments",
+      "text": "赛事相关的玩家可见时长统一以分钟填写和显示，实际计时精度保持不变。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/AdminTournamentWorkbench.vue",
+        "opcgpro-vue/src/l12/site/TournamentCreateWizard.vue",
+        "opcgpro-vue/src/l12/site/TournamentDetailPage.vue",
+        "opcgpro-vue/src/l12/tournamentTime.ts",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs"
+      ]
+    },
+    {
+      "category": "accounts",
+      "text": "登录表单的账号提示、密码框和按钮在宽窄页面下保持整齐对齐。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/ProfilePage.vue"
+      ]
+    },
+    {
+      "category": "ui",
+      "text": "缺失或隐藏的普通卡图统一显示主牌库卡背，不再出现诊断占位图。",
+      "paths": [
+        "opcgpro-vue/src/l12/CardImage.vue",
+        "opcgpro-vue/src/l12/cardAssets.ts",
+        "opcgpro-vue/src/l12/game/ZoneMovementPresentationLayer.vue"
+      ]
+    },
+    {
+      "category": "battle",
+      "text": "叠放卡等圆形卡图在没有专用素材时会裁切真实卡面中上部，不再显示卡名或首字；数量仅在叠放复数时显示。",
+      "paths": [
+        "opcgpro-vue/src/l12/CardTile.vue",
+        "opcgpro-vue/src/l12/RoundCardImage.vue",
+        "opcgpro-vue/src/l12/game/PlayerMat.vue"
+      ]
+    }
+  ]
+}

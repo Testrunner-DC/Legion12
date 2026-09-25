@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "baselineCommit": "97cc764b9a567449489e6a26cc819859766beb90",
+  "baselineCommit": "c7c990254ad4738fe056e98dd3ac078cc4e96777",
   "defaultReleaseTitle": "版本更新",
   "categories": {
     "card-effects": "卡牌效果",
