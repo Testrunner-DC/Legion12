@@ -69,6 +69,7 @@ const masterOverlay = read('../src/l12/game/MasterOverlay.vue')
 const globalBugFeedback = read('../src/l12/site/GlobalBugFeedback.vue')
 const specialAssets = read('../src/l12/specialAssets.ts')
 const cardTile = read('../src/l12/CardTile.vue')
+const roundCardImage = read('../src/l12/RoundCardImage.vue')
 const cardPresentation = read('../src/l12/cardPresentation.ts')
 const l12Types = read('../src/l12/types.ts')
 const cardArchive = read('../src/l12/CardArchive.vue')
@@ -831,9 +832,10 @@ const contracts = [
   [playerMat.includes('const displayMoraleSlots = computed') && playerMat.includes('payable(right.resource) - payable(left.resource)') && playerMat.includes('rank(left.resource) - rank(right.resource)') && playerMat.includes("isGodPower ? (tapped ? 2 : 0) : (tapped ? 3 : 1)") && playerMat.includes(':key="morale.instanceId"') && playerMat.includes('inspectOrSelectMorale(morale.instanceId)') && board.includes(':key="choice.id"') && board.includes('togglePaymentResource(choice.id)'), '费用资源必须优先展示当前可支付实例，再按状态排序，桌面与大面板均必须保留真实士气实例 ID 作为支付与返还目标'],
   [playerMat.includes('class="god-power-logo"') && playerMat.includes('sepia(1) saturate(3.2)') && playerMat.includes('border-color:#f4dda1'), '神力必须使用淡黄色 Logo 与独立描边，不能继续与白色士气图标混淆'],
   [cardTile.includes('attachedGroups') && cardTile.includes('attached-card-orbs') && cardTile.includes("$emit('focusCard', group.card)")
-    && cardTile.includes('|| CARD_IMAGE_PLACEHOLDER') && cardTile.includes('@error="useAttachedCardBack"')
-    && cardTile.includes('alt=""') && cardTile.includes('<b v-if="group.count > 1">{{ group.count }}</b>')
-    && !cardTile.includes('<i v-else>{{ group.card.name.slice(0, 1) }}</i>'), '叠放卡牌必须以圆形卡图与数量表达，图片失败时改用主牌库卡背，不得把卡名或浏览器 alt 文字绘制在圆图上'],
+    && cardTile.includes('<RoundCardImage') && cardTile.includes('<b v-if="group.count > 1">{{ group.count }}</b>')
+    && !cardTile.includes('<i v-else>{{ group.card.name.slice(0, 1) }}</i>')
+    && roundCardImage.includes('roundCardUrl(props.cardId)') && roundCardImage.includes('<CardImage v-else')
+    && roundCardImage.includes("objectPosition: 'center 28%'") && roundCardImage.includes('alt=""'), '叠放卡牌必须以圆形卡图表达：有专用圆图则使用圆图，否则裁切真实卡面中上部；不得显示卡名或首字，数量仅在复数时显示'],
   [l12StructuredSemantics.includes('GrantsStrongAttackWhileAttached')
     && l12StructuredSemantics.includes('HasEffectiveStrongAttack')
     && l12GameEngine.includes('HasEffectiveStrongAttack(card)'), '王者之剑、侵掠如火、自身与临时强攻必须共用同一有效关键词查询'],
@@ -845,7 +847,8 @@ const contracts = [
     && cardTile.includes('padding:var(--l12-card-keyword-pad);font-size:var(--l12-card-keyword-font)')
     && !cardTile.includes('status-strong'), '当前生效关键词必须在兵力上方整组居中，每行最多3个且换行向上生长，不得溢出卡牌容器或恢复单字角标'],
   [cardTile.includes("props.card.isMasterLegion === true") && cardTile.includes('displayBaseTroops'), '孙悟空等主宰军团化实体必须显示权威兵力且设定兵力不误判为增益'],
-  [cardTile.includes('position:static!important') && cardTile.includes('object-position:center 14%'), '圆形叠放卡图不得被全局卡图定位规则覆盖'],
+  [cardTile.includes('position:static!important') && roundCardImage.includes("objectPosition: 'center 28%'")
+    && roundCardImage.includes('overflow:hidden;border-radius:50%'), '圆形叠放卡图不得被全局卡图定位规则覆盖，通用裁切必须取真实卡面中上部'],
   [playerMat.includes("entry.id === 'trialAdvance'") && playerMat.includes('function canTrial') && playerMat.includes("'trialAdvance')"), '试炼军团必须拥有与进攻、移动并列的直接试炼按钮'],
   [playerMat.includes("!card.trialCompleted && (card.trialProgress ?? 0) < 8")
     && board.includes("!candidate.trialCompleted") && board.includes("(candidate.trialProgress ?? 0) < 8"), '当前可推进试炼的按钮与进度标记必须跳过已达8但尚未翻面的试炼，继续指向后续仍可推进的试炼'],
