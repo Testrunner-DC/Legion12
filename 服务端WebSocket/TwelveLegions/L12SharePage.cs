@@ -125,10 +125,13 @@ internal static partial class L12SharePage
         var normalized = (value ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(normalized)) return null;
         if (normalized.StartsWith("//", StringComparison.Ordinal)) normalized = "https:" + normalized;
+        // Root-relative site assets must be resolved against the configured public base before
+        // absolute URI parsing. Uri.TryCreate treats a leading slash differently across operating
+        // systems (for example as a file URI on Linux), which previously discarded valid media.
+        if (normalized.StartsWith('/')) return AbsoluteAssetUrl(publicBase, normalized);
         if (Uri.TryCreate(normalized, UriKind.Absolute, out var absolute))
             return absolute.Scheme == Uri.UriSchemeHttps ? absolute.AbsoluteUri : null;
-        if (!normalized.StartsWith('/')) return null;
-        return AbsoluteAssetUrl(publicBase, normalized);
+        return null;
     }
 
     private static string PlainText(string? body)
