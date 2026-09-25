@@ -70,6 +70,7 @@ $windowsDeploy = Join-Path $repoRoot "ops\windows\deploy-l12.ps1"
 $targetHelper = Join-Path $repoRoot "ops\windows\L12DeployTarget.ps1"
 $serverDeploy = Join-Path $repoRoot "ops\server\deploy-l12-release.sh"
 $webAssetsNginx = Join-Path $repoRoot "ops\server\nginx-l12-web-assets.conf"
+$webAssetsActivator = Join-Path $repoRoot "ops\server\activate-l12-web-assets.sh"
 $sharePagesNginx = Join-Path $repoRoot "ops\server\nginx-l12-share-pages.conf"
 $healthVerifier = Join-Path $repoRoot "ops\server\verify-l12-health.mjs"
 $bashPath = Get-BashPath
@@ -91,6 +92,7 @@ try {
     . $targetHelper
 
     $serverDeploySource = Get-Content -LiteralPath $serverDeploy -Raw
+    $webAssetsActivatorSource = Get-Content -LiteralPath $webAssetsActivator -Raw
     $webAssetsNginxSource = Get-Content -LiteralPath $webAssetsNginx -Raw
     $sharePagesNginxSource = Get-Content -LiteralPath $sharePagesNginx -Raw
     Assert-True ($webAssetsNginxSource.Contains('location ^~ /assets/') -and $webAssetsNginxSource.Contains('root /opt/legion12-web-assets;')) `
@@ -104,6 +106,10 @@ try {
         "正式发布没有规范多级 UTF-8 前端资源目录的 Web 读取权限。"
     Assert-True ($serverDeploySource.Contains('chmod 0755 "$prefix_path"') -and $serverDeploySource.Contains('for component in "${prefix_components[@]}"')) `
         "正式发布没有规范共享资源根目录及公开前缀的逐级 Web 读取权限。"
+    Assert-True ($webAssetsActivatorSource.Contains('include /etc/nginx/snippets/legion12-web-assets.conf;') -and
+        $webAssetsActivatorSource.Contains('production HTTPS host marker is not unique') -and
+        $webAssetsActivatorSource.Contains('trap rollback EXIT ERR INT TERM')) `
+        "正式前端哈希资源路由激活器缺少唯一站点定位或失败回滚。"
     Assert-True (([regex]::Matches($sharePagesNginxSource, 'proxy_hide_header Cache-Control;')).Count -eq 4 -and ([regex]::Matches($sharePagesNginxSource, 'add_header Cache-Control "no-cache" always;')).Count -eq 4) `
         "正式分享页 HTML 没有统一覆盖为 no-cache。"
 
@@ -784,8 +790,11 @@ exec "$L12_TEST_REAL_TAR" "$@"
         $windowsDeployText.Contains('SSH 连接暂时不可用') -and
         $windowsDeployText.Contains('卡图缓存探测连接暂时不可用')) `
         "Windows 正式部署入口没有为短时 SSH 限流提供有边界退避重试。"
+    $webRouteActivationIndex = $windowsDeployText.IndexOf('''$remoteWebAssetsActivator'' ''$remoteWebAssetsSnippet''', [StringComparison]::Ordinal)
     $prepareStorageIndex = $windowsDeployText.IndexOf('/usr/local/sbin/deploy-legion12-release prepare-storage ''$ServerArtifactRoot''', [StringComparison]::Ordinal)
     $releaseUploadIndex = $windowsDeployText.IndexOf('Invoke-External scp @sshOptions $releaseArchive', [StringComparison]::Ordinal)
+    Assert-True ($webRouteActivationIndex -ge 0 -and $webRouteActivationIndex -lt $prepareStorageIndex) `
+        "Windows 正式部署入口没有在存储预检前激活严格前端资源路由。"
     Assert-True ($prepareStorageIndex -ge 0 -and $prepareStorageIndex -lt $releaseUploadIndex) `
         "Windows 发布入口没有在大运行包上传前完成外置挂载/容量预检。"
     Assert-True ($windowsDeployText.Contains('''$ServerArtifactRoot''')) `

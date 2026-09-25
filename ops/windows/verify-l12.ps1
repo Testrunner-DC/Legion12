@@ -178,6 +178,8 @@ try {
         @{ Source = "ops\server\legion12-testrun-path.nginx"; Target = "ops\server\legion12-testrun-path.nginx" },
         @{ Source = "ops\server\nginx-l12-share-pages.conf"; Target = "ops\server\nginx-l12-share-pages.conf" },
         @{ Source = "ops\server\activate-l12-share-pages.sh"; Target = "ops\server\activate-l12-share-pages.sh" },
+        @{ Source = "ops\server\activate-l12-web-assets.sh"; Target = "ops\server\activate-l12-web-assets.sh" },
+        @{ Source = "ops\server\nginx-l12-web-assets.conf"; Target = "ops\server\nginx-l12-web-assets.conf" },
         @{ Source = "ops\server\nginx-l12-card-assets.conf"; Target = "ops\server\nginx-l12-card-assets.conf" },
         @{ Source = "服务端WebSocket\TwelveLegions\Data\cards.s1.json"; Target = "服务端WebSocket\TwelveLegions\Data\cards.s1.json" },
         @{ Source = "服务端WebSocket\TwelveLegions\Data\cards.s2.json"; Target = "服务端WebSocket\TwelveLegions\Data\cards.s2.json" },
