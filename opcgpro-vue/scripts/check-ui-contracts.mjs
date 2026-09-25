@@ -431,13 +431,14 @@ const contracts = [
     && board.includes('<PromptOverlay ') && board.includes('<GraveyardOverlay ') && board.includes('<MasterOverlay ')
     && board.includes('<ActionPresentationLayer ') && board.includes('<ZoneMovementPresentationLayer ')
     && board.includes('<CombatMotionPresentationLayer '), '16:9布局重排不得删除双方场面、手牌、操作、日志、Prompt、墓地、主宰及动作展示组件'],
-  [board.includes('.battlefield-half::before') && board.includes("inset:0;box-sizing:border-box")
-    && board.includes('.battlefield-half.my-half::before{inset:0;') && !board.includes('.battlefield-half.my-half::before{bottom:-10px;')
+  [board.includes('.felt-board :deep(.battlefield-half)::before') && board.includes("inset:0;box-sizing:border-box")
+    && board.includes('.felt-board :deep(.battlefield-half.my-half)::before{inset:0;') && !board.includes('.battlefield-half.my-half::before{bottom:-10px;')
     && board.includes('box-sizing:border-box;width:100%') && board.includes('justify-self:center')
     && playerMat.includes('width:min(100%,1320px);margin-inline:auto')
     && playerMat.includes('.l12-player-mat{grid-template-columns:minmax(270px,300px) minmax(500px,1fr) 100px 156px}')
     && playerMat.includes('.battle-zone{transform:translateX(-74px)}')
-    && board.includes('.battlefield-half.my-half{grid-row:3}'), '双方战场外框及指挥官圣物、六格、牌堆、状态列整组必须在中央可用区居中，不得只居中六格或挤压常驻UI'],
+    && board.includes('.felt-board :deep(.battlefield-half.opponent-half){grid-row:1}')
+    && board.includes('.felt-board :deep(.battlefield-half.my-half){grid-row:3}'), '双方战场外框及指挥官圣物、六格、牌堆、状态列整组必须在中央可用区居中，不得只居中六格或挤压常驻UI'],
   [playerMat.includes('grid-template-columns:140px 100px') && playerMat.includes('.master-column .mini-master{width:140px;height:196px}')
     && playerMat.includes('.master-column .mini-master>span{left:8px;right:8px;bottom:40px;overflow:visible;white-space:nowrap;text-overflow:clip;line-height:1.35}')
     && playerMat.includes('.master-column .mini-master .master-health{right:6px;bottom:5px;min-width:58px!important;height:32px!important')

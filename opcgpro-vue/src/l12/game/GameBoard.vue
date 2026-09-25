@@ -1456,14 +1456,14 @@ function statusTexts(card: Card) {
 .player-panel{display:grid;box-sizing:border-box;height:auto!important;min-height:0;flex:none;gap:8px;overflow:hidden!important}.player-panel :deep(.battle-player-identity){padding:2px}.player-panel :deep(.battle-player-identity__facts>div){grid-template-columns:64px minmax(0,1fr)}.player-panel :deep(.battle-player-identity__name>strong){font-size:max(14px,calc(var(--l12-board-copy,13px) - 1px))}.player-panel :deep(.battle-player-identity dd){font-size:calc(var(--l12-board-copy,13px) - 1px)}.player-panel :deep(.battle-player-identity .ranked-identity-badge){max-width:100%}.player-panel :deep(.battle-player-identity .ranked-identity-badge>span){min-width:0;overflow-wrap:anywhere;white-space:normal}
 .player-panel>hr{margin:9px 0!important}
 .right-rail .record-log{min-height:120px;overflow:hidden}.right-rail .record-log>.event-list{min-height:0;overflow-y:auto}
-.battlefield-half{position:relative;box-sizing:border-box;width:100%;min-height:0;align-self:stretch;justify-self:center}
-.battlefield-half::before{content:'';position:absolute;z-index:1;inset:0;box-sizing:border-box;border:1px solid rgba(238,238,228,.18);pointer-events:none}
-.battlefield-half.opponent-half::before{border-color:rgba(196,40,50,.34)}
-.battlefield-half.my-half::before{inset:0;border-color:rgba(57,171,181,.4)}
-.battlefield-half.opponent-half{grid-row:1}
+.felt-board :deep(.battlefield-half){position:relative;box-sizing:border-box;width:100%;min-height:0;align-self:stretch;justify-self:center}
+.felt-board :deep(.battlefield-half)::before{content:'';position:absolute;z-index:1;inset:0;box-sizing:border-box;border:1px solid rgba(238,238,228,.18);pointer-events:none}
+.felt-board :deep(.battlefield-half.opponent-half)::before{border-color:rgba(196,40,50,.34)}
+.felt-board :deep(.battlefield-half.my-half)::before{inset:0;border-color:rgba(57,171,181,.4)}
+.felt-board :deep(.battlefield-half.opponent-half){grid-row:1}
 .board-seam{z-index:12;grid-row:2;box-sizing:border-box;height:var(--l12-board-seam-safe-height);min-height:var(--l12-board-seam-safe-height);isolation:isolate;pointer-events:none}
 .board-midline-anchor{position:absolute;left:0;right:0;top:50%;height:1px;background:linear-gradient(90deg,transparent,rgba(238,238,228,.35),transparent)}
-.battlefield-half.my-half{grid-row:3}
+.felt-board :deep(.battlefield-half.my-half){grid-row:3}
 .felt-board :deep(.formation){width:100%;height:350px;grid-template-columns:repeat(3,173px);grid-template-rows:repeat(2,173px);justify-content:end;gap:4px 8px}
 .felt-board :deep(.formation-slot .card-tile),.felt-board :deep(.formation-slot .card-tile.tapped){width:114.4px;height:160.6px;flex-basis:114.4px}
 .felt-board :deep(.formation-slot .field-actions){bottom:calc(50% + 86.5px)}

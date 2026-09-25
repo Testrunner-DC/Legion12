@@ -146,3 +146,9 @@ onBeforeUnmount(() => { cancelActive(); queue.length = 0 })
 </script>
 
 <template><span class="card-state-transition-layer" data-ui-contract="authoritative-card-state-transition" aria-hidden="true" /></template>
+
+<style scoped>
+/* This component observes authoritative card state and draws its ghost in
+   document.body.  Its local anchor must never become a grid/flex item. */
+.card-state-transition-layer{display:none!important}
+</style>
