@@ -1493,7 +1493,10 @@ contracts.push([
 contracts.push([
   shell.includes("import { generatedPlayerRelease } from './generatedPlayerRelease'")
     && shell.includes('[generatedPlayerRelease, ...legacyUpdateEntries]')
-    && generatedPlayerRelease.includes('GeneratedPlayerReleaseEntry | null = null')
+    // Development keeps a null placeholder, while production verification
+    // injects the generated release object before this contract runs.  Check
+    // the stable typed assignment instead of requiring the placeholder value.
+    && generatedPlayerRelease.includes('GeneratedPlayerReleaseEntry | null =')
     && releaseLedgerScript.includes('正式发布区间存在未登记的玩家相关源码')
     && releaseLedgerScript.includes('forbiddenPlayerTerms'),
   '正式更新日志必须由结构化账本按线上版本区间注入，缺失登记和内部说明必须在发布前失败',
