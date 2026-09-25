@@ -22,9 +22,17 @@ function Invoke-External {
         [Parameter(Mandatory = $true, Position = 0)][string]$Executable,
         [Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments
     )
-    & $Executable @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "命令执行失败（退出码 $LASTEXITCODE）：$Executable $($Arguments -join ' ')"
+    $maxAttempts = if ($Executable -in @("ssh", "scp")) { 3 } else { 1 }
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        & $Executable @Arguments
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -eq 0) { return }
+        if ($exitCode -ne 255 -or $attempt -eq $maxAttempts) {
+            throw "命令执行失败（退出码 $exitCode）：$Executable $($Arguments -join ' ')"
+        }
+        $delay = 5 * $attempt
+        Write-Host "[L12 部署] SSH 连接暂时不可用，${delay} 秒后重试（$attempt/$maxAttempts）..."
+        Start-Sleep -Seconds $delay
     }
 }
 
@@ -172,8 +180,17 @@ try {
         else {
             "test -d '/opt/legion12-static/card-assets/$cardAssetsHash' && test ! -L '/opt/legion12-static/card-assets/$cardAssetsHash'"
         }
-        & ssh @sshOptions $Server $cardAssetsProbe
-        $cardAssetsProbeExitCode = $LASTEXITCODE
+        $cardAssetsProbeExitCode = 255
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+            & ssh @sshOptions $Server $cardAssetsProbe
+            $cardAssetsProbeExitCode = $LASTEXITCODE
+            if ($cardAssetsProbeExitCode -ne 255) { break }
+            if ($attempt -lt 3) {
+                $delay = 5 * $attempt
+                Write-Host "[L12 部署] 卡图缓存探测连接暂时不可用，${delay} 秒后重试（$attempt/3）..."
+                Start-Sleep -Seconds $delay
+            }
+        }
         if ($cardAssetsProbeExitCode -ne 0 -and $cardAssetsProbeExitCode -ne 1) {
             throw "卡图缓存探测连接失败（退出码 $cardAssetsProbeExitCode），拒绝把连接故障误判为缓存缺失并重复上传卡图。"
         }

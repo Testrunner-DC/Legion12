@@ -780,6 +780,10 @@ exec "$L12_TEST_REAL_TAR" "$@"
     }
 
     $windowsDeployText = Get-Content -LiteralPath $windowsDeploy -Raw
+    Assert-True ($windowsDeployText.Contains('$maxAttempts = if ($Executable -in @("ssh", "scp")) { 3 } else { 1 }') -and
+        $windowsDeployText.Contains('SSH 连接暂时不可用') -and
+        $windowsDeployText.Contains('卡图缓存探测连接暂时不可用')) `
+        "Windows 正式部署入口没有为短时 SSH 限流提供有边界退避重试。"
     $prepareStorageIndex = $windowsDeployText.IndexOf('/usr/local/sbin/deploy-legion12-release prepare-storage ''$ServerArtifactRoot''', [StringComparison]::Ordinal)
     $releaseUploadIndex = $windowsDeployText.IndexOf('Invoke-External scp @sshOptions $releaseArchive', [StringComparison]::Ordinal)
     Assert-True ($prepareStorageIndex -ge 0 -and $prepareStorageIndex -lt $releaseUploadIndex) `
