@@ -75,10 +75,19 @@ validate_relative_web_asset_path() {
 install_web_assets_tree() {
   local source_root="$1"
   local public_prefix="$2"
-  local source relative target target_parent temporary
+  local source relative target target_parent temporary prefix_path component
+  local -a prefix_components
   validate_web_assets_tree "$source_root" || return 1
   [[ "$public_prefix" =~ ^[A-Za-z0-9._/-]+$ && "$public_prefix" != /* && "/${public_prefix}/" != *"/../"* ]] || fail "web asset prefix is invalid"
-  [[ -d "${static_web_assets_dir}/${public_prefix}" ]] || mkdir -p "${static_web_assets_dir}/${public_prefix}"
+  prefix_path="$static_web_assets_dir"
+  [[ -d "$prefix_path" ]] || mkdir -p "$prefix_path"
+  chmod 0755 "$prefix_path" || { fail "cannot normalize shared web asset root permissions"; return 1; }
+  IFS='/' read -r -a prefix_components <<< "$public_prefix"
+  for component in "${prefix_components[@]}"; do
+    prefix_path="${prefix_path}/${component}"
+    [[ -d "$prefix_path" ]] || mkdir "$prefix_path"
+    chmod 0755 "$prefix_path" || { fail "cannot normalize shared web asset prefix permissions: ${public_prefix}"; return 1; }
+  done
   [[ -z "$(find "$static_web_assets_dir" -type l -print -quit)" ]] || fail "shared web asset root contains symlinks"
   while IFS= read -r -d '' source; do
     relative="${source#${source_root}/}"

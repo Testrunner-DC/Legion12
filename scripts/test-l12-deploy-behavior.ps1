@@ -102,6 +102,8 @@ try {
         "正式哈希资源或 HTML 缓存策略不符合兼容边界。"
     Assert-True ($serverDeploySource.Contains('find "${static_web_assets_dir}/${public_prefix}" -type d -exec chmod 0755 {} +')) `
         "正式发布没有规范多级 UTF-8 前端资源目录的 Web 读取权限。"
+    Assert-True ($serverDeploySource.Contains('chmod 0755 "$prefix_path"') -and $serverDeploySource.Contains('for component in "${prefix_components[@]}"')) `
+        "正式发布没有规范共享资源根目录及公开前缀的逐级 Web 读取权限。"
     Assert-True (([regex]::Matches($sharePagesNginxSource, 'proxy_hide_header Cache-Control;')).Count -eq 4 -and ([regex]::Matches($sharePagesNginxSource, 'add_header Cache-Control "no-cache" always;')).Count -eq 4) `
         "正式分享页 HTML 没有统一覆盖为 no-cache。"
 

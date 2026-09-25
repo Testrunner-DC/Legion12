@@ -88,6 +88,8 @@ try {
         'storage cleanup kept unproven incoming artifact:',
         'card asset cleanup skipped:'
         'find "${static_web_assets_dir}/${public_prefix}" -type d -exec chmod 0755 {} +'
+        'chmod 0755 "$prefix_path"'
+        'for component in "${prefix_components[@]}"'
     )) {
         Assert-True ($dailySource.Contains($contract)) "Missing minimal testrun retention contract: $contract"
     }
