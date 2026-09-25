@@ -11,6 +11,8 @@ const wizard = read('src/l12/site/TournamentCreateWizard.vue')
 const hub = read('src/l12/site/TournamentHubPage.vue')
 const platform = read('src/l12/platform.ts')
 const router = read('src/router/index.ts')
+const admin = read('src/l12/site/AdminTournamentWorkbench.vue')
+const time = read('src/l12/tournamentTime.ts')
 
 const checks = [
   ['detail separates organizer and judge capabilities', detail.includes('const canOrganize') && detail.includes('const canJudge') && !detail.includes('const canManage')],
@@ -28,6 +30,7 @@ const checks = [
   ['critical tournament actions use inline reasons', !detail.includes('prompt(') && !judge.includes('prompt(') && !management.includes('confirm(') && detail.includes('participantReasons[person.accountId]') && judge.includes('appealReasons[item.id]')],
   ['organizer transfer uses eligible named candidates', management.includes('transferCandidates') && management.includes('选择本场裁判或主办者好友')],
   ['career history is visible and server-paged', hub.includes('个人赛事履历') && hub.includes('career.totalPages') && platform.includes("params.set('pageSize', String(query.pageSize))")],
+  ['tournament visible timing uses minutes while authority stays in seconds', [detail, wizard, admin].every(source => !source.includes('（秒）') && !source.includes('操作秒数') && !source.includes('重连秒数') && !source.includes('选择秒数') && !source.includes('调度秒数') && !source.includes(' }} 秒')) && wizard.includes('timeControlMinutes') && admin.includes('timeControlMinutes') && time.includes('tournamentTimeControlSeconds') && time.includes('tournamentMinutesLabel')],
 ]
 
 const failed = checks.filter(([, passed]) => !passed)

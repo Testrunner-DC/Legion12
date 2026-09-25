@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { DeckCard } from '@/l12/decks'
+import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
 import { platformState, publicDeckApi, type PublicDeckGuide, type PublicDeckMatchup } from '@/l12/platform'
 import { useActionGate } from '@/l12/useActionGate'
 
@@ -13,7 +14,12 @@ const loading = ref(false)
 const error = ref('')
 const revision = ref(0)
 const updatedAt = ref('')
+const matchupPickerIndex = ref<number | null>(null)
 const homeCities = computed(() => props.catalog.filter(card => card.cardType === 'master'))
+const matchupPickerItems = computed<SingleCardPickerItem[]>(() => homeCities.value.map(card => ({
+  id: card.id, cardId: card.id, number: card.number, name: card.nameZh, nameZh: card.nameZh, cardType: card.cardType,
+  faction: card.faction, product: card.product, imageUrl: card.imageUrl,
+})))
 const actionKey = computed(() => `public-deck:${platformState.account?.id ?? 'anonymous'}:${props.publicationId}`)
 
 function emptyGuide(): PublicDeckGuide {
@@ -42,6 +48,16 @@ function addMatchup() {
   const selected = new Set(matchups.value.map(item => item.opponentMasterId))
   const opponentMasterId = homeCities.value.find(item => !selected.has(item.id))?.id ?? ''
   matchups.value.push({ opponentMasterId, notes: '', keyCards: '', suggestedSwaps: '' })
+}
+
+function chooseMatchupMaster(card: SingleCardPickerItem) {
+  if (matchupPickerIndex.value === null || !matchups.value[matchupPickerIndex.value]) return
+  matchups.value[matchupPickerIndex.value]!.opponentMasterId = card.cardId
+  matchupPickerIndex.value = null
+}
+
+function matchupMasterName(cardId: string) {
+  return homeCities.value.find(card => card.id === cardId)?.nameZh || '选择对方主宰'
 }
 
 async function saveContent() {
@@ -93,7 +109,7 @@ watch(() => props.publicationId, loadContent, { immediate: true })
       <section class="content-block">
         <header><div><h3>对局建议</h3><p>按对方主宰分别填写；完全留空的内容不会出现在公开详情中。</p></div><button type="button" @click="addMatchup">添加主宰</button></header>
         <article v-for="(row,index) in matchups" :key="`${row.opponentMasterId}-${index}`" class="matchup-row">
-          <label>对方主宰<select v-model="row.opponentMasterId"><option value="" disabled>请选择</option><option v-for="candidate in homeCities" :key="candidate.id" :value="candidate.id">{{ candidate.nameZh }}</option></select></label>
+          <label>对方主宰<button type="button" class="card-picker-trigger" @click="matchupPickerIndex = index">{{ matchupMasterName(row.opponentMasterId) }}</button></label>
           <label>对局思路<textarea v-model="row.notes" rows="3" maxlength="800"/></label>
           <label>关键牌<textarea v-model="row.keyCards" rows="2" maxlength="800"/></label>
           <label>建议换牌<textarea v-model="row.suggestedSwaps" rows="2" maxlength="800"/></label>
@@ -103,9 +119,10 @@ watch(() => props.publicationId, loadContent, { immediate: true })
       </section>
       <footer><button type="button" class="primary" :disabled="isPending(actionKey)" @click="saveContent">{{ isPending(actionKey) ? '保存中…' : '保存公开内容' }}</button></footer>
     </template>
+    <SingleCardPicker v-if="matchupPickerIndex !== null" title="选择对方主宰" :items="matchupPickerItems" :allowed-types="['master']" @select="chooseMatchupMaster" @close="matchupPickerIndex = null"/>
   </section>
 </template>
 
 <style scoped>
-.public-content-editor{overflow:auto}.public-content-editor>header,.content-block>header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.public-content-editor h2,.public-content-editor h3{margin:3px 0 8px}.public-content-editor header p{margin:0;color:#8f9995;line-height:1.6}.content-status{display:grid;flex:none;gap:4px;text-align:right}.content-status small{color:#8f9995}.content-block{margin-top:14px;padding:14px;border:1px solid #354041;background:#0b1112}.guide-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.guide-grid label:first-child{grid-column:1/-1}.public-content-editor label{display:grid;gap:6px;color:#bac4c5;font-weight:800}.public-content-editor textarea,.public-content-editor select{box-sizing:border-box;width:100%;padding:9px;border:1px solid #4c5a62;background:#081015;color:#eee;font:inherit;line-height:1.55;resize:vertical}.matchup-row{display:grid;grid-template-columns:180px 1fr 1fr 1fr auto;align-items:end;gap:8px;margin-top:10px;padding:10px;border:1px solid #354041;background:#101820}.public-content-editor button{min-height:38px;padding:7px 11px;border:1px solid #59666e;background:#15202a;color:#fff;font-weight:900}.public-content-editor .primary{border-color:#e0bf6d;background:#e0bf6d;color:#090c0e}.public-content-editor .danger{border-color:#9e3944;background:#4d171d}.public-content-editor>footer{display:flex;justify-content:flex-end;margin-top:14px}.content-state{color:#8f9995}.content-state.error{color:#e88992}@media(max-width:1000px){.matchup-row{grid-template-columns:1fr 1fr}.matchup-row label:first-child,.matchup-row .danger{grid-column:1/-1}}@media(max-width:620px){.guide-grid,.matchup-row{grid-template-columns:1fr}.guide-grid label:first-child,.matchup-row label:first-child,.matchup-row .danger{grid-column:auto}.public-content-editor>header,.content-block>header{flex-direction:column}.content-status{text-align:left}}
+.public-content-editor{overflow:auto}.public-content-editor>header,.content-block>header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.public-content-editor h2,.public-content-editor h3{margin:3px 0 8px}.public-content-editor header p{margin:0;color:#8f9995;line-height:1.6}.content-status{display:grid;flex:none;gap:4px;text-align:right}.content-status small{color:#8f9995}.content-block{margin-top:14px;padding:14px;border:1px solid #354041;background:#0b1112}.guide-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.guide-grid label:first-child{grid-column:1/-1}.public-content-editor label{display:grid;gap:6px;color:#bac4c5;font-weight:800}.public-content-editor textarea,.public-content-editor select{box-sizing:border-box;width:100%;padding:9px;border:1px solid #4c5a62;background:#081015;color:#eee;font:inherit;line-height:1.55;resize:vertical}.matchup-row{display:grid;grid-template-columns:1fr;align-items:stretch;gap:10px;margin-top:10px;padding:12px;border:1px solid #354041;background:#101820}.matchup-row label{width:100%}.matchup-row textarea{min-height:86px}.card-picker-trigger{width:100%;text-align:left!important}.matchup-row .danger{justify-self:end}.public-content-editor button{min-height:38px;padding:7px 11px;border:1px solid #59666e;background:#15202a;color:#fff;font-weight:900}.public-content-editor .primary{border-color:#e0bf6d;background:#e0bf6d;color:#090c0e}.public-content-editor .danger{border-color:#9e3944;background:#4d171d}.public-content-editor>footer{display:flex;justify-content:flex-end;margin-top:14px}.content-state{color:#8f9995}.content-state.error{color:#e88992}@media(max-width:620px){.guide-grid{grid-template-columns:1fr}.guide-grid label:first-child{grid-column:auto}.public-content-editor>header,.content-block>header{flex-direction:column}.content-status{text-align:left}.matchup-row .danger{width:100%}}
 </style>

@@ -17,16 +17,18 @@ public sealed class TournamentGlobalAdministrationTests
             var organizer = store.Register("tgloba0eac8", "password-123").Account!;
             var player = store.Register("tgloba09863", "password-123").Account!;
             var outsider = store.Register("tgloba8c792", "password-123").Account!;
+            store.UpsertDeck(organizer.Id, Deck("Organizer Deck"));
+            store.UpsertDeck(player.Id, Deck("Player Deck"));
             var tournament = store.CreateTournament(organizer, Payload(), Context("create"), true);
 
             tournament = store.RegisterTournament(player, tournament.Id,
                 new L12TournamentRegistrationPayload(), tournament.Version,
                 Context("player-registration"), true);
             tournament = store.PreCheckInTournament(organizer, tournament.Id,
-                new L12TournamentPreCheckInPayload("Organizer Deck", "ORGANIZER"),
+                new L12TournamentPreCheckInPayload("Organizer Deck", string.Empty),
                 tournament.Version, Context("organizer-deck-lock"), true);
             tournament = store.PreCheckInTournament(player, tournament.Id,
-                new L12TournamentPreCheckInPayload("Player Deck", "PLAYER"),
+                new L12TournamentPreCheckInPayload("Player Deck", string.Empty),
                 tournament.Version, Context("player-deck-lock"), true);
 
             Assert.DoesNotContain(store.Tournaments(outsider).Items, item => item.Id == tournament.Id);
@@ -79,6 +81,15 @@ public sealed class TournamentGlobalAdministrationTests
     private static L12TournamentCreatePayload Payload()
         => new("玩家私密赛事", "single", "code", 16, null, "现行规则", "仅分享链接赛事",
             "private", "season", string.Empty, 50, 5, RegistrationVisibility: "staff");
+
+    private static L12PresetDeckDefinition Deck(string name) => new()
+    {
+        Name = name,
+        MasterId = "M1",
+        CardIds = ["C1"],
+        MoraleIds = ["R1"],
+        SpecialIds = [],
+    };
 
     private static L12AdminAuditContext Context(string correlationId)
         => new(correlationId, "tournaments.manage", RequestMethod: "TEST",

@@ -593,10 +593,19 @@ public sealed partial class L12PlatformStore
         }
         data.Decks ??= [];
         data.PublishedDecks ??= [];
+        var publicDeckCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var deck in data.PublishedDecks)
         {
             deck.LikedByAccountIds ??= [];
             deck.Views = Math.Max(0, deck.Views);
+            var normalizedCode = deck.PublicCode?.Trim().Replace("-", string.Empty,
+                StringComparison.Ordinal).ToUpperInvariant() ?? string.Empty;
+            deck.PublicCode = normalizedCode.Length == PublicDeckCodeLength
+                              && normalizedCode.All(PublicDeckCodeAlphabet.Contains)
+                              && publicDeckCodes.Add(normalizedCode)
+                ? normalizedCode
+                : CreateUniquePublicDeckCode(publicDeckCodes);
+            publicDeckCodes.Add(deck.PublicCode);
         }
         data.Friends ??= [];
         data.BlockedAccounts ??= [];

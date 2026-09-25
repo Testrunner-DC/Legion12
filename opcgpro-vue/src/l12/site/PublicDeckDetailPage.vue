@@ -3,14 +3,14 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createDeckImageBlob, deckImageGroups, downloadDeckImage, encodeDeckCode } from './deckShare'
 import { automaticExtraCardIdsForMaster, deckCountSummary, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, saveDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
-import { alternateArtApi, platformState, publicDeckApi, type AlternateArt, type PublishedDeck, type PublicDeckDetails, type PublicDeckGuide, type PublicDeckVersionChange } from '@/l12/platform'
+import { platformState, publicDeckApi, type PublishedDeck, type PublicDeckDetails, type PublicDeckGuide, type PublicDeckVersionChange } from '@/l12/platform'
 import DeckProfile from '@/l12/DeckProfile.vue'
 import CatalogCardDetails from '@/l12/CatalogCardDetails.vue'
 import CardDetailContent from '@/l12/CardDetailContent.vue'
 import CardImage from '@/l12/CardImage.vue'
 import DeckConstructionBrowser, { type ConstructionEntry } from './DeckConstructionBrowser.vue'
 import { samplePublicDeckOpeningHand } from './publicDeckHands'
-import { preservePublicDeckDetails } from './publicDeckEntry'
+import { preservePublicDeckDetails, publicDeckRouteReference } from './publicDeckEntry'
 import { useActionGate } from '@/l12/useActionGate'
 
 const route = useRoute()
@@ -19,7 +19,6 @@ const { pending: actionBusy, isPending: actionPending, run: runAction } = useAct
 const publicDeckActionKey = (deckId: string, accountId = platformState.account?.id ?? 'anonymous') =>
   `public-deck:${accountId}:${deckId}`
 const catalog = ref<DeckCard[]>([])
-const alternateArts = ref<AlternateArt[]>([])
 const entry = ref<PublishedDeck | null>(null)
 const notice = ref('')
 const loading = ref(true)
@@ -73,7 +72,7 @@ const sectionTabs = computed(() => [
   { id: 'matches', label: '对局', visible: true },
   { id: 'hands', label: '起手', visible: true },
 ].filter(item => item.visible))
-const deckCopies = computed(() => entry.value ? deckImageGroups(entry.value.deck, catalog.value, alternateArts.value)
+const deckCopies = computed(() => entry.value ? deckImageGroups(entry.value.deck, catalog.value)
   .flatMap(group => Array.from({ length: group.count }, (_, index) => ({
     ...group,
     key: `${group.cardId}:${group.artId || 'original'}:${index}`,
@@ -89,10 +88,7 @@ const openingHand = computed(() => {
 
 onMounted(async () => {
   try {
-    ;[catalog.value, alternateArts.value] = await Promise.all([
-      loadDeckCatalog(),
-      alternateArtApi.gallery().catch(() => [] as AlternateArt[]),
-    ])
+    catalog.value = await loadDeckCatalog()
     const id = String(route.params.deckId || '')
     if (id.startsWith('official-')) {
       const index = Number(id.slice('official-'.length))
@@ -101,10 +97,13 @@ onMounted(async () => {
       entry.value = { id, ownerId: 'official', deck: { ...preset, specialIds: preset.specialIds ?? [], updatedAt: '' }, author: '十二军团官方预组', views: 0, likes: 0, copies: 0, liked: false, official: true, createdAt: '', updatedAt: '', details: emptyDetails() }
     } else {
       entry.value = await publicDeckApi.get(id)
-      const viewedKey = `l12:public-deck-viewed:${id}`
+      const canonicalReference = publicDeckRouteReference(entry.value)
+      if (canonicalReference !== id)
+        await router.replace({ name: 'public-deck-detail', params: { deckId: canonicalReference }, query: route.query, hash: route.hash })
+      const viewedKey = `l12:public-deck-viewed:${entry.value.id}`
       if (!sessionStorage.getItem(viewedKey)) {
         sessionStorage.setItem(viewedKey, '1')
-        void publicDeckApi.recordView(id).then(value => {
+        void publicDeckApi.recordView(publicDeckRouteReference(entry.value!)).then(value => {
           entry.value = preservePublicDeckDetails(entry.value, value)
         }).catch(() => sessionStorage.removeItem(viewedKey))
       }
@@ -139,7 +138,7 @@ async function copyToMine() {
         notice.value = `已复制《${saved.name}》到我的牌库`
       if (!entry.value.official) {
         try {
-          const updated = await publicDeckApi.recordCopy(id)
+          const updated = await publicDeckApi.recordCopy(publicDeckRouteReference(entry.value))
           if (accountId === platformState.account?.id && entry.value?.id === id)
             entry.value = preservePublicDeckDetails(entry.value, updated)
         } catch { /* 本地复制已经成功；远端统计失败不得反写为复制失败。 */ }
@@ -154,10 +153,11 @@ async function toggleLike() {
   if (!entry.value || entry.value.official) return
   if (!platformState.account) { notice.value = '请先登录账号再点赞'; return }
   const id = entry.value.id
+  const reference = publicDeckRouteReference(entry.value)
   const accountId = platformState.account.id
   await runAction(publicDeckActionKey(id, accountId), async () => {
     try {
-      const updated = await publicDeckApi.toggleLike(id)
+      const updated = await publicDeckApi.toggleLike(reference)
       if (accountId === platformState.account?.id && entry.value?.id === id)
         entry.value = preservePublicDeckDetails(entry.value, updated)
     } catch (error) {
@@ -173,7 +173,7 @@ async function copyCode() {
 async function previewImage() {
   if (!entry.value) return
   if (imagePreview.value) URL.revokeObjectURL(imagePreview.value.url)
-  const blob = await createDeckImageBlob(entry.value.deck, catalog.value, { publicUrl: publicDeckUrl(), alternateArts: alternateArts.value })
+  const blob = await createDeckImageBlob(entry.value.deck, catalog.value, { publicUrl: publicDeckUrl() })
   imagePreview.value = { blob, url: URL.createObjectURL(blob) }
 }
 async function editDeck() {
@@ -184,10 +184,11 @@ async function editDeck() {
 async function deleteDeck() {
   if (!entry.value || !window.confirm('确定删除这个公开牌库？')) return
   const id = entry.value.id
+  const reference = publicDeckRouteReference(entry.value)
   const accountId = platformState.account?.id
   await runAction(publicDeckActionKey(id, accountId), async () => {
     try {
-      await publicDeckApi.delete(id)
+      await publicDeckApi.delete(reference)
       if (accountId === platformState.account?.id) await router.replace(backTo.value)
     } catch (error) {
       if (accountId === platformState.account?.id)
@@ -206,7 +207,7 @@ function scrollToSection(section: string) {
 }
 function publicDeckUrl() {
   if (!entry.value || entry.value.official || typeof window === 'undefined') return ''
-  return new URL(router.resolve({ name: 'public-deck-detail', params: { deckId: entry.value.id } }).href, window.location.origin).href
+  return new URL(router.resolve({ name: 'public-deck-detail', params: { deckId: publicDeckRouteReference(entry.value) } }).href, window.location.origin).href
 }
 function redrawOpeningHand() {
   if (!entry.value) return
@@ -247,9 +248,10 @@ function formatRate(value: number) { return `${(value * 100).toFixed(1)}%` }
       <section id="public-deck-construction" class="deck-layout detail-anchor-section">
         <aside>
           <section><b>费用曲线</b><div class="curve"><i v-for="(value,index) in curve" :key="index"><span :style="{ height: `${Math.max(4, value / curveMax * 72)}px` }"></span><small>{{ index === 8 ? '8+' : index }}</small><em>{{ value }}</em></i></div></section>
-          <section><b>构筑摘要</b><p>主牌<strong>{{ entry.deck.cardIds.length }}</strong></p><p>士气<strong>{{ entry.deck.moraleIds.length }}</strong></p><p>试炼/额外<strong>{{ entry.deck.specialIds?.length || 0 }}</strong></p><p>自动额外<strong>{{ automaticExtraCardIdsForMaster(entry.deck.masterId).length }}</strong></p></section>
+          <section><b>构筑摘要</b><p v-if="entry.deck.cardIds.length">主牌<strong>{{ entry.deck.cardIds.length }}</strong></p><p v-if="entry.deck.moraleIds.length">士气<strong>{{ entry.deck.moraleIds.length }}</strong></p><p v-if="entry.deck.specialIds?.length">额外<strong>{{ entry.deck.specialIds.length }}</strong></p><p v-if="automaticExtraCardIdsForMaster(entry.deck.masterId).length">自动额外<strong>{{ automaticExtraCardIdsForMaster(entry.deck.masterId).length }}</strong></p></section>
+          <section id="public-deck-construction-filters" aria-label="构筑筛选"></section>
         </aside>
-        <div class="public-deck-main"><DeckConstructionBrowser :entries="entries" :catalog="catalog" :master-faction="master?.faction" :title="`${entry.deck.name} · 全部构筑`" external-details @select="selectCard"/>
+        <div class="public-deck-main"><DeckConstructionBrowser :entries="entries" :catalog="catalog" :master-faction="master?.faction" :title="`${entry.deck.name} · 全部构筑`" filter-target="#public-deck-construction-filters" hide-header external-details @select="selectCard"/>
 
       <section v-if="hasGuide" id="public-deck-guide" class="content-panel detail-anchor-section" data-detail-section="guide">
         <header><div><h2>牌库指南</h2><p v-if="details.contentUpdatedAt">作者更新于 {{ formatTime(details.contentUpdatedAt) }} · 修订 {{ details.contentRevision }}</p></div></header>

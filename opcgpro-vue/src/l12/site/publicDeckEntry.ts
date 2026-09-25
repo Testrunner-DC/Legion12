@@ -14,3 +14,7 @@ export function matchesPublishedDeckReference(deck: SavedL12Deck, published: Pub
     && published.deck.publicationVersion === publicationVersion
     && (!ownerId || published.ownerId === ownerId))
 }
+
+export function publicDeckRouteReference(published: PublishedDeck) {
+  return published.publicCode?.trim() || ''
+}

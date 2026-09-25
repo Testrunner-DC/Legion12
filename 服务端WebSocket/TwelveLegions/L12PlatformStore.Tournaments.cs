@@ -2383,59 +2383,33 @@ public sealed partial class L12PlatformStore
         cards = [];
         morale = [];
         special = [];
-        var value = code?.Trim() ?? string.Empty;
-        if (!value.StartsWith("L12D1.", StringComparison.Ordinal)) return false;
-        try
-        {
-            var encoded = value[6..].Replace('-', '+').Replace('_', '/');
-            encoded = encoded.PadRight((encoded.Length + 3) / 4 * 4, '=');
-            using var document = JsonDocument.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(encoded)));
-            var root = document.RootElement;
-            masterId = root.GetProperty("m").GetString() ?? string.Empty;
-            cards = ReadDeckCodeArray(root, "c");
-            morale = ReadDeckCodeArray(root, "r");
-            special = ReadDeckCodeArray(root, "s");
-            return !string.IsNullOrWhiteSpace(masterId);
-        }
-        catch { return false; }
+        if (!L12DeckCodeCodec.TryDecode(code, out var decoded) || decoded is null) return false;
+        masterId = decoded.MasterId;
+        cards = decoded.CardIds.ToList();
+        morale = decoded.MoraleIds.ToList();
+        special = decoded.SpecialIds.ToList();
+        return true;
     }
-
-    private static List<string> ReadDeckCodeArray(JsonElement root, string property)
-        => root.TryGetProperty(property, out var items) && items.ValueKind == JsonValueKind.Array
-            ? items.EnumerateArray().Select(item => item.GetString()).OfType<string>().ToList() : [];
 
     private static void ValidateTournamentDeckCode(TournamentRulesSnapshotRow rules, string? code)
     {
         if (string.IsNullOrWhiteSpace(code)) return;
-        var value = code.Trim();
-        // 旧赛事快照可能保存不可解析的历史码；新 L12D1 牌库码执行结构化规则校验。
-        if (!value.StartsWith("L12D1.", StringComparison.Ordinal)) return;
-        try
+        if (!L12DeckCodeCodec.TryDecode(code, out var decoded) || decoded is null)
+            throw new ArgumentException("赛事牌库码无法解析");
+        var cardIds = new[] { decoded.MasterId }.Concat(decoded.CardIds)
+            .Concat(decoded.MoraleIds).Concat(decoded.SpecialIds);
+        foreach (var group in cardIds.GroupBy(id => id, StringComparer.OrdinalIgnoreCase))
         {
-            var encoded = value[6..].Replace('-', '+').Replace('_', '/');
-            encoded = encoded.PadRight((encoded.Length + 3) / 4 * 4, '=');
-            using var document = JsonDocument.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(encoded)));
-            var root = document.RootElement;
-            var masterId = root.GetProperty("m").GetString() ?? string.Empty;
-            var cardIds = new List<string> { masterId };
-            foreach (var key in new[] { "c", "r", "s" })
-                if (root.TryGetProperty(key, out var items) && items.ValueKind == JsonValueKind.Array)
-                    cardIds.AddRange(items.EnumerateArray().Select(item => item.GetString()).OfType<string>());
-            foreach (var group in cardIds.GroupBy(id => id, StringComparer.OrdinalIgnoreCase))
-            {
-                var rule = rules.CardRestrictions.FirstOrDefault(item => string.Equals(item.CardId, group.Key,
-                               StringComparison.OrdinalIgnoreCase) && string.Equals(item.MasterId, masterId,
-                               StringComparison.OrdinalIgnoreCase))
-                           ?? rules.CardRestrictions.FirstOrDefault(item => string.Equals(item.CardId, group.Key,
-                               StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(item.MasterId));
-                if (rule is null || group.Count() <= rule.MaxCopies) continue;
-                throw new ArgumentException(rule.MaxCopies == 0
-                    ? $"赛事规则禁止使用 {group.Key}"
-                    : $"赛事规则限制 {group.Key} 最多投入 {rule.MaxCopies} 张");
-            }
+            var rule = rules.CardRestrictions.FirstOrDefault(item => string.Equals(item.CardId, group.Key,
+                           StringComparison.OrdinalIgnoreCase) && string.Equals(item.MasterId, decoded.MasterId,
+                           StringComparison.OrdinalIgnoreCase))
+                       ?? rules.CardRestrictions.FirstOrDefault(item => string.Equals(item.CardId, group.Key,
+                           StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(item.MasterId));
+            if (rule is null || group.Count() <= rule.MaxCopies) continue;
+            throw new ArgumentException(rule.MaxCopies == 0
+                ? $"赛事规则禁止使用 {group.Key}"
+                : $"赛事规则限制 {group.Key} 最多投入 {rule.MaxCopies} 张");
         }
-        catch (ArgumentException) { throw; }
-        catch (Exception) { throw new ArgumentException("赛事牌库码无法解析"); }
     }
 
     private static TournamentRulingRow NewRuling(L12AccountView actor, string matchId, string kind,

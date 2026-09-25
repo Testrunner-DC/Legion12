@@ -38,6 +38,13 @@ if(fixtureQuery.has('emptyStats')){fixture.details.matchStatistics={from:'2026-0
 if(fixtureQuery.has('smallStats')){fixture.details.matchStatistics={from:'2026-06-26T06:00:00Z',to:now,recentDays:90,games:0,sampleStatus:'insufficient',groups:[]};fixture.details.matchBindingStatus='insufficient';fixture.details.matchBindingMessage='样本不足：过去 90 天各主宰组合均不足 3 场，暂不展示胜率。'}
 publicDeckApi.get=async()=>fixture
 publicDeckApi.recordView=async()=>fixture
+const nativeFetch=window.fetch.bind(window)
+window.fetch=(input,init)=>{
+  const url=String(input)
+  if(url.includes('/api/alternate-arts'))return Promise.resolve(new Response('[]',{status:200,headers:{'Content-Type':'application/json'}}))
+  if(url.includes('/api/public-decks/qa'))return Promise.resolve(new Response(JSON.stringify(fixture),{status:200,headers:{'Content-Type':'application/json'}}))
+  return nativeFetch(input,init)
+}
 const router=createRouter({history:createMemoryHistory(),routes:[{path:'/decks/:deckId',component:PublicDeckDetailPage},{path:'/decks',component:{template:'<div>decks</div>'}}]})
 await router.push('/decks/qa')
 await router.isReady()
@@ -76,23 +83,48 @@ try {
   const port = server.httpServer.address().port
   browser = await chromium.launch({ headless: true, channel: 'msedge' })
   const page = await browser.newPage()
+  await page.addInitScript(() => localStorage.setItem('l12-account', JSON.stringify({ id: 'author', username: '验收作者', role: 'player', createdAt: '', publicHistory: true })))
   const errors = []
+  const failedRequests = []
   page.on('pageerror', error => errors.push(error.message))
+  page.on('requestfailed', request => failedRequests.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText || 'failed'}`))
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
   const report = []
   for (const viewport of viewports) {
     await page.setViewportSize(viewport)
     await page.goto(`http://127.0.0.1:${port}/__public_deck_detail__`)
-    await page.getByRole('button', { name: '指南', exact: true }).waitFor()
+    await page.getByRole('button', { name: '指南', exact: true }).waitFor().catch(async error => {
+      throw new Error(`公开牌库详情未完成渲染：${errors.join(' | ') || await page.locator('body').innerText()}${failedRequests.length ? `\n失败请求：${failedRequests.join(' | ')}` : ''}\n${error.message}`)
+    })
     assert.equal(await page.getByRole('button',{name:'编辑牌库',exact:true}).count(),1)
     const desktop=viewport.width>1000
     const sidebar=page.locator('.public-card-detail')
+    const construction=page.locator('.construction-browser')
+    const filterRail=page.locator('#public-deck-construction-filters .construction-filter-rail')
+    const summary=page.locator('.deck-layout>aside').first().locator('section').nth(1)
+    assert.doesNotMatch(await summary.innerText(),/试炼\/额外|(?:额外|自动额外)\s*0/,'摘要不单列试炼且隐藏零数量类别')
+    assert.equal(await construction.locator(':scope>header').count(),0,'公开详情不保留构筑标题行')
+    assert.equal(await construction.locator(':scope>nav').count(),0,'公开详情不保留原筛选行')
+    assert.equal(await filterRail.count(),1,'筛选控件移入左侧摘要栏')
+    const filterControls=[filterRail.getByRole('searchbox',{name:'搜索卡名或编号'}),filterRail.getByRole('combobox',{name:'按区域筛选'}),filterRail.getByRole('combobox',{name:'按类型筛选'})]
+    const filterBoxes=await Promise.all(filterControls.map(control=>control.boundingBox()))
+    assert.ok(filterBoxes.every(Boolean),`筛选控件均可见 ${suffix(viewport)}`)
+    assert.ok(filterBoxes[0].y+filterBoxes[0].height<=filterBoxes[1].y && filterBoxes[1].y+filterBoxes[1].height<=filterBoxes[2].y,`筛选控件必须从上至下排列 ${suffix(viewport)}`)
+    const initialCardCount=await construction.locator('.construction-grid>button').count()
+    await filterControls[0].fill('不存在的卡牌')
+    assert.equal(await construction.locator('.construction-grid>button').count(),0,'移动后的搜索框仍驱动卡表筛选')
+    await filterControls[0].fill('')
+    assert.equal(await construction.locator('.construction-grid>button').count(),initialCardCount,'清空搜索后恢复全部卡牌')
     assert.equal(await sidebar.isVisible(),desktop)
     if(desktop){
-      const boxes=await Promise.all([page.locator('.deck-layout>aside').first(),page.locator('.construction-browser'),sidebar].map(item=>item.boundingBox()))
+      const boxes=await Promise.all([page.locator('.deck-layout>aside').first(),construction,sidebar].map(item=>item.boundingBox()))
       assert.ok(boxes[0].x+boxes[0].width<=boxes[1].x && boxes[1].x+boxes[1].width<=boxes[2].x,'三栏互不侵入')
       assert.equal(Math.round(boxes[2].width),274,'图鉴同宽详情栏')
+      assert.ok(Math.abs(boxes[0].y-boxes[1].y)<=1,'删除原行后卡表与左侧栏顶部对齐')
+      const firstCardBox=await construction.locator('.construction-grid>button').first().boundingBox()
+      assert.ok(Math.abs(firstCardBox.y-boxes[1].y)<=1,'卡片直接占用已删除标题和筛选行的位置')
     }
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,`构筑筛选布局无横向溢出 ${suffix(viewport)}`)
     for(const source of ['.construction-grid>button','.opening-hand .hand-card']){
       const card=page.locator(source).first()
       const expectedName=await card.locator(source.includes('construction')?'span':'b').innerText()

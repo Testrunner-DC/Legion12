@@ -22,6 +22,12 @@ const ruleCenter = read('../src/l12/site/RuleCenterPage.vue')
 const checks = [
   [analyzeSource(profile, 'ProfilePage.vue').maximumParallelPageLoad <= 3 && analyzeSource(adminWorkbench, 'AdminWorkbenchPage.vue').maximumParallelPageLoad <= 3, '本批后台与个人页 AST 扇出必须不超过三路'],
   [profile.includes("{ id: 'overview'") && profile.includes("{ id: 'performance'") && profile.includes("{ id: 'collection'") && profile.includes("{ id: 'security'") && profile.includes('route.query.section') && profile.includes("router.push({ path: '/me'"), '个人四分区必须以 URL 为状态来源'],
+  [profile.includes('<small class="form-support">') && profile.indexOf('<small class="form-support">') > profile.indexOf('</label>\n          <button class="primary"')
+    && profile.includes('grid-template-rows:auto var(--l12-form-control-height,44px)')
+    && profile.includes('.account-form label input{box-sizing:border-box;height:var(--l12-form-control-height,44px)')
+    && profile.includes('.account-form .primary{height:var(--l12-form-control-height,44px)')
+    && profile.includes('@media(max-width:560px){.account-form{grid-template-columns:1fr}'),
+  '登录用户名说明必须独占整行，输入框与提交按钮共用固定控件高度，并在窄屏退化为单列，禁止说明文字再次把用户名输入框顶高'],
   [profile.includes("{ id: '7d', label: '近 7 天' }") && profile.includes("{ id: '30d', label: '近 30 天' }")
     && profile.includes("{ id: 'season', label: '本赛季' }") && profile.includes('route.query.range')
     && profile.includes('playerApi.statistics(range)') && profile.includes('statisticsCache.get(range)')

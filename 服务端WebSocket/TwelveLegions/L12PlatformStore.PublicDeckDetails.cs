@@ -20,10 +20,10 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
-            var published = _data.PublishedDecks.FirstOrDefault(item => item.Id == publicationId);
+            var published = FindPublishedDeck(publicationId);
             if (published is null) return null;
             using var connection = OpenDatabase(_databasePath, readOnly: true);
-            var content = ReadPublicDeckContent(connection, publicationId);
+            var content = ReadPublicDeckContent(connection, published.Id);
             return new(content.Guide, content.Matchups, content.Revision, content.UpdatedAt,
                 ReadPublicDeckVersions(connection, published), EmptyPublicDeckMatchStatistics, "unavailable",
                 "尚无可证明绑定到该公开牌库版本的对局记录；不会用作者总战绩替代。" );
@@ -35,7 +35,7 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
-            var published = _data.PublishedDecks.FirstOrDefault(item => item.Id == publicationId);
+            var published = FindPublishedDeck(publicationId);
             if (published is null) return null;
             if (!string.Equals(published.OwnerId, accountId, StringComparison.Ordinal))
                 throw new UnauthorizedAccessException("只有公开牌库作者可以编辑指南和对局建议");
@@ -49,13 +49,13 @@ public sealed partial class L12PlatformStore
             var now = DateTimeOffset.UtcNow;
             using var connection = OpenDatabase(_databasePath, readOnly: false);
             using var transaction = connection.BeginTransaction();
-            var current = ReadPublicDeckContent(connection, publicationId, transaction);
+            var current = ReadPublicDeckContent(connection, published.Id, transaction);
             string? currentHash = null;
             using (var query = connection.CreateCommand())
             {
                 query.Transaction = transaction;
                 query.CommandText = "SELECT content_hash FROM published_deck_content_heads WHERE publication_id=$id;";
-                query.Parameters.AddWithValue("$id", publicationId);
+                query.Parameters.AddWithValue("$id", published.Id);
                 currentHash = Convert.ToString(query.ExecuteScalar());
             }
             if (string.Equals(currentHash, hash, StringComparison.Ordinal))
@@ -92,7 +92,7 @@ public sealed partial class L12PlatformStore
                     ON CONFLICT(publication_id) DO UPDATE SET
                         revision=excluded.revision,content_hash=excluded.content_hash,updated_utc=excluded.updated_utc;
                     """;
-                revisionCommand.Parameters.AddWithValue("$id", publicationId);
+                revisionCommand.Parameters.AddWithValue("$id", published.Id);
                 revisionCommand.Parameters.AddWithValue("$revision", revision);
                 revisionCommand.Parameters.AddWithValue("$hash", hash);
                 revisionCommand.Parameters.AddWithValue("$author", accountId);

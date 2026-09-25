@@ -858,7 +858,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _app.MapGet("/api/public-decks/{id}", async (HttpRequest request, string id) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
-            var item = _platform.PublishedDeck(id, account?.Id);
+            var item = _platform.PublishedDeckByPublicCode(id, account?.Id);
             if (item is null) return Results.NotFound();
             var policy = _platform.EffectiveOperationsPolicy();
             var preset = new L12PresetDeckDefinition
@@ -875,7 +875,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             {
                 SeasonCompliant = valid,
                 SeasonComplianceReason = valid ? null : error,
-                Details = await PublicDeckDetailsWithStatisticsAsync(id),
+                Details = await PublicDeckDetailsWithStatisticsAsync(item.Id),
             });
         });
         _app.MapPost("/api/public-decks", (HttpRequest request, PublishedDeckRequest body) =>
@@ -895,8 +895,10 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (account is null) return Results.Unauthorized();
             try
             {
-                var details = _platform.UpdatePublicDeckContent(account.Id, id, body);
-                return details is null ? Results.NotFound() : Results.Ok(await PublicDeckDetailsWithStatisticsAsync(id));
+                var published = _platform.PublishedDeckByPublicCode(id, account.Id);
+                if (published is null) return Results.NotFound();
+                var details = _platform.UpdatePublicDeckContent(account.Id, published.Id, body);
+                return details is null ? Results.NotFound() : Results.Ok(await PublicDeckDetailsWithStatisticsAsync(published.Id));
             }
             catch (UnauthorizedAccessException error)
             {
@@ -911,25 +913,30 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
-            return _platform.DeletePublishedDeck(account.Id, id) ? Results.Ok() : Results.NotFound();
+            var published = _platform.PublishedDeckByPublicCode(id, account.Id);
+            return published is not null && _platform.DeletePublishedDeck(account.Id, published.Id)
+                ? Results.Ok() : Results.NotFound();
         });
         _app.MapPost("/api/public-decks/{id}/like", (HttpRequest request, string id) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
-            var published = _platform.TogglePublishedDeckLike(account.Id, id);
+            var target = _platform.PublishedDeckByPublicCode(id, account.Id);
+            var published = target is null ? null : _platform.TogglePublishedDeckLike(account.Id, target.Id);
             return published is null ? Results.NotFound() : Results.Ok(published);
         });
         _app.MapPost("/api/public-decks/{id}/copy", (HttpRequest request, string id) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
-            var published = _platform.RecordPublishedDeckCopy(id, account?.Id);
+            var target = _platform.PublishedDeckByPublicCode(id, account?.Id);
+            var published = target is null ? null : _platform.RecordPublishedDeckCopy(target.Id, account?.Id);
             return published is null ? Results.NotFound() : Results.Ok(published);
         });
         _app.MapPost("/api/public-decks/{id}/view", (HttpRequest request, string id) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
-            var published = _platform.RecordPublishedDeckView(id, account?.Id);
+            var target = _platform.PublishedDeckByPublicCode(id, account?.Id);
+            var published = target is null ? null : _platform.RecordPublishedDeckView(target.Id, account?.Id);
             return published is null ? Results.NotFound() : Results.Ok(published);
         });
         _app.MapGet("/api/tournaments", (HttpRequest request, string? status, string? search, bool? mine) =>
@@ -2821,9 +2828,11 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
 
     private async Task<L12PublicDeckDetailsView?> PublicDeckDetailsWithStatisticsAsync(string id)
     {
-        var details = _platform.PublicDeckDetails(id);
+        var published = _platform.PublishedDeck(id, null);
+        if (published is null) return null;
+        var details = _platform.PublicDeckDetails(published.Id);
         if (details is null) return null;
-        var statistics = await _recorder.PublicDeckVersionStatisticsAsync(id,
+        var statistics = await _recorder.PublicDeckVersionStatisticsAsync(published.Id,
             _platform.RankedIntegrityExcludedMatchIds(), _platform.StatisticsExcludedAccountIds());
         return details with
         {

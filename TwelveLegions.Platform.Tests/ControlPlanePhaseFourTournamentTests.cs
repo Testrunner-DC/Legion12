@@ -11,6 +11,12 @@ namespace GrandUMI.Tests;
 [Collection("Platform environment")]
 public sealed class ControlPlanePhaseFourTournamentTests
 {
+    private const string VersionDeckCode = "L12D2-79ZA8-PQB93-CWRA9-6Q6FS-EDDYC-3H8JX-4ACCE-TQS3E-8XWS8-5T5";
+    private const string OrganizerDeckCode = "L12D2-ETX6D-JC7VV-JP78R-56JXF-2FKW7-PGZ2Y-W2S6C-5N2K5-XK6WZ-PTR2R-5";
+    private const string PlayerDeckCode = "L12D2-MGAPD-QZYPH-VF7N9-SN36F-SJWWF-4KTYV-CQ63D-4HHSH-9RZYT-J";
+    private const string SecretADeckCode = "L12D2-3H2MR-YHEC2-NWYR6-ABBFK-BXS7M-36HD2-HYM8M-4QYJ2-EH3ME-7Z2PD";
+    private const string SecretBDeckCode = "L12D2-3H2MR-YHEC2-NWYR6-CJMJR-R484X-JY35M-HXVGE-9J6QQ-XCB85-GXK8B";
+
     [Fact]
     public void TournamentCapturesIndependentDisasterPoolAndConstructionRules()
     {
@@ -33,16 +39,13 @@ public sealed class ControlPlanePhaseFourTournamentTests
             Assert.Equal(policy.DisasterCardIds, tournament.Rules.DisasterCardIds);
             Assert.Equal(restrictions, tournament.Rules.CardRestrictions);
             Assert.False(string.IsNullOrWhiteSpace(tournament.Rules.Hash));
-            var payloadJson = JsonSerializer.Serialize(new
-            {
-                v = 1, n = "违规赛事牌库", m = "S01-01M1", c = new[] { "S01-0001", "S01-0001" },
-                r = Array.Empty<string>(), s = Array.Empty<string>(),
-            });
-            var deckCode = "L12D1." + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(payloadJson))
-                .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+            const string deckCode = "L12D2-B2N7M-ZM2AW-YRPWG-MNDZS-23KMT-KP73X-24KMZ-E6PWG-F8B33-38MT7-ERQFT-V";
             Assert.Throws<ArgumentException>(() => store.PreCheckInTournament(organizer, tournament.Id,
                 new L12TournamentPreCheckInPayload("违规赛事牌库", deckCode), tournament.Version,
                 Context("rules-deck-reject"), true));
+            Assert.Throws<ArgumentException>(() => store.PreCheckInTournament(organizer, tournament.Id,
+                new L12TournamentPreCheckInPayload("旧牌库码", "L12D1.eyJ2IjoxfQ"), tournament.Version,
+                Context("retired-deck-code-reject"), true));
         }
         finally { Directory.Delete(root, true); }
     }
@@ -91,7 +94,7 @@ public sealed class ControlPlanePhaseFourTournamentTests
             var tournamentVersion = tournament.Version;
             store.Register("tunrela63e4", "password-123");
 
-            var payload = new L12TournamentPreCheckInPayload("版本牌库", "DECK-V1");
+            var payload = new L12TournamentPreCheckInPayload("版本牌库", VersionDeckCode);
             var command = Envelope("tournament.pre-check-in", organizer,
                 $"tournament:{tournament.Id}/registration:{organizer.Id}", tournamentVersion, payload,
                 "tournament-version-1", false);
@@ -107,7 +110,7 @@ public sealed class ControlPlanePhaseFourTournamentTests
             var beforeDryRun = result.Value;
             var dry = Envelope("tournament.pre-check-in", organizer,
                 $"tournament:{tournament.Id}/registration:{organizer.Id}", beforeDryRun.Version,
-                new L12TournamentPreCheckInPayload("版本牌库", "DECK-V1"), "tournament-version-dry", true);
+                new L12TournamentPreCheckInPayload("版本牌库", VersionDeckCode), "tournament-version-dry", true);
             var dryResult = new L12AdminCommandBus(store).Execute(dry, L12Permission.TournamentsRegister,
                 current => L12AdminCommandResult<L12TournamentView>.Ok(store.PreCheckInTournament(
                     current.Actor, tournament.Id, current.Payload, beforeDryRun.Version,
@@ -140,13 +143,13 @@ public sealed class ControlPlanePhaseFourTournamentTests
             var tournament = store.CreateTournament(organizer, CreatePayload([reviewer.Id]),
                 Context("approval-create"), true);
             tournament = store.PreCheckInTournament(organizer, tournament.Id,
-                new L12TournamentPreCheckInPayload("Organizer Deck", "ORG"), tournament.Version,
+                new L12TournamentPreCheckInPayload("Organizer Deck", OrganizerDeckCode), tournament.Version,
                 Context("approval-deck-owner"), true);
             tournament = store.RegisterTournament(player, tournament.Id,
                 new L12TournamentRegistrationPayload(), tournament.Version,
                 Context("approval-register"), true);
             tournament = store.PreCheckInTournament(player, tournament.Id,
-                new L12TournamentPreCheckInPayload("Player Deck", "PLAYER"), tournament.Version,
+                new L12TournamentPreCheckInPayload("Player Deck", PlayerDeckCode), tournament.Version,
                 Context("approval-player-check-in"), true);
 
             var payload = new TournamentTargetCommandPayload(tournament.Id);
@@ -188,18 +191,18 @@ public sealed class ControlPlanePhaseFourTournamentTests
             var tournament = store.CreateTournament(organizer, CreatePayload(deckVisibility: "after"),
                 Context("flow-create"), true);
             tournament = store.PreCheckInTournament(organizer, tournament.Id,
-                new L12TournamentPreCheckInPayload("Secret A", "CODE-A"), tournament.Version,
+                new L12TournamentPreCheckInPayload("Secret A", SecretADeckCode), tournament.Version,
                 Context("flow-deck-a"), true);
             tournament = store.RegisterTournament(player, tournament.Id,
                 new L12TournamentRegistrationPayload(), tournament.Version,
                 Context("flow-deck-b"), true);
             tournament = store.PreCheckInTournament(player, tournament.Id,
-                new L12TournamentPreCheckInPayload("Secret B", "CODE-B"), tournament.Version,
+                new L12TournamentPreCheckInPayload("Secret B", SecretBDeckCode), tournament.Version,
                 Context("flow-check-in-b"), true);
 
             var playerBefore = store.Tournament(player, tournament.Id)!;
             Assert.Null(playerBefore.Participants.Single(item => item.AccountId == organizer.Id).Deck);
-            Assert.Equal("CODE-B", playerBefore.Participants.Single(item => item.AccountId == player.Id).Deck!.Code);
+            Assert.Equal(SecretBDeckCode, playerBefore.Participants.Single(item => item.AccountId == player.Id).Deck!.Code);
 
             tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
                 Context("flow-start"), true);
@@ -235,7 +238,7 @@ public sealed class ControlPlanePhaseFourTournamentTests
             Assert.Contains(finalMatch.Rulings, item => item.Kind == "penalty" && item.Reason == "slow play");
             Assert.Equal("completed", tournament.Status);
             var playerAfter = store.Tournament(player, tournament.Id)!;
-            Assert.Equal("CODE-A", playerAfter.Participants.Single(item => item.AccountId == organizer.Id).Deck!.Code);
+            Assert.Equal(SecretADeckCode, playerAfter.Participants.Single(item => item.AccountId == organizer.Id).Deck!.Code);
             Assert.All(playerAfter.Participants, item => Assert.NotNull(item.Deck!.LockedAt));
             Assert.Throws<L12TournamentScopeException>(() => store.SetTournamentStaff(organizer, tournament.Id,
                 new L12TournamentStaffPayload([]), tournament.Version, Context("archived-staff"), true));

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import CardImage from '@/l12/CardImage.vue'
 import CatalogCardDetails from '@/l12/CatalogCardDetails.vue'
 import { cardTypeFilterKey, cardTypeLabel } from '@/l12/cardPresentation'
@@ -15,13 +15,16 @@ const props = withDefaults(defineProps<{
   title?: string
   masterFaction?: string
   externalDetails?: boolean
-}>(), { title: '构筑快照' })
+  filterTarget?: string
+  hideHeader?: boolean
+}>(), { title: '构筑快照', filterTarget: '', hideHeader: false })
 
 const query = ref('')
 const emit = defineEmits<{ select: [card: DeckCard] }>()
 const type = ref('all')
 const section = ref('all')
 const filtersOpen = ref(false)
+const filterTargetReady = ref(false)
 const selectedId = ref('')
 const byId = computed(() => new Map(props.catalog.map(card => [card.id, card])))
 const normalized = computed(() => {
@@ -62,12 +65,20 @@ function selectCard(cardId: string) {
 watch(visible, values => {
   if (selectedId.value && !values.some(entry => entry.cardId === selectedId.value)) selectedId.value = ''
 }, { immediate: true })
+onMounted(() => { filterTargetReady.value = Boolean(props.filterTarget) })
 </script>
 
 <template>
   <section class="construction-browser" data-ui-contract="shared-deck-construction-browser">
-    <header><div><small>构筑卡表</small><h3>{{ title }}</h3></div><b>{{ totalCards }} 张 · {{ normalized.length }} 种</b></header>
-    <nav aria-label="构筑筛选">
+    <header v-if="!hideHeader"><div><small>构筑卡表</small><h3>{{ title }}</h3></div><b>{{ totalCards }} 张 · {{ normalized.length }} 种</b></header>
+    <Teleport v-if="filterTarget && filterTargetReady" :to="filterTarget">
+      <nav class="construction-filter-rail" aria-label="构筑筛选">
+        <input v-model="query" type="search" placeholder="搜索卡名或编号" aria-label="搜索卡名或编号"/>
+        <select v-model="section" aria-label="按区域筛选"><option value="all">全部区域</option><option v-for="value in sections" :key="value" :value="value">{{ sectionLabel(value) }}</option></select>
+        <select v-model="type" aria-label="按类型筛选"><option value="all">全部类型</option><option v-for="value in types" :key="value" :value="value">{{ cardTypeLabel(value) }}</option></select>
+      </nav>
+    </Teleport>
+    <nav v-else aria-label="构筑筛选">
       <input v-model="query" type="search" placeholder="搜索卡名或编号"/>
       <MobileFilterSheet v-model="filtersOpen" title="构筑筛选" :active-count="activeFilterCount" @reset="resetFilters">
         <div class="construction-filter-fields">
@@ -93,7 +104,7 @@ watch(visible, values => {
 </template>
 
 <style scoped>
-.construction-browser{display:grid;min-height:0;gap:10px;color:#eee}.construction-browser>header{display:flex;align-items:end;justify-content:space-between;gap:12px}.construction-browser h3{margin:3px 0 0}.construction-browser header small{color:#d4b65d;font-size:14px;font-weight:900;letter-spacing:.14em}.construction-browser header>b{color:#92a0a4;font-size:14px}.construction-browser>nav{display:grid;grid-template-columns:minmax(150px,1fr) auto;gap:7px}.construction-desktop-filters{display:grid;grid-template-columns:110px 120px;gap:7px}.construction-browser input,.construction-browser select{box-sizing:border-box;min-width:0;width:100%;padding:8px;border:1px solid #47545b;background:#080e13;color:#fff;font-size:14px}.construction-filter-fields{display:grid;gap:12px}.construction-filter-fields label{display:grid;gap:6px;color:#aeb8ba;font-size:12px;font-weight:900}.construction-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));align-content:start;gap:8px;overflow:visible}.construction-grid>button{position:relative;display:grid;min-width:0;gap:3px;padding:5px;border:1px solid #334149;background:#0b1217;color:#fff;text-align:left}.construction-grid>button:hover,.construction-grid>button.selected{border-color:#d4b65d}.construction-grid .l12-card-image{width:100%;height:auto;aspect-ratio:5/7}.construction-grid strong{position:absolute;right:7px;top:7px;padding:3px 5px;background:#080b0de8;color:#f1d376}.construction-grid span,.construction-grid small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.construction-grid span{font-size:14px;font-weight:900}.construction-grid small{color:#6f7e83;font-size:14px}.construction-grid>p{grid-column:1/-1;color:#748087;text-align:center}
+.construction-browser{display:grid;min-height:0;gap:10px;color:#eee}.construction-browser>header{display:flex;align-items:end;justify-content:space-between;gap:12px}.construction-browser h3{margin:3px 0 0}.construction-browser header small{color:#d4b65d;font-size:14px;font-weight:900;letter-spacing:.14em}.construction-browser header>b{color:#92a0a4;font-size:14px}.construction-browser>nav{display:grid;grid-template-columns:minmax(150px,1fr) auto;gap:7px}.construction-filter-rail{display:grid;gap:8px}.construction-desktop-filters{display:grid;grid-template-columns:110px 120px;gap:7px}.construction-browser input,.construction-browser select,.construction-filter-rail input,.construction-filter-rail select{box-sizing:border-box;min-width:0;width:100%;padding:8px;border:1px solid #47545b;background:#080e13;color:#fff;font-size:14px}.construction-filter-fields{display:grid;gap:12px}.construction-filter-fields label{display:grid;gap:6px;color:#aeb8ba;font-size:12px;font-weight:900}.construction-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));align-content:start;gap:8px;overflow:visible}.construction-grid>button{position:relative;display:grid;min-width:0;gap:3px;padding:5px;border:1px solid #334149;background:#0b1217;color:#fff;text-align:left}.construction-grid>button:hover,.construction-grid>button.selected{border-color:#d4b65d}.construction-grid .l12-card-image{width:100%;height:auto;aspect-ratio:5/7}.construction-grid strong{position:absolute;right:7px;top:7px;padding:3px 5px;background:#080b0de8;color:#f1d376}.construction-grid span,.construction-grid small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.construction-grid span{font-size:14px;font-weight:900}.construction-grid small{color:#6f7e83;font-size:14px}.construction-grid>p{grid-column:1/-1;color:#748087;text-align:center}
 .construction-grid>button{grid-template-rows:auto minmax(2.8em,auto) auto;align-content:start}.construction-grid>button:hover,.construction-grid>button.selected{box-shadow:inset 0 0 0 1px rgba(212,182,93,.34)}.construction-grid .l12-card-image{box-sizing:border-box;border:1px solid rgba(224,214,184,.18);background:#070b0f}.construction-grid span,.construction-grid small{min-width:0;overflow-wrap:anywhere}.construction-grid span{overflow:visible;line-height:1.4;text-overflow:clip;white-space:normal}.construction-grid small{align-self:end}.construction-workspace>aside h4{overflow-wrap:anywhere}
 @media(max-width:700px){.construction-browser{overflow-x:clip}.construction-browser>header{align-items:start}.construction-browser>header>b{max-width:40%;text-align:right}.construction-browser>nav{grid-template-columns:minmax(0,1fr) auto}.construction-desktop-filters{display:none}.construction-grid{grid-template-columns:repeat(auto-fill,minmax(min(82px,28vw),1fr));gap:6px}.construction-grid>button{padding:4px}.construction-grid strong{right:4px;top:4px;padding:2px 4px}.construction-grid span{font-size:12px}.construction-grid small{font-size:11px}}
 .construction-grid small{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

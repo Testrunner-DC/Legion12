@@ -44,10 +44,13 @@ public sealed partial class L12PlatformStore
                 ON account_decks(account_id,updated_utc DESC);
             CREATE TABLE IF NOT EXISTS published_decks (
                 publication_id TEXT PRIMARY KEY,
+                public_code TEXT,
                 owner_id TEXT NOT NULL,
                 name TEXT NOT NULL,
                 current_version INTEGER NOT NULL,
                 current_payload_hash TEXT NOT NULL REFERENCES deck_payloads(payload_hash),
+                alternate_art_selections_json TEXT NOT NULL DEFAULT '{}',
+                alternate_art_copies_json TEXT NOT NULL DEFAULT '{}',
                 views INTEGER NOT NULL DEFAULT 0 CHECK(views >= 0),
                 copies INTEGER NOT NULL DEFAULT 0 CHECK(copies >= 0),
                 created_utc TEXT NOT NULL,
@@ -108,7 +111,19 @@ public sealed partial class L12PlatformStore
         EnsureDeckColumn(connection, "account_decks", "bench_cards_json", "TEXT NOT NULL DEFAULT '[]'");
         EnsureDeckColumn(connection, "account_decks", "publication_id", "TEXT");
         EnsureDeckColumn(connection, "account_decks", "publication_version", "INTEGER");
+        EnsureDeckColumn(connection, "published_decks", "public_code", "TEXT");
+        EnsureDeckColumn(connection, "published_decks", "alternate_art_selections_json", "TEXT NOT NULL DEFAULT '{}'");
+        EnsureDeckColumn(connection, "published_decks", "alternate_art_copies_json", "TEXT NOT NULL DEFAULT '{}'");
         EnsureDeckColumn(connection, "published_deck_versions", "name", "TEXT NOT NULL DEFAULT ''");
+        BackfillPublicDeckCodes(connection);
+        using (var publicCodeIndex = connection.CreateCommand())
+        {
+            publicCodeIndex.CommandText = """
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_published_decks_public_code
+                    ON published_decks(public_code COLLATE NOCASE) WHERE public_code IS NOT NULL;
+                """;
+            publicCodeIndex.ExecuteNonQuery();
+        }
         using var backfill = connection.CreateCommand();
         backfill.CommandText = """
             UPDATE published_deck_versions
@@ -129,6 +144,32 @@ public sealed partial class L12PlatformStore
         using var alter = connection.CreateCommand();
         alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {declaration};";
         alter.ExecuteNonQuery();
+    }
+
+    private static void BackfillPublicDeckCodes(SqliteConnection connection)
+    {
+        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var missing = new List<string>();
+        using (var query = connection.CreateCommand())
+        {
+            query.CommandText = "SELECT publication_id,public_code FROM published_decks;";
+            using var reader = query.ExecuteReader();
+            while (reader.Read())
+            {
+                if (reader.IsDBNull(1) || string.IsNullOrWhiteSpace(reader.GetString(1))) missing.Add(reader.GetString(0));
+                else if (!existing.Add(reader.GetString(1))) throw new InvalidDataException("公开牌库短码重复");
+            }
+        }
+        foreach (var publicationId in missing)
+        {
+            var code = CreateUniquePublicDeckCode(existing);
+            existing.Add(code);
+            using var update = connection.CreateCommand();
+            update.CommandText = "UPDATE published_decks SET public_code=$code WHERE publication_id=$id;";
+            update.Parameters.AddWithValue("$code", code);
+            update.Parameters.AddWithValue("$id", publicationId);
+            update.ExecuteNonQuery();
+        }
     }
 
     private void EnsureAndHydrateDeckDomainStorage(SqliteConnection connection, DataFile data)
@@ -304,19 +345,25 @@ public sealed partial class L12PlatformStore
             {
                 command.Transaction = transaction;
                 command.CommandText = """
-                    INSERT INTO published_decks(publication_id,owner_id,name,current_version,current_payload_hash,
-                        views,copies,created_utc,updated_utc,is_deleted)
-                    VALUES($id,$owner,$name,$version,$payload,$views,$copies,$created,$updated,0)
+                    INSERT INTO published_decks(publication_id,public_code,owner_id,name,current_version,current_payload_hash,
+                        alternate_art_selections_json,alternate_art_copies_json,views,copies,created_utc,updated_utc,is_deleted)
+                    VALUES($id,$code,$owner,$name,$version,$payload,$selections,$artCopies,$views,$copies,$created,$updated,0)
                     ON CONFLICT(publication_id) DO UPDATE SET
-                        owner_id=excluded.owner_id,name=excluded.name,current_version=excluded.current_version,
-                        current_payload_hash=excluded.current_payload_hash,views=excluded.views,copies=excluded.copies,
+                        public_code=excluded.public_code,owner_id=excluded.owner_id,name=excluded.name,current_version=excluded.current_version,
+                        current_payload_hash=excluded.current_payload_hash,
+                        alternate_art_selections_json=excluded.alternate_art_selections_json,
+                        alternate_art_copies_json=excluded.alternate_art_copies_json,
+                        views=excluded.views,copies=excluded.copies,
                         updated_utc=excluded.updated_utc,is_deleted=0;
                     """;
                 command.Parameters.AddWithValue("$id", deck.Id);
+                command.Parameters.AddWithValue("$code", deck.PublicCode);
                 command.Parameters.AddWithValue("$owner", deck.OwnerId);
                 command.Parameters.AddWithValue("$name", deck.Name);
                 command.Parameters.AddWithValue("$version", version);
                 command.Parameters.AddWithValue("$payload", payload.Hash);
+                command.Parameters.AddWithValue("$selections", JsonSerializer.Serialize(deck.AlternateArtSelections));
+                command.Parameters.AddWithValue("$artCopies", JsonSerializer.Serialize(deck.AlternateArtCopies));
                 command.Parameters.AddWithValue("$views", Math.Max(0, deck.Views));
                 command.Parameters.AddWithValue("$copies", Math.Max(0, deck.Copies));
                 command.Parameters.AddWithValue("$created", deck.CreatedAt.ToString("O"));
@@ -570,23 +617,27 @@ public sealed partial class L12PlatformStore
         using (var command = connection.CreateCommand())
         {
             command.CommandText = """
-                SELECT publication_id,owner_id,name,current_payload_hash,views,copies,created_utc,updated_utc,current_version
+                SELECT publication_id,public_code,owner_id,name,current_payload_hash,
+                       alternate_art_selections_json,alternate_art_copies_json,
+                       views,copies,created_utc,updated_utc,current_version
                 FROM published_decks WHERE is_deleted=0 ORDER BY updated_utc DESC;
                 """;
             using var reader = command.ExecuteReader();
             while (reader.Read())
             {
-                if (!payloads.TryGetValue(reader.GetString(3), out var payload))
+                if (!payloads.TryGetValue(reader.GetString(4), out var payload))
                     throw new InvalidDataException("公开牌库引用了不存在的构筑正文");
                 data.PublishedDecks.Add(new PublishedDeckRow
                 {
-                    Id = reader.GetString(0), OwnerId = reader.GetString(1), Name = reader.GetString(2),
+                    Id = reader.GetString(0), PublicCode = reader.GetString(1), OwnerId = reader.GetString(2), Name = reader.GetString(3),
                     MasterId = payload.MasterId, CardIds = payload.MainCards.ToList(),
                     MoraleIds = payload.MoraleCards.ToList(), SpecialIds = payload.SpecialCards.ToList(),
-                    Views = reader.GetInt32(4), Copies = reader.GetInt32(5),
-                    CreatedAt = DateTimeOffset.Parse(reader.GetString(6)),
-                    UpdatedAt = DateTimeOffset.Parse(reader.GetString(7)),
-                    Version = reader.GetInt32(8),
+                    AlternateArtSelections = DeserializeDictionary(reader.GetString(5)),
+                    AlternateArtCopies = DeserializeDictionaryOfLists(reader.GetString(6)),
+                    Views = reader.GetInt32(7), Copies = reader.GetInt32(8),
+                    CreatedAt = DateTimeOffset.Parse(reader.GetString(9)),
+                    UpdatedAt = DateTimeOffset.Parse(reader.GetString(10)),
+                    Version = reader.GetInt32(11),
                     LikedByAccountIds = likes.GetValueOrDefault(reader.GetString(0)) ?? [],
                 });
             }

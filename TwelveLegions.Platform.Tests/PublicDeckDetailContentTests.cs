@@ -38,17 +38,17 @@ public sealed class PublicDeckDetailContentTests
             using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
 
             var body = Content("接口保存", MasterId(catalog, "master"));
-            using (var anonymous = await client.PutAsJsonAsync($"/api/public-decks/{published.Id}/content", body))
+            using (var anonymous = await client.PutAsJsonAsync($"/api/public-decks/{published.PublicCode}/content", body))
                 Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
             using (var forbiddenRequest = new HttpRequestMessage(HttpMethod.Put,
-                       $"/api/public-decks/{published.Id}/content") { Content = JsonContent.Create(body) })
+                       $"/api/public-decks/{published.PublicCode}/content") { Content = JsonContent.Create(body) })
             {
                 forbiddenRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", otherLogin.Token);
                 using var forbidden = await client.SendAsync(forbiddenRequest);
                 Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
             }
             using (var ownerRequest = new HttpRequestMessage(HttpMethod.Put,
-                       $"/api/public-decks/{published.Id}/content") { Content = JsonContent.Create(body) })
+                       $"/api/public-decks/{published.PublicCode}/content") { Content = JsonContent.Create(body) })
             {
                 ownerRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ownerLogin.Token);
                 using var saved = await client.SendAsync(ownerRequest);

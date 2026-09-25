@@ -228,7 +228,7 @@ public sealed class PublicDeckMatchBindingTests
         {
             await server.StartAsync(0);
             using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
-            var anonymousJson = await client.GetStringAsync($"/api/public-decks/{published.Id}");
+            var anonymousJson = await client.GetStringAsync($"/api/public-decks/{published.PublicCode}");
             var anonymous = JsonSerializer.Deserialize<L12PublishedDeckView>(anonymousJson,
                 new JsonSerializerOptions(JsonSerializerDefaults.Web));
             Assert.Equal(3, anonymous!.Details!.MatchStatistics.Games);
@@ -236,7 +236,7 @@ public sealed class PublicDeckMatchBindingTests
                 AssertPublicStatisticsAreAnonymous(document.RootElement.GetProperty("details")
                     .GetProperty("matchStatistics").GetRawText());
             client.DefaultRequestHeaders.Authorization = new("Bearer", owner.Token);
-            using var update = await client.PutAsJsonAsync($"/api/public-decks/{published.Id}/content",
+            using var update = await client.PutAsJsonAsync($"/api/public-decks/{published.PublicCode}/content",
                 new L12PublicDeckContentInput(new("指南", "", "", "", ""), []));
             update.EnsureSuccessStatusCode();
             var updatedJson = await update.Content.ReadAsStringAsync();
@@ -247,10 +247,10 @@ public sealed class PublicDeckMatchBindingTests
             var admin = store.Login("Admin", "L12master").Account!;
             store.SetAccountDisabled(admin, opponent.Id, true, "测试统计排除", new("disable-bind"), true);
             Assert.Equal(0, (await client.GetFromJsonAsync<L12PublishedDeckView>(
-                $"/api/public-decks/{published.Id}"))!.Details!.MatchStatistics.Games);
+                $"/api/public-decks/{published.PublicCode}"))!.Details!.MatchStatistics.Games);
             store.SetAccountDisabled(admin, opponent.Id, false, "测试恢复统计", new("restore-bind"), true);
             Assert.Equal(3, (await client.GetFromJsonAsync<L12PublishedDeckView>(
-                $"/api/public-decks/{published.Id}"))!.Details!.MatchStatistics.Games);
+                $"/api/public-decks/{published.PublicCode}"))!.Details!.MatchStatistics.Games);
         }
         finally { await server.StopAsync(); Environment.SetEnvironmentVariable("L12_LISTEN_HOST", host); }
     }

@@ -53,7 +53,7 @@ export interface FriendOverview {
   friends: PlatformFriend[]; requests: PlatformFriend[]; blocked: PlatformFriend[]
 }
 export interface PublishedDeck {
-  id: string; ownerId: string; author: string; deck: SavedL12Deck; views: number; likes: number; copies: number; liked: boolean
+  id: string; publicCode?: string; ownerId: string; author: string; deck: SavedL12Deck; views: number; likes: number; copies: number; liked: boolean
   createdAt: string; updatedAt: string; seasonCompliant?: boolean; seasonComplianceReason?: string; official?: boolean
   details?: PublicDeckDetails
 }

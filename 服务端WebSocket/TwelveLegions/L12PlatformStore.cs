@@ -28,7 +28,7 @@ public sealed record L12AccountDeckView(string Name, string MasterId, IReadOnlyL
     IReadOnlyDictionary<string, string>? AlternateArtSelections = null,
     IReadOnlyDictionary<string, IReadOnlyList<string>>? AlternateArtCopies = null,
     IReadOnlyList<string>? BenchIds = null, string? PublicationId = null, int? PublicationVersion = null);
-public sealed record L12PublishedDeckView(string Id, string OwnerId, string Author, L12AccountDeckView Deck,
+public sealed record L12PublishedDeckView(string Id, string PublicCode, string OwnerId, string Author, L12AccountDeckView Deck,
     int Views, int Likes, int Copies, bool Liked, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
     bool SeasonCompliant = true, string? SeasonComplianceReason = null,
     L12PublicDeckDetailsView? Details = null);
@@ -84,6 +84,9 @@ public sealed record L12EffectReviewView(string CardId, string? AbilityId, strin
 
 public sealed partial class L12PlatformStore
 {
+    private const string PublicDeckCodeAlphabet = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
+    private const int PublicDeckCodeLength = 12;
+
     private sealed class AccountRow
     {
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -253,12 +256,15 @@ public sealed partial class L12PlatformStore
     {
         public int Version { get; set; }
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string PublicCode { get; set; } = string.Empty;
         public string OwnerId { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string MasterId { get; set; } = string.Empty;
         public List<string> CardIds { get; set; } = [];
         public List<string> MoraleIds { get; set; } = [];
         public List<string> SpecialIds { get; set; } = [];
+        public Dictionary<string, string> AlternateArtSelections { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, List<string>> AlternateArtCopies { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public List<string> LikedByAccountIds { get; set; } = [];
         public int Views { get; set; }
         public int Copies { get; set; }
@@ -933,11 +939,52 @@ public sealed partial class L12PlatformStore
             .Select(row => ToView(row, viewerAccountId)).ToArray();
     }
 
+    private PublishedDeckRow? FindPublishedDeck(string? reference)
+    {
+        var value = reference?.Trim();
+        if (string.IsNullOrEmpty(value)) return null;
+        var byId = _data.PublishedDecks.FirstOrDefault(item => item.Id == value);
+        if (byId is not null) return byId;
+        var code = value.Replace("-", string.Empty, StringComparison.Ordinal).ToUpperInvariant();
+        return code.Length == PublicDeckCodeLength && code.All(PublicDeckCodeAlphabet.Contains)
+            ? _data.PublishedDecks.FirstOrDefault(item => string.Equals(item.PublicCode, code,
+                StringComparison.OrdinalIgnoreCase))
+            : null;
+    }
+
+    public L12PublishedDeckView? PublishedDeckByPublicCode(string publicCode, string? viewerAccountId)
+    {
+        lock (_gate)
+        {
+            var code = publicCode.Trim().Replace("-", string.Empty, StringComparison.Ordinal).ToUpperInvariant();
+            if (code.Length != PublicDeckCodeLength || !code.All(PublicDeckCodeAlphabet.Contains)) return null;
+            var row = _data.PublishedDecks.FirstOrDefault(item => string.Equals(item.PublicCode, code,
+                StringComparison.OrdinalIgnoreCase));
+            return row is null ? null : ToView(row, viewerAccountId);
+        }
+    }
+
+    private static string CreateUniquePublicDeckCode(IEnumerable<string> existing)
+    {
+        var used = existing.Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.ToUpperInvariant()).ToHashSet(StringComparer.Ordinal);
+        for (var attempt = 0; attempt < 64; attempt++)
+        {
+            var code = string.Create(PublicDeckCodeLength, 0, static (span, _) =>
+            {
+                for (var index = 0; index < span.Length; index++)
+                    span[index] = PublicDeckCodeAlphabet[RandomNumberGenerator.GetInt32(PublicDeckCodeAlphabet.Length)];
+            });
+            if (used.Add(code)) return code;
+        }
+        throw new InvalidOperationException("无法分配不重复的公开牌库短码");
+    }
+
     public L12PublishedDeckView? PublishedDeck(string publicationId, string? viewerAccountId)
     {
         lock (_gate)
         {
-            var row = _data.PublishedDecks.FirstOrDefault(item => item.Id == publicationId);
+            var row = FindPublishedDeck(publicationId);
             return row is null ? null : ToView(row, viewerAccountId);
         }
     }
@@ -946,14 +993,19 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
-            var row = string.IsNullOrWhiteSpace(publicationId) ? null
-                : _data.PublishedDecks.FirstOrDefault(item => item.Id == publicationId && item.OwnerId == accountId);
+            var row = string.IsNullOrWhiteSpace(publicationId) ? null : FindPublishedDeck(publicationId);
+            if (row is not null && row.OwnerId != accountId) row = null;
             if (!string.IsNullOrWhiteSpace(publicationId) && row is null) return null;
             row ??= _data.PublishedDecks.FirstOrDefault(item => item.OwnerId == accountId
                 && string.Equals(item.Name, deck.Name, StringComparison.OrdinalIgnoreCase));
             if (row is null)
             {
-                row = new PublishedDeckRow { OwnerId = accountId, CreatedAt = DateTimeOffset.UtcNow };
+                row = new PublishedDeckRow
+                {
+                    OwnerId = accountId,
+                    PublicCode = CreateUniquePublicDeckCode(_data.PublishedDecks.Select(item => item.PublicCode)),
+                    CreatedAt = DateTimeOffset.UtcNow,
+                };
                 _data.PublishedDecks.Add(row);
             }
             row.Name = deck.Name;
@@ -961,6 +1013,8 @@ public sealed partial class L12PlatformStore
             row.CardIds = deck.CardIds.ToList();
             row.MoraleIds = deck.MoraleIds.ToList();
             row.SpecialIds = deck.SpecialIds.ToList();
+            row.AlternateArtSelections = SanitizeOwnedAlternateArtSelections(accountId, deck.AlternateArtSelections);
+            row.AlternateArtCopies = SanitizeOwnedAlternateArtCopies(accountId, deck.CardIds, deck.AlternateArtCopies);
             row.UpdatedAt = DateTimeOffset.UtcNow;
             Save();
             return ToView(row, accountId);
@@ -971,7 +1025,8 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
-            var removed = _data.PublishedDecks.RemoveAll(row => row.Id == publicationId && row.OwnerId == accountId) > 0;
+            var target = FindPublishedDeck(publicationId);
+            var removed = target is not null && target.OwnerId == accountId && _data.PublishedDecks.Remove(target);
             if (removed)
             {
                 Save();
@@ -984,9 +1039,9 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
-            var row = _data.PublishedDecks.FirstOrDefault(item => item.Id == publicationId);
+            var row = FindPublishedDeck(publicationId);
             if (row is null) return null;
-            var liked = ToggleStoredPublishedDeckLike(accountId, publicationId);
+            var liked = ToggleStoredPublishedDeckLike(accountId, row.Id);
             if (liked)
             {
                 if (!row.LikedByAccountIds.Contains(accountId)) row.LikedByAccountIds.Add(accountId);
@@ -1000,9 +1055,9 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
-            var row = _data.PublishedDecks.FirstOrDefault(item => item.Id == publicationId);
+            var row = FindPublishedDeck(publicationId);
             if (row is null) return null;
-            row.Copies = IncrementStoredPublishedDeckCounter(publicationId, "copies");
+            row.Copies = IncrementStoredPublishedDeckCounter(row.Id, "copies");
             return ToView(row, viewerAccountId);
         }
     }
@@ -1011,9 +1066,9 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
-            var row = _data.PublishedDecks.FirstOrDefault(item => item.Id == publicationId);
+            var row = FindPublishedDeck(publicationId);
             if (row is null) return null;
-            row.Views = IncrementStoredPublishedDeckCounter(publicationId, "views");
+            row.Views = IncrementStoredPublishedDeckCounter(row.Id, "views");
             return ToView(row, viewerAccountId);
         }
     }
@@ -1594,7 +1649,7 @@ public sealed partial class L12PlatformStore
             row.SpecialIds.ToArray(), row.UpdatedAt,
             PublicationId: viewerAccountId == row.OwnerId ? row.Id : null,
             PublicationVersion: viewerAccountId == row.OwnerId ? row.Version : null);
-        return new L12PublishedDeckView(row.Id, row.OwnerId, author, deck, row.Views, row.LikedByAccountIds.Count, row.Copies,
+        return new L12PublishedDeckView(row.Id, row.PublicCode, row.OwnerId, author, deck, row.Views, row.LikedByAccountIds.Count, row.Copies,
             viewerAccountId is not null && row.LikedByAccountIds.Contains(viewerAccountId), row.CreatedAt, row.UpdatedAt);
     }
     private static L12BugReportView ToView(BugRow row) => new(row.Id, row.ReporterId, row.ReporterName, row.Title, row.Description,

@@ -147,8 +147,17 @@ public sealed class PublicDeckAndLeaderboardVisibilityTests
             var banned = Assert.Single(all.AsArray(), row => row!["id"]!.GetValue<string>() == copies.Id)!;
             Assert.False(banned["seasonCompliant"]!.GetValue<bool>());
             Assert.Contains("本赛季禁用", banned["seasonComplianceReason"]!.GetValue<string>());
-            var direct = await Json(client, Get($"/api/public-decks/{copies.Id}"));
+            var direct = await Json(client, Get($"/api/public-decks/{copies.PublicCode}"));
             Assert.Equal(copies.Id, direct["id"]!.GetValue<string>());
+            var publicCode = direct["publicCode"]!.GetValue<string>();
+            Assert.Equal(12, publicCode.Length);
+            var shortDirect = await Json(client, Get($"/api/public-decks/{publicCode.ToLowerInvariant()}"));
+            Assert.Equal(copies.Id, shortDirect["id"]!.GetValue<string>());
+            Assert.Equal(publicCode, shortDirect["publicCode"]!.GetValue<string>());
+            using (var retiredUuidRoute = await client.GetAsync($"/api/public-decks/{copies.Id}"))
+                Assert.Equal(HttpStatusCode.NotFound, retiredUuidRoute.StatusCode);
+            using (var retiredUuidMutation = await client.PostAsync($"/api/public-decks/{copies.Id}/view", null))
+                Assert.Equal(HttpStatusCode.NotFound, retiredUuidMutation.StatusCode);
             Assert.Equal("最多复制牌库", direct["deck"]!["name"]!.GetValue<string>());
             Assert.False(direct["seasonCompliant"]!.GetValue<bool>());
             using (var missing = await client.GetAsync("/api/public-decks/not-found"))

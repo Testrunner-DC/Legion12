@@ -8,7 +8,7 @@ import DeckProfile from '@/l12/DeckProfile.vue'
 import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
 import MobileFilterSheet from './MobileFilterSheet.vue'
 import { useActionGate } from '@/l12/useActionGate'
-import { matchesPublishedDeckReference } from './publicDeckEntry'
+import { matchesPublishedDeckReference, publicDeckRouteReference } from './publicDeckEntry'
 
 const tab = ref<'mine' | 'plaza'>('mine')
 const pageRoot = ref<HTMLElement | null>(null)
@@ -158,7 +158,7 @@ async function copyToMine(entry: PublishedDeck) {
         notice.value = `已复制《${confirmed.name}》到我的牌库`
       }
       if (!entry.official) {
-        const updated = await publicDeckApi.recordCopy(entry.id).catch(() => null)
+        const updated = await publicDeckApi.recordCopy(publicDeckRouteReference(entry)).catch(() => null)
         if (updated && accountId === platformState.account?.id) updatePublished(updated)
       }
     } catch (error) {
@@ -202,7 +202,7 @@ async function duplicateMine(deck: SavedL12Deck) {
 }
 function openDeck(entry: PublishedDeck) {
   sessionStorage.setItem(`l12:deck-library:scroll:${route.fullPath}`, String(listScrollHost()?.scrollTop ?? window.scrollY))
-  void router.push({ name: 'public-deck-detail', params: { deckId: entry.id }, query: { from: route.fullPath } })
+  void router.push({ name: 'public-deck-detail', params: { deckId: publicDeckRouteReference(entry) }, query: { from: route.fullPath } })
 }
 function listScrollHost(): HTMLElement | null {
   return pageRoot.value?.closest<HTMLElement>('.site-content') ?? document.scrollingElement as HTMLElement | null
@@ -226,7 +226,7 @@ async function toggleLike(entry: PublishedDeck) {
   const accountId = platformState.account.id
   await runAction(publicDeckActionKey(entry.id, accountId), async () => {
     try {
-      const updated = await publicDeckApi.toggleLike(entry.id)
+      const updated = await publicDeckApi.toggleLike(publicDeckRouteReference(entry))
       if (accountId === platformState.account?.id) updatePublished(updated)
     }
     catch (error) {
@@ -247,7 +247,7 @@ async function publishDeck() {
       await saveDeck({ ...deck, publicationId: entry.deck.publicationId, publicationVersion: entry.deck.publicationVersion })
       saved.value = loadSavedDecks()
       const hasContent = Object.values(publishGuide.value).some(value => value.trim()) || publishMatchups.value.length > 0
-      if (hasContent) entry.details = await publicDeckApi.updateContent(entry.id, publishGuide.value, publishMatchups.value)
+      if (hasContent) entry.details = await publicDeckApi.updateContent(publicDeckRouteReference(entry), publishGuide.value, publishMatchups.value)
       if (published.value.some(item => item.id === entry.id)) updatePublished(entry)
       else published.value.push(entry)
       showPublish.value = false; tab.value = 'plaza'; notice.value = hasContent ? '牌库与公开内容已同步发布' : '牌库已公开到公开牌库'
@@ -259,7 +259,7 @@ async function editPublished(entry: PublishedDeck) {
   try {
     const confirmed = await saveDeck(deck)
     saved.value = loadSavedDecks()
-    await router.push(editorLink(confirmed.name, entry.id))
+    await router.push(editorLink(confirmed.name, publicDeckRouteReference(entry)))
   } catch (error) { notice.value = error instanceof Error ? error.message : '牌库保存失败' }
 }
 async function deletePublished(entry: PublishedDeck) {
@@ -267,7 +267,7 @@ async function deletePublished(entry: PublishedDeck) {
   const accountId = platformState.account?.id
   await runAction(publicDeckActionKey(entry.id, accountId), async () => {
     try {
-      await publicDeckApi.delete(entry.id)
+      await publicDeckApi.delete(publicDeckRouteReference(entry))
       if (accountId === platformState.account?.id) {
         published.value = published.value.filter(item => item.id !== entry.id)
         notice.value = `已从公开牌库删除《${entry.deck.name}》`
@@ -285,15 +285,24 @@ function publicDeckUrl(id: string) {
 async function verifiedPublicDeckUrl(deck: SavedL12Deck) {
   const id = deck.publicationId?.trim()
   if (!id || !deck.publicationVersion) return ''
+  const candidate = published.value.find(entry => !entry.official && entry.id === id)
+  if (!candidate?.publicCode) return ''
   try {
-    const publishedDeck = await publicDeckApi.get(id)
-    return matchesPublishedDeckReference(deck, publishedDeck, platformState.account?.id) ? publicDeckUrl(id) : ''
+    const publishedDeck = await publicDeckApi.get(publicDeckRouteReference(candidate))
+    return matchesPublishedDeckReference(deck, publishedDeck, platformState.account?.id)
+      ? publicDeckUrl(publicDeckRouteReference(publishedDeck)) : ''
   } catch { return '' }
 }
 async function previewImage(deck: SavedL12Deck) {
   if (imagePreview.value) URL.revokeObjectURL(imagePreview.value.url)
   const publicUrl = await verifiedPublicDeckUrl(deck)
-  const blob = await createDeckImageBlob(deck, catalog.value, { publicUrl, alternateArts: ownedAlternateArts.value })
+  const presentationDeck = publicUrl
+    ? { ...deck, alternateArtSelections: {}, alternateArtCopies: {} }
+    : deck
+  const blob = await createDeckImageBlob(presentationDeck, catalog.value, {
+    publicUrl,
+    alternateArts: publicUrl ? [] : ownedAlternateArts.value,
+  })
   imagePreview.value = { deck, blob, url: URL.createObjectURL(blob) }
 }
 function closeImagePreview() {
@@ -375,9 +384,9 @@ watch(() => route.query, restoreFiltersFromRoute, { deep: true })
     <p v-if="notice" class="deck-notice">{{ notice }}</p>
 
     <template v-if="tab === 'mine'">
-      <section class="import-panel"><input v-model="importCode" placeholder="粘贴 L12D1 开头的牌库码"/><button :disabled="!importCode.trim()" @click="importFromCode">导入牌库码</button><button :disabled="!mine.length" @click="showPublish = true">公开牌库</button></section>
+      <section class="import-panel"><input v-model="importCode" placeholder="粘贴 L12D2 开头的牌库码"/><button :disabled="!importCode.trim()" @click="importFromCode">导入牌库码</button><button :disabled="!mine.length" @click="showPublish = true">公开牌库</button></section>
       <section v-if="mine.length" class="mine-toolbar"><input v-model="mineQuery" type="search" placeholder="按牌库名称搜索"/><select v-model="mineHomeCityFilter" aria-label="按主宰筛选"><option value="all">全部主宰</option><option v-for="city in homeCities" :key="city.id" :value="city.id">{{ city.nameZh }}</option></select><select v-model="mineLegalFilter" aria-label="按合法性筛选"><option value="all">全部合法性</option><option value="legal">构筑合法</option><option value="illegal">构筑不合法</option></select><select v-model="mineSort" aria-label="我的牌库排序"><option value="latest">最近更新</option><option value="name">按名称</option></select><span>{{ filteredMine.length }} 个结果</span><button v-if="mineFilterActive" @click="resetMineFilters">清除筛选</button></section>
-      <section v-if="filteredMine.length" class="mine-grid"><article v-for="deck in filteredMine" :key="deck.name"><DeckProfile :master-id="deck.masterId" :master-name="byId.get(deck.masterId)?.nameZh" :fallback-url="byId.get(deck.masterId)?.imageUrl" :name="deck.name" :meta="`${deckCountSummary(deck.cardIds, byId).label} 张主牌 · ${deck.moraleIds.length} 张士气`"/><small v-if="publishedCopyFor(deck)" class="mine-public-state">已公开 · 删除本地牌库不会删除公开版本</small><div class="deck-card-actions"><router-link :to="editorLink(deck.name, publishedCopyFor(deck)?.id)">编辑</router-link><details :open="desktopActions"><summary>更多操作</summary><div><button @click="duplicateMine(deck)">复制牌库</button><button @click="copyCode(deck)">复制牌库码</button><button @click="previewImage(deck)">生成牌库图</button><button class="danger" :disabled="deletingMine === deck.name" @click="deleteMine(deck)">{{ deletingMine === deck.name ? '删除中…' : '删除' }}</button></div></details></div></article></section>
+      <section v-if="filteredMine.length" class="mine-grid"><article v-for="deck in filteredMine" :key="deck.name"><DeckProfile :master-id="deck.masterId" :master-name="byId.get(deck.masterId)?.nameZh" :fallback-url="byId.get(deck.masterId)?.imageUrl" :name="deck.name" :meta="`${deckCountSummary(deck.cardIds, byId).label} 张主牌 · ${deck.moraleIds.length} 张士气`"/><small v-if="publishedCopyFor(deck)" class="mine-public-state">已公开 · 删除本地牌库不会删除公开版本</small><div class="deck-card-actions"><router-link :to="editorLink(deck.name, publishedCopyFor(deck)?.publicCode)">编辑</router-link><details :open="desktopActions"><summary>更多操作</summary><div><button @click="duplicateMine(deck)">复制牌库</button><button @click="copyCode(deck)">复制牌库码</button><button @click="previewImage(deck)">生成牌库图</button><button class="danger" :disabled="deletingMine === deck.name" @click="deleteMine(deck)">{{ deletingMine === deck.name ? '删除中…' : '删除' }}</button></div></details></div></article></section>
       <div v-else-if="mine.length" class="empty-state"><b>没有符合筛选条件的牌库</b><p>调整名称、主宰或合法性筛选后再试。</p><button @click="resetMineFilters">清除筛选</button></div>
       <div v-else class="empty-state"><b>还没有自定义牌库</b><p>从编辑器新建牌库，或粘贴其他玩家分享的牌库码。</p><router-link :to="editorLink()">打开牌库编辑器</router-link></div>
     </template>

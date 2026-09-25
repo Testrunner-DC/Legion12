@@ -208,6 +208,55 @@ public sealed class DeckDomainStorageTests
     }
 
     [Fact]
+    public void PublishedDecksPersistAlternateArtForPlayButPublicViewUsesOriginalArt()
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards,
+                officialAlternateArts: catalog.OfficialAlternateArts);
+            var admin = new L12AccountView("test-admin", "测试管理员", "admin",
+                DateTimeOffset.UtcNow, false);
+            var owner = store.Register("tpubart", "password-123").Account!;
+            var art = store.AlternateArts().First(candidate => catalog.PresetDecks.Any(preset =>
+                preset.CardIds.Contains(candidate.BaseCardId, StringComparer.OrdinalIgnoreCase)));
+            store.GrantAlternateArt(admin, new L12AlternateArtGrantDraft(art.Id, owner.Username,
+                "manual", "published-storage-regression"));
+            var source = catalog.PresetDecks.First(preset =>
+                preset.CardIds.Contains(art.BaseCardId, StringComparer.OrdinalIgnoreCase));
+            var cardId = art.BaseCardId;
+            var deck = new L12PresetDeckDefinition
+            {
+                Name = "异画公开边界", MasterId = source.MasterId, CardIds = [.. source.CardIds],
+                MoraleIds = [.. source.MoraleIds], SpecialIds = [.. source.SpecialIds],
+                AlternateArtSelections = new Dictionary<string, string> { [cardId] = art.Id },
+                AlternateArtCopies = new Dictionary<string, List<string>> { [cardId] = [art.Id, ""] },
+            };
+
+            var published = store.PublishDeck(owner.Id, deck, null)!;
+            Assert.Null(published.Deck.AlternateArtSelections);
+            Assert.Null(published.Deck.AlternateArtCopies);
+
+            var reloaded = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards,
+                officialAlternateArts: catalog.OfficialAlternateArts);
+            var restored = Assert.Single(reloaded.PublishedDecks(owner.Id));
+            Assert.Null(restored.Deck.AlternateArtSelections);
+            Assert.Null(restored.Deck.AlternateArtCopies);
+
+            using var connection = Open(reloaded.TransactionalStoragePath);
+            var selections = Scalar(connection,
+                $"SELECT alternate_art_selections_json FROM published_decks WHERE publication_id='{published.Id}';");
+            var copies = Scalar(connection,
+                $"SELECT alternate_art_copies_json FROM published_decks WHERE publication_id='{published.Id}';");
+            Assert.Contains(art.Id, selections, StringComparison.Ordinal);
+            Assert.Contains(art.Id, copies, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public void PublicCountersAreAtomicAndDoNotRewritePlatformSnapshotOrMirror()
     {
         var root = TempRoot();

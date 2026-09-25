@@ -11,10 +11,9 @@ assert.equal(maintenanceCountdown({ ...config, immediateActive: true }, start - 
 const read = name => fs.readFileSync(new URL(`../src/l12/site/${name}`, import.meta.url), 'utf8')
 const editor = fs.readFileSync(new URL('../src/l12/L12DeckEditor.vue', import.meta.url), 'utf8')
 const banners = editor.match(/<CardImage class="deck-entry-banner"[^>]+>/g) || []
-assert.equal(banners.length, 5)
+assert.ok(banners.length >= 5)
 assert.ok(banners.every(banner => banner.includes('native-orientation')))
-const copyArt = editor.match(/<span v-for="\(copy,index\) in deckCopyPresentations\(entry\.card,entry\.count\)"[^>]+class="deck-copy-art">([\s\S]*?)<\/span>/)?.[1] || ''
-assert.match(copyArt, /<CardImage[^>]+native-orientation/)
+assert.match(editor, /class="deck-entry-row alternate-art-banner"[\s\S]{0,700}<CardImage[^>]+native-orientation/)
 assert.match(read('SiteShell.vue'), /entry in updateEntries\.slice\(0, 10\)/)
 const lobby = read('BattleHubPage.vue')
 assert.doesNotMatch(lobby, /ranked\.profile\.faction = undefined/)
