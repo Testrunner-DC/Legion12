@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -123,8 +122,7 @@ internal static class EffectLifecycleCompletionMatrix
             .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
         var matrix = new CompletionMatrix(1, inventory.Abilities.Length, profileRows.Length,
             profileRows.Count(row => row.Complete), buckets, profileRows, "");
-        var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-            JsonSerializer.Serialize(matrix with { Fingerprint = "" }, JsonOptions)))).ToLowerInvariant();
+        var fingerprint = StableJsonFingerprint.Compute(matrix with { Fingerprint = "" }, JsonOptions);
         return matrix with { Fingerprint = fingerprint };
     }
 

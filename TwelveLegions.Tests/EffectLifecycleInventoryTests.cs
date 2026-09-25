@@ -1,5 +1,4 @@
 using System.Runtime.CompilerServices;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -89,8 +88,14 @@ public sealed class EffectLifecycleInventoryTests
                 gaps.Add("single-candidate-choice");
                 gaps.Add("multi-target-applicability");
             }
-            return new AbilityRow(card.CardId, card.Name, ability, entry, candidates, gaps.ToArray(),
-                evidence.Where(reference => reference.AbilityId == ability.AbilityId).ToArray(), profile);
+            return new AbilityRow(card.CardId, card.Name, ability, entry, candidates,
+                gaps.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray(),
+                evidence.Where(reference => reference.AbilityId == ability.AbilityId)
+                    .OrderBy(reference => reference.TestMethod, StringComparer.Ordinal)
+                    .ThenBy(reference => reference.CaseCardId, StringComparer.Ordinal)
+                    .ThenBy(reference => string.Join('\u001f', reference.Scopes), StringComparer.Ordinal)
+                    .ThenBy(reference => reference.Status, StringComparer.Ordinal)
+                    .ToArray(), profile);
         })).ToArray();
         return new Inventory(3, cards.Length,
             cards.Where(card => card.Abilities.Count == 0).Select(card => card.CardId).ToArray(), rows);
@@ -98,8 +103,7 @@ public sealed class EffectLifecycleInventoryTests
 
     internal static string Render(Inventory inventory)
     {
-        var fingerprint = Convert.ToHexString(SHA256.HashData(
-            Encoding.UTF8.GetBytes(JsonSerializer.Serialize(inventory, JsonOptions)))).ToLowerInvariant();
+        var fingerprint = StableJsonFingerprint.Compute(inventory, JsonOptions);
         var text = new StringBuilder();
         text.AppendLine("# 逐能力效果一致性台账（自动基线）").AppendLine();
         text.AppendLine("由 `scripts/export-l12-effect-lifecycle-inventory.ps1` 从实际 L12Catalog 生成；不要手工修改此表。");
