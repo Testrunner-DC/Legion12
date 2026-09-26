@@ -33,6 +33,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private readonly L12Catalog _catalog;
     private readonly int _cardCount;
     private readonly L12HttpPerformanceMonitor _httpPerformance = new();
+    private readonly Func<L12ServerStorageView> _storageSnapshot;
     private readonly ConcurrentDictionary<Guid, WebSocket> _sockets = new();
     private readonly ConcurrentDictionary<Guid, L12OutboundConnection> _outboundConnections = new();
     private readonly ConcurrentDictionary<Guid, L12SnapshotWireCodec> _snapshotCodecs = new();
@@ -60,7 +61,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         L12Catalog catalog, IL12ReleaseControlAdapter? releaseControl = null,
         string? rankedIntegrityHmacKey = null, TimeSpan? rankedClockWatchdogInterval = null,
         IL12ModianImportClient? modianImportClient = null,
-        TimeSpan? sandboxReplayMaintenanceInterval = null)
+        TimeSpan? sandboxReplayMaintenanceInterval = null,
+        Func<L12ServerStorageView>? storageSnapshot = null)
     {
         _rooms = rooms;
         _recorder = recorder;
@@ -76,6 +78,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _sandboxReplayMaintenanceInterval = sandboxReplayMaintenanceInterval is { } maintenanceInterval
                                             && maintenanceInterval > TimeSpan.Zero
             ? maintenanceInterval : TimeSpan.FromMinutes(5);
+        _storageSnapshot = storageSnapshot ?? (() => L12ServerStorageMonitor.Read());
         _catalog = catalog;
         _cardCount = catalog.Cards.Count;
         _platform.SessionsRevoked += HandlePlatformSessionsRevoked;
@@ -1852,48 +1855,78 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var pending = new List<L12AdminWorkbenchItemView>();
             var anomalies = new List<L12AdminWorkbenchItemView>();
             var recent = new List<L12AdminWorkbenchItemView>();
+            var unavailable = new List<string>();
+            void Capture(string id, string kind, string label, string path,
+                List<L12AdminWorkbenchItemView> target, Action read)
+            {
+                try { read(); }
+                catch (Exception error)
+                {
+                    unavailable.Add(id);
+                    LogAdminReadFailure(request, $"workbench.{id}", error);
+                    target.Add(new($"{id}-unavailable", kind, label,
+                        $"该摘要暂时不可用；关联 ID：{CorrelationId(request)}", path, "unavailable"));
+                }
+            }
             if (L12Authorization.HasPermission(account, L12Permission.AdminBugsRead))
             {
-                var openBugs = _platform.Bugs(null).Count(item => !string.Equals(item.Status, "closed",
-                    StringComparison.OrdinalIgnoreCase));
-                pending.Add(new("bugs", "bug", "Bug 闭环", openBugs == 0 ? "当前没有待处理 Bug" :
-                    $"{openBugs} 条需要确认、处理或验证", "/admin/users/bugs",
-                    openBugs == 0 ? "ok" : "attention", openBugs));
+                Capture("bugs", "bug", "Bug 闭环", "/admin/users/bugs", pending, () =>
+                {
+                    var openBugs = _platform.Bugs(null).Count(item => !string.Equals(item.Status, "closed",
+                        StringComparison.OrdinalIgnoreCase));
+                    pending.Add(new("bugs", "bug", "Bug 闭环", openBugs == 0 ? "当前没有待处理 Bug" :
+                        $"{openBugs} 条需要确认、处理或验证", "/admin/users/bugs",
+                        openBugs == 0 ? "ok" : "attention", openBugs));
+                });
             }
             if (L12Authorization.HasPermission(account, L12Permission.AdminAccountsRead))
             {
-                var renameCount = _platform.UsernameChangeRequests("pending").Count;
-                pending.Add(new("renames", "account", "改名审核", renameCount == 0 ? "当前没有待审核申请" :
-                    $"{renameCount} 条等待处理", "/admin/users/renames",
-                    renameCount == 0 ? "ok" : "attention", renameCount));
+                Capture("renames", "account", "改名审核", "/admin/users/renames", pending, () =>
+                {
+                    var renameCount = _platform.UsernameChangeRequests("pending").Count;
+                    pending.Add(new("renames", "account", "改名审核", renameCount == 0 ? "当前没有待审核申请" :
+                        $"{renameCount} 条等待处理", "/admin/users/renames",
+                        renameCount == 0 ? "ok" : "attention", renameCount));
+                });
             }
             if (L12Authorization.HasPermission(account, L12Permission.AdminRuntimeRead))
             {
-                var performance = _httpPerformance.Snapshot();
-                anomalies.Add(new("runtime", "runtime", "服务运行状态",
-                    performance.WithinBudget == false ? "请求性能超出预算，请检查运行状态" :
-                    $"{_rooms.RuntimeStats().ActiveGameCount} 场进行中",
-                    "/admin/system/releases", performance.WithinBudget == false ? "warning" : "ok"));
+                Capture("runtime", "runtime", "服务运行状态", "/admin/system/releases", anomalies, () =>
+                {
+                    var performance = _httpPerformance.Snapshot();
+                    anomalies.Add(new("runtime", "runtime", "服务运行状态",
+                        performance.WithinBudget == false ? "请求性能超出预算，请检查运行状态" :
+                        $"{_rooms.RuntimeStats().ActiveGameCount} 场进行中",
+                        "/admin/system/releases", performance.WithinBudget == false ? "warning" : "ok"));
+                });
             }
             if (L12Authorization.HasPermission(account, L12Permission.AdminSecurityRead))
             {
-                var storage = L12ServerStorageMonitor.Read();
-                anomalies.Add(new("storage", "storage", "存储容量", storage.Conclusion,
-                    "/admin/system/storage", storage.Health));
-                var security = _platform.SecurityStatus(account);
-                var alertCount = security.Alerts.Sum(item => item.Count);
-                if (alertCount > 0)
-                    anomalies.Add(new("security", "security", "安全告警", $"{alertCount} 项需要检查",
-                        "/admin/system/security", "warning", checked((int)Math.Min(int.MaxValue, alertCount))));
+                Capture("storage", "storage", "存储容量", "/admin/system/storage", anomalies, () =>
+                {
+                    var storage = _storageSnapshot();
+                    anomalies.Add(new("storage", "storage", "存储容量", storage.Conclusion,
+                        "/admin/system/storage", storage.Health));
+                });
+                Capture("security", "security", "安全告警", "/admin/system/security", anomalies, () =>
+                {
+                    var security = _platform.SecurityStatus(account);
+                    var alertCount = security.Alerts.Sum(item => (long)item.Count);
+                    if (alertCount > 0)
+                        anomalies.Add(new("security", "security", "安全告警", $"{alertCount} 项需要检查",
+                            "/admin/system/security", "warning", (int)Math.Min(int.MaxValue, alertCount)));
+                });
             }
             if (L12Authorization.HasPermission(account, L12Permission.AdminAuditRead))
             {
-                recent.AddRange(_platform.AdminAudit(limit: 6).Select(item => new L12AdminWorkbenchItemView(
-                    item.Id, item.Category, item.Action, $"{item.ActorName} · {item.Target}",
-                    "/admin/system/audit", item.Outcome is "failed" or "denied" ? "warning" : "neutral",
-                    OccurredAt: item.CreatedAt)));
+                Capture("audit", "audit", "最近活动", "/admin/system/audit", recent, () =>
+                    recent.AddRange(_platform.AdminAudit(limit: 6).Select(item => new L12AdminWorkbenchItemView(
+                        item.Id, item.Category, item.Action, $"{item.ActorName} · {item.Target}",
+                        "/admin/system/audit", item.Outcome is "failed" or "denied" ? "warning" : "neutral",
+                        OccurredAt: item.CreatedAt))));
             }
-            return Results.Ok(new L12AdminWorkbenchSummaryView(sampledAt, pending, anomalies, recent));
+            return Results.Ok(new L12AdminWorkbenchSummaryView(sampledAt, pending, anomalies, recent,
+                unavailable.Count > 0, unavailable));
         });
         _app.MapGet("/api/admin/runtime/status", (HttpRequest request) =>
         {
@@ -2599,7 +2632,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _app.MapGet("/api/admin/server-storage", (HttpRequest request) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminSecurityRead, out _, out var failure)) return failure;
-            return Results.Ok(L12ServerStorageMonitor.Read());
+            try { return Results.Ok(_storageSnapshot()); }
+            catch (Exception error)
+            {
+                LogAdminReadFailure(request, "server-storage", error);
+                return ApiError(request, "server_storage_unavailable",
+                    "服务器存储采样暂时不可用，请使用关联 ID 查询日志", StatusCodes.Status503ServiceUnavailable);
+            }
         });
         _app.MapPut("/api/admin/alternate-arts", (HttpRequest request, L12AlternateArtDraft draft) =>
         {
@@ -3585,6 +3624,10 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             request.HttpContext.Items[L12HttpPerformanceMonitor.ExpectedUnavailableItemName] = true;
         return Results.Json(new L12ApiError(code, message, CorrelationId(request)), statusCode: statusCode);
     }
+
+    private static void LogAdminReadFailure(HttpRequest request, string component, Exception error)
+        => Console.Error.WriteLine($"[{CorrelationId(request)}] admin read failed: component={component}, "
+            + $"errorType={error.GetType().FullName}");
 
     private static IResult SessionRevocationResponse(HttpRequest request, L12SessionRevocationResult result)
         => result.Found

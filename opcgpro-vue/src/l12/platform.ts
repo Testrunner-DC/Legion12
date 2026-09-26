@@ -252,10 +252,10 @@ export interface AlternateArtSearchPage { items: AlternateArt[]; total: number; 
 export interface AlternateArtGrantNotification { id: string; alternateArtId: string; displayName: string; artCode: string; baseCardId: string; baseCardName: string; reason: string; grantedAt: string; imageUrl: string; thumbnailUrl: string; cardImageId: string; builtIn: boolean }
 export interface AlternateArtProduct { id: string; name: string; active: boolean; createdAt: string; updatedAt: string }
 export interface AlternateArtRankedParticipantDispatchPreview { eligibleAccounts: number; alreadyGranted: number; toGrant: number; sourceReference: string; seasonId: string }
-export interface ServerStorageVolume { mountPoint: string; totalBytes: number; usedBytes: number; freeBytes: number }
-export interface ServerStorageCategory { id: string; label: string; path: string; bytes: number; available: boolean }
+export interface ServerStorageVolume { id: string; label: string; totalBytes: number; usedBytes: number; freeBytes: number }
+export interface ServerStorageCategory { id: string; label: string; bytes: number; available: boolean }
 export interface ServerStorageTrendPoint { observedAt: string; workingSetBytes: number; volumeUsedPercent: Record<string, number> }
-export interface ServerStorageStatus { observedAt: string; processId: number; workingSetBytes: number; volumes: ServerStorageVolume[]; categories: ServerStorageCategory[]; health: 'healthy'|'warning'|'critical'; conclusion: string; impact: string; recommendedAction: string; thresholds: { warningPercent: number; criticalPercent: number; source: string }; trend: ServerStorageTrendPoint[]; trendScope: 'current-process'; trendDescription: string }
+export interface ServerStorageStatus { observedAt: string; workingSetBytes: number; volumes: ServerStorageVolume[]; categories: ServerStorageCategory[]; health: 'healthy'|'warning'|'critical'|'unknown'; conclusion: string; impact: string; recommendedAction: string; thresholds: { warningPercent: number; criticalPercent: number; source: string }; trend: ServerStorageTrendPoint[]; trendScope: 'current-process'; trendDescription: string; sampleState: 'complete'|'partial'|'unavailable'; unavailableSourceCount: number }
 export interface AlternateArtGrant { id: string; accountId: string; username: string; alternateArtId: string; sourceKind: 'manual' | 'rank-reached' | 'season-final' | 'master-champion-season-final' | 'event' | 'ranked-participants'; sourceReference: string; grantedAt: string; revokedAt?: string }
 export interface AlternateArtAwardRule { id: string; alternateArtId: string; kind: 'rank-reached' | 'season-final' | 'master-champion-season-final' | 'event'; seasonId: string; eventId: string; minimumTierIndex: number; active: boolean; createdAt: string; updatedAt: string; masterId?: string }
 export interface AdminAnalyticsMetricCoverage {
@@ -523,10 +523,11 @@ export interface RuntimeStatus {
 }
 export interface AdminWorkbenchItem {
   id: string; kind: string; label: string; detail: string; path: string
-  severity: 'ok'|'neutral'|'attention'|'warning'|'critical'; count?: number; occurredAt?: string
+  severity: 'ok'|'neutral'|'attention'|'warning'|'critical'|'unavailable'; count?: number; occurredAt?: string
 }
 export interface AdminWorkbenchSummary {
   sampledAt: string; pending: AdminWorkbenchItem[]; anomalies: AdminWorkbenchItem[]; recentActivities: AdminWorkbenchItem[]
+  partial: boolean; unavailableSections: string[]
 }
 export interface AuditArchiveSegment {
   id: string; from: string; until: string; eventCount: number; sha256: string; createdAt: string

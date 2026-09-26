@@ -61,4 +61,6 @@ public sealed record L12AdminWorkbenchSummaryView(
     DateTimeOffset SampledAt,
     IReadOnlyList<L12AdminWorkbenchItemView> Pending,
     IReadOnlyList<L12AdminWorkbenchItemView> Anomalies,
-    IReadOnlyList<L12AdminWorkbenchItemView> RecentActivities);
+    IReadOnlyList<L12AdminWorkbenchItemView> RecentActivities,
+    bool Partial = false,
+    IReadOnlyList<string>? UnavailableSections = null);

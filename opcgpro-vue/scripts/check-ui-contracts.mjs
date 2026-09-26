@@ -1263,7 +1263,9 @@ const contracts = [
     && adminCardAnalytics.includes('adminApi.cardAnalytics({ ...query')
     && adminCardAnalytics.includes('adminApi.cardAnalyticsDetail(cardId, query)')
     && adminCardAnalytics.includes('request === detailRequest')
-    && adminCardAnalytics.includes('data-ui-contract="card-analytics-low-sample-warning"')
+    && adminCardAnalytics.includes(':data-low-sample="isLowSample(item)"')
+    && !adminCardAnalytics.includes('sample-contract')
+    && !adminCardAnalytics.includes('统计单位为')
     && adminCardAnalytics.includes("return '低样本，仅供参考'")
     && platform.includes("opponentMasterId?: string") && l12ServerSources.includes('OpponentMasterId'), '卡牌数据必须区分使用方/对方主宰，并让样本、入组率、基线与明细使用同一筛选，低样本必须明确警示'],
   [adminCardAnalytics.includes('参赛方 × 对局') && adminCardAnalytics.includes('同条件未携带基线')

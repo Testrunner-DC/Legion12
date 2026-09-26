@@ -56,16 +56,26 @@ try {
     return url.hostname === '127.0.0.1' ? route.continue() : route.abort()
   })
   await page.goto('http://127.0.0.1:' + server.httpServer.address().port + '/__batch302__')
-  await page.getByRole('button', { name: /从 GM 卡牌图鉴选择/ }).waitFor()
+  await page.getByRole('button', { name: /选择卡牌/ }).waitFor()
   assert.equal(await page.getByText('选择一张卡查看事实仪表盘').count(), 1, 'single-card view must not auto-select a list row')
+  assert.equal(await page.locator('.sample-contract').count(), 0, 'system-style analytics guidance must not occupy a persistent row')
+  assert.equal(await page.getByText(/统计单位为.*低于.*统计缓存/).count(), 0, 'implementation and cache guidance must not be shown as persistent copy')
+  const peerButtons = await page.locator('.module-tabs button').evaluateAll(buttons => buttons.map(button => ({
+    width: Math.round(button.getBoundingClientRect().width), height: Math.round(button.getBoundingClientRect().height),
+    align: getComputedStyle(button).alignItems, justify: getComputedStyle(button).justifyContent,
+    wrap: getComputedStyle(button).whiteSpace,
+  })))
+  assert.equal(new Set(peerButtons.map(button => button.width)).size, 1, 'peer tabs must have equal width')
+  assert.equal(new Set(peerButtons.map(button => button.height)).size, 1, 'peer tabs must have equal height')
+  assert.ok(peerButtons.every(button => button.align === 'center' && button.justify === 'center' && button.wrap === 'normal'), 'peer tabs must align and wrap consistently')
 
-  await page.getByRole('button', { name: /从 GM 卡牌图鉴选择/ }).click()
+  await page.getByRole('button', { name: /选择卡牌/ }).click()
   await page.getByRole('dialog', { name: '选择要分析的卡牌' }).waitFor()
-  await page.locator('.picker-card-actions').first().getByRole('button', { name: '选择', exact: true }).click()
+  await page.locator('.single-card-actions').first().getByRole('button', { name: '选择', exact: true }).click()
   await page.getByText('样本可靠性', { exact: true }).waitFor()
   await page.screenshot({ path: path.join(out, 'single-desktop.png'), fullPage: true })
 
-  const master = page.getByLabel('1. 使用方主宰')
+  const master = page.getByLabel('使用方主宰')
   await master.selectOption({ index: 1 })
   await page.getByText('选择一张卡查看事实仪表盘').waitFor()
   await page.getByRole('button', { name: '查询这张卡' }).click()
@@ -89,7 +99,7 @@ try {
   assert.equal(sevenDayCall.seasonId, '')
 
   await page.getByRole('button', { name: '卡牌数据清单', exact: true }).click()
-  await page.getByText('筛选、排序与分页均由服务端执行').waitFor()
+  await page.getByText('当前筛选结果').waitFor()
   await page.waitForFunction(() => window.listCalls.length >= 1)
   const firstListCall = await page.evaluate(() => window.listCalls.at(-1))
   assert.equal(firstListCall.page, 1)
@@ -105,6 +115,8 @@ try {
   await page.getByRole('button', { name: '单卡仪表盘', exact: true }).click()
   await page.getByRole('button', { name: '查询这张卡' }).click()
   await page.getByText('样本可靠性', { exact: true }).waitFor()
+  const rangeHeights = await page.locator('.range-filter button').evaluateAll(buttons => buttons.map(button => Math.round(button.getBoundingClientRect().height)))
+  assert.equal(new Set(rangeHeights).size, 1, 'time-range peer buttons must remain equal height when labels wrap')
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2)
   assert.equal(overflow, false, 'narrow single-card dashboard must not overflow the page')
   await page.screenshot({ path: path.join(out, 'single-narrow.png'), fullPage: true })

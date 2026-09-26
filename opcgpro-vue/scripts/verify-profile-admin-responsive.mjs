@@ -16,7 +16,7 @@ import {createApp,h} from 'vue'
 import {createMemoryHistory,createRouter,RouterView} from 'vue-router'
 import '/src/style.css'
 
-const permissions=['admin.accounts.read','admin.accounts.status.write','admin.sessions.read','admin.sessions.revoke','admin.bugs.read','admin.effects.read','admin.effects.review','admin.audit.read','admin.security.read','admin.runtime.read']
+const permissions=['admin.accounts.read','admin.accounts.status.write','admin.sessions.read','admin.sessions.revoke','admin.bugs.read','admin.effects.read','admin.effects.review','admin.audit.read','admin.security.read','admin.runtime.read','admin.analytics.read']
 localStorage.setItem('l12-auth-token','qa-token')
 localStorage.setItem('l12-account',JSON.stringify({id:'qa-admin',username:'移动端验收管理员',role:'admin',createdAt:'2026-09-21T00:00:00Z',publicHistory:true,permissions,permissionVersion:8}))
 const platform=await import('/src/l12/platform.ts')
@@ -60,8 +60,9 @@ platform.adminApi.effects=async()=>({items:[{cardId:'S01-02C1',name:'移动端�
 platform.adminApi.effectAtoms=async()=>[]
 platform.adminApi.sessions=async()=>platform.sessionApi.list()
 platform.adminApi.audit=async()=>[{id:'audit-1',actorId:'qa-admin',actorName:'验收管理员',category:'account',action:'status',target:'account-001',createdAt:'2026-09-25T03:00:00Z'}]
-platform.adminApi.workbenchSummary=async()=>({sampledAt:'2026-09-25T04:00:00Z',pending:[{id:'bugs',kind:'bug',label:'Bug 闭环',detail:'1 条需要确认、处理或验证',path:'/admin/users/bugs',severity:'attention',count:1}],anomalies:[{id:'storage',kind:'storage',label:'存储容量',detail:'最高卷已使用 84%',path:'/admin/system/storage',severity:'warning'}],recentActivities:[{id:'audit-1',kind:'account',label:'status',detail:'验收管理员 · account-001',path:'/admin/system/audit',severity:'neutral',occurredAt:'2026-09-25T03:00:00Z'}]})
-platform.adminApi.serverStorage=async()=>({observedAt:'2026-09-25T04:00:00Z',processId:42,workingSetBytes:268435456,health:'warning',conclusion:'存储容量需要关注，最高卷已使用 84%',impact:'短期仍可运行，但应在下一次运营窗口检查增长来源。',recommendedAction:'检查增长趋势与占用分类，提前安排容量。',thresholds:{warningPercent:80,criticalPercent:90,source:'服务端容量治理策略'},trendScope:'current-process',trendDescription:'本次服务进程内的真实采样，重启后重新累计，最多保留 24 小时 / 120 个样本',volumes:[{mountPoint:'D:',totalBytes:1000000000,usedBytes:840000000,freeBytes:160000000}],categories:[{id:'matches-db',label:'对局数据库',path:'/runtime/matches.db',bytes:104857600,available:true}],trend:[{observedAt:'2026-09-25T03:30:00Z',workingSetBytes:250000000,volumeUsedPercent:{'D:':82}},{observedAt:'2026-09-25T04:00:00Z',workingSetBytes:268435456,volumeUsedPercent:{'D:':84}}]})
+platform.adminApi.workbenchSummary=async()=>({sampledAt:'2026-09-25T04:00:00Z',pending:[{id:'bugs',kind:'bug',label:'Bug 闭环',detail:'1 条需要确认、处理或验证',path:'/admin/users/bugs',severity:'attention',count:1}],anomalies:[{id:'storage-unavailable',kind:'storage',label:'存储容量',detail:'该摘要暂时不可用；关联 ID：6d8e5e83-77ab-4a39-a9f2-d1a54d7683b8',path:'/admin/system/storage',severity:'unavailable'}],recentActivities:[{id:'audit-1',kind:'account',label:'status',detail:'验收管理员 · account-001',path:'/admin/system/audit',severity:'neutral',occurredAt:'2026-09-25T03:00:00Z'}],partial:true,unavailableSections:['storage']})
+platform.adminApi.globalAnalytics=async()=>({fromDate:'2026-08-27',toDate:'2026-09-25',days:[{date:'2026-09-25',dailyActiveUsers:26,weeklyActiveUsers:91,monthlyActiveUsers:184,dailyMatches:13,weeklyMatches:76,monthlyMatches:304,averageOnline:5.2,peakOnline:12,peakOnlineAt:'2026-09-25T03:30:00Z',newUsers:3,returningUsers:23,pageViews:208}],pageViews:[]})
+platform.adminApi.serverStorage=async()=>({observedAt:'2026-09-25T04:00:00Z',workingSetBytes:268435456,health:'warning',conclusion:'存储容量需要关注，最高卷已使用 84%',impact:'短期仍可运行，但应在下一次运营窗口检查增长来源。',recommendedAction:'检查增长趋势与占用分类，提前安排容量。',thresholds:{warningPercent:80,criticalPercent:90,source:'服务端容量治理策略'},trendScope:'current-process',trendDescription:'本次服务进程内的真实采样，重启后重新累计，最多保留 24 小时 / 120 个样本',sampleState:'partial',unavailableSourceCount:1,volumes:[{id:'volume-1',label:'系统卷',totalBytes:1000000000,usedBytes:840000000,freeBytes:160000000}],categories:[{id:'matches-db',label:'对局数据库',bytes:104857600,available:true},{id:'logs',label:'系统日志',bytes:0,available:false}],trend:[{observedAt:'2026-09-25T03:30:00Z',workingSetBytes:250000000,volumeUsedPercent:{'volume-1':82}},{observedAt:'2026-09-25T04:00:00Z',workingSetBytes:268435456,volumeUsedPercent:{'volume-1':84}}]})
 
 const mode=new URLSearchParams(location.search).get('mode')||'profile'
 const AdminShell=(await import('/src/l12/site/AdminPage.vue')).default
@@ -164,6 +165,10 @@ try {
 
     await page.goto(`http://127.0.0.1:${port}/__profile_admin__?mode=admin`)
     await page.locator('.admin-shell').waitFor()
+    await page.getByRole('heading', { name: '全局数据概览' }).waitFor()
+    await page.getByRole('heading', { name: '活跃趋势' }).waitFor()
+    assert.equal(await page.locator('.workbench .metric-switch button').count(), 11, `workbench trend switch incomplete at ${suffix(viewport)}`)
+    await page.getByText(/部分摘要暂时不可用/).waitFor()
     const adminBase = await page.evaluate(() => ({
       overflow: document.documentElement.scrollWidth > innerWidth + 1,
       mobileVisible: getComputedStyle(document.querySelector('.admin-mobile-navigation')).display !== 'none',
@@ -210,6 +215,10 @@ try {
       await page.evaluate(()=>window.__qaRouter.push('/admin/system/storage'))
       await page.getByRole('heading',{name:'服务器状态与存储'}).waitFor()
       assert.equal(await overflow(page), false, `admin storage overflows at ${suffix(viewport)}`)
+      const storageText = await page.locator('.storage-panel').innerText()
+      assert.equal(storageText.includes('/runtime/'), false, `admin storage leaks category path at ${suffix(viewport)}`)
+      assert.equal(storageText.includes('进程 42'), false, `admin storage leaks process id at ${suffix(viewport)}`)
+      assert.equal(storageText.includes('D:'), false, `admin storage leaks mount point at ${suffix(viewport)}`)
       await page.screenshot({ path: path.join(output, `admin-storage-${suffix(viewport)}.png`), fullPage: true })
     }
     report.push({ viewport, admin: adminBase })
