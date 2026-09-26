@@ -64,8 +64,10 @@ public sealed class SiteContentPlatformStoreTests
             Assert.DoesNotContain(store.OwnedAlternateArts(unentitled.Id), item => item.Id == saved.Id);
             Assert.Contains(store.AlternateArts(), item => item.Id == saved.Id && item.ImageUrl == saved.ImageUrl);
 
+            Assert.DoesNotContain(store.OwnedAlternateArts(admin.Id), item => item.Id == saved.Id);
+            store.GrantAlternateArt(admin, new(saved.Id, admin.Username, "manual", "管理员测试授权"));
             var owned = Assert.Single(store.OwnedAlternateArts(admin.Id), item => item.Id == saved.Id);
-            Assert.Equal("自主上传", owned.GrantReason);
+            Assert.Equal("管理员派发（管理员测试授权）", owned.GrantReason);
             var copies = preset.CardIds.ToList();
             var deck = new L12PresetDeckDefinition
             {

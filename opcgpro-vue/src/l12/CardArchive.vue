@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import { compareArchiveVersions, groupArchiveCards, type LogicalArchiveCard } from './cardArchiveVersions'
 import { cardArchiveProducts, displayCardNumber, filterableCardCost, loadCardArchiveCatalog, type DeckCard } from './decks'
 import { cardErrataForCard, type CardErrataRecord } from './data/cardErrata'
 import MobileDeferredCardImage from './MobileDeferredCardImage.vue'
 import CardDetailContent from './CardDetailContent.vue'
-import { alternateArtApi, platformState, type AlternateArt } from './platform'
+import { alternateArtApi, authState, platformState, type AlternateArt } from './platform'
 import MobileFilterSheet from './site/MobileFilterSheet.vue'
 
 type CatalogCard = DeckCard
@@ -53,6 +53,8 @@ const modalCard = ref<CatalogCard | null>(null)
 const modalVersions = ref<CatalogCard[]>([])
 const modalCloseButton = ref<HTMLButtonElement | null>(null)
 let modalTrigger: HTMLElement | null = null
+let archiveMounted = false
+let ownedArtsRequest = 0
 
 function projectedUploadedArt(art: AlternateArt, gallery = false): CatalogCard | null {
   const base = cards.value.find(card => card.id === art.baseCardId)
@@ -67,9 +69,12 @@ function projectedUploadedArt(art: AlternateArt, gallery = false): CatalogCard |
     products: art.productName ? [art.productName] : base.products,
   }
 }
+const catalogAlternateArts = computed(() => authState.verified && platformState.account?.role === 'admin'
+  ? galleryArts.value
+  : ownedArts.value)
 const catalogCards = computed(() => [
   ...cards.value,
-  ...ownedArts.value.map(art => projectedUploadedArt(art)).filter((card): card is CatalogCard => Boolean(card)),
+  ...catalogAlternateArts.value.map(art => projectedUploadedArt(art)).filter((card): card is CatalogCard => Boolean(card)),
 ])
 const logicalCards = computed(() => groupArchiveCards(catalogCards.value))
 const galleryCards = computed(() => {
@@ -84,17 +89,37 @@ const productOptions = computed(() => [...new Set([
 ])].filter(value => cards.value.some(card => card.products?.includes(value))
   || galleryCards.value.some(card => card.products?.includes(value))))
 
+async function refreshOwnedArts() {
+  const request = ++ownedArtsRequest
+  const accountId = authState.verified ? platformState.account?.id ?? '' : ''
+  if (!accountId || platformState.account?.role === 'admin') {
+    ownedArts.value = []
+    return
+  }
+  try {
+    const owned = await alternateArtApi.mine()
+    if (request === ownedArtsRequest && authState.verified && platformState.account?.id === accountId)
+      ownedArts.value = owned
+  } catch {
+    if (request === ownedArtsRequest) ownedArts.value = []
+  }
+}
+
+watch(() => `${authState.verified}:${platformState.account?.id ?? ''}:${platformState.account?.role ?? ''}`, () => {
+  if (archiveMounted) void refreshOwnedArts()
+})
+
 onMounted(async () => {
+  archiveMounted = true
   window.addEventListener('keydown', onWindowKeydown)
   try {
-    const [catalog, arts, owned] = await Promise.all([
+    const [catalog, arts] = await Promise.all([
       loadCardArchiveCatalog(),
       alternateArtApi.gallery(),
-      platformState.account ? alternateArtApi.mine().catch(() => [] as AlternateArt[]) : Promise.resolve([] as AlternateArt[]),
     ])
     cards.value = catalog
     galleryArts.value = arts
-    ownedArts.value = owned
+    await refreshOwnedArts()
     const first = logicalCards.value[0]
     if (first) selectLogical(first)
     selectedGalleryId.value = galleryCards.value[0]?.id ?? ''
@@ -105,7 +130,11 @@ onMounted(async () => {
   }
 })
 
-onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown))
+onBeforeUnmount(() => {
+  archiveMounted = false
+  ownedArtsRequest += 1
+  window.removeEventListener('keydown', onWindowKeydown)
+})
 
 function hasCostDimension(card: CatalogCard) {
   return card.cardType !== 'master' && card.cost !== undefined

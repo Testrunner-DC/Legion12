@@ -110,7 +110,9 @@ Assert-True (([regex]::Matches($deploySource, 'if \(\$cardAssetsCached\)')).Coun
 Assert-True ($deploySource.IndexOf('Invoke-External scp @sshOptions $cardAssetsArchive') -gt $deploySource.IndexOf('else {', $deploySource.IndexOf('if ($cardAssetsCached)'))) "Card asset upload must remain confined to the remote-cache-miss branch."
 Assert-True ($deploySource.Contains('Resolve-L12ProductionBaseCommit')) "Production deployment must read the live production commit before aggregating player notes."
 Assert-True ($deploySource.Contains('"-ProductionBaseCommit", $productionBaseCommit')) "Production deployment must bind release verification to the live production commit."
-Assert-True ($deploySource.Contains('发布包的更新日志基线不是当前正式服提交')) "A stale or prebuilt manifest must not bypass the production changelog range gate."
+$staleReleaseBaseMessage = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(
+    '5Y+R5biD5YyF55qE5pu05paw5pel5b+X5Z+657q/5LiN5piv5b2T5YmN5q2j5byP5pyN5o+Q5Lqk'))
+Assert-True ($deploySource.Contains($staleReleaseBaseMessage)) "A stale or prebuilt manifest must not bypass the production changelog range gate."
 
 $fixtureBase = if (Test-Path -LiteralPath "D:\GPT\Legion12") { "D:\GPT\Legion12\temp" } else { [IO.Path]::GetTempPath() }
 New-Item -ItemType Directory -Path $fixtureBase -Force | Out-Null

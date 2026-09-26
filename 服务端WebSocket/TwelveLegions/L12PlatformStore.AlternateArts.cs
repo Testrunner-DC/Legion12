@@ -103,17 +103,16 @@ public sealed partial class L12PlatformStore
                 .GroupBy(row => row.AlternateArtId, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(group => group.Key, group => group.OrderBy(row => row.GrantedAt).First(),
                     StringComparer.OrdinalIgnoreCase);
-            var owned = OwnedAlternateArtIdsLocked(accountId);
             return _officialAlternateArts.Values.Select(ToAlternateArtView)
                 .Concat(_data.AlternateArts.Where(row => row.Active).Select(ToAlternateArtView))
-                .Where(row => owned.Contains(row.Id))
+                .Where(row => grants.ContainsKey(row.Id))
                 .Select(row =>
                 {
-                    var hasGrant = grants.TryGetValue(row.Id, out var grant);
+                    var grant = grants[row.Id];
                     return row with
                     {
-                        GrantedAt = hasGrant ? grant!.GrantedAt : row.CreatedAt,
-                        GrantReason = hasGrant ? AlternateArtGrantReason(grant!) : "自主上传",
+                        GrantedAt = grant.GrantedAt,
+                        GrantReason = AlternateArtGrantReason(grant),
                     };
                 })
                 .OrderBy(row => row.ArtCode, StringComparer.OrdinalIgnoreCase).ToArray();
@@ -521,8 +520,6 @@ public sealed partial class L12PlatformStore
             .Where(row => row.AccountId == accountId && row.RevokedAt is null)
             .Select(row => row.AlternateArtId)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var row in _data.AlternateArts.Where(row => row.Active && row.CreatedByAccountId == accountId))
-            owned.Add(row.Id);
         return owned;
     }
 

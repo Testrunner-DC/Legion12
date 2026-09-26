@@ -16,16 +16,30 @@ const entry = `
 import { createApp } from 'vue'
 import Archive from '/src/l12/CardArchive.vue'
 import { loadCardArchiveCatalog } from '/src/l12/decks.ts'
-import { alternateArtApi, platformState } from '/src/l12/platform.ts'
+import { alternateArtApi, authState, platformState } from '/src/l12/platform.ts'
 import '/src/style.css'
 const cards = await loadCardArchiveCatalog()
 const base = cards.find(card => !card.archiveBaseCardId && card.cardType === 'legion') || cards[0]
 const art = { id: 'qa-admin-art', artCode: 'QA-ADMIN-ART', baseCardId: base.id, displayName: base.nameZh, mediaAssetId: 'qa-media', imageUrl: '/api/site/media/qa-admin-art.png', thumbnailUrl: '/api/site/media/qa-admin-art.png', active: true, createdAt: '', updatedAt: '', productId: 'qa-product', productName: 'QA 活动', cardImageId: '', builtIn: false, baseCardName: base.nameZh, grantedAt: new Date().toISOString(), grantReason: '管理员派发' }
-platformState.account = { id: 'qa-player', username: '已授权玩家', role: 'player', createdAt: '', publicHistory: true }
+const params = new URLSearchParams(location.search)
+const role = params.get('role') === 'admin' ? 'admin' : 'player'
+const delayed = params.get('delayed') === '1'
+platformState.account = delayed ? null : { id: 'qa-account', username: role === 'admin' ? '系统管理员' : '已授权玩家', role, createdAt: '', publicHistory: true }
 platformState.token = 'qa-token'
+authState.initialized = true
+authState.verified = !delayed
 alternateArtApi.gallery = async () => [art]
-alternateArtApi.mine = async () => new URLSearchParams(location.search).get('owned') === '0' ? [] : [art]
-window.__qa = { baseId: base.id, artCode: art.artCode }
+let mineCalls = 0
+alternateArtApi.mine = async () => { mineCalls += 1; return params.get('owned') === '0' ? [] : [art] }
+window.__qa = {
+  baseId: base.id,
+  artCode: art.artCode,
+  mineCalls: () => mineCalls,
+  completePlayerAuth: () => {
+    platformState.account = { id: 'qa-account', username: '延迟登录玩家', role: 'player', createdAt: '', publicHistory: true }
+    authState.verified = true
+  },
+}
 createApp(Archive).mount('#app')
 `
 
@@ -90,7 +104,32 @@ try {
   await unentitled.screenshot({ path: path.join(out, 'gallery-unentitled-1280.png'), fullPage: true })
   assert.deepEqual(unentitledErrors, [])
   await unentitled.close()
-  console.log(JSON.stringify({ status: 'passed', viewports: 2, permissionCases: 2, output: out }))
+
+  const admin = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  await admin.goto(`http://127.0.0.1:${server.httpServer.address().port}/__card_archive_art?role=admin&owned=0`)
+  await admin.getByRole('tab', { name: '全卡池', exact: true }).waitFor()
+  await admin.getByPlaceholder('卡名、编号或效果文字').fill(await admin.evaluate(() => window.__qa.artCode))
+  const adminCard = admin.locator('.archive-card').first()
+  await adminCard.waitFor()
+  assert.equal(await adminCard.getByRole('button', { name: '下一版本' }).count(), 1, '管理员不能在全卡池预览系统异画资产')
+  assert.equal(await admin.evaluate(() => window.__qa.mineCalls()), 0, '管理员预览不应伪装成玩家异画拥有权')
+  await admin.screenshot({ path: path.join(out, 'catalog-admin-system-assets-1280.png'), fullPage: true })
+  await admin.close()
+
+  const delayed = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  await delayed.goto(`http://127.0.0.1:${server.httpServer.address().port}/__card_archive_art?delayed=1&owned=1`)
+  await delayed.getByRole('tab', { name: '全卡池', exact: true }).waitFor()
+  await delayed.getByPlaceholder('卡名、编号或效果文字').fill(await delayed.evaluate(() => window.__qa.artCode))
+  assert.equal(await delayed.locator('.archive-card').count(), 0, '身份未验证时不应暴露玩家异画权益')
+  await delayed.evaluate(() => window.__qa.completePlayerAuth())
+  const delayedCard = delayed.locator('.archive-card').first()
+  await delayedCard.waitFor()
+  assert.equal(await delayedCard.getByRole('button', { name: '下一版本' }).count(), 1, '身份恢复后没有重新加载玩家异画权益')
+  assert.equal(await delayed.evaluate(() => window.__qa.mineCalls()), 1, '身份恢复后异画权益请求次数不正确')
+  await delayed.screenshot({ path: path.join(out, 'catalog-delayed-auth-390.png'), fullPage: true })
+  await delayed.close()
+
+  console.log(JSON.stringify({ status: 'passed', viewports: 2, permissionCases: 4, output: out }))
 } finally {
   await browser?.close()
   await server.close()
