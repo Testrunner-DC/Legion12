@@ -155,12 +155,12 @@ public sealed class L12CardInstance
     /// <summary>持续负兵力修正单独保存，避免与可消耗的正兵力层混算。</summary>
     public int ContinuousTroopsPenalty { get; set; }
     /// <summary>按实际持续效果来源保存正兵力层；不同来源失效时只移除自己的未消耗部分。</summary>
-    public Dictionary<string, L12TroopsBonusLayer> ContinuousTroopsBonusLayers { get; init; } = new(StringComparer.Ordinal);
+    public Dictionary<string, L12TroopsBonusLayer> ContinuousTroopsBonusLayers { get; set; } = new(StringComparer.Ordinal);
     public int? SetTroopsValue { get; set; }
     public int SetTroopsUntilTurn { get; set; } = -1;
     public int DisasterLevel { get; init; }
     public int TrialValue { get; init; }
-    public List<string> Traits { get; init; } = [];
+    public List<string> Traits { get; set; } = [];
     public string? Profession { get; init; }
     /// <summary>随位置或持续效果变化后的当前职介；离场时恢复印刷职介。</summary>
     public string? EffectiveProfession { get; set; }
@@ -242,8 +242,8 @@ public sealed class L12CardInstance
     public List<L12AbilityView> Abilities { get; set; } = [];
     /// <summary>不进入效果堆叠的规则动作；按钮资格、禁用原因和呈现文字均由服务端投影。</summary>
     public List<L12RuleActionView> RuleActions { get; set; } = [];
-    public List<L12TimedModifier> TimedModifiers { get; init; } = [];
-    public List<L12CardInstance> AttachedCards { get; init; } = [];
+    public List<L12TimedModifier> TimedModifiers { get; set; } = [];
+    public List<L12CardInstance> AttachedCards { get; set; } = [];
 
     public int CurrentCost => Math.Max(0, Cost + CostModifier + ContinuousCostModifier);
     /// <summary>对规则消费者和玩家投影公开的当前兵力；内部修正累计可以暂时低于0。</summary>
@@ -256,7 +256,39 @@ public sealed class L12CardInstance
     public bool CannotBeRanged => L12StructuredCardRules.CannotBeRangedInAnyRow(this);
     public bool HasTrait(string trait) => Traits.Contains(trait, StringComparer.Ordinal);
 
-    public L12CardInstance Clone() => (L12CardInstance)MemberwiseClone();
+    /// <summary>
+    /// 创建与权威实例完全隔离的卡牌快照。事件、最后已知状态、Prompt 审计和玩家投影
+    /// 都会长期持有该对象；任何可变集合或集合元素都不得与原实例共享，否则在线结算与
+    /// JSON 检查点恢复会因引用别名不同而产生两套权威结果。
+    /// </summary>
+    public L12CardInstance Clone()
+    {
+        var snapshot = (L12CardInstance)MemberwiseClone();
+        snapshot.ContinuousTroopsBonusLayers = ContinuousTroopsBonusLayers.ToDictionary(
+            pair => pair.Key,
+            pair => new L12TroopsBonusLayer { Granted = pair.Value.Granted, Consumed = pair.Value.Consumed },
+            StringComparer.Ordinal);
+        snapshot.Traits = [.. Traits];
+        snapshot.LastKnownAttachedCardIds = [.. LastKnownAttachedCardIds];
+        snapshot.ActiveKeywords = [.. ActiveKeywords];
+        snapshot.StatusIcons = [.. StatusIcons];
+        snapshot.StatusEffects = [.. StatusEffects];
+        snapshot.Abilities = [.. Abilities];
+        snapshot.RuleActions = RuleActions.Select(action => action with
+        {
+            TargetKeys = action.TargetKeys is null ? null : action.TargetKeys.ToArray(),
+        }).ToList();
+        snapshot.TimedModifiers = TimedModifiers.Select(modifier => new L12TimedModifier
+        {
+            TroopsDelta = modifier.TroopsDelta,
+            ConsumedTroopsBonus = modifier.ConsumedTroopsBonus,
+            CostDelta = modifier.CostDelta,
+            ExpiresAfterTurn = modifier.ExpiresAfterTurn,
+            Source = modifier.Source,
+        }).ToList();
+        snapshot.AttachedCards = AttachedCards.Select(card => card.Clone()).ToList();
+        return snapshot;
+    }
 }
 
 public sealed record L12AbilityView(
