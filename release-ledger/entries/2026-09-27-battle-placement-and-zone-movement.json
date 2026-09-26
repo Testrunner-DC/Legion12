@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-27-battle-placement-and-zone-movement",
+  "date": "2026-09-27",
+  "audience": "players",
+  "title": "战场占位与区域移动动画修正",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "正面置入战场的反击战术会持续占据阵地，不能再被军团或其他盖放战术顶替；只有自己覆盖的反击战术仍可按规则被自己的卡牌替换。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12Actions.cs",
+        "服务端WebSocket/TwelveLegions/L12EffectGeneratedPlay.cs"
+      ]
+    },
+    {
+      "category": "battle",
+      "text": "修正区域移动动画可能重复、漏播或错序的问题；从牌库弃置及从墓地返回牌库的多张卡牌会按权威顺序逐张展示。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/ZoneMovementPresentationLayer.vue",
+        "opcgpro-vue/src/l12/game/visualTransitionProjection.ts",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.EffectPresentations.cs",
+        "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs"
+      ]
+    }
+  ]
+}
