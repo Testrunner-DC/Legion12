@@ -64,7 +64,6 @@ public sealed partial class L12GameEngine
         var choices = candidates.Select(card => card.InstanceId).Append(DeclineLethalSubstitution).ToArray();
         var data = new Dictionary<string, string>
         {
-            ["lethalEventId"] = Guid.NewGuid().ToString("N"),
             ["replacementKind"] = kind,
             ["cardInstanceId"] = protectedCard.InstanceId,
             ["reason"] = reason,
@@ -77,8 +76,9 @@ public sealed partial class L12GameEngine
             "kondo-field-discard" => $"〈{protectedCard.Name}〉即将阵亡，是否弃置我方〈近藤勇〉代替承受？",
             _ => $"〈{protectedCard.Name}〉即将阵亡，弃置手牌中1张其他军团代替承受，或不发动",
         };
-        CreatePrompt(controller.PlayerIndex, "option", promptText,
+        var prompt = CreatePrompt(controller.PlayerIndex, "option", promptText,
             choices, 1, 1, continuation, isPrivate: kind == "helen-hand", data: data);
+        prompt.Data["lethalEventId"] = $"lethal-event:{prompt.PromptId}:{protectedCard.InstanceId}";
         return true;
     }
 

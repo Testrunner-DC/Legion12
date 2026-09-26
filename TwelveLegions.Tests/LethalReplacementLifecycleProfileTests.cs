@@ -99,6 +99,27 @@ public sealed class LethalReplacementLifecycleProfileTests
             prompt => prompt.Continuation == "effect-lethal-replacement");
     }
 
+    [Fact]
+    public void HelenLethalEventIdIsStableWhenTheSameCommandRunsAfterCheckpointRestore()
+    {
+        var original = Create(92951);
+        var (protectedCard, _) = ArrangeReplacement(original, "S02-0515", "stable-event");
+        var checkpoint = original.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        var restored = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
+            original.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0),
+            original.CardFactSignalSequence, autoPassEmptyResponses: false,
+            concealHiddenResponseAvailability: false);
+
+        var originalPrompt = BeginEffectLethalReplacement(original, protectedCard);
+        var restoredProtected = restored.State.Players[0].Field[0][0]!;
+        var restoredPrompt = BeginEffectLethalReplacement(restored, restoredProtected);
+
+        Assert.Equal(originalPrompt.PromptId, restoredPrompt.PromptId);
+        Assert.Equal(originalPrompt.Data["lethalEventId"], restoredPrompt.Data["lethalEventId"]);
+        Assert.Equal($"lethal-event:{originalPrompt.PromptId}:{protectedCard.InstanceId}",
+            originalPrompt.Data["lethalEventId"]);
+    }
+
     [Theory]
     [InlineData("S01-0205", HoremhebAbilityId)]
     [InlineData("S02-0504", AchillesAbilityId)]
