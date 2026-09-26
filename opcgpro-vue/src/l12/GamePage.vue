@@ -11,6 +11,8 @@ import OsirisVictorySequence from './game/OsirisVictorySequence.vue'
 import RankedBroadcastTicker from './site/RankedBroadcastTicker.vue'
 import L12SettingsModal from './site/L12SettingsModal.vue'
 import { gameAction, l12State, leaveRoom } from './net'
+import { connect, send } from './net'
+import { tournamentRoomLoadingState } from './tournamentRoomLoadingState'
 
 const router = useRouter()
 const game = computed(() => l12State.game)
@@ -26,9 +28,17 @@ const playerFacingWinnerReason = computed(() => {
   return filtered || '对局已结束'
 })
 const settingsOpen = ref(false)
+const loadRetrying = ref(false)
 const gmPanelOpen = ref(l12State.gmEnabled)
 const gameOverMinimized = ref(false)
 const opponent = computed(() => l12State.room?.players.find(player => player.playerIndex !== l12State.room?.yourPlayerIndex))
+const missingGameState = computed(() => tournamentRoomLoadingState({
+  status: l12State.status,
+  recoveryPhase: l12State.recoveryPhase,
+  connectionIssue: l12State.connectionIssue,
+  notice: l12State.notice,
+  room: l12State.room,
+}))
 const completedOsirisSequence = ref('')
 const osirisSequenceKey = ref('')
 let osirisSequenceMatchId = ''
@@ -84,6 +94,14 @@ function returnToLobby() {
   if (l12State.spectating || l12State.room?.sandbox || tournamentCode) leaveRoom()
   router.push(tournamentCode ? `/battle/tournaments/${encodeURIComponent(tournamentCode)}` : '/lobby')
 }
+async function retryGameLoad() {
+  if (loadRetrying.value) return
+  loadRetrying.value = true
+  l12State.notice = ''
+  try { await connect(); send({ type: 'syncState' }) }
+  catch { /* 连接层会提供可读失败和自动重连状态。 */ }
+  finally { loadRetrying.value = false }
+}
 </script>
 
 <template>
@@ -129,9 +147,14 @@ function returnToLobby() {
     </Transition>
 </BattleOverlayPortal>
   </div>
-  <main v-else class="missing-game">
-    <h1>对局状态尚未加载</h1>
-    <button @click="returnToLobby">返回赛事/大厅</button>
+  <main v-else class="missing-game" :data-state="missingGameState.kind" role="status" aria-live="polite">
+    <small>{{ missingGameState.kind === 'waiting' ? 'TOURNAMENT ROOM' : missingGameState.kind === 'loading' ? 'LOADING' : 'LOAD FAILED' }}</small>
+    <h1>{{ missingGameState.title }}</h1>
+    <p>{{ missingGameState.detail }}</p>
+    <div>
+      <button v-if="missingGameState.kind !== 'waiting'" :disabled="loadRetrying" @click="retryGameLoad">{{ loadRetrying ? '正在同步…' : '重新同步' }}</button>
+      <button @click="returnToLobby">返回赛事/大厅</button>
+    </div>
   </main>
 </template>
 
@@ -140,6 +163,7 @@ function returnToLobby() {
 .battle-settings-button{position:fixed;z-index:1600;left:12px;bottom:12px;display:grid;width:48px;height:48px;place-items:center;border:1px solid #59666b;background:#080d11ed;box-shadow:0 8px 24px #000;color:#e8d183;font-size:19px}.battle-settings-button span{position:absolute;left:100%;bottom:0;padding:4px 7px;border:1px solid #38454b;background:#080d11ed;color:#9da8a8;font-size:14px;letter-spacing:.12em}.battle-settings-mask{position:fixed;z-index:4000;inset:0;display:grid;place-items:center;padding:18px;background:#010407c9;backdrop-filter:blur(8px)}
 .battle-ranked-ticker{position:fixed;z-index:1500;top:8px;left:50%;width:min(760px,calc(100vw - 430px));transform:translateX(-50%)}.ranked-result{display:flex;min-width:320px;align-items:center;flex-direction:column;gap:6px;margin:12px 0;padding:12px;border:1px solid #a88c42;background:#17150d;text-align:center}.ranked-result>b{color:#e8cf7e}.ranked-result strong{font-size:14px}.ranked-result i{color:#65d2a1;font-style:normal}.ranked-result details{width:100%;text-align:center}.ranked-result details span{display:block;color:#b5bdbe;font-size:14px;text-align:center}.ranked-result summary{cursor:pointer;color:#e1c978;font-size:14px;text-align:center}@media(max-width:900px){.battle-ranked-ticker{top:52px;width:calc(100vw - 20px)}}
 .game-over-minimize,.game-over-restore{display:none}
+.missing-game{min-height:60vh;display:grid;place-content:center;justify-items:center;gap:12px;padding:32px;text-align:center}.missing-game small{color:var(--muted);font-weight:900;letter-spacing:.14em}.missing-game h1,.missing-game p{margin:0}.missing-game p{max-width:560px;color:var(--muted)}.missing-game>div{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}.missing-game[data-state="waiting"]{border-top:3px solid var(--accent)}.missing-game[data-state="failed"]{border-top:3px solid var(--danger)}
 /* Mobile route geometry lives with the dedicated dock; desktop stays above. */
 .game-page:has(.mobile-landscape-board){inset:0!important;width:100%!important;height:100%!important}
 .game-page:has(.mobile-landscape-board) .battle-ranked-ticker{display:none}
