@@ -42,6 +42,7 @@ try {
       const tracks = [...document.querySelectorAll('.board-status-lane')].filter(visible).map(rect)
       const hands = [...document.querySelectorAll('.board-center>.l12-hand')].filter(visible).map(rect).sort((a,b)=>a.top-b.top)
       const felt = rect(document.querySelector('.felt-board'))
+      const rightRail = rect(document.querySelector('.right-rail'))
       const intersects = (a,b) => a.left < b.right-3 && a.right > b.left+3 && a.top < b.bottom-3 && a.bottom > b.top+3
       const root=getComputedStyle(document.documentElement),number=name=>parseFloat(root.getPropertyValue(name))||0
       const safe=mobileMode?{left:number('--l12-viewport-left'),top:number('--l12-viewport-top')}:{left:0,top:0}
@@ -49,18 +50,20 @@ try {
       const labels=[...document.querySelectorAll(mobileMode ? '.mobile-timed-clocks .player-turn-clock' : '.board-player-clock')].filter(visible).map(node=>node.textContent?.replace(/\s+/g,' ').trim())
       const buttons=[...document.querySelectorAll('.right-rail button,.battle-dock-root button,.combat-resolution-panel button,.mobile-record-overlay button,.game-over button')].filter(node=>visible(node)&&!node.disabled).map(node=>({node,rect:rect(node)})).filter(item=>item.rect)
       const blocked=buttons.filter(({node,rect:r})=>{const hit=document.elementFromPoint((r.left+r.right)/2,(r.top+r.bottom)/2);return hit && hit!==node && !node.contains(hit)}).map(({node})=>node.textContent?.trim()||node.getAttribute('aria-label'))
-      return {clocks,tracks,hands,felt,forbidden,labels,safe,overlaps:clocks.flatMap(clock=>forbidden.filter(item=>intersects(clock,item))),blocked,modal:Boolean(document.querySelector('[aria-modal="true"]')),overflow:{x:document.documentElement.scrollWidth>innerWidth+1,y:document.documentElement.scrollHeight>innerHeight+1}}
+      return {clocks,tracks,hands,felt,rightRail,forbidden,labels,safe,overlaps:clocks.flatMap(clock=>forbidden.filter(item=>intersects(clock,item))),blocked,modal:Boolean(document.querySelector('[aria-modal="true"]')),overflow:{x:document.documentElement.scrollWidth>innerWidth+1,y:document.documentElement.scrollHeight>innerHeight+1}}
     }, mobileMode)
     ok(value.clocks.length === 2, `${label}: expected exactly two visible clocks, got ${value.clocks.length}`)
     ok(value.clocks.every(r => r.left >= value.safe.left-1 && r.top >= value.safe.top-1 && r.right <= value.safe.right+1 && r.bottom <= value.safe.bottom+1), `${label}: clock leaves safe viewport ${JSON.stringify(value)}`)
     if (!mobileMode) {
       ok(value.tracks.length === 2 && value.hands.length === 2, `${label}: expected two desktop tracks and hand lanes ${JSON.stringify(value)}`)
-      ok(Math.abs(value.tracks[0].left-value.tracks[1].left)<=1 && Math.abs(value.tracks[0].width-value.tracks[1].width)<=1 && Math.abs(value.tracks[0].height-value.tracks[1].height)<=1, `${label}: opponent/my clock tracks are not geometrically identical ${JSON.stringify(value.tracks)}`)
+      ok(Math.abs(value.tracks[0].left-value.tracks[1].left)<=1 && Math.abs(value.tracks[0].width-value.tracks[1].width)<=1, `${label}: opponent/my clock tracks are not geometrically aligned ${JSON.stringify(value.tracks)}`)
       ok(value.clocks.every((clock,index)=>clock.left>=value.tracks[index].left-1 && clock.right<=value.tracks[index].right+1 && clock.top>=value.tracks[index].top-1 && clock.bottom<=value.tracks[index].bottom+1), `${label}: a clock escapes its external track ${JSON.stringify(value)}`)
       ok(Math.abs(value.clocks[0].left-value.clocks[1].left)<=1 && Math.abs(value.clocks[0].width-value.clocks[1].width)<=1, `${label}: my clock is not aligned to the opponent clock reference ${JSON.stringify(value.clocks)}`)
-      ok(value.tracks[0].top>=value.hands[0].top-1 && value.tracks[0].bottom<=value.hands[0].bottom+1, `${label}: opponent clock left its reference hand row ${JSON.stringify(value)}`)
-      ok(value.tracks[1].top>=value.hands[1].top-1 && value.tracks[1].bottom<=value.hands[1].bottom+1, `${label}: my clock is not mirrored into the matching hand row ${JSON.stringify(value)}`)
-      ok(value.felt && value.clocks.every(clock=>!intersects(clock,value.felt)), `${label}: clock enters battlefield felt ${JSON.stringify(value)}`)
+      ok(value.felt && value.rightRail, `${label}: missing battlefield or right rail geometry ${JSON.stringify(value)}`)
+      ok(value.clocks.every(clock=>clock.left>=value.felt.right-1 && clock.right<=value.rightRail.left+1), `${label}: clock is not contained in the battlefield/right-rail gutter ${JSON.stringify(value)}`)
+      ok(value.clocks.every(clock=>!intersects(clock,value.felt)&&!intersects(clock,value.rightRail)), `${label}: clock enters battlefield or right rail ${JSON.stringify(value)}`)
+      ok(Math.abs(value.clocks[0].top-value.felt.top)<=2, `${label}: opponent clock is not attached to the upper battlefield edge ${JSON.stringify(value)}`)
+      ok(Math.abs(value.clocks[1].bottom-value.felt.bottom)<=2, `${label}: my clock is not attached to the lower battlefield edge ${JSON.stringify(value)}`)
     }
     if(!value.modal) ok(value.overlaps.length === 0, `${label}: clock intrudes into hand/log/action/dialog lane ${JSON.stringify(value)}`)
     ok(!value.overflow.x && !value.overflow.y, `${label}: document overflow ${JSON.stringify(value.overflow)}`)

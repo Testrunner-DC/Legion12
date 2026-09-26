@@ -303,6 +303,17 @@ try {
   if (afterScrollArchiveImages <= initialArchiveImages) throw new Error(`mobile archive did not create more images while scrolling: ${initialArchiveImages} -> ${afterScrollArchiveImages}`)
   if ((await page.locator('.archive-card .mobile-deferred-card-image').count()) !== initialArchiveCards)
     throw new Error('mobile archive changed the original card-slot count while deferring images')
+  for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }, { width: 520, height: 844 }, { width: 700, height: 900 }, { width: 701, height: 900 }]) {
+    await page.setViewportSize(viewport)
+    const geometry = await page.locator('.archive-workspace').evaluate(element => {
+      const workspace = element.getBoundingClientRect()
+      const grid = element.querySelector('.archive-grid')?.getBoundingClientRect()
+      const card = element.querySelector('.archive-card')?.getBoundingClientRect()
+      return { workspace: workspace.width, grid: grid?.width ?? 0, card: card?.width ?? 0 }
+    })
+    if (geometry.grid < geometry.workspace - 2 || geometry.card < 90)
+      throw new Error(`archive mobile grid retained a hidden detail column at ${viewport.width}x${viewport.height}: ${JSON.stringify(geometry)}`)
+  }
 
   await page.goto(`http://127.0.0.1:${port}/__mobile_review__?route=%2Fbattle%2Frankings`)
   await page.locator('.player-table .tr').first().waitFor({ timeout: 15000 })
@@ -329,6 +340,12 @@ try {
   await page.setViewportSize({ width: 701, height: 900 })
   await page.waitForTimeout(100)
   if ((await page.locator('.site-mobile-head:visible').count()) > 0) throw new Error('701px must leave compact site navigation')
+  for (const viewport of [{ width: 701, height: 360 }, { width: 844, height: 390 }, { width: 1024, height: 600 }, { width: 1920, height: 600 }]) {
+    await page.setViewportSize(viewport)
+    await page.waitForTimeout(100)
+    if ((await page.locator('.site-mobile-head:visible').count()) !== 1)
+      throw new Error(`${viewport.width}x${viewport.height} must use compact navigation by usable height`)
+  }
 
   // 交互状态：导航抽屉、设置弹窗、在线人数弹窗（390 宽）
   await page.setViewportSize({ width: 390, height: 844 })

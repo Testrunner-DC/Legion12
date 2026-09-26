@@ -27,7 +27,7 @@ html[data-l12-mobile=true] {
 }
 #l12-landscape-teleports .mobile-battle-dock > div { min-width:0; min-height:0; }
 .mobile-battle-dock__tools { flex:0 1 auto; max-height:42%; overflow:auto; }
-.mobile-battle-dock__context { position:relative; flex:1 1 0; overflow:auto; }
+.mobile-battle-dock__context { position:relative; box-sizing:border-box; flex:1 1 0; padding-top:36px; overflow:auto; }
 .mobile-battle-dock__primary { flex:0 0 auto; }
 .mobile-battle-dock__tools,.mobile-battle-dock__context {
   display:flex; flex-direction:column; gap:4px; overscroll-behavior:contain;

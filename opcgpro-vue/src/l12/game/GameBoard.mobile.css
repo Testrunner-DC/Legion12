@@ -1015,7 +1015,7 @@
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-stack) { grid-template-columns:repeat(4,minmax(11px,1fr)) !important; grid-auto-rows:var(--l12-mobile-morale-orb) !important; gap:2px !important; padding:2px !important; }
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb) { width:var(--l12-mobile-morale-orb) !important; min-width:var(--l12-mobile-morale-orb) !important; height:var(--l12-mobile-morale-orb) !important; min-height:var(--l12-mobile-morale-orb) !important; }
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb img) { width:calc(var(--l12-mobile-morale-orb) - 4px) !important; height:calc(var(--l12-mobile-morale-orb) - 4px) !important; }
-.mobile-landscape-board .board-center { grid-template-rows:0 0 minmax(0,1fr) 0 var(--l12-mobile-hand-h) !important; }
+.mobile-landscape-board .board-center { grid-template-columns:minmax(0,1fr) !important; grid-template-rows:0 0 minmax(0,1fr) 0 var(--l12-mobile-hand-h) !important; }
 .mobile-landscape-board .board-center>.opponent-hand,.mobile-landscape-board .opponent-status-lane { grid-row:1 !important; }
 .mobile-landscape-board .felt-board { grid-row:3 !important; }
 .mobile-landscape-board .my-status-lane { grid-row:4 !important; }
