@@ -258,7 +258,8 @@ public sealed class DisasterTriggerSuppressionRulingTests
             "field", "风暴乱象回手");
 
         Assert.DoesNotContain(game.State.AuthorityEvents, entry => entry.Type == "effect-hand-add");
-        Assert.Empty(game.State.DeferredEffectStack.Where(item => item.Data.GetValueOrDefault("eventType") == "effect-hand-add"));
+        Assert.DoesNotContain(game.State.DeferredEffectStack,
+            item => item.Data.GetValueOrDefault("eventType") == "effect-hand-add");
 
         // 对照组：普通效果结算期间入手正常登记权威事件（挂入延迟堆叠，随堆叠关闭处理）。
         var control = Create(2311);
