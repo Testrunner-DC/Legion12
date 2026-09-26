@@ -146,7 +146,7 @@ try {
       window.__movementTrace = []
       let last = ''
       new MutationObserver(() => {
-        const node = document.querySelector('.zone-card-movement')
+        const node = document.querySelector('.l12-zone-flight-ghost,.zone-card-movement')
         const current = node?.getAttribute('data-movement-instance-id') ?? ''
         if (current && current !== last) window.__movementTrace.push(current)
         last = current
@@ -196,6 +196,25 @@ try {
     await page.waitForTimeout(520)
     ok(await page.locator('[data-player-index="0"] [data-l12-zone="graveyard"] .pile-count').textContent() === '1'
       && await page.locator('[data-player-index="0"] [data-l12-zone="graveyard"] img[alt="佣兵部队"]').count() === 0, `${profile.name}: real second movement must match the final library state`)
+
+    await page.evaluate(() => { window.__movementTrace = [] })
+    await invoke(page, 'pharaohFestivalChain')
+    await page.waitForFunction(() => document.querySelectorAll('.l12-zone-flight-ghost,.zone-card-movement').length > 0, null, { timeout:1500 })
+    await page.waitForTimeout(2400)
+    await page.waitForFunction(() => document.querySelectorAll('.l12-zone-flight-ghost,.zone-card-movement').length === 0, null, { timeout:1500 })
+    const festivalTrace = await page.evaluate(() => window.__movementTrace.filter(id => id.startsWith('pharaoh-') || id.startsWith('festival-')))
+    ok(festivalTrace.filter(id => id === 'pharaoh-festival').length === 1, `${profile.name}: Pharaoh Festival hand play must animate once: ${festivalTrace.join(',')}`)
+    ok(festivalTrace.filter(id => id === 'festival-hand-card').length === 1, `${profile.name}: Pharaoh Festival hand choice must animate once`)
+    ok(festivalTrace.filter(id => id === 'festival-grave-card').length === 1, `${profile.name}: Pharaoh Festival grave choice must animate once`)
+    ok(festivalTrace.length === 3, `${profile.name}: rapid Festival snapshots must not reclaim an already queued movement: ${festivalTrace.join(',')}`)
+    ok(await page.locator('[data-player-index="0"] [data-l12-zone="graveyard"] img[alt="卡诺匹斯罐 一"]').count() === 1, `${profile.name}: Festival discard must settle in graveyard exactly once`)
+
+    await invoke(page, 'beginFinnOptionalReady')
+    await page.waitForTimeout(80)
+    await invoke(page, 'declineFinnOptionalReady')
+    await page.waitForTimeout(160)
+    ok(await visibleCount(page, '.l12-card-state-transition-ghost') === 0, `${profile.name}: declining optional ready must not preview or roll back a false state transition`)
+    ok(await page.locator('[data-card-instance-id="finn-optional-ready"].tapped').count() === 1, `${profile.name}: declining optional ready must preserve the rested authority state`)
     report.profiles.push(profile.name)
     await context.close()
   }

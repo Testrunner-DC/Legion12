@@ -305,6 +305,16 @@ public sealed class ExtendedCardEffectsTests
         Assert.Contains(eligible[0], player.Hand);
         Assert.Contains(eligible[1], player.Graveyard);
         Assert.Equal(order, player.Library.TakeLast(order.Count).Select(card => card.InstanceId));
+        Assert.Single(game.State.Events.Where(entry => entry.Type == "play"
+            && entry.Cards.Any(card => card.InstanceId == festival.InstanceId)));
+        Assert.Single(game.State.Events.Where(entry => entry.Type == "reveal"
+            && entry.Cards.Any(card => card.InstanceId == eligible[0].InstanceId)));
+        Assert.Single(game.State.Events.Where(entry => entry.Type == "discard"
+            && entry.Cards.Any(card => card.InstanceId == eligible[1].InstanceId)));
+        Assert.Single(game.SnapshotFor(0).RecentEvents.Where(entry => entry.Type == "discard"
+            && entry.Cards.Any(card => card.InstanceId == eligible[1].InstanceId)));
+        Assert.Single(game.SnapshotFor(1).RecentEvents.Where(entry => entry.Type == "discard"
+            && entry.Cards.Any(card => card.InstanceId == eligible[1].InstanceId)));
     }
 
     [Fact]

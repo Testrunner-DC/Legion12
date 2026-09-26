@@ -18,16 +18,20 @@ const millCards = [
   card('mill-card-3', '磨牌三', 'S01-0004'),
 ]
 const duplicateCard = card('duplicate-discard', '佣兵部队', 'S01-0002')
+const pharaohFestival = { ...card('pharaoh-festival', '法老王的庆典', 'S01-0222'), cardType: 'tactic' }
+const festivalHandCard = card('festival-hand-card', '陵墓守卫', 'S01-0212')
+const festivalGraveCard = card('festival-grave-card', '卡诺匹斯罐 一', 'S01-0208')
+const finn = card('finn-optional-ready', '芬恩', 'S02-0610', true)
 const nuada = { ...card('nuada-source', '银臂努阿达', 'ST06-M1'), cardType: 'master' }
 
 function player(playerIndex: number): PlayerView {
   return {
     playerIndex, name: playerIndex ? '玩家B' : '玩家A', deckName: '', faction: 'otherworld',
     master: { masterId: playerIndex ? 'S02-06M1' : 'ST06-M1', masterName: playerIndex ? '莫瑞甘' : '银臂努阿达', hp: 8, maxHp: 8 },
-    libraryCount: playerIndex ? 20 : 21, libraryTop: null, hand: playerIndex ? [] : [handSquire, robinSquire, duplicateCard], handCount: playerIndex ? 0 : 3,
+    libraryCount: playerIndex ? 20 : 23, libraryTop: null, hand: playerIndex ? [] : [handSquire, robinSquire, duplicateCard, pharaohFestival], handCount: playerIndex ? 0 : 4,
     morale: [], field: playerIndex
       ? [[null, null, null], [null, null, null]]
-      : [[mover, swapper, host], [null, null, null]],
+      : [[mover, swapper, host], [finn, null, null]],
     graveyard: [], graveyardCount: 0, resolving: [],
     specialZones: { runes: 2, trialLevel: 0, godPower: [], trials: [] }, mulliganDone: true,
   }
@@ -129,6 +133,43 @@ const api = {
         { sequence:++sequence, type:'effect-response', playerIndex:0, text:'佣兵部队响应结算', cards:[duplicateCard] },
       ]
     })
+  },
+  pharaohFestivalChain() {
+    game.prompts = [prompt('festival-source-zones', {
+      'pharaoh-festival:zone': '手牌',
+      'festival-hand-card:zone': '牌库',
+      'festival-grave-card:zone': '牌库',
+    })]
+    game.players[0].hand = game.players[0].hand?.filter(card => card.instanceId !== pharaohFestival.instanceId)
+    game.players[0].handCount = game.players[0].hand?.length
+    game.players[0].resolving = [...(game.players[0].resolving ?? []), pharaohFestival]
+    publish({ type:'play', playerIndex:0, text:'玩家A 打出 法老王的庆典', cards:[pharaohFestival] })
+    queueMicrotask(() => {
+      game.prompts = []
+      game.players[0].hand = [...(game.players[0].hand ?? []), festivalHandCard]
+      game.players[0].handCount = game.players[0].hand.length
+      publish({ type:'reveal', playerIndex:0, text:'法老王的庆典展示〈陵墓守卫〉并加入手牌', cards:[festivalHandCard] })
+      queueMicrotask(() => {
+        game.players[0].graveyard = [...(game.players[0].graveyard ?? []), festivalGraveCard]
+        game.players[0].graveyardCount = game.players[0].graveyard.length
+        game.players[0].libraryCount = Math.max(0, game.players[0].libraryCount - 2)
+        publish({ type:'discard', playerIndex:0, text:'法老王的庆典将 卡诺匹斯罐 一 从牌库置入墓地', cards:[festivalGraveCard] })
+        // Real command round-trips commonly append audit-only facts while the
+        // previous image/DOM preparation is still awaiting. They must not make
+        // any of the three already claimed movements enter the queue again.
+        queueMicrotask(() => publish({ type:'effect-decision', playerIndex:0, text:'法老王的庆典完成选择', cards:[] }))
+      })
+    })
+  },
+  beginFinnOptionalReady() {
+    finn.tapped = true
+    game.players[0].field[1][2] = finn
+    game.prompts = [prompt('finn-ready-choice')]
+    game.revision += 1
+  },
+  declineFinnOptionalReady() {
+    game.prompts = []
+    publish({ type:'effect-declined', playerIndex:0, text:'芬恩选择不消耗1符文转为活跃', cards:[finn] })
   },
   returnDuplicateCard() {
     game.players[0].graveyard = (game.players[0].graveyard ?? []).filter(card => card.instanceId !== duplicateCard.instanceId)
