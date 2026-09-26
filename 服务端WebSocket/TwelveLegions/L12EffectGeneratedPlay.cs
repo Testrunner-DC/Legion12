@@ -16,7 +16,7 @@ public sealed partial class L12GameEngine
         {
             if (L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && row == 1) continue;
             var occupant = player.Field[row][slot];
-            if (occupant is null || row == 1 && IsCounterTactic(occupant.CardId))
+            if (occupant is null || CanReplaceOwnCoveredCounter(player.PlayerIndex, player, row, occupant))
                 yield return $"{row}:{slot}";
         }
     }

@@ -142,7 +142,8 @@ public sealed partial class L12GameEngine
             return CommandResult.Reject("《腐秽大地》持续期间后排无法放置军团");
         if (card.CardType == "legion" && targetBattlefield.Field[command.Row!.Value][command.Slot!.Value] is { } occupant)
         {
-            var canReplaceOwnCounter = targetPlayerIndex == playerIndex && command.Row == 1 && IsCounterTactic(occupant.CardId);
+            var canReplaceOwnCounter = CanReplaceOwnCoveredCounter(
+                playerIndex, targetBattlefield, command.Row.Value, occupant);
             if (!canReplaceOwnCounter) return CommandResult.Reject("阵地已被占用");
         }
 
@@ -313,14 +314,15 @@ public sealed partial class L12GameEngine
             if (L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && row == 1)
                 return CommandResult.Reject("〈腐秽大地〉持续期间后排无法放置军团");
             var occupyingCard = targetBattlefield.Field[row][slot];
-            var displacesOwnCounter = targetPlayerIndex == playerIndex && row == 1 && occupyingCard is not null && IsCounterTactic(occupyingCard.CardId);
+            var displacesOwnCounter = CanReplaceOwnCoveredCounter(
+                playerIndex, targetBattlefield, row, occupyingCard);
             if (occupyingCard is not null && !displacesOwnCounter) return CommandResult.Reject("阵地已被占用");
             player.Hand.Remove(card);
             if (displacesOwnCounter)
             {
                 occupyingCard!.Hidden = false;
                 ResetCardAfterLeavingField(occupyingCard);
-                player.Graveyard.Add(occupyingCard);
+                CardOwner(occupyingCard, player).Graveyard.Add(occupyingCard);
                 AddEvent("counter-displaced", playerIndex,
                     $"{player.Name} 打出军团并将自己覆盖的反击战术〈{occupyingCard.Name}〉置入墓地", occupyingCard);
             }
@@ -678,7 +680,9 @@ public sealed partial class L12GameEngine
         if (command.Row != 1 || command.Slot is null or < 0 or > 2) return CommandResult.Reject("反击战术必须覆盖在后排阵地");
         var player = State.Players[playerIndex];
         var slot = command.Slot.Value;
-        if (player.Field[1][slot] is { CardType: not "tactic" }) return CommandResult.Reject("该后排阵地已有军团");
+        var occupant = player.Field[1][slot];
+        if (occupant is not null && !CanReplaceOwnCoveredCounter(playerIndex, player, 1, occupant))
+            return CommandResult.Reject("阵地已被占用");
         var freeFromDisaster = L12ActiveDisasterRules.CounterTacticsAreFree(State.ActiveDisaster?.CardId);
         var freeFromEffect = !freeFromDisaster && player.FreeTacticCount > 0;
         var cost = CounterTacticPlacementCost(player);
@@ -690,12 +694,12 @@ public sealed partial class L12GameEngine
             : TryConsumeMorale(player, cost);
         if (!paid) return CommandResult.Reject("选择的支付资源已失效或数量不正确");
         player.Hand.Remove(card);
-        if (player.Field[1][slot] is not null)
+        if (occupant is not null)
         {
-            var old = player.Field[1][slot]!;
+            var old = occupant;
             old.Hidden = false;
             ResetCardAfterLeavingField(old);
-            player.Graveyard.Add(old);
+            CardOwner(old, player).Graveyard.Add(old);
             AddEvent("counter-replaced", playerIndex, $"{old.Name} 被新的反击战术顶替并置入墓地", old);
         }
         card.Hidden = true;
@@ -707,6 +711,14 @@ public sealed partial class L12GameEngine
         AddEvent("counter-set", playerIndex, $"{player.Name} 在后排覆盖 1 张反击战术");
         return CommandResult.Ok();
     }
+
+    private bool CanReplaceOwnCoveredCounter(int actingPlayerIndex, L12PlayerState battlefield,
+        int row, L12CardInstance? occupant)
+        => battlefield.PlayerIndex == actingPlayerIndex
+           && row == 1
+           && occupant is { Hidden: true }
+           && IsCounterTactic(occupant.CardId)
+           && CardOwner(occupant, battlefield).PlayerIndex == actingPlayerIndex;
 
     private CommandResult? EnsurePlayResourcePaymentChoice(int playerIndex, L12CardInstance card, L12Command command, int cost,
         IReadOnlyCollection<string>? excludedResourceIds = null, int temporaryMoraleReserve = 0)

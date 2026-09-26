@@ -719,6 +719,29 @@ public sealed class GameEngineTests
     }
 
     [Fact]
+    public void CounterTacticCanReplaceOnlyItsControllersCoveredCounterTactic()
+    {
+        var game = Create();
+        var playerIndex = game.State.ActivePlayer;
+        var first = PutCardInHand(game, playerIndex, "S01-0016");
+        var replacement = Card("S01-0017", "replacement-covered-counter");
+        game.State.Players[playerIndex].Hand.Add(replacement);
+
+        Assert.True(game.Handle(playerIndex,
+            new L12Command("playCard", first.InstanceId, Row: 1, Slot: 1)).Accepted);
+        var result = game.Handle(playerIndex,
+            new L12Command("playCard", replacement.InstanceId, Row: 1, Slot: 1));
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.Same(replacement, game.State.Players[playerIndex].Field[1][1]);
+        Assert.True(replacement.Hidden);
+        Assert.Contains(first, game.State.Players[playerIndex].Graveyard);
+        Assert.False(first.Hidden);
+        Assert.Contains(game.State.Events, item => item.Type == "counter-replaced"
+            && item.Cards.Any(card => card.InstanceId == first.InstanceId));
+    }
+
+    [Fact]
     public void UnblockedMasterAttackEndsGameAtZeroHp()
     {
         var game = Create();

@@ -318,6 +318,28 @@ public sealed class AtomicReviewBatch6JCRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "card:S02-0523")]
+    [Trait("L12Evidence", "entry:face-up-tactic-slot-occupancy")]
+    public void EffectGeneratedLegionCannotDisplaceAFaceUpTrojanHorse()
+    {
+        var game = Create(97032);
+        var player = game.State.Players[0];
+        var top = Card("S01-0410", "batch6jc-face-up-occupied-legion");
+        var horse = Card("S02-0523", "batch6jc-face-up-trojan");
+        horse.OwnerIndex = 1;
+        horse.Hidden = false;
+        player.Field[1][2] = horse;
+        BeginOkitaTop(game, top);
+        ResolveOnlyPrompt(game, "play");
+
+        var slot = Assert.Single(game.State.PendingPrompts);
+
+        Assert.DoesNotContain("1:2", slot.ValidChoices);
+        Assert.Same(horse, player.Field[1][2]);
+        Assert.Contains(top, player.Library);
+    }
+
+    [Fact]
     [Trait("L12Evidence", "entry:batch6jc-limu-simple-common-free-play")]
     public void LiMuSimpleTacticUsesTheCommonEffectGeneratedPlayTransaction()
     {

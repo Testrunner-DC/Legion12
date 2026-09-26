@@ -4997,6 +4997,40 @@ public sealed class S2FactionRegressionTests
         Assert.True(graveSequence < drawSequence);
     }
 
+    [Theory]
+    [InlineData("S02-0004")]
+    [InlineData("S01-0018")]
+    public void FaceUpTrojanHorseOccupiesEnemyBackRowAndCannotBeReplaced(string replacementCardId)
+    {
+        var game = Create(633700);
+        var host = game.State.Players[0];
+        var owner = game.State.Players[1];
+        host.Hand.Clear();
+        var horse = Card("S02-0523", "trojan-occupied-slot");
+        horse.OwnerIndex = owner.PlayerIndex;
+        horse.Hidden = false;
+        host.Field[1][1] = horse;
+        var replacement = Card(replacementCardId, $"trojan-replacement-{replacementCardId}");
+        replacement.OwnerIndex = host.PlayerIndex;
+        host.Hand.Add(replacement);
+        AddMorale(host, 2);
+        var activeMoraleBefore = host.Morale.Count(card => !card.Tapped);
+        game.State.ActivePlayer = host.PlayerIndex;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        var result = game.Handle(host.PlayerIndex,
+            new L12Command("playCard", replacement.InstanceId, Row: 1, Slot: 1));
+
+        Assert.False(result.Accepted);
+        Assert.Equal("阵地已被占用", result.Error);
+        Assert.Same(horse, host.Field[1][1]);
+        Assert.Contains(replacement, host.Hand);
+        Assert.Equal(activeMoraleBefore, host.Morale.Count(card => !card.Tapped));
+        Assert.DoesNotContain(horse, host.Graveyard);
+        Assert.DoesNotContain(horse, owner.Graveyard);
+    }
+
     [Fact]
     [L12AbilityEvidence("S02-0523:ability:after-opponent-attack:5bff9b891b7b1cba",
         "target-invalidated", "duplicate-submit", "reconnect")]
