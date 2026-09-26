@@ -380,6 +380,16 @@ function resetFilters() {
 @media (max-width: 900px) {
   /* The shared mobile layout hides the detail panel. Do not let this later
      scoped desktop declaration keep reserving its sidebar column. */
-  .archive-workspace { grid-template-columns: minmax(0, 1fr); }
+  .archive-workspace {
+    container-type: inline-size;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .archive-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@container (max-width: 580px) {
+  .archive-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container (max-width: 380px) {
+  .archive-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>

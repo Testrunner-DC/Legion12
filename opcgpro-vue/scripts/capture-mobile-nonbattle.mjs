@@ -303,16 +303,29 @@ try {
   if (afterScrollArchiveImages <= initialArchiveImages) throw new Error(`mobile archive did not create more images while scrolling: ${initialArchiveImages} -> ${afterScrollArchiveImages}`)
   if ((await page.locator('.archive-card .mobile-deferred-card-image').count()) !== initialArchiveCards)
     throw new Error('mobile archive changed the original card-slot count while deferring images')
-  for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }, { width: 520, height: 844 }, { width: 700, height: 900 }, { width: 701, height: 900 }]) {
+  for (const viewport of [
+    { width: 320, height: 568 },
+    { width: 390, height: 844 },
+    { width: 430, height: 932 },
+    { width: 520, height: 844 },
+    { width: 700, height: 900 },
+    { width: 701, height: 900 },
+  ]) {
     await page.setViewportSize(viewport)
     const geometry = await page.locator('.archive-workspace').evaluate(element => {
       const workspace = element.getBoundingClientRect()
-      const grid = element.querySelector('.archive-grid')?.getBoundingClientRect()
+      const gridElement = element.querySelector('.archive-grid')
+      const grid = gridElement?.getBoundingClientRect()
       const card = element.querySelector('.archive-card')?.getBoundingClientRect()
-      return { workspace: workspace.width, grid: grid?.width ?? 0, card: card?.width ?? 0 }
+      const columns = gridElement ? getComputedStyle(gridElement).gridTemplateColumns.split(/\s+/).filter(Boolean).length : 0
+      return { workspace: workspace.width, grid: grid?.width ?? 0, card: card?.width ?? 0, columns }
     })
     if (geometry.grid < geometry.workspace - 2 || geometry.card < 90)
       throw new Error(`archive mobile grid retained a hidden detail column at ${viewport.width}x${viewport.height}: ${JSON.stringify(geometry)}`)
+    const expectedColumns = geometry.workspace <= 380 ? 2 : geometry.workspace <= 580 ? 3 : 4
+    if (geometry.columns !== expectedColumns)
+      throw new Error(`archive mobile grid expected ${expectedColumns} columns for ${geometry.workspace}px of usable width at ${viewport.width}x${viewport.height}, got ${geometry.columns}: ${JSON.stringify(geometry)}`)
+    await page.screenshot({ path: path.join(output, `archive-columns-${viewport.width}x${viewport.height}-${geometry.columns}col.png`) })
   }
 
   await page.goto(`http://127.0.0.1:${port}/__mobile_review__?route=%2Fbattle%2Frankings`)
