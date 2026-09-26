@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-27-qianyang-empty-target",
+  "date": "2026-09-27",
+  "audience": "players",
+  "title": "乾坤·阳空目标与独立抽牌修正",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "《乾坤·阳》在没有可击杀的3000兵力以下敌方军团时仍可发动：第一段会按无目标跳过，随后仍可独立选择是否返还1士气并抽取1张牌；第一段目标在响应后失效时也不会吞掉第二段。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12CompositeEffectPlans.cs"
+      ]
+    }
+  ]
+}

@@ -1,4 +1,7 @@
+using System.IO.Compression;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
 using Xunit;
@@ -65,6 +68,16 @@ public sealed class JournalFailureClosureAdversarialTests
         var path = _fixture.Copy(matrixId);
         await MutateLatestCheckpointAsync(path, "random-version");
         await AssertJournalDataFailureAsync(matrixId, path, "随机状态版本不受支持",
+            recorder => recorder.LoadJournalEngineAsync(JournalFailureTemplateFixture.TargetMatchId));
+    }
+
+    [Fact]
+    public async Task UnsupportedGameStateVersionIsNotHiddenByAnOlderCheckpoint()
+    {
+        const string matrixId = "CP-09";
+        var path = _fixture.Copy(matrixId);
+        await MutateLatestCheckpointAsync(path, "state-format-version");
+        await AssertJournalDataFailureAsync(matrixId, path, L12PersistenceContract.ExpiredReplayMessage,
             recorder => recorder.LoadJournalEngineAsync(JournalFailureTemplateFixture.TargetMatchId));
     }
 
@@ -297,6 +310,36 @@ public sealed class JournalFailureClosureAdversarialTests
     private static async Task MutateLatestCheckpointAsync(string path, string mutation)
     {
         await using var connection = OpenConnection(path);
+        if (mutation == "state-format-version")
+        {
+            var read = connection.CreateCommand();
+            read.CommandText = """
+                SELECT state_blob FROM match_state_checkpoints
+                WHERE match_id=$match AND sequence=64;
+                """;
+            read.Parameters.AddWithValue("$match", JournalFailureTemplateFixture.TargetMatchId);
+            var original = Assert.IsType<byte[]>(await read.ExecuteScalarAsync());
+            await using var input = new MemoryStream(original, writable: false);
+            await using var brotli = new BrotliStream(input, CompressionMode.Decompress);
+            using var output = new MemoryStream();
+            await brotli.CopyToAsync(output);
+            var state = JsonNode.Parse(Encoding.UTF8.GetString(output.ToArray()))!.AsObject();
+            state[nameof(L12GameState.StateFormatVersion)] = 999;
+            var raw = Encoding.UTF8.GetBytes(state.ToJsonString());
+            using var compressed = new MemoryStream();
+            await using (var compressor = new BrotliStream(compressed, CompressionLevel.Optimal, leaveOpen: true))
+                await compressor.WriteAsync(raw);
+            var updateBlob = connection.CreateCommand();
+            updateBlob.CommandText = """
+                UPDATE match_state_checkpoints SET state_blob=$value,uncompressed_bytes=$bytes
+                WHERE match_id=$match AND sequence=64;
+                """;
+            updateBlob.Parameters.AddWithValue("$value", compressed.ToArray());
+            updateBlob.Parameters.AddWithValue("$bytes", raw.Length);
+            updateBlob.Parameters.AddWithValue("$match", JournalFailureTemplateFixture.TargetMatchId);
+            Assert.Equal(1, await updateBlob.ExecuteNonQueryAsync());
+            return;
+        }
         if (mutation is "truncate-one" or "truncate-half" or "random-truncate")
         {
             var column = mutation == "random-truncate" ? "random_state_blob" : "state_blob";

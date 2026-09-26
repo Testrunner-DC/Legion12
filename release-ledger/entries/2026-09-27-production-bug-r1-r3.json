@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-27-production-bug-r1-r3",
+  "date": "2026-09-27",
+  "audience": "players",
+  "title": "正式服目标选择、沙盒控制与起手修正",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "战场目标统一按真实格位与实例识别：对手盖伏卡仍可在合法时被选择但不会泄露身份，同名公开卡也能按位置准确区分；弹框、棋盘高亮与确认结果保持一致。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/PlayerMat.vue",
+        "opcgpro-vue/src/l12/game/PromptOverlay.vue",
+        "opcgpro-vue/src/l12/game/battlefieldTargetPresentation.ts",
+        "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs"
+      ]
+    },
+    {
+      "category": "battle",
+      "text": "沙盒控制另一方时，墓地能力会使用当前受控玩家的合法权限与卡牌区域，不再错误读取登录玩家自己的席位。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/GraveyardOverlay.vue"
+      ]
+    },
+    {
+      "category": "decks",
+      "text": "牌库编辑器与公开牌库的随机起手统一排除不计入正常主牌数量的特殊卡，同时保留普通卡的实际副本权重。",
+      "paths": [
+        "opcgpro-vue/src/l12/L12DeckEditor.vue",
+        "opcgpro-vue/src/l12/decks.ts",
+        "opcgpro-vue/src/l12/openingHandEligibility.ts",
+        "opcgpro-vue/src/l12/site/PublicDeckDetailPage.vue"
+      ]
+    }
+  ]
+}
