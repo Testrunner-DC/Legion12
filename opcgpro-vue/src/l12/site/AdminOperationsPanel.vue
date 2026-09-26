@@ -1,12 +1,18 @@
 <script setup lang="ts">
 import PagedCollection from './PagedCollection.vue'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, shallowRef } from 'vue'
 import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import ConstructionRuleEditor from './ConstructionRuleEditor.vue'
 import DisasterPoolPicker from './DisasterPoolPicker.vue'
 import ImmediateMaintenancePanel from './ImmediateMaintenancePanel.vue'
 import AdminRiskActionDialog from './AdminRiskActionDialog.vue'
 import { useAdminRiskAction } from './useAdminRiskAction'
+import {
+  freezeOperationsConfigPreview,
+  operationsConfigPreviewMatches,
+  operationsConfigPreviewSubmission,
+  type FrozenOperationsConfigPreview,
+} from './operationsConfigPreview'
 import {
   adminApi,
   hasPermission,
@@ -27,7 +33,7 @@ const versionId = ref('')
 const updatedBy = ref('')
 const updatedAt = ref('')
 const preview = ref<OperationsConfigPreview | null>(null)
-const previewFingerprint = ref('')
+const previewGuard = shallowRef<FrozenOperationsConfigPreview | null>(null)
 const history = ref<OperationsConfigVersion[]>([])
 const runtime = ref<RuntimeStatus | null>(null)
 const reason = ref('')
@@ -102,6 +108,11 @@ const httpBudgetState = computed(() => {
   if (!performance?.sampleSufficient) return '采样不足'
   return performance.withinBudget ? '预算内' : '超出预算'
 })
+const previewMatchesForm = computed(() => {
+  if (!preview.value?.valid || !previewGuard.value) return false
+  try { return operationsConfigPreviewMatches(previewGuard.value, serialize()) }
+  catch { return false }
+})
 
 function lines(value: string) {
   return value.split(/\r?\n/).map(item => item.trim()).filter(Boolean)
@@ -168,6 +179,8 @@ function serialize(): OperationsConfigPayload {
 async function load() {
   loading.value = true
   loadError.value = ''
+  preview.value = null
+  previewGuard.value = null
   try {
     const [current, versions, status] = await Promise.all([
       adminApi.operationsConfig(), adminApi.operationsHistory(), adminApi.runtimeStatus(),
@@ -234,34 +247,39 @@ function startServer() {
 }
 async function previewChanges() {
   if (!canWrite.value) return
+  preview.value = null
+  previewGuard.value = null
   try {
-    preview.value = await adminApi.previewOperationsConfig(serialize(), version.value)
-    if (preview.value.valid) hydrate(preview.value.normalized)
-    previewFingerprint.value = preview.value.valid ? JSON.stringify(serialize()) : ''
-    emit('notice', preview.value.valid ? `预览通过：${preview.value.changes.length} 项变更` : '预览未通过，请检查警告')
+    const result = await adminApi.previewOperationsConfig(serialize(), version.value)
+    preview.value = result
+    if (result.valid) {
+      previewGuard.value = freezeOperationsConfigPreview(result)
+      hydrate(previewGuard.value.snapshot)
+    }
+    emit('notice', result.valid ? `预览通过：${result.changes.length} 项变更` : '预览未通过，请检查警告')
   } catch (error) { emit('notice', error instanceof Error ? error.message : '运营配置预览失败') }
 }
-async function performApplyChanges() {
+async function performApplyChanges(config: OperationsConfigPayload, applyReason: string, expectedVersion: number) {
   if (!canWrite.value) return
-  if (!reason.value.trim()) { emit('notice', '应用配置前请填写变更理由'); return }
-  if (!preview.value?.valid || previewFingerprint.value !== JSON.stringify(serialize())) {
-    emit('notice', '配置已变化或尚未通过预览，请重新预览后再应用'); return
-  }
   try {
-    const result = await adminApi.applyOperationsConfig(serialize(), reason.value.trim(), version.value)
+    const result = await adminApi.applyOperationsConfig(config, applyReason, expectedVersion)
     emit('notice', result.applied ? `运营配置 v${result.current.version} 已保存并写入审计` : '运营配置未发生变更')
     reason.value = ''
     preview.value = null
+    previewGuard.value = null
     await load()
   } catch (error) { emit('notice', error instanceof Error ? error.message : '运营配置应用失败'); throw error }
 }
 function applyChanges() {
   if (!canWrite.value) return
-  if (!reason.value.trim()) { emit('notice', '应用配置前请填写变更理由'); return }
-  if (!preview.value?.valid || previewFingerprint.value !== JSON.stringify(serialize())) {
+  const applyReason = reason.value.trim()
+  if (!applyReason) { emit('notice', '应用配置前请填写变更理由'); return }
+  const guard = previewGuard.value
+  if (!preview.value?.valid || !guard || !previewMatchesForm.value) {
     emit('notice', '配置已变化或尚未通过预览，请重新预览后再应用'); return
   }
-  requestRiskAction({ title: '应用运营配置', target: `v${version.value} → v${preview.value.nextVersion}`, targetLabel: '配置版本', impact: `${preview.value.changes.length} 项已冻结预览将立即生效；进行中对局继续使用创建时规则。`, confirmLabel: '确认应用配置', run: performApplyChanges })
+  const submission = operationsConfigPreviewSubmission(guard)
+  requestRiskAction({ title: '应用运营配置', target: `v${guard.currentVersion} → v${guard.nextVersion}`, targetLabel: '配置版本', impact: `${preview.value.changes.length} 项已冻结预览将立即生效；进行中对局继续使用创建时规则。`, confirmLabel: '确认应用配置', run: () => performApplyChanges(submission.config, applyReason, submission.expectedVersion) })
 }
 async function performRollback(target: OperationsConfigVersion) {
   if (!canWrite.value) return
@@ -370,7 +388,7 @@ onMounted(load)
       </div>
       <footer v-if="activeSection === 'ranked'" class="config-actions"><input v-model="rankedReason" placeholder="排位配置变更理由（必填）"/><button class="confirm" @click="saveRanked">保存排位配置</button></footer>
       <footer v-else class="config-actions"><input v-model="reason" placeholder="变更或回滚理由（必填）"/><button @click="previewChanges">预览差异</button><button class="confirm" @click="applyChanges">保存配置</button></footer>
-      <div v-if="preview" class="preview-box"><b>{{ preview.valid ? '预览通过' : '预览未通过' }} · v{{ preview.currentVersion }} → v{{ preview.nextVersion }}</b><ul><li v-for="item in preview.changes" :key="item">{{ item }}</li></ul><p v-for="item in preview.warnings" :key="item">警告：{{ item }}</p></div>
+      <div v-if="preview" class="preview-box"><b>{{ preview.valid ? (previewMatchesForm ? '预览通过' : '配置已编辑，请重新预览') : '预览未通过' }} · v{{ preview.currentVersion }} → v{{ preview.nextVersion }}</b><ul><li v-for="item in preview.changes" :key="item">{{ item }}</li></ul><p v-for="item in preview.warnings" :key="item">警告：{{ item }}</p></div>
       </fieldset>
     </section>
 
