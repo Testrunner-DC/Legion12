@@ -14,7 +14,7 @@ const checkMobile = process.env.L12_CHECK_MOBILE !== '0'
 const mobileOffset = Math.max(0, Number(process.env.L12_MOBILE_OFFSET ?? 0))
 const mobileLimit = Math.max(1, Number(process.env.L12_MOBILE_LIMIT ?? mobileViewports.length))
 const selectedMobileViewports = mobileViewports.slice(mobileOffset, mobileOffset + mobileLimit)
-const query = '?mobile=1&special=1&trials=2&myTrials=1&fieldIndicators=1&rankedClock=1&hand=15'
+const query = '?mobile=1&canvas=1&special=1&trials=2&myTrials=1&fieldIndicators=1&rankedClock=1&hand=15'
 fs.mkdirSync(out, { recursive: true })
 
 const browser = await chromium.launch({ headless: true, channel: 'msedge' })

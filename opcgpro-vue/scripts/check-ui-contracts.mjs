@@ -349,15 +349,15 @@ const contracts = [
   [(board.match(/data-ui-contract="shared-external-clock-track"/g) ?? []).length === 2
     && board.includes('opponent-player-clock') && board.includes('my-player-clock')
     && board.includes(':active="game.activePlayer === viewEnemy.playerIndex"') && board.includes(':active="game.activePlayer === viewMe.playerIndex"')
-    && board.includes('--l12-clock-track-width:164px')
-    && board.includes('grid-template-columns:minmax(0,1fr) var(--l12-clock-track-width)')
-    && board.includes('.board-center>.l12-hand,.board-center>.felt-board{grid-column:1}.board-center>.board-status-lane{grid-column:2;grid-row:2}')
+    && board.includes('--l12-clock-track-width:196px')
+    && board.includes('grid-template-columns:minmax(0,1fr);grid-template-rows:var(--l12-hand-lane-height) minmax(0,1fr) var(--l12-hand-lane-height)')
+    && board.includes('.board-center>.l12-hand,.board-center>.felt-board{grid-column:1}.board-center>.board-status-lane{grid-column:1;width:var(--l12-clock-track-width);justify-self:end}')
     && board.includes('.board-player-clock{position:relative;right:auto;top:auto;bottom:auto;width:100%;max-width:var(--l12-clock-track-width);transform:none}')
-    && board.includes('justify-self:stretch;overflow:hidden;pointer-events:none')
-    && board.includes('.opponent-status-lane{align-self:start;align-items:flex-start}.my-status-lane{align-self:end;align-items:flex-end}')
+    && board.includes('height:auto;min-height:0;justify-content:flex-end;overflow:hidden;pointer-events:none')
+    && board.includes('.opponent-status-lane{grid-row:1;align-self:stretch;align-items:flex-end}.my-status-lane{grid-row:3;align-self:stretch;align-items:flex-start}')
     && board.includes("'timed-board': Boolean(l12State.rankedClock)") && board.includes('.board-center>.l12-hand{position:relative;z-index:40;box-sizing:border-box;width:calc(100% - 400px)')
-    && board.includes('.board-center.timed-board>.l12-hand{width:calc(100% - 360px);transform:none}')
-    && !globalStyle.includes("content:'回合玩家'"), '双方回合标识与常驻计时必须位于战区垫和右侧栏之间的同一独立安全轨；对方贴战区垫上沿、我方贴下沿，避开对战垫、右侧栏、双方手牌和操作条，当前回合只能控制高亮'],
+    && board.includes('.board-center.timed-board>.l12-hand{width:calc(100% - 424px);transform:none}')
+    && !globalStyle.includes("content:'回合玩家'"), '宽屏双方计时必须在手牌行右侧共用196px镜像安全轨；对方底边贴战区垫上沿、我方顶边贴战区垫下沿，二者右边贴右栏且战区垫主体同时直连右栏；不得侵入战垫、右栏、手牌或操作条'],
   [playerTurnClock.includes('data-ui-contract="persistent-player-turn-clock"') && playerTurnClock.includes('总时') && playerTurnClock.includes('本次') && playerTurnClock.includes('重连')
     && playerTurnClock.includes('.player-turn-clock{box-sizing:border-box;display:grid;width:196px;')
     && playerTurnClock.includes('grid-template-columns:repeat(2,minmax(0,1fr))')
@@ -406,20 +406,21 @@ const contracts = [
   [board.includes('? { width: 2304, height: 1296 }') && board.includes(': { width: 2048, height: 1264 }')
     && board.includes('width: `${stageSize.width}px`') && board.includes('height: `${stageSize.height}px`')
     && board.includes('.board-stage{aspect-ratio:16/9}')
-    && board.includes('grid-template-columns:340px 92px minmax(0,1fr) 320px')
+    && board.includes('grid-template-columns:340px 8px 92px 8px minmax(0,1fr) 320px')
+    && board.includes('.board-viewport:not(.mobile-landscape-board) .board-center{grid-column:5}.board-viewport:not(.mobile-landscape-board) .right-rail{grid-column:6}')
     && board.includes('.right-rail{display:grid;grid-template-rows:auto minmax(0,1fr) auto')
     && board.includes('.right-rail .action-panel{max-height:300px;overflow:auto}')
-    && board.includes('--l12-clock-track-width:164px')
+    && board.includes('--l12-clock-track-width:196px')
     && board.includes('grid-template-rows:var(--l12-hand-lane-height) minmax(0,1fr) var(--l12-hand-lane-height)')
-    && board.includes('grid-template-columns:minmax(0,1fr) var(--l12-clock-track-width)')
-    && board.includes('.board-center>.l12-hand,.board-center>.felt-board{grid-column:1}.board-center>.board-status-lane{grid-column:2;grid-row:2}')
+    && board.includes('grid-template-columns:minmax(0,1fr);grid-template-rows:var(--l12-hand-lane-height) minmax(0,1fr) var(--l12-hand-lane-height)')
+    && board.includes('.board-center>.l12-hand,.board-center>.felt-board{grid-column:1}.board-center>.board-status-lane{grid-column:1;width:var(--l12-clock-track-width);justify-self:end}')
     && (board.match(/data-ui-contract="shared-external-clock-track"/g) ?? []).length === 2
     && (board.match(/class="opponent-hand"/g) ?? []).length === 2
     && handArea.includes('const cardWidth = computed(() => 114.4)') && handArea.includes('.l12-hand .hand-card-wrap .card-tile{width:114.4px;height:160.6px;flex-basis:114.4px;border:1px solid transparent')
     && handArea.includes('.l12-hand.hidden .card-back{box-sizing:border-box;width:114.4px;height:160.6px}')
     && board.includes('align-self:stretch;justify-self:center;transform:translateX(64px)')
     && board.includes('.board-center>.opponent-hand{grid-row:1}.felt-board{grid-row:2}.board-center>.l12-hand:last-child{grid-row:3}')
-    && board.includes('.opponent-status-lane{align-self:start;align-items:flex-start}.my-status-lane{align-self:end;align-items:flex-end}')
+    && board.includes('.opponent-status-lane{grid-row:1;align-self:stretch;align-items:flex-end}.my-status-lane{grid-row:3;align-self:stretch;align-items:flex-start}')
     && !board.includes('.battlefield-half.opponent-half{transform:rotate(180deg)')
     && !board.includes('.opponent-hand{transform:rotate(180deg)'), '对局舞台必须保持16:9主布局；独立窄阶段列与左、中、右区不得互相侵入，双方手牌和文字不得倒置'],
   [board.includes('data-ui-contract="left-current-disaster"') && !board.includes('<h3>当前天灾</h3>')
@@ -879,9 +880,9 @@ const contracts = [
   [handArea.includes('data-ui-contract="field-sized-safe-hand"') && handArea.includes('const cardWidth = computed(() => 114.4)')
     && handArea.includes('width:114.4px;height:160.6px;flex-basis:114.4px')
     && board.includes('.formation-slot .card-tile.tapped){width:114.4px;height:160.6px;flex-basis:114.4px}')
-    && board.includes('.board-center{--l12-hand-lane-height:160px;--l12-clock-track-width:164px;display:grid;min-height:0;')
-    && board.includes('width:calc(100% - 400px)') && board.includes('.board-center.timed-board>.l12-hand{width:calc(100% - 360px);transform:none}') && board.includes('z-index:40')
-    && handArea.includes('overflow-x:auto') && handArea.includes('ResizeObserver'), '双方手牌必须与场上军团同尺寸并高于场面可点击；计时轨独立位于战区垫和右侧栏之间，不得挤占手牌，多数量时按实测宽度扇形收拢或横向滚动'],
+    && board.includes('.board-center{--l12-hand-lane-height:160px;--l12-clock-track-width:196px;display:grid;min-height:0;')
+    && board.includes('width:calc(100% - 400px)') && board.includes('.board-center.timed-board>.l12-hand{width:calc(100% - 424px);transform:none}') && board.includes('z-index:40')
+    && handArea.includes('overflow-x:auto') && handArea.includes('ResizeObserver'), '双方手牌必须与场上军团同尺寸并高于场面可点击；排位计时使用手牌行右侧196px安全轨，多数量时按实测宽度扇形收拢或横向滚动'],
   [board.includes('v-if="l12State.spectating" class="spectator-hand" hidden :count="viewMe.handCount || 0"')
     && board.includes('class="opponent-hand" hidden :count="viewEnemy.handCount || 0"')
     && !board.includes('class="spectator-hand" :cards="viewMe.hand"'), '观战者必须同时看到双方完整手牌数量与等量卡背，不得接收或渲染任一方手牌身份'],
