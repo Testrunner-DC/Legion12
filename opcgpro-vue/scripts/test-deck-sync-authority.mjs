@@ -7,6 +7,13 @@ const deckSourceUrl = new URL('../src/l12/decks.ts', import.meta.url)
 const editorSourceUrl = new URL('../src/l12/L12DeckEditor.vue', import.meta.url)
 const deckSource = readFileSync(deckSourceUrl, 'utf8').replaceAll('\r\n', '\n')
 const editorSource = readFileSync(editorSourceUrl, 'utf8').replaceAll('\r\n', '\n')
+const openingHandImport = `import {
+  NORMAL_OPENING_HAND_CARD_TYPES,
+  bypassesNormalDrawDeck,
+  isDerivedDeckSpecialCard,
+  isNormalOpeningHandCard,
+  normalOpeningHandCopies,
+} from './openingHandEligibility'`
 
 class MemoryStorage {
   values = new Map()
@@ -38,6 +45,11 @@ const executableSource = deckSource
   .replace("import cardProductInclusionsData from '../../../服务端WebSocket/TwelveLegions/Data/card-product-inclusions.json'", 'const cardProductInclusionsData = { products: [], cards: [] }')
   .replace("import cardArchiveAssetsData from '../../../服务端WebSocket/TwelveLegions/Data/card-archive-assets.json'", 'const cardArchiveAssetsData = { cards: [] }')
   .replace("import seasonTwoRulesData from '../../../服务端WebSocket/TwelveLegions/Data/cards.s2.json'", 'const seasonTwoRulesData = []')
+  .replace(openingHandImport, `const NORMAL_OPENING_HAND_CARD_TYPES = new Set(['legion', 'tactic', 'artifact'])
+const isDerivedDeckSpecialCard = card => card?.cardType === 'token' || card?.id === 'S02-01S1' || card?.id === 'S02-06S2'
+const bypassesNormalDrawDeck = card => isDerivedDeckSpecialCard(card) || Boolean(card?.effect?.includes('构筑时不计入卡组数量'))
+const isNormalOpeningHandCard = card => Boolean(card && NORMAL_OPENING_HAND_CARD_TYPES.has(card.cardType) && !bypassesNormalDrawDeck(card))
+const normalOpeningHandCopies = (copies, cardForCopy) => copies.filter(copy => isNormalOpeningHandCard(cardForCopy(copy)))`)
 const executableJavaScript = ts.transpileModule(executableSource, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText

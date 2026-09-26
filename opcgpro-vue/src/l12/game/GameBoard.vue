@@ -26,6 +26,7 @@ import PlayerTurnClock from './PlayerTurnClock.vue'
 import BattlePlayerIdentity from './BattlePlayerIdentity.vue'
 import PhasePlayback from './PhasePlayback.vue'
 import PromptOverlay from './PromptOverlay.vue'
+import { battlefieldTargetLabel } from './battlefieldTargetPresentation'
 import SingleCardPicker, { type SingleCardPickerItem } from '../SingleCardPicker.vue'
 import CardImage from '../CardImage.vue'
 import CardDetailContent from '../CardDetailContent.vue'
@@ -262,6 +263,13 @@ const boardTargetPrompt = computed(() => {
   }) ?? null
 })
 const boardTargetableIds = computed(() => boardTargetPrompt.value?.validChoices.filter(id => id !== 'skip') ?? [])
+const boardTargetSelectionSummary = computed(() => {
+  const prompt = boardTargetPrompt.value
+  if (!prompt) return ''
+  const prefix = `已选择 ${boardTargetIds.value.length}/${prompt.maxChoose}`
+  const labels = boardTargetIds.value.map(id => battlefieldTargetLabel(props.game, controlledPlayerIndex.value, id)).filter(Boolean)
+  return labels.length ? `${prefix}：${labels.join('、')}` : prefix
+})
 const boardSlotPrompt = computed(() => props.game.prompts?.find(prompt =>
   (prompt.kind === 'slot' || prompt.data?.choiceMode === 'board-slot')
   && prompt.validChoices.some(id => id !== 'skip')
@@ -1411,7 +1419,7 @@ function statusTexts(card: Card) {
       </Teleport>
       <BattleDockPortal lane="context"><button v-if="mobileMoralePickerEnabled && mobileMoralePickerMinimized" class="mobile-morale-restore" type="button" @click="openMobileMoralePicker">恢复士气选择</button></BattleDockPortal>
       <GraveyardOverlay v-if="graveyardPlayer !== null" :players="[viewMe, viewEnemy]" :initial-player="graveyardPlayer"
-        :own-player-index="game.you" :can-activate-osiris="canActivateOsiris" :inspection-only="hasBlockingPrompt"
+        :actor-player-index="controlledPlayerIndex" :can-activate-osiris="canActivateOsiris" :inspection-only="hasBlockingPrompt"
         :mobile-layout="mobileLandscapeViewport"
         @close="graveyardPlayer = null" @focus="focusCard = $event" @inspect="inspectDialogCard" @ability="activateAbility" />
       <MasterOverlay v-if="masterPlayerIndex !== null" :player="game.players[masterPlayerIndex]" :mine="masterPlayerIndex === controlledPlayerIndex"
@@ -1423,7 +1431,7 @@ function statusTexts(card: Card) {
         <button @click="emit('gmPlacementResolved')">取消</button>
       </div></BattleDockPortal>
       <BattleDockPortal lane="context"><div v-if="boardTargetPrompt && !readOnly && !boardControlMinimized" class="board-target-controls">
-        <strong>{{ boardTargetPrompt.text }}</strong><span>已选择 {{ boardTargetIds.length }}/{{ boardTargetPrompt.maxChoose }}</span>
+        <strong>{{ boardTargetPrompt.text }}</strong><span>{{ boardTargetSelectionSummary }}</span>
         <small v-if="mobileLandscapeViewport" class="mobile-target-hand-counts" :aria-label="`对手手牌 ${viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0} 张；我方手牌 ${viewMe.handCount ?? viewMe.hand?.length ?? 0} 张`">对{{ viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0 }}·我{{ viewMe.handCount ?? viewMe.hand?.length ?? 0 }}</small>
         <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
         <button v-if="boardTargetPrompt.validChoices.includes('skip')" @click="resolveBoardTarget(true)">不发动</button>

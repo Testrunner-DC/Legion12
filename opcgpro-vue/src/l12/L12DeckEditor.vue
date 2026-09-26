@@ -7,7 +7,7 @@ import { compareDeckCards } from './deckOrdering'
 import { createDeckImageBlob, downloadDeckImage } from './site/deckShare'
 import { samplePublicDeckOpeningHand } from './site/publicDeckHands'
 import {
-  MAIN_DECK_TYPES, automaticExtraCardIdsForMaster, buildMoraleDeck, deckCountSummary, deleteDeck, doesNotCountTowardMainDeck, effectiveDeckLimit, ensureOfficialPrebuiltDecks, filterableCardCost, isDerivedSpecialCard, loadDeckCatalog, loadSavedDecks, trialCapacityForMaster,
+  MAIN_DECK_TYPES, automaticExtraCardIdsForMaster, buildMoraleDeck, deckCountSummary, deleteDeck, doesNotCountTowardMainDeck, effectiveDeckLimit, ensureOfficialPrebuiltDecks, filterableCardCost, isDerivedSpecialCard, loadDeckCatalog, loadSavedDecks, normalOpeningHandCopies, trialCapacityForMaster,
   saveDeck, validateDeck, type DeckCard, type SavedL12Deck,
 } from './decks'
 import { alternateArtApi, getEffectiveOperationsPolicy, platformState, publicDeckApi, type AlternateArt, type OperationsCardRestriction } from './platform'
@@ -257,11 +257,12 @@ function originalAppearanceCount(card: DeckCard, count = counts.value[card.id] ?
   return deckCopyPresentations(card, count).filter(presentation => !presentation.artId).length
 }
 const mainDeckCopies = computed(() => entries.value.flatMap(entry => deckCopyPresentations(entry.card, entry.count)))
+const eligibleMainDeckCopies = computed(() => normalOpeningHandCopies(mainDeckCopies.value, copy => copy.card))
 const openingHand = computed(() => {
   const copies = new Map(mainDeckCopies.value.map(copy => [copy.key, copy]))
   return openingHandIds.value.map(key => copies.get(key)).filter((copy): copy is DeckCopyPresentation => Boolean(copy))
 })
-const openingHandTotal = computed(() => Math.max(1, entries.value.reduce((sum, entry) => sum + entry.count, 0)))
+const openingHandTotal = computed(() => Math.max(1, eligibleMainDeckCopies.value.length))
 function openingHandMeta(copy: DeckCopyPresentation, index: number) {
   const deckCopies = counts.value[copy.card.id] ?? 0
   return `第 ${index + 1} 张 · 牌库 ${deckCopies} 张 · 单次约 ${Math.round(deckCopies / openingHandTotal.value * 100)}%`
@@ -298,7 +299,7 @@ function setMobilePane(next: 'pool' | 'deck' | 'insights') {
   if (next === 'insights' && workspace.value === 'gallery') workspace.value = 'stats'
 }
 function redrawOpeningHand() {
-  openingHandIds.value = samplePublicDeckOpeningHand(mainDeckCopies.value.map(copy => copy.key))
+  openingHandIds.value = samplePublicDeckOpeningHand(eligibleMainDeckCopies.value.map(copy => copy.key))
 }
 function toggleSection(section: DeckSection) {
   collapsedSections.value = { ...collapsedSections.value, [section]: !collapsedSections.value[section] }

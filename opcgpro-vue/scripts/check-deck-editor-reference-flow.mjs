@@ -12,7 +12,7 @@ const checks = [
   ['牌库 / 统计 / 起手使用同一编辑器工作区', ['>牌库</button>', '>统计</button>', '>起手</button>'].every(value => editor.includes(value))],
   ['编辑器仅保留指定英文标题，其余工作区标签中文化', editor.includes('<small>DECK EDITOR</small>') && !['Gallery 卡池', 'Stats 统计', 'Hand 起手', 'CARD POOL', 'DECK STATS', 'OPENING HAND', 'DECK LIST'].some(value => editor.includes(value))],
   ['工作区使用 v-show 保留卡池筛选与滚动节点', ['workspace === \'gallery\'', 'workspace === \'stats\'', 'workspace === \'hand\''].every(value => editor.includes(`v-show="${value}"`))],
-  ['起手从未保存的当前逐副本构筑抽取且不写后台', editor.includes('samplePublicDeckOpeningHand(mainDeckCopies.value.map(copy => copy.key))') && editor.includes('不修改牌库或生成对局记录')],
+  ['起手从共享合法候选的当前逐副本构筑抽取且不写后台', editor.includes('normalOpeningHandCopies') && editor.includes('eligibleMainDeckCopies') && editor.includes('samplePublicDeckOpeningHand(eligibleMainDeckCopies.value.map(copy => copy.key))') && editor.includes('不修改牌库或生成对局记录')],
   ['移动端为卡池、牌表、统计/起手单任务入口', ['setMobilePane(\'pool\')', 'setMobilePane(\'deck\')', 'setMobilePane(\'insights\')'].every(value => editor.includes(value))],
   ['卡池按钮与类型等筛选同排，其余筛选始终可见', editor.includes('class="catalog-filter-bar"') && editor.indexOf('class="product-filter-control"') > editor.indexOf('class="catalog-filter-bar"') && editor.includes('v-if="poolSelectorOpen" class="product-filter"') && !editor.includes('mobileFiltersOpen') && !editor.includes('卡池（可多选）')],
   ['卡池覆盖名称效果、阵营、类型、产品、费用、兵力、天灾、禁限与排序', ['query', 'factionFilter', 'typeFilter', 'productFilters', 'costFilter', 'troopsFilter', 'disasterFilter', 'legalityFilter', 'sortMode'].every(value => editor.includes(value))],

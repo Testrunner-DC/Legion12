@@ -372,6 +372,12 @@ public sealed partial class L12GameEngine
         for (var index = 0; index < choices.Count; index++)
         {
             var choice = choices[index];
+            var battlefield = BattlefieldPlayerChoiceLabel(playerIndex, choice, choices, data);
+            if (battlefield is not null)
+            {
+                labels[choice] = L12PlayerFacingText.Naturalize(battlefield);
+                continue;
+            }
             if (data.TryGetValue(choice, out var supplied) && IsNaturalLanguageChoiceLabel(choice, supplied))
             {
                 labels[choice] = L12PlayerFacingText.Naturalize(supplied.Trim());
@@ -398,6 +404,57 @@ public sealed partial class L12GameEngine
                 StructuredPlayerChoiceLabel(playerIndex, choice) ?? $"效果选项 {index + 1}");
         }
         return labels;
+    }
+
+    private string? BattlefieldPlayerChoiceLabel(int viewer, string choice,
+        IReadOnlyList<string> choices,
+        IReadOnlyDictionary<string, string> data)
+    {
+        foreach (var player in State.Players)
+        {
+            for (var row = 0; row < player.Field.Length; row++)
+            {
+                for (var slot = 0; slot < player.Field[row].Length; slot++)
+                {
+                    var card = player.Field[row][slot];
+                    if (card?.InstanceId.Equals(choice, StringComparison.OrdinalIgnoreCase) != true) continue;
+                    var location = $"{(player.PlayerIndex == viewer ? "我方" : "对方")}{(row == 0 ? "前排" : "后排")}第{slot + 1}格";
+                    if (card.Hidden && player.PlayerIndex != viewer) return location;
+                    var identity = data.TryGetValue(choice, out var supplied)
+                        && IsNaturalLanguageChoiceLabel(choice, supplied)
+                        ? supplied.Trim()
+                        : card.Name;
+                    return BattlefieldChoiceIdentityIsAmbiguous(viewer, choice, identity, choices, data)
+                        ? $"{identity} · {location}"
+                        : identity;
+                }
+            }
+        }
+        return null;
+    }
+
+    private bool BattlefieldChoiceIdentityIsAmbiguous(int viewer, string choice, string identity,
+        IReadOnlyList<string> choices, IReadOnlyDictionary<string, string> data)
+    {
+        foreach (var player in State.Players)
+        {
+            foreach (var row in player.Field)
+            {
+                foreach (var candidate in row)
+                {
+                    if (candidate is null
+                        || candidate.InstanceId.Equals(choice, StringComparison.OrdinalIgnoreCase)
+                        || !choices.Contains(candidate.InstanceId, StringComparer.OrdinalIgnoreCase)
+                        || (candidate.Hidden && player.PlayerIndex != viewer)) continue;
+                    var candidateIdentity = data.TryGetValue(candidate.InstanceId, out var supplied)
+                        && IsNaturalLanguageChoiceLabel(candidate.InstanceId, supplied)
+                        ? supplied.Trim()
+                        : candidate.Name;
+                    if (candidateIdentity.Equals(identity, StringComparison.OrdinalIgnoreCase)) return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static string? ContextualPlayerChoiceLabel(string promptKind, string promptText, string choice)

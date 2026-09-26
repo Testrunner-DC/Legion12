@@ -164,6 +164,26 @@ public sealed class LethalReplacementLifecycleProfileTests
         Assert.False(duplicate.Accepted);
     }
 
+    [Fact]
+    [Trait("L12Evidence", "bug:BUG-20260926-334ff582")]
+    [Trait("L12Evidence", "prompt:battlefield-position-label")]
+    public void HoremhebSameNameSubstitutesHaveStableBattlefieldPositionLabels()
+    {
+        var game = Create(93015);
+        var player = game.State.Players[0];
+        var horemheb = Card("S01-0205", "horemheb-position-label");
+        var frontGuard = Card("S01-0212", "guard-front-position");
+        var backGuard = Card("S01-0212", "guard-back-position");
+        player.Field[0][0] = horemheb;
+        player.Field[0][1] = frontGuard;
+        player.Field[1][2] = backGuard;
+
+        var prompt = BeginEffectLethalReplacement(game, horemheb);
+
+        Assert.Equal("陵墓守卫 · 我方前排第2格", prompt.ChoiceLabels[frontGuard.InstanceId]);
+        Assert.Equal("陵墓守卫 · 我方后排第3格", prompt.ChoiceLabels[backGuard.InstanceId]);
+    }
+
     [Theory]
     [InlineData("S01-0205", HoremhebAbilityId)]
     [InlineData("S02-0515", HelenAbilityId)]

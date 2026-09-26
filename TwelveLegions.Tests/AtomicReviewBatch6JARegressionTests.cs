@@ -144,6 +144,8 @@ public sealed class AtomicReviewBatch6JARegressionTests
         const string counterId = "batch6ja-covered-counter";
         Assert.Contains(counterId, target.ValidChoices);
         Assert.Equal("board-target", target.Data.GetValueOrDefault("choiceMode"));
+        Assert.Equal("对方后排第1格", target.ChoiceLabels[counterId]);
+        Assert.DoesNotContain("伏击", target.ChoiceLabels[counterId], StringComparison.Ordinal);
         Assert.False(target.Data.ContainsKey($"{counterId}:cardId"));
         Assert.False(target.Data.ContainsKey($"{counterId}:effect"));
         Assert.False(target.Data.ContainsKey($"{counterId}:image"));

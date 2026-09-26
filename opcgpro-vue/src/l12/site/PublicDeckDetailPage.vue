@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createDeckImageBlob, deckImageGroups, downloadDeckImage, encodeDeckCode } from './deckShare'
-import { automaticExtraCardIdsForMaster, deckCountSummary, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, saveDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
+import { automaticExtraCardIdsForMaster, deckCountSummary, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, normalOpeningHandCopies, saveDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
 import { platformState, publicDeckApi, type PublishedDeck, type PublicDeckDetails, type PublicDeckGuide, type PublicDeckVersionChange } from '@/l12/platform'
 import DeckProfile from '@/l12/DeckProfile.vue'
 import CatalogCardDetails from '@/l12/CatalogCardDetails.vue'
@@ -78,6 +78,7 @@ const deckCopies = computed(() => entry.value ? deckImageGroups(entry.value.deck
     key: `${group.cardId}:${group.artId || 'original'}:${index}`,
     card: byId.value.get(group.cardId),
   }))).filter(copy => Boolean(copy.card)) : [])
+const eligibleDeckCopies = computed(() => normalOpeningHandCopies(deckCopies.value, copy => copy.card))
 const openingHand = computed(() => {
   const copies = new Map(deckCopies.value.map(copy => [copy.key, copy]))
   return openingHandIds.value.flatMap(key => {
@@ -211,7 +212,7 @@ function publicDeckUrl() {
 }
 function redrawOpeningHand() {
   if (!entry.value) return
-  openingHandIds.value = samplePublicDeckOpeningHand(deckCopies.value.map(copy => copy.key))
+  openingHandIds.value = samplePublicDeckOpeningHand(eligibleDeckCopies.value.map(copy => copy.key))
 }
 function cardName(cardId: string) { return byId.value.get(cardId)?.nameZh || cardId }
 function masterName(masterId: string) { return byId.value.get(masterId)?.nameZh || masterId }

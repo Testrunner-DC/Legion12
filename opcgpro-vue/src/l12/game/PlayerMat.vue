@@ -6,6 +6,7 @@ defineOptions({ inheritAttrs: false })
 import { computed, ref, watch } from 'vue'
 import CardTile from '../CardTile.vue'
 import type { Card, PlayerView } from '../types'
+import { battlefieldSlotLabel } from './battlefieldTargetPresentation'
 import { isCounterTacticCard } from '../cardPresentation'
 import { blackLotusLogoUrl, factionLogoUrls, godPowerLogoUrl, roundCardUrl, siteBrandIconUrl } from '../specialAssets'
 import CardImage from '../CardImage.vue'
@@ -186,7 +187,14 @@ function isResponseTarget(card: Card | null) {
   // Empty slots have no response identity. Never coerce a missing instanceId to
   // an empty-string target: optional response metadata may itself contain an
   // empty value while an attack/defense prompt is changing stages.
-  return Boolean(card && !card.hidden && card.instanceId && props.responseTargetIds?.includes(card.instanceId))
+  return Boolean(card?.instanceId && props.responseTargetIds?.includes(card.instanceId))
+}
+function slotAccessibilityLabel(row: number, slot: number, card: Card | null) {
+  const location = battlefieldSlotLabel(props.side === 'my' ? 'self' : 'opponent', row, slot)
+  if (isResponseTarget(card)) return `${location}，当前效果目标`
+  if (props.selectedTargetIds?.includes(card?.instanceId ?? '')) return `${location}，已选择`
+  if (props.targetableIds?.includes(card?.instanceId ?? '')) return `${location}，可选择`
+  return card && !card.hidden ? `${card.name}，${location}` : location
 }
 function isCombatCard(card: Card | null, instanceId?: string | null) {
   return Boolean(card && instanceId && card.instanceId === instanceId)
@@ -384,6 +392,7 @@ function beginCardAbility(card: Card) {
         <template v-for="row in (side === 'opponent' ? [1, 0] : [0, 1])" :key="row">
           <div v-for="slot in [0,1,2]" :key="slot" class="formation-slot" role="button" tabindex="0"
             data-ui-contract="actual-combat-target-only"
+            :aria-label="slotAccessibilityLabel(row, slot, player.field[row][slot])"
             :class="{
               targetable: Boolean(player.field[row][slot]) && targetableIds?.includes(player.field[row][slot]!.instanceId) && (selectionMode || (!controllable && attackMode)),
               'prompt-selected': selectedTargetIds?.includes(player.field[row][slot]?.instanceId ?? ''),

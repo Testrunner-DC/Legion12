@@ -25,7 +25,7 @@ const checks = [
   ['公开实体核验同时匹配ID、版本与作者', ['published.id === publicationId', 'published.deck.publicationVersion === publicationVersion', 'published.ownerId === ownerId'].every(value => entry.includes(value))],
   ['我的牌库分享图仅在核验后传入稳定公开链接且公开图剥离异画', library.includes('const publicUrl = await verifiedPublicDeckUrl(deck)') && library.includes('alternateArts: publicUrl ? [] : ownedAlternateArts.value') && library.includes('alternateArtSelections: {}')],
   ['当前牌表原画归入基础行、异画另起横幅且不再提供备卡按钮', editor.includes('originalAppearanceCount(entry.card,entry.count)') && editor.includes('class="deck-entry-row alternate-art-banner"') && !editor.includes('moveMainToBench(entry.card.id)')],
-  ['起手按逐副本身份抽取并显示实际卡图', editor.includes('mainDeckCopies.value.map(copy => copy.key)') && editor.includes(':card-id="copy.cardImageId"') && editor.includes('{{ copy.card.number }} · {{ copy.label }}')],
+  ['起手按共享合法候选的逐副本身份抽取并显示实际卡图', editor.includes('eligibleMainDeckCopies.value.map(copy => copy.key)') && editor.includes(':card-id="copy.cardImageId"') && editor.includes('{{ copy.card.number }} · {{ copy.label }}')],
   ['分享图沿用alternateArtCopies并区分原画和异画', share.includes('deck.alternateArtCopies?.[cardId]') && share.includes("label: art ?") && share.includes("group.label.slice") && share.includes('group.count')],
   ['私有构筑仍保留逐副本异画身份', share.includes('deck.alternateArtCopies?.[cardId]') && editor.includes('alternateArtCopies: Object.fromEntries')],
   ['自主上传异画在全卡池使用异画ID与媒体回退，不被原画清单覆盖', editor.includes("entry.art ? (entry.art.cardImageId || entry.art.id) : entry.card.id") && editor.includes("entry.art.thumbnailUrl || entry.art.imageUrl")],

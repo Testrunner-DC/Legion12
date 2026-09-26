@@ -111,6 +111,7 @@ const ruleCenter = read('../src/l12/site/RuleCenterPage.vue')
 const platform = read('../src/l12/platform.ts')
 const audioPreferencesModule = read('../src/l12/audioPreferences.ts')
 const decks = read('../src/l12/decks.ts')
+const openingHandEligibility = read('../src/l12/openingHandEligibility.ts')
 const deckOrdering = read('../src/l12/deckOrdering.ts')
 const deckShare = read('../src/l12/site/deckShare.ts')
 const deckLibrary = read('../src/l12/site/DeckLibraryPage.vue')
@@ -500,7 +501,7 @@ const contracts = [
     && playerMat.includes('.formation-slot.combat-target,.mini-master.combat-target')
     && playerMat.includes('@keyframes l12-combat-target-cue')
     && playerMat.includes("function isResponseTarget(card: Card | null)")
-    && playerMat.includes("Boolean(card && !card.hidden && card.instanceId && props.responseTargetIds?.includes(card.instanceId))")
+    && playerMat.includes("Boolean(card?.instanceId && props.responseTargetIds?.includes(card.instanceId))")
     && playerMat.includes("function isCombatCard(card: Card | null, instanceId?: string | null)")
     && playerMat.includes("Boolean(card && instanceId && card.instanceId === instanceId)")
     && playerMat.includes("'combat-target': isCombatCard(player.field[row][slot], combatTargetId)")
@@ -892,7 +893,8 @@ const contracts = [
   [board.includes('destructionRoundBackUrl'), '本局天灾圆形未知卡必须使用圆形天灾卡背'],
   [specialAssets.includes('disasterRoundUrl') && board.includes('disasterRoundUrl(card.cardId, card.imageUrl)') && board.includes('destructionRoundBackUrl'), '本局已知天灾必须使用官方圆形卡图，未知天灾继续使用专用卡背'],
   [lobby.includes('visibleDeckLabel') && lobby.includes('player.playerIndex === l12State.room?.yourPlayerIndex'), '房间内不得向对手公开牌库名称'],
-  [decks.includes("构筑时不计入卡组数量") && decks.includes("`${counted}${uncounted ? `(${uncounted})` : ''}`"), '不计入构筑上下限的卡牌必须使用通用规则识别，并以 40(3) 形式单列数量'],
+  [openingHandEligibility.includes("构筑时不计入卡组数量") && decks.includes('bypassesNormalDrawDeck(card)')
+    && decks.includes("`${counted}${uncounted ? `(${uncounted})` : ''}`"), '不计入构筑上下限的卡牌必须使用通用规则识别，并以 40(3) 形式单列数量'],
   [deckEditor.includes('publicDeckApi.publish') && deckEditor.includes("publicationId.value = ''") && deckEditor.includes("preservePublication = false"), '牌库编辑器须支持公开/更新公开牌库，并在新建、另存或切换本地牌库时隔离公开版本身份'],
   [deckLibrary.includes('publicDeckApi.list') && publicDeckDetail.includes('编辑') && publicDeckDetail.includes('删除') && publicDeckDetail.includes('ownerId === platformState.account?.id'), '公开牌库必须由服务端持久化，且仅作者显示编辑与删除入口'],
   [publicDeckDetail.includes('<DeckConstructionBrowser :entries="entries"')
@@ -971,8 +973,8 @@ const contracts = [
   [decks.includes("'S01-02M1': ['S01-02M2']") && decks.includes('export function automaticExtraCardIdsForMaster')
     && deckEditor.includes('automaticExtraCardIdsForMaster(selectedMaster.value?.id)')
     && deckShare.includes('automaticExtraCardIdsForMaster(deck.masterId)'), '主宰自动额外卡映射必须由 decks.ts 公共函数统一提供给编辑器与牌库图导出'],
-  [decks.includes("card?.id === 'S02-01S1'") && decks.includes("card?.id === 'S02-06S2'")
-    && decks.includes('isDerivedSpecialCard(card)') && deckEditor.includes('!isDerivedSpecialCard(card)'),
+  [openingHandEligibility.includes("card?.id === 'S02-01S1'") && openingHandEligibility.includes("card?.id === 'S02-06S2'")
+    && decks.includes('isDerivedDeckSpecialCard(card)') && deckEditor.includes('!isDerivedSpecialCard(card)'),
   '哮天犬与王者之剑必须共用衍生卡身份，不进入主牌库候选或保存校验'],
   [deckShare.includes('...(deck.specialIds ?? [])') && deckShare.includes('const extraIds = [...new Set([')
     && deckShare.includes("isHorizontalCardType(card?.cardType) ? 1752 / 1255 : 5 / 7")

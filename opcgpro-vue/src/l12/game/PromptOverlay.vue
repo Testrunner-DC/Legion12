@@ -10,6 +10,7 @@ import CardImage from '../CardImage.vue'
 import PromptCardCandidate from './PromptCardCandidate.vue'
 import SetupDecisionClock from './SetupDecisionClock.vue'
 import { landscapeTeleportTarget } from '../mobileViewport'
+import { battlefieldTargetIds, battlefieldTargetLabel, findBattlefieldTarget } from './battlefieldTargetPresentation'
 
 const props = withDefaults(defineProps<{
   game: GameState
@@ -130,9 +131,7 @@ const responseTargetIds = computed(() => {
   // 普通目标选择也必须在最小化弹框后保留场面定位；这里只接纳当前
   // 公开战场上真实存在的 instanceId，不扩大任何可选择权限。
   for (const id of activeSelected.value) ids.add(id)
-  return props.game.players.flatMap(player => player.field.flat())
-    .filter((card): card is Card => Boolean(card && !card.hidden && ids.has(card.instanceId)))
-    .map(card => card.instanceId)
+  return battlefieldTargetIds(props.game, ids)
 })
 watch(responseTargetIds, ids => emit('responseTargetsChange', ids), { immediate: true })
 onBeforeUnmount(() => emit('responseTargetsChange', []))
@@ -227,6 +226,8 @@ function label(id: string) {
     ?? naturalChoiceLabel(prompt.value?.data?.[id], id)
     ?? safeChoiceFallback(id)
   const zone = naturalChoiceLabel(prompt.value?.data?.[`${id}:zone`], id)
+  const location = findBattlefieldTarget(props.game, sandboxActorIndex.value, id)
+  if (location) return battlefieldTargetLabel(props.game, sandboxActorIndex.value, id, base)
   return zone ? `${base} · ${zone}` : base
 }
 function imageFor(id: string) { return prompt.value?.data?.[`${id}:image`] ?? cardFor(id)?.imageUrl }

@@ -5,6 +5,15 @@ import moraleIdentityData from '../../../服务端WebSocket/TwelveLegions/Data/m
 import cardProductInclusionsData from '../../../服务端WebSocket/TwelveLegions/Data/card-product-inclusions.json'
 import cardArchiveAssetsData from '../../../服务端WebSocket/TwelveLegions/Data/card-archive-assets.json'
 import seasonTwoRulesData from '../../../服务端WebSocket/TwelveLegions/Data/cards.s2.json'
+import {
+  NORMAL_OPENING_HAND_CARD_TYPES,
+  bypassesNormalDrawDeck,
+  isDerivedDeckSpecialCard,
+  isNormalOpeningHandCard,
+  normalOpeningHandCopies,
+} from './openingHandEligibility'
+
+export { isNormalOpeningHandCard, normalOpeningHandCopies }
 
 export interface DeckCard {
   id: string
@@ -88,7 +97,7 @@ export const L12_DECK_SELECTION_SCOPES = [
   'ranked', 'casual', 'friendly', 'sandbox-player', 'sandbox-opponent',
 ] as const
 export type L12DeckSelectionScope = typeof L12_DECK_SELECTION_SCOPES[number]
-export const MAIN_DECK_TYPES = new Set(['legion', 'tactic', 'artifact'])
+export const MAIN_DECK_TYPES = NORMAL_OPENING_HAND_CARD_TYPES
 
 /** 费用筛选按规则费用维度处理；没有印刷费用的非主宰卡归入0费，但仍不伪造卡面数字。 */
 export function filterableCardCost(card: Pick<DeckCard, 'cardType' | 'cost'>): number | null {
@@ -570,11 +579,11 @@ export function effectiveDeckLimit(card: DeckCard, masterId: string, restriction
 }
 
 export function doesNotCountTowardMainDeck(card: DeckCard | undefined) {
-  return isDerivedSpecialCard(card) || !!card?.effect?.includes('构筑时不计入卡组数量')
+  return bypassesNormalDrawDeck(card)
 }
 
 export function isDerivedSpecialCard(card: DeckCard | undefined) {
-  return card?.cardType === 'token' || card?.id === 'S02-01S1' || card?.id === 'S02-06S2'
+  return isDerivedDeckSpecialCard(card)
 }
 
 export function deckCountSummary(cardIds: readonly string[], cards: ReadonlyMap<string, DeckCard>) {
