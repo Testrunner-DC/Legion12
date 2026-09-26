@@ -18,7 +18,8 @@ internal sealed record L12CompositeEffectSegmentSpec(
     bool RequiresPreviousSuccess = false,
     string? DeclinedMode = null,
     string? DeclinedDeclarationKey = null,
-    bool WaitForStateCheckTriggers = false);
+    bool WaitForStateCheckTriggers = false,
+    bool SkipWhenNoLegalTargets = false);
 
 /// <summary>
 /// 多段卡效的权威计划。卡牌差异只存在于这份声明数据；通用运行时负责在计划指定的
@@ -213,7 +214,7 @@ internal static partial class L12CompositeEffectPlans
             ["S02-0105"] =
             [
                 new("qianyang-kill", "击杀对方1张原本兵力不高于3000的军团",
-                    PublicTargetKeys: ["killTarget"]),
+                    PublicTargetKeys: ["killTarget"], SkipWhenNoLegalTargets: true),
                 new("qianyang-draw", "返还1士气：抽取1张牌",
                     "mode:draw", "morale-return", "drawCost", 1,
                     DeclareAtSegmentStart: true),
@@ -881,15 +882,23 @@ public sealed partial class L12GameEngine
                 break;
 
             case "S02-0522":
-                steps.Add(CompositeStep("enemy-legion", "primaryTarget", "倪克斯的陨星：选择本回合兵力-3000的目标",
-                    PublicLegions(opponent).Select(card => card.InstanceId), 1));
+            {
+                var firstSegment = L12CompositeEffectPlans.Segments(source.CardId)[0];
+                steps.Add(CompositeTargetOrSkipStep(firstSegment, "enemy-legion", "primaryTarget",
+                    "倪克斯的陨星：选择本回合兵力-3000的目标",
+                    PublicLegions(opponent).Select(card => card.InstanceId)));
                 break;
+            }
 
             case "S02-0105":
-                steps.Add(CompositeStep("enemy-legion", "killTarget", "乾坤 阳：预先选择击杀目标",
+            {
+                var firstSegment = L12CompositeEffectPlans.Segments(source.CardId)[0];
+                steps.Add(CompositeTargetOrSkipStep(firstSegment, "enemy-legion", "killTarget",
+                    "乾坤 阳：预先选择击杀目标",
                     PublicLegions(opponent).Where(card => card.DisplayBaseTroops <= 3000 && !card.Hidden)
-                        .Select(card => card.InstanceId), 1));
+                        .Select(card => card.InstanceId)));
                 break;
+            }
 
             case "S02-0521":
                 steps.Add(CompositeStep("target-morale", "flipTargets", "荣耀之路：预先选择最多3张要翻转的士气",
@@ -1030,6 +1039,18 @@ public sealed partial class L12GameEngine
             AutoSelectEquivalentOrdinaryMorale = autoSelectEquivalentOrdinaryMorale,
         };
 
+    private static L12ActivationSelectionStep CompositeTargetOrSkipStep(
+        L12CompositeEffectSegmentSpec segment, string kind, string key, string text,
+        IEnumerable<string> choices)
+    {
+        var available = choices.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        return available.Length == 0 && segment.SkipWhenNoLegalTargets
+            ? CompositeStep("effect-skip", key,
+                $"{text}；当前没有合法目标，仅跳过此效果段", [], 0, 0,
+                autoSelectWhenExact: true)
+            : CompositeStep(kind, key, text, available, 1);
+    }
+
     private IEnumerable<string> CompositeOrdinaryPaymentChoices(L12PlayerState player)
     {
         foreach (var temporary in TemporaryMoralePaymentChoices(player)) yield return temporary;
@@ -1160,6 +1181,16 @@ public sealed partial class L12GameEngine
             return PublicLegions(opponent).Any(target => target.InstanceId == id && !target.Hidden
                 && (predicate?.Invoke(target) ?? true));
         }
+        bool EnemyOrSkippableEmpty(string key, Func<L12CardInstance, bool>? predicate = null)
+        {
+            if (Enemy(key, predicate)) return true;
+            var first = L12CompositeEffectPlans.Segments(card.CardId).FirstOrDefault();
+            return first?.SkipWhenNoLegalTargets == true
+                && first.PublicTargetKeys?.Contains(key, StringComparer.OrdinalIgnoreCase) == true
+                && declared.GetValueOrDefault(key, []).Count == 0
+                && !PublicLegions(opponent).Any(target => !target.Hidden
+                    && (predicate?.Invoke(target) ?? true));
+        }
         bool Own(string key, Func<L12CardInstance, bool>? predicate = null)
         {
             var id = declared.GetValueOrDefault(key, []).SingleOrDefault();
@@ -1237,8 +1268,8 @@ public sealed partial class L12GameEngine
             "S02-0306" => (effectOnlyRepeat || player.MasterDamageTakenThisTurn >= 2
                 && !L12CardNameUsageRules.HasUsed(player, card.CardId))
                 && declared.Count == 0,
-            "S02-0522" => Enemy("primaryTarget"),
-            "S02-0105" => Enemy("killTarget", target => target.DisplayBaseTroops <= 3000),
+            "S02-0522" => EnemyOrSkippableEmpty("primaryTarget"),
+            "S02-0105" => EnemyOrSkippableEmpty("killTarget", target => target.DisplayBaseTroops <= 3000),
             "S02-0521" => declared.GetValueOrDefault("flipTargets", []).Count <= 3
                 && declared.GetValueOrDefault("flipTargets", []).Distinct(StringComparer.OrdinalIgnoreCase).Count()
                     == declared.GetValueOrDefault("flipTargets", []).Count
@@ -1383,6 +1414,16 @@ public sealed partial class L12GameEngine
         if (L12CompositeEffectPlans.UsesSingleResponseEffect(cardId))
             data["compositeResponseScope"] = "single-effect";
         foreach (var pair in declared) data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
+        var first = segments[firstIndex];
+        if (first.SkipWhenNoLegalTargets && first.PublicTargetKeys is { Length: > 0 } targetKeys
+            && targetKeys.All(key => declared.GetValueOrDefault(key, []).Count == 0))
+        {
+            data["skipCompositeSettlement"] = "true";
+            data["effectResultStatus"] = "skipped";
+            data["effectFailureReason"] = $"首个效果段“{first.Text}”没有合法目标；仅跳过该段";
+            data["unrespondable"] = "true";
+            data["preserveSourceSnapshot"] = "true";
+        }
         // 沙漠君临的公开效果分支由“冒号前实际支付的弃置数量”决定；托勒密重复
         // 效果则由玩家声明同一数量。两条入口必须投影为同一个公开分支身份，避免
         // 结算器正确执行但按钮、动效、日志和回放无法定位到权威能力段。
