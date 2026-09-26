@@ -22,6 +22,35 @@ internal sealed record L12JournalRecoveryState(
     L12GameEngine Engine, long CommandSequence,
     IReadOnlyList<L12PersistedActionRequest> ProcessedRequests);
 
+internal sealed record L12StoredCheckpointRow(
+    long Sequence,
+    long Revision,
+    string StateHash,
+    string StateEncoding,
+    byte[] StateBlob,
+    int UncompressedBytes,
+    long RandomDrawCount,
+    long CardFactSignalSequence,
+    bool AutoPassEmptyResponses,
+    bool ConcealHiddenResponseAvailability,
+    int RandomStateVersion,
+    byte[]? RandomStateBlob);
+
+internal readonly record struct L12JournalDurableBounds(
+    long? EventSequence,
+    long? RequestSequence,
+    long? ActionEventSequence,
+    long? CheckpointSequence)
+{
+    internal long UpperBound => new[]
+    {
+        EventSequence ?? 0,
+        RequestSequence ?? 0,
+        ActionEventSequence ?? 0,
+        CheckpointSequence ?? 0,
+    }.Max();
+}
+
 public sealed partial class MatchRecorder
 {
     internal const int JournalStorageVersion = L12PersistenceContract.CurrentJournalStorageVersion;
@@ -379,43 +408,218 @@ public sealed partial class MatchRecorder
         if (await ReadStorageVersionAsync(connection, matchId, cancellationToken) < JournalStorageVersion)
             return null;
         var verifyStateHashes = !await IsIdentityScrubbedAsync(connection, matchId, cancellationToken);
-        var checkpoint = await LoadLatestCheckpointAsync(matchId, cancellationToken)
-            ?? throw new InvalidDataException("v2 对局缺少状态检查点");
-        var engine = L12GameEngine.RestoreCheckpoint(catalog, checkpoint.StateJson,
-            checkpoint.RandomState, checkpoint.CardFactSignalSequence,
-            checkpoint.AutoPassEmptyResponses, checkpoint.ConcealHiddenResponseAvailability);
-        if (engine.State.Revision != checkpoint.Revision
-            || (verifyStateHashes
-                && !string.Equals(engine.ComputeStateHash(), checkpoint.StateHash, StringComparison.Ordinal)))
-            throw new InvalidDataException("v2 恢复检查点哈希不一致");
+        var bounds = await ReadJournalDurableBoundsAsync(connection, matchId, cancellationToken);
+        ValidateJournalDurableBounds(bounds);
+        var durableUpperBound = bounds.UpperBound;
+        var beforeSequence = long.MaxValue;
+        Exception? latestCheckpointDamage = null;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var stored = await LoadStoredCheckpointBeforeAsync(connection, matchId, beforeSequence,
+                cancellationToken);
+            if (stored is null) break;
+            beforeSequence = stored.Sequence;
+
+            // Storage/random/state format incompatibility is a contract boundary, not physical damage.
+            // It must fail explicitly instead of being hidden by an older checkpoint.
+            ValidateCheckpointCompatibility(stored);
+            L12PersistedCheckpoint checkpoint;
+            L12GameEngine engine;
+            try
+            {
+                checkpoint = await DecodeStoredCheckpointAsync(stored, cancellationToken);
+                engine = L12GameEngine.RestoreCheckpoint(catalog, checkpoint.StateJson,
+                    checkpoint.RandomState, checkpoint.CardFactSignalSequence,
+                    checkpoint.AutoPassEmptyResponses, checkpoint.ConcealHiddenResponseAvailability);
+                if (engine.State.Revision != checkpoint.Revision
+                    || (verifyStateHashes
+                        && !string.Equals(engine.ComputeStateHash(), checkpoint.StateHash,
+                            StringComparison.Ordinal)))
+                    throw new InvalidDataException("v2 恢复检查点哈希不一致");
+            }
+            catch (Exception error) when (IsRecoverableCheckpointDamage(error))
+            {
+                latestCheckpointDamage ??= error;
+                continue;
+            }
+
+            var recoveredSequence = await ReplayJournalTailAsync(connection, matchId, checkpoint.Sequence,
+                durableUpperBound, engine, verifyStateHashes, cancellationToken);
+            RegisterRecoveredEngine(engine);
+            return new L12JournalRecoveryState(engine, recoveredSequence,
+                await LoadProcessedActionRequestsThroughAsync(connection, matchId, recoveredSequence,
+                    cancellationToken));
+        }
+
+        throw new InvalidDataException("v2 对局没有可验证的状态检查点", latestCheckpointDamage);
+    }
+
+    private static async Task<L12JournalDurableBounds> ReadJournalDurableBoundsAsync(
+        SqliteConnection connection, string matchId, CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                (SELECT MAX(sequence) FROM match_events WHERE match_id=$match),
+                (SELECT MAX(command_sequence) FROM match_action_requests WHERE match_id=$match),
+                (SELECT MAX(command_sequence) FROM match_action_events WHERE match_id=$match),
+                (SELECT MAX(sequence) FROM match_state_checkpoints WHERE match_id=$match);
+            """;
+        command.Parameters.AddWithValue("$match", matchId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+            throw new InvalidDataException("v2 对局无法读取耐久已提交边界");
+        return new L12JournalDurableBounds(
+            reader.IsDBNull(0) ? null : reader.GetInt64(0),
+            reader.IsDBNull(1) ? null : reader.GetInt64(1),
+            reader.IsDBNull(2) ? null : reader.GetInt64(2),
+            reader.IsDBNull(3) ? null : reader.GetInt64(3));
+    }
+
+    private static void ValidateJournalDurableBounds(L12JournalDurableBounds bounds)
+    {
+        var eventUpperBound = bounds.EventSequence ?? 0;
+        if ((bounds.RequestSequence ?? 0) > eventUpperBound
+            || (bounds.ActionEventSequence ?? 0) > eventUpperBound
+            || (bounds.CheckpointSequence ?? 0) > eventUpperBound
+                && (bounds.CheckpointSequence ?? 0) > 0)
+            throw new InvalidDataException("v2 日志缺少耐久已提交边界对应的命令记录");
+    }
+
+    private static async Task<L12StoredCheckpointRow?> LoadStoredCheckpointBeforeAsync(
+        SqliteConnection connection, string matchId, long beforeSequence,
+        CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT sequence,revision,state_hash,state_encoding,state_blob,uncompressed_bytes,
+                   random_draw_count,card_fact_signal_sequence,auto_pass_empty_responses,
+                   conceal_hidden_response_availability,random_state_version,random_state_blob
+            FROM match_state_checkpoints
+            WHERE match_id=$match AND sequence<$before
+            ORDER BY sequence DESC LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$match", matchId);
+        command.Parameters.AddWithValue("$before", beforeSequence);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        return new L12StoredCheckpointRow(
+            reader.GetInt64(0), reader.GetInt64(1), reader.GetString(2), reader.GetString(3),
+            (byte[])reader[4], reader.GetInt32(5), reader.GetInt64(6), reader.GetInt64(7),
+            reader.GetInt32(8) == 1, reader.GetInt32(9) == 1, reader.GetInt32(10),
+            reader.IsDBNull(11) ? null : (byte[])reader[11]);
+    }
+
+    private static void ValidateCheckpointCompatibility(L12StoredCheckpointRow checkpoint)
+    {
+        if (!string.Equals(checkpoint.StateEncoding, "json-br-v1", StringComparison.Ordinal))
+            throw new InvalidDataException("对局检查点编码版本不受支持");
+        if (checkpoint.RandomStateVersion != L12DeterministicRandom.StateVersion)
+            throw new InvalidDataException("随机状态版本不受支持");
+    }
+
+    private static async Task<L12PersistedCheckpoint> DecodeStoredCheckpointAsync(
+        L12StoredCheckpointRow checkpoint, CancellationToken cancellationToken)
+    {
+        if (checkpoint.UncompressedBytes < 0)
+            throw new InvalidDataException("对局检查点长度校验失败");
+        var stateJson = await DecompressStateAsync(checkpoint.StateBlob,
+            checkpoint.UncompressedBytes, cancellationToken);
+        if (checkpoint.RandomStateBlob is null)
+            throw new InvalidDataException("随机状态载荷缺失");
+        var randomState = L12DeterministicRandom.DecodeState(checkpoint.RandomStateVersion,
+            checkpoint.RandomStateBlob, checkpoint.RandomDrawCount);
+        return new L12PersistedCheckpoint(checkpoint.Sequence, checkpoint.Revision,
+            checkpoint.StateHash, stateJson, checkpoint.RandomDrawCount, randomState,
+            checkpoint.CardFactSignalSequence, checkpoint.AutoPassEmptyResponses,
+            checkpoint.ConcealHiddenResponseAvailability);
+    }
+
+    private static bool IsRecoverableCheckpointDamage(Exception error)
+        => error is JsonException
+            || error is InvalidDataException invalidData
+                && !string.Equals(invalidData.Message, L12PersistenceContract.ExpiredReplayMessage,
+                    StringComparison.Ordinal);
+
+    private static async Task<long> ReplayJournalTailAsync(SqliteConnection connection,
+        string matchId, long checkpointSequence, long durableUpperBound, L12GameEngine engine,
+        bool verifyStateHashes, CancellationToken cancellationToken)
+    {
+        if (checkpointSequence > durableUpperBound)
+            throw new InvalidDataException("v2 检查点超出耐久已提交边界");
         var command = connection.CreateCommand();
         command.CommandText = """
             SELECT sequence,player_index,command_json,accepted,revision,state_hash
-            FROM match_events WHERE match_id=$match AND sequence>$after ORDER BY sequence;
+            FROM match_events
+            WHERE match_id=$match AND sequence>$after AND sequence<=$upper
+            ORDER BY sequence;
             """;
         command.Parameters.AddWithValue("$match", matchId);
-        command.Parameters.AddWithValue("$after", checkpoint.Sequence);
-        var expectedSequence = checkpoint.Sequence;
+        command.Parameters.AddWithValue("$after", checkpointSequence);
+        command.Parameters.AddWithValue("$upper", durableUpperBound);
+        var expectedSequence = checkpointSequence;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
             var sequence = reader.GetInt64(0);
             if (sequence != ++expectedSequence) throw new InvalidDataException("v2 恢复尾部命令序号不连续");
-            using var document = JsonDocument.Parse(reader.GetString(2));
-            var root = document.RootElement;
-            var type = root.TryGetProperty("type", out var lowerType) ? lowerType.GetString()
-                : root.TryGetProperty("Type", out var upperType) ? upperType.GetString() : null;
-            if (string.IsNullOrWhiteSpace(type)) throw new InvalidDataException("v2 恢复命令缺少类型");
-            var outcome = ReplayJournalCommand(engine, reader.GetInt32(1), type, root);
-            if (outcome.Accepted != (reader.GetInt32(3) == 1)
-                || engine.State.Revision != reader.GetInt64(4)
-                || (verifyStateHashes
-                    && !string.Equals(engine.ComputeStateHash(), reader.GetString(5), StringComparison.Ordinal)))
-                throw new InvalidDataException($"v2 恢复尾部校验失败：{sequence}");
+            JsonDocument document;
+            try
+            {
+                document = JsonDocument.Parse(reader.GetString(2));
+            }
+            catch (JsonException error)
+            {
+                throw new InvalidDataException($"v2 恢复命令 JSON 损坏：{sequence}", error);
+            }
+            using (document)
+            {
+                var root = document.RootElement;
+                if (root.ValueKind != JsonValueKind.Object)
+                    throw new InvalidDataException($"v2 恢复命令 JSON 结构无效：{sequence}");
+                var typeElement = root.TryGetProperty("type", out var lowerType) ? lowerType
+                    : root.TryGetProperty("Type", out var upperType) ? upperType : default;
+                var type = typeElement.ValueKind == JsonValueKind.String
+                    ? typeElement.GetString()
+                    : null;
+                if (string.IsNullOrWhiteSpace(type))
+                    throw new InvalidDataException("v2 恢复命令缺少类型");
+                var outcome = ReplayJournalCommand(engine, reader.GetInt32(1), type, root);
+                if (outcome.Accepted != (reader.GetInt32(3) == 1)
+                    || engine.State.Revision != reader.GetInt64(4)
+                    || (verifyStateHashes
+                        && !string.Equals(engine.ComputeStateHash(), reader.GetString(5),
+                            StringComparison.Ordinal)))
+                    throw new InvalidDataException($"v2 恢复尾部校验失败：{sequence}");
+            }
         }
-        RegisterRecoveredEngine(engine);
-        return new L12JournalRecoveryState(engine, expectedSequence,
-            await LoadProcessedActionRequestsAsync(matchId, cancellationToken: cancellationToken));
+        if (expectedSequence != durableUpperBound)
+            throw new InvalidDataException("v2 恢复尾链未达到耐久已提交边界");
+        return expectedSequence;
+    }
+
+    private static async Task<IReadOnlyList<L12PersistedActionRequest>>
+        LoadProcessedActionRequestsThroughAsync(SqliteConnection connection, string matchId,
+            long recoveredSequence, CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT player_index,request_id,accepted,error,revision
+            FROM match_action_requests
+            WHERE match_id=$match AND command_sequence<=$sequence
+            ORDER BY command_sequence DESC,player_index DESC,request_id DESC LIMIT 256;
+            """;
+        command.Parameters.AddWithValue("$match", matchId);
+        command.Parameters.AddWithValue("$sequence", recoveredSequence);
+        var result = new List<L12PersistedActionRequest>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            result.Add(new L12PersistedActionRequest(reader.GetInt32(0), reader.GetString(1),
+                reader.GetInt32(2) == 1, reader.IsDBNull(3) ? null : reader.GetString(3),
+                reader.GetInt64(4)));
+        result.Reverse();
+        return result;
     }
 
     private static CommandResult ReplayJournalCommand(L12GameEngine engine, int playerIndex,
