@@ -1701,7 +1701,9 @@ public sealed partial class L12GameEngine
         var legal = requested.Where(CanEnterHandOrLibrary).ToArray();
         foreach (var guard in requested.Where(card => !CanEnterHandOrLibrary(card)))
             AddEvent("replacement", player.PlayerIndex, $"{guard.Name}不能进入牌库，仍置于墓地", guard);
-        L12LibraryOps.PutOnBottom(player, legal);
+        if (!L12LibraryOps.PutOnBottom(player, legal)) return;
+        foreach (var card in legal)
+            AddEvent("return", player.PlayerIndex, $"〈{card.Name}〉从墓地返回牌库底部", card);
     }
 
     private void MoveGraveToLibraryTop(L12PlayerState player, string instanceId)
@@ -1709,7 +1711,8 @@ public sealed partial class L12GameEngine
         var card = player.Graveyard.FirstOrDefault(candidate => candidate.InstanceId == instanceId);
         if (card is null) return;
         if (!CanEnterHandOrLibrary(card)) { AddEvent("replacement", player.PlayerIndex, $"{card.Name}不能进入牌库，仍置于墓地", card); return; }
-        L12LibraryOps.PutOnTop(player, [card]);
+        if (L12LibraryOps.PutOnTop(player, [card]))
+            AddEvent("return", player.PlayerIndex, $"〈{card.Name}〉从墓地返回牌库顶部", card);
     }
 
     private void RecoverAsgard(L12StackItem item, int maxCost, bool legionOnly)

@@ -4,12 +4,13 @@ import { l12AnimationDuration } from '../audioPreferences'
 import { landscapeTeleportTarget, visibleViewport, viewportRect } from '../mobileViewport'
 import { CARD_IMAGE_PLACEHOLDER, resolveCardAssetUrls } from '../cardAssets'
 import type { ActionEvent, Card, PlayerView, Prompt } from '../types'
-import { collectKnownCardZones, collectPromptSourceZoneHints, isCombatDefeatLeaveEvent, isSupersededLeaveEvent, leaveMovementDestination, movementCardsForEvent, type VisualZone } from './visualTransitionProjection'
+import { claimFreshMovementEvents, claimMovementFact, collectKnownCardZones, collectPromptSourceZoneHints, createMovementClaimState, isCombatDefeatLeaveEvent, isMovementCardConcealed, isSupersededLeaveEvent, leaveMovementDestination, movementCardsForEvent, movementFactKey, resetMovementClaimState, type VisualZone } from './visualTransitionProjection'
 import type { PresentationReservation, PresentationSequenceCoordinator } from './presentationSequenceCoordinator'
 
 type Zone = VisualZone
 type AnchorRect = { x: number; y: number; width: number; height: number }
 type Movement = {
+  key: string
   sequence: number
   playerIndex: number
   label: string
@@ -44,8 +45,7 @@ const emit = defineEmits<{ busyChange: [busy: boolean] }>()
 
 const active = ref<Movement | null>(null)
 const queue: Movement[] = []
-let initialized = false
-let lastSequence = 0
+const movementClaims = createMovementClaimState()
 let timer: ReturnType<typeof setTimeout> | null = null
 let preparationCount = 0
 const preparedImageUrls = new Map<string, string>()
@@ -107,15 +107,6 @@ function textSource(text: string): Zone {
   return 'field'
 }
 
-function isMovementIdentityConcealed(event: ActionEvent, card?: Card) {
-  // identityKnown is meaningful only for a card that is still covered. Normal
-  // authoritative event cards keep the model default false even after their
-  // identity has become public (for example, an opponent playing from hand).
-  if (!card || event.type === 'counter-set') return true
-  if (!card.cardId || card.cardId === 'hidden-card') return true
-  return card.hidden === true && card.identityKnown !== true
-}
-
 function publicHandAddCaption(event: ActionEvent, card: Card) {
   const otherPublicCard = (event.cards ?? []).find(candidate => candidate !== card && !candidate.hidden && candidate.name)
   const namedSources = [...`${event.text} ${event.effectText ?? ''}`.matchAll(/〈([^〉]+)〉/g)]
@@ -126,7 +117,7 @@ function publicHandAddCaption(event: ActionEvent, card: Card) {
   return source ? `〈${card.name}〉因〈${source}〉加入手牌` : `〈${card.name}〉加入手牌`
 }
 
-function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: AnchorRect, selectedCard?: Card): Movement | null {
+function movementFromEvent(event: ActionEvent, cardIndex: number, fromRect: AnchorRect, toRect: AnchorRect, selectedCard?: Card): Movement | null {
   // Combat deaths already keep the exact battlefield visual until it reaches the
   // owner's graveyard. Do not create a second card when delayed death triggers finish.
   if (event.type === 'grave' && event.text.includes('阵亡触发已完成')) return null
@@ -139,7 +130,7 @@ function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: Anc
     // ordering as every other authoritative card action.
     from = 'disaster'; to = 'disaster'; label = '天灾翻开'
   } else if (event.type === 'reveal' && /加入手牌/.test(event.text)) {
-    const revealed = (event.cards ?? []).find(card => !isMovementIdentityConcealed(event, card))
+    const revealed = (event.cards ?? []).find(card => !isMovementCardConcealed(event, card))
     if (!revealed) return null
     from = textSource(event.text); to = 'hand'; label = '加入手牌'
   } else if (event.type === 'counter-set') {
@@ -155,6 +146,8 @@ function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: Anc
     from = selectedCard && sourceZoneHints.get(selectedCard.instanceId) || 'resolving'; to = 'attached'; label = '叠放'
   } else if (event.type === 'grave' || event.type === 'discard') {
     from = textSource(event.text); to = 'graveyard'; label = event.type === 'discard' ? '弃置' : '入墓'
+  } else if (event.type === 'mill') {
+    from = 'library'; to = 'graveyard'; label = '弃置'
   } else if (event.type === 'return') {
     from = event.text.includes('从墓地') ? 'graveyard' : event.text.includes('从圣物区') ? 'relic' : 'field'
     to = event.text.includes('主宰区') ? 'master' : event.text.includes('手牌') ? 'hand' : event.text.includes('圣物区') ? 'relic' : 'library'
@@ -170,16 +163,20 @@ function movementFromEvent(event: ActionEvent, fromRect: AnchorRect, toRect: Anc
 
   const cards = event.cards ?? []
   const card = selectedCard ?? (event.type === 'move' ? cards.at(-1)
-    : event.type === 'reveal' ? cards.find(candidate => !isMovementIdentityConcealed(event, candidate))
+    : event.type === 'reveal' ? cards.find(candidate => !isMovementCardConcealed(event, candidate))
     : cards[0])
-  const concealed = isMovementIdentityConcealed(event, card)
+  const concealed = isMovementCardConcealed(event, card, from)
   return {
+    key: movementFactKey(event, cardIndex, card, from, to),
     sequence: event.sequence,
     playerIndex: event.playerIndex ?? props.viewerPlayerIndex,
     label,
     from,
     to,
     card,
+    // A library card remains concealed while it is in flight. Its identity is
+    // revealed only by the authoritative public destination after the motion
+    // completes, never early from the event snapshot carried to the client.
     concealed,
     covered: card?.hidden === true,
     fromRect,
@@ -300,6 +297,10 @@ function showNext() {
     const target = active.value.toRect
     const wrapper = document.createElement('div')
     wrapper.className = 'l12-zone-flight-ghost'
+    wrapper.dataset.movementKey = active.value.key
+    wrapper.dataset.movementInstanceId = active.value.card?.instanceId ?? ''
+    wrapper.dataset.movementFrom = active.value.from
+    wrapper.dataset.movementTo = active.value.to
     Object.assign(wrapper.style, {
       position: 'fixed', left: `${source.x - source.width / 2}px`, top: `${source.y - source.height / 2}px`,
       width: `${source.width}px`, height: `${source.height}px`, zIndex: '902', pointerEvents: 'none',
@@ -373,15 +374,14 @@ function viewportChanged() {
   for (const movement of queue) movement.presentationRelease?.()
   queue.length = 0
   notifyBusy()
-  lastSequence = Math.max(lastSequence, ...props.events.map(event => event.sequence))
+  movementClaims.lastSequence = Math.max(movementClaims.lastSequence, ...props.events.map(event => event.sequence))
 }
 function reset() {
   viewportGeneration++
   cancelActiveMovement()
   for (const movement of queue) movement.presentationRelease?.()
   queue.length = 0
-  initialized = false
-  lastSequence = 0
+  resetMovementClaimState(movementClaims, Math.max(0, ...props.events.map(event => event.sequence)))
   sourceZoneHints.clear()
   for (const reservation of pendingReservations) reservation.cancel()
   pendingReservations.clear()
@@ -392,21 +392,19 @@ function reset() {
 
 watch(() => props.matchId, reset, { flush: 'sync' })
 watch(() => props.events.map(event => event.sequence).join(','), async () => {
-  const highest = Math.max(0, ...props.events.map(event => event.sequence))
-  if (!initialized) {
-    initialized = true
-    lastSequence = highest
-    return
-  }
-  const fresh = props.events.filter(item => item.sequence > lastSequence).sort((a, b) => a.sequence - b.sequence)
+  // This advances the cursor synchronously, before the first await below. A
+  // rapid next snapshot therefore cannot reclaim events still being prepared.
+  const fresh = claimFreshMovementEvents(props.events, movementClaims)
   const drafts = fresh.flatMap(event => {
     if (isSupersededLeaveEvent(event, fresh) || isCombatDefeatLeaveEvent(event)) return []
     return movementCardsForEvent(event)
-    .filter(card => event.type !== 'reveal' || !isMovementIdentityConcealed(event, card)).map(card => ({
-    event,
-    draft: movementFromEvent(event, fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), card),
+    .filter(card => event.type !== 'reveal' || !isMovementCardConcealed(event, card)).map((card, cardIndex) => ({
+      event,
+      cardIndex,
+      draft: movementFromEvent(event, cardIndex, fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), card),
     }))
-  }).filter((item): item is { event: ActionEvent; draft: Movement } => Boolean(item.draft))
+  }).filter((item): item is { event: ActionEvent; cardIndex: number; draft: Movement } => Boolean(item.draft))
+    .filter(({ draft }) => claimMovementFact(movementClaims, draft.key))
   const reservations = drafts.map(({ event }) => {
     const reservation = props.sequenceCoordinator.reserve(event.sequence, 20)
     reservation.setPaused(props.paused)
@@ -423,9 +421,13 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
     // A disaster is revealed from its dedicated deck/active-disaster anchor,
     // not cloned from the newly visible session thumbnail.  Using that
     // thumbnail as a source would skip the card-back/front flip entirely.
-    const source = draft.disasterReveal ? null : cardElement(draft.card?.instanceId)
+    // A normal library is likewise an identity-free pile. Never let a newly
+    // rendered graveyard destination become the source clone and reveal the
+    // milled card face before its card-back flight has finished.
+    const source = draft.disasterReveal || draft.from === 'library' ? null : cardElement(draft.card?.instanceId)
     return {
-      rect: elementRect(source) ?? resolveRect(draft.from, draft.playerIndex, draft.disasterReveal ? undefined : draft.card?.instanceId),
+      rect: elementRect(source) ?? resolveRect(draft.from, draft.playerIndex,
+        draft.disasterReveal || draft.from === 'library' ? undefined : draft.card?.instanceId),
       ghost: source instanceof HTMLElement ? source.cloneNode(true) as HTMLElement : undefined,
       rotation: elementRotation(source),
     }
@@ -450,8 +452,8 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
       continue
     }
     const movement = starts[index]
-      ? movementFromEvent(event, starts[index]!.rect, elementRect(destination)
-        ?? resolveRect(draft.to, draft.playerIndex, draft.disasterReveal ? undefined : draft.card?.instanceId), draft.card)
+        ? movementFromEvent(event, drafts[index]!.cardIndex, starts[index]!.rect, elementRect(destination)
+          ?? resolveRect(draft.to, draft.playerIndex, draft.disasterReveal ? undefined : draft.card?.instanceId), draft.card)
       : null
     if (movement) movement.sourceGhost = starts[index]?.ghost
     if (movement) {
@@ -470,12 +472,7 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
       notifyBusy()
       return
     }
-    const previous = queue.at(-1) ?? active.value
-    const repeated = movement && previous && movement.card?.instanceId
-      && movement.card.instanceId === previous.card?.instanceId
-      && movement.sequence - previous.sequence <= 2
-      && movement.to === previous.to
-    if (movement && !repeated) {
+    if (movement) {
       const reservation = reservations[index]!
       const release = await reservation.waitUntilGranted()
       pendingReservations.delete(reservation)
@@ -491,7 +488,6 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
     }
     if (movement?.card?.instanceId) sourceZoneHints.delete(movement.card.instanceId)
   }
-  for (const event of fresh) lastSequence = Math.max(lastSequence, event.sequence)
   if (hasMovement) preparationCount--
   notifyBusy()
   showNext()
@@ -509,8 +505,10 @@ onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewpo
 
 <template>
   <Teleport :to="landscapeTeleportTarget()">
-    <div v-if="active && !active.sourceGhost" :key="active.sequence" class="zone-card-movement" :style="motionStyle"
-      data-ui-contract="authoritative-zone-card-movement" aria-hidden="true">
+    <div v-if="active && !active.sourceGhost" :key="active.key" class="zone-card-movement" :style="motionStyle"
+      data-ui-contract="authoritative-zone-card-movement" :data-movement-key="active.key"
+      :data-movement-instance-id="active.card?.instanceId" :data-movement-from="active.from" :data-movement-to="active.to"
+      aria-hidden="true">
       <div class="moving-card" data-essential-motion :class="{ concealed: active.concealed, covered: active.covered, 'disaster-reveal': active.disasterReveal }">
         <small v-if="active.caption" class="movement-caption">{{ active.caption }}</small>
         <template v-if="active.disasterReveal && active.preparedImageUrl">

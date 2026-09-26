@@ -12,13 +12,19 @@ const swapper = card('mover-2', '罗宾汉', 'S02-0617')
 const host = card('host-1', '狮心王理查一世', 'S02-0608')
 const handSquire = card('hand-squire', '侍从骑士', 'S02-0609')
 const robinSquire = card('robin-squire', '侍从骑士', 'S02-0609')
+const millCards = [
+  card('mill-card-1', '磨牌一', 'S01-0001'),
+  card('mill-card-2', '磨牌二', 'S01-0003'),
+  card('mill-card-3', '磨牌三', 'S01-0004'),
+]
+const duplicateCard = card('duplicate-discard', '佣兵部队', 'S01-0002')
 const nuada = { ...card('nuada-source', '银臂努阿达', 'ST06-M1'), cardType: 'master' }
 
 function player(playerIndex: number): PlayerView {
   return {
     playerIndex, name: playerIndex ? '玩家B' : '玩家A', deckName: '', faction: 'otherworld',
     master: { masterId: playerIndex ? 'S02-06M1' : 'ST06-M1', masterName: playerIndex ? '莫瑞甘' : '银臂努阿达', hp: 8, maxHp: 8 },
-    libraryCount: playerIndex ? 20 : 18, libraryTop: null, hand: playerIndex ? [] : [handSquire, robinSquire], handCount: playerIndex ? 0 : 2,
+    libraryCount: playerIndex ? 20 : 21, libraryTop: null, hand: playerIndex ? [] : [handSquire, robinSquire, duplicateCard], handCount: playerIndex ? 0 : 3,
     morale: [], field: playerIndex
       ? [[null, null, null], [null, null, null]]
       : [[mover, swapper, host], [null, null, null]],
@@ -90,6 +96,45 @@ const api = {
     game.players[0].graveyard = [...(game.players[0].graveyard ?? []), leaving]
     game.players[0].graveyardCount = game.players[0].graveyard.length
     publish({ type:'leave', playerIndex:0, text:'加拉哈德作为主动效果的费用被弃置', cards:[leaving] })
+  },
+  millMany() {
+    game.players[0].libraryCount = Math.max(0, game.players[0].libraryCount - millCards.length)
+    game.players[0].graveyard = [...(game.players[0].graveyard ?? []), ...millCards]
+    game.players[0].graveyardCount = game.players[0].graveyard.length
+    publish({ type:'mill', playerIndex:0, text:'动画契约弃置牌库顶部3张牌', cards:millCards })
+  },
+  returnMilled() {
+    const ids = new Set(millCards.map(card => card.instanceId))
+    game.players[0].graveyard = (game.players[0].graveyard ?? []).filter(card => !ids.has(card.instanceId))
+    game.players[0].graveyardCount = game.players[0].graveyard.length
+    game.players[0].libraryCount += millCards.length
+    const events = millCards.map(card => ({
+      sequence:++sequence, type:'return', playerIndex:0,
+      text:`〈${card.name}〉从墓地返回牌库底部`, cards:[card],
+    }))
+    game.revision += 1
+    game.stateHash = `visual-${game.revision}`
+    game.recentEvents = [...(game.recentEvents ?? []), ...events]
+  },
+  duplicateDiscardSnapshots() {
+    game.players[0].hand = game.players[0].hand?.filter(card => card.instanceId !== duplicateCard.instanceId)
+    game.players[0].handCount = game.players[0].hand?.length
+    game.players[0].graveyard = [...(game.players[0].graveyard ?? []), duplicateCard]
+    game.players[0].graveyardCount = game.players[0].graveyard.length
+    const discard = { sequence:++sequence, type:'discard', playerIndex:0, text:'玩家A弃置佣兵部队', cards:[duplicateCard] }
+    game.recentEvents = [...(game.recentEvents ?? []), discard]
+    queueMicrotask(() => {
+      game.recentEvents = [...(game.recentEvents ?? []),
+        { sequence:++sequence, type:'response', playerIndex:0, text:'发动佣兵部队抵挡进攻', cards:[duplicateCard] },
+        { sequence:++sequence, type:'effect-response', playerIndex:0, text:'佣兵部队响应结算', cards:[duplicateCard] },
+      ]
+    })
+  },
+  returnDuplicateCard() {
+    game.players[0].graveyard = (game.players[0].graveyard ?? []).filter(card => card.instanceId !== duplicateCard.instanceId)
+    game.players[0].graveyardCount = game.players[0].graveyard.length
+    game.players[0].libraryCount += 1
+    publish({ type:'return', playerIndex:0, text:'〈佣兵部队〉从墓地返回牌库底部', cards:[duplicateCard] })
   },
   openPrompt() { game.prompts = [prompt(`blocking-${game.revision}`)]; game.revision += 1 },
   closePrompt() { game.prompts = []; game.revision += 1 },

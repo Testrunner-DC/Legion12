@@ -221,7 +221,6 @@ public sealed partial class L12GameEngine
             else
             {
                 MoveGraveToLibraryBottom(player, [card]);
-                AddEvent("return", item.Controller, $"〈{card.Name}〉从墓地置于牌库底部", card);
             }
             resolved++;
         }

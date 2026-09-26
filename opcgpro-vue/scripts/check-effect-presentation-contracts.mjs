@@ -17,6 +17,8 @@ const zoneMovement = read('../src/l12/game/ZoneMovementPresentationLayer.vue')
 const combatMotion = read('../src/l12/game/CombatMotionPresentationLayer.vue')
 const phasePlayback = read('../src/l12/game/PhasePlayback.vue')
 const visualTransitionProjection = read('../src/l12/game/visualTransitionProjection.ts')
+const graveReturnHelper = read('../../服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs')
+const legacyGraveReturnCaller = read('../../服务端WebSocket/TwelveLegions/L12GameEngine.EffectPresentations.cs')
 const platform = read('../src/l12/platform.ts')
 const store = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.EffectPresentations.cs')
 const model = read('../../服务端WebSocket/TwelveLegions/EffectPresentationTexts.cs')
@@ -71,6 +73,14 @@ for (const contract of [
 assert(eventLogViewModel.includes("'effect-result'") && eventLogViewModel.includes("'effect-declined'")
   && eventLogViewModel.includes('PLAYER_LOG_HIDDEN_TYPES'),
   'Player log must explicitly suppress settlement internals and declined effects while authority history remains intact')
+assert.equal((backend.match(/MoveGraveToLibraryBottom\(/g) ?? []).length, 18,
+  'The reviewed grave-to-library-bottom family must remain one shared helper plus 17 callers; audit any new bypass')
+assert(graveReturnHelper.includes('foreach (var card in legal)')
+  && graveReturnHelper.includes('AddEvent("return", player.PlayerIndex, $"〈{card.Name}〉从墓地返回牌库底部", card)')
+  && graveReturnHelper.includes('AddEvent("return", player.PlayerIndex, $"〈{card.Name}〉从墓地返回牌库顶部", card)'),
+  'Every successful shared grave-to-library move must publish one ordered authority event per physical card')
+assert(!/MoveGraveToLibraryBottom\(player, \[card\]\);\s*AddEvent\("return"/.test(legacyGraveReturnCaller),
+  'A caller must not publish a second return after the shared helper already emitted the movement fact')
 assert(backend.includes('"effect-declined" => "declined"'),
   'Backend event and stack projections must share the declined result status')
 const replay = read('../src/l12/replayModel.ts')

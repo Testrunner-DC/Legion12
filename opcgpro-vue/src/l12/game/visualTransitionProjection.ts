@@ -16,8 +16,73 @@ export function cardEffectPresentationCards(event: ActionEvent) {
 }
 
 export function movementCardsForEvent(event: ActionEvent) {
-  if (event.type === 'move' || event.type === 'attach') return event.cards ?? []
+  if (event.type === 'move' || event.type === 'attach' || event.type === 'mill') return event.cards ?? []
   return (event.cards ?? []).slice(0, 1)
+}
+
+export type MovementClaimState = {
+  initialized: boolean
+  lastSequence: number
+  claimedKeys: Set<string>
+}
+
+export function createMovementClaimState(): MovementClaimState {
+  return { initialized: false, lastSequence: 0, claimedKeys: new Set<string>() }
+}
+
+export function resetMovementClaimState(state: MovementClaimState, baselineSequence = 0) {
+  // An explicit match reset establishes a baseline even when the new match has
+  // no events yet. Its first later movement is live and must be animated.
+  state.initialized = true
+  state.lastSequence = baselineSequence
+  state.claimedKeys.clear()
+}
+
+export function claimFreshMovementEvents(events: ActionEvent[], state: MovementClaimState) {
+  const highest = Math.max(0, ...events.map(event => event.sequence))
+  if (!state.initialized) {
+    state.initialized = true
+    state.lastSequence = highest
+    return []
+  }
+  const fresh = events
+    .filter(event => event.sequence > state.lastSequence)
+    .sort((left, right) => left.sequence - right.sequence)
+  // Commit the authoritative cursor before image decoding, nextTick, or the
+  // global sequence coordinator can yield. Vue watchers may re-enter while
+  // those asynchronous steps are pending; the same snapshot must not be
+  // claimed a second time.
+  state.lastSequence = Math.max(state.lastSequence, highest)
+  const oldestRetained = Math.min(highest, ...events.map(event => event.sequence))
+  for (const key of state.claimedKeys) {
+    const separator = key.indexOf(':')
+    if (separator > 0 && Number(key.slice(0, separator)) < oldestRetained) state.claimedKeys.delete(key)
+  }
+  return fresh
+}
+
+export function movementFactKey(event: ActionEvent, cardIndex: number, card: Card | undefined,
+  from: VisualZone, to: VisualZone) {
+  return `${event.sequence}:${cardIndex}:${card?.instanceId ?? 'cardless'}:${from}>${to}`
+}
+
+export function claimMovementFact(state: MovementClaimState, key: string) {
+  if (state.claimedKeys.has(key)) return false
+  state.claimedKeys.add(key)
+  return true
+}
+
+export function isMovementCardConcealed(event: ActionEvent, card: Card | undefined, from?: VisualZone) {
+  // A normal library never exposes its top identity. Even when the resulting
+  // graveyard event carries the now-public card snapshot, the flight starts as
+  // the official deck back and the destination becomes visible only afterward.
+  if (from === 'library') return true
+  // identityKnown is meaningful only for a card that is still covered. Normal
+  // authoritative event cards keep the model default false even after their
+  // identity has become public (for example, an opponent playing from hand).
+  if (!card || event.type === 'counter-set') return true
+  if (!card.cardId || card.cardId === 'hidden-card') return true
+  return card.hidden === true && card.identityKnown !== true
 }
 
 export function isCombatDefeatLeaveEvent(event: ActionEvent) {
