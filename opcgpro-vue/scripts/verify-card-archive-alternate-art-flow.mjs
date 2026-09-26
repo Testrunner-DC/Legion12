@@ -19,8 +19,9 @@ import { loadCardArchiveCatalog } from '/src/l12/decks.ts'
 import { alternateArtApi, authState, platformState } from '/src/l12/platform.ts'
 import '/src/style.css'
 const cards = await loadCardArchiveCatalog()
-const base = cards.find(card => !card.archiveBaseCardId && card.cardType === 'legion') || cards[0]
-const art = { id: 'qa-admin-art', artCode: 'QA-ADMIN-ART', baseCardId: base.id, displayName: base.nameZh, mediaAssetId: 'qa-media', imageUrl: '/api/site/media/qa-admin-art.png', thumbnailUrl: '/api/site/media/qa-admin-art.png', active: true, createdAt: '', updatedAt: '', productId: 'qa-product', productName: 'QA 活动', cardImageId: '', builtIn: false, baseCardName: base.nameZh, grantedAt: new Date().toISOString(), grantReason: '管理员派发' }
+const base = cards.find(card => card.id === 'S01-0002')
+if (!base) throw new Error('S01-0002 acceptance base card is missing')
+const art = { id: 'qa-admin-art', artCode: 'S01-0002OLA', baseCardId: base.id, displayName: base.nameZh, mediaAssetId: 'qa-media', imageUrl: '/api/site/media/qa-admin-art.png', thumbnailUrl: '/api/site/media/qa-admin-art.png', active: true, createdAt: '', updatedAt: '', productId: 'qa-product', productName: 'OL专属', cardImageId: '', builtIn: false, baseCardName: base.nameZh, grantedAt: new Date().toISOString(), grantReason: '管理员派发' }
 const params = new URLSearchParams(location.search)
 const role = params.get('role') === 'admin' ? 'admin' : 'player'
 const delayed = params.get('delayed') === '1'
