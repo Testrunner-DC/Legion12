@@ -45,6 +45,7 @@ const matchRecords = await read('src/l12/MatchRecords.vue')
 const deckEditor = await read('src/l12/L12DeckEditor.vue')
 const mobileDeferredCardImage = await read('src/l12/MobileDeferredCardImage.vue')
 const promptCardCandidate = await read('src/l12/game/PromptCardCandidate.vue')
+const masterMatchupMatrix = await read('src/l12/site/MasterMatchupMatrix.vue')
 
 const expect = (condition, message) => {
   if (!condition) throw new Error(`mobile responsive contract: ${message}`)
@@ -89,7 +90,7 @@ expect(adminModule.includes('.account-row{grid-template-columns:1fr}') && adminM
 expect(decks.includes('.deck-notice{position:static;max-width:none'), 'portrait notices must not cover deck actions')
 expect(news.includes('.news-page h1{margin:4px 0;font-size:26px}') && home.includes('.hero-copy h1{font-size:26px;line-height:1.08}'), 'portrait editorial pages must use compact hero typography')
 expect(battleHub.includes('.battle-hub{padding:14px 10px 34px}') && battleHub.includes('.mode-panel{padding:14px}'), 'battle lobby must scale its panels and controls together on narrow phones')
-expect(rankings.includes('.ranking-page{--ranking-master-avatar:28px;padding:14px 10px 32px}') && rankings.includes('.matrix-grid{grid-auto-rows:52px}'), 'rankings must compact both table rows and matchup matrix cells')
+expect(rankings.includes('.ranking-page{--ranking-master-avatar:28px;padding:14px 10px 32px}') && masterMatchupMatrix.includes('.matrix-grid{grid-auto-rows:52px}'), 'rankings must compact both table rows and the shared matchup matrix cells')
 expect(rankings.includes('data-label="最擅长主宰"') && rankings.includes('data-label="最强玩家"') && rankings.includes('@media(max-width:700px)') && rankings.includes('.player-mobile-meta') && rankings.includes('.player-table,.master-table,.honor-table{overflow:visible'), 'portrait rankings must become compact information cards instead of requiring horizontal table scrolling')
 expect(tournaments.includes('.tournament-page{padding:14px 10px 34px}') && tournaments.includes('.bracket>section{min-width:190px;padding:8px}'), 'tournament content must preserve bracket proportions while compacting its panels')
 expect(tournaments.includes('class="site-toast"') && !tournaments.includes('class="toast"') && tournaments.includes('top:auto;right:22px;bottom:22px;left:auto;transform:none'), 'site notifications must be isolated from the battle toast positioning contract')

@@ -87,9 +87,11 @@ function logicalIdentity(card: DeckCard) {
 
 export function groupArchiveCards(cards: readonly DeckCard[]): LogicalArchiveCard[] {
   const uniqueCards = [...new Map(cards.map(card => [card.id, card])).values()]
+  const byId = new Map(uniqueCards.map(card => [card.id, card]))
   const grouped = new Map<string, DeckCard[]>()
   uniqueCards.forEach(card => {
-    const key = logicalIdentity(card)
+    const base = card.id === 'S02-05C1B' ? undefined : byId.get(card.archiveBaseCardId ?? '')
+    const key = logicalIdentity(base ?? card)
     const versions = grouped.get(key) ?? []
     versions.push(card)
     grouped.set(key, versions)

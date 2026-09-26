@@ -6,7 +6,7 @@ import { cardArchiveProducts, displayCardNumber, filterableCardCost, loadCardArc
 import { cardErrataForCard, type CardErrataRecord } from './data/cardErrata'
 import MobileDeferredCardImage from './MobileDeferredCardImage.vue'
 import CardDetailContent from './CardDetailContent.vue'
-import { alternateArtApi, type AlternateArt } from './platform'
+import { alternateArtApi, platformState, type AlternateArt } from './platform'
 import MobileFilterSheet from './site/MobileFilterSheet.vue'
 
 type CatalogCard = DeckCard
@@ -33,7 +33,8 @@ const galleryVariantPatterns = [
   /^ST\d{2}-C1st$/,
 ]
 const cards = ref<CatalogCard[]>([])
-const uploadedGalleryArts = ref<AlternateArt[]>([])
+const galleryArts = ref<AlternateArt[]>([])
+const ownedArts = ref<AlternateArt[]>([])
 const loading = ref(true)
 const loadError = ref('')
 const page = ref<ArchivePage>('catalog')
@@ -53,16 +54,28 @@ const modalVersions = ref<CatalogCard[]>([])
 const modalCloseButton = ref<HTMLButtonElement | null>(null)
 let modalTrigger: HTMLElement | null = null
 
-const logicalCards = computed(() => groupArchiveCards(cards.value))
+function projectedUploadedArt(art: AlternateArt, gallery = false): CatalogCard | null {
+  const base = cards.value.find(card => card.id === art.baseCardId)
+  if (!base || art.builtIn) return null
+  return {
+    ...base,
+    id: `ALT-${gallery ? art.artCode || art.id : art.id}`,
+    number: art.artCode || `ALT-${art.id.slice(0, 8)}`,
+    nameZh: gallery ? `${base.nameZh} · ${art.displayName}` : base.nameZh,
+    imageUrl: art.imageUrl,
+    archiveBaseCardId: base.id,
+    products: art.productName ? [art.productName] : base.products,
+  }
+}
+const catalogCards = computed(() => [
+  ...cards.value,
+  ...ownedArts.value.map(art => projectedUploadedArt(art)).filter((card): card is CatalogCard => Boolean(card)),
+])
+const logicalCards = computed(() => groupArchiveCards(catalogCards.value))
 const galleryCards = computed(() => {
   const legacy = cards.value.filter(isGalleryVariant)
-  const uploaded = uploadedGalleryArts.value.filter(art => !art.builtIn).flatMap(art => {
-    const base = cards.value.find(card => card.id === art.baseCardId)
-    if (!base) return []
-    return [{ ...base, id: `ALT-${art.artCode || art.id}`, number: art.artCode || `ALT-${art.id.slice(0, 8)}`,
-      nameZh: `${base.nameZh} · ${art.displayName}`, imageUrl: art.imageUrl, archiveBaseCardId: base.id,
-      products: art.productName ? [art.productName] : base.products }]
-  })
+  const uploaded = galleryArts.value.map(art => projectedUploadedArt(art, true))
+    .filter((card): card is CatalogCard => Boolean(card))
   return [...legacy, ...uploaded].sort(compareArchiveVersions)
 })
 const productOptions = computed(() => [...new Set([
@@ -74,9 +87,14 @@ const productOptions = computed(() => [...new Set([
 onMounted(async () => {
   window.addEventListener('keydown', onWindowKeydown)
   try {
-    const [catalog, arts] = await Promise.all([loadCardArchiveCatalog(), alternateArtApi.gallery()])
+    const [catalog, arts, owned] = await Promise.all([
+      loadCardArchiveCatalog(),
+      alternateArtApi.gallery(),
+      platformState.account ? alternateArtApi.mine().catch(() => [] as AlternateArt[]) : Promise.resolve([] as AlternateArt[]),
+    ])
     cards.value = catalog
-    uploadedGalleryArts.value = arts
+    galleryArts.value = arts
+    ownedArts.value = owned
     const first = logicalCards.value[0]
     if (first) selectLogical(first)
     selectedGalleryId.value = galleryCards.value[0]?.id ?? ''

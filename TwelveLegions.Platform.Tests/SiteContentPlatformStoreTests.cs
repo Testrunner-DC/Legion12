@@ -57,6 +57,13 @@ public sealed class SiteContentPlatformStoreTests
             Assert.Equal(product.Id, saved.ProductId);
             Assert.Contains(store.AlternateArts(), item => item.Id == saved.Id && item.Active);
 
+            var entitled = store.Register("ent" + Guid.NewGuid().ToString("N")[..7], "Password123!").Account!;
+            var unentitled = store.Register("unent" + Guid.NewGuid().ToString("N")[..5], "Password123!").Account!;
+            store.GrantAlternateArt(admin, new(saved.Id, entitled.Username, "manual", "archive-full-pool"));
+            Assert.Contains(store.OwnedAlternateArts(entitled.Id), item => item.Id == saved.Id && !item.BuiltIn);
+            Assert.DoesNotContain(store.OwnedAlternateArts(unentitled.Id), item => item.Id == saved.Id);
+            Assert.Contains(store.AlternateArts(), item => item.Id == saved.Id && item.ImageUrl == saved.ImageUrl);
+
             var owned = Assert.Single(store.OwnedAlternateArts(admin.Id), item => item.Id == saved.Id);
             Assert.Equal("自主上传", owned.GrantReason);
             var copies = preset.CardIds.ToList();

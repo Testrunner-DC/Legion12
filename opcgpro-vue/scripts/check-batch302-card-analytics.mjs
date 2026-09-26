@@ -56,7 +56,14 @@ try {
     return url.hostname === '127.0.0.1' ? route.continue() : route.abort()
   })
   await page.goto('http://127.0.0.1:' + server.httpServer.address().port + '/__batch302__')
-  await page.getByRole('button', { name: /选择卡牌/ }).waitFor()
+  const analyzeButton = page.getByRole('button', { name: '分析卡牌', exact: true })
+  await analyzeButton.waitFor()
+  assert.equal((await analyzeButton.innerText()).trim(), '分析卡牌', 'single-card picker button must keep only the action label')
+  const analyzeGeometry = await analyzeButton.evaluate(button => ({
+    height: Math.round(button.getBoundingClientRect().height), align: getComputedStyle(button).alignItems,
+    justify: getComputedStyle(button).justifyContent, textAlign: getComputedStyle(button).textAlign,
+  }))
+  assert.deepEqual(analyzeGeometry, { height: 44, align: 'center', justify: 'center', textAlign: 'center' })
   assert.equal(await page.getByText('选择一张卡查看事实仪表盘').count(), 1, 'single-card view must not auto-select a list row')
   assert.equal(await page.locator('.sample-contract').count(), 0, 'system-style analytics guidance must not occupy a persistent row')
   assert.equal(await page.getByText(/统计单位为.*低于.*统计缓存/).count(), 0, 'implementation and cache guidance must not be shown as persistent copy')
@@ -69,7 +76,7 @@ try {
   assert.equal(new Set(peerButtons.map(button => button.height)).size, 1, 'peer tabs must have equal height')
   assert.ok(peerButtons.every(button => button.align === 'center' && button.justify === 'center' && button.wrap === 'normal'), 'peer tabs must align and wrap consistently')
 
-  await page.getByRole('button', { name: /选择卡牌/ }).click()
+  await analyzeButton.click()
   await page.getByRole('dialog', { name: '选择要分析的卡牌' }).waitFor()
   await page.locator('.single-card-actions').first().getByRole('button', { name: '选择', exact: true }).click()
   await page.getByText('样本可靠性', { exact: true }).waitFor()
