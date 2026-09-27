@@ -175,6 +175,159 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Contains("继续结算", prompt.Presentation.ChoiceConsequences["decline"], StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:peace-negotiation-five-view-checkpoint")]
+    public void PeaceNegotiationExplainsBothOutcomesToTheAskedOpponentAndKeepsOtherViewsSafe(
+        int controller)
+    {
+        var game = CreateCleanGame(202609276 + controller);
+        var source = Card("S01-0015", $"narrative-peace-{controller}", controller);
+        var item = LegacyStackItem($"narrative-peace-stack-{controller}", controller, source,
+            "play", "peace-negotiation");
+        game.State.EffectStack.Add(item);
+
+        Invoke(game, "ResolveTacticEffect", item);
+
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        var askedPlayer = 1 - controller;
+        Assert.Equal(askedPlayer, prompt.PlayerIndex);
+        AssertPresentation(prompt, "议和谈判", "对方打出〈议和谈判〉并已先抽取1张牌",
+            "同意后，对方再抽1张牌、你抽1张牌");
+        Assert.Equal("同意议和", prompt.ChoiceLabels["agree"]);
+        Assert.Equal("拒绝议和", prompt.ChoiceLabels["refuse"]);
+        Assert.Contains("对方本次共抽取2张", prompt.Presentation!.ChoiceConsequences["agree"],
+            StringComparison.Ordinal);
+        Assert.Contains("你不抽牌", prompt.Presentation.ChoiceConsequences["refuse"],
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(prompt.Data.Keys,
+            key => key.StartsWith("__promptNarrative:", StringComparison.Ordinal));
+
+        Assert.Single(game.SnapshotFor(askedPlayer).Prompts);
+        Assert.Empty(game.SnapshotFor(controller).Prompts);
+        Assert.Empty(game.SnapshotForSpectator().Prompts);
+        Assert.Empty(game.SnapshotForReferee().Prompts);
+        Assert.Single(game.SnapshotForGm(controller).Prompts);
+        Assert.Null(game.SnapshotForGm(controller).WaitingPrompt);
+        AssertSafeWaitingViews(game, controller, source);
+
+        var random = game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0);
+        var restored = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(), random,
+            game.CardFactSignalSequence, game.AutoPassEmptyResponses,
+            game.ConcealHiddenResponseAvailability);
+        var restoredPrompt = Assert.Single(restored.State.PendingPrompts);
+        AssertPresentation(restoredPrompt, "议和谈判", "请求你决定是否同意议和", "请选择同意或拒绝");
+        Assert.Equal(prompt.Presentation.ChoiceConsequences,
+            restoredPrompt.Presentation!.ChoiceConsequences);
+        Assert.DoesNotContain(restoredPrompt.Data.Keys,
+            key => key.StartsWith("__promptNarrative:", StringComparison.Ordinal));
+        AssertSafeWaitingViews(restored, controller, source);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "prompt-narrative:legacy-entry-card-decisions")]
+    public void EntryDecisionsExplainOptionalCostsTargetCountsAndConcreteOutcomes()
+    {
+        var wuzetianGame = CreateCleanGame(202609278);
+        AddMorale(wuzetianGame, 0, 1, "wuzetian");
+        var wuzetian = Card("S01-0102", "narrative-wuzetian", 0);
+        var firstLocked = Card("S01-0003", "narrative-wuzetian-target-1", 1);
+        var secondLocked = Card("S01-0004", "narrative-wuzetian-target-2", 1);
+        firstLocked.Tapped = true;
+        secondLocked.Tapped = true;
+        wuzetianGame.State.Players[1].Field[0][0] = firstLocked;
+        wuzetianGame.State.Players[1].Field[1][0] = secondLocked;
+        var wuzetianItem = LegacyStackItem("narrative-wuzetian-stack", 0, wuzetian,
+            "enter", "武则天");
+        wuzetianGame.State.EffectStack.Add(wuzetianItem);
+
+        Invoke(wuzetianGame, "ResolveEnterEffect", wuzetianItem);
+
+        var wuzetianPrompt = Assert.Single(wuzetianGame.State.PendingPrompts);
+        Assert.Equal(0, wuzetianPrompt.MinChoose);
+        Assert.Equal(2, wuzetianPrompt.MaxChoose);
+        AssertPresentation(wuzetianPrompt, "武则天", "返还1张士气", "请选择0至2个合法目标");
+        Assert.Contains("不选择任何目标即表示不发动", wuzetianPrompt.Presentation!.Instruction,
+            StringComparison.Ordinal);
+        Assert.Contains("锁定所选全部目标", wuzetianPrompt.Presentation.ChoiceConsequences[firstLocked.InstanceId],
+            StringComparison.Ordinal);
+        Assert.Contains("锁定所选全部目标", wuzetianPrompt.Presentation.ChoiceConsequences[secondLocked.InstanceId],
+            StringComparison.Ordinal);
+
+        var mulanGame = CreateCleanGame(202609279);
+        AddMorale(mulanGame, 0, 1, "mulan");
+        var mulan = Card("S01-0108", "narrative-mulan", 0);
+        var mulanItem = LegacyStackItem("narrative-mulan-stack", 0, mulan, "enter", "花木兰");
+        mulanGame.State.EffectStack.Add(mulanItem);
+
+        Invoke(mulanGame, "ResolveEnterEffect", mulanItem);
+
+        var mulanPrompt = Assert.Single(mulanGame.State.PendingPrompts);
+        AssertPresentation(mulanPrompt, "花木兰", "获得冲锋并能在登场回合进攻", "还需完成士气返还");
+        Assert.Equal("发动", mulanPrompt.ChoiceLabels["yes"]);
+        Assert.Equal("不发动", mulanPrompt.ChoiceLabels["no"]);
+        Assert.Contains("返还完成后", mulanPrompt.Presentation!.ChoiceConsequences["yes"], StringComparison.Ordinal);
+        Assert.Contains("不返还士气", mulanPrompt.Presentation.ChoiceConsequences["no"], StringComparison.Ordinal);
+
+        var inahimeGame = CreateCleanGame(202609280);
+        var inahime = Card("S01-0416", "narrative-inahime", 0);
+        var buffTarget = Card("S01-0402", "narrative-inahime-target", 0);
+        inahimeGame.State.Players[0].Field[0][0] = inahime;
+        inahimeGame.State.Players[0].Field[0][1] = buffTarget;
+        var inahimeItem = LegacyStackItem("narrative-inahime-stack", 0, inahime,
+            "enter", "稻姬本多小松");
+        inahimeGame.State.EffectStack.Add(inahimeItem);
+
+        Invoke(inahimeGame, "ResolveEnterEffect", inahimeItem);
+
+        var inahimePrompt = Assert.Single(inahimeGame.State.PendingPrompts);
+        AssertPresentation(inahimePrompt, "稻姬本多小松", "我方前排另一张", "本回合兵力增加1000");
+        Assert.Equal(buffTarget.Name, inahimePrompt.ChoiceLabels[buffTarget.InstanceId]);
+        Assert.Contains("本回合兵力增加1000",
+            inahimePrompt.Presentation!.ChoiceConsequences[buffTarget.InstanceId], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "prompt-narrative:optional-and-mandatory-enemy-target")]
+    public void EnemyTargetGatewayDistinguishesLubuDeclineFromKusanagiMandatoryKill()
+    {
+        var lubuGame = CreateCleanGame(202609281);
+        AddMorale(lubuGame, 0, 2, "lubu");
+        var lubu = Card("S01-0101", "narrative-lubu", 0);
+        var disasterTarget = Card("S01-0104", "narrative-lubu-target", 1);
+        lubuGame.State.Players[1].Field[0][0] = disasterTarget;
+        var lubuItem = LegacyStackItem("narrative-lubu-stack", 0, lubu, "enter", "吕布");
+        lubuGame.State.EffectStack.Add(lubuItem);
+
+        Invoke(lubuGame, "ResolveEnterEffect", lubuItem);
+
+        var lubuPrompt = Assert.Single(lubuGame.State.PendingPrompts);
+        AssertPresentation(lubuPrompt, "吕布", "返还2张士气", "或选择“不发动”");
+        Assert.Contains("skip", lubuPrompt.ValidChoices);
+        Assert.Equal("不发动", lubuPrompt.ChoiceLabels["skip"]);
+        Assert.Contains("不返还士气", lubuPrompt.Presentation!.ChoiceConsequences["skip"],
+            StringComparison.Ordinal);
+        Assert.Contains("返还完成后击杀", lubuPrompt.Presentation.ChoiceConsequences[disasterTarget.InstanceId],
+            StringComparison.Ordinal);
+
+        var kusanagiGame = CreateCleanGame(202609282);
+        var kusanagi = Card("S01-0417", "narrative-kusanagi", 0);
+        var lowCostTarget = Card("S01-0004", "narrative-kusanagi-target", 1);
+        kusanagiGame.State.Players[1].Field[0][0] = lowCostTarget;
+        var kusanagiItem = LegacyStackItem("narrative-kusanagi-stack", 0, kusanagi,
+            "enter", "草薙剑");
+        kusanagiGame.State.EffectStack.Add(kusanagiItem);
+
+        Invoke(kusanagiGame, "ResolveEnterEffect", kusanagiItem);
+
+        var kusanagiPrompt = Assert.Single(kusanagiGame.State.PendingPrompts);
+        AssertPresentation(kusanagiPrompt, "草薙剑", "必须选择并击杀", "这个效果不能跳过");
+        Assert.DoesNotContain("skip", kusanagiPrompt.ValidChoices);
+        Assert.Contains("确认后击杀", kusanagiPrompt.Presentation!.ChoiceConsequences[lowCostTarget.InstanceId],
+            StringComparison.Ordinal);
+    }
+
     private static void AssertPresentation(L12Prompt prompt, string title, string situation, string instruction)
     {
         var presentation = Assert.IsType<L12PromptPresentation>(prompt.Presentation);
@@ -182,6 +335,28 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Contains(situation, presentation.Situation, StringComparison.Ordinal);
         Assert.Contains(instruction, presentation.Instruction, StringComparison.Ordinal);
         Assert.False(string.IsNullOrWhiteSpace(presentation.WaitingSummary));
+    }
+
+    private static void AssertSafeWaitingViews(L12GameEngine game, int waitingViewer,
+        L12CardInstance source)
+    {
+        foreach (var waitingObject in new[]
+                 {
+                     game.SnapshotFor(waitingViewer).WaitingPrompt,
+                     game.SnapshotForSpectator().WaitingPrompt,
+                     game.SnapshotForReferee().WaitingPrompt,
+                 })
+        {
+            Assert.NotNull(waitingObject);
+            var waiting = JsonSerializer.SerializeToElement(waitingObject,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            var summary = waiting.GetProperty("waitingSummary").GetString();
+            Assert.False(string.IsNullOrWhiteSpace(summary));
+            Assert.DoesNotContain(source.Name, summary!, StringComparison.Ordinal);
+            Assert.DoesNotContain(source.InstanceId, summary, StringComparison.Ordinal);
+            Assert.DoesNotContain("agree", summary, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("refuse", summary, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     private static L12GameEngine CreateGame(int seed, bool autoPassEmptyResponses,
@@ -271,6 +446,32 @@ public sealed class PromptNarrativeMatrixTests
             Text = text,
             SourceSnapshot = source,
         };
+
+    private static L12StackItem LegacyStackItem(string id, int controller, L12CardInstance source,
+        string trigger, string atomicFlow)
+    {
+        var item = new L12StackItem
+        {
+            StackItemId = id,
+            Controller = controller,
+            SourceInstanceId = source.InstanceId,
+            SourceCardId = $"legacy-{source.CardId}",
+            SourceName = source.Name,
+            Trigger = trigger,
+            Text = $"测试〈{source.Name}〉的{trigger}效果",
+            SourceSnapshot = source,
+        };
+        item.Data["atomicFlow"] = atomicFlow;
+        return item;
+    }
+
+    private static void AddMorale(L12GameEngine game, int playerIndex, int count, string prefix)
+    {
+        var moraleIds = Catalog.DeckAt(0).MoraleIds;
+        for (var index = 0; index < count; index++)
+            game.State.Players[playerIndex].Morale.Add(Morale(moraleIds[index % moraleIds.Count],
+                $"narrative-{prefix}-morale-{index}"));
+    }
 
     private static L12MoraleCard Morale(string cardId, string instanceId)
         => new()

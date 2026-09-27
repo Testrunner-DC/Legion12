@@ -158,12 +158,21 @@ public sealed partial class L12GameEngine
                 target => target.DisasterLevel is 1 or 2, CanReturnMorale(player, 2)); return;
             case "武则天":
             {
-                var choices = State.Players[1 - item.Controller].Field.SelectMany(row => row)
-                    .Where(target => target is { Tapped: true }).Select(target => target!.InstanceId).ToList();
+                var targets = State.Players[1 - item.Controller].Field.SelectMany(row => row)
+                    .Where(target => target is { Tapped: true }).Cast<L12CardInstance>().ToList();
+                var choices = targets.Select(target => target.InstanceId).ToList();
                 if (!CanReturnMorale(player, 1) || choices.Count == 0) { FinishStackItem(item); return; }
                 CreatePrompt(item.Controller, "optional-targets", "可返还 1 张士气：选择对方最多 2 张休整军团，下个对方重置阶段不能转为活跃",
                     choices, 0, Math.Min(2, choices.Count), "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "wuzetian-lock" });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string> { ["action"] = "wuzetian-lock" },
+                        new(card.Name,
+                            $"〈{card.Name}〉的登场时效果可以返还1张士气，令对方至多2张休整军团在下个对方重置阶段不能转为活跃。",
+                            "请选择0至2个合法目标并确认；不选择任何目标即表示不发动，本次不会返还士气。",
+                            L12PromptWaitingAction.TargetSelection,
+                            targets.ToDictionary(target => target.InstanceId,
+                                target => $"选择〈{target.Name}〉作为效果目标；确认后返还1张士气，并锁定所选全部目标的下个重置阶段。",
+                                StringComparer.OrdinalIgnoreCase))));
                 return;
             }
             case "李靖": BeginLiJingEffect(item); return;
@@ -171,7 +180,23 @@ public sealed partial class L12GameEngine
             case "花木兰":
                 if (CanReturnMorale(player, 1))
                     CreatePrompt(item.Controller, "optional", "是否返还 1 张士气，使花木兰获得冲锋？", ["yes", "no"], 1, 1,
-                        "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "mulan-charge" });
+                        "card-effect", item.StackItemId,
+                        data: WithPromptNarrative(
+                            new Dictionary<string, string>
+                            {
+                                ["action"] = "mulan-charge",
+                                ["yes"] = "发动",
+                                ["no"] = "不发动",
+                            },
+                            new(card.Name,
+                                $"〈{card.Name}〉登场后，你可以返还1张士气，使她获得冲锋并能在登场回合进攻。",
+                                "请选择是否发动；选择发动后还需完成士气返还，选择不发动则直接结束这次登场时效果。",
+                                L12PromptWaitingAction.EffectDecision,
+                                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                                {
+                                    ["yes"] = "发动效果并继续返还1张士气；返还完成后，〈花木兰〉获得冲锋。",
+                                    ["no"] = "不返还士气，〈花木兰〉不会因这次登场时效果获得冲锋。",
+                                })));
                 else FinishStackItem(item);
                 return;
             case "服部半藏":
@@ -181,14 +206,23 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item); return;
             case "稻姬本多小松":
             {
-                var choices = PublicFactionLegions(player, "gaotianyuan").Where(target =>
+                var targets = PublicFactionLegions(player, "gaotianyuan").Where(target =>
                         target.InstanceId != card.InstanceId
                         && FindOnField(player, target.InstanceId, out var row, out _) is not null && row == 0
-                        && target.Troops <= 5000).Select(target => target.InstanceId).ToArray();
+                        && target.Troops <= 5000).ToArray();
+                var choices = targets.Select(target => target.InstanceId).ToArray();
                 if (choices.Length == 0) { FinishStackItem(item); return; }
                 CreatePrompt(item.Controller, "target", "选择我方前排 1 张其他兵力不高于 5000 的【高天原】军团，本回合兵力 +1000",
                     choices, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "inaihime-buff" });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string> { ["action"] = "inaihime-buff" },
+                        new(card.Name,
+                            $"〈{card.Name}〉的登场时效果可以强化我方前排另一张兵力不高于5000的【高天原】军团。",
+                            "请选择1个合法目标；确认后，该军团本回合兵力增加1000。",
+                            L12PromptWaitingAction.TargetSelection,
+                            targets.ToDictionary(target => target.InstanceId,
+                                target => $"选择〈{target.Name}〉；确认后，该军团本回合兵力增加1000。",
+                                StringComparer.OrdinalIgnoreCase))));
                 return;
             }
             case "草薙剑":
@@ -250,7 +284,22 @@ public sealed partial class L12GameEngine
             case "peace-negotiation":
                 CreatePrompt(1 - item.Controller, "opponent-confirm", "是否同意〈议和谈判〉？", ["agree", "refuse"], 1, 1,
                     "card-effect", item.StackItemId, isPrivate: false,
-                    data: new Dictionary<string, string> { ["action"] = "peace-talk" });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "peace-talk",
+                            ["agree"] = "同意议和",
+                            ["refuse"] = "拒绝议和",
+                        },
+                        new(card.Name,
+                            $"对方打出〈{card.Name}〉并已先抽取1张牌，现在请求你决定是否同意议和。",
+                            "请选择同意或拒绝；同意后，对方再抽1张牌、你抽1张牌；拒绝后，双方不再抽牌。",
+                            L12PromptWaitingAction.EffectDecision,
+                            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                            {
+                                ["agree"] = "同意议和：对方再抽取1张牌，你抽取1张牌；因此对方本次共抽取2张，你抽取1张。",
+                                ["refuse"] = "拒绝议和：双方不再抽牌；因此对方本次只抽取此前的1张牌，你不抽牌。",
+                            })));
                 return;
             case "草薙剑":
                 if (PublicTriggerDeclared(item, "mode") == "mode:use"
@@ -432,12 +481,38 @@ public sealed partial class L12GameEngine
     private void PromptEnemyLegion(L12StackItem item, string action, string text,
         Func<L12CardInstance, bool> predicate, bool optional)
     {
-        var choices = State.Players[1 - item.Controller].Field.SelectMany(row => row)
+        var targets = State.Players[1 - item.Controller].Field.SelectMany(row => row)
             .Where(target => target is not null && !target.Hidden && predicate(target))
-            .Select(target => target!.InstanceId).ToList();
+            .Cast<L12CardInstance>().ToList();
+        var choices = targets.Select(target => target.InstanceId).ToList();
         if (choices.Count == 0) { FinishStackItem(item); return; }
         if (optional) choices.Add("skip");
+        Dictionary<string, string> data = new() { ["action"] = action };
+        if (action is "lubu-kill" or "kusanagi-enter-kill")
+        {
+            var consequences = targets.ToDictionary(target => target.InstanceId,
+                target => action == "lubu-kill"
+                    ? $"选择〈{target.Name}〉；确认后继续返还2张士气，返还完成后击杀该军团。"
+                    : $"选择〈{target.Name}〉；确认后击杀该军团。",
+                StringComparer.OrdinalIgnoreCase);
+            if (optional)
+            {
+                data["skip"] = "不发动";
+                consequences["skip"] = "不返还士气，也不发动这次登场时效果。";
+            }
+            var sourceName = string.IsNullOrWhiteSpace(item.SourceName) ? "卡牌效果" : item.SourceName;
+            data = WithPromptNarrative(data,
+                action == "lubu-kill"
+                    ? new(sourceName,
+                        $"〈{sourceName}〉的登场时效果可以返还2张士气，击杀对方1张天灾等级为1或2的军团。",
+                        "请选择1个合法目标，或选择“不发动”；选择目标后还需完成士气返还。",
+                        L12PromptWaitingAction.TargetSelection, consequences)
+                    : new(sourceName,
+                        $"〈{sourceName}〉的登场时效果必须选择并击杀对方1张费用不高于2的军团。",
+                        "请选择1个合法目标；这个效果不能跳过，确认后将击杀所选军团。",
+                        L12PromptWaitingAction.TargetSelection, consequences));
+        }
         CreatePrompt(item.Controller, "target", text, choices, 1, 1, "card-effect", item.StackItemId,
-            data: new Dictionary<string, string> { ["action"] = action });
+            data: data);
     }
 }
