@@ -493,10 +493,25 @@ public sealed class L12Prompt
     /// </summary>
     public Dictionary<string, string> ChoiceLabels { get; init; } = [];
     /// <summary>
+    /// 玩家弹框的权威叙事结构。旧检查点没有该字段时保持 null，由客户端使用安全的自然语言降级；
+    /// 等待视角只能取得 WaitingSummary，绝不能取得其余私密内容。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12PromptPresentation? Presentation { get; init; }
+    /// <summary>
     /// 服务端专用的匿名选项映射。公开快照只投影 ValidChoices 与 Data，绝不传输此映射；
     /// 用于从随机槽位恢复隐藏区域中的真实实例，避免客户端获得手牌顺序或实例标识。
     /// </summary>
     public Dictionary<string, string> HiddenChoiceMap { get; init; } = [];
+}
+
+public sealed class L12PromptPresentation
+{
+    public required string Title { get; init; }
+    public required string Situation { get; init; }
+    public required string Instruction { get; init; }
+    public required string WaitingSummary { get; init; }
+    public Dictionary<string, string> ChoiceConsequences { get; init; } = [];
 }
 
 public sealed class L12StackItem

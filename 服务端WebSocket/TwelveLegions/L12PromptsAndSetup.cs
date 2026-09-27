@@ -147,6 +147,7 @@ public sealed partial class L12GameEngine
             AddBoundResponsePresentation(playerIndex, responseTarget, data);
             playerText += "\n\n" + data["responseContext"];
         }
+        var presentation = BuildPromptPresentation(playerIndex, kind, playerText, min, max, data, choiceLabels);
         var prompt = new L12Prompt
         {
             PromptId = $"prompt-{++State.PromptSequence}",
@@ -167,10 +168,99 @@ public sealed partial class L12GameEngine
             IsPrivate = isPrivate,
             Data = data,
             ChoiceLabels = choiceLabels,
+            Presentation = presentation,
         };
         State.PendingPrompts.Add(prompt);
         AddEvent("prompt", playerIndex, $"等待 {State.Players[playerIndex].Name}：{playerText}");
         return prompt;
+    }
+
+    private L12PromptPresentation BuildPromptPresentation(int playerIndex, string kind, string playerText,
+        int minChoose, int maxChoose, IReadOnlyDictionary<string, string> data,
+        Dictionary<string, string> choiceLabels)
+    {
+        var sourceName = data.GetValueOrDefault("sourceName")?.Trim();
+        var separator = playerText.IndexOf('：');
+        var inferredTitle = separator > 0 ? playerText[..separator].Trim() : string.Empty;
+        var title = !string.IsNullOrWhiteSpace(sourceName)
+            ? sourceName
+            : !string.IsNullOrWhiteSpace(inferredTitle)
+                ? inferredTitle
+                : PromptKindTitle(kind);
+        var situation = data.GetValueOrDefault("effectText")?.Trim();
+        if (string.IsNullOrWhiteSpace(situation))
+            situation = separator > 0 ? playerText[(separator + 1)..].Trim() : playerText.Trim();
+        var instruction = PromptInstruction(kind, title, minChoose, maxChoose,
+            string.Equals(data.GetValueOrDefault("uiPattern"), "effect-decision", StringComparison.OrdinalIgnoreCase));
+        return new L12PromptPresentation
+        {
+            Title = title,
+            Situation = situation,
+            Instruction = instruction,
+            WaitingSummary = PromptWaitingSummary(State.Players[playerIndex].Name, kind),
+            // 与 Prompt.ChoiceLabels 共用权威映射；匿名手牌流程会在建立 Prompt 后追加
+            // “取消整次发动”，叙事合同必须同步取得该选项而不能留下半套协议。
+            ChoiceConsequences = choiceLabels,
+        };
+    }
+
+    private static string PromptKindTitle(string kind)
+    {
+        if (kind.Contains("disaster", StringComparison.OrdinalIgnoreCase)) return "天灾准备";
+        if (kind.Contains("trial", StringComparison.OrdinalIgnoreCase)) return "试炼安排";
+        if (kind.Contains("slot", StringComparison.OrdinalIgnoreCase)) return "选择战场位置";
+        if (kind.Contains("morale", StringComparison.OrdinalIgnoreCase)
+            || kind.Contains("resource", StringComparison.OrdinalIgnoreCase)
+            || kind.Contains("cost", StringComparison.OrdinalIgnoreCase)) return "选择支付方式";
+        if (kind.Contains("target", StringComparison.OrdinalIgnoreCase)) return "选择效果对象";
+        if (kind.Contains("card", StringComparison.OrdinalIgnoreCase)
+            || kind is "discard" or "search" or "order") return "选择卡牌";
+        return kind switch
+        {
+            "initiative" => "决定先后攻",
+            "response" => "响应确认",
+            "optional" or "option" => "效果确认",
+            _ => "操作确认",
+        };
+    }
+
+    private static string PromptInstruction(string kind, string title, int minChoose, int maxChoose,
+        bool effectDecision)
+    {
+        if (effectDecision || kind is "optional" or "option") return $"请决定是否执行〈{title}〉的效果。";
+        if (kind == "response") return "请决定是否响应当前效果。";
+        if (kind.Contains("slot", StringComparison.OrdinalIgnoreCase)) return "请选择一个合法的战场位置。";
+        if (kind.Contains("target", StringComparison.OrdinalIgnoreCase)) return "请选择本次效果的合法对象。";
+        if (kind.Contains("resource", StringComparison.OrdinalIgnoreCase)
+            || kind.Contains("cost", StringComparison.OrdinalIgnoreCase)) return "请选择本次操作要支付或返还的资源。";
+        if (kind.Contains("card", StringComparison.OrdinalIgnoreCase)
+            || kind is "discard" or "search" or "order")
+            return minChoose == maxChoose
+                ? $"请选择 {minChoose} 项并确认。"
+                : $"请选择 {minChoose} 至 {maxChoose} 项并确认。";
+        return "请根据当前情况完成选择并确认。";
+    }
+
+    private static string PromptWaitingSummary(string playerName, string kind)
+    {
+        var action = kind switch
+        {
+            "initiative" => "正在选择先攻或后攻",
+            "disaster-ban" => "正在禁用天灾",
+            "disaster-pick" => "正在选择天灾",
+            "disaster-reveal" or "disaster-trigger" => "正在确认天灾信息",
+            "response" => "正在决定是否响应",
+            "optional" or "option" => "正在决定是否发动效果",
+            "slot" => "正在选择战场位置",
+            "trial-order" => "正在完成对局准备",
+            _ when kind.Contains("target", StringComparison.OrdinalIgnoreCase) => "正在选择效果对象",
+            _ when kind.Contains("resource", StringComparison.OrdinalIgnoreCase)
+                || kind.Contains("cost", StringComparison.OrdinalIgnoreCase) => "正在选择如何支付费用",
+            _ when kind.Contains("card", StringComparison.OrdinalIgnoreCase)
+                || kind is "discard" or "search" or "order" => "正在完成卡牌选择",
+            _ => "正在完成当前操作",
+        };
+        return $"{playerName} {action}";
     }
 
     /// <summary>

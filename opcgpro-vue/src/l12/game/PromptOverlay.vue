@@ -215,12 +215,8 @@ function naturalChoiceLabel(value: string | undefined, id: string) {
 function label(id: string) {
   if (prompt.value?.kind === 'response-target') return naturalChoiceLabel(prompt.value.data?.[id], id)
     ?? naturalChoiceLabel(prompt.value.choiceLabels?.[id], id) ?? safeChoiceFallback(id)
-  if (isPureEffectDecision.value) return isDeclineChoice(id) ? '不发动' : '发动'
-  if (isEffectDecision.value) {
-    if (['yes', 'mode:use'].includes(id.toLowerCase())) return '发动'
-    if (['no', 'mode:none'].includes(id.toLowerCase())) return '不发动'
-  }
   const base = naturalChoiceLabel(prompt.value?.choiceLabels?.[id], id)
+    ?? naturalChoiceLabel(prompt.value?.presentation?.choiceConsequences?.[id], id)
     ?? cardFor(id)?.name
     ?? naturalChoiceLabel(prompt.value?.data?.[`${id}:name`], id)
     ?? naturalChoiceLabel(prompt.value?.data?.[id], id)
@@ -229,6 +225,10 @@ function label(id: string) {
   const location = findBattlefieldTarget(props.game, sandboxActorIndex.value, id)
   if (location) return battlefieldTargetLabel(props.game, sandboxActorIndex.value, id, base)
   return zone ? `${base} · ${zone}` : base
+}
+function choiceConsequence(id: string) {
+  const consequence = naturalChoiceLabel(prompt.value?.presentation?.choiceConsequences?.[id], id)
+  return consequence && consequence !== label(id) ? consequence : ''
 }
 function imageFor(id: string) { return prompt.value?.data?.[`${id}:image`] ?? cardFor(id)?.imageUrl }
 function cardIdFor(id: string) {
@@ -450,8 +450,41 @@ const isSingleCardRow = computed(() => prompt.value?.data?.layout === 'single-ro
   || displayedCardsAreAllFromHand.value
   || placementMode.value === 'single-top-bottom')
 const unassignedChoices = computed(() => currentChoices.value.filter(id => !placementTop.value.includes(id) && !placementBottom.value.includes(id)))
+function legacyPromptTitle(p: Prompt) {
+  const sourceName = p.data?.sourceName?.trim()
+  if (sourceName) return sourceName
+  const separator = p.text.indexOf('：')
+  if (separator > 0) return p.text.slice(0, separator).trim()
+  if (p.kind.includes('disaster')) return '天灾准备'
+  if (p.kind.includes('trial')) return '试炼安排'
+  if (p.kind.includes('slot')) return '选择战场位置'
+  if (p.kind.includes('resource') || p.kind.includes('cost') || p.kind.includes('morale')) return '选择支付方式'
+  if (p.kind.includes('target')) return '选择效果对象'
+  if (p.kind.includes('card') || ['discard', 'search', 'order'].includes(p.kind)) return '选择卡牌'
+  if (p.kind === 'initiative') return '决定先后攻'
+  if (p.kind === 'response') return '响应确认'
+  if (['optional', 'option'].includes(p.kind)) return '效果确认'
+  return '操作确认'
+}
+function legacyPromptSituation(p: Prompt) {
+  return p.data?.effectText?.trim() || p.text.trim()
+}
+function legacyPromptInstruction(p: Prompt) {
+  if (p.data?.uiPattern === 'effect-decision' || ['optional', 'option'].includes(p.kind)) return '请决定是否执行本次效果。'
+  if (p.kind === 'response') return '请决定是否响应当前效果。'
+  if (p.kind.includes('slot')) return '请选择一个合法的战场位置。'
+  if (p.kind.includes('target')) return '请选择本次效果的合法对象。'
+  if (p.kind.includes('resource') || p.kind.includes('cost') || p.kind.includes('morale')) return '请选择本次操作要支付或返还的资源。'
+  return `请选择 ${p.minChoose} 至 ${p.maxChoose} 项并确认。`
+}
+const promptTitle = computed(() => prompt.value?.presentation?.title?.trim()
+  || (prompt.value ? legacyPromptTitle(prompt.value) : ''))
+const promptSituation = computed(() => prompt.value?.presentation?.situation?.trim()
+  || (prompt.value ? legacyPromptSituation(prompt.value) : ''))
+const promptInstruction = computed(() => prompt.value?.presentation?.instruction?.trim()
+  || (prompt.value ? legacyPromptInstruction(prompt.value) : ''))
 const overlayTitle = computed(() => {
-  if (prompt.value) return isEffectDecision.value ? (prompt.value.data?.sourceName || prompt.value.text) : prompt.value.text
+  if (prompt.value) return promptTitle.value
   if (isMulligan.value) return '选择需要调度的起始手牌'
   if (isMulliganPhase.value) return '等待对手完成调度'
   return waitingText()
@@ -469,7 +502,7 @@ function setupRoleLabel(playerIndex: number | null) {
   return `${props.game.firstPlayer === playerIndex ? '先攻' : '后攻'}玩家准备`
 }
 const decisionEffectText = computed(() => {
-  const text = prompt.value?.data?.effectText?.trim() || prompt.value?.text || ''
+  const text = prompt.value?.presentation?.situation?.trim() || prompt.value?.data?.effectText?.trim() || prompt.value?.text || ''
   const context = prompt.value?.data?.responseContext?.trim()
   return context && !text.includes(context) ? `${text}\n${context}` : text
 })
@@ -588,6 +621,11 @@ function waitingText() {
   if (waitingDefense.value) return `${props.game.players[1 - props.game.you].name} 正在选择是否支援或抵挡`
   const waiting = waitingPrompt.value
   if (!waiting) return ''
+  const authoritativeSummary = waitingPrompt.value?.waitingSummary?.trim()
+  if (authoritativeSummary) return authoritativeSummary
+  return legacyWaitingSummary(waiting)
+}
+function legacyWaitingSummary(waiting: NonNullable<GameState['waitingPrompt']>) {
   const action: Record<string, string> = {
     initiative: '正在选择先攻或后攻',
     'disaster-ban': '正在禁用天灾',
@@ -603,15 +641,15 @@ function waitingText() {
     card: '正在选择卡牌', cards: '正在选择卡牌', search: '正在查看并选择卡牌',
     discard: '正在选择弃置卡牌', order: '正在排列卡牌', slot: '正在选择战场位置',
   }
-  return `${waiting.playerName} ${action[waiting.kind] ?? '正在处理选择'}`
+  return `${waiting.playerName} ${action[waiting.kind] ?? '正在完成当前操作'}`
 }
 function kindLabel() {
-  if (isEffectDecision.value) return 'OPTION'
+  if (isEffectDecision.value) return '效果确认'
   if (isInitiative.value) return '先后攻决定'
   if (isDisasterChoice.value) return prompt.value?.kind === 'disaster-ban' ? '天灾禁用' : '天灾选择'
   if (prompt.value?.kind === 'disaster-reveal') return '随机公开天灾'
   if (prompt.value?.kind === 'disaster-trigger') return '天灾触发'
-  return prompt.value?.kind ?? ''
+  return prompt.value ? legacyPromptTitle(prompt.value) : '操作确认'
 }
 </script>
 
@@ -626,15 +664,16 @@ function kindLabel() {
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
       </section>
 
-      <section v-else-if="prompt" class="prompt-panel prompt-choice-panel" :class="{ 'has-card-choices': hasCardChoices, 'single-card-row': isSingleCardRow, 'effect-decision': isEffectDecision }" role="dialog" aria-modal="true" :aria-label="prompt.text">
+      <section v-else-if="prompt" class="prompt-panel prompt-choice-panel" :class="{ 'has-card-choices': hasCardChoices, 'single-card-row': isSingleCardRow, 'effect-decision': isEffectDecision }" role="dialog" aria-modal="true" :aria-label="promptTitle">
         <header :class="{ 'effect-decision-header': isEffectDecision }">
-          <small v-if="!isPureEffectDecision">{{ kindLabel() }}</small><h2>{{ isEffectDecision ? (prompt.data?.sourceName || prompt.text) : prompt.text }}</h2>
-          <p v-if="isEffectDecision" class="effect-decision-text l12-effect-body">{{ decisionEffectText }}</p>
+          <small v-if="!isPureEffectDecision">{{ kindLabel() }}</small><h2>{{ promptTitle }}</h2>
+          <p v-if="promptSituation" class="effect-decision-text l12-effect-body">{{ isEffectDecision ? decisionEffectText : promptSituation }}</p>
           <button v-if="!isDisasterPreparation" class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimized = true">—</button>
         </header>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
         <main class="prompt-choice-body" data-ui-contract="mobile-choice-scroll-body">
+        <p v-if="promptInstruction" class="prompt-instruction">{{ promptInstruction }}</p>
         <div v-if="isInitiative" class="initiative-race" :class="{ settled: diceSettled }">
           <article v-for="player in initiativePlayers" :key="player.playerIndex" :class="{ winner: diceSettled && game.diceWinner === player.playerIndex }">
             <img :src="masterProfileUrl(player.master.masterId, player.master.masterImageUrl)" :alt="player.master.masterName" />
@@ -730,6 +769,7 @@ function kindLabel() {
               :disabled="l12State.pendingAction || Boolean(disabledChoiceReason(choice))" :title="disabledChoiceReason(choice)"
               :data-ui-contract="isDeclineChoice(choice) ? 'minimum-decline-action' : undefined" @click="toggle(choice)">
               <span :class="{ 'l12-effect-body': isEffectOptionList, 'l12-effect-body--compact': isEffectOptionList }">{{ label(choice) }}</span>
+              <small v-if="choiceConsequence(choice)" class="choice-consequence">{{ choiceConsequence(choice) }}</small>
               <small v-if="triggerOrderHint(choice)" class="trigger-order-hint">{{ triggerOrderHint(choice) }}</small>
               <small v-if="disabledChoiceReason(choice)">{{ disabledChoiceReason(choice) }}</small>
             </button>
@@ -779,7 +819,7 @@ function kindLabel() {
             </button>
           </template>
           <template v-else>
-            <span>{{ isEffectDecision ? '请选择是否发动本次效果' : isInfoConfirm ? '双方均确认后继续' : `选择 ${prompt.minChoose}–${prompt.maxChoose} 项` }}</span>
+            <span>{{ isInfoConfirm ? '双方均确认后继续' : promptInstruction }}</span>
             <button v-if="prompt.minChoose === 0 && !isInfoConfirm" :disabled="l12State.pendingAction" @click="selected = []; confirm()">不选择</button>
             <button class="primary prompt-confirm-choice" :disabled="l12State.pendingAction || activeSelected.length < prompt.minChoose || activeSelected.length > prompt.maxChoose || (activeSelected.some(isDeclineChoice) && activeSelected.length > 1)" @click="confirm">
               {{ l12State.pendingAction ? '处理中…' : (isInfoConfirm ? '确认信息' : '确认选择') }}
@@ -851,6 +891,7 @@ function kindLabel() {
 .prompt-choices.effect-option-list>button{position:relative}.trigger-order-hint{position:absolute;left:4px;top:4px;display:block;margin:0;padding:2px 5px;border:1px solid #f2d56d;background:#241b07;color:#ffe78d;font-size:var(--l12-board-micro,9px);font-weight:900;line-height:1.2}
 .prompt-choices>button.decline-action,.prompt-action-footer>button.decline-action{box-sizing:border-box;min-width:112px!important;min-height:44px!important;padding:9px 16px!important;font-size:var(--l12-board-copy,13px)!important;line-height:1.35}
 .effect-decision-header h2{margin-bottom:8px}.effect-decision-text{margin:0;padding:11px 13px;border:1px solid #3b4542;background:#0b1011;color:#eef0eb;font-size:var(--l12-board-copy,13px);line-height:1.75;white-space:pre-wrap}.prompt-panel.effect-decision .prompt-choices.effect-option-list{max-width:520px}.prompt-panel.effect-decision .prompt-choices.effect-option-list>button{text-align:center;font-size:var(--l12-board-copy,13px)}
+.prompt-instruction{margin:10px 3px 4px;color:#b9c1bd;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:1.55}.choice-consequence{display:block;margin-top:4px;color:#9fb8b4;font-size:var(--l12-board-micro,9px);line-height:1.3}
 .prompt-panel.single-card-row{width:min(920px,calc(100vw - 36px))}.l12-prompt-overlay.information-confirm .prompt-panel{width:min(850px,calc(100vw - 36px));overflow-y:auto}.l12-prompt-overlay.information-confirm .prompt-card-strip{justify-content:center}.mulligan-panel{width:min(920px,calc(100vw - 36px))!important}.l12-prompt-overlay.disaster-choice .prompt-panel{width:min(980px,calc(100vw - 36px))}
 .placement-workspace{display:grid;grid-template-columns:1fr 1.1fr 1fr;gap:8px;min-height:166px;margin:9px 3px;padding:8px;border:1px solid rgba(238,238,228,.28);background:#090d0e}.placement-workspace>section{min-width:0;padding:7px;border:1px solid #39413f;background:#101516}.placement-workspace>section>header{display:block;min-height:32px;padding:0 0 5px;border-bottom:1px solid #323a38}.placement-workspace>section>header strong{display:block;color:#fff;font-size:var(--l12-board-copy,13px)}.placement-workspace>section>header small{display:block;margin-top:2px;color:#7f8884;font-size:var(--l12-board-copy,13px);line-height:1.35}.placement-destination.top{border-color:#3b9da5}.placement-destination.bottom{border-color:#9c3f46}.placement-row{min-height:124px;align-items:center;gap:4px;padding:5px 1px}.placement-row>p{margin:auto;color:#626b68;font-size:var(--l12-board-copy,13px);line-height:1.5;text-align:center}.placement-buttons{display:grid;grid-template-columns:1fr 1fr;gap:5px}.placement-buttons button{box-sizing:border-box;height:44px;min-height:44px;max-height:44px;padding:5px 3px;border:1px solid #dcd8cc;background:#1a2020;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;line-height:1.25;text-align:center;white-space:normal;overflow:hidden;text-wrap:balance}.placement-buttons button:first-child{border-color:#5cbac1}.placement-buttons button:last-child{border-color:#ba555c}.placement-buttons button:disabled{opacity:.38}
 .all-placement-workspace{display:grid;grid-template-columns:62px minmax(0,1fr) 62px;align-items:center;gap:8px;margin:10px 3px;padding:10px;border:1px solid rgba(238,238,228,.28);background:#090d0e}.all-placement-row{min-width:0;padding:5px}.placement-edge{color:#fff;font-size:max(18px,var(--l12-board-copy,13px));font-weight:900;letter-spacing:.28em;text-align:center;writing-mode:vertical-rl}.top-edge{color:#70d7df}.bottom-edge{color:#d76069}

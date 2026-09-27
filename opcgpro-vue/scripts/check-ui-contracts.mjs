@@ -1030,7 +1030,8 @@ const contracts = [
   [!board.includes('当前子阶段：') && !board.includes('data-ui-contract="combat-substage"') && board.includes('pending.attackValue > 0') && board.includes("pendingDefense?.stage === 'DefenseChoice'") && gameActions.includes("pendingDefense?.stage === 'DefenseChoice'"), '进攻界面必须消费服务端子阶段与冻结进攻值，只在 DefenseChoice 开放抵挡/支援，并禁止显示内部子阶段调试文字'],
   [prompt.includes("prompt.value?.data?.uiPattern === 'effect-decision'") && prompt.includes('isPureEffectDecision')
     && prompt.includes('isDirectActivationChoice')
-    && prompt.includes("isDeclineChoice(id) ? '不发动' : '发动'") && prompt.includes('decisionEffectText')
+    && prompt.includes('prompt.value?.presentation?.choiceConsequences')
+    && !prompt.includes("return isDeclineChoice(id) ? '不发动' : '发动'") && prompt.includes('decisionEffectText')
     && prompt.includes("if (p.data?.choiceMode === 'instant' || isPureEffectDecision.value) { resolveChoice(id); return }")
     && prompt.includes('<footer v-if="!isPureEffectDecision"') && prompt.includes('!isPureEffectDecision">{{ kindLabel() }}')
     && prompt.includes('(hasCardChoices.value || (isEffectDecision.value && !isPureEffectDecision.value))'), '纯二选一卡效发动框必须仅显示来源、当前效果文本和等大的发动/不发动按钮，点击立即提交；费用选择不得误判为纯发动，拒绝动作须与确认选择保留在底部'],
@@ -1712,7 +1713,7 @@ contracts.push(
   [board.includes("filter(id => id !== 'skip' && id !== 'cancel')")
     && board.includes('function cancelResourcePayment()')
     && board.includes('resourceSelectionPrompt.validChoices.includes(\'cancel\')')
-    && board.includes('@click="cancelResourcePayment">{{ resourceSelectionPrompt.data?.cancel ?? \'取消打出\' }}</button>')
+    && board.includes("promptChoiceText(resourceSelectionPrompt, 'cancel', resourceSelectionPrompt.data?.cancel ?? '取消打出')")
     && prompt.includes("'decline', 'cancel'")
     && prompt.includes("id === 'cancel' && p.data?.allowCancel === 'true'"),
     '打出前支付取消必须复用既有支付控制条与Prompt底部次级按钮，且取消值不得混入资源或卡牌选择'],

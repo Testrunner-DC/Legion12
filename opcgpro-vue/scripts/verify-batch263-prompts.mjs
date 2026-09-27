@@ -72,10 +72,14 @@ try{
  await candidateGroupCentered();await page.getByRole('button',{name:'不响应',exact:true}).click()
  assert.deepEqual(await page.evaluate(()=>window.__sent.at(-1).command.cardInstanceIds),['pass'])
  await page.screenshot({path:path.join(out,'response-desktop.png')})
- await set({kind:'option',text:'加拉哈德',validChoices:['mode:use','no'],choiceLabels:{'mode:use':'试炼进度+1',no:'不发动'},data:{uiPattern:'effect-decision',sourceName:'加拉哈德',effectText:'登场时 可发动试炼。'}})
- assert.equal((await page.locator('.effect-decision-text').textContent()).trim(),'登场时 可发动试炼。')
+ await set({kind:'option',text:'旧文本不会覆盖权威叙事',validChoices:['mode:use','no'],choiceLabels:{'mode:use':'推进我方试炼进度+1',no:'不发动'},
+  presentation:{title:'加拉哈德',situation:'登场时，可发动效果推进我方试炼进度。',instruction:'请决定是否发动〈加拉哈德〉的登场时效果。',waitingSummary:'我方正在决定是否发动效果',choiceConsequences:{'mode:use':'推进我方试炼进度+1',no:'不发动'}},
+  data:{uiPattern:'effect-decision',sourceName:'旧来源',effectText:'旧效果文本'}})
+ assert.equal((await page.locator('h2').textContent()).trim(),'加拉哈德')
+ assert.equal((await page.locator('.prompt-instruction').textContent()).trim(),'请决定是否发动〈加拉哈德〉的登场时效果。')
+ assert.equal((await page.locator('.effect-decision-text').textContent()).trim(),'登场时，可发动效果推进我方试炼进度。')
  const options=page.locator('.prompt-choices>button');assert.equal(await options.count(),2)
- assert.equal((await options.nth(0).textContent()).trim(),'发动','Pure effect decision must normalize its affirmative branch to 发动')
+ assert.equal((await options.nth(0).textContent()).trim(),'推进我方试炼进度+1','Pure effect decision must preserve the authoritative option text')
  assert.equal((await options.nth(1).textContent()).trim(),'不发动')
  assert.equal(await page.locator('.prompt-action-footer').count(),0,'Pure effect decision must not render a second confirmation footer')
  const yesBox=await options.nth(0).boundingBox(),noBox=await options.nth(1).boundingBox()

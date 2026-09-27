@@ -4,7 +4,7 @@ import BattleDockPortal from './BattleDockPortal.vue'
 import { provideMobileBattleDock } from './mobileBattleDock'
 provideMobileBattleDock()
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { ActionEvent, Card, DisasterCardView, GameState, Phase } from '../types'
+import type { ActionEvent, Card, DisasterCardView, GameState, Phase, Prompt } from '../types'
 import { isCounterTacticCard, isHorizontalCardType } from '../cardPresentation'
 import { blackLotusLogoUrl, destructionRoundBackUrl, disasterRoundUrl, factionLogoUrls, godPowerLogoUrl, roundCardUrl, siteBrandIconUrl } from '../specialAssets'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
@@ -286,6 +286,14 @@ const resourceSelectionPrompt = computed(() => props.game.prompts?.find(prompt =
   || prompt.data?.choiceMode === 'resource-selection' || prompt.data?.choiceMode === 'board-selection'
   || prompt.kind === 'target-morale',
 ) ?? null)
+function promptActionText(prompt: Prompt) {
+  return prompt.presentation?.instruction?.trim() || prompt.text
+}
+function promptChoiceText(prompt: Prompt, choice: string, fallback: string) {
+  return prompt.choiceLabels?.[choice]?.trim()
+    || prompt.presentation?.choiceConsequences?.[choice]?.trim()
+    || fallback
+}
 const paymentChoiceIds = computed(() => (resourceSelectionPrompt.value
   ?? (boardTargetPrompt.value?.data?.choiceMode === 'mixed-board-payment' ? boardTargetPrompt.value : null))
   ?.validChoices.filter(id => id !== 'skip' && id !== 'cancel') ?? [])
@@ -1393,7 +1401,7 @@ function statusTexts(card: Card) {
       <Teleport :to="landscapeTeleportTarget()">
         <section v-if="mobileMoralePickerEnabled && mobileMoralePickerOpen" class="mobile-record-overlay mobile-morale-overlay mobile-safe-overlay" role="dialog" aria-modal="true" aria-label="选择士气">
           <header><div><h2>{{ mobileMoraleInteractive ? '选择士气' : '我方士气' }}</h2><small>{{ mobileMoraleInteractive ? `已选择 ${paymentResourceIds.length}/${resourceSelectionPrompt?.maxChoose ?? 0}` : `活跃 ${viewMe.morale.filter(item => !item.tapped).length} / 共 ${viewMe.morale.length}` }}</small></div><div class="mobile-morale-header-actions"><button type="button" @click="mobileMoralePickerOpen = false; mobileMoralePickerMinimized = true">最小化</button><button type="button" @click="mobileMoralePickerOpen = false; mobileMoralePickerMinimized = false">返回对局</button></div></header>
-          <p class="mobile-morale-prompt">{{ resourceSelectionPrompt?.text || '这里展示当前士气状态；需要支付或返还时会自动变为可选择面板。' }}</p>
+          <p class="mobile-morale-prompt">{{ resourceSelectionPrompt ? promptActionText(resourceSelectionPrompt) : '这里展示当前士气状态；需要支付或返还时会自动变为可选择面板。' }}</p>
           <div class="mobile-morale-picker" aria-label="可选择的士气与符文">
             <section v-if="viewMe.faction === 'otherworld'" class="mobile-rune-row" aria-label="彼界阵营符文">
               <div v-if="mobileRuneChoices.length">
@@ -1411,8 +1419,8 @@ function statusTexts(card: Card) {
             <p v-if="!mobileMoraleChoices.length">{{ mobileMoraleInteractive ? '当前提示没有可选择的士气。' : '当前没有士气。' }}</p>
           </div>
           <footer v-if="resourceSelectionPrompt" class="mobile-morale-actions" data-ui-contract="equal-action-group">
-            <button v-if="resourceSelectionPrompt.validChoices.includes('skip')" type="button" @click="confirmMobileMoralePayment(true)">不发动</button>
-            <button v-if="resourceSelectionPrompt.validChoices.includes('cancel')" type="button" @click="cancelMobileMoralePayment">取消打出</button>
+            <button v-if="resourceSelectionPrompt.validChoices.includes('skip')" type="button" @click="confirmMobileMoralePayment(true)">{{ promptChoiceText(resourceSelectionPrompt, 'skip', '不发动') }}</button>
+            <button v-if="resourceSelectionPrompt.validChoices.includes('cancel')" type="button" @click="cancelMobileMoralePayment">{{ promptChoiceText(resourceSelectionPrompt, 'cancel', '取消打出') }}</button>
             <button class="primary" type="button" :disabled="paymentResourceIds.length < resourceSelectionPrompt.minChoose || paymentResourceIds.length > resourceSelectionPrompt.maxChoose" @click="confirmMobileMoralePayment(false)">{{ resourceSelectionPrompt.kind === 'resource-return' || resourceSelectionPrompt.data?.choiceMode === 'resource-return' ? '确认返还' : resourceSelectionPrompt.kind === 'resource-payment' || resourceSelectionPrompt.data?.choiceMode === 'resource-payment' ? '确认支付' : '确认选择' }}</button>
           </footer>
         </section>
@@ -1431,27 +1439,27 @@ function statusTexts(card: Card) {
         <button @click="emit('gmPlacementResolved')">取消</button>
       </div></BattleDockPortal>
       <BattleDockPortal lane="context"><div v-if="boardTargetPrompt && !readOnly && !boardControlMinimized" class="board-target-controls">
-        <strong>{{ boardTargetPrompt.text }}</strong><span>{{ boardTargetSelectionSummary }}</span>
+        <strong>{{ promptActionText(boardTargetPrompt) }}</strong><span>{{ boardTargetSelectionSummary }}</span>
         <small v-if="mobileLandscapeViewport" class="mobile-target-hand-counts" :aria-label="`对手手牌 ${viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0} 张；我方手牌 ${viewMe.handCount ?? viewMe.hand?.length ?? 0} 张`">对{{ viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0 }}·我{{ viewMe.handCount ?? viewMe.hand?.length ?? 0 }}</small>
         <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
-        <button v-if="boardTargetPrompt.validChoices.includes('skip')" @click="resolveBoardTarget(true)">不发动</button>
+        <button v-if="boardTargetPrompt.validChoices.includes('skip')" @click="resolveBoardTarget(true)">{{ promptChoiceText(boardTargetPrompt, 'skip', '不发动') }}</button>
         <button class="primary" :disabled="boardTargetIds.length < boardTargetPrompt.minChoose" @click="resolveBoardTarget(false)">{{ boardTargetPrompt.data?.choiceMode === 'mixed-board-payment' ? '确认费用' : '确认发动' }}</button>
       </div></BattleDockPortal>
       <BattleDockPortal lane="context"><div v-if="boardSlotPrompt && !readOnly && !boardControlMinimized" class="board-target-controls board-slot-controls">
         <CardImage v-if="boardSlotPreview" :card-id="boardSlotPreview.cardId" :legacy-url="boardSlotPreview.imageUrl" :alt="boardSlotPreview.name" intent="board" eager
           @mouseenter="focusCard = boardSlotPreview" @click="focusCard = boardSlotPreview" />
-        <strong>{{ boardSlotPrompt.text }}</strong><span>直接点击绿色高亮空位</span>
+        <strong>{{ promptActionText(boardSlotPrompt) }}</strong><span>直接点击绿色高亮空位</span>
         <small v-if="mobileLandscapeViewport" class="mobile-target-hand-counts" :aria-label="`对手手牌 ${viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0} 张；我方手牌 ${viewMe.handCount ?? viewMe.hand?.length ?? 0} 张`">对{{ viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0 }}·我{{ viewMe.handCount ?? viewMe.hand?.length ?? 0 }}</small>
         <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
         <button v-if="boardSlotPrompt.validChoices.includes('skip')"
-          @click="command('resolvePrompt', { promptId: boardSlotPrompt.promptId, cardInstanceIds: ['skip'] })">取消</button>
+          @click="command('resolvePrompt', { promptId: boardSlotPrompt.promptId, cardInstanceIds: ['skip'] })">{{ promptChoiceText(boardSlotPrompt, 'skip', '取消') }}</button>
       </div></BattleDockPortal>
       <BattleDockPortal lane="context"><div v-if="resourceSelectionPrompt && !readOnly && !boardControlMinimized" class="board-target-controls resource-payment-controls">
-        <strong>{{ resourceSelectionPrompt.text }}</strong>
+        <strong>{{ promptActionText(resourceSelectionPrompt) }}</strong>
         <span>已选择 {{ paymentResourceIds.length }}/{{ resourceSelectionPrompt.maxChoose }}</span>
         <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
-        <button v-if="resourceSelectionPrompt.validChoices.includes('skip')" @click="confirmResourcePayment(true)">不发动</button>
-        <button v-if="resourceSelectionPrompt.validChoices.includes('cancel')" @click="cancelResourcePayment">{{ resourceSelectionPrompt.data?.cancel ?? '取消打出' }}</button>
+        <button v-if="resourceSelectionPrompt.validChoices.includes('skip')" @click="confirmResourcePayment(true)">{{ promptChoiceText(resourceSelectionPrompt, 'skip', '不发动') }}</button>
+        <button v-if="resourceSelectionPrompt.validChoices.includes('cancel')" @click="cancelResourcePayment">{{ promptChoiceText(resourceSelectionPrompt, 'cancel', resourceSelectionPrompt.data?.cancel ?? '取消打出') }}</button>
         <button class="primary" :disabled="paymentResourceIds.length < resourceSelectionPrompt.minChoose"
           @click="confirmResourcePayment(false)">{{ resourceSelectionPrompt.kind === 'resource-return' || resourceSelectionPrompt.data?.choiceMode === 'resource-return'
             ? '确认返还'

@@ -162,7 +162,7 @@ export interface GameState {
   chosenDisasters?: DisasterCardView[]
   sessionDisasters?: DisasterCardView[]
   disasterPreparationStep?: number
-  waitingPrompt?: { playerIndex: number; playerName: string; kind: string } | null
+  waitingPrompt?: { playerIndex: number; playerName: string; kind: string; waitingSummary?: string | null } | null
   prompts?: Prompt[]
   effectStack?: StackItem[]
   pendingDefense?: {
@@ -195,12 +195,21 @@ export interface Prompt {
   maxChoose: number
   data: Record<string, string>
   choiceLabels: Record<string, string>
+  presentation?: PromptPresentation | null
   activationId?: string | null
   sourceInstanceId?: string | null
   sourceCardId?: string | null
   step?: number | null
   createdRevision?: number | null
   controller?: number | null
+}
+
+export interface PromptPresentation {
+  title: string
+  situation: string
+  instruction: string
+  waitingSummary: string
+  choiceConsequences: Record<string, string>
 }
 
 export interface StackItem {

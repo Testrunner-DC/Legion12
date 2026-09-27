@@ -278,6 +278,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             {
                 prompt.PromptId, prompt.PlayerIndex, prompt.Kind, prompt.Text, prompt.ValidChoices,
                 prompt.MinChoose, prompt.MaxChoose, prompt.Data, prompt.ChoiceLabels,
+                prompt.Presentation,
                 prompt.ActivationId, prompt.SourceInstanceId, prompt.SourceCardId,
                 prompt.Step, prompt.CreatedRevision, prompt.Controller,
             }).ToArray();
@@ -290,6 +291,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             waitingPromptSource.PlayerIndex,
             playerName = State.Players[waitingPromptSource.PlayerIndex].Name,
             waitingPromptSource.Kind,
+            waitingSummary = waitingPromptSource.Presentation?.WaitingSummary,
         };
         var stack = State.EffectStack.Select(item =>
         {
