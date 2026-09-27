@@ -26,10 +26,22 @@ public sealed partial class L12GameEngine
                     .Where(target => target is not null && IsCounterTactic(target.CardId))
                     .Select(target => target!.InstanceId).ToList();
                 if (choices.Count == 0) { FinishStackItem(item); return true; }
+                var consequences = choices.ToDictionary(choice => choice,
+                    _ => "将所选反击战术置入其所有者墓地。",
+                    StringComparer.OrdinalIgnoreCase);
                 choices.Add("skip");
+                consequences["skip"] = "不选择对象，结束〈宫廷魔术师〉的登场时效果。";
                 CreatePrompt(item.Controller, "covered-counter", "宫廷魔术师：可选择战场上 1 张反击战术置入所有者墓地",
                     choices, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-magician-remove-counter" });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "s2-magician-remove-counter", ["skip"] = "不发动",
+                        },
+                        new("宫廷魔术师",
+                            "〈宫廷魔术师〉的登场时效果正在结算。你可以将战场上的1张反击战术置入其所有者墓地，也可以不发动。",
+                            "请选择1张战场上的反击战术，或选择“不发动”。",
+                            L12PromptWaitingAction.TargetSelection, consequences)));
                 return true;
             }
             case "万物统御之戒":
@@ -41,12 +53,21 @@ public sealed partial class L12GameEngine
                 }
                 CreatePrompt(item.Controller, "optional", "万物统御之戒：是否弃置1张手牌，检索1张【通用】卡牌？",
                     ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string>
-                    {
-                        ["action"] = "s2-ring-start", ["choiceMode"] = "instant",
-                        ["yes"] = "弃置1张手牌，检索1张【通用】卡牌",
-                        ["no"] = "不发动",
-                    });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "s2-ring-start", ["choiceMode"] = "instant",
+                            ["yes"] = "发动", ["no"] = "不发动",
+                        },
+                        new("万物统御之戒",
+                            "〈万物统御之戒〉的登场时效果正在结算。你可以弃置1张手牌作为费用；成功支付后，从牌库检索1张【通用】卡牌，展示并加入手牌，然后洗牌。",
+                            "请选择“发动”继续支付费用，或选择“不发动”结束本次登场时效果。",
+                            L12PromptWaitingAction.EffectDecision,
+                            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                            {
+                                ["yes"] = "继续选择并弃置1张手牌作为费用，然后检索1张【通用】卡牌。",
+                                ["no"] = "不支付费用，直接结束〈万物统御之戒〉的登场时效果。",
+                            })));
                 return true;
             }
             default:
@@ -263,10 +284,19 @@ public sealed partial class L12GameEngine
                     FinishStackItem(item);
                     break;
                 }
+                var discardChoices = State.Players[item.Controller].Hand.ToArray();
                 CreatePrompt(item.Controller, "hand-card", "万物统御之戒：弃置1张手牌",
-                    State.Players[item.Controller].Hand.Select(candidate => candidate.InstanceId), 1, 1,
+                    discardChoices.Select(candidate => candidate.InstanceId), 1, 1,
                     "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-ring-discard" });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string> { ["action"] = "s2-ring-discard" },
+                        new("万物统御之戒",
+                            "你已决定发动〈万物统御之戒〉的登场时效果。现在必须弃置1张手牌支付费用；只有成功支付后才会继续检索。",
+                            "请选择1张手牌弃置作为费用；本步骤不能取消。",
+                            L12PromptWaitingAction.CostPayment,
+                            discardChoices.ToDictionary(candidate => candidate.InstanceId,
+                                candidate => $"弃置〈{candidate.Name}〉作为费用，然后进入【通用】卡牌检索。",
+                                StringComparer.OrdinalIgnoreCase))));
                 break;
             case "s2-ring-discard":
             {
@@ -277,13 +307,19 @@ public sealed partial class L12GameEngine
                     FinishStackItem(item);
                     break;
                 }
-                var candidates = player.Library
-                    .Where(candidate => candidate.Faction == "universal")
-                    .Select(candidate => candidate.InstanceId).ToArray();
+                var candidates = player.Library.Where(candidate => candidate.Faction == "universal").ToArray();
                 if (candidates.Length == 0) { FinishStackItem(item); break; }
                 CreatePrompt(item.Controller, "library-search", "万物统御之戒：选择牌库1张【通用】卡牌展示并加入手牌",
-                    candidates, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-ring-search" });
+                    candidates.Select(candidate => candidate.InstanceId), 1, 1, "card-effect", item.StackItemId,
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string> { ["action"] = "s2-ring-search" },
+                        new("万物统御之戒",
+                            "弃置手牌的费用已经支付。现在从牌库选择1张【通用】卡牌，展示并加入手牌，随后洗牌。",
+                            "请选择1张【通用】卡牌；本步骤不能取消。",
+                            L12PromptWaitingAction.CardSelection,
+                            candidates.ToDictionary(candidate => candidate.InstanceId,
+                                candidate => $"展示〈{candidate.Name}〉并加入手牌，然后洗牌。",
+                                StringComparer.OrdinalIgnoreCase))));
                 break;
             }
             case "s2-ring-search":

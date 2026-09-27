@@ -417,6 +417,152 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Contains(second, game.State.Players[affectedPlayer].Hand);
     }
 
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(0, 1)]
+    [InlineData(1, 1)]
+    [InlineData(1, 0)]
+    [Trait("L12Evidence", "prompt-narrative:court-magician-hidden-counter-boundary")]
+    public void CourtMagicianUsesPositionOnlyForAnOpposingCoveredCounterAndKeepsOwnIdentityVisible(
+        int controller, int targetOwner)
+    {
+        var magicianCase = BeginCourtMagicianPrompt(202609289 + controller * 10 + targetOwner,
+            controller, targetOwner, $"{controller}-{targetOwner}");
+        var game = magicianCase.Game;
+        var prompt = magicianCase.Prompt;
+        var target = magicianCase.Target;
+
+        Assert.Equal(controller, prompt.PlayerIndex);
+        AssertPresentation(prompt, "宫廷魔术师", "登场时效果正在结算", "选择“不发动”");
+        Assert.Equal($"{game.State.Players[controller].Name} 正在选择效果对象",
+            prompt.Presentation!.WaitingSummary);
+        Assert.Contains(target.InstanceId, prompt.ValidChoices);
+        Assert.Contains("skip", prompt.ValidChoices);
+        Assert.Equal("不发动", prompt.ChoiceLabels["skip"]);
+        Assert.Equal("将所选反击战术置入其所有者墓地。",
+            prompt.Presentation.ChoiceConsequences[target.InstanceId]);
+        Assert.Contains("结束〈宫廷魔术师〉的登场时效果",
+            prompt.Presentation.ChoiceConsequences["skip"], StringComparison.Ordinal);
+        Assert.DoesNotContain(prompt.Data.Keys,
+            key => key.StartsWith("__promptNarrative:", StringComparison.Ordinal));
+
+        if (targetOwner == controller)
+        {
+            Assert.Equal(target.Name, prompt.ChoiceLabels[target.InstanceId]);
+            Assert.Equal(target.Name, prompt.Data[target.InstanceId]);
+        }
+        else
+        {
+            Assert.Equal("对方后排第2格", prompt.ChoiceLabels[target.InstanceId]);
+            Assert.DoesNotContain(prompt.Data.Keys,
+                key => key.Equals(target.InstanceId, StringComparison.OrdinalIgnoreCase)
+                    || key.StartsWith($"{target.InstanceId}:", StringComparison.OrdinalIgnoreCase));
+            var ownerDetail = JsonSerializer.Serialize(new
+            {
+                prompt.ChoiceLabels,
+                prompt.Data,
+                prompt.Presentation,
+            }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            foreach (var secret in new[] { target.Name, target.CardId, target.ImageUrl, target.EffectText }
+                         .Where(value => !string.IsNullOrWhiteSpace(value)))
+                Assert.DoesNotContain(secret!, ownerDetail, StringComparison.Ordinal);
+        }
+
+        AssertPromptBoundaryAndCheckpoint(game, controller,
+            $"{game.State.Players[controller].Name} 正在选择效果对象");
+
+        game.State.PendingPrompts.Remove(prompt);
+        Invoke(game, "ContinueS2UniversalEffect", magicianCase.Item, prompt,
+            new List<string> { target.InstanceId });
+        Assert.Contains(game.State.Players[targetOwner].Graveyard,
+            card => card.InstanceId == target.InstanceId);
+        Assert.DoesNotContain(game.State.Players[targetOwner].Field[1],
+            card => card?.InstanceId == target.InstanceId);
+
+        if (controller == 0 && targetOwner == 0)
+        {
+            var skipCase = BeginCourtMagicianPrompt(202609299, 0, 1, "skip");
+            skipCase.Game.State.PendingPrompts.Remove(skipCase.Prompt);
+            Invoke(skipCase.Game, "ContinueS2UniversalEffect", skipCase.Item, skipCase.Prompt,
+                new List<string> { "skip" });
+            Assert.Contains(skipCase.Game.State.Players[1].Field[1],
+                card => card?.InstanceId == skipCase.Target.InstanceId);
+            Assert.DoesNotContain(skipCase.Game.State.Players[1].Graveyard,
+                card => card.InstanceId == skipCase.Target.InstanceId);
+        }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:ring-decision-cost-search-chain")]
+    public void RingExplainsTheDecisionRealDiscardCostAndPrivateSearchAcrossEveryView(int controller)
+    {
+        var ringCase = BeginRingPrompt(202609301 + controller, controller, "use");
+        var game = ringCase.Game;
+        var start = ringCase.Prompt;
+        var playerName = game.State.Players[controller].Name;
+
+        AssertPresentation(start, "万物统御之戒", "弃置1张手牌作为费用", "选择“发动”");
+        Assert.Equal("发动", start.ChoiceLabels["yes"]);
+        Assert.Equal("不发动", start.ChoiceLabels["no"]);
+        Assert.Contains("继续选择并弃置1张手牌作为费用",
+            start.Presentation!.ChoiceConsequences["yes"], StringComparison.Ordinal);
+        Assert.Contains("不支付费用", start.Presentation.ChoiceConsequences["no"],
+            StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在决定是否发动效果",
+            ringCase.FirstHand, ringCase.SecondHand, ringCase.FirstLibrary, ringCase.SecondLibrary);
+
+        game.State.PendingPrompts.Remove(start);
+        Invoke(game, "ContinueS2UniversalEffect", ringCase.Item, start, new List<string> { "yes" });
+
+        var discard = Assert.Single(game.State.PendingPrompts);
+        AssertPresentation(discard, "万物统御之戒", "弃置1张手牌支付费用", "本步骤不能取消");
+        Assert.Equal(new[] { ringCase.FirstHand.InstanceId, ringCase.SecondHand.InstanceId }.Order(),
+            discard.ValidChoices.Order());
+        Assert.DoesNotContain("skip", discard.ValidChoices);
+        Assert.DoesNotContain("no", discard.ValidChoices);
+        Assert.Contains("作为费用，然后进入【通用】卡牌检索",
+            discard.Presentation!.ChoiceConsequences[ringCase.FirstHand.InstanceId], StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在支付费用",
+            ringCase.FirstHand, ringCase.SecondHand);
+
+        game.State.PendingPrompts.Remove(discard);
+        Invoke(game, "ContinueS2UniversalEffect", ringCase.Item, discard,
+            new List<string> { ringCase.FirstHand.InstanceId });
+        Assert.Contains(ringCase.FirstHand, game.State.Players[controller].Graveyard);
+
+        var search = Assert.Single(game.State.PendingPrompts);
+        AssertPresentation(search, "万物统御之戒", "费用已经支付", "本步骤不能取消");
+        Assert.Equal(new[] { ringCase.FirstLibrary.InstanceId, ringCase.SecondLibrary.InstanceId }.Order(),
+            search.ValidChoices.Order());
+        Assert.DoesNotContain("skip", search.ValidChoices);
+        Assert.DoesNotContain("no", search.ValidChoices);
+        Assert.Contains("展示", search.Presentation!.ChoiceConsequences[ringCase.FirstLibrary.InstanceId],
+            StringComparison.Ordinal);
+        Assert.Contains("加入手牌，然后洗牌",
+            search.Presentation.ChoiceConsequences[ringCase.FirstLibrary.InstanceId], StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在完成卡牌选择",
+            ringCase.FirstLibrary, ringCase.SecondLibrary);
+
+        game.State.PendingPrompts.Remove(search);
+        Invoke(game, "ContinueS2UniversalEffect", ringCase.Item, search,
+            new List<string> { ringCase.FirstLibrary.InstanceId });
+        Assert.Contains(ringCase.FirstLibrary, game.State.Players[controller].Hand);
+        Assert.DoesNotContain(ringCase.FirstLibrary, game.State.Players[controller].Library);
+
+        var declineCase = BeginRingPrompt(202609305 + controller, controller, "decline");
+        var handBefore = declineCase.Game.State.Players[controller].Hand.Select(card => card.InstanceId).Order().ToArray();
+        declineCase.Game.State.PendingPrompts.Remove(declineCase.Prompt);
+        Invoke(declineCase.Game, "ContinueS2UniversalEffect", declineCase.Item, declineCase.Prompt,
+            new List<string> { "no" });
+        Assert.Empty(declineCase.Game.State.PendingPrompts);
+        Assert.Equal(handBefore,
+            declineCase.Game.State.Players[controller].Hand.Select(card => card.InstanceId).Order());
+        Assert.DoesNotContain(declineCase.Game.State.Players[controller].Graveyard,
+            card => handBefore.Contains(card.InstanceId, StringComparer.OrdinalIgnoreCase));
+    }
+
     private static void AssertPresentation(L12Prompt prompt, string title, string situation, string instruction)
     {
         var presentation = Assert.IsType<L12PromptPresentation>(prompt.Presentation);
@@ -494,6 +640,69 @@ public sealed class PromptNarrativeMatrixTests
             Assert.DoesNotContain("抵挡", summary, StringComparison.Ordinal);
             Assert.DoesNotContain("支援", summary, StringComparison.Ordinal);
         }
+    }
+
+    private static void AssertPromptBoundaryAndCheckpoint(L12GameEngine game, int owner,
+        string expectedWaitingSummary, params L12CardInstance[] privateCards)
+    {
+        AssertPromptBoundary(game, owner, expectedWaitingSummary, privateCards);
+        var checkpoint = game.SerializeFullState();
+        Assert.DoesNotContain("__promptNarrative:", checkpoint, StringComparison.Ordinal);
+        var random = game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0);
+        var restored = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint, random,
+            game.CardFactSignalSequence, game.AutoPassEmptyResponses,
+            game.ConcealHiddenResponseAvailability);
+        var originalPrompt = Assert.Single(game.State.PendingPrompts);
+        var restoredPrompt = Assert.Single(restored.State.PendingPrompts);
+        Assert.Equal(originalPrompt.Presentation!.Title, restoredPrompt.Presentation!.Title);
+        Assert.Equal(originalPrompt.Presentation.Situation, restoredPrompt.Presentation.Situation);
+        Assert.Equal(originalPrompt.Presentation.Instruction, restoredPrompt.Presentation.Instruction);
+        Assert.Equal(originalPrompt.Presentation.ChoiceConsequences,
+            restoredPrompt.Presentation.ChoiceConsequences);
+        Assert.DoesNotContain(restoredPrompt.Data.Keys,
+            key => key.StartsWith("__promptNarrative:", StringComparison.Ordinal));
+        AssertPromptBoundary(restored, owner, expectedWaitingSummary, privateCards);
+    }
+
+    private static void AssertPromptBoundary(L12GameEngine game, int owner,
+        string expectedWaitingSummary, IReadOnlyCollection<L12CardInstance> privateCards)
+    {
+        var other = 1 - owner;
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Single(game.SnapshotFor(owner).Prompts);
+        Assert.Empty(game.SnapshotFor(other).Prompts);
+        Assert.Empty(game.SnapshotForSpectator().Prompts);
+        Assert.Empty(game.SnapshotForReferee().Prompts);
+        Assert.Single(game.SnapshotForGm(other).Prompts);
+        Assert.Null(game.SnapshotForGm(other).WaitingPrompt);
+
+        foreach (var waitingObject in new[]
+                 {
+                     game.SnapshotFor(other).WaitingPrompt,
+                     game.SnapshotForSpectator().WaitingPrompt,
+                     game.SnapshotForReferee().WaitingPrompt,
+                 })
+        {
+            Assert.NotNull(waitingObject);
+            var waiting = JsonSerializer.SerializeToElement(waitingObject,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            Assert.Equal(expectedWaitingSummary, waiting.GetProperty("waitingSummary").GetString());
+        }
+
+        var hiddenViews = new[]
+        {
+            JsonSerializer.Serialize(game.SnapshotFor(other), new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            JsonSerializer.Serialize(game.SnapshotForSpectator(), new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            JsonSerializer.Serialize(game.SnapshotForReferee(), new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+        };
+        foreach (var hidden in hiddenViews)
+            foreach (var card in privateCards)
+                Assert.DoesNotContain(card.InstanceId, hidden, StringComparison.Ordinal);
+
+        var gm = JsonSerializer.Serialize(game.SnapshotForGm(other),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        foreach (var card in privateCards.Where(card => prompt.ValidChoices.Contains(card.InstanceId)))
+            Assert.Contains(card.InstanceId, gm, StringComparison.Ordinal);
     }
 
     private static L12GameEngine CreateGame(int seed, bool autoPassEmptyResponses,
@@ -641,6 +850,47 @@ public sealed class PromptNarrativeMatrixTests
 
         Invoke(game, "ResolveS2CounterEffect", item);
         return (game, Assert.Single(game.State.PendingPrompts), item, authority, excluded, legal);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance Target) BeginCourtMagicianPrompt(int seed, int controller, int targetOwner,
+        string suffix)
+    {
+        var game = CreateCleanGame(seed);
+        var target = Card("S02-0018", $"narrative-magician-target-{suffix}", targetOwner);
+        target.Hidden = true;
+        game.State.Players[targetOwner].Field[1][1] = target;
+        var magician = Card("S02-0003", $"narrative-magician-{suffix}", controller);
+        var item = LegacyStackItem($"narrative-magician-stack-{suffix}", controller, magician,
+            "enter", "宫廷魔术师");
+        game.State.EffectStack.Add(item);
+
+        Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveS2UniversalEnter", item, magician)));
+        return (game, Assert.Single(game.State.PendingPrompts), item, target);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance FirstHand, L12CardInstance SecondHand,
+        L12CardInstance FirstLibrary, L12CardInstance SecondLibrary) BeginRingPrompt(
+        int seed, int controller, string suffix)
+    {
+        var game = CreateCleanGame(seed);
+        var player = game.State.Players[controller];
+        var firstHand = Card("S01-0003", $"narrative-ring-hand-1-{suffix}-{controller}", controller);
+        var secondHand = Card("S01-0004", $"narrative-ring-hand-2-{suffix}-{controller}", controller);
+        var firstLibrary = Card("S02-0001", $"narrative-ring-library-1-{suffix}-{controller}", controller);
+        var secondLibrary = Card("S02-0003", $"narrative-ring-library-2-{suffix}-{controller}", controller);
+        player.Hand.AddRange([firstHand, secondHand]);
+        player.Library.AddRange([firstLibrary, secondLibrary]);
+        var ring = Card("S02-0008", $"narrative-ring-{suffix}-{controller}", controller);
+        player.Relic = ring;
+        var item = LegacyStackItem($"narrative-ring-stack-{suffix}-{controller}", controller, ring,
+            "enter", "万物统御之戒");
+        game.State.EffectStack.Add(item);
+
+        Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveS2UniversalEnter", item, ring)));
+        return (game, Assert.Single(game.State.PendingPrompts), item,
+            firstHand, secondHand, firstLibrary, secondLibrary);
     }
 
     private static void AddMorale(L12GameEngine game, int playerIndex, int count, string prefix)
