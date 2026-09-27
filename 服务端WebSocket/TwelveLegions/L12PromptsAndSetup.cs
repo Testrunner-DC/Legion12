@@ -1728,17 +1728,38 @@ public sealed partial class L12GameEngine
 
     private void BeginResponseWindow(L12StackItem item)
     {
-        State.ResponseWindow = new L12ResponseWindow
-        {
-            PriorityPlayer = State.ActivePlayer,
-            ConsecutivePasses = 0,
-        };
+        State.ResponseWindow = CreateResponseWindow(State.ActivePlayer);
         OfferResponse();
     }
+
+    private L12ResponseWindow CreateResponseWindow(int priorityPlayer)
+    {
+        var modes = new[] { ResponseModeFor(0), ResponseModeFor(1) };
+        return new L12ResponseWindow
+        {
+            PriorityPlayer = priorityPlayer,
+            ConsecutivePasses = 0,
+            FrozenPlayerResponseModes = modes.All(mode => mode == DefaultResponseMode) ? null : modes,
+        };
+    }
+
+    private L12ResponseWindow ReopenResponseWindow(int priorityPlayer)
+        => new()
+        {
+            PriorityPlayer = priorityPlayer,
+            ConsecutivePasses = 0,
+            FrozenPlayerResponseModes = State.ResponseWindow?.FrozenPlayerResponseModes is { } modes
+                ? [.. modes] : null,
+        };
+
+    private static string FrozenResponseModeFor(L12ResponseWindow window, int playerIndex)
+        => window.FrozenPlayerResponseModes?.ElementAtOrDefault(playerIndex) is { } mode
+           && IsValidResponseMode(mode) ? mode : DefaultResponseMode;
 
     private void OfferResponse()
     {
         if (State.ResponseWindow is null || State.EffectStack.Count == 0) return;
+        ClearResponseAutoClose(State.ResponseWindow);
         var playerIndex = State.ResponseWindow.PriorityPlayer;
         var top = State.EffectStack[^1];
         var player = State.Players[playerIndex];
@@ -1748,7 +1769,15 @@ public sealed partial class L12GameEngine
         var hasAnonymousPoolResponse = _concealHiddenResponseAvailability
             && State.EffectStack.Any(item => CanMasterCardPoolRespondAtTiming(playerIndex, item,
                 item.Controller != playerIndex && IsProtectedFromCounterTactics(item)));
-        if ((_autoPassEmptyResponses || disasterAuthorityTiming) && choices.Count == 0 && !hasAnonymousPoolResponse)
+        var responseMode = FrozenResponseModeFor(State.ResponseWindow, playerIndex);
+        if (ShouldAutoPassEmptyResponse(responseMode, choices.Count, hasAnonymousPoolResponse,
+                _autoPassEmptyResponses, disasterAuthorityTiming))
+        {
+            PassPriority(playerIndex);
+            return;
+        }
+        if ((_autoPassEmptyResponses || disasterAuthorityTiming) && choices.Count == 0
+            && !hasAnonymousPoolResponse && responseMode == DefaultResponseMode)
         {
             PassPriority(playerIndex);
             return;
@@ -1769,12 +1798,60 @@ public sealed partial class L12GameEngine
                 ? "不打出响应牌，优先权将继续传递。"
                 : $"打出〈{responseData[id]}〉，并按其合法范围响应当前未结算效果。",
             StringComparer.OrdinalIgnoreCase);
-        CreatePrompt(playerIndex, "response", responseText, choices,
+        var prompt = CreatePrompt(playerIndex, "response", responseText, choices,
             1, 1, "stack-response", top.StackItemId, isPrivate: true,
             data: WithPromptNarrative(responseData,
                 new("响应窗口", "当前堆叠中有未结算效果，你拥有本次响应优先权。",
                     "请选择1张当前可合法响应的卡牌，或选择“不响应”并传递优先权。",
                     L12PromptWaitingAction.ResponseDecision, responseConsequences)));
+        if (responseMode == InvalidFiveSecondsResponseMode && choices.Count == 1)
+        {
+            State.ResponseWindow.AutoClosePromptId = prompt.PromptId;
+            State.ResponseWindow.AutoCloseStackItemId = top.StackItemId;
+            State.ResponseWindow.AutoClosePriorityPlayer = playerIndex;
+            State.ResponseWindow.AutoCloseDeadlineUtc = _utcNow().ToUniversalTime().AddSeconds(5);
+        }
+    }
+
+    private static bool ShouldAutoPassEmptyResponse(string responseMode, int legalChoiceCount,
+        bool hasAnonymousPoolResponse, bool autoPassEmptyResponses, bool disasterAuthorityTiming)
+        => responseMode == ValidOnlyResponseMode
+           && legalChoiceCount == 0; // 用户明确选择的隐私／时点权衡：忽略匿名池提示。
+
+    private static void ClearResponseAutoClose(L12ResponseWindow window)
+    {
+        window.AutoClosePromptId = null;
+        window.AutoCloseStackItemId = null;
+        window.AutoClosePriorityPlayer = null;
+        window.AutoCloseDeadlineUtc = null;
+    }
+
+    internal bool TryExpireResponseAutoClose(string promptId, string stackItemId, int priorityPlayer,
+        DateTimeOffset deadlineUtc, DateTimeOffset observedAtUtc)
+    {
+        var window = State.ResponseWindow;
+        var prompt = State.PendingPrompts.SingleOrDefault(item => item.PromptId == promptId);
+        if (window is null || prompt is null || observedAtUtc.ToUniversalTime() < deadlineUtc.ToUniversalTime()
+            || window.AutoClosePromptId != promptId || window.AutoCloseStackItemId != stackItemId
+            || window.AutoClosePriorityPlayer != priorityPlayer || window.AutoCloseDeadlineUtc != deadlineUtc
+            || window.PriorityPlayer != priorityPlayer || prompt.PlayerIndex != priorityPlayer
+            || prompt.StackItemId != stackItemId || State.EffectStack.LastOrDefault()?.StackItemId != stackItemId)
+            return false;
+        State.PendingPrompts.Remove(prompt);
+        PassPriority(priorityPlayer);
+        State.Revision++;
+        return true;
+    }
+
+    internal L12ResponseAutoCloseLease? CaptureResponseAutoCloseLease()
+    {
+        var window = State.ResponseWindow;
+        return window?.AutoClosePromptId is { } promptId
+               && window.AutoCloseStackItemId is { } stackItemId
+               && window.AutoClosePriorityPlayer is { } priorityPlayer
+               && window.AutoCloseDeadlineUtc is { } deadline
+            ? new(promptId, stackItemId, priorityPlayer, deadline)
+            : null;
     }
 
     // Eligibility is evaluated against the exact selected item, never a different chain ancestor.
@@ -2198,7 +2275,7 @@ public sealed partial class L12GameEngine
     {
         if (slotChoice == "cancel")
         {
-            State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = playerIndex };
+            State.ResponseWindow = ReopenResponseWindow(playerIndex);
             OfferResponse();
             return;
         }
@@ -2241,7 +2318,7 @@ public sealed partial class L12GameEngine
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{State.Players[playerIndex].Name} 发动〈{response.Name}〉响应主宰进攻", response);
         PublishEffectPresentation("effect-response", playerIndex, response, item.Trigger, item.Text, item.Data);
-        State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = playerIndex };
+        State.ResponseWindow = CreateResponseWindow(playerIndex);
         OfferResponse();
     }
 
@@ -2274,7 +2351,7 @@ public sealed partial class L12GameEngine
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{player.Name} 打出〈{response.Name}〉响应", response);
         PublishEffectPresentation("effect-response", playerIndex, response, item.Trigger, item.Text, item.Data);
-        State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = playerIndex };
+        State.ResponseWindow = CreateResponseWindow(playerIndex);
         OfferResponse();
     }
 
@@ -2298,7 +2375,7 @@ public sealed partial class L12GameEngine
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{playerIndex + 1} 号玩家发动〈佣兵部队〉抵挡进攻", response);
         PublishEffectPresentation("effect-response", playerIndex, response, item.Trigger, item.Text, item.Data);
-        State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = playerIndex };
+        State.ResponseWindow = CreateResponseWindow(playerIndex);
         OfferResponse();
     }
 
@@ -2306,6 +2383,7 @@ public sealed partial class L12GameEngine
     {
         var window = State.ResponseWindow;
         if (window is null) return;
+        ClearResponseAutoClose(window);
         window.ConsecutivePasses++;
         AddEvent("priority-pass", playerIndex, $"{State.Players[playerIndex].Name} 不响应");
         if (window.ConsecutivePasses >= 2)

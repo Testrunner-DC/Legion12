@@ -139,6 +139,11 @@ if(params.has('response-fixture')){
  const choices=['stack-a','stack-b','stack-c']
  l12State.game.prompts=[{promptId:'fixture-response-targets',playerIndex:0,kind:'response-target',text:'选择要响应的效果',validChoices:choices,minChoose:1,maxChoose:1,choiceLabels:{},data:{'stack-a':'短来源','stack-b':'同名来源：第二段\\n公开目标：长名称军团与附加状态','stack-c':'第三个来源：包含更多语义说明但尺寸必须一致'},createdRevision:1,controller:0}]
 }
+if(params.has('invalid-response-fixture')){
+ const serverNow=new Date(),deadline=new Date(serverNow.getTime()+5000)
+ l12State.game.prompts=[{promptId:'fixture-invalid-response',playerIndex:0,kind:'response',text:'当前堆叠中有未结算效果',validChoices:['pass'],minChoose:1,maxChoose:1,choiceLabels:{pass:'不响应'},data:{choiceMode:'instant'},createdRevision:1,controller:0,stackItemId:'fixture-stack',autoClose:{reason:'no-valid-response',deadlineUtc:deadline.toISOString(),serverNowUtc:serverNow.toISOString()}}]
+}
+window.__l12State=l12State
 if(params.has('disaster-choice')){
  const choiceCount=Math.max(1,Math.min(20,Number(params.get('choice-count')||8)))
  const choiceCards=Array.from({length:choiceCount},(_,index)=>disasters[index%disasters.length])

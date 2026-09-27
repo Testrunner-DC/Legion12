@@ -351,9 +351,10 @@ public sealed partial class MatchRecorder
                 throw new InvalidDataException("v2 对局缺少可用检查点");
             initial = await ReadCheckpointAsync(reader, cancellationToken);
         }
+        var replayNow = DateTimeOffset.UnixEpoch;
         var engine = L12GameEngine.RestoreCheckpoint(catalog, initial.StateJson,
             initial.RandomState, initial.CardFactSignalSequence,
-            initial.AutoPassEmptyResponses, initial.ConcealHiddenResponseAvailability);
+            initial.AutoPassEmptyResponses, initial.ConcealHiddenResponseAvailability, () => replayNow);
         if (engine.State.Revision != initial.Revision
             || (verifyStateHashes
                 && !string.Equals(engine.ComputeStateHash(), initial.StateHash, StringComparison.Ordinal)))
@@ -378,6 +379,7 @@ public sealed partial class MatchRecorder
             var sequence = rows.GetInt64(0);
             if (sequence != ++expectedSequence) throw new InvalidDataException("v2 命令序号不连续");
             var commandJson = rows.GetString(3);
+            replayNow = DateTimeOffset.Parse(rows.GetString(1));
             using var commandDocument = JsonDocument.Parse(commandJson);
             var commandRoot = commandDocument.RootElement;
             var type = commandRoot.TryGetProperty("type", out var lowerType)
@@ -635,6 +637,22 @@ public sealed partial class MatchRecorder
                 && drawElement.ValueKind == JsonValueKind.True;
             if (agreedDraw) engine.ConcludeAgreedDrawByAuthority(reason);
             else engine.ConcludeByAuthority(winner, reason);
+            return CommandResult.Ok();
+        }
+        if (string.Equals(type, "setResponsePreference", StringComparison.OrdinalIgnoreCase))
+        {
+            var mode = commandRoot.TryGetProperty("responseMode", out var modeElement)
+                ? modeElement.GetString() : null;
+            return engine.ApplyResponsePreference(playerIndex, mode);
+        }
+        if (string.Equals(type, "responseAutoClose", StringComparison.OrdinalIgnoreCase))
+        {
+            var promptId = commandRoot.GetProperty("promptId").GetString() ?? string.Empty;
+            var stackItemId = commandRoot.GetProperty("stackItemId").GetString() ?? string.Empty;
+            var priorityPlayer = commandRoot.GetProperty("priorityPlayer").GetInt32();
+            var deadline = commandRoot.GetProperty("deadlineUtc").GetDateTimeOffset();
+            var observedAt = commandRoot.GetProperty("observedAtUtc").GetDateTimeOffset();
+            engine.TryExpireResponseAutoClose(promptId, stackItemId, priorityPlayer, deadline, observedAt);
             return CommandResult.Ok();
         }
         if (playerIndex == -1)

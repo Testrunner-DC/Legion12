@@ -49,7 +49,7 @@ public sealed partial class L12GameEngine
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{player.Name}发动〈{response.Name}〉", response);
         PublishEffectPresentation("effect-response", playerIndex, response, item.Trigger, item.Text, item.Data);
-        State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = playerIndex };
+        State.ResponseWindow = CreateResponseWindow(playerIndex);
         OfferResponse();
     }
 

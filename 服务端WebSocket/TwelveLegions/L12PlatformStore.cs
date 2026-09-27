@@ -115,6 +115,8 @@ public sealed partial class L12PlatformStore
         public string CardSize { get; set; } = "auto";
         public string Animation { get; set; } = "standard";
         public string MobileLayout { get; set; } = "auto";
+        public string ResponseMode { get; set; } = L12GameEngine.DefaultResponseMode;
+        public string? ResponseModeOperationId { get; set; }
         public DateTimeOffset? DeletedAt { get; set; }
         public string? DeletedByAccountId { get; set; }
         public string? DeletedReason { get; set; }
@@ -699,6 +701,36 @@ public sealed partial class L12PlatformStore
             Save();
             return new L12AudioPreferencesView(row.MusicEnabled, row.MusicVolume, row.SfxEnabled, row.SfxVolume,
                 row.CardSize, row.Animation, row.MobileLayout);
+        }
+    }
+
+    public string ResponsePreference(string accountId)
+    {
+        lock (_gate)
+        {
+            var row = _data.Accounts.FirstOrDefault(item => item.Id == accountId && !item.Deleted && !item.Disabled);
+            return row is not null && L12GameEngine.IsValidResponseMode(row.ResponseMode)
+                ? row.ResponseMode : L12GameEngine.DefaultResponseMode;
+        }
+    }
+
+    internal string ApplyResponsePreference(string accountId, string mode, string operationId)
+    {
+        if (!L12GameEngine.IsValidResponseMode(mode) || string.IsNullOrWhiteSpace(operationId))
+            throw new ArgumentException("响应设置投递载荷无效");
+        lock (_gate)
+        {
+            var row = _data.Accounts.First(item => item.Id == accountId && !item.Deleted && !item.Disabled);
+            if (row.ResponseModeOperationId == operationId)
+            {
+                if (!string.Equals(row.ResponseMode, mode, StringComparison.Ordinal))
+                    throw new InvalidOperationException("响应设置幂等键与既有载荷冲突");
+                return row.ResponseMode;
+            }
+            row.ResponseMode = mode;
+            row.ResponseModeOperationId = operationId;
+            Save();
+            return row.ResponseMode;
         }
     }
 

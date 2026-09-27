@@ -514,6 +514,17 @@ public sealed class L12PromptPresentation
     public Dictionary<string, string> ChoiceConsequences { get; init; } = [];
 }
 
+public sealed record L12PromptAutoCloseView(
+    string Reason,
+    DateTimeOffset DeadlineUtc,
+    DateTimeOffset ServerNowUtc);
+
+internal sealed record L12ResponseAutoCloseLease(
+    string PromptId,
+    string StackItemId,
+    int PriorityPlayer,
+    DateTimeOffset DeadlineUtc);
+
 public sealed class L12StackItem
 {
     public required string StackItemId { get; init; }
@@ -722,6 +733,17 @@ public sealed class L12ResponseWindow
 {
     public int PriorityPlayer { get; set; }
     public int ConsecutivePasses { get; set; }
+    /// <summary>窗口创建时冻结的双方响应模式；null 表示双方均为历史默认模式。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string[]? FrozenPlayerResponseModes { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? AutoClosePromptId { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? AutoCloseStackItemId { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? AutoClosePriorityPlayer { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? AutoCloseDeadlineUtc { get; set; }
 }
 
 /// <summary>
@@ -818,6 +840,9 @@ public sealed class L12GameState
     public List<L12TriggerCandidate> PendingTriggerStackCandidates { get; } = [];
     public List<L12AuthorityEvent> AuthorityEvents { get; } = [];
     public L12ResponseWindow? ResponseWindow { get; set; }
+    /// <summary>为空表示双方均使用历史默认响应流程，以保持旧检查点与默认局哈希不变。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string[]? PlayerResponseModes { get; set; }
     public bool IsResolvingStack { get; set; }
     public bool ResumeTurnStartAfterStack { get; set; }
     public bool ResumeGmResetAfterStack { get; set; }

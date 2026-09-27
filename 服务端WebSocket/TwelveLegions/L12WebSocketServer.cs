@@ -3020,6 +3020,9 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     "ready" => await _rooms.SetReadyAsync(sessionId, GetBool(root, "ready", true)),
                     "gameAction" when root.TryGetProperty("command", out var command)
                         => await _rooms.HandleActionAsync(sessionId, command, GetString(root, "requestId")),
+                    "getResponsePreference" => await _rooms.GetResponsePreferenceAsync(sessionId),
+                    "setResponsePreference" => await _rooms.SetResponsePreferenceAsync(sessionId,
+                        GetString(root, "mode"), GetString(root, "requestId")),
                     "requestMatchDraw" => await _rooms.RequestMatchDrawAsync(sessionId,
                         GetString(root, "requestId"), GetString(root, "reason")),
                     "resolveMatchDraw" => await _rooms.ResolveMatchDrawAsync(sessionId,
@@ -3342,6 +3345,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 try
                 {
                     await SendManyAsync(await _rooms.TickRankedClocksAsync(), cancellationToken);
+                    await SendManyAsync(await _rooms.TickResponseWindowsAsync(), cancellationToken);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {

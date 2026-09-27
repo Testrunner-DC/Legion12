@@ -89,6 +89,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await InitializeGlobalAnalyticsSchemaAsync(connection);
         await InitializePublicDeckBindingsAsync(connection);
         await InitializeTournamentResultOutboxAsync(connection);
+        await InitializeResponsePreferenceOutboxAsync(connection);
     }
 
     public Task StartAsync(L12GameState state, string modeId = "friendly",
@@ -197,7 +198,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         CommandResult result, string? requestId = null, bool stateChangedOnRejection = false)
     {
         await AppendWithCardFactsAsync(engine, sequence, playerIndex, commandJson, result, null, null,
-            requestId, stateChangedOnRejection);
+            requestId, stateChangedOnRejection, null);
     }
 
     internal Task AppendRankedAsync(L12GameEngine engine, long sequence, int playerIndex,
@@ -205,7 +206,13 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         L12RankedSettlementEnvelope? settlement, string? requestId = null,
         bool stateChangedOnRejection = false)
         => AppendWithCardFactsAsync(engine, sequence, playerIndex, commandJson, result, runtime, settlement,
-            requestId, stateChangedOnRejection);
+            requestId, stateChangedOnRejection, null);
+
+    internal Task AppendResponsePreferenceAsync(L12GameEngine engine, long sequence, int playerIndex,
+        string commandJson, CommandResult result, L12ResponsePreferenceOutboxEnvelope envelope,
+        L12RankedRuntimeCheckpoint? runtime, string? requestId)
+        => AppendWithCardFactsAsync(engine, sequence, playerIndex, commandJson, result, runtime, null,
+            requestId, false, envelope);
 
     public Task AppendAuthorityAsync(L12GameEngine engine, long sequence, string reason)
         => AppendAsync(engine, sequence, -1,
@@ -497,9 +504,11 @@ public sealed partial class MatchRecorder : IAsyncDisposable
 
     private static JsonElement SanitizeRecordedCommand(JsonElement command, bool ownCommand)
     {
-        if (ownCommand) return command;
         var type = command.TryGetProperty("type", out var camel) ? camel.GetString()
             : command.TryGetProperty("Type", out var pascal) ? pascal.GetString() : string.Empty;
+        if (type is "setResponsePreference" or "responseAutoClose")
+            return JsonSerializer.SerializeToElement(new { type = "authorityProgress" });
+        if (ownCommand) return command;
         return JsonSerializer.SerializeToElement(new { type });
     }
 
@@ -549,6 +558,15 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         }
         root["PendingPrompts"] = new JsonArray();
         root["PendingActivations"] = new JsonArray();
+        root.Remove("PlayerResponseModes");
+        if (root["ResponseWindow"] is JsonObject responseWindow)
+        {
+            responseWindow.Remove("FrozenPlayerResponseModes");
+            responseWindow.Remove("AutoClosePromptId");
+            responseWindow.Remove("AutoCloseStackItemId");
+            responseWindow.Remove("AutoClosePriorityPlayer");
+            responseWindow.Remove("AutoCloseDeadlineUtc");
+        }
         L12TrialProgressVisibility.RedactRecordedState(root);
         return JsonSerializer.SerializeToElement(root);
     }

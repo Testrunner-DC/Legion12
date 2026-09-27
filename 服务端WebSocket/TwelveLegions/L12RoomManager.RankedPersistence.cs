@@ -186,6 +186,7 @@ public sealed partial class L12RoomManager
 
     private L12GameEngine ReplayRankedEngine(L12RankedRecoverySource source)
     {
+        var replayNow = DateTimeOffset.UnixEpoch;
         L12GameEngine engine;
         long expectedSequence;
         if (source.StorageVersion >= MatchRecorder.JournalStorageVersion)
@@ -194,7 +195,7 @@ public sealed partial class L12RoomManager
                 ?? throw new InvalidDataException("v2 排位缺少状态检查点");
             engine = L12GameEngine.RestoreCheckpoint(_catalog, checkpoint.StateJson,
                 checkpoint.RandomState, checkpoint.CardFactSignalSequence,
-                checkpoint.AutoPassEmptyResponses, checkpoint.ConcealHiddenResponseAvailability);
+                checkpoint.AutoPassEmptyResponses, checkpoint.ConcealHiddenResponseAvailability, () => replayNow);
             if (engine.State.Revision != checkpoint.Revision
                 || !string.Equals(engine.ComputeStateHash(), checkpoint.StateHash,
                     StringComparison.Ordinal))
@@ -216,7 +217,7 @@ public sealed partial class L12RoomManager
                 : null;
             engine = new L12GameEngine(_catalog, source.MatchId, source.RoomCode, source.Seed,
                 source.PlayerNames, source.Decks, disasterMode: disasterMode, operationsPolicy: policy,
-                effectPresentationSnapshot: presentationSnapshot);
+                effectPresentationSnapshot: presentationSnapshot, utcNow: () => replayNow);
             if (!string.Equals(engine.ComputeStateHash(), HashStateJson(source.InitialStateJson),
                     StringComparison.Ordinal))
                 throw new InvalidDataException("初始状态重放校验失败");
@@ -235,6 +236,7 @@ public sealed partial class L12RoomManager
             if (recorded.Sequence != ++expectedSequence)
                 throw new InvalidDataException("排位命令序号不连续");
             var type = recorded.CommandType;
+            replayNow = DateTimeOffset.Parse(recorded.ReceivedUtc);
             CommandResult outcome;
             if (string.Equals(type, "authorityConclusion", StringComparison.OrdinalIgnoreCase))
             {
@@ -245,6 +247,23 @@ public sealed partial class L12RoomManager
                     engine.ConcludeAgreedDrawByAuthority(reason);
                 else
                     engine.ConcludeByAuthority(winner, reason);
+                outcome = CommandResult.Ok();
+            }
+            else if (string.Equals(type, "setResponsePreference", StringComparison.OrdinalIgnoreCase))
+            {
+                using var document = JsonDocument.Parse(recorded.CommandJson);
+                outcome = engine.ApplyResponsePreference(recorded.PlayerIndex,
+                    document.RootElement.GetProperty("responseMode").GetString());
+            }
+            else if (string.Equals(type, "responseAutoClose", StringComparison.OrdinalIgnoreCase))
+            {
+                using var document = JsonDocument.Parse(recorded.CommandJson);
+                var root = document.RootElement;
+                engine.TryExpireResponseAutoClose(root.GetProperty("promptId").GetString() ?? string.Empty,
+                    root.GetProperty("stackItemId").GetString() ?? string.Empty,
+                    root.GetProperty("priorityPlayer").GetInt32(),
+                    root.GetProperty("deadlineUtc").GetDateTimeOffset(),
+                    root.GetProperty("observedAtUtc").GetDateTimeOffset());
                 outcome = CommandResult.Ok();
             }
             else

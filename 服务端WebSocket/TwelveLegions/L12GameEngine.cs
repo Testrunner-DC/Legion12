@@ -27,6 +27,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     private readonly Random _random;
     private readonly bool _autoPassEmptyResponses;
     private readonly bool _concealHiddenResponseAvailability;
+    private readonly Func<DateTimeOffset> _utcNow;
     private long _cachedHashRevision = long.MinValue;
     private int _cachedHashEventCount = -1;
     private string? _cachedStateHash;
@@ -67,10 +68,13 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         L12OperationsPolicySnapshot? operationsPolicy = null,
         int stateFormatVersion = 0,
         IReadOnlyList<L12FrozenEffectPresentation>? effectPresentationSnapshot = null,
-        IReadOnlyDictionary<string, string>[]? alternateArtUrls = null)
+        IReadOnlyDictionary<string, string>[]? alternateArtUrls = null,
+        Func<DateTimeOffset>? utcNow = null,
+        IReadOnlyList<string>? responseModes = null)
         : this(catalog, matchId, roomCode, seed, playerNames,
             deckIndexes.Select(catalog.DeckAt).ToArray(), skipPreparation, disasterMode, autoPassEmptyResponses,
-            concealHiddenResponseAvailability, operationsPolicy, stateFormatVersion, effectPresentationSnapshot, alternateArtUrls)
+            concealHiddenResponseAvailability, operationsPolicy, stateFormatVersion, effectPresentationSnapshot,
+            alternateArtUrls, utcNow, responseModes)
     {
     }
 
@@ -88,7 +92,9 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         L12OperationsPolicySnapshot? operationsPolicy = null,
         int stateFormatVersion = 0,
         IReadOnlyList<L12FrozenEffectPresentation>? effectPresentationSnapshot = null,
-        IReadOnlyDictionary<string, string>[]? alternateArtUrls = null)
+        IReadOnlyDictionary<string, string>[]? alternateArtUrls = null,
+        Func<DateTimeOffset>? utcNow = null,
+        IReadOnlyList<string>? responseModes = null)
     {
         if (playerNames.Length != 2 || decks.Length != 2)
             throw new ArgumentException("十二军团对战需要两名玩家和两副牌库");
@@ -98,6 +104,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             : new Random(seed);
         _autoPassEmptyResponses = autoPassEmptyResponses ?? AutoPassEmptyResponsesByDefault;
         _concealHiddenResponseAvailability = concealHiddenResponseAvailability ?? !skipPreparation;
+        _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
         State = new L12GameState
         {
             StateFormatVersion = stateFormatVersion,
@@ -116,6 +123,10 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 BuildPlayer(0, playerNames[0], decks[0], alternateArtUrls?.ElementAtOrDefault(0)),
                 BuildPlayer(1, playerNames[1], decks[1], alternateArtUrls?.ElementAtOrDefault(1)),
             ],
+            PlayerResponseModes = responseModes is { Count: 2 }
+                && responseModes.Any(mode => mode != DefaultResponseMode)
+                ? responseModes.Select(mode => IsValidResponseMode(mode) ? mode : DefaultResponseMode).ToArray()
+                : null,
         };
 
         RollInitiative();
@@ -140,7 +151,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
     private L12GameEngine(L12Catalog catalog, L12GameState state, L12RandomState randomState,
         long cardFactSignalSequence, bool autoPassEmptyResponses,
-        bool concealHiddenResponseAvailability)
+        bool concealHiddenResponseAvailability, Func<DateTimeOffset>? utcNow)
     {
         _catalog = catalog;
         State = state;
@@ -148,11 +159,13 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         _cardFactSignalSequence = cardFactSignalSequence;
         _autoPassEmptyResponses = autoPassEmptyResponses;
         _concealHiddenResponseAvailability = concealHiddenResponseAvailability;
+        _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
     }
 
     internal static L12GameEngine RestoreCheckpoint(L12Catalog catalog, string stateJson,
         L12RandomState randomState, long cardFactSignalSequence,
-        bool autoPassEmptyResponses = true, bool concealHiddenResponseAvailability = true)
+        bool autoPassEmptyResponses = true, bool concealHiddenResponseAvailability = true,
+        Func<DateTimeOffset>? utcNow = null)
     {
         var state = JsonSerializer.Deserialize<L12GameState>(stateJson, new JsonSerializerOptions
         {
@@ -165,7 +178,41 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             || player.Field.Any(row => row is null || row.Length != 3)))
             throw new InvalidDataException("对局检查点战场结构无效，不能以空战场恢复");
         return new L12GameEngine(catalog, state, randomState, cardFactSignalSequence,
-            autoPassEmptyResponses, concealHiddenResponseAvailability);
+            autoPassEmptyResponses, concealHiddenResponseAvailability, utcNow);
+    }
+
+    public const string DefaultResponseMode = "default";
+    public const string ValidOnlyResponseMode = "valid-only";
+    public const string InvalidFiveSecondsResponseMode = "invalid-five-seconds";
+
+    public static bool IsValidResponseMode(string? mode)
+        => mode is DefaultResponseMode or ValidOnlyResponseMode or InvalidFiveSecondsResponseMode;
+
+    public string ResponseModeFor(int playerIndex)
+    {
+        if (playerIndex is < 0 or > 1) throw new ArgumentOutOfRangeException(nameof(playerIndex));
+        return State.PlayerResponseModes?.ElementAtOrDefault(playerIndex) is { } mode
+               && IsValidResponseMode(mode) ? mode : DefaultResponseMode;
+    }
+
+    internal CommandResult ApplyResponsePreference(int playerIndex, string? mode)
+    {
+        if (playerIndex is < 0 or > 1 || !IsValidResponseMode(mode))
+            return CommandResult.Reject("响应设置无效");
+        if (ResponseModeFor(playerIndex) == mode) return CommandResult.Ok();
+        var modes = State.PlayerResponseModes is { Length: 2 }
+            ? [.. State.PlayerResponseModes]
+            : new[] { DefaultResponseMode, DefaultResponseMode };
+        modes[playerIndex] = mode!;
+        State.PlayerResponseModes = modes.All(item => item == DefaultResponseMode) ? null : modes;
+        State.Revision++;
+        return CommandResult.Ok();
+    }
+
+    internal void RestoreResponsePreference(string[]? playerResponseModes, long revision)
+    {
+        State.PlayerResponseModes = playerResponseModes is null ? null : [.. playerResponseModes];
+        State.Revision = revision;
     }
 
     internal void MarkEventsPersisted(long throughSequence)
@@ -272,6 +319,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 removedCount = player.Removed.Count, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters), player.TemporaryMorale, spendableResourceCount = ActiveResourceCount(player), player.NextLegionChargeMaxCost, player.NextLegionEntryDiscount, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
             }).ToArray();
 
+        var projectionNow = _utcNow().ToUniversalTime();
         var prompts = State.PendingPrompts
             .Where(prompt => !spectator && (prompt.PlayerIndex == viewer || revealAllHands))
             .Select(prompt => (object)new
@@ -279,6 +327,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 prompt.PromptId, prompt.PlayerIndex, prompt.Kind, prompt.Text, prompt.ValidChoices,
                 prompt.MinChoose, prompt.MaxChoose, prompt.Data, prompt.ChoiceLabels,
                 prompt.Presentation,
+                autoClose = ResponseAutoCloseView(prompt, projectionNow),
                 prompt.ActivationId, prompt.SourceInstanceId, prompt.SourceCardId,
                 prompt.Step, prompt.CreatedRevision, prompt.Controller,
             }).ToArray();
@@ -327,6 +376,18 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             State.DisasterPreparationStep,
             waitingPrompt, prompts, stack, State.PendingDefense, State.Winner, State.WinnerReason, players, lastAction,
             recentEvents, spectator ? [] : BuildLegalAttackTargets(revealAllHands ? State.ActivePlayer : viewer), ComputeStateHash());
+    }
+
+    private L12PromptAutoCloseView? ResponseAutoCloseView(L12Prompt prompt, DateTimeOffset serverNowUtc)
+    {
+        var window = State.ResponseWindow;
+        if (window?.AutoCloseDeadlineUtc is not { } deadline
+            || window.AutoClosePromptId != prompt.PromptId
+            || window.AutoCloseStackItemId != prompt.StackItemId
+            || window.AutoClosePriorityPlayer != prompt.PlayerIndex
+            || window.PriorityPlayer != prompt.PlayerIndex)
+            return null;
+        return new L12PromptAutoCloseView("no-valid-response", deadline, serverNowUtc);
     }
 
     private object[] BuildChosenDisasterSnapshot(int viewer, bool revealAll)

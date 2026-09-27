@@ -238,7 +238,7 @@ public sealed partial class MatchRecorder
     private async Task AppendWithCardFactsAsync(L12GameEngine engine, long sequence, int playerIndex,
         string commandJson, CommandResult result, L12RankedRuntimeCheckpoint? rankedRuntime,
         L12RankedSettlementEnvelope? rankedSettlement, string? requestId,
-        bool stateChangedOnRejection)
+        bool stateChangedOnRejection, L12ResponsePreferenceOutboxEnvelope? responsePreference)
     {
         if (sequence <= 0)
             throw new ArgumentOutOfRangeException(nameof(sequence), sequence,
@@ -288,6 +288,8 @@ public sealed partial class MatchRecorder
                     throw new InvalidOperationException("同一对局命令序号的重复写入与已记录状态冲突");
                 if (rankedSettlement is not null)
                     await VerifyRankedCompletionAsync(connection, transaction, rankedSettlement, stateHash);
+                if (responsePreference is not null)
+                    await InsertOrVerifyResponsePreferenceOutboxAsync(connection, transaction, responsePreference);
                 await transaction.CommitAsync();
                 return;
             }
@@ -443,6 +445,8 @@ public sealed partial class MatchRecorder
             if (!await HasCardFactCompactionAsync(connection, transaction, engine.State.MatchId))
                 await CompactCardFactsForMatchAsync(connection, transaction, engine.State.MatchId, occurredUtc);
         }
+        if (responsePreference is not null)
+            await InsertOrVerifyResponsePreferenceOutboxAsync(connection, transaction, responsePreference);
         if (journalV2)
         {
             await PersistActionEventsAsync(connection, transaction, engine, sequence, occurredUtc,

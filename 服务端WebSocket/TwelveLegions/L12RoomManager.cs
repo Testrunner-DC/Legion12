@@ -82,6 +82,7 @@ public sealed partial class L12RoomManager
         public bool CompletionRecorded { get; set; }
         public DateTimeOffset? SettlementStartedAt { get; set; }
         public bool[] SettlementLeft { get; } = [false, false];
+        public bool[] ResponsePreferenceSyncPending { get; } = [false, false];
         public long RankedCheckpointGeneration { get; set; }
         public RankedClockState? RankedClock { get; set; }
         public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -477,12 +478,16 @@ public sealed partial class L12RoomManager
         room.Ready[0] = room.Ready[1] = true;
         other.RoomCode = room.Code; other.PlayerIndex = 0; other.CustomDeck = opponent.Deck;
         session.RoomCode = room.Code; session.PlayerIndex = 1; session.CustomDeck = entry.Deck;
+        var responsePreferences = await ResolveResponsePreferencesAsync([other, session]);
+        room.ResponsePreferenceSyncPending[0] = responsePreferences[0].SyncPending;
+        room.ResponsePreferenceSyncPending[1] = responsePreferences[1].SyncPending;
         room.Game = new L12GameEngine(_catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
             [other.Name, session.Name], [opponent.Deck, entry.Deck], disasterMode: room.Options.DisasterMode,
             operationsPolicy: policy,
             stateFormatVersion: L12PersistenceContract.CurrentStateFormatVersion,
             effectPresentationSnapshot: CaptureEffectPresentationSnapshot(),
-            alternateArtUrls: ResolveAlternateArtUrls([other, session]));
+            alternateArtUrls: ResolveAlternateArtUrls([other, session]), utcNow: _utcNow,
+            responseModes: responsePreferences.Select(item => item.Mode).ToArray());
         InitializeRankedClock(room);
         try
         {
@@ -784,7 +789,11 @@ public sealed partial class L12RoomManager
         {
             var tournamentStartBlocked = false;
             if (room.Game is not null)
+            {
                 await ApplyRankedClockConclusionLockedAsync(room, _utcNow());
+                await ExpireResponseWindowLockedAsync(room, _utcNow());
+                await RefreshRoomResponsePreferencesAsync(room);
+            }
             if (room.TournamentId is not null)
             {
                 tournamentStartBlocked = await StartTournamentGameIfReadyLockedAsync(room);
@@ -812,7 +821,11 @@ public sealed partial class L12RoomManager
         {
             var tournamentStartBlocked = false;
             if (room.Game is not null)
+            {
                 await ApplyRankedClockConclusionLockedAsync(room, _utcNow());
+                await ExpireResponseWindowLockedAsync(room, _utcNow());
+                await RefreshRoomResponsePreferencesAsync(room);
+            }
             if (room.TournamentId is not null)
             {
                 tournamentStartBlocked = await StartTournamentGameIfReadyLockedAsync(room);
@@ -980,13 +993,16 @@ public sealed partial class L12RoomManager
         session.SelectedDeckIndex = playerDeckIndex;
         session.CustomDeck = playerDeck;
 
+        var sandboxPreference = await ResolveResponsePreferenceAsync(session.AccountId);
+        room.ResponsePreferenceSyncPending[0] = sandboxPreference.SyncPending;
         room.Game = new L12GameEngine(
             _catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
             [session.Name, opponent.Name], [playerDeck, opponentDeck], skipPreparation: true,
             disasterMode: room.Options.DisasterMode, operationsPolicy: room.OperationsPolicy,
             stateFormatVersion: L12PersistenceContract.CurrentStateFormatVersion,
             effectPresentationSnapshot: CaptureEffectPresentationSnapshot(),
-            alternateArtUrls: ResolveAlternateArtUrls([session, opponent]));
+            alternateArtUrls: ResolveAlternateArtUrls([session, opponent]), utcNow: _utcNow,
+            responseModes: [sandboxPreference.Mode, L12GameEngine.DefaultResponseMode]);
         room.Game.InitializeGmDisasters();
         foreach (var playerIndex in new[] { 0, 1 })
         {
@@ -1252,12 +1268,16 @@ public sealed partial class L12RoomManager
                 && !member.IsVirtual && member.Connected)) return false;
         if (CaptureOperationsPolicy().IsNewGameEntryBlocked(DateTimeOffset.UtcNow)) return true;
         var members = room.Sessions.Select(id => _sessions[id]).ToArray();
+        var responsePreferences = await ResolveResponsePreferencesAsync(members);
+        room.ResponsePreferenceSyncPending[0] = responsePreferences[0].SyncPending;
+        room.ResponsePreferenceSyncPending[1] = responsePreferences[1].SyncPending;
         var game = new L12GameEngine(_catalog, Guid.NewGuid().ToString("N"), room.Code,
             Random.Shared.Next(), members.Select(member => member.Name).ToArray(),
             members.Select(SelectedDeck).ToArray(), disasterMode: room.Options.DisasterMode,
             operationsPolicy: room.OperationsPolicy,
             stateFormatVersion: L12PersistenceContract.CurrentStateFormatVersion,
-            effectPresentationSnapshot: CaptureEffectPresentationSnapshot(), alternateArtUrls: ResolveAlternateArtUrls(members));
+            effectPresentationSnapshot: CaptureEffectPresentationSnapshot(), alternateArtUrls: ResolveAlternateArtUrls(members),
+            utcNow: _utcNow, responseModes: responsePreferences.Select(item => item.Mode).ToArray());
         room.Game = game;
         InitializeRankedClock(room);
         // 只有对局记录与权威计时初始快照在同一事务落库后才发布可操作引擎。
@@ -1325,15 +1345,19 @@ public sealed partial class L12RoomManager
             {
                 var playerNames = room.Sessions.Select(id => _sessions[id].Name).ToArray();
                 var selectedDecks = room.Sessions.Select(id => SelectedDeck(_sessions[id])).ToArray();
+                var startedMembers = room.Sessions.Select(id => _sessions[id]).ToArray();
+                var responsePreferences = await ResolveResponsePreferencesAsync(startedMembers);
+                room.ResponsePreferenceSyncPending[0] = responsePreferences[0].SyncPending;
+                room.ResponsePreferenceSyncPending[1] = responsePreferences[1].SyncPending;
                 room.Game = new L12GameEngine(
                     _catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
                     playerNames, selectedDecks,
                     disasterMode: room.Options.DisasterMode, operationsPolicy: room.OperationsPolicy,
                     stateFormatVersion: L12PersistenceContract.CurrentStateFormatVersion,
                     effectPresentationSnapshot: CaptureEffectPresentationSnapshot(),
-                    alternateArtUrls: ResolveAlternateArtUrls(room.Sessions.Select(id => _sessions[id])));
+                    alternateArtUrls: ResolveAlternateArtUrls(room.Sessions.Select(id => _sessions[id])),
+                    utcNow: _utcNow, responseModes: responsePreferences.Select(item => item.Mode).ToArray());
                 InitializeRankedClock(room);
-                var startedMembers = room.Sessions.Select(id => _sessions[id]).ToArray();
                 await StartRecordedGameAsync(room, startedMembers, selectedDecks);
             }
             return room.Game is null ? BroadcastRoom(room) : BroadcastGame(room, forceCritical: true);
@@ -1378,13 +1402,14 @@ public sealed partial class L12RoomManager
                     : Error(sessionId, duplicate.Error ?? "操作被拒绝", "actionRejected", requestId);
             }
             var clockConcluded = await ApplyRankedClockConclusionLockedAsync(room, _utcNow());
+            var responseExpired = await ExpireResponseWindowLockedAsync(room, _utcNow());
             if (room.RankedClock is { SetupBroadcastPending: true } setupClock)
             {
                 setupClock.SetupBroadcastPending = false;
                 return BroadcastGame(room, forceCritical: true, requestSessionId: sessionId,
                     requestId: requestId);
             }
-            if (clockConcluded)
+            if (clockConcluded || responseExpired)
                 return BroadcastGame(room, forceCritical: true, requestSessionId: sessionId,
                     requestId: requestId);
             if (room.Game.State.Phase == L12Phase.GameOver)
@@ -1848,6 +1873,11 @@ public sealed partial class L12RoomManager
                 playerBadges,
                 rankedClock,
                 matchGovernance,
+                responsePreference = viewer.IsSpectator || viewer.PlayerIndex is null ? null : new
+                {
+                    confirmedMode = room.Game.ResponseModeFor(viewer.PlayerIndex.Value),
+                    syncPending = room.ResponsePreferenceSyncPending[viewer.PlayerIndex.Value],
+                },
                 rankedSettlement = room.Options.MatchModeId == "ranked" && _platform is not null
                     ? _platform.RankedSettlement(room.Game!.State.MatchId,
                         viewer.AccountId ?? string.Empty) : null,

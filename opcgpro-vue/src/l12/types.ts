@@ -196,12 +196,19 @@ export interface Prompt {
   data: Record<string, string>
   choiceLabels: Record<string, string>
   presentation?: PromptPresentation | null
+  autoClose?: PromptAutoCloseView | null
   activationId?: string | null
   sourceInstanceId?: string | null
   sourceCardId?: string | null
   step?: number | null
   createdRevision?: number | null
   controller?: number | null
+}
+
+export interface PromptAutoCloseView {
+  reason: 'no-valid-response'
+  deadlineUtc: string
+  serverNowUtc: string
 }
 
 export interface PromptPresentation {

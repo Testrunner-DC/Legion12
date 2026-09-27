@@ -1284,7 +1284,7 @@ public sealed partial class L12GameEngine
                 BeginResponseWindow(State.EffectStack[^1]);
             return;
         }
-        State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = activation.Controller };
+        State.ResponseWindow = ReopenResponseWindow(activation.Controller);
         OfferResponse();
     }
 

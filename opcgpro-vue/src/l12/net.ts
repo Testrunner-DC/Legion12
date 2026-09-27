@@ -10,6 +10,13 @@ export type L12RecoveryPhase = 'idle' | 'opening-websocket' | 'authenticating' |
   | 'snapshot-received' | 'snapshot-mismatch' | 'snapshot-acknowledged' | 'authentication-rejected'
   | 'superseded' | 'disconnected'
 export type L12ConnectionIssue = 'none' | 'http' | 'websocket' | 'authentication' | 'maintenance' | 'superseded'
+export type ResponseMode = 'default' | 'valid-only' | 'invalid-five-seconds'
+export interface ResponsePreferenceState { confirmedMode: ResponseMode; syncPending: boolean }
+export interface ResponsePreferenceResult extends ResponsePreferenceState {
+  matchApplied: boolean
+  accountSynced: boolean
+  requestId?: string
+}
 export interface BugClientConnectionDiagnostic {
   capturedAt: string
   currentRoute: string
@@ -265,6 +272,8 @@ export const l12State = reactive({
   rankedSettlement: null as RankedSettlement | null,
   rankedClock: null as RankedClockView | null,
   matchGovernanceResult: null as MatchGovernanceResult | null,
+  responsePreference: { confirmedMode: 'default', syncPending: false } as ResponsePreferenceState,
+  responsePreferenceResult: null as ResponsePreferenceResult | null,
   connectionGeneration: 0,
   recoveryPhase: 'idle' as L12RecoveryPhase,
   connectionIssue: 'none' as L12ConnectionIssue,
@@ -670,11 +679,22 @@ export function connect(): Promise<void> {
           l12State.gmEnabled = Boolean(message.gmEnabled)
           completePendingAction(message.requestId)
           l12State.rankedSettlement = message.rankedSettlement || null
+          if (message.responsePreference) l12State.responsePreference = message.responsePreference as ResponsePreferenceState
           if (l12State.status === 'connecting') l12State.recoveryPhase = 'snapshot-received'
           clearMatchmakingRecovery()
           l12State.matchFound = null
           if (message.recovered || l12State.notice.includes('正在同步')) l12State.notice = ''
           syncGameReentry()
+        }
+      }
+      else if (message.type === 'responsePreferenceState') {
+        l12State.responsePreference = message as ResponsePreferenceState
+      }
+      else if (message.type === 'responsePreferenceResult') {
+        l12State.responsePreferenceResult = message as ResponsePreferenceResult
+        l12State.responsePreference = {
+          confirmedMode: message.confirmedMode as ResponseMode,
+          syncPending: Boolean(message.syncPending),
         }
       }
       else if (message.type === 'recoveryComplete') {
@@ -875,6 +895,12 @@ export const spectateTournamentMatch = (tournamentId: string, matchId: string) =
 export const selectDeck = (deckIndex: number) => send({ type: 'selectDeck', deckIndex })
 export const selectCustomDeck = (deck: SavedL12Deck) => send({ type: 'selectCustomDeck', deck })
 export const setReady = (ready: boolean) => send({ type: 'ready', ready })
+export const getResponsePreference = () => send({ type: 'getResponsePreference' })
+export const setResponsePreference = (mode: ResponseMode) => {
+  const requestId = createActionRequestId()
+  send({ type: 'setResponsePreference', mode, requestId })
+  return requestId
+}
 export const returnToRoom = () => {
   void gameReentry.requestExit(l12State.game?.matchId)
   setReady(false)

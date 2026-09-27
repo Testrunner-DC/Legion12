@@ -128,7 +128,7 @@ public sealed partial class L12GameEngine
         if (!evaluation.Available)
         {
             AddEvent("ability-rejected", playerIndex, evaluation.UnavailableReason!);
-            State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = playerIndex };
+            State.ResponseWindow = ReopenResponseWindow(playerIndex);
             OfferResponse();
             return true;
         }
@@ -137,7 +137,7 @@ public sealed partial class L12GameEngine
             evaluation.Steps, null, null, targetStackItemId);
         if (!result.Accepted)
         {
-            State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = playerIndex };
+            State.ResponseWindow = ReopenResponseWindow(playerIndex);
             OfferResponse();
         }
         return true;

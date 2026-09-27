@@ -35,7 +35,7 @@ internal sealed record L12RankedRecoverySource(
     IReadOnlyList<L12PersistedActionRequest>? ProcessedRequests = null, string ModeId = "ranked");
 
 internal sealed record L12RankedReplayCommand(
-    long Sequence, int PlayerIndex, string CommandJson, string CommandType, bool Accepted, long Revision,
+    long Sequence, string ReceivedUtc, int PlayerIndex, string CommandJson, string CommandType, bool Accepted, long Revision,
     string StateHash, int? AuthorityWinner, string? AuthorityWinnerReason);
 
 public sealed record L12RankedRecoverySummary(
@@ -805,7 +805,7 @@ public sealed partial class MatchRecorder
     {
         var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT sequence,player_index,command_json,accepted,revision,state_hash
+            SELECT sequence,received_utc,player_index,command_json,accepted,revision,state_hash
             FROM match_events WHERE match_id=$match AND sequence>$after ORDER BY sequence;
             """;
         command.Parameters.AddWithValue("$match", matchId);
@@ -815,16 +815,16 @@ public sealed partial class MatchRecorder
         {
             while (await reader.ReadAsync())
             {
-                var commandJson = reader.GetString(2);
+                var commandJson = reader.GetString(3);
                 using var commandDocument = JsonDocument.Parse(commandJson);
                 var commandElement = commandDocument.RootElement;
                 if (!(commandElement.TryGetProperty("type", out var type)
                       || commandElement.TryGetProperty("Type", out type))
                     || type.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(type.GetString()))
                     throw new InvalidDataException("排位命令缺少类型");
-                events.Add(new L12RankedReplayCommand(reader.GetInt64(0), reader.GetInt32(1),
-                    commandJson, type.GetString()!, reader.GetInt32(3) == 1, reader.GetInt64(4),
-                    reader.GetString(5), null, null));
+                events.Add(new L12RankedReplayCommand(reader.GetInt64(0), reader.GetString(1), reader.GetInt32(2),
+                    commandJson, type.GetString()!, reader.GetInt32(4) == 1, reader.GetInt64(5),
+                    reader.GetString(6), null, null));
             }
         }
         for (var index = 0; index < events.Count; index++)

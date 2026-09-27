@@ -76,6 +76,30 @@ const animatedRolls = ref([1, 1])
 const diceSettled = ref(false)
 let diceTimer: ReturnType<typeof setInterval> | null = null
 let diceSettleTimer: ReturnType<typeof setTimeout> | null = null
+const autoCloseRemainingMs = ref(0)
+let autoCloseTimer: ReturnType<typeof setTimeout> | null = null
+let autoCloseBaselineAt = 0
+let autoCloseBaselineMs = 0
+const autoCloseSeconds = computed(() => Math.max(0, Math.ceil(autoCloseRemainingMs.value / 1000)))
+const autoCloseMessage = computed(() => prompt.value?.autoClose
+  ? `当前没有有效响应，将在 ${autoCloseSeconds.value} 秒后自动关闭` : '')
+function updateAutoCloseCountdown() {
+  autoCloseRemainingMs.value = Math.max(0,
+    autoCloseBaselineMs - (performance.now() - autoCloseBaselineAt))
+  if (autoCloseRemainingMs.value > 0)
+    autoCloseTimer = setTimeout(updateAutoCloseCountdown, 100)
+  else autoCloseTimer = null
+}
+watch(() => prompt.value?.autoClose
+  ? `${prompt.value.promptId}:${prompt.value.autoClose.deadlineUtc}:${prompt.value.autoClose.serverNowUtc}` : '', key => {
+  if (autoCloseTimer) clearTimeout(autoCloseTimer)
+  autoCloseTimer = null
+  if (!key || !prompt.value?.autoClose) { autoCloseRemainingMs.value = 0; return }
+  autoCloseBaselineMs = Math.max(0, Date.parse(prompt.value.autoClose.deadlineUtc)
+    - Date.parse(prompt.value.autoClose.serverNowUtc))
+  autoCloseBaselineAt = performance.now()
+  updateAutoCloseCountdown()
+}, { immediate: true })
 const dieFaces = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅']
 function dieFace(value: number) { return dieFaces[Math.max(1, Math.min(6, value)) - 1] }
 function startInitiativeDice() {
@@ -94,7 +118,7 @@ function startInitiativeDice() {
 watch(() => `${isInitiative.value}:${props.game.matchId}:${props.game.initiativeRolls.join(',')}`, () => {
   if (isInitiative.value) startInitiativeDice()
 }, { immediate: true })
-onBeforeUnmount(() => { if (diceTimer) clearInterval(diceTimer); if (diceSettleTimer) clearTimeout(diceSettleTimer) })
+onBeforeUnmount(() => { if (diceTimer) clearInterval(diceTimer); if (diceSettleTimer) clearTimeout(diceSettleTimer); if (autoCloseTimer) clearTimeout(autoCloseTimer) })
 
 watch(() => JSON.stringify([
   prompt.value?.promptId ?? '',
@@ -660,6 +684,7 @@ function kindLabel() {
       :class="{ preparation: isPreparation, initiative: isInitiative, 'disaster-choice': isDisasterChoice, 'information-confirm': isInfoConfirm, waiting: waitingPrompt || (isMulliganPhase && !isMulligan), minimized, 'inspector-active': inspectorVisible, 'mobile-safe-overlay': mobileLayout }">
       <section v-if="minimized" class="prompt-minimized-bar" role="status">
         <button :aria-label="`展开：${overlayTitle}`" :title="overlayTitle" @click="minimized = false">展开</button>
+        <span v-if="autoCloseMessage" class="prompt-auto-close" role="timer">{{ autoCloseMessage }}</span>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
       </section>
@@ -674,6 +699,7 @@ function kindLabel() {
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
         <main class="prompt-choice-body" data-ui-contract="mobile-choice-scroll-body">
         <p v-if="promptInstruction" class="prompt-instruction">{{ promptInstruction }}</p>
+        <p v-if="autoCloseMessage" class="prompt-auto-close" role="timer" aria-live="polite">{{ autoCloseMessage }}</p>
         <div v-if="isInitiative" class="initiative-race" :class="{ settled: diceSettled }">
           <article v-for="player in initiativePlayers" :key="player.playerIndex" :class="{ winner: diceSettled && game.diceWinner === player.playerIndex }">
             <img :src="masterProfileUrl(player.master.masterId, player.master.masterImageUrl)" :alt="player.master.masterName" />
@@ -892,6 +918,7 @@ function kindLabel() {
 .prompt-choices>button.decline-action,.prompt-action-footer>button.decline-action{box-sizing:border-box;min-width:112px!important;min-height:44px!important;padding:9px 16px!important;font-size:var(--l12-board-copy,13px)!important;line-height:1.35}
 .effect-decision-header h2{margin-bottom:8px}.effect-decision-text{margin:0;padding:11px 13px;border:1px solid #3b4542;background:#0b1011;color:#eef0eb;font-size:var(--l12-board-copy,13px);line-height:1.75;white-space:pre-wrap}.prompt-panel.effect-decision .prompt-choices.effect-option-list{max-width:520px}.prompt-panel.effect-decision .prompt-choices.effect-option-list>button{text-align:center;font-size:var(--l12-board-copy,13px)}
 .prompt-instruction{margin:10px 3px 4px;color:#b9c1bd;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:1.55}.choice-consequence{display:block;margin-top:4px;color:#9fb8b4;font-size:var(--l12-board-micro,9px);line-height:1.3}
+.prompt-auto-close{margin:8px 3px;padding:8px 10px;border-left:3px solid #d5b85e;background:#211c0f;color:#f1d77d;font-size:var(--l12-board-copy,13px);font-weight:900;line-height:1.45}.prompt-minimized-bar .prompt-auto-close{max-width:min(360px,calc(100vw - 32px));margin:0;box-shadow:0 12px 35px #000}
 .prompt-panel.single-card-row{width:min(920px,calc(100vw - 36px))}.l12-prompt-overlay.information-confirm .prompt-panel{width:min(850px,calc(100vw - 36px));overflow-y:auto}.l12-prompt-overlay.information-confirm .prompt-card-strip{justify-content:center}.mulligan-panel{width:min(920px,calc(100vw - 36px))!important}.l12-prompt-overlay.disaster-choice .prompt-panel{width:min(980px,calc(100vw - 36px))}
 .placement-workspace{display:grid;grid-template-columns:1fr 1.1fr 1fr;gap:8px;min-height:166px;margin:9px 3px;padding:8px;border:1px solid rgba(238,238,228,.28);background:#090d0e}.placement-workspace>section{min-width:0;padding:7px;border:1px solid #39413f;background:#101516}.placement-workspace>section>header{display:block;min-height:32px;padding:0 0 5px;border-bottom:1px solid #323a38}.placement-workspace>section>header strong{display:block;color:#fff;font-size:var(--l12-board-copy,13px)}.placement-workspace>section>header small{display:block;margin-top:2px;color:#7f8884;font-size:var(--l12-board-copy,13px);line-height:1.35}.placement-destination.top{border-color:#3b9da5}.placement-destination.bottom{border-color:#9c3f46}.placement-row{min-height:124px;align-items:center;gap:4px;padding:5px 1px}.placement-row>p{margin:auto;color:#626b68;font-size:var(--l12-board-copy,13px);line-height:1.5;text-align:center}.placement-buttons{display:grid;grid-template-columns:1fr 1fr;gap:5px}.placement-buttons button{box-sizing:border-box;height:44px;min-height:44px;max-height:44px;padding:5px 3px;border:1px solid #dcd8cc;background:#1a2020;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;line-height:1.25;text-align:center;white-space:normal;overflow:hidden;text-wrap:balance}.placement-buttons button:first-child{border-color:#5cbac1}.placement-buttons button:last-child{border-color:#ba555c}.placement-buttons button:disabled{opacity:.38}
 .all-placement-workspace{display:grid;grid-template-columns:62px minmax(0,1fr) 62px;align-items:center;gap:8px;margin:10px 3px;padding:10px;border:1px solid rgba(238,238,228,.28);background:#090d0e}.all-placement-row{min-width:0;padding:5px}.placement-edge{color:#fff;font-size:max(18px,var(--l12-board-copy,13px));font-weight:900;letter-spacing:.28em;text-align:center;writing-mode:vertical-rl}.top-edge{color:#70d7df}.bottom-edge{color:#d76069}
