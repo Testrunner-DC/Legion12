@@ -234,12 +234,26 @@ public sealed partial class L12GameEngine
                     : "场上已存在〈王者之剑〉。若继续发动，仍会消耗1符文，但不会叠放、生成或转移〈王者之剑〉。";
                 CreatePrompt(item.Controller, "optional", promptText,
                     ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string>
-                    {
-                        ["action"] = "s2-arthur-sword",
-                        ["yes"] = existingSwordOwner is null ? "消耗1符文并叠放〈王者之剑〉" : "继续支付并发动",
-                        ["no"] = existingSwordOwner is null ? "不发动" : "取消",
-                    });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "s2-arthur-sword",
+                            ["yes"] = "发动",
+                            ["no"] = "不发动",
+                        },
+                        new("亚瑟王",
+                            existingSwordOwner is null
+                                ? "〈亚瑟王〉的登场时效果正在结算。你可以消耗1符文，将〈王者之剑〉叠放至本次登场的〈亚瑟王〉下方。"
+                                : $"〈王者之剑〉已经叠放在〈{existingSwordOwner.Name}〉下方。场上同时只能存在1张〈王者之剑〉；选择继续仍会消耗1符文，但不会生成、移动或叠放新的剑，也不会产生后续结果。",
+                            "请选择“发动”并消耗1符文，或选择“不发动”且不消耗符文。",
+                            L12PromptWaitingAction.EffectDecision,
+                            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                            {
+                                ["yes"] = existingSwordOwner is null
+                                    ? "消耗1符文，并将〈王者之剑〉叠放至本次登场的〈亚瑟王〉下方。"
+                                    : "消耗1符文；〈王者之剑〉保持原位，本次效果不产生其他结果。",
+                                ["no"] = "不发动本次登场时效果，也不消耗符文。",
+                            })));
                 return true;
             case "limu-reveal":
                 RevealS2LiMuTop(item);
@@ -261,16 +275,40 @@ public sealed partial class L12GameEngine
                 return true;
             case "赫拉克勒斯·晋升":
                 CreatePrompt(item.Controller, "optional", "是否对双方主宰各造成1点非致命伤害？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-heracles-entry-damage" });
+                    "card-effect", item.StackItemId,
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "s2-heracles-entry-damage", ["yes"] = "发动", ["no"] = "不发动",
+                        },
+                        new("赫拉克勒斯·晋升",
+                            "〈赫拉克勒斯·晋升〉的登场时效果正在结算。你可以令双方主宰各受到1点非致命伤害；非致命伤害不会令主宰的生命降至1以下。",
+                            "请选择是否发动；不发动时双方主宰都不会受到本次伤害。",
+                            L12PromptWaitingAction.EffectDecision,
+                            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                            {
+                                ["yes"] = "双方主宰各受到1点非致命伤害，生命最低保留为1。",
+                                ["no"] = "不发动本次登场时效果，双方主宰的生命不变。",
+                            })));
                 return true;
             case "赫拉克勒斯":
                 CreatePrompt(item.Controller, "optional", "赫拉克勒斯：是否抽取2张牌，并弃置1张手牌？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string>
-                    {
-                        ["action"] = "s2-heracles-draw-discard-choice",
-                        ["yes"] = "抽取2张牌，并弃置1张手牌",
-                        ["no"] = "不发动",
-                    });
+                    "card-effect", item.StackItemId,
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "s2-heracles-draw-discard-choice",
+                            ["yes"] = "发动", ["no"] = "不发动",
+                        },
+                        new("赫拉克勒斯",
+                            "〈赫拉克勒斯〉的登场时效果正在结算。选择发动后先抽取2张牌，再必须弃置1张手牌以完成效果；这次弃牌属于效果结算，不是发动费用。",
+                            "请选择是否发动；不发动时不会抽牌，也不会弃牌。",
+                            L12PromptWaitingAction.EffectDecision,
+                            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                            {
+                                ["yes"] = "抽取2张牌，然后必须弃置1张手牌以完成效果。",
+                                ["no"] = "不发动本次登场时效果，不抽牌也不弃牌。",
+                            })));
                 return true;
             case "海伦":
                 if (!player.Morale.Any(morale => morale.IsGodPower))
@@ -2362,10 +2400,19 @@ public sealed partial class L12GameEngine
                     FinishStackItem(item);
                     return true;
                 }
+                var discardChoices = player.Hand.ToArray();
                 CreatePrompt(item.Controller, "hand-card", "赫拉克勒斯：抽取2张牌后弃置1张手牌",
-                    player.Hand.Select(candidate => candidate.InstanceId), 1, 1,
+                    discardChoices.Select(candidate => candidate.InstanceId), 1, 1,
                     "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-olympus-draw-discard" });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string> { ["action"] = "s2-olympus-draw-discard" },
+                        new("赫拉克勒斯",
+                            "〈赫拉克勒斯〉已经抽取2张牌。现在必须弃置1张手牌，以完成本次登场时效果；这次弃牌是效果结算，不是支付费用。",
+                            "请选择1张手牌弃置；本步骤不能拒绝或跳过。",
+                            L12PromptWaitingAction.CardSelection,
+                            discardChoices.ToDictionary(candidate => candidate.InstanceId,
+                                candidate => $"弃置〈{candidate.Name}〉，并完成〈赫拉克勒斯〉的登场时效果。",
+                                StringComparer.OrdinalIgnoreCase))));
                 return true;
             case "s2-olympus-draw-discard":
                 if (!MoveHandToGrave(player, chosen[0], causedByEffect: true))

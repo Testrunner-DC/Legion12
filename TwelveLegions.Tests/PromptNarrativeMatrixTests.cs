@@ -563,6 +563,155 @@ public sealed class PromptNarrativeMatrixTests
             card => handBefore.Contains(card.InstanceId, StringComparer.OrdinalIgnoreCase));
     }
 
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [Trait("L12Evidence", "prompt-narrative:arthur-rune-decision-limit-one")]
+    public void ArthurExplainsRuneConsumptionAndTheExistingSwordNoOp(int controller, bool existingSword)
+    {
+        var arthurCase = BeginArthurPrompt(202609307 + controller * 10 + (existingSword ? 1 : 0),
+            controller, existingSword, "use");
+        var game = arthurCase.Game;
+        var prompt = arthurCase.Prompt;
+        var playerName = game.State.Players[controller].Name;
+
+        AssertPresentation(prompt, "亚瑟王", existingSword ? "场上同时只能存在1张" : "消耗1符文",
+            "选择“发动”");
+        Assert.Equal("发动", prompt.ChoiceLabels["yes"]);
+        Assert.Equal("不发动", prompt.ChoiceLabels["no"]);
+        Assert.Contains("消耗1符文", prompt.Presentation!.ChoiceConsequences["yes"],
+            StringComparison.Ordinal);
+        Assert.Contains(existingSword ? "保持原位" : "叠放至本次登场",
+            prompt.Presentation.ChoiceConsequences["yes"], StringComparison.Ordinal);
+        Assert.Contains("不消耗符文", prompt.Presentation.ChoiceConsequences["no"],
+            StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在决定是否发动效果");
+
+        game.State.PendingPrompts.Remove(prompt);
+        ContinueS2Faction(game, arthurCase.Item, prompt, "yes");
+        Assert.Equal(0, game.State.Players[controller].SpecialZones.Runes);
+        if (existingSword)
+        {
+            Assert.Empty(arthurCase.Arthur.AttachedCards);
+            Assert.NotNull(arthurCase.ExistingOwner);
+            Assert.Single(arthurCase.ExistingOwner!.AttachedCards,
+                card => card.CardId == "S02-06S2");
+        }
+        else
+            Assert.Single(arthurCase.Arthur.AttachedCards, card => card.CardId == "S02-06S2");
+
+        var declineCase = BeginArthurPrompt(202609317 + controller * 10 + (existingSword ? 1 : 0),
+            controller, existingSword, "decline");
+        declineCase.Game.State.PendingPrompts.Remove(declineCase.Prompt);
+        ContinueS2Faction(declineCase.Game, declineCase.Item, declineCase.Prompt, "no");
+        Assert.Equal(1, declineCase.Game.State.Players[controller].SpecialZones.Runes);
+        Assert.Empty(declineCase.Arthur.AttachedCards);
+        if (existingSword)
+            Assert.Single(declineCase.ExistingOwner!.AttachedCards, card => card.CardId == "S02-06S2");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:promoted-heracles-nonlethal-decision")]
+    public void PromotedHeraclesExplainsThatDamageToBothMastersCannotReduceHealthBelowOne(int controller)
+    {
+        var damageCase = BeginPromotedHeraclesPrompt(202609327 + controller, controller, "use");
+        var game = damageCase.Game;
+        var prompt = damageCase.Prompt;
+        game.State.Players[0].Hp = 1;
+        game.State.Players[1].Hp = 4;
+
+        AssertPresentation(prompt, "赫拉克勒斯·晋升", "非致命伤害不会令主宰的生命降至1以下",
+            "选择是否发动");
+        Assert.Equal("发动", prompt.ChoiceLabels["yes"]);
+        Assert.Equal("不发动", prompt.ChoiceLabels["no"]);
+        Assert.Contains("生命最低保留为1", prompt.Presentation!.ChoiceConsequences["yes"],
+            StringComparison.Ordinal);
+        Assert.Contains("双方主宰的生命不变", prompt.Presentation.ChoiceConsequences["no"],
+            StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(game, controller,
+            $"{game.State.Players[controller].Name} 正在决定是否发动效果");
+
+        game.State.PendingPrompts.Remove(prompt);
+        ContinueS2Faction(game, damageCase.Item, prompt, "yes");
+        Assert.Equal(1, game.State.Players[0].Hp);
+        Assert.Equal(3, game.State.Players[1].Hp);
+
+        var declineCase = BeginPromotedHeraclesPrompt(202609329 + controller, controller, "decline");
+        declineCase.Game.State.Players[0].Hp = 3;
+        declineCase.Game.State.Players[1].Hp = 4;
+        declineCase.Game.State.PendingPrompts.Remove(declineCase.Prompt);
+        ContinueS2Faction(declineCase.Game, declineCase.Item, declineCase.Prompt, "no");
+        Assert.Equal(3, declineCase.Game.State.Players[0].Hp);
+        Assert.Equal(4, declineCase.Game.State.Players[1].Hp);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:heracles-draw-then-effect-discard")]
+    public void HeraclesKeepsThePostDrawDiscardAsMandatoryEffectResolutionInsteadOfCost(int controller)
+    {
+        var heraclesCase = BeginHeraclesPrompt(202609331 + controller, controller, "use");
+        var game = heraclesCase.Game;
+        var start = heraclesCase.Prompt;
+        var playerName = game.State.Players[controller].Name;
+
+        AssertPresentation(start, "赫拉克勒斯", "弃牌属于效果结算，不是发动费用", "选择是否发动");
+        Assert.Equal("发动", start.ChoiceLabels["yes"]);
+        Assert.Equal("不发动", start.ChoiceLabels["no"]);
+        Assert.Contains("抽取2张牌，然后必须弃置1张",
+            start.Presentation!.ChoiceConsequences["yes"], StringComparison.Ordinal);
+        Assert.Contains("不抽牌也不弃牌", start.Presentation.ChoiceConsequences["no"],
+            StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在决定是否发动效果",
+            heraclesCase.ExistingHand, heraclesCase.DrawnA, heraclesCase.DrawnB);
+
+        game.State.PendingPrompts.Remove(start);
+        ContinueS2Faction(game, heraclesCase.Item, start, "yes");
+        var discard = Assert.Single(game.State.PendingPrompts);
+        AssertPresentation(discard, "赫拉克勒斯", "已经抽取2张牌", "不能拒绝或跳过");
+        Assert.Equal(new[]
+        {
+            heraclesCase.ExistingHand.InstanceId,
+            heraclesCase.DrawnA.InstanceId,
+            heraclesCase.DrawnB.InstanceId,
+        }.Order(), discard.ValidChoices.Order());
+        Assert.DoesNotContain("skip", discard.ValidChoices);
+        Assert.DoesNotContain("no", discard.ValidChoices);
+        Assert.Contains("完成〈赫拉克勒斯〉的登场时效果",
+            discard.Presentation!.ChoiceConsequences[heraclesCase.DrawnB.InstanceId],
+            StringComparison.Ordinal);
+        var discardDetail = JsonSerializer.Serialize(new
+        {
+            discard.Presentation,
+            discard.ChoiceLabels,
+        }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.DoesNotContain("支付费用", discardDetail, StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在完成卡牌选择",
+            heraclesCase.ExistingHand, heraclesCase.DrawnA, heraclesCase.DrawnB);
+
+        game.State.PendingPrompts.Remove(discard);
+        ContinueS2Faction(game, heraclesCase.Item, discard, heraclesCase.DrawnB.InstanceId);
+        Assert.Contains(heraclesCase.DrawnB, game.State.Players[controller].Graveyard);
+        Assert.Contains(heraclesCase.ExistingHand, game.State.Players[controller].Hand);
+        Assert.Contains(heraclesCase.DrawnA, game.State.Players[controller].Hand);
+
+        var declineCase = BeginHeraclesPrompt(202609335 + controller, controller, "decline");
+        var handBefore = declineCase.Game.State.Players[controller].Hand.Select(card => card.InstanceId).ToArray();
+        var libraryBefore = declineCase.Game.State.Players[controller].Library.Select(card => card.InstanceId).ToArray();
+        declineCase.Game.State.PendingPrompts.Remove(declineCase.Prompt);
+        ContinueS2Faction(declineCase.Game, declineCase.Item, declineCase.Prompt, "no");
+        Assert.Empty(declineCase.Game.State.PendingPrompts);
+        Assert.Equal(handBefore,
+            declineCase.Game.State.Players[controller].Hand.Select(card => card.InstanceId).ToArray());
+        Assert.Equal(libraryBefore,
+            declineCase.Game.State.Players[controller].Library.Select(card => card.InstanceId).ToArray());
+    }
+
     private static void AssertPresentation(L12Prompt prompt, string title, string situation, string instruction)
     {
         var presentation = Assert.IsType<L12PromptPresentation>(prompt.Presentation);
@@ -891,6 +1040,74 @@ public sealed class PromptNarrativeMatrixTests
         Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveS2UniversalEnter", item, ring)));
         return (game, Assert.Single(game.State.PendingPrompts), item,
             firstHand, secondHand, firstLibrary, secondLibrary);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance Arthur, L12CardInstance? ExistingOwner) BeginArthurPrompt(
+        int seed, int controller, bool existingSword, string suffix)
+    {
+        var game = CreateCleanGame(seed);
+        var player = game.State.Players[controller];
+        player.SpecialZones.Runes = 1;
+        L12CardInstance? existingOwner = null;
+        if (existingSword)
+        {
+            existingOwner = Card("S02-0601", $"narrative-existing-arthur-{suffix}-{controller}", controller);
+            existingOwner.AttachedCards.Add(Card("S02-06S2",
+                $"narrative-existing-sword-{suffix}-{controller}", controller));
+            player.Field[0][0] = existingOwner;
+        }
+        var arthur = Card("S02-0601", $"narrative-arthur-{suffix}-{controller}", controller);
+        player.Field[0][1] = arthur;
+        var item = LegacyStackItem($"narrative-arthur-stack-{suffix}-{controller}", controller, arthur,
+            "enter", "亚瑟王");
+        game.State.EffectStack.Add(item);
+
+        Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveS2FactionEnter", item, arthur)));
+        return (game, Assert.Single(game.State.PendingPrompts), item, arthur, existingOwner);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item)
+        BeginPromotedHeraclesPrompt(int seed, int controller, string suffix)
+    {
+        var game = CreateCleanGame(seed);
+        var heracles = Card("S02-0501", $"narrative-promoted-heracles-{suffix}-{controller}", controller);
+        game.State.Players[controller].Field[0][0] = heracles;
+        var item = LegacyStackItem($"narrative-promoted-heracles-stack-{suffix}-{controller}",
+            controller, heracles, "enter", "赫拉克勒斯·晋升");
+        game.State.EffectStack.Add(item);
+
+        Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveS2FactionEnter", item, heracles)));
+        return (game, Assert.Single(game.State.PendingPrompts), item);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance ExistingHand, L12CardInstance DrawnA, L12CardInstance DrawnB)
+        BeginHeraclesPrompt(int seed, int controller, string suffix)
+    {
+        var game = CreateCleanGame(seed);
+        var player = game.State.Players[controller];
+        var existingHand = Card("S01-0002", $"narrative-heracles-hand-{suffix}-{controller}", controller);
+        var drawnA = Card("S01-0003", $"narrative-heracles-drawn-a-{suffix}-{controller}", controller);
+        var drawnB = Card("S01-0004", $"narrative-heracles-drawn-b-{suffix}-{controller}", controller);
+        player.Hand.Add(existingHand);
+        player.Library.AddRange([drawnA, drawnB]);
+        var heracles = Card("S02-0502", $"narrative-heracles-{suffix}-{controller}", controller);
+        player.Field[0][0] = heracles;
+        var item = LegacyStackItem($"narrative-heracles-stack-{suffix}-{controller}", controller, heracles,
+            "enter", "赫拉克勒斯");
+        game.State.EffectStack.Add(item);
+
+        Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveS2FactionEnter", item, heracles)));
+        return (game, Assert.Single(game.State.PendingPrompts), item, existingHand, drawnA, drawnB);
+    }
+
+    private static void ContinueS2Faction(L12GameEngine game, L12StackItem item, L12Prompt prompt,
+        string choice)
+    {
+        Assert.True(Assert.IsType<bool>(Invoke(game, "TryContinueS2Faction", item, prompt,
+            new List<string> { choice }, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+                Choice: choice, CardInstanceIds: [choice]))));
     }
 
     private static void AddMorale(L12GameEngine game, int playerIndex, int count, string prefix)
