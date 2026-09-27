@@ -87,20 +87,29 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
             AssertRecipientPrivacy(secondInitial, 1, secondPrivateIds, firstPrivateIds);
             AssertSpectatorPrivacy(spectatorInitial, firstPrivateIds, secondPrivateIds);
 
-            const string firstMulliganId = "lc03a-mulligan-player-0";
-            await first.SendAsync(new
+            const string firstMulliganId = "lc04a-back-to-back-mulligan-player-0";
+            var firstMulligan = new
             {
                 type = "gameAction",
                 requestId = firstMulliganId,
                 command = new { type = "mulligan", cardInstanceIds = Array.Empty<string>() },
-            });
+            };
+            await first.SendBackToBackAsync(firstMulligan, firstMulligan);
             var firstAfterMulligan = await first.ReceiveGameAsync(state => Revision(state) > initialRevision);
             var afterFirstRevision = Revision(firstAfterMulligan);
             Assert.Equal(firstMulliganId, first.CurrentPayload!["requestId"]?.GetValue<string>());
+            var firstConcurrentReplay = await first.ReceiveGameAsync(state => Revision(state) == afterFirstRevision);
+            Assert.Equal(firstMulliganId, first.CurrentPayload!["requestId"]?.GetValue<string>());
+            Assert.True(JsonNode.DeepEquals(firstAfterMulligan, firstConcurrentReplay),
+                "当前连接代连续双发的同载荷请求没有收敛到同一权威投影");
             var secondAfterFirst = await second.ReceiveGameAsync(state => Revision(state) == afterFirstRevision);
             var spectatorAfterFirst = await spectator.ReceiveGameAsync(state => Revision(state) == afterFirstRevision);
             Assert.Equal(StateHash(firstAfterMulligan), StateHash(secondAfterFirst));
             Assert.Equal(StateHash(firstAfterMulligan), StateHash(spectatorAfterFirst));
+            Assert.Equal(preparationCommandCount + 1,
+                (await recorder.GetMatchAsync(matchId))!.Commands.Count);
+            Assert.Single((await recorder.LoadJournalEngineAsync(matchId))!.ProcessedRequests,
+                request => request.RequestId == firstMulliganId);
 
             var stateBeforeDuplicate = firstAfterMulligan.DeepClone();
             await first.SendAsync(new
@@ -127,9 +136,22 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
             Assert.Equal(roomCode, firstReplacement.Recovery!["roomCode"]?.GetValue<string>());
             Assert.Equal(afterFirstRevision, firstReplacement.Recovery["recoveryRevision"]?.GetValue<long>());
             Assert.NotNull(firstReplacement.CurrentState);
+            AssertRecoveryReadyBeforeWritable(firstReplacement, afterFirstRevision);
             Assert.True(JsonNode.DeepEquals(duplicateFirst, firstReplacement.CurrentState),
                 "玩家替代连接没有从完整权威快照收敛");
             Assert.True(firstReplacement.FullGameStateCount > 0);
+
+            await firstReplacement.SendAsync(firstMulligan);
+            var retryAfterReconnect = await firstReplacement.ReceiveGameAsync(
+                state => Revision(state) == afterFirstRevision);
+            Assert.Equal(firstMulliganId,
+                firstReplacement.CurrentPayload!["requestId"]?.GetValue<string>());
+            Assert.True(JsonNode.DeepEquals(duplicateFirst, retryAfterReconnect),
+                "替代连接重发同 requestId 和同载荷后没有保持原权威投影");
+            Assert.Equal(preparationCommandCount + 1,
+                (await recorder.GetMatchAsync(matchId))!.Commands.Count);
+            Assert.Single((await recorder.LoadJournalEngineAsync(matchId))!.ProcessedRequests,
+                request => request.RequestId == firstMulliganId);
 
             await TrySendFromFencedSocketAsync(first, new
             {
@@ -145,24 +167,43 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
             Assert.Equal(preparationCommandCount + 1,
                 (await recorder.GetMatchAsync(matchId))!.Commands.Count);
 
-            const string secondMulliganId = "lc03a-mulligan-player-1";
-            await second.SendAsync(new
+            await using var secondReplacement = await WireClient.ConnectAsync(endpoint, secondToken);
+            var supersededSecond = await second.ReceiveTypeAsync("sessionSuperseded");
+            Assert.Equal("newer-connection-generation", supersededSecond["reason"]?.GetValue<string>());
+            Assert.True(secondReplacement.Session!["recovered"]!.GetValue<bool>());
+            Assert.Equal(second.ConnectionGeneration + 1, secondReplacement.ConnectionGeneration);
+            AssertRecoveryReadyBeforeWritable(secondReplacement, afterFirstRevision);
+
+            const string secondMulliganId = "lc04a-first-write-after-recovery-player-1";
+            var secondMulligan = new
             {
                 type = "gameAction",
                 requestId = secondMulliganId,
                 command = new { type = "mulligan", cardInstanceIds = Array.Empty<string>() },
-            });
-            var secondMain = await second.ReceiveGameAsync(state => Revision(state) > afterFirstRevision);
+            };
+            await secondReplacement.SendBackToBackAsync(secondMulligan, secondMulligan);
+            var secondMain = await secondReplacement.ReceiveGameAsync(state => Revision(state) > afterFirstRevision);
             var mainRevision = Revision(secondMain);
             Assert.Equal("Main", Phase(secondMain));
-            Assert.Equal(secondMulliganId, second.CurrentPayload!["requestId"]?.GetValue<string>());
+            Assert.Equal(secondMulliganId,
+                secondReplacement.CurrentPayload!["requestId"]?.GetValue<string>());
+            var secondConcurrentReplay = await secondReplacement.ReceiveGameAsync(
+                state => Revision(state) == mainRevision);
+            Assert.Equal(secondMulliganId,
+                secondReplacement.CurrentPayload!["requestId"]?.GetValue<string>());
+            Assert.True(JsonNode.DeepEquals(secondMain, secondConcurrentReplay),
+                "恢复完成后的首个合法新请求没有按 requestId 至多执行一次");
             var firstMain = await firstReplacement.ReceiveGameAsync(state => Revision(state) == mainRevision);
             var spectatorMain = await spectator.ReceiveGameAsync(state => Revision(state) == mainRevision);
             Assert.Equal(StateHash(firstMain), StateHash(secondMain));
             Assert.Equal(StateHash(firstMain), StateHash(spectatorMain));
+            Assert.Equal(preparationCommandCount + 2,
+                (await recorder.GetMatchAsync(matchId))!.Commands.Count);
+            Assert.Single((await recorder.LoadJournalEngineAsync(matchId))!.ProcessedRequests,
+                request => request.RequestId == secondMulliganId);
 
             var activePlayer = firstMain["activePlayer"]!.GetValue<int>();
-            var actor = activePlayer == 0 ? firstReplacement : second;
+            var actor = activePlayer == 0 ? firstReplacement : secondReplacement;
             const string endTurnId = "lc03a-end-turn";
             await actor.SendAsync(new
             {
@@ -178,11 +219,11 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
                 : await firstReplacement.ReceiveGameAsync(state => Revision(state) == finalRevision);
             var secondFinal = activePlayer == 1
                 ? actorFinal
-                : await second.ReceiveGameAsync(state => Revision(state) == finalRevision);
+                : await secondReplacement.ReceiveGameAsync(state => Revision(state) == finalRevision);
             var spectatorFinal = await spectator.ReceiveGameAsync(state => Revision(state) == finalRevision);
             Assert.Equal(StateHash(firstFinal), StateHash(secondFinal));
             Assert.Equal(StateHash(firstFinal), StateHash(spectatorFinal));
-            Assert.True(firstReplacement.DeltaGameStateCount + second.DeltaGameStateCount
+            Assert.True(firstReplacement.DeltaGameStateCount + secondReplacement.DeltaGameStateCount
                         + spectator.DeltaGameStateCount > 0,
                 "真实 WebSocket 链没有产生可校验的增量状态");
 
@@ -206,7 +247,8 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
             await firstReplacement.SendAsync(new { type = "syncState" });
             var firstSynchronized = await firstReplacement.ReceiveGameAsync(
                 state => Revision(state) == finalRevision);
-            var secondSynchronized = await second.ReceiveGameAsync(state => Revision(state) == finalRevision);
+            var secondSynchronized = await secondReplacement.ReceiveGameAsync(
+                state => Revision(state) == finalRevision);
             var spectatorSynchronized = await spectatorReplacement.ReceiveGameAsync(
                 state => Revision(state) == finalRevision);
             Assert.True(JsonNode.DeepEquals(firstFinal, firstSynchronized));
@@ -219,6 +261,21 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
         {
             await server.StopAsync();
         }
+    }
+
+    private static void AssertRecoveryReadyBeforeWritable(WireClient client, long expectedRevision)
+    {
+        var sessionIndex = client.RecoveryMessageTypes.IndexOf("session");
+        var fullStateIndex = client.RecoveryMessageTypes.IndexOf("gameState");
+        var recoveryIndex = client.RecoveryMessageTypes.IndexOf("recoveryComplete");
+        Assert.True(sessionIndex >= 0, "恢复序列缺少 session");
+        Assert.True(fullStateIndex > sessionIndex, "完整权威状态没有排在 session 之后");
+        Assert.True(recoveryIndex > fullStateIndex, "recoveryComplete 早于完整权威状态");
+        Assert.Equal(client.RecoveryMessageTypes.Count - 1, recoveryIndex);
+        Assert.True(client.RecoveryReadyForWrites, "测试客户端在恢复完成前进入了可写状态");
+        Assert.Equal(expectedRevision, Revision(Assert.IsType<JsonObject>(client.CurrentState)));
+        Assert.Equal(expectedRevision,
+            client.Recovery!["recoveryRevision"]?.GetValue<long>());
     }
 
     private static async Task<(JsonObject First, JsonObject Second, JsonObject Spectator)>
@@ -346,12 +403,14 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
         internal int FullGameStateCount { get; private set; }
         internal int DeltaGameStateCount { get; private set; }
         internal long ConnectionGeneration => Session!["connectionGeneration"]!.GetValue<long>();
+        internal List<string> RecoveryMessageTypes { get; } = [];
+        internal bool RecoveryReadyForWrites { get; private set; }
 
         internal static async Task<WireClient> ConnectAsync(Uri endpoint, string token)
         {
             var client = new WireClient();
             await client._socket.ConnectAsync(endpoint, CancellationToken.None);
-            await client.SendAsync(new
+            await client.SendBeforeRecoveryAsync(new
             {
                 type = "hello",
                 authToken = token,
@@ -362,16 +421,32 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
             {
                 var message = await client.ReceiveMessageAsync(timeout.Token);
                 var type = message.Node["type"]?.GetValue<string>();
+                if (type is not null) client.RecoveryMessageTypes.Add(type);
                 client.ApplyGameMessage(message.Bytes, message.Node);
                 if (type == "session") client.Session = message.Node;
                 if (type == "recoveryComplete") client.Recovery = message.Node;
             }
             Assert.NotNull(client.Session);
             Assert.NotNull(client.Recovery);
+            client.RecoveryReadyForWrites = true;
             return client;
         }
 
         internal async Task SendAsync(object payload)
+        {
+            Assert.True(RecoveryReadyForWrites, "recoveryComplete 前禁止发送业务请求");
+            await SendBeforeRecoveryAsync(payload);
+        }
+
+        internal async Task SendBackToBackAsync(params object[] payloads)
+        {
+            Assert.True(RecoveryReadyForWrites, "recoveryComplete 前禁止发送业务请求");
+            Assert.True(payloads.Length >= 2, "连续双发至少需要两条请求");
+            foreach (var payload in payloads)
+                await SendBeforeRecoveryAsync(payload);
+        }
+
+        private async Task SendBeforeRecoveryAsync(object payload)
         {
             var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, WireJson);
             await _socket.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
