@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
 using Xunit.Sdk;
 
@@ -17,6 +18,29 @@ public sealed record LongChainScenario(
     string Action,
     string ExpectedEvidence,
     string Mechanism = "attack");
+
+internal sealed record LongChainRunOptions(
+    int TargetCommandCount,
+    int Seed,
+    string RunLabel,
+    int[] JournalRecoveryTargets);
+
+internal sealed record LongChainJournalRecoverySample(
+    string Label,
+    long CommandSequence,
+    double ElapsedMilliseconds,
+    string StateHash,
+    string Player0ProjectionHash,
+    string Player1ProjectionHash,
+    string SpectatorProjectionHash,
+    string RefereeProjectionHash);
+
+internal sealed record LongChainStorageMetrics(
+    long JournalBytes,
+    long CheckpointBytes,
+    long DatabaseBytes,
+    int EventRows,
+    int CheckpointRows);
 
 internal sealed record LongChainEvidence(
     string ScenarioId,
@@ -37,7 +61,17 @@ internal sealed record LongChainEvidence(
     int StateBytes,
     int MaximumProjectionBytes,
     double SnapshotP95Milliseconds,
-    double RestoreP95Milliseconds);
+    double RestoreP95Milliseconds,
+    string RandomStateHash,
+    long Revision,
+    string FlowContractHash,
+    string EventContractHash,
+    string CardFactHash,
+    string CommandSequenceHash,
+    LongChainStorageMetrics Storage,
+    LongChainJournalRecoverySample[] JournalRecoveries,
+    double JournalRecoveryP95Milliseconds,
+    double TotalMilliseconds);
 
 /// <summary>
 /// LC-01 的最小确定性编排器。它只调用现有命令入口、Journal V2、检查点恢复与各接收者
@@ -57,6 +91,7 @@ internal static class LongChainAdversarialHarness
     // 65 guarantees two non-initial checkpoints even when command 32 itself is a rejection.
     internal const int RepresentativeMinimumCommands = 65;
     internal const int MinimumLatestJournalCheckpointSequence = 64;
+    internal const int MaximumRecoveredProcessedRequests = 256;
 
     internal const string AttachmentEvidence = "attachment-committed";
     internal const string TimedSourceEvidence = "timed-modifier-survives-source-exit";
@@ -140,8 +175,44 @@ internal static class LongChainAdversarialHarness
     private static readonly JsonSerializerOptions WireJson = new(JsonSerializerDefaults.Web);
     private static readonly L12Catalog Catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
 
-    internal static async Task<LongChainEvidence> RunAsync(LongChainScenario scenario)
+    internal static Task<LongChainEvidence> RunAsync(LongChainScenario scenario)
+        => RunCoreAsync(scenario, null);
+
+    internal static Task<LongChainEvidence> RunAsync(LongChainScenario scenario,
+        LongChainRunOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
+        if (!IsRepresentative(scenario))
+            throw new ArgumentException("LC-06 深链只能扩展现有代表场景", nameof(scenario));
+        if (options.TargetCommandCount < RepresentativeMinimumCommands)
+            throw new ArgumentOutOfRangeException(nameof(options),
+                $"LC-06 目标命令数不得少于 {RepresentativeMinimumCommands}");
+        if (string.IsNullOrWhiteSpace(options.RunLabel))
+            throw new ArgumentException("LC-06 深链必须提供稳定运行标签", nameof(options));
+        if (options.JournalRecoveryTargets.Any(target => target <= 0
+                || target > options.TargetCommandCount))
+            throw new ArgumentOutOfRangeException(nameof(options), "Journal 恢复切点超出命令链范围");
+        return RunCoreAsync(scenario, options);
+    }
+
+    private static async Task<LongChainEvidence> RunCoreAsync(LongChainScenario sourceScenario,
+        LongChainRunOptions? options)
+    {
+        var totalWatch = Stopwatch.StartNew();
+        var representative = IsRepresentative(sourceScenario);
+        var targetCommandCount = options?.TargetCommandCount ?? RepresentativeMinimumCommands;
+        var scenario = options is null
+            ? sourceScenario
+            : sourceScenario with
+            {
+                Id = $"{sourceScenario.Id}-{options.RunLabel}",
+                Seed = options.Seed,
+            };
+        var journalRecoveryTargets = (options?.JournalRecoveryTargets ?? [])
+            .Distinct()
+            .Order()
+            .ToArray();
+        var journalRecoverySamples = new List<LongChainJournalRecoverySample>();
         var primary = CreateGame(scenario);
         var initialState = primary.SerializeFullState();
         var initialRandom = RequireRandom(primary, scenario, "initial");
@@ -224,6 +295,41 @@ internal static class LongChainAdversarialHarness
                 AssertEquivalent(scenario, commands, cutpoints, label, primary, checkpoint, journalLive,
                     private0, private1);
                 await Task.CompletedTask;
+            }
+
+            async Task<L12JournalRecoveryState> RecoverJournalAsync(string label)
+            {
+                var watch = Stopwatch.StartNew();
+                var restored = await recorder.LoadJournalEngineAsync(primary.State.MatchId)
+                    ?? throw new XunitException($"{scenario.Id} Journal V2 未返回恢复状态");
+                watch.Stop();
+                cutpoints.Add($"{label}-sequence-{restored.CommandSequence}");
+                AssertEquivalent(scenario, commands, cutpoints, label, primary, checkpoint,
+                    restored.Engine, private0, private1);
+                if (restored.CommandSequence != sequence)
+                    Fail(scenario, commands, cutpoints, label,
+                        $"日志序号不一致：expected={sequence}, actual={restored.CommandSequence}");
+                var expectedProcessedRequests = (int)Math.Min(sequence,
+                    MaximumRecoveredProcessedRequests);
+                if (restored.ProcessedRequests.Count != expectedProcessedRequests)
+                    Fail(scenario, commands, cutpoints, label,
+                        $"请求去重证据数量不一致：expected={expectedProcessedRequests}, "
+                        + $"actual={restored.ProcessedRequests.Count}");
+                var latestRequestId = $"{scenario.Id}-{sequence:D3}";
+                if (!restored.ProcessedRequests.Any(request => request.RequestId == latestRequestId))
+                    Fail(scenario, commands, cutpoints, label,
+                        $"请求去重有界窗口缺少最新请求：{latestRequestId}");
+                var projections = ProjectionJson(restored.Engine);
+                journalRecoverySamples.Add(new LongChainJournalRecoverySample(
+                    label,
+                    restored.CommandSequence,
+                    watch.Elapsed.TotalMilliseconds,
+                    restored.Engine.ComputeStateHash(),
+                    Sha256(projections.Player0),
+                    Sha256(projections.Player1),
+                    Sha256(projections.Spectator),
+                    Sha256(projections.Referee)));
+                return restored;
             }
 
             await ApplyGmAsync("prelude-life-p0", new L12GmCommand("setLife", 0, Value: 29));
@@ -329,10 +435,11 @@ internal static class LongChainAdversarialHarness
             postconditions.Add("试炼已完成且权威场上存在已翻开的天灾");
             await ReconnectCheckpointAsync("after-disaster-and-trial");
 
-            if (IsRepresentative(scenario))
+            if (representative)
             {
                 var depthIndex = 0;
-                while (sequence < RepresentativeMinimumCommands)
+                var recoveryIndex = 0;
+                while (sequence < targetCommandCount)
                 {
                     var player = depthIndex % 2;
                     var life = 20 + depthIndex % 9;
@@ -340,6 +447,13 @@ internal static class LongChainAdversarialHarness
                         new L12GmCommand("setLife", player, Value: life));
                     if (sequence % 8 == 0)
                         await ReconnectCheckpointAsync($"representative-checkpoint-{sequence:D3}");
+                    while (recoveryIndex < journalRecoveryTargets.Length
+                           && sequence >= journalRecoveryTargets[recoveryIndex]
+                           && journalRecoveryTargets[recoveryIndex] < targetCommandCount)
+                    {
+                        var requested = journalRecoveryTargets[recoveryIndex++];
+                        await RecoverJournalAsync($"soak-journal-{requested:D3}");
+                    }
                     depthIndex++;
                 }
                 postconditions.Add($"代表深链达到 {sequence} 条 Journal 命令并持续通过 A/B/C 比较");
@@ -347,25 +461,22 @@ internal static class LongChainAdversarialHarness
 
             var latestCheckpoint = await recorder.LoadLatestCheckpointAsync(primary.State.MatchId)
                 ?? throw new XunitException($"{scenario.Id} Journal V2 缺少初始检查点");
-            if (IsRepresentative(scenario)
+            if (representative
                 && latestCheckpoint.Sequence < MinimumLatestJournalCheckpointSequence)
                 Fail(scenario, commands, cutpoints, "journal-checkpoint-depth",
                     $"代表深链未形成至少两个非初始 Journal 检查点：latest={latestCheckpoint.Sequence}");
+            if (options is not null && sequence - latestCheckpoint.Sequence >= MatchRecorder.CheckpointInterval)
+                Fail(scenario, commands, cutpoints, "journal-checkpoint-cadence",
+                    $"末次检查点距离终点过远：target={sequence}, latest={latestCheckpoint.Sequence}, "
+                    + $"interval={MatchRecorder.CheckpointInterval}");
 
-            var restoredJournal = await recorder.LoadJournalEngineAsync(primary.State.MatchId)
-                ?? throw new XunitException($"{scenario.Id} Journal V2 未返回恢复状态");
-            cutpoints.Add($"journal-sequence-{restoredJournal.CommandSequence}");
-            AssertEquivalent(scenario, commands, cutpoints, "journal-recovery", primary, checkpoint,
-                restoredJournal.Engine, private0, private1);
-            if (restoredJournal.CommandSequence != sequence)
-                Fail(scenario, commands, cutpoints, "journal-recovery",
-                    $"日志序号不一致：expected={sequence}, actual={restoredJournal.CommandSequence}");
-            if (restoredJournal.ProcessedRequests.Count != sequence)
-                Fail(scenario, commands, cutpoints, "journal-recovery",
-                    $"请求去重证据数量不一致：expected={sequence}, actual={restoredJournal.ProcessedRequests.Count}");
+            var restoredJournal = await RecoverJournalAsync(options is null
+                ? "journal" : $"soak-journal-{targetCommandCount:D3}");
 
             var metrics = Measure(primary);
             var projections = ProjectionJson(primary);
+            var storage = await ReadStorageMetricsAsync(database, primary.State.MatchId);
+            totalWatch.Stop();
             return new LongChainEvidence(
                 scenario.Id,
                 scenario.CardId,
@@ -386,7 +497,17 @@ internal static class LongChainAdversarialHarness
                 new[] { projections.Player0, projections.Player1, projections.Spectator, projections.Referee }
                     .Max(value => Encoding.UTF8.GetByteCount(value)),
                 metrics.SnapshotP95Milliseconds,
-                metrics.RestoreP95Milliseconds);
+                metrics.RestoreP95Milliseconds,
+                Sha256(JsonSerializer.Serialize(primary.RandomState, WireJson)),
+                primary.State.Revision,
+                Sha256(FlowContractJson(primary)),
+                Sha256(EventContractJson(primary)),
+                Sha256(JsonSerializer.Serialize(primary.CardFactSignals, WireJson)),
+                Sha256(JsonSerializer.Serialize(commands, WireJson)),
+                storage,
+                [.. journalRecoverySamples],
+                P95(journalRecoverySamples.Select(sample => sample.ElapsedMilliseconds).ToList()),
+                totalWatch.Elapsed.TotalMilliseconds);
         }
         finally
         {
@@ -1005,6 +1126,47 @@ internal static class LongChainAdversarialHarness
         samples.Sort();
         return samples[(int)Math.Ceiling(samples.Count * 0.95) - 1];
     }
+
+    private static async Task<LongChainStorageMetrics> ReadStorageMetricsAsync(string database,
+        string matchId)
+    {
+        await using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = database,
+            Pooling = false,
+        }.ToString());
+        await connection.OpenAsync();
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+              COALESCE((SELECT SUM(length(command_json)+length(state_hash)+length(state_json)
+                  +length(COALESCE(error,''))+length(COALESCE(request_id,'')))
+                  FROM match_events WHERE match_id=$match),0)
+              +COALESCE((SELECT SUM(length(request_id)+length(state_hash)+length(COALESCE(error,'')))
+                  FROM match_action_requests WHERE match_id=$match),0)
+              +COALESCE((SELECT SUM(length(event_json))
+                  FROM match_action_events WHERE match_id=$match),0),
+              COALESCE((SELECT SUM(length(state_blob)+length(random_state_blob)+length(state_hash))
+                  FROM match_state_checkpoints WHERE match_id=$match),0),
+              (SELECT COUNT(*) FROM match_events WHERE match_id=$match),
+              (SELECT COUNT(*) FROM match_state_checkpoints WHERE match_id=$match);
+            """;
+        command.Parameters.AddWithValue("$match", matchId);
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+            throw new XunitException($"{matchId} 无法读取 LC-06 Journal 存储指标");
+        return new LongChainStorageMetrics(
+            reader.GetInt64(0),
+            reader.GetInt64(1),
+            StorageFootprintBytes(database),
+            reader.GetInt32(2),
+            reader.GetInt32(3));
+    }
+
+    private static long StorageFootprintBytes(string database)
+        => new[] { database, database + "-wal", database + "-shm" }
+            .Where(File.Exists)
+            .Sum(path => new FileInfo(path).Length);
 
     private static L12GameEngine Restore(string state, L12RandomState random, long cardFactSignalSequence,
         L12GameEngine source)
