@@ -214,7 +214,24 @@ public sealed partial class L12GameEngine
             }
             case "神箭奥德尔":
                 CreatePrompt(item.Controller, "optional", "神箭奥德尔：是否令我方主宰受到1点伤害并抽1张牌？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "oddr-draw" }); return true;
+                    "card-effect", item.StackItemId,
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "oddr-draw",
+                            ["yes"] = "发动",
+                            ["no"] = "不发动",
+                        },
+                        new("神箭奥德尔",
+                            "〈神箭奥德尔〉的登场时效果可以选择是否发动。选择发动后，我方主宰先受到1点伤害；只有该伤害处理后对局仍继续，才会抽取1张牌。若抽牌时牌库为空，沿用牌库耗尽的既有胜负规则。",
+                            "请选择“发动”并承担1点主宰伤害，或选择“不发动”结束本效果。",
+                            L12PromptWaitingAction.EffectDecision,
+                            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                            {
+                                ["yes"] = "发动：我方主宰先受到1点伤害；若对局仍继续，再抽取1张牌。",
+                                ["no"] = "不发动：我方主宰不受此伤害，不抽牌，并结束本效果。",
+                            })));
+                return true;
             case "无骨者伊瓦尔":
                 if (PublicTriggerDeclared(item, "mode") == "mode:use")
                     BeginFactionTopSearch(item, 3, "asgard", "S01-0315", "ivar-search");
@@ -222,7 +239,24 @@ public sealed partial class L12GameEngine
                 return true;
             case "夺命诗人埃吉尔":
                 CreatePrompt(item.Controller, "optional", "夺命诗人埃吉尔：是否令主宰受到1点伤害并弃置牌库顶部2张牌？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "egil-pay" }); return true;
+                    "card-effect", item.StackItemId,
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "egil-pay",
+                            ["yes"] = "发动",
+                            ["no"] = "不发动",
+                        },
+                        new("夺命诗人埃吉尔",
+                            "〈夺命诗人埃吉尔〉的登场时效果可以选择是否发动。选择发动后，我方主宰先受到1点伤害；若对局仍继续，再弃置我方牌库顶部2张牌，并在存在合法对方军团时继续选择1张使其本回合兵力-2000。若没有合法目标，已经处理的主宰伤害与牌库弃置不会返还。",
+                            "请选择“发动”并承担主宰伤害与牌库弃置，或选择“不发动”结束本效果。",
+                            L12PromptWaitingAction.EffectDecision,
+                            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                            {
+                                ["yes"] = "发动：我方主宰先受到1点伤害；若对局仍继续，再弃置牌库顶部2张牌，并按现有流程继续目标选择。",
+                                ["no"] = "不发动：我方主宰不受此伤害，不弃置牌库顶部卡牌，也不进入目标选择。",
+                            })));
+                return true;
             case "神剑格拉墨":
                 Mill(player, 2, "神剑格拉墨");
                 PromptEnemyByTroops(item, "gram-bottom", "神剑格拉墨：选择对方1张兵力不高于3000的军团返回牌库底部",

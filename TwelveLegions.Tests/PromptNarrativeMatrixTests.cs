@@ -1351,6 +1351,144 @@ public sealed class PromptNarrativeMatrixTests
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:oddr-optional-master-damage")]
+    public void OddrDecisionExplainsDamageBeforeDrawAndItsLethalBoundary(int controller)
+    {
+        var success = BeginS1OptionalEnterPrompt(202609427 + controller, controller,
+            "S01-0313", "oddr-success", includeEnemyTarget: false);
+        var player = success.Game.State.Players[controller];
+        var playerName = player.Name;
+
+        AssertPresentation(success.Prompt, success.Source.Name,
+            "主宰先受到1点伤害", "选择“发动”");
+        Assert.Equal("oddr-draw", success.Prompt.Data["action"]);
+        Assert.Equal("发动", success.Prompt.ChoiceLabels["yes"]);
+        Assert.Equal("不发动", success.Prompt.ChoiceLabels["no"]);
+        Assert.Contains("若对局仍继续，再抽取1张牌",
+            success.Prompt.Presentation!.ChoiceConsequences["yes"], StringComparison.Ordinal);
+        Assert.Contains("不受此伤害，不抽牌",
+            success.Prompt.Presentation.ChoiceConsequences["no"], StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(success.Game, controller,
+            $"{playerName} 正在决定是否发动效果");
+
+        var hpBefore = player.Hp;
+        var handBefore = player.Hand.Count;
+        var libraryBefore = player.Library.Count;
+        ResolvePromptChoice(success.Game, success.Prompt, "yes");
+        Assert.Equal(hpBefore - 1, player.Hp);
+        Assert.Equal(handBefore + 1, player.Hand.Count);
+        Assert.Equal(libraryBefore - 1, player.Library.Count);
+
+        var decline = BeginS1OptionalEnterPrompt(202609429 + controller, controller,
+            "S01-0313", "oddr-decline", includeEnemyTarget: false);
+        var declinePlayer = decline.Game.State.Players[controller];
+        var declineHp = declinePlayer.Hp;
+        var declineHand = declinePlayer.Hand.Count;
+        var declineLibrary = declinePlayer.Library.Count;
+        ResolvePromptChoice(decline.Game, decline.Prompt, "no");
+        Assert.Equal(declineHp, declinePlayer.Hp);
+        Assert.Equal(declineHand, declinePlayer.Hand.Count);
+        Assert.Equal(declineLibrary, declinePlayer.Library.Count);
+        Assert.Empty(decline.Game.State.PendingPrompts);
+
+        var lethal = BeginS1OptionalEnterPrompt(202609431 + controller, controller,
+            "S01-0313", "oddr-lethal", includeEnemyTarget: false);
+        var lethalPlayer = lethal.Game.State.Players[controller];
+        lethalPlayer.Hp = 1;
+        var lethalHand = lethalPlayer.Hand.Count;
+        var lethalLibrary = lethalPlayer.Library.Count;
+        ResolvePromptChoice(lethal.Game, lethal.Prompt, "yes");
+        Assert.Equal(L12Phase.GameOver, lethal.Game.State.Phase);
+        Assert.Equal(1 - controller, lethal.Game.State.Winner);
+        Assert.Equal(lethalHand, lethalPlayer.Hand.Count);
+        Assert.Equal(lethalLibrary, lethalPlayer.Library.Count);
+
+        var emptyLibrary = BeginS1OptionalEnterPrompt(202609433 + controller, controller,
+            "S01-0313", "oddr-empty", includeEnemyTarget: false);
+        var emptyPlayer = emptyLibrary.Game.State.Players[controller];
+        emptyPlayer.Library.Clear();
+        var emptyHp = emptyPlayer.Hp;
+        ResolvePromptChoice(emptyLibrary.Game, emptyLibrary.Prompt, "yes");
+        Assert.Equal(emptyHp - 1, emptyPlayer.Hp);
+        Assert.Equal(L12Phase.GameOver, emptyLibrary.Game.State.Phase);
+        Assert.Equal(1 - controller, emptyLibrary.Game.State.Winner);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:egil-optional-master-damage-mill")]
+    public void EgilDecisionExplainsCommittedCostsBeforeItsLaterTarget(int controller)
+    {
+        var success = BeginS1OptionalEnterPrompt(202609435 + controller, controller,
+            "S01-0316", "egil-success", includeEnemyTarget: true);
+        var player = success.Game.State.Players[controller];
+        var playerName = player.Name;
+
+        AssertPresentation(success.Prompt, success.Source.Name,
+            "主宰先受到1点伤害", "承担主宰伤害与牌库弃置");
+        Assert.Equal("egil-pay", success.Prompt.Data["action"]);
+        Assert.Equal("发动", success.Prompt.ChoiceLabels["yes"]);
+        Assert.Equal("不发动", success.Prompt.ChoiceLabels["no"]);
+        Assert.Contains("按现有流程继续目标选择",
+            success.Prompt.Presentation!.ChoiceConsequences["yes"], StringComparison.Ordinal);
+        Assert.Contains("不进入目标选择",
+            success.Prompt.Presentation.ChoiceConsequences["no"], StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(success.Game, controller,
+            $"{playerName} 正在决定是否发动效果");
+
+        var hpBefore = player.Hp;
+        var graveBefore = player.Graveyard.Count;
+        var libraryBefore = player.Library.Count;
+        ResolvePromptChoice(success.Game, success.Prompt, "yes");
+        Assert.Equal(hpBefore - 1, player.Hp);
+        Assert.Equal(libraryBefore - 2, player.Library.Count);
+        Assert.Equal(graveBefore + 2, player.Graveyard.Count);
+        var targetPrompt = Assert.Single(success.Game.State.PendingPrompts);
+        Assert.Equal("egil-debuff", targetPrompt.Data["action"]);
+        Assert.Contains(success.EnemyTarget!.InstanceId, targetPrompt.ValidChoices);
+
+        var decline = BeginS1OptionalEnterPrompt(202609437 + controller, controller,
+            "S01-0316", "egil-decline", includeEnemyTarget: true);
+        var declinePlayer = decline.Game.State.Players[controller];
+        var declineHp = declinePlayer.Hp;
+        var declineGrave = declinePlayer.Graveyard.Count;
+        var declineLibrary = declinePlayer.Library.Count;
+        ResolvePromptChoice(decline.Game, decline.Prompt, "no");
+        Assert.Equal(declineHp, declinePlayer.Hp);
+        Assert.Equal(declineGrave, declinePlayer.Graveyard.Count);
+        Assert.Equal(declineLibrary, declinePlayer.Library.Count);
+        Assert.Empty(decline.Game.State.PendingPrompts);
+
+        var noTarget = BeginS1OptionalEnterPrompt(202609439 + controller, controller,
+            "S01-0316", "egil-no-target", includeEnemyTarget: false);
+        var noTargetPlayer = noTarget.Game.State.Players[controller];
+        var noTargetHp = noTargetPlayer.Hp;
+        var noTargetGrave = noTargetPlayer.Graveyard.Count;
+        var noTargetLibrary = noTargetPlayer.Library.Count;
+        ResolvePromptChoice(noTarget.Game, noTarget.Prompt, "yes");
+        Assert.Equal(noTargetHp - 1, noTargetPlayer.Hp);
+        Assert.Equal(noTargetLibrary - 2, noTargetPlayer.Library.Count);
+        Assert.Equal(noTargetGrave + 2, noTargetPlayer.Graveyard.Count);
+        Assert.Empty(noTarget.Game.State.PendingPrompts);
+
+        var lethal = BeginS1OptionalEnterPrompt(202609441 + controller, controller,
+            "S01-0316", "egil-lethal", includeEnemyTarget: true);
+        var lethalPlayer = lethal.Game.State.Players[controller];
+        lethalPlayer.Hp = 1;
+        var lethalGrave = lethalPlayer.Graveyard.Count;
+        var lethalLibrary = lethalPlayer.Library.Count;
+        ResolvePromptChoice(lethal.Game, lethal.Prompt, "yes");
+        Assert.Equal(L12Phase.GameOver, lethal.Game.State.Phase);
+        Assert.Equal(1 - controller, lethal.Game.State.Winner);
+        Assert.Equal(lethalGrave, lethalPlayer.Graveyard.Count);
+        Assert.Equal(lethalLibrary, lethalPlayer.Library.Count);
+        Assert.Empty(lethal.Game.State.PendingPrompts);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
     [Trait("L12Evidence", "prompt-narrative:promoted-heracles-paid-cost-target")]
     public void PromotedHeraclesExplainsTheIrreversibleTopDeckCostAndTargetBoundary(int controller)
     {
@@ -2002,6 +2140,35 @@ public sealed class PromptNarrativeMatrixTests
         ResolvePromptChoice(selection.Game, selection.Prompt, selection.FirstTarget.InstanceId);
         return (selection.Game, Assert.Single(selection.Game.State.PendingPrompts), selection.Item,
             selection.Source, selection.FirstTarget);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance Source, L12CardInstance? EnemyTarget) BeginS1OptionalEnterPrompt(
+        int seed, int controller, string cardId, string suffix, bool includeEnemyTarget)
+    {
+        var game = CreateCleanGame(seed);
+        var player = game.State.Players[controller];
+        var opponent = game.State.Players[1 - controller];
+        player.Library.AddRange([
+            Card("S01-0002", $"narrative-{suffix}-library-1-{controller}", controller),
+            Card("S01-0003", $"narrative-{suffix}-library-2-{controller}", controller),
+            Card("S01-0004", $"narrative-{suffix}-library-3-{controller}", controller),
+        ]);
+        var source = Card(cardId, $"narrative-{suffix}-source-{controller}", controller);
+        player.Field[0][0] = source;
+        L12CardInstance? enemyTarget = null;
+        if (includeEnemyTarget)
+        {
+            enemyTarget = Card("S01-0107", $"narrative-{suffix}-target-{controller}",
+                1 - controller);
+            opponent.Field[0][0] = enemyTarget;
+        }
+        var item = LegacyStackItem($"narrative-{suffix}-stack-{controller}",
+            controller, source, "enter", source.Name);
+        game.State.EffectStack.Add(item);
+
+        Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveS1FactionEnter", item, source)));
+        return (game, Assert.Single(game.State.PendingPrompts), item, source, enemyTarget);
     }
 
     private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
