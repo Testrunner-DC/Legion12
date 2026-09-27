@@ -122,3 +122,38 @@ const filtered = computed(() => {
 <style scoped>
 .single-card-picker-mask{position:fixed;z-index:5200;inset:0;display:grid;padding:clamp(8px,3vw,36px);background:#020507dc;place-items:center}.single-card-picker{display:grid;width:min(1180px,96vw);height:min(820px,92vh);grid-template-rows:auto auto auto minmax(0,1fr);overflow:hidden;border:1px solid var(--l12-ui-accent-line,#6a5a2a);border-radius:var(--l12-ui-radius-lg,8px);background:var(--l12-ui-panel,#0b1116);color:var(--l12-ui-text,#eff2ef);box-shadow:var(--l12-ui-shadow-dialog,0 30px 100px #000)}.single-card-picker>header{display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--l12-ui-line,#374147)}.single-card-picker h2{margin:4px 0 0;font-size:22px}.single-card-picker small{color:var(--l12-ui-accent,#cfad43);font-size:12px;font-weight:900;letter-spacing:.08em}.single-card-picker>header button{width:38px;height:38px;border:1px solid var(--l12-ui-line-strong,#48545c);background:var(--l12-ui-control,#080d11);color:#fff;font-size:26px}.single-card-filters{display:grid;grid-template-columns:minmax(220px,2fr) repeat(5,minmax(92px,1fr));gap:8px;padding:12px;border-bottom:1px solid var(--l12-ui-line,#303a40)}.single-card-filters input,.single-card-filters select{min-width:0;padding:9px;border:1px solid var(--l12-ui-line-strong,#445159);background:var(--l12-ui-control,#070c10);color:#fff}.single-card-result{margin:0;padding:8px 14px;color:var(--l12-ui-text-muted,#87959b);font-size:12px}.single-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(126px,1fr));gap:11px;overflow:auto;padding:14px;align-content:start}.single-card-result-card{display:flex;min-width:0;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--l12-ui-line,#39464d);border-radius:var(--l12-ui-radius-sm,3px);background:var(--l12-ui-panel-raised,#111a21);color:#fff}.single-card-result-card:hover,.single-card-result-card:focus-within{border-color:var(--l12-ui-accent,#e1bd50);box-shadow:0 0 14px #c598383d}.single-card-image{display:grid;width:100%;height:auto;aspect-ratio:5/7;padding:0;overflow:hidden;border:0;background:#050708;place-items:center}.single-card-result-card.horizontal .single-card-image{aspect-ratio:8/5}.single-card-image img,.single-card-image :deep(.l12-card-image){width:100%;height:100%;object-fit:contain}.single-card-result-card>b,.single-card-result-card>small,.single-card-result-card>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.single-card-result-card>span{color:var(--l12-ui-text-muted,#93a0a6);font-size:12px}.single-card-actions{display:flex;gap:6px;margin-top:auto}.single-card-actions button{min-height:34px;flex:1;border:1px solid var(--l12-ui-line-strong,#536168);background:var(--l12-ui-control,#080d11);color:#fff;font-weight:900}.single-card-actions button:last-child{border-color:var(--l12-ui-accent-line,#9e7e3d);color:var(--l12-ui-accent,#e1bd50)}.single-card-empty{grid-column:1/-1;color:var(--l12-ui-text-muted,#87959b);text-align:center}@media(max-width:760px){.single-card-picker-mask{padding:max(6px,env(safe-area-inset-top)) max(6px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(6px,env(safe-area-inset-left))}.single-card-picker{width:100%;height:100%;max-height:100%;border-radius:0}.single-card-filters{grid-template-columns:1fr 1fr}.single-card-filters input{grid-column:1/-1}.single-card-grid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:7px;padding:9px}}
 </style>
+
+<style scoped>
+/* Both ordinary touch pages and the logical mobile canvas use this compact
+   picker. Filters pan as one 44px row, leaving the card grid a scroll viewport. */
+@media (pointer: coarse) and (max-width: 900px) {
+  .single-card-picker-mask { --picker-mobile: 1; }
+}
+:global(html[data-l12-mobile=true]) .single-card-picker-mask { --picker-mobile: 1; }
+.single-card-picker-mask { container-name: single-picker; container-type: normal; }
+@container single-picker style(--picker-mobile: 1) {
+  .single-card-picker {
+    box-sizing: border-box;
+    width: min(100%, var(--l12-mobile-dialog-width, 94vw));
+    height: min(100%, var(--l12-mobile-dialog-height, 90dvh));
+    max-width: 100%;
+    max-height: 100%;
+    font-size: var(--l12-dialog-copy, .8125rem);
+  }
+  .single-card-picker > header { min-height: 44px; padding: 4px 7px; gap: 6px; }
+  .single-card-picker > header > div { min-width: 0; }
+  .single-card-picker > header small { display: none; }
+  .single-card-picker h2 { margin: 0; font-size: var(--l12-dialog-title, 1rem); overflow-wrap: anywhere; }
+  .single-card-picker > header button { width: 44px; height: 44px; flex: 0 0 44px; font-size: 1.125rem; }
+  .single-card-filters { display: flex; gap: 5px; overflow-x: auto; padding: 4px 7px; }
+  .single-card-filters :is(input,select) { min-height: 44px; min-width: 108px; flex: 0 0 108px; padding: 5px; font-size: .875rem; }
+  .single-card-filters input { flex-basis: 180px; }
+  .single-card-result { padding: 3px 7px; font-size: .6875rem; }
+  .single-card-grid { grid-template-columns: repeat(auto-fill,minmax(min(100%,108px),1fr)); gap: 6px; padding: 6px; }
+  .single-card-result-card { gap: 4px; padding: 4px; }
+  .single-card-result-card .single-card-image { height: 112px; min-height: 44px; aspect-ratio: auto; }
+  .single-card-result-card > b { min-height: 2.6em; max-height: 2.6em; overflow: auto; white-space: normal; line-height: 1.3; }
+  .single-card-result-card > :is(small,span) { font-size: .6875rem; }
+  .single-card-actions button { min-width: 44px; min-height: 44px; font-size: .8125rem; }
+}
+</style>

@@ -162,8 +162,8 @@ html[data-l12-mobile=true][data-l12-viewport] .prompt-panel.prompt-choice-panel 
   display: flex !important;
   flex-direction: column;
   justify-content: normal;
-  gap: clamp(3px, 1cqh, 8px);
-  padding: clamp(8px, 3cqh, 13px) !important;
+  gap: var(--l12-dialog-gap);
+  padding: var(--l12-dialog-pad) !important;
   overflow: hidden !important;
 }
 html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-body {
@@ -208,15 +208,16 @@ html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-actio
 html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-card-candidate:not(.size-featured) {
   display: grid !important;
   box-sizing: border-box;
-  flex-basis: clamp(78px, 17cqw, 108px) !important;
-  width: clamp(78px, 17cqw, 108px) !important;
-  min-width: clamp(78px, 17cqw, 108px) !important;
-  height: clamp(128px, 46cqh, 190px) !important;
-  min-height: clamp(128px, 46cqh, 190px) !important;
-  max-height: clamp(128px, 46cqh, 190px) !important;
+  flex-basis: var(--l12-dialog-card-w) !important;
+  width: var(--l12-dialog-card-w) !important;
+  min-width: var(--l12-dialog-card-w) !important;
+  height: var(--l12-dialog-card-h) !important;
+  min-height: var(--l12-dialog-card-h) !important;
+  max-height: var(--l12-dialog-card-h) !important;
   gap: 3px !important;
   padding: 3px !important;
-  grid-template-rows: minmax(0, 1fr) minmax(2.5em, max-content) minmax(1.45em, max-content);
+  grid-template-rows: minmax(0, 1fr) 2.7em 1.9em;
+  font-size: var(--l12-dialog-copy);
   align-content: start;
   align-self: start;
   overflow: hidden;
@@ -232,9 +233,9 @@ html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-card-
   object-fit: contain;
 }
 html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-card-candidate.horizontal:not(.size-featured) {
-  flex-basis: clamp(78px, 17cqw, 108px) !important;
-  width: clamp(78px, 17cqw, 108px) !important;
-  min-width: clamp(78px, 17cqw, 108px) !important;
+  flex-basis: var(--l12-dialog-card-w) !important;
+  width: var(--l12-dialog-card-w) !important;
+  min-width: var(--l12-dialog-card-w) !important;
 }
 html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-card-candidate.horizontal:not(.size-featured) .l12-card-image {
   width: calc(100% - 4px) !important;
@@ -246,14 +247,15 @@ html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-card-
   object-fit: contain;
 }
 html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-card-candidate__name {
-  min-height: 2.5em !important;
-  font-size: clamp(9px, 1.8cqw, 12px) !important;
-  line-height: 1.25 !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  font-size: var(--l12-dialog-copy) !important;
+  line-height: 1.3 !important;
   white-space: normal !important;
   overflow-wrap: anywhere;
 }
 html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-card-candidate__meta { display: none !important; }
-html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-card-candidate__state { font-size: clamp(8px, 1.45cqw, 10px) !important; line-height: 1.2 !important; }
+html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-card-candidate__state { font-size: var(--l12-dialog-meta) !important; line-height: 1.2 !important; }
 html[data-l12-mobile=true][data-l12-viewport] :is(.master-dialog,.faction-effect-dialog) {
   grid-template-columns: clamp(96px, 24cqw, 156px) minmax(0, 1fr) !important;
   align-content: center;
@@ -331,7 +333,7 @@ html[data-l12-mobile=true][data-l12-viewport] .graveyard-cards .graveyard-card-e
 }
 html[data-l12-mobile=true][data-l12-viewport] .graveyard-card-name {
   min-height: 2.5em;
-  font-size: clamp(9px, 1.55cqw, 12px) !important;
+  font-size: var(--l12-dialog-copy) !important;
   line-height: 1.25;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -440,3 +442,237 @@ html[data-l12-viewport] .graveyard-window {
   height: min(570px,calc(var(--l12-viewport-height) - 64px));
 }
 html[data-l12-viewport] :is(input,textarea) { font-size: 16px; }
+
+/* Mobile dialog density. Use the resolved safe frame for dimensions (a size
+   container cannot query itself), and rem bounds so font enlargement survives.
+   These tokens are consumed only inside dialogs, never by the battle table. */
+html[data-l12-mobile=true][data-l12-viewport] {
+  --l12-dialog-copy: clamp(.8125rem, calc(var(--l12-mobile-dialog-width) * .026), .9375rem);
+  --l12-dialog-meta: clamp(.6875rem, calc(var(--l12-mobile-dialog-width) * .023), .8125rem);
+  --l12-dialog-title: clamp(.9375rem, calc(var(--l12-mobile-dialog-width) * .032), 1.125rem);
+  --l12-dialog-gap: clamp(4px, calc(var(--l12-mobile-dialog-height) * .018), 8px);
+  --l12-dialog-pad: clamp(6px, calc(var(--l12-mobile-dialog-height) * .025), 12px);
+  --l12-dialog-action-w: clamp(88px, calc(var(--l12-mobile-dialog-width) * .19), 116px);
+  --l12-dialog-card-w: clamp(104px, calc(var(--l12-mobile-dialog-width) * .23), 148px);
+  --l12-dialog-card-h: max(160px, 10rem, calc(var(--l12-mobile-dialog-height) * .57));
+}
+html[data-l12-mobile=true][data-l12-viewport] :is(.prompt-panel,.waiting-panel,.master-dialog,.faction-effect-dialog,.graveyard-window,.mobile-record-overlay,.battle-dialog,.l12-settings-modal,.single-card-picker) {
+  --l12-board-copy: var(--l12-dialog-copy);
+  --l12-board-meta: var(--l12-dialog-meta);
+  --l12-board-micro: var(--l12-dialog-meta);
+  --l12-effect-copy: var(--l12-dialog-copy);
+  font-size: var(--l12-dialog-copy);
+}
+html[data-l12-mobile=true][data-l12-viewport] :is(.prompt-panel,.waiting-panel,.master-dialog,.faction-effect-dialog,.graveyard-window,.mobile-record-overlay,.battle-dialog,.l12-settings-modal) h2 {
+  margin: 0;
+  font-size: var(--l12-dialog-title) !important;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+html[data-l12-mobile=true][data-l12-viewport] :is(.prompt-panel,.waiting-panel,.master-dialog,.faction-effect-dialog,.graveyard-window,.mobile-record-overlay,.battle-dialog,.l12-settings-modal) button {
+  box-sizing: border-box;
+  min-width: 44px;
+  min-height: 44px !important;
+  font-size: var(--l12-dialog-copy);
+  touch-action: manipulation;
+}
+html[data-l12-mobile=true][data-l12-viewport] :is(.prompt-panel,.master-dialog,.faction-effect-dialog,.graveyard-window,.mobile-record-overlay) :is(button,[role=button]):focus-visible {
+  outline: 2px solid #f4da85;
+  outline-offset: -3px;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel > header {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  min-height: 44px;
+  max-height: min(32%, 6rem);
+  padding: 0 50px 3px 0;
+  overflow: auto;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel > header > small { display: none; }
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .effect-decision-text {
+  margin: 3px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--l12-dialog-copy);
+  line-height: 1.35;
+}
+html[data-l12-mobile=true][data-l12-viewport] :is(.prompt-minimize,.master-minimize,.master-close,.faction-minimize,.faction-close) {
+  width: 44px;
+  height: 44px;
+  line-height: 1;
+  font-size: var(--l12-dialog-title);
+}
+html[data-l12-mobile=true][data-l12-viewport] :is(.master-minimize,.faction-minimize) { right: 54px; top: 4px; }
+html[data-l12-mobile=true][data-l12-viewport] :is(.master-close,.faction-close) { right: 6px; top: 4px; }
+html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-body { overflow-x: hidden; overflow-y: auto; }
+html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-body > :is(.prompt-instruction,.prompt-auto-close) {
+  flex: 0 0 auto;
+  margin: 0;
+  font-size: var(--l12-dialog-copy);
+  line-height: 1.35;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .setup-decision-clock {
+  flex: 0 0 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 3px 6px;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .setup-decision-clock strong { font-size: var(--l12-dialog-title); }
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .prompt-action-footer {
+  gap: var(--l12-dialog-gap);
+  align-items: stretch;
+  padding-top: 3px;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .prompt-action-footer > span {
+  flex: 1 1 0;
+  align-self: center;
+  margin: 0;
+  max-height: 3.9em;
+  overflow: auto;
+  font-size: var(--l12-dialog-meta);
+  line-height: 1.3;
+}
+html[data-l12-mobile=true][data-l12-viewport] :is(.prompt-panel .prompt-action-footer,.mobile-morale-actions) > button {
+  flex: 0 1 var(--l12-dialog-action-w);
+  width: var(--l12-dialog-action-w);
+  min-width: 44px !important;
+  max-width: none;
+  height: auto;
+  min-height: 44px !important;
+  max-height: none;
+  padding: 5px 8px !important;
+  font-size: var(--l12-dialog-copy) !important;
+  line-height: 1.3;
+  overflow: visible;
+}
+/* Text stacks share width; grid peers stretch to the tallest copy in a row.
+   Do not hide or clamp authoritative option text to meet a fixed height. */
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .prompt-choices:not(.prompt-card-strip) {
+  flex: 0 0 auto;
+  display: grid;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(44px, auto);
+  align-items: stretch;
+  gap: var(--l12-dialog-gap);
+  margin: 0;
+  padding: 2px;
+  box-sizing: border-box;
+  overflow: visible;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .prompt-choices.response-target-list { grid-template-columns: minmax(0, 1fr); }
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .prompt-choices:not(.prompt-card-strip) > :is(button,.response-target-row) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0 !important;
+  max-width: none;
+  height: auto;
+  min-height: 44px !important;
+  max-height: none;
+  padding: 6px 8px !important;
+  font-size: var(--l12-dialog-copy) !important;
+  line-height: 1.4;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .response-target-row { padding: 0 !important; }
+html[data-l12-mobile=true][data-l12-viewport] .response-target-select { padding: 7px 9px; overflow: visible; }
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .prompt-choices:not(.prompt-card-strip) > button > span {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .trigger-order-hint { position: static; width: fit-content; }
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .prompt-card-candidate__name {
+  display: block;
+  overflow: auto;
+  -webkit-line-clamp: unset;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .prompt-card-candidate.size-featured {
+  flex: 0 0 min(100%, 320px);
+  width: min(100%, 320px);
+  min-width: 0;
+}
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .prompt-card-candidate.size-featured .l12-card-image {
+  width: 100%;
+  height: auto;
+  max-height: var(--l12-dialog-card-h);
+  object-fit: contain;
+}
+html[data-l12-mobile=true][data-l12-viewport] :is(.master-dialog,.faction-effect-dialog) {
+  padding: 52px var(--l12-dialog-pad) var(--l12-dialog-pad) !important;
+  gap: var(--l12-dialog-gap) !important;
+  align-items: start;
+}
+html[data-l12-mobile=true][data-l12-viewport] :is(.master-content,.faction-effect-content) {
+  height: 100%;
+  max-height: 100%;
+  align-content: start;
+  padding-right: 3px;
+  gap: var(--l12-dialog-gap);
+}
+html[data-l12-mobile=true][data-l12-viewport] :is(.master-dialog,.faction-effect-dialog) > .l12-card-image { max-height: 100%; }
+html[data-l12-mobile=true][data-l12-viewport] :is(.master-abilities,.faction-effect-actions) {
+  grid-auto-rows: auto;
+  max-height: none !important;
+  margin: 0 !important;
+  overflow: visible !important;
+}
+html[data-l12-mobile=true][data-l12-viewport] :is(.master-abilities,.faction-effect-actions) button {
+  width: 100%;
+  height: auto;
+  max-height: none;
+  padding: 7px !important;
+  overflow: visible;
+}
+html[data-l12-mobile=true][data-l12-viewport] :is(.master-abilities,.faction-effect-actions) button :is(strong,span) {
+  display: block;
+  white-space: normal;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+  font-size: var(--l12-dialog-copy);
+}
+html[data-l12-mobile=true][data-l12-viewport] :is(.master-content,.faction-effect-content) > p {
+  max-height: none !important;
+  margin: 0;
+  overflow: visible !important;
+  font-size: var(--l12-dialog-copy) !important;
+  line-height: 1.4;
+}
+html[data-l12-mobile=true][data-l12-viewport] .graveyard-window > header { padding: var(--l12-dialog-pad); gap: 4px; }
+html[data-l12-mobile=true][data-l12-viewport] .graveyard-window > header > div { flex: 1; min-width: 0; }
+html[data-l12-mobile=true][data-l12-viewport] .graveyard-window > header button { width: 44px; height: 44px; flex: 0 0 44px; }
+html[data-l12-mobile=true][data-l12-viewport] .graveyard-columns article { overflow: auto; }
+html[data-l12-mobile=true][data-l12-viewport] .graveyard-columns h3 { margin: 0 0 4px; font-size: var(--l12-dialog-copy); }
+html[data-l12-mobile=true][data-l12-viewport] .graveyard-cards { flex: 0 0 auto; align-items: stretch !important; }
+html[data-l12-mobile=true][data-l12-viewport] .graveyard-card-entry { flex-basis: var(--l12-dialog-card-w); width: var(--l12-dialog-card-w); min-width: var(--l12-dialog-card-w); align-content: start; grid-template-rows: auto 2.7em; }
+html[data-l12-mobile=true][data-l12-viewport] .graveyard-card-name { min-height: 0; overflow: auto; }
+html[data-l12-mobile=true][data-l12-viewport] .mobile-record-overlay { container-type: size; padding: var(--l12-dialog-pad) !important; }
+html[data-l12-mobile=true][data-l12-viewport] .mobile-record-overlay > header { flex: 0 0 auto; gap: 6px; padding: 0 0 4px; }
+html[data-l12-mobile=true][data-l12-viewport] .mobile-morale-picker { min-height: 44px; align-content: start; }
+html[data-l12-mobile=true][data-l12-viewport] .mobile-morale-prompt { margin: 3px 0; font-size: var(--l12-dialog-copy); }
+html[data-l12-mobile=true][data-l12-viewport] .mobile-resource-row { grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)) !important; gap: var(--l12-dialog-gap); }
+html[data-l12-mobile=true][data-l12-viewport] .mobile-morale-choice {
+  width: clamp(52px, 11cqw, 64px) !important;
+  min-width: 52px !important;
+  max-width: 64px !important;
+  height: clamp(52px, 11cqw, 64px) !important;
+  min-height: 52px !important;
+  max-height: 64px !important;
+  flex-basis: clamp(52px, 11cqw, 64px) !important;
+  overflow: visible;
+}
+html[data-l12-mobile=true][data-l12-viewport] .mobile-morale-choice img { width: 76% !important; height: 76% !important; }
+html[data-l12-mobile=true][data-l12-viewport] .mobile-morale-reason { height: auto; white-space: normal; font-size: var(--l12-dialog-meta); }
+html[data-l12-mobile=true][data-l12-viewport] .mobile-morale-actions { display: flex; flex-wrap: wrap; align-items: stretch; gap: var(--l12-dialog-gap); padding-top: 4px; }
+html[data-l12-mobile=true][data-l12-viewport] .prompt-panel .prompt-card-candidate .l12-card-image__img {
+  width: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+  object-fit: contain;
+}

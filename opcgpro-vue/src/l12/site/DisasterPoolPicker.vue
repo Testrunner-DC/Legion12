@@ -40,3 +40,20 @@ function toggle(id: string) {
 <style scoped>
 .pool-picker{display:grid;gap:10px}.pool-picker>header{display:flex;align-items:center;gap:9px}.pool-picker input{flex:1}.pool-picker header span{white-space:nowrap}.pool-picker header span.invalid{color:#ff9aa1}.pool-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:8px;max-height:520px;overflow:auto;padding:2px}.pool-grid button{display:grid;align-content:start;gap:7px;min-width:0;padding:7px;overflow:hidden;border:1px solid #354249;background:#091016;color:#d5dcde;text-align:left}.pool-grid button.selected{border-color:#d2ad4e;background:#29210f;box-shadow:inset 0 0 0 1px #8e742f}.pool-grid button.locked{border-style:double}.pool-card-art{display:block;width:100%;aspect-ratio:8/5;overflow:hidden;background:#090d0e}.pool-card-copy{display:grid;gap:2px;min-width:0;line-height:1.35}.pool-card-copy b,.pool-card-copy small{position:static;overflow-wrap:anywhere}.pool-card-copy b{font-weight:900}.pool-card-copy small{color:#8b979c;font-size:14px}
 </style>
+
+<style scoped>
+@media (pointer: coarse) and (max-width: 900px) {
+  .pool-picker { --pool-mobile: 1; }
+}
+:global(html[data-l12-mobile=true]) .pool-picker { --pool-mobile: 1; }
+.pool-picker { container-name: disaster-pool; container-type: normal; }
+@container disaster-pool style(--pool-mobile: 1) {
+  header { min-width: 0; flex-wrap: wrap; gap: 4px; }
+  header input { box-sizing: border-box; min-width: 0; min-height: 44px; width: 100%; font-size: .875rem; }
+  header span { white-space: normal; font-size: .8125rem; line-height: 1.35; }
+  .pool-grid { grid-template-columns: repeat(auto-fill,minmax(min(100%,132px),1fr)); grid-auto-rows: 1fr; gap: 6px; max-height: min(520px,55dvh); }
+  .pool-grid button { min-width: 44px; min-height: 44px; gap: 4px; padding: 5px; }
+  .pool-card-copy b { font-size: .8125rem; line-height: 1.35; }
+  .pool-card-copy small { font-size: .6875rem; }
+}
+</style>
