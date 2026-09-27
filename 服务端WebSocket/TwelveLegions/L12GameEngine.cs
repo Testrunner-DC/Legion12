@@ -425,46 +425,15 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
     private object DisasterVisibilitySnapshot(L12CardInstance card, int viewer, bool revealAll)
     {
-        var alreadyRevealed = State.ActiveDisaster?.InstanceId == card.InstanceId
-            || State.RemovedDisasters.Any(item => item.InstanceId == card.InstanceId)
-            || State.RevealedDisasters.Any(item => item.InstanceId == card.InstanceId);
         var owner = State.ChosenDisasterOwners.GetValueOrDefault(card.InstanceId, card.OwnerIndex ?? -1);
-        if (revealAll || alreadyRevealed || (viewer >= 0 && owner == viewer)) return card;
+        if (L12RecipientVisibility.CanSeeDisaster(State, card, viewer, revealAll)) return card;
         return new { card.InstanceId, hidden = true, ownerIndex = owner };
     }
 
     private L12ActionEvent FilterDisasterEvent(L12ActionEvent actionEvent, int viewer, bool revealAll,
         bool revealAllHands = false)
-    {
-        actionEvent = L12TrialProgressVisibility.PublicEvent(actionEvent);
-        if (actionEvent.Type == "private-return")
-            return revealAllHands || actionEvent.PlayerIndex == viewer
-                ? actionEvent with { Type = "return" }
-                : new L12ActionEvent(actionEvent.Sequence, "return", actionEvent.PlayerIndex, "放回1张牌", []);
-        if (!revealAll && actionEvent.Type == "private-disaster-reveal"
-            && actionEvent.PlayerIndex != viewer)
-        {
-            var viewingPlayerName = actionEvent.PlayerIndex is >= 0 and <= 1
-                ? State.Players[actionEvent.PlayerIndex.Value].Name
-                : "玩家";
-            return new L12ActionEvent(actionEvent.Sequence, actionEvent.Type,
-                actionEvent.PlayerIndex, $"{viewingPlayerName}查看了下一张天灾", []);
-        }
-        if (revealAll || actionEvent.Type != "disaster-selected" || actionEvent.Cards.Length == 0)
-            return actionEvent;
-
-        var visibleCards = actionEvent.Cards
-            .Where(card => ReferenceEquals(DisasterVisibilitySnapshot(card, viewer, revealAll), card))
-            .Select(card => card.Clone())
-            .ToArray();
-        if (visibleCards.Length == actionEvent.Cards.Length) return actionEvent;
-
-        var playerName = actionEvent.PlayerIndex is >= 0 and <= 1
-            ? State.Players[actionEvent.PlayerIndex.Value].Name
-            : "玩家";
-        return new L12ActionEvent(actionEvent.Sequence, actionEvent.Type, actionEvent.PlayerIndex,
-            $"{playerName} 已完成天灾选择", visibleCards);
-    }
+        => L12RecipientVisibility.ProjectActionEvent(State, actionEvent, viewer, revealAll,
+            revealAllHands);
 
     private Dictionary<string, string[]> BuildLegalAttackTargets(int viewer)
     {

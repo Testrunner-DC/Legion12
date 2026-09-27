@@ -2,12 +2,18 @@ using Microsoft.Data.Sqlite;
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 
 namespace TwelveLegions.Server;
 
 public sealed partial class MatchRecorder : IAsyncDisposable
 {
     internal const long JournalSizeLimitBytes = 64L * 1024 * 1024;
+    private static readonly JsonSerializerOptions RecordedStateJson = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PreferredObjectCreationHandling = JsonObjectCreationHandling.Populate,
+    };
     private readonly string _connectionString;
     private readonly Func<DateTimeOffset> _utcNow;
     private readonly ConcurrentDictionary<string, Dictionary<string, CardLocation>> _factLocationBaselines =
@@ -516,6 +522,9 @@ public sealed partial class MatchRecorder : IAsyncDisposable
     {
         var root = JsonNode.Parse(state.GetRawText())?.AsObject();
         if (root is null) return state;
+        L12GameState? authorityState;
+        try { authorityState = JsonSerializer.Deserialize<L12GameState>(state.GetRawText(), RecordedStateJson); }
+        catch (JsonException) { authorityState = null; }
         var players = root["Players"] as JsonArray;
         if (players is not null)
         {
@@ -539,6 +548,9 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             }
         }
         RedactCardArray(root["DisasterDeck"] as JsonArray, "天灾牌库");
+        RedactCardArray(root["DisasterPool"] as JsonArray, "天灾候选");
+        RedactCardArray(root["SelectedDisasters"] as JsonArray, "待选天灾");
+        ProjectRecordedDisastersAndEvents(root, authorityState, viewer);
         if (root["OperationsPolicy"] is JsonObject operationsPolicy)
         {
             operationsPolicy.Remove("VersionId");
@@ -558,6 +570,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         }
         root["PendingPrompts"] = new JsonArray();
         root["PendingActivations"] = new JsonArray();
+        root["Log"] = new JsonArray();
         root.Remove("PlayerResponseModes");
         if (root["ResponseWindow"] is JsonObject responseWindow)
         {
@@ -570,6 +583,46 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         L12TrialProgressVisibility.RedactRecordedState(root);
         return JsonSerializer.SerializeToElement(root);
     }
+
+    private static void ProjectRecordedDisastersAndEvents(JsonObject root,
+        L12GameState? authorityState, int viewer)
+    {
+        if (authorityState is null)
+        {
+            // A legacy or malformed state that cannot be interpreted must fail closed at the
+            // player replay boundary. Internal authority replay remains available via GetMatchAsync.
+            root["ChosenDisasters"] = new JsonArray();
+            root["Events"] = new JsonArray();
+            root["LastAction"] = null;
+            return;
+        }
+
+        root["ChosenDisasters"] = new JsonArray(authorityState.ChosenDisasters.Select(card =>
+            L12RecipientVisibility.CanSeeDisaster(authorityState, card, viewer,
+                revealAllDisasters: false)
+                ? JsonSerializer.SerializeToNode(card)
+                : HiddenDisaster(card.InstanceId,
+                    authorityState.ChosenDisasterOwners.GetValueOrDefault(card.InstanceId,
+                        card.OwnerIndex ?? -1))).ToArray());
+
+        root["Events"] = new JsonArray(authorityState.Events
+            .TakeLast(L12GameEngine.MaximumSnapshotEvents)
+            .Select(actionEvent => JsonSerializer.SerializeToNode(
+                L12RecipientVisibility.ProjectActionEvent(authorityState, actionEvent, viewer,
+                    revealAllDisasters: false)))
+            .ToArray());
+        root["LastAction"] = authorityState.LastAction is null
+            ? null
+            : JsonSerializer.SerializeToNode(L12RecipientVisibility.ProjectActionEvent(
+                authorityState, authorityState.LastAction, viewer, revealAllDisasters: false));
+    }
+
+    private static JsonObject HiddenDisaster(string instanceId, int ownerIndex) => new()
+    {
+        ["InstanceId"] = instanceId,
+        ["Hidden"] = true,
+        ["OwnerIndex"] = ownerIndex,
+    };
 
     private static void RedactCardArray(JsonArray? cards, string label)
     {
