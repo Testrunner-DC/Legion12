@@ -1738,18 +1738,65 @@ public sealed partial class L12GameEngine
 
     private void RecoverAsgard(L12StackItem item, int maxCost, bool legionOnly)
     {
-        var player = State.Players[item.Controller]; var choices = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard") && L12StructuredCardRules.CurrentCostAtMost(card, maxCost) && (!legionOnly || card.CardType == "legion")).Select(card => card.InstanceId).ToList();
-        if (choices.Count == 0) { FinishStackItem(item); return; }
+        var player = State.Players[item.Controller];
+        var candidates = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard")
+            && L12StructuredCardRules.CurrentCostAtMost(card, maxCost)
+            && (!legionOnly || card.CardType == "legion")).ToArray();
+        if (candidates.Length == 0) { FinishStackItem(item); return; }
+        var choices = candidates.Select(card => card.InstanceId).ToList();
         choices.Add("skip");
-        CreatePrompt(item.Controller, "optional-card", "选择墓地1张【阿斯加德】卡牌加入手牌", choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "recover-asgard" });
+        var data = new Dictionary<string, string>
+        {
+            ["action"] = "recover-asgard",
+            ["skip"] = "不发动",
+        };
+        foreach (var candidate in candidates) AddPromptCardData(data, candidate);
+        var sourceName = FindSource(item)?.Name ?? item.SourceName ?? "墓地回收效果";
+        CreatePrompt(item.Controller, "optional-card", "选择墓地1张【阿斯加德】卡牌加入手牌",
+            choices, 1, 1, "card-effect", item.StackItemId,
+            data: WithPromptNarrative(data,
+                new(sourceName,
+                    $"〈{sourceName}〉的阵亡时效果正在选择墓地回收对象。你可以选择墓地中1张当前费用不高于{maxCost}的【阿斯加德】{(legionOnly ? "军团" : "卡牌")}，并尝试将其公开加入手牌。若所选牌在结算时已离开墓地，本次回收无事结束；若既有规则不允许其进入手牌，则该牌仍留在墓地；两种情况都不会改选其他卡牌。",
+                    "请选择1张当前符合条件的墓地卡牌，或选择“不发动”结束本效果。",
+                    L12PromptWaitingAction.CardSelection,
+                    candidates.ToDictionary(card => card.InstanceId,
+                            card => $"尝试将〈{card.Name}〉从墓地公开加入手牌；结算失败时不改选。",
+                            StringComparer.OrdinalIgnoreCase)
+                        .Append(new KeyValuePair<string, string>("skip",
+                            "结束本效果，不移动任何墓地卡牌。"))
+                        .ToDictionary(pair => pair.Key, pair => pair.Value,
+                            StringComparer.OrdinalIgnoreCase))));
     }
 
     private void SummonAsgardFromGrave(L12StackItem item, int maxCost)
     {
-        var player = State.Players[item.Controller]; var choices = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard") && card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, maxCost)).Select(card => card.InstanceId).ToList();
-        if (choices.Count == 0) { FinishStackItem(item); return; }
+        var player = State.Players[item.Controller];
+        var candidates = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard")
+            && card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, maxCost)).ToArray();
+        if (candidates.Length == 0) { FinishStackItem(item); return; }
+        var choices = candidates.Select(card => card.InstanceId).ToList();
         choices.Add("skip");
-        CreatePrompt(item.Controller, "optional-card", "选择墓地1张【阿斯加德】军团活跃登场", choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "summon-asgard" });
+        var data = new Dictionary<string, string>
+        {
+            ["action"] = "summon-asgard",
+            ["skip"] = "不发动",
+        };
+        foreach (var candidate in candidates) AddPromptCardData(data, candidate);
+        var sourceName = FindSource(item)?.Name ?? item.SourceName ?? "墓地登场效果";
+        CreatePrompt(item.Controller, "optional-card", "选择墓地1张【阿斯加德】军团活跃登场",
+            choices, 1, 1, "card-effect", item.StackItemId,
+            data: WithPromptNarrative(data,
+                new(sourceName,
+                    $"〈{sourceName}〉的阵亡时效果正在选择登场对象。你可以选择墓地中1张当前费用不高于{maxCost}的【阿斯加德】军团；选择后还需要为其选择我方战场的合法空位。此时只确定登场对象，该军团尚未离开墓地，也尚未登场。",
+                    "请选择1张当前符合条件的墓地军团进入位置选择，或选择“不发动”结束本效果。",
+                    L12PromptWaitingAction.CardSelection,
+                    candidates.ToDictionary(card => card.InstanceId,
+                            card => $"选择〈{card.Name}〉作为登场对象，然后进入合法空位选择；此时尚未登场。",
+                            StringComparer.OrdinalIgnoreCase)
+                        .Append(new KeyValuePair<string, string>("skip",
+                            "结束本效果，不选择登场对象，也不进入位置选择。"))
+                        .ToDictionary(pair => pair.Key, pair => pair.Value,
+                            StringComparer.OrdinalIgnoreCase))));
     }
 
     private void BeginPharaohFestival(L12StackItem item)

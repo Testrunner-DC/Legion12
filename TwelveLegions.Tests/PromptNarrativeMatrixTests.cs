@@ -1238,6 +1238,119 @@ public sealed class PromptNarrativeMatrixTests
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:alvida-grave-recovery-selection")]
+    public void AlvidaRecoveryExplainsThePublicHandAttemptWithoutPromisingSuccess(int controller)
+    {
+        var success = BeginAlvidaRecoveryPrompt(202609413 + controller, controller, "success");
+        var playerName = success.Game.State.Players[controller].Name;
+
+        AssertPresentation(success.Prompt, success.Source.Name,
+            "阵亡时效果正在选择墓地回收对象", "当前符合条件的墓地卡牌");
+        Assert.Equal(success.FirstTarget.Name,
+            success.Prompt.ChoiceLabels[success.FirstTarget.InstanceId]);
+        Assert.Equal("不发动", success.Prompt.ChoiceLabels["skip"]);
+        Assert.Contains("尝试将", success.Prompt.Presentation!
+            .ChoiceConsequences[success.FirstTarget.InstanceId], StringComparison.Ordinal);
+        Assert.Contains("公开加入手牌", success.Prompt.Presentation
+            .ChoiceConsequences[success.FirstTarget.InstanceId], StringComparison.Ordinal);
+        Assert.Contains("不移动任何墓地卡牌",
+            success.Prompt.Presentation.ChoiceConsequences["skip"], StringComparison.Ordinal);
+        Assert.DoesNotContain("已经加入手牌", success.Prompt.Presentation.Situation,
+            StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(success.Game, controller,
+            $"{playerName} 正在完成卡牌选择");
+        AssertPrivateNamesStayOutOfWaitingViews(success.Game, controller,
+            success.FirstTarget, success.SecondTarget);
+
+        ResolvePromptChoice(success.Game, success.Prompt, success.FirstTarget.InstanceId);
+        Assert.Contains(success.FirstTarget, success.Game.State.Players[controller].Hand);
+        Assert.DoesNotContain(success.FirstTarget, success.Game.State.Players[controller].Graveyard);
+
+        var skip = BeginAlvidaRecoveryPrompt(202609415 + controller, controller, "skip");
+        ResolvePromptChoice(skip.Game, skip.Prompt, "skip");
+        Assert.Contains(skip.FirstTarget, skip.Game.State.Players[controller].Graveyard);
+        Assert.Contains(skip.SecondTarget, skip.Game.State.Players[controller].Graveyard);
+        Assert.Empty(skip.Game.State.PendingPrompts);
+
+        var stale = BeginAlvidaRecoveryPrompt(202609417 + controller, controller, "stale");
+        stale.Game.State.Players[controller].Graveyard.Remove(stale.FirstTarget);
+        stale.Game.State.Players[controller].Library.Add(stale.FirstTarget);
+        ResolvePromptChoice(stale.Game, stale.Prompt, stale.FirstTarget.InstanceId);
+        Assert.Contains(stale.FirstTarget, stale.Game.State.Players[controller].Library);
+        Assert.DoesNotContain(stale.FirstTarget, stale.Game.State.Players[controller].Hand);
+        Assert.Contains(stale.SecondTarget, stale.Game.State.Players[controller].Graveyard);
+
+        var blocked = BeginAlvidaRecoveryPrompt(202609419 + controller, controller, "blocked");
+        var blockedPlayer = blocked.Game.State.Players[controller];
+        blockedPlayer.Graveyard.Remove(blocked.FirstTarget);
+        var blockedReplacement = Card("S02-01S1", blocked.FirstTarget.InstanceId, controller, cost: 2);
+        blockedPlayer.Graveyard.Add(blockedReplacement);
+        ResolvePromptChoice(blocked.Game, blocked.Prompt, blockedReplacement.InstanceId);
+        Assert.Contains(blockedReplacement, blockedPlayer.Graveyard);
+        Assert.DoesNotContain(blockedReplacement, blockedPlayer.Hand);
+        Assert.Contains(blocked.Game.State.Events, entry => entry.Type == "replacement"
+            && entry.Cards.Any(card => card.InstanceId == blockedReplacement.InstanceId));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:erik-grave-summon-selection")]
+    public void ErikSelectionExplainsTheTwoStepSummonWithoutClaimingEntryEarly(int controller)
+    {
+        var success = BeginAsgardSummonSelectionPrompt(202609419 + controller, controller, "success");
+        var playerName = success.Game.State.Players[controller].Name;
+
+        AssertPresentation(success.Prompt, success.Source.Name,
+            "阵亡时效果正在选择登场对象", "进入位置选择");
+        Assert.Equal(success.FirstTarget.Name,
+            success.Prompt.ChoiceLabels[success.FirstTarget.InstanceId]);
+        Assert.Equal("不发动", success.Prompt.ChoiceLabels["skip"]);
+        Assert.Contains("尚未离开墓地", success.Prompt.Presentation!.Situation,
+            StringComparison.Ordinal);
+        Assert.Contains("此时尚未登场", success.Prompt.Presentation
+            .ChoiceConsequences[success.FirstTarget.InstanceId], StringComparison.Ordinal);
+        Assert.Contains("不进入位置选择", success.Prompt.Presentation.ChoiceConsequences["skip"],
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("已经活跃登场", success.Prompt.Presentation.Situation,
+            StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(success.Game, controller,
+            $"{playerName} 正在完成卡牌选择");
+        AssertPrivateNamesStayOutOfWaitingViews(success.Game, controller,
+            success.FirstTarget, success.SecondTarget);
+
+        ResolvePromptChoice(success.Game, success.Prompt, success.FirstTarget.InstanceId);
+        var slot = Assert.Single(success.Game.State.PendingPrompts);
+        Assert.Contains(success.FirstTarget, success.Game.State.Players[controller].Graveyard);
+        AssertPresentation(slot, success.Source.Name, "已经选择墓地中的", "当前合法的空位");
+        ResolvePromptChoice(success.Game, slot, "0:1");
+        Assert.Same(success.FirstTarget, success.Game.State.Players[controller].Field[0][1]);
+
+        var skip = BeginAsgardSummonSelectionPrompt(202609421 + controller, controller, "skip");
+        ResolvePromptChoice(skip.Game, skip.Prompt, "skip");
+        Assert.Contains(skip.FirstTarget, skip.Game.State.Players[controller].Graveyard);
+        Assert.Empty(skip.Game.State.PendingPrompts);
+
+        var stale = BeginAsgardSummonSelectionPrompt(202609423 + controller, controller, "stale");
+        stale.Game.State.Players[controller].Graveyard.Remove(stale.FirstTarget);
+        ResolvePromptChoice(stale.Game, stale.Prompt, stale.FirstTarget.InstanceId);
+        var staleSlot = Assert.Single(stale.Game.State.PendingPrompts);
+        ResolvePromptChoice(stale.Game, staleSlot, "0:1");
+        Assert.Null(stale.Game.State.Players[controller].Field[0][1]);
+
+        var occupied = BeginAsgardSummonSelectionPrompt(202609425 + controller, controller, "occupied");
+        ResolvePromptChoice(occupied.Game, occupied.Prompt, occupied.FirstTarget.InstanceId);
+        var occupiedSlot = Assert.Single(occupied.Game.State.PendingPrompts);
+        var blocker = Card("S01-0002", $"narrative-erik-slot-blocker-{controller}", controller);
+        occupied.Game.State.Players[controller].Field[0][1] = blocker;
+        ResolvePromptChoice(occupied.Game, occupiedSlot, "0:1");
+        Assert.Same(blocker, occupied.Game.State.Players[controller].Field[0][1]);
+        Assert.Contains(occupied.FirstTarget, occupied.Game.State.Players[controller].Graveyard);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
     [Trait("L12Evidence", "prompt-narrative:promoted-heracles-paid-cost-target")]
     public void PromotedHeraclesExplainsTheIrreversibleTopDeckCostAndTargetBoundary(int controller)
     {
@@ -1885,21 +1998,54 @@ public sealed class PromptNarrativeMatrixTests
         L12CardInstance Source, L12CardInstance Target) BeginAsgardSummonSlotPrompt(
         int seed, int controller)
     {
+        var selection = BeginAsgardSummonSelectionPrompt(seed, controller, "position");
+        ResolvePromptChoice(selection.Game, selection.Prompt, selection.FirstTarget.InstanceId);
+        return (selection.Game, Assert.Single(selection.Game.State.PendingPrompts), selection.Item,
+            selection.Source, selection.FirstTarget);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance Source, L12CardInstance FirstTarget,
+        L12CardInstance SecondTarget) BeginAlvidaRecoveryPrompt(
+        int seed, int controller, string suffix)
+    {
         var game = CreateCleanGame(seed);
         var player = game.State.Players[controller];
-        var source = Card("S01-0307", $"narrative-asgard-summon-source-{controller}", controller);
-        var target = Card("S01-0302", $"narrative-asgard-summon-target-{controller}", controller,
-            cost: 2);
-        player.Field[0][0] = source;
-        player.Graveyard.Add(target);
-        var item = LegacyStackItem($"narrative-asgard-summon-stack-{controller}",
+        var source = Card("S01-0307", $"narrative-alvida-source-{suffix}-{controller}", controller);
+        var firstTarget = Card("S01-0302", $"narrative-alvida-target-1-{suffix}-{controller}",
+            controller, cost: 2);
+        var secondTarget = Card("S01-0303", $"narrative-alvida-target-2-{suffix}-{controller}",
+            controller, cost: 3);
+        player.Resolving.Add(source);
+        player.Graveyard.AddRange([firstTarget, secondTarget]);
+        var item = LegacyStackItem($"narrative-alvida-stack-{suffix}-{controller}",
+            controller, source, "death", source.Name);
+        game.State.EffectStack.Add(item);
+
+        Invoke(game, "RecoverAsgard", item, 3, false);
+        return (game, Assert.Single(game.State.PendingPrompts), item, source, firstTarget, secondTarget);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance Source, L12CardInstance FirstTarget,
+        L12CardInstance SecondTarget) BeginAsgardSummonSelectionPrompt(
+        int seed, int controller, string suffix)
+    {
+        var game = CreateCleanGame(seed);
+        var player = game.State.Players[controller];
+        var source = Card("S01-0308", $"narrative-erik-source-{suffix}-{controller}", controller);
+        var firstTarget = Card("S01-0302", $"narrative-erik-target-1-{suffix}-{controller}",
+            controller, cost: 2);
+        var secondTarget = Card("S01-0303", $"narrative-erik-target-2-{suffix}-{controller}",
+            controller, cost: 3);
+        player.Resolving.Add(source);
+        player.Graveyard.AddRange([firstTarget, secondTarget]);
+        var item = LegacyStackItem($"narrative-erik-stack-{suffix}-{controller}",
             controller, source, "death", source.Name);
         game.State.EffectStack.Add(item);
 
         Invoke(game, "SummonAsgardFromGrave", item, 3);
-        var selection = Assert.Single(game.State.PendingPrompts);
-        ResolvePromptChoice(game, selection, target.InstanceId);
-        return (game, Assert.Single(game.State.PendingPrompts), item, source, target);
+        return (game, Assert.Single(game.State.PendingPrompts), item, source, firstTarget, secondTarget);
     }
 
     private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
