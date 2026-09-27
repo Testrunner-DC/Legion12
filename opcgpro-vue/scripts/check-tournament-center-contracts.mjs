@@ -18,6 +18,7 @@ const createPolicy = read('src/l12/tournamentCreatePolicy.ts')
 const gamePage = read('src/l12/GamePage.vue')
 const roomLoadingState = read('src/l12/tournamentRoomLoadingState.ts')
 const tournamentServer = read('../服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs')
+const visualSources = [detail, management, judge, summary, wizard, hub]
 
 const loadTypeScriptModule = async source => {
   const transpiled = ts.transpileModule(source, {
@@ -39,6 +40,13 @@ const roomBase = {
 }
 
 const checks = [
+  ['player tournament pages use the shared site visual tokens', visualSources.every(source => source.includes('--l12-ui-')) && visualSources.every(source => !/var\(--(?:border|panel|accent|muted|danger)\)/.test(source))],
+  ['player tournament pages share the 700px compact boundary', visualSources.every(source => source.includes('@media(max-width:700px)')) && visualSources.every(source => !/@media\(max-width:(?:650|680|720|760|850)px\)/.test(source))],
+  ['mobile tournament actions retain 44px targets', [detail, management, judge, wizard, hub].every(source => source.includes('min-height:44px'))],
+  ['tournament states and roles retain text labels', summary.includes('tournamentStatusText(item.status)') && summary.includes('tournamentViewerRoleText(item.viewerRole)') && detail.includes('tournamentPhaseText(tournament.phase)') && detail.includes('tournamentRoundStatusText(round.status)')],
+  ['dangerous organizer actions are visually separated', management.includes('class="danger-zone"') && management.includes('class="danger" @click="cancel"') && detail.includes('class="danger" @click="remove(person,true)"')],
+  ['responsive standings become labeled cards', detail.includes('class="standings-table"') && detail.includes('data-label="胜-负-平"') && detail.includes('.standings-table .thead{display:none}')],
+  ['creation progress and ranked timing stay visibly structured', wizard.includes('class="stepper"') && wizard.includes('RANKED TIME CONTROL') && wizard.includes('与排位一致的五项计时') && wizard.includes('报名时无需提交，赛前签到时锁定')],
   ['detail separates organizer and judge capabilities', detail.includes('const canOrganize') && detail.includes('const canJudge') && !detail.includes('const canManage')],
   ['participant moderation is organizer-only', detail.includes('v-if="canOrganize && person.accountId !== tournament.organizerAccountId"')],
   ['management is an extracted component', detail.includes('<TournamentManagementPanel') && management.includes('赛事生命周期')],

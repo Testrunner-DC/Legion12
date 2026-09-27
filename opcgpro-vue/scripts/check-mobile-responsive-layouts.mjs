@@ -46,6 +46,14 @@ const deckEditor = await read('src/l12/L12DeckEditor.vue')
 const mobileDeferredCardImage = await read('src/l12/MobileDeferredCardImage.vue')
 const promptCardCandidate = await read('src/l12/game/PromptCardCandidate.vue')
 const masterMatchupMatrix = await read('src/l12/site/MasterMatchupMatrix.vue')
+const [tournamentHub, tournamentDetail, tournamentWizard, tournamentJudge, tournamentManagement, tournamentSummary] = await Promise.all([
+  read('src/l12/site/TournamentHubPage.vue'),
+  read('src/l12/site/TournamentDetailPage.vue'),
+  read('src/l12/site/TournamentCreateWizard.vue'),
+  read('src/l12/site/TournamentJudgeDesk.vue'),
+  read('src/l12/site/TournamentManagementPanel.vue'),
+  read('src/l12/site/TournamentSummaryList.vue'),
+])
 
 const expect = (condition, message) => {
   if (!condition) throw new Error(`mobile responsive contract: ${message}`)
@@ -110,6 +118,21 @@ expect(battleHub.includes('.battle-hub{padding:14px 10px 34px}') && battleHub.in
 expect(rankings.includes('.ranking-page{--ranking-master-avatar:28px;padding:14px 10px 32px}') && masterMatchupMatrix.includes('.matrix-grid{grid-auto-rows:52px}'), 'rankings must compact both table rows and the shared matchup matrix cells')
 expect(rankings.includes('data-label="最擅长主宰"') && rankings.includes('data-label="最强玩家"') && rankings.includes('@media(max-width:700px)') && rankings.includes('.player-mobile-meta') && rankings.includes('.player-table,.master-table,.honor-table{overflow:visible'), 'portrait rankings must become compact information cards instead of requiring horizontal table scrolling')
 expect(tournaments.includes('.tournament-page{padding:14px 10px 34px}') && tournaments.includes('.bracket>section{min-width:190px;padding:8px}'), 'tournament content must preserve bracket proportions while compacting its panels')
+expect([tournamentHub, tournamentDetail, tournamentWizard, tournamentJudge, tournamentManagement, tournamentSummary]
+  .every(source => source.includes('@media(max-width:700px)'))
+  && [tournamentHub, tournamentDetail, tournamentWizard, tournamentJudge, tournamentManagement, tournamentSummary]
+    .every(source => !/@media\(max-width:(650|680|720|760|850)px\)/.test(source)), 'player tournament surfaces must use the shared 700px compact boundary')
+expect(tournamentHub.includes('.hub-page{padding:18px 10px calc(42px + env(safe-area-inset-bottom))')
+  && tournamentDetail.includes('.detail-page{padding:16px 10px calc(42px + env(safe-area-inset-bottom))'), 'player tournament pages must keep compact gutters and bottom safe-area space')
+expect(tournamentHub.includes('.section-tabs{grid-template-columns:1fr 1fr}')
+  && tournamentDetail.includes('.personal-actions{display:grid;grid-template-columns:1fr 1fr')
+  && tournamentDetail.includes('.match-actions{display:grid;grid-template-columns:1fr 1fr}')
+  && tournamentManagement.includes('.actions{display:grid;grid-template-columns:1fr 1fr}'), 'portrait tournament action groups must preserve a clear stacked reading order')
+expect(tournamentDetail.includes('.standings-table .thead{display:none}')
+  && tournamentDetail.includes('data-label="胜-负-平"')
+  && tournamentDetail.includes('.person{grid-template-columns:1fr}'), 'portrait tournament standings and participant operations must become contained labeled cards')
+expect([tournamentHub, tournamentDetail, tournamentWizard, tournamentJudge, tournamentManagement]
+  .every(source => source.includes('min-height:44px')), 'portrait tournament controls must retain 44px interaction targets')
 expect(tournaments.includes('class="site-toast"') && !tournaments.includes('class="toast"') && tournaments.includes('top:auto;right:22px;bottom:22px;left:auto;transform:none'), 'site notifications must be isolated from the battle toast positioning contract')
 expect(shell.includes('class="site-drawer-backdrop"') && shell.includes('aria-controls="site-mobile-drawer"') && shell.includes("event.key === 'Escape'") && shell.includes("document.body.style.overflow = 'hidden'"), 'mobile navigation must provide a modal backdrop, escape close, focus semantics and body scroll lock')
 expect(app.includes('maximum-scale=5, user-scalable=yes') && app.includes('locked ? lockedViewport : readableViewport'), 'reading routes must allow zoom while immersive battle and editor routes stay locked')
