@@ -712,6 +712,142 @@ public sealed class PromptNarrativeMatrixTests
             declineCase.Game.State.Players[controller].Library.Select(card => card.InstanceId).ToArray());
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:joan-optional-discard-cost")]
+    public void JoanExplainsThatSelectingAHandCardPaysForMasterProtection(int controller)
+    {
+        var joanCase = BeginJoanPrompt(202609337 + controller, controller, "use");
+        var game = joanCase.Game;
+        var prompt = joanCase.Prompt;
+        var playerName = game.State.Players[controller].Name;
+
+        AssertPresentation(prompt, "圣女贞德", "弃置1张手牌支付费用", "选择“不发动”");
+        Assert.Equal(new[]
+        {
+            joanCase.FirstHand.InstanceId,
+            joanCase.SecondHand.InstanceId,
+            "skip",
+        }.Order(), prompt.ValidChoices.Order());
+        Assert.Equal("不发动", prompt.ChoiceLabels["skip"]);
+        Assert.Contains("无法被进攻", prompt.Presentation!.ChoiceConsequences[joanCase.FirstHand.InstanceId],
+            StringComparison.Ordinal);
+        Assert.Contains("不获得", prompt.Presentation.ChoiceConsequences["skip"], StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在支付费用",
+            joanCase.FirstHand, joanCase.SecondHand);
+
+        game.State.PendingPrompts.Remove(prompt);
+        ContinueS2Faction(game, joanCase.Item, prompt, joanCase.FirstHand.InstanceId);
+        Assert.Contains(joanCase.FirstHand, game.State.Players[controller].Graveyard);
+        Assert.Equal(int.MaxValue, game.State.Players[controller].MasterCannotBeAttackedUntilTurn);
+        Assert.Equal(controller,
+            game.State.Players[controller].MasterCannotBeAttackedExpiresAtPlayerTurnStart);
+
+        var declineCase = BeginJoanPrompt(202609339 + controller, controller, "decline");
+        declineCase.Game.State.PendingPrompts.Remove(declineCase.Prompt);
+        ContinueS2Faction(declineCase.Game, declineCase.Item, declineCase.Prompt, "skip");
+        Assert.Contains(declineCase.FirstHand, declineCase.Game.State.Players[controller].Hand);
+        Assert.Empty(declineCase.Game.State.Players[controller].Graveyard);
+        Assert.Equal(-1, declineCase.Game.State.Players[controller].MasterCannotBeAttackedUntilTurn);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:perseus-optional-discard-cost")]
+    public void PerseusExplainsTheDiscardCostAndPublicPromotionRecovery(int controller)
+    {
+        var perseusCase = BeginPerseusPrompt(202609341 + controller, controller, "use");
+        var game = perseusCase.Game;
+        var prompt = perseusCase.Prompt;
+        var playerName = game.State.Players[controller].Name;
+
+        AssertPresentation(prompt, "珀尔修斯", "弃置1张手牌支付费用", "手牌和墓地都不会改变");
+        Assert.Contains(perseusCase.FirstHand.InstanceId, prompt.ValidChoices);
+        Assert.Contains(perseusCase.SecondHand.InstanceId, prompt.ValidChoices);
+        Assert.Contains("skip", prompt.ValidChoices);
+        Assert.Contains("〈珀尔修斯·晋升〉加入手牌",
+            prompt.Presentation!.ChoiceConsequences[perseusCase.FirstHand.InstanceId],
+            StringComparison.Ordinal);
+        Assert.Contains("不支付", prompt.Presentation.ChoiceConsequences["skip"], StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在支付费用",
+            perseusCase.FirstHand, perseusCase.SecondHand);
+
+        game.State.PendingPrompts.Remove(prompt);
+        ContinueS2Faction(game, perseusCase.Item, prompt, perseusCase.FirstHand.InstanceId);
+        Assert.Contains(perseusCase.FirstHand, game.State.Players[controller].Graveyard);
+        Assert.Contains(perseusCase.Promotion, game.State.Players[controller].Hand);
+        Assert.DoesNotContain(perseusCase.Promotion, game.State.Players[controller].Graveyard);
+
+        var declineCase = BeginPerseusPrompt(202609343 + controller, controller, "decline");
+        declineCase.Game.State.PendingPrompts.Remove(declineCase.Prompt);
+        ContinueS2Faction(declineCase.Game, declineCase.Item, declineCase.Prompt, "skip");
+        Assert.Contains(declineCase.FirstHand, declineCase.Game.State.Players[controller].Hand);
+        Assert.Contains(declineCase.Promotion, declineCase.Game.State.Players[controller].Graveyard);
+        Assert.DoesNotContain(declineCase.Promotion, declineCase.Game.State.Players[controller].Hand);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:iio-cost-then-declared-target")]
+    public void IioNaotoraSeparatesTheDiscardCostFromTheDeclaredReadyTarget(int controller)
+    {
+        var iioCase = BeginIioPrompt(202609345 + controller, controller, "use");
+        var game = iioCase.Game;
+        var payment = iioCase.Prompt;
+        var playerName = game.State.Players[controller].Name;
+
+        AssertPresentation(payment, "井伊直虎", "必须先弃置1张手牌支付费用", "不能取消或跳过");
+        Assert.Equal(new[] { iioCase.FirstHand.InstanceId, iioCase.SecondHand.InstanceId }.Order(),
+            payment.ValidChoices.Order());
+        Assert.DoesNotContain("skip", payment.ValidChoices);
+        Assert.Contains("进入休整【高天原】军团的对象选择",
+            payment.Presentation!.ChoiceConsequences[iioCase.FirstHand.InstanceId],
+            StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在支付费用",
+            iioCase.FirstHand, iioCase.SecondHand);
+
+        game.State.PendingPrompts.Remove(payment);
+        ContinueS2Faction(game, iioCase.Item, payment, iioCase.FirstHand.InstanceId);
+        Assert.Contains(iioCase.FirstHand, game.State.Players[controller].Graveyard);
+
+        var target = Assert.Single(game.State.PendingPrompts);
+        AssertPresentation(target, "井伊直虎", "费用已经支付", "仍然合法的休整【高天原】军团");
+        Assert.Equal(new[] { iioCase.FirstTarget.InstanceId, iioCase.SecondTarget.InstanceId }.Order(),
+            target.ValidChoices.Order());
+        Assert.Contains("转为活跃", target.Presentation!.ChoiceConsequences[iioCase.FirstTarget.InstanceId],
+            StringComparison.Ordinal);
+        var targetDetail = JsonSerializer.Serialize(new
+        {
+            target.Presentation,
+            target.ChoiceLabels,
+        }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.DoesNotContain("支付费用", targetDetail, StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在选择效果对象");
+
+        game.State.PendingPrompts.Remove(target);
+        ContinueS2Faction(game, iioCase.Item, target, iioCase.FirstTarget.InstanceId);
+        Invoke(game, "ResolveTopStack");
+        Assert.False(iioCase.FirstTarget.Tapped);
+        Assert.True(iioCase.SecondTarget.Tapped);
+
+        var staleCase = BeginIioPrompt(202609347 + controller, controller, "stale");
+        staleCase.Game.State.PendingPrompts.Remove(staleCase.Prompt);
+        ContinueS2Faction(staleCase.Game, staleCase.Item, staleCase.Prompt,
+            staleCase.FirstHand.InstanceId);
+        var staleTargetPrompt = Assert.Single(staleCase.Game.State.PendingPrompts);
+        staleCase.Game.State.Players[controller].Field[0][1] = null;
+        staleCase.Game.State.PendingPrompts.Remove(staleTargetPrompt);
+        ContinueS2Faction(staleCase.Game, staleCase.Item, staleTargetPrompt,
+            staleCase.FirstTarget.InstanceId);
+        Assert.Contains(staleCase.FirstHand, staleCase.Game.State.Players[controller].Graveyard);
+        Assert.True(staleCase.SecondTarget.Tapped);
+        Assert.Empty(staleCase.Game.State.PendingPrompts);
+        Assert.Contains(staleCase.Game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
     private static void AssertPresentation(L12Prompt prompt, string title, string situation, string instruction)
     {
         var presentation = Assert.IsType<L12PromptPresentation>(prompt.Presentation);
@@ -1100,6 +1236,74 @@ public sealed class PromptNarrativeMatrixTests
 
         Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveS2FactionEnter", item, heracles)));
         return (game, Assert.Single(game.State.PendingPrompts), item, existingHand, drawnA, drawnB);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance FirstHand, L12CardInstance SecondHand) BeginJoanPrompt(
+        int seed, int controller, string suffix)
+    {
+        var game = CreateCleanGame(seed);
+        var player = game.State.Players[controller];
+        var firstHand = Card("S01-0002", $"narrative-joan-hand-1-{suffix}-{controller}", controller);
+        var secondHand = Card("S01-0003", $"narrative-joan-hand-2-{suffix}-{controller}", controller);
+        player.Hand.AddRange([firstHand, secondHand]);
+        var joan = Card("S02-0613", $"narrative-joan-{suffix}-{controller}", controller);
+        player.Field[0][0] = joan;
+        var item = LegacyStackItem($"narrative-joan-stack-{suffix}-{controller}", controller, joan,
+            "enter", "圣女贞德");
+        game.State.EffectStack.Add(item);
+
+        Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveS2FactionEnter", item, joan)));
+        return (game, Assert.Single(game.State.PendingPrompts), item, firstHand, secondHand);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance FirstHand, L12CardInstance SecondHand, L12CardInstance Promotion)
+        BeginPerseusPrompt(int seed, int controller, string suffix)
+    {
+        var game = CreateCleanGame(seed);
+        var player = game.State.Players[controller];
+        var firstHand = Card("S01-0002", $"narrative-perseus-hand-1-{suffix}-{controller}", controller);
+        var secondHand = Card("S01-0003", $"narrative-perseus-hand-2-{suffix}-{controller}", controller);
+        var promotion = Card("S02-0505", $"narrative-perseus-promotion-{suffix}-{controller}", controller);
+        player.Hand.AddRange([firstHand, secondHand]);
+        player.Graveyard.Add(promotion);
+        var perseus = Card("S02-0506", $"narrative-perseus-{suffix}-{controller}", controller);
+        player.Field[0][0] = perseus;
+        var item = LegacyStackItem($"narrative-perseus-stack-{suffix}-{controller}", controller, perseus,
+            "enter", "珀尔修斯");
+        game.State.EffectStack.Add(item);
+
+        Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveS2FactionEnter", item, perseus)));
+        return (game, Assert.Single(game.State.PendingPrompts), item,
+            firstHand, secondHand, promotion);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance FirstHand, L12CardInstance SecondHand,
+        L12CardInstance FirstTarget, L12CardInstance SecondTarget) BeginIioPrompt(
+        int seed, int controller, string suffix)
+    {
+        var game = CreateCleanGame(seed);
+        var player = game.State.Players[controller];
+        var firstHand = Card("S01-0002", $"narrative-iio-hand-1-{suffix}-{controller}", controller);
+        var secondHand = Card("S01-0003", $"narrative-iio-hand-2-{suffix}-{controller}", controller);
+        player.Hand.AddRange([firstHand, secondHand]);
+        var iio = Card("S02-0402", $"narrative-iio-{suffix}-{controller}", controller);
+        var firstTarget = Card("S02-0401", $"narrative-iio-target-1-{suffix}-{controller}", controller);
+        var secondTarget = Card("S02-0403", $"narrative-iio-target-2-{suffix}-{controller}", controller);
+        firstTarget.Tapped = true;
+        secondTarget.Tapped = true;
+        player.Field[0][0] = iio;
+        player.Field[0][1] = firstTarget;
+        player.Field[0][2] = secondTarget;
+        var item = LegacyStackItem($"narrative-iio-stack-{suffix}-{controller}", controller, iio,
+            "enter", "井伊直虎");
+        game.State.EffectStack.Add(item);
+
+        Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveS2FactionEnter", item, iio)));
+        return (game, Assert.Single(game.State.PendingPrompts), item,
+            firstHand, secondHand, firstTarget, secondTarget);
     }
 
     private static void ContinueS2Faction(L12GameEngine game, L12StackItem item, L12Prompt prompt,

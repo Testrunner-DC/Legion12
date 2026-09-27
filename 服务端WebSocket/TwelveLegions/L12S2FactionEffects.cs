@@ -326,11 +326,25 @@ public sealed partial class L12GameEngine
                 return PromptS2FlipMorale(item, card, optional: true, onlyTapped: true);
             case "圣女贞德":
             {
-                var choices = player.Hand.Select(candidate => candidate.InstanceId).ToList();
+                var handChoices = player.Hand.ToArray();
+                var choices = handChoices.Select(candidate => candidate.InstanceId).ToList();
                 if (choices.Count == 0) { FinishStackItem(item); return true; }
+                var consequences = handChoices.ToDictionary(candidate => candidate.InstanceId,
+                    candidate => $"弃置〈{candidate.Name}〉支付费用，使我方主宰直到下个我方回合开始前无法被进攻。",
+                    StringComparer.OrdinalIgnoreCase);
                 choices.Add("skip");
+                consequences["skip"] = "不支付弃牌费用，不获得本次无法被进攻的保护。";
                 CreatePrompt(item.Controller, "optional-card", "圣女贞德：可弃置1张手牌，使我方主宰直到下个我方回合开始前无法被进攻", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-joan-master-guard" });
+                    "card-effect", item.StackItemId,
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "s2-joan-master-guard", ["skip"] = "不发动",
+                        },
+                        new("圣女贞德",
+                            "〈圣女贞德〉的登场时效果正在结算。你可以弃置1张手牌支付费用，使我方主宰直到下个我方回合开始前无法被进攻。",
+                            "请选择1张手牌弃置并支付费用，或选择“不发动”；不发动时不会弃牌，也不会获得保护。",
+                            L12PromptWaitingAction.CostPayment, consequences)));
                 return true;
             }
             // Batch 6F：四张牌的公开模式与冒号前休整/符文费用均已在触发候选阶段声明。
@@ -437,7 +451,19 @@ public sealed partial class L12GameEngine
                 };
                 foreach (var handCard in player.Hand) AddPromptCardData(data, handCard);
                 CreatePrompt(item.Controller, "hand-card", "珀尔修斯：可弃置1张手牌，将墓地1张〈珀尔修斯·晋升〉加入手牌",
-                    choices, 1, 1, "card-effect", item.StackItemId, data: data);
+                    choices, 1, 1, "card-effect", item.StackItemId,
+                    data: WithPromptNarrative(data,
+                        new("珀尔修斯",
+                            "〈珀尔修斯〉的登场时效果正在结算。你可以弃置1张手牌支付费用；成功支付后，公开墓地的〈珀尔修斯·晋升〉并将其加入手牌。",
+                            "请选择1张手牌弃置并支付费用，或选择“不发动”；不发动时手牌和墓地都不会改变。",
+                            L12PromptWaitingAction.CostPayment,
+                            player.Hand.ToDictionary(candidate => candidate.InstanceId,
+                                candidate => $"弃置〈{candidate.Name}〉支付费用，并将墓地的〈珀尔修斯·晋升〉加入手牌。",
+                                StringComparer.OrdinalIgnoreCase)
+                                .Append(new KeyValuePair<string, string>("skip",
+                                    "不支付弃牌费用，不将〈珀尔修斯·晋升〉加入手牌。"))
+                                .ToDictionary(pair => pair.Key, pair => pair.Value,
+                                    StringComparer.OrdinalIgnoreCase))));
                 return true;
             }
             case "柏拉图":
@@ -450,8 +476,18 @@ public sealed partial class L12GameEngine
                     .Select(candidate => candidate.InstanceId).ToList();
                 if (choices.Count == 0 || targets.Count == 0) { FinishStackItem(item); return true; }
                 item.Data["s2-gaotianyuan-ready-targets"] = string.Join('|', targets);
+                var discardChoices = player.Hand.ToArray();
                 CreatePrompt(item.Controller, "hand-card", "弃置1张手牌：选择1张休整的【高天原】军团转为活跃", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-gaotianyuan-ready-discard" });
+                    "card-effect", item.StackItemId,
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string> { ["action"] = "s2-gaotianyuan-ready-discard" },
+                        new("井伊直虎",
+                            "〈井伊直虎〉的登场时效果正在结算。你必须先弃置1张手牌支付费用；支付成功后，才能从已经声明的合法对象中选择1张休整的【高天原】军团转为活跃。",
+                            "请选择1张手牌弃置并支付费用；本步骤不能取消或跳过。",
+                            L12PromptWaitingAction.CostPayment,
+                            discardChoices.ToDictionary(candidate => candidate.InstanceId,
+                                candidate => $"弃置〈{candidate.Name}〉支付费用，然后进入休整【高天原】军团的对象选择。",
+                                StringComparer.OrdinalIgnoreCase))));
                 return true;
             }
             case "冲田总司":
@@ -2385,7 +2421,18 @@ public sealed partial class L12GameEngine
                     return true;
                 }
                 CreatePrompt(item.Controller, "target", "选择1张休整的【高天原】军团转为活跃", currentTargets, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-gaotianyuan-ready-target" });
+                    "card-effect", item.StackItemId,
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string> { ["action"] = "s2-gaotianyuan-ready-target" },
+                        new("井伊直虎",
+                            "弃置手牌的费用已经支付。现在请选择原先声明且仍然合法的1张休整【高天原】军团转为活跃；若所选对象随后失效，已支付的费用不会返还，也不会改选其他目标。",
+                            "请选择1张仍然合法的休整【高天原】军团。",
+                            L12PromptWaitingAction.TargetSelection,
+                            currentTargets.ToDictionary(targetId => targetId,
+                                targetId => FindOnField(player, targetId, out _, out _) is { } target
+                                    ? $"使〈{target.Name}〉转为活跃；若结算时对象失效，费用不返还。"
+                                    : "使所选军团转为活跃；若结算时对象失效，费用不返还。",
+                                StringComparer.OrdinalIgnoreCase))));
                 return true;
             }
             case "s2-heracles-draw-discard-choice":
