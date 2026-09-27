@@ -126,6 +126,8 @@ try {
     await page.screenshot({ path: path.join(output, `deck-${suffix(viewport)}.png`), fullPage: true })
 
     await page.goto(`http://127.0.0.1:${port}/__site_portrait__?mode=rules`)
+    await page.locator('.rules-home-lead').waitFor()
+    await page.getByRole('button', { name: /核心规则/ }).click()
     await page.locator('.rule-tools input').waitFor()
     await page.locator('.rule-layout article').first().waitFor()
     const rulesBase = await page.evaluate(() => ({
@@ -146,11 +148,12 @@ try {
       await dialog.getByRole('button', { name: '关闭筛选' }).click()
       assert.equal(await dialog.count(), 0, `rules filter sheet did not close at ${suffix(viewport)}`)
 
-      await page.getByRole('button', { name: /FAQ/ }).click()
+      await page.getByRole('button', { name: '规则资料首页' }).click()
+      await page.getByRole('button', { name: /常见问题/ }).click()
       await page.locator('.faq-search-row input').waitFor()
       assert.equal(await page.locator('.desktop-popular-keywords').isVisible(), false, `FAQ keywords must collapse at ${suffix(viewport)}`)
       await page.locator('.faq-search-row .mobile-filter-trigger').click()
-      const faqDialog = page.getByRole('dialog', { name: '规则主题筛选' })
+      const faqDialog = page.getByRole('dialog', { name: '常见问题筛选' })
       await faqDialog.waitFor()
       assert.equal(await faqDialog.locator('.mobile-popular-keywords').isVisible(), true, `FAQ keywords missing from filter sheet at ${suffix(viewport)}`)
       assert.equal(await faqDialog.evaluate(element => element.scrollWidth > element.clientWidth + 1), false, `FAQ filter sheet overflows at ${suffix(viewport)}`)

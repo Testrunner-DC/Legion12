@@ -6,17 +6,20 @@ import { getEffectiveOperationsPolicy, getPublicContentBatch, type EffectiveOper
 import { mergedRulings, parsePublishedRuleCenter, parsePublishedRulings, RULE_TOPIC_DEFINITIONS, type RuleCenterDocument, type RuleCenterEntry, type RuleRuling, type RuleTopicId } from '@/l12/data/ruleCenterData'
 import MobileFilterSheet from './MobileFilterSheet.vue'
 
-type MainTab = 'core' | 'quick-start' | 'terms' | 'faq' | 'construction' | 'tournament' | 'versions'
+type MainTab = 'home' | 'core' | 'quick-start' | 'terms' | 'faq' | 'construction' | 'tournament' | 'versions'
 type FaqMode = 'general' | 'card'
+
 const route = useRoute()
 const router = useRouter()
-const tabIds = new Set<MainTab>(['core', 'quick-start', 'terms', 'faq', 'construction', 'tournament', 'versions'])
+const tabIds = new Set<MainTab>(['home', 'core', 'quick-start', 'terms', 'faq', 'construction', 'tournament', 'versions'])
 const topicIds = new Set<RuleTopicId>(RULE_TOPIC_DEFINITIONS.map(item => item.id))
-const tab = ref<MainTab>('core')
+const tab = ref<MainTab>('home')
 const faqMode = ref<FaqMode>('general')
 const query = ref('')
 const coreTopic = ref('all')
 const selectedTopics = ref<RuleTopicId[]>([])
+const selectedCategory = ref('')
+const selectedProduct = ref('')
 const coreFiltersOpen = ref(false)
 const faqFiltersOpen = ref(false)
 const openIds = ref<Set<string>>(new Set())
@@ -33,39 +36,84 @@ const nextRuleTransitionAt = ref('')
 let transitionTimer: number | undefined
 let applyingRoute = false
 let contentRefresh: Promise<void> | undefined
-const tabs: Array<{ id: MainTab; label: string }> = [
-  { id: 'core', label: '核心规则' }, { id: 'quick-start', label: '快速入门' }, { id: 'terms', label: '术语' }, { id: 'faq', label: 'FAQ' },
-  { id: 'construction', label: '构筑与限制' }, { id: 'tournament', label: '赛事规则' }, { id: 'versions', label: '版本记录' },
+
+const materialEntries: Array<{ id: Exclude<MainTab, 'home' | 'faq'>; label: string; eyebrow: string; description: string }> = [
+  { id: 'core', label: '核心规则', eyebrow: 'RULEBOOK', description: '按章节查阅当前规则手册。' },
+  { id: 'quick-start', label: '快速入门', eyebrow: 'QUICK START', description: '从准备、回合和进攻开始。' },
+  { id: 'terms', label: '术语', eyebrow: 'GLOSSARY', description: '查找十二军团的规则用语。' },
+  { id: 'construction', label: '构筑与限制', eyebrow: 'DECK RULES', description: '查看构筑规则与当前卡牌限制。' },
+  { id: 'tournament', label: '赛事规则', eyebrow: 'TOURNAMENT', description: '查阅赛制、裁判与申诉规则。' },
+  { id: 'versions', label: '版本记录', eyebrow: 'VERSIONS', description: '核对规则版本、记录和生效日期。' },
 ]
-const popularKeywords = ['登场', '响应', '费用', '进攻', '兵力', '天灾']
+const qaEntries: Array<{ id: 'faq'; mode: FaqMode; label: string; eyebrow: string; description: string }> = [
+  { id: 'faq', mode: 'general', label: '常见问题', eyebrow: 'COMMON QUESTIONS', description: '按规则主题、从属分类和关键词查找通用裁定。' },
+  { id: 'faq', mode: 'card', label: '单卡问答', eyebrow: 'CARD Q&A', description: '按产品系列浏览，或输入官方卡号与卡名查找。' },
+]
+const tabLabels: Record<MainTab, string> = {
+  home: '规则资料', core: '核心规则', 'quick-start': '快速入门', terms: '术语', faq: '裁定问答',
+  construction: '构筑与限制', tournament: '赛事规则', versions: '版本记录',
+}
+const popularKeywords = computed(() => faqMode.value === 'general'
+  ? ['登场', '响应', '费用', '进攻', '兵力', '天灾']
+  : ['登场效果', '无效', '区域', '费用', '响应', '替代'])
 const coreTopics = computed(() => [...new Set(ruleCenter.value.coreBlocks.map(block => block.topic).filter(Boolean))] as string[])
 const allRulings = computed(() => mergedRulings(dynamicRulings.value).filter(item => item.status === 'published'))
+const generalRulings = computed(() => allRulings.value.filter(item => item.scope === 'general'))
+const cardRulings = computed(() => allRulings.value.filter(item => item.scope === 'card' || item.scope === 'errata'))
 const constructionRulings = computed(() => allRulings.value.filter(item => item.scope === 'construction'))
 const tournamentRulings = computed(() => allRulings.value.filter(item => item.scope === 'tournament'))
+const modeRulings = computed(() => faqMode.value === 'general' ? generalRulings.value : cardRulings.value)
 const cardById = computed(() => new Map(cardCatalog.value.map(card => [card.id.toLowerCase(), card])))
+const topicCards = computed(() => RULE_TOPIC_DEFINITIONS.map(topic => ({
+  ...topic, count: modeRulings.value.filter(item => item.topics.includes(topic.id)).length,
+})))
+const categoryOptions = computed(() => [...new Set(modeRulings.value
+  .filter(item => !selectedTopics.value.length || selectedTopics.value.some(topic => item.topics.includes(topic)))
+  .map(item => item.category).filter(Boolean))].sort((left, right) => left.localeCompare(right, 'zh-CN')))
+const productOptions = computed(() => [...new Set(cardRulings.value.flatMap(item => item.productIds))]
+  .sort((left, right) => left.localeCompare(right, 'zh-CN', { numeric: true })))
+
 function textSearch(value: string, queryText: string) { return !queryText || value.toLowerCase().includes(queryText.toLowerCase()) }
-function cardText(item: RuleRuling) { return item.cardIds.map(id => { const card = cardById.value.get(id.toLowerCase()); return [id, card?.number, card?.nameZh].filter(Boolean).join(' ') }).join(' ') }
-function rulingText(item: RuleRuling) { return [item.id, item.question, item.answer, item.category, item.tags.join(' '), item.cardIds.join(' '), cardText(item), item.productIds.join(' ')].join(' ') }
-function displayRuleText(text: string) { return text.split('\n').map(line => line.replace(/（?\s*P\.[^\s\n）]*\s*）?/gi, '').replace(/[.。]{2,}\s*\d+\s*$/, '').trimEnd()).filter(line => line.trim()).join('\n') }
+function cardText(item: RuleRuling) {
+  return item.cardIds.map(id => {
+    const card = cardById.value.get(id.toLowerCase())
+    return [id, card?.number, card?.nameZh].filter(Boolean).join(' ')
+  }).join(' ')
+}
+function rulingText(item: RuleRuling) {
+  return [item.id, item.question, item.answer, item.category, item.tags.join(' '), item.cardIds.join(' '), cardText(item), item.productIds.join(' ')].join(' ')
+}
+function displayRuleText(text: string) {
+  return text.split('\n').map(line => line.replace(/（?\s*P\.[^\s\n）]*\s*）?/gi, '').replace(/[.。]{2,}\s*\d+\s*$/, '').trimEnd())
+    .filter(line => line.trim()).join('\n')
+}
 function searchScore(item: RuleRuling, queryText: string) {
   const term = queryText.trim().toLowerCase()
   if (!term) return 0
-  const cards = item.cardIds.flatMap(id => { const card = cardById.value.get(id.toLowerCase()); return [id, card?.number || '', card?.nameZh || ''] }).map(value => value.toLowerCase())
+  const cards = item.cardIds.flatMap(id => {
+    const card = cardById.value.get(id.toLowerCase())
+    return [id, card?.number || '', card?.nameZh || '']
+  }).map(value => value.toLowerCase())
   if ([item.id, ...cards].some(value => value === term)) return 4
   if (cards.some(value => value.startsWith(term))) return 3
   if ([item.question, ...cards].some(value => value.toLowerCase().includes(term))) return 2
   return rulingText(item).toLowerCase().includes(term) ? 1 : -1
 }
-const ruleResults = computed(() => ruleCenter.value.coreBlocks.filter(block => block.topic !== '目录' && (coreTopic.value === 'all' || block.topic === coreTopic.value) && textSearch([block.id, block.topic, block.chapter, displayRuleText(block.text)].filter(Boolean).join(' '), query.value.trim())))
+
+const ruleResults = computed(() => ruleCenter.value.coreBlocks.filter(block => block.topic !== '目录'
+  && (coreTopic.value === 'all' || block.topic === coreTopic.value)
+  && textSearch([block.id, block.topic, block.chapter, displayRuleText(block.text)].filter(Boolean).join(' '), query.value.trim())))
 const filteredEntries = computed(() => {
   const entries: RuleCenterEntry[] = tab.value === 'quick-start' ? ruleCenter.value.quickStart : ruleCenter.value.terms
   return entries.filter(item => textSearch([item.id, item.title, item.body, item.tags.join(' ')].join(' '), query.value.trim()))
 })
-const faqResults = computed(() => allRulings.value.filter(item => {
-  const matchesMode = faqMode.value === 'general' ? item.scope === 'general' : item.scope === 'card' || item.scope === 'errata'
-  return matchesMode && (!selectedTopics.value.length || selectedTopics.value.some(topic => item.topics.includes(topic))) && searchScore(item, query.value) >= 0
+const faqResults = computed(() => modeRulings.value.filter(item => {
+  const topicMatch = !selectedTopics.value.length || selectedTopics.value.some(topic => item.topics.includes(topic))
+  const categoryMatch = !selectedCategory.value || item.category === selectedCategory.value
+  const productMatch = faqMode.value === 'general' || !selectedProduct.value || item.productIds.includes(selectedProduct.value)
+  return topicMatch && categoryMatch && productMatch && searchScore(item, query.value) >= 0
 }).sort((left, right) => searchScore(right, query.value) - searchScore(left, query.value) || right.recordedAt.localeCompare(left.recordedAt)))
-const topicCards = computed(() => RULE_TOPIC_DEFINITIONS.map(topic => ({ ...topic, count: allRulings.value.filter(item => item.topics.includes(topic.id) && (faqMode.value === 'general' ? item.scope === 'general' : item.scope === 'card' || item.scope === 'errata')).length })))
+
 function scheduleTransition(value?: string | null) {
   if (transitionTimer !== undefined) window.clearTimeout(transitionTimer)
   nextRuleTransitionAt.value = value || ''
@@ -113,34 +161,77 @@ async function ensureCardCatalog() {
   try { cardCatalog.value = await loadDeckCatalog(); catalogState.value = 'ready' }
   catch { catalogState.value = 'error' }
 }
-function toggleTopic(topic: RuleTopicId) { selectedTopics.value = selectedTopics.value.includes(topic) ? selectedTopics.value.filter(value => value !== topic) : [...selectedTopics.value, topic] }
-async function switchTab(next: MainTab) {
-  tab.value = next; query.value = ''; coreTopic.value = 'all'; selectedTopics.value = []; openIds.value = new Set()
-  await router.push({ query: { tab: next === 'core' ? undefined : next } })
+function toggleTopic(topic: RuleTopicId) {
+  selectedTopics.value = selectedTopics.value.includes(topic)
+    ? selectedTopics.value.filter(value => value !== topic) : [...selectedTopics.value, topic]
+  if (selectedCategory.value && !categoryOptions.value.includes(selectedCategory.value)) selectedCategory.value = ''
 }
-function toggleEntry(id: string) { const next = new Set(openIds.value); next.has(id) ? next.delete(id) : next.add(id); openIds.value = next }
-function setAllExpanded(expanded: boolean) { openIds.value = expanded ? new Set(faqResults.value.map(item => item.id)) : new Set() }
+async function switchTab(next: MainTab) {
+  tab.value = next; query.value = ''; coreTopic.value = 'all'; selectedTopics.value = []
+  selectedCategory.value = ''; selectedProduct.value = ''; openIds.value = new Set()
+  await router.push({ query: { tab: next === 'home' ? undefined : next } })
+}
+async function openFaq(mode: FaqMode) {
+  tab.value = 'faq'; faqMode.value = mode; query.value = ''; selectedTopics.value = []
+  selectedCategory.value = ''; selectedProduct.value = ''; openIds.value = new Set()
+  await router.push({ query: { tab: 'faq', mode: mode === 'card' ? 'card' : undefined } })
+}
+function switchFaqMode(mode: FaqMode) {
+  faqMode.value = mode; query.value = ''; selectedTopics.value = []
+  selectedCategory.value = ''; selectedProduct.value = ''; openIds.value = new Set()
+}
+function toggleEntry(item: RuleRuling) {
+  const next = new Set(openIds.value)
+  next.has(item.id) ? next.delete(item.id) : next.add(item.id)
+  openIds.value = next
+  if (next.has(item.id) && item.cardIds.length) void ensureCardCatalog()
+}
+function setAllExpanded(items: RuleRuling[], expanded: boolean) { openIds.value = expanded ? new Set(items.map(item => item.id)) : new Set() }
 function selectKeyword(keyword: string) { query.value = keyword }
 function resetCoreFilters() { coreTopic.value = 'all' }
-function resetFaqFilters() { selectedTopics.value = [] }
-function printRules() { window.print() }
+function resetFaqFilters() { selectedTopics.value = []; selectedCategory.value = ''; selectedProduct.value = '' }
 function firstQuery(value: unknown) { return Array.isArray(value) ? String(value[0] || '') : typeof value === 'string' ? value : '' }
+function replacementFor(entry: string) { return allRulings.value.find(item => item.supersedes.includes(entry))?.id || entry }
+function tabForEntry(entry: string): MainTab | undefined {
+  if (ruleCenter.value.coreBlocks.some(item => item.id === entry)) return 'core'
+  if (ruleCenter.value.quickStart.some(item => item.id === entry)) return 'quick-start'
+  if (ruleCenter.value.terms.some(item => item.id === entry)) return 'terms'
+  if (ruleCenter.value.tournament.some(item => item.id === entry)) return 'tournament'
+  if (ruleCenter.value.versions.some(item => item.id === entry)) return 'versions'
+  const ruling = allRulings.value.find(item => item.id === entry)
+  if (!ruling) return undefined
+  if (ruling.scope === 'construction') return 'construction'
+  if (ruling.scope === 'tournament') return 'tournament'
+  return 'faq'
+}
 async function revealRouteEntry() {
-  let entry = firstQuery(route.query.entry)
-  if (!entry) return
-  const replacement = allRulings.value.find(item => item.supersedes.includes(entry))
-  if (replacement) entry = replacement.id
+  const requested = firstQuery(route.query.entry)
+  if (!requested) return
+  const entry = replacementFor(requested)
+  const inferredTab = tabForEntry(entry)
+  const ruling = allRulings.value.find(item => item.id === entry)
+  if (inferredTab && (tab.value === 'home' || !firstQuery(route.query.tab))) {
+    applyingRoute = true
+    tab.value = inferredTab
+    if (inferredTab === 'faq' && ruling) faqMode.value = ruling.scope === 'card' || ruling.scope === 'errata' ? 'card' : 'general'
+    applyingRoute = false
+    await router.replace({ query: { ...route.query, tab: inferredTab,
+      mode: inferredTab === 'faq' && faqMode.value === 'card' ? 'card' : undefined, entry } })
+  } else if (entry !== requested) await router.replace({ query: { ...route.query, entry } })
   openIds.value = new Set([entry])
+  if (ruling?.cardIds.length) void ensureCardCatalog()
   await nextTick()
   document.getElementById(`rule-entry-${entry}`)?.scrollIntoView({ block: 'center' })
 }
 function applyRoute() {
   applyingRoute = true
   const requestedTab = firstQuery(route.query.tab) as MainTab
-  tab.value = tabIds.has(requestedTab) ? requestedTab : 'core'
+  tab.value = tabIds.has(requestedTab) ? requestedTab : 'home'
   faqMode.value = firstQuery(route.query.mode) === 'card' ? 'card' : 'general'
   query.value = firstQuery(route.query.q)
   selectedTopics.value = firstQuery(route.query.topics).split(',').filter((value): value is RuleTopicId => topicIds.has(value as RuleTopicId))
+  selectedCategory.value = firstQuery(route.query.category)
+  selectedProduct.value = firstQuery(route.query.product)
   const entry = firstQuery(route.query.entry)
   openIds.value = entry ? new Set([entry]) : new Set()
   applyingRoute = false
@@ -150,29 +241,58 @@ function syncQuery() {
   if (applyingRoute) return
   const entry = [...openIds.value][0]
   void router.replace({ query: {
-    tab: tab.value === 'core' ? undefined : tab.value,
+    tab: tab.value === 'home' ? undefined : tab.value,
     mode: tab.value === 'faq' && faqMode.value === 'card' ? 'card' : undefined,
     q: query.value.trim() || undefined,
-    topics: selectedTopics.value.length ? selectedTopics.value.join(',') : undefined,
+    topics: tab.value === 'faq' && selectedTopics.value.length ? selectedTopics.value.join(',') : undefined,
+    category: tab.value === 'faq' && selectedCategory.value ? selectedCategory.value : undefined,
+    product: tab.value === 'faq' && faqMode.value === 'card' && selectedProduct.value ? selectedProduct.value : undefined,
     entry: entry || undefined,
   } })
 }
 function onRulesResource() { void loadRulesContent() }
-function onVisibility() { if (document.visibilityState === 'visible' && nextRuleTransitionAt.value && new Date(nextRuleTransitionAt.value).getTime() <= Date.now()) void loadRulesContent() }
+function onVisibility() {
+  if (document.visibilityState === 'visible' && nextRuleTransitionAt.value && new Date(nextRuleTransitionAt.value).getTime() <= Date.now()) void loadRulesContent()
+}
+
 watch(() => route.query, applyRoute, { immediate: true })
-watch([tab, faqMode, query, selectedTopics, openIds], syncQuery, { deep: true })
-watch([tab, faqMode, query], () => { if (tab.value === 'faq' && faqMode.value === 'card' && query.value.trim()) void ensureCardCatalog() })
-onMounted(() => { void loadDynamicContent(); window.addEventListener('l12-resource-rulesContent', onRulesResource); document.addEventListener('visibilitychange', onVisibility) })
-onBeforeUnmount(() => { if (transitionTimer !== undefined) window.clearTimeout(transitionTimer); window.removeEventListener('l12-resource-rulesContent', onRulesResource); document.removeEventListener('visibilitychange', onVisibility) })
+watch([tab, faqMode, query, selectedTopics, selectedCategory, selectedProduct, openIds], syncQuery, { deep: true })
+watch([tab, faqMode, query], () => {
+  if (tab.value === 'faq' && faqMode.value === 'card' && query.value.trim()) void ensureCardCatalog()
+})
+onMounted(() => {
+  void loadDynamicContent()
+  window.addEventListener('l12-resource-rulesContent', onRulesResource)
+  document.addEventListener('visibilitychange', onVisibility)
+})
+onBeforeUnmount(() => {
+  if (transitionTimer !== undefined) window.clearTimeout(transitionTimer)
+  window.removeEventListener('l12-resource-rulesContent', onRulesResource)
+  document.removeEventListener('visibilitychange', onVisibility)
+})
 </script>
 
 <template>
   <div class="rules-page">
-    <header class="rules-head"><div><small>RULES CENTER</small><h1>规则中心</h1><p>浏览当前生效的规则、术语、裁定与赛事规则。</p></div><button v-if="tab === 'core'" @click="printRules">打印 / 保存 PDF</button></header>
+    <header class="rules-head"><div><small>RULES CENTER</small><h1>规则中心</h1><p>先选择资料类型，再按分类、产品或关键词定位当前生效的规则。</p></div></header>
     <aside v-if="ruleNotice" class="admin-rule-notice"><b>规则公告</b><span>{{ ruleNotice }}</span></aside>
     <aside v-if="contentError || (tab === 'construction' && policyError)" class="load-error"><span>{{ contentError || policyError }}</span><button :disabled="loading" @click="loadDynamicContent">{{ loading ? '重试中…' : '重试' }}</button></aside>
-    <nav class="rule-tabs" aria-label="规则中心栏目"><button v-for="item in tabs" :key="item.id" :class="{ active: tab === item.id }" @click="switchTab(item.id)">{{ item.label }}</button></nav>
-    <template v-if="tab === 'core'">
+    <nav v-if="tab !== 'home'" class="rules-breadcrumb" aria-label="规则资料位置"><button @click="switchTab('home')">规则资料首页</button><span aria-hidden="true">/</span><b>{{ tabLabels[tab] }}</b></nav>
+
+    <template v-if="tab === 'home'">
+      <section class="rules-home-lead"><small>CHOOSE A GUIDE</small><h2>你想查找什么？</h2><p>规则资料、裁定问答和当前运营限制都在这里。进入资料后仍可随时返回本页。</p></section>
+      <section class="rules-home-section" aria-labelledby="rules-material-heading">
+        <header><div><small>01</small><h2 id="rules-material-heading">规则资料</h2></div><p>学习玩法、核对术语与查看当前规则版本。</p></header>
+        <div class="material-grid"><button v-for="item in materialEntries" :key="item.id" @click="switchTab(item.id)"><small>{{ item.eyebrow }}</small><b>{{ item.label }}</b><span>{{ item.description }}</span><i aria-hidden="true">→</i></button></div>
+      </section>
+      <section class="rules-home-section qa-home-section" aria-labelledby="rules-qa-heading">
+        <header><div><small>02</small><h2 id="rules-qa-heading">裁定问答</h2></div><p>通用规则与单卡裁定分开检索。</p></header>
+        <div class="qa-entry-grid"><button v-for="item in qaEntries" :key="item.mode" @click="openFaq(item.mode)"><small>{{ item.eyebrow }}</small><b>{{ item.label }}</b><span>{{ item.description }}</span><i aria-hidden="true">→</i></button></div>
+      </section>
+    </template>
+
+    <template v-else-if="tab === 'core'">
+      <section class="section-lead"><small>RULEBOOK</small><h2>核心规则</h2><p>按章节或关键词浏览现行规则手册。</p></section>
       <section class="rule-tools">
         <input v-model="query" type="search" placeholder="搜索规则章节或关键词">
         <MobileFilterSheet v-model="coreFiltersOpen" title="规则章节筛选" :active-count="coreTopic === 'all' ? 0 : 1" @reset="resetCoreFilters">
@@ -183,25 +303,33 @@ onBeforeUnmount(() => { if (transitionTimer !== undefined) window.clearTimeout(t
       </section>
       <div class="rule-layout"><aside><b>规则手册</b><span>{{ ruleCenter.coreBlocks.length }} 个规则内容块</span><p>按主题与章节浏览现行规则。</p></aside><main><article v-for="block in ruleResults" :id="`rule-entry-${block.id}`" :key="block.id"><header><span v-if="block.topic">{{ block.topic }}</span><b v-if="block.chapter">{{ block.chapter }}</b></header><p>{{ displayRuleText(block.text) }}</p></article><div v-if="!ruleCenter.coreBlocks.length" class="empty">核心规则资料尚未发布</div><div v-else-if="!ruleResults.length" class="empty">没有匹配的规则内容</div></main></div>
     </template>
+
     <template v-else-if="tab === 'quick-start' || tab === 'terms'">
-      <section class="section-lead"><small>{{ tab === 'quick-start' ? 'QUICK START' : 'GLOSSARY' }}</small><h2>{{ tab === 'quick-start' ? '快速入门' : '术语' }}</h2><p>{{ tab === 'quick-start' ? '从胜利条件、对局准备、回合与进攻开始阅读。具体争议以现行 FAQ 或规则书为准。' : '术语采用《十二军团》规则书的本地用语，不借用其他游戏的术语体系。' }}</p><input v-model="query" :placeholder="tab === 'quick-start' ? '搜索入门主题' : '搜索术语'" /></section>
+      <section class="section-lead"><small>{{ tab === 'quick-start' ? 'QUICK START' : 'GLOSSARY' }}</small><h2>{{ tab === 'quick-start' ? '快速入门' : '术语' }}</h2><p>{{ tab === 'quick-start' ? '从胜利条件、对局准备、回合与进攻开始阅读。具体争议以现行裁定为准。' : '术语采用《十二军团》规则书的本地用语。' }}</p><input v-model="query" :placeholder="tab === 'quick-start' ? '搜索入门主题' : '搜索术语'"></section>
       <section class="entry-grid"><article v-for="item in filteredEntries" :id="`rule-entry-${item.id}`" :key="item.id" :data-status="item.status"><h3>{{ item.title }}</h3><p>{{ item.body }}</p><div><span v-for="tag in item.tags" :key="tag">{{ tag }}</span></div></article><div v-if="!filteredEntries.length" class="empty">没有匹配的内容</div></section>
     </template>
+
     <template v-else-if="tab === 'faq'">
-      <nav class="faq-mode-tabs" aria-label="FAQ 类型"><button :class="{ active: faqMode === 'general' }" @click="faqMode = 'general'; selectedTopics = []; query = ''"><b>常见问题</b><span>规则主题与通用裁定</span></button><button :class="{ active: faqMode === 'card' }" @click="faqMode = 'card'; selectedTopics = []; query = ''"><b>单卡问答</b><span>已确认的单卡裁定与勘误</span></button></nav>
-      <section class="faq-search-panel"><div><small>{{ faqMode === 'general' ? 'FAQ SEARCH' : 'CARD Q&A SEARCH' }}</small><h2>{{ faqMode === 'general' ? '从现行规则裁定中搜索' : '从已确认的单卡裁定中搜索' }}</h2><p>搜索已经发布的通用规则与单卡裁定。</p></div><div class="faq-search-row"><input v-model="query" type="search" :placeholder="faqMode === 'general' ? '输入规则关键词' : '输入官方卡名、卡号或关键词'"><MobileFilterSheet v-model="faqFiltersOpen" title="规则主题筛选" :active-count="selectedTopics.length" @reset="resetFaqFilters"><div class="rule-filter-fields"><div class="topic-checks"><button v-for="topicItem in topicCards" :key="topicItem.id" type="button" :class="{ active: selectedTopics.includes(topicItem.id) }" @click="toggleTopic(topicItem.id)">{{ topicItem.label }}（{{ topicItem.count }}）</button></div><div class="popular-keywords mobile-popular-keywords"><span>常用关键词</span><button v-for="keyword in popularKeywords" :key="keyword" @click="selectKeyword(keyword); faqFiltersOpen = false">{{ keyword }}</button></div></div><template #apply-label>查看 {{ faqResults.length }} 项结果</template></MobileFilterSheet><span v-if="faqMode === 'card' && catalogState === 'loading'" class="catalog-state">正在载入官方卡名…</span><button v-else-if="faqMode === 'card' && catalogState === 'error'" class="catalog-retry" @click="ensureCardCatalog">卡名读取失败，重试</button></div><div class="popular-keywords desktop-popular-keywords"><span>常用关键词</span><button v-for="keyword in popularKeywords" :key="keyword" @click="selectKeyword(keyword)">{{ keyword }}</button></div></section>
-      <section class="faq-category-section"><header><h2>按规则主题查看</h2><span>可组合多个固定主题；主题用于检索，不改变裁定效力。</span></header><div class="faq-category-grid"><button v-for="topicItem in topicCards" :key="topicItem.id" :class="{ active: selectedTopics.includes(topicItem.id) }" @click="toggleTopic(topicItem.id)"><small>{{ topicItem.count }} 条</small><b>{{ topicItem.label }}</b></button></div></section>
-      <div class="faq-result-bar"><b>{{ faqResults.length }} 条现行裁定</b><div><button @click="setAllExpanded(false)">全部收起</button><button @click="setAllExpanded(true)">全部展开</button></div></div>
-      <div class="faq-list"><article v-for="item in faqResults" :id="`rule-entry-${item.id}`" :key="item.id" :class="{ open: openIds.has(item.id) }"><button class="faq-question" :aria-expanded="openIds.has(item.id)" @click="toggleEntry(item.id)"><span class="faq-number">裁定</span><span class="faq-title"><small>{{ item.category }}</small><b>{{ item.question }}</b></span><span class="faq-toggle">{{ openIds.has(item.id) ? '−' : '+' }}</span></button><div v-if="openIds.has(item.id)" class="faq-answer"><strong>答</strong><div><p>{{ item.answer }}</p><div class="ruling-meta"><span>记录：{{ item.recordedAt }}</span><span v-if="item.effectiveAt">生效：{{ new Date(item.effectiveAt).toLocaleString('zh-CN') }}</span></div><div v-if="item.cardIds.length" class="ruling-cards"><span v-for="cardId in item.cardIds" :key="cardId">{{ cardById.get(cardId.toLowerCase())?.nameZh || cardId }} · {{ cardById.get(cardId.toLowerCase())?.number || cardId }}</span></div><div v-if="item.tags.length" class="ruling-tags"><span v-for="tag in item.tags" :key="tag">{{ tag }}</span></div></div></div></article><div v-if="!faqResults.length" class="empty">当前没有符合条件的已确认裁定</div></div>
+      <nav class="faq-mode-tabs" aria-label="裁定问答类型"><button :class="{ active: faqMode === 'general' }" @click="switchFaqMode('general')"><b>常见问题</b><span>主题、子分类与通用裁定</span></button><button :class="{ active: faqMode === 'card' }" @click="switchFaqMode('card')"><b>单卡问答</b><span>产品系列、卡号与卡名</span></button></nav>
+      <section class="faq-search-panel"><div><small>{{ faqMode === 'general' ? 'COMMON QUESTIONS' : 'CARD Q&A' }}</small><h2>{{ faqMode === 'general' ? '从通用规则裁定中查找' : '从单卡裁定中查找' }}</h2><p>{{ faqMode === 'general' ? '先选规则主题，再用从属分类和关键词缩小范围。' : '可先浏览产品系列，也可直接输入官方卡号、卡名或关键词。' }}</p></div><div class="faq-search-row"><input v-model="query" type="search" :placeholder="faqMode === 'general' ? '输入规则关键词' : '输入官方卡名、卡号或关键词'"><MobileFilterSheet v-model="faqFiltersOpen" :title="faqMode === 'general' ? '常见问题筛选' : '单卡问答筛选'" :active-count="selectedTopics.length + (selectedCategory ? 1 : 0) + (selectedProduct ? 1 : 0)" @reset="resetFaqFilters"><div class="rule-filter-fields"><div v-if="faqMode === 'general'" class="topic-checks"><button v-for="topicItem in topicCards" :key="topicItem.id" type="button" :class="{ active: selectedTopics.includes(topicItem.id) }" @click="toggleTopic(topicItem.id)">{{ topicItem.label }}（{{ topicItem.count }}）</button></div><label v-if="faqMode === 'general'"><span>从属分类</span><select v-model="selectedCategory"><option value="">全部分类</option><option v-for="value in categoryOptions" :key="value" :value="value">{{ value }}</option></select></label><div v-else class="product-checks"><button v-for="product in productOptions" :key="product" type="button" :class="{ active: selectedProduct === product }" @click="selectedProduct = selectedProduct === product ? '' : product">{{ product }}</button></div><div class="popular-keywords mobile-popular-keywords"><span>常用关键词</span><button v-for="keyword in popularKeywords" :key="keyword" @click="selectKeyword(keyword); faqFiltersOpen = false">{{ keyword }}</button></div></div><template #apply-label>查看 {{ faqResults.length }} 项结果</template></MobileFilterSheet><span v-if="faqMode === 'card' && catalogState === 'loading'" class="catalog-state">正在载入官方卡名…</span><button v-else-if="faqMode === 'card' && catalogState === 'error'" class="catalog-retry" @click="ensureCardCatalog">卡名读取失败，重试</button></div><div class="popular-keywords desktop-popular-keywords"><span>常用关键词</span><button v-for="keyword in popularKeywords" :key="keyword" @click="selectKeyword(keyword)">{{ keyword }}</button></div></section>
+      <section v-if="faqMode === 'general'" class="faq-category-section"><header><div><small>MAIN CATEGORY</small><h2>先选择规则主题</h2></div><span>可组合主题，再选择从属分类。</span></header><div class="faq-category-grid"><button v-for="topicItem in topicCards" :key="topicItem.id" :class="{ active: selectedTopics.includes(topicItem.id) }" @click="toggleTopic(topicItem.id)"><small>{{ topicItem.count }} 条</small><b>{{ topicItem.label }}</b></button></div><label class="subcategory-select"><span>从属分类</span><select v-model="selectedCategory"><option value="">全部分类</option><option v-for="value in categoryOptions" :key="value" :value="value">{{ value }}</option></select></label></section>
+      <section v-else class="faq-product-section"><header><div><small>PRODUCT SERIES</small><h2>按产品系列浏览</h2></div><button v-if="selectedProduct" @click="selectedProduct = ''">查看全部产品</button></header><div class="product-grid"><button v-for="product in productOptions" :key="product" :class="{ active: selectedProduct === product }" @click="selectedProduct = selectedProduct === product ? '' : product"><b>{{ product }}</b><span>{{ cardRulings.filter(item => item.productIds.includes(product)).length }} 条问答</span></button><p v-if="!productOptions.length">已发布裁定尚未标注产品系列，可直接使用卡号、卡名或关键词搜索。</p></div></section>
+      <div class="faq-result-bar"><b>{{ faqResults.length }} 条现行裁定</b><div><button @click="setAllExpanded(faqResults, false)">全部收起</button><button @click="setAllExpanded(faqResults, true)">全部展开</button></div></div>
+      <div class="faq-list"><article v-for="item in faqResults" :id="`rule-entry-${item.id}`" :key="item.id" :class="{ open: openIds.has(item.id) }"><button class="faq-question" :aria-expanded="openIds.has(item.id)" @click="toggleEntry(item)"><span class="faq-number">问</span><span class="faq-title"><small>{{ item.category }}</small><b>{{ item.question }}</b></span><span class="faq-toggle" aria-hidden="true">{{ openIds.has(item.id) ? '−' : '+' }}</span></button><div v-if="openIds.has(item.id)" class="faq-answer"><strong>答</strong><div><p>{{ item.answer }}</p><div class="ruling-meta"><span>记录：{{ item.recordedAt }}</span><span v-if="item.effectiveAt">生效：{{ new Date(item.effectiveAt).toLocaleString('zh-CN') }}</span><span v-for="product in item.productIds" :key="product">产品：{{ product }}</span></div><div v-if="item.cardIds.length" class="ruling-cards"><span v-for="cardId in item.cardIds" :key="cardId">{{ cardById.get(cardId.toLowerCase())?.nameZh || cardId }} · {{ cardById.get(cardId.toLowerCase())?.number || cardId }}</span></div><div v-if="item.tags.length" class="ruling-tags"><span v-for="tag in item.tags" :key="tag">{{ tag }}</span></div></div></div></article><div v-if="!faqResults.length" class="empty">当前没有符合条件的已确认裁定</div></div>
     </template>
+
     <template v-else-if="tab === 'construction'">
       <section class="section-lead"><small>DECK CONSTRUCTION</small><h2>构筑与限制</h2><p>查看当前生效的构筑规则与卡牌限制。</p></section>
       <section v-if="policy" class="policy-grid"><article><small>规则版本</small><h3>运营规则 #{{ policy.version }}</h3><p>{{ policy.season.name }} · {{ policy.season.status }}</p></article><article><small>默认对局</small><h3>{{ policy.defaultRoomConfig.matchModeId }}</h3><p>天灾模式：{{ policy.defaultRoomConfig.disasterMode }}</p></article><article class="policy-restrictions"><small>当前卡牌限制</small><h3>{{ policy.cardRestrictions.length ? `${policy.cardRestrictions.length} 项` : '无额外限制' }}</h3><ul v-if="policy.cardRestrictions.length"><li v-for="restriction in policy.cardRestrictions" :key="`${restriction.cardId}-${restriction.masterId || ''}`"><b>{{ restriction.cardId }}</b><span>最多 {{ restriction.maxCopies }} 张</span><em v-if="restriction.reason">{{ restriction.reason }}</em></li></ul><p v-else>仍须遵守核心规则与卡牌自身的构筑文字。</p></article></section><div v-else class="empty compact">{{ policyError || '正在读取当前运营限制…' }}</div>
-      <section v-if="constructionRulings.length" class="entry-grid supplemental-rulings"><article v-for="item in constructionRulings" :id="`rule-entry-${item.id}`" :key="item.id"><h3>{{ item.question }}</h3><p>{{ item.answer }}</p></article></section>
+      <section v-if="constructionRulings.length" class="supplemental-qa"><div class="faq-result-bar"><b>构筑裁定 · {{ constructionRulings.length }} 条</b><div><button @click="setAllExpanded(constructionRulings, false)">全部收起</button><button @click="setAllExpanded(constructionRulings, true)">全部展开</button></div></div><div class="faq-list"><article v-for="item in constructionRulings" :id="`rule-entry-${item.id}`" :key="item.id" :class="{ open: openIds.has(item.id) }"><button class="faq-question" :aria-expanded="openIds.has(item.id)" @click="toggleEntry(item)"><span class="faq-number">问</span><span class="faq-title"><small>{{ item.category }}</small><b>{{ item.question }}</b></span><span class="faq-toggle" aria-hidden="true">{{ openIds.has(item.id) ? '−' : '+' }}</span></button><div v-if="openIds.has(item.id)" class="faq-answer"><strong>答</strong><div><p>{{ item.answer }}</p></div></div></article></div></section>
     </template>
+
     <template v-else-if="tab === 'tournament'">
-      <section class="section-lead"><small>TOURNAMENT RULES</small><h2>赛事规则</h2><p>查看当前赛事采用的赛制、时限、裁判与申诉规则。</p></section><section class="entry-grid"><article v-for="item in ruleCenter.tournament" :id="`rule-entry-${item.id}`" :key="item.id"><h3>{{ item.title }}</h3><p>{{ item.body }}</p></article><article v-for="item in tournamentRulings" :id="`rule-entry-${item.id}`" :key="item.id"><h3>{{ item.question }}</h3><p>{{ item.answer }}</p></article><div v-if="!ruleCenter.tournament.length && !tournamentRulings.length" class="empty">赛事规则尚未发布</div></section>
+      <section class="section-lead"><small>TOURNAMENT RULES</small><h2>赛事规则</h2><p>查看当前赛事采用的赛制、时限、裁判与申诉规则。</p></section>
+      <section class="entry-grid"><article v-for="item in ruleCenter.tournament" :id="`rule-entry-${item.id}`" :key="item.id"><h3>{{ item.title }}</h3><p>{{ item.body }}</p></article><div v-if="!ruleCenter.tournament.length && !tournamentRulings.length" class="empty">赛事规则尚未发布</div></section>
+      <section v-if="tournamentRulings.length" class="supplemental-qa"><div class="faq-result-bar"><b>赛事裁定 · {{ tournamentRulings.length }} 条</b><div><button @click="setAllExpanded(tournamentRulings, false)">全部收起</button><button @click="setAllExpanded(tournamentRulings, true)">全部展开</button></div></div><div class="faq-list"><article v-for="item in tournamentRulings" :id="`rule-entry-${item.id}`" :key="item.id" :class="{ open: openIds.has(item.id) }"><button class="faq-question" :aria-expanded="openIds.has(item.id)" @click="toggleEntry(item)"><span class="faq-number">问</span><span class="faq-title"><small>{{ item.category }}</small><b>{{ item.question }}</b></span><span class="faq-toggle" aria-hidden="true">{{ openIds.has(item.id) ? '−' : '+' }}</span></button><div v-if="openIds.has(item.id)" class="faq-answer"><strong>答</strong><div><p>{{ item.answer }}</p></div></div></article></div></section>
     </template>
+
     <template v-else>
       <section class="section-lead"><small>VERSION HISTORY</small><h2>版本记录</h2><p>查看现行规则的版本记录与生效日期。</p></section><section class="version-list"><article v-for="item in ruleCenter.versions" :id="`rule-entry-${item.id}`" :key="item.id"><div><small>{{ item.kind }} · 已发布</small><h3>{{ item.title }}<span v-if="item.version">{{ item.version }}</span></h3><p>{{ item.summary }}</p></div><aside><span v-if="item.recordedAt">记录：{{ item.recordedAt }}</span><span v-if="item.effectiveAt">生效：{{ item.effectiveAt }}</span></aside></article><div v-if="!ruleCenter.versions.length" class="empty">版本记录尚未发布</div></section>
     </template>
@@ -209,12 +337,8 @@ onBeforeUnmount(() => { if (transitionTimer !== undefined) window.clearTimeout(t
 </template>
 
 <style scoped>
-.rules-page{min-height:100%;max-width:100%;overflow-x:clip;padding:0 clamp(18px,4vw,64px) 60px;font-family:'Microsoft YaHei','微软雅黑',sans-serif}.rules-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:32px 0 20px}.rules-head small,.section-lead>small{color:#52c4cb;font:900 14px monospace;letter-spacing:.18em}.rules-head h1{margin:6px 0;font-size:32px}.rules-head p,.section-lead p{margin:0;color:#8d999f;font-size:14px;line-height:1.75}.rules-head button,.faq-result-bar button{padding:10px 14px;border:1px solid #d8ba68;background:#d8ba68;color:#080b0d;font-weight:900}.admin-rule-notice{display:flex;gap:12px;margin:0 0 12px;padding:14px 18px;border:1px solid #6d5a2d;border-left:4px solid #d1ad54;background:#171811}.admin-rule-notice b{color:#edd58d}.admin-rule-notice span{color:#d5d0c2;font-size:14px;line-height:1.7;white-space:pre-line}.rule-tabs{display:flex;overflow-x:auto;border:1px solid #35424a;background:#091016}.rule-tabs button{flex:1 0 max-content;padding:14px 16px;border:0;border-bottom:3px solid transparent;background:transparent;color:#8d989e;font-weight:900}.rule-tabs button.active{border-bottom-color:#d7b85f;background:#41131c;color:#fff}.rule-tools,.faq-search-row{display:grid;grid-template-columns:minmax(0,1fr) 230px;gap:8px;margin:14px 0}.rule-tools input,.rule-tools select,.faq-search-row input,.faq-search-row select,.section-lead input{box-sizing:border-box;min-width:0;padding:12px;border:1px solid #46545c;background:#090f14;color:#fff;font:700 14px 'Microsoft YaHei','微软雅黑',sans-serif}.rule-layout{display:grid;grid-template-columns:240px minmax(0,1fr);gap:12px}.rule-layout>aside,.rule-layout article,.entry-grid article,.policy-grid article,.version-list article{border:1px solid #35424a;background:#101821}.rule-layout>aside{height:max-content;padding:20px}.rule-layout aside b,.rule-layout aside span{display:block}.rule-layout aside b{color:#e0bf6b}.rule-layout aside span{margin-top:5px;color:#7d898e;font-size:14px}.rule-layout aside p{color:#89949a;font-size:14px;line-height:1.8}.rule-layout main{display:flex;flex-direction:column;gap:8px}.rule-layout article{padding:20px}.rule-layout article header{display:flex;gap:8px}.rule-layout article header span{color:#52c4cb;font-size:14px;font-weight:900}.rule-layout article header b{padding:3px 7px;background:#272014;color:#e0c271;font-size:14px}.rule-layout article p{margin:13px 0 0;color:#c0c5c5;font-size:14px;line-height:1.95;white-space:pre-line}.section-lead{margin:20px 0;padding:25px;border:1px solid #35424a;background:linear-gradient(135deg,#121b22,#0c1217)}.section-lead h2{margin:6px 0;font-size:24px}.section-lead input{width:min(680px,100%);margin-top:16px}.entry-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:12px}.entry-grid article{padding:19px}.entry-grid article[data-status="pending"],.version-list article[data-status="pending"]{border-color:#6d5a2d;background:#171811}.entry-grid small,.version-list small{color:#d7bc69;font-size:13px}.entry-grid h3,.policy-grid h3,.version-list h3{margin:8px 0;font-size:18px}.entry-grid p,.policy-grid p,.version-list p{margin:0;color:#bac3c5;font-size:14px;line-height:1.85;white-space:pre-line}.entry-grid article>div,.ruling-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}.entry-grid article>div span,.ruling-tags span{padding:3px 7px;background:#16242a;color:#8ad5d8;font-size:12px}.faq-mode-tabs{display:grid;grid-template-columns:1fr 1fr;margin:16px 0;border:1px solid #35424a;background:#090f14}.faq-mode-tabs button{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:16px 20px;border:0;border-bottom:3px solid transparent;background:transparent;color:#849198}.faq-mode-tabs button.active{border-bottom-color:#d7b85f;background:#151b20;color:#fff}.faq-search-panel{padding:22px;border:1px solid #35424a;background:linear-gradient(135deg,#121b22,#0c1217)}.faq-search-panel>div:first-child small{color:#cfac55;font:900 14px monospace;letter-spacing:.18em}.faq-search-panel h2{margin:5px 0;font-size:20px}.faq-search-panel p{margin:0;color:#95a1a7;font-size:14px;line-height:1.75}.popular-keywords{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-top:13px}.popular-keywords span{color:#839097;font-size:14px}.popular-keywords button,.faq-result-bar button{padding:6px 10px;border:1px solid #43515a;background:#101820;color:#c7cdcf;font-weight:800;font-size:14px}.faq-category-section{margin-top:18px}.faq-category-section>header,.faq-result-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:9px}.faq-category-section h2{margin:0;font-size:16px}.faq-category-section>header span{color:#7c898f;font-size:14px}.faq-category-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.faq-category-grid button{display:flex;min-height:92px;flex-direction:column;align-items:flex-start;padding:16px;border:1px solid #35424a;background:#101821;color:#fff;text-align:left}.faq-category-grid button.active{border-color:#c5a553;background:#1c1b17}.faq-category-grid small{align-self:flex-end;color:#d6b85e}.faq-category-grid b{margin-top:12px}.faq-result-bar{margin-top:20px}.faq-result-bar>div{display:flex;gap:6px}.faq-list{display:flex;flex-direction:column;gap:7px}.faq-list article{border:1px solid #35424a;background:#101821}.faq-list article.open{border-color:#62614f}.faq-question{display:grid;width:100%;grid-template-columns:64px minmax(0,1fr) 32px;align-items:center;gap:12px;padding:16px;border:0;background:transparent;color:#fff;text-align:left}.faq-number{color:#dfc46f;font:900 14px monospace}.faq-title{display:flex;min-width:0;flex-direction:column;gap:5px}.faq-title small{color:#68cbd0;font-size:13px;font-weight:900}.faq-title b{font-size:14px;line-height:1.55}.faq-toggle{display:grid;width:28px;height:28px;place-items:center;border:1px solid #47555d;color:#d7bd6a;font-size:18px}.faq-answer{display:grid;grid-template-columns:64px minmax(0,1fr);gap:12px;padding:17px 16px;border-top:1px solid #2e3940;background:#0b1116}.faq-answer>strong{color:#62c6cc;font:900 14px monospace}.faq-answer p{margin:0;color:#c0c6c7;font-size:14px;line-height:1.9;white-space:pre-line}.ruling-meta{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:12px;color:#87969d;font-size:12px}.policy-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.policy-grid article{padding:20px}.policy-grid small{color:#d6b85e}.policy-restrictions{grid-column:span 2}.policy-restrictions ul{display:grid;gap:8px;margin:12px 0 0;padding:0;list-style:none}.policy-restrictions li{display:grid;grid-template-columns:110px 120px 1fr;gap:8px;padding:10px;background:#0a1116;color:#c5cdcf;font-size:13px}.policy-restrictions li b{color:#e3c56d}.policy-restrictions li em{color:#9aa7aa;font-style:normal}.version-list{display:flex;flex-direction:column;gap:10px}.version-list article{display:flex;justify-content:space-between;gap:24px;padding:20px}.version-list h3 span{margin-left:8px;color:#d7bc69;font-size:14px}.version-list aside{display:flex;min-width:230px;flex-direction:column;gap:6px;color:#8f9ba0;font-size:13px}.version-list aside b{color:#d3bb75;font-weight:700}.empty{display:grid;min-height:220px;place-items:center;border:1px dashed #35424a;color:#718087}.empty.compact{min-height:110px}
-@media(max-width:700px){.rule-layout,.rule-tools,.faq-search-row,.policy-grid{grid-template-columns:1fr}.rule-layout>aside{position:static}.faq-category-grid{grid-template-columns:repeat(2,1fr)}.policy-restrictions{grid-column:auto}.version-list article{flex-direction:column}.version-list aside{min-width:0}.rules-head{align-items:flex-start;flex-direction:column}.policy-restrictions li{grid-template-columns:1fr}}
-@media(max-width:520px){.rules-page{padding:0 12px 48px}.rule-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow:visible}.rule-tabs button{min-width:0;padding:12px 8px;line-height:1.35;white-space:normal}.faq-mode-tabs button{padding:13px 12px}.faq-category-grid{grid-template-columns:1fr}.faq-question{grid-template-columns:48px minmax(0,1fr) 28px;padding:14px 10px;gap:8px}.faq-answer{grid-template-columns:48px minmax(0,1fr);padding:15px 10px;gap:8px}}
-@media(max-width:520px){.rules-head{gap:10px;padding:20px 0 12px}.rules-head small,.section-lead>small{font-size:11px}.rules-head h1{margin:4px 0;font-size:26px}.rules-head p,.section-lead p{font-size:12px;line-height:1.65}.rules-head button{padding:9px 12px;font-size:13px}.rule-tabs button{min-height:42px;padding:9px 6px;font-size:12px}.rule-tools{gap:7px;margin:10px 0}.rule-tools input,.rule-tools select,.faq-search-row input,.faq-search-row select,.section-lead input{padding:10px;font-size:12px}.rule-layout>aside,.rule-layout article,.entry-grid article{padding:15px}.rule-layout aside span,.rule-layout aside p,.rule-layout article header span,.rule-layout article header b,.rule-layout article p{font-size:12px}.section-lead{margin:14px 0;padding:17px}.section-lead h2{font-size:20px}.faq-mode-tabs{margin:12px 0}.faq-mode-tabs button{padding:11px 10px;font-size:12px}.faq-search-panel{padding:16px}.faq-search-panel>div:first-child small,.faq-search-panel p,.popular-keywords span,.popular-keywords button,.faq-category-section>header span,.faq-result-bar button{font-size:12px}.faq-search-panel h2{font-size:18px}.faq-category-grid button{min-height:70px;padding:12px}.faq-category-grid small{font-size:11px}.faq-category-grid b{margin-top:7px;font-size:13px}.faq-result-bar{margin-top:14px}.faq-title b,.faq-title small,.faq-number,.faq-answer p{font-size:12px}}
-.rule-filter-fields{display:grid;gap:12px}.rule-filter-fields label{display:grid;gap:6px;color:#aeb8ba;font-size:12px;font-weight:900}.rule-filter-fields select{box-sizing:border-box;min-width:0;width:100%;padding:10px;border:1px solid #46545c;background:#090f14;color:#fff;font-size:12px}.mobile-popular-keywords{margin-top:2px}.mobile-popular-keywords>span{width:100%}
-@media(max-width:700px){.rule-tools,.faq-search-row{grid-template-columns:minmax(0,1fr) auto}.rule-desktop-filter,.desktop-popular-keywords{display:none}.rule-tools input,.faq-search-row input{min-width:0}.faq-search-panel{overflow-x:clip}}
-@media print{.rules-page{padding:0;color:#111}.rules-head button,.rule-tabs,.rule-tools,.rule-layout>aside{display:none}.rule-layout{display:block}.rule-layout article{break-inside:avoid;border:0;border-bottom:1px solid #ccc;background:#fff}.rule-layout article p{color:#111}}
-.load-error{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;padding:14px 18px;border:1px solid #7b4747;border-left:4px solid #d36b6b;background:#211316}.load-error span{color:#e4caca;font-size:14px;line-height:1.7}.load-error button{padding:8px 14px;border:1px solid #9a6262;background:#281417;color:#f0c0c0;font-weight:900}.topic-checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.topic-checks button{padding:9px;border:1px solid #43515a;background:#101820;color:#c7cdcf}.topic-checks button.active{border-color:#c5a553;background:#2b2515;color:#f0d47b}.catalog-state{align-self:center;color:#92a0a5;font-size:12px}.catalog-retry{padding:8px;border:1px solid #8c5a5a;background:#241316;color:#efbcbc;font-size:12px;font-weight:800}.ruling-cards{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}.ruling-cards span{padding:4px 8px;border:1px solid #35565c;color:#98dce0;font-size:12px}.supplemental-rulings{margin-top:12px}
+.rules-page{min-height:100%;max-width:100%;overflow-x:clip;padding:0 clamp(18px,4vw,64px) 60px;font-family:'Microsoft YaHei','微软雅黑',sans-serif}.rules-head{padding:32px 0 20px}.rules-head small,.section-lead>small,.rules-home-lead>small{color:#52c4cb;font-size:13px;font-weight:900;letter-spacing:.14em}.rules-head h1{margin:6px 0;font-size:32px}.rules-head p,.section-lead p,.rules-home-lead p{margin:0;color:#8d999f;font-size:14px;line-height:1.75}.admin-rule-notice{display:flex;gap:12px;margin:0 0 12px;padding:14px 18px;border:1px solid #6d5a2d;border-left:4px solid #d1ad54;background:#171811}.admin-rule-notice b{color:#edd58d}.admin-rule-notice span{color:#d5d0c2;font-size:14px;line-height:1.7;white-space:pre-line}.rules-breadcrumb{display:flex;align-items:center;gap:9px;margin-bottom:14px;color:#7f8b91;font-size:13px}.rules-breadcrumb button{padding:7px 10px;border:1px solid #3b4a52;background:#0b1218;color:#a9dfe1;font-weight:800}.rules-breadcrumb b{color:#e0c270}.rules-home-lead,.section-lead{margin:0 0 20px;padding:25px;border:1px solid #35424a;background:linear-gradient(135deg,#121b22,#0c1217)}.rules-home-lead h2,.section-lead h2{margin:6px 0;font-size:24px}.rules-home-section{margin-top:24px}.rules-home-section>header,.faq-category-section>header,.faq-product-section>header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:10px}.rules-home-section>header>div{display:flex;align-items:center;gap:10px}.rules-home-section>header small{display:grid;width:30px;height:30px;place-items:center;border:1px solid #655727;color:#e0c270;font-weight:900}.rules-home-section h2,.faq-category-section h2,.faq-product-section h2{margin:0;font-size:18px}.rules-home-section>header p,.faq-category-section>header span{margin:0;color:#7f8c91;font-size:13px}.material-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.material-grid button,.qa-entry-grid button{position:relative;display:flex;min-height:154px;flex-direction:column;align-items:flex-start;padding:20px 48px 20px 20px;border:1px solid #35424a;background:#101821;color:#fff;text-align:left}.material-grid button:hover,.material-grid button:focus-visible,.qa-entry-grid button:hover,.qa-entry-grid button:focus-visible{border-color:#b3974d;background:#171a19}.material-grid button small,.qa-entry-grid button small{color:#58c3c8;font-size:11px;font-weight:900;letter-spacing:.12em}.material-grid button b,.qa-entry-grid button b{margin-top:14px;font-size:18px}.material-grid button span,.qa-entry-grid button span{margin-top:7px;color:#929ea3;font-size:13px;line-height:1.65}.material-grid button i,.qa-entry-grid button i{position:absolute;right:18px;bottom:18px;color:#e2c46c;font-size:20px;font-style:normal}.qa-entry-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.qa-entry-grid button{min-height:166px;border-color:#4b4731;background:linear-gradient(135deg,#151a1b,#12130f)}.rule-tools,.faq-search-row{display:grid;grid-template-columns:minmax(0,1fr) 230px;gap:8px;margin:14px 0}.rule-tools input,.rule-tools select,.faq-search-row input,.faq-search-row select,.section-lead input,.subcategory-select select{box-sizing:border-box;min-width:0;padding:12px;border:1px solid #46545c;background:#090f14;color:#fff;font:700 14px 'Microsoft YaHei','微软雅黑',sans-serif}.rule-layout{display:grid;grid-template-columns:240px minmax(0,1fr);gap:12px}.rule-layout>aside,.rule-layout article,.entry-grid article,.policy-grid article,.version-list article{border:1px solid #35424a;background:#101821}.rule-layout>aside{height:max-content;padding:20px}.rule-layout aside b,.rule-layout aside span{display:block}.rule-layout aside b{color:#e0bf6b}.rule-layout aside span{margin-top:5px;color:#7d898e;font-size:14px}.rule-layout aside p{color:#89949a;font-size:14px;line-height:1.8}.rule-layout main{display:flex;flex-direction:column;gap:8px}.rule-layout article{padding:20px}.rule-layout article header{display:flex;gap:8px}.rule-layout article header span{color:#52c4cb;font-size:14px;font-weight:900}.rule-layout article header b{padding:3px 7px;background:#272014;color:#e0c271;font-size:14px}.rule-layout article p{margin:13px 0 0;color:#c0c5c5;font-size:14px;line-height:1.95;white-space:pre-line}.section-lead{margin:0 0 14px}.section-lead input{width:min(680px,100%);margin-top:16px}.entry-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:12px}.entry-grid article{padding:19px}.entry-grid h3,.policy-grid h3,.version-list h3{margin:8px 0;font-size:18px}.entry-grid p,.policy-grid p,.version-list p{margin:0;color:#bac3c5;font-size:14px;line-height:1.85;white-space:pre-line}.entry-grid article>div,.ruling-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}.entry-grid article>div span,.ruling-tags span{padding:3px 7px;background:#16242a;color:#8ad5d8;font-size:12px}.faq-mode-tabs{display:grid;grid-template-columns:1fr 1fr;margin:0 0 16px;border:1px solid #35424a;background:#090f14}.faq-mode-tabs button{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:16px 20px;border:0;border-bottom:3px solid transparent;background:transparent;color:#849198}.faq-mode-tabs button.active{border-bottom-color:#d7b85f;background:#151b20;color:#fff}.faq-search-panel{padding:22px;border:1px solid #35424a;background:linear-gradient(135deg,#121b22,#0c1217)}.faq-search-panel>div:first-child small,.faq-category-section>header small,.faq-product-section>header small{color:#cfac55;font-size:12px;font-weight:900;letter-spacing:.12em}.faq-search-panel h2{margin:5px 0;font-size:20px}.faq-search-panel p{margin:0;color:#95a1a7;font-size:14px;line-height:1.75}.popular-keywords{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-top:13px}.popular-keywords span{color:#839097;font-size:14px}.popular-keywords button,.faq-result-bar button,.faq-product-section>header>button{padding:6px 10px;border:1px solid #43515a;background:#101820;color:#c7cdcf;font-weight:800;font-size:14px}.faq-category-section,.faq-product-section{margin-top:18px}.faq-category-section>header>div,.faq-product-section>header>div{display:grid;gap:4px}.faq-category-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.faq-category-grid button{display:flex;min-height:80px;flex-direction:column;align-items:flex-start;padding:14px;border:1px solid #35424a;background:#101821;color:#fff;text-align:left}.faq-category-grid button.active{border-color:#c5a553;background:#1c1b17}.faq-category-grid small{align-self:flex-end;color:#d6b85e}.faq-category-grid b{margin-top:8px}.subcategory-select{display:grid;grid-template-columns:90px minmax(0,360px);align-items:center;gap:10px;margin-top:10px;color:#aab4b8;font-size:13px;font-weight:800}.product-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.product-grid button{display:grid;gap:5px;padding:14px;border:1px solid #35424a;background:#101821;color:#fff;text-align:left}.product-grid button.active{border-color:#c5a553;background:#242014}.product-grid button span,.product-grid>p{color:#8e9a9f;font-size:12px}.faq-result-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:20px 0 9px}.faq-result-bar>div{display:flex;gap:6px}.faq-list{display:flex;flex-direction:column;gap:7px}.faq-list article{border:1px solid #35424a;background:#101821}.faq-list article.open{border-color:#62614f}.faq-question{display:grid;width:100%;grid-template-columns:48px minmax(0,1fr) 32px;align-items:center;gap:12px;padding:16px;border:0;background:transparent;color:#fff;text-align:left}.faq-number{display:grid;width:30px;height:30px;place-items:center;border:1px solid #655727;color:#dfc46f;font-size:14px;font-weight:900}.faq-title{display:flex;min-width:0;flex-direction:column;gap:5px}.faq-title small{color:#68cbd0;font-size:13px;font-weight:900}.faq-title b{font-size:14px;line-height:1.55}.faq-toggle{display:grid;width:28px;height:28px;place-items:center;border:1px solid #47555d;color:#d7bd6a;font-size:18px}.faq-answer{display:grid;grid-template-columns:48px minmax(0,1fr);gap:12px;padding:17px 16px;border-top:1px solid #2e3940;background:#0b1116}.faq-answer>strong{display:grid;width:30px;height:30px;place-items:center;border:1px solid #31565a;color:#62c6cc;font-size:14px}.faq-answer p{margin:0;color:#c0c6c7;font-size:14px;line-height:1.9;white-space:pre-line}.ruling-meta{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:12px;color:#87969d;font-size:12px}.policy-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.policy-grid article{padding:20px}.policy-grid small{color:#d6b85e}.policy-restrictions{grid-column:span 2}.policy-restrictions ul{display:grid;gap:8px;margin:12px 0 0;padding:0;list-style:none}.policy-restrictions li{display:grid;grid-template-columns:110px 120px 1fr;gap:8px;padding:10px;background:#0a1116;color:#c5cdcf;font-size:13px}.policy-restrictions li b{color:#e3c56d}.policy-restrictions li em{color:#9aa7aa;font-style:normal}.supplemental-qa{margin-top:18px}.version-list{display:flex;flex-direction:column;gap:10px}.version-list article{display:flex;justify-content:space-between;gap:24px;padding:20px}.version-list h3 span{margin-left:8px;color:#d7bc69;font-size:14px}.version-list aside{display:flex;min-width:230px;flex-direction:column;gap:6px;color:#8f9ba0;font-size:13px}.empty{display:grid;min-height:220px;place-items:center;border:1px dashed #35424a;color:#718087}.empty.compact{min-height:110px}.load-error{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;padding:14px 18px;border:1px solid #7b4747;border-left:4px solid #d36b6b;background:#211316}.load-error span{color:#e4caca;font-size:14px;line-height:1.7}.load-error button{padding:8px 14px;border:1px solid #9a6262;background:#281417;color:#f0c0c0;font-weight:900}.rule-filter-fields{display:grid;gap:12px}.rule-filter-fields label{display:grid;gap:6px;color:#aeb8ba;font-size:12px;font-weight:900}.rule-filter-fields select{box-sizing:border-box;min-width:0;width:100%;padding:10px;border:1px solid #46545c;background:#090f14;color:#fff;font-size:12px}.topic-checks,.product-checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.topic-checks button,.product-checks button{padding:9px;border:1px solid #43515a;background:#101820;color:#c7cdcf}.topic-checks button.active,.product-checks button.active{border-color:#c5a553;background:#2b2515;color:#f0d47b}.mobile-popular-keywords{margin-top:2px}.mobile-popular-keywords>span{width:100%}.catalog-state{align-self:center;color:#92a0a5;font-size:12px}.catalog-retry{padding:8px;border:1px solid #8c5a5a;background:#241316;color:#efbcbc;font-size:12px;font-weight:800}.ruling-cards{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}.ruling-cards span{padding:4px 8px;border:1px solid #35565c;color:#98dce0;font-size:12px}
+@media(max-width:1024px){.material-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.product-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:700px){.rule-layout,.rule-tools,.faq-search-row,.policy-grid{grid-template-columns:1fr}.faq-category-grid,.product-grid{grid-template-columns:repeat(2,1fr)}.policy-restrictions{grid-column:auto}.version-list article{flex-direction:column}.version-list aside{min-width:0}.policy-restrictions li{grid-template-columns:1fr}.rule-tools,.faq-search-row{grid-template-columns:minmax(0,1fr) auto}.rule-desktop-filter,.desktop-popular-keywords{display:none}.rule-tools input,.faq-search-row input{min-width:0}.faq-search-panel{overflow-x:clip}}
+@media(max-width:520px){.rules-page{padding:0 12px 48px}.rules-head{padding:20px 0 12px}.rules-head small,.section-lead>small,.rules-home-lead>small{font-size:11px}.rules-head h1{margin:4px 0;font-size:26px}.rules-head p,.section-lead p,.rules-home-lead p{font-size:12px}.rules-home-lead,.section-lead{padding:17px}.rules-home-lead h2,.section-lead h2{font-size:20px}.rules-home-section>header{align-items:flex-start;flex-direction:column;gap:5px}.material-grid,.qa-entry-grid{grid-template-columns:1fr}.material-grid button,.qa-entry-grid button{min-height:126px;padding:16px 44px 16px 16px}.faq-mode-tabs{margin-bottom:12px}.faq-mode-tabs button{padding:11px 10px;font-size:12px}.rule-tools{gap:7px;margin:10px 0}.rule-tools input,.rule-tools select,.faq-search-row input,.faq-search-row select,.section-lead input{padding:10px;font-size:12px}.rule-layout>aside,.rule-layout article,.entry-grid article{padding:15px}.rule-layout aside span,.rule-layout aside p,.rule-layout article header span,.rule-layout article header b,.rule-layout article p{font-size:12px}.faq-search-panel{padding:16px}.faq-search-panel h2{font-size:18px}.faq-category-section>header,.faq-product-section>header{align-items:flex-start;flex-direction:column}.faq-category-grid,.product-grid{grid-template-columns:1fr}.faq-category-grid button{min-height:64px;padding:12px}.subcategory-select{grid-template-columns:1fr}.faq-result-bar{align-items:flex-start;flex-direction:column}.faq-title b,.faq-title small,.faq-number,.faq-answer p{font-size:12px}.faq-question{grid-template-columns:40px minmax(0,1fr) 28px;padding:14px 10px;gap:8px}.faq-answer{grid-template-columns:40px minmax(0,1fr);padding:15px 10px;gap:8px}}
 </style>

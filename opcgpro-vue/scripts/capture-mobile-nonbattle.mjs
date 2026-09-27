@@ -151,7 +151,7 @@ const server = await createServer({
 const routesToCapture = [
   { route: '/', name: 'home', wait: '.official-home' },
   { route: '/news', name: 'news', wait: '.news-page, .article-list, main' },
-  { route: '/rules', name: 'rules', wait: '.rule-tools input' },
+  { route: '/rules', name: 'rules', wait: '.rules-home-lead' },
   { route: '/cards', name: 'cards', wait: '.archive-grid, .card-archive' },
   { route: '/decks', name: 'decks', wait: '.deck-page' },
   { route: '/battle', name: 'battle-hub', wait: '.battle-hub' },
@@ -223,7 +223,7 @@ try {
   await page.evaluate(() => { window.__qaRouteRecovery.begin('/'); window.__qaRouteRecovery.finish('/') })
   const mainNavigation = [
     ['资讯', '.news-page'], ['对战', '.battle-hub'], ['牌库', '.deck-page'],
-    ['图鉴', '.archive-grid, .card-archive'], ['规则', '.rule-tools input'], ['我的', '.profile-page, main'],
+    ['图鉴', '.archive-grid, .card-archive'], ['规则', '.rules-home-lead'], ['我的', '.profile-page, main'],
   ]
   for (const [label, selector] of mainNavigation) {
     await clickNavigation('主页', '.official-home')

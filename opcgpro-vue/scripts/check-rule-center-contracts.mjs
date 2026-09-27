@@ -23,7 +23,7 @@ const player = readFrontend('src/l12/site/RuleCenterPage.vue')
 assert((player.match(/getPublicContentBatch\(/g) ?? []).length >= 2, 'initial and resource refresh paths must use public batch reads')
 assert(!player.includes("getPublicContent('rules."), 'rule center must not fan out single-content requests')
 assert(!player.includes('setInterval('), 'rule center must not poll')
-for (const token of ['useRoute()', 'useRouter()', 'l12-resource-rulesContent', 'nextRuleTransitionAt', 'loadDynamicContent', 'selectedTopics'])
+for (const token of ['useRoute()', 'useRouter()', 'l12-resource-rulesContent', 'nextRuleTransitionAt', 'loadDynamicContent', 'selectedTopics', 'selectedCategory', 'selectedProduct'])
   assert(player.includes(token), `player rule center missing ${token}`)
 assert(player.includes("getPublicContentBatch(['rules.notice', 'rules.center', 'rules.rulings'])"), 'first content read must be one three-key batch')
 const initialLoad = player.slice(player.indexOf('async function loadDynamicContent()'), player.indexOf('async function ensureCardCatalog()'))
@@ -32,10 +32,21 @@ assert((initialLoad.match(/getPublicContentBatch\(/g) ?? []).length === 1
   && !initialLoad.includes('loadDeckCatalog('), 'first render must stay within two rule-center requests')
 for (const token of ['contentError', 'loadDynamicContent">', 'router.replace', 'router.push', 'visibilitychange'])
   assert(player.includes(token), `retry/navigation contract missing ${token}`)
+for (const token of ['规则资料首页', '常见问题', '单卡问答', '从属分类', '按产品系列浏览', '全部收起', '全部展开', 'tabForEntry'])
+  assert(player.includes(token), `reference information architecture missing ${token}`)
+for (const tab of ['core', 'quick-start', 'terms', 'construction', 'tournament', 'versions'])
+  assert(player.includes(`id: '${tab}'`), `rule material home is missing ${tab}`)
+assert(!player.includes('printRules') && !player.includes('打印 / 保存 PDF') && !player.includes('@media print'),
+  'print/PDF controls and print-only styles must stay removed')
+assert(!player.includes('<CardImage') && player.includes("if (next.has(item.id) && item.cardIds.length) void ensureCardCatalog()"),
+  'card Q&A must load metadata only when needed and never batch-render card images')
 
 const admin = readFrontend('src/l12/site/AdminRuleRulingsPanel.vue')
 for (const token of ['SingleCardPicker', 'rule-item-publish', 'ruleHistory', 'historyChanges', '审核并发布此项', '高级：查看原始结构（只读）'])
   assert(admin.includes(token), `admin rule workflow missing ${token}`)
+for (const token of ["'drafts'", "'sources'", "'published'", "'history'", 'workspaceCounts', 'admin-item-preview', '退回修改', '保存此项'])
+  assert(admin.includes(token), `admin workspaces missing ${token}`)
+assert(!admin.includes('class="publish-queue"'), 'publishing controls must stay next to each reviewed object')
 assert(!admin.includes('移动实体'), 'admin ruling copy must use game terminology')
 
 const store = readRepo('服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs')
@@ -45,7 +56,7 @@ const server = readRepo('服务端WebSocket/TwelveLegions/L12WebSocketServer.Res
 assert(server.includes('RulesContentResource') && server.includes('ScheduleNextRulesContentTransition'),
   'rulesContent revisions and one-shot effective-time scheduling must remain enabled')
 const portrait = readFrontend('scripts/verify-site-portrait-filters.mjs')
-assert(portrait.includes("name: '规则主题筛选'") && portrait.includes(".rule-layout article').first().waitFor()"),
+assert(portrait.includes("name: '规则章节筛选'") && portrait.includes(".rule-layout article').first().waitFor()"),
   'portrait verification must exercise loaded rule content and the collapsed mobile topic filter')
 
 console.log(`Rule center contracts OK: ${ruleRows.length} official blocks, ${blankPages.length} blank page fields retained.`)
