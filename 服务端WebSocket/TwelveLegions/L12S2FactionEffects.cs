@@ -540,12 +540,30 @@ public sealed partial class L12GameEngine
             case "伊姆何泰普":
             {
                 if (player.Hand.Count >= State.Players[1 - item.Controller].Hand.Count) { FinishStackItem(item); return true; }
-                var choices = player.Graveyard.Where(candidate => candidate.Faction == "taiyangcheng" && candidate.CardType == "legion" && candidate.Cost >= 6)
-                    .Select(candidate => candidate.InstanceId).ToList();
-                if (choices.Count == 0) { FinishStackItem(item); return true; }
+                var recoverChoices = player.Graveyard.Where(candidate => candidate.Faction == "taiyangcheng"
+                        && candidate.CardType == "legion" && candidate.Cost >= 6)
+                    .ToArray();
+                if (recoverChoices.Length == 0) { FinishStackItem(item); return true; }
+                var choices = recoverChoices.Select(candidate => candidate.InstanceId).ToList();
                 choices.Add("skip");
                 CreatePrompt(item.Controller, "optional-card", "伊姆何泰普：可将墓地1张费用为6及以上的【太阳城】军团加入手牌", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "s2-imhotep-recover" });
+                    "card-effect", item.StackItemId,
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "s2-imhotep-recover", ["skip"] = "不发动",
+                        },
+                        new("伊姆何泰普",
+                            "〈伊姆何泰普〉的登场时效果正在结算。因我方手牌数量少于对方，你可以从墓地选择1张费用为6及以上的【太阳城】军团，公开并加入手牌；若所选军团在结算前离开墓地，本次不会回收其他卡牌。",
+                            "请选择1张符合条件的墓地军团，或选择“不发动”；不发动时墓地和手牌都不会改变。",
+                            L12PromptWaitingAction.CardSelection,
+                            recoverChoices.ToDictionary(candidate => candidate.InstanceId,
+                                candidate => $"公开墓地的〈{candidate.Name}〉并将其加入手牌。",
+                                StringComparer.OrdinalIgnoreCase)
+                                .Append(new KeyValuePair<string, string>("skip",
+                                    "不发动本次回收效果，墓地和手牌都不改变。"))
+                                .ToDictionary(pair => pair.Key, pair => pair.Value,
+                                    StringComparer.OrdinalIgnoreCase))));
                 return true;
             }
             case "武田信玄":
@@ -556,7 +574,11 @@ public sealed partial class L12GameEngine
                 choices.Add("skip");
                 CreatePrompt(item.Controller, "optional-card", "武田信玄：可查看牌库并选择1张兵力不高于5000的【高天原】军团展示并加入手牌",
                     choices, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-takeda-search" });
+                    data: BuildS2TakedaSearchPromptData(player, choices,
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "s2-takeda-search", ["skip"] = "不加入手牌",
+                        }));
                 return true;
             }
             default:
@@ -574,12 +596,28 @@ public sealed partial class L12GameEngine
         {
             case "赫拉克勒斯·晋升":
             {
-                var handLegions = player.Hand.Where(candidate => candidate.CardType == "legion").Select(candidate => candidate.InstanceId).ToList();
-                if (handLegions.Count == 0) { FinishStackItem(item); return; }
+                var handLegionChoices = player.Hand.Where(candidate => candidate.CardType == "legion").ToArray();
+                if (handLegionChoices.Length == 0) { FinishStackItem(item); return; }
+                var handLegions = handLegionChoices.Select(candidate => candidate.InstanceId).ToList();
                 handLegions.Add("skip");
                 CreatePrompt(item.Controller, "optional-card", "可展示手牌中1张军团并放回牌库顶部，随后击杀费用不高于该牌费用的对方军团",
                     handLegions, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-heracles-promotion-show" });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "s2-heracles-promotion-show", ["skip"] = "不发动",
+                        },
+                        new("赫拉克勒斯·晋升",
+                            "〈赫拉克勒斯·晋升〉的晋升登场效果正在结算。你可以展示手牌中1张军团并将其放回牌库顶部，以支付本次效果的费用；随后可击杀对方1张费用不高于所展示军团费用的军团。费用支付后，即使没有合法目标或所选目标随后失效，已展示的军团也不会返回手牌，且不会改选其他目标。",
+                            "请选择1张手牌中的军团展示并放回牌库顶部，或选择“不发动”。",
+                            L12PromptWaitingAction.CostPayment,
+                            handLegionChoices.ToDictionary(candidate => candidate.InstanceId,
+                                candidate => $"展示〈{candidate.Name}〉并放回牌库顶部，支付费用；随后可选择费用不高于{candidate.CurrentCost}的对方军团。",
+                                StringComparer.OrdinalIgnoreCase)
+                                .Append(new KeyValuePair<string, string>("skip",
+                                    "不支付展示并回顶的费用，也不选择击杀目标。"))
+                                .ToDictionary(pair => pair.Key, pair => pair.Value,
+                                    StringComparer.OrdinalIgnoreCase))));
                 return;
             }
             case "阿喀琉斯·晋升":
@@ -589,14 +627,31 @@ public sealed partial class L12GameEngine
                 return;
             case "珀尔修斯·晋升":
             {
-                var targets = State.Players[1 - item.Controller].Field.SelectMany(row => row)
+                var targetChoices = State.Players[1 - item.Controller].Field.SelectMany(row => row)
                     .Where(target => target is { Tapped: true } && IsFieldLegion(target) && !target.Hidden)
-                    .Select(target => target!.InstanceId).ToList();
-                if (targets.Count == 0) { FinishStackItem(item); return; }
+                    .Cast<L12CardInstance>()
+                    .ToArray();
+                if (targetChoices.Length == 0) { FinishStackItem(item); return; }
+                var targets = targetChoices.Select(target => target.InstanceId).ToList();
                 targets.Add("skip");
                 CreatePrompt(item.Controller, "optional-target", "可选择对方1张休整军团，使其在下个对方重置阶段无法转为活跃",
                     targets, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-perseus-promotion-lock" });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "s2-perseus-promotion-lock", ["skip"] = "不发动",
+                        },
+                        new("珀尔修斯·晋升",
+                            "〈珀尔修斯·晋升〉的晋升登场效果正在结算。你可以选择对方1张休整军团，使其在下个对方重置阶段无法转为活跃；若所选军团在结算时已离场或不再休整，本次效果不生效，也不会改选其他目标。",
+                            "请选择1张对方休整军团，或选择“不发动”；本效果没有额外费用。",
+                            L12PromptWaitingAction.TargetSelection,
+                            targetChoices.ToDictionary(target => target.InstanceId,
+                                target => $"使〈{target.Name}〉在下个对方重置阶段无法转为活跃；若结算时不再合法，则不改选。",
+                                StringComparer.OrdinalIgnoreCase)
+                                .Append(new KeyValuePair<string, string>("skip",
+                                    "不发动本次锁定效果，不影响任何军团。"))
+                                .ToDictionary(pair => pair.Key, pair => pair.Value,
+                                    StringComparer.OrdinalIgnoreCase))));
                 return;
             }
             default:
@@ -3028,18 +3083,48 @@ public sealed partial class L12GameEngine
     private void ContinueHeraclesPromotionTargetChoice(L12StackItem item)
     {
         var maxCost = int.TryParse(item.Data.GetValueOrDefault("heracles-shown-cost"), out var parsed) ? parsed : -1;
-        var targets = State.Players[1 - item.Controller].Field.SelectMany(row => row)
+        var opponent = State.Players[1 - item.Controller];
+        var targetChoices = opponent.Field.SelectMany(row => row)
             .Where(target => target is not null && IsFieldLegion(target) && !target.Hidden && L12StructuredCardRules.CurrentCostAtMost(target, maxCost))
-            .Select(target => target!.InstanceId)
+            .Cast<L12CardInstance>()
             .ToArray();
-        if (targets.Length == 0)
+        if (targetChoices.Length == 0)
         {
             FinishStackItem(item);
             return;
         }
+        var targets = targetChoices.Select(target => target.InstanceId).ToArray();
         CreatePrompt(item.Controller, "target", $"选择对方1张费用不高于{maxCost}的军团并击杀", targets, 1, 1,
             "card-effect", item.StackItemId,
-            data: new Dictionary<string, string> { ["action"] = "s2-heracles-promotion-kill" });
+            data: WithPromptNarrative(
+                new Dictionary<string, string> { ["action"] = "s2-heracles-promotion-kill" },
+                new("赫拉克勒斯·晋升",
+                    $"展示军团并放回牌库顶部的费用已经支付。现在可击杀对方1张当前费用不高于{maxCost}的军团；若所选目标随后离场或费用升高，已支付的费用不会返还，也不会改选其他目标。",
+                    $"请选择1张当前费用不高于{maxCost}的对方军团。",
+                    L12PromptWaitingAction.TargetSelection,
+                    targetChoices.ToDictionary(target => target.InstanceId,
+                        target => $"击杀〈{target.Name}〉；若结算时目标不再合法，费用不返还且不改选。",
+                        StringComparer.OrdinalIgnoreCase))));
+    }
+
+    private static Dictionary<string, string> BuildS2TakedaSearchPromptData(
+        L12PlayerState player, IEnumerable<string> choices, Dictionary<string, string> data)
+    {
+        var ids = choices.ToArray();
+        var consequences = ids.ToDictionary(id => id,
+            id => id == "skip"
+                ? "不将牌加入手牌；仍会重洗牌库，并继续结算〈真田幸村〉登场与士气转为活跃的后续部分。"
+                : player.Library.FirstOrDefault(card => card.InstanceId == id) is { } card
+                    ? $"公开〈{card.Name}〉并将其加入手牌；随后重洗牌库，并继续结算后续部分。"
+                    : "公开所选军团并将其加入手牌；随后重洗牌库，并继续结算后续部分。",
+            StringComparer.OrdinalIgnoreCase);
+        return WithPromptNarrative(
+            data,
+            new("武田信玄",
+                "〈武田信玄〉的登场时效果正在结算。你可以查看我方牌库，选择1张兵力不高于5000的【高天原】军团，公开并加入手牌。无论是否选择，随后都会重洗牌库，并继续结算〈真田幸村〉登场与士气转为活跃的后续部分；若所选卡牌在结算时不再符合条件，本步骤失败，但仍会洗牌并继续后续部分，不会改选其他卡牌。",
+                "请选择1张符合条件的军团，或选择“不加入手牌”；这一步不会跳过后续部分。",
+                L12PromptWaitingAction.CardSelection,
+                consequences));
     }
 
     private void ApplyS2Shock(L12StackItem item, L12CardInstance source)

@@ -748,7 +748,9 @@ public sealed partial class L12GameEngine
                         && card.CardType == "legion" && card.BaseTroops <= 5000)
                     .Select(card => card.InstanceId).Append("skip").ToArray();
                 CreatePrompt(item.Controller, "optional-card", "武田信玄：选择符合条件的高天原军团展示并加入手牌", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new() { ["action"] = "s2-takeda-search" }); return true;
+                    "card-effect", item.StackItemId,
+                    data: BuildS2TakedaSearchPromptData(player, choices,
+                        new() { ["action"] = "s2-takeda-search", ["skip"] = "不加入手牌" })); return true;
             }
             case "canute":
             {

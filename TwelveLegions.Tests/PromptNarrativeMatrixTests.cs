@@ -848,6 +848,212 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Contains(staleCase.Game.State.Events, entry => entry.Type == "effect-failed");
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:imhotep-optional-grave-recovery")]
+    public void ImhotepExplainsTheSatisfiedHandConditionAndPublicGraveRecovery(int controller)
+    {
+        var imhotepCase = BeginImhotepPrompt(202609349 + controller, controller, "use");
+        var game = imhotepCase.Game;
+        var prompt = imhotepCase.Prompt;
+        var playerName = game.State.Players[controller].Name;
+
+        AssertPresentation(prompt, "伊姆何泰普", "我方手牌数量少于对方", "选择“不发动”");
+        Assert.Equal(new[]
+        {
+            imhotepCase.FirstTarget.InstanceId,
+            imhotepCase.SecondTarget.InstanceId,
+            "skip",
+        }.Order(), prompt.ValidChoices.Order());
+        Assert.Equal("不发动", prompt.ChoiceLabels["skip"]);
+        Assert.Contains("公开墓地", prompt.Presentation!.ChoiceConsequences[imhotepCase.FirstTarget.InstanceId],
+            StringComparison.Ordinal);
+        Assert.Contains("墓地和手牌都不改变", prompt.Presentation.ChoiceConsequences["skip"],
+            StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在完成卡牌选择");
+
+        game.State.PendingPrompts.Remove(prompt);
+        ContinueS2Faction(game, imhotepCase.Item, prompt, imhotepCase.FirstTarget.InstanceId);
+        Assert.Contains(imhotepCase.FirstTarget, game.State.Players[controller].Hand);
+        Assert.DoesNotContain(imhotepCase.FirstTarget, game.State.Players[controller].Graveyard);
+        Assert.Contains(imhotepCase.SecondTarget, game.State.Players[controller].Graveyard);
+
+        var declineCase = BeginImhotepPrompt(202609351 + controller, controller, "decline");
+        declineCase.Game.State.PendingPrompts.Remove(declineCase.Prompt);
+        ContinueS2Faction(declineCase.Game, declineCase.Item, declineCase.Prompt, "skip");
+        Assert.Contains(declineCase.FirstTarget, declineCase.Game.State.Players[controller].Graveyard);
+        Assert.Contains(declineCase.SecondTarget, declineCase.Game.State.Players[controller].Graveyard);
+        Assert.DoesNotContain(declineCase.FirstTarget, declineCase.Game.State.Players[controller].Hand);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:takeda-search-route-parity")]
+    public void TakedaSearchUsesOneNarrativeAcrossLegacyAndPublicTriggerRoutes(int controller)
+    {
+        var legacyCase = BeginTakedaSearchPrompt(202609353 + controller, controller, publicTrigger: false,
+            "legacy");
+        var publicCase = BeginTakedaSearchPrompt(202609355 + controller, controller, publicTrigger: true,
+            "public");
+        var playerName = legacyCase.Game.State.Players[controller].Name;
+
+        foreach (var prompt in new[] { legacyCase.Prompt, publicCase.Prompt })
+        {
+            AssertPresentation(prompt, "武田信玄", "无论是否选择，随后都会重洗牌库",
+                "这一步不会跳过后续部分");
+            Assert.Equal("不加入手牌", prompt.ChoiceLabels["skip"]);
+            Assert.Contains("继续结算后续部分",
+                prompt.Presentation!.ChoiceConsequences[legacyCase.FirstTarget.InstanceId],
+                StringComparison.Ordinal);
+            Assert.Contains("仍会重洗牌库", prompt.Presentation.ChoiceConsequences["skip"],
+                StringComparison.Ordinal);
+        }
+        Assert.Equal(legacyCase.Prompt.Presentation!.Situation, publicCase.Prompt.Presentation!.Situation);
+        Assert.Equal(legacyCase.Prompt.Presentation.Instruction, publicCase.Prompt.Presentation.Instruction);
+        Assert.Equal(legacyCase.Prompt.Presentation.ChoiceConsequences,
+            publicCase.Prompt.Presentation.ChoiceConsequences);
+        AssertPromptBoundaryAndCheckpoint(legacyCase.Game, controller,
+            $"{playerName} 正在完成卡牌选择", legacyCase.FirstTarget, legacyCase.SecondTarget);
+        AssertPromptBoundaryAndCheckpoint(publicCase.Game, controller,
+            $"{playerName} 正在完成卡牌选择", publicCase.FirstTarget, publicCase.SecondTarget);
+
+        legacyCase.Game.State.PendingPrompts.Remove(legacyCase.Prompt);
+        ContinueS2Faction(legacyCase.Game, legacyCase.Item, legacyCase.Prompt,
+            legacyCase.FirstTarget.InstanceId);
+        Assert.Contains(legacyCase.FirstTarget, legacyCase.Game.State.Players[controller].Hand);
+        Assert.Contains(legacyCase.Game.State.Events, entry => entry.Type == "shuffle"
+            && entry.PlayerIndex == controller && entry.Text.Contains("武田信玄", StringComparison.Ordinal));
+
+        var skipCase = BeginTakedaSearchPrompt(202609357 + controller, controller, publicTrigger: true,
+            "skip");
+        skipCase.Game.State.PendingPrompts.Remove(skipCase.Prompt);
+        ContinueS2Faction(skipCase.Game, skipCase.Item, skipCase.Prompt, "skip");
+        Assert.DoesNotContain(skipCase.FirstTarget, skipCase.Game.State.Players[controller].Hand);
+        Assert.Contains(skipCase.Game.State.Events, entry => entry.Type == "shuffle"
+            && entry.PlayerIndex == controller);
+
+        var staleCase = BeginTakedaSearchPrompt(202609359 + controller, controller, publicTrigger: true,
+            "stale");
+        staleCase.Game.State.Players[controller].Library.Remove(staleCase.FirstTarget);
+        staleCase.Game.State.Players[controller].Graveyard.Add(staleCase.FirstTarget);
+        staleCase.Game.State.PendingPrompts.Remove(staleCase.Prompt);
+        ContinueS2Faction(staleCase.Game, staleCase.Item, staleCase.Prompt,
+            staleCase.FirstTarget.InstanceId);
+        Assert.Contains(staleCase.Game.State.Events, entry => entry.Type == "effect-failed");
+        Assert.Contains(staleCase.Game.State.Events, entry => entry.Type == "shuffle");
+        Assert.DoesNotContain(staleCase.SecondTarget, staleCase.Game.State.Players[controller].Hand);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:promoted-heracles-paid-cost-target")]
+    public void PromotedHeraclesExplainsTheIrreversibleTopDeckCostAndTargetBoundary(int controller)
+    {
+        var heraclesCase = BeginHeraclesPromotionPrompt(202609361 + controller, controller, "success");
+        var game = heraclesCase.Game;
+        var payment = heraclesCase.Prompt;
+        var playerName = game.State.Players[controller].Name;
+
+        AssertPresentation(payment, "赫拉克勒斯·晋升", "支付本次效果的费用", "选择“不发动”");
+        Assert.Equal("不发动", payment.ChoiceLabels["skip"]);
+        Assert.Contains($"费用不高于{heraclesCase.ShownCard.CurrentCost}",
+            payment.Presentation!.ChoiceConsequences[heraclesCase.ShownCard.InstanceId],
+            StringComparison.Ordinal);
+        Assert.Contains("不支付", payment.Presentation.ChoiceConsequences["skip"],
+            StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在支付费用",
+            heraclesCase.ShownCard, heraclesCase.OtherHand);
+
+        game.State.PendingPrompts.Remove(payment);
+        ContinueS2Faction(game, heraclesCase.Item, payment, heraclesCase.ShownCard.InstanceId);
+        Assert.Same(heraclesCase.ShownCard, game.State.Players[controller].Library[0]);
+        Assert.DoesNotContain(heraclesCase.ShownCard, game.State.Players[controller].Hand);
+
+        var target = Assert.Single(game.State.PendingPrompts);
+        AssertPresentation(target, "赫拉克勒斯·晋升", "费用已经支付", "请选择1张当前费用不高于");
+        Assert.Contains("费用不返还且不改选",
+            target.Presentation!.ChoiceConsequences[heraclesCase.FirstTarget.InstanceId],
+            StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在选择效果对象");
+
+        game.State.PendingPrompts.Remove(target);
+        ContinueS2Faction(game, heraclesCase.Item, target, heraclesCase.FirstTarget.InstanceId);
+        Assert.Contains(heraclesCase.FirstTarget, game.State.Players[1 - controller].Graveyard);
+        Assert.Same(heraclesCase.ShownCard, game.State.Players[controller].Library[0]);
+
+        var declineCase = BeginHeraclesPromotionPrompt(202609363 + controller, controller, "decline");
+        declineCase.Game.State.PendingPrompts.Remove(declineCase.Prompt);
+        ContinueS2Faction(declineCase.Game, declineCase.Item, declineCase.Prompt, "skip");
+        Assert.Contains(declineCase.ShownCard, declineCase.Game.State.Players[controller].Hand);
+        Assert.Empty(declineCase.Game.State.Players[controller].Library);
+
+        var noTargetCase = BeginHeraclesPromotionPrompt(202609365 + controller, controller, "no-target");
+        noTargetCase.Game.State.Players[1 - controller].Field[0][0] = null;
+        noTargetCase.Game.State.Players[1 - controller].Field[0][1] = null;
+        noTargetCase.Game.State.PendingPrompts.Remove(noTargetCase.Prompt);
+        ContinueS2Faction(noTargetCase.Game, noTargetCase.Item, noTargetCase.Prompt,
+            noTargetCase.ShownCard.InstanceId);
+        Assert.Empty(noTargetCase.Game.State.PendingPrompts);
+        Assert.Same(noTargetCase.ShownCard, noTargetCase.Game.State.Players[controller].Library[0]);
+
+        var staleCase = BeginHeraclesPromotionPrompt(202609367 + controller, controller, "stale");
+        staleCase.Game.State.PendingPrompts.Remove(staleCase.Prompt);
+        ContinueS2Faction(staleCase.Game, staleCase.Item, staleCase.Prompt,
+            staleCase.ShownCard.InstanceId);
+        var staleTargetPrompt = Assert.Single(staleCase.Game.State.PendingPrompts);
+        staleCase.Game.State.Players[1 - controller].Field[0][0] = null;
+        staleCase.Game.State.PendingPrompts.Remove(staleTargetPrompt);
+        ContinueS2Faction(staleCase.Game, staleCase.Item, staleTargetPrompt,
+            staleCase.FirstTarget.InstanceId);
+        Assert.Same(staleCase.ShownCard, staleCase.Game.State.Players[controller].Library[0]);
+        Assert.NotNull(staleCase.Game.State.Players[1 - controller].Field[0][1]);
+        Assert.Contains(staleCase.Game.State.Events, entry => entry.Type == "effect-failed");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:promoted-perseus-optional-lock")]
+    public void PromotedPerseusExplainsTheOptionalLockAndNoReplacementBoundary(int controller)
+    {
+        var perseusCase = BeginPerseusPromotionPrompt(202609369 + controller, controller, "success");
+        var game = perseusCase.Game;
+        var prompt = perseusCase.Prompt;
+        var playerName = game.State.Players[controller].Name;
+
+        AssertPresentation(prompt, "珀尔修斯·晋升", "下个对方重置阶段无法转为活跃",
+            "本效果没有额外费用");
+        Assert.Equal("不发动", prompt.ChoiceLabels["skip"]);
+        Assert.Contains("若结算时不再合法，则不改选",
+            prompt.Presentation!.ChoiceConsequences[perseusCase.FirstTarget.InstanceId],
+            StringComparison.Ordinal);
+        Assert.Contains("不影响任何军团", prompt.Presentation.ChoiceConsequences["skip"],
+            StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在选择效果对象");
+
+        game.State.PendingPrompts.Remove(prompt);
+        ContinueS2Faction(game, perseusCase.Item, prompt, perseusCase.FirstTarget.InstanceId);
+        Assert.Equal(game.State.Round + 1, perseusCase.FirstTarget.CannotUntapUntilRound);
+        Assert.True(perseusCase.SecondTarget.CannotUntapUntilRound < game.State.Round + 1);
+
+        var declineCase = BeginPerseusPromotionPrompt(202609371 + controller, controller, "decline");
+        declineCase.Game.State.PendingPrompts.Remove(declineCase.Prompt);
+        ContinueS2Faction(declineCase.Game, declineCase.Item, declineCase.Prompt, "skip");
+        Assert.True(declineCase.FirstTarget.CannotUntapUntilRound < declineCase.Game.State.Round + 1);
+        Assert.True(declineCase.SecondTarget.CannotUntapUntilRound < declineCase.Game.State.Round + 1);
+
+        var staleCase = BeginPerseusPromotionPrompt(202609373 + controller, controller, "stale");
+        staleCase.Game.State.Players[1 - controller].Field[0][0] = null;
+        staleCase.Game.State.PendingPrompts.Remove(staleCase.Prompt);
+        ContinueS2Faction(staleCase.Game, staleCase.Item, staleCase.Prompt,
+            staleCase.FirstTarget.InstanceId);
+        Assert.True(staleCase.SecondTarget.CannotUntapUntilRound < staleCase.Game.State.Round + 1);
+        Assert.Empty(staleCase.Game.State.PendingPrompts);
+    }
+
     private static void AssertPresentation(L12Prompt prompt, string title, string situation, string instruction)
     {
         var presentation = Assert.IsType<L12PromptPresentation>(prompt.Presentation);
@@ -1277,6 +1483,120 @@ public sealed class PromptNarrativeMatrixTests
         Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveS2FactionEnter", item, perseus)));
         return (game, Assert.Single(game.State.PendingPrompts), item,
             firstHand, secondHand, promotion);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance FirstTarget, L12CardInstance SecondTarget) BeginImhotepPrompt(
+        int seed, int controller, string suffix)
+    {
+        var game = CreateCleanGame(seed);
+        var player = game.State.Players[controller];
+        var opponent = game.State.Players[1 - controller];
+        var firstTarget = Card("S01-0202", $"narrative-imhotep-target-1-{suffix}-{controller}", controller);
+        var secondTarget = Card("S01-0202", $"narrative-imhotep-target-2-{suffix}-{controller}", controller);
+        player.Graveyard.AddRange([firstTarget, secondTarget]);
+        opponent.Hand.Add(Card("S01-0002", $"narrative-imhotep-opponent-hand-{suffix}-{controller}",
+            1 - controller));
+        var imhotep = Card("S02-0204", $"narrative-imhotep-{suffix}-{controller}", controller);
+        player.Field[0][0] = imhotep;
+        var item = LegacyStackItem($"narrative-imhotep-stack-{suffix}-{controller}", controller, imhotep,
+            "enter", "伊姆何泰普");
+        game.State.EffectStack.Add(item);
+
+        Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveS2FactionEnter", item, imhotep)));
+        return (game, Assert.Single(game.State.PendingPrompts), item, firstTarget, secondTarget);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance FirstTarget, L12CardInstance SecondTarget) BeginTakedaSearchPrompt(
+        int seed, int controller, bool publicTrigger, string suffix)
+    {
+        var game = CreateCleanGame(seed);
+        var player = game.State.Players[controller];
+        var firstTarget = Card("S01-0402", $"narrative-takeda-target-1-{controller}", controller);
+        var secondTarget = Card("S02-0402", $"narrative-takeda-target-2-{controller}", controller);
+        player.Library.AddRange([firstTarget, secondTarget]);
+        var takeda = Card("S02-0401", $"narrative-takeda-{suffix}-{controller}", controller);
+        player.Field[0][0] = takeda;
+        var item = publicTrigger
+            ? new L12StackItem
+            {
+                StackItemId = $"narrative-takeda-stack-{suffix}-{controller}",
+                Controller = controller,
+                SourceInstanceId = takeda.InstanceId,
+                SourceCardId = takeda.CardId,
+                SourceName = takeda.Name,
+                Trigger = "enter",
+                Text = "测试武田信玄的公开登场触发效果",
+                SourceSnapshot = takeda,
+            }
+            : LegacyStackItem($"narrative-takeda-stack-{suffix}-{controller}", controller, takeda,
+                "enter", "武田信玄");
+        game.State.EffectStack.Add(item);
+
+        if (publicTrigger)
+        {
+            item.Data["declared:mode"] = "mode:use";
+            Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveBatch6JAEnterEffect", item, takeda)));
+        }
+        else
+        {
+            Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveS2FactionEnter", item, takeda)));
+        }
+        return (game, Assert.Single(game.State.PendingPrompts), item, firstTarget, secondTarget);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance ShownCard, L12CardInstance OtherHand,
+        L12CardInstance FirstTarget, L12CardInstance SecondTarget) BeginHeraclesPromotionPrompt(
+        int seed, int controller, string suffix)
+    {
+        var game = CreateCleanGame(seed);
+        var player = game.State.Players[controller];
+        var opponent = game.State.Players[1 - controller];
+        var shownCard = Card("S01-0202", $"narrative-heracles-promotion-cost-{suffix}-{controller}", controller);
+        var otherHand = Card("S01-0002", $"narrative-heracles-promotion-hand-{suffix}-{controller}", controller);
+        var firstTarget = Card("S01-0002", $"narrative-heracles-promotion-target-1-{suffix}-{controller}",
+            1 - controller);
+        var secondTarget = Card("S01-0003", $"narrative-heracles-promotion-target-2-{suffix}-{controller}",
+            1 - controller);
+        player.Hand.AddRange([shownCard, otherHand]);
+        opponent.Field[0][0] = firstTarget;
+        opponent.Field[0][1] = secondTarget;
+        var heracles = Card("S02-0501", $"narrative-heracles-promotion-{suffix}-{controller}", controller);
+        player.Field[0][0] = heracles;
+        var item = LegacyStackItem($"narrative-heracles-promotion-stack-{suffix}-{controller}",
+            controller, heracles, "promotion-enter", "赫拉克勒斯·晋升");
+        game.State.EffectStack.Add(item);
+
+        Invoke(game, "ResolveS2PromotionEnter", item);
+        return (game, Assert.Single(game.State.PendingPrompts), item,
+            shownCard, otherHand, firstTarget, secondTarget);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance FirstTarget, L12CardInstance SecondTarget) BeginPerseusPromotionPrompt(
+        int seed, int controller, string suffix)
+    {
+        var game = CreateCleanGame(seed);
+        var player = game.State.Players[controller];
+        var opponent = game.State.Players[1 - controller];
+        var firstTarget = Card("S01-0002", $"narrative-perseus-promotion-target-1-{suffix}-{controller}",
+            1 - controller);
+        var secondTarget = Card("S01-0003", $"narrative-perseus-promotion-target-2-{suffix}-{controller}",
+            1 - controller);
+        firstTarget.Tapped = true;
+        secondTarget.Tapped = true;
+        opponent.Field[0][0] = firstTarget;
+        opponent.Field[0][1] = secondTarget;
+        var perseus = Card("S02-0505", $"narrative-perseus-promotion-{suffix}-{controller}", controller);
+        player.Field[0][0] = perseus;
+        var item = LegacyStackItem($"narrative-perseus-promotion-stack-{suffix}-{controller}",
+            controller, perseus, "promotion-enter", "珀尔修斯·晋升");
+        game.State.EffectStack.Add(item);
+
+        Invoke(game, "ResolveS2PromotionEnter", item);
+        return (game, Assert.Single(game.State.PendingPrompts), item, firstTarget, secondTarget);
     }
 
     private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
