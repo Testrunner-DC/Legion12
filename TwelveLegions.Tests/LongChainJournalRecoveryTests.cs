@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using TwelveLegions.Server;
 using Xunit;
@@ -6,10 +7,37 @@ namespace TwelveLegions.Tests;
 
 public sealed class LongChainJournalRecoveryTests
 {
+    private const int MaximumStateBytes = 2 * 1024 * 1024;
+    private const int MaximumProjectionBytes = 1024 * 1024;
+    private const double MaximumSnapshotP95Milliseconds = 1_000;
+    private const double MaximumRestoreP95Milliseconds = 2_000;
+    private const double MaximumRepresentativeScenarioSeconds = 20;
     private static readonly L12Catalog Catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
 
     public static IEnumerable<object[]> HistoricalFailureScenarios()
         => LongChainAdversarialHarness.Scenarios.Select(scenario => new object[] { scenario });
+
+    [Fact]
+    [Trait("L12Evidence", "lc03c-seven-risk-family-matrix")]
+    public void RepresentativeRiskMatrixCoversAllSevenFamiliesWithoutCartesianExpansion()
+    {
+        Assert.Equal(
+            LongChainAdversarialHarness.AllRiskFamilies.Order(StringComparer.Ordinal),
+            LongChainAdversarialHarness.RepresentativeScenarioByRisk.Keys.Order(StringComparer.Ordinal));
+
+        foreach (var risk in LongChainAdversarialHarness.RequiredRiskFamilies)
+        {
+            var scenarioId = LongChainAdversarialHarness.RepresentativeScenarioByRisk[risk];
+            var scenario = Assert.Single(LongChainAdversarialHarness.Scenarios,
+                candidate => candidate.Id == scenarioId);
+            Assert.Contains(risk, scenario.RiskFamilies);
+        }
+
+        Assert.Equal(LongChainAdversarialHarness.RequestOrderingScenarioId,
+            LongChainAdversarialHarness.RepresentativeScenarioByRisk[
+                LongChainAdversarialHarness.RequestOrderingRisk]);
+        Assert.InRange(LongChainAdversarialHarness.RepresentativeScenarios.Count, 1, 6);
+    }
 
     [Theory]
     [MemberData(nameof(HistoricalFailureScenarios))]
@@ -17,7 +45,9 @@ public sealed class LongChainJournalRecoveryTests
     public async Task HistoricalFailureCardsKeepCheckpointJournalReplayAndProjectionEquivalence(
         LongChainScenario scenario)
     {
+        var watch = Stopwatch.StartNew();
         var evidence = await LongChainAdversarialHarness.RunAsync(scenario);
+        watch.Stop();
 
         Assert.NotEmpty(evidence.FinalStateHash);
         Assert.Contains("after-prelude", evidence.Cutpoints);
@@ -26,12 +56,44 @@ public sealed class LongChainJournalRecoveryTests
         Assert.Contains(evidence.Cutpoints, item => item.StartsWith("journal-sequence-", StringComparison.Ordinal));
         Assert.True(evidence.RejectedCommands >= 3,
             $"{scenario.Id} 未形成越权、非法与过期重复请求证据");
+
+        if (!LongChainAdversarialHarness.IsRepresentative(scenario)) return;
+
+        Assert.True(evidence.Commands.Length >= LongChainAdversarialHarness.RepresentativeMinimumCommands,
+            $"{scenario.Id} 代表链不足 {LongChainAdversarialHarness.RepresentativeMinimumCommands} 条命令");
+        Assert.Equal(evidence.Commands.Length, evidence.JournalCommandSequence);
+        Assert.True(evidence.LatestJournalCheckpointSequence
+                    >= LongChainAdversarialHarness.MinimumLatestJournalCheckpointSequence,
+            $"{scenario.Id} 没有形成至少两个非初始 Journal 检查点");
+        Assert.Contains(evidence.Cutpoints, item => item.StartsWith("representative-checkpoint-",
+            StringComparison.Ordinal));
+        foreach (var risk in scenario.RiskFamilies)
+        {
+            var evidenceName = LongChainAdversarialHarness.RequiredEvidenceByRisk[risk];
+            Assert.True(evidence.EvidenceCounts[evidenceName] > 0,
+                $"{scenario.Id} 未形成 {risk} 的真实后置证据 {evidenceName}");
+        }
+        Assert.True(evidence.StateBytes < MaximumStateBytes,
+            $"{scenario.Id} 完整状态 {evidence.StateBytes}B 超过 {MaximumStateBytes}B");
+        Assert.True(evidence.MaximumProjectionBytes < MaximumProjectionBytes,
+            $"{scenario.Id} 最大投影 {evidence.MaximumProjectionBytes}B 超过 {MaximumProjectionBytes}B");
+        Assert.True(evidence.SnapshotP95Milliseconds < MaximumSnapshotP95Milliseconds,
+            $"{scenario.Id} snapshot P95 {evidence.SnapshotP95Milliseconds:F3}ms 超限");
+        Assert.True(evidence.RestoreP95Milliseconds < MaximumRestoreP95Milliseconds,
+            $"{scenario.Id} restore P95 {evidence.RestoreP95Milliseconds:F3}ms 超限");
+        Assert.True(watch.Elapsed.TotalSeconds <= MaximumRepresentativeScenarioSeconds,
+            $"{scenario.Id} 代表场景耗时 {watch.Elapsed.TotalSeconds:F3}s 超过 "
+            + $"{MaximumRepresentativeScenarioSeconds:F0}s");
     }
 
     [Fact]
     [Trait("L12Evidence", "long-chain-at-most-once-request-id")]
     public async Task SamePlayerAndRequestIdIsAppliedAtMostOnceAcrossDelayReorderAndReconnect()
     {
+        var watch = Stopwatch.StartNew();
+        Assert.Equal(LongChainAdversarialHarness.RequestOrderingScenarioId,
+            LongChainAdversarialHarness.RepresentativeScenarioByRisk[
+                LongChainAdversarialHarness.RequestOrderingRisk]);
         var directory = Path.Combine(Path.GetTempPath(), "l12-lc01-request-id", Guid.NewGuid().ToString("N"));
         var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
         try
@@ -92,6 +154,10 @@ public sealed class LongChainJournalRecoveryTests
             Assert.Equal(new[] { delayedId, acceptedId },
                 recovery.ProcessedRequests.Select(request => request.RequestId));
             Assert.Equal(acceptedHash, recovery.Engine.ComputeStateHash());
+            watch.Stop();
+            Assert.True(watch.Elapsed.TotalSeconds <= MaximumRepresentativeScenarioSeconds,
+                $"{LongChainAdversarialHarness.RequestOrderingScenarioId} 耗时 "
+                + $"{watch.Elapsed.TotalSeconds:F3}s 超过 {MaximumRepresentativeScenarioSeconds:F0}s");
         }
         finally
         {

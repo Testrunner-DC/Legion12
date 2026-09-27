@@ -1,11 +1,11 @@
 # LC-03C｜长局累计与恢复性能基线
 
-状态：L12-main 已批准 LC-03C-1 只做测试、测量与报告；未授权产品修复。原候选 `5ee269a` 已按 Main 要求将三份纯新增文件重放到当前基线 `aefc91daddc8a3a2252074de7f8550d92ebe89cd`，等待重放后独立验收。
+状态：LC-03C-1 已由 L12-main 验收、集成并推送到 `d441845afcad5e9a8b751f6f7fe773753bf3db46`；LC-03C-2 已在该基线上获得四文件精确租约并完成七风险族首次全绿。未授权产品修复、推送或部署。
 
 ## 1. Main 对齐与边界
 
 - LC-03C-1 建立短／中／长三档命令链、多检查点、重复恢复与继续写入的规模曲线；LC-03C-2 再扩代表性七类长链正确性；仅在出现可复现红项并获得新租约后进入 LC-03C-3 产品修复。
-- 真实裁判 viewer role 拆为 LC-03D。LC-03C 只冻结待测合同：普通 spectator 永远不可见手牌、牌库顺序、盖伏身份及私密 Prompt／选择；referee 必须由服务端基于赛事指派或具名房间授权，限定 matchId、带审计、可即时撤销，且实时观看与回放权限分离。
+- 权威计划不再保留独立 LC-03D 标签，真实裁判 viewer role 归入 LC-05。LC-03C-2 只验证既有 referee 占位投影在恢复前后同授权域一致，不定义或扩大真实裁判权限。普通 spectator 仍不得看到手牌、牌库顺序、盖伏身份及私密 Prompt／选择。
 - 不修改产品、规则、投影、权限、前端、共享台账、部署或运营配置；不读取真实数据库。
 
 ## 2. C-1 分目标
@@ -63,7 +63,7 @@
 
 基线更新后复验：三文件候选重放到 `aefc91d` 后再次连续运行两次，仍为性能预算 `1/1` 加兼容回归 `38/38`，总耗时 53.7 秒与 40.0 秒；无新增差异、无跳过，继续低于 180 秒预算。
 
-## 7. 精确写入租约
+## 7. C-1 精确写入租约（历史）
 
 本子批仅新增：
 
@@ -71,4 +71,47 @@
 2. `scripts/test-l12-lc03c-long-chain.ps1`
 3. `artifacts/reports/LC-03C-LONG-CHAIN-TARGETS-20260927.md`
 
-获准但本子批无需修改的 `LongChainJournalRecoveryTests.cs` 与 `LongChainAdversarialHarness.cs` 保持不变。
+C-1 当时获准但无需修改的 `LongChainJournalRecoveryTests.cs` 与 `LongChainAdversarialHarness.cs` 保持不变；二者在 C-2 获得了新的独立租约，见下节。
+
+## 8. C-2 七风险族代表性长链正确性
+
+### 8.1 精确租约与基线
+
+- 基线：`origin/main@d441845afcad5e9a8b751f6f7fe773753bf3db46`；独立分支 `codex/lc03c2-long-chain`。
+- 修改范围仅为 `LongChainJournalRecoveryTests.cs`、`LongChainAdversarialHarness.cs`、本脚本和本报告。
+- 并行弹框文案 A 批只租用 `Models.cs`、`L12PromptsAndSetup.cs`、`types.ts`、`PromptOverlay.vue`、`GameBoard.vue` 及其专项测试，与本批不重叠。
+
+### 8.2 七风险族与代表链
+
+| 风险族 | 代表场景 | 真实证据与恢复切点 |
+| --- | --- | --- |
+| 叠放、转移与最后已知信息 | `lc01-arthur`／亚瑟王 | 王者之剑真实叠放；`attachment-committed` 前后恢复 |
+| 限时与持续效果源失效 | `lc01-oiran`／吉原的花魁 | 支付后、来源离场后仍保留限时修正；`paid-cost-before-resolution`、`source-left-field` |
+| 响应、无效化与同时触发 | `lc01-hanxin`／韩信 | 真实响应栈、盖伏反击与 negated 终态；`response-stack` |
+| 手牌、牌库、检索与顺序 | `lc01-gustav`／古斯塔夫一世 | 两张墓地牌按声明顺序回牌库；`private-library-order-committed` |
+| 天灾与试炼 | 上述四条代表链 | 试炼实际完成、天灾实际翻开；`after-disaster-and-trial` |
+| 跨回合清理、次数与阵亡替代 | `lc01-oiran`／吉原的花魁 | 来源离场后保留、回合结束后准确清理；`cross-turn-cleanup` |
+| 重复、延迟、乱序与过期请求 | `lc03c-request-ordering` | 真实 `L12RoomManager`、Journal V2、连接替换和同 requestId 重试至多一次 |
+
+四条卡效代表链各自至少写入 65 条 Journal 命令，并形成至少两个非初始真实 Journal 检查点。深度段每 8 条命令重建 B 线，最终再从 Journal V2 重建 C 线；不是 15 张历史卡与七风险族的笛卡尔积。
+
+### 8.3 比较与隐私合同
+
+- A/B/C 每步显式比较 Pending Prompt、Pending Activation、EffectStack、ResponseWindow、使用次数、权威事件、CardFact、完整状态、StateHash、随机状态／抽取计数、Revision 及玩家甲／乙、普通 spectator、既有 referee 占位投影。
+- `UnpersistedEvents` 是发送队列，检查点恢复后按设计清空，不属于跨恢复历史等价字段；权威 `State.Events`、`EventSequence` 和 CardFact 必须一致。拒绝原子性仍要求同一执行线的 `UnpersistedEvents` 不变。
+- 双方手牌和牌库顺序使用专用合成哨兵。盖伏牌允许既有 P2 合同公开稳定 `instanceId` 定位，但对手、普通观战和 referee 占位投影必须把 `cardId/name/cardType/faction/effectText` 裁剪为 `hidden-card/覆盖的卡牌/covered/hidden/null`。
+- 恢复后的 Journal 命令序号、最新检查点序号和 processed request 集合必须与不中断线一致。
+
+### 8.4 固定预算与停止条件
+
+- C-2 正确性合计不超过 90 秒、单代表场景不超过 20 秒；统一脚本不超过 180 秒。
+- 完整状态小于 2MB、每个接收者投影小于 1MB、snapshot P95 小于 1 秒、restore P95 小于 2 秒。
+- C-1 的单样本 60 秒、恢复 30 秒和四倍规模增长 6 倍预算保持不变。
+- 任一权威字段、随机流、事件/CardFact、Journal、请求幂等或投影分叉，任一私密哨兵越权，固定种子不稳定，或必须修改租约外产品文件，立即停止并回传最小复现。
+
+### 8.5 当前验证
+
+- 红测先因七族矩阵、代表映射与请求时序合同尚未实现而预期失败；没有产品行为红灯。
+- 七族首次全绿：`LongChainJournalRecoveryTests` 17/17，约 27 秒。
+- 统一门禁连续两轮稳定：每轮均为性能 1/1、Recovery 17/17、FailureClosure 22/22、P1/P2-P3 架构测试 7/7；墙钟分别为 50.5 秒和 51.0 秒。P0—P4 架构锁和 `git diff --check` 通过。
+- 构建输出固定到 `D:\GPT\Legion12\cache\primary\lc03c2`；C 盘空间不足只影响最初的依赖复制，未影响测试结论，也未删除用户数据。

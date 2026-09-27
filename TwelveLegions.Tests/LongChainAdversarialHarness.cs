@@ -32,6 +32,8 @@ internal sealed record LongChainEvidence(
     IReadOnlyDictionary<string, int> EvidenceCounts,
     string[] Postconditions,
     int RejectedCommands,
+    long JournalCommandSequence,
+    long LatestJournalCheckpointSequence,
     int StateBytes,
     int MaximumProjectionBytes,
     double SnapshotP95Milliseconds,
@@ -49,6 +51,12 @@ internal static class LongChainAdversarialHarness
     internal const string PrivateRisk = "手牌、牌库、检索与顺序";
     internal const string DisasterTrialRisk = "天灾与试炼";
     internal const string CleanupRisk = "跨回合清理、次数与阵亡替代";
+    internal const string RequestOrderingRisk = "重复、延迟、乱序与过期请求";
+    internal const string RequestOrderingScenarioId = "lc03c-request-ordering";
+    // Rejected commands use the lightweight Journal path and intentionally do not emit checkpoints.
+    // 65 guarantees two non-initial checkpoints even when command 32 itself is a rejection.
+    internal const int RepresentativeMinimumCommands = 65;
+    internal const int MinimumLatestJournalCheckpointSequence = 64;
 
     internal const string AttachmentEvidence = "attachment-committed";
     internal const string TimedSourceEvidence = "timed-modifier-survives-source-exit";
@@ -72,6 +80,24 @@ internal static class LongChainAdversarialHarness
     [
         AttachmentRisk, TimedRisk, ResponseRisk, PrivateRisk, DisasterTrialRisk, CleanupRisk,
     ];
+
+    internal static readonly string[] AllRiskFamilies =
+    [
+        .. RequiredRiskFamilies,
+        RequestOrderingRisk,
+    ];
+
+    internal static readonly IReadOnlyDictionary<string, string> RepresentativeScenarioByRisk =
+        new Dictionary<string, string>
+        {
+            [AttachmentRisk] = "lc01-arthur",
+            [TimedRisk] = "lc01-oiran",
+            [ResponseRisk] = "lc01-hanxin",
+            [PrivateRisk] = "lc01-gustav",
+            [DisasterTrialRisk] = "lc01-hanxin",
+            [CleanupRisk] = "lc01-oiran",
+            [RequestOrderingRisk] = RequestOrderingScenarioId,
+        };
 
     internal static readonly LongChainScenario[] Scenarios =
     [
@@ -99,6 +125,17 @@ internal static class LongChainAdversarialHarness
             "花魁与双方军团在场、当前为主要阶段", "主动休整后移除来源并结束回合",
             "限时修正来源离场后保留，跨回合准确清理", "timed-cleanup"),
     ];
+
+    internal static IReadOnlyList<LongChainScenario> RepresentativeScenarios { get; } =
+        RepresentativeScenarioByRisk
+            .Where(entry => entry.Key != RequestOrderingRisk)
+            .Select(entry => entry.Value)
+            .Distinct(StringComparer.Ordinal)
+            .Select(id => Scenarios.Single(scenario => scenario.Id == id))
+            .ToArray();
+
+    internal static bool IsRepresentative(LongChainScenario scenario)
+        => RepresentativeScenarios.Any(candidate => candidate.Id == scenario.Id);
 
     private static readonly JsonSerializerOptions WireJson = new(JsonSerializerDefaults.Web);
     private static readonly L12Catalog Catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
@@ -292,6 +329,29 @@ internal static class LongChainAdversarialHarness
             postconditions.Add("试炼已完成且权威场上存在已翻开的天灾");
             await ReconnectCheckpointAsync("after-disaster-and-trial");
 
+            if (IsRepresentative(scenario))
+            {
+                var depthIndex = 0;
+                while (sequence < RepresentativeMinimumCommands)
+                {
+                    var player = depthIndex % 2;
+                    var life = 20 + depthIndex % 9;
+                    await ApplyGmAsync($"representative-depth-{sequence + 1:D3}",
+                        new L12GmCommand("setLife", player, Value: life));
+                    if (sequence % 8 == 0)
+                        await ReconnectCheckpointAsync($"representative-checkpoint-{sequence:D3}");
+                    depthIndex++;
+                }
+                postconditions.Add($"代表深链达到 {sequence} 条 Journal 命令并持续通过 A/B/C 比较");
+            }
+
+            var latestCheckpoint = await recorder.LoadLatestCheckpointAsync(primary.State.MatchId)
+                ?? throw new XunitException($"{scenario.Id} Journal V2 缺少初始检查点");
+            if (IsRepresentative(scenario)
+                && latestCheckpoint.Sequence < MinimumLatestJournalCheckpointSequence)
+                Fail(scenario, commands, cutpoints, "journal-checkpoint-depth",
+                    $"代表深链未形成至少两个非初始 Journal 检查点：latest={latestCheckpoint.Sequence}");
+
             var restoredJournal = await recorder.LoadJournalEngineAsync(primary.State.MatchId)
                 ?? throw new XunitException($"{scenario.Id} Journal V2 未返回恢复状态");
             cutpoints.Add($"journal-sequence-{restoredJournal.CommandSequence}");
@@ -320,6 +380,8 @@ internal static class LongChainAdversarialHarness
                 evidenceCounts,
                 [.. postconditions],
                 rejected,
+                restoredJournal.CommandSequence,
+                latestCheckpoint.Sequence,
                 Encoding.UTF8.GetByteCount(primary.SerializeFullState()),
                 new[] { projections.Player0, projections.Player1, projections.Spectator, projections.Referee }
                     .Max(value => Encoding.UTF8.GetByteCount(value)),
@@ -552,7 +614,9 @@ internal static class LongChainAdversarialHarness
         for (var itemIndex = 0; itemIndex < handIds.Length; itemIndex++)
             player.Hand.Add(Card(Catalog.Cards[handIds[itemIndex]], $"lc-hand-{index}-{itemIndex}"));
         for (var itemIndex = 0; itemIndex < libraryIds.Length; itemIndex++)
-            player.Library.Add(Card(Catalog.Cards[libraryIds[itemIndex]], $"lc-library-{index}-{itemIndex}"));
+            player.Library.Add(Card(Catalog.Cards[libraryIds[itemIndex]], itemIndex == 0
+                ? $"lc-private-library-p{index}-{scenarioId}"
+                : $"lc-library-{index}-{itemIndex}"));
         for (var itemIndex = 0; itemIndex < graveIds.Length; itemIndex++)
             player.Graveyard.Add(Card(Catalog.Cards[graveIds[itemIndex]], $"lc-grave-{index}-{itemIndex}"));
     }
@@ -714,6 +778,14 @@ internal static class LongChainAdversarialHarness
         var pb = ProjectionJson(b);
         var pc = ProjectionJson(c);
         var summary = ComparisonSummary(a, b, c, pa, pb, pc);
+        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/flow-A-B",
+            FlowContractJson(a), FlowContractJson(b), summary);
+        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/flow-A-C",
+            FlowContractJson(a), FlowContractJson(c), summary);
+        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/events-A-B",
+            EventContractJson(a), EventContractJson(b), summary);
+        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/events-A-C",
+            EventContractJson(a), EventContractJson(c), summary);
         AssertJsonEqual(scenario, commands, cutpoints, $"{label}/authority-state-A-B", stateA, stateB, summary);
         AssertJsonEqual(scenario, commands, cutpoints, $"{label}/authority-state-A-C", stateA, stateC, summary);
         if (a.ComputeStateHash() != b.ComputeStateHash() || a.ComputeStateHash() != c.ComputeStateHash())
@@ -744,12 +816,17 @@ internal static class LongChainAdversarialHarness
         List<string> cutpoints, string label, L12GameEngine game, ProjectionSet projection,
         string private0, string private1)
     {
+        var privateLibrary0 = $"lc-private-library-p0-{scenario.Id}";
+        var privateLibrary1 = $"lc-private-library-p1-{scenario.Id}";
         if (game.State.Players[0].Hand.Any(card => card.InstanceId == private0))
         {
             if (!VisibleHandIds(projection.Player0, 0).Contains(private0)
                 || HasHandField(projection.Player1, 0)
                 || HasHandField(projection.Spectator, 0)
-                || HasHandField(projection.Referee, 0))
+                || HasHandField(projection.Referee, 0)
+                || ContainsIdentifier(projection.Player1, private0)
+                || ContainsIdentifier(projection.Spectator, private0)
+                || ContainsIdentifier(projection.Referee, private0))
                 Fail(scenario, commands, cutpoints, $"{label}/privacy-p0",
                     "玩家1手牌结构字段或私密哨兵在接收者投影中的授权不符合合同");
         }
@@ -758,10 +835,62 @@ internal static class LongChainAdversarialHarness
             if (!VisibleHandIds(projection.Player1, 1).Contains(private1)
                 || HasHandField(projection.Player0, 1)
                 || HasHandField(projection.Spectator, 1)
-                || HasHandField(projection.Referee, 1))
+                || HasHandField(projection.Referee, 1)
+                || ContainsIdentifier(projection.Player0, private1)
+                || ContainsIdentifier(projection.Spectator, private1)
+                || ContainsIdentifier(projection.Referee, private1))
                 Fail(scenario, commands, cutpoints, $"{label}/privacy-p1",
                     "玩家2手牌结构字段或私密哨兵在接收者投影中的授权不符合合同");
         }
+
+        foreach (var (privateLibrary, owner) in new[] { (privateLibrary0, 0), (privateLibrary1, 1) })
+        {
+            if (!game.State.Players[owner].Library.Any(card => card.InstanceId == privateLibrary)) continue;
+            if (ContainsIdentifier(projection.Player0, privateLibrary)
+                || ContainsIdentifier(projection.Player1, privateLibrary)
+                || ContainsIdentifier(projection.Spectator, privateLibrary)
+                || ContainsIdentifier(projection.Referee, privateLibrary))
+                Fail(scenario, commands, cutpoints, $"{label}/privacy-library-p{owner}",
+                    "牌库顺序私密哨兵出现在接收者投影中");
+        }
+
+        for (var owner = 0; owner < game.State.Players.Length; owner++)
+        {
+            foreach (var hidden in game.State.Players[owner].Field.SelectMany(row => row)
+                         .Where(card => card is { Hidden: true }).Cast<L12CardInstance>())
+            {
+                var opponent = owner == 0 ? projection.Player1 : projection.Player0;
+                if (!HiddenFieldIdentityIsRedacted(opponent, owner, hidden.InstanceId)
+                    || !HiddenFieldIdentityIsRedacted(projection.Spectator, owner, hidden.InstanceId)
+                    || !HiddenFieldIdentityIsRedacted(projection.Referee, owner, hidden.InstanceId))
+                    Fail(scenario, commands, cutpoints, $"{label}/privacy-hidden-p{owner}",
+                        $"盖伏牌实例 {hidden.InstanceId} 的身份字段越权出现在对手、观战或 referee 占位投影");
+            }
+        }
+    }
+
+    private static bool ContainsIdentifier(string projectionJson, string identifier)
+        => projectionJson.Contains(identifier, StringComparison.Ordinal);
+
+    private static bool HiddenFieldIdentityIsRedacted(string projectionJson, int owner, string instanceId)
+    {
+        using var document = JsonDocument.Parse(projectionJson);
+        var field = document.RootElement.GetProperty("players")[owner].GetProperty("field");
+        foreach (var row in field.EnumerateArray())
+        foreach (var card in row.EnumerateArray())
+        {
+            if (card.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) continue;
+            if (!card.TryGetProperty("instanceId", out var candidate)
+                || candidate.GetString() != instanceId) continue;
+            return card.GetProperty("cardId").GetString() == "hidden-card"
+                   && card.GetProperty("name").GetString() == "覆盖的卡牌"
+                   && card.GetProperty("cardType").GetString() == "covered"
+                   && card.GetProperty("faction").GetString() == "hidden"
+                   && card.GetProperty("hidden").GetBoolean()
+                   && !card.GetProperty("identityKnown").GetBoolean()
+                   && card.GetProperty("effectText").ValueKind == JsonValueKind.Null;
+        }
+        return false;
     }
 
     private static HashSet<string> VisibleHandIds(string projectionJson, int playerIndex)
@@ -789,6 +918,26 @@ internal static class LongChainAdversarialHarness
             JsonSerializer.Serialize(game.SnapshotFor(1), WireJson),
             JsonSerializer.Serialize(game.SnapshotForSpectator(), WireJson),
             JsonSerializer.Serialize(game.SnapshotForReferee(), WireJson));
+
+    private static string FlowContractJson(L12GameEngine game)
+        => JsonSerializer.Serialize(new
+        {
+            game.State.Phase,
+            game.State.ActivePlayer,
+            game.State.PendingPrompts,
+            game.State.PendingActivations,
+            game.State.EffectStack,
+            game.State.ResponseWindow,
+            UsedAbilities = game.State.Players.Select(player => player.UsedAbilities).ToArray(),
+        }, WireJson);
+
+    private static string EventContractJson(L12GameEngine game)
+        => JsonSerializer.Serialize(new
+        {
+            game.State.EventSequence,
+            game.CardFactSignalSequence,
+            game.State.Events,
+        }, WireJson);
 
     private static string ComparisonSummary(L12GameEngine a, L12GameEngine b, L12GameEngine c,
         ProjectionSet pa, ProjectionSet pb, ProjectionSet pc)
