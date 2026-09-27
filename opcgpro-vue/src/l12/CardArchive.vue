@@ -405,6 +405,12 @@ function resetFilters() {
 
 <style scoped>
 .archive-workspace{grid-template-columns:minmax(0,1fr) var(--l12-card-detail-sidebar-width,274px)}
+.archive-card-image{box-sizing:border-box;display:grid;min-width:0;min-height:0;place-items:stretch}
+.archive-image-open,
+.archive-image-open :deep(.mobile-deferred-card-image),
+.archive-image-open :deep(.l12-card-image),
+.archive-image-open :deep(.l12-card-image__img){box-sizing:border-box;min-width:0;min-height:0;width:100%;height:100%}
+.archive-image-open :deep(.l12-card-image__img){object-fit:contain!important;object-position:center!important}
 :global(.archive-card.landscape-thumbnail .archive-card-image){aspect-ratio:8/5}
 .archive-modal {
   box-sizing: border-box;
@@ -424,13 +430,50 @@ function resetFilters() {
     scrollbar-gutter: stable;
   }
 }
-@media (max-width: 900px) {
-  /* The shared mobile layout hides the detail panel. Do not let this later
-     scoped desktop declaration keep reserving its sidebar column. */
+@media (max-width: 900px), (max-height: 640px) {
+  /* SiteShell switches to the compact navigation for either a narrow width or
+     a short usable height. The archive must follow the same geometry rule;
+     otherwise a landscape phone keeps the desktop detail column and clips the
+     lower part of card rows inside the fixed-height desktop surface. */
+  :global(.card-archive) {
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+    padding: 14px;
+  }
+  :global(.archive-toolbar) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+  :global(.archive-search) { grid-column: auto; min-width: 0; }
+  :global(.archive-desktop-filters) { display: none; }
+  .archive-toolbar :deep(.mobile-filter-trigger) {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+  }
+  :global(.archive-filter-summary) {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    padding: 8px 10px;
+    border: 1px solid #52636a;
+    background: #101a20;
+    color: #c7d8d6;
+    font-size: 12px;
+    font-weight: 800;
+    text-align: left;
+  }
   .archive-workspace {
     container-type: inline-size;
     grid-template-columns: minmax(0, 1fr);
+    min-height: auto;
+    flex: none;
   }
+  .archive-detail { display: none; }
+  .archive-grid { min-height: auto; max-height: none; overflow: visible; padding-right: 0; }
   .archive-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 @container (max-width: 580px) {

@@ -304,6 +304,10 @@ try {
   if ((await page.locator('.archive-card .mobile-deferred-card-image').count()) !== initialArchiveCards)
     throw new Error('mobile archive changed the original card-slot count while deferring images')
   for (const viewport of [
+    { width: 568, height: 320 },
+    { width: 667, height: 375 },
+    { width: 844, height: 390 },
+    { width: 932, height: 430 },
     { width: 320, height: 568 },
     { width: 390, height: 844 },
     { width: 430, height: 932 },
@@ -312,6 +316,9 @@ try {
     { width: 701, height: 900 },
   ]) {
     await page.setViewportSize(viewport)
+    await page.goto(`http://127.0.0.1:${port}/__mobile_review__?route=%2Fcards`)
+    await page.locator('.archive-grid .archive-card').first().waitFor({ timeout: 15000 })
+    await page.waitForTimeout(150)
     const geometry = await page.locator('.archive-workspace').evaluate(element => {
       const workspace = element.getBoundingClientRect()
       const gridElement = element.querySelector('.archive-grid')
@@ -325,7 +332,55 @@ try {
     const expectedColumns = geometry.workspace <= 380 ? 2 : geometry.workspace <= 580 ? 3 : 4
     if (geometry.columns !== expectedColumns)
       throw new Error(`archive mobile grid expected ${expectedColumns} columns for ${geometry.workspace}px of usable width at ${viewport.width}x${viewport.height}, got ${geometry.columns}: ${JSON.stringify(geometry)}`)
+    const imageGeometry = await page.locator('.archive-card-image').evaluateAll(elements => elements.slice(0, 12).map(element => {
+      const slot = element.getBoundingClientRect()
+      const picture = element.querySelector('.l12-card-image')?.getBoundingClientRect()
+      const image = element.querySelector('.l12-card-image__img')
+      const imageBox = image?.getBoundingClientRect()
+      return {
+        slotWidth: slot.width,
+        slotHeight: slot.height,
+        pictureWidth: picture?.width ?? 0,
+        pictureHeight: picture?.height ?? 0,
+        imageWidth: imageBox?.width ?? 0,
+        imageHeight: imageBox?.height ?? 0,
+        fit: image ? getComputedStyle(image).objectFit : '',
+      }
+    }))
+    for (const [index, image] of imageGeometry.entries()) {
+      if (!image.pictureWidth || !image.pictureHeight || !image.imageWidth || !image.imageHeight)
+        continue
+      if (Math.abs(image.pictureWidth - image.slotWidth) > 1
+        || Math.abs(image.pictureHeight - image.slotHeight) > 1
+        || Math.abs(image.imageWidth - image.slotWidth) > 1
+        || Math.abs(image.imageHeight - image.slotHeight) > 1
+        || image.fit !== 'contain')
+        throw new Error(`archive card image ${index} is cropped at ${viewport.width}x${viewport.height}: ${JSON.stringify(image)}`)
+    }
     await page.screenshot({ path: path.join(output, `archive-columns-${viewport.width}x${viewport.height}-${geometry.columns}col.png`) })
+    await page.evaluate(() => {
+      const scroller = document.querySelector('.site-content')
+      if (scroller instanceof HTMLElement) scroller.scrollTop = scroller.scrollHeight
+    })
+    await page.waitForTimeout(150)
+    const lastCardReachability = await page.locator('.archive-card').last().evaluate(element => {
+      const card = element.getBoundingClientRect()
+      const scroller = document.querySelector('.site-content')?.getBoundingClientRect()
+      return {
+        cardTop: card.top,
+        cardBottom: card.bottom,
+        viewportTop: scroller?.top ?? 0,
+        viewportBottom: scroller?.bottom ?? innerHeight,
+      }
+    })
+    // A 320px-high landscape viewport is shorter than one complete archive
+    // card after the mobile header is deducted. Requiring the entire card to
+    // fit at once would reject a correctly scrollable layout. What matters is
+    // that the final row can be scrolled all the way to its lower edge; the
+    // image-box assertions above separately prove that its artwork is not
+    // cropped inside the card.
+    if (lastCardReachability.cardBottom > lastCardReachability.viewportBottom + 1)
+      throw new Error(`archive last card is not fully reachable at ${viewport.width}x${viewport.height}: ${JSON.stringify(lastCardReachability)}`)
   }
 
   await page.goto(`http://127.0.0.1:${port}/__mobile_review__?route=%2Fbattle%2Frankings`)
@@ -348,11 +403,9 @@ try {
   await page.setViewportSize({ width: 700, height: 900 })
   await page.goto(`http://127.0.0.1:${port}/__mobile_review__?route=%2Fdecks`)
   await page.setViewportSize({ width: 700, height: 900 })
-  await page.waitForTimeout(100)
-  if ((await page.locator('.site-mobile-head:visible').count()) < 1) throw new Error('700px must use compact site navigation')
+  await page.locator('.site-mobile-head').waitFor({ state: 'visible', timeout: 2000 })
   await page.setViewportSize({ width: 701, height: 900 })
-  await page.waitForTimeout(100)
-  if ((await page.locator('.site-mobile-head:visible').count()) > 0) throw new Error('701px must leave compact site navigation')
+  await page.locator('.site-mobile-head').waitFor({ state: 'hidden', timeout: 2000 })
   for (const viewport of [{ width: 701, height: 360 }, { width: 844, height: 390 }, { width: 1024, height: 600 }, { width: 1920, height: 600 }]) {
     await page.setViewportSize(viewport)
     await page.waitForTimeout(100)
