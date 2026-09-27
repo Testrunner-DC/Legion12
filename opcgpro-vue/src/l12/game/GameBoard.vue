@@ -188,10 +188,19 @@ function identityLabel(value: string | null | undefined) {
   const label = value?.trim() ?? ''
   return absentIdentityLabels.has(label) ? '' : label
 }
-function battleTierLabel(badge: { rank?: number | null; tier?: string | null } | null | undefined) {
+type BattleIdentityBadge = {
+  rank?: number | null
+  tier?: string | null
+  placementTitle?: string | null
+}
+function battleRank(badge: BattleIdentityBadge | null | undefined) {
+  return identityLabel(badge?.tier) === '冠冕' ? badge?.rank ?? null : null
+}
+function battleTierLabel(badge: BattleIdentityBadge | null | undefined) {
   const label = identityLabel(badge?.tier)
-  // Once an all-server rank is present, "冠冕" only repeats the meaning of
-  // that rank. Keep lower tiers visible because they still carry information.
+  // A placement title is the more specific player-facing identity.  Crown is
+  // also implicit once its all-server rank is shown.
+  if (identityLabel(badge?.placementTitle)) return ''
   return badge?.rank && label === '冠冕' ? '' : label
 }
 const playerConnection = (playerIndex: number) => {
@@ -1338,11 +1347,11 @@ function statusTexts(card: Card) {
               <button type="button" class="mobile-player-name mine" :aria-label="`查看我方玩家详情：${viewMe.name || '未命名玩家'}`" @click="openMobilePlayerDetails(viewMe.playerIndex)"><b>我方</b><strong>{{ viewMe.name || '未命名玩家' }}</strong></button>
             </div>
             <template v-else>
-              <BattlePlayerIdentity side-label="对方" :player="viewEnemy" :rank="enemyBadge?.rank" :tier-label="battleTierLabel(enemyBadge)"
+              <BattlePlayerIdentity side-label="对方" :player="viewEnemy" :rank="battleRank(enemyBadge)" :tier-label="battleTierLabel(enemyBadge)"
                 :placement-title="identityLabel(enemyBadge?.placementTitle)" :master-title="identityLabel(enemyBadge?.masterTitle)"
                 :faction="viewEnemy.faction" :faction-label="factionLabel(viewEnemy.faction)" :connection-label="connectionLabel(viewEnemy.playerIndex)" :connected="playerConnection(viewEnemy.playerIndex)" />
               <hr/>
-              <BattlePlayerIdentity side-label="我方" :player="viewMe" :rank="myBadge?.rank" :tier-label="battleTierLabel(myBadge)"
+              <BattlePlayerIdentity side-label="我方" :player="viewMe" :rank="battleRank(myBadge)" :tier-label="battleTierLabel(myBadge)"
                 :placement-title="identityLabel(myBadge?.placementTitle)" :master-title="identityLabel(myBadge?.masterTitle)"
                 :faction="viewMe.faction" :faction-label="factionLabel(viewMe.faction)" :connection-label="connectionLabel(viewMe.playerIndex)" :connected="playerConnection(viewMe.playerIndex)" />
             </template>
@@ -1367,12 +1376,12 @@ function statusTexts(card: Card) {
           <div class="mobile-player-details-dialog">
             <header><div><small>PLAYER DETAILS</small><h2>双方玩家信息</h2></div><button type="button" aria-label="关闭双方玩家详情" @click="mobilePlayerDetailsOpen = false">×</button></header>
             <div class="mobile-player-details-list">
-              <BattlePlayerIdentity side-label="对方" :player="viewEnemy" :rank="enemyBadge?.rank" :tier-label="battleTierLabel(enemyBadge)"
+              <BattlePlayerIdentity side-label="对方" :player="viewEnemy" :rank="battleRank(enemyBadge)" :tier-label="battleTierLabel(enemyBadge)"
                 :placement-title="identityLabel(enemyBadge?.placementTitle)" :master-title="identityLabel(enemyBadge?.masterTitle)"
                 :faction="viewEnemy.faction" :faction-label="factionLabel(viewEnemy.faction)" :connection-label="connectionLabel(viewEnemy.playerIndex)" :connected="playerConnection(viewEnemy.playerIndex)"
                 show-master-details
                 :class="{ focused: mobilePlayerDetailsFocus === viewEnemy.playerIndex }" />
-              <BattlePlayerIdentity side-label="我方" :player="viewMe" :rank="myBadge?.rank" :tier-label="battleTierLabel(myBadge)"
+              <BattlePlayerIdentity side-label="我方" :player="viewMe" :rank="battleRank(myBadge)" :tier-label="battleTierLabel(myBadge)"
                 :placement-title="identityLabel(myBadge?.placementTitle)" :master-title="identityLabel(myBadge?.masterTitle)"
                 :faction="viewMe.faction" :faction-label="factionLabel(viewMe.faction)" :connection-label="connectionLabel(viewMe.playerIndex)" :connected="playerConnection(viewMe.playerIndex)"
                 show-master-details

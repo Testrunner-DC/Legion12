@@ -23,7 +23,7 @@ const mobile = [
   { width: 667, height: 375 },
   { width: 568, height: 320 },
 ]
-const modes = ['full', 'mixed', 'minimal', 'placement']
+const modes = ['full', 'crown', 'mixed', 'minimal', 'placement']
 
 const browser = await chromium.launch(process.env.L12_CHROMIUM_EXECUTABLE
   ? { headless: true, executablePath: process.env.L12_CHROMIUM_EXECUTABLE }
@@ -96,7 +96,7 @@ try {
       for (const identity of report.identities) {
         assert(identity.scrollWidth <= identity.clientWidth + 1,
           `${viewport.width}x${viewport.height}/${mode}: player identity must not overflow horizontally ${JSON.stringify(identity)}`)
-        assert(identity.name && identity.master && identity.connection,
+        assert(identity.name && identity.connection && (!isMobile || identity.master),
           `${viewport.width}x${viewport.height}/${mode}: lawful player fields are incomplete ${JSON.stringify(identity)}`)
         for (const row of identity.rows) {
           assert(row.left >= report.identityRoot.left - 1 && row.right <= report.identityRoot.right + 1,
@@ -127,17 +127,42 @@ try {
           `${viewport.width}x${viewport.height}/${mode}: desktop player panel content was clipped`)
       }
 
-      for (const identity of report.identities) {
-        if (mode === 'placement') {
-          assert.equal(identity.rank, '', `${viewport.width}x${viewport.height}/${mode}: unavailable rank must be omitted`)
-          assert.match(identity.tier, /定级/, `${viewport.width}x${viewport.height}/${mode}: placement title missing`)
-          assert.equal(identity.masterTitle, '', `${viewport.width}x${viewport.height}/${mode}: unavailable master title must be omitted`)
-        } else {
-          assert.match(identity.rank, /^第 \d+ 名$/, `${viewport.width}x${viewport.height}/${mode}: authoritative rank missing`)
-          assert.ok(identity.tier, `${viewport.width}x${viewport.height}/${mode}: tier/title row missing`)
-          assert.equal(Boolean(identity.masterTitle), mode === 'full' || (mode === 'mixed' && identity.rank === '第 3 名'),
-            `${viewport.width}x${viewport.height}/${mode}: master title availability changed`)
+      const [enemyIdentity, myIdentity] = report.identities
+      if (mode === 'full') {
+        for (const identity of report.identities) {
+          assert.match(identity.rank, /^第 \d+ 名$/, `${viewport.width}x${viewport.height}/${mode}: Crown rank missing`)
+          assert.ok(identity.tier && !identity.tier.includes('冠冕'),
+            `${viewport.width}x${viewport.height}/${mode}: placement title must replace the redundant tier`)
+          assert.ok(identity.masterTitle, `${viewport.width}x${viewport.height}/${mode}: master title missing`)
         }
+      } else if (mode === 'crown') {
+        for (const identity of report.identities) {
+          assert.match(identity.rank, /^第 \d+ 名$/, `${viewport.width}x${viewport.height}/${mode}: Crown rank missing`)
+          assert.equal(identity.tier, '', `${viewport.width}x${viewport.height}/${mode}: ranked Crown tier must be omitted`)
+          assert.equal(identity.masterTitle, '', `${viewport.width}x${viewport.height}/${mode}: unavailable master title must be omitted`)
+        }
+      } else if (mode === 'mixed') {
+        assert.equal(enemyIdentity.rank, '', `${viewport.width}x${viewport.height}/${mode}: non-Crown rank must be omitted`)
+        assert.match(enemyIdentity.tier, /统领/, `${viewport.width}x${viewport.height}/${mode}: non-Crown tier missing`)
+        assert.equal(enemyIdentity.masterTitle, '', `${viewport.width}x${viewport.height}/${mode}: unavailable master title must be omitted`)
+        assert.equal(myIdentity.rank, '第 3 名', `${viewport.width}x${viewport.height}/${mode}: Crown rank missing`)
+        assert.match(myIdentity.tier, /秩序冠首/, `${viewport.width}x${viewport.height}/${mode}: placement title missing`)
+        assert.ok(!myIdentity.tier.includes('冠冕'), `${viewport.width}x${viewport.height}/${mode}: tier must be hidden behind placement title`)
+        assert.ok(myIdentity.masterTitle, `${viewport.width}x${viewport.height}/${mode}: master title missing`)
+      } else if (mode === 'minimal') {
+        assert.equal(report.identities.every(identity => identity.rank === ''), true,
+          `${viewport.width}x${viewport.height}/${mode}: non-Crown ranks must be omitted`)
+        assert.match(enemyIdentity.tier, /进阶/, `${viewport.width}x${viewport.height}/${mode}: opponent tier missing`)
+        assert.match(myIdentity.tier, /精英/, `${viewport.width}x${viewport.height}/${mode}: player tier missing`)
+        assert.equal(report.identities.every(identity => identity.masterTitle === ''), true,
+          `${viewport.width}x${viewport.height}/${mode}: unavailable master titles must be omitted`)
+      } else {
+        assert.equal(report.identities.every(identity => identity.rank === ''), true,
+          `${viewport.width}x${viewport.height}/${mode}: unavailable ranks must be omitted`)
+        assert.equal(report.identities.every(identity => /定级/.test(identity.tier)), true,
+          `${viewport.width}x${viewport.height}/${mode}: placement progress missing`)
+        assert.equal(report.identities.every(identity => identity.masterTitle === ''), true,
+          `${viewport.width}x${viewport.height}/${mode}: unavailable master titles must be omitted`)
       }
 
       const suffix = `${isMobile ? 'mobile' : 'desktop'}-${viewport.width}x${viewport.height}-${mode}`

@@ -76,6 +76,8 @@ l12State.spectating=spectatorMode
 const identityMode=params.get('identity')||'mixed'
 const playerBadges=identityMode==='full'
  ? [{playerIndex:0,faction:'秩序',rank:3,tier:'冠冕',placementTitle:'秩序冠首',masterTitle:'最强银臂努阿达'},{playerIndex:1,faction:'混沌',rank:128,tier:'冠冕',placementTitle:'混沌先声',masterTitle:'最强阿斯加德'}]
+ : identityMode==='crown'
+  ? [{playerIndex:0,faction:'秩序',rank:18,tier:'冠冕'},{playerIndex:1,faction:'混沌',rank:247,tier:'冠冕'}]
  : identityMode==='placement'
   ? [{playerIndex:0,faction:'秩序',tier:'定级 3/5'},{playerIndex:1,faction:'混沌',tier:'定级 4/5'}]
   : identityMode==='minimal'
