@@ -311,15 +311,8 @@ public sealed partial class L12GameEngine
                 if (candidates.Length == 0) { FinishStackItem(item); break; }
                 CreatePrompt(item.Controller, "library-search", "万物统御之戒：选择牌库1张【通用】卡牌展示并加入手牌",
                     candidates.Select(candidate => candidate.InstanceId), 1, 1, "card-effect", item.StackItemId,
-                    data: WithPromptNarrative(
-                        new Dictionary<string, string> { ["action"] = "s2-ring-search" },
-                        new("万物统御之戒",
-                            "弃置手牌的费用已经支付。现在从牌库选择1张【通用】卡牌，展示并加入手牌，随后洗牌。",
-                            "请选择1张【通用】卡牌；本步骤不能取消。",
-                            L12PromptWaitingAction.CardSelection,
-                            candidates.ToDictionary(candidate => candidate.InstanceId,
-                                candidate => $"展示〈{candidate.Name}〉并加入手牌，然后洗牌。",
-                                StringComparer.OrdinalIgnoreCase))));
+                    data: BuildS2RingSearchPromptData(candidates,
+                        new Dictionary<string, string> { ["action"] = "s2-ring-search" }));
                 break;
             }
             case "s2-ring-search":

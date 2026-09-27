@@ -949,6 +949,181 @@ public sealed class PromptNarrativeMatrixTests
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:ring-paid-search-route-parity")]
+    public void RingPaidSearchUsesOneNarrativeAcrossLegacyAndPublicTriggerRoutes(int controller)
+    {
+        var legacyCase = BeginRingSearchPrompt(202609375 + controller, controller, publicTrigger: false);
+        var publicCase = BeginRingSearchPrompt(202609377 + controller, controller, publicTrigger: true);
+        var playerName = legacyCase.Game.State.Players[controller].Name;
+
+        foreach (var prompt in new[] { legacyCase.Prompt, publicCase.Prompt })
+        {
+            AssertPresentation(prompt, "万物统御之戒", "费用已经支付", "本步骤不能取消");
+            Assert.DoesNotContain("skip", prompt.ValidChoices);
+            Assert.Contains("仍会洗牌", prompt.Presentation!.Situation, StringComparison.Ordinal);
+            Assert.Contains("不改选且费用不返还",
+                prompt.Presentation.ChoiceConsequences[legacyCase.FirstTarget.InstanceId],
+                StringComparison.Ordinal);
+        }
+        Assert.Equal(legacyCase.Prompt.Presentation!.Situation, publicCase.Prompt.Presentation!.Situation);
+        Assert.Equal(legacyCase.Prompt.Presentation.Instruction, publicCase.Prompt.Presentation.Instruction);
+        Assert.Equal(legacyCase.Prompt.Presentation.ChoiceConsequences,
+            publicCase.Prompt.Presentation.ChoiceConsequences);
+        AssertPromptBoundaryAndCheckpoint(legacyCase.Game, controller,
+            $"{playerName} 正在完成卡牌选择", legacyCase.FirstTarget, legacyCase.SecondTarget);
+        AssertPromptBoundaryAndCheckpoint(publicCase.Game, controller,
+            $"{playerName} 正在完成卡牌选择", publicCase.FirstTarget, publicCase.SecondTarget);
+
+        publicCase.Game.State.PendingPrompts.Remove(publicCase.Prompt);
+        Invoke(publicCase.Game, "ContinueS2UniversalEffect", publicCase.Item, publicCase.Prompt,
+            new List<string> { publicCase.FirstTarget.InstanceId });
+        Assert.Contains(publicCase.FirstTarget, publicCase.Game.State.Players[controller].Hand);
+        Assert.Contains(publicCase.Game.State.Events, entry => entry.Type == "shuffle");
+
+        var staleCase = BeginRingSearchPrompt(202609379 + controller, controller, publicTrigger: true);
+        staleCase.Game.State.Players[controller].Library.Remove(staleCase.FirstTarget);
+        staleCase.Game.State.Players[controller].Graveyard.Add(staleCase.FirstTarget);
+        staleCase.Game.State.PendingPrompts.Remove(staleCase.Prompt);
+        Invoke(staleCase.Game, "ContinueS2UniversalEffect", staleCase.Item, staleCase.Prompt,
+            new List<string> { staleCase.FirstTarget.InstanceId });
+        Assert.Contains(staleCase.Game.State.Events, entry => entry.Type == "effect-failed");
+        Assert.Contains(staleCase.Game.State.Events, entry => entry.Type == "shuffle");
+        Assert.DoesNotContain(staleCase.SecondTarget, staleCase.Game.State.Players[controller].Hand);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:heracles-discard-route-parity")]
+    public void HeraclesMandatoryDiscardUsesOneNarrativeAcrossLegacyAndPublicTriggerRoutes(int controller)
+    {
+        var legacyCase = BeginHeraclesDiscardPrompt(202609381 + controller, controller, publicTrigger: false);
+        var publicCase = BeginHeraclesDiscardPrompt(202609383 + controller, controller, publicTrigger: true);
+        var playerName = legacyCase.Game.State.Players[controller].Name;
+
+        foreach (var prompt in new[] { legacyCase.Prompt, publicCase.Prompt })
+        {
+            AssertPresentation(prompt, "赫拉克勒斯", "已经抽取2张牌", "不能拒绝或跳过");
+            Assert.DoesNotContain("skip", prompt.ValidChoices);
+            Assert.DoesNotContain("no", prompt.ValidChoices);
+            Assert.Contains("效果结算，不是支付费用", prompt.Presentation!.Situation,
+                StringComparison.Ordinal);
+        }
+        Assert.Equal(legacyCase.Prompt.Presentation!.Situation, publicCase.Prompt.Presentation!.Situation);
+        Assert.Equal(legacyCase.Prompt.Presentation.ChoiceConsequences,
+            publicCase.Prompt.Presentation.ChoiceConsequences);
+        AssertPromptBoundaryAndCheckpoint(legacyCase.Game, controller,
+            $"{playerName} 正在完成卡牌选择", legacyCase.ExistingHand, legacyCase.DrawnA,
+            legacyCase.DrawnB);
+        AssertPromptBoundaryAndCheckpoint(publicCase.Game, controller,
+            $"{playerName} 正在完成卡牌选择", publicCase.ExistingHand, publicCase.DrawnA,
+            publicCase.DrawnB);
+
+        publicCase.Game.State.PendingPrompts.Remove(publicCase.Prompt);
+        ContinueS2Faction(publicCase.Game, publicCase.Item, publicCase.Prompt,
+            publicCase.DrawnB.InstanceId);
+        Assert.Contains(publicCase.DrawnB, publicCase.Game.State.Players[controller].Graveyard);
+        Assert.Contains(publicCase.ExistingHand, publicCase.Game.State.Players[controller].Hand);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:robin-private-squire-route-parity")]
+    public void RobinExplainsPrivateSourceAndOnlyClaimsADeclaredSlotWhenOneExists(int controller)
+    {
+        var legacyCase = BeginRobinPrompt(202609385 + controller, controller, publicTrigger: false);
+        var publicCase = BeginRobinPrompt(202609387 + controller, controller, publicTrigger: true);
+        var playerName = legacyCase.Game.State.Players[controller].Name;
+
+        AssertPresentation(legacyCase.Prompt, "罗宾汉", "在合法空位活跃登场", "选择“不发动”");
+        Assert.DoesNotContain("已声明", legacyCase.Prompt.Presentation!.Situation, StringComparison.Ordinal);
+        AssertPresentation(publicCase.Prompt, "罗宾汉", "已声明的合法位置", "选择“不发动”");
+        Assert.Contains("手牌中的", legacyCase.Prompt.Presentation!
+            .ChoiceConsequences[legacyCase.HandSquire.InstanceId], StringComparison.Ordinal);
+        Assert.Contains("牌库中的", legacyCase.Prompt.Presentation
+            .ChoiceConsequences[legacyCase.LibrarySquire.InstanceId], StringComparison.Ordinal);
+        Assert.Contains("墓地中的", legacyCase.Prompt.Presentation
+            .ChoiceConsequences[legacyCase.GraveSquire.InstanceId], StringComparison.Ordinal);
+        Assert.Contains("已声明位置", publicCase.Prompt.Presentation!
+            .ChoiceConsequences[publicCase.HandSquire.InstanceId], StringComparison.Ordinal);
+        Assert.Equal("不发动", publicCase.Prompt.ChoiceLabels["skip"]);
+        Assert.Contains("不移动任何", publicCase.Prompt.Presentation.ChoiceConsequences["skip"],
+            StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(legacyCase.Game, controller,
+            $"{playerName} 正在完成卡牌选择", legacyCase.HandSquire, legacyCase.LibrarySquire);
+        AssertPromptBoundaryAndCheckpoint(publicCase.Game, controller,
+            $"{playerName} 正在完成卡牌选择", publicCase.HandSquire, publicCase.LibrarySquire);
+        AssertPrivateNamesStayOutOfWaitingViews(legacyCase.Game, controller,
+            legacyCase.HandSquire, legacyCase.LibrarySquire, legacyCase.GraveSquire);
+        AssertPrivateNamesStayOutOfWaitingViews(publicCase.Game, controller,
+            publicCase.HandSquire, publicCase.LibrarySquire, publicCase.GraveSquire);
+
+        var skipCase = BeginRobinPrompt(202609389 + controller, controller, publicTrigger: true);
+        skipCase.Game.State.PendingPrompts.Remove(skipCase.Prompt);
+        ContinueS2Faction(skipCase.Game, skipCase.Item, skipCase.Prompt, "skip");
+        Assert.Contains(skipCase.HandSquire, skipCase.Game.State.Players[controller].Hand);
+        Assert.Contains(skipCase.LibrarySquire, skipCase.Game.State.Players[controller].Library);
+        Assert.Contains(skipCase.GraveSquire, skipCase.Game.State.Players[controller].Graveyard);
+
+        var staleCase = BeginRobinPrompt(202609391 + controller, controller, publicTrigger: true);
+        staleCase.Game.State.Players[controller].Hand.Remove(staleCase.HandSquire);
+        staleCase.Game.State.PendingPrompts.Remove(staleCase.Prompt);
+        ContinueS2Faction(staleCase.Game, staleCase.Item, staleCase.Prompt,
+            staleCase.HandSquire.InstanceId);
+        Assert.DoesNotContain(staleCase.LibrarySquire,
+            staleCase.Game.State.Players[controller].Field.SelectMany(row => row));
+        Assert.DoesNotContain(staleCase.GraveSquire,
+            staleCase.Game.State.Players[controller].Field.SelectMany(row => row));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:magatama-search-route-parity")]
+    public void MagatamaSearchUsesOneNarrativeAcrossLegacyAndPublicTriggerRoutes(int controller)
+    {
+        var legacyCase = BeginMagatamaPrompt(202609393 + controller, controller, publicTrigger: false);
+        var publicCase = BeginMagatamaPrompt(202609395 + controller, controller, publicTrigger: true);
+        var playerName = legacyCase.Game.State.Players[controller].Name;
+
+        foreach (var prompt in new[] { legacyCase.Prompt, publicCase.Prompt })
+        {
+            AssertPresentation(prompt, "八尺琼勾玉", "无论选择、不加入手牌", "不加入手牌");
+            Assert.Equal("不加入手牌", prompt.ChoiceLabels["skip"]);
+            Assert.Contains("仍会洗牌", prompt.Presentation!.ChoiceConsequences["skip"],
+                StringComparison.Ordinal);
+            Assert.Contains("不改选", prompt.Presentation.ChoiceConsequences[legacyCase.FirstTarget.InstanceId],
+                StringComparison.Ordinal);
+        }
+        Assert.Equal(legacyCase.Prompt.Presentation!.Situation, publicCase.Prompt.Presentation!.Situation);
+        Assert.Equal(legacyCase.Prompt.Presentation.ChoiceConsequences,
+            publicCase.Prompt.Presentation.ChoiceConsequences);
+        AssertPromptBoundaryAndCheckpoint(legacyCase.Game, controller,
+            $"{playerName} 正在完成卡牌选择", legacyCase.FirstTarget, legacyCase.SecondTarget);
+        AssertPromptBoundaryAndCheckpoint(publicCase.Game, controller,
+            $"{playerName} 正在完成卡牌选择", publicCase.FirstTarget, publicCase.SecondTarget);
+
+        var skipCase = BeginMagatamaPrompt(202609397 + controller, controller, publicTrigger: true);
+        skipCase.Game.State.PendingPrompts.Remove(skipCase.Prompt);
+        ContinueS2Faction(skipCase.Game, skipCase.Item, skipCase.Prompt, "skip");
+        Assert.Contains(skipCase.Game.State.Events, entry => entry.Type == "shuffle");
+        Assert.DoesNotContain(skipCase.FirstTarget, skipCase.Game.State.Players[controller].Hand);
+
+        var staleCase = BeginMagatamaPrompt(202609399 + controller, controller, publicTrigger: true);
+        staleCase.Game.State.Players[controller].Library.Remove(staleCase.FirstTarget);
+        staleCase.Game.State.Players[controller].Graveyard.Add(staleCase.FirstTarget);
+        staleCase.Game.State.PendingPrompts.Remove(staleCase.Prompt);
+        ContinueS2Faction(staleCase.Game, staleCase.Item, staleCase.Prompt,
+            staleCase.FirstTarget.InstanceId);
+        Assert.Contains(staleCase.Game.State.Events, entry => entry.Type == "effect-failed");
+        Assert.Contains(staleCase.Game.State.Events, entry => entry.Type == "shuffle");
+        Assert.DoesNotContain(staleCase.SecondTarget, staleCase.Game.State.Players[controller].Hand);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
     [Trait("L12Evidence", "prompt-narrative:promoted-heracles-paid-cost-target")]
     public void PromotedHeraclesExplainsTheIrreversibleTopDeckCostAndTargetBoundary(int controller)
     {
@@ -1108,6 +1283,30 @@ public sealed class PromptNarrativeMatrixTests
         var gm = JsonSerializer.Serialize(game.SnapshotForGm(other),
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
         Assert.Contains(privateCards[0].InstanceId, gm, StringComparison.Ordinal);
+    }
+
+    private static void AssertPrivateNamesStayOutOfWaitingViews(L12GameEngine game, int owner,
+        params L12CardInstance[] privateCards)
+    {
+        foreach (var waitingObject in new[]
+                 {
+                     game.SnapshotFor(1 - owner).WaitingPrompt,
+                     game.SnapshotForSpectator().WaitingPrompt,
+                     game.SnapshotForReferee().WaitingPrompt,
+                 })
+        {
+            Assert.NotNull(waitingObject);
+            var waiting = JsonSerializer.Serialize(waitingObject,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            Assert.DoesNotContain("手牌", waiting, StringComparison.Ordinal);
+            Assert.DoesNotContain("牌库", waiting, StringComparison.Ordinal);
+            Assert.DoesNotContain("墓地", waiting, StringComparison.Ordinal);
+            foreach (var card in privateCards)
+            {
+                Assert.DoesNotContain(card.InstanceId, waiting, StringComparison.Ordinal);
+                Assert.DoesNotContain(card.Name, waiting, StringComparison.Ordinal);
+            }
+        }
     }
 
     private static void AssertLandlordWaitingViews(L12GameEngine game, int owner, int other)
@@ -1545,6 +1744,141 @@ public sealed class PromptNarrativeMatrixTests
         }
         return (game, Assert.Single(game.State.PendingPrompts), item, firstTarget, secondTarget);
     }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance FirstTarget, L12CardInstance SecondTarget) BeginRingSearchPrompt(
+        int seed, int controller, bool publicTrigger)
+    {
+        var game = CreateCleanGame(seed);
+        var player = game.State.Players[controller];
+        var cost = Card("S01-0002", $"narrative-ring-route-cost-{controller}", controller);
+        var firstTarget = Card("S02-0001", $"narrative-ring-route-target-1-{controller}", controller);
+        var secondTarget = Card("S02-0003", $"narrative-ring-route-target-2-{controller}", controller);
+        player.Hand.Add(cost);
+        player.Library.AddRange([firstTarget, secondTarget]);
+        var ring = Card("S02-0008", $"narrative-ring-route-source-{controller}", controller);
+        player.Relic = ring;
+        var item = EntryRouteItem("ring", controller, ring);
+        game.State.EffectStack.Add(item);
+
+        if (publicTrigger)
+        {
+            player.Hand.Remove(cost);
+            player.Graveyard.Add(cost);
+            item.Data["declared:mode"] = "mode:use";
+            item.Data["declared:discardCost"] = cost.InstanceId;
+            Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveBatch6JAEnterEffect", item, ring)));
+        }
+        else
+        {
+            Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveS2UniversalEnter", item, ring)));
+            var decision = Assert.Single(game.State.PendingPrompts);
+            game.State.PendingPrompts.Remove(decision);
+            Invoke(game, "ContinueS2UniversalEffect", item, decision, new List<string> { "yes" });
+            var payment = Assert.Single(game.State.PendingPrompts);
+            game.State.PendingPrompts.Remove(payment);
+            Invoke(game, "ContinueS2UniversalEffect", item, payment,
+                new List<string> { cost.InstanceId });
+        }
+        return (game, Assert.Single(game.State.PendingPrompts), item, firstTarget, secondTarget);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance ExistingHand, L12CardInstance DrawnA, L12CardInstance DrawnB)
+        BeginHeraclesDiscardPrompt(int seed, int controller, bool publicTrigger)
+    {
+        var game = CreateCleanGame(seed);
+        var player = game.State.Players[controller];
+        var existingHand = Card("S01-0002", $"narrative-heracles-route-hand-{controller}", controller);
+        var drawnA = Card("S01-0003", $"narrative-heracles-route-drawn-a-{controller}", controller);
+        var drawnB = Card("S01-0004", $"narrative-heracles-route-drawn-b-{controller}", controller);
+        player.Hand.Add(existingHand);
+        player.Library.AddRange([drawnA, drawnB]);
+        var heracles = Card("S02-0502", $"narrative-heracles-route-source-{controller}", controller);
+        player.Field[0][0] = heracles;
+        var item = EntryRouteItem("heracles", controller, heracles);
+        game.State.EffectStack.Add(item);
+
+        if (publicTrigger)
+        {
+            item.Data["declared:mode"] = "mode:use";
+            Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveBatch6JAEnterEffect", item, heracles)));
+        }
+        else
+        {
+            Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveS2FactionEnter", item, heracles)));
+            var decision = Assert.Single(game.State.PendingPrompts);
+            game.State.PendingPrompts.Remove(decision);
+            ContinueS2Faction(game, item, decision, "yes");
+        }
+        return (game, Assert.Single(game.State.PendingPrompts), item, existingHand, drawnA, drawnB);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance HandSquire, L12CardInstance LibrarySquire, L12CardInstance GraveSquire)
+        BeginRobinPrompt(int seed, int controller, bool publicTrigger)
+    {
+        var game = CreateCleanGame(seed);
+        var player = game.State.Players[controller];
+        var handSquire = Card("S02-0609", $"narrative-robin-hand-{controller}", controller);
+        var librarySquire = Card("S02-0609", $"narrative-robin-library-{controller}", controller);
+        var graveSquire = Card("S02-0609", $"narrative-robin-grave-{controller}", controller);
+        player.Hand.Add(handSquire);
+        player.Library.Add(librarySquire);
+        player.Graveyard.Add(graveSquire);
+        var robin = Card("S02-0617", $"narrative-robin-source-{controller}", controller);
+        player.Field[0][0] = robin;
+        var item = EntryRouteItem("robin", controller, robin);
+        game.State.EffectStack.Add(item);
+
+        if (publicTrigger)
+        {
+            item.Data["declared:mode"] = "mode:use";
+            item.Data["declared:entrySlot"] = "0:1";
+            Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveBatch6JAEnterEffect", item, robin)));
+        }
+        else
+            Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveS2FactionEnter", item, robin)));
+        return (game, Assert.Single(game.State.PendingPrompts), item,
+            handSquire, librarySquire, graveSquire);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance FirstTarget, L12CardInstance SecondTarget) BeginMagatamaPrompt(
+        int seed, int controller, bool publicTrigger)
+    {
+        var game = CreateCleanGame(seed);
+        var player = game.State.Players[controller];
+        var firstTarget = Card("S01-0409", $"narrative-magatama-target-1-{controller}", controller);
+        var secondTarget = Card("S01-0409", $"narrative-magatama-target-2-{controller}", controller);
+        player.Library.AddRange([firstTarget, secondTarget]);
+        var magatama = Card("S02-0404", $"narrative-magatama-source-{controller}", controller);
+        player.Relic = magatama;
+        var item = EntryRouteItem("magatama", controller, magatama);
+        game.State.EffectStack.Add(item);
+
+        if (publicTrigger)
+        {
+            item.Data["declared:mode"] = "mode:use";
+            Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveBatch6JAEnterEffect", item, magatama)));
+        }
+        else
+            Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveS2FactionEnter", item, magatama)));
+        return (game, Assert.Single(game.State.PendingPrompts), item, firstTarget, secondTarget);
+    }
+
+    private static L12StackItem EntryRouteItem(string suffix, int controller, L12CardInstance source)
+        => new()
+        {
+            StackItemId = $"narrative-{suffix}-route-stack-{controller}",
+            Controller = controller,
+            SourceInstanceId = source.InstanceId,
+            SourceCardId = source.CardId,
+            SourceName = source.Name,
+            Trigger = "enter",
+            Text = $"测试〈{source.Name}〉登场时效果的双路径叙事",
+            SourceSnapshot = source,
+        };
 
     private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
         L12CardInstance ShownCard, L12CardInstance OtherHand,

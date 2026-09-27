@@ -682,10 +682,12 @@ public sealed partial class L12GameEngine
             }
             case "ring":
             {
-                var choices = player.Library.Where(card => card.Faction == "universal").Select(card => card.InstanceId).ToArray();
-                if (choices.Length == 0) { ShuffleLibrary(player, "万物统御之戒检索未命中"); break; }
-                CreatePrompt(item.Controller, "library-search", "万物统御之戒：选择牌库1张【通用】卡牌展示并加入手牌", choices, 1, 1,
-                    "card-effect", item.StackItemId, data: new() { ["action"] = "s2-ring-search" }); return true;
+                var candidates = player.Library.Where(card => card.Faction == "universal").ToArray();
+                if (candidates.Length == 0) { ShuffleLibrary(player, "万物统御之戒检索未命中"); break; }
+                CreatePrompt(item.Controller, "library-search", "万物统御之戒：选择牌库1张【通用】卡牌展示并加入手牌",
+                    candidates.Select(card => card.InstanceId), 1, 1, "card-effect", item.StackItemId,
+                    data: BuildS2RingSearchPromptData(candidates,
+                        new() { ["action"] = "s2-ring-search" })); return true;
             }
             case "arthur":
                 if (FindKingsSwordOwner(player) is { } existingSwordOwner)
@@ -704,9 +706,11 @@ public sealed partial class L12GameEngine
             case "heracles-promoted-entry": DamageMasterNonLethal(0, 1, "赫拉克勒斯·晋升登场效果"); DamageMasterNonLethal(1, 1, "赫拉克勒斯·晋升登场效果"); break;
             case "heracles":
                 if (!Draw(player, 2)) { SetWinner(1 - item.Controller, "赫拉克勒斯登场效果抽牌时牌库为空"); break; }
+                var discardChoices = player.Hand.ToArray();
                 CreatePrompt(item.Controller, "hand-card", "赫拉克勒斯：抽取2张牌后弃置1张手牌",
-                    player.Hand.Select(card => card.InstanceId), 1, 1, "card-effect", item.StackItemId,
-                    data: new() { ["action"] = "s2-olympus-draw-discard" }); return true;
+                    discardChoices.Select(card => card.InstanceId), 1, 1, "card-effect", item.StackItemId,
+                    data: BuildS2HeraclesDiscardPromptData(discardChoices,
+                        new() { ["action"] = "s2-olympus-draw-discard" })); return true;
             case "morale-flip" or "theseus-flip" or "morale-flip-two":
                 return PromptS2FlipMorale(item, source, optional: true, onlyTapped: plan == "theseus-flip");
             case "joan": ProtectMasterUntilNextTurnStart(player, item.Controller); break;
@@ -724,7 +728,8 @@ public sealed partial class L12GameEngine
                 }
                 if (candidates.Length == 0) { FinishStackItem(item); return true; }
                 CreatePrompt(item.Controller, "optional-card", "罗宾汉：选择1张侍从骑士活跃登场", candidates.Select(card => card.InstanceId).Append("skip"), 1, 1,
-                    "card-effect", item.StackItemId, data: data); return true;
+                    "card-effect", item.StackItemId,
+                    data: BuildS2RobinSummonSquirePromptData(player, item, candidates, data)); return true;
             }
             case "claudia":
                 if (ResolveDeclaredEntryEnemyLegion(item, One("target"), null, "对方军团条件") is { } claudiaTarget)
@@ -732,10 +737,13 @@ public sealed partial class L12GameEngine
                 break;
             case "magatama-search":
             {
-                var choices = player.Library.Where(card => L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")
-                    && card.CardType == "legion" && card.Profession == "骑兵").Select(card => card.InstanceId).Append("skip").ToArray();
-                CreatePrompt(item.Controller, "optional-card", "八尺琼勾玉：选择高天原骑兵展示并加入手牌", choices, 1, 1, "card-effect", item.StackItemId,
-                    data: new() { ["action"] = "s2-magatama-search", ["skip"] = "不加入手牌" }); return true;
+                var candidates = player.Library.Where(card => L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")
+                    && card.CardType == "legion" && card.Profession == "骑兵").ToArray();
+                var choices = candidates.Select(card => card.InstanceId).Append("skip").ToArray();
+                CreatePrompt(item.Controller, "optional-card", "八尺琼勾玉：选择高天原骑兵展示并加入手牌", choices, 1, 1,
+                    "card-effect", item.StackItemId,
+                    data: BuildS2MagatamaSearchPromptData(candidates,
+                        new() { ["action"] = "s2-magatama-search", ["skip"] = "不加入手牌" })); return true;
             }
             case "takeda-search":
             {

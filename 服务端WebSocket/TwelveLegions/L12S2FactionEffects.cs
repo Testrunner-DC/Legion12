@@ -373,7 +373,7 @@ public sealed partial class L12GameEngine
                 }
                 CreatePrompt(item.Controller, "optional-card", "罗宾汉：可从手牌、牌库或墓地选择1张〈侍从骑士〉活跃登场",
                     squires, 1, 1, "card-effect", item.StackItemId,
-                    data: data);
+                    data: BuildS2RobinSummonSquirePromptData(player, item, candidates, data));
                 return true;
             }
             case "克劳迪娅":
@@ -399,21 +399,23 @@ public sealed partial class L12GameEngine
                 return true;
             case "八尺琼勾玉":
             {
-                var choices = player.Library
+                var candidates = player.Library
                     .Where(candidate => L12StructuredCardRules.HasFaction(player, candidate, "gaotianyuan")
                         && candidate.CardType == "legion"
                         && candidate.Profession == "骑兵")
-                    .Select(candidate => candidate.InstanceId).ToList();
+                    .ToArray();
+                var choices = candidates.Select(candidate => candidate.InstanceId).ToList();
                 choices.Add("skip");
                 CreatePrompt(item.Controller, "optional-card",
                     "八尺琼勾玉：可查看牌库，选择1张【高天原】的【骑兵】军团展示并加入手牌，随后重洗牌库",
                     choices, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string>
-                    {
-                        ["action"] = "s2-magatama-search",
-                        ["choiceMode"] = "optional-add",
-                        ["skip"] = "不加入手牌",
-                    });
+                    data: BuildS2MagatamaSearchPromptData(candidates,
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "s2-magatama-search",
+                            ["choiceMode"] = "optional-add",
+                            ["skip"] = "不加入手牌",
+                        }));
                 return true;
             }
             case "卡纽特大帝":
@@ -2506,15 +2508,8 @@ public sealed partial class L12GameEngine
                 CreatePrompt(item.Controller, "hand-card", "赫拉克勒斯：抽取2张牌后弃置1张手牌",
                     discardChoices.Select(candidate => candidate.InstanceId), 1, 1,
                     "card-effect", item.StackItemId,
-                    data: WithPromptNarrative(
-                        new Dictionary<string, string> { ["action"] = "s2-olympus-draw-discard" },
-                        new("赫拉克勒斯",
-                            "〈赫拉克勒斯〉已经抽取2张牌。现在必须弃置1张手牌，以完成本次登场时效果；这次弃牌是效果结算，不是支付费用。",
-                            "请选择1张手牌弃置；本步骤不能拒绝或跳过。",
-                            L12PromptWaitingAction.CardSelection,
-                            discardChoices.ToDictionary(candidate => candidate.InstanceId,
-                                candidate => $"弃置〈{candidate.Name}〉，并完成〈赫拉克勒斯〉的登场时效果。",
-                                StringComparer.OrdinalIgnoreCase))));
+                    data: BuildS2HeraclesDiscardPromptData(discardChoices,
+                        new Dictionary<string, string> { ["action"] = "s2-olympus-draw-discard" }));
                 return true;
             case "s2-olympus-draw-discard":
                 if (!MoveHandToGrave(player, chosen[0], causedByEffect: true))
@@ -3123,6 +3118,81 @@ public sealed partial class L12GameEngine
             new("武田信玄",
                 "〈武田信玄〉的登场时效果正在结算。你可以查看我方牌库，选择1张兵力不高于5000的【高天原】军团，公开并加入手牌。无论是否选择，随后都会重洗牌库，并继续结算〈真田幸村〉登场与士气转为活跃的后续部分；若所选卡牌在结算时不再符合条件，本步骤失败，但仍会洗牌并继续后续部分，不会改选其他卡牌。",
                 "请选择1张符合条件的军团，或选择“不加入手牌”；这一步不会跳过后续部分。",
+                L12PromptWaitingAction.CardSelection,
+                consequences));
+    }
+
+    private static Dictionary<string, string> BuildS2RingSearchPromptData(
+        IEnumerable<L12CardInstance> candidates, Dictionary<string, string> data)
+    {
+        var cards = candidates.ToArray();
+        return WithPromptNarrative(
+            data,
+            new("万物统御之戒",
+                "弃置手牌的费用已经支付。现在必须从牌库选择1张【通用】卡牌，公开并加入手牌，随后洗牌；若所选卡牌在结算时离开牌库或不再符合条件，本次检索失败，不会改选其他卡牌，但仍会洗牌，已支付的费用不会返还。",
+                "请选择1张【通用】卡牌；本步骤不能取消。",
+                L12PromptWaitingAction.CardSelection,
+                cards.ToDictionary(card => card.InstanceId,
+                    card => $"展示并公开〈{card.Name}〉，将其加入手牌，然后洗牌；若结算时失效，则不改选且费用不返还。",
+                    StringComparer.OrdinalIgnoreCase)));
+    }
+
+    private static Dictionary<string, string> BuildS2HeraclesDiscardPromptData(
+        IEnumerable<L12CardInstance> candidates, Dictionary<string, string> data)
+    {
+        var cards = candidates.ToArray();
+        return WithPromptNarrative(
+            data,
+            new("赫拉克勒斯",
+                "〈赫拉克勒斯〉已经抽取2张牌。现在必须弃置1张手牌，以完成本次登场时效果；这次弃牌是效果结算，不是支付费用。",
+                "请选择1张手牌弃置；本步骤不能拒绝或跳过。",
+                L12PromptWaitingAction.CardSelection,
+                cards.ToDictionary(card => card.InstanceId,
+                    card => $"弃置〈{card.Name}〉，并完成〈赫拉克勒斯〉的登场时效果。",
+                    StringComparer.OrdinalIgnoreCase)));
+    }
+
+    private static Dictionary<string, string> BuildS2RobinSummonSquirePromptData(
+        L12PlayerState player, L12StackItem item, IEnumerable<L12CardInstance> candidates,
+        Dictionary<string, string> data)
+    {
+        var cards = candidates.ToArray();
+        var declaredSlot = PublicTriggerDeclared(item, "entrySlot");
+        var hasDeclaredSlot = !string.IsNullOrWhiteSpace(declaredSlot);
+        string ZoneOf(L12CardInstance card)
+            => player.Hand.Contains(card) ? "手牌"
+                : player.Library.Contains(card) ? "牌库"
+                : player.Graveyard.Contains(card) ? "墓地" : "原区域";
+        var consequences = cards.ToDictionary(card => card.InstanceId,
+            card => hasDeclaredSlot
+                ? $"选择{ZoneOf(card)}中的〈{card.Name}〉，并尝试使其在已声明位置活跃登场；若结算时卡牌或位置失效，则不改选。"
+                : $"选择{ZoneOf(card)}中的〈{card.Name}〉，并尝试使其在合法空位活跃登场；若结算时卡牌或空位失效，则不改选。",
+            StringComparer.OrdinalIgnoreCase);
+        consequences["skip"] = "不发动本次登场时效果，不移动任何〈侍从骑士〉。";
+        return WithPromptNarrative(
+            data,
+            new("罗宾汉",
+                hasDeclaredSlot
+                    ? "〈罗宾汉〉的登场时效果正在结算。你可以从手牌、牌库或墓地选择1张〈侍从骑士〉，使其在已声明的合法位置活跃登场；若所选卡牌或位置在结算时失效，本次效果不生效，也不会改选。"
+                    : "〈罗宾汉〉的登场时效果正在结算。你可以从手牌、牌库或墓地选择1张〈侍从骑士〉，使其在合法空位活跃登场；若所选卡牌或空位在结算时失效，本次效果不生效，也不会改选。",
+                "请选择1张〈侍从骑士〉，或选择“不发动”。",
+                L12PromptWaitingAction.CardSelection,
+                consequences));
+    }
+
+    private static Dictionary<string, string> BuildS2MagatamaSearchPromptData(
+        IEnumerable<L12CardInstance> candidates, Dictionary<string, string> data)
+    {
+        var cards = candidates.ToArray();
+        var consequences = cards.ToDictionary(card => card.InstanceId,
+            card => $"公开〈{card.Name}〉并加入手牌，然后洗牌；若结算时失效，则不改选。",
+            StringComparer.OrdinalIgnoreCase);
+        consequences["skip"] = "不将卡牌加入手牌，但仍会洗牌。";
+        return WithPromptNarrative(
+            data,
+            new("八尺琼勾玉",
+                "〈八尺琼勾玉〉的登场时效果正在结算。你可以查看牌库，选择1张具有【高天原】阵营的【骑兵】军团，公开并加入手牌。无论选择、不加入手牌，或所选卡牌在结算时失效，随后都会洗牌；失效时不会改选其他卡牌。",
+                "请选择1张符合条件的军团，或选择“不加入手牌”。",
                 L12PromptWaitingAction.CardSelection,
                 consequences));
     }
