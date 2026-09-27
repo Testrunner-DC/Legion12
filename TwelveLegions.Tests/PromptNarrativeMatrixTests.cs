@@ -1124,6 +1124,120 @@ public sealed class PromptNarrativeMatrixTests
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:takeda-sanada-slot-morale-chain")]
+    public void TakedaFollowupExplainsEveryConditionalStepWithoutPromisingLaterMorale(int controller)
+    {
+        var success = BeginTakedaFollowupPrompt(202609401 + controller, controller, "success");
+        var playerName = success.Game.State.Players[controller].Name;
+        AssertPresentation(success.Prompt, "武田信玄", "检索部分已经结束", "选择“不发动”");
+        Assert.Contains("只有登场成功且届时仍有休整士气",
+            success.Prompt.Presentation!.Situation, StringComparison.Ordinal);
+        Assert.Contains("才继续士气步骤",
+            success.Prompt.Presentation.ChoiceConsequences[success.FirstSanada.InstanceId],
+            StringComparison.Ordinal);
+        Assert.Contains("不将士气转为活跃",
+            success.Prompt.Presentation.ChoiceConsequences["skip"], StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(success.Game, controller,
+            $"{playerName} 正在完成卡牌选择", success.FirstSanada, success.SecondSanada);
+
+        ResolvePromptChoice(success.Game, success.Prompt, success.FirstSanada.InstanceId);
+        var slot = Assert.Single(success.Game.State.PendingPrompts);
+        AssertPresentation(slot, "武田信玄", "已经选择手牌中的", "当前合法的空位");
+        Assert.Contains("不覆盖、不改选，也不继续士气步骤", slot.Presentation!.Situation,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("已经活跃登场", slot.Presentation.Situation, StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(success.Game, controller,
+            $"{playerName} 正在选择战场位置");
+        AssertPrivateNamesStayOutOfWaitingViews(success.Game, controller, success.FirstSanada);
+
+        ResolvePromptChoice(success.Game, slot, "0:1");
+        Assert.Same(success.FirstSanada, success.Game.State.Players[controller].Field[0][1]);
+        var morale = Assert.Single(success.Game.State.PendingPrompts, prompt =>
+            prompt.Data.GetValueOrDefault("action") == "s2-takeda-ready-morale");
+        foreach (var generated in success.Game.State.PendingPrompts.Where(prompt => prompt != morale).ToArray())
+            success.Game.State.PendingPrompts.Remove(generated);
+        AssertPresentation(morale, "武田信玄", "已经活跃登场", "不能跳过");
+        Assert.Contains("不补偿，也不会改选", morale.Presentation!.Situation, StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(success.Game, controller,
+            $"{playerName} 正在选择效果对象");
+
+        var selectedMorale = morale.ValidChoices[0];
+        success.Game.State.PendingPrompts.Remove(morale);
+        ContinueS2Faction(success.Game, success.Item, morale, selectedMorale);
+        Assert.False(success.Game.State.Players[controller].Morale
+            .Single(card => card.InstanceId == selectedMorale).Tapped);
+        Assert.Empty(success.Game.State.PendingPrompts);
+
+        var skip = BeginTakedaFollowupPrompt(202609403 + controller, controller, "skip");
+        ResolvePromptChoice(skip.Game, skip.Prompt, "skip");
+        Assert.Contains(skip.FirstSanada, skip.Game.State.Players[controller].Hand);
+        Assert.All(skip.Game.State.Players[controller].Morale, card => Assert.True(card.Tapped));
+        Assert.Empty(skip.Game.State.PendingPrompts);
+
+        var staleCard = BeginTakedaFollowupPrompt(202609405 + controller, controller, "stale-card");
+        ResolvePromptChoice(staleCard.Game, staleCard.Prompt, staleCard.FirstSanada.InstanceId);
+        var staleCardSlot = Assert.Single(staleCard.Game.State.PendingPrompts);
+        staleCard.Game.State.Players[controller].Hand.Remove(staleCard.FirstSanada);
+        ResolvePromptChoice(staleCard.Game, staleCardSlot, "0:1");
+        Assert.Empty(staleCard.Game.State.PendingPrompts);
+        Assert.All(staleCard.Game.State.Players[controller].Morale, card => Assert.True(card.Tapped));
+
+        var staleSlot = BeginTakedaFollowupPrompt(202609407 + controller, controller, "stale-slot");
+        ResolvePromptChoice(staleSlot.Game, staleSlot.Prompt, staleSlot.FirstSanada.InstanceId);
+        var occupiedSlot = Assert.Single(staleSlot.Game.State.PendingPrompts);
+        staleSlot.Game.State.Players[controller].Field[0][1] =
+            Card("S01-0002", $"narrative-takeda-slot-blocker-{controller}", controller);
+        ResolvePromptChoice(staleSlot.Game, occupiedSlot, "0:1");
+        Assert.Contains(staleSlot.FirstSanada, staleSlot.Game.State.Players[controller].Hand);
+        Assert.Empty(staleSlot.Game.State.PendingPrompts);
+        Assert.All(staleSlot.Game.State.Players[controller].Morale, card => Assert.True(card.Tapped));
+
+        var staleMorale = BeginTakedaFollowupPrompt(202609409 + controller, controller, "stale-morale");
+        ResolvePromptChoice(staleMorale.Game, staleMorale.Prompt,
+            staleMorale.FirstSanada.InstanceId);
+        var validSlot = Assert.Single(staleMorale.Game.State.PendingPrompts);
+        ResolvePromptChoice(staleMorale.Game, validSlot, "0:1");
+        var staleMoralePrompt = Assert.Single(staleMorale.Game.State.PendingPrompts, prompt =>
+            prompt.Data.GetValueOrDefault("action") == "s2-takeda-ready-morale");
+        foreach (var generated in staleMorale.Game.State.PendingPrompts
+                     .Where(prompt => prompt != staleMoralePrompt).ToArray())
+            staleMorale.Game.State.PendingPrompts.Remove(generated);
+        var staleMoraleId = staleMoralePrompt.ValidChoices[0];
+        staleMorale.Game.State.Players[controller].Morale
+            .Single(card => card.InstanceId == staleMoraleId).Tapped = false;
+        staleMorale.Game.State.PendingPrompts.Remove(staleMoralePrompt);
+        ContinueS2Faction(staleMorale.Game, staleMorale.Item, staleMoralePrompt, staleMoraleId);
+        Assert.Empty(staleMorale.Game.State.PendingPrompts);
+        Assert.Contains(staleMorale.Game.State.Players[controller].Morale,
+            card => card.InstanceId != staleMoraleId && card.Tapped);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:shared-private-summon-position")]
+    public void SharedAsgardSummonPositionReceivesExplicitNarrativeFromItsCaller(int controller)
+    {
+        var summon = BeginAsgardSummonSlotPrompt(202609411 + controller, controller);
+        var playerName = summon.Game.State.Players[controller].Name;
+
+        AssertPresentation(summon.Prompt, summon.Source.Name, "已经选择墓地中的", "当前合法的空位");
+        Assert.Contains(summon.Target.Name, summon.Prompt.Presentation!.Situation,
+            StringComparison.Ordinal);
+        Assert.Contains("不覆盖其他军团，也不会改选", summon.Prompt.Presentation.Situation,
+            StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(summon.Game, controller,
+            $"{playerName} 正在选择战场位置");
+        AssertPrivateNamesStayOutOfWaitingViews(summon.Game, controller, summon.Target);
+
+        ResolvePromptChoice(summon.Game, summon.Prompt, "0:1");
+        Assert.Same(summon.Target, summon.Game.State.Players[controller].Field[0][1]);
+        Assert.DoesNotContain(summon.Target, summon.Game.State.Players[controller].Graveyard);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
     [Trait("L12Evidence", "prompt-narrative:promoted-heracles-paid-cost-target")]
     public void PromotedHeraclesExplainsTheIrreversibleTopDeckCostAndTargetBoundary(int controller)
     {
@@ -1401,9 +1515,9 @@ public sealed class PromptNarrativeMatrixTests
             autoPassEmptyResponses: autoPassEmptyResponses,
             concealHiddenResponseAvailability: concealHiddenResponseAvailability, stateFormatVersion: 2);
 
-    private static L12GameEngine CreateCleanGame(int seed)
+    private static L12GameEngine CreateCleanGame(int seed, bool autoPassEmptyResponses = false)
     {
-        var game = CreateGame(seed, autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        var game = CreateGame(seed, autoPassEmptyResponses, concealHiddenResponseAvailability: false);
         game.State.ActivePlayer = 0;
         game.State.FirstPlayer = 0;
         game.State.Round = 2;
@@ -1445,7 +1559,8 @@ public sealed class PromptNarrativeMatrixTests
         return card;
     }
 
-    private static L12CardInstance Card(string cardId, string instanceId, int ownerIndex)
+    private static L12CardInstance Card(string cardId, string instanceId, int ownerIndex,
+        int? cost = null)
     {
         var definition = Catalog.Cards[cardId];
         return new L12CardInstance
@@ -1456,7 +1571,7 @@ public sealed class PromptNarrativeMatrixTests
             CardType = definition.CardType,
             Faction = definition.Faction,
             ImageUrl = definition.ImageUrl,
-            Cost = definition.Cost ?? 0,
+            Cost = cost ?? definition.Cost ?? 0,
             EffectText = definition.Effect,
             Traits = [.. definition.Traits],
             Profession = definition.Profession,
@@ -1746,6 +1861,48 @@ public sealed class PromptNarrativeMatrixTests
     }
 
     private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance FirstSanada, L12CardInstance SecondSanada) BeginTakedaFollowupPrompt(
+        int seed, int controller, string suffix)
+    {
+        var game = CreateCleanGame(seed, autoPassEmptyResponses: true);
+        var player = game.State.Players[controller];
+        var firstSanada = Card("S01-0404", $"narrative-takeda-sanada-1-{suffix}-{controller}", controller);
+        var secondSanada = Card("S01-0404", $"narrative-takeda-sanada-2-{suffix}-{controller}", controller);
+        player.Hand.AddRange([firstSanada, secondSanada]);
+        AddMorale(game, controller, 2, $"takeda-followup-{suffix}");
+        foreach (var morale in player.Morale) morale.Tapped = true;
+        var takeda = Card("S02-0401", $"narrative-takeda-followup-{suffix}-{controller}", controller);
+        player.Field[0][0] = takeda;
+        var item = LegacyStackItem($"narrative-takeda-followup-stack-{suffix}-{controller}",
+            controller, takeda, "enter", "武田信玄");
+        game.State.EffectStack.Add(item);
+
+        Assert.True(Assert.IsType<bool>(Invoke(game, "BeginTakedaFollowupWithinStack", item)));
+        return (game, Assert.Single(game.State.PendingPrompts), item, firstSanada, secondSanada);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance Source, L12CardInstance Target) BeginAsgardSummonSlotPrompt(
+        int seed, int controller)
+    {
+        var game = CreateCleanGame(seed);
+        var player = game.State.Players[controller];
+        var source = Card("S01-0307", $"narrative-asgard-summon-source-{controller}", controller);
+        var target = Card("S01-0302", $"narrative-asgard-summon-target-{controller}", controller,
+            cost: 2);
+        player.Field[0][0] = source;
+        player.Graveyard.Add(target);
+        var item = LegacyStackItem($"narrative-asgard-summon-stack-{controller}",
+            controller, source, "death", source.Name);
+        game.State.EffectStack.Add(item);
+
+        Invoke(game, "SummonAsgardFromGrave", item, 3);
+        var selection = Assert.Single(game.State.PendingPrompts);
+        ResolvePromptChoice(game, selection, target.InstanceId);
+        return (game, Assert.Single(game.State.PendingPrompts), item, source, target);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
         L12CardInstance FirstTarget, L12CardInstance SecondTarget) BeginRingSearchPrompt(
         int seed, int controller, bool publicTrigger)
     {
@@ -1966,6 +2123,14 @@ public sealed class PromptNarrativeMatrixTests
         Assert.True(Assert.IsType<bool>(Invoke(game, "TryContinueS2Faction", item, prompt,
             new List<string> { choice }, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
                 Choice: choice, CardInstanceIds: [choice]))));
+    }
+
+    private static void ResolvePromptChoice(L12GameEngine game, L12Prompt prompt,
+        string choice)
+    {
+        Assert.True(game.Handle(prompt.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+                Choice: choice, CardInstanceIds: [choice])).Accepted);
     }
 
     private static void AddMorale(L12GameEngine game, int playerIndex, int count, string prefix)

@@ -607,7 +607,28 @@ public sealed partial class L12GameEngine
             case "death-cycle-discard": MoveHandToGrave(player, chosen[0], causedByEffect: true,
                 FindSource(item) ?? item.SourceSnapshot); FinishStackItem(item); return true;
             case "recover-asgard": if (chosen[0] != "skip") MoveGraveToHand(player, chosen[0], item); FinishStackItem(item); return true;
-            case "summon-asgard": if (chosen[0] == "skip") FinishStackItem(item); else { item.Data["faction-summon"] = chosen[0]; PromptFirstEmptySlot(item, "faction-summon-slot", "选择军团活跃登场的位置"); } return true;
+            case "summon-asgard":
+            {
+                if (chosen[0] == "skip")
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                item.Data["faction-summon"] = chosen[0];
+                var selected = player.Graveyard.FirstOrDefault(card => card.InstanceId == chosen[0]);
+                var selectedName = selected?.Name ?? "所选军团";
+                var sourceName = FindSource(item)?.Name ?? item.SourceName ?? "军团登场效果";
+                var slots = EmptySlots(player).ToArray();
+                PromptFirstEmptySlot(item, "faction-summon-slot", "选择军团活跃登场的位置",
+                    new(sourceName,
+                        $"你已经选择墓地中的〈{selectedName}〉作为登场对象。现在需要为其选择我方战场的合法空位；若该军团或所选空位在结算时失效，本次登场失败，不覆盖其他军团，也不会改选。",
+                        "请选择1个当前合法的空位，使所选军团活跃登场。",
+                        L12PromptWaitingAction.PositionSelection,
+                        slots.ToDictionary(slot => slot,
+                            _ => $"尝试使〈{selectedName}〉在所选空位活跃登场；若结算时失效，则不覆盖、不改选。",
+                            StringComparer.OrdinalIgnoreCase)));
+                return true;
+            }
             case "erik-discard": MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true); FinishStackItem(item); return true;
             case "queued-summon-slot": CompleteQueuedSummon(item, chosen[0]); return true;
             case "mengpo-silence": { var target = DeclaredEnemyTarget(item.Controller, chosen[0]); if (target is not null) target.SuppressDeathUntilTurn = State.TurnSerial; else RecordTargetSettlementFailure(item, chosen[0], "所选对方军团已离场或不再是军团"); if (player.Hand.Count <= 5) Draw(player, 1); FinishStackItem(item); return true; }
@@ -1873,8 +1894,12 @@ public sealed partial class L12GameEngine
             MoveFieldCardToZone(enemy, card, "library-bottom", "返回牌库底部");
     }
 
-    private void PromptFirstEmptySlot(L12StackItem item, string action, string text)
-        => CreatePrompt(item.Controller, "slot", text, EmptySlots(State.Players[item.Controller]), 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = action });
+    private void PromptFirstEmptySlot(L12StackItem item, string action, string text,
+        L12PromptNarrativeInput narrative)
+        => CreatePrompt(item.Controller, "slot", text, EmptySlots(State.Players[item.Controller]), 1, 1,
+            "card-effect", item.StackItemId,
+            data: WithPromptNarrative(
+                new Dictionary<string, string> { ["action"] = action }, narrative));
 
     private bool TrySummonFromAnyPrivateZone(L12PlayerState sourceOwner, int destinationPlayerIndex,
         string instanceId, string slotChoice, bool tapped)

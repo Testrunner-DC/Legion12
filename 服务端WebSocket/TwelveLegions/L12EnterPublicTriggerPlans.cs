@@ -833,7 +833,19 @@ public sealed partial class L12GameEngine
         foreach (var sanada in sanadas) AddPromptCardData(data, sanada);
         CreatePrompt(item.Controller, "optional-card", "武田信玄：可选择手牌1张〈真田幸村〉活跃登场，并将1张士气转为活跃",
             sanadas.Select(card => card.InstanceId).Append("skip"), 1, 1,
-            "card-effect", item.StackItemId, data: data);
+            "card-effect", item.StackItemId,
+            data: WithPromptNarrative(data,
+                new("武田信玄",
+                    "〈武田信玄〉的检索部分已经结束，牌库也已经洗牌。你可以选择手牌中的1张〈真田幸村〉，再为其选择合法空位并尝试使其活跃登场；只有登场成功且届时仍有休整士气，才会继续选择1张士气转为活跃。",
+                    "请选择1张手牌中的〈真田幸村〉继续，或选择“不发动”结束这段后续。",
+                    L12PromptWaitingAction.CardSelection,
+                    sanadas.ToDictionary(card => card.InstanceId,
+                        card => $"选择手牌中的〈{card.Name}〉，然后进入合法登场空位选择；登场成功且仍有休整士气时，才继续士气步骤。",
+                        StringComparer.OrdinalIgnoreCase)
+                        .Append(new KeyValuePair<string, string>("skip",
+                            "结束这段后续，不移动〈真田幸村〉，也不将士气转为活跃。"))
+                        .ToDictionary(pair => pair.Key, pair => pair.Value,
+                            StringComparer.OrdinalIgnoreCase))));
         return true;
     }
 }

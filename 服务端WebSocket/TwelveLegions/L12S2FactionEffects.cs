@@ -2286,7 +2286,17 @@ public sealed partial class L12GameEngine
                     return true;
                 }
                 item.Data["takeda-sanada"] = chosen[0];
-                PromptFirstEmptySlot(item, "s2-takeda-sanada-slot", "武田信玄：选择〈真田幸村〉活跃登场的位置");
+                var sanada = player.Hand.FirstOrDefault(card => card.InstanceId == chosen[0]);
+                var sanadaName = sanada?.Name ?? "真田幸村";
+                var slots = EmptySlots(player).ToArray();
+                PromptFirstEmptySlot(item, "s2-takeda-sanada-slot", "武田信玄：选择〈真田幸村〉活跃登场的位置",
+                    new("武田信玄",
+                        $"你已经选择手牌中的〈{sanadaName}〉。现在需要为其选择我方战场的合法空位；只有实际登场成功且届时仍有休整士气，才会继续选择1张士气转为活跃。若卡牌或空位在结算时失效，本次登场失败，不覆盖、不改选，也不继续士气步骤。",
+                        "请选择1个当前合法的空位，使〈真田幸村〉活跃登场。",
+                        L12PromptWaitingAction.PositionSelection,
+                        slots.ToDictionary(slot => slot,
+                            _ => $"尝试使〈{sanadaName}〉在所选空位活跃登场；成功且仍有休整士气时，才继续士气步骤。",
+                            StringComparer.OrdinalIgnoreCase)));
                 return true;
             case "s2-takeda-sanada-slot":
             {
@@ -2307,7 +2317,15 @@ public sealed partial class L12GameEngine
                 }
                 CreatePrompt(item.Controller, "target-morale", "武田信玄：选择1张休整士气转为活跃",
                     restedMorale, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-takeda-ready-morale" });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string> { ["action"] = "s2-takeda-ready-morale" },
+                        new("武田信玄",
+                            "〈真田幸村〉已经活跃登场。现在必须选择1张当前休整的士气转为活跃，以完成〈武田信玄〉的登场时效果；若所选士气在结算时已离开士气区或不再休整，本步骤无事结束，不补偿，也不会改选其他士气。",
+                            "请选择1张当前休整的士气；本步骤不能跳过。",
+                            L12PromptWaitingAction.TargetSelection,
+                            restedMorale.ToDictionary(id => id,
+                                _ => "使所选休整士气转为活跃；若结算时不再合法，则不改选。",
+                                StringComparer.OrdinalIgnoreCase))));
                 return true;
             }
             case "s2-takeda-ready-morale":
