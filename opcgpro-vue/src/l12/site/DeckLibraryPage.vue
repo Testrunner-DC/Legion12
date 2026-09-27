@@ -10,8 +10,11 @@ import MobileFilterSheet from './MobileFilterSheet.vue'
 import { useActionGate } from '@/l12/useActionGate'
 import { matchesPublishedDeckReference, publicDeckRouteReference } from './publicDeckEntry'
 
-const tab = ref<'mine' | 'plaza'>('mine')
+const PAGE_SIZE = 30
+const tab = ref<'mine' | 'plaza'>('plaza')
 const pageRoot = ref<HTMLElement | null>(null)
+const importTrigger = ref<HTMLButtonElement | null>(null)
+const importInput = ref<HTMLInputElement | null>(null)
 const actionViewport = window.matchMedia('(min-width:701px)')
 const desktopActions = ref(actionViewport.matches)
 function updateActionViewport() { desktopActions.value = actionViewport.matches }
@@ -24,6 +27,8 @@ const published = ref<PublishedDeck[]>([])
 const operationsPolicy = ref<EffectiveOperationsPolicy | null>(null)
 const query = ref('')
 const importCode = ref('')
+const importError = ref('')
+const showImport = ref(false)
 const notice = ref('')
 const publishName = ref('')
 const showPublish = ref(false)
@@ -40,6 +45,8 @@ const mineQuery = ref('')
 const mineHomeCityFilter = ref('all')
 const mineLegalFilter = ref<'all' | 'legal' | 'illegal'>('all')
 const mineSort = ref<'latest' | 'name'>('latest')
+const minePage = ref(1)
+const plazaPage = ref(1)
 const cardPickerOpen = ref(false)
 const publishGuide = ref<PublicDeckGuide>({ buildIdea: '', opening: '', keyCards: '', commonSequence: '', substitutions: '' })
 const publishMatchups = ref<PublicDeckMatchup[]>([])
@@ -93,6 +100,8 @@ const filteredMine = computed(() => {
   return [...values].sort((left, right) => mineSort.value === 'name'
     ? left.name.localeCompare(right.name, 'zh-CN') : right.updatedAt.localeCompare(left.updatedAt))
 })
+const minePageCount = computed(() => Math.max(1, Math.ceil(filteredMine.value.length / PAGE_SIZE)))
+const pagedMine = computed(() => filteredMine.value.slice((minePage.value - 1) * PAGE_SIZE, minePage.value * PAGE_SIZE))
 const mineFilterActive = computed(() => Boolean(mineQuery.value.trim()) || mineHomeCityFilter.value !== 'all' || mineLegalFilter.value !== 'all' || mineSort.value !== 'latest')
 const plazaFactions = computed(() => [...new Set(published.value.map(entry => byId.value.get(entry.deck.masterId)?.faction).filter(Boolean) as string[])])
 const plazaMasters = computed(() => [...new Set(published.value.map(entry => entry.deck.masterId))].map(id => byId.value.get(id)).filter(Boolean) as DeckCard[])
@@ -127,6 +136,8 @@ const filteredPublished = computed(() => {
         ? (b.views ?? 0) - (a.views ?? 0) || b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id)
         : b.copies - a.copies || b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id))
 })
+const plazaPageCount = computed(() => Math.max(1, Math.ceil(filteredPublished.value.length / PAGE_SIZE)))
+const pagedPublished = computed(() => filteredPublished.value.slice((plazaPage.value - 1) * PAGE_SIZE, plazaPage.value * PAGE_SIZE))
 const plazaFilterCount = computed(() => [factionFilter.value !== 'all', masterFilter.value !== 'all', legalFilter.value !== 'all', !!cardFilter.value, updatedFilter.value !== 'all', sortMode.value !== 'trend'].filter(Boolean).length)
 const plazaFilterSummary = computed(() => [
   factionFilter.value === 'all' ? '' : (factionLabels[factionFilter.value] || factionFilter.value),
@@ -317,14 +328,35 @@ async function copyPreviewImage() {
   } catch { notice.value = '当前浏览器不支持复制图片，请使用下载' }
 }
 async function importFromCode() {
+  importError.value = ''
+  if (!importCode.value.trim()) {
+    importError.value = '请粘贴牌库码'
+    return
+  }
   try {
     const deck = decodeDeckCode(importCode.value)
     deck.name = uniqueName(deck.name)
     const error = validateDeck(deck, catalog.value)
     if (error) throw new Error(error)
     const confirmed = await saveDeck(deck)
-    saved.value = loadSavedDecks(); importCode.value = ''; notice.value = `已导入《${confirmed.name}》`
-  } catch (error) { notice.value = error instanceof Error ? error.message : '牌库码导入失败' }
+    saved.value = loadSavedDecks(); importCode.value = ''; minePage.value = 1; notice.value = `已导入《${confirmed.name}》`
+    closeImportModal()
+  } catch (error) { importError.value = error instanceof Error ? error.message : '牌库码导入失败' }
+}
+async function openImportModal() {
+  importError.value = ''
+  showImport.value = true
+  await nextTick()
+  importInput.value?.focus()
+}
+function closeImportModal() {
+  showImport.value = false
+  importError.value = ''
+  importCode.value = ''
+  void nextTick(() => importTrigger.value?.focus())
+}
+function handleImportDialogKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') closeImportModal()
 }
 function resetPlazaFilters() {
   factionFilter.value = 'all'; masterFilter.value = 'all'; legalFilter.value = 'all'; cardFilter.value = ''; updatedFilter.value = 'all'; sortMode.value = 'trend'
@@ -336,6 +368,17 @@ function choosePlazaCard(card: SingleCardPickerItem) {
 function resetMineFilters() {
   mineQuery.value = ''; mineHomeCityFilter.value = 'all'; mineLegalFilter.value = 'all'; mineSort.value = 'latest'
 }
+function pageItems(total: number, current: number) {
+  const pages = total <= 7
+    ? Array.from({ length: total }, (_, index) => index + 1)
+    : [...new Set([1, total, current - 1, current, current + 1].filter(value => value >= 1 && value <= total))].sort((a, b) => a - b)
+  const items: Array<{ key: string; label: string; page?: number }> = []
+  pages.forEach((page, index) => {
+    if (index && page - pages[index - 1] > 1) items.push({ key: `gap-${page}`, label: '…' })
+    items.push({ key: `page-${page}`, label: String(page), page })
+  })
+  return items
+}
 function addPublishMatchup() {
   const selected = new Set(publishMatchups.value.map(row => row.opponentMasterId))
   const opponentMasterId = publishHomeCities.value.find(card => !selected.has(card.id))?.id ?? ''
@@ -346,8 +389,8 @@ function routeValue(key: string, fallback = '') {
   return typeof value === 'string' ? value : fallback
 }
 function restoreFiltersFromRoute() {
-  const requestedTab = routeValue('tab', 'mine')
-  tab.value = requestedTab === 'plaza' ? 'plaza' : 'mine'
+  const requestedTab = routeValue('tab', 'plaza')
+  tab.value = requestedTab === 'mine' ? 'mine' : 'plaza'
   query.value = routeValue('q')
   masterFilter.value = routeValue('master', 'all')
   factionFilter.value = routeValue('faction', 'all')
@@ -362,7 +405,7 @@ function setQueryValue(next: Record<string, string>, key: string, value: string,
 }
 watch([tab, query, masterFilter, factionFilter, legalFilter, cardFilter, updatedFilter, sortMode], () => {
   const next: Record<string, string> = {}
-  setQueryValue(next, 'tab', tab.value, 'mine')
+  setQueryValue(next, 'tab', tab.value, 'plaza')
   setQueryValue(next, 'q', query.value.trim())
   setQueryValue(next, 'master', masterFilter.value, 'all')
   setQueryValue(next, 'faction', factionFilter.value, 'all')
@@ -375,29 +418,35 @@ watch([tab, query, masterFilter, factionFilter, legalFilter, cardFilter, updated
   if (current !== target) void router.replace({ path: '/decks', query: next })
 })
 watch(() => route.query, restoreFiltersFromRoute, { deep: true })
+watch([mineQuery, mineHomeCityFilter, mineLegalFilter, mineSort], () => { minePage.value = 1 })
+watch([query, masterFilter, factionFilter, legalFilter, cardFilter, updatedFilter, sortMode], () => { plazaPage.value = 1 })
+watch(minePageCount, total => { minePage.value = Math.min(minePage.value, total) }, { immediate: true })
+watch(plazaPageCount, total => { plazaPage.value = Math.min(plazaPage.value, total) }, { immediate: true })
 </script>
 
 <template>
   <div ref="pageRoot" class="deck-page" :aria-busy="actionBusy">
-    <header class="page-head"><div><small>牌库管理</small><h1>牌库</h1><p>构筑、保存、分享并发现公开牌库。</p></div><router-link :to="editorLink()">＋ 新建牌库</router-link></header>
-    <div class="deck-tabs"><button :class="{ active: tab === 'mine' }" @click="tab = 'mine'">我的牌库</button><button :class="{ active: tab === 'plaza' }" @click="tab = 'plaza'">公开牌库</button></div>
+    <header class="page-head"><div><small>DECKS</small><h1>牌库管理</h1><p>构筑、保存、分享并发现公开牌库。</p></div><router-link :to="editorLink()">＋ 新建牌库</router-link></header>
+    <div class="deck-tabs"><button :class="{ active: tab === 'plaza' }" @click="tab = 'plaza'">公开牌库</button><button :class="{ active: tab === 'mine' }" @click="tab = 'mine'">我的牌库</button></div>
     <p v-if="notice" class="deck-notice">{{ notice }}</p>
 
     <template v-if="tab === 'mine'">
-      <section class="import-panel"><input v-model="importCode" placeholder="粘贴 L12D2 开头的牌库码"/><button :disabled="!importCode.trim()" @click="importFromCode">导入牌库码</button><button :disabled="!mine.length" @click="showPublish = true">公开牌库</button></section>
-      <section v-if="mine.length" class="mine-toolbar"><input v-model="mineQuery" type="search" placeholder="按牌库名称搜索"/><select v-model="mineHomeCityFilter" aria-label="按主宰筛选"><option value="all">全部主宰</option><option v-for="city in homeCities" :key="city.id" :value="city.id">{{ city.nameZh }}</option></select><select v-model="mineLegalFilter" aria-label="按合法性筛选"><option value="all">全部合法性</option><option value="legal">构筑合法</option><option value="illegal">构筑不合法</option></select><select v-model="mineSort" aria-label="我的牌库排序"><option value="latest">最近更新</option><option value="name">按名称</option></select><span>{{ filteredMine.length }} 个结果</span><button v-if="mineFilterActive" @click="resetMineFilters">清除筛选</button></section>
-      <section v-if="filteredMine.length" class="mine-grid"><article v-for="deck in filteredMine" :key="deck.name"><DeckProfile :master-id="deck.masterId" :master-name="byId.get(deck.masterId)?.nameZh" :fallback-url="byId.get(deck.masterId)?.imageUrl" :name="deck.name" :meta="`${deckCountSummary(deck.cardIds, byId).label} 张主牌 · ${deck.moraleIds.length} 张士气`"/><small v-if="publishedCopyFor(deck)" class="mine-public-state">已公开 · 删除本地牌库不会删除公开版本</small><div class="deck-card-actions"><router-link :to="editorLink(deck.name, publishedCopyFor(deck)?.publicCode)">编辑</router-link><details :open="desktopActions"><summary>更多操作</summary><div><button @click="duplicateMine(deck)">复制牌库</button><button @click="copyCode(deck)">复制牌库码</button><button @click="previewImage(deck)">生成牌库图</button><button class="danger" :disabled="deletingMine === deck.name" @click="deleteMine(deck)">{{ deletingMine === deck.name ? '删除中…' : '删除' }}</button></div></details></div></article></section>
-      <div v-else-if="mine.length" class="empty-state"><b>没有符合筛选条件的牌库</b><p>调整名称、主宰或合法性筛选后再试。</p><button @click="resetMineFilters">清除筛选</button></div>
-      <div v-else class="empty-state"><b>还没有自定义牌库</b><p>从编辑器新建牌库，或粘贴其他玩家分享的牌库码。</p><router-link :to="editorLink()">打开牌库编辑器</router-link></div>
+      <section class="mine-toolbar"><input v-model="mineQuery" type="search" placeholder="按牌库名称搜索"/><select v-model="mineHomeCityFilter" aria-label="按主宰筛选"><option value="all">全部主宰</option><option v-for="city in homeCities" :key="city.id" :value="city.id">{{ city.nameZh }}</option></select><select v-model="mineLegalFilter" aria-label="按合法性筛选"><option value="all">全部合法性</option><option value="legal">构筑合法</option><option value="illegal">构筑不合法</option></select><select v-model="mineSort" aria-label="我的牌库排序"><option value="latest">最近更新</option><option value="name">按名称</option></select><span>{{ filteredMine.length }} 个结果</span><button v-if="mineFilterActive" @click="resetMineFilters">清除筛选</button><button ref="importTrigger" type="button" @click="openImportModal">导入牌库码</button><button type="button" :disabled="!mine.length" @click="showPublish = true">公开牌库</button></section>
+      <section v-if="filteredMine.length" class="mine-grid"><article v-for="deck in pagedMine" :key="deck.name"><DeckProfile :master-id="deck.masterId" :master-name="byId.get(deck.masterId)?.nameZh" :fallback-url="byId.get(deck.masterId)?.imageUrl" :name="deck.name" :meta="`${deckCountSummary(deck.cardIds, byId).label} 张主牌 · ${deck.moraleIds.length} 张士气`"/><small v-if="publishedCopyFor(deck)" class="mine-public-state">已公开 · 删除本地牌库不会删除公开版本</small><div class="deck-card-actions"><router-link :to="editorLink(deck.name, publishedCopyFor(deck)?.publicCode)">编辑</router-link><details :open="desktopActions"><summary>更多操作</summary><div><button @click="duplicateMine(deck)">复制牌库</button><button @click="copyCode(deck)">复制牌库码</button><button @click="previewImage(deck)">生成牌库图</button><button class="danger" :disabled="deletingMine === deck.name" @click="deleteMine(deck)">{{ deletingMine === deck.name ? '删除中…' : '删除' }}</button></div></details></div></article></section>
+      <nav v-if="filteredMine.length && minePageCount > 1" class="deck-pagination" aria-label="我的牌库分页"><button :disabled="minePage === 1" @click="minePage--">上一页</button><template v-for="item in pageItems(minePageCount,minePage)" :key="item.key"><button v-if="item.page" :class="{ active: item.page === minePage }" :aria-current="item.page === minePage ? 'page' : undefined" @click="minePage = item.page">{{ item.label }}</button><span v-else>{{ item.label }}</span></template><button :disabled="minePage === minePageCount" @click="minePage++">下一页</button></nav>
+      <div v-if="!filteredMine.length && mine.length" class="empty-state"><b>没有符合筛选条件的牌库</b><p>调整名称、主宰或合法性筛选后再试。</p><button @click="resetMineFilters">清除筛选</button></div>
+      <div v-if="!mine.length" class="empty-state"><b>还没有自定义牌库</b><p>从编辑器新建牌库，或使用上方按钮导入其他玩家分享的牌库码。</p><router-link :to="editorLink()">打开牌库编辑器</router-link></div>
     </template>
 
     <template v-else>
       <section class="plaza-toolbar"><input v-model="query" placeholder="搜索牌库名称、作者或主宰"/><MobileFilterSheet v-model="plazaFiltersOpen" title="牌库筛选与排序" :active-count="plazaFilterCount" @reset="resetPlazaFilters"><div class="plaza-filter-fields"><label>主宰<select v-model="masterFilter"><option value="all">全部主宰</option><option v-for="city in plazaMasters" :key="city.id" :value="city.id">{{ city.nameZh }}</option></select></label><label>阵营<select v-model="factionFilter"><option value="all">全部阵营</option><option v-for="faction in plazaFactions" :key="faction" :value="faction">{{ factionLabels[faction] || faction }}</option></select></label><label>赛季合法性<select v-model="legalFilter"><option value="all">全部</option><option value="legal">符合本赛季</option><option value="illegal">不符合本赛季</option></select></label><label>包含卡牌<button type="button" class="card-picker-button" @click="cardPickerOpen = true">{{ cardFilter ? `${byId.get(cardFilter)?.nameZh || cardFilter} · ${byId.get(cardFilter)?.number || ''}` : '选择单卡' }}</button></label><label>更新时间<select v-model="updatedFilter"><option value="all">不限时间</option><option value="1">1天内</option><option value="7">7天内</option><option value="30">30天内</option><option value="90">90天内</option><option value="365">365天内</option></select></label><label>排序<select v-model="sortMode"><option value="trend">综合热度</option><option value="copies">最多复制</option><option value="likes">最多点赞</option><option value="views">最多浏览</option><option value="latest">最新发布</option><option value="name">按名称</option></select></label></div><template #apply-label>查看 {{ filteredPublished.length }} 个牌库</template></MobileFilterSheet><div class="plaza-desktop-filters"><select v-model="masterFilter" aria-label="按主宰筛选"><option value="all">全部主宰</option><option v-for="city in plazaMasters" :key="city.id" :value="city.id">{{ city.nameZh }}</option></select><select v-model="factionFilter" aria-label="按阵营筛选"><option value="all">全部阵营</option><option v-for="faction in plazaFactions" :key="faction" :value="faction">{{ factionLabels[faction] || faction }}</option></select><select v-model="legalFilter" aria-label="按合法性筛选"><option value="all">全部合法性</option><option value="legal">符合本赛季</option><option value="illegal">不符合本赛季</option></select><button type="button" class="card-picker-button" @click="cardPickerOpen = true">{{ cardFilter ? `含：${byId.get(cardFilter)?.nameZh || cardFilter}` : '选择包含卡牌' }}</button><button v-if="cardFilter" type="button" class="card-filter-clear" @click="cardFilter = ''">清除单卡</button><select v-model="updatedFilter" aria-label="按更新时间筛选"><option value="all">不限时间</option><option value="1">1天内</option><option value="7">7天内</option><option value="30">30天内</option><option value="90">90天内</option><option value="365">365天内</option></select><select v-model="sortMode" aria-label="排序"><option value="trend">综合热度</option><option value="copies">最多复制</option><option value="likes">最多点赞</option><option value="views">最多浏览</option><option value="latest">最新发布</option><option value="name">按名称</option></select></div><button :disabled="!mine.length" @click="showPublish = true">发布我的牌库</button></section>
       <button v-if="plazaFilterCount" type="button" class="plaza-filter-summary" @click="plazaFiltersOpen = true">{{ plazaFilterSummary }}</button>
       <div class="plaza-result-line"><b>{{ filteredPublished.length }}</b> 个牌库<span v-if="plazaFilterCount"> · 已启用 {{ plazaFilterCount }} 项筛选</span><button v-if="plazaFilterCount" @click="resetPlazaFilters">清除筛选</button></div>
-      <section class="plaza-grid"><article v-for="entry in filteredPublished" :key="entry.id" :class="`faction-${deckFaction(entry)}`"><button class="plaza-summary" @click="openDeck(entry)"><DeckProfile :master-id="entry.deck.masterId" :master-name="byId.get(entry.deck.masterId)?.nameZh" :fallback-url="byId.get(entry.deck.masterId)?.imageUrl" :name="entry.deck.name" :context="entry.author" :meta="`${deckCountSummary(entry.deck.cardIds, byId).label} 主牌 · ${entry.deck.moraleIds.length} 士气`"/></button><footer><span>浏览量 {{ entry.views ?? 0 }}</span><span>点赞 {{ entry.likes }}</span><span>复制 {{ entry.copies }}</span><span class="season-compliance" :class="{ compliant: seasonRequirement(entry).compliant }" :title="seasonRequirement(entry).reason">{{ seasonRequirement(entry).label }}</span><button @click="openDeck(entry)">查看构筑</button><details class="deck-actions-menu" :open="desktopActions"><summary>更多操作</summary><div><button :class="{ liked: entry.liked }" :disabled="entry.official || actionPending(publicDeckActionKey(entry.id))" @click="toggleLike(entry)">♡ {{ entry.liked ? '取消点赞' : '点赞' }}</button></div></details></footer></article></section>
+      <section class="plaza-grid"><article v-for="entry in pagedPublished" :key="entry.id" :class="`faction-${deckFaction(entry)}`"><button class="plaza-summary" @click="openDeck(entry)"><DeckProfile :master-id="entry.deck.masterId" :master-name="byId.get(entry.deck.masterId)?.nameZh" :fallback-url="byId.get(entry.deck.masterId)?.imageUrl" :name="entry.deck.name" :context="entry.author" :meta="`${deckCountSummary(entry.deck.cardIds, byId).label} 主牌 · ${entry.deck.moraleIds.length} 士气`"/></button><footer><span>浏览量 {{ entry.views ?? 0 }}</span><span>点赞 {{ entry.likes }}</span><span>复制 {{ entry.copies }}</span><span class="season-compliance" :class="{ compliant: seasonRequirement(entry).compliant }" :title="seasonRequirement(entry).reason">{{ seasonRequirement(entry).label }}</span><button @click="openDeck(entry)">查看构筑</button><details class="deck-actions-menu" :open="desktopActions"><summary>更多操作</summary><div><button :class="{ liked: entry.liked }" :disabled="entry.official || actionPending(publicDeckActionKey(entry.id))" @click="toggleLike(entry)">♡ {{ entry.liked ? '取消点赞' : '点赞' }}</button></div></details></footer></article></section>
+      <nav v-if="filteredPublished.length && plazaPageCount > 1" class="deck-pagination" aria-label="公开牌库分页"><button :disabled="plazaPage === 1" @click="plazaPage--">上一页</button><template v-for="item in pageItems(plazaPageCount,plazaPage)" :key="item.key"><button v-if="item.page" :class="{ active: item.page === plazaPage }" :aria-current="item.page === plazaPage ? 'page' : undefined" @click="plazaPage = item.page">{{ item.label }}</button><span v-else>{{ item.label }}</span></template><button :disabled="plazaPage === plazaPageCount" @click="plazaPage++">下一页</button></nav>
       <div v-if="!filteredPublished.length" class="empty-state"><b>{{ published.length ? '没有符合筛选条件的公开牌库' : '还没有公开牌库' }}</b><p v-if="published.length">调整筛选条件后再试。</p><button v-if="plazaFilterCount" @click="resetPlazaFilters">清除筛选</button></div>
     </template>
+    <div v-if="showImport" class="modal-mask" @click.self="closeImportModal" @keydown="handleImportDialogKeydown"><section class="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-deck-title"><header><h2 id="import-deck-title">导入牌库码</h2><button type="button" aria-label="关闭导入牌库码" @click="closeImportModal">×</button></header><form @submit.prevent="importFromCode"><label for="deck-import-code">牌库码</label><input id="deck-import-code" ref="importInput" v-model="importCode" autocomplete="off" placeholder="粘贴 L12D2 开头的牌库码"/><p v-if="importError" class="import-error" role="alert">{{ importError }}</p><footer><button type="button" @click="closeImportModal">取消</button><button class="primary" type="submit">确认导入</button></footer></form></section></div>
     <div v-if="showPublish" class="modal-mask" @click.self="showPublish = false"><section class="publish-modal"><header><h2>公开牌库</h2><button @click="showPublish = false">×</button></header><div class="publish-form"><p>选择一个已保存且合法的牌库；可在首次发布时同步填写公开内容。</p><select v-model="publishName"><option value="">选择牌库</option><option v-for="deck in mine" :key="deck.name" :value="deck.name">{{ deck.name }}</option></select><h3>牌库指南</h3><label>构筑思路<textarea v-model="publishGuide.buildIdea" rows="3" maxlength="1200"/></label><label>起手建议<textarea v-model="publishGuide.opening" rows="2" maxlength="1200"/></label><label>关键牌与配合<textarea v-model="publishGuide.keyCards" rows="2" maxlength="1200"/></label><label>常见展开<textarea v-model="publishGuide.commonSequence" rows="2" maxlength="1200"/></label><label>替换建议<textarea v-model="publishGuide.substitutions" rows="2" maxlength="1200"/></label><section class="publish-matchups"><header><h3>对局建议</h3><button type="button" @click="addPublishMatchup">添加主宰</button></header><article v-for="(row,index) in publishMatchups" :key="`${row.opponentMasterId}-${index}`"><label>对方主宰<select v-model="row.opponentMasterId"><option value="" disabled>请选择</option><option v-for="city in publishHomeCities" :key="city.id" :value="city.id">{{ city.nameZh }}</option></select></label><label>对局思路<textarea v-model="row.notes" rows="2" maxlength="800"/></label><label>关键牌<textarea v-model="row.keyCards" rows="2" maxlength="800"/></label><label>建议换牌<textarea v-model="row.suggestedSwaps" rows="2" maxlength="800"/></label><button type="button" class="danger" @click="publishMatchups.splice(index,1)">移除</button></article></section></div><button class="primary" :disabled="!publishName || !platformState.account || actionPending(`public-deck:publish:${publishName}`)" @click="publishDeck">{{ actionPending(`public-deck:publish:${publishName}`) ? '公开中…' : '确认公开' }}</button></section></div>
     <div v-if="imagePreview" class="modal-mask image-mask" @click.self="closeImagePreview"><section class="image-preview"><header><div><small>16:9 牌库分享图</small><h2>{{ imagePreview.deck.name }} · 牌库图</h2></div><button @click="closeImagePreview">×</button></header><img :src="imagePreview.url" alt="牌库图预览"/><footer><button @click="copyPreviewImage">复制图片</button><button class="primary" @click="downloadDeckImage(imagePreview.deck,catalog,imagePreview.blob)">下载 PNG</button></footer></section></div>
     <SingleCardPicker v-if="cardPickerOpen" title="选择公开牌库必须包含的卡牌" :items="plazaCardPickerItems" @select="choosePlazaCard" @close="cardPickerOpen = false"/>
@@ -426,5 +475,10 @@ watch(() => route.query, restoreFiltersFromRoute, { deep: true })
 @media(max-width:900px){.mine-toolbar{grid-template-columns:repeat(2,minmax(0,1fr))}.mine-toolbar input{grid-column:1/-1}.mine-toolbar span{align-self:center}.publish-matchups article{grid-template-columns:1fr 1fr}.publish-matchups article>button{grid-column:1/-1}}
 @media(max-width:700px){.mine-toolbar{grid-template-columns:1fr;padding:9px}.mine-toolbar input{grid-column:auto}.deck-card-actions{align-items:stretch}.deck-card-actions>a{flex:1}.deck-card-actions details,.deck-actions-menu{display:block;position:relative;flex:1}.deck-card-actions summary,.deck-actions-menu summary{display:grid;min-height:38px;padding:7px 9px;border:1px solid #4b5961;background:#0b1218;color:#e8e5dd;font-size:13px;font-weight:900;list-style:none;place-items:center}.deck-card-actions details>div,.deck-actions-menu>div{display:none;position:absolute;z-index:8;right:0;bottom:calc(100% + 5px);min-width:160px;padding:6px;border:1px solid #53616a;background:#101820;box-shadow:0 12px 30px #000}.deck-card-actions details[open]>div,.deck-actions-menu[open]>div{display:grid}.deck-card-actions details>div button,.deck-actions-menu>div button{width:100%;min-height:40px}.plaza-grid footer{grid-template-columns:repeat(2,minmax(0,1fr))}.plaza-grid footer>span{white-space:normal}.plaza-grid footer>button,.deck-actions-menu{min-height:40px}.publish-modal{width:100%;max-height:100dvh;border:0}.publish-matchups article{grid-template-columns:1fr}}
 @media(max-width:700px){.deck-card-actions details>div,.deck-actions-menu>div{position:static;box-sizing:border-box;min-width:0;width:100%;margin-top:5px}.deck-card-actions>a{align-self:start}}
+.mine-toolbar{grid-template-columns:minmax(220px,1fr) repeat(3,minmax(120px,auto)) repeat(4,auto)}
+.deck-pagination{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px;margin:16px 0}.deck-pagination button{min-width:40px;min-height:40px;padding:7px 10px;border:1px solid #4b5961;background:#0b1218;color:#e8e5dd;font-weight:900}.deck-pagination button.active{border-color:#e0bf6d;color:#f1d376}.deck-pagination button:disabled{cursor:not-allowed;opacity:.45}.deck-pagination span{padding:0 3px;color:#77858c}
+.import-modal{width:min(560px,94vw);max-height:calc(100dvh - 24px);overflow:auto;border:1px solid #52606a;background:#111923}.import-modal>header{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid #354149}.import-modal h2{margin:0}.import-modal>header button{width:34px;height:34px;border:1px solid #53616a;background:#0b1117;color:#fff}.import-modal form{display:grid;gap:9px;padding:20px}.import-modal label{color:#c3cccb;font-weight:900}.import-modal input{box-sizing:border-box;width:100%;padding:11px;border:1px solid #46545d;background:#070d12;color:#fff;font:inherit}.import-modal footer{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}.import-modal footer button{min-height:40px;padding:8px 12px;border:1px solid #59666e;background:#15202a;color:#fff;font-weight:900}.import-error{margin:0;color:#f0a9ad;font-size:13px}
+@media(max-width:900px){.mine-toolbar{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.mine-toolbar{grid-template-columns:1fr}.deck-pagination{gap:4px}.deck-pagination button{min-width:38px;padding-inline:8px}.import-modal{width:100%;max-height:100dvh;border:0}.import-modal footer button{flex:1}}
 </style>
 

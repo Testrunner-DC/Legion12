@@ -23,7 +23,7 @@ const now=new Date().toISOString()
 const rows=Array.from({length:60},(_,index)=>{
  const source=presets[index%presets.length]||target
  const deck=index===7?target:source
- return {id:'community-'+index,ownerId:'owner-'+index,author:index===7?'组合验收作者':'公开作者'+index,deck:{...deck,name:index===7?'组合目标牌库':'公开牌库 '+String(index+1).padStart(2,'0'),specialIds:deck.specialIds||[],updatedAt:now,publicationId:'community-'+index,publicationVersion:1},views:index*9,likes:index,copies:60-index,liked:false,createdAt:now,updatedAt:now,seasonCompliant:index===7||index%2===0,seasonComplianceReason:index===7?'符合当前赛季构筑要求':'验收夹具'}
+ return {id:'community-'+index,publicCode:'QA'+String(index+1).padStart(6,'0'),ownerId:'owner-'+index,author:index===7?'组合验收作者':'公开作者'+index,deck:{...deck,name:index===7?'组合目标牌库':'公开牌库 '+String(index+1).padStart(2,'0'),specialIds:deck.specialIds||[],updatedAt:now,publicationId:'community-'+index,publicationVersion:1},views:index*9,likes:index,copies:60-index,liked:false,createdAt:now,updatedAt:now,seasonCompliant:index===7||index%2===0,seasonComplianceReason:index===7?'符合当前赛季构筑要求':'验收夹具'}
 })
 platformState.account=null
 publicDeckApi.list=async()=>rows
@@ -33,7 +33,7 @@ createApp({render:()=>h('main',{class:'site-content',style:{position:'absolute',
 await router.isReady()
 `
 
-const server = await createServer({ root, server: { host: '127.0.0.1', port: 0 }, plugins: [{
+const server = await createServer({ root, configLoader: 'runner', server: { host: '127.0.0.1', port: 0 }, plugins: [{
   name: 'public-deck-library-flow-fixture',
   resolveId(id) { if (id === '/__public_deck_library_flow__.js') return id },
   load(id) { if (id === '/__public_deck_library_flow__.js') return entry },
@@ -98,7 +98,7 @@ try {
     await targetResult.getByRole('button', { name: '选择', exact: true }).click()
     if (width <= 700) await page.getByRole('dialog', { name: '牌库筛选与排序' }).getByRole('button', { name: /查看/ }).click()
     await page.waitForFunction(() => document.querySelectorAll('.plaza-grid>article').length === 1)
-    assert.match(page.url(), /tab=plaza/)
+    assert.equal((await page.locator('.deck-tabs button.active').innerText()).trim(), '公开牌库')
     assert.match(decodeURIComponent(page.url()), /q=组合目标/)
     assert.match(page.url(), /card=/)
     assert.equal(await page.locator('.plaza-grid>article').count(), 1)
@@ -119,14 +119,15 @@ try {
 
     await page.getByRole('button', { name:'清除筛选', exact:true }).last().click()
     await page.locator('.plaza-toolbar>input').fill('')
-    await page.waitForFunction(() => document.querySelectorAll('.plaza-grid>article').length >= 50)
+    await page.waitForFunction(() => document.querySelectorAll('.plaza-grid>article').length === 30)
     await page.locator('.site-content').evaluate(element => element.scrollTo({ top: Math.min(1200, element.scrollHeight - element.clientHeight) }))
     await page.waitForTimeout(100)
     const before = await page.locator('.site-content').evaluate(element => element.scrollTop)
     assert.ok(before > 100, `${name} 列表没有形成可验证滚动距离`)
+    const listRoute = await page.evaluate(() => location.pathname + location.search)
     await page.locator('.plaza-summary').nth(10).click()
     await page.locator('#detail-fixture').waitFor()
-    const expectedRestore = await page.evaluate(() => Number(sessionStorage.getItem('l12:deck-library:scroll:/decks?tab=plaza')))
+    const expectedRestore = await page.evaluate(key => Number(sessionStorage.getItem(`l12:deck-library:scroll:${key}`)), listRoute)
     assert.ok(expectedRestore > 100, `${name} 没有保存进入详情时的列表位置`)
     await page.goBack()
     await page.locator('.plaza-grid>article').first().waitFor()
