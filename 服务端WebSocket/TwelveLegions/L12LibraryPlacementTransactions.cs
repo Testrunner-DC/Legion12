@@ -28,8 +28,18 @@ public sealed partial class L12GameEngine
         var data = new Dictionary<string, string> { ["action"] = action, ["placementMode"] = placementMode,
             ["layout"] = "single-row", ["displayCardIds"] = string.Join('|', ids) };
         foreach (var id in ids) AddPromptCardData(data, player.Library.First(card => card.InstanceId == id));
+        var instruction = placementMode switch
+        {
+            "split-top-bottom" => "请排列这些牌，并分别确认要放回牌库顶部和底部的顺序。",
+            "all-top-bottom" => "请排列这些牌，再确认将全部牌放回牌库顶部或底部。",
+            "all-bottom" => "请排列这些牌；确认后将按当前顺序放回牌库底部。",
+            _ => "请按效果要求排列这些牌并确认放回位置。",
+        };
         CreatePrompt(item.Controller, "order", text, ids, ids.Length, ids.Length,
-            "card-effect", item.StackItemId, isPrivate: true, data: data);
+            "card-effect", item.StackItemId, isPrivate: true,
+            data: WithPromptNarrative(data,
+                new(item.SourceName, $"〈{item.SourceName}〉正在整理你查看的{ids.Length}张牌；这些牌尚未向对手公开。",
+                    instruction, L12PromptWaitingAction.LibraryArrangement)));
     }
 
     private void FailLibraryPlacement(L12StackItem item)

@@ -208,16 +208,26 @@ public sealed partial class L12GameEngine
             else
             {
                 var choices = Enumerable.Range(1, maximum).Select(index => $"rune:{index}").Append("cancel").ToArray();
+                var runeConsequences = choices.ToDictionary(
+                    choice => choice,
+                    choice => choice == "cancel"
+                        ? "取消本次打出，不消耗符文。"
+                        : "将这枚符文计入本次费用支付；确认后消耗全部已选符文。",
+                    StringComparer.OrdinalIgnoreCase);
                 CreatePrompt(playerIndex, "resource-payment", "〈槲寄生符咒〉：请直接点击要消耗的符文", choices, 0, maximum,
-                    "s2-mistletoe-rune-cost", data: new Dictionary<string, string>
-                    {
-                        ["cardInstanceId"] = card.InstanceId,
-                        ["targetInstanceId"] = command.Target?.InstanceId ?? string.Empty,
-                        ["choiceMode"] = "resource-payment",
-                        ["resourceKind"] = "rune",
-                        ["allowCancel"] = "true",
-                        ["cancel"] = "取消打出",
-                    });
+                    "s2-mistletoe-rune-cost", data: WithPromptNarrative(
+                        new Dictionary<string, string>
+                        {
+                            ["cardInstanceId"] = card.InstanceId,
+                            ["targetInstanceId"] = command.Target?.InstanceId ?? string.Empty,
+                            ["choiceMode"] = "resource-payment",
+                            ["resourceKind"] = "rune",
+                            ["allowCancel"] = "true",
+                            ["cancel"] = "取消打出",
+                        },
+                        new("槲寄生符咒", $"你正在打出〈槲寄生符咒〉，本次最多可以消耗{maximum}枚符文支付费用。",
+                            "请选择要消耗的符文并确认；也可以取消整次打出。",
+                            L12PromptWaitingAction.CostPayment, runeConsequences)));
                 return CommandResult.Ok();
             }
         }
@@ -231,18 +241,27 @@ public sealed partial class L12GameEngine
             var discountedCost = GetPlayCost(playerIndex, card, useSelfDamageDiscount: true);
             if (ActiveResourceCount(player) < discountedCost) return CommandResult.Reject("活跃士气不足");
             CreatePrompt(playerIndex, "optional", $"{card.Name}：是否发动「{selfDamageRule!.CostText}：{selfDamageRule.ResolutionText}」？", ["yes", "no"], 1, 1,
-                "play-cost-choice", data: new Dictionary<string, string>
-                {
-                    ["cardInstanceId"] = card.InstanceId,
-                    ["row"] = command.Row!.Value.ToString(),
-                    ["slot"] = command.Slot!.Value.ToString(),
-                    ["targetPlayerIndex"] = targetPlayerIndex.ToString(),
-                    ["normalCost"] = normalCost.ToString(),
-                    ["discountedCost"] = discountedCost.ToString(),
-                    ["choiceMode"] = "instant",
-                    ["yes"] = $"发动（{selfDamageRule.CostText}，支付{discountedCost}士气）",
-                    ["no"] = $"否（支付{normalCost}士气）",
-                });
+                "play-cost-choice", data: WithPromptNarrative(
+                    new Dictionary<string, string>
+                    {
+                        ["cardInstanceId"] = card.InstanceId,
+                        ["row"] = command.Row!.Value.ToString(),
+                        ["slot"] = command.Slot!.Value.ToString(),
+                        ["targetPlayerIndex"] = targetPlayerIndex.ToString(),
+                        ["normalCost"] = normalCost.ToString(),
+                        ["discountedCost"] = discountedCost.ToString(),
+                        ["choiceMode"] = "instant",
+                        ["yes"] = "发动减费效果",
+                        ["no"] = "按通常费用打出",
+                    },
+                    new(card.Name, $"你正在打出〈{card.Name}〉，可以选择“{selfDamageRule.CostText}”来降低本次费用。",
+                        "请选择是否发动减费效果；确认后将按所选方式支付费用。",
+                        L12PromptWaitingAction.EffectDecision,
+                        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                        {
+                            ["yes"] = $"{selfDamageRule.CostText}，随后支付{discountedCost}士气并继续打出。",
+                            ["no"] = $"不发动减费效果，支付{normalCost}士气并继续打出。",
+                        })));
             return CommandResult.Ok();
         }
 
@@ -517,13 +536,23 @@ public sealed partial class L12GameEngine
             ["cardInstanceId"] = promoted.InstanceId,
             ["row"] = command.Row!.Value.ToString(),
             ["slot"] = command.Slot!.Value.ToString(),
-            ["normal"] = $"正常登场（支付{normalCost}士气并选择当前战场位置）",
-            ["promotion"] = $"晋升登场（消耗并翻转{promotionCost}神力，叠放至同名军团上方）",
+            ["normal"] = "普通登场",
+            ["promotion"] = "晋升登场",
             ["cancel"] = "取消打出",
             ["choiceMode"] = "instant",
         };
         CreatePrompt(playerIndex, "option", $"{promoted.Name}：选择登场方式", ["cancel", "normal", "promotion"], 1, 1,
-            "s2-promotion-mode", isPrivate: true, data: data);
+            "s2-promotion-mode", isPrivate: true,
+            data: WithPromptNarrative(data,
+                new(promoted.Name, $"你正在打出〈{promoted.Name}〉，当前既可以普通登场，也可以叠放到同名军团上方晋升登场。",
+                    "请选择登场方式；取消会终止本次打出且不支付费用。",
+                    L12PromptWaitingAction.EffectDecision,
+                    new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["cancel"] = "取消整次打出，不支付士气或神力。",
+                        ["normal"] = $"支付{normalCost}士气，并在当前选择的战场位置普通登场。",
+                        ["promotion"] = $"消耗并翻转{promotionCost}神力，再选择1张同名非【晋升者】军团进行叠放。",
+                    })));
         return CommandResult.Ok();
     }
 
@@ -545,9 +574,18 @@ public sealed partial class L12GameEngine
                 ["cancel"] = "取消晋升登场",
             };
             foreach (var candidate in foundations) AddPromptCardData(data, candidate);
+            var foundationConsequences = foundations.ToDictionary(
+                candidate => candidate.InstanceId,
+                candidate => $"将〈{promoted.Name}〉叠放到〈{candidate.Name}〉上方，完成晋升登场。",
+                StringComparer.OrdinalIgnoreCase);
+            foundationConsequences["cancel"] = "取消本次晋升登场，不消耗神力。";
             CreatePrompt(playerIndex, "friendly-target", $"{promoted.Name}：选择要叠放的同名非【晋升者】军团",
                 foundations.Select(card => card.InstanceId).Append("cancel"), 1, 1,
-                "s2-promotion-foundation", isPrivate: true, data: data);
+                "s2-promotion-foundation", isPrivate: true,
+                data: WithPromptNarrative(data,
+                    new(promoted.Name, $"你已选择让〈{promoted.Name}〉晋升登场，需要指定1张同名非【晋升者】军团作为叠放基础。",
+                        "请选择1张合法基础军团；取消会终止本次晋升登场。",
+                        L12PromptWaitingAction.TargetSelection, foundationConsequences)));
             return CommandResult.Ok();
         }
 
@@ -1297,14 +1335,23 @@ public sealed partial class L12GameEngine
         CreatePrompt(controller.PlayerIndex, "optional",
             $"〈{card.Name}〉即将阵亡，是否消耗并翻转1神力，代替承受本次致命进攻？",
             ["yes", "no"], 1, 1, "combat-lethal-replacement", isPrivate: false,
-            data: new Dictionary<string, string>
-            {
-                ["cardInstanceId"] = card.InstanceId,
-                ["preservedTroops"] = card.Troops.ToString(),
-                ["preservedTapped"] = card.Tapped ? "true" : "false",
-                ["yes"] = "消耗并翻转1神力，保持当前兵力与活跃/休整状态",
-                ["no"] = "不发动",
-            });
+            data: WithPromptNarrative(
+                new Dictionary<string, string>
+                {
+                    ["cardInstanceId"] = card.InstanceId,
+                    ["preservedTroops"] = card.Troops.ToString(),
+                    ["preservedTapped"] = card.Tapped ? "true" : "false",
+                    ["yes"] = "发动致命代替",
+                    ["no"] = "不发动",
+                },
+                new(card.Name, $"〈{card.Name}〉即将因本次进攻阵亡，你可以消耗并翻转1神力代替承受这个致命结果。",
+                    "请选择是否发动；不发动将继续结算原致命进攻。",
+                    L12PromptWaitingAction.LethalReplacement,
+                    new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["yes"] = "消耗并翻转1神力，保留当前兵力与活跃/休整状态，代替本次阵亡。",
+                        ["no"] = "不发动致命代替，继续结算原致命进攻。",
+                    })));
         return true;
     }
 

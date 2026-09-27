@@ -181,8 +181,29 @@ public sealed partial class L12GameEngine
             .Select(guard => L12StructuredCardSemantics.FieldMoraleResourceRule(guard.CardId)!.DisplayName)
             .Distinct(StringComparer.Ordinal));
         var promptText = $"请选择支付费用的{string.Join("、", resourceNames)}";
+        var sourceName = stackItemId is null
+            ? data.GetValueOrDefault("cardInstanceId") is { Length: > 0 } sourceInstanceId
+                ? FindPromptCard(playerIndex, sourceInstanceId)?.Name
+                : null
+            : State.EffectStack.Concat(State.DeferredEffectStack)
+                .FirstOrDefault(item => item.StackItemId == stackItemId)?.SourceName;
+        sourceName = string.IsNullOrWhiteSpace(sourceName) ? "当前操作" : sourceName;
+        var consequences = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (allowCancel)
+            consequences["cancel"] = continuation switch
+            {
+                "active-morale-choice" => "不发动当前主动效果，不支付任何资源。",
+                "card-effect" => "不发动当前后续效果，不支付任何资源。",
+                _ => "取消整次打出，不支付任何资源。",
+            };
         CreatePrompt(playerIndex, "resource-payment", promptText, choices,
-            totalCost, totalCost, continuation, stackItemId, isPrivate: true, data: data);
+            totalCost, totalCost, continuation, stackItemId, isPrivate: true,
+            data: WithPromptNarrative(data,
+                new(sourceName, $"〈{sourceName}〉需要支付{totalCost}份资源才能继续。可用资源为{string.Join("、", resourceNames)}。",
+                    allowCancel
+                        ? $"请选择恰好{totalCost}份可用资源并确认；也可以取消当前操作。"
+                        : $"请选择恰好{totalCost}份可用资源并确认。",
+                    L12PromptWaitingAction.CostPayment, consequences)));
     }
 
     private bool TryConsumeSelectedResources(L12PlayerState player, int totalCost, IReadOnlyCollection<string> selectedIds,

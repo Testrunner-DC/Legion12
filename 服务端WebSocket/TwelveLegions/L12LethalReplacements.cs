@@ -76,8 +76,21 @@ public sealed partial class L12GameEngine
             "kondo-field-discard" => $"〈{protectedCard.Name}〉即将阵亡，是否弃置我方〈近藤勇〉代替承受？",
             _ => $"〈{protectedCard.Name}〉即将阵亡，弃置手牌中1张其他军团代替承受，或不发动",
         };
+        var consequences = candidates.ToDictionary(
+            candidate => candidate.InstanceId,
+            candidate => kind switch
+            {
+                "helen-hand" => $"弃置手牌中的〈{candidate.Name}〉，代替〈{protectedCard.Name}〉承受本次致命结果。",
+                _ => $"让〈{candidate.Name}〉代替〈{protectedCard.Name}〉承受本次致命结果。",
+            },
+            StringComparer.OrdinalIgnoreCase);
+        consequences[DeclineLethalSubstitution] = $"不发动致命代替，继续结算〈{protectedCard.Name}〉的原致命结果。";
         var prompt = CreatePrompt(controller.PlayerIndex, "option", promptText,
-            choices, 1, 1, continuation, isPrivate: kind == "helen-hand", data: data);
+            choices, 1, 1, continuation, isPrivate: kind == "helen-hand",
+            data: WithPromptNarrative(data,
+                new(protectedCard.Name, $"〈{protectedCard.Name}〉即将因{reason}阵亡，你可以选择1张符合条件的军团代替承受。",
+                    "请选择代替承受的军团，或选择“不发动”继续结算原致命结果。",
+                    L12PromptWaitingAction.LethalReplacement, consequences)));
         prompt.Data["lethalEventId"] = $"lethal-event:{prompt.PromptId}:{protectedCard.InstanceId}";
         return true;
     }

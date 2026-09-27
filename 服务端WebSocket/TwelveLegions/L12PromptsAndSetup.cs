@@ -2,6 +2,66 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
+    private const string PromptNarrativePrefix = "__promptNarrative:";
+    private const string PromptNarrativeTitleKey = PromptNarrativePrefix + "title";
+    private const string PromptNarrativeSituationKey = PromptNarrativePrefix + "situation";
+    private const string PromptNarrativeInstructionKey = PromptNarrativePrefix + "instruction";
+    private const string PromptNarrativeWaitingActionKey = PromptNarrativePrefix + "waitingAction";
+    private const string PromptNarrativeConsequencePrefix = PromptNarrativePrefix + "consequence:";
+
+    private enum L12PromptWaitingAction
+    {
+        SetupDecision,
+        InitiativeDecision,
+        EffectDecision,
+        ResponseDecision,
+        CostPayment,
+        ResourceReturn,
+        CardSelection,
+        TargetSelection,
+        PositionSelection,
+        LibraryArrangement,
+        LethalReplacement,
+    }
+
+    private sealed record L12PromptNarrativeInput(
+        string Title,
+        string Situation,
+        string Instruction,
+        L12PromptWaitingAction WaitingAction,
+        IReadOnlyDictionary<string, string>? ChoiceConsequences = null);
+
+    private static Dictionary<string, string> WithPromptNarrative(
+        Dictionary<string, string>? data,
+        L12PromptNarrativeInput narrative)
+    {
+        data ??= [];
+        data[PromptNarrativeTitleKey] = narrative.Title;
+        data[PromptNarrativeSituationKey] = narrative.Situation;
+        data[PromptNarrativeInstructionKey] = narrative.Instruction;
+        data[PromptNarrativeWaitingActionKey] = narrative.WaitingAction.ToString();
+        foreach (var pair in narrative.ChoiceConsequences ?? new Dictionary<string, string>())
+            data[PromptNarrativeConsequencePrefix + pair.Key] = pair.Value;
+        return data;
+    }
+
+    private static L12PromptNarrativeInput? TakePromptNarrative(Dictionary<string, string> data)
+    {
+        if (!data.TryGetValue(PromptNarrativeTitleKey, out var title)) return null;
+        if (!data.TryGetValue(PromptNarrativeSituationKey, out var situation)
+            || !data.TryGetValue(PromptNarrativeInstructionKey, out var instruction)
+            || !data.TryGetValue(PromptNarrativeWaitingActionKey, out var waitingAction)
+            || !Enum.TryParse<L12PromptWaitingAction>(waitingAction, out var parsedWaitingAction))
+            throw new InvalidOperationException("Prompt 叙事输入不完整");
+        var consequences = data
+            .Where(pair => pair.Key.StartsWith(PromptNarrativeConsequencePrefix, StringComparison.Ordinal))
+            .ToDictionary(pair => pair.Key[PromptNarrativeConsequencePrefix.Length..], pair => pair.Value,
+                StringComparer.OrdinalIgnoreCase);
+        foreach (var key in data.Keys.Where(key => key.StartsWith(PromptNarrativePrefix, StringComparison.Ordinal)).ToArray())
+            data.Remove(key);
+        return new(title, situation, instruction, parsedWaitingAction, consequences);
+    }
+
     private void RollInitiative()
     {
         int first;
@@ -82,11 +142,29 @@ public sealed partial class L12GameEngine
             if (player.Library.Any(card => card.CardId == "S02-0305"))
                 CreatePrompt(player.PlayerIndex, "optional", "游戏开始时，是否将〈安德华拉诺特〉从牌库置入圣物区？",
                     ["yes", "no"], 1, 1, "setup-s2-ring", isPrivate: true,
-                    data: new Dictionary<string, string> { ["yes"] = "置入圣物区，起始手牌为4张", ["no"] = "不发动" });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string> { ["yes"] = "置入圣物区", ["no"] = "不发动" },
+                        new("安德华拉诺特", "游戏开始时，你可以将牌库中的〈安德华拉诺特〉置入圣物区。",
+                            "请选择是否执行；置入后你的起始手牌数量改为4张。",
+                            L12PromptWaitingAction.SetupDecision,
+                            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                            {
+                                ["yes"] = "将〈安德华拉诺特〉从牌库置入圣物区，并以4张牌作为起始手牌。",
+                                ["no"] = "不执行这个开局效果，按通常数量抽取起始手牌。",
+                            })));
             if (player.MasterId == "S02-03M1" && player.Library.Any(card => card.CardId == "S02-0301"))
                 CreatePrompt(player.PlayerIndex, "optional", "游戏开始时，是否将牌库1张〈雷神之锤〉加入起始手牌？",
                     ["yes", "no"], 1, 1, "setup-s2-thor-hammer", isPrivate: true,
-                    data: new Dictionary<string, string> { ["yes"] = "加入起始手牌", ["no"] = "不发动" });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string> { ["yes"] = "加入起始手牌", ["no"] = "不发动" },
+                        new("雷神索尔", "游戏开始时，你可以将牌库中的1张〈雷神之锤〉加入起始手牌。",
+                            "请选择是否执行；加入的〈雷神之锤〉会占用1张起始手牌名额。",
+                            L12PromptWaitingAction.SetupDecision,
+                            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                            {
+                                ["yes"] = "将牌库中的1张〈雷神之锤〉加入起始手牌，再补足其余起始手牌。",
+                                ["no"] = "不执行这个开局效果，按通常流程抽取起始手牌。",
+                            })));
         }
         if (!State.PendingPrompts.Any(prompt => prompt.Continuation.StartsWith("setup-s2-", StringComparison.Ordinal)))
             FinishOptionalS2Setup();
@@ -106,7 +184,11 @@ public sealed partial class L12GameEngine
             foreach (var trial in player.SpecialZones.Trials) AddPromptCardData(data, trial);
             CreatePrompt(player.PlayerIndex, "trial-order", "按本局进行顺序依次选择全部试炼",
                 player.SpecialZones.Trials.Select(card => card.InstanceId), player.SpecialZones.Trials.Count,
-                player.SpecialZones.Trials.Count, "setup-trial-order", isPrivate: true, data: data);
+                player.SpecialZones.Trials.Count, "setup-trial-order", isPrivate: true,
+                data: WithPromptNarrative(data,
+                    new("安排我方试炼", $"你需要为我方的{player.SpecialZones.Trials.Count}张试炼确定本局完成顺序。",
+                        "请按计划完成的先后顺序依次选择全部试炼；确认后将以该顺序进行。",
+                        L12PromptWaitingAction.SetupDecision)));
         }
         if (!State.PendingPrompts.Any(item => item.Continuation == "setup-trial-order")) StartMulliganAfterPreparation();
     }
@@ -126,6 +208,8 @@ public sealed partial class L12GameEngine
         var playerText = L12PlayerFacingText.Naturalize(text);
         var validChoices = choices.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         data ??= [];
+        var explicitNarrative = TakePromptNarrative(data) ?? DefaultSystemPromptNarrative(kind);
+        ValidatePromptNarrative(explicitNarrative, validChoices);
         ExpandGraveyardSelectionDisplay(playerIndex, kind, validChoices, data);
         var explicitlyDisplayedIds = data.GetValueOrDefault("displayCardIds")?
             .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
@@ -147,7 +231,8 @@ public sealed partial class L12GameEngine
             AddBoundResponsePresentation(playerIndex, responseTarget, data);
             playerText += "\n\n" + data["responseContext"];
         }
-        var presentation = BuildPromptPresentation(playerIndex, kind, playerText, min, max, data, choiceLabels);
+        var presentation = BuildPromptPresentation(playerIndex, kind, playerText, min, max, data,
+            explicitNarrative);
         var prompt = new L12Prompt
         {
             PromptId = $"prompt-{++State.PromptSequence}",
@@ -177,32 +262,64 @@ public sealed partial class L12GameEngine
 
     private L12PromptPresentation BuildPromptPresentation(int playerIndex, string kind, string playerText,
         int minChoose, int maxChoose, IReadOnlyDictionary<string, string> data,
-        Dictionary<string, string> choiceLabels)
+        L12PromptNarrativeInput? narrative)
     {
         var sourceName = data.GetValueOrDefault("sourceName")?.Trim();
         var separator = playerText.IndexOf('：');
         var inferredTitle = separator > 0 ? playerText[..separator].Trim() : string.Empty;
-        var title = !string.IsNullOrWhiteSpace(sourceName)
+        var title = !string.IsNullOrWhiteSpace(narrative?.Title)
+            ? narrative.Title.Trim()
+            : !string.IsNullOrWhiteSpace(sourceName)
             ? sourceName
             : !string.IsNullOrWhiteSpace(inferredTitle)
                 ? inferredTitle
                 : PromptKindTitle(kind);
-        var situation = data.GetValueOrDefault("effectText")?.Trim();
+        var situation = narrative?.Situation.Trim() ?? data.GetValueOrDefault("effectText")?.Trim();
         if (string.IsNullOrWhiteSpace(situation))
             situation = separator > 0 ? playerText[(separator + 1)..].Trim() : playerText.Trim();
-        var instruction = PromptInstruction(kind, title, minChoose, maxChoose,
+        var instruction = narrative?.Instruction.Trim() ?? PromptInstruction(kind, title, minChoose, maxChoose,
             string.Equals(data.GetValueOrDefault("uiPattern"), "effect-decision", StringComparison.OrdinalIgnoreCase));
         return new L12PromptPresentation
         {
-            Title = title,
-            Situation = situation,
-            Instruction = instruction,
-            WaitingSummary = PromptWaitingSummary(State.Players[playerIndex].Name, kind),
-            // 与 Prompt.ChoiceLabels 共用权威映射；匿名手牌流程会在建立 Prompt 后追加
-            // “取消整次发动”，叙事合同必须同步取得该选项而不能留下半套协议。
-            ChoiceConsequences = choiceLabels,
+            Title = L12PlayerFacingText.Naturalize(title),
+            Situation = L12PlayerFacingText.Naturalize(situation),
+            Instruction = L12PlayerFacingText.Naturalize(instruction),
+            WaitingSummary = narrative is null
+                ? PromptWaitingSummary(State.Players[playerIndex].Name, kind)
+                : PromptWaitingSummary(State.Players[playerIndex].Name, narrative.WaitingAction),
+            // 后果是独立值语义，不与短按钮标签共用实例；没有权威后果时保持为空。
+            ChoiceConsequences = narrative?.ChoiceConsequences?.ToDictionary(
+                pair => pair.Key,
+                pair => L12PlayerFacingText.Naturalize(pair.Value),
+                StringComparer.OrdinalIgnoreCase) ?? [],
         };
     }
+
+    private static void ValidatePromptNarrative(L12PromptNarrativeInput? narrative,
+        IReadOnlyCollection<string> validChoices)
+    {
+        if (narrative is null) return;
+        if (string.IsNullOrWhiteSpace(narrative.Title)
+            || string.IsNullOrWhiteSpace(narrative.Situation)
+            || string.IsNullOrWhiteSpace(narrative.Instruction))
+            throw new InvalidOperationException("Prompt 叙事标题、情况与指令均不能为空");
+        var invalidConsequence = narrative.ChoiceConsequences?.Keys.FirstOrDefault(choice =>
+            !validChoices.Contains(choice, StringComparer.OrdinalIgnoreCase));
+        if (invalidConsequence is not null)
+            throw new InvalidOperationException($"Prompt 选择后果包含无效选项：{invalidConsequence}");
+    }
+
+    private static L12PromptNarrativeInput? DefaultSystemPromptNarrative(string kind)
+        => kind == "initiative"
+            ? new("决定先后攻", "掷骰已经结束，点数较高的一方取得先后攻决定权。",
+                "请选择由哪一方先攻；确认后将继续进行对局准备。",
+                L12PromptWaitingAction.InitiativeDecision,
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["first"] = "你将成为先攻玩家，对方成为后攻玩家。",
+                    ["second"] = "你将成为后攻玩家，对方成为先攻玩家。",
+                })
+            : null;
 
     private static string PromptKindTitle(string kind)
     {
@@ -261,6 +378,26 @@ public sealed partial class L12GameEngine
             _ => "正在完成当前操作",
         };
         return $"{playerName} {action}";
+    }
+
+    private static string PromptWaitingSummary(string playerName, L12PromptWaitingAction action)
+    {
+        var text = action switch
+        {
+            L12PromptWaitingAction.SetupDecision => "正在决定是否执行开局效果",
+            L12PromptWaitingAction.InitiativeDecision => "正在选择先攻或后攻",
+            L12PromptWaitingAction.EffectDecision => "正在决定是否发动效果",
+            L12PromptWaitingAction.ResponseDecision => "正在决定是否响应",
+            L12PromptWaitingAction.CostPayment => "正在支付费用",
+            L12PromptWaitingAction.ResourceReturn => "正在返还资源",
+            L12PromptWaitingAction.CardSelection => "正在完成卡牌选择",
+            L12PromptWaitingAction.TargetSelection => "正在选择效果对象",
+            L12PromptWaitingAction.PositionSelection => "正在选择战场位置",
+            L12PromptWaitingAction.LibraryArrangement => "正在整理牌库",
+            L12PromptWaitingAction.LethalReplacement => "正在决定是否发动致命代替",
+            _ => "正在完成当前操作",
+        };
+        return $"{playerName} {text}";
     }
 
     /// <summary>
@@ -622,6 +759,12 @@ public sealed partial class L12GameEngine
             data[slots[index]] = $"对方手牌 {index + 1}";
             data[$"{slots[index]}:image"] = "/assets/l12/card-back-official.png";
         }
+        WithPromptNarrative(data,
+            new(data.GetValueOrDefault("sourceName") ?? "选择对方手牌", text,
+                min == max
+                    ? $"请从这些身份未公开的手牌中选择{min}张并确认。"
+                    : $"请从这些身份未公开的手牌中选择{min}至{max}张并确认。",
+                L12PromptWaitingAction.CardSelection));
         var prompt = CreatePrompt(playerIndex, kind, text, slots, min, max, continuation,
             stackItemId, isPrivate: true, data: data);
         for (var index = 0; index < slots.Length; index++)
@@ -1322,6 +1465,10 @@ public sealed partial class L12GameEngine
                     ["previewPresentation"] = "information-card",
                 };
                 AddPromptCardData(data, publicCard);
+                WithPromptNarrative(data,
+                    new("公开天灾", $"准备阶段随机公开了天灾〈{publicCard.Name}〉。",
+                        "请确认本次公开结果；双方确认后将继续选择本局天灾。",
+                        L12PromptWaitingAction.SetupDecision));
                 CreatePrompt(first, "disaster-reveal", $"随机公开天灾〈{publicCard.Name}〉", [], 0, 0,
                     "setup-public-confirm", isPrivate: false, data: new Dictionary<string, string>(data));
                 CreatePrompt(second, "disaster-reveal", $"随机公开天灾〈{publicCard.Name}〉", [], 0, 0,
@@ -1348,9 +1495,16 @@ public sealed partial class L12GameEngine
             data[card.InstanceId] = card.Name;
             if (!string.IsNullOrWhiteSpace(card.ImageUrl)) data[$"{card.InstanceId}:image"] = card.ImageUrl;
         }
+        var consequences = State.DisasterPool.ToDictionary(
+            card => card.InstanceId,
+            card => $"禁用〈{card.Name}〉；这张天灾不会进入本局后续选择。",
+            StringComparer.OrdinalIgnoreCase);
         CreatePrompt(playerIndex, "disaster-ban", text,
             State.DisasterPool.Select(card => card.InstanceId), 1, 1, "setup-ban", isPrivate: false,
-            data: data);
+            data: WithPromptNarrative(data,
+                new("禁用天灾", $"{text}，本步骤需要从当前天灾池中禁用1张。",
+                    "请选择1张天灾并确认；确认后该天灾会移出本局后续选择。",
+                    L12PromptWaitingAction.SetupDecision, consequences)));
     }
 
     private void ResolveDisasterBan(int playerIndex, string instanceId)
@@ -1372,9 +1526,16 @@ public sealed partial class L12GameEngine
             data[card.InstanceId] = card.Name;
             if (!string.IsNullOrWhiteSpace(card.ImageUrl)) data[$"{card.InstanceId}:image"] = card.ImageUrl;
         }
+        var consequences = candidates.ToDictionary(
+            card => card.InstanceId,
+            card => $"选择〈{card.Name}〉加入本局天灾构成；其余本步骤候选不会进入下一位玩家的候选池。",
+            StringComparer.OrdinalIgnoreCase);
         CreatePrompt(playerIndex, "disaster-pick", text, candidates.Select(card => card.InstanceId),
             1, 1, continuation, isPrivate: true,
-            data: data);
+            data: WithPromptNarrative(data,
+                new("选择本局天灾", $"{text}；这些候选只向你展示。",
+                    "请选择1张天灾并确认；未选择的本步骤候选也会离开后续候选池。",
+                    L12PromptWaitingAction.SetupDecision, consequences)));
     }
 
     private void ResolveDisasterPick(int playerIndex, string instanceId, L12Prompt prompt)
@@ -1602,8 +1763,18 @@ public sealed partial class L12GameEngine
         AddPaidCostResponseData(top, responseData);
         var responseText = "选择响应卡牌；可响应任意符合卡面条件的未结算效果。\n"
             + string.Join("\n\n", State.EffectStack.Select(item => DescribeResponse(item, playerIndex)));
+        var responseConsequences = choices.ToDictionary(
+            id => id,
+            id => id == "pass"
+                ? "不打出响应牌，优先权将继续传递。"
+                : $"打出〈{responseData[id]}〉，并按其合法范围响应当前未结算效果。",
+            StringComparer.OrdinalIgnoreCase);
         CreatePrompt(playerIndex, "response", responseText, choices,
-            1, 1, "stack-response", top.StackItemId, isPrivate: true, data: responseData);
+            1, 1, "stack-response", top.StackItemId, isPrivate: true,
+            data: WithPromptNarrative(responseData,
+                new("响应窗口", "当前堆叠中有未结算效果，你拥有本次响应优先权。",
+                    "请选择1张当前可合法响应的卡牌，或选择“不响应”并传递优先权。",
+                    L12PromptWaitingAction.ResponseDecision, responseConsequences)));
     }
 
     // Eligibility is evaluated against the exact selected item, never a different chain ancestor.
@@ -1892,6 +2063,18 @@ public sealed partial class L12GameEngine
             var source = FindSource(target) ?? target.SourceSnapshot;
             if (source?.ImageUrl is { } imageUrl) data[$"{id}:image"] = imageUrl;
         }
+        var response = FindOnField(State.Players[playerIndex], choice, out _, out _)
+            ?? State.Players[playerIndex].Hand.FirstOrDefault(card => card.InstanceId == choice);
+        var responseName = response?.Name ?? "所选响应卡牌";
+        var targetConsequences = targets.ToDictionary(
+            target => target.StackItemId,
+            _ => $"以〈{responseName}〉响应所选的未结算效果。",
+            StringComparer.OrdinalIgnoreCase);
+        targetConsequences["cancel"] = "返回响应卡牌选择，不打出当前响应。";
+        WithPromptNarrative(data,
+            new(responseName, $"〈{responseName}〉可以响应多个尚未结算的效果。",
+                "请选择这张响应卡牌要作用于哪个效果；取消会返回响应卡牌选择。",
+                L12PromptWaitingAction.ResponseDecision, targetConsequences));
         CreatePrompt(playerIndex, "response-target", "选择本次响应的效果对象", targets.Select(item => item.StackItemId).Append("cancel"),
             1, 1, "stack-response-target", isPrivate: true, data: data);
     }
@@ -1930,20 +2113,38 @@ public sealed partial class L12GameEngine
             var choices = frontSlots.Append("cancel").ToArray();
             CreatePrompt(playerIndex, "slot", $"{response.Name}：选择休整登场的前排位置（登场为费用）", choices,
                 1, 1, "stack-response-puppet-slot", targetStackItemId, isPrivate: true,
-                data: new Dictionary<string, string>
-                {
-                    ["responseId"] = response.InstanceId,
-                    ["choiceMode"] = "board-slot",
-                    ["cancel"] = "取消发动",
-                });
+                data: WithPromptNarrative(
+                    new Dictionary<string, string>
+                    {
+                        ["responseId"] = response.InstanceId,
+                        ["choiceMode"] = "board-slot",
+                        ["cancel"] = "取消发动",
+                    },
+                    new(response.Name, $"你已选择以〈{response.Name}〉响应当前进攻；它需要先以休整状态登场作为费用。",
+                        "请选择我方前排的1个高亮空位；取消会返回响应选择且不打出此牌。",
+                        L12PromptWaitingAction.PositionSelection,
+                        choices.ToDictionary(
+                            slot => slot,
+                            slot => slot == "cancel"
+                                ? "返回响应选择，不打出这张响应卡牌。"
+                                : $"〈{response.Name}〉将休整登场到我方前排第{int.Parse(slot.Split(':')[1]) + 1}格，并继续响应。",
+                            StringComparer.OrdinalIgnoreCase))));
             return;
         }
         if (L12StructuredCardSemantics.IsAbsoluteDefenseResponse(response.CardId))
         {
             var discards = player.Hand.Select(card => card.InstanceId).ToArray();
+            var discardConsequences = player.Hand.ToDictionary(
+                card => card.InstanceId,
+                card => $"弃置〈{card.Name}〉支付〈绝对防御〉的费用，然后继续响应。",
+                StringComparer.OrdinalIgnoreCase);
             CreatePrompt(playerIndex, "discard-cost", "弃置 1 张手牌作为〈绝对防御〉的费用", discards,
                 1, 1, "stack-response-discard", targetStackItemId, isPrivate: true,
-                data: new Dictionary<string, string> { ["responseId"] = response.InstanceId });
+                data: WithPromptNarrative(
+                    new Dictionary<string, string> { ["responseId"] = response.InstanceId },
+                    new("绝对防御", "你已选择发动〈绝对防御〉；继续响应前必须弃置1张手牌。",
+                        "请选择并弃置1张手牌作为费用。",
+                        L12PromptWaitingAction.CostPayment, discardConsequences)));
             return;
         }
         if (L12StructuredCardRules.RequiresOwnLegionResponseTarget(response.CardId))

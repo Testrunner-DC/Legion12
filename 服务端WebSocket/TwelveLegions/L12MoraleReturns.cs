@@ -24,8 +24,22 @@ public sealed partial class L12GameEngine
                 ?? (morale.IsGodPower ? "god-power" : morale.Tapped ? "rested-morale" : "active-morale");
             data[$"{morale.InstanceId}:activityState"] = morale.Tapped ? "rested" : "active";
         }
+        var sourceName = stackItemId is null
+            ? data.GetValueOrDefault("sourceName")
+            : State.EffectStack.Concat(State.DeferredEffectStack)
+                .FirstOrDefault(item => item.StackItemId == stackItemId)?.SourceName;
+        sourceName = string.IsNullOrWhiteSpace(sourceName) ? "返还士气" : sourceName;
+        var consequences = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (continuation == "active-return-choice")
+            consequences["cancel"] = "不发动当前主动效果，不返还士气。";
         CreatePrompt(playerIndex, "resource-return", "请选择返还的士气", choices, count, count,
-            continuation, stackItemId, isPrivate: true, data: data);
+            continuation, stackItemId, isPrivate: true,
+            data: WithPromptNarrative(data,
+                new(sourceName, $"〈{sourceName}〉需要返还{count}张{(requireActive ? "活跃" : "可选")}士气才能继续。",
+                    continuation == "active-return-choice"
+                        ? $"请选择恰好{count}张符合条件的士气并确认；也可以选择不发动。"
+                        : $"请选择恰好{count}张符合条件的士气并确认。",
+                    L12PromptWaitingAction.ResourceReturn, consequences)));
     }
 
     private int GetActiveAbilityReturnMoraleCost(L12PlayerState player, L12CardInstance source, string ability, string? target)
@@ -228,7 +242,22 @@ public sealed partial class L12GameEngine
                     player.Resolving.Add(top);
                     item.Data["zhuge-card"] = top.InstanceId;
                     CreatePrompt(item.Controller, "option", "将展示的圣物活跃登场，或加入手牌？", ["play", "hand"], 1, 1,
-                        "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "zhuge-artifact" });
+                        "card-effect", item.StackItemId,
+                        data: WithPromptNarrative(
+                            new Dictionary<string, string>
+                            {
+                                ["action"] = "zhuge-artifact",
+                                ["play"] = "活跃登场",
+                                ["hand"] = "加入手牌",
+                            },
+                            new(item.SourceName, $"〈{item.SourceName}〉展示了牌库顶部的圣物〈{top.Name}〉。",
+                                "请选择让这张圣物活跃登场，或将其加入手牌。",
+                                L12PromptWaitingAction.EffectDecision,
+                                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                                {
+                                    ["play"] = $"让〈{top.Name}〉在我方圣物区活跃登场。",
+                                    ["hand"] = $"将〈{top.Name}〉加入我方手牌。",
+                                })));
                 }
                 else
                 {
@@ -257,8 +286,17 @@ public sealed partial class L12GameEngine
                 };
                 var recruitCard = player.Library.FirstOrDefault(card => card.InstanceId == recruit);
                 if (recruitCard is not null) AddPromptCardData(promptData, recruitCard);
+                var recruitName = recruitCard?.Name ?? "展示的军团";
+                var slotConsequences = EmptySlots(player).ToDictionary(
+                    slot => slot,
+                    slot => $"让〈{recruitName}〉活跃登场到我方{(slot.StartsWith("0:", StringComparison.Ordinal) ? "前排" : "后排")}第{int.Parse(slot.Split(':')[1]) + 1}格。",
+                    StringComparer.OrdinalIgnoreCase);
                 CreatePrompt(item.Controller, "slot", "请直接点击战场上的高亮空位，使展示的军团活跃登场", EmptySlots(player), 1, 1,
-                    "card-effect", item.StackItemId, data: promptData);
+                    "card-effect", item.StackItemId,
+                    data: WithPromptNarrative(promptData,
+                        new(item.SourceName, $"〈{item.SourceName}〉已展示〈{recruitName}〉，现在需要为其选择登场位置。",
+                            "请选择我方战场上的1个高亮空位；确认后该军团将活跃登场。",
+                            L12PromptWaitingAction.PositionSelection, slotConsequences)));
                 break;
             }
             case "free-tactic":

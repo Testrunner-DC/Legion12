@@ -25,9 +25,11 @@ public sealed class PromptPresentationContractTests
         Assert.False(string.IsNullOrWhiteSpace(presentation.GetProperty("situation").GetString()));
         Assert.False(string.IsNullOrWhiteSpace(presentation.GetProperty("instruction").GetString()));
         Assert.False(string.IsNullOrWhiteSpace(presentation.GetProperty("waitingSummary").GetString()));
+        var labels = prompt.GetProperty("choiceLabels");
+        Assert.Equal("不发动", labels.GetProperty("mode:none").GetString());
+        Assert.Equal("发动", labels.GetProperty("mode:use").GetString());
         var consequences = presentation.GetProperty("choiceConsequences");
-        Assert.Equal("不发动", consequences.GetProperty("mode:none").GetString());
-        Assert.Equal("发动", consequences.GetProperty("mode:use").GetString());
+        Assert.Empty(consequences.EnumerateObject());
     }
 
     [Fact]
@@ -40,6 +42,7 @@ public sealed class PromptPresentationContractTests
         var owner = Serialize(game.SnapshotFor(0));
         var opponent = Serialize(game.SnapshotFor(1));
         var spectator = Serialize(game.SnapshotForSpectator());
+        var referee = Serialize(game.SnapshotForReferee());
         var gm = Serialize(game.SnapshotForGm(1));
 
         Assert.Equal(privateDetail, Assert.Single(owner.GetProperty("prompts").EnumerateArray())
@@ -48,9 +51,11 @@ public sealed class PromptPresentationContractTests
             .GetProperty("text").GetString());
         Assert.Empty(opponent.GetProperty("prompts").EnumerateArray());
         Assert.Empty(spectator.GetProperty("prompts").EnumerateArray());
+        Assert.Empty(referee.GetProperty("prompts").EnumerateArray());
 
         AssertSafeWaitingSummary(opponent);
         AssertSafeWaitingSummary(spectator);
+        AssertSafeWaitingSummary(referee);
         Assert.Equal(JsonValueKind.Null, gm.GetProperty("waitingPrompt").ValueKind);
     }
 
