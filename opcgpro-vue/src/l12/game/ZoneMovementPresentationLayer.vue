@@ -4,7 +4,7 @@ import { l12AnimationDuration } from '../audioPreferences'
 import { landscapeTeleportTarget, visibleViewport, viewportRect } from '../mobileViewport'
 import { CARD_IMAGE_PLACEHOLDER, resolveCardAssetUrls } from '../cardAssets'
 import type { ActionEvent, Card, PlayerView, Prompt } from '../types'
-import { claimFreshMovementEvents, claimMovementFact, collectKnownCardZones, collectPromptSourceZoneHints, createMovementClaimState, isCombatDefeatLeaveEvent, isMovementCardConcealed, isSupersededLeaveEvent, leaveMovementDestination, movementCardsForEvent, movementFactKey, resetMovementClaimState, type VisualZone } from './visualTransitionProjection'
+import { claimFreshMovementEvents, claimMovementFact, collectKnownCardZones, collectPromptSourceZoneHints, createMovementClaimState, isAuthoritativePublicFaceMovement, isCombatDefeatLeaveEvent, isMovementCardConcealed, isSupersededLeaveEvent, leaveMovementDestination, movementCardsForEvent, movementFactKey, resetMovementClaimState, type VisualZone } from './visualTransitionProjection'
 import type { PresentationReservation, PresentationSequenceCoordinator } from './presentationSequenceCoordinator'
 
 type Zone = VisualZone
@@ -17,6 +17,7 @@ type Movement = {
   from: Zone
   to: Zone
   card?: Card
+  authoritativeFace: boolean
   concealed: boolean
   covered: boolean
   fromRect: AnchorRect
@@ -165,7 +166,8 @@ function movementFromEvent(event: ActionEvent, cardIndex: number, fromRect: Anch
   const card = selectedCard ?? (event.type === 'move' ? cards.at(-1)
     : event.type === 'reveal' ? cards.find(candidate => !isMovementCardConcealed(event, candidate))
     : cards[0])
-  const concealed = isMovementCardConcealed(event, card, from)
+  const authoritativeFace = isAuthoritativePublicFaceMovement(event, from, to)
+  const concealed = isMovementCardConcealed(event, card, from, to)
   return {
     key: movementFactKey(event, cardIndex, card, from, to),
     sequence: event.sequence,
@@ -174,9 +176,7 @@ function movementFromEvent(event: ActionEvent, cardIndex: number, fromRect: Anch
     from,
     to,
     card,
-    // A library card remains concealed while it is in flight. Its identity is
-    // revealed only by the authoritative public destination after the motion
-    // completes, never early from the event snapshot carried to the client.
+    authoritativeFace,
     concealed,
     covered: card?.hidden === true,
     fromRect,
@@ -421,13 +421,14 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
     // A disaster is revealed from its dedicated deck/active-disaster anchor,
     // not cloned from the newly visible session thumbnail.  Using that
     // thumbnail as a source would skip the card-back/front flip entirely.
-    // A normal library is likewise an identity-free pile. Never let a newly
-    // rendered graveyard destination become the source clone and reveal the
-    // milled card face before its card-back flight has finished.
-    const source = draft.disasterReveal || draft.from === 'library' ? null : cardElement(draft.card?.instanceId)
+    // Public library-boundary events present the authoritative event face.
+    // Their source instance may already have disappeared, while cardElement
+    // can now resolve to the final graveyard face or library back. Never clone
+    // that post-update DOM in reverse; start from the real zone anchor instead.
+    const source = draft.disasterReveal || draft.authoritativeFace ? null : cardElement(draft.card?.instanceId)
     return {
       rect: elementRect(source) ?? resolveRect(draft.from, draft.playerIndex,
-        draft.disasterReveal || draft.from === 'library' ? undefined : draft.card?.instanceId),
+        draft.disasterReveal || draft.authoritativeFace ? undefined : draft.card?.instanceId),
       ghost: source instanceof HTMLElement ? source.cloneNode(true) as HTMLElement : undefined,
       rotation: elementRotation(source),
     }

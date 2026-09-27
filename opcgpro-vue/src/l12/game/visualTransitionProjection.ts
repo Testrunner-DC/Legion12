@@ -72,10 +72,17 @@ export function claimMovementFact(state: MovementClaimState, key: string) {
   return true
 }
 
-export function isMovementCardConcealed(event: ActionEvent, card: Card | undefined, from?: VisualZone) {
-  // A normal library never exposes its top identity. Even when the resulting
-  // graveyard event carries the now-public card snapshot, the flight starts as
-  // the official deck back and the destination becomes visible only afterward.
+export function isAuthoritativePublicFaceMovement(event: ActionEvent, from?: VisualZone, to?: VisualZone) {
+  return (event.type === 'mill' && from === 'library' && to === 'graveyard')
+    || (event.type === 'return' && from === 'graveyard' && to === 'library')
+}
+
+export function isMovementCardConcealed(event: ActionEvent, card: Card | undefined, from?: VisualZone, to?: VisualZone) {
+  // These events have already made the moving identity public. Their animation
+  // presents the authoritative card face even though one endpoint is a hidden
+  // library. The settled library pile remains concealed by the board itself.
+  if (isAuthoritativePublicFaceMovement(event, from, to) && card?.cardId && card.cardId !== 'hidden-card') return false
+  // Other movement out of a normal library must not infer its top identity.
   if (from === 'library') return true
   // identityKnown is meaningful only for a card that is still covered. Normal
   // authoritative event cards keep the model default false even after their

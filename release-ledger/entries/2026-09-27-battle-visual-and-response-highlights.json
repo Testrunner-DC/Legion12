@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-27-battle-visual-and-response-highlights",
+  "date": "2026-09-27",
+  "audience": "players",
+  "title": "对战动画连续性与响应目标提示修正",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "从牌库弃置和从墓地返回牌库的公开卡牌会以正面逐张播放，进入牌库后恢复卡背；活跃与休整之间的状态切换不再出现卡牌短暂消失。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/ZoneMovementPresentationLayer.vue",
+        "opcgpro-vue/src/l12/game/visualTransitionProjection.ts",
+        "opcgpro-vue/src/l12/game/CardStateTransitionLayer.vue"
+      ]
+    },
+    {
+      "category": "battle",
+      "text": "需要先声明场上对象再等待响应的效果，会在整个响应过程中持续高亮实际对象；同名卡不会串位，对象离场后自动停止提示。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/PromptOverlay.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.vue"
+      ]
+    }
+  ]
+}

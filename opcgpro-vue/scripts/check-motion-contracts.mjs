@@ -26,7 +26,12 @@ const checks = [
   ['zone flight arc and settle', movement.includes('const lift =') && movement.includes('offset: .85')],
   ['attack hit pause and impact', combat.includes('offset: .58') && combat.includes('const impact = targetElement.animate')],
   ['site and battle modal language', motion.includes('.site-modal-mask > .site-modal') && motion.includes('.l12-prompt-overlay > .prompt-panel')],
-  ['ready and rest snapshot handoff', board.includes('<CardStateTransitionLayer') && stateTransition.includes("flush: 'pre', immediate: true") && stateTransition.includes('hiddenTarget.style.visibility')],
+  ['ready and rest snapshot handoff', board.includes('<CardStateTransitionLayer') && stateTransition.includes("flush: 'pre', immediate: true")
+    && stateTransition.includes('const sourceGhost = source.cloneNode(true)') && stateTransition.includes('sourceGhost.style.visibility = \'visible\'')
+    && stateTransition.includes('sourceRect: { left: sourceRect.left') && stateTransition.indexOf('wrapper.appendChild(ghost)') < stateTransition.indexOf("target.style.visibility = 'hidden'")],
+  ['ready and rest never clone hidden target state', !stateTransition.includes('source: HTMLElement')
+    && stateTransition.indexOf('revealTarget()', stateTransition.indexOf('function finish()'))
+      < stateTransition.indexOf('wrapper?.remove()', stateTransition.indexOf('function finish()'))],
   ['state observer is layout neutral', stateTransition.includes('.card-state-transition-layer{display:none!important}') && board.includes('.felt-board :deep(.battlefield-half.my-half){grid-row:3}')],
   ['ready and rest use global timing language', stateTransition.includes('l12AnimationDuration') && stateTransition.includes("cubic-bezier(.22,1,.36,1)") && stateTransition.includes('prefers-reduced-motion: reduce')],
   ['multi-card movement stays per instance', movement.includes('movementCardsForEvent(event)') && visualProjection.includes("event.type === 'move' || event.type === 'attach'")],

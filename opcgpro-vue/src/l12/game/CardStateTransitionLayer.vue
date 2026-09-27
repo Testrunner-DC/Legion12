@@ -10,7 +10,8 @@ type Transition = {
   instanceId: string
   fromTapped: boolean
   toTapped: boolean
-  source: HTMLElement
+  sourceRect: { left: number; top: number; width: number; height: number }
+  sourceGhost: HTMLElement
 }
 
 const props = withDefaults(defineProps<{
@@ -48,9 +49,12 @@ function revealTarget() {
 function finish() {
   animation?.cancel()
   animation = null
+  // Hand the final frame to the authoritative DOM before removing the ghost.
+  // Both operations are synchronous, but this ordering prevents a blank frame
+  // at the compositor boundary on slower/mobile renderers.
+  revealTarget()
   wrapper?.remove()
   wrapper = null
-  revealTarget()
   active.value = null
   showNext()
 }
@@ -58,9 +62,9 @@ function finish() {
 function cancelActive() {
   animation?.cancel()
   animation = null
+  revealTarget()
   wrapper?.remove()
   wrapper = null
-  revealTarget()
   active.value = null
 }
 
@@ -72,8 +76,8 @@ function showNext() {
   void nextTick(() => {
     if (active.value?.key !== transition.key) return
     const target = cardElement(transition.instanceId)
-    if (!(target instanceof HTMLElement) || !transition.source.isConnected) { finish(); return }
-    const sourceRect = viewportRect(transition.source)
+    if (!(target instanceof HTMLElement)) { finish(); return }
+    const sourceRect = transition.sourceRect
     const targetRect = viewportRect(target)
     const width = target.offsetWidth || Math.min(sourceRect.width, sourceRect.height * 5 / 7)
     const height = target.offsetHeight || Math.max(sourceRect.height, sourceRect.width * 7 / 5)
@@ -81,19 +85,18 @@ function showNext() {
     const startY = sourceRect.top + sourceRect.height / 2 - height / 2
     const endX = targetRect.left + targetRect.width / 2 - width / 2
     const endY = targetRect.top + targetRect.height / 2 - height / 2
-    hiddenTarget = target
-    hiddenTargetVisibility = target.style.visibility
-    target.style.visibility = 'hidden'
-    const ghost = transition.source.cloneNode(true) as HTMLElement
+    const ghost = transition.sourceGhost
     ghost.removeAttribute('id')
     ghost.removeAttribute('data-card-instance-id')
     ghost.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'))
     ghost.querySelectorAll('[data-card-instance-id]').forEach(node => node.removeAttribute('data-card-instance-id'))
     ghost.classList.remove('tapped', 'selected')
-    Object.assign(ghost.style, { width: '100%', height: '100%', margin: '0', transform: 'none', transition: 'none', pointerEvents: 'none' })
+    Object.assign(ghost.style, { width: '100%', height: '100%', margin: '0', transform: 'none', transition: 'none', visibility: 'visible', pointerEvents: 'none' })
     wrapper = document.createElement('div')
     wrapper.className = 'l12-card-state-transition-ghost'
     wrapper.dataset.visualTransitionKey = transition.key
+    wrapper.dataset.stateFrom = transition.fromTapped ? 'rested' : 'active'
+    wrapper.dataset.stateTo = transition.toTapped ? 'rested' : 'active'
     Object.assign(wrapper.style, {
       position: 'fixed', left: `${startX}px`, top: `${startY}px`, width: `${width}px`, height: `${height}px`,
       zIndex: '902', pointerEvents: 'none', transformOrigin: 'center', willChange: 'transform',
@@ -101,6 +104,9 @@ function showNext() {
     })
     wrapper.appendChild(ghost)
     document.body.appendChild(wrapper)
+    hiddenTarget = target
+    hiddenTargetVisibility = target.style.visibility
+    target.style.visibility = 'hidden'
     const fromAngle = transition.fromTapped ? 90 : 0
     const toAngle = transition.toTapped ? 90 : 0
     const dx = endX - startX
@@ -125,12 +131,20 @@ watch(() => collectVisualFieldState(props.players), (next, previous) => {
     const instanceId = change.instanceId
     const source = cardElement(instanceId)
     if (!(source instanceof HTMLElement)) continue
+    const sourceRect = viewportRect(source)
+    if (sourceRect.width <= 0 || sourceRect.height <= 0) continue
+    // flush:'pre' still sees the old authority state. Snapshot both pixels and
+    // geometry now; waiting until nextTick can make source===target and clone
+    // the target's temporary visibility:hidden into an invisible ghost.
+    const sourceGhost = source.cloneNode(true) as HTMLElement
+    sourceGhost.style.visibility = 'visible'
     queue.push({
       key: `${props.matchId}:${++serial}:${instanceId}:${Number(change.fromTapped)}-${Number(change.toTapped)}`,
       instanceId,
       fromTapped: change.fromTapped,
       toTapped: change.toTapped,
-      source,
+      sourceRect: { left: sourceRect.left, top: sourceRect.top, width: sourceRect.width, height: sourceRect.height },
+      sourceGhost,
     })
   }
   showNext()

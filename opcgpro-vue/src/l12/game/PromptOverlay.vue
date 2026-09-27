@@ -116,7 +116,7 @@ watch(() => JSON.stringify([
 }, { immediate: true })
 watch(minimized, value => emit('minimizedChange', value), { immediate: true })
 const responseTargetIds = computed(() => {
-  if (!minimized.value || !visible.value || !prompt.value) return []
+  if (!visible.value || !prompt.value) return []
   const data = prompt.value.data
   const keys = prompt.value.kind === 'response-target'
     ? (activeSelected.value.length ? activeSelected.value : prompt.value.validChoices).map(id => `${id}:responseTargetIds`)
@@ -128,8 +128,8 @@ const responseTargetIds = computed(() => {
       if (Array.isArray(parsed)) for (const id of parsed) if (typeof id === 'string') ids.add(id)
     } catch { /* Malformed optional presentation metadata grants no highlight. */ }
   }
-  // 普通目标选择也必须在最小化弹框后保留场面定位；这里只接纳当前
-  // 公开战场上真实存在的 instanceId，不扩大任何可选择权限。
+  // 目标高亮贯穿选择与响应弹框的展开／最小化状态；这里只接纳当前
+  // 战场上真实存在的 instanceId，不扩大任何可选择权限或公开身份。
   for (const id of activeSelected.value) ids.add(id)
   return battlefieldTargetIds(props.game, ids)
 })

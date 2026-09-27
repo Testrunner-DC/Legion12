@@ -3,21 +3,28 @@ import { reactive, ref } from 'vue'
 import type { ActionEvent, Card, GameState, PlayerView, Prompt } from '../../src/l12/types'
 import GameBoard from '../../src/l12/game/GameBoard.vue'
 
-const card = (instanceId: string, name: string, cardId: string, tapped = false): Card => ({
+const faceUrl = (cardId: string) => `/api/site/media/visual-transition/${cardId}.png`
+const card = (instanceId: string, name: string, cardId: string, tapped = false, imageUrl?: string): Card => ({
   instanceId, name, cardId, cardType: 'legion', faction: 'otherworld', cost: 1,
-  baseTroops: 2000, troops: 2000, disasterLevel: 0, tapped, summonRound: 0,
+  baseTroops: 2000, troops: 2000, disasterLevel: 0, tapped, summonRound: 0, imageUrl,
 })
 const mover = card('mover-1', '侍从骑士', 'S02-0609')
 const swapper = card('mover-2', '罗宾汉', 'S02-0617')
 const host = card('host-1', '狮心王理查一世', 'S02-0608')
 const handSquire = card('hand-squire', '侍从骑士', 'S02-0609')
 const robinSquire = card('robin-squire', '侍从骑士', 'S02-0609')
-const millCards = [
-  card('mill-card-1', '磨牌一', 'S01-0001'),
-  card('mill-card-2', '磨牌二', 'S01-0003'),
-  card('mill-card-3', '磨牌三', 'S01-0004'),
+const topSingleCard = card('top-single', '顶部单张', 'S01-01M1', false, faceUrl('S01-01M1'))
+const topManyCards = [
+  card('top-card-1', '顶部一', 'S01-01M2', false, faceUrl('S01-01M2')),
+  card('top-card-2', '顶部二', 'S01-02M1', false, faceUrl('S01-02M1')),
+  card('top-card-3', '顶部三', 'S01-02M3', false, faceUrl('S01-02M3')),
 ]
-const duplicateCard = card('duplicate-discard', '佣兵部队', 'S01-0002')
+const millCards = [
+  card('mill-card-1', '磨牌一', 'S01-03M1', false, faceUrl('S01-03M1')),
+  card('mill-card-2', '磨牌二', 'S01-03M2', false, faceUrl('S01-03M2')),
+  card('mill-card-3', '磨牌三', 'S01-04M1', false, faceUrl('S01-04M1')),
+]
+const duplicateCard = card('duplicate-discard', '佣兵部队', 'S01-04M2', false, faceUrl('S01-04M2'))
 const pharaohFestival = { ...card('pharaoh-festival', '法老王的庆典', 'S01-0222'), cardType: 'tactic' }
 const festivalHandCard = card('festival-hand-card', '陵墓守卫', 'S01-0212')
 const festivalGraveCard = card('festival-grave-card', '卡诺匹斯罐 一', 'S01-0208')
@@ -54,6 +61,25 @@ function prompt(id: string, data: Record<string, string> = {}): Prompt {
   return { promptId: id, playerIndex: 0, kind: 'optional-card', text: '测试阻塞弹框', validChoices: ['yes'], minChoose: 1, maxChoose: 1, data, choiceLabels: { yes: '确认' } }
 }
 function replaceField(next: Array<Array<Card | null>>) { game.players[0].field = next; game.revision += 1 }
+function mill(cards: Card[], text: string) {
+  game.players[0].libraryCount = Math.max(0, game.players[0].libraryCount - cards.length)
+  game.players[0].graveyard = [...(game.players[0].graveyard ?? []), ...cards]
+  game.players[0].graveyardCount = game.players[0].graveyard.length
+  publish({ type:'mill', playerIndex:0, text, cards })
+}
+function returnFromGrave(cards: Card[], placement: '顶部' | '底部') {
+  const ids = new Set(cards.map(card => card.instanceId))
+  game.players[0].graveyard = (game.players[0].graveyard ?? []).filter(card => !ids.has(card.instanceId))
+  game.players[0].graveyardCount = game.players[0].graveyard.length
+  game.players[0].libraryCount += cards.length
+  const events = cards.map(card => ({
+    sequence:++sequence, type:'return', playerIndex:0,
+    text:`〈${card.name}〉从墓地返回牌库${placement}`, cards:[card],
+  }))
+  game.revision += 1
+  game.stateHash = `visual-${game.revision}`
+  game.recentEvents = [...(game.recentEvents ?? []), ...events]
+}
 
 const api = {
   tap() { const current = game.players[0].field.flat().find(item => item?.instanceId === mover.instanceId); if (current) current.tapped = true; game.revision += 1 },
@@ -101,25 +127,12 @@ const api = {
     game.players[0].graveyardCount = game.players[0].graveyard.length
     publish({ type:'leave', playerIndex:0, text:'加拉哈德作为主动效果的费用被弃置', cards:[leaving] })
   },
-  millMany() {
-    game.players[0].libraryCount = Math.max(0, game.players[0].libraryCount - millCards.length)
-    game.players[0].graveyard = [...(game.players[0].graveyard ?? []), ...millCards]
-    game.players[0].graveyardCount = game.players[0].graveyard.length
-    publish({ type:'mill', playerIndex:0, text:'动画契约弃置牌库顶部3张牌', cards:millCards })
-  },
-  returnMilled() {
-    const ids = new Set(millCards.map(card => card.instanceId))
-    game.players[0].graveyard = (game.players[0].graveyard ?? []).filter(card => !ids.has(card.instanceId))
-    game.players[0].graveyardCount = game.players[0].graveyard.length
-    game.players[0].libraryCount += millCards.length
-    const events = millCards.map(card => ({
-      sequence:++sequence, type:'return', playerIndex:0,
-      text:`〈${card.name}〉从墓地返回牌库底部`, cards:[card],
-    }))
-    game.revision += 1
-    game.stateHash = `visual-${game.revision}`
-    game.recentEvents = [...(game.recentEvents ?? []), ...events]
-  },
+  millOneForTop() { mill([topSingleCard], '动画契约弃置牌库顶部1张牌') },
+  returnOneTop() { returnFromGrave([topSingleCard], '顶部') },
+  millManyForTop() { mill(topManyCards, '动画契约弃置牌库顶部3张牌后逐张回顶') },
+  returnManyTop() { returnFromGrave(topManyCards, '顶部') },
+  millMany() { mill(millCards, '动画契约弃置牌库顶部3张牌后逐张回底') },
+  returnMilled() { returnFromGrave(millCards, '底部') },
   duplicateDiscardSnapshots() {
     game.players[0].hand = game.players[0].hand?.filter(card => card.instanceId !== duplicateCard.instanceId)
     game.players[0].handCount = game.players[0].hand?.length
