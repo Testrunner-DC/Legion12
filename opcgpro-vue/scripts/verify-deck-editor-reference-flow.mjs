@@ -75,10 +75,13 @@ try {
     await page.goto(`http://127.0.0.1:${port}/__deck_editor_reference__`)
     await page.locator('.deck-builder-grid').waitFor()
     assert.equal(await page.locator('.saved-decks-panel').count(), 1)
-    assert.equal(await page.locator('.saved-decks-panel select').isVisible(), true)
     await page.screenshot({ path: path.join(out, `${name}-saved-decks.png`), fullPage: true })
     const narrow = width <= 820
     if (narrow) {
+      assert.equal(await page.locator('.saved-decks-panel').isVisible(), false, `${name} 不应常驻已保存牌库`)
+      await page.locator('.mobile-saved-decks-nav-trigger').click()
+      assert.equal(await page.locator('.mobile-saved-decks-dialog').isVisible(), true, `${name} 已保存牌库弹框未显示`)
+      await page.getByRole('button', { name: '关闭已保存牌库' }).click()
       await page.getByRole('button', { name: '更多操作', exact: true }).click()
       assert.equal(await page.locator('.secondary-actions').isVisible(), true, `${name} 次要操作菜单未展开`)
       await page.getByRole('button', { name: '更多操作', exact: true }).click()
@@ -105,6 +108,7 @@ try {
       await page.screenshot({ path: path.join(out, `${name}-filters.png`), fullPage: true })
       await productPopup.getByRole('button', { name: '完成', exact: true }).click()
     } else {
+      assert.equal(await page.locator('.saved-decks-panel').isVisible(), true, `${name} 桌面已保存牌库列表未显示`)
       await page.getByRole('button', { name: '统计', exact: true }).click()
       assert.equal(await page.locator('[data-editor-workspace="stats"]').isVisible(), true)
       assert.equal(await page.locator('.deck-list').isVisible(), true)
@@ -162,7 +166,6 @@ try {
   await page.locator('.deck-builder-grid').waitFor()
   // A copied/local deck has no publication provenance even if the route still contains a publication id.
   await page.evaluate(() => { const key='l12-custom-decks-v1:author'; const rows=JSON.parse(localStorage.getItem(key)); Object.values(rows).forEach(deck=>{delete deck.publicationId;delete deck.publicationVersion});localStorage.setItem(key,JSON.stringify(rows)); window.__qaPrivate=true })
-  await page.locator('.saved-decks-panel select').selectOption({index:1})
   // Reload the fixture in explicitly private mode so its local seed cannot add provenance back.
   await page.goto(`http://127.0.0.1:${port}/__deck_editor_reference__?private=1`)
   await page.locator('.deck-builder-grid').waitFor()

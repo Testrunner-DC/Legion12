@@ -758,7 +758,8 @@ const contracts = [
   [!board.includes('.modal-card-inspector') && !prompt.includes('.prompt-card-inspector'), '不得保留第二套弹框详情框样式'],
   [deckEditor.includes('class="saved-decks-panel grand-panel"') && deckEditor.includes('class="saved-list"')
     && deckEditor.includes(':class="{ active: deck.name === activeDeckName }"') && deckEditor.includes('<DeckProfile compact')
-    && !deckEditor.includes('<label>已保存牌库<select'), '已保存牌库必须按原有详情栏列表样式常驻，选中状态和深色对比必须明确，且不得恢复顶部下拉菜单'],
+    && deckEditor.includes('class="mobile-saved-decks-dialog"') && deckEditor.includes('chooseMobileSavedDeck')
+    && !deckEditor.includes('<label>已保存牌库<select'), '已保存牌库必须在桌面保持详情栏列表与明确选中态，并在移动端通过独立可滚动弹框选择，不得恢复顶部下拉菜单'],
   [board.includes('card.playCost ?? card.currentCost ?? card.cost'), '手牌可打出校验必须使用服务端动态费用'],
   [battleLog.includes('class="event-message"') && battleLog.includes('overflow-wrap:anywhere'), '对局记录必须使用可换行的独立消息容器'],
   [board.includes('<Teleport :to="landscapeTeleportTarget()">') && board.includes('public-card-reveal-animation') && board.includes('.public-reveal-animation{z-index:903}') && visualTransitionProjection.includes("event.type === 'effect-trigger'") && visualTransitionProjection.includes("event.type === 'effect-response'") && visualTransitionProjection.includes("event.type === 'effect-activation'") && visualTransitionProjection.includes('event.effectSceneId') && visualTransitionProjection.includes('event.cards?.slice(0, 1)') && board.includes("event.type === 'reveal'") && board.includes("event.playerIndex !== props.game.you") && board.includes("event.type === 'effect-trigger' && /展示|公开/.test(event.text)") && board.includes("event.type === 'search' && /展示|加入手牌/") && board.includes('text: publicRevealText(event)') && board.includes('const override = event.effectText?.trim()') && board.indexOf('if (override) return override') < board.indexOf('/花魁的馈赠/.test(text)') && board.includes('花魁的馈赠将〈${card.name}〉加入手牌') && board.includes('l12AnimationDuration(3000, 700)') && !board.includes('reveal-confirm') && !board.includes('public-reveal-mask'), '公开展示与检索仍只向非发动方播放；结构化触发、响应与发动向双方播放且只展示权威来源卡。两者共享无蒙版非阻塞队列、后台文案与统一时长'],
@@ -967,7 +968,8 @@ const contracts = [
     && ['factionFilter', 'costFilter', 'troopsFilter', 'disasterFilter', 'legalityFilter', 'sortMode'].every(value => deckEditor.includes(value)), '牌库编辑器必须把完整卡池筛选放在主牌库卡池上方，并保留阵营、类型、卡池、费用、兵力、天灾、禁限与排序'],
   [deckEditor.includes('class="deck-detail-panel grand-panel"') && deckEditor.includes('detailCollapsed')
     && deckEditor.includes('class="saved-decks-panel grand-panel"') && deckEditor.includes('class="saved-list"')
-    && !deckEditor.includes('<label>已保存牌库<select') && !deckEditor.includes('class="saved-deck-switcher"'), '牌库编辑器详情必须可折叠，已保存牌库在详情下方按原列表样式常驻，且只保留这一处'],
+    && deckEditor.includes('grid-template-rows:minmax(0,5fr) minmax(0,2fr)')
+    && deckEditor.includes('class="mobile-saved-decks-dialog"') && !deckEditor.includes('<label>已保存牌库<select'), '牌库编辑器桌面详情与已保存牌库必须按约5:2分区独立滚动；移动端已保存牌库只通过弹框选择'],
   [deckEditor.includes('class="deck-list-header"') && deckEditor.includes('<DeckProfile compact :master-id="selectedMaster?.id"')
     && deckEditor.includes('context="当前牌表"') && deckEditor.includes('士气 ${moraleIds.length} 张')
     && deckEditor.includes('<b>{{ countSummary.label }}</b>') && !deckEditor.includes('class="current-deck-summary"')

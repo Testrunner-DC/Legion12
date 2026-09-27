@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-27-deck-editor-saved-layout",
+  "date": "2026-09-27",
+  "audience": "players",
+  "title": "牌库编辑器侧栏与移动牌库选择优化",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "牌库编辑器桌面左栏优先展示卡牌详情，超长效果和已保存牌库分别滚动；移动端已保存牌库改为按钮打开选择弹框，不再挤占卡牌详情。",
+      "paths": [
+        "opcgpro-vue/src/l12/L12DeckEditor.vue",
+        "opcgpro-vue/src/l12/mobileViewport.css"
+      ]
+    }
+  ]
+}

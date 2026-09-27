@@ -80,10 +80,12 @@ html[data-l12-mobile=true] .deck-builder-grid {
   gap:5px;
   padding:5px;
 }
-html[data-l12-mobile=true] .deck-side-column { display:grid;grid-template-rows:minmax(0,1fr) minmax(92px,.55fr);min-height:0; }
+html[data-l12-mobile=true] .deck-side-column { display:grid;grid-template-rows:minmax(0,1fr);min-height:0; }
 html[data-l12-mobile=true] .deck-builder-grid .grand-panel { min-height:0;padding:7px;overflow:hidden; }
 html[data-l12-mobile=true] .deck-detail-panel { order:initial;min-height:0; }
-html[data-l12-mobile=true] .saved-decks-panel { order:initial;max-height:none; }
+html[data-l12-mobile=true] .saved-decks-panel { display:none; }
+html[data-l12-mobile=true] .mobile-saved-decks-side-trigger { display:block; }
+html[data-l12-mobile=true] .detail-panel-actions { flex-direction:column; }
 html[data-l12-mobile=true] .deck-catalog { order:initial;min-height:0; }
 html[data-l12-mobile=true] .deck-list { order:initial;min-height:0; }
 html[data-l12-mobile=true] .deck-card-grid { grid-template-columns:repeat(auto-fill,minmax(72px,1fr));max-height:none; }

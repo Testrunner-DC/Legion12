@@ -18,7 +18,7 @@ const checks = [
   ['对局建议显示主宰头像且统一主宰用语', detail.includes('class="matchup-city"') && detail.includes('<DeckProfile compact :master-id="row.opponentMasterId"') && detail.includes('对阵 ${masterName(row.opponentMasterId)}') && !detail.includes('homeCityName') && content.includes('添加对方主宰')],
   ['导航与操作同栏', detail.includes('class="detail-toolbar"')],
   ['编辑器卡池按钮与其他筛选平级且其余筛选常驻', editor.includes('class="catalog-filter-bar"') && editor.indexOf('class="product-filter-control"') > editor.indexOf('class="catalog-filter-bar"') && !editor.includes('卡池（可多选）') && !editor.includes('mobileFiltersOpen')],
-  ['编辑器只有一个详情下方牌库列表且详情可折叠', editor.includes('class="saved-decks-panel grand-panel"') && editor.includes('class="saved-list"') && !editor.includes('<label>已保存牌库<select') && editor.includes('detailCollapsed') && !editor.includes('class="saved-deck-switcher"')],
+  ['编辑器桌面保留详情下方列表，移动端收入口弹框', editor.includes('class="saved-decks-panel grand-panel"') && editor.includes('class="saved-list"') && !editor.includes('<label>已保存牌库<select') && editor.includes('detailCollapsed') && editor.includes('mobileSavedDecksOpen') && editor.includes('class="mobile-saved-decks-dialog"')],
   ['对局建议复用共享单卡选择器并纵向排列', content.includes('SingleCardPicker') && content.includes('matchupPickerItems') && content.includes('.matchup-row{display:grid;grid-template-columns:1fr')],
   ['编辑器主宰候选排除 divinity', editor.includes("card.cardType === 'master'") && !editor.match(/card\.cardType === 'master'\s*\|\|\s*card\.cardType === 'divinity'/)],
   ['共享卡图不再旋转横卡', image.includes('l12-card-image--landscape') && !image.includes('rotate(90deg)')],
