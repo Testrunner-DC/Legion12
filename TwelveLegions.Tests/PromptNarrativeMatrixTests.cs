@@ -1447,6 +1447,16 @@ public sealed class PromptNarrativeMatrixTests
         var targetPrompt = Assert.Single(success.Game.State.PendingPrompts);
         Assert.Equal("egil-debuff", targetPrompt.Data["action"]);
         Assert.Contains(success.EnemyTarget!.InstanceId, targetPrompt.ValidChoices);
+        AssertPresentation(targetPrompt, success.Source.Name,
+            "已令我方主宰受到1点伤害", "使其本回合兵力-2000");
+        Assert.Contains("已经处理的主宰伤害与牌库弃置不会返还",
+            targetPrompt.Presentation!.ChoiceConsequences[success.EnemyTarget.InstanceId],
+            StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(success.Game, controller,
+            $"{playerName} 正在选择效果对象");
+        var troopsBefore = success.EnemyTarget.Troops;
+        ResolvePromptChoice(success.Game, targetPrompt, success.EnemyTarget.InstanceId);
+        Assert.Equal(troopsBefore - 2000, success.EnemyTarget.Troops);
 
         var decline = BeginS1OptionalEnterPrompt(202609437 + controller, controller,
             "S01-0316", "egil-decline", includeEnemyTarget: true);
@@ -1484,6 +1494,135 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Equal(lethalGrave, lethalPlayer.Graveyard.Count);
         Assert.Equal(lethalLibrary, lethalPlayer.Library.Count);
         Assert.Empty(lethal.Game.State.PendingPrompts);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:thutmose-enter-enemy-target")]
+    public void ThutmoseEnterTargetExplainsTheMandatoryCurrentTroopBoundary(int controller)
+    {
+        var success = BeginS1EnemyTargetEnterPrompt(202609443 + controller, controller,
+            "S01-0201", "thutmose-enter", targetTroops: 5000, addExcludedTarget: true);
+        var playerName = success.Game.State.Players[controller].Name;
+
+        AssertPresentation(success.Prompt, success.Source.Name,
+            "登场时效果正在结算", "当前兵力不高于5000");
+        Assert.Equal("thutmose-kill", success.Prompt.Data["action"]);
+        Assert.Contains(success.Target.InstanceId, success.Prompt.ValidChoices);
+        Assert.DoesNotContain(success.ExcludedTarget!.InstanceId, success.Prompt.ValidChoices);
+        Assert.DoesNotContain("skip", success.Prompt.ValidChoices);
+        Assert.Contains("仍位于对方战场",
+            success.Prompt.Presentation!.ChoiceConsequences[success.Target.InstanceId],
+            StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(success.Game, controller,
+            $"{playerName} 正在选择效果对象");
+
+        ResolvePromptChoice(success.Game, success.Prompt, success.Target.InstanceId);
+        Assert.Contains(success.Target, success.Game.State.Players[1 - controller].Graveyard);
+
+        var noTarget = BeginS1EnemyTargetEnterWithoutLegalTarget(202609445 + controller,
+            controller, "S01-0201", "thutmose-enter-empty", targetTroops: 5001);
+        Assert.Empty(noTarget.Game.State.PendingPrompts);
+        Assert.Empty(noTarget.Game.State.EffectStack);
+        Assert.Same(noTarget.Target, noTarget.Game.State.Players[1 - controller].Field[0][0]);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Trait("L12Evidence", "prompt-narrative:gram-committed-mill-target")]
+    public void GramTargetExplainsCommittedMillOptionalTargetAndSpecialCardBoundary(int controller)
+    {
+        var decline = BeginS1EnemyTargetEnterPrompt(202609447 + controller, controller,
+            "S01-0317", "gram-decline", targetTroops: 3000, addExcludedTarget: true,
+            addDerivedSpecialTarget: true);
+        var player = decline.Game.State.Players[controller];
+        var playerName = player.Name;
+
+        Assert.Equal(2, player.Graveyard.Count);
+        AssertPresentation(decline.Prompt, decline.Source.Name,
+            "已经弃置我方牌库顶部2张牌", "不选择目标");
+        Assert.Equal("gram-bottom", decline.Prompt.Data["action"]);
+        Assert.Contains(decline.Target.InstanceId, decline.Prompt.ValidChoices);
+        Assert.DoesNotContain(decline.ExcludedTarget!.InstanceId, decline.Prompt.ValidChoices);
+        Assert.DoesNotContain(decline.DerivedSpecialTarget!.InstanceId, decline.Prompt.ValidChoices);
+        Assert.Equal("不选择目标", decline.Prompt.ChoiceLabels["skip"]);
+        Assert.Contains("已经弃置的牌不会返回",
+            decline.Prompt.Presentation!.ChoiceConsequences[decline.Target.InstanceId],
+            StringComparison.Ordinal);
+        Assert.Contains("结束本效果",
+            decline.Prompt.Presentation.ChoiceConsequences["skip"], StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(decline.Game, controller,
+            $"{playerName} 正在选择效果对象");
+
+        ResolvePromptChoice(decline.Game, decline.Prompt, "skip");
+        Assert.Equal(2, player.Graveyard.Count);
+        Assert.Same(decline.Target,
+            decline.Game.State.Players[1 - controller].Field[0][0]);
+
+        var choose = BeginS1EnemyTargetEnterPrompt(202609449 + controller, controller,
+            "S01-0317", "gram-choose", targetTroops: 3000);
+        ResolvePromptChoice(choose.Game, choose.Prompt, choose.Target.InstanceId);
+        Assert.Null(choose.Game.State.Players[1 - controller].Field[0][0]);
+        Assert.Same(choose.Target, choose.Game.State.Players[1 - controller].Library[^1]);
+        Assert.Equal(2, choose.Game.State.Players[controller].Graveyard.Count);
+
+        var noTarget = BeginS1EnemyTargetEnterWithoutLegalTarget(202609451 + controller,
+            controller, "S01-0317", "gram-empty", targetTroops: 3001);
+        Assert.Empty(noTarget.Game.State.PendingPrompts);
+        Assert.Empty(noTarget.Game.State.EffectStack);
+        Assert.Equal(2, noTarget.Game.State.Players[controller].Graveyard.Count);
+    }
+
+    [Theory]
+    [InlineData(0, "attack")]
+    [InlineData(1, "attack")]
+    [InlineData(0, "death")]
+    [InlineData(1, "death")]
+    [Trait("L12Evidence", "prompt-narrative:thutmose-trigger-committed-debuff-target")]
+    public void ThutmoseTriggeredTargetExplainsCommittedDebuffAndOptionalKill(
+        int controller, string trigger)
+    {
+        var decline = BeginThutmoseTriggeredTargetPrompt(202609453 + controller + trigger.Length,
+            controller, trigger, targetTroopsBeforeDebuff: 2000);
+        var playerName = decline.Game.State.Players[controller].Name;
+
+        Assert.Equal(1000, decline.Target.Troops);
+        AssertPresentation(decline.Prompt, decline.Source.Name,
+            "全体减兵已经处理", "不击杀");
+        Assert.Equal("thutmose-kill", decline.Prompt.Data["action"]);
+        Assert.Contains(decline.Target.InstanceId, decline.Prompt.ValidChoices);
+        Assert.Equal("不击杀", decline.Prompt.ChoiceLabels["skip"]);
+        Assert.Contains("全体减兵不会撤销",
+            decline.Prompt.Presentation!.ChoiceConsequences[decline.Target.InstanceId],
+            StringComparison.Ordinal);
+        Assert.Contains("兵力-1000不会撤销",
+            decline.Prompt.Presentation.ChoiceConsequences["skip"], StringComparison.Ordinal);
+        AssertPromptBoundaryAndCheckpoint(decline.Game, controller,
+            $"{playerName} 正在选择效果对象");
+
+        ResolvePromptChoice(decline.Game, decline.Prompt, "skip");
+        Assert.Contains(decline.Target.TimedModifiers,
+            modifier => modifier.Source == "图特摩斯三世" && modifier.TroopsDelta == -1000);
+        Assert.Same(decline.Target,
+            decline.Game.State.Players[1 - controller].Field[0][0]);
+
+        var choose = BeginThutmoseTriggeredTargetPrompt(202609455 + controller + trigger.Length,
+            controller, trigger, targetTroopsBeforeDebuff: 2000);
+        ResolvePromptChoice(choose.Game, choose.Prompt, choose.Target.InstanceId);
+        Assert.Contains(choose.Target, choose.Game.State.Players[1 - controller].Graveyard);
+
+        var noTarget = BeginThutmoseTriggeredTargetWithoutLegalTarget(
+            202609457 + controller + trigger.Length, controller, trigger,
+            targetTroopsBeforeDebuff: 2001);
+        Assert.True(noTarget.Target.Troops > 1000);
+        Assert.Contains(noTarget.Target.TimedModifiers,
+            modifier => modifier.Source == "图特摩斯三世" && modifier.TroopsDelta == -1000);
+        Assert.Empty(noTarget.Game.State.PendingPrompts);
+        Assert.Empty(noTarget.Game.State.EffectStack);
+        Assert.Same(noTarget.Target,
+            noTarget.Game.State.Players[1 - controller].Field[0][0]);
     }
 
     [Theory]
@@ -1811,7 +1950,7 @@ public sealed class PromptNarrativeMatrixTests
     }
 
     private static L12CardInstance Card(string cardId, string instanceId, int ownerIndex,
-        int? cost = null)
+        int? cost = null, int? troops = null)
     {
         var definition = Catalog.Cards[cardId];
         return new L12CardInstance
@@ -1827,8 +1966,8 @@ public sealed class PromptNarrativeMatrixTests
             Traits = [.. definition.Traits],
             Profession = definition.Profession,
             EffectiveProfession = definition.Profession,
-            BaseTroops = definition.Troops ?? 0,
-            Troops = definition.Troops ?? 0,
+            BaseTroops = troops ?? definition.Troops ?? 0,
+            Troops = troops ?? definition.Troops ?? 0,
             DisasterLevel = definition.DisasterLevel ?? 0,
             TrialValue = definition.TrialValue ?? 0,
             OwnerIndex = ownerIndex,
@@ -2169,6 +2308,110 @@ public sealed class PromptNarrativeMatrixTests
 
         Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveS1FactionEnter", item, source)));
         return (game, Assert.Single(game.State.PendingPrompts), item, source, enemyTarget);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance Source, L12CardInstance Target, L12CardInstance? ExcludedTarget,
+        L12CardInstance? DerivedSpecialTarget) BeginS1EnemyTargetEnterPrompt(
+        int seed, int controller, string cardId, string suffix, int targetTroops,
+        bool addExcludedTarget = false, bool addDerivedSpecialTarget = false)
+    {
+        var targetCase = BeginS1EnemyTargetEnterCase(seed, controller, cardId, suffix,
+            targetTroops, addExcludedTarget, addDerivedSpecialTarget);
+        return (targetCase.Game, Assert.Single(targetCase.Game.State.PendingPrompts),
+            targetCase.Item, targetCase.Source, targetCase.Target, targetCase.ExcludedTarget,
+            targetCase.DerivedSpecialTarget);
+    }
+
+    private static (L12GameEngine Game, L12StackItem Item, L12CardInstance Source,
+        L12CardInstance Target, L12CardInstance? ExcludedTarget,
+        L12CardInstance? DerivedSpecialTarget) BeginS1EnemyTargetEnterWithoutLegalTarget(
+        int seed, int controller, string cardId, string suffix, int targetTroops)
+        => BeginS1EnemyTargetEnterCase(seed, controller, cardId, suffix, targetTroops,
+            addExcludedTarget: false, addDerivedSpecialTarget: false);
+
+    private static (L12GameEngine Game, L12StackItem Item, L12CardInstance Source,
+        L12CardInstance Target, L12CardInstance? ExcludedTarget,
+        L12CardInstance? DerivedSpecialTarget) BeginS1EnemyTargetEnterCase(
+        int seed, int controller, string cardId, string suffix, int targetTroops,
+        bool addExcludedTarget, bool addDerivedSpecialTarget)
+    {
+        var game = CreateCleanGame(seed);
+        var player = game.State.Players[controller];
+        var opponent = game.State.Players[1 - controller];
+        player.Library.AddRange([
+            Card("S01-0002", $"narrative-{suffix}-mill-1-{controller}", controller),
+            Card("S01-0003", $"narrative-{suffix}-mill-2-{controller}", controller),
+        ]);
+        var source = Card(cardId, $"narrative-{suffix}-source-{controller}", controller);
+        player.Field[0][0] = source;
+        var target = Card("S01-0107", $"narrative-{suffix}-target-{controller}",
+            1 - controller, troops: targetTroops);
+        opponent.Field[0][0] = target;
+
+        L12CardInstance? excludedTarget = null;
+        if (addExcludedTarget)
+        {
+            excludedTarget = Card("S01-0107", $"narrative-{suffix}-excluded-{controller}",
+                1 - controller, troops: targetTroops + 1);
+            opponent.Field[0][1] = excludedTarget;
+        }
+
+        L12CardInstance? derivedSpecialTarget = null;
+        if (addDerivedSpecialTarget)
+        {
+            derivedSpecialTarget = Card("S02-01S1",
+                $"narrative-{suffix}-derived-special-{controller}", 1 - controller,
+                troops: Math.Min(targetTroops, 1000));
+            opponent.Field[0][2] = derivedSpecialTarget;
+        }
+
+        var item = LegacyStackItem($"narrative-{suffix}-stack-{controller}",
+            controller, source, "enter", source.Name);
+        game.State.EffectStack.Add(item);
+        Assert.True(Assert.IsType<bool>(Invoke(game, "TryResolveS1FactionEnter", item, source)));
+        return (game, item, source, target, excludedTarget, derivedSpecialTarget);
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12CardInstance Source, L12CardInstance Target) BeginThutmoseTriggeredTargetPrompt(
+        int seed, int controller, string trigger, int targetTroopsBeforeDebuff)
+    {
+        var targetCase = BeginThutmoseTriggeredTargetCase(seed, controller, trigger,
+            targetTroopsBeforeDebuff);
+        return (targetCase.Game, Assert.Single(targetCase.Game.State.PendingPrompts),
+            targetCase.Item, targetCase.Source, targetCase.Target);
+    }
+
+    private static (L12GameEngine Game, L12StackItem Item, L12CardInstance Source,
+        L12CardInstance Target) BeginThutmoseTriggeredTargetWithoutLegalTarget(
+        int seed, int controller, string trigger, int targetTroopsBeforeDebuff)
+        => BeginThutmoseTriggeredTargetCase(seed, controller, trigger,
+            targetTroopsBeforeDebuff);
+
+    private static (L12GameEngine Game, L12StackItem Item, L12CardInstance Source,
+        L12CardInstance Target) BeginThutmoseTriggeredTargetCase(
+        int seed, int controller, string trigger, int targetTroopsBeforeDebuff)
+    {
+        var game = CreateCleanGame(seed);
+        var player = game.State.Players[controller];
+        var opponent = game.State.Players[1 - controller];
+        var source = Card("S01-0201", $"narrative-thutmose-{trigger}-source-{controller}",
+            controller);
+        if (trigger == "death") player.Resolving.Add(source);
+        else player.Field[0][0] = source;
+        var target = Card("S01-0107",
+            $"narrative-thutmose-{trigger}-target-{controller}", 1 - controller,
+            troops: targetTroopsBeforeDebuff);
+        opponent.Field[0][0] = target;
+        var item = LegacyStackItem($"narrative-thutmose-{trigger}-stack-{controller}",
+            controller, source, trigger, source.Name);
+        game.State.EffectStack.Add(item);
+        var methodName = trigger == "death"
+            ? "TryResolveS1FactionDeath"
+            : "TryResolveS1FactionAttack";
+        Assert.True(Assert.IsType<bool>(Invoke(game, methodName, item, source)));
+        return (game, item, source, target);
     }
 
     private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,

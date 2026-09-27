@@ -91,7 +91,13 @@ public sealed partial class L12GameEngine
         switch (AtomicFlowKey(item, card))
         {
             case "图特摩斯三世":
-                PromptEnemyByTroops(item, "thutmose-kill", "图特摩斯三世：击杀对方1张兵力不高于5000的军团", 5000, false); return true;
+                PromptEnemyByTroops(item, "thutmose-kill", "图特摩斯三世：击杀对方1张兵力不高于5000的军团", 5000, false,
+                    new("图特摩斯三世",
+                        "〈图特摩斯三世〉的登场时效果正在结算。必须从对方战场选择1张当前兵力不高于5000的军团；所选对象在结算时仍需位于对方战场、仍是军团且满足兵力条件。",
+                        "请选择1张当前兵力不高于5000的对方军团并击杀。",
+                        L12PromptWaitingAction.TargetSelection),
+                    "结算时若所选对象仍位于对方战场、仍是军团且当前兵力不高于5000，将其击杀；否则本次目标效果失败。");
+                return true;
             case "拉美西斯二世":
             {
                 var choices = PublicLegions(player).Where(target => target.Faction == "taiyangcheng"
@@ -260,7 +266,18 @@ public sealed partial class L12GameEngine
             case "神剑格拉墨":
                 Mill(player, 2, "神剑格拉墨");
                 PromptEnemyByTroops(item, "gram-bottom", "神剑格拉墨：选择对方1张兵力不高于3000的军团返回牌库底部",
-                    3000, true, predicate: card => !L12SpecialDeckRules.IsDerivedSpecialCard(card));
+                    3000, true,
+                    new("神剑格拉墨",
+                        "〈神剑格拉墨〉已经弃置我方牌库顶部2张牌。现在可以选择对方1张当前兵力不高于3000、且能够返回牌库的军团，将其返回所有者牌库底部；也可以不选择目标。无论是否选择目标或目标结算是否成功，已经弃置的牌都不会返回。",
+                        "请选择1张符合条件的对方军团，或选择“不选择目标”结束后续处理。",
+                        L12PromptWaitingAction.TargetSelection,
+                        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                        {
+                            ["skip"] = "不选择目标：结束本效果；已经弃置的牌不会返回。",
+                        }),
+                    "结算时若所选对象仍位于对方战场、仍是军团、当前兵力不高于3000且能够返回牌库，将其返回所有者牌库底部；否则目标效果失败，已经弃置的牌不会返回。",
+                    skipLabel: "不选择目标",
+                    predicate: card => !L12SpecialDeckRules.IsDerivedSpecialCard(card));
                 return true;
             default: return false;
         }
@@ -627,7 +644,14 @@ public sealed partial class L12GameEngine
             case "egil-pay":
                 if (chosen[0] == "no") { FinishStackItem(item); return true; }
                 if (!PayMasterDamageCostAndCanContinue(item.Controller, 1, "夺命诗人埃吉尔效果")) return true;
-                Mill(player, 2, "夺命诗人埃吉尔"); PromptEnemyByTroops(item, "egil-debuff", "选择对方1张军团，本回合兵力-2000", int.MaxValue, false); return true;
+                Mill(player, 2, "夺命诗人埃吉尔");
+                PromptEnemyByTroops(item, "egil-debuff", "选择对方1张军团，本回合兵力-2000", int.MaxValue, false,
+                    new("夺命诗人埃吉尔",
+                        "〈夺命诗人埃吉尔〉已令我方主宰受到1点伤害，并弃置我方牌库顶部2张牌。现在必须选择对方1张军团，使其本回合兵力-2000；无论目标结算是否成功，已经处理的主宰伤害与牌库弃置都不会返还。",
+                        "请选择1张对方军团，使其本回合兵力-2000。",
+                        L12PromptWaitingAction.TargetSelection),
+                    "结算时若所选对象仍位于对方战场且仍是军团，使其本回合兵力-2000；否则目标效果失败，已经处理的主宰伤害与牌库弃置不会返还。");
+                return true;
             case "egil-debuff": { var target = DeclaredEnemyTarget(item.Controller, chosen[0]); if (target is not null) AddTimedModifier(target, -2000, 0, State.TurnSerial, "夺命诗人埃吉尔"); else RecordTargetSettlementFailure(item, chosen[0], "所选对方军团已离场或不再是军团"); FinishStackItem(item); return true; }
             case "gram-bottom":
                 if (chosen[0] != "skip") ReturnEnemyFieldToLibraryBottom(item.Controller, chosen[0]);
@@ -1607,7 +1631,17 @@ public sealed partial class L12GameEngine
     {
         foreach (var target in PublicLegions(State.Players[1 - item.Controller]))
             AddTimedModifier(target, -1000, 0, State.TurnSerial, "图特摩斯三世");
-        PromptEnemyByTroops(item, "thutmose-kill", "选择对方1张兵力不高于1000的军团并击杀", 1000, true);
+        PromptEnemyByTroops(item, "thutmose-kill", "选择对方1张兵力不高于1000的军团并击杀", 1000, true,
+            new("图特摩斯三世",
+                "〈图特摩斯三世〉本次触发的全体减兵已经处理：对方所有军团本回合兵力-1000。现在可以选择对方1张当前兵力不高于1000的军团并击杀，也可以不执行后续击杀。无论是否击杀或目标结算是否成功，已经处理的全体减兵都不会撤销。",
+                "请选择1张当前兵力不高于1000的对方军团并击杀，或选择“不击杀”。",
+                L12PromptWaitingAction.TargetSelection,
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["skip"] = "不击杀：结束后续击杀处理；已经处理的全体兵力-1000不会撤销。",
+                }),
+            "结算时若所选对象仍位于对方战场、仍是军团且当前兵力不高于1000，将其击杀；否则目标效果失败，已经处理的全体减兵不会撤销。",
+            skipLabel: "不击杀");
     }
 
     private void ApplySunKingDebuff(L12StackItem item)
@@ -1631,6 +1665,7 @@ public sealed partial class L12GameEngine
     }
 
     private void PromptEnemyByTroops(L12StackItem item, string action, string text, int maxTroops, bool optional,
+        L12PromptNarrativeInput narrative, string targetConsequence, string? skipLabel = null,
         int? row = null, Func<L12CardInstance, bool>? predicate = null)
     {
         var enemy = State.Players[1 - item.Controller];
@@ -1639,8 +1674,18 @@ public sealed partial class L12GameEngine
                 && (row is null || FindOnField(enemy, target.InstanceId, out var targetRow, out _) is not null && targetRow == row))
             .Select(target => target.InstanceId).ToList();
         if (choices.Count == 0) { FinishStackItem(item); return; }
-        if (optional) choices.Add("skip");
-        CreatePrompt(item.Controller, "target", text, choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = action });
+        var consequences = narrative.ChoiceConsequences is null
+            ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string>(narrative.ChoiceConsequences, StringComparer.OrdinalIgnoreCase);
+        foreach (var choice in choices) consequences[choice] = targetConsequence;
+        var data = new Dictionary<string, string> { ["action"] = action };
+        if (optional)
+        {
+            choices.Add("skip");
+            if (!string.IsNullOrWhiteSpace(skipLabel)) data["skip"] = skipLabel;
+        }
+        CreatePrompt(item.Controller, "target", text, choices, 1, 1, "card-effect", item.StackItemId,
+            data: WithPromptNarrative(data, narrative with { ChoiceConsequences = consequences }));
     }
 
     private void PromptOwnLegion(L12StackItem item, string action, string text, Func<L12CardInstance, bool> predicate, bool optional)
