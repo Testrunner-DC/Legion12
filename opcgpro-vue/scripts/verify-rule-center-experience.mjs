@@ -170,9 +170,10 @@ try {
       const products = page.locator('.product-grid button')
       if (await products.count()) await products.first().click()
       assert.equal(catalogRequests.length, 0, `product browsing eagerly loaded card catalog at ${suffix(viewport)}`)
-      await page.locator('.faq-search-row input').fill('S01')
+      if (viewport.width === 1920) await page.getByRole('button', { name: '全部展开' }).click()
+      else await page.locator('.faq-search-row input').fill('S01')
       await page.waitForFunction(() => performance.getEntriesByType('resource').some(entry => entry.name.includes('/data/l12/cards.s1.json')))
-      assert(catalogRequests.length >= 3, `card search did not load catalog on demand at ${suffix(viewport)}`)
+      assert(catalogRequests.length >= 3, `card query or expansion did not load catalog on demand at ${suffix(viewport)}`)
       assert.equal(imageRequests.length, 0, `card Q&A loaded card images at ${suffix(viewport)}`)
       await page.screenshot({ path: path.join(output, `card-qa-${suffix(viewport)}.png`), fullPage: true })
     }

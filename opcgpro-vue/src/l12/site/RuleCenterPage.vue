@@ -186,7 +186,10 @@ function toggleEntry(item: RuleRuling) {
   openIds.value = next
   if (next.has(item.id) && item.cardIds.length) void ensureCardCatalog()
 }
-function setAllExpanded(items: RuleRuling[], expanded: boolean) { openIds.value = expanded ? new Set(items.map(item => item.id)) : new Set() }
+function setAllExpanded(items: RuleRuling[], expanded: boolean) {
+  openIds.value = expanded ? new Set(items.map(item => item.id)) : new Set()
+  if (expanded && items.some(item => item.cardIds.length)) void ensureCardCatalog()
+}
 function selectKeyword(keyword: string) { query.value = keyword }
 function resetCoreFilters() { coreTopic.value = 'all' }
 function resetFaqFilters() { selectedTopics.value = []; selectedCategory.value = ''; selectedProduct.value = '' }
