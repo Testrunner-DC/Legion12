@@ -328,6 +328,95 @@ public sealed class PromptNarrativeMatrixTests
             StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(0, "block")]
+    [InlineData(1, "support")]
+    [Trait("L12Evidence", "prompt-narrative:landlord-affected-player-private-choice")]
+    public void LandlordCoercionExplainsDiscardAndDeclineToTheAffectedPlayerWithoutLeakingTheHand(
+        int affectedPlayer, string authorityAction)
+    {
+        var discardCase = BeginLandlordPrompt(202609283 + affectedPlayer, affectedPlayer, authorityAction,
+            "discard");
+        var game = discardCase.Game;
+        var prompt = discardCase.Prompt;
+        var actionLabel = authorityAction == "support" ? "支援" : "抵挡";
+
+        Assert.Equal(affectedPlayer, prompt.PlayerIndex);
+        AssertPresentation(prompt, "地主的胁迫", $"本次{actionLabel}额外弃置1张", "放弃抵挡/支援");
+        Assert.DoesNotContain(discardCase.Excluded.InstanceId, prompt.ValidChoices);
+        Assert.Contains(discardCase.Legal.InstanceId, prompt.ValidChoices);
+        Assert.Contains("decline", prompt.ValidChoices);
+        Assert.Equal("放弃抵挡/支援", prompt.ChoiceLabels["decline"]);
+        Assert.Contains($"本次{actionLabel}继续有效",
+            prompt.Presentation!.ChoiceConsequences[discardCase.Legal.InstanceId], StringComparison.Ordinal);
+        Assert.Contains($"本次{actionLabel}无效", prompt.Presentation.ChoiceConsequences["decline"],
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(prompt.Data.Keys,
+            key => key.StartsWith("__promptNarrative:", StringComparison.Ordinal));
+        AssertPrivatePromptViews(game, affectedPlayer, 1 - affectedPlayer,
+            discardCase.Excluded, discardCase.Legal);
+        AssertLandlordWaitingViews(game, affectedPlayer, 1 - affectedPlayer);
+
+        var random = game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0);
+        var restored = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(), random,
+            game.CardFactSignalSequence, game.AutoPassEmptyResponses,
+            game.ConcealHiddenResponseAvailability);
+        var restoredPrompt = Assert.Single(restored.State.PendingPrompts);
+        AssertPresentation(restoredPrompt, "地主的胁迫", $"本次{actionLabel}额外弃置1张",
+            "放弃抵挡/支援");
+        Assert.DoesNotContain(restoredPrompt.Data.Keys,
+            key => key.StartsWith("__promptNarrative:", StringComparison.Ordinal));
+        AssertPrivatePromptViews(restored, affectedPlayer, 1 - affectedPlayer,
+            discardCase.Excluded, discardCase.Legal);
+        AssertLandlordWaitingViews(restored, affectedPlayer, 1 - affectedPlayer);
+
+        Assert.True(Assert.IsType<bool>(Invoke(game, "ContinueS2CounterEffect", discardCase.Item,
+            prompt, new List<string> { discardCase.Legal.InstanceId })));
+        Assert.Contains(game.State.Players[affectedPlayer].Graveyard,
+            card => card.InstanceId == discardCase.Legal.InstanceId);
+        Assert.NotEqual("true", discardCase.Authority.Data.GetValueOrDefault("invalid"));
+
+        var declineCase = BeginLandlordPrompt(202609285 + affectedPlayer, affectedPlayer, authorityAction,
+            "decline");
+        Assert.True(Assert.IsType<bool>(Invoke(declineCase.Game, "ContinueS2CounterEffect", declineCase.Item,
+            declineCase.Prompt, new List<string> { "decline" })));
+        Assert.Equal("true", declineCase.Authority.Data["invalid"]);
+        Assert.Contains(declineCase.Legal, declineCase.Game.State.Players[affectedPlayer].Hand);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "prompt-narrative:poison-forced-private-discard")]
+    public void PoisonDiscardExplainsTheMandatoryEffectWithoutOfferingADeclineBranch()
+    {
+        var game = CreateCleanGame(202609287);
+        const int affectedPlayer = 0;
+        var first = Card("S01-0003", "narrative-poison-hand-1", affectedPlayer);
+        var second = Card("S01-0004", "narrative-poison-hand-2", affectedPlayer);
+        game.State.Players[affectedPlayer].Hand.AddRange([first, second]);
+        var poison = Card("S02-0018", "narrative-poison", 1);
+        var item = LegacyStackItem("narrative-poison-stack", 1, poison,
+            "s2-reaction", "poison-discard");
+        item.Data["affectedPlayer"] = affectedPlayer.ToString();
+        game.State.EffectStack.Add(item);
+
+        Invoke(game, "ResolveS2CounterEffect", item);
+
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(affectedPlayer, prompt.PlayerIndex);
+        AssertPresentation(prompt, "毒药发作", "强制弃牌效果正在结算", "本次没有拒绝选项");
+        Assert.Equal(new[] { first.InstanceId, second.InstanceId }.Order(), prompt.ValidChoices.Order());
+        Assert.DoesNotContain("decline", prompt.ValidChoices);
+        Assert.DoesNotContain("skip", prompt.ValidChoices);
+        Assert.Contains("完成〈毒药发作〉的强制弃牌",
+            prompt.Presentation!.ChoiceConsequences[first.InstanceId], StringComparison.Ordinal);
+        AssertPrivatePromptViews(game, affectedPlayer, 1, first, second);
+
+        Assert.True(Assert.IsType<bool>(Invoke(game, "ContinueS2CounterEffect", item, prompt,
+            new List<string> { first.InstanceId })));
+        Assert.Contains(first, game.State.Players[affectedPlayer].Graveyard);
+        Assert.Contains(second, game.State.Players[affectedPlayer].Hand);
+    }
+
     private static void AssertPresentation(L12Prompt prompt, string title, string situation, string instruction)
     {
         var presentation = Assert.IsType<L12PromptPresentation>(prompt.Presentation);
@@ -356,6 +445,54 @@ public sealed class PromptNarrativeMatrixTests
             Assert.DoesNotContain(source.InstanceId, summary, StringComparison.Ordinal);
             Assert.DoesNotContain("agree", summary, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("refuse", summary, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private static void AssertPrivatePromptViews(L12GameEngine game, int owner, int other,
+        params L12CardInstance[] privateCards)
+    {
+        Assert.Single(game.SnapshotFor(owner).Prompts);
+        Assert.Empty(game.SnapshotFor(other).Prompts);
+        Assert.Empty(game.SnapshotForSpectator().Prompts);
+        Assert.Empty(game.SnapshotForReferee().Prompts);
+        Assert.Single(game.SnapshotForGm(other).Prompts);
+        Assert.Null(game.SnapshotForGm(other).WaitingPrompt);
+
+        var hiddenViews = new[]
+        {
+            JsonSerializer.Serialize(game.SnapshotFor(other), new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            JsonSerializer.Serialize(game.SnapshotForSpectator(), new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            JsonSerializer.Serialize(game.SnapshotForReferee(), new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+        };
+        foreach (var hidden in hiddenViews)
+            foreach (var card in privateCards)
+                Assert.DoesNotContain(card.InstanceId, hidden, StringComparison.Ordinal);
+
+        var gm = JsonSerializer.Serialize(game.SnapshotForGm(other),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Contains(privateCards[0].InstanceId, gm, StringComparison.Ordinal);
+    }
+
+    private static void AssertLandlordWaitingViews(L12GameEngine game, int owner, int other)
+    {
+        var expected = $"{game.State.Players[owner].Name} 正在完成卡牌选择";
+        foreach (var waitingObject in new[]
+                 {
+                     game.SnapshotFor(other).WaitingPrompt,
+                     game.SnapshotForSpectator().WaitingPrompt,
+                     game.SnapshotForReferee().WaitingPrompt,
+                 })
+        {
+            Assert.NotNull(waitingObject);
+            var waiting = JsonSerializer.SerializeToElement(waitingObject,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            var summary = waiting.GetProperty("waitingSummary").GetString();
+            Assert.Equal(expected, summary);
+            Assert.DoesNotContain("支付费用", summary!, StringComparison.Ordinal);
+            Assert.DoesNotContain("弃牌", summary, StringComparison.Ordinal);
+            Assert.DoesNotContain("decline", summary, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("抵挡", summary, StringComparison.Ordinal);
+            Assert.DoesNotContain("支援", summary, StringComparison.Ordinal);
         }
     }
 
@@ -463,6 +600,47 @@ public sealed class PromptNarrativeMatrixTests
         };
         item.Data["atomicFlow"] = atomicFlow;
         return item;
+    }
+
+    private static (L12GameEngine Game, L12Prompt Prompt, L12StackItem Item,
+        L12StackItem Authority, L12CardInstance Excluded, L12CardInstance Legal) BeginLandlordPrompt(
+        int seed, int affectedPlayer, string authorityAction, string suffix)
+    {
+        var game = CreateCleanGame(seed);
+        var excluded = Card("S01-0003", $"narrative-landlord-excluded-{suffix}-{affectedPlayer}",
+            affectedPlayer);
+        var legal = Card("S01-0004", $"narrative-landlord-legal-{suffix}-{affectedPlayer}",
+            affectedPlayer);
+        game.State.Players[affectedPlayer].Hand.AddRange([excluded, legal]);
+
+        var authoritySource = Card("S01-0002", $"narrative-landlord-authority-source-{suffix}-{affectedPlayer}",
+            affectedPlayer);
+        var authority = new L12StackItem
+        {
+            StackItemId = $"narrative-landlord-authority-{suffix}-{affectedPlayer}",
+            Controller = affectedPlayer,
+            SourceInstanceId = authoritySource.InstanceId,
+            SourceCardId = authoritySource.CardId,
+            SourceName = authoritySource.Name,
+            Trigger = "authority-event",
+            Text = authorityAction == "support" ? "支援权威事件" : "抵挡权威事件",
+            SourceSnapshot = authoritySource,
+        };
+        authority.Data["eventType"] = "defense";
+        authority.Data["action"] = authorityAction;
+        authority.Data["blockIds"] = excluded.InstanceId;
+        game.State.EffectStack.Add(authority);
+
+        var landlord = Card("S02-0015", $"narrative-landlord-{suffix}-{affectedPlayer}",
+            1 - affectedPlayer);
+        var item = LegacyStackItem($"narrative-landlord-stack-{suffix}-{affectedPlayer}",
+            1 - affectedPlayer, landlord, "s2-reaction", "landlord-coercion");
+        item.Targets.Add(authority.StackItemId);
+        item.Data["affectedPlayer"] = affectedPlayer.ToString();
+        game.State.EffectStack.Add(item);
+
+        Invoke(game, "ResolveS2CounterEffect", item);
+        return (game, Assert.Single(game.State.PendingPrompts), item, authority, excluded, legal);
     }
 
     private static void AddMorale(L12GameEngine game, int playerIndex, int count, string prefix)

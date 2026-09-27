@@ -87,16 +87,26 @@ public sealed partial class L12GameEngine
                 }
                 var excluded = target.Data.GetValueOrDefault("blockIds", string.Empty)
                     .Split('|', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                var choices = affected.Hand.Where(card => !excluded.Contains(card.InstanceId))
-                    .Select(card => card.InstanceId).ToList();
+                var handChoices = affected.Hand.Where(card => !excluded.Contains(card.InstanceId)).ToList();
+                var choices = handChoices.Select(card => card.InstanceId).ToList();
                 choices.Add("decline");
+                var actionLabel = target.Data.GetValueOrDefault("action") == "support" ? "支援" : "抵挡";
+                var consequences = handChoices.ToDictionary(card => card.InstanceId,
+                    card => $"弃置〈{card.Name}〉，本次{actionLabel}继续有效。",
+                    StringComparer.OrdinalIgnoreCase);
+                consequences["decline"] = $"不弃置手牌，本次{actionLabel}无效。";
                 CreatePrompt(affectedPlayer, "discard-or-decline", "地主的胁迫：额外弃置1张手牌，否则本次抵挡/支援无效",
                     choices, 1, 1, "card-effect", item.StackItemId, isPrivate: true,
-                    data: new Dictionary<string, string>
-                    {
-                        ["action"] = "s2-landlord-extra-discard", ["targetStackId"] = target.StackItemId,
-                        ["choiceMode"] = "instant", ["decline"] = "不弃置，本次抵挡/支援无效",
-                    });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "s2-landlord-extra-discard", ["targetStackId"] = target.StackItemId,
+                            ["choiceMode"] = "instant", ["decline"] = "放弃抵挡/支援",
+                        },
+                        new("地主的胁迫",
+                            $"对方发动〈地主的胁迫〉，要求你为本次{actionLabel}额外弃置1张未用于{actionLabel}的手牌，否则本次{actionLabel}无效。",
+                            "请选择一张其余手牌弃置，或选择“放弃抵挡/支援”。",
+                            L12PromptWaitingAction.CardSelection, consequences)));
                 return;
             }
             case "破败仪式":
@@ -153,9 +163,19 @@ public sealed partial class L12GameEngine
                 return;
             case "poison-discard":
                 if (affected.Hand.Count == 0) { FinishStackItem(item); return; }
+                var poisonChoices = affected.Hand.ToArray();
                 CreatePrompt(affectedPlayer, "hand-card", "毒药发作：弃置1张手牌",
-                    affected.Hand.Select(card => card.InstanceId), 1, 1, "card-effect", item.StackItemId, isPrivate: true,
-                    data: new Dictionary<string, string> { ["action"] = "s2-poison-discard" });
+                    poisonChoices.Select(card => card.InstanceId), 1, 1, "card-effect", item.StackItemId,
+                    isPrivate: true,
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string> { ["action"] = "s2-poison-discard" },
+                        new("毒药发作",
+                            "〈毒药发作〉的强制弃牌效果正在结算，受影响的玩家必须弃置1张手牌。",
+                            "请选择1张手牌弃置；本次没有拒绝选项。",
+                            L12PromptWaitingAction.CardSelection,
+                            poisonChoices.ToDictionary(card => card.InstanceId,
+                                card => $"弃置〈{card.Name}〉，并完成〈毒药发作〉的强制弃牌。",
+                                StringComparer.OrdinalIgnoreCase))));
                 return;
             default:
                 FinishStackItem(item);
