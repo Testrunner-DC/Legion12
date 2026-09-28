@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { GameState, PlayerView } from '../types'
 import { l12State } from '../net'
+import DefenseDecisionExplanation from './DefenseDecisionExplanation.vue'
 
-defineProps<{
+const props = defineProps<{
   game: GameState; me: PlayerView; mode: 'play' | 'attack' | 'move' | 'freeMove' | 'cavalryMove'; selectedId: string | null;
-  mulliganCount: number; defenseCount: number; defenseTargetType: string | null;
+  mulliganCount: number; defenseIds: string[]; defenseTargetType: string | null;
   supportIds: string[]; canSupport: boolean; supportReady: boolean; busy?: boolean
 }>()
 const emit = defineEmits<{
@@ -15,6 +17,10 @@ function rankedSetupLimitLabel() {
   const seconds = Math.max(0, Math.ceil(milliseconds / 1000))
   return seconds >= 60 && seconds % 60 === 0 ? `${seconds / 60} 分钟` : `${seconds} 秒`
 }
+const selectedBlockers = computed(() => (props.me.hand ?? []).filter(card => props.defenseIds.includes(card.instanceId)))
+const selectedBlockTroops = computed(() => selectedBlockers.value.reduce((total, card) => total + card.troops, 0))
+const attackValue = computed(() => props.game.pendingDefense?.attackValue ?? 0)
+const blockReady = computed(() => selectedBlockers.value.length > 0 && (attackValue.value <= 0 || selectedBlockTroops.value >= attackValue.value))
 </script>
 
 <template>
@@ -29,12 +35,14 @@ function rankedSetupLimitLabel() {
       </button>
     </template>
     <template v-else-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && me.playerIndex === 1 - game.pendingDefense.attackerPlayer && defenseTargetType === 'master'">
-      <button class="primary" :disabled="defenseCount === 0 || busy" @click="emit('command', 'resolveDefense')">确认抵挡</button>
-      <button class="danger" :disabled="busy" @click="emit('command', 'resolveDefense')">不抵挡</button>
+      <DefenseDecisionExplanation :game="game" :me="me" :defense-ids="defenseIds" :support-ids="supportIds" :defense-target-type="defenseTargetType" compact />
+      <button class="primary" :disabled="!blockReady || busy" @click="emit('command', 'resolveDefense')">确认抵挡</button>
+      <button class="danger" :disabled="busy" @click="emit('command', 'resolveDefense', { cardInstanceIds: [] })">不抵挡</button>
     </template>
     <template v-else-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && me.playerIndex === 1 - game.pendingDefense.attackerPlayer && defenseTargetType === 'legion'">
+      <DefenseDecisionExplanation :game="game" :me="me" :defense-ids="defenseIds" :support-ids="supportIds" :defense-target-type="defenseTargetType" compact />
       <button class="primary" :disabled="!supportReady || busy" @click="emit('command', 'resolveDefense')">确认支援</button>
-      <button class="danger" :disabled="busy" @click="emit('command', 'resolveDefense', { supportInstanceId: null })">不支援</button>
+      <button class="danger" :disabled="busy" @click="emit('command', 'resolveDefense', { cardInstanceIds: [], supportInstanceId: null })">不支援</button>
     </template>
     <template v-else-if="game.activePlayer === me.playerIndex && ['Disaster','Reset','Draw','Morale','End'].includes(game.phase)">
       <p>服务器正在依次执行阶段步骤…</p>

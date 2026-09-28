@@ -22,6 +22,7 @@ if(params.has('mobile')){
   : nativeMatchMedia(query)
 }
 l12State.gmEnabled=params.has('gm')
+if(params.has('referee')){l12State.spectating=true;l12State.observerView='referee'}
 const trialCount=Math.max(0,Math.min(2,Number(params.get('trials')||0)))
 const myTrialCount=Math.max(0,Math.min(1,Number(params.get('myTrials')||0)))
 const showcaseHandCount=Math.max(1,Math.min(40,Number(params.get('hand')||6)))
@@ -101,6 +102,8 @@ if(params.has('defense')){
  l12State.game.phase='Defense';l12State.game.activePlayer=1;l12State.game.prompts=[]
  l12State.game.pendingDefense={attackerPlayer:1,attackerInstanceId:attacker.instanceId,target:{type:'master'},stage:'DefenseChoice',attackValue:attacker.troops||3000}
 }
+if(params.has('richard-tax')&&l12State.game.pendingDefense)l12State.game.pendingDefense.richardDefenseTaxActive=true
+if(params.has('easy-defense')&&l12State.game.pendingDefense)l12State.game.pendingDefense.attackValue=1000
 if(params.has('combat-stage')){
  const attacker=players[1].field[0][0],target=players[0].field[0][0]
  const stage=params.get('combat-stage')||'AttackerAttackTiming'

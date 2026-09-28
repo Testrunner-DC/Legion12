@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import MobileBattleDock from './MobileBattleDock.vue'
 import BattleDockPortal from './BattleDockPortal.vue'
+import BattleOverlayPortal from './BattleOverlayPortal.vue'
 import { provideMobileBattleDock } from './mobileBattleDock'
 provideMobileBattleDock()
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -9,6 +10,7 @@ import { isCounterTacticCard, isHorizontalCardType } from '../cardPresentation'
 import { blackLotusLogoUrl, destructionRoundBackUrl, disasterRoundUrl, factionLogoUrls, godPowerLogoUrl, roundCardUrl, siteBrandIconUrl } from '../specialAssets'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
+import DefenseDecisionExplanation from './DefenseDecisionExplanation.vue'
 import BattleEventLog from './BattleEventLog.vue'
 import BattleUtilityDock from './BattleUtilityDock.vue'
 import ActionPresentationLayer from './ActionPresentationLayer.vue'
@@ -134,6 +136,21 @@ const boardTargetIds = ref<string[]>([])
 const paymentResourceIds = ref<string[]>([])
 const boardControlMinimized = ref(false)
 const combatDecisionMinimized = ref(false)
+const combatDecisionInfoOpen = ref(false)
+const combatInfoTrigger = ref<HTMLButtonElement | null>(null)
+const combatInfoClose = ref<HTMLButtonElement | null>(null)
+async function toggleCombatDecisionInfo() {
+  combatDecisionInfoOpen.value = !combatDecisionInfoOpen.value
+  await nextTick()
+  const focusTarget = combatDecisionInfoOpen.value ? combatInfoClose.value : combatInfoTrigger.value
+  focusTarget?.focus()
+}
+async function closeCombatDecisionInfo() {
+  if (!combatDecisionInfoOpen.value) return
+  combatDecisionInfoOpen.value = false
+  await nextTick()
+  combatInfoTrigger.value?.focus()
+}
 const inspectionLayerMinimized = computed(() => promptMinimized.value || boardControlMinimized.value || mobileMoralePickerMinimized.value || combatDecisionMinimized.value)
 const phasePlaybackPhase = ref<Phase | null>(null)
 const hiddenRevealCard = ref<Card | null>(null)
@@ -392,6 +409,7 @@ const activeBoardPromptId = computed(() => activeBoardPromptIds.value[0] ?? null
 watch(activeBoardPromptId, () => { boardControlMinimized.value = false })
 watch(() => [props.game.phase, props.game.pendingDefense?.stage, props.game.turnSerial], () => {
   combatDecisionMinimized.value = false
+  combatDecisionInfoOpen.value = false
   if (props.game.pendingDefense) playArmed.value = false
 })
 const modalInspectorVisible = computed(() => Boolean(!mobileLandscapeViewport.value && focusCard.value && (
@@ -816,8 +834,8 @@ function command(type: string, extra: Record<string, unknown> = {}) {
   if (type === 'resolvePrompt') extra = withPromptBinding(extra)
   if (type === 'mulligan') extra.cardInstanceIds = mulliganIds.value
   if (type === 'resolveDefense') {
-    extra.cardInstanceIds = defenseIds.value
-    if (defenseTargetType.value === 'legion') extra.cardInstanceIds = [...supportIds.value]
+    if (!Object.hasOwn(extra, 'cardInstanceIds'))
+      extra.cardInstanceIds = defenseTargetType.value === 'legion' ? [...supportIds.value] : [...defenseIds.value]
   }
   if (l12State.gmEnabled) sandboxAction(controlledPlayerIndex.value, { type, ...extra })
   else gameAction({ type, ...extra })
@@ -1302,13 +1320,19 @@ function statusTexts(card: Card) {
                 <b>{{ combat.targetValue }}<small>{{ combat.targetUnit }}</small></b>
               </div>
               <button v-if="mobileLandscapeViewport && game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && !readOnly && !combatDecisionMinimized"
-                class="combat-decision-minimize" type="button" aria-label="最小化支援或抵挡选择" @click="combatDecisionMinimized = true">−</button>
+                class="combat-decision-minimize" type="button" aria-label="最小化支援或抵挡选择" @click="combatDecisionMinimized = true; combatDecisionInfoOpen = false">−</button>
               <BattleDockPortal lane="primary"><div v-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && !readOnly && !combatDecisionMinimized" class="combat-resolution-panel">
                   <GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
-                    :mulligan-count="mulliganIds.length" :defense-count="defenseIds.length" :defense-target-type="defenseTargetType"
+                    :mulligan-count="mulliganIds.length" :defense-ids="defenseIds" :defense-target-type="defenseTargetType"
                     :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="l12State.pendingAction" @command="command" />
                 </div></BattleDockPortal>
             </div></BattleDockPortal>
+            <BattleDockPortal lane="tools"><button v-if="combat && game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && !readOnly && !combatDecisionMinimized && isControlledPlayer(1 - game.pendingDefense.attackerPlayer)"
+              ref="combatInfoTrigger" class="combat-decision-info-trigger" type="button" :aria-expanded="combatDecisionInfoOpen" @click="toggleCombatDecisionInfo">{{ combatDecisionInfoOpen ? '关闭说明' : '操作说明' }}</button></BattleDockPortal>
+            <BattleOverlayPortal><div v-if="combatDecisionInfoOpen && combat && game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && !readOnly && isControlledPlayer(1 - game.pendingDefense.attackerPlayer)" class="combat-decision-info-panel" role="dialog" aria-label="抵挡或支援操作说明" @keydown.esc="closeCombatDecisionInfo">
+              <DefenseDecisionExplanation :game="game" :me="me" :defense-ids="defenseIds" :support-ids="supportIds" :defense-target-type="defenseTargetType" />
+              <button ref="combatInfoClose" type="button" @click="closeCombatDecisionInfo">返回选择</button>
+            </div></BattleOverlayPortal>
             <BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport && combat && game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && combatDecisionMinimized"
               class="combat-decision-restore" type="button" @click="combatDecisionMinimized = false">恢复支援/抵挡</button></BattleDockPortal>
             <PlayerMat class="battlefield-half my-half" :player="viewMe" side="my" :controllable="isControlledPlayer(viewMe.playerIndex)"
@@ -1379,7 +1403,7 @@ function statusTexts(card: Card) {
             <BattleEventLog :events="game.recentEvents ?? []" :you="game.you" :names="game.players.map(player => player.name)" @focus="focusCard = $event" />
           </section>
           <BattleDockPortal lane="primary"><section v-if="!combat && !readOnly" class="grand-panel action-panel" :class="{ 'mobile-context-actions': mobileLandscapeViewport }"><h3>操作</h3><GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
-            :mulligan-count="mulliganIds.length" :defense-count="defenseIds.length" :defense-target-type="defenseTargetType"
+            :mulligan-count="mulliganIds.length" :defense-ids="defenseIds" :defense-target-type="defenseTargetType"
             :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="l12State.pendingAction" @command="command" /></section></BattleDockPortal>
         </aside>
       </div>
@@ -1542,6 +1566,9 @@ function statusTexts(card: Card) {
 .board-mode-hint{position:absolute;z-index:28;left:50%;top:50%;display:flex;align-items:center;gap:10px;padding:8px 9px 8px 16px;border:1px solid #e0b85a;background:rgba(8,10,11,.95);color:#fff3c2;box-shadow:0 7px 22px #000;transform:translate(-50%,-50%);font-size:var(--l12-board-copy,13px);font-weight:900;pointer-events:auto}.board-mode-hint button{min-width:58px;min-height:44px;padding:6px 12px;border:1px solid #747d7b;background:#171b1c;color:#f1eee4;font-size:var(--l12-board-copy,13px);font-weight:900}.board-mode-hint button:hover{border-color:#e0b85a;background:#292419}
 .public-reveal-animation{position:fixed;z-index:2147483000;left:50%;top:50%;display:grid;min-width:190px;max-width:min(760px,80vw);justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.public-reveal-cards{display:flex;max-width:100%;align-items:center;justify-content:center;gap:8px;overflow:hidden}.public-reveal-cards .l12-card-image{width:118px;height:165px;filter:drop-shadow(0 10px 15px #000) drop-shadow(0 0 16px rgba(213,188,112,.38))}.public-reveal-cards .l12-card-image.horizontal{width:190px;height:auto;aspect-ratio:8/5}.public-reveal-animation strong{padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.9);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:var(--l12-board-copy,13px);font-weight:900;letter-spacing:.04em;text-align:center;white-space:pre-wrap;overflow-wrap:anywhere}.public-reveal-enter-active,.public-reveal-leave-active{transition:opacity .24s ease,filter .24s ease}.public-reveal-enter-from,.public-reveal-leave-to{opacity:0;filter:blur(5px)}
 .combat-presentation{position:absolute;z-index:20;left:50%;top:50%;width:760px;height:1px;transform:translate(-50%,-50%);pointer-events:none}.combat-trace{position:absolute;left:50%;top:-108px;width:4px;height:216px;background:linear-gradient(transparent,#d88a39 20%,#f0ba66 50%,#d88a39 80%,transparent);filter:drop-shadow(0 0 7px #c36b26);transform:rotate(-10deg)}.combat-versus{position:absolute;left:50%;top:0;display:flex;width:max-content;max-width:760px;align-items:center;gap:12px;padding:10px 18px;border:1px solid #8e7650;background:rgba(7,9,10,.95);box-shadow:0 8px 26px #000;transform:translate(-50%,-50%);font-weight:900}.combat-versus span{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.combat-versus span.mine{color:#74d0d3}.combat-versus span.opponent{color:#e6757c}.combat-versus>b{display:flex;align-items:baseline;gap:4px;padding:4px 7px;background:#342a25;color:#fff}.combat-versus b small{color:#c8bba3;font-size:var(--l12-board-copy,13px)}.combat-versus em{color:#e5bd60;font-size:max(18px,var(--l12-board-copy,13px));font-style:normal}.combat-resolution-panel{position:absolute;left:50%;top:34px;width:390px;padding:10px 12px;border:1px solid #8e7650;background:rgba(8,11,12,.96);box-shadow:0 12px 30px #000;transform:translateX(-50%);pointer-events:auto}.combat-resolution-panel :deep(.l12-actions){gap:6px}.combat-resolution-panel :deep(.l12-actions p){margin:0;font-size:var(--l12-board-copy,13px)}.combat-resolution-panel :deep(.l12-actions button){padding:7px 9px}
+.combat-decision-info-trigger{position:absolute;top:calc(50% + 38px);left:calc(50% + 205px);z-index:22;min-height:38px;padding:4px 8px;border:1px solid #d7ad62;background:#4b331d;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;pointer-events:auto}
+.combat-decision-info-panel{position:fixed;top:50%;left:50%;z-index:2147483600;box-sizing:border-box;width:min(390px,calc(100vw - 24px));max-height:min(70vh,450px);padding:10px;overflow-y:auto;border:1px solid #d7ad62;background:#111819;box-shadow:0 12px 30px #000;color:#fff;transform:translate(-50%,-50%);pointer-events:auto}
+.combat-decision-info-panel>button{display:block;width:100%;min-height:38px;margin-top:8px;border:1px solid #d7ad62;background:#4b331d;color:#fff;font-weight:900}
 .record-log .event-list p{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:5px;margin:0 0 7px}.record-log .event-list p.event-turn-start{display:block;padding:4px 0;text-align:center}.record-log .event-message{min-width:0;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.turn-divider{color:#e0b641;font-size:var(--l12-board-copy,13px);white-space:nowrap}.event-tag{flex:none;padding:2px 4px;border:1px solid #5c4a86;color:#cbaaff;font-size:var(--l12-board-copy,13px);line-height:1.25}.event-play .event-tag,.event-put .event-tag{border-color:#126f82;color:#5fd5e2}.event-attack .event-tag,.event-combat .event-tag{border-color:#8d2942;color:#ff6687}.event-response .event-tag,.event-defense .event-tag,.event-support .event-tag{border-color:#9a501b;color:#f0a45e}.event-disaster .event-tag,.event-disaster-active .event-tag,.event-disaster-value .event-tag{border-color:#9e722b;color:#efc15b}.event-damage .event-tag,.event-leave .event-tag{border-color:#813c40;color:#dd7c81}.event-move .event-tag{border-color:#26757c;color:#65cbd0}
 .board-target-controls{position:fixed;z-index:2147483500;left:50%;top:76px;display:flex;align-items:center;gap:10px;max-width:760px;padding:10px 13px;border:1px solid #70d7df;background:#091011;box-shadow:0 14px 36px #000;transform:translateX(-50%)}.board-target-controls strong{max-width:430px;color:#fff;font-size:var(--l12-board-copy,13px)}.board-target-controls span{color:#8f9894;font-size:var(--l12-board-copy,13px)}.board-target-controls button{box-sizing:border-box;width:112px;min-width:112px;max-width:112px;height:44px;min-height:44px;max-height:44px;padding:6px 8px;border:1px solid #999;background:#1b2020;color:#fff;font-weight:900;line-height:1.2;text-align:center;white-space:normal;overflow:hidden;text-wrap:balance}.board-target-controls button.primary{border-color:#72e09a;background:#174d2d}.board-target-controls button:disabled{opacity:.38}
 .board-slot-controls .l12-card-image{width:52px;height:72px;background:#050708;cursor:pointer}.board-slot-controls span{color:#72e09a;font-weight:900}

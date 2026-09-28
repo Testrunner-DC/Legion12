@@ -381,6 +381,32 @@ public sealed class CombatTimelineRegressionTests
     }
 
     [Fact]
+    public void ExplicitEmptyDefenseChoiceLeavesEligibleHandLegionUnspent()
+    {
+        var game = Create(82815, autoPass: false);
+        ReadyForCombat(game);
+        var attacker = PlainLegion("decline-attacker", 3000);
+        var eligibleBlocker = PlainLegion("decline-blocker", 3000);
+        game.State.Players[0].Field[0][0] = attacker;
+        game.State.Players[1].Hand.Add(eligibleBlocker);
+        var hpBefore = game.State.Players[1].Hp;
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master"))).Accepted);
+        PassCurrentResponse(game);
+        PassCurrentResponse(game);
+        Assert.Equal(L12CombatStage.DefenseChoice, game.State.PendingDefense?.Stage);
+
+        Assert.True(game.Handle(1, new L12Command("resolveDefense", CardInstanceIds: [])).Accepted);
+
+        Assert.Contains(eligibleBlocker, game.State.Players[1].Hand);
+        Assert.DoesNotContain(eligibleBlocker, game.State.Players[1].Graveyard);
+        Assert.Equal(hpBefore - 1, game.State.Players[1].Hp);
+        Assert.Contains(game.State.Events, entry => entry.Type == "defense"
+            && entry.Text.Contains("主宰受到", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void AttackerLeavingDuringDefenseAuthorityEventSkipsRichardExtraDiscardAndAborts()
     {
         var game = Create(82809, autoPass: false);

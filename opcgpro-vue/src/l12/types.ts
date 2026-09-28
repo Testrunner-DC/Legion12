@@ -173,6 +173,7 @@ export interface GameState {
       | 'KillTriggers' | 'DefenderKillTriggers' | 'AttackerDeathTriggers' | 'DefenderDeathTriggers' | 'FinalizeDeaths'
       | 'AttackerAfterAttack' | 'DefenderAfterAttack' | 'Complete'
     attackValue: number
+    richardDefenseTaxActive?: boolean
   } | null
   winner?: number | null
   winnerReason?: string | null
