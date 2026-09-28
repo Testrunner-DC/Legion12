@@ -153,6 +153,10 @@ export function displayCardNumber(card: Pick<DeckCard, 'id' | 'number'>) {
   return card.number
 }
 
+export function compareCardNumbers(left: string, right: string) {
+  return left.localeCompare(right, 'zh-CN', { numeric: true, sensitivity: 'base' })
+}
+
 export function cardProductsForIds(cardIds: readonly string[]) {
   const included = new Set(cardIds.flatMap(cardId => productInclusionsByNormalizedCardId.get(cardId.toLocaleLowerCase())?.products ?? []))
   return [

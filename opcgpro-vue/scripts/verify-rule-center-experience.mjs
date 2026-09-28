@@ -172,6 +172,9 @@ try {
       assert(catalogRequests.length >= 3, `card workspace did not load title metadata on demand at ${suffix(viewport)}`)
       assert.equal(imageRequests.length, 0, `collapsed card Q&A eagerly loaded card images at ${suffix(viewport)}`)
       await page.getByText('S02-06S5·芬尼亚传奇·裁定', { exact: true }).waitFor()
+      assert.deepEqual((await page.locator('.faq-title small').allInnerTexts()).slice(0, 2),
+        ['S02-06S5·芬尼亚传奇·裁定', 'S01-0213·锡瓦的卡巴·裁定'],
+        `card rulings are not in descending card-number order at ${suffix(viewport)}`)
       const products = page.locator('.product-grid button')
       if (await products.count()) {
         await products.first().click()
@@ -213,6 +216,9 @@ try {
   }
   await directCard.goto(base + '?tab=faq&mode=card')
   await directCard.getByText('S02-06S5·芬尼亚传奇·裁定', { exact: true }).waitFor()
+  assert.deepEqual((await directCard.locator('.faq-title small').allInnerTexts()).slice(0, 2),
+    ['S02-06S5·芬尼亚传奇·裁定', 'S01-0213·锡瓦的卡巴·裁定'],
+    'direct card FAQ entry is not in descending card-number order')
   assertSingleCatalogLoad('direct card FAQ entry')
   assert.equal(directImageRequests.length, 0, 'direct card FAQ entry eagerly loaded card images')
   await directCard.locator('.faq-search-row input').fill('芬尼亚传奇')
