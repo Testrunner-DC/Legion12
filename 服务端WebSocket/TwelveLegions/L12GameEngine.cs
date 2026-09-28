@@ -2268,6 +2268,12 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         => AddEventCoreWithPlayerLog(type, playerIndex, text, null, null,
             playerLogGroupId, playerLogTiming, playerLogDecisionLabel, cards);
 
+    private void AddStructuredPlayerLogEvent(string type, int? playerIndex, string text,
+        string? playerLogGroupId, string? playerLogTiming,
+        L12PlayerLogSemantic playerLogSemantic, params L12CardInstance[] cards)
+        => AddEventCoreWithPlayerLogSemantic(type, playerIndex, text, null, null,
+            playerLogGroupId, playerLogTiming, null, playerLogSemantic, cards);
+
     private void AddSemanticPlayerLogEvent(string type, int? playerIndex, string text,
         L12PlayerLogSemantic playerLogSemantic, params L12CardInstance[] cards)
         => AddEventCoreWithPlayerLogSemantic(type, playerIndex, text, null, null,

@@ -221,10 +221,15 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
   }
 
   if (trial) {
-    const progress = trial.text.match(/(?:《([^》]+)》)?试炼进度\s*(\d+)\s*→\s*(\d+)/)
-    suffix += progress
-      ? `，推进${progress[1] ? `《${progress[1]}》` : ''}试炼 ${progress[2]}→${progress[3]}`
-      : '，推进试炼'
+    const semantic = trial.playerLogSemantic
+    if (semantic?.actionLabel && semantic.outcomeLabel)
+      suffix += `，${semantic.actionLabel}，${semantic.outcomeLabel}`
+    else {
+      const progress = trial.text.match(/(?:《([^》]+)》)?试炼进度\s*(\d+)\s*→\s*(\d+)/)
+      suffix += progress
+        ? `，推进${progress[1] ? `《${progress[1]}》` : ''}试炼 ${progress[2]}→${progress[3]}`
+        : '，推进试炼'
+    }
   }
 
   if (result?.effectResultStatus === 'negated') {
@@ -300,9 +305,9 @@ function projectSemanticPlayerLog(event: ActionEvent, you: number): LogLineRow |
   const sourcePart = source
     ? cardPart(source)
     : semantic.sourceName ? { text: `〈${semantic.sourceName}〉` } satisfies LogPart : null
-  if (!sourcePart) return null
+  if (!sourcePart && event.type !== 'trial') return null
   return line(event.sequence, 'effect', side(event.playerIndex, you), [
-    sourcePart,
+    ...(sourcePart ? [sourcePart] : []),
     { text: semantic.actionLabel },
     { text: `，${semantic.outcomeLabel}` },
   ])
@@ -470,6 +475,9 @@ function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], co
         [badge(amount, '符文'), ...costs])
     }
     case 'trial': {
+      if (/完成试炼/.test(event.text))
+        return line(event.sequence, 'effect', actor,
+          card ? [cardPart(card), { text: '：完成试炼' }] : [{ text: '完成试炼' }])
       const progress = trialProgressBadge(event)
       return line(event.sequence, 'effect', actor,
         [...(card ? [cardPart(card), { text: '：推进试炼' } satisfies LogPart] : [{ text: '推进试炼' }]), ...costDetails],

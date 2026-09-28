@@ -16,7 +16,9 @@ public sealed partial class L12GameEngine
         var player = State.Players[controller];
         player.SpecialZones.TrialLevel = player.SpecialZones.Trials.Where(card => !card.TrialCompleted)
             .Select(card => card.TrialProgress).DefaultIfEmpty().Max();
-        AddEvent("trial", controller, $"完成试炼《{trial.Name}》", trial);
+        AddSemanticPlayerLogEvent("trial", controller, $"完成试炼《{trial.Name}》",
+            new L12PlayerLogSemantic("完成试炼", "试炼已翻至完成面",
+                trial.InstanceId, trial.Name, trial.InstanceId, trial.Name), trial);
         // Flipping is a rule action. Only the resulting printed trigger gets a response window.
         QueueCompletedTrialTriggerBatch(controller, trial);
     }

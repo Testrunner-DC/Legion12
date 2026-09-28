@@ -205,10 +205,14 @@ public sealed partial class L12GameEngine
         trial.TrialProgress = Math.Min(8, trial.TrialProgress + count);
         player.SpecialZones.TrialLevel = trial.TrialProgress;
         var origin = State.IsResolvingStack ? State.EffectStack.LastOrDefault() : null;
-        AddPlayerLogEvent("trial", playerIndex, $"《{trial.Name}》试炼进度 {before} → {trial.TrialProgress}",
+        var publicSource = source is { CardType: not "trial", Hidden: false } ? source : null;
+        AddStructuredPlayerLogEvent("trial", playerIndex,
+            $"《{trial.Name}》试炼进度 {before} → {trial.TrialProgress}",
             playerLogGroupId ?? origin?.Data.GetValueOrDefault("playerLogGroupId"),
             playerLogTiming ?? origin?.Data.GetValueOrDefault("playerLogTiming") ?? origin?.Trigger,
-            cards: source ?? trial);
+            new L12PlayerLogSemantic("推进试炼", $"试炼 {before}→{trial.TrialProgress}",
+                publicSource?.InstanceId, publicSource?.Name, trial.InstanceId, trial.Name),
+            publicSource is null ? [] : [publicSource]);
         var advanced = trial.TrialProgress > before;
         if (advanced && queueAngusTrigger) QueueS2AngusTrialAdvanceRune(playerIndex, source ?? trial);
         return advanced;

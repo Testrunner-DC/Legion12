@@ -21,10 +21,30 @@ internal static partial class L12TrialProgressVisibility
     }
 
     internal static L12ActionEvent PublicEvent(L12ActionEvent actionEvent)
-        => !IsProgressEvent(actionEvent.Type, actionEvent.Text) ? actionEvent
-            : new L12ActionEvent(actionEvent.Sequence, actionEvent.Type, actionEvent.PlayerIndex,
-                PublicText(actionEvent.Text), actionEvent.Cards
-                    .Where(card => card.CardType != "trial" && !card.Hidden).ToArray());
+    {
+        if (!IsProgressEvent(actionEvent.Type, actionEvent.Text)) return actionEvent;
+        var cards = actionEvent.Cards
+            .Where(card => card.CardType != "trial" && !card.Hidden).ToArray();
+        var semantic = actionEvent.PlayerLogSemantic;
+        if (semantic is null)
+            return new L12ActionEvent(actionEvent.Sequence, actionEvent.Type, actionEvent.PlayerIndex,
+                PublicText(actionEvent.Text), cards);
+        var visibleSource = cards.FirstOrDefault(card =>
+            card.InstanceId == semantic.SourceInstanceId);
+        semantic = semantic with
+        {
+            SourceInstanceId = visibleSource?.InstanceId,
+            SourceName = visibleSource?.Name,
+            TargetInstanceId = null,
+            TargetName = null,
+        };
+        return actionEvent with
+        {
+            Text = PublicText(actionEvent.Text),
+            Cards = cards,
+            PlayerLogSemantic = semantic,
+        };
+    }
 
     internal static void RedactRecordedState(JsonObject state)
     {
@@ -44,17 +64,39 @@ internal static partial class L12TrialProgressVisibility
     {
         if (!IsProgressEvent(action["Type"]?.GetValue<string>(), action["Text"]?.GetValue<string>()))
             return null;
-        // Do not keep old effect text/scene metadata: a legacy trial snapshot may
-        // carry the hidden identity in those fields as well as in Cards.
-        return new JsonObject
+        var cards = new JsonArray((action["Cards"] as JsonArray ?? [])
+            .OfType<JsonObject>().Where(card => card["CardType"]?.GetValue<string>() != "trial"
+                && card["Hidden"]?.GetValue<bool>() != true).Select(card => card.DeepClone()).ToArray());
+        if (action["PlayerLogSemantic"] is not JsonObject)
+            return new JsonObject
+            {
+                ["Sequence"] = action["Sequence"]?.DeepClone(),
+                ["Type"] = action["Type"]?.DeepClone(),
+                ["PlayerIndex"] = action["PlayerIndex"]?.DeepClone(),
+                ["Text"] = PublicText(action["Text"]!.GetValue<string>()),
+                ["Cards"] = cards,
+            };
+        var redacted = (JsonObject)action.DeepClone();
+        redacted["Text"] = PublicText(action["Text"]!.GetValue<string>());
+        redacted["Cards"] = cards;
+        if (redacted["PlayerLogSemantic"] is JsonObject semantic)
         {
-            ["Sequence"] = action["Sequence"]?.DeepClone(),
-            ["Type"] = action["Type"]?.DeepClone(),
-            ["PlayerIndex"] = action["PlayerIndex"]?.DeepClone(),
-            ["Text"] = PublicText(action["Text"]!.GetValue<string>()),
-            ["Cards"] = new JsonArray((action["Cards"] as JsonArray ?? [])
-                .OfType<JsonObject>().Where(card => card["CardType"]?.GetValue<string>() != "trial"
-                    && card["Hidden"]?.GetValue<bool>() != true).Select(card => card.DeepClone()).ToArray()),
-        };
+            var sourceId = semantic["SourceInstanceId"]?.GetValue<string>();
+            var visibleSource = cards.OfType<JsonObject>().FirstOrDefault(card =>
+                card["InstanceId"]?.GetValue<string>() == sourceId);
+            if (visibleSource is null)
+            {
+                semantic.Remove("SourceInstanceId");
+                semantic.Remove("SourceName");
+            }
+            else
+            {
+                semantic["SourceInstanceId"] = visibleSource["InstanceId"]?.DeepClone();
+                semantic["SourceName"] = visibleSource["Name"]?.DeepClone();
+            }
+            semantic.Remove("TargetInstanceId");
+            semantic.Remove("TargetName");
+        }
+        return redacted;
     }
 }

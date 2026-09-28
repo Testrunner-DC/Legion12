@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { PLAYER_LOG_REDLINE_TERMS, playerLogContainsForbiddenTerms, projectLog } from '../src/l12/game/logViewModel.ts'
+import { replayGameAt } from '../src/l12/replayModel.ts'
 
 const card = (name, instanceId = name, hidden = false) => ({
   instanceId, cardId: `ID-${instanceId}`, name, cardType: 'legion', faction: '秩序', cost: 2,
@@ -112,6 +113,78 @@ const hiddenSemanticSource = projectLog([
   }),
 ], 0, [])
 assert.equal(hiddenSemanticSource.length, 0, 'semantic metadata must not reveal a source that is still hidden')
+
+const structuredTrialEvents = [
+  event(1, 'play', '权威打出事件', [card('加拉哈德', 'galahad')], 0, {
+    playerLogGroupId: 'trial:galahad',
+    playerLogTiming: 'enter',
+  }),
+  event(2, 'trial', '不包含中文进度格式的权威事件', [card('加拉哈德', 'galahad')], 0, {
+    playerLogGroupId: 'trial:galahad',
+    playerLogTiming: 'enter',
+    playerLogSemantic: {
+      sourceInstanceId: 'galahad',
+      sourceName: '加拉哈德',
+      actionLabel: '推进试炼',
+      outcomeLabel: '试炼 0→2',
+    },
+  }),
+]
+const structuredTrialGroup = projectLog(structuredTrialEvents, 0, [])
+assert.equal(structuredTrialGroup.length, 1)
+assert.deepEqual(structuredTrialGroup[0].parts.map(part => part.text), [
+  '打出', '〈加拉哈德〉', '并发动登场时效果，推进试炼，试炼 0→2',
+], 'new grouped trial events must render only structured semantics instead of parsing audit text')
+const opponentTrialGroup = projectLog(structuredTrialEvents, 1, [])
+assert.equal(opponentTrialGroup[0].actor, '对方', 'trial ownership must follow the acting player for the opponent view')
+assert.deepEqual(opponentTrialGroup[0].parts.map(part => part.text),
+  structuredTrialGroup[0].parts.map(part => part.text), 'both players must receive the same public trial result words')
+
+const hiddenTrialIdentity = projectLog([
+  event(1, 'trial', '试炼进度 2 → 3', [], 0, {
+    playerLogSemantic: { actionLabel: '推进试炼', outcomeLabel: '试炼 2→3' },
+  }),
+], 1, [])
+assert.equal(hiddenTrialIdentity[0].actor, '对方')
+assert.deepEqual(hiddenTrialIdentity[0].parts.map(part => part.text), ['推进试炼', '，试炼 2→3'],
+  'an unrevealed trial remains readable without exposing its hidden identity')
+
+const replayState = {
+  MatchId: 'trial-replay', RoomCode: 'TRIAL', Players: [],
+  Events: structuredTrialEvents.map(item => ({
+    Sequence: item.sequence,
+    Type: item.type,
+    PlayerIndex: item.playerIndex,
+    Text: item.text,
+    PlayerLogGroupId: item.playerLogGroupId,
+    PlayerLogTiming: item.playerLogTiming,
+    PlayerLogSemantic: item.playerLogSemantic && {
+      ActionLabel: item.playerLogSemantic.actionLabel,
+      OutcomeLabel: item.playerLogSemantic.outcomeLabel,
+      SourceInstanceId: item.playerLogSemantic.sourceInstanceId,
+      SourceName: item.playerLogSemantic.sourceName,
+    },
+    Cards: item.cards,
+  })),
+}
+const replay = replayGameAt({
+  match: { matchId: 'trial-replay', roomCode: 'TRIAL' },
+  commands: [{ state: replayState, revision: 1 }],
+  viewerPlayerIndex: 0,
+}, 0)
+assert(replay)
+const logWords = rows => rows.map(row => row.kind === 'line'
+  ? { actor: row.actor, parts: row.parts.map(part => part.text), badges: row.badges.map(item => item.value) }
+  : row)
+assert.deepEqual(logWords(projectLog(replay.recentEvents ?? [], 0, [])), logWords(structuredTrialGroup),
+  'live and replay trial semantics must project to exactly the same player log rows')
+
+const completedTrial = projectLog([
+  event(1, 'trial', '完成试炼《寻找圣杯之旅》', [card('寻找圣杯之旅', 'grail-trial')], 0),
+], 0, [])
+assert.deepEqual(completedTrial[0].parts.map(part => part.text), [
+  '〈寻找圣杯之旅〉', '：完成试炼',
+], 'a completed trial must not be mislabeled as trial advancement')
 
 const legacySet = projectLog([
   event(1, 'effect', '旧回放：本次进攻兵力视为3000', [source], 0),
