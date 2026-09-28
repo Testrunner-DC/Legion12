@@ -41,7 +41,7 @@ public sealed record L12RankedProfileView(string AccountId, string Username, str
     string RankLabel, string? PlacementTitle, string? SelectedMasterTitle,
     IReadOnlyList<string> MasterTitles);
 public sealed record L12RankedBattleIdentityView(int PlayerIndex, string Faction, int? Rank,
-    string Tier, string? PlacementTitle, string? MasterTitle);
+    string Tier, string? PlacementTitle, string? MasterTitle, bool HighestTier);
 public sealed record L12RankedProfileHistoryView(string SeasonId, string Faction, int SevenValue,
     int PlacementPlayed, int PlacementWins, int Wins, int Losses, int WinStreak,
     DateTimeOffset ArchivedAt);
@@ -450,15 +450,16 @@ public sealed partial class L12PlatformStore
             var factionRank = FactionRank(row);
             var placementTitle = FactionPlacementTitle(row, factionRank);
             var placed = row.PlacementPlayed >= _data.RankedConfig!.PlacementMatches;
+            var highestTier = placed && IsHighestTier(row);
             var tier = string.IsNullOrWhiteSpace(row.Faction) ? string.Empty
                 : placed ? TierFor(row).Name
                 : $"定级 {row.PlacementPlayed}/{_data.RankedConfig.PlacementMatches}";
-            var overallRank = placed ? OverallRank(row) : 0;
+            var overallRank = highestTier ? OverallRank(row) : 0;
             var masterTitles = PlayerMasterTitles(row, CurrentMasterChampions());
             var selected = SelectedMasterTitle(row, masterTitles);
             var faction = string.IsNullOrWhiteSpace(row.Faction) ? string.Empty : FactionFor(row.Faction).Name;
             return new L12RankedBattleIdentityView(playerIndex, faction,
-                overallRank > 0 ? overallRank : null, tier, placementTitle, selected);
+                overallRank > 0 ? overallRank : null, tier, placementTitle, selected, highestTier);
         }
     }
 
@@ -1212,10 +1213,18 @@ public sealed partial class L12PlatformStore
 
     private string? FactionPlacementTitle(RankedProfileRow row, int factionRank)
     {
-        if (TierIndex(row) != _data.RankedConfig!.Factions[0].Tiers.Count - 1) return null;
+        if (!IsHighestTier(row)) return null;
         var faction = string.IsNullOrWhiteSpace(row.Faction) ? null : FactionFor(row.Faction);
         return factionRank == 1 ? faction?.FirstTitle
             : factionRank is >= 2 and <= 5 ? faction?.TopFiveTitle : null;
+    }
+
+    private bool IsHighestTier(RankedProfileRow row)
+    {
+        if (string.IsNullOrWhiteSpace(row.Faction)
+            || row.PlacementPlayed < _data.RankedConfig!.PlacementMatches) return false;
+        var faction = FactionFor(row.Faction);
+        return TierIndex(row) == faction.Tiers.Count - 1;
     }
 
     private void UpdateMasterRecord(RankedProfileRow profile, string? masterId, bool won)

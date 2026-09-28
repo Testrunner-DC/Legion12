@@ -178,7 +178,7 @@ export interface GameState {
   winnerReason?: string | null
   matchGovernance?: MatchGovernanceClientState
   players: PlayerView[]
-  playerBadges?: Array<{ playerIndex: number; faction?: string; rank?: number; tier: string; placementTitle?: string; masterTitle?: string }>
+  playerBadges?: Array<{ playerIndex: number; faction?: string; rank?: number; tier: string; placementTitle?: string; masterTitle?: string; highestTier?: boolean }>
   lastAction?: ActionEvent | null
   recentEvents?: ActionEvent[]
   legalAttackTargets?: Record<string, string[]>

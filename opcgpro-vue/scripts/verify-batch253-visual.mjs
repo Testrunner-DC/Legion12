@@ -75,14 +75,14 @@ if(relicMode)players[0].relic=battleCard(battleArtwork[2],'visual-relic')
 l12State.spectating=spectatorMode
 const identityMode=params.get('identity')||'mixed'
 const playerBadges=identityMode==='full'
- ? [{playerIndex:0,faction:'秩序',rank:3,tier:'冠冕',placementTitle:'秩序冠首',masterTitle:'最强银臂努阿达'},{playerIndex:1,faction:'混沌',rank:128,tier:'冠冕',placementTitle:'混沌先声',masterTitle:'最强阿斯加德'}]
+ ? [{playerIndex:0,faction:'秩序',rank:3,tier:'秩序天冠',placementTitle:'秩序冠首',masterTitle:'最强银臂努阿达',highestTier:true},{playerIndex:1,faction:'混沌',rank:128,tier:'混沌魔冠',placementTitle:'混沌先声',masterTitle:'最强阿斯加德',highestTier:true}]
  : identityMode==='crown'
-  ? [{playerIndex:0,faction:'秩序',rank:18,tier:'冠冕'},{playerIndex:1,faction:'混沌',rank:247,tier:'冠冕'}]
+  ? [{playerIndex:0,faction:'秩序',rank:18,tier:'秩序天冠',highestTier:true},{playerIndex:1,faction:'混沌',rank:247,tier:'混沌魔冠',highestTier:true}]
  : identityMode==='placement'
-  ? [{playerIndex:0,faction:'秩序',tier:'定级 3/5'},{playerIndex:1,faction:'混沌',tier:'定级 4/5'}]
+  ? [{playerIndex:0,faction:'秩序',tier:'定级 3/5',highestTier:false},{playerIndex:1,faction:'混沌',tier:'定级 4/5',highestTier:false}]
   : identityMode==='minimal'
-   ? [{playerIndex:0,faction:'秩序',rank:18,tier:'精英'},{playerIndex:1,faction:'混沌',rank:247,tier:'进阶'}]
-   : [{playerIndex:0,faction:'秩序',rank:3,tier:'冠冕',placementTitle:'秩序冠首',masterTitle:'最强银臂努阿达'},{playerIndex:1,faction:'混沌',rank:128,tier:'统领'}]
+   ? [{playerIndex:0,faction:'秩序',rank:18,tier:'精英',highestTier:false},{playerIndex:1,faction:'混沌',rank:247,tier:'进阶',highestTier:false}]
+   : [{playerIndex:0,faction:'秩序',rank:3,tier:'秩序天冠',placementTitle:'秩序冠首',masterTitle:'最强银臂努阿达',highestTier:true},{playerIndex:1,faction:'混沌',rank:128,tier:'统领',highestTier:false}]
 l12State.game={matchId:'synthetic-batch253',roomCode:'TEST253',you:0,revision:1,activePlayer:0,firstPlayer:0,diceWinner:0,initiativeRolls:[6,3],phase:'Main',round:3,turnSerial:5,disasterMode:'all',disasterValue:0,players,sessionDisasters:disasters.map((d,j)=>card(d,'disaster'+j)),prompts:[],effectStack:[],stateHash:'synthetic',playerBadges,recentEvents:Array.from({length:20},(_,j)=>({sequence:j+1,type:j%4===0?'turn-start':j%3===0?'prompt-resolved':'attack',playerIndex:j%2,text:j%4===0?'第 '+(j/4+1)+' 回合 · 回合开始':j%3===0?'选择另外1张军团 → 公开军团':'以公开军团进攻，兵力5000 → 3000',cards:[]}))}
 if(logMode){
  const source=battleCard(battleArtwork[2],'log-source'),target=battleCard(battleArtwork[1],'log-target'),hidden={...battleCard(battleArtwork[0],'log-hidden'),name:'绝密手牌',hidden:true}

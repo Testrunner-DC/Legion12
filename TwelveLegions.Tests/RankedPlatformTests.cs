@@ -164,7 +164,8 @@ public sealed class RankedPlatformTests
         Assert.Equal("最强天照", selected.SelectedMasterTitle);
         var battleIdentity = store.RankedBattleIdentity(amaterasu.Id, 0);
         Assert.Equal("秩序", battleIdentity.Faction);
-        Assert.Equal(1, battleIdentity.Rank);
+        Assert.False(battleIdentity.HighestTier);
+        Assert.Null(battleIdentity.Rank);
         Assert.Equal(selected.Tier, battleIdentity.Tier);
         Assert.Equal(selected.PlacementTitle, battleIdentity.PlacementTitle);
         Assert.Equal("最强天照", battleIdentity.MasterTitle);
@@ -312,9 +313,63 @@ public sealed class RankedPlatformTests
         var identity = store.RankedBattleIdentity(leader.Id, 0);
 
         Assert.Equal(1, identity.Rank);
+        Assert.True(identity.HighestTier);
         Assert.Equal("冠冕", identity.Tier);
         Assert.Equal("秩序冠首", identity.PlacementTitle);
         Assert.Equal("最强天照", identity.MasterTitle);
+    }
+
+    [Fact]
+    public void BattleIdentityUsesEachFactionsHighestTierInsteadOfItsDisplayName()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-battle-highest-tier",
+            Guid.NewGuid().ToString("N"));
+        var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
+        var admin = store.Login("Admin", "L12master").Account!;
+        var config = store.RankedConfig(admin);
+        var highestTierNames = new[] { "秩序天冠", "混沌魔冠", "命运星冠" };
+        var factions = config.Factions.Select((faction, factionIndex) => faction with
+        {
+            Tiers = faction.Tiers.Select((tier, tierIndex) => tier with
+            {
+                Name = tierIndex == 4 ? highestTierNames[factionIndex] : tier.Name,
+                Minimum = tierIndex * 1_000,
+                BaseDelta = 1_000,
+                WinStreakCap = 0,
+                LossProtectionCap = 0,
+                RatingGapCap = 0,
+                StreakTerminationReward = 0,
+            }).ToArray(),
+        }).ToArray();
+        store.UpdateRankedConfig(admin, config with
+        {
+            PlacementMatches = 1,
+            PlacementMaximum = 500,
+            Factions = factions,
+        }, "验证各派系最高段权威身份", new L12AdminAuditContext("ranked-battle-highest-tier"));
+
+        var factionIds = new[] { "order", "chaos", "fate" };
+        for (var factionIndex = 0; factionIndex < factionIds.Length; factionIndex++)
+        {
+            var leader = store.Register($"thigh{factionIndex}lead", "Password123!").Account!;
+            var rival = store.Register($"thigh{factionIndex}rival", "Password123!").Account!;
+            store.SelectRankedFaction(leader.Id, factionIds[factionIndex]);
+            store.SelectRankedFaction(rival.Id, factionIds[factionIndex]);
+            for (var match = 0; match < 20 && store.RankedProfile(leader.Id).TierIndex < 4; match++)
+                store.SettleRankedMatch($"highest-{factionIndex}-{match}", leader.Id, rival.Id, 0);
+
+            var highest = store.RankedBattleIdentity(leader.Id, factionIndex);
+            Assert.True(highest.HighestTier);
+            Assert.NotNull(highest.Rank);
+            Assert.Equal(highestTierNames[factionIndex], highest.Tier);
+            Assert.NotNull(highest.PlacementTitle);
+
+            var lower = store.RankedBattleIdentity(rival.Id, factionIndex + 3);
+            Assert.False(lower.HighestTier);
+            Assert.Null(lower.Rank);
+            Assert.NotEqual(highestTierNames[factionIndex], lower.Tier);
+            Assert.Null(lower.PlacementTitle);
+        }
     }
 
     [Fact]

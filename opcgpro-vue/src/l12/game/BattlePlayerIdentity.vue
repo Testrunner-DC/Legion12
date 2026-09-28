@@ -24,7 +24,7 @@ defineProps<{
       <strong :title="player.name || '未命名玩家'">{{ player.name || '未命名玩家' }}</strong>
     </header>
     <dl class="battle-player-identity__facts">
-      <div v-if="rank" class="identity-rank-row"><dt>名次</dt><dd>第 {{ rank }} 名</dd></div>
+      <div v-if="rank" class="identity-rank-row"><dt>名次</dt><dd>{{ rank }}名</dd></div>
       <div v-if="tierLabel || placementTitle" class="identity-tier-row">
         <dt>段位</dt>
         <dd>

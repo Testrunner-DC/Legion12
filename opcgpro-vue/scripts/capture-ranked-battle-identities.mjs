@@ -130,22 +130,23 @@ try {
       const [enemyIdentity, myIdentity] = report.identities
       if (mode === 'full') {
         for (const identity of report.identities) {
-          assert.match(identity.rank, /^第 \d+ 名$/, `${viewport.width}x${viewport.height}/${mode}: Crown rank missing`)
-          assert.ok(identity.tier && !identity.tier.includes('冠冕'),
+          assert.match(identity.rank, /^\d+名$/, `${viewport.width}x${viewport.height}/${mode}: highest-tier rank missing`)
+          assert.ok(identity.tier && !identity.tier.includes('天冠') && !identity.tier.includes('魔冠'),
             `${viewport.width}x${viewport.height}/${mode}: placement title must replace the redundant tier`)
           assert.ok(identity.masterTitle, `${viewport.width}x${viewport.height}/${mode}: master title missing`)
         }
       } else if (mode === 'crown') {
-        for (const identity of report.identities) {
-          assert.match(identity.rank, /^第 \d+ 名$/, `${viewport.width}x${viewport.height}/${mode}: Crown rank missing`)
-          assert.equal(identity.tier, '', `${viewport.width}x${viewport.height}/${mode}: ranked Crown tier must be omitted`)
+        for (const [index, identity] of report.identities.entries()) {
+          assert.match(identity.rank, /^\d+名$/, `${viewport.width}x${viewport.height}/${mode}: highest-tier rank missing`)
+          assert.match(identity.tier, index === 0 ? /混沌魔冠/ : /秩序天冠/,
+            `${viewport.width}x${viewport.height}/${mode}: faction-specific highest tier must remain visible without a title`)
           assert.equal(identity.masterTitle, '', `${viewport.width}x${viewport.height}/${mode}: unavailable master title must be omitted`)
         }
       } else if (mode === 'mixed') {
         assert.equal(enemyIdentity.rank, '', `${viewport.width}x${viewport.height}/${mode}: non-Crown rank must be omitted`)
         assert.match(enemyIdentity.tier, /统领/, `${viewport.width}x${viewport.height}/${mode}: non-Crown tier missing`)
         assert.equal(enemyIdentity.masterTitle, '', `${viewport.width}x${viewport.height}/${mode}: unavailable master title must be omitted`)
-        assert.equal(myIdentity.rank, '第 3 名', `${viewport.width}x${viewport.height}/${mode}: Crown rank missing`)
+        assert.equal(myIdentity.rank, '3名', `${viewport.width}x${viewport.height}/${mode}: highest-tier rank missing`)
         assert.match(myIdentity.tier, /秩序冠首/, `${viewport.width}x${viewport.height}/${mode}: placement title missing`)
         assert.ok(!myIdentity.tier.includes('冠冕'), `${viewport.width}x${viewport.height}/${mode}: tier must be hidden behind placement title`)
         assert.ok(myIdentity.masterTitle, `${viewport.width}x${viewport.height}/${mode}: master title missing`)

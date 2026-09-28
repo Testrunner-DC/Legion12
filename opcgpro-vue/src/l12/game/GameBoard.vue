@@ -192,16 +192,17 @@ type BattleIdentityBadge = {
   rank?: number | null
   tier?: string | null
   placementTitle?: string | null
+  highestTier?: boolean | null
 }
 function battleRank(badge: BattleIdentityBadge | null | undefined) {
-  return identityLabel(badge?.tier) === '冠冕' ? badge?.rank ?? null : null
+  return badge?.highestTier === true ? badge?.rank ?? null : null
 }
 function battleTierLabel(badge: BattleIdentityBadge | null | undefined) {
   const label = identityLabel(badge?.tier)
-  // A placement title is the more specific player-facing identity.  Crown is
-  // also implicit once its all-server rank is shown.
+  // A placement title is the more specific player-facing identity. Players
+  // without one keep their faction-specific tier name on its own row.
   if (identityLabel(badge?.placementTitle)) return ''
-  return badge?.rank && label === '冠冕' ? '' : label
+  return label
 }
 const playerConnection = (playerIndex: number) => {
   const timed = l12State.rankedClock?.players.find(player => player.playerIndex === playerIndex)
