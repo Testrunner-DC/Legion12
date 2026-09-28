@@ -592,18 +592,33 @@ const promptSelectionRange = computed(() => {
     : `需选择 ${current.minChoose} 至 ${current.maxChoose} 项`
 })
 const minimizedTask = computed(() => {
-  if (!prompt.value) return isMulligan.value ? '选择要换掉的手牌；零选择保留全部' : overlayTitle.value
+  if (!prompt.value) return isMulligan.value
+    ? props.mulliganSelectedIds.length ? `调度：已选 ${props.mulliganSelectedIds.length} 张待换` : '调度：未选牌，确认后保留全部'
+    : overlayTitle.value
   return [promptActor.value, promptSelectionRange.value,
     prompt.value.presentation?.paymentStatus === 'paid' ? '费用已支付' : prompt.value.presentation?.paymentStatus === 'pending' ? '费用待支付' : '',
     promptInstruction.value,
     prompt.value.presentation?.paymentSummary?.trim()].filter(Boolean).join('；')
 })
+const minimizedMobileLabel = computed(() => {
+  if (isMulligan.value)
+    return props.mulliganSelectedIds.length ? `已选\n${props.mulliganSelectedIds.length}张` : '保留\n全部'
+  const current = prompt.value
+  if (!current) return '当前\n待办'
+  if (current.presentation?.paymentStatus === 'pending') return '支付\n费用'
+  if (current.maxChoose === 0) return '确认\n信息'
+  if (current.minChoose === current.maxChoose) return `选择\n${current.maxChoose}项`
+  if (current.minChoose === 0) return `至多\n${current.maxChoose}项`
+  return `选择\n${current.minChoose}-${current.maxChoose}项`
+})
+const minimizedButtonText = computed(() => props.mobileLayout ? minimizedMobileLabel.value : '展开')
 const overlayTitle = computed(() => {
   if (prompt.value) return promptTitle.value
-  if (isMulligan.value) return '选择要换掉的起始手牌；零选择保留全部'
-  if (isMulliganPhase.value) return '等待对手完成调度'
+  if (isMulligan.value) return '选择要换掉的起始手牌'
+  if (isMulliganPhase.value) return props.readOnly ? '等待玩家完成调度' : '已确认调度，等待对手'
   return waitingText()
 })
+const mulliganInstruction = computed(() => `已选 ${props.mulliganSelectedIds.length} 张要换掉的起始手牌。确认后换掉所选牌并抽取相同数量；未选牌则保留全部。若对手尚未完成，确认后会等待对手${l12State.rankedClock?.operationLimitMs && l12State.rankedClock.operationLimitMs > 0 ? '；排位调度超时保留原手牌' : ''}。`)
 const setupClockPlayerIndex = computed(() => {
   if (isMulliganPhase.value)
     return isMulligan.value ? me.value.playerIndex : props.game.players.find(player => !player.mulliganDone)?.playerIndex ?? null
@@ -774,9 +789,9 @@ function kindLabel() {
       @pointerdown="onCardStripPointerDown" @pointermove="onCardStripPointerMove" @pointerup="endCardStripPointer" @pointercancel="endCardStripPointer"
       :class="{ preparation: isPreparation, initiative: isInitiative, 'disaster-choice': isDisasterChoice, 'information-confirm': isInfoConfirm, waiting: waitingPrompt || (isMulliganPhase && !isMulligan), minimized, 'inspector-active': inspectorVisible, 'mobile-safe-overlay': mobileLayout }">
       <section v-if="minimized" class="prompt-minimized-bar" role="status">
-        <button :aria-label="`展开：${overlayTitle}`" ref="expandButton" aria-describedby="prompt-minimized-task" :title="minimizedTask" @click="expandPrompt">展开</button>
+        <button :aria-label="`展开：${overlayTitle}`" ref="expandButton" aria-describedby="prompt-minimized-task" :title="minimizedTask" @click="expandPrompt">{{ minimizedButtonText }}</button>
         <span id="prompt-minimized-task" class="prompt-minimized-task">{{ minimizedTask }}</span>
-        <span v-if="autoCloseMessage" class="prompt-auto-close" role="timer">{{ autoCloseMessage }}</span>
+        <span v-if="autoCloseMessage" class="prompt-auto-close" role="timer" :aria-label="autoCloseMessage" :title="autoCloseMessage">{{ mobileLayout ? `${autoCloseSeconds}秒` : autoCloseMessage }}</span>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
       </section>
@@ -969,7 +984,7 @@ function kindLabel() {
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
         <main class="prompt-choice-body" data-ui-contract="mobile-choice-scroll-body">
-          <p class="prompt-instruction">确认后换掉选中的手牌并抽取相同数量；不选牌直接确认会保留全部起始手牌。</p>
+           <p class="prompt-instruction">{{ mulliganInstruction }}</p>
           <div class="prompt-choices prompt-card-strip">
           <PromptCardCandidate v-for="card in me.hand" :key="card.instanceId"
             :card-id="card.cardId" :legacy-url="card.imageUrl" :name="card.name" meta="手牌"
@@ -977,7 +992,7 @@ function kindLabel() {
             @focus="focusChoice(card.instanceId)" @select="emit('mulliganToggle', card.instanceId)"/>
           </div>
         </main>
-        <footer class="prompt-action-footer" data-ui-contract="equal-action-group"><span>将换掉 {{ mulliganSelectedIds.length }} 张</span><button class="primary" :disabled="busy" @click="emit('mulliganConfirm')">{{ busy ? '处理中…' : mulliganSelectedIds.length ? `换掉所选 ${mulliganSelectedIds.length} 张` : '保留全部手牌' }}</button></footer>
+        <footer class="prompt-action-footer" data-ui-contract="equal-action-group"><span>已选 {{ mulliganSelectedIds.length }} 张</span><button class="primary" :disabled="busy" @click="emit('mulliganConfirm')">{{ busy ? '处理中…' : mulliganSelectedIds.length ? `换掉所选 ${mulliganSelectedIds.length} 张` : '保留全部手牌' }}</button></footer>
       </section>
 
       <section v-else class="prompt-panel waiting-panel" role="status">
@@ -1000,7 +1015,7 @@ function kindLabel() {
           </article>
         </div>
         <small>{{ isMulliganPhase ? '调度' : waitingDefense ? '进攻结算' : '对手操作' }}</small>
-        <h2>{{ isMulliganPhase ? '等待对手完成调度' : waitingText() }}</h2>
+        <h2>{{ isMulliganPhase ? overlayTitle : waitingText() }}</h2>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
         <i/><i/><i/>
@@ -1033,7 +1048,7 @@ function kindLabel() {
 .all-placement-workspace{display:grid;grid-template-columns:62px minmax(0,1fr) 62px;align-items:center;gap:8px;margin:10px 3px;padding:10px;border:1px solid rgba(238,238,228,.28);background:#090d0e}.all-placement-row{min-width:0;padding:5px}.placement-edge{color:#fff;font-size:max(18px,var(--l12-board-copy,13px));font-weight:900;letter-spacing:.28em;text-align:center;writing-mode:vertical-rl}.top-edge{color:#70d7df}.bottom-edge{color:#d76069}
 .prompt-card-detail{display:grid;min-height:112px;grid-template-columns:130px 1fr;gap:14px;margin:0 3px 10px;padding:10px;border:1px solid rgba(238,238,228,.32);background:#090d0e}.prompt-card-detail>.l12-card-image{width:130px;height:108px;background:#050708}.prompt-card-detail small{color:#70d7df;font-size:var(--l12-board-copy,13px);letter-spacing:.12em}.prompt-card-detail h3{margin:3px 0 5px;color:#fff;font-size:max(16px,var(--l12-board-copy,13px))}.prompt-card-detail dl{display:flex;gap:12px;margin:0}.prompt-card-detail dl div{display:flex;gap:4px}.prompt-card-detail dt{color:#777f7c;font-size:var(--l12-board-copy,13px)}.prompt-card-detail dd{margin:0;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900}.prompt-card-detail p{max-height:48px;margin:5px 0 0;overflow:auto;color:#c9cdc7;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:1.55;white-space:pre-wrap}
 .prompt-panel footer button.primary{border:2px solid #fff!important;background:#f2eee3!important;color:#090c0d!important}.prompt-panel footer button.primary:disabled{border-color:#646966!important;background:#2a2e2d!important;color:#929792!important}.l12-prompt-overlay.waiting{background:rgba(2,4,5,.3)!important;backdrop-filter:blur(2px)}.waiting-panel{position:relative;width:min(430px,calc(100vw - 32px));padding:25px;text-align:center}.waiting-panel>.prompt-minimize{right:10px;top:10px}.waiting-panel small{color:#73d7de;font-size:var(--l12-board-copy,13px);letter-spacing:.16em}.waiting-panel h2{margin:10px 0;color:#fff;font-size:max(21px,var(--l12-board-copy,13px))}.waiting-panel p{color:#c0c5bf;font-size:var(--l12-board-copy,13px)}.waiting-panel i{display:inline-block;width:7px;height:7px;margin:10px 4px 0;border-radius:50%;background:#70d7df;animation:waiting-pulse 1.2s infinite}.waiting-panel i:nth-of-type(2){animation-delay:.2s}.waiting-panel i:nth-of-type(3){animation-delay:.4s}@keyframes waiting-pulse{0%,70%,100%{opacity:.25;transform:translateY(0)}35%{opacity:1;transform:translateY(-4px)}}
-.l12-prompt-overlay.minimized{z-index:2147483600;inset:auto 16px 66px auto;width:auto;height:auto;padding:0;background:transparent!important;backdrop-filter:none;pointer-events:none}.prompt-minimized-bar{display:grid;gap:6px;pointer-events:auto}.prompt-minimized-bar button{padding:7px 12px;border:1px solid #70d7df;background:#174e54;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;box-shadow:0 12px 35px #000}
+.l12-prompt-overlay.minimized{z-index:2147483600;inset:auto 16px 66px auto;width:auto;height:auto;padding:0;background:transparent!important;backdrop-filter:none;pointer-events:none}.prompt-minimized-bar{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;gap:6px;pointer-events:auto}.prompt-minimized-bar button{box-sizing:border-box;width:100%;padding:7px 12px;border:1px solid #70d7df;background:#174e54;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;box-shadow:0 12px 35px #000}
 @media(max-width:760px){.l12-prompt-overlay.minimized{right:10px;bottom:60px}}
 @media(max-width:520px){.l12-prompt-overlay.inspector-active:not(.minimized){--inspector-safe-lane:92px;padding:8px 8px 8px var(--inspector-safe-lane)}.l12-prompt-overlay.inspector-active:not(.minimized) .prompt-panel{max-width:calc(100vw - var(--inspector-safe-lane) - 8px);padding:10px}}
 /* 天灾卡是横版；所有天灾准备、公开、触发与详情场景共用同一比例。 */
@@ -1062,7 +1077,7 @@ function kindLabel() {
 .prompt-action-footer>button{box-sizing:border-box;width:132px;min-width:132px;max-width:132px;height:48px;min-height:48px;max-height:48px;flex:0 0 132px;padding:7px 10px;font-size:var(--l12-board-copy,13px);line-height:1.25;text-align:center;white-space:normal;overflow:hidden;text-wrap:balance}.prompt-action-footer>.prompt-footer-choice,.prompt-action-footer>.prompt-confirm-choice{box-sizing:border-box;width:132px;min-width:132px;max-width:132px;height:48px;min-height:48px;max-height:48px;padding:7px 10px;font-size:var(--l12-board-copy,13px);line-height:1.25;text-align:center}
 .prompt-action-footer>.prompt-footer-choice.selected{border-color:#70d7df;background:#174e54;color:#fff}
 @media(max-width:520px){.prompt-action-footer>span{flex-basis:100%}}
-.l12-prompt-overlay.mobile-safe-overlay.minimized{inset:auto calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 110px) calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + var(--l12-mobile-hand-h,64px) + 5px) auto!important}
+.l12-prompt-overlay.mobile-safe-overlay.minimized{inset:auto max(8px,calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 8px)) max(8px,calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + 8px)) auto!important}
 .l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip[data-more-start="false"][data-more-end="true"]{box-shadow:inset -16px 0 14px -13px #7adce5}
 .l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip[data-more-start="true"][data-more-end="false"]{box-shadow:inset 16px 0 14px -13px #7adce5}
 .l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip[data-more-start="true"][data-more-end="true"]{box-shadow:inset 16px 0 14px -13px #7adce5,inset -16px 0 14px -13px #7adce5}
@@ -1073,7 +1088,10 @@ function kindLabel() {
 .prompt-actor,.prompt-selection-range{overflow-wrap:anywhere}
 .prompt-choice-detail{display:flex;flex-direction:column;gap:3px;min-width:0;margin:7px 3px 10px;padding:8px 10px;border:1px solid #598c8c;background:#0a1b1e;color:#e9f2ed;font-size:var(--l12-board-copy,13px);line-height:1.4;overflow-wrap:anywhere}
 .prompt-choice-detail strong{color:#fff}.prompt-choice-detail .unavailable-reason{color:#ffb7ba}
-.prompt-minimized-bar{max-width:min(360px,calc(100vw - 16px))}
+.prompt-minimized-bar{max-width:min(360px,calc(var(--l12-viewport-width,100vw) - var(--l12-viewport-left,0px) - 16px))}
 .prompt-minimized-task{box-sizing:border-box;display:block;max-width:100%;max-height:4.5em;overflow:auto;padding:5px 8px;border:1px solid #598c8c;background:#10191b;color:#fff;font-size:var(--l12-board-copy,13px);line-height:1.35;white-space:normal;overflow-wrap:anywhere;box-shadow:0 12px 35px #000}
 .l12-prompt-overlay.mobile-safe-overlay .prompt-minimize,.l12-prompt-overlay.mobile-safe-overlay .prompt-minimized-bar button{min-width:44px;min-height:44px}
+:global(#l12-landscape-teleports .mobile-battle-dock__context) .l12-prompt-overlay.mobile-safe-overlay.minimized{max-height:min(100%,calc(var(--l12-viewport-height,100vh) - var(--l12-viewport-top,0px) - 8px))!important;overflow:auto!important}
+:global(#l12-landscape-teleports .mobile-battle-dock__context) .l12-prompt-overlay.mobile-safe-overlay.minimized .prompt-minimized-bar{max-width:100%}
+:global(#l12-landscape-teleports .mobile-battle-dock__context) .l12-prompt-overlay.mobile-safe-overlay.minimized .prompt-minimized-bar button{min-height:44px!important}
 </style>

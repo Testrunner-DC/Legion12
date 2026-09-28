@@ -34,6 +34,13 @@ const clock = computed(() => {
     timedPreparation,
   }
 })
+const clockStatus = computed(() => {
+  if (!clock.value) return props.active ? '回合玩家' : '等待回合'
+  const actor = props.side === 'my' ? '我方' : '对手'
+  return clock.value.acting
+    ? `${actor}${clock.value.preparation ? '准备中' : '行动中'}`
+    : `${actor}等待${clock.value.preparation ? '准备' : '行动'}`
+})
 
 function formatClock(value: number) {
   const seconds = Math.max(0, Math.ceil(value / 1000))
@@ -44,14 +51,14 @@ function formatClock(value: number) {
 <template>
   <section class="player-turn-clock" :class="[`side-${side}`, { active: clock?.acting ?? active, disconnected: clock && !clock.connected, 'untimed-clock': !clock }]"
     data-ui-contract="persistent-player-turn-clock" :data-player-index="playerIndex">
-    <strong>{{ clock?.preparation ? (clock.acting ? '准备操作' : '等待准备') : active ? '回合玩家' : '等待回合' }}</strong>
+    <strong>{{ clockStatus }}</strong>
     <template v-if="clock">
-      <span v-if="!clock.preparation || clock.connected"><small>总时</small><b>{{ formatClock(clock.total) }}</b></span>
-      <span v-if="clock.timedPreparation && clock.acting"><small>准备</small><b>{{ formatClock(clock.operation) }}</b></span>
+      <span v-if="!clock.preparation || clock.connected"><small>总时剩余</small><b>{{ formatClock(clock.total) }}</b></span>
+      <span v-if="clock.timedPreparation && clock.acting"><small>准备剩余</small><b>{{ formatClock(clock.operation) }}</b></span>
       <span v-else-if="clock.preparation"><small>准备</small><b>{{ clock.acting ? '处理中' : '等待' }}</b></span>
-      <span v-if="clock.preparation && !clock.connected"><small>重连</small><b>{{ formatClock(clock.reconnect ?? 0) }}</b></span>
-      <span v-if="!clock.preparation && clock.connected"><small>本次</small><b>{{ formatClock(clock.operation) }}</b></span>
-      <span v-if="!clock.preparation && !clock.connected"><small>重连</small><b>{{ formatClock(clock.reconnect ?? 0) }}</b></span>
+      <span v-if="clock.preparation && !clock.connected"><small>重连剩余</small><b>{{ formatClock(clock.reconnect ?? 0) }}</b></span>
+      <span v-if="!clock.preparation && clock.connected"><small>本次剩余</small><b>{{ formatClock(clock.operation) }}</b></span>
+      <span v-if="!clock.preparation && !clock.connected"><small>重连剩余</small><b>{{ formatClock(clock.reconnect ?? 0) }}</b></span>
     </template>
   </section>
 </template>
