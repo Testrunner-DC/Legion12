@@ -85,4 +85,40 @@ assert.equal(knownZones.get('grave-copy'), 'graveyard')
 assert.equal(knownZones.get('field-copy'), 'field')
 assert.equal(knownZones.get('resolving-copy'), 'resolving')
 
-console.log('Battle visual transition projection passed: 41/41 assertions')
+const stateClaims = model.createCardStateClaimState()
+assert.deepEqual(model.claimCardStateTransitions(stateClaims, 20, before), [], 'first authoritative snapshot establishes a state baseline')
+const firstRest = model.claimCardStateTransitions(stateClaims, 21, after)
+assert.deepEqual(firstRest.map(change => change.transactionKey), ['21:same:active>rested'], 'a newer authoritative revision claims one active-to-rested transaction')
+assert.deepEqual(model.claimCardStateTransitions(stateClaims, 21, before), [], 'same-revision object replacement cannot roll the accepted state backward')
+assert.deepEqual(model.claimCardStateTransitions(stateClaims, 21, after), [], 'same-revision replay cannot claim the same rest transaction twice')
+assert.deepEqual(model.claimCardStateTransitions(stateClaims, 22, before).map(change => change.transactionKey), ['22:same:rested>active'], 'a later real ready transaction remains visible')
+model.resetCardStateClaimState(stateClaims, 30, after)
+assert.deepEqual(model.claimCardStateTransitions(stateClaims, 30, after), [], 'reconnect baseline never backfills historical state motion')
+assert.deepEqual(model.claimCardStateTransitions(stateClaims, 29, before), [], 'stale snapshot cannot rewind live authoritative state')
+
+const transactionClaims = model.createMovementClaimState()
+const handZones = new Map([['entrant', 'hand'], ['second-entrant', 'hand']])
+model.resetMovementClaimState(transactionClaims, 9, 40, handZones)
+const fieldZones = new Map([['entrant', 'field'], ['second-entrant', 'field']])
+const playFact = { key:'10:0:entrant:hand>field', sequence:10, cardIndex:0, instanceId:'entrant', from:'hand', to:'field' }
+const enterFact = { key:'11:0:entrant:hand>field', sequence:11, cardIndex:0, instanceId:'entrant', from:'hand', to:'field' }
+const secondPlay = { key:'12:0:second-entrant:hand>field', sequence:12, cardIndex:0, instanceId:'second-entrant', from:'hand', to:'field' }
+assert.equal(model.movementTransactionKey(41, playFact), '41:entrant:hand>field', 'movement transaction identity is revision, instance and normalized zones rather than event source')
+assert.deepEqual(model.claimMovementTransactions(transactionClaims, 41, fieldZones, [playFact, enterFact, secondPlay]).map(fact => fact.key),
+  [playFact.key, secondPlay.key], 'different event sources describing one authoritative entry are collapsed while different instances remain independent')
+assert.deepEqual(model.claimMovementTransactions(transactionClaims, 42, fieldZones, [enterFact]), [], 'later snapshots cannot replay an already settled cross-zone migration')
+const graveZones = new Map([['entrant', 'graveyard'], ['second-entrant', 'field']])
+const leaveFact = { key:'13:0:entrant:field>graveyard', sequence:13, cardIndex:0, instanceId:'entrant', from:'field', to:'graveyard' }
+assert.deepEqual(model.claimMovementTransactions(transactionClaims, 43, graveZones, [leaveFact]).map(fact => fact.key), [leaveFact.key], 'a real later departure of the same instance remains visible')
+const reenterFact = { key:'14:0:entrant:graveyard>field', sequence:14, cardIndex:0, instanceId:'entrant', from:'graveyard', to:'field' }
+assert.deepEqual(model.claimMovementTransactions(transactionClaims, 44, fieldZones, [reenterFact]).map(fact => fact.key), [reenterFact.key], 'the same instance may enter again after an authoritative departure')
+const duplicateEnterAtDestination = { key:'15:0:entrant:field>field', sequence:15, cardIndex:0, instanceId:'entrant', from:'field', to:'field' }
+assert.deepEqual(model.claimMovementTransactions(transactionClaims, 45, fieldZones, [duplicateEnterAtDestination]), [], 'a later enter description cannot masquerade as a same-zone move after the card has settled')
+const firstMove = { key:'16:0:entrant:field>field', sequence:16, cardIndex:0, instanceId:'entrant', from:'field', to:'field', allowSameZone:true }
+const secondMove = { key:'17:0:entrant:field>field', sequence:17, cardIndex:0, instanceId:'entrant', from:'field', to:'field', allowSameZone:true }
+assert.deepEqual(model.claimMovementTransactions(transactionClaims, 46, fieldZones, [firstMove, secondMove]).map(fact => fact.key),
+  [firstMove.key, secondMove.key], 'same-zone movements retain their distinct authoritative event identities')
+model.resetMovementClaimState(transactionClaims, 17, 50, fieldZones)
+assert.deepEqual(model.claimMovementTransactions(transactionClaims, 50, fieldZones, [playFact]), [], 'reconnect baseline does not backfill a historical entry')
+
+console.log('Battle visual transition projection passed: 55/55 assertions')

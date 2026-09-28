@@ -4,7 +4,7 @@ import { l12AnimationDuration } from '../audioPreferences'
 import { landscapeTeleportTarget, visibleViewport, viewportRect } from '../mobileViewport'
 import { CARD_IMAGE_PLACEHOLDER, resolveCardAssetUrls } from '../cardAssets'
 import type { ActionEvent, Card, PlayerView, Prompt } from '../types'
-import { claimFreshMovementEvents, claimMovementFact, collectKnownCardZones, collectPromptSourceZoneHints, createMovementClaimState, isAuthoritativePublicFaceMovement, isCombatDefeatLeaveEvent, isMovementCardConcealed, isSupersededLeaveEvent, leaveMovementDestination, movementCardsForEvent, movementFactKey, resetMovementClaimState, type VisualZone } from './visualTransitionProjection'
+import { claimFreshMovementEvents, claimMovementTransactions, collectKnownCardZones, collectPromptSourceZoneHints, createMovementClaimState, isAuthoritativePublicFaceMovement, isCombatDefeatLeaveEvent, isMovementCardConcealed, isSupersededLeaveEvent, leaveMovementDestination, movementCardsForEvent, movementFactKey, resetMovementClaimState, type VisualZone } from './visualTransitionProjection'
 import type { PresentationReservation, PresentationSequenceCoordinator } from './presentationSequenceCoordinator'
 
 type Zone = VisualZone
@@ -37,11 +37,13 @@ const props = withDefaults(defineProps<{
   players: PlayerView[]
   prompts: Prompt[]
   matchId: string
+  revision: number
   viewerPlayerIndex: number
+  synchronizing?: boolean
   paused?: boolean
   playbackSpeed?: number | null
   sequenceCoordinator: PresentationSequenceCoordinator
-}>(), { paused: false, playbackSpeed: null })
+}>(), { synchronizing: false, paused: false, playbackSpeed: null })
 const emit = defineEmits<{ busyChange: [busy: boolean] }>()
 
 const active = ref<Movement | null>(null)
@@ -118,6 +120,11 @@ function publicHandAddCaption(event: ActionEvent, card: Card) {
   return source ? `〈${card.name}〉因〈${source}〉加入手牌` : `〈${card.name}〉加入手牌`
 }
 
+function authoritativeSourceZone(card: Card | undefined, fallback: Zone) {
+  if (!card?.instanceId) return fallback
+  return sourceZoneHints.get(card.instanceId) ?? movementClaims.zones.get(card.instanceId) ?? fallback
+}
+
 function movementFromEvent(event: ActionEvent, cardIndex: number, fromRect: AnchorRect, toRect: AnchorRect, selectedCard?: Card): Movement | null {
   // Combat deaths already keep the exact battlefield visual until it reaches the
   // owner's graveyard. Do not create a second card when delayed death triggers finish.
@@ -140,24 +147,25 @@ function movementFromEvent(event: ActionEvent, cardIndex: number, fromRect: Anch
     from = 'hand'; to = event.cards?.[0]?.cardType === 'artifact' ? 'relic'
       : event.cards?.[0]?.cardType === 'legion' ? 'field' : 'center'; label = '打出'
   } else if (event.type === 'put' || event.type === 'enter') {
-    from = selectedCard && sourceZoneHints.get(selectedCard.instanceId) || textSource(event.text); to = 'field'; label = '登场'
+    const describedSource = textSource(event.text)
+    from = authoritativeSourceZone(selectedCard, describedSource === 'field' ? 'resolving' : describedSource); to = 'field'; label = '登场'
   } else if (event.type === 'move') {
     from = 'field'; to = 'field'; label = '位移'
   } else if (event.type === 'attach') {
-    from = selectedCard && sourceZoneHints.get(selectedCard.instanceId) || 'resolving'; to = 'attached'; label = '叠放'
+    from = authoritativeSourceZone(selectedCard, 'resolving'); to = 'attached'; label = '叠放'
   } else if (event.type === 'grave' || event.type === 'discard') {
-    from = textSource(event.text); to = 'graveyard'; label = event.type === 'discard' ? '弃置' : '入墓'
+    from = authoritativeSourceZone(selectedCard, textSource(event.text)); to = 'graveyard'; label = event.type === 'discard' ? '弃置' : '入墓'
   } else if (event.type === 'mill') {
     from = 'library'; to = 'graveyard'; label = '弃置'
   } else if (event.type === 'return') {
-    from = event.text.includes('从墓地') ? 'graveyard' : event.text.includes('从圣物区') ? 'relic' : 'field'
+    from = authoritativeSourceZone(selectedCard, event.text.includes('从墓地') ? 'graveyard' : event.text.includes('从圣物区') ? 'relic' : 'field')
     to = event.text.includes('主宰区') ? 'master' : event.text.includes('手牌') ? 'hand' : event.text.includes('圣物区') ? 'relic' : 'library'
     label = '返回'
   } else if (event.type === 'leave') {
     // Ordinary authoritative field departures used to disappear between two
     // snapshots. Combat defeat owns its own motion layer; non-defeat costs,
     // discards, removals and replacements use this shared zone lane.
-    from = selectedCard && sourceZoneHints.get(selectedCard.instanceId) || 'field'
+    from = authoritativeSourceZone(selectedCard, 'field')
     to = leaveMovementDestination(event)
     label = /费用/.test(event.text) ? '支付费用' : '离场'
   } else return null
@@ -381,7 +389,8 @@ function reset() {
   cancelActiveMovement()
   for (const movement of queue) movement.presentationRelease?.()
   queue.length = 0
-  resetMovementClaimState(movementClaims, Math.max(0, ...props.events.map(event => event.sequence)))
+  resetMovementClaimState(movementClaims, Math.max(0, ...props.events.map(event => event.sequence)),
+    props.revision, collectKnownCardZones(props.players))
   sourceZoneHints.clear()
   for (const reservation of pendingReservations) reservation.cancel()
   pendingReservations.clear()
@@ -390,12 +399,16 @@ function reset() {
   notifyBusy()
 }
 
-watch(() => props.matchId, reset, { flush: 'sync' })
-watch(() => props.events.map(event => event.sequence).join(','), async () => {
+watch(() => props.matchId, reset, { flush: 'sync', immediate: true })
+watch(() => [props.revision, props.synchronizing, props.events.map(event => event.sequence).join(',')] as const, async ([revision, synchronizing]) => {
+  if (synchronizing || (props.playbackSpeed && revision < movementClaims.zoneRevision)) {
+    reset()
+    return
+  }
   // This advances the cursor synchronously, before the first await below. A
   // rapid next snapshot therefore cannot reclaim events still being prepared.
   const fresh = claimFreshMovementEvents(props.events, movementClaims)
-  const drafts = fresh.flatMap(event => {
+  const transactionDrafts = fresh.flatMap(event => {
     if (isSupersededLeaveEvent(event, fresh) || isCombatDefeatLeaveEvent(event)) return []
     return movementCardsForEvent(event)
     .filter(card => event.type !== 'reveal' || !isMovementCardConcealed(event, card)).map((card, cardIndex) => ({
@@ -404,7 +417,18 @@ watch(() => props.events.map(event => event.sequence).join(','), async () => {
       draft: movementFromEvent(event, cardIndex, fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), fallbackRect('center', event.playerIndex ?? props.viewerPlayerIndex), card),
     }))
   }).filter((item): item is { event: ActionEvent; cardIndex: number; draft: Movement } => Boolean(item.draft))
-    .filter(({ draft }) => claimMovementFact(movementClaims, draft.key))
+  const authoritativeZones = collectKnownCardZones(props.players)
+  const claimedKeys = new Set(claimMovementTransactions(movementClaims, revision, authoritativeZones,
+    transactionDrafts.map(({ event, cardIndex, draft }) => ({
+      key: draft.key,
+      sequence: draft.sequence,
+      cardIndex,
+      instanceId: draft.card?.instanceId ?? `cardless-${draft.sequence}-${cardIndex}`,
+      from: draft.from,
+      to: draft.to,
+      allowSameZone: event.type === 'move' || event.type === 'disaster-reveal',
+    }))).map(fact => fact.key))
+  const drafts = transactionDrafts.filter(({ draft }) => claimedKeys.has(draft.key))
   const reservations = drafts.map(({ event }) => {
     const reservation = props.sequenceCoordinator.reserve(event.sequence, 20)
     reservation.setPaused(props.paused)

@@ -2,8 +2,10 @@
 import { reactive, ref } from 'vue'
 import type { ActionEvent, Card, GameState, PlayerView, Prompt } from '../../src/l12/types'
 import GameBoard from '../../src/l12/game/GameBoard.vue'
+import { l12State } from '../../src/l12/net'
 
 const faceUrl = (cardId: string) => `/api/site/media/visual-transition/${cardId}.png`
+const initialViewer = Number(new URLSearchParams(window.location.search).get('viewer') || 0)
 const card = (instanceId: string, name: string, cardId: string, tapped = false, imageUrl?: string): Card => ({
   instanceId, name, cardId, cardType: 'legion', faction: 'otherworld', cost: 1,
   baseTroops: 2000, troops: 2000, disasterLevel: 0, tapped, summonRound: 0, imageUrl,
@@ -30,14 +32,24 @@ const festivalHandCard = card('festival-hand-card', '陵墓守卫', 'S01-0212')
 const festivalGraveCard = card('festival-grave-card', '卡诺匹斯罐 一', 'S01-0208')
 const finn = card('finn-optional-ready', '芬恩', 'S02-0610', true)
 const nuada = { ...card('nuada-source', '银臂努阿达', 'ST06-M1'), cardType: 'master' }
+const restedDefender = card('rested-defender', '休整守军', 'S01-01M1', true, faceUrl('S01-01M1'))
+const activeDefender = card('active-defender', '活跃守军', 'S01-01M2', false, faceUrl('S01-01M2'))
+const plainEntrant = card('plain-entrant', '普通登场军团', 'S01-02M1', false, faceUrl('S01-02M1'))
+const triggeredEntrant = card('triggered-entrant', '带登场效果军团', 'S01-02M3', false, faceUrl('S01-02M3'))
+const negatedEntrant = card('negated-entrant', '效果被无效军团', 'S01-03M1', false, faceUrl('S01-03M1'))
+const freeEntrant = card('free-entrant', '免费登场军团', 'S01-03M2', false, faceUrl('S01-03M2'))
+const rapidEntrantA = card('rapid-entrant-a', '连续登场甲', 'S01-04M1', false, faceUrl('S01-04M1'))
+const rapidEntrantB = card('rapid-entrant-b', '连续登场乙', 'S01-04M2', false, faceUrl('S01-04M2'))
 
 function player(playerIndex: number): PlayerView {
   return {
     playerIndex, name: playerIndex ? '玩家B' : '玩家A', deckName: '', faction: 'otherworld',
     master: { masterId: playerIndex ? 'S02-06M1' : 'ST06-M1', masterName: playerIndex ? '莫瑞甘' : '银臂努阿达', hp: 8, maxHp: 8 },
-    libraryCount: playerIndex ? 20 : 23, libraryTop: null, hand: playerIndex ? [] : [handSquire, robinSquire, duplicateCard, pharaohFestival], handCount: playerIndex ? 0 : 4,
+    libraryCount: playerIndex ? 20 : 23, libraryTop: null,
+    hand: playerIndex ? [plainEntrant, triggeredEntrant, negatedEntrant, freeEntrant, rapidEntrantA, rapidEntrantB] : [handSquire, robinSquire, duplicateCard, pharaohFestival],
+    handCount: playerIndex ? 6 : 4,
     morale: [], field: playerIndex
-      ? [[null, null, null], [null, null, null]]
+      ? [[restedDefender, activeDefender, null], [null, null, null]]
       : [[mover, swapper, host], [finn, null, null]],
     graveyard: [], graveyardCount: 0, resolving: [],
     specialZones: { runes: 2, trialLevel: 0, godPower: [], trials: [] }, mulliganDone: true,
@@ -45,7 +57,7 @@ function player(playerIndex: number): PlayerView {
 }
 
 const game = reactive<GameState>({
-  matchId: 'visual-transition-harness', roomCode: 'HARNESS', you: 0, revision: 1,
+  matchId: 'visual-transition-harness', roomCode: 'HARNESS', you: initialViewer, revision: 1,
   activePlayer: 0, firstPlayer: 0, diceWinner: 0, initiativeRolls: [4, 2], phase: 'Main', round: 2, turnSerial: 2,
   disasterMode: 'none', disasterValue: 0, prompts: [], effectStack: [], players: [player(0), player(1)],
   recentEvents: [], legalAttackTargets: {}, stateHash: 'visual-1',
@@ -80,10 +92,96 @@ function returnFromGrave(cards: Card[], placement: '顶部' | '底部') {
   game.stateHash = `visual-${game.revision}`
   game.recentEvents = [...(game.recentEvents ?? []), ...events]
 }
+function publishBatch(events: Array<Omit<ActionEvent, 'sequence'>>) {
+  game.revision += 1
+  game.stateHash = `visual-${game.revision}`
+  game.recentEvents = [...(game.recentEvents ?? []), ...events.map(event => ({ ...event, sequence:++sequence }))]
+}
+function placeOpponent(card: Card, row: number, slot: number, events: Array<Omit<ActionEvent, 'sequence'>>) {
+  game.players[1].hand = game.players[1].hand?.filter(item => item.instanceId !== card.instanceId)
+  game.players[1].handCount = game.players[1].hand?.length
+  game.players[1].field[row][slot] = card
+  publishBatch(events)
+}
 
 const api = {
   tap() { const current = game.players[0].field.flat().find(item => item?.instanceId === mover.instanceId); if (current) current.tapped = true; game.revision += 1 },
   ready() { const current = game.players[0].field.flat().find(item => item?.instanceId === mover.instanceId); if (current) current.tapped = false; game.revision += 1 },
+  attackWithDuplicateRestSnapshots() {
+    const current = game.players[0].field.flat().find(item => item?.instanceId === mover.instanceId)
+    if (!current) return
+    current.tapped = true
+    game.revision += 1
+    const attackRevision = game.revision
+    game.recentEvents = [...(game.recentEvents ?? []), { sequence:++sequence, type:'attack', playerIndex:0, text:'侍从骑士发动进攻', cards:[current, restedDefender] }]
+    queueMicrotask(() => {
+      current.tapped = false
+      game.revision = attackRevision
+      queueMicrotask(() => {
+        current.tapped = true
+        game.revision = attackRevision
+      })
+    })
+  },
+  attackRestedTarget() { publishBatch([{ type:'attack', playerIndex:0, text:'攻击休整守军', cards:[swapper, restedDefender] }]) },
+  attackActiveTarget() { publishBatch([{ type:'attack', playerIndex:0, text:'攻击活跃守军', cards:[swapper, activeDefender] }]) },
+  reconnectWithHistoricalReady() {
+    l12State.status = 'connecting'
+    l12State.recoveryPhase = 'snapshot-received'
+    const current = game.players[0].field.flat().find(item => item?.instanceId === mover.instanceId)
+    if (current) current.tapped = false
+    game.revision += 10
+    queueMicrotask(() => {
+      l12State.status = 'online'
+      l12State.recoveryPhase = 'snapshot-acknowledged'
+    })
+  },
+  playPlainEntrant() {
+    placeOpponent(plainEntrant, 0, 2, [{ type:'play', playerIndex:1, text:'玩家B打出普通登场军团', cards:[plainEntrant] }])
+  },
+  playTriggeredEntrant() {
+    placeOpponent(triggeredEntrant, 1, 0, [
+      { type:'play', playerIndex:1, text:'玩家B打出带登场效果军团', cards:[triggeredEntrant] },
+      { type:'enter', playerIndex:1, text:'带登场效果军团登场并触发效果', cards:[triggeredEntrant] },
+      { type:'effect-trigger', playerIndex:1, text:'带登场效果军团的登场时效果入栈', effectSceneId:'entry-trigger', effectResultStatus:'resolved', cards:[triggeredEntrant] },
+    ])
+  },
+  repeatTriggeredEnterSnapshot() {
+    publishBatch([
+      { type:'enter', playerIndex:1, text:'带登场效果军团登场并触发效果', cards:[triggeredEntrant] },
+      { type:'effect-response', playerIndex:1, text:'响应后重新发布登场对象', cards:[triggeredEntrant] },
+    ])
+  },
+  playNegatedEntrant() {
+    placeOpponent(negatedEntrant, 1, 1, [
+      { type:'play', playerIndex:1, text:'玩家B打出效果被无效军团', cards:[negatedEntrant] },
+      { type:'enter', playerIndex:1, text:'效果被无效军团登场', cards:[negatedEntrant] },
+      { type:'effect-result', playerIndex:1, text:'登场时效果被无效', effectSceneId:'entry-negated', effectResultStatus:'negated', cards:[negatedEntrant] },
+    ])
+  },
+  freeTriggeredEntrant() {
+    game.prompts = [prompt('free-entry-source', { 'free-entrant:zone':'手牌' })]
+    placeOpponent(freeEntrant, 1, 2, [
+      { type:'put', playerIndex:1, text:'效果使免费登场军团从手牌免费登场', cards:[freeEntrant] },
+      { type:'enter', playerIndex:1, text:'免费登场军团登场并触发效果', cards:[freeEntrant] },
+    ])
+    game.prompts = []
+  },
+  rapidDifferentEntrants() {
+    game.players[0].hand = [...(game.players[0].hand ?? []), rapidEntrantA, rapidEntrantB]
+    game.players[0].handCount = game.players[0].hand.length
+    game.revision += 1
+    queueMicrotask(() => {
+      game.players[0].hand = game.players[0].hand?.filter(item => item.instanceId !== rapidEntrantA.instanceId && item.instanceId !== rapidEntrantB.instanceId)
+      game.players[0].handCount = game.players[0].hand?.length
+      game.players[0].field[1][1] = rapidEntrantA
+      game.players[0].field[1][2] = rapidEntrantB
+      publishBatch([
+        { type:'play', playerIndex:0, text:'玩家A连续打出军团甲', cards:[rapidEntrantA] },
+        { type:'play', playerIndex:0, text:'玩家A连续打出军团乙', cards:[rapidEntrantB] },
+      ])
+    })
+  },
   move() {
     replaceField([[null, mover, host], [null, swapper, null]])
     publish({ type: 'move', playerIndex: 0, text: '侍从骑士移动至相邻阵地', cards: [mover] })
@@ -138,6 +236,8 @@ const api = {
     game.players[0].handCount = game.players[0].hand?.length
     game.players[0].graveyard = [...(game.players[0].graveyard ?? []), duplicateCard]
     game.players[0].graveyardCount = game.players[0].graveyard.length
+    game.revision += 1
+    game.stateHash = `visual-${game.revision}`
     const discard = { sequence:++sequence, type:'discard', playerIndex:0, text:'玩家A弃置佣兵部队', cards:[duplicateCard] }
     game.recentEvents = [...(game.recentEvents ?? []), discard]
     queueMicrotask(() => {
@@ -193,6 +293,7 @@ const api = {
   openPrompt() { game.prompts = [prompt(`blocking-${game.revision}`)]; game.revision += 1 },
   closePrompt() { game.prompts = []; game.revision += 1 },
   setReplay(speed: number | null) { playbackSpeed.value = speed },
+  setViewer(playerIndex: number) { game.you = playerIndex; game.revision += 1 },
 }
 Object.assign(window, { __visualTransitionHarness: api })
 </script>

@@ -8,7 +8,7 @@ import { createServer } from 'vite'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const output = path.join(root, 'artifacts', 'battle-visual-transitions')
+const output = process.env.L12_BATTLE_VISUAL_OUT || path.join(root, 'artifacts', 'battle-visual-transitions')
 fs.rmSync(output, { recursive: true, force: true })
 fs.mkdirSync(output, { recursive: true })
 const harnessFaceIds = ['S01-01M1', 'S01-01M2', 'S01-02M1', 'S01-02M3', 'S01-03M1', 'S01-03M2', 'S01-04M1', 'S01-04M2']
@@ -98,8 +98,12 @@ async function expectConcealedLibraryPile(page, profile, label) {
   ok(sources.every(source => !source.includes('/api/site/media/visual-transition/')), `${profile}: ${label} must not expose an authority face after settling`)
 }
 async function resetMovementTrace(page) { await page.evaluate(() => { window.__movementTrace = [] }) }
+async function waitForMovementTrace(page, count = 1) {
+  await page.waitForFunction(expected => (window.__movementTrace?.length ?? 0) >= expected, count, { timeout:6000 })
+}
 async function expectTrace(page, profile, expected, label) {
-  ok(JSON.stringify(await page.evaluate(() => window.__movementTrace.slice())) === JSON.stringify(expected), `${profile}: ${label} must preserve event-local order`)
+  const actual = await page.evaluate(() => window.__movementTrace.slice())
+  ok(JSON.stringify(actual) === JSON.stringify(expected), `${profile}: ${label} must preserve event-local order: ${actual.join(',')}`)
 }
 async function startStateContinuityProbe(page, instanceId, durationMs = 520) {
   await page.evaluate(({ instanceId, durationMs }) => {
@@ -135,6 +139,41 @@ function assertStateContinuity(samples, profile, label) {
   ok(samples.some(sample => sample.ghost && !sample.target), `${profile}: ${label} must visibly hand authority to a transition ghost`)
   ok(samples.some(sample => !sample.ghost && sample.target), `${profile}: ${label} must visibly settle on the authority target`)
 }
+async function resetStateTransitionTrace(page) {
+  await page.evaluate(() => {
+    window.__stateTransitionTrace = []
+    if (window.__stateTransitionObserver) return
+    let last = ''
+    window.__stateTransitionObserver = new MutationObserver(() => {
+      const node = document.querySelector('.l12-card-state-transition-ghost')
+      const key = node?.getAttribute('data-visual-transition-key') ?? ''
+      if (key && key !== last) window.__stateTransitionTrace.push(`${node.dataset.stateFrom}>${node.dataset.stateTo}`)
+      last = key
+    })
+    window.__stateTransitionObserver.observe(document.body, { childList:true, subtree:true })
+  })
+}
+async function startCardAngleProbe(page, instanceId, durationMs = 520) {
+  await page.evaluate(({ instanceId, durationMs }) => {
+    const samples = []
+    window.__cardAngleSamples = samples
+    const started = performance.now()
+    const tick = () => {
+      const element = document.querySelector(`[data-card-instance-id="${CSS.escape(instanceId)}"]`)
+      if (element instanceof HTMLElement) {
+        const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform)
+        samples.push(Math.atan2(matrix.b, matrix.a) * 180 / Math.PI)
+      }
+      if (performance.now() - started < durationMs) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }, { instanceId, durationMs })
+}
+function nearAngle(angle, expected) {
+  const normalized = ((angle % 360) + 360) % 360
+  const target = ((expected % 360) + 360) % 360
+  return Math.min(Math.abs(normalized - target), 360 - Math.abs(normalized - target)) <= 4
+}
 
 try {
   await server.listen()
@@ -142,13 +181,13 @@ try {
   const port = typeof address === 'object' && address ? address.port : 0
   browser = await chromium.launch({ headless: true, channel: 'msedge' })
   for (const profile of [
-    { name: 'desktop', viewport: { width: 1920, height: 1080 } },
-    { name: 'mobile-landscape', viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true },
+    { name: 'desktop', viewport: { width: 1920, height: 1080 }, viewer: 0 },
+    { name: 'mobile-landscape', viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true, viewer: 0 },
   ]) {
     const context = await browser.newContext({ viewport: profile.viewport, isMobile: profile.isMobile, hasTouch: profile.hasTouch })
     const page = await context.newPage()
     page.on('pageerror', error => report.errors.push(`${profile.name}: ${error.message}`))
-    await page.goto(`http://127.0.0.1:${port}/__battle-visual-transitions`, { waitUntil: 'networkidle' })
+    await page.goto(`http://127.0.0.1:${port}/__battle-visual-transitions?viewer=${profile.viewer}`, { waitUntil: 'networkidle' })
     await page.waitForSelector('[data-l12-game-stage]')
     await startStateContinuityProbe(page, 'mover-1')
     await invoke(page, 'tap')
@@ -189,6 +228,36 @@ try {
       && new Set(rapidSamples.map(sample => sample.direction).filter(Boolean)).has('rested>active'), `${profile.name}: rapid reverse must render both authoritative directions`)
     ok(await page.locator('[data-card-instance-id="mover-1"]:not(.tapped)').count() === 1
       && await visibleCount(page, '.l12-card-state-transition-ghost') === 0, `${profile.name}: rapid reverse must settle once on the active authority DOM`)
+
+    await resetStateTransitionTrace(page)
+    await invoke(page, 'attackWithDuplicateRestSnapshots')
+    await page.waitForTimeout(1300)
+    let stateTrace = await page.evaluate(() => window.__stateTransitionTrace.slice())
+    ok(stateTrace.filter(direction => direction === 'active>rested').length === 1, `${profile.name}: one attack transaction must rest its attacker exactly once: ${stateTrace.join(',')}`)
+    ok(!stateTrace.includes('rested>active'), `${profile.name}: same-revision object replacement must not fabricate a ready transition`)
+    ok(await page.locator('[data-card-instance-id="mover-1"].tapped').count() === 1, `${profile.name}: duplicate attack snapshots must settle on the rested authority state`)
+
+    await invoke(page, 'ready')
+    await page.waitForTimeout(500)
+    await startCardAngleProbe(page, 'rested-defender')
+    await invoke(page, 'attackWithDuplicateRestSnapshots')
+    await page.waitForTimeout(1300)
+    stateTrace = await page.evaluate(() => window.__stateTransitionTrace.slice())
+    ok(stateTrace.filter(direction => direction === 'active>rested').length === 2, `${profile.name}: a later real ready→attack transaction must still animate once`)
+    const restedAngles = await page.evaluate(() => window.__cardAngleSamples.slice())
+    ok(restedAngles.length >= 8 && restedAngles.every(angle => nearAngle(angle, 90)), `${profile.name}: rested defender must preserve its authority angle through every attack-impact sample`)
+
+    await startCardAngleProbe(page, 'active-defender')
+    await invoke(page, 'attackActiveTarget')
+    await page.waitForTimeout(560)
+    const activeAngles = await page.evaluate(() => window.__cardAngleSamples.slice())
+    ok(activeAngles.length >= 8 && activeAngles.every(angle => nearAngle(angle, 0)), `${profile.name}: active defender must not be rotated by the isolated impact animation`)
+
+    await resetStateTransitionTrace(page)
+    await invoke(page, 'reconnectWithHistoricalReady')
+    await page.waitForTimeout(180)
+    ok(await visibleCount(page, '.l12-card-state-transition-ghost') === 0, `${profile.name}: reconnect baseline must not backfill a historical ready animation`)
+    ok(await page.locator('[data-card-instance-id="mover-1"]:not(.tapped)').count() === 1, `${profile.name}: reconnect baseline must expose only the current authority state`)
 
     await invoke(page, 'move')
     await page.waitForTimeout(60)
@@ -339,7 +408,8 @@ try {
 
     await invoke(page, 'duplicateDiscardSnapshots')
     await page.waitForTimeout(70)
-    ok(await visibleCount(page, '.l12-zone-flight-ghost,.zone-card-movement') === 1, `${profile.name}: rapid discard snapshot must start exactly one movement`)
+    const rapidDiscardCount = await visibleCount(page, '.l12-zone-flight-ghost,.zone-card-movement')
+    ok(rapidDiscardCount === 1, `${profile.name}: rapid discard snapshot must start exactly one movement (found ${rapidDiscardCount})`)
     await page.waitForTimeout(520)
     ok(await visibleCount(page, '.l12-zone-flight-ghost,.zone-card-movement') === 0, `${profile.name}: reentrant snapshots must not replay the same discard fact`)
     await invoke(page, 'returnDuplicateCard')
@@ -349,6 +419,46 @@ try {
     await expectConcealedLibraryPile(page, profile.name, 'single bottom return')
     ok(await page.locator('[data-player-index="0"] [data-l12-zone="graveyard"] .pile-count').textContent() === '1'
       && await page.locator('[data-player-index="0"] [data-l12-zone="graveyard"] img[alt="佣兵部队"]').count() === 0, `${profile.name}: real second movement must match the final library state`)
+
+    await resetMovementTrace(page)
+    await invoke(page, 'playPlainEntrant')
+    await waitForMovementTrace(page)
+    await waitForMovementQueue(page)
+    await expectTrace(page, profile.name, ['plain-entrant'], 'ordinary legion entry')
+
+    await resetMovementTrace(page)
+    await invoke(page, 'playTriggeredEntrant')
+    await waitForMovementTrace(page)
+    await waitForMovementQueue(page)
+    await expectTrace(page, profile.name, ['triggered-entrant'], 'play plus enter-effect descriptions of one authority migration')
+    await page.waitForFunction(() => !document.querySelector('.public-reveal-animation'), null, { timeout:5000 })
+    await resetMovementTrace(page)
+    await invoke(page, 'repeatTriggeredEnterSnapshot')
+    await page.waitForTimeout(700)
+    ok((await page.evaluate(() => window.__movementTrace.slice())).length === 0
+      && await visibleCount(page, '.l12-zone-flight-ghost,.zone-card-movement') === 0,
+    `${profile.name}: response/object refresh at a later revision must not replay an already settled entry`)
+
+    await resetMovementTrace(page)
+    await invoke(page, 'playNegatedEntrant')
+    await waitForMovementTrace(page)
+    await waitForMovementQueue(page)
+    await expectTrace(page, profile.name, ['negated-entrant'], 'current-view entry with a negated trigger')
+    await page.waitForFunction(() => !document.querySelector('.public-reveal-animation'), null, { timeout:5000 })
+
+    await page.evaluate(() => window.__visualTransitionHarness.setReplay(8))
+    await resetMovementTrace(page)
+    await invoke(page, 'freeTriggeredEntrant')
+    await waitForMovementTrace(page)
+    await waitForMovementQueue(page)
+    await expectTrace(page, profile.name, ['free-entrant'], 'replay-speed free entry with put and enter descriptions')
+    await page.evaluate(() => window.__visualTransitionHarness.setReplay(null))
+
+    await resetMovementTrace(page)
+    await invoke(page, 'rapidDifferentEntrants')
+    await waitForMovementTrace(page, 2)
+    await waitForMovementQueue(page)
+    await expectTrace(page, profile.name, ['rapid-entrant-a', 'rapid-entrant-b'], 'rapid different-instance entries')
 
     await page.evaluate(() => { window.__movementTrace = [] })
     await invoke(page, 'pharaohFestivalChain')
@@ -368,9 +478,60 @@ try {
     await page.waitForTimeout(160)
     ok(await visibleCount(page, '.l12-card-state-transition-ghost') === 0, `${profile.name}: declining optional ready must not preview or roll back a false state transition`)
     ok(await page.locator('[data-card-instance-id="finn-optional-ready"].tapped').count() === 1, `${profile.name}: declining optional ready must preserve the rested authority state`)
+    if (profile.name === 'desktop') {
+      const opponentPage = await context.newPage()
+      opponentPage.on('pageerror', error => report.errors.push(`opponent-view: ${error.message}`))
+      await opponentPage.goto(`http://127.0.0.1:${port}/__battle-visual-transitions?viewer=1`, { waitUntil:'networkidle' })
+      await opponentPage.waitForSelector('[data-l12-game-stage]')
+      await opponentPage.evaluate(() => {
+        window.__movementTrace = []
+        let last = ''
+        new MutationObserver(() => {
+          const node = document.querySelector('.l12-zone-flight-ghost,.zone-card-movement')
+          const current = node?.getAttribute('data-movement-instance-id') ?? ''
+          if (current && current !== last) window.__movementTrace.push(current)
+          last = current
+        }).observe(document.body, { childList:true, subtree:true, attributes:true, attributeFilter:['data-movement-instance-id'] })
+      })
+      await invoke(opponentPage, 'playNegatedEntrant')
+      await waitForMovementTrace(opponentPage)
+      await waitForMovementQueue(opponentPage)
+      await expectTrace(opponentPage, 'opponent-view', ['negated-entrant'], 'opposite-player entry with a negated trigger')
+      await opponentPage.close()
+    }
     report.profiles.push(profile.name)
     await context.close()
   }
+  const reducedContext = await browser.newContext({ viewport:{ width:1366, height:768 }, reducedMotion:'reduce' })
+  const reducedPage = await reducedContext.newPage()
+  reducedPage.on('pageerror', error => report.errors.push(`reduced-motion: ${error.message}`))
+  await reducedPage.goto(`http://127.0.0.1:${port}/__battle-visual-transitions?viewer=0`, { waitUntil:'networkidle' })
+  await reducedPage.waitForSelector('[data-l12-game-stage]')
+  await resetStateTransitionTrace(reducedPage)
+  await startCardAngleProbe(reducedPage, 'rested-defender', 360)
+  await invoke(reducedPage, 'attackWithDuplicateRestSnapshots')
+  await reducedPage.waitForTimeout(480)
+  const reducedStateTrace = await reducedPage.evaluate(() => window.__stateTransitionTrace.slice())
+  ok(reducedStateTrace.filter(direction => direction === 'active>rested').length === 1
+    && !reducedStateTrace.includes('rested>active'), 'reduced-motion: one attack authority transaction must still be claimed exactly once')
+  const reducedAngles = await reducedPage.evaluate(() => window.__cardAngleSamples.slice())
+  ok(reducedAngles.length >= 6 && reducedAngles.every(angle => nearAngle(angle, 90)), 'reduced-motion: rested defender must preserve its authority angle')
+  await reducedPage.evaluate(() => {
+    window.__movementTrace = []
+    let last = ''
+    new MutationObserver(() => {
+      const node = document.querySelector('.l12-zone-flight-ghost,.zone-card-movement')
+      const current = node?.getAttribute('data-movement-instance-id') ?? ''
+      if (current && current !== last) window.__movementTrace.push(current)
+      last = current
+    }).observe(document.body, { childList:true, subtree:true, attributes:true, attributeFilter:['data-movement-instance-id'] })
+  })
+  await invoke(reducedPage, 'playTriggeredEntrant')
+  await waitForMovementTrace(reducedPage)
+  await waitForMovementQueue(reducedPage)
+  await expectTrace(reducedPage, 'reduced-motion', ['triggered-entrant'], 'entry transaction under reduced motion')
+  report.profiles.push('reduced-motion')
+  await reducedContext.close()
   ok(report.errors.length === 0, `browser errors: ${report.errors.join('; ')}`)
   fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ ...report, status: 'passed' }, null, 2))
   console.log(`Battle visual transitions browser verification passed: ${report.assertions} assertions, ${report.screenshots.length} frames`)

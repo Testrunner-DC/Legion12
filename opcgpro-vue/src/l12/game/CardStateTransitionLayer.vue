@@ -3,7 +3,7 @@ import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { l12AnimationDuration } from '../audioPreferences'
 import { viewportRect } from '../mobileViewport'
 import type { PlayerView } from '../types'
-import { changedTappedStates, collectVisualFieldState } from './visualTransitionProjection'
+import { claimCardStateTransitions, collectVisualFieldState, createCardStateClaimState, resetCardStateClaimState } from './visualTransitionProjection'
 
 type Transition = {
   key: string
@@ -17,14 +17,15 @@ type Transition = {
 const props = withDefaults(defineProps<{
   players: PlayerView[]
   matchId: string
+  revision: number
+  synchronizing?: boolean
   paused?: boolean
   playbackSpeed?: number | null
-}>(), { paused: false, playbackSpeed: null })
+}>(), { synchronizing: false, paused: false, playbackSpeed: null })
 
 const active = ref<Transition | null>(null)
 const queue: Transition[] = []
-let initialized = false
-let serial = 0
+const stateClaims = createCardStateClaimState()
 let wrapper: HTMLElement | null = null
 let animation: Animation | null = null
 let hiddenTarget: HTMLElement | null = null
@@ -122,13 +123,21 @@ function showNext() {
 }
 
 watch(() => props.matchId, () => {
-  cancelActive(); queue.length = 0; initialized = false
-}, { flush: 'sync' })
+  cancelActive(); queue.length = 0
+  resetCardStateClaimState(stateClaims, props.revision, collectVisualFieldState(props.players))
+}, { flush: 'sync', immediate: true })
 
-watch(() => collectVisualFieldState(props.players), (next, previous) => {
-  if (!initialized || !previous) { initialized = true; return }
-  for (const change of changedTappedStates(previous, next)) {
+watch(() => [props.revision, props.synchronizing, collectVisualFieldState(props.players)] as const, ([revision, synchronizing, next]) => {
+  // Recovery snapshots and backward replay seeks establish a new visual
+  // baseline. Historical state must never be backfilled as live motion.
+  if (synchronizing || (props.playbackSpeed && revision < stateClaims.revision)) {
+    cancelActive(); queue.length = 0
+    resetCardStateClaimState(stateClaims, revision, next)
+    return
+  }
+  for (const change of claimCardStateTransitions(stateClaims, revision, next)) {
     const instanceId = change.instanceId
+    if (active.value?.key === change.transactionKey || queue.some(item => item.key === change.transactionKey)) continue
     const source = cardElement(instanceId)
     if (!(source instanceof HTMLElement)) continue
     const sourceRect = viewportRect(source)
@@ -139,7 +148,7 @@ watch(() => collectVisualFieldState(props.players), (next, previous) => {
     const sourceGhost = source.cloneNode(true) as HTMLElement
     sourceGhost.style.visibility = 'visible'
     queue.push({
-      key: `${props.matchId}:${++serial}:${instanceId}:${Number(change.fromTapped)}-${Number(change.toTapped)}`,
+      key: `${props.matchId}:${change.transactionKey}`,
       instanceId,
       fromTapped: change.fromTapped,
       toTapped: change.toTapped,

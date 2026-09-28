@@ -24,18 +24,35 @@ export type MovementClaimState = {
   initialized: boolean
   lastSequence: number
   claimedKeys: Set<string>
+  zoneInitialized: boolean
+  zoneRevision: number
+  zones: Map<string, VisualZone>
+  transactionKeys: Set<string>
 }
 
 export function createMovementClaimState(): MovementClaimState {
-  return { initialized: false, lastSequence: 0, claimedKeys: new Set<string>() }
+  return {
+    initialized: false,
+    lastSequence: 0,
+    claimedKeys: new Set<string>(),
+    zoneInitialized: false,
+    zoneRevision: 0,
+    zones: new Map<string, VisualZone>(),
+    transactionKeys: new Set<string>(),
+  }
 }
 
-export function resetMovementClaimState(state: MovementClaimState, baselineSequence = 0) {
+export function resetMovementClaimState(state: MovementClaimState, baselineSequence = 0,
+  baselineRevision = 0, baselineZones = new Map<string, VisualZone>()) {
   // An explicit match reset establishes a baseline even when the new match has
   // no events yet. Its first later movement is live and must be animated.
   state.initialized = true
   state.lastSequence = baselineSequence
   state.claimedKeys.clear()
+  state.zoneInitialized = true
+  state.zoneRevision = baselineRevision
+  state.zones = new Map(baselineZones)
+  state.transactionKeys.clear()
 }
 
 export function claimFreshMovementEvents(events: ActionEvent[], state: MovementClaimState) {
@@ -70,6 +87,61 @@ export function claimMovementFact(state: MovementClaimState, key: string) {
   if (state.claimedKeys.has(key)) return false
   state.claimedKeys.add(key)
   return true
+}
+
+export type MovementTransactionFact = {
+  key: string
+  sequence: number
+  cardIndex: number
+  instanceId: string
+  from: VisualZone
+  to: VisualZone
+  allowSameZone?: boolean
+}
+
+export function movementTransactionKey(revision: number, fact: MovementTransactionFact) {
+  return `${revision}:${fact.instanceId}:${fact.from}>${fact.to}`
+}
+
+/**
+ * Claims the semantic zone migrations represented by a snapshot. Event
+ * sequence remains the identity for genuine same-zone moves, while cross-zone
+ * moves are consumed against a simulated authoritative zone cursor. This
+ * collapses play/put/enter descriptions of one migration without using time
+ * windows, and still admits leave -> re-enter chains and concurrent cards.
+ */
+export function claimMovementTransactions(state: MovementClaimState, revision: number,
+  authoritativeZones: Map<string, VisualZone>, facts: MovementTransactionFact[]) {
+  if (!state.zoneInitialized) {
+    state.zoneInitialized = true
+    state.zoneRevision = revision
+    state.zones = new Map(authoritativeZones)
+    return []
+  }
+  // Equal revisions are re-materializations of the same authority snapshot;
+  // lower revisions are stale live snapshots. Neither can create new motion.
+  if (revision <= state.zoneRevision) return []
+
+  const cursor = new Map(state.zones)
+  state.transactionKeys.clear()
+  const claimed: MovementTransactionFact[] = []
+  for (const fact of facts) {
+    if (fact.from === fact.to) {
+      if (!fact.allowSameZone) continue
+      if (claimMovementFact(state, fact.key)) claimed.push(fact)
+      continue
+    }
+    const current = cursor.get(fact.instanceId)
+    if (current !== undefined && current !== fact.from) continue
+    const transactionKey = movementTransactionKey(revision, fact)
+    if (state.transactionKeys.has(transactionKey)) continue
+    state.transactionKeys.add(transactionKey)
+    claimed.push(fact)
+    cursor.set(fact.instanceId, fact.to)
+  }
+  state.zoneRevision = revision
+  state.zones = new Map(authoritativeZones)
+  return claimed
 }
 
 export function isAuthoritativePublicFaceMovement(event: ActionEvent, from?: VisualZone, to?: VisualZone) {
@@ -136,6 +208,49 @@ export function collectPromptSourceZoneHints(prompts: Prompt[]) {
 }
 
 export type VisualFieldState = { instanceId: string; tapped: boolean }
+
+export type CardStateTransitionClaim = {
+  instanceId: string
+  fromTapped: boolean
+  toTapped: boolean
+  revision: number
+  transactionKey: string
+}
+
+export type CardStateClaimState = {
+  initialized: boolean
+  revision: number
+  states: Map<string, VisualFieldState>
+}
+
+export function createCardStateClaimState(): CardStateClaimState {
+  return { initialized: false, revision: 0, states: new Map<string, VisualFieldState>() }
+}
+
+export function resetCardStateClaimState(state: CardStateClaimState, revision: number,
+  states: Map<string, VisualFieldState>) {
+  state.initialized = true
+  state.revision = revision
+  state.states = new Map(states)
+}
+
+export function claimCardStateTransitions(state: CardStateClaimState, revision: number,
+  states: Map<string, VisualFieldState>): CardStateTransitionClaim[] {
+  if (!state.initialized) {
+    resetCardStateClaimState(state, revision, states)
+    return []
+  }
+  // One revision is one authority transaction. Replaced objects, duplicate
+  // envelopes, or a stale snapshot must not mutate the accepted visual state.
+  if (revision <= state.revision) return []
+  const changes = changedTappedStates(state.states, states).map(change => ({
+    ...change,
+    revision,
+    transactionKey: `${revision}:${change.instanceId}:${change.fromTapped ? 'rested' : 'active'}>${change.toTapped ? 'rested' : 'active'}`,
+  }))
+  resetCardStateClaimState(state, revision, states)
+  return changes
+}
 
 export function collectVisualFieldState(players: PlayerView[]) {
   const result = new Map<string, VisualFieldState>()

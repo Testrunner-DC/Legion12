@@ -160,6 +160,8 @@ let diceHideTimer: ReturnType<typeof setTimeout> | null = null
 const replayCardPresentationBusy = computed(() => Boolean(props.replayPlaybackSpeed && (
   hiddenRevealCard.value || publicReveal.value || replayZonePresentationBusy.value || replaySequencePresentationBusy.value || replayCombatPresentationBusy.value
 )))
+const synchronizingAuthoritySnapshot = computed(() => !props.replayPlaybackSpeed
+  && l12State.status === 'connecting' && l12State.recoveryPhase !== 'snapshot-acknowledged')
 watch(replayCardPresentationBusy, busy => emit('replayPresentationChange', busy), { immediate: true })
 
 function cardRevealDuration() {
@@ -1250,11 +1252,13 @@ function statusTexts(card: Card) {
             <ActionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId" :player-names="game.players.map(player => player.name)"
               :paused="passivePresentationPaused" />
             <ZoneMovementPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
-              :players="game.players" :prompts="game.prompts ?? []"
+              :players="game.players" :prompts="game.prompts ?? []" :revision="game.revision"
+              :synchronizing="synchronizingAuthoritySnapshot"
               :viewer-player-index="game.you" :paused="passivePresentationPaused" :playback-speed="replayPlaybackSpeed"
               :sequence-coordinator="cardPresentationCoordinator"
               @busy-change="replayZonePresentationBusy = $event" />
-            <CardStateTransitionLayer :players="game.players" :match-id="game.matchId"
+            <CardStateTransitionLayer :players="game.players" :match-id="game.matchId" :revision="game.revision"
+              :synchronizing="synchronizingAuthoritySnapshot"
               :paused="modalPresentationPaused" :playback-speed="replayPlaybackSpeed" />
             <CombatMotionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
               :playback-speed="replayPlaybackSpeed" @busy-change="replayCombatPresentationBusy = $event" />

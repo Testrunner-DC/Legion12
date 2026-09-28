@@ -78,8 +78,8 @@ function animateAttack(event: ActionEvent) {
   const source = viewportRect(attacker)
   const targetCard = cardElement(event.cards?.[1]?.instanceId)
   const targetPlayer = event.playerIndex === undefined ? undefined : 1 - event.playerIndex
-  const targetElement = targetCard ?? (targetPlayer === undefined ? null : zoneElement('master', targetPlayer))
-  const target = targetElement ? viewportRect(targetElement) : null
+  const targetAnchor = targetCard ?? (targetPlayer === undefined ? null : zoneElement('master', targetPlayer))
+  const target = targetAnchor ? viewportRect(targetAnchor) : null
   if (!target) return
   const dx = target.left + target.width / 2 - (source.left + source.width / 2)
   const dy = target.top + target.height / 2 - (source.top + source.height / 2)
@@ -94,8 +94,12 @@ function animateAttack(event: ActionEvent) {
     { transform: 'translate3d(0,0,0)' },
   ], { duration: presentationDuration(360, 24, 80), easing: 'cubic-bezier(.22,1,.36,1)' })
   remember(animation)
-  if (targetElement instanceof HTMLElement) {
-    const impact = targetElement.animate([
+  // The card itself owns the authoritative active/rested rotation. Applying a
+  // WAAPI transform to it temporarily replaces `.tapped { transform:... }`
+  // and makes a rested defender flash active. Shake its stable slot instead.
+  const impactElement = targetCard?.closest('.formation-slot') ?? targetAnchor
+  if (impactElement instanceof HTMLElement) {
+    const impact = impactElement.animate([
       { transform: 'translate3d(0,0,0)', filter: 'brightness(1)' },
       { transform: `translate3d(${-ux * 4}px,${-uy * 4}px,0)`, filter: 'brightness(1.28)', offset: .5 },
       { transform: 'translate3d(0,0,0)', filter: 'brightness(1)' },
