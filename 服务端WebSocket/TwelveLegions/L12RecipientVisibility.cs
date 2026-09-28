@@ -6,6 +6,16 @@ namespace TwelveLegions.Server;
 /// </summary>
 internal static class L12RecipientVisibility
 {
+    internal readonly record struct Policy(bool BothHands, bool CoveredBattlefieldIdentity,
+        bool AllDisasters, bool PrivatePrompts, bool PrivateHandEvents, bool DeckOrder,
+        bool LegalActions)
+    {
+        internal static Policy Player => new(false, false, false, false, false, false, true);
+        internal static Policy Gm => new(true, true, true, true, true, true, true);
+        internal static Policy PublicSpectator => new(false, false, false, false, false, false, false);
+        internal static Policy Referee => new(true, true, true, false, false, false, false);
+    }
+
     internal static bool CanSeeDisaster(L12GameState state, L12CardInstance card, int viewer,
         bool revealAllDisasters)
     {

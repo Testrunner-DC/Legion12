@@ -358,7 +358,8 @@ public sealed record L12TournamentRoomAssignment(
     bool CanPlay,
     bool CanSpectate,
     bool Paused,
-    string? PauseReason);
+    string? PauseReason,
+    bool CanRefereeView);
 
 public sealed partial class L12PlatformStore
 {
@@ -1349,7 +1350,9 @@ public sealed partial class L12PlatformStore
             if (tournament.Status != "running" || round.Status != "running" || match.Status != "running")
                 throw new L12TournamentVersionConflictException("本桌赛事房间尚未启动或已结束");
             var canPlay = match.PlayerAAccountId == accountId || match.PlayerBAccountId == accountId;
-            var canSpectate = IsStaff(tournament, accountId) || tournament.Visibility == "public";
+            var canRefereeView = IsStaff(tournament, accountId)
+                || CanGloballyAccessTournaments(ToView(account));
+            var canSpectate = canRefereeView || tournament.Visibility == "public";
             if (spectate ? !canSpectate : !canPlay)
                 throw new L12TournamentScopeException(spectate
                     ? "该桌当前不可观战"
@@ -1388,7 +1391,8 @@ public sealed partial class L12PlatformStore
             }
             return new L12TournamentRoomAssignment(tournament.Id, tournament.Code, match.Id, match.RoomCode,
                 playerA, playerB, policy, tournament.Rules.DisasterMode, tournament.Rules.Hash,
-                roomTimeControl, match.Deadline, canPlay, canSpectate, match.Paused, match.PauseReason);
+                roomTimeControl, match.Deadline, canPlay, canSpectate, match.Paused, match.PauseReason,
+                canRefereeView);
         }
     }
 
@@ -1430,7 +1434,7 @@ public sealed partial class L12PlatformStore
                     return new L12TournamentRoomAssignment(tournament.Id, tournament.Code, match.Id,
                         match.RoomCode, playerA, playerB, policy, tournament.Rules.DisasterMode,
                         tournament.Rules.Hash, roomTimeControl, match.Deadline, false, false,
-                        match.Paused, match.PauseReason);
+                        match.Paused, match.PauseReason, false);
                 }
             }
             throw new KeyNotFoundException("赛事房间绑定不存在");

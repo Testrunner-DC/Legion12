@@ -942,24 +942,22 @@ internal static class LongChainAdversarialHarness
         if (game.State.Players[0].Hand.Any(card => card.InstanceId == private0))
         {
             if (!VisibleHandIds(projection.Player0, 0).Contains(private0)
+                || !VisibleHandIds(projection.Referee, 0).Contains(private0)
                 || HasHandField(projection.Player1, 0)
                 || HasHandField(projection.Spectator, 0)
-                || HasHandField(projection.Referee, 0)
                 || ContainsIdentifier(projection.Player1, private0)
-                || ContainsIdentifier(projection.Spectator, private0)
-                || ContainsIdentifier(projection.Referee, private0))
+                || ContainsIdentifier(projection.Spectator, private0))
                 Fail(scenario, commands, cutpoints, $"{label}/privacy-p0",
                     "玩家1手牌结构字段或私密哨兵在接收者投影中的授权不符合合同");
         }
         if (game.State.Players[1].Hand.Any(card => card.InstanceId == private1))
         {
             if (!VisibleHandIds(projection.Player1, 1).Contains(private1)
+                || !VisibleHandIds(projection.Referee, 1).Contains(private1)
                 || HasHandField(projection.Player0, 1)
                 || HasHandField(projection.Spectator, 1)
-                || HasHandField(projection.Referee, 1)
                 || ContainsIdentifier(projection.Player0, private1)
-                || ContainsIdentifier(projection.Spectator, private1)
-                || ContainsIdentifier(projection.Referee, private1))
+                || ContainsIdentifier(projection.Spectator, private1))
                 Fail(scenario, commands, cutpoints, $"{label}/privacy-p1",
                     "玩家2手牌结构字段或私密哨兵在接收者投影中的授权不符合合同");
         }
@@ -983,11 +981,16 @@ internal static class LongChainAdversarialHarness
                 var opponent = owner == 0 ? projection.Player1 : projection.Player0;
                 if (!HiddenFieldIdentityIsRedacted(opponent, owner, hidden.InstanceId)
                     || !HiddenFieldIdentityIsRedacted(projection.Spectator, owner, hidden.InstanceId)
-                    || !HiddenFieldIdentityIsRedacted(projection.Referee, owner, hidden.InstanceId))
+                    || !HiddenFieldIdentityIsKnown(projection.Referee, owner, hidden))
                     Fail(scenario, commands, cutpoints, $"{label}/privacy-hidden-p{owner}",
-                        $"盖伏牌实例 {hidden.InstanceId} 的身份字段越权出现在对手、观战或 referee 占位投影");
+                        $"盖伏牌实例 {hidden.InstanceId} 的身份字段未按对手、公开观战与裁判权限投影");
             }
         }
+        using var referee = JsonDocument.Parse(projection.Referee);
+        if (referee.RootElement.GetProperty("prompts").GetArrayLength() != 0
+            || referee.RootElement.GetProperty("legalAttackTargets").EnumerateObject().Any())
+            Fail(scenario, commands, cutpoints, $"{label}/privacy-referee-actions",
+                "裁判投影不得包含私密选择或合法动作");
     }
 
     private static bool ContainsIdentifier(string projectionJson, string identifier)
@@ -1010,6 +1013,25 @@ internal static class LongChainAdversarialHarness
                    && card.GetProperty("hidden").GetBoolean()
                    && !card.GetProperty("identityKnown").GetBoolean()
                    && card.GetProperty("effectText").ValueKind == JsonValueKind.Null;
+        }
+        return false;
+    }
+
+    private static bool HiddenFieldIdentityIsKnown(string projectionJson, int owner, L12CardInstance hidden)
+    {
+        using var document = JsonDocument.Parse(projectionJson);
+        var field = document.RootElement.GetProperty("players")[owner].GetProperty("field");
+        foreach (var row in field.EnumerateArray())
+        foreach (var card in row.EnumerateArray())
+        {
+            if (card.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) continue;
+            if (!card.TryGetProperty("instanceId", out var candidate)
+                || candidate.GetString() != hidden.InstanceId) continue;
+            return card.GetProperty("cardId").GetString() == hidden.CardId
+                   && card.GetProperty("hidden").GetBoolean()
+                   && card.GetProperty("identityKnown").GetBoolean()
+                   && card.GetProperty("abilities").GetArrayLength() == 0
+                   && card.GetProperty("ruleActions").GetArrayLength() == 0;
         }
         return false;
     }

@@ -35,6 +35,94 @@ public sealed class RecipientPrivacyMatrixAdversarialTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "referee:display-identities-without-live-actions")]
+    public void RefereePublicCardZonesKeepStaticFacesButNeverCarryExecutableActionState()
+    {
+        var fixture = CreateFixture("referee-display-only-card-zones");
+        var player = fixture.Game.State.Players[0];
+        var graveyard = Card("S01-0103", "referee-graveyard", 0);
+        var relic = Card("S01-0103", "referee-relic", 0);
+        var extraRelic = Card("S01-0103", "referee-extra-relic", 0);
+        var resolving = Card("S01-0103", "referee-resolving", 0);
+        var canopic = Card("S01-0103", "referee-canopic", 0);
+        var libraryTop = Card("S01-0103", "referee-library-top", 0);
+        foreach (var card in new[] { fixture.Player0Hand, fixture.Player0Covered, fixture.Player0Trial,
+                     graveyard, relic, extraRelic, resolving, canopic, libraryTop })
+        {
+            card.Abilities.Add(new L12AbilityView("referee-live-ability", "实时能力", false, "私密禁用原因"));
+            card.RuleActions.Add(new L12RuleActionView("referee-live-rule", "规则动作", "实时目标", false,
+                "私密规则原因", TargetKeys: ["private-target"]));
+            card.PlayCost = 7;
+            card.MinimumPlayCost = 1;
+            card.PlayBlockedReason = "私密出牌阻断";
+            card.SpendableResourceType = "morale";
+        }
+        relic.AttachedCards.Add(Card("S01-0103", "referee-attached", 0));
+        relic.AttachedCards[0].RuleActions.Add(new L12RuleActionView("attached-live-rule", "叠放动作", "实时"));
+        player.Graveyard.Add(graveyard);
+        player.Relic = relic;
+        player.ExtraRelics.Add(extraRelic);
+        player.Resolving.Add(resolving);
+        player.SpecialZones.CanopicProgress.Add(canopic);
+        player.Library.Add(libraryTop);
+        fixture.Player0Disaster.RuleActions.Add(new L12RuleActionView("disaster-live-rule", "天灾动作", "实时"));
+        fixture.Game.State.ActiveDisaster = fixture.Player0Disaster;
+        fixture.Game.State.BannedDisasters.Add(fixture.Player0Disaster);
+        fixture.Game.State.RemovedDisasters.Add(fixture.Player0Disaster);
+        fixture.Game.State.RevealedDisasters.Add(fixture.Player0Disaster);
+
+        var refereeSnapshot = Serialize(fixture.Game.SnapshotForReferee());
+        var referee = refereeSnapshot.GetProperty("players")[0];
+        var gm = Serialize(fixture.Game.SnapshotForGm(0)).GetProperty("players")[0];
+        var normal = Serialize(fixture.Game.SnapshotFor(0)).GetProperty("players")[0];
+        Assert.Empty(referee.GetProperty("master").GetProperty("abilities").EnumerateArray());
+        Assert.Empty(referee.GetProperty("factionEffect").GetProperty("abilities").EnumerateArray());
+        Assert.Equal(normal.GetProperty("master").GetProperty("abilities").GetRawText(),
+            gm.GetProperty("master").GetProperty("abilities").GetRawText());
+        Assert.Equal(normal.GetProperty("factionEffect").GetProperty("abilities").GetRawText(),
+            gm.GetProperty("factionEffect").GetProperty("abilities").GetRawText());
+
+        foreach (var card in new[]
+        {
+            referee.GetProperty("hand")[0], referee.GetProperty("field")[1][0],
+            referee.GetProperty("graveyard")[0], referee.GetProperty("specialZones").GetProperty("trials")[0],
+            referee.GetProperty("relic"), referee.GetProperty("extraRelics")[0],
+            referee.GetProperty("resolving")[0], referee.GetProperty("specialZones").GetProperty("canopicProgress")[0],
+        })
+            AssertDisplayOnlyCard(card);
+        AssertDisplayOnlyCard(referee.GetProperty("relic").GetProperty("attachedCards")[0]);
+        Assert.Equal("referee-graveyard", referee.GetProperty("graveyard")[0].GetProperty("instanceId").GetString());
+        Assert.Equal("referee-relic", referee.GetProperty("relic").GetProperty("instanceId").GetString());
+        Assert.True(referee.GetProperty("field")[1][0].GetProperty("hidden").GetBoolean());
+        Assert.True(referee.GetProperty("field")[1][0].GetProperty("identityKnown").GetBoolean());
+        Assert.False(referee.TryGetProperty("spendableResourceCount", out _));
+        Assert.True(gm.GetProperty("relic").GetProperty("ruleActions").GetArrayLength() > 0);
+        Assert.True(normal.GetProperty("extraRelics")[0].GetProperty("ruleActions").GetArrayLength() > 0);
+        Assert.True(gm.GetProperty("specialZones").GetProperty("trials")[0]
+            .GetProperty("ruleActions").GetArrayLength() > 0);
+        foreach (var zone in new[] { "activeDisaster", "bannedDisasters", "removedDisasters",
+                     "revealedDisasters", "chosenDisasters", "sessionDisasters" })
+        {
+            var value = refereeSnapshot.GetProperty(zone);
+            IEnumerable<JsonElement> cards = value.ValueKind == JsonValueKind.Array
+                ? value.EnumerateArray().ToArray() : [value];
+            foreach (var card in cards.Where(card => card.ValueKind == JsonValueKind.Object
+                         && card.TryGetProperty("cardId", out _)))
+                AssertDisplayOnlyCard(card);
+        }
+    }
+
+    private static void AssertDisplayOnlyCard(JsonElement card)
+    {
+        Assert.Empty(card.GetProperty("abilities").EnumerateArray());
+        Assert.Empty(card.GetProperty("ruleActions").EnumerateArray());
+        Assert.Equal(JsonValueKind.Null, card.GetProperty("playCost").ValueKind);
+        Assert.Equal(JsonValueKind.Null, card.GetProperty("minimumPlayCost").ValueKind);
+        Assert.Equal(JsonValueKind.Null, card.GetProperty("playBlockedReason").ValueKind);
+        Assert.False(card.TryGetProperty("spendableResourceType", out _));
+    }
+
+    [Fact]
     [Trait("L12Evidence", "lc05a:persisted-history-player-replay-matrix")]
     public async Task LaterDisclosureDoesNotRewriteHistoricalFramesOrLeakAcrossPlayerReplay()
     {
@@ -211,7 +299,7 @@ public sealed class RecipientPrivacyMatrixAdversarialTests
         AssertPlayerOwnsOnlyTheirHandAndCoveredIdentity(views.Player0, fixture, 0);
         AssertPlayerOwnsOnlyTheirHandAndCoveredIdentity(views.Player1, fixture, 1);
         AssertPublicViewerHasNoHandOrCoveredIdentity(views.Spectator, fixture);
-        AssertPublicViewerHasNoHandOrCoveredIdentity(views.Referee, fixture);
+        AssertRefereeSeesBothHandsAndCoveredIdentityWithoutActions(views.Referee, fixture);
 
         AssertTrialVisibility(views.Player0, fixture.Player0Trial, visible: true);
         AssertTrialVisibility(views.Player0, fixture.Player1Trial, visible: false);
@@ -248,7 +336,11 @@ public sealed class RecipientPrivacyMatrixAdversarialTests
             Assert.Empty(hiddenView.GetProperty("prompts").EnumerateArray());
             var json = hiddenView.GetRawText();
             foreach (var secret in OwnerPromptSecrets(fixture))
+            {
+                if (hiddenView.Equals(views.Referee) && secret == fixture.Player0Hand.InstanceId)
+                    continue; // The card is visible, but its private choice and prompt remain hidden.
                 Assert.DoesNotContain(secret, json, StringComparison.Ordinal);
+            }
         }
     }
 
@@ -272,7 +364,7 @@ public sealed class RecipientPrivacyMatrixAdversarialTests
             coveredNowPublic: true);
         AssertPublicViewerHasNoHandOrCoveredIdentity(views.Spectator, fixture,
             coveredNowPublic: true);
-        AssertPublicViewerHasNoHandOrCoveredIdentity(views.Referee, fixture,
+        AssertRefereeSeesBothHandsAndCoveredIdentityWithoutActions(views.Referee, fixture,
             coveredNowPublic: true);
     }
 
@@ -377,6 +469,41 @@ public sealed class RecipientPrivacyMatrixAdversarialTests
         AssertCoveredVisibility(snapshot, fixture.Player1Covered, visible: coveredNowPublic);
     }
 
+    private static void AssertRefereeSeesBothHandsAndCoveredIdentityWithoutActions(JsonElement snapshot,
+        PrivacyFixture fixture, bool coveredNowPublic = false)
+    {
+        var players = snapshot.GetProperty("players");
+        Assert.Contains(players[0].GetProperty("hand").EnumerateArray(),
+            card => card.GetProperty("instanceId").GetString() == fixture.Player0Hand.InstanceId);
+        Assert.Contains(players[1].GetProperty("hand").EnumerateArray(),
+            card => card.GetProperty("instanceId").GetString() == fixture.Player1Hand.InstanceId);
+        Assert.All(players.EnumerateArray(), player =>
+        {
+            Assert.False(player.TryGetProperty("moraleDeck", out _));
+            Assert.False(player.TryGetProperty("promotionOptions", out _));
+            Assert.All(player.GetProperty("hand").EnumerateArray(), card =>
+            {
+                Assert.Equal(JsonValueKind.Null, card.GetProperty("playCost").ValueKind);
+                Assert.Empty(card.GetProperty("abilities").EnumerateArray());
+                Assert.Empty(card.GetProperty("ruleActions").EnumerateArray());
+            });
+        });
+        AssertCoveredVisibility(snapshot, fixture.Player0Covered, visible: true);
+        AssertCoveredVisibility(snapshot, fixture.Player1Covered, visible: true);
+        Assert.Empty(snapshot.GetProperty("legalAttackTargets").EnumerateObject());
+        Assert.Empty(snapshot.GetProperty("prompts").EnumerateArray());
+        foreach (var actionEvent in snapshot.GetProperty("recentEvents").EnumerateArray())
+            if (actionEvent.GetProperty("type").GetString() == "return")
+                Assert.Empty(actionEvent.GetProperty("cards").EnumerateArray());
+        if (!coveredNowPublic)
+        {
+            var covered = players.EnumerateArray().SelectMany(player => player.GetProperty("field").EnumerateArray())
+                .SelectMany(row => row.EnumerateArray()).Where(card => card.ValueKind == JsonValueKind.Object
+                    && card.GetProperty("hidden").GetBoolean()).ToArray();
+            Assert.All(covered, card => Assert.True(card.GetProperty("identityKnown").GetBoolean()));
+        }
+    }
+
     private static void AssertCoveredVisibility(JsonElement snapshot, L12CardInstance card, bool visible)
     {
         var matches = snapshot.GetProperty("players").EnumerateArray()
@@ -389,6 +516,7 @@ public sealed class RecipientPrivacyMatrixAdversarialTests
         var projected = Assert.Single(matches);
         Assert.Equal(visible ? card.CardId : "hidden-card",
             projected.GetProperty("cardId").GetString());
+        Assert.Equal(card.Hidden, projected.GetProperty("hidden").GetBoolean());
         Assert.Equal(visible && card.Hidden, projected.GetProperty("identityKnown").GetBoolean());
     }
 

@@ -1100,6 +1100,53 @@
 .mobile-record-restore,.board-control-restore { position:fixed; z-index:2147483604; left:96px; min-height:32px; padding:4px 9px; border:1px solid #70d7df; background:#174e54; color:#fff; font-size:10px; font-weight:900; box-shadow:0 6px 18px #000; }
 .mobile-record-restore { top:6px; }
 .board-control-restore { bottom:calc(var(--l12-mobile-hand-h) + 5px); }
+
+/* Tournament referee is the only mobile observer with two visible hands.
+   Keep the public/player/GM board geometry and the admin replay blocker intact. */
+.mobile-landscape-board.read-only-board.referee-both-hands .board-center {
+  grid-template-rows:50px 0 minmax(0,1fr) 0 50px !important;
+}
+.mobile-landscape-board.read-only-board.referee-both-hands .board-center>.opponent-hand {
+  display:flex !important;
+  box-sizing:border-box;
+  width:100% !important;
+  height:50px !important;
+  min-height:50px !important;
+  padding:2px 4px !important;
+  align-items:flex-start !important;
+  justify-content:flex-start !important;
+  transform:none !important;
+  overflow-x:auto !important;
+  overflow-y:hidden !important;
+}
+.mobile-landscape-board.read-only-board.referee-both-hands .board-center>.opponent-hand :deep(.hand-card-wrap),
+.mobile-landscape-board.read-only-board.referee-both-hands .board-center>.opponent-hand :deep(.card-tile) {
+  box-sizing:border-box !important;
+  top:0 !important;
+  bottom:auto !important;
+  width:31px !important;
+  min-width:31px !important;
+  height:44px !important;
+  min-height:44px !important;
+  flex:0 0 31px !important;
+  margin-left:0 !important;
+  aspect-ratio:5/7 !important;
+}
+.mobile-landscape-board.read-only-board.referee-both-hands .board-center>.l12-hand:last-child {
+  height:50px !important;
+  min-height:50px !important;
+  padding:2px 4px !important;
+}
+.mobile-landscape-board.read-only-board.referee-both-hands .board-center>.l12-hand:last-child :deep(.hand-card-wrap),
+.mobile-landscape-board.read-only-board.referee-both-hands .board-center>.l12-hand:last-child :deep(.card-tile) {
+  box-sizing:border-box !important;
+  width:31px !important;
+  min-width:31px !important;
+  height:44px !important;
+  min-height:44px !important;
+  flex:0 0 31px !important;
+  margin-left:0 !important;
+}
 .mobile-landscape-board .board-control-minimize { min-height:30px !important; padding:3px 6px !important; }
 
 /* Player names stay in the dock; the complete lawful identity projection opens

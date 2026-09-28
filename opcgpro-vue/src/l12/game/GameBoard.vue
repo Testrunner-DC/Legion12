@@ -48,11 +48,14 @@ type GmPlacementRequest = {
 const props = withDefaults(defineProps<{
   game: GameState
   readOnly?: boolean
+  revealBothHands?: boolean
+  refereeLiveView?: boolean
+  spectatorLiveView?: boolean
   replayFocusCard?: Card | null
   replayPlaybackSpeed?: number | null
   gmPlacement?: GmPlacementRequest | null
   gmPanelOpen?: boolean
-}>(), { readOnly: false, replayFocusCard: null, replayPlaybackSpeed: null, gmPlacement: null, gmPanelOpen: false })
+}>(), { readOnly: false, revealBothHands: false, refereeLiveView: false, spectatorLiveView: false, replayFocusCard: null, replayPlaybackSpeed: null, gmPlacement: null, gmPanelOpen: false })
 const emit = defineEmits<{ gmPlacementResolved: []; settings: []; replayPresentationChange: [busy: boolean] }>()
 // Preserve the desktop hierarchy while allowing the whole board to become
 // genuinely denser on smaller canvases. Full inverse scaling made text remain
@@ -183,6 +186,7 @@ const enemy = computed(() => props.game.players[1 - controlledPlayerIndex.value]
 // The sandbox actor may change for prompts, but the observing player's board orientation never changes.
 const viewMe = computed(() => props.game.players[props.game.you])
 const viewEnemy = computed(() => props.game.players[1 - props.game.you])
+const showBothHands = computed(() => props.readOnly && (props.revealBothHands || props.refereeLiveView))
 const myBadge = computed(() => props.game.playerBadges?.find(item => item.playerIndex === viewMe.value.playerIndex))
 const enemyBadge = computed(() => props.game.playerBadges?.find(item => item.playerIndex === viewEnemy.value.playerIndex))
 const absentIdentityLabels = new Set(['未定级', '暂无段位', '无段位', '未评级', '暂无称号', '无称号', '未获得称号', '暂无'])
@@ -824,19 +828,22 @@ function toggle(list: string[], id: string) {
   if (index >= 0) list.splice(index, 1); else list.push(id)
 }
 function selectedHandIdsFor(playerIndex: number) {
+  if (props.readOnly) return []
   if (!isControlledPlayer(playerIndex)) return []
   if (props.game.phase === 'Mulligan') return mulliganIds.value
   if (props.game.phase === 'Defense' && props.game.pendingDefense?.stage === 'DefenseChoice') return defenseIds.value
   return selectedId.value ? [selectedId.value] : []
 }
 function playableHandIdsFor(playerIndex: number) {
-  return isControlledPlayer(playerIndex) && !l12State.pendingAction ? handPlayableIds.value : []
+  return !props.readOnly && isControlledPlayer(playerIndex) && !l12State.pendingAction ? handPlayableIds.value : []
 }
 function selectHandFor(playerIndex: number, card: Card) {
+  if (props.readOnly) { focusCard.value = card; return }
   if (isControlledPlayer(playerIndex)) selectHand(card)
   else focusCard.value = card
 }
 function playFromHandFor(playerIndex: number, card: Card) {
+  if (props.readOnly) return
   if (isControlledPlayer(playerIndex)) playFromHand(card)
 }
 function slotFor(playerIndex: number, row: number, slot: number, card: Card | null) {
@@ -1118,7 +1125,7 @@ function statusTexts(card: Card) {
 </script>
 
 <template>
-  <div class="board-viewport" :class="{ 'compact-viewport': compactViewport, 'mobile-landscape-board': mobileLandscapeViewport, 'read-only-board': readOnly, 'gm-panel-docked': gmPanelOpen && !compactViewport, 'board-target-active': Boolean(gmPlacement || boardTargetPrompt), 'board-slot-active': Boolean(boardSlotPrompt), 'board-control-expanded': !boardControlMinimized && Boolean(gmPlacement || boardTargetPrompt || boardSlotPrompt) }" :data-l12-battle-layout="mobileLandscapeViewport ? 'mobile' : 'desktop'" :data-l12-mobile-landscape="mobileLandscapeViewport ? 'true' : undefined">
+  <div class="board-viewport" :class="{ 'compact-viewport': compactViewport, 'mobile-landscape-board': mobileLandscapeViewport, 'read-only-board': readOnly, 'referee-both-hands': readOnly && refereeLiveView && showBothHands, 'gm-panel-docked': gmPanelOpen && !compactViewport, 'board-target-active': Boolean(gmPlacement || boardTargetPrompt), 'board-slot-active': Boolean(boardSlotPrompt), 'board-control-expanded': !boardControlMinimized && Boolean(gmPlacement || boardTargetPrompt || boardSlotPrompt) }" :data-l12-battle-layout="mobileLandscapeViewport ? 'mobile' : 'desktop'" :data-l12-mobile-landscape="mobileLandscapeViewport ? 'true' : undefined">
     <MobileBattleDock v-if="mobileLandscapeViewport" />
     <Teleport :to="landscapeTeleportTarget()">
       <button v-if="mobileLandscapeViewport" type="button" class="mobile-card-inspector-handle mobile-card-inspector-handle-global" :class="{ open: mobileInspectorOpen }" :aria-expanded="mobileInspectorOpen" @click="mobileInspectorOpen = !mobileInspectorOpen">{{ mobileInspectorOpen ? '收起详情' : '展开卡牌详情' }}</button>
@@ -1206,10 +1213,10 @@ function statusTexts(card: Card) {
         </section>
 
         <main class="board-center" :class="{ 'timed-board': Boolean(l12State.rankedClock) }" data-l12-game-stage>
-          <HandArea v-if="l12State.gmEnabled" class="opponent-hand" :cards="viewEnemy.hand" :player-index="viewEnemy.playerIndex"
+          <HandArea v-if="l12State.gmEnabled || showBothHands" class="opponent-hand" :cards="viewEnemy.hand" :player-index="viewEnemy.playerIndex"
             :selected-ids="selectedHandIdsFor(viewEnemy.playerIndex)"
             :playable-ids="playableHandIdsFor(viewEnemy.playerIndex)" :dim-unplayable="isControlledPlayer(viewEnemy.playerIndex) && game.phase !== 'Mulligan'"
-            :show-play-action="!hasBlockingPrompt && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction" :confirm-all-playable="mobileLandscapeViewport" :mobile-layout="mobileLandscapeViewport"
+            :show-play-action="!readOnly && !hasBlockingPrompt && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction" :confirm-all-playable="mobileLandscapeViewport" :mobile-layout="mobileLandscapeViewport"
             @select="selectHandFor(viewEnemy.playerIndex, $event)" @play="playFromHandFor(viewEnemy.playerIndex, $event)" @focus="focusCard = $event" />
           <HandArea v-else class="opponent-hand" hidden :count="viewEnemy.handCount || 0" :player-index="viewEnemy.playerIndex" />
           <div class="board-status-lane opponent-status-lane" data-ui-contract="shared-external-clock-track">
@@ -1335,10 +1342,10 @@ function statusTexts(card: Card) {
             <PlayerTurnClock class="board-player-clock my-player-clock" :player-index="viewMe.playerIndex" side="my"
               :active="game.activePlayer === viewMe.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
           </div>
-          <HandArea v-if="l12State.spectating" class="spectator-hand" hidden :count="viewMe.handCount || 0" :player-index="viewMe.playerIndex" />
+          <HandArea v-if="spectatorLiveView && !showBothHands" class="spectator-hand" hidden :count="viewMe.handCount || 0" :player-index="viewMe.playerIndex" />
           <HandArea v-else :cards="viewMe.hand" :player-index="viewMe.playerIndex" :selected-ids="selectedHandIdsFor(viewMe.playerIndex)"
             :playable-ids="playableHandIdsFor(viewMe.playerIndex)" :dim-unplayable="isControlledPlayer(viewMe.playerIndex) && game.phase !== 'Mulligan'"
-            :show-play-action="!hasBlockingPrompt && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction" :confirm-all-playable="mobileLandscapeViewport" :mobile-layout="mobileLandscapeViewport"
+            :show-play-action="!readOnly && !hasBlockingPrompt && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction" :confirm-all-playable="mobileLandscapeViewport" :mobile-layout="mobileLandscapeViewport"
             @select="selectHandFor(viewMe.playerIndex, $event)" @play="playFromHandFor(viewMe.playerIndex, $event)" @focus="focusCard = $event" />
         </main>
 

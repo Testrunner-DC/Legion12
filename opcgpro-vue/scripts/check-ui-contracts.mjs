@@ -809,7 +809,7 @@ const contracts = [
     && l12ServerSources.includes('RunPlayerReplayCleanupIfDueAsync'), '玩家回放必须限制7天内最近10场并由服务端统一可见性与每日清理保护'],
   [router.includes("name: 'json-replay'") && router.includes("name: 'match-replay'") && router.includes("name: 'admin-match-replay'")
     && replayPage.includes('<GameBoard v-else-if="currentGame" :game="currentGame" :replay-focus-card="replayFocusCard"')
-    && replayPage.includes(':replay-playback-speed="playbackSpeed" read-only @replay-presentation-change="replayPresentationBusy = $event"')
+    && replayPage.includes(':replay-playback-speed="playbackSpeed" :reveal-both-hands="isAdminReplay" read-only @replay-presentation-change="replayPresentationBusy = $event"')
     && replayPage.includes('>上一步</button>') && replayPage.includes("playing ? '暂停' : '播放'")
     && replayPage.includes("loadingReplayPage ? '加载中' : '下一步'") && replayPage.includes("isAdminReplay.value ? '返回后台对局档案' : '返回对局记录'")
     && gameReentry.includes('!route.replay') && l12Net.includes('replay: router.currentRoute.value.meta.replay === true')
@@ -898,9 +898,20 @@ const contracts = [
     && board.includes('.board-center{--l12-hand-lane-height:160px;--l12-clock-track-width:196px;display:grid;min-height:0;')
     && board.includes('width:calc(100% - 400px)') && board.includes('.board-center.timed-board>.l12-hand{width:calc(100% - 424px);transform:none}') && board.includes('z-index:40')
     && handArea.includes('overflow-x:auto') && handArea.includes('ResizeObserver'), '双方手牌必须与场上军团同尺寸并高于场面可点击；排位计时使用手牌行右侧196px安全轨，多数量时按实测宽度扇形收拢或横向滚动'],
-  [board.includes('v-if="l12State.spectating" class="spectator-hand" hidden :count="viewMe.handCount || 0"')
+  [board.includes('v-if="spectatorLiveView && !showBothHands" class="spectator-hand" hidden :count="viewMe.handCount || 0"')
+    && gamePage.includes(':spectator-live-view="l12State.spectating"')
     && board.includes('class="opponent-hand" hidden :count="viewEnemy.handCount || 0"')
-    && !board.includes('class="spectator-hand" :cards="viewMe.hand"'), '观战者必须同时看到双方完整手牌数量与等量卡背，不得接收或渲染任一方手牌身份'],
+    && gamePage.includes(":referee-live-view=\"l12State.spectating && l12State.observerView === 'referee'\"")
+    && board.includes('props.readOnly && (props.revealBothHands || props.refereeLiveView)')
+    && !board.includes("l12State.spectating && l12State.observerView === 'referee'")
+    && board.includes('l12State.gmEnabled || showBothHands')
+    && board.includes('if (props.readOnly) { focusCard.value = card; return }')
+    && board.includes(':show-play-action="!readOnly &&')
+    && l12Net.includes("observerView: 'public' as 'public' | 'referee'")
+    && l12Net.includes("message.spectating && message.observerView === 'referee' ? 'referee' : 'public'")
+    && replayPage.includes("route.name !== 'admin-match-replay'")
+    && replayPage.includes("card?.hidden && card.cardId && card.cardId !== 'hidden-card'")
+    && !replayModel.includes('revealBothHands'), '普通观战和玩家回放继续使用牌背；只有权威裁判观战及后台专属回放显示双手与盖伏正面，且始终只读'],
   [playerMat.includes('class="master-marker-track"') && playerMat.includes('.master-marker-track{position:absolute') && playerMat.includes('.master-marker-track{top:-70px}.side-opponent .master-marker-track{top:auto;bottom:-70px}')
     && playerMat.includes('.rune-orb{width:36px;height:36px;min-width:36px') && playerMat.includes('.canopic-orb{width:36px;height:36px;min-width:36px'), '主宰附近符文与卡诺匹斯罐必须复用同一轨道、适量放大并与主宰保持间距'],
   [!playerMat.includes('class="rune-zone"') && !playerMat.includes('class="canopic-track"'), '符文与卡诺匹斯不得恢复各自独立的定位父级'],
@@ -1125,7 +1136,7 @@ const contracts = [
     && board.includes("mode.value = 'play'") && board.includes('.board-mode-hint button{min-width:58px;min-height:44px')
     && !board.includes("cancelLocalAttackSelection() {\n  command('attack'"), '选择进攻对象提示必须提供最小44px取消按钮，只清理未提交的本地进攻选择，不能发送撤销权威进攻的命令'],
   [board.includes('boardSlotTargetPlayerIndex') && board.includes('targetPlayerIndex') && playerMat.includes("promptSlotIds?.includes(`${row}:${slot}`)"), '跨阵营位移的目标阵地必须高亮实际被移动军团所在战场，不得回退为操作者自己的同坐标格'],
-  [l12Net.includes("type: 'sandboxAction', requestId: createActionRequestId(), actingPlayerIndex, command") && board.includes('controlledPlayerIndex') && board.includes('const viewMe = computed(() => props.game.players[props.game.you])') && board.includes('const viewEnemy = computed(() => props.game.players[1 - props.game.you])') && board.includes('v-if="l12State.gmEnabled" class="opponent-hand" :cards="viewEnemy.hand"') && board.includes(':cards="viewMe.hand"') && board.includes(':controllable="isControlledPlayer(viewEnemy.playerIndex)"') && prompt.includes('sandboxAction(actingPlayerIndex, command)') && globalStyle.includes('.opponent-hand .hand-actions{top:calc(100% + 4px);bottom:auto}'), '沙盒必须固定我方在下、对方在上，不交换棋盘，同时可查看双方手牌并代行双方规则内选择；上方手牌操作按钮必须朝棋盘中心展开而不被裁切'],
+  [l12Net.includes("type: 'sandboxAction', requestId: createActionRequestId(), actingPlayerIndex, command") && board.includes('controlledPlayerIndex') && board.includes('const viewMe = computed(() => props.game.players[props.game.you])') && board.includes('const viewEnemy = computed(() => props.game.players[1 - props.game.you])') && board.includes('v-if="l12State.gmEnabled || showBothHands" class="opponent-hand" :cards="viewEnemy.hand"') && board.includes(':cards="viewMe.hand"') && board.includes(':controllable="isControlledPlayer(viewEnemy.playerIndex)"') && prompt.includes('sandboxAction(actingPlayerIndex, command)') && globalStyle.includes('.opponent-hand .hand-actions{top:calc(100% + 4px);bottom:auto}'), '沙盒必须固定我方在下、对方在上，不交换棋盘，同时可查看双方手牌并代行双方规则内选择；上方手牌操作按钮必须朝棋盘中心展开而不被裁切'],
   [board.includes(':mine="masterPlayerIndex === controlledPlayerIndex"') && board.includes("sandboxAction(controlledPlayerIndex.value, { type, ...extra })") && prompt.includes('sandboxAction(actingPlayerIndex, command)'), '沙盒代操作对方时必须按受控方索引开放主宰效果并完成后续提示，正式房仍只允许登录座位'],
   [board.includes('watch(activeBoardPromptId, promptId => {') && board.includes('graveyardPlayer.value = null') && board.includes('masterPlayerIndex.value = null') && board.includes('focusCard.value = null'), '任何场面直选 Prompt 开始时必须关闭墓地、效果弹框与浮动卡牌详情'],
   [board.includes('const hasBlockingPrompt = computed') && board.includes('function clearOrdinaryInteractionState()') && board.includes('watch(hasBlockingPrompt')

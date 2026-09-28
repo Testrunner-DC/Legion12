@@ -1785,11 +1785,19 @@ public sealed class PromptNarrativeMatrixTests
         {
             JsonSerializer.Serialize(game.SnapshotFor(other), new JsonSerializerOptions(JsonSerializerDefaults.Web)),
             JsonSerializer.Serialize(game.SnapshotForSpectator(), new JsonSerializerOptions(JsonSerializerDefaults.Web)),
-            JsonSerializer.Serialize(game.SnapshotForReferee(), new JsonSerializerOptions(JsonSerializerDefaults.Web)),
         };
         foreach (var hidden in hiddenViews)
             foreach (var card in privateCards)
                 Assert.DoesNotContain(card.InstanceId, hidden, StringComparison.Ordinal);
+
+        var referee = JsonSerializer.Serialize(game.SnapshotForReferee(),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        foreach (var card in privateCards)
+            if (game.State.Players.Any(player => player.Hand.Any(item => item.InstanceId == card.InstanceId)))
+                Assert.Contains(card.InstanceId, referee, StringComparison.Ordinal);
+            else
+                Assert.DoesNotContain(card.InstanceId, referee, StringComparison.Ordinal);
+        Assert.DoesNotContain(Assert.Single(game.State.PendingPrompts).PromptId, referee, StringComparison.Ordinal);
 
         var gm = JsonSerializer.Serialize(game.SnapshotForGm(other),
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
@@ -1898,11 +1906,19 @@ public sealed class PromptNarrativeMatrixTests
         {
             JsonSerializer.Serialize(game.SnapshotFor(other), new JsonSerializerOptions(JsonSerializerDefaults.Web)),
             JsonSerializer.Serialize(game.SnapshotForSpectator(), new JsonSerializerOptions(JsonSerializerDefaults.Web)),
-            JsonSerializer.Serialize(game.SnapshotForReferee(), new JsonSerializerOptions(JsonSerializerDefaults.Web)),
         };
         foreach (var hidden in hiddenViews)
             foreach (var card in privateCards)
                 Assert.DoesNotContain(card.InstanceId, hidden, StringComparison.Ordinal);
+
+        var referee = JsonSerializer.Serialize(game.SnapshotForReferee(),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        foreach (var card in privateCards)
+            if (game.State.Players.Any(player => player.Hand.Any(item => item.InstanceId == card.InstanceId)))
+                Assert.Contains(card.InstanceId, referee, StringComparison.Ordinal);
+            else
+                Assert.DoesNotContain(card.InstanceId, referee, StringComparison.Ordinal);
+        Assert.DoesNotContain(prompt.PromptId, referee, StringComparison.Ordinal);
 
         var gm = JsonSerializer.Serialize(game.SnapshotForGm(other),
             new JsonSerializerOptions(JsonSerializerDefaults.Web));

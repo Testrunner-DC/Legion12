@@ -112,7 +112,7 @@ async function retryGameLoad() {
       <button class="balanced-copy-button" aria-label="返回大厅" @click="returnToLobby"><span class="route-label" aria-hidden="true"><span>返回</span><span>大厅</span></span></button>
       <button v-if="!l12State.spectating && game.phase !== 'GameOver'" class="surrender" @click="surrender">投降</button>
     </div></BattleDockPortal>
-    <GameBoard :game="game" :read-only="l12State.spectating" :gm-placement="gmPlacement" :gm-panel-open="gmPanelOpen"
+    <GameBoard :game="game" :read-only="l12State.spectating" :spectator-live-view="l12State.spectating" :referee-live-view="l12State.spectating && l12State.observerView === 'referee'" :gm-placement="gmPlacement" :gm-panel-open="gmPanelOpen"
       @gm-placement-resolved="gmPlacement = null" @settings="settingsOpen = true" />
     <GmPanel v-if="l12State.gmEnabled" :game="game" @arm-placement="gmPlacement = $event" @open-change="gmPanelOpen = $event" />
     <OsirisVictorySequence v-if="osirisSequencePlaying" :key="osirisSequenceKey"

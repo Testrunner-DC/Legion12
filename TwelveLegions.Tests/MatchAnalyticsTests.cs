@@ -840,6 +840,10 @@ public sealed class MatchAnalyticsTests
             using (var forbidden = Authorized(HttpMethod.Get, "/api/admin/matches", playerLogin.Token!))
             using (var response = await client.SendAsync(forbidden))
                 Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            using (var forbidden = Authorized(HttpMethod.Get,
+                       "/api/admin/matches/api-match/replay?limit=1", playerLogin.Token!))
+            using (var response = await client.SendAsync(forbidden))
+                Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
             using (var forbidden = Authorized(HttpMethod.Get, "/api/admin/analytics/cards", playerLogin.Token!))
             using (var response = await client.SendAsync(forbidden))
                 Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -881,6 +885,7 @@ public sealed class MatchAnalyticsTests
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
                 var page = await response.Content.ReadFromJsonAsync<L12AdminReplayPage>();
                 Assert.NotEmpty(page!.Items);
+                Assert.True(page.TotalCommands > page.Items.Count);
                 oversizedCursor = Assert.IsType<string>(page.NextCursor);
             }
             using (var oversizedRequest = Authorized(HttpMethod.Get,

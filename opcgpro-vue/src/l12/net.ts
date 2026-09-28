@@ -256,6 +256,7 @@ export const l12State = reactive({
   room: null as RoomState | null,
   game: null as GameState | null,
   spectating: false,
+  observerView: 'public' as 'public' | 'referee',
   leavingRoom: false,
   gmEnabled: false,
   pendingAction: false,
@@ -544,6 +545,7 @@ export function connect(): Promise<void> {
           l12State.game = null
           l12State.rankedClock = null
           l12State.spectating = false
+          l12State.observerView = 'public'
           l12State.gmEnabled = false
           completePendingAction(message.requestId)
         }
@@ -651,6 +653,7 @@ export function connect(): Promise<void> {
         l12State.rankedClock = null
         l12State.matchGovernanceResult = null
         l12State.spectating = false
+        l12State.observerView = 'public'
         l12State.leavingRoom = false
         l12State.gmEnabled = false
         cancelPendingAction()
@@ -676,6 +679,7 @@ export function connect(): Promise<void> {
             ? { ...(message.rankedClock as RankedClockView), receivedAtMs: Date.now() }
             : null
           l12State.spectating = Boolean(message.spectating)
+          l12State.observerView = message.spectating && message.observerView === 'referee' ? 'referee' : 'public'
           l12State.gmEnabled = Boolean(message.gmEnabled)
           completePendingAction(message.requestId)
           l12State.rankedSettlement = message.rankedSettlement || null
@@ -720,6 +724,7 @@ export function connect(): Promise<void> {
           lastGameStateEnvelope = null
           l12State.rankedClock = null
           l12State.spectating = false
+          l12State.observerView = 'public'
           l12State.gmEnabled = false
           l12State.matchFound = null
         }
@@ -729,6 +734,7 @@ export function connect(): Promise<void> {
           lastGameStateEnvelope = null
           l12State.rankedClock = null
           l12State.spectating = false
+          l12State.observerView = 'public'
           l12State.gmEnabled = false
         }
         reconnectAttempts = 0
@@ -779,6 +785,11 @@ export function connect(): Promise<void> {
         l12State.recoveryPhase = event.code === 4002 ? 'superseded' : 'disconnected'
         if (!negotiatedRequestIds || [4001, 4002, 1008].includes(event.code)) cancelPendingAction()
         l12State.gmEnabled = false
+        if (l12State.observerView === 'referee') {
+          l12State.game = null
+          lastGameStateEnvelope = null
+          l12State.observerView = 'public'
+        }
         syncGameReentry()
         settle(new Error(l12State.notice || '连接已关闭'))
         if (![4001, 4002, 1008].includes(event.code)) scheduleReconnect()
@@ -835,6 +846,7 @@ export function disconnect() {
   l12State.room = null
   l12State.game = null
   l12State.spectating = false
+  l12State.observerView = 'public'
   l12State.leavingRoom = false
   l12State.gmEnabled = false
   cancelPendingAction()

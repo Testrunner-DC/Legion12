@@ -223,9 +223,11 @@ public sealed partial class L12RoomManager
                         ? source.RankedBrowserKey : rankedBrowserKey,
                     ConnectionGeneration = generation,
                 };
-                if (source.RoomCode is not null && _rooms.TryGetValue(source.RoomCode, out var recoveredRoom))
+                if (source.RoomCode is not null && _rooms.TryGetValue(source.RoomCode, out var recoveredRoom)
+                    && (!source.IsSpectator || CanRecoverTournamentSpectator(recoveredRoom, accountId)))
                 {
-                    if (recoveredRoom.TournamentId is not null && recoveredRoom.TournamentMatchId is not null)
+                    if (!source.IsSpectator && recoveredRoom.TournamentId is not null
+                        && recoveredRoom.TournamentMatchId is not null)
                     {
                         _ = _platform?.TournamentRoomAssignment(accountId, recoveredRoom.TournamentId,
                             recoveredRoom.TournamentMatchId, source.IsSpectator);
@@ -306,6 +308,11 @@ public sealed partial class L12RoomManager
                 }
                 else
                 {
+                    if (source.IsSpectator && source.RoomCode is not null
+                        && _rooms.TryGetValue(source.RoomCode, out var formerRoom))
+                    {
+                        lock (formerRoom.Spectators) formerRoom.Spectators.Remove(previous.Key);
+                    }
                     replacement.RoomCode = null;
                     replacement.PlayerIndex = null;
                     replacement.IsSpectator = false;
@@ -1213,10 +1220,29 @@ public sealed partial class L12RoomManager
         return [RoomStateForViewer(room, session), new OutgoingMessage(sessionId, new
         {
             type = "gameState", spectating = true, gmEnabled = false,
+            observerView = assignment.CanRefereeView ? "referee" : "public",
             tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
             tournamentMatchId = room.TournamentMatchId,
-            state = L12KernelProjection.ForSpectator(room.Game),
-        })];
+            state = assignment.CanRefereeView
+                ? L12KernelProjection.ForReferee(room.Game)
+                : L12KernelProjection.ForSpectator(room.Game),
+        }, IsGameState: true, ForceFullGameState: true)];
+    }
+
+    private bool CanRecoverTournamentSpectator(Room room, string accountId)
+    {
+        if (room.TournamentId is null || room.TournamentMatchId is null) return true;
+        try
+        {
+            return _platform?.TournamentRoomAssignment(accountId, room.TournamentId,
+                room.TournamentMatchId, spectate: true).CanSpectate == true;
+        }
+        catch (Exception error) when (error is L12TournamentScopeException
+                                      or L12TournamentVersionConflictException
+                                      or KeyNotFoundException or ArgumentException)
+        {
+            return false;
+        }
     }
 
     private Room CreateTournamentRoom(L12TournamentRoomAssignment assignment)
@@ -1895,35 +1921,58 @@ public sealed partial class L12RoomManager
         IEnumerable<OutgoingMessage> SpectatorMessages()
         {
             if (spectators.Length == 0) yield break;
-            // 所有观战者使用同一公开视角对象，发送层会按对象引用只序列化一次。
-            var payload = new
+            // 每次按权威赛事 assignment 选视角；同一类观战者复用同一载荷。
+            object? publicPayload = null;
+            object? refereePayload = null;
+            object SpectatorPayload(bool referee) => referee
+                ? refereePayload ??= BuildSpectatorPayload(true)
+                : publicPayload ??= BuildSpectatorPayload(false);
+            object BuildSpectatorPayload(bool referee) => new
             {
                 type = "gameState", spectating = true, gmEnabled = false,
+                observerView = referee ? "referee" : "public",
                 tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
                 tournamentMatchId = room.TournamentMatchId, playerBadges, rankedClock,
-                state = L12KernelProjection.ForSpectator(room.Game!),
+                state = referee ? L12KernelProjection.ForReferee(room.Game!)
+                    : L12KernelProjection.ForSpectator(room.Game!),
             };
             foreach (var id in spectators)
             {
-                if (room.TournamentId is not null && room.TournamentMatchId is not null
-                    && _sessions.TryGetValue(id, out var spectator) && spectator.AccountId is not null)
+                if (!_sessions.TryGetValue(id, out var spectator) || !spectator.IsSpectator
+                    || spectator.RoomCode != room.Code) continue;
+                var referee = false;
+                var authorized = true;
+                if (room.TournamentId is not null && room.TournamentMatchId is not null)
                 {
                     try
                     {
-                        _ = _platform?.TournamentRoomAssignment(spectator.AccountId, room.TournamentId,
-                            room.TournamentMatchId, spectate: true);
+                        if (spectator.AccountId is null)
+                            throw new L12TournamentScopeException("赛事观战账号缺失");
+                        var assignment = _platform?.TournamentRoomAssignment(spectator.AccountId,
+                            room.TournamentId, room.TournamentMatchId, spectate: true);
+                        referee = assignment?.CanRefereeView == true;
                     }
                     catch (Exception error) when (error is L12TournamentScopeException
                                                   or L12TournamentVersionConflictException
-                                                  or KeyNotFoundException)
+                                                  or KeyNotFoundException or ArgumentException)
                     {
-                        lock (room.Spectators) room.Spectators.Remove(id);
-                        ClearRoomMembership(spectator);
-                        continue;
+                        authorized = false;
                     }
                 }
-                yield return new OutgoingMessage(id, payload, replaceable, IsGameState: true,
-                    ForceFullGameState: forceCritical || state.Phase == L12Phase.GameOver);
+                if (!authorized)
+                {
+                    lock (room.Spectators) room.Spectators.Remove(id);
+                    ClearRoomMembership(spectator);
+                    yield return new OutgoingMessage(id, new
+                    {
+                        type = "roomLeft", message = "赛事观战资格已失效",
+                    });
+                    continue;
+                }
+                yield return new OutgoingMessage(id, SpectatorPayload(referee), replaceable,
+                    IsGameState: true, ForceFullGameState: room.TournamentId is not null
+                        && room.TournamentMatchId is not null || forceCritical
+                        || state.Phase == L12Phase.GameOver);
             }
         }
     }

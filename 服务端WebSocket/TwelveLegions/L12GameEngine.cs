@@ -314,21 +314,21 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         return result;
     }
 
-    public L12GameSnapshot SnapshotFor(int viewer) => SnapshotForInternal(viewer, spectator: false, revealAllDisasters: false, revealAllHands: false);
+    public L12GameSnapshot SnapshotFor(int viewer) => SnapshotForInternal(viewer, spectator: false, L12RecipientVisibility.Policy.Player);
 
-    public L12GameSnapshot SnapshotForGm(int viewer) => SnapshotForInternal(viewer, spectator: false, revealAllDisasters: true, revealAllHands: true);
+    public L12GameSnapshot SnapshotForGm(int viewer) => SnapshotForInternal(viewer, spectator: false, L12RecipientVisibility.Policy.Gm);
 
-    public L12GameSnapshot SnapshotForSpectator() => SnapshotForInternal(-1, spectator: true, revealAllDisasters: false, revealAllHands: false);
+    public L12GameSnapshot SnapshotForSpectator() => SnapshotForInternal(-1, spectator: true, L12RecipientVisibility.Policy.PublicSpectator);
 
-    public L12GameSnapshot SnapshotForReferee() => SnapshotForInternal(-1, spectator: true, revealAllDisasters: true, revealAllHands: false);
+    public L12GameSnapshot SnapshotForReferee() => SnapshotForInternal(-1, spectator: true, L12RecipientVisibility.Policy.Referee);
 
-    private L12GameSnapshot SnapshotForInternal(int viewer, bool spectator, bool revealAllDisasters, bool revealAllHands)
+    private L12GameSnapshot SnapshotForInternal(int viewer, bool spectator, L12RecipientVisibility.Policy visibility)
     {
         if (ReconcilePendingActivationTransactions()) State.Revision++;
         if (State.StateFormatVersion < L12PersistenceContract.MinimumCheckpointRecoveryVersion)
             RecalculateContinuousTroops();
         else PrepareV2ProjectionState();
-        var players = State.Players.Select((player, index) => !spectator && (index == viewer || revealAllHands)
+        var players = State.Players.Select((player, index) => !spectator && (index == viewer || visibility.DeckOrder)
             ? (object)new
             {
                 player.PlayerIndex, player.Name, player.DeckName, player.Faction,
@@ -337,8 +337,24 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 libraryCount = player.Library.Count, libraryTop = L12ActiveDisasterRules.LibraryFlipped(State.ActiveDisaster?.CardId) ? player.Library.FirstOrDefault() : null,
                 hand = SnapshotHand(index), promotionOptions = BuildS2PromotionOptions(player), player.MoraleDeck,
                 morale = SnapshotMorale(player),
-                field = SnapshotField(player, viewer, revealAllHands), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), player.Removed, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters),
+                field = SnapshotField(player, viewer, visibility.CoveredBattlefieldIdentity), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), player.Removed, specialZones = SpecialZonesSnapshot(player, index, viewer, visibility.AllDisasters),
                 player.TemporaryMorale, spendableResourceCount = ActiveResourceCount(player), player.NextLegionChargeMaxCost, player.NextLegionEntryDiscount, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
+            }
+            : visibility.BothHands ? (object)new
+            {
+                player.PlayerIndex, player.Name, player.DeckName, player.Faction,
+                master = MasterSnapshotCore(player, includeActions: false), factionEffect = FactionEffectSnapshotCore(player, includeActions: false),
+                libraryCount = player.Library.Count, libraryTop = L12ActiveDisasterRules.LibraryFlipped(State.ActiveDisaster?.CardId) && player.Library.FirstOrDefault() is { } visibleTop ? SnapshotDisplayOnlyCard(visibleTop) : null,
+                hand = SnapshotObserverHand(index), handCount = player.Hand.Count,
+                moraleDeckCount = player.MoraleDeck.Count, morale = SnapshotMorale(player),
+                field = SnapshotFieldCore(player, viewer, visibility.CoveredBattlefieldIdentity, includeActions: false),
+                Relic = player.Relic is null ? null : SnapshotDisplayOnlyCard(player.Relic),
+                ExtraRelics = player.ExtraRelics.Select(SnapshotDisplayOnlyCard).ToArray(),
+                Resolving = player.Resolving.Select(SnapshotDisplayOnlyCard).ToArray(),
+                Graveyard = SnapshotGraveyardCore(player, includeActions: false),
+                graveyardCount = player.Graveyard.Count, removedCount = player.Removed.Count,
+                specialZones = SpecialZonesSnapshotCore(player, index, viewer, visibility.AllDisasters, includeActions: false),
+                player.TemporaryMorale, player.MulliganDone,
             }
             : new
             {
@@ -348,13 +364,13 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 libraryCount = player.Library.Count, libraryTop = L12ActiveDisasterRules.LibraryFlipped(State.ActiveDisaster?.CardId) ? player.Library.FirstOrDefault() : null,
                 handCount = player.Hand.Count,
                 moraleDeckCount = player.MoraleDeck.Count, morale = SnapshotMorale(player),
-                field = SnapshotField(player, viewer, revealAllHands), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), graveyardCount = player.Graveyard.Count,
-                removedCount = player.Removed.Count, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters), player.TemporaryMorale, spendableResourceCount = ActiveResourceCount(player), player.NextLegionChargeMaxCost, player.NextLegionEntryDiscount, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
+                field = SnapshotField(player, viewer, visibility.CoveredBattlefieldIdentity), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), graveyardCount = player.Graveyard.Count,
+                removedCount = player.Removed.Count, specialZones = SpecialZonesSnapshot(player, index, viewer, visibility.AllDisasters), player.TemporaryMorale, spendableResourceCount = ActiveResourceCount(player), player.NextLegionChargeMaxCost, player.NextLegionEntryDiscount, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
             }).ToArray();
 
         var projectionNow = _utcNow().ToUniversalTime();
         var prompts = State.PendingPrompts
-            .Where(prompt => !spectator && (prompt.PlayerIndex == viewer || revealAllHands))
+            .Where(prompt => !spectator && (prompt.PlayerIndex == viewer || visibility.PrivatePrompts))
             .Select(prompt => (object)new
             {
                 prompt.PromptId, prompt.PlayerIndex, prompt.Kind, prompt.Text, prompt.ValidChoices,
@@ -365,7 +381,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 prompt.Step, prompt.CreatedRevision, prompt.Controller,
             }).ToArray();
         // 对手正在处理任何选择时都给出不泄露私密候选内容的等待状态。
-        var waitingPromptSource = revealAllHands
+        var waitingPromptSource = visibility.PrivatePrompts
             ? null
             : State.PendingPrompts.FirstOrDefault(prompt => spectator || prompt.PlayerIndex != viewer);
         object? waitingPrompt = waitingPromptSource is null ? null : new
@@ -397,23 +413,28 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
         var recentEvents = State.Events
             .TakeLast(MaximumSnapshotEvents)
-            .Select(actionEvent => FilterDisasterEvent(actionEvent, viewer, revealAllDisasters, revealAllHands))
+            .Select(actionEvent => FilterDisasterEvent(actionEvent, viewer, visibility.AllDisasters, visibility.PrivateHandEvents))
             .ToArray();
         var lastAction = State.LastAction is null
             ? null
-            : FilterDisasterEvent(State.LastAction, viewer, revealAllDisasters, revealAllHands);
+            : FilterDisasterEvent(State.LastAction, viewer, visibility.AllDisasters, visibility.PrivateHandEvents);
 
+        var displayOnlyCards = spectator && visibility.BothHands;
         return new L12GameSnapshot(
             State.MatchId, State.RoomCode, State.OperationsPolicy.Version, spectator ? 0 : viewer,
             State.Revision, State.ActivePlayer,
             State.FirstPlayer, State.DiceWinner, State.InitiativeRolls, State.Phase, State.Round, State.TurnSerial,
-            State.DisasterMode, State.DisasterValue, State.ActiveDisaster, State.DisasterDeck.Select(CardBackSnapshot).ToArray(),
-            State.BannedDisasters.Cast<object>().ToArray(), State.RemovedDisasters.Cast<object>().ToArray(),
-            State.RevealedDisasters.Cast<object>().ToArray(), BuildChosenDisasterSnapshot(viewer, revealAllDisasters),
-            BuildSessionDisasterSnapshot(viewer, revealAllDisasters),
+            State.DisasterMode, State.DisasterValue,
+            displayOnlyCards && State.ActiveDisaster is { } active ? SnapshotDisplayOnlyCard(active) : State.ActiveDisaster,
+            State.DisasterDeck.Select(CardBackSnapshot).ToArray(),
+            State.BannedDisasters.Select(card => (object)(displayOnlyCards ? SnapshotDisplayOnlyCard(card) : card)).ToArray(),
+            State.RemovedDisasters.Select(card => (object)(displayOnlyCards ? SnapshotDisplayOnlyCard(card) : card)).ToArray(),
+            State.RevealedDisasters.Select(card => (object)(displayOnlyCards ? SnapshotDisplayOnlyCard(card) : card)).ToArray(),
+            BuildChosenDisasterSnapshot(viewer, visibility.AllDisasters, displayOnlyCards),
+            BuildSessionDisasterSnapshot(viewer, visibility.AllDisasters, displayOnlyCards),
             State.DisasterPreparationStep,
             waitingPrompt, prompts, stack, State.PendingDefense, State.Winner, State.WinnerReason, players, lastAction,
-            recentEvents, spectator ? [] : BuildLegalAttackTargets(revealAllHands ? State.ActivePlayer : viewer), ComputeStateHash());
+            recentEvents, spectator || !visibility.LegalActions ? [] : BuildLegalAttackTargets(visibility.DeckOrder ? State.ActivePlayer : viewer), ComputeStateHash());
     }
 
     private L12PromptAutoCloseView? ResponseAutoCloseView(L12Prompt prompt, DateTimeOffset serverNowUtc)
@@ -428,13 +449,13 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         return new L12PromptAutoCloseView("no-valid-response", deadline, serverNowUtc);
     }
 
-    private object[] BuildChosenDisasterSnapshot(int viewer, bool revealAll)
-        => State.ChosenDisasters.Select(card => DisasterVisibilitySnapshot(card, viewer, revealAll)).ToArray();
+    private object[] BuildChosenDisasterSnapshot(int viewer, bool revealAll, bool displayOnlyCards = false)
+        => State.ChosenDisasters.Select(card => DisasterVisibilitySnapshot(card, viewer, revealAll, displayOnlyCards)).ToArray();
 
-    private object[] BuildSessionDisasterSnapshot(int viewer, bool revealAll)
+    private object[] BuildSessionDisasterSnapshot(int viewer, bool revealAll, bool displayOnlyCards = false)
     {
         if (State.DisasterMode == "custom" && State.CustomDisasters.Count == 4)
-            return State.CustomDisasters.Cast<object>().ToArray();
+            return State.CustomDisasters.Select(card => (object)(displayOnlyCards ? SnapshotDisplayOnlyCard(card) : card)).ToArray();
 
         // 这一区域只表达“玩家目前知道哪些牌”，绝不能用亮/暗位置泄露洗混后的牌序。
         // 前三格先紧凑排列已知的非最终天灾，再补未知牌背；公开的最终天灾固定在第四格。
@@ -446,7 +467,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             .DistinctBy(card => card.InstanceId)
             .ToArray();
         var visible = all.Where(card => card.CardId != "S01-DS10")
-            .Select(card => DisasterVisibilitySnapshot(card, viewer, revealAll))
+            .Select(card => DisasterVisibilitySnapshot(card, viewer, revealAll, displayOnlyCards))
             .Where(IsVisibleDisasterSnapshot)
             .Take(3)
             .ToList();
@@ -455,16 +476,18 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
         var final = all.FirstOrDefault(card => card.CardId == "S01-DS10")
             ?? (_catalog.Cards.ContainsKey("S01-DS10") ? CreateCard("S01-DS10", "session-final-disaster") : null);
-        if (final is not null) visible.Add(final);
+        if (final is not null) visible.Add(displayOnlyCards ? SnapshotDisplayOnlyCard(final) : final);
         return visible.ToArray();
     }
 
     private static bool IsVisibleDisasterSnapshot(object snapshot) => snapshot is L12CardInstance;
 
-    private object DisasterVisibilitySnapshot(L12CardInstance card, int viewer, bool revealAll)
+    private object DisasterVisibilitySnapshot(L12CardInstance card, int viewer, bool revealAll,
+        bool displayOnlyCards = false)
     {
         var owner = State.ChosenDisasterOwners.GetValueOrDefault(card.InstanceId, card.OwnerIndex ?? -1);
-        if (L12RecipientVisibility.CanSeeDisaster(State, card, viewer, revealAll)) return card;
+        if (L12RecipientVisibility.CanSeeDisaster(State, card, viewer, revealAll))
+            return displayOnlyCards ? SnapshotDisplayOnlyCard(card) : card;
         return new { card.InstanceId, hidden = true, ownerIndex = owner };
     }
 
@@ -506,7 +529,9 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
     private static object CardBackSnapshot(L12CardInstance _) => new { hidden = true };
 
-    private object MasterSnapshot(L12PlayerState player)
+    private object MasterSnapshot(L12PlayerState player) => MasterSnapshotCore(player, includeActions: true);
+
+    private object MasterSnapshotCore(L12PlayerState player, bool includeActions)
     {
         _catalog.Cards.TryGetValue(player.MasterId, out var card);
         var deployedAsLegion = PublicLegions(player)
@@ -527,11 +552,14 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             statusEffects = player.MasterCannotBeAttackedUntilTurn >= State.TurnSerial
                 ? new[] { new L12StatusEffectView("shield", "主宰暂时不可被进攻") }
                 : Array.Empty<L12StatusEffectView>(),
-            abilities = BuildAbilityViews(player, player.MasterId, $"master-{player.PlayerIndex}"),
+            abilities = includeActions ? BuildAbilityViews(player, player.MasterId, $"master-{player.PlayerIndex}") : [],
         };
     }
 
     private object FactionEffectSnapshot(L12PlayerState player)
+        => FactionEffectSnapshotCore(player, includeActions: true);
+
+    private object FactionEffectSnapshotCore(L12PlayerState player, bool includeActions)
     {
         var identity = _catalog.MoraleIdentities.ForFaction(player.Faction);
         if (identity.GodPowerCardId is { Length: > 0 } godPowerCardId
@@ -539,7 +567,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             && _catalog.Cards.TryGetValue(godPowerCardId, out var godPowerFace))
         {
             var samePrintedCard = moraleFace.Id.Equals(godPowerFace.Id, StringComparison.OrdinalIgnoreCase);
-            var abilities = samePrintedCard
+            var abilities = !includeActions ? [] : samePrintedCard
                 ? BuildAbilityViews(player, moraleFace.Id, $"faction-{player.PlayerIndex}").ToArray()
                 : BuildAbilityViews(player, moraleFace.Id, $"faction-{player.PlayerIndex}")
                     .Concat(BuildAbilityViews(player, godPowerFace.Id, $"faction-{player.PlayerIndex}"))
@@ -558,10 +586,14 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         var moraleId = identity.CanonicalCardId;
         if (moraleId is null || !_catalog.Cards.TryGetValue(moraleId, out var card))
             return new { cardId = string.Empty, name = "阵营效果", imageUrl = (string?)null, effectText = string.Empty, abilities = Array.Empty<L12AbilityView>() };
-        return new { cardId = card.Id, name = card.NameZh, imageUrl = card.ImageUrl, effectText = card.Effect, abilities = BuildAbilityViews(player, card.Id, $"faction-{player.PlayerIndex}") };
+        return new { cardId = card.Id, name = card.NameZh, imageUrl = card.ImageUrl, effectText = card.Effect, abilities = includeActions ? BuildAbilityViews(player, card.Id, $"faction-{player.PlayerIndex}") : [] };
     }
 
     private object SpecialZonesSnapshot(L12PlayerState player, int ownerIndex, int viewer, bool revealAll)
+        => SpecialZonesSnapshotCore(player, ownerIndex, viewer, revealAll, includeActions: true);
+
+    private object SpecialZonesSnapshotCore(L12PlayerState player, int ownerIndex, int viewer, bool revealAll,
+        bool includeActions)
     {
         string[] canopicIds = ["S01-0216", "S01-0217", "S01-0218", "S01-0219", "S01-0220"];
         var completedCanopicIds = player.SpecialZones.CanopicProgress.Select(card => card.CardId)
@@ -582,8 +614,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         {
             if (revealAll || viewer == ownerIndex || card.TrialCompleted)
             {
-                var snapshot = card.Clone();
-                snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
+                var snapshot = includeActions ? card.Clone() : SnapshotDisplayOnlyCard(card);
+                if (includeActions) snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
                 return (object)snapshot;
             }
             return new { card.InstanceId, cardId = "hidden-trial", name = "未揭示试炼", cardType = "trial", hidden = true,
@@ -604,7 +636,9 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         return new
         {
             player.SpecialZones.Runes, player.SpecialZones.TrialLevel, player.SpecialZones.TrialCapacity,
-            godPower, trials, canopicProgress = player.SpecialZones.CanopicProgress, canopicTrack,
+            godPower, trials,
+            canopicProgress = includeActions ? player.SpecialZones.CanopicProgress : player.SpecialZones.CanopicProgress.Select(SnapshotDisplayOnlyCard).ToList(),
+            canopicTrack,
         };
     }
 
@@ -836,15 +870,22 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     }
 
     private L12CardInstance[] SnapshotGraveyard(L12PlayerState player)
+        => SnapshotGraveyardCore(player, includeActions: true);
+
+    private L12CardInstance[] SnapshotGraveyardCore(L12PlayerState player, bool includeActions)
         => player.Graveyard.Select(card =>
         {
-            var snapshot = card.Clone();
+            var snapshot = includeActions ? card.Clone() : SnapshotDisplayOnlyCard(card);
             snapshot.Troops = snapshot.CurrentTroops;
-            snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
+            if (includeActions) snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
             return snapshot;
         }).ToArray();
 
     private object?[][] SnapshotField(L12PlayerState player, int viewer, bool revealAllHidden)
+        => SnapshotFieldCore(player, viewer, revealAllHidden, includeActions: true);
+
+    private object?[][] SnapshotFieldCore(L12PlayerState player, int viewer, bool revealAllHidden,
+        bool includeActions)
         => player.Field.Select((row, rowIndex) => row.Select(card =>
         {
             if (card is null) return null;
@@ -859,11 +900,12 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 // cannot safely reuse the ability list captured when the card instance
                 // was created.
                 snapshot.Troops = snapshot.CurrentTroops;
-                snapshot.SpendableResourceType = CanUseFieldMoraleResource(player, card)
+                snapshot.SpendableResourceType = includeActions && CanUseFieldMoraleResource(player, card)
                     ? L12StructuredCardSemantics.FieldMoraleResourceRule(card.CardId)?.ResourceType
                     : null;
-                snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
-                snapshot.RuleActions = BuildRuleActionViews(player, card, rowIndex);
+                if (!includeActions) StripDisplayOnlyActions(snapshot);
+                snapshot.Abilities = includeActions ? BuildAbilityViews(player, card.CardId, card.InstanceId) : [];
+                snapshot.RuleActions = includeActions ? BuildRuleActionViews(player, card, rowIndex) : [];
                 snapshot.ActiveKeywords = BuildActiveKeywords(player, card, rowIndex);
                 snapshot.StatusEffects = BuildStatusEffects(player, card, rowIndex);
                 snapshot.StatusIcons = snapshot.StatusEffects.Select(effect => effect.Kind)
@@ -2102,6 +2144,32 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 return L12StructuredCardRules.IsRangedLegion(card, row);
         return false;
     }
+
+    private static L12CardInstance SnapshotDisplayOnlyCard(L12CardInstance card)
+    {
+        var snapshot = card.Clone();
+        StripDisplayOnlyActions(snapshot);
+        return snapshot;
+    }
+
+    private static void StripDisplayOnlyActions(L12CardInstance card)
+    {
+        card.PlayCost = null;
+        card.MinimumPlayCost = null;
+        card.PlayBlockedReason = null;
+        card.SpendableResourceType = null;
+        card.Abilities = [];
+        card.RuleActions = [];
+        foreach (var attached in card.AttachedCards) StripDisplayOnlyActions(attached);
+    }
+
+    private L12CardInstance[] SnapshotObserverHand(int playerIndex)
+        => State.Players[playerIndex].Hand.Select(card =>
+        {
+            var snapshot = SnapshotDisplayOnlyCard(card);
+            snapshot.Troops = snapshot.CurrentTroops;
+            return snapshot;
+        }).ToArray();
 
     private L12CardInstance[] SnapshotHand(int playerIndex)
         => State.Players[playerIndex].Hand.Select(card =>

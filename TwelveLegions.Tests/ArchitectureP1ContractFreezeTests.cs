@@ -50,7 +50,7 @@ public sealed class ArchitectureP1ContractFreezeTests
     }
 
     [Fact]
-    public void RecipientProjectionNeverLeaksTheOtherPlayersPrivateHand()
+    public void RecipientProjectionKeepsPlayerAndPublicHandsPrivateWhileRefereeSeesBoth()
     {
         var game = CreateEngine();
         var privateInstanceId = Assert.Single(game.State.Players[0].Hand.Take(1)).InstanceId;
@@ -58,7 +58,7 @@ public sealed class ArchitectureP1ContractFreezeTests
         Assert.Contains(privateInstanceId, JsonSerializer.Serialize(game.SnapshotFor(0), WireJson), StringComparison.Ordinal);
         Assert.DoesNotContain(privateInstanceId, JsonSerializer.Serialize(game.SnapshotFor(1), WireJson), StringComparison.Ordinal);
         Assert.DoesNotContain(privateInstanceId, JsonSerializer.Serialize(game.SnapshotForSpectator(), WireJson), StringComparison.Ordinal);
-        Assert.DoesNotContain(privateInstanceId, JsonSerializer.Serialize(game.SnapshotForReferee(), WireJson), StringComparison.Ordinal);
+        Assert.Contains(privateInstanceId, JsonSerializer.Serialize(game.SnapshotForReferee(), WireJson), StringComparison.Ordinal);
         Assert.Contains(privateInstanceId, JsonSerializer.Serialize(game.SnapshotForGm(0), WireJson), StringComparison.Ordinal);
     }
 

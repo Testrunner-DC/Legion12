@@ -28,7 +28,16 @@ let timer: ReturnType<typeof setTimeout> | null = null
 let playbackGeneration = 0
 
 const replayCatalog = computed(() => new Map(cards.value.map(card => [card.id, card])))
-const currentGame = computed(() => detail.value ? replayGameAt(detail.value, selectedStep.value, replayCatalog.value) : null)
+const currentGame = computed(() => {
+  const game = detail.value ? replayGameAt(detail.value, selectedStep.value, replayCatalog.value) : null
+  if (!game || route.name !== 'admin-match-replay') return game
+  // Raw archive frames are authoritative; IdentityKnown was not a persisted viewer flag.
+  // Decorate only this admin display instance, never the shared mapper or exported JSON.
+  for (const player of game.players)
+    for (const card of player.field.flat())
+      if (card?.hidden && card.cardId && card.cardId !== 'hidden-card') card.identityKnown = true
+  return game
+})
 const replayFocusCard = computed(() => detail.value ? replayFocusCardAt(detail.value, selectedStep.value, cards.value) : null)
 const isAdminReplay = computed(() => route.name === 'admin-match-replay')
 const totalSteps = computed(() => isAdminReplay.value ? replayTotalCommands.value : detail.value?.commands.length ?? 0)
@@ -196,7 +205,7 @@ function returnFromReplay() {
       <button @click="returnFromReplay">{{ returnLabel }}</button>
     </main>
     <GameBoard v-else-if="currentGame" :game="currentGame" :replay-focus-card="replayFocusCard"
-      :replay-playback-speed="playbackSpeed" read-only @replay-presentation-change="replayPresentationBusy = $event" />
+      :replay-playback-speed="playbackSpeed" :reveal-both-hands="isAdminReplay" read-only @replay-presentation-change="replayPresentationBusy = $event" />
 
     <Teleport v-if="!mobileReplayBlocked" :to="landscapeTeleportTarget()">
       <div class="replay-route-controls">

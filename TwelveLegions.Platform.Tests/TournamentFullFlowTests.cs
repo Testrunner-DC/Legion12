@@ -337,6 +337,72 @@ public sealed class TournamentFullFlowTests
     }
 
     [Fact]
+    public async Task PrivateTournamentRevocationRemovesSpectatorAndForgetsTheRefereeView()
+    {
+        var root = TempRoot();
+        MatchRecorder? recorder = null;
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 2, "PrivateRef");
+            var referee = store.Register("tprivref42", "password-123").Account!;
+            MakeFriends(store, organizer, referee);
+            var tournament = CreateAndRegister(store, organizer, players,
+                Payload("single") with { Visibility = "code", RefereeAccountIds = [referee.Id] });
+            tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
+                Context("private-start"), true);
+            tournament = store.CheckInTournament(organizer, tournament.Id, 1,
+                new L12TournamentCheckInPayload(organizer.Id, true), tournament.Version,
+                Context("private-ready-a"), true);
+            tournament = store.CheckInTournament(players[0], tournament.Id, 1,
+                new L12TournamentCheckInPayload(null, true), tournament.Version,
+                Context("private-ready-b"), true);
+            tournament = store.StartTournamentRound(organizer, tournament.Id, 1,
+                tournament.Version, Context("private-round"), true);
+            var match = Assert.Single(tournament.Rounds[0].Matches);
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            var rooms = new L12RoomManager(catalog, recorder, store);
+            var host = Guid.NewGuid();
+            var guest = Guid.NewGuid();
+            var judge = Guid.NewGuid();
+            rooms.Connect(host, organizer.Id, organizer.Username);
+            rooms.Connect(guest, players[0].Id, players[0].Username);
+            rooms.Connect(judge, referee.Id, referee.Username);
+            await rooms.EnterTournamentMatchAsync(host, tournament.Id, match.Id);
+            await rooms.EnterTournamentMatchAsync(guest, tournament.Id, match.Id);
+            Assert.Equal("referee", rooms.SpectateTournamentMatch(judge, tournament.Id, match.Id)
+                .Where(message => MessageType(message.Payload) == "gameState")
+                .Select(message => JsonSerializer.SerializeToElement(message.Payload)
+                    .GetProperty("observerView").GetString()).Single());
+
+            tournament = store.SetTournamentStaff(organizer, tournament.Id,
+                new L12TournamentStaffPayload([]), tournament.Version,
+                Context("private-revoke"), true);
+            var revoked = await rooms.RecoveryStateWithAckAsync(host);
+            Assert.Contains(revoked, message => message.SessionId == judge
+                && MessageType(message.Payload) == "roomLeft");
+            Assert.DoesNotContain(revoked, message => message.SessionId == judge
+                && MessageType(message.Payload) == "gameState");
+            rooms.Disconnect(judge);
+            var replacement = Guid.NewGuid();
+            var claim = await rooms.ConnectAsync(replacement, referee.Id, referee.Username);
+            Assert.False(claim.Recovered);
+            Assert.Null(claim.RoomCode);
+            Assert.DoesNotContain(await rooms.RecoveryStateWithAckAsync(replacement),
+                message => MessageType(message.Payload) == "gameState");
+            Assert.Equal("tournamentRoomRejected", MessageType(Assert.Single(
+                rooms.SpectateTournamentMatch(replacement, tournament.Id, match.Id)).Payload));
+        }
+        finally
+        {
+            if (recorder is not null) await recorder.DisposeAsync();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public async Task TournamentRoomUsesBoundDeckAndRulesSnapshotsAndWritesResultIdempotently()
     {
         var root = TempRoot();
@@ -369,6 +435,17 @@ public sealed class TournamentFullFlowTests
                 Context("ready-b"), true);
             tournament = store.StartTournamentRound(organizer, tournament.Id, 1, tournament.Version,
                 Context("round-start"), true);
+            Assert.True(store.TournamentRoomAssignment(organizer.Id, tournament.Id, match.Id,
+                spectate: true).CanRefereeView);
+            Assert.True(store.TournamentRoomAssignment(referee.Id, tournament.Id, match.Id,
+                spectate: true).CanRefereeView);
+            Assert.False(store.TournamentRoomAssignment(player.Id, tournament.Id, match.Id,
+                spectate: true).CanRefereeView);
+            Assert.False(store.TournamentRoomAssignment(outsider.Id, tournament.Id, match.Id,
+                spectate: true).CanRefereeView);
+            var globalTournamentAdmin = store.Login("Admin", "L12master").Account!;
+            Assert.True(store.TournamentRoomAssignment(globalTournamentAdmin.Id, tournament.Id,
+                match.Id, spectate: true).CanRefereeView);
 
             recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
             await recorder.InitializeAsync();
@@ -454,11 +531,35 @@ public sealed class TournamentFullFlowTests
                 Assert.False(viewedPlayer.GetProperty("customDeck").GetBoolean());
             });
             using (var spectatorDocument = JsonDocument.Parse(spectatorPayloads[1].GetRawText()))
+            {
                 Assert.Equal(tournament.Code,
                     spectatorDocument.RootElement.GetProperty("tournamentCode").GetString());
+                Assert.Equal("referee", spectatorDocument.RootElement.GetProperty("observerView").GetString());
+                Assert.False(spectatorDocument.RootElement.GetProperty("gmEnabled").GetBoolean());
+                var state = spectatorDocument.RootElement.GetProperty("state");
+                Assert.All(state.GetProperty("Players").EnumerateArray(), viewedPlayer =>
+                    Assert.Equal(viewedPlayer.GetProperty("handCount").GetInt32(),
+                        viewedPlayer.GetProperty("hand").GetArrayLength()));
+                Assert.Empty(state.GetProperty("Prompts").EnumerateArray());
+                Assert.Empty(state.GetProperty("LegalAttackTargets").EnumerateObject());
+            }
             var publicSpectate = rooms.SpectateTournamentMatch(outsiderSession, tournament.Id, match.Id);
-            Assert.Contains(publicSpectate, message => message.SessionId == outsiderSession
-                && MessageType(message.Payload) == "gameState");
+            var publicState = publicSpectate.Where(message => message.SessionId == outsiderSession
+                    && MessageType(message.Payload) == "gameState")
+                .Select(message => JsonSerializer.SerializeToElement(message.Payload)).Single();
+            Assert.Equal("public", publicState.GetProperty("observerView").GetString());
+            Assert.All(publicState.GetProperty("state").GetProperty("Players").EnumerateArray(),
+                viewedPlayer => Assert.False(viewedPlayer.TryGetProperty("hand", out _)));
+
+            var mixedBroadcast = await rooms.RecoveryStateWithAckAsync(hostSession);
+            Assert.Equal("referee", mixedBroadcast.Where(message => message.SessionId == refereeSession
+                    && MessageType(message.Payload) == "gameState")
+                .Select(message => JsonSerializer.SerializeToElement(message.Payload))
+                .Single().GetProperty("observerView").GetString());
+            Assert.Equal("public", mixedBroadcast.Where(message => message.SessionId == outsiderSession
+                    && MessageType(message.Payload) == "gameState")
+                .Select(message => JsonSerializer.SerializeToElement(message.Payload))
+                .Single().GetProperty("observerView").GetString());
 
             rooms.Disconnect(refereeSession);
             var replacementReferee = Guid.NewGuid();
@@ -474,6 +575,30 @@ public sealed class TournamentFullFlowTests
             Assert.Equal(tournament.Code, refereeRecovery[1].GetProperty("tournamentCode").GetString());
             Assert.Equal(match.Id, refereeRecovery[1].GetProperty("tournamentMatchId").GetString());
             Assert.Equal(match.RoomCode, refereeRecovery[2].GetProperty("roomCode").GetString());
+            Assert.Equal("referee", refereeRecovery[1].GetProperty("observerView").GetString());
+
+            tournament = store.SetTournamentStaff(organizer, tournament.Id,
+                new L12TournamentStaffPayload([]), tournament.Version,
+                Context("revoke-referee-view"), true);
+            Assert.False(store.TournamentRoomAssignment(referee.Id, tournament.Id, match.Id,
+                spectate: true).CanRefereeView);
+            var downgraded = (await rooms.RecoveryStateWithAckAsync(hostSession))
+                .Where(message => message.SessionId == replacementReferee
+                    && MessageType(message.Payload) == "gameState")
+                .Select(message => JsonSerializer.SerializeToElement(message.Payload)).Single();
+            Assert.Equal("public", downgraded.GetProperty("observerView").GetString());
+            Assert.All(downgraded.GetProperty("state").GetProperty("Players").EnumerateArray(),
+                viewedPlayer => Assert.False(viewedPlayer.TryGetProperty("hand", out _)));
+            rooms.Disconnect(replacementReferee);
+            var revokedSession = Guid.NewGuid();
+            Assert.True((await rooms.ConnectAsync(revokedSession, referee.Id, referee.Username)).Recovered);
+            var revokedRecovery = (await rooms.RecoveryStateWithAckAsync(revokedSession, recovered: true))
+                .Where(message => message.SessionId == revokedSession
+                    && MessageType(message.Payload) == "gameState")
+                .Select(message => JsonSerializer.SerializeToElement(message.Payload)).Single();
+            Assert.Equal("public", revokedRecovery.GetProperty("observerView").GetString());
+            Assert.All(revokedRecovery.GetProperty("state").GetProperty("Players").EnumerateArray(),
+                viewedPlayer => Assert.False(viewedPlayer.TryGetProperty("hand", out _)));
 
             using var surrender = JsonDocument.Parse("{\"type\":\"surrender\"}");
             var gameOver = await rooms.HandleActionAsync(hostSession, surrender.RootElement);

@@ -584,14 +584,18 @@ internal static class LongChainAllCardHarness
         var p0Private = game.State.Players[0].Hand.Any(card => card.InstanceId == "lc02-private-0");
         var p1Private = game.State.Players[1].Hand.Any(card => card.InstanceId == "lc02-private-1");
         if (p0Private && (!VisibleHandIds(projections.Player0, 0).Contains("lc02-private-0")
+                || !VisibleHandIds(projections.Referee, 0).Contains("lc02-private-0")
                 || HasHandField(projections.Player1, 0)
-                || HasHandField(projections.Spectator, 0)
-                || HasHandField(projections.Referee, 0))
+                || HasHandField(projections.Spectator, 0))
             || p1Private && (!VisibleHandIds(projections.Player1, 1).Contains("lc02-private-1")
+                || !VisibleHandIds(projections.Referee, 1).Contains("lc02-private-1")
                 || HasHandField(projections.Player0, 1)
-                || HasHandField(projections.Spectator, 1)
-                || HasHandField(projections.Referee, 1)))
+                || HasHandField(projections.Spectator, 1)))
             throw new XunitException($"LC-02 投影隐私失败 cardId={testCase.CardId} profileId={profileId} seed={testCase.Seed} shard={testCase.Shard} cutpoints={string.Join(" -> ", cutpoints)} commands={commands.Count}");
+        using var referee = JsonDocument.Parse(projections.Referee);
+        if (referee.RootElement.GetProperty("prompts").GetArrayLength() != 0
+            || referee.RootElement.GetProperty("legalAttackTargets").EnumerateObject().Any())
+            throw new XunitException($"LC-02 裁判只读投影失败 cardId={testCase.CardId} seed={testCase.Seed}");
     }
 
     private static HashSet<string> VisibleHandIds(string projectionJson, int playerIndex)
