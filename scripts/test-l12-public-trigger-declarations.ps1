@@ -219,7 +219,10 @@ Assert-Contains $attackPlans 'new AttackPublicTriggerPlan(spec.PlanId, spec.Cost
 Assert-Contains $attackPlans 'TryQueueAttackPublicTriggerCandidates' 'Attack triggers must share one candidate entry.'
 Assert-Contains $attackPlans 'CreateTriggerCandidate(controller, source, trigger, candidateText, candidateData, source)' 'Attack candidates must retain a last-known source snapshot.'
 Assert-Contains $attackPlans 'PayAttackPublicCost(candidate, activation, plan, player, source, costIds)' 'Attack colon costs must commit before stack entry.'
-Assert-Contains $attackPlans 'PublicLegions(player).Select(card => card.InstanceId), requiredChoice: required)' 'Menes must be allowed to declare itself as the legion discard cost.'
+if (-not [regex]::IsMatch($attackPlans,
+    'PublicTriggerStep\("field-legion",\s*"cost",\s*"美尼斯：预先选择作为费用弃置的我方1张军团",\s*PublicLegions\(player\)\.Select\(card => card\.InstanceId\),\s*requiredChoice:\s*required,\s*isCostSelection:\s*true\)')) {
+    throw 'Menes must be allowed to declare itself as the legion discard cost, and the selection must remain explicitly marked as a cost.'
+}
 Assert-Contains $attackPlans '"discard-own-legion" => PublicLegions(player).Any(),' 'Menes must remain activatable when it is the only friendly legion.'
 if ($attackPlans.IndexOf('sacrifice.InstanceId == candidate.SourceInstanceId', [StringComparison]::Ordinal) -ge 0) {
     throw 'Menes self-discard cost must not be rejected during declaration commit.'
