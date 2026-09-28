@@ -143,6 +143,12 @@ public sealed partial class L12GameEngine
     private CommandResult BeginPendingActivationSequence(int playerIndex, L12CardInstance source, string ability,
         IEnumerable<L12ActivationSelectionStep> selectionSteps, string? triggerCandidateId, string? playCardInstanceId,
         string? responseTargetStackItemId)
+        => BeginPendingActivationSequence(playerIndex, source, ability, selectionSteps, triggerCandidateId,
+            playCardInstanceId, responseTargetStackItemId, initialize: null);
+
+    private CommandResult BeginPendingActivationSequence(int playerIndex, L12CardInstance source, string ability,
+        IEnumerable<L12ActivationSelectionStep> selectionSteps, string? triggerCandidateId, string? playCardInstanceId,
+        string? responseTargetStackItemId, Action<L12PendingActivation>? initialize)
     {
         var steps = selectionSteps.Select(step => new L12ActivationSelectionStep
         {
@@ -248,6 +254,7 @@ public sealed partial class L12GameEngine
             PlayCardInstanceId = playCardInstanceId,
             ResponseTargetStackItemId = responseTargetStackItemId,
         };
+        initialize?.Invoke(activation);
         State.PendingActivations.Add(activation);
         CreateActivationStepPrompt(activation);
         if (responseTargetStackItemId is null)

@@ -694,22 +694,20 @@ public sealed partial class L12GameEngine
             CompleteCommittedCompositeEffectDeclaration(direct);
             return CommandResult.Ok();
         }
-        var result = BeginCompositeDeclaration(playerIndex, source, "composite-committed-play", effectOnlyRepeat: false);
-        if (!result.Accepted) return result;
-        var activation = State.PendingActivations.Last(candidate => candidate.Controller == playerIndex
-            && candidate.SourceInstanceId == source.InstanceId
-            && candidate.Ability == "composite-committed-play");
-        activation.CommittedParentStackItemId = parent.StackItemId;
-        activation.CommittedCompletion = completion;
-        activation.PlayerLogGroupId = playerLogGroupId;
-        return result;
+        return BeginCompositeDeclaration(playerIndex, source, "composite-committed-play", effectOnlyRepeat: false,
+            activation =>
+            {
+                activation.CommittedParentStackItemId = parent.StackItemId;
+                activation.CommittedCompletion = completion;
+                activation.PlayerLogGroupId = playerLogGroupId;
+            });
     }
 
     private CommandResult BeginRepeatedCompositeEffectDeclaration(int playerIndex, L12CardInstance source)
         => BeginCompositeDeclaration(playerIndex, source, "composite-repeated-effect", effectOnlyRepeat: true);
 
     private CommandResult BeginCompositeDeclaration(int playerIndex, L12CardInstance source, string ability,
-        bool effectOnlyRepeat)
+        bool effectOnlyRepeat, Action<L12PendingActivation>? initialize = null)
     {
         var player = State.Players[playerIndex];
         var opponent = State.Players[1 - playerIndex];
@@ -1014,7 +1012,8 @@ public sealed partial class L12GameEngine
             return CommandResult.Ok();
         }
         return BeginPendingActivationSequence(playerIndex, source, ability, steps,
-            triggerCandidateId: null, playCardInstanceId: source.InstanceId, responseTargetStackItemId: null);
+            triggerCandidateId: null, playCardInstanceId: source.InstanceId, responseTargetStackItemId: null,
+            initialize);
     }
 
     private static L12ActivationSelectionStep CompositeStep(string kind, string key, string text,

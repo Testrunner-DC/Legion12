@@ -56,7 +56,13 @@ public sealed partial class L12GameEngine
                     MaxChoose = 1,
                     CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed,
                 },
-            ], triggerCandidateId: null, playCardInstanceId: card.InstanceId, responseTargetStackItemId: null);
+            ], triggerCandidateId: null, playCardInstanceId: card.InstanceId, responseTargetStackItemId: null,
+                activation =>
+                {
+                    activation.CommittedParentStackItemId = parent.StackItemId;
+                    activation.CommittedOriginZone = originZone;
+                    activation.CommittedReason = reason;
+                });
             if (!result.Accepted)
             {
                 RecordEffectGeneratedPlayFailure(controller,
@@ -64,12 +70,6 @@ public sealed partial class L12GameEngine
                 FinishStackItem(parent);
                 return CommandResult.Ok();
             }
-            var activation = State.PendingActivations.Last(candidate => candidate.Controller == controller
-                && candidate.SourceInstanceId == card.InstanceId
-                && candidate.Ability == EffectGeneratedFreePlayAbility);
-            activation.CommittedParentStackItemId = parent.StackItemId;
-            activation.CommittedOriginZone = originZone;
-            activation.CommittedReason = reason;
             return CommandResult.Ok();
         }
 
