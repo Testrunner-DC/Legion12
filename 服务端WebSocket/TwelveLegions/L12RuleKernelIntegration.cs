@@ -1046,9 +1046,17 @@ public sealed partial class L12GameEngine
             var hadReservedCost = activation.SelectionSteps.Take(activation.CurrentStep)
                 .Any(step => step.Kind is "mixed-board-payment" or "resource-payment" or "composite-ordinary-payment"
                     || step.DeclarationKey?.Contains("cost", StringComparison.OrdinalIgnoreCase) == true);
-            AddEvent("ability-cancelled", prompt.PlayerIndex, hadReservedCost
-                ? "已取消结算选择，锁定的费用已全部释放，未产生费用、离场、次数或触发事件"
-                : "已取消发动，未支付费用且未进入堆叠");
+            var declinedMoraleEnter = State.PendingTriggerStackCandidates.FirstOrDefault(candidate =>
+                candidate.CandidateId == activation.TriggerCandidateId
+                && candidate.Trigger == "enter" && (candidate.SourceCardId is
+                    "S02-0513" or "S02-0518" or "S02-0520"));
+            if (declinedMoraleEnter is not null)
+                AddEvent("effect-declined", prompt.PlayerIndex,
+                    $"〈{declinedMoraleEnter.SourceName}〉选择不发动翻转士气效果");
+            else
+                AddEvent("ability-cancelled", prompt.PlayerIndex, hadReservedCost
+                    ? "已取消结算选择，锁定的费用已全部释放，未产生费用、离场、次数或触发事件"
+                    : "已取消发动，未支付费用且未进入堆叠");
             if (cancelledFreeMasterActivation)
             {
                 ResumeAfterPostResolutionGeneratedInteraction();
@@ -2332,6 +2340,9 @@ public sealed partial class L12GameEngine
         // Response presentation must use the card's resolved trigger segment instead.
         candidate.Data["responseUsesTriggerEffectText"] = "true";
         SetResponsePresentationTargets(candidate.Data, activation.ResponsePresentationTargetIds);
+        if (candidate.Trigger == "enter" && (candidate.SourceCardId is
+            "S01-0408" or "S02-0513" or "S02-0518" or "S02-0520"))
+            CaptureResponsePublicTargetSnapshot(candidate.Data, activation.ResponsePresentationTargetIds);
         BeginTriggeredPaidCostCapture(candidate, source);
         try
         {

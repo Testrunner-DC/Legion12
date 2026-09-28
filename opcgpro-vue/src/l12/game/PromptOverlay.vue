@@ -173,10 +173,13 @@ const responseTargetIds = computed(() => {
       if (Array.isArray(parsed)) for (const id of parsed) if (typeof id === 'string') ids.add(id)
     } catch { /* Malformed optional presentation metadata grants no highlight. */ }
   }
-  // 目标高亮贯穿选择与响应弹框的展开／最小化状态；这里只接纳当前
-  // 战场上真实存在的 instanceId，不扩大任何可选择权限或公开身份。
+  // Only currently public battlefield cards and morale resources may be highlighted.
+  // IDs are supplied by the server's response presentation, never inferred here.
   for (const id of activeSelected.value) ids.add(id)
-  return battlefieldTargetIds(props.game, ids)
+  const field = battlefieldTargetIds(props.game, ids)
+  const morale = props.game.players.flatMap(player => player.morale)
+    .filter(resource => ids.has(resource.instanceId)).map(resource => resource.instanceId)
+  return [...new Set([...field, ...morale])]
 })
 watch(responseTargetIds, ids => emit('responseTargetsChange', ids), { immediate: true })
 onBeforeUnmount(() => emit('responseTargetsChange', []))

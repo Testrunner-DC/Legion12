@@ -19,7 +19,9 @@ const props = reactive({ game: { phase: 'Main', players: [{ field: [[
   { instanceId: 'same-a', name: '同名军团', hidden: false },
   { instanceId: 'same-b', name: '同名军团', hidden: false },
   { instanceId: 'secret', name: '不可泄露', hidden: true },
-]], hand: [{ instanceId: 'hand', hidden: false }] }] } })
+]], hand: [{ instanceId: 'hand', hidden: false }], morale: [
+  { instanceId: 'morale-a', tapped: false }, { instanceId: 'morale-b', tapped: false },
+] }, { field: [[], []], hand: [], morale: [{ instanceId: 'enemy-morale', tapped: true }] }] } })
 const events = [], unmount = []
 const scope = effectScope()
 const activeSelected = computed(() => {
@@ -57,14 +59,26 @@ prompt.value.data.responseTargetIds = '{broken'; await next(); assert.deepEqual(
 prompt.value = { promptId: 'ordinary-target', kind: 'field-target', validChoices: ['same-a', 'same-b'], data: {} }; await next()
 selected.value = ['same-b', 'hand', 'secret']; await next()
 assert.deepEqual(highlights(), ['same-b'], 'ordinary selected targets only retain valid choices that are still on the battlefield')
+prompt.value = { promptId: 'morale-response', kind: 'response', validChoices: ['pass'], data: {
+  responseTargetIds: JSON.stringify(['morale-b', 'hand']),
+} }; await next()
+assert.deepEqual(highlights(), ['morale-b'], 'only the selected public morale instance is highlighted among identical resources')
+minimized.value = true; await next(); assert.deepEqual(highlights(), ['morale-b'])
+minimized.value = false; await next(); assert.deepEqual(highlights(), ['morale-b'])
+props.game.players[0].morale.splice(1, 1); await next()
+assert.deepEqual(highlights(), [], 'a morale target leaving its public zone clears the highlight')
+prompt.value.data.responseTargetIds = JSON.stringify(['enemy-morale']); await next()
+assert.deepEqual(highlights(), ['enemy-morale'], 'the opponent resource uses the same public-instance projection')
 prompt.value = null; await next(); assert.deepEqual(highlights(), [])
 unmount.forEach(fn => fn()); scope.stop(); assert.deepEqual(highlights(), [])
 
 const mat = readFileSync(new URL('../src/l12/game/PlayerMat.vue', import.meta.url), 'utf8')
 const board = readFileSync(new URL('../src/l12/game/GameBoard.vue', import.meta.url), 'utf8')
-assert.equal((mat.match(/responseTargetIds/g) ?? []).length, 2, 'highlight prop is declaration and visual binding only, never permission')
+assert.equal((mat.match(/responseTargetIds/g) ?? []).length, 3, 'highlight prop binds battlefield and morale visuals without granting permission')
 assert.match(mat, /return Boolean\(card\?\.instanceId && props\.responseTargetIds\?\.includes\(card\.instanceId\)\)/,
   'response highlight must require a real instance while allowing a covered battlefield target')
+assert.match(mat, /'response-target': responseTargetIds\?\.includes\(morale\.instanceId\)/,
+  'morale response highlight must require the exact selected public instance')
 assert.equal((board.match(/:response-target-ids="responseTargetIds"/g) ?? []).length, 2,
   'both battlefield halves must keep response targets while the prompt is expanded or minimized')
 assert.equal((board.match(/@graveyard="\(!hasBlockingPrompt \|\| inspectionLayerMinimized\) && \(graveyardPlayer = \$event\)"/g) ?? []).length, 2,

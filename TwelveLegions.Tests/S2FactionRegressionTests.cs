@@ -2256,9 +2256,9 @@ public sealed class S2FactionRegressionTests
         "normal", "single-candidate-choice", "rested-only-filter", "black-lotus-excluded")]
     [L12AbilityEvidence("S02-0520:ability:enter:361ec387b847ecee",
         "normal", "single-candidate-choice", "black-lotus-excluded")]
-    public void OlympusFlipEntryUsesOneCancellableTargetChoiceDuringResolution(string cardId)
+    public void OlympusFlipEntryUsesOneCancellableTargetChoiceBeforeResponse(string cardId)
     {
-        var game = Create(6305);
+        var game = Create(6305, autoPassEmptyResponses: false);
         var player = game.State.Players[0];
         var card = Card(cardId, $"s2-olympus-flip-entry-{cardId}");
         player.Hand.Add(card);
@@ -2279,15 +2279,15 @@ public sealed class S2FactionRegressionTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", card.InstanceId, Row: 0, Slot: 0)).Accepted);
-        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "pending-activation");
-        PassResponses(game);
         var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-flip-morale", prompt.Data["action"]);
+        Assert.Equal("pending-activation", prompt.Continuation);
         Assert.Contains("skip", prompt.ValidChoices);
         Assert.DoesNotContain(lotus.InstanceId, prompt.ValidChoices);
         Assert.Single(game.State.PendingPrompts);
         var morale = player.Morale.First(candidate => prompt.ValidChoices.Contains(candidate.InstanceId));
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: morale.InstanceId)).Accepted);
+        Assert.False(morale.IsGodPower);
+        PassResponses(game);
         Assert.True(morale.IsGodPower);
     }
 
@@ -2363,9 +2363,11 @@ public sealed class S2FactionRegressionTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", card.InstanceId, Row: 0, Slot: 0)).Accepted);
-        PassResponses(game);
         var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", prompt.Continuation);
         Assert.Contains(target.InstanceId, prompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: target.InstanceId)).Accepted);
         var declaration = Assert.Single(game.State.Events, entry => entry.EffectResultStatus == "declared"
             && entry.Cards.Any(candidate => candidate.InstanceId == card.InstanceId));
         Assert.False(string.IsNullOrWhiteSpace(declaration.EffectSceneId));
@@ -2375,10 +2377,9 @@ public sealed class S2FactionRegressionTests
             game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
             autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
 
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: promptId,
-            Choice: target.InstanceId)).Accepted);
         Assert.False(game.Handle(0, new L12Command("resolvePrompt", PromptId: promptId,
             Choice: target.InstanceId)).Accepted);
+        PassResponses(game);
         Assert.True(game.State.Players[0].Morale.Single(morale => morale.InstanceId == target.InstanceId).IsGodPower);
         var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
             && entry.EffectSceneId == declaration.EffectSceneId);
@@ -2418,6 +2419,9 @@ public sealed class S2FactionRegressionTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", card.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var targetPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: targetPrompt.PromptId,
+            Choice: target.InstanceId)).Accepted);
         var declaration = Assert.Single(game.State.Events, entry => entry.EffectResultStatus == "declared"
             && entry.EffectSceneId?.StartsWith($"{cardId}:ability:enter:", StringComparison.Ordinal) == true);
         if (negate)
@@ -2428,11 +2432,8 @@ public sealed class S2FactionRegressionTests
         }
         else
         {
-            PassResponses(game);
-            var prompt = Assert.Single(game.State.PendingPrompts);
             target.IsGodPower = true;
-            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
-                Choice: target.InstanceId)).Accepted);
+            PassResponses(game);
         }
 
         var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"

@@ -33,9 +33,9 @@ public sealed class AtomicReviewBatch6JARegressionTests
     public static IEnumerable<object[]> ReviewedRows()
         => ReviewedEntries.Select(entry => new object[] { entry.CardId, entry.Trigger });
 
-    private static L12GameEngine Create(int seed)
+    private static L12GameEngine Create(int seed, bool? autoPassEmptyResponses = null)
         => new(Catalog, "atomic-review-batch6ja", "ATOMIC6JA", seed, ["甲", "乙"], [0, 1],
-            skipPreparation: true);
+            skipPreparation: true, autoPassEmptyResponses: autoPassEmptyResponses);
 
     private static L12CardInstance Card(string cardId, string instanceId, int? troops = null)
     {
@@ -63,9 +63,10 @@ public sealed class AtomicReviewBatch6JARegressionTests
     private static void AddMorale(L12PlayerState player, string id, bool tapped = false)
         => player.Morale.Add(new L12MoraleCard { InstanceId = id, CardId = "S01-01C1", Tapped = tapped });
 
-    private static (L12GameEngine Game, L12CardInstance Source) Arrange(string cardId, string trigger, int seed)
+    private static (L12GameEngine Game, L12CardInstance Source) Arrange(string cardId, string trigger, int seed,
+        bool? autoPassEmptyResponses = null)
     {
-        var game = Create(seed);
+        var game = Create(seed, autoPassEmptyResponses);
         var player = game.State.Players[0];
         var enemy = game.State.Players[1];
         player.Hand.Clear();
@@ -75,6 +76,9 @@ public sealed class AtomicReviewBatch6JARegressionTests
         enemy.Library.Clear();
         enemy.Graveyard.Clear();
         for (var index = 0; index < 6; index++) AddMorale(player, $"batch6ja-morale-{index}", tapped: index == 5);
+        if (cardId is "S02-0513" or "S02-0518" or "S02-0520")
+            player.Morale.Add(new L12MoraleCard { InstanceId = "batch6ja-olympus-target",
+                CardId = "S02-05C1A", Tapped = cardId == "S02-0518" });
         player.SpecialZones.Runes = 4;
         player.Hp = Math.Max(player.Hp, 6);
 
@@ -165,7 +169,7 @@ public sealed class AtomicReviewBatch6JARegressionTests
         var fixture = Arrange(cardId, trigger, 9900 + index);
 
         var prompt = OnlyPrompt(fixture.Game);
-        if (cardId is "S01-0111" or "S01-0408" or "S02-0513" or "S02-0518" or "S02-0520")
+        if (cardId == "S01-0111")
         {
             Assert.Equal("stack-response", prompt.Continuation);
             Assert.Single(fixture.Game.State.EffectStack);
@@ -179,8 +183,8 @@ public sealed class AtomicReviewBatch6JARegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S01-0408")]
-    [Trait("L12Evidence", "entry:takasugi-draw-before-target")]
-    public void TakasugiDrawsBeforeChoosingItsEntryTargetAndStillDrawsWithoutOne()
+    [Trait("L12Evidence", "entry:takasugi-draw-no-target")]
+    public void TakasugiStillDrawsWithoutAnEntryTarget()
     {
         var game = Create(99601);
         var player = game.State.Players[0];
@@ -204,10 +208,10 @@ public sealed class AtomicReviewBatch6JARegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S01-0408")]
-    [Trait("L12Evidence", "entry:takasugi-target-after-draw")]
-    public void TakasugiRequestsItsEntryTargetOnlyAfterTheDrawResolves()
+    [Trait("L12Evidence", "entry:takasugi-target-before-response")]
+    public void TakasugiDeclaresItsEntryTargetBeforeResponseButDrawsAtResolution()
     {
-        var game = Create(99602);
+        var game = Create(99602, autoPassEmptyResponses: false);
         var player = game.State.Players[0];
         var opponent = game.State.Players[1];
         player.Library.Clear();
@@ -220,44 +224,142 @@ public sealed class AtomicReviewBatch6JARegressionTests
 
         Invoke(game, "QueueOrPushTriggeredEffect", 0, source, "enter", "高杉晋作登场时效果", null,
             new Dictionary<string, string>());
+        var declaration = OnlyPrompt(game);
+        Assert.Equal("pending-activation", declaration.Continuation);
+        Assert.Contains(target.InstanceId, declaration.ValidChoices);
+        Assert.DoesNotContain("skip", declaration.ValidChoices);
+        Assert.DoesNotContain("cancel", declaration.ValidChoices);
+        Assert.DoesNotContain(drawn, player.Hand);
+        Assert.False(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "skip")).Accepted);
+        Assert.False(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "cancel")).Accepted);
+        Assert.Equal(declaration.PromptId, OnlyPrompt(game).PromptId);
+        Assert.DoesNotContain(drawn, player.Hand);
+        Resolve(game, target.InstanceId);
+        Assert.Single(game.State.EffectStack);
         PassResponses(game);
 
-        var prompt = OnlyPrompt(game);
-        Assert.Equal("takasugi-enter-target", prompt.Data["action"]);
         Assert.Contains(drawn, player.Hand);
-        Assert.Contains(target.InstanceId, prompt.ValidChoices);
-        Resolve(game, target.InstanceId);
         Assert.Equal(-2, target.CostModifier);
     }
 
     [Fact]
     [Trait("L12Evidence", "card:S01-0408")]
-    [Trait("L12Evidence", "entry:takasugi-target-after-draw-stale")]
-    public void TakasugiDrawFollowupTargetLeavingTheFieldIsFailedNotCancelled()
+    [Trait("L12Evidence", "entry:takasugi-declared-target-stale")]
+    public void TakasugiPredeclaredTargetLeavingTheFieldIsFailedNotCancelled()
     {
-        var game = Create(996021);
+        var game = Create(996021, autoPassEmptyResponses: false);
         var player = game.State.Players[0];
         var opponent = game.State.Players[1];
         player.Library.Clear();
         player.Hand.Clear();
-        player.Library.Add(Card("S01-0002", "takasugi-stale-draw"));
+        var drawn = Card("S01-0002", "takasugi-stale-draw");
+        player.Library.Add(drawn);
         var target = Card("S01-0201", "takasugi-stale-target");
         opponent.Field[0][0] = target;
         var source = Card("S01-0408", "takasugi-stale-source");
 
         Invoke(game, "QueueOrPushTriggeredEffect", 0, source, "enter", "高杉晋作登场时效果", null,
             new Dictionary<string, string>());
-        PassResponses(game);
-        var prompt = OnlyPrompt(game);
+        Resolve(game, target.InstanceId);
         opponent.Field[0][0] = null;
         opponent.Graveyard.Add(target);
+        PassResponses(game);
 
-        Resolve(game, target.InstanceId);
-
+        Assert.Contains(drawn, player.Hand);
+        Assert.Equal(0, target.CostModifier);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
-            && entry.Text.Contains("抽牌后的目标已失效", StringComparison.Ordinal));
+            && entry.Text.Contains("原目标", StringComparison.Ordinal));
         Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
-            && entry.Text.Contains("抽牌后的目标已失效", StringComparison.Ordinal));
+            && entry.Text.Contains("原目标", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("S01-0408")]
+    [InlineData("S02-0513")]
+    [InlineData("S02-0518")]
+    [InlineData("S02-0520")]
+    [Trait("L12Evidence", "response:stage2b-public-entry-declared-target")]
+    public void PublicEntryTargetIsFrozenForBothResponsePrioritiesAndV2Recovery(string cardId)
+    {
+        var (game, _) = Arrange(cardId, "enter", 99720 + cardId[^1],
+            autoPassEmptyResponses: false);
+        var targetId = cardId == "S01-0408" ? "batch6ja-enemy-low" : "batch6ja-olympus-target";
+        Resolve(game, targetId);
+        var first = OnlyPrompt(game);
+        Assert.Equal("response", first.Kind);
+        var targetOwner = cardId == "S01-0408" ? 1 : 0;
+        var firstSide = first.PlayerIndex == targetOwner ? "我方" : "对方";
+        Assert.Equal([targetId], JsonSerializer.Deserialize<string[]>(first.Data["responseTargetIds"])!);
+        Assert.Contains(cardId == "S01-0408" ? $"{firstSide}前排左格" : $"{firstSide}士气区的", first.Text);
+        Assert.DoesNotContain("responsePublicTargetSnapshotV1", JsonSerializer.Serialize(game.SnapshotFor(0)));
+        var spectator = JsonSerializer.Serialize(game.SnapshotForSpectator());
+        var referee = JsonSerializer.Serialize(game.SnapshotForReferee());
+        Assert.DoesNotContain("responsePublicTargetSnapshotV1", spectator);
+        Assert.DoesNotContain("responsePublicTargetSnapshotV1", referee);
+        var publicLabel = cardId == "S01-0408" ? "玩家2前排左格" : "玩家1士气区的";
+        using var spectatorDocument = JsonDocument.Parse(spectator);
+        using var refereeDocument = JsonDocument.Parse(referee);
+        Assert.Contains(publicLabel, spectatorDocument.RootElement.GetProperty("EffectStack")[0]
+            .GetProperty("publicTargetLabels")[0].GetString());
+        Assert.Contains(publicLabel, refereeDocument.RootElement.GetProperty("EffectStack")[0]
+            .GetProperty("publicTargetLabels")[0].GetString());
+
+        game = L12GameEngine.RestoreCheckpoint(Catalog,
+            game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,"),
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        if (cardId == "S01-0408")
+            game.State.Players[1].Field[0][0] = null;
+        else
+            game.State.Players[0].Morale.RemoveAll(card => card.InstanceId == targetId);
+        using var afterLeaveSpectator = JsonDocument.Parse(JsonSerializer.Serialize(game.SnapshotForSpectator()));
+        var stackView = afterLeaveSpectator.RootElement.GetProperty("EffectStack")[0];
+        Assert.Contains(publicLabel, stackView.GetProperty("publicTargetLabels")[0].GetString());
+        Assert.Empty(stackView.GetProperty("publicTargetIds").EnumerateArray());
+        var response = OnlyPrompt(game);
+        Assert.Equal(first.Text, response.Text);
+        Assert.True(game.Handle(response.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        var second = OnlyPrompt(game);
+        Assert.Equal(1 - first.PlayerIndex, second.PlayerIndex);
+        var secondSide = second.PlayerIndex == targetOwner ? "我方" : "对方";
+        Assert.Contains(cardId == "S01-0408" ? $"{secondSide}前排左格" : $"{secondSide}士气区的", second.Text);
+        Assert.DoesNotContain(targetId, second.Text);
+        Assert.True(game.Handle(second.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: second.PromptId, Choice: "pass")).Accepted);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("原目标", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "response:stage2b-covered-and-old-checkpoint-privacy")]
+    public void FrozenCoveredTargetUsesNeutralNameAndOldCheckpointWithoutSnapshotDoesNotGuess()
+    {
+        var game = Create(99729, autoPassEmptyResponses: false);
+        var hidden = Card("S01-0019", "covered-public-position");
+        hidden.Hidden = true;
+        game.State.Players[1].Field[1][1] = hidden;
+        var item = new L12StackItem
+        {
+            StackItemId = "stage2b-covered", Controller = 0, SourceInstanceId = "source",
+            SourceCardId = "S01-0408", SourceName = "高杉晋作", Trigger = "enter", Text = "测试公开目标",
+        };
+        item.Data["responsePresentationTargetIds"] = hidden.InstanceId;
+        Invoke(game, "CaptureResponsePublicTargetSnapshot", item.Data, new[] { hidden.InstanceId });
+        var first = (string)Invoke(game, "DescribeResponse", item, 0)!;
+        Assert.Contains("盖伏卡牌（对方后排中格）", first);
+        Assert.DoesNotContain(hidden.Name, first);
+        Assert.DoesNotContain(hidden.CardId, JsonSerializer.Serialize(item.Data));
+
+        game.State.Players[1].Field[1][1] = null;
+        var afterLeave = (string)Invoke(game, "DescribeResponse", item, 1)!;
+        Assert.Contains("盖伏卡牌（我方后排中格）", afterLeave);
+        item.Data.Remove("responsePublicTargetSnapshotV1"); // Pre-change V2 state.
+        var oldCheckpoint = (string)Invoke(game, "DescribeResponse", item, 1)!;
+        Assert.DoesNotContain("已选目标", oldCheckpoint);
+        Assert.DoesNotContain(hidden.Name, oldCheckpoint);
     }
 
     [Theory]

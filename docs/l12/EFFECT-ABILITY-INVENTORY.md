@@ -5,7 +5,7 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`f575aa6503bc1ba4ec9fbffcd8b6269fb1cc50823469fe9fb155134927bfbbfd`。
+内容指纹：`5a5b45c5102916c89be72c66b282cb729c7e649b11b4015ba13758f95dbf3419`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
@@ -1305,7 +1305,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0512:ability:keyword-definition:6692b63a59c971d0 | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedTauntDefinitionsUseOneCurrentRowStateForProjectionAndAttackRestriction / S02-0512 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
 | S02-0513:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0513 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
 | S02-0513:ability:enter:eef83ec51f2ef093 | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-0513 | identity-definition, runtime-owner |
-| S02-0513:ability:enter:eef83ec51f2ef093 | TwelveLegions.Tests.S2FactionRegressionTests.OlympusFlipEntryUsesOneCancellableTargetChoiceDuringResolution / S02-0513 | black-lotus-excluded, normal, single-candidate-choice |
+| S02-0513:ability:enter:eef83ec51f2ef093 | TwelveLegions.Tests.S2FactionRegressionTests.OlympusFlipEntryUsesOneCancellableTargetChoiceBeforeResponse / S02-0513 | black-lotus-excluded, normal, single-candidate-choice |
 | S02-0513:ability:enter:eef83ec51f2ef093 | TwelveLegions.Tests.S2FactionRegressionTests.OptionalEntryMoraleFlipDistinguishesNegationFromStaleChoice / S02-0513 | negated, target-invalidated |
 | S02-0513:ability:enter:eef83ec51f2ef093 | TwelveLegions.Tests.S2FactionRegressionTests.OptionalEntryMoraleFlipRestoresItsChoiceAndPresentation / S02-0513 | duplicate-submit, presentation-consumers, reconnect |
 | S02-0513:ability:enter:eef83ec51f2ef093 | TwelveLegions.Tests.S2FactionRegressionTests.OptionalEntryMoraleFlipWithNoGodPowerFaceCandidateEndsAsSkipped / S02-0513 | no-target |
@@ -1324,14 +1324,14 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0518:ability:static:fff4ed8e0ac25ed9 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.DiscountedSnapshotCostSurvivesReconnectAndIsTheAuthoritativePayment / S02-0518 | duplicate-submit, normal, presentation-consumers, reconnect |
 | S02-0518:ability:static:fff4ed8e0ac25ed9 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / S02-0518 | condition-false, display-and-payment-parity |
 | S02-0518:ability:enter:6e9ddf89fefa712f | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-0518 | identity-definition, runtime-owner |
-| S02-0518:ability:enter:6e9ddf89fefa712f | TwelveLegions.Tests.S2FactionRegressionTests.OlympusFlipEntryUsesOneCancellableTargetChoiceDuringResolution / S02-0518 | black-lotus-excluded, normal, rested-only-filter, single-candidate-choice |
+| S02-0518:ability:enter:6e9ddf89fefa712f | TwelveLegions.Tests.S2FactionRegressionTests.OlympusFlipEntryUsesOneCancellableTargetChoiceBeforeResponse / S02-0518 | black-lotus-excluded, normal, rested-only-filter, single-candidate-choice |
 | S02-0518:ability:enter:6e9ddf89fefa712f | TwelveLegions.Tests.S2FactionRegressionTests.OptionalEntryMoraleFlipDistinguishesNegationFromStaleChoice / S02-0518 | negated, target-invalidated |
 | S02-0518:ability:enter:6e9ddf89fefa712f | TwelveLegions.Tests.S2FactionRegressionTests.OptionalEntryMoraleFlipRestoresItsChoiceAndPresentation / S02-0518 | duplicate-submit, presentation-consumers, reconnect |
 | S02-0518:ability:enter:6e9ddf89fefa712f | TwelveLegions.Tests.S2FactionRegressionTests.OptionalEntryMoraleFlipWithNoGodPowerFaceCandidateEndsAsSkipped / S02-0518 | no-target |
 | S02-0519:ability:static:2b21805b14115304 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EverySimpleContinuousTroopsRuleFeedsTheSharedRecalcOutlet / S02-0519 | authoritative-consumer, condition-current, shared-recalc-outlet |
 | S02-0519:ability:static:2b21805b14115304 | TwelveLegions.Tests.SimpleContinuousTroopsLifecycleProfileTests.ContinuousTroopsRulesRecalculateFromCurrentStateAfterReconnect / S02-0519 | normal, presentation-consumers, reconnect |
 | S02-0520:ability:enter:361ec387b847ecee | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-0520 | identity-definition, runtime-owner |
-| S02-0520:ability:enter:361ec387b847ecee | TwelveLegions.Tests.S2FactionRegressionTests.OlympusFlipEntryUsesOneCancellableTargetChoiceDuringResolution / S02-0520 | black-lotus-excluded, normal, single-candidate-choice |
+| S02-0520:ability:enter:361ec387b847ecee | TwelveLegions.Tests.S2FactionRegressionTests.OlympusFlipEntryUsesOneCancellableTargetChoiceBeforeResponse / S02-0520 | black-lotus-excluded, normal, single-candidate-choice |
 | S02-0520:ability:enter:361ec387b847ecee | TwelveLegions.Tests.S2FactionRegressionTests.OptionalEntryMoraleFlipDistinguishesNegationFromStaleChoice / S02-0520 | negated, target-invalidated |
 | S02-0520:ability:enter:361ec387b847ecee | TwelveLegions.Tests.S2FactionRegressionTests.OptionalEntryMoraleFlipRestoresItsChoiceAndPresentation / S02-0520 | duplicate-submit, presentation-consumers, reconnect |
 | S02-0520:ability:enter:361ec387b847ecee | TwelveLegions.Tests.S2FactionRegressionTests.OptionalEntryMoraleFlipWithNoGodPowerFaceCandidateEndsAsSkipped / S02-0520 | no-target |

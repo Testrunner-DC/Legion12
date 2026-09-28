@@ -3061,6 +3061,24 @@ public sealed partial class L12GameEngine
         return true;
     }
 
+    private bool ResolveDeclaredS2FlipMorale(L12StackItem item, L12CardInstance source,
+        string targetId, bool onlyTapped)
+    {
+        var player = State.Players[item.Controller];
+        var morale = player.Morale.FirstOrDefault(card => card.InstanceId == targetId
+            && CanFlipMoraleToGodPower(card, onlyTapped));
+        if (morale is null || !L12S2ZoneOps.FlipMoraleFace(player, _catalog.MoraleIdentities,
+                morale.InstanceId, toGodPower: true))
+            RecordTargetSettlementFailure(item, targetId,
+                onlyTapped
+                    ? $"{DeclaredPublicTargetLabel(item, targetId)}已离开士气区、转为活跃或不再是士气面"
+                    : $"{DeclaredPublicTargetLabel(item, targetId)}已离开士气区或不再是士气面");
+        else
+            AddEvent("morale", item.Controller, "翻转1张士气", [source]);
+        FinishStackItem(item);
+        return true;
+    }
+
 
     private bool PromptS2RichardEntryAttach(L12StackItem item, L12CardInstance source)
     {

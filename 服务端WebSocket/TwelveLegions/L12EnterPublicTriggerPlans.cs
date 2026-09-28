@@ -39,10 +39,6 @@ public sealed partial class L12GameEngine
         var plan = Batch6JAEnterPlan(candidate.SourceCardId, candidate.Trigger);
         if (plan is null) return true;
         candidate.Data["batch6JAConditionLocked"] = "true";
-        // “可翻转1张士气”的唯一决定就是选择目标。目标选择界面本身提供不发动，
-        // 不再先询问一次“是否发动”，并将目标选择延后到效果真正结算时。
-        if (plan is "morale-flip" or "theseus-flip" or "morale-flip-two" or "takasugi")
-            candidate.Data["declaration-complete"] = "true";
         if (plan == "zhuge" && !RequiresPrideMasterSurcharge(candidate.Controller,
                 candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId)))
         {
@@ -73,10 +69,20 @@ public sealed partial class L12GameEngine
         var plan = Batch6JAEnterPlan(candidate.SourceCardId, candidate.Trigger);
         if (plan is null) return false;
         var steps = Batch6JAEnterSteps(candidate, source, plan);
+        if (steps.Count == 0 && plan == "takasugi")
+        {
+            // Drawing is mandatory even when there is no enemy legion to target.
+            candidate.Data["batch6JAPredeclaration"] = "true";
+            candidate.Data["declaration-complete"] = "true";
+            return false;
+        }
         if (steps.Count == 0 && plan != "zhuge" || steps.Any(step => step.RequiredDeclaredChoice is null
                 && step.ValidChoices.Count < step.MinChoose))
         {
             State.PendingTriggerStackCandidates.Remove(candidate);
+            if (plan is "morale-flip" or "theseus-flip" or "morale-flip-two")
+                AddEvent("effect-noop", candidate.Controller,
+                    $"〈{candidate.SourceName}〉没有合法处理对象：无可翻转的士气，登场效果未发动");
             AdvanceTriggerBatches();
             return true;
         }
@@ -98,16 +104,17 @@ public sealed partial class L12GameEngine
         void Optional(string text) => steps.Add(PublicTriggerStep("option", "mode", text,
             ["mode:none", "mode:use"]));
         void One(string kind, string key, string text, IEnumerable<string> choices, string? required = null,
-            bool isCostSelection = false)
+            bool isCostSelection = false, bool allowCancel = true)
             => steps.Add(PublicTriggerStep(kind, key, text, choices, 1, 1, requiredChoice: required,
-                isCostSelection: isCostSelection));
+                isCostSelection: isCostSelection, allowCancel: allowCancel));
         void OneEffectOrSkip(string kind, string key, string text, IEnumerable<string> choices,
-            string? required = null, bool allowCancel = true)
+            string? required = null, bool allowCancel = true, bool isResponsePresentationTarget = false)
         {
             var materialized = choices.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             if (materialized.Length == 0) return;
             steps.Add(PublicTriggerStep(kind, key, text, materialized, 1, 1,
-                requiredChoice: required, allowCancel: allowCancel));
+                requiredChoice: required, allowCancel: allowCancel,
+                isResponsePresentationTarget: isResponsePresentationTarget));
         }
         void ManyEffectOrSkip(string kind, string key, string text, IEnumerable<string> choices, int min, int max,
             string? required = null, bool allowCancel = true, string? selectionConstraint = null)
@@ -209,7 +216,10 @@ public sealed partial class L12GameEngine
                 break;
             }
             case "takasugi":
-                // 抽牌先结算；目标属于效果正文的后续选择，不能因当前没有目标而取消整段登场效果。
+                // The target is public before response; the draw still happens at resolution.
+                if (enemy.Length > 0)
+                    One("enemy-legion", "target", "高杉晋作：预先选择抽牌后本回合费用-2的对方军团",
+                        enemy.Select(card => card.InstanceId), allowCancel: false);
                 break;
             case "abe": One("field-legion", "target", "安倍晴明：预先选择获得免死的我方军团",
                 own.Select(card => card.InstanceId)); break;
@@ -245,6 +255,9 @@ public sealed partial class L12GameEngine
             case "heracles-promoted-entry": Optional("赫拉克勒斯·晋升：预先声明是否对双方主宰造成非致命伤害"); break;
             case "heracles": Optional("赫拉克勒斯：预先声明是否抽2后弃1"); break;
             case "morale-flip" or "theseus-flip" or "morale-flip-two":
+                OneEffectOrSkip("target-morale", "target", $"{source.Name}：预先选择翻转的我方士气",
+                    player.Morale.Where(card => CanFlipMoraleToGodPower(card, plan == "theseus-flip"))
+                        .Select(card => card.InstanceId), isResponsePresentationTarget: true);
                 break;
             case "joan":
                 if (player.Hand.Count == 0) break;
@@ -414,6 +427,8 @@ public sealed partial class L12GameEngine
         }
         foreach (var pair in activation.DeclaredValues)
             candidate.Data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
+        if (plan is "takasugi" or "morale-flip" or "theseus-flip" or "morale-flip-two")
+            candidate.Data["batch6JAPredeclaration"] = "true";
         if (plan == "hijikata")
         {
             var selected = activation.DeclaredValues.GetValueOrDefault("targets", []);
@@ -653,11 +668,23 @@ public sealed partial class L12GameEngine
                     FinishStackItem(item);
                     return true;
                 }
-                var takasugiTargets = PublicLegions(opponent).Select(card => card.InstanceId).ToArray();
-                if (takasugiTargets.Length == 0) break;
-                CreateResolutionChoicePrompt(item, "enemy-legion", "高杉晋作：抽牌后选择对方1张军团，本回合费用-2",
-                    takasugiTargets, "takasugi-enter-target", []);
-                return true;
+                if (item.Data.GetValueOrDefault("batch6JAPredeclaration") != "true")
+                {
+                    // Restore of a pre-change V2 checkpoint keeps its original continuation.
+                    var legacyTargets = PublicLegions(opponent).Select(card => card.InstanceId).ToArray();
+                    if (legacyTargets.Length == 0) break;
+                    CreateResolutionChoicePrompt(item, "enemy-legion", "高杉晋作：抽牌后选择对方1张军团，本回合费用-2",
+                        legacyTargets, "takasugi-enter-target", []);
+                    return true;
+                }
+                var takasugiTargetId = One("target");
+                if (takasugiTargetId.Length == 0) break;
+                if (DeclaredEnemyTarget(item.Controller, takasugiTargetId) is { } takasugiTarget)
+                    AddTimedModifier(takasugiTarget, 0, -2, State.TurnSerial, source.Name);
+                else
+                    RecordTargetSettlementFailure(item, takasugiTargetId,
+                        $"{DeclaredPublicTargetLabel(item, takasugiTargetId)}已离场、被覆盖或不再是对方军团");
+                break;
             case "abe":
                 if (ResolveDeclaredOwnLegionTarget(item, One("target"), null, "我方军团条件") is { } abe)
                     GrantImmortalUntilNextTurnStart(abe, item.Controller);
@@ -717,7 +744,9 @@ public sealed partial class L12GameEngine
                     data: BuildS2HeraclesDiscardPromptData(discardChoices,
                         new() { ["action"] = "s2-olympus-draw-discard" })); return true;
             case "morale-flip" or "theseus-flip" or "morale-flip-two":
-                return PromptS2FlipMorale(item, source, optional: true, onlyTapped: plan == "theseus-flip");
+                if (item.Data.GetValueOrDefault("batch6JAPredeclaration") != "true")
+                    return PromptS2FlipMorale(item, source, optional: true, onlyTapped: plan == "theseus-flip");
+                return ResolveDeclaredS2FlipMorale(item, source, One("target"), plan == "theseus-flip");
             case "joan": ProtectMasterUntilNextTurnStart(player, item.Controller); break;
             case "robin":
             {

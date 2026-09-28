@@ -378,6 +378,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         var stack = State.EffectStack.Select(item =>
         {
             var privateHandCard = item.Data.GetValueOrDefault("eventType") == "effect-hand-add";
+            var publicTargets = PublicResponseTargets(item, spectator ? -1 : viewer).ToArray();
             return (object)new
             {
                 item.StackItemId, item.Controller,
@@ -387,6 +388,10 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 item.Trigger,
                 Text = item.Text,
                 item.Negated, Targets = privateHandCard ? [] : item.Targets,
+                publicTargetLabels = publicTargets.Select(target => target.Label).ToArray(),
+                publicTargetIds = publicTargets.Where(target => target.OnField
+                        && IsCurrentPublicResponseTarget(target.Id))
+                    .Select(target => target.Id).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
             };
         }).ToArray();
 
