@@ -4,12 +4,42 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
+    private const string ResponsePresentationTargetIdsKey = "responsePresentationTargetIds";
+
+    private static void SetResponsePresentationTargets(Dictionary<string, string> data,
+        IEnumerable<string> targetIds)
+    {
+        var targets = targetIds.Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (targets.Length == 0) data.Remove(ResponsePresentationTargetIdsKey);
+        else data[ResponsePresentationTargetIdsKey] = string.Join('|', targets);
+    }
+
+    private void CaptureResponsePresentationTargets(L12PendingActivation activation,
+        L12ActivationSelectionStep step, IEnumerable<string> selected)
+    {
+        if (!step.IsResponsePresentationTarget || step.IsCostSelection) return;
+        foreach (var id in selected)
+        {
+            if (!State.Players.Any(player => FindOnField(player, id, out _, out _) is not null)
+                || activation.ResponsePresentationTargetIds.Contains(id, StringComparer.OrdinalIgnoreCase)) continue;
+            activation.ResponsePresentationTargetIds.Add(id);
+        }
+    }
+
     // Display only already-public identities. Never resolve a target through private-zone lookup.
     private IEnumerable<(string Id, string Label, bool OnField)> PublicResponseTargets(L12StackItem item, int viewer)
     {
         if (item.Data.GetValueOrDefault("eventType") == "effect-hand-add") yield break;
-        foreach (var id in item.Targets.Distinct(StringComparer.OrdinalIgnoreCase))
+        var authoritativeTargets = item.Targets.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var presentationTargets = (item.Data.GetValueOrDefault(ResponsePresentationTargetIdsKey) ?? string.Empty)
+            .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(id => !authoritativeTargets.Contains(id, StringComparer.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(id => (Id: id, FieldOnly: true));
+        foreach (var candidate in authoritativeTargets.Select(id => (Id: id, FieldOnly: false)).Concat(presentationTargets))
         {
+            var id = candidate.Id;
             var found = false;
             foreach (var player in State.Players)
             {
@@ -18,11 +48,12 @@ public sealed partial class L12GameEngine
                 for (var slot = 0; slot < 3; slot++)
                 {
                     var card = player.Field[row][slot];
-                    if (card?.InstanceId != id) continue;
+                    if (card is null || !string.Equals(card.InstanceId, id, StringComparison.OrdinalIgnoreCase)) continue;
                     var name = card.Hidden ? "盖伏卡牌" : $"〈{card.Name}〉";
                     yield return (id, $"{side}{name}（{(row == 0 ? "前排" : "后排")}第{slot + 1}格）", true);
                     found = true;
                 }
+                if (candidate.FieldOnly) continue;
                 var grave = player.Graveyard.FirstOrDefault(card => card.InstanceId == id && !card.Hidden);
                 if (grave is not null)
                 {
@@ -31,6 +62,7 @@ public sealed partial class L12GameEngine
                 }
             }
             if (found) continue;
+            if (candidate.FieldOnly) continue;
             var targetEffect = State.EffectStack.FirstOrDefault(effect => effect.StackItemId == id);
             if (targetEffect is not null)
                 yield return (id, targetEffect.Data.GetValueOrDefault("eventType") == "effect-hand-add"

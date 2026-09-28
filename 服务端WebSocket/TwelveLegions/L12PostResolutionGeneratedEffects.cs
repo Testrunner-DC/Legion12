@@ -62,6 +62,7 @@ public sealed partial class L12GameEngine
                     ValidChoices = targets.ToList(),
                     DeclarationKey = "target",
                     CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed,
+                    IsResponsePresentationTarget = true,
                 }
             ], triggerCandidateId: null, playCardInstanceId: source.InstanceId,
                 responseTargetStackItemId: null);

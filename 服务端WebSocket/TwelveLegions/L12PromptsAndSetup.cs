@@ -1634,6 +1634,15 @@ public sealed partial class L12GameEngine
     private L12StackItem PushEffect(int controller, L12CardInstance source, string trigger, string text,
         IEnumerable<string>? targets = null, Dictionary<string, string>? data = null)
     {
+        var committingActivation = State.PendingActivations.SingleOrDefault(activation =>
+            activation.IsCommittingResponsePresentation
+            && activation.Controller == controller
+            && activation.SourceInstanceId.Equals(source.InstanceId, StringComparison.OrdinalIgnoreCase));
+        if (committingActivation is not null)
+        {
+            data ??= new Dictionary<string, string>();
+            SetResponsePresentationTargets(data, committingActivation.ResponsePresentationTargetIds);
+        }
         if (trigger == "active")
         {
             data ??= new Dictionary<string, string>();

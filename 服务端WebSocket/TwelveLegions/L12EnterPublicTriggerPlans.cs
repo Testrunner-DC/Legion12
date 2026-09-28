@@ -97,8 +97,10 @@ public sealed partial class L12GameEngine
         var steps = new List<L12ActivationSelectionStep>();
         void Optional(string text) => steps.Add(PublicTriggerStep("option", "mode", text,
             ["mode:none", "mode:use"]));
-        void One(string kind, string key, string text, IEnumerable<string> choices, string? required = null)
-            => steps.Add(PublicTriggerStep(kind, key, text, choices, 1, 1, requiredChoice: required));
+        void One(string kind, string key, string text, IEnumerable<string> choices, string? required = null,
+            bool isCostSelection = false)
+            => steps.Add(PublicTriggerStep(kind, key, text, choices, 1, 1, requiredChoice: required,
+                isCostSelection: isCostSelection));
         void OneEffectOrSkip(string kind, string key, string text, IEnumerable<string> choices,
             string? required = null, bool allowCancel = true)
         {
@@ -168,7 +170,7 @@ public sealed partial class L12GameEngine
                 if (tombGuards.Length == 0) break;
                 Optional("霍列姆赫布：预先声明是否弃置陵墓守卫获得冲锋");
                 One("field-legion", "discardCost", "霍列姆赫布：预先选择弃置的陵墓守卫",
-                    tombGuards.Select(card => card.InstanceId), "mode:use"); break;
+                    tombGuards.Select(card => card.InstanceId), "mode:use", isCostSelection: true); break;
             case "ankh": One("field-legion", "target", "安卡神碑：选择本回合兵力+2000的陵墓守卫",
                 own.Where(card => card.CardId == "S01-0212").Select(card => card.InstanceId)); break;
             case "canopic-one": One("field-legion", "targets", "卡诺匹斯罐一：选择本回合兵力+2000并获得强攻的太阳城军团",

@@ -148,7 +148,8 @@ public sealed partial class L12GameEngine
                     break;
                 case "discard-own-legion":
                     steps.Add(PublicTriggerStep("field-legion", "cost", "美尼斯：预先选择作为费用弃置的我方1张军团",
-                        PublicLegions(player).Select(card => card.InstanceId), requiredChoice: required));
+                        PublicLegions(player).Select(card => card.InstanceId), requiredChoice: required,
+                        isCostSelection: true));
                     break;
                 case "ordinary-morale":
                     steps.Add(PublicTriggerStep("composite-ordinary-payment", "cost", $"{source.Name}：预先选择消耗的1份公开资源",

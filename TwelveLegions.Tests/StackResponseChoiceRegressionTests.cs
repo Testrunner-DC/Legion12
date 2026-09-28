@@ -211,6 +211,373 @@ public sealed partial class StackResponseChoiceRegressionTests
     }
 
     [Fact]
+    public void ExplicitPresentationTargetsExcludeFieldCostsAndOtherDeclarationValues()
+    {
+        var game = Create();
+        var target = Card("S01-0103", "explicit-public-target", 1);
+        var coveredTarget = Card("S01-0018", "explicit-covered-target", 1);
+        coveredTarget.Hidden = true;
+        var fieldCost = Card("S01-0212", "declared-field-cost", 0);
+        var sourceLikeValue = Card("S01-0002", "declared-source-like-value", 0);
+        var privateHand = Card("S01-0003", "declared-private-hand", 0);
+        game.State.Players[1].Field[0][0] = target;
+        game.State.Players[1].Field[1][0] = coveredTarget;
+        game.State.Players[0].Field[0][1] = fieldCost;
+        game.State.Players[0].Field[0][2] = sourceLikeValue;
+        game.State.Players[0].Hand.Add(privateHand);
+        var effect = AddEffect(game, "explicit-presentation");
+        effect.Data["responsePresentationTargetIds"] = string.Join('|', target.InstanceId, coveredTarget.InstanceId);
+        effect.Data["declared:cost"] = fieldCost.InstanceId;
+        effect.Data["declared:source"] = sourceLikeValue.InstanceId;
+        effect.Data["declared:entryCard"] = privateHand.InstanceId;
+        effect.Data["declared:slot"] = "0:2";
+        effect.Data["declared:mode"] = "mode:use";
+        effect.Data["declared:count"] = "2";
+
+        Offer(game);
+
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(new[] { target.InstanceId, coveredTarget.InstanceId },
+            JsonSerializer.Deserialize<string[]>(prompt.Data["responseTargetIds"]));
+        Assert.Contains("我方盖伏卡牌（后排第1格）", prompt.Text);
+        Assert.DoesNotContain(coveredTarget.Name, JsonSerializer.Serialize(prompt));
+        Assert.DoesNotContain(fieldCost.InstanceId, JsonSerializer.Serialize(prompt));
+        Assert.DoesNotContain(sourceLikeValue.InstanceId, JsonSerializer.Serialize(prompt));
+        Assert.DoesNotContain(privateHand.InstanceId, JsonSerializer.Serialize(prompt));
+    }
+
+    [Fact]
+    public void ExplicitPresentationTargetStopsBeingPresentedAfterItLeavesDuringResponsePriority()
+    {
+        var game = Create();
+        var target = Card("S01-0002", "explicit-leaving-field", 1);
+        game.State.Players[1].Field[0][0] = target;
+        var effect = AddEffect(game, "explicit-leaving-presentation");
+        effect.Data["responsePresentationTargetIds"] = target.InstanceId;
+
+        Offer(game);
+        var first = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(new[] { target.InstanceId },
+            JsonSerializer.Deserialize<string[]>(first.Data["responseTargetIds"]));
+
+        game.State.Players[1].Field[0][0] = null;
+        game.State.Players[1].Graveyard.Add(target);
+        Resolve(game, "pass");
+
+        var second = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(0, second.PlayerIndex);
+        Assert.Empty(JsonSerializer.Deserialize<string[]>(second.Data["responseTargetIds"])!);
+        Assert.DoesNotContain("已选目标", second.Text);
+    }
+
+    [Fact]
+    public void EffectReadyAuthorityWindowHighlightsItsPublicFieldTarget()
+    {
+        var game = Create();
+        var source = Card("S01-0103", "ready-presentation-source", 0);
+        var target = Card("S01-0002", "ready-presentation-target", 0);
+        target.Tapped = true;
+        game.State.Players[0].Field[0][0] = source;
+        game.State.Players[0].Field[0][1] = target;
+
+        var ready = typeof(L12GameEngine).GetMethod("ReadyCardByEffect",
+            BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var item = Assert.IsType<L12StackItem>(ready.Invoke(game,
+            [0, source, target, "测试因效果转为活跃", null]));
+
+        Assert.Equal("effect-ready", item.Data["eventType"]);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(new[] { target.InstanceId },
+            JsonSerializer.Deserialize<string[]>(prompt.Data["responseTargetIds"]));
+    }
+
+    [Fact]
+    public void CostSelectionCannotEnterPresentationCarrierEvenIfMisflagged()
+    {
+        var game = Create();
+        var source = Card("S01-0103", "cost-presentation-source", 0);
+        var cost = Card("S01-0212", "cost-presentation-field-card", 0);
+        game.State.Players[0].Field[0][0] = source;
+        game.State.Players[0].Field[0][1] = cost;
+        var activation = PendingPresentationActivation(game, source, cost.InstanceId);
+        activation.ResponsePresentationTargetIds.Clear();
+        var step = new L12ActivationSelectionStep
+        {
+            Kind = "active-target", Text = "选择场上费用", ValidChoices = [cost.InstanceId],
+            IsCostSelection = true, IsResponsePresentationTarget = true,
+        };
+
+        typeof(L12GameEngine).GetMethod("CaptureResponsePresentationTargets",
+            BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(game,
+            [activation, step, new[] { cost.InstanceId }]);
+
+        Assert.Empty(activation.ResponsePresentationTargetIds);
+    }
+
+    [Fact]
+    public void AttackDeclarationDistinguishesMenesFieldCostFromRealFieldTargets()
+    {
+        var menes = Create();
+        var menesSource = Card("S01-0203", "menes-presentation-source", 0);
+        menes.State.Players[0].Field[0][0] = menesSource;
+        menes.State.Players[0].Field[0][1] = Card("S01-0103", "menes-field-cost", 0);
+        var menesActivation = BeginAttackDeclaration(menes, menesSource, "menes");
+        var cost = Assert.Single(menesActivation.SelectionSteps,
+            step => step.DeclarationKey == "cost" && step.Kind == "field-legion");
+        Assert.True(cost.IsCostSelection);
+        Assert.False(cost.IsResponsePresentationTarget);
+
+        var cases = new (string CardId, string PlanId, Action<L12GameEngine> Arrange, string Kind)[]
+        {
+            ("S01-0208", "ay", game =>
+            {
+                game.State.Players[0].TemporaryMorale = 1;
+                game.State.Players[0].Field[0][1] = Card("S01-0416", "ay-real-target", 0, troops: 1000);
+            }, "field-legion"),
+            ("S01-0406", "hijikata", game =>
+            {
+                game.State.Players[0].TemporaryMorale = 1;
+                game.State.Players[1].Field[0][0] = Card("S01-0416", "hijikata-real-target", 1);
+            }, "enemy-legion"),
+            ("S01-0408", "takasugi", game =>
+            {
+                game.State.Players[0].TemporaryMorale = 1;
+                game.State.Players[1].Field[0][0] = Card("S01-0103", "takasugi-real-target", 1);
+            }, "enemy-legion"),
+            ("S01-0413", "hiromasa", game =>
+            {
+                var counter = Card("S01-0018", "hiromasa-real-target", 1);
+                counter.Hidden = true;
+                game.State.Players[1].Field[1][0] = counter;
+            }, "covered-counter"),
+            ("S01-0416", "inahime", game =>
+            {
+                game.State.Players[0].Field[0][1] = Card("S01-0406", "inahime-real-target", 0);
+            }, "field-legion"),
+        };
+
+        foreach (var (cardId, planId, arrange, kind) in cases)
+        {
+            var game = Create();
+            var source = Card(cardId, $"{planId}-presentation-source", 0);
+            game.State.Players[0].Field[0][0] = source;
+            arrange(game);
+            var activation = BeginAttackDeclaration(game, source, planId);
+            var target = Assert.Single(activation.SelectionSteps,
+                step => step.DeclarationKey == "target" && step.Kind == kind);
+            Assert.False(target.IsCostSelection);
+            Assert.True(target.IsResponsePresentationTarget);
+        }
+    }
+
+    [Fact]
+    public void HoremhebFieldSacrificeIsNotAResponsePresentationTarget()
+    {
+        var game = Create();
+        var source = Card("S01-0205", "horemheb-presentation-source", 0);
+        var guard = Card("S01-0212", "horemheb-field-cost", 0);
+        game.State.Players[0].Field[0][0] = source;
+        game.State.Players[0].Field[0][1] = guard;
+        var candidate = new L12TriggerCandidate
+        {
+            CandidateId = "candidate-horemheb", Controller = 0,
+            SourceInstanceId = source.InstanceId, SourceCardId = source.CardId,
+            SourceName = source.Name, SourceSnapshot = source,
+            Trigger = "enter", Text = "霍列姆赫布登场时效果",
+        };
+
+        var steps = Assert.IsType<List<L12ActivationSelectionStep>>(typeof(L12GameEngine)
+            .GetMethod("Batch6JAEnterSteps", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(game, [candidate, source, "horemheb"]));
+        var cost = Assert.Single(steps,
+            step => step.DeclarationKey == "discardCost" && step.Kind == "field-legion");
+
+        Assert.True(cost.IsCostSelection);
+        Assert.False(cost.IsResponsePresentationTarget);
+    }
+
+    [Fact]
+    public void NephthysFieldSacrificeIsNotAResponsePresentationTarget()
+    {
+        var game = Create();
+        var source = Card("S02-02M1", "nephthys-presentation-source", 0);
+        var cost = Card("S01-0212", "nephthys-field-cost", 0);
+        game.State.Players[0].Field[0][0] = cost;
+
+        var result = Assert.IsType<CommandResult>(typeof(L12GameEngine)
+            .GetMethod("TryBeginS2FactionActiveAbility", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(game, [0, source, "nephthysSacrifice"]));
+
+        Assert.True(result.Accepted);
+        var step = Assert.Single(Assert.Single(game.State.PendingActivations).SelectionSteps);
+        Assert.True(step.IsCostSelection);
+        Assert.False(step.IsResponsePresentationTarget);
+    }
+
+    [Fact]
+    public void AmbushResponseCarriesItsSelectedOwnLegionIntoTheNextResponseWindow()
+    {
+        var game = Create();
+        var timing = AddEffect(game, "ambush-public-timing", owner: 0);
+        timing.Negated = false;
+        var response = Counter(game, 0, "S01-0019");
+        var target = Card("S01-0103", "ambush-own-legion-target", 1);
+        game.State.Players[1].Field[0][0] = target;
+        var activation = new L12PendingActivation
+        {
+            ActivationId = "ambush-presentation-activation", Controller = 1,
+            SourceInstanceId = response.InstanceId, SourceCardId = response.CardId,
+            Ability = "response", Text = "伏击选择我方军团",
+            ResponseTargetStackItemId = timing.StackItemId,
+            ValidChoices = [target.InstanceId], CreatedRevision = game.State.Revision,
+        };
+        activation.DeclaredTargets.Add(target.InstanceId);
+        activation.ResponsePresentationTargetIds.Add(target.InstanceId);
+        game.State.PendingActivations.Add(activation);
+
+        typeof(L12GameEngine).GetMethod("CompleteResolvedPendingActivation",
+            BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(game, [activation]);
+
+        var responseItem = game.State.EffectStack[^1];
+        Assert.Equal(response.InstanceId, responseItem.SourceInstanceId);
+        Assert.Equal(target.InstanceId, responseItem.Data["responsePresentationTargetIds"]);
+    }
+
+    [Fact]
+    public void PresentationSelectionStateRestoresAndConsecutiveCommitsDoNotLeakTargets()
+    {
+        var game = Create();
+        var source = Card("S01-0103", "presentation-source", 0);
+        game.State.Players[0].Field[0][0] = source;
+        var firstTarget = Card("S01-0002", "first-commit-target", 1);
+        var secondTarget = Card("S01-0003", "second-commit-target", 1);
+        game.State.Players[1].Field[0][0] = firstTarget;
+        game.State.Players[1].Field[0][1] = secondTarget;
+        var activation = PendingPresentationActivation(game, source, firstTarget.InstanceId);
+        game.State.PendingActivations.Add(activation);
+
+        game = Restore(game);
+        activation = Assert.Single(game.State.PendingActivations);
+        Assert.Equal(new[] { firstTarget.InstanceId }, activation.ResponsePresentationTargetIds);
+        Assert.True(Assert.Single(activation.SelectionSteps).IsResponsePresentationTarget);
+
+        activation.IsCommittingResponsePresentation = true;
+        InvokePushEffect(game, activation.Controller,
+            game.State.Players[0].Field[0][0]!, new Dictionary<string, string> { ["ability"] = "test-first" });
+        var firstPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(new[] { firstTarget.InstanceId },
+            JsonSerializer.Deserialize<string[]>(firstPrompt.Data["responseTargetIds"]));
+
+        game.State.PendingActivations.Remove(activation);
+        game.State.PendingPrompts.Clear();
+        game.State.EffectStack.Clear();
+        game.State.ResponseWindow = null;
+        var secondActivation = PendingPresentationActivation(game,
+            game.State.Players[0].Field[0][0]!, secondTarget.InstanceId);
+        secondActivation.IsCommittingResponsePresentation = true;
+        game.State.PendingActivations.Add(secondActivation);
+
+        InvokePushEffect(game, secondActivation.Controller,
+            game.State.Players[0].Field[0][0]!, new Dictionary<string, string> { ["ability"] = "test-second" });
+
+        var secondPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(new[] { secondTarget.InstanceId },
+            JsonSerializer.Deserialize<string[]>(secondPrompt.Data["responseTargetIds"]));
+        Assert.DoesNotContain(firstTarget.InstanceId, secondPrompt.Data["responseTargetIds"]);
+    }
+
+    [Fact]
+    public void CancelledPresentationSelectionClearsActivationWithoutPublishingTargets()
+    {
+        var game = Create();
+        var source = Card("S01-0103", "cancelled-presentation-source", 0);
+        game.State.Players[0].Field[0][0] = source;
+        var target = Card("S01-0002", "cancelled-presentation-target", 1);
+        game.State.Players[1].Field[0][0] = target;
+        var begin = typeof(L12GameEngine).GetMethod("BeginPendingActivation",
+            BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        var result = Assert.IsType<CommandResult>(begin.Invoke(game,
+            [0, source, "test-cancel", new[] { target.InstanceId }, "选择公开战场对象", 1, 1]));
+        Assert.True(result.Accepted);
+        Resolve(game, "skip");
+
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Data.ContainsKey("responsePresentationTargetIds"));
+    }
+
+    [Fact]
+    public void FailedActiveCommitClearsPresentationSubmissionScope()
+    {
+        var game = Create();
+        var source = Card("S01-0103", "failed-presentation-source", 0);
+        var target = Card("S01-0002", "failed-presentation-target", 1);
+        game.State.Players[0].Field[0][0] = source;
+        game.State.Players[1].Field[0][0] = target;
+        var activation = PendingPresentationActivation(game, source, target.InstanceId);
+        activation.CurrentStep = activation.SelectionSteps.Count;
+        game.State.PendingActivations.Add(activation);
+
+        typeof(L12GameEngine).GetMethod("CompleteResolvedPendingActivation",
+            BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(game, [activation]);
+
+        Assert.Empty(game.State.PendingActivations);
+        Assert.False(activation.IsCommittingResponsePresentation);
+        Assert.Empty(game.State.EffectStack);
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Data.ContainsKey("responsePresentationTargetIds"));
+    }
+
+    private static L12PendingActivation PendingPresentationActivation(L12GameEngine game,
+        L12CardInstance source, string targetId)
+    {
+        var activation = new L12PendingActivation
+        {
+            ActivationId = $"presentation-{targetId}", Controller = 0,
+            SourceInstanceId = source.InstanceId, SourceCardId = source.CardId,
+            Ability = "test-presentation", Text = "测试公开场上对象展示",
+            ValidChoices = [targetId], CreatedRevision = game.State.Revision,
+            SelectionSteps =
+            [
+                new L12ActivationSelectionStep
+                {
+                    Kind = "field-legion", Text = "选择公开场上对象", ValidChoices = [targetId],
+                    IsResponsePresentationTarget = true,
+                },
+            ],
+        };
+        activation.DeclaredTargets.Add(targetId);
+        activation.ResponsePresentationTargetIds.Add(targetId);
+        return activation;
+    }
+
+    private static void InvokePushEffect(L12GameEngine game, int controller,
+        L12CardInstance source, Dictionary<string, string> data)
+        => typeof(L12GameEngine).GetMethod("PushEffect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(game, [controller, source, "active", "主动效果", null, data]);
+
+    private static L12PendingActivation BeginAttackDeclaration(L12GameEngine game,
+        L12CardInstance source, string planId)
+    {
+        var candidate = new L12TriggerCandidate
+        {
+            CandidateId = $"candidate-{planId}", Controller = 0,
+            SourceInstanceId = source.InstanceId, SourceCardId = source.CardId,
+            SourceName = source.Name, SourceSnapshot = source,
+            Trigger = "attack", Text = $"{source.Name}进攻时效果",
+            Data = new Dictionary<string, string> { ["attackPlan"] = planId },
+        };
+        game.State.PendingTriggerStackCandidates.Add(candidate);
+        var handled = Assert.IsType<bool>(typeof(L12GameEngine)
+            .GetMethod("TryBeginAttackPublicTriggerDeclaration",
+                BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(game, [candidate, source]));
+        Assert.True(handled);
+        return Assert.Single(game.State.PendingActivations);
+    }
+
+    [Fact]
     public void EachResponseOptionKeepsItsOwnTargetInstanceInsteadOfSameNameUnion()
     {
         var game = Create();

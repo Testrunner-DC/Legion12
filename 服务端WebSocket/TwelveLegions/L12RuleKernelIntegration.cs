@@ -118,7 +118,7 @@ public sealed partial class L12GameEngine
     private CommandResult BeginPendingActivation(int playerIndex, L12CardInstance source, string ability,
         IEnumerable<string> choices, string text, int min = 1, int max = 1)
         => BeginPendingActivationSequence(playerIndex, source, ability,
-        [new L12ActivationSelectionStep { Kind = "active-target", Text = text, ValidChoices = choices.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), MinChoose = min, MaxChoose = max }]);
+        [new L12ActivationSelectionStep { Kind = "active-target", Text = text, ValidChoices = choices.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), MinChoose = min, MaxChoose = max, IsResponsePresentationTarget = true }]);
 
     private CommandResult BeginPendingActivationSequence(int playerIndex, L12CardInstance source, string ability,
         IEnumerable<L12ActivationSelectionStep> selectionSteps)
@@ -131,13 +131,13 @@ public sealed partial class L12GameEngine
     private CommandResult BeginPendingHandPlay(int playerIndex, L12CardInstance source,
         IEnumerable<string> choices, string text)
         => BeginPendingActivationSequence(playerIndex, source, "play-card",
-        [new L12ActivationSelectionStep { Kind = "active-target", Text = text, ValidChoices = choices.ToList() }],
+        [new L12ActivationSelectionStep { Kind = "active-target", Text = text, ValidChoices = choices.ToList(), IsResponsePresentationTarget = true }],
         null, source.InstanceId, null);
 
     private CommandResult BeginPendingResponseActivation(int playerIndex, L12CardInstance source,
         string targetStackItemId, IEnumerable<string> choices, string text)
         => BeginPendingActivationSequence(playerIndex, source, "response",
-        [new L12ActivationSelectionStep { Kind = "active-target", Text = text, ValidChoices = choices.ToList() }],
+        [new L12ActivationSelectionStep { Kind = "active-target", Text = text, ValidChoices = choices.ToList(), IsResponsePresentationTarget = true }],
         null, null, targetStackItemId);
 
     private CommandResult BeginPendingActivationSequence(int playerIndex, L12CardInstance source, string ability,
@@ -167,6 +167,7 @@ public sealed partial class L12GameEngine
             CancellationPolicy = step.CancellationPolicy,
             AutoSelectWhenExact = step.AutoSelectWhenExact,
             IsCostSelection = step.IsCostSelection,
+            IsResponsePresentationTarget = step.IsResponsePresentationTarget,
             AutoSelectEquivalentOrdinaryMorale = step.AutoSelectEquivalentOrdinaryMorale,
             ChoiceLabels = new Dictionary<string, string>(step.ChoiceLabels, StringComparer.OrdinalIgnoreCase),
             SkipWhenPreviousStepEmpty = step.SkipWhenPreviousStepEmpty,
@@ -334,6 +335,7 @@ public sealed partial class L12GameEngine
             {
                 var selected = deterministicCostChoices ?? pendingStep.ValidChoices;
                 activation.DeclaredTargets.AddRange(selected);
+                CaptureResponsePresentationTargets(activation, pendingStep, selected);
                 if (!string.IsNullOrWhiteSpace(pendingStep.DeclarationKey))
                     activation.DeclaredValues[pendingStep.DeclarationKey] = selected.ToList();
                 activation.CurrentStep++;
@@ -1084,6 +1086,7 @@ public sealed partial class L12GameEngine
             return;
         }
         activation.DeclaredTargets.AddRange(chosen);
+        CaptureResponsePresentationTargets(activation, step, chosen);
         if (!string.IsNullOrWhiteSpace(step.DeclarationKey))
             activation.DeclaredValues[step.DeclarationKey] = chosen.ToList();
         activation.CurrentStep++;
@@ -1158,8 +1161,19 @@ public sealed partial class L12GameEngine
                 AddEvent("ability-rejected", activation.Controller, "手牌来源或目标已不合法，未支付费用也未入栈");
                 return;
             }
-            var handPlayResult = PlayCard(activation.Controller, new L12Command("playCard", card.InstanceId,
-                Target: new L12AttackTarget("legion", declaredTarget)));
+            activation.IsCommittingResponsePresentation = true;
+            State.PendingActivations.Add(activation);
+            CommandResult handPlayResult;
+            try
+            {
+                handPlayResult = PlayCard(activation.Controller, new L12Command("playCard", card.InstanceId,
+                    Target: new L12AttackTarget("legion", declaredTarget)));
+            }
+            finally
+            {
+                State.PendingActivations.Remove(activation);
+                activation.IsCommittingResponsePresentation = false;
+            }
             if (!handPlayResult.Accepted) AddEvent("ability-rejected", activation.Controller, handPlayResult.Error ?? "手牌打出失败");
             return;
         }
@@ -1183,7 +1197,10 @@ public sealed partial class L12GameEngine
                 ResumeResponseAfterCancelledDeclaration(activation);
                 return;
             }
-            CommitS1ReactionResponse(activation.Controller, response, activation.ResponseTargetStackItemId, declaredTarget);
+            var responseData = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            SetResponsePresentationTargets(responseData, activation.ResponsePresentationTargetIds);
+            CommitS1ReactionResponse(activation.Controller, response, activation.ResponseTargetStackItemId,
+                declaredTarget, responseData);
             return;
         }
 
@@ -1220,9 +1237,20 @@ public sealed partial class L12GameEngine
         }
         var committingFreeMasterActivation = MatchesPendingFreeMasterActivation(
             activation.Controller, source, activation.Ability);
-        var result = CommitActiveAbility(activation.Controller, source, activation.Ability,
-            activation.DeclaredTargets.Count == 0 ? null : string.Join('|', activation.DeclaredTargets),
-            selectedResourceIds: selectedResourceIds);
+        activation.IsCommittingResponsePresentation = true;
+        State.PendingActivations.Add(activation);
+        CommandResult result;
+        try
+        {
+            result = CommitActiveAbility(activation.Controller, source, activation.Ability,
+                activation.DeclaredTargets.Count == 0 ? null : string.Join('|', activation.DeclaredTargets),
+                selectedResourceIds: selectedResourceIds);
+        }
+        finally
+        {
+            State.PendingActivations.Remove(activation);
+            activation.IsCommittingResponsePresentation = false;
+        }
         if (!result.Accepted)
         {
             AddEvent("ability-rejected", activation.Controller, result.Error ?? "主动效果发动失败");
@@ -2303,6 +2331,7 @@ public sealed partial class L12GameEngine
         int min, int max = 1) => new()
     {
         Kind = kind, Text = text, ValidChoices = choices.ToList(), MinChoose = min, MaxChoose = max,
+        IsResponsePresentationTarget = kind is "field-legion" or "enemy-legion" or "covered-counter",
     };
 
     private void CompleteTriggerDeclaration(L12PendingActivation activation)
@@ -2314,6 +2343,7 @@ public sealed partial class L12GameEngine
         // A completed public declaration may use a short internal stack label for routing.
         // Response presentation must use the card's resolved trigger segment instead.
         candidate.Data["responseUsesTriggerEffectText"] = "true";
+        SetResponsePresentationTargets(candidate.Data, activation.ResponsePresentationTargetIds);
         BeginTriggeredPaidCostCapture(candidate, source);
         try
         {

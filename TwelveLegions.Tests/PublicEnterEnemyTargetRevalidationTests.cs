@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -193,6 +194,14 @@ public sealed class PublicEnterEnemyTargetRevalidationTests
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: targets.PromptId,
             CardInstanceIds: [first.InstanceId, second.InstanceId])).Accepted);
 
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("response", response.Kind);
+        Assert.Equal(new[] { first.InstanceId, second.InstanceId },
+            JsonSerializer.Deserialize<string[]>(response.Data["responseTargetIds"]));
+        var restored = RestoreAsV2(game);
+        Assert.Equal(response.Data["responseTargetIds"],
+            Assert.Single(restored.State.PendingPrompts).Data["responseTargetIds"]);
+
         var transformed = Card("S01-0002", second.InstanceId, cardType: "artifact");
         transformed.Tapped = true;
         game.State.Players[1].Field[0][1] = transformed;
@@ -202,6 +211,37 @@ public sealed class PublicEnterEnemyTargetRevalidationTests
         Assert.Equal(0, transformed.CannotUntapUntilRound);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect"
             && entry.Text.Contains("已声明对象在逆结算后失效", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0003")]
+    [Trait("L12Evidence", "response-presentation:explicit-covered-target")]
+    public void CourtMagicianResponseHighlightsCoveredTargetForBothPlayersWithoutRevealingIdentity()
+    {
+        var game = Create(9111);
+        var source = Card("S02-0003", "entry-court-magician");
+        var covered = Card("S01-0019", "entry-covered-counter", cardType: "tactic");
+        covered.Hidden = true;
+        game.State.Players[0].Field[0][0] = source;
+        game.State.Players[1].Field[1][1] = covered;
+
+        QueueEnter(game, source);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0,
+            new L12Command("resolvePrompt", PromptId: mode.PromptId, Choice: "mode:use")).Accepted);
+        Resolve(game, covered.InstanceId);
+
+        for (var viewer = 0; viewer < 2; viewer++)
+        {
+            var response = Assert.Single(game.State.PendingPrompts);
+            Assert.Equal(viewer, response.PlayerIndex);
+            Assert.Equal(new[] { covered.InstanceId },
+                JsonSerializer.Deserialize<string[]>(response.Data["responseTargetIds"]));
+            Assert.Contains($"{(viewer == 0 ? "对方" : "我方")}盖伏卡牌（后排第2格）", response.Text);
+            Assert.DoesNotContain(covered.Name, JsonSerializer.Serialize(response));
+            Assert.True(game.Handle(viewer,
+                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        }
     }
 
     [Fact]

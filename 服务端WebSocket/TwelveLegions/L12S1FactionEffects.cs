@@ -724,6 +724,7 @@ public sealed partial class L12GameEngine
                     {
                         Kind = "active-target", Text = "安卡神碑：选择我方1张休整的陵墓守卫",
                         ValidChoices = PublicLegions(player).Where(card => card.CardId == "S01-0212" && CanReadyCardByEffect(card)).Select(card => card.InstanceId).ToList(),
+                        IsResponsePresentationTarget = true,
                     },
                     new L12ActivationSelectionStep
                     {
@@ -759,6 +760,7 @@ public sealed partial class L12GameEngine
                     {
                         Kind = "enemy-unselected-required", Text = "英灵殿：选择对方1张兵力不高于1000的军团",
                         ValidChoices = lowTargets.Count == 0 ? ["mode:none"] : lowTargets, MinChoose = 1, MaxChoose = 1,
+                        IsResponsePresentationTarget = true,
                         ChoiceLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                         {
                             ["mode:none"] = "没有合法目标，继续结算",
@@ -768,6 +770,7 @@ public sealed partial class L12GameEngine
                     {
                         Kind = "enemy-unselected-required", Text = "英灵殿：选择另一张兵力不高于5000的军团",
                         ValidChoices = broadTargets.Count == 0 ? ["mode:none"] : broadTargets, MinChoose = 1, MaxChoose = 1,
+                        IsResponsePresentationTarget = true,
                         ChoiceLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                         {
                             ["mode:none"] = "没有其他合法目标，继续结算",
@@ -821,11 +824,14 @@ public sealed partial class L12GameEngine
                         Kind = "active-target", Text = "梅杰德：选择额外休整的1张活跃〈陵墓守卫〉",
                         ValidChoices = strongGuards, MinChoose = 1, MaxChoose = 1,
                         RequiredDeclaredChoice = "mode:strong",
+                        IsCostSelection = true,
+                        IsResponsePresentationTarget = false,
                     },
                     new L12ActivationSelectionStep
                     {
                         Kind = "active-target", Text = "梅杰德：选择本回合降低兵力的对方军团",
                         ValidChoices = targets, MinChoose = 1, MaxChoose = 1,
+                        IsResponsePresentationTarget = true,
                     },
                 ]);
             }

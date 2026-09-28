@@ -139,6 +139,7 @@ public sealed partial class L12GameEngine
             ReferenceDeclarationKey = referenceKey,
             MinimumReferenceNumericValue = minimumReferenceNumericValue,
             ReferenceNumericChoicePrefix = referenceNumericChoicePrefix,
+            IsResponsePresentationTarget = kind is "field-legion" or "enemy-legion" or "field-card",
             ChoiceLabels = labels ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["mode:none"] = "不发动",

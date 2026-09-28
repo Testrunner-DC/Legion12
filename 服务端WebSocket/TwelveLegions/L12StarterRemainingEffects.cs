@@ -24,8 +24,8 @@ public sealed partial class L12GameEngine
                 if (own.Count == 0 || enemy.Count == 0) return CommandResult.Reject("双方战场各需要至少1张军团");
                 return BeginPendingActivationSequence(controller, source, ability,
                 [
-                    new L12ActivationSelectionStep { Kind = "enemy-legion", DeclarationKey = "enemyTarget", Text = "吉原的花魁：选择本回合兵力-1000的对方军团", ValidChoices = enemy, MinChoose = 1, MaxChoose = 1, TargetPlayerIndex = 1 - controller },
-                    new L12ActivationSelectionStep { Kind = "field-legion", DeclarationKey = "ownTarget", Text = "吉原的花魁：选择本回合兵力+1000的我方军团", ValidChoices = own, MinChoose = 1, MaxChoose = 1 },
+                    new L12ActivationSelectionStep { Kind = "enemy-legion", DeclarationKey = "enemyTarget", Text = "吉原的花魁：选择本回合兵力-1000的对方军团", ValidChoices = enemy, MinChoose = 1, MaxChoose = 1, TargetPlayerIndex = 1 - controller, IsResponsePresentationTarget = true },
+                    new L12ActivationSelectionStep { Kind = "field-legion", DeclarationKey = "ownTarget", Text = "吉原的花魁：选择本回合兵力+1000的我方军团", ValidChoices = own, MinChoose = 1, MaxChoose = 1, IsResponsePresentationTarget = true },
                 ]);
             }
             case "lightSwordActive":
@@ -39,7 +39,7 @@ public sealed partial class L12GameEngine
                 [
                     new L12ActivationSelectionStep { Kind = "option", DeclarationKey = "mode", Text = "光之剑：选择1项效果", ValidChoices = targets.Count > 0 ? ["mode:buff", "mode:rune"] : ["mode:rune"], MinChoose = 1, MaxChoose = 1, ChoiceLabels = new() { ["mode:buff"] = "主动休整 弃置1张手牌：选择我方前排1张【彼界】军团，本回合兵力+2000。", ["mode:rune"] = "主动休整 弃置1张手牌：获得1符文。" } },
                     new L12ActivationSelectionStep { Kind = "hand-card", DeclarationKey = "discardCost", Text = "光之剑：选择弃置的1张手牌", ValidChoices = player.Hand.Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 1 },
-                    new L12ActivationSelectionStep { Kind = "field-legion", DeclarationKey = "buffTarget", Text = "光之剑：选择本回合兵力+2000的我方前排【彼界】军团", ValidChoices = targets, MinChoose = 1, MaxChoose = 1, RequiredDeclaredChoice = "mode:buff" },
+                    new L12ActivationSelectionStep { Kind = "field-legion", DeclarationKey = "buffTarget", Text = "光之剑：选择本回合兵力+2000的我方前排【彼界】军团", ValidChoices = targets, MinChoose = 1, MaxChoose = 1, RequiredDeclaredChoice = "mode:buff", IsResponsePresentationTarget = true },
                 ]);
             }
             case "horusRevive":
@@ -151,7 +151,7 @@ public sealed partial class L12GameEngine
                 [
                     new L12ActivationSelectionStep { Kind = "hand-card", DeclarationKey = "discardCost", Text = "雅典娜：选择弃置的1张手牌", ValidChoices = player.Hand.Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 1 },
                     new L12ActivationSelectionStep { Kind = "target-morale", DeclarationKey = "flipTarget", Text = "雅典娜：选择翻转的1张士气", ValidChoices = player.Morale.Where(CanToggleMoraleFace).Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 1 },
-                    new L12ActivationSelectionStep { Kind = "field-legion", DeclarationKey = "buffTargets", Text = "雅典娜：选择我方前排最多2张奥林匹斯军团", ValidChoices = player.Field[0].Where(card => card is not null && IsFieldLegion(card) && L12StructuredCardRules.HasFaction(player, card, "olympus")).Select(card => card!.InstanceId).ToList(), MinChoose = 0, MaxChoose = 2 },
+                    new L12ActivationSelectionStep { Kind = "field-legion", DeclarationKey = "buffTargets", Text = "雅典娜：选择我方前排最多2张奥林匹斯军团", ValidChoices = player.Field[0].Where(card => card is not null && IsFieldLegion(card) && L12StructuredCardRules.HasFaction(player, card, "olympus")).Select(card => card!.InstanceId).ToList(), MinChoose = 0, MaxChoose = 2, IsResponsePresentationTarget = true },
                 ]);
             case "telemachusTopThree":
                 if (source.Tapped) return CommandResult.Reject("特勒马科斯必须为活跃状态");

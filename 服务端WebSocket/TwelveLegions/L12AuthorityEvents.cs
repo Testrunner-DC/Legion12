@@ -54,6 +54,11 @@ public sealed partial class L12GameEngine
         if (destinationZone is not null) item.Data["destinationZone"] = destinationZone;
         item.Data["causedByEffect"] = causedByEffect ? "true" : "false";
         foreach (var pair in authorityEvent.Data) item.Data[pair.Key] = pair.Value;
+        if (type == "effect-ready" && !string.IsNullOrWhiteSpace(targetInstanceId)
+            && State.Players.Any(player => FindOnField(player, targetInstanceId, out _, out _) is not null))
+        {
+            SetResponsePresentationTargets(item.Data, [targetInstanceId]);
+        }
 
         if (State.IsResolvingStack)
         {

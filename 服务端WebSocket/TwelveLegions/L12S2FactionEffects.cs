@@ -1031,8 +1031,19 @@ public sealed partial class L12GameEngine
             if (HasUsedLimitedActiveAbility(player, source.CardId, source.InstanceId, ability)) return CommandResult.Reject("该效果本回合已经发动");
             var choices = PublicLegions(player).Select(card => card.InstanceId).ToArray();
             if (choices.Length == 0) return CommandResult.Reject("我方战场没有可弃置的军团");
-            return BeginPendingActivation(playerIndex, source, ability, choices,
-                "奈芙蒂斯：选择我方战场任意数量的军团弃置", min: 1, max: choices.Length);
+            return BeginPendingActivationSequence(playerIndex, source, ability,
+            [
+                new L12ActivationSelectionStep
+                {
+                    Kind = "active-target",
+                    Text = "奈芙蒂斯：选择我方战场任意数量的军团弃置",
+                    ValidChoices = choices.ToList(),
+                    MinChoose = 1,
+                    MaxChoose = choices.Length,
+                    IsCostSelection = true,
+                    IsResponsePresentationTarget = false,
+                },
+            ]);
         }
         if (ability == "avalonRecover" && source.CardId == "S02-06D1")
         {
@@ -1104,7 +1115,7 @@ public sealed partial class L12GameEngine
             if (choices.Length == 0) return CommandResult.Reject("我方战场没有可选择的【彼界】军团");
             return BeginPendingActivationSequence(playerIndex, source, ability,
             [
-                new L12ActivationSelectionStep { Kind = "active-target", Text = "莫瑞甘：选择我方1张【彼界】军团，本回合其下一次击杀对方军团后转为活跃", ValidChoices = choices.ToList() },
+                new L12ActivationSelectionStep { Kind = "active-target", Text = "莫瑞甘：选择我方1张【彼界】军团，本回合其下一次击杀对方军团后转为活跃", ValidChoices = choices.ToList(), IsResponsePresentationTarget = true },
             ]);
         }
         if (ability == "runeUse" && source.CardId == "S02-06C1")
@@ -1162,6 +1173,7 @@ public sealed partial class L12GameEngine
                 {
                     Kind = "active-target", DeclarationKey = "target", Text = "梅林：预先选择对方1张军团",
                     ValidChoices = enemy, MinChoose = 1, MaxChoose = 1, RequiredDeclaredChoice = "mode:debuff",
+                    IsResponsePresentationTarget = true,
                 },
             ]);
         }
@@ -1229,6 +1241,7 @@ public sealed partial class L12GameEngine
                 new L12ActivationSelectionStep
                 {
                     Kind = "active-target", Text = "黄金圣甲虫：选择对方最多2张军团，本回合兵力-1000", ValidChoices = choices.ToList(), MinChoose = 0, MaxChoose = Math.Min(2, choices.Length),
+                    IsResponsePresentationTarget = true,
                 },
             ]);
         }
@@ -1247,6 +1260,7 @@ public sealed partial class L12GameEngine
                 {
                     Kind = "active-target", Text = "八尺琼勾玉：选择我方1张活跃军团",
                     ValidChoices = candidates,
+                    IsResponsePresentationTarget = true,
                 },
                 new L12ActivationSelectionStep
                 {
@@ -1287,7 +1301,7 @@ public sealed partial class L12GameEngine
                     return CommitActiveAbility(playerIndex, source, ability, target: null);
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
-                    new L12ActivationSelectionStep { Kind = "active-target", Text = "选择我方1张〈芬恩〉或原本兵力不高于4000的【彼界】军团转为活跃", ValidChoices = choices.ToList() },
+                    new L12ActivationSelectionStep { Kind = "active-target", Text = "选择我方1张〈芬恩〉或原本兵力不高于4000的【彼界】军团转为活跃", ValidChoices = choices.ToList(), IsResponsePresentationTarget = true },
                 ]);
             }
             if (ability == "crusadeTrialNoLoss")
@@ -1298,7 +1312,7 @@ public sealed partial class L12GameEngine
                 if (choices.Length == 0) return CommandResult.Reject("战场上没有【试炼军团】");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
-                    new L12ActivationSelectionStep { Kind = "active-target", Text = "选择我方1张【试炼军团】，本回合下一次进攻无损", ValidChoices = choices.ToList() },
+                    new L12ActivationSelectionStep { Kind = "active-target", Text = "选择我方1张【试炼军团】，本回合下一次进攻无损", ValidChoices = choices.ToList(), IsResponsePresentationTarget = true },
                 ]);
             }
             if (ability == "crusadeRichardPiercing")
@@ -1308,7 +1322,7 @@ public sealed partial class L12GameEngine
                 if (choices.Length == 0) return CommandResult.Reject("战场上没有〈狮心王理查一世〉");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
-                    new L12ActivationSelectionStep { Kind = "active-target", Text = "选择我方1张〈狮心王理查一世〉", ValidChoices = choices.ToList() },
+                    new L12ActivationSelectionStep { Kind = "active-target", Text = "选择我方1张〈狮心王理查一世〉", ValidChoices = choices.ToList(), IsResponsePresentationTarget = true },
                 ]);
             }
             if (player.SpecialZones.Runes < 2 || player.Hand.Count == 0) return CommandResult.Reject("需要消耗2符文并弃置1张手牌");

@@ -44,6 +44,7 @@ public sealed partial class L12GameEngine
                         MinChoose = 2,
                         MaxChoose = Math.Min(8, player.Morale.Count),
                         IsCostSelection = true,
+                        IsResponsePresentationTarget = false,
                     },
                     new L12ActivationSelectionStep
                     {
@@ -104,6 +105,7 @@ public sealed partial class L12GameEngine
                     {
                         Kind = "field-legion", DeclarationKey = "buffTarget", Text = "阿尔忒弥斯：选择我方1张【奥林匹斯】军团",
                         ValidChoices = targets,
+                        IsResponsePresentationTarget = true,
                     },
                     new L12ActivationSelectionStep
                     {

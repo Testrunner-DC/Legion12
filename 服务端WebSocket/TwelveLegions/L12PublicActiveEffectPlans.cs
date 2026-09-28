@@ -259,6 +259,9 @@ public sealed partial class L12GameEngine
             MaxChoose = max,
             AutoSelectWhenExact = autoSelectWhenExact,
             IsCostSelection = isCostSelection,
+            IsResponsePresentationTarget = !isCostSelection && kind is ("active-target" or "field-legion"
+                or "enemy-legion" or "public-enemy-after-cost-debuff"
+                or "public-enemy-after-declared-cost-debuff" or "public-palace-enemy"),
             ReferenceDeclarationKey = referenceKey,
             IncludeSourceSlotAfterCost = includeSourceSlotAfterCost,
             SkipWhenReferenceIsNone = skipWhenReferenceIsNone,

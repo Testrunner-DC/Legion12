@@ -38,7 +38,7 @@ public sealed partial class L12GameEngine
                     StarterStep("option", "mode", "萧何：是否返还1张士气，使手牌中的〈韩信〉活跃登场？",
                         Modes(canUse)),
                     StarterStep("target-morale", "returnCost", "萧何：选择要返还的1张士气",
-                        player.Morale.Select(card => card.InstanceId), requiredChoice: "mode:use"),
+                        player.Morale.Select(card => card.InstanceId), requiredChoice: "mode:use", isCostSelection: true),
                     StarterStep("hand-card", "entryCard", "萧何：选择手牌中的1张〈韩信〉",
                         hanXin, requiredChoice: "mode:use"),
                     StarterStep("unused-slot", "entrySlot", "萧何：选择〈韩信〉活跃登场的位置",
@@ -56,7 +56,7 @@ public sealed partial class L12GameEngine
                     StarterStep("option", "mode", "胡夫：是否弃置我方1张〈陵墓守卫〉，使对方1张军团本回合兵力-4000？",
                         Modes(canUse)),
                     StarterStep("field-legion", "discardCost", "胡夫：选择要弃置的1张〈陵墓守卫〉",
-                        guards, requiredChoice: "mode:use"),
+                        guards, requiredChoice: "mode:use", isCostSelection: true),
                     StarterStep("field-legion", "enemyTarget", "胡夫：选择本回合兵力-4000的对方军团",
                         enemy, requiredChoice: "mode:use"),
                 ];
@@ -88,7 +88,7 @@ public sealed partial class L12GameEngine
                     StarterStep("option", "mode", "乔泽：是否弃置我方战场上1张军团，使对方1张军团本回合兵力-2000？",
                         Modes(canUse)),
                     StarterStep("field-legion", "discardCost", "乔泽：选择要弃置的我方军团",
-                        costs, requiredChoice: "mode:use"),
+                        costs, requiredChoice: "mode:use", isCostSelection: true),
                     StarterStep("field-legion", "enemyTarget", "乔泽：选择本回合兵力-2000的对方军团",
                         enemy, requiredChoice: "mode:use"),
                 ];
@@ -106,7 +106,7 @@ public sealed partial class L12GameEngine
                     StarterStep("option", "mode", "弗蕾迪斯：是否弃置1张手牌，将墓地1张【阿斯加德】军团加入手牌？",
                         Modes(canUse)),
                     StarterStep("hand-card", "discardCost", "弗蕾迪斯：选择要弃置的1张手牌",
-                        costs, requiredChoice: "mode:use"),
+                        costs, requiredChoice: "mode:use", isCostSelection: true),
                     StarterStep("grave-card", "recoverTarget", "弗蕾迪斯：选择要加入手牌的【阿斯加德】军团",
                         recover, requiredChoice: "mode:use"),
                 ];
@@ -196,7 +196,7 @@ public sealed partial class L12GameEngine
     }
 
     private static L12ActivationSelectionStep StarterStep(string kind, string key, string text,
-        IEnumerable<string> choices, string? requiredChoice = null) => new()
+        IEnumerable<string> choices, string? requiredChoice = null, bool isCostSelection = false) => new()
     {
         Kind = kind,
         DeclarationKey = key,
@@ -206,6 +206,9 @@ public sealed partial class L12GameEngine
         MaxChoose = 1,
         CancellationPolicy = L12ActivationCancellationPolicy.WhenNoExplicitDecline,
         RequiredDeclaredChoice = requiredChoice,
+        IsCostSelection = isCostSelection,
+        IsResponsePresentationTarget = !isCostSelection
+            && kind is ("field-legion" or "enemy-legion" or "field-card"),
         ChoiceLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["mode:none"] = "不发动",
@@ -227,6 +230,7 @@ public sealed partial class L12GameEngine
         TargetPlayerIndex = targetPlayerIndex,
         AutoSelectWhenExact = autoSelectWhenExact,
         RequiredDeclaredChoice = requiredChoice,
+        IsResponsePresentationTarget = kind is "field-legion" or "enemy-legion" or "field-card",
         CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed,
         ChoiceLabels = labels ?? [],
     };

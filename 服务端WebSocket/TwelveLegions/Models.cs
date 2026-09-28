@@ -559,6 +559,13 @@ public sealed class L12PendingActivation
     public int CurrentStep { get; set; }
     public List<string> DeclaredTargets { get; } = [];
     /// <summary>
+    /// 仅记录声明步骤显式标注的公开战场效果对象。费用、来源、私有区卡牌、
+    /// 位置、模式及内部控制值不得写入；该集合会随检查点序列化。
+    /// </summary>
+    public List<string> ResponsePresentationTargetIds { get; } = [];
+    /// <summary>仅在本次激活同步提交堆叠项期间为 true；完成或失败后必须清理。</summary>
+    public bool IsCommittingResponsePresentation { get; set; }
+    /// <summary>
     /// 复合效果按声明键保存每一步的选择边界。旧主动/触发流程继续读取扁平的
     /// DeclaredTargets；事务化复合计划不得再靠实例类型猜测“哪个目标属于哪一段”。
     /// </summary>
@@ -637,6 +644,8 @@ public sealed class L12ActivationSelectionStep
     public bool AutoSelectWhenExact { get; init; }
     /// <summary>显式按该效果段冒号前的文字标注费用；不可从候选数量推断。</summary>
     public bool IsCostSelection { get; init; }
+    /// <summary>本步骤选择的是响应窗口可展示的公开战场效果对象，而不是费用或控制值。</summary>
+    public bool IsResponsePresentationTarget { get; init; }
     /// <summary>
     /// 本费用步骤仅在全部候选都是同卡号、同锁定后果的普通士气时允许确定性自动选择。
     /// 临时士气、神力、黑色莲花、陵墓守卫及任何不同后果仍必须由玩家明确选择。

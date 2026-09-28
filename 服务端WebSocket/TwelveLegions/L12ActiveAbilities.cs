@@ -181,6 +181,7 @@ public sealed partial class L12GameEngine
                         Kind = "active-target", DeclarationKey = "target",
                         Text = "梅杰德：选择本回合降低兵力的对方军团",
                         ValidChoices = targets, MinChoose = 1, MaxChoose = 1,
+                        IsResponsePresentationTarget = true,
                     },
                 ]);
             }

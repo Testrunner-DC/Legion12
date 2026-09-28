@@ -995,7 +995,8 @@ public sealed partial class L12GameEngine
                     .Select(card => card.InstanceId).Prepend("mode:none").ToList();
                 steps =
                 [
-                    PublicTriggerStep("optional-card", "moveTarget", "萨拉丁：预先选择位移的陵墓守卫，或不发动", guards),
+                    PublicTriggerStep("optional-card", "moveTarget", "萨拉丁：预先选择位移的陵墓守卫，或不发动", guards,
+                        isResponsePresentationTarget: true),
                     PublicTriggerStep("unused-slot", "moveSlot", "萨拉丁：预先选择陵墓守卫位移后的位置",
                         EmptySlots(player), referenceKey: "moveTarget", skipWhenReferenceIsNone: true),
                 ];
@@ -1032,7 +1033,8 @@ public sealed partial class L12GameEngine
                     PublicTriggerStep("option", "mode", "坂本龙马：预先声明是否位移我方最多2张军团",
                         canUse ? ["mode:none", "mode:use"] : ["mode:none"]),
                     PublicTriggerStep("cards", "moveTargets", "坂本龙马：预先选择并排序要位移的最多2张军团",
-                        movers, min: minimum, max: Math.Min(2, movers.Count), requiredChoice: "mode:use"),
+                        movers, min: minimum, max: Math.Min(2, movers.Count), requiredChoice: "mode:use",
+                        isResponsePresentationTarget: true),
                     PublicTriggerStep("public-move-slot", "moveSlot1", "坂本龙马：预先选择第1张军团位移位置",
                         ["dynamic"], referenceKey: "moveTargets", requiredChoice: "mode:use"),
                     PublicTriggerStep("public-move-slot", "moveSlot2", "坂本龙马：预先选择第2张军团位移位置",
@@ -1089,7 +1091,8 @@ public sealed partial class L12GameEngine
         bool skipWhenReferenceIsNone = false, string? requiredChoice = null,
         int minReferenceCount = 0, int referenceChoiceIndex = 0, int? targetPlayerIndex = null,
         bool allowCancel = true, string? selectionConstraint = null,
-        bool autoSelectEquivalentOrdinaryMorale = false)
+        bool autoSelectEquivalentOrdinaryMorale = false, bool isResponsePresentationTarget = false,
+        bool isCostSelection = false)
         => new()
         {
             Kind = kind,
@@ -1115,6 +1118,9 @@ public sealed partial class L12GameEngine
             TargetPlayerIndex = targetPlayerIndex,
             SelectionConstraint = selectionConstraint,
             AutoSelectEquivalentOrdinaryMorale = autoSelectEquivalentOrdinaryMorale,
+            IsCostSelection = isCostSelection,
+            IsResponsePresentationTarget = !isCostSelection && (isResponsePresentationTarget
+                || kind is "field-legion" or "enemy-legion" or "field-card" or "covered-counter"),
             ChoiceLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["mode:none"] = "不发动",
