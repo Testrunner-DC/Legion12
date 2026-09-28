@@ -117,7 +117,7 @@ public sealed partial class L12GameEngine
 
     private CommandResult BeginPendingActivation(int playerIndex, L12CardInstance source, string ability,
         IEnumerable<string> choices, string text, int min = 1, int max = 1,
-        bool isCostSelection = false)
+        bool isCostSelection = false, bool isResponsePresentationTarget = true)
         => BeginPendingActivationSequence(playerIndex, source, ability,
         [new L12ActivationSelectionStep
         {
@@ -125,7 +125,7 @@ public sealed partial class L12GameEngine
             ValidChoices = choices.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             MinChoose = min, MaxChoose = max,
             IsCostSelection = isCostSelection,
-            IsResponsePresentationTarget = !isCostSelection,
+            IsResponsePresentationTarget = !isCostSelection && isResponsePresentationTarget,
         }]);
 
     private CommandResult BeginPendingActivationSequence(int playerIndex, L12CardInstance source, string ability,

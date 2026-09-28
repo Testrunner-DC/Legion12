@@ -101,9 +101,16 @@ public sealed class SingleActiveSelectionTests
     }
 
     [Theory]
-    [InlineData("S01-0117", "artifactSearch")]
-    [InlineData("S01-0215", "ankhDraw")]
-    public void CostOnlySingleSelectionsAreTypedAsCostsInsteadOfPresentationTargets(string card, string ability)
+    [InlineData("S01-04M2", "frontBuff", false, true)]
+    [InlineData("S01-04M2", "kusanagi", false, false)]
+    [InlineData("S01-0117", "artifactSearch", true, false)]
+    [InlineData("S01-0417", "kusanagiDebuff", false, true)]
+    [InlineData("S01-0417", "kusanagiStrong", false, true)]
+    [InlineData("S01-0314", "olgaDebuff", false, true)]
+    [InlineData("S01-02D1", "sunBottomEnemy", false, true)]
+    [InlineData("S01-0215", "ankhDraw", true, false)]
+    public void EverySingleSelectionHasExplicitCostAndPresentationTargetSemantics(string card,
+        string ability, bool isCostSelection, bool isResponsePresentationTarget)
     {
         var (game, source) = Create(card, ability, true);
 
@@ -112,8 +119,8 @@ public sealed class SingleActiveSelectionTests
 
         Assert.True(result.Accepted, result.Error);
         var step = Assert.Single(Assert.Single(game.State.PendingActivations).SelectionSteps);
-        Assert.True(step.IsCostSelection);
-        Assert.False(step.IsResponsePresentationTarget);
+        Assert.Equal(isCostSelection, step.IsCostSelection);
+        Assert.Equal(isResponsePresentationTarget, step.IsResponsePresentationTarget);
     }
 
     [Theory]

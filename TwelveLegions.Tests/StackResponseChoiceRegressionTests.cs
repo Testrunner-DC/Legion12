@@ -498,7 +498,7 @@ public sealed partial class StackResponseChoiceRegressionTests
             BindingFlags.NonPublic | BindingFlags.Instance)!;
 
         var result = Assert.IsType<CommandResult>(begin.Invoke(game,
-            [0, source, "test-cancel", new[] { target.InstanceId }, "选择公开战场对象", 1, 1, false]));
+            [0, source, "test-cancel", new[] { target.InstanceId }, "选择公开战场对象", 1, 1, false, true]));
         Assert.True(result.Accepted);
         Resolve(game, "skip");
 

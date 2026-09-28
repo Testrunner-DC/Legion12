@@ -5,7 +5,8 @@ public sealed partial class L12GameEngine
     // A read-only declaration proposal, not a reservation or a payment. Rebuilt
     // for every snapshot/command; the existing activation transaction revalidates.
     private sealed record SingleActiveSelection(string Text, string[] Choices, string? Rejection = null,
-        bool SkipEmptyEffect = false, bool IsCostSelection = false)
+        bool SkipEmptyEffect = false, bool IsCostSelection = false,
+        bool IsResponsePresentationTarget = true)
     {
         public string? UnavailableReason => Rejection
             ?? (Choices.Length == 0 && !SkipEmptyEffect ? "当前没有合法的选择对象" : null);
@@ -19,9 +20,11 @@ public sealed partial class L12GameEngine
                 PublicFactionLegions(player, "gaotianyuan").Select(card => card.InstanceId).ToArray()),
             ("S01-04M2", "kusanagi") => new("选择〈草薙剑〉置入前排的位置",
                 Enumerable.Range(0, 3).Where(slot => player.Field[0][slot] is null).Select(slot => $"0:{slot}").ToArray(),
-                player.Relic?.CardId == "S01-0417" ? null : "圣物区没有〈草薙剑〉"),
+                player.Relic?.CardId == "S01-0417" ? null : "圣物区没有〈草薙剑〉",
+                IsResponsePresentationTarget: false),
             ("S01-0117", "artifactSearch") => new("选择弃置的 1 张手牌",
-                player.Hand.Select(card => card.InstanceId).ToArray(), IsCostSelection: true),
+                player.Hand.Select(card => card.InstanceId).ToArray(), IsCostSelection: true,
+                IsResponsePresentationTarget: false),
             ("S01-0417", "kusanagiDebuff") => new("选择对方 1 张军团，本回合费用 -1",
                 PublicLegions(State.Players[1 - player.PlayerIndex]).Select(card => card.InstanceId).ToArray()),
             ("S01-0417", "kusanagiStrong") => new("选择我方 1 张【高天原】军团，本回合获得强攻",
@@ -37,7 +40,8 @@ public sealed partial class L12GameEngine
             ("S01-0215", "ankhDraw") => new("安卡神碑：选择转为休整的陵墓守卫",
                 PublicLegions(player).Where(card => card.CardId == "S01-0212" && !card.Tapped)
                     .Select(card => card.InstanceId).ToArray(),
-                source.Tapped ? "安卡神碑已经休整" : null, IsCostSelection: true),
+                source.Tapped ? "安卡神碑已经休整" : null, IsCostSelection: true,
+                IsResponsePresentationTarget: false),
             _ => null,
         };
 
@@ -48,5 +52,5 @@ public sealed partial class L12GameEngine
             : selection.SkipEmptyEffect && selection.Choices.Length == 0
                 ? CommitActiveAbility(playerIndex, source, ability, null)
             : PromptActiveTarget(playerIndex, source, ability, selection.Choices, selection.Text,
-                selection.IsCostSelection);
+                selection.IsCostSelection, selection.IsResponsePresentationTarget);
 }
