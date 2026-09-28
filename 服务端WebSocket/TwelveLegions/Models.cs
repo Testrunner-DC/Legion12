@@ -512,6 +512,10 @@ public sealed class L12PromptPresentation
     public required string Instruction { get; init; }
     public required string WaitingSummary { get; init; }
     public Dictionary<string, string> ChoiceConsequences { get; init; } = [];
+    /// <summary>Only explicitly declared payment facts reach the acting player. Null means unknown.</summary>
+    public string? PaymentStatus { get; init; }
+    public string? PaymentSummary { get; init; }
+    public string? SubmissionConsequence { get; init; }
 }
 
 public sealed record L12PromptAutoCloseView(

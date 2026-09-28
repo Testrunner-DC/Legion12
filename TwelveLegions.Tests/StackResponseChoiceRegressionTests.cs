@@ -150,7 +150,7 @@ public sealed partial class StackResponseChoiceRegressionTests
         var prompt = Assert.Single(game.State.PendingPrompts);
         Assert.Contains("对方使用〈天诛〉", prompt.Text);
         Assert.Contains("费用不高于7", prompt.Text);
-        Assert.Contains($"我方〈{victim.Name}〉（前排第2格）", prompt.Text);
+        Assert.Contains($"〈{victim.Name}〉（我方前排中格）", prompt.Text);
         Assert.Contains("是否响应？", prompt.Text);
         Assert.Equal(new[] { victim.InstanceId }, JsonSerializer.Deserialize<string[]>(prompt.Data["responseTargetIds"]));
         Resolve(game, counter.InstanceId);
@@ -204,7 +204,7 @@ public sealed partial class StackResponseChoiceRegressionTests
         effect.Targets.AddRange([covered.InstanceId, secret.InstanceId]);
         Offer(game);
         var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Contains("对方盖伏卡牌（后排第2格）", prompt.Text);
+        Assert.Contains("盖伏卡牌（对方后排中格）", prompt.Text);
         Assert.DoesNotContain(covered.Name, prompt.Text);
         Assert.DoesNotContain(secret.InstanceId, JsonSerializer.Serialize(prompt));
         Assert.Equal(new[] { covered.InstanceId }, JsonSerializer.Deserialize<string[]>(prompt.Data["responseTargetIds"]));
@@ -239,7 +239,7 @@ public sealed partial class StackResponseChoiceRegressionTests
         var prompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(new[] { target.InstanceId, coveredTarget.InstanceId },
             JsonSerializer.Deserialize<string[]>(prompt.Data["responseTargetIds"]));
-        Assert.Contains("我方盖伏卡牌（后排第1格）", prompt.Text);
+        Assert.Contains("盖伏卡牌（我方后排左格）", prompt.Text);
         Assert.DoesNotContain(coveredTarget.Name, JsonSerializer.Serialize(prompt));
         Assert.DoesNotContain(fieldCost.InstanceId, JsonSerializer.Serialize(prompt));
         Assert.DoesNotContain(sourceLikeValue.InstanceId, JsonSerializer.Serialize(prompt));

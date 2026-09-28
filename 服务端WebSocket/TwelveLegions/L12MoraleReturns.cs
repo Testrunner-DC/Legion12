@@ -289,7 +289,7 @@ public sealed partial class L12GameEngine
                 var recruitName = recruitCard?.Name ?? "展示的军团";
                 var slotConsequences = EmptySlots(player).ToDictionary(
                     slot => slot,
-                    slot => $"让〈{recruitName}〉活跃登场到我方{(slot.StartsWith("0:", StringComparison.Ordinal) ? "前排" : "后排")}第{int.Parse(slot.Split(':')[1]) + 1}格。",
+                    slot => $"让〈{recruitName}〉活跃登场到{PlayerBattlefieldSlotLabel(item.Controller, item.Controller, int.Parse(slot.Split(':')[0]), int.Parse(slot.Split(':')[1]))}。",
                     StringComparer.OrdinalIgnoreCase);
                 CreatePrompt(item.Controller, "slot", "请直接点击战场上的高亮空位，使展示的军团活跃登场", EmptySlots(player), 1, 1,
                     "card-effect", item.StackItemId,

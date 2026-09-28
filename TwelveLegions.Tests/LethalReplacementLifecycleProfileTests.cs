@@ -180,8 +180,8 @@ public sealed class LethalReplacementLifecycleProfileTests
 
         var prompt = BeginEffectLethalReplacement(game, horemheb);
 
-        Assert.Equal("陵墓守卫 · 我方前排第2格", prompt.ChoiceLabels[frontGuard.InstanceId]);
-        Assert.Equal("陵墓守卫 · 我方后排第3格", prompt.ChoiceLabels[backGuard.InstanceId]);
+        Assert.Equal("陵墓守卫 · 我方前排中格", prompt.ChoiceLabels[frontGuard.InstanceId]);
+        Assert.Equal("陵墓守卫 · 我方后排右格", prompt.ChoiceLabels[backGuard.InstanceId]);
     }
 
     [Theory]

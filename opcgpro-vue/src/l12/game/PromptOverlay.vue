@@ -509,7 +509,7 @@ const promptInstruction = computed(() => prompt.value?.presentation?.instruction
   || (prompt.value ? legacyPromptInstruction(prompt.value) : ''))
 const overlayTitle = computed(() => {
   if (prompt.value) return promptTitle.value
-  if (isMulligan.value) return '选择需要调度的起始手牌'
+  if (isMulligan.value) return '选择要换掉的起始手牌；零选择保留全部'
   if (isMulliganPhase.value) return '等待对手完成调度'
   return waitingText()
 })
@@ -684,6 +684,7 @@ function kindLabel() {
       :class="{ preparation: isPreparation, initiative: isInitiative, 'disaster-choice': isDisasterChoice, 'information-confirm': isInfoConfirm, waiting: waitingPrompt || (isMulliganPhase && !isMulligan), minimized, 'inspector-active': inspectorVisible, 'mobile-safe-overlay': mobileLayout }">
       <section v-if="minimized" class="prompt-minimized-bar" role="status">
         <button :aria-label="`展开：${overlayTitle}`" :title="overlayTitle" @click="minimized = false">展开</button>
+        <span class="prompt-minimized-task">{{ prompt ? promptInstruction : isMulligan ? '选择要换掉的手牌；零选择保留全部' : overlayTitle }}</span>
         <span v-if="autoCloseMessage" class="prompt-auto-close" role="timer">{{ autoCloseMessage }}</span>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
@@ -699,6 +700,12 @@ function kindLabel() {
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
         <main class="prompt-choice-body" data-ui-contract="mobile-choice-scroll-body">
         <p v-if="promptInstruction" class="prompt-instruction">{{ promptInstruction }}</p>
+        <p v-if="prompt.presentation?.paymentStatus && prompt.presentation?.paymentSummary" class="prompt-payment-state"
+          :data-payment-status="prompt.presentation.paymentStatus">{{ prompt.presentation.paymentSummary }}</p>
+        <p v-if="prompt.presentation?.submissionConsequence" class="prompt-submit-consequence">确认后：{{ prompt.presentation.submissionConsequence }}</p>
+        <p v-for="choice in supplementalChoices.filter(item => choiceConsequence(item))" :key="`exit-${choice}`" class="prompt-exit-consequence">
+          {{ label(choice) }}：{{ choiceConsequence(choice) }}
+        </p>
         <p v-if="autoCloseMessage" class="prompt-auto-close" role="timer" aria-live="polite">{{ autoCloseMessage }}</p>
         <div v-if="isInitiative" class="initiative-race" :class="{ settled: diceSettled }">
           <article v-for="player in initiativePlayers" :key="player.playerIndex" :class="{ winner: diceSettled && game.diceWinner === player.playerIndex }">
@@ -856,12 +863,13 @@ function kindLabel() {
 
       <section v-else-if="isMulligan" class="prompt-panel prompt-choice-panel mulligan-panel has-card-choices" role="dialog" aria-modal="true" aria-label="起始手牌调度">
         <header>
-          <small>调度 · {{ game.firstPlayer === me.playerIndex ? '先攻' : '后攻' }}玩家</small><h2>选择需要调度的起始手牌</h2>
+          <small>调度 · {{ game.firstPlayer === me.playerIndex ? '先攻' : '后攻' }}玩家</small><h2>选择要换掉的起始手牌</h2>
           <button class="prompt-minimize" aria-label="最小化弹框" title="最小化以查看场面" @click="minimized = true">—</button>
         </header>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
         <main class="prompt-choice-body" data-ui-contract="mobile-choice-scroll-body">
+          <p class="prompt-instruction">确认后换掉选中的手牌并抽取相同数量；不选牌直接确认会保留全部起始手牌。</p>
           <div class="prompt-choices prompt-card-strip">
           <PromptCardCandidate v-for="card in me.hand" :key="card.instanceId"
             :card-id="card.cardId" :legacy-url="card.imageUrl" :name="card.name" meta="手牌"
@@ -869,7 +877,7 @@ function kindLabel() {
             @focus="focusChoice(card.instanceId)" @select="emit('mulliganToggle', card.instanceId)"/>
           </div>
         </main>
-        <footer class="prompt-action-footer" data-ui-contract="equal-action-group"><span>已选择 {{ mulliganSelectedIds.length }} 张</span><button class="primary" :disabled="busy" @click="emit('mulliganConfirm')">{{ busy ? '处理中…' : '确认调度' }}</button></footer>
+        <footer class="prompt-action-footer" data-ui-contract="equal-action-group"><span>将换掉 {{ mulliganSelectedIds.length }} 张</span><button class="primary" :disabled="busy" @click="emit('mulliganConfirm')">{{ busy ? '处理中…' : mulliganSelectedIds.length ? `换掉所选 ${mulliganSelectedIds.length} 张` : '保留全部手牌' }}</button></footer>
       </section>
 
       <section v-else class="prompt-panel waiting-panel" role="status">
@@ -918,6 +926,7 @@ function kindLabel() {
 .prompt-choices>button.decline-action,.prompt-action-footer>button.decline-action{box-sizing:border-box;min-width:112px!important;min-height:44px!important;padding:9px 16px!important;font-size:var(--l12-board-copy,13px)!important;line-height:1.35}
 .effect-decision-header h2{margin-bottom:8px}.effect-decision-text{margin:0;padding:11px 13px;border:1px solid #3b4542;background:#0b1011;color:#eef0eb;font-size:var(--l12-board-copy,13px);line-height:1.75;white-space:pre-wrap}.prompt-panel.effect-decision .prompt-choices.effect-option-list{max-width:520px}.prompt-panel.effect-decision .prompt-choices.effect-option-list>button{text-align:center;font-size:var(--l12-board-copy,13px)}
 .prompt-instruction{margin:10px 3px 4px;color:#b9c1bd;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:1.55}.choice-consequence{display:block;margin-top:4px;color:#9fb8b4;font-size:var(--l12-board-micro,9px);line-height:1.3}
+.prompt-payment-state,.prompt-submit-consequence,.prompt-exit-consequence{margin:6px 3px;color:#d3ded8;font-size:var(--l12-board-copy,13px);line-height:1.45}.prompt-payment-state[data-payment-status="paid"]{color:#f4d994}.prompt-minimized-task{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .prompt-auto-close{margin:8px 3px;padding:8px 10px;border-left:3px solid #d5b85e;background:#211c0f;color:#f1d77d;font-size:var(--l12-board-copy,13px);font-weight:900;line-height:1.45}.prompt-minimized-bar .prompt-auto-close{max-width:min(360px,calc(100vw - 32px));margin:0;box-shadow:0 12px 35px #000}
 .prompt-panel.single-card-row{width:min(920px,calc(100vw - 36px))}.l12-prompt-overlay.information-confirm .prompt-panel{width:min(850px,calc(100vw - 36px));overflow-y:auto}.l12-prompt-overlay.information-confirm .prompt-card-strip{justify-content:center}.mulligan-panel{width:min(920px,calc(100vw - 36px))!important}.l12-prompt-overlay.disaster-choice .prompt-panel{width:min(980px,calc(100vw - 36px))}
 .placement-workspace{display:grid;grid-template-columns:1fr 1.1fr 1fr;gap:8px;min-height:166px;margin:9px 3px;padding:8px;border:1px solid rgba(238,238,228,.28);background:#090d0e}.placement-workspace>section{min-width:0;padding:7px;border:1px solid #39413f;background:#101516}.placement-workspace>section>header{display:block;min-height:32px;padding:0 0 5px;border-bottom:1px solid #323a38}.placement-workspace>section>header strong{display:block;color:#fff;font-size:var(--l12-board-copy,13px)}.placement-workspace>section>header small{display:block;margin-top:2px;color:#7f8884;font-size:var(--l12-board-copy,13px);line-height:1.35}.placement-destination.top{border-color:#3b9da5}.placement-destination.bottom{border-color:#9c3f46}.placement-row{min-height:124px;align-items:center;gap:4px;padding:5px 1px}.placement-row>p{margin:auto;color:#626b68;font-size:var(--l12-board-copy,13px);line-height:1.5;text-align:center}.placement-buttons{display:grid;grid-template-columns:1fr 1fr;gap:5px}.placement-buttons button{box-sizing:border-box;height:44px;min-height:44px;max-height:44px;padding:5px 3px;border:1px solid #dcd8cc;background:#1a2020;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;line-height:1.25;text-align:center;white-space:normal;overflow:hidden;text-wrap:balance}.placement-buttons button:first-child{border-color:#5cbac1}.placement-buttons button:last-child{border-color:#ba555c}.placement-buttons button:disabled{opacity:.38}

@@ -68,7 +68,7 @@ public sealed partial class L12GameEngine
                     var card = player.Field[row][slot];
                     if (card is null || !string.Equals(card.InstanceId, id, StringComparison.OrdinalIgnoreCase)) continue;
                     var name = card.Hidden ? "盖伏卡牌" : $"〈{card.Name}〉";
-                    yield return (id, $"{side}{name}（{(row == 0 ? "前排" : "后排")}第{slot + 1}格）", true);
+                    yield return (id, $"{name}（{PlayerBattlefieldSlotLabel(viewer, player.PlayerIndex, row, slot)}）", true);
                     found = true;
                 }
                 if (candidate.FieldOnly) continue;

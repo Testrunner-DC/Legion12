@@ -8,6 +8,9 @@ public sealed partial class L12GameEngine
     private const string PromptNarrativeInstructionKey = PromptNarrativePrefix + "instruction";
     private const string PromptNarrativeWaitingActionKey = PromptNarrativePrefix + "waitingAction";
     private const string PromptNarrativeConsequencePrefix = PromptNarrativePrefix + "consequence:";
+    private const string PromptNarrativePaymentStatusKey = PromptNarrativePrefix + "paymentStatus";
+    private const string PromptNarrativePaymentSummaryKey = PromptNarrativePrefix + "paymentSummary";
+    private const string PromptNarrativeSubmissionConsequenceKey = PromptNarrativePrefix + "submissionConsequence";
 
     private enum L12PromptWaitingAction
     {
@@ -29,7 +32,10 @@ public sealed partial class L12GameEngine
         string Situation,
         string Instruction,
         L12PromptWaitingAction WaitingAction,
-        IReadOnlyDictionary<string, string>? ChoiceConsequences = null);
+        IReadOnlyDictionary<string, string>? ChoiceConsequences = null,
+        string? PaymentStatus = null,
+        string? PaymentSummary = null,
+        string? SubmissionConsequence = null);
 
     private static Dictionary<string, string> WithPromptNarrative(
         Dictionary<string, string>? data,
@@ -40,6 +46,10 @@ public sealed partial class L12GameEngine
         data[PromptNarrativeSituationKey] = narrative.Situation;
         data[PromptNarrativeInstructionKey] = narrative.Instruction;
         data[PromptNarrativeWaitingActionKey] = narrative.WaitingAction.ToString();
+        if (narrative.PaymentStatus is { } paymentStatus) data[PromptNarrativePaymentStatusKey] = paymentStatus;
+        if (narrative.PaymentSummary is { } paymentSummary) data[PromptNarrativePaymentSummaryKey] = paymentSummary;
+        if (narrative.SubmissionConsequence is { } submissionConsequence)
+            data[PromptNarrativeSubmissionConsequenceKey] = submissionConsequence;
         foreach (var pair in narrative.ChoiceConsequences ?? new Dictionary<string, string>())
             data[PromptNarrativeConsequencePrefix + pair.Key] = pair.Value;
         return data;
@@ -57,9 +67,13 @@ public sealed partial class L12GameEngine
             .Where(pair => pair.Key.StartsWith(PromptNarrativeConsequencePrefix, StringComparison.Ordinal))
             .ToDictionary(pair => pair.Key[PromptNarrativeConsequencePrefix.Length..], pair => pair.Value,
                 StringComparer.OrdinalIgnoreCase);
+        data.TryGetValue(PromptNarrativePaymentStatusKey, out var paymentStatus);
+        data.TryGetValue(PromptNarrativePaymentSummaryKey, out var paymentSummary);
+        data.TryGetValue(PromptNarrativeSubmissionConsequenceKey, out var submissionConsequence);
         foreach (var key in data.Keys.Where(key => key.StartsWith(PromptNarrativePrefix, StringComparison.Ordinal)).ToArray())
             data.Remove(key);
-        return new(title, situation, instruction, parsedWaitingAction, consequences);
+        return new(title, situation, instruction, parsedWaitingAction, consequences,
+            paymentStatus, paymentSummary, submissionConsequence);
     }
 
     private void RollInitiative()
@@ -292,6 +306,11 @@ public sealed partial class L12GameEngine
                 pair => pair.Key,
                 pair => L12PlayerFacingText.Naturalize(pair.Value),
                 StringComparer.OrdinalIgnoreCase) ?? [],
+            PaymentStatus = narrative?.PaymentStatus,
+            PaymentSummary = narrative?.PaymentSummary is { } paymentSummary
+                ? L12PlayerFacingText.Naturalize(paymentSummary) : null,
+            SubmissionConsequence = narrative?.SubmissionConsequence is { } submissionConsequence
+                ? L12PlayerFacingText.Naturalize(submissionConsequence) : null,
         };
     }
 
@@ -307,6 +326,10 @@ public sealed partial class L12GameEngine
             !validChoices.Contains(choice, StringComparer.OrdinalIgnoreCase));
         if (invalidConsequence is not null)
             throw new InvalidOperationException($"Prompt 选择后果包含无效选项：{invalidConsequence}");
+        if (narrative.PaymentStatus is not null
+            && (narrative.PaymentStatus is not ("pending" or "paid")
+                || string.IsNullOrWhiteSpace(narrative.PaymentSummary)))
+            throw new InvalidOperationException("Prompt 费用状态必须是待支付或已支付，且附带费用事实");
     }
 
     private static L12PromptNarrativeInput? DefaultSystemPromptNarrative(string kind)
@@ -596,13 +619,24 @@ public sealed partial class L12GameEngine
         IReadOnlyDictionary<string, string> data)
     {
         var labels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        static bool IsSlot(string choice)
+        {
+            var parts = choice.Split(':');
+            return parts.Length == 2 && int.TryParse(parts[0], out var row) && int.TryParse(parts[1], out var slot)
+                && row is >= 0 and < 2 && slot is >= 0 and < 3;
+        }
         for (var index = 0; index < choices.Count; index++)
         {
             var choice = choices[index];
-            var battlefield = BattlefieldPlayerChoiceLabel(playerIndex, choice, choices, data);
+            var battlefield = BattlefieldPlayerChoiceLabel(playerIndex, choice, data);
             if (battlefield is not null)
             {
                 labels[choice] = L12PlayerFacingText.Naturalize(battlefield);
+                continue;
+            }
+            if (IsSlot(choice))
+            {
+                labels[choice] = StructuredPlayerChoiceLabel(playerIndex, choice, data)!;
                 continue;
             }
             if (data.TryGetValue(choice, out var supplied) && IsNaturalLanguageChoiceLabel(choice, supplied))
@@ -628,13 +662,12 @@ public sealed partial class L12GameEngine
                 continue;
             }
             labels[choice] = L12PlayerFacingText.Naturalize(
-                StructuredPlayerChoiceLabel(playerIndex, choice) ?? $"效果选项 {index + 1}");
+                StructuredPlayerChoiceLabel(playerIndex, choice, data) ?? $"效果选项 {index + 1}");
         }
         return labels;
     }
 
     private string? BattlefieldPlayerChoiceLabel(int viewer, string choice,
-        IReadOnlyList<string> choices,
         IReadOnlyDictionary<string, string> data)
     {
         foreach (var player in State.Players)
@@ -645,43 +678,23 @@ public sealed partial class L12GameEngine
                 {
                     var card = player.Field[row][slot];
                     if (card?.InstanceId.Equals(choice, StringComparison.OrdinalIgnoreCase) != true) continue;
-                    var location = $"{(player.PlayerIndex == viewer ? "我方" : "对方")}{(row == 0 ? "前排" : "后排")}第{slot + 1}格";
+                    var location = PlayerBattlefieldSlotLabel(viewer, player.PlayerIndex, row, slot);
                     if (card.Hidden && player.PlayerIndex != viewer) return location;
                     var identity = data.TryGetValue(choice, out var supplied)
                         && IsNaturalLanguageChoiceLabel(choice, supplied)
                         ? supplied.Trim()
                         : card.Name;
-                    return BattlefieldChoiceIdentityIsAmbiguous(viewer, choice, identity, choices, data)
-                        ? $"{identity} · {location}"
-                        : identity;
+                    return $"{identity} · {location}";
                 }
             }
         }
         return null;
     }
 
-    private bool BattlefieldChoiceIdentityIsAmbiguous(int viewer, string choice, string identity,
-        IReadOnlyList<string> choices, IReadOnlyDictionary<string, string> data)
+    private static string PlayerBattlefieldSlotLabel(int viewer, int controller, int row, int slot)
     {
-        foreach (var player in State.Players)
-        {
-            foreach (var row in player.Field)
-            {
-                foreach (var candidate in row)
-                {
-                    if (candidate is null
-                        || candidate.InstanceId.Equals(choice, StringComparison.OrdinalIgnoreCase)
-                        || !choices.Contains(candidate.InstanceId, StringComparer.OrdinalIgnoreCase)
-                        || (candidate.Hidden && player.PlayerIndex != viewer)) continue;
-                    var candidateIdentity = data.TryGetValue(candidate.InstanceId, out var supplied)
-                        && IsNaturalLanguageChoiceLabel(candidate.InstanceId, supplied)
-                        ? supplied.Trim()
-                        : candidate.Name;
-                    if (candidateIdentity.Equals(identity, StringComparison.OrdinalIgnoreCase)) return true;
-                }
-            }
-        }
-        return false;
+        var column = slot switch { 0 => "左格", 1 => "中格", 2 => "右格", _ => throw new ArgumentOutOfRangeException(nameof(slot)) };
+        return $"{(viewer == controller ? "我方" : "对方")}{(row == 0 ? "前排" : "后排")}{column}";
     }
 
     private static string? ContextualPlayerChoiceLabel(string promptKind, string promptText, string choice)
@@ -701,7 +714,8 @@ public sealed partial class L12GameEngine
         return null;
     }
 
-    private string? StructuredPlayerChoiceLabel(int playerIndex, string choice)
+    private string? StructuredPlayerChoiceLabel(int playerIndex, string choice,
+        IReadOnlyDictionary<string, string> data)
     {
         if (choice.StartsWith("rune:", StringComparison.OrdinalIgnoreCase)
             && int.TryParse(choice.AsSpan(5), out var runeIndex))
@@ -719,7 +733,11 @@ public sealed partial class L12GameEngine
         var slot = choice.Split(':');
         if (slot.Length == 2 && int.TryParse(slot[0], out var row) && int.TryParse(slot[1], out var column)
             && row is >= 0 and < 2 && column is >= 0 and < 3)
-            return $"{(row == 0 ? "前排" : "后排")}第{column + 1}格";
+        {
+            var controller = int.TryParse(data.GetValueOrDefault("targetPlayerIndex"), out var target)
+                && target is >= 0 and < 2 ? target : playerIndex;
+            return PlayerBattlefieldSlotLabel(playerIndex, controller, row, column);
+        }
         return null;
     }
 
@@ -2216,8 +2234,11 @@ public sealed partial class L12GameEngine
                             slot => slot,
                             slot => slot == "cancel"
                                 ? "返回响应选择，不打出这张响应卡牌。"
-                                : $"〈{response.Name}〉将休整登场到我方前排第{int.Parse(slot.Split(':')[1]) + 1}格，并继续响应。",
-                            StringComparer.OrdinalIgnoreCase))));
+                                : $"〈{response.Name}〉将休整登场到{PlayerBattlefieldSlotLabel(playerIndex, playerIndex, 0, int.Parse(slot.Split(':')[1]))}，并继续响应。",
+                            StringComparer.OrdinalIgnoreCase),
+                        PaymentStatus: "pending",
+                        PaymentSummary: "尚未支付登场费用；确认位置后，这张响应卡牌才会休整登场。",
+                        SubmissionConsequence: "所选响应卡牌将在指定位置休整登场并继续响应。")));
             return;
         }
         if (L12StructuredCardSemantics.IsAbsoluteDefenseResponse(response.CardId))
@@ -2233,7 +2254,10 @@ public sealed partial class L12GameEngine
                     new Dictionary<string, string> { ["responseId"] = response.InstanceId },
                     new("绝对防御", "你已选择发动〈绝对防御〉；继续响应前必须弃置1张手牌。",
                         "请选择并弃置1张手牌作为费用。",
-                        L12PromptWaitingAction.CostPayment, discardConsequences)));
+                        L12PromptWaitingAction.CostPayment, discardConsequences,
+                        PaymentStatus: "pending",
+                        PaymentSummary: "尚未支付弃牌费用；选择手牌并确认后才会弃置。",
+                        SubmissionConsequence: "弃置所选的1张手牌作为响应费用。")));
             return;
         }
         if (L12StructuredCardRules.RequiresOwnLegionResponseTarget(response.CardId))

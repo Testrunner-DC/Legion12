@@ -277,7 +277,7 @@ public sealed class Bq20260905_01RegressionTests
         var begin = game.Handle(0, new L12Command("playCard", bloodline.InstanceId));
         Assert.True(begin.Accepted, begin.Error);
         var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("当前加3000", prompt.ChoiceLabels[target.InstanceId]);
+        Assert.Equal("当前加3000 · 我方前排左格", prompt.ChoiceLabels[target.InstanceId]);
     }
 
     [Fact]

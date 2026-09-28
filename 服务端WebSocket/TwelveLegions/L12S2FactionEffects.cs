@@ -493,7 +493,10 @@ public sealed partial class L12GameEngine
                             L12PromptWaitingAction.CostPayment,
                             discardChoices.ToDictionary(candidate => candidate.InstanceId,
                                 candidate => $"弃置〈{candidate.Name}〉支付费用，然后进入休整【高天原】军团的对象选择。",
-                                StringComparer.OrdinalIgnoreCase))));
+                                StringComparer.OrdinalIgnoreCase),
+                            PaymentStatus: "pending",
+                            PaymentSummary: "尚未支付费用；确认后弃置所选的1张手牌。",
+                            SubmissionConsequence: "弃置所选手牌，再选择仍合法的军团目标。")));
                 return true;
             }
             case "冲田总司":
@@ -2525,7 +2528,9 @@ public sealed partial class L12GameEngine
                                 targetId => FindOnField(player, targetId, out _, out _) is { } target
                                     ? $"使〈{target.Name}〉转为活跃；若结算时对象失效，费用不返还。"
                                     : "使所选军团转为活跃；若结算时对象失效，费用不返还。",
-                                StringComparer.OrdinalIgnoreCase))));
+                                StringComparer.OrdinalIgnoreCase),
+                            PaymentStatus: "paid",
+                            PaymentSummary: "已弃置1张手牌作为费用；目标失效时不返还。")));
                 return true;
             }
             case "s2-heracles-draw-discard-choice":
@@ -3135,7 +3140,9 @@ public sealed partial class L12GameEngine
                     L12PromptWaitingAction.TargetSelection,
                     targetChoices.ToDictionary(target => target.InstanceId,
                         target => $"击杀〈{target.Name}〉；若结算时目标不再合法，费用不返还且不改选。",
-                        StringComparer.OrdinalIgnoreCase))));
+                        StringComparer.OrdinalIgnoreCase),
+                    PaymentStatus: "paid",
+                    PaymentSummary: "已展示军团并将其放回牌库顶部作为费用；目标失效时不返还。")));
     }
 
     private static Dictionary<string, string> BuildS2TakedaSearchPromptData(
@@ -3170,7 +3177,9 @@ public sealed partial class L12GameEngine
                 L12PromptWaitingAction.CardSelection,
                 cards.ToDictionary(card => card.InstanceId,
                     card => $"展示并公开〈{card.Name}〉，将其加入手牌，然后洗牌；若结算时失效，则不改选且费用不返还。",
-                    StringComparer.OrdinalIgnoreCase)));
+                    StringComparer.OrdinalIgnoreCase),
+                PaymentStatus: "paid",
+                PaymentSummary: "已弃置1张手牌作为费用；检索失效时不返还。"));
     }
 
     private static Dictionary<string, string> BuildS2HeraclesDiscardPromptData(

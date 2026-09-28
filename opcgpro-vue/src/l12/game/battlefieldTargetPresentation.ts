@@ -12,7 +12,9 @@ export interface BattlefieldTargetLocation {
 }
 
 export function battlefieldSlotLabel(side: BattlefieldRelativeSide, row: number, slot: number) {
-  return `${side === 'self' ? '我方' : '对方'}${row === 0 ? '前排' : '后排'}第${slot + 1}格`
+  const column = ['左格', '中格', '右格'][slot]
+  if ((row !== 0 && row !== 1) || !column) return ''
+  return `${side === 'self' ? '我方' : '对方'}${row === 0 ? '前排' : '后排'}${column}`
 }
 
 export function findBattlefieldTarget(game: Pick<GameState, 'players'>, viewerPlayerIndex: number, instanceId: string) {
@@ -52,7 +54,10 @@ export function battlefieldTargetLabel(
   const location = findBattlefieldTarget(game, viewerPlayerIndex, instanceId)
   if (!location) return visibleLabel?.trim() || ''
   if (location.card.hidden && location.playerIndex !== viewerPlayerIndex) return location.label
-  const identity = visibleLabel?.trim() || location.card.name?.trim()
+  // Saved prompt labels may carry an earlier location. The visible field decides the present one.
+  const identity = (visibleLabel?.trim() || location.card.name?.trim())
+    ?.replace(/\s*·\s*(?:我方|对方)(?:前排|后排)(?:第[123]格|[左中右]格)$/, '')
+    .replace(/（(?:我方|对方)?(?:前排|后排)(?:第[123]格|[左中右]格)）$/, '')
   if (!identity || identity.includes(location.label)) return identity || location.label
   return `${identity} · ${location.label}`
 }

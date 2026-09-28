@@ -217,6 +217,9 @@ export interface PromptPresentation {
   instruction: string
   waitingSummary: string
   choiceConsequences: Record<string, string>
+  paymentStatus?: 'pending' | 'paid' | null
+  paymentSummary?: string | null
+  submissionConsequence?: string | null
 }
 
 export interface StackItem {

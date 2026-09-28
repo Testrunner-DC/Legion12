@@ -19,14 +19,29 @@ const game = {
 
 const ids = targetPresentation.battlefieldTargetIds(game, ['covered-counter', 'missing'])
 if (JSON.stringify(ids) !== JSON.stringify(['covered-counter'])) throw new Error('盖伏战场实例被目标投影过滤')
-if (targetPresentation.battlefieldTargetLabel(game, 0, hidden.instanceId, hidden.name) !== '对方后排第1格')
+for (const viewer of [0, 1]) {
+  for (const player of game.players) {
+    for (const row of [0, 1]) {
+      for (const slot of [0, 1, 2]) {
+        const expected = `${player.playerIndex === viewer ? '我方' : '对方'}${row === 0 ? '前排' : '后排'}${['左格', '中格', '右格'][slot]}`
+        if (targetPresentation.battlefieldSlotLabel(player.playerIndex === viewer ? 'self' : 'opponent', row, slot) !== expected)
+          throw new Error(`观看者 ${viewer} 的 ${expected} 与实际格位不一致`)
+      }
+    }
+  }
+}
+if (targetPresentation.battlefieldTargetLabel(game, 0, hidden.instanceId, hidden.name) !== '对方后排左格')
   throw new Error('盖伏目标泄露身份或缺少稳定格位')
-if (targetPresentation.battlefieldTargetLabel(game, 1, hidden.instanceId, hidden.name) !== '不应泄露的反击战术 · 我方后排第1格')
+if (targetPresentation.battlefieldTargetLabel(game, 1, hidden.instanceId, hidden.name) !== '不应泄露的反击战术 · 我方后排左格')
   throw new Error('己方盖伏目标不应对其拥有者隐藏身份')
-if (targetPresentation.battlefieldTargetLabel(game, 0, firstGuard.instanceId, firstGuard.name) !== '陵墓守卫 · 我方前排第2格')
+if (targetPresentation.battlefieldTargetLabel(game, 0, firstGuard.instanceId, firstGuard.name) !== '陵墓守卫 · 我方前排中格')
   throw new Error('同名公开目标缺少前排格位')
-if (targetPresentation.battlefieldTargetLabel(game, 0, secondGuard.instanceId, secondGuard.name) !== '陵墓守卫 · 我方后排第3格')
+if (targetPresentation.battlefieldTargetLabel(game, 0, secondGuard.instanceId, secondGuard.name) !== '陵墓守卫 · 我方后排右格')
   throw new Error('同名公开目标缺少后排格位')
+if (targetPresentation.battlefieldTargetLabel(game, 0, firstGuard.instanceId, '陵墓守卫 · 我方前排第2格') !== '陵墓守卫 · 我方前排中格')
+  throw new Error('旧检查点的格位编号被带入当前候选')
+if (targetPresentation.battlefieldTargetLabel(game, 0, firstGuard.instanceId, '陵墓守卫 · 我方前排左格') !== '陵墓守卫 · 我方前排中格')
+  throw new Error('提示创建后目标移动，旧方位被带入当前候选')
 
 const playerMat = fs.readFileSync('src/l12/game/PlayerMat.vue', 'utf8')
 const prompt = fs.readFileSync('src/l12/game/PromptOverlay.vue', 'utf8')

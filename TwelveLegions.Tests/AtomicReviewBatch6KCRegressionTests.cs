@@ -379,7 +379,7 @@ public sealed class AtomicReviewBatch6KCRegressionTests
         Assert.Equal(1, response.PlayerIndex);
         Assert.Contains("对方使用〈天诛〉", response.Text);
         Assert.Contains("费用不高于7", response.Text);
-        Assert.Contains($"我方〈{legal.Name}〉（前排第1格）", response.Text);
+        Assert.Contains($"〈{legal.Name}〉（我方前排左格）", response.Text);
         Assert.Equal("[\"batch6kc-divine-legal\"]", response.Data["responseTargetIds"]);
     }
 

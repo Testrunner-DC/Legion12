@@ -423,7 +423,7 @@ public sealed partial class L12GameEngine
             counter.SummonRound = State.Round;
             player.Field[1][slot] = counter;
             AddEvent("counter-set", item.Controller,
-                $"{player.Name}因〈{item.SourceName}〉在后排{slot + 1}号位覆盖1张反击战术");
+                $"{player.Name}因〈{item.SourceName}〉在{PlayerBattlefieldSlotLabel(item.Controller, item.Controller, 1, slot)}覆盖1张反击战术");
             resolved++;
         }
 

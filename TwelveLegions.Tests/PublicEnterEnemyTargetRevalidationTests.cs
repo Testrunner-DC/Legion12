@@ -237,7 +237,7 @@ public sealed class PublicEnterEnemyTargetRevalidationTests
             Assert.Equal(viewer, response.PlayerIndex);
             Assert.Equal(new[] { covered.InstanceId },
                 JsonSerializer.Deserialize<string[]>(response.Data["responseTargetIds"]));
-            Assert.Contains($"{(viewer == 0 ? "对方" : "我方")}盖伏卡牌（后排第2格）", response.Text);
+            Assert.Contains($"盖伏卡牌（{(viewer == 0 ? "对方" : "我方")}后排中格）", response.Text);
             Assert.DoesNotContain(covered.Name, JsonSerializer.Serialize(response));
             Assert.True(game.Handle(viewer,
                 new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);

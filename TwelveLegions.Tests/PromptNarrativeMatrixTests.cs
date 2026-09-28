@@ -168,7 +168,7 @@ public sealed class PromptNarrativeMatrixTests
         Assert.True(offered);
         var prompt = Assert.Single(game.State.PendingPrompts);
         AssertPresentation(prompt, protectedCard.Name, "即将因效果伤害阵亡", "不发动");
-        Assert.Equal(replacement.Name, prompt.ChoiceLabels[replacement.InstanceId]);
+        Assert.Equal($"{replacement.Name} · 我方前排中格", prompt.ChoiceLabels[replacement.InstanceId]);
         Assert.Contains($"代替〈{protectedCard.Name}〉承受", prompt.Presentation!.ChoiceConsequences[replacement.InstanceId],
             StringComparison.Ordinal);
         Assert.Equal("不发动", prompt.ChoiceLabels["decline"]);
@@ -283,7 +283,7 @@ public sealed class PromptNarrativeMatrixTests
 
         var inahimePrompt = Assert.Single(inahimeGame.State.PendingPrompts);
         AssertPresentation(inahimePrompt, "稻姬本多小松", "我方前排另一张", "本回合兵力增加1000");
-        Assert.Equal(buffTarget.Name, inahimePrompt.ChoiceLabels[buffTarget.InstanceId]);
+        Assert.Equal($"{buffTarget.Name} · 我方前排中格", inahimePrompt.ChoiceLabels[buffTarget.InstanceId]);
         Assert.Contains("本回合兵力增加1000",
             inahimePrompt.Presentation!.ChoiceConsequences[buffTarget.InstanceId], StringComparison.Ordinal);
     }
@@ -448,12 +448,12 @@ public sealed class PromptNarrativeMatrixTests
 
         if (targetOwner == controller)
         {
-            Assert.Equal(target.Name, prompt.ChoiceLabels[target.InstanceId]);
+            Assert.Equal($"{target.Name} · 我方后排中格", prompt.ChoiceLabels[target.InstanceId]);
             Assert.Equal(target.Name, prompt.Data[target.InstanceId]);
         }
         else
         {
-            Assert.Equal("对方后排第2格", prompt.ChoiceLabels[target.InstanceId]);
+            Assert.Equal("对方后排中格", prompt.ChoiceLabels[target.InstanceId]);
             Assert.DoesNotContain(prompt.Data.Keys,
                 key => key.Equals(target.InstanceId, StringComparison.OrdinalIgnoreCase)
                     || key.StartsWith($"{target.InstanceId}:", StringComparison.OrdinalIgnoreCase));
@@ -534,6 +534,8 @@ public sealed class PromptNarrativeMatrixTests
 
         var search = Assert.Single(game.State.PendingPrompts);
         AssertPresentation(search, "万物统御之戒", "费用已经支付", "本步骤不能取消");
+        Assert.Equal("paid", search.Presentation!.PaymentStatus);
+        Assert.Contains("已弃置1张手牌", search.Presentation.PaymentSummary);
         Assert.Equal(new[] { ringCase.FirstLibrary.InstanceId, ringCase.SecondLibrary.InstanceId }.Order(),
             search.ValidChoices.Order());
         Assert.DoesNotContain("skip", search.ValidChoices);
@@ -800,6 +802,8 @@ public sealed class PromptNarrativeMatrixTests
         var playerName = game.State.Players[controller].Name;
 
         AssertPresentation(payment, "井伊直虎", "必须先弃置1张手牌支付费用", "不能取消或跳过");
+        Assert.Equal("pending", payment.Presentation!.PaymentStatus);
+        Assert.Contains("弃置所选手牌", payment.Presentation.SubmissionConsequence);
         Assert.Equal(new[] { iioCase.FirstHand.InstanceId, iioCase.SecondHand.InstanceId }.Order(),
             payment.ValidChoices.Order());
         Assert.DoesNotContain("skip", payment.ValidChoices);
@@ -815,6 +819,8 @@ public sealed class PromptNarrativeMatrixTests
 
         var target = Assert.Single(game.State.PendingPrompts);
         AssertPresentation(target, "井伊直虎", "费用已经支付", "仍然合法的休整【高天原】军团");
+        Assert.Equal("paid", target.Presentation!.PaymentStatus);
+        Assert.Contains("目标失效时不返还", target.Presentation.PaymentSummary);
         Assert.Equal(new[] { iioCase.FirstTarget.InstanceId, iioCase.SecondTarget.InstanceId }.Order(),
             target.ValidChoices.Order());
         Assert.Contains("转为活跃", target.Presentation!.ChoiceConsequences[iioCase.FirstTarget.InstanceId],
@@ -1653,6 +1659,7 @@ public sealed class PromptNarrativeMatrixTests
 
         var target = Assert.Single(game.State.PendingPrompts);
         AssertPresentation(target, "赫拉克勒斯·晋升", "费用已经支付", "请选择1张当前费用不高于");
+        Assert.Equal("paid", target.Presentation!.PaymentStatus);
         Assert.Contains("费用不返还且不改选",
             target.Presentation!.ChoiceConsequences[heraclesCase.FirstTarget.InstanceId],
             StringComparison.Ordinal);
@@ -1853,6 +1860,10 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Equal(originalPrompt.Presentation.Instruction, restoredPrompt.Presentation.Instruction);
         Assert.Equal(originalPrompt.Presentation.ChoiceConsequences,
             restoredPrompt.Presentation.ChoiceConsequences);
+        Assert.Equal(originalPrompt.Presentation.PaymentStatus, restoredPrompt.Presentation.PaymentStatus);
+        Assert.Equal(originalPrompt.Presentation.PaymentSummary, restoredPrompt.Presentation.PaymentSummary);
+        Assert.Equal(originalPrompt.Presentation.SubmissionConsequence,
+            restoredPrompt.Presentation.SubmissionConsequence);
         Assert.DoesNotContain(restoredPrompt.Data.Keys,
             key => key.StartsWith("__promptNarrative:", StringComparison.Ordinal));
         AssertPromptBoundary(restored, owner, expectedWaitingSummary, privateCards);
