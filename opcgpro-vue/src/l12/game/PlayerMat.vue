@@ -433,7 +433,7 @@ function beginCardAbility(card: Card) {
                 @focus-card="emit('focus', $event)"
                 @mouseenter="emit('focus', hiddenRevealCard?.instanceId === player.field[row][slot]!.instanceId ? hiddenRevealCard : player.field[row][slot]!)" />
             </template>
-            <span v-else>{{ battlefieldSlotLabel(side === 'my' ? 'self' : 'opponent', row, slot) }}</span>
+            <span v-else>{{ ['左格', '中格', '右格'][slot] }}</span>
           </div>
         </template>
       </div>

@@ -1,5 +1,8 @@
 import fs from 'node:fs'
+import assert from 'node:assert/strict'
 import ts from 'typescript'
+import { compile, createSSRApp } from 'vue'
+import { renderToString } from 'vue/server-renderer'
 
 const source = fs.readFileSync('src/l12/game/battlefieldTargetPresentation.ts', 'utf8')
 const javascript = ts.transpileModule(source, {
@@ -52,5 +55,32 @@ if (!prompt.includes('battlefieldTargetIds') || !prompt.includes('battlefieldTar
   throw new Error('PromptOverlay 未消费共享战场目标投影')
 if (!board.includes('boardTargetSelectionSummary') || !board.includes('battlefieldTargetLabel'))
   throw new Error('棋盘确认区未显示共享格位标签')
+
+// Render the actual empty-slot expression and accessibility function, not a
+// separately maintained label table. Both sides and rows share this template.
+const emptySlot = playerMat.match(/<span v-else>\{\{ (.+?) \}\}<\/span>/)?.[1]
+const accessibility = playerMat.match(/function slotAccessibilityLabel\(row: number, slot: number, card: Card \| null\) \{[\s\S]*?\n\}/)?.[0]
+assert(emptySlot && accessibility, '战场空格位与可访问名称入口必须保持可检测')
+assert.match(playerMat, /:aria-label="slotAccessibilityLabel\(row, slot, player\.field\[row\]\[slot\]\)"/)
+const renderedSlot = compile(`<div class="formation-slot" role="button" :aria-label="slotAccessibilityLabel(row, slot, null)"><span>${'{{ ' + emptySlot + ' }}'}</span></div>`)
+for (const side of ['my', 'opponent']) {
+  const props = { side }
+  const slotAccessibilityLabel = new Function('props', 'battlefieldSlotLabel', 'isResponseTarget',
+    `${accessibility.replace('(row: number, slot: number, card: Card | null)', '(row, slot, card)')}; return slotAccessibilityLabel`)(props, targetPresentation.battlefieldSlotLabel, () => false)
+  for (const row of [0, 1]) {
+    for (const slot of [0, 1, 2]) {
+      const shortLabel = ['左格', '中格', '右格'][slot]
+      const fullLabel = `${side === 'my' ? '我方' : '对方'}${row === 0 ? '前排' : '后排'}${shortLabel}`
+      const html = await renderToString(createSSRApp({
+        data: () => ({ row, slot }),
+        methods: { slotAccessibilityLabel },
+        render: renderedSlot,
+      }))
+      assert.match(html, new RegExp(`aria-label="${fullLabel}"`))
+      assert.match(html, new RegExp(`<span>${shortLabel}</span>`))
+      assert(!html.includes(`<span>${fullLabel}</span>`), `格内不可重复展示${fullLabel}`)
+    }
+  }
+}
 
 console.log('battlefield target presentation tests passed')
