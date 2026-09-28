@@ -1858,6 +1858,12 @@ public sealed class LatestBugRegressionTests
         Assert.Contains(eligible.InstanceId, pick.ValidChoices);
         Assert.DoesNotContain(neutral.InstanceId, pick.ValidChoices);
         Assert.DoesNotContain(sameName.InstanceId, pick.ValidChoices);
+        Assert.Equal(string.Join('|', eligible.InstanceId, neutral.InstanceId, sameName.InstanceId), pick.Data["displayCardIds"]);
+        Assert.Equal("只能选择【彼界】卡牌，且不能选择〈符文之力〉本身",
+            pick.Data[$"disabledChoice:{neutral.InstanceId}"]);
+        Assert.Equal(pick.Data[$"disabledChoice:{neutral.InstanceId}"],
+            pick.Data[$"disabledChoice:{sameName.InstanceId}"]);
+        Assert.False(pick.Data.ContainsKey($"disabledChoice:{eligible.InstanceId}"));
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: pick.PromptId,
             Choice: eligible.InstanceId)).Accepted);
 

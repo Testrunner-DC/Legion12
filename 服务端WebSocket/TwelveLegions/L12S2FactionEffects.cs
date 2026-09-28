@@ -2903,6 +2903,9 @@ public sealed partial class L12GameEngine
             ["displayCardIds"] = string.Join('|', displayed.Select(card => card.InstanceId)),
         };
         foreach (var card in displayed) AddPromptCardData(data, card);
+        AddUnavailableCardChoiceReasons(data, displayed.Select(card => card.InstanceId),
+            choices.Select(card => card.InstanceId), action == "s2-fortune-artifact"
+                ? "只能选择【圣物】卡牌" : "只能选择〈上杉谦信〉");
         CreatePrompt(item.Controller, "card", text, choices.Select(card => card.InstanceId), 1, 1,
             "card-effect", item.StackItemId, data: data);
     }
@@ -2988,6 +2991,8 @@ public sealed partial class L12GameEngine
             ["layout"] = "single-row", ["skip"] = "不将卡牌加入手牌",
         };
         foreach (var card in top) AddPromptCardData(data, card);
+        AddUnavailableCardChoiceReasons(data, top.Select(card => card.InstanceId), choices,
+            "只能选择【彼界】卡牌，且不能选择〈符文之力〉本身");
         CreatePrompt(item.Controller, "optional-card", "符文之力：选择1张〈符文之力〉以外的【彼界】卡牌展示并加入手牌",
             choices, 1, 1, "card-effect", item.StackItemId, data: data);
     }

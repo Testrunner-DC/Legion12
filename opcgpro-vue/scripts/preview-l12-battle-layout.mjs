@@ -143,6 +143,29 @@ if(params.has('invalid-response-fixture')){
  const serverNow=new Date(),deadline=new Date(serverNow.getTime()+5000)
  l12State.game.prompts=[{promptId:'fixture-invalid-response',playerIndex:0,kind:'response',text:'当前堆叠中有未结算效果',validChoices:['pass'],minChoose:1,maxChoose:1,choiceLabels:{pass:'不响应'},data:{choiceMode:'instant'},createdRevision:1,controller:0,stackItemId:'fixture-stack',autoClose:{reason:'no-valid-response',deadlineUtc:deadline.toISOString(),serverNowUtc:serverNow.toISOString()}}]
 }
+if(params.has('information-contract')){
+ l12State.game.phase='Main';l12State.game.activePlayer=1
+ for(const player of players)player.field=[0,1].map(row=>[0,1,2].map((_,slot)=>({...card(legions[0],'info-'+player.playerIndex+'-'+row+'-'+slot),name:'同名测试军团',troops:6000-(row*1000+slot*500),tapped:slot===1})))
+ const first=players[0].field[0][0].instanceId,unavailable=players[0].field[0][1].instanceId,opponent=players[1].field[1][2].instanceId
+ const data={cardSelection:'true',displayCardIds:[first,unavailable,opponent].join('|'),allowCancel:'true'}
+ data['disabledChoice:'+unavailable]='该军团已休整，不能成为本次效果目标'
+ l12State.game.prompts=[{
+  promptId:'fixture-information-contract',playerIndex:0,kind:'card',
+  text:'〈测试来源〉发动时选择目标',validChoices:[first,opponent,'skip','cancel'],
+  minChoose:1,maxChoose:1,
+  choiceLabels:{[first]:'同名测试军团',[unavailable]:'同名测试军团',[opponent]:'同名测试军团',skip:'不发动',cancel:'取消整次发动'},
+  data,createdRevision:1,controller:0,
+  presentation:{
+   title:'〈测试来源〉选择本次效果目标',
+   situation:'〈测试来源〉发动后需要决定处理对象。当前由我方玩家操作；本次选择只影响指定的一张军团。下段效果是否能完成仍以结算时的合法状态为准。'.repeat(2),
+   instruction:'从双方战场选择1张仍合法的军团；同名卡按位置与当前兵力区分。确认前可查看详情或收起弹框。',
+   waitingSummary:'我方玩家正在选择效果对象',
+   choiceConsequences:{[first]:'选择此军团作为本次效果对象；确认后继续结算。',[opponent]:'选择对方军团作为本次效果对象；确认后继续结算。',skip:'本次效果不发动。',cancel:'取消整次发动，已支付的费用不会自动返还。'},
+   paymentStatus:'paid',paymentSummary:'已支付2士气；本次选择取消或目标之后失效时，费用不会自动返还。',
+   submissionConsequence:'确认后锁定所选对象并继续结算；实际结果以权威结算为准。',
+  },
+ }]
+}
 window.__l12State=l12State
 if(params.has('disaster-choice')){
  const choiceCount=Math.max(1,Math.min(20,Number(params.get('choice-count')||8)))

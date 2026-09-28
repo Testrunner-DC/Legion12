@@ -288,14 +288,26 @@ public sealed class ExtendedCardEffectsTests
         var eligible = player.Library.Where(card => card.Faction == "taiyangcheng" && card.CardId != "S01-0222").Take(2).ToArray();
         foreach (var card in eligible) player.Library.Remove(card);
         player.Library.InsertRange(0, eligible);
+        var ineligible = Card("S01-0003", "festival-ineligible");
+        player.Library.Insert(2, ineligible);
+        var displayedBeforeChoice = player.Library.Take(5).Select(card => card.InstanceId).ToArray();
 
         Assert.True(game.Handle(0, new L12Command("playCard", festival.InstanceId)).Accepted);
         PassResponses(game);
         var handPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("festival-hand", handPrompt.Data["action"]);
+        Assert.Equal(string.Join('|', displayedBeforeChoice), handPrompt.Data["displayCardIds"]);
+        Assert.DoesNotContain(ineligible.InstanceId, handPrompt.ValidChoices);
+        Assert.Equal("只能选择【太阳城】卡牌，且不能选择〈法老王的庆典〉本身",
+            handPrompt.Data[$"disabledChoice:{ineligible.InstanceId}"]);
+        Assert.False(handPrompt.Data.ContainsKey($"disabledChoice:{eligible[0].InstanceId}"));
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: handPrompt.PromptId, Choice: eligible[0].InstanceId)).Accepted);
         var gravePrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("festival-grave", gravePrompt.Data["action"]);
+        Assert.Equal(string.Join('|', displayedBeforeChoice.Where(id => id != eligible[0].InstanceId)),
+            gravePrompt.Data["displayCardIds"]);
+        Assert.Equal("只能选择【太阳城】卡牌，且不能选择〈法老王的庆典〉本身",
+            gravePrompt.Data[$"disabledChoice:{ineligible.InstanceId}"]);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: gravePrompt.PromptId, Choice: eligible[1].InstanceId)).Accepted);
         var orderPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("all-bottom", orderPrompt.Data["placementMode"]);

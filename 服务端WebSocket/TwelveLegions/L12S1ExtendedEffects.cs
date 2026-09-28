@@ -335,6 +335,8 @@ public sealed partial class L12GameEngine
                     ["displayCardIds"] = string.Join('|', top.Select(card => card.InstanceId))
                 };
                 foreach (var candidate in top) AddPromptCardData(data, candidate);
+                AddUnavailableCardChoiceReasons(data, top.Select(card => card.InstanceId), choices,
+                    "只能选择与主宰阵营相同的军团");
                 CreatePrompt(item.Controller, "search", "野外扎营：选择其中1张与主宰阵营相同的军团加入手牌", choices, 1, 1,
                     "card-effect", item.StackItemId, data: data);
                 return true;

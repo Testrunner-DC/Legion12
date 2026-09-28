@@ -16,6 +16,8 @@ const props = withDefaults(defineProps<{
   selectionOrder?: number
   removable?: boolean
   badge?: string
+  consequence?: string
+  unavailableReason?: string
 }>(), {
   cardId: '',
   legacyUrl: undefined,
@@ -28,6 +30,8 @@ const props = withDefaults(defineProps<{
   selectionOrder: undefined,
   removable: false,
   badge: '',
+  consequence: '',
+  unavailableReason: '',
 })
 
 const emit = defineEmits<{
@@ -45,6 +49,13 @@ const stateLabel = computed(() => [
   props.selected ? '已选择' : '',
   props.unavailable ? '当前不可选择' : '',
 ].filter(Boolean).join(' · '))
+const accessibleLabel = computed(() => [
+  props.name,
+  props.meta,
+  stateLabel.value,
+  props.unavailable ? props.unavailableReason : '',
+  props.consequence,
+].filter(Boolean).join('，'))
 </script>
 
 <template>
@@ -56,7 +67,8 @@ const stateLabel = computed(() => [
     tabindex="0"
     :aria-disabled="unavailable"
     :aria-pressed="selected"
-    :aria-label="stateLabel ? `${name}，${stateLabel}` : name"
+    :aria-label="accessibleLabel"
+    :title="accessibleLabel"
     @mouseenter="emit('focus')"
     @focus="emit('focus')"
     @click="select"

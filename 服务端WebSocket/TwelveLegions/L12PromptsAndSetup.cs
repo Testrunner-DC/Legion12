@@ -444,7 +444,17 @@ public sealed partial class L12GameEngine
                 .Select(card => card.InstanceId))
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (displayed.Length > 0) data["displayCardIds"] = string.Join('|', displayed);
+        AddUnavailableCardChoiceReasons(data, displayed, validChoices,
+            "该卡不符合本次效果的选择条件");
         data.TryAdd("sourceZone", "graveyard");
+    }
+
+    private static void AddUnavailableCardChoiceReasons(Dictionary<string, string> data,
+        IEnumerable<string> displayedIds, IEnumerable<string> legalChoiceIds, string reason)
+    {
+        var legal = legalChoiceIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var id in displayedIds.Distinct(StringComparer.OrdinalIgnoreCase))
+            if (!legal.Contains(id)) data.TryAdd($"disabledChoice:{id}", reason);
     }
 
     /// <summary>

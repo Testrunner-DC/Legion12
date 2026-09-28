@@ -424,6 +424,12 @@ public sealed class AtomicReviewBatch6LCRegressionTests
         var search = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("faction-search-pick", search.Data["action"]);
         Assert.Contains(neutral.InstanceId, search.ValidChoices);
+        var ineligible = "batch6lc-plato-other-a";
+        Assert.Contains(ineligible, search.Data["displayCardIds"]);
+        Assert.DoesNotContain(ineligible, search.ValidChoices);
+        Assert.Equal("只能选择【奥林匹斯】卡牌，且不能选择效果来源本身",
+            search.Data[$"disabledChoice:{ineligible}"]);
+        Assert.False(search.Data.ContainsKey($"disabledChoice:{neutral.InstanceId}"));
     }
 
     [Fact]

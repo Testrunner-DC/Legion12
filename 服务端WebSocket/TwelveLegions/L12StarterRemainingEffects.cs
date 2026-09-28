@@ -562,6 +562,8 @@ public sealed partial class L12GameEngine
                     ["displayCardIds"] = string.Join('|', top.Select(card => card.InstanceId)),
                 };
                 foreach (var card in top) AddPromptCardData(data, card);
+                AddUnavailableCardChoiceReasons(data, top.Select(card => card.InstanceId), choices,
+                    "只能选择【远程】军团或【奥林匹斯】战术卡");
                 CreateDelayedPublicResolutionPrompt(item, "card",
                     "特勒马科斯：选择1张【远程】军团或【奥林匹斯】战术卡，展示并加入手牌",
                     choices, "starter-telemachus-pick", data, isPrivate: true, min: 1, max: 1);
@@ -1481,6 +1483,8 @@ public sealed partial class L12GameEngine
                     ["displayCardIds"] = string.Join('|', top.Select(card => card.InstanceId)),
                 };
                 foreach (var card in top) AddPromptCardData(data, card);
+                AddUnavailableCardChoiceReasons(data, top.Select(card => card.InstanceId), choices,
+                    "只能选择【远程】军团或【奥林匹斯】战术卡");
                 CreateDelayedPublicResolutionPrompt(item, "card",
                     "特勒马科斯：选择1张【远程】军团或【奥林匹斯】战术卡，展示并加入手牌",
                     choices, "starter-telemachus-pick", data, isPrivate: true, min: 1, max: 1);

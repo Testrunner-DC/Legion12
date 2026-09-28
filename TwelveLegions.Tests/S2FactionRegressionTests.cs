@@ -3196,11 +3196,18 @@ public sealed class S2FactionRegressionTests
         PassResponses(game);
         var artifactPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-fortune-artifact", artifactPrompt.Data["action"]);
+        Assert.Equal(string.Join('|', artifact.InstanceId, first.InstanceId, uesugi.InstanceId, second.InstanceId, third.InstanceId),
+            artifactPrompt.Data["displayCardIds"]);
+        Assert.Equal([artifact.InstanceId], artifactPrompt.ValidChoices);
+        Assert.Equal("只能选择【圣物】卡牌", artifactPrompt.Data[$"disabledChoice:{first.InstanceId}"]);
+        Assert.False(artifactPrompt.Data.ContainsKey($"disabledChoice:{artifact.InstanceId}"));
         Assert.True(game.Handle(playerIndex, new L12Command("resolvePrompt", PromptId: artifactPrompt.PromptId,
             Choice: artifact.InstanceId)).Accepted);
 
         var uesugiPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-fortune-uesugi", uesugiPrompt.Data["action"]);
+        Assert.Equal("只能选择〈上杉谦信〉", uesugiPrompt.Data[$"disabledChoice:{first.InstanceId}"]);
+        Assert.False(uesugiPrompt.Data.ContainsKey($"disabledChoice:{uesugi.InstanceId}"));
         Assert.True(game.Handle(playerIndex, new L12Command("resolvePrompt", PromptId: uesugiPrompt.PromptId,
             Choice: uesugi.InstanceId)).Accepted);
 

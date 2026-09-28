@@ -463,6 +463,7 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         var hidden = Card("S01-0201", "batch6kb-ivar-hidden");
         player.Field[0][0] = source;
         player.Library.AddRange([eligible, hidden]);
+        var displayedBeforeChoice = player.Library.Take(3).Select(card => card.InstanceId).ToArray();
 
         QueueTrigger(game, source, "enter");
 
@@ -478,7 +479,14 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         PassResponses(game);
         var search = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("faction-search-pick", search.Data["action"]);
+        Assert.Equal(string.Join('|', displayedBeforeChoice), search.Data["displayCardIds"]);
         Assert.Contains(eligible.InstanceId, search.ValidChoices);
+        Assert.Contains(hidden.InstanceId, search.Data["displayCardIds"]);
+        Assert.DoesNotContain(hidden.InstanceId, search.ValidChoices);
+        Assert.Equal("只能选择【阿斯加德】卡牌，且不能选择效果来源本身",
+            search.Data[$"disabledChoice:{hidden.InstanceId}"]);
+        Assert.False(search.Data.ContainsKey($"disabledChoice:{eligible.InstanceId}"));
+        Assert.DoesNotContain(hidden.InstanceId, JsonSerializer.Serialize(game.SnapshotFor(1)));
     }
 
     [Fact]

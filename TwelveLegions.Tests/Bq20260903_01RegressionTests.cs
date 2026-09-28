@@ -469,6 +469,14 @@ public sealed class Bq20260903_01RegressionTests
 
         var topThree = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("oiran-pick", topThree.Data.GetValueOrDefault("action"));
+        Assert.Equal(string.Join('|', chosen.InstanceId, second.InstanceId, third.InstanceId), topThree.Data["displayCardIds"]);
+        Assert.Equal([chosen.InstanceId], topThree.ValidChoices);
+        Assert.False(topThree.Data.ContainsKey($"disabledChoice:{chosen.InstanceId}"));
+        Assert.Equal("只能选择【高天原】卡牌，且不能选择〈花魁的馈赠〉本身",
+            topThree.Data[$"disabledChoice:{second.InstanceId}"]);
+        Assert.Equal(topThree.Data[$"disabledChoice:{second.InstanceId}"],
+            topThree.Data[$"disabledChoice:{third.InstanceId}"]);
+        Assert.DoesNotContain(second.InstanceId, JsonSerializer.Serialize(game.SnapshotFor(1)));
         Assert.True(morale.Tapped);
         ResolveOnlyPrompt(game, chosen.InstanceId);
         ResolveOnlyBottomOrder(game, second.InstanceId, third.InstanceId);

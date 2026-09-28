@@ -1923,6 +1923,8 @@ public sealed partial class L12GameEngine
         var displayed = FestivalCardsStillInLibrary(item, State.Players[item.Controller]);
         var data = new Dictionary<string, string> { ["action"] = action, ["displayCardIds"] = string.Join('|', displayed.Select(card => card.InstanceId)) };
         foreach (var card in displayed) AddPromptCardData(data, card);
+        AddUnavailableCardChoiceReasons(data, displayed.Select(card => card.InstanceId),
+            choices.Select(card => card.InstanceId), "只能选择【太阳城】卡牌，且不能选择〈法老王的庆典〉本身");
         CreatePrompt(item.Controller, "card", text, choices.Select(card => card.InstanceId), 1, 1, "card-effect", item.StackItemId, data: data);
     }
 
@@ -1971,6 +1973,13 @@ public sealed partial class L12GameEngine
             ["displayCardIds"] = string.Join('|', top.Select(card => card.InstanceId))
         };
         foreach (var card in top) AddPromptCardData(data, card);
+        var factionLabel = faction switch
+        {
+            "asgard" => "阿斯加德", "taiyangcheng" => "太阳城", "olympus" => "奥林匹斯",
+            _ => "指定阵营",
+        };
+        AddUnavailableCardChoiceReasons(data, top.Select(card => card.InstanceId), choices,
+            $"只能选择【{factionLabel}】卡牌" + (string.IsNullOrWhiteSpace(excluded) ? "" : "，且不能选择效果来源本身"));
         CreatePrompt(item.Controller, "search", $"选择{max}张符合条件的卡牌", choices, max, max, "card-effect", item.StackItemId, data: data);
     }
 

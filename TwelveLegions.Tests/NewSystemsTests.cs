@@ -963,10 +963,11 @@ public sealed class NewSystemsTests
         var eligibleDefinition = Catalog.Cards.Values.First(card => card.CardType == "legion"
             && card.Faction == player.Faction);
         var eligible = CreateInstance(eligibleDefinition.Id, "wild-camp-staged-hit");
+        var ineligible = CreateInstance("S01-0003", "wild-camp-staged-miss");
         player.Hand.Clear();
         player.Hand.Add(camp);
         player.Library.Clear();
-        player.Library.Add(eligible);
+        player.Library.AddRange([eligible, ineligible]);
         player.Morale.Clear();
         AddActiveMorale(player, camp.Cost);
         game.State.ActivePlayer = owner;
@@ -975,6 +976,10 @@ public sealed class NewSystemsTests
         Assert.True(game.Handle(owner, new L12Command("playCard", camp.InstanceId)).Accepted);
         var search = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("camp-pick", search.Data["action"]);
+        Assert.Equal(string.Join('|', eligible.InstanceId, ineligible.InstanceId), search.Data["displayCardIds"]);
+        Assert.Equal([eligible.InstanceId], search.ValidChoices);
+        Assert.Equal("只能选择与主宰阵营相同的军团", search.Data[$"disabledChoice:{ineligible.InstanceId}"]);
+        Assert.False(search.Data.ContainsKey($"disabledChoice:{eligible.InstanceId}"));
         Assert.True(game.Handle(owner, new L12Command("resolvePrompt", PromptId: search.PromptId,
             Choice: eligible.InstanceId)).Accepted);
 

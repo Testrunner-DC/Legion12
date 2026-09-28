@@ -67,6 +67,27 @@ function currentValidSelection(values = selected.value) {
 const activeSelected = computed(() => currentValidSelection())
 const hoveredChoice = ref<string | null>(null)
 const minimized = ref(false)
+const expandButton = ref<HTMLElement | null>(null)
+let focusBeforePrompt: HTMLElement | null = null
+async function minimizePrompt() {
+  minimized.value = true
+  await nextTick()
+  expandButton.value?.focus()
+}
+async function expandPrompt() {
+  minimized.value = false
+  await nextTick()
+  document.querySelector<HTMLElement>('.l12-prompt-overlay .prompt-minimize')?.focus()
+}
+watch(visible, async (open, wasOpen) => {
+  if (open && !wasOpen)
+    focusBeforePrompt = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  else if (!open && wasOpen) {
+    await nextTick()
+    if (focusBeforePrompt?.isConnected) focusBeforePrompt.focus()
+    focusBeforePrompt = null
+  }
+})
 const placementTop = ref<string[]>([])
 const placementBottom = ref<string[]>([])
 const placementSelected = ref<string | null>(null)
@@ -259,6 +280,8 @@ function cardIdFor(id: string) {
   return cardFor(id)?.cardId ?? prompt.value?.data?.[`${id}:cardId`] ?? (/^(?:S\d{2}|ST\d{2}|ST)-/.test(id) ? id : '')
 }
 function cardName(id: string) {
+  const location = findBattlefieldTarget(props.game, sandboxActorIndex.value, id)
+  if (location?.card.hidden && location.playerIndex !== sandboxActorIndex.value) return location.label
   return naturalChoiceLabel(prompt.value?.data?.[`${id}:name`], id)
     ?? cardFor(id)?.name
     ?? label(id)
@@ -279,8 +302,16 @@ function triggerOrderHint(id: string) {
   return `结算 ${resolutionOrder}`
 }
 function cardMeta(id: string) {
-  return naturalChoiceLabel(prompt.value?.data?.[`${id}:zone`], id)
+  const location = findBattlefieldTarget(props.game, sandboxActorIndex.value, id)
+  if (location) {
+    if (location.card.hidden && location.playerIndex !== sandboxActorIndex.value) return location.label
+    const troops = Number.isFinite(location.card.troops) ? `兵力 ${location.card.troops}` : ''
+    return [location.label, troops, location.card.tapped ? '休整' : '活跃'].filter(Boolean).join(' · ')
+  }
+  const zone = naturalChoiceLabel(prompt.value?.data?.[`${id}:zone`], id)
     ?? (prompt.value?.kind === 'opponent-hand-card' && !cardIdFor(id) ? '匿名手牌' : '')
+  const cost = numberData(id, 'cost')
+  return [zone, cost === undefined ? '' : `费用 ${cost}`].filter(Boolean).join(' · ')
 }
 function numberData(id: string, key: string) {
   const value = prompt.value?.data?.[`${id}:${key}`]
@@ -393,6 +424,21 @@ const displayedChoices = computed(() => {
   if (showPreviewCard.value && previewCardId.value && !currentChoices.value.length) return [previewCardId.value]
   return currentChoices.value
 })
+const focusedCandidate = computed(() => {
+  const id = hoveredChoice.value ?? activeSelected.value[0]
+  return id && displayedChoices.value.includes(id) && detailFor(id) ? id : null
+})
+const focusedCandidateDetail = computed(() => {
+  const id = focusedCandidate.value
+  if (!id) return null
+  return {
+    name: cardName(id),
+    meta: cardMeta(id),
+    consequence: choiceConsequence(id),
+    unavailable: prompt.value?.data?.cardSelection === 'true' && !prompt.value.validChoices.includes(id),
+    unavailableReason: disabledChoiceReason(id),
+  }
+})
 function disabledChoiceReason(choice: string) {
   return prompt.value?.data?.[`disabledChoice:${choice}`] ?? ''
 }
@@ -448,6 +494,29 @@ function endCardStripPointer(event: PointerEvent) {
   if (cardStripDrag.element.hasPointerCapture?.(event.pointerId)) cardStripDrag.element.releasePointerCapture?.(event.pointerId)
   updateCardStripEdges(cardStripDrag.element)
   cardStripDrag = null
+}
+let rotatedBodyTouch: { identifier: number; startX: number; startScroll: number; element: HTMLElement } | null = null
+function onChoiceBodyTouchStart(event: TouchEvent) {
+  if (!props.mobileLayout || document.documentElement.dataset.l12Rotated !== 'true'
+    || event.target instanceof Element && event.target.closest(
+      '.prompt-card-strip,.placement-workspace,.all-placement-workspace,.disaster-preparation-history,.response-target-list')) return
+  const touch = event.changedTouches[0]
+  const element = event.currentTarget
+  if (touch && element instanceof HTMLElement)
+    rotatedBodyTouch = { identifier: touch.identifier, startX: touch.clientX, startScroll: element.scrollTop, element }
+}
+function onChoiceBodyTouchMove(event: TouchEvent) {
+  if (!rotatedBodyTouch) return
+  const touch = Array.from(event.touches).find(candidate => candidate.identifier === rotatedBodyTouch?.identifier)
+  if (!touch) return
+  const delta = touch.clientX - rotatedBodyTouch.startX
+  if (Math.abs(delta) < 4) return
+  event.preventDefault()
+  rotatedBodyTouch.element.scrollTop = rotatedBodyTouch.startScroll + delta
+}
+function onChoiceBodyTouchEnd(event: TouchEvent) {
+  if (rotatedBodyTouch && Array.from(event.changedTouches).some(touch => touch.identifier === rotatedBodyTouch?.identifier))
+    rotatedBodyTouch = null
 }
 watch(() => `${visible.value}:${minimized.value}:${displayedChoices.value.length}`, refreshCardStrips, { immediate: true })
 const primaryChoices = computed(() => (hasCardChoices.value || (isEffectDecision.value && !isPureEffectDecision.value))
@@ -507,6 +576,28 @@ const promptSituation = computed(() => prompt.value?.presentation?.situation?.tr
   || (prompt.value ? legacyPromptSituation(prompt.value) : ''))
 const promptInstruction = computed(() => prompt.value?.presentation?.instruction?.trim()
   || (prompt.value ? legacyPromptInstruction(prompt.value) : ''))
+const promptActor = computed(() => {
+  const playerIndex = prompt.value?.playerIndex
+  if (playerIndex === undefined) return ''
+  const side = playerIndex === props.game.you ? '我方' : '对方'
+  const name = props.game.players[playerIndex]?.name
+  return `当前操作：${side}${name ? ` · ${name}` : ''}`
+})
+const promptSelectionRange = computed(() => {
+  const current = prompt.value
+  if (!current) return ''
+  if (current.maxChoose === 0) return '无需选择；请确认信息'
+  return current.minChoose === current.maxChoose
+    ? `需选择 ${current.maxChoose} 项`
+    : `需选择 ${current.minChoose} 至 ${current.maxChoose} 项`
+})
+const minimizedTask = computed(() => {
+  if (!prompt.value) return isMulligan.value ? '选择要换掉的手牌；零选择保留全部' : overlayTitle.value
+  return [promptActor.value, promptSelectionRange.value,
+    prompt.value.presentation?.paymentStatus === 'paid' ? '费用已支付' : prompt.value.presentation?.paymentStatus === 'pending' ? '费用待支付' : '',
+    promptInstruction.value,
+    prompt.value.presentation?.paymentSummary?.trim()].filter(Boolean).join('；')
+})
 const overlayTitle = computed(() => {
   if (prompt.value) return promptTitle.value
   if (isMulligan.value) return '选择要换掉的起始手牌；零选择保留全部'
@@ -683,25 +774,27 @@ function kindLabel() {
       @pointerdown="onCardStripPointerDown" @pointermove="onCardStripPointerMove" @pointerup="endCardStripPointer" @pointercancel="endCardStripPointer"
       :class="{ preparation: isPreparation, initiative: isInitiative, 'disaster-choice': isDisasterChoice, 'information-confirm': isInfoConfirm, waiting: waitingPrompt || (isMulliganPhase && !isMulligan), minimized, 'inspector-active': inspectorVisible, 'mobile-safe-overlay': mobileLayout }">
       <section v-if="minimized" class="prompt-minimized-bar" role="status">
-        <button :aria-label="`展开：${overlayTitle}`" :title="overlayTitle" @click="minimized = false">展开</button>
-        <span class="prompt-minimized-task">{{ prompt ? promptInstruction : isMulligan ? '选择要换掉的手牌；零选择保留全部' : overlayTitle }}</span>
+        <button :aria-label="`展开：${overlayTitle}`" ref="expandButton" aria-describedby="prompt-minimized-task" :title="minimizedTask" @click="expandPrompt">展开</button>
+        <span id="prompt-minimized-task" class="prompt-minimized-task">{{ minimizedTask }}</span>
         <span v-if="autoCloseMessage" class="prompt-auto-close" role="timer">{{ autoCloseMessage }}</span>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
       </section>
 
-      <section v-else-if="prompt" class="prompt-panel prompt-choice-panel" :class="{ 'has-card-choices': hasCardChoices, 'single-card-row': isSingleCardRow, 'effect-decision': isEffectDecision }" role="dialog" aria-modal="true" :aria-label="promptTitle">
+      <section v-else-if="prompt" class="prompt-panel prompt-choice-panel" :class="{ 'prompt-information-panel': true, 'has-card-choices': hasCardChoices, 'single-card-row': isSingleCardRow, 'effect-decision': isEffectDecision }" role="dialog" aria-modal="true" :aria-label="promptTitle">
         <header :class="{ 'effect-decision-header': isEffectDecision }">
           <small v-if="!isPureEffectDecision">{{ kindLabel() }}</small><h2>{{ promptTitle }}</h2>
           <p v-if="promptSituation" class="effect-decision-text l12-effect-body">{{ isEffectDecision ? decisionEffectText : promptSituation }}</p>
-          <button v-if="!isDisasterPreparation" class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimized = true">—</button>
+          <button v-if="!isDisasterPreparation" class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimizePrompt">—</button>
         </header>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
-        <main class="prompt-choice-body" data-ui-contract="mobile-choice-scroll-body">
+        <main class="prompt-choice-body" data-ui-contract="mobile-choice-scroll-body"
+          @touchstart.passive="onChoiceBodyTouchStart" @touchmove="onChoiceBodyTouchMove" @touchend="onChoiceBodyTouchEnd" @touchcancel="onChoiceBodyTouchEnd">
+        <div class="prompt-task-context"><span class="prompt-actor">{{ promptActor }}</span><span class="prompt-selection-range">{{ promptSelectionRange }}</span></div>
         <p v-if="promptInstruction" class="prompt-instruction">{{ promptInstruction }}</p>
         <p v-if="prompt.presentation?.paymentStatus && prompt.presentation?.paymentSummary" class="prompt-payment-state"
-          :data-payment-status="prompt.presentation.paymentStatus">{{ prompt.presentation.paymentSummary }}</p>
+          :data-payment-status="prompt.presentation.paymentStatus">{{ prompt.presentation.paymentStatus === 'paid' ? '已支付：' : '待支付：' }}{{ prompt.presentation.paymentSummary }}</p>
         <p v-if="prompt.presentation?.submissionConsequence" class="prompt-submit-consequence">确认后：{{ prompt.presentation.submissionConsequence }}</p>
         <p v-for="choice in supplementalChoices.filter(item => choiceConsequence(item))" :key="`exit-${choice}`" class="prompt-exit-consequence">
           {{ label(choice) }}：{{ choiceConsequence(choice) }}
@@ -793,6 +886,7 @@ function kindLabel() {
             <PromptCardCandidate v-else-if="detailFor(choice)"
               :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :name="cardName(choice)" :meta="cardMeta(choice)"
               :badge="selectionHint(choice)"
+              :consequence="choiceConsequence(choice)" :unavailable-reason="disabledChoiceReason(choice)"
               :horizontal="isHorizontalCardType(detailFor(choice)?.cardType)" :selected="activeSelected.includes(choice)"
               :unavailable="isCardSelectionPrompt && !prompt.validChoices.includes(choice)"
               :intent="usesDetailCardImages ? 'detail' : 'thumb'" :size="isInfoConfirm ? 'featured' : 'standard'"
@@ -808,6 +902,12 @@ function kindLabel() {
             </button>
           </template>
         </div>
+        <section v-if="focusedCandidateDetail" class="prompt-choice-detail" aria-live="polite">
+          <strong>{{ focusedCandidateDetail.name }}</strong>
+          <span v-if="focusedCandidateDetail.meta">{{ focusedCandidateDetail.meta }}</span>
+          <span v-if="focusedCandidateDetail.consequence">选择后：{{ focusedCandidateDetail.consequence }}</span>
+          <span v-if="focusedCandidateDetail.unavailable" class="unavailable-reason">当前不可选择<span v-if="focusedCandidateDetail.unavailableReason">：{{ focusedCandidateDetail.unavailableReason }}</span></span>
+        </section>
         </main>
         <footer v-if="!isPureEffectDecision" class="prompt-action-footer" data-ui-contract="equal-action-group">
           <template v-if="prompt.data?.choiceMode !== 'optional-add'">
@@ -864,7 +964,7 @@ function kindLabel() {
       <section v-else-if="isMulligan" class="prompt-panel prompt-choice-panel mulligan-panel has-card-choices" role="dialog" aria-modal="true" aria-label="起始手牌调度">
         <header>
           <small>调度 · {{ game.firstPlayer === me.playerIndex ? '先攻' : '后攻' }}玩家</small><h2>选择要换掉的起始手牌</h2>
-          <button class="prompt-minimize" aria-label="最小化弹框" title="最小化以查看场面" @click="minimized = true">—</button>
+          <button class="prompt-minimize" aria-label="最小化弹框" title="最小化以查看场面" @click="minimizePrompt">—</button>
         </header>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
@@ -881,7 +981,7 @@ function kindLabel() {
       </section>
 
       <section v-else class="prompt-panel waiting-panel" role="status">
-        <button v-if="!isDisasterPreparation" class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimized = true">—</button>
+        <button v-if="!isDisasterPreparation" class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimizePrompt">—</button>
         <div v-if="isDisasterPreparation" class="disaster-preparation-history" aria-label="天灾准备进度">
           <section v-for="group in disasterHistory" :key="group.key" :class="group.key">
             <header><b>{{ group.label }}</b><span>{{ group.entries.length }}</span></header>
@@ -966,4 +1066,14 @@ function kindLabel() {
 .l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip[data-more-start="false"][data-more-end="true"]{box-shadow:inset -16px 0 14px -13px #7adce5}
 .l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip[data-more-start="true"][data-more-end="false"]{box-shadow:inset 16px 0 14px -13px #7adce5}
 .l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip[data-more-start="true"][data-more-end="true"]{box-shadow:inset 16px 0 14px -13px #7adce5,inset -16px 0 14px -13px #7adce5}
+.prompt-task-context{display:flex;flex-wrap:wrap;gap:5px 12px;margin:8px 3px 0;color:#e8e2cc;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:1.4}
+.prompt-information-panel{display:flex;flex-direction:column;overflow:hidden}
+.prompt-information-panel>.prompt-choice-body{min-height:0;flex:1 1 auto;overflow-x:hidden;overflow-y:auto}
+.prompt-information-panel>.prompt-action-footer{flex:0 0 auto}
+.prompt-actor,.prompt-selection-range{overflow-wrap:anywhere}
+.prompt-choice-detail{display:flex;flex-direction:column;gap:3px;min-width:0;margin:7px 3px 10px;padding:8px 10px;border:1px solid #598c8c;background:#0a1b1e;color:#e9f2ed;font-size:var(--l12-board-copy,13px);line-height:1.4;overflow-wrap:anywhere}
+.prompt-choice-detail strong{color:#fff}.prompt-choice-detail .unavailable-reason{color:#ffb7ba}
+.prompt-minimized-bar{max-width:min(360px,calc(100vw - 16px))}
+.prompt-minimized-task{box-sizing:border-box;display:block;max-width:100%;max-height:4.5em;overflow:auto;padding:5px 8px;border:1px solid #598c8c;background:#10191b;color:#fff;font-size:var(--l12-board-copy,13px);line-height:1.35;white-space:normal;overflow-wrap:anywhere;box-shadow:0 12px 35px #000}
+.l12-prompt-overlay.mobile-safe-overlay .prompt-minimize,.l12-prompt-overlay.mobile-safe-overlay .prompt-minimized-bar button{min-width:44px;min-height:44px}
 </style>

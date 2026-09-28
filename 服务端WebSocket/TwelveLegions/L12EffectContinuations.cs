@@ -553,6 +553,8 @@ public sealed partial class L12GameEngine
             ["displayCardIds"] = string.Join('|', top.Select(card => card.InstanceId))
         };
         foreach (var card in top) AddPromptCardData(data, card);
+        AddUnavailableCardChoiceReasons(data, top.Select(card => card.InstanceId), choices,
+            "只能选择【高天原】卡牌，且不能选择〈花魁的馈赠〉本身");
         CreatePrompt(item.Controller, "card", "查看牌库顶部 3 张牌，选择 1 张符合条件的牌", choices, 1, 1,
             "card-effect", item.StackItemId, data: data);
     }

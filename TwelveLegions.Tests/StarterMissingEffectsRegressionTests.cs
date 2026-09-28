@@ -297,6 +297,9 @@ public sealed class StarterMissingEffectsRegressionTests
         Assert.Contains(ranged.InstanceId, choice.ValidChoices);
         Assert.Contains(tactic.InstanceId, choice.ValidChoices);
         Assert.DoesNotContain(invalid.InstanceId, choice.ValidChoices);
+        Assert.Equal("只能选择【远程】军团或【奥林匹斯】战术卡",
+            choice.Data[$"disabledChoice:{invalid.InstanceId}"]);
+        Assert.False(choice.Data.ContainsKey($"disabledChoice:{ranged.InstanceId}"));
         var choiceSnapshot = JsonSerializer.SerializeToElement(game.SnapshotFor(0),
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
         var choiceData = choiceSnapshot.GetProperty("prompts")[0].GetProperty("data");
