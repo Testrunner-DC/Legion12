@@ -296,6 +296,68 @@ public sealed class SiteContentPlatformStoreTests
     }
 
     [Fact]
+    public void CardRulingProductsAreDerivedOnReadSaveAndPublish()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-rule-products-{Guid.NewGuid():N}");
+        try
+        {
+            var path = Path.Combine(root, "platform.json");
+            var legacyStore = new L12PlatformStore(path);
+            var stale = JsonSerializer.Serialize(new
+            {
+                schemaVersion = 2,
+                entries = new object[]
+                {
+                    new { id = "RULING-SINGLE", scope = "card", question = "单卡问题？", answer = "单卡答案。",
+                        category = "单卡裁定", sourceKind = "user-ruling", sourceRef = "管理员复核",
+                        recordedAt = "2026-09-28", status = "published", cardIds = new[] { "S02-06S5" },
+                        productIds = new[] { "S02" }, tags = Array.Empty<string>(), topics = new[] { "effects-stack" },
+                        sourceIds = Array.Empty<string>(), supersedes = Array.Empty<string>() },
+                    new { id = "RULING-MULTI", scope = "card", question = "多卡问题？", answer = "多卡答案。",
+                        category = "单卡裁定", sourceKind = "user-ruling", sourceRef = "管理员复核",
+                        recordedAt = "2026-09-28", status = "pending", cardIds = new[] { "S02-06S5", "S01-0213", "S02-06S5" },
+                        productIds = new[] { "MANUAL" }, tags = Array.Empty<string>(), topics = new[] { "effects-stack" },
+                        sourceIds = Array.Empty<string>(), supersedes = Array.Empty<string>() },
+                    new { id = "RULING-MISSING", scope = "card", question = "待关联问题？", answer = "待关联答案。",
+                        category = "单卡裁定", sourceKind = "user-ruling", sourceRef = "管理员复核",
+                        recordedAt = "2026-09-28", status = "pending", cardIds = Array.Empty<string>(),
+                        productIds = new[] { "SHOULD-BE-CLEARED" }, tags = Array.Empty<string>(), topics = new[] { "effects-stack" },
+                        sourceIds = Array.Empty<string>(), supersedes = Array.Empty<string>() },
+                },
+            });
+            legacyStore.SetContent("rules.rulings", stale);
+
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards,
+                officialCardProducts: catalog.CardProducts);
+            var fallback = JsonDocument.Parse(store.GetContent("rules.rulings"));
+            Assert.Equal(new[] { "第2季|伟大试炼", "第2季|典藏版" }, Products(fallback, "RULING-SINGLE"));
+
+            var admin = store.Login("Admin", "L12master").Account!;
+            var saved = store.SaveContentDraft(admin, "rules.rulings", stale);
+            using var savedDocument = JsonDocument.Parse(saved.DraftValue);
+            Assert.Equal(new[] { "第1季|天御", "第1季|天御·再临", "第1季|典藏版", "第2季|伟大试炼", "第2季|典藏版" },
+                Products(savedDocument, "RULING-MULTI"));
+            Assert.Empty(Products(savedDocument, "RULING-MISSING"));
+
+            store.PublishRuleItem(admin, new("rules.rulings", "entries", "RULING-SINGLE",
+                ExpectedVersion: saved.Version));
+            using var published = JsonDocument.Parse(store.GetContentEntry("rules.rulings").PublishedValue);
+            Assert.Equal(new[] { "第2季|伟大试炼", "第2季|典藏版" }, Products(published, "RULING-SINGLE"));
+            Assert.DoesNotContain("S02\"", store.GetContentEntry("rules.rulings").PublishedValue);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+
+        static string[] Products(JsonDocument document, string id)
+            => document.RootElement.GetProperty("entries").EnumerateArray()
+                .Single(row => row.GetProperty("id").GetString() == id).GetProperty("productIds")
+                .EnumerateArray().Select(value => value.GetString()!).ToArray();
+    }
+
+    [Fact]
     public void RuleCenterPublishDoesNotExposePendingEntries()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-rule-center-{Guid.NewGuid():N}");

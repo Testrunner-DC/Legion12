@@ -137,6 +137,7 @@ export const moraleIdentities = moraleIdentityData as MoraleIdentity[]
 export const cardArchiveProducts = cardProductInclusionsData.products as string[]
 const productInclusions = cardProductInclusionsData.cards as CardProductInclusion[]
 const productInclusionsByCardId = new Map(productInclusions.map(entry => [entry.cardId, entry]))
+const productInclusionsByNormalizedCardId = new Map(productInclusions.map(entry => [entry.cardId.toLocaleLowerCase(), entry]))
 const cardArchiveAssets = cardArchiveAssetsData.cards as CardArchiveAsset[]
 const moraleIdentityByFaction = new Map(moraleIdentities.map(identity => [identity.faction, identity]))
 const moraleIdentityByVersion = new Map(moraleIdentities.flatMap(identity =>
@@ -150,6 +151,14 @@ export function canonicalMoraleCardId(cardId: string) {
 
 export function displayCardNumber(card: Pick<DeckCard, 'id' | 'number'>) {
   return card.number
+}
+
+export function cardProductsForIds(cardIds: readonly string[]) {
+  const included = new Set(cardIds.flatMap(cardId => productInclusionsByNormalizedCardId.get(cardId.toLocaleLowerCase())?.products ?? []))
+  return [
+    ...cardArchiveProducts.filter(product => included.delete(product)),
+    ...[...included].sort((left, right) => left.localeCompare(right, 'zh-CN', { numeric: true })),
+  ]
 }
 
 function withProductInclusions(card: DeckCard): DeckCard {

@@ -18,7 +18,8 @@ if (ephemeralTestMatches)
 
 var catalog = L12Catalog.Load(dataPath);
 var platform = new L12PlatformStore(Path.Combine(runtimePath, "platform.json"), catalog.PresetDecks,
-    officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts);
+    officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts,
+    officialCardProducts: catalog.CardProducts);
 if (L12TestRunStorageProfile.AcceptanceDataEnabled(ephemeralTestMatches,
         Environment.GetEnvironmentVariable(L12TestRunStorageProfile.AcceptanceDataEnvironmentKey)))
 {

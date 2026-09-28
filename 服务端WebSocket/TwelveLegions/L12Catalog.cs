@@ -22,18 +22,21 @@ public sealed class L12Catalog
     public L12MoraleIdentityCatalog MoraleIdentities { get; }
     public L12AtomicEffectCatalog AtomicEffects { get; }
     public IReadOnlyList<L12OfficialAlternateArtDefinition> OfficialAlternateArts { get; }
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> CardProducts { get; }
 
     private L12Catalog(
         IReadOnlyDictionary<string, L12CardDefinition> cards,
         IReadOnlyList<L12PresetDeckDefinition> presetDecks,
         L12MoraleIdentityCatalog moraleIdentities,
-        IReadOnlyList<L12OfficialAlternateArtDefinition> officialAlternateArts)
+        IReadOnlyList<L12OfficialAlternateArtDefinition> officialAlternateArts,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> cardProducts)
     {
         Cards = cards;
         PresetDecks = presetDecks;
         MoraleIdentities = moraleIdentities;
         AtomicEffects = L12AtomicEffectCatalog.Build(cards.Values);
         OfficialAlternateArts = officialAlternateArts;
+        CardProducts = cardProducts;
     }
 
     public static L12Catalog Load(string dataPath)
@@ -88,7 +91,23 @@ public sealed class L12Catalog
         }
 
         var officialAlternateArts = LoadOfficialAlternateArts(dataPath, byId);
-        return new L12Catalog(byId, decks, moraleIdentities, officialAlternateArts);
+        var cardProducts = LoadCardProducts(dataPath);
+        return new L12Catalog(byId, decks, moraleIdentities, officialAlternateArts, cardProducts);
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<string>> LoadCardProducts(string dataPath)
+    {
+        var path = Path.Combine(dataPath, "card-product-inclusions.json");
+        if (!File.Exists(path)) throw new FileNotFoundException("卡牌产品收录登记缺失", path);
+        var catalog = JsonSerializer.Deserialize<CardProductInclusionCatalog>(File.ReadAllText(path), JsonOptions)
+            ?? throw new InvalidDataException("卡牌产品收录登记格式无效");
+        var duplicates = catalog.Cards.GroupBy(row => row.CardId, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1).Select(group => group.Key).ToArray();
+        if (duplicates.Length > 0)
+            throw new InvalidDataException($"卡牌产品收录登记存在重复卡号：{string.Join(", ", duplicates)}");
+        return catalog.Cards.ToDictionary(row => row.CardId,
+            row => (IReadOnlyList<string>)row.Products.Distinct(StringComparer.Ordinal).ToArray(),
+            StringComparer.OrdinalIgnoreCase);
     }
 
     private static IReadOnlyList<L12OfficialAlternateArtDefinition> LoadOfficialAlternateArts(
@@ -129,6 +148,18 @@ public sealed class L12Catalog
         public string Id { get; init; } = string.Empty;
         public string BaseCardId { get; init; } = string.Empty;
         public string Product { get; init; } = string.Empty;
+        public List<string> Products { get; init; } = [];
+    }
+
+    private sealed class CardProductInclusionCatalog
+    {
+        public List<string> Products { get; init; } = [];
+        public List<CardProductInclusionRow> Cards { get; init; } = [];
+    }
+
+    private sealed class CardProductInclusionRow
+    {
+        public string CardId { get; init; } = string.Empty;
         public List<string> Products { get; init; } = [];
     }
 

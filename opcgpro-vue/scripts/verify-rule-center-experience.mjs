@@ -59,7 +59,8 @@ const contentView=(key)=>key==='rules.rulings'
  : {key,draftValue:JSON.stringify(centerDraft),publishedValue:JSON.stringify(centerPublished),version:6}
 adminApi.getContent=async key=>contentView(key)
 adminApi.contentBatches=async()=>[]
-adminApi.saveContentDraft=async(key,value)=>({...contentView(key),draftValue:value,version:8})
+window.__savedDrafts=[]
+adminApi.saveContentDraft=async(key,value)=>{window.__savedDrafts.push({key,value});return {...contentView(key),draftValue:value,version:8}}
 adminApi.previewContent=async()=>({items:[]})
 adminApi.publishRuleItem=async(key)=>contentView(key)
 platformState.account={id:'qa-admin',username:'验收管理员',role:'admin',createdAt:'2026-01-01',publicHistory:false,permissions:['admin.content.draft','admin.content.publish']}
@@ -167,20 +168,67 @@ try {
       }
       await page.getByRole('button', { name: '单卡问答' }).click()
       await page.locator('.faq-product-section').waitFor()
-      const products = page.locator('.product-grid button')
-      if (await products.count()) await products.first().click()
-      assert.equal(catalogRequests.length, 0, `product browsing eagerly loaded card catalog at ${suffix(viewport)}`)
-      if (viewport.width === 1920) await page.getByRole('button', { name: '全部展开' }).click()
-      else await page.locator('.faq-search-row input').fill('S01')
       await page.waitForFunction(() => performance.getEntriesByType('resource').some(entry => entry.name.includes('/data/l12/cards.s1.json')))
-      assert(catalogRequests.length >= 3, `card query or expansion did not load catalog on demand at ${suffix(viewport)}`)
-      assert.equal(imageRequests.length, 0, `card Q&A loaded card images at ${suffix(viewport)}`)
+      assert(catalogRequests.length >= 3, `card workspace did not load title metadata on demand at ${suffix(viewport)}`)
+      assert.equal(imageRequests.length, 0, `collapsed card Q&A eagerly loaded card images at ${suffix(viewport)}`)
+      await page.getByText('S02-06S5·芬尼亚传奇·裁定', { exact: true }).waitFor()
+      const products = page.locator('.product-grid button')
+      if (await products.count()) {
+        await products.first().click()
+        assert.equal(imageRequests.length, 0, `product browsing loaded card images at ${suffix(viewport)}`)
+        await page.getByRole('button', { name: '查看全部产品' }).click()
+      }
+      const fenian = page.locator('#rule-entry-RULING-20260922-FENIAN-REPEAT')
+      await fenian.locator('.faq-question').click()
+      const cardArt = fenian.getByRole('button', { name: '查看芬尼亚传奇卡牌详情' })
+      await cardArt.waitFor()
+      await cardArt.locator('img').waitFor()
+      await cardArt.click()
+      const details = page.getByRole('dialog', { name: '芬尼亚传奇' })
+      await details.waitFor()
+      assert.equal(await details.locator('[data-card-detail-context="catalog"]').count(), 1,
+        `card ruling did not reuse catalog detail content at ${suffix(viewport)}`)
+      await details.getByRole('button', { name: '关闭卡牌详情' }).click()
+      assert.equal(await details.count(), 0, `card detail did not close at ${suffix(viewport)}`)
       await page.screenshot({ path: path.join(output, `card-qa-${suffix(viewport)}.png`), fullPage: true })
     }
     assert.deepEqual(errors, [], `page errors at ${suffix(viewport)}`)
     report.push({ viewport, apiRequests: ruleFetches.length, catalogRequests: catalogRequests.length, imageRequests: imageRequests.length })
     await context.close()
   }
+
+  const directCardContext = await browser.newContext({ viewport: { width: 1366, height: 768 } })
+  const directCard = await directCardContext.newPage()
+  const directCatalogRequests = []
+  const directImageRequests = []
+  directCard.on('request', request => {
+    const url = request.url()
+    if (/\/data\/l12\/cards\.(s1|lookup|st)\.json/.test(url)) directCatalogRequests.push(url)
+    if (request.resourceType() === 'image') directImageRequests.push(url)
+  })
+  const assertSingleCatalogLoad = label => {
+    for (const file of ['s1', 'lookup', 'st'])
+      assert.equal(directCatalogRequests.filter(url => url.includes(`/data/l12/cards.${file}.json`)).length, 1,
+        `${label} loaded cards.${file}.json more or less than once`)
+  }
+  await directCard.goto(base + '?tab=faq&mode=card')
+  await directCard.getByText('S02-06S5·芬尼亚传奇·裁定', { exact: true }).waitFor()
+  assertSingleCatalogLoad('direct card FAQ entry')
+  assert.equal(directImageRequests.length, 0, 'direct card FAQ entry eagerly loaded card images')
+  await directCard.locator('.faq-search-row input').fill('芬尼亚传奇')
+  await directCard.getByText('S02-06S5·芬尼亚传奇·裁定', { exact: true }).waitFor()
+  assert.equal(await directCard.locator('.faq-list article').count(), 1, 'direct card FAQ name search did not narrow results')
+  directCatalogRequests.length = 0
+  directImageRequests.length = 0
+  await directCard.reload()
+  await directCard.getByText('S02-06S5·芬尼亚传奇·裁定', { exact: true }).waitFor()
+  assertSingleCatalogLoad('refreshed card FAQ entry')
+  assert.equal(directImageRequests.length, 0, 'refreshed card FAQ entry eagerly loaded card images')
+  await directCard.locator('.faq-search-row input').fill('芬尼亚传奇')
+  await directCard.getByText('S02-06S5·芬尼亚传奇·裁定', { exact: true }).waitFor()
+  assert.equal(await directCard.locator('.faq-list article').count(), 1, 'refreshed card FAQ name search did not narrow results')
+  await directCard.screenshot({ path: path.join(output, 'card-qa-direct-refresh-1366x768.png'), fullPage: true })
+  await directCardContext.close()
 
   const deepLink = await browser.newPage({ viewport: { width: 1366, height: 768 } })
   await deepLink.goto(base + '?entry=OLD-RULING')
@@ -214,6 +262,23 @@ try {
   const publishedCard = admin.locator('.admin-item-card').first()
   await publishedCard.locator('summary').click()
   assert.equal(await publishedCard.locator('.item-actions').getByRole('button', { name: '退回修改' }).count(), 1, 'return action is not adjacent to published object')
+  await admin.getByRole('button', { name: /待审核/ }).click()
+  const rulingEditor = admin.locator('.ruling-editor').filter({ hasText: 'ADMIN-DRAFT' })
+  await rulingEditor.locator('summary').click()
+  await rulingEditor.getByText('锡瓦的卡巴', { exact: true }).waitFor()
+  assert.equal(await rulingEditor.getByText('第1季|天御', { exact: true }).count(), 1, 'admin did not derive linked-card products')
+  await rulingEditor.getByRole('button', { name: '查看锡瓦的卡巴卡牌详情' }).click()
+  const adminDetails = admin.getByRole('dialog', { name: '锡瓦的卡巴' })
+  await adminDetails.waitFor()
+  assert.equal(await adminDetails.locator('[data-card-detail-context="catalog"]').count(), 1, 'admin did not reuse catalog detail component')
+  await adminDetails.getByRole('button', { name: '关闭卡牌详情' }).click()
+  await admin.screenshot({ path: path.join(output, 'admin-card-ruling-1366x900.png'), fullPage: true })
+  await rulingEditor.locator('.item-actions').getByRole('button', { name: '保存此项' }).click()
+  const savedProducts = await admin.evaluate(() => {
+    const saved = window.__savedDrafts.filter(item => item.key === 'rules.rulings').at(-1)
+    return JSON.parse(saved.value).entries.find(item => item.id === 'ADMIN-DRAFT').productIds
+  })
+  assert.deepEqual(savedProducts, ['第1季|天御', '第1季|天御·再临', '第1季|典藏版'], 'admin save did not persist derived products')
   await admin.getByRole('button', { name: /^来源/ }).click()
   await admin.locator('.source-list').waitFor()
   await admin.getByRole('button', { name: /历史与已替代/ }).click()
@@ -222,7 +287,7 @@ try {
   await admin.close()
 
   fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ status: 'passed', viewports, report }, null, 2))
-  console.log(JSON.stringify({ status: 'passed', output, viewports: viewports.length, screenshots: viewports.length * 2 + 1 }, null, 2))
+  console.log(JSON.stringify({ status: 'passed', output, viewports: viewports.length, screenshots: viewports.length * 2 + 3 }, null, 2))
 } finally {
   await browser?.close()
   await server.close()

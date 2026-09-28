@@ -38,19 +38,27 @@ for (const tab of ['core', 'quick-start', 'terms', 'construction', 'tournament',
   assert(player.includes(`id: '${tab}'`), `rule material home is missing ${tab}`)
 assert(!player.includes('printRules') && !player.includes('打印 / 保存 PDF') && !player.includes('@media print'),
   'print/PDF controls and print-only styles must stay removed')
-assert(!player.includes('<CardImage') && player.includes("if (next.has(item.id) && item.cardIds.length) void ensureCardCatalog()"),
-  'card Q&A must load metadata only when needed and never batch-render card images')
+for (const token of ['CatalogCardDetails', 'CardImage', 'rulingHeading(item)', '待补关联·裁定', 'cardProductsForIds(item.cardIds)'])
+  assert(player.includes(token), `card ruling presentation missing ${token}`)
+assert(player.includes('v-if="openIds.has(item.id)"')
+  && player.includes("if (next.has(item.id) && item.cardIds.length) void ensureCardCatalog()"),
+  'linked card art must stay behind the expanded ruling boundary')
+assert(/watch\(\[tab, faqMode\],[\s\S]*?ensureCardCatalog\(\)[\s\S]*?\}, \{ immediate: true \}\)/.test(player),
+  'direct card FAQ entry must initialize card title metadata immediately')
 
 const admin = readFrontend('src/l12/site/AdminRuleRulingsPanel.vue')
 for (const token of ['SingleCardPicker', 'rule-item-publish', 'ruleHistory', 'historyChanges', '审核并发布此项', '高级：查看原始结构（只读）'])
   assert(admin.includes(token), `admin rule workflow missing ${token}`)
 for (const token of ["'drafts'", "'sources'", "'published'", "'history'", 'workspaceCounts', 'admin-item-preview', '退回修改', '保存此项'])
   assert(admin.includes(token), `admin workspaces missing ${token}`)
+for (const token of ['CatalogCardDetails', 'CardImage', 'normalizeAllRulingProducts', '自动归属产品', '不可手工修改', '待补关联'])
+  assert(admin.includes(token), `admin derived card ruling workflow missing ${token}`)
+assert(!admin.includes('产品（逗号分隔）'), 'card ruling products must not remain manually editable')
 assert(!admin.includes('class="publish-queue"'), 'publishing controls must stay next to each reviewed object')
 assert(!admin.includes('移动实体'), 'admin ruling copy must use game terminology')
 
 const store = readRepo('服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs')
-for (const token of ['ProjectEffectiveRuleContent', 'NextRuleContentTransition', 'rule-item-publish', 'ExpectedVersion', 'schemaVersion'])
+for (const token of ['ProjectEffectiveRuleContent', 'NextRuleContentTransition', 'rule-item-publish', 'ExpectedVersion', 'schemaVersion', 'NormalizeRuleRulingProducts', '_officialCardProducts'])
   assert(store.includes(token), `server rule projection missing ${token}`)
 const server = readRepo('服务端WebSocket/TwelveLegions/L12WebSocketServer.ResourceSync.cs')
 assert(server.includes('RulesContentResource') && server.includes('ScheduleNextRulesContentTransition'),

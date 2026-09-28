@@ -64,7 +64,8 @@ public sealed partial class L12PlatformStore
             var row = EnsureContentEntry(key);
             if (request.ExpectedVersion.HasValue && request.ExpectedVersion.Value != row.Version)
                 throw new L12ContentStateConflictException("规则草稿已被其他管理员修改，请刷新后重试");
-            var draft = JsonNode.Parse(row.DraftValue) as JsonObject ?? throw new ArgumentException("规则草稿不是有效对象");
+            var draft = JsonNode.Parse(NormalizeRuleRulingProducts(key, row.DraftValue)) as JsonObject
+                ?? throw new ArgumentException("规则草稿不是有效对象");
             var draftItems = draft[collection] as JsonArray ?? throw new ArgumentException("规则草稿缺少指定分组");
             var selected = draftItems.OfType<JsonObject>().FirstOrDefault(item =>
                 string.Equals(item["id"]?.GetValue<string>(), itemId, StringComparison.OrdinalIgnoreCase))
@@ -686,6 +687,35 @@ public sealed partial class L12PlatformStore
     /// 公开裁定采用结构化草稿，而不是把原始问答表直接推到玩家页面。
     /// pending 记录可以保存在草稿中供逐条复核，但不得随发布批次公开。
     /// </summary>
+    private string NormalizeRuleRulingProducts(string key, string value)
+    {
+        if (!string.Equals(key, "rules.rulings", StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(value) || _officialCardProducts.Count == 0) return value;
+        try
+        {
+            var root = JsonNode.Parse(value) as JsonObject;
+            if (root?["entries"] is not JsonArray entries) return value;
+            foreach (var entry in entries.OfType<JsonObject>())
+            {
+                var scope = entry["scope"]?.GetValue<string>();
+                if (scope is not ("card" or "errata")) continue;
+                var cardIds = entry["cardIds"] is JsonArray ids
+                    ? ids.Select(node => node?.GetValue<string>()?.Trim()).Where(id => !string.IsNullOrWhiteSpace(id))
+                        .Select(id => id!).Distinct(StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToArray()
+                    : [];
+                var products = cardIds.Where(_officialCardProducts.ContainsKey)
+                    .SelectMany(id => _officialCardProducts[id]).Distinct(StringComparer.Ordinal).ToArray();
+                var productIds = new JsonArray();
+                foreach (var product in products) productIds.Add(product);
+                entry["productIds"] = productIds;
+            }
+            return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch (JsonException) { return value; }
+        catch (InvalidOperationException) { return value; }
+    }
+
     private static void ValidateRuleRulings(string value, bool publishing)
     {
         if (value.Length > 250_000) throw new ArgumentException("规则裁定内容超过 250KB 限制");
@@ -751,11 +781,12 @@ public sealed partial class L12PlatformStore
     /// Produces the immutable player-facing snapshot. Draft rows remain intact so an
     /// administrator can continue reviewing them after publishing confirmed rows.
     /// </summary>
-    internal static string PreparePublicContentValue(string key, string value)
+    internal string PreparePublicContentValue(string key, string value)
     {
         var rulings = string.Equals(key, "rules.rulings", StringComparison.OrdinalIgnoreCase);
         var center = string.Equals(key, "rules.center", StringComparison.OrdinalIgnoreCase);
         if (!rulings && !center) return value;
+        if (rulings) value = NormalizeRuleRulingProducts(key, value);
         if (rulings) ValidateRuleRulings(value, false);
         else ValidateRuleCenter(value);
         if (string.IsNullOrWhiteSpace(value)) return value;
@@ -795,8 +826,9 @@ public sealed partial class L12PlatformStore
         catch (JsonException error) { throw new ArgumentException($"规则裁定 JSON 无效：{error.Message}"); }
     }
 
-    internal static string ProjectEffectiveRuleContent(string key, string value, DateTimeOffset observedAt)
+    internal string ProjectEffectiveRuleContent(string key, string value, DateTimeOffset observedAt)
     {
+        value = NormalizeRuleRulingProducts(key, value);
         var collections = string.Equals(key, "rules.rulings", StringComparison.OrdinalIgnoreCase)
             ? new[] { "entries" }
             : string.Equals(key, "rules.center", StringComparison.OrdinalIgnoreCase)

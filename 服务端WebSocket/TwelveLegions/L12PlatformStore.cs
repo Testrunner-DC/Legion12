@@ -425,6 +425,7 @@ public sealed partial class L12PlatformStore
     private readonly IReadOnlyList<L12PresetDeckDefinition> _officialDecks;
     private readonly IReadOnlyDictionary<string, L12CardDefinition> _officialCards;
     private readonly IReadOnlyDictionary<string, L12OfficialAlternateArtDefinition> _officialAlternateArts;
+    private readonly IReadOnlyDictionary<string, IReadOnlyList<string>> _officialCardProducts;
     private readonly IL12EmailSender _emailSender;
     private readonly bool _emailFeatureEnabled;
     private DataFile _data;
@@ -441,13 +442,16 @@ public sealed partial class L12PlatformStore
         IReadOnlyDictionary<string, L12CardDefinition>? officialCards = null,
         IL12EmailSender? emailSender = null,
         bool? emailFeatureEnabled = null,
-        IReadOnlyList<L12OfficialAlternateArtDefinition>? officialAlternateArts = null)
+        IReadOnlyList<L12OfficialAlternateArtDefinition>? officialAlternateArts = null,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? officialCardProducts = null)
     {
         _path = path;
         _officialDecks = officialDecks ?? [];
         _officialCards = officialCards ?? new Dictionary<string, L12CardDefinition>(StringComparer.OrdinalIgnoreCase);
         _officialAlternateArts = (officialAlternateArts ?? []).ToDictionary(row => row.Id,
             StringComparer.OrdinalIgnoreCase);
+        _officialCardProducts = officialCardProducts ??
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
         _mfaCredentialProtector = mfaCredentialProtector ?? new L12UnavailableMfaCredentialProtector();
         _emailSender = emailSender ?? L12SmtpEmailSender.FromEnvironment();
         _emailFeatureEnabled = emailFeatureEnabled ?? L12EmailFeature.EnabledFromEnvironment();
@@ -1239,6 +1243,7 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
+            value = NormalizeRuleRulingProducts(key, value);
             _data.Content[key] = value;
             var entry = EnsureContentEntry(key);
             entry.DraftValue = value;
@@ -1268,6 +1273,7 @@ public sealed partial class L12PlatformStore
         {
             if (!IsContentKeyAllowed(key)) throw new ArgumentException($"内容键不在白名单中：{key}");
             var canonical = ContentKeys().First(item => string.Equals(item, key.Trim(), StringComparison.OrdinalIgnoreCase));
+            value = NormalizeRuleRulingProducts(canonical, value);
             ValidateSiteContentValue(canonical, value, false);
             var row = EnsureContentEntry(canonical);
             var previous = row.DraftValue;
