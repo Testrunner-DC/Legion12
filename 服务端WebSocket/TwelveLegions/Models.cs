@@ -356,6 +356,12 @@ public sealed class L12PlayerState
         new L12CardInstance?[3],
     ];
     public L12CardInstance? Relic { get; set; }
+    /// <summary>
+    /// 主宰临时作为军团登场后返回主宰区时保留的同一权威实例。
+    /// 旧检查点没有此字段时保持 null，并在下一次军团化时按旧行为创建实例。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12CardInstance? MasterLegionState { get; set; }
     public List<L12CardInstance> ExtraRelics { get; } = [];
     public List<L12CardInstance> Resolving { get; } = [];
     public List<L12CardInstance> Graveyard { get; } = [];

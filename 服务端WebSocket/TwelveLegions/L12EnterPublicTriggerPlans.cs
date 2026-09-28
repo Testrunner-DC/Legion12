@@ -394,7 +394,7 @@ public sealed partial class L12GameEngine
                 if (plan == "heracles-promotion")
                 {
                     var card = player.Hand.First(entry => entry.InstanceId == discard);
-                    player.Hand.Remove(card); player.Library.Insert(0, card);
+                    player.Hand.Remove(card); ResetCardForPrivateZone(card); player.Library.Insert(0, card);
                     AddPresentationEvent("reveal", candidate.Controller,
                         $"赫拉克勒斯·晋升展示〈{card.Name}〉并放回牌库顶部",
                         "S02-0501", "promotion-cost-declaration", card);
@@ -700,7 +700,10 @@ public sealed partial class L12GameEngine
                 {
                     var sword = player.Graveyard.FirstOrDefault(card => card.CardId == "S02-06S2")
                         ?? CreateCard("S02-06S2", $"p{item.Controller}-arthur-sword-{State.TurnSerial}");
-                    player.Graveyard.Remove(sword); sword.OwnerIndex = item.Controller; arthur.AttachedCards.Add(sword);
+                    player.Graveyard.Remove(sword);
+                    ResetCardForFieldEntry(sword);
+                    sword.OwnerIndex = item.Controller;
+                    arthur.AttachedCards.Add(sword);
                     RecalculateContinuousTroops();
                     AddEvent("attach", item.Controller, "〈王者之剑〉叠放至〈亚瑟王〉下方", arthur, sword);
                 }

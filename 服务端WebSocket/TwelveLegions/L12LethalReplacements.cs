@@ -224,6 +224,7 @@ public sealed partial class L12GameEngine
                 && card.CardType == "legion" && card.CardId != "S02-0515");
             if (substitute is null) return false;
             controller.Hand.Remove(substitute);
+            ResetCardForPrivateZone(substitute);
             var owner = CardOwner(substitute, controller);
             owner.Graveyard.Add(substitute);
             AddEvent("discard", controller.PlayerIndex,

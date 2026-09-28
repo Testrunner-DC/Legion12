@@ -340,12 +340,13 @@ public sealed partial class L12GameEngine
         var battlefield = State.Players[battlefieldController];
         var card = battlefield.Resolving.FirstOrDefault(candidate => candidate.InstanceId == instanceId);
         if (card is null) return;
-        battlefield.Resolving.Remove(card);
         var owner = CardOwner(card, battlefield);
+        if (ReturnsToMasterZoneOnDeparture(card)
+            && !CanStoreMasterLegion(owner, card, "阵亡结算")) return;
+        battlefield.Resolving.Remove(card);
         var promotionFoundations = DetachPromotionFoundations(card);
         if (card.AttachedCards.Count > 0) DiscardAttachedCards(card, $"{card.Name}阵亡");
         var returnsToMaster = ReturnsToMasterZoneOnDeparture(card);
-        ResetCardAfterLeavingField(card);
         if (returnsToMaster)
         {
             CompleteMasterLegionDeparture(owner, card);
@@ -353,12 +354,14 @@ public sealed partial class L12GameEngine
         }
         else if (L12SpecialDeckRules.VanishesWhenLeavingField(card))
         {
+            ResetCardForPrivateZone(card);
             AddEvent("derived-vanished", owner.PlayerIndex,
                 $"衍生卡〈{card.Name}〉在阵亡触发完成后消灭，不进入其他区域", card);
             MovePromotionFoundationsToZone(promotionFoundations, owner, "vanished", $"{card.Name}阵亡");
         }
         else
         {
+            ResetCardForPrivateZone(card);
             owner.Graveyard.Add(card);
             MovePromotionFoundationsToZone(promotionFoundations, owner, "graveyard", $"{card.Name}阵亡");
             AddEvent("grave", owner.PlayerIndex, $"{card.Name}的相关阵亡触发已完成，置入所有者墓地", card);

@@ -487,7 +487,7 @@ public sealed partial class L12GameEngine
                 if (source.Tapped) return CommandResult.Reject("山河社稷图必须为活跃状态");
                 var discard = player.Hand.FirstOrDefault(card => card.InstanceId == target);
                 if (discard is null) return CommandResult.Reject("弃置费用不在手牌中");
-                source.Tapped = true; player.Hand.Remove(discard); player.Graveyard.Add(discard);
+                source.Tapped = true; player.Hand.Remove(discard); ResetCardForPrivateZone(discard); player.Graveyard.Add(discard);
                 AddEvent("cost", playerIndex, $"弃置 {discard.Name} 支付山河社稷图费用", discard); break;
             }
             case "kusanagiDebuff" or "kusanagiStrong" when source.CardId == "S01-0417":
@@ -939,6 +939,7 @@ public sealed partial class L12GameEngine
         if (card is not null)
         {
             player.Hand.Remove(card);
+            ResetCardForPrivateZone(card);
             if (place == "top") player.Library.Insert(0, card); else player.Library.Add(card);
             AddEvent("private-return", item.Controller, $"{card.Name} 返回牌库{(place == "top" ? "顶部" : "底部")}", card);
         }

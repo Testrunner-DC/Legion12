@@ -113,7 +113,12 @@ public sealed partial class L12GameEngine
             case "陵墓构造体":
             {
                 var guards = player.Graveyard.Where(candidate => candidate.CardId == "S01-0212").ToArray();
-                foreach (var guard in guards) { player.Graveyard.Remove(guard); card.AttachedCards.Add(guard); }
+                foreach (var guard in guards)
+                {
+                    player.Graveyard.Remove(guard);
+                    ResetCardForFieldEntry(guard);
+                    card.AttachedCards.Add(guard);
+                }
                 AddEvent("effect", item.Controller, $"陵墓构造体叠放{guards.Length}张陵墓守卫，兵力+{guards.Length * 1000}", card);
                 RecalculateContinuousTroops();
                 FinishStackItem(item); return true;
@@ -1414,7 +1419,7 @@ public sealed partial class L12GameEngine
                     return true;
                 }
                 player.Graveyard.Remove(canopic);
-                ResetCardAfterLeavingField(canopic);
+                ResetCardForPrivateZone(canopic);
                 player.SpecialZones.CanopicProgress.Add(canopic);
                 if (declared[4] == "mode:draw") Draw(player, 1);
                 else HealMaster(item.Controller, 1, "伊西斯");
@@ -1773,7 +1778,7 @@ public sealed partial class L12GameEngine
         if (player.Relic?.InstanceId == relic.InstanceId) player.Relic = null; else player.ExtraRelics.Remove(relic);
         DiscardAttachedCards(relic, "被叠放的圣物离开圣物区");
         var owner = CardOwner(relic, player);
-        ResetCardAfterLeavingField(relic);
+        ResetCardForPrivateZone(relic);
         if (L12SpecialDeckRules.VanishesWhenLeavingField(relic))
             AddEvent("derived-vanished", owner.PlayerIndex,
                 $"衍生卡〈{relic.Name}〉离开圣物区时消灭，不进入其他区域", relic);
@@ -1791,7 +1796,10 @@ public sealed partial class L12GameEngine
         if (State.Phase == L12Phase.GameOver) return;
         var origin = State.IsResolvingStack ? State.EffectStack.LastOrDefault() : null;
         var result = L12LibraryOps.Mill(player, count, card =>
-            NotifyCardDiscarded(player, card, "library", causedByEffect: true));
+        {
+            ResetCardForPrivateZone(card);
+            NotifyCardDiscarded(player, card, "library", causedByEffect: true);
+        });
         if (result.Cards.Count > 0)
             AddPlayerLogEvent("mill", player.PlayerIndex,
                 $"{source}弃置牌库顶部{result.Cards.Count}张牌",
@@ -1807,6 +1815,7 @@ public sealed partial class L12GameEngine
         var legal = requested.Where(CanEnterHandOrLibrary).ToArray();
         foreach (var guard in requested.Where(card => !CanEnterHandOrLibrary(card)))
             AddEvent("replacement", player.PlayerIndex, $"{guard.Name}不能进入牌库，仍置于墓地", guard);
+        foreach (var card in legal) ResetCardForPrivateZone(card);
         if (!L12LibraryOps.PutOnBottom(player, legal)) return;
         foreach (var card in legal)
             AddEvent("return", player.PlayerIndex, $"〈{card.Name}〉从墓地返回牌库底部", card);
@@ -1817,6 +1826,7 @@ public sealed partial class L12GameEngine
         var card = player.Graveyard.FirstOrDefault(candidate => candidate.InstanceId == instanceId);
         if (card is null) return;
         if (!CanEnterHandOrLibrary(card)) { AddEvent("replacement", player.PlayerIndex, $"{card.Name}不能进入牌库，仍置于墓地", card); return; }
+        ResetCardForPrivateZone(card);
         if (L12LibraryOps.PutOnTop(player, [card]))
             AddEvent("return", player.PlayerIndex, $"〈{card.Name}〉从墓地返回牌库顶部", card);
     }
@@ -1914,7 +1924,7 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[item.Controller];
         var selected = player.Library.FirstOrDefault(card => card.InstanceId == choice);
-        if (selected is not null) { player.Library.Remove(selected); player.Graveyard.Add(selected); AddEvent("discard", item.Controller, $"法老王的庆典将 {selected.Name} 置入墓地", selected); }
+        if (selected is not null) { player.Library.Remove(selected); ResetCardForPrivateZone(selected); player.Graveyard.Add(selected); AddEvent("discard", item.Controller, $"法老王的庆典将 {selected.Name} 置入墓地", selected); }
         PromptPharaohFestivalOrder(item);
     }
 
@@ -2085,6 +2095,7 @@ public sealed partial class L12GameEngine
         sourceOwner.Hand.Remove(card);
         sourceOwner.Graveyard.Remove(card);
         sourceOwner.Library.Remove(card);
+        ResetCardForFieldEntry(card);
         card.OwnerIndex ??= sourceOwner.PlayerIndex;
         card.Tapped = tapped;
         card.SummonRound = State.Round;

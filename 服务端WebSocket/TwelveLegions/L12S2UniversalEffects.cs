@@ -262,7 +262,7 @@ public sealed partial class L12GameEngine
             {
                 source.AttachedCards.Remove(holyLock);
                 var owner = holyLock.OwnerIndex is >= 0 and <= 1 ? holyLock.OwnerIndex.Value : 1 - item.Controller;
-                ResetCardAfterLeavingField(holyLock);
+                ResetCardForPrivateZone(holyLock);
                 State.Players[owner].Graveyard.Add(holyLock);
                 if (source.AttachedCards.All(card => card.CardId != "S02-0013"))
                     source.Abilities.RemoveAll(view => view.Id == "discardHolyLock");
@@ -418,6 +418,7 @@ public sealed partial class L12GameEngine
                 continue;
 
             player.Hand.Remove(counter);
+            ResetCardForFieldEntry(counter);
             counter.Hidden = true;
             counter.SetRound = State.Round;
             counter.SummonRound = State.Round;

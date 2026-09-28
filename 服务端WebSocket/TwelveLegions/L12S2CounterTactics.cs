@@ -144,6 +144,7 @@ public sealed partial class L12GameEngine
                 var selected = affected.Hand.FirstOrDefault(card => card.InstanceId == selectedId);
                 if (selected is not null)
                 {
+                    ResetCardForPrivateZone(selected);
                     L12LibraryOps.PutOnTop(affected, CardOwner(selected, affected), [selected]);
                     AddEvent("return", item.Controller, "〈粮草掠夺〉将盲选的1张对方手牌返回所有者牌库顶部");
                 }
@@ -209,6 +210,7 @@ public sealed partial class L12GameEngine
         }
 
         player.Library.RemoveAt(0);
+        ResetCardForPrivateZone(revealed);
         player.Graveyard.Add(revealed);
         DeclarePresentationBranch(item.Data, "cosmos-yin-reveal", "revealMode", "mode:hit");
         item.Data.Remove("presentationSceneId");

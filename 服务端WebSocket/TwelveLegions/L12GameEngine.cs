@@ -177,8 +177,41 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             || player.Field is null || player.Field.Length != 2
             || player.Field.Any(row => row is null || row.Length != 3)))
             throw new InvalidDataException("对局检查点战场结构无效，不能以空战场恢复");
+        ValidateCheckpointCardInstances(state);
         return new L12GameEngine(catalog, state, randomState, cardFactSignalSequence,
             autoPassEmptyResponses, concealHiddenResponseAvailability, utcNow);
+    }
+
+    private static void ValidateCheckpointCardInstances(L12GameState state)
+    {
+        var locations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        void Add(L12CardInstance card, string zone)
+        {
+            if (!locations.TryAdd(card.InstanceId, zone))
+                throw new InvalidDataException(
+                    $"对局检查点存在重复卡牌实例 {card.InstanceId}（{locations[card.InstanceId]} / {zone}）");
+            foreach (var attached in card.AttachedCards)
+                Add(attached, $"{zone}:attached:{card.InstanceId}");
+        }
+
+        foreach (var player in state.Players)
+        {
+            var prefix = $"player:{player.PlayerIndex}";
+            foreach (var card in player.Library) Add(card, $"{prefix}:library");
+            foreach (var card in player.Hand) Add(card, $"{prefix}:hand");
+            for (var row = 0; row < player.Field.Length; row++)
+            for (var slot = 0; slot < player.Field[row].Length; slot++)
+                if (player.Field[row][slot] is { } card) Add(card, $"{prefix}:field:{row}:{slot}");
+            if (player.Relic is { } relic) Add(relic, $"{prefix}:relic");
+            if (player.MasterLegionState is { } master) Add(master, $"{prefix}:master");
+            foreach (var card in player.ExtraRelics) Add(card, $"{prefix}:extra-relic");
+            foreach (var card in player.Resolving) Add(card, $"{prefix}:resolving");
+            foreach (var card in player.Graveyard) Add(card, $"{prefix}:graveyard");
+            foreach (var card in player.Removed) Add(card, $"{prefix}:removed");
+            foreach (var card in player.SpecialZones.GodPower) Add(card, $"{prefix}:god-power");
+            foreach (var card in player.SpecialZones.Trials) Add(card, $"{prefix}:trials");
+            foreach (var card in player.SpecialZones.CanopicProgress) Add(card, $"{prefix}:canopic");
+        }
     }
 
     public const string DefaultResponseMode = "default";
@@ -480,7 +513,9 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             masterImageUrl = deployedAsLegion ? null : player.MasterImageUrl,
             deployedAsLegion,
             effectText = card?.Effect,
-            tapped = player.MasterTapped,
+            // 孙悟空军团返回主宰区后仍保留同一公开实例的休整状态；再次按卡文
+            // “活跃登场”时会在成功落场边界转为活跃。这里不公开实例本身。
+            tapped = player.MasterLegionState?.Tapped ?? player.MasterTapped,
             Hp = Math.Max(0, player.Hp),
             player.MaxHp,
             statusIcons = player.MasterCannotBeAttackedUntilTurn >= State.TurnSerial ? new[] { "shield" } : Array.Empty<string>(),
@@ -1109,6 +1144,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         foreach (var card in chosen)
         {
             player.Hand.Remove(card);
+            ResetCardForPrivateZone(card);
             player.Library.Add(card);
         }
         Draw(player, chosen.Count);
@@ -1298,6 +1334,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         var origin = State.IsResolvingStack ? State.EffectStack.LastOrDefault() : null;
         var result = L12LibraryOps.Draw(player, count, card =>
         {
+            ResetCardForPrivateZone(card);
             TrackCardFact("draw", player.PlayerIndex, card, "library", "hand");
             if (origin is not null)
                 NotifyCardAddedToHandByEffect(player, card, "library", $"{player.Name}因效果将{card.Name}加入手牌");
@@ -1471,7 +1508,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         foreach (var attached in host.AttachedCards.ToArray())
         {
             var owner = CardOwner(attached, fallbackOwner);
-            ResetCardAfterLeavingField(attached);
+            ResetCardForPrivateZone(attached);
             if (L12SpecialDeckRules.VanishesWhenLeavingField(attached))
             {
                 AddEvent("derived-vanished", owner.PlayerIndex,
@@ -1509,7 +1546,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         foreach (var foundation in foundations)
         {
             var owner = CardOwner(foundation, fallbackOwner);
-            ResetCardAfterLeavingField(foundation);
+            ResetCardForPrivateZone(foundation);
             switch (destination)
             {
                 case "hand":
@@ -1544,11 +1581,15 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             foreach (var card in row)
                 if (card is not null && card.CannotUntapUntilRound < State.Round) card.Tapped = false;
         if (player.Relic is not null && player.Relic.CannotUntapUntilRound < State.Round) player.Relic.Tapped = false;
+        if (player.MasterLegionState is { } master && master.CannotUntapUntilRound < State.Round)
+            master.Tapped = false;
     }
 
     private static void ResetTemporaryCardState(L12PlayerState player, int completedTurn, int completedPlayer)
     {
-        foreach (var card in player.Field.SelectMany(row => row).Where(card => card is not null).Cast<L12CardInstance>())
+        var cards = player.Field.SelectMany(row => row).Where(card => card is not null).Cast<L12CardInstance>()
+            .Concat(player.MasterLegionState is null ? [] : [player.MasterLegionState]);
+        foreach (var card in cards)
         {
             L12DerivedStats.ResetForCompletedTurn(card, completedTurn);
             card.HasStrongAttack = false;
@@ -1590,7 +1631,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     private void ExpireEffectsAtPlayerTurnStart(int playerIndex)
     {
         foreach (var player in State.Players)
-        foreach (var card in player.Field.SelectMany(row => row).Where(card => card is not null).Cast<L12CardInstance>())
+        foreach (var card in player.Field.SelectMany(row => row).Where(card => card is not null).Cast<L12CardInstance>()
+                     .Concat(player.MasterLegionState is null ? [] : [player.MasterLegionState]))
         {
             if (card.TauntExpiresAtPlayerTurnStart == playerIndex)
             {
@@ -1685,6 +1727,9 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         bool bypassLethalReplacement = false, bool deferGraveyard = false)
     {
         if (FindOnField(player, card.InstanceId, out var row, out var slot) is null) return false;
+        var departureOwner = CardOwner(card, player);
+        if (toGraveyard && ReturnsToMasterZoneOnDeparture(card)
+            && !CanStoreMasterLegion(departureOwner, card, reason)) return false;
         var isDefeat = toGraveyard && leaveKind == L12FieldLeaveKind.Defeat;
         if (isDefeat && !bypassLethalReplacement && TryApplyLakeLadySwordReplacement(player, card, reason)) return false;
         if (isDefeat && !bypassLethalReplacement && TryOfferEffectLethalReplacement(player, card, reason))
@@ -1719,7 +1764,6 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 var promotionFoundations = DetachPromotionFoundations(card);
                 if (card.AttachedCards.Count > 0) DiscardAttachedCards(card, $"{card.Name}离场");
                 var returnsToMaster = ReturnsToMasterZoneOnDeparture(card);
-                ResetCardAfterLeavingField(card);
                 if (returnsToMaster)
                 {
                     CompleteMasterLegionDeparture(owner, card);
@@ -1727,12 +1771,14 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 }
                 else if (L12SpecialDeckRules.VanishesWhenLeavingField(card))
                 {
+                    ResetCardForPrivateZone(card);
                     AddEvent("derived-vanished", owner.PlayerIndex,
                         $"衍生卡〈{card.Name}〉离场时消灭，不进入其他区域", card);
                     MovePromotionFoundationsToZone(promotionFoundations, owner, "vanished", $"{card.Name}离场");
                 }
                 else
                 {
+                    ResetCardForPrivateZone(card);
                     owner.Graveyard.Add(card);
                     MovePromotionFoundationsToZone(promotionFoundations, owner, "graveyard", $"{card.Name}离场");
                     if (owner.PlayerIndex != player.PlayerIndex)
@@ -1778,7 +1824,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
         card.AttachedCards.Remove(sword);
         var owner = CardOwner(sword, controller);
-        ResetCardAfterLeavingField(sword);
+        ResetCardForPrivateZone(sword);
         owner.Graveyard.Add(sword);
         RecalculateContinuousTroops();
         AddSemanticPlayerLogEvent("replacement", controller.PlayerIndex,
@@ -1869,6 +1915,9 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         bool queueLeaveTrigger = true)
     {
         if (FindOnField(player, card.InstanceId, out var row, out var slot) is null) return false;
+        var departureOwner = CardOwner(card, player);
+        if (ReturnsToMasterZoneOnDeparture(card)
+            && !CanStoreMasterLegion(departureOwner, card, reason)) return false;
         CaptureLastKnownFieldState(card, row);
         var sourceSnapshot = CaptureLastKnownSourceSnapshot(card);
         player.Field[row][slot] = null;
@@ -1876,6 +1925,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         var owner = CardOwner(card, player);
         var promotionFoundations = DetachPromotionFoundations(card);
         var finalDestination = destination;
+        if (card.AttachedCards.Count > 0)
+            DiscardAttachedCards(card, $"{card.Name}离场");
 
         if (ReturnsToMasterZoneOnDeparture(card))
         {
@@ -1885,9 +1936,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         else if (L12SpecialDeckRules.VanishesWhenLeavingField(card))
         {
             finalDestination = "vanished";
-            if (card.AttachedCards.Count > 0)
-                DiscardAttachedCards(card, $"{card.Name}离场");
-            ResetCardAfterLeavingField(card);
+            ResetCardForPrivateZone(card);
             AddEvent("derived-vanished", owner.PlayerIndex,
                 $"衍生卡〈{card.Name}〉离场时消灭，不进入其他区域", card);
         }
@@ -1895,28 +1944,26 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         else if (L12SpecialDeckRules.AlwaysReturnsToOwnerGraveyard(card))
         {
             finalDestination = "graveyard";
-            ResetCardAfterLeavingField(card);
+            ResetCardForPrivateZone(card);
             owner.Graveyard.Add(card);
             AddEvent("replacement", owner.PlayerIndex, $"{card.Name}以任何形式离场，改为置入所有者墓地", card);
         }
         else switch (destination)
         {
             case "hand":
-                ResetCardAfterLeavingField(card);
+                ResetCardForPrivateZone(card);
                 if (State.IsResolvingStack || State.EffectStack.Count > 0)
                     AddCardToHandByEffect(owner, card, "field", $"{card.Name}因效果加入所有者手牌");
                 else owner.Hand.Add(card);
                 break;
-            case "library-top": ResetCardAfterLeavingField(card); owner.Library.Insert(0, card); break;
-            case "library-bottom": ResetCardAfterLeavingField(card); owner.Library.Add(card); break;
-            case "removed": ResetCardAfterLeavingField(card); owner.Removed.Add(card); break;
-            default: ResetCardAfterLeavingField(card); owner.Graveyard.Add(card); break;
+            case "library-top": ResetCardForPrivateZone(card); owner.Library.Insert(0, card); break;
+            case "library-bottom": ResetCardForPrivateZone(card); owner.Library.Add(card); break;
+            case "removed": ResetCardForPrivateZone(card); owner.Removed.Add(card); break;
+            default: ResetCardForPrivateZone(card); owner.Graveyard.Add(card); break;
         }
 
         MovePromotionFoundationsToZone(promotionFoundations, owner, finalDestination, $"{card.Name}离场");
 
-        if (card.AttachedCards.Count > 0)
-            DiscardAttachedCards(card, $"{card.Name}离场");
         AddEvent("leave", player.PlayerIndex, $"{card.Name}{reason}", card);
         if (queueLeaveTrigger)
             QueueTriggerCandidates(BuildS1LeaveReactionCandidates(player.PlayerIndex, sourceSnapshot));
@@ -1937,11 +1984,29 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             card);
     }
 
+    private void ResetCardForPrivateZone(L12CardInstance card)
+    {
+        foreach (var player in State.Players)
+            player.UsedAbilities.RemoveWhere(key => IsCardInstanceRuntimeKey(key, card));
+        ResetCardAfterLeavingField(card);
+    }
+
+    private void ResetCardForFieldEntry(L12CardInstance card)
+    {
+        ResetCardForPrivateZone(card);
+        card.LastKnownEffectiveProfession = null;
+        card.LastKnownWasRanged = false;
+        card.LastKnownAttachedCardIds.Clear();
+    }
+
     private static void ResetCardAfterLeavingField(L12CardInstance card)
     {
         card.CostModifier = 0;
         card.ContinuousCostModifier = 0;
         card.PlayCost = null;
+        card.MinimumPlayCost = null;
+        card.PlayBlockedReason = null;
+        card.SpendableResourceType = null;
         card.Troops = card.BaseTroops;
         card.ContinuousTroopsModifier = 0;
         card.ContinuousTroopsBonusGranted = 0;
@@ -1999,7 +2064,21 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         card.ImmortalExpiresAtPlayerTurnStart = -1;
         card.SuppressDeathUntilTurn = -1;
         card.EffectiveProfession = card.Profession;
+        card.IdentityKnown = false;
+        card.IsMasterLegion = false;
+        card.ActiveKeywords.Clear();
+        card.StatusIcons.Clear();
+        card.StatusEffects.Clear();
+        card.RuleActions.Clear();
         card.TimedModifiers.Clear();
+    }
+
+    private static bool IsCardInstanceRuntimeKey(string key, L12CardInstance card)
+    {
+        // UsedAbilities 的实例维度统一使用冒号分隔 token。只匹配完整 token，既能覆盖
+        // SimpleCardState 等数据驱动前缀，也不会把卡名、主宰、全局或相似实例 ID 误删。
+        return key.Split(':').Any(token =>
+            token.Equals(card.InstanceId, StringComparison.OrdinalIgnoreCase));
     }
 
     private static void CaptureLastKnownFieldState(L12CardInstance card, int row)

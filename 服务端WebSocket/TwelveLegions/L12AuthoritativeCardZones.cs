@@ -37,6 +37,8 @@ public sealed partial class L12GameEngine
 
             if (player.Relic is { } relic && relic.InstanceId == instanceId)
                 locations.Add(new(player, relic, "relic"));
+            if (player.MasterLegionState is { } master && master.InstanceId == instanceId)
+                locations.Add(new(player, master, "master"));
             AddCards(player, player.ExtraRelics, "extra");
             AddCards(player, player.SpecialZones.GodPower, "god-power");
             AddCards(player, player.SpecialZones.Trials, "trial");
@@ -74,6 +76,8 @@ public sealed partial class L12GameEngine
                 => RemoveFieldReference(location),
             "relic" when ReferenceEquals(location.Host.Relic, location.Card)
                 => RemoveRelicReference(location),
+            "master" when ReferenceEquals(location.Host.MasterLegionState, location.Card)
+                => RemoveMasterReference(location),
             "extra" => location.Host.ExtraRelics.Remove(location.Card),
             "god-power" => location.Host.SpecialZones.GodPower.Remove(location.Card),
             "trial" => location.Host.SpecialZones.Trials.Remove(location.Card),
@@ -95,6 +99,12 @@ public sealed partial class L12GameEngine
     private static bool RemoveRelicReference(L12AuthoritativeCardLocation location)
     {
         location.Host.Relic = null;
+        return true;
+    }
+
+    private static bool RemoveMasterReference(L12AuthoritativeCardLocation location)
+    {
+        location.Host.MasterLegionState = null;
         return true;
     }
 
@@ -138,7 +148,7 @@ public sealed partial class L12GameEngine
         }
         if (location.Zone is "relic" or "extra" && card.AttachedCards.Count > 0)
             DiscardAttachedCards(card, $"{card.Name}离开圣物区");
-        ResetCardAfterLeavingField(card);
+        ResetCardForPrivateZone(card);
         owner.Library.Insert(0, card);
         if (location.Zone is "relic" or "extra")
         {

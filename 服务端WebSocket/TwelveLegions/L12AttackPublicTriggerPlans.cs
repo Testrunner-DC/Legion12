@@ -326,7 +326,7 @@ public sealed partial class L12GameEngine
                 foreach (var squire in discarded)
                 {
                     source.AttachedCards.Remove(squire);
-                    ResetCardAfterLeavingField(squire);
+                    ResetCardForPrivateZone(squire);
                     player.Graveyard.Add(squire);
                 }
                 activation.DeclaredValues["squireCount"] = [discarded.Length.ToString()];

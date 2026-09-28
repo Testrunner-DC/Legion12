@@ -8,6 +8,11 @@ public sealed partial class L12GameEngine
     private void PlaceArtifactInRelicZone(int playerIndex, L12CardInstance card)
     {
         var player = State.Players[playerIndex];
+        ResetCardForFieldEntry(card);
+        card.OwnerIndex ??= playerIndex;
+        // 圣物的实际打出回合也是其入场回合；若同回合随后被规则视为军团，
+        // 公共进攻合法性仍应据此施加召唤失调。
+        card.SummonRound = State.Round;
         if (L12StructuredCardSemantics.IgnoresRelicZoneLimit(card.CardId) && player.Relic is not null)
         {
             player.ExtraRelics.Add(card);
@@ -340,11 +345,12 @@ public sealed partial class L12GameEngine
             if (displacesOwnCounter)
             {
                 occupyingCard!.Hidden = false;
-                ResetCardAfterLeavingField(occupyingCard);
+                ResetCardForPrivateZone(occupyingCard);
                 CardOwner(occupyingCard, player).Graveyard.Add(occupyingCard);
                 AddEvent("counter-displaced", playerIndex,
                     $"{player.Name} 打出军团并将自己覆盖的反击战术〈{occupyingCard.Name}〉置入墓地", occupyingCard);
             }
+            ResetCardForFieldEntry(card);
             card.OwnerIndex ??= playerIndex;
             card.SummonRound = State.Round;
             targetBattlefield.Field[row][slot] = card;
@@ -352,10 +358,6 @@ public sealed partial class L12GameEngine
         else if (card.CardType == "artifact")
         {
             player.Hand.Remove(card);
-            card.OwnerIndex ??= playerIndex;
-            // 圣物的实际打出回合也是其入场回合；若同回合随后被规则视为军团，
-            // 公共进攻合法性仍应据此施加召唤失调。
-            card.SummonRound = State.Round;
             PlaceArtifactInRelicZone(playerIndex, card);
         }
         else
@@ -438,7 +440,7 @@ public sealed partial class L12GameEngine
         {
             if (player.Resolving.Remove(card))
             {
-                ResetCardAfterLeavingField(card);
+                ResetCardForPrivateZone(card);
                 player.Graveyard.Add(card);
             }
             if (grailEntryCandidate is not null) QueueTriggerCandidates([grailEntryCandidate]);
@@ -593,7 +595,7 @@ public sealed partial class L12GameEngine
         if (foundation is null) return CommandResult.Reject("选择的晋升基础已不合法");
         var printedCost = S2PromotionGodPowerCost(promoted);
         var actualCost = Math.Max(0, printedCost - player.NextS2PromotionGodPowerDiscount);
-        if (!L12S2ZoneOps.Promote(player, foundation, promoted, actualCost))
+        if (!L12S2ZoneOps.Promote(player, foundation, promoted, actualCost, ResetCardForFieldEntry))
             return CommandResult.Reject($"需要{actualCost}张活跃的神力完成晋升");
 
         if (player.NextS2PromotionGodPowerDiscount > 0) player.NextS2PromotionGodPowerDiscount = 0;
@@ -736,10 +738,11 @@ public sealed partial class L12GameEngine
         {
             var old = occupant;
             old.Hidden = false;
-            ResetCardAfterLeavingField(old);
+            ResetCardForPrivateZone(old);
             CardOwner(old, player).Graveyard.Add(old);
             AddEvent("counter-replaced", playerIndex, $"{old.Name} 被新的反击战术顶替并置入墓地", old);
         }
+        ResetCardForFieldEntry(card);
         card.Hidden = true;
         card.OwnerIndex ??= playerIndex;
         card.SetRound = State.Round;
@@ -1209,6 +1212,7 @@ public sealed partial class L12GameEngine
             foreach (var card in cards)
             {
                 defender.Hand.Remove(card);
+                ResetCardForPrivateZone(card);
                 defender.Graveyard.Add(card);
             }
             AddEvent("defense", playerIndex, cards.Count == 0

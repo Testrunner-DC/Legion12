@@ -329,7 +329,8 @@ public static class L12S2ZoneOps
         return true;
     }
 
-    public static bool Promote(L12PlayerState player, L12CardInstance foundation, L12CardInstance promoted, int godPowerCost)
+    public static bool Promote(L12PlayerState player, L12CardInstance foundation, L12CardInstance promoted,
+        int godPowerCost, Action<L12CardInstance>? preparePromotedForField = null)
     {
         if (!promoted.HasTrait("晋升者") || foundation.HasTrait("晋升者")) return false;
         var normalizedPromotedName = promoted.Name.Replace("·晋升", string.Empty, StringComparison.Ordinal);
@@ -344,6 +345,7 @@ public static class L12S2ZoneOps
             if (player.Field[row][slot]?.InstanceId == foundation.InstanceId) position = (row, slot);
         if (position.Row < 0 || !ConsumeAndFlipGodPower(player, godPowerCost)) return false;
 
+        preparePromotedForField?.Invoke(promoted);
         InheritPromotionState(foundation, promoted);
         promoted.AttachedCards.Add(foundation);
         player.Hand.Remove(promoted);

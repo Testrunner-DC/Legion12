@@ -268,6 +268,7 @@ public sealed partial class L12GameEngine
                 foreach (var arthur in player.Graveyard.Where(card => card.CardId == "S02-0601").ToArray())
                 {
                     player.Graveyard.Remove(arthur);
+                    ResetCardForPrivateZone(arthur);
                     player.Library.Add(arthur);
                 }
                 ShuffleLibrary(player, "湖中仙女的馈赠返回墓地亚瑟王并重洗");

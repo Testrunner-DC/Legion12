@@ -633,6 +633,7 @@ public sealed partial class MatchRecorder
                     if (player.Field[row][slot] is { } card)
                         AddCard(result, player.PlayerIndex, $"field:{row}:{slot}", card);
             if (player.Relic is { } relic) AddCard(result, player.PlayerIndex, "relic", relic);
+            if (player.MasterLegionState is { } master) AddCard(result, player.PlayerIndex, "master", master);
             AddCards(result, player.PlayerIndex, "extra-relic", player.ExtraRelics);
             AddCards(result, player.PlayerIndex, "resolving", player.Resolving);
             AddCards(result, player.PlayerIndex, "graveyard", player.Graveyard);
@@ -667,6 +668,9 @@ public sealed partial class MatchRecorder
                 if (TryProperty(player, "Relic", "relic", out var relic)
                     && relic.ValueKind == JsonValueKind.Object)
                     AddJsonCard(result, playerIndex, "relic", relic);
+                if (TryProperty(player, "MasterLegionState", "masterLegionState", out var master)
+                    && master.ValueKind == JsonValueKind.Object)
+                    AddJsonCard(result, playerIndex, "master", master);
                 if (TryProperty(player, "Field", "field", out var field)
                     && field.ValueKind == JsonValueKind.Array)
                 {
@@ -744,6 +748,7 @@ public sealed partial class MatchRecorder
         IEnumerable<L12CardInstance> roots = player.Library.Concat(player.Hand)
             .Concat(player.Field.SelectMany(row => row).OfType<L12CardInstance>())
             .Concat(player.Relic is null ? [] : [player.Relic])
+            .Concat(player.MasterLegionState is null ? [] : [player.MasterLegionState])
             .Concat(player.ExtraRelics).Concat(player.Resolving).Concat(player.Graveyard).Concat(player.Removed)
             .Concat(player.SpecialZones.GodPower).Concat(player.SpecialZones.Trials)
             .Concat(player.SpecialZones.CanopicProgress);

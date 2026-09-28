@@ -172,6 +172,7 @@ public sealed partial class L12GameEngine
         var (row, slot) = ParseSlot(destination);
         player.Graveyard.Remove(xiaotian);
         player.Removed.Remove(xiaotian);
+        ResetCardForFieldEntry(xiaotian);
         xiaotian.Tapped = false;
         xiaotian.SummonRound = State.Round;
         player.Field[row][slot] = xiaotian;
@@ -1584,6 +1585,7 @@ public sealed partial class L12GameEngine
             if (declared.Skip(1).Distinct().Count() > 2 || declared.Skip(1).Any(id => DeclaredEnemyTarget(playerIndex, id) is null))
                 return CommandResult.Reject("减兵目标不合法");
             player.Hand.Remove(discard);
+            ResetCardForPrivateZone(discard);
             player.Graveyard.Add(discard);
             RecordLimitedActiveAbilityUse(player, source, ability);
             var data = new Dictionary<string, string> { ["ability"] = ability, ["targets"] = string.Join('|', declared.Skip(1)) };
@@ -2213,6 +2215,7 @@ public sealed partial class L12GameEngine
                     var sword = player.Graveyard.FirstOrDefault(card => card.CardId == "S02-06S2")
                         ?? CreateCard("S02-06S2", $"p{item.Controller}-arthur-sword-{State.TurnSerial}");
                     player.Graveyard.Remove(sword);
+                    ResetCardForFieldEntry(sword);
                     sword.OwnerIndex = item.Controller;
                     arthur.AttachedCards.Add(sword);
                     RecalculateContinuousTroops();
@@ -2465,6 +2468,7 @@ public sealed partial class L12GameEngine
                     return true;
                 }
                 player.Hand.Remove(shown);
+                ResetCardForPrivateZone(shown);
                 player.Library.Insert(0, shown);
                 item.Data["heracles-shown-cost"] = shown.CurrentCost.ToString();
                 AddPresentationEvent("reveal", item.Controller,
@@ -2503,6 +2507,7 @@ public sealed partial class L12GameEngine
                     return true;
                 }
                 player.Hand.Remove(discarded);
+                ResetCardForPrivateZone(discarded);
                 player.Graveyard.Add(discarded);
                 var targets = (item.Data.GetValueOrDefault("s2-gaotianyuan-ready-targets") ?? string.Empty)
                     .Split('|', StringSplitOptions.RemoveEmptyEntries);
@@ -3089,15 +3094,14 @@ public sealed partial class L12GameEngine
         if (squire?.CardId == "S02-0609")
         {
             player.Field[row][slot] = null;
-            ResetCardAfterLeavingField(squire);
             return squire;
         }
         squire = player.Hand.FirstOrDefault(card => card.InstanceId == instanceId && card.CardId == "S02-0609");
-        if (squire is not null) { player.Hand.Remove(squire); return squire; }
+        if (squire is not null) { player.Hand.Remove(squire); ResetCardForFieldEntry(squire); return squire; }
         squire = player.Library.FirstOrDefault(card => card.InstanceId == instanceId && card.CardId == "S02-0609");
-        if (squire is not null) { player.Library.Remove(squire); return squire; }
+        if (squire is not null) { player.Library.Remove(squire); ResetCardForFieldEntry(squire); return squire; }
         squire = player.Graveyard.FirstOrDefault(card => card.InstanceId == instanceId && card.CardId == "S02-0609");
-        if (squire is not null) player.Graveyard.Remove(squire);
+        if (squire is not null) { player.Graveyard.Remove(squire); ResetCardForFieldEntry(squire); }
         return squire;
     }
 
@@ -3385,6 +3389,7 @@ public sealed partial class L12GameEngine
         }
 
         player.Hand.Remove(discard);
+        ResetCardForPrivateZone(discard);
         player.Graveyard.Add(discard);
         AddEvent("cost", prompt.PlayerIndex, $"始皇帝 嬴政弃置〈{discard.Name}〉作为登场时效果费用", discard);
         var data = CompositeFirstSegmentData("trigger:S02-0101:enter",

@@ -581,7 +581,7 @@ public sealed partial class L12GameEngine
                     FinishStackItem(item);
                     return true;
                 }
-                enemy.Hand.Remove(target); enemy.Library.Add(target); ShuffleLibrary(enemy, "前线侦查结算");
+                enemy.Hand.Remove(target); ResetCardForPrivateZone(target); enemy.Library.Add(target); ShuffleLibrary(enemy, "前线侦查结算");
                 FinishStackItem(item); return true;
             }
             case "ambush-buff":
@@ -855,6 +855,7 @@ public sealed partial class L12GameEngine
         var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == instanceId);
         if (card is null) return false;
         player.Hand.Remove(card);
+        ResetCardForPrivateZone(card);
         player.Graveyard.Add(card);
         var authoritativeSource = source;
         if (authoritativeSource is null && State.IsResolvingStack && State.EffectStack.LastOrDefault() is { } origin)
@@ -873,6 +874,7 @@ public sealed partial class L12GameEngine
         if (card is null) return;
         if (!CanEnterHandOrLibrary(card)) { AddEvent("replacement", player.PlayerIndex, $"{card.Name}不能进入手牌，仍置于墓地", card); return; }
         player.Graveyard.Remove(card);
+        ResetCardForPrivateZone(card);
         PubliclyRevealThenAddCardToHandByEffect(player, card, "graveyard",
             $"〈{card.Name}〉从墓地公开加入手牌", $"{card.Name}从墓地回到手牌", item);
         AddEvent("return", player.PlayerIndex, $"{card.Name}从墓地回到手牌", card);
@@ -968,7 +970,9 @@ public sealed partial class L12GameEngine
             || battlefield != player.PlayerIndex && card.CardId != "S01-0004"
             || !EmptySlots(State.Players[battlefield]).Contains(slotChoice, StringComparer.OrdinalIgnoreCase)) return false;
         var (row, slot) = ParseSlot(slotChoice);
-        player.Hand.Remove(card); card.OwnerIndex ??= player.PlayerIndex; card.Tapped = tapped; card.SummonRound = State.Round;
+        player.Hand.Remove(card);
+        ResetCardForFieldEntry(card);
+        card.OwnerIndex ??= player.PlayerIndex; card.Tapped = tapped; card.SummonRound = State.Round;
         State.Players[battlefield].Field[row][slot] = card;
         AddEvent("put", battlefield, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
         CompleteEffectLegionEntry(battlefield, card, "hand");
@@ -1199,7 +1203,7 @@ public sealed partial class L12GameEngine
                         if (failedKaba is not null)
                         {
                             player.Hand.Remove(failedKaba);
-                            ResetCardAfterLeavingField(failedKaba);
+                            ResetCardForPrivateZone(failedKaba);
                             player.Graveyard.Add(failedKaba);
                             AddEvent("move", item.Controller,
                                 "〈锡瓦的卡巴〉声明的登场位置在逆结算后被占用，按单卡裁定置入墓地", failedKaba);

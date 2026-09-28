@@ -143,6 +143,7 @@ public sealed partial class L12GameEngine
         };
         if (destination.Length == 0) return CommandResult.Reject("请选择手牌要前往的合法区域");
         player.Hand.Remove(card);
+        ResetCardForPrivateZone(card);
         switch (destination)
         {
             case "library-top": player.Library.Insert(0, card); break;
@@ -168,14 +169,17 @@ public sealed partial class L12GameEngine
             var targetSlot = command.Slot.GetValueOrDefault();
             if (player.Field[targetRow][targetSlot] is not null)
                 return CommandResult.Reject("目标阵地已有卡牌");
-            if (removeFromHand) player.Hand.Remove(card);
+            if (removeFromHand)
+            {
+                player.Hand.Remove(card);
+                ResetCardForFieldEntry(card);
+            }
             card.SummonRound = State.Round;
             player.Field[targetRow][targetSlot] = card;
         }
         else if (card.CardType == "artifact")
         {
             if (removeFromHand) player.Hand.Remove(card);
-            card.SummonRound = State.Round;
             PlaceArtifactInRelicZone(command.TargetPlayer, card);
         }
         else if (card.CardType == "tactic")
@@ -198,14 +202,14 @@ public sealed partial class L12GameEngine
                     trigger == "enter" ? "【登场时】效果" : "战术效果");
             else if (player.Resolving.Remove(card))
             {
-                ResetCardAfterLeavingField(card);
+                ResetCardForPrivateZone(card);
                 player.Graveyard.Add(card);
             }
             if (card.CardType == "legion") QueueS2GrailRoundTableEntry(command.TargetPlayer, card);
         }
         else if (player.Resolving.Remove(card))
         {
-            ResetCardAfterLeavingField(card);
+            ResetCardForPrivateZone(card);
             player.Graveyard.Add(card);
         }
         TrySettleScheduledDisasterIfIdle();
@@ -257,7 +261,7 @@ public sealed partial class L12GameEngine
             if (card.AttachedCards.Count > 0)
                 DiscardAttachedCards(card, $"{card.Name}离开圣物区");
             var owner = CardOwner(card, controller);
-            ResetCardAfterLeavingField(card);
+            ResetCardForPrivateZone(card);
             if (vanishes)
             {
                 AddEvent("derived-vanished", owner.PlayerIndex,
@@ -476,7 +480,7 @@ public sealed partial class L12GameEngine
             foreach (var resolving in player.Resolving.ToArray())
             {
                 player.Resolving.Remove(resolving);
-                ResetCardAfterLeavingField(resolving);
+                ResetCardForPrivateZone(resolving);
                 player.Graveyard.Add(resolving);
             }
         }

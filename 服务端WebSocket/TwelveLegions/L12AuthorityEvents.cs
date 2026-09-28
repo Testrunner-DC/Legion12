@@ -300,6 +300,7 @@ public sealed partial class L12GameEngine
 
     private void AddCardToHandByEffect(L12PlayerState player, L12CardInstance card, string originZone, string reason)
     {
+        ResetCardForPrivateZone(card);
         player.Hand.Add(card);
         TrackCardFact("search-or-hand-add", player.PlayerIndex, card, originZone, "hand");
         NotifyCardAddedToHandByEffect(player, card, originZone, reason);

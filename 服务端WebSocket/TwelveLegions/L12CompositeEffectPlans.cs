@@ -1130,7 +1130,7 @@ public sealed partial class L12GameEngine
         if (source is not null)
         {
             player.Resolving.Remove(source);
-            ResetCardAfterLeavingField(source);
+            ResetCardForPrivateZone(source);
             player.Graveyard.Add(source);
         }
         AddEvent("ability-rejected", activation.Controller, reason);
@@ -1333,6 +1333,7 @@ public sealed partial class L12GameEngine
             var result = L12LibraryOps.Mill(player, 1);
             if (!result.Success) return false;
             var discarded = result.Cards[0];
+            ResetCardForPrivateZone(discarded);
             AddEvent("cost", controller, $"〈{source.Name}〉弃置牌库顶部1张牌作为发动费用", source, discarded);
             NotifyCardDiscarded(player, discarded, "library", causedByEffect: false);
         }
@@ -1940,7 +1941,7 @@ public sealed partial class L12GameEngine
             && State.DeferredEffectStack.All(item => item.SourceInstanceId != resolving.InstanceId))
         {
             player.Resolving.Remove(resolving);
-            ResetCardAfterLeavingField(resolving);
+            ResetCardForPrivateZone(resolving);
             player.Graveyard.Add(resolving);
         }
         AddEvent("ability-rejected", activation.Controller,

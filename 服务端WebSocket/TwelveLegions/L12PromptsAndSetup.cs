@@ -131,13 +131,14 @@ public sealed partial class L12GameEngine
             if (applyOptionalSetupDefaults && player.Library.FirstOrDefault(card => card.CardId == "S02-0305") is { } ring)
             {
                 player.Library.Remove(ring);
-                player.Relic = ring;
+                PlaceArtifactInRelicZone(player.PlayerIndex, ring);
                 AddEvent("setup", player.PlayerIndex, "将〈安德华拉诺特〉从牌库置入圣物区，起始手牌改为4张", ring);
             }
             if (applyOptionalSetupDefaults && player.MasterId == "S02-03M1"
                 && player.Library.FirstOrDefault(card => card.CardId == "S02-0301") is { } hammer)
             {
                 player.Library.Remove(hammer);
+                ResetCardForPrivateZone(hammer);
                 player.Hand.Add(hammer);
                 AddEvent("setup", player.PlayerIndex, "〈雷神索尔〉将1张〈雷神之锤〉加入起始手牌", hammer);
             }
@@ -1063,7 +1064,7 @@ public sealed partial class L12GameEngine
                 if (chosen[0] == "yes" && player.Library.FirstOrDefault(card => card.CardId == "S02-0305") is { } ring)
                 {
                     player.Library.Remove(ring);
-                    player.Relic = ring;
+                    PlaceArtifactInRelicZone(playerIndex, ring);
                     AddEvent("setup", playerIndex, "将〈安德华拉诺特〉从牌库置入圣物区，起始手牌改为4张", ring);
                 }
                 if (!State.PendingPrompts.Any(item => item.Continuation.StartsWith("setup-s2-", StringComparison.Ordinal)))
@@ -1076,6 +1077,7 @@ public sealed partial class L12GameEngine
                 if (chosen[0] == "yes" && player.Library.FirstOrDefault(card => card.CardId == "S02-0301") is { } hammer)
                 {
                     player.Library.Remove(hammer);
+                    ResetCardForPrivateZone(hammer);
                     player.Hand.Add(hammer);
                     AddPresentationEvent("reveal", playerIndex, $"{player.Name}展示卡牌〈雷神之锤〉",
                         "S02-03M1", "setup-hammer",
@@ -2310,6 +2312,7 @@ public sealed partial class L12GameEngine
             return;
         }
         player.Hand.Remove(discard);
+        ResetCardForPrivateZone(discard);
         player.Graveyard.Add(discard);
         AddEvent("cost", playerIndex, $"{player.Name} 弃置 {discard.Name} 支付〈绝对防御〉费用", discard);
         // 冒号前的弃置是支付 Cost，不是“因效果从手牌弃置”。
@@ -2338,6 +2341,7 @@ public sealed partial class L12GameEngine
         }
         var slot = int.Parse(slotChoice.AsSpan(2));
         player.Hand.Remove(response);
+        ResetCardForFieldEntry(response);
         response.Tapped = true;
         response.SummonRound = State.Round;
         player.Field[0][slot] = response;
@@ -2542,7 +2546,7 @@ public sealed partial class L12GameEngine
             && card.CardId == "S01-0213");
         if (kaba is null) return;
         player.Hand.Remove(kaba);
-        ResetCardAfterLeavingField(kaba);
+        ResetCardForPrivateZone(kaba);
         player.Graveyard.Add(kaba);
         AddEvent("move", item.Controller, "〈锡瓦的卡巴〉的手牌登场效果被无效，按单卡裁定置入墓地", kaba);
     }
@@ -2586,7 +2590,7 @@ public sealed partial class L12GameEngine
             && State.EffectStack.All(other => other.SourceInstanceId != resolving.InstanceId))
         {
             owner.Resolving.Remove(resolving);
-            ResetCardAfterLeavingField(resolving);
+            ResetCardForPrivateZone(resolving);
             owner.Graveyard.Add(resolving);
         }
         if (!queuedCompositeContinuation && item.Data.ContainsKey("postResolutionGenerated"))

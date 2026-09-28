@@ -28,8 +28,8 @@ public sealed partial class L12GameEngine
             }
             case "wukongTransform" when source.CardId == "S02-01M1":
             {
-                if (PublicLegions(player).Any(card => card.IsMasterLegion))
-                    return CommandResult.Reject("孙悟空已经作为军团登场");
+                if (!CanDeployStoredWukong(player, out var deploymentError))
+                    return CommandResult.Reject(deploymentError);
                 if (!EmptySlots(player).Any(slot => slot.StartsWith("0:", StringComparison.Ordinal)))
                     return CommandResult.Reject("我方前排没有空位");
                 if (player.Morale.Count < 2) return CommandResult.Reject("至少需要返还2张士气");
@@ -323,7 +323,7 @@ public sealed partial class L12GameEngine
                 if (discard is null || revive is null || !EmptySlots(player).Contains(declared[2]))
                     return CommandResult.Reject("选择的卡牌或位置已失效；费用未支付");
                 if (!TryConsumeMorale(player, 3)) return CommandResult.Reject("需要3张活跃士气");
-                source.Tapped = true; player.Hand.Remove(discard); player.Graveyard.Add(discard);
+                source.Tapped = true; player.Hand.Remove(discard); ResetCardForPrivateZone(discard); player.Graveyard.Add(discard);
                 PushEffect(playerIndex, source, "active", "主动休整效果", data: new Dictionary<string, string>
                 {
                     ["ability"] = ability, ["revive"] = revive.InstanceId, ["slot"] = declared[2],
@@ -357,8 +357,20 @@ public sealed partial class L12GameEngine
                     FinishStackItem(item);
                     return true;
                 }
-                var masterLegion = CreateCard(source.CardId, $"master-legion-{item.Controller}-{State.TurnSerial}");
-                masterLegion.OwnerIndex = item.Controller; masterLegion.IsMasterLegion = true; masterLegion.HasCharge = true;
+                if (!CanDeployStoredWukong(player, out var deploymentError))
+                {
+                    RecordTargetSettlementFailure(item, player.MasterLegionState?.InstanceId,
+                        deploymentError);
+                    FinishStackItem(item);
+                    return true;
+                }
+                var masterLegion = player.MasterLegionState
+                    ?? CreateCard(source.CardId, $"master-legion-{item.Controller}-{State.TurnSerial}");
+                player.MasterLegionState = null;
+                masterLegion.OwnerIndex = item.Controller;
+                masterLegion.IsMasterLegion = true;
+                masterLegion.Tapped = false;
+                masterLegion.HasCharge = true;
                 masterLegion.SummonRound = State.Round;
                 masterLegion.SetTroopsValue = int.Parse(item.Data["count"]) * 1000;
                 masterLegion.Troops = masterLegion.SetTroopsValue.Value;
@@ -609,7 +621,7 @@ public sealed partial class L12GameEngine
                 }
 
                 State.Players[hostIndex].Field[row][slot] = null;
-                ResetCardAfterLeavingField(horse);
+                ResetCardForPrivateZone(horse);
                 owner.Graveyard.Add(horse);
                 AddEvent("grave", item.Controller, $"{horse.Name}在我方回合结束时置入墓地", horse);
                 RecalculateContinuousTroops();
@@ -864,6 +876,7 @@ public sealed partial class L12GameEngine
         foreach (var masterLegion in PublicLegions(player).Where(ReturnsToMasterZoneOnDeparture).ToArray())
         {
             if (FindOnField(player, masterLegion.InstanceId, out var row, out var slot) is null) continue;
+            if (!CanStoreMasterLegion(player, masterLegion, timing)) continue;
             player.Field[row][slot] = null;
             CompleteMasterLegionDeparture(player, masterLegion, timing, resumeEndTurn);
             returnedAny = true;
@@ -875,17 +888,49 @@ public sealed partial class L12GameEngine
     private static bool ReturnsToMasterZoneOnDeparture(L12CardInstance card)
         => card.IsMasterLegion && card.CardId == "S02-01M1";
 
-    private void CompleteMasterLegionDeparture(L12PlayerState owner, L12CardInstance card,
+    private bool CanDeployStoredWukong(L12PlayerState player, out string error)
+    {
+        if (PublicLegions(player).Any(card => card.IsMasterLegion))
+        {
+            error = "孙悟空已经作为军团登场";
+            return false;
+        }
+        if (player.MasterLegionState is not { } stored)
+        {
+            error = string.Empty;
+            return true;
+        }
+        var locations = AuthoritativeCardLocations(stored.InstanceId);
+        if (stored.CardId != "S02-01M1" || locations.Count != 1
+            || locations[0].Zone != "master" || !ReferenceEquals(locations[0].Card, stored))
+        {
+            error = "孙悟空保存实例的权威区域不唯一，变身已取消";
+            return false;
+        }
+        error = string.Empty;
+        return true;
+    }
+
+    private bool CanStoreMasterLegion(L12PlayerState owner, L12CardInstance card, string timing)
+    {
+        if (owner.MasterLegionState is null) return true;
+        AddEvent("invalid-state", owner.PlayerIndex,
+            $"孙悟空在{timing}返回主宰区失败：主宰区已存在另一权威实例", card, owner.MasterLegionState);
+        return false;
+    }
+
+    private bool CompleteMasterLegionDeparture(L12PlayerState owner, L12CardInstance card,
         string timing = "离场", bool resumeEndTurn = false)
     {
+        if (!CanStoreMasterLegion(owner, card, timing)) return false;
         var returnedSnapshot = CaptureLastKnownSourceSnapshot(card);
-        ResetCardAfterLeavingField(card);
+        owner.MasterLegionState = card;
         AddEvent("return", owner.PlayerIndex, $"孙悟空在{timing}返回主宰区", card);
         // 上位规则：主宰变为军团后任何情况下离场都返回主宰区（不因天灾改变）；
         // 天灾只抑制其离场时效果（追加士气）的触发排队。
-        if (IsDisasterAuthorityActive()) return;
+        if (IsDisasterAuthorityActive()) return true;
         if (owner.Morale.Count >= State.Players[1 - owner.PlayerIndex].Morale.Count
-            || owner.MoraleDeck.Count == 0) return;
+            || owner.MoraleDeck.Count == 0) return true;
         QueueTriggerCandidates([
             CreateTriggerCandidate(owner.PlayerIndex, returnedSnapshot, "master-legion-returned",
                 "孙悟空返回主宰区后的可选士气效果",
@@ -895,5 +940,6 @@ public sealed partial class L12GameEngine
                     ["resumeEndTurn"] = resumeEndTurn ? "true" : "false",
                 }, returnedSnapshot)
         ]);
+        return true;
     }
 }

@@ -127,7 +127,7 @@ public sealed partial class L12GameEngine
             {
                 player.Field[row][slot] = null;
                 displacedCounter.Hidden = false;
-                ResetCardAfterLeavingField(displacedCounter);
+                ResetCardForPrivateZone(displacedCounter);
                 CardOwner(displacedCounter, player).Graveyard.Add(displacedCounter);
                 AddEvent("counter-displaced", activation.Controller,
                     $"{reason}打出军团并将自己覆盖的反击战术〈{displacedCounter.Name}〉置入墓地", displacedCounter);
@@ -175,7 +175,7 @@ public sealed partial class L12GameEngine
         {
             // 当前已核准的李牧/冲田路径不会命中此分支；保持真实实例在可追溯的墓地，
             // 不把不合法的反击战术伪装成主动战术压入堆叠。
-            ResetCardAfterLeavingField(card);
+            ResetCardForPrivateZone(card);
             player.Graveyard.Add(card);
             AbortEffectGeneratedFreePlay(activation, $"{reason}不能在当前时点打出该类型卡牌");
             return;
@@ -193,7 +193,7 @@ public sealed partial class L12GameEngine
         if (!HasImmediateEffect(card, "play"))
         {
             player.Resolving.Remove(card);
-            ResetCardAfterLeavingField(card);
+            ResetCardForPrivateZone(card);
             player.Graveyard.Add(card);
             FinishStackItem(parent);
             return;
@@ -204,7 +204,7 @@ public sealed partial class L12GameEngine
             if (!result.Accepted)
             {
                 player.Resolving.Remove(card);
-                ResetCardAfterLeavingField(card);
+                ResetCardForPrivateZone(card);
                 player.Graveyard.Add(card);
                 AddEvent("ability-rejected", activation.Controller, result.Error ?? "复合战术无法建立声明", card);
                 FinishStackItem(parent);

@@ -278,7 +278,7 @@ public sealed partial class L12GameEngine
             {
                 var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == id);
                 if (card is null) continue;
-                player.Hand.Remove(card); player.Graveyard.Add(card);
+                player.Hand.Remove(card); ResetCardForPrivateZone(card); player.Graveyard.Add(card);
                 NotifyCardDiscarded(player, card, "hand", causedByEffect: true);
             }
         }
@@ -558,6 +558,7 @@ public sealed partial class L12GameEngine
             {
                 var card = cards[id];
                 player.Hand.Remove(card);
+                ResetCardForPrivateZone(card);
                 player.Library.Add(card);
             }
             if (!Draw(player, 4)) SetWinner(1 - index, "天启默示录抽牌时牌库为空");
@@ -604,7 +605,7 @@ public sealed partial class L12GameEngine
         foreach (var id in chosen)
         {
             var card = player.Hand.First(candidate => candidate.InstanceId == id);
-            player.Hand.Remove(card); player.Library.Add(card);
+            player.Hand.Remove(card); ResetCardForPrivateZone(card); player.Library.Add(card);
         }
         CompleteEndTurn(prompt.PlayerIndex);
     }
