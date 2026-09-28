@@ -46,6 +46,10 @@ const checks = [
     && visualProjection.includes('cursor: new Map(state.zones)')
     && visualProjection.includes('`${revision}:${fact.instanceId}:${fact.from}>${fact.to}`')
     && visualProjection.includes('current !== undefined && current !== fact.from')],
+  ['movement geometry only reuses a card in its semantic zone', movement.includes('function cardElementInZone(instanceId: string | undefined, zone: Zone)')
+    && movement.includes("element.closest('[data-l12-zone]')?.getAttribute('data-l12-zone') === zone")
+    && movement.includes('cardElementInZone(movement.card?.instanceId, movement.to)')
+    && movement.includes('cardElementInZone(draft.card?.instanceId, draft.from)')],
   ['combat impact preserves authority card rotation', combat.includes("targetCard?.closest('.formation-slot') ?? targetAnchor")
     && !combat.includes('const impact = targetElement.animate')],
   ['attachment target uses stable instance identity', tile.includes('data-attached-card-instance-ids') && movement.includes('attachmentElement') && movement.includes('draft.attachment && !destination')],

@@ -105,6 +105,65 @@ async function expectTrace(page, profile, expected, label) {
   const actual = await page.evaluate(() => window.__movementTrace.slice())
   ok(JSON.stringify(actual) === JSON.stringify(expected), `${profile}: ${label} must preserve event-local order: ${actual.join(',')}`)
 }
+async function zoneMovementGeometry(page, instanceId, from, to) {
+  const selector = `[data-movement-instance-id="${instanceId}"][data-movement-from="${from}"][data-movement-to="${to}"]`
+  await page.waitForSelector(selector, { state:'attached', timeout:3000 })
+  return page.locator(selector).evaluate(node => ({
+    from: node.getAttribute('data-movement-from'),
+    to: node.getAttribute('data-movement-to'),
+    fromX: Number(node.getAttribute('data-movement-from-x')),
+    fromY: Number(node.getAttribute('data-movement-from-y')),
+    toX: Number(node.getAttribute('data-movement-to-x')),
+    toY: Number(node.getAttribute('data-movement-to-y')),
+  }))
+}
+async function resetMovementGeometryTrace(page) {
+  await page.evaluate(() => {
+    window.__movementGeometryTrace = []
+    window.__movementGeometryKeys = new Set()
+    if (window.__movementGeometryObserver) return
+    const capture = () => {
+      document.querySelectorAll('.l12-zone-flight-ghost,.zone-card-movement').forEach(node => {
+        const key = node.getAttribute('data-movement-key') ?? ''
+        if (!key || window.__movementGeometryKeys.has(key)) return
+        window.__movementGeometryKeys.add(key)
+        window.__movementGeometryTrace.push({
+          instanceId: node.getAttribute('data-movement-instance-id'),
+          from: node.getAttribute('data-movement-from'),
+          to: node.getAttribute('data-movement-to'),
+          fromX: Number(node.getAttribute('data-movement-from-x')),
+          fromY: Number(node.getAttribute('data-movement-from-y')),
+          toX: Number(node.getAttribute('data-movement-to-x')),
+          toY: Number(node.getAttribute('data-movement-to-y')),
+          renderer: node.classList.contains('zone-card-movement') ? 'event-face' : 'source-clone',
+          imageSrc: node.querySelector('.moving-card > img')?.getAttribute('src') ?? '',
+        })
+      })
+    }
+    window.__movementGeometryObserver = new MutationObserver(capture)
+    window.__movementGeometryObserver.observe(document.body, { childList:true, subtree:true })
+  })
+}
+async function movementGeometryTrace(page, count) {
+  await page.waitForFunction(expected => (window.__movementGeometryTrace?.length ?? 0) >= expected, count, { timeout:6000 })
+  return page.evaluate(() => window.__movementGeometryTrace.slice())
+}
+async function zoneCenters(page, playerIndex, instanceId) {
+  return page.evaluate(({ playerIndex, instanceId }) => {
+    const center = selector => {
+      const rect = document.querySelector(selector)?.getBoundingClientRect()
+      return rect ? { x:rect.left + rect.width / 2, y:rect.top + rect.height / 2, width:rect.width, height:rect.height } : null
+    }
+    return {
+      field: center(`[data-player-index="${playerIndex}"] [data-l12-zone="field"] [data-card-instance-id="${CSS.escape(instanceId)}"]`),
+      graveyard: center(`[data-player-index="${playerIndex}"] [data-l12-zone="graveyard"]`),
+    }
+  }, { playerIndex, instanceId })
+}
+function expectNear(actual, expected, tolerance, message) {
+  ok(Boolean(expected) && Math.hypot(actual.x - expected.x, actual.y - expected.y) <= tolerance,
+    `${message}: actual ${actual.x.toFixed(1)},${actual.y.toFixed(1)} expected ${expected?.x.toFixed(1)},${expected?.y.toFixed(1)}`)
+}
 async function startStateContinuityProbe(page, instanceId, durationMs = 520) {
   await page.evaluate(({ instanceId, durationMs }) => {
     const samples = []
@@ -427,8 +486,34 @@ try {
     await expectTrace(page, profile.name, ['plain-entrant'], 'ordinary legion entry')
 
     await resetMovementTrace(page)
+    await resetMovementGeometryTrace(page)
+    const sameRevisionAnchors = await zoneCenters(page, 1, 'plain-entrant')
     await invoke(page, 'sameRevisionLeaveAndReenter')
-    await waitForMovementTrace(page, 2)
+    if (profile.name === 'desktop') {
+      await zoneMovementGeometry(page, 'plain-entrant', 'field', 'graveyard')
+      await shot(page, 'desktop-12-same-revision-field-to-grave-mid')
+      await zoneMovementGeometry(page, 'plain-entrant', 'graveyard', 'field')
+      await shot(page, 'desktop-13-same-revision-grave-to-field-mid')
+    }
+    const sameRevisionGeometry = await movementGeometryTrace(page, 2)
+    const [sameRevisionLeave, sameRevisionReenter] = sameRevisionGeometry
+    ok(sameRevisionLeave.from === 'field' && sameRevisionLeave.to === 'graveyard', `${profile.name}: same-revision first leg must be field>graveyard`)
+    ok(Math.hypot(sameRevisionLeave.toX - sameRevisionLeave.fromX, sameRevisionLeave.toY - sameRevisionLeave.fromY) > 40,
+      `${profile.name}: same-revision first leg must have a non-zero route`)
+    expectNear({ x:sameRevisionLeave.fromX, y:sameRevisionLeave.fromY }, sameRevisionAnchors.field, 4,
+      `${profile.name}: same-revision first leg must start at the field card`)
+    expectNear({ x:sameRevisionLeave.toX, y:sameRevisionLeave.toY }, sameRevisionAnchors.graveyard, 4,
+      `${profile.name}: same-revision first leg must end at the graveyard anchor`)
+    ok(sameRevisionReenter.from === 'graveyard' && sameRevisionReenter.to === 'field', `${profile.name}: same-revision second leg must be graveyard>field`)
+    ok(sameRevisionReenter.renderer === 'event-face'
+      && sameRevisionReenter.imageSrc.includes('/api/site/media/visual-transition/S01-02M1.png'),
+    `${profile.name}: same-revision re-entry must render the public event face from the graveyard anchor`)
+    ok(Math.hypot(sameRevisionReenter.toX - sameRevisionReenter.fromX, sameRevisionReenter.toY - sameRevisionReenter.fromY) > 40,
+      `${profile.name}: same-revision second leg must have a non-zero route`)
+    expectNear({ x:sameRevisionReenter.fromX, y:sameRevisionReenter.fromY }, sameRevisionAnchors.graveyard, 4,
+      `${profile.name}: same-revision second leg must start at the graveyard anchor`)
+    expectNear({ x:sameRevisionReenter.toX, y:sameRevisionReenter.toY }, sameRevisionAnchors.field, 4,
+      `${profile.name}: same-revision second leg must end at the field card`)
     await waitForMovementQueue(page)
     await expectTrace(page, profile.name, ['plain-entrant', 'plain-entrant'], 'same-revision field-to-grave-to-field chain')
 

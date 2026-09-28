@@ -203,10 +203,11 @@ function elementRect(element: Element | null): AnchorRect | null {
   if (rect.width <= 0 || rect.height <= 0) return null
   return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, width: rect.width, height: rect.height }
 }
-function cardElement(instanceId?: string) {
+function cardElementInZone(instanceId: string | undefined, zone: Zone) {
   if (!instanceId) return null
   const root = document.querySelector('[data-l12-game-stage]')
-  return root?.querySelector(`[data-card-instance-id="${CSS.escape(instanceId)}"]`) ?? null
+  return [...(root?.querySelectorAll(`[data-card-instance-id="${CSS.escape(instanceId)}"]`) ?? [])]
+    .find(element => element.closest('[data-l12-zone]')?.getAttribute('data-l12-zone') === zone) ?? null
 }
 function attachmentElement(instanceId?: string) {
   if (!instanceId) return null
@@ -215,7 +216,8 @@ function attachmentElement(instanceId?: string) {
     .find(element => (element.dataset.attachedCardInstanceIds ?? '').split(/\s+/).includes(instanceId)) ?? null
 }
 function destinationElement(movement: Movement) {
-  return movement.attachment ? attachmentElement(movement.card?.instanceId) : cardElement(movement.card?.instanceId)
+  return movement.attachment ? attachmentElement(movement.card?.instanceId)
+    : cardElementInZone(movement.card?.instanceId, movement.to)
 }
 function elementRotation(element: Element | null) {
   return element?.classList.contains('tapped') ? 90 : 0
@@ -237,7 +239,7 @@ function fallbackRect(zone: Zone, playerIndex: number): AnchorRect {
   return { x, y, width: 72, height: 101 }
 }
 function resolveRect(zone: Zone, playerIndex: number, instanceId?: string) {
-  return elementRect(zone === 'attached' ? attachmentElement(instanceId) : cardElement(instanceId))
+  return elementRect(zone === 'attached' ? attachmentElement(instanceId) : cardElementInZone(instanceId, zone))
     ?? elementRect(zoneElement(zone, playerIndex)) ?? fallbackRect(zone, playerIndex)
 }
 
@@ -311,6 +313,10 @@ function showNext() {
     wrapper.dataset.movementInstanceId = active.value.card?.instanceId ?? ''
     wrapper.dataset.movementFrom = active.value.from
     wrapper.dataset.movementTo = active.value.to
+    wrapper.dataset.movementFromX = `${source.x}`
+    wrapper.dataset.movementFromY = `${source.y}`
+    wrapper.dataset.movementToX = `${target.x}`
+    wrapper.dataset.movementToY = `${target.y}`
     Object.assign(wrapper.style, {
       position: 'fixed', left: `${source.x - source.width / 2}px`, top: `${source.y - source.height / 2}px`,
       width: `${source.width}px`, height: `${source.height}px`, zIndex: '902', pointerEvents: 'none',
@@ -455,7 +461,9 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
     // Their source instance may already have disappeared, while cardElement
     // can now resolve to the final graveyard face or library back. Never clone
     // that post-update DOM in reverse; start from the real zone anchor instead.
-    const source = draft.disasterReveal || draft.authoritativeFace ? null : cardElement(draft.card?.instanceId)
+    const source = draft.disasterReveal || draft.authoritativeFace ? null
+      : draft.from === 'attached' ? attachmentElement(draft.card?.instanceId)
+      : cardElementInZone(draft.card?.instanceId, draft.from)
     return {
       rect: elementRect(source) ?? resolveRect(draft.from, draft.playerIndex,
         draft.disasterReveal || draft.authoritativeFace ? undefined : draft.card?.instanceId),
@@ -544,6 +552,8 @@ onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewpo
     <div v-if="active && !active.sourceGhost" :key="active.key" class="zone-card-movement" :style="motionStyle"
       data-ui-contract="authoritative-zone-card-movement" :data-movement-key="active.key"
       :data-movement-instance-id="active.card?.instanceId" :data-movement-from="active.from" :data-movement-to="active.to"
+      :data-movement-from-x="active.fromRect.x" :data-movement-from-y="active.fromRect.y"
+      :data-movement-to-x="active.toRect.x" :data-movement-to-y="active.toRect.y"
       aria-hidden="true">
       <div class="moving-card" data-essential-motion :class="{ concealed: active.concealed, covered: active.covered, 'disaster-reveal': active.disasterReveal }">
         <small v-if="active.caption" class="movement-caption">{{ active.caption }}</small>
