@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-28-faction-highest-tier-rank",
+  "date": "2026-09-28",
+  "audience": "players",
+  "title": "对战玩家名次显示规则修正",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "对战玩家信息现在只为达到所属派系最高段位的玩家显示全服名次，并正确处理各派系自定义段位名称；已有段位称号时不再重复显示普通段位。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs",
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/BattlePlayerIdentity.vue"
+      ]
+    }
+  ]
+}
