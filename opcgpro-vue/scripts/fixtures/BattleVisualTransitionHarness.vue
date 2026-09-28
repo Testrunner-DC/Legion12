@@ -40,6 +40,7 @@ const negatedEntrant = card('negated-entrant', '效果被无效军团', 'S01-03M
 const freeEntrant = card('free-entrant', '免费登场军团', 'S01-03M2', false, faceUrl('S01-03M2'))
 const rapidEntrantA = card('rapid-entrant-a', '连续登场甲', 'S01-04M1', false, faceUrl('S01-04M1'))
 const rapidEntrantB = card('rapid-entrant-b', '连续登场乙', 'S01-04M2', false, faceUrl('S01-04M2'))
+const interleavedEntrant = card('interleaved-entrant', '交错登场军团', 'S01-01M2', false, faceUrl('S01-01M2'))
 
 function player(playerIndex: number): PlayerView {
   return {
@@ -138,6 +139,39 @@ const api = {
   },
   playPlainEntrant() {
     placeOpponent(plainEntrant, 0, 2, [{ type:'play', playerIndex:1, text:'玩家B打出普通登场军团', cards:[plainEntrant] }])
+  },
+  sameRevisionLeaveAndReenter() {
+    publishBatch([
+      { type:'leave', playerIndex:1, text:'普通登场军团因效果临时离场', cards:[plainEntrant] },
+      { type:'enter', playerIndex:1, text:'普通登场军团从墓地再次登场', cards:[plainEntrant] },
+    ])
+  },
+  leavePlainEntrant() {
+    game.players[1].field = game.players[1].field.map(row => row.map(item => item?.instanceId === plainEntrant.instanceId ? null : item))
+    game.players[1].graveyard = [...(game.players[1].graveyard ?? []), plainEntrant]
+    game.players[1].graveyardCount = game.players[1].graveyard.length
+    publishBatch([{ type:'leave', playerIndex:1, text:'普通登场军团离场进入墓地', cards:[plainEntrant] }])
+  },
+  reenterPlainEntrant() {
+    game.players[1].graveyard = (game.players[1].graveyard ?? []).filter(item => item.instanceId !== plainEntrant.instanceId)
+    game.players[1].graveyardCount = game.players[1].graveyard.length
+    game.players[1].field[0][2] = plainEntrant
+    publishBatch([{ type:'enter', playerIndex:1, text:'普通登场军团从墓地再次登场', cards:[plainEntrant] }])
+  },
+  interleavedDifferentInstanceChain() {
+    game.players[0].hand = [...(game.players[0].hand ?? []), interleavedEntrant]
+    game.players[0].handCount = game.players[0].hand.length
+    game.revision += 1
+    queueMicrotask(() => {
+      game.players[0].hand = game.players[0].hand?.filter(item => item.instanceId !== interleavedEntrant.instanceId)
+      game.players[0].handCount = game.players[0].hand?.length
+      game.players[0].field[1][1] = interleavedEntrant
+      publishBatch([
+        { type:'leave', playerIndex:1, text:'普通登场军团因效果临时离场', cards:[plainEntrant] },
+        { type:'play', playerIndex:0, text:'玩家A打出交错登场军团', cards:[interleavedEntrant] },
+        { type:'enter', playerIndex:1, text:'普通登场军团从墓地再次登场', cards:[plainEntrant] },
+      ])
+    })
   },
   playTriggeredEntrant() {
     placeOpponent(triggeredEntrant, 1, 0, [

@@ -103,6 +103,48 @@ export function movementTransactionKey(revision: number, fact: MovementTransacti
   return `${revision}:${fact.instanceId}:${fact.from}>${fact.to}`
 }
 
+export type MovementTransactionBatch = {
+  revision: number
+  cursor: Map<string, VisualZone>
+  transactionKeys: Set<string>
+}
+
+export function beginMovementTransactionBatch(state: MovementClaimState, revision: number,
+  authoritativeZones: Map<string, VisualZone>): MovementTransactionBatch | null {
+  if (!state.zoneInitialized) {
+    state.zoneInitialized = true
+    state.zoneRevision = revision
+    state.zones = new Map(authoritativeZones)
+    return null
+  }
+  // Equal revisions are re-materializations of the same authority snapshot;
+  // lower revisions are stale live snapshots. Neither can create new motion.
+  if (revision <= state.zoneRevision) return null
+  return { revision, cursor: new Map(state.zones), transactionKeys: new Set<string>() }
+}
+
+export function claimMovementTransaction(state: MovementClaimState, batch: MovementTransactionBatch,
+  fact: MovementTransactionFact) {
+  if (fact.from === fact.to) {
+    if (!fact.allowSameZone) return false
+    return claimMovementFact(state, fact.key)
+  }
+  const current = batch.cursor.get(fact.instanceId)
+  if (current !== undefined && current !== fact.from) return false
+  const transactionKey = movementTransactionKey(batch.revision, fact)
+  if (batch.transactionKeys.has(transactionKey)) return false
+  batch.transactionKeys.add(transactionKey)
+  batch.cursor.set(fact.instanceId, fact.to)
+  return true
+}
+
+export function finalizeMovementTransactionBatch(state: MovementClaimState, batch: MovementTransactionBatch,
+  authoritativeZones: Map<string, VisualZone>) {
+  state.zoneRevision = batch.revision
+  state.zones = new Map(authoritativeZones)
+  state.transactionKeys = new Set(batch.transactionKeys)
+}
+
 /**
  * Claims the semantic zone migrations represented by a snapshot. Event
  * sequence remains the identity for genuine same-zone moves, while cross-zone
@@ -112,35 +154,11 @@ export function movementTransactionKey(revision: number, fact: MovementTransacti
  */
 export function claimMovementTransactions(state: MovementClaimState, revision: number,
   authoritativeZones: Map<string, VisualZone>, facts: MovementTransactionFact[]) {
-  if (!state.zoneInitialized) {
-    state.zoneInitialized = true
-    state.zoneRevision = revision
-    state.zones = new Map(authoritativeZones)
-    return []
-  }
-  // Equal revisions are re-materializations of the same authority snapshot;
-  // lower revisions are stale live snapshots. Neither can create new motion.
-  if (revision <= state.zoneRevision) return []
-
-  const cursor = new Map(state.zones)
-  state.transactionKeys.clear()
+  const batch = beginMovementTransactionBatch(state, revision, authoritativeZones)
+  if (!batch) return []
   const claimed: MovementTransactionFact[] = []
-  for (const fact of facts) {
-    if (fact.from === fact.to) {
-      if (!fact.allowSameZone) continue
-      if (claimMovementFact(state, fact.key)) claimed.push(fact)
-      continue
-    }
-    const current = cursor.get(fact.instanceId)
-    if (current !== undefined && current !== fact.from) continue
-    const transactionKey = movementTransactionKey(revision, fact)
-    if (state.transactionKeys.has(transactionKey)) continue
-    state.transactionKeys.add(transactionKey)
-    claimed.push(fact)
-    cursor.set(fact.instanceId, fact.to)
-  }
-  state.zoneRevision = revision
-  state.zones = new Map(authoritativeZones)
+  for (const fact of facts) if (claimMovementTransaction(state, batch, fact)) claimed.push(fact)
+  finalizeMovementTransactionBatch(state, batch, authoritativeZones)
   return claimed
 }
 

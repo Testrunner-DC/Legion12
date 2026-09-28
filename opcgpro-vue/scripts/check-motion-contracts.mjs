@@ -39,8 +39,11 @@ const checks = [
   ['state observer is layout neutral', stateTransition.includes('.card-state-transition-layer{display:none!important}') && board.includes('.felt-board :deep(.battlefield-half.my-half){grid-row:3}')],
   ['ready and rest use global timing language', stateTransition.includes('l12AnimationDuration') && stateTransition.includes("cubic-bezier(.22,1,.36,1)") && stateTransition.includes('prefers-reduced-motion: reduce')],
   ['multi-card movement stays per instance', movement.includes('movementCardsForEvent(event)') && visualProjection.includes("event.type === 'move' || event.type === 'attach'")],
-  ['cross-source movement descriptions share one authority transaction', movement.includes('claimMovementTransactions(movementClaims, revision, authoritativeZones')
-    && visualProjection.includes('const cursor = new Map(state.zones)')
+  ['cross-source movement descriptions share one authority transaction', movement.includes('beginMovementTransactionBatch(movementClaims, revision, authoritativeZones)')
+    && movement.includes('claimMovementTransaction(movementClaims, transactionBatch')
+    && movement.includes('finalizeMovementTransactionBatch(movementClaims, transactionBatch, authoritativeZones)')
+    && movement.includes('card, transactionBatch.cursor')
+    && visualProjection.includes('cursor: new Map(state.zones)')
     && visualProjection.includes('`${revision}:${fact.instanceId}:${fact.from}>${fact.to}`')
     && visualProjection.includes('current !== undefined && current !== fact.from')],
   ['combat impact preserves authority card rotation', combat.includes("targetCard?.closest('.formation-slot') ?? targetAnchor")

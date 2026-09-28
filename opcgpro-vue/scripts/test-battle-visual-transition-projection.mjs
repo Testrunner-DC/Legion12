@@ -121,4 +121,38 @@ assert.deepEqual(model.claimMovementTransactions(transactionClaims, 46, fieldZon
 model.resetMovementClaimState(transactionClaims, 17, 50, fieldZones)
 assert.deepEqual(model.claimMovementTransactions(transactionClaims, 50, fieldZones, [playFact]), [], 'reconnect baseline does not backfill a historical entry')
 
-console.log('Battle visual transition projection passed: 55/55 assertions')
+const sameRevisionClaims = model.createMovementClaimState()
+model.resetMovementClaimState(sameRevisionClaims, 20, 60, new Map([['chain-unit', 'field']]))
+const sameRevisionBatch = model.beginMovementTransactionBatch(sameRevisionClaims, 61, new Map([['chain-unit', 'field']]))
+assert.ok(sameRevisionBatch, 'a newer snapshot opens one ordered movement transaction batch')
+const sameRevisionLeave = { key:'21:0:chain-unit:field>graveyard', sequence:21, cardIndex:0, instanceId:'chain-unit', from:'field', to:'graveyard' }
+assert.equal(model.claimMovementTransaction(sameRevisionClaims, sameRevisionBatch, sameRevisionLeave), true, 'same-revision chain claims field-to-grave first')
+assert.equal(sameRevisionBatch.cursor.get('chain-unit'), 'graveyard', 'accepted departure advances the per-instance batch cursor')
+const sameRevisionReenter = { key:'22:0:chain-unit:graveyard>field', sequence:22, cardIndex:0, instanceId:'chain-unit', from:sameRevisionBatch.cursor.get('chain-unit'), to:'field' }
+assert.equal(model.claimMovementTransaction(sameRevisionClaims, sameRevisionBatch, sameRevisionReenter), true, 'same-revision re-entry reads the accepted departure cursor')
+assert.equal(sameRevisionBatch.cursor.get('chain-unit'), 'field', 'accepted re-entry advances the cursor back to field')
+
+const duplicateDescriptionClaims = model.createMovementClaimState()
+model.resetMovementClaimState(duplicateDescriptionClaims, 30, 70, new Map([['described-unit', 'hand']]))
+const duplicateDescriptionBatch = model.beginMovementTransactionBatch(duplicateDescriptionClaims, 71, new Map([['described-unit', 'field']]))
+assert.ok(duplicateDescriptionBatch, 'play snapshot opens a movement batch')
+const describedPlay = { key:'31:0:described-unit:hand>field', sequence:31, cardIndex:0, instanceId:'described-unit', from:'hand', to:'field' }
+assert.equal(model.claimMovementTransaction(duplicateDescriptionClaims, duplicateDescriptionBatch, describedPlay), true, 'play owns the hand-to-field migration')
+const describedEnter = { key:'32:0:described-unit:field>field', sequence:32, cardIndex:0, instanceId:'described-unit', from:duplicateDescriptionBatch.cursor.get('described-unit'), to:'field' }
+assert.equal(model.claimMovementTransaction(duplicateDescriptionClaims, duplicateDescriptionBatch, describedEnter), false, 'enter description at the accepted destination does not advance the cursor twice')
+
+const interleavedClaims = model.createMovementClaimState()
+model.resetMovementClaimState(interleavedClaims, 40, 80, new Map([['returning-unit', 'field'], ['other-unit', 'hand']]))
+const interleavedBatch = model.beginMovementTransactionBatch(interleavedClaims, 81, new Map([['returning-unit', 'field'], ['other-unit', 'field']]))
+assert.ok(interleavedBatch, 'interleaved instances share a batch without sharing cursors')
+assert.equal(model.claimMovementTransaction(interleavedClaims, interleavedBatch,
+  { key:'41:0:returning-unit:field>graveyard', sequence:41, cardIndex:0, instanceId:'returning-unit', from:'field', to:'graveyard' }), true)
+assert.equal(model.claimMovementTransaction(interleavedClaims, interleavedBatch,
+  { key:'42:0:other-unit:hand>field', sequence:42, cardIndex:0, instanceId:'other-unit', from:'hand', to:'field' }), true)
+assert.equal(model.claimMovementTransaction(interleavedClaims, interleavedBatch,
+  { key:'43:0:returning-unit:graveyard>field', sequence:43, cardIndex:0, instanceId:'returning-unit', from:interleavedBatch.cursor.get('returning-unit'), to:'field' }), true)
+assert.deepEqual([...interleavedBatch.cursor.entries()].sort(), [['other-unit', 'field'], ['returning-unit', 'field']], 'different instance cursors remain isolated while event order is preserved')
+model.finalizeMovementTransactionBatch(interleavedClaims, interleavedBatch, new Map([['returning-unit', 'field'], ['other-unit', 'field']]))
+assert.equal(interleavedClaims.zoneRevision, 81, 'finalization commits the batch revision only after ordered claims finish')
+
+console.log('Battle visual transition projection passed: 69/69 assertions')
