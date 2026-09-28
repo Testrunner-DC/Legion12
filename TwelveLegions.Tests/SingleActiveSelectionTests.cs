@@ -101,6 +101,22 @@ public sealed class SingleActiveSelectionTests
     }
 
     [Theory]
+    [InlineData("S01-0117", "artifactSearch")]
+    [InlineData("S01-0215", "ankhDraw")]
+    public void CostOnlySingleSelectionsAreTypedAsCostsInsteadOfPresentationTargets(string card, string ability)
+    {
+        var (game, source) = Create(card, ability, true);
+
+        var result = game.Handle(0, new L12Command("activateAbility", source.InstanceId,
+            Ability: ability));
+
+        Assert.True(result.Accepted, result.Error);
+        var step = Assert.Single(Assert.Single(game.State.PendingActivations).SelectionSteps);
+        Assert.True(step.IsCostSelection);
+        Assert.False(step.IsResponsePresentationTarget);
+    }
+
+    [Theory]
     [InlineData("S01-04M2", "frontBuff")]
     [InlineData("S01-04M2", "kusanagi")]
     [InlineData("S01-0117", "artifactSearch")]

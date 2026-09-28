@@ -461,9 +461,9 @@ public sealed partial class StackResponseChoiceRegressionTests
         Assert.Equal(new[] { firstTarget.InstanceId }, activation.ResponsePresentationTargetIds);
         Assert.True(Assert.Single(activation.SelectionSteps).IsResponsePresentationTarget);
 
-        activation.IsCommittingResponsePresentation = true;
         InvokePushEffect(game, activation.Controller,
-            game.State.Players[0].Field[0][0]!, new Dictionary<string, string> { ["ability"] = "test-first" });
+            game.State.Players[0].Field[0][0]!, new Dictionary<string, string> { ["ability"] = "test-first" },
+            activation);
         var firstPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(new[] { firstTarget.InstanceId },
             JsonSerializer.Deserialize<string[]>(firstPrompt.Data["responseTargetIds"]));
@@ -474,11 +474,11 @@ public sealed partial class StackResponseChoiceRegressionTests
         game.State.ResponseWindow = null;
         var secondActivation = PendingPresentationActivation(game,
             game.State.Players[0].Field[0][0]!, secondTarget.InstanceId);
-        secondActivation.IsCommittingResponsePresentation = true;
         game.State.PendingActivations.Add(secondActivation);
 
         InvokePushEffect(game, secondActivation.Controller,
-            game.State.Players[0].Field[0][0]!, new Dictionary<string, string> { ["ability"] = "test-second" });
+            game.State.Players[0].Field[0][0]!, new Dictionary<string, string> { ["ability"] = "test-second" },
+            secondActivation);
 
         var secondPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(new[] { secondTarget.InstanceId },
@@ -498,7 +498,7 @@ public sealed partial class StackResponseChoiceRegressionTests
             BindingFlags.NonPublic | BindingFlags.Instance)!;
 
         var result = Assert.IsType<CommandResult>(begin.Invoke(game,
-            [0, source, "test-cancel", new[] { target.InstanceId }, "选择公开战场对象", 1, 1]));
+            [0, source, "test-cancel", new[] { target.InstanceId }, "选择公开战场对象", 1, 1, false]));
         Assert.True(result.Accepted);
         Resolve(game, "skip");
 
@@ -554,9 +554,27 @@ public sealed partial class StackResponseChoiceRegressionTests
     }
 
     private static void InvokePushEffect(L12GameEngine game, int controller,
-        L12CardInstance source, Dictionary<string, string> data)
-        => typeof(L12GameEngine).GetMethod("PushEffect", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(game, [controller, source, "active", "主动效果", null, data]);
+        L12CardInstance source, Dictionary<string, string> data,
+        L12PendingActivation? activation = null)
+    {
+        var field = typeof(L12GameEngine).GetField("_committingResponsePresentationActivation",
+            BindingFlags.NonPublic | BindingFlags.Instance)!;
+        if (activation is not null)
+        {
+            activation.IsCommittingResponsePresentation = true;
+            field.SetValue(game, activation);
+        }
+        try
+        {
+            typeof(L12GameEngine).GetMethod("PushEffect", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .Invoke(game, [controller, source, "active", "主动效果", null, data]);
+        }
+        finally
+        {
+            field.SetValue(game, null);
+            if (activation is not null) activation.IsCommittingResponsePresentation = false;
+        }
+    }
 
     private static L12PendingActivation BeginAttackDeclaration(L12GameEngine game,
         L12CardInstance source, string planId)
@@ -1246,6 +1264,35 @@ public sealed partial class StackResponseChoiceRegressionTests
         Offer(unavailable);
         Assert.DoesNotContain(unavailableCounter.InstanceId,
             LegalResponses(unavailable, 1, unavailableRoot));
+    }
+
+    [Fact]
+    public void AnkhDrawRestedGuardIsAFieldCostAndNeverAResponsePresentationTarget()
+    {
+        var game = Create();
+        var source = Card("S01-0215", "ankh-cost-source", 0);
+        var guard = Card("S01-0212", "ankh-cost-guard", 0);
+        game.State.Players[0].Relic = source;
+        game.State.Players[0].Field[0][0] = guard;
+        game.State.Players[0].Library.Add(Card("S01-0001", "ankh-cost-draw", 0));
+
+        var begin = game.Handle(0, new L12Command("activateAbility", source.InstanceId,
+            Ability: "ankhDraw"));
+
+        Assert.True(begin.Accepted, begin.Error);
+        var activation = Assert.Single(game.State.PendingActivations);
+        var step = Assert.Single(activation.SelectionSteps);
+        Assert.True(step.IsCostSelection);
+        Assert.False(step.IsResponsePresentationTarget);
+
+        Resolve(game, guard.InstanceId);
+
+        Assert.True(guard.Tapped);
+        Assert.Empty(activation.ResponsePresentationTargetIds);
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("response", response.Kind);
+        Assert.DoesNotContain(guard.InstanceId,
+            response.Data.GetValueOrDefault("responseTargetIds", string.Empty));
     }
 
     [Theory]

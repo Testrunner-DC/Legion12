@@ -150,8 +150,10 @@ public sealed partial class L12GameEngine
             ? player.MasterTapped
             : source.Tapped;
 
-    private CommandResult PromptActiveTarget(int playerIndex, L12CardInstance source, string ability, string[] choices, string text)
-        => BeginPendingActivation(playerIndex, source, ability, choices, text);
+    private CommandResult PromptActiveTarget(int playerIndex, L12CardInstance source, string ability,
+        string[] choices, string text, bool isCostSelection)
+        => BeginPendingActivation(playerIndex, source, ability, choices, text,
+            isCostSelection: isCostSelection);
 
     private CommandResult? TryBeginFaithZealotFreeMasterDeclaration(int playerIndex, L12CardInstance source,
         string ability)

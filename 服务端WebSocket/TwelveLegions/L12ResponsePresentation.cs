@@ -5,6 +5,24 @@ namespace TwelveLegions.Server;
 public sealed partial class L12GameEngine
 {
     private const string ResponsePresentationTargetIdsKey = "responsePresentationTargetIds";
+    private L12PendingActivation? _committingResponsePresentationActivation;
+
+    private CommandResult CommitWithResponsePresentation(L12PendingActivation activation,
+        Func<CommandResult> commit)
+    {
+        var previous = _committingResponsePresentationActivation;
+        activation.IsCommittingResponsePresentation = true;
+        _committingResponsePresentationActivation = activation;
+        try
+        {
+            return commit();
+        }
+        finally
+        {
+            _committingResponsePresentationActivation = previous;
+            activation.IsCommittingResponsePresentation = false;
+        }
+    }
 
     private static void SetResponsePresentationTargets(Dictionary<string, string> data,
         IEnumerable<string> targetIds)

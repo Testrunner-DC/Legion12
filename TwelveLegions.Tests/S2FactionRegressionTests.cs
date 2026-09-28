@@ -5497,6 +5497,8 @@ public sealed class S2FactionRegressionTests
         Assert.Equal("slot", slot.Kind);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId,
             Choice: slot.ValidChoices[0])).Accepted);
+        Assert.DoesNotContain(game.State.PendingActivations,
+            activation => activation.Ability == "wukongTransform");
         PassResponses(game);
 
         var wukong = Assert.Single(player.Field[0], card => card?.IsMasterLegion == true)!;
@@ -5571,6 +5573,8 @@ public sealed class S2FactionRegressionTests
         Assert.Equal("slot", slot.Kind);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId,
             Choice: slot.ValidChoices[0])).Accepted);
+        Assert.DoesNotContain(game.State.PendingActivations,
+            activation => activation.Ability == "wukongTransform");
         PassResponses(game);
         var zeroMoraleTrigger = Assert.Single(game.State.PendingPrompts,
             prompt => prompt.Continuation == "pending-activation");
