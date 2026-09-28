@@ -3,10 +3,11 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import CardImage from '@/l12/CardImage.vue'
 import CatalogCardDetails from '@/l12/CatalogCardDetails.vue'
-import { cardProductsForIds, compareCardNumbers, displayCardNumber, loadDeckCatalog, type DeckCard } from '@/l12/decks'
+import { cardProductsForIds, displayCardNumber, loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import { getEffectiveOperationsPolicy, getPublicContentBatch, type EffectiveOperationsPolicy } from '@/l12/platform'
 import { mergedRulings, parsePublishedRuleCenter, parsePublishedRulings, RULE_TOPIC_DEFINITIONS, type RuleCenterDocument, type RuleCenterEntry, type RuleRuling, type RuleTopicId } from '@/l12/data/ruleCenterData'
 import MobileFilterSheet from './MobileFilterSheet.vue'
+import { compareCardRulingsByNumber, compareRulingsByScoreAndDate } from './ruleRulingOrdering'
 
 type MainTab = 'home' | 'core' | 'quick-start' | 'terms' | 'faq' | 'construction' | 'tournament' | 'versions'
 type FaqMode = 'general' | 'card'
@@ -100,11 +101,6 @@ function rulingHeading(item: RuleRuling) {
   if (!cards.length) return '待补关联·裁定'
   return `${cards.map(({ id, card }) => card ? `${displayCardNumber(card)}·${card.nameZh}` : `${id}·待识别卡牌`).join(' / ')}·裁定`
 }
-function rulingCardSortKey(item: RuleRuling) {
-  return item.cardIds.map(id => cardById.value.get(id.toLowerCase()))
-    .filter((card): card is DeckCard => Boolean(card)).map(displayCardNumber)
-    .sort(compareCardNumbers).at(-1) || ''
-}
 function displayRuleText(text: string) {
   return text.split('\n').map(line => line.replace(/（?\s*P\.[^\s\n）]*\s*）?/gi, '').replace(/[.。]{2,}\s*\d+\s*$/, '').trimEnd())
     .filter(line => line.trim()).join('\n')
@@ -135,19 +131,9 @@ const faqResults = computed(() => modeRulings.value.filter(item => {
   const productMatch = faqMode.value === 'general' || !selectedProduct.value || item.productIds.includes(selectedProduct.value)
   return topicMatch && categoryMatch && productMatch && searchScore(item, query.value) >= 0
 }).sort((left, right) => {
-  if (faqMode.value === 'card') {
-    const leftCard = rulingCardSortKey(left)
-    const rightCard = rulingCardSortKey(right)
-    if (leftCard || rightCard) {
-      if (!leftCard) return 1
-      if (!rightCard) return -1
-      const cardOrder = compareCardNumbers(rightCard, leftCard)
-      if (cardOrder) return cardOrder
-    }
-  }
-  const scoreOrder = searchScore(right, query.value) - searchScore(left, query.value)
-  if (scoreOrder) return scoreOrder
-  return right.recordedAt.localeCompare(left.recordedAt)
+  if (faqMode.value === 'card') return compareCardRulingsByNumber(left, right,
+    cardId => { const card = cardById.value.get(cardId.toLowerCase()); return card ? displayCardNumber(card) : undefined })
+  return compareRulingsByScoreAndDate(left, right, searchScore(left, query.value), searchScore(right, query.value))
 }))
 
 function scheduleTransition(value?: string | null) {

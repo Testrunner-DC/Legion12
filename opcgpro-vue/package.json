@@ -14,7 +14,7 @@
     "verify:battle-grid-integrity": "node scripts/verify-battle-grid-integrity.mjs",
     "check:release-version": "node scripts/check-client-release-version.mjs && node ../scripts/release-ledger.mjs validate --repo ..",
     "check:card-assets": "node scripts/check-l12-card-assets.mjs",
-    "check:rule-center": "node scripts/check-rule-center-contracts.mjs",
+    "check:rule-center": "node scripts/check-rule-center-contracts.mjs && node --experimental-strip-types scripts/test-rule-ruling-ordering.mjs",
     "verify:rule-center-experience": "node scripts/verify-rule-center-experience.mjs",
     "verify:profile-admin-responsive": "node scripts/verify-profile-admin-responsive.mjs",
     "verify:admin-p1-safety": "node scripts/verify-admin-p1-safety.mjs",

@@ -18,9 +18,9 @@ const data = readFrontend('src/l12/data/ruleCenterData.ts')
 assert(data.includes("return `core-rule-${String(index + 1).padStart(3, '0')}`"), 'core blocks need stable generated IDs')
 assert(data.includes("typeof row.page === 'string'") && !data.includes('text(row.page, 20)'), 'blank page values must stay compatible')
 assert(data.includes('RULE_TOPIC_DEFINITIONS') && data.includes('schemaVersion: 2'), 'schema v2 fixed topics must remain explicit')
-const decks = readFrontend('src/l12/decks.ts')
-assert(/export function compareCardNumbers[\s\S]*?localeCompare[\s\S]*?numeric: true/.test(decks),
-  'canonical card-number comparison must remain numeric-aware')
+const ordering = readFrontend('src/l12/site/ruleRulingOrdering.ts')
+for (const token of ['compareCardNumbers', 'numeric: true', 'rulingCardSortKey', 'compareCardRulingsByNumber', 'compareRulingsByScoreAndDate'])
+  assert(ordering.includes(token), `ruling ordering helper missing ${token}`)
 
 const player = readFrontend('src/l12/site/RuleCenterPage.vue')
 assert((player.match(/getPublicContentBatch\(/g) ?? []).length >= 2, 'initial and resource refresh paths must use public batch reads')
@@ -43,7 +43,7 @@ assert(!player.includes('printRules') && !player.includes('打印 / 保存 PDF')
   'print/PDF controls and print-only styles must stay removed')
 for (const token of ['CatalogCardDetails', 'CardImage', 'rulingHeading(item)', '待补关联·裁定', 'cardProductsForIds(item.cardIds)'])
   assert(player.includes(token), `card ruling presentation missing ${token}`)
-assert(player.includes('rulingCardSortKey') && player.includes('compareCardNumbers(rightCard, leftCard)'),
+assert(player.includes('compareCardRulingsByNumber(left, right') && player.includes('compareRulingsByScoreAndDate(left, right'),
   'card rulings must remain ordered by descending canonical card number')
 assert(player.includes('v-if="openIds.has(item.id)"')
   && player.includes("if (next.has(item.id) && item.cardIds.length) void ensureCardCatalog()"),

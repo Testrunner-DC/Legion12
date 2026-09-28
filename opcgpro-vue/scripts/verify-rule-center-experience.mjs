@@ -23,7 +23,13 @@ import '/src/style.css'
 const center=createRuleCenterDraft()
 for(const collection of ['coreBlocks','quickStart','terms','tournament','versions'])
   for(const item of center[collection])item.status='published'
-const rulings=createRulingsDraft().map((item,index)=>({...item,status:'published',supersedes:index===0?['OLD-RULING']:item.supersedes}))
+const rulingSeeds=createRulingsDraft()
+const generalSeed=rulingSeeds.find(item=>item.scope==='general')
+const generalOrderingFixtures=[
+ {...generalSeed,id:'GENERAL-SORT-TAG',question:'较新的通用裁定',recordedAt:'2026-09-30',tags:['排序共同词'],status:'published'},
+ {...generalSeed,id:'GENERAL-SORT-QUESTION',question:'排序共同词出现在较旧问题中',recordedAt:'2026-01-01',tags:[],status:'published'},
+]
+const rulings=[...rulingSeeds.map((item,index)=>({...item,status:'published',supersedes:index===0?['OLD-RULING']:item.supersedes})),...generalOrderingFixtures]
 const privateDraft={...rulings[0],id:'PRIVATE-DRAFT',question:'PRIVATE-DRAFT',answer:'PRIVATE-DRAFT',status:'pending'}
 const operations={version:7,season:{name:'验收赛季',status:'active'},defaultRoomConfig:{matchModeId:'standard',disasterMode:'all'},cardRestrictions:[]}
 const originalFetch=window.fetch.bind(window)
@@ -103,6 +109,19 @@ const viewports = [
   { width: 390, height: 844, input: 'touch' },
 ]
 const suffix = viewport => `${viewport.width}x${viewport.height}`
+const expectedCardRulingOrder = [
+  'RULING-20260922-FENIAN-REPEAT',
+  'RULING-20260922-SIWA-KABA',
+  'RULING-20260917-LIVE-COST',
+  'RULING-20260902-FAITH-ZEALOT',
+  'RULING-20260902-HELEN',
+  'RULING-20260902-HOREMHEB',
+  'RULING-20260902-LI-JING',
+  'RULING-20260902-PTOLEMY',
+  'RULING-20260902-THUNDER',
+]
+const visibleRulingIds = page => page.locator('.faq-list article').evaluateAll(nodes =>
+  nodes.map(node => node.id.replace('rule-entry-', '')))
 
 let browser
 try {
@@ -144,6 +163,9 @@ try {
       await page.getByRole('button', { name: '规则资料首页' }).focus()
       await page.keyboard.press('Enter')
       await page.locator('.rules-home-lead').waitFor()
+      await page.getByRole('button', { name: /常见问题/ }).focus()
+      await page.keyboard.press('Enter')
+      await page.locator('.faq-search-panel').waitFor()
     } else if (viewport.input === 'touch') {
       await page.getByRole('button', { name: /常见问题/ }).tap()
       await page.locator('.faq-search-panel').waitFor()
@@ -158,43 +180,54 @@ try {
       await page.locator('.faq-search-panel').waitFor()
     }
 
-    if (viewport.input !== 'keyboard') {
-      const questions = page.locator('.faq-question')
-      if (await questions.count()) {
-        await questions.first().click()
-        assert.equal(await questions.first().getAttribute('aria-expanded'), 'true', `question did not expand at ${suffix(viewport)}`)
-        await page.getByRole('button', { name: '全部收起' }).click()
-        assert.equal(await questions.first().getAttribute('aria-expanded'), 'false', `collapse all failed at ${suffix(viewport)}`)
-      }
-      await page.getByRole('button', { name: '单卡问答' }).click()
-      await page.locator('.faq-product-section').waitFor()
-      await page.waitForFunction(() => performance.getEntriesByType('resource').some(entry => entry.name.includes('/data/l12/cards.s1.json')))
-      assert(catalogRequests.length >= 3, `card workspace did not load title metadata on demand at ${suffix(viewport)}`)
-      assert.equal(imageRequests.length, 0, `collapsed card Q&A eagerly loaded card images at ${suffix(viewport)}`)
-      await page.getByText('S02-06S5·芬尼亚传奇·裁定', { exact: true }).waitFor()
-      assert.deepEqual((await page.locator('.faq-title small').allInnerTexts()).slice(0, 2),
-        ['S02-06S5·芬尼亚传奇·裁定', 'S01-0213·锡瓦的卡巴·裁定'],
-        `card rulings are not in descending card-number order at ${suffix(viewport)}`)
-      const products = page.locator('.product-grid button')
-      if (await products.count()) {
-        await products.first().click()
-        assert.equal(imageRequests.length, 0, `product browsing loaded card images at ${suffix(viewport)}`)
-        await page.getByRole('button', { name: '查看全部产品' }).click()
-      }
-      const fenian = page.locator('#rule-entry-RULING-20260922-FENIAN-REPEAT')
-      await fenian.locator('.faq-question').click()
-      const cardArt = fenian.getByRole('button', { name: '查看芬尼亚传奇卡牌详情' })
-      await cardArt.waitFor()
-      await cardArt.locator('img').waitFor()
-      await cardArt.click()
-      const details = page.getByRole('dialog', { name: '芬尼亚传奇' })
-      await details.waitFor()
-      assert.equal(await details.locator('[data-card-detail-context="catalog"]').count(), 1,
-        `card ruling did not reuse catalog detail content at ${suffix(viewport)}`)
-      await details.getByRole('button', { name: '关闭卡牌详情' }).click()
-      assert.equal(await details.count(), 0, `card detail did not close at ${suffix(viewport)}`)
-      await page.screenshot({ path: path.join(output, `card-qa-${suffix(viewport)}.png`), fullPage: true })
+    const generalBlankIds = await visibleRulingIds(page)
+    assert(generalBlankIds.indexOf('GENERAL-SORT-TAG') < generalBlankIds.indexOf('GENERAL-SORT-QUESTION'),
+      `general blank-query date ordering changed at ${suffix(viewport)}`)
+    await page.locator('.faq-search-row input').fill('排序共同词')
+    assert.deepEqual(await visibleRulingIds(page), ['GENERAL-SORT-QUESTION', 'GENERAL-SORT-TAG'],
+      `general score ordering changed at ${suffix(viewport)}`)
+    await page.locator('.faq-search-row input').fill('')
+
+    const questions = page.locator('.faq-question')
+    if (await questions.count()) {
+      if (viewport.input === 'keyboard') {
+        await questions.first().focus()
+        await page.keyboard.press('Enter')
+      } else await questions.first().click()
+      assert.equal(await questions.first().getAttribute('aria-expanded'), 'true', `question did not expand at ${suffix(viewport)}`)
+      await page.getByRole('button', { name: '全部收起' }).click()
+      assert.equal(await questions.first().getAttribute('aria-expanded'), 'false', `collapse all failed at ${suffix(viewport)}`)
     }
+    const cardMode = page.getByRole('button', { name: '单卡问答' })
+    if (viewport.input === 'keyboard') { await cardMode.focus(); await page.keyboard.press('Enter') }
+    else if (viewport.input === 'touch') await cardMode.tap()
+    else await cardMode.click()
+    await page.locator('.faq-product-section').waitFor()
+    await page.waitForFunction(() => performance.getEntriesByType('resource').some(entry => entry.name.includes('/data/l12/cards.s1.json')))
+    assert(catalogRequests.length >= 3, `card workspace did not load title metadata on demand at ${suffix(viewport)}`)
+    assert.equal(imageRequests.length, 0, `collapsed card Q&A eagerly loaded card images at ${suffix(viewport)}`)
+    await page.getByText('S02-06S5·芬尼亚传奇·裁定', { exact: true }).waitFor()
+    assert.deepEqual(await visibleRulingIds(page), expectedCardRulingOrder,
+      `card rulings are not in complete descending card-number order at ${suffix(viewport)}`)
+    const products = page.locator('.product-grid button')
+    if (await products.count()) {
+      await products.first().click()
+      assert.equal(imageRequests.length, 0, `product browsing loaded card images at ${suffix(viewport)}`)
+      await page.getByRole('button', { name: '查看全部产品' }).click()
+    }
+    const fenian = page.locator('#rule-entry-RULING-20260922-FENIAN-REPEAT')
+    await fenian.locator('.faq-question').click()
+    const cardArt = fenian.getByRole('button', { name: '查看芬尼亚传奇卡牌详情' })
+    await cardArt.waitFor()
+    await cardArt.locator('img').waitFor()
+    await cardArt.click()
+    const details = page.getByRole('dialog', { name: '芬尼亚传奇' })
+    await details.waitFor()
+    assert.equal(await details.locator('[data-card-detail-context="catalog"]').count(), 1,
+      `card ruling did not reuse catalog detail content at ${suffix(viewport)}`)
+    await details.getByRole('button', { name: '关闭卡牌详情' }).click()
+    assert.equal(await details.count(), 0, `card detail did not close at ${suffix(viewport)}`)
+    await page.screenshot({ path: path.join(output, `card-qa-${suffix(viewport)}.png`), fullPage: true })
     assert.deepEqual(errors, [], `page errors at ${suffix(viewport)}`)
     report.push({ viewport, apiRequests: ruleFetches.length, catalogRequests: catalogRequests.length, imageRequests: imageRequests.length })
     await context.close()
@@ -216,18 +249,26 @@ try {
   }
   await directCard.goto(base + '?tab=faq&mode=card')
   await directCard.getByText('S02-06S5·芬尼亚传奇·裁定', { exact: true }).waitFor()
-  assert.deepEqual((await directCard.locator('.faq-title small').allInnerTexts()).slice(0, 2),
-    ['S02-06S5·芬尼亚传奇·裁定', 'S01-0213·锡瓦的卡巴·裁定'],
-    'direct card FAQ entry is not in descending card-number order')
+  assert.deepEqual(await visibleRulingIds(directCard), expectedCardRulingOrder,
+    'direct card FAQ entry is not in complete descending card-number order')
   assertSingleCatalogLoad('direct card FAQ entry')
   assert.equal(directImageRequests.length, 0, 'direct card FAQ entry eagerly loaded card images')
+  await directCard.locator('.faq-search-row input').fill('待审核草稿')
+  assert.deepEqual(await visibleRulingIds(directCard), expectedCardRulingOrder.slice(0, 2),
+    'search changed the relative order of identified card rulings')
   await directCard.locator('.faq-search-row input').fill('芬尼亚传奇')
   await directCard.getByText('S02-06S5·芬尼亚传奇·裁定', { exact: true }).waitFor()
   assert.equal(await directCard.locator('.faq-list article').count(), 1, 'direct card FAQ name search did not narrow results')
+  await directCard.locator('.faq-search-row input').fill('')
+  await directCard.waitForFunction(expected => document.querySelectorAll('.faq-list article').length === expected,
+    expectedCardRulingOrder.length)
+  await directCard.waitForFunction(() => !new URL(location.href).searchParams.has('q'))
   directCatalogRequests.length = 0
   directImageRequests.length = 0
   await directCard.reload()
   await directCard.getByText('S02-06S5·芬尼亚传奇·裁定', { exact: true }).waitFor()
+  assert.deepEqual(await visibleRulingIds(directCard), expectedCardRulingOrder,
+    'refreshed card FAQ entry is not in complete descending card-number order')
   assertSingleCatalogLoad('refreshed card FAQ entry')
   assert.equal(directImageRequests.length, 0, 'refreshed card FAQ entry eagerly loaded card images')
   await directCard.locator('.faq-search-row input').fill('芬尼亚传奇')
