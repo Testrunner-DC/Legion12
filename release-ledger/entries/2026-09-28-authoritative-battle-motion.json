@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-28-authoritative-battle-motion",
+  "date": "2026-09-28",
+  "audience": "players",
+  "title": "卡牌动画单次播放与连续移动",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "军团打出、登场、进攻休整、状态切换和区域移动改为按权威事实只播放一次；真实连续移动会从上一段落点自然衔接，不再重复闪烁或从错误位置起飞。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/CardStateTransitionLayer.vue",
+        "opcgpro-vue/src/l12/game/CombatMotionPresentationLayer.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/ZoneMovementPresentationLayer.vue",
+        "opcgpro-vue/src/l12/game/visualTransitionProjection.ts"
+      ]
+    }
+  ]
+}

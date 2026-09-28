@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-28-admin-responsive-internal",
+  "date": "2026-09-28",
+  "audience": "internal",
+  "reason": "后台账号、内容、运营、赛事、统计、安全和审计页面的全尺寸响应式收口只影响管理员工作区，不向普通玩家展示。",
+  "paths": [
+    "opcgpro-vue/src/l12/site/AdminAccountDetailPage.vue",
+    "opcgpro-vue/src/l12/site/AdminAccountsPage.vue",
+    "opcgpro-vue/src/l12/site/AdminAlternateArtsPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminAuditPage.vue",
+    "opcgpro-vue/src/l12/site/AdminBugsPage.vue",
+    "opcgpro-vue/src/l12/site/AdminCardAnalyticsPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminEffectsPage.vue",
+    "opcgpro-vue/src/l12/site/AdminGlobalAnalyticsSummary.vue",
+    "opcgpro-vue/src/l12/site/AdminGlobalDataPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminMasterAnalyticsPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminMatchGovernancePanel.vue",
+    "opcgpro-vue/src/l12/site/AdminMatchesPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminOperationsPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminPage.vue",
+    "opcgpro-vue/src/l12/site/AdminRankedIntegrityPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminRuleRulingsPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminSecurityPage.vue",
+    "opcgpro-vue/src/l12/site/AdminSiteContentPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminTournamentWorkbench.vue"
+  ]
+}

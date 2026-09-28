@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-28-deck-environment-filter",
+  "date": "2026-09-28",
+  "audience": "players",
+  "title": "公开牌库环境标识与筛选",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "公开牌库和热门牌库会按整副牌的权威收录信息显示环境 1.0、2.0、2.5 或环境待定；牌库广场可按环境筛选，刷新或分享筛选网址后仍会恢复，未知卡牌和未来产品不会被误归到现有环境。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/DeckLibraryPage.vue",
+        "opcgpro-vue/src/l12/site/deckEnvironment.ts"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-28-card-ruling-display-order",
+  "date": "2026-09-28",
+  "audience": "players",
+  "title": "单卡裁定信息与排序",
+  "changes": [
+    {
+      "category": "rules",
+      "text": "单卡裁定现在使用权威卡号、卡名和产品归属显示，关联卡图可直接打开图鉴详情；同一卡牌的裁定按卡号数值逆序稳定排列，搜索不会打乱顺序。",
+      "paths": [
+        "opcgpro-vue/src/l12/decks.ts",
+        "opcgpro-vue/src/l12/site/RuleCenterPage.vue",
+        "opcgpro-vue/src/l12/site/ruleRulingOrdering.ts",
+        "服务端WebSocket/TwelveLegions/L12Catalog.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.cs"
+      ]
+    }
+  ]
+}
