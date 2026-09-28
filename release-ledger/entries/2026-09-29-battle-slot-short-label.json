@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-29-battle-slot-short-label",
+  "date": "2026-09-29",
+  "audience": "players",
+  "title": "对战垫格位文字精简",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "对战垫空格位只显示左格、中格或右格，避免重复占用战场空间；选择弹框、确认信息和对局记录仍会显示我方或对方及前排或后排的完整方位。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/PlayerMat.vue"
+      ]
+    }
+  ]
+}

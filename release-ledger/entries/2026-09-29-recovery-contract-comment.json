@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-29-recovery-contract-comment",
+  "date": "2026-09-29",
+  "audience": "internal",
+  "reason": "仅补充现有状态格式可选字段及历史命令恢复校验的代码注释；状态格式版本、恢复版本与运行行为均未改变。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PersistenceContract.cs"
+  ]
+}
