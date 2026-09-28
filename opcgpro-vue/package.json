@@ -17,6 +17,7 @@
     "check:rule-center": "node scripts/check-rule-center-contracts.mjs && node --experimental-strip-types scripts/test-rule-ruling-ordering.mjs",
     "verify:rule-center-experience": "node scripts/verify-rule-center-experience.mjs",
     "verify:profile-admin-responsive": "node scripts/verify-profile-admin-responsive.mjs",
+    "verify:admin-responsive-full": "node scripts/verify-admin-responsive-full.mjs",
     "verify:admin-p1-safety": "node scripts/verify-admin-p1-safety.mjs",
     "audit:card-assets": "node scripts/audit-l12-card-cdn.mjs",
     "build:card-cdn": "node scripts/build-l12-card-cdn.mjs",
