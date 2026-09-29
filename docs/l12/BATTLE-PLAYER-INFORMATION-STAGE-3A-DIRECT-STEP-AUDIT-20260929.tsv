@@ -9,10 +9,10 @@ file	line	kind	declaration_key	is_cost_selection	scope	review_cue_not_semantics	
 服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs	163	-	-	forwarded-from-step	3A-direct	-	-
 服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs	207	grave-faction-count	-	false	3A-direct	-	{GraveSelectionHeading(graveSelection.DeclarationKey)}：选择〈渴求死亡的勇士〉本次视为几张{(graveSelection.LegionCardsOnly ?
 服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs	232	composite-ordinary-payment	prideMasterSurcharge	true	3A-direct	candidate-review	〈傲慢之罪〉：主宰发动效果需额外支付1士气
-服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs	2340	option	-	false	3A-direct	-	拼死反抗：预先声明结算方式与合法目标
-服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs	2374	unused-slot	-	false	3A-direct	-	选择〈陵墓守卫〉位移后的位置
-服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs	2388	unused-slot	entrySlot	false	3A-direct	-	选择〈勇士比约恩〉休整登场的位置
-服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs	2406	unused-slot	-	false	3A-direct	-	选择该军团活跃登场的位置
+服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs	2385	option	-	false	3A-direct	-	拼死反抗：预先声明结算方式与合法目标
+服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs	2419	unused-slot	-	false	3A-direct	-	选择〈陵墓守卫〉位移后的位置
+服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs	2433	unused-slot	entrySlot	false	3A-direct	-	选择〈勇士比约恩〉休整登场的位置
+服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs	2451	unused-slot	-	false	3A-direct	-	选择该军团活跃登场的位置
 服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs	654	card	entryCard	false	3A-direct	-	西施：选择手牌中最多 1 张兵力不高于 2000 的其他军团
 服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs	664	effect-entry-battlefield	entryBattlefield	false	3A-direct	-	西施：选择该军团活跃登场的战场
 服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs	670	prospective-entry-slot	entrySlot	false	3A-direct	-	西施：预先选择该军团活跃登场的位置
