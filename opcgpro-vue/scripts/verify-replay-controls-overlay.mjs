@@ -187,13 +187,14 @@ try {
   const tools = page.getByRole('button', { name: '打开对局工具', exact: true })
   await tools.click()
   await page.getByRole('dialog', { name: '对局工具' }).waitFor()
-  const blockedHit = await hitTarget(page, page.getByRole('button', { name: '播放', exact: true }))
-  assert.equal(blockedHit.contained, false, 'a true blocking dialog must stay above replay controls')
-  await assert.rejects(
-    page.getByRole('button', { name: '播放', exact: true }).click({ timeout: 700 }),
-    /intercepts pointer events|Timeout/,
-    'a true blocking dialog must reject a real click on replay controls',
-  )
+  const modalPlaybackHit = await hitTarget(page, page.getByRole('button', { name: '播放', exact: true }))
+  assert.equal(modalPlaybackHit.contained, true, 'playback must remain reachable with a dialog open')
+  const boardHit = await hitTarget(page, page.locator('.mini-master').first())
+  assert.equal(boardHit.contained, false, 'the same dialog must still block board clicks')
+  await page.getByRole('button', { name: '播放', exact: true }).click()
+  await page.getByRole('button', { name: '暂停', exact: true }).waitFor()
+  await page.getByRole('button', { name: '暂停', exact: true }).click()
+  assert.equal(await page.getByRole('dialog', { name: '对局工具' }).count(), 1, 'playback must not close the dialog')
   await page.screenshot({ path: path.join(output, 'blocking-dialog-1366x768.png') })
   await page.getByRole('button', { name: '关闭对局工具', exact: true }).click()
 
@@ -231,9 +232,19 @@ try {
       const speed3 = matrixPage.getByRole('button', { name: '3.0', exact: true })
       await speed3.click()
       assert.equal(await speed3.getAttribute('aria-pressed'), 'true', `real speed click failed at ${viewport.width}x${viewport.height} ${zoom}`)
+      await matrixPage.getByRole('button', { name: '打开对局工具', exact: true }).evaluate(node => node.click())
+      await matrixPage.getByRole('dialog', { name: '对局工具' }).waitFor()
+      const modalAudit = await controlAudit(matrixPage)
+      assert(modalAudit.buttons.filter(button => button.enabled).every(button => button.hit),
+        `dialog intercepts replay controls at ${viewport.width}x${viewport.height} ${zoom}: ${JSON.stringify(modalAudit)}`)
+      const maskedBoard = await hitTarget(matrixPage, matrixPage.locator('.mini-master').first())
+      assert.equal(maskedBoard.contained, false, `dialog leaks board clicks at ${viewport.width}x${viewport.height} ${zoom}`)
+      const dialogFile = `dialog-${viewport.width}x${viewport.height}-zoom-${Math.round(zoom * 100)}.png`
+      await matrixPage.screenshot({ path: path.join(output, dialogFile) })
+      await matrixPage.getByRole('button', { name: '关闭对局工具', exact: true }).click()
       const file = `prompt-${viewport.width}x${viewport.height}-zoom-${Math.round(zoom * 100)}.png`
       await matrixPage.screenshot({ path: path.join(output, file) })
-      matrix.push({ viewport, zoom, file, audit })
+      matrix.push({ viewport, zoom, file, dialogFile, audit, modalAudit })
       await matrixContext.close()
     }
   }
@@ -262,7 +273,7 @@ try {
     generatedAt: new Date().toISOString(), status: 'passed',
     rootCause: 'replay controls outside #l12-landscape-teleports could not overtake its z-index:100000 stacking context',
     matrix,
-    states: ['loading', 'paused', 'playing', 'speed', 'previous', 'next', 'progress', 'card-animation', 'card-detail', 'ordinary-prompt', 'blocking-dialog', 'replay-ended'],
+    states: ['loading', 'paused', 'playing', 'speed', 'previous', 'next', 'progress', 'card-animation', 'card-detail', 'dialog-with-playback-and-board-block', 'replay-ended'],
   }, null, 2))
 } finally {
   await browser.close()

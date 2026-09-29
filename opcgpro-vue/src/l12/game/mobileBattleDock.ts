@@ -1,6 +1,6 @@
 import { inject, provide, shallowReactive, type InjectionKey } from 'vue'
 
-export type BattleDockLane = 'tools' | 'context' | 'primary' | 'utility'
+export type BattleDockLane = 'route' | 'tools' | 'context' | 'primary' | 'utility'
 type BattleDock = Partial<Record<BattleDockLane, HTMLElement | null>>
 const key: InjectionKey<BattleDock> = Symbol('mobile-battle-dock')
 

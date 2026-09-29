@@ -16,9 +16,29 @@ html[data-l12-mobile=true] {
   position:absolute; z-index:2200; inset:4px 4px 4px auto;
   box-sizing:border-box; width:var(--l12-mobile-dock-width,108px);
   display:flex; flex-direction:column; gap:4px; overflow:hidden;
-  padding:3px; border:1px solid #4d6665; background:#080e10;
+  padding:46px 3px 3px; border:1px solid #4d6665; background:#080e10;
   color:#edf1ec; font:11px/1.25 'Microsoft YaHei','微软雅黑',sans-serif;
   pointer-events:auto; isolation:isolate;
+}
+#l12-landscape-teleports .mobile-battle-dock__route {
+  position:absolute; z-index:var(--l12-battle-fixed-controls-z,2147483632);
+  top:4px; right:4px; box-sizing:border-box; width:var(--l12-mobile-dock-width,108px);
+  min-height:40px; padding:3px; pointer-events:auto;
+}
+#l12-landscape-teleports .mobile-battle-dock__route:empty { pointer-events:none; }
+#l12-landscape-teleports .mobile-battle-dock__route > .battle-route-controls {
+  position:static !important; inset:auto !important; display:grid;
+  width:100%; grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px;
+  margin:0; padding:3px; box-sizing:border-box; box-shadow:none;
+}
+#l12-landscape-teleports .mobile-battle-dock__route > .battle-route-controls > span { display:none !important; }
+#l12-landscape-teleports .mobile-battle-dock__route > .battle-route-controls button {
+  box-sizing:border-box; min-width:0; min-height:34px; padding:3px;
+  font-size:10px; line-height:1.15; white-space:normal;
+}
+#l12-landscape-teleports .mobile-battle-dock__route .battle-route-controls .route-label,
+#l12-landscape-teleports .mobile-battle-dock__route .battle-route-controls .route-label>span {
+  display:block; min-width:2em; text-align:center;
 }
 #l12-landscape-teleports .mobile-battle-dock__utility {
   position:absolute; z-index:2200; left:4px; bottom:4px;
@@ -161,13 +181,8 @@ html[data-l12-mobile=true] #l12-landscape-teleports .battle-modal-mask { z-index
 #l12-landscape-teleports .mobile-battle-dock .mobile-rail-clock { min-height:0; padding:3px; gap:2px; grid-template-columns:1fr 1fr; box-shadow:none; }
 #l12-landscape-teleports .mobile-battle-dock .mobile-rail-clock strong { grid-column:1/-1; font-size:9px; padding:1px; }
 #l12-landscape-teleports .mobile-battle-dock .mobile-rail-clock :is(b,small) { font-size:10px; line-height:1.1; }
-#l12-landscape-teleports .mobile-battle-dock .battle-route-controls { align-items:stretch; }
-#l12-landscape-teleports .mobile-battle-dock .battle-route-controls button { padding:3px; font-size:10px; }
-#l12-landscape-teleports .mobile-battle-dock .battle-route-controls .route-label { display:block; }
-#l12-landscape-teleports .mobile-battle-dock .battle-route-controls .route-label>span { display:block; min-width:2em; text-align:center; }
-
 /* Mobile overlays share the same host as the action dock. */
-html[data-l12-mobile=true] #l12-landscape-teleports .gm-panel{top:8px;right:8px;bottom:auto;box-sizing:border-box;width:min(320px,calc(var(--l12-viewport-width,100vw) - 16px));height:calc(var(--l12-viewport-height,100vh) - 16px)}
+html[data-l12-mobile=true] #l12-landscape-teleports .gm-panel{top:50px;right:8px;bottom:auto;box-sizing:border-box;width:min(320px,calc(var(--l12-viewport-width,100vw) - 16px));height:calc(var(--l12-viewport-height,100vh) - 58px)}
 html[data-l12-mobile=true] #l12-landscape-teleports .game-over{box-sizing:border-box;inset:0;width:100%;height:100%;padding:max(10px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));place-content:safe center;justify-items:center;gap:6px;overflow:auto;text-align:center}
 html[data-l12-mobile=true] #l12-landscape-teleports .game-over>p{font-size:clamp(32px,10vh,52px);line-height:1;letter-spacing:.12em}
 html[data-l12-mobile=true] #l12-landscape-teleports .game-over>strong{display:block;max-width:min(620px,calc(var(--l12-viewport-width,100vw) - 32px));margin:auto;font-size:12px;line-height:1.35}
