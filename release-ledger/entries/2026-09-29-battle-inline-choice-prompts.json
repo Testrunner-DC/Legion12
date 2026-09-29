@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-29-battle-inline-choice-prompts",
+  "date": "2026-09-29",
+  "audience": "players",
+  "title": "对战选择提示与移动端混合费用修正",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "对战中的战场目标、空战场格与士气支付会在对应区域就近说明当前选择、所需数量和确认结果；移动端需要同时选择战场卡牌与士气时，现在可以在同一流程中完成并一次确认，不再因士气面板只读而卡住。观战与回放不会显示操作方的未提交选择。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/scripts/verify-battle-inline-prompts.mjs"
+      ]
+    }
+  ]
+}
