@@ -36,6 +36,8 @@
 
 [直接构造点清单](l12/BATTLE-PLAYER-INFORMATION-STAGE-3A-DIRECT-STEP-AUDIT-20260929.tsv)逐一定位 `L12ActivationSelectionStep` 的 77 个显式 `new` 构造点，列出类型、声明键、显式费用标记及审阅线索。线索列只用于人工定位，不把卡文、中文提示或 `DeclarationKey` 当作费用判据；费用归类以对应执行路径的支付事实为准。共用工厂返回的 `new()` 由下表单独核对，不混入 77 处直接构造点的数量。清单包含后续 3B／3C 的构造点，列出位置不表示本阶段验收了其结算语义。
 
+清单中的 `dynamic-parameter` 表示 `BeginPendingActivation` 接收调用方 `isCostSelection` 参数，`forwarded-from-step` 表示 `BeginPendingActivationSequence` 复制原步骤标记；两者均不能当作恒为 `false`。此前费用摘要也须先确认该步骤实际执行：序号已越过不等于已选择，条件跳过的费用不得进入后续目标提示。
+
 | 共用构造路径 | 本阶段费用元数据审计 | 同类型效果对象的反证 |
 | --- | --- | --- |
 | `L12AttackPublicTriggerPlans`、`L12EnterPublicTriggerPlans` | 士气返还、神力、弃牌、墓地返牌、军团弃置等预付步骤均显式传 `isCostSelection`。 | `L12EnterPublicTriggerPlans` 的士气翻转目标保留非费用。 |
@@ -54,6 +56,8 @@
 验证回执：Focused 规则 5802/5802、UI 合同 352 项通过；Batch 规则 5802/5802、UI 合同 352 项、卡图 42 项／324 张、Vue 类型检查、正式与测试前端各 464 模块通过。七档 3A 浏览器脚本及七档 Stage2 Prompt 复测均通过。第一次 Batch 因隔离缓存缺少 NuGet 包且联网受限，在测试还原前报 `NU1301`；复制本机已有包到本批缓存、禁用联网漏洞元数据查询后，完整 Batch 退出码 0。没有推送或部署。
 
 补审回执：真实卡与同类型效果反证的专项回归 123/123；补审 Batch 的架构、卡池与完整规则 5804/5804 全部通过，原样日志见 `artifacts/battle-player-information-stage3a/supplemental-batch.log`。后端补修后重跑七档 3A 浏览器视口检查 7/7，通过；本轮未修改前端组件，补审 Batch 因此只执行其后端及通用门禁。补审只形成待 Main 验收的本地候选，未推送或部署。
+
+条件费用补修回执：阿尔忒弥斯选择神力时，跳过的弃牌步骤不再出现在后续对象提示中；选择弃牌时则仍显示该费用待提交。此前费用摘要只取实际适用且已有权威选择证据的步骤，同键互斥费用按其声明条件区分；无键且有条件的步骤若无法证明已执行，则不声称待支付。荷鲁斯互斥费用、傲慢之罪不发动及四类条件跳过均有正反验证。专项 84/84、Batch 架构／卡池／完整规则 5816/5816 通过，日志见 `artifacts/battle-player-information-stage3a/skipped-cost-batch.log`；本轮未改前端组件。
 
 ## 当前未覆盖边界
 

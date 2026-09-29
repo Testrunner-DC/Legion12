@@ -97,6 +97,52 @@ public sealed class ArtemisActiveLifecycleTests
         => Invoke(game, "QueueOrPushTriggeredEffect", 0, source, trigger, $"【{trigger}】效果", null,
             new Dictionary<string, string>());
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void GodPowerBranchDoesNotPresentSkippedDiscardAsPendingPayment(bool hasHand)
+    {
+        var game = Create(hasHand ? 914601 : 914602);
+        var player = game.State.Players[0];
+        var target = Card("S02-0502", "artemis-presentation-target", 3);
+        player.Field[0][0] = target;
+        player.Morale.Add(GodPower("artemis-presentation-power"));
+        if (hasHand) player.Hand.Add(Card("S02-0001", "artemis-unused-hand"));
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "artemisBuff")).Accepted);
+        ResolveOnly(game, "pay:god-power");
+
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(target.InstanceId, prompt.ValidChoices);
+        Assert.Null(prompt.Presentation!.PaymentStatus);
+        Assert.Null(prompt.Presentation.PaymentSummary);
+        Assert.Contains("正在选择效果对象", prompt.Presentation.WaitingSummary);
+        Assert.False(game.State.PendingActivations[0].DeclaredValues.ContainsKey("discardCost"));
+    }
+
+    [Fact]
+    public void DiscardBranchStillPresentsSelectedCardAsPendingPayment()
+    {
+        var game = Create(914603);
+        var player = game.State.Players[0];
+        var target = Card("S02-0502", "artemis-discard-presentation-target", 3);
+        var discard = Card("S02-0001", "artemis-presentation-discard");
+        player.Field[0][0] = target;
+        player.Hand.Add(discard);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "artemisBuff")).Accepted);
+        ResolveOnly(game, "pay:discard");
+        ResolveOnly(game, discard.InstanceId);
+
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(target.InstanceId, prompt.ValidChoices);
+        Assert.Equal("pending", prompt.Presentation!.PaymentStatus);
+        Assert.Contains("弃置", prompt.Presentation.PaymentSummary);
+        Assert.Equal([discard.InstanceId], game.State.PendingActivations[0].DeclaredValues["discardCost"]);
+    }
+
     [Fact]
     [Trait("L12Evidence", "cards:S02-05M1,ST05-07")]
     [Trait("L12Bug", "BUG-20260925-ANTINOUS-MASTER-DISCARD")]

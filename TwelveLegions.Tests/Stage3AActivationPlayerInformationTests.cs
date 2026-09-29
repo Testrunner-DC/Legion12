@@ -116,6 +116,127 @@ public sealed class Stage3AActivationPlayerInformationTests
         Assert.Contains("正在选择效果对象", prompt.Presentation.WaitingSummary);
     }
 
+    [Theory]
+    [InlineData("required-choice")]
+    [InlineData("reference-none")]
+    [InlineData("minimum-count")]
+    [InlineData("minimum-numeric")]
+    [InlineData("previous-empty")]
+    public void SkippedConditionalCostNeverAppearsAsPendingAtLaterTarget(string condition)
+    {
+        var game = Game();
+        var source = Card("S01-0103", $"3a-skipped-{condition}", 0);
+        game.State.Players[0].Field[0][0] = source;
+        var activation = Activation(source,
+        [
+            new L12ActivationSelectionStep
+            {
+                Kind = "option", DeclarationKey = "mode", Text = "选择处理方式",
+                ValidChoices = ["mode:none", "mode:use"],
+            },
+            new L12ActivationSelectionStep
+            {
+                Kind = "hand-card", DeclarationKey = "sharedCost", Text = "选择要弃置的手牌",
+                ValidChoices = ["cost-a"], IsCostSelection = true,
+                RequiredDeclaredChoice = condition == "required-choice" ? "mode:discard" : null,
+                ReferenceDeclarationKey = condition is "reference-none" or "minimum-count" or "minimum-numeric"
+                    ? "mode" : null,
+                SkipWhenReferenceIsNone = condition == "reference-none",
+                MinimumReferenceCount = condition == "minimum-count" ? 2 : 0,
+                MinimumReferenceNumericValue = condition == "minimum-numeric" ? 2 : 0,
+                ReferenceNumericChoicePrefix = condition == "minimum-numeric" ? "rune-count:" : null,
+                SkipWhenPreviousStepEmpty = condition == "previous-empty",
+            },
+            new L12ActivationSelectionStep
+            {
+                Kind = "active-target", DeclarationKey = "target", Text = "选择效果对象",
+                ValidChoices = ["target-a"],
+            },
+        ]);
+        activation.CurrentStep = 2;
+        activation.DeclaredTargets.Add("mode:use");
+        activation.DeclaredValues["mode"] = condition switch
+        {
+            "reference-none" => ["mode:none"],
+            "minimum-count" => ["one"],
+            "minimum-numeric" => ["rune-count:1"],
+            "previous-empty" => [],
+            _ => ["mode:use"],
+        };
+        // Another mutually exclusive cost can share this declaration key.
+        activation.DeclaredValues["sharedCost"] = ["cost-from-other-branch"];
+        game.State.PendingActivations.Add(activation);
+
+        Render(game, activation);
+
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Null(prompt.Presentation!.PaymentStatus);
+        Assert.Null(prompt.Presentation.PaymentSummary);
+    }
+
+    [Fact]
+    public void OnlySelectedPriorCostCanSupplyPendingPaymentSummary()
+    {
+        var game = Game();
+        var source = Card("S01-0103", "3a-selected-cost", 0);
+        game.State.Players[0].Field[0][0] = source;
+        var activation = Activation(source,
+        [
+            new L12ActivationSelectionStep { Kind = "option", DeclarationKey = "mode", Text = "选择支付方式", ValidChoices = ["pay:discard"] },
+            new L12ActivationSelectionStep
+            {
+                Kind = "hand-card", DeclarationKey = "discard", Text = "选择弃置的1张手牌",
+                ValidChoices = ["card-a"], IsCostSelection = true,
+                RequiredDeclaredChoice = "pay:discard",
+            },
+            new L12ActivationSelectionStep { Kind = "active-target", Text = "选择效果对象", ValidChoices = ["target-a"] },
+        ]);
+        activation.CurrentStep = 2;
+        activation.DeclaredTargets.Add("pay:discard");
+        activation.DeclaredValues["mode"] = ["pay:discard"];
+        activation.DeclaredValues["discard"] = ["card-a"];
+        game.State.PendingActivations.Add(activation);
+
+        Render(game, activation);
+
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending", prompt.Presentation!.PaymentStatus);
+        Assert.Contains("弃置的1张手牌", prompt.Presentation.PaymentSummary);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void KeylessOrEmptyPriorCostRequiresActualExecutionEvidence(bool conditional, bool selected)
+    {
+        var game = Game();
+        var source = Card("S01-0103", $"3a-keyless-{conditional}-{selected}", 0);
+        game.State.Players[0].Field[0][0] = source;
+        var activation = Activation(source,
+        [
+            new L12ActivationSelectionStep { Kind = "option", DeclarationKey = "mode", Text = "选择方式", ValidChoices = ["mode:use"] },
+            new L12ActivationSelectionStep
+            {
+                Kind = "hand-card", DeclarationKey = selected ? "cost" : null,
+                Text = "选择费用", ValidChoices = ["card-a"], IsCostSelection = true,
+                RequiredDeclaredChoice = conditional ? "mode:use" : null,
+            },
+            new L12ActivationSelectionStep { Kind = "active-target", Text = "选择对象", ValidChoices = ["target-a"] },
+        ]);
+        activation.CurrentStep = 2;
+        activation.DeclaredTargets.Add("mode:use");
+        activation.DeclaredValues["mode"] = ["mode:use"];
+        if (selected) activation.DeclaredValues["cost"] = [];
+        game.State.PendingActivations.Add(activation);
+
+        Render(game, activation);
+
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(!conditional && !selected ? "pending" : null,
+            prompt.Presentation!.PaymentStatus);
+    }
+
     [Fact]
     [Trait("L12Evidence", "battle-info-3a:optional-versus-mandatory")]
     public void OptionalDeclineExplainsThatMandatoryFollowingStepsRemain()

@@ -3,10 +3,10 @@ file	line	kind	declaration_key	is_cost_selection	scope	review_cue_not_semantics	
 服务端WebSocket/TwelveLegions/L12ActiveAbilities.cs	182	active-target	target	false	3A-direct	-	梅杰德：选择本回合降低兵力的对方军团
 服务端WebSocket/TwelveLegions/L12EffectGeneratedPlay.cs	49	slot	entrySlot	false	later-or-shared	candidate-review	{reason}：预先声明〈{card.Name}〉无需消耗费用登场的位置
 服务端WebSocket/TwelveLegions/L12PostResolutionGeneratedEffects.cs	58	enemy-legion	target	false	later-or-shared	-	托勒密十三世：为再次发动的〈{source.Name}〉效果声明目标
-服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs	124	active-target	-	false	3A-direct	-	-
+服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs	124	active-target	-	dynamic-parameter	3A-direct	-	-
 服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs	144	active-target	-	false	3A-direct	-	-
 服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs	150	active-target	-	false	3A-direct	-	-
-服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs	163	-	-	false	3A-direct	-	-
+服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs	163	-	-	forwarded-from-step	3A-direct	-	-
 服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs	207	grave-faction-count	-	false	3A-direct	-	{GraveSelectionHeading(graveSelection.DeclarationKey)}：选择〈渴求死亡的勇士〉本次视为几张{(graveSelection.LegionCardsOnly ?
 服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs	232	composite-ordinary-payment	prideMasterSurcharge	true	3A-direct	candidate-review	〈傲慢之罪〉：主宰发动效果需额外支付1士气
 服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs	2340	option	-	false	3A-direct	-	拼死反抗：预先声明结算方式与合法目标

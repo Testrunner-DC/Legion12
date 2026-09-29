@@ -986,9 +986,12 @@ public sealed partial class L12GameEngine
                 ?? CreateCard(activation.SourceCardId, activation.SourceInstanceId)).Name;
         var currentCost = step.IsCostSelection
             || step.Kind is "resource-payment" or "composite-ordinary-payment";
-        var earlierCost = activation.SelectionSteps.Take(activation.CurrentStep)
-            .LastOrDefault(candidate => candidate.IsCostSelection
-                || candidate.Kind is "resource-payment" or "composite-ordinary-payment");
+        var earlierCost = Enumerable.Range(0, activation.CurrentStep).Reverse()
+            .Where(index => activation.SelectionSteps[index].IsCostSelection
+                || activation.SelectionSteps[index].Kind is "resource-payment" or "composite-ordinary-payment")
+            .Where(index => WasPriorActivationStepSelected(activation, index))
+            .Select(index => activation.SelectionSteps[index])
+            .FirstOrDefault();
         var pendingCost = currentCost ? step : earlierCost;
         var range = step.MinChoose == step.MaxChoose
             ? $"{step.MinChoose}项"
@@ -1026,6 +1029,48 @@ public sealed partial class L12GameEngine
             pendingCost is null ? null : "pending",
             pendingCost is null ? null : pendingCost.Text,
             submission));
+    }
+
+    // Presentation only: CurrentStep also advances past skipped steps. Do not describe
+    // a skipped cost as pending just because its index precedes the current prompt.
+    private static bool WasPriorActivationStepSelected(L12PendingActivation activation, int index)
+    {
+        if (index >= activation.CurrentStep) return false;
+        var step = activation.SelectionSteps[index];
+        if (step.RequiredDeclaredChoice is { } required
+            && !activation.DeclaredTargets.Contains(required, StringComparer.OrdinalIgnoreCase))
+            return false;
+        if (step.SkipWhenReferenceIsNone
+            && step.ReferenceDeclarationKey is { } referenceKey
+            && activation.DeclaredValues.GetValueOrDefault(referenceKey, [])
+                .SingleOrDefault()?.Equals("mode:none", StringComparison.OrdinalIgnoreCase) == true)
+            return false;
+        if (step.MinimumReferenceCount > 0
+            && step.ReferenceDeclarationKey is { } countedReference
+            && activation.DeclaredValues.GetValueOrDefault(countedReference, []).Count < step.MinimumReferenceCount)
+            return false;
+        if (step.MinimumReferenceNumericValue > 0
+            && step.ReferenceDeclarationKey is { } numericReference
+            && !DeclaredNumericValueAtLeast(activation, numericReference,
+                step.ReferenceNumericChoicePrefix, step.MinimumReferenceNumericValue))
+            return false;
+        if (step.SkipWhenPreviousStepEmpty)
+        {
+            if (index == 0) return false;
+            var previous = activation.SelectionSteps[index - 1];
+            if (previous.DeclarationKey is not { } previousKey
+                || !activation.DeclaredValues.TryGetValue(previousKey, out var previousChoices)
+                || previousChoices.Count == 0
+                || !WasPriorActivationStepSelected(activation, index - 1))
+                return false;
+        }
+        if (step.DeclarationKey is { } key)
+            return activation.DeclaredValues.TryGetValue(key, out var selected) && selected.Count > 0;
+        // A keyless conditional step has no per-step receipt in the existing state.
+        // Suppress its payment claim rather than infer execution from a card or label.
+        return step.MinChoose > 0 && step.RequiredDeclaredChoice is null
+            && !step.SkipWhenReferenceIsNone && step.MinimumReferenceCount == 0
+            && step.MinimumReferenceNumericValue == 0 && !step.SkipWhenPreviousStepEmpty;
     }
 
     private static bool? ModeNoneContinuation(L12PendingActivation activation,

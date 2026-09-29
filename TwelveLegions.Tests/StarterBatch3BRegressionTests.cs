@@ -616,6 +616,9 @@ public sealed class StarterBatch3BRegressionTests
         Assert.DoesNotContain("mode:morale-legions", mode.ValidChoices);
         Choose(game, "mode:tomb-guards");
         ChooseMany(game, firstGuard.InstanceId, secondGuard.InstanceId);
+        Assert.Equal("pending", Prompt(game).Presentation!.PaymentStatus);
+        Assert.Contains("〈陵墓守卫〉", Prompt(game).Presentation!.PaymentSummary);
+        Assert.DoesNotContain("弃置我方战场2张军团", Prompt(game).Presentation!.PaymentSummary);
         Choose(game, firstGuard.InstanceId);
         Choose(game, "0:0");
         PassResponses(game);
@@ -694,6 +697,8 @@ public sealed class StarterBatch3BRegressionTests
         Assert.Equal("board-target", fieldCost.Data.GetValueOrDefault("choiceMode"));
         Assert.Contains(guard.InstanceId, fieldCost.ValidChoices);
         ChooseMany(game, guard.InstanceId, secondCost.InstanceId);
+        Assert.Equal("pending", Prompt(game).Presentation!.PaymentStatus);
+        Assert.Contains("弃置我方战场2张军团", Prompt(game).Presentation!.PaymentSummary);
         Choose(game, guard.InstanceId);
         Choose(game, "0:0");
         PassResponses(game);

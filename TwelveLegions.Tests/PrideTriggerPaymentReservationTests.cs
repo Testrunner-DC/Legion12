@@ -316,6 +316,7 @@ public sealed class PrideTriggerPaymentReservationTests
         game.State.PendingTriggerStackCandidates.Add(candidate);
         Invoke(game, "AdvanceTriggerBatches");
 
+        Assert.Null(OnlyPrompt(game).Presentation?.PaymentStatus);
         ResolveAccepted(game, "mode:none");
 
         Assert.False(morale.Tapped);
