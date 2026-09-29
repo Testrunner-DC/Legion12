@@ -1282,7 +1282,7 @@ function statusTexts(card: Card) {
               :viewer-player-index="game.you" :paused="passivePresentationPaused" :playback-speed="replayPlaybackSpeed"
               :sequence-coordinator="cardPresentationCoordinator"
               @busy-change="replayZonePresentationBusy = $event" />
-            <CardStateTransitionLayer :players="game.players" :match-id="game.matchId" :revision="game.revision"
+            <CardStateTransitionLayer :players="game.players" :events="game.recentEvents ?? []" :match-id="game.matchId" :revision="game.revision"
               :synchronizing="synchronizingAuthoritySnapshot"
               :paused="modalPresentationPaused" :playback-speed="replayPlaybackSpeed" />
             <CombatMotionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"

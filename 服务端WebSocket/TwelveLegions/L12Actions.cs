@@ -810,21 +810,26 @@ public sealed partial class L12GameEngine
             AddEvent("cost", playerIndex, "色欲之罪使进攻方弃置1张手牌", attacker, discarded);
         }
 
+        // Crossing this point commits the attack. Rest the legion and consume
+        // its attack count once before publishing any attack-time event so
+        // every event snapshot in this authority transaction observes the
+        // same rested attacker. Prompts and validation above this boundary
+        // remain cancellable without paying either cost.
+        attacker.Tapped = true;
+        attacker.AttacksThisTurn++;
+
         if (L12ActiveDisasterRules.HighTroopsAttackRollsDice(State.ActiveDisaster?.CardId) && attacker.Troops > 2000)
         {
             var thunderRoll = _random.Next(1, 7);
             AddEvent("dice", playerIndex, $"〈雷霆天怒〉：{attacker.Name}进攻时掷骰结果为 {thunderRoll}", attacker);
             if (thunderRoll <= 2)
             {
-                attacker.Tapped = true;
-                attacker.AttacksThisTurn++;
                 AddEvent("attack-ended", playerIndex,
                     $"〈雷霆天怒〉使{attacker.Name}转为休整，进攻结束", attacker);
                 return CommandResult.Ok();
             }
         }
 
-        attacker.Tapped = true;
         var combatProfile = L12StructuredCardRules.CombatProfile(attacker, row);
         var attackNoLoss = combatProfile.HasAttackNoLoss
             || attacker.AttackNoLossUntilTurn >= State.TurnSerial
@@ -841,7 +846,6 @@ public sealed partial class L12GameEngine
                     attacker.InstanceId, attacker.Name, attacker.InstanceId, attacker.Name), attacker);
         }
         temporaryAttackerTroopsBonus += ApplyS1FactionAttackPassives(playerIndex, attacker, row);
-        attacker.AttacksThisTurn++;
         if (row == 0 && L12StructuredCardRules.HasFaction(State.Players[playerIndex], attacker, "gaotianyuan")
             && State.Players[playerIndex].UsedAbilities.Contains($"s2-tenka-front-attack:{State.TurnSerial}"))
         {

@@ -96,6 +96,19 @@ model.resetCardStateClaimState(stateClaims, 30, after)
 assert.deepEqual(model.claimCardStateTransitions(stateClaims, 30, after), [], 'reconnect baseline never backfills historical state motion')
 assert.deepEqual(model.claimCardStateTransitions(stateClaims, 29, before), [], 'stale snapshot cannot rewind live authoritative state')
 
+const attackStateClaims = model.createCardStateClaimState()
+model.resetCardStateClaimState(attackStateClaims, 40, before, 100)
+const attackEvent = { ...event, sequence:101, type:'attack', playerIndex:0, cards:[card('same'), targetCard] }
+const [attackRest] = model.claimCardStateTransitions(attackStateClaims, 41, after, [attackEvent])
+assert.equal(attackRest.transactionKey, '41:same:active>rested', 'attack rest keeps the authority revision transaction identity')
+assert.equal(attackRest.attackSequence, 101, 'fresh attack event binds to the same active-to-rested transaction')
+assert.equal(attackRest.attackTargetInstanceId, targetCard.instanceId, 'legion target is carried into the combined attack-rest motion')
+assert.equal(attackRest.attackTargetPlayerIndex, 1, 'defending player is carried into the combined attack-rest motion')
+assert.deepEqual(model.claimCardStateTransitions(attackStateClaims, 41, before, [attackEvent]), [], 'same revision cannot replay or reverse the combined attack-rest transaction')
+model.resetCardStateClaimState(attackStateClaims, 50, after, 110)
+assert.deepEqual(model.claimCardStateTransitions(attackStateClaims, 51, before, [{ ...attackEvent, sequence:110 }]).map(change => change.attackSequence),
+  [undefined], 'a historical attack at the reconnect baseline cannot bind to a later real ready transaction')
+
 const transactionClaims = model.createMovementClaimState()
 const handZones = new Map([['entrant', 'hand'], ['second-entrant', 'hand']])
 model.resetMovementClaimState(transactionClaims, 9, 40, handZones)

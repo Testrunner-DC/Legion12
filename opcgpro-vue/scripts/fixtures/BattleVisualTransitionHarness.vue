@@ -128,8 +128,8 @@ const api = {
       })
     })
   },
-  attackRestedTarget() { publishBatch([{ type:'attack', playerIndex:0, text:'攻击休整守军', cards:[swapper, restedDefender] }]) },
-  attackActiveTarget() { publishBatch([{ type:'attack', playerIndex:0, text:'攻击活跃守军', cards:[swapper, activeDefender] }]) },
+  attackRestedTarget() { swapper.tapped = true; publishBatch([{ type:'attack', playerIndex:0, text:'攻击休整守军', cards:[swapper, restedDefender] }]) },
+  attackActiveTarget() { swapper.tapped = true; publishBatch([{ type:'attack', playerIndex:0, text:'攻击活跃守军', cards:[swapper, activeDefender] }]) },
   reconnectWithHistoricalReady() {
     l12State.status = 'connecting'
     l12State.recoveryPhase = 'snapshot-received'
@@ -140,6 +140,26 @@ const api = {
       l12State.status = 'online'
       l12State.recoveryPhase = 'snapshot-acknowledged'
     })
+  },
+  reconnectWithHistoricalAttack() {
+    l12State.status = 'connecting'
+    l12State.recoveryPhase = 'snapshot-received'
+    const current = game.players[0].field.flat().find(item => item?.instanceId === mover.instanceId)
+    if (current) current.tapped = true
+    game.revision += 10
+    game.recentEvents = [...(game.recentEvents ?? []), { sequence:++sequence, type:'attack', playerIndex:0, text:'重连快照中的历史进攻', cards: current ? [current, activeDefender] : [] }]
+    queueMicrotask(() => {
+      l12State.status = 'online'
+      l12State.recoveryPhase = 'snapshot-acknowledged'
+    })
+  },
+  replaySeekBackwardWithHistoricalAttack() {
+    const priorRevision = game.revision
+    const current = game.players[0].field.flat().find(item => item?.instanceId === mover.instanceId)
+    if (current) current.tapped = true
+    game.revision = Math.max(1, priorRevision - 5)
+    game.recentEvents = [...(game.recentEvents ?? []), { sequence:++sequence, type:'attack', playerIndex:0, text:'回放后退帧中的历史进攻', cards: current ? [current, activeDefender] : [] }]
+    queueMicrotask(() => { game.revision = priorRevision + 1 })
   },
   playPlainEntrant() {
     placeOpponent(plainEntrant, 0, 2, [{ type:'play', playerIndex:1, text:'玩家B打出普通登场军团', cards:[plainEntrant] }])

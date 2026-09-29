@@ -233,40 +233,58 @@ export type CardStateTransitionClaim = {
   toTapped: boolean
   revision: number
   transactionKey: string
+  attackSequence?: number
+  attackTargetInstanceId?: string
+  attackTargetPlayerIndex?: number
 }
 
 export type CardStateClaimState = {
   initialized: boolean
   revision: number
+  lastEventSequence: number
   states: Map<string, VisualFieldState>
 }
 
 export function createCardStateClaimState(): CardStateClaimState {
-  return { initialized: false, revision: 0, states: new Map<string, VisualFieldState>() }
+  return { initialized: false, revision: 0, lastEventSequence: 0, states: new Map<string, VisualFieldState>() }
 }
 
 export function resetCardStateClaimState(state: CardStateClaimState, revision: number,
-  states: Map<string, VisualFieldState>) {
+  states: Map<string, VisualFieldState>, baselineEventSequence = state.lastEventSequence) {
   state.initialized = true
   state.revision = revision
+  state.lastEventSequence = baselineEventSequence
   state.states = new Map(states)
 }
 
 export function claimCardStateTransitions(state: CardStateClaimState, revision: number,
-  states: Map<string, VisualFieldState>): CardStateTransitionClaim[] {
+  states: Map<string, VisualFieldState>, events: ActionEvent[] = []): CardStateTransitionClaim[] {
+  const highestEventSequence = Math.max(0, ...events.map(event => event.sequence))
   if (!state.initialized) {
-    resetCardStateClaimState(state, revision, states)
+    resetCardStateClaimState(state, revision, states, highestEventSequence)
     return []
   }
   // One revision is one authority transaction. Replaced objects, duplicate
   // envelopes, or a stale snapshot must not mutate the accepted visual state.
   if (revision <= state.revision) return []
+  const attacks = new Map<string, ActionEvent>()
+  for (const event of events) {
+    const attackerId = event.cards?.[0]?.instanceId
+    if (event.sequence > state.lastEventSequence && event.type === 'attack' && attackerId)
+      attacks.set(attackerId, event)
+  }
   const changes = changedTappedStates(state.states, states).map(change => ({
     ...change,
     revision,
     transactionKey: `${revision}:${change.instanceId}:${change.fromTapped ? 'rested' : 'active'}>${change.toTapped ? 'rested' : 'active'}`,
+    ...(!change.fromTapped && change.toTapped && attacks.get(change.instanceId) ? {
+      attackSequence: attacks.get(change.instanceId)!.sequence,
+      attackTargetInstanceId: attacks.get(change.instanceId)!.cards?.[1]?.instanceId,
+      attackTargetPlayerIndex: attacks.get(change.instanceId)!.playerIndex === undefined
+        ? undefined : 1 - attacks.get(change.instanceId)!.playerIndex!,
+    } : {}),
   }))
-  resetCardStateClaimState(state, revision, states)
+  resetCardStateClaimState(state, revision, states, Math.max(state.lastEventSequence, highestEventSequence))
   return changes
 }
 

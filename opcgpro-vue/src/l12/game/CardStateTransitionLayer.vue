@@ -2,7 +2,7 @@
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { l12AnimationDuration } from '../audioPreferences'
 import { landscapeTeleportElement, settleElementGeometry, viewportLayoutRect } from '../mobileViewport'
-import type { PlayerView } from '../types'
+import type { ActionEvent, PlayerView } from '../types'
 import { claimCardStateTransitions, collectVisualFieldState, createCardStateClaimState, resetCardStateClaimState } from './visualTransitionProjection'
 
 type Transition = {
@@ -12,10 +12,14 @@ type Transition = {
   toTapped: boolean
   sourceRect: { left: number; top: number; width: number; height: number }
   sourceGhost: HTMLElement
+  attackSequence?: number
+  attackTargetInstanceId?: string
+  attackTargetPlayerIndex?: number
 }
 
 const props = withDefaults(defineProps<{
   players: PlayerView[]
+  events: ActionEvent[]
   matchId: string
   revision: number
   synchronizing?: boolean
@@ -33,6 +37,12 @@ let hiddenTargetVisibility = ''
 
 function cardElement(instanceId: string) {
   return document.querySelector(`[data-l12-game-stage] [data-card-instance-id="${CSS.escape(instanceId)}"]`)
+}
+
+function attackTargetElement(transition: Transition) {
+  if (transition.attackTargetInstanceId) return cardElement(transition.attackTargetInstanceId)
+  if (transition.attackTargetPlayerIndex === undefined) return null
+  return document.querySelector(`[data-l12-game-stage] [data-player-index="${transition.attackTargetPlayerIndex}"] [data-l12-zone="master"]`)
 }
 
 function duration() {
@@ -103,6 +113,8 @@ function showNext() {
     wrapper.dataset.visualTransitionKey = transition.key
     wrapper.dataset.stateFrom = transition.fromTapped ? 'rested' : 'active'
     wrapper.dataset.stateTo = transition.toTapped ? 'rested' : 'active'
+    wrapper.dataset.motionKind = transition.attackSequence === undefined ? 'state' : 'attack-rest'
+    if (transition.attackSequence !== undefined) wrapper.dataset.attackSequence = String(transition.attackSequence)
     Object.assign(wrapper.style, {
       position: 'fixed', left: `${startX}px`, top: `${startY}px`, width: `${width}px`, height: `${height}px`,
       zIndex: '902', pointerEvents: 'none', transformOrigin: 'center', willChange: 'transform',
@@ -116,29 +128,56 @@ function showNext() {
     const dx = endX - startX
     const dy = endY - startY
     const motionDuration = duration()
-    animation = wrapper.animate([
+    const attackTarget = attackTargetElement(transition)
+    const attackRect = attackTarget instanceof HTMLElement ? viewportLayoutRect(attackTarget) : null
+    const attackDx = attackRect ? attackRect.left + attackRect.width / 2 - (sourceRect.left + sourceRect.width / 2) : 0
+    const attackDy = attackRect ? attackRect.top + attackRect.height / 2 - (sourceRect.top + sourceRect.height / 2) : 0
+    const attackDistance = Math.hypot(attackDx, attackDy)
+    // Keep the lunge readable even when opposing slots overlap closely in the
+    // compact board projection. This is an impact gesture, so a short pass
+    // through the target center is preferable to an imperceptible twitch.
+    const attackStep = attackDistance > 0
+      ? Math.min(30, Math.max(12, attackDistance * .1))
+      : 0
+    const lungeX = attackDistance > 0 ? attackDx / attackDistance * attackStep : 0
+    const lungeY = attackDistance > 0 ? attackDy / attackDistance * attackStep : 0
+    const frames = transition.attackSequence === undefined ? [
       { transform: `translate3d(0,0,0) rotate(${fromAngle}deg) scale(1)` },
       { transform: `translate3d(${dx * .72}px,${dy * .72}px,0) rotate(${fromAngle + (toAngle - fromAngle) * .72}deg) scale(.96)`, offset: .72 },
       { transform: `translate3d(${dx}px,${dy}px,0) rotate(${toAngle}deg) scale(1)` },
-    ], { duration: motionDuration, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' })
+    ] : [
+      { transform: `translate3d(0,0,0) rotate(${fromAngle}deg) scale(1)`, easing: 'cubic-bezier(.22,1,.36,1)' },
+      { transform: `translate3d(${lungeX}px,${lungeY}px,0) rotate(${fromAngle + (toAngle - fromAngle) * .5}deg) scale(1.03)`, offset: .38 },
+      { transform: `translate3d(${lungeX}px,${lungeY}px,0) rotate(${fromAngle + (toAngle - fromAngle) * .78}deg) scale(1)`, offset: .56, easing: 'cubic-bezier(.22,1,.36,1)' },
+      { transform: `translate3d(${dx}px,${dy}px,0) rotate(${toAngle}deg) scale(1)` },
+    ]
+    // Attack keyframe offsets are transaction phases (lunge, contact, settle),
+    // so keep the overall timeline linear and ease within those phases.
+    animation = wrapper.animate(frames, {
+      duration: motionDuration,
+      easing: transition.attackSequence === undefined ? 'cubic-bezier(.22,1,.36,1)' : 'linear',
+      fill: 'forwards',
+    })
     animation.onfinish = finish
   })
 }
 
 watch(() => props.matchId, () => {
   cancelActive(); queue.length = 0
-  resetCardStateClaimState(stateClaims, props.revision, collectVisualFieldState(props.players))
+  resetCardStateClaimState(stateClaims, props.revision, collectVisualFieldState(props.players),
+    Math.max(0, ...props.events.map(event => event.sequence)))
 }, { flush: 'sync', immediate: true })
 
-watch(() => [props.revision, props.synchronizing, collectVisualFieldState(props.players)] as const, ([revision, synchronizing, next]) => {
+watch(() => [props.revision, props.synchronizing, collectVisualFieldState(props.players), props.events.map(event => event.sequence).join(',')] as const, ([revision, synchronizing, next]) => {
   // Recovery snapshots and backward replay seeks establish a new visual
   // baseline. Historical state must never be backfilled as live motion.
   if (synchronizing || (props.playbackSpeed && revision < stateClaims.revision)) {
     cancelActive(); queue.length = 0
-    resetCardStateClaimState(stateClaims, revision, next)
+    resetCardStateClaimState(stateClaims, revision, next,
+      Math.max(0, ...props.events.map(event => event.sequence)))
     return
   }
-  for (const change of claimCardStateTransitions(stateClaims, revision, next)) {
+  for (const change of claimCardStateTransitions(stateClaims, revision, next, props.events)) {
     const instanceId = change.instanceId
     if (active.value?.key === change.transactionKey || queue.some(item => item.key === change.transactionKey)) continue
     const source = cardElement(instanceId)
@@ -157,6 +196,9 @@ watch(() => [props.revision, props.synchronizing, collectVisualFieldState(props.
       toTapped: change.toTapped,
       sourceRect: { left: sourceRect.left, top: sourceRect.top, width: sourceRect.width, height: sourceRect.height },
       sourceGhost,
+      attackSequence: change.attackSequence,
+      attackTargetInstanceId: change.attackTargetInstanceId,
+      attackTargetPlayerIndex: change.attackTargetPlayerIndex,
     })
   }
   showNext()

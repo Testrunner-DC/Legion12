@@ -406,7 +406,21 @@ try {
 
     await resetStateTransitionTrace(page)
     await invoke(page, 'attackWithDuplicateRestSnapshots')
-    await page.waitForTimeout(1300)
+    const combinedAttack = page.locator('.l12-card-state-transition-ghost[data-motion-kind="attack-rest"]')
+    await combinedAttack.waitFor({ state:'attached', timeout:1500 })
+    ok(await combinedAttack.count() === 1, `${profile.name}: one attack transaction must create one combined attack-rest ghost`)
+    ok(await combinedAttack.getAttribute('data-attack-sequence') !== null, `${profile.name}: combined attack-rest ghost must retain its authority attack sequence`)
+    ok(await page.locator('[data-card-instance-id="mover-1"]').evaluate(node => node.closest('.formation-slot')?.getAnimations().length ?? -1) === 0,
+      `${profile.name}: combat layer must not animate the hidden authority slot a second time`)
+    const authorityCenter = await physicalCenter(page.locator('[data-card-instance-id="mover-1"]'))
+    await setAnimationProgress(combinedAttack, .48)
+    const lungeCenter = await physicalCenter(combinedAttack)
+    ok(centerDistance(authorityCenter, lungeCenter) >= 6,
+      `${profile.name}: combined attack-rest ghost must visibly lunge toward the defender, drift=${centerDistance(authorityCenter, lungeCenter).toFixed(1)}px`)
+    await assertGhostGeometry(combinedAttack, profile.name, 'combined attack-rest at 48%')
+    await shot(page, `${profile.name}-01d-combined-attack-rest-mid`)
+    await finishAnimationFast(combinedAttack)
+    await page.waitForFunction(() => !document.querySelector('.l12-card-state-transition-ghost'), null, { timeout:1500 })
     let stateTrace = await page.evaluate(() => window.__stateTransitionTrace.slice())
     ok(stateTrace.filter(direction => direction === 'active>rested').length === 1, `${profile.name}: one attack transaction must rest its attacker exactly once: ${stateTrace.join(',')}`)
     ok(!stateTrace.includes('rested>active'), `${profile.name}: same-revision object replacement must not fabricate a ready transition`)
@@ -426,13 +440,24 @@ try {
     await invoke(page, 'attackActiveTarget')
     await page.waitForTimeout(560)
     const activeAngles = await page.evaluate(() => window.__cardAngleSamples.slice())
-    ok(activeAngles.length >= 8 && activeAngles.every(angle => nearAngle(angle, 0)), `${profile.name}: active defender must not be rotated by the isolated impact animation`)
+    ok(activeAngles.length >= 8 && activeAngles.every(angle => nearAngle(angle, 0)), `${profile.name}: active defender must preserve its authority angle during the combined attacker animation`)
 
     await resetStateTransitionTrace(page)
     await invoke(page, 'reconnectWithHistoricalReady')
     await page.waitForTimeout(180)
     ok(await visibleCount(page, '.l12-card-state-transition-ghost') === 0, `${profile.name}: reconnect baseline must not backfill a historical ready animation`)
     ok(await page.locator('[data-card-instance-id="mover-1"]:not(.tapped)').count() === 1, `${profile.name}: reconnect baseline must expose only the current authority state`)
+    await invoke(page, 'reconnectWithHistoricalAttack')
+    await page.waitForTimeout(180)
+    ok(await visibleCount(page, '.l12-card-state-transition-ghost') === 0,
+      `${profile.name}: reconnect attack history must establish a baseline without replaying attack-rest motion`)
+
+    await page.evaluate(() => window.__visualTransitionHarness.setReplay(8))
+    await invoke(page, 'replaySeekBackwardWithHistoricalAttack')
+    await page.waitForTimeout(180)
+    ok(await visibleCount(page, '.l12-card-state-transition-ghost') === 0,
+      `${profile.name}: backward replay seek must establish a baseline without replaying attack-rest motion`)
+    await page.evaluate(() => window.__visualTransitionHarness.setReplay(null))
 
     await invoke(page, 'move')
     await page.waitForTimeout(60)
@@ -773,6 +798,32 @@ try {
   ok(rotatedStateTrace.filter(direction => direction === 'active>rested').length === 1,
     `mobile-portrait-rotated: one authority state change must play once: ${rotatedStateTrace.join(',')}`)
 
+  await invoke(rotatedPage, 'ready')
+  await rotatedPage.waitForFunction(() => !document.querySelector('.l12-card-state-transition-ghost'), null, { timeout:1500 })
+  await resetStateTransitionTrace(rotatedPage)
+  await invoke(rotatedPage, 'attackWithDuplicateRestSnapshots')
+  const rotatedAttackGhost = rotatedPage.locator('.l12-card-state-transition-ghost[data-motion-kind="attack-rest"]')
+  await rotatedAttackGhost.waitFor({ state:'attached', timeout:1500 })
+  ok(await rotatedAttackGhost.evaluate(node => node.parentElement?.id) === 'l12-landscape-teleports',
+    'mobile-portrait-rotated: combined attack-rest ghost must share the transformed logical canvas')
+  const rotatedAttackKey = await rotatedAttackGhost.getAttribute('data-attack-sequence')
+  const rotatedAttackAuthority = await physicalCenter(rotatedPage.locator('[data-card-instance-id="mover-1"]'))
+  await setAnimationProgress(rotatedAttackGhost, .48)
+  const rotatedAttackLunge = await physicalCenter(rotatedAttackGhost)
+  ok(centerDistance(rotatedAttackAuthority, rotatedAttackLunge) >= 6,
+    'mobile-portrait-rotated: combined attack-rest ghost must visibly lunge toward the defender')
+  await assertGhostGeometry(rotatedAttackGhost, 'mobile-portrait-rotated', 'combined attack-rest at 48%')
+  await rotatedPage.evaluate(() => window.dispatchEvent(new Event('l12-viewport-change')))
+  await rotatedPage.waitForTimeout(32)
+  ok(await rotatedAttackGhost.count() === 1 && await rotatedAttackGhost.getAttribute('data-attack-sequence') === rotatedAttackKey,
+    'mobile-portrait-rotated: viewport jitter must not blink away or replay an active attack-rest transaction')
+  await shot(rotatedPage, 'mobile-portrait-rotated-14b-attack-rest')
+  await finishAnimationFast(rotatedAttackGhost)
+  await rotatedPage.waitForFunction(() => !document.querySelector('.l12-card-state-transition-ghost'), null, { timeout:1500 })
+  const rotatedAttackTrace = await rotatedPage.evaluate(() => window.__stateTransitionTrace.slice())
+  ok(rotatedAttackTrace.filter(direction => direction === 'active>rested').length === 1,
+    `mobile-portrait-rotated: one attack transaction must play one combined rest animation: ${rotatedAttackTrace.join(',')}`)
+
   await invoke(rotatedPage, 'move')
   const rotatedMoveGhost = rotatedPage.locator('.l12-zone-flight-ghost')
   await rotatedMoveGhost.waitFor({ state:'attached', timeout:1500 })
@@ -864,6 +915,16 @@ try {
   await rotatedPage.waitForTimeout(180)
   ok(await visibleCount(rotatedPage, '.l12-card-state-transition-ghost,.l12-zone-flight-ghost,.zone-card-movement') === 0,
     'mobile-portrait-rotated: reconnect must establish a baseline without replaying historical motion')
+  await invoke(rotatedPage, 'reconnectWithHistoricalAttack')
+  await rotatedPage.waitForTimeout(180)
+  ok(await visibleCount(rotatedPage, '.l12-card-state-transition-ghost') === 0,
+    'mobile-portrait-rotated: reconnect attack history must not replay attack-rest motion')
+  await rotatedPage.evaluate(() => window.__visualTransitionHarness.setReplay(8))
+  await invoke(rotatedPage, 'replaySeekBackwardWithHistoricalAttack')
+  await rotatedPage.waitForTimeout(180)
+  ok(await visibleCount(rotatedPage, '.l12-card-state-transition-ghost') === 0,
+    'mobile-portrait-rotated: backward replay seek must not replay attack-rest motion')
+  await rotatedPage.evaluate(() => window.__visualTransitionHarness.setReplay(null))
   report.profiles.push('mobile-portrait-rotated')
   await rotatedContext.close()
 

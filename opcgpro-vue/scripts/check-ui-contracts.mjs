@@ -25,6 +25,7 @@ const actionLayer = read('../src/l12/game/ActionPresentationLayer.vue')
 const actionPresentation = read('../src/l12/game/actionPresentation.ts')
 const actionAudio = read('../src/l12/game/useL12ActionAudio.ts')
 const zoneMovementLayer = read('../src/l12/game/ZoneMovementPresentationLayer.vue')
+const cardStateTransitionLayer = read('../src/l12/game/CardStateTransitionLayer.vue')
 const combatMotionLayer = read('../src/l12/game/CombatMotionPresentationLayer.vue')
 const visualTransitionProjection = read('../src/l12/game/visualTransitionProjection.ts')
 const osirisVictory = read('../src/l12/game/OsirisVictorySequence.vue')
@@ -319,8 +320,11 @@ const contracts = [
   [board.includes("import ZoneMovementPresentationLayer from './ZoneMovementPresentationLayer.vue'") && board.includes('<ZoneMovementPresentationLayer :events="game.recentEvents ?? []"') && zoneMovementLayer.includes('data-ui-contract="authoritative-zone-card-movement"') && zoneMovementLayer.includes('viewportLayoutRect(element)') && read('../src/l12/mobileViewport.ts').includes('element.getBoundingClientRect()') && read('../src/l12/mobileViewport.ts').includes('element.offsetWidth * scaleX') && zoneMovementLayer.includes('data-l12-game-stage') && zoneMovementLayer.includes('data-card-instance-id') && zoneMovementLayer.includes('await nextTick()'), '打出、登场与区域移动必须读取更新前后真实 DOM 锚点并由独立卡牌实体连续飞行'],
   [zoneMovementLayer.includes('source.cloneNode(true)') && zoneMovementLayer.includes('wrapper.animate([') && !zoneMovementLayer.includes('--move-mid-x') && !zoneMovementLayer.includes('l12-zone-card-pulse'), '卡牌跨区域动画必须复用来源实体快照并做单次起终点位移，不得恢复中途放大、脉冲或三段跳变'],
   [zoneMovementLayer.includes('prepareMovementImage') && zoneMovementLayer.includes('resolveCardAssetUrls') && zoneMovementLayer.includes('preparedImageUrl') && zoneMovementLayer.includes(".filter(url => url !== CARD_IMAGE_PLACEHOLDER)"), '无来源实体的区域移动必须在动画前预解码真实卡图，主牌库卡背只能作为全部候选失败后的最终兜底'],
-  [board.includes("import CombatMotionPresentationLayer from './CombatMotionPresentationLayer.vue'") && board.includes('<CombatMotionPresentationLayer :events="game.recentEvents ?? []"')
-    && combatMotionLayer.includes("event.type === 'attack'") && combatMotionLayer.includes("event.type === 'combat' || isDefeatLeave(event)")
+  [board.includes("import CardStateTransitionLayer from './CardStateTransitionLayer.vue'") && board.includes('<CardStateTransitionLayer :players="game.players" :events="game.recentEvents ?? []"')
+    && cardStateTransitionLayer.includes("wrapper.dataset.motionKind = transition.attackSequence === undefined ? 'state' : 'attack-rest'")
+    && cardStateTransitionLayer.includes('attackTargetElement(transition)') && cardStateTransitionLayer.includes('const frames = transition.attackSequence === undefined ? [')
+    && board.includes("import CombatMotionPresentationLayer from './CombatMotionPresentationLayer.vue'") && board.includes('<CombatMotionPresentationLayer :events="game.recentEvents ?? []"')
+    && !combatMotionLayer.includes("event.type === 'attack'") && combatMotionLayer.includes("event.type === 'combat' || isDefeatLeave(event)")
     && combatMotionLayer.includes('fieldSnapshots') && combatMotionLayer.includes('defeatedInstances')
     && combatMotionLayer.includes("power.textContent = '0'") && combatMotionLayer.includes('l12-defeat-damage')
     && combatMotionLayer.includes("zoneElement('graveyard', owner)")
@@ -329,7 +333,7 @@ const contracts = [
     && combatMotionLayer.includes('confirmedDefeatIds.has(captured.card.instanceId)')
     && combatMotionLayer.includes("Number(right.event.type === 'combat')")
     && combatMotionLayer.includes("fontFamily: \"'Microsoft YaHei','微软雅黑',sans-serif\"")
-    && !combatMotionLayer.includes('captured.card.baseTroops') && !combatMotionLayer.includes("font: '900 20px monospace'"), '进攻必须有轻量前冲；战斗或效果阵亡要使用前态快照去重；真实战斗优先采用权威战斗伤害，效果击杀不得猜测数值，返回/位移/弃置/替代不得误播阵亡'],
+    && !combatMotionLayer.includes('captured.card.baseTroops') && !combatMotionLayer.includes("font: '900 20px monospace'"), '进攻与休整必须由卡牌状态层合并为一次权威事务动画；战斗层不得二次播放普通进攻，战斗或效果阵亡要使用前态快照去重；真实战斗优先采用权威战斗伤害，效果击杀不得猜测数值，返回/位移/弃置/替代不得误播阵亡'],
   [zoneMovementLayer.includes("event.type === 'play'") && zoneMovementLayer.includes("event.type === 'put' || event.type === 'enter'") && zoneMovementLayer.includes("event.type === 'move'") && zoneMovementLayer.includes("event.type === 'counter-set'") && zoneMovementLayer.includes(':src="CARD_IMAGE_PLACEHOLDER"') && zoneMovementLayer.includes('covered: card?.hidden === true') && !zoneMovementLayer.includes("event.type === 'counter-set' ||"), '跨区域动画必须覆盖打出、登场、位移和盖伏；未知身份使用全局统一主牌库卡背，拥有者已知盖伏卡仍显示灰置卡面'],
   [visualTransitionProjection.includes("if (isAuthoritativePublicFaceMovement(event, from, to) && card?.cardId && card.cardId !== 'hidden-card') return false") && visualTransitionProjection.includes("if (from === 'library') return true") && visualTransitionProjection.includes("if (!card || event.type === 'counter-set') return true") && visualTransitionProjection.includes("if (!card.cardId || card.cardId === 'hidden-card') return true") && visualTransitionProjection.includes('return card.hidden === true && card.identityKnown !== true') && zoneMovementLayer.includes('const concealed = isMovementCardConcealed(event, card, from, to)') && !zoneMovementLayer.includes('const concealed = !card || card.identityKnown === false'), '已公开且携带真实身份的牌库弃牌与墓地回库在飞行中必须使用权威正面；其他牌库起点、无卡身份、占位卡或真正未知盖伏卡仍保持正式卡背'],
   [actionLayer.includes('lastSequence = highest') && visualTransitionProjection.includes('state.lastSequence = Math.max(state.lastSequence, highest)') && zoneMovementLayer.indexOf('claimFreshMovementEvents(props.events, movementClaims)') < zoneMovementLayer.indexOf('await nextTick()') && board.includes(':paused="passivePresentationPaused"'), '阶段条与跨区域卡牌动画必须以首次事件序列建立基线；区域移动在首个 await 前原子认领事件，并在既有展示/掷骰动画播放时排队'],
@@ -694,8 +698,10 @@ const contracts = [
     && backgroundMusic.includes('track.generation !== this.generation') && backgroundMusic.includes('destroy()')
     && app.includes('new BackgroundMusicController()') && !app.includes('new Audio('), '场景切换、对局曲目轮换及快速开关音乐必须由单一代次控制器淡出/淡入，过期ended回调不得叠播或改写当前曲目'],
   [audioPreferencesModule.includes('export function l12AnimationDuration')
+    && cardStateTransitionLayer.includes("import { l12AnimationDuration } from '../audioPreferences'")
+    && cardStateTransitionLayer.includes('return l12AnimationDuration(standard, props.playbackSpeed ? 80 : 140)')
     && combatMotionLayer.includes('if (!props.playbackSpeed) return l12AnimationDuration(standardMs, liveMinimumMs)')
-    && combatMotionLayer.includes('presentationDuration(360, 24, 80)') && combatMotionLayer.includes('presentationDuration(920, 260, 160)')
+    && !combatMotionLayer.includes('presentationDuration(360, 24, 80)') && combatMotionLayer.includes('presentationDuration(920, 260, 160)')
     && zoneMovementLayer.includes('function movementDuration(movement: Movement)')
     && zoneMovementLayer.includes('if (!props.playbackSpeed) return l12AnimationDuration(standardMs, liveMinimumMs)')
     && zoneMovementLayer.includes("'--move-duration': `${movementDuration(active.value)}ms`")
@@ -703,7 +709,7 @@ const contracts = [
     && zoneMovementLayer.includes('class="moving-card" data-essential-motion')
     && !zoneMovementLayer.includes('@media(prefers-reduced-motion:reduce){.moving-card{animation-duration:')
     && zoneMovementLayer.includes('timer = setTimeout(finish, duration + replayDuration')
-    && board.includes('l12AnimationDuration(3000, 700)') && board.includes('l12AnimationDuration(900, 180)'), '动画设置必须被战斗WAAPI、跨区CSS/WAAPI及公开结算计时共同消费；视觉时长和移动队列锁必须同源，关闭时仍保留必要公开信息最短可读时间'],
+    && board.includes('l12AnimationDuration(3000, 700)') && board.includes('l12AnimationDuration(900, 180)'), '动画设置必须被进攻休整合成动画、战斗WAAPI、跨区CSS/WAAPI及公开结算计时共同消费；视觉时长和移动队列锁必须同源，关闭时仍保留必要公开信息最短可读时间'],
   [app.includes(':root[data-l12-card-size="small"] .archive-grid')
     && app.includes(':root[data-l12-card-size="large"] .deck-card-grid')
     && app.includes(':root[data-l12-card-size="small"] .construction-grid')

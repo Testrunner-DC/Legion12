@@ -76,42 +76,6 @@ function captureCards(event: ActionEvent) {
   })
 }
 
-function animateAttack(event: ActionEvent) {
-  const attacker = cardElement(event.cards?.[0]?.instanceId)?.closest('.formation-slot') as HTMLElement | null
-  if (!attacker) return
-  const source = viewportRect(attacker)
-  const targetCard = cardElement(event.cards?.[1]?.instanceId)
-  const targetPlayer = event.playerIndex === undefined ? undefined : 1 - event.playerIndex
-  const targetAnchor = targetCard ?? (targetPlayer === undefined ? null : zoneElement('master', targetPlayer))
-  const target = targetAnchor ? viewportRect(targetAnchor) : null
-  if (!target) return
-  const dx = target.left + target.width / 2 - (source.left + source.width / 2)
-  const dy = target.top + target.height / 2 - (source.top + source.height / 2)
-  const distance = Math.max(1, Math.hypot(dx, dy))
-  const step = Math.min(26, distance * .09)
-  const ux = dx / distance
-  const uy = dy / distance
-  const animation = attacker.animate([
-    { transform: 'translate3d(0,0,0)' },
-    { transform: `translate3d(${ux * step}px,${uy * step}px,0)`, offset: .42 },
-    { transform: `translate3d(${ux * step}px,${uy * step}px,0)`, offset: .58 },
-    { transform: 'translate3d(0,0,0)' },
-  ], { duration: presentationDuration(360, 24, 80), easing: 'cubic-bezier(.22,1,.36,1)' })
-  remember(animation)
-  // The card itself owns the authoritative active/rested rotation. Applying a
-  // WAAPI transform to it temporarily replaces `.tapped { transform:... }`
-  // and makes a rested defender flash active. Shake its stable slot instead.
-  const impactElement = targetCard?.closest('.formation-slot') ?? targetAnchor
-  if (impactElement instanceof HTMLElement) {
-    const impact = impactElement.animate([
-      { transform: 'translate3d(0,0,0)', filter: 'brightness(1)' },
-      { transform: `translate3d(${-ux * 4}px,${-uy * 4}px,0)`, filter: 'brightness(1.28)', offset: .5 },
-      { transform: 'translate3d(0,0,0)', filter: 'brightness(1)' },
-    ], { duration: presentationDuration(240, 24, 80), delay: presentationDuration(120, 0, 20), easing: 'ease-out' })
-    remember(impact)
-  }
-}
-
 function animatePowerBadge(element: HTMLElement) {
   const badge = element.querySelector('.card-power')
   if (!(badge instanceof HTMLElement)) return
@@ -256,7 +220,8 @@ watch(() => props.events.map(event => event.sequence).join(','), () => {
     .flatMap(event => (event.cards ?? []).map(card => card.instanceId)))
   const jobs: DefeatJob[] = []
   for (const event of fresh) {
-    if (event.type === 'attack') animateAttack(event)
+    // The state layer owns a normal attack as one combined lunge/rest
+    // transaction. This layer only presents damage and confirmed defeats.
     if (event.type === 'combat' || isDefeatLeave(event)) jobs.push({ event, captured: captureCards(event), confirmedDefeatIds })
     lastSequence = Math.max(lastSequence, event.sequence)
   }

@@ -25,7 +25,9 @@ const checks = [
   ['hand FLIP anchors', hand.includes('useFlip') && hand.includes('data-flip-id')],
   ['public hand-add presentation preserved', movement.includes('publicHandAddCaption') && movement.includes("event.type === 'reveal' && /加入手牌/")],
   ['zone flight arc and settle', movement.includes('const lift =') && movement.includes('offset: .85')],
-  ['attack hit pause and impact', combat.includes('offset: .58') && combat.includes('const impact = impactElement.animate')],
+  ['attack lunge and rest share one visible transaction', stateTransition.includes("wrapper.dataset.motionKind = transition.attackSequence === undefined ? 'state' : 'attack-rest'")
+    && stateTransition.includes('offset: .38') && stateTransition.includes('offset: .56')
+    && !combat.includes("event.type === 'attack' &&") && !combat.includes("event.type === 'attack') animateAttack")],
   ['site and battle modal language', motion.includes('.site-modal-mask > .site-modal') && motion.includes('.l12-prompt-overlay > .prompt-panel')],
   ['ready and rest snapshot handoff', board.includes('<CardStateTransitionLayer') && stateTransition.includes("flush: 'pre', immediate: true")
     && stateTransition.includes('const sourceGhost = source.cloneNode(true)') && stateTransition.includes('sourceGhost.style.visibility = \'visible\'')
@@ -34,7 +36,8 @@ const checks = [
     && stateTransition.indexOf('revealTarget()', stateTransition.indexOf('function finish()'))
       < stateTransition.indexOf('wrapper?.remove()', stateTransition.indexOf('function finish()'))],
   ['ready and rest use revision-scoped authority transactions', board.includes(':revision="game.revision"')
-    && stateTransition.includes('claimCardStateTransitions(stateClaims, revision, next)')
+    && board.includes(':events="game.recentEvents ?? []"')
+    && stateTransition.includes('claimCardStateTransitions(stateClaims, revision, next, props.events)')
     && visualProjection.includes('if (revision <= state.revision) return []')
     && visualProjection.includes('transactionKey: `${revision}:${change.instanceId}')],
   ['state observer is layout neutral', stateTransition.includes('.card-state-transition-layer{display:none!important}') && board.includes('.felt-board :deep(.battlefield-half.my-half){grid-row:3}')],
@@ -72,8 +75,8 @@ const checks = [
   ['combat defender defeat resolves the opposite graveyard without owner metadata', combat.includes("event.type === 'combat' && index === 1")
     && combat.includes('return 1 - event.playerIndex')
     && combat.includes('const owner = defeatOwner(event, captured.card, index)')],
-  ['combat impact preserves authority card rotation', combat.includes("targetCard?.closest('.formation-slot') ?? targetAnchor")
-    && !combat.includes('const impact = targetElement.animate')],
+  ['combat layer cannot replay a second ordinary attack animation', !combat.includes('function animateAttack(')
+    && combat.includes('state layer owns a normal attack as one combined lunge/rest')],
   ['attachment target uses stable instance identity', tile.includes('data-attached-card-instance-ids') && movement.includes('attachmentElement') && movement.includes('draft.attachment && !destination')],
   ['private-zone source hints survive prompt removal', movement.includes('sourceZoneHints') && movement.includes('collectPromptSourceZoneHints') && visualProjection.includes("key.endsWith(':zone')")],
   ['effect card art includes authority source only', board.includes('isCardEffectPresentationEvent(event)') && board.includes('presentationCards(event)') && visualProjection.includes('event.effectSceneId') && visualProjection.includes('event.cards?.slice(0, 1)')],
