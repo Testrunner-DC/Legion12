@@ -509,35 +509,53 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         });
         _app.MapPost("/api/admin/seasons/draft", (HttpRequest request, SeasonDraftCreateRequest body) =>
         {
-            if (!TryAuthorize(request, L12Permission.AdminOperationsWrite, out var authenticated, out var failure))
-                return failure;
-            try
-            {
-                return Results.Ok(_platform.CreateSeasonDraft(authenticated.Account,
-                    body.ExpectedCurrentRevision, body.Reason ?? string.Empty,
-                    new L12AdminAuditContext(CorrelationId(request),
-                        Permission: L12Authorization.Key(L12Permission.AdminOperationsWrite),
-                        Reason: body.Reason, ExpectedVersion: body.ExpectedCurrentRevision,
-                        RequestMethod: "POST", RequestPath: request.Path.Value ?? string.Empty)));
-            }
-            catch (L12OperationsConfigException error)
-            {
-                return SeasonManagementError(request, error);
-            }
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var expectedVersion = body.ExpectedVersion ?? _platform.OperationsConfigVersion();
+            var idempotencyKey = ResolveSeasonCommandKey(request, body.IdempotencyKey);
+            var payload = new L12SeasonDraftCreateCommandPayload(body.ExpectedCurrentRevision);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "operations.config.season-draft-create", "operations:config", payload,
+                idempotencyKey, expectedVersion, false, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission,
+                current => ExecuteOperationsConfig(() => _platform.CreateSeasonDraft(current.Actor,
+                    current.Payload.ExpectedCurrentRevision, current.Reason ?? string.Empty,
+                    current.AuditContext)));
+            var response = AdminCommandResponse(request, command, outcome);
+            request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
+            return response;
         });
         _app.MapPut("/api/admin/seasons/draft/{definitionId}", (HttpRequest request,
             string definitionId, SeasonDraftUpdateRequest body) =>
         {
-            if (!TryAuthorize(request, L12Permission.AdminOperationsWrite, out var authenticated, out var failure))
-                return failure;
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var expectedVersion = body.ExpectedVersion ?? _platform.OperationsConfigVersion();
             try
             {
-                return Results.Ok(_platform.UpdateSeasonDraft(authenticated.Account, definitionId,
-                    body.Draft, body.ExpectedRevision, body.Reason ?? string.Empty,
-                    new L12AdminAuditContext(CorrelationId(request),
-                        Permission: L12Authorization.Key(L12Permission.AdminOperationsWrite),
-                        Reason: body.Reason, ExpectedVersion: body.ExpectedRevision,
-                        RequestMethod: "PUT", RequestPath: request.Path.Value ?? string.Empty)));
+                var idempotencyKey = ResolveSeasonCommandKey(request, body.IdempotencyKey);
+                var payload = new L12SeasonDefinitionApplyCommandPayload(definitionId, body.Draft,
+                    body.ExpectedRevision, body.PreviewToken ?? string.Empty);
+                var command = CommandEnvelope(request, authenticated.Account, permission,
+                    "operations.config.season-draft-update", "operations:config", payload,
+                    idempotencyKey, expectedVersion, false, body.Reason);
+                var outcome = _adminCommands.Execute(command, permission,
+                    current => ExecuteOperationsConfig(() =>
+                    {
+                        var token = current.Payload.PreviewToken;
+                        if (string.IsNullOrWhiteSpace(token))
+                            token = _platform.PreviewNextSeasonDefinition(current.Actor,
+                                current.Payload.DefinitionId, current.Payload.Draft,
+                                current.Payload.ExpectedRevision, expectedVersion,
+                                current.AuditContext).PreviewToken;
+                        return _platform.ApplyNextSeasonDefinition(current.Actor,
+                            current.Payload.DefinitionId, current.Payload.Draft,
+                            current.Payload.ExpectedRevision, expectedVersion, token,
+                            current.Reason ?? string.Empty, current.AuditContext);
+                    }));
+                var response = AdminCommandResponse(request, command, outcome);
+                request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
+                return response;
             }
             catch (L12OperationsConfigException error)
             {
@@ -547,21 +565,67 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _app.MapDelete("/api/admin/seasons/draft/{definitionId}", (HttpRequest request,
             string definitionId, [Microsoft.AspNetCore.Mvc.FromBody] SeasonDraftDeleteRequest body) =>
         {
-            if (!TryAuthorize(request, L12Permission.AdminOperationsWrite, out var authenticated, out var failure))
-                return failure;
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var expectedVersion = body.ExpectedVersion ?? _platform.OperationsConfigVersion();
+            var idempotencyKey = ResolveSeasonCommandKey(request, body.IdempotencyKey);
+            var payload = new L12SeasonDraftDeleteCommandPayload(definitionId, body.ExpectedRevision);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "operations.config.season-draft-delete", "operations:config", payload,
+                idempotencyKey, expectedVersion, false, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission,
+                current => ExecuteOperationsConfig(() => _platform.DeleteSeasonDraft(current.Actor,
+                    current.Payload.DefinitionId, current.Payload.ExpectedRevision,
+                    current.Reason ?? string.Empty, current.AuditContext)));
+            request.HttpContext.Response.Headers["X-Command-ID"] = outcome.Command?.Id ?? command.CommandId;
+            request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
+            if (outcome.Replayed) request.HttpContext.Response.Headers["X-Idempotent-Replay"] = "true";
+            return outcome.Success ? Results.NoContent()
+                : ApiError(request, outcome.Code, outcome.Message, outcome.StatusCode);
+        });
+        _app.MapPost("/api/admin/seasons/{definitionId}/preview", (HttpRequest request,
+            string definitionId, SeasonDefinitionPreviewRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var expectedVersion = body.ExpectedVersion
+                ?? ParseExpectedVersion(request.Headers.IfMatch.FirstOrDefault());
+            if (expectedVersion is null)
+                return ApiError(request, "expected_version_required",
+                    "赛季配置预览必须提供 expectedVersion/If-Match",
+                    StatusCodes.Status428PreconditionRequired);
             try
             {
-                _platform.DeleteSeasonDraft(authenticated.Account, definitionId, body.ExpectedRevision,
-                    body.Reason ?? string.Empty, new L12AdminAuditContext(CorrelationId(request),
-                        Permission: L12Authorization.Key(L12Permission.AdminOperationsWrite),
-                        Reason: body.Reason, ExpectedVersion: body.ExpectedRevision,
-                        RequestMethod: "DELETE", RequestPath: request.Path.Value ?? string.Empty));
-                return Results.NoContent();
+                return Results.Ok(_platform.PreviewSeasonDefinition(authenticated.Account, definitionId,
+                    body.Draft, body.ExpectedRevision, expectedVersion.Value,
+                    AuditContext(request, permission)));
             }
             catch (L12OperationsConfigException error)
             {
                 return SeasonManagementError(request, error);
             }
+        });
+        _app.MapPut("/api/admin/seasons/{definitionId}", (HttpRequest request,
+            string definitionId, SeasonDefinitionApplyRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12SeasonDefinitionApplyCommandPayload(definitionId, body.Draft,
+                body.ExpectedRevision, body.PreviewToken ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "operations.config.season-definition-apply", "operations:config", payload,
+                key, expected, false, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission,
+                current => ExecuteOperationsConfig(() => _platform.ApplySeasonDefinition(current.Actor,
+                    current.Payload.DefinitionId, current.Payload.Draft, current.Payload.ExpectedRevision,
+                    expected, current.Payload.PreviewToken, current.Reason ?? string.Empty,
+                    current.AuditContext)));
+            if (outcome.Success && outcome.Value?.Slot == "current") NotifyOperationsPolicyChanged();
+            var response = AdminCommandResponse(request, command, outcome);
+            request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
+            return response;
         });
         _app.MapPost("/api/admin/seasons/draft/{definitionId}/activate", async (HttpRequest request,
             string definitionId, SeasonActivationRequest body) =>
@@ -3746,6 +3810,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             "season_definition_not_found" or "season_archive_not_found" => StatusCodes.Status404NotFound,
             "season_definition_revision_conflict" or "season_draft_exists" or "duplicate_season_id"
+                or "operations_version_conflict" or "season_preview_stale"
                 => StatusCodes.Status409Conflict,
             "permission_denied" => StatusCodes.Status403Forbidden,
             _ => StatusCodes.Status400BadRequest,
@@ -3861,6 +3926,15 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         return true;
     }
 
+    private static string ResolveSeasonCommandKey(HttpRequest request, string? bodyIdempotencyKey)
+    {
+        var supplied = string.IsNullOrWhiteSpace(bodyIdempotencyKey)
+            ? request.Headers["Idempotency-Key"].FirstOrDefault()?.Trim()
+            : bodyIdempotencyKey.Trim();
+        if (!string.IsNullOrWhiteSpace(supplied)) return supplied;
+        return $"season-compat-{Guid.NewGuid():N}";
+    }
+
     private static L12AdminCommandResult<T> ExecuteOperationsConfig<T>(Func<T> operation)
     {
         try
@@ -3876,7 +3950,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 "season_definition_not_found" => StatusCodes.Status404NotFound,
                 "season_definition_revision_conflict" or "season_link_conflict"
                     or "season_cutover_not_ready" or "season_runtime_conflict"
-                    or "season_archive_conflict" => StatusCodes.Status409Conflict,
+                    or "season_archive_conflict" or "season_preview_stale"
+                    or "season_draft_exists" or "duplicate_season_id" => StatusCodes.Status409Conflict,
                 "permission_denied" => StatusCodes.Status403Forbidden,
                 _ => StatusCodes.Status400BadRequest,
             };
@@ -4648,10 +4723,22 @@ public sealed record FriendResolveRequest(bool Accept);
 public sealed record RankedFactionRequest(string? Faction);
 public sealed record RankedTitleRequest(string? Title);
 public sealed record RankedConfigRequest(L12RankedConfigView Config, string? Reason);
-public sealed record SeasonDraftCreateRequest(long ExpectedCurrentRevision, string? Reason);
+public sealed record SeasonDraftCreateRequest(long ExpectedCurrentRevision, string? Reason,
+    string? IdempotencyKey = null, long? ExpectedVersion = null);
 public sealed record SeasonDraftUpdateRequest(L12SeasonDefinitionDraft Draft, long ExpectedRevision,
-    string? Reason);
-public sealed record SeasonDraftDeleteRequest(long ExpectedRevision, string? Reason);
+    string? Reason, string? PreviewToken = null, string? IdempotencyKey = null,
+    long? ExpectedVersion = null);
+public sealed record SeasonDraftDeleteRequest(long ExpectedRevision, string? Reason,
+    string? IdempotencyKey = null, long? ExpectedVersion = null);
+public sealed record SeasonDefinitionPreviewRequest(L12SeasonDefinitionDraft Draft,
+    long ExpectedRevision, long? ExpectedVersion = null);
+public sealed record SeasonDefinitionApplyRequest(L12SeasonDefinitionDraft Draft,
+    long ExpectedRevision, string? PreviewToken, string? Reason = null,
+    string? IdempotencyKey = null, long? ExpectedVersion = null);
+public sealed record L12SeasonDraftCreateCommandPayload(long ExpectedCurrentRevision);
+public sealed record L12SeasonDraftDeleteCommandPayload(string DefinitionId, long ExpectedRevision);
+public sealed record L12SeasonDefinitionApplyCommandPayload(string DefinitionId,
+    L12SeasonDefinitionDraft Draft, long ExpectedRevision, string PreviewToken);
 public sealed record RankedBroadcastCompleteRequest(string? ClaimToken);
 public sealed record RoleRequest(string? Role, string? IdempotencyKey = null, long? ExpectedVersion = null,
     bool DryRun = false, string? Reason = null);
