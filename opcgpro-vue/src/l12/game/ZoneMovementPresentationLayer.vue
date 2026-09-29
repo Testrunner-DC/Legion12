@@ -4,7 +4,8 @@ import { l12AnimationDuration } from '../audioPreferences'
 import { landscapeTeleportElement, landscapeTeleportTarget, settleElementGeometry, viewportLayoutRect, visibleViewport } from '../mobileViewport'
 import { CARD_IMAGE_PLACEHOLDER, resolveCardAssetUrls } from '../cardAssets'
 import type { ActionEvent, Card, PlayerView, Prompt } from '../types'
-import { beginMovementTransactionBatch, claimFreshMovementEvents, claimMovementTransaction, collectKnownCardZones, collectPromptSourceZoneHints, createMovementClaimState, finalizeMovementTransactionBatch, isAuthoritativePublicFaceMovement, isCombatDefeatLeaveEvent, isMovementCardConcealed, isSupersededLeaveEvent, leaveMovementDestination, movementCardsForEvent, movementFactKey, resetMovementClaimState, type VisualZone } from './visualTransitionProjection'
+import { acquireAuthoritativeCardVisibility } from './authoritativeCardVisibility'
+import { beginMovementTransactionBatch, claimFreshMovementEvents, claimMovementTransaction, collectKnownCardZones, collectPromptSourceZoneHints, createMovementClaimState, entryMovementTransactionKey, finalizeMovementTransactionBatch, isAuthoritativePublicFaceMovement, isCombatDefeatLeaveEvent, isMovementCardConcealed, isSupersededLeaveEvent, leaveMovementDestination, movementCardsForEvent, movementFactKey, resetMovementClaimState, type MovementSourceEvidence, type VisualZone } from './visualTransitionProjection'
 import type { PresentationReservation, PresentationSequenceCoordinator } from './presentationSequenceCoordinator'
 
 type Zone = VisualZone
@@ -16,6 +17,7 @@ type Movement = {
   label: string
   from: Zone
   to: Zone
+  sourceEvidence: MovementSourceEvidence
   card?: Card
   authoritativeFace: boolean
   concealed: boolean
@@ -47,6 +49,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{ busyChange: [busy: boolean] }>()
 
 const active = ref<Movement | null>(null)
+const reservationCount = ref(0)
 const queue: Movement[] = []
 const movementClaims = createMovementClaimState()
 let timer: ReturnType<typeof setTimeout> | null = null
@@ -121,9 +124,12 @@ function publicHandAddCaption(event: ActionEvent, card: Card) {
 }
 
 function authoritativeSourceZone(card: Card | undefined, fallback: Zone, batchCursor?: Map<string, VisualZone>) {
-  if (!card?.instanceId) return fallback
-  return batchCursor?.get(card.instanceId) ?? sourceZoneHints.get(card.instanceId)
-    ?? movementClaims.zones.get(card.instanceId) ?? fallback
+  if (!card?.instanceId) return { zone:fallback, evidence:'fallback' as const }
+  const cursorZone = batchCursor?.get(card.instanceId) ?? movementClaims.zones.get(card.instanceId)
+  if (cursorZone) return { zone:cursorZone, evidence:'cursor' as const }
+  const hintedZone = sourceZoneHints.get(card.instanceId)
+  if (hintedZone) return { zone:hintedZone, evidence:'hint' as const }
+  return { zone:fallback, evidence:'fallback' as const }
 }
 
 function movementFromEvent(event: ActionEvent, cardIndex: number, fromRect: AnchorRect, toRect: AnchorRect,
@@ -134,6 +140,12 @@ function movementFromEvent(event: ActionEvent, cardIndex: number, fromRect: Anch
   let from: Zone
   let to: Zone
   let label: string
+  let sourceEvidence: MovementSourceEvidence = 'fallback'
+  const sourceZone = (fallback: Zone) => {
+    const resolved = authoritativeSourceZone(selectedCard, fallback, batchCursor)
+    sourceEvidence = resolved.evidence
+    return resolved.zone
+  }
   if (event.type === 'disaster-reveal') {
     // A disaster without a triggered effect still has a public reveal moment.
     // Keep it in the card-movement queue so it receives the same presentation
@@ -146,28 +158,28 @@ function movementFromEvent(event: ActionEvent, cardIndex: number, fromRect: Anch
   } else if (event.type === 'counter-set') {
     from = 'hand'; to = 'field'; label = '盖伏'
   } else if (event.type === 'play') {
-    from = 'hand'; to = event.cards?.[0]?.cardType === 'artifact' ? 'relic'
+    from = sourceZone('hand'); to = event.cards?.[0]?.cardType === 'artifact' ? 'relic'
       : event.cards?.[0]?.cardType === 'legion' ? 'field' : 'center'; label = '打出'
   } else if (event.type === 'put' || event.type === 'enter') {
     const describedSource = textSource(event.text)
-    from = authoritativeSourceZone(selectedCard, describedSource === 'field' ? 'resolving' : describedSource, batchCursor); to = 'field'; label = '登场'
+    from = sourceZone(describedSource === 'field' ? 'resolving' : describedSource); to = 'field'; label = '登场'
   } else if (event.type === 'move') {
     from = 'field'; to = 'field'; label = '位移'
   } else if (event.type === 'attach') {
-    from = authoritativeSourceZone(selectedCard, 'resolving', batchCursor); to = 'attached'; label = '叠放'
+    from = sourceZone('resolving'); to = 'attached'; label = '叠放'
   } else if (event.type === 'grave' || event.type === 'discard') {
-    from = authoritativeSourceZone(selectedCard, textSource(event.text), batchCursor); to = 'graveyard'; label = event.type === 'discard' ? '弃置' : '入墓'
+    from = sourceZone(textSource(event.text)); to = 'graveyard'; label = event.type === 'discard' ? '弃置' : '入墓'
   } else if (event.type === 'mill') {
     from = 'library'; to = 'graveyard'; label = '弃置'
   } else if (event.type === 'return') {
-    from = authoritativeSourceZone(selectedCard, event.text.includes('从墓地') ? 'graveyard' : event.text.includes('从圣物区') ? 'relic' : 'field', batchCursor)
+    from = sourceZone(event.text.includes('从墓地') ? 'graveyard' : event.text.includes('从圣物区') ? 'relic' : 'field')
     to = event.text.includes('主宰区') ? 'master' : event.text.includes('手牌') ? 'hand' : event.text.includes('圣物区') ? 'relic' : 'library'
     label = '返回'
   } else if (event.type === 'leave') {
     // Ordinary authoritative field departures used to disappear between two
     // snapshots. Combat defeat owns its own motion layer; non-defeat costs,
     // discards, removals and replacements use this shared zone lane.
-    from = authoritativeSourceZone(selectedCard, 'field', batchCursor)
+    from = sourceZone('field')
     to = leaveMovementDestination(event)
     label = /费用/.test(event.text) ? '支付费用' : '离场'
   } else return null
@@ -185,6 +197,7 @@ function movementFromEvent(event: ActionEvent, cardIndex: number, fromRect: Anch
     label,
     from,
     to,
+    sourceEvidence,
     card,
     authoritativeFace,
     concealed,
@@ -272,15 +285,12 @@ const motionStyle = computed(() => {
   }
 })
 
-let hiddenTarget: HTMLElement | null = null
-let hiddenTargetVisibility = ''
+let releaseTargetVisibility: (() => void) | null = null
 let activeGhostWrapper: HTMLElement | null = null
 let activeGhostAnimation: Animation | null = null
 function revealTarget() {
-  if (!hiddenTarget) return
-  hiddenTarget.style.visibility = hiddenTargetVisibility
-  hiddenTarget = null
-  hiddenTargetVisibility = ''
+  releaseTargetVisibility?.()
+  releaseTargetVisibility = null
 }
 
 function showNext() {
@@ -290,12 +300,14 @@ function showNext() {
   notifyBusy()
   const destination = destinationElement(active.value)
   if (destination instanceof HTMLElement) {
-    hiddenTarget = destination
-    hiddenTargetVisibility = destination.style.visibility
-    destination.style.visibility = 'hidden'
+    releaseTargetVisibility = acquireAuthoritativeCardVisibility(destination)
     // The flight owns the visible transform. If a preceding state change left
     // this authority node mid-motion, finish it while covered for handoff.
-    settleElementGeometry(destination)
+    try {
+      settleElementGeometry(destination)
+    } catch {
+      revealTarget()
+    }
   }
   const finish = () => {
     if (!active.value) return
@@ -312,7 +324,8 @@ function showNext() {
     showNext()
     notifyBusy()
   }
-  if (active.value.sourceGhost) {
+  try {
+    if (active.value.sourceGhost) {
     const source = active.value.fromRect
     const target = active.value.toRect
     const wrapper = document.createElement('div')
@@ -372,11 +385,14 @@ function showNext() {
       activeGhostWrapper?.remove()
       activeGhostWrapper = null
     }
-    timer = setTimeout(finish, duration + replayDuration(80, 20))
-    return
+      timer = setTimeout(finish, duration + replayDuration(80, 20))
+      return
+    }
+    const duration = movementDuration(active.value)
+    timer = setTimeout(finish, duration + replayDuration(20, 10))
+  } catch {
+    finish()
   }
-  const duration = movementDuration(active.value)
-  timer = setTimeout(finish, duration + replayDuration(20, 10))
 }
 
 function cancelActiveMovement() {
@@ -404,6 +420,7 @@ function reset() {
   sourceZoneHints.clear()
   for (const reservation of pendingReservations) reservation.cancel()
   pendingReservations.clear()
+  props.sequenceCoordinator.clearEntryMovementTransactions()
   for (const [instanceId, zone] of collectKnownCardZones(props.players)) sourceZoneHints.set(instanceId, zone)
   for (const [instanceId, zone] of collectPromptSourceZoneHints(props.prompts)) sourceZoneHints.set(instanceId, zone)
   notifyBusy()
@@ -439,7 +456,18 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
         to: draft.to,
         allowSameZone: event.type === 'move' || event.type === 'disaster-reveal',
       })
-      if (claimed) drafts.push({ event, cardIndex, draft })
+      if (claimed) {
+        // Opponent/spectator projections deliberately omit private hand
+        // instances. A public legion `play` with a stable enter identity and an
+        // actual field destination is itself an authoritative movement
+        // contract; generic `put` layout fallbacks never receive this evidence.
+        const entrySourceEvidence = draft.sourceEvidence === 'fallback' && event.type === 'play'
+          ? 'play-contract'
+          : draft.sourceEvidence
+        const entryTransactionKey = entryMovementTransactionKey(event, draft.from, draft.to, entrySourceEvidence)
+        if (entryTransactionKey) props.sequenceCoordinator.registerEntryMovementTransaction(entryTransactionKey)
+        drafts.push({ event, cardIndex, draft })
+      }
     }
   }
   if (transactionBatch) finalizeMovementTransactionBatch(movementClaims, transactionBatch, authoritativeZones)
@@ -449,6 +477,7 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
     pendingReservations.add(reservation)
     return reservation
   })
+  reservationCount.value += reservations.length
   const hasMovement = drafts.length > 0
   if (hasMovement) {
     preparationCount++
@@ -549,6 +578,8 @@ onBeforeUnmount(() => { reset(); emit('busyChange', false) })
 </script>
 
 <template>
+  <span class="zone-movement-presentation-layer" data-ui-contract="zone-movement-reservation-ledger"
+    :data-movement-reservation-count="reservationCount" aria-hidden="true" />
   <Teleport :to="landscapeTeleportTarget()">
     <div v-if="active && !active.sourceGhost" :key="active.key" class="zone-card-movement" :style="motionStyle"
       data-ui-contract="authoritative-zone-card-movement" :data-movement-key="active.key"
@@ -572,6 +603,7 @@ onBeforeUnmount(() => { reset(); emit('busyChange', false) })
 </template>
 
 <style scoped>
+.zone-movement-presentation-layer{display:none!important}
 .zone-card-movement{position:fixed;z-index:2147482988;left:0;top:0;width:0;height:0;pointer-events:none}.moving-card{position:absolute;width:72px;height:101px;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0);animation:l12-zone-card-flight var(--move-duration,.44s) var(--l12-ease-standard) both;filter:drop-shadow(0 8px 10px rgba(0,0,0,.72));will-change:transform,opacity}.moving-card>img,.moving-card :deep(.l12-card-image){width:100%;height:100%;object-fit:contain}.moving-card.concealed>img{object-fit:cover;border:1px solid #d6c488}
 .moving-card.covered:not(.concealed){filter:grayscale(.45) brightness(.72) drop-shadow(0 12px 14px #000)}
 .movement-caption{position:absolute;z-index:2;left:50%;bottom:calc(100% + 7px);width:max-content;max-width:240px;transform:translateX(-50%);padding:3px 7px;border:1px solid #8cc6d2;background:rgba(7,16,20,.94);color:#eef6f5;font-size:12px;line-height:1.35;text-align:center;white-space:normal;overflow-wrap:anywhere}

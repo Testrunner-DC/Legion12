@@ -24,6 +24,40 @@ assert.equal(model.isCardEffectPresentationEvent({ ...event, effectSceneId: unde
 assert.equal(model.isCardEffectPresentationEvent({ ...event, effectResultStatus: 'declared' }), false, 'declarations must wait for a real result')
 assert.equal(model.isCardEffectPresentationEvent({ ...event, type: 'effect-announced' }), false, 'whole-effect announcements stay out of presentation')
 assert.deepEqual(model.cardEffectPresentationCards(event).map(item => item.instanceId), ['nuada'], 'only the source card is presented')
+const entryGroup = 'play:entry-source'
+const entryPlay = { sequence:8, type:'play', playerIndex:0, text:'打出登场军团', playerLogGroupId:entryGroup, playerLogTiming:'enter', cards:[sourceCard] }
+const entryResult = { ...event, sequence:10, type:'effect-result', playerLogGroupId:entryGroup, playerLogTiming:'enter', cards:[sourceCard] }
+const entryKey = `${entryGroup}\u001fenter\u001f${sourceCard.instanceId}`
+const ownsEntry = key => key === entryKey
+assert.equal(model.entryPresentationTransactionKey(entryPlay), entryKey, 'stable group/timing/source identity owns an entry transaction')
+assert.equal(model.entryPresentationTransactionKey({ ...entryPlay, cards:[{ ...sourceCard, hidden:false, identityKnown:false }] }), entryKey,
+  'real serialized public cards keep entry identity even when identityKnown has its ordinary false default')
+assert.equal(model.entryMovementTransactionKey(entryPlay, 'hand', 'field', 'cursor'), entryKey, 'a cursor-proven hand-to-field legion movement registers the entry transaction')
+assert.equal(model.entryMovementTransactionKey({ ...entryPlay, type:'put' }, 'resolving', 'field', 'hint'), entryKey, 'a hint-proven resolving-to-field legion put registers the entry transaction')
+assert.equal(model.entryMovementTransactionKey(entryPlay, 'hand', 'field', 'play-contract'), entryKey,
+  'a public legion play contract survives an opponent projection without private hand instances')
+assert.equal(model.entryMovementTransactionKey({ ...entryPlay, playerLogTiming:'promotion-enter' }, 'hand', 'field', 'play-contract'), null,
+  'the private-hand play contract does not broaden to promotion entry')
+assert.equal(model.entryMovementTransactionKey({ ...entryPlay, type:'put' }, 'resolving', 'field', 'fallback'), null,
+  'an unknown put source may use resolving for layout but cannot register an entry continuation')
+assert.equal(model.entryEffectContinuationTransaction(entryResult, ownsEntry), entryKey, 'matching entry result consumes the registered movement transaction without a second full card')
+assert.equal(model.entryEffectContinuationTransaction(entryResult, () => false), null, 'matching log metadata alone cannot invent an unclaimed movement transaction')
+assert.equal(model.entryEffectContinuationTransaction({ ...entryResult, playerLogGroupId:undefined }, ownsEntry), null, 'missing group never guesses an entry transaction')
+assert.equal(model.entryEffectContinuationTransaction({ ...entryResult, playerLogTiming:undefined }, ownsEntry), null, 'missing timing never guesses an entry transaction')
+assert.equal(model.entryEffectContinuationTransaction({ ...entryResult, cards:[targetCard] }, ownsEntry), null, 'a different instance cannot borrow the entry transaction')
+assert.equal(model.entryEffectContinuationTransaction({ ...entryResult, playerLogGroupId:'play:later-entry' }, ownsEntry), null, 'a later real entry group is independent')
+assert.equal(model.entryEffectContinuationTransaction({ ...entryResult, cards:[{ ...sourceCard, hidden:true }] }, ownsEntry), null, 'hidden sources retain their existing presentation boundary')
+assert.equal(model.entryEffectContinuationTransaction({ ...entryResult, playerLogTiming:'active' }, ownsEntry), null, 'an already-field active effect remains a full-card presentation')
+assert.equal(model.entryMovementTransactionKey({ ...entryPlay, cards:[{ ...sourceCard, cardType:'artifact' }] }, 'hand', 'relic', 'cursor'), null, 'artifact hand-to-relic movement never owns a battlefield entry continuation')
+assert.equal(model.entryMovementTransactionKey({ ...entryPlay, cards:[{ ...sourceCard, cardType:'master' }] }, 'hand', 'field', 'cursor'), null, 'master movement never owns a legion entry continuation')
+assert.equal(model.entryMovementTransactionKey({ ...entryPlay, cards:[{ ...sourceCard, cardType:'' }] }, 'hand', 'field', 'cursor'), null, 'missing card type keeps the existing full-card effect presentation')
+assert.equal(model.entryMovementTransactionKey({ ...entryPlay, type:'put' }, 'graveyard', 'field', 'cursor'), null, 'graveyard put retains a separate effect presentation')
+assert.equal(model.entryMovementTransactionKey({ ...entryPlay, type:'put' }, 'library', 'field', 'cursor'), null, 'library put retains a separate effect presentation')
+const reentryPlay = { ...entryPlay, sequence:20, playerLogGroupId:'play:reentry' }
+const reentryResult = { ...entryResult, sequence:21, playerLogGroupId:'play:reentry' }
+const reentryKey = model.entryMovementTransactionKey(reentryPlay, 'hand', 'field', 'cursor')
+assert.equal(model.entryEffectContinuationTransaction(reentryResult, key => key === reentryKey),
+  `play:reentry\u001fenter\u001f${sourceCard.instanceId}`, 'a true later re-entry owns a new visual transaction')
 assert.deepEqual(model.movementCardsForEvent({ ...event, type: 'move', cards: [sourceCard, targetCard] }).map(item => item.instanceId), ['nuada', 'target'], 'every card in a swap/multi-move is retained')
 assert.deepEqual(model.movementCardsForEvent({ ...event, type: 'attach', cards: [targetCard, sourceCard] }).map(item => item.instanceId), ['target', 'nuada'], 'attach host/source order is not guessed in the projection model')
 assert.deepEqual(model.movementCardsForEvent({ ...event, type: 'mill', cards: [sourceCard, targetCard] }).map(item => item.instanceId), ['nuada', 'target'], 'every milled card keeps authoritative event order')

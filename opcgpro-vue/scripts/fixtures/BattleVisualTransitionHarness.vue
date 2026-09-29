@@ -4,6 +4,7 @@ import type { ActionEvent, Card, GameState, PlayerView, Prompt } from '../../src
 import GameBoard from '../../src/l12/game/GameBoard.vue'
 import { l12State } from '../../src/l12/net'
 import { useLandscapeViewport } from '../../src/l12/mobileViewport'
+import { authoritativeCardVisibilityLeaseCount } from '../../src/l12/game/authoritativeCardVisibility'
 
 const faceUrl = (cardId: string) => `/api/site/media/visual-transition/${cardId}.png`
 const harnessParams = new URLSearchParams(window.location.search)
@@ -39,24 +40,33 @@ const nuada = { ...card('nuada-source', '银臂努阿达', 'ST06-M1'), cardType:
 const restedDefender = card('rested-defender', '休整守军', 'S01-01M1', true, faceUrl('S01-01M1'))
 const activeDefender = card('active-defender', '活跃守军', 'S01-01M2', false, faceUrl('S01-01M2'))
 const plainEntrant = card('plain-entrant', '普通登场军团', 'S01-02M1', false, faceUrl('S01-02M1'))
-const triggeredEntrant = card('triggered-entrant', '带登场效果军团', 'S01-02M3', false, faceUrl('S01-02M3'))
+// Mirrors the server's ordinary public serialization defaults. identityKnown
+// is only meaningful for covered cards and remains false on public event cards.
+const triggeredEntrant = { ...card('triggered-entrant', '加拉哈德', 'S02-0604', false, faceUrl('S02-0604')), hidden:false, identityKnown:false }
+const angus = { ...card('angus-source', '安格斯', 'S02-06M2', false, faceUrl('S02-06M2')), cardType: 'master' }
 const negatedEntrant = card('negated-entrant', '效果被无效军团', 'S01-03M1', false, faceUrl('S01-03M1'))
 const freeEntrant = card('free-entrant', '免费登场军团', 'S01-03M2', false, faceUrl('S01-03M2'))
 const rapidEntrantA = card('rapid-entrant-a', '连续登场甲', 'S01-04M1', false, faceUrl('S01-04M1'))
 const rapidEntrantB = card('rapid-entrant-b', '连续登场乙', 'S01-04M2', false, faceUrl('S01-04M2'))
 const interleavedEntrant = card('interleaved-entrant', '交错登场军团', 'S01-01M2', false, faceUrl('S01-01M2'))
+const entryArtifact = { ...card('entry-artifact', '登场圣物', 'S01-01M1', false, faceUrl('S01-01M1')), cardType:'artifact' }
+const graveyardEntrant = card('graveyard-entrant', '墓地置入军团', 'S01-01M2', false, faceUrl('S01-01M2'))
+const libraryEntrant = card('library-entrant', '牌库置入军团', 'S01-02M1', false, faceUrl('S01-02M1'))
+const missingTypeSource = { ...card('missing-type-source', '缺类型来源', 'S01-02M3', false, faceUrl('S01-02M3')), cardType:'' }
+const masterPlaySource = { ...card('master-play-source', '主宰来源', 'S01-03M1', false, faceUrl('S01-03M1')), cardType:'master' }
+const unknownOriginEntrant = card('unknown-origin-entrant', '未知来源置入军团', 'S01-03M2', false, faceUrl('S01-03M2'))
 
 function player(playerIndex: number): PlayerView {
   return {
     playerIndex, name: playerIndex ? '玩家B' : '玩家A', deckName: '', faction: 'otherworld',
     master: { masterId: playerIndex ? 'S02-06M1' : 'ST06-M1', masterName: playerIndex ? '莫瑞甘' : '银臂努阿达', hp: 8, maxHp: 8 },
-    libraryCount: playerIndex ? 20 : 23, libraryTop: null,
-    hand: playerIndex ? [plainEntrant, triggeredEntrant, negatedEntrant, freeEntrant, rapidEntrantA, rapidEntrantB] : [handSquire, robinSquire, duplicateCard, pharaohFestival],
-    handCount: playerIndex ? 6 : 4,
+    libraryCount: playerIndex ? 20 : 23, libraryTop: playerIndex ? libraryEntrant : null,
+    hand: playerIndex ? [plainEntrant, triggeredEntrant, negatedEntrant, freeEntrant, rapidEntrantA, rapidEntrantB, entryArtifact, missingTypeSource, masterPlaySource] : [handSquire, robinSquire, duplicateCard, pharaohFestival],
+    handCount: playerIndex ? 9 : 4,
     morale: [], field: playerIndex
       ? [[restedDefender, activeDefender, null], [null, null, null]]
       : [[mover, swapper, host], [finn, null, null]],
-    graveyard: [], graveyardCount: 0, resolving: [],
+    graveyard: playerIndex ? [graveyardEntrant] : [], graveyardCount: playerIndex ? 1 : 0, resolving: [],
     specialZones: { runes: 2, trialLevel: 0, godPower: [], trials: [] }, mulliganDone: true,
   }
 }
@@ -67,8 +77,14 @@ const game = reactive<GameState>({
   disasterMode: 'none', disasterValue: 0, prompts: [], effectStack: [], players: [player(0), player(1)],
   recentEvents: [], legalAttackTargets: {}, stateHash: 'visual-1',
 })
+if (harnessParams.has('private-hand')) {
+  // Production opponent/spectator projection exposes only handCount. Keep the
+  // count while removing every private instance before the board mounts.
+  game.players[1].hand = []
+}
 const playbackSpeed = ref<number | null>(null)
 let sequence = 0
+const authorityEntryMoves = new Map<string, number>()
 function publish(event: Omit<ActionEvent, 'sequence'>) {
   game.revision += 1
   game.stateHash = `visual-${game.revision}`
@@ -103,9 +119,13 @@ function publishBatch(events: Array<Omit<ActionEvent, 'sequence'>>) {
   game.recentEvents = [...(game.recentEvents ?? []), ...events.map(event => ({ ...event, sequence:++sequence }))]
 }
 function placeOpponent(card: Card, row: number, slot: number, events: Array<Omit<ActionEvent, 'sequence'>>) {
+  const projectedPrivateHand = (game.players[1].hand?.length ?? 0) === 0 && (game.players[1].handCount ?? 0) > 0
   game.players[1].hand = game.players[1].hand?.filter(item => item.instanceId !== card.instanceId)
-  game.players[1].handCount = game.players[1].hand?.length
+  game.players[1].handCount = projectedPrivateHand
+    ? Math.max(0, (game.players[1].handCount ?? 0) - 1)
+    : game.players[1].hand?.length
   game.players[1].field[row][slot] = card
+  authorityEntryMoves.set(card.instanceId, (authorityEntryMoves.get(card.instanceId) ?? 0) + 1)
   publishBatch(events)
 }
 
@@ -198,11 +218,29 @@ const api = {
     })
   },
   playTriggeredEntrant() {
+    const playerLogGroupId = 'play:triggered-entrant'
     placeOpponent(triggeredEntrant, 1, 0, [
-      { type:'play', playerIndex:1, text:'玩家B打出带登场效果军团', cards:[triggeredEntrant] },
-      { type:'enter', playerIndex:1, text:'带登场效果军团登场并触发效果', cards:[triggeredEntrant] },
-      { type:'effect-trigger', playerIndex:1, text:'带登场效果军团的登场时效果入栈', effectSceneId:'entry-trigger', effectResultStatus:'resolved', cards:[triggeredEntrant] },
+      { type:'play', playerIndex:1, text:'玩家B打出加拉哈德', playerLogGroupId, playerLogTiming:'enter', cards:[triggeredEntrant] },
+      { type:'enter', playerIndex:1, text:'加拉哈德登场并触发效果', playerLogGroupId, playerLogTiming:'enter', cards:[triggeredEntrant] },
+      { type:'effect-trigger', playerIndex:1, text:'加拉哈德的登场时效果入栈', effectSceneId:'entry-trigger', effectResultStatus:'resolved', playerLogGroupId, playerLogTiming:'enter', cards:[triggeredEntrant] },
     ])
+  },
+  playGalahadTrialRuneChain() {
+    const playerLogGroupId = 'play:galahad-trial-rune'
+    placeOpponent(triggeredEntrant, 1, 0, [
+      { type:'play', playerIndex:1, text:'玩家B打出加拉哈德', playerLogGroupId, playerLogTiming:'enter', cards:[triggeredEntrant] },
+      { type:'effect-trigger', playerIndex:1, text:'加拉哈德的登场时效果入栈', effectSceneId:'galahad-entry-trial', effectResultStatus:'declared', playerLogGroupId, playerLogTiming:'enter', cards:[triggeredEntrant] },
+    ])
+    // The real chain prepays Galahad's rest while its hand-to-field flight is
+    // still visible, then publishes the trial result and Angus rune receipt.
+    setTimeout(() => {
+      triggeredEntrant.tapped = true
+      game.players[1].specialZones.runes += 1
+      publishBatch([
+        { type:'effect-result', playerIndex:1, text:'加拉哈德发动试炼并进入休整', effectText:'进行试炼。', effectSceneId:'galahad-entry-trial', effectResultStatus:'resolved', playerLogGroupId, playerLogTiming:'enter', cards:[triggeredEntrant] },
+        { type:'effect-result', playerIndex:1, text:'安格斯因推进试炼获得1符文', effectText:'获得1符文。', effectSceneId:'angus-trial-rune', effectResultStatus:'resolved', playerLogGroupId:'effect:angus-trial-rune', playerLogTiming:'trial', cards:[angus] },
+      ])
+    }, 120)
   },
   repeatTriggeredEnterSnapshot() {
     publishBatch([
@@ -218,10 +256,12 @@ const api = {
     ])
   },
   freeTriggeredEntrant() {
+    const playerLogGroupId = 'play:free-triggered-entrant'
     game.prompts = [prompt('free-entry-source', { 'free-entrant:zone':'手牌' })]
     placeOpponent(freeEntrant, 1, 2, [
-      { type:'put', playerIndex:1, text:'效果使免费登场军团从手牌免费登场', cards:[freeEntrant] },
-      { type:'enter', playerIndex:1, text:'免费登场军团登场并触发效果', cards:[freeEntrant] },
+      { type:'put', playerIndex:1, text:'效果使免费登场军团从手牌免费登场', playerLogGroupId, playerLogTiming:'enter', cards:[freeEntrant] },
+      { type:'enter', playerIndex:1, text:'免费登场军团登场并触发效果', playerLogGroupId, playerLogTiming:'enter', cards:[freeEntrant] },
+      { type:'effect-result', playerIndex:1, text:'免费登场军团放弃发动可选登场效果', effectText:'不发动可选登场效果。', effectSceneId:'free-entry-declined', effectResultStatus:'declined', playerLogGroupId, playerLogTiming:'enter', cards:[freeEntrant] },
     ])
     game.prompts = []
   },
@@ -239,6 +279,67 @@ const api = {
         { type:'play', playerIndex:0, text:'玩家A连续打出军团乙', cards:[rapidEntrantB] },
       ])
     })
+  },
+  playEntryArtifact() {
+    const playerLogGroupId = 'play:entry-artifact'
+    game.players[1].hand = game.players[1].hand?.filter(item => item.instanceId !== entryArtifact.instanceId)
+    game.players[1].handCount = game.players[1].hand?.length
+    game.players[1].relic = entryArtifact
+    publishBatch([
+      { type:'play', playerIndex:1, text:'玩家B打出登场圣物', playerLogGroupId, playerLogTiming:'enter', cards:[entryArtifact] },
+      { type:'effect-result', playerIndex:1, text:'登场圣物的登场效果结算', effectText:'圣物效果正常展示。', effectSceneId:'artifact-entry-effect', effectResultStatus:'resolved', playerLogGroupId, playerLogTiming:'enter', cards:[entryArtifact] },
+    ])
+  },
+  putGraveyardEntrant() {
+    const playerLogGroupId = 'play:graveyard-entrant'
+    game.players[1].graveyard = (game.players[1].graveyard ?? []).filter(item => item.instanceId !== graveyardEntrant.instanceId)
+    game.players[1].graveyardCount = game.players[1].graveyard.length
+    game.players[1].field[0][2] = graveyardEntrant
+    publishBatch([
+      { type:'put', playerIndex:1, text:'墓地置入军团从墓地登场', playerLogGroupId, playerLogTiming:'enter', cards:[graveyardEntrant] },
+      { type:'effect-result', playerIndex:1, text:'墓地置入军团的登场效果结算', effectText:'墓地来源效果正常展示。', effectSceneId:'graveyard-entry-effect', effectResultStatus:'resolved', playerLogGroupId, playerLogTiming:'enter', cards:[graveyardEntrant] },
+    ])
+  },
+  putLibraryEntrant() {
+    const playerLogGroupId = 'play:library-entrant'
+    game.players[1].libraryTop = null
+    game.players[1].libraryCount = Math.max(0, game.players[1].libraryCount - 1)
+    game.players[1].field[1][0] = libraryEntrant
+    publishBatch([
+      { type:'put', playerIndex:1, text:'牌库置入军团从牌库登场', playerLogGroupId, playerLogTiming:'enter', cards:[libraryEntrant] },
+      { type:'effect-result', playerIndex:1, text:'牌库置入军团的登场效果结算', effectText:'牌库来源效果正常展示。', effectSceneId:'library-entry-effect', effectResultStatus:'resolved', playerLogGroupId, playerLogTiming:'enter', cards:[libraryEntrant] },
+    ])
+  },
+  putUnknownOriginEntrant() {
+    const playerLogGroupId = 'play:unknown-origin-entrant'
+    // This instance was absent from every prior authority snapshot and prompt.
+    // The movement may use resolving as a layout fallback, but that fallback
+    // must not authorize suppression of the effect's full-card presentation.
+    game.players[1].field[1][1] = unknownOriginEntrant
+    publishBatch([
+      { type:'put', playerIndex:1, text:'未知来源置入军团登场', playerLogGroupId, playerLogTiming:'enter', cards:[unknownOriginEntrant] },
+      { type:'effect-result', playerIndex:1, text:'未知来源置入军团的登场效果结算', effectText:'未知来源保留整卡展示。', effectSceneId:'unknown-origin-entry-effect', effectResultStatus:'resolved', playerLogGroupId, playerLogTiming:'enter', cards:[unknownOriginEntrant] },
+    ])
+  },
+  playMissingTypeSource() {
+    const playerLogGroupId = 'play:missing-type-source'
+    game.players[1].hand = game.players[1].hand?.filter(item => item.instanceId !== missingTypeSource.instanceId)
+    game.players[1].handCount = game.players[1].hand?.length
+    game.players[1].resolving = [...(game.players[1].resolving ?? []), missingTypeSource]
+    publishBatch([
+      { type:'play', playerIndex:1, text:'玩家B打出缺类型来源', playerLogGroupId, playerLogTiming:'enter', cards:[missingTypeSource] },
+      { type:'effect-result', playerIndex:1, text:'缺类型来源的效果结算', effectText:'缺类型来源保留整卡展示。', effectSceneId:'missing-type-entry-effect', effectResultStatus:'resolved', playerLogGroupId, playerLogTiming:'enter', cards:[missingTypeSource] },
+    ])
+  },
+  playMasterSource() {
+    const playerLogGroupId = 'play:master-source'
+    game.players[1].hand = game.players[1].hand?.filter(item => item.instanceId !== masterPlaySource.instanceId)
+    game.players[1].handCount = game.players[1].hand?.length
+    game.players[1].resolving = [...(game.players[1].resolving ?? []), masterPlaySource]
+    publishBatch([
+      { type:'play', playerIndex:1, text:'玩家B打出主宰来源', playerLogGroupId, playerLogTiming:'enter', cards:[masterPlaySource] },
+      { type:'effect-result', playerIndex:1, text:'主宰来源的效果结算', effectText:'主宰来源保留整卡展示。', effectSceneId:'master-entry-effect', effectResultStatus:'resolved', playerLogGroupId, playerLogTiming:'enter', cards:[masterPlaySource] },
+    ])
   },
   move() {
     replaceField([[null, mover, host], [null, swapper, null]])
@@ -363,6 +464,11 @@ const api = {
   closePrompt() { game.prompts = []; game.revision += 1 },
   setReplay(speed: number | null) { playbackSpeed.value = speed },
   setViewer(playerIndex: number) { game.you = playerIndex; game.revision += 1 },
+  authorityEntryMoveCount(instanceId: string) { return authorityEntryMoves.get(instanceId) ?? 0 },
+  visibilityLeaseCount(instanceId: string) {
+    const target = document.querySelector(`[data-card-instance-id="${CSS.escape(instanceId)}"]`)
+    return target instanceof HTMLElement ? authoritativeCardVisibilityLeaseCount(target) : -1
+  },
 }
 Object.assign(window, { __visualTransitionHarness: api })
 </script>

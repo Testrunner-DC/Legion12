@@ -10,6 +10,7 @@ const hand = read('src/l12/game/HandArea.vue')
 const movement = read('src/l12/game/ZoneMovementPresentationLayer.vue')
 const combat = read('src/l12/game/CombatMotionPresentationLayer.vue')
 const stateTransition = read('src/l12/game/CardStateTransitionLayer.vue')
+const visibilityLease = read('src/l12/game/authoritativeCardVisibility.ts')
 const visualProjection = read('src/l12/game/visualTransitionProjection.ts')
 const mobileViewport = read('src/l12/mobileViewport.ts')
 const board = read('src/l12/game/GameBoard.vue')
@@ -31,10 +32,10 @@ const checks = [
   ['site and battle modal language', motion.includes('.site-modal-mask > .site-modal') && motion.includes('.l12-prompt-overlay > .prompt-panel')],
   ['ready and rest snapshot handoff', board.includes('<CardStateTransitionLayer') && stateTransition.includes("flush: 'pre', immediate: true")
     && stateTransition.includes('const sourceGhost = source.cloneNode(true)') && stateTransition.includes('sourceGhost.style.visibility = \'visible\'')
-    && stateTransition.includes('sourceRect: { left: sourceRect.left') && stateTransition.indexOf('wrapper.appendChild(ghost)') < stateTransition.indexOf("target.style.visibility = 'hidden'")],
+    && stateTransition.includes('sourceRect: { left: sourceRect.left') && stateTransition.includes('acquireAuthoritativeCardVisibility(target)')],
   ['ready and rest never clone hidden target state', !stateTransition.includes('source: HTMLElement')
-    && stateTransition.indexOf('revealTarget()', stateTransition.indexOf('function finish()'))
-      < stateTransition.indexOf('wrapper?.remove()', stateTransition.indexOf('function finish()'))],
+    && stateTransition.indexOf('revealTarget()', stateTransition.indexOf('function finalizeActive('))
+      < stateTransition.indexOf('wrapper?.remove()', stateTransition.indexOf('function finalizeActive('))],
   ['ready and rest use revision-scoped authority transactions', board.includes(':revision="game.revision"')
     && board.includes(':events="game.recentEvents ?? []"')
     && stateTransition.includes('claimCardStateTransitions(stateClaims, revision, next, props.events)')
@@ -80,6 +81,32 @@ const checks = [
   ['attachment target uses stable instance identity', tile.includes('data-attached-card-instance-ids') && movement.includes('attachmentElement') && movement.includes('draft.attachment && !destination')],
   ['private-zone source hints survive prompt removal', movement.includes('sourceZoneHints') && movement.includes('collectPromptSourceZoneHints') && visualProjection.includes("key.endsWith(':zone')")],
   ['effect card art includes authority source only', board.includes('isCardEffectPresentationEvent(event)') && board.includes('presentationCards(event)') && visualProjection.includes('event.effectSceneId') && visualProjection.includes('event.cards?.slice(0, 1)')],
+  ['overlapping presentation layers share one visibility lease', movement.includes("from './authoritativeCardVisibility'")
+    && stateTransition.includes("from './authoritativeCardVisibility'")
+    && movement.includes('acquireAuthoritativeCardVisibility(destination)')
+    && stateTransition.includes('acquireAuthoritativeCardVisibility(target)')
+    && !movement.includes('hiddenTargetVisibility') && !stateTransition.includes('hiddenTargetVisibility')
+    && visibilityLease.includes('new WeakMap<HTMLElement, VisibilityLeaseState>()')
+    && visibilityLease.includes('if (current.count > 0) return')
+    && stateTransition.includes('function finalizeActive(generation: number, advance: boolean)')
+    && stateTransition.includes('generation !== activeGeneration')
+    && stateTransition.includes('animation.oncancel = () => finalize(false)')
+    && stateTransition.includes('settled.then(() => finalize(true), () => finalize(false))')
+    && movement.includes('activeGhostAnimation.oncancel = () => {')
+    && movement.includes('timer = setTimeout(finish')],
+  ['entry effects continue one stable movement transaction without a second full card',
+    visualProjection.includes('playerLogGroupId') && visualProjection.includes("timing !== 'enter' && timing !== 'promotion-enter'")
+    && visualProjection.includes("source.cardType !== 'legion'")
+    && visualProjection.includes("sourceEvidence === 'fallback'")
+    && visualProjection.includes("sourceEvidence === 'play-contract'")
+    && visualProjection.includes("event.playerLogTiming !== 'enter'")
+    && visualProjection.includes("from !== 'hand' && from !== 'resolving'")
+    && movement.includes('draft.sourceEvidence')
+    && movement.includes("event.type === 'play'")
+    && movement.includes('registerEntryMovementTransaction(entryTransactionKey)')
+    && board.includes('cardPresentationCoordinator.ownsEntryMovementTransaction')
+    && board.includes("kind: entryTransactionKey ? 'entry-continuation' : 'full-card'")
+    && board.includes('cards: entryTransactionKey ? [] : next.cards')],
   ['blocking prompt cancels only active presentation', stateTransition.includes('if (paused && active.value) cancelActive()') && movement.includes('if (paused && active.value) cancelActiveMovement()')],
 ]
 

@@ -3,6 +3,7 @@ import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { l12AnimationDuration } from '../audioPreferences'
 import { landscapeTeleportElement, settleElementGeometry, viewportLayoutRect } from '../mobileViewport'
 import type { ActionEvent, PlayerView } from '../types'
+import { acquireAuthoritativeCardVisibility } from './authoritativeCardVisibility'
 import { claimCardStateTransitions, collectVisualFieldState, createCardStateClaimState, resetCardStateClaimState } from './visualTransitionProjection'
 
 type Transition = {
@@ -32,8 +33,9 @@ const queue: Transition[] = []
 const stateClaims = createCardStateClaimState()
 let wrapper: HTMLElement | null = null
 let animation: Animation | null = null
-let hiddenTarget: HTMLElement | null = null
-let hiddenTargetVisibility = ''
+let releaseTargetVisibility: (() => void) | null = null
+let finalizing = false
+let activeGeneration = 0
 
 function cardElement(instanceId: string) {
   return document.querySelector(`[data-l12-game-stage] [data-card-instance-id="${CSS.escape(instanceId)}"]`)
@@ -52,14 +54,24 @@ function duration() {
 }
 
 function revealTarget() {
-  if (hiddenTarget) hiddenTarget.style.visibility = hiddenTargetVisibility
-  hiddenTarget = null
-  hiddenTargetVisibility = ''
+  releaseTargetVisibility?.()
+  releaseTargetVisibility = null
 }
 
-function finish() {
-  animation?.cancel()
+function finalizeActive(generation: number, advance: boolean) {
+  if (generation !== activeGeneration || finalizing) return
+  finalizing = true
+  // Invalidate every promise/event callback owned by this animation before
+  // cancelling it. A late completion can therefore never finalize or advance
+  // a newer queued transition.
+  activeGeneration += 1
+  const currentAnimation = animation
   animation = null
+  if (currentAnimation) {
+    currentAnimation.onfinish = null
+    currentAnimation.oncancel = null
+    currentAnimation.cancel()
+  }
   // Hand the final frame to the authoritative DOM before removing the ghost.
   // Both operations are synchronous, but this ordering prevents a blank frame
   // at the compositor boundary on slower/mobile renderers.
@@ -67,98 +79,102 @@ function finish() {
   wrapper?.remove()
   wrapper = null
   active.value = null
-  showNext()
+  finalizing = false
+  if (advance) showNext()
 }
 
 function cancelActive() {
-  animation?.cancel()
-  animation = null
-  revealTarget()
-  wrapper?.remove()
-  wrapper = null
-  active.value = null
+  if (!active.value && !animation && !wrapper && !releaseTargetVisibility) return
+  finalizeActive(activeGeneration, false)
 }
 
 function showNext() {
   if (active.value || props.paused || !queue.length) return
   const transition = queue.shift()
   if (!transition) return
+  const generation = ++activeGeneration
   active.value = transition
   void nextTick(() => {
-    if (active.value?.key !== transition.key) return
+    if (generation !== activeGeneration || active.value?.key !== transition.key) return
+    const finalize = (advance: boolean) => finalizeActive(generation, advance)
     const target = cardElement(transition.instanceId)
-    if (!(target instanceof HTMLElement)) { finish(); return }
-    const sourceRect = transition.sourceRect
-    hiddenTarget = target
-    hiddenTargetVisibility = target.style.visibility
-    // The ghost owns the visible state turn. Finish the covered authority
-    // node's transition and settle animation without waiting on CSS timers.
-    settleElementGeometry(target)
-    const targetRect = viewportLayoutRect(target)
-    const width = targetRect.width || Math.min(sourceRect.width, sourceRect.height * 5 / 7)
-    const height = targetRect.height || Math.max(sourceRect.height, sourceRect.width * 7 / 5)
-    const startX = sourceRect.left + sourceRect.width / 2 - width / 2
-    const startY = sourceRect.top + sourceRect.height / 2 - height / 2
-    const endX = targetRect.left + targetRect.width / 2 - width / 2
-    const endY = targetRect.top + targetRect.height / 2 - height / 2
-    const ghost = transition.sourceGhost
-    ghost.removeAttribute('id')
-    ghost.removeAttribute('data-card-instance-id')
-    ghost.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'))
-    ghost.querySelectorAll('[data-card-instance-id]').forEach(node => node.removeAttribute('data-card-instance-id'))
-    ghost.classList.remove('tapped', 'selected')
-    Object.assign(ghost.style, { width: '100%', height: '100%', margin: '0', transform: 'none', transition: 'none', visibility: 'visible', pointerEvents: 'none' })
-    wrapper = document.createElement('div')
-    wrapper.className = 'l12-card-state-transition-ghost'
-    wrapper.dataset.visualTransitionKey = transition.key
-    wrapper.dataset.stateFrom = transition.fromTapped ? 'rested' : 'active'
-    wrapper.dataset.stateTo = transition.toTapped ? 'rested' : 'active'
-    wrapper.dataset.motionKind = transition.attackSequence === undefined ? 'state' : 'attack-rest'
-    if (transition.attackSequence !== undefined) wrapper.dataset.attackSequence = String(transition.attackSequence)
-    Object.assign(wrapper.style, {
-      position: 'fixed', left: `${startX}px`, top: `${startY}px`, width: `${width}px`, height: `${height}px`,
-      zIndex: '902', pointerEvents: 'none', transformOrigin: 'center', willChange: 'transform',
-      filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))',
-    })
-    wrapper.appendChild(ghost)
-    landscapeTeleportElement()?.appendChild(wrapper)
-    target.style.visibility = 'hidden'
-    const fromAngle = transition.fromTapped ? 90 : 0
-    const toAngle = transition.toTapped ? 90 : 0
-    const dx = endX - startX
-    const dy = endY - startY
-    const motionDuration = duration()
-    const attackTarget = attackTargetElement(transition)
-    const attackRect = attackTarget instanceof HTMLElement ? viewportLayoutRect(attackTarget) : null
-    const attackDx = attackRect ? attackRect.left + attackRect.width / 2 - (sourceRect.left + sourceRect.width / 2) : 0
-    const attackDy = attackRect ? attackRect.top + attackRect.height / 2 - (sourceRect.top + sourceRect.height / 2) : 0
-    const attackDistance = Math.hypot(attackDx, attackDy)
-    // Keep the lunge readable even when opposing slots overlap closely in the
-    // compact board projection. This is an impact gesture, so a short pass
-    // through the target center is preferable to an imperceptible twitch.
-    const attackStep = attackDistance > 0
-      ? Math.min(30, Math.max(12, attackDistance * .1))
-      : 0
-    const lungeX = attackDistance > 0 ? attackDx / attackDistance * attackStep : 0
-    const lungeY = attackDistance > 0 ? attackDy / attackDistance * attackStep : 0
-    const frames = transition.attackSequence === undefined ? [
-      { transform: `translate3d(0,0,0) rotate(${fromAngle}deg) scale(1)` },
-      { transform: `translate3d(${dx * .72}px,${dy * .72}px,0) rotate(${fromAngle + (toAngle - fromAngle) * .72}deg) scale(.96)`, offset: .72 },
-      { transform: `translate3d(${dx}px,${dy}px,0) rotate(${toAngle}deg) scale(1)` },
-    ] : [
-      { transform: `translate3d(0,0,0) rotate(${fromAngle}deg) scale(1)`, easing: 'cubic-bezier(.22,1,.36,1)' },
-      { transform: `translate3d(${lungeX}px,${lungeY}px,0) rotate(${fromAngle + (toAngle - fromAngle) * .5}deg) scale(1.03)`, offset: .38 },
-      { transform: `translate3d(${lungeX}px,${lungeY}px,0) rotate(${fromAngle + (toAngle - fromAngle) * .78}deg) scale(1)`, offset: .56, easing: 'cubic-bezier(.22,1,.36,1)' },
-      { transform: `translate3d(${dx}px,${dy}px,0) rotate(${toAngle}deg) scale(1)` },
-    ]
-    // Attack keyframe offsets are transaction phases (lunge, contact, settle),
-    // so keep the overall timeline linear and ease within those phases.
-    animation = wrapper.animate(frames, {
-      duration: motionDuration,
-      easing: transition.attackSequence === undefined ? 'cubic-bezier(.22,1,.36,1)' : 'linear',
-      fill: 'forwards',
-    })
-    animation.onfinish = finish
+    if (!(target instanceof HTMLElement)) { finalize(true); return }
+    releaseTargetVisibility = acquireAuthoritativeCardVisibility(target)
+    try {
+      const sourceRect = transition.sourceRect
+      // The ghost owns the visible state turn. Finish the covered authority
+      // node's transition and settle animation without waiting on CSS timers.
+      settleElementGeometry(target)
+      const targetRect = viewportLayoutRect(target)
+      const width = targetRect.width || Math.min(sourceRect.width, sourceRect.height * 5 / 7)
+      const height = targetRect.height || Math.max(sourceRect.height, sourceRect.width * 7 / 5)
+      const startX = sourceRect.left + sourceRect.width / 2 - width / 2
+      const startY = sourceRect.top + sourceRect.height / 2 - height / 2
+      const endX = targetRect.left + targetRect.width / 2 - width / 2
+      const endY = targetRect.top + targetRect.height / 2 - height / 2
+      const ghost = transition.sourceGhost
+      ghost.removeAttribute('id')
+      ghost.removeAttribute('data-card-instance-id')
+      ghost.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'))
+      ghost.querySelectorAll('[data-card-instance-id]').forEach(node => node.removeAttribute('data-card-instance-id'))
+      ghost.classList.remove('tapped', 'selected')
+      Object.assign(ghost.style, { width: '100%', height: '100%', margin: '0', transform: 'none', transition: 'none', visibility: 'visible', pointerEvents: 'none' })
+      wrapper = document.createElement('div')
+      wrapper.className = 'l12-card-state-transition-ghost'
+      wrapper.dataset.visualTransitionKey = transition.key
+      wrapper.dataset.stateFrom = transition.fromTapped ? 'rested' : 'active'
+      wrapper.dataset.stateTo = transition.toTapped ? 'rested' : 'active'
+      wrapper.dataset.motionKind = transition.attackSequence === undefined ? 'state' : 'attack-rest'
+      if (transition.attackSequence !== undefined) wrapper.dataset.attackSequence = String(transition.attackSequence)
+      Object.assign(wrapper.style, {
+        position: 'fixed', left: `${startX}px`, top: `${startY}px`, width: `${width}px`, height: `${height}px`,
+        zIndex: '902', pointerEvents: 'none', transformOrigin: 'center', willChange: 'transform',
+        filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))',
+      })
+      wrapper.appendChild(ghost)
+      landscapeTeleportElement()?.appendChild(wrapper)
+      const fromAngle = transition.fromTapped ? 90 : 0
+      const toAngle = transition.toTapped ? 90 : 0
+      const dx = endX - startX
+      const dy = endY - startY
+      const motionDuration = duration()
+      const attackTarget = attackTargetElement(transition)
+      const attackRect = attackTarget instanceof HTMLElement ? viewportLayoutRect(attackTarget) : null
+      const attackDx = attackRect ? attackRect.left + attackRect.width / 2 - (sourceRect.left + sourceRect.width / 2) : 0
+      const attackDy = attackRect ? attackRect.top + attackRect.height / 2 - (sourceRect.top + sourceRect.height / 2) : 0
+      const attackDistance = Math.hypot(attackDx, attackDy)
+      // Keep the lunge readable even when opposing slots overlap closely in the
+      // compact board projection. This is an impact gesture, so a short pass
+      // through the target center is preferable to an imperceptible twitch.
+      const attackStep = attackDistance > 0
+        ? Math.min(30, Math.max(12, attackDistance * .1))
+        : 0
+      const lungeX = attackDistance > 0 ? attackDx / attackDistance * attackStep : 0
+      const lungeY = attackDistance > 0 ? attackDy / attackDistance * attackStep : 0
+      const frames = transition.attackSequence === undefined ? [
+        { transform: `translate3d(0,0,0) rotate(${fromAngle}deg) scale(1)` },
+        { transform: `translate3d(${dx * .72}px,${dy * .72}px,0) rotate(${fromAngle + (toAngle - fromAngle) * .72}deg) scale(.96)`, offset: .72 },
+        { transform: `translate3d(${dx}px,${dy}px,0) rotate(${toAngle}deg) scale(1)` },
+      ] : [
+        { transform: `translate3d(0,0,0) rotate(${fromAngle}deg) scale(1)`, easing: 'cubic-bezier(.22,1,.36,1)' },
+        { transform: `translate3d(${lungeX}px,${lungeY}px,0) rotate(${fromAngle + (toAngle - fromAngle) * .5}deg) scale(1.03)`, offset: .38 },
+        { transform: `translate3d(${lungeX}px,${lungeY}px,0) rotate(${fromAngle + (toAngle - fromAngle) * .78}deg) scale(1)`, offset: .56, easing: 'cubic-bezier(.22,1,.36,1)' },
+        { transform: `translate3d(${dx}px,${dy}px,0) rotate(${toAngle}deg) scale(1)` },
+      ]
+      // Attack keyframe offsets are transaction phases (lunge, contact, settle),
+      // so keep the overall timeline linear and ease within those phases.
+      animation = wrapper.animate(frames, {
+        duration: motionDuration,
+        easing: transition.attackSequence === undefined ? 'cubic-bezier(.22,1,.36,1)' : 'linear',
+        fill: 'forwards',
+      })
+      const settled = animation.finished
+      animation.onfinish = () => finalize(true)
+      animation.oncancel = () => finalize(false)
+      void settled.then(() => finalize(true), () => finalize(false))
+    } catch {
+      finalize(true)
+    }
   })
 }
 

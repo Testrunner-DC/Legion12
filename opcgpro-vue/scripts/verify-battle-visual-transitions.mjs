@@ -17,7 +17,7 @@ const harnessFaceRedirects = new Map(harnessFaceIds.map(cardId => [
   `/assets/l12/special/master/${cardId}.png`,
 ]))
 
-const harnessHtml = `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover"></head><body><div id="app"></div><script type="module">import { createApp } from 'vue';import Harness from '/scripts/fixtures/BattleVisualTransitionHarness.vue';import '/src/style.css';import '/src/l12/mobileViewport.css';import '/src/l12/motion.css';createApp(Harness).mount('#app')</script></body></html>`
+const harnessHtml = `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover"></head><body><div id="app"></div><script type="module">import { createApp } from 'vue';import Harness from '/scripts/fixtures/BattleVisualTransitionHarness.vue';import '/src/style.css';import '/src/l12/mobileViewport.css';import '/src/l12/motion.css';window.__battleVisualApp=createApp(Harness);window.__battleVisualApp.mount('#app')</script></body></html>`
 const harnessPlugin = {
   name: 'battle-visual-transition-harness',
   configureServer(server) {
@@ -37,7 +37,7 @@ const harnessPlugin = {
 
 const server = await createServer({ root, plugins: [harnessPlugin], server: { host: '127.0.0.1', port: 0 }, logLevel: 'error' })
 let browser
-const report = { assertions: 0, screenshots: [], errors: [], profiles: [] }
+const report = { assertions: 0, screenshots: [], errors: [], profiles: [], entryVisualEvidence: [] }
 function ok(value, message) { assert.ok(value, message); report.assertions += 1 }
 async function shot(page, name) { const file = path.join(output, `${name}.png`); await page.screenshot({ path: file }); report.screenshots.push(file) }
 async function elementShot(page, locator, name) {
@@ -676,11 +676,73 @@ try {
     await expectTrace(page, profile.name, ['plain-entrant', 'interleaved-entrant', 'plain-entrant'], 'same-revision interleaved instance chain')
 
     await resetMovementTrace(page)
-    await invoke(page, 'playTriggeredEntrant')
+    const entryReservationBaseline = Number(await page.locator('[data-ui-contract="zone-movement-reservation-ledger"]').getAttribute('data-movement-reservation-count') ?? 0)
+    await page.evaluate(() => {
+      window.__entryVisualTrace = { zone:[], state:[], effectCards:[], effectHints:[] }
+      const seen = { zone:new Set(), state:new Set(), effectCards:new WeakSet(), effectHints:new Set() }
+      const scan = () => {
+        document.querySelectorAll('.l12-zone-flight-ghost,.zone-card-movement').forEach(node => {
+          const instanceId = node.getAttribute('data-movement-instance-id') ?? ''
+          const key = node.getAttribute('data-movement-key') ?? instanceId
+          if (instanceId && !seen.zone.has(key)) {
+            seen.zone.add(key)
+            window.__entryVisualTrace.zone.push(instanceId)
+          }
+        })
+        document.querySelectorAll('.l12-card-state-transition-ghost').forEach(node => {
+          const key = node.getAttribute('data-visual-transition-key') ?? ''
+          const name = node.querySelector('img')?.getAttribute('alt') ?? ''
+          if (key && !seen.state.has(key)) {
+            seen.state.add(key)
+            window.__entryVisualTrace.state.push(name)
+          }
+        })
+        document.querySelectorAll('.public-reveal-animation').forEach(node => {
+          const name = node.querySelector('img')?.getAttribute('alt') ?? ''
+          if (name && !seen.effectCards.has(node)) {
+            seen.effectCards.add(node)
+            window.__entryVisualTrace.effectCards.push(name)
+          }
+          const transactionKey = node.getAttribute('data-entry-transaction-key') ?? ''
+          if (node.getAttribute('data-presentation-kind') === 'entry-continuation'
+            && transactionKey && !seen.effectHints.has(transactionKey)) {
+            seen.effectHints.add(transactionKey)
+            window.__entryVisualTrace.effectHints.push(transactionKey)
+          }
+        })
+      }
+      new MutationObserver(scan).observe(document.body, { childList:true, subtree:true, attributes:true })
+      scan()
+    })
+    await invoke(page, 'playGalahadTrialRuneChain')
     await waitForMovementTrace(page)
     await waitForMovementQueue(page)
-    await expectTrace(page, profile.name, ['triggered-entrant'], 'play plus enter-effect descriptions of one authority migration')
-    await page.waitForFunction(() => !document.querySelector('.public-reveal-animation'), null, { timeout:5000 })
+    await page.waitForTimeout(650)
+    const entryTrace = await page.evaluate(() => {
+      const authority = document.querySelector('[data-card-instance-id="triggered-entrant"]')
+      return {
+        ...window.__entryVisualTrace,
+        authorityMovementCount:window.__visualTransitionHarness.authorityEntryMoveCount('triggered-entrant'),
+        authorityCount:document.querySelectorAll('[data-card-instance-id="triggered-entrant"]').length,
+        authorityVisibility:authority ? getComputedStyle(authority).visibility : 'missing',
+        reservationCount:Number(document.querySelector('[data-ui-contract="zone-movement-reservation-ledger"]')?.getAttribute('data-movement-reservation-count') ?? 0),
+      }
+    })
+    const entryReservationCount = entryTrace.reservationCount - entryReservationBaseline
+    const galahadZoneCount = entryTrace.zone.filter(instanceId => instanceId === 'triggered-entrant').length
+    const galahadStateCount = entryTrace.state.filter(name => name === '加拉哈德').length
+    const galahadEffectCardCount = entryTrace.effectCards.filter(name => name === '加拉哈德').length
+    const galahadEffectHintCount = entryTrace.effectHints.filter(key => key.includes('play:galahad-trial-rune')).length
+    ok(entryTrace.authorityMovementCount === 1 && entryReservationCount === 1
+      && galahadZoneCount === 1 && galahadStateCount === 1 && galahadEffectCardCount === 0 && galahadEffectHintCount === 1
+      && entryTrace.authorityCount === 1 && entryTrace.authorityVisibility === 'visible',
+    `${profile.name}: Galahad chain must keep one authority move/reservation/play and one rest transition without a second full-card flash or hidden authority DOM; authority-move=${entryTrace.authorityMovementCount}, enter-reservation=${entryReservationCount}, enter-play=${galahadZoneCount}, state=${galahadStateCount}, effect-card=${galahadEffectCardCount}, effect-hint=${galahadEffectHintCount}, authority-dom=${entryTrace.authorityCount}, visibility=${entryTrace.authorityVisibility}`)
+    report.entryVisualEvidence.push({ profile:profile.name, authorityMovement:entryTrace.authorityMovementCount,
+      enterReservation:entryReservationCount, enterPlay:galahadZoneCount, stateRestPlay:galahadStateCount,
+      effectFullCard:galahadEffectCardCount, effectHint:galahadEffectHintCount,
+      authorityDom:entryTrace.authorityCount, visibility:entryTrace.authorityVisibility })
+    await expectTrace(page, profile.name, ['triggered-entrant'], 'Galahad play plus entry-effect descriptions of one authority migration')
+    await page.waitForFunction(() => !document.querySelector('.public-reveal-animation'), null, { timeout:8000 })
     await resetMovementTrace(page)
     await invoke(page, 'repeatTriggeredEnterSnapshot')
     await page.waitForTimeout(700)
@@ -701,6 +763,10 @@ try {
     await waitForMovementTrace(page)
     await waitForMovementQueue(page)
     await expectTrace(page, profile.name, ['free-entrant'], 'replay-speed free entry with put and enter descriptions')
+    await page.waitForFunction(() => document.querySelector('[data-presentation-kind="entry-continuation"]'), null, { timeout:1500 })
+    ok(await page.locator('.public-reveal-animation img[alt="免费登场军团"]').count() === 0,
+      `${profile.name}: declining an optional entry effect keeps text but cannot replay the entrant card`)
+    await page.waitForFunction(() => !document.querySelector('.public-reveal-animation'), null, { timeout:3000 })
     await page.evaluate(() => window.__visualTransitionHarness.setReplay(null))
 
     await resetMovementTrace(page)
@@ -751,6 +817,161 @@ try {
     report.profiles.push(profile.name)
     await context.close()
   }
+  const privateHandContext = await browser.newContext({ viewport:{ width:1366, height:768 } })
+  const privateHandPage = await privateHandContext.newPage()
+  privateHandPage.on('pageerror', error => report.errors.push(`production-opponent-private-hand: ${error.message}`))
+  await privateHandPage.goto(`http://127.0.0.1:${port}/__battle-visual-transitions?viewer=0&private-hand=1`, { waitUntil:'networkidle' })
+  await privateHandPage.waitForSelector('[data-l12-game-stage]')
+  await privateHandPage.evaluate(() => window.__visualTransitionHarness.setReplay(8))
+  const privateReservationBaseline = Number(await privateHandPage.locator('[data-ui-contract="zone-movement-reservation-ledger"]').getAttribute('data-movement-reservation-count') ?? 0)
+  await privateHandPage.evaluate(() => {
+    window.__privateEntryTrace = { zone:[], effectCards:[], effectHints:[] }
+    const seen = { zone:new Set(), effectCards:new WeakSet(), effectHints:new Set() }
+    const scan = () => {
+      document.querySelectorAll('.l12-zone-flight-ghost,.zone-card-movement').forEach(node => {
+        const instanceId = node.getAttribute('data-movement-instance-id') ?? ''
+        const key = node.getAttribute('data-movement-key') ?? instanceId
+        if (instanceId && !seen.zone.has(key)) {
+          seen.zone.add(key)
+          window.__privateEntryTrace.zone.push(instanceId)
+        }
+      })
+      document.querySelectorAll('.public-reveal-animation').forEach(node => {
+        const name = node.querySelector('img')?.getAttribute('alt') ?? ''
+        if (name && !seen.effectCards.has(node)) {
+          seen.effectCards.add(node)
+          window.__privateEntryTrace.effectCards.push(name)
+        }
+        const transactionKey = node.getAttribute('data-entry-transaction-key') ?? ''
+        if (node.getAttribute('data-presentation-kind') === 'entry-continuation'
+          && transactionKey && !seen.effectHints.has(transactionKey)) {
+          seen.effectHints.add(transactionKey)
+          window.__privateEntryTrace.effectHints.push(transactionKey)
+        }
+      })
+    }
+    new MutationObserver(scan).observe(document.body, { childList:true, subtree:true, attributes:true })
+    scan()
+  })
+  await invoke(privateHandPage, 'playGalahadTrialRuneChain')
+  await privateHandPage.waitForFunction(() => window.__privateEntryTrace.effectHints.length === 1
+    && window.__privateEntryTrace.effectCards.includes('安格斯'), null, { timeout:4000 })
+  await waitForMovementQueue(privateHandPage)
+  await privateHandPage.waitForTimeout(650)
+  const privateEntryTrace = await privateHandPage.evaluate(() => {
+    const authority = document.querySelector('[data-card-instance-id="triggered-entrant"]')
+    return {
+      ...window.__privateEntryTrace,
+      authorityMovementCount:window.__visualTransitionHarness.authorityEntryMoveCount('triggered-entrant'),
+      authorityCount:document.querySelectorAll('[data-card-instance-id="triggered-entrant"]').length,
+      authorityVisibility:authority ? getComputedStyle(authority).visibility : 'missing',
+      leaseCount:window.__visualTransitionHarness.visibilityLeaseCount('triggered-entrant'),
+      reservationCount:Number(document.querySelector('[data-ui-contract="zone-movement-reservation-ledger"]')?.getAttribute('data-movement-reservation-count') ?? 0),
+    }
+  })
+  const privateReservationCount = privateEntryTrace.reservationCount - privateReservationBaseline
+  const privateGalahadZoneCount = privateEntryTrace.zone.filter(instanceId => instanceId === 'triggered-entrant').length
+  const privateGalahadEffectCardCount = privateEntryTrace.effectCards.filter(name => name === '加拉哈德').length
+  const privateGalahadEffectHintCount = privateEntryTrace.effectHints.filter(key => key.includes('play:galahad-trial-rune')).length
+  const privateAngusEffectCardCount = privateEntryTrace.effectCards.filter(name => name === '安格斯').length
+  ok(privateEntryTrace.authorityMovementCount === 1 && privateReservationCount === 1
+    && privateGalahadZoneCount === 1 && privateGalahadEffectCardCount === 0 && privateGalahadEffectHintCount === 1
+    && privateAngusEffectCardCount === 1 && privateEntryTrace.authorityCount === 1
+    && privateEntryTrace.authorityVisibility === 'visible' && privateEntryTrace.leaseCount === 0,
+  `production-opponent-private-hand: one public legion play contract must survive private hand projection without swallowing Angus; authority=${privateEntryTrace.authorityMovementCount}, reservation=${privateReservationCount}, enter=${privateGalahadZoneCount}, Galahad-full=${privateGalahadEffectCardCount}, hint=${privateGalahadEffectHintCount}, Angus-full=${privateAngusEffectCardCount}, DOM=${privateEntryTrace.authorityCount}, visibility=${privateEntryTrace.authorityVisibility}, leases=${privateEntryTrace.leaseCount}`)
+  report.entryVisualEvidence.push({ profile:'production-opponent-private-hand', authorityMovement:privateEntryTrace.authorityMovementCount,
+    enterReservation:privateReservationCount, enterPlay:privateGalahadZoneCount, effectFullCard:privateGalahadEffectCardCount,
+    effectHint:privateGalahadEffectHintCount, angusFullCard:privateAngusEffectCardCount,
+    authorityDom:privateEntryTrace.authorityCount, visibility:privateEntryTrace.authorityVisibility, leaseCount:privateEntryTrace.leaseCount })
+  report.profiles.push('production-opponent-private-hand')
+  await privateHandContext.close()
+
+  const cancellationContext = await browser.newContext({ viewport:{ width:1366, height:768 } })
+  const cancellationPage = await cancellationContext.newPage()
+  cancellationPage.on('pageerror', error => report.errors.push(`native-cancellation: ${error.message}`))
+  await cancellationPage.goto(`http://127.0.0.1:${port}/__battle-visual-transitions?viewer=0`, { waitUntil:'networkidle' })
+  await cancellationPage.waitForSelector('[data-l12-game-stage]')
+  await invoke(cancellationPage, 'tap')
+  await cancellationPage.waitForSelector('.l12-card-state-transition-ghost')
+  await cancellationPage.evaluate(() => {
+    const animation = document.querySelector('.l12-card-state-transition-ghost')?.getAnimations()[0]
+    animation?.cancel()
+    animation?.cancel()
+  })
+  await cancellationPage.evaluate(() => new Promise(resolve => queueMicrotask(resolve)))
+  const cancelledMicrotask = await cancellationPage.evaluate(() => ({
+    ghosts:document.querySelectorAll('.l12-card-state-transition-ghost').length,
+    visibility:getComputedStyle(document.querySelector('[data-card-instance-id="mover-1"]')).visibility,
+    leases:window.__visualTransitionHarness.visibilityLeaseCount('mover-1'),
+  }))
+  ok(cancelledMicrotask.ghosts === 0 && cancelledMicrotask.visibility === 'visible' && cancelledMicrotask.leases === 0,
+    `native-cancellation: duplicate animation.cancel must finalize in the cancellation microtask; ghosts=${cancelledMicrotask.ghosts}, visibility=${cancelledMicrotask.visibility}, leases=${cancelledMicrotask.leases}`)
+  await cancellationPage.waitForTimeout(1000)
+  const cancelledSettled = await cancellationPage.evaluate(() => ({
+    ghosts:document.querySelectorAll('.l12-card-state-transition-ghost').length,
+    visibility:getComputedStyle(document.querySelector('[data-card-instance-id="mover-1"]')).visibility,
+    leases:window.__visualTransitionHarness.visibilityLeaseCount('mover-1'),
+  }))
+  ok(cancelledSettled.ghosts === 0 && cancelledSettled.visibility === 'visible' && cancelledSettled.leases === 0,
+    `native-cancellation: cancelled state animation must remain finalized after 1s; ghosts=${cancelledSettled.ghosts}, visibility=${cancelledSettled.visibility}, leases=${cancelledSettled.leases}`)
+  await invoke(cancellationPage, 'ready')
+  await cancellationPage.waitForSelector('.l12-card-state-transition-ghost')
+  const raceMicrotasks = await cancellationPage.evaluate(async () => {
+    const animation = document.querySelector('.l12-card-state-transition-ghost')?.getAnimations()[0]
+    animation?.finish()
+    animation?.cancel()
+    const snapshot = () => ({
+      ghosts:document.querySelectorAll('.l12-card-state-transition-ghost').length,
+      visibility:getComputedStyle(document.querySelector('[data-card-instance-id="mover-1"]')).visibility,
+      leases:window.__visualTransitionHarness.visibilityLeaseCount('mover-1'),
+    })
+    await Promise.resolve()
+    const first = snapshot()
+    await Promise.resolve()
+    return { first, second:snapshot() }
+  })
+  ok(raceMicrotasks.first.ghosts === 0 && raceMicrotasks.first.visibility === 'visible' && raceMicrotasks.first.leases === 0
+    && raceMicrotasks.second.ghosts === 0 && raceMicrotasks.second.visibility === 'visible' && raceMicrotasks.second.leases === 0,
+  `native-cancellation: finish/cancel race must settle by the first microtask and stay settled after the second; first=${JSON.stringify(raceMicrotasks.first)}, second=${JSON.stringify(raceMicrotasks.second)}`)
+  await invoke(cancellationPage, 'tap')
+  await cancellationPage.waitForSelector('.l12-card-state-transition-ghost')
+  const cancelUnmount = await cancellationPage.evaluate(async () => {
+    const authority = document.querySelector('[data-card-instance-id="mover-1"]')
+    document.querySelector('.l12-card-state-transition-ghost')?.getAnimations()[0]?.cancel()
+    await new Promise(resolve => queueMicrotask(resolve))
+    const leasesBeforeUnmount = window.__visualTransitionHarness.visibilityLeaseCount('mover-1')
+    window.__battleVisualApp.unmount()
+    return { ghosts:document.querySelectorAll('.l12-card-state-transition-ghost').length,
+      oldInlineVisibility:authority?.style.visibility, leasesBeforeUnmount }
+  })
+  ok(cancelUnmount.ghosts === 0 && cancelUnmount.oldInlineVisibility === '' && cancelUnmount.leasesBeforeUnmount === 0,
+    `native-cancellation: cancel followed by unmount must stay idempotent; ghosts=${cancelUnmount.ghosts}, old=${cancelUnmount.oldInlineVisibility}, leases=${cancelUnmount.leasesBeforeUnmount}`)
+  report.profiles.push('native-cancellation')
+  await cancellationContext.close()
+
+  const adversarialContext = await browser.newContext({ viewport:{ width:1366, height:768 } })
+  const adversarialPage = await adversarialContext.newPage()
+  adversarialPage.on('pageerror', error => report.errors.push(`entry-boundaries: ${error.message}`))
+  await adversarialPage.goto(`http://127.0.0.1:${port}/__battle-visual-transitions?viewer=0`, { waitUntil:'networkidle' })
+  await adversarialPage.waitForSelector('[data-l12-game-stage]')
+  await adversarialPage.evaluate(() => window.__visualTransitionHarness.setReplay(8))
+  for (const [method, name] of [
+    ['playEntryArtifact', '登场圣物'],
+    ['putGraveyardEntrant', '墓地置入军团'],
+    ['putLibraryEntrant', '牌库置入军团'],
+    ['putUnknownOriginEntrant', '未知来源置入军团'],
+    ['playMissingTypeSource', '缺类型来源'],
+    ['playMasterSource', '主宰来源'],
+  ]) {
+    await invoke(adversarialPage, method)
+    await waitForMovementQueue(adversarialPage)
+    await adversarialPage.locator(`[data-presentation-kind="full-card"] img[alt="${name}"]`).waitFor({ state:'visible', timeout:1800 })
+    ok(await adversarialPage.locator('[data-presentation-kind="entry-continuation"]').count() === 0,
+      `entry-boundaries: ${name} must retain the existing full-card effect presentation`)
+    await adversarialPage.waitForFunction(() => !document.querySelector('.public-reveal-animation'), null, { timeout:2500 })
+  }
+  report.profiles.push('entry-boundaries')
+  await adversarialContext.close()
   for (const profile of [
     { name:'mobile-landscape-geometry', viewport:{ width:844, height:390 } },
     { name:'mobile-portrait-geometry', viewport:{ width:390, height:844 } },
@@ -895,6 +1116,9 @@ try {
   const rotatedEntryTrace = await rotatedPage.evaluate(() => window.__rotatedMovementTrace.slice())
   ok(JSON.stringify(rotatedEntryTrace) === JSON.stringify(['triggered-entrant']),
     `mobile-portrait-rotated: play plus enter/effect descriptions must animate once: ${rotatedEntryTrace.join(',')}`)
+  await rotatedPage.waitForFunction(() => document.querySelector('[data-presentation-kind="entry-continuation"]'), null, { timeout:1500 })
+  ok(await rotatedPage.locator('.public-reveal-animation img[alt="加拉哈德"]').count() === 0,
+    'mobile-portrait-rotated: entry effect continues as text without a second Galahad card flash')
   await rotatedPage.waitForFunction(() => !document.querySelector('.public-reveal-animation'), null, { timeout:5000 })
 
   await rotatedPage.evaluate(() => { window.__rotatedMovementTrace = []; window.__rotatedMovementKeys = new Set() })
@@ -956,6 +1180,9 @@ try {
   await waitForMovementTrace(reducedPage)
   await waitForMovementQueue(reducedPage)
   await expectTrace(reducedPage, 'reduced-motion', ['triggered-entrant'], 'entry transaction under reduced motion')
+  await reducedPage.waitForFunction(() => document.querySelector('[data-presentation-kind="entry-continuation"]'), null, { timeout:1500 })
+  ok(await reducedPage.locator('.public-reveal-animation img[alt="加拉哈德"]').count() === 0,
+    'reduced-motion: entry effect hint cannot reintroduce the entrant full card')
   report.profiles.push('reduced-motion')
   await reducedContext.close()
   ok(report.errors.length === 0, `browser errors: ${report.errors.join('; ')}`)

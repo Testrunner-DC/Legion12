@@ -15,6 +15,53 @@ export function cardEffectPresentationCards(event: ActionEvent) {
   return event.cards ?? []
 }
 
+function entryPresentationSource(event: ActionEvent) {
+  const sourceInstanceId = event.playerLogSemantic?.sourceInstanceId ?? event.cards?.[0]?.instanceId
+  if (!sourceInstanceId) return null
+  const source = event.cards?.find(card => card.instanceId === sourceInstanceId)
+  // Ordinary public event cards serialize identityKnown=false by default. That
+  // flag only means "unknown" while the card is still covered; use the same
+  // public/concealed contract as movement presentation instead of treating the
+  // model default as a private identity signal.
+  if (!source || isMovementCardConcealed(event, source)) return null
+  return source
+}
+
+export function entryPresentationTransactionKey(event: ActionEvent) {
+  const groupId = event.playerLogGroupId?.trim()
+  const timing = event.playerLogTiming
+  const source = entryPresentationSource(event)
+  if (!groupId || (timing !== 'enter' && timing !== 'promotion-enter') || !source) return null
+  return `${groupId}\u001f${timing}\u001f${source.instanceId}`
+}
+
+/**
+ * A resolved entry effect is a text continuation only when its stable public
+ * log identity matches a preceding authoritative play/put of the same source.
+ * Missing metadata deliberately falls back to the existing full-card reveal.
+ */
+export type MovementSourceEvidence = 'cursor' | 'hint' | 'play-contract' | 'fallback'
+
+export function entryMovementTransactionKey(event: ActionEvent, from: VisualZone, to: VisualZone,
+  sourceEvidence: MovementSourceEvidence) {
+  const transactionKey = entryPresentationTransactionKey(event)
+  const source = entryPresentationSource(event)
+  if (!transactionKey || !source || source.cardType !== 'legion'
+    || (event.type !== 'play' && event.type !== 'put')
+    || sourceEvidence === 'fallback'
+    || (sourceEvidence === 'play-contract'
+      && (event.type !== 'play' || event.playerLogTiming !== 'enter'))
+    || (from !== 'hand' && from !== 'resolving') || to !== 'field') return null
+  return transactionKey
+}
+
+export function entryEffectContinuationTransaction(event: ActionEvent, ownsEntryMovement: (transactionKey: string) => boolean) {
+  if (!isCardEffectPresentationEvent(event)) return null
+  const transactionKey = entryPresentationTransactionKey(event)
+  if (!transactionKey) return null
+  return ownsEntryMovement(transactionKey) ? transactionKey : null
+}
+
 export function movementCardsForEvent(event: ActionEvent) {
   if (event.type === 'move' || event.type === 'attach' || event.type === 'mill') return event.cards ?? []
   return (event.cards ?? []).slice(0, 1)

@@ -18,6 +18,7 @@ export type PresentationSequenceCoordinator = ReturnType<typeof createPresentati
 
 export function createPresentationSequenceCoordinator(onBusyChange?: (busy: boolean) => void) {
   const pending = new Set<PendingPresentation>()
+  const entryMovementTransactions = new Set<string>()
   let active: PendingPresentation | null = null
   let nextOrder = 0
   let scheduled = false
@@ -99,12 +100,21 @@ export function createPresentationSequenceCoordinator(onBusyChange?: (busy: bool
     }
   }
 
+  const registerEntryMovementTransaction = (transactionKey: string) => {
+    entryMovementTransactions.add(transactionKey)
+  }
+
+  const ownsEntryMovementTransaction = (transactionKey: string) => entryMovementTransactions.has(transactionKey)
+
+  const clearEntryMovementTransactions = () => entryMovementTransactions.clear()
+
   const reset = () => {
     for (const item of pending) item.cancelled = true
     pending.clear()
+    entryMovementTransactions.clear()
     active = null
     notifyBusy()
   }
 
-  return { reserve, reset }
+  return { reserve, registerEntryMovementTransaction, ownsEntryMovementTransaction, clearEntryMovementTransactions, reset }
 }

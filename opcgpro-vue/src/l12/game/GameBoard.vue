@@ -16,7 +16,7 @@ import BattleUtilityDock from './BattleUtilityDock.vue'
 import ActionPresentationLayer from './ActionPresentationLayer.vue'
 import ZoneMovementPresentationLayer from './ZoneMovementPresentationLayer.vue'
 import CardStateTransitionLayer from './CardStateTransitionLayer.vue'
-import { cardEffectPresentationCards, isCardEffectPresentationEvent } from './visualTransitionProjection'
+import { cardEffectPresentationCards, entryEffectContinuationTransaction, isCardEffectPresentationEvent } from './visualTransitionProjection'
 import { effectResultPresentationText } from './effectResultPresentation'
 import CombatMotionPresentationLayer from './CombatMotionPresentationLayer.vue'
 import GraveyardOverlay from './GraveyardOverlay.vue'
@@ -166,7 +166,21 @@ async function closeCombatDecisionInfo() {
 const inspectionLayerMinimized = computed(() => promptMinimized.value || boardControlMinimized.value || mobileMoralePickerMinimized.value || combatDecisionMinimized.value)
 const phasePlaybackPhase = ref<Phase | null>(null)
 const hiddenRevealCard = ref<Card | null>(null)
-const publicReveal = ref<{ sequence: number; cards: Card[]; text: string } | null>(null)
+type PublicRevealPresentation = {
+  sequence: number
+  cards: Card[]
+  text: string
+  kind: 'full-card' | 'entry-continuation'
+  transactionKey?: string
+}
+type PublicRevealQueueItem = {
+  sequence: number
+  cards: Card[]
+  text: string
+  event: ActionEvent
+  reservation: PresentationReservation
+}
+const publicReveal = ref<PublicRevealPresentation | null>(null)
 const diceReveal = ref<{ sequence: number; values: number[]; animatedValues: number[]; text: string; settled: boolean } | null>(null)
 const customDisasterSlot = ref<number | null>(null)
 const promptMinimized = ref(false)
@@ -175,7 +189,7 @@ const hasBlockingPrompt = computed(() => Boolean((props.game.prompts?.length ?? 
 const lastHiddenRevealSequence = ref(0)
 const lastPublicRevealSequence = ref(0)
 const lastDiceSequence = ref(0)
-const publicRevealQueue: Array<{ sequence: number; cards: Card[]; text: string; reservation: PresentationReservation }> = []
+const publicRevealQueue: PublicRevealQueueItem[] = []
 const diceRevealQueue: Array<{ sequence: number; values: number[]; text: string }> = []
 const replayZonePresentationBusy = ref(false)
 const replaySequencePresentationBusy = ref(false)
@@ -667,7 +681,15 @@ async function showNextPublicReveal() {
   publicRevealWaiting = false
   publicRevealWaitingReservation = null
   publicRevealRelease = release
-  publicReveal.value = next
+  const entryTransactionKey = entryEffectContinuationTransaction(next.event,
+    cardPresentationCoordinator.ownsEntryMovementTransaction)
+  publicReveal.value = {
+    sequence: next.sequence,
+    cards: entryTransactionKey ? [] : next.cards,
+    text: next.text,
+    kind: entryTransactionKey ? 'entry-continuation' : 'full-card',
+    transactionKey: entryTransactionKey ?? undefined,
+  }
   if (publicRevealTimer) clearTimeout(publicRevealTimer)
   publicRevealTimer = setTimeout(() => {
     publicReveal.value = null
@@ -739,6 +761,7 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
       sequence: event.sequence,
       cards: presentationCards(event),
       text: publicRevealText(event),
+      event,
       reservation,
     })
     lastPublicRevealSequence.value = Math.max(lastPublicRevealSequence.value, event.sequence)
@@ -1375,8 +1398,11 @@ function statusTexts(card: Card) {
               :playback-speed="replayPlaybackSpeed" @busy-change="replayCombatPresentationBusy = $event" />
             <Teleport :to="landscapeTeleportTarget()">
               <Transition name="public-reveal">
-                <div v-if="publicReveal && !activeBoardPromptId" :key="publicReveal.sequence" class="public-reveal-animation" data-ui-contract="public-card-reveal-animation">
-                  <div class="public-reveal-cards">
+                <div v-if="publicReveal && !activeBoardPromptId" :key="publicReveal.sequence" class="public-reveal-animation"
+                  :class="{ 'public-reveal-animation--entry-continuation': publicReveal.kind === 'entry-continuation' }"
+                  data-ui-contract="public-card-reveal-animation" :data-presentation-kind="publicReveal.kind"
+                  :data-entry-transaction-key="publicReveal.transactionKey">
+                  <div v-if="publicReveal.cards.length" class="public-reveal-cards">
                     <CardImage v-for="card in publicReveal.cards" :key="card.instanceId" :card-id="card.cardId" :legacy-url="card.imageUrl" :alt="card.name" intent="detail" eager
                       :class="{ horizontal: isHorizontalCardType(card.cardType) }" />
                   </div>
@@ -1705,7 +1731,7 @@ function statusTexts(card: Card) {
 .felt-board :deep(.formation-slot .field-actions){bottom:calc(50% + 86.5px)}
 .session-disaster-panel{flex:none;padding:9px 10px}.session-disaster-panel h3{margin:0 0 7px}.session-disaster-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.session-disaster-strip button{min-width:0;padding:2px;border:1px solid #59625f;background:#070a0b;color:#d9ddd8;cursor:pointer}.session-disaster-strip button.hidden{border-color:#343b39;cursor:default}.session-disaster-strip button.inactive img,.session-disaster-strip button.inactive .l12-card-image{filter:grayscale(.85) brightness(.45)}.session-disaster-strip img,.session-disaster-strip .l12-card-image{display:block;width:100%;height:auto;aspect-ratio:8/5}.session-disaster-strip span{display:block;overflow:hidden;padding:2px 2px 1px;font-size:var(--l12-board-copy,13px);font-weight:900;text-overflow:ellipsis;white-space:nowrap}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 8px rgba(115,212,197,.3)}
 .board-mode-hint{position:absolute;z-index:28;left:50%;top:50%;display:flex;align-items:center;gap:10px;padding:8px 9px 8px 16px;border:1px solid #e0b85a;background:rgba(8,10,11,.95);color:#fff3c2;box-shadow:0 7px 22px #000;transform:translate(-50%,-50%);font-size:var(--l12-board-copy,13px);font-weight:900;pointer-events:auto}.board-mode-hint button{min-width:58px;min-height:44px;padding:6px 12px;border:1px solid #747d7b;background:#171b1c;color:#f1eee4;font-size:var(--l12-board-copy,13px);font-weight:900}.board-mode-hint button:hover{border-color:#e0b85a;background:#292419}
-.public-reveal-animation{position:fixed;z-index:2147483000;left:50%;top:50%;display:grid;min-width:190px;max-width:min(760px,80vw);justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.public-reveal-cards{display:flex;max-width:100%;align-items:center;justify-content:center;gap:8px;overflow:hidden}.public-reveal-cards .l12-card-image{width:118px;height:165px;filter:drop-shadow(0 10px 15px #000) drop-shadow(0 0 16px rgba(213,188,112,.38))}.public-reveal-cards .l12-card-image.horizontal{width:190px;height:auto;aspect-ratio:8/5}.public-reveal-animation strong{padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.9);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:var(--l12-board-copy,13px);font-weight:900;letter-spacing:.04em;text-align:center;white-space:pre-wrap;overflow-wrap:anywhere}.public-reveal-enter-active,.public-reveal-leave-active{transition:opacity .24s ease,filter .24s ease}.public-reveal-enter-from,.public-reveal-leave-to{opacity:0;filter:blur(5px)}
+.public-reveal-animation{position:fixed;z-index:2147483000;left:50%;top:50%;display:grid;min-width:190px;max-width:min(760px,80vw);justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.public-reveal-animation--entry-continuation{min-width:0}.public-reveal-cards{display:flex;max-width:100%;align-items:center;justify-content:center;gap:8px;overflow:hidden}.public-reveal-cards .l12-card-image{width:118px;height:165px;filter:drop-shadow(0 10px 15px #000) drop-shadow(0 0 16px rgba(213,188,112,.38))}.public-reveal-cards .l12-card-image.horizontal{width:190px;height:auto;aspect-ratio:8/5}.public-reveal-animation strong{padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.9);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:var(--l12-board-copy,13px);font-weight:900;letter-spacing:.04em;text-align:center;white-space:pre-wrap;overflow-wrap:anywhere}.public-reveal-enter-active,.public-reveal-leave-active{transition:opacity .24s ease,filter .24s ease}.public-reveal-enter-from,.public-reveal-leave-to{opacity:0;filter:blur(5px)}
 .combat-presentation{position:absolute;z-index:20;left:50%;top:50%;width:760px;height:1px;transform:translate(-50%,-50%);pointer-events:none}.combat-trace{position:absolute;left:50%;top:-108px;width:4px;height:216px;background:linear-gradient(transparent,#d88a39 20%,#f0ba66 50%,#d88a39 80%,transparent);filter:drop-shadow(0 0 7px #c36b26);transform:rotate(-10deg)}.combat-versus{position:absolute;left:50%;top:0;display:flex;width:max-content;max-width:760px;align-items:center;gap:12px;padding:10px 18px;border:1px solid #8e7650;background:rgba(7,9,10,.95);box-shadow:0 8px 26px #000;transform:translate(-50%,-50%);font-weight:900}.combat-versus span{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.combat-versus span.mine{color:#74d0d3}.combat-versus span.opponent{color:#e6757c}.combat-versus>b{display:flex;align-items:baseline;gap:4px;padding:4px 7px;background:#342a25;color:#fff}.combat-versus b small{color:#c8bba3;font-size:var(--l12-board-copy,13px)}.combat-versus em{color:#e5bd60;font-size:max(18px,var(--l12-board-copy,13px));font-style:normal}.combat-resolution-panel{position:absolute;left:50%;top:34px;width:390px;padding:10px 12px;border:1px solid #8e7650;background:rgba(8,11,12,.96);box-shadow:0 12px 30px #000;transform:translateX(-50%);pointer-events:auto}.combat-resolution-panel :deep(.l12-actions){gap:6px}.combat-resolution-panel :deep(.l12-actions p){margin:0;font-size:var(--l12-board-copy,13px)}.combat-resolution-panel :deep(.l12-actions button){padding:7px 9px}
 .combat-decision-info-trigger{position:absolute;top:calc(50% + 38px);left:calc(50% + 205px);z-index:22;min-height:38px;padding:4px 8px;border:1px solid #d7ad62;background:#4b331d;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;pointer-events:auto}
 .combat-decision-info-panel{position:fixed;top:50%;left:50%;z-index:2147483600;box-sizing:border-box;width:min(390px,calc(100vw - 24px));max-height:min(70vh,450px);padding:10px;overflow-y:auto;border:1px solid #d7ad62;background:#111819;box-shadow:0 12px 30px #000;color:#fff;transform:translate(-50%,-50%);pointer-events:auto}
@@ -1733,7 +1759,9 @@ function statusTexts(card: Card) {
 .dice-reveal-animation{position:fixed;z-index:2147483001;left:50%;top:45%;display:grid;justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.dice-reveal-values{display:flex;gap:14px}.dice-reveal-values b{display:grid;width:76px;height:76px;place-items:center;border:3px solid #e3c36d;border-radius:15px;background:#f1eee2;box-shadow:0 12px 30px #000,0 0 22px rgba(227,195,109,.35);color:#111;font-size:max(44px,var(--l12-board-copy,13px));line-height:1;animation:l12-dice-roll .18s infinite alternate}.dice-reveal-animation.settled .dice-reveal-values b{animation:l12-dice-land .32s ease-out}.dice-reveal-animation strong{max-width:min(720px,82vw);padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.92);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:var(--l12-board-copy,13px);font-weight:900;text-align:center}.dice-reveal-enter-active,.dice-reveal-leave-active{transition:opacity .2s ease,filter .2s ease}.dice-reveal-enter-from,.dice-reveal-leave-to{opacity:0;filter:blur(5px)}@keyframes l12-dice-roll{from{transform:rotate(-10deg) scale(.94)}to{transform:rotate(10deg) scale(1.06)}}@keyframes l12-dice-land{0%{transform:scale(1.35) rotate(20deg)}100%{transform:scale(1) rotate(0)}}
 .public-reveal-animation{z-index:903}.dice-reveal-animation{z-index:904}.board-target-controls{z-index:3000}.card-inspector-floating{z-index:3100!important}
 @media (max-width:900px) and (max-height:400px) and (orientation:landscape){.public-reveal-animation{top:calc((100dvh - 64px)/2);width:min(560px,calc(100vw - 180px));min-width:0;max-width:none;grid-template-columns:80px minmax(0,1fr);align-items:center;justify-items:stretch;gap:8px}.public-reveal-cards .l12-card-image{width:80px;height:112px}.public-reveal-cards .l12-card-image.horizontal{width:80px;height:auto}.public-reveal-animation strong{max-height:calc(100dvh - 88px);overflow-y:auto}}
+@media (max-width:900px) and (max-height:400px) and (orientation:landscape){.public-reveal-animation--entry-continuation{width:min(420px,calc(100vw - 180px));grid-template-columns:minmax(0,1fr)}}
 @media (max-width:430px) and (min-height:700px) and (orientation:portrait){:global(html[data-l12-rotated=true] .public-reveal-animation){top:calc((100dvw - 64px)/2);width:min(560px,calc(100dvh - 180px));min-width:0;max-width:none;grid-template-columns:80px minmax(0,1fr);align-items:center;justify-items:stretch;gap:8px}:global(html[data-l12-rotated=true] .public-reveal-cards .l12-card-image){width:80px;height:112px}:global(html[data-l12-rotated=true] .public-reveal-cards .l12-card-image.horizontal){width:80px;height:auto}:global(html[data-l12-rotated=true] .public-reveal-animation strong){max-height:calc(100dvw - 88px);overflow-y:auto}}
+@media (max-width:430px) and (min-height:700px) and (orientation:portrait){:global(html[data-l12-rotated=true] .public-reveal-animation--entry-continuation){width:min(420px,calc(100dvh - 180px));grid-template-columns:minmax(0,1fr)}}
 .battle-title{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}.battle-title b,.battle-title i{padding:3px 6px;border:1px solid #82663a;border-radius:3px;background:#261b0c;color:#f2d27a;font-size:var(--l12-board-copy,13px);font-style:normal;font-weight:900}.battle-title i{border-color:#75509a;background:#1b1028;color:#dfbdff}
 
 </style>
