@@ -30,7 +30,7 @@ public sealed class BattlePlayerResultFlowTests
     }
 
     [Fact]
-    [Trait("L12Evidence", "player-result:single-segment-no-public-object")]
+    [Trait("L12Evidence", "player-result:empty-private-library-resource")]
     public void PrometheusWithNoCardToShowExplainsItsSkippedSingleSegment()
     {
         var game = Create(94802, 3);
@@ -139,6 +139,53 @@ public sealed class BattlePlayerResultFlowTests
             JsonSerializer.Serialize(game.SnapshotForSpectator().RecentEvents
                 .Where(entry => entry.Type == "effect-result"
                     && entry.Sequence != result.Sequence)));
+    }
+
+    [Theory]
+    [InlineData("mode:front", 0, "对方前排没有可处理的军团")]
+    [InlineData("mode:back", 1, "对方后排没有可处理的军团")]
+    [Trait("L12Evidence", "player-result:single-segment-no-public-field-target")]
+    public void VolleyWithNoEnemyInChosenPublicRowExplainsSkippedSingleSegment(
+        string mode, int row, string reason)
+    {
+        var game = Create(94805);
+        game.State.ActivePlayer = 0;
+        var source = Card("S01-0005", "result-volley-empty");
+        game.State.Players[0].FreeTacticCount = 1;
+        game.State.Players[0].Hand.Add(source);
+
+        Assert.True(game.Handle(0, new L12Command("playCard", source.InstanceId)).Accepted);
+        Resolve(game, mode);
+        Assert.Single(game.State.EffectStack, item => item.SourceInstanceId == source.InstanceId);
+        PassResponses(game);
+
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("skipped", result.EffectResultStatus);
+        Assert.Equal(1, result.EffectSegmentIndex);
+        Assert.Equal(1, result.EffectSegmentCount);
+        Assert.Contains($"原因：{reason}", result.PlayerLogSemantic?.OutcomeLabel);
+        Assert.Null(result.PlayerLogSemantic?.TargetInstanceId);
+        Assert.DoesNotContain("已支付费用：", result.PlayerLogSemantic?.OutcomeLabel ?? "");
+        foreach (var events in new[] { game.SnapshotFor(0).RecentEvents,
+                     game.SnapshotFor(1).RecentEvents, game.SnapshotForSpectator().RecentEvents })
+            Assert.Contains(events, entry => entry.Sequence == result.Sequence
+                && entry.PlayerLogSemantic?.OutcomeLabel.Contains(reason,
+                    StringComparison.Ordinal) == true);
+
+        var positive = Create(94806);
+        positive.State.ActivePlayer = 0;
+        var positiveSource = Card("S01-0005", "result-volley-positive");
+        positive.State.Players[0].FreeTacticCount = 1;
+        positive.State.Players[0].Hand.Add(positiveSource);
+        positive.State.Players[1].Field[row][0] = Card("S01-0103", "result-volley-target");
+        Assert.True(positive.Handle(0, new L12Command("playCard", positiveSource.InstanceId)).Accepted);
+        Resolve(positive, mode);
+        PassResponses(positive);
+        var success = Assert.Single(positive.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == positiveSource.InstanceId));
+        Assert.Equal("resolved", success.EffectResultStatus);
+        Assert.DoesNotContain("没有可处理的军团", success.PlayerLogSemantic?.OutcomeLabel ?? "");
     }
 
     [Fact]

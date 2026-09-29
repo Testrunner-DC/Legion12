@@ -101,6 +101,7 @@ for (const view of [hidden.owner, hidden.opponent, hidden.spectator]) {
 for (const [scenarioName, status, expectedReason] of [
   ['prometheus-empty', 'skipped', '牌库为空，没有可展示的牌库顶卡牌'],
   ['yin-empty', 'failed', '牌库为空，无法展示牌库顶部卡牌'],
+  ['volley-empty', 'skipped', '对方前排没有可处理的军团'],
 ]) {
   const real = scenario(scenarioName)
   for (const [view, you] of [[real.owner, 0], [real.opponent, 1], [real.spectator, -1]]) {
@@ -109,6 +110,12 @@ for (const [scenarioName, status, expectedReason] of [
     assert(result, `${scenarioName}: the authoritative result and public reason must reach each viewer`)
     assert(!result.playerLogSemantic?.targetInstanceId,
       `${scenarioName}: no target was actually processed`)
+    if (scenarioName === 'volley-empty') {
+      assert.equal(result.effectSegmentIndex, 1)
+      assert.equal(result.effectSegmentCount, 1)
+      assert(!result.playerLogSemantic?.outcomeLabel?.includes('已支付费用：'),
+        'the free tactic must not invent a paid cost')
+    }
     const rows = projectLog(view, you, [])
     assert(rows.some(row => row.kind === 'line' && (
       words(row).includes(expectedReason)
@@ -127,5 +134,13 @@ for (const [scenarioName, status, expectedReason] of [
     words(row).includes(expectedReason)
     || row.detail?.some(detail => words(detail).includes(expectedReason)))),
   `${scenarioName}: an old replay must not synthesize the missing reason`)
+}
+const volleyPositive = scenario('volley-positive')
+for (const view of [volleyPositive.owner, volleyPositive.opponent, volleyPositive.spectator]) {
+  const result = results(view).find(event => event.cards?.some(card =>
+    card.instanceId === 'stage4a-volley-positive'))
+  assert.equal(result?.effectResultStatus, 'resolved',
+    'a legal public front-row target must still resolve normally')
+  assert(!result.playerLogSemantic?.outcomeLabel?.includes('没有可处理的军团'))
 }
 console.log('battle log engine integration: real grouping, cost, target, reason and privacy passed')

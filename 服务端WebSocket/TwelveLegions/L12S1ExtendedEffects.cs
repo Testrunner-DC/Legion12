@@ -246,7 +246,13 @@ public sealed partial class L12GameEngine
                     var row = mode == "mode:front" ? 0 : 1;
                     var targets = enemy.Field[row].Where(target => target is not null)
                         .Cast<L12CardInstance>().ToArray();
-                    if (targets.Length == 0) item.Data["effectResultStatus"] = "skipped";
+                    if (targets.Length == 0)
+                    {
+                        item.Data["effectResultStatus"] = "skipped";
+                        RecordPlayerSafeEffectReason(item, row == 0
+                            ? "对方前排没有可处理的军团"
+                            : "对方后排没有可处理的军团");
+                    }
                     foreach (var target in targets)
                         AddTimedModifier(target, -2000, 0, State.TurnSerial, card.Name);
                 }

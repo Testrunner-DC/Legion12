@@ -1,5 +1,5 @@
 param(
-  [ValidateSet('empty-draw', 'target-decline', 'hidden-draw', 'prometheus-empty', 'yin-empty')] [string]$Scenario = 'empty-draw',
+  [ValidateSet('empty-draw', 'target-decline', 'hidden-draw', 'prometheus-empty', 'yin-empty', 'volley-empty', 'volley-positive')] [string]$Scenario = 'empty-draw',
   [ValidateSet('Debug', 'Release')] [string]$Configuration = 'Release',
   [string]$AssemblyDirectory,
   [string]$ExpectedCommit
@@ -129,8 +129,23 @@ if ($Scenario -eq 'prometheus-empty') {
     $prompt = $game.State.PendingPrompts[0]
     Accept (Command 'resolvePrompt' $null $prompt.PromptId 'pass' $null) $prompt.PlayerIndex
   }
+} elseif ($Scenario -in @('volley-empty', 'volley-positive')) {
+  $source = $createCard.Invoke($game, @('S01-0005', "stage4a-$Scenario"))
+  $game.State.Players[0].FreeTacticCount = 1
+  $game.State.Players[0].Hand.Add($source)
+  if ($Scenario -eq 'volley-positive') {
+    $target = $createCard.Invoke($game, @('S01-0103', 'stage4a-volley-public-target'))
+    $game.State.Players[1].Field[0][0] = $target
+  }
+  Accept (Command 'playCard' $source.InstanceId $null $null $null) 0
+  $prompt = $game.State.PendingPrompts[0]
+  Accept (Command 'resolvePrompt' $null $prompt.PromptId 'mode:front' $null) $prompt.PlayerIndex
+  while ($game.State.PendingPrompts.Count -gt 0 -and $game.State.PendingPrompts[0].Kind -eq 'response') {
+    $prompt = $game.State.PendingPrompts[0]
+    Accept (Command 'resolvePrompt' $null $prompt.PromptId 'pass' $null) $prompt.PlayerIndex
+  }
 }
-if ($Scenario -in @('prometheus-empty', 'yin-empty')) {
+if ($Scenario -in @('prometheus-empty', 'yin-empty', 'volley-empty', 'volley-positive')) {
   $options = [System.Text.Json.JsonSerializerOptions]::new()
   $options.PropertyNamingPolicy = [System.Text.Json.JsonNamingPolicy]::CamelCase
   [System.Text.Json.JsonSerializer]::Serialize(@{
