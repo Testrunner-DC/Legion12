@@ -143,11 +143,21 @@ public sealed partial class L12GameEngine
     /// 区分“发动时本来没有对象”与“已声明对象在逆结算后失去合法性”。前者是必发
     /// 效果的空处理，后者是一次真实的结算失败；两者都不回退已支付费用。
     /// </summary>
-    private void RecordTargetSettlementFailure(L12StackItem item, string? declaredTarget, string reason)
+    private static void RecordPlayerSafeEffectReason(L12StackItem item, string? playerReason)
+    {
+        // A producer must opt in with a reason that is safe for every public recipient.
+        // Never derive one from an event's text or whichever item happens to top the stack.
+        if (!string.IsNullOrWhiteSpace(playerReason))
+            item.Data["effectPlayerReason"] = playerReason;
+    }
+
+    private void RecordTargetSettlementFailure(L12StackItem item, string? declaredTarget, string reason,
+        string? playerReason = null)
     {
         var wasDeclared = !string.IsNullOrWhiteSpace(declaredTarget)
             && !declaredTarget.StartsWith("mode:", StringComparison.OrdinalIgnoreCase);
         item.Data["effectResultStatus"] = wasDeclared ? "failed" : "skipped";
+        RecordPlayerSafeEffectReason(item, playerReason);
         var source = FindSource(item) ?? item.SourceSnapshot;
         AddEvent(wasDeclared ? "effect-failed" : "effect-noop", item.Controller,
             wasDeclared
@@ -160,9 +170,10 @@ public sealed partial class L12GameEngine
     /// 用于不存在“已声明目标”、但结算所必需的权威来源或区域事务已失效的情形。
     /// 这不是玩家选择不发动，也不是效果被无效；已进入堆叠的本段应明确结束为失败。
     /// </summary>
-    private void RecordResolutionFailure(L12StackItem item, string reason)
+    private void RecordResolutionFailure(L12StackItem item, string reason, string? playerReason = null)
     {
         item.Data["effectResultStatus"] = "failed";
+        RecordPlayerSafeEffectReason(item, playerReason);
         var source = FindSource(item) ?? item.SourceSnapshot;
         AddEvent("effect-failed", item.Controller,
             $"〈{item.SourceName}〉结算时无法继续：{reason}", source is null ? [] : [source]);

@@ -98,4 +98,34 @@ for (const view of [hidden.owner, hidden.opponent, hidden.spectator]) {
   assert(!JSON.stringify(results(view)).includes('stage4a-private-target'),
     'the hidden target instance must not be serialized into the new terminal facts')
 }
-console.log('battle log engine integration: real composite grouping, payment, target and privacy passed')
+for (const [scenarioName, status, expectedReason] of [
+  ['prometheus-empty', 'skipped', '牌库为空，没有可展示的牌库顶卡牌'],
+  ['yin-empty', 'failed', '牌库为空，无法展示牌库顶部卡牌'],
+]) {
+  const real = scenario(scenarioName)
+  for (const [view, you] of [[real.owner, 0], [real.opponent, 1], [real.spectator, -1]]) {
+    const result = results(view).find(event => event.effectResultStatus === status
+      && event.playerLogSemantic?.outcomeLabel?.includes(expectedReason))
+    assert(result, `${scenarioName}: the authoritative result and public reason must reach each viewer`)
+    assert(!result.playerLogSemantic?.targetInstanceId,
+      `${scenarioName}: no target was actually processed`)
+    const rows = projectLog(view, you, [])
+    assert(rows.some(row => row.kind === 'line' && (
+      words(row).includes(expectedReason)
+      || row.detail?.some(detail => words(detail).includes(expectedReason)))),
+    `${scenarioName}: the real reason must survive the player log projection`)
+    assert.deepEqual(playerLogContainsForbiddenTerms(rows), [])
+    const duplicateRows = projectLog([...view.slice().reverse(), ...view], you, [])
+    assert.equal(duplicateRows.filter(row => row.kind === 'line'
+      && (words(row).includes(expectedReason)
+        || row.detail?.some(detail => words(detail).includes(expectedReason)))).length, 1,
+    `${scenarioName}: reconnect duplicates must retain one result detail`)
+  }
+  const oldReplay = projectLog(real.owner.map(event => event.type === 'effect-result'
+    ? { ...event, playerLogSemantic: undefined, effectResultStatus: undefined } : event), 0, [])
+  assert(!oldReplay.some(row => row.kind === 'line' && (
+    words(row).includes(expectedReason)
+    || row.detail?.some(detail => words(detail).includes(expectedReason)))),
+  `${scenarioName}: an old replay must not synthesize the missing reason`)
+}
+console.log('battle log engine integration: real grouping, cost, target, reason and privacy passed')

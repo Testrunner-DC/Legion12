@@ -491,7 +491,8 @@ public sealed partial class L12GameEngine
         var target = DeclaredEnemyTarget(item.Controller, targetId, predicate);
         if (target is null)
             RecordTargetSettlementFailure(item, targetId,
-                $"所选军团已离场、被覆盖、不再是军团，或不再满足{requirement}");
+                $"所选军团已离场、被覆盖、不再是军团，或不再满足{requirement}",
+                "所选公开军团已离场或不再符合当前条件");
         return target;
     }
 

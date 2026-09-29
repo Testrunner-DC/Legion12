@@ -1,5 +1,5 @@
 param(
-  [ValidateSet('empty-draw', 'target-decline', 'hidden-draw')] [string]$Scenario = 'empty-draw',
+  [ValidateSet('empty-draw', 'target-decline', 'hidden-draw', 'prometheus-empty', 'yin-empty')] [string]$Scenario = 'empty-draw',
   [ValidateSet('Debug', 'Release')] [string]$Configuration = 'Release',
   [string]$AssemblyDirectory,
   [string]$ExpectedCommit
@@ -30,11 +30,12 @@ if (-not [string]::IsNullOrWhiteSpace($ExpectedCommit)) {
 }
 $catalog = [TwelveLegions.Server.L12Catalog]::Load((Join-Path $testOutput 'Data'))
 $ctor = [TwelveLegions.Server.L12GameEngine].GetConstructors()[0]
+$deckIndex = if ($Scenario -eq 'prometheus-empty') { 3 } else { 0 }
 $argsForGame = @($catalog, 'stage4a-integration', 'STAGE4A', 105311,
-  [string[]]@('甲','乙'), [int[]]@(0,0), $true, 'random', $true, $false,
+  [string[]]@('甲','乙'), [int[]]@($deckIndex,$deckIndex), $true, 'random', $true, $false,
   $null, 2, $null, $null, $null, $null)
 $game = $ctor.Invoke($argsForGame)
-$game.State.ActivePlayer = 0
+$game.State.ActivePlayer = if ($Scenario -eq 'yin-empty') { 1 } else { 0 }
 $game.State.FirstPlayer = 0
 $game.State.Round = 2
 $game.State.TurnSerial = 3
@@ -46,24 +47,26 @@ foreach ($player in $game.State.Players) {
 }
 $createCard = [TwelveLegions.Server.L12GameEngine].GetMethod('CreateCard',
   [System.Reflection.BindingFlags]'NonPublic,Instance')
-$source = $createCard.Invoke($game, @('S02-0105', "stage4a-qianyang-$Scenario"))
-$game.State.Players[0].Hand.Add($source)
-if ($Scenario -eq 'target-decline') {
-  $target = $createCard.Invoke($game, @('S02-0003', 'stage4a-public-target'))
-  $game.State.Players[1].Field[0][0] = $target
+if ($Scenario -in @('empty-draw', 'target-decline', 'hidden-draw')) {
+  $source = $createCard.Invoke($game, @('S02-0105', "stage4a-qianyang-$Scenario"))
+  $game.State.Players[0].Hand.Add($source)
+  if ($Scenario -eq 'target-decline') {
+    $target = $createCard.Invoke($game, @('S02-0003', 'stage4a-public-target'))
+    $game.State.Players[1].Field[0][0] = $target
+  }
+  if ($Scenario -eq 'hidden-draw') {
+    $target = $createCard.Invoke($game, @('S02-0003', 'stage4a-private-target'))
+    $target.Hidden = $true
+    $game.State.Players[1].Field[1][0] = $target
+  }
+  while ($game.State.Players[0].Morale.Count -lt 3) {
+    $morale = $game.State.Players[0].MoraleDeck[0]
+    $game.State.Players[0].MoraleDeck.RemoveAt(0)
+    $morale.Tapped = $false
+    $game.State.Players[0].Morale.Add($morale)
+  }
 }
-if ($Scenario -eq 'hidden-draw') {
-  $target = $createCard.Invoke($game, @('S02-0003', 'stage4a-private-target'))
-  $target.Hidden = $true
-  $game.State.Players[1].Field[1][0] = $target
-}
-while ($game.State.Players[0].Morale.Count -lt 3) {
-  $morale = $game.State.Players[0].MoraleDeck[0]
-  $game.State.Players[0].MoraleDeck.RemoveAt(0)
-  $morale.Tapped = $false
-  $game.State.Players[0].Morale.Add($morale)
-}
-function Command($type, $card, $prompt, $choice, $selectedIds) {
+function Command($type, $card, $prompt, $choice, $selectedIds, $ability) {
   $commandCtor = [TwelveLegions.Server.L12Command].GetConstructors()[0]
   $values = foreach ($parameter in $commandCtor.GetParameters()) {
     switch ($parameter.Name) {
@@ -71,6 +74,7 @@ function Command($type, $card, $prompt, $choice, $selectedIds) {
       'CardInstanceId' { $card }
       'PromptId' { $prompt }
       'Choice' { $choice }
+      'Ability' { $ability }
       'CardInstanceIds' {
         if ($null -eq $selectedIds) { $null }
         else {
@@ -87,6 +91,55 @@ function Command($type, $card, $prompt, $choice, $selectedIds) {
 function Accept($command, $actor) {
   $result = $game.Handle($actor, $command)
   if (-not $result.Accepted) { throw $result.Error }
+}
+if ($Scenario -eq 'prometheus-empty') {
+  $source = $createCard.Invoke($game, @('S02-05M2', 'stage4a-prometheus-empty'))
+  $game.State.Players[0].Field[0][0] = $source
+  $game.State.Players[0].Library.Clear()
+  $power = [TwelveLegions.Server.L12MoraleCard]::new()
+  $power.InstanceId = 'stage4a-prometheus-power'
+  $power.CardId = 'S02-05C1'
+  $power.IsGodPower = $true
+  $game.State.Players[0].Morale.Add($power)
+  Accept (Command 'activateAbility' $source.InstanceId $null $null $null 'prometheusTopThree') 0
+  while ($game.State.PendingPrompts.Count -gt 0 -and $game.State.PendingPrompts[0].Kind -eq 'response') {
+    $prompt = $game.State.PendingPrompts[0]
+    Accept (Command 'resolvePrompt' $null $prompt.PromptId 'pass' $null) $prompt.PlayerIndex
+  }
+} elseif ($Scenario -eq 'yin-empty') {
+  $source = $createCard.Invoke($game, @('S02-0106', 'stage4a-yin-empty'))
+  $source.Hidden = $true
+  $source.SetRound = 2
+  $game.State.Players[0].Field[1][0] = $source
+  $game.State.Players[0].Library.Clear()
+  $tactic = $createCard.Invoke($game, @('S01-0219', 'stage4a-yin-base'))
+  $game.State.Players[1].Hand.Add($tactic)
+  for ($index = 0; $index -lt $tactic.CurrentCost; $index++) {
+    $morale = [TwelveLegions.Server.L12MoraleCard]::new()
+    $morale.CardId = 'S01-02C1'
+    $morale.InstanceId = "stage4a-yin-morale-$index"
+    $game.State.Players[1].Morale.Add($morale)
+  }
+  Accept (Command 'playCard' $tactic.InstanceId $null $null $null) 1
+  $prompt = $game.State.PendingPrompts[0]
+  Accept (Command 'resolvePrompt' $null $prompt.PromptId 'pass' $null) $prompt.PlayerIndex
+  $prompt = $game.State.PendingPrompts[0]
+  Accept (Command 'resolvePrompt' $null $prompt.PromptId $source.InstanceId $null) $prompt.PlayerIndex
+  while ($game.State.PendingPrompts.Count -gt 0 -and $game.State.PendingPrompts[0].Kind -eq 'response') {
+    $prompt = $game.State.PendingPrompts[0]
+    Accept (Command 'resolvePrompt' $null $prompt.PromptId 'pass' $null) $prompt.PlayerIndex
+  }
+}
+if ($Scenario -in @('prometheus-empty', 'yin-empty')) {
+  $options = [System.Text.Json.JsonSerializerOptions]::new()
+  $options.PropertyNamingPolicy = [System.Text.Json.JsonNamingPolicy]::CamelCase
+  [System.Text.Json.JsonSerializer]::Serialize(@{
+    scenario = $Scenario
+    owner = $game.SnapshotFor(0).RecentEvents
+    opponent = $game.SnapshotFor(1).RecentEvents
+    spectator = $game.SnapshotForSpectator().RecentEvents
+  }, $options)
+  exit
 }
 Accept (Command 'playCard' $source.InstanceId $null $null $null) 0
 if ($Scenario -eq 'target-decline') {

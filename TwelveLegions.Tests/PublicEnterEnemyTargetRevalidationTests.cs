@@ -140,6 +140,18 @@ public sealed class PublicEnterEnemyTargetRevalidationTests
         Assert.Equal(0, transformed.CostModifier);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
             && entry.Text.Contains("不再符合条件", StringComparison.Ordinal));
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("failed", result.EffectResultStatus);
+        Assert.Contains("原因：", result.PlayerLogSemantic?.OutcomeLabel);
+        Assert.Contains("所选公开军团已离场或不再符合当前条件",
+            result.PlayerLogSemantic?.OutcomeLabel);
+        Assert.Null(result.PlayerLogSemantic?.TargetInstanceId);
+        foreach (var events in new[] { game.SnapshotFor(0).RecentEvents,
+                     game.SnapshotFor(1).RecentEvents, game.SnapshotForSpectator().RecentEvents })
+            Assert.Contains(events, entry => entry.Sequence == result.Sequence
+                && entry.PlayerLogSemantic?.OutcomeLabel.Contains("所选公开军团已离场或不再符合当前条件",
+                    StringComparison.Ordinal) == true);
     }
 
     [Fact]
@@ -245,6 +257,47 @@ public sealed class PublicEnterEnemyTargetRevalidationTests
         Assert.Equal(0, transformed.CannotUntapUntilRound);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect"
             && entry.Text.Contains("已声明对象在逆结算后失效", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId)
+            && entry.EffectResultStatus == "failed");
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "player-result:public-target-success-and-prestack-decline")]
+    public void PublicEntrySuccessAndDeclinedDeclarationDoNotInventFailureOrPayment()
+    {
+        var game = Create(9122);
+        var source = Card("S01-0201", "result-thutmose-success");
+        var target = Card("S01-0001", "result-thutmose-success-target", troops: 1000);
+        game.State.Players[0].Field[0][0] = source;
+        game.State.Players[1].Field[0][0] = target;
+        QueueEnter(game, source);
+        Resolve(game, target.InstanceId);
+        PassResponses(game);
+        Assert.Contains(target, game.State.Players[1].Graveyard);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId)
+            && entry.EffectResultStatus == "failed");
+
+        var declined = Create(9123);
+        var player = declined.State.Players[0];
+        var optional = Card("S02-0402", "result-iio-declined");
+        var readyTarget = Card("S02-0401", "result-iio-declined-target");
+        readyTarget.Tapped = true;
+        var handCost = Card("S01-0001", "result-iio-declined-cost");
+        player.Field[0][0] = optional;
+        player.Field[0][1] = readyTarget;
+        player.Hand.Add(handCost);
+        QueueEnter(declined, optional);
+        var mode = Assert.Single(declined.State.PendingPrompts);
+        Assert.Contains("mode:none", mode.ValidChoices);
+        Assert.True(declined.Handle(0, new L12Command("resolvePrompt",
+            PromptId: mode.PromptId, Choice: "mode:none")).Accepted);
+        Assert.Contains(handCost, player.Hand);
+        Assert.DoesNotContain(declined.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == optional.InstanceId));
+        Assert.DoesNotContain(declined.State.Events, entry => entry.Type == "cost"
+            && entry.Cards.Any(card => card.InstanceId == optional.InstanceId));
     }
 
     [Fact]
@@ -300,6 +353,12 @@ public sealed class PublicEnterEnemyTargetRevalidationTests
         Assert.False(game.Handle(0, new L12Command("resolvePrompt", PromptId: responseId, Choice: "pass")).Accepted);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
             && entry.Text.Contains("不再符合条件", StringComparison.Ordinal));
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("failed", result.EffectResultStatus);
+        Assert.Contains("所选公开军团已离场或不再符合当前条件",
+            result.PlayerLogSemantic?.OutcomeLabel);
+        Assert.Equal(1, game.State.Events.Count(entry => entry.Sequence == result.Sequence));
     }
 
     [Fact]

@@ -1900,6 +1900,7 @@ public sealed partial class L12GameEngine
             if (top.Length == 0)
             {
                 item.Data["effectResultStatus"] = "skipped";
+                RecordPlayerSafeEffectReason(item, "牌库为空，没有可展示的牌库顶卡牌");
                 AddEvent("effect-noop", item.Controller, "普罗米修斯结算时牌库为空，跳过查看与选择", source);
                 FinishStackItem(item);
                 return true;

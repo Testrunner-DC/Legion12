@@ -190,7 +190,8 @@ public sealed partial class L12GameEngine
         if (player.Library.Count == 0)
         {
             SetWinner(1 - item.Controller, "〈乾坤·阴〉展示牌库顶部时牌库为空");
-            AddEvent("effect-failed", item.Controller, "〈乾坤·阴〉展示牌库顶部时牌库为空");
+            RecordResolutionFailure(item, "展示牌库顶部时牌库为空",
+                "牌库为空，无法展示牌库顶部卡牌");
             FinishStackItem(item);
             return;
         }
