@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { l12AnimationDuration } from '../audioPreferences'
-import { landscapeTeleportElement, landscapeTeleportTarget, visibleViewport, viewportRect } from '../mobileViewport'
+import { landscapeTeleportElement, landscapeTeleportTarget, settleElementGeometry, viewportLayoutRect, visibleViewport } from '../mobileViewport'
 import { CARD_IMAGE_PLACEHOLDER, resolveCardAssetUrls } from '../cardAssets'
 import type { ActionEvent, Card, PlayerView, Prompt } from '../types'
 import { beginMovementTransactionBatch, claimFreshMovementEvents, claimMovementTransaction, collectKnownCardZones, collectPromptSourceZoneHints, createMovementClaimState, finalizeMovementTransactionBatch, isAuthoritativePublicFaceMovement, isCombatDefeatLeaveEvent, isMovementCardConcealed, isSupersededLeaveEvent, leaveMovementDestination, movementCardsForEvent, movementFactKey, resetMovementClaimState, type VisualZone } from './visualTransitionProjection'
@@ -198,18 +198,14 @@ function movementFromEvent(event: ActionEvent, cardIndex: number, fromRect: Anch
 }
 
 function elementRect(element: Element | null): AnchorRect | null {
-  if (!element) return null
-  const rect = viewportRect(element)
+  if (!(element instanceof HTMLElement)) return null
+  const rect = viewportLayoutRect(element)
   if (rect.width <= 0 || rect.height <= 0) return null
-  const quarterTurn = element.classList.contains('tapped')
   return {
     x: rect.left + rect.width / 2,
     y: rect.top + rect.height / 2,
-    // The DOM bounds already contain the rested 90° transform. The flight
-    // wrapper applies that rotation itself, so restore the card's unrotated
-    // dimensions while preserving its visible center.
-    width: quarterTurn ? rect.height : rect.width,
-    height: quarterTurn ? rect.width : rect.height,
+    width: rect.width,
+    height: rect.height,
   }
 }
 function cardElementInZone(instanceId: string | undefined, zone: Zone) {
@@ -297,6 +293,9 @@ function showNext() {
     hiddenTarget = destination
     hiddenTargetVisibility = destination.style.visibility
     destination.style.visibility = 'hidden'
+    // The flight owns the visible transform. If a preceding state change left
+    // this authority node mid-motion, finish it while covered for handoff.
+    settleElementGeometry(destination)
   }
   const finish = () => {
     if (!active.value) return

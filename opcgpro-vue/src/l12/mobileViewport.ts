@@ -65,6 +65,38 @@ export function viewportRect(element: Element): DOMRect {
     : new DOMRect(rect.left - layout.left, rect.top - layout.top, rect.width, rect.height)
 }
 
+/**
+ * Return a logical rect whose center follows the rendered element but whose
+ * size comes from its stable layout box. This excludes the element's own
+ * in-progress transform while retaining the board's responsive scale.
+ */
+export function viewportLayoutRect(element: HTMLElement): DOMRect {
+  const rendered = viewportRect(element)
+  const stage = element.closest('.board-stage')
+  let scaleX = 1
+  let scaleY = 1
+  if (stage instanceof HTMLElement && stage.offsetWidth > 0 && stage.offsetHeight > 0) {
+    const stageRect = viewportRect(stage)
+    scaleX = stageRect.width / stage.offsetWidth
+    scaleY = stageRect.height / stage.offsetHeight
+  }
+  const width = element.offsetWidth * scaleX
+  const height = element.offsetHeight * scaleY
+  const centerX = rendered.left + rendered.width / 2
+  const centerY = rendered.top + rendered.height / 2
+  return new DOMRect(centerX - width / 2, centerY - height / 2, width, height)
+}
+
+/** Finish element-owned CSS motion synchronously while it is covered by a
+ * presentation ghost. This establishes the authoritative final class state
+ * without a timing delay or a persistent inline-style override. */
+export function settleElementGeometry(element: HTMLElement) {
+  void getComputedStyle(element).transform
+  for (const animation of element.getAnimations()) {
+    try { animation.finish() } catch { /* Ignore non-finite decorative motion. */ }
+  }
+}
+
 export function visibleViewport() {
   if (layout.active) return { width: layout.width, height: layout.height }
   const viewport = window.visualViewport

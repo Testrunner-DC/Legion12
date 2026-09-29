@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
 import { l12AnimationDuration } from '../audioPreferences'
-import { landscapeTeleportElement, viewportRect } from '../mobileViewport'
+import { landscapeTeleportElement, viewportLayoutRect, viewportRect } from '../mobileViewport'
 import type { ActionEvent, Card } from '../types'
 
 const props = withDefaults(defineProps<{ events: ActionEvent[]; matchId: string; playbackSpeed?: number | null }>(), { playbackSpeed: null })
@@ -34,11 +34,7 @@ function cardElement(instanceId?: string) {
 }
 
 function cardSnapshotRect(element: HTMLElement) {
-  const rect = viewportRect(element)
-  if (!element.classList.contains('tapped')) return rect
-  const centerX = rect.left + rect.width / 2
-  const centerY = rect.top + rect.height / 2
-  return new DOMRect(centerX - rect.height / 2, centerY - rect.width / 2, rect.height, rect.width)
+  return viewportLayoutRect(element)
 }
 
 function zoneElement(zone: string, playerIndex: number) {

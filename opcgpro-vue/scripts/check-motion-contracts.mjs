@@ -58,11 +58,17 @@ const checks = [
   ['visual viewport jitter preserves claimed motion', !movement.includes("addEventListener('l12-viewport-change'")
     && combat.includes('function viewportChanged()')
     && !combat.slice(combat.indexOf('function viewportChanged()'), combat.indexOf('onMounted(', combat.indexOf('function viewportChanged()'))).includes('reset()')],
-  ['rested card geometry is normalized before ghost rotation', movement.includes("const quarterTurn = element.classList.contains('tapped')")
-    && movement.includes('width: quarterTurn ? rect.height : rect.width')
+  ['card geometry uses stable layout size instead of transient transformed bounds', mobileViewport.includes('export function viewportLayoutRect(element: HTMLElement)')
+    && mobileViewport.includes('const width = element.offsetWidth * scaleX')
+    && movement.includes('const rect = viewportLayoutRect(element)')
     && movement.includes("transformOrigin: 'center'")
     && combat.includes('function cardSnapshotRect(element: HTMLElement)')
-    && combat.includes('rect: cardSnapshotRect(element)')],
+    && combat.includes('return viewportLayoutRect(element)')
+    && stateTransition.includes('const sourceRect = viewportLayoutRect(source)')],
+  ['covered authority cards finish CSS motion before ghost handoff', mobileViewport.includes('export function settleElementGeometry(element: HTMLElement)')
+    && mobileViewport.includes('element.getAnimations()')
+    && stateTransition.includes('settleElementGeometry(target)')
+    && movement.includes('settleElementGeometry(destination)')],
   ['combat defender defeat resolves the opposite graveyard without owner metadata', combat.includes("event.type === 'combat' && index === 1")
     && combat.includes('return 1 - event.playerIndex')
     && combat.includes('const owner = defeatOwner(event, captured.card, index)')],

@@ -255,6 +255,100 @@ async function physicalCenter(locator) {
   return { x:box.x + box.width / 2, y:box.y + box.height / 2 }
 }
 function centerDistance(left, right) { return Math.hypot(left.x - right.x, left.y - right.y) }
+async function physicalSize(locator) {
+  const box = await locator.boundingBox()
+  if (!box) throw new Error('expected a measurable animation element')
+  return { width:box.width, height:box.height, ratio:box.width / Math.max(1, box.height) }
+}
+function assertSameSize(left, right, profile, label, tolerance = 1.5) {
+  const widthDrift = Math.abs(left.width - right.width)
+  const heightDrift = Math.abs(left.height - right.height)
+  const ratioDrift = Math.abs(left.ratio - right.ratio)
+  ok(widthDrift <= tolerance && heightDrift <= tolerance && ratioDrift <= .04,
+    `${profile}: ${label} size must match; drift=${widthDrift.toFixed(2)}x${heightDrift.toFixed(2)}px ratio=${ratioDrift.toFixed(3)}`)
+}
+async function assertGhostGeometry(locator, profile, label) {
+  const geometry = await locator.evaluate(node => {
+    const matrix = new DOMMatrixReadOnly(getComputedStyle(node).transform)
+    const logicalWidth = Math.abs(matrix.a) * node.offsetWidth + Math.abs(matrix.c) * node.offsetHeight
+    const logicalHeight = Math.abs(matrix.b) * node.offsetWidth + Math.abs(matrix.d) * node.offsetHeight
+    const rotated = document.documentElement.dataset.l12Rotated === 'true'
+    const rect = node.getBoundingClientRect()
+    return {
+      scaleX:Math.hypot(matrix.a, matrix.b), scaleY:Math.hypot(matrix.c, matrix.d),
+      expectedWidth:rotated ? logicalHeight : logicalWidth,
+      expectedHeight:rotated ? logicalWidth : logicalHeight,
+      actualWidth:rect.width, actualHeight:rect.height,
+    }
+  })
+  const scaleDrift = Math.abs(geometry.scaleX - geometry.scaleY)
+  const widthDrift = Math.abs(geometry.actualWidth - geometry.expectedWidth)
+  const heightDrift = Math.abs(geometry.actualHeight - geometry.expectedHeight)
+  const actualRatio = geometry.actualWidth / Math.max(1, geometry.actualHeight)
+  const expectedRatio = geometry.expectedWidth / Math.max(1, geometry.expectedHeight)
+  ok(scaleDrift <= Math.max(.025, Math.max(geometry.scaleX, geometry.scaleY) * .025)
+      && widthDrift <= 1 && heightDrift <= 1 && Math.abs(actualRatio - expectedRatio) <= .025,
+    `${profile}: ${label} must preserve width/height/aspect; axes=${geometry.scaleX.toFixed(3)},${geometry.scaleY.toFixed(3)} size-drift=${widthDrift.toFixed(2)}x${heightDrift.toFixed(2)}px`)
+}
+async function finishAnimationFast(locator) {
+  await locator.evaluate(node => node.getAnimations().forEach(animation => {
+    animation.playbackRate = 20
+    animation.play()
+  }))
+}
+async function verifyStateGeometry(page, profile, method, from, to, jitter = false) {
+  await invoke(page, method)
+  const ghost = page.locator(`.l12-card-state-transition-ghost[data-state-from="${from}"][data-state-to="${to}"]`)
+  await ghost.waitFor({ state:'attached', timeout:1500 })
+  await setAnimationProgress(ghost, .5)
+  await assertGhostGeometry(ghost, profile, `${from}→${to} at 50%`)
+  if (jitter) {
+    const key = await ghost.getAttribute('data-visual-transition-key')
+    const before = await physicalSize(ghost)
+    await page.evaluate(() => window.dispatchEvent(new Event('l12-viewport-change')))
+    await page.waitForTimeout(32)
+    ok(await ghost.count() === 1 && await ghost.getAttribute('data-visual-transition-key') === key,
+      `${profile}: viewport jitter must preserve the in-flight ${from}→${to} state ghost`)
+    assertSameSize(await physicalSize(ghost), before, profile, `${from}→${to} viewport-jitter frame`, .5)
+  }
+  await setAnimationProgress(ghost, .999)
+  await assertGhostGeometry(ghost, profile, `${from}→${to} at 99.9%`)
+  const ghostEnd = await physicalSize(ghost)
+  const target = page.locator('[data-card-instance-id="mover-1"]')
+  const targetEnd = await physicalSize(target)
+  assertSameSize(ghostEnd, targetEnd, profile, `${from}→${to} final ghost/authority handoff`)
+  await finishAnimationFast(ghost)
+  await page.waitForFunction(() => !document.querySelector('.l12-card-state-transition-ghost'), null, { timeout:1500 })
+  assertSameSize(await physicalSize(target), targetEnd, profile, `${from}→${to} post-handoff authority`)
+  ok(await target.evaluate(node => node.style.transition === ''), `${profile}: ${from}→${to} must restore authority transition style`)
+}
+async function verifyMovementGeometry(page, profile, jitter = false) {
+  await invoke(page, 'move')
+  await page.waitForFunction(() => (document.querySelector('.l12-zone-flight-ghost')?.getAnimations().length ?? 0) > 0,
+    null, { timeout:1500 })
+  const ghost = page.locator('.l12-zone-flight-ghost')
+  await setAnimationProgress(ghost, .5)
+  await assertGhostGeometry(ghost, profile, 'state→movement flight at 50%')
+  if (jitter) {
+    const key = await ghost.getAttribute('data-movement-key')
+    const before = await physicalSize(ghost)
+    await page.evaluate(() => window.dispatchEvent(new Event('l12-viewport-change')))
+    await page.waitForTimeout(32)
+    ok(await ghost.count() === 1 && await ghost.getAttribute('data-movement-key') === key,
+      `${profile}: viewport jitter must preserve the state→movement flight`)
+    assertSameSize(await physicalSize(ghost), before, profile, 'state→movement viewport-jitter frame', .5)
+  }
+  await setAnimationProgress(ghost, .999)
+  await assertGhostGeometry(ghost, profile, 'state→movement flight at 99.9%')
+  const ghostEnd = await physicalSize(ghost)
+  const target = page.locator('[data-card-instance-id="mover-1"]')
+  const targetEnd = await physicalSize(target)
+  assertSameSize(ghostEnd, targetEnd, profile, 'state→movement final ghost/authority handoff')
+  await finishAnimationFast(ghost)
+  await waitForMovementQueue(page)
+  assertSameSize(await physicalSize(target), targetEnd, profile, 'state→movement post-handoff authority')
+  ok(await target.evaluate(node => node.style.transition === ''), `${profile}: movement must restore authority transition style`)
+}
 
 try {
   await server.listen()
@@ -629,6 +723,27 @@ try {
       await expectTrace(opponentPage, 'opponent-view', ['negated-entrant'], 'opposite-player entry with a negated trigger')
       await opponentPage.close()
     }
+    report.profiles.push(profile.name)
+    await context.close()
+  }
+  for (const profile of [
+    { name:'mobile-landscape-geometry', viewport:{ width:844, height:390 } },
+    { name:'mobile-portrait-geometry', viewport:{ width:390, height:844 } },
+  ]) {
+    const context = await browser.newContext({ viewport:profile.viewport, isMobile:true, hasTouch:true })
+    const page = await context.newPage()
+    page.on('pageerror', error => report.errors.push(`${profile.name}: ${error.message}`))
+    await page.goto(`http://127.0.0.1:${port}/__battle-visual-transitions?viewer=0&landscape=1`, { waitUntil:'networkidle' })
+    await page.waitForSelector('[data-l12-game-stage]')
+    await page.evaluate(() => window.__visualTransitionHarness.setReplay(.1))
+    await page.waitForTimeout(32)
+    await verifyStateGeometry(page, profile.name, 'tap', 'active', 'rested', true)
+    await verifyStateGeometry(page, profile.name, 'ready', 'rested', 'active')
+    // No delay is inserted between this state handoff and the movement event:
+    // this is the production chain that previously captured a transitional box.
+    await verifyStateGeometry(page, profile.name, 'tap', 'active', 'rested')
+    await verifyMovementGeometry(page, profile.name, true)
+    await shot(page, `${profile.name}-state-movement-size-handoff`)
     report.profiles.push(profile.name)
     await context.close()
   }

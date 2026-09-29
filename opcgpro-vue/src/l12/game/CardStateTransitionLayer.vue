@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { l12AnimationDuration } from '../audioPreferences'
-import { landscapeTeleportElement, viewportRect } from '../mobileViewport'
+import { landscapeTeleportElement, settleElementGeometry, viewportLayoutRect } from '../mobileViewport'
 import type { PlayerView } from '../types'
 import { claimCardStateTransitions, collectVisualFieldState, createCardStateClaimState, resetCardStateClaimState } from './visualTransitionProjection'
 
@@ -79,9 +79,14 @@ function showNext() {
     const target = cardElement(transition.instanceId)
     if (!(target instanceof HTMLElement)) { finish(); return }
     const sourceRect = transition.sourceRect
-    const targetRect = viewportRect(target)
-    const width = target.offsetWidth || Math.min(sourceRect.width, sourceRect.height * 5 / 7)
-    const height = target.offsetHeight || Math.max(sourceRect.height, sourceRect.width * 7 / 5)
+    hiddenTarget = target
+    hiddenTargetVisibility = target.style.visibility
+    // The ghost owns the visible state turn. Finish the covered authority
+    // node's transition and settle animation without waiting on CSS timers.
+    settleElementGeometry(target)
+    const targetRect = viewportLayoutRect(target)
+    const width = targetRect.width || Math.min(sourceRect.width, sourceRect.height * 5 / 7)
+    const height = targetRect.height || Math.max(sourceRect.height, sourceRect.width * 7 / 5)
     const startX = sourceRect.left + sourceRect.width / 2 - width / 2
     const startY = sourceRect.top + sourceRect.height / 2 - height / 2
     const endX = targetRect.left + targetRect.width / 2 - width / 2
@@ -105,8 +110,6 @@ function showNext() {
     })
     wrapper.appendChild(ghost)
     landscapeTeleportElement()?.appendChild(wrapper)
-    hiddenTarget = target
-    hiddenTargetVisibility = target.style.visibility
     target.style.visibility = 'hidden'
     const fromAngle = transition.fromTapped ? 90 : 0
     const toAngle = transition.toTapped ? 90 : 0
@@ -140,7 +143,7 @@ watch(() => [props.revision, props.synchronizing, collectVisualFieldState(props.
     if (active.value?.key === change.transactionKey || queue.some(item => item.key === change.transactionKey)) continue
     const source = cardElement(instanceId)
     if (!(source instanceof HTMLElement)) continue
-    const sourceRect = viewportRect(source)
+    const sourceRect = viewportLayoutRect(source)
     if (sourceRect.width <= 0 || sourceRect.height <= 0) continue
     // flush:'pre' still sees the old authority state. Snapshot both pixels and
     // geometry now; waiting until nextTick can make source===target and clone
@@ -171,7 +174,7 @@ onBeforeUnmount(() => { cancelActive(); queue.length = 0 })
 <template><span class="card-state-transition-layer" data-ui-contract="authoritative-card-state-transition" aria-hidden="true" /></template>
 
 <style scoped>
-/* This component observes authoritative card state and draws its ghost in
-   document.body.  Its local anchor must never become a grid/flex item. */
+/* This component observes authoritative card state and draws its ghost in the
+   shared logical-canvas host. Its local anchor must never become a grid item. */
 .card-state-transition-layer{display:none!important}
 </style>
