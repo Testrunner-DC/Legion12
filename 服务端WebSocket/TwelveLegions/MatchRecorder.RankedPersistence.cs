@@ -459,33 +459,33 @@ public sealed partial class MatchRecorder
         {
             var command = connection.CreateCommand();
             command.CommandText = sql;
-            command.Parameters.AddWithValue("$season", seasonId);
             return Convert.ToInt32(await command.ExecuteScalarAsync());
         }
 
         var active = await CountAsync("""
-            SELECT COUNT(*) FROM ranked_match_runtime r
-            JOIN matches m ON m.match_id=r.match_id
-            WHERE r.status='active' AND m.mode_id='ranked' AND m.season_id=$season;
+            SELECT COUNT(*) FROM (
+                SELECT m.match_id
+                FROM matches m
+                WHERE m.mode_id='ranked' AND m.ended_utc IS NULL
+                UNION
+                SELECT r.match_id
+                FROM ranked_match_runtime r
+                LEFT JOIN matches m ON m.match_id=r.match_id
+                WHERE r.status='active'
+                  AND (m.match_id IS NULL OR m.mode_id<>'ranked' OR m.ended_utc IS NOT NULL)
+            );
             """);
         var pending = await CountAsync("""
-            SELECT COUNT(*) FROM ranked_settlement_outbox o
-            JOIN matches m ON m.match_id=o.match_id
-            WHERE o.status='pending' AND m.season_id=$season;
+            SELECT COUNT(*) FROM ranked_settlement_outbox WHERE status='pending';
             """);
         var reconciliation = await CountAsync("""
-            SELECT COUNT(*) FROM ranked_settlement_outbox o
-            JOIN matches m ON m.match_id=o.match_id
-            WHERE o.status='applied' AND o.last_error IS NOT NULL AND m.season_id=$season;
+            SELECT COUNT(*) FROM ranked_settlement_outbox
+            WHERE status='applied' AND last_error IS NOT NULL;
             """);
         var quarantined = await CountAsync("""
             SELECT
-                (SELECT COUNT(*) FROM ranked_settlement_outbox o
-                 JOIN matches m ON m.match_id=o.match_id
-                 WHERE o.status='quarantined' AND m.season_id=$season)
-              + (SELECT COUNT(*) FROM ranked_recovery_quarantine q
-                 JOIN matches m ON m.match_id=q.match_id
-                 WHERE m.season_id=$season);
+                (SELECT COUNT(*) FROM ranked_settlement_outbox WHERE status='quarantined')
+              + (SELECT COUNT(*) FROM ranked_recovery_quarantine);
             """);
         return new L12RankedSeasonCutoverReadiness(seasonId, active, pending, reconciliation, quarantined);
     }

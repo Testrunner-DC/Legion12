@@ -212,7 +212,7 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var row = _data.SeasonArchives.FirstOrDefault(item =>
-                    item.SeasonId.Equals(seasonId, StringComparison.OrdinalIgnoreCase))
+                    SeasonIdsEqual(item.SeasonId, seasonId))
                 ?? throw new L12OperationsConfigException("season_archive_not_found", "赛季档案不存在");
             return ToSeasonArchiveView(row);
         }
@@ -329,17 +329,17 @@ public sealed partial class L12PlatformStore
                 throw new L12OperationsConfigException("season_definition_read_only", "只有下一赛季草稿可以生效");
             EnsureSeasonDefinitionRevision(current, expectedCurrentRevision);
             EnsureSeasonDefinitionRevision(draft, expectedDraftRevision);
-            if (!string.Equals(draft.PreviousSeasonId, current.SeasonId, StringComparison.OrdinalIgnoreCase)
-                || !string.Equals(current.NextSeasonId, draft.SeasonId, StringComparison.OrdinalIgnoreCase))
+            if (!SeasonIdsEqual(draft.PreviousSeasonId, current.SeasonId)
+                || !SeasonIdsEqual(current.NextSeasonId, draft.SeasonId))
                 throw new L12OperationsConfigException("season_link_conflict", "赛季衔接关系已变化，请刷新后重试");
             if (string.IsNullOrWhiteSpace(draft.SeasonId) || string.IsNullOrWhiteSpace(draft.Name))
                 throw new L12OperationsConfigException("season_draft_incomplete", "下一赛季草稿尚未填写完整");
-            if (!string.Equals(readiness.SeasonId, current.SeasonId, StringComparison.OrdinalIgnoreCase)
+            if (!SeasonIdsEqual(readiness.SeasonId, current.SeasonId)
                 || !readiness.Ready)
                 throw new L12OperationsConfigException("season_cutover_not_ready", "当前赛季仍有未完成或未对账的排位对局");
 
             var operations = RequireOperationsConfig();
-            if (!string.Equals(operations.Season.Id, current.SeasonId, StringComparison.OrdinalIgnoreCase))
+            if (!SeasonIdsEqual(operations.Season.Id, current.SeasonId))
                 throw new L12OperationsConfigException("season_runtime_conflict", "当前赛季定义与运行配置不一致");
             if (_data.SeasonArchives.Any(row => row.SourceDefinitionId == current.DefinitionId))
                 throw new L12OperationsConfigException("season_archive_conflict", "当前赛季已经归档，不能再次切换");
@@ -409,8 +409,7 @@ public sealed partial class L12PlatformStore
     {
         var active = _data.SeasonDefinitions.SingleOrDefault(row => row.LifecycleStatus == "active");
         var operations = RequireOperationsConfig();
-        if (active is null || !active.SeasonId.Equals(operations.Season.Id,
-                StringComparison.OrdinalIgnoreCase)) return;
+        if (active is null || !SeasonIdsEqual(active.SeasonId, operations.Season.Id)) return;
         active.Name = operations.Season.Name;
         active.StartsAt = operations.Season.StartsAt;
         active.EndsAt = operations.Season.EndsAt;
@@ -424,11 +423,11 @@ public sealed partial class L12PlatformStore
     {
         if (draft is null || draft.Configuration is null || draft.Configuration.Ranked is null)
             throw new L12OperationsConfigException("invalid_season_definition", "下一赛季草稿字段不完整");
-        var seasonId = RequireOperationsId(draft.SeasonId, "赛季 ID");
+        var seasonId = RequireSeasonId(draft.SeasonId);
         var name = RequireOperationsText(draft.Name, "赛季名称", 100);
         if (_data.SeasonDefinitions.Any(row => row.DefinitionId != definitionId
-                && row.SeasonId.Equals(seasonId, StringComparison.OrdinalIgnoreCase))
-            || _data.SeasonArchives.Any(row => row.SeasonId.Equals(seasonId, StringComparison.OrdinalIgnoreCase)))
+                && SeasonIdsEqual(row.SeasonId, seasonId))
+            || _data.SeasonArchives.Any(row => SeasonIdsEqual(row.SeasonId, seasonId)))
             throw new L12OperationsConfigException("duplicate_season_id", "赛季 ID 已存在");
 
         var currentPayload = ToPayload(RequireOperationsConfig());

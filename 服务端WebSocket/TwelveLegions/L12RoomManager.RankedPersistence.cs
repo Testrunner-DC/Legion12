@@ -16,6 +16,8 @@ public sealed partial class L12RoomManager
         PropertyNameCaseInsensitive = true,
     };
 
+    internal Func<Task>? RankedSeasonCutoverFinalCheckInjector { get; set; }
+
     private async Task StartRecordedGameAsync(Room room, IReadOnlyList<Session> members,
         IReadOnlyList<L12PresetDeckDefinition> decks)
     {
@@ -61,10 +63,23 @@ public sealed partial class L12RoomManager
         {
             var seasonId = CaptureOperationsPolicy().Season.Id;
             await DrainRankedSettlementOutboxAsync(includeApplied: true);
-            var readiness = await _recorder.RankedSeasonCutoverReadinessAsync(seasonId);
+            _ = await CaptureRankedSeasonCutoverReadinessAsync(seasonId);
+            if (RankedSeasonCutoverFinalCheckInjector is not null)
+                await RankedSeasonCutoverFinalCheckInjector();
+            var readiness = await CaptureRankedSeasonCutoverReadinessAsync(seasonId);
             return activate(readiness);
         }
         finally { _rankedSeasonGate.Release(); }
+    }
+
+    private async Task<L12RankedSeasonCutoverReadiness> CaptureRankedSeasonCutoverReadinessAsync(
+        string seasonId)
+    {
+        var persisted = await _recorder.RankedSeasonCutoverReadinessAsync(seasonId);
+        var inMemory = _rooms.Values.Count(room =>
+            string.Equals(room.Options.MatchModeId, "ranked", StringComparison.OrdinalIgnoreCase)
+            && room.Game is not null && room.Game.State.Phase != L12Phase.GameOver);
+        return persisted with { ActiveMatches = Math.Max(persisted.ActiveMatches, inMemory) };
     }
 
     private L12RankedSettlementEnvelope BuildRankedSettlementEnvelope(Room room, DateTimeOffset endedAt)

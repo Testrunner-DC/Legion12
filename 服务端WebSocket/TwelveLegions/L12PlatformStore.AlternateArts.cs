@@ -373,13 +373,13 @@ public sealed partial class L12PlatformStore
     }
 
     private IReadOnlyCollection<string> RankedParticipantAccountIdsLocked(string seasonId)
-        => _data.RankedProfiles.Where(row => row.SeasonId.Equals(seasonId, StringComparison.OrdinalIgnoreCase)
+        => _data.RankedProfiles.Where(row => SeasonIdsEqual(row.SeasonId, seasonId)
                 && row.PlacementPlayed + row.Wins + row.Losses > 0)
             .Select(row => row.AccountId)
-            .Concat(_data.RankedProfileHistory.Where(row => row.SeasonId.Equals(seasonId, StringComparison.OrdinalIgnoreCase)
+            .Concat(_data.RankedProfileHistory.Where(row => SeasonIdsEqual(row.SeasonId, seasonId)
                     && row.PlacementPlayed + row.Wins + row.Losses > 0)
                 .Select(row => row.AccountId))
-            .Concat(_data.RankedMasterRecords.Where(row => row.SeasonId.Equals(seasonId, StringComparison.OrdinalIgnoreCase)
+            .Concat(_data.RankedMasterRecords.Where(row => SeasonIdsEqual(row.SeasonId, seasonId)
                     && row.Games > 0)
                 .Select(row => row.AccountId))
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -388,7 +388,7 @@ public sealed partial class L12PlatformStore
     private void ApplyRankReachedAlternateArtAwardsLocked(string accountId, string seasonId, int tierIndex)
     {
         foreach (var rule in _data.AlternateArtAwardRules.Where(row => row.Active && row.Kind == "rank-reached"
-                     && string.Equals(row.SeasonId, seasonId, StringComparison.OrdinalIgnoreCase)
+                     && SeasonIdsEqual(row.SeasonId, seasonId)
                      && tierIndex >= row.MinimumTierIndex))
             if (IsActiveAlternateArt(rule.AlternateArtId))
                 GrantAlternateArtToAccountLocked(accountId, rule.AlternateArtId, "rank-reached", seasonId, "system");
@@ -397,7 +397,7 @@ public sealed partial class L12PlatformStore
     private void ApplySeasonFinalAlternateArtAwardsLocked(string accountId, string seasonId, int tierIndex)
     {
         foreach (var rule in _data.AlternateArtAwardRules.Where(row => row.Active && row.Kind == "season-final"
-                     && string.Equals(row.SeasonId, seasonId, StringComparison.OrdinalIgnoreCase)
+                     && SeasonIdsEqual(row.SeasonId, seasonId)
                      && tierIndex >= row.MinimumTierIndex))
             if (IsActiveAlternateArt(rule.AlternateArtId))
                 GrantAlternateArtToAccountLocked(accountId, rule.AlternateArtId, "season-final", seasonId, "system");
@@ -407,7 +407,7 @@ public sealed partial class L12PlatformStore
         IReadOnlyDictionary<string, RankedMasterRecordRow> champions, string seasonId)
     {
         foreach (var rule in _data.AlternateArtAwardRules.Where(row => row.Active && row.Kind == "master-champion-season-final"
-                     && string.Equals(row.SeasonId, seasonId, StringComparison.OrdinalIgnoreCase)))
+                     && SeasonIdsEqual(row.SeasonId, seasonId)))
         {
             if (!IsActiveAlternateArt(rule.AlternateArtId)) continue;
             foreach (var champion in champions.Values.Where(item => string.IsNullOrWhiteSpace(rule.MasterId)

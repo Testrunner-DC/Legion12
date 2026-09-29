@@ -54,7 +54,7 @@ public sealed partial class L12PlatformStore
                 {
                     var currentSeason = RequireOperationsConfig().Season.Id;
                     var profile = _data.RankedProfiles.FirstOrDefault(row => row.AccountId == record.AccountId
-                        && row.SeasonId == currentSeason);
+                        && SeasonIdsEqual(row.SeasonId, currentSeason));
                     var masterName = MasterName(record.MasterId);
                     return new L12RankedMasterChampionView(record.MasterId, masterName,
                         AccountName(record.AccountId), MasterTitle(record.MasterId), profile?.SevenValue ?? 0,

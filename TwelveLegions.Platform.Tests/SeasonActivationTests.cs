@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -162,6 +163,45 @@ public sealed class SeasonActivationTests
     }
 
     [Fact]
+    public void EquivalentSeasonIdVariantKeepsCanonicalIdentityAndPlayerProgress()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var first = store.Register("赛季标识甲", "Password123!").Account!;
+            var second = store.Register("赛季标识乙", "Password123!").Account!;
+            store.SelectRankedFaction(first.Id, "order");
+            store.SelectRankedFaction(second.Id, "chaos");
+            for (var index = 0; index < 6; index++)
+                store.SettleRankedMatch($"identity-{index}", first.Id, second.Id, 0);
+            var before = store.RankedProfile(first.Id);
+            var current = store.OperationsConfig(admin);
+
+            store.ApplyOperationsConfig(admin, current.Config with
+                {
+                    Season = current.Config.Season with { Id = "  ｓ０１  " },
+                },
+                current.Version, "normalize equivalent identity", Context("identity"));
+
+            var after = store.RankedProfile(first.Id);
+            Assert.Equal(current.Config.Season.Id, store.OperationsConfig(admin).Config.Season.Id);
+            Assert.Equal(current.Config.Season.Id, after.SeasonId);
+            Assert.Equal(before.SevenValue, after.SevenValue);
+            Assert.Equal(before.PlacementPlayed, after.PlacementPlayed);
+            Assert.Equal(before.Wins, after.Wins);
+            Assert.Equal(before.WinStreak, after.WinStreak);
+            Assert.Empty(store.RankedOverview(first.Id).History);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public async Task ActivationApiIsHighRiskIdempotentAndRequiresOperationsPreconditions()
     {
         var root = TempRoot();
@@ -225,6 +265,77 @@ public sealed class SeasonActivationTests
             if (recorder is not null) await recorder.DisposeAsync();
             SqliteConnection.ClearAllPools();
             Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previousHost);
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task RankedLobbyPinnedToArchivedSeasonCannotStartAfterCutover()
+    {
+        var root = TempRoot();
+        await using var recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+        try
+        {
+            var catalog = Catalog();
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var first = store.Register("旧赛季房间甲", "Password123!").Account!;
+            var second = store.Register("旧赛季房间乙", "Password123!").Account!;
+            store.SelectRankedFaction(first.Id, "order");
+            store.SelectRankedFaction(second.Id, "chaos");
+            await recorder.InitializeAsync();
+            var manager = new L12RoomManager(catalog, recorder, store);
+            var firstSession = Guid.NewGuid();
+            var secondSession = Guid.NewGuid();
+            manager.Connect(firstSession, first.Id, first.Username);
+            manager.Connect(secondSession, second.Id, second.Username);
+            var created = JsonSerializer.SerializeToElement(Assert.Single(manager.CreateRoom(firstSession,
+                new L12RoomOptions
+                {
+                    MatchModeId = "ranked",
+                    DisasterMode = "season",
+                    UseCardRestrictions = true,
+                })).Payload);
+            var roomCode = created.GetProperty("roomCode").GetString()!;
+            manager.JoinRoom(secondSession, roomCode);
+            // Matchmaking normally starts immediately. Model its pinned pre-start boundary directly so
+            // the test can hold the room across the administrative cutover.
+            var rooms = typeof(L12RoomManager).GetField("_rooms",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                .GetValue(manager)!;
+            var arguments = new object?[] { roomCode, null };
+            Assert.True((bool)rooms.GetType().GetMethod("TryGetValue")!.Invoke(rooms, arguments)!);
+            var room = arguments[1]!;
+            room.GetType().GetProperty("Options")!.SetValue(room, new L12RoomOptions
+            {
+                MatchModeId = "ranked",
+                DisasterMode = "season",
+                UseCardRestrictions = true,
+            });
+
+            var seasons = store.SeasonCatalog(admin);
+            var draft = store.UpdateSeasonDraft(admin, seasons.Next!.DefinitionId,
+                new L12SeasonDefinitionDraft("S02", "第二赛季", null, null,
+                    seasons.Next.Configuration), seasons.Next.Revision, "prepare",
+                Context("prepare-old-lobby"));
+            store.ActivateSeason(admin, draft.DefinitionId, seasons.Current.Revision, draft.Revision,
+                "activate", new L12RankedSeasonCutoverReadiness(seasons.Current.SeasonId, 0, 0, 0, 0),
+                Context("activate-old-lobby"));
+
+            await manager.SetReadyAsync(firstSession, true);
+            var blockedPayloads = (await manager.SetReadyAsync(secondSession, true))
+                .Select(message => JsonSerializer.SerializeToElement(message.Payload)).ToArray();
+            var blocked = blockedPayloads.FirstOrDefault(payload =>
+                payload.GetProperty("type").GetString() == "roomSeasonExpired");
+            Assert.True(blocked.ValueKind != JsonValueKind.Undefined,
+                string.Join(Environment.NewLine, blockedPayloads.Select(payload => payload.ToString())));
+            Assert.Contains("所属赛季已结束", blocked.GetProperty("message").GetString());
+            Assert.Equal(0, manager.RuntimeStats().ActiveGameCount);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
             Directory.Delete(root, true);
         }
     }

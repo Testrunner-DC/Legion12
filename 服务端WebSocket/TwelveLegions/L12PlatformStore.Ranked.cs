@@ -423,7 +423,7 @@ public sealed partial class L12PlatformStore
             {
                 ArchiveRankedProfile(row);
                 _data.RankedMasterRecords.RemoveAll(item => item.AccountId == accountId
-                    && item.SeasonId == row.SeasonId);
+                    && SeasonIdsEqual(item.SeasonId, row.SeasonId));
                 row.Faction = faction;
                 row.SevenValue = row.PlacementPlayed = row.PlacementWins = row.Wins = row.Losses = 0;
                 row.WinStreak = row.LossStreak = row.HighestFloor = 0;
@@ -524,7 +524,7 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var season = RequireOperationsConfig().Season.Id;
-            var rows = _data.RankedProfiles.Where(row => row.SeasonId == season
+            var rows = _data.RankedProfiles.Where(row => SeasonIdsEqual(row.SeasonId, season)
                     && row.PlacementPlayed >= _data.RankedConfig!.PlacementMatches
                     && !string.IsNullOrWhiteSpace(row.Faction)
                     && IsActiveAccountLocked(row.AccountId)
@@ -554,7 +554,7 @@ public sealed partial class L12PlatformStore
                 {
                     var currentSeason = RequireOperationsConfig().Season.Id;
                     var profile = _data.RankedProfiles.FirstOrDefault(row => row.AccountId == record.AccountId
-                        && row.SeasonId == currentSeason);
+                        && SeasonIdsEqual(row.SeasonId, currentSeason));
                     var masterName = MasterName(record.MasterId);
                     return new L12RankedMasterChampionView(record.MasterId, masterName,
                         AccountName(record.AccountId), MasterTitle(record.MasterId), profile?.SevenValue ?? 0,
@@ -621,7 +621,7 @@ public sealed partial class L12PlatformStore
                 .Select(item => new L12RankedMatchupStatsView(item.MasterId, item.OpponentMasterId,
                     item.Games, item.Wins, Percentage(item.Wins, item.Games), item.FirstGames,
                     item.FirstWins, item.SecondGames, item.SecondWins)).ToArray();
-            var placedPlayers = _data.RankedProfiles.Count(row => row.SeasonId == season.Id
+            var placedPlayers = _data.RankedProfiles.Count(row => SeasonIdsEqual(row.SeasonId, season.Id)
                 && row.PlacementPlayed >= _data.RankedConfig!.PlacementMatches
                 && _data.Accounts.Any(account => account.Id == row.AccountId && !account.Disabled && !account.Deleted));
             var updatedAt = matches.Select(item => item.Ended ?? item.Started).Where(value => value is not null)
@@ -1066,7 +1066,7 @@ public sealed partial class L12PlatformStore
             if (!afterMasterChampions.TryGetValue(masterId, out var champion)
                 || beforeMasterChampions.GetValueOrDefault(masterId) == champion.AccountId) continue;
             var championProfile = _data.RankedProfiles.First(row => row.AccountId == champion.AccountId
-                && row.SeasonId == champion.SeasonId);
+                && SeasonIdsEqual(row.SeasonId, champion.SeasonId));
             Add($"master-champion-{masterId}",
                 $"【{FactionFor(championProfile.Faction!).Name}】{AccountName(champion.AccountId)} 获得称号「{MasterTitle(masterId)}」");
         }
@@ -1084,13 +1084,18 @@ public sealed partial class L12PlatformStore
             row = new RankedProfileRow { AccountId = accountId, SeasonId = season };
             _data.RankedProfiles.Add(row);
         }
-        else if (row.SeasonId != season)
+        else if (!SeasonIdsEqual(row.SeasonId, season))
         {
             ArchiveRankedProfile(row);
             row.SeasonId = season;
             row.SevenValue = row.PlacementPlayed = row.PlacementWins = row.Wins = row.Losses = 0;
             row.WinStreak = row.LossStreak = row.HighestFloor = 0;
             row.ReachedHighestTier = false;
+        }
+        else if (!string.Equals(row.SeasonId, season, StringComparison.Ordinal))
+        {
+            // Heal legacy casing/whitespace/Unicode variants without treating them as a season boundary.
+            row.SeasonId = season;
         }
         _ = account;
         return row;
@@ -1099,8 +1104,7 @@ public sealed partial class L12PlatformStore
     private void EnsureRankedSettlementSeason(string? seasonId)
     {
         if (string.IsNullOrWhiteSpace(seasonId)) return;
-        if (!string.Equals(seasonId, RequireOperationsConfig().Season.Id,
-                StringComparison.OrdinalIgnoreCase))
+        if (!SeasonIdsEqual(seasonId, RequireOperationsConfig().Season.Id))
             throw new InvalidOperationException("排位结算所属赛季已结束，拒绝写入当前赛季");
     }
 
@@ -1110,7 +1114,7 @@ public sealed partial class L12PlatformStore
     {
         if (string.IsNullOrWhiteSpace(row.Faction) || row.PlacementPlayed == 0) return;
         if (_data.RankedProfileHistory.Any(history => history.AccountId == row.AccountId
-                && history.SeasonId == row.SeasonId && history.FinalizedSeasonAwards)) return;
+                && SeasonIdsEqual(history.SeasonId, row.SeasonId) && history.FinalizedSeasonAwards)) return;
         _data.RankedProfileHistory.Add(new RankedProfileHistoryRow
         {
             AccountId = row.AccountId,
@@ -1135,9 +1139,9 @@ public sealed partial class L12PlatformStore
     private void FinalizeOutgoingRankedSeason(string outgoingSeasonId, string outgoingSeasonName,
         string incomingSeasonId)
     {
-        if (string.Equals(outgoingSeasonId, incomingSeasonId, StringComparison.OrdinalIgnoreCase)) return;
+        if (SeasonIdsEqual(outgoingSeasonId, incomingSeasonId)) return;
         var champions = CurrentMasterChampions();
-        var rows = _data.RankedProfiles.Where(row => row.SeasonId == outgoingSeasonId).ToArray();
+        var rows = _data.RankedProfiles.Where(row => SeasonIdsEqual(row.SeasonId, outgoingSeasonId)).ToArray();
         foreach (var row in rows)
         {
             // 在归档前使用该赛季的最终七曜值计算门槛；重复切换同一赛季只会复用同一权益记录。
@@ -1156,7 +1160,7 @@ public sealed partial class L12PlatformStore
     private void CarryRankedProfilesIntoSeason(string outgoingSeasonId, string incomingSeasonId,
         int placementMatches)
     {
-        foreach (var row in _data.RankedProfiles.Where(row => row.SeasonId == outgoingSeasonId))
+        foreach (var row in _data.RankedProfiles.Where(row => SeasonIdsEqual(row.SeasonId, outgoingSeasonId)))
         {
             row.SeasonId = incomingSeasonId;
             row.PlacementPlayed = string.IsNullOrWhiteSpace(row.Faction) ? 0 : placementMatches;
@@ -1170,10 +1174,8 @@ public sealed partial class L12PlatformStore
         L12AccountView actor, L12AdminAuditContext context)
     {
         var pending = _data.RankedPendingGradient;
-        if (pending is null || string.Equals(outgoingSeasonId, incomingSeasonId,
-                StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(pending.AfterSeasonId, outgoingSeasonId,
-                StringComparison.OrdinalIgnoreCase)) return;
+        if (pending is null || SeasonIdsEqual(outgoingSeasonId, incomingSeasonId)
+            || !SeasonIdsEqual(pending.AfterSeasonId, outgoingSeasonId)) return;
         if (pending.Tiers.Count != 5 || _data.RankedConfig!.Factions.Any(faction => faction.Tiers.Count != 5))
             throw new InvalidDataException("下赛季排位梯度不完整，已拒绝切换赛季");
 
@@ -1226,7 +1228,7 @@ public sealed partial class L12PlatformStore
         var factionRank = FactionRank(row);
         var titles = PlayerTitles(row, factionRank, champions);
         var favoriteMaster = _data.RankedMasterRecords.Where(item => item.AccountId == row.AccountId
-                && item.SeasonId == row.SeasonId && item.Games > 0)
+                && SeasonIdsEqual(item.SeasonId, row.SeasonId) && item.Games > 0)
             .OrderByDescending(item => item.Games).ThenByDescending(item => item.Wins)
             .ThenBy(item => item.MasterId, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
         return new(rank, AccountName(row.AccountId), faction.Name, row.SevenValue,
@@ -1279,7 +1281,7 @@ public sealed partial class L12PlatformStore
     {
         if (string.IsNullOrWhiteSpace(masterId)) return;
         var row = _data.RankedMasterRecords.FirstOrDefault(item => item.AccountId == profile.AccountId
-            && item.SeasonId == profile.SeasonId
+            && SeasonIdsEqual(item.SeasonId, profile.SeasonId)
             && item.MasterId.Equals(masterId, StringComparison.OrdinalIgnoreCase));
         if (row is null)
         {
@@ -1296,7 +1298,7 @@ public sealed partial class L12PlatformStore
         var account = _data.Accounts.FirstOrDefault(item => !item.Disabled && !item.Deleted
             && item.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
         return account is null ? null : _data.RankedProfiles.FirstOrDefault(item => item.AccountId == account.Id
-            && item.SeasonId == seasonId);
+            && SeasonIdsEqual(item.SeasonId, seasonId));
     }
 
     private string? RankingMasterId(string? id, string name) => id is null ? MasterIdByName(name)
@@ -1330,7 +1332,8 @@ public sealed partial class L12PlatformStore
     private int FactionRank(RankedProfileRow row)
     {
         if (string.IsNullOrWhiteSpace(row.Faction) || row.PlacementPlayed < _data.RankedConfig!.PlacementMatches) return 0;
-        return _data.RankedProfiles.Where(item => item.SeasonId == row.SeasonId && item.Faction == row.Faction
+        return _data.RankedProfiles.Where(item => SeasonIdsEqual(item.SeasonId, row.SeasonId)
+                && item.Faction == row.Faction
                 && item.PlacementPlayed >= _data.RankedConfig.PlacementMatches
                 && IsActiveAccountLocked(item.AccountId))
             .OrderByDescending(item => item.SevenValue).ThenByDescending(item => item.HiddenRating)
@@ -1341,7 +1344,7 @@ public sealed partial class L12PlatformStore
     {
         if (string.IsNullOrWhiteSpace(row.Faction)
             || row.PlacementPlayed < _data.RankedConfig!.PlacementMatches) return 0;
-        return _data.RankedProfiles.Where(item => item.SeasonId == row.SeasonId
+        return _data.RankedProfiles.Where(item => SeasonIdsEqual(item.SeasonId, row.SeasonId)
                 && !string.IsNullOrWhiteSpace(item.Faction)
                 && item.PlacementPlayed >= _data.RankedConfig.PlacementMatches
                 && IsActiveAccountLocked(item.AccountId))
@@ -1353,7 +1356,8 @@ public sealed partial class L12PlatformStore
     private Dictionary<string, string> CurrentFactionTitleAssignments()
     {
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var row in _data.RankedProfiles.Where(row => row.SeasonId == RequireOperationsConfig().Season.Id))
+        foreach (var row in _data.RankedProfiles.Where(row =>
+                     SeasonIdsEqual(row.SeasonId, RequireOperationsConfig().Season.Id)))
         {
             var title = FactionPlacementTitle(row, FactionRank(row));
             if (title is not null) result[row.AccountId] = title;
@@ -1363,7 +1367,8 @@ public sealed partial class L12PlatformStore
 
     private IReadOnlyDictionary<string, int> FactionTotalsLocked()
         => _data.RankedConfig!.Factions.ToDictionary(faction => faction.Name,
-            faction => _data.RankedProfiles.Where(row => row.SeasonId == RequireOperationsConfig().Season.Id
+            faction => _data.RankedProfiles.Where(row =>
+                    SeasonIdsEqual(row.SeasonId, RequireOperationsConfig().Season.Id)
                     && row.Faction == faction.Id && row.PlacementPlayed >= _data.RankedConfig.PlacementMatches
                     && _data.Accounts.Any(account => account.Id == row.AccountId && !account.Disabled && !account.Deleted))
                 .Sum(row => row.SevenValue));

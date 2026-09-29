@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -383,9 +384,10 @@ public sealed partial class L12PlatformStore
             var current = RequireOperationsConfig();
             EnsureOperationsVersion(current, expectedVersion);
             var normalized = NormalizeOperationsPayload(payload);
-            if (!string.Equals(current.Season.Id, normalized.Season.Id, StringComparison.OrdinalIgnoreCase))
+            if (!SeasonIdsEqual(current.Season.Id, normalized.Season.Id))
                 throw new L12OperationsConfigException("season_activation_required",
                     "切换赛季必须通过下一赛季生效命令执行");
+            normalized = normalized with { Season = normalized.Season with { Id = current.Season.Id } };
             var changes = DescribeOperationsChanges(ToPayload(current), normalized);
             var warnings = OperationsWarnings(normalized);
             AddAdminAudit(actor, "operations", "config-preview", "operations:config",
@@ -408,9 +410,10 @@ public sealed partial class L12PlatformStore
             var current = RequireOperationsConfig();
             EnsureOperationsVersion(current, expectedVersion);
             var normalized = NormalizeOperationsPayload(payload);
-            if (!string.Equals(current.Season.Id, normalized.Season.Id, StringComparison.OrdinalIgnoreCase))
+            if (!SeasonIdsEqual(current.Season.Id, normalized.Season.Id))
                 throw new L12OperationsConfigException("season_activation_required",
                     "切换赛季必须通过下一赛季生效命令执行");
+            normalized = normalized with { Season = normalized.Season with { Id = current.Season.Id } };
             var changes = DescribeOperationsChanges(ToPayload(current), normalized);
             var next = ToRow(normalized, current.Version + 1, actor.Username, current.ImmediateMaintenance);
             _data.OperationsConfig = next;
@@ -439,9 +442,13 @@ public sealed partial class L12PlatformStore
             var target = _data.OperationsConfigHistory.FirstOrDefault(row => row.Id == normalizedVersionId)
                 ?? throw new L12OperationsConfigException("operations_version_not_found", "运营配置历史版本不存在");
             var targetPayload = ToPayload(target.Config);
-            if (!string.Equals(current.Season.Id, targetPayload.Season.Id, StringComparison.OrdinalIgnoreCase))
+            if (!SeasonIdsEqual(current.Season.Id, targetPayload.Season.Id))
                 throw new L12OperationsConfigException("season_activation_required",
                     "不能通过运营配置回滚激活或恢复其他赛季");
+            targetPayload = targetPayload with
+            {
+                Season = targetPayload.Season with { Id = current.Season.Id },
+            };
             var changes = DescribeOperationsChanges(ToPayload(current), targetPayload);
             var next = ToRow(targetPayload, current.Version + 1, actor.Username, current.ImmediateMaintenance);
             _data.OperationsConfig = next;
@@ -691,7 +698,7 @@ public sealed partial class L12PlatformStore
             || payload.MatchModes is null || payload.FeatureFlags is null || payload.Maintenance is null)
             throw new L12OperationsConfigException("invalid_operations_config", "运营配置字段不完整");
 
-        var seasonId = RequireOperationsId(payload.Season.Id, "赛季 ID");
+        var seasonId = RequireSeasonId(payload.Season.Id);
         var seasonName = RequireOperationsText(payload.Season.Name, "赛季名称", 100);
         var seasonStatus = payload.Season.Status?.Trim().ToLowerInvariant();
         if (seasonStatus is not ("upcoming" or "active" or "archived"))
@@ -1104,6 +1111,21 @@ public sealed partial class L12PlatformStore
             throw new L12OperationsConfigException("invalid_operations_config", $"{label}格式无效");
         return normalized;
     }
+
+    private static string RequireSeasonId(string? value)
+    {
+        var normalized = NormalizeSeasonIdentity(value);
+        if (!OperationsIdPattern.IsMatch(normalized))
+            throw new L12OperationsConfigException("invalid_operations_config", "赛季 ID格式无效");
+        return normalized;
+    }
+
+    private static string NormalizeSeasonIdentity(string? value)
+        => (value ?? string.Empty).Trim().Normalize(NormalizationForm.FormKC);
+
+    private static bool SeasonIdsEqual(string? left, string? right)
+        => string.Equals(NormalizeSeasonIdentity(left), NormalizeSeasonIdentity(right),
+            StringComparison.OrdinalIgnoreCase);
 
     private static string RequireCardId(string? value, string label)
     {

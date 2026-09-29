@@ -9,6 +9,85 @@ public sealed class RankedPersistenceRecoveryTests
 {
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
+    [Theory]
+    [InlineData("missing-runtime")]
+    [InlineData("blank-season")]
+    [InlineData("other-season")]
+    public async Task CutoverBlocksActiveInMemoryRankedGameWhenPersistenceOwnershipIsUnprovable(
+        string corruption)
+    {
+        await using var fixture = await RankedFixture.CreateAsync($"cutover-{corruption}");
+        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                         $"Data Source={fixture.MatchPath}"))
+        {
+            await connection.OpenAsync();
+            var command = connection.CreateCommand();
+            command.CommandText = corruption switch
+            {
+                "missing-runtime" => "DELETE FROM ranked_match_runtime WHERE match_id=$match;",
+                "blank-season" => "UPDATE matches SET season_id=NULL WHERE match_id=$match;",
+                _ => "UPDATE matches SET season_id='other-season' WHERE match_id=$match;",
+            };
+            command.Parameters.AddWithValue("$match", fixture.MatchId);
+            Assert.Equal(1, await command.ExecuteNonQueryAsync());
+        }
+
+        var readiness = await fixture.Manager.ExecuteRankedSeasonCutoverAsync(value => value);
+
+        Assert.Equal(1, fixture.Manager.RuntimeStats().ActiveGameCount);
+        Assert.True(readiness.ActiveMatches >= 1);
+        Assert.False(readiness.Ready);
+    }
+
+    [Fact]
+    public async Task CutoverRechecksDurableStateImmediatelyBeforeActivation()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"l12-cutover-recheck-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        MatchRecorder? recorder = null;
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
+            var platform = new L12PlatformStore(Path.Combine(directory, "platform.json"),
+                catalog.PresetDecks, officialCards: catalog.Cards);
+            var matchPath = Path.Combine(directory, "matches.db");
+            recorder = new MatchRecorder(matchPath);
+            await recorder.InitializeAsync();
+            var manager = new L12RoomManager(catalog, recorder, platform);
+            manager.RankedSeasonCutoverFinalCheckInjector = async () =>
+            {
+                await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                    $"Data Source={matchPath}");
+                await connection.OpenAsync();
+                var command = connection.CreateCommand();
+                command.CommandText = """
+                    INSERT INTO matches(match_id,room_code,seed,player_0,player_1,deck_0,deck_1,
+                        started_utc,mode_id,season_id)
+                    VALUES('cutover-race','RACE01',1,'a','b','a','b',$started,'ranked',NULL);
+                    """;
+                command.Parameters.AddWithValue("$started", DateTimeOffset.UtcNow.ToString("O"));
+                Assert.Equal(1, await command.ExecuteNonQueryAsync());
+            };
+
+            var activated = false;
+            var readiness = await manager.ExecuteRankedSeasonCutoverAsync(value =>
+            {
+                activated = value.Ready;
+                return value;
+            });
+
+            Assert.False(activated);
+            Assert.Equal(1, readiness.ActiveMatches);
+            Assert.False(readiness.Ready);
+        }
+        finally
+        {
+            if (recorder is not null) await recorder.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            await DeleteTestDirectoryAsync(directory);
+        }
+    }
+
     [Fact]
     public async Task RestartRestoresRankedSeatPromptAndClockBeforeReconnectBoundary()
     {
