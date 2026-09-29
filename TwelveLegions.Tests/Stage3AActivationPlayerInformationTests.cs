@@ -93,6 +93,30 @@ public sealed class Stage3AActivationPlayerInformationTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "battle-info-3a:morale-effect-is-not-cost")]
+    public void MoraleEffectTargetWithoutCostMetadataRemainsAnEffectSelection()
+    {
+        var game = Game();
+        var source = Card("S01-0103", "3a-morale-effect-source", 0);
+        game.State.Players[0].Field[0][0] = source;
+        var activation = Activation(source,
+        [new L12ActivationSelectionStep
+        {
+            Kind = "target-morale", DeclarationKey = "flipTarget",
+            Text = "选择翻转的1张士气", ValidChoices = ["morale-target"],
+            MinChoose = 1, MaxChoose = 1,
+        }]);
+        game.State.PendingActivations.Add(activation);
+
+        Render(game, activation);
+
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Null(prompt.Presentation!.PaymentStatus);
+        Assert.Null(prompt.Presentation.PaymentSummary);
+        Assert.Contains("正在选择效果对象", prompt.Presentation.WaitingSummary);
+    }
+
+    [Fact]
     [Trait("L12Evidence", "battle-info-3a:optional-versus-mandatory")]
     public void OptionalDeclineExplainsThatMandatoryFollowingStepsRemain()
     {
@@ -118,8 +142,8 @@ public sealed class Stage3AActivationPlayerInformationTests
         Render(game, activation);
 
         var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Contains("后续必须完成", prompt.Presentation!.ChoiceConsequences["mode:none"]);
-        Assert.Contains("下一步声明", prompt.Presentation.SubmissionConsequence);
+        Assert.Contains("后续声明按步骤继续", prompt.Presentation!.ChoiceConsequences["mode:none"]);
+        Assert.Contains("继续或结束", prompt.Presentation.SubmissionConsequence);
         Assert.Null(prompt.Presentation.PaymentStatus);
         Assert.DoesNotContain("skip", prompt.ValidChoices);
     }

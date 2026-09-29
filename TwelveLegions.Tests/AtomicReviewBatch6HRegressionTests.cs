@@ -199,6 +199,9 @@ public sealed class AtomicReviewBatch6HRegressionTests
         Resolve(game, "mode:use");
         var cost = Assert.Single(game.State.PendingPrompts);
         Assert.Contains(morale.InstanceId, cost.ValidChoices);
+        Assert.Equal("pending", cost.Presentation!.PaymentStatus);
+        Assert.Contains("士气", cost.Presentation.PaymentSummary);
+        Assert.Contains("正在支付费用", cost.Presentation.WaitingSummary);
         Resolve(game, morale.InstanceId);
 
         Assert.DoesNotContain(morale, player.Morale);

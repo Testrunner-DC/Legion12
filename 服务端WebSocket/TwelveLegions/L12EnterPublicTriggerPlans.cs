@@ -125,9 +125,9 @@ public sealed partial class L12GameEngine
                 allowCancel: allowCancel, selectionConstraint: selectionConstraint));
         }
         void Many(string kind, string key, string text, IEnumerable<string> choices, int min, int max,
-            string? required = null, string? selectionConstraint = null)
+            string? required = null, string? selectionConstraint = null, bool isCostSelection = false)
             => steps.Add(PublicTriggerStep(kind, key, text, choices, min, max, requiredChoice: required,
-                selectionConstraint: selectionConstraint));
+                selectionConstraint: selectionConstraint, isCostSelection: isCostSelection));
         IEnumerable<string> Morale(int count) => player.Morale.Where(card => !card.IsGodPower)
             .Select(card => card.InstanceId);
 
@@ -136,13 +136,15 @@ public sealed partial class L12GameEngine
             case "lubu":
                 if (!CanReturnMorale(player, 2)) break;
                 Optional("吕布：预先声明是否返还2士气发动登场效果");
-                Many("target-morale", "returnCost", "吕布：预先选择返还的2张士气", Morale(2), 2, 2, "mode:use");
+                Many("target-morale", "returnCost", "吕布：预先选择返还的2张士气", Morale(2), 2, 2,
+                    "mode:use", isCostSelection: true);
                 OneEffectOrSkip("enemy-legion", "target", "吕布：预先选择击杀目标",
                     enemy.Where(card => card.DisasterLevel is 1 or 2).Select(card => card.InstanceId), "mode:use"); break;
             case "wuzetian":
                 if (!CanReturnMorale(player, 1)) break;
                 Optional("武则天：预先声明是否返还1士气发动登场效果");
-                One("target-morale", "returnCost", "武则天：预先选择返还的1张士气", Morale(1), "mode:use");
+                One("target-morale", "returnCost", "武则天：预先选择返还的1张士气", Morale(1),
+                    "mode:use", isCostSelection: true);
                 ManyEffectOrSkip("enemy-legion", "targets", "武则天：预先选择1至2张休整军团",
                     enemy.Where(card => card.Tapped).Select(card => card.InstanceId), 0, 2, "mode:use"); break;
             case "lijing":
@@ -151,11 +153,13 @@ public sealed partial class L12GameEngine
             case "mulan":
                 if (!CanReturnMorale(player, 1)) break;
                 Optional("花木兰：预先声明是否返还1士气获得冲锋");
-                One("target-morale", "returnCost", "花木兰：预先选择返还的1张士气", Morale(1), "mode:use"); break;
+                One("target-morale", "returnCost", "花木兰：预先选择返还的1张士气", Morale(1),
+                    "mode:use", isCostSelection: true); break;
             case "mozi":
                 if (!CanReturnMorale(player, 1)) break;
                 Optional("墨子：预先声明是否返还1士气发动登场效果");
-                One("target-morale", "returnCost", "墨子：预先选择返还的1张士气", Morale(1), "mode:use");
+                One("target-morale", "returnCost", "墨子：预先选择返还的1张士气", Morale(1),
+                    "mode:use", isCostSelection: true);
                 ManyEffectOrSkip("field-legion", "targets", "墨子：预先选择1至2张天廷军团",
                     own.Where(card => L12StructuredCardRules.HasFaction(player, card, "tianting"))
                         .Select(card => card.InstanceId), 0, 2, "mode:use"); break;
@@ -165,7 +169,8 @@ public sealed partial class L12GameEngine
             case "sunwu":
                 if (!CanReturnMorale(player, 1)) break;
                 Optional("孙武：预先声明是否返还1士气获得下次战术免费");
-                One("target-morale", "returnCost", "孙武：预先选择返还的1张士气", Morale(1), "mode:use"); break;
+                One("target-morale", "returnCost", "孙武：预先选择返还的1张士气", Morale(1),
+                    "mode:use", isCostSelection: true); break;
             case "thutmose": One("enemy-legion", "target", "图特摩斯三世：预先选择击杀目标",
                 enemy.Where(card => card.Troops <= 5000).Select(card => card.InstanceId)); break;
             case "ramses": Many("field-legion", "targets", "拉美西斯二世：预先选择1至3张其他太阳城军团并确定顺序",
@@ -245,13 +250,14 @@ public sealed partial class L12GameEngine
                 if (player.Hand.Count == 0 || player.Library.Count == 0) break;
                 Optional("万物统御之戒：预先声明是否弃置1张手牌检索");
                 One("hand-card", "discardCost", "万物统御之戒：私密选择弃置的手牌",
-                    player.Hand.Select(card => card.InstanceId), "mode:use"); break;
+                    player.Hand.Select(card => card.InstanceId), "mode:use", isCostSelection: true); break;
             case "arthur":
                 if (player.SpecialZones.Runes < 1) break;
                 Optional(FindKingsSwordOwner(player) is null
                     ? "亚瑟王：预先声明是否消耗1符文发动登场效果"
                     : "场上已存在〈王者之剑〉。若继续发动，仍会消耗1符文，但不会叠放、生成或转移〈王者之剑〉。");
-                One("option", "runeCost", "亚瑟王：预先声明1符文费用", ["rune-count:1"], "mode:use"); break;
+                One("option", "runeCost", "亚瑟王：预先声明1符文费用", ["rune-count:1"],
+                    "mode:use", isCostSelection: true); break;
             case "heracles-promoted-entry": Optional("赫拉克勒斯·晋升：预先声明是否对双方主宰造成非致命伤害"); break;
             case "heracles": Optional("赫拉克勒斯：预先声明是否抽2后弃1"); break;
             case "morale-flip" or "theseus-flip" or "morale-flip-two":
@@ -263,7 +269,7 @@ public sealed partial class L12GameEngine
                 if (player.Hand.Count == 0) break;
                 Optional("圣女贞德：预先声明是否弃置1张手牌发动效果");
                 One("hand-card", "discardCost", "圣女贞德：私密选择弃置的手牌",
-                    player.Hand.Select(card => card.InstanceId), "mode:use"); break;
+                    player.Hand.Select(card => card.InstanceId), "mode:use", isCostSelection: true); break;
             case "robin":
                 if (!EmptySlots(player).Any()) break;
                 Optional("罗宾汉：预先声明是否从私密区域选择侍从骑士登场");
@@ -271,7 +277,8 @@ public sealed partial class L12GameEngine
             case "claudia":
                 if (player.SpecialZones.Runes < 1) break;
                 Optional("克劳迪娅：预先声明是否消耗1符文发动效果");
-                One("option", "runeCost", "克劳迪娅：预先声明1符文费用", ["rune-count:1"], "mode:use");
+                One("option", "runeCost", "克劳迪娅：预先声明1符文费用", ["rune-count:1"],
+                    "mode:use", isCostSelection: true);
                 OneEffectOrSkip("enemy-legion", "target", "克劳迪娅：预先选择兵力-2000目标",
                     enemy.Select(card => card.InstanceId), "mode:use"); break;
             case "richard": Optional("狮心王理查一世：预先声明是否叠放1张侍从骑士"); break;
@@ -295,7 +302,7 @@ public sealed partial class L12GameEngine
                 if (player.Hand.Count == 0) break;
                 Optional("井伊直虎：预先声明是否弃置1张手牌发动效果");
                 One("hand-card", "discardCost", "井伊直虎：私密选择弃置的手牌",
-                    player.Hand.Select(card => card.InstanceId), "mode:use");
+                    player.Hand.Select(card => card.InstanceId), "mode:use", isCostSelection: true);
                 OneEffectOrSkip("field-legion", "target", "井伊直虎：预先选择转为活跃的高天原军团", targets, "mode:use"); break;
             }
             case "imhotep":
@@ -313,7 +320,7 @@ public sealed partial class L12GameEngine
                 if (player.Hand.Count == 0) break;
                 Optional("珀尔修斯：预先声明是否弃牌回收晋升者");
                 One("hand-card", "discardCost", "珀尔修斯：私密选择弃置的手牌",
-                    player.Hand.Select(card => card.InstanceId), "mode:use");
+                    player.Hand.Select(card => card.InstanceId), "mode:use", isCostSelection: true);
                 OneEffectOrSkip("grave-card", "target", "珀尔修斯：预先选择墓地晋升者", targets, "mode:use"); break;
             }
             case "heracles-promotion":
@@ -322,7 +329,7 @@ public sealed partial class L12GameEngine
                 if (hand.Length == 0) break;
                 Optional("赫拉克勒斯·晋升：预先声明是否展示军团并放回牌库顶");
                 One("hand-card", "discardCost", "赫拉克勒斯·晋升：私密选择展示并放回牌库顶的军团",
-                    hand.Select(card => card.InstanceId), "mode:use");
+                    hand.Select(card => card.InstanceId), "mode:use", isCostSelection: true);
                 OneEffectOrSkip("enemy-legion", "target", "赫拉克勒斯·晋升：预先选择击杀目标",
                     enemy.Select(card => card.InstanceId), "mode:use"); break;
             }

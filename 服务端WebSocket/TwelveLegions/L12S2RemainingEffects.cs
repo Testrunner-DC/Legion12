@@ -100,6 +100,7 @@ public sealed partial class L12GameEngine
                     {
                         Kind = "hand-card", DeclarationKey = "discardCost", Text = "阿尔忒弥斯：选择弃置的1张手牌",
                         ValidChoices = player.Hand.Select(card => card.InstanceId).ToList(), RequiredDeclaredChoice = "pay:discard",
+                        IsCostSelection = true,
                     },
                     new L12ActivationSelectionStep
                     {
@@ -125,7 +126,7 @@ public sealed partial class L12GameEngine
                     return CommandResult.Reject("需要手牌、墓地中费用不高于4的【奥林匹斯】军团和空战场位置");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
-                    new L12ActivationSelectionStep { Kind = "hand-card", Text = "希波吕忒：选择弃置1张手牌", ValidChoices = player.Hand.Select(card => card.InstanceId).ToList() },
+                    new L12ActivationSelectionStep { Kind = "hand-card", Text = "希波吕忒：选择弃置1张手牌", ValidChoices = player.Hand.Select(card => card.InstanceId).ToList(), IsCostSelection = true },
                     new L12ActivationSelectionStep { Kind = "grave-card", Text = "选择墓地1张费用不高于4的【奥林匹斯】军团", ValidChoices = grave },
                     new L12ActivationSelectionStep { Kind = "slot", Text = "选择该军团活跃登场的位置", ValidChoices = EmptySlots(player).ToList() },
                 ]);

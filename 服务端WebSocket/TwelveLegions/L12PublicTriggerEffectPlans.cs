@@ -472,7 +472,7 @@ public sealed partial class L12GameEngine
                 PublicTriggerStep("option", "mode", "吕布：预先声明是否返还4张士气并转为活跃",
                     ["mode:none", "mode:use"]),
                 PublicTriggerStep("target-morale", "returnCost", "吕布：预先选择返还的4张士气",
-                    player.Morale.Select(card => card.InstanceId), min: 4, max: 4, requiredChoice: "mode:use"),
+                    player.Morale.Select(card => card.InstanceId), min: 4, max: 4, requiredChoice: "mode:use", isCostSelection: true),
             ];
         }
         else if (batch6JBPlan == "mulan-lock-morale")
@@ -513,7 +513,7 @@ public sealed partial class L12GameEngine
                     ["mode:none", "mode:use"]),
                 PublicTriggerStep("composite-ordinary-payment", "cost", "祷告仪式：预先选择消耗的1份资源",
                     CompositeOrdinaryPaymentChoices(player), requiredChoice: "mode:use",
-                    autoSelectEquivalentOrdinaryMorale: true),
+                    autoSelectEquivalentOrdinaryMorale: true, isCostSelection: true),
             ];
         }
         else if (batch6IBPlan is "teach-draw-cycle" or "ragnar-draw-cycle" or "olaf-draw-cycle"
@@ -549,7 +549,7 @@ public sealed partial class L12GameEngine
             [
                 PublicTriggerStep("option", "mode", "荆轲：预先声明是否返还1士气发动阵亡效果", ["mode:none", "mode:use"]),
                 PublicTriggerStep("target-morale", "returnCost", "荆轲：预先选择返还的1张士气",
-                    player.Morale.Select(card => card.InstanceId), requiredChoice: "mode:use"),
+                    player.Morale.Select(card => card.InstanceId), requiredChoice: "mode:use", isCostSelection: true),
                 PublicTriggerStep("field-legion", "killTarget", "荆轲：预先选择对方最多1张兵力不高于2000的军团",
                     PublicLegions(opponent).Where(card => card.Troops <= 2000).Select(card => card.InstanceId),
                     min: 0, max: 1, requiredChoice: "mode:use"),
@@ -778,7 +778,7 @@ public sealed partial class L12GameEngine
                         canUse ? ["mode:none", "mode:use"] : ["mode:none"]),
                     PublicTriggerStep("composite-ordinary-payment", "cost", "月读：预先选择消耗的1份公开资源",
                         CompositeOrdinaryPaymentChoices(player), requiredChoice: "mode:use",
-                        autoSelectEquivalentOrdinaryMorale: true),
+                        autoSelectEquivalentOrdinaryMorale: true, isCostSelection: true),
                     PublicTriggerStep("field-legion", "target", "月读：预先选择双方战场另一张军团进行1格位移",
                         targets, requiredChoice: "mode:use"),
                     PublicTriggerStep("adjacent-slot", "slot", "月读：预先选择该军团位移后的相邻空位",
@@ -862,7 +862,7 @@ public sealed partial class L12GameEngine
                     PublicTriggerStep("option", "mode", "刘备：预先声明是否返还1士气并使关羽或张飞活跃登场",
                         canUse ? ["mode:none", "mode:use"] : ["mode:none"]),
                     PublicTriggerStep("target-morale", "returnCost", "刘备：预先选择返还的1张士气",
-                        player.Morale.Select(card => card.InstanceId), requiredChoice: "mode:use"),
+                        player.Morale.Select(card => card.InstanceId), requiredChoice: "mode:use", isCostSelection: true),
                 ];
                 if (brothers.Count > 0 && EmptySlots(player).Any())
                 {

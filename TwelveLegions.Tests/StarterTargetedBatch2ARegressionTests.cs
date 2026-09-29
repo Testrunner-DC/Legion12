@@ -154,6 +154,31 @@ public sealed class StarterTargetedBatch2ARegressionTests
     }
 
     [Fact]
+    public void XiaoHeDecliningOptionalTriggerEndsDeclarationWithoutPayingOrStacking()
+    {
+        var game = Create(201011);
+        var player = game.State.Players[0];
+        var xiaoHe = Card("ST01-03", "xiaohe-decline");
+        var morale = new L12MoraleCard { CardId = "S01-01C1", InstanceId = "xiaohe-decline-morale" };
+        player.Field[0][0] = xiaoHe;
+        player.Hand.Add(Card("S01-0104", "xiaohe-decline-hanxin"));
+        player.Morale.Add(morale);
+
+        Queue(game, xiaoHe);
+        var prompt = Prompt(game);
+        Assert.Contains("本次声明到此结束", prompt.Presentation!.ChoiceConsequences["mode:none"]);
+        Assert.DoesNotContain("进入下一步", prompt.Presentation.SubmissionConsequence);
+        Choose(game, "mode:none");
+
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Contains(morale, player.Morale);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "cost"
+            && entry.Text.Contains("萧何", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void KhufuDiscardsGuardBeforeStackAndHasSummonTurnCounterProtection()
     {
         var game = Create(20102);

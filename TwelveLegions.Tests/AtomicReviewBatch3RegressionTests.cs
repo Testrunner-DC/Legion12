@@ -488,9 +488,13 @@ public sealed class AtomicReviewBatch3RegressionTests
         Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "amaterasuReady")).Accepted);
         var prompt = Assert.Single(game.State.PendingPrompts);
         Assert.Contains(discard.InstanceId, prompt.ValidChoices);
+        Assert.Equal("pending", prompt.Presentation!.PaymentStatus);
+        Assert.Contains("正在支付费用", prompt.Presentation.WaitingSummary);
         Assert.All(player.Morale, morale => Assert.True(morale.Tapped));
         ResolveSinglePrompt(game, discard.InstanceId);
         var moralePrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending", moralePrompt.Presentation!.PaymentStatus);
+        Assert.Contains("正在选择效果对象", moralePrompt.Presentation.WaitingSummary);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: moralePrompt.PromptId,
             CardInstanceIds: [.. player.Morale.Select(morale => morale.InstanceId)])).Accepted);
 

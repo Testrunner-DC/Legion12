@@ -1241,6 +1241,7 @@ public sealed partial class L12GameEngine
                 new L12ActivationSelectionStep
                 {
                     Kind = "hand-card", Text = "黄金圣甲虫：选择弃置的1张手牌", ValidChoices = player.Hand.Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 1,
+                    IsCostSelection = true,
                 },
                 new L12ActivationSelectionStep
                 {
@@ -1336,7 +1337,7 @@ public sealed partial class L12GameEngine
             if (grave.Length == 0) return CommandResult.Reject("墓地没有只有【彼界】特征的卡牌");
             return BeginPendingActivationSequence(playerIndex, source, ability,
             [
-                new L12ActivationSelectionStep { Kind = "hand-card", Text = "选择弃置的1张手牌", ValidChoices = player.Hand.Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 1 },
+                new L12ActivationSelectionStep { Kind = "hand-card", Text = "选择弃置的1张手牌", ValidChoices = player.Hand.Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 1, IsCostSelection = true },
                 new L12ActivationSelectionStep { Kind = "grave-card", Text = "选择墓地1张只有【彼界】特征的卡牌加入手牌", ValidChoices = grave.ToList(), MinChoose = 1, MaxChoose = 1 },
             ]);
         }

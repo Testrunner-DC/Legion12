@@ -735,6 +735,7 @@ public sealed partial class L12GameEngine
                     {
                         Kind = "card", Text = "安卡神碑：选择弃置的1张手牌",
                         ValidChoices = player.Hand.Select(card => card.InstanceId).ToList(),
+                        IsCostSelection = true,
                     },
                 ]);
             case "gramDamage":

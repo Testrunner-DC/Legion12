@@ -69,7 +69,7 @@ public sealed partial class L12GameEngine
                     return CommandResult.Reject("士气需少于对方，且需弃置1张手牌");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [PublicActiveStep("hand-card", "discardCost", "孟婆：预先选择弃置的1张手牌",
-                    player.Hand.Select(card => card.InstanceId))]);
+                    player.Hand.Select(card => card.InstanceId), isCostSelection: true)]);
             }
             case ("S01-04M1", "amaterasuReady"):
             {
@@ -77,7 +77,7 @@ public sealed partial class L12GameEngine
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
                     PublicActiveStep("hand-card", "discardCost", "天照大神：预先选择弃置的1张手牌",
-                        player.Hand.Select(card => card.InstanceId)),
+                        player.Hand.Select(card => card.InstanceId), isCostSelection: true),
                     PublicActiveStep("target-morale", "moraleTargets", "天照大神：预先选择转为活跃的最多2张休整士气",
                         player.Morale.Where(card => card.Tapped).Select(card => card.InstanceId), min: 0, max: 2),
                 ]);

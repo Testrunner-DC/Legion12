@@ -144,7 +144,8 @@ public sealed partial class L12GameEngine
             {
                 case "return-morale":
                     steps.Add(PublicTriggerStep("target-morale", "cost", $"{source.Name}：预先选择返还的1张士气",
-                        player.Morale.Select(card => card.InstanceId), requiredChoice: required));
+                        player.Morale.Select(card => card.InstanceId), requiredChoice: required,
+                        isCostSelection: true));
                     break;
                 case "discard-own-legion":
                     steps.Add(PublicTriggerStep("field-legion", "cost", "美尼斯：预先选择作为费用弃置的我方1张军团",
@@ -154,12 +155,12 @@ public sealed partial class L12GameEngine
                 case "ordinary-morale":
                     steps.Add(PublicTriggerStep("composite-ordinary-payment", "cost", $"{source.Name}：预先选择消耗的1份公开资源",
                         CompositeOrdinaryPaymentChoices(player), requiredChoice: required,
-                        autoSelectEquivalentOrdinaryMorale: true));
+                        autoSelectEquivalentOrdinaryMorale: true, isCostSelection: true));
                     break;
                 case "grave-bottom-one":
                     steps.Add(PublicTriggerStep("grave-card", "cost", "奥拉夫二世：预先选择置于牌库底部的墓地1张牌",
                         player.Graveyard.Where(CanEnterHandOrLibrary).Select(card => card.InstanceId),
-                        requiredChoice: required));
+                        requiredChoice: required, isCostSelection: true));
                     break;
                 case "grave-bottom-two":
                     steps.Add(GraveCostSelectionStep(player,
@@ -169,23 +170,25 @@ public sealed partial class L12GameEngine
                     break;
                 case "show-hand-tactic":
                     steps.Add(PublicTriggerStep("hand-card", "cost", "奥德修斯：预先选择并展示手牌中的1张战术",
-                        player.Hand.Where(card => card.CardType == "tactic").Select(card => card.InstanceId), requiredChoice: required));
+                        player.Hand.Where(card => card.CardType == "tactic").Select(card => card.InstanceId),
+                        requiredChoice: required, isCostSelection: true));
                     break;
                 case "god-power":
                     steps.Add(PublicTriggerStep("target-morale", "cost", $"{source.Name}：预先选择消耗并翻转的1神力",
                         player.Morale.Where(card => card.IsGodPower && !card.Tapped).Select(card => card.InstanceId),
-                        requiredChoice: required));
+                        requiredChoice: required, isCostSelection: true));
                     break;
                 case "discard-hand":
                     steps.Add(PublicTriggerStep("hand-card", "cost", "帕西瓦尔：预先选择弃置的1张手牌",
-                        player.Hand.Select(card => card.InstanceId), requiredChoice: required));
+                        player.Hand.Select(card => card.InstanceId), requiredChoice: required,
+                        isCostSelection: true));
                     break;
                 case "rune-count":
                 {
                     var choices = Enumerable.Range(1, player.SpecialZones.Runes)
                         .Select(count => $"rune-count:{count}").ToList();
                     var runeStep = PublicTriggerStep("option", "runeCount", "高文：预先声明本次效果要消耗的符文数量",
-                        choices);
+                        choices, isCostSelection: true);
                     foreach (var choice in choices)
                         runeStep.ChoiceLabels[choice] = $"消耗{choice["rune-count:".Length..]}符文";
                     steps.Add(runeStep);

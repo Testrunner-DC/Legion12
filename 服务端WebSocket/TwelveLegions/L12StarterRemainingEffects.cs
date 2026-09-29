@@ -38,7 +38,7 @@ public sealed partial class L12GameEngine
                 return BeginPendingActivationSequence(controller, source, ability,
                 [
                     new L12ActivationSelectionStep { Kind = "option", DeclarationKey = "mode", Text = "光之剑：选择1项效果", ValidChoices = targets.Count > 0 ? ["mode:buff", "mode:rune"] : ["mode:rune"], MinChoose = 1, MaxChoose = 1, ChoiceLabels = new() { ["mode:buff"] = "主动休整 弃置1张手牌：选择我方前排1张【彼界】军团，本回合兵力+2000。", ["mode:rune"] = "主动休整 弃置1张手牌：获得1符文。" } },
-                    new L12ActivationSelectionStep { Kind = "hand-card", DeclarationKey = "discardCost", Text = "光之剑：选择弃置的1张手牌", ValidChoices = player.Hand.Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 1 },
+                    new L12ActivationSelectionStep { Kind = "hand-card", DeclarationKey = "discardCost", Text = "光之剑：选择弃置的1张手牌", ValidChoices = player.Hand.Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 1, IsCostSelection = true },
                     new L12ActivationSelectionStep { Kind = "field-legion", DeclarationKey = "buffTarget", Text = "光之剑：选择本回合兵力+2000的我方前排【彼界】军团", ValidChoices = targets, MinChoose = 1, MaxChoose = 1, RequiredDeclaredChoice = "mode:buff", IsResponsePresentationTarget = true },
                 ]);
             }
@@ -99,6 +99,7 @@ public sealed partial class L12GameEngine
                         Text = "荷鲁斯：选择弃置的2张〈陵墓守卫〉（X/2）",
                         ValidChoices = tombGuards, MinChoose = 2, MaxChoose = 2,
                         RequiredDeclaredChoice = "mode:tomb-guards",
+                        IsCostSelection = true,
                     },
                     new L12ActivationSelectionStep
                     {
@@ -107,6 +108,7 @@ public sealed partial class L12GameEngine
                         ValidChoices = resources, MinChoose = paymentCost, MaxChoose = paymentCost,
                         RequiredDeclaredChoice = "mode:morale-legions",
                         AutoSelectEquivalentOrdinaryMorale = true,
+                        IsCostSelection = true,
                     },
                     new L12ActivationSelectionStep
                     {
@@ -114,6 +116,7 @@ public sealed partial class L12GameEngine
                         Text = "荷鲁斯：支付费用——弃置我方战场2张军团（X/2）",
                         ValidChoices = field, MinChoose = 2, MaxChoose = 2,
                         RequiredDeclaredChoice = "mode:morale-legions",
+                        IsCostSelection = true,
                     },
                     new L12ActivationSelectionStep
                     {
@@ -149,7 +152,7 @@ public sealed partial class L12GameEngine
                     return CommandResult.Reject("需要1张手牌和1张士气");
                 return BeginPendingActivationSequence(controller, source, ability,
                 [
-                    new L12ActivationSelectionStep { Kind = "hand-card", DeclarationKey = "discardCost", Text = "雅典娜：选择弃置的1张手牌", ValidChoices = player.Hand.Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 1 },
+                    new L12ActivationSelectionStep { Kind = "hand-card", DeclarationKey = "discardCost", Text = "雅典娜：选择弃置的1张手牌", ValidChoices = player.Hand.Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 1, IsCostSelection = true },
                     new L12ActivationSelectionStep { Kind = "target-morale", DeclarationKey = "flipTarget", Text = "雅典娜：选择翻转的1张士气", ValidChoices = player.Morale.Where(CanToggleMoraleFace).Select(card => card.InstanceId).ToList(), MinChoose = 1, MaxChoose = 1 },
                     new L12ActivationSelectionStep { Kind = "field-legion", DeclarationKey = "buffTargets", Text = "雅典娜：选择我方前排最多2张奥林匹斯军团", ValidChoices = player.Field[0].Where(card => card is not null && IsFieldLegion(card) && L12StructuredCardRules.HasFaction(player, card, "olympus")).Select(card => card!.InstanceId).ToList(), MinChoose = 0, MaxChoose = 2, IsResponsePresentationTarget = true },
                 ]);
@@ -606,7 +609,7 @@ public sealed partial class L12GameEngine
                 };
                 steps.Add(StarterStep("option", "mode", effectText, OptionalModes(canUse)));
                 steps.Add(StarterStep("target-morale", "returnCost", $"{source.Name}：选择返还的1张士气",
-                    player.Morale.Select(card => card.InstanceId), requiredChoice: "mode:use"));
+                    player.Morale.Select(card => card.InstanceId), requiredChoice: "mode:use", isCostSelection: true));
                 if (onceKey is not null) candidate.Data["onceKey"] = onceKey;
                 break;
             }
@@ -625,7 +628,7 @@ public sealed partial class L12GameEngine
                     "暗度陈仓：是否返还1张士气，从我方手牌中将1张费用不高于4的【天廷】军团活跃登场？",
                     OptionalModes(canUse)));
                 steps.Add(StarterStep("target-morale", "returnCost", "暗度陈仓：选择返还的1张士气",
-                    player.Morale.Select(card => card.InstanceId), requiredChoice: "mode:use"));
+                    player.Morale.Select(card => card.InstanceId), requiredChoice: "mode:use", isCostSelection: true));
                 steps.Add(StarterStep("hand-card", "entryCard",
                     "暗度陈仓：选择手牌中1张费用不高于4的【天廷】军团",
                     entries, requiredChoice: "mode:use"));
@@ -696,9 +699,10 @@ public sealed partial class L12GameEngine
                     AutoSelectWhenExact = resources.Count == moraleCost,
                     AutoSelectEquivalentOrdinaryMorale = true,
                     CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed,
+                    IsCostSelection = true,
                 });
                 steps.Add(StarterStep("hand-card", "discardCost", "迦具土：选择弃置的1张手牌",
-                    player.Hand.Select(card => card.InstanceId), requiredChoice: "mode:discard"));
+                    player.Hand.Select(card => card.InstanceId), requiredChoice: "mode:discard", isCostSelection: true));
                 break;
             }
             case "gareth-kill-ready":
@@ -742,7 +746,7 @@ public sealed partial class L12GameEngine
                     "阿肯那顿：是否弃置1张手牌，使我方主宰增加1点血量？",
                     OptionalModes(player.Hand.Count > 0)));
                 steps.Add(StarterStep("hand-card", "discardCost", "阿肯那顿：选择弃置的1张手牌",
-                    player.Hand.Select(card => card.InstanceId), requiredChoice: "mode:use"));
+                    player.Hand.Select(card => card.InstanceId), requiredChoice: "mode:use", isCostSelection: true));
                 break;
             }
             case "light-sword-enter-kill":
@@ -1066,6 +1070,7 @@ public sealed partial class L12GameEngine
                 ValidChoices = State.Players[controller].Hand.Select(card => card.InstanceId).ToList(),
                 MinChoose = 1,
                 MaxChoose = 1,
+                IsCostSelection = true,
                 ChoiceLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["attack-target-type"] = target.Type,

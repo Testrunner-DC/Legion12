@@ -12,18 +12,19 @@ public sealed partial class L12GameEngine
         int required, string faction = "", bool legionOnly = false,
         string? requiredDeclaredChoice = null)
         => GraveExactCountSelectionStep(owner, text, declarationKey, candidates, required, faction,
-            legionOnly, requiredDeclaredChoice);
+            legionOnly, requiredDeclaredChoice, isCostSelection: true);
 
     private static L12ActivationSelectionStep GraveEffectSelectionStep(L12PlayerState owner,
         string text, string declarationKey, IReadOnlyCollection<L12CardInstance> candidates,
         int required, string faction = "", bool legionOnly = false,
         string? requiredDeclaredChoice = null)
         => GraveExactCountSelectionStep(owner, text, declarationKey, candidates, required, faction,
-            legionOnly, requiredDeclaredChoice);
+            legionOnly, requiredDeclaredChoice, isCostSelection: false);
 
     private static L12ActivationSelectionStep GraveExactCountSelectionStep(L12PlayerState owner,
         string text, string declarationKey, IReadOnlyCollection<L12CardInstance> candidates,
-        int required, string faction, bool legionOnly, string? requiredDeclaredChoice)
+        int required, string faction, bool legionOnly, string? requiredDeclaredChoice,
+        bool isCostSelection)
         => new()
         {
             Kind = "order",
@@ -34,6 +35,7 @@ public sealed partial class L12GameEngine
                 required, legionOnly),
             MaxChoose = required,
             RequiredDeclaredChoice = requiredDeclaredChoice,
+            IsCostSelection = isCostSelection,
             SelectionConstraint = "grave-faction-exact",
             FactionConstraint = faction,
             RepresentedCount = required,
@@ -236,6 +238,7 @@ public sealed partial class L12GameEngine
                 MaxChoose = 1,
                 AutoSelectEquivalentOrdinaryMorale = true,
                 CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed,
+                IsCostSelection = true,
                 DeclarationKey = "prideMasterSurcharge",
                 ReferenceDeclarationKey = modeStep is null ? null : "mode",
                 SkipWhenReferenceIsNone = modeStep is not null,
@@ -998,12 +1001,21 @@ public sealed partial class L12GameEngine
         var consequences = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (hasCancellationChoice)
             consequences["skip"] = "取消本次发动声明；未提交的选择不再继续。";
-        if (step.Kind == "option" && validChoices.Contains("mode:none", StringComparer.OrdinalIgnoreCase)
-            && step.CancellationPolicy == L12ActivationCancellationPolicy.NotAllowed)
-            consequences["mode:none"] = "不执行本次可选段；后续必须完成的步骤仍按流程处理。";
-        var submission = activation.CurrentStep + 1 < activation.SelectionSteps.Count
-            ? "进入下一步声明；本次效果尚未结算。"
-            : "提交本次声明；费用、对象和效果结果仍由权威结算确定。";
+        if (step.Kind == "option" && validChoices.Contains("mode:none", StringComparer.OrdinalIgnoreCase))
+        {
+            var continuation = ModeNoneContinuation(activation, step);
+            consequences["mode:none"] = continuation switch
+            {
+                true => "不执行本次可选段；后续声明按步骤继续。",
+                false => "不发动本次可选效果；本次声明到此结束。",
+                null => "不执行本次可选段；后续步骤按已声明条件处理。",
+            };
+        }
+        var submission = step.Kind == "option" && validChoices.Contains("mode:none", StringComparer.OrdinalIgnoreCase)
+            ? "按所选方式继续或结束本次声明；实际结果以权威处理为准。"
+            : activation.CurrentStep + 1 < activation.SelectionSteps.Count
+                ? "确认本步选择并继续处理声明；本次效果尚未结算。"
+                : "提交本次声明；费用、对象和效果结果仍由权威结算确定。";
         WithPromptNarrative(promptData, new(sourceName,
             promptData.GetValueOrDefault("effectText") ?? step.Text,
             instruction,
@@ -1014,6 +1026,30 @@ public sealed partial class L12GameEngine
             pendingCost is null ? null : "pending",
             pendingCost is null ? null : pendingCost.Text,
             submission));
+    }
+
+    private static bool? ModeNoneContinuation(L12PendingActivation activation,
+        L12ActivationSelectionStep current)
+    {
+        var uncertain = false;
+        foreach (var next in activation.SelectionSteps.Skip(activation.CurrentStep + 1))
+        {
+            if (next.RequiredDeclaredChoice is { } required
+                && !required.Equals("mode:none", StringComparison.OrdinalIgnoreCase)
+                && !activation.DeclaredTargets.Contains(required, StringComparer.OrdinalIgnoreCase))
+                continue;
+            if (next.SkipWhenReferenceIsNone
+                && next.ReferenceDeclarationKey == current.DeclarationKey)
+                continue;
+            if (next.MinimumReferenceCount > 0 || next.MinimumReferenceNumericValue > 0
+                || next.SkipWhenPreviousStepEmpty || next.SkipWhenReferenceIsNone)
+            {
+                uncertain = true;
+                continue;
+            }
+            return true;
+        }
+        return uncertain ? null : false;
     }
 
     private static bool ShouldAddActivationCancellationChoice(L12ActivationSelectionStep step)

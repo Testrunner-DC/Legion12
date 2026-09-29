@@ -32,11 +32,28 @@
 
 共享出口只补操作前信息：`L12RuleKernelIntegration.cs` 给普通主动／触发声明加阶段、待付费用、取消及提交后果；`L12MoralePayments.cs` 给通用资源支付提示加待付状态。已有结算状态和事件投影继续负责结果，未在本批制造新的结算推断。桌面 Prompt 的最小化按钮移到标题左侧，避开保留在右上角的“返回大厅／投降”控件；移动布局保持原位置。
 
+## 费用选择元数据补审
+
+[直接构造点清单](l12/BATTLE-PLAYER-INFORMATION-STAGE-3A-DIRECT-STEP-AUDIT-20260929.tsv)逐一定位 `L12ActivationSelectionStep` 的 77 个显式 `new` 构造点，列出类型、声明键、显式费用标记及审阅线索。线索列只用于人工定位，不把卡文、中文提示或 `DeclarationKey` 当作费用判据；费用归类以对应执行路径的支付事实为准。共用工厂返回的 `new()` 由下表单独核对，不混入 77 处直接构造点的数量。清单包含后续 3B／3C 的构造点，列出位置不表示本阶段验收了其结算语义。
+
+| 共用构造路径 | 本阶段费用元数据审计 | 同类型效果对象的反证 |
+| --- | --- | --- |
+| `L12AttackPublicTriggerPlans`、`L12EnterPublicTriggerPlans` | 士气返还、神力、弃牌、墓地返牌、军团弃置等预付步骤均显式传 `isCostSelection`。 | `L12EnterPublicTriggerPlans` 的士气翻转目标保留非费用。 |
+| `L12PublicTriggerEffectPlans` | 吕布、荆轲、刘备返还士气与祷告仪式、月读资源支付显式标为费用；共用 `GraveCostSelectionStep` 标为费用，`GraveEffectSelectionStep` 保留非费用。 | 花木兰等士气效果目标未标为费用。 |
+| `L12PublicActiveEffectPlans`、`L12StarterTargetedEffectPlans`、`L12StarterRemainingEffects` | 伊西斯、孟婆、天照、萧何、荷鲁斯等弃牌／返还／资源成本显式标记；雅典娜、光之剑及色欲之罪的弃牌步骤也标记。 | 天照后续转活跃士气、雅典娜翻转士气、银臂努阿达转活跃士气保持效果对象。 |
+| `L12S1FactionEffects`、`L12S2FactionEffects`、`L12S2RemainingEffects`、`L12RuleKernelIntegration` | 安卡神碑、黄金圣甲虫、阿尔忒弥斯、希波吕忒等弃牌及孙悟空返还、傲慢之罪附加费用依权威路径标记。 | 梅杰德、阿尔忒弥斯的后续效果目标不因同一声明中含费用而被标记。 |
+
+完整的 3A `target-morale` 共用构造调用分组：13 处费用选择（进攻 2、登场 5、其他公开触发 3、余下初始卡 2、萧何 1）与 10 处效果目标（登场 1、其他公开触发 4、公开主动 1、余下初始卡 2、初始定向 1、通用触发 1）。后续多段复合构造里的 `target-morale` 留给 3C；独立响应构造留给 3B。分类据执行路径和显式元数据核验，同名 `Kind` 不能决定费用。真实卡流程回归覆盖萧何选择 `mode:none` 后声明结束、韩信士气费用待付、天照弃牌费用待付且后续士气效果目标仍是对象选择；合成边界测试覆盖同类型无费用标记时不得出现待付。
+
+选 `mode:none` 的通用提交提示保持中性，再根据后续声明条件说明“不发动本次可选效果，本次声明到此结束”或“后续声明按步骤继续”。它不再把萧何的整个可选触发错误写成进入下一步；复杂条件无法确定时说明按已声明条件处理，不推断结算结果。
+
 具名回归见 `Stage3AActivationPlayerInformationTests` 与 `PromptNarrativeMatrixTests.NonHomogeneousPaymentAndReturnExplainAmountsResourcesAndCancelConsequences`。浏览器脚本 `verify-battle-player-information-stage3a.mjs` 以服务端同型字段验证“待支付”、提交/取消后果、同名卡格位、最小化及七档视口；截图在 `artifacts/battle-player-information-stage3a/`，重点是 `1280x720-pending.png`、`568x320-payment.png`、`320x568-pending.png` 和各档 `*-minimized.png`。这套夹具验证客户端消费权威字段与操作可达性，不冒充 324 张卡的逐卡实战回放。
 
 已有真实结算回归由完整规则集一并复跑，例如 `AtomicReviewBatch3RegressionTests.ActiveReturnAndRestCostsUseTheCommittedStateReceipt`、`HelaRejectsBeforeBasePaymentWhenItsColonCostCannotBePaid`、`ArtemisActiveLifecycleTests.PaymentSelectionCanBeCancelledBeforeDiscardingOrUsingTheAbility` 与 `AnkhSteleActiveLifecycleTests.ReadyModeRevalidatesItsTargetAfterResponseAndKeepsPaidCostsOnFailure`。这些测试验证费用成功／失败和对象失效的现有权威边界；本批没有改其结算或事件内容。
 
 验证回执：Focused 规则 5802/5802、UI 合同 352 项通过；Batch 规则 5802/5802、UI 合同 352 项、卡图 42 项／324 张、Vue 类型检查、正式与测试前端各 464 模块通过。七档 3A 浏览器脚本及七档 Stage2 Prompt 复测均通过。第一次 Batch 因隔离缓存缺少 NuGet 包且联网受限，在测试还原前报 `NU1301`；复制本机已有包到本批缓存、禁用联网漏洞元数据查询后，完整 Batch 退出码 0。没有推送或部署。
+
+补审回执：真实卡与同类型效果反证的专项回归 123/123；补审 Batch 的架构、卡池与完整规则 5804/5804 全部通过，原样日志见 `artifacts/battle-player-information-stage3a/supplemental-batch.log`。后端补修后重跑七档 3A 浏览器视口检查 7/7，通过；本轮未修改前端组件，补审 Batch 因此只执行其后端及通用门禁。补审只形成待 Main 验收的本地候选，未推送或部署。
 
 ## 当前未覆盖边界
 
