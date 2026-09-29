@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-29-battle-effect-result-details",
+  "date": "2026-09-29",
+  "audience": "players",
+  "title": "对战效果结果与明细显示优化",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "对局记录中的多段效果现在会汇总每一段的实际结果，并可展开查看失败或跳过原因、已经支付的费用和实际处理的公开目标；部分完成不会再显示成整项跳过，旧回放与隐藏信息的可见范围保持不变。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/BattleEventLog.vue",
+        "opcgpro-vue/src/l12/game/logViewModel.ts",
+        "服务端WebSocket/TwelveLegions/L12CompositeEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.EffectPresentations.cs",
+        "服务端WebSocket/TwelveLegions/L12PaidCostPresentation.cs",
+        "服务端WebSocket/TwelveLegions/L12S2UniversalEffects.cs"
+      ]
+    }
+  ]
+}
