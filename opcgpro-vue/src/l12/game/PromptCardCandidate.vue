@@ -52,6 +52,8 @@ const stateLabel = computed(() => [
 const accessibleLabel = computed(() => [
   props.name,
   props.meta,
+  props.selectionOrder ? `本组相对顺序第 ${props.selectionOrder} 张` : '',
+  props.badge,
   stateLabel.value,
   props.unavailable ? props.unavailableReason : '',
   props.consequence,
@@ -101,6 +103,7 @@ const accessibleLabel = computed(() => [
 .prompt-card-candidate.size-compact{flex-basis:80px;width:80px;min-width:80px;height:172px;min-height:172px;max-height:172px;padding:3px;border-width:1px}.prompt-card-candidate.size-compact .l12-card-image{width:70px;height:98px}.prompt-card-candidate.size-compact .prompt-card-candidate__name{height:24px;min-height:24px;font-size:var(--l12-board-copy,13px);line-height:12px}.prompt-card-candidate.size-compact.horizontal{flex-basis:80px;width:80px;min-width:80px}.prompt-card-candidate.size-compact.horizontal .l12-card-image{width:70px;height:98px;aspect-ratio:auto;object-fit:contain}
 .prompt-card-candidate.size-featured{flex-basis:min(616px,calc(100vw - 100px));width:min(616px,calc(100vw - 100px));max-width:616px;height:auto;min-height:0;max-height:none;overflow:visible}.prompt-card-candidate.size-featured .l12-card-image{width:min(588px,calc(100vw - 140px));height:min(368px,48vh)}.prompt-card-candidate.size-featured.horizontal .l12-card-image{width:min(588px,calc(100vw - 140px));height:auto;max-height:48vh;aspect-ratio:8/5}
 .prompt-card-candidate__order{position:absolute;right:3px;top:3px;display:grid;min-width:20px;height:20px;padding:0 4px;place-items:center;border-radius:50%;background:#70d7df;color:#071012;font-size:var(--l12-board-copy,13px)}
+.prompt-card-candidate:has(.prompt-card-candidate__remove) .prompt-card-candidate__order{left:3px;right:auto}
 .prompt-card-candidate__badge{position:absolute;left:3px;top:3px;padding:3px 6px;border:1px solid #f2d56d;background:rgba(20,14,2,.96);color:#ffe78d;font-size:var(--l12-board-copy,13px);line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.65)}
 .prompt-card-candidate__meta.empty,.prompt-card-candidate__state.empty{visibility:hidden}.prompt-card-candidate__state{display:block;box-sizing:border-box;min-height:1.45em;max-width:100%;margin:0;padding:2px 4px;border:1px solid #70d7df;background:#0b3034;color:#d8ffff;font-size:var(--l12-board-micro,9px);font-style:normal;font-weight:900;line-height:1.2;text-align:center;overflow-wrap:anywhere}.prompt-card-candidate.unavailable .prompt-card-candidate__state{border-color:#b95f68;background:#411d23;color:#ffe0e3}.prompt-card-candidate.selected.unavailable .prompt-card-candidate__state{border-color:#e4bd58;background:#443711;color:#fff1b5}
 .prompt-card-candidate__remove{position:absolute;right:2px;top:2px;padding:2px 4px;border:0;background:#8c2931;color:#fff;font-size:var(--l12-board-copy,13px);font-style:normal}

@@ -30,9 +30,9 @@ public sealed partial class L12GameEngine
         foreach (var id in ids) AddPromptCardData(data, player.Library.First(card => card.InstanceId == id));
         var instruction = placementMode switch
         {
-            "split-top-bottom" => "请排列这些牌，并分别确认要放回牌库顶部和底部的顺序。",
-            "all-top-bottom" => "请排列这些牌，再确认将全部牌放回牌库顶部或底部。",
-            "all-bottom" => "请排列这些牌；确认后将按当前顺序放回牌库底部。",
+            "split-top-bottom" => "请分别排列牌库顶部和底部的牌。每组从左到右是之后抽到的先后顺序；底部组要等其他牌抽完后才抽到。",
+            "all-top-bottom" => "请从左到右排列最终相对牌序，再决定全部放回牌库顶部或底部；左侧的牌先抽到。",
+            "all-bottom" => "请从左到右排列这些牌；其他牌抽完后，左侧的牌先从牌库底部抽到。",
             _ => "请按效果要求排列这些牌并确认放回位置。",
         };
         CreatePrompt(item.Controller, "order", text, ids, ids.Length, ids.Length,

@@ -131,8 +131,9 @@ public sealed class PromptNarrativeMatrixTests
     }
 
     [Theory]
-    [InlineData("split-top-bottom", "分别确认要放回牌库顶部和底部")]
-    [InlineData("all-bottom", "放回牌库底部")]
+    [InlineData("split-top-bottom", "每组从左到右是之后抽到的先后顺序")]
+    [InlineData("all-top-bottom", "左侧的牌先抽到")]
+    [InlineData("all-bottom", "其他牌抽完后，左侧的牌先")]
     [Trait("L12Evidence", "prompt-narrative:library-placement")]
     public void LibraryPlacementExplainsThePrivateCardsAndRequestedDestination(string placementMode,
         string expectedInstruction)

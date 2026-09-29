@@ -169,6 +169,26 @@ if(params.has('information-contract')){
   },
  }]
 }
+if(params.has('order-direction-fixture')){
+ const mode=params.get('order-direction-fixture')
+ const names=['甲号测试卡','乙号测试卡','丙号测试卡']
+ l12State.game.phase='Main';l12State.game.activePlayer=0
+ if(mode==='trigger-order'){
+  const choices=names.map((_,index)=>'fixture-trigger-'+index)
+  l12State.game.prompts=[{promptId:'fixture-trigger-direction',playerIndex:0,kind:'trigger-order',
+   text:'同一时点有多个效果触发，请按发动先后排列（后发动的先结算）',validChoices:choices,
+   minChoose:3,maxChoose:3,choiceLabels:Object.fromEntries(choices.map((id,index)=>[id,names[index]+'的触发效果'])),
+   data:{choiceMode:'ordered'},createdRevision:1,controller:0}]
+ }else if(['split-top-bottom','all-top-bottom','all-bottom'].includes(mode)){
+  const cards=players[0].hand.slice(0,3).map((entry,index)=>({...entry,name:names[index]}))
+  players[0].hand=cards;players[0].handCount=cards.length
+  const choices=cards.map(entry=>entry.instanceId)
+  l12State.game.prompts=[{promptId:'fixture-library-direction-'+mode,playerIndex:0,kind:'order',
+   text:'排列查看的三张牌',validChoices:choices,minChoose:3,maxChoose:3,
+   choiceLabels:Object.fromEntries(choices.map((id,index)=>[id,names[index]])),
+   data:{placementMode:mode,displayCardIds:choices.join('|'),layout:'single-row'},createdRevision:1,controller:0}]
+ }
+}
 window.__l12State=l12State
 if(params.has('disaster-choice')){
  const choiceCount=Math.max(1,Math.min(20,Number(params.get('choice-count')||8)))

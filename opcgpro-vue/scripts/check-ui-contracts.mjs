@@ -583,9 +583,16 @@ const contracts = [
     && prompt.includes(':data-ui-contract="isDeclineChoice(choice) ? \'minimum-decline-action\' : undefined"')
     && prompt.includes('min-width:112px!important;min-height:44px!important'), '所有“不响应”选项必须走统一拒绝动作识别，并保持至少112×44像素的可操作尺寸'],
   [prompt.includes("prompt.value?.kind === 'trigger-order'")
-    && prompt.includes('return `结算 ${resolutionOrder}`')
+    && prompt.includes('第${declarationIndex + 1}个发动 · 第${resolutionOrder}个结算')
     && prompt.includes('data-ui-contract="trigger-order-lifo-hint"')
-    && prompt.includes('后选择的效果先结算'), '同一时点触发排序必须在选项角标显示真实逆序结算顺序，避免把点击序号误读为结算序号'],
+    && prompt.includes('后选择的效果先结算')
+    && prompt.includes('确认前的实际结算顺序'), '同一时点触发排序必须同时显示发动与逆序结算序号，并在确认前展示实际结算顺序'],
+  [prompt.includes('placement-direction-hint')
+    && prompt.includes('从左到右是最终相对牌序')
+    && prompt.includes('底部待其他牌抽完后')
+    && prompt.includes('其他牌抽完后依次抽到')
+    && prompt.includes(':selection-order="index + 1"')
+    && promptCardCandidate.includes('本组相对顺序第 ${props.selectionOrder} 张'), '牌库顶部和底部排序必须显示最终相对方向、分组顺序与确认前预览'],
   [gamePage.includes('data-ui-contract="manual-game-over-exit"')
     && gamePage.includes('<button @click="returnToLobby">返回大厅</button>')
     && !gamePage.includes('点击返回后才离开本局')

@@ -302,8 +302,11 @@ function triggerOrderHint(id: string) {
   const declarationIndex = activeSelected.value.indexOf(id)
   if (declarationIndex < 0) return ''
   const resolutionOrder = (prompt.value?.maxChoose ?? activeSelected.value.length) - declarationIndex
-  return `结算 ${resolutionOrder}`
+  return `第${declarationIndex + 1}个发动 · 第${resolutionOrder}个结算`
 }
+const triggerResolutionPreview = computed(() => isTriggerOrder.value
+  && activeSelected.value.length === prompt.value?.maxChoose
+  ? [...activeSelected.value].reverse() : [])
 function cardMeta(id: string) {
   const location = findBattlefieldTarget(props.game, sandboxActorIndex.value, id)
   if (location) {
@@ -842,23 +845,26 @@ function kindLabel() {
             intent="detail" size="featured" @focus="focusChoice(previewCardId)" @select="focusChoice(previewCardId)"/>
         </div>
         <div v-if="placementMode === 'all-top-bottom' || placementMode === 'all-bottom'" class="all-placement-workspace">
-          <strong class="placement-edge top-edge">{{ placementMode === 'all-bottom' ? '先放到底' : '靠顶' }}</strong>
+          <strong class="placement-edge top-edge">左侧先抽到</strong>
           <div class="prompt-card-strip all-placement-row">
-            <PromptCardCandidate v-for="choice in placementOrder" :key="choice"
+            <PromptCardCandidate v-for="(choice, index) in placementOrder" :key="choice"
               :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :name="cardName(choice)" :meta="cardMeta(choice)"
               :horizontal="isHorizontalCardType(detailFor(choice)?.cardType)" :selected="placementSelected === choice"
+              :selection-order="index + 1"
               draggable="true" @dragstart="draggedChoice = choice" @dragover.prevent @drop.stop.prevent="reorderAll(choice)"
               @focus="focusChoice(choice)" @select="selectSwapChoice(choice)"/>
           </div>
-          <strong class="placement-edge bottom-edge">{{ placementMode === 'all-bottom' ? '后放到底' : '靠底' }}</strong>
+          <strong class="placement-edge bottom-edge">右侧后抽到</strong>
+          <p class="placement-direction-hint">从左到右是最终相对牌序。放回顶部时左侧最靠牌库顶；放回底部时须先抽完牌库中的其他牌，之后才从左侧依次抽到。</p>
         </div>
         <div v-else-if="placementMode === 'split-top-bottom'" class="placement-workspace">
           <section class="placement-destination top" @dragover.prevent @drop="dropPlacement('top')">
-            <header><strong>靠顶</strong><small>从左到右，最左侧最靠牌库顶</small></header>
+            <header><strong>放回顶部</strong><small>从左到右：左侧最靠顶，也最先抽到</small></header>
             <div class="prompt-card-strip placement-row">
-              <PromptCardCandidate v-for="choice in placementTop" :key="choice" size="compact"
+              <PromptCardCandidate v-for="(choice, index) in placementTop" :key="choice" size="compact"
                 :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :name="cardName(choice)" :meta="cardMeta(choice)"
                 :horizontal="isHorizontalCardType(detailFor(choice)?.cardType)" :selected="placementSelected === choice"
+                :selection-order="index + 1"
                 removable draggable="true"
                 @dragstart="draggedChoice = choice" @dragover.prevent @drop.stop.prevent="dropPlacement('top', choice)"
                 @focus="focusChoice(choice)" @select="selectSplitSwap(choice)" @remove="returnToUnassigned(choice)"/>
@@ -883,11 +889,12 @@ function kindLabel() {
           </section>
 
           <section class="placement-destination bottom" @dragover.prevent @drop="dropPlacement('bottom')">
-            <header><strong>靠底</strong><small>从左到右，最左侧最先到达牌库底</small></header>
+            <header><strong>放回底部</strong><small>其他牌抽完后，从左到右依次抽到；右侧最靠底</small></header>
             <div class="prompt-card-strip placement-row">
-              <PromptCardCandidate v-for="choice in placementBottom" :key="choice" size="compact"
+              <PromptCardCandidate v-for="(choice, index) in placementBottom" :key="choice" size="compact"
                 :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :name="cardName(choice)" :meta="cardMeta(choice)"
                 :horizontal="isHorizontalCardType(detailFor(choice)?.cardType)" :selected="placementSelected === choice"
+                :selection-order="index + 1"
                 removable draggable="true"
                 @dragstart="draggedChoice = choice" @dragover.prevent @drop.stop.prevent="dropPlacement('bottom', choice)"
                 @focus="focusChoice(choice)" @select="selectSplitSwap(choice)" @remove="returnToUnassigned(choice)"/>
@@ -920,6 +927,10 @@ function kindLabel() {
             </button>
           </template>
         </div>
+        <section v-if="triggerResolutionPreview.length" class="trigger-resolution-preview" aria-label="确认前的实际结算顺序">
+          <strong>确认后实际结算顺序（先 → 后）</strong>
+          <ol><li v-for="choice in triggerResolutionPreview" :key="choice">{{ label(choice) }}</li></ol>
+        </section>
         <section v-if="focusedCandidateDetail" class="prompt-choice-detail" aria-live="polite">
           <strong>{{ focusedCandidateDetail.name }}</strong>
           <span v-if="focusedCandidateDetail.meta">{{ focusedCandidateDetail.meta }}</span>
@@ -941,18 +952,18 @@ function kindLabel() {
             <button class="primary" :disabled="l12State.pendingAction || activeSelected.length !== 1" @click="resolveSinglePlacement('bottom')">放回底部</button>
           </template>
           <template v-else-if="placementMode === 'split-top-bottom'">
-            <span>靠顶 {{ placementTop.length }} / 靠底 {{ placementBottom.length }} / 待安排 {{ unassignedChoices.length }}；已安排的牌可依次点击两张交换位置</span>
+            <span class="order-final-preview">顶部先抽到：{{ placementTop.map(cardName).join(' → ') || '无' }}；底部待其他牌抽完后：{{ placementBottom.map(cardName).join(' → ') || '无' }}。待安排 {{ unassignedChoices.length }} 张；每组均按左到右的顺序。</span>
             <button class="primary" :disabled="l12State.pendingAction || unassignedChoices.length > 0" @click="confirmSplitPlacement">
               {{ l12State.pendingAction ? '处理中…' : '确认排列' }}
             </button>
           </template>
           <template v-else-if="placementMode === 'all-top-bottom'">
-            <span>依次点击两张牌交换位置，然后将全部卡牌放回同一端</span>
+            <span class="order-final-preview">最终相对牌序（左侧先抽到）：{{ placementOrder.map(cardName).join(' → ') }}。再选择全部放回顶部或底部。</span>
             <button :disabled="l12State.pendingAction" @click="confirmAllPlacement('top')">全部放回顶部</button>
             <button class="primary" :disabled="l12State.pendingAction" @click="confirmAllPlacement('bottom')">全部放回底部</button>
           </template>
           <template v-else-if="placementMode === 'all-bottom'">
-            <span>依次点击两张牌交换位置；左侧卡牌先放回牌库底部</span>
+            <span class="order-final-preview">其他牌抽完后依次抽到：{{ placementOrder.map(cardName).join(' → ') }}。可依次点击两张牌交换位置。</span>
             <button class="primary" :disabled="l12State.pendingAction" @click="confirmAllPlacement('bottom')">确认顺序并全部放回底部</button>
           </template>
           <template v-else-if="prompt.data?.choiceMode === 'optional-add'">
@@ -964,7 +975,7 @@ function kindLabel() {
             <span>点击选项后立即结算</span>
           </template>
           <template v-else-if="isTriggerOrder">
-            <span data-ui-contract="trigger-order-lifo-hint">后选择的效果先结算；每个选项角标显示实际结算顺序。</span>
+            <span class="order-final-preview" data-ui-contract="trigger-order-lifo-hint">{{ triggerResolutionPreview.length ? `确认后实际结算（先 → 后）：${triggerResolutionPreview.map(label).join(' → ')}` : '后选择的效果先结算；每个选项角标显示实际结算顺序。' }}</span>
             <button class="primary prompt-confirm-choice" :disabled="l12State.pendingAction || activeSelected.length !== prompt.maxChoose" @click="confirm">
               {{ l12State.pendingAction ? '处理中…' : '确认发动顺序' }}
             </button>
@@ -1097,4 +1108,9 @@ function kindLabel() {
 :global(#l12-landscape-teleports .mobile-battle-dock__context) .l12-prompt-overlay.mobile-safe-overlay.minimized{max-height:min(100%,calc(var(--l12-viewport-height,100vh) - var(--l12-viewport-top,0px) - 8px))!important;overflow:auto!important}
 :global(#l12-landscape-teleports .mobile-battle-dock__context) .l12-prompt-overlay.mobile-safe-overlay.minimized .prompt-minimized-bar{max-width:100%}
 :global(#l12-landscape-teleports .mobile-battle-dock__context) .l12-prompt-overlay.mobile-safe-overlay.minimized .prompt-minimized-bar button{min-height:44px!important}
+.placement-direction-hint{grid-column:1/-1;margin:0;color:#d2dbd6;font-size:var(--l12-board-copy,13px);line-height:1.4;overflow-wrap:anywhere}
+.trigger-resolution-preview{margin:8px 3px;padding:8px 10px;border:1px solid #a58a46;background:#211c0e;color:#f7ead0;font-size:var(--l12-board-copy,13px);line-height:1.45}
+.trigger-resolution-preview ol{display:flex;flex-wrap:wrap;gap:4px 18px;margin:5px 0 0;padding-left:23px}
+.trigger-resolution-preview li{max-width:100%;overflow-wrap:anywhere}
+.prompt-action-footer>.order-final-preview{max-height:4.4em;overflow:auto;line-height:1.4;overflow-wrap:anywhere}
 </style>
