@@ -76,6 +76,50 @@ async function checkOsiris(page, label, spectator) {
   if (await handle.count()) assert.equal(await handle.evaluate(node => getComputedStyle(node).visibility), 'hidden', `${label}: inspector handle must not bypass victory blocker`)
   return sequence
 }
+async function checkOpenInspectorVictory(page, label) {
+  await page.locator('.board-center>.l12-hand:last-child .hand-card-wrap').first().click()
+  const handle = page.locator('.mobile-card-inspector-handle-global')
+  await handle.click()
+  const drawer = page.locator('.mobile-card-inspector.mobile-safe-overlay')
+  const close = drawer.locator('header button')
+  await drawer.waitFor()
+  const cardName = await drawer.locator('header h2').innerText()
+  assert.notEqual(cardName, '选择一张卡牌', `${label}: fixture must retain a selected card`)
+  assert.equal(await handle.getAttribute('aria-expanded'), 'true', `${label}: drawer did not open`)
+  assert.equal((await geometry(close)).hit, true, `${label}: ordinary drawer must remain usable before victory`)
+  await page.waitForFunction(() => Boolean(window.__osirisFixture?.start))
+  await page.evaluate(() => window.__osirisFixture.start({ gameOver: true }))
+  const sequence = page.locator('.osiris-victory-sequence')
+  await sequence.waitFor()
+  await assertRoute(page, `${label}-victory`, true)
+  await assertBoardBlocked(page, `${label}-victory`)
+  for (const [name, locator] of [['drawer', drawer], ['handle', handle]]) {
+    const state = await geometry(locator)
+    assert.equal(state.visibility, 'hidden', `${label}: ${name} must be hidden during victory: ${JSON.stringify(state)}`)
+    assert.equal(state.hit, false, `${label}: ${name} must not receive victory clicks: ${JSON.stringify(state)}`)
+  }
+  const closeRect = (await geometry(close)).rect
+  await page.mouse.click((closeRect.left + closeRect.right) / 2, (closeRect.top + closeRect.bottom) / 2)
+  assert.equal(await handle.getAttribute('aria-expanded'), 'true', `${label}: victory click closed the hidden drawer`)
+  assert.equal(await drawer.count(), 1, `${label}: victory removed the drawer state`)
+  await page.screenshot({ path: path.join(output, `${label}-victory.png`) })
+  matrix.push(`${label}-victory`)
+  await sequence.waitFor({ state: 'detached', timeout: 10000 })
+  const result = page.locator('.game-over')
+  await result.waitFor()
+  const resultExit = result.getByRole('button', { name: '返回大厅', exact: true })
+  const resultHit = await geometry(resultExit)
+  assert.ok(resultHit.hit && resultHit.inside, `${label}: result return must be usable: ${JSON.stringify(resultHit)}`)
+  assert.equal(await drawer.evaluate(node => getComputedStyle(node).visibility), 'hidden', `${label}: result must still cover drawer`)
+  await result.getByRole('button', { name: '最小化对局结果', exact: true }).click()
+  await page.locator('.game-over').waitFor({ state: 'detached' })
+  assert.equal(await handle.getAttribute('aria-expanded'), 'true', `${label}: minimizing result lost drawer state`)
+  assert.equal(await drawer.locator('header h2').innerText(), cardName, `${label}: minimizing result lost card selection`)
+  assert.equal((await geometry(close)).hit, true, `${label}: drawer must recover after result is minimized`)
+  await close.click()
+  assert.equal(await handle.getAttribute('aria-expanded'), 'false', `${label}: recovered drawer cannot close`)
+  matrix.push(`${label}-victory-complete`)
+}
 
 try {
   const page = await browser.newPage()
@@ -155,6 +199,13 @@ try {
         matrix.push(`${profile.name}-victory-complete`)
       }
     }
+  }
+  for (const profile of profiles.filter(item => ['mobile-568', 'mobile-font-125', 'mobile-844-safe'].includes(item.name))) {
+    await page.setViewportSize({ width: profile.width, height: profile.height })
+    await page.goto(`${origin}?canvas=1&mobile=1&field=full&hand=6&modalFixture=1`, { waitUntil: 'domcontentloaded' })
+    if (profile.safe) await page.addStyleTag({ content: 'html { --l12-viewport-left:44px !important; --l12-viewport-width:756px !important; --l12-viewport-height:369px !important; }' })
+    if (profile.textScale) await page.addStyleTag({ content: '#l12-landscape-teleports .mobile-battle-dock__route button { font-size:13px !important; }' })
+    await checkOpenInspectorVictory(page, profile.name)
   }
   await page.setViewportSize({ width: 1280, height: 720 })
   await page.goto(`${origin}?field=full&hand=6&modalFixture=1`, { waitUntil: 'domcontentloaded' })

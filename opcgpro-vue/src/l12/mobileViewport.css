@@ -33,9 +33,9 @@ html[data-l12-mobile=true] #l12-landscape-teleports {
   --l12-battle-fixed-controls-z:2147483632;
   --l12-battle-victory-layer:2147483628;
 }
-/* The global card-inspector handle is normally above mobile dialogs; a victory
-   sequence alone suppresses it so its click cannot bypass the event blocker. */
-html[data-l12-mobile=true] #l12-landscape-teleports:has(> .osiris-victory-sequence) .mobile-card-inspector-handle-global {
+/* Preserve an open card drawer's state while a victory or result dialog owns
+   the screen. Both the drawer and its handle normally sit above mobile masks. */
+html[data-l12-mobile=true] #l12-landscape-teleports:has(> :is(.osiris-victory-sequence,.game-over)) :is(.mobile-card-inspector-handle-global,.mobile-card-inspector.mobile-safe-overlay) {
   visibility:hidden !important; pointer-events:none !important;
 }
 #l12-landscape-teleports > * { pointer-events: auto; }

@@ -570,7 +570,7 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
   if (!specialVictory) return
   graveyardPlayer.value = null
   masterPlayerIndex.value = null
-  focusCard.value = null
+  if (!mobileLandscapeViewport.value || !mobileInspectorOpen.value) focusCard.value = null
   promptMinimized.value = false
 })
 async function showNextPublicReveal() {

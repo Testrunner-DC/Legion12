@@ -32,7 +32,7 @@ assert.ok(gamePage.includes('<BattleDockPortal lane="route"><div')
 assert.ok(victory.includes('z-index:var(--l12-battle-victory-layer,5050)')
   && viewport.includes('--l12-battle-victory-layer:5050')
   && viewport.includes('--l12-battle-victory-layer:2147483628')
-  && viewport.includes(':has(> .osiris-victory-sequence) .mobile-card-inspector-handle-global')
+  && viewport.includes(':has(> :is(.osiris-victory-sequence,.game-over)) :is(.mobile-card-inspector-handle-global,.mobile-card-inspector.mobile-safe-overlay)')
   && gamePage.includes("gameOverMinimized || osirisSequencePlaying"),
   'special-victory visuals must block board hits below the protected route without hiding the return action')
 for (const file of ['HandArea','PlayerMat']) assert.ok(read(`src/l12/game/${file}.vue`).includes('<BattleDockPortal lane="context">'))
