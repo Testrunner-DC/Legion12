@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-30-battle-effect-result-animation",
+  "date": "2026-09-30",
+  "audience": "players",
+  "title": "卡牌效果结果演出优化",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "卡牌效果演出会按实际结果显示跳过、未能完成、被无效或选择不发动，并在公开且安全时说明具体原因；空牌库不再误写成没有合法对象，同一事件的补发或重连也不会重复播放。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/effectResultPresentation.ts"
+      ]
+    }
+  ]
+}

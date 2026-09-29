@@ -17,6 +17,7 @@ import ActionPresentationLayer from './ActionPresentationLayer.vue'
 import ZoneMovementPresentationLayer from './ZoneMovementPresentationLayer.vue'
 import CardStateTransitionLayer from './CardStateTransitionLayer.vue'
 import { cardEffectPresentationCards, isCardEffectPresentationEvent } from './visualTransitionProjection'
+import { effectResultPresentationText } from './effectResultPresentation'
 import CombatMotionPresentationLayer from './CombatMotionPresentationLayer.vue'
 import GraveyardOverlay from './GraveyardOverlay.vue'
 import HandArea from './HandArea.vue'
@@ -680,13 +681,9 @@ async function showNextPublicReveal() {
   }, cardRevealDuration())
 }
 function publicRevealText(event: ActionEvent) {
+  if (event.type === 'effect-result') return effectResultPresentationText(event, presentationCards(event)[0])
   const override = event.effectText?.trim()
-  if (override) {
-    if (event.effectResultStatus === 'negated') return `${override}（被无效）`
-    if (event.effectResultStatus === 'skipped') return `${override}（无合法处理对象，跳过）`
-    if (event.effectResultStatus === 'failed') return `${override}（未能完成结算）`
-    return override
-  }
+  if (override) return override
   const text = event.text.trim()
   const card = event.cards?.[0]
   if (card && /花魁的馈赠/.test(text)) return `花魁的馈赠将〈${card.name}〉加入手牌`
@@ -738,6 +735,7 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
       && !(event.type === 'effect-trigger' && /展示|公开/.test(event.text)))
     .sort((left, right) => left.sequence - right.sequence)
   for (const event of fresh) {
+    if (event.sequence <= lastPublicRevealSequence.value) continue
     const reservation = cardPresentationCoordinator.reserve(event.sequence, 10)
     reservation.setPaused(modalPresentationPaused.value)
     publicRevealQueue.push({
@@ -1737,6 +1735,8 @@ function statusTexts(card: Card) {
 .session-disaster-strip button.replaceable{cursor:pointer}.session-disaster-strip button.replaceable:hover{border-color:#e6bd4a;box-shadow:0 0 12px #d49c3d80}
 .dice-reveal-animation{position:fixed;z-index:2147483001;left:50%;top:45%;display:grid;justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.dice-reveal-values{display:flex;gap:14px}.dice-reveal-values b{display:grid;width:76px;height:76px;place-items:center;border:3px solid #e3c36d;border-radius:15px;background:#f1eee2;box-shadow:0 12px 30px #000,0 0 22px rgba(227,195,109,.35);color:#111;font-size:max(44px,var(--l12-board-copy,13px));line-height:1;animation:l12-dice-roll .18s infinite alternate}.dice-reveal-animation.settled .dice-reveal-values b{animation:l12-dice-land .32s ease-out}.dice-reveal-animation strong{max-width:min(720px,82vw);padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.92);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:var(--l12-board-copy,13px);font-weight:900;text-align:center}.dice-reveal-enter-active,.dice-reveal-leave-active{transition:opacity .2s ease,filter .2s ease}.dice-reveal-enter-from,.dice-reveal-leave-to{opacity:0;filter:blur(5px)}@keyframes l12-dice-roll{from{transform:rotate(-10deg) scale(.94)}to{transform:rotate(10deg) scale(1.06)}}@keyframes l12-dice-land{0%{transform:scale(1.35) rotate(20deg)}100%{transform:scale(1) rotate(0)}}
 .public-reveal-animation{z-index:903}.dice-reveal-animation{z-index:904}.board-target-controls{z-index:3000}.card-inspector-floating{z-index:3100!important}
+@media (max-width:900px) and (max-height:400px) and (orientation:landscape){.public-reveal-animation{top:calc((100dvh - 64px)/2);width:min(560px,calc(100vw - 180px));min-width:0;max-width:none;grid-template-columns:80px minmax(0,1fr);align-items:center;justify-items:stretch;gap:8px}.public-reveal-cards .l12-card-image{width:80px;height:112px}.public-reveal-cards .l12-card-image.horizontal{width:80px;height:auto}.public-reveal-animation strong{max-height:calc(100dvh - 88px);overflow-y:auto}}
+@media (max-width:430px) and (min-height:700px) and (orientation:portrait){:global(html[data-l12-rotated=true] .public-reveal-animation){top:calc((100dvw - 64px)/2);width:min(560px,calc(100dvh - 180px));min-width:0;max-width:none;grid-template-columns:80px minmax(0,1fr);align-items:center;justify-items:stretch;gap:8px}:global(html[data-l12-rotated=true] .public-reveal-cards .l12-card-image){width:80px;height:112px}:global(html[data-l12-rotated=true] .public-reveal-cards .l12-card-image.horizontal){width:80px;height:auto}:global(html[data-l12-rotated=true] .public-reveal-animation strong){max-height:calc(100dvw - 88px);overflow-y:auto}}
 .battle-title{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}.battle-title b,.battle-title i{padding:3px 6px;border:1px solid #82663a;border-radius:3px;background:#261b0c;color:#f2d27a;font-size:var(--l12-board-copy,13px);font-style:normal;font-weight:900}.battle-title i{border-color:#75509a;background:#1b1028;color:#dfbdff}
 
 </style>

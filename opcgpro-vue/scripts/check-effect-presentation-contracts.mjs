@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
+import './test-effect-result-presentation.mjs'
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
 const backendRoot = new URL('../../服务端WebSocket/TwelveLegions/', import.meta.url)
@@ -17,6 +18,7 @@ const zoneMovement = read('../src/l12/game/ZoneMovementPresentationLayer.vue')
 const combatMotion = read('../src/l12/game/CombatMotionPresentationLayer.vue')
 const phasePlayback = read('../src/l12/game/PhasePlayback.vue')
 const visualTransitionProjection = read('../src/l12/game/visualTransitionProjection.ts')
+const effectResultPresentation = read('../src/l12/game/effectResultPresentation.ts')
 const graveReturnHelper = read('../../服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs')
 const legacyGraveReturnCaller = read('../../服务端WebSocket/TwelveLegions/L12GameEngine.EffectPresentations.cs')
 const platform = read('../src/l12/platform.ts')
@@ -24,7 +26,7 @@ const store = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.Effe
 const model = read('../../服务端WebSocket/TwelveLegions/EffectPresentationTexts.cs')
 const operations = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.Operations.cs')
 
-const runtimePresentation = `${board}\n${visualTransitionProjection}`
+const runtimePresentation = `${board}\n${visualTransitionProjection}\n${effectResultPresentation}`
 for (const contract of [
   'data-ui-contract="effect-workbench"',
   'data-ui-contract="effect-workbench-preview"',
@@ -55,7 +57,7 @@ assert([board, actionLayer, actionPresentation, zoneMovement, combatMotion, phas
 assert(eventLogViewModel.includes("'effect-announced'") && eventLogViewModel.includes('PLAYER_LOG_HIDDEN_TYPES'),
   'Recorded whole-effect announcements must remain authoritative history while the player projection explicitly hides them')
 
-const overrideGuard = board.indexOf('if (override) {')
+const overrideGuard = board.indexOf('if (override) return override')
 const oiranFallback = board.indexOf('/花魁的馈赠/.test(text)')
 assert(overrideGuard >= 0 && overrideGuard < oiranFallback,
   'Authoritative override must win before the legacy Oiran compatibility fallback')
@@ -66,10 +68,13 @@ assert(actionLayer.includes('.l12-action-presentation .action-copy strong{white-
 for (const contract of [
   "event.type === 'effect-result'",
   "event.effectResultStatus !== 'declared'",
-  "event.effectResultStatus === 'negated'",
-  "event.effectResultStatus === 'skipped'",
-  "event.effectResultStatus === 'failed'",
 ]) assert(runtimePresentation.includes(contract), `Battle animation settlement projection is missing ${contract}`)
+for (const contract of [
+  "negated: '被无效'",
+  "skipped: '跳过'",
+  "failed: '未能完成'",
+  "declined: '选择不发动'",
+]) assert(effectResultPresentation.includes(contract), `Battle result formatter is missing ${contract}`)
 assert(eventLogViewModel.includes("'effect-result'") && eventLogViewModel.includes("'effect-declined'")
   && eventLogViewModel.includes('PLAYER_LOG_HIDDEN_TYPES'),
   'Player log must explicitly suppress settlement internals and declined effects while authority history remains intact')
