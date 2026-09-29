@@ -19,6 +19,11 @@ public sealed class SeasonLifecycleManagementTests
         try
         {
             var catalog = Catalog();
+            _ = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            RewriteAsLegacy(path, data =>
+            {
+                data["RankedPendingGradient"]!["Tiers"]![0]!["BaseDelta"] = 4321;
+            });
             var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
             var admin = store.Login("Admin", "L12master").Account!;
             var runtime = store.OperationsConfig(admin);
@@ -32,24 +37,167 @@ public sealed class SeasonLifecycleManagementTests
             Assert.NotNull(seasons.Next);
             Assert.Equal("draft", seasons.Next!.LifecycleStatus);
             Assert.Equal(seasons.Current.SeasonId, seasons.Next.PreviousSeasonId);
+            Assert.Equal(4321, ranked.PendingGradient!.Tiers[0].BaseDelta);
             Assert.Equal(ranked.PendingGradient!.Tiers.Select(TierValues),
                 seasons.Next.Configuration.Ranked.Factions[0].Tiers.Select(TierValues));
             Assert.Empty(seasons.Archives);
 
             var persisted = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            Assert.Equal(1, persisted["SeasonLifecycleMigrationVersion"]!.GetValue<int>());
             Assert.Equal(2, persisted["SeasonDefinitions"]!.AsArray().Count);
             Assert.Empty(persisted["SeasonArchives"]!.AsArray());
             var currentDefinitionId = seasons.Current.DefinitionId;
             var draftDefinitionId = seasons.Next.DefinitionId;
 
-            SqliteConnection.ClearAllPools();
-            File.Delete(Path.Combine(root, "platform.db"));
             var reopened = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
             var reopenedAdmin = reopened.Login("Admin", "L12master").Account!;
             var reopenedSeasons = reopened.SeasonCatalog(reopenedAdmin);
             Assert.Equal(currentDefinitionId, reopenedSeasons.Current.DefinitionId);
             Assert.Equal(draftDefinitionId, reopenedSeasons.Next!.DefinitionId);
             Assert.Empty(reopenedSeasons.Archives);
+
+            SqliteConnection.ClearAllPools();
+            File.Delete(Path.Combine(root, "platform.db"));
+            var jsonReopened = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var jsonAdmin = jsonReopened.Login("Admin", "L12master").Account!;
+            var jsonSeasons = jsonReopened.SeasonCatalog(jsonAdmin);
+            Assert.Equal(currentDefinitionId, jsonSeasons.Current.DefinitionId);
+            Assert.Equal(draftDefinitionId, jsonSeasons.Next!.DefinitionId);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void DeletedDraftDoesNotReturnAfterSqliteOrJsonRestart()
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var catalog = Catalog();
+            var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var draft = store.SeasonCatalog(admin).Next!;
+
+            Assert.True(store.DeleteSeasonDraft(admin, draft.DefinitionId, draft.Revision,
+                "cancel next season", Context("season-draft-delete", draft.Revision)));
+            Assert.Null(store.SeasonCatalog(admin).Next);
+            Assert.Null(store.RankedConfig(admin).PendingGradient);
+
+            var sqliteReopened = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var sqliteAdmin = sqliteReopened.Login("Admin", "L12master").Account!;
+            Assert.Null(sqliteReopened.SeasonCatalog(sqliteAdmin).Next);
+            Assert.Null(sqliteReopened.RankedConfig(sqliteAdmin).PendingGradient);
+
+            SqliteConnection.ClearAllPools();
+            File.Delete(Path.Combine(root, "platform.db"));
+            var jsonReopened = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var jsonAdmin = jsonReopened.Login("Admin", "L12master").Account!;
+            Assert.Null(jsonReopened.SeasonCatalog(jsonAdmin).Next);
+            Assert.Null(jsonReopened.RankedConfig(jsonAdmin).PendingGradient);
+            var persisted = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            Assert.Equal(1, persisted["SeasonLifecycleMigrationVersion"]!.GetValue<int>());
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void DeletedDraftFromPreMarkerCandidateDoesNotReturnDuringCompatibilityUpgrade()
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var catalog = Catalog();
+            var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var draft = store.SeasonCatalog(admin).Next!;
+            store.DeleteSeasonDraft(admin, draft.DefinitionId, draft.Revision,
+                "simulate accepted candidate", Context("pre-marker-delete", draft.Revision));
+
+            RewriteSnapshot(path, data => data.Remove("SeasonLifecycleMigrationVersion"));
+            var reopened = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var reopenedAdmin = reopened.Login("Admin", "L12master").Account!;
+
+            Assert.Null(reopened.SeasonCatalog(reopenedAdmin).Next);
+            Assert.Null(reopened.RankedConfig(reopenedAdmin).PendingGradient);
+            var persisted = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            Assert.Equal(1, persisted["SeasonLifecycleMigrationVersion"]!.GetValue<int>());
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    public void LegacyStoreWithoutPendingGradientPreservesRankedCompatibilitySemantics(
+        int gradientVersion, bool expectsDraft)
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var catalog = Catalog();
+            _ = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            RewriteAsLegacy(path, data =>
+            {
+                data["RankedGradientVersion"] = gradientVersion;
+                data.Remove("RankedPendingGradient");
+            });
+
+            var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var seasons = store.SeasonCatalog(admin);
+
+            Assert.Equal(expectsDraft, seasons.Next is not null);
+            Assert.Equal(expectsDraft, store.RankedConfig(admin).PendingGradient is not null);
+            var persisted = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            Assert.Equal(1, persisted["SeasonLifecycleMigrationVersion"]!.GetValue<int>());
+
+            var reopened = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var reopenedAdmin = reopened.Login("Admin", "L12master").Account!;
+            Assert.Equal(expectsDraft, reopened.SeasonCatalog(reopenedAdmin).Next is not null);
+            Assert.Equal(expectsDraft, reopened.RankedConfig(reopenedAdmin).PendingGradient is not null);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void SeasonLifecycleMigrationIsIdempotentUnderRepeatedConcurrentCalls()
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var catalog = Catalog();
+            var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var expected = store.SeasonCatalog(admin);
+
+            Parallel.For(0, 64, _ => store.EnsureSeasonLifecycleState());
+
+            var actual = store.SeasonCatalog(admin);
+            Assert.Equal(expected.Current.DefinitionId, actual.Current.DefinitionId);
+            Assert.Equal(expected.Next!.DefinitionId, actual.Next!.DefinitionId);
+            var persisted = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            Assert.Equal(1, persisted["SeasonLifecycleMigrationVersion"]!.GetValue<int>());
+            Assert.Equal(2, persisted["SeasonDefinitions"]!.AsArray().Count);
         }
         finally
         {
@@ -221,6 +369,24 @@ public sealed class SeasonLifecycleManagementTests
 
     private static L12Catalog Catalog()
         => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+
+    private static void RewriteAsLegacy(string path, Action<JsonObject> mutate)
+        => RewriteSnapshot(path, data =>
+        {
+            data.Remove("SeasonLifecycleMigrationVersion");
+            data.Remove("SeasonDefinitions");
+            data.Remove("SeasonArchives");
+            mutate(data);
+        });
+
+    private static void RewriteSnapshot(string path, Action<JsonObject> mutate)
+    {
+        var data = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+        mutate(data);
+        SqliteConnection.ClearAllPools();
+        File.Delete(Path.Combine(Path.GetDirectoryName(path)!, "platform.db"));
+        File.WriteAllText(path, data.ToJsonString());
+    }
 
     private static L12AdminAuditContext Context(string correlationId, long? expectedVersion = null)
         => new(correlationId, ExpectedVersion: expectedVersion, RequestMethod: "TEST", RequestPath: "/test");

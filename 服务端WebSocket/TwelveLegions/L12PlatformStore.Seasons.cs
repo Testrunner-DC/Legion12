@@ -53,6 +53,8 @@ public sealed record L12SeasonCatalogView(
 
 public sealed partial class L12PlatformStore
 {
+    private const int CurrentSeasonLifecycleMigrationVersion = 1;
+
     private sealed class SeasonScopedConfigRow
     {
         public OperationsDisasterPoolRow DisasterPool { get; set; } = new();
@@ -97,13 +99,14 @@ public sealed partial class L12PlatformStore
         public string ArchivedBy { get; set; } = string.Empty;
     }
 
-    private void EnsureSeasonLifecycleState()
+    internal void EnsureSeasonLifecycleState()
     {
         lock (_gate)
         {
             var changed = false;
             _data.SeasonDefinitions ??= [];
             _data.SeasonArchives ??= [];
+            var shouldMigrateLegacyPendingGradient = IsLegacySeasonLifecycleMigrationPending();
             var currentOperations = RequireOperationsConfig();
             var active = _data.SeasonDefinitions.SingleOrDefault(row => row.LifecycleStatus == "active");
             if (active is null)
@@ -126,7 +129,8 @@ public sealed partial class L12PlatformStore
                 changed = true;
             }
 
-            if (_data.SeasonDefinitions.All(row => row.LifecycleStatus != "draft")
+            if (shouldMigrateLegacyPendingGradient
+                && _data.SeasonDefinitions.All(row => row.LifecycleStatus != "draft")
                 && _data.RankedPendingGradient is not null)
             {
                 var configuration = CaptureCurrentSeasonScope();
@@ -141,6 +145,11 @@ public sealed partial class L12PlatformStore
                     CreatedBy = "系统迁移",
                     UpdatedBy = "系统迁移",
                 });
+                changed = true;
+            }
+            if (_data.SeasonLifecycleMigrationVersion < CurrentSeasonLifecycleMigrationVersion)
+            {
+                _data.SeasonLifecycleMigrationVersion = CurrentSeasonLifecycleMigrationVersion;
                 changed = true;
             }
             if (changed) Save();
@@ -269,6 +278,8 @@ public sealed partial class L12PlatformStore
             EnsureSeasonDefinitionRevision(row, expectedRevision);
             _data.SeasonDefinitions.Remove(row);
             _data.SeasonDefinitions.Single(item => item.LifecycleStatus == "active").NextSeasonId = null;
+            _data.SeasonLifecycleMigrationVersion = Math.Max(_data.SeasonLifecycleMigrationVersion,
+                CurrentSeasonLifecycleMigrationVersion);
             _data.RankedPendingGradient = null;
             AddAdminAudit(actor, "operations", "season-draft-delete",
                 $"season-definition:{row.DefinitionId}", row.Revision.ToString(), null, normalizedReason,
@@ -412,6 +423,11 @@ public sealed partial class L12PlatformStore
             throw new L12OperationsConfigException("season_definition_revision_conflict",
                 "赛季草稿版本已变化，请刷新后重试");
     }
+
+    private bool IsLegacySeasonLifecycleMigrationPending()
+        => _data.SeasonLifecycleMigrationVersion < CurrentSeasonLifecycleMigrationVersion
+            && (_data.SeasonDefinitions?.Count ?? 0) == 0
+            && (_data.SeasonArchives?.Count ?? 0) == 0;
 
     private L12SeasonScopedConfig ToSeasonScopeView(SeasonScopedConfigRow row)
         => new(new L12SeasonDisasterPoolConfig(row.DisasterPool.CardIds.ToArray(), true),

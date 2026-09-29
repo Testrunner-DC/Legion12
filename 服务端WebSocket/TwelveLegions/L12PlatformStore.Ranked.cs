@@ -268,7 +268,8 @@ public sealed partial class L12PlatformStore
                         faction.Tiers[index].StreakTerminationReward = LegacyStreakTerminationReward(index);
                 changed = true;
             }
-            if (_data.RankedGradientVersion < 2 && _data.RankedPendingGradient is null)
+            if (_data.RankedGradientVersion < 2 && _data.RankedPendingGradient is null
+                && IsLegacySeasonLifecycleMigrationPending())
             {
                 _data.RankedPendingGradient = DefaultPendingRankedGradient(
                     RequireOperationsConfig().Season.Id);

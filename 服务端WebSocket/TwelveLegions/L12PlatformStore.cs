@@ -334,6 +334,7 @@ public sealed partial class L12PlatformStore
         public RankedConfigRow? RankedConfig { get; set; }
         public int RankedGradientVersion { get; set; }
         public RankedPendingGradientRow? RankedPendingGradient { get; set; }
+        public int SeasonLifecycleMigrationVersion { get; set; }
         public List<SeasonDefinitionRow> SeasonDefinitions { get; set; } = [];
         public List<SeasonArchiveRow> SeasonArchives { get; set; } = [];
         public List<RankedProfileRow> RankedProfiles { get; set; } = [];
