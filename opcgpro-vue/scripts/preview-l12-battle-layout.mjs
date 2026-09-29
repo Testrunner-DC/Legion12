@@ -247,13 +247,16 @@ if(params.has('disaster-chain')){
  }
 }
 if(params.has('board-target')){
- const targetCards=[players[0].field[0][0],players[1].field[0][2],players[0].field[1][1]].filter(Boolean)
+ const mixedReal=params.has('target-mixed-real')
+ const targetCards=(mixedReal?[players[0].field[0][0]]:[players[0].field[0][0],players[1].field[0][2],players[0].field[1][1]]).filter(Boolean)
  if(params.has('inline-rich'))targetCards.forEach(card=>{card.name='同名测试军团'})
  const choices=targetCards.map(card=>card.instanceId)
- const mixed=params.has('target-mixed')
- const validChoices=[...choices,...(mixed?[players[0].morale[0]?.instanceId].filter(Boolean):[]),'skip']
- const data={choiceMode:mixed?'mixed-board-payment':'board-target',...(params.has('target-locked')?{lockedChoices:choices[0]}:{})}
- l12State.game.prompts=[{promptId:'fixture-board-target',playerIndex:0,kind:'target',text:'选择 1–2 个战场目标',validChoices,minChoose:1,maxChoose:2,choiceLabels:{skip:'不发动'},data,...(params.has('inline-rich')?{presentation:{title:mixed?'选择战场费用':'指定效果目标',situation:params.has('inline-long')?'〈同名测试军团〉的效果正在等待处理；请选择合法战场对象并在确认前核对费用与后果。'.repeat(8):'〈同名测试军团〉的效果正在等待处理。',instruction:mixed?'选择要支付的战场对象。':'选择1至2个战场目标。',waitingSummary:'等待操作玩家指定目标',choiceConsequences:{skip:'本次不发动'},paymentStatus:mixed?'pending':null,paymentSummary:mixed?'1至2个战场对象':null,submissionConsequence:mixed?'所选对象将作为费用提交。':'将以所选对象继续处理效果。'}}:{}) ,createdRevision:1,controller:0}]
+ const mixed=params.has('target-mixed')||mixedReal
+ const resourceChoices=mixed?players[0].morale.slice(0,mixedReal&&!params.has('target-mixed-unique')?2:1).map(item=>item.instanceId):[]
+ const validChoices=[...choices,...resourceChoices,'skip',...(params.has('target-mixed-cancel')?['cancel']:[])]
+ const lockedChoice=mixedReal&&params.has('target-mixed-unique')?resourceChoices[0]:params.has('target-locked')?choices[0]:null
+ const data={choiceMode:mixed?'mixed-board-payment':'board-target',...(lockedChoice?{lockedChoices:lockedChoice}:{})}
+ l12State.game.prompts=[{promptId:'fixture-board-target',playerIndex:0,kind:'target',text:mixedReal?'选择2项战场费用':'选择 1–2 个战场目标',validChoices,minChoose:mixedReal?2:1,maxChoose:2,choiceLabels:{skip:'不发动',...(params.has('target-mixed-cancel')?{cancel:'取消选择'}:{})},data,...(params.has('inline-rich')?{presentation:{title:mixed?'选择战场费用':'指定效果目标',situation:params.has('inline-long')?'〈同名测试军团〉的效果正在等待处理；请选择合法战场对象并在确认前核对费用与后果。'.repeat(8):'〈同名测试军团〉的效果正在等待处理。',instruction:mixed?'选择要支付的战场对象。':'选择1至2个战场目标。',waitingSummary:'等待操作玩家指定目标',choiceConsequences:{skip:'本次不发动',...(params.has('target-mixed-cancel')?{cancel:'取消本次费用'}:{})},paymentStatus:mixed?'pending':null,paymentSummary:mixed?(mixedReal?'2项战场费用':'1至2个战场对象'):null,submissionConsequence:mixed?'所选对象将作为费用提交。':'将以所选对象继续处理效果。'}}:{}) ,createdRevision:1,controller:0}]
 }
 if(params.has('board-slot')){
  const opponent=params.has('slot-opponent')

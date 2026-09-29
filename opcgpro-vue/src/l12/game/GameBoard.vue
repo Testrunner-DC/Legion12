@@ -386,8 +386,8 @@ const minimizedBoardTask = computed(() => {
   if (!prompt) return '恢复当前选择'
   return `${inlinePromptBrief(prompt)}；${inlinePromptRange(prompt)}${inlinePromptPayment(prompt) ? `；${inlinePromptPayment(prompt)}` : ''}`
 })
-const minimizedMoraleTask = computed(() => resourceSelectionPrompt.value
-  ? `${inlinePromptBrief(resourceSelectionPrompt.value)}；${inlinePromptRange(resourceSelectionPrompt.value)}${inlinePromptPayment(resourceSelectionPrompt.value) ? `；${inlinePromptPayment(resourceSelectionPrompt.value)}` : ''}`
+const minimizedMoraleTask = computed(() => mobilePaymentPrompt.value
+  ? `${inlinePromptBrief(mobilePaymentPrompt.value)}；${inlinePromptRange(mobilePaymentPrompt.value)}${inlinePromptPayment(mobilePaymentPrompt.value) ? `；${inlinePromptPayment(mobilePaymentPrompt.value)}` : ''}`
   : '恢复士气查看')
 const inlineInfoPrompt = computed(() => boardTargetPrompt.value ?? boardSlotPrompt.value ?? resourceSelectionPrompt.value)
 function inlinePromptCurrentSummary(prompt: Prompt) {
@@ -409,14 +409,17 @@ function inlinePromptExitSummary(prompt: Prompt, choice: string) {
 function inlinePromptConsequenceLead(prompt: Prompt) {
   return prompt.promptId === boardSlotPrompt.value?.promptId ? '选中后' : '确认后'
 }
-const paymentChoiceIds = computed(() => (resourceSelectionPrompt.value
+const mobilePaymentPrompt = computed(() => resourceSelectionPrompt.value
   ?? (boardTargetPrompt.value?.data?.choiceMode === 'mixed-board-payment' ? boardTargetPrompt.value : null))
+const mixedBoardPayment = computed(() => mobilePaymentPrompt.value?.data?.choiceMode === 'mixed-board-payment')
+const selectedPaymentIds = computed(() => mixedBoardPayment.value ? boardTargetIds.value : paymentResourceIds.value)
+const paymentChoiceIds = computed(() => mobilePaymentPrompt.value
   ?.validChoices.filter(id => id !== 'skip' && id !== 'cancel') ?? [])
 // The compact resource strip is always a readable entry point on a phone.  A
 // real resource prompt additionally turns the same large sheet into a selector;
 // merely viewing morale never changes game state.
 const mobileMoralePickerEnabled = computed(() => mobileLandscapeViewport.value)
-const mobileMoraleInteractive = computed(() => Boolean(resourceSelectionPrompt.value))
+const mobileMoraleInteractive = computed(() => Boolean(mobilePaymentPrompt.value))
 type MobileMoraleCandidate = {
   id: string
   label: string
@@ -617,7 +620,7 @@ watch(activeBoardPromptId, promptId => {
   focusCard.value = null
   customDisasterSlot.value = null
 })
-watch(() => resourceSelectionPrompt.value?.promptId, () => {
+watch(() => mobilePaymentPrompt.value?.promptId, () => {
   paymentResourceIds.value = []
   mobileMoralePickerOpen.value = false
 })
@@ -1063,10 +1066,9 @@ function ownSlot(row: number, slot: number, card: Card | null) {
   playArmed.value = false
 }
 function togglePaymentResource(instanceId: string) {
-  const prompt = resourceSelectionPrompt.value
-    ?? (boardTargetPrompt.value?.data?.choiceMode === 'mixed-board-payment' ? boardTargetPrompt.value : null)
+  const prompt = mobilePaymentPrompt.value
   if (!prompt || !paymentChoiceIds.value.includes(instanceId)) return
-  const selected = prompt.data?.choiceMode === 'mixed-board-payment' ? boardTargetIds.value : paymentResourceIds.value
+  const selected = selectedPaymentIds.value
   if (prompt.data?.lockedChoices?.split('|').includes(instanceId)) return
   const index = selected.indexOf(instanceId)
   if (index >= 0) selected.splice(index, 1)
@@ -1089,11 +1091,16 @@ function cancelResourcePayment() {
   command('resolvePrompt', { promptId: prompt.promptId, cardInstanceIds: ['cancel'] })
 }
 function confirmMobileMoralePayment(skip = false) {
-  confirmResourcePayment(skip)
+  if (mixedBoardPayment.value) resolveBoardTarget(skip)
+  else confirmResourcePayment(skip)
   mobileMoralePickerOpen.value = false
 }
 function cancelMobileMoralePayment() {
-  cancelResourcePayment()
+  if (mixedBoardPayment.value) {
+    const prompt = mobilePaymentPrompt.value
+    if (prompt?.validChoices.includes('cancel'))
+      command('resolvePrompt', { promptId: prompt.promptId, cardInstanceIds: ['cancel'] })
+  } else cancelResourcePayment()
   mobileMoralePickerOpen.value = false
 }
 function enemySlot(row: number, slot: number, card: Card | null) {
@@ -1345,7 +1352,7 @@ function statusTexts(card: Card) {
               :combat-attacker-id="combat?.attackerOwner.playerIndex === viewEnemy.playerIndex ? combat.attacker.instanceId : null"
               :combat-target-id="combat?.targetOwner.playerIndex === viewEnemy.playerIndex ? combat.target?.instanceId : null"
               :combat-target-master="combat?.targetOwner.playerIndex === viewEnemy.playerIndex && !combat.target"
-              :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="paymentResourceIds"
+              :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="mobileLandscapeViewport ? selectedPaymentIds : paymentResourceIds"
               :mobile-morale-picker="mobileMoralePickerEnabled"
               :master-targetable="!isControlledPlayer(viewEnemy.playerIndex) && !combat && selectedAttackTargets.includes('master')"
               @slot="(row, slot, card) => slotFor(viewEnemy.playerIndex, row, slot, card)" @master="masterFor(viewEnemy.playerIndex)"
@@ -1431,7 +1438,7 @@ function statusTexts(card: Card) {
               :selection-mode="selectionModeFor(viewMe.playerIndex)" :targetable-ids="targetableIdsFor(viewMe.playerIndex)"
               :prompt-slot-ids="boardSlotTargetPlayerIndex === viewMe.playerIndex ? (boardSlotPrompt?.validChoices ?? []) : []"
               :attackable-ids="isControlledPlayer(viewMe.playerIndex) ? attackableIds : []" :response-playable-ids="isControlledPlayer(viewMe.playerIndex) ? responsePlayableIds : []"
-              :selected-target-ids="boardTargetIds" :response-target-ids="responseTargetIds" :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="paymentResourceIds" :mobile-morale-picker="mobileMoralePickerEnabled"
+              :selected-target-ids="boardTargetIds" :response-target-ids="responseTargetIds" :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="mobileLandscapeViewport ? selectedPaymentIds : paymentResourceIds" :mobile-morale-picker="mobileMoralePickerEnabled"
               :can-activate-osiris="isControlledPlayer(viewMe.playerIndex) && canActivateOsiris"
               :osiris-victory-disabled-reason="osirisVictoryDisabledReason"
               :combat-attacker-id="combat?.attackerOwner.playerIndex === viewMe.playerIndex ? combat.attacker.instanceId : null"
@@ -1529,37 +1536,37 @@ function statusTexts(card: Card) {
       </Teleport>
       <Teleport :to="landscapeTeleportTarget()">
         <section v-if="mobileMoralePickerEnabled && mobileMoralePickerOpen" class="mobile-record-overlay mobile-morale-overlay mobile-safe-overlay" role="dialog" aria-modal="true" aria-label="选择士气">
-          <header><div><h2>{{ mobileMoraleInteractive ? '选择士气' : '我方士气' }}</h2><small>{{ mobileMoraleInteractive ? `已选择 ${paymentResourceIds.length}/${resourceSelectionPrompt?.maxChoose ?? 0}` : `活跃 ${viewMe.morale.filter(item => !item.tapped).length} / 共 ${viewMe.morale.length}` }}</small></div><div class="mobile-morale-header-actions"><button type="button" @click="mobileMoralePickerOpen = false; mobileMoralePickerMinimized = true">最小化</button><button type="button" @click="mobileMoralePickerOpen = false; mobileMoralePickerMinimized = false">返回对局</button></div></header>
-          <div v-if="resourceSelectionPrompt" class="mobile-morale-prompt inline-prompt-copy">
-            <strong>{{ inlinePromptTitle(resourceSelectionPrompt) }}</strong>
-            <span>{{ inlinePromptActor(resourceSelectionPrompt) }}</span>
-            <span v-if="resourceSelectionPrompt.presentation?.situation">{{ resourceSelectionPrompt.presentation.situation }}</span>
-            <span v-if="inlinePromptInstruction(resourceSelectionPrompt)">{{ inlinePromptInstruction(resourceSelectionPrompt) }}</span>
-            <span role="status">{{ inlinePromptRange(resourceSelectionPrompt) }}；{{ inlinePromptSelectionSummary(resourceSelectionPrompt, paymentResourceIds) }}</span>
-            <span v-if="inlinePromptPayment(resourceSelectionPrompt)">{{ inlinePromptPayment(resourceSelectionPrompt) }}</span>
-            <span v-if="resourceSelectionPrompt.presentation?.submissionConsequence">确认后：{{ resourceSelectionPrompt.presentation.submissionConsequence }}</span>
+          <header><div><h2>{{ mobileMoraleInteractive ? '选择士气' : '我方士气' }}</h2><small>{{ mobileMoraleInteractive ? `已选择 ${selectedPaymentIds.length}/${mobilePaymentPrompt?.maxChoose ?? 0}` : `活跃 ${viewMe.morale.filter(item => !item.tapped).length} / 共 ${viewMe.morale.length}` }}</small></div><div class="mobile-morale-header-actions"><button type="button" @click="mobileMoralePickerOpen = false; mobileMoralePickerMinimized = true">最小化</button><button type="button" @click="mobileMoralePickerOpen = false; mobileMoralePickerMinimized = false">返回对局</button></div></header>
+          <div v-if="mobilePaymentPrompt" class="mobile-morale-prompt inline-prompt-copy">
+            <strong>{{ inlinePromptTitle(mobilePaymentPrompt) }}</strong>
+            <span>{{ inlinePromptActor(mobilePaymentPrompt) }}</span>
+            <span v-if="mobilePaymentPrompt.presentation?.situation">{{ mobilePaymentPrompt.presentation.situation }}</span>
+            <span v-if="inlinePromptInstruction(mobilePaymentPrompt)">{{ inlinePromptInstruction(mobilePaymentPrompt) }}</span>
+            <span role="status">{{ inlinePromptRange(mobilePaymentPrompt) }}；{{ inlinePromptSelectionSummary(mobilePaymentPrompt, selectedPaymentIds) }}</span>
+            <span v-if="inlinePromptPayment(mobilePaymentPrompt)">{{ inlinePromptPayment(mobilePaymentPrompt) }}</span>
+            <span v-if="mobilePaymentPrompt.presentation?.submissionConsequence">确认后：{{ mobilePaymentPrompt.presentation.submissionConsequence }}</span>
           </div>
           <p v-else class="mobile-morale-prompt">这里展示当前士气状态；需要支付或返还时会自动变为可选择面板。</p>
           <div class="mobile-morale-picker" aria-label="可选择的士气与符文">
             <section v-if="viewMe.faction === 'otherworld'" class="mobile-rune-row" aria-label="彼界阵营符文">
               <div v-if="mobileRuneChoices.length">
-                <button v-for="choice in mobileRuneChoices" :key="choice.id" type="button" :class="['mobile-morale-choice', choice.state, `activity-${choice.activity}`, { selected: paymentResourceIds.includes(choice.id), unavailable: !choice.selectable }]" :aria-pressed="paymentResourceIds.includes(choice.id)" :aria-disabled="!choice.selectable" :aria-label="`${choice.label}${choice.disabledReason ? `：${choice.disabledReason}` : ''}`" :title="choice.disabledReason || choice.label" @click="chooseMobileMorale(choice)">
+                <button v-for="choice in mobileRuneChoices" :key="choice.id" type="button" :class="['mobile-morale-choice', choice.state, `activity-${choice.activity}`, { selected: selectedPaymentIds.includes(choice.id), unavailable: !choice.selectable }]" :aria-pressed="selectedPaymentIds.includes(choice.id)" :aria-disabled="!choice.selectable" :aria-label="`${choice.label}${choice.disabledReason ? `：${choice.disabledReason}` : ''}`" :title="choice.disabledReason || choice.label" @click="chooseMobileMorale(choice)">
                   <img :src="choice.iconUrl" alt="" />
                 </button>
               </div>
             </section>
             <section class="mobile-resource-row" aria-label="普通士气与特殊士气">
-              <button v-for="choice in mobileMoraleChoices" :key="choice.id" type="button" :class="['mobile-morale-choice', choice.state, `activity-${choice.activity}`, { selected: paymentResourceIds.includes(choice.id), unavailable: !choice.selectable }]" :aria-pressed="paymentResourceIds.includes(choice.id)" :aria-disabled="!choice.selectable" :aria-label="`${choice.label}${choice.disabledReason ? `：${choice.disabledReason}` : ''}`" :title="choice.disabledReason || choice.label" @click="chooseMobileMorale(choice)">
+              <button v-for="choice in mobileMoraleChoices" :key="choice.id" type="button" :class="['mobile-morale-choice', choice.state, `activity-${choice.activity}`, { selected: selectedPaymentIds.includes(choice.id), unavailable: !choice.selectable }]" :aria-pressed="selectedPaymentIds.includes(choice.id)" :aria-disabled="!choice.selectable" :aria-label="`${choice.label}${choice.disabledReason ? `：${choice.disabledReason}` : ''}`" :title="choice.disabledReason || choice.label" @click="chooseMobileMorale(choice)">
                 <img :src="choice.iconUrl" alt="" />
               </button>
             </section>
             <p v-if="mobileMoraleReason" class="mobile-morale-reason" role="status">{{ mobileMoraleReason }}</p>
             <p v-if="!mobileMoraleChoices.length">{{ mobileMoraleInteractive ? '当前提示没有可选择的士气。' : '当前没有士气。' }}</p>
           </div>
-          <footer v-if="resourceSelectionPrompt" class="mobile-morale-actions" data-ui-contract="equal-action-group">
-            <button v-if="resourceSelectionPrompt.validChoices.includes('skip')" type="button" @click="confirmMobileMoralePayment(true)">{{ promptChoiceText(resourceSelectionPrompt, 'skip', '不发动') }}</button>
-            <button v-if="resourceSelectionPrompt.validChoices.includes('cancel')" type="button" @click="cancelMobileMoralePayment">{{ promptChoiceText(resourceSelectionPrompt, 'cancel', '取消打出') }}</button>
-            <button class="primary" type="button" :disabled="paymentResourceIds.length < resourceSelectionPrompt.minChoose || paymentResourceIds.length > resourceSelectionPrompt.maxChoose" @click="confirmMobileMoralePayment(false)">{{ resourceSelectionPrompt.kind === 'resource-return' || resourceSelectionPrompt.data?.choiceMode === 'resource-return' ? '确认返还' : resourceSelectionPrompt.kind === 'resource-payment' || resourceSelectionPrompt.data?.choiceMode === 'resource-payment' ? '确认支付' : '确认选择' }}</button>
+          <footer v-if="mobilePaymentPrompt" class="mobile-morale-actions" data-ui-contract="equal-action-group">
+            <button v-if="mobilePaymentPrompt.validChoices.includes('skip')" type="button" @click="confirmMobileMoralePayment(true)">{{ promptChoiceText(mobilePaymentPrompt, 'skip', '不发动') }}</button>
+            <button v-if="mobilePaymentPrompt.validChoices.includes('cancel')" type="button" @click="cancelMobileMoralePayment">{{ promptChoiceText(mobilePaymentPrompt, 'cancel', '取消打出') }}</button>
+            <button class="primary" type="button" :disabled="selectedPaymentIds.length < mobilePaymentPrompt.minChoose || selectedPaymentIds.length > mobilePaymentPrompt.maxChoose" @click="confirmMobileMoralePayment(false)">{{ mixedBoardPayment ? '确认费用' : mobilePaymentPrompt.kind === 'resource-return' || mobilePaymentPrompt.data?.choiceMode === 'resource-return' ? '确认返还' : mobilePaymentPrompt.kind === 'resource-payment' || mobilePaymentPrompt.data?.choiceMode === 'resource-payment' ? '确认支付' : '确认选择' }}</button>
           </footer>
         </section>
       </Teleport>
