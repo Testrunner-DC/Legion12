@@ -22,7 +22,7 @@ public sealed record L12AlternateArtAwardRuleView(string Id, string AlternateArt
     string MasterId = "");
 public sealed record L12AlternateArtAwardRuleDraft(string? Id, string AlternateArtId, string Kind, string SeasonId,
     string EventId, int MinimumTierIndex, bool Active = true, string MasterId = "");
-public sealed record L12AlternateArtEventDispatchDraft(string RuleId, IReadOnlyList<string> Usernames);
+public sealed record L12AlternateArtEventDispatchDraft(string RuleId, IReadOnlyList<string> AccountIds);
 public sealed record L12AlternateArtRankedParticipantDispatchDraft(string AlternateArtId, string SeasonId = "");
 public sealed record L12AlternateArtRankedParticipantDispatchPreview(int EligibleAccounts, int AlreadyGranted,
     int ToGrant, string SourceReference, string SeasonId);
@@ -311,12 +311,13 @@ public sealed partial class L12PlatformStore
         {
             var rule = _data.AlternateArtAwardRules.FirstOrDefault(row => row.Id == draft.RuleId && row.Active && row.Kind == "event")
                 ?? throw new KeyNotFoundException("可执行的活动异画规则不存在");
-            var usernames = (draft.Usernames ?? []).Select(value => value?.Trim()).Where(value => !string.IsNullOrWhiteSpace(value))
-                .Distinct(StringComparer.OrdinalIgnoreCase).Take(500).ToArray();
-            if (usernames.Length == 0) throw new ArgumentException("请至少填写一个玩家账号");
-            var accounts = usernames.Select(username => _data.Accounts.FirstOrDefault(row =>
-                    string.Equals(row.Username, username, StringComparison.OrdinalIgnoreCase) && !row.Deleted)
-                ?? throw new KeyNotFoundException($"目标玩家不存在：{username}")).ToArray();
+            var accountIds = (draft.AccountIds ?? []).Select(value => value?.Trim()).Where(value => !string.IsNullOrWhiteSpace(value))
+                .Distinct(StringComparer.Ordinal).Take(500).ToArray();
+            if (accountIds.Length == 0) throw new ArgumentException("请至少选择一个玩家账号");
+            var accounts = accountIds.Select(accountId => _data.Accounts.FirstOrDefault(row => row.Id == accountId && !row.Deleted)
+                ?? throw new KeyNotFoundException($"目标玩家不存在：{accountId}")).ToArray();
+            var disabled = accounts.FirstOrDefault(account => account.Disabled);
+            if (disabled is not null) throw new ArgumentException($"目标玩家账号已禁用：{disabled.Id}");
             var views = new List<L12AlternateArtGrantView>();
             foreach (var account in accounts)
             {
@@ -324,7 +325,7 @@ public sealed partial class L12PlatformStore
                 views.Add(ToAlternateArtGrantView(grant));
             }
             AddAdminAudit(actor, "alternate-art-award-rule", "dispatch-event", rule.Id, null,
-                $"event={rule.EventId};players={usernames.Length}", null, context);
+                $"event={rule.EventId};players={accountIds.Length}", null, context);
             Save();
             return views;
         }

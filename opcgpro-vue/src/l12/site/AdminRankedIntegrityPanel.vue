@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import PagedCollection from './PagedCollection.vue'
 import RankedIntegrityActions from './RankedIntegrityActions.vue'
+import AdminAccountPicker from './AdminAccountPicker.vue'
 import { computed, onMounted, ref } from 'vue'
 import { adminApi, type RankedIntegrityAudit } from '@/l12/platform'
 import { integrityLabel } from '../rankedIntegrity'
@@ -76,7 +77,7 @@ onMounted(load)
   <section class="integrity-panel" data-ui-contract="ranked-integrity-review">
     <header>
       <div><small>RANKED INTEGRITY</small><h2>排位完整性审计</h2><p>风险不等于违规。强复合风险可暂缓收益；人工处置须核查证据，不自动扣减七曜、封禁或限制正常重复对局。</p></div>
-      <div class="filters"><input v-model="accountId" placeholder="账号 ID" @keyup.enter="load"/><input v-model="matchId" placeholder="对局 ID" @keyup.enter="load"/><label><input v-model="reviewOnly" type="checkbox"/>仅需复核</label><button :disabled="loading" @click="load">{{ loading ? '加载中' : '查询' }}</button></div>
+      <div class="filters"><AdminAccountPicker v-model="accountId" label="玩家账号" @change="load"/><input v-model="matchId" placeholder="对局 ID" @keyup.enter="load"/><label><input v-model="reviewOnly" type="checkbox"/>仅需复核</label><button :disabled="loading" @click="load">{{ loading ? '加载中' : '查询' }}</button></div>
     </header>
     <p v-if="notice" class="notice">{{ notice }}</p>
     <details v-if="groups.length" class="risk-groups"><summary>相同对手归组（仅当前查询结果，不代表完整对局历史）</summary><button v-for="group in groups" :key="group.key" @click="selectGroup(group)">{{ group.names }} · {{ group.rows.length }}条 · 同一账号最多获胜{{ Math.max(0, ...group.winnerCounts.values()) }}条 · 选择{{ Math.min(50, group.rows.length) }}条</button></details>
@@ -97,4 +98,5 @@ onMounted(load)
 .risk-groups{margin:12px 0;padding:12px;border:1px solid #55656e;max-height:240px;overflow:auto}.risk-groups button{display:block;max-width:100%;margin:8px 0;padding:10px;border:1px solid #6e654a;background:#201f16;color:#e9ddb5;white-space:normal;text-align:left;font:inherit}
 .integrity-panel{border:1px solid #35424a;background:#101821;padding:20px}.integrity-panel>header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;border-bottom:1px solid #36434a;padding-bottom:13px}.integrity-panel h2{margin:4px 0}.integrity-panel p{margin:0;color:#7d898e;font-size:14px}.integrity-panel small{display:block;color:#75828a;font-size:14px}.filters{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}.filters input,.filters button{box-sizing:border-box;padding:9px;border:1px solid #4c5961;background:#080e13;color:#fff}.filters label{display:flex;align-items:center;gap:5px;color:#aab3b6;font-size:14px}.filters label input{width:auto}.integrity-head,.integrity-row{display:grid;grid-template-columns:1.1fr 1.1fr 2fr .75fr;gap:12px;padding:10px}.integrity-head{color:#77858b;font-size:14px;font-weight:900}.integrity-row{border-top:1px solid #303c43;color:#c8cecc;font-size:14px}.integrity-row[data-review="true"]{border-left:3px solid #d28f3e;background:#1a140c}.integrity-row span{min-width:0}.integrity-row b,.integrity-row code,.integrity-row small{display:block;margin-top:4px}.integrity-row code{color:#d7b95f;overflow-wrap:anywhere}.integrity-row em{display:inline-block;margin:0 4px 4px 0;padding:4px 6px;border:1px solid #7b5930;background:#241b0d;color:#e6c87b;font-size:14px;font-style:normal}.notice{margin:10px 0;padding:9px;border-left:3px solid #a9404c;background:#281116;color:#efadb4!important}.empty{padding:36px;color:#75828a;text-align:center}@media(max-width:900px){.integrity-panel>header{align-items:stretch;flex-direction:column}.filters{justify-content:flex-start}.integrity-head{display:none}.integrity-row{grid-template-columns:1fr}}
 .integrity-panel,.integrity-panel>header,.filters,.integrity-row{box-sizing:border-box;min-width:0;max-width:100%}.filters>*{min-width:0;max-width:100%}@media(max-width:520px){.integrity-panel{padding:14px}.filters{display:grid;grid-template-columns:1fr}.filters input,.filters button{width:100%}}
+.filters :deep(.admin-account-picker){min-width:min(320px,100%)}
 </style>

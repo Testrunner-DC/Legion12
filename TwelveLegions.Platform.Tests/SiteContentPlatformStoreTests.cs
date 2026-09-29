@@ -251,11 +251,13 @@ public sealed class SiteContentPlatformStoreTests
             var rule = store.SaveAlternateArtAwardRule(admin,
                 new(null, art.Id, "event", "", "INTERNAL-EVENT-42", 0));
 
-            store.DispatchAlternateArtEvent(admin, new(rule.Id, [player.Username]));
+            store.DispatchAlternateArtEvent(admin, new(rule.Id, [player.Id]));
 
             var notification = Assert.Single(store.PendingAlternateArtGrantNotifications(player.Id));
             Assert.Equal("", notification.Reason);
             Assert.DoesNotContain("INTERNAL-EVENT-42", notification.Reason);
+            Assert.Throws<KeyNotFoundException>(() =>
+                store.DispatchAlternateArtEvent(admin, new(rule.Id, [player.Username])));
         }
         finally
         {

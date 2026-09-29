@@ -1201,7 +1201,7 @@ export const adminApi = {
   reviewUsernameChangeRequest: (id: string, approve: boolean, note = '') => platformRequest<UsernameChangeRequest>(`/api/admin/username-change-requests/${encodeURIComponent(id)}/review`, { method: 'POST', body: JSON.stringify({ approve, note }) }),
   alternateArtAwardRules: () => platformRequest<AlternateArtAwardRule[]>('/api/admin/alternate-art-award-rules'),
   saveAlternateArtAwardRule: (draft: Partial<AlternateArtAwardRule> & Pick<AlternateArtAwardRule, 'alternateArtId' | 'kind' | 'seasonId' | 'eventId' | 'minimumTierIndex'>) => platformRequest<AlternateArtAwardRule>('/api/admin/alternate-art-award-rules', { method: 'PUT', body: JSON.stringify(draft) }),
-  dispatchAlternateArtEvent: (ruleId: string, usernames: string[]) => platformRequest<AlternateArtGrant[]>('/api/admin/alternate-art-award-rules/event-dispatch', { method: 'POST', body: JSON.stringify({ ruleId, usernames }) }),
+  dispatchAlternateArtEvent: (ruleId: string, accountIds: string[]) => platformRequest<AlternateArtGrant[]>('/api/admin/alternate-art-award-rules/event-dispatch', { method: 'POST', body: JSON.stringify({ ruleId, accountIds }) }),
   siteCategories: (kind?: SiteContentKind) => platformRequest<SiteCategory[]>(`/api/admin/site/categories${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`),
   saveSiteCategory: (category: Partial<SiteCategory> & Pick<SiteCategory, 'kind' | 'name' | 'slug' | 'sortOrder' | 'active'>) => {
     const body = { kind: category.kind, name: category.name, slug: category.slug, sortOrder: category.sortOrder,

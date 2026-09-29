@@ -31,10 +31,12 @@ platformState.account={id:'admin-a',username:'AdminA',role:'admin',createdAt:'',
 window.__qa={reads:()=>reads,auth:()=>({verified:authState.verified,account:platformState.account})}
 const App=defineComponent({setup(){
  const accountId=ref('')
+ const secondAccountId=ref('')
  const switchAccount=()=>{platformState.account={...platformState.account,id:'admin-b',username:'AdminB'}}
  return()=>h('main',{class:'qa-altart'},[
   h('h1','异画派发玩家选择'),
   h(AdminAccountPicker,{modelValue:accountId.value,'onUpdate:modelValue':value=>accountId.value=value,label:'玩家账号'}),
+  h(AdminAccountPicker,{modelValue:secondAccountId.value,'onUpdate:modelValue':value=>secondAccountId.value=value,label:'第二玩家账号'}),
   h('output',{id:'selected-id'},accountId.value),
   h('button',{id:'switch-account',onClick:switchAccount},'切换管理员账号'),
  ])
@@ -77,11 +79,15 @@ try {
   for (const viewport of viewports) {
     await page.setViewportSize(viewport)
     await page.goto(`http://127.0.0.1:${port}/__alternate_art_admin_closeout__`)
-    const input = page.getByRole('combobox', { name: '玩家账号' })
+    const input = page.locator('input[role="combobox"]').nth(0)
+    const secondInput = page.locator('input[role="combobox"]').nth(1)
     await input.waitFor()
     await page.waitForTimeout(100)
     assert.ok(await page.evaluate(() => window.__qa.reads()) > 0,
       `account candidates were not requested at ${suffix(viewport)}: ${pageErrors.join(' | ')} · ${JSON.stringify(await page.evaluate(() => window.__qa.auth()))} · ${await page.locator('body').innerText()}`)
+    const firstControls = await input.getAttribute('aria-controls')
+    const secondControls = await secondInput.getAttribute('aria-controls')
+    assert.ok(firstControls && secondControls && firstControls !== secondControls, `picker aria-controls ids collided at ${suffix(viewport)}`)
     await input.fill('桐')
     const options = page.getByRole('option')
     await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length === 4)

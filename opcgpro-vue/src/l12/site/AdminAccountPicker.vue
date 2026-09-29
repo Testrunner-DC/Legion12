@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, useId, watch } from 'vue'
 import { adminApi, hasPermission, platformState, type PlatformAccount } from '@/l12/platform'
 
 const props = withDefaults(defineProps<{
@@ -15,6 +15,8 @@ const emit = defineEmits<{
   selected: [account: PlatformAccount | null]
   change: [account: PlatformAccount]
 }>()
+const pickerId = useId()
+const listboxId = `admin-account-options-${pickerId}`
 
 const accounts = ref<PlatformAccount[]>([])
 const query = ref('')
@@ -39,7 +41,7 @@ function accountStatus(account: PlatformAccount) {
   if (account.disabled) return '已禁用，不可选择'
   return '可选择'
 }
-function optionId(account: PlatformAccount) { return `admin-account-option-${account.id}` }
+function optionId(account: PlatformAccount) { return `admin-account-option-${pickerId}-${account.id}` }
 function syncSelected() {
   const selected = selectedAccount.value
   if (selected) query.value = selected.username
@@ -131,7 +133,7 @@ onMounted(loadAccounts)
       role="combobox"
       autocomplete="off"
       aria-autocomplete="list"
-      aria-controls="admin-account-options"
+      :aria-controls="listboxId"
       :aria-expanded="open"
       :aria-activedescendant="open && activeAccount ? optionId(activeAccount) : undefined"
       @input="onInput"
@@ -139,7 +141,7 @@ onMounted(loadAccounts)
       @blur="onBlur"
       @keydown="onKeydown"
     >
-    <div v-if="open" id="admin-account-options" class="admin-account-options" role="listbox">
+    <div v-if="open" :id="listboxId" class="admin-account-options" role="listbox">
       <p v-if="loading">正在读取玩家账号…</p>
       <p v-else-if="error" class="account-picker-error" role="alert">{{ error }}</p>
       <template v-else-if="candidates.length">
