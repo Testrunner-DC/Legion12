@@ -1,12 +1,25 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { playerLogContainsForbiddenTerms, projectLog } from '../src/l12/game/logViewModel.ts'
 import { replayGameAt } from '../src/l12/replayModel.ts'
 
 const probe = fileURLToPath(new URL('./probe-battle-log-qianyang.ps1', import.meta.url))
+const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
+const testProject = path.join(repoRoot, 'TwelveLegions.Tests', 'TwelveLegions.Tests.csproj')
+const configuration = process.env.L12_BATTLE_LOG_CONFIGURATION ?? 'Release'
+assert(['Debug', 'Release'].includes(configuration), 'configuration must be Debug or Release')
+const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim()
+const framework = execFileSync('dotnet', ['msbuild', testProject,
+  '-getProperty:TargetFramework', `-p:Configuration=${configuration}`], { encoding: 'utf8' }).trim()
+assert(framework, 'the test project must declare a target framework')
+execFileSync('dotnet', ['build', testProject, '--no-restore', '--no-incremental', '-c', configuration, '-v:q'],
+  { cwd: repoRoot, encoding: 'utf8' })
+const assemblyDirectory = path.join(repoRoot, 'TwelveLegions.Tests', 'bin', configuration, framework)
 function scenario(name) {
-  return JSON.parse(execFileSync('pwsh', ['-NoProfile', '-File', probe, '-Scenario', name],
+  return JSON.parse(execFileSync('pwsh', ['-NoProfile', '-File', probe, '-Scenario', name,
+    '-Configuration', configuration, '-AssemblyDirectory', assemblyDirectory, '-ExpectedCommit', commit],
     { encoding: 'utf8' }).trim())
 }
 const results = events => events.filter(event => event.type === 'effect-result')

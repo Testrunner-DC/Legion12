@@ -1,8 +1,33 @@
-param([ValidateSet('empty-draw', 'target-decline', 'hidden-draw')] [string]$Scenario = 'empty-draw')
+param(
+  [ValidateSet('empty-draw', 'target-decline', 'hidden-draw')] [string]$Scenario = 'empty-draw',
+  [ValidateSet('Debug', 'Release')] [string]$Configuration = 'Release',
+  [string]$AssemblyDirectory,
+  [string]$ExpectedCommit
+)
 
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../..')).Path
-$testOutput = Join-Path $repoRoot 'TwelveLegions.Tests/bin/Debug/net10.0'
-[System.Reflection.Assembly]::LoadFrom((Join-Path $testOutput 'GrandUMIServer.dll')) | Out-Null
+$testProject = Join-Path $repoRoot 'TwelveLegions.Tests/TwelveLegions.Tests.csproj'
+if ([string]::IsNullOrWhiteSpace($AssemblyDirectory)) {
+  $targetFramework = (& dotnet msbuild $testProject '-getProperty:TargetFramework' "-p:Configuration=$Configuration").Trim()
+  if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($targetFramework)) {
+    throw "Unable to resolve TargetFramework for $Configuration"
+  }
+  $testOutput = Join-Path $repoRoot "TwelveLegions.Tests/bin/$Configuration/$targetFramework"
+} else {
+  $testOutput = (Resolve-Path -LiteralPath $AssemblyDirectory).Path
+}
+$assemblyPath = Join-Path $testOutput 'GrandUMIServer.dll'
+if (-not (Test-Path -LiteralPath $assemblyPath)) {
+  throw "Missing $Configuration engine assembly: $assemblyPath. Build the test project first."
+}
+$engineAssembly = [System.Reflection.Assembly]::LoadFrom($assemblyPath)
+if (-not [string]::IsNullOrWhiteSpace($ExpectedCommit)) {
+  $version = $engineAssembly.GetCustomAttributes(
+    [System.Reflection.AssemblyInformationalVersionAttribute], $false).InformationalVersion
+  if (-not $version.EndsWith("+$ExpectedCommit", [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Engine assembly commit mismatch: expected $ExpectedCommit, found $version"
+  }
+}
 $catalog = [TwelveLegions.Server.L12Catalog]::Load((Join-Path $testOutput 'Data'))
 $ctor = [TwelveLegions.Server.L12GameEngine].GetConstructors()[0]
 $argsForGame = @($catalog, 'stage4a-integration', 'STAGE4A', 105311,
