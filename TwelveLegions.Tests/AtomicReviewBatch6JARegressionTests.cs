@@ -290,7 +290,7 @@ public sealed class AtomicReviewBatch6JARegressionTests
         var first = OnlyPrompt(game);
         Assert.Equal("response", first.Kind);
         var targetOwner = cardId == "S01-0408" ? 1 : 0;
-        var firstSide = first.PlayerIndex == targetOwner ? "我方" : "对方";
+        var firstSide = first.PlayerIndex == targetOwner ? "你的" : "对手的";
         Assert.Equal([targetId], JsonSerializer.Deserialize<string[]>(first.Data["responseTargetIds"])!);
         Assert.Contains(cardId == "S01-0408" ? $"{firstSide}前排左格" : $"{firstSide}士气区的", first.Text);
         Assert.DoesNotContain("responsePublicTargetSnapshotV1", JsonSerializer.Serialize(game.SnapshotFor(0)));
@@ -298,7 +298,7 @@ public sealed class AtomicReviewBatch6JARegressionTests
         var referee = JsonSerializer.Serialize(game.SnapshotForReferee());
         Assert.DoesNotContain("responsePublicTargetSnapshotV1", spectator);
         Assert.DoesNotContain("responsePublicTargetSnapshotV1", referee);
-        var publicLabel = cardId == "S01-0408" ? "玩家2前排左格" : "玩家1士气区的";
+        var publicLabel = cardId == "S01-0408" ? "玩家2的前排左格" : "玩家1的士气区的";
         using var spectatorDocument = JsonDocument.Parse(spectator);
         using var refereeDocument = JsonDocument.Parse(referee);
         Assert.Contains(publicLabel, spectatorDocument.RootElement.GetProperty("EffectStack")[0]
@@ -324,7 +324,7 @@ public sealed class AtomicReviewBatch6JARegressionTests
             new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
         var second = OnlyPrompt(game);
         Assert.Equal(1 - first.PlayerIndex, second.PlayerIndex);
-        var secondSide = second.PlayerIndex == targetOwner ? "我方" : "对方";
+        var secondSide = second.PlayerIndex == targetOwner ? "你的" : "对手的";
         Assert.Contains(cardId == "S01-0408" ? $"{secondSide}前排左格" : $"{secondSide}士气区的", second.Text);
         Assert.DoesNotContain(targetId, second.Text);
         Assert.True(game.Handle(second.PlayerIndex,
@@ -349,13 +349,13 @@ public sealed class AtomicReviewBatch6JARegressionTests
         item.Data["responsePresentationTargetIds"] = hidden.InstanceId;
         Invoke(game, "CaptureResponsePublicTargetSnapshot", item.Data, new[] { hidden.InstanceId });
         var first = (string)Invoke(game, "DescribeResponse", item, 0)!;
-        Assert.Contains("盖伏卡牌（对方后排中格）", first);
+        Assert.Contains("对手的后排中格盖伏卡牌", first);
         Assert.DoesNotContain(hidden.Name, first);
         Assert.DoesNotContain(hidden.CardId, JsonSerializer.Serialize(item.Data));
 
         game.State.Players[1].Field[1][1] = null;
         var afterLeave = (string)Invoke(game, "DescribeResponse", item, 1)!;
-        Assert.Contains("盖伏卡牌（我方后排中格）", afterLeave);
+        Assert.Contains("你的后排中格盖伏卡牌", afterLeave);
         item.Data.Remove("responsePublicTargetSnapshotV1"); // Pre-change V2 state.
         var oldCheckpoint = (string)Invoke(game, "DescribeResponse", item, 1)!;
         Assert.DoesNotContain("已选目标", oldCheckpoint);

@@ -2,6 +2,32 @@ import assert from 'node:assert/strict'
 import './test-library-placement-recovery.mjs'
 import {readFileSync} from 'node:fs'
 const source=readFileSync(new URL('../src/l12/game/PromptOverlay.vue',import.meta.url),'utf8')
+const board=readFileSync(new URL('../src/l12/game/GameBoard.vue',import.meta.url),'utf8')
+const serverRoot=new URL('../../服务端WebSocket/TwelveLegions/',import.meta.url)
+// Stage 3B-2 regression scope. The future-card, repository-wide gate is deferred
+// until the whole player-information programme has passed Stage 6 acceptance.
+const serverSources=[
+ 'L12RuleKernelIntegration.cs','L12MoralePayments.cs',
+ 'L12PromptsAndSetup.cs','L12ResponsePresentation.cs',
+].map(file=>({file,text:readFileSync(new URL(file,serverRoot),'utf8')}))
+const forbiddenPlayerPromptTemplates=[
+ /(?:实际结果|实际支付|后续结果).{0,30}权威(?:处理|结算|确定)/,
+ /(?:继续|结束|提交|处理)本次声明|本次声明到此结束|后续声明按步骤继续/,
+ /本次效果尚未结算|取消本次发动声明|不执行本次可选段/,
+ /效果原文中的我方／对方以发动者为准/,
+ /未结算效果|尚未结算的效果/,
+]
+for(const {file,text} of serverSources)
+ for(const phrase of forbiddenPlayerPromptTemplates)
+  assert(!phrase.test(text),`${file} still exposes a system-process prompt template: ${phrase}`)
+assert(!source.includes('waiting.playerName')&&!source.includes('props.game.players[playerIndex]?.name')
+ && !source.includes('<strong>{{ player.name }}</strong>'),
+ 'Prompt and waiting dialogs must use recipient-relative roles, never account names')
+assert(!board.includes('props.game.players[prompt.playerIndex]?.name'),
+ 'Inline prompt dialogs must not show account names')
+assert(!source.includes('naturalChoiceLabel(prompt.value?.presentation?.choiceConsequences?.[id], id)\n    ?? cardFor(id)?.name')
+ && !board.includes('|| prompt.presentation?.choiceConsequences?.[choice]?.trim()'),
+ 'A choice consequence must never become its button label')
 assert(source.includes('justify-content:safe center'),'Scrollable candidates must keep their first card accessible')
 assert(source.includes('overflow-x:hidden;overflow-y:auto'),'Full effect text must not trap footer actions below a clipped panel')
 assert(source.includes('.prompt-choices.effect-option-list{display:grid;width:100%;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));grid-auto-rows:82px'))

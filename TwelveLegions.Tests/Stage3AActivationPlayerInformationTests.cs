@@ -32,8 +32,8 @@ public sealed class Stage3AActivationPlayerInformationTests
         Assert.Equal("pending", prompt.Presentation.PaymentStatus);
         Assert.Contains("1张士气", prompt.Presentation.PaymentSummary);
         Assert.Contains("费用", prompt.Presentation.Instruction);
-        Assert.Contains("提交本次声明", prompt.Presentation.SubmissionConsequence);
-        Assert.Contains("取消本次发动声明", prompt.Presentation.ChoiceConsequences["skip"]);
+        Assert.Null(prompt.Presentation.SubmissionConsequence);
+        Assert.Equal("不发动当前效果。", prompt.Presentation.ChoiceConsequences["skip"]);
         Assert.Empty(game.SnapshotFor(1).Prompts);
         Assert.Empty(game.SnapshotForSpectator().Prompts);
         Assert.Empty(game.SnapshotForReferee().Prompts);
@@ -263,8 +263,8 @@ public sealed class Stage3AActivationPlayerInformationTests
         Render(game, activation);
 
         var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Contains("后续声明按步骤继续", prompt.Presentation!.ChoiceConsequences["mode:none"]);
-        Assert.Contains("继续或结束", prompt.Presentation.SubmissionConsequence);
+        Assert.False(prompt.Presentation!.ChoiceConsequences.ContainsKey("mode:none"));
+        Assert.Null(prompt.Presentation.SubmissionConsequence);
         Assert.Null(prompt.Presentation.PaymentStatus);
         Assert.DoesNotContain("skip", prompt.ValidChoices);
     }
@@ -285,7 +285,7 @@ public sealed class Stage3AActivationPlayerInformationTests
         game.State.PendingActivations.Add(activation);
         Render(game, activation);
         var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Contains("取消本次发动声明", prompt.Presentation!.ChoiceConsequences["skip"]);
+        Assert.Equal("不发动当前效果。", prompt.Presentation!.ChoiceConsequences["skip"]);
 
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
             Choice: "skip")).Accepted);

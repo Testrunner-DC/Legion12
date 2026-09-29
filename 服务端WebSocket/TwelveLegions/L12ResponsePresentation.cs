@@ -84,11 +84,10 @@ public sealed partial class L12GameEngine
     }
 
     private static string ResponseTargetSideLabel(int viewer, int owner)
-        => viewer < 0 ? $"玩家{owner + 1}" : owner == viewer ? "我方" : "对方";
+        => viewer < 0 ? $"玩家{owner + 1}的" : owner == viewer ? "你的" : "对手的";
 
     private static string ResponseBattlefieldSlotLabel(int viewer, int owner, int row, int slot)
-        => viewer >= 0 ? PlayerBattlefieldSlotLabel(viewer, owner, row, slot)
-            : $"玩家{owner + 1}{(row == 0 ? "前排" : "后排")}{new[] { "左格", "中格", "右格" }[slot]}";
+        => $"{ResponseTargetSideLabel(viewer, owner)}{(row == 0 ? "前排" : "后排")}{new[] { "左格", "中格", "右格" }[slot]}";
 
     private bool IsCurrentPublicResponseTarget(string id)
         => State.Players.Any(player => FindOnField(player, id, out _, out _) is not null
@@ -116,7 +115,7 @@ public sealed partial class L12GameEngine
                 var name = fact.PublicName is null ? "盖伏卡牌" : $"〈{fact.PublicName}〉";
                 var cost = fact.CurrentCost is { } value ? $"；声明时当前费用{value}" : "";
                 yield return (fact.Id,
-                    $"{name}（{ResponseBattlefieldSlotLabel(viewer, fact.Owner, fact.Row, fact.Slot)}{cost}）", true);
+                    $"{ResponseBattlefieldSlotLabel(viewer, fact.Owner, fact.Row, fact.Slot)}{name}{cost}", true);
             }
             else if (fact.Zone == "morale")
                 yield return (fact.Id, $"{side}士气区的{(fact.Tapped ? "休整" : "活跃")}士气", true);
@@ -141,7 +140,7 @@ public sealed partial class L12GameEngine
                     var card = player.Field[row][slot];
                     if (card is null || !string.Equals(card.InstanceId, id, StringComparison.OrdinalIgnoreCase)) continue;
                     var name = card.Hidden ? "盖伏卡牌" : $"〈{card.Name}〉";
-                    yield return (id, $"{name}（{ResponseBattlefieldSlotLabel(viewer, player.PlayerIndex, row, slot)}）", true);
+                    yield return (id, $"{ResponseBattlefieldSlotLabel(viewer, player.PlayerIndex, row, slot)}{name}", true);
                     found = true;
                 }
                 if (candidate.FieldOnly) continue;
@@ -158,7 +157,7 @@ public sealed partial class L12GameEngine
             if (targetEffect is not null)
                 yield return (id, targetEffect.Data.GetValueOrDefault("eventType") == "effect-hand-add"
                     ? "因效果加入手牌的事件"
-                    : $"{ResponseTargetSideLabel(viewer, targetEffect.Controller)}〈{targetEffect.SourceName}〉的效果：{targetEffect.Text}", false);
+                    : $"{(targetEffect.Controller == viewer ? "你" : "对手")}的〈{targetEffect.SourceName}〉效果：{targetEffect.Text}", false);
         }
     }
 
@@ -169,11 +168,10 @@ public sealed partial class L12GameEngine
     private string DescribeResponse(L12StackItem item, int viewer)
     {
         if (item.Data.GetValueOrDefault("eventType") == "effect-hand-add")
-            return $"{(item.Controller == viewer ? "我方" : "对方")}因效果将卡牌加入手牌。是否响应？";
-        var side = item.Controller == viewer ? "我方" : "对方";
+            return $"{(item.Controller == viewer ? "你" : "对手")}因效果将卡牌加入手牌。是否响应？";
+        var side = item.Controller == viewer ? "你" : "对手";
         var targets = PublicResponseTargets(item, viewer).Select(target => target.Label).ToArray();
         return $"{side}使用{BuildResponsePromptText(item)}"
-            + "\n（效果原文中的我方／对方以发动者为准）"
             + (targets.Length == 0 ? "" : $"\n已选目标：{string.Join("；", targets)}")
             + "\n是否响应？";
     }

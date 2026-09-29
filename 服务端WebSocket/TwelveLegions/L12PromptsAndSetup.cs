@@ -300,8 +300,8 @@ public sealed partial class L12GameEngine
             Situation = L12PlayerFacingText.Naturalize(situation),
             Instruction = L12PlayerFacingText.Naturalize(instruction),
             WaitingSummary = narrative is null
-                ? PromptWaitingSummary(State.Players[playerIndex].Name, kind)
-                : PromptWaitingSummary(State.Players[playerIndex].Name, narrative.WaitingAction),
+                ? PromptWaitingSummary(kind)
+                : PromptWaitingSummary(narrative.WaitingAction),
             // 后果是独立值语义，不与短按钮标签共用实例；没有权威后果时保持为空。
             ChoiceConsequences = narrative?.ChoiceConsequences?.ToDictionary(
                 pair => pair.Key,
@@ -382,7 +382,7 @@ public sealed partial class L12GameEngine
         return "请根据当前情况完成选择并确认。";
     }
 
-    private static string PromptWaitingSummary(string playerName, string kind)
+    private static string PromptWaitingSummary(string kind)
     {
         var action = kind switch
         {
@@ -401,10 +401,10 @@ public sealed partial class L12GameEngine
                 || kind is "discard" or "search" or "order" => "正在完成卡牌选择",
             _ => "正在完成当前操作",
         };
-        return $"{playerName} {action}";
+        return $"对手{action}";
     }
 
-    private static string PromptWaitingSummary(string playerName, L12PromptWaitingAction action)
+    private static string PromptWaitingSummary(L12PromptWaitingAction action)
     {
         var text = action switch
         {
@@ -421,7 +421,7 @@ public sealed partial class L12GameEngine
             L12PromptWaitingAction.LethalReplacement => "正在决定是否发动致命代替",
             _ => "正在完成当前操作",
         };
-        return $"{playerName} {text}";
+        return $"对手{text}";
     }
 
     /// <summary>
@@ -1832,19 +1832,18 @@ public sealed partial class L12GameEngine
         foreach (var item in State.EffectStack)
             AddPaidCostResponseData(item, responseData, item.StackItemId);
         AddPaidCostResponseData(top, responseData);
-        var responseText = "选择响应卡牌；可响应任意符合卡面条件的未结算效果。\n"
-            + string.Join("\n\n", State.EffectStack.Select(item => DescribeResponse(item, playerIndex)));
+        var responseText = string.Join("\n\n", State.EffectStack.Select(item => DescribeResponse(item, playerIndex)));
         var responseConsequences = choices.ToDictionary(
             id => id,
             id => id == "pass"
-                ? "不打出响应牌，优先权将继续传递。"
-                : $"打出〈{responseData[id]}〉，并按其合法范围响应当前未结算效果。",
+                ? "不打出响应牌。"
+                : $"打出〈{responseData[id]}〉响应当前效果。",
             StringComparer.OrdinalIgnoreCase);
         var prompt = CreatePrompt(playerIndex, "response", responseText, choices,
             1, 1, "stack-response", top.StackItemId, isPrivate: true,
             data: WithPromptNarrative(responseData,
-                new("响应窗口", "当前堆叠中有未结算效果，你拥有本次响应优先权。",
-                    "请选择1张当前可合法响应的卡牌，或选择“不响应”并传递优先权。",
+                new("是否响应", responseText,
+                    "请选择1张可响应的卡牌，或选择“不响应”。",
                     L12PromptWaitingAction.ResponseDecision, responseConsequences)));
         if (responseMode == InvalidFiveSecondsResponseMode && choices.Count == 1)
         {
@@ -2187,12 +2186,12 @@ public sealed partial class L12GameEngine
         var responseName = response?.Name ?? "所选响应卡牌";
         var targetConsequences = targets.ToDictionary(
             target => target.StackItemId,
-            _ => $"以〈{responseName}〉响应所选的未结算效果。",
+            _ => $"以〈{responseName}〉响应所选效果。",
             StringComparer.OrdinalIgnoreCase);
-        targetConsequences["cancel"] = "返回响应卡牌选择，不打出当前响应。";
+        targetConsequences["cancel"] = "重新选择响应卡牌。";
         WithPromptNarrative(data,
-            new(responseName, $"〈{responseName}〉可以响应多个尚未结算的效果。",
-                "请选择这张响应卡牌要作用于哪个效果；取消会返回响应卡牌选择。",
+            new(responseName, $"〈{responseName}〉可以响应多个效果。",
+                "请选择要响应的效果；取消则重新选牌。",
                 L12PromptWaitingAction.ResponseDecision, targetConsequences));
         CreatePrompt(playerIndex, "response-target", "选择本次响应的效果对象", targets.Select(item => item.StackItemId).Append("cancel"),
             1, 1, "stack-response-target", isPrivate: true, data: data);

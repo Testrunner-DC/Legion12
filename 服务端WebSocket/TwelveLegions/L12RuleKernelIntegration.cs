@@ -999,26 +999,11 @@ public sealed partial class L12GameEngine
         var candidateKind = currentCost ? "费用选项"
             : step.IsResponsePresentationTarget ? "合法对象" : "当前合法候选";
         var instruction = step.Kind == "option"
-            ? "请选择一种处理方式；本次效果尚未结算。"
-            : $"请从{candidateKind}中选择{range}并确认；本次效果尚未结算。";
+            ? "请选择一种处理方式。"
+            : $"请从{candidateKind}中选择{range}并确认。";
         var consequences = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (hasCancellationChoice)
-            consequences["skip"] = "取消本次发动声明；未提交的选择不再继续。";
-        if (step.Kind == "option" && validChoices.Contains("mode:none", StringComparer.OrdinalIgnoreCase))
-        {
-            var continuation = ModeNoneContinuation(activation, step);
-            consequences["mode:none"] = continuation switch
-            {
-                true => "不执行本次可选段；后续声明按步骤继续。",
-                false => "不发动本次可选效果；本次声明到此结束。",
-                null => "不执行本次可选段；后续步骤按已声明条件处理。",
-            };
-        }
-        var submission = step.Kind == "option" && validChoices.Contains("mode:none", StringComparer.OrdinalIgnoreCase)
-            ? "按所选方式继续或结束本次声明；实际结果以权威处理为准。"
-            : activation.CurrentStep + 1 < activation.SelectionSteps.Count
-                ? "确认本步选择并继续处理声明；本次效果尚未结算。"
-                : "提交本次声明；费用、对象和效果结果仍由权威结算确定。";
+            consequences["skip"] = "不发动当前效果。";
         WithPromptNarrative(promptData, new(sourceName,
             promptData.GetValueOrDefault("effectText") ?? step.Text,
             instruction,
@@ -1027,8 +1012,7 @@ public sealed partial class L12GameEngine
                 : L12PromptWaitingAction.TargetSelection,
             consequences,
             pendingCost is null ? null : "pending",
-            pendingCost is null ? null : pendingCost.Text,
-            submission));
+            pendingCost is null ? null : pendingCost.Text));
     }
 
     // Presentation only: CurrentStep also advances past skipped steps. Do not describe

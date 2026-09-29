@@ -166,8 +166,8 @@ public sealed class StarterTargetedBatch2ARegressionTests
 
         Queue(game, xiaoHe);
         var prompt = Prompt(game);
-        Assert.Contains("本次声明到此结束", prompt.Presentation!.ChoiceConsequences["mode:none"]);
-        Assert.DoesNotContain("进入下一步", prompt.Presentation.SubmissionConsequence);
+        Assert.False(prompt.Presentation!.ChoiceConsequences.ContainsKey("mode:none"));
+        Assert.Null(prompt.Presentation.SubmissionConsequence);
         Choose(game, "mode:none");
 
         Assert.Empty(game.State.PendingActivations);

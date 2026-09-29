@@ -207,14 +207,14 @@ function disasterEventOwner(card: Card, type: string, fallback: string) {
   const event = props.game.recentEvents?.find(item => item.type === type && item.cards?.some(entry => entry.instanceId === card.instanceId))
   return event?.playerIndex === undefined || event.playerIndex === null
     ? fallback
-    : `${props.game.players[event.playerIndex]?.name ?? `玩家${event.playerIndex + 1}`}选用`
+    : `${event.playerIndex === props.game.you ? '你' : '对手'}选用`
 }
 function isVisibleDisasterCard(card: DisasterCardView): card is Card {
   return !card.hidden && Boolean(card.cardId && card.name && card.cardType)
 }
 function disasterOwnerLabel(card: DisasterCardView) {
   if (card.ownerIndex === undefined || card.ownerIndex < 0) return '玩家已选用'
-  return `${props.game.players[card.ownerIndex]?.name ?? `玩家${card.ownerIndex + 1}`}选用`
+  return `${card.ownerIndex === props.game.you ? '你' : '对手'}选用`
 }
 const disasterHistory = computed(() => [
   {
@@ -253,6 +253,10 @@ function withPromptBinding(p: Prompt, command: Record<string, unknown> = {}) {
   }
 }
 function safeChoiceFallback(id: string) {
+  if (id === 'skip' || id === 'mode:none' || id === 'no') return '不发动'
+  if (id === 'cancel') return '取消'
+  if (id === 'pass') return '不响应'
+  if (id === 'yes') return '发动'
   const position = prompt.value?.validChoices.indexOf(id) ?? -1
   return position >= 0 ? `效果选项 ${position + 1}` : '效果选项'
 }
@@ -264,7 +268,6 @@ function label(id: string) {
   if (prompt.value?.kind === 'response-target') return naturalChoiceLabel(prompt.value.data?.[id], id)
     ?? naturalChoiceLabel(prompt.value.choiceLabels?.[id], id) ?? safeChoiceFallback(id)
   const base = naturalChoiceLabel(prompt.value?.choiceLabels?.[id], id)
-    ?? naturalChoiceLabel(prompt.value?.presentation?.choiceConsequences?.[id], id)
     ?? cardFor(id)?.name
     ?? naturalChoiceLabel(prompt.value?.data?.[`${id}:name`], id)
     ?? naturalChoiceLabel(prompt.value?.data?.[id], id)
@@ -585,9 +588,7 @@ const promptInstruction = computed(() => prompt.value?.presentation?.instruction
 const promptActor = computed(() => {
   const playerIndex = prompt.value?.playerIndex
   if (playerIndex === undefined) return ''
-  const side = playerIndex === props.game.you ? '我方' : '对方'
-  const name = props.game.players[playerIndex]?.name
-  return `当前操作：${side}${name ? ` · ${name}` : ''}`
+  return playerIndex === props.game.you ? '你正在选择' : '对手正在选择'
 })
 const promptSelectionRange = computed(() => {
   const current = prompt.value
@@ -752,13 +753,26 @@ function confirmAllPlacement(destination: 'top' | 'bottom') {
   }), p.playerIndex)
 }
 const isInfoConfirm = computed(() => ['disaster-reveal', 'disaster-trigger'].includes(prompt.value?.kind ?? ''))
+const promptConfirmLabel = computed(() => {
+  const kind = prompt.value?.kind ?? ''
+  if (isInfoConfirm.value) return '确认信息'
+  if (kind === 'resource-return' || prompt.value?.data?.choiceMode === 'resource-return') return '确认返还'
+  if (kind.includes('resource') || kind.includes('cost') || kind.includes('morale')) return '确认支付'
+  if (kind.includes('target')) return '确认目标'
+  if (kind.includes('slot')) return '确认位置'
+  if (kind.includes('card') || ['discard', 'search'].includes(kind)) return '确认卡牌'
+  return '确认选择'
+})
 const usesDetailCardImages = computed(() => isDisasterChoice.value || isInfoConfirm.value)
 function waitingText() {
-  if (waitingDefense.value) return `${props.game.players[1 - props.game.you].name} 正在选择是否支援或抵挡`
+  if (waitingDefense.value) return '对手正在选择是否支援或抵挡'
   const waiting = waitingPrompt.value
   if (!waiting) return ''
   const authoritativeSummary = waitingPrompt.value?.waitingSummary?.trim()
-  if (authoritativeSummary) return authoritativeSummary
+  if (authoritativeSummary) {
+    const action = authoritativeSummary.slice(authoritativeSummary.lastIndexOf('正在'))
+    return authoritativeSummary.includes('正在') ? `对手${action}` : legacyWaitingSummary(waiting)
+  }
   return legacyWaitingSummary(waiting)
 }
 function legacyWaitingSummary(waiting: NonNullable<GameState['waitingPrompt']>) {
@@ -777,7 +791,7 @@ function legacyWaitingSummary(waiting: NonNullable<GameState['waitingPrompt']>) 
     card: '正在选择卡牌', cards: '正在选择卡牌', search: '正在查看并选择卡牌',
     discard: '正在选择弃置卡牌', order: '正在排列卡牌', slot: '正在选择战场位置',
   }
-  return `${waiting.playerName} ${action[waiting.kind] ?? '正在完成当前操作'}`
+  return `对手${action[waiting.kind] ?? '正在完成当前操作'}`
 }
 function kindLabel() {
   if (isEffectDecision.value) return '效果确认'
@@ -824,7 +838,7 @@ function kindLabel() {
         <div v-if="isInitiative" class="initiative-race" :class="{ settled: diceSettled }">
           <article v-for="player in initiativePlayers" :key="player.playerIndex" :class="{ winner: diceSettled && game.diceWinner === player.playerIndex }">
             <img :src="masterProfileUrl(player.master.masterId, player.master.masterImageUrl)" :alt="player.master.masterName" />
-            <div><strong>{{ player.name }}</strong><span>{{ player.master.masterName }}</span></div>
+            <div><strong>{{ player.playerIndex === game.you ? '你' : '对手' }}</strong><span>{{ player.master.masterName }}</span></div>
             <b>{{ dieFace(animatedRolls[player.playerIndex] ?? 1) }}</b><em>{{ animatedRolls[player.playerIndex] ?? 1 }} 点</em>
           </article>
         </div>
@@ -972,7 +986,7 @@ function kindLabel() {
             <button class="primary" :disabled="l12State.pendingAction || activeSelected.length !== 1" @click="resolveChoice(activeSelected[0])">加入手牌</button>
           </template>
           <template v-else-if="prompt.data?.choiceMode === 'instant'">
-            <span>点击选项后立即结算</span>
+            <span>点击选项后立即确认</span>
           </template>
           <template v-else-if="isTriggerOrder">
             <span class="order-final-preview" data-ui-contract="trigger-order-lifo-hint">{{ triggerResolutionPreview.length ? `确认后实际结算（先 → 后）：${triggerResolutionPreview.map(label).join(' → ')}` : '后选择的效果先结算；每个选项角标显示实际结算顺序。' }}</span>
@@ -984,7 +998,7 @@ function kindLabel() {
             <span>{{ isInfoConfirm ? '双方均确认后继续' : promptInstruction }}</span>
             <button v-if="prompt.minChoose === 0 && !isInfoConfirm" :disabled="l12State.pendingAction" @click="selected = []; confirm()">不选择</button>
             <button class="primary prompt-confirm-choice" :disabled="l12State.pendingAction || activeSelected.length < prompt.minChoose || activeSelected.length > prompt.maxChoose || (activeSelected.some(isDeclineChoice) && activeSelected.length > 1)" @click="confirm">
-              {{ l12State.pendingAction ? '处理中…' : (isInfoConfirm ? '确认信息' : '确认选择') }}
+              {{ l12State.pendingAction ? '处理中…' : promptConfirmLabel }}
             </button>
           </template>
         </footer>
@@ -1024,7 +1038,7 @@ function kindLabel() {
         <div v-if="isInitiative" class="initiative-race" :class="{ settled: diceSettled }">
           <article v-for="player in initiativePlayers" :key="player.playerIndex" :class="{ winner: diceSettled && game.diceWinner === player.playerIndex }">
             <img :src="masterProfileUrl(player.master.masterId, player.master.masterImageUrl)" :alt="player.master.masterName" />
-            <div><strong>{{ player.name }}</strong><span>{{ player.master.masterName }}</span></div>
+            <div><strong>{{ player.playerIndex === game.you ? '你' : '对手' }}</strong><span>{{ player.master.masterName }}</span></div>
             <b>{{ dieFace(animatedRolls[player.playerIndex] ?? 1) }}</b><em>{{ animatedRolls[player.playerIndex] ?? 1 }} 点</em>
           </article>
         </div>

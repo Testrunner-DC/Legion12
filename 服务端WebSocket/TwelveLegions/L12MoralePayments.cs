@@ -205,7 +205,7 @@ public sealed partial class L12GameEngine
                         : $"请选择恰好{totalCost}份可用资源并确认。",
                     L12PromptWaitingAction.CostPayment, consequences,
                     "pending", $"{totalCost}份资源（{string.Join("、", resourceNames)}）",
-                    "核验所选资源并继续当前操作；实际支付与后续结果以权威结算为准。")));
+                    $"支付所选的{totalCost}份资源。")));
     }
 
     private bool TryConsumeSelectedResources(L12PlayerState player, int totalCost, IReadOnlyCollection<string> selectedIds,

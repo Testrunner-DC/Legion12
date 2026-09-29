@@ -256,7 +256,7 @@ public sealed class RecipientPrivacyMatrixAdversarialTests
                 Title = "lc05a-owner-title-secret",
                 Situation = "lc05a-owner-situation-secret",
                 Instruction = "lc05a-owner-instruction-secret",
-                WaitingSummary = "甲 正在选择卡牌",
+                WaitingSummary = "对手正在选择卡牌",
                 ChoiceConsequences = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     [player0Hand.InstanceId] = "lc05a-owner-consequence-secret",
@@ -547,7 +547,7 @@ public sealed class RecipientPrivacyMatrixAdversarialTests
         Assert.Equal(0, waiting.GetProperty("playerIndex").GetInt32());
         Assert.Equal("甲", waiting.GetProperty("playerName").GetString());
         Assert.Equal("hand-card", waiting.GetProperty("kind").GetString());
-        Assert.Equal("甲 正在选择卡牌", waiting.GetProperty("waitingSummary").GetString());
+        Assert.Equal("对手正在选择卡牌", waiting.GetProperty("waitingSummary").GetString());
     }
 
     private static RecipientViews CaptureViews(L12GameEngine game) => new(

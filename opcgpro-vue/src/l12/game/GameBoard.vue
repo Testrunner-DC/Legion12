@@ -334,7 +334,6 @@ function promptActionText(prompt: Prompt) {
 }
 function promptChoiceText(prompt: Prompt, choice: string, fallback: string) {
   return prompt.choiceLabels?.[choice]?.trim()
-    || prompt.presentation?.choiceConsequences?.[choice]?.trim()
     || fallback
 }
 function inlinePromptTitle(prompt: Prompt) {
@@ -350,9 +349,7 @@ function inlinePromptRange(prompt: Prompt) {
   return `需选择 ${prompt.minChoose} 至 ${prompt.maxChoose} 项`
 }
 function inlinePromptActor(prompt: Prompt) {
-  const side = prompt.playerIndex === controlledPlayerIndex.value ? '我方' : '对方'
-  const name = props.game.players[prompt.playerIndex]?.name
-  return `当前操作：${side}${name ? ` · ${name}` : ''}`
+  return prompt.playerIndex === controlledPlayerIndex.value ? '你正在选择' : '对手正在选择'
 }
 function inlinePromptPayment(prompt: Prompt) {
   const status = prompt.presentation?.paymentStatus

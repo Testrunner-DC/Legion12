@@ -67,9 +67,9 @@ public sealed class PromptNarrativeMatrixTests
         var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
         Assert.Equal(1, response.PlayerIndex);
         Assert.Contains(ambush.InstanceId, response.ValidChoices);
-        AssertPresentation(response, "响应窗口", "拥有本次响应优先权", "不响应");
+        AssertPresentation(response, "是否响应", "是否响应？", "不响应");
         Assert.Equal("不响应", response.ChoiceLabels["pass"]);
-        Assert.Contains("优先权将继续传递", response.Presentation!.ChoiceConsequences["pass"], StringComparison.Ordinal);
+        Assert.Equal("不打出响应牌。", response.Presentation!.ChoiceConsequences["pass"]);
         Assert.NotEqual(response.ChoiceLabels[ambush.InstanceId],
             response.Presentation.ChoiceConsequences[ambush.InstanceId]);
         Assert.DoesNotContain(response.Data.Keys,
@@ -92,7 +92,7 @@ public sealed class PromptNarrativeMatrixTests
             var waiting = JsonSerializer.SerializeToElement(waitingObject,
                 new JsonSerializerOptions(JsonSerializerDefaults.Web));
             var summary = waiting.GetProperty("waitingSummary").GetString();
-            Assert.Equal("乙 正在决定是否响应", summary);
+            Assert.Equal("对手正在决定是否响应", summary);
             Assert.DoesNotContain(ambush.Name, summary!, StringComparison.Ordinal);
             Assert.DoesNotContain(ambush.InstanceId, summary, StringComparison.Ordinal);
         }
@@ -122,7 +122,7 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Contains("取消整次打出", payment.Presentation!.ChoiceConsequences["cancel"], StringComparison.Ordinal);
         Assert.Equal("pending", payment.Presentation.PaymentStatus);
         Assert.Contains("1份资源", payment.Presentation.PaymentSummary, StringComparison.Ordinal);
-        Assert.Contains("实际支付", payment.Presentation.SubmissionConsequence, StringComparison.Ordinal);
+        Assert.Equal("支付所选的1份资源。", payment.Presentation.SubmissionConsequence);
 
         game.State.PendingPrompts.Clear();
         Invoke(game, "CreateReturnMoralePrompt", 0, 1, "active-return-choice", null,
@@ -153,7 +153,7 @@ public sealed class PromptNarrativeMatrixTests
         var prompt = Assert.Single(game.State.PendingPrompts);
         AssertPresentation(prompt, first.Name, "2张牌", expectedInstruction);
         Assert.Contains("尚未向对手公开", prompt.Presentation!.Situation, StringComparison.Ordinal);
-        Assert.Equal("甲 正在整理牌库", prompt.Presentation.WaitingSummary);
+        Assert.Equal("对手正在整理牌库", prompt.Presentation.WaitingSummary);
     }
 
     [Fact]
@@ -438,7 +438,7 @@ public sealed class PromptNarrativeMatrixTests
 
         Assert.Equal(controller, prompt.PlayerIndex);
         AssertPresentation(prompt, "宫廷魔术师", "登场时效果正在结算", "选择“不发动”");
-        Assert.Equal($"{game.State.Players[controller].Name} 正在选择效果对象",
+        Assert.Equal("对手正在选择效果对象",
             prompt.Presentation!.WaitingSummary);
         Assert.Contains(target.InstanceId, prompt.ValidChoices);
         Assert.Contains("skip", prompt.ValidChoices);
@@ -473,7 +473,7 @@ public sealed class PromptNarrativeMatrixTests
         }
 
         AssertPromptBoundaryAndCheckpoint(game, controller,
-            $"{game.State.Players[controller].Name} 正在选择效果对象");
+            "对手正在选择效果对象");
 
         game.State.PendingPrompts.Remove(prompt);
         Invoke(game, "ContinueS2UniversalEffect", magicianCase.Item, prompt,
@@ -514,7 +514,7 @@ public sealed class PromptNarrativeMatrixTests
             start.Presentation!.ChoiceConsequences["yes"], StringComparison.Ordinal);
         Assert.Contains("不支付费用", start.Presentation.ChoiceConsequences["no"],
             StringComparison.Ordinal);
-        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在决定是否发动效果",
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"对手正在决定是否发动效果",
             ringCase.FirstHand, ringCase.SecondHand, ringCase.FirstLibrary, ringCase.SecondLibrary);
 
         game.State.PendingPrompts.Remove(start);
@@ -528,7 +528,7 @@ public sealed class PromptNarrativeMatrixTests
         Assert.DoesNotContain("no", discard.ValidChoices);
         Assert.Contains("作为费用，然后进入【通用】卡牌检索",
             discard.Presentation!.ChoiceConsequences[ringCase.FirstHand.InstanceId], StringComparison.Ordinal);
-        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在支付费用",
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"对手正在支付费用",
             ringCase.FirstHand, ringCase.SecondHand);
 
         game.State.PendingPrompts.Remove(discard);
@@ -548,7 +548,7 @@ public sealed class PromptNarrativeMatrixTests
             StringComparison.Ordinal);
         Assert.Contains("加入手牌，然后洗牌",
             search.Presentation.ChoiceConsequences[ringCase.FirstLibrary.InstanceId], StringComparison.Ordinal);
-        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在完成卡牌选择",
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"对手正在完成卡牌选择",
             ringCase.FirstLibrary, ringCase.SecondLibrary);
 
         game.State.PendingPrompts.Remove(search);
@@ -593,7 +593,7 @@ public sealed class PromptNarrativeMatrixTests
             prompt.Presentation.ChoiceConsequences["yes"], StringComparison.Ordinal);
         Assert.Contains("不消耗符文", prompt.Presentation.ChoiceConsequences["no"],
             StringComparison.Ordinal);
-        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在决定是否发动效果");
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"对手正在决定是否发动效果");
 
         game.State.PendingPrompts.Remove(prompt);
         ContinueS2Faction(game, arthurCase.Item, prompt, "yes");
@@ -639,7 +639,7 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Contains("双方主宰的生命不变", prompt.Presentation.ChoiceConsequences["no"],
             StringComparison.Ordinal);
         AssertPromptBoundaryAndCheckpoint(game, controller,
-            $"{game.State.Players[controller].Name} 正在决定是否发动效果");
+            "对手正在决定是否发动效果");
 
         game.State.PendingPrompts.Remove(prompt);
         ContinueS2Faction(game, damageCase.Item, prompt, "yes");
@@ -673,7 +673,7 @@ public sealed class PromptNarrativeMatrixTests
             start.Presentation!.ChoiceConsequences["yes"], StringComparison.Ordinal);
         Assert.Contains("不抽牌也不弃牌", start.Presentation.ChoiceConsequences["no"],
             StringComparison.Ordinal);
-        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在决定是否发动效果",
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"对手正在决定是否发动效果",
             heraclesCase.ExistingHand, heraclesCase.DrawnA, heraclesCase.DrawnB);
 
         game.State.PendingPrompts.Remove(start);
@@ -697,7 +697,7 @@ public sealed class PromptNarrativeMatrixTests
             discard.ChoiceLabels,
         }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         Assert.DoesNotContain("支付费用", discardDetail, StringComparison.Ordinal);
-        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在完成卡牌选择",
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"对手正在完成卡牌选择",
             heraclesCase.ExistingHand, heraclesCase.DrawnA, heraclesCase.DrawnB);
 
         game.State.PendingPrompts.Remove(discard);
@@ -740,7 +740,7 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Contains("无法被进攻", prompt.Presentation!.ChoiceConsequences[joanCase.FirstHand.InstanceId],
             StringComparison.Ordinal);
         Assert.Contains("不获得", prompt.Presentation.ChoiceConsequences["skip"], StringComparison.Ordinal);
-        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在支付费用",
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"对手正在支付费用",
             joanCase.FirstHand, joanCase.SecondHand);
 
         game.State.PendingPrompts.Remove(prompt);
@@ -777,7 +777,7 @@ public sealed class PromptNarrativeMatrixTests
             prompt.Presentation!.ChoiceConsequences[perseusCase.FirstHand.InstanceId],
             StringComparison.Ordinal);
         Assert.Contains("不支付", prompt.Presentation.ChoiceConsequences["skip"], StringComparison.Ordinal);
-        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在支付费用",
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"对手正在支付费用",
             perseusCase.FirstHand, perseusCase.SecondHand);
 
         game.State.PendingPrompts.Remove(prompt);
@@ -814,7 +814,7 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Contains("进入休整【高天原】军团的对象选择",
             payment.Presentation!.ChoiceConsequences[iioCase.FirstHand.InstanceId],
             StringComparison.Ordinal);
-        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在支付费用",
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"对手正在支付费用",
             iioCase.FirstHand, iioCase.SecondHand);
 
         game.State.PendingPrompts.Remove(payment);
@@ -835,7 +835,7 @@ public sealed class PromptNarrativeMatrixTests
             target.ChoiceLabels,
         }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         Assert.DoesNotContain("支付费用", targetDetail, StringComparison.Ordinal);
-        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在选择效果对象");
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"对手正在选择效果对象");
 
         game.State.PendingPrompts.Remove(target);
         ContinueS2Faction(game, iioCase.Item, target, iioCase.FirstTarget.InstanceId);
@@ -881,7 +881,7 @@ public sealed class PromptNarrativeMatrixTests
             StringComparison.Ordinal);
         Assert.Contains("墓地和手牌都不改变", prompt.Presentation.ChoiceConsequences["skip"],
             StringComparison.Ordinal);
-        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在完成卡牌选择");
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"对手正在完成卡牌选择");
 
         game.State.PendingPrompts.Remove(prompt);
         ContinueS2Faction(game, imhotepCase.Item, prompt, imhotepCase.FirstTarget.InstanceId);
@@ -925,9 +925,9 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Equal(legacyCase.Prompt.Presentation.ChoiceConsequences,
             publicCase.Prompt.Presentation.ChoiceConsequences);
         AssertPromptBoundaryAndCheckpoint(legacyCase.Game, controller,
-            $"{playerName} 正在完成卡牌选择", legacyCase.FirstTarget, legacyCase.SecondTarget);
+            $"对手正在完成卡牌选择", legacyCase.FirstTarget, legacyCase.SecondTarget);
         AssertPromptBoundaryAndCheckpoint(publicCase.Game, controller,
-            $"{playerName} 正在完成卡牌选择", publicCase.FirstTarget, publicCase.SecondTarget);
+            $"对手正在完成卡牌选择", publicCase.FirstTarget, publicCase.SecondTarget);
 
         legacyCase.Game.State.PendingPrompts.Remove(legacyCase.Prompt);
         ContinueS2Faction(legacyCase.Game, legacyCase.Item, legacyCase.Prompt,
@@ -980,9 +980,9 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Equal(legacyCase.Prompt.Presentation.ChoiceConsequences,
             publicCase.Prompt.Presentation.ChoiceConsequences);
         AssertPromptBoundaryAndCheckpoint(legacyCase.Game, controller,
-            $"{playerName} 正在完成卡牌选择", legacyCase.FirstTarget, legacyCase.SecondTarget);
+            $"对手正在完成卡牌选择", legacyCase.FirstTarget, legacyCase.SecondTarget);
         AssertPromptBoundaryAndCheckpoint(publicCase.Game, controller,
-            $"{playerName} 正在完成卡牌选择", publicCase.FirstTarget, publicCase.SecondTarget);
+            $"对手正在完成卡牌选择", publicCase.FirstTarget, publicCase.SecondTarget);
 
         publicCase.Game.State.PendingPrompts.Remove(publicCase.Prompt);
         Invoke(publicCase.Game, "ContinueS2UniversalEffect", publicCase.Item, publicCase.Prompt,
@@ -1023,10 +1023,10 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Equal(legacyCase.Prompt.Presentation.ChoiceConsequences,
             publicCase.Prompt.Presentation.ChoiceConsequences);
         AssertPromptBoundaryAndCheckpoint(legacyCase.Game, controller,
-            $"{playerName} 正在完成卡牌选择", legacyCase.ExistingHand, legacyCase.DrawnA,
+            $"对手正在完成卡牌选择", legacyCase.ExistingHand, legacyCase.DrawnA,
             legacyCase.DrawnB);
         AssertPromptBoundaryAndCheckpoint(publicCase.Game, controller,
-            $"{playerName} 正在完成卡牌选择", publicCase.ExistingHand, publicCase.DrawnA,
+            $"对手正在完成卡牌选择", publicCase.ExistingHand, publicCase.DrawnA,
             publicCase.DrawnB);
 
         publicCase.Game.State.PendingPrompts.Remove(publicCase.Prompt);
@@ -1061,9 +1061,9 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Contains("不移动任何", publicCase.Prompt.Presentation.ChoiceConsequences["skip"],
             StringComparison.Ordinal);
         AssertPromptBoundaryAndCheckpoint(legacyCase.Game, controller,
-            $"{playerName} 正在完成卡牌选择", legacyCase.HandSquire, legacyCase.LibrarySquire);
+            $"对手正在完成卡牌选择", legacyCase.HandSquire, legacyCase.LibrarySquire);
         AssertPromptBoundaryAndCheckpoint(publicCase.Game, controller,
-            $"{playerName} 正在完成卡牌选择", publicCase.HandSquire, publicCase.LibrarySquire);
+            $"对手正在完成卡牌选择", publicCase.HandSquire, publicCase.LibrarySquire);
         AssertPrivateNamesStayOutOfWaitingViews(legacyCase.Game, controller,
             legacyCase.HandSquire, legacyCase.LibrarySquire, legacyCase.GraveSquire);
         AssertPrivateNamesStayOutOfWaitingViews(publicCase.Game, controller,
@@ -1110,9 +1110,9 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Equal(legacyCase.Prompt.Presentation.ChoiceConsequences,
             publicCase.Prompt.Presentation.ChoiceConsequences);
         AssertPromptBoundaryAndCheckpoint(legacyCase.Game, controller,
-            $"{playerName} 正在完成卡牌选择", legacyCase.FirstTarget, legacyCase.SecondTarget);
+            $"对手正在完成卡牌选择", legacyCase.FirstTarget, legacyCase.SecondTarget);
         AssertPromptBoundaryAndCheckpoint(publicCase.Game, controller,
-            $"{playerName} 正在完成卡牌选择", publicCase.FirstTarget, publicCase.SecondTarget);
+            $"对手正在完成卡牌选择", publicCase.FirstTarget, publicCase.SecondTarget);
 
         var skipCase = BeginMagatamaPrompt(202609397 + controller, controller, publicTrigger: true);
         skipCase.Game.State.PendingPrompts.Remove(skipCase.Prompt);
@@ -1148,7 +1148,7 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Contains("不将士气转为活跃",
             success.Prompt.Presentation.ChoiceConsequences["skip"], StringComparison.Ordinal);
         AssertPromptBoundaryAndCheckpoint(success.Game, controller,
-            $"{playerName} 正在完成卡牌选择", success.FirstSanada, success.SecondSanada);
+            $"对手正在完成卡牌选择", success.FirstSanada, success.SecondSanada);
 
         ResolvePromptChoice(success.Game, success.Prompt, success.FirstSanada.InstanceId);
         var slot = Assert.Single(success.Game.State.PendingPrompts);
@@ -1157,7 +1157,7 @@ public sealed class PromptNarrativeMatrixTests
             StringComparison.Ordinal);
         Assert.DoesNotContain("已经活跃登场", slot.Presentation.Situation, StringComparison.Ordinal);
         AssertPromptBoundaryAndCheckpoint(success.Game, controller,
-            $"{playerName} 正在选择战场位置");
+            $"对手正在选择战场位置");
         AssertPrivateNamesStayOutOfWaitingViews(success.Game, controller, success.FirstSanada);
 
         ResolvePromptChoice(success.Game, slot, "0:1");
@@ -1169,7 +1169,7 @@ public sealed class PromptNarrativeMatrixTests
         AssertPresentation(morale, "武田信玄", "已经活跃登场", "不能跳过");
         Assert.Contains("不补偿，也不会改选", morale.Presentation!.Situation, StringComparison.Ordinal);
         AssertPromptBoundaryAndCheckpoint(success.Game, controller,
-            $"{playerName} 正在选择效果对象");
+            $"对手正在选择效果对象");
 
         var selectedMorale = morale.ValidChoices[0];
         success.Game.State.PendingPrompts.Remove(morale);
@@ -1237,7 +1237,7 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Contains("不覆盖其他军团，也不会改选", summon.Prompt.Presentation.Situation,
             StringComparison.Ordinal);
         AssertPromptBoundaryAndCheckpoint(summon.Game, controller,
-            $"{playerName} 正在选择战场位置");
+            $"对手正在选择战场位置");
         AssertPrivateNamesStayOutOfWaitingViews(summon.Game, controller, summon.Target);
 
         ResolvePromptChoice(summon.Game, summon.Prompt, "0:1");
@@ -1268,7 +1268,7 @@ public sealed class PromptNarrativeMatrixTests
         Assert.DoesNotContain("已经加入手牌", success.Prompt.Presentation.Situation,
             StringComparison.Ordinal);
         AssertPromptBoundaryAndCheckpoint(success.Game, controller,
-            $"{playerName} 正在完成卡牌选择");
+            $"对手正在完成卡牌选择");
         AssertPrivateNamesStayOutOfWaitingViews(success.Game, controller,
             success.FirstTarget, success.SecondTarget);
 
@@ -1325,7 +1325,7 @@ public sealed class PromptNarrativeMatrixTests
         Assert.DoesNotContain("已经活跃登场", success.Prompt.Presentation.Situation,
             StringComparison.Ordinal);
         AssertPromptBoundaryAndCheckpoint(success.Game, controller,
-            $"{playerName} 正在完成卡牌选择");
+            $"对手正在完成卡牌选择");
         AssertPrivateNamesStayOutOfWaitingViews(success.Game, controller,
             success.FirstTarget, success.SecondTarget);
 
@@ -1379,7 +1379,7 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Contains("不受此伤害，不抽牌",
             success.Prompt.Presentation.ChoiceConsequences["no"], StringComparison.Ordinal);
         AssertPromptBoundaryAndCheckpoint(success.Game, controller,
-            $"{playerName} 正在决定是否发动效果");
+            $"对手正在决定是否发动效果");
 
         var hpBefore = player.Hp;
         var handBefore = player.Hand.Count;
@@ -1445,7 +1445,7 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Contains("不进入目标选择",
             success.Prompt.Presentation.ChoiceConsequences["no"], StringComparison.Ordinal);
         AssertPromptBoundaryAndCheckpoint(success.Game, controller,
-            $"{playerName} 正在决定是否发动效果");
+            $"对手正在决定是否发动效果");
 
         var hpBefore = player.Hp;
         var graveBefore = player.Graveyard.Count;
@@ -1463,7 +1463,7 @@ public sealed class PromptNarrativeMatrixTests
             targetPrompt.Presentation!.ChoiceConsequences[success.EnemyTarget.InstanceId],
             StringComparison.Ordinal);
         AssertPromptBoundaryAndCheckpoint(success.Game, controller,
-            $"{playerName} 正在选择效果对象");
+            $"对手正在选择效果对象");
         var troopsBefore = success.EnemyTarget.Troops;
         ResolvePromptChoice(success.Game, targetPrompt, success.EnemyTarget.InstanceId);
         Assert.Equal(troopsBefore - 2000, success.EnemyTarget.Troops);
@@ -1526,7 +1526,7 @@ public sealed class PromptNarrativeMatrixTests
             success.Prompt.Presentation!.ChoiceConsequences[success.Target.InstanceId],
             StringComparison.Ordinal);
         AssertPromptBoundaryAndCheckpoint(success.Game, controller,
-            $"{playerName} 正在选择效果对象");
+            $"对手正在选择效果对象");
 
         ResolvePromptChoice(success.Game, success.Prompt, success.Target.InstanceId);
         Assert.Contains(success.Target, success.Game.State.Players[1 - controller].Graveyard);
@@ -1564,7 +1564,7 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Contains("结束本效果",
             decline.Prompt.Presentation.ChoiceConsequences["skip"], StringComparison.Ordinal);
         AssertPromptBoundaryAndCheckpoint(decline.Game, controller,
-            $"{playerName} 正在选择效果对象");
+            $"对手正在选择效果对象");
 
         ResolvePromptChoice(decline.Game, decline.Prompt, "skip");
         Assert.Equal(2, player.Graveyard.Count);
@@ -1610,7 +1610,7 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Contains("兵力-1000不会撤销",
             decline.Prompt.Presentation.ChoiceConsequences["skip"], StringComparison.Ordinal);
         AssertPromptBoundaryAndCheckpoint(decline.Game, controller,
-            $"{playerName} 正在选择效果对象");
+            $"对手正在选择效果对象");
 
         ResolvePromptChoice(decline.Game, decline.Prompt, "skip");
         Assert.Contains(decline.Target.TimedModifiers,
@@ -1653,7 +1653,7 @@ public sealed class PromptNarrativeMatrixTests
             StringComparison.Ordinal);
         Assert.Contains("不支付", payment.Presentation.ChoiceConsequences["skip"],
             StringComparison.Ordinal);
-        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在支付费用",
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"对手正在支付费用",
             heraclesCase.ShownCard, heraclesCase.OtherHand);
 
         game.State.PendingPrompts.Remove(payment);
@@ -1667,7 +1667,7 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Contains("费用不返还且不改选",
             target.Presentation!.ChoiceConsequences[heraclesCase.FirstTarget.InstanceId],
             StringComparison.Ordinal);
-        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在选择效果对象");
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"对手正在选择效果对象");
 
         game.State.PendingPrompts.Remove(target);
         ContinueS2Faction(game, heraclesCase.Item, target, heraclesCase.FirstTarget.InstanceId);
@@ -1722,7 +1722,7 @@ public sealed class PromptNarrativeMatrixTests
             StringComparison.Ordinal);
         Assert.Contains("不影响任何军团", prompt.Presentation.ChoiceConsequences["skip"],
             StringComparison.Ordinal);
-        AssertPromptBoundaryAndCheckpoint(game, controller, $"{playerName} 正在选择效果对象");
+        AssertPromptBoundaryAndCheckpoint(game, controller, $"对手正在选择效果对象");
 
         game.State.PendingPrompts.Remove(prompt);
         ContinueS2Faction(game, perseusCase.Item, prompt, perseusCase.FirstTarget.InstanceId);
@@ -1834,7 +1834,7 @@ public sealed class PromptNarrativeMatrixTests
 
     private static void AssertLandlordWaitingViews(L12GameEngine game, int owner, int other)
     {
-        var expected = $"{game.State.Players[owner].Name} 正在完成卡牌选择";
+        var expected = "对手正在完成卡牌选择";
         foreach (var waitingObject in new[]
                  {
                      game.SnapshotFor(other).WaitingPrompt,

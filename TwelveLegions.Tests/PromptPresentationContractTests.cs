@@ -120,7 +120,8 @@ public sealed class PromptPresentationContractTests
         Assert.Equal(0, waiting.GetProperty("playerIndex").GetInt32());
         var summary = waiting.GetProperty("waitingSummary").GetString();
         Assert.False(string.IsNullOrWhiteSpace(summary));
-        Assert.Contains("甲", summary!, StringComparison.Ordinal);
+        Assert.DoesNotContain("甲", summary!, StringComparison.Ordinal);
+        Assert.StartsWith("对手正在", summary, StringComparison.Ordinal);
         Assert.DoesNotContain("秘密手牌", summary, StringComparison.Ordinal);
         Assert.False(waiting.TryGetProperty("title", out _));
         Assert.False(waiting.TryGetProperty("situation", out _));
