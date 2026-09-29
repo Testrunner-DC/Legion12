@@ -554,7 +554,7 @@ const contracts = [
     && gamePage.includes('<span class="route-label" aria-hidden="true"><span>返回</span><span>大厅</span></span>')
     && mobileActionDockStyle.includes('.mobile-battle-dock button {') && mobileActionDockStyle.includes('min-height:32px')
     && mobileActionDockStyle.includes('.mobile-battle-dock__route .battle-route-controls .route-label>span {')
-    && gamePage.includes('<BattleDockPortal lane="route"><div v-if="game.phase !== \'GameOver\' || gameOverMinimized" class="battle-route-controls">')
+    && gamePage.includes('<BattleDockPortal lane="route"><div v-if="game.phase !== \'GameOver\' || gameOverMinimized || osirisSequencePlaying" class="battle-route-controls">')
     && mobileViewportStyle.includes('transform: translateZ(0)')
     && mobileViewportStyle.includes('#l12-landscape-teleports > .mobile-safe-overlay:not(.minimized)')
     && mobileActionDockStyle.includes('inset:4px 4px 4px auto')

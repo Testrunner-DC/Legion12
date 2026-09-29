@@ -61,6 +61,21 @@ async function check(page, label, spectator) {
   await page.screenshot({ path: path.join(output, `${label}.png`) })
   matrix.push(label)
 }
+async function checkOsiris(page, label, spectator) {
+  await page.waitForFunction(() => Boolean(window.__osirisFixture?.start))
+  await page.evaluate(() => window.__osirisFixture.start())
+  const sequence = page.locator('.osiris-victory-sequence')
+  await sequence.waitFor()
+  const layers = await page.evaluate(() => ({
+    sequence: Number(getComputedStyle(document.querySelector('.osiris-victory-sequence')).zIndex),
+    route: Number(getComputedStyle(document.querySelector('.battle-route-controls')).zIndex),
+  }))
+  assert.ok(layers.route > layers.sequence, `${label}: route must paint above victory: ${JSON.stringify(layers)}`)
+  await check(page, `${label}-victory`, spectator)
+  const handle = page.locator('.mobile-card-inspector-handle-global')
+  if (await handle.count()) assert.equal(await handle.evaluate(node => getComputedStyle(node).visibility), 'hidden', `${label}: inspector handle must not bypass victory blocker`)
+  return sequence
+}
 
 try {
   const page = await browser.newPage()
@@ -127,7 +142,50 @@ try {
       await page.locator('.mini-master').last().click()
       await check(page, `${profile.name}-${role}-master`, true)
     }
+    for (const role of ['player', 'spectator', 'referee']) {
+      await page.goto(`${origin}?${query}${role === 'player' ? '' : `&${role}=1`}`, { waitUntil: 'domcontentloaded' })
+      await adjust()
+      const sequence = await checkOsiris(page, `${profile.name}-${role}`, role !== 'player')
+      if (profile.name === 'mobile-568' && role === 'player') {
+        await sequence.waitFor({ state: 'detached', timeout: 10000 })
+        await assertRoute(page, `${profile.name}-victory-complete`, false)
+        assert.equal(await page.locator('.osiris-victory-sequence').count(), 0, 'victory blocker must retire after the animation')
+        const handle = page.locator('.mobile-card-inspector-handle-global')
+        if (await handle.count()) assert.notEqual(await handle.evaluate(node => getComputedStyle(node).visibility), 'hidden', 'inspector handle must recover after victory')
+        matrix.push(`${profile.name}-victory-complete`)
+      }
+    }
   }
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto(`${origin}?field=full&hand=6&modalFixture=1`, { waitUntil: 'domcontentloaded' })
+  await page.waitForFunction(() => Boolean(window.__osirisFixture?.start))
+  await page.evaluate(() => window.__osirisFixture.start({ gameOver: true }))
+  await page.locator('.osiris-victory-sequence').waitFor()
+  await assertRoute(page, 'desktop-game-over-victory', true)
+  await assertBoardBlocked(page, 'desktop-game-over-victory')
+  await page.screenshot({ path: path.join(output, 'desktop-game-over-victory.png') })
+  matrix.push('desktop-game-over-victory')
+  await page.locator('.osiris-victory-sequence').waitFor({ state: 'detached', timeout: 10000 })
+  const resultExit = page.locator('.game-over').getByRole('button', { name: '返回大厅', exact: true })
+  await resultExit.waitFor()
+  const resultHit = await geometry(resultExit)
+  assert.ok(resultHit.hit && resultHit.inside, `game-over return must recover after victory: ${JSON.stringify(resultHit)}`)
+  matrix.push('desktop-game-over-victory-complete')
+  await page.setViewportSize({ width: 568, height: 320 })
+  await page.goto(`${origin}?canvas=1&mobile=1&field=full&hand=6&modalFixture=1`, { waitUntil: 'domcontentloaded' })
+  await page.waitForFunction(() => Boolean(window.__osirisFixture?.start))
+  await page.evaluate(() => window.__osirisFixture.start({ gameOver: true }))
+  await page.locator('.osiris-victory-sequence').waitFor()
+  await assertRoute(page, 'mobile-game-over-victory', true)
+  await assertBoardBlocked(page, 'mobile-game-over-victory')
+  await page.screenshot({ path: path.join(output, 'mobile-game-over-victory.png') })
+  matrix.push('mobile-game-over-victory')
+  await page.locator('.osiris-victory-sequence').waitFor({ state: 'detached', timeout: 10000 })
+  const mobileResultExit = page.locator('.game-over').getByRole('button', { name: '返回大厅', exact: true })
+  await mobileResultExit.waitFor()
+  const mobileResultHit = await geometry(mobileResultExit)
+  assert.ok(mobileResultHit.hit && mobileResultHit.inside, `mobile game-over return must recover: ${JSON.stringify(mobileResultHit)}`)
+  matrix.push('mobile-game-over-victory-complete')
   await page.setViewportSize({ width: 1280, height: 720 })
   await page.goto(`${origin}?field=full&hand=6&modalFixture=1&effect=cost2`, { waitUntil: 'domcontentloaded' })
   await page.locator('.l12-prompt-overlay').waitFor()

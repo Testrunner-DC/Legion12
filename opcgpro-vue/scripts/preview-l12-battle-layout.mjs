@@ -290,6 +290,14 @@ if(deathMode!==null)setTimeout(()=>{
 },800)
 if(params.has('canvas'))window.__battleDockFixture={state:l12State}
 const previewState={game:l12State.game,room:l12State.room,socket:l12State.socket,rankedClock:l12State.rankedClock}
+window.__osirisFixture={start({gameOver=false}={}){
+ const current=previewState.game
+ const sequence=Math.max(0,...(current.recentEvents||[]).map(event=>event.sequence||0))+1
+ const next={...current,phase:gameOver?'GameOver':current.phase,winner:gameOver?0:current.winner,
+  recentEvents:[...(current.recentEvents||[]),{sequence,type:'special-victory',playerIndex:0,
+   text:'〈复苏的奥西里斯〉达成特殊胜利',cards:[{cardId:'S01-02M2',instanceId:'fixture-osiris-victory',name:'复苏的奥西里斯'}]}]}
+ previewState.game=next;l12State.game=next
+}}
 if(import.meta.hot){
  let previewReloadScheduled=false
  import.meta.hot.on('vite:beforeUpdate',()=>{
