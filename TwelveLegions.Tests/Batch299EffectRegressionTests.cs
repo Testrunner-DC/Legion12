@@ -63,28 +63,138 @@ public sealed class Batch299EffectRegressionTests
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "response");
     }
 
+    private static void ResolveAmaterasuReady(L12GameEngine game, string discardInstanceId, int controller = 0)
+    {
+        var activation = game.Handle(controller, new L12Command("activateAbility", $"master-{controller}",
+            Ability: "amaterasuReady"));
+        Assert.True(activation.Accepted, activation.Error);
+        Resolve(game, discardInstanceId);
+        if (game.State.PendingPrompts.FirstOrDefault()?.Kind != "response") Resolve(game);
+        Pass(game);
+    }
+
     [Fact]
-    public void AmaterasuBuffTracksFrontPositionAndLaterEntriesUntilTurnEnds()
+    public void AmaterasuBuffSnapshotsOnlyCurrentFriendlyFrontTakamagaharaLegions()
     {
         var game = Create();
         var owner = game.State.Players[0];
+        var opponent = game.State.Players[1];
         var discard = Card(game, "S01-0003", "cost");
-        var legion = Card(game, "S01-0404", "front");
-        owner.Hand.Add(discard); owner.Field[0][0] = legion;
-        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "amaterasuReady")).Accepted);
-        Resolve(game, discard.InstanceId);
-        if (game.State.PendingPrompts.FirstOrDefault()?.Kind != "response") Resolve(game);
-        Pass(game);
-        Assert.Equal(legion.BaseTroops + 1000, legion.Troops);
-        owner.Field[0][0] = null; owner.Field[1][0] = legion;
+        var resolvedFront = Card(game, "S01-0404", "resolved-front");
+        var resolvedBack = Card(game, "S01-0404", "resolved-back");
+        var enemyFront = Card(game, "S01-0404", "enemy-front");
+        owner.Hand.Add(discard);
+        owner.Field[0][0] = resolvedFront;
+        owner.Field[1][0] = resolvedBack;
+        opponent.Field[0][0] = enemyFront;
+
+        ResolveAmaterasuReady(game, discard.InstanceId);
+
+        Assert.Equal(resolvedFront.BaseTroops + 1000, resolvedFront.Troops);
+        Assert.Equal(resolvedBack.BaseTroops, resolvedBack.Troops);
+        Assert.Equal(enemyFront.BaseTroops, enemyFront.Troops);
+
+        owner.Field[0][0] = resolvedBack;
+        owner.Field[1][0] = resolvedFront;
         Call(game, "RecalculateContinuousTroops");
+        var lateFront = Card(game, "S01-0404", "late-front");
+        owner.Field[0][1] = lateFront;
+        Call(game, "RecalculateContinuousTroops");
+
+        Assert.Equal(resolvedFront.BaseTroops + 1000, resolvedFront.Troops);
+        Assert.Equal(resolvedBack.BaseTroops, resolvedBack.Troops);
+        Assert.Equal(lateFront.BaseTroops, lateFront.Troops);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void AmaterasuBuffUsesTheResolvingControllerSnapshot(int controller)
+    {
+        var game = Create();
+        game.State.ActivePlayer = controller;
+        var owner = game.State.Players[controller];
+        var opponent = game.State.Players[1 - controller];
+        var discard = Card(game, "S01-0003", $"controller-{controller}-cost");
+        var friendly = Card(game, "S01-0404", $"controller-{controller}-friendly");
+        var enemy = Card(game, "S01-0404", $"controller-{controller}-enemy");
+        owner.Hand.Add(discard);
+        owner.Field[0][0] = friendly;
+        opponent.Field[0][0] = enemy;
+
+        ResolveAmaterasuReady(game, discard.InstanceId, controller);
+
+        Assert.Equal(friendly.BaseTroops + 1000, friendly.Troops);
+        Assert.Equal(enemy.BaseTroops, enemy.Troops);
+    }
+
+    [Fact]
+    public void AmaterasuBuffKeepsTheResolutionSnapshotAfterEffectiveFactionIsLost()
+    {
+        var game = Create();
+        var owner = game.State.Players[0];
+        var discard = Card(game, "S01-0003", "lost-faction-cost");
+        var universal = Card(game, "S01-0001", "lost-faction-universal");
+        var ring = Card(game, "S02-0008", "lost-faction-ring");
+        owner.Hand.Add(discard);
+        owner.Field[0][0] = universal;
+        owner.ExtraRelics.Add(ring);
+
+        ResolveAmaterasuReady(game, discard.InstanceId);
+        Assert.Equal(universal.BaseTroops + 1000, universal.Troops);
+
+        owner.ExtraRelics.Remove(ring);
+        Call(game, "RecalculateContinuousTroops");
+        Assert.Equal(universal.BaseTroops + 1000, universal.Troops);
+    }
+
+    [Fact]
+    public void AmaterasuBuffDoesNotReachALegionThatGainsFactionAfterResolution()
+    {
+        var game = Create();
+        var owner = game.State.Players[0];
+        var discard = Card(game, "S01-0003", "gained-faction-cost");
+        var universal = Card(game, "S01-0001", "gained-faction-universal");
+        owner.Hand.Add(discard);
+        owner.Field[0][0] = universal;
+
+        ResolveAmaterasuReady(game, discard.InstanceId);
+        Assert.Equal(universal.BaseTroops, universal.Troops);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect"
+            && entry.Text.Contains("结算时", StringComparison.Ordinal)
+            && entry.Text.Contains("0张【高天原】军团", StringComparison.Ordinal));
+
+        owner.ExtraRelics.Add(Card(game, "S02-0008", "gained-faction-ring"));
+        Call(game, "RecalculateContinuousTroops");
+        Assert.Equal(universal.BaseTroops, universal.Troops);
+        Assert.DoesNotContain(owner.UsedAbilities, key => key.StartsWith("amaterasu-front-aura:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AmaterasuBuffStacksPerResolutionAndUsesExistingZoneResetRules()
+    {
+        var game = Create();
+        var owner = game.State.Players[0];
+        var firstDiscard = Card(game, "S01-0003", "stack-cost-1");
+        var secondDiscard = Card(game, "S01-0003", "stack-cost-2");
+        var legion = Card(game, "S01-0404", "stack-front");
+        owner.Hand.AddRange([firstDiscard, secondDiscard]);
+        owner.Field[0][0] = legion;
+
+        ResolveAmaterasuReady(game, firstDiscard.InstanceId);
+        owner.UsedAbilities.Remove("active:master-0:amaterasuReady");
+        ResolveAmaterasuReady(game, secondDiscard.InstanceId);
+
+        Assert.Equal(legion.BaseTroops + 2000, legion.Troops);
+        Assert.Equal(2, legion.TimedModifiers.Count(modifier => modifier.Source == "天照大神"
+            && modifier.TroopsDelta == 1000 && modifier.ExpiresAfterTurn == game.State.TurnSerial));
+
+        var moved = Assert.IsType<bool>(Call(game, "MoveFieldCardToZone", owner, legion,
+            "hand", "因测试回到手牌", false));
+        Assert.True(moved);
+        Assert.Contains(legion, owner.Hand);
         Assert.Equal(legion.BaseTroops, legion.Troops);
-        var late = Card(game, "S01-0404", "late"); owner.Field[0][1] = late;
-        Call(game, "RecalculateContinuousTroops");
-        Assert.Equal(late.BaseTroops + 1000, late.Troops);
-        game.State.TurnSerial++;
-        Call(game, "RecalculateContinuousTroops");
-        Assert.Equal(late.BaseTroops, late.Troops);
+        Assert.Empty(legion.TimedModifiers);
     }
 
     [Fact]
@@ -113,10 +223,13 @@ public sealed class Batch299EffectRegressionTests
         Assert.Equal(front.BaseTroops + 1000, VisibleCard(game).GetProperty("troops").GetInt32());
         Assert.Contains(VisibleCard(game).GetProperty("statusEffects").EnumerateArray(), status =>
             status.GetProperty("source").GetString() == "天照大神"
-            && status.GetProperty("label").GetString() == "本回合兵力+1000");
+            && status.GetProperty("label").GetString() == "临时兵力+1000");
         Assert.Contains(game.State.Events, entry => entry.Type == "effect"
-            && entry.Text.Contains("前排所有【高天原】军团本回合兵力+1000", StringComparison.Ordinal));
-        Assert.Contains($"amaterasu-front-aura:{game.State.TurnSerial}", owner.UsedAbilities);
+            && entry.Text.Contains("结算时", StringComparison.Ordinal)
+            && entry.Text.Contains("1张【高天原】军团", StringComparison.Ordinal));
+        Assert.DoesNotContain($"amaterasu-front-aura:{game.State.TurnSerial}", owner.UsedAbilities);
+        Assert.Contains(front.TimedModifiers, modifier => modifier.Source == "天照大神"
+            && modifier.TroopsDelta == 1000 && modifier.ExpiresAfterTurn == game.State.TurnSerial);
 
         var restored = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(),
             game.RandomState!.Value, game.CardFactSignalSequence,
@@ -124,11 +237,24 @@ public sealed class Batch299EffectRegressionTests
         Assert.Equal(front.BaseTroops + 1000, VisibleCard(restored).GetProperty("troops").GetInt32());
         Assert.Contains(VisibleCard(restored).GetProperty("statusEffects").EnumerateArray(), status =>
             status.GetProperty("source").GetString() == "天照大神");
+        Assert.Contains(restored.State.Events, entry => entry.Type == "effect"
+            && entry.Text.Contains("天照大神结算时为我方前排的1张【高天原】军团", StringComparison.Ordinal));
 
+        var restoredOwner = restored.State.Players[0];
+        var restoredFront = Assert.IsType<L12CardInstance>(restoredOwner.Field[0][0]);
+        restoredOwner.Field[0][0] = null;
+        restoredOwner.Field[1][0] = restoredFront;
+        Call(restored, "RecalculateContinuousTroops");
+        Assert.Equal(front.BaseTroops + 1000, restoredFront.Troops);
+
+        L12DerivedStats.ResetForCompletedTurn(restoredFront, restored.State.TurnSerial);
         restored.State.TurnSerial++;
         Call(restored, "RecalculateContinuousTroops");
-        Assert.Equal(front.BaseTroops, VisibleCard(restored).GetProperty("troops").GetInt32());
-        Assert.DoesNotContain(VisibleCard(restored).GetProperty("statusEffects").EnumerateArray(), status =>
+        var restoredBack = JsonSerializer.SerializeToElement(restored.SnapshotFor(0),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            .GetProperty("players")[0].GetProperty("field")[1][0];
+        Assert.Equal(front.BaseTroops, restoredBack.GetProperty("troops").GetInt32());
+        Assert.DoesNotContain(restoredBack.GetProperty("statusEffects").EnumerateArray(), status =>
             status.TryGetProperty("source", out var source) && source.GetString() == "天照大神");
     }
 

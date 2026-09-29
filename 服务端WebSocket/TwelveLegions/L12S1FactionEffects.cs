@@ -1605,11 +1605,15 @@ public sealed partial class L12GameEngine
                 }
                 else if (AtomicFlowKey(item) == "amaterasu-front-buff")
                 {
-                    // 本回合的前排持续状态，不是只给结算当刻的实体加值。
-                    player.UsedAbilities.Add($"amaterasu-front-aura:{State.TurnSerial}");
-                    RecalculateContinuousTroops();
+                    var affected = player.Field[0]
+                        .Where(card => card is not null && !card.Hidden && IsFieldLegion(card)
+                            && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan"))
+                        .Cast<L12CardInstance>()
+                        .ToArray();
+                    foreach (var legion in affected)
+                        AddTimedModifier(legion, 1000, 0, State.TurnSerial, "天照大神");
                     AddEvent("effect", item.Controller,
-                        "天照大神使我方前排所有【高天原】军团本回合兵力+1000",
+                        $"天照大神结算时为我方前排的{affected.Length}张【高天原】军团各生成本回合兵力+1000修正",
                         source is null ? [] : [source]);
                 }
                 FinishStackItem(item);

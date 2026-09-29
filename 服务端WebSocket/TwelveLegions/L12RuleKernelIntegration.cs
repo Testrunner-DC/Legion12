@@ -2503,9 +2503,6 @@ public sealed partial class L12GameEngine
     {
         var bonuses = new Dictionary<string, int>(StringComparer.Ordinal);
         void Add(string key, int amount) => bonuses[key] = bonuses.GetValueOrDefault(key) + amount;
-        if (row == 0 && owner.UsedAbilities.Contains($"amaterasu-front-aura:{State.TurnSerial}")
-            && L12StructuredCardRules.HasFaction(owner, card, "gaotianyuan"))
-            Add("turn:amaterasu-front-aura", 1000);
         foreach (var sword in card.AttachedCards.Where(attached => attached.CardId == "S02-06S2"))
             Add($"attached:{sword.InstanceId}:king-sword", 1000);
         var starterDisasterBonus = L12StructuredCardRules.StarterDisasterTroopsBonus(
