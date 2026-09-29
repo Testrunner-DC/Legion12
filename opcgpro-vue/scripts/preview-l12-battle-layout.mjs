@@ -205,7 +205,8 @@ if(params.has('disaster-choice')){
 if(params.has('morale-payment')){
  const runeChoices=Array.from({length:Math.max(0,Math.min(players[0].specialZones.runes||0,Number(params.get('rune-usable')||0)))},(_,index)=>'rune:'+(index+1))
  const validChoices=[...runeChoices,...players[0].morale.slice(0,5).map(item=>item.instanceId),...(params.has('payment-actions')?['skip','cancel']:[])]
- l12State.game.prompts=[{promptId:'fixture-morale-payment',playerIndex:0,kind:'resource-payment',text:'选择2枚士气支付',validChoices,minChoose:2,maxChoose:2,choiceLabels:{},data:{choiceMode:'resource-payment'},createdRevision:1,controller:0}]
+ const returning=params.has('payment-return')
+ l12State.game.prompts=[{promptId:'fixture-morale-payment',playerIndex:0,kind:returning?'resource-return':'resource-payment',text:returning?'选择2枚士气返还':'选择2枚士气支付',validChoices,minChoose:2,maxChoose:2,choiceLabels:{skip:'不发动',cancel:'取消打出'},data:{choiceMode:returning?'resource-return':'resource-payment'},...(params.has('inline-rich')?{presentation:{title:returning?'返还士气':'支付士气',situation:'〈同名测试军团〉的效果正在等待处理。',instruction:returning?'选择要返还的2枚士气。':'选择要支付的2枚士气。',waitingSummary:'等待操作玩家处理士气',choiceConsequences:{skip:'本次不发动',cancel:'取消本次打出'},paymentStatus:params.has('payment-paid')?'paid':'pending',paymentSummary:'2枚士气',submissionConsequence:returning?'所选士气将返还。':'所选士气将作为本次费用支付。'}}:{}) ,createdRevision:1,controller:0}]
 }
 if(params.has('action-fixture')){
  l12State.game.phase='Main';l12State.game.activePlayer=0;l12State.game.prompts=[]
@@ -246,10 +247,18 @@ if(params.has('disaster-chain')){
  }
 }
 if(params.has('board-target')){
- const choices=players.flatMap(player=>player.field.flat()).filter(Boolean).slice(0,2).map(card=>card.instanceId)
- l12State.game.prompts=[{promptId:'fixture-board-target',playerIndex:0,kind:'target',text:'选择 1–2 个战场目标',validChoices:[...choices,'skip'],minChoose:1,maxChoose:2,choiceLabels:{skip:'不发动'},data:{choiceMode:'board-target'},createdRevision:1,controller:0}]
+ const targetCards=[players[0].field[0][0],players[1].field[0][2],players[0].field[1][1]].filter(Boolean)
+ if(params.has('inline-rich'))targetCards.forEach(card=>{card.name='同名测试军团'})
+ const choices=targetCards.map(card=>card.instanceId)
+ const mixed=params.has('target-mixed')
+ const validChoices=[...choices,...(mixed?[players[0].morale[0]?.instanceId].filter(Boolean):[]),'skip']
+ const data={choiceMode:mixed?'mixed-board-payment':'board-target',...(params.has('target-locked')?{lockedChoices:choices[0]}:{})}
+ l12State.game.prompts=[{promptId:'fixture-board-target',playerIndex:0,kind:'target',text:'选择 1–2 个战场目标',validChoices,minChoose:1,maxChoose:2,choiceLabels:{skip:'不发动'},data,...(params.has('inline-rich')?{presentation:{title:mixed?'选择战场费用':'指定效果目标',situation:params.has('inline-long')?'〈同名测试军团〉的效果正在等待处理；请选择合法战场对象并在确认前核对费用与后果。'.repeat(8):'〈同名测试军团〉的效果正在等待处理。',instruction:mixed?'选择要支付的战场对象。':'选择1至2个战场目标。',waitingSummary:'等待操作玩家指定目标',choiceConsequences:{skip:'本次不发动'},paymentStatus:mixed?'pending':null,paymentSummary:mixed?'1至2个战场对象':null,submissionConsequence:mixed?'所选对象将作为费用提交。':'将以所选对象继续处理效果。'}}:{}) ,createdRevision:1,controller:0}]
 }
-if(params.has('board-slot'))l12State.game.prompts=[{promptId:'fixture-board-slot',playerIndex:0,kind:'slot',text:'选择我方空格位',validChoices:['0:1','1:2','skip'],minChoose:1,maxChoose:1,choiceLabels:{skip:'取消'},data:{choiceMode:'board-slot',targetPlayerIndex:'0'},createdRevision:1,controller:0}]
+if(params.has('board-slot')){
+ const opponent=params.has('slot-opponent')
+ l12State.game.prompts=[{promptId:'fixture-board-slot',playerIndex:0,kind:'slot',text:'选择空格位',validChoices:['0:1','1:2','skip'],minChoose:1,maxChoose:1,choiceLabels:{skip:'取消'},data:{choiceMode:'board-slot',targetPlayerIndex:opponent?'1':'0'},...(params.has('inline-rich')?{presentation:{title:'选择登场格位',situation:'〈同名测试军团〉等待登场。',instruction:'在高亮空格中选择登场位置。',waitingSummary:'等待操作玩家指定格位',choiceConsequences:{skip:'取消本次登场'},submissionConsequence:'选中格位后立即提交登场位置。'}}:{}) ,createdRevision:1,controller:0}]
+}
 if(trialCount){
  players[1].specialZones.trials=Array.from({length:trialCount},(_,index)=>({
   ...card(trialCards[index]||trial,'trial-showcase-'+index),

@@ -28,7 +28,7 @@ import PlayerTurnClock from './PlayerTurnClock.vue'
 import BattlePlayerIdentity from './BattlePlayerIdentity.vue'
 import PhasePlayback from './PhasePlayback.vue'
 import PromptOverlay from './PromptOverlay.vue'
-import { battlefieldTargetLabel } from './battlefieldTargetPresentation'
+import { battlefieldSlotLabel, battlefieldTargetLabel } from './battlefieldTargetPresentation'
 import SingleCardPicker, { type SingleCardPickerItem } from '../SingleCardPicker.vue'
 import CardImage from '../CardImage.vue'
 import CardDetailContent from '../CardDetailContent.vue'
@@ -135,6 +135,17 @@ const masterPlayerIndex = ref<number | null>(null)
 const boardTargetIds = ref<string[]>([])
 const paymentResourceIds = ref<string[]>([])
 const boardControlMinimized = ref(false)
+const inlinePromptInfoOpen = ref(false)
+const inlinePromptInfoTrigger = ref<HTMLButtonElement | null>(null)
+const inlinePromptInfoClose = ref<HTMLButtonElement | null>(null)
+function openInlinePromptInfo() {
+  inlinePromptInfoOpen.value = true
+  void nextTick(() => inlinePromptInfoClose.value?.focus())
+}
+function closeInlinePromptInfo() {
+  inlinePromptInfoOpen.value = false
+  void nextTick(() => inlinePromptInfoTrigger.value?.focus())
+}
 const combatDecisionMinimized = ref(false)
 const combatDecisionInfoOpen = ref(false)
 const combatInfoTrigger = ref<HTMLButtonElement | null>(null)
@@ -299,9 +310,7 @@ const boardTargetableIds = computed(() => boardTargetPrompt.value?.validChoices.
 const boardTargetSelectionSummary = computed(() => {
   const prompt = boardTargetPrompt.value
   if (!prompt) return ''
-  const prefix = `已选择 ${boardTargetIds.value.length}/${prompt.maxChoose}`
-  const labels = boardTargetIds.value.map(id => battlefieldTargetLabel(props.game, controlledPlayerIndex.value, id)).filter(Boolean)
-  return labels.length ? `${prefix}：${labels.join('、')}` : prefix
+  return inlinePromptSelectionSummary(prompt, boardTargetIds.value)
 })
 const boardSlotPrompt = computed(() => props.game.prompts?.find(prompt =>
   (prompt.kind === 'slot' || prompt.data?.choiceMode === 'board-slot')
@@ -326,6 +335,79 @@ function promptChoiceText(prompt: Prompt, choice: string, fallback: string) {
   return prompt.choiceLabels?.[choice]?.trim()
     || prompt.presentation?.choiceConsequences?.[choice]?.trim()
     || fallback
+}
+function inlinePromptTitle(prompt: Prompt) {
+  return prompt.presentation?.title?.trim() || promptActionText(prompt)
+}
+function inlinePromptInstruction(prompt: Prompt) {
+  const instruction = promptActionText(prompt)
+  return instruction === inlinePromptTitle(prompt) ? '' : instruction
+}
+function inlinePromptRange(prompt: Prompt) {
+  if (prompt.maxChoose === 0) return '无需选择；请确认信息'
+  if (prompt.minChoose === prompt.maxChoose) return `需选择 ${prompt.maxChoose} 项`
+  return `需选择 ${prompt.minChoose} 至 ${prompt.maxChoose} 项`
+}
+function inlinePromptActor(prompt: Prompt) {
+  const side = prompt.playerIndex === controlledPlayerIndex.value ? '我方' : '对方'
+  const name = props.game.players[prompt.playerIndex]?.name
+  return `当前操作：${side}${name ? ` · ${name}` : ''}`
+}
+function inlinePromptPayment(prompt: Prompt) {
+  const status = prompt.presentation?.paymentStatus
+  const summary = prompt.presentation?.paymentSummary?.trim()
+  return status ? `${status === 'paid' ? '已支付' : '待支付'}${summary ? `：${summary}` : ''}` : ''
+}
+function inlinePromptSelectedLabel(prompt: Prompt, id: string) {
+  const battlefield = battlefieldTargetLabel(props.game, controlledPlayerIndex.value, id, prompt.choiceLabels?.[id])
+  if (battlefield) return battlefield
+  const label = prompt.choiceLabels?.[id]?.trim() || prompt.data?.[id]?.trim()
+  if (label) return label
+  if (/^rune:\d+$/.test(id)) return `彼界符文 ${Number(id.split(':')[1])}`
+  const resource = mobileMoraleChoices.value.find(choice => choice.id === id)
+  return resource ? `${resource.label}（${resource.detail}）` : ''
+}
+function inlinePromptSelectionSummary(prompt: Prompt, selectedIds: string[]) {
+  const count = `已选择 ${selectedIds.length}/${prompt.maxChoose}`
+  const labels = selectedIds.map(id => inlinePromptSelectedLabel(prompt, id)).filter(Boolean)
+  return labels.length ? `${count}：${labels.join('、')}` : count
+}
+const boardSlotChoices = computed(() => {
+  const prompt = boardSlotPrompt.value
+  if (!prompt) return ''
+  const side = boardSlotTargetPlayerIndex.value === controlledPlayerIndex.value ? 'self' : 'opponent'
+  return prompt.validChoices.filter(choice => choice !== 'skip').map(choice => {
+    const [row, slot] = choice.split(':').map(Number)
+    return battlefieldSlotLabel(side, row, slot)
+  }).filter(Boolean).join('、')
+})
+const minimizedBoardTask = computed(() => {
+  const prompt = boardTargetPrompt.value ?? boardSlotPrompt.value ?? resourceSelectionPrompt.value
+  if (!prompt) return '恢复当前选择'
+  return `${inlinePromptBrief(prompt)}；${inlinePromptRange(prompt)}${inlinePromptPayment(prompt) ? `；${inlinePromptPayment(prompt)}` : ''}`
+})
+const minimizedMoraleTask = computed(() => resourceSelectionPrompt.value
+  ? `${inlinePromptBrief(resourceSelectionPrompt.value)}；${inlinePromptRange(resourceSelectionPrompt.value)}${inlinePromptPayment(resourceSelectionPrompt.value) ? `；${inlinePromptPayment(resourceSelectionPrompt.value)}` : ''}`
+  : '恢复士气查看')
+const inlineInfoPrompt = computed(() => boardTargetPrompt.value ?? boardSlotPrompt.value ?? resourceSelectionPrompt.value)
+function inlinePromptCurrentSummary(prompt: Prompt) {
+  if (prompt.promptId === boardTargetPrompt.value?.promptId) return boardTargetSelectionSummary.value
+  if (prompt.promptId === boardSlotPrompt.value?.promptId) return `可选格位：${boardSlotChoices.value}`
+  return inlinePromptSelectionSummary(prompt, paymentResourceIds.value)
+}
+function inlinePromptBrief(prompt: Prompt) {
+  const selected = prompt.promptId === boardTargetPrompt.value?.promptId ? boardTargetIds.value.length
+    : prompt.promptId === resourceSelectionPrompt.value?.promptId ? paymentResourceIds.value.length : null
+  return selected === null ? `${inlinePromptTitle(prompt)} · 点击空格即提交`
+    : `${inlinePromptTitle(prompt)} · 已选 ${selected}/${prompt.maxChoose}`
+}
+function inlinePromptExitSummary(prompt: Prompt, choice: string) {
+  const label = prompt.choiceLabels?.[choice]?.trim() || (choice === 'skip' ? '不发动' : '取消')
+  const consequence = prompt.presentation?.choiceConsequences?.[choice]?.trim()
+  return consequence && consequence !== label ? `${label}：${consequence}` : label
+}
+function inlinePromptConsequenceLead(prompt: Prompt) {
+  return prompt.promptId === boardSlotPrompt.value?.promptId ? '选中后' : '确认后'
 }
 const paymentChoiceIds = computed(() => (resourceSelectionPrompt.value
   ?? (boardTargetPrompt.value?.data?.choiceMode === 'mixed-board-payment' ? boardTargetPrompt.value : null))
@@ -406,7 +488,7 @@ const activeBoardPromptIds = computed(() => [
   resourceSelectionPrompt.value?.promptId,
 ].filter((promptId): promptId is string => Boolean(promptId)))
 const activeBoardPromptId = computed(() => activeBoardPromptIds.value[0] ?? null)
-watch(activeBoardPromptId, () => { boardControlMinimized.value = false })
+watch(activeBoardPromptId, () => { boardControlMinimized.value = false; inlinePromptInfoOpen.value = false })
 watch(() => [props.game.phase, props.game.pendingDefense?.stage, props.game.turnSerial], () => {
   combatDecisionMinimized.value = false
   combatDecisionInfoOpen.value = false
@@ -513,7 +595,7 @@ const boardSlotPreview = computed<Card | null>(() => {
 })
 watch(() => boardTargetPrompt.value?.promptId, () => {
   boardTargetIds.value = boardTargetPrompt.value?.data?.lockedChoices?.split('|').filter(Boolean) ?? []
-})
+}, { immediate: true })
 function clearOrdinaryInteractionState() {
   selectedId.value = null
   mode.value = 'play'
@@ -668,6 +750,7 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
 function openMobileMoralePicker() {
   mobileMoralePickerMinimized.value = false
   mobileMoraleReason.value = ''
+  inlinePromptInfoOpen.value = false
   mobileMoralePickerOpen.value = true
 }
 function chooseMobileMorale(choice:MobileMoraleCandidate){
@@ -1043,6 +1126,7 @@ function selectBoardTarget(card: Card) {
   const prompt = boardTargetPrompt.value
   if (!prompt || !boardTargetableIds.value.includes(card.instanceId)) return
   focusCard.value = card
+  if (prompt.data?.lockedChoices?.split('|').includes(card.instanceId)) return
   const index = boardTargetIds.value.indexOf(card.instanceId)
   if (index >= 0) boardTargetIds.value.splice(index, 1)
   else if (prompt.maxChoose === 1) boardTargetIds.value = [card.instanceId]
@@ -1446,7 +1530,16 @@ function statusTexts(card: Card) {
       <Teleport :to="landscapeTeleportTarget()">
         <section v-if="mobileMoralePickerEnabled && mobileMoralePickerOpen" class="mobile-record-overlay mobile-morale-overlay mobile-safe-overlay" role="dialog" aria-modal="true" aria-label="选择士气">
           <header><div><h2>{{ mobileMoraleInteractive ? '选择士气' : '我方士气' }}</h2><small>{{ mobileMoraleInteractive ? `已选择 ${paymentResourceIds.length}/${resourceSelectionPrompt?.maxChoose ?? 0}` : `活跃 ${viewMe.morale.filter(item => !item.tapped).length} / 共 ${viewMe.morale.length}` }}</small></div><div class="mobile-morale-header-actions"><button type="button" @click="mobileMoralePickerOpen = false; mobileMoralePickerMinimized = true">最小化</button><button type="button" @click="mobileMoralePickerOpen = false; mobileMoralePickerMinimized = false">返回对局</button></div></header>
-          <p class="mobile-morale-prompt">{{ resourceSelectionPrompt ? promptActionText(resourceSelectionPrompt) : '这里展示当前士气状态；需要支付或返还时会自动变为可选择面板。' }}</p>
+          <div v-if="resourceSelectionPrompt" class="mobile-morale-prompt inline-prompt-copy">
+            <strong>{{ inlinePromptTitle(resourceSelectionPrompt) }}</strong>
+            <span>{{ inlinePromptActor(resourceSelectionPrompt) }}</span>
+            <span v-if="resourceSelectionPrompt.presentation?.situation">{{ resourceSelectionPrompt.presentation.situation }}</span>
+            <span v-if="inlinePromptInstruction(resourceSelectionPrompt)">{{ inlinePromptInstruction(resourceSelectionPrompt) }}</span>
+            <span role="status">{{ inlinePromptRange(resourceSelectionPrompt) }}；{{ inlinePromptSelectionSummary(resourceSelectionPrompt, paymentResourceIds) }}</span>
+            <span v-if="inlinePromptPayment(resourceSelectionPrompt)">{{ inlinePromptPayment(resourceSelectionPrompt) }}</span>
+            <span v-if="resourceSelectionPrompt.presentation?.submissionConsequence">确认后：{{ resourceSelectionPrompt.presentation.submissionConsequence }}</span>
+          </div>
+          <p v-else class="mobile-morale-prompt">这里展示当前士气状态；需要支付或返还时会自动变为可选择面板。</p>
           <div class="mobile-morale-picker" aria-label="可选择的士气与符文">
             <section v-if="viewMe.faction === 'otherworld'" class="mobile-rune-row" aria-label="彼界阵营符文">
               <div v-if="mobileRuneChoices.length">
@@ -1470,7 +1563,24 @@ function statusTexts(card: Card) {
           </footer>
         </section>
       </Teleport>
-      <BattleDockPortal lane="context"><button v-if="mobileMoralePickerEnabled && mobileMoralePickerMinimized" class="mobile-morale-restore" type="button" @click="openMobileMoralePicker">恢复士气选择</button></BattleDockPortal>
+      <BattleDockPortal lane="context"><button v-if="mobileMoralePickerEnabled && mobileMoralePickerMinimized" class="mobile-morale-restore" type="button" :title="minimizedMoraleTask" @click="openMobileMoralePicker">{{ minimizedMoraleTask }}</button></BattleDockPortal>
+      <Teleport :to="landscapeTeleportTarget()">
+        <section v-if="mobileLandscapeViewport && !readOnly && inlinePromptInfoOpen && inlineInfoPrompt" class="mobile-record-overlay mobile-morale-overlay mobile-safe-overlay inline-prompt-info-overlay" role="dialog" aria-modal="false" aria-label="当前选择说明">
+          <header><h2>{{ inlinePromptTitle(inlineInfoPrompt) }}</h2><button ref="inlinePromptInfoClose" type="button" @click="closeInlinePromptInfo">返回选择</button></header>
+          <div class="inline-prompt-info-body">
+            <p>{{ inlinePromptActor(inlineInfoPrompt) }}</p>
+            <p v-if="inlineInfoPrompt.presentation?.situation">{{ inlineInfoPrompt.presentation.situation }}</p>
+            <p v-if="inlinePromptInstruction(inlineInfoPrompt)">{{ inlinePromptInstruction(inlineInfoPrompt) }}</p>
+            <p>{{ inlinePromptRange(inlineInfoPrompt) }}</p>
+            <p>{{ inlinePromptCurrentSummary(inlineInfoPrompt) }}</p>
+            <p v-if="inlineInfoPrompt.promptId === boardSlotPrompt?.promptId">点击绿色高亮空格即提交选择。</p>
+            <p v-if="inlinePromptPayment(inlineInfoPrompt)">{{ inlinePromptPayment(inlineInfoPrompt) }}</p>
+            <p v-if="inlineInfoPrompt.presentation?.submissionConsequence">{{ inlinePromptConsequenceLead(inlineInfoPrompt) }}：{{ inlineInfoPrompt.presentation.submissionConsequence }}</p>
+            <p v-if="inlineInfoPrompt.validChoices.includes('skip')">{{ inlinePromptExitSummary(inlineInfoPrompt, 'skip') }}</p>
+            <p v-if="inlineInfoPrompt.validChoices.includes('cancel')">{{ inlinePromptExitSummary(inlineInfoPrompt, 'cancel') }}</p>
+          </div>
+        </section>
+      </Teleport>
       <GraveyardOverlay v-if="graveyardPlayer !== null" :players="[viewMe, viewEnemy]" :initial-player="graveyardPlayer"
         :actor-player-index="controlledPlayerIndex" :can-activate-osiris="canActivateOsiris" :inspection-only="hasBlockingPrompt"
         :mobile-layout="mobileLandscapeViewport"
@@ -1483,35 +1593,64 @@ function statusTexts(card: Card) {
         <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
         <button @click="emit('gmPlacementResolved')">取消</button>
       </div></BattleDockPortal>
-      <BattleDockPortal lane="context"><div v-if="boardTargetPrompt && !readOnly && !boardControlMinimized" class="board-target-controls">
-        <strong>{{ promptActionText(boardTargetPrompt) }}</strong><span>{{ boardTargetSelectionSummary }}</span>
+      <BattleDockPortal lane="context"><div v-if="boardTargetPrompt && !readOnly && !boardControlMinimized" class="board-target-controls inline-prompt-controls">
+        <span v-if="mobileLandscapeViewport" class="inline-prompt-brief" role="status">{{ inlinePromptBrief(boardTargetPrompt) }}</span>
+        <div v-if="!mobileLandscapeViewport" class="inline-prompt-copy">
+          <strong>{{ inlinePromptTitle(boardTargetPrompt) }}</strong>
+          <span>{{ inlinePromptActor(boardTargetPrompt) }}</span>
+          <span v-if="boardTargetPrompt.presentation?.situation">{{ boardTargetPrompt.presentation.situation }}</span>
+          <span v-if="inlinePromptInstruction(boardTargetPrompt)">{{ inlinePromptInstruction(boardTargetPrompt) }}</span>
+          <span role="status">{{ inlinePromptRange(boardTargetPrompt) }}；{{ boardTargetSelectionSummary }}</span>
+          <span v-if="inlinePromptPayment(boardTargetPrompt)">{{ inlinePromptPayment(boardTargetPrompt) }}</span>
+          <span v-if="boardTargetPrompt.presentation?.submissionConsequence">确认后：{{ boardTargetPrompt.presentation.submissionConsequence }}</span>
+        </div>
         <small v-if="mobileLandscapeViewport" class="mobile-target-hand-counts" :aria-label="`对手手牌 ${viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0} 张；我方手牌 ${viewMe.handCount ?? viewMe.hand?.length ?? 0} 张`">对{{ viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0 }}·我{{ viewMe.handCount ?? viewMe.hand?.length ?? 0 }}</small>
+        <button v-if="mobileLandscapeViewport" ref="inlinePromptInfoTrigger" type="button" @click="openInlinePromptInfo">任务说明</button>
         <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
         <button v-if="boardTargetPrompt.validChoices.includes('skip')" @click="resolveBoardTarget(true)">{{ promptChoiceText(boardTargetPrompt, 'skip', '不发动') }}</button>
-        <button class="primary" :disabled="boardTargetIds.length < boardTargetPrompt.minChoose" @click="resolveBoardTarget(false)">{{ boardTargetPrompt.data?.choiceMode === 'mixed-board-payment' ? '确认费用' : '确认发动' }}</button>
+        <button class="primary" :disabled="boardTargetIds.length < boardTargetPrompt.minChoose || boardTargetIds.length > boardTargetPrompt.maxChoose" @click="resolveBoardTarget(false)">{{ boardTargetPrompt.data?.choiceMode === 'mixed-board-payment' ? '确认费用' : '确认目标' }}</button>
       </div></BattleDockPortal>
-      <BattleDockPortal lane="context"><div v-if="boardSlotPrompt && !readOnly && !boardControlMinimized" class="board-target-controls board-slot-controls">
+      <BattleDockPortal lane="context"><div v-if="boardSlotPrompt && !readOnly && !boardControlMinimized" class="board-target-controls board-slot-controls inline-prompt-controls">
+        <span v-if="mobileLandscapeViewport" class="inline-prompt-brief" role="status">{{ inlinePromptBrief(boardSlotPrompt) }}</span>
         <CardImage v-if="boardSlotPreview" :card-id="boardSlotPreview.cardId" :legacy-url="boardSlotPreview.imageUrl" :alt="boardSlotPreview.name" intent="board" eager
           @mouseenter="focusCard = boardSlotPreview" @click="focusCard = boardSlotPreview" />
-        <strong>{{ promptActionText(boardSlotPrompt) }}</strong><span>直接点击绿色高亮空位</span>
+        <div v-if="!mobileLandscapeViewport" class="inline-prompt-copy">
+          <strong>{{ inlinePromptTitle(boardSlotPrompt) }}</strong>
+          <span>{{ inlinePromptActor(boardSlotPrompt) }}</span>
+          <span v-if="boardSlotPrompt.presentation?.situation">{{ boardSlotPrompt.presentation.situation }}</span>
+          <span v-if="inlinePromptInstruction(boardSlotPrompt)">{{ inlinePromptInstruction(boardSlotPrompt) }}</span>
+          <span>{{ inlinePromptRange(boardSlotPrompt) }}；可选：{{ boardSlotChoices }}</span>
+          <span class="inline-prompt-action">点击绿色高亮空格即提交选择</span>
+          <span v-if="boardSlotPrompt.presentation?.submissionConsequence">选中后：{{ boardSlotPrompt.presentation.submissionConsequence }}</span>
+        </div>
         <small v-if="mobileLandscapeViewport" class="mobile-target-hand-counts" :aria-label="`对手手牌 ${viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0} 张；我方手牌 ${viewMe.handCount ?? viewMe.hand?.length ?? 0} 张`">对{{ viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0 }}·我{{ viewMe.handCount ?? viewMe.hand?.length ?? 0 }}</small>
+        <button v-if="mobileLandscapeViewport" ref="inlinePromptInfoTrigger" type="button" @click="openInlinePromptInfo">任务说明</button>
         <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
         <button v-if="boardSlotPrompt.validChoices.includes('skip')"
           @click="command('resolvePrompt', { promptId: boardSlotPrompt.promptId, cardInstanceIds: ['skip'] })">{{ promptChoiceText(boardSlotPrompt, 'skip', '取消') }}</button>
       </div></BattleDockPortal>
-      <BattleDockPortal lane="context"><div v-if="resourceSelectionPrompt && !readOnly && !boardControlMinimized" class="board-target-controls resource-payment-controls">
-        <strong>{{ promptActionText(resourceSelectionPrompt) }}</strong>
-        <span>已选择 {{ paymentResourceIds.length }}/{{ resourceSelectionPrompt.maxChoose }}</span>
+      <BattleDockPortal lane="context"><div v-if="resourceSelectionPrompt && !readOnly && !boardControlMinimized" class="board-target-controls resource-payment-controls inline-prompt-controls">
+        <span v-if="mobileLandscapeViewport" class="inline-prompt-brief" role="status">{{ inlinePromptBrief(resourceSelectionPrompt) }}</span>
+        <div v-if="!mobileLandscapeViewport" class="inline-prompt-copy">
+          <strong>{{ inlinePromptTitle(resourceSelectionPrompt) }}</strong>
+          <span>{{ inlinePromptActor(resourceSelectionPrompt) }}</span>
+          <span v-if="resourceSelectionPrompt.presentation?.situation">{{ resourceSelectionPrompt.presentation.situation }}</span>
+          <span v-if="inlinePromptInstruction(resourceSelectionPrompt)">{{ inlinePromptInstruction(resourceSelectionPrompt) }}</span>
+          <span role="status">{{ inlinePromptRange(resourceSelectionPrompt) }}；{{ inlinePromptSelectionSummary(resourceSelectionPrompt, paymentResourceIds) }}</span>
+          <span v-if="inlinePromptPayment(resourceSelectionPrompt)">{{ inlinePromptPayment(resourceSelectionPrompt) }}</span>
+          <span v-if="resourceSelectionPrompt.presentation?.submissionConsequence">确认后：{{ resourceSelectionPrompt.presentation.submissionConsequence }}</span>
+        </div>
+        <button v-if="mobileLandscapeViewport" ref="inlinePromptInfoTrigger" type="button" @click="openInlinePromptInfo">任务说明</button>
         <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
         <button v-if="resourceSelectionPrompt.validChoices.includes('skip')" @click="confirmResourcePayment(true)">{{ promptChoiceText(resourceSelectionPrompt, 'skip', '不发动') }}</button>
         <button v-if="resourceSelectionPrompt.validChoices.includes('cancel')" @click="cancelResourcePayment">{{ promptChoiceText(resourceSelectionPrompt, 'cancel', resourceSelectionPrompt.data?.cancel ?? '取消打出') }}</button>
-        <button class="primary" :disabled="paymentResourceIds.length < resourceSelectionPrompt.minChoose"
+        <button class="primary" :disabled="paymentResourceIds.length < resourceSelectionPrompt.minChoose || paymentResourceIds.length > resourceSelectionPrompt.maxChoose"
           @click="confirmResourcePayment(false)">{{ resourceSelectionPrompt.kind === 'resource-return' || resourceSelectionPrompt.data?.choiceMode === 'resource-return'
             ? '确认返还'
             : resourceSelectionPrompt.kind === 'resource-payment' || resourceSelectionPrompt.data?.choiceMode === 'resource-payment'
               ? '确认支付' : '确认选择' }}</button>
       </div></BattleDockPortal>
-      <BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport && boardControlMinimized && (gmPlacement || boardTargetPrompt || boardSlotPrompt || resourceSelectionPrompt)" class="board-control-restore" type="button" @click="boardControlMinimized = false">恢复当前选择</button></BattleDockPortal>
+      <BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport && boardControlMinimized && (gmPlacement || boardTargetPrompt || boardSlotPrompt || resourceSelectionPrompt)" class="board-control-restore" type="button" :aria-label="gmPlacement ? '恢复 GM 登场位置选择' : minimizedBoardTask" :title="gmPlacement ? '恢复 GM 登场位置选择' : minimizedBoardTask" @click="boardControlMinimized = false">{{ gmPlacement ? '恢复 GM 选择' : minimizedBoardTask }}</button></BattleDockPortal>
       <PromptOverlay v-if="!readOnly || game.phase === 'DisasterPreparation'" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppressed-prompt-ids="activeBoardPromptIds" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction" :inspector-visible="modalInspectorVisible" :mobile-layout="mobileLandscapeViewport"
         @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" @minimized-change="promptMinimized = $event" @response-targets-change="responseTargetIds = $event" />
     </div>
@@ -1571,6 +1710,16 @@ function statusTexts(card: Card) {
 .combat-decision-info-panel>button{display:block;width:100%;min-height:38px;margin-top:8px;border:1px solid #d7ad62;background:#4b331d;color:#fff;font-weight:900}
 .record-log .event-list p{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:5px;margin:0 0 7px}.record-log .event-list p.event-turn-start{display:block;padding:4px 0;text-align:center}.record-log .event-message{min-width:0;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.turn-divider{color:#e0b641;font-size:var(--l12-board-copy,13px);white-space:nowrap}.event-tag{flex:none;padding:2px 4px;border:1px solid #5c4a86;color:#cbaaff;font-size:var(--l12-board-copy,13px);line-height:1.25}.event-play .event-tag,.event-put .event-tag{border-color:#126f82;color:#5fd5e2}.event-attack .event-tag,.event-combat .event-tag{border-color:#8d2942;color:#ff6687}.event-response .event-tag,.event-defense .event-tag,.event-support .event-tag{border-color:#9a501b;color:#f0a45e}.event-disaster .event-tag,.event-disaster-active .event-tag,.event-disaster-value .event-tag{border-color:#9e722b;color:#efc15b}.event-damage .event-tag,.event-leave .event-tag{border-color:#813c40;color:#dd7c81}.event-move .event-tag{border-color:#26757c;color:#65cbd0}
 .board-target-controls{position:fixed;z-index:2147483500;left:50%;top:76px;display:flex;align-items:center;gap:10px;max-width:760px;padding:10px 13px;border:1px solid #70d7df;background:#091011;box-shadow:0 14px 36px #000;transform:translateX(-50%)}.board-target-controls strong{max-width:430px;color:#fff;font-size:var(--l12-board-copy,13px)}.board-target-controls span{color:#8f9894;font-size:var(--l12-board-copy,13px)}.board-target-controls button{box-sizing:border-box;width:112px;min-width:112px;max-width:112px;height:44px;min-height:44px;max-height:44px;padding:6px 8px;border:1px solid #999;background:#1b2020;color:#fff;font-weight:900;line-height:1.2;text-align:center;white-space:normal;overflow:hidden;text-wrap:balance}.board-target-controls button.primary{border-color:#72e09a;background:#174d2d}.board-target-controls button:disabled{opacity:.38}
+.inline-prompt-controls{box-sizing:border-box;width:min(860px,calc(100vw - 20px));max-width:calc(100vw - 20px)}
+.inline-prompt-copy{display:flex;min-width:0;min-height:0;flex:1;flex-direction:column;gap:2px;max-height:116px;overflow:auto;overflow-wrap:anywhere;line-height:1.35}
+.inline-prompt-copy strong{max-width:none;color:#fff}
+.inline-prompt-copy span{color:#c7d3ce}
+.inline-prompt-copy .inline-prompt-action{color:#72e09a;font-weight:900}
+.mobile-morale-prompt.inline-prompt-copy{flex:0 1 auto;max-height:112px;margin:7px 0 6px}
+.inline-prompt-brief{min-width:0;color:#e7ece6!important;font-weight:900;overflow-wrap:anywhere}
+.inline-prompt-info-overlay{z-index:2147483602}
+.inline-prompt-info-body{min-height:0;overflow:auto;padding:8px 2px;color:#edf1ec;font-size:12px;line-height:1.45;overflow-wrap:anywhere}
+.inline-prompt-info-body p{margin:0 0 7px}
 .board-slot-controls .l12-card-image{width:52px;height:72px;background:#050708;cursor:pointer}.board-slot-controls span{color:#72e09a;font-weight:900}
 .inspector-statuses{display:grid;gap:4px;margin:8px 0 0;padding:0;list-style:none}.inspector-statuses li{padding:4px 6px;border-left:2px solid #70d7df;background:rgba(112,215,223,.08);color:#d9ddd7;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:1.45}
 .inspector-card-tags{display:flex;box-sizing:border-box;width:max-content;max-width:100%;align-self:center;justify-content:center;flex-wrap:wrap;gap:5px;margin:0 auto 7px}.inspector-card-tags span{flex:0 0 auto;padding:2px 6px;border:1px solid #4f5e5b;background:#111819;color:#8fdad7;font-size:var(--l12-board-copy,13px);font-weight:900;white-space:nowrap}
