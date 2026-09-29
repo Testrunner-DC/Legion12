@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-29-battle-order-direction",
+  "date": "2026-09-29",
+  "audience": "players",
+  "title": "牌序与触发结算方向说明完善",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "整理牌库顶部、底部或混合放回牌序时，会明确显示从左到右的最终抽取先后，并在确认按钮旁预览牌名；选择多个触发效果时，会同时标明发动顺序和实际逆序结算顺序，撤回或重新选择后序号会同步更新。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/PromptCardCandidate.vue",
+        "opcgpro-vue/src/l12/game/PromptOverlay.vue",
+        "服务端WebSocket/TwelveLegions/L12LibraryPlacementTransactions.cs"
+      ]
+    }
+  ]
+}
