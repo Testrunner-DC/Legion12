@@ -22,6 +22,20 @@ public sealed partial class L12GameEngine
     }
 
     internal const string PaidCostSummaryDataKey = "paidCostSummary";
+    private const string CompositePaidCostReceiptPrefix = "compositePaidCostReceipt:";
+
+    // The identity belongs to the committed segment, not to its Chinese summary. Two
+    // separate segments can really pay the same amount and both must remain in history.
+    private static void RecordCompositeSegmentPaidCost(L12StackItem item, string segmentFlow,
+        string publicSummary)
+    {
+        var receiptKey = $"{CompositePaidCostReceiptPrefix}{item.StackItemId}:{segmentFlow}";
+        if (item.Data.ContainsKey(receiptKey)) return;
+        item.Data[receiptKey] = publicSummary;
+        var previous = item.Data.GetValueOrDefault(PaidCostSummaryDataKey);
+        item.Data[PaidCostSummaryDataKey] = string.IsNullOrWhiteSpace(previous)
+            ? publicSummary : $"{previous}；{publicSummary}";
+    }
 
     private sealed record PaidCostCardSnapshot(string Name, string CardId, bool Tapped);
     private sealed record PaidCostMoraleSnapshot(string CardId, bool Tapped, bool IsGodPower);

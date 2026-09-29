@@ -328,6 +328,66 @@ assert.equal(galahadNegated.length, 1)
 assert.deepEqual(galahadNegated[0].parts.map(part => part.text), [
   '打出', '〈加拉哈德〉', '，休整该军团并发动登场时效果；登场时效果被无效',
 ])
+assert.deepEqual(galahadNegated[0].detail?.map(row => row.parts.map(part => part.text).join('')), [
+  '效果被无效',
+], 'a negated effect retains an expandable terminal fact without inventing a refund')
+const stagedOutcome = [
+  event(1, 'play', '打出来源卡', [source], 0, { playerLogGroupId: 'effect:staged', playerLogTiming: 'enter' }),
+  event(2, 'effect-result', '第一段完成', [source], 0, {
+    playerLogGroupId: 'effect:staged', effectResultStatus: 'resolved',
+    effectSegmentIndex: 1, effectSegmentCount: 2,
+    playerLogSemantic: { sourceInstanceId: source.instanceId, actionLabel: '效果结果', outcomeLabel: '已支付费用：消耗1士气' },
+  }),
+  event(3, 'effect-result', '第二段跳过', [source], 0, {
+    playerLogGroupId: 'effect:staged', effectResultStatus: 'skipped',
+    effectSegmentIndex: 2, effectSegmentCount: 2,
+    playerLogSemantic: { sourceInstanceId: source.instanceId, actionLabel: '效果结果', outcomeLabel: '原因：没有合法目标；已支付费用：消耗1士气' },
+  }),
+]
+const stagedRows = projectLog([stagedOutcome[2], stagedOutcome[0], stagedOutcome[1], stagedOutcome[2]], 0, [])
+assert.equal(stagedRows.length, 1, 'reconnect replay must group and deduplicate each terminal fact')
+assert(stagedRows[0].kind === 'line' && stagedRows[0].parts.some(part => part.text.includes('1段完成、1段跳过')),
+  'the summary must represent partial completion instead of treating the final skipped segment as the whole effect')
+assert.deepEqual(stagedRows[0].detail?.map(row => row.parts.map(part => part.text).join('')), [
+  '第1/2段完成',
+  '第2/2段跳过；原因：没有合法目标；已支付费用：消耗1士气',
+], 'expanded details must retain authoritative segment order, reason and paid receipt')
+const costOnlyOnFirstSegment = projectLog([
+  stagedOutcome[0], stagedOutcome[1],
+  event(3, 'effect-result', '第二段跳过', [source], 0, {
+    playerLogGroupId: 'effect:staged', effectResultStatus: 'skipped',
+    effectSegmentIndex: 2, effectSegmentCount: 2,
+    playerLogSemantic: { sourceInstanceId: source.instanceId, actionLabel: '效果结果', outcomeLabel: '原因：没有合法目标' },
+  }),
+], 0, [])
+assert.equal(costOnlyOnFirstSegment[0].detail?.flatMap(row => row.parts.map(part => part.text))
+  .filter(text => text.includes('已支付费用：')).length, 1,
+'a later segment without a copied receipt must not erase the earlier actual payment')
+const oldGroupedReplay = projectLog([
+  event(1, 'play', '打出来源卡', [source], 0, { playerLogGroupId: 'effect:old-replay', playerLogTiming: 'enter' }),
+  event(2, 'effect-result', '旧结果无状态字段', [source], 0, { playerLogGroupId: 'effect:old-replay' }),
+], 0, [])
+assert.equal(oldGroupedReplay.length, 1)
+assert.equal(oldGroupedReplay[0].detail, undefined,
+  'older replays without a terminal status must remain readable without an invented outcome')
+const ungroupedTerminal = projectLog([
+  event(7, 'effect-result', '旧审计文本', [source], 0, {
+    effectResultStatus: 'failed',
+    playerLogSemantic: { sourceInstanceId: source.instanceId, actionLabel: '效果结果',
+      outcomeLabel: '原因：目标不再符合条件；已支付费用：消耗1士气' },
+  }),
+], 0, [])
+assert.deepEqual(ungroupedTerminal[0].parts.map(part => part.text), [
+  '〈来源卡〉', '：', '效果未能完成', '；原因：目标不再符合条件', '；已支付费用：消耗1士气',
+], 'a terminal event without group metadata must still show its status and authoritative receipt')
+const hiddenResult = projectLog([
+  event(1, 'effect-result', '不可见来源的结果', [{ ...source, hidden: true }], 1, {
+    playerLogGroupId: 'effect:hidden-result', effectResultStatus: 'failed',
+    playerLogSemantic: { sourceInstanceId: source.instanceId, sourceName: source.name,
+      actionLabel: '效果结果', outcomeLabel: '原因：不可公开的内容' },
+  }),
+], 0, [])
+assert.equal(hiddenResult.length, 0, 'a hidden source and its terminal receipt must remain absent for other viewers')
 const unrelated = card('其他军团', 'unrelated')
 const unrelatedRest = projectLog([
   event(1, 'play', '我方打出加拉哈德', [galahad], 0, { playerLogGroupId: 'play:unrelated-rest', playerLogTiming: 'enter' }),

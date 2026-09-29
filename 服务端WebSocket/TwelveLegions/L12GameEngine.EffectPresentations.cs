@@ -12,6 +12,8 @@ internal sealed record L12EffectEventMetadata(
 
 public sealed partial class L12GameEngine
 {
+    private const string EffectProcessedPublicTargetIdDataKey = "effectProcessedPublicTargetId";
+    private const string EffectProcessedPublicTargetNameDataKey = "effectProcessedPublicTargetName";
     private void AddPresentationEvent(string type, int? playerIndex, string text,
         string producerCardId, string sceneKey, IReadOnlyDictionary<string, string>? values,
         params L12CardInstance[] cards)
@@ -106,11 +108,35 @@ public sealed partial class L12GameEngine
             "declined" => $"〈{item.SourceName}〉的效果选择不发动",
             _ => $"〈{item.SourceName}〉的效果结算完成",
         };
-        AddEventCoreWithPlayerLog("effect-result", item.Controller, summary, effectText,
+        // Both values were committed by the resolver before this terminal event.  The cost
+        // receipt is already public in the response window. A resolver must explicitly
+        // register its player-facing reason before it can appear in this result event.
+        var publicReason = resultStatus is "failed" or "skipped" or "declined"
+            ? item.Data.GetValueOrDefault("effectPlayerReason") : null;
+        var paidCost = item.Data.GetValueOrDefault(PaidCostSummaryDataKey);
+        var processedTargetId = item.Data.GetValueOrDefault(EffectProcessedPublicTargetIdDataKey);
+        var processedTargetName = item.Data.GetValueOrDefault(EffectProcessedPublicTargetNameDataKey);
+        if (string.IsNullOrWhiteSpace(processedTargetId) || string.IsNullOrWhiteSpace(processedTargetName))
+        {
+            processedTargetId = null;
+            processedTargetName = null;
+        }
+        var outcome = new[]
+        {
+            string.IsNullOrWhiteSpace(publicReason) ? null : $"原因：{publicReason}",
+            string.IsNullOrWhiteSpace(paidCost) ? null : $"已支付费用：{paidCost}",
+        }.Where(value => value is not null).ToArray();
+        // Existing terminal facts remain intact for covered cards, but their additional
+        // receipt never carries private payment/choice information to a public viewer.
+        var semantic = source.Hidden || (outcome.Length == 0 && processedTargetId is null)
+            ? null : new L12PlayerLogSemantic(
+                "效果结果", string.Join("；", outcome), source.InstanceId, source.Name,
+                processedTargetId, processedTargetName);
+        AddEventCoreWithPlayerLogSemantic("effect-result", item.Controller, summary, effectText,
             BuildEffectEventMetadata(configured, resultStatus)
                 ?? new L12EffectEventMetadata(null, null, null, null, null, null, null, resultStatus),
             item.Data.GetValueOrDefault("playerLogGroupId"),
-            item.Data.GetValueOrDefault("playerLogTiming") ?? item.Trigger, null, source);
+            item.Data.GetValueOrDefault("playerLogTiming") ?? item.Trigger, null, semantic, source);
     }
 
     /// <summary>

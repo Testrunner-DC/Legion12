@@ -310,6 +310,11 @@ public sealed class ArtemisActiveLifecycleTests
         Assert.True(power.IsGodPower);
         Assert.False(target.HasShock);
         Assert.Equal("negated", Result(game).EffectResultStatus);
+        Assert.Contains("已支付费用：消耗1神力", Result(game).PlayerLogSemantic?.OutcomeLabel);
+        foreach (var events in new[] { game.SnapshotFor(0).RecentEvents,
+                     game.SnapshotFor(1).RecentEvents, game.SnapshotForSpectator().RecentEvents })
+            Assert.Contains(events, entry => entry.Type == "effect-result"
+                && entry.PlayerLogSemantic?.OutcomeLabel.Contains("已支付费用：消耗1神力", StringComparison.Ordinal) == true);
     }
 
     [Theory]

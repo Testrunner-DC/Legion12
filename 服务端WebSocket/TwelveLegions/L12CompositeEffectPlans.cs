@@ -1421,6 +1421,7 @@ public sealed partial class L12GameEngine
             data["skipCompositeSettlement"] = "true";
             data["effectResultStatus"] = "skipped";
             data["effectFailureReason"] = $"首个效果段“{first.Text}”没有合法目标；仅跳过该段";
+            data["effectPlayerReason"] = "开始处理该段时没有合法对象";
             data["unrespondable"] = "true";
             data["preserveSourceSnapshot"] = "true";
         }
@@ -1480,6 +1481,8 @@ public sealed partial class L12GameEngine
         => item.Data.Where(pair =>
                 pair.Key.StartsWith("composite", StringComparison.OrdinalIgnoreCase)
                 || pair.Key.StartsWith("declared:", StringComparison.OrdinalIgnoreCase)
+                || pair.Key.StartsWith(CompositePaidCostReceiptPrefix, StringComparison.Ordinal)
+                || pair.Key is "playerLogGroupId" or "playerLogTiming" or PaidCostSummaryDataKey
                 || pair.Key is "bonusTroops" or "bonusCost"
                 || pair.Key is "repeatedEffectOnly" or "effectGeneratedPlay" or "originZone" or "attackPlan"
                 || pair.Key is "ability" or "freeMasterActivation" or "freeMasterSource")
@@ -1816,7 +1819,8 @@ public sealed partial class L12GameEngine
         if (!TryBuildCompositeSegmentDeclarationSteps(item.Controller, item, segment, out var steps))
         {
             return QueueSkippedCompositeSettlementSegment(item, source, segmentIndex, segment,
-                $"〈{source.Name}〉的“{segment.Text}”在声明时没有合法对象；仅跳过该段");
+                $"〈{source.Name}〉的“{segment.Text}”在声明时没有合法对象；仅跳过该段",
+                "开始处理该段时没有合法对象");
         }
 
         var continuationData = CompositeContinuationData(item);
@@ -1930,7 +1934,8 @@ public sealed partial class L12GameEngine
                 carrier.Data["compositeOriginTrigger"] = context.OriginTrigger;
                 QueueCompositeSettlementTerminal(carrier, source, context.SegmentIndex,
                     segments[context.SegmentIndex], resultStatus,
-                    $"〈{source.Name}〉的后续效果段{reason}；此前完成的效果段与费用均不回退");
+                    $"〈{source.Name}〉的后续效果段{reason}；此前完成的效果段与费用均不回退",
+                    "本段无法继续处理；之前完成的效果和已支付费用仍然有效");
                 return;
             }
         }
@@ -2000,12 +2005,21 @@ public sealed partial class L12GameEngine
             AbortCompositeSegmentDeclaration(activation, "因目标已失效而取消");
             return;
         }
+        var hpBeforePayment = State.Players[activation.Controller].Hp;
         if (data.GetValueOrDefault("repeatedEffectOnly") != "true"
             && !TryPayCompositeSegmentCost(activation.Controller, source, segment, validationItem))
         {
-            AbortCompositeSegmentDeclaration(activation, "因费用对象已失效而取消，且未发生部分支付");
+            CopyCompositePaidCostReceipts(validationItem, data);
+            activation.CommittedCompletion = JsonSerializer.Serialize(context with { Data = data });
+            AbortCompositeSegmentDeclaration(activation,
+                State.Players[activation.Controller].Hp < hpBeforePayment
+                    ? "支付主宰伤害费用后对局结束"
+                    : "因费用对象已失效而取消，且未发生部分支付");
             return;
         }
+        // The payment was committed on validationItem. PushEffect consumes data, so copy
+        // only its public receipt fields across this declaration boundary.
+        CopyCompositePaidCostReceipts(validationItem, data);
 
         data["compositePlan"] = context.PlanId;
         data["compositeSegment"] = context.SegmentIndex.ToString();
@@ -2054,7 +2068,8 @@ public sealed partial class L12GameEngine
                 && !priorStatus.Equals("resolved", StringComparison.OrdinalIgnoreCase))
             {
                 return QueueSkippedCompositeSettlementSegment(item, source, nextIndex, next,
-                    $"〈{source.Name}〉的前一效果段未成功结算；不执行“{next.Text}”");
+                    $"〈{source.Name}〉的前一效果段未成功结算；不执行“{next.Text}”",
+                    "前一段未能完成，因此跳过本段");
             }
             if (next.DeclareAtSegmentStart)
             {
@@ -2106,18 +2121,21 @@ public sealed partial class L12GameEngine
                     .Contains(declinedMode, StringComparer.OrdinalIgnoreCase))
             {
                 return QueueDeclinedCompositeSettlementSegment(item, source, nextIndex, next,
-                    $"〈{source.Name}〉已明确选择不发动“{next.Text}”");
+                    $"〈{source.Name}〉已明确选择不发动“{next.Text}”",
+                    "玩家选择不发动本段");
             }
             if (!ValidateCompositeSegmentTargets(item.Controller, next.Flow, item))
             {
                 return QueueFailedCompositeSettlementSegment(item, source, nextIndex, next,
-                    $"〈{source.Name}〉的“{next.Text}”已声明对象在前段及响应逆结算后不再符合条件；此前效果不回退");
+                    $"〈{source.Name}〉的“{next.Text}”已声明对象在前段及响应逆结算后不再符合条件；此前效果不回退",
+                    "已选择的对象在处理本段时不再符合条件；之前完成的效果仍然有效");
             }
             if (item.Data.GetValueOrDefault("repeatedEffectOnly") != "true"
                 && !next.PreStackCost && !TryPayCompositeSegmentCost(item.Controller, source, next, item))
             {
                 return QueueFailedCompositeSettlementSegment(item, source, nextIndex, next,
-                    $"〈{source.Name}〉的“{next.Text}”已声明费用对象在结算前失效；未发生部分支付，此前效果不回退");
+                    $"〈{source.Name}〉的“{next.Text}”已声明费用对象在结算前失效；未发生部分支付，此前效果不回退",
+                    "本段所选费用对象不再可用；本段未支付费用，之前完成的效果仍然有效");
             }
             var data = new Dictionary<string, string>(item.Data, StringComparer.OrdinalIgnoreCase)
             {
@@ -2134,6 +2152,9 @@ public sealed partial class L12GameEngine
             data.Remove("presentationFlow");
             data.Remove("skipCompositeSettlement");
             data.Remove("effectFailureReason");
+            data.Remove("effectPlayerReason");
+            data.Remove(EffectProcessedPublicTargetIdDataKey);
+            data.Remove(EffectProcessedPublicTargetNameDataKey);
             data.Remove("unrespondable");
             data.Remove("sameStackContinuation");
             // 首段已经完成双方响应；后续子句只继续结算，不再重复询问或允许
@@ -2157,19 +2178,19 @@ public sealed partial class L12GameEngine
     }
 
     private bool QueueFailedCompositeSettlementSegment(L12StackItem item, L12CardInstance source,
-        int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason)
-        => QueueCompositeSettlementTerminal(item, source, segmentIndex, segment, "failed", reason);
+        int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason, string playerReason)
+        => QueueCompositeSettlementTerminal(item, source, segmentIndex, segment, "failed", reason, playerReason);
 
     private bool QueueSkippedCompositeSettlementSegment(L12StackItem item, L12CardInstance source,
-        int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason)
-        => QueueCompositeSettlementTerminal(item, source, segmentIndex, segment, "skipped", reason);
+        int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason, string playerReason)
+        => QueueCompositeSettlementTerminal(item, source, segmentIndex, segment, "skipped", reason, playerReason);
 
     private bool QueueDeclinedCompositeSettlementSegment(L12StackItem item, L12CardInstance source,
-        int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason)
-        => QueueCompositeSettlementTerminal(item, source, segmentIndex, segment, "declined", reason);
+        int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason, string playerReason)
+        => QueueCompositeSettlementTerminal(item, source, segmentIndex, segment, "declined", reason, playerReason);
 
     private bool QueueCompositeSettlementTerminal(L12StackItem item, L12CardInstance source,
-        int segmentIndex, L12CompositeEffectSegmentSpec segment, string resultStatus, string reason)
+        int segmentIndex, L12CompositeEffectSegmentSpec segment, string resultStatus, string reason, string playerReason)
     {
         var data = new Dictionary<string, string>(item.Data, StringComparer.OrdinalIgnoreCase)
         {
@@ -2179,12 +2200,15 @@ public sealed partial class L12GameEngine
             ["skipCompositeSettlement"] = "true",
             ["effectResultStatus"] = resultStatus,
             ["effectFailureReason"] = reason,
+            ["effectPlayerReason"] = playerReason,
             ["unrespondable"] = "true",
             ["preserveSourceSnapshot"] = "true",
         };
         data.Remove("effectResultPublished");
         data.Remove("presentationSceneId");
         data.Remove("presentationFlow");
+        data.Remove(EffectProcessedPublicTargetIdDataKey);
+        data.Remove(EffectProcessedPublicTargetNameDataKey);
         data.Remove("wisdomRewards");
         if (CompositeUsesSingleSettlementWindow(item))
             data["sameStackContinuation"] = "true";
@@ -2295,7 +2319,33 @@ public sealed partial class L12GameEngine
         var declared = item.Data.Where(pair => pair.Key.StartsWith("declared:", StringComparison.OrdinalIgnoreCase))
             .ToDictionary(pair => pair.Key["declared:".Length..], pair => pair.Value
                 .Split('|', StringSplitOptions.RemoveEmptyEntries).ToList(), StringComparer.OrdinalIgnoreCase);
-        return TryPayCompositeDeclaredCost(controller, source, segment, declared);
+        var hpBefore = State.Players[controller].Hp;
+        var canContinue = TryPayCompositeDeclaredCost(controller, source, segment, declared);
+        var actualDamage = Math.Max(0, hpBefore - State.Players[controller].Hp);
+        if (segment.CostKind == "conditional-master-damage" && actualDamage > 0)
+            RecordCompositeSegmentPaidCost(item, segment.Flow,
+                $"对我方主宰造成{actualDamage}点伤害");
+        if (!canContinue) return false;
+        var publicSummary = segment.CostKind switch
+        {
+            "god-power-flip" => $"消耗并翻转{segment.Cost}神力",
+            "morale-return" => $"返还{segment.Cost}士气",
+            "ordinary-payment" => $"消耗{segment.Cost}士气",
+            "discard-hand" => $"弃置{segment.Cost}张手牌",
+            "grave-bottom" => $"将墓地卡牌按效果合计{segment.Cost}张置于牌库底部",
+            _ => null,
+        };
+        if (publicSummary is not null)
+            RecordCompositeSegmentPaidCost(item, segment.Flow, publicSummary);
+        return true;
+    }
+
+    private static void CopyCompositePaidCostReceipts(L12StackItem item, Dictionary<string, string> destination)
+    {
+        foreach (var pair in item.Data.Where(pair =>
+                     pair.Key == PaidCostSummaryDataKey
+                     || pair.Key.StartsWith(CompositePaidCostReceiptPrefix, StringComparison.Ordinal)))
+            destination[pair.Key] = pair.Value;
     }
 
     private bool TryPayCompositeDeclaredCost(int controller, L12CardInstance source,

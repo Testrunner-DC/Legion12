@@ -12,6 +12,7 @@ export type LogLineRow = {
   parts: LogPart[]
   badges: LogBadge[]
   effectText?: string
+  detail?: LogLineRow[]
 }
 export type LogTurnRow = { kind: 'turn'; sequence: number; round: number; side: '我方' | '对方' }
 export type LogCombatRow = {
@@ -151,6 +152,36 @@ function timingLabel(timing: string | undefined) {
   return '效果'
 }
 
+const resultLabels: Record<string, string> = {
+  resolved: '完成', negated: '被无效', failed: '未能完成',
+  skipped: '跳过', declined: '选择不发动',
+}
+
+function groupedResultDetail(event: ActionEvent, you: number, source: Card, showPaidCost: boolean): LogLineRow | null {
+  const status = event.effectResultStatus
+  if (event.type !== 'effect-result' || !status || !resultLabels[status]) return null
+  if (!publicCards(event).some(card => card.instanceId === source.instanceId)) return null
+  const segment = event.effectSegmentIndex != null && event.effectSegmentCount != null
+    ? `第${event.effectSegmentIndex}/${event.effectSegmentCount}段` : '效果'
+  const receipt = event.playerLogSemantic?.sourceInstanceId === source.instanceId
+    ? event.playerLogSemantic.outcomeLabel : undefined
+  const processedTarget = event.playerLogSemantic?.sourceInstanceId === source.instanceId
+    && event.playerLogSemantic.targetInstanceId && event.playerLogSemantic.targetName
+    ? event.playerLogSemantic.targetName : undefined
+  // The producer emits these two clauses as one receipt.  A continuation can carry
+  // the same cumulative paid-cost summary, so only its latest copy is shown.
+  const paidMarker = '已支付费用：'
+  const paidAt = receipt?.indexOf(paidMarker) ?? -1
+  const reason = paidAt < 0 ? receipt : receipt?.slice(0, paidAt).replace(/；$/, '')
+  const paid = paidAt < 0 || !showPaidCost ? undefined : receipt?.slice(paidAt)
+  return line(event.sequence, 'effect', side(event.playerIndex, you), [
+    { text: `${segment}${resultLabels[status]}` },
+    ...(processedTarget ? [{ text: `；实际处理目标：〈${processedTarget}〉` }] : []),
+    ...(reason ? [{ text: `；${reason}` }] : []),
+    ...(paid ? [{ text: `；${paid}` }] : []),
+  ])
+}
+
 function projectGroupedAction(events: ActionEvent[], indexes: number[], you: number): LogLineRow | null {
   const group = indexes.map(index => events[index])
   const play = group.find(event => event.type === 'play')
@@ -232,15 +263,40 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
     }
   }
 
-  if (result?.effectResultStatus === 'negated') {
+  if (results.length === 1 && result?.effectResultStatus && resultLabels[result.effectResultStatus]
+    && result.effectSegmentCount != null && result.effectSegmentCount > 1
+    && result.effectSegmentIndex != null) {
+    suffix += `；第${result.effectSegmentIndex}/${result.effectSegmentCount}段${resultLabels[result.effectResultStatus]}`
+  } else if (results.length === 1 && result?.effectResultStatus === 'negated') {
     suffix += play && source?.cardType === 'tactic' && first.playerLogTiming === 'play'
       ? '；该战术的效果被无效'
       : `；${timingLabel(first.playerLogTiming)}被无效`
-  } else if (result?.effectResultStatus === 'failed') suffix += `；${timingLabel(first.playerLogTiming)}未能完成`
-  else if (result?.effectResultStatus === 'declined') suffix += `；未发动${timingLabel(first.playerLogTiming)}`
+  } else if (results.length === 1 && result?.effectResultStatus === 'failed') suffix += `；${timingLabel(first.playerLogTiming)}未能完成`
+  else if (results.length === 1 && result?.effectResultStatus === 'declined') suffix += `；未发动${timingLabel(first.playerLogTiming)}`
+  else if (results.length === 1 && result?.effectResultStatus === 'skipped') suffix += `；${timingLabel(first.playerLogTiming)}跳过`
+
+  if (results.length > 1) {
+    const counts = new Map<string, number>()
+    for (const event of results) {
+      if (event.effectResultStatus && resultLabels[event.effectResultStatus])
+        counts.set(event.effectResultStatus, (counts.get(event.effectResultStatus) ?? 0) + 1)
+    }
+    if (counts.size) suffix += `；效果段：${[...counts].map(([status, count]) => `${count}段${resultLabels[status]}`).join('、')}`
+  }
 
   if (suffix) parts.push({ text: suffix })
-  return line(first.sequence, play ? 'play' : 'effect', side(first.playerIndex, you), parts, [], safeEffectText(first))
+  const row = line(first.sequence, play ? 'play' : 'effect', side(first.playerIndex, you), parts, [], safeEffectText(first))
+  const lastPaidResult = results.filter(event => event.playerLogSemantic?.sourceInstanceId === source.instanceId
+    && event.playerLogSemantic.outcomeLabel?.includes('已支付费用：')).at(-1)
+  const detail = group.flatMap(event => {
+    const resultDetail = groupedResultDetail(event, you, source, event === lastPaidResult)
+    if (resultDetail) return [resultDetail]
+    if (event.type === 'effect-result' || event.type === 'cost' || event === first) return []
+    const projected = projectLine(event, you)
+    return projected ? [projected] : []
+  })
+  if (detail.length) row.detail = detail
+  return row
 }
 function isPrivateHandAddEvent(event: ActionEvent) {
   return event.type === 'authority-event' && /因效果将\s*\d+\s*张牌加入手牌/.test(event.text)
@@ -611,6 +667,15 @@ export function projectLog(events: ActionEvent[], you: number, _names: string[])
       if (row) rows.push(row)
       continue
     }
+    if (event.type === 'effect-result' && event.playerLogSemantic) {
+      const source = firstPublicCard(event)
+      const row = source && groupedResultDetail(event, you, source, true)
+      if (row && source) {
+        row.parts.unshift(cardPart(source), { text: '：' })
+        rows.push(row)
+      }
+      continue
+    }
     if (event.type === 'attack') {
       const combat = projectCombat(ordered, index, you)
       if (combat) {
@@ -652,7 +717,8 @@ export function playerLogContainsForbiddenTerms(rows: LogRow[]) {
   const text = JSON.stringify(rows.map(row => {
     if (row.kind === 'turn') return `${row.round}${row.side}`
     if (row.kind === 'combat') return [row.result, ...row.detail.flatMap(item => item.parts.map(part => part.text))].join('')
-    return [...row.parts.map(part => part.text), ...row.badges.map(item => item.value), row.effectText ?? ''].join('')
+    return [...row.parts.map(part => part.text), ...row.badges.map(item => item.value), row.effectText ?? '',
+      ...(row.detail?.flatMap(item => item.parts.map(part => part.text)) ?? [])].join('')
   }))
   return PLAYER_LOG_REDLINE_TERMS.filter(term => text.includes(term))
 }

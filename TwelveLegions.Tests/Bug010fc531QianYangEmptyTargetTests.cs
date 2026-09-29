@@ -40,6 +40,16 @@ public sealed class Bug010fc531QianYangEmptyTargetTests
         Assert.Equal(draw ? 2 : 3, player.Morale.Count);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-noop"
             && entry.Text.Contains("没有合法", StringComparison.Ordinal));
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "skipped"
+            && entry.PlayerLogSemantic?.OutcomeLabel.Contains("原因：开始处理该段时没有合法对象", StringComparison.Ordinal) == true);
+        var terminal = game.State.Events.Where(entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == tactic.InstanceId)).ToArray();
+        Assert.Equal(["skipped", draw ? "resolved" : "declined"],
+            terminal.Select(entry => entry.EffectResultStatus));
+        Assert.Equal(terminal[0].PlayerLogGroupId, terminal[1].PlayerLogGroupId);
+        if (draw)
+            Assert.Contains("已支付费用：返还1士气", terminal[1].PlayerLogSemantic?.OutcomeLabel);
     }
 
     [Theory]
@@ -75,6 +85,14 @@ public sealed class Bug010fc531QianYangEmptyTargetTests
         Assert.Contains(tactic, player.Graveyard);
         Assert.Equal(initialHandCount - 1 + (draw ? 1 : 0), player.Hand.Count);
         Assert.Equal(draw ? 2 : 3, player.Morale.Count);
+        var processed = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == tactic.InstanceId)
+            && entry.EffectSegmentIndex == 1);
+        Assert.Equal(target.InstanceId, processed.PlayerLogSemantic?.TargetInstanceId);
+        foreach (var events in new[] { game.SnapshotFor(0).RecentEvents,
+                     game.SnapshotFor(1).RecentEvents, game.SnapshotForSpectator().RecentEvents })
+            Assert.Contains(events, entry => entry.Type == "effect-result"
+                && entry.PlayerLogSemantic?.TargetInstanceId == target.InstanceId);
     }
 
     [Fact]
@@ -101,6 +119,8 @@ public sealed class Bug010fc531QianYangEmptyTargetTests
         Assert.Contains("mode:draw", mode.ValidChoices);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
             && entry.Text.Contains("乾坤 阳", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.PlayerLogSemantic?.TargetInstanceId == target.InstanceId);
     }
 
     [Fact]
