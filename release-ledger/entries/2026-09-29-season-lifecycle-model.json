@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-29-season-lifecycle-model",
+  "date": "2026-09-29",
+  "audience": "internal",
+  "reason": "新增后台赛季定义、下一赛季草稿、配置快照和历史档案的持久化模型及管理接口，并修正一次性旧数据迁移边界；本批不启用自动切季，也不改变当前玩家排位结算、赛季展示或对战行为。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.Seasons.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+  ]
+}
