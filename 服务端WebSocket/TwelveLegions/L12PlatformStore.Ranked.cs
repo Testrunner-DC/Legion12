@@ -44,7 +44,9 @@ public sealed record L12RankedBattleIdentityView(int PlayerIndex, string Faction
     string Tier, string? PlacementTitle, string? MasterTitle, bool HighestTier);
 public sealed record L12RankedProfileHistoryView(string SeasonId, string Faction, int SevenValue,
     int PlacementPlayed, int PlacementWins, int Wins, int Losses, int WinStreak,
-    DateTimeOffset ArchivedAt);
+    DateTimeOffset ArchivedAt, string SeasonName, string Tier, string DisplayValue,
+    double? WinRate, string? FactionTitle, IReadOnlyList<string> MasterTitles,
+    IReadOnlyList<string> Titles);
 public sealed record L12RankedSeasonHonorView(string SeasonId, string SeasonName, string Username,
     string Faction, string Tier, int SevenValue, string DisplayValue,
     IReadOnlyList<string> Titles, DateTimeOffset AwardedAt);
@@ -173,6 +175,8 @@ public sealed partial class L12PlatformStore
         public string SeasonName { get; set; } = string.Empty;
         public string Tier { get; set; } = string.Empty;
         public List<string> Titles { get; set; } = [];
+        public string? FactionTitle { get; set; }
+        public List<string> MasterTitles { get; set; } = [];
         public bool FinalizedSeasonAwards { get; set; }
         public DateTimeOffset ArchivedAt { get; set; } = DateTimeOffset.UtcNow;
     }
@@ -272,7 +276,11 @@ public sealed partial class L12PlatformStore
             }
             _data.RankedProfiles ??= [];
             _data.RankedProfileHistory ??= [];
-            foreach (var history in _data.RankedProfileHistory) history.Titles ??= [];
+            foreach (var history in _data.RankedProfileHistory)
+            {
+                history.Titles ??= [];
+                history.MasterTitles ??= [];
+            }
             _data.RankedSettlements ??= [];
             _data.RankedBroadcasts ??= [];
             _data.RankedBroadcastDeliveries ??= [];
@@ -477,7 +485,11 @@ public sealed partial class L12PlatformStore
                 .OrderByDescending(item => item.ArchivedAt)
                 .Select(item => new L12RankedProfileHistoryView(item.SeasonId,
                     FactionFor(item.Faction).Name, item.SevenValue, item.PlacementPlayed,
-                    item.PlacementWins, item.Wins, item.Losses, item.WinStreak, item.ArchivedAt))
+                    item.PlacementWins, item.Wins, item.Losses, item.WinStreak, item.ArchivedAt,
+                    string.IsNullOrWhiteSpace(item.SeasonName) ? item.SeasonId : item.SeasonName,
+                    item.Tier, $"七曜值 {item.SevenValue:N0}",
+                    item.Wins + item.Losses == 0 ? null : Percentage(item.Wins, item.Wins + item.Losses),
+                    item.FactionTitle, item.MasterTitles.ToArray(), item.Titles.ToArray()))
                 .ToArray();
             return new L12RankedOverviewView(ProfileView(profile), FactionTotalsLocked(),
                 ToView(_data.RankedConfig!), history);
@@ -1079,7 +1091,8 @@ public sealed partial class L12PlatformStore
     }
 
     private void ArchiveRankedProfile(RankedProfileRow row, string? seasonName = null,
-        bool finalizedSeasonAwards = false, IReadOnlyList<string>? frozenTitles = null)
+        bool finalizedSeasonAwards = false, IReadOnlyList<string>? frozenTitles = null,
+        string? factionTitle = null, IReadOnlyList<string>? frozenMasterTitles = null)
     {
         if (string.IsNullOrWhiteSpace(row.Faction) || row.PlacementPlayed == 0) return;
         if (_data.RankedProfileHistory.Any(history => history.AccountId == row.AccountId
@@ -1099,6 +1112,8 @@ public sealed partial class L12PlatformStore
             SeasonName = seasonName ?? RequireOperationsConfig().Season.Name,
             Tier = TierFor(row).Name,
             Titles = frozenTitles?.ToList() ?? [],
+            FactionTitle = factionTitle,
+            MasterTitles = frozenMasterTitles?.ToList() ?? [],
             FinalizedSeasonAwards = finalizedSeasonAwards,
         });
     }
@@ -1113,7 +1128,13 @@ public sealed partial class L12PlatformStore
         {
             // 在归档前使用该赛季的最终七曜值计算门槛；重复切换同一赛季只会复用同一权益记录。
             ApplySeasonFinalAlternateArtAwardsLocked(row.AccountId, outgoingSeasonId, TierIndex(row));
-            ArchiveRankedProfile(row, outgoingSeasonName, true, PlayerTitles(row, FactionRank(row), champions));
+            var factionRank = FactionRank(row);
+            var factionTitle = FactionPlacementTitle(row, factionRank);
+            var masterTitles = PlayerMasterTitles(row, champions);
+            var titles = new[] { factionTitle }.Where(title => !string.IsNullOrWhiteSpace(title))
+                .Select(title => title!).Concat(masterTitles)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            ArchiveRankedProfile(row, outgoingSeasonName, true, titles, factionTitle, masterTitles);
         }
         ApplyMasterChampionSeasonFinalAlternateArtAwardsLocked(champions, outgoingSeasonId);
     }

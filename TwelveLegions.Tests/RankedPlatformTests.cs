@@ -67,6 +67,12 @@ public sealed class RankedPlatformTests
         var history = Assert.Single(store.RankedOverview(first.Id).History);
         Assert.Equal("秩序", history.Faction);
         Assert.Equal(1, history.PlacementPlayed);
+        Assert.False(string.IsNullOrWhiteSpace(history.SeasonName));
+        Assert.Equal($"七曜值 {history.SevenValue:N0}", history.DisplayValue);
+        Assert.Equal(100d, history.WinRate);
+        Assert.Null(history.FactionTitle);
+        Assert.Empty(history.MasterTitles);
+        Assert.Empty(history.Titles);
     }
 
     [Fact]
@@ -240,6 +246,16 @@ public sealed class RankedPlatformTests
         Assert.Equal(current.Config.Season.Name, honor.SeasonName);
         Assert.Contains("最强天照", honor.Titles);
         Assert.Equal($"七曜值 {honor.SevenValue:N0}", honor.DisplayValue);
+
+        var history = Assert.Single(store.RankedOverview(champion.Id).History);
+        Assert.Equal(current.Config.Season.Id, history.SeasonId);
+        Assert.Equal(current.Config.Season.Name, history.SeasonName);
+        Assert.Equal(honor.Tier, history.Tier);
+        Assert.Equal(honor.DisplayValue, history.DisplayValue);
+        Assert.Equal(100d, history.WinRate);
+        Assert.Null(history.FactionTitle);
+        Assert.Contains("最强天照", history.MasterTitles);
+        Assert.Contains("最强天照", history.Titles);
     }
 
     [Fact]

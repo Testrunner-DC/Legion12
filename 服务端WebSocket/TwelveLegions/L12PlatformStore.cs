@@ -334,6 +334,8 @@ public sealed partial class L12PlatformStore
         public RankedConfigRow? RankedConfig { get; set; }
         public int RankedGradientVersion { get; set; }
         public RankedPendingGradientRow? RankedPendingGradient { get; set; }
+        public List<SeasonDefinitionRow> SeasonDefinitions { get; set; } = [];
+        public List<SeasonArchiveRow> SeasonArchives { get; set; } = [];
         public List<RankedProfileRow> RankedProfiles { get; set; } = [];
         public List<RankedProfileHistoryRow> RankedProfileHistory { get; set; } = [];
         public List<RankedSettlementRow> RankedSettlements { get; set; } = [];
@@ -464,6 +466,7 @@ public sealed partial class L12PlatformStore
         EnsureUsernameChangeState();
         EnsureOperationsState();
         EnsureRankedState();
+        EnsureSeasonLifecycleState();
         EnsureArticleState();
         EnsureSiteContentState();
     }

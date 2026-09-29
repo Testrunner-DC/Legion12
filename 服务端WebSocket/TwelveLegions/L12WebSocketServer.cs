@@ -475,6 +475,94 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (!TryAuthorize(request, L12Permission.AdminOperationsRead, out var authenticated, out var failure)) return failure;
             return Results.Ok(_platform.RankedConfig(authenticated.Account));
         });
+        _app.MapGet("/api/admin/seasons", (HttpRequest request) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminOperationsRead, out var authenticated, out var failure))
+                return failure;
+            return Results.Ok(_platform.SeasonCatalog(authenticated.Account));
+        });
+        _app.MapGet("/api/admin/seasons/archives", (HttpRequest request) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminOperationsRead, out var authenticated, out var failure))
+                return failure;
+            return Results.Ok(_platform.SeasonArchives(authenticated.Account));
+        });
+        _app.MapGet("/api/admin/seasons/archives/{seasonId}", (HttpRequest request, string seasonId) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminOperationsRead, out var authenticated, out var failure))
+                return failure;
+            try { return Results.Ok(_platform.SeasonArchive(authenticated.Account, seasonId)); }
+            catch (L12OperationsConfigException error)
+            {
+                return SeasonManagementError(request, error);
+            }
+        });
+        _app.MapGet("/api/admin/seasons/{definitionId}", (HttpRequest request, string definitionId) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminOperationsRead, out var authenticated, out var failure))
+                return failure;
+            try { return Results.Ok(_platform.SeasonDefinition(authenticated.Account, definitionId)); }
+            catch (L12OperationsConfigException error)
+            {
+                return SeasonManagementError(request, error);
+            }
+        });
+        _app.MapPost("/api/admin/seasons/draft", (HttpRequest request, SeasonDraftCreateRequest body) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminOperationsWrite, out var authenticated, out var failure))
+                return failure;
+            try
+            {
+                return Results.Ok(_platform.CreateSeasonDraft(authenticated.Account,
+                    body.ExpectedCurrentRevision, body.Reason ?? string.Empty,
+                    new L12AdminAuditContext(CorrelationId(request),
+                        Permission: L12Authorization.Key(L12Permission.AdminOperationsWrite),
+                        Reason: body.Reason, ExpectedVersion: body.ExpectedCurrentRevision,
+                        RequestMethod: "POST", RequestPath: request.Path.Value ?? string.Empty)));
+            }
+            catch (L12OperationsConfigException error)
+            {
+                return SeasonManagementError(request, error);
+            }
+        });
+        _app.MapPut("/api/admin/seasons/draft/{definitionId}", (HttpRequest request,
+            string definitionId, SeasonDraftUpdateRequest body) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminOperationsWrite, out var authenticated, out var failure))
+                return failure;
+            try
+            {
+                return Results.Ok(_platform.UpdateSeasonDraft(authenticated.Account, definitionId,
+                    body.Draft, body.ExpectedRevision, body.Reason ?? string.Empty,
+                    new L12AdminAuditContext(CorrelationId(request),
+                        Permission: L12Authorization.Key(L12Permission.AdminOperationsWrite),
+                        Reason: body.Reason, ExpectedVersion: body.ExpectedRevision,
+                        RequestMethod: "PUT", RequestPath: request.Path.Value ?? string.Empty)));
+            }
+            catch (L12OperationsConfigException error)
+            {
+                return SeasonManagementError(request, error);
+            }
+        });
+        _app.MapDelete("/api/admin/seasons/draft/{definitionId}", (HttpRequest request,
+            string definitionId, [Microsoft.AspNetCore.Mvc.FromBody] SeasonDraftDeleteRequest body) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminOperationsWrite, out var authenticated, out var failure))
+                return failure;
+            try
+            {
+                _platform.DeleteSeasonDraft(authenticated.Account, definitionId, body.ExpectedRevision,
+                    body.Reason ?? string.Empty, new L12AdminAuditContext(CorrelationId(request),
+                        Permission: L12Authorization.Key(L12Permission.AdminOperationsWrite),
+                        Reason: body.Reason, ExpectedVersion: body.ExpectedRevision,
+                        RequestMethod: "DELETE", RequestPath: request.Path.Value ?? string.Empty));
+                return Results.NoContent();
+            }
+            catch (L12OperationsConfigException error)
+            {
+                return SeasonManagementError(request, error);
+            }
+        });
         _app.MapPut("/api/admin/ranked/config", (HttpRequest request, RankedConfigRequest body) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminOperationsWrite, out var authenticated, out var failure)) return failure;
@@ -3629,6 +3717,19 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         return Results.Json(new L12ApiError(code, message, CorrelationId(request)), statusCode: statusCode);
     }
 
+    private static IResult SeasonManagementError(HttpRequest request, L12OperationsConfigException error)
+    {
+        var status = error.Code switch
+        {
+            "season_definition_not_found" or "season_archive_not_found" => StatusCodes.Status404NotFound,
+            "season_definition_revision_conflict" or "season_draft_exists" or "duplicate_season_id"
+                => StatusCodes.Status409Conflict,
+            "permission_denied" => StatusCodes.Status403Forbidden,
+            _ => StatusCodes.Status400BadRequest,
+        };
+        return ApiError(request, error.Code, error.Message, status);
+    }
+
     private static void LogAdminReadFailure(HttpRequest request, string component, Exception error)
         => Console.Error.WriteLine($"[{CorrelationId(request)}] admin read failed: component={component}, "
             + $"errorType={error.GetType().FullName}");
@@ -4520,6 +4621,10 @@ public sealed record FriendResolveRequest(bool Accept);
 public sealed record RankedFactionRequest(string? Faction);
 public sealed record RankedTitleRequest(string? Title);
 public sealed record RankedConfigRequest(L12RankedConfigView Config, string? Reason);
+public sealed record SeasonDraftCreateRequest(long ExpectedCurrentRevision, string? Reason);
+public sealed record SeasonDraftUpdateRequest(L12SeasonDefinitionDraft Draft, long ExpectedRevision,
+    string? Reason);
+public sealed record SeasonDraftDeleteRequest(long ExpectedRevision, string? Reason);
 public sealed record RankedBroadcastCompleteRequest(string? ClaimToken);
 public sealed record RoleRequest(string? Role, string? IdempotencyKey = null, long? ExpectedVersion = null,
     bool DryRun = false, string? Reason = null);
