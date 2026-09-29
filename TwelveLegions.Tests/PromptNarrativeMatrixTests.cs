@@ -120,6 +120,9 @@ public sealed class PromptNarrativeMatrixTests
         AssertPresentation(payment, source.Name, "需要支付1份资源", "也可以取消当前操作");
         Assert.Equal("取消打出", payment.ChoiceLabels["cancel"]);
         Assert.Contains("取消整次打出", payment.Presentation!.ChoiceConsequences["cancel"], StringComparison.Ordinal);
+        Assert.Equal("pending", payment.Presentation.PaymentStatus);
+        Assert.Contains("1份资源", payment.Presentation.PaymentSummary, StringComparison.Ordinal);
+        Assert.Contains("实际支付", payment.Presentation.SubmissionConsequence, StringComparison.Ordinal);
 
         game.State.PendingPrompts.Clear();
         Invoke(game, "CreateReturnMoralePrompt", 0, 1, "active-return-choice", null,

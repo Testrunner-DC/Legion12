@@ -954,10 +954,66 @@ public sealed partial class L12GameEngine
         }
         var promptChoices = (addCancellationChoice ? step.ValidChoices.Append("skip") : step.ValidChoices)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        AddActivationStepPlayerInformation(activation, step, promptData, promptChoices,
+            addCancellationChoice);
         CreatePrompt(activation.Controller, promptKind, promptText, promptChoices, step.MinChoose,
             Math.Min(step.MaxChoose, step.ValidChoices.Count),
             "pending-activation", isPrivate: true,
             data: promptData);
+    }
+
+    private void AddActivationStepPlayerInformation(L12PendingActivation activation,
+        L12ActivationSelectionStep step, Dictionary<string, string> promptData,
+        IReadOnlyCollection<string> validChoices, bool hasCancellationChoice)
+    {
+        // A response or card play has its own presentation contract. This shared
+        // narrative only describes the still-pending active/trigger declaration.
+        if (activation.ResponseTargetStackItemId is not null
+            || activation.PlayCardInstanceId is not null
+            || activation.CommittedParentStackItemId is not null
+            || activation.Ability == CompositeSegmentDeclarationAbility
+            || activation.Ability == FixedGraveReturnResolutionAbility
+            || activation.Ability is "composite-repeated-effect" or "repeated-tactic-effect"
+                or "composite-committed-play")
+            return;
+
+        var sourceName = promptData.GetValueOrDefault("sourceName");
+        if (string.IsNullOrWhiteSpace(sourceName))
+            sourceName = (FindPromptCard(activation.Controller, activation.SourceInstanceId)
+                ?? CreateCard(activation.SourceCardId, activation.SourceInstanceId)).Name;
+        var currentCost = step.IsCostSelection
+            || step.Kind is "resource-payment" or "composite-ordinary-payment";
+        var earlierCost = activation.SelectionSteps.Take(activation.CurrentStep)
+            .LastOrDefault(candidate => candidate.IsCostSelection
+                || candidate.Kind is "resource-payment" or "composite-ordinary-payment");
+        var pendingCost = currentCost ? step : earlierCost;
+        var range = step.MinChoose == step.MaxChoose
+            ? $"{step.MinChoose}项"
+            : $"{step.MinChoose}至{step.MaxChoose}项";
+        var candidateKind = currentCost ? "费用选项"
+            : step.IsResponsePresentationTarget ? "合法对象" : "当前合法候选";
+        var instruction = step.Kind == "option"
+            ? "请选择一种处理方式；本次效果尚未结算。"
+            : $"请从{candidateKind}中选择{range}并确认；本次效果尚未结算。";
+        var consequences = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (hasCancellationChoice)
+            consequences["skip"] = "取消本次发动声明；未提交的选择不再继续。";
+        if (step.Kind == "option" && validChoices.Contains("mode:none", StringComparer.OrdinalIgnoreCase)
+            && step.CancellationPolicy == L12ActivationCancellationPolicy.NotAllowed)
+            consequences["mode:none"] = "不执行本次可选段；后续必须完成的步骤仍按流程处理。";
+        var submission = activation.CurrentStep + 1 < activation.SelectionSteps.Count
+            ? "进入下一步声明；本次效果尚未结算。"
+            : "提交本次声明；费用、对象和效果结果仍由权威结算确定。";
+        WithPromptNarrative(promptData, new(sourceName,
+            promptData.GetValueOrDefault("effectText") ?? step.Text,
+            instruction,
+            currentCost ? L12PromptWaitingAction.CostPayment
+                : step.Kind == "option" ? L12PromptWaitingAction.EffectDecision
+                : L12PromptWaitingAction.TargetSelection,
+            consequences,
+            pendingCost is null ? null : "pending",
+            pendingCost is null ? null : pendingCost.Text,
+            submission));
     }
 
     private static bool ShouldAddActivationCancellationChoice(L12ActivationSelectionStep step)
