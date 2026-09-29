@@ -466,7 +466,9 @@ public sealed partial class MatchRecorder
             SELECT COUNT(*) FROM (
                 SELECT m.match_id
                 FROM matches m
-                WHERE LOWER(TRIM(m.mode_id))='ranked' AND m.ended_utc IS NULL
+                WHERE m.ended_utc IS NULL
+                  AND LOWER(TRIM(COALESCE(m.mode_id,'')))
+                      NOT IN ('friendly','casual','tournament','sandbox')
                 UNION
                 SELECT r.match_id
                 FROM ranked_match_runtime r

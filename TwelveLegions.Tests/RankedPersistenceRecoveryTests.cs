@@ -109,6 +109,50 @@ public sealed class RankedPersistenceRecoveryTests
         }
     }
 
+    [Theory]
+    [InlineData("mystery", false, 1)]
+    [InlineData("", false, 1)]
+    [InlineData("mystery", true, 0)]
+    [InlineData("tournament", false, 0)]
+    [InlineData("friendly", false, 0)]
+    [InlineData("ranked", false, 1)]
+    public async Task CutoverFailsClosedForUnknownUnfinishedModeWithoutRuntime(
+        string mode, bool completed, int expectedActive)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"l12-cutover-unknown-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+        try
+        {
+            await recorder.InitializeAsync();
+            await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                $"Data Source={Path.Combine(directory, "matches.db")}");
+            await connection.OpenAsync();
+            var match = connection.CreateCommand();
+            match.CommandText = """
+                INSERT INTO matches(match_id,room_code,seed,player_0,player_1,deck_0,deck_1,
+                    started_utc,ended_utc,mode_id,season_id)
+                VALUES('unknown-no-runtime','MODE01',1,'a','b','a','b',$started,$ended,$mode,'S01');
+                """;
+            match.Parameters.AddWithValue("$started", DateTimeOffset.UtcNow.ToString("O"));
+            match.Parameters.AddWithValue("$ended", completed
+                ? DateTimeOffset.UtcNow.ToString("O")
+                : DBNull.Value);
+            match.Parameters.AddWithValue("$mode", mode);
+            Assert.Equal(1, await match.ExecuteNonQueryAsync());
+
+            var readiness = await recorder.RankedSeasonCutoverReadinessAsync("S01");
+
+            Assert.Equal(expectedActive, readiness.ActiveMatches);
+            Assert.Equal(expectedActive == 0, readiness.Ready);
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            await DeleteTestDirectoryAsync(directory);
+        }
+    }
+
     [Fact]
     public async Task CutoverRechecksDurableStateImmediatelyBeforeActivation()
     {
