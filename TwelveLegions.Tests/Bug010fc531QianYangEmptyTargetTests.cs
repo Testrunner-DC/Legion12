@@ -40,6 +40,9 @@ public sealed class Bug010fc531QianYangEmptyTargetTests
         Assert.Equal(draw ? 2 : 3, player.Morale.Count);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-noop"
             && entry.Text.Contains("没有合法", StringComparison.Ordinal));
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "skipped"
+            && entry.PlayerLogSemantic?.OutcomeLabel.Contains("原因：开始处理该段时没有合法对象", StringComparison.Ordinal) == true);
     }
 
     [Theory]

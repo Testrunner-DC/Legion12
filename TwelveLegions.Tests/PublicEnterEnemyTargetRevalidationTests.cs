@@ -78,6 +78,40 @@ public sealed class PublicEnterEnemyTargetRevalidationTests
             concealHiddenResponseAvailability: false);
     }
 
+    [Fact]
+    [Trait("L12Evidence", "player-log:hidden-result-receipt")]
+    public void HiddenSourceDoesNotPublishNewReasonOrPaidCostToAnyViewer()
+    {
+        var game = Create(9120);
+        var source = Card("S01-0001", "covered-result-source");
+        source.Hidden = true;
+        game.State.Players[0].Field[1][0] = source;
+        var item = new L12StackItem
+        {
+            StackItemId = "covered-result-stack", Controller = 0,
+            SourceInstanceId = source.InstanceId, SourceCardId = source.CardId,
+            SourceName = source.Name, SourceSnapshot = source,
+            Trigger = "response", Text = "隐藏来源测试",
+        };
+        item.Data["effectPlayerReason"] = "私区原因标记";
+        item.Data["paidCostSummary"] = "私区费用标记";
+        var publish = typeof(L12GameEngine).GetMethod("AddEffectResultEvent",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        publish.Invoke(game, [item, "failed"]);
+        publish.Invoke(game, [item, "failed"]);
+
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result");
+        Assert.Equal("true", item.Data["effectResultPublished"]);
+        foreach (var events in new[] { game.SnapshotFor(0).RecentEvents,
+                     game.SnapshotFor(1).RecentEvents, game.SnapshotForSpectator().RecentEvents })
+        {
+            var result = Assert.Single(events, entry => entry.Type == "effect-result");
+            Assert.Null(result.PlayerLogSemantic);
+            Assert.DoesNotContain("私区原因标记", JsonSerializer.Serialize(result), StringComparison.Ordinal);
+            Assert.DoesNotContain("私区费用标记", JsonSerializer.Serialize(result), StringComparison.Ordinal);
+        }
+    }
+
     [Theory]
     [InlineData("S01-0201", 9101)] // 图特摩斯三世：兵力不高于5000
     [InlineData("S01-0402", 9102)] // 织田信长：费用不高于4

@@ -1421,6 +1421,7 @@ public sealed partial class L12GameEngine
             data["skipCompositeSettlement"] = "true";
             data["effectResultStatus"] = "skipped";
             data["effectFailureReason"] = $"首个效果段“{first.Text}”没有合法目标；仅跳过该段";
+            data["effectPlayerReason"] = "开始处理该段时没有合法对象";
             data["unrespondable"] = "true";
             data["preserveSourceSnapshot"] = "true";
         }
@@ -1816,7 +1817,8 @@ public sealed partial class L12GameEngine
         if (!TryBuildCompositeSegmentDeclarationSteps(item.Controller, item, segment, out var steps))
         {
             return QueueSkippedCompositeSettlementSegment(item, source, segmentIndex, segment,
-                $"〈{source.Name}〉的“{segment.Text}”在声明时没有合法对象；仅跳过该段");
+                $"〈{source.Name}〉的“{segment.Text}”在声明时没有合法对象；仅跳过该段",
+                "开始处理该段时没有合法对象");
         }
 
         var continuationData = CompositeContinuationData(item);
@@ -1930,7 +1932,8 @@ public sealed partial class L12GameEngine
                 carrier.Data["compositeOriginTrigger"] = context.OriginTrigger;
                 QueueCompositeSettlementTerminal(carrier, source, context.SegmentIndex,
                     segments[context.SegmentIndex], resultStatus,
-                    $"〈{source.Name}〉的后续效果段{reason}；此前完成的效果段与费用均不回退");
+                    $"〈{source.Name}〉的后续效果段{reason}；此前完成的效果段与费用均不回退",
+                    "本段无法继续处理；之前完成的效果和已支付费用仍然有效");
                 return;
             }
         }
@@ -2054,7 +2057,8 @@ public sealed partial class L12GameEngine
                 && !priorStatus.Equals("resolved", StringComparison.OrdinalIgnoreCase))
             {
                 return QueueSkippedCompositeSettlementSegment(item, source, nextIndex, next,
-                    $"〈{source.Name}〉的前一效果段未成功结算；不执行“{next.Text}”");
+                    $"〈{source.Name}〉的前一效果段未成功结算；不执行“{next.Text}”",
+                    "前一段未能完成，因此跳过本段");
             }
             if (next.DeclareAtSegmentStart)
             {
@@ -2106,18 +2110,21 @@ public sealed partial class L12GameEngine
                     .Contains(declinedMode, StringComparer.OrdinalIgnoreCase))
             {
                 return QueueDeclinedCompositeSettlementSegment(item, source, nextIndex, next,
-                    $"〈{source.Name}〉已明确选择不发动“{next.Text}”");
+                    $"〈{source.Name}〉已明确选择不发动“{next.Text}”",
+                    "玩家选择不发动本段");
             }
             if (!ValidateCompositeSegmentTargets(item.Controller, next.Flow, item))
             {
                 return QueueFailedCompositeSettlementSegment(item, source, nextIndex, next,
-                    $"〈{source.Name}〉的“{next.Text}”已声明对象在前段及响应逆结算后不再符合条件；此前效果不回退");
+                    $"〈{source.Name}〉的“{next.Text}”已声明对象在前段及响应逆结算后不再符合条件；此前效果不回退",
+                    "已选择的对象在处理本段时不再符合条件；之前完成的效果仍然有效");
             }
             if (item.Data.GetValueOrDefault("repeatedEffectOnly") != "true"
                 && !next.PreStackCost && !TryPayCompositeSegmentCost(item.Controller, source, next, item))
             {
                 return QueueFailedCompositeSettlementSegment(item, source, nextIndex, next,
-                    $"〈{source.Name}〉的“{next.Text}”已声明费用对象在结算前失效；未发生部分支付，此前效果不回退");
+                    $"〈{source.Name}〉的“{next.Text}”已声明费用对象在结算前失效；未发生部分支付，此前效果不回退",
+                    "本段所选费用对象不再可用；本段未支付费用，之前完成的效果仍然有效");
             }
             var data = new Dictionary<string, string>(item.Data, StringComparer.OrdinalIgnoreCase)
             {
@@ -2134,6 +2141,7 @@ public sealed partial class L12GameEngine
             data.Remove("presentationFlow");
             data.Remove("skipCompositeSettlement");
             data.Remove("effectFailureReason");
+            data.Remove("effectPlayerReason");
             data.Remove("unrespondable");
             data.Remove("sameStackContinuation");
             // 首段已经完成双方响应；后续子句只继续结算，不再重复询问或允许
@@ -2157,19 +2165,19 @@ public sealed partial class L12GameEngine
     }
 
     private bool QueueFailedCompositeSettlementSegment(L12StackItem item, L12CardInstance source,
-        int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason)
-        => QueueCompositeSettlementTerminal(item, source, segmentIndex, segment, "failed", reason);
+        int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason, string playerReason)
+        => QueueCompositeSettlementTerminal(item, source, segmentIndex, segment, "failed", reason, playerReason);
 
     private bool QueueSkippedCompositeSettlementSegment(L12StackItem item, L12CardInstance source,
-        int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason)
-        => QueueCompositeSettlementTerminal(item, source, segmentIndex, segment, "skipped", reason);
+        int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason, string playerReason)
+        => QueueCompositeSettlementTerminal(item, source, segmentIndex, segment, "skipped", reason, playerReason);
 
     private bool QueueDeclinedCompositeSettlementSegment(L12StackItem item, L12CardInstance source,
-        int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason)
-        => QueueCompositeSettlementTerminal(item, source, segmentIndex, segment, "declined", reason);
+        int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason, string playerReason)
+        => QueueCompositeSettlementTerminal(item, source, segmentIndex, segment, "declined", reason, playerReason);
 
     private bool QueueCompositeSettlementTerminal(L12StackItem item, L12CardInstance source,
-        int segmentIndex, L12CompositeEffectSegmentSpec segment, string resultStatus, string reason)
+        int segmentIndex, L12CompositeEffectSegmentSpec segment, string resultStatus, string reason, string playerReason)
     {
         var data = new Dictionary<string, string>(item.Data, StringComparer.OrdinalIgnoreCase)
         {
@@ -2179,6 +2187,7 @@ public sealed partial class L12GameEngine
             ["skipCompositeSettlement"] = "true",
             ["effectResultStatus"] = resultStatus,
             ["effectFailureReason"] = reason,
+            ["effectPlayerReason"] = playerReason,
             ["unrespondable"] = "true",
             ["preserveSourceSnapshot"] = "true",
         };
