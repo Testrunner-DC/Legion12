@@ -130,10 +130,11 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var outer = _adminTransactionDepth == 0;
-            string? snapshot = null;
+            var snapshot = JsonSerializer.Serialize(_data);
+            var saveRequestedAtEntry = _adminTransactionSaveRequested;
+            var businessChangedAtEntry = _adminTransactionBusinessChanged;
             if (outer)
             {
-                snapshot = JsonSerializer.Serialize(_data);
                 _adminTransactionSaveRequested = false;
                 _adminTransactionBusinessChanged = false;
             }
@@ -147,12 +148,9 @@ public sealed partial class L12PlatformStore
             catch
             {
                 _adminTransactionDepth--;
-                if (outer)
-                {
-                    _data = JsonSerializer.Deserialize<DataFile>(snapshot!) ?? new DataFile();
-                    _adminTransactionSaveRequested = false;
-                    _adminTransactionBusinessChanged = false;
-                }
+                _data = JsonSerializer.Deserialize<DataFile>(snapshot) ?? new DataFile();
+                _adminTransactionSaveRequested = outer ? false : saveRequestedAtEntry;
+                _adminTransactionBusinessChanged = outer ? false : businessChangedAtEntry;
                 throw;
             }
 
@@ -165,7 +163,7 @@ public sealed partial class L12PlatformStore
             }
             catch
             {
-                _data = JsonSerializer.Deserialize<DataFile>(snapshot!) ?? new DataFile();
+                _data = JsonSerializer.Deserialize<DataFile>(snapshot) ?? new DataFile();
                 throw;
             }
             finally

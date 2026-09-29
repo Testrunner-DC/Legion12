@@ -466,13 +466,16 @@ public sealed partial class MatchRecorder
             SELECT COUNT(*) FROM (
                 SELECT m.match_id
                 FROM matches m
-                WHERE m.mode_id='ranked' AND m.ended_utc IS NULL
+                WHERE LOWER(TRIM(m.mode_id))='ranked' AND m.ended_utc IS NULL
                 UNION
                 SELECT r.match_id
                 FROM ranked_match_runtime r
                 LEFT JOIN matches m ON m.match_id=r.match_id
                 WHERE r.status='active'
-                  AND (m.match_id IS NULL OR m.mode_id<>'ranked' OR m.ended_utc IS NOT NULL)
+                  AND (m.match_id IS NULL
+                       OR LOWER(TRIM(COALESCE(m.mode_id,''))) NOT IN ('ranked','tournament')
+                       OR m.ended_utc IS NOT NULL
+                       OR r.room_code<>m.room_code COLLATE NOCASE)
             );
             """);
         var pending = await CountAsync("""

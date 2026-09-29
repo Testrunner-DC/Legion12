@@ -72,6 +72,7 @@ public sealed record L12SeasonActivationView(
 public sealed partial class L12PlatformStore
 {
     private const int CurrentSeasonLifecycleMigrationVersion = 1;
+    internal Action<string>? SeasonActivationFailureInjector { get; set; }
 
     private sealed class SeasonScopedConfigRow
     {
@@ -345,7 +346,24 @@ public sealed partial class L12PlatformStore
                 throw new L12OperationsConfigException("season_archive_conflict", "当前赛季已经归档，不能再次切换");
 
             var now = DateTimeOffset.UtcNow;
+            var incomingScope = ToSeasonScopeView(draft.Configuration);
+            var incomingRanked = CloneSeasonScope(draft.Configuration).Ranked;
+            var previousOperations = ToPayload(operations);
+            // Finish validation and construction before the first mutable season write. The nested
+            // transaction savepoint remains the authority for failures from later reconciliation/storage.
+            var nextPayload = NormalizeOperationsPayload(previousOperations with
+            {
+                Season = new L12SeasonConfig(draft.SeasonId, draft.Name, "active",
+                    draft.StartsAt, draft.EndsAt),
+                DisasterPool = incomingScope.DisasterPool,
+                CardRestrictions = incomingScope.CardRestrictions,
+                DefaultPresetDeckIds = draft.Configuration.DefaultPresetDeckIds.ToArray(),
+            });
+            var nextOperations = ToRow(nextPayload, operations.Version + 1, actor.Username,
+                operations.ImmediateMaintenance);
+
             FinalizeOutgoingRankedSeason(current.SeasonId, current.Name, draft.SeasonId);
+            SeasonActivationFailureInjector?.Invoke("after-season-finalization");
             var archive = new SeasonArchiveRow
             {
                 SourceDefinitionId = current.DefinitionId,
@@ -362,24 +380,15 @@ public sealed partial class L12PlatformStore
                 ArchivedBy = actor.Username,
             };
             _data.SeasonArchives.Add(archive);
+            SeasonActivationFailureInjector?.Invoke("after-season-archive");
 
-            _data.RankedConfig = CloneSeasonScope(draft.Configuration).Ranked;
+            _data.RankedConfig = incomingRanked;
             CarryRankedProfilesIntoSeason(current.SeasonId, draft.SeasonId,
                 _data.RankedConfig.PlacementMatches);
+            SeasonActivationFailureInjector?.Invoke("after-season-profile-carry");
             _data.RankedPendingGradient = null;
             _data.RankedGradientVersion = Math.Max(1, _data.RankedGradientVersion + 1);
 
-            var previousOperations = ToPayload(operations);
-            var nextPayload = NormalizeOperationsPayload(previousOperations with
-            {
-                Season = new L12SeasonConfig(draft.SeasonId, draft.Name, "active",
-                    draft.StartsAt, draft.EndsAt),
-                DisasterPool = ToSeasonScopeView(draft.Configuration).DisasterPool,
-                CardRestrictions = ToSeasonScopeView(draft.Configuration).CardRestrictions,
-                DefaultPresetDeckIds = draft.Configuration.DefaultPresetDeckIds.ToArray(),
-            });
-            var nextOperations = ToRow(nextPayload, operations.Version + 1, actor.Username,
-                operations.ImmediateMaintenance);
             _data.OperationsConfig = nextOperations;
             var history = NewOperationsHistory(nextOperations, $"season-activate:{draft.SeasonId}",
                 actor, normalizedReason);
@@ -394,11 +403,13 @@ public sealed partial class L12PlatformStore
             draft.UpdatedBy = actor.Username;
             draft.UpdatedAt = now;
             draft.ActivatedAt = now;
+            SeasonActivationFailureInjector?.Invoke("after-season-runtime-swap");
 
             AddAdminAudit(actor, "operations", "season-activate",
                 $"season-definition:{draft.DefinitionId}", current.SeasonId, draft.SeasonId,
                 normalizedReason, context with { ExpectedVersion = operations.Version,
                     Reason = normalizedReason, Outcome = "succeeded" });
+            SeasonActivationFailureInjector?.Invoke("after-season-audit");
             Save();
             return new L12SeasonActivationView(true, ToSeasonDefinitionView(draft),
                 ToSeasonArchiveView(archive), readiness, nextOperations.Version);

@@ -340,6 +340,225 @@ public sealed class SeasonActivationTests
         }
     }
 
+    [Fact]
+    public void CommandBusLateValidationFailureRollsBackEverySeasonBusinessProjection()
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var catalog = Catalog();
+            var initial = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var initialAdmin = initial.Login("Admin", "L12master").Account!;
+            var first = initial.Register("晚失败甲", "Password123!").Account!;
+            var second = initial.Register("晚失败乙", "Password123!").Account!;
+            initial.SelectRankedFaction(first.Id, "order");
+            initial.SelectRankedFaction(second.Id, "chaos");
+            for (var index = 0; index < 6; index++)
+                initial.SettleRankedMatch($"late-validation-{index}", first.Id, second.Id, 0);
+            var seasons = initial.SeasonCatalog(initialAdmin);
+            var restrictedCard = catalog.Cards.Keys.First(cardId =>
+                !seasons.Next!.Configuration.CardRestrictions.Any(item =>
+                    item.CardId.Equals(cardId, StringComparison.OrdinalIgnoreCase)));
+            initial.UpdateSeasonDraft(initialAdmin, seasons.Next!.DefinitionId,
+                new L12SeasonDefinitionDraft("S02", "第二赛季", null, null,
+                    seasons.Next.Configuration with
+                    {
+                        CardRestrictions = seasons.Next.Configuration.CardRestrictions
+                            .Append(new L12CardRestrictionConfig(restrictedCard, 0, "late validation"))
+                            .ToArray(),
+                    }), seasons.Next.Revision, "prepare late validation", Context("prepare-late"));
+
+            var reducedCards = catalog.Cards.Where(pair => !pair.Key.Equals(restrictedCard,
+                    StringComparison.OrdinalIgnoreCase))
+                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+            var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: reducedCards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var before = CaptureSeasonBusinessState(store, admin, first.Id);
+            var operationsAuditBefore = store.AdminAudit("operations").Count;
+
+            var outcome = ActivateThroughBus(store, admin, "late-validation-command");
+
+            Assert.False(outcome.Success);
+            Assert.Equal("unknown_restricted_card", outcome.Code);
+            AssertSeasonBusinessState(before, store, admin, first.Id);
+            Assert.Equal(operationsAuditBefore, store.AdminAudit("operations").Count);
+            AssertMirrorAndDatabaseState(before, path, catalog.PresetDecks, reducedCards, first.Id);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void CommandBusReconciliationFailureUsesNestedSavepoint()
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var catalog = Catalog();
+            var store = PrepareValidActivation(path, catalog, out var admin, out var playerId);
+            var before = CaptureSeasonBusinessState(store, admin, playerId);
+            var operationsAuditBefore = store.AdminAudit("operations").Count;
+            store.SeasonActivationFailureInjector = stage =>
+            {
+                if (stage == "after-season-profile-carry")
+                    throw new InvalidOperationException("injected reconciliation failure");
+            };
+
+            var outcome = ActivateThroughBus(store, admin, "late-reconciliation-command");
+            store.SeasonActivationFailureInjector = null;
+
+            Assert.False(outcome.Success);
+            Assert.Equal("command_failed", outcome.Code);
+            AssertSeasonBusinessState(before, store, admin, playerId);
+            Assert.Equal(operationsAuditBefore, store.AdminAudit("operations").Count);
+            AssertMirrorAndDatabaseState(before, path, catalog.PresetDecks, catalog.Cards, playerId);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Theory]
+    [InlineData("before-mirror-serialize")]
+    [InlineData("before-audit-append")]
+    [InlineData("after-audit-append")]
+    [InlineData("before-commit")]
+    public void StorageLateFailureRollsBackSeasonMemoryDatabaseMirrorAndAudit(string failureStage)
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var catalog = Catalog();
+            var store = PrepareValidActivation(path, catalog, out var admin, out var playerId);
+            var before = CaptureSeasonBusinessState(store, admin, playerId);
+            var mirrorBefore = File.ReadAllText(path);
+            var auditBefore = store.AdminAudit().Count;
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage == failureStage) throw new IOException($"injected {failureStage}");
+            };
+
+            Assert.Throws<L12PlatformStorageUnavailableException>(() =>
+                ActivateThroughBus(store, admin, $"storage-{failureStage}"));
+            store.StorageFailureInjector = null;
+
+            AssertSeasonBusinessState(before, store, admin, playerId);
+            Assert.Equal(auditBefore, store.AdminAudit().Count);
+            Assert.Equal(mirrorBefore, File.ReadAllText(path));
+            AssertMirrorAndDatabaseState(before, path, catalog.PresetDecks, catalog.Cards, playerId);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    private sealed record SeasonBusinessState(
+        string CurrentSeasonId,
+        string? NextDefinitionId,
+        long CurrentRevision,
+        long? NextRevision,
+        int ArchiveCount,
+        int SevenValue,
+        int PlacementPlayed,
+        int Wins,
+        int WinStreak,
+        int HistoryCount,
+        long OperationsVersion);
+
+    private static SeasonBusinessState CaptureSeasonBusinessState(L12PlatformStore store,
+        L12AccountView admin, string playerId)
+    {
+        var catalog = store.SeasonCatalog(admin);
+        var profile = store.RankedProfile(playerId);
+        return new SeasonBusinessState(catalog.Current.SeasonId, catalog.Next?.DefinitionId,
+            catalog.Current.Revision, catalog.Next?.Revision, catalog.Archives.Count,
+            profile.SevenValue, profile.PlacementPlayed, profile.Wins, profile.WinStreak,
+            store.RankedOverview(playerId).History.Count, store.OperationsConfig(admin).Version);
+    }
+
+    private static void AssertSeasonBusinessState(SeasonBusinessState expected, L12PlatformStore store,
+        L12AccountView admin, string playerId)
+        => Assert.Equal(expected, CaptureSeasonBusinessState(store, admin, playerId));
+
+    private static void AssertMirrorAndDatabaseState(SeasonBusinessState expected, string path,
+        IReadOnlyList<L12PresetDeckDefinition> decks,
+        IReadOnlyDictionary<string, L12CardDefinition> cards, string playerId)
+    {
+        var database = new L12PlatformStore(path, decks, officialCards: cards);
+        var databaseAdmin = database.Login("Admin", "L12master").Account!;
+        AssertSeasonBusinessState(expected, database, databaseAdmin, playerId);
+
+        var mirrorPath = Path.Combine(Path.GetDirectoryName(path)!, $"mirror-{Guid.NewGuid():N}.json");
+        File.Copy(path, mirrorPath);
+        var mirror = new L12PlatformStore(mirrorPath, decks, officialCards: cards);
+        var mirrorAdmin = mirror.Login("Admin", "L12master").Account!;
+        AssertSeasonBusinessState(expected, mirror, mirrorAdmin, playerId);
+    }
+
+    private static L12PlatformStore PrepareValidActivation(string path, L12Catalog catalog,
+        out L12AccountView admin, out string playerId)
+    {
+        var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+        admin = store.Login("Admin", "L12master").Account!;
+        var first = store.Register(("txn" + Guid.NewGuid().ToString("N"))[..11], "Password123!").Account!;
+        var second = store.Register(("rvl" + Guid.NewGuid().ToString("N"))[..11], "Password123!").Account!;
+        playerId = first.Id;
+        store.SelectRankedFaction(first.Id, "order");
+        store.SelectRankedFaction(second.Id, "chaos");
+        for (var index = 0; index < 6; index++)
+            store.SettleRankedMatch($"txn-{Guid.NewGuid():N}", first.Id, second.Id, 0);
+        var seasons = store.SeasonCatalog(admin);
+        store.UpdateSeasonDraft(admin, seasons.Next!.DefinitionId,
+            new L12SeasonDefinitionDraft("S02", "第二赛季", null, null, seasons.Next.Configuration),
+            seasons.Next.Revision, "prepare transaction", Context("prepare-transaction"));
+        return store;
+    }
+
+    private static L12AdminCommandResult<L12SeasonActivationView> ActivateThroughBus(
+        L12PlatformStore store, L12AccountView admin, string idempotencyKey)
+    {
+        var seasons = store.SeasonCatalog(admin);
+        var operationsVersion = store.OperationsConfig(admin).Version;
+        var commandId = Guid.NewGuid().ToString("N");
+        var command = new L12AdminCommandEnvelope<L12SeasonActivationCommandPayload>(commandId,
+            idempotencyKey, "operations.config.season-activate", admin, DateTimeOffset.UtcNow,
+            "operations:config", "activate through command bus", false, operationsVersion,
+            new L12SeasonActivationCommandPayload(seasons.Next!.DefinitionId,
+                seasons.Current.Revision, seasons.Next.Revision),
+            new L12AdminAuditContext(commandId,
+                L12Authorization.Key(L12Permission.AdminOperationsWrite), commandId, idempotencyKey,
+                operationsVersion, Reason: "activate through command bus", RequestMethod: "POST",
+                RequestPath: "/api/admin/seasons/draft/activate"));
+        return new L12AdminCommandBus(store).Execute(command, L12Permission.AdminOperationsWrite,
+            current =>
+            {
+                try
+                {
+                    return L12AdminCommandResult<L12SeasonActivationView>.Ok(store.ActivateSeason(
+                        current.Actor, current.Payload.DefinitionId,
+                        current.Payload.ExpectedCurrentRevision, current.Payload.ExpectedDraftRevision,
+                        current.Reason ?? string.Empty,
+                        new L12RankedSeasonCutoverReadiness(seasons.Current.SeasonId, 0, 0, 0, 0),
+                        current.AuditContext));
+                }
+                catch (L12OperationsConfigException error)
+                {
+                    return L12AdminCommandResult<L12SeasonActivationView>.Fail(error.Code,
+                        error.Message, 400);
+                }
+            }, risk: L12AdminCommandRisk.High);
+    }
+
     private static L12Catalog Catalog()
         => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
 

@@ -250,11 +250,14 @@ public sealed partial class L12PlatformStore
             using var transaction = connection.BeginTransaction();
             PersistDeckDomainSnapshot(connection, transaction, _data);
             var snapshotJson = SerializeSnapshot(_data);
+            StorageFailureInjector?.Invoke("before-mirror-serialize");
             mirrorJson = JsonSerializer.Serialize(_data, PlatformMirrorJsonOptions);
             var snapshotChecksum = Sha256(snapshotJson);
             var mirrorChecksum = Sha256(mirrorJson);
             UpsertSnapshot(connection, transaction, snapshotJson, snapshotChecksum, mirrorChecksum, _data);
+            StorageFailureInjector?.Invoke("before-audit-append");
             AppendIndependentAudit(connection, transaction, _data.AdminAudit);
+            StorageFailureInjector?.Invoke("after-audit-append");
             StorageFailureInjector?.Invoke("before-commit");
             transaction.Commit();
             _lastCommittedSnapshot = snapshotJson;
