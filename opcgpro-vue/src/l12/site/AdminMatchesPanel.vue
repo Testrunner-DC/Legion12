@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import CardImage from '@/l12/CardImage.vue'
 import DeckSnapshotViewer from './DeckSnapshotViewer.vue'
 import AdminMatchContextLinks from './AdminMatchContextLinks.vue'
+import AdminAccountPicker from './AdminAccountPicker.vue'
 import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import {
   adminApi,
@@ -13,7 +14,6 @@ import {
   type AdminMatchPage,
   type AdminMatchParticipant,
   type AdminMatchSummary,
-  type PlatformAccount,
 } from '@/l12/platform'
 
 const props = withDefaults(defineProps<{ initialMatchId?: string }>(), { initialMatchId: '' })
@@ -28,9 +28,9 @@ const initialView: MatchView = queryText('view') === 'player' ? 'player' : query
 const view = ref<MatchView>(initialView)
 const page = ref<AdminMatchPage>({ items: [], total: 0 })
 const detail = ref<AdminMatchDetail | null>(null)
-const accounts = ref<PlatformAccount[]>([])
 const cards = ref<DeckCard[]>([])
 const selectedAccountId = ref(queryText('accountId'))
+const selectedPlayerName = ref('')
 const loading = ref(false)
 const detailLoading = ref(false)
 const expiredReplayId = ref('')
@@ -48,7 +48,6 @@ const averageDuration = computed(() => {
   const durations = visibleMatches.value.map(match => match.durationSeconds).filter((value): value is number => typeof value === 'number' && value >= 0)
   return durations.length ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length) : 0
 })
-const selectedPlayer = computed(() => accounts.value.find(account => account.id === selectedAccountId.value))
 const playerSummary = computed(() => {
   if (view.value !== 'player') return null
   let wins = 0
@@ -97,7 +96,6 @@ function factLabel(type: string) {
 
 async function ensureReferenceData() {
   if (!cards.value.length) cards.value = await loadDeckCatalog()
-  if (!accounts.value.length) accounts.value = await adminApi.accounts()
 }
 async function loadMatches(reset = true) {
   if (view.value === 'player' && !selectedAccountId.value) {
@@ -187,7 +185,7 @@ onMounted(async () => {
     <aside v-if="view === 'sandbox'" class="sandbox-retention-note"><b>管理员专用沙盒回放</b><span>用于排查 Bug；每周清理超过 7 天的记录，实际通常保留约 7～14 天，活跃沙盒不清理。玩家无权查看，也不计入战绩、排行与卡牌统计。</span></aside>
 
     <section class="filter-panel">
-      <label v-if="view === 'player'">玩家<select v-model="selectedAccountId" @change="selectPlayer"><option value="">选择玩家</option><option v-for="account in accounts" :key="account.id" :value="account.id">{{ account.username }} · {{ account.id.slice(0, 8) }}</option></select></label>
+      <AdminAccountPicker v-if="view === 'player'" v-model="selectedAccountId" label="玩家" @selected="selectedPlayerName = $event?.username || ''" @change="selectPlayer"/>
       <label v-else>玩家／账号<input v-model="filters.player" placeholder="账号、玩家名或 ID" @keyup.enter="loadMatches(true)"/></label>
       <label v-if="view === 'sandbox'">模式<select disabled><option>沙盒</option></select></label>
       <label v-else>模式<select v-model="filters.mode"><option value="">全部正式模式</option><option value="ranked">排位</option><option value="casual">休闲</option><option value="friendly">好友房</option><option value="tournament">赛事</option></select></label>
@@ -203,12 +201,12 @@ onMounted(async () => {
       <article><small>本页已结束</small><b>{{ completedCount }}</b><span>{{ view === 'sandbox' ? '管理员排查专用' : '不含沙盒' }}</span></article>
       <article><small>异常／无效</small><b>{{ abnormalCount }}</b><span>便于快速复盘</span></article>
       <article><small>平均时长</small><b>{{ durationLabel(averageDuration) }}</b><span>本页可计算对局</span></article>
-      <article v-if="playerSummary"><small>{{ selectedPlayer?.username || '玩家' }}</small><b>{{ playerSummary.wins }}-{{ playerSummary.losses }}</b><span>{{ (playerSummary.rate * 100).toFixed(1) }}% 胜率</span></article>
+      <article v-if="playerSummary"><small>{{ selectedPlayerName || '玩家' }}</small><b>{{ playerSummary.wins }}-{{ playerSummary.losses }}</b><span>{{ (playerSummary.rate * 100).toFixed(1) }}% 胜率</span></article>
     </div>
 
     <div class="match-workspace">
       <section class="match-list panel-shell">
-        <header><b>{{ view === 'recent' ? '最近记录' : view === 'sandbox' ? '沙盒排查记录' : `${selectedPlayer?.username || '玩家'}的记录` }}</b><span>按开始时间倒序</span></header>
+        <header><b>{{ view === 'recent' ? '最近记录' : view === 'sandbox' ? '沙盒排查记录' : `${selectedPlayerName || '玩家'}的记录` }}</b><span>按开始时间倒序</span></header>
         <PagedCollection :items="visibleMatches" v-slot="{ items: paged12624 }"><button v-for="match in paged12624" :key="match.matchId" class="match-row" :class="{ selected: detail?.summary.matchId === match.matchId || expiredReplayId === match.matchId }" @click="selectMatch(match.matchId)">
           <span class="match-identity"><small>{{ modeLabel(match.modeId) }} · {{ dateLabel(match.startedUtc) }}</small><b><template v-for="(player,index) in match.players" :key="player.accountId || player.displayName"><em v-if="index"> VS </em>{{ player.displayName }}</template></b><code>{{ match.matchId.slice(0, 12) }}</code></span>
           <span class="match-result"><b>{{ statusLabel(match) }}</b><small>{{ durationLabel(match.durationSeconds) }} · {{ match.commandCount }} 次操作</small></span>

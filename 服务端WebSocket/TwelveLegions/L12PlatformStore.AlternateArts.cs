@@ -15,7 +15,7 @@ public sealed record L12AlternateArtGrantView(string Id, string AccountId, strin
 public sealed record L12AlternateArtDraft(string? Id, string ArtCode, string BaseCardId, string DisplayName, string MediaAssetId,
     bool Active = true, string ProductId = "");
 public sealed record L12AlternateArtProductDraft(string? Id, string Name, bool Active = true);
-public sealed record L12AlternateArtGrantDraft(string AlternateArtId, string Username, string SourceKind,
+public sealed record L12AlternateArtGrantDraft(string AlternateArtId, string AccountId, string SourceKind,
     string SourceReference = "");
 public sealed record L12AlternateArtAwardRuleView(string Id, string AlternateArtId, string Kind, string SeasonId,
     string EventId, int MinimumTierIndex, bool Active, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
@@ -205,8 +205,10 @@ public sealed partial class L12PlatformStore
         {
             var art = FindActiveAlternateArtLocked(draft.AlternateArtId)
                 ?? throw new KeyNotFoundException("异画不存在或未启用");
-            var account = _data.Accounts.FirstOrDefault(row => string.Equals(row.Username, draft.Username?.Trim(), StringComparison.OrdinalIgnoreCase)
-                && !row.Deleted) ?? throw new KeyNotFoundException("目标玩家不存在");
+            var accountId = draft.AccountId?.Trim() ?? string.Empty;
+            var account = _data.Accounts.FirstOrDefault(row => row.Id == accountId && !row.Deleted)
+                ?? throw new KeyNotFoundException("目标玩家不存在");
+            if (account.Disabled) throw new ArgumentException("目标玩家账号已禁用，不能派发异画");
             var source = draft.SourceKind?.Trim().ToLowerInvariant() ?? string.Empty;
             if (!AlternateArtGrantSources.Contains(source)) throw new ArgumentException("派发来源必须为 manual、rank-reached、season-final 或 event");
             var reference = LimitSiteText(draft.SourceReference, 240);
@@ -220,6 +222,7 @@ public sealed partial class L12PlatformStore
             }
             row.SourceKind = source;
             row.SourceReference = reference;
+            row.RecipientReason = reference;
             row.GrantedAt = DateTimeOffset.UtcNow;
             row.NotificationSeenAt = null;
             row.RevokedAt = null;
@@ -554,16 +557,12 @@ public sealed partial class L12PlatformStore
 
     private static string AlternateArtGrantReason(AlternateArtGrantRow row)
     {
-        var label = row.SourceKind switch
-        {
-            "rank-reached" => "赛季达到段位",
-            "season-final" => "赛季结算",
-            "master-champion-season-final" => "赛季最强主宰",
-            "event" => "活动派发",
-            "ranked-participants" => "赛季排位参与",
-            _ => "管理员派发",
-        };
-        return string.IsNullOrWhiteSpace(row.SourceReference) ? label : $"{label}（{row.SourceReference}）";
+        if (!string.IsNullOrWhiteSpace(row.RecipientReason)) return row.RecipientReason.Trim();
+        // 兼容升级前由后台直接派发的默认 manual 记录；自动派发的赛季／活动标识只用于审计与幂等，不能展示给玩家。
+        return row.SourceKind.Equals("manual", StringComparison.OrdinalIgnoreCase)
+            && !row.GrantedByAccountId.Equals("system", StringComparison.OrdinalIgnoreCase)
+                ? row.SourceReference?.Trim() ?? string.Empty
+                : string.Empty;
     }
 
     private static L12AlternateArtAwardRuleView ToAlternateArtAwardRuleView(AlternateArtAwardRuleRow row)

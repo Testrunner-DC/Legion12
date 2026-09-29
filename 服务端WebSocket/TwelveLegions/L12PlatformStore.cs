@@ -383,6 +383,7 @@ public sealed partial class L12PlatformStore
         public string AlternateArtId { get; set; } = string.Empty;
         public string SourceKind { get; set; } = "manual";
         public string SourceReference { get; set; } = string.Empty;
+        public string RecipientReason { get; set; } = string.Empty;
         public string GrantedByAccountId { get; set; } = string.Empty;
         public DateTimeOffset GrantedAt { get; set; } = DateTimeOffset.UtcNow;
         public DateTimeOffset? NotificationSeenAt { get; set; }

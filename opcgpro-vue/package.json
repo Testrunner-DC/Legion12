@@ -19,6 +19,7 @@
     "verify:profile-admin-responsive": "node scripts/verify-profile-admin-responsive.mjs",
     "verify:admin-responsive-full": "node scripts/verify-admin-responsive-full.mjs",
     "verify:admin-p1-safety": "node scripts/verify-admin-p1-safety.mjs",
+    "verify:alternate-art-admin-closeout": "node scripts/verify-alternate-art-admin-closeout.mjs",
     "audit:card-assets": "node scripts/audit-l12-card-cdn.mjs",
     "build:card-cdn": "node scripts/build-l12-card-cdn.mjs",
     "build": "npm run check:performance-architecture && npm run check:release-version && npm run check:ui-contracts && npm run check:defense-actions && npm run check:ranked-broadcast && npm run check:deck-sync && npm run check:card-assets && vue-tsc -b && vite build --configLoader runner && vite build --configLoader runner --mode testrun --outDir dist-testrun",

@@ -222,7 +222,7 @@ public sealed class DeckDomainStorageTests
             var owner = store.Register("tpubart", "password-123").Account!;
             var art = store.AlternateArts().First(candidate => catalog.PresetDecks.Any(preset =>
                 preset.CardIds.Contains(candidate.BaseCardId, StringComparer.OrdinalIgnoreCase)));
-            store.GrantAlternateArt(admin, new L12AlternateArtGrantDraft(art.Id, owner.Username,
+            store.GrantAlternateArt(admin, new L12AlternateArtGrantDraft(art.Id, owner.Id,
                 "manual", "published-storage-regression"));
             var source = catalog.PresetDecks.First(preset =>
                 preset.CardIds.Contains(art.BaseCardId, StringComparer.OrdinalIgnoreCase));

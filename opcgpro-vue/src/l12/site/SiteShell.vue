@@ -875,8 +875,8 @@ onBeforeUnmount(() => {
 
     <div v-if="currentAlternateArtNotification" class="site-modal-mask alternate-art-notification-mask">
       <section class="site-modal alternate-art-notification" role="dialog" aria-modal="true" aria-labelledby="alternate-art-notification-title">
-        <header><div><small>NEW ALTERNATE ART</small><h2 id="alternate-art-notification-title">获得异画！</h2></div></header>
-        <div class="alternate-art-reward"><CardImage :card-id="currentAlternateArtNotification.cardImageId || currentAlternateArtNotification.baseCardId" :legacy-url="currentAlternateArtNotification.builtIn ? undefined : (currentAlternateArtNotification.imageUrl || currentAlternateArtNotification.thumbnailUrl)" :alt="currentAlternateArtNotification.displayName" intent="detail"/><div><p>“{{ currentAlternateArtNotification.reason }}”收到“{{ currentAlternateArtNotification.displayName }}·{{ currentAlternateArtNotification.artCode }}”的使用权</p><span>对应原画：{{ currentAlternateArtNotification.baseCardName || currentAlternateArtNotification.baseCardId }}</span><small>可在牌库编辑器中选用</small></div></div>
+        <header><div><h2 id="alternate-art-notification-title">获得异画！</h2></div></header>
+        <div class="alternate-art-reward"><CardImage :card-id="currentAlternateArtNotification.cardImageId || currentAlternateArtNotification.baseCardId" :legacy-url="currentAlternateArtNotification.builtIn ? undefined : (currentAlternateArtNotification.imageUrl || currentAlternateArtNotification.thumbnailUrl)" :alt="currentAlternateArtNotification.displayName" intent="detail"/><div><p>恭喜你获得〈{{ currentAlternateArtNotification.displayName }} {{ currentAlternateArtNotification.artCode }}〉</p><p v-if="currentAlternateArtNotification.reason.trim()" class="alternate-art-reason">{{ currentAlternateArtNotification.reason }}</p></div></div>
         <button class="alternate-art-confirm" type="button" @click="closeAlternateArtNotification">确认</button>
       </section>
     </div>

@@ -59,15 +59,15 @@ public sealed class SiteContentPlatformStoreTests
 
             var entitled = store.Register("ent" + Guid.NewGuid().ToString("N")[..7], "Password123!").Account!;
             var unentitled = store.Register("unent" + Guid.NewGuid().ToString("N")[..5], "Password123!").Account!;
-            store.GrantAlternateArt(admin, new(saved.Id, entitled.Username, "manual", "archive-full-pool"));
+            store.GrantAlternateArt(admin, new(saved.Id, entitled.Id, "manual", "archive-full-pool"));
             Assert.Contains(store.OwnedAlternateArts(entitled.Id), item => item.Id == saved.Id && !item.BuiltIn);
             Assert.DoesNotContain(store.OwnedAlternateArts(unentitled.Id), item => item.Id == saved.Id);
             Assert.Contains(store.AlternateArts(), item => item.Id == saved.Id && item.ImageUrl == saved.ImageUrl);
 
             Assert.DoesNotContain(store.OwnedAlternateArts(admin.Id), item => item.Id == saved.Id);
-            store.GrantAlternateArt(admin, new(saved.Id, admin.Username, "manual", "管理员测试授权"));
+            store.GrantAlternateArt(admin, new(saved.Id, admin.Id, "manual", "管理员测试授权"));
             var owned = Assert.Single(store.OwnedAlternateArts(admin.Id), item => item.Id == saved.Id);
-            Assert.Equal("管理员派发（管理员测试授权）", owned.GrantReason);
+            Assert.Equal("管理员测试授权", owned.GrantReason);
             var copies = preset.CardIds.ToList();
             var deck = new L12PresetDeckDefinition
             {
@@ -116,7 +116,7 @@ public sealed class SiteContentPlatformStoreTests
             Assert.False(string.IsNullOrWhiteSpace(art.CardImageId));
 
             store.GrantAlternateArt(admin, new L12AlternateArtGrantDraft(art.Id,
-                player.Username, "manual", "gallery-regression"));
+                player.Id, "manual", "gallery-regression"));
             Assert.Contains(store.OwnedAlternateArts(player.Id), row => row.Id == art.Id && row.BuiltIn);
 
             var preset = catalog.PresetDecks[0];
@@ -181,12 +181,12 @@ public sealed class SiteContentPlatformStoreTests
             var admin = store.Login("Admin", "L12master").Account!;
             var player = store.Register("notify" + Guid.NewGuid().ToString("N")[..5], "Password123!").Account!;
             var art = store.AlternateArts().First();
-            var grant = store.GrantAlternateArt(admin, new(art.Id, player.Username, "event", "测试活动"));
+            var grant = store.GrantAlternateArt(admin, new(art.Id, player.Id, "event", "测试活动"));
 
             var notification = Assert.Single(store.PendingAlternateArtGrantNotifications(player.Id));
             Assert.Equal(grant.Id, notification.Id);
             Assert.Equal(art.ArtCode, notification.ArtCode);
-            Assert.Contains("测试活动", notification.Reason);
+            Assert.Equal("测试活动", notification.Reason);
             var owned = Assert.Single(store.OwnedAlternateArts(player.Id), item => item.Id == art.Id);
             Assert.NotNull(owned.GrantedAt);
             Assert.False(string.IsNullOrWhiteSpace(owned.BaseCardName));
@@ -196,6 +196,66 @@ public sealed class SiteContentPlatformStoreTests
             Assert.Single(reloaded.PendingAlternateArtGrantNotifications(player.Id));
             reloaded.AcknowledgeAlternateArtGrantNotification(player.Id, grant.Id);
             Assert.Empty(reloaded.PendingAlternateArtGrantNotifications(player.Id));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void AlternateArtDirectGrantRequiresUniqueActiveAccountIdAndBlankReasonStaysBlank()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-alternate-art-account-target-{Guid.NewGuid():N}");
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var active = store.Register("桐玩家", "Password123!").Account!;
+            var disabled = store.Register("桐玩家二", "Password123!").Account!;
+            var art = store.AlternateArts().First();
+
+            var grant = store.GrantAlternateArt(admin, new(art.Id, active.Id, "manual", ""));
+            Assert.Equal(active.Id, grant.AccountId);
+            Assert.Equal("", Assert.Single(store.PendingAlternateArtGrantNotifications(active.Id)).Reason);
+            Assert.Throws<KeyNotFoundException>(() =>
+                store.GrantAlternateArt(admin, new(art.Id, active.Username, "manual", "用户名不得替代唯一ID")));
+
+            store.SetAccountDisabled(admin, disabled.Id, true, "异画候选状态回归",
+                new("alternate-art-disabled-target"), true);
+            var error = Assert.Throws<ArgumentException>(() =>
+                store.GrantAlternateArt(admin, new(art.Id, disabled.Id, "manual", "不应派发")));
+            Assert.Contains("已禁用", error.Message);
+            Assert.Empty(store.OwnedAlternateArts(disabled.Id));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void AlternateArtAutomaticGrantMetadataIsNotShownAsRecipientReason()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-alternate-art-private-source-{Guid.NewGuid():N}");
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var player = store.Register("event" + Guid.NewGuid().ToString("N")[..6], "Password123!").Account!;
+            var art = store.AlternateArts().First();
+            var rule = store.SaveAlternateArtAwardRule(admin,
+                new(null, art.Id, "event", "", "INTERNAL-EVENT-42", 0));
+
+            store.DispatchAlternateArtEvent(admin, new(rule.Id, [player.Username]));
+
+            var notification = Assert.Single(store.PendingAlternateArtGrantNotifications(player.Id));
+            Assert.Equal("", notification.Reason);
+            Assert.DoesNotContain("INTERNAL-EVENT-42", notification.Reason);
         }
         finally
         {
@@ -215,7 +275,7 @@ public sealed class SiteContentPlatformStoreTests
             var admin = store.Login("Admin", "L12master").Account!;
             var player = store.Register("copies" + Guid.NewGuid().ToString("N")[..5], "Password123!").Account!;
             var art = store.AlternateArts().First();
-            store.GrantAlternateArt(admin, new(art.Id, player.Username, "manual", "混搭测试"));
+            store.GrantAlternateArt(admin, new(art.Id, player.Id, "manual", "混搭测试"));
             var preset = catalog.PresetDecks[0];
             var deck = new L12PresetDeckDefinition
             {
@@ -1035,13 +1095,29 @@ public sealed class SiteContentPlatformStoreTests
             var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
             recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
             await recorder.InitializeAsync();
-            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks);
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts);
             var rooms = new L12RoomManager(catalog, recorder, store);
             server = new L12WebSocketServer(rooms, recorder, store, catalog);
             await server.StartAsync(0);
             using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
             var player = store.Register("SitePlayer", "password-123");
             var admin = store.Login("Admin", "L12master");
+            var alternateArt = store.AlternateArts().First();
+
+            using (var request = Authorized(HttpMethod.Post, "/api/admin/alternate-art-grants", player.Token!,
+                       new { alternateArtId = alternateArt.Id, accountId = player.Account!.Id, sourceKind = "manual", sourceReference = "越权派发" }))
+            using (var response = await client.SendAsync(request))
+                Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+            using (var request = Authorized(HttpMethod.Post, "/api/admin/alternate-art-grants", admin.Token!,
+                       new { alternateArtId = alternateArt.Id, accountId = player.Account!.Id, sourceKind = "manual", sourceReference = "普通管理员派发" }))
+            using (var response = await client.SendAsync(request))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var payload = await response.Content.ReadFromJsonAsync<L12AlternateArtGrantView>();
+                Assert.Equal(player.Account.Id, payload!.AccountId);
+            }
 
             using (var request = Authorized(HttpMethod.Post, "/api/admin/articles", player.Token!,
                        new { title = "越权稿件", body = "不应保存", category = "官方公告", kind = "news" }))
