@@ -137,8 +137,19 @@ public sealed partial class L12GameEngine
             case "qianyang-kill":
             {
                 var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
-                if (DeclaredEnemyTarget(item.Controller, targetId, target => target.DisplayBaseTroops <= 3000) is not null)
-                    KillTarget(item, targetId!, "被〈乾坤 阳〉击杀");
+                var target = DeclaredEnemyTarget(item.Controller, targetId,
+                    candidate => candidate.DisplayBaseTroops <= 3000);
+                if (target is not null)
+                {
+                    var publicTargetId = target.InstanceId;
+                    var publicTargetName = target.Name;
+                    var wasPublic = !target.Hidden;
+                    if (KillTarget(item, targetId!, "被〈乾坤 阳〉击杀") && wasPublic)
+                    {
+                        item.Data[EffectProcessedPublicTargetIdDataKey] = publicTargetId;
+                        item.Data[EffectProcessedPublicTargetNameDataKey] = publicTargetName;
+                    }
+                }
                 else RecordTargetSettlementFailure(item, targetId,
                     "所选军团已离场、不再是军团或原本兵力已高于3000");
                 FinishStackItem(item);

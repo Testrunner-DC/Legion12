@@ -165,6 +165,9 @@ function groupedResultDetail(event: ActionEvent, you: number, source: Card, show
     ? `第${event.effectSegmentIndex}/${event.effectSegmentCount}段` : '效果'
   const receipt = event.playerLogSemantic?.sourceInstanceId === source.instanceId
     ? event.playerLogSemantic.outcomeLabel : undefined
+  const processedTarget = event.playerLogSemantic?.sourceInstanceId === source.instanceId
+    && event.playerLogSemantic.targetInstanceId && event.playerLogSemantic.targetName
+    ? event.playerLogSemantic.targetName : undefined
   // The producer emits these two clauses as one receipt.  A continuation can carry
   // the same cumulative paid-cost summary, so only its latest copy is shown.
   const paidMarker = '已支付费用：'
@@ -173,6 +176,7 @@ function groupedResultDetail(event: ActionEvent, you: number, source: Card, show
   const paid = paidAt < 0 || !showPaidCost ? undefined : receipt?.slice(paidAt)
   return line(event.sequence, 'effect', side(event.playerIndex, you), [
     { text: `${segment}${resultLabels[status]}` },
+    ...(processedTarget ? [{ text: `；实际处理目标：〈${processedTarget}〉` }] : []),
     ...(reason ? [{ text: `；${reason}` }] : []),
     ...(paid ? [{ text: `；${paid}` }] : []),
   ])
@@ -259,7 +263,11 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
     }
   }
 
-  if (results.length === 1 && result?.effectResultStatus === 'negated') {
+  if (results.length === 1 && result?.effectResultStatus && resultLabels[result.effectResultStatus]
+    && result.effectSegmentCount != null && result.effectSegmentCount > 1
+    && result.effectSegmentIndex != null) {
+    suffix += `；第${result.effectSegmentIndex}/${result.effectSegmentCount}段${resultLabels[result.effectResultStatus]}`
+  } else if (results.length === 1 && result?.effectResultStatus === 'negated') {
     suffix += play && source?.cardType === 'tactic' && first.playerLogTiming === 'play'
       ? '；该战术的效果被无效'
       : `；${timingLabel(first.playerLogTiming)}被无效`
