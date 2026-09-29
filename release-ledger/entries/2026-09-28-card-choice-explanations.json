@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-28-card-choice-explanations",
+  "date": "2026-09-28",
+  "audience": "players",
+  "title": "卡牌选择详情与不可选原因",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "选择卡牌时可查看所在位置、当前兵力与状态、选择后果和不可选原因，同名军团可按格位区分。《花魁的馈赠》《野外扎营》《法老王的庆典》《武运在天 铠甲在前》《符文之力》、特勒马科斯及相关阵营检索会说明选牌限制；收起弹框后仍保留当前任务、选择数量和费用摘要。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/PromptCardCandidate.vue",
+        "opcgpro-vue/src/l12/game/PromptOverlay.vue",
+        "服务端WebSocket/TwelveLegions/L12EffectContinuations.cs",
+        "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+        "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12StarterRemainingEffects.cs"
+      ]
+    }
+  ]
+}

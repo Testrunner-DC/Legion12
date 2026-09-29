@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-29-tournament-referee-view",
+  "date": "2026-09-29",
+  "audience": "players",
+  "title": "赛事裁判只读观战视角",
+  "changes": [
+    {
+      "category": "tournaments",
+      "text": "获授权的赛事裁判视角可查看双方手牌、盖伏卡牌及天灾，手机端也可同时查看双方手牌，但不能代替玩家操作。普通观战者仍只能看到公开信息；观战资格变化或重新连接时会重新确认权限，断线后清除旧的私密画面。",
+      "paths": [
+        "opcgpro-vue/src/l12/GamePage.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.mobile.css",
+        "opcgpro-vue/src/l12/net.ts",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs",
+        "服务端WebSocket/TwelveLegions/L12RecipientVisibility.cs",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.cs"
+      ]
+    }
+  ]
+}

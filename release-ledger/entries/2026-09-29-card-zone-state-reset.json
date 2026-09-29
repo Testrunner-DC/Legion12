@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-29-card-zone-state-reset",
+  "date": "2026-09-29",
+  "audience": "players",
+  "title": "卡牌跨区状态与孙悟空返回修复",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "卡牌进入手牌、墓地或牌库，或在这些区域之间移动后，不再错误保留此前的临时费用、兵力、休整状态、状态标记及该张牌已使用的次数。《草薙剑》返回牌库后再次由冲田总司打出，可以正常再次发动；晋升因资源失效而失败时，不会改变手牌、原军团或其叠放牌。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12Actions.cs",
+        "服务端WebSocket/TwelveLegions/L12ActiveAbilities.cs",
+        "服务端WebSocket/TwelveLegions/L12AttackPublicTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12AuthoritativeCardZones.cs",
+        "服务端WebSocket/TwelveLegions/L12AuthorityEvents.cs",
+        "服务端WebSocket/TwelveLegions/L12CombatTimeline.cs",
+        "服务端WebSocket/TwelveLegions/L12CompositeEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12Disasters.cs",
+        "服务端WebSocket/TwelveLegions/L12EffectGeneratedPlay.cs",
+        "服务端WebSocket/TwelveLegions/L12EnterPublicTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12GmCommands.cs",
+        "服务端WebSocket/TwelveLegions/L12LethalReplacements.cs",
+        "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+        "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2CounterTactics.cs",
+        "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2RemainingEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2UniversalEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12TrialCompletionTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/RuleKernel.cs"
+      ]
+    },
+    {
+      "category": "card-effects",
+      "text": "孙悟空在战场与主宰区之间往返时会保留原有状态，进攻后返回主宰区仍显示休整；同回合经《神农鼎》重置次数后再次变身，按卡牌说明以活跃状态登场。重新连接后也会保持正确状态。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12S2RemainingEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12CombatTimeline.cs",
+        "服务端WebSocket/TwelveLegions/L12AuthoritativeCardZones.cs",
+        "服务端WebSocket/TwelveLegions/Models.cs",
+        "服务端WebSocket/TwelveLegions/MatchRecorder.CardFacts.cs"
+      ]
+    }
+  ]
+}
