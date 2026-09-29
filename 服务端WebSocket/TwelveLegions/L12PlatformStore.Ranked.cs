@@ -395,6 +395,7 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             _data.RankedConfig = normalized;
+            SyncActiveSeasonDefinitionFromRuntime(actor);
             AddAdminAudit(actor, "operations", "ranked-config-apply", "ranked:config", null, null,
                 reason.Trim(), context with { Reason = reason.Trim(), Outcome = "succeeded" });
             Save();
@@ -801,13 +802,13 @@ public sealed partial class L12PlatformStore
 
     internal L12RankedSettlementPair SettleRankedMatch(string matchId, string firstAccountId,
         string secondAccountId, int winner, string? firstMasterId = null, string? secondMasterId = null,
-        L12RankedIntegrityContext? integrity = null)
+        L12RankedIntegrityContext? integrity = null, string? seasonId = null)
     {
         lock (_gate)
         {
             ValidateRankedIdentity(matchId, firstAccountId, secondAccountId, winner);
             if (TryGetRankedSettlementReplayLocked(matchId, firstAccountId, secondAccountId, winner,
-                    firstMasterId, secondMasterId, integrity, out var replay))
+                    firstMasterId, secondMasterId, integrity, out var replay, seasonId))
             {
                 if (integrity is not null && !IsRankedMatchExcludedLocked(matchId)
                     && ImportRankedMasterTitleFactLocked(new L12RankedMasterTitleMatchFact(
@@ -816,6 +817,8 @@ public sealed partial class L12PlatformStore
                         integrity.ConclusionKind, true))) Save();
                 return replay;
             }
+
+            EnsureRankedSettlementSeason(seasonId);
 
             var first = RequireRankedProfile(firstAccountId);
             var second = RequireRankedProfile(secondAccountId);
@@ -856,7 +859,7 @@ public sealed partial class L12PlatformStore
             _data.RankedSettlements.Add(firstSettlement);
             _data.RankedSettlements.Add(secondSettlement);
             EnsureRankedIntegrityAuditLocked(matchId, firstAccountId, secondAccountId, winner,
-                firstMasterId, secondMasterId, integrity);
+                firstMasterId, secondMasterId, integrity, seasonId);
             var broadcasts = BuildBroadcasts(matchId, first, second, winner, beforeTitles,
                 beforeMasterChampions, firstStreakBefore, secondStreakBefore,
                 firstMasterId, secondMasterId);
@@ -887,7 +890,7 @@ public sealed partial class L12PlatformStore
 
     internal L12RankedSettlementPair SettleRankedDrawMatch(string matchId, string firstAccountId,
         string secondAccountId, string? firstMasterId = null, string? secondMasterId = null,
-        L12RankedIntegrityContext? integrity = null)
+        L12RankedIntegrityContext? integrity = null, string? seasonId = null)
     {
         lock (_gate)
         {
@@ -907,12 +910,14 @@ public sealed partial class L12PlatformStore
                     || firstReplay.Before != firstReplay.After || secondReplay.Before != secondReplay.After)
                     throw new InvalidOperationException("排位平局重放参数与已结算结果冲突");
                 if (EnsureRankedIntegrityAuditLocked(matchId, firstAccountId, secondAccountId, null,
-                        firstMasterId, secondMasterId, integrity)) Save(false);
+                        firstMasterId, secondMasterId, integrity, seasonId)) Save(false);
                 return new(ToView(firstReplay), ToView(secondReplay), []);
             }
             if (_data.RankedIntegrityAudits.Any(row => string.Equals(row.MatchId, matchId,
                     StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidOperationException("排位对局已作为其他终局记录，不能重放为平局");
+
+            EnsureRankedSettlementSeason(seasonId);
 
             var first = RequireRankedProfile(firstAccountId);
             var second = RequireRankedProfile(secondAccountId);
@@ -947,7 +952,7 @@ public sealed partial class L12PlatformStore
             _data.RankedSettlements.Add(firstSettlement);
             _data.RankedSettlements.Add(secondSettlement);
             EnsureRankedIntegrityAuditLocked(matchId, firstAccountId, secondAccountId, null,
-                firstMasterId, secondMasterId, integrity);
+                firstMasterId, secondMasterId, integrity, seasonId);
             Save();
             return new(ToView(firstSettlement), ToView(secondSettlement), []);
         }
@@ -1091,6 +1096,14 @@ public sealed partial class L12PlatformStore
         return row;
     }
 
+    private void EnsureRankedSettlementSeason(string? seasonId)
+    {
+        if (string.IsNullOrWhiteSpace(seasonId)) return;
+        if (!string.Equals(seasonId, RequireOperationsConfig().Season.Id,
+                StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("排位结算所属赛季已结束，拒绝写入当前赛季");
+    }
+
     private void ArchiveRankedProfile(RankedProfileRow row, string? seasonName = null,
         bool finalizedSeasonAwards = false, IReadOnlyList<string>? frozenTitles = null,
         string? factionTitle = null, IReadOnlyList<string>? frozenMasterTitles = null)
@@ -1138,6 +1151,19 @@ public sealed partial class L12PlatformStore
             ArchiveRankedProfile(row, outgoingSeasonName, true, titles, factionTitle, masterTitles);
         }
         ApplyMasterChampionSeasonFinalAlternateArtAwardsLocked(champions, outgoingSeasonId);
+    }
+
+    private void CarryRankedProfilesIntoSeason(string outgoingSeasonId, string incomingSeasonId,
+        int placementMatches)
+    {
+        foreach (var row in _data.RankedProfiles.Where(row => row.SeasonId == outgoingSeasonId))
+        {
+            row.SeasonId = incomingSeasonId;
+            row.PlacementPlayed = string.IsNullOrWhiteSpace(row.Faction) ? 0 : placementMatches;
+            row.PlacementWins = 0;
+            row.Wins = 0;
+            row.Losses = 0;
+        }
     }
 
     private void ActivatePendingRankedGradient(string outgoingSeasonId, string incomingSeasonId,

@@ -236,10 +236,7 @@ public sealed class RankedPlatformTests
 
         var admin = store.Login("Admin", "L12master").Account!;
         var current = store.OperationsConfig(admin);
-        store.ApplyOperationsConfig(admin, current.Config with
-        {
-            Season = new L12SeasonConfig("S-history-next", "下一赛季", "active", null, null),
-        }, current.Version, "验证赛季荣誉归档", new L12AdminAuditContext("ranked-season-honor-test"));
+        ActivateDraft(store, admin, "S-history-next", "下一赛季", "验证赛季荣誉归档");
 
         var honor = Assert.Single(store.RankedSeasonHonors(), item => item.Username == champion.Username);
         Assert.Equal(current.Config.Season.Id, honor.SeasonId);
@@ -281,12 +278,7 @@ public sealed class RankedPlatformTests
 
         store.SettleRankedMatch("gradient-hidden", player.Id, rival.Id, 0);
         var hidden = store.HiddenRating(player.Id);
-        var current = store.OperationsConfig(admin);
-        store.ApplyOperationsConfig(admin, current.Config with
-        {
-            Season = new L12SeasonConfig("S-gradient-next", "梯度新赛季", "active", null, null),
-        }, current.Version, "验证下赛季梯度原子切换",
-            new L12AdminAuditContext("ranked-gradient-next-season"));
+        ActivateDraft(store, admin, "S-gradient-next", "梯度新赛季", "验证下赛季梯度原子切换");
 
         var after = store.RankedConfig(admin);
         Assert.Null(after.PendingGradient);
@@ -297,7 +289,7 @@ public sealed class RankedPlatformTests
         Assert.Equal(400, after.Factions[0].Tiers[4].StreakTerminationReward);
         Assert.Equal(hidden, store.HiddenRating(player.Id));
         Assert.Contains(store.AdminAudit(category: "operations"), audit =>
-            audit.Action == "ranked-gradient-activate");
+            audit.Action == "season-activate");
 
         var reloaded = new L12PlatformStore(path);
         Assert.Equal(3800, reloaded.RankedConfig(admin).Factions[0].Tiers[0].BaseDelta);
@@ -700,6 +692,20 @@ public sealed class RankedPlatformTests
             Assert.Throws<L12OperationsConfigException>(() => reloaded.UpdateRankedConfig(admin,
                 reloaded.RankedConfig(admin) with { Broadcast = invalid }, "非法广播范围",
                 new L12AdminAuditContext("ranked-broadcast-invalid")));
+    }
+
+    private static L12SeasonActivationView ActivateDraft(L12PlatformStore store, L12AccountView admin,
+        string seasonId, string name, string reason)
+    {
+        var seasons = store.SeasonCatalog(admin);
+        var draft = seasons.Next!;
+        var updated = store.UpdateSeasonDraft(admin, draft.DefinitionId,
+            new L12SeasonDefinitionDraft(seasonId, name, null, null, draft.Configuration),
+            draft.Revision, reason, new L12AdminAuditContext($"prepare-{seasonId}"));
+        return store.ActivateSeason(admin, updated.DefinitionId, seasons.Current.Revision,
+            updated.Revision, reason,
+            new L12RankedSeasonCutoverReadiness(seasons.Current.SeasonId, 0, 0, 0, 0),
+            new L12AdminAuditContext($"activate-{seasonId}"));
     }
 
     private static L12RankedMasterTitleMatchFact[] TitleFacts(string prefix, string accountId,

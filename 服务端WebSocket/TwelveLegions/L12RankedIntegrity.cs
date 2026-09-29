@@ -116,7 +116,8 @@ public sealed partial class L12PlatformStore
     }
 
     internal void RecordInvalidRankedMatch(string matchId, string firstAccountId, string secondAccountId,
-        string? firstMasterId, string? secondMasterId, L12RankedIntegrityContext? context)
+        string? firstMasterId, string? secondMasterId, L12RankedIntegrityContext? context,
+        string? seasonId = null)
     {
         lock (_gate)
         {
@@ -124,15 +125,23 @@ public sealed partial class L12PlatformStore
             if (_data.RankedSettlements.Any(row => string.Equals(row.MatchId, matchId,
                     StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidOperationException("排位对局已存在计分结果，不能重放为无效局");
+            if (_data.RankedIntegrityAudits.Any(row => string.Equals(row.MatchId, matchId,
+                    StringComparison.OrdinalIgnoreCase)))
+            {
+                EnsureRankedIntegrityAuditLocked(matchId, firstAccountId, secondAccountId, null,
+                    firstMasterId, secondMasterId, context, seasonId);
+                return;
+            }
+            EnsureRankedSettlementSeason(seasonId);
             if (EnsureRankedIntegrityAuditLocked(matchId, firstAccountId, secondAccountId, null,
-                    firstMasterId, secondMasterId, context))
+                    firstMasterId, secondMasterId, context, seasonId))
                 Save(false);
         }
     }
 
     private bool TryGetRankedSettlementReplayLocked(string matchId, string firstAccountId,
         string secondAccountId, int winner, string? firstMasterId, string? secondMasterId,
-        L12RankedIntegrityContext? context, out L12RankedSettlementPair pair)
+        L12RankedIntegrityContext? context, out L12RankedSettlementPair pair, string? seasonId = null)
     {
         var rows = _data.RankedSettlements.Where(row => string.Equals(row.MatchId, matchId,
             StringComparison.OrdinalIgnoreCase)).ToArray();
@@ -153,7 +162,7 @@ public sealed partial class L12PlatformStore
             || !string.Equals(second.Outcome, winner == 1 ? "win" : "loss", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("排位对局重放参数与已结算结果冲突");
         var addedAudit = EnsureRankedIntegrityAuditLocked(matchId, firstAccountId, secondAccountId, winner,
-            firstMasterId, secondMasterId, context);
+            firstMasterId, secondMasterId, context, seasonId);
         if (addedAudit) Save(false);
         pair = new L12RankedSettlementPair(ToView(first), ToView(second), []);
         return true;
@@ -204,7 +213,9 @@ public sealed partial class L12PlatformStore
                 throw new InvalidDataException("排位完整性账本必须恰有一条对应记录");
             var audit = audits[0];
             var duration = Math.Max(0L, (long)(payload.EndedAt - payload.StartedAt).TotalMilliseconds);
-            if (audit.FirstAccountId != payload.FirstAccountId
+            if ((!string.IsNullOrWhiteSpace(payload.SeasonId)
+                    && !string.Equals(audit.SeasonId, payload.SeasonId, StringComparison.OrdinalIgnoreCase))
+                || audit.FirstAccountId != payload.FirstAccountId
                 || audit.SecondAccountId != payload.SecondAccountId
                 || audit.Winner != payload.Winner
                 || !string.Equals(audit.FirstMasterId, payload.FirstMasterId,
@@ -233,6 +244,12 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
+            if (!string.Equals(payload.SeasonId, RequireOperationsConfig().Season.Id,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                reason = "缺失结算所属赛季已结束";
+                return false;
+            }
             if (_data.RankedSettlements.Any(row => string.Equals(row.MatchId, payload.MatchId,
                     StringComparison.OrdinalIgnoreCase))
                 || _data.RankedIntegrityAudits.Any(row => string.Equals(row.MatchId, payload.MatchId,
@@ -262,7 +279,7 @@ public sealed partial class L12PlatformStore
 
     private bool EnsureRankedIntegrityAuditLocked(string matchId, string firstAccountId,
         string secondAccountId, int? winner, string? firstMasterId, string? secondMasterId,
-        L12RankedIntegrityContext? context)
+        L12RankedIntegrityContext? context, string? seasonId = null)
     {
         var normalizedFirstMaster = firstMasterId?.Trim() ?? string.Empty;
         var normalizedSecondMaster = secondMasterId?.Trim() ?? string.Empty;
@@ -273,7 +290,9 @@ public sealed partial class L12PlatformStore
             var expectedConclusion = string.IsNullOrWhiteSpace(context?.ConclusionKind)
                 ? "unknown"
                 : context.ConclusionKind.Trim().ToLowerInvariant();
-            if (existing.FirstAccountId != firstAccountId || existing.SecondAccountId != secondAccountId
+            if ((!string.IsNullOrWhiteSpace(seasonId)
+                    && !string.Equals(existing.SeasonId, seasonId, StringComparison.OrdinalIgnoreCase))
+                || existing.FirstAccountId != firstAccountId || existing.SecondAccountId != secondAccountId
                 || existing.Winner != winner
                 || (!string.IsNullOrWhiteSpace(existing.FirstMasterId)
                     && !string.Equals(existing.FirstMasterId, normalizedFirstMaster, StringComparison.OrdinalIgnoreCase))
@@ -337,7 +356,8 @@ public sealed partial class L12PlatformStore
         {
             EvidenceVersion = 2,
             MatchId = matchId,
-            SeasonId = RequireOperationsConfig().Season.Id,
+            SeasonId = string.IsNullOrWhiteSpace(seasonId)
+                ? RequireOperationsConfig().Season.Id : seasonId,
             FirstAccountId = firstAccountId,
             SecondAccountId = secondAccountId,
             Winner = winner,

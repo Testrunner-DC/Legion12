@@ -99,21 +99,25 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             var initial = store.OperationsConfig(admin);
             var changed = initial.Config with
             {
-                Season = initial.Config.Season with { Id = "S02", Name = "S02" },
                 CardRestrictions = [new L12CardRestrictionConfig("S01-0001", 0, "season ban")],
                 Maintenance = new L12MaintenanceConfig(true, "计划维护", null, null),
             };
 
+            var bypass = Assert.Throws<L12OperationsConfigException>(() => store.ApplyOperationsConfig(admin,
+                changed with { Season = initial.Config.Season with { Id = "S02", Name = "S02" } },
+                initial.Version, "bypass season lifecycle", Context("ops-season-bypass")));
+            Assert.Equal("season_activation_required", bypass.Code);
+
             var preview = store.PreviewOperationsConfig(admin, changed, initial.Version,
                 Context("ops-preview") with { Permission = "admin.operations.write" });
             Assert.True(preview.Valid);
-            Assert.Contains("season", preview.Changes);
+            Assert.DoesNotContain("season", preview.Changes);
             Assert.Equal(initial.Version, store.OperationsConfig(admin).Version);
 
             var commandId = Guid.NewGuid().ToString("N");
             var envelope = new L12AdminCommandEnvelope<L12OperationsConfigPayload>(commandId,
                 "ops-apply-1", "operations.config.apply", admin, DateTimeOffset.UtcNow,
-                "operations:config", "activate S02", false, initial.Version, changed,
+                "operations:config", "apply operations config", false, initial.Version, changed,
                 Context("ops-apply-1") with
                 {
                     Permission = "admin.operations.write",
@@ -140,14 +144,14 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             var reloaded = new L12PlatformStore(path);
             var reloadedAdmin = reloaded.Login("Admin", "L12master").Account!;
             var persisted = reloaded.OperationsConfig(reloadedAdmin);
-            Assert.Equal("S02", persisted.Config.Season.Id);
+            Assert.Equal(initial.Config.Season.Id, persisted.Config.Season.Id);
             Assert.True(persisted.Config.Maintenance.Enabled);
             Assert.Contains(reloaded.OperationsConfigHistory(reloadedAdmin), item => item.Id == appliedVersionId);
 
             var rollback = reloaded.RollbackOperationsConfig(reloadedAdmin, initial.VersionId,
                 persisted.Version, "restore initial", Context("ops-rollback"));
             Assert.True(rollback.Applied);
-            Assert.Equal("S01", rollback.Current.Config.Season.Id);
+            Assert.Equal(initial.Config.Season.Id, rollback.Current.Config.Season.Id);
             Assert.Equal(persisted.Version + 1, rollback.Current.Version);
             Assert.StartsWith("rollback:", rollback.HistoryEntry.Action);
         }

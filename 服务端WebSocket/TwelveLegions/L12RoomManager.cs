@@ -144,6 +144,7 @@ public sealed partial class L12RoomManager
     private readonly object _tournamentRoomGate = new();
     private readonly object _matchmakingGate = new();
     private readonly SemaphoreSlim _sessionRecoveryGate = new(1, 1);
+    private readonly SemaphoreSlim _rankedSeasonGate = new(1, 1);
     private readonly List<MatchmakingEntry> _matchmaking = [];
     private readonly Func<DateTimeOffset> _utcNow;
     private readonly Func<bool> _maintenanceSandboxFenceActive;
@@ -1384,7 +1385,16 @@ public sealed partial class L12RoomManager
                     alternateArtUrls: ResolveAlternateArtUrls(room.Sessions.Select(id => _sessions[id])),
                     utcNow: _utcNow, responseModes: responsePreferences.Select(item => item.Mode).ToArray());
                 InitializeRankedClock(room);
-                await StartRecordedGameAsync(room, startedMembers, selectedDecks);
+                try
+                {
+                    await StartRecordedGameAsync(room, startedMembers, selectedDecks);
+                }
+                catch (L12RankedSeasonChangedException seasonError)
+                {
+                    room.Game = null;
+                    room.Ready[0] = room.Ready[1] = false;
+                    return Error(sessionId, seasonError.Message, "roomSeasonExpired");
+                }
             }
             return room.Game is null ? BroadcastRoom(room) : BroadcastGame(room, forceCritical: true);
         }

@@ -4,6 +4,11 @@ using System.Text.Json;
 
 namespace TwelveLegions.Server;
 
+internal sealed class L12RankedSeasonChangedException : InvalidOperationException
+{
+    public L12RankedSeasonChangedException() : base("排位房间所属赛季已结束，请重新加入排位匹配") { }
+}
+
 public sealed partial class L12RoomManager
 {
     private static readonly JsonSerializerOptions RankedRecoveryJson = new()
@@ -15,25 +20,51 @@ public sealed partial class L12RoomManager
         IReadOnlyList<L12PresetDeckDefinition> decks)
     {
         if (room.Game is null) throw new InvalidOperationException("对局尚未建立");
-        var bindings = decks.Select((deck, index) => _platform?.ResolvePublicDeckBinding(
-            members[index].AccountId, deck, deck.PublicationId, deck.PublicationVersion)).ToArray();
         var ranked = string.Equals(room.Options.MatchModeId, "ranked", StringComparison.OrdinalIgnoreCase);
-        if (room.RankedClock is null)
+        if (ranked) await _rankedSeasonGate.WaitAsync();
+        try
         {
-            await _recorder.StartAsync(room.Game, room.Options.MatchModeId,
-                members[0].AccountId, members[1].AccountId, decks, bindings);
-            return;
+            if (ranked && !string.Equals(room.OperationsPolicy.Season.Id,
+                    CaptureOperationsPolicy().Season.Id, StringComparison.OrdinalIgnoreCase))
+                throw new L12RankedSeasonChangedException();
+            var bindings = decks.Select((deck, index) => _platform?.ResolvePublicDeckBinding(
+                members[index].AccountId, deck, deck.PublicationId, deck.PublicationVersion)).ToArray();
+            if (room.RankedClock is null)
+            {
+                await _recorder.StartAsync(room.Game, room.Options.MatchModeId,
+                    members[0].AccountId, members[1].AccountId, decks, bindings);
+                return;
+            }
+            if (members.Count != 2 || decks.Count != 2
+                || members.Any(member => string.IsNullOrWhiteSpace(member.AccountId)))
+                throw new InvalidOperationException("权威计时持久化缺少双席账号或牌库");
+            if (ranked)
+                await _recorder.StartRankedAsync(room.Game, members[0].AccountId!, members[1].AccountId!,
+                    decks, CaptureRankedRuntime(room, _utcNow()), bindings);
+            else
+                await _recorder.StartTimedAsync(room.Game, room.Options.MatchModeId,
+                    members[0].AccountId!, members[1].AccountId!, decks,
+                    CaptureRankedRuntime(room, _utcNow()), bindings);
         }
-        if (members.Count != 2 || decks.Count != 2
-            || members.Any(member => string.IsNullOrWhiteSpace(member.AccountId)))
-            throw new InvalidOperationException("权威计时持久化缺少双席账号或牌库");
-        if (ranked)
-            await _recorder.StartRankedAsync(room.Game, members[0].AccountId!, members[1].AccountId!,
-                decks, CaptureRankedRuntime(room, _utcNow()), bindings);
-        else
-            await _recorder.StartTimedAsync(room.Game, room.Options.MatchModeId,
-                members[0].AccountId!, members[1].AccountId!, decks,
-                CaptureRankedRuntime(room, _utcNow()), bindings);
+        finally
+        {
+            if (ranked) _rankedSeasonGate.Release();
+        }
+    }
+
+    internal async Task<T> ExecuteRankedSeasonCutoverAsync<T>(
+        Func<L12RankedSeasonCutoverReadiness, T> activate)
+    {
+        if (_platform is null) throw new InvalidOperationException("排位平台服务不可用");
+        await _rankedSeasonGate.WaitAsync();
+        try
+        {
+            var seasonId = CaptureOperationsPolicy().Season.Id;
+            await DrainRankedSettlementOutboxAsync(includeApplied: true);
+            var readiness = await _recorder.RankedSeasonCutoverReadinessAsync(seasonId);
+            return activate(readiness);
+        }
+        finally { _rankedSeasonGate.Release(); }
     }
 
     private L12RankedSettlementEnvelope BuildRankedSettlementEnvelope(Room room, DateTimeOffset endedAt)
@@ -43,12 +74,13 @@ public sealed partial class L12RoomManager
         var members = room.Sessions.Select(id => _sessions[id]).OrderBy(member => member.PlayerIndex).ToArray();
         if (members.Length != 2 || members.Any(member => string.IsNullOrWhiteSpace(member.AccountId)))
             throw new InvalidOperationException("排位结算缺少双席账号");
-        return new L12RankedSettlementEnvelope(1, room.Game.State.MatchId,
+        return new L12RankedSettlementEnvelope(2, room.Game.State.MatchId,
             members[0].AccountId!, members[1].AccountId!, SelectedDeck(members[0]).MasterId,
             SelectedDeck(members[1]).MasterId, room.Game.State.Winner, room.StartedAt, endedAt,
             room.MeaningfulCommandCount, RankedConclusionKind(room),
             members[0].IntegrityClientKey, members[1].IntegrityClientKey, room.Game.State.Round,
-            members[0].RankedBrowserKey, members[1].RankedBrowserKey);
+            members[0].RankedBrowserKey, members[1].RankedBrowserKey,
+            room.OperationsPolicy.Season.Id);
     }
 
     public async Task<L12RankedRecoverySummary> RestoreRankedRoomsAsync()
@@ -294,7 +326,7 @@ public sealed partial class L12RoomManager
         // Recovery must still emit a deliverable invalidation when the wall clock moved backwards.
         // Keep the corrupt source untouched for audit, but do not manufacture a negative duration.
         var started = reportedStarted > now ? now : reportedStarted;
-        var envelope = new L12RankedSettlementEnvelope(1, source.MatchId,
+        var envelope = new L12RankedSettlementEnvelope(2, source.MatchId,
             source.AccountIds.ElementAtOrDefault(0) ?? string.Empty,
             source.AccountIds.ElementAtOrDefault(1) ?? string.Empty,
             source.Decks.ElementAtOrDefault(0)?.MasterId ?? string.Empty,
@@ -303,7 +335,8 @@ public sealed partial class L12RoomManager
             "restore-incompatible", runtime?.IntegrityClientKeys.ElementAtOrDefault(0) ?? string.Empty,
             runtime?.IntegrityClientKeys.ElementAtOrDefault(1) ?? string.Empty, 0,
             runtime?.RankedBrowserKeys?.ElementAtOrDefault(0) ?? string.Empty,
-            runtime?.RankedBrowserKeys?.ElementAtOrDefault(1) ?? string.Empty);
+            runtime?.RankedBrowserKeys?.ElementAtOrDefault(1) ?? string.Empty,
+            source.SeasonId);
         await _recorder.FinalizeIncompatibleRankedAsync(source, envelope,
             $"排位恢复不兼容：{reason}");
     }
@@ -369,15 +402,16 @@ public sealed partial class L12RoomManager
                 if (payload.Winner is { } winner)
                     _platform.SettleRankedMatch(payload.MatchId, payload.FirstAccountId,
                         payload.SecondAccountId, winner, payload.FirstMasterId,
-                        payload.SecondMasterId, context);
+                        payload.SecondMasterId, context, payload.SeasonId);
                 else if (string.Equals(payload.ConclusionKind, L12GameEngine.AgreedDrawConclusionKind,
                              StringComparison.OrdinalIgnoreCase))
                     _platform.SettleRankedDrawMatch(payload.MatchId, payload.FirstAccountId,
                         payload.SecondAccountId, payload.FirstMasterId,
-                        payload.SecondMasterId, context);
+                        payload.SecondMasterId, context, payload.SeasonId);
                 else
                     _platform.RecordInvalidRankedMatch(payload.MatchId, payload.FirstAccountId,
-                        payload.SecondAccountId, payload.FirstMasterId, payload.SecondMasterId, context);
+                        payload.SecondAccountId, payload.FirstMasterId, payload.SecondMasterId, context,
+                        payload.SeasonId);
                 _platform.VerifyRankedSettlementApplied(payload);
                 if (string.Equals(payload.ConclusionKind, L12GameEngine.AgreedDrawConclusionKind,
                         StringComparison.OrdinalIgnoreCase))

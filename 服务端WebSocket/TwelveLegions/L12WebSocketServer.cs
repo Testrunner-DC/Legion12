@@ -563,6 +563,29 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 return SeasonManagementError(request, error);
             }
         });
+        _app.MapPost("/api/admin/seasons/draft/{definitionId}/activate", async (HttpRequest request,
+            string definitionId, SeasonActivationRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12SeasonActivationCommandPayload(definitionId,
+                body.ExpectedCurrentRevision, body.ExpectedDraftRevision);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "operations.config.season-activate", "operations:config", payload, key, expected,
+                false, body.Reason);
+            var outcome = await _rooms.ExecuteRankedSeasonCutoverAsync(readiness =>
+                _adminCommands.Execute(command, permission,
+                    current => ExecuteOperationsConfig(() => _platform.ActivateSeason(current.Actor,
+                        current.Payload.DefinitionId, current.Payload.ExpectedCurrentRevision,
+                        current.Payload.ExpectedDraftRevision, current.Reason ?? string.Empty,
+                        readiness, current.AuditContext)), risk: L12AdminCommandRisk.High));
+            if (outcome.Success) NotifyOperationsPolicyChanged();
+            var response = AdminCommandResponse(request, command, outcome);
+            request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
+            return response;
+        });
         _app.MapPut("/api/admin/ranked/config", (HttpRequest request, RankedConfigRequest body) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminOperationsWrite, out var authenticated, out var failure)) return failure;
@@ -3850,6 +3873,10 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             {
                 "operations_version_conflict" => StatusCodes.Status409Conflict,
                 "operations_version_not_found" => StatusCodes.Status404NotFound,
+                "season_definition_not_found" => StatusCodes.Status404NotFound,
+                "season_definition_revision_conflict" or "season_link_conflict"
+                    or "season_cutover_not_ready" or "season_runtime_conflict"
+                    or "season_archive_conflict" => StatusCodes.Status409Conflict,
                 "permission_denied" => StatusCodes.Status403Forbidden,
                 _ => StatusCodes.Status400BadRequest,
             };
@@ -4643,6 +4670,10 @@ public sealed record OperationsConfigApplyRequest(L12OperationsConfigPayload Con
 public sealed record OperationsConfigRollbackRequest(string? VersionId, string? Reason = null,
     string? IdempotencyKey = null, long? ExpectedVersion = null);
 public sealed record L12OperationsRollbackCommandPayload(string VersionId);
+public sealed record SeasonActivationRequest(long ExpectedCurrentRevision, long ExpectedDraftRevision,
+    string? Reason = null, string? IdempotencyKey = null, long? ExpectedVersion = null);
+public sealed record L12SeasonActivationCommandPayload(string DefinitionId,
+    long ExpectedCurrentRevision, long ExpectedDraftRevision);
 public sealed record OperationsServerStartRequest(string? Reason = null,
     string? IdempotencyKey = null, long? ExpectedVersion = null);
 public sealed record L12ServerStartCommandPayload(long ExpectedVersion, string RequestedState = "open");

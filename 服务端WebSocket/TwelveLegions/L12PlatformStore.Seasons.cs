@@ -51,6 +51,24 @@ public sealed record L12SeasonCatalogView(
     IReadOnlyList<L12SeasonArchiveView> Archives,
     bool AutomaticActivationEnabled);
 
+public sealed record L12RankedSeasonCutoverReadiness(
+    string SeasonId,
+    int ActiveMatches,
+    int PendingSettlements,
+    int AppliedReconciliationFailures,
+    int QuarantinedSettlements)
+{
+    public bool Ready => ActiveMatches == 0 && PendingSettlements == 0
+        && AppliedReconciliationFailures == 0 && QuarantinedSettlements == 0;
+}
+
+public sealed record L12SeasonActivationView(
+    bool Activated,
+    L12SeasonDefinitionView Current,
+    L12SeasonArchiveView Archive,
+    L12RankedSeasonCutoverReadiness Readiness,
+    long OperationsVersion);
+
 public sealed partial class L12PlatformStore
 {
     private const int CurrentSeasonLifecycleMigrationVersion = 1;
@@ -288,6 +306,118 @@ public sealed partial class L12PlatformStore
             Save();
             return true;
         }
+    }
+
+    public L12SeasonActivationView ActivateSeason(L12AccountView actor, string definitionId,
+        long expectedCurrentRevision, long expectedDraftRevision, string reason,
+        L12RankedSeasonCutoverReadiness readiness, L12AdminAuditContext context)
+        => ExecuteAdminTransaction(() => ActivateSeasonCore(actor, definitionId,
+            expectedCurrentRevision, expectedDraftRevision, reason, readiness, context));
+
+    private L12SeasonActivationView ActivateSeasonCore(L12AccountView actor, string definitionId,
+        long expectedCurrentRevision, long expectedDraftRevision, string reason,
+        L12RankedSeasonCutoverReadiness readiness, L12AdminAuditContext context)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
+        var normalizedReason = RequireOperationsReason(reason);
+        lock (_gate)
+        {
+            var current = _data.SeasonDefinitions.Single(row => row.LifecycleStatus == "active");
+            var draft = _data.SeasonDefinitions.FirstOrDefault(row => row.DefinitionId == definitionId)
+                ?? throw new L12OperationsConfigException("season_definition_not_found", "下一赛季草稿不存在");
+            if (draft.LifecycleStatus != "draft")
+                throw new L12OperationsConfigException("season_definition_read_only", "只有下一赛季草稿可以生效");
+            EnsureSeasonDefinitionRevision(current, expectedCurrentRevision);
+            EnsureSeasonDefinitionRevision(draft, expectedDraftRevision);
+            if (!string.Equals(draft.PreviousSeasonId, current.SeasonId, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(current.NextSeasonId, draft.SeasonId, StringComparison.OrdinalIgnoreCase))
+                throw new L12OperationsConfigException("season_link_conflict", "赛季衔接关系已变化，请刷新后重试");
+            if (string.IsNullOrWhiteSpace(draft.SeasonId) || string.IsNullOrWhiteSpace(draft.Name))
+                throw new L12OperationsConfigException("season_draft_incomplete", "下一赛季草稿尚未填写完整");
+            if (!string.Equals(readiness.SeasonId, current.SeasonId, StringComparison.OrdinalIgnoreCase)
+                || !readiness.Ready)
+                throw new L12OperationsConfigException("season_cutover_not_ready", "当前赛季仍有未完成或未对账的排位对局");
+
+            var operations = RequireOperationsConfig();
+            if (!string.Equals(operations.Season.Id, current.SeasonId, StringComparison.OrdinalIgnoreCase))
+                throw new L12OperationsConfigException("season_runtime_conflict", "当前赛季定义与运行配置不一致");
+            if (_data.SeasonArchives.Any(row => row.SourceDefinitionId == current.DefinitionId))
+                throw new L12OperationsConfigException("season_archive_conflict", "当前赛季已经归档，不能再次切换");
+
+            var now = DateTimeOffset.UtcNow;
+            FinalizeOutgoingRankedSeason(current.SeasonId, current.Name, draft.SeasonId);
+            var archive = new SeasonArchiveRow
+            {
+                SourceDefinitionId = current.DefinitionId,
+                SeasonId = current.SeasonId,
+                Name = current.Name,
+                DefinitionRevision = current.Revision,
+                PreviousSeasonId = current.PreviousSeasonId,
+                NextSeasonId = draft.SeasonId,
+                StartsAt = current.StartsAt,
+                EndsAt = current.EndsAt,
+                Configuration = CloneSeasonScope(current.Configuration),
+                ActivatedAt = current.ActivatedAt,
+                ArchivedAt = now,
+                ArchivedBy = actor.Username,
+            };
+            _data.SeasonArchives.Add(archive);
+
+            _data.RankedConfig = CloneSeasonScope(draft.Configuration).Ranked;
+            CarryRankedProfilesIntoSeason(current.SeasonId, draft.SeasonId,
+                _data.RankedConfig.PlacementMatches);
+            _data.RankedPendingGradient = null;
+            _data.RankedGradientVersion = Math.Max(1, _data.RankedGradientVersion + 1);
+
+            var previousOperations = ToPayload(operations);
+            var nextPayload = NormalizeOperationsPayload(previousOperations with
+            {
+                Season = new L12SeasonConfig(draft.SeasonId, draft.Name, "active",
+                    draft.StartsAt, draft.EndsAt),
+                DisasterPool = ToSeasonScopeView(draft.Configuration).DisasterPool,
+                CardRestrictions = ToSeasonScopeView(draft.Configuration).CardRestrictions,
+                DefaultPresetDeckIds = draft.Configuration.DefaultPresetDeckIds.ToArray(),
+            });
+            var nextOperations = ToRow(nextPayload, operations.Version + 1, actor.Username,
+                operations.ImmediateMaintenance);
+            _data.OperationsConfig = nextOperations;
+            var history = NewOperationsHistory(nextOperations, $"season-activate:{draft.SeasonId}",
+                actor, normalizedReason);
+            _data.OperationsConfigHistory.Add(history);
+            TrimOperationsHistory();
+
+            _data.SeasonDefinitions.Remove(current);
+            draft.LifecycleStatus = "active";
+            draft.PreviousSeasonId = current.SeasonId;
+            draft.NextSeasonId = null;
+            draft.Revision++;
+            draft.UpdatedBy = actor.Username;
+            draft.UpdatedAt = now;
+            draft.ActivatedAt = now;
+
+            AddAdminAudit(actor, "operations", "season-activate",
+                $"season-definition:{draft.DefinitionId}", current.SeasonId, draft.SeasonId,
+                normalizedReason, context with { ExpectedVersion = operations.Version,
+                    Reason = normalizedReason, Outcome = "succeeded" });
+            Save();
+            return new L12SeasonActivationView(true, ToSeasonDefinitionView(draft),
+                ToSeasonArchiveView(archive), readiness, nextOperations.Version);
+        }
+    }
+
+    private void SyncActiveSeasonDefinitionFromRuntime(L12AccountView actor)
+    {
+        var active = _data.SeasonDefinitions.SingleOrDefault(row => row.LifecycleStatus == "active");
+        var operations = RequireOperationsConfig();
+        if (active is null || !active.SeasonId.Equals(operations.Season.Id,
+                StringComparison.OrdinalIgnoreCase)) return;
+        active.Name = operations.Season.Name;
+        active.StartsAt = operations.Season.StartsAt;
+        active.EndsAt = operations.Season.EndsAt;
+        active.Configuration = CaptureCurrentSeasonScope();
+        active.Revision++;
+        active.UpdatedBy = actor.Username;
+        active.UpdatedAt = DateTimeOffset.UtcNow;
     }
 
     private SeasonDefinitionRow NormalizeSeasonDraft(L12SeasonDefinitionDraft draft, string definitionId)

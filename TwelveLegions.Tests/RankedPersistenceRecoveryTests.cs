@@ -326,6 +326,9 @@ public sealed class RankedPersistenceRecoveryTests
         await fixture.Manager.TickRankedClocksAsync(fixture.Clock.UtcNow);
 
         Assert.Equal(1, await fixture.Recorder.CountPendingRankedSettlementsAsync());
+        var pending = Assert.Single(await fixture.Recorder.ListPendingRankedSettlementsAsync());
+        Assert.Equal(2, pending.Payload!.Version);
+        Assert.Equal(fixture.Platform.CaptureOperationsPolicy().Season.Id, pending.Payload.SeasonId);
         Assert.Null(fixture.Platform.RankedSettlement(fixture.MatchId, fixture.First.Id));
         Assert.Null(fixture.Platform.RankedSettlement(fixture.MatchId, fixture.Second.Id));
         Assert.Empty(await fixture.Recorder.ListRankingMatchesAsync());
@@ -346,6 +349,57 @@ public sealed class RankedPersistenceRecoveryTests
         Assert.Equal(fixture.MatchId, Assert.Single(await restoredRecorder.ListRankedAnalyticsMatchesAsync()).MatchId);
         Assert.Equal(0, restoredPlatform.ImportRankedMasterHistory(
             await restoredRecorder.ListRankingMatchesAsync()));
+    }
+
+    [Fact]
+    public async Task LegacyV1OutboxUsesRecordedMatchSeasonAsAuthoritativeFallback()
+    {
+        await using var fixture = await RankedFixture.CreateAsync("outbox-v1-season-fallback");
+        fixture.Platform.StorageFailureInjector = stage =>
+        {
+            if (stage == "before-commit") throw new IOException("hold settlement");
+        };
+        fixture.Manager.Disconnect(fixture.SessionFor(fixture.ActingPlayer));
+        fixture.Clock.UtcNow += TimeSpan.FromMinutes(4);
+        await fixture.Manager.TickRankedClocksAsync(fixture.Clock.UtcNow);
+
+        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                         $"Data Source={fixture.MatchPath}"))
+        {
+            await connection.OpenAsync();
+            var read = connection.CreateCommand();
+            read.CommandText = "SELECT payload_json FROM ranked_settlement_outbox WHERE match_id=$match;";
+            read.Parameters.AddWithValue("$match", fixture.MatchId);
+            var payload = JsonNode.Parse((string)(await read.ExecuteScalarAsync())!)!.AsObject();
+            payload["Version"] = 1;
+            payload.Remove("SeasonId");
+            var json = payload.ToJsonString();
+            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(json))).ToLowerInvariant();
+            var update = connection.CreateCommand();
+            update.CommandText = """
+                UPDATE ranked_settlement_outbox SET payload_json=$json,payload_hash=$hash
+                WHERE match_id=$match;
+                """;
+            update.Parameters.AddWithValue("$json", json);
+            update.Parameters.AddWithValue("$hash", hash);
+            update.Parameters.AddWithValue("$match", fixture.MatchId);
+            Assert.Equal(1, await update.ExecuteNonQueryAsync());
+        }
+
+        var loaded = Assert.Single(await fixture.Recorder.ListPendingRankedSettlementsAsync());
+        Assert.Equal(1, loaded.Payload!.Version);
+        Assert.Equal(fixture.Platform.CaptureOperationsPolicy().Season.Id, loaded.Payload.SeasonId);
+
+        fixture.Platform.StorageFailureInjector = null;
+        await using var restoredRecorder = new MatchRecorder(fixture.MatchPath);
+        await restoredRecorder.InitializeAsync();
+        var restoredPlatform = fixture.ReloadPlatform();
+        var restored = new L12RoomManager(fixture.Catalog, restoredRecorder, restoredPlatform,
+            () => fixture.Clock.UtcNow);
+        var recovery = await restored.RestoreRankedRoomsAsync();
+        Assert.Equal(1, recovery.SettlementsApplied);
+        Assert.NotNull(restoredPlatform.RankedSettlement(fixture.MatchId, fixture.First.Id));
     }
 
     [Fact]
@@ -388,6 +442,10 @@ public sealed class RankedPersistenceRecoveryTests
         Assert.Equal(1, recovery.Failed);
         Assert.Equal(1, await restoredRecorder.CountQuarantinedRankedSettlementsAsync());
         Assert.Equal(0, await restoredRecorder.CountPendingRankedSettlementsAsync());
+        var readiness = await restoredRecorder.RankedSeasonCutoverReadinessAsync(
+            restoredPlatform.CaptureOperationsPolicy().Season.Id);
+        Assert.Equal(1, readiness.QuarantinedSettlements);
+        Assert.False(readiness.Ready);
         Assert.Null(restoredPlatform.RankedSettlement(fixture.MatchId, fixture.First.Id));
         Assert.NotNull(restoredPlatform.RankedSettlement(second.MatchId, second.First.Id));
         Assert.NotNull(restoredPlatform.RankedSettlement(second.MatchId, second.Second.Id));

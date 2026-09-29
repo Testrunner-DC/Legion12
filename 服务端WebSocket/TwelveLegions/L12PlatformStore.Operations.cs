@@ -383,6 +383,9 @@ public sealed partial class L12PlatformStore
             var current = RequireOperationsConfig();
             EnsureOperationsVersion(current, expectedVersion);
             var normalized = NormalizeOperationsPayload(payload);
+            if (!string.Equals(current.Season.Id, normalized.Season.Id, StringComparison.OrdinalIgnoreCase))
+                throw new L12OperationsConfigException("season_activation_required",
+                    "切换赛季必须通过下一赛季生效命令执行");
             var changes = DescribeOperationsChanges(ToPayload(current), normalized);
             var warnings = OperationsWarnings(normalized);
             AddAdminAudit(actor, "operations", "config-preview", "operations:config",
@@ -405,11 +408,13 @@ public sealed partial class L12PlatformStore
             var current = RequireOperationsConfig();
             EnsureOperationsVersion(current, expectedVersion);
             var normalized = NormalizeOperationsPayload(payload);
+            if (!string.Equals(current.Season.Id, normalized.Season.Id, StringComparison.OrdinalIgnoreCase))
+                throw new L12OperationsConfigException("season_activation_required",
+                    "切换赛季必须通过下一赛季生效命令执行");
             var changes = DescribeOperationsChanges(ToPayload(current), normalized);
             var next = ToRow(normalized, current.Version + 1, actor.Username, current.ImmediateMaintenance);
-            FinalizeOutgoingRankedSeason(current.Season.Id, current.Season.Name, next.Season.Id);
-            ActivatePendingRankedGradient(current.Season.Id, next.Season.Id, actor, context);
             _data.OperationsConfig = next;
+            SyncActiveSeasonDefinitionFromRuntime(actor);
             var history = NewOperationsHistory(next, "apply", actor, normalizedReason);
             _data.OperationsConfigHistory.Add(history);
             TrimOperationsHistory();
@@ -434,11 +439,13 @@ public sealed partial class L12PlatformStore
             var target = _data.OperationsConfigHistory.FirstOrDefault(row => row.Id == normalizedVersionId)
                 ?? throw new L12OperationsConfigException("operations_version_not_found", "运营配置历史版本不存在");
             var targetPayload = ToPayload(target.Config);
+            if (!string.Equals(current.Season.Id, targetPayload.Season.Id, StringComparison.OrdinalIgnoreCase))
+                throw new L12OperationsConfigException("season_activation_required",
+                    "不能通过运营配置回滚激活或恢复其他赛季");
             var changes = DescribeOperationsChanges(ToPayload(current), targetPayload);
             var next = ToRow(targetPayload, current.Version + 1, actor.Username, current.ImmediateMaintenance);
-            FinalizeOutgoingRankedSeason(current.Season.Id, current.Season.Name, next.Season.Id);
-            ActivatePendingRankedGradient(current.Season.Id, next.Season.Id, actor, context);
             _data.OperationsConfig = next;
+            SyncActiveSeasonDefinitionFromRuntime(actor);
             var history = NewOperationsHistory(next, $"rollback:{target.Id}", actor, normalizedReason);
             _data.OperationsConfigHistory.Add(history);
             TrimOperationsHistory();
