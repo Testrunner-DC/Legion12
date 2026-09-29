@@ -2790,7 +2790,11 @@ public sealed partial class L12GameEngine
                 if (chosen[0] == "decline")
                 {
                     item.Data["invalid"] = "true";
-                    AddEvent("defense", prompt.PlayerIndex, "未支付〈狮心王理查一世〉要求的额外弃牌费用，本次抵挡/支援无效");
+                    AddPlayerCombatEvent("defense", prompt.PlayerIndex,
+                        "未支付〈狮心王理查一世〉要求的额外弃牌费用，本次抵挡/支援无效",
+                        new(State.PendingDefense?.CombatId, "defense-invalid",
+                            item.Data.GetValueOrDefault("action") == "support" ? "invalid-support" : "invalid-block",
+                            "extra-cost-unpaid"));
                 }
                 else if (!MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: false))
                 {

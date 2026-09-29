@@ -264,6 +264,7 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
   const activeDisaster = replayActiveDisasterAt(detail, step, raw)
   const events: ActionEvent[] = value<any[]>(raw, 'Events', 'events', []).map(event => {
     const semantic = value<any>(event, 'PlayerLogSemantic', 'playerLogSemantic', undefined)
+    const combat = value<any>(event, 'PlayerCombat', 'playerCombat', undefined)
     return ({
     sequence: value(event, 'Sequence', 'sequence', 0), type: value(event, 'Type', 'type', ''),
     playerIndex: value(event, 'PlayerIndex', 'playerIndex', undefined), text: value(event, 'Text', 'text', ''),
@@ -286,6 +287,17 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
       sourceName: value(semantic, 'SourceName', 'sourceName', undefined),
       targetInstanceId: value(semantic, 'TargetInstanceId', 'targetInstanceId', undefined),
       targetName: value(semantic, 'TargetName', 'targetName', undefined),
+    } : undefined,
+    playerCombat: combat ? {
+      combatId: value(combat, 'CombatId', 'combatId', undefined),
+      eventKind: value(combat, 'EventKind', 'eventKind', undefined),
+      outcomeCode: value(combat, 'OutcomeCode', 'outcomeCode', undefined),
+      publicReasonCode: value(combat, 'PublicReasonCode', 'publicReasonCode', undefined),
+      attackerInstanceId: value(combat, 'AttackerInstanceId', 'attackerInstanceId', undefined),
+      targetInstanceId: value(combat, 'TargetInstanceId', 'targetInstanceId', undefined),
+      attackerTroops: value(combat, 'AttackerTroops', 'attackerTroops', undefined),
+      defenderTroops: value(combat, 'DefenderTroops', 'defenderTroops', undefined),
+      masterDamage: value(combat, 'MasterDamage', 'masterDamage', undefined),
     } : undefined,
     cards: value<any[]>(event, 'Cards', 'cards', []).map(replayCard).filter(Boolean) as Card[],
     })

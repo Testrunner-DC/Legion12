@@ -2428,6 +2428,11 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         => AddEventCoreWithPlayerLogSemantic(type, playerIndex, text, null, null,
             null, null, null, playerLogSemantic, cards);
 
+    private void AddPlayerCombatEvent(string type, int? playerIndex, string text,
+        L12PlayerCombatPresentation combat, params L12CardInstance[] cards)
+        => AddEventCoreWithCombat(type, playerIndex, text, null, null,
+            null, null, null, null, combat, cards);
+
     private void AddEventCore(string type, int? playerIndex, string text, string? effectText,
         params L12CardInstance[] cards)
         => AddEventCoreWithEffectMetadata(type, playerIndex, text, effectText, null, cards);
@@ -2447,6 +2452,13 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         L12EffectEventMetadata? effectMetadata, string? playerLogGroupId, string? playerLogTiming,
         string? playerLogDecisionLabel, L12PlayerLogSemantic? playerLogSemantic,
         params L12CardInstance[] cards)
+        => AddEventCoreWithCombat(type, playerIndex, text, effectText, effectMetadata,
+            playerLogGroupId, playerLogTiming, playerLogDecisionLabel, playerLogSemantic, null, cards);
+
+    private void AddEventCoreWithCombat(string type, int? playerIndex, string text, string? effectText,
+        L12EffectEventMetadata? effectMetadata, string? playerLogGroupId, string? playerLogTiming,
+        string? playerLogDecisionLabel, L12PlayerLogSemantic? playerLogSemantic,
+        L12PlayerCombatPresentation? playerCombat, params L12CardInstance[] cards)
     {
         State.EventSequence++;
         State.LastAction = new L12ActionEvent(State.EventSequence, type, playerIndex, text,
@@ -2479,6 +2491,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             PlayerLogTiming = playerLogTiming,
             PlayerLogDecisionLabel = playerLogDecisionLabel,
             PlayerLogSemantic = playerLogSemantic,
+            PlayerCombat = playerCombat,
         };
         State.Events.Add(State.LastAction);
         if (State.StateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion)

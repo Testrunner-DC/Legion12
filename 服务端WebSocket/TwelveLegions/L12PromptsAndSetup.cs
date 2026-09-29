@@ -2496,7 +2496,9 @@ public sealed partial class L12GameEngine
                 State.PendingDefense.BlockedByResponse = true;
             var card = FindSource(item) ?? item.SourceSnapshot;
             if (item.Data.GetValueOrDefault("effectResultStatus") is not ("skipped" or "failed"))
-                AddEvent("defense", item.Controller, "佣兵部队抵挡本次进攻", card is null ? [] : [card]);
+                AddPlayerCombatEvent("defense", item.Controller, "佣兵部队抵挡本次进攻",
+                    new(State.PendingDefense?.CombatId, "defense", "blocked"),
+                    card is null ? [] : [card]);
             FinishStackItem(item);
             return;
         }

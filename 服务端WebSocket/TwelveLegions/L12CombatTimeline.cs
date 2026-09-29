@@ -60,8 +60,9 @@ public sealed partial class L12GameEngine
                     if (pending.BlockedByResponse)
                     {
                         pending.Stage = L12CombatStage.AttackerAfterAttack;
-                        AddEvent("attack-ended", 1 - pending.AttackerPlayer,
-                            "响应效果抵挡本次进攻；已结算的进攻时效果不回退");
+                        AddPlayerCombatEvent("attack-ended", 1 - pending.AttackerPlayer,
+                            "响应效果抵挡本次进攻；已结算的进攻时效果不回退",
+                            new(pending.CombatId, "attack-ended", "blocked"));
                         continue;
                     }
                     if (!pending.DefenderAttackTimingOpened)
@@ -227,7 +228,10 @@ public sealed partial class L12GameEngine
 
         RevertPendingCombatTroopsModifiers(pending, attacker);
         var reason = attacker is null ? "进攻军团已离场" : "被进攻军团已离场";
-        AddEvent("attack-aborted", eventPlayer, $"{reason}，本次进攻在当前安全边界自动结束并返回主要阶段");
+        AddPlayerCombatEvent("attack-aborted", eventPlayer,
+            $"{reason}，本次进攻中止",
+            new(pending.CombatId, "attack-aborted", "aborted", attacker is null
+                ? "attacker-left" : "target-left"));
         FinishCurrentCombatContext();
         return true;
     }
@@ -236,7 +240,9 @@ public sealed partial class L12GameEngine
     {
         var attacker = FindOnField(State.Players[pending.AttackerPlayer], pending.AttackerInstanceId, out _, out _);
         RevertPendingCombatTroopsModifiers(pending, attacker);
-        AddEvent("attack-ended", pending.AttackerPlayer, "本次进攻的【进攻后】与防守方结束效果已全部结算");
+        AddPlayerCombatEvent("attack-ended", pending.AttackerPlayer,
+            "本次进攻的【进攻后】与防守方结束效果已全部结算",
+            new(pending.CombatId, "attack-ended", "completed"));
         FinishCurrentCombatContext();
     }
 

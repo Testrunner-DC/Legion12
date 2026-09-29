@@ -6,6 +6,52 @@ namespace TwelveLegions.Server;
 /// </summary>
 internal static class L12RecipientVisibility
 {
+    private static readonly HashSet<string> PublicCombatKinds = new(StringComparer.Ordinal)
+    {
+        "attack", "defense", "defense-invalid", "support", "combat", "attack-aborted", "attack-ended",
+    };
+    private static readonly HashSet<string> PublicCombatOutcomes = new(StringComparer.Ordinal)
+    {
+        "declared", "blocked", "unblocked", "supported", "invalid-block", "invalid-support",
+        "defeated", "not-defeated", "aborted", "completed", "unknown",
+    };
+    private static readonly HashSet<string> PublicCombatReasons = new(StringComparer.Ordinal)
+    {
+        "attacker-left", "target-left", "choice-unavailable", "context-unavailable",
+        "extra-cost-unpaid", "thunder-roll-failed", "unknown",
+    };
+
+    private static L12ActionEvent ProjectCombatEvent(L12ActionEvent actionEvent)
+    {
+        var combat = actionEvent.PlayerCombat;
+        if (combat is null) return actionEvent;
+        var visibleIds = actionEvent.Cards.Where(card => !card.Hidden && !string.IsNullOrWhiteSpace(card.Name))
+            .Select(card => card.InstanceId).ToHashSet(StringComparer.Ordinal);
+        return actionEvent with
+        {
+            PlayerCombat = combat with
+            {
+                CombatId = combat.CombatId is { Length: > 0 and <= 64 } id
+                    && id.All(ch => char.IsAsciiLetterOrDigit(ch) || ch == '-') ? id : null,
+                EventKind = combat.EventKind is { } kind && PublicCombatKinds.Contains(kind) ? kind : "unknown",
+                OutcomeCode = combat.OutcomeCode is { } outcome && PublicCombatOutcomes.Contains(outcome)
+                    ? outcome : "unknown",
+                PublicReasonCode = combat.PublicReasonCode is { } reason && PublicCombatReasons.Contains(reason)
+                    ? reason : "unknown",
+                AttackerInstanceId = combat.AttackerInstanceId is { } attacker && visibleIds.Contains(attacker)
+                    ? attacker : null,
+                TargetInstanceId = combat.TargetInstanceId is { } target && visibleIds.Contains(target)
+                    ? target : null,
+                AttackerTroops = combat.AttackerTroops is >= 0
+                    && combat.AttackerInstanceId is { } attackValueSource && visibleIds.Contains(attackValueSource)
+                    ? combat.AttackerTroops : null,
+                DefenderTroops = combat.DefenderTroops is >= 0
+                    && combat.TargetInstanceId is { } defenseValueSource && visibleIds.Contains(defenseValueSource)
+                    ? combat.DefenderTroops : null,
+                MasterDamage = combat.MasterDamage is >= 0 ? combat.MasterDamage : null,
+            },
+        };
+    }
     internal readonly record struct Policy(bool BothHands, bool CoveredBattlefieldIdentity,
         bool AllDisasters, bool PrivatePrompts, bool PrivateHandEvents, bool DeckOrder,
         bool LegalActions)
@@ -33,7 +79,7 @@ internal static class L12RecipientVisibility
         L12ActionEvent actionEvent, int viewer, bool revealAllDisasters,
         bool revealAllHands = false)
     {
-        actionEvent = L12TrialProgressVisibility.PublicEvent(actionEvent);
+        actionEvent = ProjectCombatEvent(L12TrialProgressVisibility.PublicEvent(actionEvent));
         if (actionEvent.Type == "private-return")
             return revealAllHands || actionEvent.PlayerIndex == viewer
                 ? actionEvent with { Type = "return" }

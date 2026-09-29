@@ -817,6 +817,9 @@ public sealed partial class L12GameEngine
         // remain cancellable without paying either cost.
         attacker.Tapped = true;
         attacker.AttacksThisTurn++;
+        var combatId = $"combat-{State.EventSequence + 1}";
+        var committedAttackerTroops = attacker.CurrentTroops;
+        var committedDefenderTroops = attackTarget?.CurrentTroops;
 
         if (L12ActiveDisasterRules.HighTroopsAttackRollsDice(State.ActiveDisaster?.CardId) && attacker.Troops > 2000)
         {
@@ -824,8 +827,12 @@ public sealed partial class L12GameEngine
             AddEvent("dice", playerIndex, $"〈雷霆天怒〉：{attacker.Name}进攻时掷骰结果为 {thunderRoll}", attacker);
             if (thunderRoll <= 2)
             {
-                AddEvent("attack-ended", playerIndex,
-                    $"〈雷霆天怒〉使{attacker.Name}转为休整，进攻结束", attacker);
+                AddPlayerCombatEvent("attack-ended", playerIndex,
+                    $"〈雷霆天怒〉使{attacker.Name}转为休整，进攻结束",
+                    new(combatId, "attack-aborted", "aborted", "thunder-roll-failed",
+                        attacker.InstanceId, attackTarget?.InstanceId,
+                        committedAttackerTroops, committedDefenderTroops),
+                    attackTarget is null ? [attacker] : [attacker, attackTarget]);
                 return CommandResult.Ok();
             }
         }
@@ -884,6 +891,7 @@ public sealed partial class L12GameEngine
         var hasAttackerAttackTiming = hasPrintedAttackerAttackTiming || kagutsuchiCandidate is not null;
         State.PendingDefense = new L12PendingDefense
         {
+            CombatId = combatId,
             AttackerPlayer = playerIndex,
             AttackerInstanceId = attacker.InstanceId,
             Target = command.Target,
@@ -900,11 +908,16 @@ public sealed partial class L12GameEngine
         };
         State.Phase = L12Phase.Defense;
         if (attackTarget is null)
-            AddEvent("attack", playerIndex,
-                $"{State.Players[playerIndex].Name}【{attacker.Name}】{attacker.CurrentTroops} vs {defender.Name}【{defender.MasterName}】血量{Math.Max(0, defender.Hp)}", attacker);
+            AddPlayerCombatEvent("attack", playerIndex,
+                $"{State.Players[playerIndex].Name}【{attacker.Name}】{attacker.CurrentTroops} vs {defender.Name}【{defender.MasterName}】血量{Math.Max(0, defender.Hp)}",
+                new(State.PendingDefense.CombatId, "attack", "declared", null,
+                    attacker.InstanceId, null, attacker.CurrentTroops), attacker);
         else
-            AddEvent("attack", playerIndex,
-                $"{State.Players[playerIndex].Name}【{attacker.Name}】{attacker.CurrentTroops} vs {defender.Name}【{attackTarget.Name}】{attackTarget.CurrentTroops}", attacker, attackTarget);
+            AddPlayerCombatEvent("attack", playerIndex,
+                $"{State.Players[playerIndex].Name}【{attacker.Name}】{attacker.CurrentTroops} vs {defender.Name}【{attackTarget.Name}】{attackTarget.CurrentTroops}",
+                new(State.PendingDefense.CombatId, "attack", "declared", null,
+                    attacker.InstanceId, attackTarget.InstanceId, attacker.CurrentTroops, attackTarget.CurrentTroops),
+                attacker, attackTarget);
         if (hasAttackerAttackTiming)
         {
             if (kagutsuchiCandidate is not null)
@@ -1192,7 +1205,10 @@ public sealed partial class L12GameEngine
             if (!revalidation.Accepted)
             {
                 forceInvalid = true;
-                AddEvent("defense-invalid", playerIndex, $"防御结算前重新校验失败：{revalidation.Error}；本次抵挡/支援无效");
+                AddPlayerCombatEvent("defense-invalid", playerIndex,
+                    "本次抵挡或支援已无法继续，未支付额外费用",
+                    new(pending.CombatId, "defense-invalid",
+                        declaredSupportIds.Count > 0 ? "invalid-support" : "invalid-block", "choice-unavailable"));
             }
         }
         pending.ForceInvalidDefense = forceInvalid;
@@ -1202,6 +1218,7 @@ public sealed partial class L12GameEngine
             var ids = forceInvalid ? [] : declaredBlockIds;
             var cards = defender.Hand.Where(card => ids.Contains(card.InstanceId) && card.CardType == "legion").ToList();
             pending.Stage = L12CombatStage.AttackerAfterAttack;
+            var masterHpBefore = defender.Hp;
             if (cards.Count == 0)
             {
                 DamageMaster(playerIndex, pending.MasterDamage, $"{attacker.Name}的进攻", pending.AttackerPlayer,
@@ -1219,9 +1236,12 @@ public sealed partial class L12GameEngine
                 ResetCardForPrivateZone(card);
                 defender.Graveyard.Add(card);
             }
-            AddEvent("defense", playerIndex, cards.Count == 0
+            AddPlayerCombatEvent("defense", playerIndex, cards.Count == 0
                 ? $"{defender.Name} 的主宰受到 {pending.MasterDamage} 点伤害"
-                : $"{defender.Name} 弃置 {cards.Count} 张军团抵挡", cards.ToArray());
+                : $"{defender.Name} 弃置 {cards.Count} 张军团抵挡",
+                new(pending.CombatId, "defense", cards.Count == 0 ? "unblocked" : "blocked",
+                    null, pending.AttackerInstanceId, pending.Target.InstanceId,
+                    MasterDamage: cards.Count == 0 ? Math.Max(0, masterHpBefore - defender.Hp) : null), cards.ToArray());
             AdvanceCombatTimelineIfIdle();
             return CommandResult.Ok();
         }
@@ -1245,7 +1265,9 @@ public sealed partial class L12GameEngine
                 // Defeated*InstanceId，也不产生战斗击杀来源，进攻军团不得触发【击杀时】。
                 foreach (var support in supporters) RemoveFromField(defender, support, true, "作为支援军团阵亡",
                     leaveKind: L12FieldLeaveKind.Defeat);
-                AddEvent("support", playerIndex, $"{string.Join('、', supporters.Select(card => card.Name))}联合支援{target.Name}，支援者阵亡；交战双方不损兵且不产生击杀",
+                AddPlayerCombatEvent("support", playerIndex, $"{string.Join('、', supporters.Select(card => card.Name))}联合支援{target.Name}，支援者阵亡；交战双方不损兵且不产生击杀",
+                    new(pending.CombatId, "support", "supported", null,
+                        attacker.InstanceId, target.InstanceId),
                     supporters.Append(target).Append(attacker).ToArray());
                 AdvanceCombatTimelineIfIdle();
                 return CommandResult.Ok();
@@ -1311,6 +1333,7 @@ public sealed partial class L12GameEngine
             bypassLethalReplacement: true, deferGraveyard: true);
         if (defenderDefeated) pending.DefeatedDefenderInstanceId = target.InstanceId;
         else if (substituteDefenderDeath is not null) pending.DefeatedDefenderInstanceId = substituteDefenderDeath;
+        var targetDefeated = defenderDefeated;
         if (attackerDefeated) pending.DefeatedAttackerInstanceId = attacker.InstanceId;
         else if (substituteAttackerDeath is not null) pending.DefeatedAttackerInstanceId = substituteAttackerDeath;
         defenderDefeated |= substituteDefenderDeath is not null;
@@ -1320,9 +1343,11 @@ public sealed partial class L12GameEngine
             : attackerDefeated
                 ? L12CombatStage.DefenderKillTriggers
                 : L12CombatStage.AttackerAfterAttack;
-        AddEvent("combat", playerIndex, pending.AttackNoLoss || pending.IsRanged && pending.RangedNoLoss
+        AddPlayerCombatEvent("combat", playerIndex, pending.AttackNoLoss || pending.IsRanged && pending.RangedNoLoss
             ? $"进攻无损：防守军团承受 {defenderDamage} 点战斗伤害，进攻军团不减损"
             : $"进攻者以 {attackValue} 点进攻值造成 {defenderDamage} 点战斗伤害；防守军团以当前兵力 {targetTroops} 反击",
+            new(pending.CombatId, "combat", targetDefeated ? "defeated" : "not-defeated", null,
+                attacker.InstanceId, target.InstanceId, attackValue, targetTroops),
             attacker, target);
         AdvanceCombatTimelineIfIdle();
         return CommandResult.Ok();
@@ -1420,6 +1445,7 @@ public sealed partial class L12GameEngine
             State.SuspendedCombatContexts.Add(parentCombat);
         State.PendingDefense = new L12PendingDefense
         {
+            CombatId = $"combat-{State.EventSequence + 1}",
             AttackerPlayer = playerIndex,
             AttackerInstanceId = attacker.InstanceId,
             Target = new L12AttackTarget("master"),
@@ -1429,8 +1455,10 @@ public sealed partial class L12GameEngine
             SuppressAttackTriggers = true,
         };
         State.Phase = L12Phase.Defense;
-        AddEvent("piercing", playerIndex,
+        AddPlayerCombatEvent("piercing", playerIndex,
             $"贯穿：{attacker.Name}以剩余兵力{attacker.CurrentTroops}对{opponent.Name}的主宰发动1次进攻；此次进攻不触发【进攻时】效果",
+            new(State.PendingDefense.CombatId, "attack", "declared", null,
+                attacker.InstanceId, null, attacker.CurrentTroops),
             attacker);
         AdvanceCombatTimelineIfIdle();
     }

@@ -48,8 +48,8 @@ watch(() => visible.value.at(-1)?.sequence, async () => { if (followLatest.value
             <span class="event-icon" aria-hidden="true">{{ icons.attack }}</span>
             <span class="combat-cards">
               <button class="log-card-link" @click="emit('focus', row.attacker)">〈{{ row.attacker.name }}〉</button>
-              <b>{{ row.attackTroops }}</b><span> vs </span>
-              <span v-if="row.defender === '主宰'">主宰</span>
+              <b v-if="row.attackTroops != null">{{ row.attackTroops }}</b><span> vs </span>
+              <span v-if="typeof row.defender === 'string'">{{ row.defender }}</span>
               <button v-else class="log-card-link" @click="emit('focus', row.defender)">〈{{ row.defender.name }}〉</button>
               <b v-if="row.defendTroops != null">{{ row.defendTroops }}</b>
               <span> · {{ row.result }}</span><span v-if="row.damage != null" class="event-badge neg">−{{ row.damage }}点</span>

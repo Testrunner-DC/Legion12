@@ -20,7 +20,20 @@ export interface ActionEvent {
   playerLogTiming?: string
   playerLogDecisionLabel?: string
   playerLogSemantic?: PlayerLogSemantic
+  playerCombat?: PlayerCombatPresentation
   cards?: Card[]
+}
+
+export interface PlayerCombatPresentation {
+  combatId?: string
+  eventKind?: string
+  outcomeCode?: string
+  publicReasonCode?: string
+  attackerInstanceId?: string
+  targetInstanceId?: string
+  attackerTroops?: number
+  defenderTroops?: number
+  masterDamage?: number
 }
 
 export interface PlayerLogSemantic {

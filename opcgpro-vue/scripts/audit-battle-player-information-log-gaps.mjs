@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { projectLog } from '../src/l12/game/logViewModel.ts'
 
-// Deterministic phase-0 projection evidence. All five inputs include the
-// claimed source fact; this script asserts that the current player projection
-// omits or blurs it. It intentionally does not change product behavior.
+// Deterministic phase-0 evidence refreshed after Stages 4A and 4B-1.
+// Closed gaps must remain visible; unfinished movement/status gaps remain
+// explicit; legacy combat audit text must never become a public reason.
 const card = (name, instanceId = name) => ({
   instanceId, cardId: `ID-${instanceId}`, name, cardType: 'legion',
   faction: '测试', cost: 2, baseTroops: 6000, troops: 6000, disasterLevel: 0,
@@ -39,6 +39,7 @@ const cases = [
     ],
     requiredSourceFacts: ['我方前排左格', '我方后排左格'],
     missingFromProjection: ['我方前排左格', '我方后排左格'],
+    status: 'OPEN: 4B-2',
   },
   {
     id: 'continuous-target-delta-duration',
@@ -47,6 +48,7 @@ const cases = [
     ],
     requiredSourceFacts: ['目标', '6000', '4000', '本回合'],
     missingFromProjection: ['6000', '4000', '本回合'],
+    status: 'OPEN: 4B-3',
   },
   {
     id: 'skipped-segment',
@@ -56,7 +58,8 @@ const cases = [
         { ...group, effectResultStatus: 'skipped', effectSegmentIndex: 1, effectSegmentCount: 2 }),
     ],
     requiredSourceFacts: ['跳过该效果段'],
-    missingFromProjection: ['跳过'],
+    expectedProjectionFacts: ['跳过'],
+    status: 'CLOSED: 4A',
   },
   {
     id: 'negated-paid-cost',
@@ -67,7 +70,9 @@ const cases = [
         { ...group, effectResultStatus: 'negated' }),
     ],
     requiredSourceFacts: ['支付2士气', '被无效'],
-    missingFromProjection: ['2士气', '士气 −2'],
+    expectedProjectionFacts: ['被无效'],
+    missingFromProjection: ['士气 −2'],
+    status: 'OPEN: 4C/log association',
   },
   {
     id: 'defense-invalid-reason',
@@ -77,6 +82,23 @@ const cases = [
     ],
     requiredSourceFacts: ['支援军团已离场'],
     missingFromProjection: ['支援军团已离场'],
+    status: 'LEGACY: no authoritative reason',
+  },
+  {
+    id: 'structured-defense-invalid-reason',
+    input: [
+      event(1, 'attack', '〈来源〉进攻〈目标〉', [source, target], { playerCombat: {
+        combatId: 'reason-example', eventKind: 'attack', outcomeCode: 'declared',
+      } }),
+      event(2, 'defense-invalid', '支援军团已离场，后台候选不可公开', [], { playerCombat: {
+        combatId: 'reason-example', eventKind: 'defense-invalid', outcomeCode: 'invalid-support',
+        publicReasonCode: 'choice-unavailable',
+      } }),
+    ],
+    requiredSourceFacts: ['支援军团已离场'],
+    expectedProjectionFacts: ['支援无效', '所选抵挡或支援已无法使用'],
+    missingFromProjection: ['后台候选'],
+    status: 'CLOSED: 4B-1',
   },
 ]
 
@@ -86,11 +108,13 @@ for (const item of cases) {
     assert(sourceText.includes(fact), `${item.id}: source fixture missing ${fact}`)
   item.projection = rendered(item.input)
   const visible = item.projection.map(row => row.summary + ' / ' + row.detail).join(' / ')
-  for (const fact of item.missingFromProjection)
+  for (const fact of item.missingFromProjection ?? [])
     assert(!visible.includes(fact), `${item.id}: baseline gap changed for ${fact}`)
+  for (const fact of item.expectedProjectionFacts ?? [])
+    assert(visible.includes(fact), `${item.id}: completed player fact missing: ${fact}`)
 }
-console.log(JSON.stringify(cases.map(({ id, input, projection }) => ({
-  id,
+console.log(JSON.stringify(cases.map(({ id, status, input, projection }) => ({
+  id, status,
   source: input.map(entry => ({
     sequence: entry.sequence, type: entry.type, text: entry.text,
     effectResultStatus: entry.effectResultStatus,

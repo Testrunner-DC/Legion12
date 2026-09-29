@@ -19,10 +19,10 @@ export type LogCombatRow = {
   kind: 'combat'
   sequence: number
   attacker: Card
-  defender: Card | '主宰'
-  attackTroops: number
+  defender: Card | '主宰' | '目标'
+  attackTroops?: number
   defendTroops?: number
-  result: '击破' | '被抵挡' | '造成伤害' | '未击破'
+  result: string
   damage?: number
   detail: LogLineRow[]
 }
@@ -131,6 +131,7 @@ function playerLogMetadataScore(event: ActionEvent) {
     + Number(Boolean(event.playerLogDecisionLabel))
     + Number(Boolean(event.effectResultStatus))
     + Number(Boolean(event.playerLogSemantic))
+    + Number(Boolean(event.playerCombat))
 }
 
 function orderedUniqueEvents(events: ActionEvent[]) {
@@ -369,23 +370,6 @@ function projectSemanticPlayerLog(event: ActionEvent, you: number): LogLineRow |
   ])
 }
 
-function isInvalidDefenseEvent(event: ActionEvent) {
-  return event.type === 'defense-invalid' || /抵挡(?:\/支援)?无效|抵挡或支援无效|本次抵挡.*无效|本次支援.*无效/.test(event.text)
-}
-
-function isSuccessfulDefenseEvent(event: ActionEvent) {
-  if (event.type === 'support') return true
-  if (event.type !== 'defense' || isInvalidDefenseEvent(event)) return false
-  return publicCards(event).length > 0 || /弃置\s*\d+\s*张军团抵挡|抵挡本次进攻/.test(event.text)
-}
-
-function supportingCards(event: ActionEvent) {
-  const cards = publicCards(event)
-  const names = event.text.match(/^(.+?)联合支援/)?.[1]?.split('、').map(name => name.trim()) ?? []
-  const named = cards.filter(card => names.includes(card.name))
-  return named.length ? named : cards.slice(0, Math.max(1, cards.length - 2))
-}
-
 function costBadges(events: ActionEvent[], index: number, event: ActionEvent) {
   const found: LogBadge[] = []
   for (let cursor = index - 1; cursor >= 0 && index - cursor <= 8; cursor--) {
@@ -580,18 +564,8 @@ function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], co
         progress ? [{ value: `天灾值 ${progress[1]}→${progress[2]}`, tone: 'info' }]
           : value ? [{ value: `天灾值 ${value}`, tone: 'info' }] : [])
     }
-    case 'defense': {
-      if (isInvalidDefenseEvent(event)) return line(event.sequence, 'defense', actor, [{ text: '抵挡/支援无效' }])
-      const cards = publicCards(event)
-      if (!isSuccessfulDefenseEvent(event)) return line(event.sequence, 'defense', actor, [{ text: '未抵挡' }])
-      return line(event.sequence, 'defense', actor,
-        cards.length ? [{ text: '弃置' }, ...cardParts(cards), { text: '完成抵挡' }] : [{ text: '完成抵挡' }])
-    }
-    case 'support': {
-      const supporters = supportingCards(event)
-      return line(event.sequence, 'support', actor,
-        supporters.length ? [...cardParts(supporters), { text: '完成支援' }] : [{ text: '完成支援' }])
-    }
+    case 'defense': return line(event.sequence, 'defense', actor, [{ text: '抵挡记录（结果未记录）' }])
+    case 'support': return line(event.sequence, 'support', actor, [{ text: '支援记录（结果未记录）' }])
     case 'initiative-choice': return line(event.sequence, 'info', actor, [{ text: `选择${/后手/.test(event.text) ? '后手' : '先手'}` }])
     case 'mulligan': return line(event.sequence, 'info', actor, [{ text: '调度手牌' }], [{ value: `${countFrom(event.text)}张`, tone: 'info' }])
     case 'disaster':
@@ -602,49 +576,116 @@ function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], co
   }
 }
 
-function projectCombat(events: ActionEvent[], start: number, you: number) {
-  const attack = events[start]
+const combatReasonLabels: Record<string, string> = {
+  'attacker-left': '进攻军团已离场',
+  'target-left': '被进攻军团已离场',
+  'choice-unavailable': '所选抵挡或支援已无法使用',
+  'context-unavailable': '本次进攻已结束',
+  'extra-cost-unpaid': '未支付额外费用',
+  'thunder-roll-failed': '雷霆天怒掷骰未满足进攻条件',
+}
+
+function combatResult(members: ActionEvent[]) {
+  const outcomes = members.map(event => event.playerCombat?.outcomeCode)
+  const has = (outcome: string) => outcomes.includes(outcome)
+  const damage = members.find(event => event.playerCombat?.masterDamage != null)?.playerCombat?.masterDamage
+  const invalid = has('invalid-support') ? '支援无效' : has('invalid-block') ? '抵挡无效' : ''
+  const settled = has('defeated') ? '击破'
+    : has('not-defeated') ? '未击破'
+      : damage != null && damage > 0 ? '造成伤害'
+        : has('supported') ? '完成支援'
+          : has('blocked') ? '完成抵挡'
+            : has('unblocked') ? '未抵挡'
+              : '战斗结果未记录'
+  return { result: has('aborted') ? '进攻中止' : invalid ? `${invalid}；${settled}` : settled, damage }
+}
+
+function projectCombat(attack: ActionEvent, members: ActionEvent[], you: number): LogCombatRow | null {
   const cards = publicCards(attack)
   const attacker = cards[0]
   if (!attacker) return null
-  const defenderIsMaster = cards.length < 2
-  const defender: Card | '主宰' = defenderIsMaster ? '主宰' : cards[1]
-  const versus = attack.text.match(/】?\s*(\d+)\s*(?:vs|VS|对)/)
-  const defend = attack.text.match(/(?:vs|VS|对)[^\d]*(\d+)/)
-  const attackTroops = versus ? Number(versus[1]) : attacker.troops ?? attacker.baseTroops ?? 0
-  const defendTroops = defenderIsMaster ? undefined : defend ? Number(defend[1]) : (defender as Card).troops ?? (defender as Card).baseTroops ?? 0
+  const declared = attack.playerCombat
+  const related = members.filter(event => event.sequence !== attack.sequence)
+    .sort((left, right) => left.sequence - right.sequence)
+  const finalTargetEvent = [...related].reverse().find(event =>
+    ['combat', 'support', 'defense'].includes(event.playerCombat?.eventKind ?? '')
+    && !['invalid-block', 'invalid-support'].includes(event.playerCombat?.outcomeCode ?? ''))
+  const finalTargetId = finalTargetEvent?.playerCombat?.targetInstanceId
+  const defender: Card | '主宰' | '目标' = finalTargetEvent
+    ? finalTargetId
+      ? publicCards(finalTargetEvent).find(card => card.instanceId === finalTargetId) ?? '目标'
+      : finalTargetEvent.playerCombat?.eventKind === 'defense' ? '主宰' : '目标'
+    : cards[1] ?? '主宰'
+  const { result, damage } = combatResult(related)
   const detail: LogLineRow[] = []
-  const consumed = new Set<number>([start])
-  let damage: number | undefined
-  let defended = false
-  let defeated = false
-  let invalidDefenseShown = false
-  for (let index = start + 1; index < events.length; index++) {
-    const event = events[index]
-    if (['attack', 'attack-ended', 'turn-start', 'game-over'].includes(event.type)) break
-    if (!['defense', 'defense-invalid', 'support', 'damage', 'leave', 'grave'].includes(event.type)) continue
-    if (event.type === 'defense-invalid' || isInvalidDefenseEvent(event)) {
-      if (!invalidDefenseShown) detail.push(line(event.sequence, 'defense', side(event.playerIndex, you), [{ text: '抵挡/支援无效' }]))
-      invalidDefenseShown = true
-      consumed.add(index)
-      continue
+  const shownInvalid = new Set<string>()
+  for (const event of related) {
+    const combat = event.playerCombat
+    if (!combat) continue
+    const actor = event.playerIndex === you ? '你' : '对手'
+    const reason = combat.publicReasonCode && combatReasonLabels[combat.publicReasonCode]
+    const publicParticipants = publicCards(event)
+    switch (combat.eventKind) {
+      case 'defense':
+        detail.push(line(event.sequence, 'defense', null,
+          combat.outcomeCode === 'blocked'
+            ? [{ text: `${actor}完成抵挡：` }, ...cardParts(publicParticipants)]
+            : [{ text: `${actor}未抵挡` }],
+          combat.masterDamage == null ? [] : [{ value: `主宰受到 ${combat.masterDamage} 点伤害`, tone: 'neg' }]))
+        break
+      case 'support': {
+        const supporters = publicParticipants.filter(card => card.instanceId !== combat.attackerInstanceId
+          && card.instanceId !== combat.targetInstanceId)
+        detail.push(line(event.sequence, 'support', null,
+          [{ text: `${actor}完成支援` }, ...(supporters.length ? [{ text: '：' }, ...cardParts(supporters)] : [])]))
+        break
+      }
+      case 'defense-invalid':
+        if (shownInvalid.has(`${combat.outcomeCode}:${combat.publicReasonCode}`)) break
+        shownInvalid.add(`${combat.outcomeCode}:${combat.publicReasonCode}`)
+        detail.push(line(event.sequence, 'defense', null,
+          [{ text: `${actor}${combat.outcomeCode === 'invalid-support' ? '支援' : '抵挡'}无效` },
+            ...(reason ? [{ text: `：${reason}` }] : [])]))
+        break
+      case 'combat': {
+        const targetCard = publicParticipants.find(card => card.instanceId === combat.targetInstanceId)
+        detail.push(line(event.sequence, 'attack', null,
+          targetCard
+            ? [cardPart(targetCard), { text: combat.outcomeCode === 'defeated' ? '被击破' : '未被击破' }]
+            : [{ text: combat.outcomeCode === 'defeated' ? '目标被击破' : '目标未被击破' }],
+          [
+            ...(combat.attackerTroops == null ? [] : [{ value: `进攻值 ${combat.attackerTroops}`, tone: 'info' as const }]),
+            ...(combat.defenderTroops == null ? [] : [{ value: `目标兵力 ${combat.defenderTroops}`, tone: 'info' as const }]),
+          ]))
+        break
+      }
+      case 'attack-aborted':
+        detail.push(line(event.sequence, 'attack', null,
+          [{ text: '进攻中止' }, ...(reason ? [{ text: `：${reason}` }] : [])]))
+        break
+      default: break
     }
-    if (isSuccessfulDefenseEvent(event)) defended = true
-    if ((event.type === 'leave' || event.type === 'grave') && defender !== '主宰')
-      defeated ||= publicCards(event).some(card => card.instanceId === defender.instanceId)
-    if (event.type === 'damage' && defenderIsMaster && event.playerIndex !== attack.playerIndex && /主宰/.test(event.text))
-      damage = Math.abs(numberAfter(event.text, /(?:受到|失去|伤害)\s*(\d+)\s*点/, countFrom(event.text)))
-    const row = projectLine(event, you)
-    if (row && !(invalidDefenseShown && event.type === 'defense' && !isSuccessfulDefenseEvent(event))) detail.push(row)
-    consumed.add(index)
   }
-  const result: LogCombatRow['result'] = defenderIsMaster && damage ? '造成伤害' : defeated ? '击破' : defended ? '被抵挡' : '未击破'
-  return { row: { kind: 'combat', sequence: attack.sequence, attacker, defender, attackTroops, defendTroops, result, damage, detail } satisfies LogCombatRow, consumed }
+  return { kind: 'combat', sequence: attack.sequence, attacker, defender,
+    attackTroops: declared?.attackerTroops,
+    defendTroops: finalTargetEvent ? finalTargetEvent.playerCombat?.defenderTroops : declared?.defenderTroops,
+    result, damage, detail }
 }
 
 export function projectLog(events: ActionEvent[], you: number, _names: string[]): LogRow[] {
   const ordered = orderedUniqueEvents(events)
+  const combats = new Map<string, ActionEvent[]>()
+  for (const event of ordered) {
+    const id = event.playerCombat?.combatId
+    if (!id) continue
+    const members = combats.get(id) ?? []
+    members.push(event)
+    combats.set(id, members)
+  }
   const consumed = new Set<number>()
+  const combatAttacks = new Set(ordered.filter(event => event.playerCombat?.eventKind === 'attack')
+    .map(event => event.playerCombat?.combatId).filter((id): id is string => Boolean(id)))
+  const shownOrphans = new Set<string>()
   const rows: LogRow[] = []
   for (let index = 0; index < ordered.length; index++) {
     if (consumed.has(index)) continue
@@ -676,12 +717,33 @@ export function projectLog(events: ActionEvent[], you: number, _names: string[])
       }
       continue
     }
-    if (event.type === 'attack') {
-      const combat = projectCombat(ordered, index, you)
-      if (combat) {
-        combat.consumed.forEach(item => consumed.add(item))
-        rows.push(combat.row)
+    if (event.playerCombat?.combatId && event.playerCombat.eventKind !== 'attack') {
+      const id = event.playerCombat.combatId
+      if (!combatAttacks.has(id) && !shownOrphans.has(id)) {
+        shownOrphans.add(id)
+        const members = combats.get(id) ?? []
+        const aborted = members.find(member => member.playerCombat?.eventKind === 'attack-aborted')
+        const reasonCode = aborted?.playerCombat?.publicReasonCode
+        const reason = reasonCode && combatReasonLabels[reasonCode]
+        const participants = aborted ? publicCards(aborted) : []
+        const attacker = participants.find(card => card.instanceId === aborted?.playerCombat?.attackerInstanceId)
+        const target = participants.find(card => card.instanceId === aborted?.playerCombat?.targetInstanceId)
+        rows.push(line(event.sequence, 'attack', null, aborted && reasonCode === 'thunder-roll-failed'
+          ? [
+              ...(attacker ? [cardPart(attacker)] : [{ text: '本次战斗' }]),
+              ...(target ? [{ text: '进攻' }, cardPart(target)]
+                : reasonCode === 'thunder-roll-failed' ? [{ text: '进攻主宰' }] : []),
+              { text: '：进攻中止' },
+              ...(reason ? [{ text: `：${reason}` }] : []),
+            ]
+          : [{ text: `本次战斗：${combatResult(members).result}` }]))
       }
+      continue
+    }
+    if (event.type === 'attack' || event.playerCombat?.eventKind === 'attack') {
+      const members = event.playerCombat?.combatId ? combats.get(event.playerCombat.combatId) ?? [] : []
+      const combat = projectCombat(event, members, you)
+      if (combat) rows.push(combat)
       continue
     }
     if (event.type === 'trial-action') {

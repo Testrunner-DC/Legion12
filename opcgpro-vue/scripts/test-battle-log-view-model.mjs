@@ -455,70 +455,163 @@ assert(fieldEffect[0].kind === 'line' && fieldEffect[0].parts.some(part => part.
 assert(fieldEffect[0].kind === 'line' && fieldEffect[0].badges.some(item => item.value === '转为活跃'))
 
 const combat = projectLog([
-  event(1, 'attack', '〈甲军团〉6000 vs 〈乙军团〉4000', [a, b], 0),
-  event(2, 'leave', '乙军团离场', [b], 1),
+  event(1, 'attack', '审计文本', [a, b], 0, { playerCombat: {
+    combatId: 'battle-one', eventKind: 'attack', outcomeCode: 'declared',
+    attackerInstanceId: a.instanceId, targetInstanceId: b.instanceId,
+    attackerTroops: 6000, defenderTroops: 4000,
+  } }),
+  event(2, 'combat', '审计文本', [a, b], 0, { playerCombat: {
+    combatId: 'battle-one', eventKind: 'combat', outcomeCode: 'defeated',
+  } }),
 ], 0, [])
-assert.equal(combat.length, 1, 'a contiguous attack chain must collapse into one combat summary')
+assert.equal(combat.length, 1, 'events with the same combat id must produce one summary')
 assert.equal(combat[0].kind, 'combat')
 assert.equal(combat[0].result, '击破')
-assert.equal(combat[0].detail.length, 1, 'combat detail must retain the defeated target departure')
+assert.equal(combat[0].detail.length, 1, 'combat detail must retain the authoritative defeat')
 
 const masterNotDefended = projectLog([
-  event(1, 'attack', '〈甲军团〉2000 vs 主宰', [a], 0),
-  event(2, 'damage', '对方主宰受到1点伤害', [], 1),
-  event(3, 'defense', '对方的主宰受到1点伤害', [], 1),
+  event(1, 'attack', '审计文本', [a], 0, { playerCombat: {
+    combatId: 'master-open', eventKind: 'attack', outcomeCode: 'declared', attackerTroops: 2000,
+  } }),
+  event(2, 'defense', '审计文本', [], 1, { playerCombat: {
+    combatId: 'master-open', eventKind: 'defense', outcomeCode: 'unblocked', masterDamage: 1,
+  } }),
 ], 0, [])
 assert.equal(masterNotDefended[0].kind, 'combat')
 assert.equal(masterNotDefended[0].result, '造成伤害')
 assert(masterNotDefended[0].kind === 'combat'
-  && masterNotDefended[0].detail.some(row => row.parts.some(part => part.text === '未抵挡')),
+  && masterNotDefended[0].detail.some(row => row.parts.some(part => part.text.includes('未抵挡'))),
   'an unblocked master attack must say the opponent did not block')
 assert.equal(JSON.stringify(masterNotDefended).includes('完成抵挡'), false)
 
 const blockOne = card('抵挡军团甲', 'block-a')
 const blockTwo = card('抵挡军团乙', 'block-b')
 const masterDefended = projectLog([
-  event(1, 'attack', '〈甲军团〉6000 vs 主宰', [a], 0),
-  event(2, 'defense', '对方弃置2张军团抵挡', [blockOne, blockTwo], 1),
+  event(1, 'attack', '审计文本', [a], 0, { playerCombat: {
+    combatId: 'master-blocked', eventKind: 'attack', outcomeCode: 'declared', attackerTroops: 6000,
+  } }),
+  event(2, 'defense', '审计文本', [blockOne, blockTwo], 1, { playerCombat: {
+    combatId: 'master-blocked', eventKind: 'defense', outcomeCode: 'blocked',
+  } }),
 ], 0, [])
 assert.equal(masterDefended[0].kind, 'combat')
-assert.equal(masterDefended[0].result, '被抵挡')
+assert.equal(masterDefended[0].result, '完成抵挡')
 assert(masterDefended[0].kind === 'combat'
   && [blockOne, blockTwo].every(card => masterDefended[0].detail[0].parts.some(part => part.card?.instanceId === card.instanceId)),
   'all public blocking cards must remain visible in the compact defense detail')
 
+const puppet = card('戏法师的傀儡', 'retargeted-puppet')
+for (const outcomeCode of ['defeated', 'not-defeated']) {
+  const retargeted = projectLog([
+    event(10, 'attack', '进攻最初指向主宰', [a], 0, { playerCombat: {
+      combatId: `puppet-${outcomeCode}`, eventKind: 'attack', outcomeCode: 'declared',
+      attackerInstanceId: a.instanceId, attackerTroops: 2000,
+    } }),
+    event(12, 'combat', '后台审计文本称主宰', [a, puppet], 0, { playerCombat: {
+      combatId: `puppet-${outcomeCode}`, eventKind: 'combat', outcomeCode,
+      attackerInstanceId: a.instanceId, targetInstanceId: puppet.instanceId,
+      attackerTroops: 2000, defenderTroops: 1000,
+    } }),
+  ], 0, [])
+  assert.equal(retargeted.length, 1)
+  assert.equal(retargeted[0].kind, 'combat')
+  assert.equal(retargeted[0].defender?.instanceId, puppet.instanceId,
+    'final summary must use the authority target rather than the declared master')
+  assert.equal(retargeted[0].defendTroops, 1000)
+  assert(retargeted[0].detail.some(row => row.parts.some(part => part.card?.instanceId === puppet.instanceId)),
+    'final detail and summary must identify the same actual target')
+  assert.equal(JSON.stringify(retargeted).includes('后台审计文本'), false)
+}
+const sameNameOriginal = card('同名军团', 'original-target')
+const sameNameFinal = card('同名军团', 'final-target')
+const sameNameRetarget = projectLog([
+  event(20, 'attack', '原目标', [a, sameNameOriginal], 0, { playerCombat: {
+    combatId: 'same-name-retarget', eventKind: 'attack', outcomeCode: 'declared',
+    targetInstanceId: sameNameOriginal.instanceId,
+  } }),
+  event(21, 'combat', '新目标', [a, sameNameFinal], 0, { playerCombat: {
+    combatId: 'same-name-retarget', eventKind: 'combat', outcomeCode: 'defeated',
+    targetInstanceId: sameNameFinal.instanceId,
+  } }),
+], 0, [])
+assert.equal(sameNameRetarget[0].kind, 'combat')
+assert.equal(sameNameRetarget[0].defender?.instanceId, sameNameFinal.instanceId,
+  'same-name targets must resolve by the final authority instance id')
+const missingFinalTarget = projectLog([
+  event(30, 'attack', '原目标是主宰', [a], 0, { playerCombat: {
+    combatId: 'missing-final-target', eventKind: 'attack', outcomeCode: 'declared',
+  } }),
+  event(31, 'combat', '旧记录缺少最终目标', [a], 0, { playerCombat: {
+    combatId: 'missing-final-target', eventKind: 'combat', outcomeCode: 'defeated',
+  } }),
+], 0, [])
+assert.equal(missingFinalTarget[0].kind, 'combat')
+assert.equal(missingFinalTarget[0].defender, '目标',
+  'a historical result without its final target must not fall back to the original master')
+assert(missingFinalTarget[0].detail.some(row => row.parts.some(part => part.text === '目标被击破')))
+
+const thunderLowRoll = projectLog([
+  event(40, 'dice', '〈雷霆天怒〉：甲军团进攻时掷骰结果为 1', [a], 0),
+  event(41, 'attack-ended', '后台原因包含私有信息', [a, b], 0, { playerCombat: {
+    combatId: 'thunder-low-roll', eventKind: 'attack-aborted', outcomeCode: 'aborted',
+    publicReasonCode: 'thunder-roll-failed', attackerInstanceId: a.instanceId,
+    targetInstanceId: b.instanceId, attackerTroops: 3000, defenderTroops: 3000,
+  } }),
+], 0, [])
+assert.equal(thunderLowRoll.length, 2, 'the dice and one stopped attack must remain separate records')
+assert(thunderLowRoll[0].kind === 'line' && thunderLowRoll[0].icon === 'dice')
+assert(thunderLowRoll[1].kind === 'line'
+  && thunderLowRoll[1].parts.some(part => part.text.includes('进攻中止'))
+  && thunderLowRoll[1].parts.some(part => part.text.includes('雷霆天怒掷骰未满足进攻条件')))
+assert.equal(JSON.stringify(thunderLowRoll).includes('后台原因'), false)
+
 const invalidDefense = projectLog([
-  event(1, 'attack', '〈甲军团〉6000 vs 〈乙军团〉4000', [a, b], 0),
-  event(2, 'defense-invalid', '防御结算前重新校验失败，本次抵挡/支援无效', [], 1),
-  event(3, 'defense', '未支付额外弃牌费用，本次抵挡/支援无效', [], 1),
+  event(1, 'attack', '审计文本', [a, b], 0, { playerCombat: {
+    combatId: 'invalid-block', eventKind: 'attack', outcomeCode: 'declared',
+  } }),
+  event(2, 'defense-invalid', '后台原因不可公开', [], 1, { playerCombat: {
+    combatId: 'invalid-block', eventKind: 'defense-invalid', outcomeCode: 'invalid-block',
+    publicReasonCode: 'choice-unavailable',
+  } }),
 ], 0, [])
 assert.equal(invalidDefense[0].kind, 'combat')
-assert.notEqual(invalidDefense[0].result, '被抵挡')
+assert.equal(invalidDefense[0].result, '抵挡无效；战斗结果未记录')
 assert(invalidDefense[0].kind === 'combat'
-  && invalidDefense[0].detail.filter(row => row.parts.some(part => part.text === '抵挡/支援无效')).length === 1,
-  'invalid defense events must collapse to one compact invalid result')
+  && invalidDefense[0].detail.some(row => row.parts.some(part => part.text.includes('抵挡无效'))),
+  'invalid defense must retain its separate result')
+assert.equal(JSON.stringify(invalidDefense).includes('后台原因'), false)
 
 const supporter = card('支援军团', 'supporter')
 const supported = projectLog([
-  event(1, 'attack', '〈甲军团〉6000 vs 〈乙军团〉4000', [a, b], 0),
+  event(1, 'attack', '审计文本', [a, b], 0, { playerCombat: {
+    combatId: 'supported', eventKind: 'attack', outcomeCode: 'declared',
+  } }),
   event(2, 'leave', '支援军团作为支援军团阵亡', [supporter], 1),
-  event(3, 'support', '支援军团联合支援乙军团，支援者阵亡', [supporter, b, a], 1),
+  event(3, 'support', '审计文本', [supporter, b, a], 1, { playerCombat: {
+    combatId: 'supported', eventKind: 'support', outcomeCode: 'supported',
+    attackerInstanceId: a.instanceId, targetInstanceId: b.instanceId,
+  } }),
 ], 0, [])
 assert.equal(supported[0].kind, 'combat')
-assert.equal(supported[0].result, '被抵挡', 'a supporter leaving must not be mistaken for the target being defeated')
+assert.equal(supported[0].result, '完成支援', 'support must not be called a block')
 assert(supported[0].kind === 'combat'
   && supported[0].detail.at(-1)?.parts.filter(part => part.card).every(part => part.card?.instanceId === supporter.instanceId),
   'support detail must list supporters without mislabeling the attacker or target as support cards')
 
 const attackerDeparture = projectLog([
-  event(1, 'attack', '〈甲军团〉2000 vs 〈乙军团〉4000', [a, b], 0),
+  event(1, 'attack', '审计文本', [a, b], 0, { playerCombat: {
+    combatId: 'aborted', eventKind: 'attack', outcomeCode: 'declared',
+  } }),
   event(2, 'leave', '甲军团离场', [a], 0),
-  event(3, 'attack-ended', '本次进攻结束', [], 0),
+  event(3, 'attack-aborted', '后台边界说明', [], 0, { playerCombat: {
+    combatId: 'aborted', eventKind: 'attack-aborted', outcomeCode: 'aborted',
+    publicReasonCode: 'attacker-left',
+  } }),
   event(4, 'grave', '乙军团因后续效果进入墓地', [b], 1),
 ], 0, [])
-assert.equal(attackerDeparture.length, 2, 'events after attack-ended must remain outside the previous combat summary')
+assert.equal(attackerDeparture.length, 3, 'unlinked departures remain outside the combat summary')
 assert.equal(attackerDeparture[0].kind, 'combat')
-assert.notEqual(attackerDeparture[0].result, '击破', 'attacker departure must not count as defeating the defender')
+assert.equal(attackerDeparture[0].result, '进攻中止')
 assert.equal(attackerDeparture[1].kind, 'line')
 
 assert.equal(projectLog([event(1, 'damage', '兵力增加0点')], 0, []).length, 0, 'standalone zero change must disappear')
@@ -557,5 +650,117 @@ const safeRows = projectLog([
 ], 0, [])
 assert.deepEqual(playerLogContainsForbiddenTerms(safeRows), [], 'player projection must not contain engine terminology')
 assert.equal(JSON.stringify(safeRows).includes('测试甲'), false, 'player nicknames must never enter projected rows')
+
+const sameNameTargetA = card('同名军团', 'same-a')
+const sameNameTargetB = card('同名军团', 'same-b')
+const mixedCombats = [
+  event(700, 'attack', '私密审计文本', [a, sameNameTargetA], 0, { playerCombat: {
+    combatId: 'battle-a', eventKind: 'attack', outcomeCode: 'declared', attackerTroops: 0,
+  } }),
+  event(701, 'attack', '私密审计文本', [a, sameNameTargetB], 0, { playerCombat: {
+    combatId: 'battle-b', eventKind: 'attack', outcomeCode: 'declared',
+  } }),
+  event(702, 'combat', '不属于 battle-a', [a, sameNameTargetB], 0, { playerCombat: {
+    combatId: 'battle-b', eventKind: 'combat', outcomeCode: 'defeated',
+    targetInstanceId: sameNameTargetB.instanceId,
+  } }),
+  event(703, 'attack-aborted', '后台 reason 含私有手牌', [], 0, { playerCombat: {
+    combatId: 'battle-a', eventKind: 'attack-aborted', outcomeCode: 'aborted',
+    publicReasonCode: 'target-left',
+  } }),
+]
+const mixedRows = projectLog([mixedCombats[3], mixedCombats[1], mixedCombats[2], mixedCombats[0], mixedCombats[2]], 1, [])
+assert.deepEqual(mixedRows.map(row => row.kind === 'combat' ? [row.defender === '主宰' ? '' : row.defender.instanceId, row.result] : []),
+  [['same-a', '进攻中止'], ['same-b', '击破']],
+  'out-of-order, duplicate and same-name combat events must group by combat id')
+assert.equal(mixedRows[0].attackTroops, 0, 'authoritative zero is a real value')
+assert.equal(mixedRows[1].attackTroops, undefined, 'missing historical value must stay missing')
+assert.equal(JSON.stringify(mixedRows).includes('私有手牌'), false, 'backend audit text must not enter combat rows')
+assert(mixedRows[0].detail.some(row => row.parts.some(part => part.text.includes('被进攻军团已离场'))))
+
+const invalidSupport = projectLog([
+  event(710, 'attack', '审计文本', [a, b], 0, { playerCombat: {
+    combatId: 'support-invalid', eventKind: 'attack', outcomeCode: 'declared',
+  } }),
+  event(711, 'defense-invalid', '错误：私有候选', [], 1, { playerCombat: {
+    combatId: 'support-invalid', eventKind: 'defense-invalid', outcomeCode: 'invalid-support',
+    publicReasonCode: 'extra-cost-unpaid',
+  } }),
+], 0, [])
+assert.equal(invalidSupport[0].result, '支援无效；战斗结果未记录')
+assert.equal(JSON.stringify(invalidSupport).includes('私有候选'), false)
+
+const legacyBattle = projectLog([event(720, 'attack', '旧记录 9999 vs 8888', [a, b], 0)], 0, [])[0]
+assert.equal(legacyBattle.result, '战斗结果未记录')
+assert.equal(legacyBattle.attackTroops, undefined)
+assert.equal(legacyBattle.defendTroops, undefined)
+const unrelatedDamage = projectLog([
+  event(721, 'attack', '旧记录', [a, b], 0),
+  event(722, 'damage', '对手的主宰受到1点非战斗伤害', [], 1),
+], 0, [])
+assert.equal(unrelatedDamage[0].result, '战斗结果未记录')
+assert.equal(unrelatedDamage[0].damage, undefined, 'non-combat damage must not attach to a battle')
+
+const combatReplay = replayGameAt({
+  match: { matchId: 'combat-replay', roomCode: 'COMBAT' },
+  commands: [{ state: { Events: mixedCombats.map(item => ({
+    Sequence: item.sequence, Type: item.type, PlayerIndex: item.playerIndex,
+    Text: item.text, Cards: item.cards,
+    PlayerCombat: item.playerCombat && {
+      CombatId: item.playerCombat.combatId, EventKind: item.playerCombat.eventKind,
+      OutcomeCode: item.playerCombat.outcomeCode, PublicReasonCode: item.playerCombat.publicReasonCode,
+      AttackerTroops: item.playerCombat.attackerTroops,
+      TargetInstanceId: item.playerCombat.targetInstanceId,
+    },
+  })) }, revision: 1 }],
+  viewerPlayerIndex: 1,
+}, 0)
+assert(combatReplay)
+assert.deepEqual(projectLog(combatReplay.recentEvents ?? [], 1, []).map(row => row.kind === 'combat' ? row.result : ''),
+  ['进攻中止', '击破'], 'replay must preserve combat id and authoritative outcome')
+const truncatedCombatWindow = projectLog([
+  event(800, 'attack-aborted', '内部安全边界', [], 0, { playerCombat: {
+    combatId: 'older-attack', eventKind: 'attack-aborted', outcomeCode: 'aborted',
+    publicReasonCode: 'attacker-left',
+  } }),
+], 0, [])
+assert.equal(truncatedCombatWindow.length, 1, 'a bounded recent-event window must retain its orphaned outcome')
+assert.deepEqual(truncatedCombatWindow[0].parts.map(part => part.text), ['本次战斗：进攻中止'])
+
+// Stage 4B-1 red matrix: legacy events do not carry a stable combat id or a
+// structured outcome. Nearby events may be caused by another effect, so they
+// cannot establish the result of this attack.
+const legacyCombatChecks = [
+  ['unlinked departure must not assert a kill', () => {
+    const projected = projectLog([
+      event(300, 'attack', '甲军团进攻乙军团', [a, b]),
+      event(301, 'leave', '乙军团因其他效果离场', [b], 1),
+    ], 0, [])
+    return projected[0]?.kind === 'combat' && projected[0].result !== '击破'
+  }],
+  ['unlinked defense must not assert a block', () => {
+    const projected = projectLog([
+      event(310, 'attack', '甲军团进攻主宰', [a]),
+      event(311, 'defense', '弃置军团抵挡另一次进攻', [blockOne], 1),
+    ], 0, [])
+    return projected[0]?.kind === 'combat' && projected[0].result !== '被抵挡'
+  }],
+  ['unlinked support must not be labeled a block', () => {
+    const projected = projectLog([
+      event(320, 'attack', '甲军团进攻乙军团', [a, b]),
+      event(321, 'support', '支援本次进攻', [supporter, b, a], 1),
+    ], 0, [])
+    return projected[0]?.kind === 'combat' && projected[0].result !== '被抵挡'
+  }],
+  ['attack abort must not be labeled a completed combat', () => {
+    const projected = projectLog([
+      event(330, 'attack', '甲军团进攻乙军团', [a, b]),
+      event(331, 'attack-aborted', '进攻军团已离场，返回主要阶段', [], 0),
+    ], 0, [])
+    return projected[0]?.kind === 'combat' && projected[0].result !== '未击破'
+  }],
+]
+const legacyCombatFailures = legacyCombatChecks.filter(([, check]) => !check()).map(([name]) => name)
+assert.deepEqual(legacyCombatFailures, [], 'Stage 4B-1 legacy combat facts must not be inferred from adjacency')
 
 console.log(`battle log view model: ${rows.length + cancelled.length + otherworldRune.length + effectWithCardCost.length + trial.length + stateChanges.length + standaloneCost.length + fieldEffect.length + combat.length + masterNotDefended.length + masterDefended.length + invalidDefense.length + supported.length + attackerDeparture.length + publicHandAdd.length + privateHandAdd.length + deduplicatedPublicHandAdd.length + safeRows.length} projected rows verified`)

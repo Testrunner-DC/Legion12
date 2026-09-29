@@ -101,8 +101,10 @@ public sealed partial class L12GameEngine
                     if (pending is null || attacker is null)
                     {
                         item.Data["invalid"] = "true";
-                        AddEvent("defense-invalid", authorityEvent.ActorPlayer,
-                            "防御权威事件结算前进攻上下文或进攻军团已离场；不再支付额外费用");
+                        AddPlayerCombatEvent("defense-invalid", authorityEvent.ActorPlayer,
+                            "本次进攻已结束，不再支付额外费用",
+                            new(pending?.CombatId, "defense-invalid",
+                                supportIds.Length > 0 ? "invalid-support" : "invalid-block", "context-unavailable"));
                     }
                     else
                     {
@@ -110,8 +112,10 @@ public sealed partial class L12GameEngine
                         if (!validation.Accepted)
                         {
                             item.Data["invalid"] = "true";
-                            AddEvent("defense-invalid", authorityEvent.ActorPlayer,
-                                $"防御权威事件结算前重新校验失败：{validation.Error}；不再支付额外费用");
+                            AddPlayerCombatEvent("defense-invalid", authorityEvent.ActorPlayer,
+                                "本次抵挡或支援已无法继续，未支付额外费用",
+                                new(pending.CombatId, "defense-invalid",
+                                    supportIds.Length > 0 ? "invalid-support" : "invalid-block", "choice-unavailable"));
                         }
                     }
                 }
@@ -161,7 +165,11 @@ public sealed partial class L12GameEngine
         {
             item.Data["richardExtraResolved"] = "true";
             item.Data["invalid"] = "true";
-            AddEvent("defense", item.Controller, "没有手牌可支付〈狮心王理查一世〉要求的额外弃牌费用，本次抵挡/支援无效");
+            AddPlayerCombatEvent("defense", item.Controller,
+                "没有手牌可支付〈狮心王理查一世〉要求的额外弃牌费用，本次抵挡/支援无效",
+                new(State.PendingDefense?.CombatId, "defense-invalid",
+                    item.Data.GetValueOrDefault("action") == "support" ? "invalid-support" : "invalid-block",
+                    "extra-cost-unpaid"));
             return false;
         }
         choices.Add("decline");

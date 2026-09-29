@@ -172,6 +172,11 @@ public sealed class CombatTimelineRegressionTests
         Assert.Equal(L12Phase.Main, game.State.Phase);
         Assert.Contains(game.State.Events, entry => entry.Type == "attack-aborted"
             && entry.Text.Contains("进攻军团已离场", StringComparison.Ordinal));
+        var declared = Assert.Single(game.State.Events, entry => entry.Type == "attack");
+        var aborted = Assert.Single(game.State.Events, entry => entry.Type == "attack-aborted");
+        Assert.Equal(declared.PlayerCombat?.CombatId, aborted.PlayerCombat?.CombatId);
+        Assert.Equal("aborted", aborted.PlayerCombat?.OutcomeCode);
+        Assert.Equal("attacker-left", aborted.PlayerCombat?.PublicReasonCode);
         Assert.Same(target, game.State.Players[1].Field[0][0]);
         Assert.Equal(3000, target.Troops);
     }
@@ -203,6 +208,8 @@ public sealed class CombatTimelineRegressionTests
         Assert.Equal(L12Phase.Main, game.State.Phase);
         Assert.Contains(game.State.Events, entry => entry.Type == "attack-aborted"
             && entry.Text.Contains("被进攻军团已离场", StringComparison.Ordinal));
+        Assert.Equal("target-left", Assert.Single(game.State.Events,
+            entry => entry.Type == "attack-aborted").PlayerCombat?.PublicReasonCode);
         Assert.Same(attacker, game.State.Players[0].Field[0][0]);
         Assert.Equal(3000, target.Troops);
     }
@@ -328,6 +335,10 @@ public sealed class CombatTimelineRegressionTests
         Assert.Contains(game.State.Players[1].Graveyard,
             card => card.InstanceId == cooperativeSupport.InstanceId);
         Assert.Contains(game.State.Events, entry => entry.Text.Contains("联合支援", StringComparison.Ordinal));
+        var declared = Assert.Single(game.State.Events, entry => entry.Type == "attack");
+        var supported = Assert.Single(game.State.Events, entry => entry.Type == "support");
+        Assert.Equal(declared.PlayerCombat?.CombatId, supported.PlayerCombat?.CombatId);
+        Assert.Equal("supported", supported.PlayerCombat?.OutcomeCode);
     }
 
     [Fact]
@@ -376,6 +387,10 @@ public sealed class CombatTimelineRegressionTests
 
         Assert.Equal(hpBefore - 1, game.State.Players[1].Hp);
         Assert.Contains(game.State.Events, entry => entry.Type == "defense-invalid");
+        Assert.Contains(game.State.Events, entry => entry.Type == "defense-invalid"
+            && entry.PlayerCombat?.CombatId == Assert.Single(game.State.Events,
+                attack => attack.Type == "attack").PlayerCombat?.CombatId
+            && entry.PlayerCombat?.OutcomeCode == "invalid-block");
         Assert.Null(game.State.PendingDefense);
         Assert.Equal(L12Phase.Main, game.State.Phase);
     }
@@ -404,6 +419,9 @@ public sealed class CombatTimelineRegressionTests
         Assert.Equal(hpBefore - 1, game.State.Players[1].Hp);
         Assert.Contains(game.State.Events, entry => entry.Type == "defense"
             && entry.Text.Contains("主宰受到", StringComparison.Ordinal));
+        var unblocked = Assert.Single(game.State.Events, entry => entry.Type == "defense");
+        Assert.Equal("unblocked", unblocked.PlayerCombat?.OutcomeCode);
+        Assert.Equal(hpBefore - game.State.Players[1].Hp, unblocked.PlayerCombat?.MasterDamage);
     }
 
     [Fact]
@@ -476,6 +494,8 @@ public sealed class CombatTimelineRegressionTests
             PassCurrentResponse(game);
 
         Assert.Equal(L12CombatStage.KillTriggers, game.State.PendingDefense?.Stage);
+        Assert.Equal("defeated", Assert.Single(game.State.Events,
+            entry => entry.Type == "combat").PlayerCombat?.OutcomeCode);
         Assert.Contains(defender, game.State.Players[1].Resolving);
         Assert.DoesNotContain(defender, game.State.Players[1].Graveyard);
         var killPrompt = Assert.Single(game.State.PendingPrompts);

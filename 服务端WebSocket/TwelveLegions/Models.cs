@@ -420,6 +420,9 @@ public sealed record L12AttackTarget(string Type, string? InstanceId = null);
 
 public sealed class L12PendingDefense
 {
+    /// <summary>一次进攻的公开日志关联键；旧检查点没有此字段时保持 null。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CombatId { get; set; }
     public required int AttackerPlayer { get; init; }
     public required string AttackerInstanceId { get; init; }
     public required L12AttackTarget Target { get; set; }
@@ -777,6 +780,18 @@ public sealed record L12PlayerLogSemantic(
     string? TargetInstanceId = null,
     string? TargetName = null);
 
+/// <summary>仅包含已公开战斗事实的日志合同。所有字段可缺省，以兼容旧事件。</summary>
+public sealed record L12PlayerCombatPresentation(
+    string? CombatId = null,
+    string? EventKind = null,
+    string? OutcomeCode = null,
+    string? PublicReasonCode = null,
+    string? AttackerInstanceId = null,
+    string? TargetInstanceId = null,
+    int? AttackerTroops = null,
+    int? DefenderTroops = null,
+    int? MasterDamage = null);
+
 public sealed record L12ActionEvent(
     long Sequence,
     string Type,
@@ -810,6 +825,8 @@ public sealed record L12ActionEvent(
     public string? PlayerLogDecisionLabel { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public L12PlayerLogSemantic? PlayerLogSemantic { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12PlayerCombatPresentation? PlayerCombat { get; init; }
 }
 
 public sealed class L12GameState
