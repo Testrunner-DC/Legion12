@@ -3,9 +3,13 @@ import { reactive, ref } from 'vue'
 import type { ActionEvent, Card, GameState, PlayerView, Prompt } from '../../src/l12/types'
 import GameBoard from '../../src/l12/game/GameBoard.vue'
 import { l12State } from '../../src/l12/net'
+import { useLandscapeViewport } from '../../src/l12/mobileViewport'
 
 const faceUrl = (cardId: string) => `/api/site/media/visual-transition/${cardId}.png`
-const initialViewer = Number(new URLSearchParams(window.location.search).get('viewer') || 0)
+const harnessParams = new URLSearchParams(window.location.search)
+const initialViewer = Number(harnessParams.get('viewer') || 0)
+const landscapeEnabled = ref(harnessParams.get('landscape') === '1')
+useLandscapeViewport(landscapeEnabled)
 const card = (instanceId: string, name: string, cardId: string, tapped = false, imageUrl?: string): Card => ({
   instanceId, name, cardId, cardType: 'legion', faction: 'otherworld', cost: 1,
   baseTroops: 2000, troops: 2000, disasterLevel: 0, tapped, summonRound: 0, imageUrl,
@@ -318,6 +322,17 @@ const api = {
     game.prompts = []
     publish({ type:'effect-declined', playerIndex:0, text:'芬恩选择不消耗1符文转为活跃', cards:[finn] })
   },
+  defeatRestedDefender() {
+    const defeated = game.players[1].field.flat().find(item => item?.instanceId === restedDefender.instanceId)
+    if (!defeated) return
+    game.players[1].field = game.players[1].field.map(row => row.map(item => item?.instanceId === defeated.instanceId ? null : item))
+    game.players[1].graveyard = [...(game.players[1].graveyard ?? []), defeated]
+    game.players[1].graveyardCount = game.players[1].graveyard.length
+    publishBatch([
+      { type:'combat', playerIndex:0, text:'侍从骑士造成2000点战斗伤害并击杀休整守军', cards:[mover, defeated] },
+      { type:'leave', playerIndex:1, text:'休整守军阵亡进入墓地', cards:[defeated] },
+    ])
+  },
   returnDuplicateCard() {
     game.players[0].graveyard = (game.players[0].graveyard ?? []).filter(card => card.instanceId !== duplicateCard.instanceId)
     game.players[0].graveyardCount = game.players[0].graveyard.length
@@ -333,5 +348,8 @@ Object.assign(window, { __visualTransitionHarness: api })
 </script>
 
 <template>
-  <GameBoard :game="game" read-only :replay-playback-speed="playbackSpeed" />
+  <div v-if="landscapeEnabled" id="l12-landscape-teleports" />
+  <div :class="{ 'l12-landscape-surface': landscapeEnabled }" :data-l12-landscape-canvas="landscapeEnabled || undefined">
+    <GameBoard :game="game" read-only :replay-playback-speed="playbackSpeed" />
+  </div>
 </template>

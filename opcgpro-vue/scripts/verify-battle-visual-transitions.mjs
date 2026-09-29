@@ -17,7 +17,7 @@ const harnessFaceRedirects = new Map(harnessFaceIds.map(cardId => [
   `/assets/l12/special/master/${cardId}.png`,
 ]))
 
-const harnessHtml = `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="app"></div><script type="module">import { createApp } from 'vue';import Harness from '/scripts/fixtures/BattleVisualTransitionHarness.vue';import '/src/style.css';import '/src/l12/motion.css';createApp(Harness).mount('#app')</script></body></html>`
+const harnessHtml = `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover"></head><body><div id="app"></div><script type="module">import { createApp } from 'vue';import Harness from '/scripts/fixtures/BattleVisualTransitionHarness.vue';import '/src/style.css';import '/src/l12/mobileViewport.css';import '/src/l12/motion.css';createApp(Harness).mount('#app')</script></body></html>`
 const harnessPlugin = {
   name: 'battle-visual-transition-harness',
   configureServer(server) {
@@ -233,16 +233,38 @@ function nearAngle(angle, expected) {
   const target = ((expected % 360) + 360) % 360
   return Math.min(Math.abs(normalized - target), 360 - Math.abs(normalized - target)) <= 4
 }
+async function setAnimationProgress(locator, progress) {
+  await locator.evaluate(async (node, value) => {
+    for (let frame = 0; frame < 10 && node.getAnimations().length === 0; frame++) {
+      await new Promise(resolve => requestAnimationFrame(resolve))
+    }
+    const animation = node.getAnimations()[0]
+    if (!animation) throw new Error('expected an active movement animation')
+    const duration = Number(animation.effect?.getComputedTiming().duration ?? 0)
+    animation.pause()
+    animation.currentTime = duration * value
+  }, progress)
+  await locator.page().waitForTimeout(32)
+}
+async function resumeAnimation(locator) {
+  await locator.evaluate(node => node.getAnimations().forEach(animation => animation.play()))
+}
+async function physicalCenter(locator) {
+  const box = await locator.boundingBox()
+  if (!box) throw new Error('expected a measurable animation element')
+  return { x:box.x + box.width / 2, y:box.y + box.height / 2 }
+}
+function centerDistance(left, right) { return Math.hypot(left.x - right.x, left.y - right.y) }
 
 try {
   await server.listen()
   const address = server.httpServer.address()
   const port = typeof address === 'object' && address ? address.port : 0
   browser = await chromium.launch({ headless: true, channel: 'msedge' })
-  for (const profile of [
+  for (const profile of (process.env.L12_VISUAL_ROTATED_ONLY ? [] : [
     { name: 'desktop', viewport: { width: 1920, height: 1080 }, viewer: 0 },
     { name: 'mobile-landscape', viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true, viewer: 0 },
-  ]) {
+  ])) {
     const context = await browser.newContext({ viewport: profile.viewport, isMobile: profile.isMobile, hasTouch: profile.hasTouch })
     const page = await context.newPage()
     page.on('pageerror', error => report.errors.push(`${profile.name}: ${error.message}`))
@@ -610,6 +632,126 @@ try {
     report.profiles.push(profile.name)
     await context.close()
   }
+  const rotatedContext = await browser.newContext({ viewport:{ width:390, height:844 }, isMobile:true, hasTouch:true })
+  const rotatedPage = await rotatedContext.newPage()
+  rotatedPage.on('pageerror', error => report.errors.push(`mobile-portrait-rotated: ${error.message}`))
+  await rotatedPage.goto(`http://127.0.0.1:${port}/__battle-visual-transitions?viewer=0&landscape=1`, { waitUntil:'networkidle' })
+  await rotatedPage.waitForSelector('html[data-l12-rotated="true"] [data-l12-game-stage]')
+  ok(await rotatedPage.locator('#l12-landscape-teleports').count() === 1,
+    'mobile-portrait-rotated: logical canvas must expose one shared animation host')
+
+  await resetStateTransitionTrace(rotatedPage)
+  await invoke(rotatedPage, 'tap')
+  const rotatedStateGhost = rotatedPage.locator('.l12-card-state-transition-ghost')
+  await rotatedStateGhost.waitFor({ state:'attached', timeout:1500 })
+  ok(await rotatedStateGhost.evaluate(node => node.parentElement?.id) === 'l12-landscape-teleports',
+    'mobile-portrait-rotated: state ghost must share the transformed logical canvas')
+  await setAnimationProgress(rotatedStateGhost, 0)
+  const rotatedStateStart = await physicalCenter(rotatedStateGhost)
+  const rotatedStateTarget = await physicalCenter(rotatedPage.locator('[data-card-instance-id="mover-1"]'))
+  ok(centerDistance(rotatedStateStart, rotatedStateTarget) <= 6,
+    `mobile-portrait-rotated: state ghost must start on the physical card, drift=${centerDistance(rotatedStateStart, rotatedStateTarget).toFixed(1)}px`)
+  await shot(rotatedPage, 'mobile-portrait-rotated-14-state-geometry')
+  await resumeAnimation(rotatedStateGhost)
+  await rotatedPage.waitForFunction(() => !document.querySelector('.l12-card-state-transition-ghost'), null, { timeout:1500 })
+  const rotatedStateTrace = await rotatedPage.evaluate(() => window.__stateTransitionTrace.slice())
+  ok(rotatedStateTrace.filter(direction => direction === 'active>rested').length === 1,
+    `mobile-portrait-rotated: one authority state change must play once: ${rotatedStateTrace.join(',')}`)
+
+  await invoke(rotatedPage, 'move')
+  const rotatedMoveGhost = rotatedPage.locator('.l12-zone-flight-ghost')
+  await rotatedMoveGhost.waitFor({ state:'attached', timeout:1500 })
+  ok(await rotatedMoveGhost.evaluate(node => node.parentElement?.id) === 'l12-landscape-teleports',
+    'mobile-portrait-rotated: cloned zone flight must share the transformed logical canvas')
+  await setAnimationProgress(rotatedMoveGhost, .999)
+  const rotatedMoveEnd = await physicalCenter(rotatedMoveGhost)
+  const rotatedMoveTarget = await physicalCenter(rotatedPage.locator('[data-card-instance-id="mover-1"]'))
+  ok(centerDistance(rotatedMoveEnd, rotatedMoveTarget) <= 10,
+    `mobile-portrait-rotated: zone flight must settle on the physical card, drift=${centerDistance(rotatedMoveEnd, rotatedMoveTarget).toFixed(1)}px, actual=${rotatedMoveEnd.x.toFixed(1)},${rotatedMoveEnd.y.toFixed(1)}, target=${rotatedMoveTarget.x.toFixed(1)},${rotatedMoveTarget.y.toFixed(1)}`)
+  await shot(rotatedPage, 'mobile-portrait-rotated-15-zone-geometry')
+  await resumeAnimation(rotatedMoveGhost)
+  await waitForMovementQueue(rotatedPage)
+
+  await rotatedPage.evaluate(() => {
+    window.__rotatedMovementTrace = []
+    window.__rotatedMovementKeys = new Set()
+    new MutationObserver(() => {
+      document.querySelectorAll('.l12-zone-flight-ghost,.zone-card-movement').forEach(node => {
+        const key = node.getAttribute('data-movement-key') ?? ''
+        if (!key || window.__rotatedMovementKeys.has(key)) return
+        window.__rotatedMovementKeys.add(key)
+        window.__rotatedMovementTrace.push(node.getAttribute('data-movement-instance-id'))
+      })
+    }).observe(document.body, { childList:true, subtree:true })
+  })
+  await rotatedPage.evaluate(() => window.__visualTransitionHarness.setReplay(.1))
+  await rotatedPage.waitForTimeout(32)
+  await invoke(rotatedPage, 'swap')
+  await rotatedPage.waitForFunction(() => (document.querySelector('.l12-zone-flight-ghost')?.getAnimations().length ?? 0) > 0,
+    null, { timeout:1500 })
+  const jitterGhost = rotatedPage.locator('.l12-zone-flight-ghost')
+  const jitterMovementKey = await jitterGhost.getAttribute('data-movement-key')
+  // Freeze a known in-flight frame so this assertion measures cancellation,
+  // not whether the naturally short animation happened to finish first.
+  await setAnimationProgress(jitterGhost, .25)
+  await rotatedPage.evaluate(() => window.dispatchEvent(new Event('l12-viewport-change')))
+  await rotatedPage.waitForTimeout(32)
+  ok(await jitterGhost.count() === 1 && await jitterGhost.getAttribute('data-movement-key') === jitterMovementKey,
+    'mobile-portrait-rotated: harmless visual-viewport jitter must not blink away an active flight')
+  await rotatedPage.evaluate(() => window.__visualTransitionHarness.setReplay(null))
+  await jitterGhost.evaluate(node => node.getAnimations().forEach(animation => {
+    animation.playbackRate = 10
+    animation.play()
+  }))
+  await waitForMovementQueue(rotatedPage)
+  const jitterTrace = await rotatedPage.evaluate(() => window.__rotatedMovementTrace.slice())
+  ok(JSON.stringify(jitterTrace) === JSON.stringify(['mover-1', 'mover-2']),
+    `mobile-portrait-rotated: viewport jitter must not drop or replay queued instance movements: ${jitterTrace.join(',')}`)
+
+  await invoke(rotatedPage, 'defeatRestedDefender')
+  const rotatedDefeatGhost = rotatedPage.locator('.l12-combat-defeat-ghost')
+  await rotatedDefeatGhost.waitFor({ state:'attached', timeout:1500 })
+  ok(await rotatedDefeatGhost.evaluate(node => node.parentElement?.id) === 'l12-landscape-teleports',
+    'mobile-portrait-rotated: combat defeat ghost must share the transformed logical canvas')
+  await setAnimationProgress(rotatedDefeatGhost, .999)
+  const rotatedDefeatEnd = await physicalCenter(rotatedDefeatGhost)
+  const rotatedGraveTarget = await physicalCenter(rotatedPage.locator('[data-player-index="1"] [data-l12-zone="graveyard"]'))
+  ok(centerDistance(rotatedDefeatEnd, rotatedGraveTarget) <= 12,
+    `mobile-portrait-rotated: defeat flight must settle on the physical graveyard, drift=${centerDistance(rotatedDefeatEnd, rotatedGraveTarget).toFixed(1)}px, actual=${rotatedDefeatEnd.x.toFixed(1)},${rotatedDefeatEnd.y.toFixed(1)}, target=${rotatedGraveTarget.x.toFixed(1)},${rotatedGraveTarget.y.toFixed(1)}`)
+  await shot(rotatedPage, 'mobile-portrait-rotated-16-defeat-geometry')
+  await resumeAnimation(rotatedDefeatGhost)
+  await rotatedPage.waitForFunction(() => !document.querySelector('.l12-combat-defeat-ghost'), null, { timeout:1800 })
+
+  await rotatedPage.evaluate(() => { window.__rotatedMovementTrace = []; window.__rotatedMovementKeys = new Set() })
+  await invoke(rotatedPage, 'playTriggeredEntrant')
+  await rotatedPage.waitForFunction(() => (window.__rotatedMovementTrace?.length ?? 0) >= 1, null, { timeout:2500 })
+  await waitForMovementQueue(rotatedPage)
+  const rotatedEntryTrace = await rotatedPage.evaluate(() => window.__rotatedMovementTrace.slice())
+  ok(JSON.stringify(rotatedEntryTrace) === JSON.stringify(['triggered-entrant']),
+    `mobile-portrait-rotated: play plus enter/effect descriptions must animate once: ${rotatedEntryTrace.join(',')}`)
+  await rotatedPage.waitForFunction(() => !document.querySelector('.public-reveal-animation'), null, { timeout:5000 })
+
+  await rotatedPage.evaluate(() => { window.__rotatedMovementTrace = []; window.__rotatedMovementKeys = new Set() })
+  await invoke(rotatedPage, 'millManyForTop')
+  await rotatedPage.waitForFunction(() => (window.__rotatedMovementTrace?.length ?? 0) >= 3, null, { timeout:5000 })
+  await waitForMovementQueue(rotatedPage)
+  const rotatedMillTrace = await rotatedPage.evaluate(() => window.__rotatedMovementTrace.slice())
+  ok(JSON.stringify(rotatedMillTrace) === JSON.stringify(['top-card-1', 'top-card-2', 'top-card-3']),
+    `mobile-portrait-rotated: batch mill must play each authority card once: ${rotatedMillTrace.join(',')}`)
+
+  await invoke(rotatedPage, 'beginFinnOptionalReady')
+  await rotatedPage.waitForTimeout(80)
+  await invoke(rotatedPage, 'declineFinnOptionalReady')
+  await rotatedPage.waitForTimeout(180)
+  ok(await visibleCount(rotatedPage, '.l12-card-state-transition-ghost') === 0,
+    'mobile-portrait-rotated: declining optional ready must not flash a false transition')
+  await invoke(rotatedPage, 'reconnectWithHistoricalReady')
+  await rotatedPage.waitForTimeout(180)
+  ok(await visibleCount(rotatedPage, '.l12-card-state-transition-ghost,.l12-zone-flight-ghost,.zone-card-movement') === 0,
+    'mobile-portrait-rotated: reconnect must establish a baseline without replaying historical motion')
+  report.profiles.push('mobile-portrait-rotated')
+  await rotatedContext.close()
+
   const reducedContext = await browser.newContext({ viewport:{ width:1366, height:768 }, reducedMotion:'reduce' })
   const reducedPage = await reducedContext.newPage()
   reducedPage.on('pageerror', error => report.errors.push(`reduced-motion: ${error.message}`))

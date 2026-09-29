@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { l12AnimationDuration } from '../audioPreferences'
-import { viewportRect } from '../mobileViewport'
+import { landscapeTeleportElement, viewportRect } from '../mobileViewport'
 import type { PlayerView } from '../types'
 import { claimCardStateTransitions, collectVisualFieldState, createCardStateClaimState, resetCardStateClaimState } from './visualTransitionProjection'
 
@@ -104,7 +104,7 @@ function showNext() {
       filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))',
     })
     wrapper.appendChild(ghost)
-    document.body.appendChild(wrapper)
+    landscapeTeleportElement()?.appendChild(wrapper)
     hiddenTarget = target
     hiddenTargetVisibility = target.style.visibility
     target.style.visibility = 'hidden'

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { l12AnimationDuration } from '../audioPreferences'
-import { landscapeTeleportTarget, visibleViewport, viewportRect } from '../mobileViewport'
+import { landscapeTeleportElement, landscapeTeleportTarget, visibleViewport, viewportRect } from '../mobileViewport'
 import { CARD_IMAGE_PLACEHOLDER, resolveCardAssetUrls } from '../cardAssets'
 import type { ActionEvent, Card, PlayerView, Prompt } from '../types'
 import { beginMovementTransactionBatch, claimFreshMovementEvents, claimMovementTransaction, collectKnownCardZones, collectPromptSourceZoneHints, createMovementClaimState, finalizeMovementTransactionBatch, isAuthoritativePublicFaceMovement, isCombatDefeatLeaveEvent, isMovementCardConcealed, isSupersededLeaveEvent, leaveMovementDestination, movementCardsForEvent, movementFactKey, resetMovementClaimState, type VisualZone } from './visualTransitionProjection'
@@ -201,7 +201,16 @@ function elementRect(element: Element | null): AnchorRect | null {
   if (!element) return null
   const rect = viewportRect(element)
   if (rect.width <= 0 || rect.height <= 0) return null
-  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, width: rect.width, height: rect.height }
+  const quarterTurn = element.classList.contains('tapped')
+  return {
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2,
+    // The DOM bounds already contain the rested 90° transform. The flight
+    // wrapper applies that rotation itself, so restore the card's unrotated
+    // dimensions while preserving its visible center.
+    width: quarterTurn ? rect.height : rect.width,
+    height: quarterTurn ? rect.width : rect.height,
+  }
 }
 function cardElementInZone(instanceId: string | undefined, zone: Zone) {
   if (!instanceId) return null
@@ -320,7 +329,9 @@ function showNext() {
     Object.assign(wrapper.style, {
       position: 'fixed', left: `${source.x - source.width / 2}px`, top: `${source.y - source.height / 2}px`,
       width: `${source.width}px`, height: `${source.height}px`, zIndex: '902', pointerEvents: 'none',
-      transformOrigin: 'left top', willChange: 'transform, opacity', filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))',
+      // Translation is center-to-center. Keep rotation and scale on that same
+      // invariant center or a rested card's quarter turn shifts the endpoint.
+      transformOrigin: 'center', willChange: 'transform, opacity', filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))',
     })
     const ghost = active.value.sourceGhost
     ghost.classList.remove('tapped', 'selected')
@@ -342,7 +353,7 @@ function showNext() {
       })
       wrapper.appendChild(caption)
     }
-    document.body.appendChild(wrapper)
+    landscapeTeleportElement()?.appendChild(wrapper)
     activeGhostWrapper = wrapper
     const dx = target.x - source.x
     const dy = target.y - source.y
@@ -384,14 +395,6 @@ function cancelActiveMovement() {
 }
 
 let viewportGeneration = 0
-function viewportChanged() {
-  viewportGeneration++
-  cancelActiveMovement()
-  for (const movement of queue) movement.presentationRelease?.()
-  queue.length = 0
-  notifyBusy()
-  movementClaims.lastSequence = Math.max(movementClaims.lastSequence, ...props.events.map(event => event.sequence))
-}
 function reset() {
   viewportGeneration++
   cancelActiveMovement()
@@ -543,8 +546,7 @@ watch(() => props.paused, paused => {
   for (const reservation of pendingReservations) reservation.setPaused(paused)
   if (!paused) showNext()
 })
-onMounted(() => window.addEventListener('l12-viewport-change', viewportChanged))
-onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewportChanged); reset(); emit('busyChange', false) })
+onBeforeUnmount(() => { reset(); emit('busyChange', false) })
 </script>
 
 <template>

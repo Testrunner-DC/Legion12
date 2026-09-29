@@ -92,6 +92,17 @@ export function landscapeTeleportTarget() {
     : 'body'
 }
 
+/**
+ * Imperative motion layers must use the same containing block as Vue
+ * Teleports. viewportRect() returns logical-canvas coordinates while the
+ * portrait mobile canvas is rotated, so appending those layers to body would
+ * mix logical coordinates with the physical viewport.
+ */
+export function landscapeTeleportElement() {
+  if (typeof document === 'undefined') return null
+  return document.getElementById('l12-landscape-teleports') ?? document.body
+}
+
 export function useLandscapeViewport(enabled: Ref<boolean>) {
   let probe: HTMLDivElement | null = null
   let previous: Pick<ViewportMode, 'rotated' | 'mobile'> = { rotated: false, mobile: false }

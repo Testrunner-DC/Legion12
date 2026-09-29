@@ -11,6 +11,7 @@ const movement = read('src/l12/game/ZoneMovementPresentationLayer.vue')
 const combat = read('src/l12/game/CombatMotionPresentationLayer.vue')
 const stateTransition = read('src/l12/game/CardStateTransitionLayer.vue')
 const visualProjection = read('src/l12/game/visualTransitionProjection.ts')
+const mobileViewport = read('src/l12/mobileViewport.ts')
 const board = read('src/l12/game/GameBoard.vue')
 const tile = read('src/l12/CardTile.vue')
 
@@ -50,6 +51,21 @@ const checks = [
     && movement.includes("element.closest('[data-l12-zone]')?.getAttribute('data-l12-zone') === zone")
     && movement.includes('cardElementInZone(movement.card?.instanceId, movement.to)')
     && movement.includes('cardElementInZone(draft.card?.instanceId, draft.from)')],
+  ['imperative motion shares the logical mobile canvas', mobileViewport.includes('export function landscapeTeleportElement()')
+    && stateTransition.includes('landscapeTeleportElement()?.appendChild(wrapper)')
+    && movement.includes('landscapeTeleportElement()?.appendChild(wrapper)')
+    && combat.includes('landscapeTeleportElement()?.appendChild(wrapper)')],
+  ['visual viewport jitter preserves claimed motion', !movement.includes("addEventListener('l12-viewport-change'")
+    && combat.includes('function viewportChanged()')
+    && !combat.slice(combat.indexOf('function viewportChanged()'), combat.indexOf('onMounted(', combat.indexOf('function viewportChanged()'))).includes('reset()')],
+  ['rested card geometry is normalized before ghost rotation', movement.includes("const quarterTurn = element.classList.contains('tapped')")
+    && movement.includes('width: quarterTurn ? rect.height : rect.width')
+    && movement.includes("transformOrigin: 'center'")
+    && combat.includes('function cardSnapshotRect(element: HTMLElement)')
+    && combat.includes('rect: cardSnapshotRect(element)')],
+  ['combat defender defeat resolves the opposite graveyard without owner metadata', combat.includes("event.type === 'combat' && index === 1")
+    && combat.includes('return 1 - event.playerIndex')
+    && combat.includes('const owner = defeatOwner(event, captured.card, index)')],
   ['combat impact preserves authority card rotation', combat.includes("targetCard?.closest('.formation-slot') ?? targetAnchor")
     && !combat.includes('const impact = targetElement.animate')],
   ['attachment target uses stable instance identity', tile.includes('data-attached-card-instance-ids') && movement.includes('attachmentElement') && movement.includes('draft.attachment && !destination')],

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
 import { l12AnimationDuration } from '../audioPreferences'
-import { viewportRect } from '../mobileViewport'
+import { landscapeTeleportElement, viewportRect } from '../mobileViewport'
 import type { ActionEvent, Card } from '../types'
 
 const props = withDefaults(defineProps<{ events: ActionEvent[]; matchId: string; playbackSpeed?: number | null }>(), { playbackSpeed: null })
@@ -33,6 +33,14 @@ function cardElement(instanceId?: string) {
   return document.querySelector(`[data-l12-game-stage] .formation-slot [data-card-instance-id="${CSS.escape(instanceId)}"]`)
 }
 
+function cardSnapshotRect(element: HTMLElement) {
+  const rect = viewportRect(element)
+  if (!element.classList.contains('tapped')) return rect
+  const centerX = rect.left + rect.width / 2
+  const centerY = rect.top + rect.height / 2
+  return new DOMRect(centerX - rect.height / 2, centerY - rect.width / 2, rect.height, rect.width)
+}
+
 function zoneElement(zone: string, playerIndex: number) {
   return document.querySelector(`[data-l12-game-stage] [data-player-index="${playerIndex}"] [data-l12-zone="${zone}"]`)
 }
@@ -54,7 +62,7 @@ function refreshFieldSnapshots() {
     if (!(element instanceof HTMLElement)) continue
     const instanceId = element.dataset.cardInstanceId
     if (!instanceId) continue
-    fieldSnapshots.set(instanceId, { ghost: element.cloneNode(true) as HTMLElement, rect: viewportRect(element) })
+    fieldSnapshots.set(instanceId, { ghost: element.cloneNode(true) as HTMLElement, rect: cardSnapshotRect(element) })
     defeatedInstances.delete(instanceId)
   }
 }
@@ -63,7 +71,7 @@ function captureCards(event: ActionEvent) {
   return (event.cards ?? []).flatMap(card => {
     const live = cardElement(card.instanceId)
     if (live instanceof HTMLElement) {
-      const snapshot = { ghost: live.cloneNode(true) as HTMLElement, rect: viewportRect(live) }
+      const snapshot = { ghost: live.cloneNode(true) as HTMLElement, rect: cardSnapshotRect(live) }
       fieldSnapshots.set(card.instanceId, snapshot)
       return [{ card, ghost: snapshot.ghost.cloneNode(true) as HTMLElement, rect: snapshot.rect }]
     }
@@ -139,6 +147,15 @@ function defeatLabel(event: ActionEvent, index: number) {
   return /击杀|消灭/.test(`${event.text ?? ''} ${event.effectText ?? ''}`) ? '击杀' : '阵亡'
 }
 
+function defeatOwner(event: ActionEvent, card: Card, index: number) {
+  if (card.ownerIndex !== undefined) return card.ownerIndex
+  // Combat cards are ordered attacker, defender. Public event snapshots do
+  // not always carry ownerIndex, so the defender belongs to the other player;
+  // a standalone leave event already names its owning player.
+  if (event.type === 'combat' && index === 1 && event.playerIndex !== undefined) return 1 - event.playerIndex
+  return event.playerIndex ?? 0
+}
+
 function animateDefeat(captured: CapturedCard, event: ActionEvent, index: number) {
   if (defeatedInstances.has(captured.card.instanceId)) return
   defeatedInstances.add(captured.card.instanceId)
@@ -169,10 +186,10 @@ function animateDefeat(captured: CapturedCard, event: ActionEvent, index: number
     lineHeight: '1', textAlign: 'center', transform: 'translateX(-50%)',
   })
   wrapper.append(ghost, damage)
-  document.body.appendChild(wrapper)
+  landscapeTeleportElement()?.appendChild(wrapper)
   overlays.add(wrapper)
 
-  const owner = captured.card.ownerIndex ?? event.playerIndex ?? 0
+  const owner = defeatOwner(event, captured.card, index)
   const graveElement = zoneElement('graveyard', owner)
   const graveRect = graveElement ? viewportRect(graveElement) : null
   const dx = graveRect ? graveRect.left + graveRect.width / 2 - (captured.rect.left + captured.rect.width / 2) : 0
@@ -258,11 +275,10 @@ watch(() => props.events.map(event => event.sequence).join(','), () => {
   })
 }, { immediate: true, flush: 'pre' })
 function viewportChanged() {
-  const consumed = lastSequence
-  const wasInitialized = initialized
-  reset()
-  lastSequence = consumed
-  initialized = wasInitialized
+  // Motion overlays live in the transformed logical-canvas host, so browser
+  // toolbar/safe-area jitter moves the host and the board together. Cancelling
+  // active WAAPI jobs here caused a visible blink and could discard a queued
+  // defeat; only refresh snapshots for later authoritative events.
   void nextTick().then(refreshFieldSnapshots)
 }
 onMounted(() => { window.addEventListener('l12-viewport-change', viewportChanged); void nextTick().then(refreshFieldSnapshots) })
