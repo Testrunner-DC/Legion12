@@ -7,12 +7,12 @@
 ## 目录模型
 
 ```text
-/opt/legion12-test -> /www/legion12/releases/<commit>-<time> # 稳定入口
-/www/legion12/releases/                                     # 不可变版本
+/opt/legion12-test -> /opt/legion12-releases/<commit>-<time> # 稳定入口
+/opt/legion12-releases/                                      # 当前不可变版本
 /opt/legion12-runtime/                                      # 持久化运行数据
-/www/legion12/card-assets/<tree-hash>/                       # 内容寻址卡图缓存
-/www/legion12/runtime-backups/                               # 切换前运行数据快照
-/www/legion12/incoming/                                      # 待校验发布包
+/opt/legion12-static/card-assets/<tree-hash>/                # 内容寻址卡图缓存
+/opt/legion12-deployment/runtime-backups/                    # 切换前运行数据快照
+/opt/legion12-deployment/incoming/                           # 待校验发布包
 ```
 
 Nginx 和 systemd 继续访问 `/opt/legion12-test`，版本切换只原子替换该符号链接。首次使用新流程时，旧版 `publish/runtime` 会在服务停止后通过同文件系统移动到共享目录，不复制约 1GB 的数据库和平台数据。
@@ -25,7 +25,7 @@ Nginx 和 systemd 继续访问 `/opt/legion12-test`，版本切换只原子替�
 - 已授权部署公钥：`ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFPzOIcDTQh/UWWdwQQGqsksGMHHDiz153ecQOtRxHhE neptu@hero-rush`。
 - 服务器 ED25519 主机公钥：`ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK7zDzJDfZJI1gyqTg8/QL7ALF8wYzXhvnenVp+Czbd2`；人工核验指纹 `SHA256:8GSTnRZ46ArgsRj+G5c1aiZI/0GuyEx0DJyipV5i1Lg`。
 - 本机可信主机记录：`C:\Users\neptu\.ssh\known_hosts`，以 IP `154.201.80.91` 为别名保存。指纹变化时必须先从服务商控制台独立核验，禁止自动接受。
-- systemd 服务：`legion12-test.service`（仅为历史名称，实际承载正式服）。稳定入口 `/opt/legion12-test`，运行数据 `/opt/legion12-runtime`，发布根目录 `/www/legion12`。
+- systemd 服务：`legion12-test.service`（仅为历史名称，实际承载正式服）。稳定入口 `/opt/legion12-test`，运行数据 `/opt/legion12-runtime`，当前发布根目录 `/opt`。`/www/legion12` 仅保留历史制品和受保护备份，不在日常部署中自动迁移或删除。
 - 健康接口 `https://legion-12.com/health`，WebSocket `wss://legion-12.com/ws`。部署完成必须同时核验本机和公网 HTTP、WebSocket、提交版本、服务重启次数与发布围栏。
 
 仓库只记录公钥和已人工核验的指纹。服务商密码、SSH 私钥、登录令牌、临时控制台直连地址不得进入仓库或部署日志。若服务器因重装丢失部署公钥，只能从已登录的服务商控制台将上述公钥幂等加入 `/root/.ssh/authorized_keys`，并恢复 `.ssh` 为 `700`、文件为 `600`，随后先执行严格指纹 SSH 探针。
@@ -74,7 +74,7 @@ powershell -ExecutionPolicy Bypass -File .\ops\windows\verify-l12.ps1
 powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1
 ```
 
-脚本默认制品根已固定为当前正式服的 `/www/legion12`；`-ServerArtifactRoot /opt` 只为核验过的历史兼容场景保留，正式服日常发布不要使用。
+脚本默认制品根为当前正式服使用的 `/opt`。`/www/legion12` 仍是受支持的外置制品根，但只有部署前只读审计确认独立挂载、持久化、权限及至少 14 GiB 可用空间时才可显式选择；空间不足时停止，不通过删除受保护快照强行达标。2026-09-29 的 `e1e561ad` 发布已使用 `/opt`，`/www` 旧制品保留未删除。
 
 部署脚本会：
 
@@ -86,7 +86,7 @@ powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1
 6. 将版本放入不可变 release 目录并原子切换稳定入口；
 7. 检查主页、卡牌页、健康接口和公网 WebSocket；
 8. 启动新服务前失败时恢复上一版本并核验；新服务一旦尝试启动，保留当前运行数据和失败现场，不自动覆盖数据库。只有证实数据兼容后才可按授权回滚程序；
-9. 仅保留最近 5 份运行数据快照，避免备份无界增长。
+9. 默认只统计运行数据快照，不自动删除；只有另行明确启用受管清理并满足成组校验、保留数量和恢复边界时才会清理。
 
 隔离工作区会被自动识别；只要工作区干净且 `HEAD` 与最新 `origin/main` 完全一致，就使用同一条正式部署命令。旧参数 `-AllowVerifiedWorktree` 仅为兼容历史调用保留，已无需手动追加。
 
@@ -94,7 +94,7 @@ powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 `
-  -ServerArtifactRoot "/www/legion12" `
+  -ServerArtifactRoot "/opt" `
   -DryRun
 ```
 
@@ -106,7 +106,7 @@ powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 `
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 `
-  -ServerArtifactRoot "/www/legion12" `
+  -ServerArtifactRoot "/opt" `
   -ArtifactManifest D:\path\l12-release-<commit>.json
 ```
 
@@ -120,7 +120,7 @@ CI Artifact 不重复包含卡图；若服务器没有对应缓存，部署电�
 /opt/legion12-deployment/deployment-info.txt
 ```
 
-切换前运行数据快照保存在 `/www/legion12/runtime-backups`，用于取证和经核验的恢复，不表示可以覆盖新写入。新服务一旦尝试启动，就可能修改 schema 或产生新数据；此后脚本停止并保留现场，不自动恢复旧快照。必须先证明当前运行数据与旧程序兼容，才可以按本批授权只回滚程序并核验；不兼容时保持维护、保留新数据并报告阻断原因。详见《伙伴提交与正式服发布指南》。部署前应关闭新局入口，等待已有对局自然结束且无待恢复运行局，再执行切换。
+使用当前 `/opt` 制品根时，切换前运行数据快照保存在 `/opt/legion12-deployment/runtime-backups`；显式使用外置根时才保存在 `/www/legion12/runtime-backups`。快照用于取证和经核验的恢复，不表示可以覆盖新写入。新服务一旦尝试启动，就可能修改 schema 或产生新数据；此后脚本停止并保留现场，不自动恢复旧快照。必须先证明当前运行数据与旧程序兼容，才可以按本批授权只回滚程序并核验；不兼容时保持维护、保留新数据并报告阻断原因。详见《伙伴提交与正式服发布指南》。部署前应关闭新局入口，等待已有对局自然结束且无待恢复运行局，再执行切换。
 
 发布脚本只切换程序并执行健康核验，不代表获得解除维护的授权。只有用户在当批任务中明确要求，才可另行结束维护；否则保持健康接口中的 `maintenance: true`。
 
