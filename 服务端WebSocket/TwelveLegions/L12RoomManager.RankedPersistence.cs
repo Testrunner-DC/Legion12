@@ -100,6 +100,17 @@ public sealed partial class L12RoomManager
         return persisted with { ActiveMatches = Math.Max(persisted.ActiveMatches, inMemory) };
     }
 
+    internal async Task<T> InspectRankedSeasonCutoverSnapshotAsync<T>(string seasonId,
+        Func<L12RankedSeasonCutoverReadiness, T> inspect)
+    {
+        await _rankedSeasonGate.WaitAsync();
+        try
+        {
+            return inspect(await CaptureRankedSeasonCutoverReadinessAsync(seasonId));
+        }
+        finally { _rankedSeasonGate.Release(); }
+    }
+
     private L12RankedSettlementEnvelope BuildRankedSettlementEnvelope(Room room, DateTimeOffset endedAt)
     {
         if (room.Game is null || room.Game.State.Phase != L12Phase.GameOver)

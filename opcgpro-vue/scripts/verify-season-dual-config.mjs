@@ -46,7 +46,7 @@ const definition=(slot,id,name,revision)=>({definitionId:'definition-'+slot,seas
 const operationsConfig={season:{id:'S01',name:'权威当前赛季',status:'active',startsAt:'2026-09-01T00:00:00Z',endsAt:'2026-12-31T16:00:00Z'},disasterPool:{cardIds:['S01-DS01','S01-DS10'],annihilationLocked:true},cardRestrictions:[],defaultPresetDeckIds:['authoritative-global'],matchModes:[{id:'casual',name:'休闲',enabled:true},{id:'ranked',name:'排位',enabled:true}],defaultRoomConfig:{matchModeId:'casual',spectating:'public',handVisibility:'request',disasterMode:'all'},featureFlags:{spectating:true},maintenance:{enabled:true,message:'预约维护长文本',startsAt:'2026-10-01T00:00:00Z',endsAt:'2026-10-01T02:00:00Z',advanceBroadcastHours:2,expectedDurationHours:2},announcements:[{id:'a1',content:'第一条长期公告',enabled:true,sortOrder:0},{id:'a2',content:'第二条长期公告',enabled:true,sortOrder:1}]}
 let current=definition('current','S01','当前赛季超长名称用于浏览器验收',3)
 let next=definition('next','S02','下赛季草稿超长名称用于浏览器验收',7)
-let operationsVersion=41, genericVersion=91, createdDraftSequence=0, failApply='', failPreview='', previewDelay=false, failCreate=false, failDelete=false
+let operationsVersion=41, genericVersion=91, createdDraftSequence=0, failApply='', failPreview='', previewDelay=false, failCreate=false, failDelete=false, activationGeneration=0
 const requests=[]
 const clone=value=>value===undefined?undefined:JSON.parse(JSON.stringify(value))
 const error=(status,message,code)=>({status,json:{message,code,correlationId:'qa-correlation'}})
@@ -69,6 +69,18 @@ try{
   if(url.pathname==='/api/admin/runtime/status')return route.fulfill({json:{serviceVersion:'qa-runtime-precision',observedAt:'2026-09-30T00:00:00Z',cardCount:324,onlineAccountCount:12,webSocketConnectionCount:10,roomCount:4,activeGameCount:3,cdn:{name:'卡图 CDN',configured:true,state:'healthy',detail:'可用',observedAt:'2026-09-30T00:00:00Z'},httpPerformance:{windowSeconds:300,slowRequestThresholdMilliseconds:800,minimumSamples:20,minimumReadSamples:10,minimumMutationSamples:5,sampleCount:50,readSampleCount:40,mutationSampleCount:10,diagnosticRequestCount:2,inFlight:1,peakInFlight:4,averageDurationMilliseconds:25,p95LatencyBand:'25-50ms',slowRequestCount:0,slowRequestPercent:0,rateLimitedCount:0,rateLimitedPercent:0,serverErrorCount:0,serverErrorPercent:0,expectedUnavailableCount:0,expectedUnavailablePercent:0,clientCancelledCount:0,clientCancelledPercent:0,sampleSufficient:true,withinBudget:true,budgetFailures:[]}}})
   if(url.pathname==='/api/ranked/broadcasts')return route.fulfill({json:[{id:'broadcast-long',matchId:'match',eventType:'streak',message:'这是用于测试换行的非常非常长的排位快讯消息',createdAt:'2026-09-30T00:00:00Z'}]})
   if(url.pathname==='/api/admin/seasons'&&req.method()==='GET')return route.fulfill({json:{current:clone(current),next:next?clone(next):undefined,archives:[],automaticActivationEnabled:false,operationsVersion}})
+  const activationMatch=url.pathname.match(/^\/api\/admin\/seasons\/draft\/([^/]+)\/(activation-preview|arm|disarm)$/)
+  if(activationMatch&&activationMatch[2]==='activation-preview'&&req.method()==='POST'){
+    const token=`impact-${activationMatch[1]}-${body.expectedCurrentRevision}-${body.expectedDraftRevision}-${body.expectedVersion}`
+    return route.fulfill({json:{valid:true,observedAt:'2026-09-30T00:10:00Z',definitionId:activationMatch[1],currentRevision:body.expectedCurrentRevision,draftRevision:body.expectedDraftRevision,operationsVersion:body.expectedVersion,planStatus:next?.activationPlan?.status||'unarmed',planGeneration:next?.activationPlan?.generation||0,leaseState:next?.activationPlan?.leaseState||'free',readiness:{seasonId:current.seasonId,activeMatches:0,pendingSettlements:0,appliedReconciliationFailures:0,quarantinedSettlements:0,ready:true},settlementParticipantCount:128,historyRecordCount:128,summaryNotificationCount:128,currentToHistory:{seasonId:current.seasonId,seasonName:current.name,fromStatus:'active',toStatus:'history'},nextToCurrent:{seasonId:next.seasonId,seasonName:next.name,fromStatus:'draft',toStatus:'active'},rankedAdmissionImpact:'fence-after-arm-at-scheduled-time',rankedAdmissionFencesAt:next.startsAt,blockingCodes:[],suggestedActionCodes:['preview-and-arm'],previewToken:token}})
+  }
+  if(activationMatch&&activationMatch[2]==='arm'&&req.method()==='POST'){
+    assert.match(body.impactPreviewToken,/^impact-/);activationGeneration++;next={...next,revision:next.revision+1,activationPlan:{status:'armed',generation:activationGeneration,scheduledAt:next.startsAt,armedAt:'2026-09-30T00:11:00Z',armedCurrentRevision:current.revision,armedDraftRevision:next.revision+1,armedOperationsVersion:operationsVersion,intentMask:'12345678…cdef',disarmGuardToken:`disarm-guard-${activationGeneration}`,leaseState:'free',attemptCount:0,suggestedActionCode:'wait-for-scheduled-cutover'}};return route.fulfill({json:clone(next)})
+  }
+  if(activationMatch&&activationMatch[2]==='disarm'&&req.method()==='POST'){
+    assert.equal(body.expectedDraftRevision,next.revision);assert.equal(body.expectedPlanGeneration,next.activationPlan.generation);assert.equal(body.disarmGuardToken,next.activationPlan.disarmGuardToken)
+    next={...next,revision:next.revision+1,activationPlan:{...next.activationPlan,status:'disarmed',generation:(next.activationPlan?.generation||0)+1,disarmGuardToken:'disarm-guard-disarmed',leaseState:'free',suggestedActionCode:'preview-and-arm'}};return route.fulfill({json:clone(next)})
+  }
   const match=url.pathname.match(/^\/api\/admin\/seasons\/([^/]+)(\/preview)?$/)
   if(match&&match[2]&&req.method()==='POST'){
     if(failPreview){const kind=failPreview;failPreview='';return route.fulfill(error(409,kind==='revision'?'赛季槽版本过期':'运营版本过期',kind))}
@@ -102,6 +114,16 @@ try{
  await page.goto(url); await page.getByLabel('赛季 ID').waitFor()
  const currentId=page.getByLabel('赛季 ID'),currentStart=page.getByLabel('开始时间',{exact:true}),name=page.getByLabel('名称',{exact:true}),reason=page.getByPlaceholder('此槽位的变更理由（必填）')
  assert.equal(await currentId.isEditable(),false);assert.equal(await currentStart.isEditable(),false);assert.equal(await name.isEditable(),true)
+
+ // 切季影响预览、预约和取消与配置预览完全分离。
+ const activationReason=page.getByPlaceholder('预约或取消预约的理由（必填）')
+ await page.getByRole('button',{name:'预览切季影响'}).click();await page.getByText('切季影响已锁定').waitFor();assert.match(await page.locator('.impact-preview').textContent(),/128.*结算参与者.*128.*赛季总结通知/s)
+ await activationReason.fill('预约赛季自动切换');await page.getByRole('button',{name:'确认预约'}).click();let activationDialog=page.getByRole('dialog');await activationDialog.waitFor();assert.match(await activationDialog.textContent(),/结算 128 名参与者/);await activationDialog.getByRole('button',{name:'确认预约'}).click();await page.getByText('已预约',{exact:true}).waitFor()
+ const armedRequest=requests.filter(x=>x.path.endsWith('/arm')).at(-1);assert.equal(armedRequest.body.expectedCurrentRevision,current.revision);assert.equal(armedRequest.body.expectedDraftRevision,next.revision-1);assert.equal(armedRequest.body.expectedVersion,operationsVersion)
+ await activationReason.fill('漂移前的取消意图');await page.getByRole('button',{name:'取消预约'}).click();activationDialog=page.getByRole('dialog');await activationDialog.waitFor();assert.match(await activationDialog.textContent(),/g1.*12345678…cdef/s)
+ activationGeneration++;next={...next,revision:next.revision+1,activationPlan:{...next.activationPlan,generation:activationGeneration,intentMask:'87654321…fedc',disarmGuardToken:`disarm-guard-${activationGeneration}`}}
+ await page.locator('.operations-version button').evaluate(button=>button.click());await activationDialog.waitFor({state:'detached'});await page.locator('#notice').getByText(/高风险确认已关闭/).waitFor()
+ await activationReason.fill('操作冻结后的精确计划');await page.getByRole('button',{name:'取消预约'}).click();activationDialog=page.getByRole('dialog');await activationDialog.waitFor();assert.match(await activationDialog.textContent(),/g2.*87654321…fedc/s);await activationDialog.getByRole('button',{name:'确认取消预约'}).click();await page.getByText('已取消',{exact:true}).waitFor();const disarmRequest=requests.filter(x=>x.path.endsWith('/disarm')).at(-1);assert.equal(disarmRequest.body.expectedPlanGeneration,2);assert.equal(disarmRequest.body.disarmGuardToken,'disarm-guard-2')
 
  // 三个 section 与双槽草稿、理由相互隔离。
  await name.fill(' current local name ');await reason.fill('当前槽理由')
@@ -173,7 +195,12 @@ try{
  await page.getByRole('button',{name:/维护与启服/}).click();await page.getByText('立即维护',{exact:true}).waitFor();const maintenancePlan=page.getByRole('group',{name:'预约维护计划'});await maintenancePlan.getByLabel('提前广播（小时）').fill('12');await maintenancePlan.getByLabel('预计维护时长（小时）').fill('6');assert.equal(await maintenancePlan.getByLabel('预计维护时长（小时）').inputValue(),'6');await page.getByPlaceholder('变更或回滚理由（必填）').fill('版本回滚验收')
  await page.getByRole('button',{name:/版本与状态/}).click();await page.getByText('qa-runtime-precision',{exact:true}).waitFor();await page.getByText('保留版本回滚能力',{exact:true}).waitFor();await page.getByRole('button',{name:'回滚到此版本'}).click();await page.getByRole('dialog').waitFor();assert.match(await page.getByRole('dialog').textContent(),/v90.*history-90/s);await page.getByRole('dialog').getByRole('button',{name:'取消'}).click()
 
+ // 切季完成后计划归属 current；界面必须显示最近完成而不是误报未预约。
+ current={...current,activationPlan:{status:'completed',generation:9,scheduledAt:'2026-09-30T00:30:00Z',armedAt:'2026-09-30T00:10:00Z',armedCurrentRevision:current.revision-1,armedDraftRevision:current.revision,armedOperationsVersion:operationsVersion,intentMask:'completed…plan',disarmGuardToken:'completed-guard',leaseState:'free',attemptCount:1,lastAttemptAt:'2026-09-30T00:30:00Z',suggestedActionCode:'no-action-required',completedAt:'2026-09-30T00:30:01Z'}};next=undefined
+ await page.goto(url);await page.getByText('已完成',{exact:true}).waitFor();await page.getByText(/最近一次自动切季已完成/).waitFor();const completedPlan=page.locator('[data-ui-contract="completed-season-activation"]');await completedPlan.waitFor();assert.match(await page.locator('.plan-grid').textContent(),/g9.*1 次/s);assert.match(await completedPlan.textContent(),/完成时间.*2026.*8:30:01/s);assert.equal(await page.getByRole('button',{name:'取消预约'}).count(),0)
+
  // 只读权限。
+ next=definition('next','S-READONLY','服务器创建的真实空槽草稿',2)
  await page.goto(url+'?readonly=1');await page.getByLabel('赛季 ID').waitFor();assert.equal(await page.getByLabel('名称',{exact:true}).isDisabled(),true);assert.equal(await page.getByRole('button',{name:'预览赛季定义'}).isDisabled(),true);await page.getByRole('button',{name:/下赛季草稿/}).click();await page.getByText(/服务器创建的真实空槽草稿/).waitFor()
 
  // 四档真实点击、弹框、触控尺寸与横向溢出。
@@ -186,6 +213,6 @@ try{
   await page.screenshot({path:path.join(output,`season-dual-${viewport.width}x${viewport.height}.png`),fullPage:true});viewportResults.push({...viewport,...metrics});await page.getByRole('dialog').getByRole('button',{name:'取消'}).click()
  }
  assert.deepEqual(pageErrors,[]);assert.deepEqual(consoleErrors,[]);assert.equal(expectedHttpErrors.length,4,'only the deliberately injected 503/409 responses may reach Chromium resource logging')
- const report={passed:true,pageErrors,applicationConsoleErrors:consoleErrors,expectedInjectedHttpErrors:expectedHttpErrors.length,requestCounts:{catalog:requests.filter(x=>x.path==='/api/admin/seasons').length,preview:requests.filter(x=>x.path.endsWith('/preview')).length,apply:requests.filter(x=>x.method==='PUT'&&x.path.startsWith('/api/admin/seasons/')).length,create:requests.filter(x=>x.path==='/api/admin/seasons/draft'&&x.method==='POST').length,delete:requests.filter(x=>x.method==='DELETE').length,legacyRanked:requests.filter(x=>x.path==='/api/admin/ranked/config').length},viewportResults,applySamples:puts.slice(-2).map(x=>x.body),create:createReq.body,delete:deleteReq.body}
+ const report={passed:true,pageErrors,applicationConsoleErrors:consoleErrors,expectedInjectedHttpErrors:expectedHttpErrors.length,requestCounts:{catalog:requests.filter(x=>x.path==='/api/admin/seasons').length,preview:requests.filter(x=>x.path.endsWith('/preview')).length,activationPreview:requests.filter(x=>x.path.endsWith('/activation-preview')).length,arm:requests.filter(x=>x.path.endsWith('/arm')).length,disarm:requests.filter(x=>x.path.endsWith('/disarm')).length,apply:requests.filter(x=>x.method==='PUT'&&x.path.startsWith('/api/admin/seasons/')).length,create:requests.filter(x=>x.path==='/api/admin/seasons/draft'&&x.method==='POST').length,delete:requests.filter(x=>x.method==='DELETE').length,legacyRanked:requests.filter(x=>x.path==='/api/admin/ranked/config').length},viewportResults,applySamples:puts.slice(-2).map(x=>x.body),create:createReq.body,delete:deleteReq.body}
  fs.writeFileSync(path.join(output,'result.json'),JSON.stringify(report,null,2));console.log(JSON.stringify({passed:report.passed,pageErrors,applicationConsoleErrors:consoleErrors,expectedInjectedHttpErrors:expectedHttpErrors.length,requestCounts:report.requestCounts,viewportResults},null,2))
 }finally{await browser?.close();await server.close()}

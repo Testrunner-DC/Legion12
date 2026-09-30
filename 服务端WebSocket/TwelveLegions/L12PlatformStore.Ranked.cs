@@ -1215,7 +1215,7 @@ public sealed partial class L12PlatformStore
     {
         if (SeasonIdsEqual(outgoingSeasonId, incomingSeasonId)) return;
         var champions = CurrentMasterChampions();
-        var rows = _data.RankedProfiles.Where(row => SeasonIdsEqual(row.SeasonId, outgoingSeasonId)).ToArray();
+        var rows = EligibleOutgoingRankedSeasonRowsLocked(outgoingSeasonId);
         foreach (var row in rows)
         {
             // 在归档前使用该赛季的最终七曜值计算门槛；重复切换同一赛季只会复用同一权益记录。
@@ -1230,6 +1230,30 @@ public sealed partial class L12PlatformStore
                 finalizedAt);
         }
         ApplyMasterChampionSeasonFinalAlternateArtAwardsLocked(champions, outgoingSeasonId);
+    }
+
+    private RankedProfileRow[] EligibleOutgoingRankedSeasonRowsLocked(string outgoingSeasonId)
+        => _data.RankedProfiles
+            .Where(row => SeasonIdsEqual(row.SeasonId, outgoingSeasonId)
+                && !string.IsNullOrWhiteSpace(row.Faction)
+                && ParticipatedInRankedSeasonLocked(row.AccountId, row.SeasonId)
+                && !_data.RankedProfileHistory.Any(history => history.AccountId == row.AccountId
+                    && SeasonIdsEqual(history.SeasonId, row.SeasonId)
+                    && history.FinalizedSeasonAwards))
+            // The persisted model normally has one live profile per account. Explicit de-duplication
+            // keeps preview counts and finalization identical even when repairing legacy duplicate rows.
+            .GroupBy(row => row.AccountId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(row => row.PlacementPlayed)
+                .ThenByDescending(row => row.SevenValue).First())
+            .OrderBy(row => row.AccountId, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private L12RankedSeasonFinalizationImpact RankedSeasonFinalizationImpactLocked(
+        string outgoingSeasonId)
+    {
+        var accountIds = EligibleOutgoingRankedSeasonRowsLocked(outgoingSeasonId)
+            .Select(row => row.AccountId).ToArray();
+        return new L12RankedSeasonFinalizationImpact(accountIds, accountIds.Length, accountIds.Length);
     }
 
     private void CarryRankedProfilesIntoSeason(string outgoingSeasonId, string incomingSeasonId,

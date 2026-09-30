@@ -11,6 +11,7 @@ const accounts = read('src/l12/site/AdminAccountsPage.vue')
 const articles = read('src/l12/site/AdminArticlesPanel.vue')
 const operations = read('src/l12/site/AdminOperationsPanel.vue')
 const seasonEditor = read('src/l12/site/SeasonConfigurationEditor.vue')
+const seasonActivation = read('src/l12/site/SeasonActivationManagement.vue')
 const seasonPreview = read('src/l12/site/seasonDefinitionPreview.ts')
 const maintenance = read('src/l12/site/ImmediateMaintenancePanel.vue')
 const username = read('src/l12/site/AdminUsernameChangeRequestsPanel.vue')
@@ -21,6 +22,7 @@ const riskAction = read('src/l12/site/useAdminRiskAction.ts')
 const platform = read('src/l12/platform.ts')
 const store = read('../服务端WebSocket/TwelveLegions/L12PlatformStore.EmailAuth.cs')
 const server = read('../服务端WebSocket/TwelveLegions/L12WebSocketServer.cs')
+const seasons = read('../服务端WebSocket/TwelveLegions/L12PlatformStore.Seasons.cs')
 
 const checks = [
   [adminSources.every(([, source]) => !source.includes('window.confirm')), '后台模块不得继续使用浏览器原生 confirm'],
@@ -33,6 +35,12 @@ const checks = [
   [operations.includes('本地编辑已保留') && operations.includes('刷新并丢弃本地编辑'), '双槽冲突必须保留本地编辑并显式恢复'],
   [seasonPreview.includes('previewToken') && seasonPreview.includes('structuredClone(guard.snapshot)'), '赛季保存必须提交服务端冻结预览快照'],
   [seasonEditor.includes('current-season') && seasonEditor.includes('next-season'), '赛季编辑器必须明确区分双槽'],
+  [operations.includes('SeasonActivationManagement') && seasonActivation.includes('previewSeasonActivation') && seasonActivation.includes('armSeasonActivation') && seasonActivation.includes('disarmSeasonActivation'), '自动切季管理必须与配置编辑分离且使用强类型接口'],
+  [seasonActivation.includes('AdminRiskActionDialog') && seasonActivation.includes('snapshot.previewToken') && seasonActivation.includes("caught.status === 409") && seasonActivation.includes('本地双槽编辑未被覆盖'), '预约/取消必须经高风险确认，且冲突只刷新权威状态'],
+  [seasonActivation.includes('const frozen = Object.freeze({') && seasonActivation.includes('frozen.expectedCurrentRevision') && seasonActivation.includes('frozen.expectedPlanGeneration') && seasonActivation.includes('frozen.disarmGuardToken'), '切季高风险弹框必须提交打开时冻结的预约/取消意图'],
+  [platform.includes('disarmGuardToken') && server.includes('ExpectedPlanGeneration') && seasons.includes('season_activation_plan_conflict') && seasons.includes('CreateSeasonActivationDisarmGuardToken'), '取消预约必须绑定精确计划代次和不透明守卫令牌'],
+  [seasonActivation.includes("planOwner.value === 'next'") && seasonActivation.includes("current.value?.activationPlan?.status === 'completed'") && seasonActivation.includes('最近一次自动切季已完成'), '完成计划必须从 current 展示且不能作为可取消计划'],
+  [platform.includes('SeasonActivationImpactPreview') && platform.includes('/activation-preview') && platform.includes('impactPreviewToken') && !seasonActivation.includes('as any'), '切季影响预览必须版本绑定且不允许弱类型逃逸'],
   [username.includes("hasPermission('admin.accounts.status.write')"), '用户名审核动作必须受账号状态写权限保护'],
   [store.includes('RandomNumberGenerator.GetBytes(16)') && store.includes('revokedIds.Length, temporaryPassword') && !store.includes('"123456"'), '后台重置必须生成至少 128 位随机一次性临时密码，禁止固定密码'],
   [server.includes('MapPost("/api/admin/security/audit-recovery-rehearsal"') && !server.includes('MapGet("/api/admin/security/audit-recovery-rehearsal"') && platform.includes("method: 'POST'"), '审计恢复演练必须使用 POST 语义'],

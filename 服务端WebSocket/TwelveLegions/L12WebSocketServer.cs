@@ -482,7 +482,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             if (!TryAuthorize(request, L12Permission.AdminOperationsRead, out var authenticated, out var failure))
                 return failure;
-            return Results.Ok(_platform.SeasonCatalog(authenticated.Account));
+            return Results.Ok(_platform.SeasonCatalog(authenticated.Account, _seasonActivationUtcNow()));
         });
         _app.MapGet("/api/admin/seasons/archives", (HttpRequest request) =>
         {
@@ -659,7 +659,37 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
             return response;
         });
-        _app.MapPost("/api/admin/seasons/draft/{definitionId}/arm", (HttpRequest request,
+        _app.MapPost("/api/admin/seasons/draft/{definitionId}/activation-preview", async (
+            HttpRequest request, string definitionId, SeasonActivationPreviewRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsRead;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var expectedVersion = body.ExpectedVersion
+                ?? ParseExpectedVersion(request.Headers.IfMatch.FirstOrDefault());
+            if (expectedVersion is null)
+                return ApiError(request, "expected_version_required",
+                    "切季影响预览必须提供 expectedVersion/If-Match",
+                    StatusCodes.Status428PreconditionRequired);
+            try
+            {
+                var catalog = _platform.SeasonCatalog(authenticated.Account,
+                    _seasonActivationUtcNow());
+                var preview = await _rooms.InspectRankedSeasonCutoverSnapshotAsync(
+                    catalog.Current.SeasonId, readiness =>
+                    {
+                        var observedAt = _seasonActivationUtcNow();
+                        return _platform.PreviewSeasonActivation(authenticated.Account, definitionId,
+                            body.ExpectedCurrentRevision, body.ExpectedDraftRevision,
+                            expectedVersion.Value, readiness, observedAt);
+                    });
+                return Results.Ok(preview);
+            }
+            catch (L12OperationsConfigException error)
+            {
+                return SeasonManagementError(request, error);
+            }
+        });
+        _app.MapPost("/api/admin/seasons/draft/{definitionId}/arm", async (HttpRequest request,
             string definitionId, SeasonActivationArmRequest body) =>
         {
             const L12Permission permission = L12Permission.AdminOperationsWrite;
@@ -667,15 +697,26 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
                     body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
             var payload = new L12SeasonActivationArmCommandPayload(definitionId,
-                body.ExpectedCurrentRevision, body.ExpectedDraftRevision);
+                body.ExpectedCurrentRevision, body.ExpectedDraftRevision,
+                body.ImpactPreviewToken ?? string.Empty);
             var command = CommandEnvelope(request, authenticated.Account, permission,
                 "operations.config.season-activation-arm", "operations:config", payload, key,
                 expected, false, body.Reason);
-            var outcome = _adminCommands.Execute(command, permission,
-                current => ExecuteOperationsConfig(() => _platform.ArmSeasonActivation(current.Actor,
-                    current.Payload.DefinitionId, current.Payload.ExpectedCurrentRevision,
-                    current.Payload.ExpectedDraftRevision, expected, current.Reason ?? string.Empty,
-                    DateTimeOffset.UtcNow, current.AuditContext)), risk: L12AdminCommandRisk.High);
+            var catalog = _platform.SeasonCatalog(authenticated.Account,
+                _seasonActivationUtcNow());
+            var outcome = await _rooms.InspectRankedSeasonCutoverSnapshotAsync(
+                catalog.Current.SeasonId, readiness =>
+                {
+                    var observedAt = _seasonActivationUtcNow();
+                    return _adminCommands.Execute(command, permission,
+                        current => ExecuteOperationsConfig(() => _platform.ArmSeasonActivation(
+                            current.Actor, current.Payload.DefinitionId,
+                            current.Payload.ExpectedCurrentRevision,
+                            current.Payload.ExpectedDraftRevision, expected,
+                            current.Payload.ImpactPreviewToken, readiness,
+                            current.Reason ?? string.Empty, observedAt, current.AuditContext)),
+                        risk: L12AdminCommandRisk.High);
+                });
             if (outcome.Success) ScheduleSeasonActivationEvaluation();
             var response = AdminCommandResponse(request, command, outcome);
             request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
@@ -689,14 +730,16 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
                     body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
             var payload = new L12SeasonActivationDisarmCommandPayload(definitionId,
-                body.ExpectedDraftRevision);
+                body.ExpectedDraftRevision, body.ExpectedPlanGeneration,
+                body.DisarmGuardToken ?? string.Empty);
             var command = CommandEnvelope(request, authenticated.Account, permission,
                 "operations.config.season-activation-disarm", "operations:config", payload, key,
                 expected, false, body.Reason);
             var outcome = _adminCommands.Execute(command, permission,
                 current => ExecuteOperationsConfig(() => _platform.DisarmSeasonActivation(current.Actor,
                     current.Payload.DefinitionId, current.Payload.ExpectedDraftRevision,
-                    current.Reason ?? string.Empty, DateTimeOffset.UtcNow, current.AuditContext)),
+                    current.Payload.ExpectedPlanGeneration, current.Payload.DisarmGuardToken,
+                    current.Reason ?? string.Empty, _seasonActivationUtcNow(), current.AuditContext)),
                 risk: L12AdminCommandRisk.High);
             if (outcome.Success) ScheduleSeasonActivationEvaluation();
             var response = AdminCommandResponse(request, command, outcome);
@@ -3888,6 +3931,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             "season_definition_not_found" or "season_archive_not_found" => StatusCodes.Status404NotFound,
             "season_definition_revision_conflict" or "season_draft_exists" or "duplicate_season_id"
                 or "operations_version_conflict" or "season_preview_stale"
+                or "season_activation_preview_stale" or "season_activation_plan_conflict"
+                or "season_cutover_snapshot_conflict"
                 => StatusCodes.Status409Conflict,
             "permission_denied" => StatusCodes.Status403Forbidden,
             _ => StatusCodes.Status400BadRequest,
@@ -4028,6 +4073,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 "season_definition_revision_conflict" or "season_link_conflict"
                     or "season_cutover_not_ready" or "season_runtime_conflict"
                     or "season_archive_conflict" or "season_preview_stale"
+                    or "season_activation_preview_stale" or "season_activation_plan_conflict"
+                    or "season_cutover_snapshot_conflict"
                     or "season_draft_exists" or "duplicate_season_id" => StatusCodes.Status409Conflict,
                 "permission_denied" => StatusCodes.Status403Forbidden,
                 _ => StatusCodes.Status400BadRequest,
@@ -4839,14 +4886,18 @@ public sealed record SeasonActivationRequest(long ExpectedCurrentRevision, long 
     string? Reason = null, string? IdempotencyKey = null, long? ExpectedVersion = null);
 public sealed record L12SeasonActivationCommandPayload(string DefinitionId,
     long ExpectedCurrentRevision, long ExpectedDraftRevision);
+public sealed record SeasonActivationPreviewRequest(long ExpectedCurrentRevision,
+    long ExpectedDraftRevision, long? ExpectedVersion = null);
 public sealed record SeasonActivationArmRequest(long ExpectedCurrentRevision, long ExpectedDraftRevision,
-    string? Reason = null, string? IdempotencyKey = null, long? ExpectedVersion = null);
+    string? Reason = null, string? IdempotencyKey = null, long? ExpectedVersion = null,
+    string? ImpactPreviewToken = null);
 public sealed record L12SeasonActivationArmCommandPayload(string DefinitionId,
-    long ExpectedCurrentRevision, long ExpectedDraftRevision);
-public sealed record SeasonActivationDisarmRequest(long ExpectedDraftRevision, string? Reason = null,
+    long ExpectedCurrentRevision, long ExpectedDraftRevision, string ImpactPreviewToken);
+public sealed record SeasonActivationDisarmRequest(long ExpectedDraftRevision,
+    long ExpectedPlanGeneration, string? DisarmGuardToken = null, string? Reason = null,
     string? IdempotencyKey = null, long? ExpectedVersion = null);
 public sealed record L12SeasonActivationDisarmCommandPayload(string DefinitionId,
-    long ExpectedDraftRevision);
+    long ExpectedDraftRevision, long ExpectedPlanGeneration, string DisarmGuardToken);
 public sealed record OperationsServerStartRequest(string? Reason = null,
     string? IdempotencyKey = null, long? ExpectedVersion = null);
 public sealed record L12ServerStartCommandPayload(long ExpectedVersion, string RequestedState = "open");

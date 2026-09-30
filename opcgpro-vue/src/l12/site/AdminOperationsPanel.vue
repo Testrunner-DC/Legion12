@@ -5,6 +5,7 @@ import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import ImmediateMaintenancePanel from './ImmediateMaintenancePanel.vue'
 import AdminRiskActionDialog from './AdminRiskActionDialog.vue'
 import SeasonConfigurationEditor from './SeasonConfigurationEditor.vue'
+import SeasonActivationManagement from './SeasonActivationManagement.vue'
 import { useAdminRiskAction } from './useAdminRiskAction'
 import {
   freezeOperationsConfigPreview,
@@ -307,6 +308,16 @@ async function captureSeasonConflict(state: SeasonSlotState, error: unknown) {
     }
   }
 }
+async function refreshSeasonAuthority() {
+  try {
+    const fresh = await adminApi.seasonCatalog()
+    seasonCatalog.value = fresh
+    reconcileSeasonSlot('current', fresh.current, fresh.operationsVersion)
+    reconcileSeasonSlot('next', fresh.next, fresh.operationsVersion)
+  } catch (error) {
+    loadError.value = error instanceof Error ? error.message : '赛季权威状态刷新失败'
+  }
+}
 async function previewSeasonDefinition() {
   const state = selectedSeasonState.value
   if (!canWrite.value || !state) return
@@ -553,6 +564,10 @@ onMounted(load)
         <button v-if="selectedSeasonSlot === 'next'" type="button" :disabled="!canWrite" @click="deleteNextSeasonDraft">删除下赛季草稿</button>
       </div>
       <p v-if="isSeasonSection && selectedSeasonState?.error" class="slot-error" role="alert">{{ selectedSeasonState.error }}</p>
+      <SeasonActivationManagement v-if="activeSection === 'season'" :catalog="seasonCatalog"
+        :can-write="canWrite" :configuration-dirty="nextSeason ? seasonStateDirty(nextSeason) : false"
+        @notice="emit('notice', $event)" @authority-conflict="refreshSeasonAuthority"
+        @changed="refreshSeasonAuthority"/>
       <fieldset class="operations-write-scope" :disabled="!canWrite">
       <ImmediateMaintenancePanel v-if="activeSection === 'maintenance'"/>
       <div class="config-grid section-grid">

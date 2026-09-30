@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -92,6 +93,7 @@ public sealed class SeasonAutomaticActivationTests
             Assert.Contains("赛季正在切换", store.RankedEntryBlock("account", now.AddMinutes(1)));
 
             var disarmed = store.DisarmSeasonActivation(admin, failed.DefinitionId, failed.Revision,
+                failed.ActivationPlan.Generation, failed.ActivationPlan.DisarmGuardToken,
                 "review stale plan", now.AddMinutes(2), Context("disarm"));
             Assert.Equal("disarmed", disarmed.ActivationPlan!.Status);
             var updated = store.UpdateSeasonDraft(admin, disarmed.DefinitionId,
@@ -258,14 +260,46 @@ public sealed class SeasonAutomaticActivationTests
                 store, catalog);
             await server.StartAsync(0);
             using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
+            using (var missingPreviewRequest = Authorized(HttpMethod.Post,
+                $"/api/admin/seasons/draft/{draft.DefinitionId}/arm", login.Token!,
+                new SeasonActivationArmRequest(seasons.Current.Revision, draft.Revision,
+                    "reject missing preview", "season-arm-missing-preview", operationsVersion)))
+            using (var missingPreviewResponse = await client.SendAsync(missingPreviewRequest))
+                Assert.Equal(HttpStatusCode.Conflict, missingPreviewResponse.StatusCode);
+            L12SeasonActivationImpactPreviewView impactPreview;
+            using (var previewRequest = Authorized(HttpMethod.Post,
+                $"/api/admin/seasons/draft/{draft.DefinitionId}/activation-preview", login.Token!,
+                new SeasonActivationPreviewRequest(seasons.Current.Revision, draft.Revision,
+                    operationsVersion)))
+            using (var previewResponse = await client.SendAsync(previewRequest))
+            {
+                Assert.Equal(HttpStatusCode.OK, previewResponse.StatusCode);
+                impactPreview = (await previewResponse.Content
+                    .ReadFromJsonAsync<L12SeasonActivationImpactPreviewView>())!;
+                Assert.True(impactPreview.Valid);
+                Assert.Equal("unarmed", impactPreview.PlanStatus);
+            }
+            using (var stalePreviewRequest = Authorized(HttpMethod.Post,
+                $"/api/admin/seasons/draft/{draft.DefinitionId}/arm", login.Token!,
+                new SeasonActivationArmRequest(seasons.Current.Revision, draft.Revision,
+                    "reject stale preview", "season-arm-stale-preview", operationsVersion,
+                    impactPreview.PreviewToken + "-stale")))
+            using (var stalePreviewResponse = await client.SendAsync(stalePreviewRequest))
+                Assert.Equal(HttpStatusCode.Conflict, stalePreviewResponse.StatusCode);
             var body = new SeasonActivationArmRequest(seasons.Current.Revision, draft.Revision,
-                "arm from api", "season-arm-api-1", operationsVersion);
+                "arm from api", "season-arm-api-1", operationsVersion,
+                impactPreview.PreviewToken);
 
             using var firstRequest = Authorized(HttpMethod.Post,
                 $"/api/admin/seasons/draft/{draft.DefinitionId}/arm", login.Token!, body);
             using var firstResponse = await client.SendAsync(firstRequest);
             Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
-            var armed = (await firstResponse.Content.ReadFromJsonAsync<L12SeasonDefinitionView>())!;
+            var firstJson = await firstResponse.Content.ReadAsStringAsync();
+            Assert.DoesNotContain("\"intentKey\"", firstJson, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("\"leaseOwner\"", firstJson, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("\"lastErrorMessage\"", firstJson, StringComparison.OrdinalIgnoreCase);
+            var armed = JsonSerializer.Deserialize<L12SeasonDefinitionView>(firstJson,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
             Assert.Equal("armed", armed.ActivationPlan!.Status);
 
             using var replayRequest = Authorized(HttpMethod.Post,
@@ -276,8 +310,18 @@ public sealed class SeasonAutomaticActivationTests
             var replay = (await replayResponse.Content.ReadFromJsonAsync<L12SeasonDefinitionView>())!;
             Assert.Equal(armed.Revision, replay.Revision);
 
-            var disarmBody = new SeasonActivationDisarmRequest(armed.Revision, "disarm from api",
-                "season-disarm-api-1", operationsVersion);
+            var staleDisarmBody = new SeasonActivationDisarmRequest(armed.Revision,
+                armed.ActivationPlan.Generation, armed.ActivationPlan.DisarmGuardToken + "-stale",
+                "reject replaced plan", "season-disarm-api-stale", operationsVersion);
+            using (var staleDisarmRequest = Authorized(HttpMethod.Post,
+                $"/api/admin/seasons/draft/{draft.DefinitionId}/disarm", login.Token!,
+                staleDisarmBody))
+            using (var staleDisarmResponse = await client.SendAsync(staleDisarmRequest))
+                Assert.Equal(HttpStatusCode.Conflict, staleDisarmResponse.StatusCode);
+
+            var disarmBody = new SeasonActivationDisarmRequest(armed.Revision,
+                armed.ActivationPlan.Generation, armed.ActivationPlan.DisarmGuardToken,
+                "disarm from api", "season-disarm-api-1", operationsVersion);
             using var disarmRequest = Authorized(HttpMethod.Post,
                 $"/api/admin/seasons/draft/{draft.DefinitionId}/disarm", login.Token!, disarmBody);
             using var disarmResponse = await client.SendAsync(disarmRequest);
@@ -413,8 +457,12 @@ public sealed class SeasonAutomaticActivationTests
                 seasons.Next.Configuration), seasons.Next.Revision, "prepare automatic season",
             Context("prepare"));
         var operationsVersion = store.OperationsConfig(admin).Version;
+        var readiness = new L12RankedSeasonCutoverReadiness(seasons.Current.SeasonId, 0, 0, 0, 0);
+        var preview = store.PreviewSeasonActivation(admin, draft.DefinitionId,
+            seasons.Current.Revision, draft.Revision, operationsVersion, readiness, now);
         store.ArmSeasonActivation(admin, draft.DefinitionId, seasons.Current.Revision, draft.Revision,
-            operationsVersion, "arm automatic season", now, Context("arm", operationsVersion));
+            operationsVersion, preview.PreviewToken, readiness, "arm automatic season", now,
+            Context("arm", operationsVersion));
         return (store, admin, catalog);
     }
 

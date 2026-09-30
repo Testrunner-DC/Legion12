@@ -536,6 +536,61 @@ export interface SeasonDefinitionView extends SeasonDefinitionDraft {
   updatedBy: string
   updatedAt: string
   activatedAt?: string
+  activationPlan?: SeasonActivationPlan
+}
+export interface SeasonActivationPlan {
+  status: 'unarmed' | 'armed' | 'waiting' | 'executing' | 'failed' | 'disarmed' | 'completed' | string
+  generation: number
+  scheduledAt: string
+  armedAt: string
+  armedCurrentRevision: number
+  armedDraftRevision: number
+  armedOperationsVersion: number
+  intentMask: string
+  disarmGuardToken: string
+  leaseState: 'free' | 'held' | 'expired' | string
+  leaseExpiresAt?: string
+  attemptCount: number
+  lastAttemptAt?: string
+  lastErrorCode?: string
+  suggestedActionCode: string
+  completedAt?: string
+}
+export interface RankedSeasonCutoverReadiness {
+  seasonId: string
+  activeMatches: number
+  pendingSettlements: number
+  appliedReconciliationFailures: number
+  quarantinedSettlements: number
+  ready: boolean
+}
+export interface SeasonTransitionImpact {
+  seasonId: string
+  seasonName: string
+  fromStatus: string
+  toStatus: string
+}
+export interface SeasonActivationImpactPreview {
+  valid: boolean
+  observedAt: string
+  definitionId: string
+  currentRevision: number
+  draftRevision: number
+  operationsVersion: number
+  planStatus: string
+  planGeneration: number
+  leaseState: string
+  readiness: RankedSeasonCutoverReadiness
+  settlementParticipantCount: number
+  historyRecordCount: number
+  summaryNotificationCount: number
+  currentToHistory: SeasonTransitionImpact
+  nextToCurrent: SeasonTransitionImpact
+  rankedAdmissionImpact: string
+  rankedAdmissionFencesAt?: string
+  blockingCodes: string[]
+  suggestedActionCodes: string[]
+  previewToken: string
 }
 export interface SeasonArchiveView {
   archiveId: string; sourceDefinitionId: string; seasonId: string; name: string; definitionRevision: number
@@ -1379,6 +1434,28 @@ export const adminApi = {
       `/api/admin/seasons/draft/${encodeURIComponent(definitionId)}`, {
         method: 'DELETE', body: JSON.stringify({ expectedRevision, expectedVersion,
           reason, idempotencyKey }),
+      }),
+  previewSeasonActivation: (definitionId: string, expectedCurrentRevision: number,
+    expectedDraftRevision: number, expectedVersion: number) =>
+    platformRequest<SeasonActivationImpactPreview>(
+      `/api/admin/seasons/draft/${encodeURIComponent(definitionId)}/activation-preview`, {
+        method: 'POST', body: JSON.stringify({ expectedCurrentRevision,
+          expectedDraftRevision, expectedVersion }),
+      }),
+  armSeasonActivation: (definitionId: string, expectedCurrentRevision: number,
+    expectedDraftRevision: number, expectedVersion: number, impactPreviewToken: string,
+    reason: string, idempotencyKey: string) => platformRequest<SeasonDefinitionView>(
+      `/api/admin/seasons/draft/${encodeURIComponent(definitionId)}/arm`, {
+        method: 'POST', body: JSON.stringify({ expectedCurrentRevision, expectedDraftRevision,
+          expectedVersion, impactPreviewToken, reason, idempotencyKey }),
+      }),
+  disarmSeasonActivation: (definitionId: string, expectedDraftRevision: number,
+    expectedPlanGeneration: number, disarmGuardToken: string, expectedVersion: number,
+    reason: string, idempotencyKey: string) =>
+    platformRequest<SeasonDefinitionView>(
+      `/api/admin/seasons/draft/${encodeURIComponent(definitionId)}/disarm`, {
+        method: 'POST', body: JSON.stringify({ expectedDraftRevision, expectedPlanGeneration,
+          disarmGuardToken, expectedVersion, reason, idempotencyKey }),
       }),
   operationsHistory: (limit = 50) => platformRequest<OperationsConfigVersion[]>(`/api/admin/operations/config/history?limit=${Math.max(1, Math.min(200, limit))}`),
   previewOperationsConfig: (config: OperationsConfigPayload, expectedVersion?: number) => platformRequest<OperationsConfigPreview>('/api/admin/operations/config/preview', {
