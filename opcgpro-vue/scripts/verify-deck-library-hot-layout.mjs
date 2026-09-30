@@ -19,7 +19,8 @@ import '/src/style.css'
 const presets=await loadOfficialPresetDecks()
 const base=presets.find(deck=>deck.cardIds.length>=40)||presets[0]
 const now=new Date().toISOString()
-const rows=Array.from({length:32},(_,index)=>({
+const hotItemsPerRow=Math.max(1,Number(new URLSearchParams(location.search).get('qaHotItems'))||8)
+const rows=Array.from({length:hotItemsPerRow*2+2},(_,index)=>({
  id:'hot-'+index,...(index<2?{}:{publicCode:'HOT'+String(index+1).padStart(6,'0')}),ownerId:'owner-'+index,author:'热门作者 '+String(index+1).padStart(2,'0'),
  deck:{...base,name:(index<2?'无短码牌库 ':'热门牌库 ')+String(index+1).padStart(2,'0'),specialIds:base.specialIds||[],updatedAt:now,publicationId:'hot-'+index,publicationVersion:1},
  views:5000-index*17,likes:500-index,copies:400-index,liked:false,createdAt:now,updatedAt:now,seasonCompliant:true,
@@ -71,6 +72,15 @@ async function prepare(page) {
 
 async function waitForLibrary(page) {
   await page.getByRole('heading', { name:'热门牌库', exact:true }).waitFor()
+  await page.locator('.hot-deck-track[data-motion-ready="true"]').nth(1).waitFor()
+}
+
+async function waitForTargetSpeeds(page) {
+  await page.waitForFunction(speeds => [...document.querySelectorAll('.hot-deck-track')].every((track, index) => {
+    const duration = Number.parseFloat(getComputedStyle(track).animationDuration)
+    const loopWidth = track.querySelector('.hot-deck-loop:not([aria-hidden="true"])')?.getBoundingClientRect().width || 0
+    return loopWidth > 0 && Math.abs(loopWidth / duration - speeds[index]) < .05
+  }), targetPixelsPerSecond)
 }
 
 async function freezeTracks(page, translatedCopy = false) {
@@ -95,8 +105,7 @@ async function backToLibrary(page) {
 }
 
 const closeTo = (actual, expected, tolerance = 0.02) => Math.abs(actual - expected) <= tolerance
-const previousDurations = [50.549, 57.143]
-const targetDurations = previousDurations.map(duration => duration / 1.3)
+const targetPixelsPerSecond = [48, 46]
 
 async function measureTrackMotion(tracks, sampleMs = 600) {
   return tracks.evaluateAll(async (elements, delay) => {
@@ -122,10 +131,10 @@ async function measureTrackMotion(tracks, sampleMs = 600) {
 function assertTrackMotion(metrics, viewport) {
   assert.equal(metrics.length, 2, `${viewport} 必须测得两条轨道`)
   metrics.forEach((metric, index) => {
-    const previousPixelsPerSecond = metric.loopWidth / previousDurations[index]
-    assert.ok(closeTo(metric.durationSeconds, targetDurations[index]), `${viewport} 第 ${index + 1} 行周期应为当前 ${previousDurations[index]}s / 1.3，实际 ${metric.durationSeconds}s`)
-    assert.ok(metric.calculatedPixelsPerSecond >= previousPixelsPerSecond * 1.299, `${viewport} 第 ${index + 1} 行像素速度未相对当前基线提升 30%`)
-    assert.ok(closeTo(metric.observedPixelsPerSecond, metric.calculatedPixelsPerSecond, Math.max(2, metric.calculatedPixelsPerSecond * .08)), `${viewport} 第 ${index + 1} 行浏览器实测速率 ${metric.observedPixelsPerSecond}px/s 偏离计算值 ${metric.calculatedPixelsPerSecond}px/s`)
+    const targetSpeed = targetPixelsPerSecond[index]
+    assert.ok(closeTo(metric.durationSeconds, metric.loopWidth / targetSpeed, .03), `${viewport} 第 ${index + 1} 行周期未按 ${metric.loopWidth}px / ${targetSpeed}px/s 动态计算，实际 ${metric.durationSeconds}s`)
+    assert.ok(closeTo(metric.calculatedPixelsPerSecond, targetSpeed, .05), `${viewport} 第 ${index + 1} 行计算速度应稳定为 ${targetSpeed}px/s，实际 ${metric.calculatedPixelsPerSecond}px/s`)
+    assert.ok(closeTo(metric.observedPixelsPerSecond, targetSpeed, Math.max(2, targetSpeed * .08)), `${viewport} 第 ${index + 1} 行浏览器实测速率应接近 ${targetSpeed}px/s，实际 ${metric.observedPixelsPerSecond}px/s`)
   })
 }
 
@@ -152,12 +161,15 @@ try {
   assert.ok(topology.loopWidths.every(widths => widths.length === 2 && widths[0] > 0 && Math.abs(widths[0] - widths[1]) < 0.5), '每条轨道必须由两个等宽循环独立闭合')
   assert.equal(await tracks.nth(0).evaluate(element => getComputedStyle(element).animationDirection), 'normal')
   assert.equal(await tracks.nth(1).evaluate(element => getComputedStyle(element).animationDirection), 'reverse')
-  const durations = await tracks.evaluateAll(elements => elements.map(element => Number.parseFloat(getComputedStyle(element).animationDuration)))
-  assert.ok(closeTo(durations[0], targetDurations[0]), `首行应在当前 50.549s 基础上再提速 30%，实际 ${durations[0]}s`)
-  assert.ok(closeTo(durations[1], targetDurations[1]), `次行应在当前 57.143s 基础上再提速 30%，实际 ${durations[1]}s`)
   const wideMotion = await measureTrackMotion(tracks)
   assertTrackMotion(wideMotion, '1366x768')
   console.log(JSON.stringify({ checkpoint:'hot-deck-motion', viewport:'1366x768', tracks:wideMotion }))
+  await page.setViewportSize({ width:390, height:844 })
+  await waitForTargetSpeeds(page)
+  assertTrackMotion(await measureTrackMotion(tracks), '1366→390 ResizeObserver')
+  await page.setViewportSize({ width:1366, height:768 })
+  await waitForTargetSpeeds(page)
+  assertTrackMotion(await measureTrackMotion(tracks), '390→1366 ResizeObserver')
   assert.equal(await hot.getByRole('button', { name:/查看热门卡组/ }).count(), 0, '旧外显名称不得保留')
   const frame = await hot.evaluate(element => {
     const style = getComputedStyle(element)
@@ -258,46 +270,51 @@ try {
   await assertDetailRoute(touchPage, touchCode)
   await touchPage.close()
 
-  const profiles = [[1920,1080],[1366,768],[430,932],[390,844]]
+  const profiles = [
+    { width:1920, height:1080, itemsPerRow:8 },
+    { width:1366, height:768, itemsPerRow:8 },
+    { width:430, height:932, itemsPerRow:8 },
+    { width:390, height:844, itemsPerRow:8 },
+    { width:1366, height:768, itemsPerRow:2 },
+    { width:390, height:844, itemsPerRow:2 },
+  ]
   const report = []
-  for (const [width, height] of profiles) {
-    const view = await browser.newPage({ viewport:{ width, height } })
+  for (const { width, height, itemsPerRow } of profiles) {
+    const scenario = `${itemsPerRow}项/行 ${width}x${height}`
+    const view = await browser.newPage({ viewport:{ width, height }, hasTouch:width <= 700 })
     await prepare(view)
-    await view.goto(`http://127.0.0.1:${port}/decks`)
+    await view.goto(`http://127.0.0.1:${port}/decks?qaHotItems=${itemsPerRow}`)
     await waitForLibrary(view)
+    const motion = await measureTrackMotion(view.locator('.hot-deck-track'))
+    assertTrackMotion(motion, scenario)
     const geometry = await view.evaluate(() => {
       const section = document.querySelector('.hot-decks')
       const rowBoxes = [...document.querySelectorAll('.hot-deck-viewport')].map(element => element.getBoundingClientRect())
-      const motion = [...document.querySelectorAll('.hot-deck-track')].map(element => {
-        const durationSeconds = Number.parseFloat(getComputedStyle(element).animationDuration)
-        const loopWidth = element.querySelector('.hot-deck-loop')?.getBoundingClientRect().width || 0
-        return { durationSeconds, loopWidth, calculatedPixelsPerSecond:loopWidth / durationSeconds }
-      })
+      const loops = [...document.querySelectorAll('.hot-deck-track')].map(track => [...track.querySelectorAll(':scope > .hot-deck-loop')])
       const cards = [...document.querySelectorAll('.plaza-grid>article')].slice(0, 6).map(element => element.getBoundingClientRect())
       const sectionStyle = section ? getComputedStyle(section) : null
       return {
         documentFits: document.documentElement.scrollWidth <= innerWidth + 1,
         rows: rowBoxes.map(box => ({ x:box.x, y:box.y, width:box.width, height:box.height })),
-        motion,
+        itemCounts: loops.map(row => row[0]?.children.length || 0),
+        loopWidths: loops.map(row => row.map(loop => loop.getBoundingClientRect().width)),
         section: section ? { x:section.getBoundingClientRect().x, width:section.getBoundingClientRect().width, backgroundColor:sectionStyle.backgroundColor, borderTop:sectionStyle.borderTopWidth, borderBottom:sectionStyle.borderBottomWidth } : null,
         cards: cards.map(box => ({ x:box.x, y:box.y, width:box.width, height:box.height })),
       }
     })
-    assert.equal(geometry.documentFits, true, `${width}x${height} 页面横向溢出`)
-    assert.equal(geometry.rows.length, 2, `${width}x${height} 热门卡组行数错误`)
-    assert.ok(geometry.rows.every(row => row.x >= -1 && row.x + row.width <= width + 1), `${width}x${height} 轮播视口越界`)
+    assert.equal(geometry.documentFits, true, `${scenario} 页面横向溢出`)
+    assert.equal(geometry.rows.length, 2, `${scenario} 热门牌库行数错误`)
+    assert.deepEqual(geometry.itemCounts, [itemsPerRow, itemsPerRow], `${scenario} 数据样本数量错误`)
+    assert.ok(geometry.loopWidths.every(widths => widths.length === 2 && widths[0] > 0 && Math.abs(widths[0] - widths[1]) < .5), `${scenario} 两份循环必须等宽连续闭合`)
+    assert.ok(geometry.rows.every(row => row.x >= -1 && row.x + row.width <= width + 1), `${scenario} 轮播视口越界`)
     const expectedRowHeight = width <= 700 ? 74 : 102
     assert.ok(geometry.rows.every(row => Math.abs(row.height - expectedRowHeight) < 1), width <= 700
-      ? `${width}x${height} 移动端热门卡组尺寸不应跟随宽屏放大`
-      : `${width}x${height} 宽屏热门卡组容器未按约30%增大`)
-    geometry.motion.forEach((metric, index) => {
-      const previousPixelsPerSecond = metric.loopWidth / previousDurations[index]
-      assert.ok(closeTo(metric.durationSeconds, targetDurations[index]), `${width}x${height} 第 ${index + 1} 行周期错误`)
-      assert.ok(metric.calculatedPixelsPerSecond >= previousPixelsPerSecond * 1.299, `${width}x${height} 第 ${index + 1} 行像素速度未提升 30%`)
-    })
-    assert.ok(geometry.cards.every(card => card.x >= -1 && card.x + card.width <= width + 1), `${width}x${height} 牌库盒子越界`)
-    await view.screenshot({ path:path.join(output,`deck-library-${width}x${height}.png`), fullPage:true })
-    report.push({ viewport:`${width}x${height}`, ...geometry })
+      ? `${scenario} 移动端热门牌库尺寸不应跟随宽屏放大`
+      : `${scenario} 宽屏热门牌库容器未按约30%增大`)
+    assert.ok(geometry.cards.every(card => card.x >= -1 && card.x + card.width <= width + 1), `${scenario} 牌库盒子越界`)
+    const screenshotName = itemsPerRow === 8 ? `deck-library-${width}x${height}.png` : `deck-library-${itemsPerRow}-items-${width}x${height}.png`
+    await view.screenshot({ path:path.join(output,screenshotName), fullPage:true })
+    report.push({ viewport:`${width}x${height}`, itemsPerRow, motion, ...geometry })
     await view.close()
   }
 
@@ -311,7 +328,7 @@ try {
   await reduced.close()
 
   fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ status:'passed', profiles:report }, null, 2))
-  console.log(JSON.stringify({ status:'passed', screenshots:5, output }))
+  console.log(JSON.stringify({ status:'passed', screenshots:profiles.length + 1, output }))
 } finally {
   await browser?.close()
   await server.close()

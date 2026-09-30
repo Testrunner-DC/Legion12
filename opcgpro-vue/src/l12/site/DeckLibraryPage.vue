@@ -12,6 +12,7 @@ import { matchesPublishedDeckReference, publicDeckRouteReference } from './publi
 import { deckEnvironmentForDeck, deckEnvironmentLabel, type DeckEnvironmentFilter } from './deckEnvironment'
 
 const PAGE_SIZE = 30
+const HOT_DECK_PIXELS_PER_SECOND = [48, 46] as const
 const tab = ref<'mine' | 'plaza'>('plaza')
 const pageRoot = ref<HTMLElement | null>(null)
 const importTrigger = ref<HTMLButtonElement | null>(null)
@@ -58,6 +59,7 @@ const publishMatchups = ref<PublicDeckMatchup[]>([])
 const route = useRoute()
 const router = useRouter()
 const { pending: actionBusy, isPending: actionPending, run: runAction } = useActionGate()
+let hotDeckResizeObserver: ResizeObserver | null = null
 const publicDeckActionKey = (deckId: string, accountId = platformState.account?.id ?? 'anonymous') =>
   `public-deck:${accountId}:${deckId}`
 const returnTo = computed(() => typeof route.query.from === 'string' && route.query.from.startsWith('/') ? route.query.from : '/decks')
@@ -67,6 +69,33 @@ const factionLabels: Record<string, string> = {
   universal: '通用', tianting: '天廷', gaotianyuan: '高天原', asgard: '阿斯加德',
   taiyangcheng: '太阳城', olympus: '奥林匹斯', otherworld: '彼界',
 }
+function updateHotDeckDuration(loop: HTMLElement) {
+  const track = loop.parentElement
+  const rowIndex = Number(track?.dataset.hotRowTrack) - 1
+  const targetSpeed = HOT_DECK_PIXELS_PER_SECOND[rowIndex]
+  const loopWidth = loop.getBoundingClientRect().width
+  if (!track || !targetSpeed || loopWidth <= 0) return
+  track.style.setProperty('--hot-deck-duration', `${loopWidth / targetSpeed}s`)
+  track.dataset.motionReady = 'true'
+}
+function syncHotDeckMotion() {
+  hotDeckResizeObserver?.disconnect()
+  hotDeckResizeObserver = typeof ResizeObserver === 'undefined'
+    ? null
+    : new ResizeObserver(entries => entries.forEach(entry => updateHotDeckDuration(entry.target as HTMLElement)))
+  const tracks = pageRoot.value?.querySelectorAll<HTMLElement>('.hot-deck-track') ?? []
+  tracks.forEach(track => {
+    track.removeAttribute('data-motion-ready')
+    const originalLoop = track.querySelector<HTMLElement>(':scope > .hot-deck-loop:not([aria-hidden="true"])')
+    if (!originalLoop) return
+    hotDeckResizeObserver?.observe(originalLoop)
+    updateHotDeckDuration(originalLoop)
+  })
+}
+onBeforeUnmount(() => {
+  hotDeckResizeObserver?.disconnect()
+  hotDeckResizeObserver = null
+})
 onMounted(async () => {
   restoreFiltersFromRoute()
   try {
@@ -154,6 +183,10 @@ const hotDeckRows = computed(() => {
   const second = ranked.filter((_, index) => index % 2 === 1)
   return [first, second.length ? second : [...first].reverse()]
 })
+watch(hotDeckRows, async () => {
+  await nextTick()
+  syncHotDeckMotion()
+}, { flush: 'post' })
 function hotDeckRowPaused(rowIndex: number) {
   return Boolean(hotDeckHoverPaused.value[rowIndex] || hotDeckFocusPaused.value[rowIndex] || hotDeckTouchPaused.value[rowIndex])
 }
@@ -485,7 +518,7 @@ watch(plazaPageCount, total => { plazaPage.value = Math.min(plazaPage.value, tot
       <section v-if="hotDeckRows.length" class="hot-decks" aria-labelledby="hot-decks-title">
         <header><h2 id="hot-decks-title">热门牌库</h2></header>
         <div v-for="(row,rowIndex) in hotDeckRows" :key="rowIndex" class="hot-deck-viewport" :class="{ paused: hotDeckRowPaused(rowIndex) }" :data-hot-row-viewport="rowIndex + 1" @mouseenter="hotDeckHoverPaused[rowIndex] = true" @mouseleave="hotDeckHoverPaused[rowIndex] = false" @focusin="hotDeckFocusPaused[rowIndex] = true" @focusout="handleHotDeckFocusOut($event,rowIndex)" @pointerdown="handleHotDeckPointerDown($event,rowIndex)" @pointerup="handleHotDeckPointerEnd($event,rowIndex)" @pointercancel="handleHotDeckPointerEnd($event,rowIndex)">
-          <div class="hot-deck-track" :class="`row-${rowIndex + 1}`">
+          <div class="hot-deck-track" :class="`row-${rowIndex + 1}`" :data-hot-row-track="rowIndex + 1">
             <div v-for="copyIndex in 2" :key="copyIndex" class="hot-deck-loop" :aria-hidden="copyIndex === 2 ? 'true' : undefined">
               <button v-for="entry in row" :key="`${copyIndex}-${entry.id}`" type="button" :tabindex="copyIndex === 2 ? -1 : 0" :data-hot-row="rowIndex + 1" :data-hot-copy="copyIndex" :data-public-code="publicDeckRouteReference(entry)" :aria-label="`查看热门牌库《${entry.deck.name}》`" @click="openDeck(entry)">
                 <DeckProfile compact :master-id="entry.deck.masterId" :master-name="byId.get(entry.deck.masterId)?.nameZh" :fallback-url="byId.get(entry.deck.masterId)?.imageUrl" :name="entry.deck.name" :context="entry.author" :meta="`浏览 ${entry.views ?? 0} · 点赞 ${entry.likes} · 复制 ${entry.copies}`"/>
@@ -534,7 +567,7 @@ watch(plazaPageCount, total => { plazaPage.value = Math.min(plazaPage.value, tot
 .import-modal{width:min(560px,94vw);max-height:calc(100dvh - 24px);overflow:auto;border:1px solid #52606a;background:#111923}.import-modal>header{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid #354149}.import-modal h2{margin:0}.import-modal>header button{width:34px;height:34px;border:1px solid #53616a;background:#0b1117;color:#fff}.import-modal form{display:grid;gap:9px;padding:20px}.import-modal label{color:#c3cccb;font-weight:900}.import-modal input{box-sizing:border-box;width:100%;padding:11px;border:1px solid #46545d;background:#070d12;color:#fff;font:inherit}.import-modal footer{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}.import-modal footer button{min-height:40px;padding:8px 12px;border:1px solid #59666e;background:#15202a;color:#fff;font-weight:900}.import-error{margin:0;color:#f0a9ad;font-size:13px}
 @media(max-width:900px){.mine-toolbar{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){.mine-toolbar{grid-template-columns:1fr}.deck-pagination{gap:4px}.deck-pagination button{min-width:38px;padding-inline:8px}.import-modal{width:100%;max-height:100dvh;border:0}.import-modal footer button{flex:1}}
-.hot-decks{margin:0 0 18px;padding:4px 0 0}.hot-decks>header{padding:0 0 10px}.hot-decks h2{margin:0;font-size:17px}.hot-deck-viewport{overflow:hidden}.hot-deck-viewport+.hot-deck-viewport{margin-top:8px}.hot-deck-track{display:flex;width:max-content;animation:hot-decks-slide 38.884s linear infinite;will-change:transform}.hot-deck-track.row-2{animation-direction:reverse;animation-duration:43.956s}.hot-deck-viewport.paused .hot-deck-track{animation-play-state:paused}.hot-deck-loop{display:flex;flex:none;gap:8px;padding-right:8px}.hot-deck-loop>button{position:relative;width:clamp(325px,26vw,429px);padding:0;border:0;background:transparent;color:inherit;text-align:left}.hot-deck-loop>button:focus-visible{outline:2px solid #e0bf6d;outline-offset:-2px}.hot-deck-loop :deep(.deck-profile){grid-template-columns:50px minmax(0,1fr);height:102px;box-sizing:border-box;gap:10px;padding:9px;background:#101821}.hot-deck-loop :deep(.deck-profile__portrait){width:50px}.hot-deck-loop :deep(.deck-profile__copy){display:flex;min-width:0;flex-direction:column;padding-right:84px}.hot-deck-loop :deep(.deck-profile__copy b){order:1}.hot-deck-loop :deep(.deck-profile__copy small){order:2;margin:3px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hot-deck-loop :deep(.deck-profile__copy span){display:none}.hot-deck-loop :deep(.deck-profile__copy em){order:3}.plaza-grid>article{display:grid;grid-template-rows:auto 1fr}.plaza-summary{position:relative;padding:0}.plaza-summary>:deep(.deck-profile){min-height:102px;padding:14px;border:0;background:transparent}.plaza-summary :deep(.deck-profile__copy){display:flex;min-width:0;flex-direction:column;padding-right:84px}.plaza-summary :deep(.deck-profile__copy b){order:1;font-size:16px}.plaza-summary :deep(.deck-profile__copy small){order:2;margin:5px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.plaza-summary :deep(.deck-profile__copy span){order:3}.plaza-summary :deep(.deck-profile__copy em){order:4}.deck-environment-badge{position:absolute;z-index:1;top:9px;right:9px;display:inline-flex!important;min-height:22px;box-sizing:border-box;align-items:center;padding:3px 7px;border:1px solid #59666e;background:#111a21;color:#dce5e5!important;font-size:11px!important;font-weight:900;line-height:1;white-space:nowrap;pointer-events:none}.plaza-grid footer{grid-template-columns:minmax(0,1fr) auto auto}.plaza-card-stats,.plaza-card-actions{display:flex;align-items:center;gap:10px;min-width:0}.plaza-card-stats{flex-wrap:wrap}.plaza-card-actions{justify-content:flex-end}.mine-grid>article{display:grid;grid-template-rows:auto auto 1fr;padding:0}.mine-grid>article>:deep(.deck-profile){min-height:102px;padding:14px}.mine-public-state{margin:0;padding:0 14px 10px}.mine-grid>article>.deck-card-actions{align-self:end;margin:0;padding:10px 14px;border-top:1px solid rgba(235,230,216,.1);background:#0d151c}
+.hot-decks{margin:0 0 18px;padding:4px 0 0}.hot-decks>header{padding:0 0 10px}.hot-decks h2{margin:0;font-size:17px}.hot-deck-viewport{overflow:hidden}.hot-deck-viewport+.hot-deck-viewport{margin-top:8px}.hot-deck-track{display:flex;width:max-content;animation:none;will-change:transform}.hot-deck-track[data-motion-ready="true"]{animation:hot-decks-slide var(--hot-deck-duration) linear infinite}.hot-deck-track.row-2{animation-direction:reverse}.hot-deck-viewport.paused .hot-deck-track{animation-play-state:paused}.hot-deck-loop{display:flex;flex:none;gap:8px;padding-right:8px}.hot-deck-loop>button{position:relative;width:clamp(325px,26vw,429px);padding:0;border:0;background:transparent;color:inherit;text-align:left}.hot-deck-loop>button:focus-visible{outline:2px solid #e0bf6d;outline-offset:-2px}.hot-deck-loop :deep(.deck-profile){grid-template-columns:50px minmax(0,1fr);height:102px;box-sizing:border-box;gap:10px;padding:9px;background:#101821}.hot-deck-loop :deep(.deck-profile__portrait){width:50px}.hot-deck-loop :deep(.deck-profile__copy){display:flex;min-width:0;flex-direction:column;padding-right:84px}.hot-deck-loop :deep(.deck-profile__copy b){order:1}.hot-deck-loop :deep(.deck-profile__copy small){order:2;margin:3px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hot-deck-loop :deep(.deck-profile__copy span){display:none}.hot-deck-loop :deep(.deck-profile__copy em){order:3}.plaza-grid>article{display:grid;grid-template-rows:auto 1fr}.plaza-summary{position:relative;padding:0}.plaza-summary>:deep(.deck-profile){min-height:102px;padding:14px;border:0;background:transparent}.plaza-summary :deep(.deck-profile__copy){display:flex;min-width:0;flex-direction:column;padding-right:84px}.plaza-summary :deep(.deck-profile__copy b){order:1;font-size:16px}.plaza-summary :deep(.deck-profile__copy small){order:2;margin:5px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.plaza-summary :deep(.deck-profile__copy span){order:3}.plaza-summary :deep(.deck-profile__copy em){order:4}.deck-environment-badge{position:absolute;z-index:1;top:9px;right:9px;display:inline-flex!important;min-height:22px;box-sizing:border-box;align-items:center;padding:3px 7px;border:1px solid #59666e;background:#111a21;color:#dce5e5!important;font-size:11px!important;font-weight:900;line-height:1;white-space:nowrap;pointer-events:none}.plaza-grid footer{grid-template-columns:minmax(0,1fr) auto auto}.plaza-card-stats,.plaza-card-actions{display:flex;align-items:center;gap:10px;min-width:0}.plaza-card-stats{flex-wrap:wrap}.plaza-card-actions{justify-content:flex-end}.mine-grid>article{display:grid;grid-template-rows:auto auto 1fr;padding:0}.mine-grid>article>:deep(.deck-profile){min-height:102px;padding:14px}.mine-public-state{margin:0;padding:0 14px 10px}.mine-grid>article>.deck-card-actions{align-self:end;margin:0;padding:10px 14px;border-top:1px solid rgba(235,230,216,.1);background:#0d151c}
 @keyframes hot-decks-slide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 @media(max-width:700px){.hot-decks{margin-bottom:14px;padding-top:2px}.hot-decks>header{padding-bottom:8px}.hot-decks h2{font-size:15px}.hot-deck-loop>button{width:230px}.hot-deck-loop :deep(.deck-profile){grid-template-columns:38px minmax(0,1fr);height:74px;gap:8px;padding:7px}.hot-deck-loop :deep(.deck-profile__portrait){width:38px}.plaza-grid footer{grid-template-columns:1fr auto}.plaza-card-stats{grid-column:1/-1}.plaza-grid footer .season-compliance{grid-column:auto;justify-self:start}.plaza-card-actions{min-height:40px}.mine-grid>article{padding:0}}
 @media(prefers-reduced-motion:reduce){.hot-deck-viewport{overflow-x:auto;scrollbar-width:thin}.hot-deck-track{animation:none!important;transform:none!important}.hot-deck-loop[aria-hidden="true"]{display:none}}
