@@ -29,7 +29,10 @@ public sealed record L12SeasonDefinitionView(
     string UpdatedBy,
     DateTimeOffset UpdatedAt,
     DateTimeOffset? ActivatedAt = null,
-    L12SeasonActivationPlanView? ActivationPlan = null);
+    L12SeasonActivationPlanView? ActivationPlan = null,
+    string FinalizationStatus = "active",
+    DateTimeOffset? DrainingAt = null,
+    DateTimeOffset? FinalizedAt = null);
 
 public sealed record L12SeasonActivationPlanView(
     string Status,
@@ -89,6 +92,17 @@ internal sealed record L12SeasonActivationClaim(
     long ExpectedCurrentRevision,
     long ExpectedDraftRevision,
     long ExpectedOperationsVersion);
+
+internal sealed record L12SeasonFinalizationClaim(
+    string DefinitionId,
+    string SeasonId,
+    string LeaseOwner,
+    DateTimeOffset LeaseExpiresAt);
+
+internal sealed record L12SeasonFinalizationView(
+    string SeasonId,
+    DateTimeOffset FinalizedAt,
+    L12RankedSeasonCutoverReadiness Readiness);
 
 public sealed record L12SeasonArchiveView(
     string ArchiveId,
@@ -185,6 +199,13 @@ public sealed partial class L12PlatformStore
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
         public DateTimeOffset? ActivatedAt { get; set; }
         public SeasonActivationPlanRow? ActivationPlan { get; set; }
+        public DateTimeOffset? DrainingAt { get; set; }
+        public DateTimeOffset? FinalizedAt { get; set; }
+        public string? FinalizationLeaseOwner { get; set; }
+        public DateTimeOffset? FinalizationLeaseExpiresAt { get; set; }
+        public DateTimeOffset? LastFinalizationAttemptAt { get; set; }
+        public string? FinalizationErrorCode { get; set; }
+        public string? FinalizationErrorMessage { get; set; }
     }
 
     private sealed class SeasonActivationPlanRow
@@ -835,20 +856,191 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
+            var current = _data.SeasonDefinitions.Single(row => row.LifecycleStatus == "active");
+            DateTimeOffset? finalizationWake = null;
+            if (current.FinalizedAt is null && current.EndsAt is { } endsAt)
+            {
+                if (current.FinalizationLeaseExpiresAt is { } finalizationLease
+                    && finalizationLease > now)
+                    finalizationWake = finalizationLease;
+                else if (current.LastFinalizationAttemptAt is { } finalizationAttempt
+                         && current.DrainingAt is not null)
+                    finalizationWake = finalizationAttempt + retryDelay > now
+                        ? finalizationAttempt + retryDelay : now;
+                else finalizationWake = endsAt > now ? endsAt : now;
+            }
+
             var plan = _data.SeasonDefinitions.SingleOrDefault(row => row.LifecycleStatus == "draft")
                 ?.ActivationPlan;
-            if (plan is null || plan.Status is "disarmed" or "completed" or "failed") return null;
-            if (plan.Status == "executing" && plan.LeaseExpiresAt is { } lease && lease > now) return lease;
-            if (plan.Status == "waiting" && plan.LastAttemptAt is { } attempted)
-                return attempted + retryDelay > now ? attempted + retryDelay : now;
-            return plan.ScheduledAt > now ? plan.ScheduledAt : now;
+            DateTimeOffset? activationWake = null;
+            if (plan is not null && plan.Status is not ("disarmed" or "completed" or "failed"))
+            {
+                if (plan.Status == "executing" && plan.LeaseExpiresAt is { } lease && lease > now)
+                    activationWake = lease;
+                else if (plan.Status == "waiting" && plan.LastAttemptAt is { } attempted)
+                    activationWake = attempted + retryDelay > now ? attempted + retryDelay : now;
+                else activationWake = plan.ScheduledAt > now ? plan.ScheduledAt : now;
+            }
+            if (finalizationWake is null) return activationWake;
+            if (activationWake is null) return finalizationWake;
+            return finalizationWake < activationWake ? finalizationWake : activationWake;
         }
     }
+
+    internal L12SeasonFinalizationClaim? TryClaimDueSeasonFinalization(string workerId,
+        DateTimeOffset now, TimeSpan leaseDuration)
+        => ExecuteSeasonFinalizationStorageMutation((connection, transaction) =>
+        {
+            var current = _data.SeasonDefinitions.Single(row => row.LifecycleStatus == "active");
+            if (current.FinalizedAt is not null || current.EndsAt is not { } endsAt || endsAt > now)
+                return new SeasonFinalizationStorageMutation<L12SeasonFinalizationClaim?>(false, null);
+
+            var leaseExpiresAt = now + leaseDuration;
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                INSERT INTO season_finalization_coordination(
+                    definition_id,season_id,status,lease_owner,lease_expires_utc,
+                    completed_utc,completed_storage_revision,updated_utc)
+                VALUES($definition,$season,'executing',$owner,$lease,NULL,NULL,$updated)
+                ON CONFLICT(definition_id,season_id) DO UPDATE SET
+                    status='executing',lease_owner=excluded.lease_owner,
+                    lease_expires_utc=excluded.lease_expires_utc,
+                    completed_utc=NULL,completed_storage_revision=NULL,updated_utc=excluded.updated_utc
+                WHERE season_finalization_coordination.status<>'finalized'
+                  AND (season_finalization_coordination.lease_owner IS NULL
+                       OR season_finalization_coordination.lease_expires_utc<=$updated);
+                """;
+            command.Parameters.AddWithValue("$definition", current.DefinitionId);
+            command.Parameters.AddWithValue("$season", current.SeasonId);
+            command.Parameters.AddWithValue("$owner", workerId);
+            command.Parameters.AddWithValue("$lease", leaseExpiresAt.ToUniversalTime().ToString("O"));
+            command.Parameters.AddWithValue("$updated", now.ToUniversalTime().ToString("O"));
+            if (command.ExecuteNonQuery() != 1)
+                return new SeasonFinalizationStorageMutation<L12SeasonFinalizationClaim?>(false, null);
+
+            current.DrainingAt ??= endsAt;
+            current.FinalizationLeaseOwner = workerId;
+            current.FinalizationLeaseExpiresAt = leaseExpiresAt;
+            current.LastFinalizationAttemptAt = now;
+            current.FinalizationErrorCode = null;
+            current.FinalizationErrorMessage = null;
+            var claim = new L12SeasonFinalizationClaim(current.DefinitionId, current.SeasonId,
+                workerId, leaseExpiresAt);
+            return new SeasonFinalizationStorageMutation<L12SeasonFinalizationClaim?>(true, claim);
+        });
+
+    internal void RecordSeasonFinalizationWaiting(L12SeasonFinalizationClaim claim,
+        DateTimeOffset now, string code, string message)
+        => ExecuteSeasonFinalizationStorageMutation((connection, transaction) =>
+        {
+            var current = RequireSeasonFinalizationTarget(claim);
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                UPDATE season_finalization_coordination
+                SET status='waiting',lease_owner=NULL,lease_expires_utc=NULL,updated_utc=$updated
+                WHERE definition_id=$definition AND season_id=$season AND status='executing'
+                  AND lease_owner=$owner AND lease_expires_utc=$lease;
+                """;
+            command.Parameters.AddWithValue("$definition", claim.DefinitionId);
+            command.Parameters.AddWithValue("$season", claim.SeasonId);
+            command.Parameters.AddWithValue("$owner", claim.LeaseOwner);
+            command.Parameters.AddWithValue("$lease", claim.LeaseExpiresAt.ToUniversalTime().ToString("O"));
+            command.Parameters.AddWithValue("$updated", now.ToUniversalTime().ToString("O"));
+            if (command.ExecuteNonQuery() != 1)
+                throw new L12OperationsConfigException("season_finalization_claim_stale",
+                    "赛季结算执行权已失效");
+
+            current.FinalizationLeaseOwner = null;
+            current.FinalizationLeaseExpiresAt = null;
+            current.FinalizationErrorCode = code;
+            current.FinalizationErrorMessage = message;
+            return new SeasonFinalizationStorageMutation<bool>(true, true);
+        });
+
+    internal L12SeasonFinalizationView FinalizeClaimedRankedSeason(L12AccountView actor,
+        L12SeasonFinalizationClaim claim, L12RankedSeasonCutoverReadiness readiness,
+        DateTimeOffset now, L12AdminAuditContext context)
+        => ExecuteSeasonFinalizationStorageMutation((connection, transaction) =>
+        {
+            EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
+            var current = RequireSeasonFinalizationTarget(claim);
+            if (!HighRiskAuditAvailable())
+                throw new L12OperationsConfigException("audit_unavailable",
+                    "独立审计不可用，赛季结算已失败关闭");
+            if (!SeasonIdsEqual(readiness.SeasonId, current.SeasonId) || !readiness.Ready)
+                throw new L12OperationsConfigException("season_finalization_not_ready",
+                    "当前赛季仍有未完成或未对账的排位对局");
+
+            using (var ownership = connection.CreateCommand())
+            {
+                ownership.Transaction = transaction;
+                ownership.CommandText = """
+                    SELECT COUNT(*) FROM season_finalization_coordination
+                    WHERE definition_id=$definition AND season_id=$season AND status='executing'
+                      AND lease_owner=$owner AND lease_expires_utc=$lease
+                      AND lease_expires_utc>$now;
+                    """;
+                ownership.Parameters.AddWithValue("$definition", claim.DefinitionId);
+                ownership.Parameters.AddWithValue("$season", claim.SeasonId);
+                ownership.Parameters.AddWithValue("$owner", claim.LeaseOwner);
+                ownership.Parameters.AddWithValue("$lease", claim.LeaseExpiresAt.ToUniversalTime().ToString("O"));
+                ownership.Parameters.AddWithValue("$now", now.ToUniversalTime().ToString("O"));
+                if (Convert.ToInt32(ownership.ExecuteScalar()) != 1)
+                    throw new L12OperationsConfigException("season_finalization_claim_stale",
+                        "赛季结算执行权已失效");
+            }
+
+            FinalizeOutgoingRankedSeason(current.SeasonId, current.Name,
+                current.NextSeasonId ?? string.Empty, now);
+            current.FinalizedAt = now;
+            current.FinalizationLeaseOwner = null;
+            current.FinalizationLeaseExpiresAt = null;
+            current.FinalizationErrorCode = null;
+            current.FinalizationErrorMessage = null;
+            AddAdminAudit(actor, "operations", "season-finalize",
+                $"season-definition:{current.DefinitionId}", "draining", "finalized",
+                "赛季截止且存量排位已全部完成，自动结算赛季", context with
+                {
+                    Outcome = "succeeded",
+                    Reason = "赛季截止且存量排位已全部完成，自动结算赛季",
+                });
+            var result = new L12SeasonFinalizationView(current.SeasonId, now, readiness);
+            return new SeasonFinalizationStorageMutation<L12SeasonFinalizationView>(true, result,
+                completedRevision =>
+                {
+                    using var complete = connection.CreateCommand();
+                    complete.Transaction = transaction;
+                    complete.CommandText = """
+                        UPDATE season_finalization_coordination
+                        SET status='finalized',lease_owner=NULL,lease_expires_utc=NULL,
+                            completed_utc=$completed,completed_storage_revision=$revision,
+                            updated_utc=$completed
+                        WHERE definition_id=$definition AND season_id=$season AND status='executing'
+                          AND lease_owner=$owner AND lease_expires_utc=$lease;
+                        """;
+                    complete.Parameters.AddWithValue("$definition", claim.DefinitionId);
+                    complete.Parameters.AddWithValue("$season", claim.SeasonId);
+                    complete.Parameters.AddWithValue("$owner", claim.LeaseOwner);
+                    complete.Parameters.AddWithValue("$lease", claim.LeaseExpiresAt.ToUniversalTime().ToString("O"));
+                    complete.Parameters.AddWithValue("$completed", now.ToUniversalTime().ToString("O"));
+                    complete.Parameters.AddWithValue("$revision", completedRevision);
+                    if (complete.ExecuteNonQuery() != 1)
+                        throw new L12OperationsConfigException("season_finalization_claim_stale",
+                            "赛季结算执行权已失效");
+                    StorageFailureInjector?.Invoke("after-season-finalization-complete-marker");
+                });
+        });
 
     internal bool IsRankedSeasonCutoverFenced(DateTimeOffset now)
     {
         lock (_gate)
         {
+            var current = _data.SeasonDefinitions.Single(row => row.LifecycleStatus == "active");
+            if (current.FinalizedAt is not null || current.DrainingAt is not null
+                || current.EndsAt is { } endsAt && endsAt <= now)
+                return true;
             var plan = _data.SeasonDefinitions.SingleOrDefault(row => row.LifecycleStatus == "draft")
                 ?.ActivationPlan;
             return plan is { Status: not "disarmed" and not "completed" }
@@ -932,7 +1124,14 @@ public sealed partial class L12PlatformStore
             var nextOperations = ToRow(nextPayload, operations.Version + 1, actor.Username,
                 operations.ImmediateMaintenance);
 
-            FinalizeOutgoingRankedSeason(current.SeasonId, current.Name, draft.SeasonId, now);
+            if (current.FinalizedAt is null)
+            {
+                if (claim is not null && current.EndsAt is not null)
+                    throw new L12OperationsConfigException("season_finalization_pending",
+                        "当前赛季尚未完成独立结算，不能自动激活下一赛季");
+                FinalizeOutgoingRankedSeason(current.SeasonId, current.Name, draft.SeasonId, now);
+                current.FinalizedAt = now;
+            }
             SeasonActivationFailureInjector?.Invoke("after-season-finalization");
             var archive = new SeasonArchiveRow
             {
@@ -1256,6 +1455,19 @@ public sealed partial class L12PlatformStore
         return plan;
     }
 
+    private SeasonDefinitionRow RequireSeasonFinalizationTarget(L12SeasonFinalizationClaim claim)
+    {
+        var current = _data.SeasonDefinitions.FirstOrDefault(row =>
+            row.LifecycleStatus == "active" && row.DefinitionId == claim.DefinitionId
+            && SeasonIdsEqual(row.SeasonId, claim.SeasonId))
+            ?? throw new L12OperationsConfigException("season_finalization_claim_stale",
+                "赛季结算执行权已失效");
+        if (current.FinalizedAt is not null)
+            throw new L12OperationsConfigException("season_finalization_claim_stale",
+                "赛季结算执行权已失效");
+        return current;
+    }
+
     private static void FailSeasonActivationPlan(SeasonActivationPlanRow plan, DateTimeOffset now,
         string code, string message)
     {
@@ -1353,7 +1565,13 @@ public sealed partial class L12PlatformStore
 
     private L12SeasonDefinitionView ToSeasonDefinitionView(SeasonDefinitionRow row,
         DateTimeOffset? observedAt = null)
-        => new(row.DefinitionId, row.SeasonId, row.Name, row.LifecycleStatus, row.StartsAt, row.EndsAt,
+    {
+        var observed = observedAt ?? DateTimeOffset.UtcNow;
+        var finalizationStatus = row.LifecycleStatus != "active" ? row.LifecycleStatus
+            : row.FinalizedAt is not null ? "finalized"
+            : row.DrainingAt is not null || row.EndsAt is { } endsAt && endsAt <= observed
+                ? "draining" : "active";
+        return new(row.DefinitionId, row.SeasonId, row.Name, row.LifecycleStatus, row.StartsAt, row.EndsAt,
             row.Revision, row.PreviousSeasonId, row.NextSeasonId, ToSeasonScopeView(row.Configuration),
             row.CreatedBy, row.CreatedAt, row.UpdatedBy, row.UpdatedAt, row.ActivatedAt,
             row.ActivationPlan is null ? null : new L12SeasonActivationPlanView(
@@ -1367,9 +1585,11 @@ public sealed partial class L12PlatformStore
                 row.ActivationPlan.LeaseExpiresAt, row.ActivationPlan.AttemptCount,
                 row.ActivationPlan.LastAttemptAt, row.ActivationPlan.LastErrorCode,
                 SeasonActivationSuggestedAction(row.ActivationPlan,
-                    observedAt ?? DateTimeOffset.UtcNow), row.ActivationPlan.CompletedAt,
+                    observed), row.ActivationPlan.CompletedAt,
                 row.ActivationPlan.IntentKey, row.ActivationPlan.LeaseOwner,
-                row.ActivationPlan.LastErrorMessage));
+                row.ActivationPlan.LastErrorMessage), finalizationStatus, row.DrainingAt,
+            row.FinalizedAt);
+    }
 
     private L12SeasonArchiveView ToSeasonArchiveView(SeasonArchiveRow row)
         => new(row.ArchiveId, row.SourceDefinitionId, row.SeasonId, row.Name,

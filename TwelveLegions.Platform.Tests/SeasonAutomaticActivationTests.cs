@@ -12,6 +12,298 @@ namespace GrandUMI.Tests;
 public sealed class SeasonAutomaticActivationTests
 {
     [Fact]
+    public async Task SeasonEndEntersDurableDrainingAndFinalizesWithoutNextSeason()
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var endsAt = new DateTimeOffset(2026, 10, 1, 16, 0, 0, TimeSpan.Zero);
+            var (store, admin, catalog) = PrepareEndingStore(root, endsAt, removeDraft: true);
+            Assert.Equal(endsAt, store.NextSeasonActivationWakeAt(endsAt.AddHours(-1),
+                TimeSpan.FromSeconds(1)));
+            Assert.Null(store.RankedEntryBlock("account", endsAt.AddTicks(-1)));
+            Assert.Contains("赛季正在切换", store.RankedEntryBlock("account", endsAt));
+            Assert.Equal("active", store.SeasonCatalog(admin, endsAt.AddTicks(-1)).Current.FinalizationStatus);
+            Assert.Equal("draining", store.SeasonCatalog(admin, endsAt).Current.FinalizationStatus);
+
+            var restartedStore = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            await using var recorder = new MatchRecorder(Path.Combine(root, "matches.db"), () => endsAt);
+            await recorder.InitializeAsync();
+            var rooms = new L12RoomManager(catalog, recorder, restartedStore, () => endsAt);
+            await using var server = new L12WebSocketServer(rooms, recorder, restartedStore, catalog,
+                seasonActivationUtcNow: () => endsAt);
+
+            Assert.True(await server.RunSeasonFinalizationOnceAsync(endsAt));
+            var finalized = restartedStore.SeasonCatalog(admin, endsAt);
+            Assert.Equal("finalized", finalized.Current.FinalizationStatus);
+            Assert.Equal(endsAt, finalized.Current.FinalizedAt);
+            Assert.Null(finalized.Next);
+            Assert.Empty(finalized.Archives);
+            Assert.Contains("赛季正在切换", restartedStore.RankedEntryBlock("account", endsAt.AddHours(8)));
+            Assert.False(await server.RunSeasonFinalizationOnceAsync(endsAt.AddHours(8)));
+
+            var reopened = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            Assert.Equal("finalized", reopened.SeasonCatalog(admin, endsAt.AddHours(8)).Current.FinalizationStatus);
+            Assert.False(reopened.TryClaimDueSeasonFinalization("restart", endsAt.AddHours(8),
+                TimeSpan.FromMinutes(1)) is not null);
+        }
+        finally { Cleanup(root); }
+    }
+
+    [Fact]
+    public void ShanghaiAndUtcBoundaryAreTheSameFinalizationInstantAndClaimsAreSingleOwner()
+    {
+        var root = TempRoot();
+        try
+        {
+            var utc = new DateTimeOffset(2026, 10, 1, 16, 0, 0, TimeSpan.Zero);
+            var shanghai = new DateTimeOffset(2026, 10, 2, 0, 0, 0, TimeSpan.FromHours(8));
+            var (store, admin, _) = PrepareEndingStore(root, shanghai, removeDraft: false);
+            Assert.Equal(utc, store.SeasonCatalog(admin).Current.EndsAt);
+            Assert.False(store.IsRankedSeasonCutoverFenced(utc.AddTicks(-1)));
+            Assert.True(store.IsRankedSeasonCutoverFenced(shanghai));
+
+            var claims = new L12SeasonFinalizationClaim?[32];
+            Parallel.For(0, claims.Length, index => claims[index] =
+                store.TryClaimDueSeasonFinalization($"worker-{index}", utc, TimeSpan.FromMinutes(1)));
+            Assert.Single(claims.Where(claim => claim is not null));
+            Assert.Equal("draining", store.SeasonCatalog(admin, utc).Current.FinalizationStatus);
+        }
+        finally { Cleanup(root); }
+    }
+
+    [Fact]
+    public async Task IndependentStoreInstancesCannotClaimTheSameSeasonFinalization()
+    {
+        var root = TempRoot();
+        try
+        {
+            var endsAt = new DateTimeOffset(2026, 10, 1, 16, 0, 0, TimeSpan.Zero);
+            var (firstStore, _, catalog) = PrepareEndingStore(root, endsAt, removeDraft: true);
+            var secondStore = new L12PlatformStore(Path.Combine(root, "platform.json"),
+                catalog.PresetDecks, officialCards: catalog.Cards);
+
+            using var barrier = new Barrier(2);
+            var claims = await Task.WhenAll(
+                Task.Run(() =>
+                {
+                    barrier.SignalAndWait();
+                    return firstStore.TryClaimDueSeasonFinalization("instance-a", endsAt,
+                        TimeSpan.FromMinutes(1));
+                }),
+                Task.Run(() =>
+                {
+                    barrier.SignalAndWait();
+                    return secondStore.TryClaimDueSeasonFinalization("instance-b", endsAt,
+                        TimeSpan.FromMinutes(1));
+                }));
+
+            Assert.Single(claims.Where(claim => claim is not null));
+        }
+        finally { Cleanup(root); }
+    }
+
+    [Fact]
+    public void ExpiredLeaseCanBeTakenOverAndTheOldOwnerCannotCommit()
+    {
+        var root = TempRoot();
+        try
+        {
+            var endsAt = new DateTimeOffset(2026, 10, 1, 16, 0, 0, TimeSpan.Zero);
+            var (firstStore, admin, catalog) = PrepareEndingStore(root, endsAt, removeDraft: true);
+            var secondStore = new L12PlatformStore(Path.Combine(root, "platform.json"),
+                catalog.PresetDecks, officialCards: catalog.Cards);
+            var firstClaim = firstStore.TryClaimDueSeasonFinalization("instance-a", endsAt,
+                TimeSpan.FromMinutes(1))!;
+            Assert.Null(secondStore.TryClaimDueSeasonFinalization("instance-b",
+                endsAt.AddSeconds(59), TimeSpan.FromMinutes(1)));
+
+            var takeoverAt = endsAt.AddMinutes(1);
+            var secondClaim = secondStore.TryClaimDueSeasonFinalization("instance-b", takeoverAt,
+                TimeSpan.FromMinutes(1))!;
+            var readiness = new L12RankedSeasonCutoverReadiness(firstClaim.SeasonId, 0, 0, 0, 0);
+            var stale = Assert.Throws<L12OperationsConfigException>(() =>
+                firstStore.FinalizeClaimedRankedSeason(admin, firstClaim, readiness, takeoverAt,
+                    Context("stale-owner")));
+            Assert.Equal("season_finalization_claim_stale", stale.Code);
+
+            secondStore.FinalizeClaimedRankedSeason(admin, secondClaim, readiness,
+                takeoverAt.AddSeconds(1), Context("takeover-owner"));
+            Assert.Null(firstStore.TryClaimDueSeasonFinalization("instance-a",
+                takeoverAt.AddHours(1), TimeSpan.FromMinutes(1)));
+            var reopened = new L12PlatformStore(Path.Combine(root, "platform.json"),
+                catalog.PresetDecks, officialCards: catalog.Cards);
+            Assert.Equal("finalized", reopened.SeasonCatalog(admin, takeoverAt.AddHours(1))
+                .Current.FinalizationStatus);
+            Assert.Null(reopened.TryClaimDueSeasonFinalization("instance-c",
+                takeoverAt.AddHours(1), TimeSpan.FromMinutes(1)));
+        }
+        finally { Cleanup(root); }
+    }
+
+    [Fact]
+    public void FinalizationCrashRollsBackFactsAndStaleOrdinaryWriteCannotEraseRecovery()
+    {
+        var root = TempRoot();
+        try
+        {
+            var endsAt = new DateTimeOffset(2026, 10, 1, 16, 0, 0, TimeSpan.Zero);
+            var (coordinator, admin, catalog) = PrepareEndingStore(root, endsAt, removeDraft: true);
+            var staleOrdinaryWriter = new L12PlatformStore(Path.Combine(root, "platform.json"),
+                catalog.PresetDecks, officialCards: catalog.Cards);
+            var firstClaim = coordinator.TryClaimDueSeasonFinalization("crashing", endsAt,
+                TimeSpan.FromMinutes(1))!;
+            var readiness = new L12RankedSeasonCutoverReadiness(firstClaim.SeasonId, 0, 0, 0, 0);
+            Assert.True(staleOrdinaryWriter.Register("结算前普通写", "Password123!").Success);
+            coordinator.StorageFailureInjector = stage =>
+            {
+                if (stage == "after-season-finalization-complete-marker")
+                    throw new IOException("simulated crash before commit");
+            };
+            Assert.Throws<L12PlatformStorageUnavailableException>(() =>
+                coordinator.FinalizeClaimedRankedSeason(admin, firstClaim, readiness,
+                    endsAt.AddSeconds(1), Context("crash-before-commit")));
+            coordinator.StorageFailureInjector = null;
+
+            var afterCrash = new L12PlatformStore(Path.Combine(root, "platform.json"),
+                catalog.PresetDecks, officialCards: catalog.Cards);
+            Assert.Equal("draining", afterCrash.SeasonCatalog(admin, endsAt.AddSeconds(1))
+                .Current.FinalizationStatus);
+            Assert.Empty(afterCrash.AdminAudit(category: "operations")
+                .Where(item => item.Action == "season-finalize"));
+
+            var retryAt = endsAt.AddMinutes(1);
+            var retryClaim = afterCrash.TryClaimDueSeasonFinalization("recovery", retryAt,
+                TimeSpan.FromMinutes(1))!;
+            afterCrash.FinalizeClaimedRankedSeason(admin, retryClaim, readiness,
+                retryAt.AddSeconds(1), Context("recovery-commit"));
+            Assert.Equal("finalized", afterCrash.SeasonCatalog(admin, retryAt.AddSeconds(1))
+                .Current.FinalizationStatus);
+            var completedRevision = afterCrash.StorageStatus().StorageRevision;
+            Assert.True(afterCrash.Login("结算前普通写", "Password123!").Success);
+
+            using (var connection = new SqliteConnection(
+                       new SqliteConnectionStringBuilder { DataSource = afterCrash.TransactionalStoragePath }.ToString()))
+            {
+                connection.Open();
+                using var command = connection.CreateCommand();
+                command.CommandText = """
+                    SELECT status,completed_storage_revision
+                    FROM season_finalization_coordination
+                    WHERE definition_id=$definition AND season_id=$season;
+                    """;
+                command.Parameters.AddWithValue("$definition", retryClaim.DefinitionId);
+                command.Parameters.AddWithValue("$season", retryClaim.SeasonId);
+                using var reader = command.ExecuteReader();
+                Assert.True(reader.Read());
+                Assert.Equal("finalized", reader.GetString(0));
+                Assert.Equal(completedRevision, reader.GetInt64(1));
+            }
+
+            var staleWrite = Assert.ThrowsAny<L12PlatformStorageUnavailableException>(() =>
+                staleOrdinaryWriter.Register("结算后普通写", "Password123!"));
+            Assert.Contains("早于已完成赛季结算版本", staleWrite.Message);
+            Assert.True(staleOrdinaryWriter.Register("结算后普通写", "Password123!").Success);
+            Assert.Equal("finalized", staleOrdinaryWriter.SeasonCatalog(admin, retryAt.AddHours(1))
+                .Current.FinalizationStatus);
+            Assert.Single(staleOrdinaryWriter.AdminAudit(category: "operations")
+                .Where(item => item.Action == "season-finalize"));
+        }
+        finally { Cleanup(root); }
+    }
+
+    [Fact]
+    public void DrainingWaitsForAuthoritativeReadinessAndActivationDoesNotRepeatFinalSummary()
+    {
+        var root = TempRoot();
+        try
+        {
+            var endsAt = new DateTimeOffset(2026, 10, 3, 0, 0, 0, TimeSpan.FromHours(8));
+            var (store, admin, _) = PrepareEndingStore(root, endsAt, removeDraft: false);
+            var first = store.Register("结算等待甲", "Password123!").Account!;
+            var second = store.Register("结算等待乙", "Password123!").Account!;
+            store.SelectRankedFaction(first.Id, "order");
+            store.SelectRankedFaction(second.Id, "chaos");
+            var config = store.RankedConfig(admin);
+            store.UpdateRankedConfig(admin, config with
+                {
+                    PlacementMatches = 1,
+                    PlacementMaximum = 1,
+                    Factions = config.Factions.Select(faction => faction with
+                    {
+                        Tiers = faction.Tiers.Select((tier, index) => tier with
+                            { Minimum = index switch { 0 => 0, 1 => 1, 2 => 50, 3 => 75, _ => 100 } })
+                            .ToArray(),
+                    }).ToArray(),
+                }, "compact finalization ranks", Context("compact-finalization"));
+            var firstMaster = config.MasterTitles[0].MasterId;
+            var secondMaster = config.MasterTitles.First(item => item.MasterId != firstMaster).MasterId;
+            store.SettleRankedMatch("finalize-summary-1", first.Id, second.Id, 0,
+                firstMaster, secondMaster);
+            store.SettleRankedMatch("finalize-summary-2", first.Id, second.Id, 0,
+                firstMaster, secondMaster);
+            var finalProfile = store.RankedProfile(first.Id);
+            var current = store.SeasonCatalog(admin, endsAt).Current;
+
+            var blockedReadiness = new[]
+            {
+                new L12RankedSeasonCutoverReadiness(current.SeasonId, 1, 0, 0, 0),
+                new L12RankedSeasonCutoverReadiness(current.SeasonId, 0, 1, 0, 0),
+                new L12RankedSeasonCutoverReadiness(current.SeasonId, 0, 0, 1, 0),
+                new L12RankedSeasonCutoverReadiness(current.SeasonId, 0, 0, 0, 1),
+            };
+            for (var index = 0; index < blockedReadiness.Length; index++)
+            {
+                var attemptedAt = endsAt.AddMilliseconds(index);
+                var blockedClaim = store.TryClaimDueSeasonFinalization($"worker-{index}", attemptedAt,
+                    TimeSpan.FromMinutes(1))!;
+                var blocked = Assert.Throws<L12OperationsConfigException>(() =>
+                    store.FinalizeClaimedRankedSeason(admin, blockedClaim,
+                        blockedReadiness[index], attemptedAt, Context($"blocked-finalization-{index}")));
+                Assert.Equal("season_finalization_not_ready", blocked.Code);
+                store.RecordSeasonFinalizationWaiting(blockedClaim, attemptedAt,
+                    blocked.Code, blocked.Message);
+            }
+            Assert.Empty(store.RankedOverview(first.Id).History);
+
+            var readyAt = endsAt.AddSeconds(2);
+            var readyClaim = store.TryClaimDueSeasonFinalization("worker-b", readyAt,
+                TimeSpan.FromMinutes(1))!;
+            store.FinalizeClaimedRankedSeason(admin, readyClaim,
+                new L12RankedSeasonCutoverReadiness(current.SeasonId, 0, 0, 0, 0), readyAt,
+                Context("ready-finalization"));
+            var summary = Assert.Single(store.PendingSeasonSummaryNotifications(first.Id));
+            Assert.Equal("秩序", summary.Faction);
+            Assert.Equal(finalProfile.Faction, summary.Faction);
+            Assert.Equal(finalProfile.Tier, summary.RankLabel);
+            Assert.Equal(1, summary.FactionRank);
+            Assert.Equal(1, summary.OverallRank);
+            Assert.Equal(finalProfile.SevenValue, summary.SevenValue);
+            Assert.NotNull(summary.FactionTitle);
+            Assert.Contains(summary.FactionTitle!, summary.Titles);
+            Assert.All(summary.MasterTitles, title => Assert.Contains(title, summary.Titles));
+
+            var seasonCatalog = store.SeasonCatalog(admin, readyAt);
+            var draft = store.UpdateSeasonDraft(admin, seasonCatalog.Next!.DefinitionId,
+                new L12SeasonDefinitionDraft("S-after-gap", "空档后赛季", readyAt.AddHours(1),
+                    readyAt.AddDays(90), seasonCatalog.Next.Configuration),
+                seasonCatalog.Next.Revision, "prepare post-gap season", Context("prepare-post-gap"));
+            var latestCurrent = store.SeasonCatalog(admin, readyAt).Current;
+            store.ActivateSeason(admin, draft.DefinitionId, latestCurrent.Revision, draft.Revision,
+                "activate after finalized gap",
+                new L12RankedSeasonCutoverReadiness(latestCurrent.SeasonId, 0, 0, 0, 0),
+                Context("activate-post-gap"));
+            Assert.Equal("S-after-gap", store.SeasonCatalog(admin).Current.SeasonId);
+            Assert.Single(store.PendingSeasonSummaryNotifications(first.Id));
+            Assert.Single(store.RankedOverview(first.Id).History);
+            Assert.Single(store.AdminAudit(category: "operations")
+                .Where(item => item.Action == "season-finalize"));
+        }
+        finally { Cleanup(root); }
+    }
+
+    [Fact]
     public void BoundaryInstantFencesRankedAdmissionAndConcurrentTriggersHaveOneLease()
     {
         var root = TempRoot();
@@ -463,6 +755,27 @@ public sealed class SeasonAutomaticActivationTests
         store.ArmSeasonActivation(admin, draft.DefinitionId, seasons.Current.Revision, draft.Revision,
             operationsVersion, preview.PreviewToken, readiness, "arm automatic season", now,
             Context("arm", operationsVersion));
+        return (store, admin, catalog);
+    }
+
+    private static (L12PlatformStore Store, L12AccountView Admin, L12Catalog Catalog) PrepareEndingStore(
+        string root, DateTimeOffset endsAt, bool removeDraft)
+    {
+        var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+        var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+            officialCards: catalog.Cards);
+        var admin = store.Login("Admin", "L12master").Account!;
+        var operations = store.OperationsConfig(admin);
+        store.ApplyOperationsConfig(admin, operations.Config with
+            {
+                Season = operations.Config.Season with { EndsAt = endsAt },
+            }, operations.Version, "set deterministic season end", Context("prepare-ending"));
+        if (removeDraft)
+        {
+            var seasons = store.SeasonCatalog(admin);
+            store.DeleteSeasonDraft(admin, seasons.Next!.DefinitionId, seasons.Next.Revision,
+                "exercise finalization gap without next season", Context("remove-next"));
+        }
         return (store, admin, catalog);
     }
 

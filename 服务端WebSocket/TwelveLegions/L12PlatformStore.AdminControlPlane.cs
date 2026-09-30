@@ -161,6 +161,12 @@ public sealed partial class L12PlatformStore
                 if (_adminTransactionSaveRequested) PersistData(_adminTransactionBusinessChanged);
                 return result;
             }
+            catch (L12SeasonFinalizationStaleWriteException)
+            {
+                // PersistTransactionalData 已从 SQLite 刷新到包含赛季结算事实的最新快照。
+                // 保留该刷新结果，但仍向调用方明确返回可重试失败；绝不自动重放原命令。
+                throw;
+            }
             catch
             {
                 _data = JsonSerializer.Deserialize<DataFile>(snapshot) ?? new DataFile();

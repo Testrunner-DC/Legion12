@@ -44,9 +44,14 @@ public sealed record L12PlatformRecoveryRehearsalView(
     string? Error,
     DateTimeOffset RehearsedAt);
 
-public sealed class L12PlatformStorageUnavailableException : IOException
+public class L12PlatformStorageUnavailableException : IOException
 {
     public L12PlatformStorageUnavailableException(string message, Exception? inner = null) : base(message, inner) { }
+}
+
+internal sealed class L12SeasonFinalizationStaleWriteException : L12PlatformStorageUnavailableException
+{
+    public L12SeasonFinalizationStaleWriteException(string message) : base(message) { }
 }
 
 public sealed partial class L12PlatformStore
@@ -244,10 +249,15 @@ public sealed partial class L12PlatformStore
             using var connection = OpenDatabase(_databasePath, readOnly: false);
             InitializeStorageSchema(connection);
             FilterMigratedAuditSnapshot(connection, _data);
+            var expectedRevision = _data.Version;
             _data.BusinessVersion ??= _data.Version;
             _data.Version++;
             if (businessChange) _data.BusinessVersion++;
             using var transaction = connection.BeginTransaction();
+            var completedFinalizationRevision = ReadLatestSeasonFinalizationRevision(connection, transaction);
+            if (expectedRevision < completedFinalizationRevision)
+                throw new L12SeasonFinalizationStaleWriteException(
+                    $"平台状态版本 {expectedRevision} 早于已完成赛季结算版本 {completedFinalizationRevision}，请重试原操作");
             PersistDeckDomainSnapshot(connection, transaction, _data);
             var snapshotJson = SerializeSnapshot(_data);
             StorageFailureInjector?.Invoke("before-mirror-serialize");
@@ -262,6 +272,22 @@ public sealed partial class L12PlatformStore
             transaction.Commit();
             _lastCommittedSnapshot = snapshotJson;
             _storageIssue = null;
+        }
+        catch (L12SeasonFinalizationStaleWriteException error)
+        {
+            try
+            {
+                _data = LoadTransactionalState();
+                _lastCommittedSnapshot = SerializeSnapshot(_data);
+            }
+            catch (Exception refreshError)
+            {
+                RestoreLastCommittedSnapshot();
+                _storageIssue = $"赛季结算后平台状态刷新失败：{refreshError.Message}";
+                throw new L12PlatformStorageUnavailableException(_storageIssue, refreshError);
+            }
+            _storageIssue = error.Message;
+            throw;
         }
         catch (Exception error)
         {
@@ -279,6 +305,88 @@ public sealed partial class L12PlatformStore
         {
             _fallbackMirrorHealthy = false;
             _storageIssue = $"SQLite 已提交，但 JSON 兼容镜像更新失败：{error.Message}";
+        }
+    }
+
+    private sealed record SeasonFinalizationStorageMutation<T>(
+        bool Changed,
+        T Result,
+        Action<long>? BeforeCommit = null);
+
+    private T ExecuteSeasonFinalizationStorageMutation<T>(
+        Func<SqliteConnection, SqliteTransaction, SeasonFinalizationStorageMutation<T>> action)
+    {
+        lock (_gate)
+        {
+            if (!_storageWritable)
+                throw new L12PlatformStorageUnavailableException(
+                    _storageIssue ?? "事务存储处于只读回退模式");
+
+            var previous = _data;
+            try
+            {
+                using var connection = OpenDatabase(_databasePath, readOnly: false);
+                InitializeStorageSchema(connection);
+                using var transaction = connection.BeginTransaction(deferred: false);
+                var stored = ReadSnapshot(connection, transaction)
+                    ?? throw new InvalidDataException("事务存储缺少平台快照");
+                if (!FixedEquals(stored.Checksum, Sha256(stored.Json)))
+                    throw new InvalidDataException("SQLite 平台快照校验和不匹配");
+
+                var latest = DeserializeDataAndValidate(stored.Json);
+                latest.Decks = previous.Decks;
+                latest.PublishedDecks = previous.PublishedDecks;
+                _data = latest;
+                var mutation = action(connection, transaction);
+                if (!mutation.Changed)
+                {
+                    transaction.Rollback();
+                    _lastCommittedSnapshot = stored.Json;
+                    _storageIssue = null;
+                    return mutation.Result;
+                }
+
+                _data.BusinessVersion ??= _data.Version;
+                _data.Version++;
+                _data.BusinessVersion++;
+                var snapshotJson = SerializeSnapshot(_data);
+                var mirrorJson = JsonSerializer.Serialize(_data, PlatformMirrorJsonOptions);
+                UpsertSnapshot(connection, transaction, snapshotJson, Sha256(snapshotJson),
+                    Sha256(mirrorJson), _data);
+                AppendIndependentAudit(connection, transaction, _data.AdminAudit);
+                mutation.BeforeCommit?.Invoke(_data.Version);
+                StorageFailureInjector?.Invoke("before-season-finalization-commit");
+                transaction.Commit();
+                _lastCommittedSnapshot = snapshotJson;
+                _storageIssue = null;
+                try
+                {
+                    WriteFallbackMirror(mirrorJson);
+                    _fallbackMirrorHealthy = true;
+                }
+                catch (Exception mirrorError)
+                {
+                    _fallbackMirrorHealthy = false;
+                    _storageIssue = $"SQLite 已提交，但 JSON 兼容镜像更新失败：{mirrorError.Message}";
+                }
+                return mutation.Result;
+            }
+            catch (L12OperationsConfigException)
+            {
+                _data = previous;
+                throw;
+            }
+            catch (L12PlatformStorageUnavailableException)
+            {
+                _data = previous;
+                throw;
+            }
+            catch (Exception error)
+            {
+                _data = previous;
+                _storageIssue = $"赛季结算事务提交失败：{error.Message}";
+                throw new L12PlatformStorageUnavailableException(_storageIssue, error);
+            }
         }
     }
 
@@ -462,6 +570,25 @@ public sealed partial class L12PlatformStore
             CREATE INDEX IF NOT EXISTS ix_admin_audit_created ON admin_audit_events(created_utc DESC);
             CREATE INDEX IF NOT EXISTS ix_admin_audit_filters
                 ON admin_audit_events(category,outcome,actor_id,command_id,correlation_id);
+            CREATE TABLE IF NOT EXISTS season_finalization_coordination (
+                definition_id TEXT NOT NULL,
+                season_id TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('executing','waiting','finalized')),
+                lease_owner TEXT,
+                lease_expires_utc TEXT,
+                completed_utc TEXT,
+                completed_storage_revision INTEGER,
+                updated_utc TEXT NOT NULL,
+                PRIMARY KEY(definition_id,season_id),
+                CHECK((status='executing' AND lease_owner IS NOT NULL AND lease_expires_utc IS NOT NULL
+                       AND completed_utc IS NULL AND completed_storage_revision IS NULL)
+                   OR (status='waiting' AND lease_owner IS NULL AND lease_expires_utc IS NULL
+                       AND completed_utc IS NULL AND completed_storage_revision IS NULL)
+                   OR (status='finalized' AND lease_owner IS NULL AND lease_expires_utc IS NULL
+                       AND completed_utc IS NOT NULL AND completed_storage_revision IS NOT NULL))
+            );
+            CREATE INDEX IF NOT EXISTS ix_season_finalization_status
+                ON season_finalization_coordination(status,lease_expires_utc);
             CREATE TABLE IF NOT EXISTS audit_archive_segments (
                 id TEXT PRIMARY KEY,
                 from_utc TEXT NOT NULL,
@@ -552,6 +679,29 @@ public sealed partial class L12PlatformStore
         command.CommandText = "SELECT snapshot_json,snapshot_sha256 FROM platform_state WHERE singleton_id=1;";
         using var reader = command.ExecuteReader();
         return reader.Read() ? (reader.GetString(0), reader.GetString(1)) : null;
+    }
+
+    private static (string Json, string Checksum)? ReadSnapshot(SqliteConnection connection,
+        SqliteTransaction transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT snapshot_json,snapshot_sha256 FROM platform_state WHERE singleton_id=1;";
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? (reader.GetString(0), reader.GetString(1)) : null;
+    }
+
+    private static long ReadLatestSeasonFinalizationRevision(SqliteConnection connection,
+        SqliteTransaction transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT COALESCE(MAX(completed_storage_revision),-1)
+            FROM season_finalization_coordination
+            WHERE status='finalized';
+            """;
+        return Convert.ToInt64(command.ExecuteScalar());
     }
 
     private static string? ReadMeta(SqliteConnection connection, string key)
