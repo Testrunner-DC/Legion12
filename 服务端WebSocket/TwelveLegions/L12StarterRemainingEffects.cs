@@ -504,8 +504,7 @@ public sealed partial class L12GameEngine
                                  && L12StructuredCardRules.HasFaction(player, card, "otherworld"),
                              "位于前排且具有有效【彼界】特征") is { } target)
                 {
-                    AddTimedModifier(target, 2000, 0, State.TurnSerial, source?.Name ?? "光之剑");
-                    AddEvent("effect", item.Controller, $"光之剑使〈{target.Name}〉本回合兵力+2000", target);
+                    ApplyPlayerThisTurnTroopsModifier(target, 2000, item.Controller, source?.Name ?? "光之剑");
                 }
                 break;
             case "horusRevive":

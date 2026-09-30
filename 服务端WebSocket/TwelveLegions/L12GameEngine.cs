@@ -2450,6 +2450,20 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             new L12PlayerPublicPlacement(card.InstanceId, ownerPlayerIndex,
                 controllerPlayerIndex, row, slot, card.Tapped, durationCode), card);
 
+    // Callers have already revalidated the target and explicitly supply its controller.
+    // Keep the existing modifier write unchanged; never recover provenance from board/text.
+    private void ApplyPlayerThisTurnTroopsModifier(L12CardInstance target, int troops,
+        int targetController, string source)
+    {
+        AddTimedModifier(target, troops, 0, State.TurnSerial, source);
+        if (target.Hidden || string.IsNullOrWhiteSpace(target.InstanceId)
+            || string.IsNullOrWhiteSpace(target.Name)) return;
+        AddEventCoreWithTroopsModifier("troops-modifier", targetController,
+            $"〈{target.Name}〉本回合兵力修正{troops:+0;-0;0}", null, null,
+            null, null, null, null, null, null, null,
+            new L12PlayerTroopsModifier(target.InstanceId, targetController, troops, "this-turn"), target);
+    }
+
     private static L12PlayerBattlefieldMovementFact BattlefieldMovementFact(
         L12CardInstance card, int battlefieldPlayerIndex, int fromRow, int fromSlot,
         int toRow, int toSlot)
@@ -2492,6 +2506,17 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         L12PlayerCombatPresentation? playerCombat,
         L12PlayerBattlefieldMovement? playerBattlefieldMovement,
         L12PlayerPublicPlacement? playerPublicPlacement, params L12CardInstance[] cards)
+        => AddEventCoreWithTroopsModifier(type, playerIndex, text, effectText, effectMetadata,
+            playerLogGroupId, playerLogTiming, playerLogDecisionLabel, playerLogSemantic,
+            playerCombat, playerBattlefieldMovement, playerPublicPlacement, null, cards);
+
+    private void AddEventCoreWithTroopsModifier(string type, int? playerIndex, string text, string? effectText,
+        L12EffectEventMetadata? effectMetadata, string? playerLogGroupId, string? playerLogTiming,
+        string? playerLogDecisionLabel, L12PlayerLogSemantic? playerLogSemantic,
+        L12PlayerCombatPresentation? playerCombat,
+        L12PlayerBattlefieldMovement? playerBattlefieldMovement,
+        L12PlayerPublicPlacement? playerPublicPlacement,
+        L12PlayerTroopsModifier? playerTroopsModifier, params L12CardInstance[] cards)
     {
         State.EventSequence++;
         State.LastAction = new L12ActionEvent(State.EventSequence, type, playerIndex, text,
@@ -2527,6 +2552,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             PlayerCombat = playerCombat,
             PlayerBattlefieldMovement = playerBattlefieldMovement,
             PlayerPublicPlacement = playerPublicPlacement,
+            PlayerTroopsModifier = playerTroopsModifier,
         };
         State.Events.Add(State.LastAction);
         if (State.StateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion)

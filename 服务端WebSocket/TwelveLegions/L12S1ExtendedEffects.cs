@@ -603,7 +603,7 @@ public sealed partial class L12GameEngine
             }
             case "ambush-buff":
             {
-                var target = DeclaredOwnLegionTarget(item.Controller, chosen[0]); if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "伏击");
+                var target = DeclaredOwnLegionTarget(item.Controller, chosen[0]); if (target is not null) ApplyPlayerThisTurnTroopsModifier(target, 2000, item.Controller, "伏击");
                 FinishStackItem(item); return true;
             }
             case "empty-city-block":
@@ -1084,7 +1084,7 @@ public sealed partial class L12GameEngine
             case "伏击":
             {
                 var target = PublicLegions(player).FirstOrDefault(card => card.InstanceId == item.Data.GetValueOrDefault("target"));
-                if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "伏击");
+                if (target is not null) ApplyPlayerThisTurnTroopsModifier(target, 2000, item.Controller, "伏击");
                 else RecordTargetSettlementFailure(item, item.Data.GetValueOrDefault("target"),
                     "所选我方军团已离场");
                 FinishStackItem(item);

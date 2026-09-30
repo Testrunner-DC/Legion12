@@ -93,6 +93,20 @@ internal static class L12RecipientVisibility
             && placement.DurationCode is null or "until-owner-next-turn-end";
         return valid ? actionEvent : actionEvent with { PlayerPublicPlacement = null };
     }
+    private static L12ActionEvent ProjectTroopsModifierEvent(L12ActionEvent actionEvent)
+    {
+        var fact = actionEvent.PlayerTroopsModifier;
+        if (fact is null) return actionEvent;
+        var matches = actionEvent.Cards.Where(card => card.InstanceId == fact.TargetInstanceId).Take(2).ToArray();
+        var valid = actionEvent.Type == "troops-modifier"
+            && !string.IsNullOrWhiteSpace(fact.TargetInstanceId)
+            && fact.TargetControllerPlayerIndex is >= 0 and <= 1
+            && fact.TargetControllerPlayerIndex == actionEvent.PlayerIndex
+            && fact.TroopsDelta is not null && fact.DurationCode == "this-turn"
+            && matches.Length == 1 && !matches[0].Hidden && !string.IsNullOrWhiteSpace(matches[0].Name);
+        return valid ? actionEvent : actionEvent with { PlayerTroopsModifier = null };
+    }
+
     internal readonly record struct Policy(bool BothHands, bool CoveredBattlefieldIdentity,
         bool AllDisasters, bool PrivatePrompts, bool PrivateHandEvents, bool DeckOrder,
         bool LegalActions)
@@ -120,8 +134,8 @@ internal static class L12RecipientVisibility
         L12ActionEvent actionEvent, int viewer, bool revealAllDisasters,
         bool revealAllHands = false)
     {
-        actionEvent = ProjectPublicPlacementEvent(ProjectBattlefieldMovementEvent(
-            ProjectCombatEvent(L12TrialProgressVisibility.PublicEvent(actionEvent))));
+        actionEvent = ProjectTroopsModifierEvent(ProjectPublicPlacementEvent(ProjectBattlefieldMovementEvent(
+            ProjectCombatEvent(L12TrialProgressVisibility.PublicEvent(actionEvent)))));
         if (actionEvent.Type == "private-return")
             return revealAllHands || actionEvent.PlayerIndex == viewer
                 ? actionEvent with { Type = "return" }

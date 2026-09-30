@@ -40,7 +40,7 @@ export const PLAYER_LOG_VISIBLE_TYPES = new Set([
   'draw', 'discard', 'grave', 'return', 'leave', 'morale', 'runes', 'dice', 'turn-start',
   'initiative-choice', 'mulligan', 'disaster', 'disaster-active', 'disaster-value',
   'trial', 'trial-action', 'enter', 'attach', 'counter-displaced', 'counter-replaced',
-  'mill', 'library', 'reorder', 'continuous', 'extra-turn', 'cost',
+  'mill', 'library', 'reorder', 'continuous', 'extra-turn', 'cost', 'troops-modifier',
 ])
 
 export const PLAYER_LOG_HIDDEN_TYPES = new Set([
@@ -137,6 +137,7 @@ function playerLogMetadataScore(event: ActionEvent) {
     + Number(Boolean(event.playerCombat))
     + Number(Boolean(event.playerBattlefieldMovement))
     + Number(Boolean(event.playerPublicPlacement))
+    + Number(Boolean(event.playerTroopsModifier))
 }
 
 function orderedUniqueEvents(events: ActionEvent[]) {
@@ -489,7 +490,24 @@ function projectPublicPlacement(event: ActionEvent, you: number, neutralView: bo
   ])
 }
 
+function projectTroopsModifier(event: ActionEvent, you: number, neutralView: boolean): LogLineRow {
+  const fact = event.playerTroopsModifier
+  const matches = (event.cards ?? []).filter(card => card.instanceId === fact?.targetInstanceId)
+  if (typeof fact?.targetInstanceId !== 'string' || !fact.targetInstanceId.trim()
+    || (fact.targetControllerPlayerIndex !== 0 && fact.targetControllerPlayerIndex !== 1)
+    || fact.targetControllerPlayerIndex !== event.playerIndex
+    || !Number.isInteger(fact.troopsDelta) || fact.troopsDelta == null
+    || fact.troopsDelta < -2147483648 || fact.troopsDelta > 2147483647
+    || fact.durationCode !== 'this-turn' || matches.length !== 1
+    || matches[0].hidden || typeof matches[0].name !== 'string' || !matches[0].name.trim())
+    return line(event.sequence, 'effect', null, [{ text: '兵力修正详情未记录' }])
+  const delta = fact.troopsDelta > 0 ? `+${fact.troopsDelta}` : String(fact.troopsDelta)
+  return line(event.sequence, 'effect', side(fact.targetControllerPlayerIndex, you, neutralView),
+    [cardPart(matches[0]), { text: `本回合兵力修正${delta}` }])
+}
+
 function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], costDetails: LogPart[] = [], neutralView = false): LogLineRow | null {
+  if (event.type === 'troops-modifier') return projectTroopsModifier(event, you, neutralView)
   const movement = projectBattlefieldMovement(event, you, neutralView)
   if (movement) return movement
   const placement = projectPublicPlacement(event, you, neutralView)
@@ -606,10 +624,8 @@ function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], co
       if (cards.length > 1) parts.push({ text: '：' }, ...cardParts(cards.slice(1)))
       parts.push(...costDetails)
       const badges = [...costs]
-      const troop = event.text.match(/兵力[^-+\d]*([+-]\d+)/)?.[1]
       const movement = event.text.match(/位移\s*(\d+)\s*格/)?.[1]
       const draw = event.text.match(/抽取\s*(\d+)\s*张/)?.[1]
-      if (troop && Number(troop)) badges.unshift(badge(Number(troop), '兵力'))
       if (movement) badges.unshift({ value: `${movement}格`, tone: 'info' })
       if (draw) badges.unshift({ value: `${draw}张`, tone: 'info' })
       for (const item of effectOutcomeBadges(event)) addUniqueBadge(badges, item)

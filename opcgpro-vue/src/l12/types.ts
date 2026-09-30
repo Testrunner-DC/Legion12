@@ -23,6 +23,7 @@ export interface ActionEvent {
   playerCombat?: PlayerCombatPresentation
   playerBattlefieldMovement?: PlayerBattlefieldMovementPresentation
   playerPublicPlacement?: PlayerPublicPlacement
+  playerTroopsModifier?: PlayerTroopsModifier
   cards?: Card[]
 }
 
@@ -37,6 +38,13 @@ export interface PlayerBattlefieldMovementFact {
 
 export interface PlayerBattlefieldMovementPresentation {
   facts?: PlayerBattlefieldMovementFact[]
+}
+
+export interface PlayerTroopsModifier {
+  targetInstanceId?: string
+  targetControllerPlayerIndex?: number
+  troopsDelta?: number
+  durationCode?: string
 }
 
 export interface PlayerPublicPlacement {

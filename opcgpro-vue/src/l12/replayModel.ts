@@ -268,6 +268,14 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
     const combat = value<any>(event, 'PlayerCombat', 'playerCombat', undefined)
     const movement = value<any>(event, 'PlayerBattlefieldMovement', 'playerBattlefieldMovement', undefined)
     const placement = value<any>(event, 'PlayerPublicPlacement', 'playerPublicPlacement', undefined)
+    const troopsModifier = value<any>(event, 'PlayerTroopsModifier', 'playerTroopsModifier', undefined)
+    // Generic replay-card defaults are presentation placeholders, not recorded target identity.
+    const troopsTargetId = value(troopsModifier, 'TargetInstanceId', 'targetInstanceId', undefined)
+    const troopsTargets = troopsModifier ? value<any[]>(event, 'Cards', 'cards', [])
+      .filter(card => value(card, 'InstanceId', 'instanceId', undefined) === troopsTargetId) : []
+    const troopsTargetName = troopsTargets.length === 1
+      ? value<unknown>(troopsTargets[0], 'Name', 'name', undefined) : undefined
+    const hasRecordedTroopsTargetName = typeof troopsTargetName === 'string' && troopsTargetName.trim().length > 0
     return ({
     sequence: value(event, 'Sequence', 'sequence', 0), type: value(event, 'Type', 'type', ''),
     playerIndex: value(event, 'PlayerIndex', 'playerIndex', undefined), text: value(event, 'Text', 'text', ''),
@@ -311,6 +319,12 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
         toRow: value(fact, 'ToRow', 'toRow', undefined),
         toSlot: value(fact, 'ToSlot', 'toSlot', undefined),
       })),
+    } : undefined,
+    playerTroopsModifier: troopsModifier && hasRecordedTroopsTargetName ? {
+      targetInstanceId: value(troopsModifier, 'TargetInstanceId', 'targetInstanceId', undefined),
+      targetControllerPlayerIndex: value(troopsModifier, 'TargetControllerPlayerIndex', 'targetControllerPlayerIndex', undefined),
+      troopsDelta: value(troopsModifier, 'TroopsDelta', 'troopsDelta', undefined),
+      durationCode: value(troopsModifier, 'DurationCode', 'durationCode', undefined),
     } : undefined,
     playerPublicPlacement: placement ? {
       instanceId: value(placement, 'InstanceId', 'instanceId', undefined),

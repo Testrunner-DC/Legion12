@@ -815,6 +815,13 @@ public sealed record L12PlayerPublicPlacement(
     bool? Tapped = null,
     string? DurationCode = null);
 
+/// <summary>已完成的单目标本回合兵力修正；不是伤害或击杀结论。</summary>
+public sealed record L12PlayerTroopsModifier(
+    string? TargetInstanceId = null,
+    int? TargetControllerPlayerIndex = null,
+    int? TroopsDelta = null,
+    string? DurationCode = null);
+
 public sealed record L12ActionEvent(
     long Sequence,
     string Type,
@@ -854,6 +861,8 @@ public sealed record L12ActionEvent(
     public L12PlayerBattlefieldMovement? PlayerBattlefieldMovement { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public L12PlayerPublicPlacement? PlayerPublicPlacement { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12PlayerTroopsModifier? PlayerTroopsModifier { get; init; }
 }
 
 public sealed class L12GameState

@@ -92,7 +92,7 @@ public sealed partial class L12GameEngine
                 if (target is not null && row == 0 && IsFieldLegion(target)
                     && target.InstanceId != item.SourceInstanceId && target.Troops <= 5000
                     && L12StructuredCardRules.HasFaction(player, target, "gaotianyuan"))
-                    AddTimedModifier(target, 1000, 0, State.TurnSerial, item.SourceName);
+                    ApplyPlayerThisTurnTroopsModifier(target, 1000, item.Controller, item.SourceName);
                 FinishStackItem(item); break;
             }
             case "takasugi-enter-target":

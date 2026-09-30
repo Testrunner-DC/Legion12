@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import './test-battle-troops-modifier.mjs'
 import { PLAYER_LOG_REDLINE_TERMS, playerLogContainsForbiddenTerms, projectLog } from '../src/l12/game/logViewModel.ts'
 import { replayGameAt } from '../src/l12/replayModel.ts'
 
@@ -195,8 +196,8 @@ assert(legacySet[0].kind === 'line' && !legacySet[0].badges.some(item => item.va
 const additiveTroops = projectLog([
   event(1, 'effect', '本回合兵力+1000', [source], 0),
 ], 0, [])
-assert(additiveTroops[0].kind === 'line' && additiveTroops[0].badges.some(item => item.value === '+1000兵力'),
-  'an explicit signed troop delta remains an additive change')
+assert(additiveTroops[0].kind === 'line' && !additiveTroops[0].badges.some(item => item.value.includes('兵力')),
+  'legacy signed text without an authoritative modifier fact must not manufacture a troop delta')
 
 const otherworldRune = projectLog([
   event(1, 'cost', '消耗2士气', [], 0),

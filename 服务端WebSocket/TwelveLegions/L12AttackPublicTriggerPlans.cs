@@ -558,7 +558,7 @@ public sealed partial class L12GameEngine
                         FindOnField(player, card.InstanceId, out var row, out _) is not null
                         && row == 0 && card.Troops <= 2000,
                         "位于前排且兵力不高于2000") is { } ayTarget)
-                    AddTimedModifier(ayTarget, 2000, 0, State.TurnSerial, "阿伊");
+                    ApplyPlayerThisTurnTroopsModifier(ayTarget, 2000, item.Controller, "阿伊");
                 Finish(); return true;
             case "olaf":
                 if (source is null) Fail("奥拉夫二世已离开战场；已支付的墓地费用不返还");
@@ -591,7 +591,7 @@ public sealed partial class L12GameEngine
                         && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")
                         && card.Troops <= 5000,
                         "位于前排、兵力不高于5000且具有高天原阵营") is { } inahimeTarget)
-                    AddTimedModifier(inahimeTarget, 1000, 0, State.TurnSerial, "稻姬本多小松");
+                    ApplyPlayerThisTurnTroopsModifier(inahimeTarget, 1000, item.Controller, "稻姬本多小松");
                 Finish(); return true;
             case "pingyang":
             {

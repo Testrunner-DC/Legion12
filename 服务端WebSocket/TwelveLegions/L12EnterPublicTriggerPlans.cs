@@ -609,12 +609,12 @@ public sealed partial class L12GameEngine
             case "ankh":
                 if (ResolveDeclaredOwnLegionTarget(item, One("target"),
                         card => card.CardId == "S01-0212", "卡名为〈陵墓守卫〉") is { } ankh)
-                    AddTimedModifier(ankh, 2000, 0, State.TurnSerial, source.Name);
+                    ApplyPlayerThisTurnTroopsModifier(ankh, 2000, item.Controller, source.Name);
                 break;
             case "oddr": Draw(player, 1); break;
             case "egil":
                 if (ResolveDeclaredEntryEnemyLegion(item, One("target"), null, "对方军团条件") is { } egilTarget)
-                    AddTimedModifier(egilTarget, -2000, 0, State.TurnSerial, source.Name);
+                    ApplyPlayerThisTurnTroopsModifier(egilTarget, -2000, 1 - item.Controller, source.Name);
                 break;
             case "gram":
                 if (ResolveDeclaredEntryEnemyLegion(item, One("target"),
@@ -707,7 +707,7 @@ public sealed partial class L12GameEngine
                         && card.InstanceId != item.SourceInstanceId && card.Troops <= 5000
                         && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan"),
                         "位于前排、兵力不高于5000且具有高天原阵营") is { } ina)
-                    AddTimedModifier(ina, 1000, 0, State.TurnSerial, source.Name);
+                    ApplyPlayerThisTurnTroopsModifier(ina, 1000, item.Controller, source.Name);
                 break;
             case "court-magician":
             {

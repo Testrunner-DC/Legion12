@@ -608,7 +608,7 @@ public sealed partial class L12GameEngine
             case "ankh-enter":
             {
                 var target = DeclaredOwnLegionTarget(item.Controller, chosen[0]);
-                if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "安卡神碑");
+                if (target is not null) ApplyPlayerThisTurnTroopsModifier(target, 2000, item.Controller, "安卡神碑");
                 FinishStackItem(item);
                 return true;
             }
@@ -657,7 +657,7 @@ public sealed partial class L12GameEngine
                         L12PromptWaitingAction.TargetSelection),
                     "结算时若所选对象仍位于对方战场且仍是军团，使其本回合兵力-2000；否则目标效果失败，已经处理的主宰伤害与牌库弃置不会返还。");
                 return true;
-            case "egil-debuff": { var target = DeclaredEnemyTarget(item.Controller, chosen[0]); if (target is not null) AddTimedModifier(target, -2000, 0, State.TurnSerial, "夺命诗人埃吉尔"); else RecordTargetSettlementFailure(item, chosen[0], "所选对方军团已离场或不再是军团"); FinishStackItem(item); return true; }
+            case "egil-debuff": { var target = DeclaredEnemyTarget(item.Controller, chosen[0]); if (target is not null) ApplyPlayerThisTurnTroopsModifier(target, -2000, 1 - item.Controller, "夺命诗人埃吉尔"); else RecordTargetSettlementFailure(item, chosen[0], "所选对方军团已离场或不再是军团"); FinishStackItem(item); return true; }
             case "gram-bottom":
                 if (chosen[0] != "skip") ReturnEnemyFieldToLibraryBottom(item.Controller, chosen[0]);
                 FinishStackItem(item); return true;
