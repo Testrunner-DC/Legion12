@@ -106,8 +106,12 @@ for (const copies of [
     playerLogSemantic: { actionLabel: '发动效果', outcomeLabel: '已完成' } }],
 ]) {
   const projected = rows(copies)
-  assert.equal(projected.length, 0,
+  assert.equal(projected.length, 1)
+  assert.equal(words(projected[0]), '发动效果',
     'a hidden-card copy must not inherit a public card or semantic fact')
+  assert(!JSON.stringify(projected).includes('公开卡'))
+  assert(!JSON.stringify(projected).includes('隐藏身份'))
+  assert(!JSON.stringify(projected).includes('已完成'))
 }
 const differentCard = rows([
   { sequence: 1, type: 'effect', playerIndex: 0, text: '发动效果', cards: [revealed],
@@ -138,6 +142,19 @@ for (const copies of [
     'matching public scalar facts remain stable without choosing a card identity')
   assert(!JSON.stringify(projected).includes('公开卡'))
   assert(!JSON.stringify(projected).includes('另一张卡'))
+}
+for (const copies of [
+  [event(1, 4, 5, { cards: [revealed],
+    playerLogGroupId: 'turn:foreign', playerLogTiming: 'turn-start' }),
+  event(1, 4, 5, { cards: [otherCard] })],
+  [event(1, 4, 5, { cards: [otherCard] }),
+  event(1, 4, 5, { cards: [revealed],
+    playerLogGroupId: 'turn:foreign', playerLogTiming: 'turn-start' })],
+]) {
+  const projected = rows(copies)
+  assert.equal(projected.length, 1)
+  assert.equal(words(projected[0]), '天灾值 4→5',
+    'same scalar value across different card identities cannot inherit a turn group')
 }
 for (const copies of [
   [event(1, 4, 5, { cards: [revealed] }),

@@ -230,7 +230,7 @@ function coalesceDuplicateEvents(events: ActionEvent[]) {
   }
   // Group, timing, decision and result form one receipt. Choose a complete
   // existing tuple; never fill its gaps from a different group or timing.
-  const metadataSource = metadataConflict ? null : [...compatible]
+  const metadataSource = metadataConflict || divergentIdentity ? null : [...compatible]
     .sort((left, right) => playerLogMetadataScore(right) - playerLogMetadataScore(left))[0]
   for (const key of groupedMetadataKeys) set(key, metadataSource?.[key])
   return merged
