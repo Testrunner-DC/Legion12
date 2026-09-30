@@ -124,7 +124,9 @@ Assert-Contains $plans 'Batch6JBPublicTriggerPlans' 'Batch 6J-B triggers need on
 Assert-Contains $plans 'PrepareBatch6JBPublicTriggerCandidate' 'Batch 6J-B public conditions and once reservations need one shared candidate filter.'
 Assert-Contains $kernel 'private bool PrepareTriggerCandidateForDeclaration' 'Every TriggerBatch entry needs one shared candidate preparation gate.'
 Assert-Contains $kernel '&& PrepareBatch6JBPublicTriggerCandidate(candidate)' 'The shared TriggerBatch preparation gate must filter Batch 6J-B candidates.'
-Assert-Contains $kernel '|| PrepareTriggerCandidateForDeclaration(candidate)).ToArray();' 'Immediate and deferred TriggerBatch candidates must both use the shared preparation gate.'
+Assert-Contains $kernel 'candidate.Data[DeferredTriggerQualification] = "true";' 'Every queued TriggerBatch candidate must defer mutable qualification until declaration.'
+Assert-Contains $kernel 'candidate.Data.Remove(DeferredTriggerQualification)' 'The declaration turn must consume the deferred qualification marker exactly once.'
+Assert-Contains $kernel '&& !PrepareTriggerCandidateForDeclaration(candidate))' 'Deferred TriggerBatch candidates must use the shared preparation gate at declaration time.'
 Assert-Contains $kernel 'activation.TriggerCandidateId == candidate.CandidateId' 'A trigger candidate with an open declaration must not create duplicate PendingActivations.'
 Assert-Contains $plans 'PublicTriggerStep("target-morale", "returnCost"' 'Lu Bu must declare the exact four-morale cost before stack entry.'
 Assert-Contains $plans 'MoveGraveToLibraryBottom(player, physicalCosts)' 'Gustav must commit his ordered grave cost before stack entry.'
@@ -220,7 +222,8 @@ Assert-Contains $attackPlans 'TryQueueAttackPublicTriggerCandidates' 'Attack tri
 Assert-Contains $attackPlans 'CreateTriggerCandidate(controller, source, trigger, candidateText, candidateData, source)' 'Attack candidates must retain a last-known source snapshot.'
 Assert-Contains $attackPlans 'PayAttackPublicCost(candidate, activation, plan, player, source, costIds)' 'Attack colon costs must commit before stack entry.'
 if (-not [regex]::IsMatch($attackPlans,
-    'PublicTriggerStep\("field-legion",\s*"cost",\s*"美尼斯：预先选择作为费用弃置的我方1张军团",\s*PublicLegions\(player\)\.Select\(card => card\.InstanceId\),\s*requiredChoice:\s*required,\s*isCostSelection:\s*true\)')) {
+    'case "discard-own-legion":\s*steps\.Add\(PublicTriggerStep\("field-legion",\s*"cost",.*?PublicLegions\(player\)\.Select\(card => card\.InstanceId\),\s*requiredChoice:\s*required,\s*isCostSelection:\s*true\)\);\s*break;',
+    [Text.RegularExpressions.RegexOptions]::Singleline)) {
     throw 'Menes must be allowed to declare itself as the legion discard cost, and the selection must remain explicitly marked as a cost.'
 }
 Assert-Contains $attackPlans '"discard-own-legion" => PublicLegions(player).Any(),' 'Menes must remain activatable when it is the only friendly legion.'
