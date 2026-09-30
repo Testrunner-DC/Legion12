@@ -12,6 +12,7 @@ import DeckConstructionBrowser, { type ConstructionEntry } from './DeckConstruct
 import { samplePublicDeckOpeningHand } from './publicDeckHands'
 import { preservePublicDeckDetails, publicDeckRouteReference } from './publicDeckEntry'
 import { useActionGate } from '@/l12/useActionGate'
+import { deckEditorQuery } from './deckEditorNavigation'
 
 const route = useRoute()
 const router = useRouter()
@@ -180,7 +181,7 @@ async function previewImage() {
 async function editDeck() {
   if (!entry.value) return
   const saved = await saveDeck({ ...entry.value.deck, cardIds: [...entry.value.deck.cardIds], moraleIds: [...entry.value.deck.moraleIds], specialIds: [...(entry.value.deck.specialIds ?? [])] })
-  await router.push({ path: '/deck-editor', query: { deck: saved.name, published: entry.value.id, returnTo: route.fullPath } })
+  await router.push({ path: '/deck-editor', query: deckEditorQuery(route.fullPath, saved.name, entry.value.id) })
 }
 async function deleteDeck() {
   if (!entry.value || !window.confirm('确定删除这个公开牌库？')) return

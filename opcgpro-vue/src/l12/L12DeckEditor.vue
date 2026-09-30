@@ -16,10 +16,11 @@ import CardDetailContent from './CardDetailContent.vue'
 import DeckCostCurve from './DeckCostCurve.vue'
 import PublicDeckContentEditor from './site/PublicDeckContentEditor.vue'
 import { matchesPublishedDeckReference, publicDeckRouteReference } from './site/publicDeckEntry'
+import { deckEditorReturnTarget } from './site/deckEditorNavigation'
 
 const router = useRouter()
 const route = useRoute()
-const returnTo = computed(() => typeof route.query.returnTo === 'string' && route.query.returnTo.startsWith('/') ? route.query.returnTo : '/decks')
+const returnTo = computed(() => deckEditorReturnTarget(route.query.returnTo))
 const catalog = ref<DeckCard[]>([])
 const savedDecks = ref<Record<string, SavedL12Deck>>({})
 const loading = ref(true)

@@ -10,6 +10,7 @@ import MobileFilterSheet from './MobileFilterSheet.vue'
 import { useActionGate } from '@/l12/useActionGate'
 import { matchesPublishedDeckReference, publicDeckRouteReference } from './publicDeckEntry'
 import { deckEnvironmentForDeck, deckEnvironmentLabel, type DeckEnvironmentFilter } from './deckEnvironment'
+import { deckEditorQuery } from './deckEditorNavigation'
 
 const PAGE_SIZE = 30
 const HOT_DECK_PIXELS_PER_SECOND = [48, 46] as const
@@ -62,8 +63,10 @@ const { pending: actionBusy, isPending: actionPending, run: runAction } = useAct
 let hotDeckResizeObserver: ResizeObserver | null = null
 const publicDeckActionKey = (deckId: string, accountId = platformState.account?.id ?? 'anonymous') =>
   `public-deck:${accountId}:${deckId}`
-const returnTo = computed(() => typeof route.query.from === 'string' && route.query.from.startsWith('/') ? route.query.from : '/decks')
-const editorLink = (deckName?: string, publicationId?: string) => ({ path: '/deck-editor', query: { ...(deckName ? { deck: deckName } : {}), ...(publicationId ? { published: publicationId } : {}), returnTo: returnTo.value } })
+const editorLink = (deckName?: string, publicationId?: string) => ({
+  path: '/deck-editor',
+  query: deckEditorQuery(route.fullPath, deckName, publicationId),
+})
 
 const factionLabels: Record<string, string> = {
   universal: '通用', tianting: '天廷', gaotianyuan: '高天原', asgard: '阿斯加德',
