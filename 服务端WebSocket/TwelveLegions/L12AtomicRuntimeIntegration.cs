@@ -176,7 +176,7 @@ public sealed partial class L12GameEngine
                     EmitVerifiedAtomicEvent(atom, item.Controller, source);
                     break;
                 case L12AtomKinds.ModifyTroops when atom.Parameters.GetValueOrDefault("operation") == "add":
-                    AddTimedModifier(source, AtomicInt(atom, "value"), item.Controller,
+                    AddTimedModifier(source, AtomicInt(atom, "value"), cost: 0,
                         ExpiryAtNextOwnEnd(item.Controller), source.Name);
                     EmitVerifiedAtomicEvent(atom, item.Controller, source);
                     break;
