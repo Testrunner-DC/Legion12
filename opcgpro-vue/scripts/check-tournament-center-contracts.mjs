@@ -19,6 +19,16 @@ const gamePage = read('src/l12/GamePage.vue')
 const roomLoadingState = read('src/l12/tournamentRoomLoadingState.ts')
 const tournamentServer = read('../服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs')
 const visualSources = [detail, management, judge, summary, wizard, hub]
+const standingComparator = tournamentServer.slice(tournamentServer.indexOf('private static int CompareStanding('))
+const appearsInOrder = (source, markers) => {
+  let position = 0
+  return markers.every(marker => {
+    const found = source.indexOf(marker, position)
+    if (found < 0) return false
+    position = found + marker.length
+    return true
+  })
+}
 
 const loadTypeScriptModule = async source => {
   const transpiled = ts.transpileModule(source, {
@@ -46,6 +56,18 @@ const checks = [
   ['tournament states and roles retain text labels', summary.includes('tournamentStatusText(item.status)') && summary.includes('tournamentViewerRoleText(item.viewerRole)') && detail.includes('tournamentPhaseText(tournament.phase)') && detail.includes('tournamentRoundStatusText(round.status)')],
   ['dangerous organizer actions are visually separated', management.includes('class="danger-zone"') && management.includes('class="danger" @click="cancel"') && detail.includes('class="danger" @click="remove(person,true)"')],
   ['responsive standings become labeled cards', detail.includes('class="standings-table"') && detail.includes('data-label="胜-负-平"') && detail.includes('.standings-table .thead{display:none}')],
+  ['Swiss ranking explanation matches the authoritative comparator',
+    detail.match(/class="ranking-method"/g)?.length === 2
+      && detail.match(/v-if="hasSwissStandings"/g)?.length === 2
+      && detail.includes("tournament.value?.format === 'swiss' || tournament.value?.format === 'swiss-cut'")
+      && detail.includes('轮空计 1 胜')
+      && detail.includes('轮空不产生对手')
+      && detail.includes("name: '对手胜场和', explanation: '实际交手过的每位对手，其胜场相加；分数较高者在前。轮空不产生对手。'")
+      && detail.includes("name: '对手的对手胜场和', explanation: '把每位实际交手对手的“对手胜场和”相加；分数较高者在前。'")
+      && detail.includes('按账号 ID 的序数升序排列；页面不展示账号标识')
+      && tournamentServer.includes('if (match.Result == "bye") { wins[match.PlayerAAccountId]++; byes[match.PlayerAAccountId]++; }')
+      && appearsInOrder(detail, ["name: '胜场'", "name: '对手胜场和'", "name: '对手的对手胜场和'", "name: '最近直接交锋'", "name: '种子'", "name: '账号 ID 稳定兜底'"])
+      && appearsInOrder(standingComparator, ['second.Wins.CompareTo(first.Wins)', 'second.OpponentScore.CompareTo(first.OpponentScore)', 'second.OpponentsOpponentScore.CompareTo(first.OpponentsOpponentScore)', 'matches.LastOrDefault', 'first.Seed.CompareTo(second.Seed)', 'string.CompareOrdinal(first.AccountId, second.AccountId)'])],
   ['creation progress and ranked timing stay visibly structured', wizard.includes('class="stepper"') && wizard.includes('RANKED TIME CONTROL') && wizard.includes('与排位一致的五项计时') && wizard.includes('报名时无需提交，赛前签到时锁定')],
   ['detail separates organizer and judge capabilities', detail.includes('const canOrganize') && detail.includes('const canJudge') && !detail.includes('const canManage')],
   ['participant moderation is organizer-only', detail.includes('v-if="canOrganize && person.accountId !== tournament.organizerAccountId"')],
