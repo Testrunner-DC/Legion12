@@ -70,7 +70,7 @@ async function prepare(page) {
 }
 
 async function waitForLibrary(page) {
-  await page.getByRole('heading', { name:'热门卡组', exact:true }).waitFor()
+  await page.getByRole('heading', { name:'热门牌库', exact:true }).waitFor()
 }
 
 async function freezeTracks(page, translatedCopy = false) {
@@ -120,8 +120,9 @@ try {
   assert.equal(await tracks.nth(0).evaluate(element => getComputedStyle(element).animationDirection), 'normal')
   assert.equal(await tracks.nth(1).evaluate(element => getComputedStyle(element).animationDirection), 'reverse')
   const durations = await tracks.evaluateAll(elements => elements.map(element => Number.parseFloat(getComputedStyle(element).animationDuration)))
-  assert.ok(closeTo(durations[0], 65.714), `首行时长应为约 65.714s，实际 ${durations[0]}`)
-  assert.ok(closeTo(durations[1], 74.286), `次行时长应为约 74.286s，实际 ${durations[1]}`)
+  assert.ok(closeTo(durations[0], 65.714 / 1.3), `首行速度应加快 30%（原时长 / 1.3），实际 ${durations[0]}s`)
+  assert.ok(closeTo(durations[1], 74.286 / 1.3), `次行速度应加快 30%（原时长 / 1.3），实际 ${durations[1]}s`)
+  assert.equal(await hot.getByRole('button', { name:/查看热门卡组/ }).count(), 0, '旧外显名称不得保留')
   const frame = await hot.evaluate(element => {
     const style = getComputedStyle(element)
     return { backgroundColor:style.backgroundColor, backgroundImage:style.backgroundImage, borderTop:style.borderTopWidth, borderBottom:style.borderBottomWidth }
