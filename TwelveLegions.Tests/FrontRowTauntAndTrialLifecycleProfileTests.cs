@@ -496,14 +496,15 @@ public sealed class FrontRowTauntAndTrialLifecycleProfileTests
     [Fact]
     public void StarterAeneasPromotionCardKeepsRuntimeIdentityWithoutPrintedSegment()
     {
-        // ST05-01 埃涅阿斯·晋升是【晋升者】：卡面带“晋升 消耗并翻转1神力……”规则行，
+        // ST05-01 埃涅阿斯·晋升是【晋升者】：卡面带“晋升 消耗并翻转2神力……”规则行，
         // 运行时由共享晋升入口（基底映射 ST05-01→S02-0512、费用读卡文）承担。
         // 结构化目录不为它生成 promotion 印刷段；封闭集合守卫与本测试共同锁定该不对称——
         // 未来为它补印段或移除运行时晋升能力，都必须重新审查本族。
         var definition = Catalog.Cards["ST05-01"];
         Assert.Equal("olympus", definition.Faction);
         Assert.Contains("晋升者", definition.Traits);
-        Assert.Contains("晋升 消耗并翻转1神力，叠放至我方同名非【晋升者】军团上方登场。",
+        Assert.Equal(6000, definition.Troops);
+        Assert.Contains("晋升 消耗并翻转2神力，叠放至我方同名非【晋升者】军团上方登场。",
             definition.Effect, StringComparison.Ordinal);
         Assert.DoesNotContain(Catalog.AtomicEffects.All
             .First(card => card.CardId == "ST05-01").Abilities, ability => ability.Trigger == "promotion");

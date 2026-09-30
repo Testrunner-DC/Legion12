@@ -185,6 +185,53 @@ public sealed class Bq20260903_01RegressionTests
     }
 
     [Fact]
+    public void AeneasPromotionRequiresAndConsumesTwoActiveGodPowers()
+    {
+        var game = Create();
+        var player = game.State.Players[0];
+        var promoted = Card("ST05-01", "aeneas-two-power-promotion");
+        var foundation = Card("S02-0512", "aeneas-two-power-foundation");
+        promoted.OwnerIndex = 0;
+        foundation.OwnerIndex = 0;
+        player.Hand.Add(promoted);
+        player.Field[0][0] = foundation;
+        player.Morale.Add(new L12MoraleCard
+        {
+            InstanceId = "aeneas-first-power", CardId = "S02-05C1A", IsGodPower = true, Tapped = false,
+        });
+
+        var insufficient = JsonSerializer.SerializeToElement(game.SnapshotFor(0));
+        Assert.False(insufficient.GetProperty("Players")[0].GetProperty("promotionOptions")
+            .TryGetProperty(promoted.InstanceId, out _));
+        var rejected = game.Handle(0, new L12Command("playCard", promoted.InstanceId));
+        Assert.False(rejected.Accepted);
+        Assert.False(player.Morale[0].Tapped);
+
+        player.Morale.Add(new L12MoraleCard
+        {
+            InstanceId = "aeneas-second-power", CardId = "S02-05C1A", IsGodPower = true, Tapped = false,
+        });
+        var sufficient = JsonSerializer.SerializeToElement(game.SnapshotFor(0));
+        Assert.True(sufficient.GetProperty("Players")[0].GetProperty("promotionOptions")
+            .TryGetProperty(promoted.InstanceId, out _));
+
+        var started = game.Handle(0, new L12Command("playCard", promoted.InstanceId));
+        Assert.True(started.Accepted, started.Error);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-promotion-foundation", prompt.Continuation);
+        var resolved = game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: foundation.InstanceId));
+        Assert.True(resolved.Accepted, resolved.Error);
+        Assert.Same(promoted, player.Field[0][0]);
+        Assert.Equal(6000, promoted.BaseTroops);
+        Assert.All(player.Morale, power =>
+        {
+            Assert.True(power.Tapped);
+            Assert.False(power.IsGodPower);
+        });
+    }
+
+    [Fact]
     public void LancelotEntryRuneCostUsesTheSharedSpendEventPath()
     {
         var game = Create();
