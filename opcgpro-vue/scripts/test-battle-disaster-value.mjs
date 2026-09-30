@@ -17,6 +17,18 @@ assert.equal(words(rows([event(1, 4, 5, { text: '虚构增加0张士气' })])[0]
 assert.equal(words(rows([event(1, 4, 5, { playerLogGroupId: 'effect:departed-source' })])[0]),
   '天灾值 4→5', 'a public value survives a group whose source is unavailable')
 assert.equal(rows([event(1, 7, 9), event(1, 7, 9), event(2, 9, 0)]).length, 2)
+for (const copies of [
+  [event(1, 4, 5, { playerDisasterValue: {} }), event(1, 4, 5)],
+  [event(1, 4, 5, { playerDisasterValue: undefined,
+    playerLogGroupId: 'effect:old', playerLogTiming: 'active' }), event(1, 4, 5)],
+]) {
+  const projected = rows(copies)
+  assert.equal(projected.length, 1, 'same-sequence copies produce one row')
+  assert.equal(words(projected[0]), '天灾值 4→5',
+    'a valid settled fact outranks an empty or metadata-rich duplicate')
+}
+assert.equal(words(rows([event(1, 4, 5), event(1, 7, 8)])[0]),
+  '天灾值变化（详情未记录）', 'conflicting settled facts cannot be spliced or chosen arbitrarily')
 for (const bad of [undefined, null, {}, { before: -1, after: 3 },
   { before: 2, after: 2147483648 }, { before: 2.5, after: 3 },
   { before: '2', after: 3 }]) {
@@ -44,6 +56,29 @@ const turn = rows([
 ])
 assert.equal(turn.length, 2)
 assert.equal(words(turn[1]), '回合开始，天灾值 4→5')
+const duplicatedGroupedTurn = rows([
+  { sequence: 1, type: 'turn-start', playerIndex: 0, text: '第2回合', cards: [],
+    playerLogGroupId: 'turn:2', playerLogTiming: 'turn-start' },
+  event(2, 4, 5, { playerDisasterValue: undefined,
+    playerLogGroupId: 'turn:2', playerLogTiming: 'turn-start' }),
+  event(2, 4, 5),
+])
+assert.equal(duplicatedGroupedTurn.length, 2)
+assert.equal(words(duplicatedGroupedTurn[1]), '回合开始，天灾值 4→5',
+  'deduplication retains the valid fact and the compatible turn grouping metadata')
+for (const fact of [undefined, {}, { before: 4, after: '5' }]) {
+  const mixedTurn = rows([
+    { sequence: 1, type: 'turn-start', playerIndex: 0, text: '第2回合', cards: [],
+      playerLogGroupId: 'turn:2', playerLogTiming: 'turn-start' },
+    { sequence: 2, type: 'draw', playerIndex: 0, text: '抽取 1 张牌', cards: [],
+      playerLogGroupId: 'turn:2', playerLogTiming: 'turn-start' },
+    event(3, 4, 5, { playerDisasterValue: fact,
+      playerLogGroupId: 'turn:2', playerLogTiming: 'turn-start' }),
+  ])
+  assert.equal(mixedTurn.length, 2)
+  assert.equal(words(mixedTurn[1]), '回合开始，抽取1张牌，天灾值变化（详情未记录）',
+    'turn grouping must retain a degraded disaster receipt alongside other summaries')
+}
 
 const replay = events => replayGameAt({ match: { matchId: 'disaster', roomCode: 'DISASTER' },
   viewerPlayerIndex: 1, commands: [{ state: { Events: events }, revision: 1 }] }, 0)

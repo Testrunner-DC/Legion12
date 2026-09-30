@@ -133,12 +133,6 @@ function playerLogMetadataScore(event: ActionEvent) {
     + Number(Boolean(event.playerLogTiming))
     + Number(Boolean(event.playerLogDecisionLabel))
     + Number(Boolean(event.effectResultStatus))
-    + Number(Boolean(event.playerLogSemantic))
-    + Number(Boolean(event.playerCombat))
-    + Number(Boolean(event.playerBattlefieldMovement))
-    + Number(Boolean(event.playerPublicPlacement))
-    + Number(Boolean(event.playerTroopsModifier))
-    + Number(Boolean(event.playerDisasterValue))
 }
 
 function disasterValueText(event: ActionEvent): string | null {
@@ -150,14 +144,80 @@ function disasterValueText(event: ActionEvent): string | null {
   return before === after ? `天灾值保持 ${after}` : `天灾值 ${before}→${after}`
 }
 
-function orderedUniqueEvents(events: ActionEvent[]) {
-  const bySequence = new Map<number, ActionEvent>()
-  for (const event of [...events].sort((left, right) => left.sequence - right.sequence)) {
-    const existing = bySequence.get(event.sequence)
-    if (!existing || playerLogMetadataScore(event) > playerLogMetadataScore(existing))
-      bySequence.set(event.sequence, event)
+const structuredFactKeys = [
+  'playerLogSemantic', 'playerCombat', 'playerBattlefieldMovement',
+  'playerPublicPlacement', 'playerTroopsModifier', 'playerDisasterValue',
+] as const
+type StructuredFactKey = typeof structuredFactKeys[number]
+
+function hasUsableStructuredFact(event: ActionEvent, key: StructuredFactKey) {
+  const fact = event[key]
+  if (!fact) return false
+  if (key === 'playerDisasterValue') return disasterValueText(event) !== null
+  if (key === 'playerBattlefieldMovement') return projectBattlefieldMovement(event, 0, false) !== null
+  if (key === 'playerPublicPlacement') return projectPublicPlacement(event, 0, false) !== null
+  if (key === 'playerTroopsModifier') return event.type === 'troops-modifier'
+    && projectTroopsModifier(event, 0, false).parts[0]?.text !== '兵力修正详情未记录'
+  if (key === 'playerCombat') return Boolean(event.playerCombat?.combatId && event.playerCombat.eventKind)
+  return Boolean(event.playerLogSemantic?.actionLabel && event.playerLogSemantic.outcomeLabel)
+}
+
+function factSignature(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(factSignature).join(',')}]`
+  if (value && typeof value === 'object') return `{${Object.entries(value)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, item]) => `${JSON.stringify(key)}:${factSignature(item)}`).join(',')}}`
+  return JSON.stringify(value)
+}
+
+function sameEventIdentity(left: ActionEvent, right: ActionEvent) {
+  if (left.type !== right.type || left.playerIndex !== right.playerIndex) return false
+  const leftIds = publicCards(left).map(card => card.instanceId || `${card.cardId}:${card.name}`).sort()
+  const rightIds = publicCards(right).map(card => card.instanceId || `${card.cardId}:${card.name}`).sort()
+  return !leftIds.length || !rightIds.length || JSON.stringify(leftIds) === JSON.stringify(rightIds)
+}
+
+function coalesceDuplicateEvents(events: ActionEvent[]) {
+  if (events.length === 1) return events[0]
+  const ranked = [...events].sort((left, right) => {
+    const factCount = (event: ActionEvent) => structuredFactKeys
+      .filter(key => hasUsableStructuredFact(event, key)).length
+    return factCount(right) - factCount(left)
+      || playerLogMetadataScore(right) - playerLogMetadataScore(left)
+  })
+  const base = ranked[0]
+  const compatible = events.filter(event => sameEventIdentity(base, event))
+  // Preserve lazy fields such as legacy Text accessors: projection only reads
+  // the fields relevant to the event, so deduplication must do the same.
+  const merged = Object.create(base) as ActionEvent
+  const set = (key: keyof ActionEvent, value: unknown) =>
+    Object.defineProperty(merged, key, { value, enumerable: true, configurable: true })
+  for (const key of structuredFactKeys) {
+    const facts = compatible.filter(event => hasUsableStructuredFact(event, key))
+      .map(event => event[key])
+    const distinct = [...new Map(facts.map(fact => [factSignature(fact), fact])).values()]
+    // A conflicting same-sequence receipt is ambiguous; never combine fields
+    // from different claims or present an arbitrary value as settled fact.
+    if (distinct.length === 1) set(key, distinct[0])
+    else if (distinct.length > 1) set(key, undefined)
   }
-  return [...bySequence.values()]
+  for (const key of ['playerLogGroupId', 'playerLogTiming', 'playerLogDecisionLabel',
+    'effectResultStatus'] as const) {
+    if (merged[key] != null) continue
+    const values = [...new Set(compatible.map(event => event[key]).filter(value => value != null))]
+    if (values.length === 1) set(key, values[0])
+  }
+  return merged
+}
+
+function orderedUniqueEvents(events: ActionEvent[]) {
+  const bySequence = new Map<number, ActionEvent[]>()
+  for (const event of [...events].sort((left, right) => left.sequence - right.sequence)) {
+    const copies = bySequence.get(event.sequence) ?? []
+    copies.push(event)
+    bySequence.set(event.sequence, copies)
+  }
+  return [...bySequence.values()].map(coalesceDuplicateEvents)
 }
 
 function timingLabel(timing: string | undefined) {
@@ -231,6 +291,7 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
     for (const event of group) {
       const value = disasterValueText(event)
       if (value) changes.push(value)
+      else if (event.type === 'disaster-value') changes.push('天灾值变化（详情未记录）')
     }
     if (!changes.length) return null
     const changeSequence = group.find(event => event.type !== 'turn-start')?.sequence ?? first.sequence
@@ -280,7 +341,7 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
 
   for (const disaster of group.filter(event => event.type === 'disaster-value')) {
     const progress = disasterValueText(disaster)
-    if (progress) suffix += `，${progress}`
+    suffix += `，${progress ?? '天灾值变化（详情未记录）'}`
   }
 
   if (trial) {
