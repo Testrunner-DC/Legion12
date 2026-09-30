@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-01-battle-deck-closeout",
+  "date": "2026-10-01",
+  "audience": "players",
+  "title": "牌库浏览与对战交互细节修正",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "热门牌库的两行横向滚动改为按实际内容宽度保持稳定速度，不再因牌库数量或屏幕宽度不同而忽快忽慢。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/DeckLibraryPage.vue"
+      ]
+    },
+    {
+      "category": "decks",
+      "text": "从“我的牌库”进入编辑器后，返回上一级会回到“我的牌库”；从公开牌库详情进入编辑器时仍返回原详情页，刷新或直接访问编辑器也有安全的返回目标。",
+      "paths": [
+        "opcgpro-vue/src/l12/L12DeckEditor.vue",
+        "opcgpro-vue/src/l12/site/DeckLibraryPage.vue",
+        "opcgpro-vue/src/l12/site/PublicDeckDetailPage.vue",
+        "opcgpro-vue/src/l12/site/deckEditorNavigation.ts"
+      ]
+    },
+    {
+      "category": "battle",
+      "text": "对战中的玩家详情、分支选择、响应和资源支付提示已精简，保留玩家作出选择所需的信息，并去除重复问题与系统性说明。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/GameBoard.mobile.css",
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/promptPlayerCopy.ts"
+      ]
+    },
+    {
+      "category": "card-effects",
+      "text": "需要翻转士气或神力的相关效果会先由发动方选定明确的资源对象，再向对手开放响应；响应提示会显示该资源的士气／神力面与活跃／休整状态，结算时继续使用已声明的同一对象。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12ActiveAbilities.cs",
+        "服务端WebSocket/TwelveLegions/L12ResponsePresentation.cs",
+        "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2RemainingEffects.cs"
+      ]
+    }
+  ]
+}
