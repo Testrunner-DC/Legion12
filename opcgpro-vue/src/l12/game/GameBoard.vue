@@ -1523,7 +1523,7 @@ function statusTexts(card: Card) {
       <Teleport :to="landscapeTeleportTarget()">
         <section v-if="mobileLandscapeViewport && mobilePlayerDetailsOpen" class="mobile-player-details-overlay mobile-safe-overlay" role="dialog" aria-modal="true" aria-label="双方玩家详情" @click.self="mobilePlayerDetailsOpen = false">
           <div class="mobile-player-details-dialog">
-            <header><div><small>PLAYER DETAILS</small><h2>双方玩家信息</h2></div><button type="button" aria-label="关闭双方玩家详情" @click="mobilePlayerDetailsOpen = false">×</button></header>
+            <header><div><h2>双方玩家信息</h2></div><button type="button" aria-label="关闭双方玩家详情" @click="mobilePlayerDetailsOpen = false">×</button></header>
             <div class="mobile-player-details-list">
               <BattlePlayerIdentity side-label="对方" :player="viewEnemy" :rank="battleRank(enemyBadge)" :tier-label="battleTierLabel(enemyBadge)"
                 :placement-title="identityLabel(enemyBadge?.placementTitle)" :master-title="identityLabel(enemyBadge?.masterTitle)"
