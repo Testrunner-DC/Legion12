@@ -1223,7 +1223,7 @@ public sealed partial class L12GameEngine
         {
             CleanupPublicTriggerReservation(candidate);
             State.PendingTriggerStackCandidates.Remove(candidate);
-            AddEvent("ability-cancelled", candidate.Controller,
+            AddTriggerDeclarationEvent("ability-cancelled", candidate,
                 "〈不朽之礼〉未发动，未进入堆叠");
             AdvanceTriggerBatches();
             return true;
@@ -1233,14 +1233,14 @@ public sealed partial class L12GameEngine
             CleanupPublicTriggerReservation(candidate);
             State.PendingTriggerStackCandidates.Remove(candidate);
             var atomicCard = _catalog.AtomicEffects.Find(candidate.SourceCardId);
-            if (atomicCard is not null
+            if (!IsPrivateTriggerCandidate(candidate) && atomicCard is not null
                 && L12SingleSegmentTriggeredEffectPresentations.TryResolveScene(atomicCard,
                     candidate.Trigger, out var declinedSceneId))
                 AddPresentationEventById("effect-declined", candidate.Controller,
                     $"〈{candidate.SourceName}〉的可选触发效果选择不发动，未进入堆叠",
                     declinedSceneId, declaredSource);
             else
-                AddEvent("ability-cancelled", candidate.Controller,
+                AddTriggerDeclarationEvent("ability-cancelled", candidate,
                     $"〈{candidate.SourceName}〉的可选触发效果未发动，未进入堆叠");
             AdvanceTriggerBatches();
             return true;
@@ -1803,7 +1803,7 @@ public sealed partial class L12GameEngine
     {
         CleanupPublicTriggerReservation(candidate);
         State.PendingTriggerStackCandidates.Remove(candidate);
-        AddEvent("ability-rejected", candidate.Controller, reason);
+        AddTriggerDeclarationEvent("ability-rejected", candidate, reason);
         AdvanceTriggerBatches();
     }
 

@@ -856,13 +856,11 @@ public sealed partial class L12GameEngine
                 {
                     ["ability"] = "tsukuyomiFrontAttackBuff", ["target"] = moved.InstanceId,
                 }));
-        if (fromRow == 0 && toRow == 1 && movedIsHighHeaven && player.Morale.Any(card => card.Tapped))
+        if (fromRow == 0 && toRow == 1 && movedIsHighHeaven)
             candidates.Add(CreateTriggerCandidate(playerIndex, master, "friendly-front-to-back", "军团从前排位移至后排时效果",
                 new Dictionary<string, string> { ["ability"] = "tsukuyomiReadyMorale", ["moved"] = moved.InstanceId }));
         var key = L12MasterTriggeredUsageRules.Key("tsukuyomiFollowMove", player.PlayerIndex, State.TurnSerial);
-        if (!player.UsedAbilities.Contains(key) && ActiveResourceCount(player) > 0
-            && State.Players.Any(targetController => PublicLegions(targetController).Any(card =>
-                card.InstanceId != moved.InstanceId)))
+        if (!player.UsedAbilities.Contains(key))
             candidates.Add(CreateTriggerCandidate(playerIndex, master, "friendly-legion-moves", "军团位移时效果",
                 new Dictionary<string, string> { ["ability"] = "tsukuyomiFollowMove", ["moved"] = moved.InstanceId }));
         QueueTriggerCandidates(candidates);

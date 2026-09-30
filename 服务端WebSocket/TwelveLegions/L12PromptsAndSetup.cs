@@ -239,6 +239,8 @@ public sealed partial class L12GameEngine
             && data.TryGetValue("activationId", out var activationId)
             ? State.PendingActivations.SingleOrDefault(candidate => candidate.ActivationId == activationId)
             : null;
+        if (activation is not null && IsPrivateTriggerActivation(activation))
+            data[PrivateTriggerDeclaration] = "true";
         var boundResponseId = activation?.ResponseTargetStackItemId
             ?? (continuation.StartsWith("stack-response-", StringComparison.Ordinal) ? stackItemId : null);
         if (boundResponseId is not null && State.EffectStack.FirstOrDefault(item => item.StackItemId == boundResponseId) is { } responseTarget)
@@ -271,7 +273,8 @@ public sealed partial class L12GameEngine
             Presentation = presentation,
         };
         State.PendingPrompts.Add(prompt);
-        AddEvent("prompt", playerIndex, $"等待 {State.Players[playerIndex].Name}：{playerText}");
+        AddEvent(data.ContainsKey(PrivateTriggerDeclaration) ? "private-trigger-prompt" : "prompt",
+            playerIndex, $"等待 {State.Players[playerIndex].Name}：{playerText}");
         return prompt;
     }
 

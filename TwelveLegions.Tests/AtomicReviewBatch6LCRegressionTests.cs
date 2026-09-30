@@ -150,7 +150,20 @@ public sealed class AtomicReviewBatch6LCRegressionTests
         var moved = Card("S02-0401", "batch6lc-tsukuyomi-moved");
         player.Field[0][0] = moved;
 
+        void OrderBonusFirst()
+        {
+            var order = Assert.Single(game.State.PendingPrompts);
+            Assert.Equal("trigger-order", order.Kind);
+            var bonus = Assert.Single(order.ValidChoices,
+                id => order.Data[$"trigger:{id}"] == "friendly-back-to-front");
+            var follow = Assert.Single(order.ValidChoices,
+                id => order.Data[$"trigger:{id}"] == "friendly-legion-moves");
+            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
+                CardInstanceIds: [follow, bonus])).Accepted);
+        }
+
         Invoke(game, "RecordLegionMovement", 0, moved, 1, 0);
+        OrderBonusFirst();
 
         Assert.Equal(0, moved.TsukuyomiFrontMoveBonusCount);
         var first = Assert.Single(game.State.EffectStack);
@@ -163,6 +176,7 @@ public sealed class AtomicReviewBatch6LCRegressionTests
         for (var occurrence = 1; occurrence <= 2; occurrence++)
         {
             Invoke(game, "RecordLegionMovement", 0, moved, 1, 0);
+            OrderBonusFirst();
             var effect = Assert.Single(game.State.EffectStack);
             Assert.Equal("tsukuyomiFrontAttackBuff", effect.Data["ability"]);
             PassResponses(game);
@@ -202,6 +216,16 @@ public sealed class AtomicReviewBatch6LCRegressionTests
 
         Invoke(game, "RecordLegionMovement", 0, moved, 0, 1);
 
+        // Both timing facts are collected, even though follow-move has no current target.
+        // Resolve the ready effect first; the unavailable optional follow-up then skips independently.
+        var order = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("trigger-order", order.Kind);
+        var ready = Assert.Single(order.ValidChoices,
+            id => order.Data[$"trigger:{id}"] == "friendly-front-to-back");
+        var follow = Assert.Single(order.ValidChoices,
+            id => order.Data[$"trigger:{id}"] == "friendly-legion-moves");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
+            CardInstanceIds: [follow, ready])).Accepted);
         var selection = Assert.Single(game.State.PendingPrompts);
         Assert.Contains(morale.InstanceId, selection.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt",

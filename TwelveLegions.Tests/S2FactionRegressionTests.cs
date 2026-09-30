@@ -4802,6 +4802,15 @@ public sealed class S2FactionRegressionTests
             Choice: "0:2")).Accepted);
         PassResponses(game);
 
+        var order = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("trigger-order", order.Kind);
+        var bonus = Assert.Single(order.ValidChoices,
+            id => order.Data[$"trigger:{id}"] == "friendly-back-to-front");
+        var follow = Assert.Single(order.ValidChoices,
+            id => order.Data[$"trigger:{id}"] == "friendly-legion-moves");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
+            CardInstanceIds: [follow, bonus])).Accepted);
+        PassResponses(game);
         var baseTroops = legion.Troops;
         Assert.True(game.Handle(0, new L12Command("attack", legion.InstanceId,
             Target: new L12AttackTarget("master", "master-1"))).Accepted);

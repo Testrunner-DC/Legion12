@@ -437,8 +437,12 @@ public sealed class StarterMissingEffectsRegressionTests
         Assert.True(hiddenPass.Hidden);
         Assert.DoesNotContain(game.State.EffectStack,
             item => item.SourceInstanceId == hiddenPass.InstanceId);
-        Assert.Contains(game.State.Events, entry => entry.Type == "ability-cancelled"
+        Assert.Contains(game.SnapshotFor(0).RecentEvents, entry => entry.Type == "ability-cancelled"
             && !entry.Cards.Any());
+        Assert.DoesNotContain(game.SnapshotFor(1).RecentEvents,
+            entry => entry.Type is "ability-cancelled" or "activation-declare");
+        Assert.DoesNotContain(game.SnapshotForSpectator().RecentEvents,
+            entry => entry.Type is "ability-cancelled" or "activation-declare");
     }
 
     [Fact]

@@ -1336,11 +1336,7 @@ public sealed partial class L12GameEngine
         var hasRestedOpponentLegion = PublicLegions(State.Players[attackerPlayer]).Any(target => target.Tapped);
         var candidates = defender.Field[1].Where(card => card is not null
                 && L12StructuredCardRules.CanOfferPostAttackReaction(card.CardId, hasOpponentLegion,
-                    hasRestedOpponentLegion)
-                && (card.CardId != "ST01-10" || defender.Morale.Count > 0
-                    && defender.Hand.Any(hand => hand.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(hand, 4)
-                        && L12StructuredCardRules.HasFaction(defender, hand, "tianting"))
-                    && EmptySlots(defender).Any())).Cast<L12CardInstance>()
+                    hasRestedOpponentLegion)).Cast<L12CardInstance>()
             .Select(counter => IsTrojanHorse(counter)
                 ? CreateTriggerCandidate(defenderIndex, counter, "trojan-after-attack", "【对方进攻后】反击战术",
                     new Dictionary<string, string> { ["attacker"] = attackerPlayer.ToString() })

@@ -268,9 +268,11 @@ public sealed partial class L12GameEngine
         };
         initialize?.Invoke(activation);
         State.PendingActivations.Add(activation);
+        var privateDeclaration = IsPrivateTriggerActivation(activation);
         CreateActivationStepPrompt(activation);
         if (responseTargetStackItemId is null)
-            AddEvent("activation-declare", playerIndex, $"{State.Players[playerIndex].Name} 正在声明〈{source.Name}〉的目标", source);
+            AddEvent(privateDeclaration ? "private-trigger-activation-declare" : "activation-declare",
+                playerIndex, $"{State.Players[playerIndex].Name} 正在声明〈{source.Name}〉的目标", source);
         else
             AddEvent("activation-declare", playerIndex, $"{State.Players[playerIndex].Name} 正在声明反击战术目标");
         return CommandResult.Ok();
@@ -1175,7 +1177,7 @@ public sealed partial class L12GameEngine
                 AddEvent("effect-declined", prompt.PlayerIndex,
                     $"〈{declinedMoraleEnter.SourceName}〉选择不发动翻转士气效果");
             else
-                AddEvent("ability-cancelled", prompt.PlayerIndex, hadReservedCost
+                AddEvent(IsPrivateTriggerActivation(activation) ? "private-trigger-ability-cancelled" : "ability-cancelled", prompt.PlayerIndex, hadReservedCost
                     ? "已取消结算选择，锁定的费用已全部释放，未产生费用、离场、次数或触发事件"
                     : "已取消发动，未支付费用且未进入堆叠");
             if (cancelledFreeMasterActivation)
@@ -1406,7 +1408,8 @@ public sealed partial class L12GameEngine
             ResumeAfterPostResolutionGeneratedInteraction();
             return;
         }
-        if (emitEvent) AddEvent("ability-rejected", activation.Controller, reason);
+        if (emitEvent) AddEvent(IsPrivateTriggerActivation(activation)
+            ? "private-trigger-ability-rejected" : "ability-rejected", activation.Controller, reason);
         if (cancelledFreeMasterActivation)
         {
             ResumeAfterPostResolutionGeneratedInteraction();
@@ -1777,16 +1780,13 @@ public sealed partial class L12GameEngine
     private void QueueTriggerCandidates(IEnumerable<L12TriggerCandidate> candidates)
     {
         var supplied = candidates.ToArray();
-        // 同一权威时点的多个候选必须先让玩家决定发动顺序。其可变资格、费用和目标
-        // 在真正轮到该候选声明时再读取；否则前一项结算产生的墓地牌、符文或其他资源
-        // 永远无法供后一项使用。单候选仍沿用即时准备，避免无意义的空声明。
-        if (supplied.Length > 1)
-            foreach (var candidate in supplied)
-                candidate.Data[DeferredTriggerQualification] = "true";
+        // 收集器只判断触发事实；可变资格、费用与目标一律等真正轮到声明时再准备。
+        // 即使本次只收集到一项，它也可能排在已有结算之后，不能用此刻资源冻结资格。
+        // 立即轮到的单候选仍会在 AdvancePendingTriggerStackCandidates 中即时准备。
+        foreach (var candidate in supplied)
+            candidate.Data[DeferredTriggerQualification] = "true";
         var materialized = supplied
-            .Where(candidate => !CounterTacticsAreDisabled() || !IsCounterTactic(candidate.SourceCardId))
-            .Where(candidate => candidate.Data.ContainsKey(DeferredTriggerQualification)
-                || PrepareTriggerCandidateForDeclaration(candidate)).ToArray();
+            .Where(candidate => !CounterTacticsAreDisabled() || !IsCounterTactic(candidate.SourceCardId)).ToArray();
         if (materialized.Length == 0)
         {
             if (supplied.Length > 0) TrySettleScheduledDisasterIfIdle();
@@ -2170,9 +2170,11 @@ public sealed partial class L12GameEngine
                 data[$"trigger:{candidate.CandidateId}"] = candidate.Trigger;
             }
             State.PendingTriggerBatches.Insert(0, batch);
+            var privateOrder = batch.Candidates.Any(IsPrivateTriggerCandidate);
+            if (privateOrder) data[PrivateTriggerDeclaration] = "true";
             CreatePrompt(batch.Controller, "trigger-order", "同一时点有多个效果触发，请按发动先后排列（后发动的先结算）",
                 batch.Candidates.Select(candidate => candidate.CandidateId), batch.Candidates.Count, batch.Candidates.Count,
-                "trigger-batch-order", isPrivate: false, data: data);
+                "trigger-batch-order", isPrivate: privateOrder, data: data);
             return;
         }
         if (State.EffectStack.Count == 0)
@@ -2238,7 +2240,8 @@ public sealed partial class L12GameEngine
             }
             State.PendingTriggerBatches.InsertRange(insertionIndex, orderedResolution);
         }
-        AddEvent("trigger-order", batch.Controller, $"{State.Players[batch.Controller].Name} 已排列同一时点的 {chosen.Count} 个触发效果");
+        AddEvent(prompt.Data.ContainsKey(PrivateTriggerDeclaration) ? "private-trigger-trigger-order" : "trigger-order",
+            batch.Controller, $"{State.Players[batch.Controller].Name} 已排列同一时点的 {chosen.Count} 个触发效果");
         AdvanceTriggerBatches();
     }
 
@@ -2258,7 +2261,7 @@ public sealed partial class L12GameEngine
             {
                 CleanupPublicTriggerReservation(candidate);
                 State.PendingTriggerStackCandidates.RemoveAt(0);
-                AddEvent("effect-skipped", candidate.Controller,
+                AddTriggerDeclarationEvent("effect-skipped", candidate,
                     $"〈{candidate.SourceName}〉在轮到声明时已无合法发动条件，跳过该同一时点效果");
                 continue;
             }

@@ -383,7 +383,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         // 对手正在处理任何选择时都给出不泄露私密候选内容的等待状态。
         var waitingPromptSource = visibility.PrivatePrompts
             ? null
-            : State.PendingPrompts.FirstOrDefault(prompt => spectator || prompt.PlayerIndex != viewer);
+            : State.PendingPrompts.FirstOrDefault(prompt => (spectator || prompt.PlayerIndex != viewer)
+                && !prompt.Data.ContainsKey(PrivateTriggerDeclaration));
         object? waitingPrompt = waitingPromptSource is null ? null : new
         {
             waitingPromptSource.PlayerIndex,
@@ -413,9 +414,11 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
         var recentEvents = State.Events
             .TakeLast(MaximumSnapshotEvents)
+            .Where(actionEvent => L12RecipientVisibility.CanSeeActionEvent(actionEvent, viewer, visibility.PrivateHandEvents))
             .Select(actionEvent => FilterDisasterEvent(actionEvent, viewer, visibility.AllDisasters, visibility.PrivateHandEvents))
             .ToArray();
         var lastAction = State.LastAction is null
+            || !L12RecipientVisibility.CanSeeActionEvent(State.LastAction, viewer, visibility.PrivateHandEvents)
             ? null
             : FilterDisasterEvent(State.LastAction, viewer, visibility.AllDisasters, visibility.PrivateHandEvents);
 

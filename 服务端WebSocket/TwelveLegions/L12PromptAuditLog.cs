@@ -27,14 +27,16 @@ public sealed partial class L12GameEngine
         var publiclyRevealedChoice = result.Accepted && prompt?.IsPrivate == true
             && State.Events.Skip(eventIndex).Any(entry => entry.Type == "reveal" && entry.Cards.Length > 0);
         if (result.Accepted && !publiclyRevealedChoice && audit is { } entry)
-            AddEvent("prompt-resolved", playerIndex, entry.Text, entry.Cards);
+            AddEvent(prompt?.Data.ContainsKey(PrivateTriggerDeclaration) == true
+                ? "private-trigger-prompt-resolved" : "prompt-resolved", playerIndex, entry.Text, entry.Cards);
         return result;
     }
 
     private void AddResolvedPromptLog(L12Prompt prompt, IReadOnlyCollection<string> chosen)
     {
         if (BuildResolvedPromptLog(prompt, chosen) is { } entry)
-            AddEvent("prompt-resolved", prompt.PlayerIndex, entry.Text, entry.Cards);
+            AddEvent(prompt.Data.ContainsKey(PrivateTriggerDeclaration)
+                ? "private-trigger-prompt-resolved" : "prompt-resolved", prompt.PlayerIndex, entry.Text, entry.Cards);
     }
 
     private (string Text, L12CardInstance[] Cards)? BuildResolvedPromptLog(L12Prompt prompt, IReadOnlyCollection<string> chosen)

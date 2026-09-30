@@ -817,7 +817,7 @@ public sealed partial class L12GameEngine
         {
             CleanupPublicTriggerReservation(candidate);
             State.PendingTriggerStackCandidates.Remove(candidate);
-            AddEvent("ability-cancelled", candidate.Controller,
+            AddTriggerDeclarationEvent("ability-cancelled", candidate,
                 $"〈{candidate.SourceName}〉的可选效果未发动，未进入堆叠");
             AdvanceTriggerBatches();
             AdvanceCombatTimelineIfIdle();
@@ -978,9 +978,8 @@ public sealed partial class L12GameEngine
     private L12TriggerCandidate? BuildStarterKagutsuchiCandidate(int controller, L12CardInstance target)
     {
         var player = State.Players[controller];
-        var moraleCost = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 0 : 1;
         if (L12StructuredCardRules.StarterRemainingPlan(player.MasterId, "legion-attack-timing")
-            != "kagutsuchi-buff" || ActiveResourceCount(player) < moraleCost && player.Hand.Count == 0)
+            != "kagutsuchi-buff")
             return null;
         var onceKey = L12MasterTriggeredUsageRules.Key("kagutsuchiBuff", player.PlayerIndex, State.TurnSerial);
         var pendingKey = $"{onceKey}:pending";

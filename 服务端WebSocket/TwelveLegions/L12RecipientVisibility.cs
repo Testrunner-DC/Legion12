@@ -130,10 +130,19 @@ internal static class L12RecipientVisibility
         return viewer >= 0 && owner == viewer;
     }
 
+    internal static bool CanSeeActionEvent(L12ActionEvent actionEvent, int viewer,
+        bool revealAllHands = false)
+        => !actionEvent.Type.StartsWith("private-trigger-", StringComparison.Ordinal)
+            || revealAllHands || actionEvent.PlayerIndex == viewer;
+
     internal static L12ActionEvent ProjectActionEvent(L12GameState state,
         L12ActionEvent actionEvent, int viewer, bool revealAllDisasters,
         bool revealAllHands = false)
     {
+        if (actionEvent.Type.StartsWith("private-trigger-", StringComparison.Ordinal))
+            return CanSeeActionEvent(actionEvent, viewer, revealAllHands)
+                ? actionEvent with { Type = actionEvent.Type["private-trigger-".Length..] }
+                : new L12ActionEvent(actionEvent.Sequence, "private", null, string.Empty, []);
         actionEvent = ProjectTroopsModifierEvent(ProjectPublicPlacementEvent(ProjectBattlefieldMovementEvent(
             ProjectCombatEvent(L12TrialProgressVisibility.PublicEvent(actionEvent)))));
         if (actionEvent.Type == "private-return")

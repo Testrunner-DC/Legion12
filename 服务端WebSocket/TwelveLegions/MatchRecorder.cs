@@ -570,6 +570,16 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         }
         root["PendingPrompts"] = new JsonArray();
         root["PendingActivations"] = new JsonArray();
+        // These are declaration work queues, not public resolved effects. They
+        // contain hidden battlefield/hand identities before the reveal boundary.
+        root["PendingTriggerBatches"] = new JsonArray();
+        root["PendingTriggerStackCandidates"] = new JsonArray();
+        // Allocation counters advance for private declarations too. Ordinary replay
+        // consumes recorded frames and visible event IDs, never these authority-only
+        // high-water marks. Keep them in raw archives/checkpoints, not this projection.
+        foreach (var counter in new[] { "EventSequence", "PromptSequence", "StackSequence",
+            "ActivationSequence", "TriggerBatchSequence", "AuthorityEventSequence" })
+            root.Remove(counter);
         root["Log"] = new JsonArray();
         root.Remove("PlayerResponseModes");
         if (root["ResponseWindow"] is JsonObject responseWindow)
@@ -607,11 +617,13 @@ public sealed partial class MatchRecorder : IAsyncDisposable
 
         root["Events"] = new JsonArray(authorityState.Events
             .TakeLast(L12GameEngine.MaximumSnapshotEvents)
+            .Where(actionEvent => L12RecipientVisibility.CanSeeActionEvent(actionEvent, viewer))
             .Select(actionEvent => JsonSerializer.SerializeToNode(
                 L12RecipientVisibility.ProjectActionEvent(authorityState, actionEvent, viewer,
                     revealAllDisasters: false)))
             .ToArray());
         root["LastAction"] = authorityState.LastAction is null
+            || !L12RecipientVisibility.CanSeeActionEvent(authorityState.LastAction, viewer)
             ? null
             : JsonSerializer.SerializeToNode(L12RecipientVisibility.ProjectActionEvent(
                 authorityState, authorityState.LastAction, viewer, revealAllDisasters: false));
