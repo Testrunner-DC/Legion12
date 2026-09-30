@@ -66,6 +66,93 @@ const duplicatedGroupedTurn = rows([
 assert.equal(duplicatedGroupedTurn.length, 2)
 assert.equal(words(duplicatedGroupedTurn[1]), '回合开始，天灾值 4→5',
   'deduplication retains the valid fact and the compatible turn grouping metadata')
+for (const copies of [
+  [event(2, 4, 5, { playerLogGroupId: 'effect:A' }),
+    event(2, 4, 5, { playerDisasterValue: undefined,
+      playerLogGroupId: 'turn:B', playerLogTiming: 'turn-start' })],
+  [event(2, 4, 5, { playerDisasterValue: undefined,
+    playerLogGroupId: 'turn:B', playerLogTiming: 'turn-start' }),
+    event(2, 4, 5, { playerLogGroupId: 'effect:A' })],
+]) {
+  const projected = rows(copies)
+  assert.equal(projected.length, 1)
+  assert.equal(words(projected[0]), '天灾值 4→5')
+  assert(!words(projected[0]).includes('回合开始'),
+    'conflicting groups cannot graft turn-start timing onto an effect receipt')
+}
+for (const incompatible of [
+  event(1, 4, 5, { type: 'effect', playerDisasterValue: undefined,
+    playerLogGroupId: 'turn:foreign', playerLogTiming: 'turn-start' }),
+  event(1, 4, 5, { playerIndex: 0, playerDisasterValue: undefined,
+    playerLogGroupId: 'turn:foreign', playerLogTiming: 'turn-start' }),
+]) {
+  const projected = rows([event(1, 4, 5), incompatible])
+  assert.equal(projected.length, 1)
+  assert.equal(words(projected[0]), '天灾值 4→5',
+    'different event type or player cannot donate grouping metadata')
+}
+const revealed = { instanceId: 'revealed', cardId: 'S01-0111', name: '公开卡',
+  cardType: 'legion', faction: 'universal', cost: 2, baseTroops: 1000, troops: 1000, hidden: false }
+for (const copies of [
+  [{ sequence: 1, type: 'effect', playerIndex: 0, text: '发动效果', cards: [revealed],
+    playerLogSemantic: { actionLabel: '发动效果', outcomeLabel: '已完成' } },
+  { sequence: 1, type: 'effect', playerIndex: 0, text: '发动效果',
+    cards: [{ ...revealed, hidden: true, name: '隐藏身份' }],
+    playerLogGroupId: 'turn:foreign', playerLogTiming: 'turn-start' }],
+  [{ sequence: 1, type: 'effect', playerIndex: 0, text: '发动效果',
+    cards: [{ ...revealed, hidden: true, name: '隐藏身份' }],
+    playerLogGroupId: 'turn:foreign', playerLogTiming: 'turn-start' },
+  { sequence: 1, type: 'effect', playerIndex: 0, text: '发动效果', cards: [revealed],
+    playerLogSemantic: { actionLabel: '发动效果', outcomeLabel: '已完成' } }],
+]) {
+  const projected = rows(copies)
+  assert.equal(projected.length, 0,
+    'a hidden-card copy must not inherit a public card or semantic fact')
+}
+const differentCard = rows([
+  { sequence: 1, type: 'effect', playerIndex: 0, text: '发动效果', cards: [revealed],
+    playerLogSemantic: { actionLabel: '发动效果', outcomeLabel: '已完成' } },
+  { sequence: 1, type: 'effect', playerIndex: 0, text: '发动效果',
+    cards: [{ ...revealed, instanceId: 'other', name: '另一张卡' }],
+    playerLogGroupId: 'turn:foreign', playerLogTiming: 'turn-start' },
+])
+assert(!JSON.stringify(differentCard).includes('另一张卡'),
+  'different public card identities cannot donate metadata or card facts')
+const otherCard = { ...revealed, instanceId: 'other', name: '另一张卡' }
+for (const copies of [
+  [event(1, 4, 5, { cards: [revealed] }), event(1, 7, 8, { cards: [otherCard] })],
+  [event(1, 7, 8, { cards: [otherCard] }), event(1, 4, 5, { cards: [revealed] })],
+]) {
+  const projected = rows(copies)
+  assert.equal(words(projected[0]), '天灾值变化（详情未记录）',
+    'different valid facts across incompatible card identities must degrade in either order')
+  assert(!JSON.stringify(projected).includes('公开卡'))
+  assert(!JSON.stringify(projected).includes('另一张卡'))
+}
+for (const copies of [
+  [event(1, 4, 5, { cards: [revealed] }), event(1, 4, 5, { cards: [otherCard] })],
+  [event(1, 4, 5, { cards: [otherCard] }), event(1, 4, 5, { cards: [revealed] })],
+]) {
+  const projected = rows(copies)
+  assert.equal(words(projected[0]), '天灾值 4→5',
+    'matching public scalar facts remain stable without choosing a card identity')
+  assert(!JSON.stringify(projected).includes('公开卡'))
+  assert(!JSON.stringify(projected).includes('另一张卡'))
+}
+for (const copies of [
+  [event(1, 4, 5, { cards: [revealed] }),
+    event(1, 4, 5, { cards: [{ ...otherCard, hidden: true, name: '隐藏身份' }],
+      playerDisasterValue: undefined })],
+  [event(1, 4, 5, { cards: [{ ...otherCard, hidden: true, name: '隐藏身份' }],
+      playerDisasterValue: undefined }),
+    event(1, 4, 5, { cards: [revealed] })],
+]) {
+  const projected = rows(copies)
+  assert.equal(words(projected[0]), '天灾值变化（详情未记录）',
+    'a hidden-card receipt must not inherit a fact from a different public card')
+  assert(!JSON.stringify(projected).includes('公开卡'))
+  assert(!JSON.stringify(projected).includes('隐藏身份'))
+}
 for (const fact of [undefined, {}, { before: 4, after: '5' }]) {
   const mixedTurn = rows([
     { sequence: 1, type: 'turn-start', playerIndex: 0, text: '第2回合', cards: [],

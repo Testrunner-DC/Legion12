@@ -170,30 +170,57 @@ function factSignature(value: unknown): string {
   return JSON.stringify(value)
 }
 
-function sameEventIdentity(left: ActionEvent, right: ActionEvent) {
-  if (left.type !== right.type || left.playerIndex !== right.playerIndex) return false
-  const leftIds = publicCards(left).map(card => card.instanceId || `${card.cardId}:${card.name}`).sort()
-  const rightIds = publicCards(right).map(card => card.instanceId || `${card.cardId}:${card.name}`).sort()
-  return !leftIds.length || !rightIds.length || JSON.stringify(leftIds) === JSON.stringify(rightIds)
+function eventIdentitySignature(event: ActionEvent) {
+  const cards = (event.cards ?? []).map(card => ({
+    instanceId: card.instanceId, cardId: card.cardId,
+    hidden: Boolean(card.hidden), name: card.hidden ? undefined : card.name,
+  })).sort((a, b) => factSignature(a).localeCompare(factSignature(b)))
+  return factSignature({ type: event.type, playerIndex: event.playerIndex, cards })
 }
+
+function sameEventIdentity(left: ActionEvent, right: ActionEvent) {
+  return eventIdentitySignature(left) === eventIdentitySignature(right)
+}
+
+const groupedMetadataKeys = [
+  'playerLogGroupId', 'playerLogTiming', 'playerLogDecisionLabel', 'effectResultStatus',
+] as const
 
 function coalesceDuplicateEvents(events: ActionEvent[]) {
   if (events.length === 1) return events[0]
-  const ranked = [...events].sort((left, right) => {
-    const factCount = (event: ActionEvent) => structuredFactKeys
-      .filter(key => hasUsableStructuredFact(event, key)).length
-    return factCount(right) - factCount(left)
-      || playerLogMetadataScore(right) - playerLogMetadataScore(left)
-  })
+  const factCount = (event: ActionEvent) => structuredFactKeys
+    .filter(key => hasUsableStructuredFact(event, key)).length
+  const divergentIdentity = events.some(event => !sameEventIdentity(events[0], event))
+  const publicCardCount = (event: ActionEvent) => publicCards(event).length
+  const hiddenCardCount = (event: ActionEvent) => (event.cards ?? [])
+    .filter(card => card.hidden).length
+  const ranked = [...events].sort((left, right) =>
+    (divergentIdentity ? publicCardCount(left) - publicCardCount(right)
+      || hiddenCardCount(right) - hiddenCardCount(left) : 0)
+    || factCount(right) - factCount(left)
+    || playerLogMetadataScore(right) - playerLogMetadataScore(left)
+    || eventIdentitySignature(left).localeCompare(eventIdentitySignature(right)))
   const base = ranked[0]
   const compatible = events.filter(event => sameEventIdentity(base, event))
+  const metadataConflict = groupedMetadataKeys.some(key =>
+    new Set(compatible.map(event => event[key]).filter(value => value != null)).size > 1)
+  const factSources = metadataConflict ? [base] : compatible
+  const globallyConflictingFacts = new Set(structuredFactKeys.filter(key =>
+    new Set(events.filter(event => hasUsableStructuredFact(event, key))
+      .map(event => factSignature(event[key]))).size > 1))
   // Preserve lazy fields such as legacy Text accessors: projection only reads
   // the fields relevant to the event, so deduplication must do the same.
   const merged = Object.create(base) as ActionEvent
   const set = (key: keyof ActionEvent, value: unknown) =>
     Object.defineProperty(merged, key, { value, enumerable: true, configurable: true })
+  if (divergentIdentity) set('cards', [])
   for (const key of structuredFactKeys) {
-    const facts = compatible.filter(event => hasUsableStructuredFact(event, key))
+    if (globallyConflictingFacts.has(key)
+      || (divergentIdentity && key !== 'playerDisasterValue')) {
+      set(key, undefined)
+      continue
+    }
+    const facts = factSources.filter(event => hasUsableStructuredFact(event, key))
       .map(event => event[key])
     const distinct = [...new Map(facts.map(fact => [factSignature(fact), fact])).values()]
     // A conflicting same-sequence receipt is ambiguous; never combine fields
@@ -201,12 +228,11 @@ function coalesceDuplicateEvents(events: ActionEvent[]) {
     if (distinct.length === 1) set(key, distinct[0])
     else if (distinct.length > 1) set(key, undefined)
   }
-  for (const key of ['playerLogGroupId', 'playerLogTiming', 'playerLogDecisionLabel',
-    'effectResultStatus'] as const) {
-    if (merged[key] != null) continue
-    const values = [...new Set(compatible.map(event => event[key]).filter(value => value != null))]
-    if (values.length === 1) set(key, values[0])
-  }
+  // Group, timing, decision and result form one receipt. Choose a complete
+  // existing tuple; never fill its gaps from a different group or timing.
+  const metadataSource = metadataConflict ? null : [...compatible]
+    .sort((left, right) => playerLogMetadataScore(right) - playerLogMetadataScore(left))[0]
+  for (const key of groupedMetadataKeys) set(key, metadataSource?.[key])
   return merged
 }
 
