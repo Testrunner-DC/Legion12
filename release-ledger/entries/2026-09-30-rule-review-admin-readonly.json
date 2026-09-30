@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-30-rule-review-admin-readonly",
+  "date": "2026-09-30",
+  "audience": "internal",
+  "reason": "规则后台的已发布与待生效对象改为只读预览；需要修改时先退回草稿，系统随后切换到草稿区并定位原对象，避免发布态内容与编辑操作混在同一信息流。",
+  "paths": [
+    "opcgpro-vue/src/l12/site/AdminRuleRulingsPanel.vue"
+  ]
+}

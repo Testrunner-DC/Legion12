@@ -3,20 +3,13 @@
   "id": "2026-09-30-rule-center-density-readonly",
   "date": "2026-09-30",
   "audience": "players",
-  "title": "规则中心浏览与审核流程优化",
+  "title": "规则中心浏览体验优化",
   "changes": [
     {
       "category": "rules",
       "text": "规则中心的产品筛选按新到旧排列并支持展开、收起和一键清除当前筛选；超宽屏内容保持合理阅读宽度，移动端和短横屏不会出现页面横向滚动。",
       "paths": [
         "opcgpro-vue/src/l12/site/RuleCenterPage.vue"
-      ]
-    },
-    {
-      "category": "rules",
-      "text": "规则后台将已发布和待生效内容改为只读预览，修改前需先退回草稿；退回后会自动定位到对应对象，审核操作不再与内容分离。",
-      "paths": [
-        "opcgpro-vue/src/l12/site/AdminRuleRulingsPanel.vue"
       ]
     }
   ]

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-30-season-admin-management",
+  "date": "2026-09-30",
+  "audience": "internal",
+  "reason": "后台赛季管理支持当前／下一赛季双槽编辑与预览，并可预约、取消和观察自动切换的租约、重试、失败及就绪状态；这些管理信息不进入玩家更新日志。",
+  "paths": [
+    "opcgpro-vue/src/l12/platform.ts",
+    "opcgpro-vue/src/l12/site/AdminOperationsPanel.vue",
+    "opcgpro-vue/src/l12/site/SeasonActivationManagement.vue",
+    "opcgpro-vue/src/l12/site/SeasonConfigurationEditor.vue",
+    "opcgpro-vue/src/l12/site/seasonDefinitionPreview.ts",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.Seasons.cs",
+    "服务端WebSocket/TwelveLegions/L12RoomManager.RankedPersistence.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.ResourceSync.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.SeasonActivation.cs"
+  ]
+}

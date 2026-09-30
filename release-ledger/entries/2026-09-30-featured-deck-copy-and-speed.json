@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-30-featured-deck-copy-and-speed",
+  "date": "2026-09-30",
+  "audience": "players",
+  "title": "热门牌库轮播优化",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "公开牌库中的“热门卡组”统一更名为“热门牌库”，双行轮播速度提高约 30%；两行仍可分别暂停，点击牌库可进入对应的公开详情页。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/DeckLibraryPage.vue"
+      ]
+    }
+  ]
+}

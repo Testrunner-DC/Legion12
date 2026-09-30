@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-30-battle-prompt-copy-simplification",
+  "date": "2026-09-30",
+  "audience": "players",
+  "title": "对战提示更简洁",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "对战弹框会直接说明当前要做什么和会发生什么，减少重复的玩家名称、系统性免责声明及无意义的不发动解释；卡牌原文、费用、对象、数值、持续时间和不可逆后果仍会保留。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/BattleUtilityDock.vue",
+        "opcgpro-vue/src/l12/game/DefenseDecisionExplanation.vue",
+        "opcgpro-vue/src/l12/game/GameActions.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/PromptOverlay.vue",
+        "opcgpro-vue/src/l12/game/promptPlayerCopy.ts",
+        "服务端WebSocket/TwelveLegions/L12MoralePayments.cs",
+        "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+        "服务端WebSocket/TwelveLegions/L12ResponsePresentation.cs",
+        "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs"
+      ]
+    }
+  ]
+}

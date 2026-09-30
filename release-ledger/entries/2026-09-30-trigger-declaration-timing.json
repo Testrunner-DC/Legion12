@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-30-trigger-declaration-timing",
+  "date": "2026-09-30",
+  "audience": "players",
+  "title": "同时触发效果的发动顺序修正",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "同时触发的效果会先保留触发资格，在实际轮到声明时再检查费用、目标和空位；前一个效果新增或恢复的资源可用于后一个效果，后来失效的效果只跳过自身。月读现在可以先通过同批效果恢复士气，再消耗该士气发动另一军团的位移。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12AttackPublicTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12PromptAuditLog.cs",
+        "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+        "服务端WebSocket/TwelveLegions/L12PublicTriggerEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12RecipientVisibility.cs",
+        "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+        "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2RemainingEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12StarterRemainingEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12StructuredCardRules.cs",
+        "服务端WebSocket/TwelveLegions/L12TriggerDeclarationPrivacy.cs",
+        "服务端WebSocket/TwelveLegions/MatchRecorder.cs"
+      ]
+    },
+    {
+      "category": "battle",
+      "text": "手牌与盖伏来源尚未公开时，对手、普通观战和玩家回放不会提前看到其触发排序、取消、失效或等待状态。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PromptAuditLog.cs",
+        "服务端WebSocket/TwelveLegions/L12RecipientVisibility.cs",
+        "服务端WebSocket/TwelveLegions/L12TriggerDeclarationPrivacy.cs",
+        "服务端WebSocket/TwelveLegions/MatchRecorder.cs"
+      ]
+    }
+  ]
+}
