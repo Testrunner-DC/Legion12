@@ -167,7 +167,8 @@ const resultLabels: Record<string, string> = {
 function groupedResultDetail(event: ActionEvent, you: number, source: Card, showPaidCost: boolean, neutralView: boolean): LogLineRow | null {
   const status = event.effectResultStatus
   if (event.type !== 'effect-result' || !status || !resultLabels[status]) return null
-  if (!publicCards(event).some(card => card.instanceId === source.instanceId)) return null
+  const matches = (event.cards ?? []).filter(card => card.instanceId === source.instanceId)
+  if (matches.length !== 1 || matches[0].hidden || !matches[0].name?.trim()) return null
   const segment = event.effectSegmentIndex != null && event.effectSegmentCount != null
     ? `第${event.effectSegmentIndex}/${event.effectSegmentCount}段` : '效果'
   const receipt = event.playerLogSemantic?.sourceInstanceId === source.instanceId
@@ -180,13 +181,23 @@ function groupedResultDetail(event: ActionEvent, you: number, source: Card, show
   const paidMarker = '已支付费用：'
   const paidAt = receipt?.indexOf(paidMarker) ?? -1
   const reason = paidAt < 0 ? receipt : receipt?.slice(0, paidAt).replace(/；$/, '')
-  const paid = paidAt < 0 || !showPaidCost ? undefined : receipt?.slice(paidAt)
+  const paid = showPaidCost ? publicPaidCostReceipt(event, source) : null
   return line(event.sequence, 'effect', side(event.playerIndex, you, neutralView), [
     { text: `${segment}${resultLabels[status]}` },
     ...(processedTarget ? [{ text: `；实际处理目标：〈${processedTarget}〉` }] : []),
     ...(reason ? [{ text: `；${reason}` }] : []),
     ...(paid ? [{ text: `；${paid}` }] : []),
   ])
+}
+
+function publicPaidCostReceipt(event: ActionEvent, source: Card): string | null {
+  const matches = (event.cards ?? []).filter(card => card.instanceId === source.instanceId)
+  if (event.type !== 'effect-result' || !source.instanceId || matches.length !== 1
+    || matches[0].hidden || !matches[0].name?.trim()
+    || event.playerLogSemantic?.sourceInstanceId !== source.instanceId) return null
+  const paid = event.playerLogSemantic.outcomeLabel
+    ?.match(/(?:^|；)已支付费用：([^；]*)/)?.[1]?.trim()
+  return paid ? `已支付费用：${paid}` : null
 }
 
 function projectGroupedAction(events: ActionEvent[], indexes: number[], you: number, neutralView: boolean): LogLineRow | null {
@@ -292,9 +303,11 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
   }
 
   if (suffix) parts.push({ text: suffix })
-  const row = line(first.sequence, play ? 'play' : 'effect', side(first.playerIndex, you, neutralView), parts, [], safeEffectText(first))
-  const lastPaidResult = results.filter(event => event.playerLogSemantic?.sourceInstanceId === source.instanceId
-    && event.playerLogSemantic.outcomeLabel?.includes('已支付费用：')).at(-1)
+  const negatedAfterPayment = results.length === 1 && result?.effectResultStatus === 'negated'
+    && publicPaidCostReceipt(result, source)
+  const row = line(first.sequence, play ? 'play' : 'effect', side(first.playerIndex, you, neutralView),
+    parts, negatedAfterPayment ? [{ value: '费用已支付', tone: 'info' }] : [], safeEffectText(first))
+  const lastPaidResult = results.filter(event => publicPaidCostReceipt(event, source)).at(-1)
   const detail = group.flatMap(event => {
     const resultDetail = groupedResultDetail(event, you, source, event === lastPaidResult, neutralView)
     if (resultDetail) return [resultDetail]

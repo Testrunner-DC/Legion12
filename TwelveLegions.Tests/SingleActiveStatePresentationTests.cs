@@ -203,7 +203,19 @@ public sealed class SingleActiveStatePresentationTests
         Assert.Equal(2, player.TemporaryMorale);
         Assert.Contains(player.UsedAbilities,
             key => key.Contains("factionAddActive", StringComparison.Ordinal));
-        Assert.Equal("negated", Result(game, "S01-01C1").EffectResultStatus);
+        var negatedResult = Result(game, "S01-01C1");
+        Assert.Equal("negated", negatedResult.EffectResultStatus);
+        Assert.Contains("已支付费用：", negatedResult.PlayerLogSemantic?.OutcomeLabel);
+        Assert.Contains("士气", negatedResult.PlayerLogSemantic?.OutcomeLabel);
+        Assert.Equal(negatedResult.Cards[0].InstanceId,
+            negatedResult.PlayerLogSemantic?.SourceInstanceId);
+        foreach (var snapshot in new[] { game.SnapshotFor(0), game.SnapshotFor(1),
+                     game.SnapshotForSpectator(), game.SnapshotForReferee() })
+        {
+            var visible = Assert.Single(snapshot.RecentEvents,
+                entry => entry.Sequence == negatedResult.Sequence);
+            Assert.Equal(negatedResult.PlayerLogSemantic, visible.PlayerLogSemantic);
+        }
         Assert.False(game.Handle(response.PlayerIndex,
             new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
     }

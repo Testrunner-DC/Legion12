@@ -332,6 +332,56 @@ assert.deepEqual(galahadNegated[0].parts.map(part => part.text), [
 assert.deepEqual(galahadNegated[0].detail?.map(row => row.parts.map(part => part.text).join('')), [
   '效果被无效',
 ], 'a negated effect retains an expandable terminal fact without inventing a refund')
+const paidNegatedEvents = [
+  event(1, 'play', '我方打出加拉哈德', [galahad], 0,
+    { playerLogGroupId: 'play:paid-negated', playerLogTiming: 'enter' }),
+  event(2, 'effect-result', '加拉哈德效果被无效', [galahad], 0, {
+    playerLogGroupId: 'play:paid-negated', playerLogTiming: 'enter', effectResultStatus: 'negated',
+    playerLogSemantic: { sourceInstanceId: galahad.instanceId, actionLabel: '效果结果',
+      outcomeLabel: '已支付费用：消耗2士气' },
+  }),
+]
+const paidNegated = projectLog(paidNegatedEvents, 0, [])
+assert.deepEqual(paidNegated[0].badges.map(item => item.value), ['费用已支付'])
+assert(paidNegated[0].detail?.flatMap(row => row.parts.map(part => part.text))
+  .some(text => text.includes('已支付费用：消耗2士气')))
+assert.equal(projectLog(paidNegatedEvents, 1, [])[0].badges[0].value, '费用已支付')
+assert.equal(projectLog(paidNegatedEvents, 0, [], true)[0].badges[0].value, '费用已支付')
+assert.equal(projectLog([paidNegatedEvents[1], paidNegatedEvents[0], paidNegatedEvents[1]], 0, [])[0]
+  .badges.length, 1, 'reconnect delivery must not duplicate the paid receipt')
+for (const invalidResult of [
+  { ...paidNegatedEvents[1], playerLogSemantic: undefined },
+  { ...paidNegatedEvents[1], playerLogSemantic: {
+    ...paidNegatedEvents[1].playerLogSemantic, sourceInstanceId: 'other' } },
+  { ...paidNegatedEvents[1], cards: [{ ...galahad, hidden: true }] },
+  { ...paidNegatedEvents[1], cards: [galahad, { ...galahad, hidden: true }] },
+  { ...paidNegatedEvents[1], playerLogSemantic: {
+    ...paidNegatedEvents[1].playerLogSemantic, outcomeLabel: '已支付费用：' } },
+  { ...paidNegatedEvents[1], playerLogSemantic: {
+    ...paidNegatedEvents[1].playerLogSemantic, outcomeLabel: '已支付费用： \t ' } },
+]) {
+  const row = projectLog([paidNegatedEvents[0], invalidResult], 0, [])[0]
+  assert.equal(row.badges.length, 0,
+    'legacy, hidden, unlinked, and empty receipts must not invent paid cost')
+  assert(!row.detail?.flatMap(item => item.parts.map(part => part.text))
+    .some(text => text.includes('已支付费用：')),
+  'empty, whitespace, wrong-source, hidden, or duplicate receipts must not enter details')
+}
+const paidNegatedReplay = replayGameAt({
+  match: { matchId: 'paid-negated', roomCode: 'PAID' },
+  commands: [{ state: { Events: paidNegatedEvents.map(item => ({
+    Sequence: item.sequence, Type: item.type, PlayerIndex: item.playerIndex, Text: item.text,
+    Cards: item.cards, PlayerLogGroupId: item.playerLogGroupId,
+    PlayerLogTiming: item.playerLogTiming, EffectResultStatus: item.effectResultStatus,
+    PlayerLogSemantic: item.playerLogSemantic && {
+      SourceInstanceId: item.playerLogSemantic.sourceInstanceId,
+      ActionLabel: item.playerLogSemantic.actionLabel,
+      OutcomeLabel: item.playerLogSemantic.outcomeLabel,
+    },
+  })) }, revision: 1 }], viewerPlayerIndex: 0,
+}, 0)
+assert.equal(projectLog(paidNegatedReplay?.recentEvents ?? [], 0, [])[0].badges[0].value,
+  '费用已支付', 'replay must retain the authoritative paid-cost receipt')
 const stagedOutcome = [
   event(1, 'play', '打出来源卡', [source], 0, { playerLogGroupId: 'effect:staged', playerLogTiming: 'enter' }),
   event(2, 'effect-result', '第一段完成', [source], 0, {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { projectLog } from '../src/l12/game/logViewModel.ts'
 
-// Deterministic phase-0 evidence refreshed after Stages 4A, 4B-2, and 4B-3A.
+// Deterministic phase-0 evidence refreshed after Stages 4A, 4B-2, 4B-3A, and 4C-1.
 // Closed gaps must remain visible; unfinished legacy/status gaps remain
 // explicit; legacy combat audit text must never become a public reason.
 const card = (name, instanceId = name) => ({
@@ -99,6 +99,21 @@ const cases = [
     expectedProjectionFacts: ['被无效'],
     missingFromProjection: ['士气 −2'],
     status: 'OPEN: 4C/log association',
+  },
+  {
+    id: 'structured-negated-paid-cost',
+    input: [
+      event(1, 'effect', '〈来源〉发动主动效果', [source], group),
+      event(2, 'cost', '〈来源〉支付2士气', [source], group),
+      event(3, 'effect-result', '〈来源〉的效果被无效', [source], {
+        ...group, effectResultStatus: 'negated',
+        playerLogSemantic: { sourceInstanceId: source.instanceId,
+          actionLabel: '效果结果', outcomeLabel: '已支付费用：消耗2士气' },
+      }),
+    ],
+    requiredSourceFacts: ['支付2士气', '被无效'],
+    expectedProjectionFacts: ['被无效', '费用已支付', '已支付费用：消耗2士气'],
+    status: 'CLOSED: 4C-1 (authoritative receipt only)',
   },
   {
     id: 'defense-invalid-reason',
