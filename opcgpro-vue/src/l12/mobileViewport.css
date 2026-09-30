@@ -419,11 +419,16 @@ html[data-l12-mobile=true][data-l12-viewport] .mobile-rune-row > div {
   justify-content: safe center;
 }
 html[data-l12-mobile=true][data-l12-viewport=landscape] #l12-landscape-teleports .l12-prompt-overlay.mobile-safe-overlay:not(.minimized) :is(.prompt-panel,.waiting-panel) {
-  width: var(--l12-mobile-dialog-width) !important;
+  /* Center the decision in the reading lane between the board's left rail and
+     the fixed action/clock dock. A full-canvas centered frame clips that dock
+     on 320px portrait and short landscape phones. */
+  position: relative;
+  left: calc((var(--l12-mobile-left-rail-w,78px) - var(--l12-mobile-dock-width,108px)) / 2);
+  width: min(var(--l12-mobile-dialog-width), calc(var(--l12-viewport-width) - var(--l12-mobile-left-rail-w,78px) - var(--l12-mobile-dock-width,108px) - 20px)) !important;
   height: var(--l12-mobile-dialog-height) !important;
   min-width: 0 !important;
   min-height: 0 !important;
-  max-width: var(--l12-mobile-dialog-width) !important;
+  max-width: min(var(--l12-mobile-dialog-width), calc(var(--l12-viewport-width) - var(--l12-mobile-left-rail-w,78px) - var(--l12-mobile-dock-width,108px) - 20px)) !important;
   max-height: var(--l12-mobile-dialog-height) !important;
   overflow: auto !important;
 }

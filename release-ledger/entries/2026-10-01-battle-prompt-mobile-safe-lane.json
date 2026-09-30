@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-01-battle-prompt-mobile-safe-lane",
+  "date": "2026-10-01",
+  "audience": "players",
+  "title": "移动对战弹框安全区域修正",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "移动端对战弹框会保持在牌桌阅读区内，并与计时、返回大厅和投降操作保留安全间距；极窄竖屏与短横屏下也不会再互相遮挡。",
+      "paths": [
+        "opcgpro-vue/src/l12/mobileViewport.css"
+      ]
+    }
+  ]
+}
