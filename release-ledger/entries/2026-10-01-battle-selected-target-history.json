@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-01-battle-selected-target-history",
+  "date": "2026-10-01",
+  "audience": "players",
+  "title": "响应目标与对局记录信息补全",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "需要先选择对象的效果会在对手响应前说明已经选定的公开目标；目标之后离场、发生重连或进入回放时仍保留当时的声明，不会改写成其他对象。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12AuthorityEvents.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+        "服务端WebSocket/TwelveLegions/L12RecipientVisibility.cs",
+        "服务端WebSocket/TwelveLegions/L12ResponsePresentation.cs",
+        "服务端WebSocket/TwelveLegions/Models.cs"
+      ]
+    },
+    {
+      "category": "replays",
+      "text": "对局记录和回放会展示本次效果实际声明的公开目标与格位；盖伏卡仍只显示其公开位置，旧记录缺少该信息时保持中性显示。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/logViewModel.ts",
+        "opcgpro-vue/src/l12/replayModel.ts",
+        "opcgpro-vue/src/l12/types.ts"
+      ]
+    }
+  ]
+}
