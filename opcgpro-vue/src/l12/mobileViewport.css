@@ -449,6 +449,15 @@ html[data-l12-mobile=true][data-l12-viewport] #l12-landscape-teleports :is(
   overflow: auto !important;
   transform: translate(-50%, -50%) !important;
 }
+/* The record is a reading surface alongside the mobile battle dock.  Center it
+   between the reserved rails instead of across the entire logical canvas, so
+   its frame cannot cover route controls, clocks or primary actions. */
+html[data-l12-mobile=true][data-l12-viewport] #l12-landscape-teleports
+  .mobile-record-overlay.mobile-safe-overlay:not(.mobile-morale-overlay):not(.minimized) {
+  left: calc((var(--l12-viewport-width) + var(--l12-mobile-left-rail-w,78px) - var(--l12-mobile-dock-width,108px)) / 2) !important;
+  width: min(var(--l12-mobile-dialog-width), calc(var(--l12-viewport-width) - var(--l12-mobile-left-rail-w,78px) - var(--l12-mobile-dock-width,108px) - 8px)) !important;
+  max-width: min(var(--l12-mobile-dialog-width), calc(var(--l12-viewport-width) - var(--l12-mobile-left-rail-w,78px) - var(--l12-mobile-dock-width,108px) - 8px)) !important;
+}
 html[data-l12-viewport] .graveyard-window {
   width: min(680px,calc(var(--l12-viewport-width) - 64px));
   height: min(570px,calc(var(--l12-viewport-height) - 64px));
