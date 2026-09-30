@@ -102,12 +102,24 @@ const server = await createServer({
 })
 
 const viewports = [
+  { width: 3440, height: 1440, input: 'mouse' },
   { width: 1920, height: 1080, input: 'mouse' },
   { width: 1366, height: 768, input: 'mouse' },
   { width: 1024, height: 768, input: 'keyboard' },
   { width: 430, height: 932, input: 'touch' },
   { width: 390, height: 844, input: 'touch' },
+  { width: 844, height: 390, input: 'touch' },
+  { width: 568, height: 320, input: 'touch' },
 ]
+const adminViewports = [
+  { width: 3440, height: 1440 },
+  { width: 1366, height: 900 },
+  { width: 1024, height: 768 },
+  { width: 430, height: 932 },
+  { width: 390, height: 844 },
+  { width: 844, height: 390 },
+]
+const expectedProductOrder = ['第2季|典藏版', '第2季|伟大试炼', '第1季|典藏版', '第1季|天御·再临', '第1季|天御']
 const suffix = viewport => `${viewport.width}x${viewport.height}`
 const expectedCardRulingOrder = [
   'RULING-20260922-FENIAN-REPEAT',
@@ -153,6 +165,7 @@ try {
     assert.equal(catalogRequests.length, 0, `home loaded card catalog at ${suffix(viewport)}`)
     assert.equal(imageRequests.length, 0, `home loaded card images at ${suffix(viewport)}`)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `home overflows at ${suffix(viewport)}`)
+    assert((await page.locator('.rules-page').boundingBox()).width <= 1681, `home is unbounded at ${suffix(viewport)}`)
     assert.equal(await page.locator('.material-grid button').count(), 6, `material entry count changed at ${suffix(viewport)}`)
     await page.screenshot({ path: path.join(output, `home-${suffix(viewport)}.png`), fullPage: true })
 
@@ -169,12 +182,14 @@ try {
     } else if (viewport.input === 'touch') {
       await page.getByRole('button', { name: /常见问题/ }).tap()
       await page.locator('.faq-search-panel').waitFor()
-      await page.locator('.faq-search-row .mobile-filter-trigger').tap()
-      const dialog = page.getByRole('dialog', { name: '常见问题筛选' })
-      await dialog.waitFor()
-      assert.equal(await dialog.evaluate(element => element.scrollWidth > element.clientWidth + 1), false, `filter sheet overflows at ${suffix(viewport)}`)
-      await page.keyboard.press('Escape')
-      assert.equal(await dialog.count(), 0, `filter sheet did not close at ${suffix(viewport)}`)
+      if (viewport.width <= 700) {
+        await page.locator('.faq-search-row .mobile-filter-trigger').tap()
+        const dialog = page.getByRole('dialog', { name: '常见问题筛选' })
+        await dialog.waitFor()
+        assert.equal(await dialog.evaluate(element => element.scrollWidth > element.clientWidth + 1), false, `filter sheet overflows at ${suffix(viewport)}`)
+        await page.keyboard.press('Escape')
+        assert.equal(await dialog.count(), 0, `filter sheet did not close at ${suffix(viewport)}`)
+      }
     } else {
       await page.getByRole('button', { name: /常见问题/ }).click()
       await page.locator('.faq-search-panel').waitFor()
@@ -210,11 +225,23 @@ try {
     assert.deepEqual(await visibleRulingIds(page), expectedCardRulingOrder,
       `card rulings are not in complete descending card-number order at ${suffix(viewport)}`)
     const products = page.locator('.product-grid button')
-    if (await products.count()) {
-      await products.first().click()
-      assert.equal(imageRequests.length, 0, `product browsing loaded card images at ${suffix(viewport)}`)
-      await page.getByRole('button', { name: '查看全部产品' }).click()
-    }
+    assert.deepEqual(await products.locator('b').allTextContents(), expectedProductOrder.slice(0, 4),
+      `collapsed products are not newest-first at ${suffix(viewport)}`)
+    const productMore = page.getByRole('button', { name: /展开更多产品/ })
+    assert.equal(await productMore.getAttribute('aria-expanded'), 'false', `product disclosure state is wrong at ${suffix(viewport)}`)
+    await productMore.click()
+    assert.deepEqual(await products.locator('b').allTextContents(), expectedProductOrder,
+      `expanded products are not newest-first at ${suffix(viewport)}`)
+    const oldestProduct = products.filter({ has: page.getByText('第1季|天御', { exact: true }) })
+    await oldestProduct.click()
+    await page.getByRole('button', { name: '收起产品' }).click()
+    assert.equal(await products.filter({ has: page.getByText('第1季|天御', { exact: true }) }).count(), 1,
+      `selected product disappeared when collapsed at ${suffix(viewport)}`)
+    assert.equal(await page.locator('.active-filters').getByText('产品：第1季|天御', { exact: true }).count(), 1,
+      `active product summary is missing at ${suffix(viewport)}`)
+    assert.equal(imageRequests.length, 0, `product browsing loaded card images at ${suffix(viewport)}`)
+    await page.locator('.active-filters').getByRole('button', { name: '清除筛选' }).click()
+    assert.equal(await page.locator('.active-filters').count(), 0, `filter reset failed at ${suffix(viewport)}`)
     const fenian = page.locator('#rule-entry-RULING-20260922-FENIAN-REPEAT')
     await fenian.locator('.faq-question').click()
     const cardArt = fenian.getByRole('button', { name: '查看芬尼亚传奇卡牌详情' })
@@ -296,45 +323,100 @@ try {
   }
   await deepLink.close()
 
-  const admin = await browser.newPage({ viewport: { width: 1366, height: 900 } })
-  await admin.goto(base + '?fixture=admin')
-  await admin.locator('.workspace-tabs').waitFor()
-  assert.equal(await admin.locator('.workspace-tabs button').count(), 4, 'admin must expose four workspaces')
-  const draftCard = admin.locator('.admin-item-card').first()
-  await draftCard.locator('summary').click()
-  assert.equal(await draftCard.locator('.admin-item-preview').count(), 1, 'draft object lost its inline preview')
-  assert.equal(await draftCard.locator('.item-actions').getByRole('button', { name: '保存此项' }).count(), 1, 'save action is not adjacent to draft object')
-  assert.equal(await draftCard.locator('.item-actions').getByRole('button', { name: '审核并发布此项' }).count(), 1, 'publish action is not adjacent to draft object')
-  await admin.getByRole('button', { name: /已发布/ }).click()
-  const publishedCard = admin.locator('.admin-item-card').first()
-  await publishedCard.locator('summary').click()
-  assert.equal(await publishedCard.locator('.item-actions').getByRole('button', { name: '退回修改' }).count(), 1, 'return action is not adjacent to published object')
-  await admin.getByRole('button', { name: /待审核/ }).click()
-  const rulingEditor = admin.locator('.ruling-editor').filter({ hasText: 'ADMIN-DRAFT' })
-  await rulingEditor.locator('summary').click()
-  await rulingEditor.getByText('锡瓦的卡巴', { exact: true }).waitFor()
-  assert.equal(await rulingEditor.getByText('第1季|天御', { exact: true }).count(), 1, 'admin did not derive linked-card products')
-  await rulingEditor.getByRole('button', { name: '查看锡瓦的卡巴卡牌详情' }).click()
-  const adminDetails = admin.getByRole('dialog', { name: '锡瓦的卡巴' })
-  await adminDetails.waitFor()
-  assert.equal(await adminDetails.locator('[data-card-detail-context="catalog"]').count(), 1, 'admin did not reuse catalog detail component')
-  await adminDetails.getByRole('button', { name: '关闭卡牌详情' }).click()
-  await admin.screenshot({ path: path.join(output, 'admin-card-ruling-1366x900.png'), fullPage: true })
-  await rulingEditor.locator('.item-actions').getByRole('button', { name: '保存此项' }).click()
-  const savedProducts = await admin.evaluate(() => {
-    const saved = window.__savedDrafts.filter(item => item.key === 'rules.rulings').at(-1)
-    return JSON.parse(saved.value).entries.find(item => item.id === 'ADMIN-DRAFT').productIds
-  })
-  assert.deepEqual(savedProducts, ['第1季|天御', '第1季|天御·再临', '第1季|典藏版'], 'admin save did not persist derived products')
-  await admin.getByRole('button', { name: /^来源/ }).click()
-  await admin.locator('.source-list').waitFor()
-  await admin.getByRole('button', { name: /历史与已替代/ }).click()
-  await admin.locator('.history-workspace').waitFor()
-  await admin.screenshot({ path: path.join(output, 'admin-history-1366x900.png'), fullPage: true })
-  await admin.close()
+  for (const viewport of adminViewports) {
+    const context = await browser.newContext({ viewport, hasTouch: viewport.width < 900 })
+    const admin = await context.newPage()
+    await admin.goto(base + '?fixture=admin')
+    await admin.locator('.workspace-tabs').waitFor()
+    assert.equal(await admin.locator('.workspace-tabs button').count(), 4, `admin must expose four workspaces at ${suffix(viewport)}`)
+    assert.equal(await admin.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false,
+      `admin overflows at ${suffix(viewport)}`)
+    assert((await admin.locator('.ruling-admin').boundingBox()).width <= 1681,
+      `admin is unbounded at ${suffix(viewport)}`)
 
-  fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ status: 'passed', viewports, report }, null, 2))
-  console.log(JSON.stringify({ status: 'passed', output, viewports: viewports.length, screenshots: viewports.length * 2 + 3 }, null, 2))
+    const draftCard = admin.locator('.admin-item-card').first()
+    await draftCard.locator('summary').click()
+    assert.equal(await draftCard.locator('.admin-item-preview').count(), 1,
+      `draft object lost its inline preview at ${suffix(viewport)}`)
+    assert.equal(await draftCard.locator('.item-actions').getByRole('button', { name: '保存此项' }).count(), 1,
+      `save action is not adjacent to draft object at ${suffix(viewport)}`)
+    assert.equal(await draftCard.locator('.item-actions').getByRole('button', { name: '审核并发布此项' }).count(), 1,
+      `publish action is not adjacent to draft object at ${suffix(viewport)}`)
+
+    await admin.getByRole('button', { name: /已发布/ }).click()
+    const publishedCenterCard = admin.locator('.center-editor').first()
+    await publishedCenterCard.locator('summary').click()
+    assert.equal(await publishedCenterCard.locator('input, textarea, select').count(), 0,
+      `published center object remained editable at ${suffix(viewport)}`)
+    assert.equal(await publishedCenterCard.getByRole('button', { name: '保存此项' }).count(), 0,
+      `published center object exposed save at ${suffix(viewport)}`)
+    assert.equal(await publishedCenterCard.getByRole('button', { name: '审核并发布此项' }).count(), 0,
+      `published center object exposed publish at ${suffix(viewport)}`)
+    assert.equal(await publishedCenterCard.locator('.item-actions').getByRole('button', { name: '退回修改' }).count(), 1,
+      `return action is not adjacent to published center object at ${suffix(viewport)}`)
+
+    const publishedRulingCard = admin.locator('.ruling-editor').first()
+    await publishedRulingCard.locator('summary').click()
+    assert.equal(await publishedRulingCard.locator('input, textarea, select').count(), 0,
+      `published ruling remained editable at ${suffix(viewport)}`)
+    assert.equal(await publishedRulingCard.getByRole('button', { name: '保存此项' }).count(), 0,
+      `published ruling exposed save at ${suffix(viewport)}`)
+    assert.equal(await publishedRulingCard.getByRole('button', { name: '审核并发布此项' }).count(), 0,
+      `published ruling exposed publish at ${suffix(viewport)}`)
+    assert.equal(await publishedRulingCard.locator('.item-actions').getByRole('button', { name: '退回修改' }).count(), 1,
+      `return action is not adjacent to published ruling at ${suffix(viewport)}`)
+
+    if (viewport.width === 1024) {
+      const returnedRulingId = await publishedRulingCard.getAttribute('id')
+      await publishedRulingCard.locator('.item-actions').getByRole('button', { name: '退回修改' }).click()
+      const returnedRuling = admin.locator(`#${returnedRulingId}`)
+      await returnedRuling.waitFor()
+      assert.equal(await returnedRuling.getAttribute('open'), '', 'returned ruling was not opened in drafts')
+      assert((await returnedRuling.locator('input, textarea, select').count()) > 0,
+        'returned ruling did not regain draft editors')
+      assert.equal(await admin.locator('.workspace-tabs button.active').getByText(/待审核/).count(), 1,
+        'ruling return action did not switch to drafts')
+    }
+
+    if (viewport.width === 1366) {
+      const returnedId = await publishedCenterCard.getAttribute('id')
+      await publishedCenterCard.locator('.item-actions').getByRole('button', { name: '退回修改' }).click()
+      const returnedCard = admin.locator(`#${returnedId}`)
+      await returnedCard.waitFor()
+      assert.equal(await returnedCard.getAttribute('open'), '', 'returned object was not opened in drafts')
+      assert((await returnedCard.locator('input, textarea, select').count()) > 0,
+        'returned object did not regain draft editors')
+      assert.equal(await admin.locator('.workspace-tabs button.active').getByText(/待审核/).count(), 1,
+        'return action did not switch to drafts')
+
+      const rulingEditor = admin.locator('.ruling-editor').filter({ hasText: 'ADMIN-DRAFT' })
+      await rulingEditor.locator('summary').click()
+      await rulingEditor.getByText('锡瓦的卡巴', { exact: true }).waitFor()
+      assert.equal(await rulingEditor.getByText('第1季|天御', { exact: true }).count(), 1, 'admin did not derive linked-card products')
+      await rulingEditor.getByRole('button', { name: '查看锡瓦的卡巴卡牌详情' }).click()
+      const adminDetails = admin.getByRole('dialog', { name: '锡瓦的卡巴' })
+      await adminDetails.waitFor()
+      assert.equal(await adminDetails.locator('[data-card-detail-context="catalog"]').count(), 1, 'admin did not reuse catalog detail component')
+      await adminDetails.getByRole('button', { name: '关闭卡牌详情' }).click()
+      await admin.screenshot({ path: path.join(output, 'admin-card-ruling-1366x900.png'), fullPage: true })
+      await rulingEditor.locator('.item-actions').getByRole('button', { name: '保存此项' }).click()
+      const savedProducts = await admin.evaluate(() => {
+        const saved = window.__savedDrafts.filter(item => item.key === 'rules.rulings').at(-1)
+        return JSON.parse(saved.value).entries.find(item => item.id === 'ADMIN-DRAFT').productIds
+      })
+      assert.deepEqual(savedProducts, ['第1季|天御', '第1季|天御·再临', '第1季|典藏版'], 'admin save did not persist derived products')
+      await admin.getByRole('button', { name: /^来源/ }).click()
+      await admin.locator('.source-list').waitFor()
+      await admin.getByRole('button', { name: /历史与已替代/ }).click()
+      await admin.locator('.history-workspace').waitFor()
+      await admin.screenshot({ path: path.join(output, 'admin-history-1366x900.png'), fullPage: true })
+    } else await admin.screenshot({ path: path.join(output, `admin-published-${suffix(viewport)}.png`), fullPage: true })
+    await context.close()
+  }
+
+  fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ status: 'passed', viewports, adminViewports, report }, null, 2))
+  console.log(JSON.stringify({ status: 'passed', output, viewports: viewports.length, adminViewports: adminViewports.length,
+    screenshots: viewports.length * 2 + adminViewports.length + 2 }, null, 2))
 } finally {
   await browser?.close()
   await server.close()
