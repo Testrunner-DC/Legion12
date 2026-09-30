@@ -71,9 +71,8 @@ public sealed partial class L12GameEngine
             var candidates = new List<L12TriggerCandidate>
             {
                 Candidate("richard-defense", "进攻时：对方抵挡/支援需额外弃置1张手牌", complete: true),
+                Candidate("richard-squires", "进攻时：可弃置侍从骑士使兵力增加"),
             };
-            if (source.AttachedCards.Any(card => card.CardId == "S02-0609"))
-                candidates.Add(Candidate("richard-squires", "进攻时：可弃置侍从骑士使兵力增加"));
             QueueTriggerCandidates(candidates);
             return true;
         }
@@ -230,6 +229,13 @@ public sealed partial class L12GameEngine
         }
 
         if (steps.Count == 0) return false;
+        if (ShouldSilentlySkipUnavailableOptionalTrigger(steps))
+        {
+            CleanupPublicTriggerReservation(candidate);
+            State.PendingTriggerStackCandidates.Remove(candidate);
+            AdvanceTriggerBatches();
+            return true;
+        }
         var result = BeginPendingActivationSequence(candidate.Controller, source, "public-trigger-declaration",
             steps, candidate.CandidateId);
         if (result.Accepted) return true;

@@ -743,7 +743,6 @@ public sealed partial class L12GameEngine
         var key = L12MasterTriggeredUsageRules.Key("artemisDeathFlip", player.PlayerIndex, State.TurnSerial);
         var pendingKey = $"{key}:pending";
         if (player.MasterId != "S02-05M1" || !defeated.LastKnownWasRanged
-            || !player.Morale.Any(card => CanFlipMoraleToGodPower(card))
             || player.UsedAbilities.Contains(key) || !player.UsedAbilities.Add(pendingKey)) return null;
         var master = CreateCard("S02-05M1", $"master-{owner}");
         return CreateTriggerCandidate(owner, master, "friendly-ranged-death", "我方远程军团阵亡时效果",

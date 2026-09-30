@@ -124,10 +124,7 @@ public sealed partial class L12GameEngine
                 }));
         }
         if (master.CardId == "S01-01M1"
-            && !player.UsedAbilities.Contains($"trigger:xiaotian-morale:{State.TurnSerial}")
-            && player.Field[0].Any(card => card is null)
-            && L12SpecialDeckRules.CanGenerateDerivedSpecialCard("S02-01S1",
-                PublicLegions(player).Count(card => card.CardId == "S02-01S1")))
+            && !player.UsedAbilities.Contains($"trigger:xiaotian-morale:{State.TurnSerial}"))
         {
             var xiaotian = CreateCard("S02-01S1", $"p{playerIndex}-xiaotian");
             candidates.Add(CreateTriggerCandidate(playerIndex, xiaotian, "master-morale-return", "【主宰效果返还士气时】效果",
@@ -139,6 +136,22 @@ public sealed partial class L12GameEngine
                 }));
         }
         QueueTriggerCandidates(candidates);
+    }
+
+    private static L12CardInstance? ReusableDerivedSpecialCard(L12PlayerState player, string cardId)
+        => player.Graveyard.LastOrDefault(card => card.CardId == cardId)
+            ?? player.Removed.LastOrDefault(card => card.CardId == cardId);
+
+    // 生成数量和实例占用是可变的落地资格，声明、支付提交及结算必须使用同一守卫。
+    // 隐藏状态不允许绕过数量上限；跨战场的同实例也不能被再次放置。
+    private bool CanPlaceDerivedSpecialCard(L12PlayerState player, string cardId, string generatedInstanceId)
+    {
+        var instanceId = ReusableDerivedSpecialCard(player, cardId)?.InstanceId ?? generatedInstanceId;
+        return L12SpecialDeckRules.CanGenerateDerivedSpecialCard(cardId,
+                player.Field.SelectMany(row => row).Count(card => card?.CardId == cardId))
+            && !State.Players.SelectMany(owner => owner.Field).SelectMany(row => row)
+                .Any(card => card is not null && string.Equals(card.InstanceId, instanceId,
+                    StringComparison.OrdinalIgnoreCase));
     }
 
     private void ResolveS2MasterMoraleReturn(L12StackItem item)
@@ -157,16 +170,16 @@ public sealed partial class L12GameEngine
         }
         var destination = PublicTriggerDeclared(item, "slot");
         if (!player.UsedAbilities.Contains(onceKey)
+            || !CanPlaceDerivedSpecialCard(player, item.SourceCardId, item.SourceInstanceId)
             || !Enumerable.Range(0, 3).Where(slot => player.Field[0][slot] is null)
                 .Select(slot => $"0:{slot}").Contains(destination, StringComparer.OrdinalIgnoreCase))
         {
-            AddEvent("effect-cancelled", item.Controller, "哮天犬·稚选择的前排登场位置已失效；该军团不登场");
+            AddEvent("effect-cancelled", item.Controller, "哮天犬·稚的登场数量或前排位置已失效；该军团不登场");
             FinishStackItem(item);
             return;
         }
-        var xiaotian = player.Graveyard.LastOrDefault(card => card.CardId == "S02-01S1")
-            ?? player.Removed.LastOrDefault(card => card.CardId == "S02-01S1")
-            ?? CreateCard("S02-01S1", $"p{item.Controller}-xiaotian");
+        var xiaotian = ReusableDerivedSpecialCard(player, item.SourceCardId)
+            ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
         var originZone = player.Graveyard.Contains(xiaotian) ? "graveyard"
             : player.Removed.Contains(xiaotian) ? "removed" : "generated";
         var (row, slot) = ParseSlot(destination);
@@ -1368,8 +1381,7 @@ public sealed partial class L12GameEngine
         var pendingKey = $"{onceKey}:pending";
         if (State.ActivePlayer == defeatedController || player.MasterId != "S02-02M1"
             || player.UsedAbilities.Contains(onceKey) || defeated.Faction != "taiyangcheng"
-            || defeated.CurrentCost < 2 || !player.Graveyard.Any(card => card.CardId == "S02-0201")
-            || !EmptySlots(player).Any())
+            || defeated.CurrentCost < 2)
             return null;
         if (!player.UsedAbilities.Add(pendingKey)) return null;
         var master = CreateCard(player.MasterId, $"master-{defeatedController}");

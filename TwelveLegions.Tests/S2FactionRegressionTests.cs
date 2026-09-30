@@ -2879,6 +2879,13 @@ public sealed class S2FactionRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("attack", richard.InstanceId,
             Target: new L12AttackTarget("master"))).Accepted);
+        var order = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("trigger-order", order.Kind);
+        Assert.Equal(2, order.ValidChoices.Count);
+        var defenseId = Assert.Single(order.ValidChoices, id => order.Data[id].Contains("抵挡", StringComparison.Ordinal));
+        var squireId = Assert.Single(order.ValidChoices, id => id != defenseId);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
+            CardInstanceIds: [defenseId, squireId])).Accepted);
         PassResponses(game);
         Assert.True(game.Handle(1, new L12Command("resolveDefense", CardInstanceIds: [blocker.InstanceId])).Accepted);
         PassResponses(game);
@@ -4504,6 +4511,17 @@ public sealed class S2FactionRegressionTests
         var declaredLiMu = false;
         while (!declaredLiMu)
         {
+            if (game.State.PendingPrompts.SingleOrDefault() is { Kind: "trigger-order" } order)
+            {
+                Assert.Equal(2, order.ValidChoices.Count);
+                var liMuId = Assert.Single(order.ValidChoices,
+                    id => order.Data[$"sourceInstance:{id}"] == "limu-morale-trigger");
+                var dogId = Assert.Single(order.ValidChoices, id => id != liMuId);
+                // The full front row prevents placement only when the dog reaches declaration.
+                Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
+                    CardInstanceIds: [liMuId, dogId])).Accepted);
+                continue;
+            }
             var prompt = Assert.Single(game.State.PendingPrompts,
                 candidate => candidate.Continuation == "pending-activation");
             var activationId = prompt.Data["activationId"];

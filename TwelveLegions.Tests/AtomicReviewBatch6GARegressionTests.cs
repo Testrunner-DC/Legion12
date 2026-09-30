@@ -172,6 +172,14 @@ public sealed class AtomicReviewBatch6GARegressionTests
                 AddMoraleDeckCard(player, "batch6ga-limu-morale");
                 InvokeVoid(game, "QueueS2MasterMoraleReturnTriggers", 0,
                     Card(game.State.Players[0].MasterId, "master-0"), 4);
+                var order = Assert.Single(game.State.PendingPrompts);
+                Assert.Equal("trigger-order", order.Kind);
+                Assert.Equal(2, order.ValidChoices.Count);
+                var liMuId = Assert.Single(order.ValidChoices,
+                    id => order.Data[$"sourceInstance:{id}"] == "batch6ga-limu");
+                var dogId = Assert.Single(order.ValidChoices, id => id != liMuId);
+                Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
+                    CardInstanceIds: [liMuId, dogId])).Accepted);
                 break;
             }
             case "grail-round-table":

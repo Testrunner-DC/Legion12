@@ -328,6 +328,14 @@ public sealed class BattlePlayerCombatPresentationTests
         game.State.Players[1].Hand.AddRange([blocker, spare]);
         Assert.True(game.Handle(0, new L12Command("attack", richard.InstanceId,
             Target: new L12AttackTarget("master"))).Accepted);
+        var order = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("trigger-order", order.Kind);
+        Assert.Equal(2, order.ValidChoices.Count);
+        var defenseId = Assert.Single(order.ValidChoices,
+            choice => order.Data[choice].Contains("抵挡", StringComparison.Ordinal));
+        var squireId = Assert.Single(order.ValidChoices, choice => choice != defenseId);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
+            CardInstanceIds: [defenseId, squireId])).Accepted);
         PassToDefenseChoice(game);
         var id = game.State.PendingDefense?.CombatId;
         Assert.True(game.Handle(1, new L12Command("resolveDefense",

@@ -442,6 +442,13 @@ public sealed class CombatTimelineRegressionTests
              && game.State.PendingDefense?.Stage != L12CombatStage.DefenseChoice; step++)
         {
             var prompt = Assert.Single(game.State.PendingPrompts);
+            if (prompt.Kind == "trigger-order")
+            {
+                Assert.Equal(2, prompt.ValidChoices.Count);
+                Assert.True(game.Handle(prompt.PlayerIndex, new L12Command("resolvePrompt",
+                    PromptId: prompt.PromptId, CardInstanceIds: [.. prompt.ValidChoices])).Accepted);
+                continue;
+            }
             var choice = prompt.Kind == "response" ? "pass"
                 : prompt.ValidChoices.Contains("no") ? "no"
                 : prompt.ValidChoices.Contains("skip") ? "skip"

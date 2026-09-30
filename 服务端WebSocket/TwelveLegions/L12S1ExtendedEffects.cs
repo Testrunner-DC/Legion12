@@ -1332,11 +1332,8 @@ public sealed partial class L12GameEngine
     {
         var defenderIndex = 1 - attackerPlayer;
         var defender = State.Players[defenderIndex];
-        var hasOpponentLegion = PublicLegions(State.Players[attackerPlayer]).Any();
-        var hasRestedOpponentLegion = PublicLegions(State.Players[attackerPlayer]).Any(target => target.Tapped);
         var candidates = defender.Field[1].Where(card => card is not null
-                && L12StructuredCardRules.CanOfferPostAttackReaction(card.CardId, hasOpponentLegion,
-                    hasRestedOpponentLegion)).Cast<L12CardInstance>()
+                && L12StructuredCardRules.CanOfferPostAttackReaction(card.CardId)).Cast<L12CardInstance>()
             .Select(counter => IsTrojanHorse(counter)
                 ? CreateTriggerCandidate(defenderIndex, counter, "trojan-after-attack", "【对方进攻后】反击战术",
                     new Dictionary<string, string> { ["attacker"] = attackerPlayer.ToString() })
@@ -1361,7 +1358,6 @@ public sealed partial class L12GameEngine
             candidates.Add(CreateTriggerCandidate(damagedPlayer, counter, "reaction", "【主宰受到伤害时】反击战术"));
         if (player.MasterId == "S01-02M3" && State.ActivePlayer == 1 - damagedPlayer
             && sourcePlayer == 1 - damagedPlayer
-            && player.Graveyard.Any(card => card.CardId == "S01-0212")
             && !player.UsedAbilities.Contains(L12MasterTriggeredUsageRules.Key("medjedDamageResponse", player.PlayerIndex, State.TurnSerial))
             && player.UsedAbilities.Add("pending:medjedDamageResponse"))
         {

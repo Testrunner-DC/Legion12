@@ -811,7 +811,7 @@ public sealed partial class L12GameEngine
             {
                 candidate.Data["cleanupReservation"] = "pending:medjedDamageResponse";
                 var guards = player.Graveyard.Where(card => State.ActivePlayer == 1 - candidate.Controller
-                        && card.CardId == PublicTriggerTombGuardCard)
+                        && card.CardId == PublicTriggerTombGuardCard && EmptySlots(player).Any())
                     .Select(card => card.InstanceId).Prepend("mode:none").ToList();
                 steps =
                 [
@@ -826,7 +826,8 @@ public sealed partial class L12GameEngine
             }
             case ("S02-02M1", "nephthys-own-death", _):
             {
-                var scarabs = player.Graveyard.Where(card => card.CardId == PublicTriggerScarabCard)
+                var scarabs = player.Graveyard.Where(card => card.CardId == PublicTriggerScarabCard
+                        && EmptySlots(player).Any())
                     .Select(card => card.InstanceId).Prepend("mode:none").ToList();
                 steps =
                 [
@@ -841,7 +842,8 @@ public sealed partial class L12GameEngine
             }
             case ("S02-01S1", "master-morale-return", _) when candidate.Data.GetValueOrDefault("mode") == "xiaotian":
             {
-                var slots = Enumerable.Range(0, 3).Where(slot => player.Field[0][slot] is null)
+                var slots = Enumerable.Range(0, 3).Where(slot => player.Field[0][slot] is null
+                        && CanPlaceDerivedSpecialCard(player, candidate.SourceCardId, candidate.SourceInstanceId))
                     .Select(slot => $"0:{slot}").ToList();
                 steps =
                 [
@@ -1530,9 +1532,10 @@ public sealed partial class L12GameEngine
             var onceKey = candidate.Data.GetValueOrDefault("onceKey") ?? string.Empty;
             var slot = activation.DeclaredValues.GetValueOrDefault("slot", []).SingleOrDefault();
             if (string.IsNullOrWhiteSpace(onceKey) || player.UsedAbilities.Contains(onceKey)
+                || !CanPlaceDerivedSpecialCard(player, candidate.SourceCardId, candidate.SourceInstanceId)
                 || slot is null || !Enumerable.Range(0, 3).Where(index => player.Field[0][index] is null)
                     .Select(index => $"0:{index}").Contains(slot, StringComparer.OrdinalIgnoreCase))
-                error = "哮天犬·稚的公开登场位置已失效；效果未入栈";
+                error = "哮天犬·稚的登场数量或公开位置已失效；效果未入栈";
             else
                 player.UsedAbilities.Add(onceKey);
         }

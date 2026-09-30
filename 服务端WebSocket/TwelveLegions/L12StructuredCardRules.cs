@@ -548,12 +548,12 @@ public static partial class L12StructuredCardRules
         };
     }
 
-    public static bool CanOfferPostAttackReaction(string cardId, bool hasAnyOpponentLegion,
-        bool hasRestedOpponentLegion)
+    public static bool CanOfferPostAttackReaction(string cardId)
         => cardId switch
         {
-            "S01-0017" => hasRestedOpponentLegion,
-            "S01-0420" => hasAnyOpponentLegion,
+            // 这里只声明印刷时点；目标在该候选实际轮到声明时重新建立。
+            "S01-0017" => true,
+            "S01-0420" => true,
             "S02-0523" => true,
             "ST01-10" => true,
             _ => false,
