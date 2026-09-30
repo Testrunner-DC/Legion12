@@ -672,7 +672,12 @@ public sealed class AtomicReviewBatch2RegressionTests
         Assert.True(invalidGame.Handle(0, new L12Command("activateAbility", "master-0",
             Ability: "divinityFlipMorale")).Accepted);
         Assert.DoesNotContain(invalidGame.State.PendingPrompts, candidate => candidate.Continuation == "pending-activation");
-        Assert.Single(invalidGame.State.EffectStack);
+        var invalidPrompt = Assert.Single(invalidGame.State.PendingPrompts);
+        Assert.Equal("active-ability", invalidPrompt.Continuation);
+        Assert.Empty(invalidGame.State.EffectStack);
+        Assert.True(invalidGame.Handle(0, new L12Command("resolvePrompt", PromptId: invalidPrompt.PromptId,
+            Choice: invalidTarget.InstanceId)).Accepted);
+        Assert.Equal(invalidTarget.InstanceId, Assert.Single(invalidGame.State.EffectStack).Data["target"]);
         invalidTarget.IsGodPower = true;
         PassResponses(invalidGame);
         Assert.Contains(invalidPlayer.UsedAbilities, key => key.Contains("divinityFlipMorale", StringComparison.Ordinal));
@@ -694,11 +699,13 @@ public sealed class AtomicReviewBatch2RegressionTests
         Assert.True(successGame.Handle(0, new L12Command("activateAbility", "master-0",
             Ability: "divinityFlipMorale")).Accepted);
         Assert.DoesNotContain(successGame.State.PendingPrompts, candidate => candidate.Continuation == "pending-activation");
-        PassResponses(successGame);
         var prompt = Assert.Single(successGame.State.PendingPrompts);
-        Assert.Equal("s2-flip-morale", prompt.Data["action"]);
+        Assert.Equal("active-ability", prompt.Continuation);
+        Assert.Empty(successGame.State.EffectStack);
         Assert.True(successGame.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
             Choice: target.InstanceId)).Accepted);
+        Assert.Equal(target.InstanceId, Assert.Single(successGame.State.EffectStack).Data["target"]);
+        PassResponses(successGame);
         Assert.True(target.IsGodPower);
         Assert.True(target.Tapped);
         Assert.Contains($"active:master-0:divinityFlipMorale", successPlayer.UsedAbilities);

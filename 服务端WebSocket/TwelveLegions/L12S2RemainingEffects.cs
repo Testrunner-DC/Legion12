@@ -195,12 +195,7 @@ public sealed partial class L12GameEngine
                 return CommandResult.Ok();
             case "divinityFlipMorale" when source.CardId == "S02-05D1":
                 RecordLimitedActiveAbilityUse(player, source, ability);
-                PushEffect(playerIndex, source, "active", "主神效果",
-                    data: new Dictionary<string, string>
-                    {
-                        ["ability"] = ability,
-                        ["resolutionTimeMoraleCandidateCommitted"] = "true",
-                    });
+                BeginPreResponseMoraleFlipTargetChoice(playerIndex, source, ability);
                 return CommandResult.Ok();
             case "divinityPower" when source.CardId == "S02-05D1":
             {
@@ -386,7 +381,9 @@ public sealed partial class L12GameEngine
                 AddEvent("effect", item.Controller, "本回合我方【阿斯加德】军团登场时获得冲锋；主宰本局无法因效果增加血量", source);
                 FinishStackItem(item); return true;
             case "divinityFlipMorale" when source?.CardId == "S02-05D1":
-                return PromptS2FlipMorale(item, source);
+                return item.Data.TryGetValue("target", out var divinityFlipTarget)
+                    ? ResolveDeclaredS2FlipMorale(item, source, divinityFlipTarget, onlyTapped: false)
+                    : PromptS2FlipMorale(item, source); // Old V2 checkpoints retain their resolution prompt.
             case "divinityFreePromotion" when source?.CardId == "S02-05D1":
                 player.NextS2PromotionGodPowerDiscount = Math.Max(player.NextS2PromotionGodPowerDiscount, 99);
                 AddEvent("effect", item.Controller, "本回合我方下一张【奥林匹斯】军团晋升登场无需消耗并翻转神力", source);

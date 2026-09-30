@@ -197,6 +197,45 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[prompt.PlayerIndex];
         var sourceId = prompt.Data["sourceId"];
+        if (prompt.Data.GetValueOrDefault("preResponseMoraleFlip") == "true")
+        {
+            var sourceCardId = prompt.Data.GetValueOrDefault("sourceCardId") ?? string.Empty;
+            var ability = prompt.Data.GetValueOrDefault("ability") ?? string.Empty;
+            var isOlympus = ability == "olympusMoraleFlip" && sourceCardId is "S02-05C1" or "S02-05C1A";
+            var isDivinity = ability == "divinityFlipMorale" && sourceCardId == "S02-05D1";
+            var targetId = chosen.SingleOrDefault();
+            if ((!isOlympus && !isDivinity) || targetId is null
+                || !prompt.ValidChoices.Contains(targetId, StringComparer.OrdinalIgnoreCase)
+                || !player.Morale.Any(card => card.InstanceId == targetId && CanFlipMoraleToGodPower(card)))
+            {
+                AddEvent("effect-failed", prompt.PlayerIndex,
+                    "已支付的翻转士气效果在入栈前失去原目标；费用和使用次数不返还");
+                return;
+            }
+            var flipSource = isDivinity && sourceCardId == player.MasterId
+                ? CreateActiveMasterSource(player, sourceId)
+                : sourceId == $"faction-{prompt.PlayerIndex}"
+                    ? CreateCard(sourceCardId, sourceId)
+                    : FindAuthoritativeCard(sourceId);
+            if (flipSource is null)
+            {
+                AddEvent("effect-failed", prompt.PlayerIndex,
+                    "已支付的翻转士气效果在入栈前失去来源；费用和使用次数不返还");
+                return;
+            }
+            var data = new Dictionary<string, string>
+            {
+                ["ability"] = ability,
+                ["target"] = targetId,
+            };
+            if (prompt.Data.TryGetValue(PaidCostSummaryDataKey, out var paidCostSummary))
+                data[PaidCostSummaryDataKey] = paidCostSummary;
+            SetResponsePresentationTargets(data, [targetId]);
+            CaptureResponsePublicTargetSnapshot(data, [targetId]);
+            PushEffect(prompt.PlayerIndex, flipSource, "active",
+                isDivinity ? "主神效果" : "阵营效果", data: data);
+            return;
+        }
         var source = FindOnField(player, sourceId, out _, out _)
             ?? (player.Relic?.InstanceId == sourceId ? player.Relic : null)
             ?? player.ExtraRelics.FirstOrDefault(card => card.InstanceId == sourceId)
@@ -204,6 +243,31 @@ public sealed partial class L12GameEngine
         if (source is null) return;
         var result = CommitActiveAbility(prompt.PlayerIndex, source, prompt.Data["ability"], chosen[0]);
         if (!result.Accepted) AddEvent("ability-rejected", prompt.PlayerIndex, result.Error ?? "主动效果发动失败");
+    }
+
+    private void BeginPreResponseMoraleFlipTargetChoice(int playerIndex, L12CardInstance source, string ability)
+    {
+        var choices = State.Players[playerIndex].Morale
+            .Where(card => CanFlipMoraleToGodPower(card))
+            .Select(card => card.InstanceId).ToArray();
+        if (choices.Length == 0)
+        {
+            AddEvent("effect-failed", playerIndex,
+                "已支付的翻转士气效果在入栈前没有合法士气对象；费用和使用次数不返还");
+            return;
+        }
+        var data = new Dictionary<string, string>
+        {
+            ["sourceId"] = source.InstanceId,
+            ["sourceCardId"] = source.CardId,
+            ["ability"] = ability,
+            ["preResponseMoraleFlip"] = "true",
+        };
+        // The original payment snapshot is still in scope here; carry its receipt across
+        // the target prompt so the later stack push reports the payment already made.
+        AddActivePaidCostPresentation(playerIndex, source, data);
+        CreatePrompt(playerIndex, "target-morale", $"{source.Name}：选择要翻转的1张士气，确认后开放响应",
+            choices, 1, 1, "active-ability", data: data);
     }
 
     private static bool IsRegisteredGraveyardActiveAbilitySource(L12CardInstance card, string ability)

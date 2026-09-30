@@ -7,7 +7,7 @@ public sealed partial class L12GameEngine
     private const string ResponsePresentationTargetIdsKey = "responsePresentationTargetIds";
     private const string ResponsePublicTargetSnapshotKey = "responsePublicTargetSnapshotV1";
     private sealed record ResponsePublicTargetSnapshot(string Id, int Owner, string Zone,
-        int Row, int Slot, string? PublicName, int? CurrentCost, bool Tapped);
+        int Row, int Slot, string? PublicName, int? CurrentCost, bool Tapped, bool? IsGodPower = null);
     private L12PendingActivation? _committingResponsePresentationActivation;
 
     private CommandResult CommitWithResponsePresentation(L12PendingActivation activation,
@@ -68,7 +68,8 @@ public sealed partial class L12GameEngine
             {
                 // Only the public resource face/activity state is needed here. Its CardId is
                 // already public, but need not be repeated in response metadata.
-                facts.Add(new(id, player.PlayerIndex, "morale", -1, -1, null, null, morale.Tapped));
+                facts.Add(new(id, player.PlayerIndex, "morale", -1, -1, null, null,
+                    morale.Tapped, morale.IsGodPower));
                 break;
             }
         }
@@ -118,7 +119,16 @@ public sealed partial class L12GameEngine
                     $"{ResponseBattlefieldSlotLabel(viewer, fact.Owner, fact.Row, fact.Slot)}{name}{cost}", true);
             }
             else if (fact.Zone == "morale")
-                yield return (fact.Id, $"{side}士气区的{(fact.Tapped ? "休整" : "活跃")}士气", true);
+            {
+                // Pre-change V2 snapshots lack the face fact. Keep that history neutral.
+                var face = fact.IsGodPower switch
+                {
+                    true => "神力面",
+                    false => "士气面",
+                    null => "资源",
+                };
+                yield return (fact.Id, $"{side}士气区的{(fact.Tapped ? "休整" : "活跃")}{face}", true);
+            }
         }
         var authoritativeTargets = item.Targets.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var presentationTargets = (item.Data.GetValueOrDefault(ResponsePresentationTargetIdsKey) ?? string.Empty)

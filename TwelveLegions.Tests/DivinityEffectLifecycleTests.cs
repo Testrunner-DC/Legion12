@@ -23,6 +23,49 @@ public sealed class DivinityEffectLifecycleTests
     }
 
     [Fact]
+    public void DivinityFlipSelectsNamedTargetBeforeFirstResponse()
+    {
+        var game = Create(913220);
+        var target = Morale("divinity-order-target");
+        game.State.Players[0].Morale.Add(target);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "divinityFlipMorale")).Accepted);
+        var targetPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("active-ability", targetPrompt.Continuation);
+        Assert.Empty(game.State.EffectStack);
+        Resolve(game, target.InstanceId);
+
+        var item = Assert.Single(game.State.EffectStack);
+        Assert.Equal(target.InstanceId, item.Data["target"]);
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("response", response.Kind);
+        Assert.Contains("已选目标", response.Text);
+        Assert.Contains("士气区", response.Text);
+    }
+
+    [Fact]
+    public void DivinityFlipLegacyV2StackWithoutDeclarationStillUsesResolutionChoice()
+    {
+        var game = Create(9132201, stateFormatVersion: 2);
+        var morale = Morale("divinity-legacy-target");
+        game.State.Players[0].Morale.Add(morale);
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "divinityFlipMorale")).Accepted);
+        Resolve(game, morale.InstanceId);
+        var item = Assert.Single(game.State.EffectStack);
+        item.Data.Remove("target");
+        item.Data.Remove("responsePresentationTargetIds");
+        item.Data.Remove("responsePublicTargetSnapshotV1");
+        game = Restore(game);
+        PassResponses(game);
+        var legacyPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-flip-morale", legacyPrompt.Data["action"]);
+        Resolve(game, morale.InstanceId);
+        Assert.True(game.State.Players[0].Morale.Single().IsGodPower);
+    }
+
+    [Fact]
     [L12AbilityEvidence("S02-05D1:ability:active:519ab3c1379a9256",
         "normal", "v2-prompt-reconnect", "duplicate-submit", "reconnect", "presentation-consumers")]
     public void DivinityFlipRestoresItsSceneAndPublishesResolved()
@@ -33,15 +76,16 @@ public sealed class DivinityEffectLifecycleTests
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
             Ability: "divinityFlipMorale")).Accepted);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("active-ability", prompt.Continuation);
+        game = Restore(game);
+        Resolve(game, morale.InstanceId);
         var sceneId = Assert.Single(game.State.Events, entry => entry.EffectResultStatus == "declared"
             && entry.Cards.Any(card => card.InstanceId == "master-0")).EffectSceneId;
 
         game = Restore(game);
         PassResponses(game);
-        var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-flip-morale", prompt.Data["action"]);
         var promptId = prompt.PromptId;
-        Resolve(game, morale.InstanceId);
         Assert.False(game.Handle(0, new L12Command("resolvePrompt", PromptId: promptId,
             Choice: morale.InstanceId)).Accepted);
 
@@ -62,6 +106,7 @@ public sealed class DivinityEffectLifecycleTests
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
             Ability: "divinityFlipMorale")).Accepted);
+        Resolve(game, morale.InstanceId);
         morale.IsGodPower = true;
         PassResponses(game);
 
@@ -87,7 +132,6 @@ public sealed class DivinityEffectLifecycleTests
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
             Ability: "divinityFlipMorale")).Accepted);
-        PassResponses(game);
         var prompt = Assert.Single(game.State.PendingPrompts);
 
         Assert.Equal([target.InstanceId], prompt.ValidChoices);
@@ -127,6 +171,7 @@ public sealed class DivinityEffectLifecycleTests
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
             Ability: "divinityFlipMorale")).Accepted);
+        Resolve(game, morale.InstanceId);
         Assert.Single(game.State.EffectStack).Negated = true;
         PassResponses(game);
 

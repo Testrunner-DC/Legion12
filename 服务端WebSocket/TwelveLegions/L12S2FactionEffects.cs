@@ -1747,12 +1747,7 @@ public sealed partial class L12GameEngine
         {
             if (!TryConsumeMorale(player, 1)) return CommandResult.Reject("需要1张活跃的士气");
             RecordLimitedActiveAbilityUse(player, source, ability);
-            PushEffect(playerIndex, source, "active", "阵营效果",
-                data: new Dictionary<string, string>
-                {
-                    ["ability"] = ability,
-                    ["resolutionTimeMoraleCandidateCommitted"] = "true",
-                });
+            BeginPreResponseMoraleFlipTargetChoice(playerIndex, source, ability);
             return CommandResult.Ok();
         }
         return TryCommitS2RemainingAbility(playerIndex, source, ability, target, onceKey);
@@ -1905,7 +1900,9 @@ public sealed partial class L12GameEngine
             return true;
         }
         if (ability == "olympusMoraleFlip" && source?.CardId is "S02-05C1" or "S02-05C1A")
-            return PromptS2FlipMorale(item, source);
+            return item.Data.TryGetValue("target", out var olympusFlipTarget)
+                ? ResolveDeclaredS2FlipMorale(item, source, olympusFlipTarget, onlyTapped: false)
+                : PromptS2FlipMorale(item, source); // Old V2 checkpoints retain their resolution prompt.
         if (ability == "prometheusTopThree" && source?.CardId == "S02-05M2")
         {
             var top = player.Library.Take(3).ToArray();

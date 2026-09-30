@@ -3302,13 +3302,14 @@ public sealed class S2FactionRegressionTests
         var paymentResult = game.Handle(playerIndex, new L12Command("resolvePrompt", PromptId: payment.PromptId,
             CardInstanceIds: ["olympus-morale-active"]));
         Assert.True(paymentResult.Accepted, paymentResult.Error);
-        PassResponses(game);
-
         var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-flip-morale", prompt.Data["action"]);
+        Assert.Equal("target-morale", prompt.Kind);
+        Assert.Equal("active-ability", prompt.Continuation);
+        Assert.Empty(game.State.EffectStack);
         Assert.Contains("olympus-morale-kept-active", prompt.ValidChoices);
         Assert.True(game.Handle(playerIndex, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
             Choice: "olympus-morale-kept-active")).Accepted);
+        PassResponses(game);
 
         var flipped = player.Morale.Single(card => card.InstanceId == "olympus-morale-kept-active");
         Assert.False(flipped.Tapped);
