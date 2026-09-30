@@ -2042,7 +2042,10 @@ public sealed partial class L12GameEngine
                 targetPlayer.Field[row][slot] = null;
                 targetPlayer.Field[targetRow][targetSlot] = legion;
                 legion.LastMovedTurn = State.TurnSerial;
-                AddEvent("move", item.Controller, $"八尺琼勾玉使〈{legion.Name}〉位移", source, legion);
+                AddPlayerBattlefieldMovementEvent("move", item.Controller,
+                    $"八尺琼勾玉使〈{legion.Name}〉位移",
+                    new([BattlefieldMovementFact(legion, item.Controller, row, slot, targetRow, targetSlot)]),
+                    source, legion);
                 RecordLegionMovement(item.Controller, legion, row, targetRow);
             }
             else RecordTargetSettlementFailure(item,

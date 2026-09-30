@@ -1,20 +1,22 @@
 import type { ActionEvent, Card } from '../types'
+import { battlefieldSlotLabel } from './battlefieldTargetPresentation.ts'
 
 export type IconKind = 'attack' | 'defense' | 'support' | 'effect' | 'disaster'
   | 'dice' | 'hand-add' | 'draw' | 'play' | 'info' | 'game-over'
 export type LogPart = { text: string; card?: Card }
 export type LogBadge = { value: string; tone: 'pos' | 'neg' | 'info' }
+export type LogSide = '我方' | '对方' | '下方' | '上方'
 export type LogLineRow = {
   kind: 'line'
   sequence: number
   icon: IconKind
-  actor: '我方' | '对方' | null
+  actor: LogSide | null
   parts: LogPart[]
   badges: LogBadge[]
   effectText?: string
   detail?: LogLineRow[]
 }
-export type LogTurnRow = { kind: 'turn'; sequence: number; round: number; side: '我方' | '对方' }
+export type LogTurnRow = { kind: 'turn'; sequence: number; round: number; side: LogSide }
 export type LogCombatRow = {
   kind: 'combat'
   sequence: number
@@ -64,8 +66,9 @@ const COST_MERGE_RESULT_TYPES = new Set([
 const changePattern = /(?:增加|减少|追加|抽取|弃置|失去|恢复|位移|获得|受到)\s*(-?\d+)\s*(?:张|点|格|士气|神力|符文)?/g
 const forbiddenPattern = new RegExp(PLAYER_LOG_REDLINE_TERMS.join('|'))
 
-function side(playerIndex: number | undefined, you: number): '我方' | '对方' | null {
-  return playerIndex == null ? null : playerIndex === you ? '我方' : '对方'
+function side(playerIndex: number | undefined, you: number, neutralView = false): LogSide | null {
+  return playerIndex == null ? null
+    : playerIndex === you ? neutralView ? '下方' : '我方' : neutralView ? '上方' : '对方'
 }
 
 function publicCards(event: ActionEvent) {
@@ -132,6 +135,7 @@ function playerLogMetadataScore(event: ActionEvent) {
     + Number(Boolean(event.effectResultStatus))
     + Number(Boolean(event.playerLogSemantic))
     + Number(Boolean(event.playerCombat))
+    + Number(Boolean(event.playerBattlefieldMovement))
 }
 
 function orderedUniqueEvents(events: ActionEvent[]) {
@@ -158,7 +162,7 @@ const resultLabels: Record<string, string> = {
   skipped: '跳过', declined: '选择不发动',
 }
 
-function groupedResultDetail(event: ActionEvent, you: number, source: Card, showPaidCost: boolean): LogLineRow | null {
+function groupedResultDetail(event: ActionEvent, you: number, source: Card, showPaidCost: boolean, neutralView: boolean): LogLineRow | null {
   const status = event.effectResultStatus
   if (event.type !== 'effect-result' || !status || !resultLabels[status]) return null
   if (!publicCards(event).some(card => card.instanceId === source.instanceId)) return null
@@ -175,7 +179,7 @@ function groupedResultDetail(event: ActionEvent, you: number, source: Card, show
   const paidAt = receipt?.indexOf(paidMarker) ?? -1
   const reason = paidAt < 0 ? receipt : receipt?.slice(0, paidAt).replace(/；$/, '')
   const paid = paidAt < 0 || !showPaidCost ? undefined : receipt?.slice(paidAt)
-  return line(event.sequence, 'effect', side(event.playerIndex, you), [
+  return line(event.sequence, 'effect', side(event.playerIndex, you, neutralView), [
     { text: `${segment}${resultLabels[status]}` },
     ...(processedTarget ? [{ text: `；实际处理目标：〈${processedTarget}〉` }] : []),
     ...(reason ? [{ text: `；${reason}` }] : []),
@@ -183,7 +187,7 @@ function groupedResultDetail(event: ActionEvent, you: number, source: Card, show
   ])
 }
 
-function projectGroupedAction(events: ActionEvent[], indexes: number[], you: number): LogLineRow | null {
+function projectGroupedAction(events: ActionEvent[], indexes: number[], you: number, neutralView: boolean): LogLineRow | null {
   const group = indexes.map(index => events[index])
   const play = group.find(event => event.type === 'play')
   const first = play ?? group[0]
@@ -203,7 +207,7 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
     if (morale) changes.push(`追加${morale}张士气`)
     if (!changes.length) return null
     const changeSequence = group.find(event => event.type !== 'turn-start')?.sequence ?? first.sequence
-    return line(changeSequence, 'info', side(first.playerIndex, you),
+    return line(changeSequence, 'info', side(first.playerIndex, you, neutralView),
       [{ text: `回合开始，${changes.join('，')}` }])
   }
 
@@ -229,16 +233,16 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
   else if (play && trial && timingLabel(first.playerLogTiming) === '登场时效果')
     suffix += '并发动登场时效果'
 
-  if (decision) suffix += `，${side(decision.playerIndex, you) ?? ''}${decision.playerLogDecisionLabel}`
+  if (decision) suffix += `，${side(decision.playerIndex, you, neutralView) ?? ''}${decision.playerLogDecisionLabel}`
 
-  const drawCounts = new Map<'我方' | '对方', number>()
+  const drawCounts = new Map<LogSide, number>()
   for (const event of group.filter(candidate => candidate.type === 'draw')) {
-    const eventSide = side(event.playerIndex, you)
+    const eventSide = side(event.playerIndex, you, neutralView)
     if (!eventSide) continue
     const amount = numberAfter(event.text, /抽取\s*(\d+)\s*张/, countFrom(event.text))
     drawCounts.set(eventSide, (drawCounts.get(eventSide) ?? 0) + amount)
   }
-  for (const eventSide of ['我方', '对方'] as const) {
+  for (const eventSide of (neutralView ? ['下方', '上方'] : ['我方', '对方']) as LogSide[]) {
     const amount = drawCounts.get(eventSide)
     if (amount) suffix += `，${eventSide}抽取${amount}张牌`
   }
@@ -286,14 +290,14 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
   }
 
   if (suffix) parts.push({ text: suffix })
-  const row = line(first.sequence, play ? 'play' : 'effect', side(first.playerIndex, you), parts, [], safeEffectText(first))
+  const row = line(first.sequence, play ? 'play' : 'effect', side(first.playerIndex, you, neutralView), parts, [], safeEffectText(first))
   const lastPaidResult = results.filter(event => event.playerLogSemantic?.sourceInstanceId === source.instanceId
     && event.playerLogSemantic.outcomeLabel?.includes('已支付费用：')).at(-1)
   const detail = group.flatMap(event => {
-    const resultDetail = groupedResultDetail(event, you, source, event === lastPaidResult)
+    const resultDetail = groupedResultDetail(event, you, source, event === lastPaidResult, neutralView)
     if (resultDetail) return [resultDetail]
     if (event.type === 'effect-result' || event.type === 'cost' || event === first) return []
-    const projected = projectLine(event, you)
+    const projected = projectLine(event, you, [], [], neutralView)
     return projected ? [projected] : []
   })
   if (detail.length) row.detail = detail
@@ -353,7 +357,7 @@ function effectOutcomeBadges(event: ActionEvent) {
   return badges
 }
 
-function projectSemanticPlayerLog(event: ActionEvent, you: number): LogLineRow | null {
+function projectSemanticPlayerLog(event: ActionEvent, you: number, neutralView: boolean): LogLineRow | null {
   const semantic = event.playerLogSemantic
   if (!semantic?.actionLabel || !semantic.outcomeLabel) return null
   const source = publicCards(event)
@@ -363,7 +367,7 @@ function projectSemanticPlayerLog(event: ActionEvent, you: number): LogLineRow |
     ? cardPart(source)
     : semantic.sourceName ? { text: `〈${semantic.sourceName}〉` } satisfies LogPart : null
   if (!sourcePart && event.type !== 'trial') return null
-  return line(event.sequence, 'effect', side(event.playerIndex, you), [
+  return line(event.sequence, 'effect', side(event.playerIndex, you, neutralView), [
     ...(sourcePart ? [sourcePart] : []),
     { text: semantic.actionLabel },
     { text: `，${semantic.outcomeLabel}` },
@@ -426,10 +430,43 @@ function costMergesIntoFollowingResult(events: ActionEvent[], index: number) {
   return false
 }
 
-function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], costDetails: LogPart[] = []): LogLineRow | null {
-  if (event.playerLogSemantic) return projectSemanticPlayerLog(event, you)
+function movementSlotLabel(playerIndex: number, row: number, slot: number, you: number, neutralView: boolean) {
+  const label = battlefieldSlotLabel(playerIndex === you ? 'self' : 'opponent', row, slot)
+  return neutralView ? label.replace(/^我方/, '下方').replace(/^对方/, '上方') : label
+}
+
+function projectBattlefieldMovement(event: ActionEvent, you: number, neutralView: boolean): LogLineRow | null {
+  if (event.type !== 'move' && event.type !== 'faction-effect') return null
+  const cards = publicCards(event)
+  const facts = (event.playerBattlefieldMovement?.facts ?? []).flatMap(fact => {
+    if (!fact.instanceId || !Number.isInteger(fact.battlefieldPlayerIndex)
+      || !Number.isInteger(fact.fromRow) || !Number.isInteger(fact.fromSlot)
+      || !Number.isInteger(fact.toRow) || !Number.isInteger(fact.toSlot)
+      || (fact.battlefieldPlayerIndex !== 0 && fact.battlefieldPlayerIndex !== 1)
+      || (fact.fromRow !== 0 && fact.fromRow !== 1) || (fact.toRow !== 0 && fact.toRow !== 1)
+      || fact.fromSlot == null || fact.fromSlot < 0 || fact.fromSlot > 2
+      || fact.toSlot == null || fact.toSlot < 0 || fact.toSlot > 2
+      || (fact.fromRow === fact.toRow && fact.fromSlot === fact.toSlot)) return []
+    const card = cards.find(candidate => candidate.instanceId === fact.instanceId)
+    return card ? [{ card, battlefieldPlayerIndex: fact.battlefieldPlayerIndex,
+      fromRow: fact.fromRow, fromSlot: fact.fromSlot, toRow: fact.toRow, toSlot: fact.toSlot }] : []
+  })
+  if (!facts.length) return null
+  const row = line(event.sequence, 'info', side(event.playerIndex, you, neutralView),
+    [...cardParts(facts.map(fact => fact.card)), { text: '已位移' }])
+  row.detail = facts.map(fact => line(event.sequence, 'info', null, [
+    cardPart(fact.card),
+    { text: `从${movementSlotLabel(fact.battlefieldPlayerIndex, fact.fromRow, fact.fromSlot, you, neutralView)}移动至${movementSlotLabel(fact.battlefieldPlayerIndex, fact.toRow, fact.toSlot, you, neutralView)}` },
+  ]))
+  return row
+}
+
+function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], costDetails: LogPart[] = [], neutralView = false): LogLineRow | null {
+  const movement = projectBattlefieldMovement(event, you, neutralView)
+  if (movement) return movement
+  if (event.playerLogSemantic) return projectSemanticPlayerLog(event, you, neutralView)
   if ((!PLAYER_LOG_VISIBLE_TYPES.has(event.type) && !isPrivateHandAddEvent(event)) || containsOnlyZeroChange(event)) return null
-  const actor = side(event.playerIndex, you)
+  const actor = side(event.playerIndex, you, neutralView)
   const card = firstPublicCard(event)
   const effectText = safeEffectText(event)
   switch (event.type) {
@@ -571,7 +608,8 @@ function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], co
     case 'disaster':
     case 'disaster-active': return line(event.sequence, 'disaster', null, [event.type === 'disaster' ? { text: '本局天灾：' } : { text: '天灾效果：' }, cardPart(card)])
     case 'game-over':
-    case 'special-victory': return line(event.sequence, 'game-over', null, [{ text: event.playerIndex === you ? '我方胜利' : '对方胜利' }])
+    case 'special-victory': return line(event.sequence, 'game-over', null,
+      [{ text: `${side(event.playerIndex, you, neutralView) ?? (neutralView ? '上方' : '对方')}胜利` }])
     default: return null
   }
 }
@@ -600,7 +638,7 @@ function combatResult(members: ActionEvent[]) {
   return { result: has('aborted') ? '进攻中止' : invalid ? `${invalid}；${settled}` : settled, damage }
 }
 
-function projectCombat(attack: ActionEvent, members: ActionEvent[], you: number): LogCombatRow | null {
+function projectCombat(attack: ActionEvent, members: ActionEvent[], you: number, neutralView: boolean): LogCombatRow | null {
   const cards = publicCards(attack)
   const attacker = cards[0]
   if (!attacker) return null
@@ -622,7 +660,7 @@ function projectCombat(attack: ActionEvent, members: ActionEvent[], you: number)
   for (const event of related) {
     const combat = event.playerCombat
     if (!combat) continue
-    const actor = event.playerIndex === you ? '你' : '对手'
+    const actor = neutralView ? side(event.playerIndex, you, true) ?? '上方' : event.playerIndex === you ? '你' : '对手'
     const reason = combat.publicReasonCode && combatReasonLabels[combat.publicReasonCode]
     const publicParticipants = publicCards(event)
     switch (combat.eventKind) {
@@ -672,7 +710,7 @@ function projectCombat(attack: ActionEvent, members: ActionEvent[], you: number)
     result, damage, detail }
 }
 
-export function projectLog(events: ActionEvent[], you: number, _names: string[]): LogRow[] {
+export function projectLog(events: ActionEvent[], you: number, _names: string[], neutralView = false): LogRow[] {
   const ordered = orderedUniqueEvents(events)
   const combats = new Map<string, ActionEvent[]>()
   for (const event of ordered) {
@@ -691,10 +729,10 @@ export function projectLog(events: ActionEvent[], you: number, _names: string[])
     if (consumed.has(index)) continue
     const event = ordered[index]
     if (event.type === 'turn-start') {
-      rows.push({ kind: 'turn', sequence: event.sequence, round: numberAfter(event.text, /第\s*(\d+)\s*回合/, 0), side: side(event.playerIndex, you) ?? '对方' })
+      rows.push({ kind: 'turn', sequence: event.sequence, round: numberAfter(event.text, /第\s*(\d+)\s*回合/, 0), side: side(event.playerIndex, you, neutralView) ?? (neutralView ? '上方' : '对方') })
       if (event.playerLogGroupId) {
         const indexes = groupedIndexes(ordered, event.playerLogGroupId)
-        const row = projectGroupedAction(ordered, indexes, you)
+        const row = projectGroupedAction(ordered, indexes, you, neutralView)
         indexes.forEach(item => consumed.add(item))
         if (row) rows.push(row)
       }
@@ -703,14 +741,14 @@ export function projectLog(events: ActionEvent[], you: number, _names: string[])
     if (event.playerLogGroupId) {
       const indexes = groupedIndexes(ordered, event.playerLogGroupId)
       if (indexes[0] !== index) continue
-      const row = projectGroupedAction(ordered, indexes, you)
+      const row = projectGroupedAction(ordered, indexes, you, neutralView)
       indexes.forEach(item => consumed.add(item))
       if (row) rows.push(row)
       continue
     }
     if (event.type === 'effect-result' && event.playerLogSemantic) {
       const source = firstPublicCard(event)
-      const row = source && groupedResultDetail(event, you, source, true)
+      const row = source && groupedResultDetail(event, you, source, true, neutralView)
       if (row && source) {
         row.parts.unshift(cardPart(source), { text: '：' })
         rows.push(row)
@@ -742,12 +780,12 @@ export function projectLog(events: ActionEvent[], you: number, _names: string[])
     }
     if (event.type === 'attack' || event.playerCombat?.eventKind === 'attack') {
       const members = event.playerCombat?.combatId ? combats.get(event.playerCombat.combatId) ?? [] : []
-      const combat = projectCombat(event, members, you)
+      const combat = projectCombat(event, members, you, neutralView)
       if (combat) rows.push(combat)
       continue
     }
     if (event.type === 'trial-action') {
-      const row = projectLine(event, you)
+      const row = projectLine(event, you, [], [], neutralView)
       const progress = ordered[index + 1]
       if (row && progress?.type === 'trial' && progress.playerIndex === event.playerIndex) {
         const progressBadge = trialProgressBadge(progress)
@@ -769,7 +807,7 @@ export function projectLog(events: ActionEvent[], you: number, _names: string[])
     const receivesCost = COST_MERGE_RESULT_TYPES.has(event.type)
     const row = projectLine(event, you,
       receivesCost ? costBadges(ordered, index, event) : [],
-      receivesCost ? costParts(ordered, index, event) : [])
+      receivesCost ? costParts(ordered, index, event) : [], neutralView)
     if (row) rows.push(row)
   }
   return rows

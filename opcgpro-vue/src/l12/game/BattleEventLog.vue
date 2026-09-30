@@ -3,13 +3,13 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { projectLog } from './logViewModel'
 import type { ActionEvent, Card } from '../types'
 
-const props = defineProps<{ events: ActionEvent[]; you: number; names: string[] }>()
+const props = defineProps<{ events: ActionEvent[]; you: number; names: string[]; neutralView?: boolean }>()
 const emit = defineEmits<{ focus: [card: Card] }>()
 const list = ref<HTMLElement | null>(null)
 const followLatest = ref(true)
 const expandedCombats = ref(new Set<number>())
 const expandedActions = ref(new Set<number>())
-const visible = computed(() => projectLog(props.events, props.you, props.names))
+const visible = computed(() => projectLog(props.events, props.you, props.names, props.neutralView ?? false))
 const icons = { attack: '⚔', defense: '🛡', support: '✚', effect: '✦', disaster: '☄', dice: '⚀', 'hand-add': '✋', draw: '◇', play: '▶', info: '·', 'game-over': '★' } as const
 
 function toggleCombat(sequence: number) {
@@ -59,7 +59,7 @@ watch(() => visible.value.at(-1)?.sequence, async () => { if (followLatest.value
             </button>
           </div>
           <div v-if="expandedCombats.has(row.sequence)" class="combat-detail">
-            <p v-for="detail in row.detail" :key="detail.sequence" :class="['battle-event', `event-${detail.icon}`]">
+            <p v-for="(detail, detailIndex) in row.detail" :key="`${detail.sequence}:${detailIndex}`" :class="['battle-event', `event-${detail.icon}`]">
               <span class="event-icon" aria-hidden="true">{{ icons[detail.icon] }}</span>
               <span class="event-message"><strong v-if="detail.actor" class="event-side">{{ detail.actor }} </strong><template v-for="(part, index) in detail.parts" :key="index"><button v-if="part.card" class="log-card-link" @click="emit('focus', part.card)">{{ part.text }}</button><span v-else>{{ part.text }}</span></template><span v-for="item in detail.badges" :key="item.value" :class="['event-badge', item.tone]">{{ item.value }}</span><span v-if="detail.effectText" class="event-effect">{{ detail.effectText }}</span></span>
             </p>
@@ -74,7 +74,7 @@ watch(() => visible.value.at(-1)?.sequence, async () => { if (followLatest.value
             {{ expandedActions.has(row.sequence) ? '收起明细 ▴' : '查看明细 ▾' }}
           </button>
           <div v-if="row.detail?.length && expandedActions.has(row.sequence)" class="combat-detail">
-            <p v-for="detail in row.detail" :key="detail.sequence" :class="['battle-event', `event-${detail.icon}`]">
+            <p v-for="(detail, detailIndex) in row.detail" :key="`${detail.sequence}:${detailIndex}`" :class="['battle-event', `event-${detail.icon}`]">
               <span class="event-icon" aria-hidden="true">{{ icons[detail.icon] }}</span>
               <span class="event-message"><strong v-if="detail.actor" class="event-side">{{ detail.actor }} </strong><template v-for="(part, index) in detail.parts" :key="index"><button v-if="part.card" class="log-card-link" @click="emit('focus', part.card)">{{ part.text }}</button><span v-else>{{ part.text }}</span></template><span v-for="item in detail.badges" :key="item.value" :class="['event-badge', item.tone]">{{ item.value }}</span><span v-if="detail.effectText" class="event-effect">{{ detail.effectText }}</span></span>
             </p>

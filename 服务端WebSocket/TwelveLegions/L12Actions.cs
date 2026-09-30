@@ -1499,7 +1499,8 @@ public sealed partial class L12GameEngine
         player.Field[targetRow][targetSlot] = card;
         card.LastMovedTurn = State.TurnSerial;
         if (hasTenkaFreeMove) player.UsedAbilities.Remove(tenkaFreeMoveKey);
-        AddEvent("move", playerIndex, $"{card.Name} 移动至相邻阵地", card);
+        AddPlayerBattlefieldMovementEvent("move", playerIndex, $"{card.Name} 移动至相邻阵地",
+            new([BattlefieldMovementFact(card, playerIndex, sourceRow, sourceSlot, targetRow, targetSlot)]), card);
         RecordLegionMovement(playerIndex, card, sourceRow, targetRow);
         return CommandResult.Ok();
     }
@@ -1524,8 +1525,9 @@ public sealed partial class L12GameEngine
         player.Field[targetRow][targetSlot] = card;
         card.LastMovedTurn = State.TurnSerial;
         card.LastCavalryMoveTurn = State.TurnSerial;
-        AddPresentationEventById("move", playerIndex, $"{card.Name} 发动骑兵位移",
-            NativeCavalryMovePresentation(card.CardId)?.SceneId, card);
+        AddPresentationBattlefieldMovementEventById("move", playerIndex, $"{card.Name} 发动骑兵位移",
+            NativeCavalryMovePresentation(card.CardId)?.SceneId,
+            new([BattlefieldMovementFact(card, playerIndex, sourceRow, sourceSlot, targetRow, targetSlot)]), card);
         RecordLegionMovement(playerIndex, card, sourceRow, targetRow);
         return CommandResult.Ok();
     }

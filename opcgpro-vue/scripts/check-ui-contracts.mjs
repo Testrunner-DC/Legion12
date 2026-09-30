@@ -958,7 +958,7 @@ const contracts = [
     && shell.includes('@click="cancelOutgoingInvitation"') && shell.includes('outgoingInvitationMinimized')
     && l12Net.includes("l12State.spectating && message.message === '观战者不能执行对局操作'")
     && l12Net.includes('if (l12State.spectating || l12State.pendingAction) return'), '好友邀请必须是右下角无背板可最小化通知，发起方按服务端返回的精确邀请编号撤回，接收方只按匹配邀请撤销；观战端不得发送对局命令或重复显示权限提示'],
-  [battleLog.includes("import { projectLog } from './logViewModel'") && battleLog.includes('computed(() => projectLog(props.events, props.you, props.names))')
+  [battleLog.includes("import { projectLog } from './logViewModel'") && battleLog.includes('computed(() => projectLog(props.events, props.you, props.names, props.neutralView ?? false))')
     && battleLog.includes('class="combat-summary"') && battleLog.includes('class="combat-toggle"')
     && battleLog.includes('event-badge') && battleLog.includes('data-event-sequence')
     && battleLogViewModel.includes('PLAYER_LOG_VISIBLE_TYPES') && battleLogViewModel.includes('PLAYER_LOG_HIDDEN_TYPES')
@@ -978,6 +978,16 @@ const contracts = [
     && !combatProjection.includes('.text') && !combatProjection.includes('index + 1')
     && battleLogViewModel.includes('isPrivateHandAddEvent') && battleLogViewModel.includes('precedingPublicAdd')
     && !battleLog.includes('event.text') && !battleLog.includes('omitted = new Set'), '玩家战报必须由白名单纯投影层生成，失败与内部流程默认隐藏；费用并入效果、进攻收拢为可展开小结，但符文、士气、试炼、公开区域与效果目标的实际变化不得被压缩丢失；玩家昵称、隐藏卡名和引擎原文不得直出'],
+  [battleLogViewModel.includes('function projectBattlefieldMovement(')
+    && battleLogViewModel.includes('event.playerBattlefieldMovement?.facts')
+    && battleLogViewModel.includes('battlefieldSlotLabel(')
+    && battleLogViewModel.includes("candidate.instanceId === fact.instanceId")
+    && boardComponent.includes('const neutralLogView = computed(')
+    && boardComponent.includes('(!props.readOnly && l12State.gmEnabled)')
+    && (boardComponent.match(/:neutral-view="neutralLogView"/g) ?? []).length === 2
+    && battleLog.includes('neutralView?: boolean')
+    && battleLog.includes('`${detail.sequence}:${detailIndex}`'),
+    '公开位移日志必须使用权威起止格位和事件内公开实例；玩家与中立观战方位由视角显式传入，两处日志入口一致且互换明细不复用相同 DOM key'],
   [zoneMovementLayer.includes("event.type === 'reveal' && /加入手牌/.test(event.text)")
     && zoneMovementLayer.includes("to = 'hand'; label = '加入手牌'")
     && zoneMovementLayer.includes('publicHandAddCaption') && zoneMovementLayer.includes('movement-caption')

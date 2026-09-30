@@ -52,6 +52,28 @@ internal static class L12RecipientVisibility
             },
         };
     }
+
+    private static L12ActionEvent ProjectBattlefieldMovementEvent(L12ActionEvent actionEvent)
+    {
+        var movement = actionEvent.PlayerBattlefieldMovement;
+        if (movement is null) return actionEvent;
+        if (actionEvent.Type is not ("move" or "faction-effect"))
+            return actionEvent with { PlayerBattlefieldMovement = null };
+        var visibleIds = actionEvent.Cards
+            .Where(card => !card.Hidden && !string.IsNullOrWhiteSpace(card.Name))
+            .Select(card => card.InstanceId).ToHashSet(StringComparer.Ordinal);
+        var safe = (movement.Facts ?? [])
+            .Where(fact => fact.InstanceId is { Length: > 0 } id && visibleIds.Contains(id)
+                && fact.BattlefieldPlayerIndex is >= 0 and <= 1
+                && fact.FromRow is >= 0 and <= 1 && fact.ToRow is >= 0 and <= 1
+                && fact.FromSlot is >= 0 and <= 2 && fact.ToSlot is >= 0 and <= 2
+                && (fact.FromRow != fact.ToRow || fact.FromSlot != fact.ToSlot))
+            .ToArray();
+        return actionEvent with
+        {
+            PlayerBattlefieldMovement = safe.Length == 0 ? null : new(safe),
+        };
+    }
     internal readonly record struct Policy(bool BothHands, bool CoveredBattlefieldIdentity,
         bool AllDisasters, bool PrivatePrompts, bool PrivateHandEvents, bool DeckOrder,
         bool LegalActions)
@@ -79,7 +101,8 @@ internal static class L12RecipientVisibility
         L12ActionEvent actionEvent, int viewer, bool revealAllDisasters,
         bool revealAllHands = false)
     {
-        actionEvent = ProjectCombatEvent(L12TrialProgressVisibility.PublicEvent(actionEvent));
+        actionEvent = ProjectBattlefieldMovementEvent(
+            ProjectCombatEvent(L12TrialProgressVisibility.PublicEvent(actionEvent)));
         if (actionEvent.Type == "private-return")
             return revealAllHands || actionEvent.PlayerIndex == viewer
                 ? actionEvent with { Type = "return" }

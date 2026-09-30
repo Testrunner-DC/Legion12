@@ -792,6 +792,19 @@ public sealed record L12PlayerCombatPresentation(
     int? DefenderTroops = null,
     int? MasterDamage = null);
 
+/// <summary>单次公开战场位移的已完成位置事实；字段可空以便旧回放安全降级。</summary>
+public sealed record L12PlayerBattlefieldMovementFact(
+    string? InstanceId = null,
+    int? BattlefieldPlayerIndex = null,
+    int? FromRow = null,
+    int? FromSlot = null,
+    int? ToRow = null,
+    int? ToSlot = null);
+
+/// <summary>一次事件可包含多张军团的有序公开位移，例如双卡互换。</summary>
+public sealed record L12PlayerBattlefieldMovement(
+    L12PlayerBattlefieldMovementFact[]? Facts = null);
+
 public sealed record L12ActionEvent(
     long Sequence,
     string Type,
@@ -827,6 +840,8 @@ public sealed record L12ActionEvent(
     public L12PlayerLogSemantic? PlayerLogSemantic { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public L12PlayerCombatPresentation? PlayerCombat { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12PlayerBattlefieldMovement? PlayerBattlefieldMovement { get; init; }
 }
 
 public sealed class L12GameState

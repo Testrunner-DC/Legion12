@@ -763,4 +763,62 @@ const legacyCombatChecks = [
 const legacyCombatFailures = legacyCombatChecks.filter(([, check]) => !check()).map(([name]) => name)
 assert.deepEqual(legacyCombatFailures, [], 'Stage 4B-1 legacy combat facts must not be inferred from adjacency')
 
+const movementFact = (instanceId, battlefieldPlayerIndex, fromRow, fromSlot, toRow, toSlot) => ({
+  instanceId, battlefieldPlayerIndex, fromRow, fromSlot, toRow, toSlot,
+})
+const movementEvent = (facts, cards = [a], type = 'move', actor = 0) =>
+  event(900, type, '不应从此文本推断位置', cards, actor, { playerBattlefieldMovement: { facts } })
+const detailText = row => row?.detail?.flatMap(detail => detail.parts.map(part => part.text)).join('') ?? ''
+for (const viewer of [0, 1]) {
+  for (const owner of [0, 1]) {
+    for (const fromRow of [0, 1]) {
+      for (const fromSlot of [0, 1, 2]) {
+        const toRow = 1 - fromRow
+        const projected = projectLog([movementEvent([
+          movementFact('a', owner, fromRow, fromSlot, toRow, fromSlot),
+        ], [source, a], 'faction-effect', 1 - owner)], viewer, [])
+        const label = owner === viewer ? '我方' : '对方'
+        const columns = ['左格', '中格', '右格']
+        const expected = `〈甲军团〉从${label}${fromRow === 0 ? '前排' : '后排'}${columns[fromSlot]}移动至${label}${toRow === 0 ? '前排' : '后排'}${columns[fromSlot]}`
+        assert.equal(detailText(projected[0]), expected, 'movement location must follow fact owner, not event actor or current board')
+      }
+    }
+  }
+}
+const neutralMovement = projectLog([movementEvent([movementFact('a', 0, 0, 0, 1, 2)])], 0, [], true)[0]
+assert.equal(detailText(neutralMovement), '〈甲军团〉从下方前排左格移动至下方后排右格')
+assert.equal(neutralMovement.actor, '下方')
+const swapped = projectLog([movementEvent([
+  movementFact('a', 0, 0, 0, 1, 1), movementFact('b', 0, 1, 1, 0, 0),
+], [a, b])], 0, [])[0]
+assert.equal(swapped.detail.length, 2, 'one swap event retains two ordered movement facts')
+assert.equal(detailText(swapped), '〈甲军团〉从我方前排左格移动至我方后排中格〈乙军团〉从我方后排中格移动至我方前排左格')
+const sameName = card('甲军团', 'same-name')
+const sameNameMove = projectLog([movementEvent([
+  movementFact('same-name', 0, 0, 1, 1, 1),
+], [a, sameName])], 0, [])[0]
+assert.equal(sameNameMove.detail[0].parts[0].card.instanceId, 'same-name', 'same-name cards bind by instance id')
+for (const invalid of [
+  movementEvent([movementFact('missing', 0, 0, 0, 1, 0)]),
+  movementEvent([movementFact('a', 2, 0, 0, 1, 0)]),
+  movementEvent([movementFact('a', 0, 0, 3, 1, 0)]),
+  movementEvent([movementFact('a', 0, 0, 0, 0, 0)]),
+  movementEvent([movementFact('a', 0, 0, 0, 1, 0)], [card('甲军团', 'a', true)]),
+  movementEvent([movementFact('a', 0, 0, 0, 1, 0)], [a], 'put'),
+  event(900, 'move', '旧记录前排左格到后排右格', [a]),
+]) {
+  assert.equal(detailText(projectLog([invalid], 0, [])[0]), '', 'unsafe or legacy movement must not invent a location')
+}
+assert.equal(detailText(projectLog([event(901, 'move', '进入墓地', [a])], 0, [])[0]), '',
+  'hand-to-grave and other non-battlefield move events must stay untagged')
+const movementReplay = replayGameAt({
+  match: { matchId: 'movement-replay', roomCode: 'MOVE' },
+  commands: [{ state: { Events: [{ Sequence: 1, Type: 'move', PlayerIndex: 0, Text: '移动', Cards: [a],
+    PlayerBattlefieldMovement: { Facts: [{ InstanceId: 'a', BattlefieldPlayerIndex: 0,
+      FromRow: 0, FromSlot: 0, ToRow: 1, ToSlot: 2 }] },
+  }] }, revision: 1 }], viewerPlayerIndex: 0,
+}, 0)
+assert.equal(detailText(projectLog(movementReplay?.recentEvents ?? [], 0, [])[0]),
+  '〈甲军团〉从我方前排左格移动至我方后排右格', 'replay restores structured movement facts')
+
 console.log(`battle log view model: ${rows.length + cancelled.length + otherworldRune.length + effectWithCardCost.length + trial.length + stateChanges.length + standaloneCost.length + fieldEffect.length + combat.length + masterNotDefended.length + masterDefended.length + invalidDefense.length + supported.length + attackerDeparture.length + publicHandAdd.length + privateHandAdd.length + deduplicatedPublicHandAdd.length + safeRows.length} projected rows verified`)

@@ -45,6 +45,12 @@ public sealed partial class L12GameEngine
     private void AddPresentationEventByProducerIdWithPlayerLog(string type, int? playerIndex, string text,
         string? producerCardId, string? sceneId, IReadOnlyDictionary<string, string>? playerLogData,
         params L12CardInstance[] cards)
+        => AddPresentationEventByProducerIdWithMovement(type, playerIndex, text,
+            producerCardId, sceneId, playerLogData, null, cards);
+
+    private void AddPresentationEventByProducerIdWithMovement(string type, int? playerIndex, string text,
+        string? producerCardId, string? sceneId, IReadOnlyDictionary<string, string>? playerLogData,
+        L12PlayerBattlefieldMovement? movement, params L12CardInstance[] cards)
     {
         var configured = FindEffectPresentationScene(producerCardId, sceneId);
         var frozen = string.IsNullOrWhiteSpace(sceneId)
@@ -69,15 +75,20 @@ public sealed partial class L12GameEngine
             // chosen branch may enter the card animation queue.
             type = "effect-announced";
         }
-        AddEventCoreWithPlayerLog(type, playerIndex, text, effectText,
+        AddEventCoreWithCombat(type, playerIndex, text, effectText,
             BuildEffectEventMetadata(configured, DeclaredStatus(type)),
             playerLogData?.GetValueOrDefault("playerLogGroupId"),
-            playerLogData?.GetValueOrDefault("playerLogTiming"), null, cards);
+            playerLogData?.GetValueOrDefault("playerLogTiming"), null, null, null, movement, cards);
     }
 
     private void AddPresentationEventById(string type, int? playerIndex, string text,
         string? sceneId, params L12CardInstance[] cards)
         => AddPresentationEventByIdWithPlayerLog(type, playerIndex, text, sceneId, null, cards);
+
+    private void AddPresentationBattlefieldMovementEventById(string type, int? playerIndex, string text,
+        string? sceneId, L12PlayerBattlefieldMovement movement, params L12CardInstance[] cards)
+        => AddPresentationEventByProducerIdWithMovement(type, playerIndex, text,
+            cards.FirstOrDefault()?.CardId, sceneId, null, movement, cards);
 
     private void AddEffectResultEvent(L12StackItem item, string resultStatus)
     {

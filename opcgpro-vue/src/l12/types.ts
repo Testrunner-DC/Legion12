@@ -21,7 +21,21 @@ export interface ActionEvent {
   playerLogDecisionLabel?: string
   playerLogSemantic?: PlayerLogSemantic
   playerCombat?: PlayerCombatPresentation
+  playerBattlefieldMovement?: PlayerBattlefieldMovementPresentation
   cards?: Card[]
+}
+
+export interface PlayerBattlefieldMovementFact {
+  instanceId?: string
+  battlefieldPlayerIndex?: number
+  fromRow?: number
+  fromSlot?: number
+  toRow?: number
+  toSlot?: number
+}
+
+export interface PlayerBattlefieldMovementPresentation {
+  facts?: PlayerBattlefieldMovementFact[]
 }
 
 export interface PlayerCombatPresentation {

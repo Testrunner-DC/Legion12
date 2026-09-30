@@ -1693,7 +1693,8 @@ public sealed partial class L12GameEngine
         player.Field[toRow][toSlot] = target;
         target.LastMovedTurn = State.TurnSerial;
         afterMove?.Invoke(target);
-        AddEvent("move", item.Controller, successText(target), target);
+        AddPlayerBattlefieldMovementEvent("move", item.Controller, successText(target),
+            new([BattlefieldMovementFact(target, targetController, fromRow, fromSlot, toRow, toSlot)]), target);
         RecordLegionMovement(targetController, target, fromRow, toRow);
         return true;
     }

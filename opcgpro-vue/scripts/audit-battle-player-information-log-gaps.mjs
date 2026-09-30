@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { projectLog } from '../src/l12/game/logViewModel.ts'
 
-// Deterministic phase-0 evidence refreshed after Stages 4A and 4B-1.
-// Closed gaps must remain visible; unfinished movement/status gaps remain
+// Deterministic phase-0 evidence refreshed after Stages 4A and 4B-2.
+// Closed gaps must remain visible; unfinished legacy/status gaps remain
 // explicit; legacy combat audit text must never become a public reason.
 const card = (name, instanceId = name) => ({
   instanceId, cardId: `ID-${instanceId}`, name, cardType: 'legion',
@@ -21,8 +21,8 @@ function rendered(events) {
     summary: row.kind === 'line'
       ? row.parts.map(part => part.text).join('') + row.badges.map(badge => badge.value).join('')
       : row.kind === 'combat' ? row.result : row.side,
-    detail: row.kind === 'combat'
-      ? row.detail.map(line => line.parts.map(part => part.text).join('')).join(' / ')
+    detail: row.kind === 'combat' || row.kind === 'line'
+      ? (row.detail ?? []).map(line => line.parts.map(part => part.text).join('')).join(' / ')
       : '',
   }))
 }
@@ -33,13 +33,32 @@ const group = {
 
 const cases = [
   {
-    id: 'move-origin-destination',
+    id: 'legacy-move-origin-destination',
     input: [
       event(1, 'move', '〈来源〉从我方前排左格移动到我方后排左格'),
     ],
     requiredSourceFacts: ['我方前排左格', '我方后排左格'],
     missingFromProjection: ['我方前排左格', '我方后排左格'],
-    status: 'OPEN: 4B-2',
+    status: 'LEGACY: no authoritative endpoints',
+  },
+  {
+    id: 'structured-move-origin-destination',
+    input: [
+      event(1, 'move', '〈来源〉从我方前排左格移动到我方后排左格', [source], {
+        playerBattlefieldMovement: { facts: [{ instanceId: source.instanceId,
+          battlefieldPlayerIndex: 0, fromRow: 0, fromSlot: 0, toRow: 1, toSlot: 0 }] },
+      }),
+    ],
+    requiredSourceFacts: ['我方前排左格', '我方后排左格'],
+    expectedProjectionFacts: ['我方前排左格', '我方后排左格'],
+    status: 'CLOSED: 4B-2',
+  },
+  {
+    id: 'trojan-horse-cross-owner-put',
+    input: [event(1, 'put', '特洛伊木马跨玩家安置', [source])],
+    requiredSourceFacts: ['跨玩家'],
+    missingFromProjection: ['跨玩家'],
+    status: 'OPEN: 4B-3 or later review',
   },
   {
     id: 'continuous-target-delta-duration',

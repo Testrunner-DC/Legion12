@@ -2431,7 +2431,17 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     private void AddPlayerCombatEvent(string type, int? playerIndex, string text,
         L12PlayerCombatPresentation combat, params L12CardInstance[] cards)
         => AddEventCoreWithCombat(type, playerIndex, text, null, null,
-            null, null, null, null, combat, cards);
+            null, null, null, null, combat, null, cards);
+
+    private void AddPlayerBattlefieldMovementEvent(string type, int? playerIndex, string text,
+        L12PlayerBattlefieldMovement movement, params L12CardInstance[] cards)
+        => AddEventCoreWithCombat(type, playerIndex, text, null, null,
+            null, null, null, null, null, movement, cards);
+
+    private static L12PlayerBattlefieldMovementFact BattlefieldMovementFact(
+        L12CardInstance card, int battlefieldPlayerIndex, int fromRow, int fromSlot,
+        int toRow, int toSlot)
+        => new(card.InstanceId, battlefieldPlayerIndex, fromRow, fromSlot, toRow, toSlot);
 
     private void AddEventCore(string type, int? playerIndex, string text, string? effectText,
         params L12CardInstance[] cards)
@@ -2453,12 +2463,13 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         string? playerLogDecisionLabel, L12PlayerLogSemantic? playerLogSemantic,
         params L12CardInstance[] cards)
         => AddEventCoreWithCombat(type, playerIndex, text, effectText, effectMetadata,
-            playerLogGroupId, playerLogTiming, playerLogDecisionLabel, playerLogSemantic, null, cards);
+            playerLogGroupId, playerLogTiming, playerLogDecisionLabel, playerLogSemantic, null, null, cards);
 
     private void AddEventCoreWithCombat(string type, int? playerIndex, string text, string? effectText,
         L12EffectEventMetadata? effectMetadata, string? playerLogGroupId, string? playerLogTiming,
         string? playerLogDecisionLabel, L12PlayerLogSemantic? playerLogSemantic,
-        L12PlayerCombatPresentation? playerCombat, params L12CardInstance[] cards)
+        L12PlayerCombatPresentation? playerCombat,
+        L12PlayerBattlefieldMovement? playerBattlefieldMovement, params L12CardInstance[] cards)
     {
         State.EventSequence++;
         State.LastAction = new L12ActionEvent(State.EventSequence, type, playerIndex, text,
@@ -2492,6 +2503,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             PlayerLogDecisionLabel = playerLogDecisionLabel,
             PlayerLogSemantic = playerLogSemantic,
             PlayerCombat = playerCombat,
+            PlayerBattlefieldMovement = playerBattlefieldMovement,
         };
         State.Events.Add(State.LastAction);
         if (State.StateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion)

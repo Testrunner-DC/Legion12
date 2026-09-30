@@ -224,7 +224,9 @@ public sealed partial class L12GameEngine
                 player.Field[0][slot] = null;
                 player.Field[1][slot] = front;
                 RecordLegionMovement(owner, front, 0, 1);
-                AddEvent("move", owner, $"〈风暴乱象〉使〈{front.Name}〉从前排位移至后排", front);
+                AddPlayerBattlefieldMovementEvent("move", owner,
+                    $"〈风暴乱象〉使〈{front.Name}〉从前排位移至后排",
+                    new([BattlefieldMovementFact(front, owner, 0, slot, 1, slot)]), front);
             }
         }
         FinishStackItem(item);

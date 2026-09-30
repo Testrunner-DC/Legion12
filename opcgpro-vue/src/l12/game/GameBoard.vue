@@ -60,6 +60,8 @@ const props = withDefaults(defineProps<{
   gmPanelOpen?: boolean
 }>(), { readOnly: false, revealBothHands: false, refereeLiveView: false, spectatorLiveView: false, replayFocusCard: null, replayPlaybackSpeed: null, gmPlacement: null, gmPanelOpen: false })
 const emit = defineEmits<{ gmPlacementResolved: []; settings: []; replayPresentationChange: [busy: boolean] }>()
+const neutralLogView = computed(() => props.spectatorLiveView || props.refereeLiveView
+  || props.revealBothHands || (!props.readOnly && l12State.gmEnabled))
 // Preserve the desktop hierarchy while allowing the whole board to become
 // genuinely denser on smaller canvases. Full inverse scaling made text remain
 // physically constant and therefore grow out of proportion to cards/zones.
@@ -1512,7 +1514,7 @@ function statusTexts(card: Card) {
               :active="game.activePlayer === viewMe.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
           </section></BattleDockPortal>
           <section class="grand-panel log-panel record-log"><h3>对局记录</h3>
-            <BattleEventLog :events="game.recentEvents ?? []" :you="game.you" :names="game.players.map(player => player.name)" @focus="focusCard = $event" />
+            <BattleEventLog :events="game.recentEvents ?? []" :you="game.you" :names="game.players.map(player => player.name)" :neutral-view="neutralLogView" @focus="focusCard = $event" />
           </section>
           <BattleDockPortal lane="primary"><section v-if="!combat && !readOnly" class="grand-panel action-panel" :class="{ 'mobile-context-actions': mobileLandscapeViewport }"><h3>操作</h3><GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
             :mulligan-count="mulliganIds.length" :defense-ids="defenseIds" :defense-target-type="defenseTargetType"
@@ -1539,7 +1541,7 @@ function statusTexts(card: Card) {
         </section>
         <section v-if="mobileLandscapeViewport && mobileRecordOpen" class="mobile-record-overlay mobile-safe-overlay" role="dialog" aria-modal="true" aria-label="对局记录">
           <header><h2>对局记录</h2><div class="mobile-record-actions"><button type="button" @click="mobileRecordOpen = false; mobileRecordMinimized = true">最小化</button><button type="button" @click="mobileRecordOpen = false; mobileRecordMinimized = false">关闭</button></div></header>
-          <BattleEventLog :events="game.recentEvents ?? []" :you="game.you" :names="game.players.map(player => player.name)" @focus="focusCard = $event" />
+          <BattleEventLog :events="game.recentEvents ?? []" :you="game.you" :names="game.players.map(player => player.name)" :neutral-view="neutralLogView" @focus="focusCard = $event" />
         </section>
       </Teleport>
       <BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport && mobileRecordMinimized" class="mobile-record-restore" type="button" @click="mobileRecordOpen = true; mobileRecordMinimized = false">恢复对局记录</button></BattleDockPortal>

@@ -191,7 +191,14 @@ public sealed partial class L12GameEngine
                         second.LastMovedTurn = State.TurnSerial;
                         RecordLegionMovement(item.Controller, first, firstRow, secondRow);
                         RecordLegionMovement(item.Controller, second, secondRow, firstRow);
-                        AddEvent("move", item.Controller, $"坂本龙马使{first.Name}与{second.Name}互换阵地", first, second);
+                        AddPlayerBattlefieldMovementEvent("move", item.Controller,
+                            $"坂本龙马使{first.Name}与{second.Name}互换阵地",
+                            new([
+                                BattlefieldMovementFact(first, item.Controller,
+                                    firstRow, firstSlot, secondRow, secondSlot),
+                                BattlefieldMovementFact(second, item.Controller,
+                                    secondRow, secondSlot, firstRow, firstSlot),
+                            ]), first, second);
                         FinishStackItem(item); return true;
                     }
                     var moved = 0;
@@ -300,6 +307,10 @@ public sealed partial class L12GameEngine
                         || L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && nextRow == 1) continue;
                     enemy.Field[row][slot] = null;
                     enemy.Field[nextRow][nextSlot] = target;
+                    AddPlayerBattlefieldMovementEvent("move", item.Controller,
+                        $"〈伪造密令〉使〈{target.Name}〉位移",
+                        new([BattlefieldMovementFact(target, enemy.PlayerIndex,
+                            row, slot, nextRow, nextSlot)]), target);
                     RecordLegionMovement(1 - item.Controller, target, row, nextRow);
                 }
                 FinishStackItem(item);

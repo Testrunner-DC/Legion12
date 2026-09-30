@@ -265,6 +265,7 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
   const events: ActionEvent[] = value<any[]>(raw, 'Events', 'events', []).map(event => {
     const semantic = value<any>(event, 'PlayerLogSemantic', 'playerLogSemantic', undefined)
     const combat = value<any>(event, 'PlayerCombat', 'playerCombat', undefined)
+    const movement = value<any>(event, 'PlayerBattlefieldMovement', 'playerBattlefieldMovement', undefined)
     return ({
     sequence: value(event, 'Sequence', 'sequence', 0), type: value(event, 'Type', 'type', ''),
     playerIndex: value(event, 'PlayerIndex', 'playerIndex', undefined), text: value(event, 'Text', 'text', ''),
@@ -298,6 +299,16 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
       attackerTroops: value(combat, 'AttackerTroops', 'attackerTroops', undefined),
       defenderTroops: value(combat, 'DefenderTroops', 'defenderTroops', undefined),
       masterDamage: value(combat, 'MasterDamage', 'masterDamage', undefined),
+    } : undefined,
+    playerBattlefieldMovement: movement ? {
+      facts: value<any[]>(movement, 'Facts', 'facts', []).map(fact => ({
+        instanceId: value(fact, 'InstanceId', 'instanceId', undefined),
+        battlefieldPlayerIndex: value(fact, 'BattlefieldPlayerIndex', 'battlefieldPlayerIndex', undefined),
+        fromRow: value(fact, 'FromRow', 'fromRow', undefined),
+        fromSlot: value(fact, 'FromSlot', 'fromSlot', undefined),
+        toRow: value(fact, 'ToRow', 'toRow', undefined),
+        toSlot: value(fact, 'ToSlot', 'toSlot', undefined),
+      })),
     } : undefined,
     cards: value<any[]>(event, 'Cards', 'cards', []).map(replayCard).filter(Boolean) as Card[],
     })
