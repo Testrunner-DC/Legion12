@@ -11,6 +11,7 @@ import PromptCardCandidate from './PromptCardCandidate.vue'
 import SetupDecisionClock from './SetupDecisionClock.vue'
 import { landscapeTeleportTarget } from '../mobileViewport'
 import { battlefieldTargetIds, battlefieldTargetLabel, findBattlefieldTarget } from './battlefieldTargetPresentation'
+import { mulliganCopy, promptConsequenceCopy, promptInstructionCopy, promptPaymentCopy, promptSituationCopy, promptSubmissionCopy } from './promptPlayerCopy'
 
 const props = withDefaults(defineProps<{
   game: GameState
@@ -278,8 +279,7 @@ function label(id: string) {
   return zone ? `${base} · ${zone}` : base
 }
 function choiceConsequence(id: string) {
-  const consequence = naturalChoiceLabel(prompt.value?.presentation?.choiceConsequences?.[id], id)
-  return consequence && consequence !== label(id) ? consequence : ''
+  return prompt.value ? promptConsequenceCopy(prompt.value, id, label(id)) : ''
 }
 function imageFor(id: string) { return prompt.value?.data?.[`${id}:image`] ?? cardFor(id)?.imageUrl }
 function cardIdFor(id: string) {
@@ -568,9 +568,6 @@ function legacyPromptTitle(p: Prompt) {
   if (['optional', 'option'].includes(p.kind)) return '效果确认'
   return '操作确认'
 }
-function legacyPromptSituation(p: Prompt) {
-  return p.data?.effectText?.trim() || p.text.trim()
-}
 function legacyPromptInstruction(p: Prompt) {
   if (p.data?.uiPattern === 'effect-decision' || ['optional', 'option'].includes(p.kind)) return '请决定是否执行本次效果。'
   if (p.kind === 'response') return '请决定是否响应当前效果。'
@@ -581,10 +578,9 @@ function legacyPromptInstruction(p: Prompt) {
 }
 const promptTitle = computed(() => prompt.value?.presentation?.title?.trim()
   || (prompt.value ? legacyPromptTitle(prompt.value) : ''))
-const promptSituation = computed(() => prompt.value?.presentation?.situation?.trim()
-  || (prompt.value ? legacyPromptSituation(prompt.value) : ''))
-const promptInstruction = computed(() => prompt.value?.presentation?.instruction?.trim()
-  || (prompt.value ? legacyPromptInstruction(prompt.value) : ''))
+const promptSituation = computed(() => prompt.value ? promptSituationCopy(prompt.value) : '')
+const promptInstruction = computed(() => prompt.value
+  ? promptInstructionCopy(prompt.value, legacyPromptInstruction(prompt.value)) : '')
 const promptActor = computed(() => {
   const playerIndex = prompt.value?.playerIndex
   if (playerIndex === undefined) return ''
@@ -625,7 +621,7 @@ const overlayTitle = computed(() => {
   if (isMulliganPhase.value) return props.readOnly ? '等待玩家完成调度' : '已确认调度，等待对手'
   return waitingText()
 })
-const mulliganInstruction = computed(() => `已选 ${props.mulliganSelectedIds.length} 张要换掉的起始手牌。确认后换掉所选牌并抽取相同数量；未选牌则保留全部。若对手尚未完成，确认后会等待对手${l12State.rankedClock?.operationLimitMs && l12State.rankedClock.operationLimitMs > 0 ? '；排位调度超时保留原手牌' : ''}。`)
+const mulliganInstruction = computed(() => mulliganCopy(props.mulliganSelectedIds.length, (l12State.rankedClock?.operationLimitMs ?? 0) > 0))
 const setupClockPlayerIndex = computed(() => {
   if (isMulliganPhase.value)
     return isMulligan.value ? me.value.playerIndex : props.game.players.find(player => !player.mulliganDone)?.playerIndex ?? null
@@ -639,9 +635,7 @@ function setupRoleLabel(playerIndex: number | null) {
   return `${props.game.firstPlayer === playerIndex ? '先攻' : '后攻'}玩家准备`
 }
 const decisionEffectText = computed(() => {
-  const text = prompt.value?.presentation?.situation?.trim() || prompt.value?.data?.effectText?.trim() || prompt.value?.text || ''
-  const context = prompt.value?.data?.responseContext?.trim()
-  return context && !text.includes(context) ? `${text}\n${context}` : text
+  return prompt.value ? promptSituationCopy(prompt.value) : ''
 })
 
 function toggle(id: string) {
@@ -829,8 +823,8 @@ function kindLabel() {
         <div class="prompt-task-context"><span class="prompt-actor">{{ promptActor }}</span><span class="prompt-selection-range">{{ promptSelectionRange }}</span></div>
         <p v-if="promptInstruction" class="prompt-instruction">{{ promptInstruction }}</p>
         <p v-if="prompt.presentation?.paymentStatus && prompt.presentation?.paymentSummary" class="prompt-payment-state"
-          :data-payment-status="prompt.presentation.paymentStatus">{{ prompt.presentation.paymentStatus === 'paid' ? '已支付：' : '待支付：' }}{{ prompt.presentation.paymentSummary }}</p>
-        <p v-if="prompt.presentation?.submissionConsequence" class="prompt-submit-consequence">确认后：{{ prompt.presentation.submissionConsequence }}</p>
+          :data-payment-status="prompt.presentation.paymentStatus">{{ promptPaymentCopy(prompt) }}</p>
+        <p v-if="promptSubmissionCopy(prompt)" class="prompt-submit-consequence">{{ promptSubmissionCopy(prompt) }}</p>
         <p v-for="choice in supplementalChoices.filter(item => choiceConsequence(item))" :key="`exit-${choice}`" class="prompt-exit-consequence">
           {{ label(choice) }}：{{ choiceConsequence(choice) }}
         </p>
@@ -942,7 +936,7 @@ function kindLabel() {
           </template>
         </div>
         <section v-if="triggerResolutionPreview.length" class="trigger-resolution-preview" aria-label="确认前的实际结算顺序">
-          <strong>确认后实际结算顺序（先 → 后）</strong>
+          <strong>结算顺序（先 → 后）</strong>
           <ol><li v-for="choice in triggerResolutionPreview" :key="choice">{{ label(choice) }}</li></ol>
         </section>
         <section v-if="focusedCandidateDetail" class="prompt-choice-detail" aria-live="polite">
@@ -978,7 +972,7 @@ function kindLabel() {
           </template>
           <template v-else-if="placementMode === 'all-bottom'">
             <span class="order-final-preview">其他牌抽完后依次抽到：{{ placementOrder.map(cardName).join(' → ') }}。可依次点击两张牌交换位置。</span>
-            <button class="primary" :disabled="l12State.pendingAction" @click="confirmAllPlacement('bottom')">确认顺序并全部放回底部</button>
+            <button class="primary" :disabled="l12State.pendingAction" @click="confirmAllPlacement('bottom')">全部放回底部</button>
           </template>
           <template v-else-if="prompt.data?.choiceMode === 'optional-add'">
             <span>选择后，将在下一步排列其余展示牌返回牌库底部的顺序</span>
@@ -986,7 +980,7 @@ function kindLabel() {
             <button class="primary" :disabled="l12State.pendingAction || activeSelected.length !== 1" @click="resolveChoice(activeSelected[0])">加入手牌</button>
           </template>
           <template v-else-if="prompt.data?.choiceMode === 'instant'">
-            <span>点击选项后立即确认</span>
+            <span>点击即确认</span>
           </template>
           <template v-else-if="isTriggerOrder">
             <span class="order-final-preview" data-ui-contract="trigger-order-lifo-hint">{{ triggerResolutionPreview.length ? `确认后实际结算（先 → 后）：${triggerResolutionPreview.map(label).join(' → ')}` : '后选择的效果先结算；每个选项角标显示实际结算顺序。' }}</span>
@@ -995,7 +989,7 @@ function kindLabel() {
             </button>
           </template>
           <template v-else>
-            <span>{{ isInfoConfirm ? '双方均确认后继续' : promptInstruction }}</span>
+            <span v-if="isInfoConfirm">双方均确认后继续</span>
             <button v-if="prompt.minChoose === 0 && !isInfoConfirm" :disabled="l12State.pendingAction" @click="selected = []; confirm()">不选择</button>
             <button class="primary prompt-confirm-choice" :disabled="l12State.pendingAction || activeSelected.length < prompt.minChoose || activeSelected.length > prompt.maxChoose || (activeSelected.some(isDeclineChoice) && activeSelected.length > 1)" @click="confirm">
               {{ l12State.pendingAction ? '处理中…' : promptConfirmLabel }}
@@ -1093,13 +1087,13 @@ function kindLabel() {
 .l12-prompt-overlay.mobile-safe-overlay{inset:var(--l12-viewport-top,0px) auto auto var(--l12-viewport-left,0px)!important;width:var(--l12-viewport-width,100vw)!important;height:var(--l12-viewport-height,100vh)!important;padding:8px!important;overflow:hidden}.l12-prompt-overlay.mobile-safe-overlay .prompt-panel,.l12-prompt-overlay.mobile-safe-overlay .waiting-panel{box-sizing:border-box;max-width:100%!important;max-height:100%;overflow:auto}.l12-prompt-overlay.mobile-safe-overlay .prompt-panel{padding:12px}.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip{position:relative;max-height:54vh;overflow-x:auto;overflow-y:hidden;overscroll-behavior-inline:contain;scroll-behavior:smooth;scrollbar-width:none;touch-action:pan-x}.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip::-webkit-scrollbar{display:none}.l12-prompt-overlay.mobile-safe-overlay.minimized{inset:auto calc(var(--l12-viewport-left,0px) + 8px) calc(var(--l12-viewport-top,0px) + 8px) auto!important;width:auto!important;height:auto!important;padding:0!important}
 /* Center short candidate groups without hiding the start of overflowing rows. */
 .prompt-choices.prompt-card-strip{justify-content:safe center}
-.prompt-choices.effect-option-list{display:grid;width:100%;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));grid-auto-rows:82px;align-items:stretch;justify-content:center}
-.prompt-choices.effect-option-list>button{box-sizing:border-box;width:100%;height:82px;min-height:82px!important;max-height:82px;overflow:hidden;text-align:center}
-.prompt-choices.effect-option-list>button>span{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:3}
-.prompt-choices.effect-option-list>button.decline-action{height:82px;min-height:82px!important;max-height:82px}
-.prompt-choices.uniform-text-option-list{display:grid;width:100%;max-width:520px;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));grid-auto-rows:82px;align-items:stretch;justify-content:center;gap:8px;margin:12px auto;padding:2px 1px 8px;overflow:visible}
-.prompt-choices.uniform-text-option-list>button,.prompt-choices.uniform-text-option-list>button.decline-action{box-sizing:border-box;width:100%;min-width:0!important;max-width:none;height:82px;min-height:82px!important;max-height:82px;padding:10px 16px!important;overflow:hidden;font-size:var(--l12-board-copy,13px)!important;line-height:1.45;text-align:center;white-space:normal;text-wrap:balance}
-.prompt-choices.uniform-text-option-list>button>span{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:3}
+.prompt-choices.effect-option-list{display:grid;width:100%;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));grid-auto-rows:1fr;align-items:stretch;justify-content:center}
+.prompt-choices.effect-option-list>button{box-sizing:border-box;width:100%;height:auto;min-height:82px!important;max-height:none;overflow:visible;text-align:center}
+.prompt-choices.effect-option-list>button>span{display:block;overflow:visible;overflow-wrap:anywhere}
+.prompt-choices.effect-option-list>button.decline-action{height:auto;min-height:82px!important;max-height:none}
+.prompt-choices.uniform-text-option-list{display:grid;width:100%;max-width:520px;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));grid-auto-rows:1fr;align-items:stretch;justify-content:center;gap:8px;margin:12px auto;padding:2px 1px 8px;overflow:visible}
+.prompt-choices.uniform-text-option-list>button,.prompt-choices.uniform-text-option-list>button.decline-action{box-sizing:border-box;width:100%;min-width:0!important;max-width:none;height:auto;min-height:82px!important;max-height:none;padding:10px 16px!important;overflow:visible;font-size:var(--l12-board-copy,13px)!important;line-height:1.45;text-align:center;white-space:normal;text-wrap:balance}
+.prompt-choices.uniform-text-option-list>button>span{display:block;overflow:visible;overflow-wrap:anywhere}
 .prompt-choices.effect-option-list>button.unavailable-choice{border-color:#4b504e;background:#202423;color:#858b88;cursor:not-allowed;opacity:.72}.prompt-choices.effect-option-list>button.unavailable-choice small{display:block;margin-top:5px;color:#a56f73;font-size:var(--l12-board-micro,9px)}
 .prompt-panel .prompt-action-footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px}
 .prompt-action-footer>span{order:-1;flex:1 1 160px;min-width:0;overflow-wrap:anywhere}

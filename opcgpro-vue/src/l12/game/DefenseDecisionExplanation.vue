@@ -24,13 +24,13 @@ const slotNames = ['左格', '中格', '右格']
       <p class="defense-explanation">从我方手牌选择军团抵挡主宰受到的进攻。所选军团总兵力须达到本次进攻值 {{ attackValueLabel }}。</p>
       <p class="defense-selection">已选 {{ selectedBlockers.length }} 张手牌军团，合计 {{ selectedBlockTroops }} 兵力<span v-if="selectedBlockers.length">：{{ selectedBlockers.map(card => `〈${card.name}〉`).join('、') }}</span>。若抵挡结算成功，将弃置这些军团。</p>
       <p v-if="game.pendingDefense?.richardDefenseTaxActive" class="defense-extra-cost">确认抵挡后还会要求额外弃置 1 张手牌；不支付则本次抵挡无效。</p>
-      <p class="defense-consequence">确认抵挡会提交所选军团；不抵挡会立即提交放弃抵挡，继续结算本次进攻。调整选择只需再次点击手牌。</p>
+      <p class="defense-consequence">不抵挡：继续结算本次进攻。再次点击手牌可取消选择。</p>
     </template>
     <template v-else-if="defenseTargetType === 'legion'">
       <p class="defense-explanation">选择我方后排军团支援被进攻军团。防守军团 {{ targetTroops }} 兵力＋已选支援 {{ selectedSupportTroops }} 兵力，须达到本次进攻值 {{ attackValueLabel }}。</p>
       <p class="defense-selection">已选 {{ selectedSupporters.length }} 张支援军团<span v-if="selectedSupporters.length">：{{ selectedSupporters.map(({ card, slot }) => `〈${card.name}〉（我方后排${slotNames[slot]}）`).join('、') }}</span>。若支援结算成功，所选支援军团阵亡；交战双方不损失兵力。</p>
       <p v-if="game.pendingDefense?.richardDefenseTaxActive" class="defense-extra-cost">确认支援后还会要求额外弃置 1 张手牌；不支付则本次支援无效。</p>
-      <p class="defense-consequence">确认支援会提交所选军团；不支援会立即提交放弃支援，继续结算本次进攻。调整选择只需再次点击军团。</p>
+      <p class="defense-consequence">不支援：双方军团正常交战。再次点击军团可取消选择。</p>
     </template>
   </div>
 </template>

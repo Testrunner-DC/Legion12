@@ -82,7 +82,7 @@ try {
         /丙号测试卡.*乙号测试卡.*甲号测试卡/)
       await assertPanel(page, panel, `${profile.name}-${mode}-${destination}`)
       await page.screenshot({ path: path.join(output, `${profile.name}-${mode}-${destination}.png`) })
-      await panel.getByRole('button', { name: destination === 'top' ? '全部放回顶部' : mode === 'all-bottom' ? '确认顺序并全部放回底部' : '全部放回底部' }).click()
+      await panel.getByRole('button', { name: destination === 'top' ? '全部放回顶部' : '全部放回底部' }).click()
       const command = await submitted(page)
       assert.deepEqual(command.topCardInstanceIds, destination === 'top' ? ['0-hand-showcase-2', '0-hand-showcase-1', '0-hand-showcase-0'] : [])
       assert.deepEqual(command.bottomCardInstanceIds, destination === 'bottom' ? ['0-hand-showcase-2', '0-hand-showcase-1', '0-hand-showcase-0'] : [])

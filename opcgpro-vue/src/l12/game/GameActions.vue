@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import type { GameState, PlayerView } from '../types'
 import { l12State } from '../net'
 import DefenseDecisionExplanation from './DefenseDecisionExplanation.vue'
+import { mulliganCopy } from './promptPlayerCopy'
 
 const props = defineProps<{
   game: GameState; me: PlayerView; mode: 'play' | 'attack' | 'move' | 'freeMove' | 'cavalryMove'; selectedId: string | null;
@@ -28,7 +29,7 @@ const blockReady = computed(() => selectedBlockers.value.length > 0 && (attackVa
     <template v-if="game.phase === 'Mulligan'">
       <p class="mulligan-role">你是{{ game.firstPlayer === me.playerIndex ? '先攻' : '后攻' }}玩家</p>
       <p>
-        已选 {{ mulliganCount }} 张要换掉的起始手牌。确认后换掉所选牌并抽取相同数量；未选牌则保留全部。若对手尚未完成，确认后会等待对手<span v-if="l12State.rankedClock?.operationLimitMs && l12State.rankedClock.operationLimitMs > 0">；排位调度限时 {{ rankedSetupLimitLabel() }}，超时保留原手牌</span>。
+        {{ mulliganCopy(mulliganCount, (l12State.rankedClock?.operationLimitMs ?? 0) > 0) }}<span v-if="l12State.rankedClock?.operationLimitMs && l12State.rankedClock.operationLimitMs > 0"> 限时 {{ rankedSetupLimitLabel() }}。</span>
       </p>
       <button class="primary" :disabled="me.mulliganDone || busy" @click="emit('command', 'mulligan')">
         {{ busy ? '处理中…' : me.mulliganDone ? '等待对方' : mulliganCount ? `换掉所选 ${mulliganCount} 张` : '保留全部手牌' }}

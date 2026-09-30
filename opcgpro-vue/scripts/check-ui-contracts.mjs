@@ -36,6 +36,7 @@ const blackLotusPath = new URL('../public/assets/l12/special/logo/black-lotus.pn
 const globalStyle = read('../src/style.css')
 const siteUiSystem = read('../src/l12/site/uiSystem.css')
 const prompt = read('../src/l12/game/PromptOverlay.vue')
+const promptPlayerCopy = read('../src/l12/game/promptPlayerCopy.ts')
 const promptCardCandidate = read('../src/l12/game/PromptCardCandidate.vue')
 const matchRecords = read('../src/l12/MatchRecords.vue')
 const replayPage = read('../src/l12/ReplayPage.vue')
@@ -801,11 +802,11 @@ const contracts = [
     && prompt.includes('orderedEffectChoices') && prompt.includes('declineChoices')
     && prompt.includes('.prompt-choices.effect-option-list{display:grid')
     && prompt.includes('grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr))')
-    && prompt.includes('grid-auto-rows:82px')
+    && prompt.includes('grid-auto-rows:1fr')
     && prompt.includes('overflow:visible'), '效果/费用分支必须按原顺序自适应同屏排列，三项不得依赖横向拖动，且不发动固定在最后'],
   [prompt.includes('isUniformTextOptionList') && prompt.includes('uniform-text-option-list')
     && prompt.includes('.prompt-choices.uniform-text-option-list>button,.prompt-choices.uniform-text-option-list>button.decline-action')
-    && prompt.includes('height:82px;min-height:82px!important;max-height:82px'), '所有非卡牌同级选项必须共享固定几何尺寸，拒绝、选中、禁用和长文本状态不得改变按钮大小'],
+    && prompt.includes('height:auto;min-height:82px!important;max-height:none'), '所有非卡牌同级选项必须共享等大网格，拒绝、选中、禁用和长文本随同组最长内容扩展，不得裁切关键后果'],
   [prompt.includes("booleanData(id, 'hasPrintedCost')") && prompt.includes('hasPrintedCost: detail.hasPrintedCost') && replayModel.includes("trait.endsWith('专属')"), '衍生卡在弹框与历史回放中不得伪造不存在的印刷费用'],
   [cardTile.includes('Math.max(0, props.card.playCost')
     && cardTile.includes('Math.max(0, props.card.troops)')
@@ -1079,7 +1080,7 @@ const contracts = [
   [!board.includes('当前子阶段：') && !board.includes('data-ui-contract="combat-substage"') && board.includes('pending.attackValue > 0') && board.includes("pendingDefense?.stage === 'DefenseChoice'") && gameActions.includes("pendingDefense?.stage === 'DefenseChoice'"), '进攻界面必须消费服务端子阶段与冻结进攻值，只在 DefenseChoice 开放抵挡/支援，并禁止显示内部子阶段调试文字'],
   [prompt.includes("prompt.value?.data?.uiPattern === 'effect-decision'") && prompt.includes('isPureEffectDecision')
     && prompt.includes('isDirectActivationChoice')
-    && prompt.includes('prompt.value?.presentation?.choiceConsequences')
+    && prompt.includes('promptConsequenceCopy(prompt.value') && promptPlayerCopy.includes('prompt.presentation?.choiceConsequences')
     && !prompt.includes("return isDeclineChoice(id) ? '不发动' : '发动'") && prompt.includes('decisionEffectText')
     && prompt.includes("if (p.data?.choiceMode === 'instant' || isPureEffectDecision.value) { resolveChoice(id); return }")
     && prompt.includes('<footer v-if="!isPureEffectDecision"') && prompt.includes('!isPureEffectDecision">{{ kindLabel() }}')
@@ -1729,7 +1730,7 @@ contracts.push(
     && battleDock.includes('<FriendsPage />') && battleDock.includes('friendApi.block(accountId)')
     && battleDock.includes('输入所出现的Bug给对手申请平局')
     && battleDock.includes('governance.value?.canRequestDraw') && battleDock.includes('governance.value?.drawUnavailableReason')
-    && battleDock.includes('drawRequest.value?.viewerCanRespond') && battleDock.includes('每场对局双方合计仅可发起一次')
+    && battleDock.includes('drawRequest.value?.viewerCanRespond') && battleDock.includes('每局双方合计仅限一次') && battleDock.includes('接受或拒绝后均不能再申请')
     && battleDock.includes("new CustomEvent('l12-open-bug-feedback')"),
     '选中卡牌下方工具坞必须是连续三等宽纯图标入口，并复用设置、好友、普通Bug反馈与好友屏蔽能力'],
   [matchGovernance.includes("type: 'requestMatchDraw'")

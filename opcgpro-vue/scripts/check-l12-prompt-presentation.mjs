@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import './test-library-placement-recovery.mjs'
+import './test-prompt-player-copy.mjs'
 import {readFileSync} from 'node:fs'
 const source=readFileSync(new URL('../src/l12/game/PromptOverlay.vue',import.meta.url),'utf8')
+const playerCopy=readFileSync(new URL('../src/l12/game/promptPlayerCopy.ts',import.meta.url),'utf8')
 const board=readFileSync(new URL('../src/l12/game/GameBoard.vue',import.meta.url),'utf8')
 const serverRoot=new URL('../../服务端WebSocket/TwelveLegions/',import.meta.url)
 // Stage 3B-2 regression scope. The future-card, repository-wide gate is deferred
@@ -30,7 +32,8 @@ assert(!source.includes('naturalChoiceLabel(prompt.value?.presentation?.choiceCo
  'A choice consequence must never become its button label')
 assert(source.includes('justify-content:safe center'),'Scrollable candidates must keep their first card accessible')
 assert(source.includes('overflow-x:hidden;overflow-y:auto'),'Full effect text must not trap footer actions below a clipped panel')
-assert(source.includes('.prompt-choices.effect-option-list{display:grid;width:100%;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));grid-auto-rows:82px'))
+assert(source.includes('.prompt-choices.effect-option-list{display:grid;width:100%;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));grid-auto-rows:1fr'))
+assert(source.includes('height:auto;min-height:82px!important;max-height:none;overflow:visible'), 'Equal options must grow together without clipping consequences')
 assert(source.includes('displayedChoices.value.filter(id => !isDeclineChoice(id))'))
 assert(source.includes("if (p.data?.choiceMode === 'instant' || isPureEffectDecision.value) { resolveChoice(id); return }"),'Pure two-choice effect decisions must submit in one click')
 assert(source.includes('<footer v-if="!isPureEffectDecision" class="prompt-action-footer" data-ui-contract="equal-action-group">'),'Pure effect decisions must omit the redundant footer')
@@ -43,11 +46,11 @@ assert(source.includes('.prompt-action-footer>.prompt-footer-choice,.prompt-acti
 assert(source.includes('.prompt-action-footer>button{box-sizing:border-box;width:132px;min-width:132px;max-width:132px;height:48px;min-height:48px;max-height:48px'))
 for(const field of ['promptId','activationId','sourceInstanceId','sourceCardId','step','createdRevision','controller'])
  assert(source.includes(`${field}: p.${field}`),'Preserve authoritative binding '+field)
-assert(source.includes('prompt.value?.data?.effectText?.trim()'),'Effect decision must display the authoritative full effect text')
+assert(playerCopy.includes('prompt.data?.effectText?.trim()') && source.includes('promptSituationCopy(prompt.value)'), 'Effect decision must display the authoritative full effect text through shared copy')
 assert(source.includes('prompt.value?.presentation?.title'),'New snapshots must prefer the authoritative narrative title')
-assert(source.includes('prompt.value?.presentation?.situation'),'New snapshots must prefer the authoritative situation')
-assert(source.includes('prompt.value?.presentation?.instruction'),'New snapshots must prefer the authoritative instruction')
-assert(source.includes('prompt.value?.presentation?.choiceConsequences'),'Choice consequences must come from the server contract')
+assert(playerCopy.includes('prompt.presentation?.situation'),'New snapshots must prefer the authoritative situation')
+assert(playerCopy.includes('prompt.presentation?.instruction') && source.includes('promptInstructionCopy(prompt.value'), 'New snapshots must prefer the authoritative instruction')
+assert(playerCopy.includes('prompt.presentation?.choiceConsequences') && source.includes('promptConsequenceCopy(prompt.value'), 'Choice consequences must come from the server contract')
 assert(source.includes('waitingPrompt.value?.waitingSummary'),'Waiting recipients must render the public-safe server summary')
 assert(source.includes('legacyPromptTitle'),'Old snapshots must retain a natural-language title fallback')
 assert(source.includes('legacyWaitingSummary'),'Old snapshots must retain a public-safe waiting fallback')

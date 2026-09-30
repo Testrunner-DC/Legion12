@@ -89,5 +89,7 @@ assert.match(board, /graveyardPlayer\.value !== null \|\| !promptMinimized\.valu
   'graveyard card detail inspector must remain visible while the original prompt stays minimized')
 const graveyard = readFileSync(new URL('../src/l12/game/GraveyardOverlay.vue', import.meta.url), 'utf8')
 assert.match(graveyard, /if \(props\.inspectionOnly\) return/)
-assert.match(source, /const context = prompt.value\?\.data\?\.responseContext\?\.trim\(\)/)
+const playerCopy = readFileSync(new URL('../src/l12/game/promptPlayerCopy.ts', import.meta.url), 'utf8')
+assert.match(source, /promptSituationCopy\(prompt.value\)/)
+assert.match(playerCopy, /const context = prompt.data\?\.responseContext\?\.trim\(\)/)
 console.log('Response-target highlights and minimized-prompt public graveyard inspection passed')

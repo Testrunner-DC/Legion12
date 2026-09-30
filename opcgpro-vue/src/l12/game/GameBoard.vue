@@ -6,6 +6,7 @@ import { provideMobileBattleDock } from './mobileBattleDock'
 provideMobileBattleDock()
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ActionEvent, Card, DisasterCardView, GameState, Phase, Prompt } from '../types'
+import { promptConsequenceCopy, promptInstructionCopy, promptPaymentCopy, promptSituationCopy, promptSubmissionCopy } from './promptPlayerCopy'
 import { isCounterTacticCard, isHorizontalCardType } from '../cardPresentation'
 import { blackLotusLogoUrl, destructionRoundBackUrl, disasterRoundUrl, factionLogoUrls, godPowerLogoUrl, roundCardUrl, siteBrandIconUrl } from '../specialAssets'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
@@ -346,14 +347,14 @@ const resourceSelectionPrompt = computed(() => props.game.prompts?.find(prompt =
   || prompt.kind === 'target-morale',
 ) ?? null)
 function promptActionText(prompt: Prompt) {
-  return prompt.presentation?.instruction?.trim() || prompt.text
+  return promptInstructionCopy(prompt, prompt.text)
 }
 function promptChoiceText(prompt: Prompt, choice: string, fallback: string) {
   return prompt.choiceLabels?.[choice]?.trim()
     || fallback
 }
 function inlinePromptTitle(prompt: Prompt) {
-  return prompt.presentation?.title?.trim() || promptActionText(prompt)
+  return prompt.presentation?.title?.trim() || prompt.text.trim()
 }
 function inlinePromptInstruction(prompt: Prompt) {
   const instruction = promptActionText(prompt)
@@ -368,9 +369,7 @@ function inlinePromptActor(prompt: Prompt) {
   return prompt.playerIndex === controlledPlayerIndex.value ? '你正在选择' : '对手正在选择'
 }
 function inlinePromptPayment(prompt: Prompt) {
-  const status = prompt.presentation?.paymentStatus
-  const summary = prompt.presentation?.paymentSummary?.trim()
-  return status ? `${status === 'paid' ? '已支付' : '待支付'}${summary ? `：${summary}` : ''}` : ''
+  return promptPaymentCopy(prompt)
 }
 function inlinePromptSelectedLabel(prompt: Prompt, id: string) {
   const battlefield = battlefieldTargetLabel(props.game, controlledPlayerIndex.value, id, prompt.choiceLabels?.[id])
@@ -417,7 +416,7 @@ function inlinePromptBrief(prompt: Prompt) {
 }
 function inlinePromptExitSummary(prompt: Prompt, choice: string) {
   const label = prompt.choiceLabels?.[choice]?.trim() || (choice === 'skip' ? '不发动' : '取消')
-  const consequence = prompt.presentation?.choiceConsequences?.[choice]?.trim()
+  const consequence = promptConsequenceCopy(prompt, choice, label)
   return consequence && consequence !== label ? `${label}：${consequence}` : label
 }
 function inlinePromptConsequenceLead(prompt: Prompt) {
@@ -1563,11 +1562,11 @@ function statusTexts(card: Card) {
           <div v-if="mobilePaymentPrompt" class="mobile-morale-prompt inline-prompt-copy">
             <strong>{{ inlinePromptTitle(mobilePaymentPrompt) }}</strong>
             <span>{{ inlinePromptActor(mobilePaymentPrompt) }}</span>
-            <span v-if="mobilePaymentPrompt.presentation?.situation">{{ mobilePaymentPrompt.presentation.situation }}</span>
+            <span v-if="promptSituationCopy(mobilePaymentPrompt)">{{ promptSituationCopy(mobilePaymentPrompt) }}</span>
             <span v-if="inlinePromptInstruction(mobilePaymentPrompt)">{{ inlinePromptInstruction(mobilePaymentPrompt) }}</span>
             <span role="status">{{ inlinePromptRange(mobilePaymentPrompt) }}；{{ inlinePromptSelectionSummary(mobilePaymentPrompt, selectedPaymentIds) }}</span>
             <span v-if="inlinePromptPayment(mobilePaymentPrompt)">{{ inlinePromptPayment(mobilePaymentPrompt) }}</span>
-            <span v-if="mobilePaymentPrompt.presentation?.submissionConsequence">确认后：{{ mobilePaymentPrompt.presentation.submissionConsequence }}</span>
+            <span v-if="promptSubmissionCopy(mobilePaymentPrompt)">{{ promptSubmissionCopy(mobilePaymentPrompt) }}</span>
           </div>
           <p v-else class="mobile-morale-prompt">这里展示当前士气状态；需要支付或返还时会自动变为可选择面板。</p>
           <div class="mobile-morale-picker" aria-label="可选择的士气与符文">
@@ -1599,13 +1598,13 @@ function statusTexts(card: Card) {
           <header><h2>{{ inlinePromptTitle(inlineInfoPrompt) }}</h2><button ref="inlinePromptInfoClose" type="button" @click="closeInlinePromptInfo">返回选择</button></header>
           <div class="inline-prompt-info-body">
             <p>{{ inlinePromptActor(inlineInfoPrompt) }}</p>
-            <p v-if="inlineInfoPrompt.presentation?.situation">{{ inlineInfoPrompt.presentation.situation }}</p>
+            <p v-if="promptSituationCopy(inlineInfoPrompt)">{{ promptSituationCopy(inlineInfoPrompt) }}</p>
             <p v-if="inlinePromptInstruction(inlineInfoPrompt)">{{ inlinePromptInstruction(inlineInfoPrompt) }}</p>
             <p>{{ inlinePromptRange(inlineInfoPrompt) }}</p>
             <p>{{ inlinePromptCurrentSummary(inlineInfoPrompt) }}</p>
             <p v-if="inlineInfoPrompt.promptId === boardSlotPrompt?.promptId">点击绿色高亮空格即提交选择。</p>
             <p v-if="inlinePromptPayment(inlineInfoPrompt)">{{ inlinePromptPayment(inlineInfoPrompt) }}</p>
-            <p v-if="inlineInfoPrompt.presentation?.submissionConsequence">{{ inlinePromptConsequenceLead(inlineInfoPrompt) }}：{{ inlineInfoPrompt.presentation.submissionConsequence }}</p>
+            <p v-if="promptSubmissionCopy(inlineInfoPrompt)">{{ inlinePromptConsequenceLead(inlineInfoPrompt) }}：{{ promptSubmissionCopy(inlineInfoPrompt) }}</p>
             <p v-if="inlineInfoPrompt.validChoices.includes('skip')">{{ inlinePromptExitSummary(inlineInfoPrompt, 'skip') }}</p>
             <p v-if="inlineInfoPrompt.validChoices.includes('cancel')">{{ inlinePromptExitSummary(inlineInfoPrompt, 'cancel') }}</p>
           </div>
@@ -1628,11 +1627,11 @@ function statusTexts(card: Card) {
         <div v-if="!mobileLandscapeViewport" class="inline-prompt-copy">
           <strong>{{ inlinePromptTitle(boardTargetPrompt) }}</strong>
           <span>{{ inlinePromptActor(boardTargetPrompt) }}</span>
-          <span v-if="boardTargetPrompt.presentation?.situation">{{ boardTargetPrompt.presentation.situation }}</span>
+          <span v-if="promptSituationCopy(boardTargetPrompt)">{{ promptSituationCopy(boardTargetPrompt) }}</span>
           <span v-if="inlinePromptInstruction(boardTargetPrompt)">{{ inlinePromptInstruction(boardTargetPrompt) }}</span>
           <span role="status">{{ inlinePromptRange(boardTargetPrompt) }}；{{ boardTargetSelectionSummary }}</span>
           <span v-if="inlinePromptPayment(boardTargetPrompt)">{{ inlinePromptPayment(boardTargetPrompt) }}</span>
-          <span v-if="boardTargetPrompt.presentation?.submissionConsequence">确认后：{{ boardTargetPrompt.presentation.submissionConsequence }}</span>
+          <span v-if="promptSubmissionCopy(boardTargetPrompt)">{{ promptSubmissionCopy(boardTargetPrompt) }}</span>
         </div>
         <small v-if="mobileLandscapeViewport" class="mobile-target-hand-counts" :aria-label="`对手手牌 ${viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0} 张；我方手牌 ${viewMe.handCount ?? viewMe.hand?.length ?? 0} 张`">对{{ viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0 }}·我{{ viewMe.handCount ?? viewMe.hand?.length ?? 0 }}</small>
         <button v-if="mobileLandscapeViewport" ref="inlinePromptInfoTrigger" type="button" @click="openInlinePromptInfo">任务说明</button>
@@ -1647,11 +1646,11 @@ function statusTexts(card: Card) {
         <div v-if="!mobileLandscapeViewport" class="inline-prompt-copy">
           <strong>{{ inlinePromptTitle(boardSlotPrompt) }}</strong>
           <span>{{ inlinePromptActor(boardSlotPrompt) }}</span>
-          <span v-if="boardSlotPrompt.presentation?.situation">{{ boardSlotPrompt.presentation.situation }}</span>
+          <span v-if="promptSituationCopy(boardSlotPrompt)">{{ promptSituationCopy(boardSlotPrompt) }}</span>
           <span v-if="inlinePromptInstruction(boardSlotPrompt)">{{ inlinePromptInstruction(boardSlotPrompt) }}</span>
           <span>{{ inlinePromptRange(boardSlotPrompt) }}；可选：{{ boardSlotChoices }}</span>
           <span class="inline-prompt-action">点击绿色高亮空格即提交选择</span>
-          <span v-if="boardSlotPrompt.presentation?.submissionConsequence">选中后：{{ boardSlotPrompt.presentation.submissionConsequence }}</span>
+          <span v-if="promptSubmissionCopy(boardSlotPrompt)">{{ promptSubmissionCopy(boardSlotPrompt) }}</span>
         </div>
         <small v-if="mobileLandscapeViewport" class="mobile-target-hand-counts" :aria-label="`对手手牌 ${viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0} 张；我方手牌 ${viewMe.handCount ?? viewMe.hand?.length ?? 0} 张`">对{{ viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0 }}·我{{ viewMe.handCount ?? viewMe.hand?.length ?? 0 }}</small>
         <button v-if="mobileLandscapeViewport" ref="inlinePromptInfoTrigger" type="button" @click="openInlinePromptInfo">任务说明</button>
@@ -1664,11 +1663,11 @@ function statusTexts(card: Card) {
         <div v-if="!mobileLandscapeViewport" class="inline-prompt-copy">
           <strong>{{ inlinePromptTitle(resourceSelectionPrompt) }}</strong>
           <span>{{ inlinePromptActor(resourceSelectionPrompt) }}</span>
-          <span v-if="resourceSelectionPrompt.presentation?.situation">{{ resourceSelectionPrompt.presentation.situation }}</span>
+          <span v-if="promptSituationCopy(resourceSelectionPrompt)">{{ promptSituationCopy(resourceSelectionPrompt) }}</span>
           <span v-if="inlinePromptInstruction(resourceSelectionPrompt)">{{ inlinePromptInstruction(resourceSelectionPrompt) }}</span>
           <span role="status">{{ inlinePromptRange(resourceSelectionPrompt) }}；{{ inlinePromptSelectionSummary(resourceSelectionPrompt, paymentResourceIds) }}</span>
           <span v-if="inlinePromptPayment(resourceSelectionPrompt)">{{ inlinePromptPayment(resourceSelectionPrompt) }}</span>
-          <span v-if="resourceSelectionPrompt.presentation?.submissionConsequence">确认后：{{ resourceSelectionPrompt.presentation.submissionConsequence }}</span>
+          <span v-if="promptSubmissionCopy(resourceSelectionPrompt)">{{ promptSubmissionCopy(resourceSelectionPrompt) }}</span>
         </div>
         <button v-if="mobileLandscapeViewport" ref="inlinePromptInfoTrigger" type="button" @click="openInlinePromptInfo">任务说明</button>
         <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
