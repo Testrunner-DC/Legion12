@@ -136,6 +136,7 @@ function playerLogMetadataScore(event: ActionEvent) {
     + Number(Boolean(event.playerLogSemantic))
     + Number(Boolean(event.playerCombat))
     + Number(Boolean(event.playerBattlefieldMovement))
+    + Number(Boolean(event.playerPublicPlacement))
 }
 
 function orderedUniqueEvents(events: ActionEvent[]) {
@@ -461,9 +462,38 @@ function projectBattlefieldMovement(event: ActionEvent, you: number, neutralView
   return row
 }
 
+function projectPublicPlacement(event: ActionEvent, you: number, neutralView: boolean): LogLineRow | null {
+  const fact = event.playerPublicPlacement
+  if (event.type !== 'put' || !fact?.instanceId
+    || !Number.isInteger(fact.ownerPlayerIndex) || !Number.isInteger(fact.controllerPlayerIndex)
+    || (fact.ownerPlayerIndex !== 0 && fact.ownerPlayerIndex !== 1)
+    || (fact.controllerPlayerIndex !== 0 && fact.controllerPlayerIndex !== 1)
+    || fact.ownerPlayerIndex === fact.controllerPlayerIndex
+    || !Number.isInteger(fact.row) || !Number.isInteger(fact.slot)
+    || (fact.row !== 0 && fact.row !== 1)
+    || fact.slot == null || fact.slot < 0 || fact.slot > 2
+    || typeof fact.tapped !== 'boolean'
+    || (fact.durationCode != null && fact.durationCode !== 'until-owner-next-turn-end')) return null
+  const matches = (event.cards ?? []).filter(candidate => candidate.instanceId === fact.instanceId)
+  if (matches.length !== 1) return null
+  const card = matches[0]
+  if (card.hidden || !card.name?.trim() || card.ownerIndex !== fact.ownerPlayerIndex
+    || card.tapped !== fact.tapped) return null
+  const owner = side(fact.ownerPlayerIndex, you, neutralView)
+  const controller = side(fact.controllerPlayerIndex, you, neutralView)
+  if (!owner || !controller) return null
+  const duration = fact.durationCode === 'until-owner-next-turn-end'
+    ? `；直到${owner}下个回合结束` : ''
+  return line(event.sequence, 'play', owner, [cardPart(card),
+    { text: `置入${movementSlotLabel(fact.controllerPlayerIndex, fact.row, fact.slot, you, neutralView)}，由${controller}控制（${fact.tapped ? '休整' : '活跃'}）${duration}` },
+  ])
+}
+
 function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], costDetails: LogPart[] = [], neutralView = false): LogLineRow | null {
   const movement = projectBattlefieldMovement(event, you, neutralView)
   if (movement) return movement
+  const placement = projectPublicPlacement(event, you, neutralView)
+  if (placement) return placement
   if (event.playerLogSemantic) return projectSemanticPlayerLog(event, you, neutralView)
   if ((!PLAYER_LOG_VISIBLE_TYPES.has(event.type) && !isPrivateHandAddEvent(event)) || containsOnlyZeroChange(event)) return null
   const actor = side(event.playerIndex, you, neutralView)
@@ -591,8 +621,8 @@ function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], co
         cards.length ? [{ text: '支付费用：' }, ...cardParts(cards)] : [{ text: '支付费用' }], paymentBadges(event))
     }
     case 'continuous': return line(event.sequence, 'effect', actor,
-      card ? [cardPart(card), { text: '：持续状态更新' }] : [{ text: '持续状态更新' }],
-      [{ value: /陵墓/.test(event.text) ? `陵墓离场 ${countFrom(event.text)}张` : `${countFrom(event.text)}张`, tone: 'info' }])
+      card ? [cardPart(card), { text: '：相关计数变化（详情未记录）' }]
+        : [{ text: '相关计数变化（详情未记录）' }])
     case 'extra-turn': return line(event.sequence, 'effect', actor, [{ text: '获得额外回合' }], [{ value: '+1回合', tone: 'pos' }])
     case 'disaster-value': {
       const progress = event.text.match(/天灾值\s*(\d+)\s*→\s*(\d+)/)

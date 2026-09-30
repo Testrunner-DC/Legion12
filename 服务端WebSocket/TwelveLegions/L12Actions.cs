@@ -375,7 +375,9 @@ public sealed partial class L12GameEngine
         AddPlayerLogEvent("play", playerIndex, $"{player.Name} 打出 {card.Name}",
             playerLogGroupId, trigger, cards: card);
         if (card.CardId == "S01-0004" && targetPlayerIndex != playerIndex)
-            AddEvent("put", targetPlayerIndex, $"{card.Name}置入{targetBattlefield.Name}的战场，由{targetBattlefield.Name}控制，所有者仍为{player.Name}", card);
+            AddPlayerPublicPlacementEvent(targetPlayerIndex, $"{card.Name}置入{targetBattlefield.Name}的战场，由{targetBattlefield.Name}控制，所有者仍为{player.Name}",
+                card, playerIndex, targetPlayerIndex,
+                command.Row.GetValueOrDefault(), command.Slot.GetValueOrDefault());
         if (card.CardType == "tactic" && !IsCounterTactic(card.CardId))
         {
             player.LastActiveTacticCardId = card.CardId;

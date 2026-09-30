@@ -132,6 +132,7 @@ function replayCard(raw: any): Card | null {
     disasterLevel: value(raw, 'DisasterLevel', 'disasterLevel', 0), trialValue: value(raw, 'TrialValue', 'trialValue', 0),
     attachedCards: value<any[]>(raw, 'AttachedCards', 'attachedCards', []).map(replayCard).filter(Boolean) as Card[],
     tapped: value(raw, 'Tapped', 'tapped', false), hidden: value(raw, 'Hidden', 'hidden', false),
+    ownerIndex: value(raw, 'OwnerIndex', 'ownerIndex', undefined),
     identityKnown: value(raw, 'IdentityKnown', 'identityKnown', false), summonRound: value(raw, 'SummonRound', 'summonRound', 0),
     hasCharge: value(raw, 'HasCharge', 'hasCharge', false), hasStrongAttack: value(raw, 'HasStrongAttack', 'hasStrongAttack', false),
     hasSureHit: value(raw, 'HasSureHit', 'hasSureHit', false), cannotAttack: value(raw, 'CannotAttack', 'cannotAttack', false),
@@ -266,6 +267,7 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
     const semantic = value<any>(event, 'PlayerLogSemantic', 'playerLogSemantic', undefined)
     const combat = value<any>(event, 'PlayerCombat', 'playerCombat', undefined)
     const movement = value<any>(event, 'PlayerBattlefieldMovement', 'playerBattlefieldMovement', undefined)
+    const placement = value<any>(event, 'PlayerPublicPlacement', 'playerPublicPlacement', undefined)
     return ({
     sequence: value(event, 'Sequence', 'sequence', 0), type: value(event, 'Type', 'type', ''),
     playerIndex: value(event, 'PlayerIndex', 'playerIndex', undefined), text: value(event, 'Text', 'text', ''),
@@ -309,6 +311,15 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
         toRow: value(fact, 'ToRow', 'toRow', undefined),
         toSlot: value(fact, 'ToSlot', 'toSlot', undefined),
       })),
+    } : undefined,
+    playerPublicPlacement: placement ? {
+      instanceId: value(placement, 'InstanceId', 'instanceId', undefined),
+      ownerPlayerIndex: value(placement, 'OwnerPlayerIndex', 'ownerPlayerIndex', undefined),
+      controllerPlayerIndex: value(placement, 'ControllerPlayerIndex', 'controllerPlayerIndex', undefined),
+      row: value(placement, 'Row', 'row', undefined),
+      slot: value(placement, 'Slot', 'slot', undefined),
+      tapped: value(placement, 'Tapped', 'tapped', undefined),
+      durationCode: value(placement, 'DurationCode', 'durationCode', undefined),
     } : undefined,
     cards: value<any[]>(event, 'Cards', 'cards', []).map(replayCard).filter(Boolean) as Card[],
     })

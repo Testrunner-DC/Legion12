@@ -2105,7 +2105,11 @@ public sealed partial class L12GameEngine
         card.Tapped = tapped;
         card.SummonRound = State.Round;
         destination.Field[row][slot] = card;
-        AddEvent("put", destinationPlayerIndex, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
+        if (destinationPlayerIndex != sourceOwner.PlayerIndex)
+            AddPlayerPublicPlacementEvent(destinationPlayerIndex, $"{card.Name}{(tapped ? "休整" : "活跃")}登场",
+                card, sourceOwner.PlayerIndex, destinationPlayerIndex, row, slot);
+        else
+            AddEvent("put", destinationPlayerIndex, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
         CompleteEffectLegionEntry(destinationPlayerIndex, card,
             fromHand ? "hand" : fromLibrary ? "library" : "graveyard");
         return true;

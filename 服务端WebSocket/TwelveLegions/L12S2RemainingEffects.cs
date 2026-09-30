@@ -589,7 +589,10 @@ public sealed partial class L12GameEngine
         resolvedHorse.SetRound = State.Round;
         resolvedHorse.DiscardAtEndOfTurnUntilTurn = ExpiryAtNextOwnEnd(item.Controller);
         host.Field[row][slot] = resolvedHorse;
-        AddEvent("put", item.Controller, $"{resolvedHorse.Name}置入{host.Name}战场，直到下个我方回合结束", resolvedHorse);
+        AddPlayerPublicPlacementEvent(item.Controller,
+            $"{resolvedHorse.Name}置入{host.Name}战场，直到下个我方回合结束",
+            resolvedHorse, item.Controller, host.PlayerIndex, row, slot,
+            "until-owner-next-turn-end");
         RecalculateContinuousTroops();
         FinishStackItem(item);
     }

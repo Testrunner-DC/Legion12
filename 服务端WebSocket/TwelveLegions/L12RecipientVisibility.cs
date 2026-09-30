@@ -74,6 +74,25 @@ internal static class L12RecipientVisibility
             PlayerBattlefieldMovement = safe.Length == 0 ? null : new(safe),
         };
     }
+
+    private static L12ActionEvent ProjectPublicPlacementEvent(L12ActionEvent actionEvent)
+    {
+        var placement = actionEvent.PlayerPublicPlacement;
+        if (placement is null) return actionEvent;
+        var matches = actionEvent.Cards.Where(candidate =>
+            candidate.InstanceId == placement.InstanceId).Take(2).ToArray();
+        var valid = actionEvent.Type == "put" && matches.Length == 1
+            && !matches[0].Hidden && !string.IsNullOrWhiteSpace(matches[0].Name)
+            && !string.IsNullOrWhiteSpace(placement.InstanceId)
+            && placement.OwnerPlayerIndex is >= 0 and <= 1
+            && placement.ControllerPlayerIndex is >= 0 and <= 1
+            && placement.OwnerPlayerIndex != placement.ControllerPlayerIndex
+            && placement.Row is >= 0 and <= 1 && placement.Slot is >= 0 and <= 2
+            && placement.Tapped is not null && matches[0].Tapped == placement.Tapped
+            && matches[0].OwnerIndex == placement.OwnerPlayerIndex
+            && placement.DurationCode is null or "until-owner-next-turn-end";
+        return valid ? actionEvent : actionEvent with { PlayerPublicPlacement = null };
+    }
     internal readonly record struct Policy(bool BothHands, bool CoveredBattlefieldIdentity,
         bool AllDisasters, bool PrivatePrompts, bool PrivateHandEvents, bool DeckOrder,
         bool LegalActions)
@@ -101,8 +120,8 @@ internal static class L12RecipientVisibility
         L12ActionEvent actionEvent, int viewer, bool revealAllDisasters,
         bool revealAllHands = false)
     {
-        actionEvent = ProjectBattlefieldMovementEvent(
-            ProjectCombatEvent(L12TrialProgressVisibility.PublicEvent(actionEvent)));
+        actionEvent = ProjectPublicPlacementEvent(ProjectBattlefieldMovementEvent(
+            ProjectCombatEvent(L12TrialProgressVisibility.PublicEvent(actionEvent))));
         if (actionEvent.Type == "private-return")
             return revealAllHands || actionEvent.PlayerIndex == viewer
                 ? actionEvent with { Type = "return" }

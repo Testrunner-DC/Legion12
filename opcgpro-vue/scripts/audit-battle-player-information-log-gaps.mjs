@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { projectLog } from '../src/l12/game/logViewModel.ts'
 
-// Deterministic phase-0 evidence refreshed after Stages 4A and 4B-2.
+// Deterministic phase-0 evidence refreshed after Stages 4A, 4B-2, and 4B-3A.
 // Closed gaps must remain visible; unfinished legacy/status gaps remain
 // explicit; legacy combat audit text must never become a public reason.
 const card = (name, instanceId = name) => ({
@@ -55,10 +55,17 @@ const cases = [
   },
   {
     id: 'trojan-horse-cross-owner-put',
-    input: [event(1, 'put', '特洛伊木马跨玩家安置', [source])],
+    input: [event(1, 'put', '特洛伊木马跨玩家安置，秘密来源格不公开',
+      [{ ...card('特洛伊木马', 'horse'), ownerIndex: 1, tapped: true }], {
+        playerIndex: 1,
+        playerPublicPlacement: { instanceId: 'horse', ownerPlayerIndex: 1,
+          controllerPlayerIndex: 0, row: 1, slot: 2, tapped: true,
+          durationCode: 'until-owner-next-turn-end' },
+      })],
     requiredSourceFacts: ['跨玩家'],
-    missingFromProjection: ['跨玩家'],
-    status: 'OPEN: 4B-3 or later review',
+    expectedProjectionFacts: ['我方后排右格', '由我方控制', '直到对方下个回合结束'],
+    missingFromProjection: ['秘密来源格'],
+    status: 'CLOSED: 4B-3A',
   },
   {
     id: 'continuous-target-delta-duration',

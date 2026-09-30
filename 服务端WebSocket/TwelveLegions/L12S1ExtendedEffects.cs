@@ -991,7 +991,11 @@ public sealed partial class L12GameEngine
         ResetCardForFieldEntry(card);
         card.OwnerIndex ??= player.PlayerIndex; card.Tapped = tapped; card.SummonRound = State.Round;
         State.Players[battlefield].Field[row][slot] = card;
-        AddEvent("put", battlefield, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
+        if (battlefield != player.PlayerIndex)
+            AddPlayerPublicPlacementEvent(battlefield, $"{card.Name}{(tapped ? "休整" : "活跃")}登场",
+                card, player.PlayerIndex, battlefield, row, slot);
+        else
+            AddEvent("put", battlefield, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
         CompleteEffectLegionEntry(battlefield, card, "hand");
         return true;
     }

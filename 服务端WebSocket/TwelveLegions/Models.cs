@@ -805,6 +805,16 @@ public sealed record L12PlayerBattlefieldMovementFact(
 public sealed record L12PlayerBattlefieldMovement(
     L12PlayerBattlefieldMovementFact[]? Facts = null);
 
+/// <summary>仅记录已公开的跨玩家战场置入终态；不记录来源位置。</summary>
+public sealed record L12PlayerPublicPlacement(
+    string? InstanceId = null,
+    int? OwnerPlayerIndex = null,
+    int? ControllerPlayerIndex = null,
+    int? Row = null,
+    int? Slot = null,
+    bool? Tapped = null,
+    string? DurationCode = null);
+
 public sealed record L12ActionEvent(
     long Sequence,
     string Type,
@@ -842,6 +852,8 @@ public sealed record L12ActionEvent(
     public L12PlayerCombatPresentation? PlayerCombat { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public L12PlayerBattlefieldMovement? PlayerBattlefieldMovement { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12PlayerPublicPlacement? PlayerPublicPlacement { get; init; }
 }
 
 public sealed class L12GameState

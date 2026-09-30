@@ -22,6 +22,7 @@ export interface ActionEvent {
   playerLogSemantic?: PlayerLogSemantic
   playerCombat?: PlayerCombatPresentation
   playerBattlefieldMovement?: PlayerBattlefieldMovementPresentation
+  playerPublicPlacement?: PlayerPublicPlacement
   cards?: Card[]
 }
 
@@ -36,6 +37,16 @@ export interface PlayerBattlefieldMovementFact {
 
 export interface PlayerBattlefieldMovementPresentation {
   facts?: PlayerBattlefieldMovementFact[]
+}
+
+export interface PlayerPublicPlacement {
+  instanceId?: string
+  ownerPlayerIndex?: number
+  controllerPlayerIndex?: number
+  row?: number
+  slot?: number
+  tapped?: boolean
+  durationCode?: string
 }
 
 export interface PlayerCombatPresentation {

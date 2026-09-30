@@ -2023,9 +2023,13 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         if (State.ActivePlayer != controller.PlayerIndex || !HasCurrentLegionState(card)
             || !card.Name.Contains("陵墓", StringComparison.Ordinal)) return;
         controller.TombNamedLegionsLeftThisTurn++;
-        AddEvent("continuous", controller.PlayerIndex,
-            $"本回合已有{controller.TombNamedLegionsLeftThisTurn}张卡名包含〈陵墓〉的我方军团离场；〈陵墓圣武士〉登场费用相应降低",
-            card);
+        var text = $"本回合已有{controller.TombNamedLegionsLeftThisTurn}张卡名包含〈陵墓〉的我方军团离场；〈陵墓圣武士〉登场费用相应降低";
+        if (card.Hidden || string.IsNullOrWhiteSpace(card.InstanceId) || string.IsNullOrWhiteSpace(card.Name))
+            AddEvent("continuous", controller.PlayerIndex, text, card);
+        else
+            AddSemanticPlayerLogEvent("continuous", controller.PlayerIndex, text,
+                new L12PlayerLogSemantic("离场", $"本回合含〈陵墓〉名称的军团离场累计{controller.TombNamedLegionsLeftThisTurn}张，〈陵墓圣武士〉登场费用相应降低",
+                    SourceInstanceId: card.InstanceId), card);
     }
 
     private void ResetCardForPrivateZone(L12CardInstance card)
@@ -2438,6 +2442,14 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         => AddEventCoreWithCombat(type, playerIndex, text, null, null,
             null, null, null, null, null, movement, cards);
 
+    private void AddPlayerPublicPlacementEvent(int? playerIndex, string text,
+        L12CardInstance card, int ownerPlayerIndex, int controllerPlayerIndex,
+        int row, int slot, string? durationCode = null)
+        => AddEventCoreWithPlacement("put", playerIndex, text, null, null,
+            null, null, null, null, null, null,
+            new L12PlayerPublicPlacement(card.InstanceId, ownerPlayerIndex,
+                controllerPlayerIndex, row, slot, card.Tapped, durationCode), card);
+
     private static L12PlayerBattlefieldMovementFact BattlefieldMovementFact(
         L12CardInstance card, int battlefieldPlayerIndex, int fromRow, int fromSlot,
         int toRow, int toSlot)
@@ -2470,6 +2482,16 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         string? playerLogDecisionLabel, L12PlayerLogSemantic? playerLogSemantic,
         L12PlayerCombatPresentation? playerCombat,
         L12PlayerBattlefieldMovement? playerBattlefieldMovement, params L12CardInstance[] cards)
+        => AddEventCoreWithPlacement(type, playerIndex, text, effectText, effectMetadata,
+            playerLogGroupId, playerLogTiming, playerLogDecisionLabel, playerLogSemantic,
+            playerCombat, playerBattlefieldMovement, null, cards);
+
+    private void AddEventCoreWithPlacement(string type, int? playerIndex, string text, string? effectText,
+        L12EffectEventMetadata? effectMetadata, string? playerLogGroupId, string? playerLogTiming,
+        string? playerLogDecisionLabel, L12PlayerLogSemantic? playerLogSemantic,
+        L12PlayerCombatPresentation? playerCombat,
+        L12PlayerBattlefieldMovement? playerBattlefieldMovement,
+        L12PlayerPublicPlacement? playerPublicPlacement, params L12CardInstance[] cards)
     {
         State.EventSequence++;
         State.LastAction = new L12ActionEvent(State.EventSequence, type, playerIndex, text,
@@ -2504,6 +2526,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             PlayerLogSemantic = playerLogSemantic,
             PlayerCombat = playerCombat,
             PlayerBattlefieldMovement = playerBattlefieldMovement,
+            PlayerPublicPlacement = playerPublicPlacement,
         };
         State.Events.Add(State.LastAction);
         if (State.StateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion)
