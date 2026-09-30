@@ -207,6 +207,12 @@ public sealed class ApprovedTriggerBoundaryRegressionTests
         var valueEvent = Assert.Single(game.State.Events, entry => entry.Type == "disaster-value");
         Assert.Null(valueEvent.PlayerIndex);
         Assert.Contains("天灾值 7 → 9", valueEvent.Text, StringComparison.Ordinal);
+        Assert.Equal(new L12PlayerDisasterValue(7, 9), valueEvent.PlayerDisasterValue);
+        foreach (var snapshot in new[] { game.SnapshotFor(0), game.SnapshotFor(1),
+            game.SnapshotForSpectator(), game.SnapshotForReferee(), game.SnapshotForGm(0) })
+            Assert.Equal(valueEvent.PlayerDisasterValue,
+                Assert.Single(snapshot.RecentEvents, entry => entry.Sequence == valueEvent.Sequence)
+                    .PlayerDisasterValue);
         Assert.True(game.State.CheckDisasterAfterStack);
         Invoke(game, "AfterStackSettled");
         Assert.Null(game.State.ActiveDisaster);
@@ -222,6 +228,26 @@ public sealed class ApprovedTriggerBoundaryRegressionTests
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "response");
         Invoke(game, "AfterStackSettled");
         Assert.Single(game.State.DisasterDeck);
+    }
+
+    [Fact]
+    public void DisasterValueFactRejectsWrongEventTypeAndMalformedNumbersForEveryViewer()
+    {
+        var game = Create(12011);
+        var raw = new L12ActionEvent(1, "disaster-value", null,
+            "秘密来源：天灾值 999 → 1000", [])
+            { PlayerDisasterValue = new L12PlayerDisasterValue(4, 5) };
+        foreach (var viewer in new[] { -1, 0, 1 }) foreach (var revealAll in new[] { false, true })
+        {
+            Assert.Equal(raw.PlayerDisasterValue,
+                L12RecipientVisibility.ProjectActionEvent(game.State, raw, viewer, revealAll)
+                    .PlayerDisasterValue);
+            foreach (var invalid in new[] { raw with { Type = "effect" },
+                raw with { PlayerDisasterValue = new(-1, 5) },
+                raw with { PlayerDisasterValue = new(4, null) } })
+                Assert.Null(L12RecipientVisibility.ProjectActionEvent(game.State, invalid, viewer, revealAll)
+                    .PlayerDisasterValue);
+        }
     }
 
     [Fact]

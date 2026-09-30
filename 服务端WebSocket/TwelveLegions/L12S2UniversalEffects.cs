@@ -97,7 +97,6 @@ public sealed partial class L12GameEngine
                 var delta = int.TryParse(CompositeDeclared(item, "disasterMode").SingleOrDefault(), out var parsed)
                     ? Math.Clamp(parsed, -1, 1) : 0;
                 AdjustDisasterValue(delta);
-                AddEvent("disaster-value", item.Controller, $"黑色莲花将天灾值调整为 {State.DisasterValue}", card);
                 FinishStackItem(item);
                 return true;
             }

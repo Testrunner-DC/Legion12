@@ -8,9 +8,10 @@ public sealed class S2UniversalEffectsTests
 {
     private static L12Catalog Catalog => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
 
-    private static L12GameEngine Create(int seed = 6201, bool autoPassEmptyResponses = true)
+    private static L12GameEngine Create(int seed = 6201, bool autoPassEmptyResponses = true,
+        int stateFormatVersion = 0)
         => new(Catalog, "s2-effects", "S2TEST", seed, ["甲", "乙"], [4, 4], skipPreparation: true,
-            autoPassEmptyResponses: autoPassEmptyResponses);
+            autoPassEmptyResponses: autoPassEmptyResponses, stateFormatVersion: stateFormatVersion);
 
     private static L12GameEngine CreateTianting(int seed)
         => new(Catalog, "s2-tianting", "S2TT", seed, ["甲", "乙"], [0, 0], skipPreparation: true);
@@ -1061,7 +1062,7 @@ public sealed class S2UniversalEffectsTests
     [Fact]
     public void BlackLotusAdjustsDisasterAndMayBecomeTappedMorale()
     {
-        var game = Create(seed: 6212);
+        var game = Create(seed: 6212, stateFormatVersion: 2);
         var player = game.State.Players[0];
         var lotus = TakeCard(game, 0, "S02-0010");
         AddMorale(player, 4);
@@ -1074,6 +1075,14 @@ public sealed class S2UniversalEffectsTests
         Assert.Equal("pending-activation", disasterPrompt.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: disasterPrompt.PromptId, Choice: "1")).Accepted);
         Assert.Equal(5, game.State.DisasterValue);
+        var valueEvent = Assert.Single(game.State.Events, entry => entry.PlayerDisasterValue is not null);
+        Assert.Equal(new L12PlayerDisasterValue(4, 5), valueEvent.PlayerDisasterValue);
+        Assert.Equal("disaster-value", valueEvent.Type);
+        var restored = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(),
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence);
+        Assert.Equal(valueEvent.PlayerDisasterValue,
+            Assert.Single(restored.SnapshotFor(1).RecentEvents,
+                entry => entry.Sequence == valueEvent.Sequence).PlayerDisasterValue);
 
         var moralePrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", moralePrompt.Continuation);

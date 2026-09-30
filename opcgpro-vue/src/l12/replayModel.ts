@@ -269,6 +269,7 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
     const movement = value<any>(event, 'PlayerBattlefieldMovement', 'playerBattlefieldMovement', undefined)
     const placement = value<any>(event, 'PlayerPublicPlacement', 'playerPublicPlacement', undefined)
     const troopsModifier = value<any>(event, 'PlayerTroopsModifier', 'playerTroopsModifier', undefined)
+    const disasterValue = value<any>(event, 'PlayerDisasterValue', 'playerDisasterValue', undefined)
     // Generic replay-card defaults are presentation placeholders, not recorded target identity.
     const troopsTargetId = value(troopsModifier, 'TargetInstanceId', 'targetInstanceId', undefined)
     const troopsTargets = troopsModifier ? value<any[]>(event, 'Cards', 'cards', [])
@@ -325,6 +326,10 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
       targetControllerPlayerIndex: value(troopsModifier, 'TargetControllerPlayerIndex', 'targetControllerPlayerIndex', undefined),
       troopsDelta: value(troopsModifier, 'TroopsDelta', 'troopsDelta', undefined),
       durationCode: value(troopsModifier, 'DurationCode', 'durationCode', undefined),
+    } : undefined,
+    playerDisasterValue: disasterValue && typeof disasterValue === 'object' ? {
+      before: value(disasterValue, 'Before', 'before', undefined),
+      after: value(disasterValue, 'After', 'after', undefined),
     } : undefined,
     playerPublicPlacement: placement ? {
       instanceId: value(placement, 'InstanceId', 'instanceId', undefined),

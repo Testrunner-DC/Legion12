@@ -1060,6 +1060,10 @@ public sealed class NewSystemsTests
         Assert.True(game.Handle(owner, new L12Command("playCard", legion.InstanceId, Row: 0, Slot: 0)).Accepted);
         Assert.Same(legion, player.Field[0][0]);
         Assert.Equal(disasterBefore + legion.DisasterLevel, game.State.DisasterValue);
+        var entryValue = Assert.Single(game.State.Events,
+            entry => entry.Type == "disaster-value" && entry.PlayerDisasterValue is not null);
+        Assert.Equal(new L12PlayerDisasterValue(disasterBefore, game.State.DisasterValue),
+            entryValue.PlayerDisasterValue);
 
         var mode = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", mode.Continuation);

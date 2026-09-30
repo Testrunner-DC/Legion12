@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import './test-battle-troops-modifier.mjs'
+import './test-battle-disaster-value.mjs'
 import { PLAYER_LOG_REDLINE_TERMS, playerLogContainsForbiddenTerms, projectLog } from '../src/l12/game/logViewModel.ts'
 import { replayGameAt } from '../src/l12/replayModel.ts'
 
@@ -467,6 +468,7 @@ const sharedDisasterChange = projectLog([
   event(1, 'play', '我方打出来源卡', [source], 0, { playerLogGroupId: 'play:disaster', playerLogTiming: 'play' }),
   event(2, 'disaster-value', '来源卡调整天灾值；天灾值 4 → 6', [source], undefined, {
     playerLogGroupId: 'play:disaster', playerLogTiming: 'play',
+    playerDisasterValue: { before: 4, after: 6 },
   }),
 ], 0, [])
 assert.equal(sharedDisasterChange.length, 1)
@@ -482,14 +484,16 @@ const stateChanges = projectLog([
   event(4, 'mill', '弃置牌库顶部2张牌', [a, b]),
   event(5, 'library', '〈甲军团〉返回牌库底部', [a]),
   event(6, 'reorder', '将 2 张牌放回牌库顶部、1 张牌放回牌库底部', []),
-  event(7, 'disaster-value', '天灾值调整为 4', [source]),
+  event(7, 'disaster-value', '天灾值调整为 4', [source], null,
+    { playerDisasterValue: { before: 3, after: 4 } }),
   event(8, 'extra-turn', '本回合后追加1个回合', []),
 ], 0, [])
 assert.equal(stateChanges.length, 8, 'public zone, deck, disaster and turn changes must each keep one compact row')
 assert(stateChanges.every(row => row.kind === 'line'))
-assert(stateChanges.some(row => row.kind === 'line' && row.badges.some(item => item.value === '天灾值 4')))
+assert(stateChanges.some(row => row.kind === 'line' && row.parts.some(item => item.text === '天灾值 3→4')))
 const publicDisasterValue = projectLog([
-  event(1, 'disaster-value', '天灾值 3 → 4', [source], 0),
+  event(1, 'disaster-value', '天灾值 3 → 4', [source], 0,
+    { playerDisasterValue: { before: 3, after: 4 } }),
 ], 1, [])[0]
 assert(publicDisasterValue.kind === 'line' && publicDisasterValue.actor === null,
   'the shared disaster value must never be attributed to either player')

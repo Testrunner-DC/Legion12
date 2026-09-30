@@ -107,6 +107,15 @@ internal static class L12RecipientVisibility
         return valid ? actionEvent : actionEvent with { PlayerTroopsModifier = null };
     }
 
+    private static L12ActionEvent ProjectDisasterValueEvent(L12ActionEvent actionEvent)
+    {
+        var fact = actionEvent.PlayerDisasterValue;
+        if (fact is null) return actionEvent;
+        return actionEvent.Type == "disaster-value"
+            && fact.Before is >= 0 && fact.After is >= 0
+            ? actionEvent : actionEvent with { PlayerDisasterValue = null };
+    }
+
     internal readonly record struct Policy(bool BothHands, bool CoveredBattlefieldIdentity,
         bool AllDisasters, bool PrivatePrompts, bool PrivateHandEvents, bool DeckOrder,
         bool LegalActions)
@@ -143,8 +152,9 @@ internal static class L12RecipientVisibility
             return CanSeeActionEvent(actionEvent, viewer, revealAllHands)
                 ? actionEvent with { Type = actionEvent.Type["private-trigger-".Length..] }
                 : new L12ActionEvent(actionEvent.Sequence, "private", null, string.Empty, []);
-        actionEvent = ProjectTroopsModifierEvent(ProjectPublicPlacementEvent(ProjectBattlefieldMovementEvent(
-            ProjectCombatEvent(L12TrialProgressVisibility.PublicEvent(actionEvent)))));
+        actionEvent = ProjectDisasterValueEvent(ProjectTroopsModifierEvent(ProjectPublicPlacementEvent(
+            ProjectBattlefieldMovementEvent(ProjectCombatEvent(
+                L12TrialProgressVisibility.PublicEvent(actionEvent))))));
         if (actionEvent.Type == "private-return")
             return revealAllHands || actionEvent.PlayerIndex == viewer
                 ? actionEvent with { Type = "return" }

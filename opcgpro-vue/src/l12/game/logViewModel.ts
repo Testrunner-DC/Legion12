@@ -138,6 +138,16 @@ function playerLogMetadataScore(event: ActionEvent) {
     + Number(Boolean(event.playerBattlefieldMovement))
     + Number(Boolean(event.playerPublicPlacement))
     + Number(Boolean(event.playerTroopsModifier))
+    + Number(Boolean(event.playerDisasterValue))
+}
+
+function disasterValueText(event: ActionEvent): string | null {
+  if (event.type !== 'disaster-value') return null
+  const before = event.playerDisasterValue?.before
+  const after = event.playerDisasterValue?.after
+  if (before == null || after == null || !Number.isInteger(before) || !Number.isInteger(after)
+    || before < 0 || after < 0 || before > 2147483647 || after > 2147483647) return null
+  return before === after ? `天灾值保持 ${after}` : `天灾值 ${before}→${after}`
 }
 
 function orderedUniqueEvents(events: ActionEvent[]) {
@@ -218,6 +228,10 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
     if (draw) changes.push(`抽取${draw}张牌`)
     if (milled) changes.push(`弃置牌库顶部${milled}张牌`)
     if (morale) changes.push(`追加${morale}张士气`)
+    for (const event of group) {
+      const value = disasterValueText(event)
+      if (value) changes.push(value)
+    }
     if (!changes.length) return null
     const changeSequence = group.find(event => event.type !== 'turn-start')?.sequence ?? first.sequence
     return line(changeSequence, 'info', side(first.playerIndex, you, neutralView),
@@ -265,8 +279,8 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
   if (milled) suffix += `，弃置牌库顶部${milled}张牌`
 
   for (const disaster of group.filter(event => event.type === 'disaster-value')) {
-    const progress = disaster.text.match(/天灾值\s*(\d+)\s*→\s*(\d+)/)
-    if (progress) suffix += `，天灾值 ${progress[1]}→${progress[2]}`
+    const progress = disasterValueText(disaster)
+    if (progress) suffix += `，${progress}`
   }
 
   if (trial) {
@@ -525,8 +539,10 @@ function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], co
   if (movement) return movement
   const placement = projectPublicPlacement(event, you, neutralView)
   if (placement) return placement
-  if (event.playerLogSemantic) return projectSemanticPlayerLog(event, you, neutralView)
-  if ((!PLAYER_LOG_VISIBLE_TYPES.has(event.type) && !isPrivateHandAddEvent(event)) || containsOnlyZeroChange(event)) return null
+  if (event.playerLogSemantic && event.type !== 'disaster-value')
+    return projectSemanticPlayerLog(event, you, neutralView)
+  if ((!PLAYER_LOG_VISIBLE_TYPES.has(event.type) && !isPrivateHandAddEvent(event))
+    || (event.type !== 'disaster-value' && containsOnlyZeroChange(event))) return null
   const actor = side(event.playerIndex, you, neutralView)
   const card = firstPublicCard(event)
   const effectText = safeEffectText(event)
@@ -652,14 +668,9 @@ function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], co
     case 'continuous': return line(event.sequence, 'effect', actor,
       card ? [cardPart(card), { text: '：相关计数变化（详情未记录）' }]
         : [{ text: '相关计数变化（详情未记录）' }])
+    case 'disaster-value': return line(event.sequence, 'disaster', null,
+      [{ text: disasterValueText(event) ?? '天灾值变化（详情未记录）' }])
     case 'extra-turn': return line(event.sequence, 'effect', actor, [{ text: '获得额外回合' }], [{ value: '+1回合', tone: 'pos' }])
-    case 'disaster-value': {
-      const progress = event.text.match(/天灾值\s*(\d+)\s*→\s*(\d+)/)
-      const value = [...event.text.matchAll(/\d+/g)].at(-1)?.[0]
-      return line(event.sequence, 'disaster', null, card ? [cardPart(card), { text: '：天灾值变化' }] : [{ text: '天灾值变化' }],
-        progress ? [{ value: `天灾值 ${progress[1]}→${progress[2]}`, tone: 'info' }]
-          : value ? [{ value: `天灾值 ${value}`, tone: 'info' }] : [])
-    }
     case 'defense': return line(event.sequence, 'defense', actor, [{ text: '抵挡记录（结果未记录）' }])
     case 'support': return line(event.sequence, 'support', actor, [{ text: '支援记录（结果未记录）' }])
     case 'initiative-choice': return line(event.sequence, 'info', actor, [{ text: `选择${/后手/.test(event.text) ? '后手' : '先手'}` }])
@@ -794,6 +805,10 @@ export function projectLog(events: ActionEvent[], you: number, _names: string[],
         const row = projectGroupedAction(ordered, indexes, you, neutralView)
         indexes.forEach(item => consumed.add(item))
         if (row) rows.push(row)
+        else for (const item of indexes) if (ordered[item].type === 'disaster-value') {
+          const valueRow = projectLine(ordered[item], you, [], [], neutralView)
+          if (valueRow) rows.push(valueRow)
+        }
       }
       continue
     }
@@ -803,6 +818,10 @@ export function projectLog(events: ActionEvent[], you: number, _names: string[],
       const row = projectGroupedAction(ordered, indexes, you, neutralView)
       indexes.forEach(item => consumed.add(item))
       if (row) rows.push(row)
+      else for (const item of indexes) if (ordered[item].type === 'disaster-value') {
+        const valueRow = projectLine(ordered[item], you, [], [], neutralView)
+        if (valueRow) rows.push(valueRow)
+      }
       continue
     }
     if (event.type === 'effect-result' && event.playerLogSemantic) {

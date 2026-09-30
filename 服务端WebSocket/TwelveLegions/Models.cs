@@ -822,6 +822,9 @@ public sealed record L12PlayerTroopsModifier(
     int? TroopsDelta = null,
     string? DurationCode = null);
 
+/// <summary>已结算的公开天灾值变化；旧事件缺失时不得从文字或当前状态补算。</summary>
+public sealed record L12PlayerDisasterValue(int? Before = null, int? After = null);
+
 public sealed record L12ActionEvent(
     long Sequence,
     string Type,
@@ -863,6 +866,8 @@ public sealed record L12ActionEvent(
     public L12PlayerPublicPlacement? PlayerPublicPlacement { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public L12PlayerTroopsModifier? PlayerTroopsModifier { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12PlayerDisasterValue? PlayerDisasterValue { get; init; }
 }
 
 public sealed class L12GameState

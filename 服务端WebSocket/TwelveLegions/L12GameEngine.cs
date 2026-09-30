@@ -1119,25 +1119,32 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
     private bool DisastersEnabled => State.DisasterMode != "none";
 
-    private void SetDisasterValue(int value, int? playerIndex = null, string? text = null)
+    private void SetDisasterValue(int value, int? playerIndex = null, string? text = null,
+        bool recordAdjustment = false)
     {
         var before = State.DisasterValue;
         State.DisasterValue = !DisastersEnabled || L12ActiveDisasterRules.DisasterValueLocked(State.ActiveDisaster?.CardId)
             ? 0
             : Math.Max(0, value);
-        if (!string.IsNullOrWhiteSpace(text) && before != State.DisasterValue)
+        if ((recordAdjustment || !string.IsNullOrWhiteSpace(text))
+            && (before != State.DisasterValue || recordAdjustment))
         {
             var item = State.IsResolvingStack ? State.EffectStack.LastOrDefault() : null;
-            var reason = text.Replace("{value}", State.DisasterValue.ToString(), StringComparison.Ordinal);
-            AddPlayerLogEvent("disaster-value", null, $"{reason}；天灾值 {before} → {State.DisasterValue}",
+            var reason = text?.Replace("{value}", State.DisasterValue.ToString(), StringComparison.Ordinal)
+                ?? "天灾值调整";
+            AddEventCoreWithTroopsModifier("disaster-value", null,
+                $"{reason}；天灾值 {before} → {State.DisasterValue}", null, null,
                 item?.Data.GetValueOrDefault("playerLogGroupId"),
-                item?.Data.GetValueOrDefault("playerLogTiming") ?? item?.Trigger);
+                item?.Data.GetValueOrDefault("playerLogTiming") ?? item?.Trigger,
+                null, null, null, null, null, null,
+                new L12PlayerDisasterValue(before, State.DisasterValue));
         }
     }
 
     private void AdjustDisasterValue(int delta, int? playerIndex = null, string? text = null)
     {
-        SetDisasterValue(State.DisasterValue + delta, playerIndex, text);
+        SetDisasterValue(State.DisasterValue + delta, playerIndex, text,
+            recordAdjustment: true);
         // 所有卡效都经由这一入口调整天灾值。首次越过现行“超过 8”阈值的来源
         // 必须随状态保存；由 AfterStackSettled 在当前效果、衍生触发和响应事务全部关闭后翻开下一张天灾。
         if (DisastersEnabled && State.DisasterValue > 8)
@@ -2464,7 +2471,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         AddEventCoreWithTroopsModifier("troops-modifier", targetController,
             $"〈{target.Name}〉本回合兵力修正{troops:+0;-0;0}", null, null,
             null, null, null, null, null, null, null,
-            new L12PlayerTroopsModifier(target.InstanceId, targetController, troops, "this-turn"), target);
+            new L12PlayerTroopsModifier(target.InstanceId, targetController, troops, "this-turn"),
+            null, target);
     }
 
     private static L12PlayerBattlefieldMovementFact BattlefieldMovementFact(
@@ -2511,7 +2519,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         L12PlayerPublicPlacement? playerPublicPlacement, params L12CardInstance[] cards)
         => AddEventCoreWithTroopsModifier(type, playerIndex, text, effectText, effectMetadata,
             playerLogGroupId, playerLogTiming, playerLogDecisionLabel, playerLogSemantic,
-            playerCombat, playerBattlefieldMovement, playerPublicPlacement, null, cards);
+            playerCombat, playerBattlefieldMovement, playerPublicPlacement, null, null, cards);
 
     private void AddEventCoreWithTroopsModifier(string type, int? playerIndex, string text, string? effectText,
         L12EffectEventMetadata? effectMetadata, string? playerLogGroupId, string? playerLogTiming,
@@ -2519,7 +2527,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         L12PlayerCombatPresentation? playerCombat,
         L12PlayerBattlefieldMovement? playerBattlefieldMovement,
         L12PlayerPublicPlacement? playerPublicPlacement,
-        L12PlayerTroopsModifier? playerTroopsModifier, params L12CardInstance[] cards)
+        L12PlayerTroopsModifier? playerTroopsModifier,
+        L12PlayerDisasterValue? playerDisasterValue, params L12CardInstance[] cards)
     {
         State.EventSequence++;
         State.LastAction = new L12ActionEvent(State.EventSequence, type, playerIndex, text,
@@ -2556,6 +2565,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             PlayerBattlefieldMovement = playerBattlefieldMovement,
             PlayerPublicPlacement = playerPublicPlacement,
             PlayerTroopsModifier = playerTroopsModifier,
+            PlayerDisasterValue = playerDisasterValue,
         };
         State.Events.Add(State.LastAction);
         if (State.StateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion)
