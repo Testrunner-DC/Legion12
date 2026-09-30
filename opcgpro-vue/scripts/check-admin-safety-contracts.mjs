@@ -10,6 +10,8 @@ const adminSources = adminPanels.map(name => [name, read(`src/l12/site/${name}`)
 const accounts = read('src/l12/site/AdminAccountsPage.vue')
 const articles = read('src/l12/site/AdminArticlesPanel.vue')
 const operations = read('src/l12/site/AdminOperationsPanel.vue')
+const seasonEditor = read('src/l12/site/SeasonConfigurationEditor.vue')
+const seasonPreview = read('src/l12/site/seasonDefinitionPreview.ts')
 const maintenance = read('src/l12/site/ImmediateMaintenancePanel.vue')
 const username = read('src/l12/site/AdminUsernameChangeRequestsPanel.vue')
 const releases = read('src/l12/site/AdminReleasesPage.vue')
@@ -27,6 +29,10 @@ const checks = [
   [accounts.includes("hasPermission('admin.accounts.roles.write')") && accounts.includes("hasPermission('admin.sessions.revoke')") && accounts.includes("hasPermission('admin.accounts.status.write')"), '账号角色、会话与状态动作必须按精确权限裁剪'],
   [articles.includes("action === 'publish' || action === 'withdraw' ? 'admin.content.publish' : 'admin.content.draft'") && articles.includes("hasPermission('admin.content.draft')"), '稿件公开动作和草稿动作必须使用各自权限'],
   [operations.includes("hasPermission('admin.operations.write')") && maintenance.includes("hasPermission('admin.operations.write')"), '运营配置与即时维护必须受写权限保护'],
+  [operations.includes('adminApi.seasonCatalog()') && operations.includes('previewSeasonDefinition') && operations.includes('applySeasonDefinition') && !operations.includes('saveRankedConfig('), '赛季、排位与构筑必须统一使用赛季定义契约'],
+  [operations.includes('本地编辑已保留') && operations.includes('刷新并丢弃本地编辑'), '双槽冲突必须保留本地编辑并显式恢复'],
+  [seasonPreview.includes('previewToken') && seasonPreview.includes('structuredClone(guard.snapshot)'), '赛季保存必须提交服务端冻结预览快照'],
+  [seasonEditor.includes('current-season') && seasonEditor.includes('next-season'), '赛季编辑器必须明确区分双槽'],
   [username.includes("hasPermission('admin.accounts.status.write')"), '用户名审核动作必须受账号状态写权限保护'],
   [store.includes('RandomNumberGenerator.GetBytes(16)') && store.includes('revokedIds.Length, temporaryPassword') && !store.includes('"123456"'), '后台重置必须生成至少 128 位随机一次性临时密码，禁止固定密码'],
   [server.includes('MapPost("/api/admin/security/audit-recovery-rehearsal"') && !server.includes('MapGet("/api/admin/security/audit-recovery-rehearsal"') && platform.includes("method: 'POST'"), '审计恢复演练必须使用 POST 语义'],

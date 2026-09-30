@@ -49,6 +49,7 @@ const rankedIdentityBadge = read('../src/l12/RankedIdentityBadge.vue')
 const rankedTicker = read('../src/l12/site/RankedBroadcastTicker.vue')
 const rankedPlayback = read('../src/l12/site/rankedBroadcastPlayback.ts')
 const adminOperations = read('../src/l12/site/AdminOperationsPanel.vue')
+const seasonConfigurationEditor = read('../src/l12/site/SeasonConfigurationEditor.vue')
 const disasterPoolPicker = read('../src/l12/site/DisasterPoolPicker.vue')
 const savedDeckSelector = read('../src/l12/SavedDeckSelector.vue')
 const deckEditor = read('../src/l12/L12DeckEditor.vue')
@@ -743,7 +744,7 @@ const contracts = [
   [l12Net.includes("export type SandboxDisasterMode = 'all' | 'random' | 'custom' | 'none'") && sandbox.includes('<option value="custom"') && !sandbox.includes('<option value="season"'), '沙盒只能使用全部、随机、自定或无天灾，不得接入赛季天灾池'],
   [lobby.includes('joinMatchmaking') && lobby.includes('七曜值') && lobby.includes('选择本赛季派系') && l12Net.includes("type: 'joinMatchmaking'") && l12Net.includes("type: 'pollMatchmaking'") && l12Net.includes("message.type === 'matchmakingRejected'") && l12Net.includes('startMatchmakingPolling()'), '公开匹配必须使用服务端权威队列、保留等待扩圈轮询并清理拒绝状态，在排位前选择赛季派系'],
   [lobby.includes('data-ui-contract="faction-totals-above-public-match"') && lobby.indexOf('data-ui-contract="faction-totals-above-public-match"') < lobby.indexOf('<section v-if="tab === \'match\'" class="mode-panel panel">'), '三派系七曜总量必须位于顶部模式标签之后、公开匹配面板之前，不能埋在公开匹配内容框内'],
-  [rankings.includes("type RankingTab = 'players' | 'masters' | 'matchups' | 'history'") && rankings.includes('主宰对阵一览') && rankings.includes('历史荣誉') && rankings.includes('row.titles') && rankings.includes('title-badge') && rankings.includes('champion-title') && rankings.includes("type MasterSort = 'games' | 'winRate' | 'firstWinRate' | 'secondWinRate' | 'usageRate'") && rankings.includes('v-model="masterSort"') && rankings.includes('right[masterSort.value] - left[masterSort.value]') && adminOperations.includes('最高段位第一名称号') && adminOperations.includes('主宰最强玩家称号') && adminOperations.includes('rankedConfig.masterTitles'), '派系前五称号必须标明最高段位门槛，排行榜必须支持玩家榜、主宰榜、多维主宰排序、对阵一览、历史荣誉及醒目的多称号展示，后台必须支持逐主宰最强玩家称号'],
+  [rankings.includes("type RankingTab = 'players' | 'masters' | 'matchups' | 'history'") && rankings.includes('主宰对阵一览') && rankings.includes('历史荣誉') && rankings.includes('row.titles') && rankings.includes('title-badge') && rankings.includes('champion-title') && rankings.includes("type MasterSort = 'games' | 'winRate' | 'firstWinRate' | 'secondWinRate' | 'usageRate'") && rankings.includes('v-model="masterSort"') && rankings.includes('right[masterSort.value] - left[masterSort.value]') && seasonConfigurationEditor.includes('最高段位第一名称号') && seasonConfigurationEditor.includes('主宰最强玩家称号') && seasonConfigurationEditor.includes('ranked.masterTitles'), '派系前五称号必须标明最高段位门槛，排行榜必须支持玩家榜、主宰榜、多维主宰排序、对阵一览、历史荣誉及醒目的多称号展示，后台必须支持逐主宰最强玩家称号'],
   [rankings.includes('<h1>排行榜</h1>') && !rankings.includes('<h1>排位排行榜</h1>')
     && rankings.includes("import { masterProfileUrl } from '@/l12/specialAssets'")
     && rankings.includes('<MasterMatchupMatrix :masters="matrixRows" :cells="matrixCells"')
@@ -764,7 +765,7 @@ const contracts = [
     && disasterPoolPicker.includes('class="pool-card-copy"')
     && disasterPoolPicker.includes('.pool-card-copy b,.pool-card-copy small{position:static')
     && !disasterPoolPicker.includes('intent="thumb"')
-    && adminOperations.includes('<DisasterPoolPicker v-model="form.disasterPool.cardIds"')
+    && seasonConfigurationEditor.includes('<DisasterPoolPicker v-model="draft.configuration.disasterPool.cardIds"')
     && tournamentCenter.includes('<DisasterPoolPicker v-model="form.disasterCardIds"'), '赛季与赛事天灾池必须复用公共选择器，以不旋转、不裁切的8:5横版完整卡图展示，并将卡名和卡号置于卡图外的独立信息区'],
   [lobby.includes('class="ranked-rules-button"') && lobby.includes('>排位规则</button>') && lobby.includes('rankedRulesOpen') && lobby.includes('七曜值') && lobby.includes('段位与派系称号') && lobby.includes('最强主宰规则') && lobby.includes('排位用时') && lobby.includes('本赛季天灾') && lobby.includes('本赛季禁限卡'), '大厅排位区必须提供排位规则按钮，并集中说明七曜、派系段位称号、最强主宰、动态时限和赛季天灾/禁限卡'],
   [lobby.includes('.ranked-rules-modal{grid-template-rows:auto minmax(0,1fr) auto') && lobby.includes('.ranked-rules-scroll{min-height:0;align-content:start;overflow-x:hidden;overflow-y:scroll'), '排位规则正文必须拥有独立纵向滚动区，在小视口中也能阅读全部内容'],
@@ -773,7 +774,7 @@ const contracts = [
   [profilePage.includes('class="title-manager"') && profilePage.includes('ranked.profile.masterTitles') && profilePage.includes('saveRankedTitle') && platform.includes("'/api/ranked/title'") && board.includes('playerBadges') && board.includes('battleRank(enemyBadge)') && board.includes('battleTierLabel(enemyBadge)') && board.includes('enemyBadge?.placementTitle') && board.includes('myBadge?.masterTitle'), '个人页必须可选择已获得的最强主宰称号；对战玩家信息仅对各派系最高段展示全服名次，有段位称号时以称号替代普通段位，并保留所选主宰称号'],
   [board.includes("choiceMode === 'mixed-board-payment'") && board.includes("? '确认费用' : '确认目标'") && board.includes('lockedChoices'), '混合场面费用必须在同一场面直选条选择，唯一资源自动锁定且与弃置对象一并确认'],
   [rankedTicker.includes('@animationend="complete"') && rankedTicker.includes('animation:ranked-message-once 16s linear 1 both') && rankedPlayback.includes('claimNextRankedBroadcast') && rankedPlayback.includes('completeCurrentRankedBroadcast') && rankedPlayback.includes('accountId'), '排位广播必须按账号领取，完整播放一次后确认，不得在页面内循环重播同一消息'],
-  [adminOperations.includes('data-ui-contract="ranked-broadcast-config"') && adminOperations.includes('rankedConfig.broadcast.displaySeconds') && adminOperations.includes('rankedConfig.broadcast.minimumTierIndex'), '排位广播的时长、大厅延迟、间隔、门槛和类别开关必须由后台统一配置'],
+  [seasonConfigurationEditor.includes('data-ui-contract="ranked-broadcast-config"') && seasonConfigurationEditor.includes('ranked.broadcast.displaySeconds') && seasonConfigurationEditor.includes('ranked.broadcast.minimumTierIndex'), '排位广播的时长、大厅延迟、间隔、门槛和类别开关必须由后台统一配置'],
   [board.includes('selected-card-inspector-anchor') && board.includes(':style="modalInspectorVisible ? inspectorFloatStyle : undefined"'), '弹框期间详情必须由原选中卡牌框锚点定位'],
   [!board.includes('.modal-card-inspector') && !prompt.includes('.prompt-card-inspector'), '不得保留第二套弹框详情框样式'],
   [deckEditor.includes('class="saved-decks-panel grand-panel"') && deckEditor.includes('class="saved-list"')
@@ -1681,8 +1682,8 @@ contracts.push(
     && friendNotifications.includes('playL12FriendRequestSound') && friendNotifications.includes('expected !== generation'),
     '全局好友申请必须具备提示音、通过拒绝屏蔽及账号代次隔离'],
   [platform.includes('interface RankedTimeControlConfig') && platform.includes('DEFAULT_RANKED_TIME_CONTROL')
-    && adminOperations.includes('data-ui-contract="ranked-time-control-config"')
-    && adminOperations.includes('disasterDecisionSeconds') && adminOperations.includes('mulliganDecisionSeconds')
+    && seasonConfigurationEditor.includes('data-ui-contract="ranked-time-control-config"')
+    && seasonConfigurationEditor.includes('disasterDecisionSeconds') && seasonConfigurationEditor.includes('mulliganDecisionSeconds')
     && setupDecisionClock.includes("['DisasterPreparation', 'Mulligan'].includes(props.phase)")
     && setupDecisionClock.includes('operationRemainingMs') && setupDecisionClock.includes('receivedAtMs')
     && prompt.includes(':phase="game.phase"') && playerTurnClock.includes("props.phase")

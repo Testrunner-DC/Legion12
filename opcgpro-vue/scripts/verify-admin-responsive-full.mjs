@@ -101,6 +101,9 @@ platform.adminApi.runtimeStatus=async()=>({observedAt:'2026-09-25T08:00:00Z',ser
 const rankedTier=(name,minimum,index)=>({name,minimum,baseDelta:100+index*10,winStreakCap:50,lossProtectionCap:40,ratingGapCap:30,streakTerminationReward:20,color:'#d7ba63',icon:'◆'})
 const rankedFactions=['order','chaos','fate'].map((id,factionIndex)=>({id,name:['秩序','混沌','命运'][factionIndex],color:'#d7ba63',icon:'◆',firstTitle:'派系第一',topFiveTitle:'派系前五',tiers:['新星','星火','群星','璀璨','永恒'].map((name,index)=>rankedTier(name,index*10000,index))}))
 platform.adminApi.rankedConfig=async()=>({placementMatches:5,placementMaximum:19999,broadcastEnabled:true,factions:rankedFactions,masterTitles:[{masterId:'S01-0001',masterName:'验收主宰一号',title:'最强验收主宰'}],timeControl:{totalTimeSeconds:1500,operationTimeSeconds:240,reconnectGraceSeconds:240,disasterDecisionSeconds:60,mulliganDecisionSeconds:60},broadcast:{displaySeconds:16,lobbyDelaySeconds:3,intervalSeconds:15,winStreakThreshold:5,streakEndedThreshold:5,minimumTierIndex:0,winStreakEnabled:true,streakEndedEnabled:true,highestTierEnabled:true,factionTitleEnabled:true,masterTitleEnabled:true}})
+const seasonRanked=await platform.adminApi.rankedConfig()
+const seasonDefinition=(slot,id,name,revision)=>({definitionId:'definition-'+slot,seasonId:id,name,startsAt:'2026-09-01T00:00:00Z',endsAt:'2026-12-01T00:00:00Z',configuration:{disasterPool:structuredClone(operationsConfigPayload.disasterPool),cardRestrictions:structuredClone(operationsConfigPayload.cardRestrictions),defaultPresetDeckIds:[...operationsConfigPayload.defaultPresetDeckIds],ranked:structuredClone(seasonRanked)},lifecycleStatus:slot==='current'?'active':'draft',revision,createdBy:'qa-admin',createdAt:'2026-09-01T00:00:00Z',updatedBy:'qa-admin',updatedAt:'2026-09-25T08:00:00Z'})
+platform.adminApi.seasonCatalog=async()=>({current:seasonDefinition('current','S01','第一赛季·后台响应式验收',3),next:seasonDefinition('next','S02','第二赛季超长草稿名称用于响应式验收',1),archives:[],automaticActivationEnabled:false,operationsVersion:37})
 platform.rankedApi.broadcasts=async()=>[{id:'broadcast-qa',matchId:'MATCH-QA-001',eventType:'win-streak',message:'长昵称玩家一号已取得五连胜',createdAt:'2026-09-25T08:00:00Z'}]
 const coverage={schemaVersion:2,supportedKinds:[],exactFacts:90,inferredFacts:0,partialFacts:0,exactDeckSnapshots:40,inferredDeckSnapshots:0,privateDuringActiveMatch:false,metrics:[],limitations:['合成验证数据']}
 const uncertainty={status:'available',method:'wilson',low:.02,high:.14,reason:null}
@@ -147,7 +150,7 @@ const routePaths = [
 ]
 const viewports=[
  {width:320,height:568},{width:360,height:800},{width:390,height:844},{width:430,height:932},{width:768,height:1024},
- {width:1024,height:768},{width:1280,height:720},{width:1440,height:900},{width:1920,height:1080},{width:2560,height:1080},
+ {width:1024,height:768},{width:1280,height:720},{width:1366,height:768},{width:1440,height:900},{width:1920,height:1080},{width:2560,height:1080},
 ]
 
 let browser
@@ -203,7 +206,7 @@ async function prepareRoute(page,route){
  }
  if(route==='/admin/operations/config'){
   await page.getByLabel('赛季 ID').waitFor({state:'visible'})
-  await page.getByRole('button',{name:'预览差异'}).waitFor({state:'visible'})
+  await page.getByRole('button',{name:'预览赛季定义'}).waitFor({state:'visible'})
   await page.getByRole('button',{name:/排位与七曜/}).click();await page.getByLabel('定级场次').waitFor({state:'visible'});await page.getByText('近期排位快讯',{exact:true}).waitFor({state:'visible'});assert.equal(await page.getByText('暂无排位快讯',{exact:true}).count(),0,'ranked broadcast success fixture')
   await page.getByRole('button',{name:/版本与状态/}).click();await page.getByText('2026.09.25-responsive-qa-long-version',{exact:true}).waitFor({state:'visible'});await page.getByText('上一版响应式验收配置',{exact:true}).waitFor({state:'visible'})
   await page.getByRole('button',{name:/赛季与天灾/}).click();await page.getByLabel('赛季 ID').waitFor({state:'visible'})

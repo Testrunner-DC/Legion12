@@ -500,6 +500,62 @@ export interface OperationsConfigPreview {
 export interface OperationsConfigOperation {
   applied: boolean; current: OperationsConfigView; historyEntry: OperationsConfigVersion; changes: string[]
 }
+export interface SeasonScopedConfig {
+  disasterPool: OperationsDisasterPoolConfig
+  cardRestrictions: OperationsCardRestriction[]
+  defaultPresetDeckIds: string[]
+  ranked: RankedConfig
+}
+export interface SeasonDefinitionDraft {
+  seasonId: string
+  name: string
+  startsAt?: string | null
+  endsAt?: string | null
+  configuration: SeasonScopedConfig
+}
+export interface SeasonDefinitionView extends SeasonDefinitionDraft {
+  definitionId: string
+  lifecycleStatus: 'active' | 'draft' | string
+  revision: number
+  previousSeasonId?: string
+  nextSeasonId?: string
+  createdBy: string
+  createdAt: string
+  updatedBy: string
+  updatedAt: string
+  activatedAt?: string
+}
+export interface SeasonArchiveView {
+  archiveId: string; sourceDefinitionId: string; seasonId: string; name: string; definitionRevision: number
+  previousSeasonId?: string; nextSeasonId?: string; startsAt?: string | null; endsAt?: string | null
+  configuration: SeasonScopedConfig; activatedAt?: string; archivedAt: string; archivedBy: string
+}
+export interface SeasonCatalog {
+  current: SeasonDefinitionView
+  next?: SeasonDefinitionView
+  archives: SeasonArchiveView[]
+  automaticActivationEnabled: boolean
+  operationsVersion: number
+}
+export interface SeasonDefinitionPreview {
+  valid: boolean
+  slot: 'current' | 'next'
+  currentRevision: number
+  nextRevision: number
+  operationsVersion: number
+  normalized: SeasonDefinitionDraft
+  changes: string[]
+  warnings: string[]
+  previewToken: string
+}
+export interface SeasonDefinitionOperation {
+  applied: boolean
+  slot: 'current' | 'next'
+  definition: SeasonDefinitionView
+  previousRevision: number
+  operationsVersion: number
+  changes: string[]
+}
 export interface ServerStartOperation { applied: boolean; alreadyStarted: boolean; current: OperationsConfigView }
 export interface ImmediateMaintenanceOperation { applied: boolean; alreadyApplied: boolean; current: OperationsConfigView }
 export interface RuntimeDependencyStatus {
@@ -1287,6 +1343,31 @@ export const adminApi = {
     return platformRequest<AdminAudit[]>(`/api/admin/v1/audit${params.size ? `?${params}` : ''}`)
   },
   operationsConfig: () => platformRequest<OperationsConfigView>('/api/admin/operations/config'),
+  seasonCatalog: () => platformRequest<SeasonCatalog>('/api/admin/seasons'),
+  previewSeasonDefinition: (definitionId: string, draft: SeasonDefinitionDraft,
+    expectedRevision: number, expectedVersion: number) => platformRequest<SeasonDefinitionPreview>(
+      `/api/admin/seasons/${encodeURIComponent(definitionId)}/preview`, {
+        method: 'POST', body: JSON.stringify({ draft, expectedRevision, expectedVersion }),
+      }),
+  applySeasonDefinition: (definitionId: string, draft: SeasonDefinitionDraft,
+    expectedRevision: number, expectedVersion: number, previewToken: string,
+    reason: string, idempotencyKey: string) => platformRequest<SeasonDefinitionOperation>(
+      `/api/admin/seasons/${encodeURIComponent(definitionId)}`, {
+        method: 'PUT', body: JSON.stringify({ draft, expectedRevision, expectedVersion,
+          previewToken, reason, idempotencyKey }),
+      }),
+  createSeasonDraft: (expectedCurrentRevision: number, expectedVersion: number,
+    reason: string, idempotencyKey: string) => platformRequest<SeasonDefinitionView>(
+      '/api/admin/seasons/draft', {
+        method: 'POST', body: JSON.stringify({ expectedCurrentRevision, expectedVersion,
+          reason, idempotencyKey }),
+      }),
+  deleteSeasonDraft: (definitionId: string, expectedRevision: number,
+    expectedVersion: number, reason: string, idempotencyKey: string) => platformRequest<void>(
+      `/api/admin/seasons/draft/${encodeURIComponent(definitionId)}`, {
+        method: 'DELETE', body: JSON.stringify({ expectedRevision, expectedVersion,
+          reason, idempotencyKey }),
+      }),
   operationsHistory: (limit = 50) => platformRequest<OperationsConfigVersion[]>(`/api/admin/operations/config/history?limit=${Math.max(1, Math.min(200, limit))}`),
   previewOperationsConfig: (config: OperationsConfigPayload, expectedVersion?: number) => platformRequest<OperationsConfigPreview>('/api/admin/operations/config/preview', {
     method: 'POST', body: JSON.stringify({ config, expectedVersion }),
