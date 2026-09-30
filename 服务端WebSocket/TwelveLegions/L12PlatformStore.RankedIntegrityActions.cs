@@ -538,6 +538,8 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
+            if (IsRankedSeasonCutoverFenced(now))
+                return "赛季正在切换，暂不接受新的排位对局；已开始的对局仍可恢复并完成";
             var activeRestriction = _data.RankedIntegrityDecisions
                 .Where(row => row.Disposition == "confirmed" && !IsDecisionRevokedLocked(row.Id))
                 .SelectMany(row => row.AccountEffects)

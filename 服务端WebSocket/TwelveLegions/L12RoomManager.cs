@@ -405,7 +405,7 @@ public sealed partial class L12RoomManager
         if (!session.Connected) return Error(sessionId, "连接已失效，请重新连接", "matchmakingRejected");
         if (normalizedMode == "ranked")
         {
-            var entryBlock = _platform.RankedEntryBlock(session.AccountId, _utcNow());
+            var entryBlock = RankedAdmissionBlock(session.AccountId, _utcNow());
             if (entryBlock is not null) return MatchmakingError(sessionId, entryBlock);
             if (HasOtherRankedBrowserOccupant(session))
                 return MatchmakingError(sessionId, "此浏览器已有其他账号正在排位匹配或对局中，请先结束后再试。此限制不代表违规判定。");
@@ -453,8 +453,8 @@ public sealed partial class L12RoomManager
             return await JoinMatchmakingCoreAsync(sessionId, normalizedMode, submission);
         if (normalizedMode == "ranked")
         {
-            var firstBlock = _platform.RankedEntryBlock(session.AccountId, _utcNow());
-            var secondBlock = _platform.RankedEntryBlock(other.AccountId!, _utcNow());
+            var firstBlock = RankedAdmissionBlock(session.AccountId, _utcNow());
+            var secondBlock = RankedAdmissionBlock(other.AccountId!, _utcNow());
             if (firstBlock is not null || secondBlock is not null)
                 return MatchmakingError(sessionId, firstBlock ?? "匹配对象暂不可进行排位，请重新匹配")
                     .Concat(MatchmakingError(other.Id, secondBlock ?? "匹配对象暂不可进行排位，请重新匹配")).ToArray();

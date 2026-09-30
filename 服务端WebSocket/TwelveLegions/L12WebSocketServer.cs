@@ -50,6 +50,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private CancellationTokenSource? _rankedClockWatchdogCancellation;
     private Task? _rankedClockWatchdogTask;
     private readonly TimeSpan _sandboxReplayMaintenanceInterval;
+    private readonly Func<DateTimeOffset> _seasonActivationUtcNow;
     private CancellationTokenSource? _sandboxReplayMaintenanceCancellation;
     private Task? _sandboxReplayMaintenanceTask;
     private WebApplication? _app;
@@ -62,7 +63,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         string? rankedIntegrityHmacKey = null, TimeSpan? rankedClockWatchdogInterval = null,
         IL12ModianImportClient? modianImportClient = null,
         TimeSpan? sandboxReplayMaintenanceInterval = null,
-        Func<L12ServerStorageView>? storageSnapshot = null)
+        Func<L12ServerStorageView>? storageSnapshot = null,
+        Func<DateTimeOffset>? seasonActivationUtcNow = null)
     {
         _rooms = rooms;
         _recorder = recorder;
@@ -79,6 +81,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                                             && maintenanceInterval > TimeSpan.Zero
             ? maintenanceInterval : TimeSpan.FromMinutes(5);
         _storageSnapshot = storageSnapshot ?? (() => L12ServerStorageMonitor.Read());
+        _seasonActivationUtcNow = seasonActivationUtcNow ?? (() => DateTimeOffset.UtcNow);
         _catalog = catalog;
         _cardCount = catalog.Cards.Count;
         _platform.SessionsRevoked += HandlePlatformSessionsRevoked;
@@ -652,6 +655,50 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     NotifySeasonSummaryNotificationsChanged(
                         _platform.SeasonSummaryRecipients(outcome.Value.Archive.SeasonId));
             }
+            var response = AdminCommandResponse(request, command, outcome);
+            request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
+            return response;
+        });
+        _app.MapPost("/api/admin/seasons/draft/{definitionId}/arm", (HttpRequest request,
+            string definitionId, SeasonActivationArmRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12SeasonActivationArmCommandPayload(definitionId,
+                body.ExpectedCurrentRevision, body.ExpectedDraftRevision);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "operations.config.season-activation-arm", "operations:config", payload, key,
+                expected, false, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission,
+                current => ExecuteOperationsConfig(() => _platform.ArmSeasonActivation(current.Actor,
+                    current.Payload.DefinitionId, current.Payload.ExpectedCurrentRevision,
+                    current.Payload.ExpectedDraftRevision, expected, current.Reason ?? string.Empty,
+                    DateTimeOffset.UtcNow, current.AuditContext)), risk: L12AdminCommandRisk.High);
+            if (outcome.Success) ScheduleSeasonActivationEvaluation();
+            var response = AdminCommandResponse(request, command, outcome);
+            request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
+            return response;
+        });
+        _app.MapPost("/api/admin/seasons/draft/{definitionId}/disarm", (HttpRequest request,
+            string definitionId, SeasonActivationDisarmRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12SeasonActivationDisarmCommandPayload(definitionId,
+                body.ExpectedDraftRevision);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "operations.config.season-activation-disarm", "operations:config", payload, key,
+                expected, false, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission,
+                current => ExecuteOperationsConfig(() => _platform.DisarmSeasonActivation(current.Actor,
+                    current.Payload.DefinitionId, current.Payload.ExpectedDraftRevision,
+                    current.Reason ?? string.Empty, DateTimeOffset.UtcNow, current.AuditContext)),
+                risk: L12AdminCommandRisk.High);
+            if (outcome.Success) ScheduleSeasonActivationEvaluation();
             var response = AdminCommandResponse(request, command, outcome);
             request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
             return response;
@@ -3046,6 +3093,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _sandboxReplayMaintenanceCancellation = new CancellationTokenSource();
         _sandboxReplayMaintenanceTask = RunSandboxReplayMaintenanceAsync(
             _sandboxReplayMaintenanceCancellation.Token);
+        StartSeasonActivationCoordinator();
         ScheduleNextOperationsTransition();
         ScheduleNextRulesContentTransition();
         Console.WriteLine($"HTTP: http://{host}:{port}  WebSocket: /ws");
@@ -3053,6 +3101,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
 
     public async Task StopAsync()
     {
+        await StopSeasonActivationCoordinatorAsync();
         await StopRulesContentTransitionAsync();
         await StopOperationsTransitionAsync();
         await StopSandboxReplayMaintenanceAsync();
@@ -4728,6 +4777,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _platform.SessionsRevoked -= HandlePlatformSessionsRevoked;
+        await StopSeasonActivationCoordinatorAsync();
         await StopRulesContentTransitionAsync();
         await StopSandboxReplayMaintenanceAsync();
         await StopRankedClockWatchdogAsync();
@@ -4789,6 +4839,14 @@ public sealed record SeasonActivationRequest(long ExpectedCurrentRevision, long 
     string? Reason = null, string? IdempotencyKey = null, long? ExpectedVersion = null);
 public sealed record L12SeasonActivationCommandPayload(string DefinitionId,
     long ExpectedCurrentRevision, long ExpectedDraftRevision);
+public sealed record SeasonActivationArmRequest(long ExpectedCurrentRevision, long ExpectedDraftRevision,
+    string? Reason = null, string? IdempotencyKey = null, long? ExpectedVersion = null);
+public sealed record L12SeasonActivationArmCommandPayload(string DefinitionId,
+    long ExpectedCurrentRevision, long ExpectedDraftRevision);
+public sealed record SeasonActivationDisarmRequest(long ExpectedDraftRevision, string? Reason = null,
+    string? IdempotencyKey = null, long? ExpectedVersion = null);
+public sealed record L12SeasonActivationDisarmCommandPayload(string DefinitionId,
+    long ExpectedDraftRevision);
 public sealed record OperationsServerStartRequest(string? Reason = null,
     string? IdempotencyKey = null, long? ExpectedVersion = null);
 public sealed record L12ServerStartCommandPayload(long ExpectedVersion, string RequestedState = "open");

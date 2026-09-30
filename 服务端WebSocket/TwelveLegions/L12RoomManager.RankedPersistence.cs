@@ -17,6 +17,15 @@ public sealed partial class L12RoomManager
     };
 
     internal Func<Task>? RankedSeasonCutoverFinalCheckInjector { get; set; }
+    private int _rankedSeasonCutoverInProgress;
+
+    private string? RankedAdmissionBlock(string accountId, DateTimeOffset now)
+    {
+        if (Volatile.Read(ref _rankedSeasonCutoverInProgress) > 0
+            || (_platform?.IsRankedSeasonCutoverFenced(now) ?? false))
+            return "赛季正在切换，暂不接受新的排位对局；已开始的对局仍可恢复并完成";
+        return _platform?.RankedEntryBlock(accountId, now);
+    }
 
     private async Task StartRecordedGameAsync(Room room, IReadOnlyList<Session> members,
         IReadOnlyList<L12PresetDeckDefinition> decks)
@@ -26,9 +35,13 @@ public sealed partial class L12RoomManager
         if (ranked) await _rankedSeasonGate.WaitAsync();
         try
         {
-            if (ranked && !string.Equals(room.OperationsPolicy.Season.Id,
-                    CaptureOperationsPolicy().Season.Id, StringComparison.OrdinalIgnoreCase))
-                throw new L12RankedSeasonChangedException();
+            if (ranked)
+            {
+                if (_platform?.IsRankedSeasonCutoverFenced(_utcNow()) == true
+                    || !string.Equals(room.OperationsPolicy.Season.Id,
+                        CaptureOperationsPolicy().Season.Id, StringComparison.OrdinalIgnoreCase))
+                    throw new L12RankedSeasonChangedException();
+            }
             var bindings = decks.Select((deck, index) => _platform?.ResolvePublicDeckBinding(
                 members[index].AccountId, deck, deck.PublicationId, deck.PublicationVersion)).ToArray();
             if (room.RankedClock is null)
@@ -58,6 +71,7 @@ public sealed partial class L12RoomManager
         Func<L12RankedSeasonCutoverReadiness, T> activate)
     {
         if (_platform is null) throw new InvalidOperationException("排位平台服务不可用");
+        Interlocked.Increment(ref _rankedSeasonCutoverInProgress);
         await _rankedSeasonGate.WaitAsync();
         try
         {
@@ -69,7 +83,11 @@ public sealed partial class L12RoomManager
             var readiness = await CaptureRankedSeasonCutoverReadinessAsync(seasonId);
             return activate(readiness);
         }
-        finally { _rankedSeasonGate.Release(); }
+        finally
+        {
+            _rankedSeasonGate.Release();
+            Interlocked.Decrement(ref _rankedSeasonCutoverInProgress);
+        }
     }
 
     private async Task<L12RankedSeasonCutoverReadiness> CaptureRankedSeasonCutoverReadinessAsync(

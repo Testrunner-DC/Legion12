@@ -31,7 +31,7 @@ public sealed class SeasonLifecycleManagementTests
 
             var seasons = store.SeasonCatalog(admin);
 
-            Assert.False(seasons.AutomaticActivationEnabled);
+            Assert.True(seasons.AutomaticActivationEnabled);
             Assert.Equal(runtime.Config.Season.Id, seasons.Current.SeasonId);
             Assert.Equal("active", seasons.Current.LifecycleStatus);
             Assert.NotNull(seasons.Next);
@@ -563,7 +563,7 @@ public sealed class SeasonLifecycleManagementTests
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
                 seasons = (await response.Content.ReadFromJsonAsync<L12SeasonCatalogView>())!;
             }
-            Assert.False(seasons.AutomaticActivationEnabled);
+            Assert.True(seasons.AutomaticActivationEnabled);
             Assert.NotNull(seasons.Next);
 
             var beforeActiveLegacyOperations = store.OperationsConfig(admin.Account!);
