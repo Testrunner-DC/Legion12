@@ -29,6 +29,12 @@ optional.presentation.instruction = '请选择一种处理方式。'
 equal(copy.promptInstructionCopy(optional), '')
 optional.presentation.instruction = '请选择一种处理方式；需弃置1张手牌。'
 equal(copy.promptInstructionCopy(optional), '请选择一项；需弃置1张手牌。')
+const branchChoice = prompt({ kind: 'option', validChoices: ['top', 'bottom'],
+  choiceLabels: { top: '置于牌库顶部', bottom: '置于牌库底部' } })
+branchChoice.presentation.instruction = '请决定是否执行〈杨戬〉的效果。'
+equal(copy.promptInstructionCopy(branchChoice), '请选择处理方式。')
+branchChoice.presentation.instruction = '请决定是否执行〈杨戬〉的效果；已支付2士气不返还。'
+equal(copy.promptInstructionCopy(branchChoice), '请决定是否执行〈杨戬〉的效果；已支付2士气不返还。')
 optional.presentation.choiceConsequences.skip = '不发动：不受此伤害，不抽牌。'
 equal(copy.promptConsequenceCopy(optional, 'skip', '不发动'), '')
 optional.presentation.choiceConsequences.pass = '不打出响应牌。'
@@ -60,6 +66,30 @@ for (const kind of ['response', 'discard-cost', 'target', 'slot', 'card', 'optio
   item.presentation.situation = JSON.parse(before).presentation.situation
   equal(JSON.stringify(item), before)
 }
+const stackedResponse = prompt({ kind: 'response', data: {}, presentation: {
+  situation: '对手使用〈天诛〉。\n已选目标：我方前排左格〈陵墓守卫〉。\n是否响应？\n\n你使用〈守护〉。\n是否响应？',
+} })
+equal(copy.promptSituationCopy(stackedResponse),
+  '对手使用〈天诛〉。\n已选目标：我方前排左格〈陵墓守卫〉。\n\n你使用〈守护〉。\n是否响应？')
+equal(stackedResponse.presentation.situation.match(/是否响应？/g).length, 2)
+const resourcePayment = prompt({ kind: 'resource-payment', minChoose: 2, maxChoose: 2,
+  validChoices: ['morale-a', 'god-power', 'cancel'], presentation: {
+    title: '光之剑', situation: '〈光之剑〉需要支付2份资源才能继续。可用资源为士气、神力。',
+    instruction: '请选择恰好2份可用资源并确认；也可以取消当前操作。',
+    paymentStatus: 'pending', paymentSummary: '2份资源（士气、神力）',
+    submissionConsequence: '支付所选的2份资源。',
+    choiceConsequences: { cancel: '取消整次打出，不支付任何资源。' },
+  } })
+equal(copy.promptSituationCopy(resourcePayment), '')
+equal(copy.promptInstructionCopy(resourcePayment), '请选择要支付的资源。')
+equal(copy.promptPaymentCopy(resourcePayment), '待支付：2份资源（士气、神力）')
+equal(copy.promptSubmissionCopy(resourcePayment), '确认后支付所选资源。')
+equal(copy.promptConsequenceCopy(resourcePayment, 'cancel', '取消'), '取消整次打出，不支付任何资源。')
+resourcePayment.presentation.situation += '已支付费用不返还。'
+equal(copy.promptSituationCopy(resourcePayment), resourcePayment.presentation.situation)
+resourcePayment.presentation.situation = '〈光之剑〉需要支付2份资源才能继续。可用资源为士气、神力。'
+resourcePayment.presentation.instruction += '已支付费用不返还。'
+equal(copy.promptInstructionCopy(resourcePayment), resourcePayment.presentation.instruction)
 for (const [status, summary, expected] of [['paid', '已支付2士气', '已支付2士气'], ['pending', '弃置1张手牌', '待支付：弃置1张手牌'], ['pending', '尚未支付弃牌费用', '尚未支付弃牌费用']]) {
   const item = prompt(); item.presentation.paymentStatus = status; item.presentation.paymentSummary = summary
   equal(copy.promptPaymentCopy(item), expected)

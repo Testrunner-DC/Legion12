@@ -47,6 +47,25 @@ function narrativeSituation(value: string): string {
   return value.replace(/^〈[^〉]+〉的(?:登场时|晋升登场|阵亡时|进攻时)效果(?:正在结算|可以选择是否发动|正在选择登场对象|正在选择墓地回收对象)。/, '')
 }
 
+function structuredResourcePayment(prompt: Prompt): boolean {
+  if (prompt.kind !== 'resource-payment' || prompt.presentation?.paymentStatus !== 'pending') return false
+  const situation = prompt.presentation.situation?.match(/^〈[^〉]+〉需要支付(\d+)份资源才能继续。可用资源为(.+)。$/)
+  if (!situation) return false
+  const instruction = prompt.presentation.instruction
+  const exactInstruction = `请选择恰好${situation[1]}份可用资源并确认。`
+  return Number(situation[1]) === prompt.minChoose && prompt.minChoose === prompt.maxChoose
+    && prompt.presentation.paymentSummary === `${situation[1]}份资源（${situation[2]}）`
+    && (instruction === exactInstruction
+      || prompt.validChoices.includes('cancel') && instruction === `请选择恰好${situation[1]}份可用资源并确认；也可以取消当前操作。`)
+}
+
+function oneResponseQuestion(value: string): string {
+  const lines = value.split('\n')
+  const questions = lines.filter(line => line.trim() === '是否响应？').length
+  if (questions < 2) return value
+  return `${lines.filter(line => line.trim() !== '是否响应？').join('\n').trimEnd()}\n是否响应？`
+}
+
 function hasDeclineButton(prompt: Prompt): boolean {
   return prompt.validChoices.some(id =>
     compactPromptCopy(prompt.choiceLabels?.[id] || prompt.data?.[id]).replace(/[。；]+$/, '') === '不发动')
@@ -88,6 +107,7 @@ function declineInstruction(value: string): string {
 }
 
 export function promptSituationCopy(prompt: Prompt): string {
+  if (structuredResourcePayment(prompt)) return ''
   // Only presentation.situation has narrative wrappers; legacy/card prose stays
   // verbatim. responseContext remains recipient-safe server metadata.
   let text = prompt.presentation?.situation?.trim()
@@ -96,16 +116,20 @@ export function promptSituationCopy(prompt: Prompt): string {
   if (prompt.presentation?.situation && hasDeclineButton(prompt))
     text = text.replace(/，也可以不发动(?=。|$)/g, '')
   const context = prompt.data?.responseContext?.trim()
-  if (!context) return text
+  if (!context) return prompt.kind === 'response' ? oneResponseQuestion(text) : text
   // Once choosing a response's cost/target, do not ask whether to respond again.
   const detail = prompt.kind === 'response' ? context : context.replace(/\n是否响应？$/, '')
-  if (text.includes(context)) return text.replace(context, detail)
-  return text.includes(detail) ? text : `${text}\n${detail}`
+  if (text.includes(context)) return prompt.kind === 'response' ? oneResponseQuestion(text.replace(context, detail)) : text.replace(context, detail)
+  const combined = text.includes(detail) ? text : `${text}\n${detail}`
+  return prompt.kind === 'response' ? oneResponseQuestion(combined) : combined
 }
 
 export function promptInstructionCopy(prompt: Prompt, fallback = ''): string {
+  if (structuredResourcePayment(prompt)) return '请选择要支付的资源。'
   const raw = compactPromptCopy(prompt.presentation?.instruction || fallback)
-  const instruction = prompt.presentation?.instruction && hasDeclineButton(prompt) ? declineInstruction(raw) : raw
+  const instruction = prompt.kind === 'option' && /^请决定是否执行〈[^〉]+〉的效果。$/.test(raw)
+    ? '请选择处理方式。'
+    : prompt.presentation?.instruction && hasDeclineButton(prompt) ? declineInstruction(raw) : raw
   // The action buttons already ask this question. Only suppress the complete
   // generic instruction, never a sentence with payment / targeting conditions.
   const genericDecision = new Set(['请选择一项。', '请选择是否发动', '请选择是否发动。', '请决定是否执行本次效果。', '请决定是否响应当前效果。'])
@@ -131,6 +155,9 @@ export function promptConsequenceCopy(prompt: Prompt, id: string, label: string)
 }
 
 export function promptSubmissionCopy(prompt: Prompt): string {
+  if (structuredResourcePayment(prompt)
+      && prompt.presentation?.submissionConsequence === `支付所选的${prompt.minChoose}份资源。`)
+    return '确认后支付所选资源。'
   const text = compactPromptCopy(prompt.presentation?.submissionConsequence)
   return sameCopy(actionCopy(text), actionCopy(promptInstructionCopy(prompt))) || sameCopy(text, promptSituationCopy(prompt)) ? '' : text
 }
