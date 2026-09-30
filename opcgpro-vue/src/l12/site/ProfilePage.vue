@@ -55,6 +55,8 @@ const ranked = ref<RankedOverview | null>(null)
 const playerStatistics = ref<PlayerStatistics | null>(null)
 const ownedAlternateArts = ref<AlternateArt[]>([])
 const profileTitleVariant = (title: string) => ranked.value?.profile.masterTitles.includes(title) || title.startsWith('最强') ? 'master-title' as const : 'faction-title' as const
+const historyTitleVariant = (title: string, masterTitles: string[]) => masterTitles.includes(title) || title.startsWith('最强') ? 'master-title' as const : 'faction-title' as const
+const historyWinRate = (value?: number | null) => value == null ? '—' : `${value.toFixed(1)}%`
 const selectedMasterTitle = ref('')
 const masterTitleRulesOpen = ref(false)
 const compactProfile = ref(false)
@@ -337,6 +339,17 @@ function openBugFeedback() { (document.querySelector('.bug-feedback-trigger') as
     <button v-if="platformState.account && section === 'overview'" class="feedback-banner" type="button" @click="openBugFeedback"><span><b>反馈 Bug 和建议</b><small>将当前页面与对局环境一并提交，方便准确复现问题。</small></span><i>进入反馈 →</i></button>
     <p v-if="notice" class="notice" role="status" aria-live="polite" aria-atomic="true">{{ notice }}</p>
     <section v-if="platformState.account && ranked && (section === 'overview' || section === 'collection')" class="rank-overview"><header><div><small>RANKED PROFILE</small><h2>本赛季排位</h2></div><div class="rank-links"><router-link to="/battle/rankings">查看排行榜 →</router-link></div></header><div class="rank-body"><article><span>派系</span><b>{{ ranked.profile.faction || '尚未选择' }}</b></article><article><span>段位</span><RankedIdentityBadge variant="tier" :faction="ranked.profile.faction" :label="ranked.profile.rankLabel"/></article><article><span>七曜值</span><b>{{ ranked.profile.sevenValue.toLocaleString() }}</b></article><article><span>排位胜率</span><b>{{ rankedWinRate }}</b></article></div><div v-if="ranked.profile.titles.length" class="profile-titles"><RankedIdentityBadge v-for="title in ranked.profile.titles" :key="title" :variant="profileTitleVariant(title)" :faction="ranked.profile.faction" :label="title"/></div><p v-else>达到称号条件后会在这里展示派系与最强主宰称号。</p><section class="title-manager"><div class="title-manager-heading"><b>最强称号管理</b><button type="button" @click="masterTitleRulesOpen = true">最强称号规则</button></div><span class="title-manager-description">对战中依次显示全服名次、段位、已获得的派系段位称号和1个已选择的最强主宰称号；没有的称号不会显示。</span><div v-if="ranked.profile.masterTitles.length" class="title-manager-controls"><select v-model="selectedMasterTitle"><option v-for="title in ranked.profile.masterTitles" :key="title" :value="title">{{ title }}</option></select><button :disabled="authBusy || selectedMasterTitle === (ranked.profile.selectedMasterTitle || '')" @click="saveRankedTitle">保存称号</button></div><em v-else>近 30 日尚未获得最强主宰称号</em></section></section>
+    <section v-if="platformState.account && ranked && section === 'overview'" class="season-history">
+      <header><div><small>SEASON HISTORY</small><h2>赛季历史</h2></div><span>只记录已正式结束的赛季</span></header>
+      <div v-if="ranked.history.length" class="season-history-list">
+        <article v-for="item in ranked.history" :key="`${item.seasonId}-${item.archivedAt}`">
+          <header><div><b>{{ item.seasonName || item.seasonId }}</b><span>{{ new Date(item.archivedAt).toLocaleDateString() }}</span></div><RankedIdentityBadge variant="tier" :faction="item.faction" :label="item.rankLabel || (item.placed === null || item.placed === undefined ? '历史版本未记录' : item.placed ? item.tier : `定级 ${item.placementPlayed}/${item.placementRequired ?? '—'}`)"/></header>
+          <div class="season-history-facts"><span>派系 <b>{{ item.faction }}</b></span><span>派系名次 <b>{{ item.factionRank ? `第 ${item.factionRank} 名` : (item.placed === null || item.placed === undefined ? '历史版本未记录' : item.placed ? '—' : '未完成定级') }}</b></span><span v-if="item.overallRank">全服名次 <b>第 {{ item.overallRank }} 名</b></span><span>七曜值 <b>{{ item.sevenValue.toLocaleString() }}</b></span><span>胜率 <b>{{ historyWinRate(item.winRate) }}</b></span><span>胜负 <b>{{ item.wins }} / {{ item.losses }}</b></span></div>
+          <div v-if="item.titles.length" class="profile-titles"><RankedIdentityBadge v-for="title in item.titles" :key="title" :variant="historyTitleVariant(title, item.masterTitles)" :faction="item.faction" :label="title"/></div>
+        </article>
+      </div>
+      <p v-else>赛季正式结束后，最终段位、名次、七曜值、胜率和称号会保存在这里。</p>
+    </section>
     <section v-if="platformState.account && section === 'performance'" class="statistics-range-panel">
       <div><small>PERFORMANCE RANGE</small><h2>总体战绩</h2><p>选择要查看的战绩时间范围。</p></div>
       <nav aria-label="战绩时间范围"><button v-for="item in statisticsRanges" :key="item.id" type="button" :aria-pressed="statisticsRange === item.id" @click="switchStatisticsRange(item.id)">{{ item.label }}</button></nav>
@@ -422,5 +435,8 @@ function openBugFeedback() { (document.querySelector('.bug-feedback-trigger') as
   .session-manager>summary{min-height:44px}.session-manager:not([open])> :not(summary){display:none}.session-manager>.session-actions{width:100%}.session-manager>.session-actions button{min-height:44px;flex:1}
   .account-panel>summary,.switch-row button,.rank-links button,.title-manager button,.title-manager select{min-height:var(--l12-site-hit,44px)}
 }
+.season-history{min-width:0;margin:12px 0;padding:20px;border:1px solid #35424a;background:#101821;overflow-x:hidden}.season-history>header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding-bottom:12px;border-bottom:1px solid #35424a}.season-history>header small{color:#52c3ca;font:900 14px monospace;letter-spacing:.16em}.season-history>header h2{margin:4px 0 0}.season-history>header>span,.season-history>p{color:#7e8b91;font-size:14px}.season-history-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.season-history-list>article{min-width:0;padding:14px;border:1px solid #4d3470;background:#100c1c}.season-history-list>article>header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.season-history-list>article>header div{min-width:0}.season-history-list>article>header b,.season-history-list>article>header span{display:block;overflow-wrap:anywhere}.season-history-list>article>header>div>b{color:#eadbff}.season-history-list>article>header>div>span{margin-top:4px;color:#756b7e;font-size:12px}.season-history-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:12px}.season-history-facts>span{min-width:0;padding:8px;border:1px solid #37284a;color:#8f80a2;font-size:12px;overflow-wrap:anywhere}.season-history-facts b{display:block;margin-top:3px;color:#ece5f4;font-size:14px}
+@media(max-width:900px){.season-history-list{grid-template-columns:1fr}.season-history-facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.season-history{padding:14px}.season-history>header{align-items:flex-start;flex-direction:column}.season-history-list>article>header{align-items:flex-start;flex-direction:column}.season-history-facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
 

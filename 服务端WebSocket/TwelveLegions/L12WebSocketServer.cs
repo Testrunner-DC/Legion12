@@ -645,7 +645,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                         current.Payload.DefinitionId, current.Payload.ExpectedCurrentRevision,
                         current.Payload.ExpectedDraftRevision, current.Reason ?? string.Empty,
                         readiness, current.AuditContext)), risk: L12AdminCommandRisk.High));
-            if (outcome.Success) NotifyOperationsPolicyChanged();
+            if (outcome.Success)
+            {
+                NotifyOperationsPolicyChanged();
+                if (outcome.Value is not null)
+                    NotifySeasonSummaryNotificationsChanged(
+                        _platform.SeasonSummaryRecipients(outcome.Value.Archive.SeasonId));
+            }
             var response = AdminCommandResponse(request, command, outcome);
             request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
             return response;
@@ -2770,6 +2776,28 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             return account is null ? Results.Unauthorized() : Results.Ok(_platform.PendingAlternateArtGrantNotifications(account.Id));
+        });
+        _app.MapGet("/api/me/season-summary-notifications", (HttpRequest request) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            return account is null ? Results.Unauthorized()
+                : Results.Ok(_platform.PendingSeasonSummaryNotifications(account.Id));
+        });
+        _app.MapPost("/api/me/season-summary-notifications/{id}/acknowledge",
+            (HttpRequest request, string id) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            try
+            {
+                _platform.AcknowledgeSeasonSummaryNotification(account.Id, id);
+                return Results.NoContent();
+            }
+            catch (KeyNotFoundException error)
+            {
+                return ApiError(request, "season_summary_notification_missing", error.Message,
+                    StatusCodes.Status404NotFound);
+            }
         });
         _app.MapPost("/api/me/alternate-art-grant-notifications/{id}/acknowledge", (HttpRequest request, string id) =>
         {

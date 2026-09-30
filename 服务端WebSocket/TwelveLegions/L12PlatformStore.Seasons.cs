@@ -533,7 +533,7 @@ public sealed partial class L12PlatformStore
             var nextOperations = ToRow(nextPayload, operations.Version + 1, actor.Username,
                 operations.ImmediateMaintenance);
 
-            FinalizeOutgoingRankedSeason(current.SeasonId, current.Name, draft.SeasonId);
+            FinalizeOutgoingRankedSeason(current.SeasonId, current.Name, draft.SeasonId, now);
             SeasonActivationFailureInjector?.Invoke("after-season-finalization");
             var archive = new SeasonArchiveRow
             {

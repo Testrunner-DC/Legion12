@@ -47,7 +47,7 @@ public sealed class RankedPlatformTests
     }
 
     [Fact]
-    public void FactionChangeResetsVisibleSeasonProgressButKeepsHiddenRating()
+    public void FactionChangeResetsVisibleSeasonProgressButKeepsHiddenRatingAndHistoryFinalOnly()
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-switch", Guid.NewGuid().ToString("N"));
         var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
@@ -64,15 +64,7 @@ public sealed class RankedPlatformTests
         Assert.Equal(0, changed.PlacementPlayed);
         Assert.Equal(0, changed.SevenValue);
         Assert.Equal(hidden, store.HiddenRating(first.Id));
-        var history = Assert.Single(store.RankedOverview(first.Id).History);
-        Assert.Equal("秩序", history.Faction);
-        Assert.Equal(1, history.PlacementPlayed);
-        Assert.False(string.IsNullOrWhiteSpace(history.SeasonName));
-        Assert.Equal($"七曜值 {history.SevenValue:N0}", history.DisplayValue);
-        Assert.Equal(100d, history.WinRate);
-        Assert.Null(history.FactionTitle);
-        Assert.Empty(history.MasterTitles);
-        Assert.Empty(history.Titles);
+        Assert.Empty(store.RankedOverview(first.Id).History);
     }
 
     [Fact]

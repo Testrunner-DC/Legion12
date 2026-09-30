@@ -40,8 +40,14 @@ platform.playerApi.statistics=async(range='season')=>{
 }
 platform.rankedApi.overview=async()=>({
  profile:{accountId:'qa-admin',username:'移动端验收管理员',seasonId:'S2026-2',faction:'秩序',sevenValue:2380,displayValue:'七曜值 2380',placementPlayed:10,placementWins:7,placed:true,wins:52,losses:33,winStreak:3,lossStreak:0,tier:'璀璨群星',tierIndex:6,factionRank:3,titles:['秩序先锋','最强梅杰德'],rankLabel:'璀璨群星 · 秩序第 3',selectedMasterTitle:'最强梅杰德',masterTitles:['最强梅杰德','最强阿斯加德']},
- factionTotals:{秩序:36},config:{placementMatches:10,placementMaximum:10,broadcastEnabled:true,factions:[],masterTitles:[],timeControl:{totalTimeSeconds:1500,operationTimeSeconds:240,reconnectGraceSeconds:240,disasterDecisionSeconds:60,mulliganDecisionSeconds:60},broadcast:{displaySeconds:16,lobbyDelaySeconds:3,intervalSeconds:15,winStreakThreshold:5,streakEndedThreshold:5,minimumTierIndex:0,winStreakEnabled:true,streakEndedEnabled:true,highestTierEnabled:true,factionTitleEnabled:true,masterTitleEnabled:true}},history:[]
+ factionTotals:{秩序:36},config:{placementMatches:10,placementMaximum:10,broadcastEnabled:true,factions:[],masterTitles:[],timeControl:{totalTimeSeconds:1500,operationTimeSeconds:240,reconnectGraceSeconds:240,disasterDecisionSeconds:60,mulliganDecisionSeconds:60},broadcast:{displaySeconds:16,lobbyDelaySeconds:3,intervalSeconds:15,winStreakThreshold:5,streakEndedThreshold:5,minimumTierIndex:0,winStreakEnabled:true,streakEndedEnabled:true,highestTierEnabled:true,factionTitleEnabled:true,masterTitleEnabled:true}},history:[
+  {seasonId:'S2026-1',seasonName:'群星归位赛季',faction:'秩序',sevenValue:123456,displayValue:'七曜值 123,456',placementPlayed:10,placementWins:8,wins:46,losses:14,winStreak:5,archivedAt:'2026-09-20T08:00:00Z',tier:'冠冕',winRate:76.7,factionTitle:'秩序冠首',masterTitles:['最强梅杰德'],titles:['秩序冠首','最强梅杰德'],factionRank:1,overallRank:2,placed:true,placementRequired:10,rankLabel:'冠冕'},
+  {seasonId:'S2025-4',seasonName:'旧版历史赛季',faction:'混沌',sevenValue:8200,displayValue:'七曜值 8,200',placementPlayed:5,placementWins:3,wins:12,losses:9,winStreak:1,archivedAt:'2025-12-20T08:00:00Z',tier:'进阶',winRate:57.1,factionTitle:null,masterTitles:[],titles:[],factionRank:null,overallRank:null,placed:null,placementRequired:null,rankLabel:null}
+ ]
 })
+let seasonSummaryNotifications=[{id:'summary-1',seasonId:'S2026-1',seasonName:'群星归位远征纪念特别长名称极限宽屏短高度赛季第三十六期最终章特别纪念版本',faction:'秩序',placed:true,rankLabel:'冠冕',factionRank:1,overallRank:2,sevenValue:123456,displayValue:'七曜值 123,456',wins:46,losses:14,winRate:76.7,factionTitle:'秩序冠首',masterTitles:['最强梅杰德'],titles:['秩序冠首','最强梅杰德'],availableAt:'2026-09-20T08:00:00Z'}]
+platform.seasonSummaryApi.notifications=async()=>seasonSummaryNotifications
+platform.seasonSummaryApi.acknowledge=async(id)=>{seasonSummaryNotifications=seasonSummaryNotifications.filter(item=>item.id!==id)}
 platform.sessionApi.list=async()=>[
  {id:'session-current-long-identifier',createdAt:'2026-09-20T09:00:00Z',expiresAt:'2026-10-20T09:00:00Z',current:true,authStrength:'password',permissionVersion:8},
  {id:'session-tablet-long-identifier',createdAt:'2026-09-19T09:00:00Z',expiresAt:'2026-10-19T09:00:00Z',current:false,authStrength:'password',permissionVersion:8}
@@ -73,6 +79,7 @@ const AdminBugs=(await import('/src/l12/site/AdminBugsPage.vue')).default
 const AdminEffects=(await import('/src/l12/site/AdminEffectsPage.vue')).default
 const AdminStorage=(await import('/src/l12/site/AdminServerStoragePanel.vue')).default
 const Profile=(await import('/src/l12/site/ProfilePage.vue')).default
+const SeasonSummary=(await import('/src/l12/site/SeasonSummaryNotice.vue')).default
 const Empty={template:'<section class="qa-empty">当前模块不在本次截图范围</section>'}
 const moduleRoutes=[
  ['users/renames','username-requests'],['content/site','content'],['content/rules','rules'],['content/alternate-arts','alternate-arts'],
@@ -82,6 +89,7 @@ const moduleRoutes=[
 ].map(([path,adminSection])=>({path,component:adminSection==='storage'?AdminStorage:Empty,meta:{adminSection}}))
 const router=createRouter({history:createMemoryHistory(),routes:[
  {path:'/me',component:Profile},
+ {path:'/season-summary',component:SeasonSummary},
  {path:'/admin',component:AdminShell,children:[
   {path:'',component:AdminWorkbench,meta:{adminSection:'overview'}},
   {path:'users/accounts',component:AdminAccounts,meta:{adminSection:'accounts'}},
@@ -91,7 +99,7 @@ const router=createRouter({history:createMemoryHistory(),routes:[
   ...moduleRoutes,
  ]},
 ]})
-const app=createApp({render:()=>h(RouterView)});app.use(router);await router.push(mode==='admin'?'/admin':'/me?section=performance');await router.isReady();app.mount('#app')
+const app=createApp({render:()=>h(RouterView)});app.use(router);await router.push(mode==='admin'?'/admin':mode==='summary'?'/season-summary':'/me?section=performance');await router.isReady();app.mount('#app')
 window.__qaRouter=router
 `
 
@@ -126,14 +134,25 @@ const viewports = [
   { width: 430, height: 932 },
   { width: 768, height: 1024 },
   { width: 851, height: 900 },
+  { width: 1024, height: 320 },
   { width: 1024, height: 768 },
   { width: 1280, height: 800 },
   { width: 1280, height: 720 },
+  { width: 1366, height: 768 },
   { width: 1440, height: 900 },
   { width: 1920, height: 1080 },
 ]
 const suffix = viewport => `${viewport.width}x${viewport.height}`
 const overflow = page => page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)
+const summaryEvidenceViewport = viewport => [
+  '390x844',
+  '430x932',
+  '844x390',
+  '1024x320',
+  '1366x768',
+  '1920x1080',
+].includes(suffix(viewport))
+const shortSummaryViewport = viewport => ['844x390', '1024x320'].includes(suffix(viewport))
 
 try {
   await server.listen()
@@ -162,6 +181,32 @@ try {
     await page.locator('.session-row').first().waitFor()
     assert.equal(await overflow(page), false, `profile account controls overflow at ${suffix(viewport)}`)
     await page.screenshot({ path: path.join(output, `profile-account-${suffix(viewport)}.png`), fullPage: true })
+
+    if (summaryEvidenceViewport(viewport)) {
+      await page.goto(`http://127.0.0.1:${port}/__profile_admin__?mode=profile`)
+      await page.getByRole('button', { name: '总览', exact: true }).click()
+      await page.getByRole('heading', { name: '赛季历史' }).waitFor()
+      assert.equal(await overflow(page), false, `season history overflows at ${suffix(viewport)}`)
+      await page.screenshot({ path: path.join(output, `season-history-${suffix(viewport)}.png`), fullPage: true })
+
+      await page.goto(`http://127.0.0.1:${port}/__profile_admin__?mode=summary`)
+      await page.getByRole('dialog').waitFor()
+      assert.equal(await overflow(page), false, `season summary overflows at ${suffix(viewport)}`)
+      assert.equal(await page.getByRole('dialog').evaluate(element => element.scrollWidth > element.clientWidth + 1), false, `season summary dialog overflows at ${suffix(viewport)}`)
+      await page.screenshot({ path: path.join(output, `season-summary-${suffix(viewport)}.png`), fullPage: true })
+      if (shortSummaryViewport(viewport)) {
+        const confirm = page.getByRole('dialog').getByRole('button', { name: '保存并确认' })
+        await confirm.scrollIntoViewIfNeeded()
+        assert.equal(await confirm.evaluate(element => {
+          const rect = element.getBoundingClientRect()
+          return rect.top >= -1 && rect.bottom <= innerHeight + 1
+        }), true, `season summary confirmation is unreachable at ${suffix(viewport)}`)
+        await page.screenshot({ path: path.join(output, `season-summary-confirm-${suffix(viewport)}.png`), fullPage: true })
+        await confirm.click()
+        await page.getByRole('dialog').waitFor({ state: 'detached' })
+        assert.equal(await overflow(page), false, `season summary page overflows after confirmation at ${suffix(viewport)}`)
+      }
+    }
 
     await page.goto(`http://127.0.0.1:${port}/__profile_admin__?mode=admin`)
     await page.locator('.admin-shell').waitFor()

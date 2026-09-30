@@ -7,6 +7,7 @@ import SiteIcon from './SiteIcon.vue'
 import L12SettingsModal from './L12SettingsModal.vue'
 import MaintenanceTicker from './MaintenanceTicker.vue'
 import CardImage from '@/l12/CardImage.vue'
+import SeasonSummaryNotice from './SeasonSummaryNotice.vue'
 import { useActionGate } from '@/l12/useActionGate'
 import { generatedPlayerRelease } from './generatedPlayerRelease'
 
@@ -880,6 +881,8 @@ onBeforeUnmount(() => {
         <button class="alternate-art-confirm" type="button" @click="closeAlternateArtNotification">确认</button>
       </section>
     </div>
+
+    <SeasonSummaryNotice :suspended="Boolean(currentAlternateArtNotification)"/>
 
     <div v-if="l12State.friendInvitation || l12State.outgoingFriendInvitation" class="invitation-stack">
       <div v-if="l12State.outgoingFriendInvitation" class="outgoing-invitation-gate" :class="{ minimized: outgoingInvitationMinimized }">

@@ -455,7 +455,19 @@ export function normalizeRankedConfig(config: Omit<RankedConfig, 'timeControl'|'
   }
 }
 export interface RankedProfile { accountId: string; username: string; seasonId: string; faction?: string; sevenValue: number; displayValue: string; placementPlayed: number; placementWins: number; placed: boolean; wins: number; losses: number; winStreak: number; lossStreak: number; tier: string; tierIndex: number; factionRank: number; title?: string; titles: string[]; rankLabel: string; placementTitle?: string; selectedMasterTitle?: string; masterTitles: string[] }
-export interface RankedProfileHistory { seasonId: string; faction: string; sevenValue: number; placementPlayed: number; placementWins: number; wins: number; losses: number; winStreak: number; archivedAt: string }
+export interface RankedProfileHistory {
+  seasonId: string; seasonName: string; faction: string; sevenValue: number; displayValue: string
+  placementPlayed: number; placementWins: number; wins: number; losses: number; winStreak: number
+  archivedAt: string; tier: string; winRate?: number | null; factionTitle?: string
+  masterTitles: string[]; titles: string[]; factionRank?: number | null; overallRank?: number | null
+  placed?: boolean | null; placementRequired?: number | null; rankLabel?: string | null
+}
+export interface SeasonSummaryNotification {
+  id: string; seasonId: string; seasonName: string; faction: string; placed: boolean
+  rankLabel: string; factionRank?: number | null; overallRank?: number | null
+  sevenValue: number; displayValue: string; wins: number; losses: number; winRate?: number | null
+  factionTitle?: string; masterTitles: string[]; titles: string[]; availableAt: string
+}
 export interface RankedSeasonHonor { seasonId: string; seasonName: string; username: string; faction: string; tier: string; sevenValue: number; displayValue: string; titles: string[]; awardedAt: string }
 export interface RankedOverview { profile: RankedProfile; factionTotals: Record<string, number>; config: RankedConfig; history: RankedProfileHistory[] }
 export interface RankedSettlementComponent { kind: string; label: string; value: number }
@@ -1412,6 +1424,11 @@ export const rankedApi = {
   completeBroadcast: (id: string, claimToken: string) => platformRequest<{ completed: boolean }>(`/api/ranked/broadcasts/${encodeURIComponent(id)}/complete`, {
     method: 'POST', body: JSON.stringify({ claimToken }),
   }),
+}
+
+export const seasonSummaryApi = {
+  notifications: () => platformRequest<SeasonSummaryNotification[]>('/api/me/season-summary-notifications'),
+  acknowledge: (id: string) => platformRequest<void>(`/api/me/season-summary-notifications/${encodeURIComponent(id)}/acknowledge`, { method: 'POST' }),
 }
 
 export const articleApi = {

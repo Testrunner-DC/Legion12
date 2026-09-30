@@ -653,7 +653,11 @@ public sealed partial class L12PlatformStore
         NormalizeSecurityState(data.Security);
         data.RankedProfiles ??= [];
         data.RankedProfileHistory ??= [];
-        foreach (var history in data.RankedProfileHistory) history.Titles ??= [];
+        foreach (var history in data.RankedProfileHistory)
+        {
+            history.Titles ??= [];
+            history.MasterTitles ??= [];
+        }
         data.RankedSettlements ??= [];
         foreach (var settlement in data.RankedSettlements)
             settlement.Outcome = string.IsNullOrWhiteSpace(settlement.Outcome)

@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -87,6 +88,186 @@ public sealed class SeasonActivationTests
             Assert.Equal("S02", reopened.SeasonCatalog(reopenedAdmin).Current.SeasonId);
             Assert.Single(reopened.SeasonArchives(reopenedAdmin));
             Assert.Equal(before.SevenValue, reopened.RankedProfile(first.Id).SevenValue);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void FinalizationFreezesRanksAndOnlyHighestTierReceivesOverallRank()
+    {
+        var root = TempRoot();
+        try
+        {
+            var catalog = Catalog();
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var winner = store.Register("最终名次甲", "Password123!").Account!;
+            var loser = store.Register("最终名次乙", "Password123!").Account!;
+            store.SelectRankedFaction(winner.Id, "order");
+            store.SelectRankedFaction(loser.Id, "chaos");
+            var config = store.RankedConfig(admin);
+            var compact = config with
+            {
+                PlacementMatches = 1,
+                PlacementMaximum = 10,
+                Factions = config.Factions.Select(faction => faction with
+                {
+                    Tiers = faction.Tiers.Select((tier, index) => tier with
+                        { Minimum = index == 0 ? 0 : index == 1 ? 11 : index * 10 }).ToArray(),
+                }).ToArray(),
+            };
+            store.UpdateRankedConfig(admin, compact, "test final ranking",
+                Context("compact-ranking"));
+            store.SettleRankedMatch("final-rank-1", winner.Id, loser.Id, 0);
+            store.SettleRankedMatch("final-rank-2", winner.Id, loser.Id, 0);
+            var frozenWinner = store.RankedProfile(winner.Id);
+            var frozenLoser = store.RankedProfile(loser.Id);
+
+            ActivateNextSeason(store, admin, "S02-rank", "排名冻结赛季");
+
+            var winnerHistory = Assert.Single(store.RankedOverview(winner.Id).History);
+            Assert.True(winnerHistory.Placed);
+            Assert.Equal(frozenWinner.Tier, winnerHistory.RankLabel);
+            Assert.Equal(1, winnerHistory.FactionRank);
+            Assert.Equal(1, winnerHistory.OverallRank);
+            Assert.Equal(frozenWinner.SevenValue, winnerHistory.SevenValue);
+            Assert.Equal(100d, winnerHistory.WinRate);
+
+            var loserHistory = Assert.Single(store.RankedOverview(loser.Id).History);
+            Assert.True(loserHistory.Placed);
+            Assert.Equal(frozenLoser.Tier, loserHistory.RankLabel);
+            Assert.Equal(1, loserHistory.FactionRank);
+            Assert.Null(loserHistory.OverallRank);
+            Assert.Equal(0d, loserHistory.WinRate);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void DrawParticipantsReceivePersistentAccountIsolatedSummaryButFactionOnlyPlayerDoesNot()
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var catalog = Catalog();
+            var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var first = store.Register("平局参与甲", "Password123!").Account!;
+            var second = store.Register("平局参与乙", "Password123!").Account!;
+            var idle = store.Register("仅选派系者", "Password123!").Account!;
+            store.SelectRankedFaction(first.Id, "order");
+            store.SelectRankedFaction(second.Id, "chaos");
+            store.SelectRankedFaction(idle.Id, "fate");
+            store.SettleRankedDrawMatch("draw-only-final", first.Id, second.Id);
+            Assert.Empty(store.RankedOverview(first.Id).History);
+
+            ActivateNextSeason(store, admin, "S02-draw", "平局总结赛季");
+
+            var history = Assert.Single(store.RankedOverview(first.Id).History);
+            Assert.False(history.Placed);
+            Assert.Null(history.FactionRank);
+            Assert.Null(history.OverallRank);
+            Assert.Equal("定级 0/5", history.RankLabel);
+            Assert.Empty(store.RankedOverview(idle.Id).History);
+            Assert.Empty(store.PendingSeasonSummaryNotifications(idle.Id));
+
+            var summary = Assert.Single(store.PendingSeasonSummaryNotifications(first.Id));
+            Assert.Equal(history.SeasonId, summary.SeasonId);
+            Assert.False(summary.Placed);
+            Assert.Equal("定级 0/5", summary.RankLabel);
+            Assert.Throws<KeyNotFoundException>(() =>
+                store.AcknowledgeSeasonSummaryNotification(second.Id, summary.Id));
+            store.AcknowledgeSeasonSummaryNotification(first.Id, summary.Id);
+            store.AcknowledgeSeasonSummaryNotification(first.Id, summary.Id);
+            Assert.Empty(store.PendingSeasonSummaryNotifications(first.Id));
+
+            var reopened = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            Assert.Empty(reopened.PendingSeasonSummaryNotifications(first.Id));
+            Assert.Single(reopened.PendingSeasonSummaryNotifications(second.Id));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void LegacyFinalHistoryKeepsUnknownRanksAndDoesNotCreateUnreadSummary()
+    {
+        var root = TempRoot();
+        var legacyRoot = TempRoot();
+        try
+        {
+            var catalog = Catalog();
+            var path = Path.Combine(root, "platform.json");
+            var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var first = store.Register("旧历史记录甲", "Password123!").Account!;
+            var second = store.Register("旧历史记录乙", "Password123!").Account!;
+            store.SelectRankedFaction(first.Id, "order");
+            store.SelectRankedFaction(second.Id, "chaos");
+            store.SettleRankedMatch("legacy-history-1", first.Id, second.Id, 0);
+            ActivateNextSeason(store, admin, "S02-legacy", "旧历史迁移赛季");
+
+            var snapshot = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var history = snapshot["RankedProfileHistory"]!.AsArray();
+            foreach (var node in history)
+            {
+                var row = node!.AsObject();
+                foreach (var property in new[] { "FactionRank", "OverallRank", "Placed",
+                             "PlacementRequired", "RankLabel", "WinRate",
+                             "SummaryAvailableAt", "SummarySeenAt" })
+                    row.Remove(property);
+            }
+            var legacyPath = Path.Combine(legacyRoot, "platform.json");
+            File.WriteAllText(legacyPath, snapshot.ToJsonString(new JsonSerializerOptions
+                { WriteIndented = true }));
+
+            var reopened = new L12PlatformStore(legacyPath, catalog.PresetDecks,
+                officialCards: catalog.Cards);
+            var legacy = Assert.Single(reopened.RankedOverview(first.Id).History);
+            Assert.Null(legacy.FactionRank);
+            Assert.Null(legacy.OverallRank);
+            Assert.Null(legacy.Placed);
+            Assert.Null(legacy.PlacementRequired);
+            Assert.Null(legacy.RankLabel);
+            Assert.Empty(reopened.PendingSeasonSummaryNotifications(first.Id));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+            Directory.Delete(legacyRoot, true);
+        }
+    }
+
+    [Fact]
+    public void FactionChangeSnapshotDoesNotEnterPlayerSeasonHistory()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var first = store.Register("换派系历史甲", "Password123!").Account!;
+            var second = store.Register("换派系历史乙", "Password123!").Account!;
+            store.SelectRankedFaction(first.Id, "order");
+            store.SelectRankedFaction(second.Id, "chaos");
+            store.SettleRankedMatch("faction-change-history", first.Id, second.Id, 0);
+            store.SelectRankedFaction(first.Id, "fate");
+
+            Assert.Empty(store.RankedOverview(first.Id).History);
+            Assert.Empty(store.PendingSeasonSummaryNotifications(first.Id));
         }
         finally
         {
@@ -522,6 +703,21 @@ public sealed class SeasonActivationTests
             new L12SeasonDefinitionDraft("S02", "第二赛季", null, null, seasons.Next.Configuration),
             seasons.Next.Revision, "prepare transaction", Context("prepare-transaction"));
         return store;
+    }
+
+    private static void ActivateNextSeason(L12PlatformStore store, L12AccountView admin,
+        string seasonId, string seasonName)
+    {
+        var seasons = store.SeasonCatalog(admin);
+        var draft = store.UpdateSeasonDraft(admin, seasons.Next!.DefinitionId,
+            new L12SeasonDefinitionDraft(seasonId, seasonName, null, null,
+                seasons.Next.Configuration), seasons.Next.Revision, "prepare summary test",
+            Context("prepare-summary"));
+        var current = store.SeasonCatalog(admin).Current;
+        store.ActivateSeason(admin, draft.DefinitionId, current.Revision, draft.Revision,
+            "activate summary test",
+            new L12RankedSeasonCutoverReadiness(current.SeasonId, 0, 0, 0, 0),
+            Context("activate-summary"));
     }
 
     private static L12AdminCommandResult<L12SeasonActivationView> ActivateThroughBus(

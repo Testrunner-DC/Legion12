@@ -46,7 +46,13 @@ public sealed record L12RankedProfileHistoryView(string SeasonId, string Faction
     int PlacementPlayed, int PlacementWins, int Wins, int Losses, int WinStreak,
     DateTimeOffset ArchivedAt, string SeasonName, string Tier, string DisplayValue,
     double? WinRate, string? FactionTitle, IReadOnlyList<string> MasterTitles,
-    IReadOnlyList<string> Titles);
+    IReadOnlyList<string> Titles, int? FactionRank, int? OverallRank, bool? Placed,
+    int? PlacementRequired, string? RankLabel);
+public sealed record L12SeasonSummaryNotificationView(string Id, string SeasonId, string SeasonName,
+    string Faction, bool Placed, string RankLabel, int? FactionRank, int? OverallRank,
+    int SevenValue, string DisplayValue, int Wins, int Losses, double? WinRate,
+    string? FactionTitle, IReadOnlyList<string> MasterTitles, IReadOnlyList<string> Titles,
+    DateTimeOffset AvailableAt);
 public sealed record L12RankedSeasonHonorView(string SeasonId, string SeasonName, string Username,
     string Faction, string Tier, int SevenValue, string DisplayValue,
     IReadOnlyList<string> Titles, DateTimeOffset AwardedAt);
@@ -178,6 +184,14 @@ public sealed partial class L12PlatformStore
         public string? FactionTitle { get; set; }
         public List<string> MasterTitles { get; set; } = [];
         public bool FinalizedSeasonAwards { get; set; }
+        public int? FactionRank { get; set; }
+        public int? OverallRank { get; set; }
+        public bool? Placed { get; set; }
+        public int? PlacementRequired { get; set; }
+        public string? RankLabel { get; set; }
+        public double? WinRate { get; set; }
+        public DateTimeOffset? SummaryAvailableAt { get; set; }
+        public DateTimeOffset? SummarySeenAt { get; set; }
         public DateTimeOffset ArchivedAt { get; set; } = DateTimeOffset.UtcNow;
     }
     private sealed class RankedSettlementRow
@@ -483,19 +497,60 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var profile = RequireRankedProfile(accountId);
-            var history = _data.RankedProfileHistory.Where(item => item.AccountId == accountId)
+            var history = _data.RankedProfileHistory.Where(item => item.AccountId == accountId
+                    && item.FinalizedSeasonAwards)
                 .OrderByDescending(item => item.ArchivedAt)
                 .Select(item => new L12RankedProfileHistoryView(item.SeasonId,
                     FactionFor(item.Faction).Name, item.SevenValue, item.PlacementPlayed,
                     item.PlacementWins, item.Wins, item.Losses, item.WinStreak, item.ArchivedAt,
                     string.IsNullOrWhiteSpace(item.SeasonName) ? item.SeasonId : item.SeasonName,
                     item.Tier, $"七曜值 {item.SevenValue:N0}",
-                    item.Wins + item.Losses == 0 ? null : Percentage(item.Wins, item.Wins + item.Losses),
-                    item.FactionTitle, item.MasterTitles.ToArray(), item.Titles.ToArray()))
+                    item.WinRate ?? (item.Wins + item.Losses == 0 ? null
+                        : Percentage(item.Wins, item.Wins + item.Losses)),
+                    item.FactionTitle, item.MasterTitles.ToArray(), item.Titles.ToArray(),
+                    item.FactionRank, item.OverallRank, item.Placed, item.PlacementRequired,
+                    item.RankLabel))
                 .ToArray();
             return new L12RankedOverviewView(ProfileView(profile), FactionTotalsLocked(),
                 ToView(_data.RankedConfig!), history);
         }
+    }
+
+    public IReadOnlyList<L12SeasonSummaryNotificationView> PendingSeasonSummaryNotifications(
+        string accountId)
+    {
+        lock (_gate)
+        {
+            _ = _data.Accounts.FirstOrDefault(row => row.Id == accountId && !row.Disabled && !row.Deleted)
+                ?? throw new KeyNotFoundException("账号不存在或不可用");
+            return _data.RankedProfileHistory.Where(row => row.AccountId == accountId
+                    && row.FinalizedSeasonAwards && row.SummaryAvailableAt is not null
+                    && row.SummarySeenAt is null)
+                .OrderBy(row => row.SummaryAvailableAt).ThenBy(row => row.Id,
+                    StringComparer.OrdinalIgnoreCase)
+                .Take(20).Select(SeasonSummaryView).ToArray();
+        }
+    }
+
+    public void AcknowledgeSeasonSummaryNotification(string accountId, string id)
+    {
+        lock (_gate)
+        {
+            var row = _data.RankedProfileHistory.FirstOrDefault(item => item.Id == id
+                && item.AccountId == accountId && item.FinalizedSeasonAwards
+                && item.SummaryAvailableAt is not null)
+                ?? throw new KeyNotFoundException("赛季总结不存在");
+            if (row.SummarySeenAt is not null) return;
+            row.SummarySeenAt = DateTimeOffset.UtcNow;
+            Save();
+        }
+    }
+
+    internal IReadOnlyList<string> SeasonSummaryRecipients(string seasonId)
+    {
+        lock (_gate) return _data.RankedProfileHistory.Where(row => row.FinalizedSeasonAwards
+                && row.SummaryAvailableAt is not null && SeasonIdsEqual(row.SeasonId, seasonId))
+            .Select(row => row.AccountId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
     public IReadOnlyList<L12RankedSeasonHonorView> RankedSeasonHonors(int limit = 500)
@@ -1110,11 +1165,18 @@ public sealed partial class L12PlatformStore
 
     private void ArchiveRankedProfile(RankedProfileRow row, string? seasonName = null,
         bool finalizedSeasonAwards = false, IReadOnlyList<string>? frozenTitles = null,
-        string? factionTitle = null, IReadOnlyList<string>? frozenMasterTitles = null)
+        string? factionTitle = null, IReadOnlyList<string>? frozenMasterTitles = null,
+        DateTimeOffset? finalizedAt = null)
     {
-        if (string.IsNullOrWhiteSpace(row.Faction) || row.PlacementPlayed == 0) return;
+        if (string.IsNullOrWhiteSpace(row.Faction)
+            || (!finalizedSeasonAwards && row.PlacementPlayed == 0)) return;
+        if (finalizedSeasonAwards && !ParticipatedInRankedSeasonLocked(row.AccountId, row.SeasonId)) return;
         if (_data.RankedProfileHistory.Any(history => history.AccountId == row.AccountId
                 && SeasonIdsEqual(history.SeasonId, row.SeasonId) && history.FinalizedSeasonAwards)) return;
+        var placed = row.PlacementPlayed >= _data.RankedConfig!.PlacementMatches;
+        var factionRank = placed ? FactionRank(row) : 0;
+        var highestTier = placed && IsHighestTier(row);
+        var archivedAt = finalizedAt ?? DateTimeOffset.UtcNow;
         _data.RankedProfileHistory.Add(new RankedProfileHistoryRow
         {
             AccountId = row.AccountId,
@@ -1128,16 +1190,28 @@ public sealed partial class L12PlatformStore
             Losses = row.Losses,
             WinStreak = row.WinStreak,
             SeasonName = seasonName ?? RequireOperationsConfig().Season.Name,
-            Tier = TierFor(row).Name,
+            Tier = placed ? TierFor(row).Name : string.Empty,
             Titles = frozenTitles?.ToList() ?? [],
             FactionTitle = factionTitle,
             MasterTitles = frozenMasterTitles?.ToList() ?? [],
             FinalizedSeasonAwards = finalizedSeasonAwards,
+            FactionRank = finalizedSeasonAwards && factionRank > 0 ? factionRank : null,
+            OverallRank = finalizedSeasonAwards && highestTier ? OverallRank(row) : null,
+            Placed = finalizedSeasonAwards ? placed : null,
+            PlacementRequired = finalizedSeasonAwards ? _data.RankedConfig.PlacementMatches : null,
+            RankLabel = finalizedSeasonAwards
+                ? placed ? TierFor(row).Name
+                    : $"定级 {row.PlacementPlayed}/{_data.RankedConfig.PlacementMatches}"
+                : null,
+            WinRate = finalizedSeasonAwards && row.Wins + row.Losses > 0
+                ? Percentage(row.Wins, row.Wins + row.Losses) : null,
+            SummaryAvailableAt = finalizedSeasonAwards ? archivedAt : null,
+            ArchivedAt = archivedAt,
         });
     }
 
     private void FinalizeOutgoingRankedSeason(string outgoingSeasonId, string outgoingSeasonName,
-        string incomingSeasonId)
+        string incomingSeasonId, DateTimeOffset finalizedAt)
     {
         if (SeasonIdsEqual(outgoingSeasonId, incomingSeasonId)) return;
         var champions = CurrentMasterChampions();
@@ -1152,7 +1226,8 @@ public sealed partial class L12PlatformStore
             var titles = new[] { factionTitle }.Where(title => !string.IsNullOrWhiteSpace(title))
                 .Select(title => title!).Concat(masterTitles)
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-            ArchiveRankedProfile(row, outgoingSeasonName, true, titles, factionTitle, masterTitles);
+            ArchiveRankedProfile(row, outgoingSeasonName, true, titles, factionTitle, masterTitles,
+                finalizedAt);
         }
         ApplyMasterChampionSeasonFinalAlternateArtAwardsLocked(champions, outgoingSeasonId);
     }
@@ -1352,6 +1427,20 @@ public sealed partial class L12PlatformStore
             .ThenBy(item => AccountName(item.AccountId), StringComparer.OrdinalIgnoreCase)
             .ToList().IndexOf(row) + 1;
     }
+
+    private bool ParticipatedInRankedSeasonLocked(string accountId, string seasonId)
+        => _data.RankedIntegrityAudits.Any(row => SeasonIdsEqual(row.SeasonId, seasonId)
+            && (row.FirstAccountId == accountId || row.SecondAccountId == accountId));
+
+    private L12SeasonSummaryNotificationView SeasonSummaryView(RankedProfileHistoryRow row)
+        => new(row.Id, row.SeasonId,
+            string.IsNullOrWhiteSpace(row.SeasonName) ? row.SeasonId : row.SeasonName,
+            FactionFor(row.Faction).Name, row.Placed == true,
+            row.RankLabel ?? "历史版本未记录", row.FactionRank, row.OverallRank,
+            row.SevenValue, $"七曜值 {row.SevenValue:N0}", row.Wins, row.Losses,
+            row.WinRate ?? (row.Wins + row.Losses == 0 ? null
+                : Percentage(row.Wins, row.Wins + row.Losses)), row.FactionTitle,
+            row.MasterTitles.ToArray(), row.Titles.ToArray(), row.SummaryAvailableAt!.Value);
 
     private Dictionary<string, string> CurrentFactionTitleAssignments()
     {

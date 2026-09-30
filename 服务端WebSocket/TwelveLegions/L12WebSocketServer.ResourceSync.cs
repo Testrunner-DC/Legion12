@@ -8,6 +8,7 @@ public sealed partial class L12WebSocketServer
     private const string FriendsResource = "friends";
     private const string IntegrityResource = "rankedIntegrity";
     private const string AlternateArtNotificationsResource = "alternateArtNotifications";
+    private const string SeasonSummaryNotificationsResource = "seasonSummaryNotifications";
     private const string OperationsPolicyResource = "operationsPolicy";
     private const string RulesContentResource = "rulesContent";
     private const string TournamentsResource = "tournaments";
@@ -45,6 +46,7 @@ public sealed partial class L12WebSocketServer
             [FriendsResource] = AccountResourceRevision(accountId, FriendsResource),
             [IntegrityResource] = AccountResourceRevision(accountId, IntegrityResource),
             [AlternateArtNotificationsResource] = AccountResourceRevision(accountId, AlternateArtNotificationsResource),
+            [SeasonSummaryNotificationsResource] = AccountResourceRevision(accountId, SeasonSummaryNotificationsResource),
             [OperationsPolicyResource] = Interlocked.Read(ref _operationsResourceRevision),
             [RulesContentResource] = Interlocked.Read(ref _rulesContentResourceRevision),
             [TournamentsResource] = Interlocked.Read(ref _tournamentsResourceRevision),
@@ -134,6 +136,9 @@ public sealed partial class L12WebSocketServer
 
     private void NotifyAlternateArtNotificationsChanged(IEnumerable<string> accountIds)
         => NotifyAccountResourceChanged(AlternateArtNotificationsResource, accountIds);
+
+    private void NotifySeasonSummaryNotificationsChanged(IEnumerable<string> accountIds)
+        => NotifyAccountResourceChanged(SeasonSummaryNotificationsResource, accountIds);
 
     private void NotifyOperationsPolicyChanged(bool reschedule = true)
     {
