@@ -59,6 +59,7 @@ public sealed partial class L12GameEngine
         {
             SetResponsePresentationTargets(item.Data, [targetInstanceId]);
         }
+        if (publicSource) FreezeAndRecordPublicResponseTargets(item, source);
 
         if (State.IsResolvingStack)
         {

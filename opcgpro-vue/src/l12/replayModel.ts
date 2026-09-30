@@ -269,6 +269,7 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
     const movement = value<any>(event, 'PlayerBattlefieldMovement', 'playerBattlefieldMovement', undefined)
     const placement = value<any>(event, 'PlayerPublicPlacement', 'playerPublicPlacement', undefined)
     const troopsModifier = value<any>(event, 'PlayerTroopsModifier', 'playerTroopsModifier', undefined)
+    const selectedTargets = value<any>(event, 'PlayerSelectedTargets', 'playerSelectedTargets', undefined)
     const disasterValue = value<any>(event, 'PlayerDisasterValue', 'playerDisasterValue', undefined)
     // Generic replay-card defaults are presentation placeholders, not recorded target identity.
     const troopsTargetId = value(troopsModifier, 'TargetInstanceId', 'targetInstanceId', undefined)
@@ -326,6 +327,20 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
       targetControllerPlayerIndex: value(troopsModifier, 'TargetControllerPlayerIndex', 'targetControllerPlayerIndex', undefined),
       troopsDelta: value(troopsModifier, 'TroopsDelta', 'troopsDelta', undefined),
       durationCode: value(troopsModifier, 'DurationCode', 'durationCode', undefined),
+    } : undefined,
+    playerSelectedTargets: selectedTargets && typeof selectedTargets === 'object' ? {
+      sourceInstanceId: value(selectedTargets, 'SourceInstanceId', 'sourceInstanceId', ''),
+      facts: value<any[]>(selectedTargets, 'Facts', 'facts', []).map(fact => ({
+        id: value(fact, 'Id', 'id', ''),
+        owner: value(fact, 'Owner', 'owner', -1),
+        zone: value(fact, 'Zone', 'zone', ''),
+        row: value(fact, 'Row', 'row', -1),
+        slot: value(fact, 'Slot', 'slot', -1),
+        publicName: value(fact, 'PublicName', 'publicName', null),
+        currentCost: value(fact, 'CurrentCost', 'currentCost', null),
+        tapped: value(fact, 'Tapped', 'tapped', false),
+        isGodPower: value(fact, 'IsGodPower', 'isGodPower', null),
+      })),
     } : undefined,
     playerDisasterValue: disasterValue && typeof disasterValue === 'object' ? {
       before: value(disasterValue, 'Before', 'before', undefined),

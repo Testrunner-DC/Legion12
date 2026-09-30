@@ -1137,7 +1137,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 item?.Data.GetValueOrDefault("playerLogGroupId"),
                 item?.Data.GetValueOrDefault("playerLogTiming") ?? item?.Trigger,
                 null, null, null, null, null, null,
-                new L12PlayerDisasterValue(before, State.DisasterValue));
+                new L12PlayerDisasterValue(before, State.DisasterValue), null);
         }
     }
 
@@ -2472,8 +2472,17 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             $"〈{target.Name}〉本回合兵力修正{troops:+0;-0;0}", null, null,
             null, null, null, null, null, null, null,
             new L12PlayerTroopsModifier(target.InstanceId, targetController, troops, "this-turn"),
-            null, target);
+            null, null, target);
     }
+
+    private void AddPlayerSelectedTargetsEvent(L12StackItem item, L12CardInstance source,
+        L12PlayerSelectedTargetFact[] facts)
+        => AddEventCoreWithTroopsModifier("target-selected", item.Controller,
+            "已选公开目标", null, null,
+            item.Data.GetValueOrDefault("playerLogGroupId"),
+            item.Data.GetValueOrDefault("playerLogTiming"),
+            null, null, null, null, null, null, null,
+            new L12PlayerSelectedTargets(source.InstanceId, facts), source);
 
     private static L12PlayerBattlefieldMovementFact BattlefieldMovementFact(
         L12CardInstance card, int battlefieldPlayerIndex, int fromRow, int fromSlot,
@@ -2519,7 +2528,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         L12PlayerPublicPlacement? playerPublicPlacement, params L12CardInstance[] cards)
         => AddEventCoreWithTroopsModifier(type, playerIndex, text, effectText, effectMetadata,
             playerLogGroupId, playerLogTiming, playerLogDecisionLabel, playerLogSemantic,
-            playerCombat, playerBattlefieldMovement, playerPublicPlacement, null, null, cards);
+            playerCombat, playerBattlefieldMovement, playerPublicPlacement, null, null, null, cards);
 
     private void AddEventCoreWithTroopsModifier(string type, int? playerIndex, string text, string? effectText,
         L12EffectEventMetadata? effectMetadata, string? playerLogGroupId, string? playerLogTiming,
@@ -2528,7 +2537,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         L12PlayerBattlefieldMovement? playerBattlefieldMovement,
         L12PlayerPublicPlacement? playerPublicPlacement,
         L12PlayerTroopsModifier? playerTroopsModifier,
-        L12PlayerDisasterValue? playerDisasterValue, params L12CardInstance[] cards)
+        L12PlayerDisasterValue? playerDisasterValue,
+        L12PlayerSelectedTargets? playerSelectedTargets, params L12CardInstance[] cards)
     {
         State.EventSequence++;
         State.LastAction = new L12ActionEvent(State.EventSequence, type, playerIndex, text,
@@ -2566,6 +2576,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             PlayerPublicPlacement = playerPublicPlacement,
             PlayerTroopsModifier = playerTroopsModifier,
             PlayerDisasterValue = playerDisasterValue,
+            PlayerSelectedTargets = playerSelectedTargets,
         };
         State.Events.Add(State.LastAction);
         if (State.StateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion)

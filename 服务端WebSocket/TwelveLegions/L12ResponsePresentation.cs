@@ -84,6 +84,27 @@ public sealed partial class L12GameEngine
         catch (JsonException) { return []; }
     }
 
+    private void FreezeAndRecordPublicResponseTargets(L12StackItem item, L12CardInstance source)
+    {
+        // The four entry declarations and Olympus flip already captured their facts.
+        // Other completed declarations use the same snapshot before any response is offered.
+        if (!item.Data.ContainsKey(ResponsePublicTargetSnapshotKey))
+        {
+            var presentationIds = (item.Data.GetValueOrDefault(ResponsePresentationTargetIdsKey) ?? string.Empty)
+                .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            CaptureResponsePublicTargetSnapshot(item.Data, item.Targets.Concat(presentationIds));
+        }
+        if (source.Hidden || string.IsNullOrWhiteSpace(source.InstanceId)) return;
+        var facts = ReadResponsePublicTargetSnapshot(item.Data)
+            .Where(fact => !string.IsNullOrWhiteSpace(fact.Id) && fact.Owner is >= 0 and <= 1
+                && (fact.Zone == "field" && fact.Row is >= 0 and <= 1 && fact.Slot is >= 0 and <= 2
+                    || fact.Zone == "morale" && fact.Row == -1 && fact.Slot == -1))
+            .Select(fact => new L12PlayerSelectedTargetFact(fact.Id, fact.Owner, fact.Zone,
+                fact.Row, fact.Slot, fact.PublicName, fact.CurrentCost, fact.Tapped, fact.IsGodPower))
+            .ToArray();
+        if (facts.Length > 0) AddPlayerSelectedTargetsEvent(item, source, facts);
+    }
+
     private static string ResponseTargetSideLabel(int viewer, int owner)
         => viewer < 0 ? $"玩家{owner + 1}的" : owner == viewer ? "你的" : "对手的";
 

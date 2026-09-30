@@ -116,6 +116,28 @@ internal static class L12RecipientVisibility
             ? actionEvent : actionEvent with { PlayerDisasterValue = null };
     }
 
+    private static L12ActionEvent ProjectSelectedTargetsEvent(L12ActionEvent actionEvent)
+    {
+        var selected = actionEvent.PlayerSelectedTargets;
+        if (selected is null) return actionEvent;
+        var source = actionEvent.Cards.Where(card => card.InstanceId == selected.SourceInstanceId)
+            .Take(2).ToArray();
+        if (actionEvent.Type != "target-selected" || source.Length != 1 || source[0].Hidden
+            || string.IsNullOrWhiteSpace(source[0].Name))
+            return actionEvent with { PlayerSelectedTargets = null };
+        var safe = (selected.Facts ?? [])
+            .Where(fact => !string.IsNullOrWhiteSpace(fact.Id) && fact.Owner is >= 0 and <= 1
+                && (fact.Zone == "field" && fact.Row is >= 0 and <= 1 && fact.Slot is >= 0 and <= 2
+                    && fact.IsGodPower is null
+                    || fact.Zone == "morale" && fact.Row == -1 && fact.Slot == -1
+                    && fact.PublicName is null && fact.CurrentCost is null))
+            .DistinctBy(fact => fact.Id, StringComparer.OrdinalIgnoreCase).ToArray();
+        return actionEvent with
+        {
+            PlayerSelectedTargets = safe.Length == 0 ? null : selected with { Facts = safe },
+        };
+    }
+
     internal readonly record struct Policy(bool BothHands, bool CoveredBattlefieldIdentity,
         bool AllDisasters, bool PrivatePrompts, bool PrivateHandEvents, bool DeckOrder,
         bool LegalActions)
@@ -152,9 +174,9 @@ internal static class L12RecipientVisibility
             return CanSeeActionEvent(actionEvent, viewer, revealAllHands)
                 ? actionEvent with { Type = actionEvent.Type["private-trigger-".Length..] }
                 : new L12ActionEvent(actionEvent.Sequence, "private", null, string.Empty, []);
-        actionEvent = ProjectDisasterValueEvent(ProjectTroopsModifierEvent(ProjectPublicPlacementEvent(
+        actionEvent = ProjectSelectedTargetsEvent(ProjectDisasterValueEvent(ProjectTroopsModifierEvent(ProjectPublicPlacementEvent(
             ProjectBattlefieldMovementEvent(ProjectCombatEvent(
-                L12TrialProgressVisibility.PublicEvent(actionEvent))))));
+                L12TrialProgressVisibility.PublicEvent(actionEvent)))))));
         if (actionEvent.Type == "private-return")
             return revealAllHands || actionEvent.PlayerIndex == viewer
                 ? actionEvent with { Type = "return" }

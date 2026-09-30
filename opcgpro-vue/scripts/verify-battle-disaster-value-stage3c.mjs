@@ -43,6 +43,21 @@ entry = entry.replace('Events:[]', `Events:${JSON.stringify([
     Text: '秘密来源／伪造天灾值 999→1000', Cards: [],
     PlayerDisasterValue: { Before: 5, After: 6 },
     PlayerLogGroupId: 'turn:4', PlayerLogTiming: 'turn-start' },
+  { Sequence: 26, Type: 'target-selected', PlayerIndex: 0,
+    Text: '秘密来源／玩家真实姓名',
+    Cards: [{ instanceId: 'public-source', cardId: 'S01-0004', name: '公开来源',
+      cardType: 'legion', faction: '测试', cost: 2, baseTroops: 6000,
+      troops: 6000, hidden: false }],
+    PlayerSelectedTargets: { SourceInstanceId: 'public-source', Facts: [
+      { Id: 'chosen-target', Owner: 1, Zone: 'field', Row: 1, Slot: 2,
+        PublicName: '公开目标', CurrentCost: 2, Tapped: false },
+    ] }, PlayerLogGroupId: 'target:1', PlayerLogTiming: 'active' },
+  { Sequence: 27, Type: 'effect-activation', PlayerIndex: 0,
+    Text: '公开来源发动主动效果',
+    Cards: [{ instanceId: 'public-source', cardId: 'S01-0004', name: '公开来源',
+      cardType: 'legion', faction: '测试', cost: 2, baseTroops: 6000,
+      troops: 6000, hidden: false }],
+    PlayerLogGroupId: 'target:1', PlayerLogTiming: 'active' },
 ])}`)
 entry = entry.replace('const routes=',
   `l12State.game.recentEvents=replayGameAt(detail,0).recentEvents;
@@ -131,9 +146,13 @@ try {
       const current = log.locator('[data-event-sequence="21"]')
       const legacy = log.locator('[data-event-sequence="22"]')
       const summary = log.locator('[data-event-sequence="24"]')
+      const selected = log.locator('[data-event-sequence="26"]')
+      await selected.getByRole('button', { name: '查看明细' }).click()
       assert((await current.innerText()).includes('天灾值 4→5'))
       assert((await legacy.innerText()).includes('详情未记录'))
       assert((await summary.innerText()).includes('回合开始，抽取2张牌，天灾值 5→6'))
+      const selectedText = await selected.innerText()
+      assert(selectedText.includes('后排右格〈公开目标〉'), selectedText)
       assert(!(await log.innerText()).includes('秘密来源'))
       assert(!(await log.innerText()).includes('999'))
       assert.deepEqual(errors, [])

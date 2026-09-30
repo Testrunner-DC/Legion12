@@ -40,7 +40,7 @@ export const PLAYER_LOG_VISIBLE_TYPES = new Set([
   'draw', 'discard', 'grave', 'return', 'leave', 'morale', 'runes', 'dice', 'turn-start',
   'initiative-choice', 'mulligan', 'disaster', 'disaster-active', 'disaster-value',
   'trial', 'trial-action', 'enter', 'attach', 'counter-displaced', 'counter-replaced',
-  'mill', 'library', 'reorder', 'continuous', 'extra-turn', 'cost', 'troops-modifier',
+  'mill', 'library', 'reorder', 'continuous', 'extra-turn', 'cost', 'troops-modifier', 'target-selected',
 ])
 
 export const PLAYER_LOG_HIDDEN_TYPES = new Set([
@@ -146,7 +146,7 @@ function disasterValueText(event: ActionEvent): string | null {
 
 const structuredFactKeys = [
   'playerLogSemantic', 'playerCombat', 'playerBattlefieldMovement',
-  'playerPublicPlacement', 'playerTroopsModifier', 'playerDisasterValue',
+  'playerPublicPlacement', 'playerTroopsModifier', 'playerDisasterValue', 'playerSelectedTargets',
 ] as const
 type StructuredFactKey = typeof structuredFactKeys[number]
 
@@ -158,6 +158,7 @@ function hasUsableStructuredFact(event: ActionEvent, key: StructuredFactKey) {
   if (key === 'playerPublicPlacement') return projectPublicPlacement(event, 0, false) !== null
   if (key === 'playerTroopsModifier') return event.type === 'troops-modifier'
     && projectTroopsModifier(event, 0, false).parts[0]?.text !== '兵力修正详情未记录'
+  if (key === 'playerSelectedTargets') return projectSelectedTargets(event, 0, false) !== null
   if (key === 'playerCombat') return Boolean(event.playerCombat?.combatId && event.playerCombat.eventKind)
   return Boolean(event.playerLogSemantic?.actionLabel && event.playerLogSemantic.outcomeLabel)
 }
@@ -257,7 +258,7 @@ function timingLabel(timing: string | undefined) {
 
 const resultLabels: Record<string, string> = {
   resolved: '完成', negated: '被无效', failed: '未能完成',
-  skipped: '跳过', declined: '选择不发动',
+  skipped: '跳过', declined: '未发动',
 }
 
 function groupedResultDetail(event: ActionEvent, you: number, source: Card, showPaidCost: boolean, neutralView: boolean): LogLineRow | null {
@@ -301,6 +302,8 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
   const play = group.find(event => event.type === 'play')
   const first = play ?? group[0]
   if (!first) return null
+  if (group.every(event => event.type === 'target-selected'))
+    return projectSelectedTargets(first, you, neutralView)
 
   if (first.playerLogTiming === 'turn-start' || first.playerLogGroupId?.startsWith('turn:')) {
     const changes: string[] = []
@@ -330,15 +333,16 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
   // Once the card is publicly revealed, the authoritative event carries a public card copy and
   // the same group can be rendered normally.
   if (!source) return null
+  const results = group.filter(event => event.type === 'effect-result')
+  const singleDecline = results.length === 1 && results[0].effectResultStatus === 'declined'
   const parts: LogPart[] = play
     ? [{ text: '打出' }, cardPart(source)]
-    : [cardPart(source), { text: `发动${timingLabel(first.playerLogTiming)}` }]
+    : [cardPart(source), { text: `${singleDecline ? '未发动' : '发动'}${timingLabel(first.playerLogTiming)}` }]
   let suffix = ''
   const decision = group.find(event => event.type === 'effect-decision' && event.playerLogDecisionLabel)
   const restPaid = group.some(event => event.type === 'cost' && /休整|横置/.test(event.text)
     && publicCards(event).some(card => card.instanceId === source?.instanceId))
   const trial = group.find(event => event.type === 'trial')
-  const results = group.filter(event => event.type === 'effect-result')
   const result = results.length === 1 ? results[0] : results.at(-1)
 
   if (play && restPaid && result?.effectResultStatus === 'negated'
@@ -391,7 +395,7 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
       ? '；该战术的效果被无效'
       : `；${timingLabel(first.playerLogTiming)}被无效`
   } else if (results.length === 1 && result?.effectResultStatus === 'failed') suffix += `；${timingLabel(first.playerLogTiming)}未能完成`
-  else if (results.length === 1 && result?.effectResultStatus === 'declined') suffix += `；未发动${timingLabel(first.playerLogTiming)}`
+  else if (singleDecline && play) suffix += `；未发动${timingLabel(first.playerLogTiming)}`
   else if (results.length === 1 && result?.effectResultStatus === 'skipped') suffix += `；${timingLabel(first.playerLogTiming)}跳过`
 
   if (results.length > 1) {
@@ -411,9 +415,12 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
   const lastPaidResult = results.filter(event => publicPaidCostReceipt(event, source)).at(-1)
   const detail = group.flatMap(event => {
     const resultDetail = groupedResultDetail(event, you, source, event === lastPaidResult, neutralView)
-    if (resultDetail) return [resultDetail]
-    if (event.type === 'effect-result' || event.type === 'cost' || event === first) return []
-    const projected = projectLine(event, you, [], [], neutralView)
+    if (resultDetail) return singleDecline && resultDetail.parts.length === 1 ? [] : [resultDetail]
+    if (event.type === 'effect-result' || event.type === 'cost'
+      || (event === first && event.type !== 'target-selected')) return []
+    const projected = event.type === 'target-selected'
+      ? projectSelectedTargets(event, you, neutralView, false)
+      : projectLine(event, you, [], [], neutralView)
     return projected ? [projected] : []
   })
   if (detail.length) row.detail = detail
@@ -620,7 +627,44 @@ function projectTroopsModifier(event: ActionEvent, you: number, neutralView: boo
     [cardPart(matches[0]), { text: `本回合兵力修正${delta}` }])
 }
 
+function projectSelectedTargets(event: ActionEvent, you: number, neutralView: boolean,
+  includeSource = true): LogLineRow | null {
+  const selected = event.playerSelectedTargets
+  const source = (event.cards ?? []).filter(card => card.instanceId === selected?.sourceInstanceId)
+  if (event.type !== 'target-selected' || !selected?.sourceInstanceId
+    || source.length !== 1 || source[0].hidden || !source[0].name?.trim()) return null
+  const seen = new Set<string>()
+  const labels = (selected.facts ?? []).flatMap(fact => {
+    if (!fact.id || seen.has(fact.id) || (fact.owner !== 0 && fact.owner !== 1)
+      || typeof fact.tapped !== 'boolean') return []
+    let label: string
+    if (fact.zone === 'field' && Number.isInteger(fact.row) && Number.isInteger(fact.slot)
+      && (fact.row === 0 || fact.row === 1) && fact.slot >= 0 && fact.slot <= 2
+      && (fact.publicName == null || typeof fact.publicName === 'string' && fact.publicName.trim())
+      && (fact.currentCost == null || Number.isInteger(fact.currentCost) && fact.currentCost >= 0)
+      && fact.isGodPower == null) {
+      label = `${movementSlotLabel(fact.owner, fact.row, fact.slot, you, neutralView)}`
+        + (fact.publicName ? `〈${fact.publicName}〉` : '盖伏卡牌')
+        + (fact.currentCost == null ? '' : `，声明时费用${fact.currentCost}`)
+    } else if (fact.zone === 'morale' && fact.row === -1 && fact.slot === -1
+      && fact.publicName == null && fact.currentCost == null
+      && (fact.isGodPower == null || typeof fact.isGodPower === 'boolean')) {
+      const owner = side(fact.owner, you, neutralView)
+      label = `${owner}士气区的${fact.tapped ? '休整' : '活跃'}`
+        + (fact.isGodPower == null ? '资源' : fact.isGodPower ? '神力面' : '士气面')
+    } else return []
+    seen.add(fact.id)
+    return [label]
+  })
+  if (!labels.length) return null
+  return line(event.sequence, 'effect', side(event.playerIndex, you, neutralView), [
+    ...(includeSource ? [cardPart(source[0]), { text: '：' }] : []),
+    { text: `已选目标：${labels.join('；')}` },
+  ])
+}
+
 function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], costDetails: LogPart[] = [], neutralView = false): LogLineRow | null {
+  if (event.type === 'target-selected') return projectSelectedTargets(event, you, neutralView)
   if (event.type === 'troops-modifier') return projectTroopsModifier(event, you, neutralView)
   const movement = projectBattlefieldMovement(event, you, neutralView)
   if (movement) return movement
@@ -752,9 +796,9 @@ function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], co
       return line(event.sequence, 'effect', actor,
         cards.length ? [{ text: '支付费用：' }, ...cardParts(cards)] : [{ text: '支付费用' }], paymentBadges(event))
     }
-    case 'continuous': return line(event.sequence, 'effect', actor,
-      card ? [cardPart(card), { text: '：相关计数变化（详情未记录）' }]
-        : [{ text: '相关计数变化（详情未记录）' }])
+    // Current public continuous writes carry PlayerLogSemantic and return above.
+    // Older writes have no trustworthy target or result; audit Text is not a receipt.
+    case 'continuous': return null
     case 'disaster-value': return line(event.sequence, 'disaster', null,
       [{ text: disasterValueText(event) ?? '天灾值变化（详情未记录）' }])
     case 'extra-turn': return line(event.sequence, 'effect', actor, [{ text: '获得额外回合' }], [{ value: '+1回合', tone: 'pos' }])

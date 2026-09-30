@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import './test-battle-troops-modifier.mjs'
+import './test-battle-selected-targets.mjs'
 import './test-battle-disaster-value.mjs'
 import { PLAYER_LOG_REDLINE_TERMS, playerLogContainsForbiddenTerms, projectLog } from '../src/l12/game/logViewModel.ts'
 import { replayGameAt } from '../src/l12/replayModel.ts'
@@ -115,6 +116,20 @@ const hiddenSemanticSource = projectLog([
   }),
 ], 0, [])
 assert.equal(hiddenSemanticSource.length, 0, 'semantic metadata must not reveal a source that is still hidden')
+const legacyContinuous = projectLog([
+  event(1, 'continuous', '秘密来源使目标兵力6000→4000', [source, b], 0),
+], 0, [])
+assert.deepEqual(legacyContinuous, [],
+  'old continuous events without public structured facts must not show a meaningless status or infer targets from audit text')
+const structuredContinuous = projectLog([
+  event(1, 'continuous', '秘密内部计数', [source], 0, { playerLogSemantic: {
+    sourceInstanceId: source.instanceId, actionLabel: '离场',
+    outcomeLabel: '本回合含〈陵墓〉名称的军团离场累计2张，登场费用相应降低',
+  } }),
+], 0, [])
+assert(structuredContinuous[0]?.kind === 'line'
+  && structuredContinuous[0].parts.map(part => part.text).join('').includes('累计2张'),
+  'a current public continuous receipt must remain visible')
 
 const structuredTrialEvents = [
   event(1, 'play', '权威打出事件', [card('加拉哈德', 'galahad')], 0, {
@@ -422,6 +437,43 @@ const oldGroupedReplay = projectLog([
 assert.equal(oldGroupedReplay.length, 1)
 assert.equal(oldGroupedReplay[0].detail, undefined,
   'older replays without a terminal status must remain readable without an invented outcome')
+const declinedActivation = projectLog([
+  event(1, 'effect', '来源卡发动主动效果', [source], 0,
+    { playerLogGroupId: 'effect:declined', playerLogTiming: 'active' }),
+  event(2, 'effect-result', '来源卡选择不发动', [source], 0,
+    { playerLogGroupId: 'effect:declined', playerLogTiming: 'active', effectResultStatus: 'declined' }),
+], 0, ['不得出现的我方姓名', '不得出现的对方姓名'])
+assert.equal(declinedActivation.length, 1)
+assert.deepEqual(declinedActivation[0].parts.map(part => part.text),
+  ['〈来源卡〉', '未发动主动效果'], 'declining an activation must not also claim it was activated')
+assert.equal(declinedActivation[0].detail, undefined,
+  'a status-only decline must not repeat the same outcome in expanded detail')
+assert(!JSON.stringify(declinedActivation).includes('不得出现的'), 'battle records must not echo player names')
+const declinedEnterEffect = projectLog([
+  event(1, 'play', '打出来源卡', [source], 0,
+    { playerLogGroupId: 'play:declined-enter', playerLogTiming: 'enter' }),
+  event(2, 'effect-result', '来源卡登场时效果未发动', [source], 0,
+    { playerLogGroupId: 'play:declined-enter', playerLogTiming: 'enter', effectResultStatus: 'declined' }),
+], 0, [])
+assert.deepEqual(declinedEnterEffect[0].parts.map(part => part.text),
+  ['打出', '〈来源卡〉', '；未发动登场时效果'],
+  'a real card play remains in the record while its declined optional effect appears once')
+assert.equal(declinedEnterEffect[0].detail, undefined)
+const declinedLaterSegment = projectLog([
+  event(1, 'effect', '来源卡发动主动效果', [source], 0,
+    { playerLogGroupId: 'effect:partial-decline', playerLogTiming: 'active' }),
+  event(2, 'effect-result', '第一段完成', [source], 0,
+    { playerLogGroupId: 'effect:partial-decline', effectResultStatus: 'resolved',
+      effectSegmentIndex: 1, effectSegmentCount: 2 }),
+  event(3, 'effect-result', '第二段不发动', [source], 0,
+    { playerLogGroupId: 'effect:partial-decline', effectResultStatus: 'declined',
+      effectSegmentIndex: 2, effectSegmentCount: 2 }),
+], 0, [])
+assert.deepEqual(declinedLaterSegment[0].parts.map(part => part.text),
+  ['〈来源卡〉', '发动主动效果', '；效果段：1段完成、1段未发动'],
+  'an independent declined segment must not erase the completed first segment')
+assert.deepEqual(declinedLaterSegment[0].detail.map(row => row.parts.map(part => part.text).join('')),
+  ['第1/2段完成', '第2/2段未发动'], 'expanded detail must preserve actual segment order')
 const ungroupedTerminal = projectLog([
   event(7, 'effect-result', '旧审计文本', [source], 0, {
     effectResultStatus: 'failed',

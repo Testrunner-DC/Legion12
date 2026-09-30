@@ -24,6 +24,7 @@ export interface ActionEvent {
   playerBattlefieldMovement?: PlayerBattlefieldMovementPresentation
   playerPublicPlacement?: PlayerPublicPlacement
   playerTroopsModifier?: PlayerTroopsModifier
+  playerSelectedTargets?: PlayerSelectedTargets
   playerDisasterValue?: PlayerDisasterValue
   cards?: Card[]
 }
@@ -46,6 +47,23 @@ export interface PlayerTroopsModifier {
   targetControllerPlayerIndex?: number
   troopsDelta?: number
   durationCode?: string
+}
+
+export interface PlayerSelectedTargetFact {
+  id: string
+  owner: number
+  zone: string
+  row: number
+  slot: number
+  publicName?: string | null
+  currentCost?: number | null
+  tapped: boolean
+  isGodPower?: boolean | null
+}
+
+export interface PlayerSelectedTargets {
+  sourceInstanceId: string
+  facts: PlayerSelectedTargetFact[]
 }
 
 export interface PlayerDisasterValue {

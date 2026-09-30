@@ -822,6 +822,14 @@ public sealed record L12PlayerTroopsModifier(
     int? TroopsDelta = null,
     string? DurationCode = null);
 
+/// <summary>响应前已选、当时公开的对象快照；不从之后的棋盘或审计文字重建。</summary>
+public sealed record L12PlayerSelectedTargetFact(
+    string Id, int Owner, string Zone, int Row, int Slot,
+    string? PublicName, int? CurrentCost, bool Tapped, bool? IsGodPower = null);
+
+public sealed record L12PlayerSelectedTargets(
+    string SourceInstanceId, L12PlayerSelectedTargetFact[] Facts);
+
 /// <summary>已结算的公开天灾值变化；旧事件缺失时不得从文字或当前状态补算。</summary>
 public sealed record L12PlayerDisasterValue(int? Before = null, int? After = null);
 
@@ -866,6 +874,8 @@ public sealed record L12ActionEvent(
     public L12PlayerPublicPlacement? PlayerPublicPlacement { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public L12PlayerTroopsModifier? PlayerTroopsModifier { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12PlayerSelectedTargets? PlayerSelectedTargets { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public L12PlayerDisasterValue? PlayerDisasterValue { get; init; }
 }

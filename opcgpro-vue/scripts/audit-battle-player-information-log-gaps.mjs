@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { projectLog } from '../src/l12/game/logViewModel.ts'
 
-// Deterministic phase-0 evidence refreshed after Stages 4A, 4B-2, 4B-3A, and 4C-1.
+// Deterministic phase-0 evidence refreshed after Stages 4A, 4B-2, 4B-3A/B, and 4C-1.
 // Closed gaps must remain visible; unfinished legacy/status gaps remain
 // explicit; legacy combat audit text must never become a public reason.
 const card = (name, instanceId = name) => ({
@@ -74,7 +74,18 @@ const cases = [
     ],
     requiredSourceFacts: ['目标', '6000', '4000', '本回合'],
     missingFromProjection: ['6000', '4000', '本回合'],
-    status: 'OPEN: 4B-3',
+    status: 'LEGACY: no authoritative modifier facts; not a current producer',
+  },
+  {
+    id: 'structured-this-turn-troops-modifier',
+    input: [event(1, 'troops-modifier', '秘密来源／伪造兵力+999999', [target], {
+      playerTroopsModifier: { targetInstanceId: target.instanceId,
+        targetControllerPlayerIndex: 0, troopsDelta: -2000, durationCode: 'this-turn' },
+    })],
+    requiredSourceFacts: ['秘密来源'],
+    expectedProjectionFacts: ['目标', '本回合', '-2000'],
+    missingFromProjection: ['秘密来源', '999999'],
+    status: 'CLOSED: 4B-3B (current producer)',
   },
   {
     id: 'skipped-segment',

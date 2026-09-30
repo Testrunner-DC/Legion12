@@ -1733,6 +1733,7 @@ public sealed partial class L12GameEngine
             foreach (var pair in data) item.Data[pair.Key] = pair.Value;
         item.Data.TryAdd("playerLogGroupId", item.StackItemId);
         item.Data.TryAdd("playerLogTiming", trigger);
+        FreezeAndRecordPublicResponseTargets(item, source);
         if (trigger is "active" or "play")
             PublishEffectPresentation("effect-activation", controller, source, trigger, text, item.Data);
         else if (IsDirectTriggeredEffect(trigger, source, text))
