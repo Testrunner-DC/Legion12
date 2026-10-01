@@ -260,9 +260,10 @@ async function revealDraftItem(itemId: string) {
 async function load() {
   busy.value = true
   try {
-    const [rulings, center, batches, media] = await Promise.all([
-      adminApi.getContent('rules.rulings'), adminApi.getContent('rules.center'), adminApi.contentBatches(), adminApi.siteMedia('rule'),
+    const [rulings, center, batches] = await Promise.all([
+      adminApi.getContent('rules.rulings'), adminApi.getContent('rules.center'), adminApi.contentBatches(),
     ])
+    const media = await adminApi.siteMedia('rule')
     cardCatalog.value = await loadDeckCatalog().catch(() => [] as DeckCard[])
     const parsedRulings = parseRulingDocument(rulings.draftValue)
     entries.value = !parsedRulings.length && !rulings.draftValue.trim() ? createRulingsDraft() : withPendingRulingSeeds(parsedRulings)
