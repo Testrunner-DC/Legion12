@@ -5,6 +5,19 @@ namespace TwelveLegions.Tests;
 
 public sealed class RankedPlatformTests
 {
+    [Fact]
+    public void PlayerOperationsPolicyUsesNaturalSeasonNameWithoutMutatingAdminConfiguration()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-player-season-display",
+            Guid.NewGuid().ToString("N"));
+        var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
+        var admin = store.Login("Admin", "L12master").Account!;
+
+        Assert.Equal("S01", store.OperationsConfig(admin).Config.Season.Name);
+        Assert.Equal("当前赛季", store.EffectiveOperationsPolicy().Season.Name);
+        Assert.Equal("S01", store.OperationsConfig(admin).Config.Season.Name);
+    }
+
     private static L12Catalog Catalog => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
 
     [Fact]
@@ -225,6 +238,8 @@ public sealed class RankedPlatformTests
             "S01-04M1", "ST03-M1", DateTimeOffset.UtcNow));
         Assert.Contains("最强天照", store.RankedProfile(champion.Id).Titles);
         Assert.Empty(store.RankedSeasonHonors());
+        var championFinalValue = store.RankedProfile(champion.Id).SevenValue;
+        var rivalFinalValue = store.RankedProfile(rival.Id).SevenValue;
 
         var admin = store.Login("Admin", "L12master").Account!;
         var current = store.OperationsConfig(admin);
@@ -238,7 +253,7 @@ public sealed class RankedPlatformTests
 
         var history = Assert.Single(store.RankedOverview(champion.Id).History);
         Assert.Equal(current.Config.Season.Id, history.SeasonId);
-        Assert.Equal(current.Config.Season.Name, history.SeasonName);
+        Assert.Equal("历史赛季", history.SeasonName);
         Assert.Equal(honor.Tier, history.Tier);
         Assert.Equal(honor.DisplayValue, history.DisplayValue);
         Assert.Equal(100d, history.WinRate);
@@ -247,10 +262,10 @@ public sealed class RankedPlatformTests
         Assert.Contains("最强天照", history.Titles);
 
         var strongest = Assert.Single(store.RankedSeasonHonorHistory(), row => row.Title == "最强天照");
-        Assert.Equal(current.Config.Season.Name, strongest.SeasonName);
+        Assert.Equal("历史赛季", strongest.SeasonName);
         Assert.Equal(champion.Username, Assert.Single(strongest.Winners).Username);
         Assert.Equal("秩序", Assert.Single(strongest.Winners).Faction);
-        Assert.Equal(new[] { "AwardedAt", "SeasonName", "Title", "Winners" }, strongest.GetType()
+        Assert.Equal(new[] { "SeasonName", "Title", "Winners" }, strongest.GetType()
             .GetProperties().Select(property => property.Name).OrderBy(name => name).ToArray());
         Assert.Equal(new[] { "Faction", "Username" }, Assert.Single(strongest.Winners).GetType()
             .GetProperties().Select(property => property.Name).OrderBy(name => name).ToArray());
@@ -263,6 +278,19 @@ public sealed class RankedPlatformTests
             "验证历史荣誉派系名冻结", new L12AdminAuditContext("honor-faction-name-snapshot"));
         var afterFactionRename = Assert.Single(store.RankedSeasonHonorHistory(), row => row.Title == "最强天照");
         Assert.Equal("秩序", Assert.Single(afterFactionRename.Winners).Faction);
+        var frozenTotals = Assert.Single(store.RankedSeasonHistory().FactionTotals);
+        Assert.Equal("历史赛季", frozenTotals.SeasonName);
+        Assert.Equal(new[] { "秩序", "混沌", "命运" }, frozenTotals.Factions.Select(row => row.Faction));
+        Assert.Equal(championFinalValue,
+            Assert.Single(frozenTotals.Factions, row => row.Faction == "秩序").Value);
+        Assert.Equal(rivalFinalValue,
+            Assert.Single(frozenTotals.Factions, row => row.Faction == "混沌").Value);
+        Assert.Equal(0, Assert.Single(frozenTotals.Factions, row => row.Faction == "命运").Value);
+        var playerJson = System.Text.Json.JsonSerializer.Serialize(store.RankedSeasonHistory());
+        Assert.DoesNotContain("AwardedAt", playerJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Provenance", playerJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("EvidenceFingerprint", playerJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("SeasonId", playerJson, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -294,6 +322,7 @@ public sealed class RankedPlatformTests
             new L12AdminAuditContext("honor-history-disable"), apply: true);
         var afterDisable = Assert.Single(store.RankedSeasonHonorHistory(), row => row.Title == "最强天照");
         Assert.Equal(champion.Username, Assert.Single(afterDisable.Winners).Username);
+        var totalsBeforeDelete = Assert.Single(store.RankedSeasonHistory().FactionTotals);
 
         store.SetAccountDisabled(admin, champion.Id, false, "准备注销隐私回归账号",
             new L12AdminAuditContext("honor-history-enable"), apply: true);
@@ -303,6 +332,9 @@ public sealed class RankedPlatformTests
         Assert.Equal("已注销玩家", Assert.Single(afterDelete.Winners).Username);
         Assert.DoesNotContain("deleted-", System.Text.Json.JsonSerializer.Serialize(afterDelete),
             StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(System.Text.Json.JsonSerializer.Serialize(totalsBeforeDelete),
+            System.Text.Json.JsonSerializer.Serialize(
+                Assert.Single(store.RankedSeasonHistory().FactionTotals)));
     }
 
     [Fact]
@@ -323,7 +355,6 @@ public sealed class RankedPlatformTests
                 "S01-04M1", "S02-03M1");
         store.ImportRankedMasterTitleFacts(TitleFacts("honor-groups-first-title", first.Id,
             "S01-04M1", "ST03-M1", DateTimeOffset.UtcNow));
-        var firstSeason = store.OperationsConfig(admin).Config.Season.Name;
         ActivateDraft(store, admin, "S-history-groups-2", "历史荣誉第二季", "冻结首季荣誉分组");
 
         for (var index = 0; index < 5; index++)
@@ -336,9 +367,10 @@ public sealed class RankedPlatformTests
         var rows = store.RankedSeasonHonorHistory().Where(row => row.Title == "最强天照").ToArray();
         Assert.Equal(2, rows.Length);
         Assert.Equal("历史荣誉第二季", rows[0].SeasonName);
-        Assert.Equal(firstSeason, rows[1].SeasonName);
-        Assert.True(rows[0].AwardedAt > rows[1].AwardedAt);
+        Assert.Equal("历史赛季", rows[1].SeasonName);
         Assert.All(rows, row => Assert.True(row.Winners.Count >= 1));
+        Assert.Equal(new[] { "历史荣誉第二季", "历史赛季" },
+            store.RankedSeasonHistory().FactionTotals.Select(row => row.SeasonName));
     }
 
     [Fact]

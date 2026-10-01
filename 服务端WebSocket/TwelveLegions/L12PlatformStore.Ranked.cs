@@ -62,7 +62,14 @@ public sealed record L12RankedSeasonHonorView(string SeasonId, string SeasonName
     IReadOnlyList<string> Titles, DateTimeOffset AwardedAt);
 public sealed record L12RankedSeasonHonorWinnerView(string Username, string Faction);
 public sealed record L12RankedSeasonHonorHistoryView(string SeasonName, string Title,
-    DateTimeOffset AwardedAt, IReadOnlyList<L12RankedSeasonHonorWinnerView> Winners);
+    IReadOnlyList<L12RankedSeasonHonorWinnerView> Winners);
+public sealed record L12RankedSeasonFactionFinalValueView(string Faction, int Value,
+    string DisplayValue);
+public sealed record L12RankedSeasonFactionTotalsHistoryView(string SeasonName,
+    IReadOnlyList<L12RankedSeasonFactionFinalValueView> Factions);
+public sealed record L12RankedSeasonHistoryView(
+    IReadOnlyList<L12RankedSeasonHonorHistoryView> Honors,
+    IReadOnlyList<L12RankedSeasonFactionTotalsHistoryView> FactionTotals);
 public sealed record L12RankedSettlementComponent(string Kind, string Label, int Value);
 public sealed record L12RankedSettlementView(string MatchId, string AccountId, string Faction,
     string Outcome, bool Won, bool Placement, int PlacementPlayed, int PlacementRequired, int Before, int After,
@@ -566,9 +573,9 @@ public sealed partial class L12PlatformStore
                     && item.FinalizedSeasonAwards)
                 .OrderByDescending(item => item.ArchivedAt)
                 .Select(item => new L12RankedProfileHistoryView(item.SeasonId,
-                    FactionFor(item.Faction).Name, item.SevenValue, item.PlacementPlayed,
+                    HistoricalHonorFactionNameLocked(item), item.SevenValue, item.PlacementPlayed,
                     item.PlacementWins, item.Wins, item.Losses, item.WinStreak, item.ArchivedAt,
-                    string.IsNullOrWhiteSpace(item.SeasonName) ? item.SeasonId : item.SeasonName,
+                    HistoricalSeasonDisplayNameLocked(item.SeasonId, item.SeasonName),
                     item.Tier, $"七曜值 {item.SevenValue:N0}",
                     item.WinRate ?? (item.Wins + item.Losses == 0 ? null
                         : Percentage(item.Wins, item.Wins + item.Losses)),
@@ -638,10 +645,6 @@ public sealed partial class L12PlatformStore
         }
     }
 
-    /// <summary>
-    /// Player-facing historical honors projection. The existing RankedSeasonHonors shape remains
-    /// available until the HTTP and frontend contracts switch atomically in a later batch.
-    /// </summary>
     public IReadOnlyList<L12RankedSeasonHonorHistoryView> RankedSeasonHonorHistory(int limit = 500)
     {
         lock (_gate)
@@ -655,8 +658,9 @@ public sealed partial class L12PlatformStore
                 .Select(group =>
                 {
                     var rows = group.Select(item => item.Row).ToArray();
-                    var seasonName = rows.Select(row => row.SeasonName?.Trim())
-                        .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)) ?? "历史赛季";
+                    var seasonName = HistoricalSeasonDisplayNameLocked(group.Key.SeasonId,
+                        rows.Select(row => row.SeasonName?.Trim())
+                            .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)));
                     var winners = rows
                         .GroupBy(row => row.AccountId, StringComparer.OrdinalIgnoreCase)
                         .Select(accounts => accounts.OrderByDescending(row => row.SevenValue)
@@ -666,14 +670,45 @@ public sealed partial class L12PlatformStore
                         .Select(row => new L12RankedSeasonHonorWinnerView(
                             HistoricalHonorUsernameLocked(row), HistoricalHonorFactionNameLocked(row)))
                         .ToArray();
-                    return new L12RankedSeasonHonorHistoryView(seasonName, group.Key.Title,
-                        rows.Max(row => row.ArchivedAt), winners);
+                    return (View: new L12RankedSeasonHonorHistoryView(seasonName,
+                        group.Key.Title, winners), AwardedAt: rows.Max(row => row.ArchivedAt));
                 })
-                .OrderBy(row => row.Title, StringComparer.Ordinal)
+                .OrderBy(row => row.View.Title, StringComparer.Ordinal)
                 .ThenByDescending(row => row.AwardedAt)
-                .ThenBy(row => row.SeasonName, StringComparer.Ordinal)
+                .ThenBy(row => row.View.SeasonName, StringComparer.Ordinal)
                 .Take(Math.Clamp(limit, 1, 2000))
+                .Select(row => row.View)
                 .ToArray();
+        }
+    }
+
+    public L12RankedSeasonHistoryView RankedSeasonHistory(int limit = 500)
+    {
+        lock (_gate)
+        {
+            var totals = _data.SeasonArchives
+                .Where(row => row.FactionFinalTotals.Count > 0)
+                .Select(row => (Key: string.IsNullOrWhiteSpace(row.SourceDefinitionId)
+                        ? $"season:{row.SeasonId.Trim().ToUpperInvariant()}"
+                        : $"definition:{row.SourceDefinitionId}", row.SeasonId, row.Name,
+                    row.SeasonOrdinal, At: row.ArchivedAt, row.FactionFinalTotals))
+                .Concat(_data.SeasonDefinitions.Where(row => row.FinalizedAt is not null
+                        && row.FactionFinalTotals.Count > 0)
+                    .Select(row => (Key: $"definition:{row.DefinitionId}", row.SeasonId, row.Name,
+                        row.SeasonOrdinal, At: row.FinalizedAt!.Value, row.FactionFinalTotals)))
+                .GroupBy(row => row.Key, StringComparer.Ordinal)
+                .Select(group => group.OrderByDescending(row => row.At).First())
+                .OrderByDescending(row => row.At)
+                .Take(Math.Clamp(limit, 1, 2000))
+                .Select(row => new L12RankedSeasonFactionTotalsHistoryView(
+                    HistoricalSeasonDisplayNameLocked(row.SeasonId, row.Name, row.SeasonOrdinal),
+                    row.FactionFinalTotals.OrderBy(total => FactionDisplayOrder(total.FactionId))
+                        .ThenBy(total => total.FactionNameSnapshot, StringComparer.Ordinal)
+                        .Select(total => new L12RankedSeasonFactionFinalValueView(
+                            total.FactionNameSnapshot, total.Value, total.Value.ToString("N0")))
+                        .ToArray()))
+                .ToArray();
+            return new(RankedSeasonHonorHistory(limit), totals);
         }
     }
 
@@ -699,6 +734,35 @@ public sealed partial class L12PlatformStore
                 StringComparison.OrdinalIgnoreCase))?.Name ?? row.Faction,
         };
     }
+
+    private string HistoricalSeasonDisplayNameLocked(string seasonId, string? frozenName,
+        int? ordinal = null, string fallback = "历史赛季")
+    {
+        var name = frozenName?.Trim();
+        if (!string.IsNullOrWhiteSpace(name) && !LooksLikeInternalSeasonCode(name)) return name;
+        var archive = _data.SeasonArchives.FirstOrDefault(row => SeasonIdsEqual(row.SeasonId, seasonId));
+        name = archive?.Name?.Trim();
+        if (!string.IsNullOrWhiteSpace(name) && !LooksLikeInternalSeasonCode(name)) return name;
+        ordinal ??= archive?.SeasonOrdinal ?? _data.SeasonDefinitions.FirstOrDefault(row =>
+            SeasonIdsEqual(row.SeasonId, seasonId))?.SeasonOrdinal;
+        return ordinal is { } value ? $"第{value}赛季" : fallback;
+    }
+
+    private static bool LooksLikeInternalSeasonCode(string value)
+    {
+        var normalized = value.Trim();
+        return normalized.Length >= 2
+            && (normalized[0] is 'S' or 's' or 'T' or 't')
+            && normalized.AsSpan(1).IndexOfAnyExceptInRange('0', '9') < 0;
+    }
+
+    private static int FactionDisplayOrder(string factionId) => factionId.Trim().ToLowerInvariant() switch
+    {
+        "order" => 0,
+        "chaos" => 1,
+        "fate" => 2,
+        _ => 3,
+    };
 
     public IReadOnlyList<L12RankedLeaderboardEntry> RankedLeaderboard(string? faction = null, int limit = 50,
         string? viewerAccountId = null)
@@ -1340,10 +1404,15 @@ public sealed partial class L12PlatformStore
         });
     }
 
-    private void FinalizeOutgoingRankedSeason(string outgoingSeasonId, string outgoingSeasonName,
+    private void FinalizeOutgoingRankedSeason(SeasonDefinitionRow outgoing,
         string incomingSeasonId, DateTimeOffset finalizedAt)
     {
+        var outgoingSeasonId = outgoing.SeasonId;
+        var outgoingSeasonName = outgoing.Name;
         if (SeasonIdsEqual(outgoingSeasonId, incomingSeasonId)) return;
+        if (outgoing.FactionFinalTotals.Count == 0)
+            outgoing.FactionFinalTotals = FreezeFactionFinalTotalsLocked(outgoingSeasonId,
+                finalizedAt, "season-finalization-v1", string.Empty);
         var champions = CurrentMasterChampions();
         var rows = EligibleOutgoingRankedSeasonRowsLocked(outgoingSeasonId);
         foreach (var row in rows)
@@ -1361,6 +1430,39 @@ public sealed partial class L12PlatformStore
         }
         ApplyMasterChampionSeasonFinalAlternateArtAwardsLocked(champions, outgoingSeasonId);
     }
+
+    private List<SeasonFactionFinalTotalRow> FreezeFactionFinalTotalsLocked(string seasonId,
+        DateTimeOffset capturedAt, string provenance, string evidenceFingerprint)
+        => _data.RankedConfig!.Factions.Select(faction =>
+        {
+            var rows = _data.RankedProfiles.Where(row => SeasonIdsEqual(row.SeasonId, seasonId)
+                    && string.Equals(row.Faction, faction.Id, StringComparison.OrdinalIgnoreCase)
+                    && row.PlacementPlayed >= _data.RankedConfig.PlacementMatches
+                    && IsActiveAccountLocked(row.AccountId))
+                .ToArray();
+            return new SeasonFactionFinalTotalRow
+            {
+                FactionId = faction.Id,
+                FactionNameSnapshot = faction.Name,
+                Value = rows.Sum(row => row.SevenValue),
+                EligiblePlayers = rows.Length,
+                CapturedAt = capturedAt,
+                Provenance = provenance,
+                EvidenceFingerprint = evidenceFingerprint,
+            };
+        }).ToList();
+
+    private static SeasonFactionFinalTotalRow CloneFactionFinalTotal(SeasonFactionFinalTotalRow row)
+        => new()
+        {
+            FactionId = row.FactionId,
+            FactionNameSnapshot = row.FactionNameSnapshot,
+            Value = row.Value,
+            EligiblePlayers = row.EligiblePlayers,
+            CapturedAt = row.CapturedAt,
+            Provenance = row.Provenance,
+            EvidenceFingerprint = row.EvidenceFingerprint,
+        };
 
     private RankedProfileRow[] EligibleOutgoingRankedSeasonRowsLocked(string outgoingSeasonId)
         => _data.RankedProfiles
@@ -1989,8 +2091,8 @@ public sealed partial class L12PlatformStore
 
     private L12SeasonSummaryNotificationView SeasonSummaryView(RankedProfileHistoryRow row)
         => new(row.Id, row.SeasonId,
-            string.IsNullOrWhiteSpace(row.SeasonName) ? row.SeasonId : row.SeasonName,
-            FactionFor(row.Faction).Name, row.Placed == true,
+            HistoricalSeasonDisplayNameLocked(row.SeasonId, row.SeasonName),
+            HistoricalHonorFactionNameLocked(row), row.Placed == true,
             row.RankLabel ?? "历史版本未记录", row.FactionRank, row.OverallRank,
             row.SevenValue, $"七曜值 {row.SevenValue:N0}", row.Wins, row.Losses,
             row.WinRate ?? (row.Wins + row.Losses == 0 ? null

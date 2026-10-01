@@ -63,7 +63,7 @@ const main=catalog.filter(card=>!['master','morale','trial','destruction'].inclu
 
 // A1：多称号玩家（3 个称号）验收逐行纵排
 platform.rankedApi.leaderboard=async()=>({players:Array.from({length:6},(_,index)=>({rank:index+1,username:'验收玩家'+index,faction:'秩序',tier:'定级段位',titles:index===0?['秩序先锋','赛季冠首','最强'+(masters[0]?.nameZh||'主宰')]:['派系称号','最强'+(masters[index%masters.length]?.nameZh||'主宰')],favoriteMasterId:masters[0]?.id,favoriteMasterName:masters[0]?.nameZh,displayValue:'七曜值 '+(2100-index*45),wins:22-index,losses:11+index})),analytics:{range:'season',summary:{matches:84,placedPlayers:19,activeMasters:masters.length,updatedAt:'2026-09-21T08:00:00Z'},masters:[],matchups:[]}})
-platform.rankedApi.history=async()=>[{seasonId:'S2026-1',seasonName:'第一赛季',username:'荣誉玩家',faction:'秩序',tier:'赛季段位',displayValue:'七曜值 2450',titles:['秩序冠首','最强'+(masters[0]?.nameZh||'主宰'),'远征先锋']}]
+platform.rankedApi.history=async()=>({honors:[{seasonName:'第一赛季',title:'秩序冠首',winners:[{username:'荣誉玩家',faction:'秩序'}]}],factionTotals:[]})
 
 // A4：正文含超宽横图、竖图、普通图，均用内联 SVG 保证固有尺寸
 const svg=(w,h,label,color)=>'data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'"><rect width="'+w+'" height="'+h+'" fill="'+color+'"/><text x="40" y="'+(h/2)+'" font-size="'+Math.min(120,h/3)+'" fill="#ffffff" font-family="sans-serif">'+label+'</text></svg>')

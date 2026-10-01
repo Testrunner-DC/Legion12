@@ -9,8 +9,8 @@ let nextTimer = 0
 const timers = new Map()
 const document = { hidden: false }
 const requests = []
-const rankedApi = { leaderboard(faction, range) { return new Promise((resolve, reject) => requests.push({ faction, range, resolve, reject })) }, history: async () => [] }
-const state = Object.fromEntries(['faction','range','loading','error','players','analytics','honors'].map(k => [k, { value: k === 'range' ? 'season' : k === 'loading' ? false : '' }]))
+const rankedApi = { leaderboard(faction, range) { return new Promise((resolve, reject) => requests.push({ faction, range, resolve, reject })) }, history: async () => ({ honors: [], factionTotals: [] }) }
+const state = Object.fromEntries(['faction','range','loading','error','players','analytics','history'].map(k => [k, { value: k === 'range' ? 'season' : k === 'loading' ? false : k === 'history' ? { honors: [], factionTotals: [] } : '' }]))
 const api = new Function(...Object.keys(state), 'rankedApi', 'document', 'setTimeout', 'clearTimeout', `${code}; return {load,onVisibilityChange,dispose(){disposed=true;clearTimeout(refreshTimer)}}`)(
   ...Object.values(state), rankedApi, document, (fn, delay) => { const id = ++nextTimer; timers.set(id, {fn,delay}); return id }, id => timers.delete(id))
 const response = label => ({ players: [label], analytics: { label } })
@@ -46,6 +46,13 @@ assert.equal(timers.size, 0)
 await api.load()
 assert.equal(requests.length, 3)
 assert.match(source, /removeEventListener\('visibilitychange', onVisibilityChange\)/)
+assert.doesNotMatch(source, /row\.seasonId|item\.seasonId/)
+assert.match(source, /v-if="tab === 'players'" class="faction-filter"/)
+assert.match(source, /class="faction-final-totals"/)
+assert.match(source, /class="honor-groups"/)
+assert.doesNotMatch(source, /赛季段位|赛季七曜值/)
+const profile = readFileSync(new URL('../src/l12/site/ProfilePage.vue', import.meta.url), 'utf8')
+assert.doesNotMatch(profile, /item\.seasonName \|\| item\.seasonId/)
 const seasonEditor = readFileSync(new URL('../src/l12/site/SeasonConfigurationEditor.vue', import.meta.url), 'utf8')
 assert.match(seasonEditor, /:max="placementMaximumLimit"/)
 assert.match(seasonEditor, /tiers\[2\]\?\.minimum/)

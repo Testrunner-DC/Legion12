@@ -468,7 +468,11 @@ export interface SeasonSummaryNotification {
   sevenValue: number; displayValue: string; wins: number; losses: number; winRate?: number | null
   factionTitle?: string; masterTitles: string[]; titles: string[]; availableAt: string
 }
-export interface RankedSeasonHonor { seasonId: string; seasonName: string; username: string; faction: string; tier: string; sevenValue: number; displayValue: string; titles: string[]; awardedAt: string }
+export interface RankedSeasonHonorWinner { username: string; faction: string }
+export interface RankedSeasonHonorHistory { seasonName: string; title: string; winners: RankedSeasonHonorWinner[] }
+export interface RankedSeasonFactionFinalValue { faction: string; value: number; displayValue: string }
+export interface RankedSeasonFactionTotalsHistory { seasonName: string; factions: RankedSeasonFactionFinalValue[] }
+export interface RankedSeasonHistory { honors: RankedSeasonHonorHistory[]; factionTotals: RankedSeasonFactionTotalsHistory[] }
 export interface RankedOverview { profile: RankedProfile; factionTotals: Record<string, number>; config: RankedConfig; history: RankedProfileHistory[] }
 export interface RankedSettlementComponent { kind: string; label: string; value: number }
 export interface RankedSettlement { matchId: string; accountId: string; faction: string; won: boolean; placement: boolean; placementPlayed: number; placementRequired: number; before: number; after: number; delta: number; tierBefore: string; tierAfter: string; components: RankedSettlementComponent[]; settledAt: string; rewardStatus?: 'applied' | 'held' | 'released' | 'voided'; effectiveDelta?: number; pendingDelta?: number }
@@ -1568,7 +1572,7 @@ export const rankedApi = {
     if (faction) params.set('faction', faction)
     return platformRequest<{ players: RankedLeaderboardEntry[]; analytics: RankedAnalytics }>(`/api/rankings?${params}`)
   },
-  history: (limit = 500) => platformRequest<RankedSeasonHonor[]>(`/api/rankings/history?limit=${limit}`),
+  history: (limit = 500) => platformRequest<RankedSeasonHistory>(`/api/rankings/history?limit=${limit}`),
   broadcasts: (limit = 30) => platformRequest<RankedBroadcast[]>(`/api/ranked/broadcasts?limit=${limit}`),
   broadcastSettings: () => platformRequest<RankedBroadcastConfig>('/api/ranked/broadcasts/settings'),
   claimBroadcast: (subscriptionStartedAt?: string) => {

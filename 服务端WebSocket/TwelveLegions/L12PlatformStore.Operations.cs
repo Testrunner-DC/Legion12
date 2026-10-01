@@ -833,12 +833,17 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var policy = ToPolicySnapshot(RequireOperationsConfig());
+            var playerSeason = policy.Season with
+            {
+                Name = HistoricalSeasonDisplayNameLocked(policy.Season.Id, policy.Season.Name,
+                    fallback: "当前赛季"),
+            };
             var immediateActive = policy.ImmediateMaintenance?.Enabled == true;
             var scheduledActive = policy.IsMaintenanceActive(now);
             var entryBlocked = policy.IsNewGameEntryBlocked(now);
             return new L12EffectiveOperationsPolicyView(
                 policy.Version,
-                policy.Season,
+                playerSeason,
                 policy.DisasterCardIds.ToArray(),
                 policy.MatchModes.ToArray(),
                 policy.DefaultRoomConfig,

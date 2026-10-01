@@ -395,6 +395,36 @@ public sealed partial class L12PlatformStore
     {
         plan.Previous.SeasonOrdinal = 0;
         plan.Current.SeasonOrdinal = 1;
+        plan.Previous.FactionFinalTotals =
+        [
+                new SeasonFactionFinalTotalRow
+                {
+                    FactionId = "chaos", FactionNameSnapshot = "混沌", Value = 2_279_096,
+                    EligiblePlayers = 30,
+                    CapturedAt = new DateTimeOffset(2026, 9, 30, 22, 32, 16, TimeSpan.Zero)
+                        .AddTicks(7_716_066),
+                    Provenance = "verified-pre-c36-backup-v1",
+                    EvidenceFingerprint = "sha256:09b4932c15cedd1436ab2a484c730d1f93972eb0293930c2fc5d0b7dfa7b7cec",
+                },
+                new SeasonFactionFinalTotalRow
+                {
+                    FactionId = "fate", FactionNameSnapshot = "命运", Value = 2_946_802,
+                    EligiblePlayers = 42,
+                    CapturedAt = new DateTimeOffset(2026, 9, 30, 22, 32, 16, TimeSpan.Zero)
+                        .AddTicks(7_716_066),
+                    Provenance = "verified-pre-c36-backup-v1",
+                    EvidenceFingerprint = "sha256:09b4932c15cedd1436ab2a484c730d1f93972eb0293930c2fc5d0b7dfa7b7cec",
+                },
+                new SeasonFactionFinalTotalRow
+                {
+                    FactionId = "order", FactionNameSnapshot = "秩序", Value = 2_407_333,
+                    EligiblePlayers = 38,
+                    CapturedAt = new DateTimeOffset(2026, 9, 30, 22, 32, 16, TimeSpan.Zero)
+                        .AddTicks(7_716_066),
+                    Provenance = "verified-pre-c36-backup-v1",
+                    EvidenceFingerprint = "sha256:09b4932c15cedd1436ab2a484c730d1f93972eb0293930c2fc5d0b7dfa7b7cec",
+                },
+        ];
         foreach (var draft in _data.SeasonDefinitions.Where(row => row.LifecycleStatus == "draft"))
             draft.SeasonOrdinal ??= 2;
 

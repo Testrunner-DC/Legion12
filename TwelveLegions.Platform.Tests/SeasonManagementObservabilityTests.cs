@@ -224,7 +224,7 @@ public sealed class SeasonManagementObservabilityTests
             var history = Assert.Single(reopened.RankedOverview(first.Id).History);
             var summary = Assert.Single(reopened.PendingSeasonSummaryNotifications(first.Id));
             Assert.Equal(activated.Archive.SeasonId, history.SeasonId);
-            Assert.Equal(activated.Archive.Name, history.SeasonName);
+            Assert.Equal("历史赛季", history.SeasonName);
             Assert.Equal(history.SeasonName, summary.SeasonName);
             Assert.Equal(history.Titles.ToArray(), summary.Titles.ToArray());
             var completedCatalog = reopened.SeasonCatalog(reopenedAdmin, scheduledAt);

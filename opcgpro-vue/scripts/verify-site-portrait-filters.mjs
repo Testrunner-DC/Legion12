@@ -41,7 +41,7 @@ const entries=picked.flatMap((card,index)=>[{cardId:card.id,quantity:index%3+1,s
 const masters=catalog.filter(card=>card.cardType==='master').slice(0,4)
 const masterStats=masters.map((master,index)=>({rank:index+1,masterId:master.id,masterName:master.nameZh,games:38-index,wins:25-index,losses:13,winRate:65.8-index,usageRate:25,firstWinRate:64,secondWinRate:67,firstWins:12,firstGames:19,secondWins:13,secondGames:19,strongestPlayer:'长昵称验收玩家'+index,title:'最强'+master.nameZh}))
 rankedApi.leaderboard=async()=>({players:Array.from({length:5},(_,index)=>({rank:index+1,username:'移动端长昵称玩家'+index,faction:['秩序','混沌','命运'][index%3],tier:'定级段位名称',titles:['派系主题称号','最强'+(masters[index%masters.length]?.nameZh||'主宰')],favoriteMasterId:masters[index%masters.length]?.id,favoriteMasterName:masters[index%masters.length]?.nameZh,displayValue:'七曜值 '+(2100-index*45),wins:22-index,losses:11+index})),analytics:{range:'season',summary:{matches:84,placedPlayers:19,activeMasters:masters.length,updatedAt:'2026-09-21T08:00:00Z'},masters:masterStats,matchups:masterStats.flatMap(left=>masterStats.map(right=>({masterId:left.masterId,opponentMasterId:right.masterId,games:8,wins:5,winRate:62.5,firstWins:3,firstGames:4,secondWins:2,secondGames:4})))}})
-rankedApi.history=async()=>[{seasonId:'S2026-1',seasonName:'第一赛季长名称',username:'赛季荣誉玩家',faction:'秩序',tier:'赛季最高段位',displayValue:'七曜值 2450',titles:['秩序冠首','最强'+(masters[0]?.nameZh||'主宰')]}]
+rankedApi.history=async()=>({honors:[{seasonName:'第一赛季长名称',title:'秩序冠首',winners:[{username:'赛季荣誉玩家',faction:'秩序'}]}],factionTotals:[]})
 const mode=new URLSearchParams(location.search).get('mode')||'deck'
 const component={render:()=>mode==='rules'?h(RuleCenterPage):mode==='rankings'?h(RankingsPage):h('main',{class:'qa-page'},[h(DeckConstructionBrowser,{entries,catalog,title:'公开牌库完整构筑验收'})])}
 const router=createRouter({history:createMemoryHistory(),routes:[{path:'/:pathMatch(.*)*',component:{render:()=>null}}]})
@@ -164,7 +164,7 @@ try {
 
     await page.goto(`http://127.0.0.1:${port}/__site_portrait__?mode=rankings`)
     await page.locator('.player-table .tr').first().waitFor()
-    const rankingCards = viewport.width <= 850
+    const rankingCards = viewport.width <= 700
     const rankingsBase = await page.evaluate(() => ({
       overflow: document.documentElement.scrollWidth > innerWidth + 1,
       tableOverflow: document.querySelector('.player-table').scrollWidth > document.querySelector('.player-table').clientWidth + 1,
@@ -182,8 +182,8 @@ try {
       assert.equal(await page.locator('.master-table').evaluate(element => element.scrollWidth > element.clientWidth + 1), false, `mobile master ranking still requires horizontal scroll at ${suffix(viewport)}`)
       await page.screenshot({ path: path.join(output, `rankings-masters-${suffix(viewport)}.png`), fullPage: true })
       await page.getByRole('button', { name: '历史荣誉', exact: true }).click()
-      await page.locator('.honor-table .tr').first().waitFor()
-      assert.equal(await page.locator('.honor-table').evaluate(element => element.scrollWidth > element.clientWidth + 1), false, `mobile honor ranking still requires horizontal scroll at ${suffix(viewport)}`)
+      await page.locator('.honor-group').first().waitFor()
+      assert.equal(await page.locator('.history-panel').evaluate(element => element.scrollWidth > element.clientWidth + 1), false, `mobile honor ranking still requires horizontal scroll at ${suffix(viewport)}`)
       await page.screenshot({ path: path.join(output, `rankings-history-${suffix(viewport)}.png`), fullPage: true })
     }
     report.push({ viewport, deck: deckBase, rules: rulesBase, rankings: rankingsBase })

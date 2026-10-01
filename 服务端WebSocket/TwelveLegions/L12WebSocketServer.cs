@@ -434,7 +434,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 analytics = _platform.RankedAnalytics(matches, range) });
         });
         _app.MapGet("/api/rankings/history", (int? limit) =>
-            Results.Ok(_platform.RankedSeasonHonors(limit ?? 500)));
+            Results.Ok(_platform.RankedSeasonHistory(limit ?? 500)));
         _app.MapGet("/api/ranked/me", (HttpRequest request) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);

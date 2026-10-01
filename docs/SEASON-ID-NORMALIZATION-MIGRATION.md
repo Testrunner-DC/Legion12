@@ -198,12 +198,7 @@ platform state、协调表键和完成 marker 必须在同一 SQLite 事务提�
 
 ## 6. B0 与 legacy 空 SeasonId
 
-B0 处理的过渡期 settlement 可能是旧版本写出的空 `SeasonId`。S0 不应按时间范围猜测所有空值归属。仅可对 B0 marker 中已锁定的 match IDs / settlement facts 做确定性关联：
-
-- 若业务决定补齐实时类型化引用，可把 marker 明确覆盖的空 `SeasonId` 填为规范 `S01`，同时保留原值、B0 指纹和豁免状态。
-- 若 settlement 被视为不可变原始证据，则保留空值，并由 B0 marker 关联；所有玩家可见/排行/奖励查询必须排除 waived transition facts。
-
-实现前需在这两种策略中作一次明确裁定。无论选择哪一种，均不得按 `SettledAt >= ActivatedAt` 批量归属未知空 settlement；该规则只能作为 preview 阻断证据，不能作为静默改写依据。
+B0 处理的过渡期 settlement 可能是旧版本写出的空 `SeasonId`。已裁定并实现：这些 settlement 作为不可变原始证据保留空值，只由 B0 marker 中锁定的精确 match IDs / settlement facts 确定性关联；所有玩家可见/排行/奖励查询排除 waived transition facts。S0 不按时间范围猜测或补写任何空值，也不得按 `SettledAt >= ActivatedAt` 静默归属未知 settlement。
 
 迁移后 B0 API 必须：
 

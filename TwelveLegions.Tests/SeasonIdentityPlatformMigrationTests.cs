@@ -50,6 +50,7 @@ public sealed class SeasonIdentityPlatformMigrationTests
         Assert.Equal(0, archive.SeasonOrdinal);
         Assert.Equal("S01", archive.NextSeasonId);
         Assert.Equal("S01", fixture.Store.OperationsConfig(fixture.Admin).Config.Season.Id);
+        Assert.Equal("第1赛季", fixture.Store.EffectiveOperationsPolicy().Season.Name);
         Assert.Equal(beforeCardIds, fixture.Store.OperationsConfig(fixture.Admin).Config.DisasterPool.CardIds);
         Assert.Contains(beforeCardIds, id => id.StartsWith("S01-", StringComparison.Ordinal));
         Assert.Equal("S00", Assert.Single(fixture.Store.AlternateArtAwardRules()).SeasonId);
@@ -58,8 +59,20 @@ public sealed class SeasonIdentityPlatformMigrationTests
             Assert.Equal("S00", grant.SourceReference);
             Assert.Equal("season-final", grant.SourceKind);
         });
-        Assert.All(fixture.Store.RankedOverview(fixture.Player.Id).History,
-            row => Assert.Equal("S00", row.SeasonId));
+        Assert.All(fixture.Store.RankedOverview(fixture.Player.Id).History, row =>
+        {
+            Assert.Equal("S00", row.SeasonId);
+            Assert.Equal("第0赛季", row.SeasonName);
+        });
+        var oldSeasonTotals = Assert.Single(fixture.Store.RankedSeasonHistory().FactionTotals);
+        Assert.Equal("第0赛季", oldSeasonTotals.SeasonName);
+        Assert.Equal(new[] { 2_407_333, 2_279_096, 2_946_802 },
+            oldSeasonTotals.Factions.Select(row => row.Value));
+        Assert.DoesNotContain("S00", System.Text.Json.JsonSerializer.Serialize(oldSeasonTotals),
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("S01", System.Text.Json.JsonSerializer.Serialize(oldSeasonTotals),
+            StringComparison.Ordinal);
+        var oldSeasonTotalsJson = System.Text.Json.JsonSerializer.Serialize(oldSeasonTotals);
         Assert.Equal("S00", await ReadMatchSeasonAsync(fixture.MatchDatabasePath, "legacy-zero"));
         Assert.Equal("S01", await ReadMatchSeasonAsync(fixture.MatchDatabasePath, "legacy-one"));
         Assert.Equal("immutable-hash", await ReadOutboxHashAsync(fixture.MatchDatabasePath, "legacy-one"));
@@ -76,6 +89,8 @@ public sealed class SeasonIdentityPlatformMigrationTests
         var verifyReplay = fixture.Store.VerifySeasonIdentityNormalization(fixture.Admin,
             recorderResult, fixture.Now.AddSeconds(3), new L12AdminAuditContext("s0-verify-replay"));
         Assert.True(verifyReplay.Replayed);
+        Assert.Equal(oldSeasonTotalsJson, System.Text.Json.JsonSerializer.Serialize(
+            Assert.Single(fixture.Store.RankedSeasonHistory().FactionTotals)));
 
         var current = fixture.Store.SeasonCatalog(fixture.Admin).Current;
         var next = fixture.Store.CreateSeasonDraft(fixture.Admin, current.Revision,
@@ -169,6 +184,8 @@ public sealed class SeasonIdentityPlatformMigrationTests
             TimeSpan.FromSeconds(20), fixture.Now, new L12AdminAuditContext("rollback-claim"));
         var recorderResult = await recorder.ApplySeasonIdentityNormalizationAsync(
             recorderPreview.Fingerprint, claim.Owner, TimeSpan.FromMinutes(2));
+        var beforeFailureTotals = System.Text.Json.JsonSerializer.Serialize(
+            fixture.Store.RankedSeasonHistory().FactionTotals);
         fixture.Store.StorageFailureInjector = point =>
         {
             if (point == "after-season-identity-platform-marker")
@@ -183,6 +200,8 @@ public sealed class SeasonIdentityPlatformMigrationTests
         var admin = reloaded.Login("Admin", "L12master").Account!;
         Assert.Equal("T01", reloaded.SeasonCatalog(admin).Current.SeasonId);
         Assert.Equal("S01", Assert.Single(reloaded.SeasonCatalog(admin).Archives).SeasonId);
+        Assert.Equal(beforeFailureTotals, System.Text.Json.JsonSerializer.Serialize(
+            reloaded.RankedSeasonHistory().FactionTotals));
         var recorderCommitted = await recorder.PreviewSeasonIdentityNormalizationAsync();
         var retryPreview = reloaded.PreviewSeasonIdentityNormalization(admin, recorderCommitted,
             readiness, fixture.Now.AddSeconds(21));

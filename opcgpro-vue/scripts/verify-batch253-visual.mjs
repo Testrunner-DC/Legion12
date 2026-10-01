@@ -137,7 +137,7 @@ if(isOnlineFixture){
 }
 const masterRows=masters.map((m,i)=>({rank:100+i,masterId:m.id,masterName:m.nameZh,games:999,wins:999,losses:0,winRate:100,usageRate:50,firstWinRate:100,secondWinRate:100,firstWins:500,firstGames:500,secondWins:499,secondGames:499,strongestPlayer:'合成测试玩家',title:'最强'+m.nameZh}))
 rankedApi.leaderboard=async()=>({players:Array.from({length:4},(_,i)=>({rank:i+1,username:'合成测试长昵称'+i,faction:'命运',tier:'迷雾旅人',titles:['最强银臂努阿达','最强雷神索尔'],favoriteMasterId:masters[0].id,favoriteMasterName:masters[0].nameZh,displayValue:'七曜值 21,945',wins:999,losses:888})),analytics:{range:'season',summary:{matches:999,placedPlayers:4,activeMasters:2},masters:masterRows,matchups:masterRows.flatMap(a=>masterRows.map(b=>({masterId:a.masterId,opponentMasterId:b.masterId,games:999,wins:999,winRate:100,firstWins:500,firstGames:500,secondWins:499,secondGames:499})))}})
-rankedApi.history=async()=>[]
+rankedApi.history=async()=>({honors:[],factionTotals:[]})
 const app=createApp({render:()=>isPicker?h(SingleCardPicker,{title:'GM横卡验收',allowedTypes:['destruction']}):isRanking?h(RankingsPage):isDeckViewer?h(DeckConstructionBrowser,{entries:deckEntries,catalog:deckCatalog,title:'公开牌库完整构筑'}):(isInviteFixture||isOutgoingInviteFixture||isOnlineFixture)?h(SiteShell,null,{default:()=>h('div',{style:'padding:40px'},'非阻塞页面内容仍可见')}):h(GamePage)})
 app.use(createRouter({history:createMemoryHistory(),routes:[]}));app.mount('#app')
 `

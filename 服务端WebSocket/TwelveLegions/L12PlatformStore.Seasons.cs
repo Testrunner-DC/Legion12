@@ -212,6 +212,7 @@ public sealed partial class L12PlatformStore
         public DateTimeOffset? LastFinalizationAttemptAt { get; set; }
         public string? FinalizationErrorCode { get; set; }
         public string? FinalizationErrorMessage { get; set; }
+        public List<SeasonFactionFinalTotalRow> FactionFinalTotals { get; set; } = [];
     }
 
     private sealed class SeasonActivationPlanRow
@@ -251,6 +252,18 @@ public sealed partial class L12PlatformStore
         public DateTimeOffset? ActivatedAt { get; set; }
         public DateTimeOffset ArchivedAt { get; set; }
         public string ArchivedBy { get; set; } = string.Empty;
+        public List<SeasonFactionFinalTotalRow> FactionFinalTotals { get; set; } = [];
+    }
+
+    private sealed class SeasonFactionFinalTotalRow
+    {
+        public string FactionId { get; set; } = string.Empty;
+        public string FactionNameSnapshot { get; set; } = string.Empty;
+        public int Value { get; set; }
+        public int EligiblePlayers { get; set; }
+        public DateTimeOffset CapturedAt { get; set; }
+        public string Provenance { get; set; } = string.Empty;
+        public string EvidenceFingerprint { get; set; } = string.Empty;
     }
 
     internal void EnsureSeasonLifecycleState()
@@ -260,6 +273,10 @@ public sealed partial class L12PlatformStore
             var changed = false;
             _data.SeasonDefinitions ??= [];
             _data.SeasonArchives ??= [];
+            foreach (var definition in _data.SeasonDefinitions)
+                definition.FactionFinalTotals ??= [];
+            foreach (var archive in _data.SeasonArchives)
+                archive.FactionFinalTotals ??= [];
             var shouldMigrateLegacyPendingGradient = IsLegacySeasonLifecycleMigrationPending();
             var currentOperations = RequireOperationsConfig();
             var active = _data.SeasonDefinitions.SingleOrDefault(row => row.LifecycleStatus == "active");
@@ -1024,8 +1041,7 @@ public sealed partial class L12PlatformStore
                         "赛季结算执行权已失效");
             }
 
-            FinalizeOutgoingRankedSeason(current.SeasonId, current.Name,
-                current.NextSeasonId ?? string.Empty, now);
+            FinalizeOutgoingRankedSeason(current, current.NextSeasonId ?? string.Empty, now);
             current.FinalizedAt = now;
             current.FinalizationLeaseOwner = null;
             current.FinalizationLeaseExpiresAt = null;
@@ -1169,7 +1185,7 @@ public sealed partial class L12PlatformStore
                 if (claim is not null && current.EndsAt is not null)
                     throw new L12OperationsConfigException("season_finalization_pending",
                         "当前赛季尚未完成独立结算，不能自动激活下一赛季");
-                FinalizeOutgoingRankedSeason(current.SeasonId, current.Name, draft.SeasonId, now);
+                FinalizeOutgoingRankedSeason(current, draft.SeasonId, now);
                 current.FinalizedAt = now;
             }
             SeasonActivationFailureInjector?.Invoke("after-season-finalization");
@@ -1188,6 +1204,7 @@ public sealed partial class L12PlatformStore
                 ActivatedAt = current.ActivatedAt,
                 ArchivedAt = now,
                 ArchivedBy = actor.Username,
+                FactionFinalTotals = current.FactionFinalTotals.Select(CloneFactionFinalTotal).ToList(),
             };
             _data.SeasonArchives.Add(archive);
             SeasonActivationFailureInjector?.Invoke("after-season-archive");
