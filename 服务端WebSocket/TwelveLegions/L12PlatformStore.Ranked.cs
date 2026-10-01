@@ -113,7 +113,8 @@ public sealed record L12RankedSeasonResetRepairPreviewView(string SeasonId,
     DateTimeOffset? OriginalStartsAt, DateTimeOffset? OriginalActivatedAt, DateTimeOffset? EndsAt,
     int TransitionMatches, int SettlementRows, int ProfileFacts, int ProfilesReset,
     int BroadcastsToRemove, int MasterRecordsToRemove, int GrantsToRevoke,
-    string EvidenceFingerprint, int MaximumSupportedMatches);
+    string EvidenceFingerprint, int MaximumSupportedMatches,
+    DateTimeOffset? CompetitiveStartAt = null);
 
 public sealed partial class L12PlatformStore
 {
@@ -221,6 +222,7 @@ public sealed partial class L12PlatformStore
         public required SeasonDefinitionRow Season { get; init; }
         public required OperationsConfigRow Operations { get; init; }
         public required DateTimeOffset ObservedAt { get; init; }
+        public required DateTimeOffset CompetitiveStartAt { get; init; }
         public required string[] MatchIds { get; init; }
         public required RankedIntegrityAuditRow[] Audits { get; init; }
         public required RankedSettlementRow[] Settlements { get; init; }
@@ -1501,33 +1503,38 @@ public sealed partial class L12PlatformStore
 
     public L12RankedSeasonResetRepairPreviewView PreviewT01RankedSeasonReset(
         L12AccountView actor, string seasonId, long expectedOperationsVersion,
-        L12RankedSeasonCutoverReadiness readiness, DateTimeOffset observedAt)
+        L12RankedSeasonCutoverReadiness readiness, DateTimeOffset observedAt,
+        DateTimeOffset? competitiveStartAt = null)
     {
         EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
         lock (_gate)
         {
             var plan = BuildT01RankedSeasonResetRepairPlanLocked(seasonId,
-                expectedOperationsVersion, readiness, observedAt.ToUniversalTime());
+                expectedOperationsVersion, readiness, observedAt.ToUniversalTime(),
+                competitiveStartAt?.ToUniversalTime());
             return new(plan.Season.SeasonId, plan.Season.StartsAt, plan.Season.ActivatedAt,
                 plan.Season.EndsAt, plan.MatchIds.Length, plan.Settlements.Length,
                 plan.ProfileFacts.Length, plan.Profiles.Length, plan.Broadcasts.Length,
                 plan.MasterRecords.Length, plan.Grants.Length, plan.EvidenceFingerprint,
-                T01TransitionRepairMaximumMatches);
+                T01TransitionRepairMaximumMatches, plan.CompetitiveStartAt);
         }
     }
 
     public L12RankedSeasonResetRepairView RepairT01RankedSeasonReset(L12AccountView actor,
         string seasonId, string reason, long expectedOperationsVersion,
         L12RankedSeasonCutoverReadiness readiness, L12AdminAuditContext context,
-        string expectedEvidenceFingerprint = "", DateTimeOffset? observedAt = null)
+        string expectedEvidenceFingerprint = "", DateTimeOffset? observedAt = null,
+        DateTimeOffset? competitiveStartAt = null)
         => ExecuteAdminTransaction(() => RepairT01RankedSeasonResetCore(actor, seasonId, reason,
             expectedOperationsVersion, readiness, context, expectedEvidenceFingerprint,
-            (observedAt ?? DateTimeOffset.UtcNow).ToUniversalTime()));
+            (observedAt ?? DateTimeOffset.UtcNow).ToUniversalTime(),
+            competitiveStartAt?.ToUniversalTime()));
 
     private L12RankedSeasonResetRepairView RepairT01RankedSeasonResetCore(L12AccountView actor,
         string seasonId, string reason, long expectedOperationsVersion,
         L12RankedSeasonCutoverReadiness readiness, L12AdminAuditContext context,
-        string expectedEvidenceFingerprint, DateTimeOffset observedAt)
+        string expectedEvidenceFingerprint, DateTimeOffset observedAt,
+        DateTimeOffset? competitiveStartAt)
     {
         EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
         var normalizedReason = string.IsNullOrWhiteSpace(reason) ? string.Empty : reason.Trim();
@@ -1553,7 +1560,7 @@ public sealed partial class L12PlatformStore
                 SeasonIdsEqual(row.SeasonId, current.SeasonId));
             if (existing is not null) return RankedSeasonResetRepairView(existing, true);
             var plan = BuildT01RankedSeasonResetRepairPlanLocked(seasonId,
-                expectedOperationsVersion, readiness, observedAt);
+                expectedOperationsVersion, readiness, observedAt, competitiveStartAt);
             var normalizedFingerprint = expectedEvidenceFingerprint?.Trim().ToLowerInvariant()
                 ?? string.Empty;
             if (normalizedFingerprint.Length != 64 || !normalizedFingerprint.All(Uri.IsHexDigit))
@@ -1578,7 +1585,7 @@ public sealed partial class L12PlatformStore
                 Reason = normalizedReason,
                 OriginalStartsAt = current.StartsAt,
                 OriginalActivatedAt = current.ActivatedAt,
-                CompetitiveStartAt = observedAt,
+                CompetitiveStartAt = plan.CompetitiveStartAt,
                 EndsAt = current.EndsAt,
                 TransitionMatchIds = plan.MatchIds.ToList(),
                 EvidenceFingerprint = plan.EvidenceFingerprint,
@@ -1611,7 +1618,7 @@ public sealed partial class L12PlatformStore
             var previousOperations = ToPayload(plan.Operations);
             var nextPayload = NormalizeOperationsPayload(previousOperations with
             {
-                Season = previousOperations.Season with { StartsAt = observedAt },
+                Season = previousOperations.Season with { StartsAt = plan.CompetitiveStartAt },
             });
             var nextOperations = ToRow(nextPayload, marker.OperationsVersionAfter, actor.Username,
                 plan.Operations.ImmediateMaintenance);
@@ -1619,14 +1626,14 @@ public sealed partial class L12PlatformStore
             _data.OperationsConfigHistory.Add(NewOperationsHistory(nextOperations,
                 "ranked-season-reset-repair:T01", actor, normalizedReason));
             TrimOperationsHistory();
-            current.StartsAt = observedAt;
+            current.StartsAt = plan.CompetitiveStartAt;
             current.Revision++;
             current.UpdatedBy = actor.Username;
             current.UpdatedAt = observedAt;
             _data.RankedSeasonResetRepairs.Add(marker);
             AddAdminAudit(actor, "ranked", "season-reset-repair", "ranked-season:T01",
                 $"profiles={marker.ProfilesReset};matches={marker.TransitionMatchIds.Count};fingerprint={marker.EvidenceFingerprint}",
-                $"competitiveStartAt={observedAt:O};seven=0;placement=0;match-stats=0", normalizedReason,
+                $"competitiveStartAt={plan.CompetitiveStartAt:O};seven=0;placement=0;match-stats=0", normalizedReason,
                 context with { ExpectedVersion = expectedOperationsVersion, Reason = normalizedReason,
                     Outcome = "succeeded" });
             Save();
@@ -1636,7 +1643,7 @@ public sealed partial class L12PlatformStore
 
     private RankedSeasonResetRepairPlan BuildT01RankedSeasonResetRepairPlanLocked(string seasonId,
         long expectedOperationsVersion, L12RankedSeasonCutoverReadiness readiness,
-        DateTimeOffset observedAt)
+        DateTimeOffset observedAt, DateTimeOffset? requestedCompetitiveStartAt = null)
     {
         var operations = RequireOperationsConfig();
         EnsureOperationsVersion(operations, expectedOperationsVersion);
@@ -1651,6 +1658,11 @@ public sealed partial class L12PlatformStore
         if (current.EndsAt is { } endsAt && observedAt >= endsAt.ToUniversalTime())
             throw new L12OperationsConfigException("ranked_season_reset_repair_season_ended",
                 "修复切点已到达 T01 结束时间，拒绝重定义开季时间");
+        var competitiveStartAt = requestedCompetitiveStartAt?.ToUniversalTime() ?? observedAt;
+        if (current.StartsAt is { } originalStart && competitiveStartAt < originalStart.ToUniversalTime()
+            || current.EndsAt is { } seasonEnd && competitiveStartAt >= seasonEnd.ToUniversalTime())
+            throw new L12OperationsConfigException("ranked_season_reset_repair_start_invalid",
+                "新开季时间不得早于原开始时间或到达赛季结束时间");
         if (!SeasonIdsEqual(readiness.SeasonId, current.SeasonId) || !readiness.Ready)
             throw new L12OperationsConfigException("ranked_season_reset_repair_not_ready",
                 "T01 仍有在途、待结算或待治理排位对局，拒绝修复");
@@ -1678,6 +1690,11 @@ public sealed partial class L12PlatformStore
                               > observedAt))
             throw new L12OperationsConfigException("ranked_season_reset_repair_future_fact",
                 "T01 存在晚于修复切点的排位事实");
+        if (requestedCompetitiveStartAt is not null && audits.Any(row =>
+                (row.EndedAt == default ? row.CreatedAt : row.EndedAt).ToUniversalTime()
+                >= competitiveStartAt))
+            throw new L12OperationsConfigException("ranked_season_reset_repair_after_start_fact",
+                "预定开季时间之后已有排位事实，拒绝将其归入过渡期");
         var matchIds = audits.Select(row => row.MatchId).ToArray();
         var selected = matchIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var activationFloor = current.ActivatedAt?.ToUniversalTime() ?? DateTimeOffset.MinValue;
@@ -1815,6 +1832,7 @@ public sealed partial class L12PlatformStore
         var fingerprintPayload = JsonSerializer.Serialize(new
         {
             seasonId = current.SeasonId,
+            requestedCompetitiveStartAt,
             current.StartsAt,
             current.ActivatedAt,
             current.EndsAt,
@@ -1835,6 +1853,7 @@ public sealed partial class L12PlatformStore
             Season = current,
             Operations = operations,
             ObservedAt = observedAt,
+            CompetitiveStartAt = competitiveStartAt,
             MatchIds = matchIds,
             Audits = audits,
             Settlements = settlements,

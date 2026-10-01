@@ -706,7 +706,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 var preview = await _rooms.InspectRankedSeasonCutoverSnapshotAsync("T01", readiness =>
                     _platform.PreviewT01RankedSeasonReset(authenticated.Account,
                         body.SeasonId ?? string.Empty, expectedVersion.Value, readiness,
-                        _seasonActivationUtcNow()));
+                        _seasonActivationUtcNow(), body.CompetitiveStartAt));
                 return Results.Ok(preview);
             }
             catch (L12OperationsConfigException error)
@@ -723,7 +723,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     body.IdempotencyKey, body.ExpectedVersion, out var key, out var expected,
                     out failure)) return failure;
             var payload = new L12RankedSeasonResetRepairCommandPayload(body.SeasonId ?? string.Empty,
-                body.ExpectedEvidenceFingerprint ?? string.Empty);
+                body.ExpectedEvidenceFingerprint ?? string.Empty, body.CompetitiveStartAt);
             var command = CommandEnvelope(request, authenticated.Account, permission,
                 "operations.config.ranked-season-reset-repair", "operations:config", payload,
                 key, expected, false, body.Reason);
@@ -733,7 +733,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                         _platform.RepairT01RankedSeasonReset(current.Actor,
                             current.Payload.SeasonId, current.Reason ?? string.Empty, expected,
                             readiness, current.AuditContext, current.Payload.ExpectedEvidenceFingerprint,
-                            _seasonActivationUtcNow())), risk: L12AdminCommandRisk.High));
+                            _seasonActivationUtcNow(), current.Payload.CompetitiveStartAt)),
+                    risk: L12AdminCommandRisk.High));
             if (outcome.Success) NotifyOperationsPolicyChanged();
             var response = AdminCommandResponse(request, command, outcome);
             request.HttpContext.Response.Headers.ETag =
@@ -5134,16 +5135,16 @@ public sealed record SeasonActivationRequest(long ExpectedCurrentRevision, long 
 public sealed record L12SeasonActivationCommandPayload(string DefinitionId,
     long ExpectedCurrentRevision, long ExpectedDraftRevision);
 public sealed record RankedSeasonResetRepairPreviewRequest(string? SeasonId,
-    long? ExpectedVersion = null);
+    long? ExpectedVersion = null, DateTimeOffset? CompetitiveStartAt = null);
 public sealed record RankedSeasonResetRepairRequest(string? SeasonId, string? Reason = null,
     string? IdempotencyKey = null, long? ExpectedVersion = null,
-    string? ExpectedEvidenceFingerprint = null);
+    string? ExpectedEvidenceFingerprint = null, DateTimeOffset? CompetitiveStartAt = null);
 public sealed record SeasonIdentityMigrationPreviewRequest(long? ExpectedVersion = null);
 public sealed record SeasonIdentityMigrationRequest(string? ExpectedPlatformFingerprint,
     string? ExpectedRecorderFingerprint, string? Reason = null, string? IdempotencyKey = null,
     long? ExpectedVersion = null);
 public sealed record L12RankedSeasonResetRepairCommandPayload(string SeasonId,
-    string ExpectedEvidenceFingerprint);
+    string ExpectedEvidenceFingerprint, DateTimeOffset? CompetitiveStartAt = null);
 public sealed record SeasonActivationPreviewRequest(long ExpectedCurrentRevision,
     long ExpectedDraftRevision, long? ExpectedVersion = null);
 public sealed record SeasonActivationArmRequest(long ExpectedCurrentRevision, long ExpectedDraftRevision,

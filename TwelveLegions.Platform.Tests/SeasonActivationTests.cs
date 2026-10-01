@@ -451,15 +451,19 @@ public sealed class SeasonActivationTests
                 store, catalog);
             await server.StartAsync(0);
             using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
+            var scheduledStart = DateTimeOffset.UtcNow.AddMinutes(10);
             using var previewRequest = Authorized(HttpMethod.Post,
                 "/api/admin/ranked/season-reset-repair/preview", login.Token!,
-                new RankedSeasonResetRepairPreviewRequest("T01", operationsVersion));
+                new RankedSeasonResetRepairPreviewRequest("T01", operationsVersion,
+                    scheduledStart));
             using var previewResponse = await client.SendAsync(previewRequest);
             Assert.Equal(HttpStatusCode.OK, previewResponse.StatusCode);
             var preview = (await previewResponse.Content.ReadFromJsonAsync<
                 L12RankedSeasonResetRepairPreviewView>())!;
+            Assert.Equal(scheduledStart, preview.CompetitiveStartAt);
             var body = new RankedSeasonResetRepairRequest("T01", "修复线上 T01 承接污染",
-                "repair-t01-api-1", operationsVersion, preview.EvidenceFingerprint);
+                "repair-t01-api-1", operationsVersion, preview.EvidenceFingerprint,
+                scheduledStart);
 
             using var request = Authorized(HttpMethod.Post, "/api/admin/ranked/season-reset-repair",
                 login.Token!, body);
@@ -467,6 +471,8 @@ public sealed class SeasonActivationTests
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             var repaired = (await response.Content.ReadFromJsonAsync<L12RankedSeasonResetRepairView>())!;
             Assert.False(repaired.Replayed);
+            Assert.Equal(scheduledStart, repaired.CompetitiveStartAt);
+            Assert.Equal(scheduledStart, store.OperationsConfig(login.Account!).Config.Season.StartsAt);
             Assert.Equal(0, store.RankedProfile(player.Id).SevenValue);
 
             using var replayRequest = Authorized(HttpMethod.Post,
@@ -1198,20 +1204,31 @@ public sealed class SeasonActivationTests
             var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
             var admin = store.Login("Admin", "L12master").Account!;
             var version = store.OperationsConfig(admin).Version;
-            var competitiveStart = DateTimeOffset.UtcNow.AddMinutes(1);
+            var observedAt = DateTimeOffset.UtcNow.AddMinutes(1);
+            var competitiveStart = observedAt.AddMinutes(30);
             var readiness = new L12RankedSeasonCutoverReadiness("T01", 0, 0, 0, 0);
+            var afterStart = Assert.Throws<L12OperationsConfigException>(() =>
+                store.PreviewT01RankedSeasonReset(admin, "T01", version, readiness,
+                    observedAt, originalStartsAt.AddMinutes(1)));
+            Assert.Equal("ranked_season_reset_repair_after_start_fact", afterStart.Code);
             var preview = store.PreviewT01RankedSeasonReset(admin, "T01", version, readiness,
-                competitiveStart);
+                observedAt, competitiveStart);
 
+            Assert.Equal(competitiveStart, preview.CompetitiveStartAt);
             Assert.Equal(2, preview.TransitionMatches);
             Assert.Equal(4, preview.SettlementRows);
             Assert.Equal(2, preview.ProfileFacts);
             Assert.Equal(3, preview.MasterRecordsToRemove);
             Assert.Equal(1, preview.BroadcastsToRemove);
             Assert.Equal(1, preview.GrantsToRevoke);
+            var changedTarget = Assert.Throws<L12OperationsConfigException>(() =>
+                store.RepairT01RankedSeasonReset(admin, "T01", "篡改预定开季时间",
+                    version, readiness, Context("repair-transition-target-mismatch", version),
+                    preview.EvidenceFingerprint, observedAt, competitiveStart.AddMinutes(1)));
+            Assert.Equal("ranked_season_reset_repair_evidence_changed", changedTarget.Code);
             var result = store.RepairT01RankedSeasonReset(admin, "T01", "放弃部署前过渡期",
                 version, readiness, Context("repair-transition", version),
-                preview.EvidenceFingerprint, competitiveStart);
+                preview.EvidenceFingerprint, observedAt, competitiveStart);
 
             Assert.Equal(2, result.TransitionMatchesWaived);
             Assert.Equal(version, result.OperationsVersionBefore);
