@@ -133,17 +133,18 @@ public sealed class ControlPlanePlatformStoreTests
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
             var admin = store.Login("Admin", "L12master").Account!;
             var bug = store.AddBug(admin, "回归问题", "用于验证证据链", "/battle", null, null, "test");
-            var verifiedAt = DateTimeOffset.UtcNow;
+            var before = DateTimeOffset.UtcNow;
             var updated = store.UpdateBug(admin, bug.Id, "closed", "high", "maintainer", "已完成",
                 "关闭验证", fixCommit: "abc1234", regressionTest: "BattleReconnectRegression",
-                deployedVersion: "2026.09.25", verifiedBy: "qa-admin", verifiedAt: verifiedAt);
+                deployedVersion: "2026.09.25", closureDisposition: "fixed_verified");
 
             Assert.NotNull(updated);
             Assert.Equal("abc1234", updated!.FixCommit);
             Assert.Equal("BattleReconnectRegression", updated.RegressionTest);
             Assert.Equal("2026.09.25", updated.DeployedVersion);
-            Assert.Equal("qa-admin", updated.VerifiedBy);
-            Assert.Equal(verifiedAt, updated.VerifiedAt);
+            Assert.Equal("Admin", updated.VerifiedBy);
+            Assert.InRange(updated.VerifiedAt!.Value, before, DateTimeOffset.UtcNow);
+            Assert.Equal("fixed_verified", updated.ClosureDisposition);
             Assert.Contains(updated.History, item => item.Action == "fix-commit");
             Assert.Contains(updated.History, item => item.Action == "regression-test");
             Assert.Contains(updated.History, item => item.Action == "verified-at");

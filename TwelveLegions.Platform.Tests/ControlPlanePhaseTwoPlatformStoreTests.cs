@@ -28,7 +28,7 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
             var support = store.AuthenticateToken(supportRegistration.Token)!;
             var bug = store.AddBug(support, "持久幂等", "首次更新只能执行一次", "/test", null, null, "test");
             var expectedVersion = store.Version;
-            var firstCommand = BugCommand(support, bug.Id, "persist-bug-1", expectedVersion, "resolved");
+            var firstCommand = BugCommand(support, bug.Id, "persist-bug-1", expectedVersion, "confirmed");
             var first = new L12AdminCommandBus(store).Execute(firstCommand, L12Permission.AdminBugsWrite,
                 current =>
                 {
@@ -38,13 +38,13 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
                     return L12AdminCommandResult<L12BugReportView>.Ok(updated!);
                 });
             Assert.True(first.Success);
-            Assert.Equal("resolved", first.Value!.Status);
+            Assert.Equal("confirmed", first.Value!.Status);
 
             var reloaded = new L12PlatformStore(path);
             var reloadedSupport = reloaded.AuthenticateToken(supportRegistration.Token)!;
             var handlerCalled = false;
             var replay = new L12AdminCommandBus(reloaded).Execute<BugUpdateCommandPayload, L12BugReportView>(
-                BugCommand(reloadedSupport, bug.Id, "persist-bug-1", expectedVersion, "resolved"),
+                BugCommand(reloadedSupport, bug.Id, "persist-bug-1", expectedVersion, "confirmed"),
                 L12Permission.AdminBugsWrite, _ =>
                 {
                     handlerCalled = true;
@@ -354,7 +354,7 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
 
             var bug = store.AddBug(admin.Account, "旧路由", "仍必须进入命令总线", "/legacy", null, null, "test");
             using (var update = Authorized(HttpMethod.Patch, $"/api/admin/bugs/{bug.Id}", admin.Token!,
-                       "legacy-bug-command-1", new { status = "resolved" }, "legacy-bug-idem-1", store.Version))
+                       "legacy-bug-command-1", new { status = "resolved", closureDisposition = "rejected", comment = "旧路由命令总线验证" }, "legacy-bug-idem-1", store.Version))
             using (var response = await client.SendAsync(update))
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             Assert.Contains(store.AdminCommands(type: "bug.update"), item => item.IdempotencyKey == "legacy-bug-idem-1");

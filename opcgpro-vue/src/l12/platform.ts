@@ -88,6 +88,7 @@ export interface BugReport {
   diagnostic?: BugRuntimeDiagnostic; clientDiagnostic?: BugClientConnectionDiagnostic
   connectionDiagnostic?: BugConnectionClaimDiagnostic
   fixCommit?: string; regressionTest?: string; deployedVersion?: string; verifiedBy?: string; verifiedAt?: string; duplicateOf?: string
+  closureDisposition?: 'fixed_verified' | 'duplicate' | 'rejected'
 }
 export interface BugRuntimeDiagnostic {
   capturedAt: string; matchId?: string; roomCode?: string; phase?: string; round?: number; turnSerial?: number
@@ -1320,7 +1321,7 @@ export const adminApi = {
     Object.entries(query).forEach(([key, value]) => { if (value) params.set(key, value) })
     return platformRequest<BugReport[]>(`/api/admin/bugs${params.size ? `?${params}` : ''}`)
   },
-  updateBug: (id: string, body: Partial<Pick<BugReport, 'status' | 'priority' | 'assignee' | 'adminNotes' | 'fixCommit' | 'regressionTest' | 'deployedVersion' | 'verifiedBy' | 'verifiedAt' | 'duplicateOf'>> & { comment?: string }) => platformRequest<BugReport>(`/api/admin/bugs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(commandBody('bug', body)) }),
+  updateBug: (id: string, body: Partial<Pick<BugReport, 'status' | 'priority' | 'assignee' | 'adminNotes' | 'fixCommit' | 'regressionTest' | 'deployedVersion' | 'duplicateOf' | 'closureDisposition'>> & { comment?: string; expectedVersion?: number; dryRun?: boolean; reason?: string }) => platformRequest<BugReport>(`/api/admin/bugs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(commandBody('bug', body)) }),
   getContent: (key: string) => platformRequest<ContentEntry>(`/api/admin/content/${encodeURIComponent(key)}`),
   articles: (query: { status?: string; category?: string; search?: string; kind?: SiteContentKind } = {}) => {
     const params = new URLSearchParams()

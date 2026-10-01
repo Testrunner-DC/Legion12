@@ -16,7 +16,7 @@ import {createApp,h} from 'vue'
 import {createMemoryHistory,createRouter,RouterView} from 'vue-router'
 import '/src/style.css'
 
-const permissions=['admin.accounts.read','admin.accounts.status.write','admin.sessions.read','admin.sessions.revoke','admin.bugs.read','admin.effects.read','admin.effects.review','admin.audit.read','admin.security.read','admin.runtime.read','admin.analytics.read']
+const permissions=['admin.accounts.read','admin.accounts.status.write','admin.sessions.read','admin.sessions.revoke','admin.bugs.read','admin.bugs.write','admin.effects.read','admin.effects.review','admin.audit.read','admin.security.read','admin.runtime.read','admin.analytics.read']
 localStorage.setItem('l12-auth-token','qa-token')
 localStorage.setItem('l12-account',JSON.stringify({id:'qa-admin',username:'移动端验收管理员',role:'admin',createdAt:'2026-09-21T00:00:00Z',publicHistory:true,permissions,permissionVersion:8}))
 const platform=await import('/src/l12/platform.ts')
@@ -245,12 +245,46 @@ try {
       await page.getByRole('heading', { name: 'Bug 分诊与证据闭环' }).waitFor()
       assert.equal(await overflow(page), false, `admin bugs overflow at ${suffix(viewport)}`)
       await page.screenshot({ path: path.join(output, `admin-bugs-${suffix(viewport)}.png`), fullPage: true })
+      if (viewport.width === 390) {
+        await page.getByRole('button', { name: '关闭反馈', exact: true }).click()
+        const closure = page.locator('.closure-panel')
+        await page.getByLabel('关闭类型').selectOption('fixed_verified')
+        await page.getByText('复测人与时间会由系统自动记录。').waitFor()
+        assert.equal(await closure.locator('input').count(), 3, `fixed closure fields mismatch at ${suffix(viewport)}`)
+        assert.equal(await closure.locator('textarea').count(), 0, `fixed closure shows rejection reason at ${suffix(viewport)}`)
+        await page.getByLabel('关闭类型').selectOption('duplicate')
+        assert.equal(await closure.locator('input').count(), 1, `duplicate closure fields mismatch at ${suffix(viewport)}`)
+        await page.getByLabel('关闭类型').selectOption('rejected')
+        assert.equal(await closure.locator('input').count(), 0, `rejected closure shows evidence inputs at ${suffix(viewport)}`)
+        assert.equal(await closure.locator('textarea').count(), 1, `rejected closure reason missing at ${suffix(viewport)}`)
+        await page.getByLabel('关闭类型').selectOption('fixed_verified')
+        assert.equal(await overflow(page), false, `admin bug closure overflows at ${suffix(viewport)}`)
+        await closure.screenshot({ path: path.join(output, `admin-bugs-close-${suffix(viewport)}.png`) })
+      }
       if (viewport.width === 390 || viewport.width === 768) {
         await picker.selectOption('/admin/content/effects')
         await page.getByRole('heading', { name: '卡效原子化与发布工作台' }).first().waitFor()
         assert.equal(await overflow(page), false, `admin effects overflow at ${suffix(viewport)}`)
         await page.screenshot({ path: path.join(output, `admin-effects-${suffix(viewport)}.png`), fullPage: true })
       }
+    }
+    if (viewport.width === 1440) {
+      await page.evaluate(()=>window.__qaRouter.push('/admin/users/bugs'))
+      await page.getByRole('heading', { name: 'Bug 分诊与证据闭环' }).waitFor()
+      await page.getByRole('button', { name: '关闭反馈', exact: true }).click()
+      const closure = page.locator('.closure-panel')
+      await page.getByLabel('关闭类型').selectOption('fixed_verified')
+      await page.getByText('复测人与时间会由系统自动记录。').waitFor()
+      assert.equal(await closure.locator('input').count(), 3, `fixed closure fields mismatch at ${suffix(viewport)}`)
+      assert.equal(await closure.locator('textarea').count(), 0, `fixed closure shows rejection reason at ${suffix(viewport)}`)
+      await page.getByLabel('关闭类型').selectOption('duplicate')
+      assert.equal(await closure.locator('input').count(), 1, `duplicate closure fields mismatch at ${suffix(viewport)}`)
+      await page.getByLabel('关闭类型').selectOption('rejected')
+      assert.equal(await closure.locator('input').count(), 0, `rejected closure shows evidence inputs at ${suffix(viewport)}`)
+      assert.equal(await closure.locator('textarea').count(), 1, `rejected closure reason missing at ${suffix(viewport)}`)
+      await page.getByLabel('关闭类型').selectOption('fixed_verified')
+      assert.equal(await overflow(page), false, `admin bug closure overflows at ${suffix(viewport)}`)
+      await closure.screenshot({ path: path.join(output, `admin-bugs-close-${suffix(viewport)}.png`) })
     }
     if (viewport.width === 390 || viewport.width === 1440) {
       await page.evaluate(()=>window.__qaRouter.push('/admin/users/accounts/account-001?tab=sessions'))

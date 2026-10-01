@@ -68,9 +68,13 @@ public sealed record L12BugReportView(string Id, string? ReporterId, string Repo
     string? EngineVersion = null, L12ClientConnectionDiagnosticView? ClientDiagnostic = null,
     L12ConnectionClaimDiagnosticView? ConnectionDiagnostic = null, string? FixCommit = null,
     string? RegressionTest = null, string? DeployedVersion = null, string? VerifiedBy = null,
-    DateTimeOffset? VerifiedAt = null, string? DuplicateOf = null);
+    DateTimeOffset? VerifiedAt = null, string? DuplicateOf = null, string? ClosureDisposition = null);
 public sealed record L12BugAuditView(string Id, string? ActorId, string ActorName, string Action,
     string? FromValue, string? ToValue, string? Comment, DateTimeOffset CreatedAt);
+public sealed class L12BugClosureValidationException(string code, string message) : ArgumentException(message)
+{
+    public string Code { get; } = code;
+}
 public sealed record L12AdminAuditView(string Id, string ActorId, string ActorName, string Category, string Action,
     string Target, string? FromValue, string? ToValue, string? Comment, DateTimeOffset CreatedAt,
     string? CorrelationId = null, string Outcome = "succeeded", string? Permission = null, string? Reason = null,
@@ -146,6 +150,7 @@ public sealed partial class L12PlatformStore
         public string? VerifiedBy { get; set; }
         public DateTimeOffset? VerifiedAt { get; set; }
         public string? DuplicateOf { get; set; }
+        public string? ClosureDisposition { get; set; }
         public L12BugDiagnosticView? Diagnostic { get; set; }
         public L12ClientConnectionDiagnosticView? ClientDiagnostic { get; set; }
         public L12ConnectionClaimDiagnosticView? ConnectionDiagnostic { get; set; }
@@ -1162,19 +1167,39 @@ public sealed partial class L12PlatformStore
     public L12BugReportView? UpdateBug(L12AccountView actor, string id, string? status, string? priority,
         string? assignee, string? notes, string? comment = null, L12AdminAuditContext? context = null,
         string? fixCommit = null, string? regressionTest = null, string? deployedVersion = null,
-        string? verifiedBy = null, DateTimeOffset? verifiedAt = null, string? duplicateOf = null)
+        string? duplicateOf = null, string? closureDisposition = null, bool validateOnly = false)
     {
         lock (_gate)
         {
             var row = _data.BugReports.FirstOrDefault(item => item.Id == id);
             if (row is null) return null;
+            var nextStatus = IsBugStatus(status) ? status! : row.Status;
+            var nextFixCommit = NormalizeBugEvidence(fixCommit, row.FixCommit);
+            var nextRegressionTest = NormalizeBugEvidence(regressionTest, row.RegressionTest);
+            var nextDeployedVersion = NormalizeBugEvidence(deployedVersion, row.DeployedVersion);
+            var nextDuplicateOf = NormalizeBugEvidence(duplicateOf, row.DuplicateOf);
+            var nextClosureDisposition = NormalizeBugEvidence(closureDisposition, row.ClosureDisposition);
+            var wasTerminal = IsTerminalBugStatus(row.Status);
+            var willBeTerminal = IsTerminalBugStatus(nextStatus);
+            var enteringClosure = willBeTerminal
+                && (!wasTerminal || !string.Equals(row.ClosureDisposition, nextClosureDisposition,
+                    StringComparison.Ordinal));
+
+            if (!willBeTerminal && closureDisposition is not null
+                && !string.IsNullOrWhiteSpace(nextClosureDisposition))
+                throw new L12BugClosureValidationException("bug_closure_disposition_without_closure",
+                    "只有关闭反馈时才能选择关闭类型。");
+            if (willBeTerminal && (!wasTerminal || row.ClosureDisposition is not null
+                    || closureDisposition is not null))
+                ValidateBugClosure(row, nextClosureDisposition, nextFixCommit, nextRegressionTest,
+                    nextDeployedVersion, nextDuplicateOf, comment, enteringClosure);
+            if (validateOnly) return ToView(row);
+
             var changed = false;
-            if (status is "new" or "decision" or "implementation" or "retest" or "deploy" or "closed"
-                or "confirmed" or "in-progress" or "resolved"
-                && row.Status != status)
+            if (IsBugStatus(status) && row.Status != status)
             {
                 row.History.Add(NewBugAudit(actor, "status", row.Status, status, null));
-                row.Status = status;
+                row.Status = status!;
                 changed = true;
             }
             if (priority is "low" or "normal" or "high" or "critical"
@@ -1207,14 +1232,31 @@ public sealed partial class L12PlatformStore
             changed |= UpdateBugEvidence(row, actor, "fix-commit", row.FixCommit, fixCommit, value => row.FixCommit = value);
             changed |= UpdateBugEvidence(row, actor, "regression-test", row.RegressionTest, regressionTest, value => row.RegressionTest = value);
             changed |= UpdateBugEvidence(row, actor, "deployed-version", row.DeployedVersion, deployedVersion, value => row.DeployedVersion = value);
-            changed |= UpdateBugEvidence(row, actor, "verified-by", row.VerifiedBy, verifiedBy, value => row.VerifiedBy = value);
             changed |= UpdateBugEvidence(row, actor, "duplicate-of", row.DuplicateOf, duplicateOf, value => row.DuplicateOf = value);
-            if (verifiedAt is not null && row.VerifiedAt != verifiedAt)
+            var appliedDisposition = willBeTerminal ? nextClosureDisposition : null;
+            var requestedDisposition = appliedDisposition ?? (row.ClosureDisposition is null ? null : string.Empty);
+            changed |= UpdateBugEvidence(row, actor, "closure-disposition", row.ClosureDisposition,
+                requestedDisposition, value => row.ClosureDisposition = value);
+            if (enteringClosure && string.Equals(appliedDisposition, "fixed_verified", StringComparison.Ordinal))
             {
+                var verifiedAt = DateTimeOffset.UtcNow;
+                changed |= UpdateBugEvidence(row, actor, "verified-by", row.VerifiedBy, actor.Username,
+                    value => row.VerifiedBy = value);
                 row.History.Add(NewBugAudit(actor, "verified-at", row.VerifiedAt?.ToString("O"),
-                    verifiedAt.Value.ToString("O"), null));
+                    verifiedAt.ToString("O"), null));
                 row.VerifiedAt = verifiedAt;
                 changed = true;
+            }
+            else if (!willBeTerminal || !string.Equals(appliedDisposition, "fixed_verified", StringComparison.Ordinal))
+            {
+                changed |= UpdateBugEvidence(row, actor, "verified-by", row.VerifiedBy, string.Empty,
+                    value => row.VerifiedBy = value);
+                if (row.VerifiedAt is not null)
+                {
+                    row.History.Add(NewBugAudit(actor, "verified-at", row.VerifiedAt.Value.ToString("O"), null, null));
+                    row.VerifiedAt = null;
+                    changed = true;
+                }
             }
             if (!changed) return ToView(row);
             row.UpdatedAt = DateTimeOffset.UtcNow;
@@ -1223,6 +1265,55 @@ public sealed partial class L12PlatformStore
             Save();
             return ToView(row);
         }
+    }
+
+    private void ValidateBugClosure(BugRow row, string? disposition, string? fixCommit,
+        string? regressionTest, string? deployedVersion, string? duplicateOf, string? comment,
+        bool enteringClosure)
+    {
+        if (disposition is not ("fixed_verified" or "duplicate" or "rejected"))
+            throw new L12BugClosureValidationException("bug_closure_disposition_required",
+                "请选择关闭类型：修复已复测、重复反馈或不成立或证据不足。");
+        if (disposition == "fixed_verified")
+        {
+            if (string.IsNullOrWhiteSpace(fixCommit) || string.IsNullOrWhiteSpace(regressionTest)
+                || string.IsNullOrWhiteSpace(deployedVersion))
+                throw new L12BugClosureValidationException("bug_closure_evidence_required",
+                    "修复已复测需要填写修复提交、命名回归测试和当前已上线版本。");
+            if (!string.IsNullOrWhiteSpace(duplicateOf))
+                throw new L12BugClosureValidationException("bug_closure_evidence_conflict",
+                    "修复已复测不能同时标记为重复反馈。");
+            return;
+        }
+        if (disposition == "duplicate")
+        {
+            if (string.IsNullOrWhiteSpace(duplicateOf)
+                || string.Equals(duplicateOf, row.Id, StringComparison.OrdinalIgnoreCase)
+                || !_data.BugReports.Any(item => string.Equals(item.Id, duplicateOf,
+                    StringComparison.OrdinalIgnoreCase)))
+                throw new L12BugClosureValidationException("bug_duplicate_target_invalid",
+                    "重复反馈必须关联到另一个真实存在的 Bug 编号。");
+            return;
+        }
+        if (!string.IsNullOrWhiteSpace(duplicateOf))
+            throw new L12BugClosureValidationException("bug_closure_evidence_conflict",
+                "不成立或证据不足不能同时标记为重复反馈。");
+        if (enteringClosure && string.IsNullOrWhiteSpace(comment))
+            throw new L12BugClosureValidationException("bug_closure_reason_required",
+                "请用一句话说明不成立或证据不足的原因。");
+    }
+
+    private static bool IsBugStatus(string? status)
+        => status is "new" or "decision" or "implementation" or "retest" or "deploy" or "closed"
+            or "confirmed" or "in-progress" or "resolved";
+
+    private static bool IsTerminalBugStatus(string? status) => status is "closed" or "resolved";
+
+    private static string? NormalizeBugEvidence(string? requested, string? current)
+    {
+        if (requested is null) return current;
+        var trimmed = requested.Trim();
+        return trimmed.Length == 0 ? null : trimmed[..Math.Min(trimmed.Length, 500)];
     }
 
     private static bool UpdateBugEvidence(BugRow row, L12AccountView actor, string action,
@@ -1707,7 +1798,8 @@ public sealed partial class L12PlatformStore
         row.History.OrderByDescending(item => item.CreatedAt).Select(ToView).ToArray(), row.CreatedAt, row.UpdatedAt,
         row.Diagnostic, row.ClientVersion ?? row.Version, row.ServerVersion ?? "legacy-unknown",
         row.EngineVersion ?? "legacy-unknown", row.ClientDiagnostic, row.ConnectionDiagnostic, row.FixCommit,
-        row.RegressionTest, row.DeployedVersion, row.VerifiedBy, row.VerifiedAt, row.DuplicateOf);
+        row.RegressionTest, row.DeployedVersion, row.VerifiedBy, row.VerifiedAt, row.DuplicateOf,
+        row.ClosureDisposition);
 
     private static L12ClientConnectionDiagnosticView? NormalizeClientDiagnostic(
         L12ClientConnectionDiagnosticView? value, string page, string? roomCode, string? matchId)

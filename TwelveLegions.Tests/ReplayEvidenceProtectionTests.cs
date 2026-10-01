@@ -29,14 +29,14 @@ public sealed class ReplayEvidenceProtectionTests
             Assert.DoesNotContain("diagnostic", evidence.MatchIds);
             Assert.DoesNotContain("claim", evidence.MatchIds);
         }
-        store.UpdateBug(admin, report.Id, "resolved", null, null, null);
+        store.UpdateBug(admin, report.Id, "closed", null, null, null, "回放证据已审查", closureDisposition: "rejected");
         Assert.Empty(store.ReplayEvidenceAt(now).MatchIds);
         store.UpdateBug(admin, report.Id, "new", null, null, null);
         Assert.Empty(new L12PlatformStore(path).ReplayEvidenceAt(now).MatchIds);
         store.UpdateBug(admin, report.Id, "confirmed", null, null, null);
         Assert.Empty(store.ReplayEvidenceAt(
             report.CreatedAt.Add(L12PlatformStore.BugReplayEvidenceMaximumAge).AddTicks(1)).MatchIds);
-        store.UpdateBug(admin, report.Id, "closed", null, null, null);
+        store.UpdateBug(admin, report.Id, "closed", null, null, null, "超过保留期限", closureDisposition: "rejected");
         Assert.Empty(store.ReplayEvidenceAt(now).RoomCodes);
         Assert.Single(store.Bugs(null)); // Cleanup protection never deletes the report itself.
     }
