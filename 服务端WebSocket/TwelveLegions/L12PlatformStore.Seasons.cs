@@ -1152,8 +1152,7 @@ public sealed partial class L12PlatformStore
             SeasonActivationFailureInjector?.Invoke("after-season-archive");
 
             _data.RankedConfig = incomingRanked;
-            CarryRankedProfilesIntoSeason(current.SeasonId, draft.SeasonId,
-                _data.RankedConfig.PlacementMatches);
+            CarryRankedProfilesIntoSeason(current.SeasonId, draft.SeasonId);
             SeasonActivationFailureInjector?.Invoke("after-season-profile-carry");
             _data.RankedPendingGradient = null;
             _data.RankedGradientVersion = Math.Max(1, _data.RankedGradientVersion + 1);

@@ -89,6 +89,9 @@ public sealed record L12RankedOverviewView(L12RankedProfileView Profile,
     IReadOnlyList<L12RankedProfileHistoryView> History);
 public sealed record L12RankedSettlementPair(L12RankedSettlementView First,
     L12RankedSettlementView Second, IReadOnlyList<L12RankedBroadcastView> Broadcasts);
+public sealed record L12RankedSeasonResetRepairView(string SeasonId, int ProfilesReset,
+    int NonzeroSevenValueProfiles, int NonzeroPlacementProfiles, int RankedProfilesWithMatchStats,
+    DateTimeOffset AppliedAt, string AppliedBy, bool Replayed);
 
 public sealed partial class L12PlatformStore
 {
@@ -165,6 +168,18 @@ public sealed partial class L12PlatformStore
         public bool ReachedHighestTier { get; set; }
         public string? SelectedMasterTitle { get; set; }
     }
+    private sealed class RankedSeasonResetRepairRow
+    {
+        public string SeasonId { get; set; } = string.Empty;
+        public string PreviousSeasonId { get; set; } = string.Empty;
+        public int ProfilesReset { get; set; }
+        public int NonzeroSevenValueProfiles { get; set; }
+        public int NonzeroPlacementProfiles { get; set; }
+        public int RankedProfilesWithMatchStats { get; set; }
+        public DateTimeOffset AppliedAt { get; set; }
+        public string AppliedBy { get; set; } = string.Empty;
+        public string Reason { get; set; } = string.Empty;
+    }
     private sealed class RankedProfileHistoryRow
     {
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -197,6 +212,7 @@ public sealed partial class L12PlatformStore
     private sealed class RankedSettlementRow
     {
         public string MatchId { get; set; } = string.Empty;
+        public string SeasonId { get; set; } = string.Empty;
         public string AccountId { get; set; } = string.Empty;
         public string Faction { get; set; } = string.Empty;
         public string Outcome { get; set; } = string.Empty;
@@ -290,6 +306,7 @@ public sealed partial class L12PlatformStore
                 changed = true;
             }
             _data.RankedProfiles ??= [];
+            _data.RankedSeasonResetRepairs ??= [];
             _data.RankedProfileHistory ??= [];
             foreach (var history in _data.RankedProfileHistory)
             {
@@ -985,6 +1002,7 @@ public sealed partial class L12PlatformStore
                 return new RankedSettlementRow
                 {
                     MatchId = matchId,
+                    SeasonId = player.SeasonId,
                     AccountId = player.AccountId,
                     Faction = player.Faction!,
                     Outcome = "draw",
@@ -1064,7 +1082,8 @@ public sealed partial class L12PlatformStore
         var tierAfter = TierFor(player);
         return new RankedSettlementRow
         {
-            MatchId = matchId, AccountId = player.AccountId, Faction = player.Faction!,
+            MatchId = matchId, SeasonId = player.SeasonId, AccountId = player.AccountId,
+            Faction = player.Faction!,
             Outcome = won ? "win" : "loss", Won = won,
             Placement = placement, PlacementPlayed = player.PlacementPlayed,
             PlacementRequired = config.PlacementMatches, Before = before, After = player.SevenValue,
@@ -1256,18 +1275,133 @@ public sealed partial class L12PlatformStore
         return new L12RankedSeasonFinalizationImpact(accountIds, accountIds.Length, accountIds.Length);
     }
 
-    private void CarryRankedProfilesIntoSeason(string outgoingSeasonId, string incomingSeasonId,
-        int placementMatches)
+    private void CarryRankedProfilesIntoSeason(string outgoingSeasonId, string incomingSeasonId)
     {
         foreach (var row in _data.RankedProfiles.Where(row => SeasonIdsEqual(row.SeasonId, outgoingSeasonId)))
         {
             row.SeasonId = incomingSeasonId;
-            row.PlacementPlayed = string.IsNullOrWhiteSpace(row.Faction) ? 0 : placementMatches;
-            row.PlacementWins = 0;
-            row.Wins = 0;
-            row.Losses = 0;
+            ResetRankedProfileForNewSeason(row);
         }
     }
+
+    public L12RankedSeasonResetRepairView RepairT01RankedSeasonReset(L12AccountView actor,
+        string seasonId, string reason, long expectedOperationsVersion,
+        L12RankedSeasonCutoverReadiness readiness, L12AdminAuditContext context)
+        => ExecuteAdminTransaction(() => RepairT01RankedSeasonResetCore(actor, seasonId, reason,
+            expectedOperationsVersion, readiness, context));
+
+    private L12RankedSeasonResetRepairView RepairT01RankedSeasonResetCore(L12AccountView actor,
+        string seasonId, string reason, long expectedOperationsVersion,
+        L12RankedSeasonCutoverReadiness readiness, L12AdminAuditContext context)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
+        var normalizedReason = string.IsNullOrWhiteSpace(reason) ? string.Empty : reason.Trim();
+        if (normalizedReason.Length == 0)
+            throw new L12OperationsConfigException("reason_required", "修复新赛季排位数据必须填写原因");
+
+        lock (_gate)
+        {
+            var operations = RequireOperationsConfig();
+            EnsureOperationsVersion(operations, expectedOperationsVersion);
+            var current = _data.SeasonDefinitions.Single(row => row.LifecycleStatus == "active");
+            if (!SeasonIdsEqual(seasonId, "T01") || !SeasonIdsEqual(current.SeasonId, "T01")
+                || !SeasonIdsEqual(operations.Season.Id, current.SeasonId))
+                throw new L12OperationsConfigException("ranked_season_reset_repair_scope_invalid",
+                    "该一次性修复仅允许当前运行赛季 T01");
+            // The marker is the durable once-only boundary. A retry with another idempotency key
+            // must report the original repair without inspecting or resetting games played later.
+            var existing = _data.RankedSeasonResetRepairs.SingleOrDefault(row =>
+                SeasonIdsEqual(row.SeasonId, current.SeasonId));
+            if (existing is not null) return RankedSeasonResetRepairView(existing, true);
+
+            if (current.FinalizedAt is not null)
+                throw new L12OperationsConfigException("ranked_season_reset_repair_finalized",
+                    "T01 已结算，拒绝重置排位数据");
+            if (!SeasonIdsEqual(readiness.SeasonId, current.SeasonId) || !readiness.Ready)
+                throw new L12OperationsConfigException("ranked_season_reset_repair_not_ready",
+                    "T01 仍有在途、待结算或待治理排位对局，拒绝修复");
+
+            if (string.IsNullOrWhiteSpace(current.PreviousSeasonId)
+                || !_data.SeasonArchives.Any(row =>
+                    SeasonIdsEqual(row.SeasonId, current.PreviousSeasonId)
+                    && SeasonIdsEqual(row.NextSeasonId, current.SeasonId)))
+                throw new L12OperationsConfigException("ranked_season_reset_repair_activation_unproven",
+                    "缺少连接到 T01 的已归档上赛季，无法证明这是切季承接污染");
+
+            var hasSeasonFacts = _data.RankedIntegrityAudits.Any(row =>
+                    SeasonIdsEqual(row.SeasonId, current.SeasonId))
+                || _data.RankedSettlements.Any(row =>
+                    SeasonIdsEqual(row.SeasonId, current.SeasonId)
+                    || (string.IsNullOrWhiteSpace(row.SeasonId)
+                        && (current.ActivatedAt is null || row.SettledAt >= current.ActivatedAt.Value)))
+                || _data.RankedSettlementProfileFacts.Any(row =>
+                    RankedSettlementFactContainsSeason(row, current.SeasonId))
+                || _data.RankedHeldRewards.Any(row => SeasonIdsEqual(row.SeasonId, current.SeasonId))
+                || _data.RankedMasterRecords.Any(row => SeasonIdsEqual(row.SeasonId, current.SeasonId))
+                || _data.RankedProfileHistory.Any(row => SeasonIdsEqual(row.SeasonId, current.SeasonId));
+            if (hasSeasonFacts)
+                throw new L12OperationsConfigException("ranked_season_reset_repair_competition_exists",
+                    "T01 已存在对局、奖励、主将或赛季档案事实，拒绝破坏性重置");
+
+            var profiles = _data.RankedProfiles.Where(row =>
+                SeasonIdsEqual(row.SeasonId, current.SeasonId)).ToArray();
+            if (profiles.GroupBy(row => row.AccountId, StringComparer.OrdinalIgnoreCase)
+                .Any(group => group.Count() != 1))
+                throw new L12OperationsConfigException("ranked_season_reset_repair_duplicate_profile",
+                    "T01 存在重复排位档案，拒绝自动修复");
+            if (profiles.Any(row => row.Wins != 0 || row.Losses != 0 || row.PlacementWins != 0))
+                throw new L12OperationsConfigException("ranked_season_reset_repair_match_stats_exist",
+                    "T01 已存在新赛季胜负或定级胜场，拒绝重置");
+
+            var marker = new RankedSeasonResetRepairRow
+            {
+                SeasonId = current.SeasonId,
+                PreviousSeasonId = current.PreviousSeasonId,
+                ProfilesReset = profiles.Length,
+                NonzeroSevenValueProfiles = profiles.Count(row => row.SevenValue != 0),
+                NonzeroPlacementProfiles = profiles.Count(row => row.PlacementPlayed != 0),
+                RankedProfilesWithMatchStats = profiles.Count(row =>
+                    row.Wins != 0 || row.Losses != 0 || row.PlacementWins != 0),
+                AppliedAt = DateTimeOffset.UtcNow,
+                AppliedBy = actor.Username,
+                Reason = normalizedReason,
+            };
+            foreach (var profile in profiles) ResetRankedProfileForNewSeason(profile);
+            _data.RankedSeasonResetRepairs.Add(marker);
+            AddAdminAudit(actor, "ranked", "season-reset-repair", "ranked-season:T01",
+                $"profiles={marker.ProfilesReset};seven={marker.NonzeroSevenValueProfiles};placement={marker.NonzeroPlacementProfiles}",
+                "seven=0;placement=0;match-stats=0", normalizedReason,
+                context with { ExpectedVersion = expectedOperationsVersion, Reason = normalizedReason,
+                    Outcome = "succeeded" });
+            Save();
+            return RankedSeasonResetRepairView(marker, false);
+        }
+    }
+
+    private static void ResetRankedProfileForNewSeason(RankedProfileRow row)
+    {
+        row.SevenValue = 0;
+        row.PlacementPlayed = 0;
+        row.PlacementWins = 0;
+        row.Wins = 0;
+        row.Losses = 0;
+        row.WinStreak = 0;
+        row.LossStreak = 0;
+        row.HighestFloor = 0;
+        row.ReachedHighestTier = false;
+        row.SelectedMasterTitle = null;
+    }
+
+    private static bool RankedSettlementFactContainsSeason(RankedSettlementProfileFactRow row,
+        string seasonId) => SeasonIdsEqual(row.FirstBefore.SeasonId, seasonId)
+            || SeasonIdsEqual(row.FirstAfter.SeasonId, seasonId)
+            || SeasonIdsEqual(row.SecondBefore.SeasonId, seasonId)
+            || SeasonIdsEqual(row.SecondAfter.SeasonId, seasonId);
+
+    private static L12RankedSeasonResetRepairView RankedSeasonResetRepairView(
+        RankedSeasonResetRepairRow row, bool replayed) => new(row.SeasonId, row.ProfilesReset,
+        row.NonzeroSevenValueProfiles, row.NonzeroPlacementProfiles,
+        row.RankedProfilesWithMatchStats, row.AppliedAt, row.AppliedBy, replayed);
 
     private void ActivatePendingRankedGradient(string outgoingSeasonId, string incomingSeasonId,
         L12AccountView actor, L12AdminAuditContext context)

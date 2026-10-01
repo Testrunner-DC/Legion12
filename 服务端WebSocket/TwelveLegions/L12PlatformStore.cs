@@ -338,6 +338,7 @@ public sealed partial class L12PlatformStore
         public List<SeasonDefinitionRow> SeasonDefinitions { get; set; } = [];
         public List<SeasonArchiveRow> SeasonArchives { get; set; } = [];
         public List<RankedProfileRow> RankedProfiles { get; set; } = [];
+        public List<RankedSeasonResetRepairRow> RankedSeasonResetRepairs { get; set; } = [];
         public List<RankedProfileHistoryRow> RankedProfileHistory { get; set; } = [];
         public List<RankedSettlementRow> RankedSettlements { get; set; } = [];
         public List<RankedBroadcastRow> RankedBroadcasts { get; set; } = [];
