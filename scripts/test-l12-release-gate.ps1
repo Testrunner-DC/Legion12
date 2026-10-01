@@ -12,6 +12,8 @@ $cacheInitializer = Join-Path $repoRoot "ops\windows\Initialize-L12BuildEnvironm
 $releaseLedgerScript = Join-Path $repoRoot "scripts\release-ledger.mjs"
 $releaseLedgerRoot = Join-Path $repoRoot "release-ledger"
 $generatedPlayerRelease = Join-Path $repoRoot "opcgpro-vue\src\l12\site\generatedPlayerRelease.ts"
+$platformProject = Join-Path $repoRoot "TwelveLegions.Platform.Tests\TwelveLegions.Platform.Tests.csproj"
+$accountPrivacyTests = Join-Path $repoRoot "TwelveLegions.Platform.Tests\AccountPrivacyLifecycleTests.cs"
 $powerShellHost = Get-Command "pwsh" -ErrorAction SilentlyContinue
 if ($null -eq $powerShellHost) { $powerShellHost = Get-Command "powershell" -ErrorAction Stop }
 
@@ -99,8 +101,34 @@ foreach ($duplicateLabel in @("L12 full rule tests", "Platform persistence relea
 Assert-True ($dryRun.Output.Contains("Atomic runtime zero-legacy audit")) "Release dry-run dropped the targeted atomic audit."
 Assert-True ($dryRun.Output.Contains(".\ops\windows\verify-l12.ps1")) "Release dry-run does not invoke the commit-level verifier."
 
+# A platform-only source must not pay for the rule engine, and a rule-only
+# source must not miss its semantic audits. Unknown shared sources run both.
+foreach ($case in @(
+    @{ Path = "服务端WebSocket/TwelveLegions/L12PlatformStore.Seasons.cs"; Platform = $true; Rules = $false; Audit = $false },
+    @{ Path = "服务端WebSocket/TwelveLegions/L12GameEngine.cs"; Platform = $false; Rules = $true; Audit = $true },
+    @{ Path = "服务端WebSocket/TwelveLegions/L12RoomManager.cs"; Platform = $true; Rules = $true; Audit = $true },
+    @{ Path = "服务端WebSocket/TwelveLegions/L12RoomManager.ResponsePreferences.cs"; Platform = $true; Rules = $true; Audit = $true },
+    @{ Path = "TwelveLegions.Platform.Tests/AccountPrivacyLifecycleTests.cs"; Platform = $true; Rules = $false; Audit = $false },
+    @{ Path = "TwelveLegions.Tests/RuleKernelTests.cs"; Platform = $false; Rules = $true; Audit = $true }
+)) {
+    $plan = Invoke-ChildPowerShell -ScriptPath $changeGateScript -Arguments @("-Level", "Batch", "-DryRun", "-ChangedPaths", $case.Path)
+    Assert-True ($plan.ExitCode -eq 0) "Selection dry-run failed for $($case.Path): $($plan.Output)"
+    Assert-True ($plan.Output.Contains("Platform persistence release gate") -eq $case.Platform) "Platform selection mismatch for $($case.Path)"
+    Assert-True ($plan.Output.Contains("L12 full rule tests") -eq $case.Rules) "Rule selection mismatch for $($case.Path)"
+    Assert-True ($plan.Output.Contains("Atomic runtime zero-legacy audit") -eq $case.Audit) "Card-effect audit selection mismatch for $($case.Path)"
+}
+
 $verifySource = Get-Content -LiteralPath $verifyScript -Raw
 $deploySource = Get-Content -LiteralPath $deployScript -Raw
+$changeGateSource = Get-Content -LiteralPath $changeGateScript -Raw
+$platformProjectSource = Get-Content -LiteralPath $platformProject -Raw
+$accountPrivacySource = Get-Content -LiteralPath $accountPrivacyTests -Raw
+Assert-True (-not $verifySource.Contains('FullyQualifiedName!~EmailAuthAndAccountLifecycleTests')) "Release gate must not hide active platform tests with a class-name filter."
+Assert-True (-not $changeGateSource.Contains('FullyQualifiedName!~EmailAuthAndAccountLifecycleTests')) "Batch gate must not hide active platform tests with a class-name filter."
+Assert-True ($platformProjectSource.Contains('<Compile Remove="EmailAuthAndAccountLifecycleTests.cs" />')) "Retired email scenarios must be explicitly outside the active product suite."
+foreach ($activeTest in @("AdminResetAndLogicalDeletionProtectRootAndSelfAndScrubPersonalData", "MatchRecorderAnonymizesNamesDeckLabelsAndRecordedJson")) {
+    Assert-True ($accountPrivacySource.Contains($activeTest)) "Active account/privacy regression is missing: $activeTest"
+}
 Assert-True (([regex]::Matches($verifySource, 'Invoke-External dotnet test "\.\\TwelveLegions\.Tests')).Count -eq 1) "Commit-level verifier must run full rules exactly once."
 Assert-True (([regex]::Matches($verifySource, 'Invoke-External dotnet test "\.\\TwelveLegions\.Platform\.Tests')).Count -eq 1) "Commit-level verifier must run the dedicated platform suite exactly once."
 Assert-True (([regex]::Matches($verifySource, 'Invoke-External \$npmExecutable ci')).Count -eq 1) "Commit-level verifier must install the isolated frontend exactly once."

@@ -158,8 +158,8 @@ try {
     # and temporary paths cannot race during teardown.
     Invoke-External dotnet test ".\TwelveLegions.Tests\TwelveLegions.Tests.csproj" --configuration Release '--' 'xUnit.ParallelizeTestCollections=false'
     Write-Host "[L12 验证] 运行平台持久化测试..."
-    # 邮箱能力已经退出产品范围；旧测试保留用于历史追溯，不再阻塞当前产品发布。
-    Invoke-External dotnet test ".\TwelveLegions.Platform.Tests\TwelveLegions.Platform.Tests.csproj" --configuration Release --filter 'FullyQualifiedName!~EmailAuthAndAccountLifecycleTests' '--' 'xUnit.ParallelizeTestCollections=false'
+    # 退役邮箱测试由项目文件显式排除；有效账号与隐私测试仍在平台套件中全量运行。
+    Invoke-External dotnet test ".\TwelveLegions.Platform.Tests\TwelveLegions.Platform.Tests.csproj" --configuration Release '--' 'xUnit.ParallelizeTestCollections=false'
 
     Write-Host "[L12 验证] 在隔离目录安装锁定依赖并构建前端..."
     $frontendSourceRoot = Join-Path $repoRoot "opcgpro-vue"

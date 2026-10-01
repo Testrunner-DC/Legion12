@@ -167,26 +167,30 @@ try {
         '(^|/)L12S1FactionEffects\.cs$',
         '(^|/)L12S2UniversalEffects\.cs$'
     )
-    $backendChanged = $runtimeEvidenceChanged -or $publicActiveChanged -or $publicTriggerChanged -or $publicResponseChanged -or $publicHandPlayChanged -or (Test-AnyPath @('^service-backend-never-match$', '^TwelveLegions\.Tests/', '^scripts/(audit-l12-atomic-effects|export-l12-legacy-effect-inventory|migrate-l12-card-cases-to-atomic-routes|test-l12-st-effect-audit)'))
-    $platformChanged = Test-AnyPath @('^service-tests-never-match$')
+    $backendChanged = $runtimeEvidenceChanged -or $publicActiveChanged -or $publicTriggerChanged -or $publicResponseChanged -or $publicHandPlayChanged -or (Test-AnyPath @('^TwelveLegions\.Tests/', '^scripts/(audit-l12-atomic-effects|export-l12-legacy-effect-inventory|migrate-l12-card-cases-to-atomic-routes|test-l12-st-effect-audit)'))
+    $platformChanged = Test-AnyPath @('^TwelveLegions\.Platform\.Tests/')
     $frontendChanged = Test-AnyPath @('^opcgpro-vue/', '^scripts/(ws-smoke|ws-ui-peer)')
     $cardEffectChanged = $runtimeEvidenceChanged -or $publicActiveChanged -or $publicTriggerChanged -or $publicResponseChanged -or $publicHandPlayChanged -or (Test-AnyPath @('^TwelveLegions\.Tests/'))
     $workflowChanged = Test-AnyPath @('^\.github/workflows/verify-release\.yml$', '^scripts/(check-l12-architecture-lock\.mjs|verify-l12-github-workflow\.ps1)$')
     $storageChanged = Test-AnyPath @('^scripts/(audit-l12-storage|clean-l12-generated|test-l12-cleanup)\.ps1$', '^ops/windows/(watch-l12-network|finalize-l12-codex-session-move)\.ps1$', '^docs/STORAGE-(GOVERNANCE|MAINTENANCE)\.md$')
-    $releaseGateChanged = Test-AnyPath @('^ops/windows/verify-l12\.ps1$', '^ops/windows/deploy-l12\.ps1$', '^scripts/verify-l12-change\.ps1$', '^scripts/(test-l12-release-gate|release-ledger|test-release-ledger)\.mjs?$', '^release-ledger/')
+    $releaseGateChanged = Test-AnyPath @('^ops/windows/verify-l12\.ps1$', '^ops/windows/deploy-l12\.ps1$', '^scripts/verify-l12-change\.ps1$', '^scripts/test-l12-release-gate\.ps1$', '^scripts/(release-ledger|test-release-ledger)\.mjs$', '^release-ledger/')
     $deploymentBehaviorChanged = Test-AnyPath @('^ops/windows/(deploy-l12|L12DeployTarget)\.ps1$', '^ops/server/(deploy-l12-release\.sh|verify-l12-health\.mjs)$', '^scripts/(test-l12-deploy-behavior|verify-l12-change)\.ps1$')
 
-    # Add non-ASCII service paths without embedding them in this Windows PowerShell 5 compatible source file.
+    # Non-ASCII service paths are classified by their filename. Unknown shared
+    # server sources intentionally exercise both suites rather than silently
+    # skipping the dedicated platform gate.
     foreach ($path in $script:paths) {
-        if ($path.EndsWith(".cs", [StringComparison]::OrdinalIgnoreCase) -and -not $path.StartsWith("TwelveLegions.Tests/", [StringComparison]::OrdinalIgnoreCase)) {
+        if (-not $path.EndsWith(".cs", [StringComparison]::OrdinalIgnoreCase)) { continue }
+        if ($path -match '^TwelveLegions\.Tests/') { continue }
+        if ($path -match '^TwelveLegions\.Platform\.Tests/') { continue }
+        $filename = [IO.Path]::GetFileName($path)
+        $platformOnly = $path -match '/TwelveLegions/' -and $filename -match '^(L12PlatformStore(?:\..*)?|MatchRecorder(?:\..*)?|L12AdminControlPlane|L12ServerStorageMonitor|L12UsernamePolicy|L12TrustedClientAddress|MatchAnalyticsModels)\.cs$'
+        $ruleOnly = $path -match '/TwelveLegions/' -and $filename -match '^(L12GameEngine(?:\..*)?|L12RuleKernelIntegration|L12CardEffects|L12S[12].*Effects|L12Public(?:Active|Response|Trigger)EffectPlans|L12CompositeEffectPlans|RuleKernel|AtomicEffects)\.cs$'
+        if (-not $platformOnly) {
             $backendChanged = $true
-        }
-        if ($path.StartsWith("TwelveLegions.Platform.Tests/", [StringComparison]::OrdinalIgnoreCase)) {
-            $platformChanged = $true
-        }
-        if ($path.Contains("/TwelveLegions/") -and $path.EndsWith(".cs", [StringComparison]::OrdinalIgnoreCase)) {
             $cardEffectChanged = $true
         }
+        if ($platformOnly -or -not $ruleOnly) { $platformChanged = $true }
     }
 
     Invoke-Checked "Git whitespace and conflict-marker check" "git" @("diff", "--check")
@@ -264,8 +268,7 @@ try {
         }
         if ($platformChanged) {
             $platformProject = Join-Path $repoRoot "TwelveLegions.Platform.Tests\TwelveLegions.Platform.Tests.csproj"
-            # 邮箱能力已经退出产品范围；保留旧测试源码供历史追溯，但不再把它作为发布门禁。
-            Invoke-Checked "Platform persistence focused tests" "dotnet" @("test", $platformProject, "--no-restore", "--filter", "FullyQualifiedName!~EmailAuthAndAccountLifecycleTests", "--", "xUnit.ParallelizeTestCollections=false")
+            Invoke-Checked "Platform persistence focused tests" "dotnet" @("test", $platformProject, "--no-restore", "--", "xUnit.ParallelizeTestCollections=false")
         }
         if ($frontendChanged) {
             Invoke-Checked "Frontend UI contracts" "npm.cmd" @("run", "check:ui-contracts") (Join-Path $repoRoot "opcgpro-vue")
@@ -292,7 +295,7 @@ try {
     }
     if ($platformChanged) {
         $platformProject = Join-Path $repoRoot "TwelveLegions.Platform.Tests\TwelveLegions.Platform.Tests.csproj"
-        Invoke-Checked "Platform persistence release gate" "dotnet" @("test", $platformProject, "--configuration", "Release", "--filter", "FullyQualifiedName!~EmailAuthAndAccountLifecycleTests", "--", "xUnit.ParallelizeTestCollections=false")
+        Invoke-Checked "Platform persistence release gate" "dotnet" @("test", $platformProject, "--configuration", "Release", "--", "xUnit.ParallelizeTestCollections=false")
     }
     if ($frontendChanged) {
         $clientRelease = (& git -C $repoRoot rev-parse HEAD).Trim()

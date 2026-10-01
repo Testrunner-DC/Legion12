@@ -17,4 +17,8 @@
   <ItemGroup>
     <ProjectReference Include="..\服务端WebSocket\GrandUMIServer.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Retired email-only scenarios are retained in source history, not in the active product gate. -->
+    <Compile Remove="EmailAuthAndAccountLifecycleTests.cs" />
+  </ItemGroup>
 </Project>
