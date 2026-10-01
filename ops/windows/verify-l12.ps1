@@ -115,6 +115,7 @@ try {
     if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') { throw "无法读取当前提交" }
     Assert-CleanCommit -ExpectedCommit $commit -Operation "验证或复用发布包"
     Invoke-External node ".\scripts\release-ledger.mjs" validate --repo $repoRoot
+    Invoke-External node ".\scripts\test-release-status.mjs"
     $CardAssetDirectory = (Resolve-Path -LiteralPath $CardAssetDirectory).Path
     $cardAssetManifestPath = Join-Path $CardAssetDirectory "card-assets.manifest.json"
     if (-not (Test-Path -LiteralPath $cardAssetManifestPath -PathType Leaf)) { throw "优化卡图目录缺少发布清单：$cardAssetManifestPath" }

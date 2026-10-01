@@ -25,5 +25,11 @@ if (([regex]::Matches($text, 'npm run check:performance-architecture')).Count -n
 if (([regex]::Matches($text, 'node scripts/check-l12-architecture-lock\.mjs')).Count -ne 1) {
     throw 'GitHub main verification must run the P0-P4 architecture exit lock exactly once.'
 }
+if ($text -match 'FullyQualifiedName!~EmailAuthAndAccountLifecycleTests') {
+    throw 'GitHub main verification must run the entire active platform test project without a class-name filter.'
+}
+if (([regex]::Matches($text, 'node scripts/test-release-status\.mjs')).Count -ne 1) {
+    throw 'GitHub main verification must validate the release state source exactly once.'
+}
 
 Write-Host '[L12 workflow] ordinary pushes run architecture, performance and release verification; manual/tag runs package and upload.'
