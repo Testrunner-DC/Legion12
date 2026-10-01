@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-01-admin-and-season-internal",
+  "date": "2026-10-01",
+  "audience": "internal",
+  "reason": "后台各运营分区独立保存、规则素材与子板块管理、Bug 关闭证据校验，以及赛季编号比赛库迁移和测试夹具属于管理与数据一致性实现；不向玩家呈现技术细节。",
+  "paths": [
+    "opcgpro-vue/src/l12/site/AdminBugsPage.vue",
+    "opcgpro-vue/src/l12/site/AdminOperationsPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminRuleRulingsPanel.vue",
+    "opcgpro-vue/src/l12/site/operationsConfigPreview.ts",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.TestRunFixtures.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.SeasonIdentityMigration.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.cs"
+  ]
+}

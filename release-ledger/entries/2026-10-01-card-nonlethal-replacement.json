@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-01-card-nonlethal-replacement",
+  "date": "2026-10-01",
+  "audience": "players",
+  "title": "卡牌效果修正",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "平阳昭公主将杨戬对主宰的下一次非致命伤害变为2点时，若2点会使目标生命归零，本次不会造成伤害；不再擅自改为1点。",
+      "paths": [
+        "opcgpro-vue/src/l12/data/officialFaq.ts",
+        "服务端WebSocket/TwelveLegions/Data/cards.s1.json",
+        "服务端WebSocket/TwelveLegions/L12CardEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12PublicTriggerEffectPlans.cs"
+      ]
+    }
+  ]
+}
