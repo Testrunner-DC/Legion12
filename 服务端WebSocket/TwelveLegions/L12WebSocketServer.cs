@@ -2880,7 +2880,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     return L12AdminCommandResult<L12ContentEntryView>.Fail("content_key_not_allowed",
                         "内容键不在白名单中", StatusCodes.Status400BadRequest);
                 return L12AdminCommandResult<L12ContentEntryView>.Ok(_platform.SaveContentDraft(current.Actor,
-                    current.Payload.Key, current.Payload.Value, current.AuditContext, current.ExpectedVersion), "草稿已保存");
+                    current.Payload.Key, current.Payload.Value, current.AuditContext,
+                    current.Payload.Key is "rules.center" or "rules.rulings" ? current.ExpectedVersion : null), "草稿已保存");
             }, current =>
             {
                 if (!_platform.IsContentKeyAllowed(current.Payload.Key))

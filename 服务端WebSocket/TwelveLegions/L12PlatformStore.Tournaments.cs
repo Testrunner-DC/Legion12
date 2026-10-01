@@ -1538,7 +1538,10 @@ public sealed partial class L12PlatformStore
                 var environment = ReleaseEnvironmentFromScope(scope);
                 return environment is null ? Version : ReleaseEnvironmentVersion(environment);
             }
-            if (type.StartsWith("content.", StringComparison.Ordinal) || type.StartsWith("rule-item.", StringComparison.Ordinal))
+            if (type.StartsWith("rule-item.", StringComparison.Ordinal)
+                || type == "content.draft.save"
+                && (scope.StartsWith("content:rules.center", StringComparison.Ordinal)
+                    || scope.StartsWith("content:rules.rulings", StringComparison.Ordinal)))
             {
                 const string prefix = "content:";
                 if (!scope.StartsWith(prefix, StringComparison.Ordinal)) return null;
