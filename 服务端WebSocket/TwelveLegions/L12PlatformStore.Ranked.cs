@@ -60,6 +60,9 @@ public sealed record L12SeasonSummaryNotificationView(string Id, string SeasonId
 public sealed record L12RankedSeasonHonorView(string SeasonId, string SeasonName, string Username,
     string Faction, string Tier, int SevenValue, string DisplayValue,
     IReadOnlyList<string> Titles, DateTimeOffset AwardedAt);
+public sealed record L12RankedSeasonHonorWinnerView(string Username, string Faction);
+public sealed record L12RankedSeasonHonorHistoryView(string SeasonName, string Title,
+    DateTimeOffset AwardedAt, IReadOnlyList<L12RankedSeasonHonorWinnerView> Winners);
 public sealed record L12RankedSettlementComponent(string Kind, string Label, int Value);
 public sealed record L12RankedSettlementView(string MatchId, string AccountId, string Faction,
     string Outcome, bool Won, bool Placement, int PlacementPlayed, int PlacementRequired, int Before, int After,
@@ -229,6 +232,7 @@ public sealed partial class L12PlatformStore
         public string SeasonId { get; set; } = string.Empty;
         public string UsernameSnapshot { get; set; } = string.Empty;
         public string Faction { get; set; } = string.Empty;
+        public string FactionNameSnapshot { get; set; } = string.Empty;
         public int SevenValue { get; set; }
         public int PlacementPlayed { get; set; }
         public int PlacementWins { get; set; }
@@ -632,6 +636,68 @@ public sealed partial class L12PlatformStore
                     row.SevenValue, $"七曜值 {row.SevenValue:N0}", row.Titles.ToArray(), row.ArchivedAt))
                 .ToArray();
         }
+    }
+
+    /// <summary>
+    /// Player-facing historical honors projection. The existing RankedSeasonHonors shape remains
+    /// available until the HTTP and frontend contracts switch atomically in a later batch.
+    /// </summary>
+    public IReadOnlyList<L12RankedSeasonHonorHistoryView> RankedSeasonHonorHistory(int limit = 500)
+    {
+        lock (_gate)
+        {
+            return _data.RankedProfileHistory
+                .Where(row => row.FinalizedSeasonAwards && row.Titles.Count > 0)
+                .SelectMany(row => row.Titles.Where(title => !string.IsNullOrWhiteSpace(title))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Select(title => (Row: row, Title: title.Trim())))
+                .GroupBy(item => (SeasonId: item.Row.SeasonId.Trim().ToUpperInvariant(), item.Title))
+                .Select(group =>
+                {
+                    var rows = group.Select(item => item.Row).ToArray();
+                    var seasonName = rows.Select(row => row.SeasonName?.Trim())
+                        .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)) ?? "历史赛季";
+                    var winners = rows
+                        .GroupBy(row => row.AccountId, StringComparer.OrdinalIgnoreCase)
+                        .Select(accounts => accounts.OrderByDescending(row => row.SevenValue)
+                            .ThenByDescending(row => row.ArchivedAt).First())
+                        .OrderByDescending(row => row.SevenValue)
+                        .ThenBy(row => HistoricalHonorUsernameLocked(row), StringComparer.Ordinal)
+                        .Select(row => new L12RankedSeasonHonorWinnerView(
+                            HistoricalHonorUsernameLocked(row), HistoricalHonorFactionNameLocked(row)))
+                        .ToArray();
+                    return new L12RankedSeasonHonorHistoryView(seasonName, group.Key.Title,
+                        rows.Max(row => row.ArchivedAt), winners);
+                })
+                .OrderBy(row => row.Title, StringComparer.Ordinal)
+                .ThenByDescending(row => row.AwardedAt)
+                .ThenBy(row => row.SeasonName, StringComparer.Ordinal)
+                .Take(Math.Clamp(limit, 1, 2000))
+                .ToArray();
+        }
+    }
+
+    private string HistoricalHonorUsernameLocked(RankedProfileHistoryRow row)
+    {
+        var account = _data.Accounts.FirstOrDefault(item => item.Id.Equals(row.AccountId,
+            StringComparison.OrdinalIgnoreCase));
+        if (account?.Deleted == true) return "已注销玩家";
+        if (!string.IsNullOrWhiteSpace(row.UsernameSnapshot))
+            return L12UsernamePolicy.PublicName(row.UsernameSnapshot);
+        return account is null ? "已注销玩家" : PublicUsername(account);
+    }
+
+    private string HistoricalHonorFactionNameLocked(RankedProfileHistoryRow row)
+    {
+        if (!string.IsNullOrWhiteSpace(row.FactionNameSnapshot)) return row.FactionNameSnapshot.Trim();
+        return row.Faction.Trim().ToLowerInvariant() switch
+        {
+            "order" => "秩序",
+            "chaos" => "混沌",
+            "fate" => "命运",
+            _ => _data.RankedConfig!.Factions.FirstOrDefault(faction => faction.Id.Equals(row.Faction,
+                StringComparison.OrdinalIgnoreCase))?.Name ?? row.Faction,
+        };
     }
 
     public IReadOnlyList<L12RankedLeaderboardEntry> RankedLeaderboard(string? faction = null, int limit = 50,
@@ -1246,6 +1312,7 @@ public sealed partial class L12PlatformStore
             SeasonId = row.SeasonId,
             UsernameSnapshot = AccountName(row.AccountId),
             Faction = row.Faction,
+            FactionNameSnapshot = FactionFor(row.Faction).Name,
             SevenValue = row.SevenValue,
             PlacementPlayed = row.PlacementPlayed,
             PlacementWins = row.PlacementWins,
