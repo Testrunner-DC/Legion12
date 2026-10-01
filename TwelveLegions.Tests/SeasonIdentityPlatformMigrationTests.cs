@@ -279,6 +279,27 @@ public sealed class SeasonIdentityPlatformMigrationTests
         Assert.Contains("season_identity_unknown_alternate_art_reference", preview.BlockingCodes);
     }
 
+    [Theory]
+    [InlineData("rank-reached", "S00")]
+    [InlineData("season-final", "S00")]
+    [InlineData("master-champion-season-final", "S00:S01-04M1")]
+    [InlineData("ranked-participants", "ranked-participants:S00")]
+    public async Task PreviewFailsClosedForAlternateArtTargetCollision(
+        string sourceKind, string sourceReference)
+    {
+        var fixture = await CreateFixtureAsync();
+        await using var recorder = fixture.Recorder;
+        fixture.Store.SeedSeasonIdentityAlternateArtFixture(fixture.Player.Id,
+            sourceKind, sourceReference);
+
+        var preview = fixture.Store.PreviewSeasonIdentityNormalization(fixture.Admin,
+            await recorder.PreviewSeasonIdentityNormalizationAsync(),
+            new L12RankedSeasonCutoverReadiness("T01", 0, 0, 0, 0), fixture.Now);
+
+        Assert.False(preview.CanApply);
+        Assert.Contains("season_identity_alternate_art_target_collision", preview.BlockingCodes);
+    }
+
     private static async Task<Fixture> CreateFixtureAsync(bool applyB0 = true)
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-season-identity-platform",

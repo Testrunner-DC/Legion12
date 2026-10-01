@@ -524,6 +524,21 @@ public sealed partial class L12PlatformStore
             var kind = row.SourceKind.Trim().ToLowerInvariant();
             var reference = row.SourceReference.Trim();
             if (kind is "manual" or "event" || string.IsNullOrWhiteSpace(reference)) continue;
+            var targetCollision = kind switch
+            {
+                "rank-reached" or "season-final" =>
+                    reference.Equals(CanonicalSeasonZeroIdentity, StringComparison.Ordinal),
+                "master-champion-season-final" =>
+                    reference.StartsWith(CanonicalSeasonZeroIdentity + ":", StringComparison.Ordinal),
+                "ranked-participants" => reference.Equals(
+                    "ranked-participants:" + CanonicalSeasonZeroIdentity, StringComparison.Ordinal),
+                _ => false,
+            };
+            if (targetCollision)
+            {
+                yield return "season_identity_alternate_art_target_collision";
+                continue;
+            }
             var parsed = kind switch
             {
                 "rank-reached" or "season-final" => reference is LegacySeasonZeroIdentity or LegacySeasonOneIdentity,
@@ -535,10 +550,13 @@ public sealed partial class L12PlatformStore
             };
             var suspicious = reference.Equals(LegacySeasonZeroIdentity, StringComparison.OrdinalIgnoreCase)
                 || reference.Equals(LegacySeasonOneIdentity, StringComparison.OrdinalIgnoreCase)
+                || reference.Equals(CanonicalSeasonZeroIdentity, StringComparison.OrdinalIgnoreCase)
                 || reference.StartsWith(LegacySeasonZeroIdentity + ":", StringComparison.OrdinalIgnoreCase)
                 || reference.StartsWith(LegacySeasonOneIdentity + ":", StringComparison.OrdinalIgnoreCase)
+                || reference.StartsWith(CanonicalSeasonZeroIdentity + ":", StringComparison.OrdinalIgnoreCase)
                 || reference.EndsWith(":" + LegacySeasonZeroIdentity, StringComparison.OrdinalIgnoreCase)
-                || reference.EndsWith(":" + LegacySeasonOneIdentity, StringComparison.OrdinalIgnoreCase);
+                || reference.EndsWith(":" + LegacySeasonOneIdentity, StringComparison.OrdinalIgnoreCase)
+                || reference.EndsWith(":" + CanonicalSeasonZeroIdentity, StringComparison.OrdinalIgnoreCase);
             if (!parsed && suspicious) yield return "season_identity_unknown_alternate_art_reference";
         }
     }
