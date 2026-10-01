@@ -203,6 +203,7 @@ public sealed partial class L12PlatformStore
         public long Version { get; set; }
         public string? PublishedVersionId { get; set; }
         public string? RollbackVersionId { get; set; }
+        public Dictionary<string, int> RuleItemSequences { get; set; } = new(StringComparer.Ordinal);
     }
 
     private sealed class EffectReviewRow
@@ -1241,7 +1242,9 @@ public sealed partial class L12PlatformStore
         {
             var entry = _data.ContentEntries.FirstOrDefault(row => string.Equals(row.Key, key, StringComparison.OrdinalIgnoreCase));
             var stored = entry?.PublishedValue ?? _data.Content.GetValueOrDefault(key, fallback);
-            return ProjectEffectiveRuleContent(key, stored, DateTimeOffset.UtcNow);
+            var projected = ProjectEffectiveRuleContent(key, stored, DateTimeOffset.UtcNow);
+            return string.Equals(key, "rules.center", StringComparison.OrdinalIgnoreCase)
+                ? HydrateRuleCenterMedia(projected) : projected;
         }
     }
 
@@ -1273,12 +1276,15 @@ public sealed partial class L12PlatformStore
     }
 
     public L12ContentEntryView SaveContentDraft(L12AccountView actor, string key, string value,
-        L12AdminAuditContext? context = null)
+        L12AdminAuditContext? context = null, long? expectedVersion = null)
     {
         lock (_gate)
         {
             if (!IsContentKeyAllowed(key)) throw new ArgumentException($"内容键不在白名单中：{key}");
             var canonical = ContentKeys().First(item => string.Equals(item, key.Trim(), StringComparison.OrdinalIgnoreCase));
+            var existing = FindContentEntry(canonical);
+            if (expectedVersion.HasValue && expectedVersion.Value != (existing?.Version ?? 0))
+                throw new L12ContentStateConflictException("内容草稿已被其他管理员修改，请刷新后重试");
             value = NormalizeRuleRulingProducts(canonical, value);
             ValidateSiteContentValue(canonical, value, false);
             var row = EnsureContentEntry(canonical);

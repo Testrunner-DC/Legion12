@@ -2870,7 +2870,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     return L12AdminCommandResult<L12ContentEntryView>.Fail("content_key_not_allowed",
                         "内容键不在白名单中", StatusCodes.Status400BadRequest);
                 return L12AdminCommandResult<L12ContentEntryView>.Ok(_platform.SaveContentDraft(current.Actor,
-                    current.Payload.Key, current.Payload.Value, current.AuditContext), "草稿已保存");
+                    current.Payload.Key, current.Payload.Value, current.AuditContext, current.ExpectedVersion), "草稿已保存");
             }, current =>
             {
                 if (!_platform.IsContentKeyAllowed(current.Payload.Key))
@@ -3070,6 +3070,71 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 {
                     return L12AdminCommandResult<L12ContentEntryView>.Fail("rule_item_not_found", error.Message,
                         StatusCodes.Status404NotFound);
+                }
+                catch (L12ContentStateConflictException error)
+                {
+                    return L12AdminCommandResult<L12ContentEntryView>.Fail("content_version_conflict", error.Message,
+                        StatusCodes.Status409Conflict);
+                }
+                catch (ArgumentException error)
+                {
+                    return L12AdminCommandResult<L12ContentEntryView>.Fail("invalid_rule_item", error.Message,
+                        StatusCodes.Status400BadRequest);
+                }
+            });
+            return AdminCommandResponse(request, command, outcome);
+        });
+        _app.MapPost("/api/admin/rule-items/create", (HttpRequest request, L12RuleItemCreateRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var command = CommandEnvelope(request, authenticated.Account, permission, "rule-item.create",
+                $"content:{body.Key}/{body.Collection}", body, body.IdempotencyKey, body.ExpectedVersion,
+                body.DryRun, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission, current =>
+            {
+                try
+                {
+                    var entry = _platform.CreateRuleItem(current.Actor, current.Payload, current.AuditContext);
+                    return L12AdminCommandResult<L12ContentEntryView>.Ok(entry, "规则资料子板块已新建");
+                }
+                catch (L12ContentStateConflictException error)
+                {
+                    return L12AdminCommandResult<L12ContentEntryView>.Fail("content_version_conflict", error.Message,
+                        StatusCodes.Status409Conflict);
+                }
+                catch (ArgumentException error)
+                {
+                    return L12AdminCommandResult<L12ContentEntryView>.Fail("invalid_rule_item", error.Message,
+                        StatusCodes.Status400BadRequest);
+                }
+            });
+            return AdminCommandResponse(request, command, outcome);
+        });
+        _app.MapPost("/api/admin/rule-items/delete", (HttpRequest request, L12RuleItemDeleteRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var command = CommandEnvelope(request, authenticated.Account, permission, "rule-item.delete",
+                $"content:{body.Key}/{body.Collection}/{body.ItemId}", body, body.IdempotencyKey,
+                body.ExpectedVersion, body.DryRun, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission, current =>
+            {
+                try
+                {
+                    var entry = _platform.DeleteRuleItem(current.Actor, current.Payload, current.AuditContext);
+                    NotifyRulesContentChanged();
+                    return L12AdminCommandResult<L12ContentEntryView>.Ok(entry, "规则资料子板块已删除");
+                }
+                catch (KeyNotFoundException error)
+                {
+                    return L12AdminCommandResult<L12ContentEntryView>.Fail("rule_item_not_found", error.Message,
+                        StatusCodes.Status404NotFound);
+                }
+                catch (UnauthorizedAccessException error)
+                {
+                    return L12AdminCommandResult<L12ContentEntryView>.Fail("permission_denied", error.Message,
+                        StatusCodes.Status403Forbidden);
                 }
                 catch (L12ContentStateConflictException error)
                 {

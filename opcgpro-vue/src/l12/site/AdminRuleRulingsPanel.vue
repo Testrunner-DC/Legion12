@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { adminApi, hasPermission, type ContentBatch } from '@/l12/platform'
+import { adminApi, hasPermission, type ContentBatch, type ContentEntry, type SiteMedia } from '@/l12/platform'
 import CardImage from '@/l12/CardImage.vue'
 import CatalogCardDetails from '@/l12/CatalogCardDetails.vue'
 import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
+import MediaUploadField from './MediaUploadField.vue'
 import { cardProductsForIds, displayCardNumber, loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import { LEGACY_FAQ_SOURCES, RULE_TOPIC_DEFINITIONS, coreRuleBlockId, createRuleCenterDraft, createRulingsDraft, mergedRulings, parsePublishedRuleCenter, parseRulingDocument, serializeRulingDocument, withPendingRulingSeeds, type RuleCenterDocument, type RuleRuling, type RuleTopicId } from '@/l12/data/ruleCenterData'
 
@@ -23,6 +24,7 @@ const history = ref<ContentBatch[]>([])
 const pickerTarget = ref<RuleRuling | null>(null)
 const cardCatalog = ref<DeckCard[]>([])
 const detailCard = ref<DeckCard | null>(null)
+const ruleMedia = ref<SiteMedia[]>([])
 const openRulingEditors = ref<Set<string>>(new Set())
 const busy = ref(false)
 const publishingId = ref('')
@@ -44,6 +46,10 @@ const supersededIds = computed(() => new Set([...entries.value, ...publishedRuli
 const ruleHistory = computed(() => history.value.filter(batch => batch.action === 'rule-item-publish'))
 const canDraft = computed(() => hasPermission('admin.content.draft'))
 const cardById = computed(() => new Map(cardCatalog.value.map(card => [card.id.toLocaleLowerCase(), card])))
+const centerCollectionDefinitions = [
+  { id: 'coreBlocks', label: '核心规则子板块' }, { id: 'quickStart', label: '快速入门' },
+  { id: 'terms', label: '术语' }, { id: 'tournament', label: '赛事规则' }, { id: 'versions', label: '版本记录' },
+] as const
 
 function findPublishedRuling(item: RuleRuling) {
   return publishedRulings.value.find(row => row.id.toLocaleLowerCase() === item.id.toLocaleLowerCase())
@@ -65,6 +71,12 @@ function centerState(collection: string, itemId: string, draft: Record<string, u
   const live = findPublishedCenter(collection, itemId)
   if (!live) return 'draft'
   if (draft.status === 'pending') return 'changed'
+  const draftDocument = ruleCenterDocument.value as unknown as Record<string, Array<Record<string, unknown>>>
+  const publishedDocument = publishedCenter.value as unknown as Record<string, Array<Record<string, unknown>>>
+  const liveIds = new Set((publishedDocument[collection] || []).map(item => String(item.id || '').toLocaleLowerCase()))
+  const draftOrder = (draftDocument[collection] || []).map(item => String(item.id || '').toLocaleLowerCase()).filter(id => liveIds.has(id))
+  const publishedOrder = (publishedDocument[collection] || []).map(item => String(item.id || '').toLocaleLowerCase())
+  if (draftOrder.indexOf(itemId.toLocaleLowerCase()) !== publishedOrder.indexOf(itemId.toLocaleLowerCase())) return 'changed'
   const comparable = (value: Record<string, unknown>) => { const copy = { ...value }; delete copy.status; return copy }
   if (JSON.stringify(comparable(live)) !== JSON.stringify(comparable(draft))) return 'changed'
   const effectiveAt = typeof live.effectiveAt === 'string' ? live.effectiveAt : ''
@@ -74,8 +86,8 @@ function centerState(collection: string, itemId: string, draft: Record<string, u
 const centerItems = computed(() => {
   const document = ruleCenterDocument.value as unknown as Record<string, Array<Record<string, any>>>
   return ['coreBlocks', 'quickStart', 'terms', 'tournament', 'versions'].flatMap(collection =>
-    (Array.isArray(document[collection]) ? document[collection] : []).filter(item => item.id).map(item => ({
-      collection, row: item, id: String(item.id),
+    (Array.isArray(document[collection]) ? document[collection] : []).filter(item => item.id).map((item, index) => ({
+      collection, row: item, id: String(item.id), index,
       title: String(item.title || item.topic || item.chapter || item.id),
       state: centerState(collection, String(item.id), item),
     })))
@@ -87,6 +99,9 @@ const activeRulingItems = computed(() => rulingItems.value.filter(item => worksp
   ? item.state === 'draft' || item.state === 'changed' : item.state === 'published' || item.state === 'scheduled'))
 const supersededCenterItems = computed(() => centerItems.value.filter(item => item.state === 'superseded'))
 const supersededRulingItems = computed(() => rulingItems.value.filter(item => item.state === 'superseded'))
+const activeCenterGroups = computed(() => centerCollectionDefinitions.map(group => ({ ...group,
+  items: activeCenterItems.value.filter(item => item.collection === group.id),
+})).filter(group => group.items.length))
 const workspaceCounts = computed<Record<Workspace, number>>(() => ({
   drafts: centerItems.value.filter(item => item.state === 'draft' || item.state === 'changed').length
     + rulingItems.value.filter(item => item.state === 'draft' || item.state === 'changed').length,
@@ -178,6 +193,61 @@ function addRuling(sourceId = '') {
 }
 function startFromSource(sourceId: string) { selectedSource.value = sourceId; addRuling(sourceId) }
 function removeRuling(index: number) { entries.value.splice(index, 1) }
+function mediaFor(id: unknown) { return ruleMedia.value.find(item => item.id === id) }
+function centerCollectionLength(collection: string) {
+  const document = ruleCenterDocument.value as unknown as Record<string, unknown[]>
+  return document[collection]?.length || 0
+}
+function ruleMediaUploaded(media: SiteMedia, row: Record<string, any>) {
+  ruleMedia.value = [media, ...ruleMedia.value.filter(item => item.id !== media.id)]
+  row.mediaAssetId = media.id
+}
+function applyCenterEntry(entry: ContentEntry) {
+  centerVersion.value = entry.version
+  ruleCenterDocument.value = JSON.parse(entry.draftValue) as RuleCenterDocument
+  publishedCenter.value = parsePublishedRuleCenter(entry.publishedValue)
+}
+async function addCenterItem(collection: string) {
+  if (!canDraft.value) return
+  try {
+    const saved = await saveCenter('', false)
+    if (!saved) return
+    const created = await adminApi.createRuleItem(collection, saved.version)
+    applyCenterEntry(created)
+    const document = ruleCenterDocument.value as unknown as Record<string, Array<Record<string, unknown>>>
+    const itemId = String(document[collection]?.at(-1)?.id || '')
+    workspace.value = 'drafts'
+    notice('已新建规则资料子板块；稳定编号由系统自动分配')
+    if (itemId) await revealDraftItem(itemId)
+  } catch (error) { notice(error instanceof Error ? error.message : '规则资料子板块新建失败') }
+}
+async function moveCenterItem(item: { collection: string; id: string; row: Record<string, any> }, direction: -1 | 1) {
+  const document = ruleCenterDocument.value as unknown as Record<string, Array<Record<string, any>>>
+  const items = document[item.collection] || []
+  const index = items.findIndex(row => String(row.id) === item.id)
+  const target = index + direction
+  if (index < 0 || target < 0 || target >= items.length) return
+  if (workspace.value === 'published') item.row.status = 'pending'
+  const [moved] = items.splice(index, 1)
+  items.splice(target, 0, moved)
+  try {
+    await saveCenter(`规则资料顺序已保存为草稿；稳定编号 ${item.id} 未改变`)
+    await revealDraftItem(item.id)
+  } catch (error) { notice(error instanceof Error ? error.message : '规则资料调序失败') }
+}
+async function deleteCenterItem(item: { collection: string; id: string; title: string; state: PublicationState }) {
+  const published = item.state !== 'draft'
+  const prompt = published
+    ? `确认删除“${item.title}”吗？该内容将同时从玩家端公开规则中移除，发布历史仍会保留。`
+    : `确认删除未发布草稿“${item.title}”吗？稳定编号不会再次使用。`
+  if (!window.confirm(prompt)) return
+  try {
+    const deleted = await adminApi.deleteRuleItem(item.collection, item.id, centerVersion.value)
+    applyCenterEntry(deleted)
+    history.value = await adminApi.contentBatches()
+    notice(published ? '规则资料已删除并同步从玩家端移除；审计历史已保留' : '规则资料草稿已删除；稳定编号不会复用')
+  } catch (error) { notice(error instanceof Error ? error.message : '规则资料删除失败') }
+}
 function normalizeList(item: RuleRuling, key: 'tags' | 'sourceIds' | 'supersedes', value: string) { item[key] = split(value) }
 async function revealDraftItem(itemId: string) {
   workspace.value = 'drafts'
@@ -190,8 +260,8 @@ async function revealDraftItem(itemId: string) {
 async function load() {
   busy.value = true
   try {
-    const [rulings, center, batches] = await Promise.all([
-      adminApi.getContent('rules.rulings'), adminApi.getContent('rules.center'), adminApi.contentBatches(),
+    const [rulings, center, batches, media] = await Promise.all([
+      adminApi.getContent('rules.rulings'), adminApi.getContent('rules.center'), adminApi.contentBatches(), adminApi.siteMedia('rule'),
     ])
     cardCatalog.value = await loadDeckCatalog().catch(() => [] as DeckCard[])
     const parsedRulings = parseRulingDocument(rulings.draftValue)
@@ -202,6 +272,7 @@ async function load() {
     rulingVersion.value = rulings.version
     centerVersion.value = center.version
     history.value = batches
+    ruleMedia.value = media
     const centerDocument = JSON.parse(center.draftValue.trim() || JSON.stringify(createRuleCenterDraft())) as Record<string, unknown>
     centerDocument.schemaVersion = 2
     const collections = centerDocument as Record<string, Array<Record<string, unknown>>>
@@ -217,21 +288,22 @@ async function load() {
 }
 async function saveRulings(message = '裁定草稿已保存') {
   normalizeAllRulingProducts()
-  const saved = await adminApi.saveContentDraft('rules.rulings', serializeRulingDocument(entries.value))
+  const saved = await adminApi.saveContentDraft('rules.rulings', serializeRulingDocument(entries.value), rulingVersion.value)
   rulingVersion.value = saved.version
   notice(message)
 }
-async function saveCenter(message = '规则资料草稿已保存') {
-  const saved = await adminApi.saveContentDraft('rules.center', ruleCenterDraft.value)
+async function saveCenter(message = '规则资料草稿已保存', show = true) {
+  const saved = await adminApi.saveContentDraft('rules.center', ruleCenterDraft.value, centerVersion.value)
   centerVersion.value = saved.version
-  notice(message)
+  if (show && message) notice(message)
+  return saved
 }
 async function save(show = true) {
   try {
     normalizeAllRulingProducts()
     const [rulings, center] = await Promise.all([
-      adminApi.saveContentDraft('rules.rulings', serializeRulingDocument(entries.value)),
-      adminApi.saveContentDraft('rules.center', ruleCenterDraft.value),
+      adminApi.saveContentDraft('rules.rulings', serializeRulingDocument(entries.value), rulingVersion.value),
+      adminApi.saveContentDraft('rules.center', ruleCenterDraft.value, centerVersion.value),
     ])
     rulingVersion.value = rulings.version
     centerVersion.value = center.version
@@ -259,7 +331,7 @@ async function publishRuling(item: RuleRuling) {
   publishingId.value = item.id
   try {
     normalizeAllRulingProducts()
-    const saved = await adminApi.saveContentDraft('rules.rulings', serializeRulingDocument(entries.value))
+    const saved = await adminApi.saveContentDraft('rules.rulings', serializeRulingDocument(entries.value), rulingVersion.value)
     const published = await adminApi.publishRuleItem('rules.rulings', 'entries', item.id, saved.version)
     rulingVersion.value = published.version
     entries.value = parseRulingDocument(published.draftValue)
@@ -272,7 +344,7 @@ async function publishRuling(item: RuleRuling) {
 async function publishCenterItem(collection: string, itemId: string) {
   publishingId.value = itemId
   try {
-    const saved = await adminApi.saveContentDraft('rules.center', ruleCenterDraft.value)
+    const saved = await adminApi.saveContentDraft('rules.center', ruleCenterDraft.value, centerVersion.value)
     const published = await adminApi.publishRuleItem('rules.center', collection, itemId, saved.version)
     centerVersion.value = published.version
     ruleCenterDocument.value = JSON.parse(published.draftValue) as RuleCenterDocument
@@ -293,19 +365,20 @@ onMounted(load)
 
     <section v-if="workspace === 'drafts' || workspace === 'published'" class="workspace-panel">
       <header><div><small>{{ workspace === 'drafts' ? 'DRAFT REVIEW' : 'PUBLISHED' }}</small><h4>{{ workspaceLabels[workspace] }}</h4></div><p>{{ workspace === 'drafts' ? '待审核和已发布后修改的对象在这里处理。' : '当前已生效和已审核待生效的对象在这里查看。' }}</p></header>
-      <section v-if="activeCenterItems.length" class="item-group"><h4>规则资料</h4>
-        <details v-for="item in activeCenterItems" :id="`admin-rule-item-${item.id}`" :key="`${item.collection}-${item.id}`" class="admin-item-card center-editor">
-          <summary><span><b>{{ item.title }}</b><small>{{ item.id }} · {{ stateLabels[item.state] }}</small></span><em>{{ workspace === 'published' ? '查看已发布内容' : '查看与操作' }}</em></summary>
+      <section v-if="canDraft && workspace === 'drafts'" class="center-create-bar"><span>新建规则资料子板块</span><div><button v-for="group in centerCollectionDefinitions" :key="group.id" type="button" @click="addCenterItem(group.id)">＋ {{ group.label }}</button></div></section>
+      <section v-for="group in activeCenterGroups" :key="group.id" class="item-group"><h4>{{ group.label }} · {{ group.items.length }} 项</h4>
+        <details v-for="item in group.items" :id="`admin-rule-item-${item.id}`" :key="`${item.collection}-${item.id}`" class="admin-item-card center-editor">
+          <summary><span><b>{{ item.title }}</b><small>{{ stateLabels[item.state] }}</small></span><em>{{ workspace === 'published' ? '查看已发布内容' : '查看与操作' }}</em></summary>
           <template v-if="workspace === 'published'"><div class="admin-item-preview published-preview"><small>玩家端预览 · {{ stateLabels[item.state] }}</small><b>{{ item.title }}</b><p>{{ item.row.text || item.row.body || item.row.summary }}</p><span>{{ item.row.effectiveAt ? `${item.state === 'scheduled' ? '计划生效' : '生效时间'}：${new Date(String(item.row.effectiveAt)).toLocaleString('zh-CN')}` : '当前已生效' }}</span></div><div class="item-actions published-actions"><button v-if="canDraft" @click="returnCenter(item.row, item.id)">退回修改</button></div></template>
           <template v-else><div class="admin-item-preview"><small>玩家端预览</small><b>{{ item.title }}</b><p>{{ item.row.text || item.row.body || item.row.summary }}</p><span v-if="item.row.effectiveAt">计划生效：{{ new Date(item.row.effectiveAt).toLocaleString('zh-CN') }}</span></div>
           <fieldset :disabled="!canDraft"><div class="form-grid">
-            <label>稳定 ID<input v-model.trim="item.row.id" maxlength="100" :disabled="item.state === 'published' || item.state === 'scheduled'"></label><label>栏目<input :value="item.collection" disabled></label>
-            <label v-if="item.collection === 'coreBlocks'">页码（可留空）<input v-model="item.row.page" maxlength="20"></label><label v-if="item.collection === 'coreBlocks'">主题<input v-model.trim="item.row.topic" maxlength="100"></label>
             <label v-if="item.collection === 'coreBlocks'" class="wide">章节<input v-model.trim="item.row.chapter" maxlength="100"></label><label v-else class="wide">标题<input v-model.trim="item.row.title" maxlength="300"></label>
             <label v-if="item.collection === 'coreBlocks'" class="wide">规则正文<textarea v-model.trim="item.row.text" rows="5" maxlength="12000"></textarea></label><label v-else-if="item.collection === 'versions'" class="wide">版本摘要<textarea v-model.trim="item.row.summary" rows="5" maxlength="12000"></textarea></label><label v-else class="wide">正文<textarea v-model.trim="item.row.body" rows="5" maxlength="12000"></textarea></label>
+            <div v-if="item.collection === 'coreBlocks'" class="wide rule-media-editor"><span>子板块图片（可选）</span><select v-model="item.row.mediaAssetId"><option value="">不插入图片</option><option v-for="media in ruleMedia" :key="media.id" :value="media.id">{{ media.altText || media.contentHash.slice(0, 12) }}</option></select><img v-if="mediaFor(item.row.mediaAssetId)" :src="mediaFor(item.row.mediaAssetId)?.thumbnailUrl" :alt="mediaFor(item.row.mediaAssetId)?.altText"><details><summary>上传新的规则图片</summary><MediaUploadField kind="rule" :initial-alt="item.row.chapter || '规则示意图'" @uploaded="ruleMediaUploaded($event, item.row)" @notice="notice"/></details></div>
             <label v-if="item.collection !== 'coreBlocks'">来源说明<input v-model.trim="item.row.sourceRef" maxlength="300"></label><label>生效时间（北京时间，可留空）<input :value="effectiveInput(String(item.row.effectiveAt || ''))" type="datetime-local" @input="setCenterEffective(item.row, ($event.target as HTMLInputElement).value)"></label>
           </div></fieldset>
-          <div class="item-actions"><button v-if="canDraft" @click="saveCenterItem(item.id)">保存此项</button><button v-if="hasPermission('admin.content.publish')" class="publish" :disabled="publishingId === item.id" @click="publishCenterItem(item.collection, item.id)">{{ publishingId === item.id ? '发布中…' : '审核并发布此项' }}</button></div></template>
+          <div class="item-actions"><button v-if="canDraft" :disabled="item.index === 0" @click="moveCenterItem(item, -1)">上移</button><button v-if="canDraft" :disabled="item.index === centerCollectionLength(item.collection) - 1" @click="moveCenterItem(item, 1)">下移</button><button v-if="canDraft" @click="saveCenterItem(item.id)">保存此项</button><button v-if="canDraft" class="danger" @click="deleteCenterItem(item)">删除</button><button v-if="hasPermission('admin.content.publish')" class="publish" :disabled="publishingId === item.id" @click="publishCenterItem(item.collection, item.id)">{{ publishingId === item.id ? '发布中…' : '审核并发布此项' }}</button></div></template>
+          <div v-if="workspace === 'published'" class="item-actions published-order-actions"><button v-if="canDraft" :disabled="item.index === 0" @click="moveCenterItem(item, -1)">退回并上移</button><button v-if="canDraft" :disabled="item.index === centerCollectionLength(item.collection) - 1" @click="moveCenterItem(item, 1)">退回并下移</button><button v-if="canDraft" class="danger" @click="deleteCenterItem(item)">删除并取消公开</button></div>
         </details>
       </section>
       <section v-if="activeRulingItems.length" class="item-group"><h4>裁定问答</h4>
@@ -348,8 +421,9 @@ onMounted(load)
 <style scoped>
 .ruling-admin{box-sizing:border-box;width:min(100%,1680px);margin:0 auto;padding:22px;border:1px solid #35424a;background:#0e161d;font-family:'Microsoft YaHei','微软雅黑',sans-serif}.ruling-admin>header{display:flex;align-items:center;justify-content:space-between;gap:20px;margin:-22px -22px 18px;padding:22px;border-bottom:1px solid #35424a;background:#101821}.ruling-admin small{color:#55c6cd;font-size:12px;font-weight:900;letter-spacing:.12em}.ruling-admin h3{margin:6px 0}.ruling-admin p{color:#98a4a9;font-size:14px;line-height:1.65}.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}.ruling-admin button,.ruling-admin input,.ruling-admin textarea,.ruling-admin select{box-sizing:border-box;min-height:40px;padding:9px 11px;border:1px solid #4a5860;background:#070d12;color:#fff;font:14px 'Microsoft YaHei','微软雅黑',sans-serif}.workspace-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-bottom:12px}.workspace-tabs button{display:flex;align-items:center;justify-content:space-between;gap:8px;text-align:left}.workspace-tabs button.active{border-color:#d1ad54;background:#2b2515;color:#f0d47b}.workspace-tabs span{display:grid;min-width:24px;height:24px;place-items:center;border-radius:12px;background:#15242a;color:#9adadd;font-size:12px}.review-summary{display:flex;gap:14px;padding:14px;border-left:3px solid #d1ad54;background:#171811;color:#c9c4b6;font-size:14px;line-height:1.7}.review-summary b{flex:0 0 auto;color:#efd170}.workspace-panel{margin-top:14px;padding:16px;border:1px solid #3d4a52;background:#091016}.workspace-panel>header{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:12px}.workspace-panel>header h4{margin:4px 0 0;font-size:18px}.workspace-panel>header p{margin:0}.item-group{display:grid;gap:8px;margin-top:14px}.item-group>h4,.rule-history>h4,.superseded-list>h4{margin:0 0 4px;color:#d8bc69}.admin-item-card{border:1px solid #344149;background:#0d151b}.admin-item-card>summary{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px;cursor:pointer}.admin-item-card>summary span{display:grid;gap:4px}.admin-item-card>summary small{letter-spacing:0}.admin-item-card>summary em{color:#8f9ba0;font-size:12px;font-style:normal}.admin-item-preview{display:grid;gap:7px;margin:0 12px;padding:12px;border-left:3px solid #47747a;background:#091116}.admin-item-preview small{letter-spacing:0}.admin-item-preview b{color:#e7eceb}.admin-item-preview p{margin:0;white-space:pre-line}.admin-item-preview span{color:#87969c;font-size:12px}.published-preview{border-left-color:#b09147;background:#11150f}.admin-item-card fieldset{margin:0;padding:0;border:0}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:12px}.form-grid label{display:grid;gap:6px;color:#c0c8ca;font-size:13px;font-weight:800}.form-grid input,.form-grid textarea,.form-grid select{width:100%}.form-grid textarea{resize:vertical}.form-grid .wide{grid-column:1/-1}.item-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;padding:12px;border-top:1px solid #303c43}.published-actions{border-top:0}.item-actions .publish{border-color:#2f785e;background:#0d251c;color:#7fe0b9}.danger{border-color:#81434c!important;background:#281117!important;color:#eea6ae!important}.topic-selector{display:flex;flex-wrap:wrap;gap:7px;padding:10px;border:1px solid #35424a}.topic-selector legend,.linked-cards>span{color:#c0c8ca;font-size:13px;font-weight:800}.topic-selector button.active{border-color:#d1ad54;background:#2b2515;color:#efd170}.linked-cards{display:grid;gap:7px}.linked-cards>div{display:flex;flex-wrap:wrap;gap:7px}.card-chip{border-color:#427278!important;background:#10272a!important;color:#9ee4e8!important}.source-search{width:100%;margin:12px 0}.source-list{display:grid;gap:8px}.source-list article{display:flex;justify-content:space-between;gap:14px;padding:13px;border:1px solid #35424a;background:#0d151b}.source-list article[data-state="conflict-flagged"]{border-color:#a46145;background:#241713}.source-list article[data-state="replaced"]{opacity:.65}.source-list article div{display:grid;gap:6px}.source-list article small{color:#d7bc69;letter-spacing:0}.source-list article p{margin:0;white-space:pre-line}.source-list article em{color:#e2b37e;font-size:13px;font-style:normal}.source-list article button{height:max-content;flex:0 0 auto}.selected-source{color:#d8bc69!important}.superseded-list,.rule-history{display:grid;gap:8px}.superseded-list article,.rule-history>details{padding:10px;border:1px solid #344149;background:#0d151b}.superseded-list article{display:grid;gap:4px}.superseded-list span{color:#8d999f;font-size:12px}.rule-history{margin-top:18px}.rule-history>details>summary{display:flex;align-items:center;justify-content:space-between;gap:12px}.rule-history>details>summary span{display:grid;gap:3px}.history-diff{display:grid;gap:5px;margin-top:10px;padding:10px;background:#081016}.history-diff p{display:grid;grid-template-columns:72px 1fr;gap:8px;color:#c6ced0}.history-diff p:first-child{display:block;color:#e2c878}.rule-history code{color:#d8bc69;font-size:12px;overflow-wrap:anywhere}.raw-rule-document{margin-top:16px}.raw-rule-document summary{cursor:pointer;color:#d8bc69;font-weight:900}.raw-rule-document pre{max-height:360px;overflow:auto;padding:12px;background:#05090c;color:#aeb9bd;font:12px/1.55 Consolas,'Courier New',monospace;white-space:pre-wrap}.empty{padding:32px;text-align:center}
 .linked-cards{align-content:start}.linked-card-grid{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:9px!important}.linked-card-grid article{display:grid;grid-template-columns:80px minmax(0,1fr);gap:10px;padding:8px;border:1px solid #35424a;background:#091116}.linked-card-image{width:80px;min-height:112px!important;padding:0!important;overflow:hidden}.linked-card-image :deep(.l12-card-image),.linked-card-image :deep(img){width:100%;height:100%;object-fit:contain}.linked-card-grid article>div{display:flex!important;min-width:0;flex-direction:column;align-items:flex-start;gap:5px!important}.linked-card-grid article b{overflow-wrap:anywhere}.linked-card-grid article small{color:#91a0a5;letter-spacing:0}.linked-card-grid .card-chip{margin-top:auto}.missing-link{grid-column:1/-1;margin:0;padding:10px;border:1px dashed #765e34;color:#d8bc69;font-size:12px}.derived-products{display:grid;align-content:start;gap:7px}.derived-products>span{color:#c0c8ca;font-size:13px;font-weight:800}.derived-products>div{display:flex;min-height:40px;flex-wrap:wrap;align-items:center;gap:6px;padding:7px;border:1px solid #35424a;background:#070d12}.derived-products b{padding:4px 7px;background:#16242a;color:#8ad5d8;font-size:12px}.derived-products em,.derived-products small{color:#849197;font-size:12px;font-style:normal;line-height:1.5}
+.center-create-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;padding:12px;border:1px solid #3d4a52;background:#0d151b}.center-create-bar>span,.rule-media-editor>span{color:#d8bc69;font-size:13px;font-weight:900}.center-create-bar>div{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px}.rule-media-editor{display:grid;gap:9px;padding:12px;border:1px solid #35424a;background:#091116}.rule-media-editor>select{width:100%}.rule-media-editor>img{display:block;max-width:min(100%,520px);max-height:300px;object-fit:contain;border:1px solid #45535b;background:#04080b}.rule-media-editor>details{border:1px solid #35424a}.rule-media-editor>details>summary{padding:10px;cursor:pointer;color:#8ad5d8;font-weight:900}.rule-media-editor>details :deep(.media-upload-field){margin:10px}.published-order-actions{border-top:1px solid #303c43}
 .ruling-admin,.ruling-admin>*,.workspace-panel,.workspace-panel>*,.item-group,.admin-item-card,.admin-item-card>*,.form-grid,.form-grid>*,.admin-item-card fieldset{box-sizing:border-box;min-width:0;max-width:100%}.ruling-admin input,.ruling-admin textarea,.ruling-admin select{min-width:0;max-width:100%}
 @media(max-width:900px){.workspace-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:760px){.ruling-admin>header,.workspace-panel>header,.source-list article{align-items:flex-start;flex-direction:column}.actions{justify-content:flex-start}.form-grid{grid-template-columns:1fr}.workspace-tabs{grid-template-columns:1fr}.review-summary{flex-direction:column}.item-actions{justify-content:flex-start}}
+@media(max-width:760px){.ruling-admin>header,.workspace-panel>header,.source-list article,.center-create-bar{align-items:flex-start;flex-direction:column}.actions,.center-create-bar>div{justify-content:flex-start}.form-grid{grid-template-columns:1fr}.workspace-tabs{grid-template-columns:1fr}.review-summary{flex-direction:column}.item-actions{justify-content:flex-start}.rule-media-editor>details :deep(.media-upload-field){margin:6px}}
 @media(max-width:380px){.ruling-admin{padding:14px}.ruling-admin>header{margin:-14px -14px 14px;padding:14px}.workspace-panel{padding:10px}.form-grid{padding:8px}.admin-item-preview{margin:0 8px;padding:8px}}
 </style>

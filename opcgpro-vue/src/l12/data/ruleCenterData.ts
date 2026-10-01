@@ -79,6 +79,18 @@ export interface RuleCenterCoreBlock {
   topic?: string
   chapter?: string
   text: string
+  mediaAssetId?: string
+  image?: {
+    id: string
+    altText: string
+    desktopUrl: string
+    mobileUrl: string
+    thumbnailUrl: string
+    desktopWidth: number
+    desktopHeight: number
+    mobileWidth: number
+    mobileHeight: number
+  }
   status?: 'published' | 'pending' | 'superseded'
   effectiveAt?: string
 }
@@ -262,10 +274,23 @@ function ruleBlock(value: unknown, index: number): RuleCenterCoreBlock | undefin
   const page = typeof row.page === 'string' && row.page.trim().length <= 20 ? row.page.trim() : undefined
   const topic = row.topic === undefined ? undefined : text(row.topic, 100)
   const chapter = row.chapter === undefined ? undefined : text(row.chapter, 100); const blockText = text(row.text, 12_000)
+  const mediaAssetId = row.mediaAssetId === undefined ? undefined : text(row.mediaAssetId, 100)
+  const imageRow = row.image && typeof row.image === 'object' && !Array.isArray(row.image) ? row.image as Record<string, unknown> : undefined
+  const image = imageRow ? {
+    id: text(imageRow.id, 100), altText: text(imageRow.altText, 180), desktopUrl: text(imageRow.desktopUrl, 500),
+    mobileUrl: text(imageRow.mobileUrl, 500), thumbnailUrl: text(imageRow.thumbnailUrl, 500),
+    desktopWidth: typeof imageRow.desktopWidth === 'number' ? imageRow.desktopWidth : 0,
+    desktopHeight: typeof imageRow.desktopHeight === 'number' ? imageRow.desktopHeight : 0,
+    mobileWidth: typeof imageRow.mobileWidth === 'number' ? imageRow.mobileWidth : 0,
+    mobileHeight: typeof imageRow.mobileHeight === 'number' ? imageRow.mobileHeight : 0,
+  } : undefined
   const status = row.status === undefined ? undefined : text(row.status, 30) as RuleCenterCoreBlock['status']
   const effectiveAt = row.effectiveAt === undefined || row.effectiveAt === null ? undefined : text(row.effectiveAt, 40)
   if (page === undefined || !blockText || (status && status !== 'published')) return undefined
-  return { id, page, ...(topic ? { topic } : {}), ...(chapter ? { chapter } : {}), text: blockText, ...(status ? { status } : {}), ...(effectiveAt ? { effectiveAt } : {}) }
+  const validImage = image?.id && image.altText && image.desktopUrl && image.mobileUrl && image.thumbnailUrl ? image as RuleCenterCoreBlock['image'] : undefined
+  return { id, page, ...(topic ? { topic } : {}), ...(chapter ? { chapter } : {}), text: blockText,
+    ...(mediaAssetId ? { mediaAssetId } : {}), ...(validImage ? { image: validImage } : {}),
+    ...(status ? { status } : {}), ...(effectiveAt ? { effectiveAt } : {}) }
 }
 
 function centerEntry(value: unknown, section: RuleCenterSection): RuleCenterEntry | undefined {

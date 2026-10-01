@@ -53,6 +53,10 @@ assert(player.includes('v-if="openIds.has(item.id)"')
   'linked card art must stay behind the expanded ruling boundary')
 assert(/watch\(\[tab, faqMode\],[\s\S]*?ensureCardCatalog\(\)[\s\S]*?\}, \{ immediate: true \}\)/.test(player),
   'direct card FAQ entry must initialize card title metadata immediately')
+for (const token of ['coreTableOfContents', 'scrollToCoreChapter', 'aria-label="规则手册章节目录"', 'rule-block-image', 'block.image.mobileUrl'])
+  assert(player.includes(token), `core rule chapter directory or managed image presentation missing ${token}`)
+assert(player.includes('ruleResults.value') && player.includes("const chapter = block.chapter?.trim() || '其他规则'"),
+  'core directory must derive from the currently filtered published blocks')
 
 const admin = readFrontend('src/l12/site/AdminRuleRulingsPanel.vue')
 for (const token of ['SingleCardPicker', 'rule-item-publish', 'ruleHistory', 'historyChanges', '审核并发布此项', '高级：查看原始结构（只读）'])
@@ -63,6 +67,11 @@ for (const token of ['CatalogCardDetails', 'CardImage', 'normalizeAllRulingProdu
   assert(admin.includes(token), `admin derived card ruling workflow missing ${token}`)
 for (const token of ["workspace === 'published'", 'published-preview', 'published-actions', 'revealDraftItem', '查看已发布内容'])
   assert(admin.includes(token), `published read-only workflow missing ${token}`)
+for (const token of ['addCenterItem', 'moveCenterItem', 'deleteCenterItem', 'createRuleItem', 'deleteRuleItem', 'MediaUploadField', 'kind="rule"'])
+  assert(admin.includes(token), `rule material block management missing ${token}`)
+assert(!admin.includes('稳定 ID<input v-model.trim="item.row.id"'), 'rule material stable IDs must not be editable')
+assert(!admin.includes('页码（可留空）') && !admin.includes('>主题<input v-model.trim="item.row.topic"')
+  && !admin.includes('>栏目<input :value="item.collection"'), 'page, topic and raw collection fields must stay out of the rule material editor')
 assert(admin.includes('width:min(100%,1680px)'), 'rule review workspace must remain bounded on ultra-wide screens')
 assert(!admin.includes('产品（逗号分隔）'), 'card ruling products must not remain manually editable')
 assert(!admin.includes('class="publish-queue"'), 'publishing controls must stay next to each reviewed object')
@@ -71,6 +80,8 @@ assert(!admin.includes('移动实体'), 'admin ruling copy must use game termino
 const store = readRepo('服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs')
 for (const token of ['ProjectEffectiveRuleContent', 'NextRuleContentTransition', 'rule-item-publish', 'ExpectedVersion', 'schemaVersion', 'NormalizeRuleRulingProducts', '_officialCardProducts'])
   assert(store.includes(token), `server rule projection missing ${token}`)
+for (const token of ['CreateRuleItem', 'DeleteRuleItem', 'NextRuleCenterItemId', 'rule-item-delete', 'HydrateRuleCenterMedia', '["rule"]', 'media.Kind != "rule"'])
+  assert(store.includes(token), `server rule block lifecycle missing ${token}`)
 const server = readRepo('服务端WebSocket/TwelveLegions/L12WebSocketServer.ResourceSync.cs')
 assert(server.includes('RulesContentResource') && server.includes('ScheduleNextRulesContentTransition'),
   'rulesContent revisions and one-shot effective-time scheduling must remain enabled')

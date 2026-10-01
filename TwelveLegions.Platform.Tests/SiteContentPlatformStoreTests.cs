@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
 using Xunit;
@@ -518,6 +519,115 @@ public sealed class SiteContentPlatformStoreTests
 
             var error = Assert.Throws<ArgumentException>(() => store.SaveContentDraft(admin, "rules.center", draft));
             Assert.Contains("核心规则块 id 重复", error.Message);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void RuleCenterItemsUseMonotonicStableIdsPublishDraftOrderAndDeletePublicSnapshots()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-rule-center-items-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var initial = JsonSerializer.Serialize(new
+            {
+                schemaVersion = 2,
+                coreBlocks = new[] { new { id = "core-rule-001", page = "", chapter = "第一章", text = "第一节", status = "pending" } },
+                quickStart = Array.Empty<object>(), terms = Array.Empty<object>(), tournament = Array.Empty<object>(), versions = Array.Empty<object>(),
+            });
+            var saved = store.SaveContentDraft(admin, "rules.center", initial);
+            var created = store.CreateRuleItem(admin, new("rules.center", "coreBlocks", ExpectedVersion: saved.Version));
+            Assert.Contains("core-rule-002", created.DraftValue);
+
+            var deletedDraft = store.DeleteRuleItem(admin, new("rules.center", "coreBlocks", "core-rule-002",
+                ExpectedVersion: created.Version));
+            var createdAgain = store.CreateRuleItem(admin, new("rules.center", "coreBlocks",
+                ExpectedVersion: deletedDraft.Version));
+            Assert.Contains("core-rule-003", createdAgain.DraftValue);
+            Assert.DoesNotContain("core-rule-002", createdAgain.DraftValue);
+            Assert.Throws<L12ContentStateConflictException>(() => store.CreateRuleItem(admin,
+                new("rules.center", "coreBlocks", ExpectedVersion: saved.Version)));
+
+            var firstPublished = store.PublishRuleItem(admin,
+                new("rules.center", "coreBlocks", "core-rule-001", ExpectedVersion: createdAgain.Version));
+            var thirdPublished = store.PublishRuleItem(admin,
+                new("rules.center", "coreBlocks", "core-rule-003", ExpectedVersion: firstPublished.Version));
+            var reorderedDocument = JsonNode.Parse(thirdPublished.DraftValue)!.AsObject();
+            var blocks = reorderedDocument["coreBlocks"]!.AsArray();
+            var first = blocks[0]!.DeepClone();
+            var third = blocks[1]!.DeepClone();
+            blocks.Clear();
+            blocks.Add(third);
+            blocks.Add(first);
+            var reordered = store.SaveContentDraft(admin, "rules.center", reorderedDocument.ToJsonString(),
+                expectedVersion: thirdPublished.Version);
+            var reorderedPublished = store.PublishRuleItem(admin,
+                new("rules.center", "coreBlocks", "core-rule-003", ExpectedVersion: reordered.Version));
+            using (var publicDocument = JsonDocument.Parse(store.GetContent("rules.center")))
+                Assert.Equal(new[] { "core-rule-003", "core-rule-001" }, publicDocument.RootElement
+                    .GetProperty("coreBlocks").EnumerateArray().Select(item => item.GetProperty("id").GetString()).ToArray());
+
+            store.DeleteRuleItem(admin, new("rules.center", "coreBlocks", "core-rule-003",
+                ExpectedVersion: reorderedPublished.Version));
+            using var afterDelete = JsonDocument.Parse(store.GetContent("rules.center"));
+            Assert.Equal("core-rule-001", Assert.Single(afterDelete.RootElement.GetProperty("coreBlocks").EnumerateArray())
+                .GetProperty("id").GetString());
+            Assert.Contains(store.ContentBatches(), batch => batch.Action == "rule-item-delete" &&
+                batch.SourceBatchId?.EndsWith("/core-rule-003", StringComparison.Ordinal) == true);
+            var publicDeleteAudit = Assert.Single(store.AdminAudit("rule-item").Where(item => item.Action == "delete" &&
+                item.Target.EndsWith("/core-rule-003", StringComparison.Ordinal)));
+            Assert.Equal("admin.content.publish", publicDeleteAudit.Permission);
+            Assert.Contains("已复验发布权限", publicDeleteAudit.Comment);
+
+            var reopened = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var reopenedAdmin = reopened.Login("Admin", "L12master").Account!;
+            var afterRestart = reopened.GetContentEntry("rules.center");
+            var fourth = reopened.CreateRuleItem(reopenedAdmin,
+                new("rules.center", "coreBlocks", ExpectedVersion: afterRestart.Version));
+            Assert.Contains("core-rule-004", fourth.DraftValue);
+            Assert.DoesNotContain("core-rule-003", fourth.DraftValue);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void RuleCenterImagesUseManagedRuleMediaReferencesAndHydrateOnlyForPlayers()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-rule-center-media-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var media = Upload(store, admin, "rule");
+            var draft = JsonSerializer.Serialize(new
+            {
+                schemaVersion = 2,
+                coreBlocks = new[] { new { id = "core-rule-001", page = "", chapter = "图示章节", text = "配图规则正文",
+                    mediaAssetId = media.Id, status = "pending" } },
+                quickStart = Array.Empty<object>(), terms = Array.Empty<object>(), tournament = Array.Empty<object>(), versions = Array.Empty<object>(),
+            });
+            var saved = store.SaveContentDraft(admin, "rules.center", draft);
+            store.PublishRuleItem(admin, new("rules.center", "coreBlocks", "core-rule-001", ExpectedVersion: saved.Version));
+
+            var stored = store.GetContentEntry("rules.center").PublishedValue;
+            using (var storedDocument = JsonDocument.Parse(stored))
+                Assert.Equal(media.Id, storedDocument.RootElement.GetProperty("coreBlocks")[0]
+                    .GetProperty("mediaAssetId").GetString());
+            Assert.DoesNotContain("\"image\"", stored);
+            using var player = JsonDocument.Parse(store.GetContent("rules.center"));
+            var image = player.RootElement.GetProperty("coreBlocks")[0].GetProperty("image");
+            Assert.Equal(media.Id, image.GetProperty("id").GetString());
+            Assert.Equal(media.DesktopUrl, image.GetProperty("desktopUrl").GetString());
+            Assert.Equal(media.MobileUrl, image.GetProperty("mobileUrl").GetString());
+            Assert.Throws<L12SiteContentConflictException>(() => store.DeleteSiteMedia(admin, media.Id));
         }
         finally
         {

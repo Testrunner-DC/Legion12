@@ -23,6 +23,12 @@ import '/src/style.css'
 const center=createRuleCenterDraft()
 for(const collection of ['coreBlocks','quickStart','terms','tournament','versions'])
   for(const item of center[collection])item.status='published'
+const ruleImage='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="960" height="360" viewBox="0 0 960 360"><rect width="960" height="360" fill="#0f2730"/><path d="M80 280L300 90l160 120 150-120 270 190" fill="none" stroke="#d8bc69" stroke-width="24"/></svg>')
+center.coreBlocks.unshift(
+ {id:'core-fixture-001',page:'',topic:'对局准备',chapter:'同章多节验收',text:'第一子板块',status:'published',mediaAssetId:'rule-media-001',image:{id:'rule-media-001',altText:'规则示意图',desktopUrl:ruleImage,mobileUrl:ruleImage,thumbnailUrl:ruleImage,desktopWidth:960,desktopHeight:360,mobileWidth:960,mobileHeight:360}},
+ {id:'core-fixture-002',page:'',topic:'回合流程',chapter:'同章多节验收',text:'第二子板块',status:'published'},
+ {id:'core-fixture-003',page:'',topic:'对局准备',chapter:'目录筛选验收',text:'SECOND UNIQUE NEEDLE',status:'published'},
+)
 const rulingSeeds=createRulingsDraft()
 const generalSeed=rulingSeeds.find(item=>item.scope==='general')
 const generalOrderingFixtures=[
@@ -54,7 +60,8 @@ const adminDrafts=[
 ]
 const adminPublished=[liveRuling,changedRuling,scheduledRuling,{...adminDrafts[4],status:'published'}]
 const centerDraft={schemaVersion:2,coreBlocks:[
- {id:'center-draft',page:'',topic:'对局准备',chapter:'待审核资料',text:'待审核正文',status:'pending'},
+ {id:'center-draft',page:'',topic:'对局准备',chapter:'待审核资料',text:'待审核正文',status:'pending',mediaAssetId:'rule-media-001'},
+ {id:'center-draft-2',page:'',topic:'回合流程',chapter:'待审核资料',text:'同章第二子板块',status:'pending'},
  {id:'center-live',page:'',topic:'回合流程',chapter:'已发布资料',text:'已发布正文',status:'published'},
 ],quickStart:[],terms:[],tournament:[],versions:[]}
 const centerPublished={schemaVersion:2,coreBlocks:[
@@ -65,6 +72,7 @@ const contentView=(key)=>key==='rules.rulings'
  : {key,draftValue:JSON.stringify(centerDraft),publishedValue:JSON.stringify(centerPublished),version:6}
 adminApi.getContent=async key=>contentView(key)
 adminApi.contentBatches=async()=>[]
+adminApi.siteMedia=async()=>[{id:'rule-media-001',kind:'rule',altText:'规则示意图',contentHash:'rule-media-content-hash',thumbnailUrl:ruleImage,desktopUrl:ruleImage,mobileUrl:ruleImage,desktopWidth:960,desktopHeight:360,mobileWidth:960,mobileHeight:360}]
 window.__savedDrafts=[]
 adminApi.saveContentDraft=async(key,value)=>{window.__savedDrafts.push({key,value});return {...contentView(key),draftValue:value,version:8}}
 adminApi.previewContent=async()=>({items:[]})
@@ -168,6 +176,42 @@ try {
     assert((await page.locator('.rules-page').boundingBox()).width <= 1681, `home is unbounded at ${suffix(viewport)}`)
     assert.equal(await page.locator('.material-grid button').count(), 6, `material entry count changed at ${suffix(viewport)}`)
     await page.screenshot({ path: path.join(output, `home-${suffix(viewport)}.png`), fullPage: true })
+
+    const coreEntry = page.getByRole('button', { name: /核心规则/ })
+    if (viewport.input === 'touch') await coreEntry.tap()
+    else if (viewport.input === 'keyboard') { await coreEntry.focus(); await page.keyboard.press('Enter') }
+    else await coreEntry.click()
+    const chapterNav = page.getByRole('navigation', { name: '规则手册章节目录' })
+    await chapterNav.waitFor()
+    assert.equal(await chapterNav.getByRole('button').filter({ hasText: '同章多节验收' }).count(), 1,
+      `same-chapter blocks did not collapse into one ToC entry at ${suffix(viewport)}`)
+    assert.match(await chapterNav.getByRole('button').filter({ hasText: '同章多节验收' }).innerText(), /2\s*节/,
+      `same-chapter ToC count changed at ${suffix(viewport)}`)
+    await chapterNav.getByRole('button').filter({ hasText: '目录筛选验收' }).click()
+    await page.waitForFunction(() => new URL(location.href).searchParams.get('entry') === 'core-fixture-003')
+    assert.equal(await page.locator('#rule-entry-core-fixture-003').count(), 1,
+      `chapter jump did not target its first block at ${suffix(viewport)}`)
+    await page.locator('.rule-tools input').fill('SECOND UNIQUE NEEDLE')
+    assert.equal(await chapterNav.getByRole('button').count(), 1,
+      `filtered ToC did not follow current results at ${suffix(viewport)}`)
+    assert.equal(await chapterNav.getByText('目录筛选验收', { exact: true }).count(), 1,
+      `filtered ToC kept the wrong chapter at ${suffix(viewport)}`)
+    await page.locator('.rule-tools input').fill('')
+    assert.equal(await page.locator('.rule-block-image img[alt="规则示意图"]').count(), 1,
+      `core rule media was not rendered at ${suffix(viewport)}`)
+    const ruleImageBox = await page.locator('.rule-block-image img[alt="规则示意图"]').boundingBox()
+    const ruleArticleBox = await page.locator('#rule-entry-core-fixture-001').boundingBox()
+    assert(ruleImageBox && Math.abs(ruleImageBox.width / ruleImageBox.height - 8 / 3) < 0.05,
+      `core rule media aspect ratio changed at ${suffix(viewport)}`)
+    assert(ruleImageBox && ruleArticleBox && ruleImageBox.width <= ruleArticleBox.width,
+      `core rule media escaped its content block at ${suffix(viewport)}`)
+    assert(ruleImageBox && ruleImageBox.width <= viewport.width - 20,
+      `core rule media exceeded the viewport at ${suffix(viewport)} (${ruleImageBox?.width}px image, ${ruleArticleBox?.width}px article)`)
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false,
+      `core rules overflow at ${suffix(viewport)}`)
+    await page.screenshot({ path: path.join(output, `core-rules-${suffix(viewport)}.png`), fullPage: true })
+    await page.getByRole('button', { name: '规则资料首页' }).click()
+    await page.locator('.rules-home-lead').waitFor()
 
     if (viewport.input === 'keyboard') {
       await page.locator('.material-grid button').first().focus()
@@ -334,8 +378,22 @@ try {
     assert((await admin.locator('.ruling-admin').boundingBox()).width <= 1681,
       `admin is unbounded at ${suffix(viewport)}`)
 
-    const draftCard = admin.locator('.admin-item-card').first()
-    await draftCard.locator('summary').click()
+    assert.equal(await admin.locator('.center-create-bar button').count(), 5,
+      `admin did not expose all five rule material creation actions at ${suffix(viewport)}`)
+    const draftCenterCards = admin.locator('.center-editor')
+    assert((await draftCenterCards.count()) >= 2, `admin did not show multiple blocks in one chapter at ${suffix(viewport)}`)
+    const centerDraftCard = draftCenterCards.first()
+    await centerDraftCard.locator(':scope > summary').click()
+    assert.equal(await centerDraftCard.getByText('子板块图片（可选）', { exact: true }).count(), 1,
+      `core block media editor is missing at ${suffix(viewport)}`)
+    assert.equal(await centerDraftCard.getByRole('button', { name: '删除', exact: true }).count(), 1,
+      `draft rule block delete action is missing at ${suffix(viewport)}`)
+    assert.equal(await centerDraftCard.getByRole('button', { name: '下移', exact: true }).count(), 1,
+      `draft rule block reorder action is missing at ${suffix(viewport)}`)
+    assert.equal(await centerDraftCard.getByText(/稳定 ID|页码|栏目|主题/).count(), 0,
+      `removed rule fields leaked back into the editor at ${suffix(viewport)}`)
+
+    const draftCard = centerDraftCard
     assert.equal(await draftCard.locator('.admin-item-preview').count(), 1,
       `draft object lost its inline preview at ${suffix(viewport)}`)
     assert.equal(await draftCard.locator('.item-actions').getByRole('button', { name: '保存此项' }).count(), 1,
@@ -345,7 +403,7 @@ try {
 
     await admin.getByRole('button', { name: /已发布/ }).click()
     const publishedCenterCard = admin.locator('.center-editor').first()
-    await publishedCenterCard.locator('summary').click()
+    await publishedCenterCard.locator(':scope > summary').click()
     assert.equal(await publishedCenterCard.locator('input, textarea, select').count(), 0,
       `published center object remained editable at ${suffix(viewport)}`)
     assert.equal(await publishedCenterCard.getByRole('button', { name: '保存此项' }).count(), 0,
@@ -354,9 +412,11 @@ try {
       `published center object exposed publish at ${suffix(viewport)}`)
     assert.equal(await publishedCenterCard.locator('.item-actions').getByRole('button', { name: '退回修改' }).count(), 1,
       `return action is not adjacent to published center object at ${suffix(viewport)}`)
+    assert.equal(await publishedCenterCard.getByRole('button', { name: '删除并取消公开' }).count(), 1,
+      `published rule block cannot be deleted from public content at ${suffix(viewport)}`)
 
     const publishedRulingCard = admin.locator('.ruling-editor').first()
-    await publishedRulingCard.locator('summary').click()
+    await publishedRulingCard.locator(':scope > summary').click()
     assert.equal(await publishedRulingCard.locator('input, textarea, select').count(), 0,
       `published ruling remained editable at ${suffix(viewport)}`)
     assert.equal(await publishedRulingCard.getByRole('button', { name: '保存此项' }).count(), 0,
@@ -390,7 +450,7 @@ try {
         'return action did not switch to drafts')
 
       const rulingEditor = admin.locator('.ruling-editor').filter({ hasText: 'ADMIN-DRAFT' })
-      await rulingEditor.locator('summary').click()
+      await rulingEditor.locator(':scope > summary').click()
       await rulingEditor.getByText('锡瓦的卡巴', { exact: true }).waitFor()
       assert.equal(await rulingEditor.getByText('第1季|天御', { exact: true }).count(), 1, 'admin did not derive linked-card products')
       await rulingEditor.getByRole('button', { name: '查看锡瓦的卡巴卡牌详情' }).click()
@@ -416,7 +476,7 @@ try {
 
   fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ status: 'passed', viewports, adminViewports, report }, null, 2))
   console.log(JSON.stringify({ status: 'passed', output, viewports: viewports.length, adminViewports: adminViewports.length,
-    screenshots: viewports.length * 2 + adminViewports.length + 2 }, null, 2))
+    screenshots: viewports.length * 3 + adminViewports.length + 2 }, null, 2))
 } finally {
   await browser?.close()
   await server.close()

@@ -12,6 +12,10 @@ public sealed record L12SiteMediaPolicyView(string Kind, string Label, int Deskt
     IReadOnlyList<string> AcceptedOriginalFormats, bool FlexibleDimensions = false);
 public sealed record L12RuleItemPublishRequest(string Key, string Collection, string ItemId,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
+public sealed record L12RuleItemCreateRequest(string Key, string Collection,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
+public sealed record L12RuleItemDeleteRequest(string Key, string Collection, string ItemId,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
 public sealed record L12PublicContentBatchView(IReadOnlyDictionary<string, string> Values,
     DateTimeOffset ObservedAt, DateTimeOffset? NextRuleTransitionAt);
 
@@ -90,6 +94,7 @@ public sealed partial class L12PlatformStore
             var publicItem = selected.DeepClone();
             if (existingIndex >= 0) publicItems[existingIndex] = publicItem;
             else publicItems.Add(publicItem);
+            if (key == "rules.center") published[collection] = OrderPublishedRuleItems(draftItems, publicItems);
 
             var previous = row.PublishedValue;
             var now = DateTimeOffset.UtcNow;
@@ -143,6 +148,206 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    public L12ContentEntryView CreateRuleItem(L12AccountView actor, L12RuleItemCreateRequest request,
+        L12AdminAuditContext? context = null)
+    {
+        if (!L12Authorization.HasPermission(actor, L12Permission.AdminContentDraft))
+            throw new UnauthorizedAccessException("当前账号没有新建规则资料的权限");
+        var key = request.Key?.Trim() ?? string.Empty;
+        var collection = request.Collection?.Trim() ?? string.Empty;
+        if (key != "rules.center" || !RuleCenterCollections.Contains(collection, StringComparer.Ordinal))
+            throw new ArgumentException("只能在规则资料的有效分组中新建条目");
+        lock (_gate)
+        {
+            var row = EnsureContentEntry(key);
+            EnsureRuleItemVersion(row, request.ExpectedVersion);
+            var draft = ParseRuleCenterDocument(row.DraftValue);
+            var items = draft[collection] as JsonArray ?? new JsonArray();
+            draft[collection] = items;
+            var id = NextRuleCenterItemId(collection, row, draft);
+            items.Add(NewRuleCenterItem(collection, id));
+            var next = draft.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            ValidateSiteContentValue(key, next, false);
+            row.DraftValue = next;
+            row.Status = row.DraftValue == row.PublishedValue ? "published" : "draft";
+            row.UpdatedBy = actor.Username;
+            row.UpdatedAt = DateTimeOffset.UtcNow;
+            row.Version++;
+            AddAdminAudit(actor, "rule-item", "create", $"{key}/{collection}/{id}", null, id,
+                "稳定 ID 由系统单调分配，后续调序不会改写", context);
+            Save();
+            return ToView(row);
+        }
+    }
+
+    public L12ContentEntryView DeleteRuleItem(L12AccountView actor, L12RuleItemDeleteRequest request,
+        L12AdminAuditContext? context = null)
+    {
+        if (!L12Authorization.HasPermission(actor, L12Permission.AdminContentDraft))
+            throw new UnauthorizedAccessException("当前账号没有删除规则资料的权限");
+        var key = request.Key?.Trim() ?? string.Empty;
+        var collection = request.Collection?.Trim() ?? string.Empty;
+        var itemId = request.ItemId?.Trim() ?? string.Empty;
+        if (key != "rules.center" || !RuleCenterCollections.Contains(collection, StringComparer.Ordinal) ||
+            string.IsNullOrWhiteSpace(itemId))
+            throw new ArgumentException("规则资料删除目标无效");
+        lock (_gate)
+        {
+            var row = EnsureContentEntry(key);
+            EnsureRuleItemVersion(row, request.ExpectedVersion);
+            var draft = ParseRuleCenterDocument(row.DraftValue);
+            var draftItems = draft[collection] as JsonArray ?? throw new ArgumentException("规则草稿缺少指定分组");
+            var draftIndex = RuleItemIndex(draftItems, itemId);
+            if (draftIndex < 0) throw new KeyNotFoundException("规则草稿中找不到指定条目");
+
+            var published = ParseRuleCenterDocument(row.PublishedValue);
+            var publicItems = published[collection] as JsonArray ?? new JsonArray();
+            published[collection] = publicItems;
+            var publicIndex = RuleItemIndex(publicItems, itemId);
+            if (publicIndex >= 0 && !L12Authorization.HasPermission(actor, L12Permission.AdminContentPublish))
+                throw new UnauthorizedAccessException("删除已发布规则资料需要发布权限");
+
+            var removedDraft = draftItems[draftIndex]?.DeepClone();
+            draftItems.RemoveAt(draftIndex);
+            var nextDraft = draft.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            ValidateSiteContentValue(key, nextDraft, false);
+            var previousPublished = row.PublishedValue;
+            row.DraftValue = nextDraft;
+            var now = DateTimeOffset.UtcNow;
+            if (publicIndex >= 0)
+            {
+                publicItems.RemoveAt(publicIndex);
+                var previousVersionId = EnsurePublishedVersion(row, actor, now);
+                row.PublishedValue = PreparePublicContentValue(key,
+                    published.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                ValidateSiteContentValue(key, row.PublishedValue, true);
+                var batch = new ContentBatchRow
+                {
+                    Action = "rule-item-delete", SourceBatchId = $"{key}/{collection}/{itemId}",
+                    ActorId = actor.Id, ActorName = actor.Username, CreatedAt = now,
+                };
+                var version = new ContentVersionRow
+                {
+                    BatchId = batch.Id, Key = key, Value = row.PublishedValue, PreviousVersionId = previousVersionId,
+                    Kind = "rule-item-delete", ActorId = actor.Id, ActorName = actor.Username, CreatedAt = now,
+                };
+                _data.ContentVersions.Add(version);
+                batch.Items.Add(new ContentBatchItemRow
+                {
+                    Key = key, PreviousValue = previousPublished, PublishedValue = row.PublishedValue,
+                    PreviousVersionId = previousVersionId, PublishedVersionId = version.Id,
+                });
+                _data.ContentBatches.Add(batch);
+                _data.Content[key] = row.PublishedValue;
+                row.PublishedBy = actor.Username;
+                row.PublishedAt = now;
+                row.PublishedVersionId = version.Id;
+                row.RollbackVersionId = previousVersionId;
+            }
+            row.Status = row.DraftValue == row.PublishedValue ? "published" : "draft";
+            row.UpdatedBy = actor.Username;
+            row.UpdatedAt = now;
+            row.Version++;
+            var auditContext = publicIndex >= 0
+                ? (context ?? new L12AdminAuditContext("store")) with
+                {
+                    Permission = L12Authorization.Key(L12Permission.AdminContentPublish),
+                }
+                : context;
+            AddAdminAudit(actor, "rule-item", "delete", $"{key}/{collection}/{itemId}",
+                removedDraft?.ToJsonString(), null,
+                publicIndex >= 0 ? "已复验发布权限并同步从公开快照移除" : "仅删除未发布草稿", auditContext);
+            Save();
+            return ToView(row);
+        }
+    }
+
+    private static readonly string[] RuleCenterCollections =
+        ["coreBlocks", "quickStart", "terms", "tournament", "versions"];
+
+    private static JsonObject ParseRuleCenterDocument(string value)
+    {
+        var root = string.IsNullOrWhiteSpace(value) ? new JsonObject() : JsonNode.Parse(value) as JsonObject
+            ?? throw new ArgumentException("规则中心草稿不是有效对象");
+        root["schemaVersion"] = 2;
+        foreach (var collection in RuleCenterCollections)
+            root[collection] ??= new JsonArray();
+        return root;
+    }
+
+    private static int RuleItemIndex(JsonArray items, string itemId)
+    {
+        for (var index = 0; index < items.Count; index++)
+            if (items[index] is JsonObject item && string.Equals(item["id"]?.GetValue<string>(), itemId,
+                    StringComparison.OrdinalIgnoreCase)) return index;
+        return -1;
+    }
+
+    private static JsonArray OrderPublishedRuleItems(JsonArray draftItems, JsonArray publicItems)
+    {
+        var remaining = publicItems.OfType<JsonObject>().ToDictionary(
+            item => item["id"]?.GetValue<string>() ?? string.Empty, item => item, StringComparer.OrdinalIgnoreCase);
+        var ordered = new JsonArray();
+        foreach (var draftItem in draftItems.OfType<JsonObject>())
+        {
+            var id = draftItem["id"]?.GetValue<string>() ?? string.Empty;
+            if (!remaining.Remove(id, out var published)) continue;
+            ordered.Add(published.DeepClone());
+        }
+        foreach (var published in remaining.Values) ordered.Add(published.DeepClone());
+        return ordered;
+    }
+
+    private static void EnsureRuleItemVersion(ContentRow row, long? expectedVersion)
+    {
+        if (expectedVersion.HasValue && expectedVersion.Value != row.Version)
+            throw new L12ContentStateConflictException("规则草稿已被其他管理员修改，请刷新后重试");
+    }
+
+    private string NextRuleCenterItemId(string collection, ContentRow row, JsonObject draft)
+    {
+        var prefix = collection switch
+        {
+            "coreBlocks" => "core-rule-", "quickStart" => "rule-quick-start-", "terms" => "rule-term-",
+            "tournament" => "rule-tournament-", "versions" => "rule-version-", _ => "rule-item-",
+        };
+        var maximum = 0;
+        void InspectId(string? id)
+        {
+            if (id is null || !id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return;
+            if (int.TryParse(id[prefix.Length..], NumberStyles.None, CultureInfo.InvariantCulture, out var value))
+                maximum = Math.Max(maximum, value);
+        }
+        void InspectDocument(string value)
+        {
+            try
+            {
+                if (JsonNode.Parse(value) is not JsonObject root || root[collection] is not JsonArray items) return;
+                foreach (var item in items.OfType<JsonObject>()) InspectId(item["id"]?.GetValue<string>());
+            }
+            catch (JsonException) { }
+        }
+        InspectDocument(draft.ToJsonString());
+        InspectDocument(row.PublishedValue);
+        foreach (var version in _data.ContentVersions.Where(item => item.Key == "rules.center")) InspectDocument(version.Value);
+        foreach (var audit in _data.AdminAudit.Where(item => item.Category == "rule-item"))
+            InspectId(audit.Target.Split('/').LastOrDefault());
+        maximum = Math.Max(maximum, row.RuleItemSequences.GetValueOrDefault(collection));
+        var next = checked(maximum + 1);
+        row.RuleItemSequences[collection] = next;
+        return $"{prefix}{next:000}";
+    }
+
+    private static JsonObject NewRuleCenterItem(string collection, string id) => collection switch
+    {
+        "coreBlocks" => new JsonObject { ["id"] = id, ["page"] = "", ["chapter"] = "新章节", ["text"] = "请填写规则正文", ["status"] = "pending" },
+        "quickStart" => new JsonObject { ["id"] = id, ["section"] = "quick-start", ["title"] = "新入门条目", ["body"] = "请填写正文", ["sourceRef"] = "待补充来源", ["tags"] = new JsonArray(), ["status"] = "pending" },
+        "terms" => new JsonObject { ["id"] = id, ["section"] = "term", ["title"] = "新术语", ["body"] = "请填写正文", ["sourceRef"] = "待补充来源", ["tags"] = new JsonArray(), ["status"] = "pending" },
+        "tournament" => new JsonObject { ["id"] = id, ["section"] = "tournament", ["title"] = "新赛事规则", ["body"] = "请填写正文", ["sourceRef"] = "待补充来源", ["tags"] = new JsonArray(), ["status"] = "pending" },
+        "versions" => new JsonObject { ["id"] = id, ["title"] = "新版本记录", ["kind"] = "rulebook", ["sourceRef"] = "待补充来源", ["status"] = "pending", ["summary"] = "请填写版本摘要" },
+        _ => throw new ArgumentException("规则资料分组无效"),
+    };
+
     public L12PublicContentBatchView PublicContents(IEnumerable<string> keys, DateTimeOffset? observedAt = null)
     {
         lock (_gate)
@@ -155,6 +360,7 @@ public sealed partial class L12PlatformStore
                     StringComparison.OrdinalIgnoreCase))?.PublishedValue ?? _data.Content.GetValueOrDefault(key, string.Empty);
                 values[key] = ProjectEffectiveRuleContent(key, stored, observed);
             }
+            if (values.TryGetValue("rules.center", out var center)) values["rules.center"] = HydrateRuleCenterMedia(center);
             return new L12PublicContentBatchView(values, observed, NextRuleContentTransitionLocked(observed));
         }
     }
@@ -229,6 +435,9 @@ public sealed partial class L12PlatformStore
                 ["image/jpeg", "image/png", "image/webp", "image/avif"], true),
             ["article"] = new("article", "资讯正文图片", 0, 0, 0, 0, 0, 0,
                 "不限固定尺寸与长宽比；生成交付图时完整保留原图构图，不裁切、不拉伸",
+                ["image/jpeg", "image/png", "image/webp", "image/avif"], true),
+            ["rule"] = new("rule", "规则子板块图片", 0, 0, 0, 0, 0, 0,
+                "不限固定尺寸与长宽比；完整保留规则示意图构图，并填写能说明规则信息的替代文字",
                 ["image/jpeg", "image/png", "image/webp", "image/avif"], true),
             ["card-art"] = new("card-art", "卡牌异画", 0, 0, 0, 0, 0, 0,
                 "完整保留异画原始构图；上传前确认已获得可用于游戏内展示的授权，禁止上传含主动内容的 SVG",
@@ -908,7 +1117,7 @@ public sealed partial class L12PlatformStore
             ? parsed : null;
     }
 
-    private static void ValidateRuleCenter(string value)
+    private void ValidateRuleCenter(string value)
     {
         if (value.Length > 250_000) throw new ArgumentException("规则中心内容超过 250KB 限制");
         if (string.IsNullOrWhiteSpace(value)) return;
@@ -927,7 +1136,7 @@ public sealed partial class L12PlatformStore
         catch (JsonException error) { throw new ArgumentException($"规则中心 JSON 无效：{error.Message}"); }
     }
 
-    private static void ValidateRuleCenterBlocks(JsonElement root, string property, int maximum, int schemaVersion)
+    private void ValidateRuleCenterBlocks(JsonElement root, string property, int maximum, int schemaVersion)
     {
         if (!root.TryGetProperty(property, out var rows) || rows.ValueKind != JsonValueKind.Array || rows.GetArrayLength() > maximum)
             throw new ArgumentException($"规则中心字段 {property} 必须是最多 {maximum} 项的数组");
@@ -953,9 +1162,48 @@ public sealed partial class L12PlatformStore
             }
             ValidateOptionalRulingText(row, "topic", 100);
             ValidateOptionalRulingText(row, "chapter", 100);
+            if (row.TryGetProperty("mediaAssetId", out var mediaAssetId) && mediaAssetId.ValueKind is not JsonValueKind.Null)
+            {
+                if (mediaAssetId.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(mediaAssetId.GetString()))
+                    throw new ArgumentException("核心规则块 mediaAssetId 必须是有效素材 ID");
+                var media = ActiveMedia(mediaAssetId.GetString());
+                if (media is null || media.Kind != "rule")
+                    throw new ArgumentException("核心规则块图片必须引用仍有效的规则素材");
+            }
             ValidateOptionalRuleEffectiveAt(row);
             RequireRulingText(row, "text", 12_000);
         }
+    }
+
+    private string HydrateRuleCenterMedia(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return value;
+        try
+        {
+            if (JsonNode.Parse(value) is not JsonObject root || root["coreBlocks"] is not JsonArray blocks) return value;
+            var changed = false;
+            foreach (var block in blocks.OfType<JsonObject>())
+            {
+                var media = ActiveMedia(block["mediaAssetId"]?.GetValue<string>());
+                if (media is null || media.Kind != "rule") continue;
+                block["image"] = new JsonObject
+                {
+                    ["id"] = media.Id,
+                    ["altText"] = media.AltText,
+                    ["desktopUrl"] = SiteMediaUrl(media.Id),
+                    ["mobileUrl"] = SiteMediaUrl(media.Id, "mobile"),
+                    ["thumbnailUrl"] = SiteMediaUrl(media.Id, "thumbnail"),
+                    ["desktopWidth"] = media.DesktopWidth,
+                    ["desktopHeight"] = media.DesktopHeight,
+                    ["mobileWidth"] = media.MobileWidth,
+                    ["mobileHeight"] = media.MobileHeight,
+                };
+                changed = true;
+            }
+            return changed ? root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) : value;
+        }
+        catch (JsonException) { return value; }
+        catch (InvalidOperationException) { return value; }
     }
 
     private static void ValidateRuleCenterEntries(JsonElement root, string property, int maximum, int schemaVersion)
@@ -1105,7 +1353,7 @@ public sealed partial class L12PlatformStore
     {
         var normalized = value?.Trim().ToLowerInvariant();
         return MediaPolicies.ContainsKey(normalized ?? string.Empty) ? normalized! :
-            throw new ArgumentException("素材类型必须是 hero、news、article、video 或 product");
+            throw new ArgumentException("素材类型必须是 hero、news、article、rule、card-art、video 或 product");
     }
 
     private L12SiteCategoryView ToSiteCategoryView(SiteCategoryRow row) => new(row.Id, row.Kind, row.Name,

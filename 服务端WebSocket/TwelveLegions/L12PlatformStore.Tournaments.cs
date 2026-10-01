@@ -1538,6 +1538,14 @@ public sealed partial class L12PlatformStore
                 var environment = ReleaseEnvironmentFromScope(scope);
                 return environment is null ? Version : ReleaseEnvironmentVersion(environment);
             }
+            if (type.StartsWith("content.", StringComparison.Ordinal) || type.StartsWith("rule-item.", StringComparison.Ordinal))
+            {
+                const string prefix = "content:";
+                if (!scope.StartsWith(prefix, StringComparison.Ordinal)) return null;
+                var key = scope[prefix.Length..].Split('/', 2)[0];
+                return _data.ContentEntries.FirstOrDefault(row =>
+                    string.Equals(row.Key, key, StringComparison.OrdinalIgnoreCase))?.Version ?? 0;
+            }
             if (!type.StartsWith("tournament.", StringComparison.Ordinal)) return Version;
             var tournamentId = TournamentIdFromScope(scope);
             if (tournamentId is null) return Version;

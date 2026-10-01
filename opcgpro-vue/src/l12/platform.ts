@@ -162,7 +162,7 @@ export interface EffectWorkbenchView {
 }
 export interface ContentEntry { key: string; draftValue: string; publishedValue: string; status: 'draft' | 'published'; updatedBy?: string; updatedAt?: string; publishedBy?: string; publishedAt?: string; version: number; publishedVersionId?: string; rollbackVersionId?: string }
 export type SiteContentKind = 'news' | 'video' | 'product'
-export type SiteMediaKind = 'hero' | 'article' | 'card-art' | SiteContentKind
+export type SiteMediaKind = 'hero' | 'article' | 'rule' | 'card-art' | SiteContentKind
 export interface SiteMediaPolicy {
   kind: SiteMediaKind; label: string; desktopWidth: number; desktopHeight: number
   mobileWidth: number; mobileHeight: number; thumbnailWidth: number; thumbnailHeight: number
@@ -1389,11 +1389,18 @@ export const adminApi = {
   },
   reorderSiteCategories: (kind: SiteContentKind, ids: string[]) => platformRequest<SiteCategory[]>(`/api/admin/site/categories/order/${kind}`, { method: 'PUT', body: JSON.stringify({ ids }) }),
   deleteSiteCategory: (id: string, migrateTo?: string) => platformRequest<void>(`/api/admin/site/categories/${encodeURIComponent(id)}${migrateTo ? `?migrateTo=${encodeURIComponent(migrateTo)}` : ''}`, { method: 'DELETE' }),
-  saveContentDraft: (key: string, value: string) => platformRequest<ContentEntry>(`/api/admin/v1/content/${encodeURIComponent(key)}/draft`, { method: 'PUT', body: JSON.stringify(commandBody('draft', { value })) }),
+  saveContentDraft: (key: string, value: string, expectedVersion?: number) => platformRequest<ContentEntry>(`/api/admin/v1/content/${encodeURIComponent(key)}/draft`, { method: 'PUT', body: JSON.stringify(commandBody('draft', { value, expectedVersion })) }),
   previewContent: (keys: string[]) => platformRequest<ContentBatchPreview>('/api/admin/v1/content/preview', { method: 'POST', body: JSON.stringify({ keys }) }),
   publishContent: (keys: string[], dryRun = false) => platformRequest<AdminCommandAccepted | ContentBatchOperation>('/api/admin/v1/content/publish', { method: 'POST', body: JSON.stringify(commandBody('content-publish', { keys, dryRun })) }),
   publishRuleItem: (key: 'rules.rulings' | 'rules.center', collection: string, itemId: string, expectedVersion?: number) => platformRequest<ContentEntry>('/api/admin/rule-items/publish', {
     method: 'POST', body: JSON.stringify(commandBody('rule-item-publish', { key, collection, itemId, expectedVersion })),
+  }),
+  createRuleItem: (collection: string, expectedVersion: number) => platformRequest<ContentEntry>('/api/admin/rule-items/create', {
+    method: 'POST', body: JSON.stringify(commandBody('rule-item-create', { key: 'rules.center', collection, expectedVersion })),
+  }),
+  deleteRuleItem: (collection: string, itemId: string, expectedVersion: number) => platformRequest<ContentEntry>('/api/admin/rule-items/delete', {
+    method: 'POST', body: JSON.stringify(commandBody('rule-item-delete', { key: 'rules.center', collection, itemId, expectedVersion,
+      reason: '管理员确认删除规则资料子板块，并同步移除公开快照' })),
   }),
   contentBatches: () => platformRequest<ContentBatch[]>('/api/admin/v1/content/batches'),
   rollbackContent: (batchId: string, dryRun = false) => platformRequest<AdminCommandAccepted | ContentBatchOperation>('/api/admin/v1/content/rollback', { method: 'POST', body: JSON.stringify(commandBody('content-rollback', { batchId, dryRun })) }),
