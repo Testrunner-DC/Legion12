@@ -27,7 +27,7 @@ const rankingOrder = [
   { name: '对手的对手胜场和', explanation: '把每位实际交手对手的“对手胜场和”相加；分数较高者在前。' },
   { name: '最近直接交锋', explanation: '双方最近一次已完成的直接交锋若分出胜者，胜者在前；否则继续比较。' },
   { name: '种子', explanation: '种子号较小者在前。' },
-  { name: '账号 ID 稳定兜底', explanation: '其余条件仍相同时，按账号 ID 的序数升序排列；页面不展示账号标识。' },
+  { name: '最终同分顺序', explanation: '以上条件仍相同时，系统按固定顺序确定先后；相同赛果不会随机换位。' },
 ] as const
 
 async function load() { loading.value = true; try { tournament.value = await tournamentApi.getByCode(String(route.params.code)); document.title = `${tournament.value.name} · 赛事中心` } catch (error) { notice.value = error instanceof Error ? error.message : '赛事不存在' } finally { loading.value = false } }
