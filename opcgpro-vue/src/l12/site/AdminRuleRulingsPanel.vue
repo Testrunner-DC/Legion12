@@ -5,6 +5,8 @@ import CardImage from '@/l12/CardImage.vue'
 import CatalogCardDetails from '@/l12/CatalogCardDetails.vue'
 import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
 import MediaUploadField from './MediaUploadField.vue'
+import AdminRiskActionDialog from './AdminRiskActionDialog.vue'
+import { useAdminRiskAction } from './useAdminRiskAction'
 import { cardProductsForIds, displayCardNumber, loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import { LEGACY_FAQ_SOURCES, RULE_TOPIC_DEFINITIONS, coreRuleBlockId, createRuleCenterDraft, createRulingsDraft, mergedRulings, parsePublishedRuleCenter, parseRulingDocument, serializeRulingDocument, withPendingRulingSeeds, type RuleCenterDocument, type RuleRuling, type RuleTopicId } from '@/l12/data/ruleCenterData'
 
@@ -12,6 +14,7 @@ type Workspace = 'drafts' | 'sources' | 'published' | 'history'
 type PublicationState = 'draft' | 'changed' | 'scheduled' | 'published' | 'superseded'
 
 const emit = defineEmits<{ notice: [value: string] }>()
+const { riskAction, riskBusy, riskError, requestRiskAction, cancelRiskAction, confirmRiskAction } = useAdminRiskAction()
 const workspace = ref<Workspace>('drafts')
 const entries = ref<RuleRuling[]>([])
 const ruleCenterDocument = ref<RuleCenterDocument>(createRuleCenterDraft())
@@ -235,18 +238,21 @@ async function moveCenterItem(item: { collection: string; id: string; row: Recor
     await revealDraftItem(item.id)
   } catch (error) { notice(error instanceof Error ? error.message : '规则资料调序失败') }
 }
-async function deleteCenterItem(item: { collection: string; id: string; title: string; state: PublicationState }) {
+function deleteCenterItem(item: { collection: string; id: string; title: string; state: PublicationState }) {
   const published = item.state !== 'draft'
-  const prompt = published
-    ? `确认删除“${item.title}”吗？该内容将同时从玩家端公开规则中移除，发布历史仍会保留。`
-    : `确认删除未发布草稿“${item.title}”吗？稳定编号不会再次使用。`
-  if (!window.confirm(prompt)) return
-  try {
-    const deleted = await adminApi.deleteRuleItem(item.collection, item.id, centerVersion.value)
-    applyCenterEntry(deleted)
-    history.value = await adminApi.contentBatches()
-    notice(published ? '规则资料已删除并同步从玩家端移除；审计历史已保留' : '规则资料草稿已删除；稳定编号不会复用')
-  } catch (error) { notice(error instanceof Error ? error.message : '规则资料删除失败') }
+  requestRiskAction({
+    title: published ? '删除已发布规则资料' : '删除规则资料草稿',
+    target: item.title,
+    impact: published ? '此项会从玩家端公开规则中移除；审计历史保留。' : '此草稿将删除；编号不会复用。',
+    confirmLabel: published ? '删除并取消公开' : '删除草稿',
+    severity: 'danger',
+    run: async () => {
+      const deleted = await adminApi.deleteRuleItem(item.collection, item.id, centerVersion.value)
+      applyCenterEntry(deleted)
+      history.value = await adminApi.contentBatches()
+      notice(published ? '规则资料已删除并同步从玩家端移除；审计历史已保留' : '规则资料草稿已删除；稳定编号不会复用')
+    },
+  })
 }
 function normalizeList(item: RuleRuling, key: 'tags' | 'sourceIds' | 'supersedes', value: string) { item[key] = split(value) }
 async function revealDraftItem(itemId: string) {
@@ -360,6 +366,7 @@ onMounted(load)
 
 <template>
   <section class="ruling-admin">
+    <AdminRiskActionDialog v-if="riskAction" :title="riskAction.title" :target="riskAction.target" :impact="riskAction.impact" :confirm-label="riskAction.confirmLabel" :severity="riskAction.severity" :busy="riskBusy" :error="riskError" @cancel="cancelRiskAction" @confirm="confirmRiskAction" />
     <header><div><small>RULE CENTER REVIEW</small><h3>规则中心与 FAQ 裁定库</h3><p>每条内容的预览、草稿保存和审核发布集中在同一工作区。玩家只读取已发布快照。</p></div><div class="actions"><button @click="load">{{ busy ? '读取中…' : '刷新' }}</button><button v-if="canDraft" @click="addRuling()">＋ 新建裁定</button><button v-if="canDraft" @click="save()">保存全部草稿</button><button v-if="canDraft" @click="preview">预览全部差异</button></div></header>
     <nav class="workspace-tabs" aria-label="规则审核工作区"><button v-for="(_, id) in workspaceLabels" :key="id" :class="{ active: workspace === id }" @click="workspace = id"><b>{{ workspaceLabels[id] }}</b><span>{{ workspaceCounts[id] }}</span></button></nav>
     <div class="review-summary"><b>规则中心 {{ centerVersion }} · 裁定库 {{ rulingVersion }}</b><span>状态由草稿、已发布快照、生效时间、字段差异和替代关系自动派生。</span></div>
