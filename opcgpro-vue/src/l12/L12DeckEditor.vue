@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import DeckProfile from './DeckProfile.vue'
 import { compareDeckCards } from './deckOrdering'
@@ -17,6 +17,7 @@ import DeckCostCurve from './DeckCostCurve.vue'
 import PublicDeckContentEditor from './site/PublicDeckContentEditor.vue'
 import { matchesPublishedDeckReference, publicDeckRouteReference } from './site/publicDeckEntry'
 import { deckEditorReturnTarget } from './site/deckEditorNavigation'
+import { clearDeckEditorDraft, draftOwner, readDeckEditorDraft, writeDeckEditorDraft, type DeckEditorDraft } from './site/deckEditorDraft'
 
 const router = useRouter()
 const route = useRoute()
@@ -52,6 +53,10 @@ const publicationId = ref('')
 const publicationCode = ref(typeof route.query.published === 'string' ? route.query.published : '')
 const publicationVersion = ref<number | null>(null)
 const editorContentRevision = ref(0)
+const persistedContentRevision = ref(0)
+const localDraft = ref<DeckEditorDraft | null>(null)
+const restoredLocalDraft = ref(false)
+const hasUnsavedChanges = computed(() => editorContentRevision.value !== persistedContentRevision.value)
 const ownedAlternateArts = ref<AlternateArt[]>([])
 const alternateArtSelections = ref<Record<string, string>>({})
 const alternateArtCopies = ref<Record<string, string[]>>({})
@@ -101,6 +106,7 @@ onMounted(async () => {
     else selected.value = mainCards.value[0] ?? null
     if (requestedPublicationCode) publicationCode.value = requestedPublicationCode
     if (publicationId.value || publicationCode.value) await resolvePublishedDeck()
+    refreshLocalDraft()
   } catch (error) {
     notice.value = error instanceof Error ? error.message : '牌库编辑器加载失败'
   } finally {
@@ -312,8 +318,7 @@ function selectCard(card: DeckCard) {
 }
 
 function chooseMobileSavedDeck(deck: SavedL12Deck) {
-  loadDeck(deck, true)
-  mobileSavedDecksOpen.value = false
+  if (requestLoadDeck(deck)) mobileSavedDecksOpen.value = false
 }
 
 function closeEditorDialogOnEscape(event: KeyboardEvent) {
@@ -467,8 +472,104 @@ function newDeck() {
   alternateArtCopies.value = {}
   openingHandIds.value = []
   selected.value = mainCards.value[0] ?? null
+  persistedContentRevision.value = editorContentRevision.value
+  restoredLocalDraft.value = false
   notice.value = '已新建空白牌库'
 }
+
+function draftScopeFor(accountId: string | null | undefined) {
+  return { owner: draftOwner(accountId), storage: accountId ? localStorage : sessionStorage }
+}
+
+function draftScope() { return draftScopeFor(platformState.account?.id) }
+
+function refreshLocalDraft() {
+  try {
+    const { owner, storage } = draftScope()
+    localDraft.value = readDeckEditorDraft(storage, owner)
+  } catch (error) {
+    localDraft.value = null
+    notice.value = `无法读取本地草稿：${mutationError(error, '请检查浏览器存储')}`
+  }
+}
+
+function confirmDiscardChanges() {
+  return !hasUnsavedChanges.value || window.confirm('当前修改尚未保存。继续操作会丢失这些修改；可先取消并暂存本地草稿。确定继续？')
+}
+
+function requestNewDeck() {
+  if (!confirmDiscardChanges()) return
+  newDeck()
+  secondaryActionsOpen.value = false
+}
+
+function requestLoadDeck(deck: SavedL12Deck) {
+  if (!confirmDiscardChanges()) return false
+  loadDeck(deck, true)
+  return true
+}
+
+function saveLocalDraft() {
+  if (deckMutationBusy.value || deletingDeck.value) return
+  try {
+    const { owner, storage } = draftScope()
+    if (localDraft.value && (localDraft.value.baseDeckName !== activeDeckName.value
+      || localDraft.value.deck.name !== deckName.value.trim())
+      && !window.confirm('本账号已有另一份本地草稿。要用当前构筑覆盖它吗？')) return
+    localDraft.value = writeDeckEditorDraft(storage, owner, currentDeck(), activeDeckName.value)
+    persistedContentRevision.value = editorContentRevision.value
+    restoredLocalDraft.value = true
+    secondaryActionsOpen.value = false
+    notice.value = '已暂存到本机；草稿尚未同步到牌库，不能用于对战或公开'
+  } catch (error) {
+    notice.value = `本地草稿暂存失败：${mutationError(error, '请检查浏览器存储空间')}`
+  }
+}
+
+function restoreLocalDraft() {
+  if (!confirmDiscardChanges()) return
+  try {
+    const { owner, storage } = draftScope()
+    const draft = readDeckEditorDraft(storage, owner)
+    if (!draft) { localDraft.value = null; notice.value = '本账号没有可恢复的本地草稿'; return }
+    const cardIds = [draft.deck.masterId, ...draft.deck.cardIds, ...(draft.deck.specialIds ?? []), ...(draft.deck.benchIds ?? [])].filter(Boolean)
+    if (cardIds.some(id => !byId.value.has(id))) throw new Error('草稿含当前卡池中不存在的卡牌，已保留原草稿')
+    loadDeck(draft.deck, true)
+    activeDeckName.value = draft.baseDeckName && savedDecks.value[draft.baseDeckName] ? draft.baseDeckName : null
+    localDraft.value = draft
+    restoredLocalDraft.value = true
+    persistedContentRevision.value = editorContentRevision.value
+    secondaryActionsOpen.value = false
+    notice.value = '已恢复本地草稿；完成构筑并保存牌库后才能用于对战或公开'
+  } catch (error) {
+    notice.value = `本地草稿恢复失败：${mutationError(error, '请检查浏览器存储')}`
+  }
+}
+
+function clearCurrentDraftAfterServerSave() {
+  try {
+    const { owner, storage } = draftScope()
+    if (!restoredLocalDraft.value) {
+      persistedContentRevision.value = editorContentRevision.value
+      return
+    }
+    clearDeckEditorDraft(storage, owner)
+    localDraft.value = null
+    restoredLocalDraft.value = false
+  } catch {
+    // The authoritative save succeeded; keep the local copy visible for manual cleanup.
+    refreshLocalDraft()
+  }
+  persistedContentRevision.value = editorContentRevision.value
+}
+
+function warnBeforeUnload(event: BeforeUnloadEvent) {
+  if (!hasUnsavedChanges.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+onBeforeRouteLeave(() => confirmDiscardChanges())
 
 function currentDeck(): SavedL12Deck {
   return {
@@ -509,6 +610,7 @@ async function onSave() {
     if (editorUnchanged) {
       activeDeckName.value = saved.name
       deckName.value = saved.name
+      clearCurrentDraftAfterServerSave()
     }
     if (oldNameDeleteError) {
       notice.value = `已保存新名称〈${saved.name}〉，但旧牌库〈${previousName}〉删除失败：${mutationError(oldNameDeleteError, '请稍后重试')}`
@@ -544,6 +646,7 @@ async function onSaveAs() {
       publicationVersion.value = null
       activeDeckName.value = saved.name
       deckName.value = saved.name
+      clearCurrentDraftAfterServerSave()
       notice.value = `已另存为〈${saved.name}〉`
     }
   } catch (error) {
@@ -574,6 +677,7 @@ async function publishCurrentDeck() {
       publicationCode.value = publicDeckRouteReference(result)
       publicationVersion.value = result.deck.publicationVersion ?? null
       await router.replace({ query: { ...route.query, deck: saved.name, published: publicationCode.value } })
+      clearCurrentDraftAfterServerSave()
       notice.value = publishedId ? `已更新公开牌库〈${saved.name}〉` : `已公开〈${saved.name}〉，后续可从此处更新公开版本`
     }
   } catch (error) {
@@ -613,6 +717,8 @@ function loadDeck(deck: SavedL12Deck, preservePublication = false) {
   alternateArtSelections.value = nextSelections
   alternateArtCopies.value = nextCopies
   openingHandIds.value = []
+  persistedContentRevision.value = editorContentRevision.value
+  restoredLocalDraft.value = false
   notice.value = `已载入〈${deck.name}〉`
   if (publicationId.value) void resolvePublishedDeck()
 }
@@ -632,6 +738,7 @@ function requestDelete(name = activeDeckName.value ?? '') {
 async function confirmDelete() {
   const name = pendingDeleteName.value
   if (!name || deletingDeck.value || deckMutationBusy.value) return
+  if (activeDeckName.value === name && !confirmDiscardChanges()) return
   deletingDeck.value = true
   try {
     await deleteDeck(name)
@@ -694,8 +801,25 @@ async function saveGeneratedDeckImage() {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', closeEditorDialogOnEscape)
+  window.removeEventListener('beforeunload', warnBeforeUnload)
   closeDeckImage()
 })
+onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
+
+watch(() => platformState.account?.id, (current, previous) => {
+  if (current === previous || loading.value) return
+  let preserveError = ''
+  if (hasUnsavedChanges.value) {
+    try {
+      const { owner, storage } = draftScopeFor(previous)
+      writeDeckEditorDraft(storage, owner, currentDeck(), activeDeckName.value)
+    } catch (error) { preserveError = mutationError(error, '浏览器存储不可用') }
+  }
+  newDeck()
+  savedDecks.value = loadSavedDecks()
+  refreshLocalDraft()
+  notice.value = preserveError ? `账号已切换，原账号未保存的修改暂存失败：${preserveError}` : '账号已切换；当前仅显示此账号的牌库和草稿'
+}, { flush: 'sync' })
 </script>
 
 <template>
@@ -703,13 +827,15 @@ onBeforeUnmount(() => {
     <header class="deck-builder-topbar">
       <button class="back-button" @click="router.push(returnTo)">← 返回上一级</button>
       <div><small>DECK EDITOR</small><h1>牌库编辑器</h1></div>
-      <label>牌库名称<input v-model="deckName" maxlength="24"/></label>
+      <label>牌库名称<span v-if="restoredLocalDraft" class="draft-state">本地草稿</span><input v-model="deckName" maxlength="24"/></label>
       <div class="deck-total" :class="{ valid: !validation }"><b>{{ countSummary.label }}</b><span>/ 40–50<span v-if="uncountedCards">（括号内不计构筑）</span></span></div>
       <div class="deck-file-actions">
         <button class="primary" :disabled="!!validation || deckMutationBusy || deletingDeck" @click="onSave">{{ deckMutationBusy ? '保存中…' : '保存牌库' }}</button>
         <button class="more-actions-trigger" @click="secondaryActionsOpen = !secondaryActionsOpen">更多操作</button>
         <div class="secondary-actions" :class="{ open: secondaryActionsOpen }">
-          <button @click="newDeck(); secondaryActionsOpen = false">新建牌库</button>
+          <button @click="requestNewDeck">新建牌库</button>
+          <button @click="saveLocalDraft">暂存草稿</button>
+          <button v-if="localDraft" @click="restoreLocalDraft">恢复草稿</button>
           <button :disabled="!!validation || deckMutationBusy || deletingDeck" @click="onSaveAs">另存为牌库</button>
           <button :disabled="!!validation || generatingDeckImage" @click="generateDeckImage">{{ generatingDeckImage ? '生成中…' : '生成牌库图' }}</button>
           <button :disabled="!!validation || deckMutationBusy || deletingDeck" @click="publishCurrentDeck">{{ publicationId ? '更新公开牌库' : '公开牌库' }}</button>
@@ -748,7 +874,7 @@ onBeforeUnmount(() => {
         <header><div><p class="kicker">已保存牌库</p><h2>选择牌库</h2></div><span>{{ Object.keys(savedDecks).length }} 个</span></header>
         <div class="saved-list">
           <article v-for="deck in savedDecks" :key="deck.name" :class="{ active: deck.name === activeDeckName }">
-            <button type="button" @click="loadDeck(deck, true)">
+            <button type="button" @click="requestLoadDeck(deck)">
               <DeckProfile compact :master-id="deck.masterId" :fallback-url="byId.get(deck.masterId)?.imageUrl" :name="deck.name" :master-name="byId.get(deck.masterId)?.nameZh || deck.masterId" :meta="`${deck.cardIds.length} 张主牌`" :selected="deck.name === activeDeckName"/>
             </button>
             <button type="button" class="delete" :aria-label="`删除牌库${deck.name}`" @click="requestDelete(deck.name)">×</button>
@@ -893,6 +1019,7 @@ onBeforeUnmount(() => {
 .deck-entry-row>div>small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .deck-builder-shell{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;background:radial-gradient(circle at 50% 0,rgba(22,108,120,.2),transparent 38%),linear-gradient(135deg,#080b0d,#160b0d 58%,#071216);color:#eee}
 .deck-builder-topbar{height:74px;flex:none;display:flex;align-items:center;gap:18px;padding:10px 20px;border-bottom:1px solid #675f59;background:rgba(8,10,12,.94)}
+.deck-builder-topbar .draft-state{color:#d9bb70;font-size:11px;line-height:1.2}
 .deck-builder-topbar>div:nth-child(2){margin-right:auto}.deck-builder-topbar small,.kicker{color:#c7a85d;font-size:14px;font-weight:900;letter-spacing:.18em}.deck-builder-topbar h1{margin:2px 0 0;font-size:23px}.deck-builder-topbar label{display:grid;gap:4px;color:#b6bab6;font-size:14px;font-weight:900}.deck-builder-topbar input{width:260px;min-height:38px;padding:8px 11px;font-size:15px;font-weight:900}.deck-builder-topbar button{padding:9px 14px}.deck-builder-topbar .primary{border-color:#e4dfd0;background:#e4dfd0;color:#111;font-weight:900}.deck-builder-topbar .primary:disabled{opacity:.3}.deck-total{display:flex;align-items:baseline;gap:4px;color:#bc5961}.deck-total.valid{color:#5cc1b8}.deck-total b{font-size:25px}.deck-total span{font-size:14px}
 .deck-loading{display:grid;flex:1;place-items:center;color:#b7b9b5}.deck-builder-grid{display:grid;grid-template-columns:260px minmax(480px,1fr) 330px;gap:10px;min-height:0;padding:10px}.deck-builder-grid .grand-panel{min-height:0;padding:13px;border-radius:2px}.deck-builder-grid h2{margin:3px 0 12px;font-size:18px}.deck-side-column{display:grid;grid-template-rows:minmax(0,5fr) minmax(0,2fr);gap:10px;min-height:0;overflow:hidden}.deck-detail-panel{display:flex;min-height:0;flex-direction:column;overflow:hidden}.empty-detail{color:#7f8985;font-size:14px;line-height:1.6}.saved-list{display:grid;align-content:start;gap:5px;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-right:3px}.saved-list article{display:flex;border:1px solid #353c3e;background:#111619}.saved-list article>button:first-child{display:block;min-width:0;flex:1;padding:0;border:0;background:#111619;text-align:left}.saved-list .delete{width:34px;flex:none;border:0;border-left:1px solid #353c3e;background:#211418;color:#f29ba4;font-size:18px}.saved-list p{color:#929b97;font-size:14px}
 .deck-catalog{display:flex;flex-direction:column;overflow:hidden}.deck-catalog>header,.deck-list>header{display:flex;align-items:center;justify-content:space-between;flex:none}.deck-catalog>header span{color:#7f8985;font-size:14px}.catalog-filter-bar{display:grid;grid-template-columns:minmax(180px,1.6fr) repeat(7,minmax(86px,.75fr)) 72px;gap:7px;align-items:end;margin:0 0 10px;padding:9px;border:1px solid #354041;background:#0b1112}.catalog-filter-bar label{display:grid;gap:4px;min-width:0;color:#959f9b;font-size:14px;font-weight:900}.catalog-filter-bar input,.catalog-filter-bar select{width:100%;min-width:0;height:32px}.catalog-filter-bar .filter-reset{height:32px;min-height:32px}.product-filter{display:flex;min-width:0;flex-wrap:wrap;gap:3px;margin:0;padding:0;border:0}.product-filter legend{width:100%;margin-bottom:1px;color:#959f9b;font-size:14px;font-weight:900}.product-filter button{min-height:28px;padding:3px 7px;border:1px solid #4a5552;background:#141a1b;color:#b8bfbb;font-size:12px;font-weight:900}.product-filter button.active{border-color:#70d7df;background:#174e54;color:#fff}.deck-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:9px;overflow:auto;padding:3px 4px 20px}.deck-card{min-width:0;border:1px solid #303638;background:#101416;box-shadow:3px 3px 0 #050607}.deck-card.chosen{border-color:#c5a456}.deck-card.alternate-art-card{border-color:#5c4d2d;background:#17140e}.card-image{position:relative;display:block;width:100%;aspect-ratio:5/7;overflow:hidden;border:0;background:#171d1f}.card-image>.l12-card-image,.card-image>img{width:100%;height:100%;object-fit:cover}.card-image>span{display:grid;height:100%;place-items:center;font-size:24px}.copy-count{position:absolute;right:4px;top:4px;padding:3px 6px;background:#07181a;color:#71d1d0}.deck-card>div{display:grid;gap:2px;padding:7px}.deck-card>div b{overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.deck-card>div b em{margin-left:5px;padding:1px 4px;border:1px solid #a9883c;color:#dfc66f;font-size:11px;font-style:normal}.deck-card>div small{color:#757d79;font-size:14px}.add-card{width:100%;padding:6px;border:0;border-top:1px solid #303638;color:#cdbb89;font-size:14px}.add-card:disabled{color:#4d5351}
