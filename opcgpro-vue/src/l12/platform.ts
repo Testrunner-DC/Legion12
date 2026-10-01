@@ -500,10 +500,13 @@ export interface RankedIntegrityAudit {
 export interface OperationsConfigView {
   version: number; versionId: string; config: OperationsConfigPayload; updatedBy: string; updatedAt: string
   immediateMaintenance?: { enabled: boolean; expectedDurationHours: number; startedAt?: string }
+  sectionRevisions?: Record<string, number>
+  fieldRevisions?: Record<string, number>
 }
 export interface OperationsConfigVersion {
   id: string; version: number; action: string; config: OperationsConfigPayload
   actorId: string; actorName: string; reason: string; createdAt: string
+  section?: OperationsConfigSection; sectionRevision?: number; changedFields?: string[]
 }
 export interface OperationsConfigPreview {
   valid: boolean; currentVersion: number; nextVersion: number; normalized: OperationsConfigPayload
@@ -511,6 +514,53 @@ export interface OperationsConfigPreview {
 }
 export interface OperationsConfigOperation {
   applied: boolean; current: OperationsConfigView; historyEntry: OperationsConfigVersion; changes: string[]
+}
+export type OperationsConfigSection = 'room' | 'features' | 'announcements' | 'maintenance'
+export interface OperationsSectionPayload {
+  defaultRoomConfig?: OperationsDefaultRoomConfig
+  matchModes?: OperationsMatchMode[]
+  featureFlags?: Record<string, boolean>
+  maintenance?: OperationsMaintenanceConfig
+  announcements?: OperationsAnnouncementConfig[]
+}
+export interface OperationsSectionView {
+  section: OperationsConfigSection
+  revision: number
+  operationsVersion: number
+  versionId: string
+  config: OperationsSectionPayload
+  fieldRevisions: Record<string, number>
+  updatedBy: string
+  updatedAt: string
+}
+export interface OperationsSectionVersion {
+  id: string
+  section: OperationsConfigSection
+  revision: number
+  operationsVersion: number
+  action: string
+  config: OperationsSectionPayload
+  changedFields: string[]
+  actorId: string
+  actorName: string
+  reason: string
+  createdAt: string
+}
+export interface OperationsSectionPreview {
+  valid: boolean
+  section: OperationsConfigSection
+  currentRevision: number
+  nextRevision: number
+  normalized: OperationsSectionPayload
+  expectedFieldRevisions: Record<string, number>
+  changes: string[]
+  warnings: string[]
+}
+export interface OperationsSectionOperation {
+  applied: boolean
+  current: OperationsSectionView
+  historyEntry?: OperationsSectionVersion
+  changes: string[]
 }
 export interface SeasonScopedConfig {
   disasterPool: OperationsDisasterPoolConfig
@@ -1410,6 +1460,31 @@ export const adminApi = {
     return platformRequest<AdminAudit[]>(`/api/admin/v1/audit${params.size ? `?${params}` : ''}`)
   },
   operationsConfig: () => platformRequest<OperationsConfigView>('/api/admin/operations/config'),
+  operationsSection: (section: OperationsConfigSection) =>
+    platformRequest<OperationsSectionView>(`/api/admin/operations/config/sections/${encodeURIComponent(section)}`),
+  operationsSectionHistory: (section: OperationsConfigSection, limit = 50) =>
+    platformRequest<OperationsSectionVersion[]>(`/api/admin/operations/config/sections/${encodeURIComponent(section)}/history?limit=${Math.max(1, Math.min(200, limit))}`),
+  previewOperationsSection: (section: OperationsConfigSection, config: OperationsSectionPayload,
+    expectedRevision: number, expectedFieldRevisions: Record<string, number>) =>
+    platformRequest<OperationsSectionPreview>(`/api/admin/operations/config/sections/${encodeURIComponent(section)}/preview`, {
+      method: 'POST', body: JSON.stringify({ config, expectedRevision, expectedFieldRevisions }),
+    }),
+  applyOperationsSection: (section: OperationsConfigSection, config: OperationsSectionPayload,
+    expectedRevision: number, expectedFieldRevisions: Record<string, number>, reason: string,
+    idempotencyKey?: string) => platformRequest<OperationsSectionOperation>(
+      `/api/admin/operations/config/sections/${encodeURIComponent(section)}`, {
+        method: 'PUT', body: JSON.stringify(commandBody('operations-section', {
+          config, expectedRevision, expectedFieldRevisions, reason, idempotencyKey,
+        })),
+      }),
+  rollbackOperationsSection: (section: OperationsConfigSection, versionId: string,
+    expectedRevision: number, reason: string, idempotencyKey?: string) =>
+    platformRequest<OperationsSectionOperation>(
+      `/api/admin/operations/config/sections/${encodeURIComponent(section)}/rollback`, {
+        method: 'POST', body: JSON.stringify(commandBody('operations-section-rollback', {
+          versionId, expectedRevision, reason, idempotencyKey,
+        })),
+      }),
   seasonCatalog: () => platformRequest<SeasonCatalog>('/api/admin/seasons'),
   previewSeasonDefinition: (definitionId: string, draft: SeasonDefinitionDraft,
     expectedRevision: number, expectedVersion: number) => platformRequest<SeasonDefinitionPreview>(
@@ -1461,11 +1536,13 @@ export const adminApi = {
   previewOperationsConfig: (config: OperationsConfigPayload, expectedVersion?: number) => platformRequest<OperationsConfigPreview>('/api/admin/operations/config/preview', {
     method: 'POST', body: JSON.stringify({ config, expectedVersion }),
   }),
-  applyOperationsConfig: (config: OperationsConfigPayload, reason: string, expectedVersion?: number) => platformRequest<OperationsConfigOperation>('/api/admin/operations/config', {
-    method: 'PUT', body: JSON.stringify(commandBody('operations-config', { config, reason, expectedVersion })),
+  applyOperationsConfig: (config: OperationsConfigPayload, reason: string, expectedVersion: number | undefined,
+    crossSectionReplaceIntent: 'replace-all-operations-sections') => platformRequest<OperationsConfigOperation>('/api/admin/operations/config', {
+    method: 'PUT', body: JSON.stringify(commandBody('operations-config', { config, reason, expectedVersion, crossSectionReplaceIntent })),
   }),
-  rollbackOperationsConfig: (versionId: string, reason: string, expectedVersion?: number) => platformRequest<OperationsConfigOperation>('/api/admin/operations/config/rollback', {
-    method: 'POST', body: JSON.stringify(commandBody('operations-rollback', { versionId, reason, expectedVersion })),
+  rollbackOperationsConfig: (versionId: string, reason: string, expectedVersion: number | undefined,
+    crossSectionReplaceIntent: 'replace-all-operations-sections') => platformRequest<OperationsConfigOperation>('/api/admin/operations/config/rollback', {
+    method: 'POST', body: JSON.stringify(commandBody('operations-rollback', { versionId, reason, expectedVersion, crossSectionReplaceIntent })),
   }),
   startServer: (reason: string, expectedVersion?: number) => platformRequest<ServerStartOperation>('/api/admin/operations/server/start', {
     method: 'POST', body: JSON.stringify(commandBody('operations-server-start', { reason, expectedVersion })),

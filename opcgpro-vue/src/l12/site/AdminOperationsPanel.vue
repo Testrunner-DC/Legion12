@@ -8,10 +8,12 @@ import SeasonConfigurationEditor from './SeasonConfigurationEditor.vue'
 import SeasonActivationManagement from './SeasonActivationManagement.vue'
 import { useAdminRiskAction } from './useAdminRiskAction'
 import {
-  freezeOperationsConfigPreview,
-  operationsConfigPreviewMatches,
-  operationsConfigPreviewSubmission,
-  type FrozenOperationsConfigPreview,
+  freezeOperationsSectionPreview,
+  mergeOperationsSection,
+  operationsSectionPreviewMatches,
+  operationsSectionPreviewRequest,
+  operationsSectionPreviewSubmission,
+  type FrozenOperationsSectionPreview,
 } from './operationsConfigPreview'
 import {
   freezeSeasonDefinitionPreview,
@@ -25,8 +27,10 @@ import {
   hasPermission,
   rankedApi,
   type OperationsConfigPayload,
-  type OperationsConfigPreview,
-  type OperationsConfigVersion,
+  type OperationsConfigSection,
+  type OperationsSectionPayload,
+  type OperationsSectionPreview,
+  type OperationsSectionVersion,
   type RuntimeStatus,
   type RankedBroadcast,
   PlatformRequestError,
@@ -42,16 +46,21 @@ const version = ref(0)
 const versionId = ref('')
 const updatedBy = ref('')
 const updatedAt = ref('')
-const preview = ref<OperationsConfigPreview | null>(null)
-const previewGuard = shallowRef<FrozenOperationsConfigPreview | null>(null)
-const history = ref<OperationsConfigVersion[]>([])
+const preview = ref<OperationsSectionPreview | null>(null)
+const previewGuard = shallowRef<FrozenOperationsSectionPreview | null>(null)
+const history = ref<OperationsSectionVersion[]>([])
+const sectionRevisions = ref<Record<string, number>>({})
+const fieldRevisions = ref<Record<string, number>>({})
+const baseline = ref<OperationsConfigPayload | null>(null)
 const runtime = ref<RuntimeStatus | null>(null)
 const reason = ref('')
 const catalog = ref<DeckCard[]>([])
 const presetDecks = ref('')
 const featureFlags = ref('')
 type OperationsSection = 'season' | 'ranked' | 'construction' | 'room' | 'features' | 'announcements' | 'maintenance' | 'versions'
+const editableOperationsSections: OperationsConfigSection[] = ['room', 'features', 'announcements', 'maintenance']
 const activeSection = ref<OperationsSection>('season')
+const historySection = ref<OperationsConfigSection>('room')
 const loadError = ref('')
 const sections: Array<{ id: OperationsSection; title: string; summary: string }> = [
   { id: 'season', title: '赛季与天灾', summary: '赛季周期、赛季天灾池与堙灭锁定' },
@@ -115,10 +124,14 @@ const httpBudgetState = computed(() => {
 })
 const previewMatchesForm = computed(() => {
   if (!preview.value?.valid || !previewGuard.value) return false
-  try { return operationsConfigPreviewMatches(previewGuard.value, serialize()) }
+  try { return operationsSectionPreviewMatches(previewGuard.value,
+    currentOperationsSectionAggregate(previewGuard.value.section)) }
   catch { return false }
 })
 const isSeasonSection = computed(() => ['season', 'ranked', 'construction'].includes(activeSection.value))
+const editableOperationsSection = computed<OperationsConfigSection | null>(() =>
+  editableOperationsSections.includes(activeSection.value as OperationsConfigSection)
+    ? activeSection.value as OperationsConfigSection : null)
 const selectedSeasonState = computed(() => selectedSeasonSlot.value === 'current' ? currentSeason.value : nextSeason.value)
 const selectedSeasonPreviewMatches = computed(() => {
   const state = selectedSeasonState.value
@@ -174,18 +187,45 @@ function hydrate(payload: OperationsConfigPayload) {
   form.announcements.splice(0, form.announcements.length, ...copy.announcements)
   syncTextFields()
 }
-function serialize(): OperationsConfigPayload {
-  return {
-    season: { ...form.season, startsAt: toIsoDateTime(form.season.startsAt), endsAt: toIsoDateTime(form.season.endsAt) },
-    disasterPool: { cardIds: [...form.disasterPool.cardIds], annihilationLocked: true },
-    cardRestrictions: form.cardRestrictions.map(item => ({ ...item })),
-    defaultPresetDeckIds: lines(presetDecks.value),
+function serializeOperationsSection(section: OperationsConfigSection): OperationsSectionPayload {
+  if (section === 'room') return {
     matchModes: form.matchModes.map(item => ({ ...item })),
     defaultRoomConfig: { ...form.defaultRoomConfig },
-    featureFlags: parseFlags(featureFlags.value),
-    maintenance: { ...form.maintenance, startsAt: toIsoDateTime(form.maintenance.startsAt), endsAt: toIsoDateTime(form.maintenance.endsAt) },
+  }
+  if (section === 'features') return { featureFlags: parseFlags(featureFlags.value) }
+  if (section === 'announcements') return {
     announcements: form.announcements.map((item, index) => ({ ...item, sortOrder: index,
       startsAt: toIsoDateTime(item.startsAt), endsAt: toIsoDateTime(item.endsAt) })),
+  }
+  return { maintenance: { ...form.maintenance,
+    startsAt: toIsoDateTime(form.maintenance.startsAt),
+    endsAt: toIsoDateTime(form.maintenance.endsAt) } }
+}
+function currentOperationsSectionAggregate(section: OperationsConfigSection) {
+  if (!baseline.value) throw new Error('运营配置尚未加载')
+  return mergeOperationsSection(baseline.value, section, serializeOperationsSection(section))
+}
+function hydrateOperationsSection(section: OperationsConfigSection, payload: OperationsSectionPayload) {
+  if (section === 'room') {
+    if (payload.matchModes) form.matchModes.splice(0, form.matchModes.length,
+      ...structuredClone(payload.matchModes))
+    if (payload.defaultRoomConfig) Object.assign(form.defaultRoomConfig,
+      structuredClone(payload.defaultRoomConfig))
+  } else if (section === 'features' && payload.featureFlags) {
+    form.featureFlags = structuredClone(payload.featureFlags)
+    featureFlags.value = Object.entries(form.featureFlags)
+      .map(([key, enabled]) => `${key}=${enabled}`).join('\n')
+  } else if (section === 'announcements' && payload.announcements) {
+    form.announcements.splice(0, form.announcements.length,
+      ...payload.announcements.map(item => ({ ...item,
+        startsAt: toLocalDateTimeInput(item.startsAt),
+        endsAt: toLocalDateTimeInput(item.endsAt),
+      })))
+  } else if (section === 'maintenance' && payload.maintenance) {
+    Object.assign(form.maintenance, { ...payload.maintenance,
+      startsAt: toLocalDateTimeInput(payload.maintenance.startsAt),
+      endsAt: toLocalDateTimeInput(payload.maintenance.endsAt) })
+    loadedMaintenanceEnabled.value = payload.maintenance.enabled
   }
 }
 function displaySeasonDraft(source: SeasonDefinitionView | SeasonDefinitionDraft): SeasonDefinitionDraft {
@@ -408,7 +448,8 @@ async function load(discardSlot?: SeasonSlot) {
   previewGuard.value = null
   try {
     const [current, versions, status] = await Promise.all([
-      adminApi.operationsConfig(), adminApi.operationsHistory(), adminApi.runtimeStatus(),
+      adminApi.operationsConfig(), adminApi.operationsSectionHistory(historySection.value),
+      adminApi.runtimeStatus(),
     ])
     const [cards, broadcasts] = await Promise.all([
       loadDeckCatalog(), rankedApi.broadcasts(30),
@@ -417,10 +458,13 @@ async function load(discardSlot?: SeasonSlot) {
     versionId.value = current.versionId
     updatedBy.value = current.updatedBy
     updatedAt.value = current.updatedAt
+    sectionRevisions.value = { ...(current.sectionRevisions ?? {}) }
+    fieldRevisions.value = { ...(current.fieldRevisions ?? {}) }
     history.value = versions
     runtime.value = status
     catalog.value = cards
     rankedBroadcasts.value = broadcasts
+    baseline.value = structuredClone(current.config)
     hydrate(current.config)
     loadedMaintenanceEnabled.value = current.config.maintenance.enabled
     try {
@@ -479,27 +523,51 @@ function startServer() {
 }
 async function previewChanges() {
   if (!canWrite.value) return
+  const section = editableOperationsSection.value
+  if (!section || !baseline.value) return
   preview.value = null
   previewGuard.value = null
   try {
-    const result = await adminApi.previewOperationsConfig(serialize(), version.value)
+    const request = operationsSectionPreviewRequest(section, baseline.value,
+      currentOperationsSectionAggregate(section), sectionRevisions.value[section] ?? 1,
+      fieldRevisions.value)
+    if (!request.changes.length) { emit('notice', '当前分区没有待保存变更'); return }
+    const result = await adminApi.previewOperationsSection(section, request.config,
+      request.expectedRevision, request.expectedFieldRevisions)
     preview.value = result
-    if (result.valid) {
-      previewGuard.value = freezeOperationsConfigPreview(result)
-      hydrate(previewGuard.value.snapshot)
-    }
+    if (result.valid) previewGuard.value = freezeOperationsSectionPreview(result)
     emit('notice', result.valid ? `预览通过：${result.changes.length} 项变更` : '预览未通过，请检查警告')
   } catch (error) { emit('notice', error instanceof Error ? error.message : '运营配置预览失败') }
 }
-async function performApplyChanges(config: OperationsConfigPayload, applyReason: string, expectedVersion: number) {
+function acceptOperationsSection(section: OperationsConfigSection, current: {
+  revision: number; operationsVersion: number; versionId: string; config: OperationsSectionPayload
+  fieldRevisions: Record<string, number>; updatedBy: string; updatedAt: string
+}) {
+  hydrateOperationsSection(section, current.config)
+  if (baseline.value) baseline.value = mergeOperationsSection(baseline.value, section, current.config)
+  sectionRevisions.value = { ...sectionRevisions.value, [section]: current.revision }
+  fieldRevisions.value = Object.fromEntries(Object.entries(fieldRevisions.value)
+    .filter(([field]) => !field.toLocaleLowerCase('en-US').startsWith(`${section}/`)))
+  Object.assign(fieldRevisions.value, current.fieldRevisions)
+  version.value = current.operationsVersion
+  versionId.value = current.versionId
+  updatedBy.value = current.updatedBy
+  updatedAt.value = current.updatedAt
+}
+async function performApplyChanges(section: OperationsConfigSection, config: OperationsSectionPayload,
+  applyReason: string, expectedRevision: number, expectedFieldVersions: Record<string, number>) {
   if (!canWrite.value) return
   try {
-    const result = await adminApi.applyOperationsConfig(config, applyReason, expectedVersion)
-    emit('notice', result.applied ? `运营配置 v${result.current.version} 已保存并写入审计` : '运营配置未发生变更')
+    const result = await adminApi.applyOperationsSection(section, config, expectedRevision,
+      expectedFieldVersions, applyReason)
+    acceptOperationsSection(section, result.current)
+    emit('notice', result.applied
+      ? `${section} 分区 r${result.current.revision} 已保存并写入审计` : '当前分区未发生变更')
     reason.value = ''
     preview.value = null
     previewGuard.value = null
-    await load()
+    if (historySection.value === section)
+      history.value = await adminApi.operationsSectionHistory(section)
   } catch (error) { emit('notice', error instanceof Error ? error.message : '运营配置应用失败'); throw error }
 }
 function applyChanges() {
@@ -510,24 +578,28 @@ function applyChanges() {
   if (!preview.value?.valid || !guard || !previewMatchesForm.value) {
     emit('notice', '配置已变化或尚未通过预览，请重新预览后再应用'); return
   }
-  const submission = operationsConfigPreviewSubmission(guard)
-  requestRiskAction({ title: '应用运营配置', target: `v${guard.currentVersion} → v${guard.nextVersion}`, targetLabel: '配置版本', impact: `${preview.value.changes.length} 项已冻结预览将立即生效；进行中对局继续使用创建时规则。`, confirmLabel: '确认应用配置', run: () => performApplyChanges(submission.config, applyReason, submission.expectedVersion) })
+  const submission = operationsSectionPreviewSubmission(guard)
+  requestRiskAction({ title: '应用运营配置分区', target: `${guard.section} · r${guard.currentRevision} → r${guard.nextRevision}`, targetLabel: '分区 / 修订', impact: `${preview.value.changes.length} 个字段或条目已冻结预览；仅合并该分区已编辑字段，其它运营分区与赛季定义保持不变。`, confirmLabel: '确认保存分区', run: () => performApplyChanges(guard.section, submission.config, applyReason, submission.expectedRevision, submission.expectedFieldRevisions) })
 }
-async function performRollback(target: OperationsConfigVersion) {
+async function performRollback(target: OperationsSectionVersion) {
   if (!canWrite.value) return
   if (!reason.value.trim()) { emit('notice', '回滚配置前请填写变更理由'); return }
+  const section = target.section
   try {
-    await adminApi.rollbackOperationsConfig(target.id, reason.value.trim(), version.value)
-    emit('notice', `已回滚至运营配置 v${target.version}`)
+    const result = await adminApi.rollbackOperationsSection(section, target.id,
+      sectionRevisions.value[section] ?? 1, reason.value.trim())
+    acceptOperationsSection(section, result.current)
+    emit('notice', result.applied ? `已将 ${section} 分区回滚至历史 r${target.revision}` : '该分区已是目标状态')
     reason.value = ''
     preview.value = null
-    await load()
+    previewGuard.value = null
+    history.value = await adminApi.operationsSectionHistory(section)
   } catch (error) { emit('notice', error instanceof Error ? error.message : '运营配置回滚失败'); throw error }
 }
-function rollback(target: OperationsConfigVersion) {
+function rollback(target: OperationsSectionVersion) {
   if (!canWrite.value) return
   if (!reason.value.trim()) { emit('notice', '回滚配置前请填写变更理由'); return }
-  requestRiskAction({ title: '回滚运营配置', target: `v${target.version} · ${target.id}`, targetLabel: '目标版本', impact: '系统将以该历史快照生成新的生效版本，不会覆盖历史记录。', confirmLabel: '确认回滚', run: () => performRollback(target) })
+  requestRiskAction({ title: '回滚运营配置分区', target: `${target.section} · r${target.revision} · ${target.id}`, targetLabel: '分区 / 目标修订', impact: '只恢复所选分区；其它分区、当前赛季、下赛季草稿和即时维护均不改写。', confirmLabel: '确认回滚分区', run: () => performRollback(target) })
 }
 function deleteBroadcast(id: string) {
   if (!canWrite.value) return
@@ -535,6 +607,17 @@ function deleteBroadcast(id: string) {
   requestRiskAction({ title: '删除排位快讯', target: broadcast?.message || id, targetLabel: '快讯', impact: '该快讯会从待播放与历史展示中删除，不能在后台恢复。', confirmLabel: '确认删除', run: async () => { await adminApi.deleteRankedBroadcast(id); rankedBroadcasts.value = rankedBroadcasts.value.filter(item => item.id !== id) } })
 }
 
+watch(activeSection, () => {
+  preview.value = null
+  previewGuard.value = null
+})
+watch(historySection, async section => {
+  try {
+    const result = await adminApi.operationsSectionHistory(section)
+    if (historySection.value === section) history.value = result
+  }
+  catch (error) { emit('notice', error instanceof Error ? error.message : '分区历史加载失败') }
+})
 onMounted(load)
 </script>
 
@@ -587,9 +670,9 @@ onMounted(load)
         <fieldset v-else-if="activeSection === 'maintenance'" class="wide"><legend>预约维护计划</legend><label class="toggle-row"><span><b>启用维护计划</b><small>到达开始前1小时自动关闭所有新开局入口。</small></span><input v-model="form.maintenance.enabled" type="checkbox"/></label><label class="wide">维护提示<textarea v-model="form.maintenance.message" rows="4" placeholder="启用维护时必填"/></label><label>开始时间<input v-model="form.maintenance.startsAt" type="datetime-local"/></label><label>结束时间（可选）<input v-model="form.maintenance.endsAt" type="datetime-local" :disabled="!form.maintenance.endsAt"/></label><label class="toggle-row wide"><span><b>不设置结束时间</b><small>预约维护持续到管理员点击下方解除按钮。</small></span><input type="checkbox" :checked="!form.maintenance.endsAt" @change="toggleMaintenanceEnd"/></label><label>提前广播（小时）<input v-model.number="form.maintenance.advanceBroadcastHours" type="number" min="1" max="168"/></label><label>预计维护时长（小时）<input v-model.number="form.maintenance.expectedDurationHours" type="number" min="1" max="168"/></label><p class="wide contract-note">下方按钮只解除预约维护，不会结束上方即时维护，也不提交本页其他未保存编辑；重复点击不会再次增加配置版本。两种维护均解除后才开放新对局。</p><button class="confirm wide" type="button" :disabled="startingServer || !loadedMaintenanceEnabled" data-ui-contract="idempotent-server-start" @click="startServer">{{ startingServer ? '正在解除…' : loadedMaintenanceEnabled ? '启动服务器（解除预约维护）' : '预约维护未开启' }}</button></fieldset>
       </div>
       <footer v-if="isSeasonSection && selectedSeasonState" class="config-actions"><input v-model="selectedSeasonState.reason" placeholder="此槽位的变更理由（必填）"/><button @click="previewSeasonDefinition">预览赛季定义</button><button class="confirm" @click="applySeasonDefinition">{{ selectedSeasonSlot === 'current' ? '保存当前配置' : '保存下赛季草稿' }}</button></footer>
-      <footer v-else-if="!isSeasonSection" class="config-actions"><input v-model="reason" placeholder="变更或回滚理由（必填）"/><button @click="previewChanges">预览差异</button><button class="confirm" @click="applyChanges">保存配置</button></footer>
+      <footer v-else-if="editableOperationsSection" class="config-actions"><input v-model="reason" placeholder="此分区的变更理由（必填）"/><button @click="previewChanges">预览分区差异</button><button class="confirm" @click="applyChanges">保存当前分区</button></footer>
       <div v-if="isSeasonSection && selectedSeasonState?.preview" class="preview-box"><b>{{ selectedSeasonState.preview.valid ? (selectedSeasonPreviewMatches ? '预览通过' : '配置已编辑，请重新预览') : '预览未通过' }} · {{ selectedSeasonState.preview.slot }} r{{ selectedSeasonState.preview.currentRevision }} → r{{ selectedSeasonState.preview.nextRevision }} · v{{ selectedSeasonState.preview.operationsVersion }}</b><ul><li v-for="item in selectedSeasonState.preview.changes" :key="item">{{ item }}</li></ul><p v-for="item in selectedSeasonState.preview.warnings" :key="item">警告：{{ item }}</p></div>
-      <div v-else-if="!isSeasonSection && preview" class="preview-box"><b>{{ preview.valid ? (previewMatchesForm ? '预览通过' : '配置已编辑，请重新预览') : '预览未通过' }} · v{{ preview.currentVersion }} → v{{ preview.nextVersion }}</b><ul><li v-for="item in preview.changes" :key="item">{{ item }}</li></ul><p v-for="item in preview.warnings" :key="item">警告：{{ item }}</p></div>
+      <div v-else-if="editableOperationsSection && preview" class="preview-box"><b>{{ preview.valid ? (previewMatchesForm ? '预览通过' : '配置已编辑，请重新预览') : '预览未通过' }} · {{ preview.section }} r{{ preview.currentRevision }} → r{{ preview.nextRevision }}</b><ul><li v-for="item in preview.changes" :key="item">{{ item }}</li></ul><p v-for="item in preview.warnings" :key="item">警告：{{ item }}</p></div>
       </fieldset>
     </section>
 
@@ -599,9 +682,10 @@ onMounted(load)
         <div v-if="runtime" class="runtime-grid"><article><small>服务版本</small><b>{{ runtime.serviceVersion }}</b><span>{{ observedAt }}</span></article><article><small>在线账号 / WS</small><b>{{ runtime.onlineAccountCount }} / {{ runtime.webSocketConnectionCount }}</b><span>账号 / 连接</span></article><article><small>房间 / 对局</small><b>{{ runtime.roomCount }} / {{ runtime.activeGameCount }}</b><span>房间 / 进行中</span></article><article><small>卡牌数据</small><b>{{ runtime.cardCount }}</b><span>当前加载卡牌</span></article><article><small>卡图 CDN</small><b>{{ runtime.cdn.state }}</b><span>{{ runtime.cdn.configured ? '已配置' : '未配置' }} · {{ runtime.cdn.detail || runtime.cdn.name }}</span></article><article class="http-budget" :class="{ failed: runtime.httpPerformance.withinBudget === false }"><small>HTTP 低卡顿预算</small><b>{{ httpBudgetState }}</b><span>最近 {{ runtime.httpPerformance.windowSeconds }} 秒 · {{ runtime.httpPerformance.sampleCount }} 个有效样本</span></article><article><small>样本构成</small><b>{{ runtime.httpPerformance.readSampleCount }} / {{ runtime.httpPerformance.mutationSampleCount }}</b><span>读取 / 写入 · 状态探针 {{ runtime.httpPerformance.diagnosticRequestCount }}</span></article><article><small>应用延迟</small><b>{{ runtime.httpPerformance.averageDurationMilliseconds }} ms</b><span>P95 {{ runtime.httpPerformance.p95LatencyBand }}</span></article><article><small>在途 / 峰值</small><b>{{ runtime.httpPerformance.inFlight }} / {{ runtime.httpPerformance.peakInFlight }}</b><span>当前 / 最近一分钟峰值</span></article><article><small>慢请求</small><b>{{ runtime.httpPerformance.slowRequestCount }}</b><span>{{ runtime.httpPerformance.slowRequestPercent }}% · 超过 {{ runtime.httpPerformance.slowRequestThresholdMilliseconds }} ms</span></article><article><small>429 / 5xx</small><b>{{ runtime.httpPerformance.rateLimitedCount }} / {{ runtime.httpPerformance.serverErrorCount }}</b><span>{{ runtime.httpPerformance.rateLimitedPercent }}% / {{ runtime.httpPerformance.serverErrorPercent }}%</span></article><article><small>计划性 503 / 客户端断开</small><b>{{ runtime.httpPerformance.expectedUnavailableCount }} / {{ runtime.httpPerformance.clientCancelledCount }}</b><span>独立观察，不计入 5xx 故障率</span></article></div>
       </section>
       <section class="panel history-panel">
-        <header><div><h2>配置版本历史</h2><p>当前由 {{ updatedBy || '系统' }} 于 {{ updatedAt ? new Date(updatedAt).toLocaleString() : '未知时间' }} 更新。每次应用和回滚均保存完整快照。</p></div></header>
-        <PagedCollection :items="history" v-slot="{ items: paged27988 }"><article v-for="item in paged27988" :key="item.id"><span><b>v{{ item.version }} · {{ item.action }}</b><small>{{ item.actorName }} · {{ new Date(item.createdAt).toLocaleString() }}</small></span><p>{{ item.reason || '无备注' }}</p><button :disabled="!canWrite || item.version === version" @click="rollback(item)">回滚到此版本</button></article></PagedCollection>
-        <span v-if="!history.length">暂无配置历史</span>
+        <header><div><h2>分区版本历史</h2><p>每次只恢复所选分区，不改写其它运营预设、赛季定义或即时维护状态。</p></div><label>分区<select v-model="historySection"><option value="room">对战与房间</option><option value="features">功能开关</option><option value="announcements">长期公告</option><option value="maintenance">预约维护</option></select></label></header>
+        <label class="history-reason">回滚理由（必填）<input v-model="reason" placeholder="说明为何恢复该分区"/></label>
+        <PagedCollection :items="history" v-slot="{ items: paged27988 }"><article v-for="item in paged27988" :key="item.id"><span><b>{{ item.section }} r{{ item.revision }} · {{ item.action }}</b><small>全局 v{{ item.operationsVersion }} · {{ item.actorName }} · {{ new Date(item.createdAt).toLocaleString() }}</small></span><p>{{ item.reason || '无备注' }}</p><small v-if="item.changedFields.length">字段：{{ item.changedFields.join('、') }}</small><button :disabled="!canWrite" @click="rollback(item)">仅回滚此分区</button></article></PagedCollection>
+        <span v-if="!history.length">暂无分区历史</span>
       </section>
     </template>
   </div>

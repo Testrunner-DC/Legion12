@@ -15,6 +15,7 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12WebSocketServer : IAsyncDisposable
 {
+    private const string OperationsCrossSectionReplaceIntent = "replace-all-operations-sections";
     private static readonly JsonSerializerOptions OutgoingJsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan SocketSendTimeout = TimeSpan.FromSeconds(5);
 
@@ -2043,6 +2044,101 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
             return Results.Ok(_platform.OperationsConfigHistory(authenticated.Account, limit ?? 50));
         });
+        _app.MapGet("/api/admin/operations/config/sections/{section}",
+            (HttpRequest request, string section) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsRead;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try
+            {
+                var result = _platform.OperationsConfigSection(authenticated.Account, section);
+                request.HttpContext.Response.Headers.ETag = $"\"{result.Revision}\"";
+                return Results.Ok(result);
+            }
+            catch (L12OperationsConfigException error)
+            {
+                return OperationsConfigError(request, error);
+            }
+        });
+        _app.MapGet("/api/admin/operations/config/sections/{section}/history",
+            (HttpRequest request, string section, int? limit) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsRead;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try
+            {
+                return Results.Ok(_platform.OperationsConfigSectionHistory(authenticated.Account,
+                    section, limit ?? 50));
+            }
+            catch (L12OperationsConfigException error)
+            {
+                return OperationsConfigError(request, error);
+            }
+        });
+        _app.MapPost("/api/admin/operations/config/sections/{section}/preview",
+            (HttpRequest request, string section, OperationsConfigSectionPreviewRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try
+            {
+                var result = _platform.PreviewOperationsConfigSection(authenticated.Account, section,
+                    body.Config, body.ExpectedRevision ?? ParseExpectedVersion(request.Headers.IfMatch.FirstOrDefault()),
+                    body.ExpectedFieldRevisions,
+                    AuditContext(request, permission) with { DryRun = true, Outcome = "dry-run" });
+                request.HttpContext.Response.Headers.ETag = $"\"{result.CurrentRevision}\"";
+                return Results.Ok(result);
+            }
+            catch (L12OperationsConfigException error)
+            {
+                return OperationsConfigError(request, error);
+            }
+        });
+        _app.MapPut("/api/admin/operations/config/sections/{section}",
+            (HttpRequest request, string section, OperationsConfigSectionApplyRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedRevision, out var key, out var expected, out failure)) return failure;
+            var payload = new L12OperationsSectionApplyCommandPayload(section, body.Config, expected,
+                body.ExpectedFieldRevisions ?? new Dictionary<string, long>());
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "operations.config.section.apply", $"operations:config:{section}", payload, key,
+                null, false, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission,
+                current => ExecuteOperationsConfig(() => _platform.ApplyOperationsConfigSection(
+                    current.Actor, current.Payload.Section, current.Payload.Config,
+                    current.Payload.ExpectedRevision, current.Payload.ExpectedFieldRevisions,
+                    current.Reason, current.AuditContext)));
+            if (outcome.Success && outcome.Value?.Applied == true) NotifyOperationsPolicyChanged();
+            var response = AdminCommandResponse(request, command, outcome);
+            if (outcome.Value?.Current is { } currentSection)
+                request.HttpContext.Response.Headers.ETag = $"\"{currentSection.Revision}\"";
+            return response;
+        });
+        _app.MapPost("/api/admin/operations/config/sections/{section}/rollback",
+            (HttpRequest request, string section, OperationsConfigSectionRollbackRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedRevision, out var key, out var expected, out failure)) return failure;
+            var payload = new L12OperationsSectionRollbackCommandPayload(section,
+                body.VersionId?.Trim() ?? string.Empty, expected);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "operations.config.section.rollback", $"operations:config:{section}", payload, key,
+                null, false, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission,
+                current => ExecuteOperationsConfig(() => _platform.RollbackOperationsConfigSection(
+                    current.Actor, current.Payload.Section, current.Payload.VersionId,
+                    current.Payload.ExpectedRevision, current.Reason, current.AuditContext)));
+            if (outcome.Success && outcome.Value?.Applied == true) NotifyOperationsPolicyChanged();
+            var response = AdminCommandResponse(request, command, outcome);
+            if (outcome.Value?.Current is { } currentSection)
+                request.HttpContext.Response.Headers.ETag = $"\"{currentSection.Revision}\"";
+            return response;
+        });
         _app.MapPost("/api/admin/operations/config/preview",
             (HttpRequest request, OperationsConfigPreviewRequest body) =>
         {
@@ -2065,6 +2161,11 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             const L12Permission permission = L12Permission.AdminOperationsWrite;
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!string.Equals(body.CrossSectionReplaceIntent, OperationsCrossSectionReplaceIntent,
+                    StringComparison.Ordinal))
+                return ApiError(request, "operations_cross_section_intent_required",
+                    "全量运营配置替换必须显式确认跨分区覆盖意图",
+                    StatusCodes.Status428PreconditionRequired);
             if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
                     body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
             var command = CommandEnvelope(request, authenticated.Account, permission, "operations.config.apply",
@@ -2082,6 +2183,11 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             const L12Permission permission = L12Permission.AdminOperationsWrite;
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!string.Equals(body.CrossSectionReplaceIntent, OperationsCrossSectionReplaceIntent,
+                    StringComparison.Ordinal))
+                return ApiError(request, "operations_cross_section_intent_required",
+                    "全量运营配置回滚必须显式确认跨分区覆盖意图",
+                    StatusCodes.Status428PreconditionRequired);
             if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
                     body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
             var payload = new L12OperationsRollbackCommandPayload(body.VersionId?.Trim() ?? string.Empty);
@@ -4119,6 +4225,10 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             {
                 "operations_version_conflict" => StatusCodes.Status409Conflict,
                 "operations_version_not_found" => StatusCodes.Status404NotFound,
+                "operations_section_conflict" or "operations_field_conflict"
+                    => StatusCodes.Status409Conflict,
+                "operations_section_not_found" or "operations_section_version_not_found"
+                    => StatusCodes.Status404NotFound,
                 "season_definition_not_found" => StatusCodes.Status404NotFound,
                 "season_definition_revision_conflict" or "season_link_conflict"
                     or "season_cutover_not_ready" or "season_runtime_conflict"
@@ -4140,6 +4250,10 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             "operations_version_conflict" => StatusCodes.Status409Conflict,
             "operations_version_not_found" => StatusCodes.Status404NotFound,
+            "operations_section_conflict" or "operations_field_conflict"
+                => StatusCodes.Status409Conflict,
+            "operations_section_not_found" or "operations_section_version_not_found"
+                => StatusCodes.Status404NotFound,
             "permission_denied" => StatusCodes.Status403Forbidden,
             _ => StatusCodes.Status400BadRequest,
         };
@@ -4928,10 +5042,23 @@ public sealed record AccountDeletionCommandPayload(string AccountId, string Reas
 public sealed record OperationsConfigPreviewRequest(L12OperationsConfigPayload Config,
     long? ExpectedVersion = null);
 public sealed record OperationsConfigApplyRequest(L12OperationsConfigPayload Config, string? Reason = null,
-    string? IdempotencyKey = null, long? ExpectedVersion = null);
+    string? IdempotencyKey = null, long? ExpectedVersion = null, string? CrossSectionReplaceIntent = null);
 public sealed record OperationsConfigRollbackRequest(string? VersionId, string? Reason = null,
-    string? IdempotencyKey = null, long? ExpectedVersion = null);
+    string? IdempotencyKey = null, long? ExpectedVersion = null, string? CrossSectionReplaceIntent = null);
 public sealed record L12OperationsRollbackCommandPayload(string VersionId);
+public sealed record OperationsConfigSectionPreviewRequest(L12OperationsSectionPayload Config,
+    IReadOnlyDictionary<string, long>? ExpectedFieldRevisions = null,
+    long? ExpectedRevision = null);
+public sealed record OperationsConfigSectionApplyRequest(L12OperationsSectionPayload Config,
+    IReadOnlyDictionary<string, long>? ExpectedFieldRevisions = null, string? Reason = null,
+    string? IdempotencyKey = null, long? ExpectedRevision = null);
+public sealed record OperationsConfigSectionRollbackRequest(string? VersionId, string? Reason = null,
+    string? IdempotencyKey = null, long? ExpectedRevision = null);
+public sealed record L12OperationsSectionApplyCommandPayload(string Section,
+    L12OperationsSectionPayload Config, long ExpectedRevision,
+    IReadOnlyDictionary<string, long> ExpectedFieldRevisions);
+public sealed record L12OperationsSectionRollbackCommandPayload(string Section, string VersionId,
+    long ExpectedRevision);
 public sealed record SeasonActivationRequest(long ExpectedCurrentRevision, long ExpectedDraftRevision,
     string? Reason = null, string? IdempotencyKey = null, long? ExpectedVersion = null);
 public sealed record L12SeasonActivationCommandPayload(string DefinitionId,

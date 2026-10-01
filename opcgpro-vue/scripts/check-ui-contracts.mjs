@@ -733,9 +733,15 @@ const contracts = [
     && gamePage.includes('class="battle-settings-mask"'), '选中卡牌容器下方必须保留横向三按钮工具坞并为其避让，设置入口复用完整设置页且立即作用于当前对局'],
   [adminOperations.includes("id: 'announcements'") && adminOperations.includes('data-ui-contract="independent-long-term-announcements"')
     && adminOperations.includes('不设置结束时间') && adminOperations.includes('data-ui-contract="idempotent-server-start"')
+    && adminOperations.includes('previewOperationsSection') && adminOperations.includes('applyOperationsSection')
+    && adminOperations.includes('rollbackOperationsSection') && adminOperations.includes('expectedFieldVersions')
+    && !adminOperations.includes('applyOperationsConfig(') && !adminOperations.includes('rollbackOperationsConfig(')
     && lobby.includes('data-ui-contract="long-term-announcements-above-deck"')
     && lobby.indexOf('data-ui-contract="long-term-announcements-above-deck"') < lobby.indexOf('class="room-current-deck"')
-    && platform.includes('/api/admin/operations/server/start'), '长期公告必须独立编辑、排序和定时，并显示在大厅更换牌库盒子上方；维护结束可空且显式启服使用独立幂等端点'],
+    && platform.includes('/api/admin/operations/config/sections/')
+    && platform.includes("crossSectionReplaceIntent: 'replace-all-operations-sections'")
+    && l12ServerSources.includes('operations_cross_section_intent_required')
+    && platform.includes('/api/admin/operations/server/start'), '运营配置必须按分区预览、字段修订合并和分区回滚；长期公告独立显示，维护结束可空且显式启服使用独立幂等端点'],
   [officialHome.includes('loadPublishedHomeCache()') && officialHome.includes('savePublishedHomeCache(payload)')
     && officialHome.includes('generation !== refreshGeneration') && officialHome.includes('scheduleHomeRefresh()')
     && officialHome.includes('ready.value = hasPublishedSnapshot')
