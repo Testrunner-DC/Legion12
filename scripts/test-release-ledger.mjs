@@ -64,6 +64,26 @@ try {
   assert.equal(covered.release.sections[0].title, '界面与体验')
   assert.deepEqual(covered.release.sections[0].items, ['页面切换后会立即显示正确内容。'])
 
+  write('opcgpro-vue/src/Second.vue', '<template>second same-day release</template>\n')
+  write('release-ledger/entries/player-ui-second.json', {
+    schemaVersion: 1,
+    id: 'player-ui-second-release',
+    date: '2026-09-25',
+    audience: 'players',
+    title: '同日再次更新',
+    changes: [{ category: 'ui', text: '第二次发布也保留页面改进。', paths: ['opcgpro-vue/src/Second.vue'] }],
+  })
+  const secondCommit = commit('second player release on same day')
+  const second = evaluateRelease(temp, coveredCommit, secondCommit)
+  assert.deepEqual(second.release.sections[0].items, ['第二次发布也保留页面改进。'], '单次发布门禁仍只覆盖本次区间')
+  assert.equal(second.history.length, 1, '同日的发布日志合并为一日，不相互覆盖')
+  assert.deepEqual([...second.history[0].sections[0].items].sort(), [
+    '页面切换后会立即显示正确内容。',
+    '第二次发布也保留页面改进。',
+  ].sort())
+  assert.deepEqual(evaluateRelease(temp, actualBaseline, coveredCommit).history[0].sections[0].items,
+    ['页面切换后会立即显示正确内容。'], '旧候选不能提前展示未来条目')
+
   write('服务端WebSocket/TwelveLegions/Internal.cs', '// internal refactor\n')
   write('release-ledger/entries/internal.json', {
     schemaVersion: 1,
@@ -74,15 +94,20 @@ try {
     paths: ['服务端WebSocket/TwelveLegions/Internal.cs'],
   })
   const internalCommit = commit('internal declaration')
-  const internal = evaluateRelease(temp, coveredCommit, internalCommit)
+  const internal = evaluateRelease(temp, secondCommit, internalCommit)
   assert.equal(internal.release, null)
+  assert.deepEqual(internal.history, second.history, '纯内部再次发布也不能清空既有玩家更新日志')
   assert.deepEqual(internal.productFiles, ['服务端WebSocket/TwelveLegions/Internal.cs'], '中文服务端路径必须被账本扫描与覆盖，不得被 Git quotepath 转义绕过')
 
   const output = path.join(temp, 'generated.ts')
   const summary = path.join(temp, 'summary.json')
-  main(['release', '--repo', temp, '--from', actualBaseline, '--to', coveredCommit, '--output', output, '--summary', summary])
-  assert.match(fs.readFileSync(output, 'utf8'), /页面切换后会立即显示正确内容/)
+  main(['release', '--repo', temp, '--from', coveredCommit, '--to', secondCommit, '--output', output, '--summary', summary])
+  const generated = fs.readFileSync(output, 'utf8')
+  assert.match(generated, /generatedPlayerReleaseHistory/)
+  assert.match(generated, /页面切换后会立即显示正确内容/)
+  assert.match(generated, /第二次发布也保留页面改进/)
   assert.equal(JSON.parse(fs.readFileSync(summary, 'utf8')).playerEntryCount, 1)
+  assert.equal(JSON.parse(fs.readFileSync(summary, 'utf8')).historyDayCount, 1)
 
   const playerPath = path.join(temp, 'release-ledger/entries/player-ui.json')
   const invalid = JSON.parse(fs.readFileSync(playerPath, 'utf8'))
@@ -90,7 +115,7 @@ try {
   write('release-ledger/entries/player-ui.json', invalid)
   assert.throws(() => loadLedger(temp), /包含内部术语/)
 
-  console.log('[玩家更新日志账本] 回归测试通过：缺失登记、分类聚合、中文路径覆盖、内部声明、生成结果与禁用术语。')
+  console.log('[玩家更新日志账本] 回归测试通过：缺失登记、分类聚合、同日多次发布累计、内部发布保留历史、中文路径覆盖、生成结果与禁用术语。')
 } finally {
   fs.rmSync(temp, { recursive: true, force: true })
 }

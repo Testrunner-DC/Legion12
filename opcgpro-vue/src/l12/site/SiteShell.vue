@@ -9,7 +9,7 @@ import MaintenanceTicker from './MaintenanceTicker.vue'
 import CardImage from '@/l12/CardImage.vue'
 import SeasonSummaryNotice from './SeasonSummaryNotice.vue'
 import { useActionGate } from '@/l12/useActionGate'
-import { generatedPlayerRelease } from './generatedPlayerRelease'
+import { generatedPlayerRelease, generatedPlayerReleaseHistory } from './generatedPlayerRelease'
 
 const siteBrandIcon = '/favicon.png'
 const legacyUpdateEntries = [
@@ -586,9 +586,11 @@ const legacyUpdateEntries = [
   },
 ]
 
-const updateEntries = generatedPlayerRelease
-  ? [generatedPlayerRelease, ...legacyUpdateEntries]
-  : legacyUpdateEntries
+const updateEntries = generatedPlayerReleaseHistory.length
+  ? [...generatedPlayerReleaseHistory, ...legacyUpdateEntries]
+  : generatedPlayerRelease
+    ? [generatedPlayerRelease, ...legacyUpdateEntries]
+    : legacyUpdateEntries
 
 const route = useRoute()
 const router = useRouter()
@@ -829,8 +831,8 @@ onBeforeUnmount(() => {
 
       <section v-else-if="modal === 'updates'" class="site-modal update-modal">
         <header><div><small>CHANGELOG</small><h2>更新日志</h2></div><button @click="modal = null">×</button></header>
-        <article v-for="entry in updateEntries.slice(0, 10)" :key="`${entry.date}-${entry.version}`">
-          <time>{{ entry.date }}</time><h3>{{ entry.title }}</h3><code>{{ entry.version }}</code>
+        <article v-for="(entry, index) in updateEntries" :key="`${entry.date}-${entry.version}-${index}`">
+          <time>{{ entry.date }}</time><h3>{{ entry.title }}</h3><code v-if="entry.version">{{ entry.version }}</code>
           <section v-for="section in entry.sections" :key="section.title" class="update-section">
             <h4>{{ section.title }}</h4>
             <ul><li v-for="item in section.items" :key="item">{{ item }}</li></ul>

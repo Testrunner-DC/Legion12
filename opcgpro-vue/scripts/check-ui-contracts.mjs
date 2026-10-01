@@ -1576,12 +1576,15 @@ contracts.push([
   '最新玩家更新日志必须覆盖本期自适应布局、对战操作、牌库社区、异画、排位、回放、卡效和连接变化，并排除后台和内部治理内容',
 ])
 contracts.push([
-  shell.includes("import { generatedPlayerRelease } from './generatedPlayerRelease'")
-    && shell.includes('[generatedPlayerRelease, ...legacyUpdateEntries]')
+  shell.includes("import { generatedPlayerRelease, generatedPlayerReleaseHistory } from './generatedPlayerRelease'")
+    && shell.includes('[...generatedPlayerReleaseHistory, ...legacyUpdateEntries]')
+    && shell.includes('v-for="(entry, index) in updateEntries"')
+    && !shell.includes('updateEntries.slice(')
     // Development keeps a null placeholder, while production verification
     // injects the generated release object before this contract runs.  Check
     // the stable typed assignment instead of requiring the placeholder value.
     && generatedPlayerRelease.includes('GeneratedPlayerReleaseEntry | null =')
+    && generatedPlayerRelease.includes('generatedPlayerReleaseHistory: GeneratedPlayerReleaseEntry[]')
     && releaseLedgerScript.includes('正式发布区间存在未登记的玩家相关源码')
     && releaseLedgerScript.includes('forbiddenPlayerTerms'),
   '正式更新日志必须由结构化账本按线上版本区间注入，缺失登记和内部说明必须在发布前失败',

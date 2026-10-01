@@ -133,14 +133,18 @@ export function evaluateRelease(repoInput, fromInput, toInput) {
   }
 
   const playerEntries = rangedEntries.filter(entry => entry.audience === 'players')
-  const sections = []
-  for (const [category, title] of Object.entries(ledger.config.categories)) {
-    const items = []
-    for (const entry of playerEntries) for (const change of entry.changes) {
-      if (change.category === category && !items.includes(change.text.trim())) items.push(change.text.trim())
+  const buildSections = entries => {
+    const sections = []
+    for (const [category, title] of Object.entries(ledger.config.categories)) {
+      const items = []
+      for (const entry of entries) for (const change of entry.changes) {
+        if (change.category === category && !items.includes(change.text.trim())) items.push(change.text.trim())
+      }
+      if (items.length) sections.push({ title, items })
     }
-    if (items.length) sections.push({ title, items })
+    return sections
   }
+  const sections = buildSections(playerEntries)
   const dates = playerEntries.map(entry => entry.date).sort()
   const titles = [...new Set(playerEntries.map(entry => entry.title.trim()))]
   const release = sections.length ? {
@@ -149,13 +153,29 @@ export function evaluateRelease(repoInput, fromInput, toInput) {
     version: to,
     sections,
   } : null
-  return { ...ledger, from, to, baseline, productFiles, rangedEntries, playerEntries, release }
+  // The current release range is still the deployment gate. Player-visible history
+  // must instead be cumulative: replacing the single range on each deployment
+  // discarded earlier releases, especially when several went live on one day.
+  const historyPaths = new Set(changedFiles(ledger.repo, baseline, to, ['release-ledger/entries']))
+  const historyEntries = ledger.entries.filter(entry => entry.audience === 'players' && historyPaths.has(entry._file))
+  const history = [...new Set(historyEntries.map(entry => entry.date))].sort().reverse().map(date => {
+    const dayEntries = historyEntries.filter(entry => entry.date === date)
+    const dayTitles = [...new Set(dayEntries.map(entry => entry.title.trim()))]
+    return {
+      date,
+      title: dayTitles.length === 1 ? dayTitles[0] : ledger.config.defaultReleaseTitle,
+      version: '',
+      sections: buildSections(dayEntries),
+    }
+  })
+  return { ...ledger, from, to, baseline, productFiles, rangedEntries, playerEntries, release, history }
 }
 
-function renderTypeScript(release) {
+function renderTypeScript(release, history) {
   return `export interface GeneratedPlayerReleaseSection {\n  title: string\n  items: string[]\n}\n\n` +
     `export interface GeneratedPlayerReleaseEntry {\n  date: string\n  title: string\n  version: string\n  sections: GeneratedPlayerReleaseSection[]\n}\n\n` +
-    `export const generatedPlayerRelease: GeneratedPlayerReleaseEntry | null = ${JSON.stringify(release, null, 2)}\n`
+    `export const generatedPlayerRelease: GeneratedPlayerReleaseEntry | null = ${JSON.stringify(release, null, 2)}\n` +
+    `export const generatedPlayerReleaseHistory: GeneratedPlayerReleaseEntry[] = ${JSON.stringify(history, null, 2)}\n`
 }
 
 function parseArgs(argv) {
@@ -184,7 +204,7 @@ export function main(argv = process.argv.slice(2)) {
   if (options.output) {
     const output = path.resolve(options.output)
     fs.mkdirSync(path.dirname(output), { recursive: true })
-    fs.writeFileSync(output, renderTypeScript(result.release), 'utf8')
+    fs.writeFileSync(output, renderTypeScript(result.release, result.history), 'utf8')
   }
   const summary = {
     schemaVersion: 1,
@@ -192,6 +212,7 @@ export function main(argv = process.argv.slice(2)) {
     to: result.to,
     declaredEntries: result.rangedEntries.map(entry => entry.id),
     playerEntryCount: result.playerEntries.length,
+    historyDayCount: result.history.length,
     coveredPlayerFiles: result.productFiles,
     release: result.release,
   }
