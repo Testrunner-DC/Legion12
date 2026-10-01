@@ -90,6 +90,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await InitializeJournalSchemaAsync(connection);
         await InitializeAnalyticsSchemaAsync(connection);
         await InitializeRankedPersistenceSchemaAsync(connection);
+        await InitializeSeasonIdentityMigrationSchemaAsync(connection);
         await InitializeSandboxRecordingSchemaAsync(connection, _utcNow());
         await InitializePlayerReplayRetentionSchemaAsync(connection, _utcNow());
         await InitializeGlobalAnalyticsSchemaAsync(connection);
