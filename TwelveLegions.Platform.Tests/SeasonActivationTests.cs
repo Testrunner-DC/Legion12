@@ -144,9 +144,8 @@ public sealed class SeasonActivationTests
             var admin = store.Login("Admin", "L12master").Account!;
             var operationsVersion = store.OperationsConfig(admin).Version;
             var auditBefore = store.AdminAudit("ranked").Count;
-            var result = store.RepairT01RankedSeasonReset(admin, "T01", "修复 T01 切季承接污染",
-                operationsVersion, new L12RankedSeasonCutoverReadiness("T01", 0, 0, 0, 0),
-                Context("repair-t01", operationsVersion));
+            var result = RepairWithPreview(store, admin, "修复 T01 切季承接污染",
+                operationsVersion, Context("repair-t01", operationsVersion));
 
             Assert.False(result.Replayed);
             Assert.Equal(2, result.ProfilesReset);
@@ -168,8 +167,9 @@ public sealed class SeasonActivationTests
             Assert.Equal(priorHistory, Assert.Single(store.RankedOverview(first.Id).History));
             var audit = Assert.Single(store.AdminAudit("ranked").Skip(auditBefore));
             Assert.Equal("season-reset-repair", audit.Action);
-            Assert.Contains("seven=", audit.FromValue);
-            Assert.Equal("seven=0;placement=0;match-stats=0", audit.ToValue);
+            Assert.Contains("profiles=2", audit.FromValue);
+            Assert.Contains("matches=0", audit.FromValue);
+            Assert.Contains("seven=0;placement=0;match-stats=0", audit.ToValue);
 
             var replay = store.RepairT01RankedSeasonReset(admin, "t01", "重试修复",
                 operationsVersion, new L12RankedSeasonCutoverReadiness("T01", 0, 0, 0, 0),
@@ -235,7 +235,7 @@ public sealed class SeasonActivationTests
     }
 
     [Fact]
-    public void T01ResetRepairRejectsAnyNewSeasonSettlementFactsWithoutChangingProfiles()
+    public void T01ResetRepairWaivesBoundedTransitionMatchesAndRestoresHiddenRatingBaseline()
     {
         var root = TempRoot();
         try
@@ -250,17 +250,19 @@ public sealed class SeasonActivationTests
             store.SelectRankedFaction(second.Id, "chaos");
             ActivateNextSeason(store, admin, "T01", "T01 赛季");
             store.SettleRankedMatch("t01-played", first.Id, second.Id, 0, seasonId: "T01");
-            var before = store.RankedProfile(first.Id);
+            var hiddenBefore = 1500d;
+            Assert.NotEqual(hiddenBefore, store.HiddenRating(first.Id));
             var version = store.OperationsConfig(admin).Version;
 
-            var error = Assert.Throws<L12OperationsConfigException>(() =>
-                store.RepairT01RankedSeasonReset(admin, "T01", "已有对局应拒绝", version,
-                    new L12RankedSeasonCutoverReadiness("T01", 0, 0, 0, 0),
-                    Context("repair-played", version)));
+            var result = RepairWithPreview(store, admin, "放弃过渡期对局", version,
+                Context("repair-played", version));
 
-            Assert.Equal("ranked_season_reset_repair_competition_exists", error.Code);
-            Assert.Equal(before, store.RankedProfile(first.Id));
-            Assert.Empty(store.AdminAudit("ranked").Where(item => item.Action == "season-reset-repair"));
+            Assert.Equal(1, result.TransitionMatchesWaived);
+            Assert.Equal("voided", store.RankedSettlement("t01-played", first.Id)!.RewardStatus);
+            Assert.Contains("t01-played", store.RankedIntegrityExcludedMatchIds());
+            Assert.Equal(hiddenBefore, store.HiddenRating(first.Id));
+            Assert.Equal(0, store.RankedProfile(first.Id).PlacementPlayed);
+            Assert.Equal(0, store.RankedProfile(first.Id).Wins);
         }
         finally
         {
@@ -318,7 +320,7 @@ public sealed class SeasonActivationTests
                     new L12RankedSeasonCutoverReadiness("T01", 0, 0, 0, 0),
                     Context("repair-ledger-only", version)));
 
-            Assert.Equal("ranked_season_reset_repair_competition_exists", error.Code);
+            Assert.Equal("ranked_season_reset_repair_orphan_fact", error.Code);
         }
         finally
         {
@@ -343,8 +345,7 @@ public sealed class SeasonActivationTests
             store.SelectRankedFaction(second.Id, "chaos");
             ActivateNextSeason(store, admin, "T01", "T01 赛季");
             var version = store.OperationsConfig(admin).Version;
-            var firstRepair = store.RepairT01RankedSeasonReset(admin, "T01", "首次修复", version,
-                new L12RankedSeasonCutoverReadiness("T01", 0, 0, 0, 0),
+            var firstRepair = RepairWithPreview(store, admin, "首次修复", version,
                 Context("repair-before-play", version));
             Assert.False(firstRepair.Replayed);
             store.SettleRankedMatch("after-t01-repair", first.Id, second.Id, 0, seasonId: "T01");
@@ -394,16 +395,17 @@ public sealed class SeasonActivationTests
                 if (stage == "before-commit") throw new IOException("injected repair commit failure");
             };
 
+            var preview = store.PreviewT01RankedSeasonReset(admin, "T01", version,
+                new L12RankedSeasonCutoverReadiness("T01", 0, 0, 0, 0), DateTimeOffset.UtcNow);
             Assert.Throws<L12PlatformStorageUnavailableException>(() =>
                 store.RepairT01RankedSeasonReset(admin, "T01", "注入存储失败", version,
                     new L12RankedSeasonCutoverReadiness("T01", 0, 0, 0, 0),
-                    Context("repair-storage-failure", version)));
+                    Context("repair-storage-failure", version), preview.EvidenceFingerprint));
             store.StorageFailureInjector = null;
 
             Assert.Equal(456, store.RankedProfile(player.Id).SevenValue);
             Assert.Empty(store.AdminAudit("ranked").Where(item => item.Action == "season-reset-repair"));
-            var retry = store.RepairT01RankedSeasonReset(admin, "T01", "失败后重试", version,
-                new L12RankedSeasonCutoverReadiness("T01", 0, 0, 0, 0),
+            var retry = RepairWithPreview(store, admin, "失败后重试", version,
                 Context("repair-storage-retry", version));
             Assert.False(retry.Replayed);
             Assert.Equal(0, store.RankedProfile(player.Id).SevenValue);
@@ -449,8 +451,15 @@ public sealed class SeasonActivationTests
                 store, catalog);
             await server.StartAsync(0);
             using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
+            using var previewRequest = Authorized(HttpMethod.Post,
+                "/api/admin/ranked/season-reset-repair/preview", login.Token!,
+                new RankedSeasonResetRepairPreviewRequest("T01", operationsVersion));
+            using var previewResponse = await client.SendAsync(previewRequest);
+            Assert.Equal(HttpStatusCode.OK, previewResponse.StatusCode);
+            var preview = (await previewResponse.Content.ReadFromJsonAsync<
+                L12RankedSeasonResetRepairPreviewView>())!;
             var body = new RankedSeasonResetRepairRequest("T01", "修复线上 T01 承接污染",
-                "repair-t01-api-1", operationsVersion);
+                "repair-t01-api-1", operationsVersion, preview.EvidenceFingerprint);
 
             using var request = Authorized(HttpMethod.Post, "/api/admin/ranked/season-reset-repair",
                 login.Token!, body);
@@ -1092,11 +1101,12 @@ public sealed class SeasonActivationTests
     }
 
     private static void ActivateNextSeason(L12PlatformStore store, L12AccountView admin,
-        string seasonId, string seasonName)
+        string seasonId, string seasonName, DateTimeOffset? startsAt = null,
+        DateTimeOffset? endsAt = null)
     {
         var seasons = store.SeasonCatalog(admin);
         var draft = store.UpdateSeasonDraft(admin, seasons.Next!.DefinitionId,
-            new L12SeasonDefinitionDraft(seasonId, seasonName, null, null,
+            new L12SeasonDefinitionDraft(seasonId, seasonName, startsAt, endsAt,
                 seasons.Next.Configuration), seasons.Next.Revision, "prepare summary test",
             Context("prepare-summary"));
         var current = store.SeasonCatalog(admin).Current;
@@ -1104,6 +1114,289 @@ public sealed class SeasonActivationTests
             "activate summary test",
             new L12RankedSeasonCutoverReadiness(current.SeasonId, 0, 0, 0, 0),
             Context("activate-summary"));
+    }
+
+    [Fact]
+    public void T01ResetRepairWaivesMultipleLegacyUntaggedMatchesAndMovesOnlyCompetitiveStart()
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var catalog = Catalog();
+            var initial = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var initialAdmin = initial.Login("Admin", "L12master").Account!;
+            var first = initial.Register("过渡修复甲", "Password123!").Account!;
+            var second = initial.Register("过渡修复乙", "Password123!").Account!;
+            var third = initial.Register("过渡修复丙", "Password123!").Account!;
+            initial.SelectRankedFaction(first.Id, "order");
+            initial.SelectRankedFaction(second.Id, "chaos");
+            initial.SelectRankedFaction(third.Id, "fate");
+            var originalStartsAt = DateTimeOffset.UtcNow.AddMinutes(-30);
+            var originalEndsAt = DateTimeOffset.UtcNow.AddDays(30);
+            ActivateNextSeason(initial, initialAdmin, "T01", "T01 赛季", originalStartsAt,
+                originalEndsAt);
+            var originalActivatedAt = initial.SeasonCatalog(initialAdmin).Current.ActivatedAt;
+            var priorHistory = initial.RankedOverview(first.Id).History.ToArray();
+
+            RewriteSnapshot(path, data =>
+            {
+                foreach (var profile in data["RankedProfiles"]!.AsArray().Select(node => node!.AsObject()))
+                {
+                    profile["SevenValue"] = 1800;
+                    profile["PlacementPlayed"] = 5;
+                    profile["PlacementWins"] = 2;
+                    profile["Wins"] = 3;
+                    profile["Losses"] = 2;
+                    profile["WinStreak"] = 2;
+                    profile["HighestFloor"] = 1000;
+                }
+            });
+            var played = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var playedAdmin = played.Login("Admin", "L12master").Account!;
+            var firstHiddenBaseline = played.HiddenRating(first.Id);
+            var secondHiddenBaseline = played.HiddenRating(second.Id);
+            var thirdHiddenBaseline = played.HiddenRating(third.Id);
+            played.SettleRankedMatch("transition-a", first.Id, second.Id, 0,
+                "S01-01M1", "S01-02M1", seasonId: "T01");
+            played.SettleRankedMatch("transition-b", first.Id, third.Id, 1,
+                "S01-01M1", "S01-03M1", seasonId: "T01");
+            Assert.NotEqual(firstHiddenBaseline, played.HiddenRating(first.Id));
+
+            RewriteSnapshot(path, data =>
+            {
+                foreach (var settlement in data["RankedSettlements"]!.AsArray()
+                             .Select(node => node!.AsObject())
+                             .Where(row => row["MatchId"]!.GetValue<string>().StartsWith("transition-")))
+                    settlement.Remove("SeasonId");
+                data["RankedBroadcasts"]!.AsArray().Add(new JsonObject
+                {
+                    ["Id"] = "transition-broadcast",
+                    ["MatchId"] = "transition-a",
+                    ["EventType"] = "highest-tier",
+                    ["Message"] = "过渡期广播",
+                    ["CreatedAt"] = DateTimeOffset.UtcNow,
+                });
+                data["RankedBroadcastDeliveries"]!.AsArray().Add(new JsonObject
+                {
+                    ["AccountId"] = first.Id,
+                    ["BroadcastId"] = "transition-broadcast",
+                    ["ClaimToken"] = "transition-claim",
+                    ["LeaseExpiresAt"] = DateTimeOffset.UtcNow.AddMinutes(1),
+                });
+                data["AlternateArtGrants"]!.AsArray().Add(new JsonObject
+                {
+                    ["Id"] = "transition-rank-grant",
+                    ["AccountId"] = first.Id,
+                    ["AlternateArtId"] = "local-fixture-art",
+                    ["SourceKind"] = "rank-reached",
+                    ["SourceReference"] = "T01",
+                    ["GrantedByAccountId"] = "system",
+                    ["GrantedAt"] = DateTimeOffset.UtcNow,
+                });
+            });
+            var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var version = store.OperationsConfig(admin).Version;
+            var competitiveStart = DateTimeOffset.UtcNow.AddMinutes(1);
+            var readiness = new L12RankedSeasonCutoverReadiness("T01", 0, 0, 0, 0);
+            var preview = store.PreviewT01RankedSeasonReset(admin, "T01", version, readiness,
+                competitiveStart);
+
+            Assert.Equal(2, preview.TransitionMatches);
+            Assert.Equal(4, preview.SettlementRows);
+            Assert.Equal(2, preview.ProfileFacts);
+            Assert.Equal(3, preview.MasterRecordsToRemove);
+            Assert.Equal(1, preview.BroadcastsToRemove);
+            Assert.Equal(1, preview.GrantsToRevoke);
+            var result = store.RepairT01RankedSeasonReset(admin, "T01", "放弃部署前过渡期",
+                version, readiness, Context("repair-transition", version),
+                preview.EvidenceFingerprint, competitiveStart);
+
+            Assert.Equal(2, result.TransitionMatchesWaived);
+            Assert.Equal(version, result.OperationsVersionBefore);
+            Assert.Equal(version + 1, result.OperationsVersionAfter);
+            Assert.Equal(competitiveStart, result.CompetitiveStartAt);
+            Assert.Equal(competitiveStart, store.OperationsConfig(admin).Config.Season.StartsAt);
+            var season = store.SeasonCatalog(admin).Current;
+            Assert.Equal(competitiveStart, season.StartsAt);
+            Assert.Equal(originalActivatedAt, season.ActivatedAt);
+            Assert.Equal(originalEndsAt, season.EndsAt);
+            Assert.Equal(firstHiddenBaseline, store.HiddenRating(first.Id));
+            Assert.Equal(secondHiddenBaseline, store.HiddenRating(second.Id));
+            Assert.Equal(thirdHiddenBaseline, store.HiddenRating(third.Id));
+            foreach (var accountId in new[] { first.Id, second.Id, third.Id })
+            {
+                var profile = store.RankedProfile(accountId);
+                Assert.Equal(0, profile.SevenValue);
+                Assert.Equal(0, profile.PlacementPlayed);
+                Assert.Equal(0, profile.Wins);
+                Assert.Equal(0, profile.Losses);
+            }
+            Assert.Equal("voided", store.RankedSettlement("transition-a", first.Id)!.RewardStatus);
+            Assert.Equal("voided", store.RankedSettlement("transition-b", third.Id)!.RewardStatus);
+            Assert.Contains("transition-a", store.RankedIntegrityExcludedMatchIds());
+            Assert.Contains("transition-b", store.RankedIntegrityExcludedMatchIds());
+            Assert.Equal(priorHistory, store.RankedOverview(first.Id).History);
+
+            var persisted = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            Assert.Equal(4, persisted["RankedSettlements"]!.AsArray().Count(node =>
+                node!["MatchId"]!.GetValue<string>().StartsWith("transition-")));
+            Assert.Equal(2, persisted["RankedSettlementProfileFacts"]!.AsArray().Count(node =>
+                node!["MatchId"]!.GetValue<string>().StartsWith("transition-")));
+            Assert.DoesNotContain(persisted["RankedMasterRecords"]!.AsArray(), node =>
+                node!["SeasonId"]!.GetValue<string>() == "T01");
+            Assert.DoesNotContain(persisted["RankedBroadcasts"]!.AsArray(), node =>
+                node!["Id"]!.GetValue<string>() == "transition-broadcast");
+            Assert.NotNull(persisted["AlternateArtGrants"]!.AsArray().Single(node =>
+                node!["Id"]!.GetValue<string>() == "transition-rank-grant")!["RevokedAt"]);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void T01ResetRepairRejectsWhenFactsChangeAfterPreview()
+    {
+        var root = TempRoot();
+        try
+        {
+            var catalog = Catalog();
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var first = store.Register("预览竞态甲", "Password123!").Account!;
+            var second = store.Register("预览竞态乙", "Password123!").Account!;
+            store.SelectRankedFaction(first.Id, "order");
+            store.SelectRankedFaction(second.Id, "chaos");
+            ActivateNextSeason(store, admin, "T01", "T01 赛季");
+            var version = store.OperationsConfig(admin).Version;
+            var readiness = new L12RankedSeasonCutoverReadiness("T01", 0, 0, 0, 0);
+            var preview = store.PreviewT01RankedSeasonReset(admin, "T01", version, readiness,
+                DateTimeOffset.UtcNow);
+            store.SettleRankedMatch("preview-race", first.Id, second.Id, 0, seasonId: "T01");
+
+            var error = Assert.Throws<L12OperationsConfigException>(() =>
+                store.RepairT01RankedSeasonReset(admin, "T01", "旧预览不得自动吸收新局", version,
+                    readiness, Context("repair-preview-race", version),
+                    preview.EvidenceFingerprint));
+
+            Assert.Equal("ranked_season_reset_repair_evidence_changed", error.Code);
+            Assert.Equal(1, store.RankedProfile(first.Id).Wins);
+            Assert.Empty(store.AdminAudit("ranked").Where(row => row.Action == "season-reset-repair"));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void T01ResetRepairRejectsAtSeasonEndAndAboveBoundedMatchLimit()
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var catalog = Catalog();
+            var initial = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var admin = initial.Login("Admin", "L12master").Account!;
+            var first = initial.Register("边界修复甲", "Password123!").Account!;
+            var second = initial.Register("边界修复乙", "Password123!").Account!;
+            initial.SelectRankedFaction(first.Id, "order");
+            initial.SelectRankedFaction(second.Id, "chaos");
+            var endsAt = DateTimeOffset.UtcNow.AddHours(2);
+            ActivateNextSeason(initial, admin, "T01", "T01 赛季", DateTimeOffset.UtcNow, endsAt);
+            var version = initial.OperationsConfig(admin).Version;
+            var readiness = new L12RankedSeasonCutoverReadiness("T01", 0, 0, 0, 0);
+            var ended = Assert.Throws<L12OperationsConfigException>(() =>
+                initial.PreviewT01RankedSeasonReset(admin, "T01", version, readiness, endsAt));
+            Assert.Equal("ranked_season_reset_repair_season_ended", ended.Code);
+
+            initial.SettleRankedMatch("limit-source", first.Id, second.Id, 0, seasonId: "T01");
+            RewriteSnapshot(path, data =>
+            {
+                var source = data["RankedIntegrityAudits"]!.AsArray().Single()!.AsObject();
+                var audits = new JsonArray();
+                for (var index = 0; index < 501; index++)
+                {
+                    var clone = JsonNode.Parse(source.ToJsonString())!.AsObject();
+                    clone["Id"] = $"limit-audit-{index}";
+                    clone["MatchId"] = $"limit-match-{index}";
+                    audits.Add(clone);
+                }
+                data["RankedIntegrityAudits"] = audits;
+            });
+            var overLimit = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var overLimitAdmin = overLimit.Login("Admin", "L12master").Account!;
+            var limitError = Assert.Throws<L12OperationsConfigException>(() =>
+                overLimit.PreviewT01RankedSeasonReset(overLimitAdmin, "T01", version, readiness,
+                    DateTimeOffset.UtcNow.AddMinutes(1)));
+            Assert.Equal("ranked_season_reset_repair_too_many_matches", limitError.Code);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void T01ResetRepairWaivesHeldTransitionWithoutPlayerNotificationOrCooldown()
+    {
+        var root = TempRoot();
+        try
+        {
+            var catalog = Catalog();
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var first = store.Register("暂扣过渡甲", "Password123!").Account!;
+            var second = store.Register("暂扣过渡乙", "Password123!").Account!;
+            store.SelectRankedFaction(first.Id, "order");
+            store.SelectRankedFaction(second.Id, "chaos");
+            ActivateNextSeason(store, admin, "T01", "T01 赛季");
+            var baseTime = DateTimeOffset.UtcNow.AddMinutes(-5);
+            for (var index = 0; index < 3; index++)
+            {
+                var endedAt = baseTime.AddSeconds(index * 10 + 5);
+                store.SettleRankedMatch($"held-transition-{index}", first.Id, second.Id, 0,
+                    integrity: new L12RankedIntegrityContext(endedAt.AddSeconds(-5), endedAt, 0,
+                        "surrender", null, null), seasonId: "T01");
+            }
+            Assert.NotEmpty(store.RankedIntegrityNotifications(first).Items);
+            Assert.NotNull(store.RankedEntryBlock(first.Id, DateTimeOffset.UtcNow));
+            var version = store.OperationsConfig(admin).Version;
+
+            var result = RepairWithPreview(store, admin, "放弃含暂扣的过渡局", version,
+                Context("repair-held-transition", version));
+
+            Assert.Equal(3, result.TransitionMatchesWaived);
+            Assert.Empty(store.RankedIntegrityNotifications(first).Items);
+            Assert.Null(store.RankedEntryBlock(first.Id, DateTimeOffset.UtcNow));
+            Assert.Equal("voided", store.RankedSettlement("held-transition-2", first.Id)!.RewardStatus);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    private static L12RankedSeasonResetRepairView RepairWithPreview(L12PlatformStore store,
+        L12AccountView admin, string reason, long operationsVersion, L12AdminAuditContext context,
+        DateTimeOffset? observedAt = null)
+    {
+        var now = observedAt ?? DateTimeOffset.UtcNow;
+        var readiness = new L12RankedSeasonCutoverReadiness("T01", 0, 0, 0, 0);
+        var preview = store.PreviewT01RankedSeasonReset(admin, "T01", operationsVersion,
+            readiness, now);
+        return store.RepairT01RankedSeasonReset(admin, "T01", reason, operationsVersion,
+            readiness, context, preview.EvidenceFingerprint, now);
     }
 
     private static L12AdminCommandResult<L12SeasonActivationView> ActivateThroughBus(

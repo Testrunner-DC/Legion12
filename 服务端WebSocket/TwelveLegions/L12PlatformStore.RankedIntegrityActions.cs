@@ -366,7 +366,8 @@ public sealed partial class L12PlatformStore
         {
             RequireActiveRankedIntegrityActorLocked(actor);
             var all = _data.RankedIntegrityNotifications.Where(row =>
-                row.AccountId.Equals(actor.Id, StringComparison.OrdinalIgnoreCase)).ToArray();
+                row.AccountId.Equals(actor.Id, StringComparison.OrdinalIgnoreCase)
+                && !row.MatchIds.Any(IsT01TransitionWaivedMatchLocked)).ToArray();
             var unreadCount = all.Count(row => row.AcknowledgedAt is null);
             var source = all.Where(row => !unreadOnly || row.AcknowledgedAt is null)
                 .OrderByDescending(row => row.DecidedAt).ThenByDescending(row => row.Id,
@@ -405,6 +406,9 @@ public sealed partial class L12PlatformStore
                 row.Id.Equals(normalizedDecisionId, StringComparison.OrdinalIgnoreCase))
                 ?? throw new L12RankedIntegrityActionException("ranked_integrity_decision_not_found",
                     "排位处置记录不存在");
+            if (decision.MatchIds.Any(IsT01TransitionWaivedMatchLocked))
+                throw new L12RankedIntegrityActionException("ranked_integrity_transition_waived",
+                    "该过渡期排位已由真实开季迁移统一作废，不再接受玩家申诉");
             if (!decision.AccountEffects.Any(effect => effect.AccountId.Equals(actor.Id,
                     StringComparison.OrdinalIgnoreCase)))
                 throw new L12RankedIntegrityActionException("ranked_integrity_appeal_forbidden",
@@ -447,7 +451,9 @@ public sealed partial class L12PlatformStore
         {
             RequireActiveRankedIntegrityActorLocked(actor);
             var source = _data.RankedIntegrityAppeals.Where(row => row.AccountId.Equals(actor.Id,
-                    StringComparison.OrdinalIgnoreCase))
+                    StringComparison.OrdinalIgnoreCase)
+                    && !_data.RankedIntegrityDecisions.Any(decision => decision.Id == row.DecisionId
+                        && decision.MatchIds.Any(IsT01TransitionWaivedMatchLocked)))
                 .OrderByDescending(AppealUpdatedAt).ThenByDescending(row => row.Id, StringComparer.Ordinal);
             var rows = PageAfter(source, cursor, row => row.Id, Math.Clamp(limit, 1, 100), out var next);
             return new(rows.Select(RankedIntegrityAppealViewLocked).ToArray(), next);
@@ -541,7 +547,8 @@ public sealed partial class L12PlatformStore
             if (IsRankedSeasonCutoverFenced(now))
                 return "赛季正在切换，暂不接受新的排位对局；已开始的对局仍可恢复并完成";
             var activeRestriction = _data.RankedIntegrityDecisions
-                .Where(row => row.Disposition == "confirmed" && !IsDecisionRevokedLocked(row.Id))
+                .Where(row => row.Disposition == "confirmed" && !IsDecisionRevokedLocked(row.Id)
+                    && !row.MatchIds.Any(IsT01TransitionWaivedMatchLocked))
                 .SelectMany(row => row.AccountEffects)
                 .Where(effect => effect.AccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase)
                     && effect.RestrictionUntil > now)
@@ -551,8 +558,9 @@ public sealed partial class L12PlatformStore
 
             var cooldown = _data.RankedHeldRewards.Where(row =>
                     (row.FirstAccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase)
-                        || row.SecondAccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase))
-                    && row.CooldownUntil > now && IsRankedMatchExcludedLocked(row.MatchId))
+                     || row.SecondAccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase))
+                    && row.CooldownUntil > now && IsRankedMatchExcludedLocked(row.MatchId)
+                    && !IsT01TransitionWaivedMatchLocked(row.MatchId))
                 .OrderByDescending(row => row.CooldownUntil).FirstOrDefault();
             return cooldown is null ? null
                 : $"异常极短排位奖励正在暂扣复核，请于 {cooldown.CooldownUntil.ToOffset(TimeSpan.FromHours(8)):HH:mm}（UTC+8）后重试";
@@ -565,6 +573,7 @@ public sealed partial class L12PlatformStore
         {
             var protectedIds = _data.RankedHeldRewards.Select(row => row.MatchId)
                 .Concat(_data.RankedIntegrityDecisions.SelectMany(row => row.MatchIds))
+                .Concat(_data.RankedSeasonResetRepairs.SelectMany(row => row.TransitionMatchIds))
                 .Concat(_data.RankedIntegrityAppeals.Where(row => CurrentAppealStatus(row) != "closed")
                     .SelectMany(row => _data.RankedIntegrityDecisions
                         .Where(decision => decision.Id == row.DecisionId).SelectMany(decision => decision.MatchIds)))
@@ -600,6 +609,9 @@ public sealed partial class L12PlatformStore
         foreach (var requested in input.MatchIds)
         {
             var normalized = requested?.Trim() ?? string.Empty;
+            if (IsT01TransitionWaivedMatchLocked(normalized))
+                throw new L12RankedIntegrityActionException("ranked_integrity_transition_waived",
+                    $"过渡期排位 {normalized} 已统一作废，不能重复处置");
             var audit = _data.RankedIntegrityAudits.FirstOrDefault(row =>
                 row.MatchId.Equals(normalized, StringComparison.OrdinalIgnoreCase))
                 ?? throw new L12RankedIntegrityActionException("ranked_integrity_match_not_found",
@@ -1170,6 +1182,7 @@ public sealed partial class L12PlatformStore
 
     private bool IsRankedMatchExcludedLocked(string matchId)
     {
+        if (IsT01TransitionWaivedMatchLocked(matchId)) return true;
         var latest = _data.RankedIntegrityDecisions.Where(row => row.MatchIds.Contains(matchId,
                 StringComparer.OrdinalIgnoreCase) && !IsDecisionRevokedLocked(row.Id))
             .OrderByDescending(row => row.Revision).FirstOrDefault();
@@ -1183,6 +1196,7 @@ public sealed partial class L12PlatformStore
 
     private string RankedRewardStatusLocked(string matchId)
     {
+        if (IsT01TransitionWaivedMatchLocked(matchId)) return "voided";
         var hasHold = _data.RankedHeldRewards.Any(row => row.MatchId.Equals(matchId,
             StringComparison.OrdinalIgnoreCase));
         var latest = _data.RankedIntegrityDecisions.Where(row => row.MatchIds.Contains(matchId,
@@ -1194,6 +1208,10 @@ public sealed partial class L12PlatformStore
         if (hasHold && latest is null) return "held";
         return "applied";
     }
+
+    private bool IsT01TransitionWaivedMatchLocked(string matchId)
+        => _data.RankedSeasonResetRepairs.Any(row => row.TransitionMatchIds.Contains(matchId,
+            StringComparer.OrdinalIgnoreCase));
 
     private bool IsDecisionRevokedLocked(string decisionId)
         => _data.RankedIntegrityDecisions.Any(row => row.Disposition == "revoked"

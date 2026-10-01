@@ -565,7 +565,8 @@ public sealed partial class L12PlatformStore
     }
 
     private string RankedIntegrityDispositionLocked(string matchId)
-        => _data.RankedIntegrityDecisions
+        => IsT01TransitionWaivedMatchLocked(matchId) ? "system-error"
+            : _data.RankedIntegrityDecisions
             .Where(row => row.Disposition != "revoked"
                 && row.MatchIds.Contains(matchId, StringComparer.OrdinalIgnoreCase)
                 && !IsDecisionRevokedLocked(row.Id))

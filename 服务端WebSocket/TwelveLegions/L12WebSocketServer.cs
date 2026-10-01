@@ -689,6 +689,30 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 return SeasonManagementError(request, error);
             }
         });
+        _app.MapPost("/api/admin/ranked/season-reset-repair/preview", async (HttpRequest request,
+            RankedSeasonResetRepairPreviewRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var expectedVersion = body.ExpectedVersion
+                ?? ParseExpectedVersion(request.Headers.IfMatch.FirstOrDefault());
+            if (expectedVersion is null)
+                return ApiError(request, "expected_version_required",
+                    "T01 修复预览必须提供 expectedVersion/If-Match",
+                    StatusCodes.Status428PreconditionRequired);
+            try
+            {
+                var preview = await _rooms.InspectRankedSeasonCutoverSnapshotAsync("T01", readiness =>
+                    _platform.PreviewT01RankedSeasonReset(authenticated.Account,
+                        body.SeasonId ?? string.Empty, expectedVersion.Value, readiness,
+                        _seasonActivationUtcNow()));
+                return Results.Ok(preview);
+            }
+            catch (L12OperationsConfigException error)
+            {
+                return SeasonManagementError(request, error);
+            }
+        });
         _app.MapPost("/api/admin/ranked/season-reset-repair", async (HttpRequest request,
             RankedSeasonResetRepairRequest body) =>
         {
@@ -697,7 +721,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (!TryOperationsCommandOptions(request, authenticated.Account, permission,
                     body.IdempotencyKey, body.ExpectedVersion, out var key, out var expected,
                     out failure)) return failure;
-            var payload = new L12RankedSeasonResetRepairCommandPayload(body.SeasonId ?? string.Empty);
+            var payload = new L12RankedSeasonResetRepairCommandPayload(body.SeasonId ?? string.Empty,
+                body.ExpectedEvidenceFingerprint ?? string.Empty);
             var command = CommandEnvelope(request, authenticated.Account, permission,
                 "operations.config.ranked-season-reset-repair", "operations:config", payload,
                 key, expected, false, body.Reason);
@@ -706,7 +731,9 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     current => ExecuteOperationsConfig(() =>
                         _platform.RepairT01RankedSeasonReset(current.Actor,
                             current.Payload.SeasonId, current.Reason ?? string.Empty, expected,
-                            readiness, current.AuditContext)), risk: L12AdminCommandRisk.High));
+                            readiness, current.AuditContext, current.Payload.ExpectedEvidenceFingerprint,
+                            _seasonActivationUtcNow())), risk: L12AdminCommandRisk.High));
+            if (outcome.Success) NotifyOperationsPolicyChanged();
             var response = AdminCommandResponse(request, command, outcome);
             request.HttpContext.Response.Headers.ETag =
                 $"\"{_platform.OperationsConfigVersion()}\"";
@@ -4909,9 +4936,13 @@ public sealed record SeasonActivationRequest(long ExpectedCurrentRevision, long 
     string? Reason = null, string? IdempotencyKey = null, long? ExpectedVersion = null);
 public sealed record L12SeasonActivationCommandPayload(string DefinitionId,
     long ExpectedCurrentRevision, long ExpectedDraftRevision);
+public sealed record RankedSeasonResetRepairPreviewRequest(string? SeasonId,
+    long? ExpectedVersion = null);
 public sealed record RankedSeasonResetRepairRequest(string? SeasonId, string? Reason = null,
-    string? IdempotencyKey = null, long? ExpectedVersion = null);
-public sealed record L12RankedSeasonResetRepairCommandPayload(string SeasonId);
+    string? IdempotencyKey = null, long? ExpectedVersion = null,
+    string? ExpectedEvidenceFingerprint = null);
+public sealed record L12RankedSeasonResetRepairCommandPayload(string SeasonId,
+    string ExpectedEvidenceFingerprint);
 public sealed record SeasonActivationPreviewRequest(long ExpectedCurrentRevision,
     long ExpectedDraftRevision, long? ExpectedVersion = null);
 public sealed record SeasonActivationArmRequest(long ExpectedCurrentRevision, long ExpectedDraftRevision,
