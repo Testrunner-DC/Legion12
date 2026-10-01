@@ -1,6 +1,6 @@
 # 赛季内部编号归一化迁移设计
 
-状态：设计审计完成；仅比赛库内部受控原语已实现，跨库 orchestrator 尚未实现，当前不可部署执行
+状态：本地候选已完成比赛库、平台库与跨库可恢复 orchestrator；尚未完成 Main 全量验收、发布和生产执行授权，当前不可部署执行
 
 范围：旧内部 `S01`（实际第 0 赛季）→ `S00`，旧内部 `T01`（实际第 1 赛季）→ `S01`
 
@@ -277,11 +277,45 @@ Main 已裁定：
 2. `SeasonDefinition`/`SeasonArchive` 增加不可变 `SeasonOrdinal`；旧两季只按本迁移显式赋值 0/1，未来从持久化最大 ordinal 生成。
 3. 双库使用分阶段 marker 和单 owner lease；半完成状态保持排位关闭并可恢复，不声称跨库原子。
 
-剩余阻断：
+本地候选已实现：
 
-1. 平台侧 schema、typed references、协调表和跨库 orchestrator 尚未实现。
-2. recorder 原语保持 `internal`，尚无 WebSocket/API 入口；在全局 maintenance、B0 marker 与平台 readiness 没有接入前不得开放或部署使用。
-3. 玩家端隐藏编号、U1 历史荣誉与共享 `Seasons.cs` 的文件租约需等待 C1 串行交接。
-4. 未获授权的生产异画权益只允许本地 fixture 验证；如需生产核对，必须另行取得明确授权。
+1. 比赛库仍只暴露内部原子换键原语；平台 orchestrator 在同一排位 cutover gate 内先排空 outbox、复核 readiness，再依次提交 recorder、平台和 verification。
+2. 平台迁移从 SQLite 事务内最新 `platform_state` 反序列化；类型化引用、`season_finalization_coordination` 主键、平台快照/checksum、独立审计和完成 marker 在一个 `BEGIN IMMEDIATE` 写事务提交。
+3. `platform_season_identity_migrations` 以固定 migration ID 提供单 owner 租约、过期接管、`platform_committed` 恢复和永久 `verified` 幂等标记；`executing`/`platform_committed` 阶段持续封闭新排位。
+4. recorder 已提交而平台失败时，重启后以 recorder 完成指纹恢复；旧 owner、漂移指纹、目标碰撞、未知异画引用、B0 缺失/覆盖漂移和未清零 readiness 均失败关闭。
+5. `SeasonOrdinal` 已写入 definition/archive；迁移只给旧两季赋 0/1，后续草稿从持久化最大 ordinal 生成 `S02` 等规范键，已赋 ordinal 不能改成其他内部键。
 
-S0-R 只提供比赛库原子换键、marker/lease、指纹和失败关闭能力；完整 S0 在上述阻断解除前不得执行生产或本地业务数据改写。
+仍有发布阻断：
+
+1. Main 尚未完成平台全量、前端/UI、Batch 与候选集成验收；本文不构成发布或生产执行授权。
+2. 玩家端隐藏编号与 U1 历史荣誉/派系冻结值须同批完成，避免规范内部键在玩家界面外显。
+3. 未获授权的生产异画权益仍未读取；实现只用本地 fixture 验证所有已知编码，并对未知疑似赛季引用失败关闭。
+
+## 11. 受控执行与恢复步骤
+
+以下只描述已实现接口；生产执行仍须单独授权，并且必须先按 B0 runbook 完成 preview/apply。
+
+1. 启用即时维护，确认排位入口已关闭；等待 active、pending、reconciliation、quarantine、held/runtime 全部为 0，并排空 settlement outbox。
+2. 对 `POST /api/admin/seasons/identity-normalization/preview` 发送当前 `expectedVersion`（或 `If-Match`）。只在 `canApply=true`、`blockingCodes=[]`，且人工核对 definition IDs、B0 fingerprint、双库 fingerprints 后继续。
+3. 对 `POST /api/admin/seasons/identity-normalization` 发送 preview 返回的两个 fingerprint、8-80 位唯一 `idempotencyKey`、明确原因与同一当前 `expectedVersion`：
+
+   ```json
+   {
+     "expectedPlatformFingerprint": "<preview.platformFingerprint>",
+     "expectedRecorderFingerprint": "<preview.recorderFingerprint>",
+     "reason": "归一第0/1赛季内部编号",
+     "idempotencyKey": "season-id-normalization-s00-s01-v1-run-001",
+     "expectedVersion": 0
+   }
+   ```
+
+4. 成功结果必须为 `status=verified`。随后重新 preview，确认仍为 `verified`、双库无漂移、平台 marker 的 `completed_storage_revision` 精确等于包含迁移事实的平台 revision；核对旧 finalization 行只改 season key，原 `completed_storage_revision` 不变。
+5. 保持维护，完成玩家 API/UI 无内部编号、B0 旧请求幂等重放、规范 `S01` 新请求拒绝、排行/历史/最强称号一致性验收后，才可由获授权操作者解除维护。
+
+恢复规则：
+
+- `executing` 且 recorder 未提交：租约到期后重新 preview/apply；不得手工交换键。
+- recorder 为 `recorder_committed`、平台仍 `executing`：保持维护，使用新 preview 的 fingerprints 重新 apply；平台从事务内最新状态继续。
+- 平台为 `platform_committed`：排位仍封闭；重复 apply 只完成 recorder 漂移校验和平台 verification，不重复换键。
+- `verified`：任何重复 apply 都只能幂等返回；若 preview 报 completed-state drift，保持维护并停止，不得重跑或回滚整库。
+- 任一步失败都保留双库 marker 与审计。不得删除 marker、改 applied outbox payload/hash，或用 JSON fallback 绕过 SQLite 协调表。

@@ -11,6 +11,33 @@ public sealed partial class L12PlatformStore
     private const string AcceptanceHistorySeason = "testrun-previous-season";
     private readonly List<L12RankingMatch> _testRunAcceptanceRankedMatches = [];
 
+    internal void SeedSeasonIdentityAlternateArtFixture(string accountId, string sourceKind,
+        string sourceReference, string? ruleSeasonId = null)
+    {
+        lock (_gate)
+        {
+            if (!_data.Accounts.Any(row => row.Id == accountId))
+                throw new ArgumentException("测试异画权益账号不存在", nameof(accountId));
+            if (!string.IsNullOrWhiteSpace(ruleSeasonId))
+                _data.AlternateArtAwardRules.Add(new AlternateArtAwardRuleRow
+                {
+                    AlternateArtId = "season-identity-fixture-art",
+                    Kind = "season-final",
+                    SeasonId = ruleSeasonId,
+                    CreatedByAccountId = "test-fixture",
+                });
+            _data.AlternateArtGrants.Add(new AlternateArtGrantRow
+            {
+                AccountId = accountId,
+                AlternateArtId = "season-identity-fixture-art",
+                SourceKind = sourceKind,
+                SourceReference = sourceReference,
+                GrantedByAccountId = "test-fixture",
+            });
+            Save();
+        }
+    }
+
     internal L12TestRunAcceptanceFixtureSummary EnsureTestRunAcceptanceFixtures()
     {
         var templates = _officialDecks

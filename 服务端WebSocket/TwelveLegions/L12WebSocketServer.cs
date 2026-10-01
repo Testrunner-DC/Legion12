@@ -740,6 +740,76 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 $"\"{_platform.OperationsConfigVersion()}\"";
             return response;
         });
+        _app.MapPost("/api/admin/seasons/identity-normalization/preview", async (HttpRequest request,
+            SeasonIdentityMigrationPreviewRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var expectedVersion = body.ExpectedVersion
+                ?? ParseExpectedVersion(request.Headers.IfMatch.FirstOrDefault());
+            if (expectedVersion is null)
+                return ApiError(request, "expected_version_required",
+                    "赛季编号迁移预览必须提供 expectedVersion/If-Match",
+                    StatusCodes.Status428PreconditionRequired);
+            if (expectedVersion.Value != _platform.OperationsConfigVersion())
+                return ApiError(request, "operations_version_conflict",
+                    "运营配置已变化，请刷新后重试", StatusCodes.Status409Conflict);
+            try
+            {
+                return Results.Ok(await _rooms.PreviewSeasonIdentityNormalizationAsync(
+                    authenticated.Account, _seasonActivationUtcNow()));
+            }
+            catch (L12OperationsConfigException error)
+            {
+                return SeasonManagementError(request, error);
+            }
+            catch (L12SeasonIdentityMigrationException error)
+            {
+                return ApiError(request, error.Code, error.Message, StatusCodes.Status409Conflict);
+            }
+        });
+        _app.MapPost("/api/admin/seasons/identity-normalization", async (HttpRequest request,
+            SeasonIdentityMigrationRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var expectedVersion = body.ExpectedVersion
+                ?? ParseExpectedVersion(request.Headers.IfMatch.FirstOrDefault());
+            if (expectedVersion is null)
+                return ApiError(request, "expected_version_required",
+                    "赛季编号迁移必须提供 expectedVersion/If-Match",
+                    StatusCodes.Status428PreconditionRequired);
+            if (expectedVersion.Value != _platform.OperationsConfigVersion())
+                return ApiError(request, "operations_version_conflict",
+                    "运营配置已变化，请刷新后重试", StatusCodes.Status409Conflict);
+            var idempotencyKey = body.IdempotencyKey?.Trim() ?? string.Empty;
+            if (idempotencyKey.Length is < 8 or > 80)
+                return ApiError(request, "idempotency_key_required",
+                    "赛季编号迁移需要 8-80 位幂等键", StatusCodes.Status400BadRequest);
+            try
+            {
+                var owner = $"{_seasonActivationWorkerId}:season-identity:{idempotencyKey}";
+                if (owner.Length > 120) owner = owner[..120];
+                var result = await _rooms.ExecuteSeasonIdentityNormalizationAsync(
+                    authenticated.Account, body.ExpectedPlatformFingerprint ?? string.Empty,
+                    body.ExpectedRecorderFingerprint ?? string.Empty, owner,
+                    body.Reason ?? string.Empty, _seasonActivationUtcNow(),
+                    RequestAuditContext(request, permission) with { IdempotencyKey = idempotencyKey,
+                        ExpectedVersion = expectedVersion, Reason = body.Reason });
+                NotifyOperationsPolicyChanged();
+                request.HttpContext.Response.Headers.ETag =
+                    $"\"{_platform.OperationsConfigVersion()}\"";
+                return Results.Ok(result);
+            }
+            catch (L12OperationsConfigException error)
+            {
+                return SeasonManagementError(request, error);
+            }
+            catch (L12SeasonIdentityMigrationException error)
+            {
+                return ApiError(request, error.Code, error.Message, StatusCodes.Status409Conflict);
+            }
+        });
         _app.MapPost("/api/admin/seasons/draft/{definitionId}/arm", async (HttpRequest request,
             string definitionId, SeasonActivationArmRequest body) =>
         {
@@ -5068,6 +5138,10 @@ public sealed record RankedSeasonResetRepairPreviewRequest(string? SeasonId,
 public sealed record RankedSeasonResetRepairRequest(string? SeasonId, string? Reason = null,
     string? IdempotencyKey = null, long? ExpectedVersion = null,
     string? ExpectedEvidenceFingerprint = null);
+public sealed record SeasonIdentityMigrationPreviewRequest(long? ExpectedVersion = null);
+public sealed record SeasonIdentityMigrationRequest(string? ExpectedPlatformFingerprint,
+    string? ExpectedRecorderFingerprint, string? Reason = null, string? IdempotencyKey = null,
+    long? ExpectedVersion = null);
 public sealed record L12RankedSeasonResetRepairCommandPayload(string SeasonId,
     string ExpectedEvidenceFingerprint);
 public sealed record SeasonActivationPreviewRequest(long ExpectedCurrentRevision,

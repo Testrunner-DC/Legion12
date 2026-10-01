@@ -1435,6 +1435,13 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var current = _data.SeasonDefinitions.Single(row => row.LifecycleStatus == "active");
+            var migratedReplay = _data.RankedSeasonResetRepairs.SingleOrDefault(row =>
+                string.Equals(row.SeasonId, "S01", StringComparison.Ordinal)
+                && string.Equals(row.PreviousSeasonId, "S00", StringComparison.Ordinal));
+            if (string.Equals(seasonId, "T01", StringComparison.Ordinal)
+                && string.Equals(current.SeasonId, "S01", StringComparison.Ordinal)
+                && migratedReplay is not null)
+                return RankedSeasonResetRepairView(migratedReplay, true);
             if (!SeasonIdsEqual(seasonId, "T01") || !SeasonIdsEqual(current.SeasonId, "T01"))
                 throw new L12OperationsConfigException("ranked_season_reset_repair_scope_invalid",
                     "该一次性修复仅允许当前运行赛季 T01");

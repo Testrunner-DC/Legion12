@@ -56,7 +56,7 @@ internal sealed class L12SeasonFinalizationStaleWriteException : L12PlatformStor
 
 public sealed partial class L12PlatformStore
 {
-    private const int PlatformStorageSchemaVersion = 6;
+    private const int PlatformStorageSchemaVersion = 7;
     private static readonly JsonSerializerOptions PlatformSnapshotJsonOptions = CreatePlatformJsonOptions(false);
     private static readonly JsonSerializerOptions PlatformMirrorJsonOptions = CreatePlatformJsonOptions(true);
     private static readonly JsonSerializerOptions PlatformMigrationJsonOptions = new()
@@ -390,6 +390,10 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    private T ExecuteSeasonIdentityStorageMutation<T>(
+        Func<SqliteConnection, SqliteTransaction, SeasonFinalizationStorageMutation<T>> action)
+        => ExecuteSeasonFinalizationStorageMutation(action);
+
     private void PersistInitialSnapshot(SqliteConnection connection, DataFile data)
     {
         FilterMigratedAuditSnapshot(connection, data);
@@ -589,6 +593,30 @@ public sealed partial class L12PlatformStore
             );
             CREATE INDEX IF NOT EXISTS ix_season_finalization_status
                 ON season_finalization_coordination(status,lease_expires_utc);
+            CREATE TABLE IF NOT EXISTS platform_season_identity_migrations (
+                migration_id TEXT PRIMARY KEY,
+                status TEXT NOT NULL CHECK(status IN ('executing','platform_committed','verified')),
+                owner TEXT,
+                lease_expires_utc TEXT,
+                source_platform_fingerprint TEXT NOT NULL,
+                result_platform_fingerprint TEXT,
+                source_recorder_fingerprint TEXT NOT NULL,
+                result_recorder_fingerprint TEXT,
+                season_zero_definition_id TEXT NOT NULL,
+                season_one_definition_id TEXT NOT NULL,
+                b0_evidence_fingerprint TEXT NOT NULL,
+                completed_storage_revision INTEGER,
+                started_utc TEXT NOT NULL,
+                completed_utc TEXT,
+                verified_utc TEXT,
+                CHECK((status='executing' AND owner IS NOT NULL AND lease_expires_utc IS NOT NULL
+                       AND completed_storage_revision IS NULL AND completed_utc IS NULL)
+                   OR (status='platform_committed' AND owner IS NULL AND lease_expires_utc IS NULL
+                       AND completed_storage_revision IS NOT NULL AND completed_utc IS NOT NULL)
+                   OR (status='verified' AND owner IS NULL AND lease_expires_utc IS NULL
+                       AND completed_storage_revision IS NOT NULL AND completed_utc IS NOT NULL
+                       AND verified_utc IS NOT NULL))
+            );
             CREATE TABLE IF NOT EXISTS audit_archive_segments (
                 id TEXT PRIMARY KEY,
                 from_utc TEXT NOT NULL,

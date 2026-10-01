@@ -32,7 +32,8 @@ public sealed record L12SeasonDefinitionView(
     L12SeasonActivationPlanView? ActivationPlan = null,
     string FinalizationStatus = "active",
     DateTimeOffset? DrainingAt = null,
-    DateTimeOffset? FinalizedAt = null);
+    DateTimeOffset? FinalizedAt = null,
+    int? SeasonOrdinal = null);
 
 public sealed record L12SeasonActivationPlanView(
     string Status,
@@ -119,7 +120,8 @@ public sealed record L12SeasonArchiveView(
     L12SeasonScopedConfig Configuration,
     DateTimeOffset? ActivatedAt,
     DateTimeOffset ArchivedAt,
-    string ArchivedBy);
+    string ArchivedBy,
+    int? SeasonOrdinal = null);
 
 public sealed record L12SeasonCatalogView(
     L12SeasonDefinitionView Current,
@@ -188,6 +190,7 @@ public sealed partial class L12PlatformStore
     {
         public string DefinitionId { get; set; } = Guid.NewGuid().ToString("N");
         public string SeasonId { get; set; } = string.Empty;
+        public int? SeasonOrdinal { get; set; }
         public string Name { get; set; } = string.Empty;
         public string LifecycleStatus { get; set; } = "draft";
         public DateTimeOffset? StartsAt { get; set; }
@@ -237,6 +240,7 @@ public sealed partial class L12PlatformStore
         public string ArchiveId { get; set; } = Guid.NewGuid().ToString("N");
         public string SourceDefinitionId { get; set; } = string.Empty;
         public string SeasonId { get; set; } = string.Empty;
+        public int? SeasonOrdinal { get; set; }
         public string Name { get; set; } = string.Empty;
         public long DefinitionRevision { get; set; }
         public string? PreviousSeasonId { get; set; }
@@ -526,8 +530,13 @@ public sealed partial class L12PlatformStore
                 throw new L12OperationsConfigException("season_draft_exists", "下一赛季草稿已存在");
             var current = _data.SeasonDefinitions.Single(row => row.LifecycleStatus == "active");
             EnsureSeasonDefinitionRevision(current, expectedCurrentRevision);
+            var nextOrdinal = current.SeasonOrdinal is null ? (int?)null
+                : _data.SeasonDefinitions.Select(item => item.SeasonOrdinal ?? -1)
+                    .Concat(_data.SeasonArchives.Select(item => item.SeasonOrdinal ?? -1)).Max() + 1;
             var row = new SeasonDefinitionRow
             {
+                SeasonOrdinal = nextOrdinal,
+                SeasonId = nextOrdinal is null ? string.Empty : CanonicalSeasonIdentityForOrdinal(nextOrdinal.Value),
                 Name = "下一赛季（待完善）",
                 PreviousSeasonId = current.SeasonId,
                 Configuration = CloneSeasonScope(current.Configuration),
@@ -1060,6 +1069,7 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
+            if (IsSeasonIdentityMigrationFencedLocked()) return true;
             var current = _data.SeasonDefinitions.Single(row => row.LifecycleStatus == "active");
             if (current.FinalizedAt is not null || current.DrainingAt is not null
                 || current.EndsAt is { } endsAt && endsAt <= now)
@@ -1167,6 +1177,7 @@ public sealed partial class L12PlatformStore
             {
                 SourceDefinitionId = current.DefinitionId,
                 SeasonId = current.SeasonId,
+                SeasonOrdinal = current.SeasonOrdinal,
                 Name = current.Name,
                 DefinitionRevision = current.Revision,
                 PreviousSeasonId = current.PreviousSeasonId,
@@ -1242,6 +1253,12 @@ public sealed partial class L12PlatformStore
         if (draft is null || draft.Configuration is null || draft.Configuration.Ranked is null)
             throw new L12OperationsConfigException("invalid_season_definition", "下一赛季草稿字段不完整");
         var seasonId = RequireSeasonId(draft.SeasonId);
+        var existing = _data.SeasonDefinitions.FirstOrDefault(row => row.DefinitionId == definitionId);
+        if (existing?.SeasonOrdinal is { } ordinal
+            && !string.Equals(seasonId, CanonicalSeasonIdentityForOrdinal(ordinal),
+                StringComparison.Ordinal))
+            throw new L12OperationsConfigException("season_ordinal_identity_conflict",
+                $"第 {ordinal} 赛季的内部编号必须为 {CanonicalSeasonIdentityForOrdinal(ordinal)}");
         var name = RequireOperationsText(draft.Name, "赛季名称", 100);
         if (_data.SeasonDefinitions.Any(row => row.DefinitionId != definitionId
                 && SeasonIdsEqual(row.SeasonId, seasonId))
@@ -1260,6 +1277,7 @@ public sealed partial class L12PlatformStore
         return new SeasonDefinitionRow
         {
             DefinitionId = definitionId,
+            SeasonOrdinal = existing?.SeasonOrdinal,
             SeasonId = normalizedOperations.Season.Id,
             Name = normalizedOperations.Season.Name,
             StartsAt = normalizedOperations.Season.StartsAt,
@@ -1800,11 +1818,12 @@ public sealed partial class L12PlatformStore
                     observed), row.ActivationPlan.CompletedAt,
                 row.ActivationPlan.IntentKey, row.ActivationPlan.LeaseOwner,
                 row.ActivationPlan.LastErrorMessage), finalizationStatus, row.DrainingAt,
-            row.FinalizedAt);
+            row.FinalizedAt, row.SeasonOrdinal);
     }
 
     private L12SeasonArchiveView ToSeasonArchiveView(SeasonArchiveRow row)
         => new(row.ArchiveId, row.SourceDefinitionId, row.SeasonId, row.Name,
             row.DefinitionRevision, row.PreviousSeasonId, row.NextSeasonId, row.StartsAt, row.EndsAt,
-            ToSeasonScopeView(row.Configuration), row.ActivatedAt, row.ArchivedAt, row.ArchivedBy);
+            ToSeasonScopeView(row.Configuration), row.ActivatedAt, row.ArchivedAt, row.ArchivedBy,
+            row.SeasonOrdinal);
 }

@@ -111,6 +111,55 @@ public sealed partial class L12RoomManager
         finally { _rankedSeasonGate.Release(); }
     }
 
+    internal async Task<L12SeasonIdentityMigrationPreview> PreviewSeasonIdentityNormalizationAsync(
+        L12AccountView actor, DateTimeOffset observedAt)
+    {
+        if (_platform is null) throw new InvalidOperationException("排位平台服务不可用");
+        await _rankedSeasonGate.WaitAsync();
+        try
+        {
+            var seasonId = CaptureOperationsPolicy().Season.Id;
+            var readiness = await CaptureRankedSeasonCutoverReadinessAsync(seasonId);
+            var recorder = await _recorder.PreviewSeasonIdentityNormalizationAsync();
+            return _platform.PreviewSeasonIdentityNormalization(actor, recorder, readiness, observedAt);
+        }
+        finally { _rankedSeasonGate.Release(); }
+    }
+
+    internal async Task<L12SeasonIdentityMigrationResult> ExecuteSeasonIdentityNormalizationAsync(
+        L12AccountView actor, string expectedPlatformFingerprint, string expectedRecorderFingerprint,
+        string owner, string reason, DateTimeOffset observedAt, L12AdminAuditContext context)
+    {
+        if (_platform is null) throw new InvalidOperationException("排位平台服务不可用");
+        Interlocked.Increment(ref _rankedSeasonCutoverInProgress);
+        await _rankedSeasonGate.WaitAsync();
+        try
+        {
+            var seasonId = CaptureOperationsPolicy().Season.Id;
+            await DrainRankedSettlementOutboxAsync(includeApplied: true);
+            _ = await CaptureRankedSeasonCutoverReadinessAsync(seasonId);
+            if (RankedSeasonCutoverFinalCheckInjector is not null)
+                await RankedSeasonCutoverFinalCheckInjector();
+            var readiness = await CaptureRankedSeasonCutoverReadinessAsync(seasonId);
+            var recorderPreview = await _recorder.PreviewSeasonIdentityNormalizationAsync();
+            var claim = _platform.ClaimSeasonIdentityNormalization(actor, recorderPreview, readiness,
+                expectedPlatformFingerprint, expectedRecorderFingerprint, owner,
+                TimeSpan.FromMinutes(2), observedAt, context);
+            var recorderResult = await _recorder.ApplySeasonIdentityNormalizationAsync(
+                recorderPreview.Fingerprint, owner, TimeSpan.FromMinutes(2));
+            var finalReadiness = await CaptureRankedSeasonCutoverReadinessAsync(seasonId);
+            _platform.CommitSeasonIdentityNormalization(actor, claim, recorderResult, finalReadiness,
+                reason, observedAt, context);
+            return _platform.VerifySeasonIdentityNormalization(actor, recorderResult,
+                observedAt, context);
+        }
+        finally
+        {
+            _rankedSeasonGate.Release();
+            Interlocked.Decrement(ref _rankedSeasonCutoverInProgress);
+        }
+    }
+
     private L12RankedSettlementEnvelope BuildRankedSettlementEnvelope(Room room, DateTimeOffset endedAt)
     {
         if (room.Game is null || room.Game.State.Phase != L12Phase.GameOver)

@@ -16,7 +16,8 @@ internal sealed record L12SeasonIdentityRecorderPreview(
     int PendingSettlements,
     int AppliedReconciliationFailures,
     int QuarantinedSettlements,
-    IReadOnlyList<string> BlockingCodes);
+    IReadOnlyList<string> BlockingCodes,
+    string? ResultFingerprint = null);
 
 internal sealed record L12SeasonIdentityRecorderResult(
     string MigrationId,
@@ -115,7 +116,8 @@ public sealed partial class MatchRecorder
             await transaction.CommitAsync(cancellationToken);
             return new(SeasonIdentityMigrationId, "recorder_committed", !drifted,
                 marker.SourceFingerprint, marker.SeasonZeroMatches, marker.SeasonOneMatches, 0,
-                0, 0, 0, 0, drifted ? ["season_identity_completed_state_drift"] : []);
+                0, 0, 0, 0, drifted ? ["season_identity_completed_state_drift"] : [],
+                currentFingerprint);
         }
 
         var snapshot = await ReadSeasonIdentitySnapshotAsync(connection, transaction,
