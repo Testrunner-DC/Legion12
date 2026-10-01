@@ -1270,6 +1270,12 @@ public sealed partial class L12GameEngine
             if (mode == "mode:use" && (FindOnField(player, candidate.SourceInstanceId, out _, out _) is null
                 || returnedMorale.Count != 4 || !CanReturnSelectedMoraleById(player, returnedMorale, 4)))
                 error = "吕布声明的4张士气或来源已失效；未支付费用且效果未入栈";
+            else if (mode == "mode:use")
+            {
+                _ = ReturnSelectedMoraleById(player, returnedMorale, 4);
+                candidate.Data["return-morale-prepaid"] = "true";
+                AddEvent("cost", candidate.Controller, "吕布返还4士气", declaredSource);
+            }
         }
         else if (batch6JBPlan == "mulan-lock-morale")
         {

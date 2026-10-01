@@ -5,7 +5,7 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`5a5b45c5102916c89be72c66b282cb729c7e649b11b4015ba13758f95dbf3419`。
+内容指纹：`cfddf16d2c24c3c57c00e9a02a7e2fc35c102c85fc827a84661365dc98fac875`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
@@ -1711,7 +1711,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0021 摄政皇权 #1 | S01-0021:ability:reaction:a0a418c3c31334fb | reaction/reaction | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.damage-master → resolution:operation.move-zone → resolution:operation.ready → resolution:operation.composite-flow | 2 | 我方主宰因对方进攻或效果受到伤害时：从我方手牌中将1张费用不高于3的军团活跃登场。 |
 | S01-00C1 士气·通用 #1 | S01-00C1:ability:static:db1ae0a9efb4bff8 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:legacy.resolve | 0 | 额外通用士气 |
 | S01-0101 吕布 #1 | S01-0101:ability:static:b5c9e323c0a061cc | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule | 0 | 进攻无损，无法被远程进攻。此军团 |
-| S01-0101 吕布 #2 | S01-0101:ability:after-attack:a89315144e297dfc | after-attack/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale → resolution:operation.ready → resolution:operation.composite-flow | 1 | 进攻后，可返还4士气，将此军团转为活跃 |
+| S01-0101 吕布 #2 | S01-0101:ability:after-attack:ebbe924bba472efe | after-attack/triggered | composite-definition | 进攻后，可返还4士气 | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale → resolution:operation.ready → resolution:operation.composite-flow | 1 | 进攻后，可返还4士气：将此军团转为活跃 |
 | S01-0101 吕布 #3 | S01-0101:ability:enter:5dfde2f721ac6c21 | enter/triggered | composite-definition | 登场时 可返还2士气 | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale → resolution:operation.move-zone → resolution:special.domain → resolution:operation.composite-flow | 1 | 登场时 可返还2士气：击杀对方1张天灾等级1或2的军团 |
 | S01-0101 吕布 #4 | S01-0101:ability:static:1f027ad861ea0006 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻无损。 |
 | S01-0101 吕布 #5 | S01-0101:ability:static:1041797d91099ae1 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 无法被远程进攻。 |

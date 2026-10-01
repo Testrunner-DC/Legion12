@@ -2391,7 +2391,9 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             declaredSourceItem);
         if (!neutralSource) amount = AdjustAnderstorpRingDamage(player, amount);
         amount = Math.Max(0, amount);
-        var actual = Math.Min(amount, Math.Max(0, player.Hp - 1));
+        // 非致命伤害只决定“整次数值能否结算”，不能把原本的伤害值缩小后再造成。
+        // 例如平阳昭公主把杨戬的1点非致命伤害替换为2时，2血主宰不能因此改受1点。
+        var actual = amount < player.Hp ? amount : 0;
         if (actual == 0) return;
         player.Hp -= actual;
         player.MasterDamageTakenThisTurn += actual;

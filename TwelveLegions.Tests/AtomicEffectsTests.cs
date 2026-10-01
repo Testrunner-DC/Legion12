@@ -174,6 +174,7 @@ public sealed class AtomicEffectsTests
     }
 
     [Theory]
+    [InlineData("S01-0101", "after-attack", "返还4士气")]
     [InlineData("S01-0301", "attack", "对我方主宰造成1点伤害")]
     [InlineData("S01-0305", "death", "墓地4张卡牌")]
     [InlineData("S01-0306", "attack", "墓地1张卡牌置入我方牌库底部")]

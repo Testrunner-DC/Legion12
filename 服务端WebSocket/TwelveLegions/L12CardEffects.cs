@@ -403,19 +403,14 @@ public sealed partial class L12GameEngine
             case "吕布":
                 if (PublicTriggerDeclared(item, "mode") == "mode:use")
                 {
-                    var returnedMorale = PublicTriggerDeclared(item, "returnCost")
-                        .Split('|', StringSplitOptions.RemoveEmptyEntries);
                     var lubu = FindOnField(player, item.SourceInstanceId, out _, out _);
-                    if (lubu is null || returnedMorale.Length != 4
-                        || !CanReturnSelectedMoraleById(player, returnedMorale, 4))
+                    if (lubu is null)
                     {
                         AddEvent("effect-cancelled", item.Controller,
-                            "吕布在结算时的来源或已选择士气不再合法；返还士气与转为活跃均不结算", card);
+                            "吕布已离开战场，不能因本次效果转为活跃", card);
                     }
                     else
                     {
-                        _ = ReturnSelectedMoraleById(player, returnedMorale, 4);
-                        AddEvent("effect", item.Controller, "吕布因进攻后效果返还4张已选择士气", lubu);
                         ReadyCardByEffect(item.Controller, lubu, lubu, "吕布因进攻后效果转为活跃", item);
                     }
                 }

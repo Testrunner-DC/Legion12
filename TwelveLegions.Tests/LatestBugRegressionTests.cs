@@ -2426,6 +2426,46 @@ public sealed class LatestBugRegressionTests
         Assert.Equal(-1, player.NextMasterDamageToOpponentBecomesTwoUntilTurn);
     }
 
+    [Theory]
+    [InlineData(1, 0)]
+    [InlineData(2, 0)]
+    [InlineData(3, 2)]
+    [InlineData(4, 2)]
+    [Trait("L12Evidence", "card:S02-0103,S01-01M1")]
+    [Trait("L12Evidence", "damage:nonlethal-replacement-all-or-nothing")]
+    public void PingyangReplacementNeverDowngradesTwoNonLethalDamageToOne(int hp, int expectedDamage)
+    {
+        var game = CreateWithFirstMaster("S01-01M1", 6442 + hp);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        player.NextMasterDamageToOpponentBecomesTwoUntilTurn = game.State.TurnSerial;
+        opponent.Hp = hp;
+        var yangjian = Card("S01-01M1", "master-0");
+        var active = new L12StackItem
+        {
+            StackItemId = $"yangjian-pingyang-nonlethal-{hp}",
+            Controller = 0,
+            SourceInstanceId = yangjian.InstanceId,
+            SourceCardId = yangjian.CardId,
+            SourceName = yangjian.Name,
+            SourceSnapshot = yangjian.Clone(),
+            Trigger = "active",
+            Text = "杨戬的主宰效果",
+        };
+        active.Data["ability"] = "nonLethal";
+        game.State.EffectStack.Add(active);
+
+        var method = typeof(L12GameEngine).GetMethod("ResolveActiveEffect",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        method.Invoke(game, [active]);
+
+        Assert.Equal(hp - expectedDamage, opponent.Hp);
+        Assert.Equal(expectedDamage, opponent.MasterDamageTakenThisTurn);
+        Assert.Equal(-1, player.NextMasterDamageToOpponentBecomesTwoUntilTurn);
+        Assert.Equal(expectedDamage > 0, game.State.Events.Any(entry => entry.Type == "damage"
+            && entry.PlayerIndex == 1));
+    }
+
     [Fact]
     public void BattlefieldSnapshotPublishesActiveKeywordsAndMasterLegionTroops()
     {

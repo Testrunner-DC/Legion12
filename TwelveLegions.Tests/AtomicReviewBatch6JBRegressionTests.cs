@@ -317,7 +317,7 @@ public sealed class AtomicReviewBatch6JBRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "trigger:batch6jb-lubu-effect-chain-negation")]
-    public void LuBuDeclaresFourMoraleButNegationStopsBothReturnAndReady()
+    public void LuBuPaysFourMoraleBeforeResponseAndNegationOnlyStopsReady()
     {
         var game = Create(9999);
         var player = game.State.Players[0];
@@ -338,22 +338,30 @@ public sealed class AtomicReviewBatch6JBRegressionTests
         Resolve(game, "mode:use");
         Resolve(game, choices: returned);
 
-        Assert.Equal(6, player.Morale.Count);
-        Assert.All(returned, id => Assert.Contains(player.Morale, card => card.InstanceId == id));
+        Assert.Equal(2, player.Morale.Count);
+        Assert.DoesNotContain(player.Morale, card => returned.Contains(card.InstanceId));
         var response = OnlyPrompt(game);
         Assert.Equal("response", response.Kind);
-        Assert.False(response.Data.ContainsKey("responsePaidCostSummary"));
-        Assert.DoesNotContain("Cost（已支付）", response.Text, StringComparison.Ordinal);
+        Assert.Equal("返还4士气", response.Data["responsePaidCostSummary"]);
+        Assert.Contains("Cost（已支付）：返还4士气", response.Text, StringComparison.Ordinal);
+        Assert.Contains("效果：将此军团转为活跃。", response.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("效果：此军团进攻后，可返还4士气", response.Text, StringComparison.Ordinal);
+        Assert.Contains(game.State.Events, entry => entry.Type == "cost"
+            && entry.Text == "吕布返还4士气");
+        Assert.DoesNotContain(game.State.Events, entry => entry.Text.Contains("入栈前", StringComparison.Ordinal)
+            || entry.Text.Contains("已声明", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Text.Contains("费用已改为", StringComparison.Ordinal)
+            || entry.Text.Contains("规则修正", StringComparison.Ordinal));
         game.State.EffectStack[^1].Negated = true;
         PassResponses(game);
 
         Assert.True(lubu.Tapped);
-        Assert.Equal(6, player.Morale.Count);
+        Assert.Equal(2, player.Morale.Count);
     }
 
     [Fact]
     [Trait("L12Evidence", "trigger:batch6jb-lubu-effect-chain-resolves")]
-    public void LuBuReturnsFourDeclaredMoraleAndReadiesOnlyDuringResolution()
+    public void LuBuPaidMoraleStaysReturnedAndOnlyReadyResolves()
     {
         var game = Create(10001);
         var player = game.State.Players[0];
@@ -369,18 +377,18 @@ public sealed class AtomicReviewBatch6JBRegressionTests
         Resolve(game, "mode:use");
         Resolve(game, choices: returned);
 
-        Assert.Equal(6, player.Morale.Count);
+        Assert.Equal(2, player.Morale.Count);
+        Assert.DoesNotContain(player.Morale, card => returned.Contains(card.InstanceId));
         Assert.True(lubu.Tapped);
         PassResponses(game);
 
         Assert.Equal(2, player.Morale.Count);
-        Assert.DoesNotContain(player.Morale, card => returned.Contains(card.InstanceId));
         Assert.False(lubu.Tapped);
     }
 
     [Fact]
     [Trait("L12Evidence", "trigger:batch6jb-lubu-effect-chain-revalidates")]
-    public void LuBuResolutionFailsAtomicallyWhenOneDeclaredMoraleLeavesDuringResponse()
+    public void LuBuPaidMoraleIsNotRefundedWhenSourceLeavesDuringResponse()
     {
         var game = Create(10002);
         var player = game.State.Players[0];
@@ -395,14 +403,14 @@ public sealed class AtomicReviewBatch6JBRegressionTests
             new Dictionary<string, string>());
         Resolve(game, "mode:use");
         Resolve(game, choices: returned);
-        player.Morale.RemoveAll(card => card.InstanceId == returned[0]);
+        player.Field[0][0] = null;
         PassResponses(game);
 
-        Assert.Equal(5, player.Morale.Count);
-        Assert.All(returned.Skip(1), id => Assert.Contains(player.Morale, card => card.InstanceId == id));
+        Assert.Equal(2, player.Morale.Count);
+        Assert.DoesNotContain(player.Morale, card => returned.Contains(card.InstanceId));
         Assert.True(lubu.Tapped);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
-            && entry.Text.Contains("返还士气与转为活跃均不结算", StringComparison.Ordinal));
+            && entry.Text == "吕布已离开战场，不能因本次效果转为活跃");
     }
 
     [Fact]
