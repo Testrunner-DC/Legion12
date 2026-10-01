@@ -52,6 +52,116 @@ public sealed class SeasonAutomaticActivationTests
     }
 
     [Fact]
+    public async Task CoordinatorWakesAtDeadlineAndFinalizesAsSoonAsStartedRankedMatchEnds()
+    {
+        var root = TempRoot();
+        var previousHost = Environment.GetEnvironmentVariable("L12_LISTEN_HOST");
+        L12WebSocketServer? server = null;
+        MatchRecorder? recorder = null;
+        try
+        {
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", "127.0.0.1");
+            var endsAt = DateTimeOffset.UtcNow.AddSeconds(2);
+            var (store, admin, catalog) = PrepareEndingStore(root, endsAt, removeDraft: true);
+            var first = store.Register("排空唤醒甲", "Password123!").Account!;
+            var second = store.Register("排空唤醒乙", "Password123!").Account!;
+            store.SelectRankedFaction(first.Id, "order");
+            store.SelectRankedFaction(second.Id, "chaos");
+
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"),
+                () => DateTimeOffset.UtcNow);
+            await recorder.InitializeAsync();
+            var rooms = new L12RoomManager(catalog, recorder, store, () => DateTimeOffset.UtcNow);
+            var firstSession = Guid.NewGuid();
+            var secondSession = Guid.NewGuid();
+            await rooms.ConnectAsync(firstSession, first.Id, first.Username);
+            await rooms.ConnectAsync(secondSession, second.Id, second.Username);
+            await rooms.JoinMatchmakingAsync(firstSession, "ranked", null);
+            var started = await rooms.JoinMatchmakingAsync(secondSession, "ranked", null);
+            Assert.Contains(started, message => MessageType(message.Payload) == "gameState");
+            Assert.Equal(1, await recorder.CountActiveRankedRuntimesAsync());
+
+            server = new L12WebSocketServer(rooms, recorder, store, catalog,
+                seasonActivationUtcNow: () => DateTimeOffset.UtcNow);
+            await server.StartAsync(0);
+            await WaitUntilAsync(() => store.SeasonCatalog(admin).Current.FinalizationStatus == "draining",
+                TimeSpan.FromSeconds(8), "协调器未在 EndsAt 到点后进入 draining");
+            Assert.Null(store.SeasonCatalog(admin).Current.FinalizedAt);
+            Assert.Contains("赛季正在切换", store.RankedEntryBlock(first.Id,
+                DateTimeOffset.UtcNow));
+
+            using var surrender = JsonDocument.Parse("{\"type\":\"surrender\"}");
+            var endedAt = DateTimeOffset.UtcNow;
+            var finished = await rooms.HandleActionAsync(firstSession, surrender.RootElement);
+            Assert.Contains(finished, message => MessageType(message.Payload) == "gameState");
+            await WaitUntilAsync(() => store.SeasonCatalog(admin).Current.FinalizedAt is not null,
+                TimeSpan.FromSeconds(8), "存量排位终局后协调器未自动结算");
+
+            var finalized = store.SeasonCatalog(admin).Current;
+            Assert.Equal("finalized", finalized.FinalizationStatus);
+            Assert.True(finalized.FinalizedAt >= endsAt);
+            Assert.True(finalized.FinalizedAt <= endedAt.AddSeconds(3));
+            Assert.Single(store.AdminAudit(category: "operations")
+                .Where(item => item.Action == "season-finalize"));
+        }
+        finally
+        {
+            if (server is not null)
+            {
+                await server.StopAsync();
+                await server.DisposeAsync();
+            }
+            if (recorder is not null) await recorder.DisposeAsync();
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previousHost);
+            Cleanup(root);
+        }
+    }
+
+    [Fact]
+    public async Task CoordinatorRestartAfterDeadlineFinalizesWithoutDraftOrExternalSignal()
+    {
+        var root = TempRoot();
+        var previousHost = Environment.GetEnvironmentVariable("L12_LISTEN_HOST");
+        L12WebSocketServer? server = null;
+        MatchRecorder? recorder = null;
+        try
+        {
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", "127.0.0.1");
+            var endsAt = DateTimeOffset.UtcNow.AddMinutes(-10);
+            var (initial, admin, catalog) = PrepareEndingStore(root, endsAt, removeDraft: true);
+            Assert.Equal("draining", initial.SeasonCatalog(admin).Current.FinalizationStatus);
+
+            var restarted = new L12PlatformStore(Path.Combine(root, "platform.json"),
+                catalog.PresetDecks, officialCards: catalog.Cards);
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"),
+                () => DateTimeOffset.UtcNow);
+            await recorder.InitializeAsync();
+            var rooms = new L12RoomManager(catalog, recorder, restarted,
+                () => DateTimeOffset.UtcNow);
+            server = new L12WebSocketServer(rooms, recorder, restarted, catalog,
+                seasonActivationUtcNow: () => DateTimeOffset.UtcNow);
+            await server.StartAsync(0);
+
+            await WaitUntilAsync(() => restarted.SeasonCatalog(admin).Current.FinalizedAt is not null,
+                TimeSpan.FromSeconds(5), "跨过 EndsAt 重启后未自动补结算");
+            Assert.Equal("finalized", restarted.SeasonCatalog(admin).Current.FinalizationStatus);
+            Assert.Single(restarted.AdminAudit(category: "operations")
+                .Where(item => item.Action == "season-finalize"));
+        }
+        finally
+        {
+            if (server is not null)
+            {
+                await server.StopAsync();
+                await server.DisposeAsync();
+            }
+            if (recorder is not null) await recorder.DisposeAsync();
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previousHost);
+            Cleanup(root);
+        }
+    }
+
+    [Fact]
     public void ShanghaiAndUtcBoundaryAreTheSameFinalizationInstantAndClaimsAreSingleOwner()
     {
         var root = TempRoot();
@@ -783,6 +893,15 @@ public sealed class SeasonAutomaticActivationTests
     {
         var property = payload.GetType().GetProperty("type");
         return property?.GetValue(payload)?.ToString();
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> predicate, TimeSpan timeout,
+        string failureMessage)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (!predicate() && DateTimeOffset.UtcNow < deadline)
+            await Task.Delay(25);
+        Assert.True(predicate(), failureMessage);
     }
 
     private static L12AdminAuditContext Context(string id, long? expected = null)
