@@ -457,7 +457,7 @@ export function normalizeRankedConfig(config: Omit<RankedConfig, 'timeControl'|'
 }
 export interface RankedProfile { accountId: string; username: string; seasonId: string; faction?: string; sevenValue: number; displayValue: string; placementPlayed: number; placementWins: number; placed: boolean; wins: number; losses: number; winStreak: number; lossStreak: number; tier: string; tierIndex: number; factionRank: number; title?: string; titles: string[]; rankLabel: string; placementTitle?: string; selectedMasterTitle?: string; masterTitles: string[] }
 export interface RankedProfileHistory {
-  seasonId: string; seasonName: string; faction: string; sevenValue: number; displayValue: string
+  seasonId: string; seasonName: string; seasonMonth?: string | null; faction: string; sevenValue: number; displayValue: string
   placementPlayed: number; placementWins: number; wins: number; losses: number; winStreak: number
   archivedAt: string; tier: string; winRate?: number | null; factionTitle?: string
   masterTitles: string[]; titles: string[]; factionRank?: number | null; overallRank?: number | null
@@ -470,10 +470,10 @@ export interface SeasonSummaryNotification {
   factionTitle?: string; masterTitles: string[]; titles: string[]; availableAt: string
 }
 export interface RankedSeasonHonorWinner { username: string; faction: string }
-export interface RankedSeasonHonorHistory { seasonName: string; title: string; winners: RankedSeasonHonorWinner[] }
+export interface RankedSeasonHonorHistory { seasonName: string; title: string; winners: RankedSeasonHonorWinner[]; masterId?: string | null }
 export interface RankedSeasonFactionFinalValue { faction: string; value: number; displayValue: string }
 export interface RankedSeasonFactionTotalsHistory { seasonName: string; factions: RankedSeasonFactionFinalValue[] }
-export interface RankedSeasonHistory { honors: RankedSeasonHonorHistory[]; factionTotals: RankedSeasonFactionTotalsHistory[] }
+export interface RankedSeasonHistory { honors: RankedSeasonHonorHistory[]; factionTotals: RankedSeasonFactionTotalsHistory[]; latestSeasonName?: string | null }
 export interface RankedOverview { profile: RankedProfile; factionTotals: Record<string, number>; config: RankedConfig; history: RankedProfileHistory[] }
 export interface RankedSettlementComponent { kind: string; label: string; value: number }
 export interface RankedSettlement { matchId: string; accountId: string; faction: string; won: boolean; placement: boolean; placementPlayed: number; placementRequired: number; before: number; after: number; delta: number; tierBefore: string; tierAfter: string; components: RankedSettlementComponent[]; settledAt: string; rewardStatus?: 'applied' | 'held' | 'released' | 'voided'; effectiveDelta?: number; pendingDelta?: number }

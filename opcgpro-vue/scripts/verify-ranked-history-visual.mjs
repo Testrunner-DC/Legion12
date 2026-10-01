@@ -27,7 +27,13 @@ rankedApi.leaderboard = async () => ({
   },
 })
 rankedApi.history = async () => ({
+  latestSeasonName: '第1赛季 · 风暴',
   factionTotals: [
+    { seasonName: '第1赛季 · 风暴', factions: [
+      { faction: '秩序', value: 12, displayValue: '12' },
+      { faction: '混沌', value: 10, displayValue: '10' },
+      { faction: '命运', value: 8, displayValue: '8' },
+    ] },
     { seasonName: '第0赛季 · 始源', factions: [
       { faction: '秩序', value: 2407333, displayValue: '2,407,333' },
       { faction: '混沌', value: 2279096, displayValue: '2,279,096' },
@@ -35,9 +41,12 @@ rankedApi.history = async () => ({
     ] },
   ],
   honors: [
-    { seasonName: '第1赛季 · 风暴', title: '最强天照大神', winners: [{ username: '公开账号甲', faction: '秩序' }] },
-    { seasonName: '第0赛季 · 始源', title: '最强天照大神', winners: [{ username: '公开账号乙', faction: '混沌' }] },
-    { seasonName: '第0赛季 · 始源', title: '命运冠首', winners: [{ username: '公开账号丙', faction: '命运' }] },
+    { seasonName: '第1赛季 · 风暴', title: '最强后号', masterId: 'S01-02M1', winners: [{ username: '公开账号甲', faction: '秩序' }] },
+    { seasonName: '第0赛季 · 始源', title: '最强前号', masterId: 'S01-01M1', winners: [{ username: '公开账号乙', faction: '混沌' }] },
+    ...['守望天士', '混沌领主', '代行主君', '织命者', '始乱者', '统御者'].map((title, index) => ({
+      seasonName: index === 5 ? '第1赛季 · 风暴' : '第0赛季 · 始源', title,
+      winners: [{ username: '派系账号' + index, faction: ['秩序', '混沌', '命运'][index % 3] }],
+    })),
   ],
 })
 
@@ -86,21 +95,33 @@ try {
         text,
         documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
         panelOverflow: panel ? panel.scrollWidth > panel.clientWidth + 1 : true,
-        totals: document.querySelectorAll('.faction-final-totals article span').length,
+        totals: document.querySelectorAll('.faction-final-totals details[open] .faction-total-values span').length,
         honorGroups: document.querySelectorAll('.honor-group').length,
+        honorOrder: [...document.querySelectorAll('.honor-group header .ranked-identity-badge')].map(element => element.querySelector('span')?.textContent?.trim()),
+        closedOldSeasons: [...document.querySelectorAll('.history-season-details')].filter(element => element.querySelector('summary')?.textContent?.includes('第0赛季')).every(element => !element.open),
+        masterProfiles: [...document.querySelectorAll('.honor-master-profile')].map(element => element.getAttribute('src')),
+        factionBadgeClasses: [...document.querySelectorAll('.honor-group header .ranked-identity-badge')].slice(0, 6).map(element => element.className),
         factionFilterVisible: !!document.querySelector('.faction-filter'),
       }
     })
     assert.equal(report.documentOverflow, false, `${viewport.width}px 页面出现横向溢出`)
     assert.equal(report.panelOverflow, false, `${viewport.width}px 历史荣誉区域出现横向溢出`)
     assert.equal(report.totals, 3, `${viewport.width}px 三派结算数值不完整`)
-    assert.equal(report.honorGroups, 2, `${viewport.width}px 未按称号独立分组`)
+    assert.equal(report.honorGroups, 8, `${viewport.width}px 未按称号独立分组`)
+    assert.deepEqual(report.honorOrder, ['统御者', '始乱者', '织命者', '代行主君', '混沌领主', '守望天士', '最强前号', '最强后号'], `${viewport.width}px 称号或主宰编号排序错误`)
+    assert.equal(report.closedOldSeasons, true, `${viewport.width}px 旧赛季未默认折叠`)
+    assert.equal(report.masterProfiles.length, 2, `${viewport.width}px 最强主宰缺少 Profile`)
+    assert(report.masterProfiles.every(src => src?.includes('/special/master/')), `${viewport.width}px 最强主宰未用 Profile 资源`)
+    assert(report.factionBadgeClasses.every(value => !value.includes('faction-neutral')), `${viewport.width}px 派系称号未沿用派系徽章`)
     assert.equal(report.factionFilterVisible, false, `${viewport.width}px 历史荣誉仍显示派系筛选`)
-    for (const expected of ['历届派系结算数值', '秩序', '2,407,333', '混沌', '2,279,096', '命运', '2,946,802', '公开账号甲', '公开账号乙', '公开账号丙'])
+    for (const expected of ['历届派系结算数值', '秩序', '混沌', '命运', '公开账号甲'])
       assert(report.text.includes(expected), `${viewport.width}px 缺少玩家可见内容：${expected}`)
     for (const forbidden of ['S00', 'S01', 'SeasonId', 'Provenance', 'EvidenceFingerprint', 'AwardedAt', '赛季结束时冻结', '历史重建值'])
       assert(!report.text.includes(forbidden), `${viewport.width}px 外显内部字段或实现文案：${forbidden}`)
     await page.screenshot({ path: path.join(output, `ranked-history-${viewport.width}.png`), fullPage: true })
+    await page.locator('.faction-total-grid details').nth(1).locator('summary').click()
+    assert.equal(await page.locator('.faction-total-grid details').nth(1).getAttribute('open'), '', '旧赛季不能手动展开')
+    assert(await page.getByText('2,407,333').isVisible(), '展开旧赛季后未显示结算值')
     if (viewport.width <= 390) {
       const group = page.locator('.honor-group').first()
       const winner = group.locator('.honor-winners > span').first()

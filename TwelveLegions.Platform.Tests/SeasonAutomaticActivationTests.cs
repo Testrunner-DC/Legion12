@@ -394,6 +394,14 @@ public sealed class SeasonAutomaticActivationTests
             Assert.NotNull(summary.FactionTitle);
             Assert.Contains(summary.FactionTitle!, summary.Titles);
             Assert.All(summary.MasterTitles, title => Assert.Contains(title, summary.Titles));
+            var finalizedHistory = Assert.Single(store.RankedOverview(first.Id).History);
+            Assert.Equal("2026年10月", finalizedHistory.SeasonMonth);
+            var publicHistory = store.RankedSeasonHistory();
+            Assert.Equal(finalizedHistory.SeasonName, publicHistory.LatestSeasonName);
+            foreach (var masterTitle in summary.MasterTitles)
+                Assert.Contains(publicHistory.Honors, honor => honor.Title == masterTitle
+                    && honor.MasterId == config.MasterTitles.Single(configured =>
+                        configured.Title == masterTitle).MasterId);
 
             var seasonCatalog = store.SeasonCatalog(admin, readyAt);
             var draft = store.UpdateSeasonDraft(admin, seasonCatalog.Next!.DefinitionId,

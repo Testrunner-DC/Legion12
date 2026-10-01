@@ -41,7 +41,7 @@ platform.playerApi.statistics=async(range='season')=>{
 platform.rankedApi.overview=async()=>({
  profile:{accountId:'qa-admin',username:'移动端验收管理员',seasonId:'S2026-2',faction:'秩序',sevenValue:2380,displayValue:'七曜值 2380',placementPlayed:10,placementWins:7,placed:true,wins:52,losses:33,winStreak:3,lossStreak:0,tier:'璀璨群星',tierIndex:6,factionRank:3,titles:['秩序先锋','最强梅杰德'],rankLabel:'璀璨群星 · 秩序第 3',selectedMasterTitle:'最强梅杰德',masterTitles:['最强梅杰德','最强阿斯加德']},
  factionTotals:{秩序:36},config:{placementMatches:10,placementMaximum:10,broadcastEnabled:true,factions:[],masterTitles:[],timeControl:{totalTimeSeconds:1500,operationTimeSeconds:240,reconnectGraceSeconds:240,disasterDecisionSeconds:60,mulliganDecisionSeconds:60},broadcast:{displaySeconds:16,lobbyDelaySeconds:3,intervalSeconds:15,winStreakThreshold:5,streakEndedThreshold:5,minimumTierIndex:0,winStreakEnabled:true,streakEndedEnabled:true,highestTierEnabled:true,factionTitleEnabled:true,masterTitleEnabled:true}},history:[
-  {seasonId:'S2026-1',seasonName:'群星归位赛季',faction:'秩序',sevenValue:123456,displayValue:'七曜值 123,456',placementPlayed:10,placementWins:8,wins:46,losses:14,winStreak:5,archivedAt:'2026-09-20T08:00:00Z',tier:'冠冕',winRate:76.7,factionTitle:'秩序冠首',masterTitles:['最强梅杰德'],titles:['秩序冠首','最强梅杰德'],factionRank:1,overallRank:2,placed:true,placementRequired:10,rankLabel:'冠冕'},
+  {seasonId:'S2026-1',seasonName:'群星归位赛季',seasonMonth:'2026年9月',faction:'秩序',sevenValue:123456,displayValue:'七曜值 123,456',placementPlayed:10,placementWins:8,wins:46,losses:14,winStreak:5,archivedAt:'2026-10-01T08:00:00Z',tier:'冠冕',winRate:76.7,factionTitle:'秩序冠首',masterTitles:['最强梅杰德'],titles:['秩序冠首','最强梅杰德'],factionRank:1,overallRank:2,placed:true,placementRequired:10,rankLabel:'冠冕'},
   {seasonId:'S2025-4',seasonName:'旧版历史赛季',faction:'混沌',sevenValue:8200,displayValue:'七曜值 8,200',placementPlayed:5,placementWins:3,wins:12,losses:9,winStreak:1,archivedAt:'2025-12-20T08:00:00Z',tier:'进阶',winRate:57.1,factionTitle:null,masterTitles:[],titles:[],factionRank:null,overallRank:null,placed:null,placementRequired:null,rankLabel:null}
  ]
 })
@@ -187,6 +187,8 @@ try {
       await page.getByRole('button', { name: '总览', exact: true }).click()
       await page.getByRole('heading', { name: '赛季历史' }).waitFor()
       assert.equal(await overflow(page), false, `season history overflows at ${suffix(viewport)}`)
+      assert.equal(await page.locator('.season-history-list>article').first().locator(':scope > span').count(), 8, `season history is not eight columns at ${suffix(viewport)}`)
+      assert.equal(await page.getByText('2026年9月', { exact: true }).isVisible(), true, `season history shows archive month instead of season month at ${suffix(viewport)}`)
       await page.screenshot({ path: path.join(output, `season-history-${suffix(viewport)}.png`), fullPage: true })
 
       await page.goto(`http://127.0.0.1:${port}/__profile_admin__?mode=summary`)

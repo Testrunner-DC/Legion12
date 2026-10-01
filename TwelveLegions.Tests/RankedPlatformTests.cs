@@ -263,9 +263,10 @@ public sealed class RankedPlatformTests
 
         var strongest = Assert.Single(store.RankedSeasonHonorHistory(), row => row.Title == "最强天照");
         Assert.Equal("历史赛季", strongest.SeasonName);
+        Assert.Equal("S01-04M1", strongest.MasterId);
         Assert.Equal(champion.Username, Assert.Single(strongest.Winners).Username);
         Assert.Equal("秩序", Assert.Single(strongest.Winners).Faction);
-        Assert.Equal(new[] { "SeasonName", "Title", "Winners" }, strongest.GetType()
+        Assert.Equal(new[] { "MasterId", "SeasonName", "Title", "Winners" }, strongest.GetType()
             .GetProperties().Select(property => property.Name).OrderBy(name => name).ToArray());
         Assert.Equal(new[] { "Faction", "Username" }, Assert.Single(strongest.Winners).GetType()
             .GetProperties().Select(property => property.Name).OrderBy(name => name).ToArray());

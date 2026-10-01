@@ -102,14 +102,30 @@ const matrixCells = computed<MasterMatchupMatrixCell[]>(() => analytics.value.ma
 const visibleHonors = computed(() => query.value
   ? history.value.honors.filter(row => `${row.seasonName} ${row.title} ${row.winners.map(winner => `${winner.username} ${winner.faction}`).join(' ')}`.toLocaleLowerCase().includes(query.value))
   : history.value.honors)
+const factionHonorOrder = ['统御者', '始乱者', '织命者', '代行主君', '混沌领主', '守望天士']
+const factionForHonor = (title: string) => ({ 统御者: 'order', 始乱者: 'chaos', 织命者: 'fate', 代行主君: 'order', 混沌领主: 'chaos', 守望天士: 'fate' } as Record<string, string>)[title]
+const cardNumberOrder = new Intl.Collator('zh-CN', { numeric: true })
 const honorGroups = computed(() => {
   const groups = new Map<string, RankedSeasonHonorHistory[]>()
   for (const row of visibleHonors.value) groups.set(row.title, [...(groups.get(row.title) ?? []), row])
-  return [...groups].map(([title, seasons]) => ({ title, seasons }))
+  return [...groups].map(([title, seasons]) => ({
+    title, seasons, masterId: seasons.find(row => row.masterId)?.masterId,
+    faction: factionForHonor(title) || seasons[0]?.winners[0]?.faction,
+  })).sort((left, right) => {
+    const leftOrder = factionHonorOrder.indexOf(left.title)
+    const rightOrder = factionHonorOrder.indexOf(right.title)
+    if (leftOrder >= 0 || rightOrder >= 0) return (leftOrder < 0 ? 99 : leftOrder) - (rightOrder < 0 ? 99 : rightOrder)
+    if (left.masterId || right.masterId) return left.masterId && right.masterId
+      ? cardNumberOrder.compare(left.masterId, right.masterId) : left.masterId ? -1 : 1
+    return cardNumberOrder.compare(left.title, right.title)
+  })
 })
 const visibleFactionTotals = computed(() => query.value
   ? history.value.factionTotals.filter(row => `${row.seasonName} ${row.factions.map(factionRow => `${factionRow.faction} ${factionRow.displayValue}`).join(' ')}`.toLocaleLowerCase().includes(query.value))
   : history.value.factionTotals)
+const latestHistorySeason = computed(() => history.value.latestSeasonName
+  || history.value.factionTotals[0]?.seasonName || history.value.honors[0]?.seasonName)
+const expandedHistorySeason = (seasonName: string) => Boolean(query.value) || seasonName === latestHistorySeason.value
 const updatedAt = computed(() => analytics.value.summary.updatedAt
   ? new Date(analytics.value.summary.updatedAt).toLocaleString() : '暂无数据')
 
@@ -193,19 +209,19 @@ onBeforeUnmount(() => {
       <section v-if="visibleFactionTotals.length" class="faction-final-totals" aria-label="历届派系结算数值">
         <header><div><small>FACTION FINALS</small><h2>历届派系结算数值</h2></div></header>
         <div class="faction-total-grid">
-          <article v-for="(season, seasonIndex) in visibleFactionTotals" :key="`${season.seasonName}-${seasonIndex}`">
-            <h3>{{ season.seasonName }}</h3>
-            <div><span v-for="factionRow in season.factions" :key="factionRow.faction"><small>{{ factionRow.faction }}</small><b>{{ factionRow.displayValue }}</b></span></div>
-          </article>
+          <details v-for="(season, seasonIndex) in visibleFactionTotals" :key="`${season.seasonName}-${seasonIndex}`" :open="expandedHistorySeason(season.seasonName)" class="history-season-details">
+            <summary>{{ season.seasonName }}</summary>
+            <div class="faction-total-values"><span v-for="factionRow in season.factions" :key="factionRow.faction"><small>{{ factionRow.faction }}</small><b>{{ factionRow.displayValue }}</b></span></div>
+          </details>
         </div>
       </section>
       <section v-if="honorGroups.length" class="honor-groups" aria-label="历史称号获得者">
         <article v-for="group in honorGroups" :key="group.title" class="honor-group">
-          <header><RankedIdentityBadge :variant="titleVariant(group.title)" :label="group.title"/><span>历届获得者</span></header>
-          <div v-for="(season, seasonIndex) in group.seasons" :key="`${group.title}-${season.seasonName}-${seasonIndex}`" class="honor-season">
-            <h3>{{ season.seasonName }}</h3>
+          <header><img v-if="group.masterId" class="honor-master-profile" :src="masterProfileUrl(group.masterId)" :alt="`${group.title}主宰头像`"/><RankedIdentityBadge :variant="titleVariant(group.title)" :faction="group.faction" :label="group.title"/><span>历届获得者</span></header>
+          <details v-for="(season, seasonIndex) in group.seasons" :key="`${group.title}-${season.seasonName}-${seasonIndex}`" class="honor-season history-season-details" :open="expandedHistorySeason(season.seasonName)">
+            <summary>{{ season.seasonName }}</summary>
             <div class="honor-winners"><span v-for="winner in season.winners" :key="`${winner.username}-${winner.faction}`"><b>{{ winner.username }}</b><em>{{ winner.faction }}</em></span></div>
-          </div>
+          </details>
         </article>
       </section>
       <div v-if="!visibleHonors.length && !visibleFactionTotals.length" class="rank-panel empty">{{ query ? '没有符合搜索条件的历史荣誉或派系结算数值' : '尚无已结算的历史赛季荣誉' }}</div>
@@ -254,5 +270,8 @@ onBeforeUnmount(() => {
 }
 @media(max-width:700px){.faction-total-grid{grid-template-columns:1fr}.faction-final-totals>header,.honor-group>header{align-items:flex-start;padding:11px 12px}.faction-total-grid article{padding:12px}.faction-total-grid article>div{gap:5px}.faction-total-grid article span{padding:8px}.faction-total-grid article b{font-size:14px}.honor-season{grid-template-columns:1fr;gap:8px;padding:11px 12px}.honor-winners{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.honor-winners>span{justify-content:space-between}}
 @media(max-width:420px){.faction-total-grid article>div,.honor-winners{grid-template-columns:1fr}.faction-final-totals>header>span,.honor-group>header>span{font-size:11px}}
+.faction-total-grid .history-season-details{min-width:0;padding:0;background:#0a1118}.history-season-details>summary{cursor:pointer;list-style:none;font-size:15px;font-weight:900}.history-season-details>summary::-webkit-details-marker{display:none}.history-season-details>summary::after{content:'▾';float:right;color:#8e9ba0}.history-season-details:not([open])>summary::after{content:'▸'}.faction-total-grid .history-season-details>summary{padding:14px 16px}.faction-total-values{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:0 16px 14px}.faction-total-values span{display:grid;min-width:0;gap:4px;padding:10px;border:1px solid #2b3841;background:#0d1720}.faction-total-values small{color:#7d8b92}.faction-total-values b{overflow-wrap:anywhere;color:#efd375;font-size:17px}.honor-season.history-season-details{display:block}.honor-season>summary{padding:0}.honor-season .honor-winners{margin-top:10px}.honor-master-profile{width:42px;height:42px;flex:0 0 42px;border:1px solid #66747b;object-fit:cover}.honor-group>header>:deep(.ranked-identity-badge){min-width:0}.honor-group>header>span{white-space:nowrap}
+@media(max-width:700px){.faction-total-values{gap:5px;padding:0 12px 12px}.faction-total-values span{padding:8px}.faction-total-values b{font-size:14px}.honor-master-profile{width:34px;height:34px;flex-basis:34px}}
+@media(max-width:420px){.faction-total-values{grid-template-columns:repeat(3,minmax(0,1fr))}}
 </style>
 

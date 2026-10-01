@@ -51,7 +51,7 @@ public sealed record L12RankedProfileHistoryView(string SeasonId, string Faction
     DateTimeOffset ArchivedAt, string SeasonName, string Tier, string DisplayValue,
     double? WinRate, string? FactionTitle, IReadOnlyList<string> MasterTitles,
     IReadOnlyList<string> Titles, int? FactionRank, int? OverallRank, bool? Placed,
-    int? PlacementRequired, string? RankLabel);
+    int? PlacementRequired, string? RankLabel, string? SeasonMonth = null);
 public sealed record L12SeasonSummaryNotificationView(string Id, string SeasonId, string SeasonName,
     string Faction, bool Placed, string RankLabel, int? FactionRank, int? OverallRank,
     int SevenValue, string DisplayValue, int Wins, int Losses, double? WinRate,
@@ -62,14 +62,15 @@ public sealed record L12RankedSeasonHonorView(string SeasonId, string SeasonName
     IReadOnlyList<string> Titles, DateTimeOffset AwardedAt);
 public sealed record L12RankedSeasonHonorWinnerView(string Username, string Faction);
 public sealed record L12RankedSeasonHonorHistoryView(string SeasonName, string Title,
-    IReadOnlyList<L12RankedSeasonHonorWinnerView> Winners);
+    IReadOnlyList<L12RankedSeasonHonorWinnerView> Winners, string? MasterId = null);
 public sealed record L12RankedSeasonFactionFinalValueView(string Faction, int Value,
     string DisplayValue);
 public sealed record L12RankedSeasonFactionTotalsHistoryView(string SeasonName,
     IReadOnlyList<L12RankedSeasonFactionFinalValueView> Factions);
 public sealed record L12RankedSeasonHistoryView(
     IReadOnlyList<L12RankedSeasonHonorHistoryView> Honors,
-    IReadOnlyList<L12RankedSeasonFactionTotalsHistoryView> FactionTotals);
+    IReadOnlyList<L12RankedSeasonFactionTotalsHistoryView> FactionTotals,
+    string? LatestSeasonName = null);
 public sealed record L12RankedSettlementComponent(string Kind, string Label, int Value);
 public sealed record L12RankedSettlementView(string MatchId, string AccountId, string Faction,
     string Outcome, bool Won, bool Placement, int PlacementPlayed, int PlacementRequired, int Before, int After,
@@ -583,7 +584,7 @@ public sealed partial class L12PlatformStore
                         : Percentage(item.Wins, item.Wins + item.Losses)),
                     item.FactionTitle, item.MasterTitles.ToArray(), item.Titles.ToArray(),
                     item.FactionRank, item.OverallRank, item.Placed, item.PlacementRequired,
-                    item.RankLabel))
+                    item.RankLabel, HistoricalSeasonMonthLabelLocked(item.SeasonId)))
                 .ToArray();
             return new L12RankedOverviewView(ProfileView(profile), FactionTotalsLocked(),
                 ToView(_data.RankedConfig!), history);
@@ -673,7 +674,8 @@ public sealed partial class L12PlatformStore
                             HistoricalHonorUsernameLocked(row), HistoricalHonorFactionNameLocked(row)))
                         .ToArray();
                     return (View: new L12RankedSeasonHonorHistoryView(seasonName,
-                        group.Key.Title, winners), AwardedAt: rows.Max(row => row.ArchivedAt));
+                        group.Key.Title, winners, HistoricalHonorMasterIdLocked(group.Key.SeasonId,
+                            group.Key.Title)), AwardedAt: rows.Max(row => row.ArchivedAt));
                 })
                 .OrderBy(row => row.View.Title, StringComparer.Ordinal)
                 .ThenByDescending(row => row.AwardedAt)
@@ -710,7 +712,17 @@ public sealed partial class L12PlatformStore
                             total.FactionNameSnapshot, total.Value, total.Value.ToString("N0")))
                         .ToArray()))
                 .ToArray();
-            return new(RankedSeasonHonorHistory(limit), totals);
+            var honors = RankedSeasonHonorHistory(limit);
+            var latestSeasonName = totals.FirstOrDefault()?.SeasonName;
+            if (latestSeasonName is null)
+            {
+                var latest = _data.RankedProfileHistory.Where(row => row.FinalizedSeasonAwards)
+                    .OrderByDescending(row => row.ArchivedAt).FirstOrDefault();
+                if (latest is not null)
+                    latestSeasonName = HistoricalSeasonDisplayNameLocked(latest.SeasonId,
+                        latest.SeasonName);
+            }
+            return new(honors, totals, latestSeasonName);
         }
     }
 
@@ -735,6 +747,28 @@ public sealed partial class L12PlatformStore
             _ => _data.RankedConfig!.Factions.FirstOrDefault(faction => faction.Id.Equals(row.Faction,
                 StringComparison.OrdinalIgnoreCase))?.Name ?? row.Faction,
         };
+    }
+
+    private string? HistoricalHonorMasterIdLocked(string seasonId, string title)
+    {
+        var archive = _data.SeasonArchives.FirstOrDefault(row => SeasonIdsEqual(row.SeasonId, seasonId));
+        var definition = _data.SeasonDefinitions.FirstOrDefault(row => SeasonIdsEqual(row.SeasonId, seasonId));
+        return archive?.Configuration?.Ranked?.MasterTitles?.FirstOrDefault(row => row.Title.Equals(title,
+                   StringComparison.OrdinalIgnoreCase))?.MasterId
+            ?? definition?.Configuration?.Ranked?.MasterTitles?.FirstOrDefault(row => row.Title.Equals(title,
+                   StringComparison.OrdinalIgnoreCase))?.MasterId
+            ?? _data.RankedConfig?.MasterTitles?.FirstOrDefault(row => row.Title.Equals(title,
+                   StringComparison.OrdinalIgnoreCase))?.MasterId;
+    }
+
+    private string? HistoricalSeasonMonthLabelLocked(string seasonId)
+    {
+        var archive = _data.SeasonArchives.FirstOrDefault(row => SeasonIdsEqual(row.SeasonId, seasonId));
+        var definition = _data.SeasonDefinitions.FirstOrDefault(row => SeasonIdsEqual(row.SeasonId, seasonId));
+        var monthDate = archive?.StartsAt ?? definition?.StartsAt ?? archive?.EndsAt ?? definition?.EndsAt;
+        if (monthDate is null) return null;
+        var local = monthDate.Value.ToOffset(TimeSpan.FromHours(8));
+        return $"{local.Year}年{local.Month}月";
     }
 
     private string HistoricalSeasonDisplayNameLocked(string seasonId, string? frozenName,
