@@ -498,6 +498,7 @@ public sealed partial class L12PlatformStore
         var normalizedSection = NormalizeOperationsSection(section);
         lock (_gate)
         {
+            EnsureOperationsSectionFieldSet(normalizedSection, payload, expectedFieldRevisions);
             var current = RequireOperationsConfig();
             var candidate = PrepareOperationsSectionCandidate(current, normalizedSection, payload,
                 expectedRevision, expectedFieldRevisions, out var changes, out var validatedFields);
@@ -524,6 +525,7 @@ public sealed partial class L12PlatformStore
         var normalizedSection = NormalizeOperationsSection(section);
         lock (_gate)
         {
+            EnsureOperationsSectionFieldSet(normalizedSection, payload, expectedFieldRevisions);
             var current = RequireOperationsConfig();
             var candidate = PrepareOperationsSectionCandidate(current, normalizedSection, payload,
                 expectedRevision, expectedFieldRevisions, out var changes, out _);
@@ -1147,6 +1149,27 @@ public sealed partial class L12PlatformStore
             field => FieldRevision(current, field), StringComparer.OrdinalIgnoreCase);
         return normalized;
     }
+
+    private static void EnsureOperationsSectionFieldSet(string section,
+        L12OperationsSectionPayload payload,
+        IReadOnlyDictionary<string, long>? expectedFieldRevisions)
+    {
+        if ((expectedFieldRevisions?.Count ?? 0) == 0
+            && OperationsSectionPayloadIsPresent(section, payload))
+            throw new L12OperationsConfigException("operations_field_revisions_required",
+                "分区保存必须声明待写字段及其字段版本");
+    }
+
+    private static bool OperationsSectionPayloadIsPresent(string section,
+        L12OperationsSectionPayload payload)
+        => section switch
+        {
+            OperationsRoomSection => payload.DefaultRoomConfig is not null || payload.MatchModes is not null,
+            OperationsFeaturesSection => payload.FeatureFlags is not null,
+            OperationsAnnouncementsSection => payload.Announcements is not null,
+            OperationsMaintenanceSection => payload.Maintenance is not null,
+            _ => false,
+        };
 
     private static L12OperationsConfigPayload ApplyOperationsSectionFields(
         L12OperationsConfigPayload current, string section, L12OperationsSectionPayload payload,

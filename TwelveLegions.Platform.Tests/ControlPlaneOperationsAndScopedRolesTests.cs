@@ -219,6 +219,34 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
     }
 
     [Fact]
+    public void OperationsSectionRejectsNonEmptyPayloadWithoutFieldRevisions()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var room = store.OperationsConfigSection(admin, "room");
+
+            var error = Assert.Throws<L12OperationsConfigException>(() =>
+                store.ApplyOperationsConfigSection(admin, "room", room.Config with
+                    {
+                        DefaultRoomConfig = room.Config.DefaultRoomConfig! with
+                            { Spectating = "friends" },
+                    }, room.Revision, new Dictionary<string, long>(),
+                    "must name fields", Context("ops-section-empty-fields")));
+
+            Assert.Equal("operations_field_revisions_required", error.Code);
+            Assert.Equal(room.OperationsVersion, store.OperationsConfig(admin).Version);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void OperationsSectionAllowsStaleSectionRevisionWhenChangedFieldsAreStillCurrent()
     {
         var root = TempRoot();
@@ -961,6 +989,20 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
                 announcements = (await response.Content.ReadFromJsonAsync<L12OperationsSectionView>())!;
 
             var defaults = room.Config.DefaultRoomConfig! with { Spectating = "friends" };
+            using (var missingFields = Authorized(HttpMethod.Put,
+                       "/api/admin/operations/config/sections/room", admin.Token!,
+                       "section-room-missing-fields",
+                       new OperationsConfigSectionApplyRequest(
+                           room.Config with { DefaultRoomConfig = defaults },
+                           new Dictionary<string, long>(), "reject ambiguous patch",
+                           "section-room-missing-fields-1", room.Revision)))
+            using (var response = await client.SendAsync(missingFields))
+            {
+                Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+                Assert.Equal("operations_field_revisions_required",
+                    JsonNode.Parse(await response.Content.ReadAsStringAsync())!["code"]!.GetValue<string>());
+            }
+
             using (var applyRoom = Authorized(HttpMethod.Put,
                        "/api/admin/operations/config/sections/room", admin.Token!, "section-room-apply",
                        new OperationsConfigSectionApplyRequest(

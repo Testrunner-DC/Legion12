@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -466,7 +467,7 @@ public sealed class SeasonAutomaticActivationTests
     }
 
     [Fact]
-    public void OperationsUpdateRaceExpiresPlanAndRequiresExplicitDisarmBeforeEditing()
+    public void UnrelatedOperationsSectionsDoNotExpireArmedPlanOrClaimedExecution()
     {
         var root = TempRoot();
         try
@@ -480,29 +481,237 @@ public sealed class SeasonAutomaticActivationTests
                         armed.EndsAt, armed.Configuration), armed.Revision, "race edit", Context("race-edit")));
             Assert.Equal("season_activation_armed", editBlocked.Code);
 
-            var operations = store.OperationsConfig(admin);
-            store.ApplyOperationsConfig(admin, operations.Config with
+            var room = store.OperationsConfigSection(admin, "room");
+            store.ApplyOperationsConfigSection(admin, "room", room.Config with
                 {
-                    Announcements =
-                    [new L12AnnouncementConfig("plan-race", "版本变化", true)],
-                }, operations.Version, "force plan precondition race", Context("ops-race"));
+                    DefaultRoomConfig = room.Config.DefaultRoomConfig! with { Spectating = "friends" },
+                }, room.Revision, room.FieldRevisions, "room update while armed", Context("ops-room"));
+            var announcements = store.OperationsConfigSection(admin, "announcements");
+            store.ApplyOperationsConfigSection(admin, "announcements",
+                new L12OperationsSectionPayload(Announcements:
+                    [new L12AnnouncementConfig("plan-safe", "预约保持有效", true)]),
+                announcements.Revision, new Dictionary<string, long>
+                {
+                    ["announcements/items/plan-safe"] = 0,
+                },
+                "announcement update while armed", Context("ops-announcements"));
+            var maintenance = store.OperationsConfigSection(admin, "maintenance");
+            store.ApplyOperationsConfigSection(admin, "maintenance", maintenance.Config with
+                {
+                    Maintenance = maintenance.Config.Maintenance! with { Message = "维护说明更新" },
+                }, maintenance.Revision, maintenance.FieldRevisions,
+                "maintenance update while armed", Context("ops-maintenance"));
 
-            Assert.Null(store.TryClaimDueSeasonActivation("worker", now.AddMinutes(1),
+            var due = now.AddMinutes(1);
+            var claim = store.TryClaimDueSeasonActivation("worker", due, TimeSpan.FromMinutes(1));
+            Assert.NotNull(claim);
+
+            var afterClaim = store.OperationsConfigSection(admin, "announcements");
+            store.ApplyOperationsConfigSection(admin, "announcements",
+                new L12OperationsSectionPayload(Announcements:
+                    [new L12AnnouncementConfig("plan-safe", "执行前仍可更新", true)]),
+                afterClaim.Revision, afterClaim.FieldRevisions,
+                "announcement update after claim", Context("ops-after-claim"));
+            var beforeImmediateMaintenance = store.OperationsConfig(admin);
+            store.BeginImmediateMaintenance(admin, 2, beforeImmediateMaintenance.Version,
+                "immediate maintenance remains independent", Context("immediate-after-claim"));
+
+            var current = store.SeasonCatalog(admin).Current;
+            var activated = store.ActivateClaimedSeason(admin, claim!, "activate after unrelated changes",
+                new L12RankedSeasonCutoverReadiness(current.SeasonId, 0, 0, 0, 0), due.AddSeconds(1),
+                Context("activate-after-unrelated"));
+            Assert.True(activated.Activated);
+            Assert.Equal("S-auto", activated.Current.SeasonId);
+            Assert.True(store.OperationsConfig(admin).ImmediateMaintenance!.Enabled);
+        }
+        finally { Cleanup(root); }
+    }
+
+    [Fact]
+    public void SeasonDefinitionAndAuthoritativeGradientChangesExpireArmedPlans()
+    {
+        var root = TempRoot();
+        try
+        {
+            var now = new DateTimeOffset(2026, 10, 1, 2, 10, 0, TimeSpan.Zero);
+            var definitionRoot = Path.Combine(root, "definition");
+            Directory.CreateDirectory(definitionRoot);
+            var (definitionStore, definitionAdmin, _) = PrepareArmedStore(definitionRoot,
+                now.AddMinutes(1), now);
+            var catalog = definitionStore.SeasonCatalog(definitionAdmin);
+            var operationsVersion = definitionStore.OperationsConfig(definitionAdmin).Version;
+            var changedCurrent = new L12SeasonDefinitionDraft(catalog.Current.SeasonId,
+                $"{catalog.Current.Name}（调整）", catalog.Current.StartsAt, catalog.Current.EndsAt,
+                catalog.Current.Configuration);
+            var preview = definitionStore.PreviewSeasonDefinition(definitionAdmin,
+                catalog.Current.DefinitionId, changedCurrent, catalog.Current.Revision,
+                operationsVersion, Context("current-preview"));
+            definitionStore.ApplySeasonDefinition(definitionAdmin, catalog.Current.DefinitionId,
+                changedCurrent, catalog.Current.Revision, operationsVersion, preview.PreviewToken,
+                "change current authority", Context("current-apply"));
+
+            Assert.Null(definitionStore.TryClaimDueSeasonActivation("definition-worker",
+                now.AddMinutes(1), TimeSpan.FromMinutes(1)));
+            var definitionFailed = definitionStore.SeasonCatalog(definitionAdmin).Next!.ActivationPlan!;
+            Assert.Equal("failed", definitionFailed.Status);
+            Assert.Equal("season_activation_plan_expired", definitionFailed.LastErrorCode);
+
+            var gradientRoot = Path.Combine(root, "gradient");
+            Directory.CreateDirectory(gradientRoot);
+            var (gradientStore, gradientAdmin, _) = PrepareArmedStore(gradientRoot,
+                now.AddMinutes(1), now);
+            var ranked = gradientStore.RankedConfig(gradientAdmin);
+            var changedGradient = ranked with
+            {
+                Factions = ranked.Factions.Select(faction => faction with
+                {
+                    Tiers = faction.Tiers.Select((tier, index) => index == 0
+                        ? tier with { BaseDelta = tier.BaseDelta + 1 }
+                        : tier).ToArray(),
+                }).ToArray(),
+                PendingGradient = null,
+            };
+            gradientStore.UpdateRankedConfig(gradientAdmin, changedGradient,
+                "change authoritative gradient", Context("gradient-change"));
+
+            Assert.Null(gradientStore.TryClaimDueSeasonActivation("gradient-worker",
+                now.AddMinutes(1), TimeSpan.FromMinutes(1)));
+            var gradientFailed = gradientStore.SeasonCatalog(gradientAdmin).Next!.ActivationPlan!;
+            Assert.Equal("failed", gradientFailed.Status);
+            Assert.Equal("season_activation_plan_expired", gradientFailed.LastErrorCode);
+        }
+        finally { Cleanup(root); }
+    }
+
+    [Fact]
+    public void IndependentFinalizationDoesNotInvalidateArmedAuthority()
+    {
+        var root = TempRoot();
+        try
+        {
+            var now = new DateTimeOffset(2026, 10, 1, 2, 20, 0, TimeSpan.Zero);
+            var due = now.AddMinutes(1);
+            var (store, admin, _) = PrepareArmedStore(root, due, now, due);
+            var activationClaim = store.TryClaimDueSeasonActivation("activation-worker", due,
+                TimeSpan.FromMinutes(2));
+            Assert.NotNull(activationClaim);
+            var current = store.SeasonCatalog(admin, due).Current;
+            var readiness = new L12RankedSeasonCutoverReadiness(current.SeasonId, 0, 0, 0, 0);
+            var finalizationClaim = store.TryClaimDueSeasonFinalization("finalization-worker", due,
+                TimeSpan.FromMinutes(1));
+            Assert.NotNull(finalizationClaim);
+            store.FinalizeClaimedRankedSeason(admin, finalizationClaim!, readiness,
+                due.AddSeconds(1), Context("independent-finalization"));
+
+            var activated = store.ActivateClaimedSeason(admin, activationClaim!,
+                "activate after independent finalization", readiness, due.AddSeconds(2),
+                Context("activate-after-finalization"));
+            Assert.True(activated.Activated);
+            Assert.Equal("S-auto", activated.Current.SeasonId);
+        }
+        finally { Cleanup(root); }
+    }
+
+    [Fact]
+    public void RestartMigratesLegacyArmedPlanOnlyFromExactOperationsSnapshot()
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var now = new DateTimeOffset(2026, 10, 1, 2, 30, 0, TimeSpan.Zero);
+            var due = now.AddMinutes(1);
+            var (store, admin, catalog) = PrepareArmedStore(root, due, now);
+            var announcements = store.OperationsConfigSection(admin, "announcements");
+            store.ApplyOperationsConfigSection(admin, "announcements",
+                new L12OperationsSectionPayload(Announcements:
+                    [new L12AnnouncementConfig("legacy-safe", "旧计划迁移", true)]),
+                announcements.Revision, new Dictionary<string, long>
+                {
+                    ["announcements/items/legacy-safe"] = 0,
+                },
+                "advance unrelated operations version", Context("legacy-unrelated"));
+            RewriteActivationPlan(path, plan =>
+            {
+                plan.Remove("AuthorityVersion");
+                plan.Remove("AuthorityToken");
+            });
+
+            var reopened = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var migrated = reopened.SeasonCatalog(admin).Next!.ActivationPlan!;
+            Assert.Equal("armed", migrated.Status);
+            Assert.NotNull(reopened.TryClaimDueSeasonActivation("legacy-worker", due,
                 TimeSpan.FromMinutes(1)));
-            var failed = store.SeasonCatalog(admin).Next!;
-            Assert.Equal("failed", failed.ActivationPlan!.Status);
-            Assert.Equal("season_activation_plan_expired", failed.ActivationPlan.LastErrorCode);
-            Assert.Contains("赛季正在切换", store.RankedEntryBlock("account", now.AddMinutes(1)));
+            var persistedPlan = ActivationPlan(JsonNode.Parse(File.ReadAllText(path))!.AsObject());
+            Assert.Equal(1, persistedPlan["AuthorityVersion"]!.GetValue<int>());
+            Assert.False(string.IsNullOrWhiteSpace(persistedPlan["AuthorityToken"]!.GetValue<string>()));
+        }
+        finally { Cleanup(root); }
+    }
 
-            var disarmed = store.DisarmSeasonActivation(admin, failed.DefinitionId, failed.Revision,
-                failed.ActivationPlan.Generation, failed.ActivationPlan.DisarmGuardToken,
-                "review stale plan", now.AddMinutes(2), Context("disarm"));
-            Assert.Equal("disarmed", disarmed.ActivationPlan!.Status);
-            var updated = store.UpdateSeasonDraft(admin, disarmed.DefinitionId,
-                new L12SeasonDefinitionDraft(disarmed.SeasonId, "允许显式修改", now.AddHours(2),
-                    disarmed.EndsAt, disarmed.Configuration), disarmed.Revision,
-                "edit after disarm", Context("edit-after-disarm"));
-            Assert.Equal("允许显式修改", updated.Name);
+    [Fact]
+    public void LegacyArmedPlanWithoutExactSnapshotFailsClosed()
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var now = new DateTimeOffset(2026, 10, 1, 2, 40, 0, TimeSpan.Zero);
+            var due = now.AddMinutes(1);
+            var (store, admin, catalog) = PrepareArmedStore(root, due, now);
+            var armedVersion = store.SeasonCatalog(admin).Next!.ActivationPlan!.ArmedOperationsVersion;
+            var room = store.OperationsConfigSection(admin, "room");
+            store.ApplyOperationsConfigSection(admin, "room", room.Config with
+                {
+                    DefaultRoomConfig = room.Config.DefaultRoomConfig! with { Spectating = "friends" },
+                }, room.Revision, room.FieldRevisions,
+                "advance operations without armed snapshot", Context("missing-snapshot"));
+            RewriteSnapshot(path, data =>
+            {
+                var plan = ActivationPlan(data);
+                plan.Remove("AuthorityVersion");
+                plan.Remove("AuthorityToken");
+                var history = data["OperationsConfigHistory"]!.AsArray();
+                for (var index = history.Count - 1; index >= 0; index--)
+                    if (history[index]?["Version"]?.GetValue<long>() == armedVersion)
+                        history.RemoveAt(index);
+            });
+
+            var reopened = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var failed = reopened.SeasonCatalog(admin).Next!.ActivationPlan!;
+            Assert.Equal("failed", failed.Status);
+            Assert.Equal("season_activation_plan_migration_required", failed.LastErrorCode);
+            Assert.Null(reopened.TryClaimDueSeasonActivation("legacy-worker", due,
+                TimeSpan.FromMinutes(1)));
+            Assert.Contains("赛季正在切换", reopened.RankedEntryBlock("account", due));
+        }
+        finally { Cleanup(root); }
+    }
+
+    [Fact]
+    public void ClaimedActivationRevalidatesAuthorityBeforeCommit()
+    {
+        var root = TempRoot();
+        try
+        {
+            var now = new DateTimeOffset(2026, 10, 1, 2, 50, 0, TimeSpan.Zero);
+            var due = now.AddMinutes(1);
+            var (store, admin, _) = PrepareArmedStore(root, due, now);
+            var claim = store.TryClaimDueSeasonActivation("authority-worker", due,
+                TimeSpan.FromMinutes(2));
+            Assert.NotNull(claim);
+            var ranked = store.RankedConfig(admin);
+            store.UpdateRankedConfig(admin, ranked with { PlacementMatches = ranked.PlacementMatches + 1 },
+                "change authority after claim", Context("post-claim-authority"));
+            var current = store.SeasonCatalog(admin).Current;
+
+            var error = Assert.Throws<L12OperationsConfigException>(() =>
+                store.ActivateClaimedSeason(admin, claim!, "must revalidate authority",
+                    new L12RankedSeasonCutoverReadiness(current.SeasonId, 0, 0, 0, 0),
+                    due.AddSeconds(1), Context("post-claim-activate")));
+            Assert.Equal("season_activation_claim_stale", error.Code);
+            Assert.Equal("S01", store.SeasonCatalog(admin).Current.SeasonId);
+            Assert.Empty(store.SeasonArchives(admin));
         }
         finally { Cleanup(root); }
     }
@@ -847,12 +1056,21 @@ public sealed class SeasonAutomaticActivationTests
     }
 
     private static (L12PlatformStore Store, L12AccountView Admin, L12Catalog Catalog) PrepareArmedStore(
-        string root, DateTimeOffset scheduledAt, DateTimeOffset now)
+        string root, DateTimeOffset scheduledAt, DateTimeOffset now,
+        DateTimeOffset? currentEndsAt = null)
     {
         var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
         var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
             officialCards: catalog.Cards);
         var admin = store.Login("Admin", "L12master").Account!;
+        if (currentEndsAt is not null)
+        {
+            var currentOperations = store.OperationsConfig(admin);
+            store.ApplyOperationsConfig(admin, currentOperations.Config with
+                {
+                    Season = currentOperations.Config.Season with { EndsAt = currentEndsAt },
+                }, currentOperations.Version, "set activation cutoff", Context("activation-cutoff"));
+        }
         var seasons = store.SeasonCatalog(admin);
         var draft = store.UpdateSeasonDraft(admin, seasons.Next!.DefinitionId,
             new L12SeasonDefinitionDraft("S-auto", "自动赛季", scheduledAt, scheduledAt.AddDays(90),
@@ -866,6 +1084,23 @@ public sealed class SeasonAutomaticActivationTests
             operationsVersion, preview.PreviewToken, readiness, "arm automatic season", now,
             Context("arm", operationsVersion));
         return (store, admin, catalog);
+    }
+
+    private static JsonObject ActivationPlan(JsonObject data)
+        => data["SeasonDefinitions"]!.AsArray()
+            .Select(node => node!.AsObject()["ActivationPlan"])
+            .First(node => node is not null)!.AsObject();
+
+    private static void RewriteActivationPlan(string path, Action<JsonObject> mutate)
+        => RewriteSnapshot(path, data => mutate(ActivationPlan(data)));
+
+    private static void RewriteSnapshot(string path, Action<JsonObject> mutate)
+    {
+        var data = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+        mutate(data);
+        SqliteConnection.ClearAllPools();
+        File.Delete(Path.Combine(Path.GetDirectoryName(path)!, "platform.db"));
+        File.WriteAllText(path, data.ToJsonString());
     }
 
     private static (L12PlatformStore Store, L12AccountView Admin, L12Catalog Catalog) PrepareEndingStore(
