@@ -4,6 +4,7 @@ param(
     [string]$Level = "Focused",
     [string[]]$ChangedPaths = @(),
     [string]$CacheRoot = "",
+    [string]$ProductionBaseCommit = "",
     [switch]$DryRun
 )
 
@@ -77,6 +78,10 @@ function Get-HeadChangedPaths {
 
 try {
     Set-Location $repoRoot
+    if ($ProductionBaseCommit.Length -gt 0) {
+        if ($Level -ne "Release") { throw "ProductionBaseCommit 仅可用于提交级 Release 验证。" }
+        if ($ProductionBaseCommit -notmatch '^[0-9a-fA-F]{40}$') { throw "ProductionBaseCommit 必须为完整 40 位提交 SHA。" }
+    }
     if ($Level -eq "Release" -and -not $DryRun) {
         $releaseDirtyPaths = @(Get-GitChangedPathStatus)
         if ($releaseDirtyPaths.Count -gt 0) {
@@ -190,10 +195,10 @@ try {
         if ($platformOnly -or -not $ruleOnly) { $platformChanged = $true }
     }
 
-    # All paths retain the complete performance lock. A Batch frontend build
-    # already runs it as its first npm build step, so avoid scanning twice.
-    # Release keeps the outer check because its isolated build may be reused.
-    if (-not ($Level -eq "Batch" -and $frontendChanged)) {
+    # A frontend Batch build and the isolated Release build run the complete
+    # performance lock as their first npm build step. Focused and non-frontend
+    # Batch paths still run it here because they do not build the frontend.
+    if ($Level -eq "Focused" -or ($Level -eq "Batch" -and -not $frontendChanged)) {
         Invoke-Checked "Low-latency performance architecture lock" "npm.cmd" @("run", "check:performance-architecture") (Join-Path $repoRoot "opcgpro-vue")
     }
 
@@ -259,7 +264,15 @@ try {
     }
 
     if ($deploymentBehaviorChanged) {
-        $deploymentFixtureBase = Join-Path $env:L12_WORK_CACHE "temp"
+        $deploymentCacheRoot = $env:L12_WORK_CACHE
+        if ([string]::IsNullOrWhiteSpace($deploymentCacheRoot)) {
+            $deploymentCacheRoot = if ($CacheRoot) { $CacheRoot } elseif (Test-Path "D:\GPT\Legion12") { "D:\GPT\Legion12\cache\primary" } else { Join-Path $repoRoot ".l12-cache" }
+        }
+        $deploymentFixtureBase = if ([string]::IsNullOrWhiteSpace($env:L12_WORK_CACHE)) {
+            Join-Path $deploymentCacheRoot "temp"
+        } else {
+            Join-Path $env:L12_WORK_CACHE "temp"
+        }
         Invoke-Checked "Deployment target, health and failure-preservation behavior" "pwsh" @(
             "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
             (Join-Path $repoRoot "scripts\test-l12-deploy-behavior.ps1"),
@@ -290,6 +303,9 @@ try {
         $releaseArguments = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ".\ops\windows\verify-l12.ps1")
         if (-not [string]::IsNullOrWhiteSpace($env:L12_WORK_CACHE)) {
             $releaseArguments += @("-CacheRoot", $env:L12_WORK_CACHE)
+        }
+        if ($ProductionBaseCommit.Length -gt 0) {
+            $releaseArguments += @("-ProductionBaseCommit", $ProductionBaseCommit)
         }
         Invoke-Checked "Commit-level release verification (no deployment)" "pwsh" $releaseArguments
         return

@@ -15,7 +15,8 @@ assert(packageDocument.scripts['check:performance-architecture'].includes('check
 assert(packageDocument.scripts['check:performance-architecture'].includes('check-http-traffic-guard.mjs'))
 assert(packageDocument.scripts['check:performance-architecture'].includes('check-performance-observability.mjs'))
 assert(changeGate.includes('npm.cmd" @("run", "check:performance-architecture")'))
-assert.equal((workflow.match(/npm run check:performance-architecture/g) ?? []).length, 1)
+assert.equal((workflow.match(/npm run check:performance-architecture/g) ?? []).length, 0)
+assert.equal((workflow.match(/run: npm run build/g) ?? []).length, 1)
 
 assert.deepEqual(analyzeSource(`<script setup lang="ts">
   fetch('/api/example')

@@ -51,10 +51,6 @@ jobs:
         working-directory: opcgpro-vue
         run: npm ci --prefer-offline --no-audit
 
-      - name: 低卡顿性能架构锁
-        working-directory: opcgpro-vue
-        run: npm run check:performance-architecture
-
       - name: 前端生产构建
         working-directory: opcgpro-vue
         env:

@@ -39,8 +39,19 @@ Assert-Count $focusedFrontend "Low-latency performance architecture lock" 1
 Assert-Count $focusedFrontend "Frontend UI contracts" 1
 
 $releaseFrontend = Get-Plan "Release" $frontend
-Assert-Count $releaseFrontend "Low-latency performance architecture lock" 1
+Assert-Count $releaseFrontend "Low-latency performance architecture lock" 0
 Assert-Count $releaseFrontend "Commit-level release verification (no deployment)" 1
 Assert-Count $releaseFrontend "Frontend production build" 0
+
+$previousWorkCache = $env:L12_WORK_CACHE
+try {
+    $env:L12_WORK_CACHE = $null
+    $deploymentPlan = Get-Plan "Batch" "ops/windows/deploy-l12.ps1"
+    Assert-Count $deploymentPlan "Deployment target, health and failure-preservation behavior" 1
+    if ([string]::IsNullOrWhiteSpace($env:L12_WORK_CACHE) -eq $false) {
+        throw "DryRun must not initialize a cache or change L12_WORK_CACHE."
+    }
+}
+finally { $env:L12_WORK_CACHE = $previousWorkCache }
 
 Write-Host "A3 gate layering: Batch frontend/other, Focused and Release plans passed."

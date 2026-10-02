@@ -9,6 +9,7 @@ $verifyScript = Join-Path $repoRoot "ops\windows\verify-l12.ps1"
 $deployScript = Join-Path $repoRoot "ops\windows\deploy-l12.ps1"
 $changeGateScript = Join-Path $repoRoot "scripts\verify-l12-change.ps1"
 $cacheInitializer = Join-Path $repoRoot "ops\windows\Initialize-L12BuildEnvironment.ps1"
+$performanceExceptions = Join-Path $repoRoot "ops\performance-exceptions.json"
 $releaseLedgerScript = Join-Path $repoRoot "scripts\release-ledger.mjs"
 $releaseLedgerRoot = Join-Path $repoRoot "release-ledger"
 $generatedPlayerRelease = Join-Path $repoRoot "opcgpro-vue\src\l12\site\generatedPlayerRelease.ts"
@@ -98,8 +99,27 @@ Assert-True ($releaseInvocationCount -eq 1) "Release dry-run must schedule the c
 foreach ($duplicateLabel in @("L12 full rule tests", "Platform persistence release gate", "Frontend production build")) {
     Assert-True (-not $dryRun.Output.Contains($duplicateLabel)) "Release dry-run still schedules duplicate work: $duplicateLabel"
 }
+Assert-True (-not $dryRun.Output.Contains("Low-latency performance architecture lock")) "Release dry-run must leave the complete performance lock to the isolated frontend build."
 Assert-True ($dryRun.Output.Contains("Atomic runtime zero-legacy audit")) "Release dry-run dropped the targeted atomic audit."
 Assert-True ($dryRun.Output.Contains(".\ops\windows\verify-l12.ps1")) "Release dry-run does not invoke the commit-level verifier."
+Assert-True (-not $dryRun.Output.Contains("-ProductionBaseCommit")) "Unbound Release must retain its original default behavior."
+$fixtureBaseSha = "d1659fa3" + ("0" * 32)
+$boundReleasePlan = Invoke-ChildPowerShell -ScriptPath $changeGateScript -Arguments @(
+    "-Level", "Release", "-DryRun", "-ChangedPaths", "opcgpro-vue/src/l12/platform.ts", "-ProductionBaseCommit", $fixtureBaseSha
+)
+Assert-True ($boundReleasePlan.ExitCode -eq 0 -and $boundReleasePlan.Output.Contains("-ProductionBaseCommit $fixtureBaseSha")) "Release did not pass the exact formal base commit to the isolated verifier."
+$shortBasePlan = Invoke-ChildPowerShell -ScriptPath $changeGateScript -Arguments @(
+    "-Level", "Release", "-DryRun", "-ChangedPaths", "opcgpro-vue/src/l12/platform.ts", "-ProductionBaseCommit", "d1659fa3"
+)
+Assert-True ($shortBasePlan.ExitCode -ne 0 -and $shortBasePlan.Output.Contains("40")) "Release accepted a short production base commit."
+$blankBasePlan = Invoke-ChildPowerShell -ScriptPath $changeGateScript -Arguments @(
+    "-Level", "Release", "-DryRun", "-ChangedPaths", "opcgpro-vue/src/l12/platform.ts", "-ProductionBaseCommit", " "
+)
+Assert-True ($blankBasePlan.ExitCode -ne 0 -and $blankBasePlan.Output.Contains("40")) "Release silently ignored a whitespace production base commit."
+$batchBasePlan = Invoke-ChildPowerShell -ScriptPath $changeGateScript -Arguments @(
+    "-Level", "Batch", "-DryRun", "-ChangedPaths", "opcgpro-vue/src/l12/platform.ts", "-ProductionBaseCommit", $fixtureBaseSha
+)
+Assert-True ($batchBasePlan.ExitCode -ne 0 -and $batchBasePlan.Output.Contains("仅可用于")) "Non-Release gate accepted a production base commit."
 
 # A platform-only source must not pay for the rule engine, and a rule-only
 # source must not miss its semantic audits. Unknown shared sources run both.
@@ -129,11 +149,13 @@ Assert-True ($platformProjectSource.Contains('<Compile Remove="EmailAuthAndAccou
 foreach ($activeTest in @("AdminResetAndLogicalDeletionProtectRootAndSelfAndScrubPersonalData", "MatchRecorderAnonymizesNamesDeckLabelsAndRecordedJson")) {
     Assert-True ($accountPrivacySource.Contains($activeTest)) "Active account/privacy regression is missing: $activeTest"
 }
-Assert-True (([regex]::Matches($verifySource, 'Invoke-External dotnet test "\.\\TwelveLegions\.Tests')).Count -eq 1) "Commit-level verifier must run full rules exactly once."
-Assert-True (([regex]::Matches($verifySource, 'Invoke-External dotnet test "\.\\TwelveLegions\.Platform\.Tests')).Count -eq 1) "Commit-level verifier must run the dedicated platform suite exactly once."
+Assert-True (([regex]::Matches($verifySource, 'Invoke-TimedExternal "rules" dotnet test "\.\\TwelveLegions\.Tests')).Count -eq 1) "Commit-level verifier must run full rules exactly once."
+Assert-True (([regex]::Matches($verifySource, 'Invoke-TimedExternal "platform" dotnet test "\.\\TwelveLegions\.Platform\.Tests')).Count -eq 1) "Commit-level verifier must run the dedicated platform suite exactly once."
+Assert-True ($verifySource.Contains('LogFileName=rules.trx') -and $verifySource.Contains('LogFileName=platform.trx') -and
+    $verifySource.Contains('"--results-directory", $evidenceDirectory') -and $verifySource.Contains('trxOmittedForBudget = $trxOmittedForBudget')) "Both full suites must write distinct TRX files unless the budget omission is explicitly recorded."
 Assert-True (([regex]::Matches($verifySource, 'Invoke-External node "\.\\scripts\\test-release-status\.mjs"')).Count -eq 1) "Commit-level verifier must validate release state source exactly once."
-Assert-True (([regex]::Matches($verifySource, 'Invoke-External \$npmExecutable ci')).Count -eq 1) "Commit-level verifier must install the isolated frontend exactly once."
-Assert-True (([regex]::Matches($verifySource, 'Invoke-External \$npmExecutable run build')).Count -eq 1) "Commit-level verifier must build the isolated frontend exactly once."
+Assert-True (([regex]::Matches($verifySource, 'Invoke-TimedExternal "frontend-npm-ci" \$npmExecutable ci')).Count -eq 1) "Commit-level verifier must install the isolated frontend exactly once."
+Assert-True (([regex]::Matches($verifySource, 'Invoke-TimedExternal "frontend-build" \$npmExecutable run build')).Count -eq 1) "Commit-level verifier must build the isolated frontend exactly once."
 Assert-True ($deploySource.Contains('$cardAssetsProbe = if ($ServerArtifactRoot -eq "/www/legion12")')) "Deployment must probe the server content-addressed card cache before upload."
 Assert-True (([regex]::Matches($deploySource, 'if \(\$cardAssetsCached\)')).Count -eq 1 -and $deploySource.Contains('$cardAssetsHash')) "Deployment must explicitly reuse a matching card asset hash."
 Assert-True ($deploySource.IndexOf('Invoke-External scp @sshOptions $cardAssetsArchive') -gt $deploySource.IndexOf('else {', $deploySource.IndexOf('if ($cardAssetsCached)'))) "Card asset upload must remain confined to the remote-cache-miss branch."
@@ -159,6 +181,7 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $fixtureRepo "ops\windows"), (Join-Path $fixtureRepo "scripts"), (Join-Path $fixtureRepo "TwelveLegions.Tests"), (Join-Path $fixtureRepo "opcgpro-vue\src\l12\site"), $fixtureOutput, $fixtureCardAssets, $fakeBin -Force | Out-Null
     Copy-Item -LiteralPath $verifyScript -Destination (Join-Path $fixtureRepo "ops\windows\verify-l12.ps1") -Force
     Copy-Item -LiteralPath $cacheInitializer -Destination (Join-Path $fixtureRepo "ops\windows\Initialize-L12BuildEnvironment.ps1") -Force
+    Copy-Item -LiteralPath $performanceExceptions -Destination (Join-Path $fixtureRepo "ops\performance-exceptions.json") -Force
     Copy-Item -LiteralPath $changeGateScript -Destination (Join-Path $fixtureRepo "scripts\verify-l12-change.ps1") -Force
     Copy-Item -LiteralPath $releaseLedgerScript -Destination (Join-Path $fixtureRepo "scripts\release-ledger.mjs") -Force
     Copy-Item -LiteralPath $releaseLedgerRoot -Destination (Join-Path $fixtureRepo "release-ledger") -Recurse -Force
@@ -203,6 +226,7 @@ try {
     Assert-True ($cleanReleasePlan.Output.Contains("Public active predeclaration guard")) "Clean committed card-effect change dropped declaration audits."
     Assert-True ($cleanReleasePlan.Output.Contains("Atomic runtime zero-legacy audit")) "Clean committed card-effect change dropped the atomic audit."
     Assert-True (([regex]::Matches($cleanReleasePlan.Output, "Commit-level release verification \(no deployment\)")).Count -eq 1) "Clean Release must schedule the commit-level verifier exactly once."
+    Assert-True (-not $cleanReleasePlan.Output.Contains("Low-latency performance architecture lock")) "Clean Release must not repeat the isolated build performance lock."
     foreach ($duplicateLabel in @("L12 full rule tests", "Platform persistence release gate", "Frontend production build")) {
         Assert-True (-not $cleanReleasePlan.Output.Contains($duplicateLabel)) "Clean Release still schedules duplicate work: $duplicateLabel"
     }
@@ -268,6 +292,26 @@ try {
     Assert-True (-not $staleCardCache.Output.Contains($cachedManifest)) "Stale cardAssetsHash cache returned the old manifest."
     $staleCommands = if (Test-Path -LiteralPath $commandLog) { Get-Content -LiteralPath $commandLog -Raw } else { "" }
     Assert-True ($staleCommands.Contains("dotnet test")) "Card asset version mismatch did not fall through to fresh full verification."
+    Assert-True ($staleCommands.Contains("LogFileName=rules.trx") -and $staleCommands.Contains("--results-directory")) "Full rules did not request an isolated TRX result."
+    $failureEvidenceRoot = Join-Path (Join-Path $fixtureOutput "verification-evidence") $fixtureCommit
+    $failureRuns = @(Get-ChildItem -LiteralPath $failureEvidenceRoot -Directory)
+    Assert-True ($failureRuns.Count -eq 1) "Failed full verification did not retain one unique D-drive evidence run."
+    $failureTiming = Get-Content -LiteralPath (Join-Path $failureRuns[0].FullName "timings.json") -Raw | ConvertFrom-Json
+    Assert-True ($failureTiming.status -eq "failure" -and $failureTiming.stages.Count -eq 1 -and
+        $failureTiming.stages[0].stage -eq "rules" -and -not $failureTiming.stages[0].passed -and
+        -not $failureTiming.trxOmittedForBudget) "Failed rule stage did not retain its elapsed time, failure status and TRX intent."
+
+    # A full evidence directory may omit optional TRX, but must still execute
+    # the complete rule command and mark the omission in durable timing output.
+    Remove-Item -LiteralPath $commandLog -Force -ErrorAction SilentlyContinue
+    $budgetRun = Invoke-ChildPowerShell -ScriptPath $fixtureVerify -Arguments ($verifyArguments + @("-EvidenceBudgetBytes", "1"))
+    Assert-True ($budgetRun.ExitCode -ne 0 -and $budgetRun.Output.Contains("不新增可选逐用例 TRX")) "Budgeted verification did not warn while continuing to the full rule suite."
+    $budgetCommands = if (Test-Path -LiteralPath $commandLog) { Get-Content -LiteralPath $commandLog -Raw } else { "" }
+    Assert-True ($budgetCommands.Contains("dotnet test") -and -not $budgetCommands.Contains("LogFileName=")) "Evidence budget changed test coverage or still requested optional TRX."
+    $budgetRuns = @(Get-ChildItem -LiteralPath $failureEvidenceRoot -Directory)
+    Assert-True ($budgetRuns.Count -eq 2) "Budgeted verification did not retain a separate stage record."
+    $budgetTimings = @($budgetRuns | ForEach-Object { Get-Content -LiteralPath (Join-Path $_.FullName "timings.json") -Raw | ConvertFrom-Json })
+    Assert-True (@($budgetTimings | Where-Object { $_.trxOmittedForBudget -and $_.status -eq "failure" }).Count -eq 1) "Budgeted failure did not record that its TRX was omitted."
 
     # Both entry points must fail before audit/build/cache reuse when any tracked
     # or untracked content makes the commit identity ambiguous.
@@ -286,6 +330,43 @@ try {
     )
     Assert-True ($dirtyRelease.ExitCode -ne 0) "Release change gate accepted a dirty worktree."
     Assert-True ($dirtyRelease.Output.Contains("clean committed tree")) "Dirty Release failure did not explain the clean-commit requirement."
+
+    # An expired exception must reject even an otherwise valid cached archive,
+    # before the test/build commands run and without deleting prior failure TRX.
+    Remove-Item -LiteralPath (Join-Path $fixtureRepo "dirty-untracked.txt") -Force
+    $fixtureExceptions = Join-Path $fixtureRepo "ops\performance-exceptions.json"
+    $expiredDocument = Get-Content -LiteralPath $fixtureExceptions -Raw | ConvertFrom-Json
+    $expiredDocument.exceptions[0].expiresAt = "2020-01-01"
+    $expiredDocument | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $fixtureExceptions -Encoding utf8
+    Invoke-GitChecked $fixtureRepo @("add", "ops/performance-exceptions.json")
+    Invoke-GitChecked $fixtureRepo @("commit", "--quiet", "-m", "expired performance exception fixture")
+    Push-Location $fixtureRepo
+    try {
+        $expiredCommit = (& git rev-parse HEAD).Trim()
+        if ($LASTEXITCODE -ne 0) { throw "Unable to read expired fixture commit." }
+    }
+    finally { Pop-Location }
+    $expiredArtifactDirectory = Join-Path $fixtureOutput $expiredCommit
+    New-Item -ItemType Directory -Path $expiredArtifactDirectory -Force | Out-Null
+    $expiredManifest = Join-Path $expiredArtifactDirectory "l12-release-$expiredCommit.json"
+    [ordered]@{
+        schema = 3
+        commit = $expiredCommit
+        generatedAt = [DateTimeOffset]::UtcNow.ToString("O")
+        releaseArchive = $releaseArchive
+        releaseSha256 = $releaseSha
+        cardAssetsHash = $assetVersionA
+        cardAssetsArchive = $cardArchive
+        cardAssetsSha256 = $cardSha
+        releaseBaseCommit = ""
+        playerReleaseNotesSha256 = $fixtureNotesHash
+    } | ConvertTo-Json | Set-Content -LiteralPath $expiredManifest -Encoding utf8
+    Remove-Item -LiteralPath $commandLog -Force -ErrorAction SilentlyContinue
+    $expiredCache = Invoke-ChildPowerShell -ScriptPath $fixtureVerify -Arguments $verifyArguments
+    Assert-True ($expiredCache.ExitCode -ne 0 -and $expiredCache.Output.Contains("请修正例外")) "Expired performance exception did not reject cached release reuse."
+    Assert-True (-not $expiredCache.Output.Contains($expiredManifest)) "Expired performance exception returned a cached release manifest."
+    $expiredCommands = if (Test-Path -LiteralPath $commandLog) { Get-Content -LiteralPath $commandLog -Raw } else { "" }
+    Assert-True (-not $expiredCommands.Contains("dotnet test")) "Expired cached release started the full test run before explaining the exception."
 }
 finally {
     $env:PATH = $originalPath

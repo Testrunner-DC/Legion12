@@ -19,8 +19,11 @@ if ($text -notmatch "tags:\s*\['v\*'\]") { throw 'Release tag trigger v* is miss
 if ($text -notmatch 'if \[\[ -d "\$\{root\}/publish/runtimes" \]\]; then') { throw 'Optional runtimes directory guard is missing.' }
 if ($text -notmatch 'archive_bytes > 157286400') { throw '150 MiB release archive budget is missing.' }
 if ($text -notmatch '::error::release archive is larger') { throw 'Release archive diagnostic is missing.' }
-if (([regex]::Matches($text, 'npm run check:performance-architecture')).Count -ne 1) {
-    throw 'GitHub main verification must run the low-latency performance architecture lock exactly once.'
+if (([regex]::Matches($text, 'npm run check:performance-architecture')).Count -ne 0) {
+    throw 'GitHub verification must not run a standalone performance lock before the frontend build.'
+}
+if (([regex]::Matches($text, 'run: npm run build')).Count -ne 1) {
+    throw 'GitHub main verification must run the frontend build exactly once; its first step owns the performance lock.'
 }
 if (([regex]::Matches($text, 'node scripts/check-l12-architecture-lock\.mjs')).Count -ne 1) {
     throw 'GitHub main verification must run the P0-P4 architecture exit lock exactly once.'

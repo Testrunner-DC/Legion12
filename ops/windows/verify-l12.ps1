@@ -4,6 +4,7 @@ param(
     [string]$CacheRoot = "",
     [string]$CardAssetDirectory = $(if ($env:L12_CARD_ASSET_ROOT) { $env:L12_CARD_ASSET_ROOT } else { "D:\L12-assets\published\current" }),
     [string]$ProductionBaseCommit = "",
+    [ValidateRange(1L, 1099511627776L)][long]$EvidenceBudgetBytes = 480MB,
     [switch]$Force
 )
 
@@ -19,6 +20,68 @@ function Invoke-External {
     if ($LASTEXITCODE -ne 0) {
         throw "命令执行失败（退出码 $LASTEXITCODE）：$Executable $($Arguments -join ' ')"
     }
+}
+
+function Invoke-TimedExternal {
+    param(
+        [Parameter(Mandatory = $true, Position = 0)][string]$Stage,
+        [Parameter(Mandatory = $true, Position = 1)][string]$Executable,
+        [Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments
+    )
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    $passed = $false
+    try {
+        Invoke-External $Executable @Arguments
+        $passed = $true
+    }
+    finally {
+        $watch.Stop()
+        $script:verificationTimings.Add([ordered]@{
+            stage = $Stage
+            elapsedMilliseconds = [math]::Round($watch.Elapsed.TotalMilliseconds, 1)
+            passed = $passed
+        })
+        Write-Host "[L12 验证] 阶段 $Stage：$([math]::Round($watch.Elapsed.TotalSeconds, 2)) 秒；通过=$passed"
+    }
+}
+
+function Assert-PerformanceExceptionsCurrent {
+    param([Parameter(Mandatory = $true)][string]$RepositoryRoot)
+    $path = Join-Path $RepositoryRoot "ops\performance-exceptions.json"
+    $document = Get-Content -LiteralPath $path -Raw -Encoding utf8 | ConvertFrom-Json
+    if ($document.schema -ne 1) { throw "性能例外清单格式错误，拒绝复用已验证发布包：$path" }
+    $today = [DateTime]::UtcNow.Date
+    foreach ($exception in $document.exceptions) {
+        $expiryText = [string]$exception.expiresAt
+        $expiry = [DateTime]::MinValue
+        $parsed = [DateTime]::TryParseExact($expiryText, "yyyy-MM-dd", [Globalization.CultureInfo]::InvariantCulture,
+            [Globalization.DateTimeStyles]::None, [ref]$expiry)
+        if (-not $parsed -or $expiry.Date -lt $today) {
+            throw "性能例外 $($exception.id) 已过期或日期无效（$expiryText）；请修正例外并从干净提交重新完整验证，拒绝复用发布包。"
+        }
+    }
+}
+
+function Get-VerificationEvidenceBytes {
+    param([Parameter(Mandatory = $true)][string]$EvidenceRoot)
+    if (-not (Test-Path -LiteralPath $EvidenceRoot)) { return 0L }
+    $pending = [Collections.Generic.Stack[string]]::new()
+    $pending.Push([IO.Path]::GetFullPath($EvidenceRoot))
+    $bytes = 0L
+    while ($pending.Count -gt 0) {
+        $directory = Get-Item -LiteralPath $pending.Pop() -Force
+        if (-not $directory.PSIsContainer -or ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "验证证据目录不是普通目录，拒绝越界扫描：$($directory.FullName)"
+        }
+        foreach ($entry in Get-ChildItem -LiteralPath $directory.FullName -Force) {
+            if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw "验证证据目录包含 junction/symlink，拒绝越界扫描：$($entry.FullName)"
+            }
+            if ($entry.PSIsContainer) { $pending.Push($entry.FullName) }
+            else { $bytes += $entry.Length }
+        }
+    }
+    return $bytes
 }
 
 function Require-Command {
@@ -105,6 +168,10 @@ $originalLocation = Get-Location
 $stagingDirectory = $null
 $frontendWorkspaceDirectory = $null
 $frontendBuildDirectory = $null
+$evidenceDirectory = $null
+$trxOmittedForBudget = $false
+$verificationSucceeded = $false
+$script:verificationTimings = [Collections.Generic.List[object]]::new()
 
 try {
     Set-Location $repoRoot
@@ -146,6 +213,9 @@ try {
     }
     $playerReleaseNotesSha256 = (Get-FileHash -LiteralPath $generatedPlayerRelease -Algorithm SHA256).Hash.ToLowerInvariant()
     $manifestPath = Join-Path $artifactDirectory "l12-release-$commit.json"
+    # A cached archive was fully checked at creation, but exception expiry is
+    # time-dependent and must never be bypassed by an unchanged commit hash.
+    Assert-PerformanceExceptionsCurrent -RepositoryRoot $repoRoot
     if (-not $Force -and (Test-CachedArtifact $manifestPath)) {
         Assert-CleanCommit -ExpectedCommit $commit -Operation "复用发布包"
         Write-Host "[L12 验证] 复用已验证提交产物：$commit"
@@ -153,14 +223,29 @@ try {
         exit 0
     }
 
+    $evidenceRoot = Join-Path ([IO.Path]::GetFullPath($OutputDirectory)) "verification-evidence"
+    $existingEvidenceBytes = Get-VerificationEvidenceBytes -EvidenceRoot $evidenceRoot
+    $trxOmittedForBudget = $existingEvidenceBytes -ge $EvidenceBudgetBytes
+    if ($trxOmittedForBudget) {
+        Write-Warning "验证证据已有 $existingEvidenceBytes 字节，达到 $EvidenceBudgetBytes 字节预算；本轮继续完整门禁，但不新增可选逐用例 TRX。请人工治理 $evidenceRoot；失败和 PINNED 证据不会自动删除。"
+    }
+    $runId = "{0}-{1}" -f [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssZ"), [Guid]::NewGuid().ToString('N')
+    $evidenceDirectory = Join-Path (Join-Path $evidenceRoot $commit) $runId
+    New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
+    Write-Host "[L12 验证] 本次阶段计时与 TRX 证据：$evidenceDirectory"
+
     Write-Host "[L12 验证] 运行 L12 规则测试..."
     # Several collections intentionally exercise independent SQLite lifecycles and
     # Windows junctions. Keep the release gate serial so their process-wide pools
     # and temporary paths cannot race during teardown.
-    Invoke-External dotnet test ".\TwelveLegions.Tests\TwelveLegions.Tests.csproj" --configuration Release '--' 'xUnit.ParallelizeTestCollections=false'
+    $ruleTrxArguments = if ($trxOmittedForBudget) { @() } else { @("--logger", "trx;LogFileName=rules.trx", "--results-directory", $evidenceDirectory) }
+    Invoke-TimedExternal "rules" dotnet test ".\TwelveLegions.Tests\TwelveLegions.Tests.csproj" --configuration Release `
+        @ruleTrxArguments '--' 'xUnit.ParallelizeTestCollections=false'
     Write-Host "[L12 验证] 运行平台持久化测试..."
     # 退役邮箱测试由项目文件显式排除；有效账号与隐私测试仍在平台套件中全量运行。
-    Invoke-External dotnet test ".\TwelveLegions.Platform.Tests\TwelveLegions.Platform.Tests.csproj" --configuration Release '--' 'xUnit.ParallelizeTestCollections=false'
+    $platformTrxArguments = if ($trxOmittedForBudget) { @() } else { @("--logger", "trx;LogFileName=platform.trx", "--results-directory", $evidenceDirectory) }
+    Invoke-TimedExternal "platform" dotnet test ".\TwelveLegions.Platform.Tests\TwelveLegions.Platform.Tests.csproj" --configuration Release `
+        @platformTrxArguments '--' 'xUnit.ParallelizeTestCollections=false'
 
     Write-Host "[L12 验证] 在隔离目录安装锁定依赖并构建前端..."
     $frontendSourceRoot = Join-Path $repoRoot "opcgpro-vue"
@@ -229,11 +314,11 @@ try {
         Copy-Item -Destination $isolatedServerSourceRoot -Force
     Push-Location $frontendBuildDirectory
     try {
-        Invoke-External $npmExecutable ci --prefer-offline --no-audit
+        Invoke-TimedExternal "frontend-npm-ci" $npmExecutable ci --prefer-offline --no-audit
         $previousClientRelease = $env:VITE_APP_VERSION
         try {
             $env:VITE_APP_VERSION = $commit
-            Invoke-External $npmExecutable run build
+            Invoke-TimedExternal "frontend-build" $npmExecutable run build
         }
         finally { $env:VITE_APP_VERSION = $previousClientRelease }
     }
@@ -248,8 +333,9 @@ try {
     New-Item -ItemType Directory -Path $webRoot, $testrunWebRoot, $publishRoot, $scriptsRoot -Force | Out-Null
 
     Write-Host "[L12 验证] 生成服务器兼容的框架依赖发布产物..."
-    Invoke-External dotnet restore ".\服务端WebSocket\GrandUMIServer.csproj" --ignore-failed-sources
-    Invoke-External dotnet publish ".\服务端WebSocket\GrandUMIServer.csproj" --configuration Release --self-contained false --output $publishRoot --no-restore
+    Invoke-TimedExternal "server-restore" dotnet restore ".\服务端WebSocket\GrandUMIServer.csproj" --ignore-failed-sources
+    Invoke-TimedExternal "server-publish" dotnet publish ".\服务端WebSocket\GrandUMIServer.csproj" `
+        --configuration Release --self-contained false --output $publishRoot --no-restore
     $nativeRuntimesRoot = Join-Path $publishRoot "runtimes"
     if (-not (Test-Path -LiteralPath (Join-Path $nativeRuntimesRoot "linux-x64"))) {
         throw "发布产物缺少 linux-x64 原生依赖"
@@ -299,7 +385,7 @@ try {
 
     $releaseArchive = Join-Path $artifactDirectory "l12-release-$commit.tar.gz"
     if (Test-Path -LiteralPath $releaseArchive) { Remove-Item -LiteralPath $releaseArchive -Force }
-    Invoke-External tar -czf $releaseArchive -C $releaseRoot .
+    Invoke-TimedExternal "release-archive" tar -czf $releaseArchive -C $releaseRoot .
     if ((Get-Item -LiteralPath $releaseArchive).Length -gt 150MB) {
         throw "不含卡图的运行包异常大于 150MB，请检查发布内容是否混入多平台原生库或运行数据"
     }
@@ -308,7 +394,7 @@ try {
     $cardAssetsArchive = Join-Path $OutputDirectory "l12-card-assets-$cardAssetsHash.tar.gz"
     if (-not (Test-Path -LiteralPath $cardAssetsArchive)) {
         Write-Host "[L12 验证] 首次生成内容寻址优化卡图包：$cardAssetsHash"
-        Invoke-External tar -czf $cardAssetsArchive -C $CardAssetDirectory .
+        Invoke-TimedExternal "card-assets-archive" tar -czf $cardAssetsArchive -C $CardAssetDirectory .
     }
     $cardAssetsSha256 = (Get-FileHash -LiteralPath $cardAssetsArchive -Algorithm SHA256).Hash.ToLowerInvariant()
     Assert-CleanCommit -ExpectedCommit $commit -Operation "写入发布包清单"
@@ -325,11 +411,25 @@ try {
         playerReleaseNotesSha256 = $playerReleaseNotesSha256
     } | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding utf8
 
+    $verificationSucceeded = $true
     Write-Host "[L12 验证] 完整验证与发布包构建通过：$commit"
     Write-Output $manifestPath
 }
 finally {
     Set-Location $originalLocation
+    if ($null -ne $evidenceDirectory -and (Test-Path -LiteralPath $evidenceDirectory -PathType Container)) {
+        try {
+            [ordered]@{
+                schema = 1
+                commit = $commit
+                completedAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
+                status = if ($verificationSucceeded) { "success" } else { "failure" }
+                trxOmittedForBudget = $trxOmittedForBudget
+                stages = @($script:verificationTimings)
+            } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $evidenceDirectory "timings.json") -Encoding utf8
+        }
+        catch { Write-Warning "无法写入验证阶段计时证据：$($_.Exception.Message)" }
+    }
     if ($null -ne $frontendWorkspaceDirectory -and (Test-Path -LiteralPath $frontendWorkspaceDirectory)) {
         $resolvedFrontendBuild = (Resolve-Path -LiteralPath $frontendWorkspaceDirectory).Path
         $resolvedOutputRoot = (Resolve-Path -LiteralPath $OutputDirectory).Path
