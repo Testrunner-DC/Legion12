@@ -17,11 +17,17 @@ import RankingsPage from '/src/l12/site/RankingsPage.vue'
 import { rankedApi } from '/src/l12/platform.ts'
 import '/src/style.css'
 
-rankedApi.leaderboard = async () => ({
-  players: [],
+rankedApi.leaderboard = async (_faction, range) => ({
+  players: range === 'season' ? [] : [{
+    rank: 1, username: '区间玩家甲', faction: '秩序', sevenValue: 0,
+    displayValue: range === '7d' ? '+2,407,333' : '-1,234', tier: '本赛季未定级',
+    title: null, titles: [], favoriteMasterId: 'S01-02M1', favoriteMasterName: '测试主宰',
+    wins: range === '7d' ? 3 : 5, losses: range === '7d' ? 1 : 2, winStreak: 0,
+    intervalSevenDelta: range === '7d' ? 2407333 : -1234, intervalSevenIncomplete: false,
+  }],
   analytics: {
-    range: 'season',
-    summary: { matches: 0, placedPlayers: 0, activeMasters: 0, updatedAt: '2026-10-01T06:32:16Z' },
+    range,
+    summary: { matches: range === 'season' ? 0 : range === '7d' ? 4 : 7, placedPlayers: 0, activeMasters: 2, updatedAt: '2026-10-01T06:32:16Z' },
     masters: [],
     matchups: [],
   },
@@ -142,6 +148,52 @@ try {
     }
   }
 
+  for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport)
+    for (const range of [
+      { button: '近7天', heading: '近7天', seven: '+2,407,333', record: '3胜 1负' },
+      { button: '近30天', heading: '近30天', seven: '-1,234', record: '5胜 2负' },
+    ]) {
+      await page.goto(`http://127.0.0.1:${port}/__ranked_history_qa__`)
+      await page.getByRole('button', { name: range.button, exact: true }).click()
+      await page.locator('.player-table .tr').waitFor()
+      const report = await page.evaluate(() => {
+        const card = document.querySelector('.player-table .tr')
+        const seven = card?.querySelector(':scope > :nth-child(7)')
+        const before = seven ? getComputedStyle(seven, '::before') : null
+        const rect = seven?.getBoundingClientRect()
+        return {
+          heading: document.querySelector('.page-head small')?.textContent?.trim(),
+          explanation: document.querySelector('.page-head p')?.textContent?.trim(),
+          cardText: card?.textContent?.replace(/\s+/g, ' ').trim(),
+          seven: seven?.textContent?.trim(),
+          sevenLabel: seven?.getAttribute('data-label'),
+          beforeContent: before?.content,
+          beforeVisible: before?.display !== 'none',
+          sevenInsideViewport: !!rect && rect.left >= 0 && rect.right <= innerWidth,
+          documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+          cardOverflow: !!card && card.scrollWidth > card.clientWidth + 1,
+        }
+      })
+      assert.equal(report.heading, `RANKED · ${range.heading}`)
+      assert(report.explanation.includes('派系、段位、称号为当前赛季'), '当前身份与区间战绩口径缺少说明')
+      assert(report.explanation.includes('七曜净变化按所选时段'), '区间七曜口径缺少说明')
+      assert(report.cardText.includes('秩序') && report.cardText.includes('本赛季未定级'), '当前身份不可读')
+      assert(report.cardText.includes(range.record), `区间战绩不可读：${range.record}`)
+      assert.equal(report.seven, range.seven)
+      assert.equal(report.sevenLabel, '七曜净变化')
+      assert.equal(report.documentOverflow, false, `${viewport.width}px ${range.button} 页面出现横向溢出`)
+      assert.equal(report.cardOverflow, false, `${viewport.width}px ${range.button} 玩家卡片出现横向溢出`)
+      assert.equal(report.sevenInsideViewport, true, `${viewport.width}px ${range.button} 区间七曜值移出屏幕`)
+      if (viewport.width <= 390) {
+        assert.equal(report.beforeContent, '"七曜净变化"', '移动卡片没有显示区间七曜标签')
+        assert.equal(report.beforeVisible, true, '移动卡片区间七曜标签被隐藏')
+      }
+      await page.screenshot({ path: path.join(output, `ranked-players-${range.heading}-${viewport.width}.png`), fullPage: true })
+    }
+  }
+
+  await page.getByRole('button', { name: '历史荣誉', exact: true }).click()
   await page.locator('.ranking-search').fill('不存在的荣誉')
   await page.getByText('没有符合搜索条件的历史荣誉或派系结算数值', { exact: true }).waitFor()
   assert.equal(await page.locator('.faction-final-totals').count(), 0, '无匹配数据时派系数值区域没有隐藏')

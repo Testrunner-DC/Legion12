@@ -84,7 +84,8 @@ public sealed record L12RankedBroadcastClaimView(L12RankedBroadcastView Broadcas
 public sealed record L12RankedLeaderboardEntry(int Rank, string Username,
     string Faction, int SevenValue, string DisplayValue, string Tier, string? Title,
     IReadOnlyList<string> Titles, string? FavoriteMasterId, string? FavoriteMasterName,
-    int Wins, int Losses, int WinStreak);
+    int Wins, int Losses, int WinStreak, int? IntervalSevenDelta = null,
+    bool IntervalSevenIncomplete = false);
 public sealed record L12RankedMasterChampionView(string MasterId, string MasterName,
     string Username, string Title, int SevenValue, string DisplayValue, int Games, int Wins);
 public sealed record L12RankedAnalyticsSummary(int Matches, int PlacedPlayers,
@@ -749,6 +750,21 @@ public sealed partial class L12PlatformStore
         };
     }
 
+    private sealed record EligibleRankedAnalyticsMatch(L12RankingMatch Match, DateTimeOffset Started,
+        DateTimeOffset Ended, string Master0, string Master1);
+
+    private sealed class RankedIntervalPlayerAccumulator
+    {
+        public required string AccountId { get; init; }
+        public int Wins { get; set; }
+        public int Losses { get; set; }
+        public int SevenDelta { get; set; }
+        public bool SevenIncomplete { get; set; }
+        public Dictionary<string, (int Games, int Wins)> Masters { get; } =
+            new(StringComparer.OrdinalIgnoreCase);
+        public int Games => Wins + Losses;
+    }
+
     private string? HistoricalHonorMasterIdLocked(string seasonId, string title)
     {
         var archive = _data.SeasonArchives.FirstOrDefault(row => SeasonIdsEqual(row.SeasonId, seasonId));
@@ -827,6 +843,105 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    public IReadOnlyList<L12RankedLeaderboardEntry> RankedIntervalLeaderboard(
+        IReadOnlyList<L12RankingMatch> source, string requestedRange, string? faction = null,
+        int limit = 50, string? viewerAccountId = null, DateTimeOffset? observedAt = null)
+    {
+        if (requestedRange is not ("7d" or "30d"))
+            throw new ArgumentException("Only rolling ranking ranges are supported", nameof(requestedRange));
+        lock (_gate)
+        {
+            var now = observedAt ?? DateTimeOffset.UtcNow;
+            var start = now.AddDays(requestedRange == "7d" ? -7 : -30);
+            var matches = EligibleRankedAnalyticsMatchesLocked(source, start, now, now);
+            var settlements = _data.RankedSettlements.ToLookup(row =>
+                $"{row.MatchId}\u001f{row.AccountId}", StringComparer.OrdinalIgnoreCase);
+            var players = new Dictionary<string, RankedIntervalPlayerAccumulator>(StringComparer.OrdinalIgnoreCase);
+            foreach (var item in matches)
+            {
+                // Legacy name-only rows cannot be assigned to a stable account after renames.
+                if (string.IsNullOrWhiteSpace(item.Match.AccountId0)
+                    || string.IsNullOrWhiteSpace(item.Match.AccountId1)) continue;
+                Add(item.Match.AccountId0, item.Master0, item.Match.Winner == 0, item.Match.MatchId);
+                Add(item.Match.AccountId1, item.Master1, item.Match.Winner == 1, item.Match.MatchId);
+            }
+
+            var currentSeason = RequireOperationsConfig().Season.Id;
+            var currentProfiles = _data.RankedProfiles.Where(row => SeasonIdsEqual(row.SeasonId, currentSeason))
+                .ToDictionary(row => row.AccountId, StringComparer.OrdinalIgnoreCase);
+            var ordered = players.Values.Where(row => string.IsNullOrWhiteSpace(faction)
+                    || currentProfiles.TryGetValue(row.AccountId, out var profile)
+                    && string.Equals(profile.Faction, faction, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(row => row.SevenIncomplete).ThenByDescending(row => row.SevenDelta)
+                .ThenByDescending(row => row.Wins).ThenByDescending(row => row.Games)
+                .ThenBy(row => row.AccountId, StringComparer.OrdinalIgnoreCase).ToArray();
+            var champions = CurrentMasterChampions();
+            var visibleLimit = Math.Clamp(limit, 1, 50);
+            var visible = ordered.Take(visibleLimit).Select((row, index) => (Row: row, Rank: index + 1)).ToList();
+            if (!string.IsNullOrWhiteSpace(viewerAccountId))
+            {
+                var viewerIndex = Array.FindIndex(ordered, row => row.AccountId.Equals(viewerAccountId,
+                    StringComparison.OrdinalIgnoreCase));
+                if (viewerIndex >= visibleLimit) visible.Add((ordered[viewerIndex], viewerIndex + 1));
+            }
+            return visible.Select(item =>
+            {
+                currentProfiles.TryGetValue(item.Row.AccountId, out var current);
+                var hasFaction = current is not null && !string.IsNullOrWhiteSpace(current.Faction);
+                var placed = hasFaction && current!.PlacementPlayed >= _data.RankedConfig!.PlacementMatches;
+                var titles = hasFaction ? PlayerTitles(current!, FactionRank(current!), champions) : [];
+                var favorite = item.Row.Masters.OrderByDescending(pair => pair.Value.Games)
+                    .ThenByDescending(pair => pair.Value.Wins)
+                    .ThenBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(pair => pair.Key).FirstOrDefault();
+                var displayDelta = item.Row.SevenIncomplete ? "未记录"
+                    : $"{(item.Row.SevenDelta >= 0 ? "+" : "")}{item.Row.SevenDelta:N0}";
+                return new L12RankedLeaderboardEntry(item.Rank, AccountName(item.Row.AccountId),
+                    hasFaction ? FactionFor(current!.Faction!).Name : "本赛季未选择",
+                    current?.SevenValue ?? 0, displayDelta,
+                    placed ? TierFor(current!).Name : "本赛季未定级", titles.FirstOrDefault(), titles,
+                    favorite, favorite is null ? null : MasterName(favorite), item.Row.Wins, item.Row.Losses, 0,
+                    item.Row.SevenIncomplete ? null : item.Row.SevenDelta, item.Row.SevenIncomplete);
+            }).ToArray();
+
+            void Add(string accountId, string masterId, bool won, string matchId)
+            {
+                if (!players.TryGetValue(accountId, out var player))
+                {
+                    player = new RankedIntervalPlayerAccumulator { AccountId = accountId };
+                    players.Add(accountId, player);
+                }
+                if (won) player.Wins++; else player.Losses++;
+                player.Masters.TryGetValue(masterId, out var master);
+                player.Masters[masterId] = (master.Games + 1, master.Wins + (won ? 1 : 0));
+                var facts = settlements[$"{matchId}\u001f{accountId}"].ToArray();
+                if (facts.Length != 1 || facts[0].Delta != facts[0].After - facts[0].Before)
+                    player.SevenIncomplete = true;
+                else player.SevenDelta += facts[0].Delta;
+            }
+        }
+    }
+
+    private EligibleRankedAnalyticsMatch[] EligibleRankedAnalyticsMatchesLocked(
+        IReadOnlyList<L12RankingMatch> source, DateTimeOffset rangeStart, DateTimeOffset rangeEnd,
+        DateTimeOffset now)
+        => source.DistinctBy(match => match.MatchId, StringComparer.OrdinalIgnoreCase).Select(match => new
+            {
+                Match = match,
+                Started = DateTimeOffset.TryParse(match.StartedUtc, out var started) ? started : (DateTimeOffset?)null,
+                Ended = DateTimeOffset.TryParse(match.EndedUtc, out var ended) ? ended : (DateTimeOffset?)null,
+                Master0 = RankingMasterId(match.MasterId0, match.Master0),
+                Master1 = RankingMasterId(match.MasterId1, match.Master1),
+            })
+            .Where(item => !IsRankedMatchExcludedLocked(item.Match.MatchId)
+                && (item.Match.AccountId0 is null || IsActiveAccountLocked(item.Match.AccountId0))
+                && (item.Match.AccountId1 is null || IsActiveAccountLocked(item.Match.AccountId1))
+                && item.Started is not null && item.Started >= rangeStart && item.Started <= rangeEnd
+                && item.Ended is not null && item.Ended >= item.Started && item.Ended <= now
+                && item.Match.Winner is 0 or 1 && item.Master0 is not null && item.Master1 is not null)
+            .Select(item => new EligibleRankedAnalyticsMatch(item.Match, item.Started!.Value,
+                item.Ended!.Value, item.Master0!, item.Master1!)).ToArray();
+
     public IReadOnlyList<L12RankedMasterChampionView> RankedMasterChampions()
     {
         lock (_gate)
@@ -847,32 +962,23 @@ public sealed partial class L12PlatformStore
         }
     }
 
-    public L12RankedAnalyticsView RankedAnalytics(IReadOnlyList<L12RankingMatch> source, string? requestedRange)
+    public L12RankedAnalyticsView RankedAnalytics(IReadOnlyList<L12RankingMatch> source, string? requestedRange,
+        DateTimeOffset? observedAt = null)
     {
         lock (_gate)
         {
             var range = requestedRange is "7d" or "30d" ? requestedRange : "season";
             var season = RequireOperationsConfig().Season;
-            var now = DateTimeOffset.UtcNow;
-            var seasonStart = season.StartsAt ?? DateTimeOffset.MinValue;
+            var now = observedAt ?? DateTimeOffset.UtcNow;
+            // A later season can be activated without a configured start date. Its activation
+            // is the boundary; the initial season keeps its legacy unbounded start.
+            var seasonStart = season.StartsAt ?? _data.SeasonDefinitions.FirstOrDefault(row =>
+                row.LifecycleStatus == "active" && SeasonIdsEqual(row.SeasonId, season.Id)
+                && !string.IsNullOrWhiteSpace(row.PreviousSeasonId))?.ActivatedAt ?? DateTimeOffset.MinValue;
             var rangeStart = range == "7d" ? now.AddDays(-7) : range == "30d" ? now.AddDays(-30) : seasonStart;
-            if (rangeStart < seasonStart) rangeStart = seasonStart;
-            var rangeEnd = season.EndsAt ?? DateTimeOffset.MaxValue;
-            var matches = source.DistinctBy(match => match.MatchId, StringComparer.OrdinalIgnoreCase).Select(match => new
-                {
-                    Match = match,
-                    Started = DateTimeOffset.TryParse(match.StartedUtc, out var started) ? started : (DateTimeOffset?)null,
-                    Ended = DateTimeOffset.TryParse(match.EndedUtc, out var ended) ? ended : (DateTimeOffset?)null,
-                    Master0 = RankingMasterId(match.MasterId0, match.Master0),
-                    Master1 = RankingMasterId(match.MasterId1, match.Master1),
-                })
-                .Where(item => !IsRankedMatchExcludedLocked(item.Match.MatchId)
-                    && (item.Match.AccountId0 is null || IsActiveAccountLocked(item.Match.AccountId0))
-                    && (item.Match.AccountId1 is null || IsActiveAccountLocked(item.Match.AccountId1))
-                    && item.Started is not null && item.Started >= rangeStart && item.Started <= rangeEnd
-                    && item.Ended is not null && item.Ended >= item.Started && item.Ended <= now
-                    && item.Match.Winner is 0 or 1 && item.Master0 is not null && item.Master1 is not null)
-                .ToArray();
+            // Rolling windows span season cutovers; only the season view is bounded by this season.
+            var rangeEnd = range == "season" ? season.EndsAt ?? DateTimeOffset.MaxValue : now;
+            var matches = EligibleRankedAnalyticsMatchesLocked(source, rangeStart, rangeEnd, now);
             var masters = new Dictionary<string, RankedMasterStatsAccumulator>(StringComparer.OrdinalIgnoreCase);
             var matchups = new Dictionary<string, RankedMatchupAccumulator>(StringComparer.OrdinalIgnoreCase);
             foreach (var item in matches)
@@ -906,8 +1012,7 @@ public sealed partial class L12PlatformStore
             var placedPlayers = _data.RankedProfiles.Count(row => SeasonIdsEqual(row.SeasonId, season.Id)
                 && row.PlacementPlayed >= _data.RankedConfig!.PlacementMatches
                 && _data.Accounts.Any(account => account.Id == row.AccountId && !account.Disabled && !account.Deleted));
-            var updatedAt = matches.Select(item => item.Ended ?? item.Started).Where(value => value is not null)
-                .Select(value => value!.Value).DefaultIfEmpty().Max();
+            var updatedAt = matches.Select(item => item.Ended).DefaultIfEmpty().Max();
             return new L12RankedAnalyticsView(range,
                 new L12RankedAnalyticsSummary(matches.Length, placedPlayers, masters.Count,
                     updatedAt == default ? null : updatedAt), masterViews, matchupViews);

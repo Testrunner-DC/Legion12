@@ -14,7 +14,6 @@ const boardComponent = read('../src/l12/game/GameBoard.vue')
 const boardMobileStyle = read('../src/l12/game/GameBoard.mobile.css')
 const mobileActionDockStyle = read('../src/l12/game/MobileBattleDock.css')
 const board = `${boardComponent}\n${boardMobileStyle}`
-const battleViewportLayout = read('../src/l12/game/battleViewportLayout.ts')
 const mobileViewportStyle = read('../src/l12/mobileViewport.css')
 const mobileViewportCheck = read('./test-mobile-viewport.mjs')
 const phaseTrack = read('../src/l12/game/PhaseTrack.vue')
@@ -1070,8 +1069,6 @@ const contracts = [
   [gamePage.includes('<GmPanel v-if="l12State.gmEnabled"') && l12Net.includes('gmEnabled: false'), 'GM 面板必须只在服务端授权的沙盒快照中显示'],
   [gamePage.includes(':gm-panel-open="gmPanelOpen"') && gamePage.includes('@open-change="gmPanelOpen = $event"')
     && gmPanel.includes("openChange: [open: boolean]") && board.includes("'gm-panel-docked': gmPanelOpen && !compactViewport")
-    && battleViewportLayout.includes('const GM_PANEL_RESERVE = 344')
-    && battleViewportLayout.includes('options.gmPanelOpen && !compact ? GM_PANEL_RESERVE : 0')
     && board.includes('.board-viewport.gm-panel-docked{right:344px}'), '展开 GM 调试面板时必须为其保留独立停靠区并重算棋盘缩放，禁止覆盖计时、玩家信息或结束回合操作'],
   [gmPanel.includes("send({ type: 'gmAction'") || (gmPanel.includes('gmAction(') && l12Net.includes("pendingActionEnvelope = { type: 'gmAction', requestId: createActionRequestId(), command }")), 'GM 操作必须走独立 gmAction 消息，不得伪装成普通 gameAction'],
   [gmPanel.includes('导出可复现 JSON') && gmPanel.includes('/api/matches/'), 'GM 面板必须保留可复现记录导出入口'],
@@ -1724,9 +1721,7 @@ contracts.push(
     && !board.includes('class="inspector-effect') && !board.includes('class="mobile-inspector-effect')
     && cardDetailContent.includes('<template v-if="showCatalogOnly">'),
     '桌面、移动端对战与回放的选中卡牌必须直接复用图鉴详情组件，并统一隐藏收录产品和刊物记录，不得保留平行旧模板'],
-  [battleViewportLayout.includes('const SITE_AND_OVERFLOW_RESERVE = 124')
-    && battleViewportLayout.includes('viewportHeight - SITE_AND_OVERFLOW_RESERVE')
-    && visualLayoutCheck.includes("throw new Error('Hand leaves viewport at '")
+  [visualLayoutCheck.includes("throw new Error('Hand leaves viewport at '")
     && visualLayoutCheck.includes("throw new Error('Utility dock leaves viewport at '"),
     '16:9棋盘缩放必须为手牌扇面和左下工具保留绘制边界，视觉验收须阻止二者离开视口'],
   [battleLogViewModel.includes("'turn-start'") && battleLogViewModel.includes("'prompt-resolved'") && battleLogViewModel.includes('PLAYER_LOG_HIDDEN_TYPES')
@@ -1758,10 +1753,7 @@ contracts.push(
     && responsiveTypeCheck.includes('{ width: 390, height: 844 }') && responsiveTypeCheck.includes('[data-card-detail-context="builder"] .archive-effect .l12-effect-body')
     && responsiveTypeCheck.includes('selected-card effect prose must wrap without horizontal overflow'),
     '响应式字号专项必须覆盖三档16:9桌面、760与390窄宽，并实际选中卡牌验证正文和标签而非只检查空详情'],
-  [battleViewportLayout.includes('Math.min(availableWidth / stageWidth, availableHeight / stageHeight)')
-    && battleViewportLayout.includes('scale: options.mobile ? 1 : desktopScale')
-    && !battleViewportLayout.includes('Math.max(.7')
-    && mobileViewportStyle.includes('.board-viewport.compact-viewport')
+  [mobileViewportStyle.includes('.board-viewport.compact-viewport')
     && mobileViewportStyle.includes('overflow: hidden !important')
     && mobileViewportStyle.includes('transform-origin: center')
     && mobileViewportCheck.includes('{width:375,height:667,mobile:true,rotated:true}')

@@ -21,7 +21,12 @@ const ruleCenter = read('../src/l12/site/RuleCenterPage.vue')
 
 const checks = [
   [analyzeSource(profile, 'ProfilePage.vue').maximumParallelPageLoad <= 3 && analyzeSource(adminWorkbench, 'AdminWorkbenchPage.vue').maximumParallelPageLoad <= 3, '本批后台与个人页 AST 扇出必须不超过三路'],
-  [profile.includes("{ id: 'overview'") && profile.includes("{ id: 'performance'") && profile.includes("{ id: 'collection'") && profile.includes("{ id: 'security'") && profile.includes('route.query.section') && profile.includes("router.push({ path: '/me'"), '个人四分区必须以 URL 为状态来源'],
+  [profile.includes("{ id: 'overview', label: '排位与战绩' }")
+    && !profile.includes("{ id: 'performance', label:")
+    && profile.includes("{ id: 'collection'") && profile.includes("{ id: 'security'")
+    && profile.includes("route.query.section === 'performance' ? 'overview'")
+    && profile.includes("router.push({ path: '/me'"),
+  '个人三分区必须以 URL 为状态来源，并将旧战绩链接映射至合并页'],
   [profile.includes('<small class="form-support">') && profile.indexOf('<small class="form-support">') > profile.indexOf('</label>\n          <button class="primary"')
     && profile.includes('grid-template-rows:auto var(--l12-form-control-height,44px)')
     && profile.includes('.account-form label input{box-sizing:border-box;height:var(--l12-form-control-height,44px)')
@@ -44,10 +49,25 @@ const checks = [
     && profile.includes('await loadRenameStatus()') && profile.includes('renameStatus.value = null'),
   '改名状态必须随登录账号切换刷新，并在退出时清空'],
   [platform.includes("statistics: (range: PlayerStatisticsRange = 'season')")
-    && profile.includes('<h2>战绩</h2>') && profile.includes('<b>主宰战绩</b>')
+    && profile.includes('<h2>战绩详情 · {{ statisticsRangeLabel }}</h2>') && profile.includes('<b>主宰战绩</b>')
     && profile.includes('playerStatistics.overall.firstGames') && profile.includes('masterProfileUrl(master.masterId)')
     && !profile.includes('统计摘要独立保留，不依赖录像文件') && !profile.includes('同时列出整体与排位表现'),
   '我的页面必须使用独立统计接口，以排行榜同源样式展示战绩和主宰战绩，不暴露存储实现说明'],
+  [profile.includes('class="ranked-season-panel"') && profile.includes('class="stats season-stats"')
+    && profile.indexOf('class="rank-overview"') < profile.indexOf('class="stats season-stats"')
+    && profile.indexOf('class="stats season-stats"') < profile.indexOf('class="season-history"')
+    && profile.includes('<span>赛季名称</span>') && !profile.includes('赛季名称（年份月份）')
+    && profile.includes('<small v-if="item.seasonMonth">{{ item.seasonMonth }}</small>')
+    && profile.includes('class="title-manager"'),
+  '本季排位、总体战绩、已结算历史必须连续且保留实际年月与称号管理'],
+  [profile.match(/<span>总场次<\/span>/g)?.length === 1
+    && profile.match(/to="\/battle\/rankings"/g)?.length === 1
+    && profile.match(/@click="openBugFeedback"/g)?.length === 1
+    && profile.includes('近 7 天与近 30 天跨赛季统计；本赛季只统计当前赛季。')
+    && profile.includes("section: 'overview', range: next")
+    && profile.includes("else if (current === 'collection') await profileResource('arts'")
+    && profile.includes('v-if="visitedPerformance"'),
+  '合并页战绩四格、排行榜、反馈入口均只出现一次；收藏不重复加载排位，判罚按需加载'],
   [router.includes("AdminRuleRulingsPanel.vue") && adminNavigation.includes("label: '规则审核'")
     && !siteContent.includes("section === 'rules'") && !siteContent.includes("id: 'rules'"),
   '规则中心审核必须与站点内容工作台平级'],

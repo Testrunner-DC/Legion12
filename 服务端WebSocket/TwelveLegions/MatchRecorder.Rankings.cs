@@ -5,6 +5,37 @@ namespace TwelveLegions.Server;
 
 public sealed partial class MatchRecorder
 {
+    // Count raw candidate rows before payload validation removes damaged records. A filtered
+    // result shorter than the page limit is not proof that the rolling window was complete.
+    public async Task<bool> IsRankedAnalyticsWindowCompleteAsync(DateTimeOffset windowStart,
+        int limit = 20_000)
+    {
+        limit = Math.Clamp(limit, 1, 20_000);
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+              (SELECT COUNT(*) FROM matches m
+               WHERE m.ended_utc IS NOT NULL AND m.mode_id='ranked'
+                 AND m.winner IN (0,1) AND COALESCE(m.error,'')=''
+                 AND NOT EXISTS (SELECT 1 FROM ranked_settlement_outbox o WHERE o.match_id=m.match_id)
+                 AND julianday(m.started_utc) >= julianday($window_start))
+              +
+              (SELECT COUNT(*) FROM matches m
+               JOIN ranked_settlement_outbox o ON o.match_id=m.match_id
+               JOIN match_participants p0 ON p0.match_id=m.match_id AND p0.player_index=0
+               JOIN match_participants p1 ON p1.match_id=m.match_id AND p1.player_index=1
+               WHERE m.mode_id='ranked' AND m.ended_utc IS NOT NULL AND m.winner IN (0,1)
+                 AND COALESCE(m.error,'')='' AND o.status='applied' AND COALESCE(o.last_error,'')=''
+                 AND NOT EXISTS (SELECT 1 FROM ranked_recovery_quarantine q WHERE q.match_id=m.match_id)
+                 AND julianday(m.started_utc) >= julianday($window_start));
+            """;
+        command.Parameters.AddWithValue("$window_start", windowStart.ToUniversalTime().ToString("O"));
+        var count = (long)(await command.ExecuteScalarAsync() ?? long.MaxValue);
+        return count < limit;
+    }
+
     // The legacy-import query deliberately excludes outboxes. Analytics must not share that filter.
     public async Task<IReadOnlyList<L12RankingMatch>> ListRankedAnalyticsMatchesAsync(int limit = 20_000)
     {

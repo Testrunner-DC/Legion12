@@ -116,9 +116,6 @@ try {
     Write-Host "[L12 $Level] Changed files: $($script:paths.Count)"
     $script:paths | ForEach-Object { Write-Host "  $_" }
 
-    # 性能架构锁是所有功能的上线前置条件，而不只是前端改动时的可选检查。
-    # 它扫描完整前端源码并拒绝新增轮询、裸业务 fetch、无预算扇出和过期例外。
-    Invoke-Checked "Low-latency performance architecture lock" "npm.cmd" @("run", "check:performance-architecture") (Join-Path $repoRoot "opcgpro-vue")
     Invoke-Checked "P0-P4 architecture exit lock" "node" @((Join-Path $repoRoot "scripts\check-l12-architecture-lock.mjs"))
     Invoke-CheckedPowerShellScript "P1 kernel dependency boundary" `
         (Join-Path $repoRoot "scripts\test-l12-core-architecture-boundaries.ps1")
@@ -191,6 +188,13 @@ try {
             $cardEffectChanged = $true
         }
         if ($platformOnly -or -not $ruleOnly) { $platformChanged = $true }
+    }
+
+    # All paths retain the complete performance lock. A Batch frontend build
+    # already runs it as its first npm build step, so avoid scanning twice.
+    # Release keeps the outer check because its isolated build may be reused.
+    if (-not ($Level -eq "Batch" -and $frontendChanged)) {
+        Invoke-Checked "Low-latency performance architecture lock" "npm.cmd" @("run", "check:performance-architecture") (Join-Path $repoRoot "opcgpro-vue")
     }
 
     Invoke-Checked "Git whitespace and conflict-marker check" "git" @("diff", "--check")

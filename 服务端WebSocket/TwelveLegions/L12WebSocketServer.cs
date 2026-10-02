@@ -426,12 +426,27 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _app.MapGet("/api/rankings", async (HttpRequest request, string? faction, string? range) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
-            var matches = (await _recorder.ListRankedAnalyticsMatchesAsync(20_000))
+            var recordedMatches = await _recorder.ListRankedAnalyticsMatchesAsync(20_000);
+            var matches = recordedMatches
                 .Concat(_platform.TestRunAcceptanceRankedMatches())
                 .DistinctBy(item => item.MatchId, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
-            return Results.Ok(new { players = _platform.RankedLeaderboard(faction, 50, account?.Id),
-                analytics = _platform.RankedAnalytics(matches, range) });
+            var rolling = range is "7d" or "30d";
+            var observedAt = DateTimeOffset.UtcNow;
+            // A capped page is complete for this window only when its oldest row is strictly
+            // earlier than the boundary; rows tied at the boundary may still be omitted.
+            var windowStart = observedAt.AddDays(range == "7d" ? -7 : -30);
+            var oldestRecordedStart = recordedMatches.LastOrDefault()?.StartedUtc;
+            var cappedWindowComplete = DateTimeOffset.TryParse(oldestRecordedStart, out var oldestStarted)
+                && oldestStarted < windowStart;
+            var rawWindowComplete = !rolling || await _recorder.IsRankedAnalyticsWindowCompleteAsync(windowStart);
+            var rangeLimited = rolling && (!rawWindowComplete
+                || recordedMatches.Count >= 20_000 && !cappedWindowComplete);
+            var players = rangeLimited ? Array.Empty<L12RankedLeaderboardEntry>()
+                : rolling ? _platform.RankedIntervalLeaderboard(matches, range!, faction, 50, account?.Id, observedAt)
+                : _platform.RankedLeaderboard(faction, 50, account?.Id);
+            var analytics = _platform.RankedAnalytics(rangeLimited ? [] : matches, range, observedAt);
+            return Results.Ok(new { players, analytics, rangeLimited });
         });
         _app.MapGet("/api/rankings/history", (int? limit) =>
             Results.Ok(_platform.RankedSeasonHistory(limit ?? 500)));

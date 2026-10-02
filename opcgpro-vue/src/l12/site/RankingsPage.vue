@@ -36,9 +36,12 @@ const analytics = ref<RankedAnalytics>({
 })
 const loading = ref(false)
 const error = ref('')
+const rangeLimited = ref(false)
 const masterTitleRulesOpen = ref(false)
 const filters = [{ id: '', name: '全服' }, { id: 'order', name: '秩序' }, { id: 'chaos', name: '混沌' }, { id: 'fate', name: '命运' }]
 const ranges: Array<{ id: RankingRange; name: string }> = [{ id: '7d', name: '近7天' }, { id: '30d', name: '近30天' }, { id: 'season', name: '本赛季' }]
+const headingScope = computed(() => tab.value === 'history' ? '已结算赛季'
+  : range.value === '7d' ? '近7天' : range.value === '30d' ? '近30天' : '本赛季')
 
 let disposed = false
 let reloadPending = false
@@ -61,6 +64,7 @@ async function load() {
     if (disposed || requestedFaction !== faction.value || requestedRange !== range.value) return
     players.value = response.players as PlayerLeaderboardEntry[]
     analytics.value = response.analytics
+    rangeLimited.value = Boolean(response.rangeLimited)
     history.value = historyResponse
   } catch (cause) {
     if (!disposed && requestedFaction === faction.value && requestedRange === range.value)
@@ -146,11 +150,12 @@ onBeforeUnmount(() => {
 <template>
   <div class="ranking-page">
     <header class="page-head">
-      <div><small>RANKED · CURRENT SEASON</small><h1>排行榜</h1><p>排位数据、主宰表现与对阵关系均由服务端权威统计。</p></div>
+      <div><small>RANKED · {{ headingScope }}</small><h1>排行榜</h1><p>{{ tab === 'players' ? range === 'season' ? '玩家榜依据当前赛季的七曜值排名。' : '场次、战绩、擅长主宰与七曜净变化按所选时段；派系、段位、称号为当前赛季。' : tab === 'history' ? '历史荣誉只显示已正式结算赛季。' : '主宰与对阵按所选范围统计；近7天和近30天可跨赛季。' }}</p></div>
       <div class="page-actions"><button :disabled="loading" @click="load">{{ loading ? '读取中…' : '刷新数据' }}</button></div>
     </header>
 
-    <section class="summary-strip">
+    <p v-if="rangeLimited && tab !== 'history'" class="error" role="alert">本时间范围对局过多，暂无法显示完整排行。请切换本赛季。</p>
+    <section v-if="!rangeLimited" class="summary-strip">
       <article><small>有效排位</small><strong>{{ analytics.summary.matches }}</strong><span>{{ range === 'season' ? '本赛季' : range === '7d' ? '近7天' : '近30天' }}</span></article>
       <article><small>已定级玩家</small><strong>{{ analytics.summary.placedPlayers }}</strong><span>当前赛季</span></article>
       <article><small>活跃主宰</small><strong>{{ analytics.summary.activeMasters }}</strong><span>统计范围内</span></article>
@@ -174,15 +179,16 @@ onBeforeUnmount(() => {
     <nav v-if="tab === 'players'" class="faction-filter"><button v-for="item in filters" :key="item.id" :class="{ active: faction === item.id }" @click="faction = item.id">{{ item.name }}</button></nav>
     <p v-if="error" class="error">{{ error }}</p>
 
-    <section v-if="tab === 'players'" class="rank-panel player-table">
-      <div class="thead"><span>排名</span><span>昵称</span><span>阵营</span><span>段位</span><span>称号</span><span>最擅长主宰</span><span>七曜值</span><span>场次</span><span>战绩</span><span>胜率</span></div>
+    <section v-if="rangeLimited && tab !== 'history'" class="rank-panel empty">当前范围无法提供完整排行</section>
+    <section v-else-if="tab === 'players'" class="rank-panel player-table">
+      <div class="thead"><span>排名</span><span>昵称</span><span>阵营</span><span>段位</span><span>称号</span><span>最擅长主宰</span><span>{{ range === 'season' ? '七曜值' : '七曜净变化' }}</span><span>场次</span><span>战绩</span><span>胜率</span></div>
       <div v-for="row in visiblePlayers" :key="`${row.rank}-${row.username}-${row.faction}`" class="tr" :class="[`rank-${Math.min(row.rank, 4)}`, { 'is-me': row.username === platformState.account?.username }]">
         <b data-label="排名">#{{ row.rank }}</b>
         <strong class="player-name" data-label="昵称"><span class="username">{{ row.username }} <i v-if="row.username === platformState.account?.username" class="me-badge">我</i></span></strong>
         <span data-label="阵营">{{ row.faction }}</span><span data-label="段位"><RankedIdentityBadge variant="tier" :faction="row.faction" :label="row.tier"/></span>
         <span class="title-list player-title-cell" data-label="称号"><RankedIdentityBadge v-for="title in row.titles" :key="title" :variant="titleVariant(title)" :faction="row.faction" :label="title"/><span v-if="!row.titles?.length">—</span></span>
         <span v-if="row.favoriteMasterId" class="player-master" data-label="最擅长主宰"><img class="player-master-avatar" data-ui-contract="ranking-master-avatar" :src="masterProfileUrl(row.favoriteMasterId)" :alt="`${row.favoriteMasterName || row.favoriteMasterId}头像`"/><b>{{ row.favoriteMasterName || row.favoriteMasterId }}</b></span><span v-else data-label="最擅长主宰">—</span>
-        <strong data-label="七曜值">{{ row.displayValue }}</strong><span data-label="场次">{{ row.wins + row.losses }}</span>
+        <strong :data-label="range === 'season' ? '七曜值' : '七曜净变化'">{{ row.displayValue }}</strong><span data-label="场次">{{ row.wins + row.losses }}</span>
         <span data-label="战绩"><i>{{ row.wins }}</i>胜 <em>{{ row.losses }}</em>负</span><strong data-label="胜率">{{ percent((row.wins + row.losses) ? row.wins * 100 / (row.wins + row.losses) : 0) }}</strong>
         <span class="player-mobile-meta">{{ row.faction }} · {{ row.wins }}胜{{ row.losses }}负 · {{ percent((row.wins + row.losses) ? row.wins * 100 / (row.wins + row.losses) : 0) }} · {{ row.wins + row.losses }}场</span>
         <span class="player-mobile-extras">
@@ -255,13 +261,14 @@ onBeforeUnmount(() => {
 @media(max-width:700px){
   .summary-strip{display:flex;overflow-x:auto;scroll-snap-type:x proximity}.summary-strip article{min-width:118px;min-height:66px;scroll-snap-align:start}
   .toolbar button,.faction-filter button,.toolbar input,.page-head button{min-height:var(--l12-site-hit,44px)}
-  .player-table .tr{display:grid;min-height:106px!important;grid-template-columns:36px minmax(0,1fr) auto auto!important;grid-template-rows:26px 20px 34px;gap:3px 7px;margin-bottom:6px;padding:8px!important}
+  .player-table .tr{display:grid;min-height:112px!important;grid-template-columns:36px minmax(0,1fr) auto auto!important;grid-template-rows:32px 20px 34px;gap:3px 7px;margin-bottom:6px;padding:8px!important}
   .player-table .tr> :nth-child(1){grid-area:1/1/3/2;align-self:center;font-size:14px!important}
   .player-table .tr> :nth-child(2){grid-area:1/2/2/3;align-self:center}
   .player-table .tr> :nth-child(4){grid-area:1/3/2/4;align-self:center}
-  .player-table .tr> :nth-child(7){grid-area:1/4/2/5;align-self:center;color:#efd375;text-align:right}
+  .player-table .tr> :nth-child(7){grid-area:1/4/2/5;align-self:center;color:#efd375;font-size:12px;text-align:right;white-space:nowrap}
   .player-table .tr> :nth-child(3),.player-table .tr> :nth-child(5),.player-table .tr> :nth-child(6),.player-table .tr> :nth-child(8),.player-table .tr> :nth-child(9),.player-table .tr> :nth-child(10){display:none!important}
   .player-table .tr>[data-label]::before{display:none!important}
+  .player-table .tr> :nth-child(7)::before{display:block!important;margin-bottom:2px;font-size:10px;white-space:nowrap}
   .player-mobile-meta{display:block!important;grid-area:2/2/3/5;color:#7f8c92;font-size:11px;white-space:nowrap}
   .player-mobile-extras{display:flex!important;grid-area:3/1/4/5;min-width:0;align-items:center;justify-content:space-between;gap:7px;overflow:hidden}
   .mobile-title-strip{display:flex;min-width:0;align-items:center;gap:4px;overflow-x:auto;scrollbar-width:none}.mobile-title-strip :deep(.ranked-identity-badge){flex:0 0 auto;max-height:28px;font-size:11px}.mobile-title-strip>b,.mobile-title-strip>i{flex:0 0 auto;color:#76848a;font-size:11px;font-style:normal}

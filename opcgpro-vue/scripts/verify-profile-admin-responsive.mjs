@@ -25,6 +25,13 @@ platform.platformState.account={id:'qa-admin',username:'移动端验收管理员
 platform.authState.initialized=true
 platform.authState.verified=true
 platform.authState.refreshing=false
+const integrity=await import('/src/l12/rankedIntegrity.ts')
+window.__qaIntegrityReads={notifications:0,appeals:0}
+integrity.integrityApi.notifications=async()=>{
+ window.__qaIntegrityReads.notifications++
+ return {items:[{id:'private-penalty',decisionId:'decision-1',matchIds:['fixture-match'],outcome:'restricted',reason:'仅本人可见的验收判罚',decidedAt:'2026-09-25T08:00:00Z',scoreDelta:0,appealGuidance:'可申诉',acknowledged:true}],nextCursor:null}
+}
+integrity.integrityApi.appeals=async()=>{window.__qaIntegrityReads.appeals++;return {items:[],nextCursor:null}}
 
 const stat=(games,wins,losses,draws,firstGames,firstWins,secondGames,secondWins)=>({games,wins,losses,draws,firstGames,firstWins,secondGames,secondWins})
 platform.playerApi.statistics=async(range='season')=>{
@@ -173,6 +180,12 @@ try {
     await page.locator('.master-records').evaluate(element => { element.open = true })
     await page.locator('.master-records article').first().waitFor()
     assert.equal(await overflow(page), false, `profile page overflows at ${suffix(viewport)}`)
+    assert.equal(await page.locator('.profile-section-nav button').count(), 3,
+      `profile navigation is not three sections at ${suffix(viewport)}`)
+    assert.equal(await page.getByRole('button', { name: '排位与战绩', exact: true }).getAttribute('aria-current'), 'page',
+      `legacy performance URL does not reach merged page at ${suffix(viewport)}`)
+    assert.deepEqual(await page.evaluate(() => window.__qaIntegrityReads), { notifications: 0, appeals: 0 },
+      `merged page fetched private penalty history before expansion at ${suffix(viewport)}`)
     assert.equal(await page.locator('.master-records').evaluate(element => element.scrollWidth > element.clientWidth + 1), false, `profile master records overflow at ${suffix(viewport)}`)
     await page.screenshot({ path: path.join(output, `profile-${suffix(viewport)}.png`), fullPage: true })
     await page.getByRole('button',{name:'账号与安全',exact:true}).click()
@@ -184,12 +197,43 @@ try {
 
     if (summaryEvidenceViewport(viewport)) {
       await page.goto(`http://127.0.0.1:${port}/__profile_admin__?mode=profile`)
-      await page.getByRole('button', { name: '总览', exact: true }).click()
+      await page.getByRole('button', { name: '排位与战绩', exact: true }).click()
       await page.getByRole('heading', { name: '赛季历史' }).waitFor()
       assert.equal(await overflow(page), false, `season history overflows at ${suffix(viewport)}`)
+      const unified = page.locator('.ranked-season-panel')
+      assert.equal(await unified.locator(':scope > .rank-overview, :scope > .statistics-range-panel, :scope > .season-stats, :scope > .season-history').count(), 4,
+        `current rank, selected-range record and finalized history are not one continuous panel at ${suffix(viewport)}`)
+      assert.equal(await unified.evaluate(element => element.scrollWidth > element.clientWidth + 1), false,
+        `unified season panel overflows at ${suffix(viewport)}`)
       assert.equal(await page.locator('.season-history-list>article').first().locator(':scope > span').count(), 8, `season history is not eight columns at ${suffix(viewport)}`)
       assert.equal(await page.getByText('2026年9月', { exact: true }).isVisible(), true, `season history shows archive month instead of season month at ${suffix(viewport)}`)
+      assert.equal(await page.locator('.season-stats article').count(), 4, `season statistics not grouped at ${suffix(viewport)}`)
+      assert.equal(await unified.getByRole('button', { name: '最强称号规则' }).count(), 1,
+        `master-title management missing at ${suffix(viewport)}`)
+      assert.equal(await page.getByRole('heading', { name: '总体战绩 · 本赛季' }).isVisible(), true,
+        `selected statistics range is missing at ${suffix(viewport)}`)
       await page.screenshot({ path: path.join(output, `season-history-${suffix(viewport)}.png`), fullPage: true })
+      if (viewport.width === 390 || viewport.width === 1920) {
+        await page.getByRole('button', { name: '近 7 天', exact: true }).click()
+        assert.equal(await page.locator('.season-stats article').first().locator('b').textContent(), '7')
+        assert.equal(await page.getByRole('heading', { name: '本赛季排位' }).isVisible(), true)
+        await page.screenshot({ path: path.join(output, `season-range-7d-${suffix(viewport)}.png`), fullPage: true })
+        await page.getByRole('button', { name: '近 30 天', exact: true }).click()
+        assert.equal(await page.locator('.season-stats article').first().locator('b').textContent(), '30')
+      }
+      assert.equal(await page.locator('.penalty-history').count(), 0,
+        `private penalty history mounted before expansion at ${suffix(viewport)}`)
+      await page.locator('.penalty-history-shell > summary').click()
+      await page.getByText('仅本人可见的验收判罚', { exact: true }).waitFor()
+      assert.deepEqual(await page.evaluate(() => window.__qaIntegrityReads), { notifications: 1, appeals: 1 },
+        `private penalty history did not load exactly once after expansion at ${suffix(viewport)}`)
+      await page.getByRole('button', { name: '收藏与偏好', exact: true }).click()
+      await page.locator('.alternate-art-collection').waitFor()
+      assert.equal(await page.locator('.public-settings').count(), 1,
+        `privacy preference missing at ${suffix(viewport)}`)
+      assert.equal(await page.locator('.ranked-season-panel').count(), 0,
+        `collection duplicates ranked section at ${suffix(viewport)}`)
+      assert.equal(await overflow(page), false, `collection overflows at ${suffix(viewport)}`)
 
       await page.goto(`http://127.0.0.1:${port}/__profile_admin__?mode=summary`)
       await page.getByRole('dialog').waitFor()

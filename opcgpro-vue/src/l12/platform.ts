@@ -479,7 +479,7 @@ export interface RankedSettlementComponent { kind: string; label: string; value:
 export interface RankedSettlement { matchId: string; accountId: string; faction: string; won: boolean; placement: boolean; placementPlayed: number; placementRequired: number; before: number; after: number; delta: number; tierBefore: string; tierAfter: string; components: RankedSettlementComponent[]; settledAt: string; rewardStatus?: 'applied' | 'held' | 'released' | 'voided'; effectiveDelta?: number; pendingDelta?: number }
 export interface RankedBroadcast { id: string; matchId: string; eventType: string; message: string; createdAt: string }
 export interface RankedBroadcastClaim { broadcast: RankedBroadcast; claimToken: string; leaseExpiresAt: string }
-export interface RankedLeaderboardEntry { rank: number; username: string; faction: string; sevenValue: number; displayValue: string; tier: string; title?: string; titles: string[]; wins: number; losses: number; winStreak: number }
+export interface RankedLeaderboardEntry { rank: number; username: string; faction: string; sevenValue: number; displayValue: string; tier: string; title?: string; titles: string[]; wins: number; losses: number; winStreak: number; intervalSevenDelta?: number | null; intervalSevenIncomplete?: boolean }
 export interface RankedMasterChampion { masterId: string; masterName: string; username: string; title: string; sevenValue: number; displayValue: string; games: number; wins: number }
 export interface RankedAnalyticsSummary { matches: number; placedPlayers: number; activeMasters: number; updatedAt?: string }
 export interface RankedMasterStats {
@@ -1578,7 +1578,7 @@ export const rankedApi = {
   leaderboard: (faction = '', range: '7d' | '30d' | 'season' = 'season') => {
     const params = new URLSearchParams({ range })
     if (faction) params.set('faction', faction)
-    return platformRequest<{ players: RankedLeaderboardEntry[]; analytics: RankedAnalytics }>(`/api/rankings?${params}`)
+    return platformRequest<{ players: RankedLeaderboardEntry[]; analytics: RankedAnalytics; rangeLimited?: boolean }>(`/api/rankings?${params}`)
   },
   history: (limit = 500) => platformRequest<RankedSeasonHistory>(`/api/rankings/history?limit=${limit}`),
   broadcasts: (limit = 30) => platformRequest<RankedBroadcast[]>(`/api/ranked/broadcasts?limit=${limit}`),
