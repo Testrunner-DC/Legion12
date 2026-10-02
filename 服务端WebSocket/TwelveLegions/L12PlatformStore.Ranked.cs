@@ -99,7 +99,9 @@ public sealed record L12RankedMatchupStatsView(string MasterId, string OpponentM
     int SecondGames, int SecondWins);
 public sealed record L12RankedAnalyticsView(string Range, L12RankedAnalyticsSummary Summary,
     IReadOnlyList<L12RankedMasterStatsView> Masters,
-    IReadOnlyList<L12RankedMatchupStatsView> Matchups);
+    IReadOnlyList<L12RankedMatchupStatsView> Matchups,
+    DateTimeOffset? FromUtc = null, DateTimeOffset? UntilUtc = null,
+    string? SeasonId = null, string? SeasonName = null);
 public sealed record L12RankedOverviewView(L12RankedProfileView Profile,
     IReadOnlyDictionary<string, int> FactionTotals, L12RankedConfigView Config,
     IReadOnlyList<L12RankedProfileHistoryView> History);
@@ -1013,9 +1015,13 @@ public sealed partial class L12PlatformStore
                 && row.PlacementPlayed >= _data.RankedConfig!.PlacementMatches
                 && _data.Accounts.Any(account => account.Id == row.AccountId && !account.Disabled && !account.Deleted));
             var updatedAt = matches.Select(item => item.Ended).DefaultIfEmpty().Max();
+            var scopeFrom = rangeStart == DateTimeOffset.MinValue ? (DateTimeOffset?)null : rangeStart;
+            var scopeUntil = rangeEnd < now ? rangeEnd : now;
             return new L12RankedAnalyticsView(range,
                 new L12RankedAnalyticsSummary(matches.Length, placedPlayers, masters.Count,
-                    updatedAt == default ? null : updatedAt), masterViews, matchupViews);
+                    updatedAt == default ? null : updatedAt), masterViews, matchupViews,
+                scopeFrom, scopeUntil, range == "season" ? season.Id : null,
+                range == "season" ? season.Name : null);
 
             void AddMaster(string masterId, bool won, bool first)
             {

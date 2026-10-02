@@ -28,6 +28,53 @@
   --l12-ui-space-4:20px;
   --l12-ui-shadow-panel:0 14px 38px rgba(0,0,0,.24);
   --l12-ui-shadow-dialog:0 30px 100px rgba(0,0,0,.72);
+  --l12-ui-control-height:44px;
+  --l12-ui-focus-width:2px;
+  --l12-ui-disabled-bg:#151d22;
+  --l12-ui-disabled-text:#98a5ac;
+}
+
+/* Opt-in primitives also work inside Teleport. They never select board geometry. */
+.ui-button{
+  box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;
+  min-width:0;min-height:var(--l12-ui-control-height);max-width:100%;height:auto;
+  padding:10px 14px;border:1px solid var(--l12-ui-line-strong);border-radius:var(--l12-ui-radius-sm);
+  background:var(--l12-ui-control);color:var(--l12-ui-text);font:inherit;font-weight:800;
+  line-height:1.4;text-align:center;white-space:normal;overflow-wrap:anywhere;cursor:pointer;
+}
+.ui-action-row{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(min(110px,100%),1fr));grid-auto-rows:1fr;align-items:stretch;gap:var(--l12-ui-space-2)}
+.ui-action-row>.ui-button{width:100%;height:100%}
+.ui-button:not(:disabled):hover{border-color:var(--l12-ui-info);background:#143038}
+.ui-button[data-ui-tone='primary']{border-color:var(--l12-ui-accent-line);background:linear-gradient(135deg,#b99648,var(--l12-ui-accent));color:#0b0d0e}
+.ui-button[data-ui-tone='danger']{border-color:#8f4049;background:#2b1218;color:#efb1b7}
+.ui-button[data-ui-tone='warning']{border-color:var(--l12-ui-accent-line);background:#32250e;color:#ffe09a}
+.ui-button[aria-pressed='true']{border-color:var(--l12-ui-info);background:#163e45;color:#e9ffff;box-shadow:inset 0 -3px var(--l12-ui-info)}
+.ui-button:not(:disabled):active{filter:brightness(.9)}
+.ui-card{min-width:0;box-sizing:border-box;border:1px solid var(--l12-ui-line);border-radius:var(--l12-ui-radius-md);background:var(--l12-ui-panel)}
+.ui-card[aria-selected='true']{border-color:var(--l12-ui-info);box-shadow:inset 3px 0 var(--l12-ui-info)}
+.ui-notice{display:flex;align-items:center;flex-wrap:wrap;gap:var(--l12-ui-space-2);padding:12px 14px;border:1px solid var(--l12-ui-line);border-left:3px solid var(--l12-ui-info);border-radius:var(--l12-ui-radius-sm);background:var(--l12-ui-panel);color:var(--l12-ui-text-soft);line-height:1.6;overflow-wrap:anywhere}
+.ui-notice-copy{flex:1 1 180px;min-width:0}.ui-notice-copy p{margin:0}.ui-notice-action{max-width:100%}
+.ui-notice[data-ui-kind='success']{border-left-color:var(--l12-ui-success);color:#ace5c9}
+.ui-notice[data-ui-kind='warning']{border-left-color:var(--l12-ui-accent);color:#ead28e}
+.ui-notice[data-ui-kind='error']{border-left-color:var(--l12-ui-danger);color:#f0b9bf}
+.ui-notice[data-ui-kind='empty']{justify-content:center;border:1px dashed var(--l12-ui-line-strong);padding:24px 16px;color:var(--l12-ui-text-muted);text-align:center}
+.ui-dialog{box-sizing:border-box;border-radius:var(--l12-ui-radius-md);box-shadow:var(--l12-ui-shadow-dialog);overscroll-behavior:contain;scroll-padding:16px}
+
+/* A named important layer makes unavailable/focus states win over old scoped
+   primary/hover styles without turning normal buttons into fixed-size cards. */
+@layer l12-ui-states{
+  :is(.ui-state-scope,.ui-dialog) :is(button,input,select,textarea,a[href],summary,[tabindex='0']):focus-visible,
+  .ui-button:focus-visible{
+    outline:var(--l12-ui-focus-width) solid var(--l12-ui-info)!important;outline-offset:2px!important;
+  }
+  :is(.ui-state-scope,.ui-dialog) :is(button,input,select,textarea):disabled,
+  .ui-button:disabled{
+    background:var(--l12-ui-disabled-bg)!important;color:var(--l12-ui-disabled-text)!important;
+    border-color:var(--l12-ui-line-strong)!important;opacity:1!important;cursor:not-allowed!important;box-shadow:none!important;filter:none!important;
+  }
+  :is(.ui-state-scope,.ui-dialog) :is(input,select,textarea)[aria-invalid='true']{
+    border-color:var(--l12-ui-danger)!important;
+  }
 }
 
 .site-shell{

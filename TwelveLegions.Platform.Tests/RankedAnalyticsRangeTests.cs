@@ -232,18 +232,28 @@ public sealed class RankedAnalyticsRangeTests
                 Match("disabled-participant", .25, disabled.Id),
             };
 
-            var seven = store.RankedAnalytics(source, "7d");
+            var seven = store.RankedAnalytics(source, "7d", now);
             Assert.Equal(2, seven.Summary.Matches);
+            Assert.Equal(now.AddDays(-7), seven.FromUtc);
+            Assert.Equal(now, seven.UntilUtc);
+            Assert.Null(seven.SeasonId);
+            Assert.Null(seven.SeasonName);
             Assert.Equal(2, seven.Masters.Single(row => row.MasterId == masters[0]).Games);
             Assert.Equal(2, seven.Matchups.Single(row => row.MasterId == masters[0]
                 && row.OpponentMasterId == masters[1]).Games);
 
-            var thirty = store.RankedAnalytics(source, "30d");
+            var thirty = store.RankedAnalytics(source, "30d", now);
             Assert.Equal(3, thirty.Summary.Matches);
+            Assert.Equal(now.AddDays(-30), thirty.FromUtc);
+            Assert.Equal(now, thirty.UntilUtc);
             Assert.Equal(3, thirty.Masters.Single(row => row.MasterId == masters[0]).Games);
 
-            var season = store.RankedAnalytics(source, "season");
+            var season = store.RankedAnalytics(source, "season", now);
             Assert.Equal(1, season.Summary.Matches);
+            Assert.Equal(now.AddDays(-1), season.FromUtc);
+            Assert.Equal(now, season.UntilUtc);
+            Assert.Equal(operations.Config.Season.Id, season.SeasonId);
+            Assert.Equal(operations.Config.Season.Name, season.SeasonName);
             Assert.Equal(1, store.RankedAnalytics(source, "unexpected").Summary.Matches);
         }
         finally

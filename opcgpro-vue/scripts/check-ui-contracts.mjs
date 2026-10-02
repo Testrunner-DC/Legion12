@@ -750,7 +750,7 @@ const contracts = [
   [l12Net.includes("export type SandboxDisasterMode = 'all' | 'random' | 'custom' | 'none'") && sandbox.includes('<option value="custom"') && !sandbox.includes('<option value="season"'), '沙盒只能使用全部、随机、自定或无天灾，不得接入赛季天灾池'],
   [lobby.includes('joinMatchmaking') && lobby.includes('七曜值') && lobby.includes('选择本赛季派系') && l12Net.includes("type: 'joinMatchmaking'") && l12Net.includes("type: 'pollMatchmaking'") && l12Net.includes("message.type === 'matchmakingRejected'") && l12Net.includes('startMatchmakingPolling()'), '公开匹配必须使用服务端权威队列、保留等待扩圈轮询并清理拒绝状态，在排位前选择赛季派系'],
   [lobby.includes('data-ui-contract="faction-totals-above-public-match"') && lobby.indexOf('data-ui-contract="faction-totals-above-public-match"') < lobby.indexOf('<section v-if="tab === \'match\'" class="mode-panel panel">'), '三派系七曜总量必须位于顶部模式标签之后、公开匹配面板之前，不能埋在公开匹配内容框内'],
-  [rankings.includes("type RankingTab = 'players' | 'masters' | 'matchups' | 'history'") && rankings.includes('主宰对阵一览') && rankings.includes('历史荣誉') && rankings.includes('row.titles') && rankings.includes('title-badge') && rankings.includes('champion-title') && rankings.includes("type MasterSort = 'games' | 'winRate' | 'firstWinRate' | 'secondWinRate' | 'usageRate'") && rankings.includes('v-model="masterSort"') && rankings.includes('right[masterSort.value] - left[masterSort.value]') && seasonConfigurationEditor.includes('最高段位第一名称号') && seasonConfigurationEditor.includes('主宰最强玩家称号') && seasonConfigurationEditor.includes('ranked.masterTitles'), '派系前五称号必须标明最高段位门槛，排行榜必须支持玩家榜、主宰榜、多维主宰排序、对阵一览、历史荣誉及醒目的多称号展示，后台必须支持逐主宰最强玩家称号'],
+  [rankings.includes("type RankingTab = 'players' | 'masters' | 'matchups' | 'history'") && rankings.includes('主宰对阵一览') && rankings.includes('历史荣誉') && rankings.includes('row.titles') && rankings.includes('title-badge') && rankings.includes('champion-title') && rankings.includes("type MasterSort = 'games' | 'winRate' | 'firstWinRate' | 'secondWinRate' | 'usageRate'") && rankings.includes('v-model="masterSort"') && rankings.includes('const publicMasterSampleMinimum = 30') && rankings.includes('const rateSort =') && rankings.includes('masterSortSamples') && rankings.includes('leftSamples < publicMasterSampleMinimum ? rightSamples - leftSamples') && rankings.includes('right[sort] - left[sort]') && seasonConfigurationEditor.includes('最高段位第一名称号') && seasonConfigurationEditor.includes('主宰最强玩家称号') && seasonConfigurationEditor.includes('ranked.masterTitles'), '派系前五称号必须标明最高段位门槛，排行榜必须支持玩家榜、主宰榜、多维主宰排序、对阵一览、历史荣誉及醒目的多称号展示，后台必须支持逐主宰最强玩家称号'],
   [rankings.includes('<h1>排行榜</h1>') && !rankings.includes('<h1>排位排行榜</h1>')
     && rankings.includes("import { masterProfileUrl } from '@/l12/specialAssets'")
     && rankings.includes('<MasterMatchupMatrix :masters="matrixRows" :cells="matrixCells"')
@@ -1335,7 +1335,9 @@ const contracts = [
     && adminCardAnalytics.includes('request === detailRequest')
     && adminCardAnalytics.includes(':data-low-sample="isLowSample(item)"')
     && !adminCardAnalytics.includes('sample-contract')
-    && !adminCardAnalytics.includes('统计单位为')
+    && adminCardAnalytics.includes('listAppliedScope.value = nextScope')
+    && adminCardAnalytics.includes('detailAppliedScope.value = nextScope')
+    && adminCardAnalytics.includes('<StatisticsScope')
     && adminCardAnalytics.includes("return '低样本，仅供参考'")
     && platform.includes("opponentMasterId?: string") && l12ServerSources.includes('OpponentMasterId'), '卡牌数据必须区分使用方/对方主宰，并让样本、入组率、基线与明细使用同一筛选，低样本必须明确警示'],
   [adminCardAnalytics.includes('参赛方 × 对局') && adminCardAnalytics.includes('同条件未携带基线')
@@ -1382,8 +1384,10 @@ const contracts = [
     && profilePage.includes('账号已登录，但后续数据同步失败')
     && platform.includes('authState.verified = true') && platform.includes("localStorage.setItem('l12-auth-token', token)")
     && app.includes('if (token && verified) startAutomaticConnection()'), '登录成功必须先提交权威账号与令牌再启动全站WebSocket；后续牌库或资料同步失败不得把已成功认证伪装成登录失败'],
-  [profilePage.includes('<p v-if="notice" class="notice" role="status" aria-live="polite" aria-atomic="true">')
-    && profilePage.indexOf('<p v-if="notice" class="notice"') < profilePage.indexOf('class="rank-overview"')
+  [profilePage.includes('<UiNotice v-if="notice" class="notice" role="status" aria-live="polite" aria-atomic="true">')
+    && profilePage.indexOf('<UiNotice v-if="notice" class="notice"') >= 0
+    && profilePage.indexOf('class="rank-overview"') >= 0
+    && profilePage.indexOf('<UiNotice v-if="notice" class="notice"') < profilePage.indexOf('class="rank-overview"')
     && profilePage.includes('.notice{position:fixed;') && profilePage.includes('z-index:90;'), '个人中心的称号、改密、邮箱与会话操作必须共用当前视口可见的状态播报，不得再把唯一反馈放到整页内容末尾'],
   [friendsPage.includes("tab === 'blocked'") && friendsPage.includes('refreshFriendResource()')
     && friendsPage.includes('l12State.presence') && friendsPage.includes('selectedPresence?.canInvite')

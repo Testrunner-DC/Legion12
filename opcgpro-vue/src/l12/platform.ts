@@ -491,7 +491,10 @@ export interface RankedMatchupStats {
   masterId: string; opponentMasterId: string; games: number; wins: number; winRate: number
   firstGames: number; firstWins: number; secondGames: number; secondWins: number
 }
-export interface RankedAnalytics { range: '7d' | '30d' | 'season'; summary: RankedAnalyticsSummary; masters: RankedMasterStats[]; matchups: RankedMatchupStats[] }
+export interface RankedAnalytics {
+  range: '7d' | '30d' | 'season'; summary: RankedAnalyticsSummary; masters: RankedMasterStats[]; matchups: RankedMatchupStats[]
+  fromUtc?: string | null; untilUtc?: string | null; seasonId?: string | null; seasonName?: string | null
+}
 export interface RankedIntegritySignal { code: string; label: string }
 export interface RankedIntegrityAudit {
   id: string; matchId: string; seasonId: string

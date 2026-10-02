@@ -19,7 +19,7 @@ const removedDetailCopy = [
 
 const checks = [
   ['详情页移除面向存储与实现的说明', removedDetailCopy.every(value => !detail.includes(value))],
-  ['详情页保留版本日期、匿名聚合统计和不可用原因', detail.includes('formatTime(version.createdAt)') && detail.includes('details.matchStatistics.groups') && detail.includes('stat.games') && detail.includes('formatRate(stat.winRate)') && detail.includes('details.matchBindingMessage')],
+  ['详情页保留版本日期、匿名聚合统计和不可用原因', detail.includes('formatTime(version.createdAt)') && detail.includes('details.matchStatistics.groups') && detail.includes('stat.games') && detail.includes('formatRate(stat.winRate)') && detail.includes('details.value.matchBindingMessage') && detail.includes(':sample="matchStatisticsSample"')],
   ['详情页不再展示单局或回放入口', !detail.includes('match.matchId') && !detail.includes('match.playedAt') && !detail.includes('match.result') && !detail.includes('replayPath')],
   ['编辑器与我的牌库复用同一公开实体核验', entry.includes('matchesPublishedDeckReference') && editor.includes('matchesPublishedDeckReference(currentDeck()') && library.includes('matchesPublishedDeckReference(deck, publishedDeck')],
   ['公开实体核验同时匹配ID、版本与作者', ['published.id === publicationId', 'published.deck.publicationVersion === publicationVersion', 'published.ownerId === ownerId'].every(value => entry.includes(value))],

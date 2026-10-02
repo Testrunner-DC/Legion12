@@ -19,6 +19,7 @@ import AdminRuleRulingsPanel from '/src/l12/site/AdminRuleRulingsPanel.vue'
 import {createRuleCenterDraft,createRulingsDraft} from '/src/l12/data/ruleCenterData.ts'
 import {adminApi,authState,platformState} from '/src/l12/platform.ts'
 import '/src/style.css'
+import '/src/l12/site/uiSystem.css'
 
 const center=createRuleCenterDraft()
 for(const collection of ['coreBlocks','quickStart','terms','tournament','versions'])
@@ -82,7 +83,7 @@ authState.initialized=true
 authState.verified=true
 
 const mode=new URLSearchParams(location.search).get('fixture')||'player'
-const component={render:()=>mode==='admin'?h(AdminRuleRulingsPanel):h(RuleCenterPage)}
+const component={render:()=>h('div',{class:'site-shell'},h('main',{class:'site-content'},mode==='admin'?h(AdminRuleRulingsPanel):h(RuleCenterPage)))}
 const router=createRouter({history:createWebHistory(),routes:[{path:'/:pathMatch(.*)*',component:{render:()=>null}}]})
 createApp(component).use(router).mount('#app')
 `
@@ -363,6 +364,8 @@ try {
     assert.match(decodeURIComponent(deepLink.url()), new RegExp('product=' + selected), 'product query state was not written')
     await deepLink.goBack()
     await deepLink.goForward()
+    await deepLink.waitForURL(url => url.searchParams.get('product') === selected)
+    await deepLink.locator('.product-grid button.active').waitFor()
     assert.match(decodeURIComponent(deepLink.url()), new RegExp('product=' + selected), 'product query state did not survive history navigation')
   }
   await deepLink.close()

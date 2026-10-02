@@ -15,6 +15,7 @@ const entry = `
 import {createApp,h} from 'vue'
 import {createMemoryHistory,createRouter,RouterView} from 'vue-router'
 import '/src/style.css'
+import '/src/l12/site/uiSystem.css'
 
 const permissions=['admin.accounts.read','admin.accounts.status.write','admin.sessions.read','admin.sessions.revoke','admin.bugs.read','admin.bugs.write','admin.effects.read','admin.effects.review','admin.audit.read','admin.security.read','admin.runtime.read','admin.analytics.read']
 localStorage.setItem('l12-auth-token','qa-token')
@@ -53,6 +54,7 @@ platform.rankedApi.overview=async()=>({
  ]
 })
 let seasonSummaryNotifications=[{id:'summary-1',seasonId:'S2026-1',seasonName:'群星归位远征纪念特别长名称极限宽屏短高度赛季第三十六期最终章特别纪念版本',faction:'秩序',placed:true,rankLabel:'冠冕',factionRank:1,overallRank:2,sevenValue:123456,displayValue:'七曜值 123,456',wins:46,losses:14,winRate:76.7,factionTitle:'秩序冠首',masterTitles:['最强梅杰德'],titles:['秩序冠首','最强梅杰德'],availableAt:'2026-09-20T08:00:00Z'}]
+platform.rankedApi.selectTitle=async(title)=>({...((await platform.rankedApi.overview()).profile),selectedMasterTitle:title||null})
 platform.seasonSummaryApi.notifications=async()=>seasonSummaryNotifications
 platform.seasonSummaryApi.acknowledge=async(id)=>{seasonSummaryNotifications=seasonSummaryNotifications.filter(item=>item.id!==id)}
 platform.sessionApi.list=async()=>[
@@ -106,7 +108,7 @@ const router=createRouter({history:createMemoryHistory(),routes:[
   ...moduleRoutes,
  ]},
 ]})
-const app=createApp({render:()=>h(RouterView)});app.use(router);await router.push(mode==='admin'?'/admin':mode==='summary'?'/season-summary':'/me?section=performance');await router.isReady();app.mount('#app')
+const app=createApp({render:()=>h('div',{class:'site-shell'},h('main',{class:'site-content'},h(RouterView)))});app.use(router);await router.push(mode==='admin'?'/admin':mode==='summary'?'/season-summary':'/me?section=performance');await router.isReady();app.mount('#app')
 window.__qaRouter=router
 `
 
@@ -188,6 +190,14 @@ try {
       `merged page fetched private penalty history before expansion at ${suffix(viewport)}`)
     assert.equal(await page.locator('.master-records').evaluate(element => element.scrollWidth > element.clientWidth + 1), false, `profile master records overflow at ${suffix(viewport)}`)
     await page.screenshot({ path: path.join(output, `profile-${suffix(viewport)}.png`), fullPage: true })
+    await page.locator('.title-manager-controls select').selectOption('最强阿斯加德')
+    await page.getByRole('button',{name:'保存称号',exact:true}).click()
+    await page.locator('.notice').getByText('对战称号已更新',{exact:true}).waitFor()
+    await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight))
+    const noticeBounds=await page.locator('.notice').evaluate(e=>{const b=e.getBoundingClientRect();return{position:getComputedStyle(e).position,left:b.left,right:b.right,top:b.top,bottom:b.bottom,width:innerWidth,height:innerHeight}})
+    assert.equal(noticeBounds.position,'fixed','real operation feedback stays fixed')
+    assert(noticeBounds.left>=-1&&noticeBounds.right<=noticeBounds.width+1&&noticeBounds.top>=-1&&noticeBounds.bottom<=noticeBounds.height+1,`fixed operation notice escapes viewport at ${suffix(viewport)}`)
+    await page.screenshot({path:path.join(output,`profile-fixed-notice-${suffix(viewport)}.png`)})
     await page.getByRole('button',{name:'账号与安全',exact:true}).click()
     await page.locator('.session-manager').waitFor()
     await page.locator('.session-manager').evaluate(element => { element.open = true })

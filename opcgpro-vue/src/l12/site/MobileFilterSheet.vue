@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
+import UiButton from './UiButton.vue'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -14,6 +15,7 @@ const emit = defineEmits<{
 }>()
 
 const closeButton = ref<HTMLButtonElement | null>(null)
+const sheet = ref<HTMLElement | null>(null)
 let trigger: HTMLElement | null = null
 
 function openFrom(event: Event) {
@@ -22,6 +24,14 @@ function openFrom(event: Event) {
 }
 function close() { emit('update:modelValue', false) }
 function reset() { emit('reset') }
+function trapFocus(event: KeyboardEvent) {
+  if (event.key !== 'Tab') return
+  const controls = [...(sheet.value?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]') ?? [])].filter(element => element.getClientRects().length)
+  const first = controls[0], last = controls[controls.length - 1]
+  if (!first) { event.preventDefault(); return }
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+}
 
 watch(() => props.modelValue, visible => {
   if (visible) nextTick(() => closeButton.value?.focus())
@@ -35,10 +45,10 @@ watch(() => props.modelValue, visible => {
   </button>
   <Teleport to="body">
     <section v-if="modelValue" class="mobile-filter-mask" role="dialog" aria-modal="true" :aria-label="title" @click.self="close" @keydown.esc="close">
-      <div class="mobile-filter-sheet">
+      <div ref="sheet" class="mobile-filter-sheet ui-dialog" @keydown="trapFocus">
         <header><div><small>FILTERS</small><h2>{{ title }}</h2></div><button ref="closeButton" type="button" aria-label="关闭筛选" @click="close">×</button></header>
         <div class="mobile-filter-content"><slot /></div>
-        <footer><button type="button" @click="reset">重置</button><button type="button" class="primary" @click="close"><slot name="apply-label">查看结果</slot></button></footer>
+        <footer><UiButton @click="reset">重置</UiButton><UiButton tone="primary" class="primary" @click="close"><slot name="apply-label">查看结果</slot></UiButton></footer>
       </div>
     </section>
   </Teleport>

@@ -4,11 +4,13 @@ import { masterProfileUrl } from '@/l12/specialAssets'
 import RankedIdentityBadge from '@/l12/RankedIdentityBadge.vue'
 import RankedMasterTitleRulesModal from './RankedMasterTitleRulesModal.vue'
 import MasterMatchupMatrix, { type MasterMatchupMatrixCell, type MasterMatchupMatrixMaster } from './MasterMatchupMatrix.vue'
+import StatisticsScope from './StatisticsScope.vue'
 import {
   platformState,
   rankedApi,
   type RankedAnalytics,
   type RankedLeaderboardEntry,
+  type RankedMasterStats,
   type RankedSeasonHistory,
   type RankedSeasonHonorHistory,
 } from '@/l12/platform'
@@ -37,7 +39,9 @@ const analytics = ref<RankedAnalytics>({
 const loading = ref(false)
 const error = ref('')
 const rangeLimited = ref(false)
+const hasAnalytics = ref(false)
 const masterTitleRulesOpen = ref(false)
+const publicMasterSampleMinimum = 30
 const filters = [{ id: '', name: '全服' }, { id: 'order', name: '秩序' }, { id: 'chaos', name: '混沌' }, { id: 'fate', name: '命运' }]
 const ranges: Array<{ id: RankingRange; name: string }> = [{ id: '7d', name: '近7天' }, { id: '30d', name: '近30天' }, { id: 'season', name: '本赛季' }]
 const headingScope = computed(() => tab.value === 'history' ? '已结算赛季'
@@ -65,6 +69,7 @@ async function load() {
     players.value = response.players as PlayerLeaderboardEntry[]
     analytics.value = response.analytics
     rangeLimited.value = Boolean(response.rangeLimited)
+    hasAnalytics.value = true
     history.value = historyResponse
   } catch (cause) {
     if (!disposed && requestedFaction === faction.value && requestedRange === range.value)
@@ -88,16 +93,31 @@ const visibleMasters = computed(() => {
   const rows = query.value
     ? analytics.value.masters.filter(row => `${row.masterName} ${row.masterId} ${row.strongestPlayer ?? ''} ${row.title ?? ''}`.toLocaleLowerCase().includes(query.value))
     : analytics.value.masters
-  return [...rows].sort((left, right) => right[masterSort.value] - left[masterSort.value]
-    || right.games - left.games
-    || right.winRate - left.winRate
-    || left.masterName.localeCompare(right.masterName, 'zh-CN'))
+  return [...rows].sort((left, right) => {
+    const sort = masterSort.value
+    const leftSamples = masterSortSamples(left, sort)
+    const rightSamples = masterSortSamples(right, sort)
+    const rateSort = sort === 'winRate' || sort === 'firstWinRate' || sort === 'secondWinRate'
+    const reliability = Number(rightSamples >= publicMasterSampleMinimum)
+      - Number(leftSamples >= publicMasterSampleMinimum)
+    return (rateSort ? reliability : 0)
+      || (rateSort && leftSamples < publicMasterSampleMinimum ? rightSamples - leftSamples : right[sort] - left[sort])
+      || right.games - left.games
+      || (!rateSort ? right.winRate - left.winRate : 0)
+      || left.masterName.localeCompare(right.masterName, 'zh-CN')
+  })
 })
+function masterSortSamples(row: RankedMasterStats, sort: MasterSort) {
+  if (sort === 'firstWinRate') return row.firstGames
+  if (sort === 'secondWinRate') return row.secondGames
+  return row.games
+}
 const currentMasterTitles = computed(() => new Set(analytics.value.masters.flatMap(row => row.title ? [row.title] : [])))
 const titleVariant = (title: string) => title.startsWith('最强') || currentMasterTitles.value.has(title) ? 'master-title' as const : 'faction-title' as const
 const matrixMasters = computed(() => visibleMasters.value)
 const matrixRows = computed<MasterMatchupMatrixMaster[]>(() => matrixMasters.value.map(row => ({
-  id: row.masterId, name: row.masterName, imageUrl: masterProfileUrl(row.masterId), rank: row.rank, winRate: row.winRate / 100,
+  id: row.masterId, name: row.masterName, imageUrl: masterProfileUrl(row.masterId), rank: row.rank,
+  winRate: row.games >= publicMasterSampleMinimum ? row.winRate / 100 : null,
 })))
 const matrixCells = computed<MasterMatchupMatrixCell[]>(() => analytics.value.matchups.map(row => ({
   masterId: row.masterId, opponentMasterId: row.opponentMasterId, samples: row.games, winRate: row.winRate / 100,
@@ -132,8 +152,43 @@ const latestHistorySeason = computed(() => history.value.latestSeasonName
 const expandedHistorySeason = (seasonName: string) => Boolean(query.value) || seasonName === latestHistorySeason.value
 const updatedAt = computed(() => analytics.value.summary.updatedAt
   ? new Date(analytics.value.summary.updatedAt).toLocaleString() : '暂无数据')
+const statisticsWindow = computed(() => {
+  const from = parseScopeDate(analytics.value.fromUtc)
+  const until = parseScopeDate(analytics.value.untilUtc)
+  const season = analytics.value.seasonName?.trim()
+  if (from && until) return `${season ? `${season} · ` : ''}${scopeDate(from)} 至 ${scopeDate(until)}（UTC+8）`
+  if (until) return `${season || '本赛季'} · 起始时间未记录 · 截至 ${scopeDate(until)}（UTC+8）`
+  const fallback = analytics.value.range === '7d' ? '近 7 天滚动窗口' : analytics.value.range === '30d' ? '近 30 天滚动窗口' : season || '本赛季'
+  return `${fallback}（服务端未返回精确起止时间）`
+})
+const statisticsSample = computed(() => {
+  if (rangeLimited.value) return '当前窗口无法证明完整，未展示残缺结果'
+  const base = `${analytics.value.summary.matches} 场有效排位 · ${analytics.value.summary.activeMasters} 位活跃主宰`
+  if (analytics.value.range === range.value) return base
+  const requested = range.value === '7d' ? '近 7 天' : range.value === '30d' ? '近 30 天' : '本赛季'
+  return `${base} · ${loading.value ? `正在读取${requested}` : error.value ? `${requested}读取失败，仍显示已加载范围` : `已选择${requested}，等待刷新`}`
+})
+const statisticsScopeItems = computed(() => [
+  analytics.value.range === 'season'
+    ? `只统计${analytics.value.seasonName ? `〈${analytics.value.seasonName}〉` : '当前赛季'}；玩家派系、段位和称号均为当前身份。`
+    : `${analytics.value.range === '7d' ? '近 7 天' : '近 30 天'}按对局开始时间滚动取数并可跨赛季；玩家派系、段位和称号仍为当前赛季身份。`,
+  '仅计入胜负、双方主宰与时间完整的有效排位；暂扣、作废、系统异常及禁用／删除账号参与的对局不计，来源上限无法证明完整时整窗不展示。',
+  '排行榜未按运营规则版本或卡效版本拆分；窗口跨越版本时会合并显示，不从缺失记录推断版本。',
+  `主宰胜率与对阵少于 ${publicMasterSampleMinimum} 场时只保留样本事实，不显示强弱色；${publicMasterSampleMinimum} 场是展示提醒，不是结算门槛。最强玩家称号另按近 30 日独立口径产生。`,
+])
 
 function percent(value: number) { return `${value.toFixed(1)}%` }
+function crediblePercent(value: number, samples: number) {
+  return samples >= publicMasterSampleMinimum ? percent(value) : '—'
+}
+function parseScopeDate(value?: string | null) {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isFinite(date.valueOf()) && date.getUTCFullYear() >= 2000 ? date : null
+}
+function scopeDate(value: Date) {
+  return value.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
 
 watch([faction, range], load)
 onMounted(() => {
@@ -155,8 +210,8 @@ onBeforeUnmount(() => {
     </header>
 
     <p v-if="rangeLimited && tab !== 'history'" class="error" role="alert">本时间范围对局过多，暂无法显示完整排行。请切换本赛季。</p>
-    <section v-if="!rangeLimited" class="summary-strip">
-      <article><small>有效排位</small><strong>{{ analytics.summary.matches }}</strong><span>{{ range === 'season' ? '本赛季' : range === '7d' ? '近7天' : '近30天' }}</span></article>
+    <section v-if="hasAnalytics && !rangeLimited" class="summary-strip">
+      <article><small>有效排位</small><strong>{{ analytics.summary.matches }}</strong><span>{{ analytics.range === 'season' ? '本赛季' : analytics.range === '7d' ? '近7天' : '近30天' }}</span></article>
       <article><small>已定级玩家</small><strong>{{ analytics.summary.placedPlayers }}</strong><span>当前赛季</span></article>
       <article><small>活跃主宰</small><strong>{{ analytics.summary.activeMasters }}</strong><span>统计范围内</span></article>
       <article><small>最近计入对局</small><strong class="updated">{{ updatedAt }}</strong><span>页面可见时每分钟自动刷新</span></article>
@@ -175,6 +230,7 @@ onBeforeUnmount(() => {
       </label>
       <input v-model="search" class="ranking-search" :placeholder="tab === 'players' ? '搜索玩家、段位或称号' : tab === 'history' ? '搜索赛季、玩家或称号' : '搜索主宰或最强玩家'">
     </section>
+    <StatisticsScope v-if="tab !== 'history' && hasAnalytics" :summary="statisticsWindow" :sample="statisticsSample" :items="statisticsScopeItems"/>
 
     <nav v-if="tab === 'players'" class="faction-filter"><button v-for="item in filters" :key="item.id" :class="{ active: faction === item.id }" @click="faction = item.id">{{ item.name }}</button></nav>
     <p v-if="error" class="error">{{ error }}</p>
@@ -200,13 +256,13 @@ onBeforeUnmount(() => {
     </section>
 
     <section v-else-if="tab === 'masters'" class="rank-panel master-table">
-      <div class="thead"><span>排名</span><span>主宰</span><span>最强玩家</span><span>场次</span><span>战绩</span><span>胜率</span><span>使用率</span><span>先手</span><span>后手</span></div>
+      <div class="thead"><span>排名</span><span>主宰</span><span title="近 30 日独立称号口径">最强玩家<small>近30日</small></span><span>场次</span><span>战绩</span><span>胜率</span><span>使用率</span><span>先手</span><span>后手</span></div>
       <div v-for="(row, index) in visibleMasters" :key="row.masterId" class="tr" :class="`rank-${Math.min(index + 1, 4)}`">
         <b data-label="排名">#{{ index + 1 }}</b>
         <span class="master-card" data-label="主宰"><img class="master-avatar" data-ui-contract="ranking-master-avatar" :src="masterProfileUrl(row.masterId)" :alt="`${row.masterName}头像`"/><strong>{{ row.masterName }}<small>{{ row.masterId }}</small></strong></span>
         <span class="champion" data-label="最强玩家"><RankedIdentityBadge v-if="row.title" variant="master-title" :label="row.title"/><strong>{{ row.strongestPlayer || '尚未产生' }}</strong></span>
-        <strong data-label="场次">{{ row.games }}</strong><span data-label="战绩"><i>{{ row.wins }}</i>胜 <em>{{ row.losses }}</em>负</span><b class="rate" data-label="胜率">{{ percent(row.winRate) }}</b><span data-label="使用率">{{ percent(row.usageRate) }}</span>
-        <span data-label="先手">{{ percent(row.firstWinRate) }}<small>{{ row.firstWins }}/{{ row.firstGames }}</small></span><span data-label="后手">{{ percent(row.secondWinRate) }}<small>{{ row.secondWins }}/{{ row.secondGames }}</small></span>
+        <strong data-label="场次">{{ row.games }}</strong><span data-label="战绩"><i>{{ row.wins }}</i>胜 <em>{{ row.losses }}</em>负</span><b class="rate" data-label="胜率">{{ crediblePercent(row.winRate, row.games) }}</b><span data-label="使用率">{{ percent(row.usageRate) }}</span>
+        <span data-label="先手">{{ crediblePercent(row.firstWinRate, row.firstGames) }}<small>{{ row.firstWins }}/{{ row.firstGames }}</small></span><span data-label="后手">{{ crediblePercent(row.secondWinRate, row.secondGames) }}<small>{{ row.secondWins }}/{{ row.secondGames }}</small></span>
       </div>
       <div v-if="!visibleMasters.length" class="empty">{{ loading ? '正在聚合主宰数据…' : '当前范围暂无主宰数据' }}</div>
     </section>
@@ -234,8 +290,8 @@ onBeforeUnmount(() => {
     </section>
 
     <section v-else class="matrix-panel">
-      <header><div><small>MASTER MATCHUPS</small><h2>主宰对阵一览</h2><p>纵轴为我方、横轴为对方；绿色优势、红色劣势，先后手数据悬停可见。</p></div><span>当前 {{ matrixMasters.length }} 位主宰</span></header>
-      <MasterMatchupMatrix :masters="matrixRows" :cells="matrixCells" :empty-text="loading ? '正在生成对阵矩阵…' : '当前范围暂无对阵数据'"/>
+      <header><div><small>MASTER MATCHUPS</small><h2>主宰对阵一览</h2><p>纵轴为我方、横轴为对方；满 30 场才显示胜率与强弱色，先后手样本悬停可见。</p></div><span>当前 {{ matrixMasters.length }} 位主宰</span></header>
+      <MasterMatchupMatrix :masters="matrixRows" :cells="matrixCells" :minimum-sample="publicMasterSampleMinimum" :empty-text="loading ? '正在生成对阵矩阵…' : '当前范围暂无对阵数据'"/>
     </section>
     <RankedMasterTitleRulesModal v-model="masterTitleRulesOpen"/>
   </div>
@@ -243,6 +299,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .ranking-page{min-height:100%;padding:28px clamp(16px,3vw,44px) 56px;font-family:'Microsoft YaHei','微软雅黑',sans-serif;color:#eef1ed}.page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px}.page-head small,.matrix-panel header small{color:#53c3ca;font:900 14px monospace;letter-spacing:.18em}.page-head h1{margin:5px 0;font-size:30px}.page-head p,.matrix-panel header p{margin:0;color:#77858b;font-size:14px}.page-head button,.toolbar button,.faction-filter button{padding:10px 14px;border:1px solid #36434c;background:#091016;color:#879399;font-weight:900}.page-head button:disabled{opacity:.45}.summary-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:20px 0 12px}.summary-strip article{display:grid;gap:4px;min-height:86px;padding:14px;border:1px solid #303e48;background:linear-gradient(135deg,#101a23,#0a1016)}.summary-strip small{color:#72828b;font:800 14px monospace}.summary-strip strong{color:#efd375;font-size:24px}.summary-strip strong.updated{font-size:14px}.summary-strip span{color:#697880;font-size:14px}.toolbar{display:grid;grid-template-columns:auto auto minmax(190px,1fr);align-items:center;gap:10px;padding:10px;border:1px solid #2f3b45;background:#0c141d}.tabs,.ranges,.faction-filter{display:flex}.toolbar button.active,.faction-filter button.active{border-color:#c7a64b;background:#392e13;color:#f6d978}.toolbar input{min-width:0;padding:10px 12px;border:1px solid #36434c;background:#070c11;color:#e7ecea}.faction-filter{width:max-content;margin:12px 0}.rank-panel{overflow:hidden;border:1px solid #35424a;background:#0a1118}.thead,.tr{display:grid;align-items:center;min-height:58px;padding:6px 18px;border-bottom:1px solid rgba(235,230,216,.09)}.player-table .thead,.player-table .tr{grid-template-columns:64px 1.6fr .65fr .8fr 1fr .8fr .65fr .45fr}.master-table .thead,.master-table .tr{grid-template-columns:58px 1.35fr 1.25fr .45fr .75fr .55fr .55fr .65fr .65fr}.thead{min-height:42px;padding-top:0;padding-bottom:0;color:#66757c;font-size:14px;font-weight:900}.tr{position:relative;font-size:14px}.tr:hover{background:#111c26}.tr>b:first-child{color:#d9dde1;font-size:15px}.tr.rank-1>b:first-child{color:#ffb239;text-shadow:0 0 12px #ff9f2c99}.tr.rank-2>b:first-child{color:#e1e8ef}.tr.rank-3>b:first-child{color:#c98d63}.tr i{font-style:normal}.tr em{color:#ee6c78;font-style:normal}.player-name{display:grid;justify-items:start;gap:7px}.username{font-size:14px}.title-list{display:flex;flex-direction:column;align-items:flex-start;gap:6px}.title-badge,.champion-title{position:relative;display:inline-flex!important;align-items:center;width:max-content;margin:0!important;border:1px solid #f1bd4a!important;border-radius:5px;background:linear-gradient(135deg,#b47716 0%,#6f3d08 48%,#3a1d02 100%)!important;color:#fff4b5!important;font-weight:900;letter-spacing:.04em;box-shadow:0 0 0 1px #5b3208,0 0 16px #e8a12f78,inset 0 1px #fff1a477;text-shadow:0 1px 2px #000}.title-badge{gap:5px;padding:5px 10px;font-size:14px!important}.title-badge i,.champion-title i{color:#fff0a0;filter:drop-shadow(0 0 4px #ffd047)}.master-card{display:flex;align-items:center;gap:9px}.master-avatar{width:40px;height:40px;border:1px solid #66747b;border-radius:50%;background:#080d11;object-fit:cover}.master-card strong,.master-card small,.champion strong,.master-table .tr>span>small{display:block}.master-card small,.master-table .tr>span>small{margin-top:3px;color:#687880;font:700 14px monospace}.champion{display:grid;justify-items:start;gap:6px}.champion-title{gap:7px;padding:6px 11px;font-size:14px!important}.champion-title i{font-size:14px}.champion>strong{padding-left:2px;color:#f8e4a2}.rate{color:#f0c86a}.matrix-panel{border:1px solid #35424a;background:#091018}.matrix-panel>header{display:flex;align-items:flex-end;justify-content:space-between;padding:16px;border-bottom:1px solid #35424a}.matrix-panel h2{margin:4px 0;font-size:18px}.matrix-panel header>span{color:#809098;font-size:14px}.empty{display:grid;min-height:280px;place-items:center;color:#738088}.error{padding:10px;border-left:3px solid #b83240;background:#251017;color:#e69aa1}
+.master-table .thead small{display:block;color:#8b7a46;font-size:10px}
 @media(max-width:1050px){.summary-strip{grid-template-columns:1fr 1fr}.toolbar{grid-template-columns:1fr}.tabs,.ranges{width:100%}.tabs button,.ranges button{flex:1}.player-table,.master-table{overflow:auto}.player-table .thead,.player-table .tr{min-width:880px}.master-table .thead,.master-table .tr{min-width:980px}}
 @media(max-width:700px){.ranking-page{padding:18px 10px 40px}.page-head{align-items:flex-start;flex-direction:column}.summary-strip{grid-template-columns:1fr 1fr}.summary-strip strong{font-size:19px}.player-name{align-items:flex-start;flex-direction:column}}
 .tr.is-me{background:linear-gradient(90deg,#122c32,#111824);box-shadow:inset 3px 0 #55c7ce}.me-badge{display:inline-grid;min-width:18px;height:18px;place-items:center;margin-left:5px;border-radius:50%;background:#55c7ce;color:#061012;font-size:14px;font-style:normal}

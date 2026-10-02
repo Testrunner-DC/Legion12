@@ -6,6 +6,7 @@ import { masterProfileUrl } from '@/l12/specialAssets'
 import { adminApi, getEffectiveOperationsPolicy, type AdminMasterAnalyticsReport } from '@/l12/platform'
 import DeckSnapshotViewer from './DeckSnapshotViewer.vue'
 import MasterMatchupMatrix, { type MasterMatchupMatrixCell, type MasterMatchupMatrixMaster } from './MasterMatchupMatrix.vue'
+import StatisticsScope from './StatisticsScope.vue'
 
 const emit = defineEmits<{ notice: [message: string] }>()
 const cards = ref<DeckCard[]>([])
@@ -16,6 +17,13 @@ const loading = ref(false)
 const sort = ref<'usage-rate'|'win-rate'>('usage-rate')
 const range = ref<'7d'|'30d'|'season'>('30d')
 const currentSeason = ref<{ id: string; name: string } | null>(null)
+const appliedScope = ref<{
+  from: string
+  to: string
+  seasonId: string
+  seasonName: string
+  effectVersion: 'current'
+} | null>(null)
 const today = new Date()
 const dateText = (value: Date) => `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
 const from = ref(dateText(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29)))
@@ -23,6 +31,16 @@ const to = ref(dateText(today))
 const cardById = computed(() => new Map(cards.value.map(card => [card.id, card])))
 const selected = computed(() => report.value?.items.find(item => item.masterId === selectedMasterId.value))
 const maximumTrend = computed(() => Math.max(1, ...(report.value?.trend.map(item => item.samples) || [1])))
+const masterScopeSummary = computed(() => appliedScope.value?.seasonId
+  ? `本赛季 · ${appliedScope.value.seasonName || appliedScope.value.seasonId}`
+  : appliedScope.value ? `${appliedScope.value.from || '未设置开始日'} 至 ${appliedScope.value.to || '未设置结束日'}` : '')
+const masterScopeSample = computed(() => report.value
+  ? `${report.value.items.reduce((total, item) => total + item.participantSamples, 0)} 份参赛方样本 · 查询时当前卡效版本` : '')
+const masterScopeItems = computed(() => [
+  '统计单位为参赛方 × 对局；只计入已结束、胜负明确、卡效版本有效且有精确赛后构筑快照的排位。',
+  '作废／暂扣对局及禁用／删除账号参与的对局不计；日期范围按对局开始时间筛选。',
+  '先手与后手分别使用各自样本分母；不足 30 份时隐藏胜率，30 份仅为展示提醒。',
+])
 const matrixRows = computed<MasterMatchupMatrixMaster[]>(() => (report.value?.items ?? []).map((item, index) => ({
   id: item.masterId, name: masterName(item.masterId), imageUrl: masterProfileUrl(item.masterId), rank: index + 1, winRate: item.winRate,
 })))
@@ -39,10 +57,16 @@ function setRange(next: typeof range.value) {
   void load()
 }
 async function load(masterId = selectedMasterId.value) {
+  const query = { from: from.value, to: to.value, masterId,
+    seasonId: range.value === 'season' ? currentSeason.value?.id || '' : '',
+    effectVersion: 'current' as const, minimumSample: 1, sort: sort.value }
+  const nextScope = { from: query.from, to: query.to, seasonId: query.seasonId,
+    seasonName: query.seasonId === currentSeason.value?.id ? currentSeason.value?.name || '' : '', effectVersion: query.effectVersion }
   loading.value = true
   try {
-    report.value = await adminApi.masterAnalytics({ from: from.value, to: to.value, masterId,
-      seasonId: range.value === 'season' ? currentSeason.value?.id : '', effectVersion: 'current', minimumSample: 1, sort: sort.value })
+    const next = await adminApi.masterAnalytics(query)
+    report.value = next
+    appliedScope.value = nextScope
   } catch (error) { emit('notice', error instanceof Error ? error.message : '主宰数据加载失败') }
   finally { loading.value = false }
 }
@@ -58,6 +82,7 @@ onMounted(async () => {
 <template>
   <section class="master-analytics">
     <div class="master-tools"><fieldset><legend>统计时间</legend><button :class="{ active: range === '7d' }" @click="setRange('7d')">近 7 天</button><button :class="{ active: range === '30d' }" @click="setRange('30d')">近 30 天</button><button :class="{ active: range === 'season' }" :disabled="!currentSeason" @click="setRange('season')">本赛季</button></fieldset><label>列表排序<select v-model="sort" @change="load()"><option value="usage-rate">使用率</option><option value="win-rate">胜率</option></select></label><button class="refresh" :disabled="loading" @click="load()">{{ loading ? '读取中…' : '刷新' }}</button></div>
+    <StatisticsScope v-if="report && appliedScope" :summary="masterScopeSummary" :sample="masterScopeSample" :items="masterScopeItems"/>
     <section class="master-list panel"><header><div><h3>主宰总览</h3><p>使用率按参赛方样本计算；构筑占比按去重构筑快照计算。低于30份的胜率仅供参考。</p></div></header><div class="master-head"><span>主宰</span><span>使用率 / 构筑占比</span><span>整体胜率</span><span>平均时长</span><span>先手 / 后手</span><span>样本</span></div><button v-for="item in report?.items || []" :key="item.masterId" :class="{ selected: selectedMasterId === item.masterId, low: item.participantSamples < 30 }" @click="chooseMaster(item.masterId)"><CardImage :card-id="item.masterId" :legacy-url="cardById.get(item.masterId)?.imageUrl" :alt="masterName(item.masterId)" intent="thumb"/><b>{{ masterName(item.masterId) }}</b><span><small>使用率 / 构筑占比</small><em>{{ percent(item.usageRate) }} / {{ percent(item.deckShare) }}</em></span><span><small>整体胜率</small><em>{{ item.participantSamples >= 30 ? percent(item.winRate) : '—' }}</em></span><span><small>平均时长</small><em>{{ Math.round(item.averageDurationSeconds / 60) }} 分钟</em></span><span><small>先手 / 后手</small><em>{{ item.firstSamples >= 30 ? percent(item.firstWinRate) : '—' }} / {{ item.secondSamples >= 30 ? percent(item.secondWinRate) : '—' }}</em></span><span><small>样本</small><em>{{ item.participantSamples }}</em></span></button><p v-if="!report?.items.length" class="empty">所选时段暂无符合新版口径的排位样本</p></section>
     <template v-if="selected">
       <section class="selected-summary"><article><small>当前主宰</small><b>{{ masterName(selected.masterId) }}</b><span>以 {{ selected.participantSamples >= 30 ? percent(selected.winRate) : '—' }} 整体胜率作为主宰内单卡比较基准</span></article><article><small>参赛方 / 去重构筑</small><b>{{ selected.participantSamples }} / {{ selected.distinctDecks }}</b><span>统计单位与卡牌数据一致</span></article><article><small>先手 / 后手胜率</small><b>{{ selected.firstSamples >= 30 ? percent(selected.firstWinRate) : '—' }} / {{ selected.secondSamples >= 30 ? percent(selected.secondWinRate) : '—' }}</b><span>{{ selected.firstSamples }} / {{ selected.secondSamples }} 份样本</span></article></section>

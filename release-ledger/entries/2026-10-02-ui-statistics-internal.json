@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-02-ui-statistics-internal",
+  "date": "2026-10-02",
+  "audience": "internal",
+  "reason": "后台工作台与危险操作组件状态收敛；后台统计绑定已应用查询，非玩家功能；C1仅规划延期。",
+  "paths": ["opcgpro-vue/src/l12/site/AdminWorkbenchPage.vue", "opcgpro-vue/src/l12/site/AdminRiskActionDialog.vue", "opcgpro-vue/src/l12/site/AdminCardAnalyticsPanel.vue", "opcgpro-vue/src/l12/site/AdminMasterAnalyticsPanel.vue"]
+}

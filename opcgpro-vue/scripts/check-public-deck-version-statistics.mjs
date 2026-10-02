@@ -17,6 +17,12 @@ const checks = [
   ['公开接口对所有访问者复用同一匿名统计', (server.includes('PublicDeckDetailsWithStatisticsAsync(item.Id)') || server.includes('PublicDeckDetailsWithStatisticsAsync(published.Id)')) && !server.includes('PublicDeckDetailsWithMatchesAsync') && server.includes('MatchStatistics = statistics')],
   ['前端数据契约没有单局与录像字段', platform.includes('PublicDeckMatchStatistics') && platform.includes('PublicDeckVersionStatistic') && !platform.includes('matchId: string; version: number; playedAt') && !platform.includes('replayPath: string | null')],
   ['页面只显示聚合量与时间范围', detail.includes('details.matchStatistics.groups') && detail.includes('stat.games') && detail.includes('formatRate(stat.winRate)') && detail.includes('matchStatisticsRange')],
+  ['有公开组时仍显示绑定和门槛说明', detail.includes('matchStatisticsSample')
+    && detail.includes('details.value.matchBindingMessage')
+    && detail.includes('可展示 ${details.value.matchStatistics.games} 场')
+    && detail.includes('每组至少 3 场才公开')],
+  ['低样本提示不泄漏隐藏组数量', detail.includes('低于门槛的组不会返回场次、胜负或胜率')
+    && !detail.includes('candidateGroups') && !detail.includes('hiddenGroupGames')],
   ['页面没有单局与录像入口', !detail.includes('match.matchId') && !detail.includes('match.playedAt') && !detail.includes('match.result') && !detail.includes('replayPath')],
   ['后端测试验证序列化匿名性与时间窗口', tests.includes('AssertPublicStatisticsAreAnonymous') && tests.includes('Assert.Equal(90, expired.RecentDays)') && tests.includes('Assert.Empty(expired.Groups)')],
 ]

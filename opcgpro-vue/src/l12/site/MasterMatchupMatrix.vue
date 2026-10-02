@@ -42,9 +42,13 @@ function cellTitle(masterId: string, opponentMasterId: string) {
   if (masterId === opponentMasterId) return '同主宰镜像'
   const value = cell(masterId, opponentMasterId)
   if (!value) return '暂无对局'
+  if (value.samples < props.minimumSample) return `共 ${value.samples} 场；不足 ${props.minimumSample} 场，仅显示样本`
   const split = typeof value.firstSamples === 'number' && typeof value.secondSamples === 'number'
-    ? `；先手 ${value.firstWins ?? 0}/${value.firstSamples}；后手 ${value.secondWins ?? 0}/${value.secondSamples}` : ''
+    ? `；${initiativeTitle('先手', value.firstWins, value.firstSamples)}；${initiativeTitle('后手', value.secondWins, value.secondSamples)}` : ''
   return `共 ${value.samples} 场${split}`
+}
+function initiativeTitle(label: string, wins: number | undefined, samples: number) {
+  return samples >= props.minimumSample ? `${label} ${wins ?? 0}/${samples}` : `${label} ${samples} 场（样本不足）`
 }
 </script>
 

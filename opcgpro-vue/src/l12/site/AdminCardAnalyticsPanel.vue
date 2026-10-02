@@ -5,6 +5,7 @@ import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
 import PagedCollection from './PagedCollection.vue'
 import AdminMasterAnalyticsPanel from './AdminMasterAnalyticsPanel.vue'
+import StatisticsScope from './StatisticsScope.vue'
 import {
   adminApi,
   getEffectiveOperationsPolicy,
@@ -48,13 +49,53 @@ const filters = ref({
   mode: 'ranked', from: localDateInput(thirtyDayStart), to: localDateInput(today), masterId: '', opponentMasterId: '',
   initiative: '', rulesVersion: '', effectVersion: 'current', seasonId: '', minimumSample: 10,
 })
+type CardAppliedScope = {
+  range: AnalyticsRange
+  seasonName: string
+  query: {
+    mode: string
+    from: string
+    to: string
+    masterId: string
+    opponentMasterId: string
+    initiative: string
+    rulesVersion: string
+    effectVersion: string
+    seasonId: string
+    minimumSample: number
+  }
+}
+const listAppliedScope = ref<CardAppliedScope | null>(null)
+const detailAppliedScope = ref<CardAppliedScope | null>(null)
 
 const cardById = computed(() => new Map(cards.value.map(card => [card.id, card])))
 const masterOptions = computed(() => cards.value
   .filter(card => card.cardType === 'master')
   .sort((left, right) => left.nameZh.localeCompare(right.nameZh, 'zh-CN')))
 const selectedCatalogCard = computed(() => cardById.value.get(selectedCardId.value || detail.value?.summary.cardId || ''))
-const summaryMetrics = computed(() => page.value.summary || {})
+const summaryMetrics = computed<NonNullable<AdminCardAnalyticsPage['summary']>>(() => page.value.summary || {})
+const activeCardScope = computed(() => activeTab.value === 'single' ? detailAppliedScope.value : listAppliedScope.value)
+const cardScopeSummary = computed(() => {
+  const scope = activeCardScope.value
+  if (!scope) return ''
+  if (scope.range === 'season') return `本赛季 · ${scope.seasonName || scope.query.seasonId || '赛季名称未返回'}`
+  if (scope.range === 'all') return '全部已记录时间（无日期限制）'
+  return `${scope.query.from || '未设置开始日'} 至 ${scope.query.to || '未设置结束日'}`
+})
+const cardScopeSample = computed(() => activeTab.value === 'single' && detail.value
+  ? `${detail.value.summary.sampleSize} 份携带参赛方 · ${detail.value.summary.includedMatches} 场`
+  : typeof summaryMetrics.value.sampleSize === 'number' && typeof summaryMetrics.value.eligibleMatches === 'number'
+    ? `${summaryMetrics.value.sampleSize} 份参赛方 · ${summaryMetrics.value.eligibleMatches} 场有效排位`
+    : listAppliedScope.value ? `已返回 ${page.value.total} 张卡牌 · 服务端未返回样本汇总` : '')
+const cardScopeItems = computed(() => {
+  const query = activeCardScope.value?.query
+  if (!query) return []
+  return [
+    '统计单位为参赛方 × 对局；只计入已结束、胜负明确、卡效版本有效且有精确赛后构筑快照的排位。',
+    `卡效版本：${query.effectVersion === 'current' ? '查询时当前版本' : '全部已记录版本'}；运营规则版本：${query.rulesVersion || '全部已记录版本'}；先后手：${query.initiative === 'first' ? '先手' : query.initiative === 'second' ? '后手' : '全部，切片分别展示'}。`,
+    `作废／暂扣对局及禁用／删除账号参与的对局不计；查询门槛为 ${query.minimumSample} 份，方向判断仍要求样本与置信区间支持，不把低样本相关性写成因果。`,
+  ]
+})
 const listPageCount = computed(() => Math.max(1, Math.ceil(page.value.total / listPageSize)))
 const maximumTiming = computed(() => Math.max(1, ...(detail.value?.turnDistribution || [])
   .flatMap(bucket => [bucket.firstDrawSamples, bucket.firstPlaySamples])))
@@ -179,6 +220,7 @@ function chooseCard(card: SingleCardPickerItem) {
   pickerOpen.value = false
   selectedCardId.value = card.id
   detail.value = null
+  detailAppliedScope.value = null
   void selectCard(card.id)
 }
 function setSort(next: AnalyticsSort) {
@@ -194,13 +236,18 @@ function sortMarker(key: AnalyticsSort) { return sortKey.value === key ? (sortDi
 async function loadAnalytics() {
   const request = ++listRequest
   const query = analyticsQuery()
+  const nextScope: CardAppliedScope = { query, range: range.value,
+    seasonName: query.seasonId === currentSeason.value?.id ? currentSeason.value?.name || '' : '' }
   const search = listSearch.value.trim()
+  page.value = { items: [], total: 0 }
+  listAppliedScope.value = null
   loading.value = true
   try {
     const next = await adminApi.cardAnalytics({ ...query, search, page: listPage.value,
       limit: listPageSize, sort: serverSort(), direction: sortDirection.value })
     if (request !== listRequest) return
     page.value = next
+    listAppliedScope.value = nextScope
   } catch (error) { if (request === listRequest) emit('notice', error instanceof Error ? error.message : '卡牌数据加载失败') }
   finally { if (request === listRequest) loading.value = false }
 }
@@ -209,10 +256,17 @@ async function selectCard(cardId = selectedCardId.value) {
   selectedCardId.value = cardId
   const request = ++detailRequest
   const query = analyticsQuery()
+  const nextScope: CardAppliedScope = { query, range: range.value,
+    seasonName: query.seasonId === currentSeason.value?.id ? currentSeason.value?.name || '' : '' }
+  detail.value = null
+  detailAppliedScope.value = null
   detailLoading.value = true
   try {
     const next = await adminApi.cardAnalyticsDetail(cardId, query)
-    if (request === detailRequest) detail.value = next
+    if (request === detailRequest) {
+      detail.value = next
+      detailAppliedScope.value = nextScope
+    }
   }
   catch (error) {
     if (request === detailRequest) {
@@ -226,9 +280,11 @@ function reloadList() { listPage.value = 1; void loadAnalytics() }
 watch(filters, () => {
   ++detailRequest
   detail.value = null
+  detailAppliedScope.value = null
   detailLoading.value = false
   ++listRequest
   page.value = { items: [], total: 0 }
+  listAppliedScope.value = null
   listPage.value = 1
   loading.value = false
 }, { deep: true, flush: 'sync' })
@@ -271,7 +327,8 @@ onMounted(async () => {
       <label>最小参赛方样本<input v-model.number="filters.minimumSample" type="number" min="1" max="1000"/></label>
       <button class="query" :disabled="activeTab === 'single' ? (!selectedCardId || detailLoading) : loading" @click="activeTab === 'single' ? selectCard() : reloadList()">{{ activeTab === 'single' ? '查询这张卡' : '刷新卡牌清单' }}</button>
     </section>
-    <div v-if="activeTab === 'list'" class="scope-summary">
+    <StatisticsScope v-if="activeTab !== 'master' && activeCardScope" :summary="cardScopeSummary" :sample="cardScopeSample" :items="cardScopeItems"/>
+    <div v-if="activeTab === 'list' && listAppliedScope" class="scope-summary">
       <article><small>有效已结束排位</small><b>{{ summaryMetrics.eligibleMatches ?? 0 }}</b><span>已排除无效、错误与无明确胜者的记录</span></article>
       <article><small>参赛方样本</small><b>{{ summaryMetrics.sampleSize ?? 0 }}</b><span>统计单位：参赛方 × 对局</span></article>
       <article><small>达到门槛的卡牌</small><b>{{ page.total }}</b><span>符合当前筛选范围</span></article>
@@ -289,7 +346,7 @@ onMounted(async () => {
         <span>{{ percent(item.inclusionRate) }}</span><span>{{ percent(item.winRate) }}</span><span>{{ item.gihSamples >= 30 ? percent(item.gihWinRate) : '—' }}</span><span :data-tone="resultTone(item)">{{ item.gihSamples >= 30 && item.gnsSamples >= 30 ? signedPercent(item.inHandWinRateDelta) : '—' }}</span><span>{{ item.sampleSize }}</span>
       </button>
       <div v-if="loading" class="empty">正在读取卡牌清单…</div>
-      <div v-else-if="!page.items.length" class="empty">排位数据不足，尚无卡牌达到当前样本门槛</div>
+      <div v-else-if="listAppliedScope && !page.items.length" class="empty">排位数据不足，尚无卡牌达到当前样本门槛</div>
       <footer v-if="page.items.length" class="pagination"><button :disabled="listPage <= 1" @click="listPage--; loadAnalytics()">上一页</button><span>{{ (listPage - 1) * listPageSize + 1 }}–{{ Math.min(listPage * listPageSize, page.total) }} / {{ page.total }}</span><button :disabled="listPage >= listPageCount" @click="listPage++; loadAnalytics()">下一页</button></footer>
     </section>
 
