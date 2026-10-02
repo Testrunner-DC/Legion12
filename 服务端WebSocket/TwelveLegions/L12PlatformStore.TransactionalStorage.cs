@@ -123,11 +123,14 @@ public sealed partial class L12PlatformStore
 
                 using var recovered = OpenDatabase(rehearsalPath, readOnly: true);
                 AssertDatabaseIntegrity(recovered);
-                var snapshot = ReadSnapshot(recovered)
+                using var transaction = recovered.BeginTransaction(deferred: true);
+                var snapshot = ReadSnapshot(recovered, transaction)
                     ?? throw new InvalidDataException("恢复副本缺少平台快照");
                 var recoveredData = DeserializeDataAndValidate(snapshot.Json);
                 if (!FixedEquals(snapshot.Checksum, Sha256(snapshot.Json)))
                     throw new InvalidDataException("恢复副本快照校验和不匹配");
+                ValidateRecoveredDeckDomain(recovered, transaction, recoveredData);
+                transaction.Commit();
                 var audits = CountRetainedAuditEvents(recovered);
                 return new(true, "sqlite-rehearsal", _databasePath, recoveredData.Version,
                     recoveredData.BusinessVersion ?? recoveredData.Version, audits, null, now);

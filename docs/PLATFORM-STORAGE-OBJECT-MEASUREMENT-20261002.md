@@ -1,5 +1,17 @@
 # F2 平台按对象持久化取证（2026-10-02）
 
+## 启用前恢复／回退收口（最新候选）
+
+用户批准 F2 启用前收口；本批只在 D 盘合成副本演练，不新增启动配置，不启用线上对象写，`PrivateDeckObjectPersistenceEnabled` 仍默认 false。下方第一／二阶段的旧待授权描述保留为历史，不再代表最新并发安全状态；普通保存双向 CAS 已由 `b051e73b` 验收。
+
+- 真实红灯：修改 `deck_payloads.master_id`，保留 payload hash 与平台 checksum，SQLite `quick_check` 正常；旧恢复演练仍返回成功。新恢复校验在备份的只读事务内核对存储／业务版本、外键、全部正文的压缩规范和哈希、活动身份、墓碑保留正文、公开版本及私人来源、赛事引用，随后走既有水合出口双读；不迁移、修复或替换源库。
+- 成功演练保留活动牌库、删除墓碑、改名历史、公开旧版本来源及赛事锁牌；复制 SQLite 备份后以默认 false 重启，再使用全量保存继续写入，最新事实与来源引用不丢失。回退只能关闭对象路径后使用同版本全量出口，不能把旧数据库覆盖回较新的事实。
+- 丢响应演练：Create／Update／Delete 已成功提交但丢弃返回结果，重启并重试旧请求分别得到现有 name_conflict／revision_conflict／not_found，不重复创建／递增／复活，不新增幂等 API。
+- 工程预算仅用于在线恢复演练：单压缩正文／备选区不超过 1 MiB，每行展开不超过 100,000 张，总计不超过 1,000,000 张；计入正文、活动备选区和每个消费者重复展开，使用 long checked，先拒绝再水合。正确重算 hash 的巨量正文、备选区和累积超限均有反例。超限返回内部演练错误，需另行配置资源做离线演练；不限制正常合法牌库、保存或加载，不把工程预算外显给玩家。
+- 聚焦最终 19 条恢复专项，相邻组合 90/90、失败／跳过 0。证据 `D:\GPT\Legion12\artifacts\f2-recovery-tests\evidence\f2-recovery-adjacent.trx`。Main 已逐文件核对冻结 SHA256，并检查公开来源在构筑变更时由既有 ResolvePublicDeckBinding 解除失配，不引入伪来源合同。完整 Batch／Release 与 Git 同步仍待最终回执。
+
+冻结 SHA256：TransactionalStorage `838ABCB9DEF299CC83DB932A8FB293999EB7C89818CAB244EB0714AC57C6F7A4`；StorageRecoveryValidation `05C82A3CD00ED957C7C14770079356AEA947E627CA10D2995795B2DC801A4225`；PrivateDeckRecoveryAndRollbackTests `9FDD058EFC9DDCEB133BD461F79639BC378D8754C17A8BAA81124A6EF4B07289`。本批没有改动热保存路径或性能测量源码，沿用上一批最终性能证据，不冒称重新跑过基准。
+
 第一阶段只增加默认关闭的内部测量端口，并在 D 盘合成库运行单变量矩阵；没有读取生产数据、改变 SQLite schema、推送或部署。机读报告为 `D:\GPT\Legion12\artifacts\platform-growth\f2\run-f2-20261002T071644-b99a47b3d795450bbf1f284c0d04c8f2\report.json`。报告包含 90 个“轴／档位／独立重复”结果，每项四种操作各 1 次预热和 100 个样本，总错误数为 0。
 
 第二阶段按本报告门槛实现了私人牌库对象写候选，但 `PrivateDeckObjectPersistenceEnabled` 仍明确默认关闭，没有生产配置入口；只有专项测试和 `--private-object` 合成基准显式开启。候选报告为 `D:\GPT\Legion12\artifacts\platform-growth\f2\run-f2-private-object-20261002T080948-1bc7c0a0c0be468eb914248f193b0ab9\report.json`，包含 20／1200 行各 5 次独立重复、每次 100 个保存样本，总错误数为 0。

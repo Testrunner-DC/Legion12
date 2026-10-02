@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## STORAGE-20261002-RECOVERY-READINESS｜恢复演练漏检规范化正文
+
+- 根因：恢复演练只核对 SQLite 结构和平台 snapshot checksum；独立规范化牌库正文损坏仍可能返回成功。Main 按用户批准的 F2 启用前收口接受共享恢复出口修正，不修改单牌库或生产数据。
+- 同类扫描：`rg -n 'RehearseStorageRecovery|HydrateDeckDomain|VerifyDeckDomainSnapshot|ExpandCards|ReadPayloads' 服务端WebSocket/TwelveLegions`，覆盖活动／墓碑／历史正文、备选区、公开当前及来源版本、赛事锁牌、存储与业务版本；压缩计数在水合前校验，并预算所有重复消费者展开。
+- 三文件修正：TransactionalStorage 的隔离备份只读事务调用新 StorageRecoveryValidation；PrivateDeckRecoveryAndRollbackTests 全部 D 盘合成。源库及其镜像保持逐表／hash 不变，演练结束删除测试副本，不修复／迁移源库、不启用内部默认关闭开关。
+- 真红灯是正文篡改后旧出口返回成功；最初用户名过长、编译与牌表顺序夹具失败不计缺陷红灯。19 条专项加相邻组合 90/90、失败／跳过 0。成功副本恢复、同版本默认关闭后全量继续保存及三种丢响应重试均有严格断言。正确重算 hash 的超大数量、备选区与累积展开先按 long checked 安全拒绝，不改变正常存储合同。
+- Main 已核对三个冻结源码哈希并复核只读事务和既有公开来源解除失配规则。完整门禁与同步状态以本批最终任务台账为准；回滚守卫是保留默认 false、通用 CAS 及新恢复专项，不能撤掉 CAS 再单独启用对象写。没有生产启用入口、部署或维护操作。
+
 ## EFFECT-20261002-PIERCING-NORMAL-ATTACK｜贯穿绕过目标优先和伤害增益
 
 - 最新用户规则：贯穿按一次正常发起进攻校验目标限制、当前兵力与伤害增益，仍保留“不会触发进攻方进攻时效果”的既有例外；不要再次休整、支付普通进攻费用或增加动作次数。暴怒范围内仍有军团时贯穿无效，迷雾兵力不高于2000时贯穿无效，百鬼对带天灾等级军团的贯穿伤害加1。
