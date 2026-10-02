@@ -7,9 +7,11 @@ export function deckEditorReturnTarget(value: unknown): string {
   return value
 }
 
-export function deckEditorQuery(returnTo: unknown, deckName?: string, publicationId?: string): LocationQueryRaw {
+export function deckEditorQuery(returnTo: unknown, deckName?: string, publicationId?: string,
+  personalDeckId?: string): LocationQueryRaw {
   return {
     ...(deckName ? { deck: deckName } : {}),
+    ...(personalDeckId ? { deckId: personalDeckId } : {}),
     ...(publicationId ? { published: publicationId } : {}),
     returnTo: deckEditorReturnTarget(returnTo),
   }

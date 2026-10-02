@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-02-private-deck-storage-candidate",
+  "date": "2026-10-02",
+  "audience": "internal",
+  "reason": "增加合成存储测量和默认关闭的个人牌库对象写候选；尚未开放生产启用入口，等待通用保存并发边界收口。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PrivateDeckPersistence.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.StorageInstrumentation.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs",
+    "服务端WebSocket/Properties/AssemblyInfo.cs"
+  ]
+}

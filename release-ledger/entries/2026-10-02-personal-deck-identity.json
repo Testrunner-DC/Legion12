@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-02-personal-deck-identity",
+  "date": "2026-10-02",
+  "audience": "players",
+  "title": "个人牌库改名与选择连续性",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "个人牌库改名后仍保留原来的牌库和各模式的出战选择，不再另存一副；其他页面已更新牌库时，旧页面保存或删除会提醒刷新，避免覆盖新修改或误删同名牌库。",
+      "paths": [
+        "opcgpro-vue/src/l12/decks.ts",
+        "opcgpro-vue/src/l12/L12DeckEditor.vue",
+        "opcgpro-vue/src/l12/site/deckEditorDraft.ts",
+        "opcgpro-vue/src/l12/site/deckEditorNavigation.ts",
+        "opcgpro-vue/src/l12/site/DeckLibraryPage.vue",
+        "opcgpro-vue/src/l12/site/PublicDeckDetailPage.vue",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckStorage.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+      ]
+    },
+    {
+      "category": "tournaments",
+      "text": "赛事签到会锁定实际选中的个人牌库；该牌库改名后仍能正确签到，已删除的牌库不会被另一副同名牌库替代。",
+      "paths": [
+        "opcgpro-vue/src/l12/platform.ts",
+        "opcgpro-vue/src/l12/site/TournamentDetailPage.vue",
+        "opcgpro-vue/src/l12/site/AdminTournamentWorkbench.vue",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs"
+      ]
+    }
+  ]
+}

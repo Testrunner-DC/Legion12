@@ -1,149 +1,329 @@
 using System.Diagnostics;
-using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using TwelveLegions.Server;
 
-if (args.Length != 1) throw new ArgumentException("Pass a D:\\GPT\\Legion12\\artifacts\\platform-growth output directory");
+if (args.Length is < 1 or > 2)
+    throw new ArgumentException("Pass a D:\\GPT\\Legion12\\artifacts\\platform-growth output directory and optionally --quick or --private-object");
+var quick = args.Length == 2 && string.Equals(args[1], "--quick", StringComparison.Ordinal);
+var privateObject = args.Length == 2 && string.Equals(args[1], "--private-object", StringComparison.Ordinal);
+if (args.Length == 2 && !quick && !privateObject)
+    throw new ArgumentException("The optional argument must be --quick or --private-object");
 var outputRoot = Path.GetFullPath(args[0]);
 var allowedRoot = @"D:\GPT\Legion12\artifacts\platform-growth";
 if (!outputRoot.Equals(allowedRoot, StringComparison.OrdinalIgnoreCase)
     && !outputRoot.StartsWith(allowedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
     throw new ArgumentException("Synthetic output must remain under D:\\GPT\\Legion12\\artifacts\\platform-growth");
-var runRoot = Path.Combine(outputRoot, $"run-{DateTimeOffset.UtcNow:yyyyMMddTHHmmss}-{Guid.NewGuid():N}");
+
+var runPrefix = privateObject ? "run-f2-private-object" : "run-f2";
+var runRoot = Path.Combine(outputRoot, $"{runPrefix}-{DateTimeOffset.UtcNow:yyyyMMddTHHmmss}-{Guid.NewGuid():N}");
 Directory.CreateDirectory(runRoot);
 const string password = "BenchmarkPassword123";
+var samplesPerOperation = quick ? 5 : 100;
+var repeats = quick ? 1 : 5;
 var seedPath = Path.Combine(runRoot, "seed", "platform.json");
 var seed = new L12PlatformStore(seedPath);
 var registration = seed.Register("BenchOwner", password);
 if (!registration.Success || registration.Account is null) throw new InvalidOperationException(registration.Message);
 var owner = registration.Account;
-var deck = new L12PresetDeckDefinition { Name = "Benchmark Deck", MasterId = "S01-01M1",
-    CardIds = Enumerable.Repeat("S01-0001", 40).ToList(), MoraleIds = Enumerable.Repeat("S01-01C1", 8).ToList() };
-seed.UpsertDeck(owner.Id, deck);
-seed.PublishDeck(owner.Id, deck, null);
+var targetDeck = new L12PresetDeckDefinition
+{
+    Name = "Benchmark Deck",
+    MasterId = "S01-01M1",
+    CardIds = Enumerable.Repeat("S01-0001", 40).ToList(),
+    MoraleIds = Enumerable.Repeat("S01-01C1", 8).ToList(),
+};
+seed.UpsertDeck(owner.Id, targetDeck);
+seed.PublishDeck(owner.Id, targetDeck, null);
 seed.CreateTournament(owner, new L12TournamentCreatePayload("Benchmark Tournament", "single", "public", 32,
-    DateTimeOffset.UtcNow.AddDays(1), "S01", "synthetic", "after", "season", "", 50, 5),
-    new L12AdminAuditContext("benchmark-seed", "tournaments.manage", RequestMethod: "BENCH", RequestPath: "/bench"), true);
+        DateTimeOffset.UtcNow.AddDays(1), "S01", "synthetic", "after", "season", "", 50, 5),
+    new L12AdminAuditContext("benchmark-seed", "tournaments.manage", RequestMethod: "BENCH",
+        RequestPath: "/bench"), true);
 var template = JsonNode.Parse(File.ReadAllText(seedPath))!.AsObject();
-// The compatibility mirror intentionally omits the normalized deck domain. For the
-// synthetic import fixture, add explicit legacy rows; no production data is read.
+// The compatibility mirror intentionally omits the normalized deck domain. Synthetic
+// legacy rows are injected before first open; production data is never read.
 template["Decks"] = new JsonArray();
 template["PublishedDecks"] = new JsonArray();
-var deckTemplate = JsonSerializer.SerializeToNode(new {
-    AccountId = owner.Id, deck.Name, deck.MasterId, deck.CardIds, deck.MoraleIds, deck.SpecialIds,
-    BenchIds = Array.Empty<string>(), AlternateArtSelections = new Dictionary<string, string>(),
-    AlternateArtCopies = new Dictionary<string, string[]>(), UpdatedAt = DateTimeOffset.UtcNow,
-})!;
-var publishedTemplate = JsonSerializer.SerializeToNode(new {
-    Id = "synthetic-seed", PublicCode = "23456789ABCD", OwnerId = owner.Id, deck.Name,
-    deck.MasterId, deck.CardIds, deck.MoraleIds, deck.SpecialIds,
-    AlternateArtSelections = new Dictionary<string, string>(), AlternateArtCopies = new Dictionary<string, string[]>(),
-    LikedByAccountIds = Array.Empty<string>(), Views = 0, Copies = 0,
-    CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
-})!;
-var gateField = typeof(L12PlatformStore).GetField("_gate", BindingFlags.NonPublic | BindingFlags.Instance)
-    ?? throw new MissingFieldException("Platform store gate changed; revise lock timing");
-var scales = new[] { (Accounts: 10, Decks: 2, Publications: 5, Tournaments: 2),
-    (Accounts: 50, Decks: 4, Publications: 20, Tournaments: 10),
-    (Accounts: 150, Decks: 8, Publications: 60, Tournaments: 30) };
-var results = new List<object>();
-foreach (var scale in scales)
+var accountTemplate = template["Accounts"]!.AsArray()
+    .Single(item => (string?)item?["Username"] == "BenchOwner")!;
+var tournamentTemplate = template["Tournaments"]!.AsArray().Single()!;
+var deckTemplate = JsonSerializer.SerializeToNode(new
 {
-    var levelRoot = Path.Combine(runRoot, $"a{scale.Accounts}-d{scale.Decks}-p{scale.Publications}-t{scale.Tournaments}");
-    Directory.CreateDirectory(levelRoot);
-    var path = Path.Combine(levelRoot, "platform.json");
-    var data = (JsonObject)template.DeepClone();
-    var accountTemplate = data["Accounts"]!.AsArray().Single(item => (string?)item?["Username"] == "BenchOwner")!;
-    var tournamentTemplate = data["Tournaments"]!.AsArray().Single()!;
-    var accounts = data["Accounts"]!.AsArray(); var decks = data["Decks"]!.AsArray();
-    var publications = data["PublishedDecks"]!.AsArray(); var tournaments = data["Tournaments"]!.AsArray();
-    accounts.Clear(); decks.Clear(); publications.Clear(); tournaments.Clear();
-    for (var i = 0; i < scale.Accounts; i++)
+    AccountId = owner.Id,
+    targetDeck.Name,
+    targetDeck.MasterId,
+    targetDeck.CardIds,
+    targetDeck.MoraleIds,
+    targetDeck.SpecialIds,
+    BenchIds = Array.Empty<string>(),
+    AlternateArtSelections = new Dictionary<string, string>(),
+    AlternateArtCopies = new Dictionary<string, string[]>(),
+    UpdatedAt = DateTimeOffset.UtcNow,
+})!;
+var publishedTemplate = JsonSerializer.SerializeToNode(new
+{
+    Id = "synthetic-seed",
+    PublicCode = "23456789ABCD",
+    OwnerId = owner.Id,
+    targetDeck.Name,
+    targetDeck.MasterId,
+    targetDeck.CardIds,
+    targetDeck.MoraleIds,
+    targetDeck.SpecialIds,
+    AlternateArtSelections = new Dictionary<string, string>(),
+    AlternateArtCopies = new Dictionary<string, string[]>(),
+    LikedByAccountIds = Array.Empty<string>(),
+    Views = 0,
+    Copies = 0,
+    CreatedAt = DateTimeOffset.UtcNow,
+    UpdatedAt = DateTimeOffset.UtcNow,
+})!;
+
+var baseline = new MatrixScale(50, 200, 20, 10, 1);
+var axes = quick || privateObject
+    ? new[] { new MatrixAxis("privateDeckRows", [20, 1200]) }
+    : new[]
     {
-        var id = $"synthetic-account-{i:000000}";
-        var account = (JsonObject)accountTemplate.DeepClone(); account["Id"] = id; account["Username"] = $"Bench{i:000000}";
-        accounts.Add(account);
-        for (var j = 0; j < scale.Decks; j++)
-        {
-            var row = (JsonObject)deckTemplate.DeepClone(); row["AccountId"] = id;
-            row["Name"] = i == 0 && j == 0 ? "Benchmark Deck" : $"Deck {i:000000}-{j:00}";
-            decks.Add(row);
-        }
-    }
-    for (var i = 0; i < scale.Publications; i++)
+        new MatrixAxis("accounts", [10, 50, 150, 500]),
+        new MatrixAxis("privateDeckRows", [20, 200, 1200]),
+        new MatrixAxis("publications", [5, 20, 60, 250]),
+        new MatrixAxis("tournamentDeckRefs", [2, 10, 30, 100]),
+        new MatrixAxis("distinctPayloads", [1, 20, 200]),
+    };
+var results = new List<MatrixResult>();
+foreach (var axis in axes)
+foreach (var level in axis.Levels)
+foreach (var repeat in Enumerable.Range(1, repeats))
+{
+    var scale = axis.Name switch
     {
-        var row = (JsonObject)publishedTemplate.DeepClone(); row["Id"] = $"synthetic-public-{i:000000}";
-        row["PublicCode"] = $"23{(i + 1):0000000000}";
-        row["OwnerId"] = $"synthetic-account-{i % scale.Accounts:000000}"; row["Name"] = $"Public {i:000000}";
-        publications.Add(row);
-    }
-    for (var i = 0; i < scale.Tournaments; i++)
+        "accounts" => baseline with { Accounts = level },
+        "privateDeckRows" => baseline with { PrivateDeckRows = level },
+        "publications" => baseline with { Publications = level },
+        "tournamentDeckRefs" => baseline with { TournamentDeckRefs = level },
+        "distinctPayloads" => baseline with { DistinctPayloads = level },
+        _ => throw new InvalidOperationException($"Unknown axis {axis.Name}"),
+    };
+    var caseRoot = Path.Combine(runRoot, $"{axis.Name}-{level}-r{repeat}");
+    var data = BuildData(template, accountTemplate, deckTemplate, publishedTemplate, tournamentTemplate, scale);
+    var login = RunOperation(caseRoot, "login", data, scale, samplesPerOperation, false, store =>
     {
-        var row = (JsonObject)tournamentTemplate.DeepClone(); row["Id"] = $"synthetic-tournament-{i:000000}";
-        row["Code"] = $"BENCH{i:000000}"; row["Name"] = $"Tournament {i:000000}";
-        row["OrganizerAccountId"] = $"synthetic-account-{i % scale.Accounts:000000}"; tournaments.Add(row);
-        row["Participants"]!.AsArray()[0]!["AccountId"] = $"synthetic-account-{i % scale.Accounts:000000}";
-    }
-    File.WriteAllText(path, data.ToJsonString());
-    var open = Stopwatch.StartNew(); var store = new L12PlatformStore(path); open.Stop();
+        if (!store.Login("Bench000000", password).Success) throw new InvalidOperationException("Login failed");
+    });
+    var save = RunOperation(caseRoot, "save", data, scale, samplesPerOperation, privateObject,
+        store => store.UpsertDeck("synthetic-account-000000", targetDeck));
+    var like = RunOperation(caseRoot, "like", data, scale, samplesPerOperation, false, store =>
+    {
+        if (store.TogglePublishedDeckLike("synthetic-account-000000", "synthetic-public-000000") is null)
+            throw new InvalidOperationException("Like failed");
+    });
     var actor = new L12AccountView("benchmark-admin", "Benchmark Admin", "admin", DateTimeOffset.UtcNow, true);
-    const string target = "synthetic-account-000000"; const string publicationId = "synthetic-public-000000";
-    if (store.Decks(target).Count != scale.Decks || store.PublishedDecks(target).Count != scale.Publications
-        || store.Tournaments(actor).Items.Count != scale.Tournaments) throw new InvalidDataException("Scale import mismatch");
-    var login = Measure(100, () => { if (!store.Login("Bench000000", password).Success) throw new InvalidOperationException("Login failed"); });
-    var save = Measure(100, () => store.UpsertDeck(target, deck));
-    var like = Measure(100, () => { if (store.TogglePublishedDeckLike(target, publicationId) is null) throw new InvalidOperationException("Like failed"); });
-    var admin = Measure(100, () => { if (!store.SetRole(actor, target, "player")) throw new InvalidOperationException("Admin mutation failed"); });
-    var gate = gateField.GetValue(store)!;
-    var start = new ManualResetEventSlim(false);
-    var workers = Enumerable.Range(0, 4).Select(_ => Task.Run(() =>
+    var admin = RunOperation(caseRoot, "admin-audit", data, scale, samplesPerOperation, false, store =>
     {
-        start.Wait(); var waits = new double[25];
-        for (var j = 0; j < waits.Length; j++)
-        {
-            var begin = Stopwatch.GetTimestamp(); Monitor.Enter(gate); waits[j] = Stopwatch.GetElapsedTime(begin).TotalMilliseconds;
-            try { if (!store.Login("Bench000000", password).Success) throw new InvalidOperationException("Contended login failed"); }
-            finally { Monitor.Exit(gate); }
-        }
-        return waits;
-    })).ToArray();
-    start.Set(); var lockWait = (await Task.WhenAll(workers)).SelectMany(row => row).ToArray();
-    var db = store.TransactionalStoragePath;
-    var mirrorBytes = new FileInfo(path).Length; var databaseBytes = new FileInfo(db).Length;
-    var walBytes = File.Exists(db + "-wal") ? new FileInfo(db + "-wal").Length : 0;
-    var recovery = Stopwatch.StartNew(); var reloaded = new L12PlatformStore(path); recovery.Stop();
-    if (reloaded.Decks(target).Count != scale.Decks) throw new InvalidDataException("Recovery mismatch");
-    var metrics = new { scale.Accounts, DecksPerAccount = scale.Decks, scale.Publications, scale.Tournaments,
-        AccountDeckRows = scale.Accounts * scale.Decks, ImportMs = Math.Round(open.Elapsed.TotalMilliseconds, 2),
-        LoginMs = Percentiles(login), SaveDeckMs = Percentiles(save), LikeMs = Percentiles(like),
-        AdminMutationMs = Percentiles(admin), ContendedGateWaitMs = Percentiles(lockWait),
-        RecoveryMs = Math.Round(recovery.Elapsed.TotalMilliseconds, 2), MirrorBytes = mirrorBytes,
-        DatabaseBytes = databaseBytes, WalBytes = walBytes, SqlStatementsExact = (int?)null,
-        SqlStatementLowerBoundPerSnapshotSave = scale.Accounts * scale.Decks + scale.Publications + 1 };
-    results.Add(metrics);
-    Console.WriteLine($"{scale.Accounts} accounts / {metrics.AccountDeckRows} decks: save P95 {metrics.SaveDeckMs.P95} ms; lock wait P95 {metrics.ContendedGateWaitMs.P95} ms");
+        if (!store.SetRole(actor, "synthetic-account-000000", "player"))
+            throw new InvalidOperationException("Admin mutation failed");
+    });
+    results.Add(new MatrixResult(axis.Name, level, repeat, scale, login.Summary, save.Summary, like.Summary,
+        admin.Summary, save.RecoveryMs, save.DatabaseBytes, save.MirrorBytes, save.WalBytes));
+    Console.WriteLine($"{axis.Name}={level} r{repeat}: save P95={save.Summary.LatencyMs.P95} ms; "
+                      + $"deck statements P50={save.Summary.DeckDomainStatements.P50}; "
+                      + $"affected rows P50={save.Summary.InclusiveAffectedRows.P50}");
 }
+
 var reportPath = Path.Combine(runRoot, "report.json");
-File.WriteAllText(reportPath, JsonSerializer.Serialize(new { Schema = 1, AtUtc = DateTimeOffset.UtcNow,
+File.WriteAllText(reportPath, JsonSerializer.Serialize(new
+{
+    Schema = 3,
+    AtUtc = DateTimeOffset.UtcNow,
     GitCommit = Environment.GetEnvironmentVariable("L12_BENCH_COMMIT") ?? "uncommitted-candidate",
     Machine = new { Environment.MachineName, OS = Environment.OSVersion.ToString(), Environment.ProcessorCount },
-    SamplesPerOperation = 100, Concurrency = 4, SyntheticOnly = true,
-    SqlStatementNote = "Exact SQL statement count is unavailable without store-level tracing. The lower bound includes per-deck/per-publication upserts and platform_state snapshot, but excludes schema checks, stale deletes, audit and lookups.",
-    Results = results }, new JsonSerializerOptions { WriteIndented = true }));
+    Profile = privateObject ? "private-object-candidate" : quick ? "quick-non-decision" : "full",
+    PrivateDeckObjectPersistence = privateObject,
+    SamplesPerOperation = samplesPerOperation,
+    IndependentRuns = repeats,
+    SyntheticOnly = true,
+    Measurement = new
+    {
+        Sql = "sqlite3_profile classifies completed unexpanded statements in memory; SQL text and values are discarded",
+        Rows = "sqlite3_changes by DML verb plus sqlite3_total_changes inclusive connection total",
+        SqliteBytes = "SQLITE_DBSTATUS_CACHE_WRITE pages multiplied by PRAGMA page_size; WAL page payload, not host/device IO",
+        MirrorBytes = "UTF-8 byte count of each successfully replaced compatibility mirror",
+    },
+    Threshold = new
+    {
+        Axis = "privateDeckRows",
+        Compare = "1200 versus 20",
+        Latency = privateObject
+            ? "candidate 1200-row save P95 must be no more than 1.25x the 20-row P95 and no more than 15 ms on this reference host"
+            : "isolated save P95 must be at least 2x and 10 ms higher in at least 4 of 5 runs",
+        Amplification = privateObject
+            ? "candidate deck-domain SQL and inclusive affected-row counts must have zero slope from 20 to 1200 rows"
+            : "at least 0.8 extra affected deck row per added non-target row, or one save rewrites at least 50% of untouched private rows",
+        Decision = privateObject
+            ? "Candidate acceptance requires zero private-row/SQL slope and bounded latency; feature remains disabled by default"
+            : "Only both latency and amplification authorize a narrow migration proposal; this report never performs migration",
+    },
+    Results = results,
+}, new JsonSerializerOptions { WriteIndented = true }));
 Console.WriteLine(reportPath);
 
-static double[] Measure(int count, Action action)
+static JsonObject BuildData(JsonObject source, JsonNode accountTemplate, JsonNode deckTemplate,
+    JsonNode publishedTemplate, JsonNode tournamentTemplate, MatrixScale scale)
 {
-    action(); var times = new double[count];
-    for (var i = 0; i < count; i++) { var clock = Stopwatch.StartNew(); action(); clock.Stop(); times[i] = clock.Elapsed.TotalMilliseconds; }
-    return times;
-}
-static Latency Percentiles(double[] values)
-{
-    var ordered = values.OrderBy(value => value).ToArray();
-    double At(double p) => Math.Round(ordered[Math.Clamp((int)Math.Ceiling(ordered.Length * p) - 1, 0, ordered.Length - 1)], 2);
-    return new(At(.5), At(.95), At(.99));
+    var data = (JsonObject)source.DeepClone();
+    var accounts = data["Accounts"]!.AsArray();
+    var decks = data["Decks"]!.AsArray();
+    var publications = data["PublishedDecks"]!.AsArray();
+    var tournaments = data["Tournaments"]!.AsArray();
+    accounts.Clear();
+    decks.Clear();
+    publications.Clear();
+    tournaments.Clear();
+    for (var index = 0; index < scale.Accounts; index++)
+    {
+        var account = (JsonObject)accountTemplate.DeepClone();
+        account["Id"] = $"synthetic-account-{index:000000}";
+        account["Username"] = $"Bench{index:000000}";
+        accounts.Add(account);
+    }
+    for (var index = 0; index < scale.PrivateDeckRows; index++)
+    {
+        var row = (JsonObject)deckTemplate.DeepClone();
+        row["AccountId"] = $"synthetic-account-{index % scale.Accounts:000000}";
+        row["Name"] = index == 0 ? "Benchmark Deck" : $"Deck {index:000000}";
+        ApplyPayload(row, index % scale.DistinctPayloads);
+        decks.Add(row);
+    }
+    for (var index = 0; index < scale.Publications; index++)
+    {
+        var row = (JsonObject)publishedTemplate.DeepClone();
+        row["Id"] = $"synthetic-public-{index:000000}";
+        row["PublicCode"] = $"23{index + 1:0000000000}";
+        row["OwnerId"] = $"synthetic-account-{index % scale.Accounts:000000}";
+        row["Name"] = $"Public {index:000000}";
+        ApplyPayload(row, index % scale.DistinctPayloads);
+        publications.Add(row);
+    }
+    for (var index = 0; index < scale.TournamentDeckRefs; index++)
+    {
+        var row = (JsonObject)tournamentTemplate.DeepClone();
+        row["Id"] = $"synthetic-tournament-{index:000000}";
+        row["Code"] = $"BENCH{index:000000}";
+        row["Name"] = $"Tournament {index:000000}";
+        row["OrganizerAccountId"] = $"synthetic-account-{index % scale.Accounts:000000}";
+        var participant = row["Participants"]!.AsArray()[0]!.AsObject();
+        participant["AccountId"] = $"synthetic-account-{index % scale.Accounts:000000}";
+        var tournamentDeck = participant["Deck"]!.AsObject();
+        tournamentDeck["MasterId"] = deckTemplate["MasterId"]!.DeepClone();
+        tournamentDeck["CardIds"] = deckTemplate["CardIds"]!.DeepClone();
+        tournamentDeck["MoraleIds"] = deckTemplate["MoraleIds"]!.DeepClone();
+        tournamentDeck["SpecialIds"] = deckTemplate["SpecialIds"]!.DeepClone();
+        ApplyPayload(tournamentDeck, index % scale.DistinctPayloads);
+        tournaments.Add(row);
+    }
+    return data;
 }
 
-readonly record struct Latency(double P50, double P95, double P99);
+static void ApplyPayload(JsonObject row, int payloadIndex)
+{
+    if (payloadIndex == 0) return;
+    row["MasterId"] = $"SYN-M-{payloadIndex:000000}";
+    row["CardIds"] = new JsonArray(Enumerable.Range(0, 40)
+        .Select(index => JsonValue.Create($"SYN-C-{payloadIndex:000000}-{index % 4}"))
+        .ToArray<JsonNode?>());
+    row["MoraleIds"] = new JsonArray(Enumerable.Range(0, 8)
+        .Select(index => JsonValue.Create($"SYN-R-{payloadIndex:000000}-{index % 2}"))
+        .ToArray<JsonNode?>());
+}
+
+static OperationRun RunOperation(string caseRoot, string operation, JsonObject source, MatrixScale scale, int samples,
+    bool privateDeckObjectPersistence, Action<L12PlatformStore> action)
+{
+    var root = Path.Combine(caseRoot, operation);
+    Directory.CreateDirectory(root);
+    var path = Path.Combine(root, "platform.json");
+    File.WriteAllText(path, source.ToJsonString());
+    var store = new L12PlatformStore(path);
+    store.PrivateDeckObjectPersistenceEnabled = privateDeckObjectPersistence;
+    var storage = store.StorageStatus().DeckStorage
+        ?? throw new InvalidDataException("Synthetic deck storage status is unavailable");
+    if (storage.ActiveAccountDecks != scale.PrivateDeckRows
+        || storage.ActivePublishedDecks != scale.Publications
+        || storage.TournamentReferences != scale.TournamentDeckRefs)
+        throw new InvalidDataException($"Synthetic scale mismatch: account decks={storage.ActiveAccountDecks}, "
+            + $"publications={storage.ActivePublishedDecks}, tournament refs={storage.TournamentReferences}");
+    action(store);
+    var measured = new List<OperationSample>(samples);
+    for (var index = 0; index < samples; index++)
+    {
+        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+        var clock = Stopwatch.StartNew();
+        L12SyntheticStorageMeasurement measurement;
+        string? error = null;
+        using (var scope = L12PlatformStore.BeginSyntheticStorageMeasurement())
+        {
+            try { action(store); }
+            catch (Exception exception) { error = exception.GetType().Name; }
+            measurement = scope.Complete();
+        }
+        if (measurement.InstrumentationErrors > 0)
+            error ??= $"InstrumentationErrors:{measurement.InstrumentationErrors}";
+        clock.Stop();
+        measured.Add(new OperationSample(clock.Elapsed.TotalMilliseconds,
+            Math.Max(0, GC.GetAllocatedBytesForCurrentThread() - allocatedBefore), error, measurement));
+    }
+    var database = store.TransactionalStoragePath;
+    var recoveryClock = Stopwatch.StartNew();
+    var reloaded = new L12PlatformStore(path);
+    recoveryClock.Stop();
+    if (reloaded.Decks("synthetic-account-000000").Count == 0)
+        throw new InvalidDataException("Recovery lost the target account deck");
+    return new OperationRun(Summarize(measured), Math.Round(recoveryClock.Elapsed.TotalMilliseconds, 3),
+        new FileInfo(database).Length, new FileInfo(path).Length,
+        File.Exists(database + "-wal") ? new FileInfo(database + "-wal").Length : 0);
+}
+
+static OperationSummary Summarize(IReadOnlyList<OperationSample> samples)
+{
+    var succeeded = samples.Where(sample => sample.Error is null).ToArray();
+    if (succeeded.Length == 0) throw new InvalidOperationException("All benchmark samples failed");
+    return new OperationSummary(samples.Count - succeeded.Length,
+        Distribution(succeeded.Select(sample => sample.LatencyMs)),
+        Distribution(succeeded.Select(sample => (double)sample.AllocatedBytes)),
+        Distribution(succeeded.Select(sample => (double)(sample.Measurement.SelectStatements
+            + sample.Measurement.InsertStatements + sample.Measurement.UpdateStatements
+            + sample.Measurement.DeleteStatements + sample.Measurement.OtherStatements))),
+        Distribution(succeeded.Select(sample => (double)sample.Measurement.DeckDomainStatements)),
+        Distribution(succeeded.Select(sample => (double)sample.Measurement.AuditDomainStatements)),
+        Distribution(succeeded.Select(sample => (double)sample.Measurement.InclusiveAffectedRows)),
+        Distribution(succeeded.Select(sample => sample.Measurement.TransactionNanoseconds / 1_000_000d)),
+        Distribution(succeeded.Select(sample => (double)sample.Measurement.SqlitePageWrites)),
+        Distribution(succeeded.Select(sample => (double)sample.Measurement.SqlitePagePayloadBytes)),
+        Distribution(succeeded.Select(sample => (double)sample.Measurement.MirrorBytes)));
+}
+
+static MetricDistribution Distribution(IEnumerable<double> values)
+{
+    var ordered = values.Order().ToArray();
+    double At(double percentile) => Math.Round(ordered[Math.Clamp(
+        (int)Math.Ceiling(ordered.Length * percentile) - 1, 0, ordered.Length - 1)], 3);
+    return new(Math.Round(ordered[0], 3), At(.5), At(.95), At(.99), Math.Round(ordered[^1], 3));
+}
+
+internal sealed record MatrixAxis(string Name, int[] Levels);
+internal sealed record MatrixScale(int Accounts, int PrivateDeckRows, int Publications,
+    int TournamentDeckRefs, int DistinctPayloads);
+internal sealed record MetricDistribution(double Min, double P50, double P95, double P99, double Max);
+internal sealed record OperationSummary(int Errors, MetricDistribution LatencyMs,
+    MetricDistribution AllocatedBytes, MetricDistribution SqlStatements,
+    MetricDistribution DeckDomainStatements, MetricDistribution AuditDomainStatements,
+    MetricDistribution InclusiveAffectedRows, MetricDistribution TransactionMs,
+    MetricDistribution SqlitePageWrites, MetricDistribution SqlitePagePayloadBytes,
+    MetricDistribution MirrorBytesWritten);
+internal sealed record OperationSample(double LatencyMs, long AllocatedBytes, string? Error,
+    L12SyntheticStorageMeasurement Measurement);
+internal sealed record OperationRun(OperationSummary Summary, double RecoveryMs,
+    long DatabaseBytes, long MirrorBytes, long WalBytes);
+internal sealed record MatrixResult(string Axis, int Level, int Repeat, MatrixScale Scale,
+    OperationSummary Login, OperationSummary SaveDeck, OperationSummary Like,
+    OperationSummary AdminAudit, double RecoveryMs, long DatabaseBytes, long MirrorBytes, long WalBytes);

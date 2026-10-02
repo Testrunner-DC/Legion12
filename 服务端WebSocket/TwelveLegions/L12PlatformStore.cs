@@ -27,7 +27,13 @@ public sealed record L12AccountDeckView(string Name, string MasterId, IReadOnlyL
     IReadOnlyList<string> MoraleIds, IReadOnlyList<string> SpecialIds, DateTimeOffset UpdatedAt,
     IReadOnlyDictionary<string, string>? AlternateArtSelections = null,
     IReadOnlyDictionary<string, IReadOnlyList<string>>? AlternateArtCopies = null,
-    IReadOnlyList<string>? BenchIds = null, string? PublicationId = null, int? PublicationVersion = null);
+    IReadOnlyList<string>? BenchIds = null, string? PublicationId = null, int? PublicationVersion = null,
+    string Id = "", long Revision = 0);
+public sealed record L12DeckMutationResult(string Status, L12AccountDeckView? Deck = null,
+    long? CurrentRevision = null)
+{
+    public bool Success => string.Equals(Status, "ok", StringComparison.Ordinal);
+}
 public sealed record L12PublishedDeckView(string Id, string PublicCode, string OwnerId, string Author, L12AccountDeckView Deck,
     int Views, int Likes, int Copies, bool Liked, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
     bool SeasonCompliant = true, string? SeasonComplianceReason = null,
@@ -246,6 +252,8 @@ public sealed partial class L12PlatformStore
 
     private sealed class DeckRow
     {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public long Revision { get; set; } = 1;
         public string? PublicationId { get; set; }
         public int? PublicationVersion { get; set; }
         public string AccountId { get; set; } = string.Empty;
@@ -895,26 +903,86 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var row = _data.Decks.FirstOrDefault(item => item.AccountId == accountId
-                && string.Equals(item.Name, deck.Name, StringComparison.OrdinalIgnoreCase));
+                && string.Equals(DeckNameKey(item.Name), DeckNameKey(deck.Name), StringComparison.Ordinal));
+            var created = row is null;
+            var expectedRevision = row?.Revision;
             if (row is null)
             {
                 row = new DeckRow { AccountId = accountId, Name = deck.Name };
                 _data.Decks.Add(row);
             }
-            row.Name = deck.Name;
-            row.MasterId = deck.MasterId;
-            row.CardIds = deck.CardIds.ToList();
-            row.MoraleIds = deck.MoraleIds.ToList();
-            row.SpecialIds = deck.SpecialIds.ToList();
-            row.BenchIds = deck.BenchIds.ToList();
-            var binding = ResolvePublicDeckBinding(accountId, deck, deck.PublicationId, deck.PublicationVersion);
-            row.PublicationId = binding?.PublicationId;
-            row.PublicationVersion = binding?.Version;
-            row.AlternateArtSelections = SanitizeOwnedAlternateArtSelections(accountId, deck.AlternateArtSelections);
-            row.AlternateArtCopies = SanitizeOwnedAlternateArtCopies(accountId, deck.CardIds, deck.AlternateArtCopies);
-            row.UpdatedAt = DateTimeOffset.UtcNow;
-            Save();
+            else row.Revision++;
+            ApplyDeck(row, accountId, deck);
+            try
+            {
+                if (created) SavePrivateDeckCreate(row);
+                else SavePrivateDeckUpdate(row, expectedRevision!.Value);
+            }
+            catch (L12PrivateDeckMutationConflictException error)
+            {
+                throw new L12PlatformStorageUnavailableException("私人牌库兼容写入发生并发冲突，请重试", error);
+            }
             return ToView(row);
+        }
+    }
+
+    public L12DeckMutationResult CreateDeck(string accountId, L12PresetDeckDefinition deck)
+    {
+        lock (_gate)
+        {
+            if (_data.Decks.Any(item => item.AccountId == accountId
+                    && string.Equals(DeckNameKey(item.Name), DeckNameKey(deck.Name), StringComparison.Ordinal)))
+                return new("name_conflict");
+            var row = new DeckRow { AccountId = accountId, Name = deck.Name, Revision = 1 };
+            ApplyDeck(row, accountId, deck);
+            _data.Decks.Add(row);
+            try { SavePrivateDeckCreate(row); }
+            catch (L12PrivateDeckMutationConflictException error)
+            {
+                return new(error.Status, CurrentRevision: error.CurrentRevision);
+            }
+            return new("ok", ToView(row));
+        }
+    }
+
+    public L12DeckMutationResult UpdateDeck(string accountId, string deckId, long expectedRevision,
+        L12PresetDeckDefinition deck)
+    {
+        lock (_gate)
+        {
+            var row = _data.Decks.FirstOrDefault(item => item.AccountId == accountId
+                && string.Equals(item.Id, deckId, StringComparison.Ordinal));
+            if (row is null) return new("not_found");
+            if (row.Revision != expectedRevision) return new("revision_conflict", CurrentRevision: row.Revision);
+            if (_data.Decks.Any(item => item.AccountId == accountId && item != row
+                    && string.Equals(DeckNameKey(item.Name), DeckNameKey(deck.Name), StringComparison.Ordinal)))
+                return new("name_conflict");
+            row.Revision++;
+            ApplyDeck(row, accountId, deck);
+            try { SavePrivateDeckUpdate(row, expectedRevision); }
+            catch (L12PrivateDeckMutationConflictException error)
+            {
+                return new(error.Status, CurrentRevision: error.CurrentRevision);
+            }
+            return new("ok", ToView(row));
+        }
+    }
+
+    public L12DeckMutationResult DeleteDeck(string accountId, string deckId, long expectedRevision)
+    {
+        lock (_gate)
+        {
+            var row = _data.Decks.FirstOrDefault(item => item.AccountId == accountId
+                && string.Equals(item.Id, deckId, StringComparison.Ordinal));
+            if (row is null) return new("not_found");
+            if (row.Revision != expectedRevision) return new("revision_conflict", CurrentRevision: row.Revision);
+            _data.Decks.Remove(row);
+            try { SavePrivateDeckDelete(accountId, deckId, expectedRevision); }
+            catch (L12PrivateDeckMutationConflictException error)
+            {
+                return new(error.Status, CurrentRevision: error.CurrentRevision);
+            }
+            return new("ok");
         }
     }
 
@@ -922,14 +990,36 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
-            var removed = _data.Decks.RemoveAll(row => row.AccountId == accountId
-                && string.Equals(row.Name, name, StringComparison.OrdinalIgnoreCase)) > 0;
-            if (removed)
+            var row = _data.Decks.SingleOrDefault(item => item.AccountId == accountId
+                && string.Equals(DeckNameKey(item.Name), DeckNameKey(name), StringComparison.Ordinal));
+            if (row is not null)
             {
-                Save();
+                _data.Decks.Remove(row);
+                try { SavePrivateDeckDelete(accountId, row.Id, row.Revision); }
+                catch (L12PrivateDeckMutationConflictException error)
+                {
+                    throw new L12PlatformStorageUnavailableException(
+                        "私人牌库兼容删除发生并发冲突，请重试", error);
+                }
             }
-            return removed;
+            return row is not null;
         }
+    }
+
+    private void ApplyDeck(DeckRow row, string accountId, L12PresetDeckDefinition deck)
+    {
+        row.Name = deck.Name;
+        row.MasterId = deck.MasterId;
+        row.CardIds = deck.CardIds.ToList();
+        row.MoraleIds = deck.MoraleIds.ToList();
+        row.SpecialIds = deck.SpecialIds.ToList();
+        row.BenchIds = deck.BenchIds.ToList();
+        var binding = ResolvePublicDeckBinding(accountId, deck, deck.PublicationId, deck.PublicationVersion);
+        row.PublicationId = binding?.PublicationId;
+        row.PublicationVersion = binding?.Version;
+        row.AlternateArtSelections = SanitizeOwnedAlternateArtSelections(accountId, deck.AlternateArtSelections);
+        row.AlternateArtCopies = SanitizeOwnedAlternateArtCopies(accountId, deck.CardIds, deck.AlternateArtCopies);
+        row.UpdatedAt = DateTimeOffset.UtcNow;
     }
 
     public bool SetRole(L12AccountView actor, string accountId, string role, L12AdminAuditContext? context = null)
@@ -1781,7 +1871,7 @@ public sealed partial class L12PlatformStore
         new Dictionary<string, string>(row.AlternateArtSelections ?? [], StringComparer.OrdinalIgnoreCase),
         (row.AlternateArtCopies ?? []).ToDictionary(item => item.Key,
             item => (IReadOnlyList<string>)item.Value.ToArray(), StringComparer.OrdinalIgnoreCase),
-        row.BenchIds.ToArray(), row.PublicationId, row.PublicationVersion);
+        row.BenchIds.ToArray(), row.PublicationId, row.PublicationVersion, row.Id, row.Revision);
     private L12PublishedDeckView ToView(PublishedDeckRow row, string? viewerAccountId)
     {
         var owner = _data.Accounts.FirstOrDefault(account => account.Id == row.OwnerId);

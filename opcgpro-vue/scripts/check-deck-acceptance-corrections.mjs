@@ -11,8 +11,8 @@ const checks = [
   ['构筑及起手点击共享详情', read('site/DeckConstructionBrowser.vue').includes('@click="selectCard(entry.cardId)"') && (detail.includes('@click="selectCard(card)"') || detail.includes('@click="selectCard(copy.card!)"')) && detail.includes('external-details @select="selectCard"') && detail.includes('class="archive-detail public-card-detail"') && detail.includes('--l12-card-detail-sidebar-width') && !detail.includes('dblclick')],
 ]
 checks.push(['编辑牌库短文案及稳定来源跳转', detail.includes('@click="editDeck">编辑牌库</button>')
-  && detail.includes('deckEditorQuery(route.fullPath, saved.name, entry.value.id)')
-  && library.includes('deckEditorQuery(route.fullPath, deckName, publicationId)')
+  && detail.includes('deckEditorQuery(route.fullPath, saved.name, entry.value.id, saved.id)')
+  && library.includes('deckEditorQuery(route.fullPath, deckName, publicationId, personalDeckId)')
   && editor.includes('deckEditorReturnTarget(route.query.returnTo)')
   && navigation.includes("DEFAULT_DECK_EDITOR_RETURN = '/decks?tab=mine'")])
 const failures = checks.filter(([,pass]) => !pass).map(([name]) => name)

@@ -10,8 +10,11 @@ public sealed partial class L12PlatformStore
 {
     private const string DeckDomainStateKey = "deck_domain_state";
     private const string DeckDomainActiveState = "active-v1";
+    private const string DeckIdentityStateKey = "deck_identity_state";
+    private const string DeckIdentityActiveState = "active-v1";
 
     private sealed record DeckCardCount(string CardId, int Quantity);
+    private sealed record DeckIdentityMigrationMapRow(string AccountId, string Name, string Id, long Revision);
     private sealed record NormalizedDeckPayload(string Hash, string MasterId, string MainJson,
         string MoraleJson, string SpecialJson, IReadOnlyList<string> MainCards,
         IReadOnlyList<string> MoraleCards, IReadOnlyList<string> SpecialCards);
@@ -32,6 +35,8 @@ public sealed partial class L12PlatformStore
                 account_id TEXT NOT NULL,
                 name_key TEXT NOT NULL,
                 name TEXT NOT NULL,
+                deck_id TEXT,
+                revision INTEGER NOT NULL DEFAULT 1,
                 payload_hash TEXT NOT NULL REFERENCES deck_payloads(payload_hash),
                 alternate_art_selections_json TEXT NOT NULL,
                 alternate_art_copies_json TEXT NOT NULL,
@@ -111,6 +116,8 @@ public sealed partial class L12PlatformStore
         EnsureDeckColumn(connection, "account_decks", "bench_cards_json", "TEXT NOT NULL DEFAULT '[]'");
         EnsureDeckColumn(connection, "account_decks", "publication_id", "TEXT");
         EnsureDeckColumn(connection, "account_decks", "publication_version", "INTEGER");
+        EnsureDeckColumn(connection, "account_decks", "deck_id", "TEXT");
+        EnsureDeckColumn(connection, "account_decks", "revision", "INTEGER NOT NULL DEFAULT 1");
         EnsureDeckColumn(connection, "published_decks", "public_code", "TEXT");
         EnsureDeckColumn(connection, "published_decks", "alternate_art_selections_json", "TEXT NOT NULL DEFAULT '{}'");
         EnsureDeckColumn(connection, "published_decks", "alternate_art_copies_json", "TEXT NOT NULL DEFAULT '{}'");
@@ -132,6 +139,16 @@ public sealed partial class L12PlatformStore
             WHERE name='';
             """;
         backfill.ExecuteNonQuery();
+        using var identityIndexes = connection.CreateCommand();
+        identityIndexes.CommandText = """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_account_decks_active_id
+                ON account_decks(account_id,deck_id) WHERE is_deleted=0 AND deck_id IS NOT NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_account_decks_active_name
+                ON account_decks(account_id,name_key COLLATE NOCASE) WHERE is_deleted=0;
+            DROP TRIGGER IF EXISTS account_decks_active_identity_insert;
+            DROP TRIGGER IF EXISTS account_decks_active_identity_update;
+            """;
+        identityIndexes.ExecuteNonQuery();
     }
 
     private static void EnsureDeckColumn(SqliteConnection connection, string table, string column, string declaration)
@@ -207,7 +224,143 @@ public sealed partial class L12PlatformStore
             transaction.Commit();
         }
 
+        EnsureDeckIdentityMigration(connection, data);
         HydrateDeckDomain(connection, data);
+    }
+
+    private void EnsureDeckIdentityMigration(SqliteConnection connection, DataFile data)
+    {
+        var stateActive = string.Equals(ReadMeta(connection, DeckIdentityStateKey), DeckIdentityActiveState,
+            StringComparison.Ordinal);
+        var hasInvalidActiveIdentity = HasInvalidActiveDeckIdentity(connection);
+        var needsFullBackup = !File.Exists(_databasePath + ".pre-deck-identity-v1.full.json.gz")
+                              && HasActiveAccountDecks(connection);
+        if (stateActive && !hasInvalidActiveIdentity && !needsFullBackup) return;
+
+        HydrateDeckDomain(connection, data);
+        WriteDeckIdentityFullBackup(data);
+        WriteDeckIdentityMigrationMap(data);
+        if (stateActive && !hasInvalidActiveIdentity) return;
+        string mirrorJson;
+        string snapshotJson;
+        using (var transaction = connection.BeginTransaction())
+        {
+            PersistDeckDomainSnapshot(connection, transaction, data);
+            VerifyDeckDomainSnapshot(connection, transaction, data);
+            SetStorageMeta(connection, transaction, DeckIdentityStateKey, DeckIdentityActiveState);
+            snapshotJson = SerializeSnapshot(data);
+            mirrorJson = JsonSerializer.Serialize(data, PlatformMirrorJsonOptions);
+            UpsertSnapshot(connection, transaction, snapshotJson, Sha256(snapshotJson), Sha256(mirrorJson), data);
+            transaction.Commit();
+        }
+        _lastCommittedSnapshot = snapshotJson;
+        try
+        {
+            WriteFallbackMirror(mirrorJson);
+            _fallbackMirrorHealthy = true;
+        }
+        catch (Exception error)
+        {
+            _fallbackMirrorHealthy = false;
+            _storageIssue = $"牌库稳定 ID 迁移已提交，但 JSON 兼容镜像更新失败：{error.Message}";
+        }
+    }
+
+    private static bool HasInvalidActiveDeckIdentity(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT EXISTS(
+                SELECT 1 FROM account_decks
+                WHERE is_deleted=0 AND (deck_id IS NULL OR trim(deck_id)='' OR revision<1)
+            );
+            """;
+        return Convert.ToInt32(command.ExecuteScalar()) != 0;
+    }
+
+    private static bool HasActiveAccountDecks(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT EXISTS(SELECT 1 FROM account_decks WHERE is_deleted=0);";
+        return Convert.ToInt32(command.ExecuteScalar()) != 0;
+    }
+
+    private void WriteDeckIdentityFullBackup(DataFile data)
+    {
+        if (data.Decks.Count == 0) return;
+        var path = _databasePath + ".pre-deck-identity-v1.full.json.gz";
+        _migrationBackupPath ??= path;
+        WriteGzipAtomically(path, JsonSerializer.Serialize(data, PlatformMigrationJsonOptions));
+    }
+
+    private void WriteDeckIdentityMigrationMap(DataFile data)
+    {
+        if (data.Decks.Count == 0) return;
+        var path = _databasePath + ".pre-deck-identity-v1.json.gz";
+        _migrationBackupPath ??= path;
+        var mappedRows = File.Exists(path)
+            ? ReadDeckIdentityMigrationMap(path).ToList()
+            : [];
+        var occupiedIds = data.Decks.Where(deck => !string.IsNullOrWhiteSpace(deck.Id))
+            .Select(deck => $"{deck.AccountId}\n{deck.Id}").ToHashSet(StringComparer.Ordinal);
+        foreach (var deck in data.Decks.Where(deck => string.IsNullOrWhiteSpace(deck.Id)))
+        {
+            var mapped = mappedRows.LastOrDefault(item => item.AccountId == deck.AccountId
+                && string.Equals(DeckNameKey(item.Name), DeckNameKey(deck.Name), StringComparison.Ordinal));
+            if (mapped is not null && occupiedIds.Add($"{deck.AccountId}\n{mapped.Id}"))
+            {
+                deck.Id = mapped.Id;
+                deck.Revision = Math.Max(1, mapped.Revision);
+            }
+        }
+        AssignDeckIdentities(data);
+        var mappings = mappedRows.ToDictionary(
+            item => $"{item.AccountId}\n{DeckNameKey(item.Name)}", StringComparer.Ordinal);
+        foreach (var deck in data.Decks)
+            mappings[$"{deck.AccountId}\n{DeckNameKey(deck.Name)}"] = new DeckIdentityMigrationMapRow(
+                deck.AccountId, deck.Name, deck.Id, deck.Revision);
+        WriteGzipAtomically(path, JsonSerializer.Serialize(mappings.Values.ToArray(), PlatformMigrationJsonOptions));
+    }
+
+    private static IReadOnlyList<DeckIdentityMigrationMapRow> ReadDeckIdentityMigrationMap(string path)
+    {
+        using var file = File.OpenRead(path);
+        using var gzip = new GZipStream(file, CompressionMode.Decompress);
+        return JsonSerializer.Deserialize<List<DeckIdentityMigrationMapRow>>(gzip, PlatformMigrationJsonOptions) ?? [];
+    }
+
+    private static void WriteGzipAtomically(string path, string json)
+    {
+        var temp = path + $".{Guid.NewGuid():N}.tmp";
+        try
+        {
+            using (var file = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            using (var gzip = new GZipStream(file, CompressionLevel.SmallestSize))
+            using (var writer = new StreamWriter(gzip, new UTF8Encoding(false)))
+                writer.Write(json);
+            File.Move(temp, path, true);
+        }
+        finally
+        {
+            try { if (File.Exists(temp)) File.Delete(temp); }
+            catch { }
+        }
+    }
+
+    private static void AssignDeckIdentities(DataFile data)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var deck in data.Decks)
+        {
+            var nameKey = DeckNameKey(deck.Name);
+            if (nameKey.Length == 0 || !names.Add($"{deck.AccountId}\n{nameKey}"))
+                throw new InvalidDataException("账号内存在空名称或大小写/空白归一化冲突的牌库");
+            if (string.IsNullOrWhiteSpace(deck.Id)) deck.Id = Guid.NewGuid().ToString("N");
+            if (!ids.Add($"{deck.AccountId}\n{deck.Id}"))
+                throw new InvalidDataException("账号内存在重复的牌库稳定 ID");
+            if (deck.Revision < 1) deck.Revision = 1;
+        }
     }
 
     private static bool HasLegacyDeckPayloads(DataFile data)
@@ -303,6 +456,7 @@ public sealed partial class L12PlatformStore
     private static void PersistDeckDomainSnapshot(SqliteConnection connection, SqliteTransaction transaction,
         DataFile data)
     {
+        AssignDeckIdentities(data);
         DeleteStaleDeckDomainRows(connection, transaction, data);
         foreach (var deck in data.Decks)
         {
@@ -311,12 +465,13 @@ public sealed partial class L12PlatformStore
             using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = """
-                INSERT INTO account_decks(account_id,name_key,name,payload_hash,
+                INSERT INTO account_decks(account_id,name_key,name,deck_id,revision,payload_hash,
                     alternate_art_selections_json,alternate_art_copies_json,bench_cards_json,updated_utc,is_deleted,
                     publication_id,publication_version)
-                VALUES($account,$key,$name,$payload,$selections,$copies,$bench,$updated,0,$publication,$version)
+                VALUES($account,$key,$name,$id,$revision,$payload,$selections,$copies,$bench,$updated,0,$publication,$version)
                 ON CONFLICT(account_id,name_key) DO UPDATE SET
-                    name=excluded.name,payload_hash=excluded.payload_hash,
+                    name=excluded.name,deck_id=excluded.deck_id,revision=excluded.revision,
+                    payload_hash=excluded.payload_hash,
                     alternate_art_selections_json=excluded.alternate_art_selections_json,
                     alternate_art_copies_json=excluded.alternate_art_copies_json,
                     bench_cards_json=excluded.bench_cards_json,updated_utc=excluded.updated_utc,
@@ -325,6 +480,8 @@ public sealed partial class L12PlatformStore
             command.Parameters.AddWithValue("$account", deck.AccountId);
             command.Parameters.AddWithValue("$key", DeckNameKey(deck.Name));
             command.Parameters.AddWithValue("$name", deck.Name);
+            command.Parameters.AddWithValue("$id", deck.Id);
+            command.Parameters.AddWithValue("$revision", deck.Revision);
             command.Parameters.AddWithValue("$payload", payload.Hash);
             command.Parameters.AddWithValue("$selections", JsonSerializer.Serialize(deck.AlternateArtSelections));
             command.Parameters.AddWithValue("$copies", JsonSerializer.Serialize(deck.AlternateArtCopies));
@@ -510,10 +667,10 @@ public sealed partial class L12PlatformStore
 
         var expectedAccounts = data.Decks.ToDictionary(
             deck => $"{deck.AccountId}\n{DeckNameKey(deck.Name)}",
-            deck => NormalizeDeckPayload(deck.MasterId, deck.CardIds, deck.MoraleIds, deck.SpecialIds).Hash,
+            deck => $"{deck.Id}\n{deck.Revision}\n{NormalizeDeckPayload(deck.MasterId, deck.CardIds, deck.MoraleIds, deck.SpecialIds).Hash}",
             StringComparer.Ordinal);
         var storedAccounts = ReadReferences(connection, transaction,
-            "SELECT account_id || char(10) || name_key,payload_hash FROM account_decks WHERE is_deleted=0;");
+            "SELECT account_id || char(10) || name_key,deck_id || char(10) || revision || char(10) || payload_hash FROM account_decks WHERE is_deleted=0;");
         if (storedAccounts.Count != expectedAccounts.Count)
             throw new InvalidDataException("账号牌库规范化引用数量校验失败");
         foreach (var pair in expectedAccounts)
@@ -578,7 +735,8 @@ public sealed partial class L12PlatformStore
         {
             command.CommandText = """
                 SELECT account_id,name,payload_hash,alternate_art_selections_json,
-                       alternate_art_copies_json,bench_cards_json,updated_utc,publication_id,publication_version
+                       alternate_art_copies_json,bench_cards_json,updated_utc,publication_id,publication_version,
+                       deck_id,revision
                 FROM account_decks WHERE is_deleted=0 ORDER BY updated_utc DESC;
                 """;
             using var reader = command.ExecuteReader();
@@ -588,6 +746,8 @@ public sealed partial class L12PlatformStore
                     throw new InvalidDataException("账号牌库引用了不存在的构筑正文");
                 data.Decks.Add(new DeckRow
                 {
+                    Id = reader.IsDBNull(9) ? string.Empty : reader.GetString(9),
+                    Revision = reader.IsDBNull(10) ? 1 : Math.Max(1, reader.GetInt64(10)),
                     AccountId = reader.GetString(0), Name = reader.GetString(1), MasterId = payload.MasterId,
                     CardIds = payload.MainCards.ToList(), MoraleIds = payload.MoraleCards.ToList(),
                     SpecialIds = payload.SpecialCards.ToList(),

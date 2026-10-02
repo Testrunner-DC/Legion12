@@ -236,6 +236,11 @@ public sealed partial class L12PlatformStore
     }
 
     private void PersistTransactionalData(bool businessChange)
+        => PersistTransactionalData(businessChange, null, privateDeckObjectWrite: false);
+
+    private void PersistTransactionalData(bool businessChange,
+        Action<SqliteConnection, SqliteTransaction>? objectWrite,
+        bool privateDeckObjectWrite)
     {
         if (!_storageWritable)
         {
@@ -247,24 +252,38 @@ public sealed partial class L12PlatformStore
         try
         {
             using var connection = OpenDatabase(_databasePath, readOnly: false);
-            InitializeStorageSchema(connection);
+            if (objectWrite is null) InitializeStorageSchema(connection);
             FilterMigratedAuditSnapshot(connection, _data);
             var expectedRevision = _data.Version;
             _data.BusinessVersion ??= _data.Version;
             _data.Version++;
             if (businessChange) _data.BusinessVersion++;
-            using var transaction = connection.BeginTransaction();
+            using var transaction = privateDeckObjectWrite
+                ? connection.BeginTransaction(deferred: false)
+                : connection.BeginTransaction();
             var completedFinalizationRevision = ReadLatestSeasonFinalizationRevision(connection, transaction);
             if (expectedRevision < completedFinalizationRevision)
                 throw new L12SeasonFinalizationStaleWriteException(
                     $"平台状态版本 {expectedRevision} 早于已完成赛季结算版本 {completedFinalizationRevision}，请重试原操作");
-            PersistDeckDomainSnapshot(connection, transaction, _data);
+            if (objectWrite is null) PersistDeckDomainSnapshot(connection, transaction, _data);
+            else objectWrite(connection, transaction);
+            if (privateDeckObjectWrite)
+            {
+                var currentStorageRevision = ReadPrivateDeckStorageRevision(connection, transaction);
+                if (currentStorageRevision != expectedRevision)
+                    throw new L12PrivateDeckStorageConflictException(expectedRevision, currentStorageRevision);
+            }
             var snapshotJson = SerializeSnapshot(_data);
+            if (privateDeckObjectWrite) StorageFailureInjector?.Invoke("before-private-deck-snapshot");
             StorageFailureInjector?.Invoke("before-mirror-serialize");
             mirrorJson = JsonSerializer.Serialize(_data, PlatformMirrorJsonOptions);
             var snapshotChecksum = Sha256(snapshotJson);
             var mirrorChecksum = Sha256(mirrorJson);
-            UpsertSnapshot(connection, transaction, snapshotJson, snapshotChecksum, mirrorChecksum, _data);
+            if (privateDeckObjectWrite)
+                UpsertPrivateDeckSnapshotCas(connection, transaction, snapshotJson, snapshotChecksum,
+                    mirrorChecksum, _data, expectedRevision);
+            else
+                UpsertSnapshot(connection, transaction, snapshotJson, snapshotChecksum, mirrorChecksum, _data);
             StorageFailureInjector?.Invoke("before-audit-append");
             AppendIndependentAudit(connection, transaction, _data.AdminAudit);
             StorageFailureInjector?.Invoke("after-audit-append");
@@ -272,6 +291,11 @@ public sealed partial class L12PlatformStore
             transaction.Commit();
             _lastCommittedSnapshot = snapshotJson;
             _storageIssue = null;
+        }
+        catch (L12PrivateDeckMutationConflictException)
+        {
+            RefreshTransactionalStateAfterObjectConflict();
+            throw;
         }
         catch (L12SeasonFinalizationStaleWriteException error)
         {
@@ -298,6 +322,7 @@ public sealed partial class L12PlatformStore
 
         try
         {
+            if (privateDeckObjectWrite) StorageFailureInjector?.Invoke("before-private-deck-mirror");
             WriteFallbackMirror(mirrorJson);
             _fallbackMirrorHealthy = true;
         }
@@ -305,6 +330,22 @@ public sealed partial class L12PlatformStore
         {
             _fallbackMirrorHealthy = false;
             _storageIssue = $"SQLite 已提交，但 JSON 兼容镜像更新失败：{error.Message}";
+        }
+    }
+
+    private void RefreshTransactionalStateAfterObjectConflict()
+    {
+        try
+        {
+            _data = LoadTransactionalState();
+            _lastCommittedSnapshot = SerializeSnapshot(_data);
+            _storageIssue = null;
+        }
+        catch (Exception refreshError)
+        {
+            RestoreLastCommittedSnapshot();
+            _storageIssue = $"私人牌库对象写冲突后平台状态刷新失败：{refreshError.Message}";
+            throw new L12PlatformStorageUnavailableException(_storageIssue, refreshError);
         }
     }
 
@@ -683,6 +724,7 @@ public sealed partial class L12PlatformStore
         };
         var connection = new SqliteConnection(builder.ToString());
         connection.Open();
+        AttachSyntheticStorageMeasurement(connection);
         if (initialize)
         {
             using var command = connection.CreateCommand();
@@ -982,6 +1024,7 @@ public sealed partial class L12PlatformStore
         var temp = _path + ".tmp";
         File.WriteAllText(temp, json);
         File.Move(temp, _path, true);
+        RecordSyntheticMirrorWrite(json);
     }
 
     private static string SerializeSnapshot(DataFile data)

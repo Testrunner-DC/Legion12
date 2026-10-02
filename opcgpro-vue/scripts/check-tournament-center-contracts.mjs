@@ -81,7 +81,7 @@ const checks = [
   ['check-in range matches server authority', wizard.includes('v-model.number="form.checkInMinutes" type="number" min="1" max="60"')],
   ['admin tournament workbench has an explicit admin-only name', router.includes("import('@/l12/site/AdminTournamentWorkbench.vue')") && !router.includes('TournamentCenterPage')],
   ['player route uses hub and stable detail routes', router.includes("component: () => import('@/l12/site/TournamentHubPage.vue')") && router.includes("path: '/battle/tournaments/:code'")],
-  ['pre-check-in selects an account deck', detail.includes('syncSavedDecksFromAccount') && detail.includes('选择账号牌组') && detail.includes("preCheckIn(item.id, item.version, deckName.value, '')")],
+  ['pre-check-in binds an owned deck ID rather than a reusable name', detail.includes('syncSavedDecksFromAccount') && detail.includes('v-model="deckId"') && detail.includes("preCheckIn(item.id, item.version, deck.name, '', deck.id!)") && admin.includes('v-model="deckDrafts[detail.id].id"') && admin.includes("preCheckIn(item.id, item.version, selected.name, '', selected.id)") && platform.includes('expectedVersion, deckName, deckCode, deckId')],
   ['critical tournament actions use inline reasons', !detail.includes('prompt(') && !judge.includes('prompt(') && !management.includes('confirm(') && detail.includes('participantReasons[person.accountId]') && judge.includes('appealReasons[item.id]')],
   ['organizer transfer uses eligible named candidates', management.includes('transferCandidates') && management.includes('选择本场裁判或主办者好友')],
   ['career history is visible and server-paged', hub.includes('个人赛事履历') && hub.includes('career.totalPages') && platform.includes("params.set('pageSize', String(query.pageSize))")],

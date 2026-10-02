@@ -237,7 +237,7 @@ public sealed record L12TournamentCreatePayload(
     L12RankedTimeControlConfig? TimeControl = null);
 
 public sealed record L12TournamentRegistrationPayload(string? DeckName = null, string? DeckCode = null);
-public sealed record L12TournamentPreCheckInPayload(string DeckName, string DeckCode);
+public sealed record L12TournamentPreCheckInPayload(string DeckName, string DeckCode, string? DeckId = null);
 public sealed record L12TournamentStaffPayload(IReadOnlyList<string> RefereeAccountIds);
 public sealed record L12TournamentCheckInPayload(string? AccountId, bool Ready);
 public sealed record L12TournamentRemoveParticipantPayload(string AccountId, bool BanRegistration, string Reason);
@@ -379,6 +379,7 @@ public sealed partial class L12PlatformStore
 
     private sealed class TournamentDeckSnapshotRow
     {
+        public string? SourceDeckId { get; set; }
         public string Name { get; set; } = string.Empty;
         public string Code { get; set; } = string.Empty;
         public string Hash { get; set; } = string.Empty;
@@ -788,14 +789,17 @@ public sealed partial class L12PlatformStore
                 throw new L12TournamentScopeException("候补递补为正式席位后才能签到锁牌");
             if (participant.TournamentCheckedInAt is not null)
             {
-                if (string.Equals(participant.Deck.Name, payload.DeckName?.Trim(), StringComparison.Ordinal)
-                    && (string.IsNullOrWhiteSpace(payload.DeckCode)
-                        || string.Equals(participant.Deck.Code, payload.DeckCode.Trim(), StringComparison.Ordinal)))
+                var requestedDeckId = OptionalText(payload.DeckId, 128);
+                var sameDeck = !string.IsNullOrWhiteSpace(requestedDeckId)
+                    ? string.Equals(participant.Deck.SourceDeckId, requestedDeckId, StringComparison.Ordinal)
+                    : string.Equals(participant.Deck.Name, payload.DeckName?.Trim(), StringComparison.Ordinal)
+                      && (string.IsNullOrWhiteSpace(payload.DeckCode)
+                          || string.Equals(participant.Deck.Code, payload.DeckCode.Trim(), StringComparison.Ordinal));
+                if (sameDeck)
                     return ToView(row, actor);
                 throw new L12TournamentVersionConflictException("牌库已在赛前签到时锁定");
             }
-            var deck = ResolveTournamentDeckSnapshot(actor.Id, row.Rules,
-                new L12TournamentRegistrationPayload(payload.DeckName, payload.DeckCode));
+            var deck = ResolveTournamentDeckSnapshot(actor.Id, row.Rules, payload);
             return Mutate(actor, row, "pre-check-in", actor.Id, context, apply, working =>
             {
                 var target = working.Participants.First(item => item.AccountId == actor.Id);
@@ -2316,13 +2320,19 @@ public sealed partial class L12PlatformStore
     }
 
     private TournamentDeckSnapshotRow ResolveTournamentDeckSnapshot(string accountId,
-        TournamentRulesSnapshotRow rules, L12TournamentRegistrationPayload payload)
+        TournamentRulesSnapshotRow rules, L12TournamentPreCheckInPayload payload)
     {
+        var requestedDeckId = OptionalText(payload.DeckId, 128);
         var requestedName = OptionalText(payload.DeckName, 200);
-        var saved = _data.Decks.FirstOrDefault(item => item.AccountId == accountId
-            && string.Equals(item.Name, requestedName, StringComparison.OrdinalIgnoreCase));
+        var saved = string.IsNullOrWhiteSpace(requestedDeckId)
+            ? _data.Decks.FirstOrDefault(item => item.AccountId == accountId
+                && string.Equals(item.Name, requestedName, StringComparison.OrdinalIgnoreCase))
+            : _data.Decks.FirstOrDefault(item => item.AccountId == accountId
+                && string.Equals(item.Id, requestedDeckId, StringComparison.Ordinal));
         if (saved is null)
         {
+            if (!string.IsNullOrWhiteSpace(requestedDeckId))
+                throw new KeyNotFoundException("所选牌库不存在或不属于当前登录账号");
             // 兼容旧客户端和已导入数据；新流程始终从账号牌库选择。
             if (string.IsNullOrWhiteSpace(payload.DeckCode))
                 throw new ArgumentException("所选牌库不在当前登录账号的服务端牌库中");
@@ -2336,6 +2346,7 @@ public sealed partial class L12PlatformStore
         });
         return new TournamentDeckSnapshotRow
         {
+            SourceDeckId = saved.Id,
             Name = saved.Name,
             Code = OptionalText(payload.DeckCode, 4096),
             MasterId = saved.MasterId,

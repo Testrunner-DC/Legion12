@@ -134,7 +134,7 @@ async function copyToMine() {
   await runAction(publicDeckActionKey(id, accountId), async () => {
     try {
       if (!entry.value || entry.value.id !== id) return
-      const deck = { ...entry.value.deck, name: uniqueName(entry.value.deck.name), publicationId: null, publicationVersion: null, cardIds: [...entry.value.deck.cardIds], moraleIds: [...entry.value.deck.moraleIds], specialIds: [...(entry.value.deck.specialIds ?? [])], updatedAt: new Date().toISOString() }
+      const deck = { ...entry.value.deck, id: undefined, revision: undefined, name: uniqueName(entry.value.deck.name), publicationId: null, publicationVersion: null, cardIds: [...entry.value.deck.cardIds], moraleIds: [...entry.value.deck.moraleIds], specialIds: [...(entry.value.deck.specialIds ?? [])], updatedAt: new Date().toISOString() }
       const saved = await saveDeck(deck)
       if (accountId === platformState.account?.id && entry.value?.id === id)
         notice.value = `已复制《${saved.name}》到我的牌库`
@@ -180,8 +180,11 @@ async function previewImage() {
 }
 async function editDeck() {
   if (!entry.value) return
-  const saved = await saveDeck({ ...entry.value.deck, cardIds: [...entry.value.deck.cardIds], moraleIds: [...entry.value.deck.moraleIds], specialIds: [...(entry.value.deck.specialIds ?? [])] })
-  await router.push({ path: '/deck-editor', query: deckEditorQuery(route.fullPath, saved.name, entry.value.id) })
+  const existing = Object.values(loadSavedDecks()).find(deck => deck.publicationId === entry.value?.id)
+  const saved = await saveDeck({ ...entry.value.deck, id: existing?.id, revision: existing?.revision,
+    name: existing?.name ?? uniqueName(entry.value.deck.name), cardIds: [...entry.value.deck.cardIds],
+    moraleIds: [...entry.value.deck.moraleIds], specialIds: [...(entry.value.deck.specialIds ?? [])] })
+  await router.push({ path: '/deck-editor', query: deckEditorQuery(route.fullPath, saved.name, entry.value.id, saved.id) })
 }
 async function deleteDeck() {
   if (!entry.value || !window.confirm('确定删除这个公开牌库？')) return

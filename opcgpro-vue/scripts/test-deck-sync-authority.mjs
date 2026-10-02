@@ -59,12 +59,17 @@ function deck(name, updatedAt = '2026-09-09T00:00:00.000Z') {
   return { name, masterId: 'S01-01M1', cardIds: [], moraleIds: [], specialIds: [], updatedAt }
 }
 
+function owned(name, updatedAt = '2026-09-09T00:00:00.000Z', revision = 1, id = `id-${name}`) {
+  return { ...deck(name, updatedAt), id, revision }
+}
+
 function accountKey(accountId = 'account-a') {
   return `l12-custom-decks-v1:${accountId}`
 }
 
 function seedAccountDecks(entries, accountId = 'account-a') {
-  localStorage.setItem(accountKey(accountId), JSON.stringify(Object.fromEntries(entries.map(item => [item.name, item]))))
+  localStorage.setItem(accountKey(accountId), JSON.stringify(Object.fromEntries(entries.map(item =>
+    [item.name, item.id ? item : { ...item, id: `id-${item.name}`, revision: 1 }]))))
 }
 
 function readAccountDecks(accountId = 'account-a') {
@@ -114,7 +119,7 @@ async function deleteWaitsForServerAndPreservesFailure() {
   localStorage.setItem('l12-selected-custom-deck:account-a', '待删除')
   const pending = deferred()
   requestHandler = (path, init = {}) => {
-    assert.equal(path, '/api/decks/%E5%BE%85%E5%88%A0%E9%99%A4')
+    assert.equal(path, '/api/decks/by-id/id-%E5%BE%85%E5%88%A0%E9%99%A4?expectedRevision=1')
     assert.equal(init.method, 'DELETE')
     return pending.promise
   }
@@ -134,18 +139,46 @@ async function deleteWaitsForServerAndPreservesFailure() {
   assert.equal(localStorage.getItem('l12-selected-custom-deck:account-a'), '删除失败保留')
 }
 
+async function deleteUsesSelectedIdentityAndRejectsStaleRevision() {
+  localStorage.clear()
+  authenticate()
+  seedAccountDecks([owned('旧名称', undefined, 1, 'id-original')])
+  const staleSelection = readAccountDecks()['旧名称']
+  seedAccountDecks([
+    owned('旧名称', undefined, 1, 'id-reused'),
+    owned('已改名', undefined, 2, 'id-original'),
+  ])
+  requestHandler = async () => { throw new Error('陈旧选择不得发出删除请求') }
+  await assert.rejects(decksModule.deleteDeck(staleSelection), /其他操作更新/)
+  assert.equal(Object.keys(readAccountDecks()).length, 2)
+
+  const selected = readAccountDecks()['已改名']
+  requestHandler = async (path, init = {}) => {
+    assert.equal(path, '/api/decks/by-id/id-original?expectedRevision=2')
+    assert.equal(init.method, 'DELETE')
+    return {}
+  }
+  await decksModule.deleteDeck(selected)
+  assert.deepEqual(Object.keys(readAccountDecks()), ['旧名称'], '按 ID 删除不能误删复用旧名称的新牌库')
+  assert.equal(readAccountDecks()['旧名称'].id, 'id-reused')
+}
+
 async function saveWaitsForServerAndPreservesFailure() {
   localStorage.clear()
   authenticate()
   seedAccountDecks([deck('原牌库')])
+  localStorage.setItem('l12-selected-custom-deck:account-a', 'id-原牌库')
+  localStorage.setItem('l12-selected-custom-deck:account-a:ranked', 'id-原牌库')
   const pending = deferred()
   requestHandler = () => pending.promise
   const saving = decksModule.saveDeck(deck('新牌库', '2026-09-09T01:00:00.000Z'))
   assert.ok(saving instanceof Promise, '保存 API 必须可等待')
   assert.equal(readAccountDecks()['新牌库'], undefined, '服务器响应前不得宣告本地保存成功')
-  pending.resolve(deck('新牌库', '2026-09-09T01:00:01.000Z'))
+  pending.resolve(owned('新牌库', '2026-09-09T01:00:01.000Z'))
   await saving
   assert.equal(readAccountDecks()['新牌库'].updatedAt, '2026-09-09T01:00:01.000Z', '缓存应采用服务器确认的版本')
+  assert.equal(localStorage.getItem('l12-selected-custom-deck:account-a'), 'id-原牌库', '新建或复制不得改动旧版全局选择')
+  assert.equal(localStorage.getItem('l12-selected-custom-deck:account-a:ranked'), 'id-原牌库', '新建或复制不得暗改排位选择')
 
   requestHandler = async () => { throw new Error('simulated PUT 500') }
   await assert.rejects(decksModule.saveDeck(deck('失败牌库')), /simulated PUT 500/)
@@ -175,9 +208,9 @@ async function staleSyncResponsesCannotOverwriteNewerState() {
   const syncingBeforeSave = decksModule.syncSavedDecksFromAccount()
   requestHandler = async (_path, init = {}) => {
     assert.equal(init.method, 'PUT')
-    return deck('保存目标', '2026-09-09T03:00:00.000Z')
+    return owned('保存目标', '2026-09-09T03:00:00.000Z', 2)
   }
-  await decksModule.saveDeck(deck('保存目标', '2026-09-09T02:00:00.000Z'))
+  await decksModule.saveDeck({ ...readAccountDecks()['保存目标'], updatedAt: '2026-09-09T02:00:00.000Z' })
   staleSaveSync.resolve([deck('保存目标', '2026-09-09T00:00:00.000Z')])
   await syncingBeforeSave
   assert.equal(readAccountDecks()['保存目标'].updatedAt, '2026-09-09T03:00:00.000Z', 'PUT 成功后，较早 GET 不得覆盖确认版本')
@@ -215,13 +248,58 @@ async function guestPresetSeedingCannotCrossAnAccountSwitch() {
   assert.deepEqual(Object.keys(readAccountDecks('account-b')), ['账号乙'], '游客预组异步结果不得写入刚登录的账号缓存')
 }
 
-function editorAwaitsMutationsAndKeepsRenameOrder() {
+async function stableIdentityRenameAndSelectionMigration() {
+  localStorage.clear()
+  authenticate()
+  const original = owned('原名')
+  seedAccountDecks([original])
+  localStorage.setItem('l12-selected-custom-deck:account-a:ranked', original.id)
+  requestHandler = async (path, init = {}) => {
+    assert.equal(path, '/api/decks/by-id/id-%E5%8E%9F%E5%90%8D')
+    assert.equal(init.method, 'PUT')
+    assert.equal(JSON.parse(init.body).expectedRevision, 1)
+    return owned('新名', '2026-09-09T04:00:00.000Z', 2, original.id)
+  }
+  await decksModule.saveDeck({ ...original, name: '新名' })
+  assert.deepEqual(Object.keys(readAccountDecks()), ['新名'], '原名不得留下第二副牌库')
+  assert.equal(readAccountDecks()['新名'].id, original.id)
+  assert.equal(localStorage.getItem('l12-selected-custom-deck:account-a:ranked'), original.id)
+  assert.equal(decksModule.loadSelectedDeckName('ranked', decksModule.loadSavedDecks()), '新名')
+
+  requestHandler = async () => { throw new Error('旧版本冲突') }
+  await assert.rejects(decksModule.saveDeck({ ...readAccountDecks()['新名'], name: '再次改名' }), /旧版本冲突/)
+  assert.deepEqual(Object.keys(readAccountDecks()), ['新名'], '冲突不得篡改已确认缓存')
+
+  const copy = { ...readAccountDecks()['新名'], id: undefined, revision: undefined, name: '副本' }
+  requestHandler = async (path, init = {}) => {
+    assert.equal(path, '/api/decks')
+    assert.equal(init.method, 'POST')
+    assert.equal(JSON.parse(init.body).id, undefined)
+    return owned('副本', undefined, 1, 'id-copy')
+  }
+  await decksModule.saveDeck(copy)
+  assert.equal(readAccountDecks()['新名'].id, original.id)
+  assert.equal(readAccountDecks()['副本'].id, 'id-copy')
+
+  localStorage.clear()
+  seedAccountDecks([deck('旧名')])
+  localStorage.setItem(accountKey(), JSON.stringify({ 旧名: deck('旧名') }))
+  localStorage.setItem('l12-selected-custom-deck:account-a:casual', '旧名')
+  requestHandler = async () => [owned('旧名')]
+  const migrated = await decksModule.syncSavedDecksFromAccount()
+  assert.equal(localStorage.getItem('l12-selected-custom-deck:account-a:casual'), 'id-旧名')
+  assert.equal(decksModule.loadSelectedDeckName('casual', migrated), '旧名')
+  requestHandler = async () => [owned('远端改名', undefined, 2, 'id-旧名')]
+  const renamed = await decksModule.syncSavedDecksFromAccount()
+  assert.equal(decksModule.loadSelectedDeckName('casual', renamed), '远端改名')
+}
+
+function editorAwaitsAtomicMutation() {
   const saveBlock = editorSource.match(/async function onSave\(\)[\s\S]*?\n}\n\nasync function onSaveAs/)
   assert.ok(saveBlock, '编辑器保存入口必须是异步事务')
-  const saveIndex = saveBlock[0].indexOf('await saveDeck(')
-  const deleteIndex = saveBlock[0].indexOf('await deleteDeck(')
-  assert.ok(saveIndex >= 0 && deleteIndex > saveIndex, '改名必须先等新名称保存成功，再删除旧名称')
-  assert.match(saveBlock[0], /toLocaleLowerCase|localeCompare/, '大小写等价名称不得误删服务端刚更新的同一牌库')
+  assert.match(saveBlock[0], /await saveDeck\(/, '必须等待权威保存结果')
+  assert.doesNotMatch(saveBlock[0], /deleteDeck\(/, '改名不得再另存后删除旧牌库')
+  assert.match(editorSource, /activeDeckId\.value/, '编辑器必须保留稳定身份')
   assert.match(saveBlock[0], /catch\s*\(/, '保存或改名失败必须进入显式错误提示')
 
   const deleteBlock = editorSource.match(/async function confirmDelete\(\)[\s\S]*?\n}/)
@@ -268,10 +346,12 @@ function changedDeckComponentsRemainSyntacticallyValid() {
 await authenticatedSyncUsesServerAuthority()
 authenticatedLoadDoesNotImplicitlyMigrateGuestCache()
 await deleteWaitsForServerAndPreservesFailure()
+await deleteUsesSelectedIdentityAndRejectsStaleRevision()
 await saveWaitsForServerAndPreservesFailure()
 await staleSyncResponsesCannotOverwriteNewerState()
 await guestPresetSeedingCannotCrossAnAccountSwitch()
-editorAwaitsMutationsAndKeepsRenameOrder()
+await stableIdentityRenameAndSelectionMigration()
+editorAwaitsAtomicMutation()
 everyUiSaveCallAwaitsConfirmation()
 changedDeckComponentsRemainSyntacticallyValid()
-console.log('Deck server authority and mutation ordering: 9/9 passed')
+console.log('Deck server authority, atomic rename and selection migration passed')

@@ -1216,6 +1216,72 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var account = _platform.Authenticate(request.Headers.Authorization);
             return account is null ? Results.Unauthorized() : Results.Ok(_platform.Decks(account.Id));
         });
+        _app.MapPost("/api/decks", (HttpRequest request, L12CustomDeckSubmission submission) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            if (!L12DeckValidator.TryValidate(_catalog, submission, out var deck, out var error))
+                return Results.BadRequest(new { message = error });
+            var result = _platform.CreateDeck(account.Id, deck);
+            return result.Status switch
+            {
+                "ok" => Results.Created($"/api/decks/by-id/{result.Deck!.Id}", result.Deck),
+                "name_conflict" => Results.Conflict(new
+                {
+                    code = "deck_name_conflict",
+                    message = "已存在同名牌库",
+                }),
+                _ => Results.BadRequest(new { message = "无法创建牌库" }),
+            };
+        });
+        _app.MapPut("/api/decks/by-id/{id}", (HttpRequest request, string id, AccountDeckUpdateRequest body) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            if (body.ExpectedRevision < 1)
+                return Results.BadRequest(new { message = "expectedRevision 必须为正整数" });
+            if (body.Deck is null) return Results.BadRequest(new { message = "牌库数据为空" });
+            if (!L12DeckValidator.TryValidate(_catalog, body.Deck, out var deck, out var error))
+                return Results.BadRequest(new { message = error });
+            var result = _platform.UpdateDeck(account.Id, id, body.ExpectedRevision, deck);
+            return result.Status switch
+            {
+                "ok" => Results.Ok(result.Deck),
+                "not_found" => Results.NotFound(),
+                "revision_conflict" => Results.Conflict(new
+                {
+                    code = "deck_revision_conflict",
+                    message = "牌库已被其他操作更新，请刷新后重试",
+                    currentRevision = result.CurrentRevision,
+                }),
+                "name_conflict" => Results.Conflict(new
+                {
+                    code = "deck_name_conflict",
+                    message = "已存在同名牌库",
+                }),
+                _ => Results.BadRequest(new { message = "无法更新牌库" }),
+            };
+        });
+        _app.MapDelete("/api/decks/by-id/{id}", (HttpRequest request, string id, long? expectedRevision) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            if (expectedRevision is null or < 1)
+                return Results.BadRequest(new { message = "expectedRevision 必须为正整数" });
+            var result = _platform.DeleteDeck(account.Id, id, expectedRevision.Value);
+            return result.Status switch
+            {
+                "ok" => Results.NoContent(),
+                "not_found" => Results.NotFound(),
+                "revision_conflict" => Results.Conflict(new
+                {
+                    code = "deck_revision_conflict",
+                    message = "牌库已被其他操作更新，请刷新后重试",
+                    currentRevision = result.CurrentRevision,
+                }),
+                _ => Results.BadRequest(new { message = "无法删除牌库" }),
+            };
+        });
         _app.MapPut("/api/decks", (HttpRequest request, L12CustomDeckSubmission submission) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
@@ -1494,7 +1560,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
                     body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
             var payload = new L12TournamentPreCheckInPayload(body.DeckName ?? string.Empty,
-                body.DeckCode ?? string.Empty);
+                body.DeckCode ?? string.Empty, body.DeckId);
             var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.pre-check-in",
                 $"tournament:{id}/registration:{authenticated.Account.Id}", payload, key, expected,
                 body.DryRun, body.Reason);
@@ -5293,6 +5359,7 @@ public sealed record BugUpdateCommandPayload(string Id, string? Status, string? 
     string? AdminNotes, string? Comment, string? FixCommit = null, string? RegressionTest = null,
     string? DeployedVersion = null, string? DuplicateOf = null, string? ClosureDisposition = null);
 public sealed record PublishedDeckRequest(string? PublicationId, L12CustomDeckSubmission? Deck);
+public sealed record AccountDeckUpdateRequest(L12CustomDeckSubmission? Deck, long ExpectedRevision);
 public sealed record TournamentCreateRequest(L12TournamentCreatePayload Tournament, string? IdempotencyKey = null,
     long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
 public sealed record TournamentLegacyImportRequest(IReadOnlyList<L12LegacyTournamentInput>? Tournaments,
@@ -5300,7 +5367,7 @@ public sealed record TournamentLegacyImportRequest(IReadOnlyList<L12LegacyTourna
     bool DryRun = false, string? Reason = null);
 public sealed record TournamentRegistrationRequest(string? DeckName, string? DeckCode,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
-public sealed record TournamentPreCheckInRequest(string? DeckName, string? DeckCode,
+public sealed record TournamentPreCheckInRequest(string? DeckName, string? DeckCode, string? DeckId = null,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
 public sealed record TournamentRemoveParticipantRequest(string? AccountId, bool BanRegistration, string? Reason,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);

@@ -41,9 +41,12 @@ const legalityFilter = ref('all')
 const sortMode = ref<'number' | 'cost' | 'troops' | 'name'>('number')
 const selected = ref<DeckCard | null>(null)
 const activeDeckName = ref<string | null>(null)
+const activeDeckId = ref<string | null>(null)
+const activeDeckRevision = ref<number | null>(null)
 const specialIds = ref<string[]>([])
 const catalogTab = ref<'master' | 'main' | 'extra'>('master')
 const pendingDeleteName = ref('')
+const pendingDeleteDeck = ref<SavedL12Deck | null>(null)
 const deckMutationBusy = ref(false)
 const deletingDeck = ref(false)
 const deckImageUrl = ref('')
@@ -102,7 +105,12 @@ onMounted(async () => {
     }).catch(() => undefined)
     const requestedPublicationCode = publicationCode.value
     const requested = typeof router.currentRoute.value.query.deck === 'string' ? router.currentRoute.value.query.deck : ''
-    if (requested && savedDecks.value[requested]) loadDeck(savedDecks.value[requested], true)
+    const requestedId = typeof router.currentRoute.value.query.deckId === 'string'
+      ? router.currentRoute.value.query.deckId : ''
+    const requestedById = requestedId
+      ? Object.values(savedDecks.value).find(deck => deck.id === requestedId) : null
+    if (requestedById) loadDeck(requestedById, true)
+    else if (!requestedId && requested && savedDecks.value[requested]) loadDeck(savedDecks.value[requested], true)
     else selected.value = mainCards.value[0] ?? null
     if (requestedPublicationCode) publicationCode.value = requestedPublicationCode
     if (publicationId.value || publicationCode.value) await resolvePublishedDeck()
@@ -463,6 +471,8 @@ function newDeck() {
   publicationId.value = ''
   publicationCode.value = ''
   activeDeckName.value = null
+  activeDeckId.value = null
+  activeDeckRevision.value = null
   deckName.value = '新牌库'
   masterId.value = ''
   counts.value = {}
@@ -516,7 +526,8 @@ function saveLocalDraft() {
     if (localDraft.value && (localDraft.value.baseDeckName !== activeDeckName.value
       || localDraft.value.deck.name !== deckName.value.trim())
       && !window.confirm('本账号已有另一份本地草稿。要用当前构筑覆盖它吗？')) return
-    localDraft.value = writeDeckEditorDraft(storage, owner, currentDeck(), activeDeckName.value)
+    localDraft.value = writeDeckEditorDraft(storage, owner, currentDeck(), activeDeckName.value,
+      new Date().toISOString(), activeDeckId.value, activeDeckRevision.value)
     persistedContentRevision.value = editorContentRevision.value
     restoredLocalDraft.value = true
     secondaryActionsOpen.value = false
@@ -535,7 +546,12 @@ function restoreLocalDraft() {
     const cardIds = [draft.deck.masterId, ...draft.deck.cardIds, ...(draft.deck.specialIds ?? []), ...(draft.deck.benchIds ?? [])].filter(Boolean)
     if (cardIds.some(id => !byId.value.has(id))) throw new Error('草稿含当前卡池中不存在的卡牌，已保留原草稿')
     loadDeck(draft.deck, true)
-    activeDeckName.value = draft.baseDeckName && savedDecks.value[draft.baseDeckName] ? draft.baseDeckName : null
+    const source = draft.baseDeckId
+      ? Object.values(savedDecks.value).find(deck => deck.id === draft.baseDeckId)
+      : null
+    activeDeckName.value = source?.name ?? null
+    activeDeckId.value = source?.id ?? null
+    activeDeckRevision.value = source?.revision ?? null
     localDraft.value = draft
     restoredLocalDraft.value = true
     persistedContentRevision.value = editorContentRevision.value
@@ -573,6 +589,7 @@ onBeforeRouteLeave(() => confirmDiscardChanges())
 
 function currentDeck(): SavedL12Deck {
   return {
+    id: activeDeckId.value ?? undefined, revision: activeDeckRevision.value ?? undefined,
     publicationId: publicationVersion.value ? publicationId.value : null, publicationVersion: publicationVersion.value,
     name: deckName.value.trim(), masterId: masterId.value,
     cardIds: entries.value.flatMap(entry => Array(entry.count).fill(entry.card.id)),
@@ -592,29 +609,20 @@ async function onSave() {
   if (deckMutationBusy.value || deletingDeck.value) return
   deckMutationBusy.value = true
   const deck = currentDeck()
-  const previousName = activeDeckName.value
   const requestedRevision = editorContentRevision.value
   try {
     const saved = await saveDeck(deck)
-    let oldNameDeleteError: unknown = null
-    if (previousName && previousName.toLocaleLowerCase('zh-CN') !== saved.name.toLocaleLowerCase('zh-CN')) {
-      try {
-        // 改名先确认新名称已保存；旧名称删除失败时保留两份，绝不以丢失新牌库换取表面原子性。
-        await deleteDeck(previousName)
-      } catch (error) {
-        oldNameDeleteError = error
-      }
-    }
     savedDecks.value = loadSavedDecks()
     const editorUnchanged = editorContentRevision.value === requestedRevision
+    activeDeckName.value = saved.name
+    activeDeckId.value = saved.id ?? null
+    activeDeckRevision.value = saved.revision ?? null
     if (editorUnchanged) {
-      activeDeckName.value = saved.name
       deckName.value = saved.name
       clearCurrentDraftAfterServerSave()
+      void router.replace({ query: { ...route.query, deck: saved.name, deckId: saved.id } })
     }
-    if (oldNameDeleteError) {
-      notice.value = `已保存新名称〈${saved.name}〉，但旧牌库〈${previousName}〉删除失败：${mutationError(oldNameDeleteError, '请稍后重试')}`
-    } else if (editorUnchanged) {
+    if (editorUnchanged) {
       notice.value = `已保存〈${saved.name}〉，可在房间中选择`
     }
   } catch (error) {
@@ -634,7 +642,8 @@ async function onSaveAs() {
     const ending = ` ${suffix++}`
     name = `${base.slice(0, 24 - ending.length)}${ending}`
   }
-  const deck = { ...currentDeck(), name, publicationId: null, publicationVersion: null }
+  const deck = { ...currentDeck(), id: undefined, revision: undefined,
+    name, publicationId: null, publicationVersion: null }
   const requestedRevision = editorContentRevision.value
   deckMutationBusy.value = true
   try {
@@ -645,8 +654,11 @@ async function onSaveAs() {
       publicationCode.value = ''
       publicationVersion.value = null
       activeDeckName.value = saved.name
+      activeDeckId.value = saved.id ?? null
+      activeDeckRevision.value = saved.revision ?? null
       deckName.value = saved.name
       clearCurrentDraftAfterServerSave()
+      void router.replace({ query: { ...route.query, deck: saved.name, deckId: saved.id } })
       notice.value = `已另存为〈${saved.name}〉`
     }
   } catch (error) {
@@ -668,15 +680,19 @@ async function publishCurrentDeck() {
     const saved = await saveDeck(deck)
     savedDecks.value = loadSavedDecks()
     const result = await publicDeckApi.publish(saved, publishedId || undefined)
-    await saveDeck({ ...saved, publicationId: result.deck.publicationId, publicationVersion: result.deck.publicationVersion })
+    const published = await saveDeck({ ...saved, publicationId: result.deck.publicationId,
+      publicationVersion: result.deck.publicationVersion })
     savedDecks.value = loadSavedDecks()
+    activeDeckName.value = published.name
+    activeDeckId.value = published.id ?? null
+    activeDeckRevision.value = published.revision ?? null
     if (editorContentRevision.value === requestedRevision) {
-      activeDeckName.value = saved.name
       deckName.value = saved.name
       publicationId.value = result.id
       publicationCode.value = publicDeckRouteReference(result)
       publicationVersion.value = result.deck.publicationVersion ?? null
-      await router.replace({ query: { ...route.query, deck: saved.name, published: publicationCode.value } })
+      await router.replace({ query: { ...route.query, deck: saved.name,
+        deckId: published.id, published: publicationCode.value } })
       clearCurrentDraftAfterServerSave()
       notice.value = publishedId ? `已更新公开牌库〈${saved.name}〉` : `已公开〈${saved.name}〉，后续可从此处更新公开版本`
     }
@@ -692,6 +708,8 @@ function loadDeck(deck: SavedL12Deck, preservePublication = false) {
   publicationCode.value = ''
   publicationVersion.value = deck.publicationVersion ?? null
   activeDeckName.value = deck.name
+  activeDeckId.value = deck.id ?? null
+  activeDeckRevision.value = deck.revision ?? null
   deckName.value = deck.name
   masterId.value = deck.masterId
   const next: Record<string, number> = {}
@@ -730,24 +748,33 @@ function selectAlternateArt(cardId: string, artId: string) {
   alternateArtSelections.value = next
 }
 
-function requestDelete(name = activeDeckName.value ?? '') {
-  if (!name) { notice.value = '当前不是已保存牌库'; return }
-  pendingDeleteName.value = name
+function requestDelete(target?: SavedL12Deck) {
+  const deck = target ?? Object.values(savedDecks.value).find(item => item.id && item.id === activeDeckId.value)
+    ?? (activeDeckName.value ? savedDecks.value[activeDeckName.value] : undefined)
+  if (!deck) { notice.value = '当前不是已保存牌库'; return }
+  pendingDeleteDeck.value = deck
+  pendingDeleteName.value = deck.name
+}
+
+function closePendingDelete() {
+  pendingDeleteName.value = ''
+  pendingDeleteDeck.value = null
 }
 
 async function confirmDelete() {
-  const name = pendingDeleteName.value
-  if (!name || deletingDeck.value || deckMutationBusy.value) return
-  if (activeDeckName.value === name && !confirmDiscardChanges()) return
+  const deck = pendingDeleteDeck.value
+  if (!deck || deletingDeck.value || deckMutationBusy.value) return
+  const deletingActiveDeck = deck.id ? activeDeckId.value === deck.id : activeDeckName.value === deck.name
+  if (deletingActiveDeck && !confirmDiscardChanges()) return
   deletingDeck.value = true
   try {
-    await deleteDeck(name)
+    await deleteDeck(deck)
     savedDecks.value = loadSavedDecks()
-    if (activeDeckName.value === name) newDeck()
-    notice.value = `已删除〈${name}〉`
-    pendingDeleteName.value = ''
+    if (deletingActiveDeck) newDeck()
+    notice.value = `已删除〈${deck.name}〉`
+    closePendingDelete()
   } catch (error) {
-    notice.value = `删除〈${name}〉失败：${mutationError(error, '请稍后重试')}`
+    notice.value = `删除〈${deck.name}〉失败：${mutationError(error, '请稍后重试')}`
   } finally {
     deletingDeck.value = false
   }
@@ -812,7 +839,8 @@ watch(() => platformState.account?.id, (current, previous) => {
   if (hasUnsavedChanges.value) {
     try {
       const { owner, storage } = draftScopeFor(previous)
-      writeDeckEditorDraft(storage, owner, currentDeck(), activeDeckName.value)
+      writeDeckEditorDraft(storage, owner, currentDeck(), activeDeckName.value,
+        new Date().toISOString(), activeDeckId.value, activeDeckRevision.value)
     } catch (error) { preserveError = mutationError(error, '浏览器存储不可用') }
   }
   newDeck()
@@ -877,7 +905,7 @@ watch(() => platformState.account?.id, (current, previous) => {
             <button type="button" @click="requestLoadDeck(deck)">
               <DeckProfile compact :master-id="deck.masterId" :fallback-url="byId.get(deck.masterId)?.imageUrl" :name="deck.name" :master-name="byId.get(deck.masterId)?.nameZh || deck.masterId" :meta="`${deck.cardIds.length} 张主牌`" :selected="deck.name === activeDeckName"/>
             </button>
-            <button type="button" class="delete" :aria-label="`删除牌库${deck.name}`" @click="requestDelete(deck.name)">×</button>
+            <button type="button" class="delete" :aria-label="`删除牌库${deck.name}`" @click="requestDelete(deck)">×</button>
           </article>
           <p v-if="!Object.keys(savedDecks).length">保存牌库后会显示在这里。</p>
         </div>
@@ -993,11 +1021,11 @@ watch(() => platformState.account?.id, (current, previous) => {
         </div>
       </section>
     </div>
-    <div v-if="pendingDeleteName" class="builder-modal-mask" @click.self="deletingDeck ? undefined : pendingDeleteName = ''">
+    <div v-if="pendingDeleteName" class="builder-modal-mask" @click.self="deletingDeck ? undefined : closePendingDelete()">
       <section class="delete-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-deck-title">
         <h2 id="delete-deck-title">删除〈{{ pendingDeleteName }}〉？</h2>
         <p>牌库删除后不可找回</p>
-        <footer><button class="danger" :disabled="deletingDeck" @click="confirmDelete">{{ deletingDeck ? '删除中…' : '继续删除' }}</button><button :disabled="deletingDeck" @click="pendingDeleteName = ''">取消</button></footer>
+        <footer><button class="danger" :disabled="deletingDeck" @click="confirmDelete">{{ deletingDeck ? '删除中…' : '继续删除' }}</button><button :disabled="deletingDeck" @click="closePendingDelete">取消</button></footer>
       </section>
     </div>
     <div v-if="deckImageUrl" class="builder-modal-mask" @click.self="closeDeckImage">

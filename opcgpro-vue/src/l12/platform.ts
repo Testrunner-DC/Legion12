@@ -1643,8 +1643,8 @@ export const tournamentApi = {
   updateRegistration: (id: string, expectedVersion: number, deckName: string, deckCode: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/registration`, {
     method: 'PUT', body: JSON.stringify(commandBody('tournament-registration', { expectedVersion, deckName, deckCode })),
   }),
-  preCheckIn: (id: string, expectedVersion: number, deckName: string, deckCode = '') => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/pre-check-in`, {
-    method: 'POST', body: JSON.stringify(commandBody('tournament-pre-check-in', { expectedVersion, deckName, deckCode })),
+  preCheckIn: (id: string, expectedVersion: number, deckName: string, deckCode = '', deckId = '') => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/pre-check-in`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-pre-check-in', { expectedVersion, deckName, deckCode, deckId })),
   }),
   removeParticipant: (id: string, expectedVersion: number, accountId: string, banRegistration: boolean, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/participants/remove`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-participant-remove', { expectedVersion, accountId, banRegistration, reason })),

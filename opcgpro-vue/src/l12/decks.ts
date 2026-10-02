@@ -51,6 +51,9 @@ export interface MoraleIdentity {
 }
 
 export interface SavedL12Deck {
+  /** Only account-owned decks have a server-issued identity and revision. */
+  id?: string
+  revision?: number
   publicationId?: string | null
   publicationVersion?: number | null
   name: string
@@ -231,15 +234,29 @@ function scopedSelectedDeckStorageKey(scope: L12DeckSelectionScope, accountId = 
 export function loadSelectedDeckName(scope: L12DeckSelectionScope,
     decks: Readonly<Record<string, SavedL12Deck>>) {
   const scoped = localStorage.getItem(scopedSelectedDeckStorageKey(scope))
-  if (scoped && decks[scoped]) return scoped
+  if (scoped) {
+    const selected = Object.values(decks).find(deck => deck.id && deck.id === scoped)
+    if (selected) return selected.name
+    if (scoped.startsWith('unresolved:')) return ''
+    if (decks[scoped] && !decks[scoped].id) return scoped
+    // A stale account name must never silently select a different deck that reused that name.
+    return ''
+  }
   // 兼容编辑器曾写入的单一选择键；迁移只读取，不在打开选择器时产生副作用。
   const legacy = localStorage.getItem(selectedDeckStorageKey())
-  if (legacy && decks[legacy]) return legacy
+  if (legacy) {
+    const selected = Object.values(decks).find(deck => deck.id && deck.id === legacy)
+    if (selected) return selected.name
+    if (legacy.startsWith('unresolved:')) return ''
+    if (decks[legacy] && !decks[legacy].id) return legacy
+    return ''
+  }
   return Object.keys(decks)[0] ?? ''
 }
 
 export function saveSelectedDeckName(scope: L12DeckSelectionScope, name: string) {
-  localStorage.setItem(scopedSelectedDeckStorageKey(scope), name)
+  const deck = loadSavedDecks()[name]
+  localStorage.setItem(scopedSelectedDeckStorageKey(scope), deck?.id || name)
 }
 
 function normalizeSavedDeck(deck: SavedL12Deck): SavedL12Deck {
@@ -281,8 +298,31 @@ function sameDeckName(first: string, second: string) {
 }
 
 function upsertCachedDeck(decks: Record<string, SavedL12Deck>, deck: SavedL12Deck) {
-  Object.keys(decks).filter(name => sameDeckName(name, deck.name)).forEach(name => delete decks[name])
+  Object.keys(decks).filter(name => sameDeckName(name, deck.name)
+    || Boolean(deck.id && decks[name]?.id === deck.id)).forEach(name => delete decks[name])
   decks[deck.name] = deck
+}
+
+function deckIdentityContent(deck: SavedL12Deck) {
+  return JSON.stringify([deck.masterId, deck.cardIds, deck.moraleIds, deck.specialIds, deck.benchIds ?? []])
+}
+
+function migrateDeckSelectionReferences(context: ReturnType<typeof captureDeckStorageContext>,
+  previous: Readonly<Record<string, SavedL12Deck>>, authoritative: Readonly<Record<string, SavedL12Deck>>) {
+  const currentById = new Map(Object.values(authoritative).filter(deck => deck.id).map(deck => [deck.id!, deck]))
+  const keys = [context.selectedKey, ...L12_DECK_SELECTION_SCOPES.map(scope =>
+    scopedSelectedDeckStorageKey(scope, context.accountId))]
+  for (const key of keys) {
+    const value = localStorage.getItem(key)
+    if (!value || currentById.has(value) || value.startsWith('unresolved:')) continue
+    const cached = previous[value]
+    const exactId = cached?.id && currentById.get(cached.id)
+    const legacy = !cached?.id && cached && authoritative[value]
+      && deckIdentityContent(cached) === deckIdentityContent(authoritative[value])
+        ? authoritative[value] : null
+    const matched = exactId || legacy
+    localStorage.setItem(key, matched?.id || `unresolved:${value}`)
+  }
 }
 
 function captureDeckStorageContext() {
@@ -358,6 +398,7 @@ export async function syncSavedDecksFromAccount(): Promise<Record<string, SavedL
     }
     const authoritative = Object.fromEntries(remote.map(deck => [deck.name, normalizeSavedDeck(deck)]))
     // 登录同步只消费服务端权威列表。旧标签页、其他设备或旧版留下的缓存不能因远端缺失而自动上传。
+    migrateDeckSelectionReferences(context, local, authoritative)
     writeSavedDecks(authoritative, context.storageKey)
     return authoritative
   } catch {
@@ -425,12 +466,19 @@ export async function saveDeck(deck: SavedL12Deck): Promise<SavedL12Deck> {
   const normalized = normalizeSavedDeck(deck)
   try {
     const saved = context.accountId
-      ? normalizeSavedDeck(await platformRequest<SavedL12Deck>('/api/decks', { method: 'PUT', body: JSON.stringify(normalized) }))
-      : normalized
+      ? normalizeSavedDeck(await (normalized.id
+        ? platformRequest<SavedL12Deck>(`/api/decks/by-id/${encodeURIComponent(normalized.id)}`, {
+          method: 'PUT', body: JSON.stringify({ deck: normalized, expectedRevision: normalized.revision }),
+        })
+        : platformRequest<SavedL12Deck>('/api/decks', { method: 'POST', body: JSON.stringify(normalized) })))
+      : { ...normalized, id: normalized.id || globalThis.crypto?.randomUUID?.()
+        || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+        revision: (normalized.revision ?? 0) + 1 }
     const decks = readSavedDecks(context.storageKey)
     upsertCachedDeck(decks, saved)
     writeSavedDecks(decks, context.storageKey)
-    localStorage.setItem(context.selectedKey, saved.name)
+    // Saving, importing or copying a deck must not silently change a battle mode's selection.
+    // Each mode records its own explicit choice through saveSelectedDeckName.
     markDeckCacheActivity(context)
     return saved
   } catch (error) {
@@ -439,26 +487,44 @@ export async function saveDeck(deck: SavedL12Deck): Promise<SavedL12Deck> {
   }
 }
 
-export async function deleteDeck(name: string): Promise<void> {
+export async function deleteDeck(target: string | SavedL12Deck): Promise<void> {
   const context = captureDeckStorageContext()
   assertCompleteDeckAccount(context)
   markDeckCacheActivity(context)
   try {
+    const name = typeof target === 'string' ? target : target.name
+    const selectedId = typeof target === 'string' ? undefined : target.id
+    if (context.accountId && typeof target !== 'string' && !selectedId)
+      throw new Error('牌库身份尚未同步，请刷新后重试')
+    const cached = readSavedDecks(context.storageKey)
+    const current = selectedId
+      ? Object.values(cached).find(deck => deck.id === selectedId)
+      : cached[name]
+    if (!current) throw new Error('牌库已变化，请刷新后重试')
+    if (typeof target !== 'string' && target.revision !== current.revision)
+      throw new Error('牌库已被其他操作更新，请刷新后重试')
     if (context.accountId) {
+      if (!current.id || !current.revision) throw new Error('牌库身份尚未同步，请刷新后重试')
       try {
-        await platformRequest(`/api/decks/${encodeURIComponent(name)}`, { method: 'DELETE' })
+        await platformRequest(`/api/decks/by-id/${encodeURIComponent(current.id)}?expectedRevision=${current.revision}`, { method: 'DELETE' })
       } catch (error) {
         // DELETE is idempotent from the user's perspective: 404 also confirms that the server no longer has this deck.
         if (!error || typeof error !== 'object' || !('status' in error) || error.status !== 404) throw error
       }
     }
     const decks = readSavedDecks(context.storageKey)
-    Object.keys(decks).filter(deckName => sameDeckName(deckName, name)).forEach(deckName => delete decks[deckName])
+    Object.keys(decks).filter(deckName => current.id
+      ? decks[deckName]?.id === current.id
+      : sameDeckName(deckName, name)).forEach(deckName => delete decks[deckName])
     writeSavedDecks(decks, context.storageKey)
-    if (sameDeckName(localStorage.getItem(context.selectedKey) ?? '', name)) localStorage.removeItem(context.selectedKey)
+    const selectedWasDeleted = (value: string | null) => Boolean(value && (current.id
+      ? value === current.id || (sameDeckName(value, current.name) && !Object.values(decks)
+        .some(deck => sameDeckName(deck.name, value)))
+      : sameDeckName(value, name)))
+    if (selectedWasDeleted(localStorage.getItem(context.selectedKey))) localStorage.removeItem(context.selectedKey)
     L12_DECK_SELECTION_SCOPES.forEach(scope => {
       const scopedKey = scopedSelectedDeckStorageKey(scope, context.accountId)
-      if (sameDeckName(localStorage.getItem(scopedKey) ?? '', name)) localStorage.removeItem(scopedKey)
+      if (selectedWasDeleted(localStorage.getItem(scopedKey))) localStorage.removeItem(scopedKey)
     })
     markDeckCacheActivity(context)
   } catch (error) {

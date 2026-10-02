@@ -4,10 +4,12 @@ const PREFIX = 'l12:deck-editor-draft:v1:'
 const MAX_CHARACTERS = 64_000
 
 export interface DeckEditorDraft {
-  schema: 1
+  schema: 1 | 2
   owner: string
   savedAt: string
   baseDeckName: string | null
+  baseDeckId?: string | null
+  baseDeckRevision?: number | null
   deck: SavedL12Deck
 }
 
@@ -43,17 +45,21 @@ export function readDeckEditorDraft(storage: Pick<Storage, 'getItem'>, owner: st
   try { parsed = JSON.parse(text) } catch { throw new Error('本地草稿格式损坏') }
   if (!parsed || typeof parsed !== 'object') throw new Error('本地草稿格式损坏')
   const draft = parsed as Record<string, unknown>
-  if (draft.schema !== 1 || draft.owner !== owner || typeof draft.savedAt !== 'string'
-    || (draft.baseDeckName !== null && typeof draft.baseDeckName !== 'string') || !validDeck(draft.deck)) {
+  if (![1, 2].includes(Number(draft.schema)) || draft.owner !== owner || typeof draft.savedAt !== 'string'
+    || (draft.baseDeckName !== null && typeof draft.baseDeckName !== 'string') || !validDeck(draft.deck)
+    || (draft.schema === 2 && (draft.baseDeckId !== null && typeof draft.baseDeckId !== 'string'
+      || draft.baseDeckRevision !== null && (typeof draft.baseDeckRevision !== 'number'
+        || !Number.isSafeInteger(draft.baseDeckRevision) || draft.baseDeckRevision < 1)))) {
     throw new Error('本地草稿格式或归属不正确')
   }
   return draft as unknown as DeckEditorDraft
 }
 
 export function writeDeckEditorDraft(storage: Pick<Storage, 'setItem'>, owner: string,
-  deck: SavedL12Deck, baseDeckName: string | null, savedAt = new Date().toISOString()): DeckEditorDraft {
+  deck: SavedL12Deck, baseDeckName: string | null, savedAt = new Date().toISOString(),
+  baseDeckId: string | null = null, baseDeckRevision: number | null = null): DeckEditorDraft {
   if (!validDeck(deck)) throw new Error('当前构筑无法暂存')
-  const draft: DeckEditorDraft = { schema: 1, owner, savedAt, baseDeckName, deck }
+  const draft: DeckEditorDraft = { schema: 2, owner, savedAt, baseDeckName, baseDeckId, baseDeckRevision, deck }
   const text = JSON.stringify(draft)
   if (text.length > MAX_CHARACTERS) throw new Error('本地草稿超出容量限制')
   storage.setItem(draftStorageKey(owner), text)
