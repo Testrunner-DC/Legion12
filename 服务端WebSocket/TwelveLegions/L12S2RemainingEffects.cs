@@ -565,12 +565,15 @@ public sealed partial class L12GameEngine
     private void ResolveS2TrojanHorseAfterAttack(L12StackItem item)
     {
         var owner = State.Players[item.Controller];
-        var horse = FindOnField(owner, item.SourceInstanceId, out _, out _);
+        var horse = owner.Resolving.FirstOrDefault(card =>
+            card.InstanceId.Equals(item.SourceInstanceId, StringComparison.OrdinalIgnoreCase)
+            && card.CardId.Equals(item.SourceCardId, StringComparison.OrdinalIgnoreCase)
+            && card.OwnerIndex == item.Controller);
         var host = int.TryParse(item.Data.GetValueOrDefault("attacker"), out var attacker) && attacker is >= 0 and <= 1
             ? State.Players[attacker]
             : State.Players[1 - item.Controller];
         var destination = PublicTriggerDeclared(item, "slot");
-        if (!IsSetTrojanHorse(horse) || !EmptySlots(host).Contains(destination, StringComparer.OrdinalIgnoreCase))
+        if (!IsTrojanHorse(horse) || !EmptySlots(host).Contains(destination, StringComparer.OrdinalIgnoreCase))
         {
             RecordTargetSettlementFailure(item, destination,
                 "特洛伊木马选择的来源或置入位置已失效；该卡不置入战场");
@@ -578,9 +581,8 @@ public sealed partial class L12GameEngine
             return;
         }
         var resolvedHorse = horse!;
-        _ = FindOnField(owner, resolvedHorse.InstanceId, out var sourceRow, out var sourceSlot);
         var (row, slot) = ParseSlot(destination);
-        owner.Field[sourceRow][sourceSlot] = null;
+        owner.Resolving.Remove(resolvedHorse);
         resolvedHorse.OwnerIndex = item.Controller;
         resolvedHorse.Hidden = false;
         resolvedHorse.SetRound = State.Round;

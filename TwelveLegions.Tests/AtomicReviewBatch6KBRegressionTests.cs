@@ -276,6 +276,8 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         var player = game.State.Players[0];
         game.State.ActivePlayer = 1;
         var gift = Card("S01-0223", "batch6kb-gift-decline");
+        gift.Hidden = true;
+        gift.OwnerIndex = player.PlayerIndex;
         var discounted = Card("S01-0208", "batch6kb-gift-discounted");
         discounted.CostModifier = -2;
         player.Field[1][0] = gift;
@@ -313,6 +315,8 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         var player = game.State.Players[0];
         game.State.ActivePlayer = 1;
         var gift = Card("S01-0223", "batch6kb-gift-draw-only");
+        gift.Hidden = true;
+        gift.OwnerIndex = player.PlayerIndex;
         var left = Card("S01-0208", "batch6kb-gift-left");
         var guard = Card("S01-0212", "batch6kb-gift-optional-guard");
         var drawn = Card("S01-0201", "batch6kb-gift-drawn-card");

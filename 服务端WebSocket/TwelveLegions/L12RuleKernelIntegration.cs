@@ -1770,10 +1770,6 @@ public sealed partial class L12GameEngine
             var artemis = BuildArtemisRangedDeathCandidate(entry.Controller, entry.SourceSnapshot);
             if (artemis is not null) candidates.Add(artemis);
         }
-        var seenCounterTactics = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        candidates = candidates.Where(candidate => !IsCounterTactic(candidate.SourceCardId)
-                || seenCounterTactics.Add($"{candidate.Controller}:{candidate.SourceInstanceId}"))
-            .ToList();
         QueueTriggerCandidates(candidates);
     }
 
@@ -2145,6 +2141,7 @@ public sealed partial class L12GameEngine
             if (State.ResponseWindow is null) BeginResponseWindow(State.EffectStack[^1]);
             return;
         }
+        PruneInvalidFreshSetCounterTriggerBatches();
         while (State.PendingTriggerBatches.Count > 0)
         {
             var batch = State.PendingTriggerBatches[0];
@@ -2256,6 +2253,15 @@ public sealed partial class L12GameEngine
                 State.PendingTriggerStackCandidates.RemoveAt(0);
                 continue;
             }
+            if (!CanDeclareFreshSetCounterTacticTrigger(candidate))
+            {
+                MarkFreshSetCounterCandidateConsumed(candidate);
+                CleanupPublicTriggerReservation(candidate);
+                State.PendingTriggerStackCandidates.RemoveAt(0);
+                AddFreshSetCounterLifecycleEvent("effect-skipped", candidate,
+                    $"〈{candidate.SourceName}〉已不再是可发动的盖伏来源，跳过该响应时机");
+                continue;
+            }
             if (candidate.Data.Remove(DeferredTriggerQualification)
                 && !PrepareTriggerCandidateForDeclaration(candidate))
             {
@@ -2321,7 +2327,7 @@ public sealed partial class L12GameEngine
 
     private void RevealSetReactionSourceWhenStacked(L12TriggerCandidate candidate)
     {
-        if (candidate.Trigger != "reaction" || !IsCounterTactic(candidate.SourceCardId)) return;
+        if (!IsFreshSetCounterTacticTrigger(candidate)) return;
         var player = State.Players[candidate.Controller];
         var source = FindOnField(player, candidate.SourceInstanceId, out var row, out var slot);
         if (source is null || !source.Hidden) return;
@@ -2329,6 +2335,7 @@ public sealed partial class L12GameEngine
         source.Hidden = false;
         if (!player.Resolving.Any(card => card.InstanceId == source.InstanceId)) player.Resolving.Add(source);
         AddEvent("reveal", candidate.Controller, $"〈{source.Name}〉在触发效果入栈时翻开", source);
+        ConsumeFreshSetCounterResponseLifecycle(candidate);
     }
 
     private bool TryBeginTriggerDeclaration(L12TriggerCandidate candidate)
@@ -2459,6 +2466,16 @@ public sealed partial class L12GameEngine
     {
         var candidate = State.PendingTriggerStackCandidates.FirstOrDefault(item => item.CandidateId == activation.TriggerCandidateId);
         if (candidate is null) { AdvanceTriggerBatches(); return; }
+        if (!CanDeclareFreshSetCounterTacticTrigger(candidate))
+        {
+            MarkFreshSetCounterCandidateConsumed(candidate);
+            CleanupPublicTriggerReservation(candidate);
+            State.PendingTriggerStackCandidates.Remove(candidate);
+            AddFreshSetCounterLifecycleEvent("ability-rejected", candidate,
+                $"〈{candidate.SourceName}〉已不再是可发动的盖伏来源；未支付费用且效果未入栈");
+            AdvanceTriggerBatches();
+            return;
+        }
         var source = FindAuthoritativeCard(candidate.SourceInstanceId)
             ?? candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
         // A completed public declaration may use a short internal stack label for routing.

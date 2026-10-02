@@ -5120,14 +5120,26 @@ public sealed class S2FactionRegressionTests
         PassResponses(game);
 
         Assert.Same(occupant, restoredAttacker.Field[1][1]);
-        Assert.Contains(restoredOwner.Field.SelectMany(row => row), card => card?.InstanceId == horse.InstanceId);
+        Assert.DoesNotContain(restoredOwner.Field.SelectMany(row => row),
+            card => card?.InstanceId == horse.InstanceId);
+        Assert.DoesNotContain(restoredOwner.Resolving, card => card.InstanceId == horse.InstanceId);
+        Assert.Single(restoredOwner.Graveyard, card => card.InstanceId == horse.InstanceId);
         var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
             && entry.Cards.Any(card => card.InstanceId == horse.InstanceId));
         Assert.Equal("failed", result.EffectResultStatus);
         Assert.Equal(1, result.EffectSegmentIndex);
+        var ownerHandCount = restoredOwner.Hand.Count;
+        var ownerLibraryCount = restoredOwner.Library.Count;
+        var attackerHandCount = restoredAttacker.Hand.Count;
+        var attackerMorale = restoredAttacker.Morale.Select(card => (card.InstanceId, card.Tapped)).ToArray();
         var duplicate = game.Handle(responsePrompt.PlayerIndex,
             new L12Command("resolvePrompt", PromptId: responsePrompt.PromptId, Choice: "pass"));
         Assert.False(duplicate.Accepted);
+        Assert.Single(restoredOwner.Graveyard, card => card.InstanceId == horse.InstanceId);
+        Assert.Equal(ownerHandCount, restoredOwner.Hand.Count);
+        Assert.Equal(ownerLibraryCount, restoredOwner.Library.Count);
+        Assert.Equal(attackerHandCount, restoredAttacker.Hand.Count);
+        Assert.Equal(attackerMorale, restoredAttacker.Morale.Select(card => (card.InstanceId, card.Tapped)));
     }
 
     [Fact]
