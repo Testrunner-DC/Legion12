@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import GameBoard from './game/GameBoard.vue'
 import { loadDeckCatalog, type DeckCard } from './decks'
 import { adminApi, PlatformRequestError, platformRequest } from './platform'
 import { adminReplayDetail, consumeImportedReplay, replayFocusCardAt, replayGameAt, type MatchDetail } from './replayModel'
 import { isMobileDeviceExperience, landscapeTeleportTarget } from './mobileViewport'
+import { buildReplayIndex, type ReplayIndexCategory } from './replayIndex'
 
 const route = useRoute()
 const router = useRouter()
@@ -21,11 +22,19 @@ const replayNextCursor = ref<string | undefined>()
 const replayTotalCommands = ref(0)
 const loadingReplayPage = ref(false)
 const replayPresentationBusy = ref(false)
+const indexOpen = ref(false)
+const indexRound = ref<number | ''>('')
+const indexCategory = ref<ReplayIndexCategory | ''>('')
+const indexSearch = ref('')
+const indexPage = ref(0)
+const indexError = ref('')
+const indexPageSize = 40
 // Mobile replay is intentionally a hard stop: do not load its data or mount a
 // board behind a message that a player cannot use on this form factor.
 const mobileReplayBlocked = isMobileDeviceExperience()
 let timer: ReturnType<typeof setTimeout> | null = null
 let playbackGeneration = 0
+let disposed = false
 
 const replayCatalog = computed(() => new Map(cards.value.map(card => [card.id, card])))
 const currentGame = computed(() => {
@@ -40,6 +49,15 @@ const currentGame = computed(() => {
 })
 const replayFocusCard = computed(() => detail.value ? replayFocusCardAt(detail.value, selectedStep.value, cards.value) : null)
 const isAdminReplay = computed(() => route.name === 'admin-match-replay')
+const replayIndex = computed(() => detail.value ? buildReplayIndex(detail.value, isAdminReplay.value) : { rounds: [], events: [] })
+const indexedRounds = computed(() => [...new Set(replayIndex.value.rounds.map(item => item.round))])
+const filteredIndexEvents = computed(() => replayIndex.value.events.filter(item =>
+  (indexRound.value === '' || item.round === indexRound.value)
+  && (!indexCategory.value || item.category === indexCategory.value)
+  && (!indexSearch.value.trim() || item.label.includes(indexSearch.value.trim()))))
+const visibleIndexEvents = computed(() => filteredIndexEvents.value.slice(indexPage.value * indexPageSize, (indexPage.value + 1) * indexPageSize))
+const visibleRoundStarts = computed(() => replayIndex.value.rounds.filter(item =>
+  item.round === (indexRound.value || currentGame.value?.round)).slice(0, 4))
 const totalSteps = computed(() => isAdminReplay.value ? replayTotalCommands.value : detail.value?.commands.length ?? 0)
 const atFirst = computed(() => selectedStep.value <= 0)
 const atLast = computed(() => selectedStep.value >= totalSteps.value - 1)
@@ -67,7 +85,7 @@ const replayResult = computed(() => {
 onMounted(() => {
   if (!mobileReplayBlocked) void loadReplay()
 })
-onBeforeUnmount(stop)
+onBeforeUnmount(() => { disposed = true; stop() })
 
 async function loadReplay() {
   loading.value = true
@@ -119,21 +137,25 @@ function previous() {
   selectedStep.value = Math.max(0, selectedStep.value - 1)
 }
 
-async function ensureReplayStepLoaded(index: number) {
+async function ensureReplayStepLoaded(index: number, indexOnly = false) {
   if (!isAdminReplay.value || !detail.value || index < detail.value.commands.length) return true
   if (!replayNextCursor.value || loadingReplayPage.value) return false
   loadingReplayPage.value = true
   try {
     const matchId = String(route.params.matchId ?? '')
     const page = await adminApi.replayPage(matchId, replayNextCursor.value)
+    if (disposed) return false
+    if (!page.items.length && page.nextCursor === replayNextCursor.value) throw new Error('本页回放暂不可用')
     detail.value.commands.push(...page.items)
     replayNextCursor.value = page.nextCursor
     replayTotalCommands.value = page.totalCommands
     return index < detail.value.commands.length
   } catch (reason) {
-    error.value = reason instanceof PlatformRequestError && reason.status === 410 && reason.code === 'sandbox_replay_expired'
+    const message = reason instanceof PlatformRequestError && reason.status === 410 && reason.code === 'sandbox_replay_expired'
       ? '回放已过期'
       : reason instanceof Error ? reason.message : '读取下一页回放失败'
+    if (indexOnly) indexError.value = message
+    else error.value = message
     stop()
     return false
   } finally { loadingReplayPage.value = false }
@@ -142,6 +164,33 @@ async function next() {
   stop()
   const target = Math.min(totalSteps.value - 1, selectedStep.value + 1)
   if (await ensureReplayStepLoaded(target)) selectedStep.value = target
+}
+
+function openIndex() {
+  stop()
+  if (indexOpen.value) return closeIndex()
+  indexOpen.value = true
+  void nextTick(() => document.getElementById('replay-index')?.querySelector('button')?.focus())
+}
+
+function closeIndex() {
+  indexOpen.value = false
+  void nextTick(() => document.querySelector<HTMLButtonElement>('.replay-controls [aria-controls="replay-index"]')?.focus())
+}
+
+function seekIndex(step: number) {
+  if (replayPresentationBusy.value || loadingReplayPage.value || !detail.value
+    || step < 0 || step >= detail.value.commands.length) return
+  stop()
+  selectedStep.value = step
+  closeIndex()
+}
+
+async function loadMoreIndex() {
+  if (!detail.value || loadingReplayPage.value) return
+  stop()
+  indexError.value = ''
+  await ensureReplayStepLoaded(detail.value.commands.length, true)
 }
 
 function toggle() {
@@ -225,8 +274,33 @@ function returnFromReplay() {
         <button class="play" @click="toggle">{{ playing ? '暂停' : '播放' }}</button>
         <button v-for="speed in ([1, 2, 3] as const)" :key="speed" class="speed" :class="{ active: playbackSpeed === speed }" :aria-pressed="playbackSpeed === speed" @click="setPlaybackSpeed(speed)">{{ speed.toFixed(1) }}</button>
         <button :disabled="atLast || loadingReplayPage || replayPresentationBusy" @click="next">{{ loadingReplayPage ? '加载中' : '下一步' }}</button>
+        <button :aria-expanded="indexOpen" aria-controls="replay-index" @click="openIndex">回放定位</button>
         <small>步骤 {{ selectedStep + 1 }} / {{ totalSteps }}<template v-if="isAdminReplay"> · 分页</template></small>
       </div>
+
+      <section v-if="currentGame && indexOpen" id="replay-index" class="replay-index" aria-label="回放定位" @keydown.esc="closeIndex">
+        <header><strong>回放定位</strong><button aria-label="关闭回放定位" @click="closeIndex">关闭</button></header>
+        <div class="replay-index-filters">
+          <label>回合<select v-model="indexRound" @change="indexPage = 0"><option value="">全部回合</option><option v-for="round in indexedRounds" :key="round" :value="round">第{{ round }}回合</option></select></label>
+          <label>事件<select v-model="indexCategory" @change="indexPage = 0"><option value="">全部事件</option><option value="action">卡牌与进攻</option><option value="cost">费用支付</option><option value="effect">效果处理</option><option value="disaster">天灾</option><option value="result">胜负</option></select></label>
+          <label class="replay-index-search">卡名或事件<input v-model="indexSearch" placeholder="搜索已显示的事件" @input="indexPage = 0" /></label>
+        </div>
+        <div class="replay-index-rounds" aria-label="回合起点">
+          <button v-for="item in visibleRoundStarts" :key="item.id" :disabled="loadingReplayPage || replayPresentationBusy" :data-step="item.step" @click="seekIndex(item.step)">第{{ item.round }}回合 · {{ isAdminReplay ? (item.activePlayer === 0 ? '下方' : '上方') : (item.activePlayer === (detail?.viewerPlayerIndex ?? 0) ? '我方' : '对方') }}回合开始</button>
+        </div>
+        <div class="replay-index-events">
+          <p v-if="!visibleIndexEvents.length">没有符合条件的事件</p>
+          <button v-for="item in visibleIndexEvents" :key="item.id" :disabled="loadingReplayPage || replayPresentationBusy" :data-step="item.step" @click="seekIndex(item.step)"><span>{{ item.label }}</span><small>{{ item.round ? `第${item.round}回合 · ` : '' }}步骤 {{ item.step + 1 }}</small></button>
+        </div>
+        <footer>
+          <span>{{ filteredIndexEvents.length }}个事件</span>
+          <button :disabled="indexPage === 0" @click="indexPage--">前页</button>
+          <button :disabled="(indexPage + 1) * indexPageSize >= filteredIndexEvents.length" @click="indexPage++">后页</button>
+          <button v-if="isAdminReplay && replayNextCursor" :disabled="loadingReplayPage" @click="loadMoreIndex">{{ loadingReplayPage ? '加载中' : '继续加载索引' }}</button>
+        </footer>
+        <p v-if="isAdminReplay && replayNextCursor" class="replay-index-note">已索引 {{ detail?.commands.length }} / {{ totalSteps }} 步</p>
+        <p v-if="indexError" role="alert" class="replay-index-note">{{ indexError }}，可重试加载</p>
+      </section>
 
       <main v-if="loading || error" class="replay-loading">
         <p>{{ loading ? '正在加载回放…' : error }}</p>
@@ -250,6 +324,12 @@ function returnFromReplay() {
 .replay-controls .play{min-width:64px;border-color:#b79c4e;background:#2c2612;color:#f4dda0}
 .replay-controls .speed{min-width:38px;padding-inline:8px;color:#8f9a9c}.replay-controls .speed.active{border-color:#d7c06f;background:#443816;color:#f4dda0}
 .replay-controls button:disabled{cursor:not-allowed;opacity:.35}
+.replay-controls{max-width:calc(100vw - 28px);box-sizing:border-box;flex-wrap:wrap}
+.replay-index{position:fixed;z-index:var(--l12-battle-fixed-controls-z,5100);left:14px;bottom:112px;width:min(460px,calc(100vw - 28px));max-height:calc(100dvh - 190px);box-sizing:border-box;display:flex;flex-direction:column;gap:10px;padding:12px;border:1px solid #667276;background:#080d11fa;color:#e7e4da;box-shadow:0 8px 24px #000;font-size:14px}
+.replay-index header,.replay-index footer{display:flex;align-items:center;gap:8px;flex:none}.replay-index header{justify-content:space-between}.replay-index footer{flex-wrap:wrap}.replay-index button{min-height:36px;padding:6px 9px;border:1px solid #667276;background:#11191c;color:#f1eee6;font-weight:800}.replay-index button:hover:not(:disabled),.replay-index button:focus-visible{border-color:#d7c06f}.replay-index button:disabled{opacity:.4;cursor:not-allowed}
+.replay-index-filters{display:grid;grid-template-columns:1fr 1fr;gap:8px;flex:none}.replay-index label{display:grid;gap:4px;min-width:0;color:#adb8b7}.replay-index select,.replay-index input{width:100%;min-width:0;box-sizing:border-box;min-height:36px;padding:5px;border:1px solid #667276;background:#11191c;color:#f1eee6;font:inherit}.replay-index select option{background:#11191c;color:#f1eee6}.replay-index-search{grid-column:1/-1}
+.replay-index-rounds{display:flex;flex-wrap:wrap;gap:6px;flex:none}.replay-index-events{min-height:0;overflow:auto;display:grid;gap:6px;overscroll-behavior:contain}.replay-index-events button{display:grid;gap:5px;text-align:left;overflow-wrap:anywhere}.replay-index-events small,.replay-index-note{color:#adb8b7;font-size:12px}.replay-index-note,.replay-index-events p{margin:0}.replay-result{bottom:80px}
+.replay-index-events button{height:auto;min-height:58px;align-content:center}
 .replay-controls small{min-width:92px;padding:0 6px;color:#919b98;font-size:14px;text-align:center}
 .replay-loading{position:fixed;z-index:3300;inset:0;display:grid;place-content:center;justify-items:center;gap:14px;background:radial-gradient(circle,rgba(28,70,74,.28),transparent 40%),#050809;color:#e7e4da;font-weight:900}
 @media(max-width:760px){.replay-result{top:58px;bottom:auto;min-width:0}.replay-result>strong{display:none}.replay-route-controls span{display:none}.replay-controls{right:14px;justify-content:center}.replay-controls small{position:absolute;right:0;bottom:100%;padding:5px 7px;background:#080d11ed}}
