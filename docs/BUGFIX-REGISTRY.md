@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## OPS-20261002-TEST-VERIFIER-BASELINE｜隔离发布输入及线上验收基线保护
+
+- Release隔离构建漏复制统计检查依赖的RankedAnalyticsRangeTests.cs；补明确复制清单并新增统计第12合同保护，重新完整Release通过。真实应用934a68c6部署测试服；无正式部署。
+- 线上验收脚本误设JSON无BOM、新注册账号零牌库，实际新账号有6副预组。修正BOM读取，记录初始对象并逐字段保护、按ID检查新增对象、清理只针对本次且排除全部基线；基线读取失败不允许自动删除。独立复核发现新建响应异常复用基线ID时可能误改／误删，已在任何后续修改前拒绝并统一清理排除。嵌套finally保证清理失败也尝试撤销已知token的验收会话，全部清理成功后才输出passed。
+- 同类扫描 `rg -n 'JSON.parse|baseline|createdId|finally|sessions|redirect' scripts/verify-f2-testrun-live.mjs ops/server/verify-l12-testrun-private-deck-mode.mjs`；不修改业务API、数据库或服务器应用，只补离线验收工具。六离线反例及最终线上六场景通过，预组6副完整保留，实际对象模式读回。尚无token的注册丢响应撤销未证明；首个注册后失败尝试未创建临时牌库且旧finally未完成注销，不虚报完整清理。
+
 ## UI-20261002-STATE-SCOPE-AND-DETAIL-CONTAINMENT｜基础状态范围与详情页尾吸附
 
 - E1/D3批准范围内的Main验收发现：共享重要状态层若覆盖整个站点壳会改变未迁移页面；旧通知顺序检查在缺少节点时以负索引假通过。状态层限定显式迁移容器／弹框，通知检查先确认两节点存在。范围扫描 `rg -n 'ui-state-scope|ui-dialog|profile-notice|public-card-detail|position:sticky' opcgpro-vue/src/l12/site`，保留对战／回放／编辑器旧几何和状态计算样式。
