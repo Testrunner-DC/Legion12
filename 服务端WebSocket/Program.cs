@@ -4,6 +4,10 @@ using TwelveLegions.Server;
 Console.Title = "Twelve Legions WebSocket Server";
 Console.OutputEncoding = Encoding.UTF8;
 
+// Reject an invalid storage mode before creating runtime directories or opening a database.
+var privateDeckObjectPersistenceEnabled = L12PrivateDeckPersistenceStartup.Parse(
+    Environment.GetEnvironmentVariable(L12PrivateDeckPersistenceStartup.EnvironmentKey));
+
 var port = args.FirstOrDefault(argument => int.TryParse(argument, out _)) is { } portArgument
     && int.TryParse(portArgument, out var parsedPort) ? parsedPort : 8080;
 var dataPath = Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data");
@@ -20,6 +24,7 @@ var catalog = L12Catalog.Load(dataPath);
 var platform = new L12PlatformStore(Path.Combine(runtimePath, "platform.json"), catalog.PresetDecks,
     officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts,
     officialCardProducts: catalog.CardProducts);
+platform.ApplyPrivateDeckPersistenceStartup(privateDeckObjectPersistenceEnabled);
 if (L12TestRunStorageProfile.AcceptanceDataEnabled(ephemeralTestMatches,
         Environment.GetEnvironmentVariable(L12TestRunStorageProfile.AcceptanceDataEnvironmentKey)))
 {

@@ -26,6 +26,12 @@
 
 测试服务单元同时固定启用`L12_TESTRUN_ACCEPTANCE_DATA=acceptance-v2`。只有上述临时对局隔离校验已通过时，服务才会为`Aimin`（不存在时回退到测试服`Admin`）幂等补齐三份带`[验收]`前缀的牌库，其中两份公开牌库包含指南、对局建议、长名称和横卡场景；同时补齐三派系、多段位的验收玩家、主宰排行与对阵、历史荣誉及 Aimin 的整体/主宰战绩。排位验收事实只存在于测试进程的服务端投影，不写入`matches.db`，因此不会出现在玩家回放列表，也不会被当作真实录像或长期分析资料。账号、牌库和历史荣誉按稳定标识幂等补齐；正式入口无法通过该开关，生产服务单元也不配置它。
 
+## F2 测试对象写
+
+2026-10-02 起，已获授权的测试service显式配置 `L12_PRIVATE_DECK_OBJECT_PERSISTENCE=true`；测试环境文件显式false可覆盖并在同版本重启后回到全量路径。正常正式service未配置，默认关闭。开关只在启动时捕获，变更需重启，不是运营配置热更新。受保护只读状态 `GET /api/admin/storage/private-deck-persistence` 必须读回 `configuredEnabled=true`、`effectiveMode=object`、`writable=true`；健康接口不披露内部模式。
+
+启用与回退不得用旧库覆盖最新数据。Main通过受控测试牌库CRUD／陈旧标签页冲突和重新登录读回验证；生产副本预演与生产启用另行批准。详情见 `F2-CONTROLLED-ENABLE-20261002.md`。
+
 ## 已有测试服务迁移到路径入口
 
 现有测试服务已经存在时，不重跑 bootstrap。日常部署入口会先执行受管路径激活器：

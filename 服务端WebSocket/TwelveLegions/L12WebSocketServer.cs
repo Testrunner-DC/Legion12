@@ -489,6 +489,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 ? Results.Ok(new { completed = true })
                 : Results.Conflict(new { message = "广播领取不存在或确认凭据无效" });
         });
+        _app.MapGet("/api/admin/storage/private-deck-persistence", (HttpRequest request) =>
+        {
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            if (!TryAuthorize(request, L12Permission.AdminOperationsRead, out var authenticated, out var failure))
+                return failure;
+            return Results.Ok(_platform.PrivateDeckPersistenceStatus(authenticated.Account));
+        });
         _app.MapGet("/api/admin/ranked/config", (HttpRequest request) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminOperationsRead, out var authenticated, out var failure)) return failure;

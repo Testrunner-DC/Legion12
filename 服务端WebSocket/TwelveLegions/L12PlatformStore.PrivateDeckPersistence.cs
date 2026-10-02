@@ -36,9 +36,35 @@ public sealed partial class L12PlatformStore
 
     private sealed record StoredPrivateDeck(string NameKey, long Revision);
 
-    // Deliberately off until the isolated-copy comparisons, fault suite and candidate
-    // benchmark have been accepted. This has no production/configuration surface yet.
+    // Defaults off. Product configuration is applied once by Program before serving requests;
+    // the internal setter is retained only for the existing isolated tests and benchmarks.
     internal bool PrivateDeckObjectPersistenceEnabled { get; set; }
+    private bool _privateDeckPersistenceStartupApplied;
+
+    internal void ApplyPrivateDeckPersistenceStartup(bool enabled)
+    {
+        lock (_gate)
+        {
+            if (_privateDeckPersistenceStartupApplied)
+                throw new InvalidOperationException("私人牌库持久化启动配置已应用；修改后需重启服务。");
+            PrivateDeckObjectPersistenceEnabled = enabled;
+            _privateDeckPersistenceStartupApplied = true;
+        }
+    }
+
+    public L12PrivateDeckPersistenceStatusView PrivateDeckPersistenceStatus(L12AccountView actor)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsRead);
+        lock (_gate)
+        {
+            // Report the instance's captured mode, not fresh environment values or a DB scan.
+            // An enabled flag cannot make a degraded/fallback store writable.
+            return new(PrivateDeckObjectPersistenceEnabled,
+                !_storageWritable ? "readonly"
+                    : PrivateDeckObjectPersistenceEnabled ? "object" : "full-snapshot",
+                _storageMode, _storageWritable, _fallbackMirrorHealthy, true);
+        }
+    }
 
     private void SavePrivateDeckCreate(DeckRow deck)
     {

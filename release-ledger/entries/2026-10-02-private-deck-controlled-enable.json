@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-02-private-deck-controlled-enable",
+  "date": "2026-10-02",
+  "audience": "internal",
+  "reason": "私人牌库对象写新增一次捕获的启动开关与受保护只读状态，测试服受控启用；正式服默认关闭，非玩家日志内容。",
+  "paths": ["服务端WebSocket/TwelveLegions/L12PlatformStore.PrivateDeckPersistence.cs", "服务端WebSocket/TwelveLegions/L12PrivateDeckPersistenceStartup.cs", "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs", "服务端WebSocket/Program.cs"]
+}
