@@ -372,6 +372,18 @@ internal static class L12HttpExceptionBoundary
             if (context.Response.HasStarted) throw;
             await WriteErrorAsync(context, "invalid_request", "请求格式无效", error.StatusCode);
         }
+        catch (L12PlatformStorageConflictException)
+        {
+            context.Items[L12HttpPerformanceMonitor.OutcomeStatusItemName] = StatusCodes.Status409Conflict;
+            if (context.Response.HasStarted) throw;
+            await WriteErrorAsync(context, "storage_conflict", "数据已更新，请刷新后重试", StatusCodes.Status409Conflict);
+        }
+        catch (L12PlatformStorageUnavailableException)
+        {
+            context.Items[L12HttpPerformanceMonitor.OutcomeStatusItemName] = StatusCodes.Status503ServiceUnavailable;
+            if (context.Response.HasStarted) throw;
+            await WriteErrorAsync(context, "storage_unavailable", "暂时无法保存，请稍后重试", StatusCodes.Status503ServiceUnavailable);
+        }
         catch (Exception error)
         {
             context.Items[L12HttpPerformanceMonitor.OutcomeStatusItemName] = StatusCodes.Status500InternalServerError;

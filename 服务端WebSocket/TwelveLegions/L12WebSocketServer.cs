@@ -1231,6 +1231,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     code = "deck_name_conflict",
                     message = "已存在同名牌库",
                 }),
+                "storage_conflict" => StorageConflictResponse(request),
                 _ => Results.BadRequest(new { message = "无法创建牌库" }),
             };
         });
@@ -1259,6 +1260,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     code = "deck_name_conflict",
                     message = "已存在同名牌库",
                 }),
+                "storage_conflict" => StorageConflictResponse(request),
                 _ => Results.BadRequest(new { message = "无法更新牌库" }),
             };
         });
@@ -1279,6 +1281,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     message = "牌库已被其他操作更新，请刷新后重试",
                     currentRevision = result.CurrentRevision,
                 }),
+                "storage_conflict" => StorageConflictResponse(request),
                 _ => Results.BadRequest(new { message = "无法删除牌库" }),
             };
         });
@@ -4299,6 +4302,12 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
 
     private static string ClientKey(HttpRequest request)
         => request.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown-client";
+
+    private static IResult StorageConflictResponse(HttpRequest request)
+    {
+        request.HttpContext.Response.Headers.CacheControl = "no-store";
+        return ApiError(request, "storage_conflict", "数据已更新，请刷新后重试", StatusCodes.Status409Conflict);
+    }
 
     private static IResult ApiError(HttpRequest request, string code, string message, int statusCode)
     {

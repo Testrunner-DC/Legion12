@@ -920,7 +920,7 @@ public sealed partial class L12PlatformStore
             }
             catch (L12PrivateDeckMutationConflictException error)
             {
-                throw new L12PlatformStorageUnavailableException("私人牌库兼容写入发生并发冲突，请重试", error);
+                throw new L12PlatformStorageConflictException(error);
             }
             return ToView(row);
         }
@@ -937,6 +937,7 @@ public sealed partial class L12PlatformStore
             ApplyDeck(row, accountId, deck);
             _data.Decks.Add(row);
             try { SavePrivateDeckCreate(row); }
+            catch (L12PlatformStorageConflictException) { return new("storage_conflict"); }
             catch (L12PrivateDeckMutationConflictException error)
             {
                 return new(error.Status, CurrentRevision: error.CurrentRevision);
@@ -960,6 +961,7 @@ public sealed partial class L12PlatformStore
             row.Revision++;
             ApplyDeck(row, accountId, deck);
             try { SavePrivateDeckUpdate(row, expectedRevision); }
+            catch (L12PlatformStorageConflictException) { return new("storage_conflict"); }
             catch (L12PrivateDeckMutationConflictException error)
             {
                 return new(error.Status, CurrentRevision: error.CurrentRevision);
@@ -978,6 +980,7 @@ public sealed partial class L12PlatformStore
             if (row.Revision != expectedRevision) return new("revision_conflict", CurrentRevision: row.Revision);
             _data.Decks.Remove(row);
             try { SavePrivateDeckDelete(accountId, deckId, expectedRevision); }
+            catch (L12PlatformStorageConflictException) { return new("storage_conflict"); }
             catch (L12PrivateDeckMutationConflictException error)
             {
                 return new(error.Status, CurrentRevision: error.CurrentRevision);
@@ -998,8 +1001,7 @@ public sealed partial class L12PlatformStore
                 try { SavePrivateDeckDelete(accountId, row.Id, row.Revision); }
                 catch (L12PrivateDeckMutationConflictException error)
                 {
-                    throw new L12PlatformStorageUnavailableException(
-                        "私人牌库兼容删除发生并发冲突，请重试", error);
+                    throw new L12PlatformStorageConflictException(error);
                 }
             }
             return row is not null;

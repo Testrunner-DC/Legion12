@@ -297,7 +297,7 @@ public sealed partial class L12PlatformStore
     private static int? ReadNullableInt(SqliteDataReader reader, int ordinal)
         => reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal);
 
-    private static long ReadPrivateDeckStorageRevision(SqliteConnection connection,
+    private static long ReadStorageRevision(SqliteConnection connection,
         SqliteTransaction transaction)
     {
         using var command = connection.CreateCommand();
@@ -305,13 +305,13 @@ public sealed partial class L12PlatformStore
         command.CommandText = "SELECT storage_revision FROM platform_state WHERE singleton_id=1;";
         var value = command.ExecuteScalar();
         if (value is null || value is DBNull)
-            throw new InvalidDataException("私人牌库对象写入缺少平台状态");
+            throw new InvalidDataException("保存缺少平台状态");
         return Convert.ToInt64(value);
     }
 
-    private static void UpsertPrivateDeckSnapshotCas(SqliteConnection connection, SqliteTransaction transaction,
+    private static void UpsertSnapshotCas(SqliteConnection connection, SqliteTransaction transaction,
         string snapshotJson, string snapshotChecksum, string mirrorChecksum, DataFile data,
-        long expectedStorageRevision)
+        long expectedStorageRevision, bool privateDeckObjectWrite)
     {
         using (var command = connection.CreateCommand())
         {
@@ -334,8 +334,12 @@ public sealed partial class L12PlatformStore
             command.Parameters.AddWithValue("$updated", DateTimeOffset.UtcNow.ToString("O"));
             command.Parameters.AddWithValue("$expected", expectedStorageRevision);
             if (command.ExecuteNonQuery() != 1)
-                throw new L12PrivateDeckStorageConflictException(expectedStorageRevision,
-                    ReadPrivateDeckStorageRevision(connection, transaction));
+            {
+                var current = ReadStorageRevision(connection, transaction);
+                if (privateDeckObjectWrite)
+                    throw new L12PrivateDeckStorageConflictException(expectedStorageRevision, current);
+                throw new L12PlatformStorageConflictException(expectedStorageRevision, current);
+            }
         }
 
         using var meta = connection.CreateCommand();

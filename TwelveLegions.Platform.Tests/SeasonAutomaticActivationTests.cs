@@ -266,6 +266,10 @@ public sealed class SeasonAutomaticActivationTests
             var firstClaim = coordinator.TryClaimDueSeasonFinalization("crashing", endsAt,
                 TimeSpan.FromMinutes(1))!;
             var readiness = new L12RankedSeasonCutoverReadiness(firstClaim.SeasonId, 0, 0, 0, 0);
+            // The ordinary writer predates the claim; it must refresh rather than
+            // overwrite claim state, then an explicitly retried registration succeeds.
+            Assert.Throws<L12PlatformStorageConflictException>(() =>
+                staleOrdinaryWriter.Register("结算前普通写", "Password123!"));
             Assert.True(staleOrdinaryWriter.Register("结算前普通写", "Password123!").Success);
             coordinator.StorageFailureInjector = stage =>
             {

@@ -36,10 +36,12 @@ public sealed partial class L12PlatformStore
 
     // Exact, compact IDs only: no payload or second archived copy. Unlike a timestamp
     // cutoff this does not discard unrelated late-arriving historical audit events.
-    private static void FilterMigratedAuditSnapshot(SqliteConnection connection, DataFile data)
+    private static void FilterMigratedAuditSnapshot(SqliteConnection connection, DataFile data,
+        SqliteTransaction? transaction = null)
     {
         if (data.AdminAudit.Count == 0) return;
         using var query = connection.CreateCommand();
+        query.Transaction = transaction;
         query.CommandText = """
             SELECT event_id FROM admin_audit_migrations
             WHERE event_id IN (SELECT value FROM json_each($ids));
@@ -252,7 +254,7 @@ public sealed partial class L12PlatformStore
         }
         var moved = events.Select(e => e.Id).ToHashSet(StringComparer.Ordinal);
         _data.AdminAudit.RemoveAll(row => moved.Contains(row.Id));
-        _lastCommittedSnapshot = SerializeSnapshot(_data);
+        _lastCommittedSnapshot = SerializeRollbackState(_data);
         AuditLifecycleFailureInjector?.Invoke("after-source-commit");
     }
 

@@ -327,6 +327,39 @@ public sealed class PrivateDeckObjectPersistenceTests
         finally { DeleteRoot(root); }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void StaleOrdinarySaveCannotOverwriteNewDeckAndCanRetry(bool objectWriter)
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var seed = new L12PlatformStore(path);
+            var owner = seed.Register("ordrace", "password-123").Account!;
+            var deck = seed.CreateDeck(owner.Id, Deck("原牌库", "C1")).Deck!;
+            var writer = new L12PlatformStore(path) { PrivateDeckObjectPersistenceEnabled = objectWriter };
+            var stale = new L12PlatformStore(path);
+            Assert.True(writer.UpdateDeck(owner.Id, deck.Id, 1, Deck("最新牌库", "C2")).Success);
+            var databaseBefore = ReadPlatformProjection(writer.TransactionalStoragePath);
+            var mirrorBefore = SHA256.HashData(File.ReadAllBytes(path));
+
+            var error = Assert.ThrowsAny<L12PlatformStorageUnavailableException>(() =>
+                stale.Register("不得覆盖", "password-123"));
+            Assert.Contains("请", error.Message);
+            Assert.Equal(databaseBefore, ReadPlatformProjection(writer.TransactionalStoragePath));
+            Assert.Equal(mirrorBefore, SHA256.HashData(File.ReadAllBytes(path)));
+            Assert.DoesNotContain(stale.Accounts(), account => account.Username == "不得覆盖");
+            Assert.Equal("最新牌库", Assert.Single(stale.Decks(owner.Id)).Name);
+            Assert.True(stale.Register("正常重试", "password-123").Success);
+            var recovered = new L12PlatformStore(path);
+            Assert.Equal("最新牌库", Assert.Single(recovered.Decks(owner.Id)).Name);
+            Assert.Contains(recovered.Accounts(), account => account.Username == "正常重试");
+        }
+        finally { DeleteRoot(root); }
+    }
+
     private static L12PresetDeckDefinition Deck(string name, string cardId) => new()
     {
         Name = name,

@@ -205,7 +205,7 @@ public sealed partial class L12PlatformStore
             mirrorJson = JsonSerializer.Serialize(data, PlatformMirrorJsonOptions);
             UpsertSnapshot(connection, transaction, snapshotJson, Sha256(snapshotJson), Sha256(mirrorJson), data);
             transaction.Commit();
-            _lastCommittedSnapshot = snapshotJson;
+            _lastCommittedSnapshot = SerializeRollbackState(data);
             try
             {
                 WriteFallbackMirror(mirrorJson);
@@ -253,7 +253,7 @@ public sealed partial class L12PlatformStore
             UpsertSnapshot(connection, transaction, snapshotJson, Sha256(snapshotJson), Sha256(mirrorJson), data);
             transaction.Commit();
         }
-        _lastCommittedSnapshot = snapshotJson;
+        _lastCommittedSnapshot = SerializeRollbackState(data);
         try
         {
             WriteFallbackMirror(mirrorJson);
@@ -727,12 +727,14 @@ public sealed partial class L12PlatformStore
 
     private static string DeckNameKey(string value) => (value ?? string.Empty).Trim().ToUpperInvariant();
 
-    private static void HydrateDeckDomain(SqliteConnection connection, DataFile data)
+    private static void HydrateDeckDomain(SqliteConnection connection, DataFile data,
+        SqliteTransaction? transaction = null)
     {
-        var payloads = ReadPayloads(connection);
+        var payloads = ReadPayloads(connection, transaction);
         data.Decks = [];
         using (var command = connection.CreateCommand())
         {
+            command.Transaction = transaction;
             command.CommandText = """
                 SELECT account_id,name,payload_hash,alternate_art_selections_json,
                        alternate_art_copies_json,bench_cards_json,updated_utc,publication_id,publication_version,
@@ -764,6 +766,7 @@ public sealed partial class L12PlatformStore
         var likes = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         using (var command = connection.CreateCommand())
         {
+            command.Transaction = transaction;
             command.CommandText = "SELECT publication_id,account_id FROM published_deck_likes;";
             using var reader = command.ExecuteReader();
             while (reader.Read())
@@ -776,6 +779,7 @@ public sealed partial class L12PlatformStore
         data.PublishedDecks = [];
         using (var command = connection.CreateCommand())
         {
+            command.Transaction = transaction;
             command.CommandText = """
                 SELECT publication_id,public_code,owner_id,name,current_payload_hash,
                        alternate_art_selections_json,alternate_art_copies_json,
@@ -806,6 +810,7 @@ public sealed partial class L12PlatformStore
         var tournamentRefs = new Dictionary<string, string>(StringComparer.Ordinal);
         using (var command = connection.CreateCommand())
         {
+            command.Transaction = transaction;
             command.CommandText = "SELECT tournament_id,account_id,payload_hash FROM tournament_deck_refs;";
             using var reader = command.ExecuteReader();
             while (reader.Read()) tournamentRefs[$"{reader.GetString(0)}\n{reader.GetString(1)}"] = reader.GetString(2);
@@ -826,10 +831,12 @@ public sealed partial class L12PlatformStore
         }
     }
 
-    private static Dictionary<string, NormalizedDeckPayload> ReadPayloads(SqliteConnection connection)
+    private static Dictionary<string, NormalizedDeckPayload> ReadPayloads(SqliteConnection connection,
+        SqliteTransaction? transaction = null)
     {
         var result = new Dictionary<string, NormalizedDeckPayload>(StringComparer.Ordinal);
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT payload_hash,master_id,main_cards_json,morale_cards_json,special_cards_json FROM deck_payloads;
             """;
