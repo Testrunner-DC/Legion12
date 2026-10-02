@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-03-deck-editor-and-ranking-scope",
+  "date": "2026-10-03",
+  "audience": "players",
+  "title": "牌库保存与排行榜体验修复",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "官方预组可以正常打开构筑详情并复制到我的牌库。旧标签页或旧草稿不会覆盖另一页面已保存的牌库，也不会重新创建已经删除的牌库；无法确认原版本的旧草稿仍可明确另存。手机编辑器的保存结果始终可见。",
+      "paths": ["opcgpro-vue/src/l12/site/publicDeckEntry.ts", "opcgpro-vue/src/l12/L12DeckEditor.vue", "opcgpro-vue/src/l12/decks.ts"]
+    },
+    {
+      "category": "ranking",
+      "text": "排行榜的统计口径移到刷新数据左侧的按钮中，点击弹框查看完整说明，不再单独占一行。",
+      "paths": ["opcgpro-vue/src/l12/site/RankingsPage.vue"]
+    }
+  ]
+}

@@ -546,12 +546,10 @@ function restoreLocalDraft() {
     const cardIds = [draft.deck.masterId, ...draft.deck.cardIds, ...(draft.deck.specialIds ?? []), ...(draft.deck.benchIds ?? [])].filter(Boolean)
     if (cardIds.some(id => !byId.value.has(id))) throw new Error('草稿含当前卡池中不存在的卡牌，已保留原草稿')
     loadDeck(draft.deck, true)
-    const source = draft.baseDeckId
-      ? Object.values(savedDecks.value).find(deck => deck.id === draft.baseDeckId)
-      : null
-    activeDeckName.value = source?.name ?? null
-    activeDeckId.value = source?.id ?? null
-    activeDeckRevision.value = source?.revision ?? null
+    // 草稿内容必须携带当时的基线；不能借用最新缓存的版本号绕过冲突保护。
+    activeDeckName.value = draft.baseDeckName
+    activeDeckId.value = draft.baseDeckId ?? draft.deck.id ?? null
+    activeDeckRevision.value = draft.baseDeckRevision ?? draft.deck.revision ?? null
     localDraft.value = draft
     restoredLocalDraft.value = true
     persistedContentRevision.value = editorContentRevision.value
@@ -604,9 +602,17 @@ function mutationError(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
 }
 
+function canSaveCurrentDeck() {
+  if (activeDeckName.value && (!activeDeckId.value || !activeDeckRevision.value)) {
+    notice.value = '无法确认这份草稿的原牌库版本，请另存为牌库'
+    return false
+  }
+  return true
+}
+
 async function onSave() {
   if (validation.value) { notice.value = validation.value; return }
-  if (deckMutationBusy.value || deletingDeck.value) return
+  if (deckMutationBusy.value || deletingDeck.value || !canSaveCurrentDeck()) return
   deckMutationBusy.value = true
   const deck = currentDeck()
   const requestedRevision = editorContentRevision.value
@@ -671,7 +677,7 @@ async function onSaveAs() {
 async function publishCurrentDeck() {
   if (!platformState.account) { notice.value = '请先登录账号，再公开牌库'; return }
   if (validation.value) { notice.value = validation.value; return }
-  if (deckMutationBusy.value || deletingDeck.value) return
+  if (deckMutationBusy.value || deletingDeck.value || !canSaveCurrentDeck()) return
   deckMutationBusy.value = true
   const requestedRevision = editorContentRevision.value
   const publishedId = publicationId.value
@@ -872,6 +878,7 @@ watch(() => platformState.account?.id, (current, previous) => {
       </div>
     </header>
 
+    <p v-if="notice" class="deck-operation-notice" role="status">{{ notice }}</p>
     <nav class="deck-mobile-nav" aria-label="移动端牌库编辑工作区">
       <button :class="{ active: mobilePane === 'pool' }" @click="setMobilePane('pool')">牌库</button>
       <button :class="{ active: mobilePane === 'deck' }" @click="setMobilePane('deck')">牌表 · {{ totalCards }}</button>
@@ -1002,7 +1009,7 @@ watch(() => platformState.account?.id, (current, previous) => {
           <section class="deck-zone" data-deck-section="extra"><header><button @click="toggleSection('extra')"><span>额外区</span><b>{{ selectedTrials.length }}/{{ trialCapacity }}<span v-if="automaticExtraCards.length"> + {{ automaticExtraCards.length }} 自动</span></b><i>{{ collapsedSections.extra ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.extra" class="deck-zone-body"><article v-for="trial in selectedTrials" :key="trial.id" class="deck-entry-row" @click="selectCard(trial)"><CardImage class="deck-entry-banner" :card-id="trial.id" :legacy-url="trial.imageUrl" :alt="trial.nameZh" intent="thumb" fit="cover" native-orientation/><span>{{ trial.trialValue ?? '试' }}</span><div><b>{{ trial.nameZh }}</b><small>{{ trial.number }} · 试炼</small></div><strong>×1</strong><button aria-label="移出额外区" @click.stop="toggleTrial(trial)">−</button></article><article v-for="card in automaticExtraCards" :key="card.id" class="deck-entry-row" @click="selectCard(card)"><CardImage class="deck-entry-banner" :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb" fit="cover" native-orientation/><span>专</span><div><b>{{ card.nameZh }}</b><small>{{ card.number }} · 自动配置</small></div><strong>×1</strong><button aria-label="主宰自动配置" disabled>锁</button></article><p v-if="!selectedTrials.length && !automaticExtraCards.length">当前没有额外区卡牌。</p></div></section>
           <section class="deck-zone" data-deck-section="bench"><header><button @click="toggleSection('bench')"><span>备选区</span><b>{{ benchTotal }} 张</b><i>{{ collapsedSections.bench ? '展开' : '折叠' }}</i></button><small>不计入主牌数量与合法性</small></header><div v-if="!collapsedSections.bench" class="deck-zone-body"><article v-for="entry in benchEntries" :key="entry.card.id" class="deck-entry-row" @click="selectCard(entry.card)"><CardImage class="deck-entry-banner" :card-id="entry.card.id" :legacy-url="entry.card.imageUrl" :alt="entry.card.nameZh" intent="thumb" fit="cover" native-orientation/><span>{{ entry.card.cost ?? '—' }}</span><div><b>{{ entry.card.nameZh }}</b><small>{{ entry.card.number }}</small></div><strong>×{{ entry.count }}</strong><button title="加入主牌库" aria-label="加入主牌库" :disabled="(counts[entry.card.id] || 0) >= allowedCopies(entry.card) || (!doesNotCountTowardMainDeck(entry.card) && totalCards >= 50)" @click.stop="moveBenchToMain(entry.card)">＋主</button><button aria-label="移出备选区" @click.stop="removeFromBench(entry.card.id)">−</button></article><p v-if="!benchEntries.length">从卡池加入暂不采用的卡牌。</p></div></section>
         </div>
-        <footer :class="{ error: validation }">{{ notice || validation || '牌库合法，可以保存并用于房间对战' }}</footer>
+        <footer :class="{ error: validation }">{{ validation || '牌库合法，可以保存并用于房间对战' }}</footer>
       </aside>
     </main>
     <div v-if="mobileDetailOpen && selected" class="builder-modal-mask mobile-card-detail-mask" @click.self="mobileDetailOpen = false">
@@ -1048,6 +1055,7 @@ watch(() => platformState.account?.id, (current, previous) => {
 .deck-builder-shell{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;background:radial-gradient(circle at 50% 0,rgba(22,108,120,.2),transparent 38%),linear-gradient(135deg,#080b0d,#160b0d 58%,#071216);color:#eee}
 .deck-builder-topbar{height:74px;flex:none;display:flex;align-items:center;gap:18px;padding:10px 20px;border-bottom:1px solid #675f59;background:rgba(8,10,12,.94)}
 .deck-builder-topbar .draft-state{color:#d9bb70;font-size:11px;line-height:1.2}
+.deck-operation-notice{flex:none;margin:0;padding:8px 20px;color:#e0c875;background:#151c20;border-bottom:1px solid #675f59;overflow-wrap:anywhere}
 .deck-builder-topbar>div:nth-child(2){margin-right:auto}.deck-builder-topbar small,.kicker{color:#c7a85d;font-size:14px;font-weight:900;letter-spacing:.18em}.deck-builder-topbar h1{margin:2px 0 0;font-size:23px}.deck-builder-topbar label{display:grid;gap:4px;color:#b6bab6;font-size:14px;font-weight:900}.deck-builder-topbar input{width:260px;min-height:38px;padding:8px 11px;font-size:15px;font-weight:900}.deck-builder-topbar button{padding:9px 14px}.deck-builder-topbar .primary{border-color:#e4dfd0;background:#e4dfd0;color:#111;font-weight:900}.deck-builder-topbar .primary:disabled{opacity:.3}.deck-total{display:flex;align-items:baseline;gap:4px;color:#bc5961}.deck-total.valid{color:#5cc1b8}.deck-total b{font-size:25px}.deck-total span{font-size:14px}
 .deck-loading{display:grid;flex:1;place-items:center;color:#b7b9b5}.deck-builder-grid{display:grid;grid-template-columns:260px minmax(480px,1fr) 330px;gap:10px;min-height:0;padding:10px}.deck-builder-grid .grand-panel{min-height:0;padding:13px;border-radius:2px}.deck-builder-grid h2{margin:3px 0 12px;font-size:18px}.deck-side-column{display:grid;grid-template-rows:minmax(0,5fr) minmax(0,2fr);gap:10px;min-height:0;overflow:hidden}.deck-detail-panel{display:flex;min-height:0;flex-direction:column;overflow:hidden}.empty-detail{color:#7f8985;font-size:14px;line-height:1.6}.saved-list{display:grid;align-content:start;gap:5px;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-right:3px}.saved-list article{display:flex;border:1px solid #353c3e;background:#111619}.saved-list article>button:first-child{display:block;min-width:0;flex:1;padding:0;border:0;background:#111619;text-align:left}.saved-list .delete{width:34px;flex:none;border:0;border-left:1px solid #353c3e;background:#211418;color:#f29ba4;font-size:18px}.saved-list p{color:#929b97;font-size:14px}
 .deck-catalog{display:flex;flex-direction:column;overflow:hidden}.deck-catalog>header,.deck-list>header{display:flex;align-items:center;justify-content:space-between;flex:none}.deck-catalog>header span{color:#7f8985;font-size:14px}.catalog-filter-bar{display:grid;grid-template-columns:minmax(180px,1.6fr) repeat(7,minmax(86px,.75fr)) 72px;gap:7px;align-items:end;margin:0 0 10px;padding:9px;border:1px solid #354041;background:#0b1112}.catalog-filter-bar label{display:grid;gap:4px;min-width:0;color:#959f9b;font-size:14px;font-weight:900}.catalog-filter-bar input,.catalog-filter-bar select{width:100%;min-width:0;height:32px}.catalog-filter-bar .filter-reset{height:32px;min-height:32px}.product-filter{display:flex;min-width:0;flex-wrap:wrap;gap:3px;margin:0;padding:0;border:0}.product-filter legend{width:100%;margin-bottom:1px;color:#959f9b;font-size:14px;font-weight:900}.product-filter button{min-height:28px;padding:3px 7px;border:1px solid #4a5552;background:#141a1b;color:#b8bfbb;font-size:12px;font-weight:900}.product-filter button.active{border-color:#70d7df;background:#174e54;color:#fff}.deck-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:9px;overflow:auto;padding:3px 4px 20px}.deck-card{min-width:0;border:1px solid #303638;background:#101416;box-shadow:3px 3px 0 #050607}.deck-card.chosen{border-color:#c5a456}.deck-card.alternate-art-card{border-color:#5c4d2d;background:#17140e}.card-image{position:relative;display:block;width:100%;aspect-ratio:5/7;overflow:hidden;border:0;background:#171d1f}.card-image>.l12-card-image,.card-image>img{width:100%;height:100%;object-fit:cover}.card-image>span{display:grid;height:100%;place-items:center;font-size:24px}.copy-count{position:absolute;right:4px;top:4px;padding:3px 6px;background:#07181a;color:#71d1d0}.deck-card>div{display:grid;gap:2px;padding:7px}.deck-card>div b{overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.deck-card>div b em{margin-left:5px;padding:1px 4px;border:1px solid #a9883c;color:#dfc66f;font-size:11px;font-style:normal}.deck-card>div small{color:#757d79;font-size:14px}.add-card{width:100%;padding:6px;border:0;border-top:1px solid #303638;color:#cdbb89;font-size:14px}.add-card:disabled{color:#4d5351}

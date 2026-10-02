@@ -41,6 +41,7 @@ const error = ref('')
 const rangeLimited = ref(false)
 const hasAnalytics = ref(false)
 const masterTitleRulesOpen = ref(false)
+const statisticsDialog = ref<HTMLDialogElement | null>(null)
 const publicMasterSampleMinimum = 30
 const filters = [{ id: '', name: '全服' }, { id: 'order', name: '秩序' }, { id: 'chaos', name: '混沌' }, { id: 'fate', name: '命运' }]
 const ranges: Array<{ id: RankingRange; name: string }> = [{ id: '7d', name: '近7天' }, { id: '30d', name: '近30天' }, { id: 'season', name: '本赛季' }]
@@ -206,7 +207,7 @@ onBeforeUnmount(() => {
   <div class="ranking-page">
     <header class="page-head">
       <div><small>RANKED · {{ headingScope }}</small><h1>排行榜</h1><p>{{ tab === 'players' ? range === 'season' ? '玩家榜依据当前赛季的七曜值排名。' : '场次、战绩、擅长主宰与七曜净变化按所选时段；派系、段位、称号为当前赛季。' : tab === 'history' ? '历史荣誉只显示已正式结算赛季。' : '主宰与对阵按所选范围统计；近7天和近30天可跨赛季。' }}</p></div>
-      <div class="page-actions"><button :disabled="loading" @click="load">{{ loading ? '读取中…' : '刷新数据' }}</button></div>
+      <div class="page-actions"><button v-if="tab !== 'history' && hasAnalytics" type="button" aria-haspopup="dialog" @click="statisticsDialog?.showModal()">统计口径</button><button :disabled="loading" @click="load">{{ loading ? '读取中…' : '刷新数据' }}</button></div>
     </header>
 
     <p v-if="rangeLimited && tab !== 'history'" class="error" role="alert">本时间范围对局过多，暂无法显示完整排行。请切换本赛季。</p>
@@ -230,7 +231,10 @@ onBeforeUnmount(() => {
       </label>
       <input v-model="search" class="ranking-search" :placeholder="tab === 'players' ? '搜索玩家、段位或称号' : tab === 'history' ? '搜索赛季、玩家或称号' : '搜索主宰或最强玩家'">
     </section>
-    <StatisticsScope v-if="tab !== 'history' && hasAnalytics" :summary="statisticsWindow" :sample="statisticsSample" :items="statisticsScopeItems"/>
+    <dialog ref="statisticsDialog" class="ranking-statistics-dialog" aria-labelledby="ranking-statistics-heading" @click.self="statisticsDialog?.close()">
+      <header><h2 id="ranking-statistics-heading">统计口径</h2><button type="button" autofocus aria-label="关闭统计口径" @click="statisticsDialog?.close()">关闭</button></header>
+      <div class="ranking-statistics-body"><StatisticsScope :summary="statisticsWindow" :sample="statisticsSample"/><ul><li v-for="item in statisticsScopeItems" :key="item">{{ item }}</li></ul></div>
+    </dialog>
 
     <nav v-if="tab === 'players'" class="faction-filter"><button v-for="item in filters" :key="item.id" :class="{ active: faction === item.id }" @click="faction = item.id">{{ item.name }}</button></nav>
     <p v-if="error" class="error">{{ error }}</p>
@@ -305,6 +309,7 @@ onBeforeUnmount(() => {
 .tr.is-me{background:linear-gradient(90deg,#122c32,#111824);box-shadow:inset 3px 0 #55c7ce}.me-badge{display:inline-grid;min-width:18px;height:18px;place-items:center;margin-left:5px;border-radius:50%;background:#55c7ce;color:#061012;font-size:14px;font-style:normal}
 .history-panel{display:grid;gap:14px}.faction-final-totals,.honor-group{overflow:hidden;border:1px solid #35424a;background:#0a1118}.faction-final-totals>header,.honor-group>header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid rgba(235,230,216,.09)}.faction-final-totals>header small{color:#53c3ca;font:900 12px monospace;letter-spacing:.14em}.faction-final-totals h2,.faction-final-totals h3,.honor-season h3{margin:0}.faction-final-totals h2{margin-top:3px;font-size:18px}.faction-final-totals>header>span,.honor-group>header>span{color:#77858b;font-size:13px}.faction-total-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,480px),1fr));gap:1px;background:#0a1118}.faction-total-grid article{min-width:0;padding:14px 16px;background:#0a1118}.faction-total-grid article>div{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.faction-total-grid article span{display:grid;min-width:0;gap:4px;padding:10px;border:1px solid #2b3841;background:#0d1720}.faction-total-grid article small{color:#7d8b92}.faction-total-grid article b{overflow-wrap:anywhere;color:#efd375;font-size:17px}.honor-groups{display:grid;gap:12px}.honor-group>header{justify-content:flex-start}.honor-group>header>span{margin-left:auto}.honor-season{display:grid;grid-template-columns:minmax(120px,.35fr) minmax(0,1fr);gap:16px;padding:14px 16px;border-bottom:1px solid rgba(235,230,216,.09)}.honor-season:last-child{border-bottom:0}.honor-season h3{font-size:15px}.honor-winners{display:flex;min-width:0;flex-wrap:wrap;gap:8px}.honor-winners>span{display:flex;min-width:0;align-items:center;gap:7px;padding:7px 9px;border:1px solid #2f3d45;background:#0d1720}.honor-winners b{overflow-wrap:anywhere}.honor-winners em{color:#8e9ba0;font-size:12px;font-style:normal}
 .page-actions{display:flex;gap:8px}.page-actions button:first-child{border-color:#a98d3f;color:#efd477}
+.ranking-statistics-dialog{box-sizing:border-box;width:min(720px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:0;border:1px solid #a98d3f;background:#0d151d;color:#eef1ed}.ranking-statistics-dialog[open]{display:flex;flex-direction:column}.ranking-statistics-dialog::backdrop{background:rgba(0,0,0,.76);backdrop-filter:blur(4px)}.ranking-statistics-dialog>header{display:flex;flex:none;align-items:center;justify-content:space-between;gap:12px;padding:16px;border-bottom:1px solid #35454e}.ranking-statistics-dialog h2{margin:0;font-size:20px}.ranking-statistics-body{min-height:0;overflow-y:auto;padding:16px;overflow-wrap:anywhere}.ranking-statistics-body ul{margin:16px 0 0;padding-left:22px;line-height:1.7}.ranking-statistics-body li+li{margin-top:10px}
 .player-table .thead,.player-table .tr{grid-template-columns:56px minmax(110px,.9fr) .55fr .65fr minmax(150px,1.25fr) minmax(130px,1fr) .8fr .45fr .68fr .58fr}
 .master-avatar{border-radius:0}
 .player-table{overflow-x:auto}.player-title-cell{align-content:center}.player-title-cell>span{color:#697880}.player-master{display:flex;align-items:center;gap:8px;min-width:0}.player-master-avatar{width:34px;height:34px;flex:0 0 34px;border:1px solid #66747b;border-radius:0;background:#080d11;object-fit:cover}.player-master b{overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap}

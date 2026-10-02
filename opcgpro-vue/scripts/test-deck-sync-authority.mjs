@@ -343,6 +343,84 @@ function changedDeckComponentsRemainSyntacticallyValid() {
   }
 }
 
+async function staleGuestSaveCannotOverwriteOrResurrect() {
+  localStorage.clear()
+  platformState.account = null
+  platformState.token = ''
+  const original = await decksModule.saveDeck(deck('双标签游客'))
+  const latest = await decksModule.saveDeck({ ...original, name: '标签A的新名' })
+  await assert.rejects(decksModule.saveDeck(original), /更新|变化/, '标签B的旧版本必须被拒绝')
+  assert.equal(decksModule.loadSavedDecks()['标签A的新名'].revision, latest.revision)
+  await decksModule.deleteDeck(latest)
+  await assert.rejects(decksModule.saveDeck(original), /更新|变化/, '旧标签不得复活已删除牌库')
+  const a = await decksModule.saveDeck(deck('Deck-A'))
+  const b = await decksModule.saveDeck(deck('Deck-B'))
+  await assert.rejects(decksModule.saveDeck({ ...a, name: 'deck-b' }), /同名/, '改名不得删除另一稳定ID')
+  await assert.rejects(decksModule.saveDeck(deck('deck-b')), /更新|同名/, '大小写变体新建不得覆盖原对象')
+  await assert.rejects(decksModule.saveDeck({ ...b, revision: undefined }), /更新/, '不得用缺失的版本号更新')
+  assert.deepEqual(Object.values(decksModule.loadSavedDecks()).map(value => value.id).sort(), [a.id, b.id].sort())
+}
+
+async function guestDeleteAndSaveShareLock() {
+  localStorage.clear()
+  platformState.account = null
+  platformState.token = ''
+  const original = await decksModule.saveDeck(deck('并发删除'))
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+  const gate = deferred(), names = []
+  let tail = gate.promise
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { locks: {
+    request(name, callback) {
+      names.push(name)
+      const result = tail.then(callback)
+      tail = result.catch(() => undefined)
+      return result
+    },
+  } } })
+  try {
+    const deleting = decksModule.deleteDeck(original)
+    const saving = decksModule.saveDeck(original)
+    const rejected = assert.rejects(saving, /变化|更新/)
+    assert.equal(Object.keys(decksModule.loadSavedDecks()).length, 1, '锁持有时删除必须等待')
+    assert.equal(names.length, 2)
+    assert.equal(names[0], names[1], '删除和保存必须使用同一把同源锁')
+    gate.resolve()
+    await deleting
+    await rejected
+    assert.deepEqual(decksModule.loadSavedDecks(), {})
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, 'navigator', descriptor)
+    else delete globalThis.navigator
+  }
+}
+
+async function guestPresetIdentityMigration() {
+  localStorage.clear()
+  platformState.account = null
+  platformState.token = ''
+  globalThis.fetch = async () => ({ ok: true, json: async () => [deck('默认预组')] })
+  const first = await decksModule.ensureOfficialPrebuiltDecks()
+  assert.ok(first['默认预组'].id)
+  assert.equal(first['默认预组'].revision, 1)
+  await decksModule.deleteDeck(first['默认预组'])
+  assert.deepEqual(await decksModule.ensureOfficialPrebuiltDecks(), {}, '删除过的预组不得重新播种')
+  localStorage.setItem('l12-custom-decks-v1', JSON.stringify({ 旧游客牌库: deck('旧游客牌库') }))
+  localStorage.setItem('l12-selected-custom-deck', '旧游客牌库')
+  for (const scope of decksModule.L12_DECK_SELECTION_SCOPES) localStorage.setItem(`l12-selected-custom-deck:${scope}`, '旧游客牌库')
+  const migrated = await decksModule.ensureOfficialPrebuiltDecks()
+  assert.ok(migrated['旧游客牌库'].id)
+  assert.equal(migrated['旧游客牌库'].revision, 1)
+  assert.equal(localStorage.getItem('l12-selected-custom-deck'), migrated['旧游客牌库'].id)
+  for (const scope of decksModule.L12_DECK_SELECTION_SCOPES) {
+    assert.equal(decksModule.loadSelectedDeckName(scope, migrated), '旧游客牌库')
+    assert.equal(localStorage.getItem(`l12-selected-custom-deck:${scope}`), migrated['旧游客牌库'].id)
+  }
+  assert.equal((await decksModule.ensureOfficialPrebuiltDecks())['旧游客牌库'].id, migrated['旧游客牌库'].id)
+}
+
+await staleGuestSaveCannotOverwriteOrResurrect()
+await guestDeleteAndSaveShareLock()
+await guestPresetIdentityMigration()
 await authenticatedSyncUsesServerAuthority()
 authenticatedLoadDoesNotImplicitlyMigrateGuestCache()
 await deleteWaitsForServerAndPreservesFailure()

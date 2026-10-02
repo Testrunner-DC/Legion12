@@ -52,6 +52,12 @@ const entrySource = fs.readFileSync(new URL('../src/l12/site/publicDeckEntry.ts'
 const librarySource = fs.readFileSync(new URL('../src/l12/site/DeckLibraryPage.vue', import.meta.url), 'utf8')
 const detailSource = fs.readFileSync(new URL('../src/l12/site/PublicDeckDetailPage.vue', import.meta.url), 'utf8')
 assert.ok(entrySource.includes("published.publicCode?.trim() || ''"))
+const entryModule = await import(`data:text/javascript;base64,${Buffer.from(ts.transpileModule(entrySource, {
+  compilerOptions: { module: ts.ModuleKind.ESNext },
+}).outputText).toString('base64')}`)
+assert.equal(entryModule.publicDeckRouteReference({ id: 'official-0', ownerId: 'official', official: true }), 'official-0')
+assert.equal(entryModule.publicDeckRouteReference({ id: 'legacy-uuid', ownerId: 'player' }), '')
+assert.equal(entryModule.publicDeckRouteReference({ id: 'official-0', ownerId: 'player' }), '')
 assert.ok(librarySource.includes('publicDeckRouteReference(entry)'))
 assert.ok(detailSource.includes('publicDeckRouteReference(entry.value)'))
 assert.ok(detailSource.includes("router.replace({ name: 'public-deck-detail', params: { deckId: canonicalReference }"))

@@ -16,5 +16,8 @@ export function matchesPublishedDeckReference(deck: SavedL12Deck, published: Pub
 }
 
 export function publicDeckRouteReference(published: PublishedDeck) {
+  // 官方预组由本地目录提供详情，不经过社区牌库的短码接口。
+  if (published.official && published.ownerId === 'official' && /^official-\d+$/.test(published.id))
+    return published.id
   return published.publicCode?.trim() || ''
 }
