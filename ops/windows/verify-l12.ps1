@@ -209,6 +209,7 @@ try {
         @{ Source = "服务端WebSocket\TwelveLegions\Data\card-product-inclusions.json"; Target = "服务端WebSocket\TwelveLegions\Data\card-product-inclusions.json" },
         @{ Source = "服务端WebSocket\TwelveLegions\Data\card-archive-assets.json"; Target = "服务端WebSocket\TwelveLegions\Data\card-archive-assets.json" },
         @{ Source = "TwelveLegions.Platform.Tests\PublicDeckMatchBindingTests.cs"; Target = "TwelveLegions.Platform.Tests\PublicDeckMatchBindingTests.cs" },
+        @{ Source = "TwelveLegions.Platform.Tests\RankedAnalyticsRangeTests.cs"; Target = "TwelveLegions.Platform.Tests\RankedAnalyticsRangeTests.cs" },
         @{ Source = "ops\windows\Get-L12BugQueue.ps1"; Target = "ops\windows\Get-L12BugQueue.ps1" }
     )
     foreach ($contractFile in $contractFiles) {

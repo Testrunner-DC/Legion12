@@ -4,6 +4,7 @@ import fs from 'node:fs'
 const read = relative => fs.readFileSync(new URL(relative, import.meta.url), 'utf8')
 const ranked = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs')
 const rankedTests = read('../../TwelveLegions.Platform.Tests/RankedAnalyticsRangeTests.cs')
+const releaseVerifier = read('../../ops/windows/verify-l12.ps1')
 const platform = read('../src/l12/platform.ts')
 const scope = read('../src/l12/site/StatisticsScope.vue')
 const rankings = read('../src/l12/site/RankingsPage.vue')
@@ -13,6 +14,7 @@ const adminMaster = read('../src/l12/site/AdminMasterAnalyticsPanel.vue')
 const adminCard = read('../src/l12/site/AdminCardAnalyticsPanel.vue')
 
 const checks = [
+  ['隔离发布保留统计测试输入', releaseVerifier.includes('Source = "TwelveLegions.Platform.Tests\\RankedAnalyticsRangeTests.cs"; Target = "TwelveLegions.Platform.Tests\\RankedAnalyticsRangeTests.cs"')],
   ['排行只追加权威范围元数据', ranked.includes('DateTimeOffset? FromUtc = null')
     && ranked.includes('DateTimeOffset? UntilUtc = null')
     && ranked.includes('string? SeasonId = null, string? SeasonName = null')
