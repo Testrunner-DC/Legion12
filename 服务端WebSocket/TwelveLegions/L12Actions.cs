@@ -882,12 +882,7 @@ public sealed partial class L12GameEngine
             attacker.Troops += attacker.AttackOnlyTroopsBonus;
             AddEvent("effect", playerIndex, $"〈{attacker.Name}〉本次进攻兵力+{attacker.AttackOnlyTroopsBonus}", attacker);
         }
-        var damage = 1 + (L12StructuredCardSemantics.HasEffectiveStrongAttack(attacker) ? 1 : 0);
-        if (attacker.CardId == "S02-0607" && attacker.GawainMasterDamageBonusUntilTurn == State.TurnSerial)
-            damage += attacker.GawainMasterDamageBonus;
-        if (attacker.MasterAttackDamageBonusUntilTurn == State.TurnSerial)
-            damage += attacker.MasterAttackDamageBonus;
-        if (L12ActiveDisasterRules.DisasterLegionMasterDamageBonus(State.ActiveDisaster?.CardId) && attacker.DisasterLevel > 0) damage++;
+        var damage = CalculateMasterAttackDamage(attacker);
         var kagutsuchiCandidate = BuildStarterKagutsuchiCandidate(playerIndex, attacker);
         var hasPrintedAttackerAttackTiming = HasImmediateEffect(attacker, "attack");
         var hasAttackerAttackTiming = hasPrintedAttackerAttackTiming || kagutsuchiCandidate is not null;
@@ -1032,8 +1027,21 @@ public sealed partial class L12GameEngine
     private static bool CanAttackFromRow(L12CardInstance card, int row)
         => row == 0 || (row == 1 && HasRangeInPosition(card, row));
 
+    private int CalculateMasterAttackDamage(L12CardInstance attacker)
+    {
+        var damage = 1 + (L12StructuredCardSemantics.HasEffectiveStrongAttack(attacker) ? 1 : 0);
+        if (attacker.CardId == "S02-0607" && attacker.GawainMasterDamageBonusUntilTurn == State.TurnSerial)
+            damage += attacker.GawainMasterDamageBonus;
+        if (attacker.MasterAttackDamageBonusUntilTurn == State.TurnSerial)
+            damage += attacker.MasterAttackDamageBonus;
+        if (L12ActiveDisasterRules.DisasterLegionMasterDamageBonus(State.ActiveDisaster?.CardId)
+            && attacker.DisasterLevel > 0)
+            damage++;
+        return damage;
+    }
+
     private bool CanAttackMasterTarget(int playerIndex, L12CardInstance attacker, int row,
-        L12PlayerState defender, out string error, bool isPiercingAttack = false)
+        L12PlayerState defender, out string error)
     {
         error = string.Empty;
         if (defender.MasterCannotBeAttackedUntilTurn >= State.TurnSerial)
@@ -1046,9 +1054,7 @@ public sealed partial class L12GameEngine
             error = "对方前排军团使主宰无法被兵力不高于2000的军团进攻";
         else if (L12ActiveDisasterRules.MasterUnattackableByTroopsAtMost2000(State.ActiveDisaster?.CardId) && attacker.Troops <= 2000)
             error = "〈迷雾绝境〉生效时兵力不高于2000的军团无法进攻主宰";
-        // 〈暴怒之罪〉只约束玩家声明的普通进攻目标。贯穿已经由“击杀所进攻军团”
-        // 这一事实生成对主宰的专属进攻，不能再次被普通目标优先规则改写或阻断。
-        else if (!isPiercingAttack && L12ActiveDisasterRules.MustAttackLegionBeforeMaster(State.ActiveDisaster?.CardId)
+        else if (L12ActiveDisasterRules.MustAttackLegionBeforeMaster(State.ActiveDisaster?.CardId)
                  && HasMandatoryDisasterLegionTarget(attacker, row, defender))
             error = "〈暴怒之罪〉生效时必须优先进攻范围内的对方军团";
         // 〈风暴乱象〉同样阻断远程军团经效果许可（扩展射程/天灾许可）从后排对主宰的远程进攻。
@@ -1437,8 +1443,7 @@ public sealed partial class L12GameEngine
         if (State.Phase == L12Phase.GameOver
             || FindOnField(player, attacker.InstanceId, out var row, out _) is null) return;
         var opponent = State.Players[1 - playerIndex];
-        if (!CanAttackMasterTarget(playerIndex, attacker, row, opponent, out var error,
-                isPiercingAttack: true))
+        if (!CanAttackMasterTarget(playerIndex, attacker, row, opponent, out var error))
         {
             AddEvent("effect-failed", playerIndex, $"{attacker.Name}的贯穿进攻失败：{error}", attacker);
             return;
@@ -1453,7 +1458,8 @@ public sealed partial class L12GameEngine
             Target = new L12AttackTarget("master"),
             Stage = L12CombatStage.DefenderAttackTiming,
             SureHit = attacker.HasSureHit,
-            MasterDamage = 1,
+            MasterDamage = CalculateMasterAttackDamage(attacker),
+            // 贯穿卡文只排除本次【进攻时】效果；防守方响应、抵挡、伤害和【进攻后】时间线仍照常推进。
             SuppressAttackTriggers = true,
         };
         State.Phase = L12Phase.Defense;

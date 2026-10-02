@@ -1445,7 +1445,7 @@ public sealed class LatestBugRegressionTests
     [Fact]
     [Trait("L12Evidence", "keyword:piercing")]
     [Trait("L12Evidence", "card:S02-DS05")]
-    public void WrathDisasterKeepsOrdinaryLegionPriorityButDoesNotBlockGeneratedPiercing()
+    public void WrathDisasterLegionPriorityAlsoBlocksGeneratedPiercing()
     {
         var game = Create(64250);
         var attackerPlayer = game.State.Players[0];
@@ -1474,26 +1474,30 @@ public sealed class LatestBugRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
             Target: new L12AttackTarget("legion", killed.InstanceId))).Accepted);
-        for (var step = 0; step < 16 && game.State.PendingDefense?.Target.Type != "master"; step++)
+        for (var step = 0; step < 24 && !game.State.Events.Any(entry => entry.Type == "effect-failed"
+                 && entry.Text.Contains("贯穿进攻失败") && entry.Text.Contains("暴怒之罪")); step++)
         {
             var prompt = game.State.PendingPrompts.FirstOrDefault();
-            if (prompt is null) continue;
-            var choice = prompt.Kind == "response" ? "pass"
-                : prompt.ValidChoices.Contains("skip") ? "skip"
-                : prompt.ValidChoices.Contains("no") ? "no"
-                : prompt.ValidChoices[0];
-            Assert.True(game.Handle(prompt.PlayerIndex,
-                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+            if (prompt is not null)
+            {
+                var choice = prompt.Kind == "response" ? "pass"
+                    : prompt.ValidChoices.Contains("skip") ? "skip"
+                    : prompt.ValidChoices.Contains("no") ? "no"
+                    : prompt.ValidChoices[0];
+                Assert.True(game.Handle(prompt.PlayerIndex,
+                    new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+                continue;
+            }
+            if (game.State.PendingDefense is { Stage: L12CombatStage.DefenseChoice } pending)
+                Assert.True(game.Handle(1 - pending.AttackerPlayer,
+                    new L12Command("resolveDefense", CardInstanceIds: [])).Accepted);
         }
 
-        Assert.Contains(killed, defender.Resolving);
         Assert.Contains(remaining, defender.Field[0]);
-        Assert.NotNull(game.State.PendingDefense);
-        Assert.Equal("master", game.State.PendingDefense!.Target.Type);
-        Assert.True(game.State.PendingDefense.SuppressAttackTriggers);
-        Assert.Equal(4000, game.State.PendingDefense.AttackValue);
-        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-failed"
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "piercing");
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
             && entry.Text.Contains("贯穿进攻失败") && entry.Text.Contains("暴怒之罪"));
+        Assert.Equal(1, attacker.AttacksThisTurn);
     }
 
     [Fact]
