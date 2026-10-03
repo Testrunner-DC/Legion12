@@ -5,10 +5,10 @@ import { tournamentApi, type TournamentCareer, type TournamentSummaryPage } from
 import { tournamentFormatText, tournamentStatusText } from '@/l12/tournamentLabels'
 import TournamentCreateWizard from './TournamentCreateWizard.vue'
 import TournamentSummaryList from './TournamentSummaryList.vue'
+import { tournamentHubSection, type TournamentHubSection as Section } from './tournamentHubNavigation'
 
-type Section = 'discover' | 'mine' | 'history' | 'host' | 'create'
 const route = useRoute(); const router = useRouter()
-const section = ref<Section>('discover'); const search = ref(''); const format = ref(''); const timeRange = ref('')
+const section = ref<Section>(tournamentHubSection(route.query.section)); const search = ref(''); const format = ref(''); const timeRange = ref('')
 const loading = ref(false); const notice = ref(''); const page = ref(1)
 const result = ref<TournamentSummaryPage>({ platformVersion: 0, items: [], page: 1, pageSize: 24, total: 0, totalPages: 0 })
 const career = ref<TournamentCareer | null>(null)
@@ -28,8 +28,16 @@ async function loadCareer() {
   try { career.value = await tournamentApi.career({ page: careerPage.value, pageSize: 12 }) }
   catch (error) { notice.value = error instanceof Error ? error.message : '赛事履历加载失败' }
 }
-function switchSection(value: Section) { section.value = value; page.value = 1 }
+function switchSection(value: Section) {
+  section.value = value; page.value = 1
+  const { code: _code, ...query } = route.query
+  void router.replace({ query: { ...query, section: value } })
+}
 function open(code: string) { void router.push(`/battle/tournaments/${encodeURIComponent(code)}`) }
+watch(() => route.query.section, value => {
+  const next = tournamentHubSection(value)
+  if (section.value !== next) { section.value = next; page.value = 1 }
+})
 watch([section, format, timeRange, page], load)
 watch(careerPage, loadCareer)
 watch(search, () => { window.clearTimeout(searchTimer); searchTimer = window.setTimeout(() => { page.value = 1; void load() }, 250) })

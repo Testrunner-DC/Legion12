@@ -1275,7 +1275,8 @@ const contracts = [
     && siteContentStore.includes('["product"] = new("product", "商品图片", 1600, 1200, 1200, 900, 480, 360')
     && officialHome.includes('news.value.slice(0, 5)') && officialHome.includes('videos.value.slice(0, 5)')
     && (officialHome.match(/class="featured-editorial-layout"/g)?.length ?? 0) === 2
-    && officialHome.includes('资讯一主四辅布局占位范例') && officialHome.includes('视频一主四辅布局占位范例')
+    && officialHome.includes('暂无资讯') && officialHome.includes('暂无视频') && officialHome.includes('暂无产品')
+    && !/标题占位|占位范例|通知占位|2026[./]00/.test(officialHome)
     && officialHome.includes('class="featured-editorial-support"') && officialHome.includes('grid-template-columns:repeat(2,minmax(0,1fr))')
     && officialHome.includes('<small>{{ dateLabel(item) }} · {{ item.category }}</small><b>{{ item.title }}</b></span></component></div>')
     && officialHome.includes('.home-editorial-card{display:flex;min-width:0;flex-direction:column;border:0;background:transparent;box-shadow:none')
