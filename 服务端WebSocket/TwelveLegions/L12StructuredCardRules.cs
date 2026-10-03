@@ -357,7 +357,8 @@ public static partial class L12StructuredCardRules
                 var faction = atom.Parameters.GetValueOrDefault("faction");
                 if (string.IsNullOrWhiteSpace(faction)) continue;
                 modifier -= controller.Field.SelectMany(row => row)
-                    .Count(target => target is not null && HasFaction(controller, target, faction));
+                    .Count(target => target is { CardType: "legion" }
+                        && HasFaction(controller, target, faction));
             }
         }
         return modifier;

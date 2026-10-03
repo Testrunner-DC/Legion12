@@ -1,5 +1,9 @@
 # 十二军团简短交接
 
+- **2026-10-04最新接续**：鲍斯最小类型修复两源冻结SHA与专项一致，Main独立66/66；完整Batch日志bors-cost-batch-20261004.log已exit0，规则6185/平台435失败跳过0、两成功receipt实读，干净Release/同步待做，未部署。动画独立导出器第二版JSON已实际生成，Main核实正常rev5进场/失效最终仍墓地；取消coverage忽略实际skip已要求纠正，两确认链可以继续前端RED取证，未确认共享根因或改生产。E4用户最新决定先研究与评审，设备iOS/Safari/微信输入法已记，实施未批准；方案补评审结论，官方示意图读取失败未目检，真实IME仍待，生产编辑器未改。无新部署/维护授权；下方待确认设备及Batch进行中为历史。
+
+- **2026-10-04接收1/2并行，未部署**：基线5472673a，Main推进E4真机试用准备及限定P4评审，生产前端不改；详细方案docs/l12/E4-PORTRAIT-DECK-EDITOR-IMPLEMENTATION-PLAN-20261004.md，真实设备/IME及实施批准待完成。鲍斯费用受监督6项4绿2红，Main实读TRX/卡文：戒指映射的盖伏战术错误被计作彼界军团，6费报价为5且5费playCard被接受，V2保持。用户已批准最小修复，租约仅L12StructuredCardRules.cs相应legion计数条件与新专用测试；保留戒指阵营，不新增正面裁定。全池扫描/绿回归/冻结交付进行中，子任务持有.NET锁，Main独立及完整门禁待做。上批测试7d6b7cf6、正式c858为上次采样，本批无部署/维护操作；详见TASK-LEDGER最新项。
+
 - **23:45最终验收/测试服部署回执**：修复应用7d6b7cf66719152487d0c7e0a0b0058cd2508ff9（伤害9339d640、木马7d6b7cf6），完整Batch及23:39:56干净Release规则6178/平台435失败跳过0，UI354/卡图324+42/双前端/制品通过；原始两TRX与success timings实读，包SHA84998930…bde2d。GitHub精确读回同一候选，用户新增一次测试服部署授权后执行成功，23:45:29公网测试7d6b7cf6/maintenance=false，正式仍c85819f0/false，两WS通过，正式ActiveEnterTimestampMonotonic=1140145077921/NRestarts=0与部署前一致。测试旧程序07fcbf85及消费包例行回收304153786B，22份运行快照不删、忙碌旧卡图缓存保留。证据artifacts/trojan-disaster-clean-release-20261003.log、deploy/verification-evidence/7d6b7cf6…/20261003T152736Z-6a15c739fa3548448dfeeb3992ef87b5、trojan-testrun-deploy-20261003.log和before/after-status。E4仅浏览器研究交付，真机IME及P4实施批准仍待；S02-0605只记候选。规则专项已最终回执冻结，未部署正式服/改维护/后台发布/关闭Bug。下方未同步/未部署均为过程历史；后续纯文档回执不改变应用与测试版本绑定。
 
 - **最终Batch通过，待干净Release/同步，未部署**：trojan-disaster-final-batch-20261003.log exit0，规则6178/平台435失败跳过0，UI354/卡图324+42/双前端通过。Main实读receipt test-1ba0f560f5f242cf8b383d99e203cd56及test-ce646c26fc2d4cfeb4baba8844830e7d，临时树首次清理成功；源码SHA保持冻结。E4报告独立1472fd57，真机与P4实施仍待；新伤害/木马分别保存有界提交后完整Release，不部署、不改维护。

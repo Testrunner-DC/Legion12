@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-04-bors-legion-cost",
+  "date": "2026-10-04",
+  "audience": "players",
+  "title": "鲍斯的登场费用",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "鲍斯仅按战场上的彼界军团减少登场费用。万物统御之戒转换阵营后的通用军团仍可减费，战术不计入减费数量。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12StructuredCardRules.cs"
+      ]
+    }
+  ]
+}
