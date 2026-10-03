@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import { gunzipSync } from 'node:zlib'
 import { createServer } from 'vite'
 
 const require = createRequire(import.meta.url)
@@ -11,11 +12,15 @@ const { chromium } = require(process.env.L12_PLAYWRIGHT
   || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const fixturePath = process.env.L12_REAL_ENGINE_FIXTURE
-if (!fixturePath) throw new Error('L12_REAL_ENGINE_FIXTURE is required')
+  || path.join(root,'scripts/fixtures/battle-authority-engine-v5.json.gz.b64')
 const defaultRunId = new Date().toISOString().replaceAll(':','-').replaceAll('.','-')
 const output = process.env.L12_AUTHORITY_STATE_OUT
   || path.join('D:/GPT/Legion12/artifacts/battle-animation-recurrence-20261003', `authoritative-card-state-${defaultRunId}`)
-const fixtureBytes = fs.readFileSync(fixturePath)
+if (!fs.existsSync(fixturePath)) throw new Error(`Fixture not found: ${fixturePath}`)
+const storedFixture = fs.readFileSync(fixturePath)
+const fixtureBytes = fixturePath.endsWith('.gz.b64')
+  ? gunzipSync(Buffer.from(storedFixture.toString('utf8').trim(),'base64'))
+  : storedFixture
 const fixtureSha256 = crypto.createHash('sha256').update(fixtureBytes).digest('hex')
 const fixture = JSON.parse(fixtureBytes.toString('utf8'))
 const inMemoryEntryCandidate = process.env.L12_IN_MEMORY_ENTRY_CANDIDATE === '1'

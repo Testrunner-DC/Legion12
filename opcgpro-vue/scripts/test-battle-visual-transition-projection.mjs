@@ -110,6 +110,28 @@ const before = model.collectVisualFieldState([player([[card('same', 'X', false),
 const after = model.collectVisualFieldState([player([[card('same', 'X', true), null, null], [null, null, null]])])
 assert.deepEqual(model.changedTappedStates(before, after), [{ instanceId: 'same', fromTapped: false, toTapped: true }])
 assert.deepEqual(model.changedTappedStates(after, before), [{ instanceId: 'same', fromTapped: true, toTapped: false }])
+const relicStateBefore = model.collectVisualFieldState([{
+  ...player([[null, null, null], [null, null, null]]),
+  relic: card('primary-relic', 'S01-0215', false),
+  extraRelics: [card('extra-relic', 'S01-0215', false)],
+}])
+const relicStateAfter = model.collectVisualFieldState([{
+  ...player([[null, null, null], [null, null, null]]),
+  relic: card('primary-relic', 'S01-0215', false),
+  extraRelics: [card('extra-relic', 'S01-0215', true)],
+}])
+assert.deepEqual(model.changedTappedStates(relicStateBefore, relicStateAfter),
+  [{ instanceId:'extra-relic', fromTapped:false, toTapped:true }],
+  'extra relic state changes are collected independently from the primary relic')
+const extraRelicClaims = model.createCardStateClaimState()
+model.resetCardStateClaimState(extraRelicClaims, 70, relicStateBefore, 200)
+assert.deepEqual(model.claimCardStateTransitions(extraRelicClaims, 71, relicStateAfter).map(change => change.transactionKey),
+  ['71:extra-relic:active>rested'], 'a newer extra relic authority revision owns one state transaction')
+assert.deepEqual(model.claimCardStateTransitions(extraRelicClaims, 71, relicStateBefore), [],
+  'same-revision replacement cannot replay or reverse an extra relic transaction')
+model.resetCardStateClaimState(extraRelicClaims, 80, relicStateAfter, 210)
+assert.deepEqual(model.claimCardStateTransitions(extraRelicClaims, 80, relicStateAfter), [],
+  'extra relic reconnect baseline cannot backfill historical state motion')
 const knownZones = model.collectKnownCardZones([{
   ...player([[card('field-copy'), null, null], [null, null, null]]),
   hand: [card('hand-copy')], graveyard: [card('grave-copy')], resolving: [card('resolving-copy')],
@@ -202,4 +224,4 @@ assert.deepEqual([...interleavedBatch.cursor.entries()].sort(), [['other-unit', 
 model.finalizeMovementTransactionBatch(interleavedClaims, interleavedBatch, new Map([['returning-unit', 'field'], ['other-unit', 'field']]))
 assert.equal(interleavedClaims.zoneRevision, 81, 'finalization commits the batch revision only after ordered claims finish')
 
-console.log('Battle visual transition projection passed: 69/69 assertions')
+console.log('Battle visual transition projection passed: 74/74 assertions')

@@ -339,7 +339,8 @@ export function collectVisualFieldState(players: PlayerView[]) {
   const result = new Map<string, VisualFieldState>()
   for (const player of players) {
     for (const card of player.field.flat()) if (card) result.set(card.instanceId, { instanceId: card.instanceId, tapped: card.tapped })
-    if (player.relic) result.set(player.relic.instanceId, { instanceId: player.relic.instanceId, tapped: player.relic.tapped })
+    for (const relic of [player.relic, ...(player.extraRelics ?? [])])
+      if (relic) result.set(relic.instanceId, { instanceId: relic.instanceId, tapped: relic.tapped })
     result.set(`master-${player.playerIndex}`, { instanceId: `master-${player.playerIndex}`, tapped: Boolean(player.master.tapped) })
   }
   return result

@@ -5315,7 +5315,8 @@
 - 根因一：同一次权威休整既由场上卡片CSS transform/settle呈现，又由CardStateTransitionLayer呈现；后者被模态暂停到后续响应结束，补播旧休整。根因二：ZoneMovement同样受passivePresentationPaused压制；加拉哈德rev1入场被压到安格斯符文rev7结束才播放旧hand→field，造成后续动作重播入场和卡图暂时消失的观感。
 - 共享修正：状态动画由既有权威状态层单独负责，移除CSS第二源；状态层和已提交区域移动不因弹框推迟，Reveal的卡效展示暂停保留。无服务端/原子/费用/目标/隐私/投影规则修改，不依卡名吞动画或吞合法后续事件。取消、拒绝、无效不产生未结算状态变化；已支付Cost和提交进攻按本来权威时点呈现。
 - 真证据：立即深冻结接收者快照v4 SHA35c2510148f7900755e2fb7b40f99aebe6ff06b44ee7ec2cd90861c6efdd367e。生产RED v4-004、同fixture内存GREEN v4-005与落源006均保留；Main无注入独立007通过20组144断言，sourceFingerprint a0133ec9…28c8、错误0。按卡实例精确匹配可见、解码幽灵；四profile加拉哈德一次入场/一次费用休整，安格斯后续与同revision重传0次补播，末态同实例卡图可见且已解码。覆盖正常/无效/取消/真实进攻与休整防守、宽屏/移动竖屏、减动态；最终综合447/9profile/44截图错误0补充多张正面弃回、叠放、恢复/回放等消费者，不冒称每张卡逐一实战。
-- 同型范围：全池状态文字候选67、服务端Tapped/SetTapped/ReadyTarget/RestTarget出口78行、共享CardState/ZoneMovement/CSS渲染消费者。修复为共同展示层，不迁移卡效语义；静态扫描不等于逐卡效果通过。motion33/projection69/UI354与前端完整Batch通过；最终提交级Release待执行。早期未冻结夹具无效，不引用其PASS，失败/中止证据不删。
+- 同型范围：全池状态文字候选67、服务端Tapped/SetTapped/ReadyTarget/RestTarget出口78行、共享CardState/ZoneMovement/CSS渲染消费者。修复为共同展示层，不迁移卡效语义；静态扫描不等于逐卡效果通过。motion33/projection74/UI354与最新完整前端Batch通过；最终提交级Release待执行。早期未冻结夹具无效，不引用其PASS，失败/中止证据不删。
+- 同族补查发现extraRelics卡片有真实DOM却未进入状态变化采集，主圣物正常不能覆盖该路径。生产RED extra-relic-state-red-v5费用已休整但精确实例ghost为0；共享collector纳入所有extraRelics，不改权威时点。Main独立main-extra-relic-state-v5-20261003：宽屏/移动取消、恢复、结算6组30断言通过，费用休整/目标活跃各1次，重传/恢复/取消0次；逐实例可见解码验证。五项单元守卫加入原69，现74。仓库压缩完整确定性v5夹具解压4041669B、SHA5c7ca151eb4a42962ea84851c7923541130b3da0ad51c060b04f141801c25da6；未裁剪状态、无真实玩家资料。默认夹具新旧两个verifier通过30/144，源码冻结后同族完整门禁，不把局部GREEN称上线。
 
 ## BUG-20261003-MOBILE-COMMANDER-CENTER｜主宰圣物偏离六格纵向中心（本地验收，未同步/部署）
 
