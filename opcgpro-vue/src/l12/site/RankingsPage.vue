@@ -118,7 +118,7 @@ const titleVariant = (title: string) => title.startsWith('最强') || currentMas
 const matrixMasters = computed(() => visibleMasters.value)
 const matrixRows = computed<MasterMatchupMatrixMaster[]>(() => matrixMasters.value.map(row => ({
   id: row.masterId, name: row.masterName, imageUrl: masterProfileUrl(row.masterId), rank: row.rank,
-  winRate: row.games >= publicMasterSampleMinimum ? row.winRate / 100 : null,
+  winRate: row.games > 0 ? row.winRate / 100 : null,
 })))
 const matrixCells = computed<MasterMatchupMatrixCell[]>(() => analytics.value.matchups.map(row => ({
   masterId: row.masterId, opponentMasterId: row.opponentMasterId, samples: row.games, winRate: row.winRate / 100,
@@ -175,12 +175,12 @@ const statisticsScopeItems = computed(() => [
     : `${analytics.value.range === '7d' ? '近 7 天' : '近 30 天'}按对局开始时间滚动取数并可跨赛季；玩家派系、段位和称号仍为当前赛季身份。`,
   '仅计入胜负、双方主宰与时间完整的有效排位；暂扣、作废、系统异常及禁用／删除账号参与的对局不计，来源上限无法证明完整时整窗不展示。',
   '排行榜未按运营规则版本或卡效版本拆分；窗口跨越版本时会合并显示，不从缺失记录推断版本。',
-  `主宰胜率与对阵少于 ${publicMasterSampleMinimum} 场时只保留样本事实，不显示强弱色；${publicMasterSampleMinimum} 场是展示提醒，不是结算门槛。最强玩家称号另按近 30 日独立口径产生。`,
+  `主宰胜率与对阵有样本即显示百分比；少于 ${publicMasterSampleMinimum} 场时使用较浅强弱色提醒样本偏少。${publicMasterSampleMinimum} 场不是结算门槛。最强玩家称号另按近 30 日独立口径产生。`,
 ])
 
 function percent(value: number) { return `${value.toFixed(1)}%` }
-function crediblePercent(value: number, samples: number) {
-  return samples >= publicMasterSampleMinimum ? percent(value) : '—'
+function sampledPercent(value: number, samples: number) {
+  return samples > 0 ? percent(value) : '—'
 }
 function parseScopeDate(value?: string | null) {
   if (!value) return null
@@ -265,8 +265,8 @@ onBeforeUnmount(() => {
         <b data-label="排名">#{{ index + 1 }}</b>
         <span class="master-card" data-label="主宰"><img class="master-avatar" data-ui-contract="ranking-master-avatar" :src="masterProfileUrl(row.masterId)" :alt="`${row.masterName}头像`"/><strong>{{ row.masterName }}<small>{{ row.masterId }}</small></strong></span>
         <span class="champion" data-label="最强玩家"><RankedIdentityBadge v-if="row.title" variant="master-title" :label="row.title"/><strong>{{ row.strongestPlayer || '尚未产生' }}</strong></span>
-        <strong data-label="场次">{{ row.games }}</strong><span data-label="战绩"><i>{{ row.wins }}</i>胜 <em>{{ row.losses }}</em>负</span><b class="rate" data-label="胜率">{{ crediblePercent(row.winRate, row.games) }}</b><span data-label="使用率">{{ percent(row.usageRate) }}</span>
-        <span data-label="先手">{{ crediblePercent(row.firstWinRate, row.firstGames) }}<small>{{ row.firstWins }}/{{ row.firstGames }}</small></span><span data-label="后手">{{ crediblePercent(row.secondWinRate, row.secondGames) }}<small>{{ row.secondWins }}/{{ row.secondGames }}</small></span>
+        <strong data-label="场次">{{ row.games }}</strong><span data-label="战绩"><i>{{ row.wins }}</i>胜 <em>{{ row.losses }}</em>负</span><b class="rate" data-label="胜率">{{ sampledPercent(row.winRate, row.games) }}</b><span data-label="使用率">{{ percent(row.usageRate) }}</span>
+        <span data-label="先手">{{ sampledPercent(row.firstWinRate, row.firstGames) }}<small>{{ row.firstWins }}/{{ row.firstGames }}</small></span><span data-label="后手">{{ sampledPercent(row.secondWinRate, row.secondGames) }}<small>{{ row.secondWins }}/{{ row.secondGames }}</small></span>
       </div>
       <div v-if="!visibleMasters.length" class="empty">{{ loading ? '正在聚合主宰数据…' : '当前范围暂无主宰数据' }}</div>
     </section>
@@ -294,8 +294,8 @@ onBeforeUnmount(() => {
     </section>
 
     <section v-else class="matrix-panel">
-      <header><div><small>MASTER MATCHUPS</small><h2>主宰对阵一览</h2><p>纵轴为我方、横轴为对方；满 30 场才显示胜率与强弱色，先后手样本悬停可见。</p></div><span>当前 {{ matrixMasters.length }} 位主宰</span></header>
-      <MasterMatchupMatrix :masters="matrixRows" :cells="matrixCells" :minimum-sample="publicMasterSampleMinimum" :empty-text="loading ? '正在生成对阵矩阵…' : '当前范围暂无对阵数据'"/>
+      <header><div><small>MASTER MATCHUPS</small><h2>主宰对阵一览</h2><p>纵轴为我方、横轴为对方；有对局即显示胜率，少于 30 场使用较浅强弱色提醒样本偏少。先后手详情悬停可见。</p></div><span>当前 {{ matrixMasters.length }} 位主宰</span></header>
+      <MasterMatchupMatrix :masters="matrixRows" :cells="matrixCells" :minimum-sample="publicMasterSampleMinimum" low-sample-display="muted" :empty-text="loading ? '正在生成对阵矩阵…' : '当前范围暂无对阵数据'"/>
     </section>
     <RankedMasterTitleRulesModal v-model="masterTitleRulesOpen"/>
   </div>

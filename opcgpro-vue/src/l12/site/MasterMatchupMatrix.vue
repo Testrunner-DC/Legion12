@@ -23,32 +23,47 @@ const props = withDefaults(defineProps<{
   masters: MasterMatchupMatrixMaster[]
   cells: MasterMatchupMatrixCell[]
   minimumSample?: number
+  lowSampleDisplay?: 'hidden' | 'muted'
   emptyText?: string
-}>(), { minimumSample: 0, emptyText: '当前范围暂无对阵数据' })
+}>(), { minimumSample: 0, lowSampleDisplay: 'hidden', emptyText: '当前范围暂无对阵数据' })
 
 const columnWidth = '银臂努阿达'.length * 14 + 44
 const cellIndex = computed(() => new Map(props.cells.map(cell => [`${cell.masterId}|${cell.opponentMasterId}`, cell])))
 function cell(masterId: string, opponentMasterId: string) { return cellIndex.value.get(`${masterId}|${opponentMasterId}`) }
 function rate(value?: number | null) { return typeof value === 'number' ? `${(value * 100).toFixed(1)}%` : '—' }
+function canShowRate(matchup?: MasterMatchupMatrixCell) {
+  if (!matchup || typeof matchup.winRate !== 'number') return false
+  return props.lowSampleDisplay === 'muted' ? matchup.samples > 0 : matchup.samples >= props.minimumSample
+}
+function isMutedSample(matchup?: MasterMatchupMatrixCell) {
+  return Boolean(matchup && matchup.samples > 0 && matchup.samples < props.minimumSample
+    && props.lowSampleDisplay === 'muted' && typeof matchup.winRate === 'number')
+}
 function cellTone(masterId: string, opponentMasterId: string) {
   if (masterId === opponentMasterId) return 'mirror'
   const matchup = cell(masterId, opponentMasterId)
-  if (!matchup || matchup.samples < props.minimumSample) return 'no-data'
+  if (!matchup || !canShowRate(matchup)) return 'no-data'
   const value = matchup.winRate
   if (typeof value !== 'number') return 'no-data'
-  return value > .5 ? 'advantage' : value < .5 ? 'disadvantage' : 'even'
+  const tone = value > .5 ? 'advantage' : value < .5 ? 'disadvantage' : 'even'
+  return isMutedSample(matchup) ? [tone, 'low-sample'] : tone
 }
 function cellTitle(masterId: string, opponentMasterId: string) {
   if (masterId === opponentMasterId) return '同主宰镜像'
   const value = cell(masterId, opponentMasterId)
-  if (!value) return '暂无对局'
-  if (value.samples < props.minimumSample) return `共 ${value.samples} 场；不足 ${props.minimumSample} 场，仅显示样本`
+  if (!value || (props.lowSampleDisplay === 'muted' && value.samples <= 0)) return '暂无对局'
+  if (value.samples < props.minimumSample && props.lowSampleDisplay !== 'muted')
+    return `共 ${value.samples} 场；不足 ${props.minimumSample} 场，仅显示样本`
   const split = typeof value.firstSamples === 'number' && typeof value.secondSamples === 'number'
     ? `；${initiativeTitle('先手', value.firstWins, value.firstSamples)}；${initiativeTitle('后手', value.secondWins, value.secondSamples)}` : ''
-  return `共 ${value.samples} 场${split}`
+  const reminder = value.samples < props.minimumSample ? `（不足 ${props.minimumSample} 场，仅供参考）` : ''
+  return `共 ${value.samples} 场${reminder}${split}`
 }
 function initiativeTitle(label: string, wins: number | undefined, samples: number) {
-  return samples >= props.minimumSample ? `${label} ${wins ?? 0}/${samples}` : `${label} ${samples} 场（样本不足）`
+  if (props.lowSampleDisplay !== 'muted')
+    return samples >= props.minimumSample ? `${label} ${wins ?? 0}/${samples}` : `${label} ${samples} 场（样本不足）`
+  if (samples <= 0) return `${label} 暂无对局`
+  return typeof wins === 'number' ? `${label} ${wins}/${samples}（${rate(wins / samples)}）` : `${label} ${samples} 场`
 }
 </script>
 
@@ -64,10 +79,10 @@ function initiativeTitle(label: string, wins: number | undefined, samples: numbe
       <template v-for="(master, index) in masters" :key="`row-${master.id}`">
         <div class="matrix-rank-cell"><b>#{{ master.rank ?? index + 1 }}</b><span>{{ rate(master.winRate) }}</span></div>
         <div class="matrix-row-head"><img class="matrix-master-avatar" data-ui-contract="ranking-master-avatar" :src="master.imageUrl" :alt="`${master.name}头像`"/><b>{{ master.name }}</b></div>
-        <div v-for="opponent in masters" :key="`${master.id}-${opponent.id}`" class="matrix-cell" :class="cellTone(master.id, opponent.id)" :title="cellTitle(master.id, opponent.id)">
+        <div v-for="opponent in masters" :key="`${master.id}-${opponent.id}`" class="matrix-cell" :class="cellTone(master.id, opponent.id)" :title="cellTitle(master.id, opponent.id)" :data-master-id="master.id" :data-opponent-master-id="opponent.id">
           <template v-if="master.id === opponent.id"><b>镜像</b></template>
           <template v-else-if="cell(master.id, opponent.id)">
-            <b>{{ cell(master.id, opponent.id)!.samples >= minimumSample ? rate(cell(master.id, opponent.id)!.winRate) : '—' }}</b>
+            <b>{{ canShowRate(cell(master.id, opponent.id)) ? rate(cell(master.id, opponent.id)!.winRate) : '—' }}</b>
             <span>{{ cell(master.id, opponent.id)!.samples }} 场</span>
           </template>
           <template v-else><b>等待</b><span>更多对局</span></template>
@@ -80,6 +95,7 @@ function initiativeTitle(label: string, wins: number | undefined, samples: numbe
 
 <style scoped>
 .master-matchup-matrix{max-height:68vh;overflow:auto}.matrix-grid{display:grid;grid-auto-rows:76px;width:max-content;min-width:100%}.matrix-rank-head,.matrix-rank-cell,.matrix-corner,.matrix-head,.matrix-row-head,.matrix-cell{box-sizing:border-box;height:76px;min-height:76px;max-height:76px;overflow:hidden;border-right:1px solid #27343e;border-bottom:1px solid #27343e}.matrix-rank-head{position:sticky;z-index:7;top:0;left:0;display:grid;place-items:center;background:#101b27;color:#758994;font-size:14px}.matrix-corner{position:sticky;z-index:6;top:0;left:64px;display:grid;place-items:center;background:#101b27;color:#758994;font-size:14px}.matrix-head{position:sticky;z-index:4;top:0;display:flex;align-items:center;flex-direction:column;justify-content:center;gap:5px;background:#101b27}.matrix-master-avatar{box-sizing:border-box;width:44px;height:44px;min-width:44px;max-width:44px;flex:0 0 44px;border:1px solid #58666e;border-radius:0;background:#080d11;object-fit:cover}.matrix-head span,.matrix-row-head b{max-width:calc(100% - 8px);overflow:hidden;color:#c3ccd0;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.matrix-rank-cell{position:sticky;z-index:5;left:0;display:flex;align-items:center;flex-direction:column;justify-content:center;gap:3px;background:#0d1720}.matrix-rank-cell b{color:#e7c864}.matrix-rank-cell span{color:#829098}.matrix-row-head{position:sticky;z-index:3;left:64px;display:flex;align-items:center;flex-direction:column;justify-content:center;gap:5px;padding:3px;background:#101b27}.matrix-cell{display:flex;align-items:center;flex-direction:column;justify-content:center;gap:3px;background:#101923}.matrix-cell b{font-size:14px}.matrix-cell span{color:#8a989e;font-size:14px}.matrix-cell.advantage{background:#0b352d}.matrix-cell.advantage b{color:#62e6b4}.matrix-cell.disadvantage{background:#36131e}.matrix-cell.disadvantage b{color:#ff8494}.matrix-cell.even{background:#2d2b17}.matrix-cell.even b{color:#ead56e}.matrix-cell.mirror{background:#121923;color:#53636c}.matrix-cell span,.matrix-cell b{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.matrix-empty{display:grid;min-height:280px;place-items:center;color:#738088}
+.matrix-cell.advantage.low-sample{background:#24423c}.matrix-cell.advantage.low-sample b{color:#98d7c0}.matrix-cell.disadvantage.low-sample{background:#452a31}.matrix-cell.disadvantage.low-sample b{color:#dcabb2}.matrix-cell.even.low-sample{background:#454334}.matrix-cell.even.low-sample b{color:#d5cca0}
 @media(max-width:700px){.master-matchup-matrix{max-height:72vh}}
 @media(max-width:520px){.master-matchup-matrix{max-height:64vh}.matrix-grid{grid-auto-rows:52px}.matrix-rank-head,.matrix-rank-cell,.matrix-corner,.matrix-head,.matrix-row-head,.matrix-cell{height:52px;min-height:52px;max-height:52px}.matrix-master-avatar{width:28px;height:28px;min-width:28px;max-width:28px;flex-basis:28px}.matrix-rank-head,.matrix-corner,.matrix-head span,.matrix-row-head b,.matrix-cell b,.matrix-cell span{font-size:11px}.matrix-head span,.matrix-row-head b{max-width:78px}}
 </style>

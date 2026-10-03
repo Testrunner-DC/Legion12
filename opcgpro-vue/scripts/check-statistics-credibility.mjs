@@ -35,15 +35,22 @@ const checks = [
     && rankings.includes('tab !== \'history\' && hasAnalytics')
     && rankings.includes('暂扣、作废、系统异常')
     && rankings.includes('未按运营规则版本或卡效版本拆分')],
-  ['公开主宰低样本不着强弱色', rankings.includes('const publicMasterSampleMinimum = 30')
+  ['公开主宰低样本显示百分比与浅色提醒', rankings.includes('const publicMasterSampleMinimum = 30')
     && rankings.includes(':minimum-sample="publicMasterSampleMinimum"')
-    && rankings.includes('crediblePercent(row.winRate, row.games)')
+    && rankings.includes('low-sample-display="muted"')
+    && rankings.includes('sampledPercent(row.winRate, row.games)')
+    && rankings.includes('samples > 0 ? percent(value)')
     && rankings.includes('leftSamples < publicMasterSampleMinimum ? rightSamples - leftSamples')
-    && rankings.includes('场是展示提醒，不是结算门槛')],
-  ['主宰矩阵低样本悬浮说明不泄露胜率方向', matrix.includes('value.samples < props.minimumSample')
+    && rankings.includes('场不是结算门槛')],
+  ['主宰矩阵低样本显示可选且后台保持原口径', matrix.includes("lowSampleDisplay?: 'hidden' | 'muted'")
+    && matrix.includes("lowSampleDisplay: 'hidden'")
+    && matrix.includes("[tone, 'low-sample']")
+    && matrix.includes('matchup.samples > 0')
     && matrix.includes('不足 ${props.minimumSample} 场，仅显示样本')
     && matrix.includes("initiativeTitle('先手', value.firstWins, value.firstSamples)")
-    && matrix.includes('samples >= props.minimumSample')],
+    && matrix.includes('暂无对局')
+    && adminMaster.includes('<MasterMatchupMatrix :masters="matrixRows" :cells="matrixCells" :minimum-sample="30"')
+    && !adminMaster.includes('low-sample-display')],
   ['近30日最强称号独立标注', rankings.includes('最强玩家<small>近30日</small>')
     && rankings.includes('最强玩家称号另按近 30 日独立口径产生')],
   ['公开牌库显示可公开样本但不补低样本', publicDeck.includes('<StatisticsScope')

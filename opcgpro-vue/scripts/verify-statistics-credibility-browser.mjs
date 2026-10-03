@@ -36,13 +36,14 @@ const pixel='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.
 catalog.forEach(card=>{card.imageUrl=pixel})
 const masters=catalog.filter(card=>card.cardType==='master').slice(0,3)
 window.expectedMasterOrder=[masters[0].nameZh,masters[2].nameZh,masters[1].nameZh]
+window.masterIds=masters.map(master=>master.id)
 const preset=(await loadOfficialPresetDecks())[0]
 platformState.account={id:'qa-viewer',username:'统计验收者',role:'player',createdAt:'2026-01-01T00:00:00Z',publicHistory:false}
 
 const masterStats=[
- {rank:1,masterId:masters[0].id,masterName:masters[0].nameZh,games:40,wins:24,losses:16,winRate:60,usageRate:70,firstGames:32,firstWins:19,firstWinRate:59.4,secondGames:8,secondWins:5,secondWinRate:62.5,strongestPlayer:'甲',title:'最强'+masters[0].nameZh},
- {rank:2,masterId:masters[1].id,masterName:masters[1].nameZh,games:5,wins:5,losses:0,winRate:100,usageRate:10,firstGames:1,firstWins:1,firstWinRate:100,secondGames:4,secondWins:4,secondWinRate:100,strongestPlayer:null,title:null},
- {rank:3,masterId:masters[2].id,masterName:masters[2].nameZh,games:8,wins:0,losses:8,winRate:0,usageRate:20,firstGames:4,firstWins:0,firstWinRate:0,secondGames:4,secondWins:0,secondWinRate:0,strongestPlayer:null,title:null},
+ {rank:1,masterId:masters[0].id,masterName:masters[0].nameZh,games:30,wins:15,losses:15,winRate:50,usageRate:70,firstGames:0,firstWins:0,firstWinRate:0,secondGames:30,secondWins:15,secondWinRate:50,strongestPlayer:'甲',title:'最强'+masters[0].nameZh},
+ {rank:2,masterId:masters[1].id,masterName:masters[1].nameZh,games:1,wins:1,losses:0,winRate:100,usageRate:10,firstGames:1,firstWins:1,firstWinRate:100,secondGames:0,secondWins:0,secondWinRate:0,strongestPlayer:null,title:null},
+ {rank:3,masterId:masters[2].id,masterName:masters[2].nameZh,games:29,wins:0,losses:29,winRate:0,usageRate:20,firstGames:14,firstWins:0,firstWinRate:0,secondGames:15,secondWins:0,secondWinRate:0,strongestPlayer:null,title:null},
 ]
 const rangeMetadata={
  season:{fromUtc:'2026-10-01T00:00:00Z',untilUtc:'2026-10-06T00:00:00Z',seasonId:'S-CURRENT',seasonName:'当前赛季'},
@@ -53,8 +54,12 @@ window.rankingCalls=[]
 rankedApi.leaderboard=async(faction,range)=>{
  window.rankingCalls.push({faction,range})
  return {players:[{rank:1,username:'统计验收者',faction:'秩序',tier:'定级',titles:[],favoriteMasterId:masters[0].id,favoriteMasterName:masters[0].nameZh,displayValue:'七曜值 2100',wins:20,losses:10}],rangeLimited:new URLSearchParams(location.search).has('capped'),analytics:{range,summary:{matches:53,placedPlayers:1,activeMasters:3,updatedAt:'2026-10-05T15:00:00Z'},masters:masterStats,matchups:[
-  {masterId:masters[0].id,opponentMasterId:masters[1].id,games:35,wins:14,winRate:40,firstGames:10,firstWins:10,secondGames:25,secondWins:4},
-  {masterId:masters[1].id,opponentMasterId:masters[2].id,games:5,wins:5,winRate:100,firstGames:1,firstWins:1,secondGames:4,secondWins:4},
+  {masterId:masters[0].id,opponentMasterId:masters[1].id,games:30,wins:0,winRate:0,firstGames:0,firstWins:0,secondGames:30,secondWins:0},
+  {masterId:masters[0].id,opponentMasterId:masters[2].id,games:29,wins:29,winRate:100,firstGames:1,firstWins:1,secondGames:28,secondWins:28},
+  {masterId:masters[1].id,opponentMasterId:masters[0].id,games:1,wins:0,winRate:0,firstGames:0,firstWins:0,secondGames:1,secondWins:0},
+  {masterId:masters[1].id,opponentMasterId:masters[2].id,games:2,wins:1,winRate:50,firstGames:1,firstWins:1,secondGames:1,secondWins:0},
+  {masterId:masters[2].id,opponentMasterId:masters[0].id,games:30,wins:30,winRate:100,firstGames:30,firstWins:30,secondGames:0,secondWins:0},
+  {masterId:masters[2].id,opponentMasterId:masters[1].id,games:0,wins:0,winRate:0,firstGames:0,firstWins:0,secondGames:0,secondWins:0},
  ],...rangeMetadata[range]}}
 }
 rankedApi.history=async()=>({honors:[],factionTotals:[]})
@@ -146,18 +151,46 @@ try {
   const masterRows = page.locator('.master-table .tr')
   const visibleMasterOrder = await masterRows.locator('[data-label="主宰"] strong').evaluateAll(nodes => nodes.map(node => node.childNodes[0].textContent.trim()))
   assert.deepEqual(visibleMasterOrder, await page.evaluate(() => window.expectedMasterOrder))
-  assert.equal((await masterRows.nth(1).locator('[data-label="胜率"]').innerText()).trim(), '—')
-  assert.equal((await masterRows.nth(2).locator('[data-label="胜率"]').innerText()).trim(), '—')
+  assert.deepEqual(await masterRows.locator('[data-label="胜率"]').allTextContents(), ['50.0%', '0.0%', '100.0%'])
+  assert.match(await masterRows.nth(0).locator('[data-label="先手"]').innerText(), /^—\s*0\/0$/)
+  assert.match(await masterRows.nth(2).locator('[data-label="后手"]').innerText(), /^—\s*0\/0$/)
   await page.getByRole('button', { name: '对阵一览', exact: true }).click()
-  const splitTitle = await page.locator('.matrix-cell[title*="共 35 场"]').getAttribute('title')
-  assert.match(splitTitle, /先手 10 场（样本不足）[\s\S]*后手 25 场（样本不足）/)
-  assert.doesNotMatch(splitTitle, /\d+\/\d+/)
-  const lowTitle = await page.locator('.matrix-cell[title*="共 5 场"]').getAttribute('title')
-  assert.match(lowTitle, /不足 30 场，仅显示样本/)
-  assert.doesNotMatch(lowTitle, /\d+\/\d+/)
-  await page.screenshot({ path: path.join(output, 'rankings-authoritative-scope.png'), fullPage: true })
+  const [firstMaster, secondMaster, thirdMaster] = await page.evaluate(() => window.masterIds)
+  const matchupCell = (masterId, opponentMasterId) => page.locator(`.matrix-cell[data-master-id="${masterId}"][data-opponent-master-id="${opponentMasterId}"]`)
+  const fullLoss = matchupCell(firstMaster, secondMaster)
+  const lowWin29 = matchupCell(firstMaster, thirdMaster)
+  const lowLoss1 = matchupCell(secondMaster, firstMaster)
+  const lowEven = matchupCell(secondMaster, thirdMaster)
+  const fullWin = matchupCell(thirdMaster, firstMaster)
+  const zeroSample = matchupCell(thirdMaster, secondMaster)
+  assert.deepEqual(await Promise.all([fullLoss, lowWin29, lowLoss1, lowEven, fullWin, zeroSample].map(cell => cell.locator('b').innerText())), ['0.0%', '100.0%', '0.0%', '50.0%', '100.0%', '—'])
+  assert.match(await fullLoss.getAttribute('class'), /disadvantage/)
+  assert.doesNotMatch(await fullLoss.getAttribute('class'), /low-sample/)
+  assert.match(await lowWin29.getAttribute('class'), /advantage[\s\S]*low-sample/)
+  assert.match(await lowLoss1.getAttribute('class'), /disadvantage[\s\S]*low-sample/)
+  assert.match(await lowEven.getAttribute('class'), /even[\s\S]*low-sample/)
+  assert.match(await fullWin.getAttribute('class'), /advantage/)
+  assert.doesNotMatch(await fullWin.getAttribute('class'), /low-sample/)
+  assert.match(await zeroSample.getAttribute('class'), /no-data/)
+  assert.doesNotMatch(await zeroSample.getAttribute('class'), /low-sample|advantage|disadvantage|even/)
+  assert.match(await lowWin29.getAttribute('title'), /共 29 场（不足 30 场，仅供参考）[；;]先手 1\/1（100\.0%）[；;]后手 28\/28（100\.0%）/)
+  assert.match(await lowLoss1.getAttribute('title'), /共 1 场（不足 30 场，仅供参考）[；;]先手 暂无对局[；;]后手 0\/1（0\.0%）/)
+  assert.match(await fullLoss.getAttribute('title'), /共 30 场[；;]先手 暂无对局[；;]后手 0\/30（0\.0%）/)
+  assert.equal(await zeroSample.getAttribute('title'), '暂无对局')
+  const backgroundLuminance = async cell => {
+    const color = await cell.evaluate(element => getComputedStyle(element).backgroundColor)
+    const [red, green, blue] = color.match(/\d+(?:\.\d+)?/g).slice(0, 3).map(Number)
+    return red * .2126 + green * .7152 + blue * .0722
+  }
+  assert((await backgroundLuminance(lowWin29)) > (await backgroundLuminance(fullWin)), '低样本优势色应比足量样本浅')
+  assert((await backgroundLuminance(lowLoss1)) > (await backgroundLuminance(fullLoss)), '低样本劣势色应比足量样本浅')
+  assert.match(await page.locator('.matrix-panel>header p').innerText(), /有对局即显示胜率[\s\S]*少于 30 场[\s\S]*较浅强弱色/)
+  await page.screenshot({ path: path.join(output, 'rankings-low-sample-wide.png'), fullPage: true })
 
   await page.setViewportSize({ width: 390, height: 844 })
+  assert.equal(await page.locator('.master-matchup-matrix').evaluate(element => element.scrollWidth > element.clientWidth), true, '窄屏矩阵应在自身内横向滚动')
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, '窄屏页面不应横向溢出')
+  await page.screenshot({ path: path.join(output, 'rankings-low-sample-narrow.png'), fullPage: true })
   await page.goto(`http://127.0.0.1:${port}/__statistics_credibility__?fixture=public`)
   await page.getByRole('button', { name: '对局', exact: true }).click()
   const publicStatistics = page.locator('[data-detail-section="matches"]')
@@ -218,7 +251,7 @@ try {
   const report = {
     status: 'passed',
     scope: 'synthetic browser fixtures for rankings, public deck statistics, admin card and master analytics',
-    cases: ['server-authored-7d-30d-window', 'cross-season-copy', 'low-sample-order-and-tooltip', 'public-insufficient-privacy', 'applied-filter-scope', 'failed-query-retains-scope', 'narrow-details-flow', 'capped-window-no-partial-summary'],
+    cases: ['server-authored-7d-30d-window', 'cross-season-copy', 'low-sample-1-29-30-boundaries', 'zero-sample-no-fake-rate', 'matchup-0-50-100-tones', 'low-sample-muted-color-depth', 'initiative-tooltip', 'rankings-wide-narrow-layout', 'public-insufficient-privacy', 'applied-filter-scope', 'failed-query-retains-scope', 'narrow-details-flow', 'capped-window-no-partial-summary'],
     screenshots: fs.readdirSync(output).filter(name => name.endsWith('.png')),
   }
   fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify(report, null, 2))
