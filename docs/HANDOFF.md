@@ -1,5 +1,7 @@
 # 十二军团简短交接
 
+- **23:45最终验收/测试服部署回执**：修复应用7d6b7cf66719152487d0c7e0a0b0058cd2508ff9（伤害9339d640、木马7d6b7cf6），完整Batch及23:39:56干净Release规则6178/平台435失败跳过0，UI354/卡图324+42/双前端/制品通过；原始两TRX与success timings实读，包SHA84998930…bde2d。GitHub精确读回同一候选，用户新增一次测试服部署授权后执行成功，23:45:29公网测试7d6b7cf6/maintenance=false，正式仍c85819f0/false，两WS通过，正式ActiveEnterTimestampMonotonic=1140145077921/NRestarts=0与部署前一致。测试旧程序07fcbf85及消费包例行回收304153786B，22份运行快照不删、忙碌旧卡图缓存保留。证据artifacts/trojan-disaster-clean-release-20261003.log、deploy/verification-evidence/7d6b7cf6…/20261003T152736Z-6a15c739fa3548448dfeeb3992ef87b5、trojan-testrun-deploy-20261003.log和before/after-status。E4仅浏览器研究交付，真机IME及P4实施批准仍待；S02-0605只记候选。规则专项已最终回执冻结，未部署正式服/改维护/后台发布/关闭Bug。下方未同步/未部署均为过程历史；后续纯文档回执不改变应用与测试版本绑定。
+
 - **最终Batch通过，待干净Release/同步，未部署**：trojan-disaster-final-batch-20261003.log exit0，规则6178/平台435失败跳过0，UI354/卡图324+42/双前端通过。Main实读receipt test-1ba0f560f5f242cf8b383d99e203cd56及test-ce646c26fc2d4cfeb4baba8844830e7d，临时树首次清理成功；源码SHA保持冻结。E4报告独立1472fd57，真机与P4实施仍待；新伤害/木马分别保存有界提交后完整Release，不部署、不改维护。
 
 - **木马专项冻结，Main独立125通过，最终完整门禁接续**：三根因真实红3失败，修后新3/同族70全部通过；Main最终125/125失败跳过0，源SHA匹配。自然双方endTurn、V2、腐秽后排、仅敌方宿主减兵、军团/盖伏不可顶替及到期抽1均有实际断言。构建锁已移交Main，最终Batch/干净Release/Git仍待；旧中间Batch不能替代。本轮无部署/维护操作。S02-0605费用计数只登记独立候选，不扩改；详见BUGFIX-REGISTRY及TASK-LEDGER顶部。
