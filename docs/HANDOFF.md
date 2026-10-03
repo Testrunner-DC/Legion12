@@ -1,5 +1,7 @@
 # 十二军团简短交接
 
+- **2026-10-03 11:20正式部署与维护解除已完成（最新回执）**：应用 `c85819f0aacd1477f4f771fb3fdcfa0ac99acc91` 完整Batch与干净Release均通过，规则6150/6150、平台411/411、失败/跳过0，UI354、卡图324+42、双前端与41隔离部署故障场景通过；GitHub精确读回后只部署正式服一次。北京时间11:20即时维护配置85→86，最终HTTP/WS正常、maintenance=false、两独立部署围栏不存在，专用会话已注销；测试服保持934a68c6。本次新增日志2条目/3项行为，与同日既有历史累计保留。最新正式服务启动03:19:51 UTC，NRestarts=0、发布后OOM/启动失败匹配0，1536MiB临时内存上限保留，容量根因不冒称已修。实际回执 `artifacts/card-recurrence-20261003/formal-publication.json`、`production-live.json`、`maintenance-receipt.json`、`release-state-after.json`；完整Release证据在deploy/verification-evidence/c85819f0…/20261003T030254Z-a10820274d2c4c458db6c48dd5e9a22f。用户最新指令：先部署及开服，再处理Bug清单；本次反馈操作0、未关闭任何Bug，后续逐条回填不得自动批量关闭。首次Release因本机MSYS CreateProcessW errno13失败，原日志保留；未改断言/源码，诊断41及随后原始完整Release均通过。下方未部署/待验证叙述均为过程历史；后续文档同步不代表另一次应用部署，脏规范app不重置。
+
 - **最新完整Batch通过，提交级Release待执行（未部署）**：最后冻结候选规则6150/6150、平台411/411、失败/跳过0，两项目实际TEMP清理均一次成功；UI354、卡图324+42、正式/测试双前端构建、41部署故障场景及全部静态保护通过。batch-frozen.log为唯一完整成功日志；规则test-d1f798099dae4da38d36d2ff1ae98bf4、平台test-41790e5e43b24591b9241f478b826c96，专项365源码绑定不变。按存储/排行榜/通知/卡效四组提交后，对唯一干净提交完整Release、精确推送读回，才执行本次已授权正式部署与解除维护。测试服不部署，规范app脏树不重置。
 
 - **10:10最终365项冻结（未部署）**：旧绝防展示夹具最小迁移后子149/149、Main扩展365/365通过；清单用既有渲染方法Release生成后，关闭更新标志正常断言24/24。仅新增6项具名抵挡证据及两指纹，能力686/档案78分母和完成数不变，不人工改表、不降低断言。最终TRX/source-binding在artifacts/card-recurrence-20261003/focused-final-df85788aed8e4af08636d074ed7b6b29，test-abc6fb21b69c4c1b99cf1ec68ac5bd0b；重新完整Batch日志batch-frozen.log。此前6150的3失败及嬴政7失败均保留为红灯历史，尚待完整Batch/干净Release/同步/正式验收。
