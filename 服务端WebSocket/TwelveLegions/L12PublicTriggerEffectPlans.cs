@@ -797,7 +797,7 @@ public sealed partial class L12GameEngine
             {
                 var hostIndex = int.TryParse(candidate.Data.GetValueOrDefault("attacker"), out var attacker)
                     && attacker is >= 0 and <= 1 ? attacker : 1 - candidate.Controller;
-                var slots = EmptySlots(State.Players[hostIndex]).ToList();
+                var slots = AllEmptyBattlefieldSlots(State.Players[hostIndex]).ToList();
                 steps =
                 [
                     PublicTriggerStep("option", "mode", "特洛伊木马：预先声明是否置入对方战场",
@@ -1499,7 +1499,7 @@ public sealed partial class L12GameEngine
                 && attacker is >= 0 and <= 1 ? attacker : 1 - candidate.Controller;
             var slot = activation.DeclaredValues.GetValueOrDefault("slot", []).SingleOrDefault();
             if (!IsSetTrojanHorse(FindOnField(player, candidate.SourceInstanceId, out _, out _))
-                || slot is null || !EmptySlots(State.Players[hostIndex]).Contains(slot, StringComparer.OrdinalIgnoreCase))
+                || slot is null || !AllEmptyBattlefieldSlots(State.Players[hostIndex]).Contains(slot, StringComparer.OrdinalIgnoreCase))
                 error = "特洛伊木马的来源或公开置入位置已失效；效果未入栈";
         }
         else if (key.Item1 == "S01-02M3")

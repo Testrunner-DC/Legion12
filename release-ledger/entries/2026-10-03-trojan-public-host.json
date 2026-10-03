@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-03-trojan-public-host",
+  "date": "2026-10-03",
+  "audience": "players",
+  "title": "特洛伊木马的设伏与敌方战场效果",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "特洛伊木马盖伏时不会削弱己方军团，也不会提前弃置或抽牌。响应后正面置入对方任意空位（包括腐秽大地下的空后排），仅削弱所在对方战场的军团；下个己方回合结束时弃置并抽1张牌，正面木马不能被打出或盖伏的卡顶替。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+        "服务端WebSocket/TwelveLegions/L12S2RemainingEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12EffectContinuations.cs",
+        "服务端WebSocket/TwelveLegions/L12PublicTriggerEffectPlans.cs"
+      ]
+    }
+  ]
+}

@@ -2617,7 +2617,9 @@ public sealed partial class L12GameEngine
     {
         foreach (var player in State.Players)
         {
-            var trojanHorses = player.Field.SelectMany(row => row).Count(card => card?.CardId == "S02-0523");
+            var trojanHorses = player.Field.SelectMany(row => row).Count(card =>
+                card is { CardId: "S02-0523", Hidden: false, OwnerIndex: >= 0 and <= 1 }
+                && card.OwnerIndex != player.PlayerIndex);
             var globalModifier = -1000 * trojanHorses;
             for (var row = 0; row < player.Field.Length; row++)
             for (var slot = 0; slot < player.Field[row].Length; slot++)

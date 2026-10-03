@@ -573,7 +573,7 @@ public sealed partial class L12GameEngine
             ? State.Players[attacker]
             : State.Players[1 - item.Controller];
         var destination = PublicTriggerDeclared(item, "slot");
-        if (!IsTrojanHorse(horse) || !EmptySlots(host).Contains(destination, StringComparer.OrdinalIgnoreCase))
+        if (!IsTrojanHorse(horse) || !AllEmptyBattlefieldSlots(host).Contains(destination, StringComparer.OrdinalIgnoreCase))
         {
             RecordTargetSettlementFailure(item, destination,
                 "特洛伊木马选择的来源或置入位置已失效；该卡不置入战场");
@@ -761,7 +761,9 @@ public sealed partial class L12GameEngine
             for (var slot = 0; slot < host.Field[row].Length; slot++)
             {
                 var horse = host.Field[row][slot];
-                if (horse?.CardId != "S02-0523" || horse.OwnerIndex != endingPlayer
+                if (horse?.CardId != "S02-0523" || horse.Hidden
+                    || horse.OwnerIndex != endingPlayer || hostIndex == endingPlayer
+                    || horse.DiscardAtEndOfTurnUntilTurn < 0
                     || horse.DiscardAtEndOfTurnUntilTurn > State.TurnSerial) continue;
                 var data = CompositeFirstSegmentData("trigger:S02-0523:trojan-expiry",
                     new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase));

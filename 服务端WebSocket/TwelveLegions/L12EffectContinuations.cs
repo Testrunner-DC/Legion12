@@ -478,6 +478,14 @@ public sealed partial class L12GameEngine
                     yield return $"{row}:{slot}";
     }
 
+    private static IEnumerable<string> AllEmptyBattlefieldSlots(L12PlayerState player)
+    {
+        for (var row = 0; row < 2; row++)
+            for (var slot = 0; slot < 3; slot++)
+                if (player.Field[row][slot] is null)
+                    yield return $"{row}:{slot}";
+    }
+
     private static (int Row, int Slot) ParseSlot(string choice)
     {
         var parts = choice.Split(':');
