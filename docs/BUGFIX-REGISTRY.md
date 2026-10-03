@@ -1,9 +1,12 @@
 # Legion12 Bug 修复记录
 
-## VISUAL-20261004-ALL-RESULTS-RECURRENCE｜墓地拉军团及其他结果动画重复反馈（只读诊断中）
+## VISUAL-20261004-ALL-RESULTS-RECURRENCE｜结果层二次全卡呈现已复现，全部同类仍在只读诊断
 
 - 原反馈：“从墓地拉军团的效果现在依然会有两次军团从墓地到战场的动画”；用户要求不只墓地，全部类似区域移动/休整活跃及结果动画须实际生效后恰一次。旧有限矩阵通过不证明此反馈已解决，不先归因网络、卡图或重复命令。
 - 交回对应动画专项，只读所有展示消费者和同族来源，真实权威快照到实际DOM/WAAPI逐事实计数，宽屏/移动及三档动画偏好；要求取消无结果0、重传不补播、连续合法动作不吞、最终同实例卡图可见、控制组件边界保持。首交付为RED/根因/最小方案/租约，尚未真实复现或生产修复，不宣称根治，不部署或关闭Bug。
+- 最新具名证据：雷神之锤真实activateAbility/费用与格位声明/双方响应深冻结快照，正常rev5才进场，rev3/4仍墓地。宽屏runtime-2026-10-03T17-01-54-150Z/report.json SHA95C40B18D39990317E598D1445C65A1FB9AD293A8A14A7417E2E51332A8CC32F，9断言唯一RED：seq19墓地→战场只飞1次，30正透明帧；之后seq21 effect-result/active再全卡显示同实例，196正透明帧，均peakOpacity1且解码可见，Main实读并目检两即时图。此链是区域层与结果层的重复卡片呈现，不是引擎重复移动，不是seq29 declared-enter重复，也未见响应前结果。截图素材回退卡背，不能称实际卡面资源验收通过；旧birth visible=false仅DOM证据已由连续帧补足。
+- 关联缺口：seq21携带stack-1/active/sourceInstanceId，seq19区域put无相应事务字段；状态diff层也尚未加入统一结果认领。新增权威关联元数据与既有序号复用方案仍待Main核准，未修改生产源，不为绿灯按卡身份、时间窗、相邻序号或文案猜因果。当前仅1宽屏真实可见RED，其余区域/状态、移动尺寸及偏好不能冒称全量。
+- 取消夹具初版把cancel当选项、第二版忽略真实skip，两错误结论撤回并保留旧证据。Main执行schema3新文件authority-grave-entry-fixture-v3.json SHA88EE5B933869D5A8C507797E91B8495AC4AB32CDAB37E7EE4FD4401D7DF415D7，order/slot skip实际accepted、目标和3费用均墓地、pending/stack0；前端取消播放仍待验，不以引擎状态正确替代动画零次证明。
 
 ## EFFECT-20261004-BORS-FACTION-COST｜戒指阵营转换后战术误计作军团减费（已复现获准，修复验收中）
 
@@ -11,6 +14,7 @@
 - 根因：L12StructuredCardRules.cs中entry-cost-minus-per-friendly-faction-legion只按HasFaction计数，缺少CardType==legion。真实盖伏通用反击战术后持有戒指，报价6误为5；V2恢复后5费真实playCard错误接受。受监督6项中4绿2红、无跳过，Main实读原始red/s02-0605-cost-audit-red.trx并核对源/卡文；红证据保留于D盘artifacts/s02-0605-cost-audit-20261003。
 - 用户已明确批准，只补共享legion类型条件，保留戒指有效阵营；不新增Hidden/正面限制，不改权威支付链或V2格式。子专项7/7、相邻42/42、印刷费用族18/18通过；Main独立最终66/66失败跳过0，main-final/main-final.trx SHA334C88CF…626936、监督receipt test-8e59309f5f084baeb333422a7944d151已实读，临时树首次回收成功。冻结源EE75D9C6…25F44B、新测试0041F10A…4D8F4D7一致。覆盖真实欠费拒绝/足额出牌与V2、正常/转换军团、盖伏战术、敌方正面木马、多军团及移除字段后的动态报价回算；该移除检查不是自然离场命令录像，不能扩大宣称。
 - 全池/共享消费者扫描：semantic注册仅S02-0605，S01-0302同文字家族走friendly-field-legion-count/PublicLegions类型安全出口；潜在误计为10张通用盖伏S01-0016至0021、S02-0015至0018，共享谓词统一排除而无需逐卡特判。现有报价L12GameEngine:2204与支付L12Actions:299–318/686共用修复，已支付/既定历史事实不重算。Main完整Batch已exit0：规则6185/平台435失败跳过0；receipt test-ef4ae773921c40fcbcacfd0fce08e824及test-ecddb032d5f4476d80f8856a9b756e6c已实读，临时树首次回收。干净Release/Git待做，玩家日志仅储备，尚未同步/部署/关闭反馈。
+- 最终01:00:19干净Release应用d26e55704c6bf956b0a9e1bbae01cf4090233f48已通过，规则6185/平台435失败跳过0、UI354/卡图324+42/前端构建/测试前端同源复用与制品成功；原始rules TRX SHA5489B6B08D830118D3216C2958F61C137F4244F240073C84B43C98B024E03CEE，platform TRX SHAA7919FA534272A58A4AD8E7C1410731F300DA204D8D16BF906819F5001427938，timings success及包SHA已Main核对。鲍斯修复提交79241e86，E4方案单独d26e5570；Git远端精确读回同一候选，无冲突，未部署/维护/线上关闭，玩家条目只储备。
 
 ## EFFECT-20261003-TROJAN-PUBLIC-HOST｜盖伏木马误减己方兵力、未发动提前到期与腐秽后排误限（验收同步、测试已部署）
 
