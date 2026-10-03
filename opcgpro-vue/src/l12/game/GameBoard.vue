@@ -31,6 +31,7 @@ import BattlePlayerIdentity from './BattlePlayerIdentity.vue'
 import PhasePlayback from './PhasePlayback.vue'
 import PromptOverlay from './PromptOverlay.vue'
 import { battlefieldSlotLabel, battlefieldTargetLabel } from './battlefieldTargetPresentation'
+import { battleActionActorPresentation, battleActionDirectSubmitStatus, battleActionSelectionRange, battleActionSelectionStatus } from './battleActionPresentation'
 import SingleCardPicker, { type SingleCardPickerItem } from '../SingleCardPicker.vue'
 import CardImage from '../CardImage.vue'
 import CardDetailContent from '../CardDetailContent.vue'
@@ -361,12 +362,13 @@ function inlinePromptInstruction(prompt: Prompt) {
   return instruction === inlinePromptTitle(prompt) ? '' : instruction
 }
 function inlinePromptRange(prompt: Prompt) {
-  if (prompt.maxChoose === 0) return '无需选择；请确认信息'
-  if (prompt.minChoose === prompt.maxChoose) return `需选择 ${prompt.maxChoose} 项`
-  return `需选择 ${prompt.minChoose} 至 ${prompt.maxChoose} 项`
+  return battleActionSelectionRange(prompt.minChoose, prompt.maxChoose)
 }
 function inlinePromptActor(prompt: Prompt) {
-  return prompt.playerIndex === controlledPlayerIndex.value ? '你正在选择' : '对手正在选择'
+  return battleActionActorPresentation(prompt.playerIndex, controlledPlayerIndex.value).label
+}
+function inlinePromptActorState(prompt: Prompt) {
+  return battleActionActorPresentation(prompt.playerIndex, controlledPlayerIndex.value).state
 }
 function inlinePromptPayment(prompt: Prompt) {
   return promptPaymentCopy(prompt)
@@ -411,8 +413,10 @@ function inlinePromptCurrentSummary(prompt: Prompt) {
 function inlinePromptBrief(prompt: Prompt) {
   const selected = prompt.promptId === boardTargetPrompt.value?.promptId ? boardTargetIds.value.length
     : prompt.promptId === resourceSelectionPrompt.value?.promptId ? paymentResourceIds.value.length : null
-  return selected === null ? `${inlinePromptTitle(prompt)} · 点击空格即提交`
-    : `${inlinePromptTitle(prompt)} · 已选 ${selected}/${prompt.maxChoose}`
+  const status = selected === null
+    ? battleActionDirectSubmitStatus()
+    : battleActionSelectionStatus(selected, prompt.maxChoose)
+  return `${inlinePromptActor(prompt)} · ${inlinePromptTitle(prompt)} · ${status}`
 }
 function inlinePromptExitSummary(prompt: Prompt, choice: string) {
   const label = prompt.choiceLabels?.[choice]?.trim() || (choice === 'skip' ? '不发动' : '取消')
@@ -1561,13 +1565,11 @@ function statusTexts(card: Card) {
         <section v-if="mobileMoralePickerEnabled && mobileMoralePickerOpen" class="mobile-record-overlay mobile-morale-overlay mobile-safe-overlay" role="dialog" aria-modal="true" aria-label="选择士气">
           <header><div><h2>{{ mobileMoraleInteractive ? '选择士气' : '我方士气' }}</h2><small>{{ mobileMoraleInteractive ? `已选择 ${selectedPaymentIds.length}/${mobilePaymentPrompt?.maxChoose ?? 0}` : `活跃 ${viewMe.morale.filter(item => !item.tapped).length} / 共 ${viewMe.morale.length}` }}</small></div><div class="mobile-morale-header-actions"><button type="button" @click="mobileMoralePickerOpen = false; mobileMoralePickerMinimized = true">最小化</button><button type="button" @click="mobileMoralePickerOpen = false; mobileMoralePickerMinimized = false">返回对局</button></div></header>
           <div v-if="mobilePaymentPrompt" class="mobile-morale-prompt inline-prompt-copy">
-            <strong>{{ inlinePromptTitle(mobilePaymentPrompt) }}</strong>
-            <span>{{ inlinePromptActor(mobilePaymentPrompt) }}</span>
-            <span v-if="promptSituationCopy(mobilePaymentPrompt)">{{ promptSituationCopy(mobilePaymentPrompt) }}</span>
-            <span v-if="inlinePromptInstruction(mobilePaymentPrompt)">{{ inlinePromptInstruction(mobilePaymentPrompt) }}</span>
-            <span role="status">{{ inlinePromptRange(mobilePaymentPrompt) }}；{{ inlinePromptSelectionSummary(mobilePaymentPrompt, selectedPaymentIds) }}</span>
-            <span v-if="inlinePromptPayment(mobilePaymentPrompt)">{{ inlinePromptPayment(mobilePaymentPrompt) }}</span>
-            <span v-if="promptSubmissionCopy(mobilePaymentPrompt)">{{ promptSubmissionCopy(mobilePaymentPrompt) }}</span>
+            <div class="inline-prompt-operation" :data-actor-state="inlinePromptActorState(mobilePaymentPrompt)"><small class="inline-prompt-actor-badge">{{ inlinePromptActor(mobilePaymentPrompt) }}</small><strong>{{ inlinePromptTitle(mobilePaymentPrompt) }}</strong></div>
+            <div class="inline-prompt-legal"><span v-if="promptSituationCopy(mobilePaymentPrompt)">{{ promptSituationCopy(mobilePaymentPrompt) }}</span><span v-if="inlinePromptInstruction(mobilePaymentPrompt)">{{ inlinePromptInstruction(mobilePaymentPrompt) }}</span><span>{{ inlinePromptRange(mobilePaymentPrompt) }}</span></div>
+            <div class="inline-prompt-pending"><span role="status">{{ inlinePromptSelectionSummary(mobilePaymentPrompt, selectedPaymentIds) }}</span></div>
+            <div v-if="inlinePromptPayment(mobilePaymentPrompt)" class="inline-prompt-payment" :data-payment-status="mobilePaymentPrompt.presentation?.paymentStatus"><span>{{ inlinePromptPayment(mobilePaymentPrompt) }}</span></div>
+            <div v-if="promptSubmissionCopy(mobilePaymentPrompt)" class="inline-prompt-result"><span>{{ promptSubmissionCopy(mobilePaymentPrompt) }}</span></div>
           </div>
           <p v-else class="mobile-morale-prompt">这里展示当前士气状态；需要支付或返还时会自动变为可选择面板。</p>
           <div class="mobile-morale-picker" aria-label="可选择的士气与符文">
@@ -1598,14 +1600,11 @@ function statusTexts(card: Card) {
         <section v-if="mobileLandscapeViewport && !readOnly && inlinePromptInfoOpen && inlineInfoPrompt" class="mobile-record-overlay mobile-morale-overlay mobile-safe-overlay inline-prompt-info-overlay" role="dialog" aria-modal="false" aria-label="当前选择说明">
           <header><h2>{{ inlinePromptTitle(inlineInfoPrompt) }}</h2><button ref="inlinePromptInfoClose" type="button" @click="closeInlinePromptInfo">返回选择</button></header>
           <div class="inline-prompt-info-body">
-            <p>{{ inlinePromptActor(inlineInfoPrompt) }}</p>
-            <p v-if="promptSituationCopy(inlineInfoPrompt)">{{ promptSituationCopy(inlineInfoPrompt) }}</p>
-            <p v-if="inlinePromptInstruction(inlineInfoPrompt)">{{ inlinePromptInstruction(inlineInfoPrompt) }}</p>
-            <p>{{ inlinePromptRange(inlineInfoPrompt) }}</p>
-            <p>{{ inlinePromptCurrentSummary(inlineInfoPrompt) }}</p>
-            <p v-if="inlineInfoPrompt.promptId === boardSlotPrompt?.promptId">点击绿色高亮空格即提交选择。</p>
-            <p v-if="inlinePromptPayment(inlineInfoPrompt)">{{ inlinePromptPayment(inlineInfoPrompt) }}</p>
-            <p v-if="promptSubmissionCopy(inlineInfoPrompt)">{{ inlinePromptConsequenceLead(inlineInfoPrompt) }}：{{ promptSubmissionCopy(inlineInfoPrompt) }}</p>
+            <p class="inline-info-operation" :data-actor-state="inlinePromptActorState(inlineInfoPrompt)"><strong>{{ inlinePromptActor(inlineInfoPrompt) }}</strong></p>
+            <p class="inline-info-legal"><span v-if="promptSituationCopy(inlineInfoPrompt)">{{ promptSituationCopy(inlineInfoPrompt) }}</span><span v-if="inlinePromptInstruction(inlineInfoPrompt)">{{ inlinePromptInstruction(inlineInfoPrompt) }}</span><span>{{ inlinePromptRange(inlineInfoPrompt) }}</span></p>
+            <p class="inline-info-pending"><span>{{ inlineInfoPrompt.promptId === boardSlotPrompt?.promptId ? battleActionDirectSubmitStatus() : inlinePromptCurrentSummary(inlineInfoPrompt) }}</span></p>
+            <p v-if="inlinePromptPayment(inlineInfoPrompt)" class="inline-info-payment" :data-payment-status="inlineInfoPrompt.presentation?.paymentStatus"><span>{{ inlinePromptPayment(inlineInfoPrompt) }}</span></p>
+            <p v-if="promptSubmissionCopy(inlineInfoPrompt)" class="inline-info-result"><span>{{ inlinePromptConsequenceLead(inlineInfoPrompt) }}：{{ promptSubmissionCopy(inlineInfoPrompt) }}</span></p>
             <p v-if="inlineInfoPrompt.validChoices.includes('skip')">{{ inlinePromptExitSummary(inlineInfoPrompt, 'skip') }}</p>
             <p v-if="inlineInfoPrompt.validChoices.includes('cancel')">{{ inlinePromptExitSummary(inlineInfoPrompt, 'cancel') }}</p>
           </div>
@@ -1626,13 +1625,11 @@ function statusTexts(card: Card) {
       <BattleDockPortal lane="context"><div v-if="boardTargetPrompt && !readOnly && !boardControlMinimized" class="board-target-controls inline-prompt-controls">
         <span v-if="mobileLandscapeViewport" class="inline-prompt-brief" role="status">{{ inlinePromptBrief(boardTargetPrompt) }}</span>
         <div v-if="!mobileLandscapeViewport" class="inline-prompt-copy">
-          <strong>{{ inlinePromptTitle(boardTargetPrompt) }}</strong>
-          <span>{{ inlinePromptActor(boardTargetPrompt) }}</span>
-          <span v-if="promptSituationCopy(boardTargetPrompt)">{{ promptSituationCopy(boardTargetPrompt) }}</span>
-          <span v-if="inlinePromptInstruction(boardTargetPrompt)">{{ inlinePromptInstruction(boardTargetPrompt) }}</span>
-          <span role="status">{{ inlinePromptRange(boardTargetPrompt) }}；{{ boardTargetSelectionSummary }}</span>
-          <span v-if="inlinePromptPayment(boardTargetPrompt)">{{ inlinePromptPayment(boardTargetPrompt) }}</span>
-          <span v-if="promptSubmissionCopy(boardTargetPrompt)">{{ promptSubmissionCopy(boardTargetPrompt) }}</span>
+          <div class="inline-prompt-operation" :data-actor-state="inlinePromptActorState(boardTargetPrompt)"><small class="inline-prompt-actor-badge">{{ inlinePromptActor(boardTargetPrompt) }}</small><strong>{{ inlinePromptTitle(boardTargetPrompt) }}</strong></div>
+          <div class="inline-prompt-legal"><span v-if="promptSituationCopy(boardTargetPrompt)">{{ promptSituationCopy(boardTargetPrompt) }}</span><span v-if="inlinePromptInstruction(boardTargetPrompt)">{{ inlinePromptInstruction(boardTargetPrompt) }}</span><span>{{ inlinePromptRange(boardTargetPrompt) }}</span></div>
+          <div class="inline-prompt-pending"><span role="status">{{ boardTargetSelectionSummary }}</span></div>
+          <div v-if="inlinePromptPayment(boardTargetPrompt)" class="inline-prompt-payment" :data-payment-status="boardTargetPrompt.presentation?.paymentStatus"><span>{{ inlinePromptPayment(boardTargetPrompt) }}</span></div>
+          <div v-if="promptSubmissionCopy(boardTargetPrompt)" class="inline-prompt-result"><span>{{ promptSubmissionCopy(boardTargetPrompt) }}</span></div>
         </div>
         <small v-if="mobileLandscapeViewport" class="mobile-target-hand-counts" :aria-label="`对手手牌 ${viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0} 张；我方手牌 ${viewMe.handCount ?? viewMe.hand?.length ?? 0} 张`">对{{ viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0 }}·我{{ viewMe.handCount ?? viewMe.hand?.length ?? 0 }}</small>
         <button v-if="mobileLandscapeViewport" ref="inlinePromptInfoTrigger" type="button" @click="openInlinePromptInfo">任务说明</button>
@@ -1645,13 +1642,10 @@ function statusTexts(card: Card) {
         <CardImage v-if="boardSlotPreview" :card-id="boardSlotPreview.cardId" :legacy-url="boardSlotPreview.imageUrl" :alt="boardSlotPreview.name" intent="board" eager
           @mouseenter="focusCard = boardSlotPreview" @click="focusCard = boardSlotPreview" />
         <div v-if="!mobileLandscapeViewport" class="inline-prompt-copy">
-          <strong>{{ inlinePromptTitle(boardSlotPrompt) }}</strong>
-          <span>{{ inlinePromptActor(boardSlotPrompt) }}</span>
-          <span v-if="promptSituationCopy(boardSlotPrompt)">{{ promptSituationCopy(boardSlotPrompt) }}</span>
-          <span v-if="inlinePromptInstruction(boardSlotPrompt)">{{ inlinePromptInstruction(boardSlotPrompt) }}</span>
-          <span>{{ inlinePromptRange(boardSlotPrompt) }}；可选：{{ boardSlotChoices }}</span>
-          <span class="inline-prompt-action">点击绿色高亮空格即提交选择</span>
-          <span v-if="promptSubmissionCopy(boardSlotPrompt)">{{ promptSubmissionCopy(boardSlotPrompt) }}</span>
+          <div class="inline-prompt-operation" :data-actor-state="inlinePromptActorState(boardSlotPrompt)"><small class="inline-prompt-actor-badge">{{ inlinePromptActor(boardSlotPrompt) }}</small><strong>{{ inlinePromptTitle(boardSlotPrompt) }}</strong></div>
+          <div class="inline-prompt-legal"><span v-if="promptSituationCopy(boardSlotPrompt)">{{ promptSituationCopy(boardSlotPrompt) }}</span><span v-if="inlinePromptInstruction(boardSlotPrompt)">{{ inlinePromptInstruction(boardSlotPrompt) }}</span><span>{{ inlinePromptRange(boardSlotPrompt) }}；可选：{{ boardSlotChoices }}</span></div>
+          <div class="inline-prompt-pending direct-submit"><span class="inline-prompt-action">{{ battleActionDirectSubmitStatus() }}</span></div>
+          <div v-if="promptSubmissionCopy(boardSlotPrompt)" class="inline-prompt-result"><span>{{ promptSubmissionCopy(boardSlotPrompt) }}</span></div>
         </div>
         <small v-if="mobileLandscapeViewport" class="mobile-target-hand-counts" :aria-label="`对手手牌 ${viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0} 张；我方手牌 ${viewMe.handCount ?? viewMe.hand?.length ?? 0} 张`">对{{ viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0 }}·我{{ viewMe.handCount ?? viewMe.hand?.length ?? 0 }}</small>
         <button v-if="mobileLandscapeViewport" ref="inlinePromptInfoTrigger" type="button" @click="openInlinePromptInfo">任务说明</button>
@@ -1662,13 +1656,11 @@ function statusTexts(card: Card) {
       <BattleDockPortal lane="context"><div v-if="resourceSelectionPrompt && !readOnly && !boardControlMinimized" class="board-target-controls resource-payment-controls inline-prompt-controls">
         <span v-if="mobileLandscapeViewport" class="inline-prompt-brief" role="status">{{ inlinePromptBrief(resourceSelectionPrompt) }}</span>
         <div v-if="!mobileLandscapeViewport" class="inline-prompt-copy">
-          <strong>{{ inlinePromptTitle(resourceSelectionPrompt) }}</strong>
-          <span>{{ inlinePromptActor(resourceSelectionPrompt) }}</span>
-          <span v-if="promptSituationCopy(resourceSelectionPrompt)">{{ promptSituationCopy(resourceSelectionPrompt) }}</span>
-          <span v-if="inlinePromptInstruction(resourceSelectionPrompt)">{{ inlinePromptInstruction(resourceSelectionPrompt) }}</span>
-          <span role="status">{{ inlinePromptRange(resourceSelectionPrompt) }}；{{ inlinePromptSelectionSummary(resourceSelectionPrompt, paymentResourceIds) }}</span>
-          <span v-if="inlinePromptPayment(resourceSelectionPrompt)">{{ inlinePromptPayment(resourceSelectionPrompt) }}</span>
-          <span v-if="promptSubmissionCopy(resourceSelectionPrompt)">{{ promptSubmissionCopy(resourceSelectionPrompt) }}</span>
+          <div class="inline-prompt-operation" :data-actor-state="inlinePromptActorState(resourceSelectionPrompt)"><small class="inline-prompt-actor-badge">{{ inlinePromptActor(resourceSelectionPrompt) }}</small><strong>{{ inlinePromptTitle(resourceSelectionPrompt) }}</strong></div>
+          <div class="inline-prompt-legal"><span v-if="promptSituationCopy(resourceSelectionPrompt)">{{ promptSituationCopy(resourceSelectionPrompt) }}</span><span v-if="inlinePromptInstruction(resourceSelectionPrompt)">{{ inlinePromptInstruction(resourceSelectionPrompt) }}</span><span>{{ inlinePromptRange(resourceSelectionPrompt) }}</span></div>
+          <div class="inline-prompt-pending"><span role="status">{{ inlinePromptSelectionSummary(resourceSelectionPrompt, paymentResourceIds) }}</span></div>
+          <div v-if="inlinePromptPayment(resourceSelectionPrompt)" class="inline-prompt-payment" :data-payment-status="resourceSelectionPrompt.presentation?.paymentStatus"><span>{{ inlinePromptPayment(resourceSelectionPrompt) }}</span></div>
+          <div v-if="promptSubmissionCopy(resourceSelectionPrompt)" class="inline-prompt-result"><span>{{ promptSubmissionCopy(resourceSelectionPrompt) }}</span></div>
         </div>
         <button v-if="mobileLandscapeViewport" ref="inlinePromptInfoTrigger" type="button" @click="openInlinePromptInfo">任务说明</button>
         <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
@@ -1745,11 +1737,13 @@ function statusTexts(card: Card) {
 .inline-prompt-copy strong{max-width:none;color:#fff}
 .inline-prompt-copy span{color:#c7d3ce}
 .inline-prompt-copy .inline-prompt-action{color:#72e09a;font-weight:900}
+.inline-prompt-copy>div{display:flex;min-width:0;flex-wrap:wrap;gap:2px 8px;align-items:baseline}.inline-prompt-operation{padding-bottom:3px;border-bottom:1px solid rgba(238,238,228,.18)}.inline-prompt-actor-badge{padding:2px 5px;border:1px solid #5a6964;background:#101718;color:#c9d3ce;font-size:var(--l12-board-micro,9px);font-weight:900;white-space:nowrap}.inline-prompt-operation[data-actor-state="self"]>.inline-prompt-actor-badge{border-color:#4d9e72;color:#79e4a3}.inline-prompt-operation[data-actor-state="opponent"]>.inline-prompt-actor-badge{border-color:#8f454b;color:#ef9297}.inline-prompt-legal{flex-direction:column}.inline-prompt-pending{padding:2px 6px;border-left:3px solid #e2bd60;background:rgba(226,189,96,.08)}.inline-prompt-pending.direct-submit{border-left-color:#72e09a;background:rgba(82,213,138,.08)}.inline-prompt-payment[data-payment-status="paid"]>span{color:#f4d994}.inline-prompt-payment[data-payment-status="pending"]>span{color:#efb771}
 .mobile-morale-prompt.inline-prompt-copy{flex:0 1 auto;max-height:112px;margin:7px 0 6px}
 .inline-prompt-brief{min-width:0;color:#e7ece6!important;font-weight:900;overflow-wrap:anywhere}
 .inline-prompt-info-overlay{z-index:2147483602}
 .inline-prompt-info-body{min-height:0;overflow:auto;padding:8px 2px;color:#edf1ec;font-size:12px;line-height:1.45;overflow-wrap:anywhere}
 .inline-prompt-info-body p{margin:0 0 7px}
+.inline-prompt-info-body p{display:flex;flex-direction:column;gap:3px;padding:7px 8px;border-left:3px solid #3e5552;background:#0b1213}.inline-prompt-info-body .inline-info-operation{display:inline-flex;width:max-content;max-width:100%;padding:4px 8px;border:1px solid #67dca0;background:#0d1c15;color:#79e4a3}.inline-prompt-info-body .inline-info-operation[data-actor-state="opponent"]{border-color:#e06d75;color:#ef9297}.inline-prompt-info-body .inline-info-pending{border-left-color:#e2bd60}.inline-prompt-info-body .inline-info-payment[data-payment-status="paid"]{border-left-color:#f4d994;color:#f4d994}
 .board-slot-controls .l12-card-image{width:52px;height:72px;background:#050708;cursor:pointer}.board-slot-controls span{color:#72e09a;font-weight:900}
 .inspector-statuses{display:grid;gap:4px;margin:8px 0 0;padding:0;list-style:none}.inspector-statuses li{padding:4px 6px;border-left:2px solid #70d7df;background:rgba(112,215,223,.08);color:#d9ddd7;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:1.45}
 .inspector-card-tags{display:flex;box-sizing:border-box;width:max-content;max-width:100%;align-self:center;justify-content:center;flex-wrap:wrap;gap:5px;margin:0 auto 7px}.inspector-card-tags span{flex:0 0 auto;padding:2px 6px;border:1px solid #4f5e5b;background:#111819;color:#8fdad7;font-size:var(--l12-board-copy,13px);font-weight:900;white-space:nowrap}

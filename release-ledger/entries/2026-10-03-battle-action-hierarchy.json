@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-03-battle-action-hierarchy",
+  "date": "2026-10-03",
+  "audience": "players",
+  "title": "对战当前行动提示",
+  "changes": [{
+    "category": "ui",
+    "text": "对战选择时更清楚地区分当前操作者、可选目标和已选对象，费用已支付与待支付保持分明；选择空格即提交会提前提示，等待对手选择时不再显示结束回合。原战场布局及操作流程保持。",
+    "paths": ["opcgpro-vue/src/l12/game/GameBoard.vue", "opcgpro-vue/src/l12/game/GameActions.vue", "opcgpro-vue/src/l12/game/PlayerMat.vue", "opcgpro-vue/src/l12/game/PromptOverlay.vue", "opcgpro-vue/src/l12/game/battleActionPresentation.ts"]
+  }]
+}

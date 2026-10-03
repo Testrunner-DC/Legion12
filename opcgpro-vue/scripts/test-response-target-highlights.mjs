@@ -74,7 +74,11 @@ unmount.forEach(fn => fn()); scope.stop(); assert.deepEqual(highlights(), [])
 
 const mat = readFileSync(new URL('../src/l12/game/PlayerMat.vue', import.meta.url), 'utf8')
 const board = readFileSync(new URL('../src/l12/game/GameBoard.vue', import.meta.url), 'utf8')
-assert.equal((mat.match(/responseTargetIds/g) ?? []).length, 3, 'highlight prop binds battlefield and morale visuals without granting permission')
+const guidance = mat.match(/const actionGuidanceActive = computed\(\(\) => Boolean\([\s\S]*?\n\)\)/)?.[0]
+assert.ok(guidance, 'E2 presentation-only guidance block must be identifiable')
+assert.match(guidance, /\|\| props\.responseTargetIds\?\.length,/, 'response targets may activate the visual guidance only')
+assert.equal((mat.replace(guidance, '').match(/responseTargetIds/g) ?? []).length, 3,
+  'outside presentation-only guidance, highlight prop binds battlefield and morale visuals without granting permission')
 assert.match(mat, /return Boolean\(card\?\.instanceId && props\.responseTargetIds\?\.includes\(card\.instanceId\)\)/,
   'response highlight must require a real instance while allowing a covered battlefield target')
 assert.match(mat, /'response-target': responseTargetIds\?\.includes\(morale\.instanceId\)/,

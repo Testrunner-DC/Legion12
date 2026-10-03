@@ -12,6 +12,7 @@ import SetupDecisionClock from './SetupDecisionClock.vue'
 import { landscapeTeleportTarget } from '../mobileViewport'
 import { battlefieldTargetIds, battlefieldTargetLabel, findBattlefieldTarget } from './battlefieldTargetPresentation'
 import { mulliganCopy, promptConsequenceCopy, promptInstructionCopy, promptPaymentCopy, promptSituationCopy, promptSubmissionCopy } from './promptPlayerCopy'
+import { battleActionActorPresentation, battleActionSelectionRange, battleActionSelectionStatus } from './battleActionPresentation'
 
 const props = withDefaults(defineProps<{
   game: GameState
@@ -582,23 +583,20 @@ const promptSituation = computed(() => prompt.value ? promptSituationCopy(prompt
 const promptInstruction = computed(() => prompt.value
   ? promptInstructionCopy(prompt.value, legacyPromptInstruction(prompt.value)) : '')
 const promptActor = computed(() => {
-  const playerIndex = prompt.value?.playerIndex
-  if (playerIndex === undefined) return ''
-  return playerIndex === props.game.you ? '你正在选择' : '对手正在选择'
+  return battleActionActorPresentation(prompt.value?.playerIndex, sandboxActorIndex.value, props.readOnly)
 })
 const promptSelectionRange = computed(() => {
   const current = prompt.value
   if (!current) return ''
-  if (current.maxChoose === 0) return '无需选择；请确认信息'
-  return current.minChoose === current.maxChoose
-    ? `需选择 ${current.maxChoose} 项`
-    : `需选择 ${current.minChoose} 至 ${current.maxChoose} 项`
+  return battleActionSelectionRange(current.minChoose, current.maxChoose)
 })
+const promptPendingSelection = computed(() => prompt.value
+  ? battleActionSelectionStatus(activeSelected.value.length, prompt.value.maxChoose) : '')
 const minimizedTask = computed(() => {
   if (!prompt.value) return isMulligan.value
     ? props.mulliganSelectedIds.length ? `调度：已选 ${props.mulliganSelectedIds.length} 张待换` : '调度：未选牌，确认后保留全部'
     : overlayTitle.value
-  return [promptActor.value, promptSelectionRange.value,
+  return [promptActor.value.label, promptSelectionRange.value,
     prompt.value.presentation?.paymentStatus === 'paid' ? '费用已支付' : prompt.value.presentation?.paymentStatus === 'pending' ? '费用待支付' : '',
     promptInstruction.value,
     prompt.value.presentation?.paymentSummary?.trim()].filter(Boolean).join('；')
@@ -820,7 +818,7 @@ function kindLabel() {
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
         <main class="prompt-choice-body" data-ui-contract="mobile-choice-scroll-body"
           @touchstart.passive="onChoiceBodyTouchStart" @touchmove="onChoiceBodyTouchMove" @touchend="onChoiceBodyTouchEnd" @touchcancel="onChoiceBodyTouchEnd">
-        <div class="prompt-task-context"><span class="prompt-actor">{{ promptActor }}</span><span class="prompt-selection-range">{{ promptSelectionRange }}</span></div>
+        <div class="prompt-task-context" :data-actor-state="promptActor.state"><span class="prompt-actor">{{ promptActor.label }}</span><span v-if="!isPureEffectDecision && prompt.data?.choiceMode !== 'instant'" class="prompt-selection-range" role="status">{{ promptSelectionRange }} · {{ promptPendingSelection }}</span><span v-else class="prompt-selection-range">{{ promptSelectionRange }}</span></div>
         <p v-if="promptInstruction" class="prompt-instruction">{{ promptInstruction }}</p>
         <p v-if="prompt.presentation?.paymentStatus && prompt.presentation?.paymentSummary" class="prompt-payment-state"
           :data-payment-status="prompt.presentation.paymentStatus">{{ promptPaymentCopy(prompt) }}</p>
@@ -1063,8 +1061,8 @@ function kindLabel() {
 .prompt-choices.effect-option-list>button{position:relative}.trigger-order-hint{position:absolute;left:4px;top:4px;display:block;margin:0;padding:2px 5px;border:1px solid #f2d56d;background:#241b07;color:#ffe78d;font-size:var(--l12-board-micro,9px);font-weight:900;line-height:1.2}
 .prompt-choices>button.decline-action,.prompt-action-footer>button.decline-action{box-sizing:border-box;min-width:112px!important;min-height:44px!important;padding:9px 16px!important;font-size:var(--l12-board-copy,13px)!important;line-height:1.35}
 .effect-decision-header h2{margin-bottom:8px}.effect-decision-text{margin:0;padding:11px 13px;border:1px solid #3b4542;background:#0b1011;color:#eef0eb;font-size:var(--l12-board-copy,13px);line-height:1.75;white-space:pre-wrap}.prompt-panel.effect-decision .prompt-choices.effect-option-list{max-width:520px}.prompt-panel.effect-decision .prompt-choices.effect-option-list>button{text-align:center;font-size:var(--l12-board-copy,13px)}
-.prompt-instruction{margin:10px 3px 4px;color:#b9c1bd;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:1.55}.choice-consequence{display:block;margin-top:4px;color:#9fb8b4;font-size:var(--l12-board-micro,9px);line-height:1.3}
-.prompt-payment-state,.prompt-submit-consequence,.prompt-exit-consequence{margin:6px 3px;color:#d3ded8;font-size:var(--l12-board-copy,13px);line-height:1.45}.prompt-payment-state[data-payment-status="paid"]{color:#f4d994}.prompt-minimized-task{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prompt-instruction,.prompt-payment-state,.prompt-submit-consequence{margin:6px 3px;padding:5px 8px;border-left:3px solid #425551;background:#0b1112;color:#cfd8d3;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:1.45}.choice-consequence{display:block;margin-top:4px;color:#9fb8b4;font-size:var(--l12-board-micro,9px);line-height:1.3}
+.prompt-exit-consequence{margin:6px 3px;color:#d3ded8;font-size:var(--l12-board-copy,13px);line-height:1.45}.prompt-payment-state[data-payment-status="paid"]{border-left-color:#f4d994;color:#f4d994}.prompt-payment-state[data-payment-status="pending"]{border-left-color:#d69b58}.prompt-minimized-task{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .prompt-auto-close{margin:8px 3px;padding:8px 10px;border-left:3px solid #d5b85e;background:#211c0f;color:#f1d77d;font-size:var(--l12-board-copy,13px);font-weight:900;line-height:1.45}.prompt-minimized-bar .prompt-auto-close{max-width:min(360px,calc(100vw - 32px));margin:0;box-shadow:0 12px 35px #000}
 .prompt-panel.single-card-row{width:min(920px,calc(100vw - 36px))}.l12-prompt-overlay.information-confirm .prompt-panel{width:min(850px,calc(100vw - 36px));overflow-y:auto}.l12-prompt-overlay.information-confirm .prompt-card-strip{justify-content:center}.mulligan-panel{width:min(920px,calc(100vw - 36px))!important}.l12-prompt-overlay.disaster-choice .prompt-panel{width:min(980px,calc(100vw - 36px))}
 .placement-workspace{display:grid;grid-template-columns:1fr 1.1fr 1fr;gap:8px;min-height:166px;margin:9px 3px;padding:8px;border:1px solid rgba(238,238,228,.28);background:#090d0e}.placement-workspace>section{min-width:0;padding:7px;border:1px solid #39413f;background:#101516}.placement-workspace>section>header{display:block;min-height:32px;padding:0 0 5px;border-bottom:1px solid #323a38}.placement-workspace>section>header strong{display:block;color:#fff;font-size:var(--l12-board-copy,13px)}.placement-workspace>section>header small{display:block;margin-top:2px;color:#7f8884;font-size:var(--l12-board-copy,13px);line-height:1.35}.placement-destination.top{border-color:#3b9da5}.placement-destination.bottom{border-color:#9c3f46}.placement-row{min-height:124px;align-items:center;gap:4px;padding:5px 1px}.placement-row>p{margin:auto;color:#626b68;font-size:var(--l12-board-copy,13px);line-height:1.5;text-align:center}.placement-buttons{display:grid;grid-template-columns:1fr 1fr;gap:5px}.placement-buttons button{box-sizing:border-box;height:44px;min-height:44px;max-height:44px;padding:5px 3px;border:1px solid #dcd8cc;background:#1a2020;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;line-height:1.25;text-align:center;white-space:normal;overflow:hidden;text-wrap:balance}.placement-buttons button:first-child{border-color:#5cbac1}.placement-buttons button:last-child{border-color:#ba555c}.placement-buttons button:disabled{opacity:.38}
@@ -1104,7 +1102,7 @@ function kindLabel() {
 .l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip[data-more-start="false"][data-more-end="true"]{box-shadow:inset -16px 0 14px -13px #7adce5}
 .l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip[data-more-start="true"][data-more-end="false"]{box-shadow:inset 16px 0 14px -13px #7adce5}
 .l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip[data-more-start="true"][data-more-end="true"]{box-shadow:inset 16px 0 14px -13px #7adce5,inset -16px 0 14px -13px #7adce5}
-.prompt-task-context{display:flex;flex-wrap:wrap;gap:5px 12px;margin:8px 3px 0;color:#e8e2cc;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:1.4}
+.prompt-task-context{display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px;margin:8px 3px 0;color:#e8e2cc;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:1.4}.prompt-task-context>span{padding:4px 8px;border:1px solid #43504d;background:#0c1213}.prompt-task-context .prompt-selection-range{min-width:0;flex:1 1 180px;color:#e8e2cc}.prompt-task-context[data-actor-state="self"] .prompt-actor{border-color:#4d9e72;background:#0d1c15;color:#79e4a3}.prompt-task-context[data-actor-state="opponent"] .prompt-actor{border-color:#8f454b;background:#1d1012;color:#ef9297}
 .prompt-information-panel{display:flex;flex-direction:column;overflow:hidden}
 .prompt-information-panel>.prompt-choice-body{min-height:0;flex:1 1 auto;overflow-x:hidden;overflow-y:auto}
 .prompt-information-panel>.prompt-action-footer{flex:0 0 auto}

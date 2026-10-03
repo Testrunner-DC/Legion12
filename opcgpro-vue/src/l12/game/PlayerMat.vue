@@ -88,6 +88,12 @@ watch(() => props.interactionPromptActive, active => {
   abilityCardMinimized.value = false
 })
 const currentMoraleLimit = computed(() => props.player.morale.length)
+const actionGuidanceActive = computed(() => Boolean(
+  props.targetableIds?.length
+  || props.promptSlotIds?.some(choice => choice !== 'skip' && choice !== 'cancel')
+  || props.paymentChoiceIds?.length
+  || props.responseTargetIds?.length,
+))
 const topGraveyard = computed(() => props.player.graveyard?.at(-1) ?? null)
 type MoraleResource = PlayerView['morale'][number]
 const visibleTemporaryMoraleCount = computed(() => Math.max(0, Math.floor(props.player.temporaryMorale ?? 0)))
@@ -326,7 +332,7 @@ function beginCardAbility(card: Card) {
 </script>
 
 <template>
-  <section v-bind="$attrs" class="l12-player-mat" :class="[`side-${side}`, `faction-${player.faction}`, { 'active-turn': active }]"
+  <section v-bind="$attrs" class="l12-player-mat" :class="[`side-${side}`, `faction-${player.faction}`, { 'active-turn': active, 'action-guidance': actionGuidanceActive }]"
     :data-player-index="player.playerIndex">
     <div class="commander-zone">
       <span v-if="mobileMoralePicker" class="mobile-hand-count" :aria-label="`${side === 'opponent' ? '对手' : '我方'}手牌 ${player.handCount ?? player.hand?.length ?? 0} 张`"><i>手牌</i><b>{{ player.handCount ?? player.hand?.length ?? 0 }}</b></span>
@@ -558,6 +564,7 @@ function beginCardAbility(card: Card) {
 .formation-slot.payment-resource{z-index:9;border-color:#52d58a!important;box-shadow:0 0 0 2px #52d58a,0 0 18px rgba(82,213,138,.55)!important;cursor:pointer}.formation-slot.payment-selected{border-color:#f1c75b!important;box-shadow:0 0 0 3px #f1c75b,0 0 22px rgba(241,199,91,.7)!important}
 .formation-slot.resource-ready:not(.payment-resource):not(.combat-attacker):not(.combat-target){border-color:#8cdbad;box-shadow:0 0 0 1px rgba(140,219,173,.72),0 0 10px rgba(82,213,138,.28)}
 .formation-slot.prompt-selected{z-index:10;border-color:#f1c75b!important;box-shadow:0 0 0 3px #f1c75b,0 0 22px rgba(241,199,91,.68)!important}.formation-slot.prompt-selected::after{content:'已选择';position:absolute;z-index:12;right:4px;top:4px;padding:3px 6px;background:#f1c75b;color:#15120a;font-size:var(--l12-board-copy,13px);font-weight:900}
+.l12-player-mat.action-guidance .formation-slot:not(.targetable):not(.available):not(.payment-resource):not(.payment-selected):not(.prompt-selected):not(.response-target){border-color:rgba(116,128,124,.34);background-color:rgba(7,10,11,.54);box-shadow:none}.l12-player-mat.action-guidance .formation-slot:is(.targetable,.available,.payment-resource,.payment-selected,.prompt-selected,.response-target){background-color:rgba(18,31,28,.76)}
 .morale-orb{position:relative;box-sizing:border-box;width:22px;height:22px;min-width:22px;padding:0;border:1px solid #7d8581;border-radius:50%;display:grid;place-items:center;overflow:visible;background:#151a1a;transition:filter .16s,box-shadow .16s,border-color .16s}.morale-orb img{width:14px;height:14px;object-fit:contain}.morale-orb img.god-power-logo{filter:sepia(1) saturate(3.2) hue-rotate(352deg) brightness(1.18)}.morale-orb.active-morale{background:var(--faction-morale-active,#b4b2af);border-color:var(--faction-morale-border,#eee);box-shadow:inset 0 0 0 1px rgba(255,255,255,.36),0 0 6px color-mix(in srgb,var(--faction-morale-active,#b4b2af) 76%,transparent);filter:saturate(1.15) brightness(1.1)}.active-turn .morale-orb.active-morale{box-shadow:inset 0 0 0 1px rgba(255,255,255,.52),0 0 11px color-mix(in srgb,var(--faction-morale-active,#b4b2af) 92%,transparent);filter:saturate(1.25) brightness(1.2)}.morale-orb.rested-morale{background:var(--faction-morale-rested,#555);border-color:#4d5350;box-shadow:inset 0 0 0 3px rgba(0,0,0,.38);filter:saturate(.35) brightness(.52)}.morale-orb.active-god-power{background:#0091be;border-color:#f4dda1;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35),0 0 9px rgba(0,145,190,.72);filter:saturate(1.18) brightness(1.12)}.active-turn .morale-orb.active-god-power{box-shadow:inset 0 0 0 1px rgba(255,255,255,.55),0 0 13px rgba(0,174,222,.9);filter:saturate(1.25) brightness(1.2)}.morale-orb.rested-god-power{background:#264c57;border-color:#7e7459;box-shadow:inset 0 0 0 3px rgba(0,0,0,.35);filter:saturate(.48) brightness(.56)}.morale-orb.unused{opacity:.25}.morale-orb.payable{cursor:pointer;border-color:#72e29f;box-shadow:0 0 9px rgba(82,213,138,.75)}.morale-orb.selected{border:3px solid #fff0a0;box-shadow:0 0 12px #f1c75b}.morale-orb:disabled:not(.payable){cursor:default}
 .morale-lock-icon{position:absolute;z-index:3;right:-10px;top:-3px;box-sizing:border-box;width:12px;height:10px;border:1px solid rgba(218,221,214,.76);border-radius:2px;background:rgba(7,9,10,.82);box-shadow:0 1px 3px rgba(0,0,0,.72);opacity:.78;pointer-events:none;transition:opacity .16s,transform .16s}.morale-lock-icon::before{content:'';position:absolute;left:2px;top:-6px;box-sizing:border-box;width:6px;height:7px;border:2px solid rgba(7,9,10,.92);border-bottom:0;border-radius:5px 5px 0 0}.morale-lock-icon::after{content:'';position:absolute;left:4px;top:3px;width:2px;height:4px;border-radius:1px;background:rgba(225,227,219,.82)}.morale-orb.selected .morale-lock-icon,.morale-orb.payable .morale-lock-icon{opacity:.32;transform:translate(2px,-2px) scale(.84)}
 .morale-orb.temporary-morale{position:relative;border-color:#f2f2ed;background:#050607;box-shadow:0 0 0 2px #121416,0 0 10px rgba(255,255,255,.35);cursor:default;opacity:1!important}.morale-orb.temporary-morale img{width:16px;height:16px;object-fit:contain}.morale-orb.temporary-morale.payable{cursor:pointer;border-color:#72e29f;box-shadow:0 0 0 2px #121416,0 0 12px rgba(82,213,138,.78)}
