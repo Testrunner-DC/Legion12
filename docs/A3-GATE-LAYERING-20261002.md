@@ -1,5 +1,15 @@
 # A3：发布门禁去重与布局证据分层（2026-10-02）
 
+## 2026-10-03：长链测试成功路径的无效分配收敛（待最终Release）
+
+仅优化测试夹具，不改规则内核、平台事务或玩家界面。`LongChainAllCardHarness`和`LongChainAdversarialHarness`原先在每个必须成功的操作前生成完整Atomic快照；该快照仅用于可拒绝命令的失败原子性比较。现只在`requireAccepted:false`路径捕获，A/B/C拒绝比较保持。三路状态、哈希、随机、事件与事实序号、四类投影、隐私哨兵和检查点/Journal恢复均继续断言。
+
+另将成功比较时立即生成的12投影诊断改为失败时生成并缓存；Flow/Event每路序列化一次并复用。新增两项诊断预算测试，锁定成功不调用诊断委托，失败仍保留差异位置、stage、cutpoint和最小命令前缀。没有缩减场景、命令长度、恢复次数或Release/CI兜底。
+
+专项443/443，失败/跳过0；证据`D:\GPT\Legion12\artifacts\rules-backend-closure-20261003\a3-focused-3735853da1264d46a619e320eea8665e`。三文件SHA与TRX绑定于91b66e基线上的最终工作区差异；独立关键复核无P0/P1并冻结。LC06九场景的StableFingerprint、StateBytes、CheckpointRows及Journal/Checkpoint/DatabaseBytes逐项与b1a571b7完整Release相等；200/350/500命令和27次Journal恢复不变。单次Focused用例68.20秒，旧完整Release77.87秒，不同运行负载的单样本不能宣传为稳定性能幅度，亦未测整套分配下降。
+
+当前Adversarial GM没有可拒绝调用，原先也无GM Atomic比较；将来新增此类调用时需补守卫，不借本批扩写未存在场景。后续完整Batch和干净Release结果统一在台账记录。本批不部署、不改变维护。
+
 ## 2026-10-03：正式副本预演后的追加编排优化
 
 - 03:27最终完整Batch通过：规则6101／平台407、失败／跳过0；UI354、卡图324＋42、正式／测试前端构建、41部署故障反例全过。下面提到的首轮失败均保留历史，不计通过；干净提交级Release、真实阶段计时与05:00部署待外部最终回执核验。

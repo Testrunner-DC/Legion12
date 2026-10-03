@@ -102,9 +102,10 @@ internal static class LongChainAllCardHarness
             async Task ApplyGm(string label, L12GmCommand command, bool requireAccepted = true)
             {
                 var canonical = JsonSerializer.Serialize(command);
-                var beforeA = Atomic(primary);
-                var beforeB = Atomic(checkpoint);
-                var beforeC = journalLive is null ? null : Atomic(journalLive);
+                // Must-accept failures stop before atomicity comparison; capture only rejection probes.
+                var beforeA = requireAccepted ? null : Atomic(primary);
+                var beforeB = requireAccepted ? null : Atomic(checkpoint);
+                var beforeC = requireAccepted || journalLive is null ? null : Atomic(journalLive);
                 var a = primary.HandleGm(command);
                 var b = checkpoint.HandleGm(command);
                 var c = journalLive?.HandleGm(command);
@@ -114,8 +115,8 @@ internal static class LongChainAllCardHarness
                 if (a.Accepted) accepted++; else
                 {
                     rejected++;
-                    RejectedAtomic(label + "/A", beforeA, Atomic(primary));
-                    RejectedAtomic(label + "/B", beforeB, Atomic(checkpoint));
+                    RejectedAtomic(label + "/A", beforeA!, Atomic(primary));
+                    RejectedAtomic(label + "/B", beforeB!, Atomic(checkpoint));
                     if (journalLive is not null) RejectedAtomic(label + "/C", beforeC!, Atomic(journalLive));
                 }
                 if (recorder is not null)
@@ -127,9 +128,9 @@ internal static class LongChainAllCardHarness
             async Task ApplyPlayer(string label, int player, L12Command command, bool requireAccepted = true)
             {
                 var canonical = JsonSerializer.Serialize(command);
-                var beforeA = Atomic(primary);
-                var beforeB = Atomic(checkpoint);
-                var beforeC = journalLive is null ? null : Atomic(journalLive);
+                var beforeA = requireAccepted ? null : Atomic(primary);
+                var beforeB = requireAccepted ? null : Atomic(checkpoint);
+                var beforeC = requireAccepted || journalLive is null ? null : Atomic(journalLive);
                 var a = primary.Handle(player, command);
                 var b = checkpoint.Handle(player, command);
                 var c = journalLive?.Handle(player, command);
@@ -139,8 +140,8 @@ internal static class LongChainAllCardHarness
                 if (a.Accepted) accepted++; else
                 {
                     rejected++;
-                    RejectedAtomic(label + "/A", beforeA, Atomic(primary));
-                    RejectedAtomic(label + "/B", beforeB, Atomic(checkpoint));
+                    RejectedAtomic(label + "/A", beforeA!, Atomic(primary));
+                    RejectedAtomic(label + "/B", beforeB!, Atomic(checkpoint));
                     if (journalLive is not null) RejectedAtomic(label + "/C", beforeC!, Atomic(journalLive));
                 }
                 if (recorder is not null)

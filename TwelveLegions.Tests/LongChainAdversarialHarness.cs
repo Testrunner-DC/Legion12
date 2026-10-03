@@ -260,9 +260,10 @@ internal static class LongChainAdversarialHarness
             async Task ApplyAsync(string label, int player, L12Command command, bool requireAccepted = true)
             {
                 var canonical = JsonSerializer.Serialize(command);
-                var beforeA = CaptureAtomicContract(primary);
-                var beforeB = CaptureAtomicContract(checkpoint);
-                var beforeC = CaptureAtomicContract(journalLive);
+                // Unexpected must-accept rejection fails first; its unused snapshots need not be built.
+                var beforeA = requireAccepted ? null : CaptureAtomicContract(primary);
+                var beforeB = requireAccepted ? null : CaptureAtomicContract(checkpoint);
+                var beforeC = requireAccepted ? null : CaptureAtomicContract(journalLive);
                 var a = primary.Handle(player, command);
                 var b = checkpoint.Handle(player, command);
                 var c = journalLive.Handle(player, command);
@@ -273,11 +274,11 @@ internal static class LongChainAdversarialHarness
                 {
                     rejected++;
                     var attempted = commands.Append($"{label}|p{player}|{canonical}|accepted=False").ToList();
-                    AssertRejectedAtomic(scenario, attempted, cutpoints, $"{label}/A", beforeA,
+                    AssertRejectedAtomic(scenario, attempted, cutpoints, $"{label}/A", beforeA!,
                         CaptureAtomicContract(primary));
-                    AssertRejectedAtomic(scenario, attempted, cutpoints, $"{label}/B", beforeB,
+                    AssertRejectedAtomic(scenario, attempted, cutpoints, $"{label}/B", beforeB!,
                         CaptureAtomicContract(checkpoint));
-                    AssertRejectedAtomic(scenario, attempted, cutpoints, $"{label}/C", beforeC,
+                    AssertRejectedAtomic(scenario, attempted, cutpoints, $"{label}/C", beforeC!,
                         CaptureAtomicContract(journalLive));
                 }
                 commands.Add($"{label}|p{player}|{canonical}|accepted={a.Accepted}");
@@ -898,38 +899,45 @@ internal static class LongChainAdversarialHarness
         var pa = ProjectionJson(a);
         var pb = ProjectionJson(b);
         var pc = ProjectionJson(c);
-        var summary = ComparisonSummary(a, b, c, pa, pb, pc);
+        string? cachedSummary = null;
+        string Summary() => cachedSummary ??= ComparisonSummary(a, b, c, pa, pb, pc);
+        var flowA = FlowContractJson(a);
+        var flowB = FlowContractJson(b);
+        var flowC = FlowContractJson(c);
+        var eventsA = EventContractJson(a);
+        var eventsB = EventContractJson(b);
+        var eventsC = EventContractJson(c);
         AssertJsonEqual(scenario, commands, cutpoints, $"{label}/flow-A-B",
-            FlowContractJson(a), FlowContractJson(b), summary);
+            flowA, flowB, Summary);
         AssertJsonEqual(scenario, commands, cutpoints, $"{label}/flow-A-C",
-            FlowContractJson(a), FlowContractJson(c), summary);
+            flowA, flowC, Summary);
         AssertJsonEqual(scenario, commands, cutpoints, $"{label}/events-A-B",
-            EventContractJson(a), EventContractJson(b), summary);
+            eventsA, eventsB, Summary);
         AssertJsonEqual(scenario, commands, cutpoints, $"{label}/events-A-C",
-            EventContractJson(a), EventContractJson(c), summary);
-        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/authority-state-A-B", stateA, stateB, summary);
-        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/authority-state-A-C", stateA, stateC, summary);
+            eventsA, eventsC, Summary);
+        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/authority-state-A-B", stateA, stateB, Summary);
+        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/authority-state-A-C", stateA, stateC, Summary);
         if (a.ComputeStateHash() != b.ComputeStateHash() || a.ComputeStateHash() != c.ComputeStateHash())
-            Fail(scenario, commands, cutpoints, $"{label}/authority-hash", $"A/B/C 状态哈希不一致；{summary}");
+            Fail(scenario, commands, cutpoints, $"{label}/authority-hash", $"A/B/C 状态哈希不一致；{Summary()}");
         if (a.RandomState != b.RandomState || a.RandomState != c.RandomState
             || a.RandomDrawCount != b.RandomDrawCount || a.RandomDrawCount != c.RandomDrawCount)
             Fail(scenario, commands, cutpoints, $"{label}/authority-random",
-                $"A/B/C 随机状态或抽取计数不一致；{summary}");
+                $"A/B/C 随机状态或抽取计数不一致；{Summary()}");
         if (a.State.Revision != b.State.Revision || a.State.Revision != c.State.Revision
             || a.State.EventSequence != b.State.EventSequence || a.State.EventSequence != c.State.EventSequence
             || a.CardFactSignalSequence != b.CardFactSignalSequence
             || a.CardFactSignalSequence != c.CardFactSignalSequence)
             Fail(scenario, commands, cutpoints, $"{label}/authority-sequence",
-                $"A/B/C revision、事件或卡牌事实序号不一致；{summary}");
+                $"A/B/C revision、事件或卡牌事实序号不一致；{Summary()}");
 
-        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/projection.player0-A-B", pa.Player0, pb.Player0, summary);
-        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/projection.player0-A-C", pa.Player0, pc.Player0, summary);
-        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/projection.player1-A-B", pa.Player1, pb.Player1, summary);
-        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/projection.player1-A-C", pa.Player1, pc.Player1, summary);
-        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/projection.spectator-A-B", pa.Spectator, pb.Spectator, summary);
-        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/projection.spectator-A-C", pa.Spectator, pc.Spectator, summary);
-        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/projection.referee-A-B", pa.Referee, pb.Referee, summary);
-        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/projection.referee-A-C", pa.Referee, pc.Referee, summary);
+        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/projection.player0-A-B", pa.Player0, pb.Player0, Summary);
+        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/projection.player0-A-C", pa.Player0, pc.Player0, Summary);
+        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/projection.player1-A-B", pa.Player1, pb.Player1, Summary);
+        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/projection.player1-A-C", pa.Player1, pc.Player1, Summary);
+        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/projection.spectator-A-B", pa.Spectator, pb.Spectator, Summary);
+        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/projection.spectator-A-C", pa.Spectator, pc.Spectator, Summary);
+        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/projection.referee-A-B", pa.Referee, pb.Referee, Summary);
+        AssertJsonEqual(scenario, commands, cutpoints, $"{label}/projection.referee-A-C", pa.Referee, pc.Referee, Summary);
         AssertPrivateSentinels(scenario, commands, cutpoints, label, a, pa, private0, private1);
     }
 
@@ -1198,12 +1206,12 @@ internal static class LongChainAdversarialHarness
     private static L12RandomState RequireRandom(L12GameEngine game, LongChainScenario scenario, string label)
         => game.RandomState ?? throw new XunitException($"{scenario.Id}/{label} 缺少确定性随机状态");
 
-    private static void AssertJsonEqual(LongChainScenario scenario, List<string> commands, List<string> cutpoints,
-        string label, string expected, string actual, string comparisonSummary)
+    internal static void AssertJsonEqual(LongChainScenario scenario, List<string> commands, List<string> cutpoints,
+        string label, string expected, string actual, Func<string> comparisonSummary)
     {
         if (expected == actual) return;
         var difference = FirstJsonDifference(expected, actual);
-        Fail(scenario, commands, cutpoints, label, $"{difference}; {comparisonSummary}");
+        Fail(scenario, commands, cutpoints, label, $"{difference}; {comparisonSummary()}");
     }
 
     private static string FirstJsonDifference(string expected, string actual)
