@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\服务端WebSocket\GrandUMIServer.csproj" />
+    <Compile Include="..\scripts\lib\TestStorageIsolationTests.cs" Link="TestInfrastructure\TestStorageIsolationTests.cs" />
   </ItemGroup>
   <ItemGroup>
     <!-- Retired email-only scenarios are retained in source history, not in the active product gate. -->

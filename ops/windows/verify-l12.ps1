@@ -9,6 +9,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot '../../scripts/lib/l12-test-storage.ps1')
 Set-StrictMode -Version Latest
 
 function Invoke-External {
@@ -31,7 +32,10 @@ function Invoke-TimedExternal {
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $passed = $false
     try {
-        Invoke-External $Executable @Arguments
+        if ($Executable -eq 'dotnet' -and $Arguments[0] -eq 'test') {
+            Invoke-L12TestRun -Executable $Executable -Arguments $Arguments -Label $Stage `
+                -TemporaryBase (Join-Path $env:L12_WORK_CACHE 'test-temp') -EvidenceBase (Join-Path $evidenceDirectory 'test-storage')
+        } else { Invoke-External $Executable @Arguments }
         $passed = $true
     }
     finally {

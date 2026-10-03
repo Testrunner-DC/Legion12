@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-03-local-storage-internal",
+  "date": "2026-10-03",
+  "audience": "internal",
+  "reason": "本地测试临时数据生命周期、共享依赖缓存、独立容量预算、失败证据保护与受控制品保留。仅工程治理，不改变卡效或线上数据，不向玩家发布本地存储细节。",
+  "paths": [".github/workflows/verify-release.yml", "ops/windows/Initialize-L12BuildEnvironment.ps1", "ops/windows/verify-l12.ps1", "scripts/audit-l12-storage.ps1", "scripts/clean-l12-generated.ps1", "scripts/invoke-l12-tests.ps1", "scripts/lib/l12-test-storage.ps1", "scripts/lib/TestStorageIsolationTests.cs", "scripts/test-l12-cleanup.ps1", "scripts/test-l12-release-gate.ps1", "scripts/test-l12-storage-audit.ps1", "scripts/test-l12-test-storage.ps1", "scripts/verify-l12-change.ps1", "scripts/verify-l12-github-workflow.ps1", "TwelveLegions.Tests/TwelveLegions.Tests.csproj", "TwelveLegions.Platform.Tests/TwelveLegions.Platform.Tests.csproj"]
+}

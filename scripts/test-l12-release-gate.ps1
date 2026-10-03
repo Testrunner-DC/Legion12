@@ -180,6 +180,8 @@ $originalCommandLog = $env:L12_TEST_COMMAND_LOG
 try {
     New-Item -ItemType Directory -Path (Join-Path $fixtureRepo "ops\windows"), (Join-Path $fixtureRepo "scripts"), (Join-Path $fixtureRepo "TwelveLegions.Tests"), (Join-Path $fixtureRepo "opcgpro-vue\src\l12\site"), $fixtureOutput, $fixtureCardAssets, $fakeBin -Force | Out-Null
     Copy-Item -LiteralPath $verifyScript -Destination (Join-Path $fixtureRepo "ops\windows\verify-l12.ps1") -Force
+    New-Item -ItemType Directory -Path (Join-Path $fixtureRepo 'scripts/lib') -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/lib/l12-test-storage.ps1') -Destination (Join-Path $fixtureRepo 'scripts/lib/l12-test-storage.ps1')
     Copy-Item -LiteralPath $cacheInitializer -Destination (Join-Path $fixtureRepo "ops\windows\Initialize-L12BuildEnvironment.ps1") -Force
     Copy-Item -LiteralPath $performanceExceptions -Destination (Join-Path $fixtureRepo "ops\performance-exceptions.json") -Force
     Copy-Item -LiteralPath $changeGateScript -Destination (Join-Path $fixtureRepo "scripts\verify-l12-change.ps1") -Force
@@ -307,7 +309,7 @@ try {
     $budgetRun = Invoke-ChildPowerShell -ScriptPath $fixtureVerify -Arguments ($verifyArguments + @("-EvidenceBudgetBytes", "1"))
     Assert-True ($budgetRun.ExitCode -ne 0 -and $budgetRun.Output.Contains("不新增可选逐用例 TRX")) "Budgeted verification did not warn while continuing to the full rule suite."
     $budgetCommands = if (Test-Path -LiteralPath $commandLog) { Get-Content -LiteralPath $commandLog -Raw } else { "" }
-    Assert-True ($budgetCommands.Contains("dotnet test") -and -not $budgetCommands.Contains("LogFileName=")) "Evidence budget changed test coverage or still requested optional TRX."
+    Assert-True ($budgetCommands.Contains("dotnet test") -and $budgetCommands.Contains("LogFileName=pass-proof.trx") -and -not $budgetCommands.Contains("LogFileName=rules.trx")) "Evidence budget changed coverage or dropped the mandatory cleanup pass proof. Commands: $budgetCommands Output: $($budgetRun.Output)"
     $budgetRuns = @(Get-ChildItem -LiteralPath $failureEvidenceRoot -Directory)
     Assert-True ($budgetRuns.Count -eq 2) "Budgeted verification did not retain a separate stage record."
     $budgetTimings = @($budgetRuns | ForEach-Object { Get-Content -LiteralPath (Join-Path $_.FullName "timings.json") -Raw | ConvertFrom-Json })

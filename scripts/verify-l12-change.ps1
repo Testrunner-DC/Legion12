@@ -14,6 +14,7 @@ $script:paths = @()
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $originalLocation = Get-Location
+. (Join-Path $PSScriptRoot 'lib/l12-test-storage.ps1')
 
 function Invoke-Checked {
     param(
@@ -27,6 +28,11 @@ function Invoke-Checked {
     if ($DryRun) { return }
     Push-Location $WorkingDirectory
     try {
+        if ($Executable -eq 'dotnet' -and $Arguments[0] -eq 'test') {
+            Invoke-L12TestRun -Executable $Executable -Arguments $Arguments -Label $Label `
+                -TemporaryBase (Join-Path $env:L12_WORK_CACHE 'test-temp') -EvidenceBase (Join-Path $env:L12_WORK_CACHE 'test-evidence')
+            return
+        }
         & $Executable @Arguments
         if ($LASTEXITCODE -ne 0) { throw "$Label failed with exit code $LASTEXITCODE" }
     }
@@ -173,8 +179,10 @@ try {
     $platformChanged = Test-AnyPath @('^TwelveLegions\.Platform\.Tests/')
     $frontendChanged = Test-AnyPath @('^opcgpro-vue/', '^scripts/(ws-smoke|ws-ui-peer)')
     $cardEffectChanged = $runtimeEvidenceChanged -or $publicActiveChanged -or $publicTriggerChanged -or $publicResponseChanged -or $publicHandPlayChanged -or (Test-AnyPath @('^TwelveLegions\.Tests/'))
-    $workflowChanged = Test-AnyPath @('^\.github/workflows/verify-release\.yml$', '^scripts/(check-l12-architecture-lock\.mjs|verify-l12-github-workflow\.ps1)$')
-    $storageChanged = Test-AnyPath @('^scripts/(audit-l12-storage|clean-l12-generated|test-l12-cleanup)\.ps1$', '^ops/windows/(watch-l12-network|finalize-l12-codex-session-move)\.ps1$', '^docs/STORAGE-(GOVERNANCE|MAINTENANCE)\.md$')
+    $testStorageChanged = Test-AnyPath @('^scripts/(lib/l12-test-storage|test-l12-test-storage|invoke-l12-tests)\.ps1$', '^scripts/lib/TestStorageIsolationTests\.cs$', '^ops/windows/Initialize-L12BuildEnvironment\.ps1$')
+    $workflowChanged = $testStorageChanged -or (Test-AnyPath @('^\.github/workflows/verify-release\.yml$', '^scripts/(check-l12-architecture-lock\.mjs|verify-l12-github-workflow\.ps1)$'))
+    if ($testStorageChanged) { $backendChanged=$true; $platformChanged=$true }
+    $storageChanged = Test-AnyPath @('^scripts/(audit-l12-storage|clean-l12-generated|test-l12-cleanup|test-l12-storage-audit)\.ps1$', '^ops/windows/(watch-l12-network|finalize-l12-codex-session-move)\.ps1$', '^docs/STORAGE-(GOVERNANCE|MAINTENANCE)\.md$')
     $releaseGateChanged = Test-AnyPath @('^ops/windows/verify-l12\.ps1$', '^ops/windows/deploy-l12\.ps1$', '^scripts/verify-l12-change\.ps1$', '^scripts/test-l12-release-gate\.ps1$', '^scripts/(release-ledger|test-release-ledger|release-status|test-release-status)\.mjs$', '^release-ledger/')
     $deploymentBehaviorChanged = Test-AnyPath @('^ops/windows/(deploy-l12|L12DeployTarget)\.ps1$', '^ops/server/(deploy-l12-release\.sh|verify-l12-health\.mjs)$', '^scripts/(test-l12-deploy-behavior|verify-l12-change)\.ps1$')
 
@@ -183,6 +191,7 @@ try {
     # skipping the dedicated platform gate.
     foreach ($path in $script:paths) {
         if (-not $path.EndsWith(".cs", [StringComparison]::OrdinalIgnoreCase)) { continue }
+        if ($path -eq 'scripts/lib/TestStorageIsolationTests.cs') { continue } # Both full suites selected above; no card semantics changed.
         if ($path -match '^TwelveLegions\.Tests/') { continue }
         if ($path -match '^TwelveLegions\.Platform\.Tests/') { continue }
         $filename = [IO.Path]::GetFileName($path)
@@ -244,14 +253,18 @@ try {
             (Join-Path $repoRoot "scripts\verify-l12-codex-routing.ps1")
     }
 
+    if ($testStorageChanged) {
+        Invoke-CheckedPowerShellScript 'Test temporary lifecycle and shared dependency regression' (Join-Path $repoRoot 'scripts/test-l12-test-storage.ps1')
+    }
     if ($workflowChanged) {
         Invoke-CheckedPowerShellScript "GitHub verification/release workflow contract" `
             (Join-Path $repoRoot "scripts\verify-l12-github-workflow.ps1")
     }
 
     if ($storageChanged) {
+        Invoke-CheckedPowerShellScript 'Storage scoped-budget and link behavior regression' (Join-Path $repoRoot 'scripts/test-l12-storage-audit.ps1')
         Invoke-CheckedPowerShellScript "D-drive storage budget and layout" `
-            (Join-Path $repoRoot "scripts\audit-l12-storage.ps1") @{ Strict = $true }
+            (Join-Path $repoRoot "scripts\audit-l12-storage.ps1") @{ Strict = $true; Scope = 'Active'; CandidateRoot = $repoRoot }
         Invoke-CheckedPowerShellScript "Generated-output cleanup behavior regression" `
             (Join-Path $repoRoot "scripts\test-l12-cleanup.ps1")
     }

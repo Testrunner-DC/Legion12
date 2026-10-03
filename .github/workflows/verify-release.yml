@@ -39,10 +39,12 @@ jobs:
         run: node scripts/check-l12-architecture-lock.mjs
 
       - name: L12 规则测试
-        run: dotnet test ./TwelveLegions.Tests/TwelveLegions.Tests.csproj --configuration Release
+        shell: pwsh
+        run: ./scripts/invoke-l12-tests.ps1 -Project ./TwelveLegions.Tests/TwelveLegions.Tests.csproj
 
       - name: 平台与控制面测试
-        run: dotnet test ./TwelveLegions.Platform.Tests/TwelveLegions.Platform.Tests.csproj --configuration Release
+        shell: pwsh
+        run: ./scripts/invoke-l12-tests.ps1 -Project ./TwelveLegions.Platform.Tests/TwelveLegions.Platform.Tests.csproj
 
       - name: 发布状态来源回归
         run: node scripts/test-release-status.mjs

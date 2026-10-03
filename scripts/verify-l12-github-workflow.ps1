@@ -11,6 +11,11 @@ $path = if ([IO.Path]::IsPathRooted($Workflow)) { $Workflow } else { Join-Path $
 if (-not (Test-Path -LiteralPath $path)) { throw "Workflow not found: $path" }
 
 $text = Get-Content -LiteralPath $path -Raw
+$testEntry = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/invoke-l12-tests.ps1') -Raw
+foreach ($project in @('TwelveLegions.Tests','TwelveLegions.Platform.Tests')) {
+    if ($text -notmatch [regex]::Escape("./scripts/invoke-l12-tests.ps1 -Project ./$project/$project.csproj")) { throw "Full supervised project missing: $project" }
+}
+if ($testEntry -match '--filter' -or -not $testEntry.Contains("@('test',`$Project,'--configuration'")) { throw 'CI test entry must execute both full projects without filters.' }
 $releaseCondition = "if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')"
 $conditionCount = ([regex]::Matches($text, [regex]::Escape($releaseCondition))).Count
 
