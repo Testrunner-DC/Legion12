@@ -1,5 +1,7 @@
 # Legion12 Bug 修复记录
 
+- **2026-10-03 11:42部署后逐条回填**：BUG-20261002-7d433183原文“对方佣兵触发抵挡效果时 地主无法触发”，Main核对当前正式c85819f0及其干净Release的MercenaryHandBlockLifecycleProfileTests两项地主具名用例Passed后，预览、CAS提交并读回resolved/fixed_verified；原备注/分派保留，专用会话注销。成功回执artifacts/card-recurrence-20261003/bugs-resolved-landlord.json。首次辅助脚本把Invoke-RestMethod返回的JSON数组当作单行读取，在GET阶段失败，未发PATCH；失败回执仍保留，修正显式JSON数组解析且离线验证空/单/多/重复ID后独立回填。不是重新修引擎或部署。BUG-20261002-93b912f3含狮心王进攻吕布，与现有具名用例的武则天目标存在差异，暂不关闭；未复现三项继续保持原边界，不按关联代码批量关闭。
+
 - **2026-10-03最终发布回执**：抵挡共享出口/索尔授予登场响应、首页通知地址解析及低样本展示包含于正式应用c85819f0；完整Batch与干净Release6150规则/411平台失败跳过0、UI354/卡图324+42/双构建/41部署故障场景通过。11:20正式部署后HTTP/WS、持久化与独立围栏核验通过，即时维护85→86解除；测试934a68c6未变。回执artifacts/card-recurrence-20261003/formal-publication.json等。用户要求Bug清单处理后置，反馈操作0，尚未关闭任何条目；阿喀琉斯/腐秽/美狄亚未复现，只有确定性正确行为与恢复证据，不伪造根因或上线修复结论。首次Release本机MSYS CreateProcessW errno13失败保留，未改产品/保护断言，诊断及原始完整重跑通过；下方待Release/未部署描述均为历史。
 
 ## ADMIN-20261003-HOME-NOTICE-ROUTE｜首页通知的新独立资讯地址被旧合同拒绝

@@ -1,5 +1,30 @@
 # F2 平台按对象持久化取证（2026-10-02）
 
+## 2026-10-03发布后容量收口：首轮只读取证完成，受限测量待执行
+
+当前正式应用c85819f0，11:35线上读回object/sqlite状态沿用11:20受保护验收回执；本节没有线上写入、部署、重启或更改内存额度。1536MiB限制下既往峰值1519792128B（1449.39MiB、额度94.36%），余量只有5.64%，不能称容量根因已修。
+
+Main及独立关键复核在200f3c1a平台源码闭合以下分配链：
+
+1. 启动读紧凑snapshot后HydrateDeckDomain，再生成完整内存回滚缓存，水合对象和旧完整JSON同时常驻。
+2. 私人对象创建经PrivateDeckPersistence进入TransactionalStorage。对象只点写一行，但同事务仍生成紧凑snapshot/mirror及完整回滚JSON；Sha256将字符串转完整UTF8数组。新回滚值只在SQLite提交成功后替换旧引用，编码期间旧缓存必须保留。
+3. 普通异常进入RestoreLastCommittedSnapshot，先从完整回滚JSON反序列化DataFile，再从SQLite水合整个牌库域。该缓存已包含牌库，恢复又读取并展开全部payload，是确定存在的重复整域分配链；尚未证明它是本次首个OOM抛出位置。
+4. 成功登录及限流/认证拒绝中的Save也走全域PersistDeckDomainSnapshot与同一完整回滚路径，不能称登录仅写会话。
+
+精确消费者：L12PlatformStore.TransactionalStorage.cs的InitializeTransactionalStorage/事务提交/RestoreLastCommittedSnapshot/SerializeRollbackState/Sha256；L12PlatformStore.DeckStorage.cs的HydrateDeckDomain/ReadPayloads/ExpandCards；PrivateDeckPersistence的创建事务；L12PlatformStore.cs的Login/Save。磁盘snapshot/mirror是紧凑格式，不能与内存完整rollback混称。
+
+证据边界：可访问回执有1GiB原创建OOM及登录503的事故结论，没有对应OOM堆栈或GC分段轨迹。数据图、旧UTF16回滚字符串、新编码缓冲和恢复水合叠加是待测假设，不能给各段字节或声称某一行已被实证为首throw。9月其他事故堆栈不移用。
+
+下一阶段仅使用D盘已授权不可变副本：源DB70168576B、mirror35379501B，manifest schema7/revision24313、5333活跃/230删除/73公开，真实赛事引用0。每个场景经SQLite BackupDatabase建立唯一新副本，原source逐SHA保护，不使用全库内存serialize复制。当前本地Release产品DLL SHA为E72C2945E9754603419FF2C9941B26832B20935F97D6F998EF1718E7092A0DF4，尚需与c85819f0发布包逐字节核对；预演不能先冒称相同二进制绑定。
+
+测量按独立新进程串行：冷启动、对象创建成功、对象行后失败、镜像序列化前失败、before-commit失败、登录成功及登录相应失败；成功/失败均核对恢复后的业务事实、revision、镜像和最新数据。输出只含计数/哈希/阶段/字节/耗时，不输出正文、账号、SQL绑定值或heap dump。收进程private/working set、总分配、GC heap/LOH/碎片和代际次数；分配归因尚未取到。
+
+Main独立纠正测量时点：before-commit注入器位于SerializeRollbackState之前。因此在该点失败覆盖紧凑snapshot/mirror，但不覆盖“新完整rollback已编码后提交失败”；完整编码成本先由成功路径及分配采样取证，实际提交失败若需新测试hook，须绑定插桩程序集独立哈希，不假称正式二进制。
+
+Windows Job/GC堆上限只作预筛，不能等同Linux cgroup。Linux容量验收须记录1GiB/1536MiB精确memory.max、swap约束、memory.peak、oom/oom_kill及整个进程树退出；建议1GiB且至少10%余量，贴顶但不OOM不算容量收口。本机WSL列表预检未取得可运行Linux环境，未安装/升级任何系统组件；不将该预检当容量测试。生产swap/GC参数尚未核验。
+
+待测的最小可逆候选：内存完整rollback改流式压缩字节缓存，提交成功后原子替换；恢复从完整缓存流式读取，避免随后再次全域水合。暂未实施；不改SQLite/schema/磁盘镜像/事务/CAS，不移除完整恢复，不顺手扩改登录写描述符。压缩CPU、往返等价、数据库缺失/损坏、提交失败、多实例冲突、登录拒绝及真实规模容量必须补证，最终完整平台门禁不能用专项替代。若需新的Linux隔离环境或架构变更，由Main明确范围再推进。
+
 ## 2026-10-03正式启用与容量缺口（最新回执）
 
 45b65e47已完成完整规则6101/平台407及干净Release，以最终包同一二进制40757541核对真实5333有效对象副本迁移/恢复/同版本关闭回退/损坏拒绝，13.04秒通过；原11字段、230删除记录、73公开版本保持，生产写入0。真实赛事引用0，不冒称该分支实测。05:00仅一次正式发布，object/sqlite/可写/镜像健康随后三轮真实CRUD、同ID改名、陈旧409、重新登录、删除及会话注销通过，原6副专用账号牌库不变。
