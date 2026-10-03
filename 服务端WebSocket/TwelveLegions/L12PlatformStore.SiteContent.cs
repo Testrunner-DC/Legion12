@@ -879,10 +879,8 @@ public sealed partial class L12PlatformStore
                     ValidateOptionalSiteUrl(href, "通知按钮链接");
                     var enabled = !notice.TryGetProperty("enabled", out var enabledValue) || enabledValue.ValueKind != JsonValueKind.False;
                     if (!publishing || !enabled) continue;
-                    const string prefix = "/news#article-";
-                    if (!href.StartsWith(prefix, StringComparison.Ordinal) || href.Length <= prefix.Length)
+                    if (!TryParseHomeNoticeArticleId(href, out var articleId))
                         throw new ArgumentException("启用的首页通知按钮必须选择一篇已发布资讯");
-                    var articleId = href[prefix.Length..];
                     var article = _data.Articles.FirstOrDefault(row => row.Id == articleId && row.Published is not null &&
                         row.Published.Kind == "news" && row.Status == "published");
                     if (article is null) throw new ArgumentException("首页通知按钮引用的资讯不存在或尚未发布");
@@ -890,6 +888,18 @@ public sealed partial class L12PlatformStore
             }
         }
         catch (JsonException error) { throw new ArgumentException($"站点编排 JSON 无效：{error.Message}"); }
+    }
+
+    private static bool TryParseHomeNoticeArticleId(string href, out string articleId)
+    {
+        const string canonicalPrefix = "/news/";
+        const string legacyPrefix = "/news#article-";
+        var prefix = href.StartsWith(canonicalPrefix, StringComparison.Ordinal) ? canonicalPrefix
+            : href.StartsWith(legacyPrefix, StringComparison.Ordinal) ? legacyPrefix
+            : null;
+        articleId = prefix is null ? string.Empty : href[prefix.Length..];
+        return articleId.Length > 0 && !articleId.Contains('/') && !articleId.Contains('\\')
+            && !articleId.Contains('?') && !articleId.Contains('#');
     }
 
     /// <summary>
