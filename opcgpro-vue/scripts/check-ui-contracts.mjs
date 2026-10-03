@@ -913,9 +913,12 @@ const contracts = [
   [playerMat.includes("!card.trialCompleted && (card.trialProgress ?? 0) < 8")
     && board.includes("!candidate.trialCompleted") && board.includes("(candidate.trialProgress ?? 0) < 8"), '当前可推进试炼的按钮与进度标记必须跳过已达8但尚未翻面的试炼，继续指向后续仍可推进的试炼'],
   [playerMat.includes("@click.stop=\"(!trial.hidden || side === 'my') && selectZoneCard(trial)\""), '试炼卡必须复用公开区域卡牌能力入口；己方未完成试炼仍可查看详情，对方未知试炼保持不可见'],
-  [playerMat.includes('aspect-ratio:1752/1255') && playerMat.includes('class="trial-card-back"')
+  [playerMat.includes('aspect-ratio:1752/1255') && playerMat.includes('<img v-if="trial.hidden" class="trial-card-back" src="/assets/l12/trial-back.png"')
+    && !playerMat.includes('<img v-if="trial.hidden && side === \'opponent\'" class="trial-card-back"')
+    && board.includes('<img v-if="trial.hidden" class="trial-card-back" src="/assets/l12/trial-back.png" alt="对手未揭示的试炼"')
+    && board.includes('<img v-if="trial.hidden" class="trial-card-back" src="/assets/l12/trial-back.png" alt="我方未揭示的试炼"')
     && playerMat.includes('class="trial-progress"') && playerMat.includes('width:46px;min-width:46px;height:46px;min-height:46px')
-    && playerMat.includes('font-variant-numeric:tabular-nums'), '试炼卡背必须保持正式横版素材比例，进度数字使用不会被挤压的独立大尺寸容器'],
+    && playerMat.includes('font-variant-numeric:tabular-nums'), '宽屏和移动端的双方未揭示试炼必须统一读取专用横版卡背，不得让本方可查看权限落入通用主牌背回退；进度数字使用不会被挤压的独立大尺寸容器'],
   [handArea.includes('data-ui-contract="field-sized-safe-hand"') && handArea.includes('const cardWidth = computed(() => 114.4)')
     && handArea.includes('width:114.4px;height:160.6px;flex-basis:114.4px')
     && board.includes('.formation-slot .card-tile.tapped){width:114.4px;height:160.6px;flex-basis:114.4px}')

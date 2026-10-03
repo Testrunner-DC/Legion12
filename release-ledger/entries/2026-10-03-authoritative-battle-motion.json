@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-03-authoritative-battle-motion",
+  "date": "2026-10-03",
+  "audience": "players",
+  "title": "对战动作显示修正",
+  "changes": [{
+    "category": "battle",
+    "text": "卡牌实际转为活跃或休整时只播放一次状态变化；选择、取消和被无效不会提前转动。登场动画不再等到后续响应结束后补播，加拉哈德登场后发动安格斯符文效果时保持卡图正常显示。",
+    "paths": ["opcgpro-vue/src/l12/game/GameBoard.vue", "opcgpro-vue/src/l12/motion.css"]
+  }, {
+    "category": "battle",
+    "text": "移动端主宰和圣物保持在所属六格战场左侧，并与六格区域大致上下居中，不侵入战场或其他组件。",
+    "paths": ["opcgpro-vue/src/l12/game/GameBoard.mobile.css"]
+  }]
+}

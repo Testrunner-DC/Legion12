@@ -15,6 +15,10 @@ const visualProjection = read('src/l12/game/visualTransitionProjection.ts')
 const mobileViewport = read('src/l12/mobileViewport.ts')
 const board = read('src/l12/game/GameBoard.vue')
 const tile = read('src/l12/CardTile.vue')
+const stateLayerMarkup = board.slice(board.indexOf('<CardStateTransitionLayer'),
+  board.indexOf('/>', board.indexOf('<CardStateTransitionLayer')) + 2)
+const zoneLayerMarkup = board.slice(board.indexOf('<ZoneMovementPresentationLayer'),
+  board.indexOf('/>', board.indexOf('<ZoneMovementPresentationLayer')) + 2)
 
 const checks = [
   ['motion tokens imported once', main.includes("import './l12/motion.css'")],
@@ -29,6 +33,11 @@ const checks = [
   ['attack lunge and rest share one visible transaction', stateTransition.includes("wrapper.dataset.motionKind = transition.attackSequence === undefined ? 'state' : 'attack-rest'")
     && stateTransition.includes('offset: .38') && stateTransition.includes('offset: .56')
     && !combat.includes("event.type === 'attack' &&") && !combat.includes("event.type === 'attack') animateAttack")],
+  ['authoritative state layer solely owns ready and rest motion', !motion.includes('l12-rest-settle')
+    && !motion.includes('.formation-slot .card-tile.tapped')
+    && !stateLayerMarkup.includes(':paused="modalPresentationPaused"')],
+  ['authoritative zone movement cannot replay after a blocking prompt',
+    !zoneLayerMarkup.includes(':paused="passivePresentationPaused"')],
   ['site and battle modal language', motion.includes('.site-modal-mask > .site-modal') && motion.includes('.l12-prompt-overlay > .prompt-panel')],
   ['ready and rest snapshot handoff', board.includes('<CardStateTransitionLayer') && stateTransition.includes("flush: 'pre', immediate: true")
     && stateTransition.includes('const sourceGhost = source.cloneNode(true)') && stateTransition.includes('sourceGhost.style.visibility = \'visible\'')

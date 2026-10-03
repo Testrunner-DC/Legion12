@@ -27,7 +27,6 @@
 @keyframes l12-toast-in { from { transform: translate(-50%, calc(-1 * var(--l12-dist-2))); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
 @keyframes l12-site-toast-in { from { transform: translateY(var(--l12-dist-2)); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes l12-list-in { from { transform: translateY(var(--l12-dist-2)); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-@keyframes l12-rest-settle { 0% { scale: 1; } 40% { scale: .94; } 100% { scale: 1; } }
 
 /* Shared interaction language. Geometry remains owned by each page. */
 .site-shell button:not(:disabled):active { transform: scale(.97); transition: transform var(--l12-dur-1) var(--l12-ease-standard); }
@@ -50,12 +49,6 @@
 .archive-card:nth-child(7), .deck-card:nth-child(7) { animation-delay: 150ms; }
 .archive-card:nth-child(8), .deck-card:nth-child(8) { animation-delay: 175ms; }
 
-.formation-slot .card-tile,
-.mini-master,
-.relic-zone .card-tile { transform-origin: center; transition: transform var(--l12-dur-3) var(--l12-ease-standard); }
-.formation-slot .card-tile.tapped,
-.mini-master.tapped,
-.relic-zone .card-tile.tapped { animation: l12-rest-settle var(--l12-dur-3) var(--l12-ease-standard); }
 .l12-phase-track span { transition: background var(--l12-dur-3) var(--l12-ease-standard), color var(--l12-dur-3) linear, opacity var(--l12-dur-2) linear; }
 
 .page-fade-enter-active, .page-fade-leave-active { transition: opacity var(--l12-dur-1) linear; }
@@ -73,6 +66,6 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .l12-pop,.l12-swap-out,.l12-swap-in,.l12-error-shake,.toast,.site-toast,.site-modal-mask,.site-modal,
-  .archive-card,.deck-card,.deck-entry-row,.online-entry,.formation-slot .card-tile.tapped,.mini-master.tapped,.relic-zone .card-tile.tapped { animation-duration: .001ms !important; }
+  .archive-card,.deck-card,.deck-entry-row,.online-entry { animation-duration: .001ms !important; }
   .page-fade-enter-active,.page-fade-leave-active,.page-slide-enter-active,.page-slide-leave-active { transition-duration: .001ms !important; }
 }

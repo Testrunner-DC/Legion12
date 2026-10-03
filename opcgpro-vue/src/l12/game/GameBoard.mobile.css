@@ -886,6 +886,7 @@
   padding:0 !important;
   grid-template-columns:var(--l12-mobile-master-w) var(--l12-mobile-relic-w) !important;
   grid-template-rows:var(--l12-mobile-hand-count-h) var(--l12-mobile-card-h) calc(var(--l12-mobile-marker) + 2px) !important;
+  align-self:center !important;
   align-content:center !important;
   gap:2px 4px !important;
 }

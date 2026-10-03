@@ -1307,7 +1307,8 @@ function statusTexts(card: Card) {
                 :class="{ concealed: trial.hidden, inactive: !trial.hidden && !trial.trialCompleted }"
                 :title="trial.hidden ? '我方未揭示的试炼' : trial.name"
                 @mouseenter="focusCard = trial" @click.stop="selectPublicCardFor(viewMe.playerIndex, trial)">
-                <CardImage :card-id="trial.cardId" :legacy-url="trial.imageUrl" :alt="trial.name" intent="board" eager />
+                <img v-if="trial.hidden" class="trial-card-back" src="/assets/l12/trial-back.png" alt="我方未揭示的试炼" />
+                <CardImage v-else :card-id="trial.cardId" :legacy-url="trial.imageUrl" :alt="trial.name" intent="board" eager />
                 <b v-if="isCurrentTrial(viewMe.specialZones?.trials, trial)" aria-label="当前试炼进度">{{ trial.trialProgress ?? viewMe.specialZones?.trialLevel ?? 0 }}</b>
               </button>
             </div>
@@ -1389,12 +1390,12 @@ function statusTexts(card: Card) {
             <ZoneMovementPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
               :players="game.players" :prompts="game.prompts ?? []" :revision="game.revision"
               :synchronizing="synchronizingAuthoritySnapshot"
-              :viewer-player-index="game.you" :paused="passivePresentationPaused" :playback-speed="replayPlaybackSpeed"
+              :viewer-player-index="game.you" :playback-speed="replayPlaybackSpeed"
               :sequence-coordinator="cardPresentationCoordinator"
               @busy-change="replayZonePresentationBusy = $event" />
             <CardStateTransitionLayer :players="game.players" :events="game.recentEvents ?? []" :match-id="game.matchId" :revision="game.revision"
               :synchronizing="synchronizingAuthoritySnapshot"
-              :paused="modalPresentationPaused" :playback-speed="replayPlaybackSpeed" />
+              :playback-speed="replayPlaybackSpeed" />
             <CombatMotionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
               :playback-speed="replayPlaybackSpeed" @busy-change="replayCombatPresentationBusy = $event" />
             <Teleport :to="landscapeTeleportTarget()">

@@ -380,7 +380,7 @@ function beginCardAbility(card: Card) {
             :class="{ concealed: trial.hidden, 'own-concealed': trial.hidden && side === 'my', inactive: !trial.hidden && !trial.trialCompleted }"
             :title="trial.hidden && side === 'opponent' ? '对方未揭示的试炼' : trial.name"
             @mouseenter="(!trial.hidden || side === 'my') && emit('focus', trial)" @focus="(!trial.hidden || side === 'my') && emit('focus', trial)" @click.stop="(!trial.hidden || side === 'my') && selectZoneCard(trial)">
-            <img v-if="trial.hidden && side === 'opponent'" class="trial-card-back" src="/assets/l12/trial-back.png" alt="试炼牌背" />
+            <img v-if="trial.hidden" class="trial-card-back" src="/assets/l12/trial-back.png" :alt="side === 'my' ? '我方未揭示的试炼' : '试炼牌背'" />
             <CardImage v-else :card-id="trial.cardId" :legacy-url="trial.imageUrl" :alt="trial.name" intent="board" eager />
             <b v-if="trial.instanceId === currentTrialInstanceId" class="trial-progress" aria-label="当前试炼进度">{{ trial.trialProgress ?? player.specialZones?.trialLevel ?? 0 }}</b>
           </button>

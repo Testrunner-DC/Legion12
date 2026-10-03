@@ -35,7 +35,8 @@ const harnessPlugin = {
   },
 }
 
-const server = await createServer({ root, plugins: [harnessPlugin], server: { host: '127.0.0.1', port: 0 }, logLevel: 'error' })
+const server = await createServer({ root, cacheDir:path.join(output,'vite-cache'), plugins: [harnessPlugin],
+  server: { host: '127.0.0.1', port: 0 }, logLevel: 'error' })
 let browser
 const report = { assertions: 0, screenshots: [], errors: [], profiles: [], entryVisualEvidence: [] }
 function ok(value, message) { assert.ok(value, message); report.assertions += 1 }
