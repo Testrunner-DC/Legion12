@@ -574,7 +574,7 @@ public sealed class RankedIntegrityActionsTests
 
     private static void ClearProfileFacts(L12PlatformStore store)
     {
-        var data = typeof(L12PlatformStore).GetField("_data", BindingFlags.Instance | BindingFlags.NonPublic)!
+        var data = typeof(L12PlatformStore).GetProperty("_data", BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(store)!;
         var facts = (IList)data.GetType().GetProperty("RankedSettlementProfileFacts")!.GetValue(data)!;
         facts.Clear();
@@ -616,7 +616,7 @@ public sealed class RankedIntegrityActionsTests
 
     private static object GetRankedProfileRow(L12PlatformStore store, string accountId)
     {
-        var data = typeof(L12PlatformStore).GetField("_data", BindingFlags.Instance | BindingFlags.NonPublic)!
+        var data = typeof(L12PlatformStore).GetProperty("_data", BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(store)!;
         var profiles = (IEnumerable)data.GetType().GetProperty("RankedProfiles")!.GetValue(data)!;
         return profiles.Cast<object>().Single(row => string.Equals((string)row.GetType()
@@ -625,7 +625,7 @@ public sealed class RankedIntegrityActionsTests
 
     private static object GetRankedIntegrityAuditRow(L12PlatformStore store, string matchId)
     {
-        var data = typeof(L12PlatformStore).GetField("_data", BindingFlags.Instance | BindingFlags.NonPublic)!
+        var data = typeof(L12PlatformStore).GetProperty("_data", BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(store)!;
         var audits = (IEnumerable)data.GetType().GetProperty("RankedIntegrityAudits")!.GetValue(data)!;
         return audits.Cast<object>().Single(row => string.Equals((string)row.GetType()

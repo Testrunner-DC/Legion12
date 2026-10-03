@@ -133,7 +133,7 @@ public sealed class UsernameModerationTests
 
     private static void RewriteStoredUsername(L12PlatformStore store, string accountId, string username)
     {
-        var data = typeof(L12PlatformStore).GetField("_data", BindingFlags.Instance | BindingFlags.NonPublic)!
+        var data = typeof(L12PlatformStore).GetProperty("_data", BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(store)!;
         var accounts = (IEnumerable)data.GetType().GetProperty("Accounts")!.GetValue(data)!;
         var row = accounts.Cast<object>().Single(value =>

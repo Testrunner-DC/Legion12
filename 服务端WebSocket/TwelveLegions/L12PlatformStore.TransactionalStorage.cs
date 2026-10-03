@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -80,7 +81,7 @@ public sealed partial class L12PlatformStore
 
     private string _databasePath = string.Empty;
     private string? _migrationBackupPath;
-    private string _lastCommittedSnapshot = string.Empty;
+    private byte[] _lastCommittedSnapshot = [];
     private string _storageMode = "sqlite";
     private string? _storageIssue;
     private bool _storageWritable = true;
@@ -306,9 +307,10 @@ public sealed partial class L12PlatformStore
             AppendIndependentAudit(connection, transaction, _data.AdminAudit);
             StorageFailureInjector?.Invoke("after-audit-append");
             StorageFailureInjector?.Invoke("before-commit");
-            var rollbackJson = SerializeRollbackState(_data);
+            var rollbackSnapshot = SerializeRollbackState(_data);
+            StorageFailureInjector?.Invoke("after-rollback-serialize");
             transaction.Commit();
-            _lastCommittedSnapshot = rollbackJson;
+            _lastCommittedSnapshot = rollbackSnapshot;
             _storageIssue = null;
         }
         catch (L12PrivateDeckMutationConflictException)
@@ -433,9 +435,10 @@ public sealed partial class L12PlatformStore
                 AppendIndependentAudit(connection, transaction, _data.AdminAudit);
                 mutation.BeforeCommit?.Invoke(_data.Version);
                 StorageFailureInjector?.Invoke("before-season-finalization-commit");
-                var rollbackJson = SerializeRollbackState(_data);
+                var rollbackSnapshot = SerializeRollbackState(_data);
+                StorageFailureInjector?.Invoke("after-season-rollback-serialize");
                 transaction.Commit();
-                _lastCommittedSnapshot = rollbackJson;
+                _lastCommittedSnapshot = rollbackSnapshot;
                 _storageIssue = null;
                 try
                 {
@@ -836,8 +839,10 @@ public sealed partial class L12PlatformStore
     }
 
     private static DataFile DeserializeData(string json)
+        => NormalizeDeserializedData(JsonSerializer.Deserialize<DataFile>(json, PlatformSnapshotJsonOptions) ?? new DataFile());
+
+    private static DataFile NormalizeDeserializedData(DataFile data)
     {
-        var data = JsonSerializer.Deserialize<DataFile>(json, PlatformSnapshotJsonOptions) ?? new DataFile();
         data.Accounts ??= [];
         foreach (var account in data.Accounts)
         {
@@ -1048,13 +1053,50 @@ public sealed partial class L12PlatformStore
 
     private void RestoreLastCommittedSnapshot()
     {
-        if (!string.IsNullOrWhiteSpace(_lastCommittedSnapshot))
+        try
         {
-            _data = DeserializeData(_lastCommittedSnapshot);
-            if (_storageWritable && File.Exists(_databasePath))
+            var snapshot = _lastCommittedSnapshot;
+            if (snapshot.Length <= 32 || !CryptographicOperations.FixedTimeEquals(
+                    snapshot.AsSpan(0, 32), SHA256.HashData(snapshot.AsSpan(32))))
+                throw new InvalidDataException("完整回滚缓存校验失败");
+            using var bytes = new MemoryStream(snapshot, 32, snapshot.Length - 32, writable: false);
+            using var compressed = new GZipStream(bytes, CompressionMode.Decompress);
+            var restored = JsonSerializer.Deserialize<DataFile>(compressed, PlatformSnapshotJsonOptions)
+                ?? throw new InvalidDataException("完整回滚缓存为空");
+            _data = NormalizeDeserializedData(restored);
+            // Complete committed generation: normal rollback must not hydrate it
+            // again from a potentially newer SQLite generation.
+        }
+        catch (Exception cacheError)
+        {
+            try
             {
+                // Exceptional corruption recovery only. Read all authoritative
+                // domains from one strictly verified read transaction; no mirror
+                // import, migration, repair or database write is allowed here.
                 using var connection = OpenDatabase(_databasePath, readOnly: true);
-                HydrateDeckDomain(connection, _data);
+                AssertDatabaseIntegrity(connection);
+                using var transaction = connection.BeginTransaction(deferred: true);
+                var stored = ReadSnapshot(connection, transaction)
+                    ?? throw new InvalidDataException("回滚恢复缺少平台快照");
+                if (!FixedEquals(stored.Checksum, Sha256(stored.Json)))
+                    throw new InvalidDataException("回滚恢复快照校验失败");
+                var restored = DeserializeDataAndValidate(stored.Json);
+                ValidateRecoveredDeckDomain(connection, transaction, restored);
+                MergeIndependentAudit(connection, restored, transaction);
+                var replacement = SerializeRollbackState(restored);
+                transaction.Commit();
+                _data = restored;
+                _lastCommittedSnapshot = replacement;
+            }
+            catch (Exception databaseError)
+            {
+                _rollbackViewUnavailable = true;
+                _storageWritable = false;
+                _storageMode = "unavailable";
+                _storageIssue = "完整回滚缓存恢复失败";
+                throw new L12PlatformStorageUnavailableException(_storageIssue,
+                    new AggregateException(cacheError, databaseError));
             }
         }
     }
@@ -1073,14 +1115,38 @@ public sealed partial class L12PlatformStore
     // Memory-only rollback state includes the normalized deck domain. The on-disk
     // snapshot/mirror remain compact; a failed database refresh cannot erase the
     // last known committed decks just because writable recovery is unavailable.
-    private static string SerializeRollbackState(DataFile data)
-        => JsonSerializer.Serialize(data, PlatformMigrationJsonOptions);
+    private static byte[] SerializeRollbackState(DataFile data)
+    {
+        using var bytes = new MemoryStream();
+        using (var compressed = new GZipStream(bytes, CompressionLevel.Fastest, leaveOpen: true))
+            JsonSerializer.Serialize(compressed, data, PlatformMigrationJsonOptions);
+        var payload = bytes.GetBuffer().AsSpan(0, checked((int)bytes.Length));
+        var snapshot = new byte[checked(payload.Length + 32)];
+        SHA256.HashData(payload, snapshot.AsSpan(0, 32));
+        payload.CopyTo(snapshot.AsSpan(32));
+        return snapshot;
+    }
 
     private static string PlatformDatabasePath(string legacyPath)
         => Path.Combine(Path.GetDirectoryName(legacyPath)!, Path.GetFileNameWithoutExtension(legacyPath) + ".db");
 
     private static string Sha256(string value)
-        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var encoder = Encoding.UTF8.GetEncoder();
+        ReadOnlySpan<char> remaining = value.AsSpan();
+        Span<byte> buffer = stackalloc byte[4096];
+        bool completed;
+        do
+        {
+            // Encoder state preserves pairs/replacement fallback at buffer edges,
+            // exactly matching Encoding.UTF8.GetBytes without a whole-value buffer.
+            encoder.Convert(remaining, buffer, flush: true, out var consumed, out var written, out completed);
+            hash.AppendData(buffer[..written]);
+            remaining = remaining[consumed..];
+        } while (!completed);
+        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+    }
 
     private static bool FixedEquals(string? left, string? right)
     {

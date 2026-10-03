@@ -1479,7 +1479,7 @@ public sealed class SiteContentPlatformStoreTests
 
     private static void MarkVideoAuthorOptionalForLegacyFixture(L12PlatformStore store, string id)
     {
-        var data = typeof(L12PlatformStore).GetField("_data", System.Reflection.BindingFlags.Instance |
+        var data = typeof(L12PlatformStore).GetProperty("_data", System.Reflection.BindingFlags.Instance |
             System.Reflection.BindingFlags.NonPublic)!.GetValue(store)!;
         var rows = (System.Collections.IEnumerable)data.GetType().GetProperty("Articles")!.GetValue(data)!;
         foreach (var row in rows)

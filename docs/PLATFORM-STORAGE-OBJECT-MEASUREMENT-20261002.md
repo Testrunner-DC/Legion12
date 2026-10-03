@@ -1,5 +1,28 @@
 # F2 平台按对象持久化取证（2026-10-02）
 
+## 2026-10-03 13:20最小内存优化：本地对照已通过，未部署
+
+用户明确批准本地实现和验收。Main将完整内存回滚缓存改为流式gzip字节（附32字节SHA完整性头），正常恢复只从同代完整缓存流式解码并沿用原归一化，不再再次水合SQLite；UTF-8哈希使用4096字节Encoder缓冲，包含非法代理项的旧哈希字节语义不变。SQLite/schema7、磁盘snapshot/mirror、事务/CAS、版本与完整回退保持原合同，编码完成并提交成功后才换缓存。所有10个缓存赋值出口已扫描。
+
+独立只读复核发现的P1已解除：损坏缓存不能继续投影未提交状态。缓存损坏时只读同一数据库事务，严格验证snapshot/规范牌库域/独立审计后恢复；缓存和数据库均不可恢复时统一拒绝当前实例状态读取、鉴权及写入，不导入旧镜像或修改数据库。最终只读复核无新增P0/P1；该复核不冒称独立运行测试。
+
+最终同族专项128/128，完整Batch规则6150/6150、平台435/435，失败/跳过0，实际TEMP清理均成功。Batch日志`D:/GPT/Legion12/artifacts/f2-memory-20261003/batch-memory-optimized.log`；规则TRX `cache/sg3/test-evidence/test-e8d477451ffb46778e7061235ea9fbc2`，平台TRX `test-5d13ce3137264b4094b196a35afa49ea`。首轮用户名长度、非法Unicode发现ID碰撞及测试命名空间错误均保留为过程红灯，修正夹具而没有减少业务断言。
+
+同一prepared派生副本、每场景独立BackupDatabase副本及新进程的7项对照全部通过，GC实际额度均1610612736B（1536MiB）。最终报告`D:/GPT/Legion12/artifacts/f2-memory-20261003/windows-managed-comparison-20261003T051718-221bac0fe2e04a2683f429917787b728.json`，SHA256 `0AB06A970CE44C04A32C6ECB18CEB2D824EF3886BCB2273CEFC813DA3C15E3DF`。Main逐项核对原source/prepared hash及时间未变、成功仅fixture一副牌库/版本+1、失败内存/数据库/镜像/revision/business完整不变、原私人/公开与赛事保护不变。额外编码后失败实际采样包含`failure-injector:after-rollback-serialize`，不是只按场景名推断。
+
+| 场景 | 正式c858基线Private峰 | 本地候选Private峰 | 本轮下降 |
+| --- | ---: | ---: | ---: |
+| 冷启动 | 764301312 B / 728.89MiB | 728588288 B / 694.84MiB | 4.67% |
+| 对象创建成功 | 877821952 B / 837.16MiB | 770658304 B / 734.96MiB | 12.21% |
+| 完整编码前提交故障 | 830484480 B / 792.01MiB | 729387008 B / 695.60MiB | 12.17% |
+| 完整编码后提交故障 | 旧正式二进制无此hook，不伪造对照 | 771411968 B / 735.68MiB | 完整回退通过 |
+
+已加载缓存有效载荷占用由68393722B（UTF16字符串内容，不计对象头）降至6367453B（含SHA头的压缩数组内容），减少90.69%。各场景包括PowerShell宿主/反射/GC采样开销，20ms外部采样可能漏短峰；各仅一个独立样本，不宣称P95或CPU统计改善。本轮7场景私有目录780837254B、<=1GiB，生产写入0、无联网/部署/维护操作。
+
+绑定：正式包950D9652…、基线DLL E72C2945…/c85819f0；冻结本地DLL 5D0A8C80…、源TransactionalStorage 2DC2CC68…及PlatformStore 5BAEA4AA…。本地DLL的InformationalVersion仍a8ffe12c加未提交源码，不能称已发布提交；父runner 902BFFCE…、子runner A4B2EAE0…均与运行一致。后续提交级Release另记录提交与证据，不把DLL跨编译版本的字节变化误当逻辑差异。
+
+**尚未完成的容量门槛**：Windows1536MiB托管预筛不等同Linux总进程/cgroup1GiB验收；正式服务完整负载、重复登录、并发、长期增长及memory.max/swap/events仍未测。真实赛事引用0不能称覆盖正式赛事规模。当前通过的是本地最小优化及数据保护，不是正式容量根因全面收口；不能下调线上额度或复用旧部署授权。下方“待批准/未实施/待测”均为早期过程，保留证据而不覆盖本节。
+
 ## 2026-10-03发布后容量收口：首轮只读取证完成，受限测量待执行
 
 当前正式应用c85819f0，11:35线上读回object/sqlite状态沿用11:20受保护验收回执；本节没有线上写入、部署、重启或更改内存额度。1536MiB限制下既往峰值1519792128B（1449.39MiB、额度94.36%），余量只有5.64%，不能称容量根因已修。
@@ -24,6 +47,24 @@ Main独立纠正测量时点：before-commit注入器位于SerializeRollbackStat
 Windows Job/GC堆上限只作预筛，不能等同Linux cgroup。Linux容量验收须记录1GiB/1536MiB精确memory.max、swap约束、memory.peak、oom/oom_kill及整个进程树退出；建议1GiB且至少10%余量，贴顶但不OOM不算容量收口。本机WSL列表预检未取得可运行Linux环境，未安装/升级任何系统组件；不将该预检当容量测试。生产swap/GC参数尚未核验。
 
 待测的最小可逆候选：内存完整rollback改流式压缩字节缓存，提交成功后原子替换；恢复从完整缓存流式读取，避免随后再次全域水合。暂未实施；不改SQLite/schema/磁盘镜像/事务/CAS，不移除完整恢复，不顺手扩改登录写描述符。压缩CPU、往返等价、数据库缺失/损坏、提交失败、多实例冲突、登录拒绝及真实规模容量必须补证，最终完整平台门禁不能用专项替代。若需新的Linux隔离环境或架构变更，由Main明确范围再推进。
+
+## 2026-10-03隔离副本分段测量（Windows预筛已验收，Linux容量未收口）
+
+用户明确补充授权生产派生副本复制、本地写入与故障注入；原始source与正式服不改、不联网、不公开个人信息。最终报告`D:/GPT/Legion12/artifacts/f2-memory-20261003/windows-managed-probe-20261003T043424-cc55d5982141467aaa79ea2899525688.json`，SHA256 `FB801E67644CE24E5B567B3DA7C265F7DE51D974402D43645960645058F6C610`。Main逐项复核报告、脚本hash、源DB/mirror hash及版本/业务保护，接受最终3/3结果；子任务已回执冻结。
+
+发布包SHA950d9652…、提取/本地产品DLL E72C2945…、ProductVersion c85819f0精确一致。父runner SHA920323E7FB004CD3FD33613174C0779BDEAC4571A154B61A576EDEF74BB5AF78、子runner SHA0E9C64D7C3E8FD9BEC1952A60DC3D7875BFFF5651A92B7915A613F537F921C38均与最终运行一致。每场景为独立新进程，实际TotalAvailableMemoryBytes均1610612736（1536MiB），外部20ms进程采样；预备进程已经退出，测量本身没有保留多Store图。
+
+| 场景 | 采样峰值Private Bytes | 采样峰值Working Set | 操作结果及保护 |
+| --- | ---: | ---: | --- |
+| 冷启动 | 756224000 B / 721.19MiB | 704397312 B / 671.77MiB | revision/business、私人/公开/镜像哈希均不变 |
+| 对象创建成功 | 913006592 B / 870.71MiB | 864546816 B / 824.50MiB | storage/business各+1，仅fixture牌库0→1，读回正确，原私人/公开/赛事保护不变 |
+| before-commit故障 | 944332800 B / 900.59MiB | 875110400 B / 834.57MiB | 预期存储不可用异常；内存完整回滚、镜像、revision/business/牌库哈希均保持 |
+
+分段累计分配（不是驻留峰值或单方法分配）：创建从before-operation到child-final约316.10MiB；before-commit到before-private-deck-mirror约65.28MiB，区间包含完整回滚编码、提交及采样开销；失败before-commit到after-expected-failure约91.48MiB，包含异常包装、完整反序列化及重复水合。这支持有界检查回滚缓存/恢复及全块编码缓冲，但没有捕获原正式OOM首throw，不声称精确单行归因。
+
+三项exit0/stderr0，source DB与镜像hash/时间不变，productionWrites=0；私有证据997911288 B，<=1GiB，修正runner时复用未变副本而没有继续复制。早期prepare及采样/空集合GetBytes(null)失败保留，不属于产品OOM且不计通过；采样桥仅适配GC的ref-struct，非产品插桩，自身开销包括在结果。
+
+仍未验收：Windows托管GC限制不是总进程或Linux cgroup限制；1GiB实际限制、Linux memory.max/swap/current/peak/events与OOM行为未测，20ms采样可能漏掉短峰。before-commit在完整rollback编码之前，失败场景不能声称覆盖“编码后提交失败”。真实赛事引用0不冒称生产赛事规模覆盖。缓存/流式哈希候选尚未实施，已向用户提交最小本地实现方案等待明确批准；没有部署或维护变化，F2容量风险保持未收口。
 
 ## 2026-10-03正式启用与容量缺口（最新回执）
 

@@ -48,6 +48,7 @@ public sealed class ControlPlaneAuditLifecycleTests
         f.Seed(("old",31,"content","title"), ("boundary",30,"content","title"),
             ("active",60,"content","match-running"), ("incident",60,"ranked","unknown-settlement"));
         var result = f.Store.RunAuditLifecycle(f.Now, new[] { "match-running" });
+        TwelveLegions.Platform.Tests.PlatformRollbackMemoryTests.AssertCompleteCache(f.Store);
         Assert.Equal(1,result.Archived);
         Assert.Equal(1,f.Count("admin_audit_migrations"));
         Assert.Null(f.Scalar("SELECT id FROM admin_audit_events WHERE id='old';"));

@@ -447,7 +447,22 @@ public sealed partial class L12PlatformStore
     private readonly IReadOnlyDictionary<string, IReadOnlyList<string>> _officialCardProducts;
     private readonly IL12EmailSender _emailSender;
     private readonly bool _emailFeatureEnabled;
-    private DataFile _data;
+    private DataFile _state = null!;
+    private bool _rollbackViewUnavailable;
+    // A failed rollback must never publish the partially mutated object. This
+    // guard applies to every state-backed read/auth/write, not just persistence.
+    private DataFile _data
+    {
+        get => _rollbackViewUnavailable
+            ? throw new L12PlatformStorageUnavailableException("平台已提交状态不可恢复")
+            : _state;
+        set
+        {
+            if (_rollbackViewUnavailable)
+                throw new L12PlatformStorageUnavailableException("平台已提交状态不可恢复");
+            _state = value;
+        }
+    }
 
     public event Action<IReadOnlyList<string>>? SessionsRevoked;
 

@@ -1,5 +1,17 @@
 # Legion12 Bug 修复记录
 
+## STORAGE-20261003-ROLLBACK-MEMORY｜完整回滚缓存与恢复重复分配（本地验收通过，未部署）
+
+- 13:20最终本地回执：专项128、完整Batch规则6150/平台435失败跳过0；同prepared副本7独立新进程对照全部通过，原source/prepared不变、生产写0。完整缓存68393722→6367453B（-90.69%）、创建private837.16→734.96MiB、编码前失败792.01→695.60MiB，编码后故障到达真实hook并完整回退。独立最终复核无新增P0/P1、已冻结；报告SHA0AB06A97…/windows-managed-comparison-20261003T051718-221bac0fe2e04a2683f429917787b728.json。干净Release及Git同步待执行，无部署/维护操作；Windows1536MiB/单样本不冒称Linux1GiB或正式长期容量通过。下方待对照/门禁为过程历史。
+
+- 证据：c858同DLL、同正式派生副本Windows1536MiB基线冷启动/创建/提交前失败3/3，private峰721.19/870.71/900.59MiB。源码存在常驻完整UTF16回滚字符串、整块UTF8哈希缓冲和完整反序列化后再次全域水合；未捕获原正式OOM首throw，不冒称精确单行归因。
+- 用户明确批准最小本地优化：gzip流式完整缓存、流式解码沿用原归一化、普通恢复不再读取第二代SQLite牌库，UTF8分块哈希与原字节一致。SQLite/schema7/磁盘快照/镜像/事务/CAS不变，提交成功才替换新缓存。
+- 同类扫描：`rg -n 'SerializeRollbackState|_lastCommittedSnapshot' 服务端WebSocket/TwelveLegions`，startup/fallback、普通保存、冲突刷新、赛季changed/no-op、初始/牌库身份迁移、独立审计迁出共10个赋值出口保持完整域；对象与普通create/update/delete均补编码后提交前故障。没有扩改登录点写或公开/赛事写模式。
+- 独立关键档发现新候选损坏缓存仅禁写仍可读到未提交事实的P1阻断。Main补32字节SHA完整性头及异常路径严格同代数据库读取/全域校验；缓存与数据库均不可恢复时统一状态访问屏障拒绝当前实例读、鉴权与写，不返回污染对象。正常恢复仍只流式解码一次，异常重载不导入旧镜像或修库。
+- 具名守卫：PlatformRollbackMemoryTests包含完整缓存字节等价/Unicode及异常surrogate边界/六CRUD故障/缺DB及不同代不重水合/四缓存损坏/三缓存+DB双坏读写拒绝/成功CAS刷新/旧JSON与紧凑只读回退/赛季changed-noop；审计迁出增加完整缓存核对。旧反射夹具字段改属性仅适配统一屏障，业务断言不减。最终同族128/128、失败跳过0；完整Batch/干净Release、同副本对照仍待最终回执，不构成部署或Linux容量通过。
+
+- **2026-10-03 12:21原反馈闭环补证**：BUG-20261002-93b912f3原文“这局里狮心王攻击吕布，对方佣兵抵挡，是不是没有额外弃置1张牌？”已补原印刷9000吕布四项具名确定性场景：额外弃牌/没有额外弃牌分别覆盖实时与V2恢复，既有武则天两对照保持，合计6/6。断言实际额外弃牌入口、佣兵弃置恰一次、有效抵挡权威事件、吕布存活/被击杀及所有队列结束。测试产品DLL与正式c858发布包提取文件同SHA E72C2945；没有新产品修复或部署，不冒称找回真实录像。12:19按原备注/分派及CAS回填resolved；初次辅助命令误写fixCommit为不存在编号，12:21仅校正为已核验c85819f0，原错误回执保留、最终读回一致且会话注销。辅助入口新增修复提交与部署版本精确相等和原目标具名证据检查，不覆盖其他关闭记录。最终证据artifacts/card-recurrence-20261003/richard-lubu-original-scenario.json、richard-package-binding.json、bugs-resolved-richard-lubu-correction.json；原始bugs-resolved-richard-lubu.json仅事故过程。未复现三项仍保持原边界，不据此批量关闭。
+
 - **2026-10-03 11:42部署后逐条回填**：BUG-20261002-7d433183原文“对方佣兵触发抵挡效果时 地主无法触发”，Main核对当前正式c85819f0及其干净Release的MercenaryHandBlockLifecycleProfileTests两项地主具名用例Passed后，预览、CAS提交并读回resolved/fixed_verified；原备注/分派保留，专用会话注销。成功回执artifacts/card-recurrence-20261003/bugs-resolved-landlord.json。首次辅助脚本把Invoke-RestMethod返回的JSON数组当作单行读取，在GET阶段失败，未发PATCH；失败回执仍保留，修正显式JSON数组解析且离线验证空/单/多/重复ID后独立回填。不是重新修引擎或部署。BUG-20261002-93b912f3含狮心王进攻吕布，与现有具名用例的武则天目标存在差异，暂不关闭；未复现三项继续保持原边界，不按关联代码批量关闭。
 
 - **2026-10-03最终发布回执**：抵挡共享出口/索尔授予登场响应、首页通知地址解析及低样本展示包含于正式应用c85819f0；完整Batch与干净Release6150规则/411平台失败跳过0、UI354/卡图324+42/双构建/41部署故障场景通过。11:20正式部署后HTTP/WS、持久化与独立围栏核验通过，即时维护85→86解除；测试934a68c6未变。回执artifacts/card-recurrence-20261003/formal-publication.json等。用户要求Bug清单处理后置，反馈操作0，尚未关闭任何条目；阿喀琉斯/腐秽/美狄亚未复现，只有确定性正确行为与恢复证据，不伪造根因或上线修复结论。首次Release本机MSYS CreateProcessW errno13失败保留，未改产品/保护断言，诊断及原始完整重跑通过；下方待Release/未部署描述均为历史。
