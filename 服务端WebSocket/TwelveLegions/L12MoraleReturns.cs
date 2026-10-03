@@ -269,8 +269,16 @@ public sealed partial class L12GameEngine
             }
             case "empty-city-block":
             {
-                var targetStack = State.EffectStack.FirstOrDefault(stack => stack.StackItemId == item.Targets.FirstOrDefault());
-                if (targetStack is not null) targetStack.Negated = true;
+                var targetStack = DeclaredResponseTimingTarget(item);
+                if (targetStack?.Trigger == "opponent-attack")
+                {
+                    if (!DeclareEffectBlock(item, targetStack))
+                        RecordTargetSettlementFailure(item, targetStack.StackItemId,
+                            "原抵挡/支援窗口已经结束");
+                }
+                else
+                    RecordTargetSettlementFailure(item, item.Targets.FirstOrDefault(),
+                        "原进攻已离开堆叠或不再是进攻事件");
                 if (!player.Field[0].Any(card => card is not null && IsFieldLegion(card))) Draw(player, 1);
                 FinishStackItem(item);
                 break;

@@ -397,6 +397,21 @@ public sealed class EffectPresentationBranchSegmentTests
         response.Hidden = true;
         game.State.Players[1].Field[1][0] = response;
         var rootSource = Card(catalog, "S01-0109", $"absolute-root-{expectedMode}");
+        var combatId = $"absolute-defense-combat-{expectedMode}";
+        if (targetTrigger == "opponent-attack")
+        {
+            rootSource.SummonRound = -1;
+            game.State.Players[0].Field[0][0] = rootSource;
+            game.State.PendingDefense = new L12PendingDefense
+            {
+                CombatId = combatId,
+                AttackerPlayer = 0,
+                AttackerInstanceId = rootSource.InstanceId,
+                Target = new L12AttackTarget("master"),
+                Stage = L12CombatStage.DefenderAttackTiming,
+                DefenderAttackTimingOpened = true,
+            };
+        }
         var root = new L12StackItem
         {
             StackItemId = $"absolute-root-stack-{expectedMode}",
@@ -408,6 +423,7 @@ public sealed class EffectPresentationBranchSegmentTests
             Trigger = targetTrigger,
             Text = targetTrigger == "opponent-attack" ? "对方进攻宣言" : "对方发动效果",
         };
+        if (targetTrigger == "opponent-attack") root.Data["combatTiming"] = "defender-attack";
         game.State.EffectStack.Add(root);
 
         Invoke(game, "CommitNegateResponse", 1, response, root.StackItemId);
@@ -424,6 +440,13 @@ public sealed class EffectPresentationBranchSegmentTests
         game = L12GameEngine.RestoreCheckpoint(catalog, game.SerializeFullState(),
             game.RandomState!.Value, game.CardFactSignalSequence,
             autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        if (targetTrigger == "opponent-attack")
+        {
+            var restoredDefense = Assert.IsType<L12PendingDefense>(game.State.PendingDefense);
+            Assert.Equal(combatId, restoredDefense.CombatId);
+            Assert.Equal(rootSource.InstanceId, restoredDefense.AttackerInstanceId);
+            Assert.Equal("master", restoredDefense.Target.Type);
+        }
         game.State.PendingPrompts.Clear();
         game.State.ResponseWindow = null;
         Invoke(game, "ResolveTopStack");
@@ -433,7 +456,31 @@ public sealed class EffectPresentationBranchSegmentTests
         Assert.Equal("resolved", result.EffectResultStatus);
         Assert.Equal(expectedScene.SceneId, result.EffectSceneId);
         Assert.Equal(expectedLabel, result.EffectBranchLabel);
-        Assert.True(Assert.Single(game.State.EffectStack).Negated);
+        var restoredRoot = Assert.Single(game.State.EffectStack,
+            item => item.StackItemId == root.StackItemId);
+        if (targetTrigger == "opponent-attack")
+        {
+            Assert.False(restoredRoot.Negated);
+            var authorityEvent = Assert.Single(game.State.AuthorityEvents,
+                candidate => candidate.Type == "defense");
+            Assert.Equal("true", authorityEvent.Data["effectBlock"]);
+            Assert.Equal(combatId, authorityEvent.Data["effectBlockCombatId"]);
+            Assert.Equal(root.StackItemId, authorityEvent.Data["effectBlockAttackStackItemId"]);
+            Assert.Equal(rootSource.InstanceId, authorityEvent.Data["effectBlockAttackerInstanceId"]);
+            Assert.Equal("master", authorityEvent.Data["effectBlockTargetType"]);
+            var authorityItem = Assert.Single(game.State.EffectStack,
+                item => item.Trigger == "authority-event"
+                    && item.Data.GetValueOrDefault("eventType") == "defense");
+            Assert.Equal(authorityEvent.EventId, authorityItem.Data["eventId"]);
+            Assert.Equal("true", authorityItem.Data["effectBlock"]);
+            Assert.Equal(combatId, authorityItem.Data["effectBlockCombatId"]);
+            Assert.Equal(root.StackItemId, authorityItem.Data["effectBlockAttackStackItemId"]);
+        }
+        else
+        {
+            Assert.True(Assert.Single(game.State.EffectStack).Negated);
+            Assert.DoesNotContain(game.State.AuthorityEvents, candidate => candidate.Type == "defense");
+        }
     }
 
     [Theory]

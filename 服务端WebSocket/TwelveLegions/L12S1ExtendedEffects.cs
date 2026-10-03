@@ -1105,7 +1105,7 @@ public sealed partial class L12GameEngine
             case "empty-city-block":
             {
                 var targetStack = DeclaredResponseTimingTarget(item);
-                if (targetStack?.Trigger == "opponent-attack") targetStack.Negated = true;
+                if (targetStack?.Trigger == "opponent-attack") DeclareEffectBlock(item, targetStack);
                 else RecordTargetSettlementFailure(item, item.Targets.FirstOrDefault(), "原进攻已离开堆叠或不再是进攻事件");
                 FinishStackItem(item);
                 return;

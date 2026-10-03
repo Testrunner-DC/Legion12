@@ -409,6 +409,9 @@ public sealed partial class L12GameEngine
         var grailEntryCandidate = card.CardType == "legion"
             ? BuildS2GrailRoundTableEntryCandidate(playerIndex, card)
             : null;
+        var thorEntryCandidate = card.CardType == "legion"
+            ? BuildThorGrantedEntryChargeCandidate(playerIndex, card)
+            : null;
         if (HasImmediateEffect(card, trigger))
         {
             State.CheckDisasterAfterStack |= card.CardType == "legion" && State.DisasterValue > 8;
@@ -426,12 +429,15 @@ public sealed partial class L12GameEngine
             var declaredTargets = compositeDeclaration is null
                 ? null
                 : CompositeFirstSegmentTargets(card.CardId, compositeDeclaration);
-            if (grailEntryCandidate is not null)
+            if (card.CardType == "legion" && (thorEntryCandidate is not null || grailEntryCandidate is not null))
             {
                 var entryCandidate = CreateTriggerCandidate(playerIndex, card, trigger, "【登场时】效果", declaredData);
                 if (declaredTargets is not null)
                     entryCandidate.Data["declaredTargets"] = string.Join('|', declaredTargets);
-                QueueTriggerCandidates([entryCandidate, grailEntryCandidate]);
+                var candidates = new List<L12TriggerCandidate> { entryCandidate };
+                if (thorEntryCandidate is not null) candidates.Add(thorEntryCandidate);
+                if (grailEntryCandidate is not null) candidates.Add(grailEntryCandidate);
+                QueueTriggerCandidates(candidates);
             }
             else
                 QueueOrPushTriggeredEffect(playerIndex, card, trigger,
@@ -445,8 +451,10 @@ public sealed partial class L12GameEngine
                 ResetCardForPrivateZone(card);
                 player.Graveyard.Add(card);
             }
-            if (grailEntryCandidate is not null) QueueTriggerCandidates([grailEntryCandidate]);
-            TrySettleScheduledDisasterIfIdle();
+            var candidates = new[] { thorEntryCandidate, grailEntryCandidate }
+                .OfType<L12TriggerCandidate>().ToArray();
+            if (candidates.Length > 0) QueueTriggerCandidates(candidates);
+            else TrySettleScheduledDisasterIfIdle();
         }
         return CommandResult.Ok();
     }
@@ -611,6 +619,8 @@ public sealed partial class L12GameEngine
             candidates.Add(CreateTriggerCandidate(playerIndex, promoted, "promotion-enter", "【晋升登场】效果"));
         if (HasImmediateEffect(promoted, "enter"))
             candidates.Add(CreateTriggerCandidate(playerIndex, promoted, "enter", "【登场时】效果"));
+        if (BuildThorGrantedEntryChargeCandidate(playerIndex, promoted) is { } thorCandidate)
+            candidates.Add(thorCandidate);
         if (BuildS2GrailRoundTableEntryCandidate(playerIndex, promoted) is { } grailCandidate)
             candidates.Add(grailCandidate);
         if (candidates.Count > 0)
@@ -625,7 +635,6 @@ public sealed partial class L12GameEngine
 
     private void ApplyDisasterLevelOnEntry(int playerIndex, L12CardInstance card, bool deferTriggerUntilStackSettles)
     {
-        ResolveEntryContinuousEffects(playerIndex, card);
         if (!DisastersEnabled || card.CardType != "legion" || card.DisasterLevel <= 0) return;
         if (L12ActiveDisasterRules.DisasterValueLocked(State.ActiveDisaster?.CardId))
         {

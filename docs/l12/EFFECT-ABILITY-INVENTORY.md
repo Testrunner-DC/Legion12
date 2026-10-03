@@ -5,7 +5,7 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`cfddf16d2c24c3c57c00e9a02a7e2fc35c102c85fc827a84661365dc98fac875`。
+内容指纹：`b14e8c94932cd906b0dec43325642fb05ee03fa2ca6adf2f707ce336aa630236`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
@@ -765,7 +765,13 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0002:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / S01-0002 | destination-invalidated, reconnect-before-command, source-invalidated |
 | S01-0002:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / S01-0002 | button-rejection-consistency, timing |
 | S01-0002:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / S01-0002 | button-text, duplicate-submit, no-resource-cost, normal, presentation-consumers, presentation-event, reconnect-after-command, reconnect-before-command |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.CounterBlockAuthorityRegressionTests.EffectBlockAuthorityDoesNotCommitAfterItsBoundAttackerLeavesTheBattlefield / S01-0002 | attacker-left-before-authority, context-invalidated |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.CounterBlockAuthorityRegressionTests.RestoredEffectBlockAuthorityDoesNotBindAChangedCombatIdentity / S01-0002 | reconnect, stale-combat-binding |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.CounterBlockAuthorityRegressionTests.RichardPaidExtraDiscardKeepsMercenaryBlockValid / S01-0002 | paid-cost-not-refunded, richard-extra-discard-paid |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.CounterBlockAuthorityRegressionTests.RichardUnpaidExtraDiscardInvalidatesMercenaryBlockAndAttackContinues / S01-0002 | paid-cost-not-refunded, richard-extra-discard-unpaid |
 | S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.SpecialResponseSegmentsReadTheSharedCapabilityRegistry / S01-0002 | authoritative-consumer, capability-registry, self-discard-cost |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.MercenaryHandBlockLifecycleProfileTests.LandlordsCoercionMayInvalidateMercenaryBlockWithoutRefundingItsDiscard / S01-0002 | landlord-coercion, paid-cost-not-refunded |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.MercenaryHandBlockLifecycleProfileTests.LandlordsCoercionPaidExtraDiscardKeepsMercenaryBlockValid / S01-0002 | landlord-coercion-paid, paid-cost-not-refunded |
 | S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.MercenaryHandBlockLifecycleProfileTests.MissingAttackStackTargetFailsBlockWithoutBindingAnotherItem / S01-0002 | target-invalidated |
 | S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.MercenaryHandBlockLifecycleProfileTests.NegatedBlockKeepsPaidDiscardAndAttackContinues / S01-0002 | negated |
 | S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.MercenaryHandBlockLifecycleProfileTests.PaidHandBlockSurvivesRestoreAndBlocksExactlyOnce / S01-0002 | duplicate-submit, normal, presentation-consumers, reconnect |

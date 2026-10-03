@@ -2482,10 +2482,29 @@ public sealed partial class L12GameEngine
         if (item.Trigger == "response-negate")
         {
             var target = State.EffectStack.FirstOrDefault(candidate => candidate.StackItemId == item.Targets.FirstOrDefault());
-            if (target is not null) target.Negated = true;
-            else RecordTargetSettlementFailure(item, item.Targets.FirstOrDefault(), "响应目标已经离开堆叠");
-            AddEvent("effect-negated", item.Controller,
-                target is null ? "响应目标已经离开堆叠" : $"〈{target.SourceName}〉的{target.Text}被无效");
+            var declaresAttackBlock = item.Data.GetValueOrDefault("declared:mode") == "mode:block";
+            if (target is null)
+            {
+                RecordTargetSettlementFailure(item, item.Targets.FirstOrDefault(), "响应目标已经离开堆叠");
+                AddEvent("effect-negated", item.Controller, "响应目标已经离开堆叠");
+            }
+            else if (declaresAttackBlock && target.Trigger == "opponent-attack")
+            {
+                if (DeclareEffectBlock(item, target))
+                {
+                    AddEvent("effect", item.Controller, $"〈{item.SourceName}〉声明抵挡本次进攻");
+                    // 保留历史消费者使用的响应结算事件类型；规则状态不再把根进攻项标为 Negated。
+                    AddEvent("effect-negated", item.Controller,
+                        $"〈{item.SourceName}〉将抵挡原进攻；已发动的进攻时效果不回退");
+                }
+                else
+                    RecordTargetSettlementFailure(item, target.StackItemId, "原抵挡/支援窗口已经结束");
+            }
+            else
+            {
+                target.Negated = true;
+                AddEvent("effect-negated", item.Controller, $"〈{target.SourceName}〉的{target.Text}被无效");
+            }
             FinishStackItem(item);
             return;
         }
@@ -2497,12 +2516,7 @@ public sealed partial class L12GameEngine
                 RecordTargetSettlementFailure(item, item.Targets.FirstOrDefault(),
                     target is null ? "响应目标已经离开堆叠" : "原抵挡/支援窗口已经结束");
             else
-                State.PendingDefense.BlockedByResponse = true;
-            var card = FindSource(item) ?? item.SourceSnapshot;
-            if (item.Data.GetValueOrDefault("effectResultStatus") is not ("skipped" or "failed"))
-                AddPlayerCombatEvent("defense", item.Controller, "佣兵部队抵挡本次进攻",
-                    new(State.PendingDefense?.CombatId, "defense", "blocked"),
-                    card is null ? [] : [card]);
+                DeclareEffectBlock(item, target);
             FinishStackItem(item);
             return;
         }
@@ -2583,6 +2597,7 @@ public sealed partial class L12GameEngine
         var completedSource = FindSource(item);
         QueueTombConstructLeaveFallback(item);
         var queuedCompositeContinuation = QueueNextCompositeSegment(item, completedSource);
+        QueueEffectBlockAuthorityEvent(item, completedSource ?? item.SourceSnapshot);
         var queueAngusTrial = !queuedCompositeContinuation && !item.Negated && completedSource?.CardType == "tactic"
             && item.Trigger is "play" or "reaction" or "s2-reaction" or "response-negate";
         var queueExorcistReturn = !queuedCompositeContinuation && !item.Negated

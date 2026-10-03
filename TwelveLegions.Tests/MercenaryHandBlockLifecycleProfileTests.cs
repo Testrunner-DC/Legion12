@@ -89,6 +89,72 @@ public sealed class MercenaryHandBlockLifecycleProfileTests
             && entry.Cards.Any(card => card.InstanceId == mercenary.InstanceId));
     }
 
+    [Fact]
+    [L12AbilityEvidence(AbilityId, "landlord-coercion", "paid-cost-not-refunded")]
+    public void LandlordsCoercionMayInvalidateMercenaryBlockWithoutRefundingItsDiscard()
+    {
+        var (game, attacker, target, mercenary) = Prepare(72534);
+        var landlord = Card("S02-0015", "mercenary-profile-landlord", 0);
+        landlord.Hidden = true;
+        landlord.SetRound = 0;
+        game.State.Players[0].Field[1][0] = landlord;
+
+        var prompt = BeginAttackAndFindMercenaryPrompt(game, attacker, target, mercenary);
+        var result = game.Handle(1, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: mercenary.InstanceId));
+        Assert.True(result.Accepted, result.Error);
+
+        var landlordPrompt = FindResponsePrompt(game, landlord.InstanceId);
+        result = game.Handle(0, new L12Command("resolvePrompt", PromptId: landlordPrompt.PromptId,
+            Choice: landlord.InstanceId));
+        Assert.True(result.Accepted, result.Error);
+        var discardPrompt = FindPrompt(game,
+            candidate => candidate.Data.GetValueOrDefault("action") == "s2-landlord-extra-discard",
+            "〈地主的胁迫〉未进入额外弃牌结算");
+        Assert.Equal("s2-landlord-extra-discard", discardPrompt.Data["action"]);
+        result = game.Handle(1, new L12Command("resolvePrompt", PromptId: discardPrompt.PromptId,
+            Choice: "decline"));
+        Assert.True(result.Accepted, result.Error);
+        PassAll(game);
+
+        Assert.Single(game.State.Players[1].Graveyard,
+            card => card.InstanceId == mercenary.InstanceId);
+        Assert.Contains(game.State.Players[0].Graveyard,
+            card => card.InstanceId == landlord.InstanceId);
+        Assert.Null(FindField(game.State.Players[1], target.InstanceId));
+    }
+
+    [Fact]
+    [L12AbilityEvidence(AbilityId, "landlord-coercion-paid", "paid-cost-not-refunded")]
+    public void LandlordsCoercionPaidExtraDiscardKeepsMercenaryBlockValid()
+    {
+        var (game, attacker, target, mercenary) = Prepare(72535);
+        var landlord = Card("S02-0015", "mercenary-profile-landlord-paid", 0);
+        var extra = Card("S01-0001", "mercenary-profile-landlord-extra", 1);
+        landlord.Hidden = true;
+        landlord.SetRound = 0;
+        game.State.Players[0].Field[1][0] = landlord;
+        game.State.Players[1].Hand.Add(extra);
+
+        var prompt = BeginAttackAndFindMercenaryPrompt(game, attacker, target, mercenary);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: mercenary.InstanceId)).Accepted);
+        var landlordPrompt = FindResponsePrompt(game, landlord.InstanceId);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: landlordPrompt.PromptId,
+            Choice: landlord.InstanceId)).Accepted);
+        var discardPrompt = FindPrompt(game,
+            candidate => candidate.Data.GetValueOrDefault("action") == "s2-landlord-extra-discard",
+            "〈地主的胁迫〉未进入额外弃牌结算");
+        Assert.Contains(extra.InstanceId, discardPrompt.ValidChoices);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: discardPrompt.PromptId,
+            Choice: extra.InstanceId)).Accepted);
+        PassAll(game);
+
+        Assert.NotNull(FindField(game.State.Players[1], target.InstanceId));
+        Assert.Single(game.State.Players[1].Graveyard, card => card.InstanceId == mercenary.InstanceId);
+        Assert.Single(game.State.Players[1].Graveyard, card => card.InstanceId == extra.InstanceId);
+    }
+
     private static L12Prompt BeginAttackAndFindMercenaryPrompt(L12GameEngine game,
         L12CardInstance attacker, L12CardInstance target, L12CardInstance mercenary)
     {
@@ -132,6 +198,35 @@ public sealed class MercenaryHandBlockLifecycleProfileTests
         }
         Assert.Empty(game.State.PendingPrompts);
         Assert.Empty(game.State.EffectStack);
+        Assert.Empty(game.State.DeferredEffectStack);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.PendingTriggerBatches);
+        Assert.Empty(game.State.PendingTriggerStackCandidates);
+        Assert.Null(game.State.PendingDefense);
+    }
+
+    private static L12Prompt FindResponsePrompt(L12GameEngine game, string responseInstanceId)
+        => FindPrompt(game,
+            prompt => prompt.Kind == "response" && prompt.ValidChoices.Contains(responseInstanceId),
+            "佣兵部队抵挡未建立可供〈地主的胁迫〉响应的权威时点");
+
+    private static L12Prompt FindPrompt(
+        L12GameEngine game,
+        Func<L12Prompt, bool> predicate,
+        string failure)
+    {
+        for (var count = 0; count < 100; count++)
+        {
+            if (game.State.PendingPrompts.FirstOrDefault() is not { } prompt) break;
+            if (predicate(prompt)) return prompt;
+            var choice = prompt.Kind == "response" ? "pass"
+                : prompt.ValidChoices.Contains("no") ? "no"
+                : prompt.ValidChoices.Contains("skip") ? "skip" : prompt.ValidChoices.First();
+            var result = game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice));
+            Assert.True(result.Accepted, result.Error);
+        }
+        throw new Xunit.Sdk.XunitException(failure);
     }
 
     private static (L12GameEngine Game, L12CardInstance Attacker, L12CardInstance Target,

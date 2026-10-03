@@ -32,19 +32,53 @@ public sealed partial class L12GameEngine
         AddEvent("effect", playerIndex, $"{card.Name} 获得〈全军出击〉赋予的冲锋", card);
     }
 
-    private void ResolveEntryContinuousEffects(int playerIndex, L12CardInstance card)
+    private const string ThorGrantedEntryCharge = "thorGrantedEntryCharge";
+
+    private L12TriggerCandidate? BuildThorGrantedEntryChargeCandidate(int playerIndex, L12CardInstance card)
     {
         var player = State.Players[playerIndex];
-        if (card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "asgard")
-            && player.UsedAbilities.Contains($"s2-thor-charge:{State.TurnSerial}"))
+        if (card.CardType != "legion" || !L12StructuredCardRules.HasFaction(player, card, "asgard")
+            || !player.UsedAbilities.Contains($"s2-thor-charge:{State.TurnSerial}")) return null;
+        const string effectText = "登场时 获得冲锋。";
+        return new L12TriggerCandidate
+        {
+            CandidateId = $"trigger-{++State.TriggerBatchSequence}",
+            Controller = playerIndex,
+            SourceInstanceId = card.InstanceId,
+            SourceCardId = card.CardId,
+            SourceName = card.Name,
+            Trigger = "enter",
+            Text = "雷神索尔赋予的【登场时】冲锋效果",
+            SourceSnapshot = CaptureLastKnownSourceSnapshot(card),
+            Data = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [ThorGrantedEntryCharge] = "true",
+                ["grantedByCardId"] = "S02-03M1",
+                ["triggerEffectText"] = effectText,
+                ["stackText"] = effectText,
+            },
+        };
+    }
+
+    private bool TryResolveThorGrantedEntryCharge(L12StackItem item)
+    {
+        if (item.Data.GetValueOrDefault(ThorGrantedEntryCharge) != "true") return false;
+        var card = FindOnField(State.Players[item.Controller], item.SourceInstanceId, out _, out _);
+        if (card is null)
+            AddEvent("effect-noop", item.Controller,
+                $"〈{item.SourceName}〉已离开战场，雷神索尔赋予的冲锋未生效");
+        else
         {
             card.HasCharge = true;
-            AddEvent("effect", playerIndex, $"{card.Name}获得雷神索尔赋予的冲锋", card);
+            AddEvent("effect", item.Controller, $"{card.Name}获得雷神索尔赋予的冲锋", card);
         }
+        FinishStackItem(item);
+        return true;
     }
 
     private void ResolveCardEffect(L12StackItem item)
     {
+        if (TryResolveThorGrantedEntryCharge(item)) return;
         if (item.Data.GetValueOrDefault("skipCompositeSettlement") == "true")
         {
             var status = item.Data.GetValueOrDefault("effectResultStatus");

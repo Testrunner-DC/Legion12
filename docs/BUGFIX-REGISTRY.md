@@ -1,5 +1,46 @@
 # Legion12 Bug 修复记录
 
+## ADMIN-20261003-HOME-NOTICE-ROUTE｜首页通知的新独立资讯地址被旧合同拒绝
+
+- 根因与授权：选择器已迁至/news/{id}，服务端发布校验仍仅识别/news#article-{id}。只读取证确认后用户批准最小解析修复；不借此修改实际配置或发布内容。
+- 修复：同一校验出口精确接受新旧两种本地地址，随后仍要求Published非空、Kind=news、Status=published。空地址、外部URL、额外路径、query/hash/反斜杠均拒绝；草稿保存、disabled通知旧行为保留。
+- 同型核对：搜索前端资讯路由/通知选择器及服务端HomeComposition发布消费者；修复不扩大到任意链接、不绕过资讯权限与发布投影、不改变跨区事务。
+- 文件：L12PlatformStore.SiteContent.cs、HomeNoticeArticleRouteRegressionTests.cs。修复前具名3项中2通过1失败（新路由），修复后3/3、失败/跳过0；红绿回执cache/an3/test-evidence。Main独立差异审查已过，最终完整平台/Release及正式部署尚未完成。本项为后台内部变更，不写玩家更新日志。
+
+## EFFECT-20261003-EFFECT-BLOCK-AUTHORITY｜效果抵挡没有进入统一抵挡事件
+
+- Main最后完整Batch：6150规则/411平台、失败/跳过0、UI354/卡图324+42/双前端/41部署故障场景通过，真实成功TEMP清理均一次；batch-frozen.log及test-d1f798099dae4da38d36d2ff1ae98bf4/test-41790e5e43b24591b9241f478b826c96。仅在干净Release及正式版本读回后关闭确有具名原场景证据的反馈；未复现三项不得据相关代码自动关闭。
+
+- 最终夹具红绿闭合：attack具名理论红灯2项1失败；补真实交战后最终完整展示114+旧35=149/149通过，唯一文件8E0A321099056BAC55174B317F937FDF650512006A63347335A0E1D5E6BE12AB冻结。Main最终365/365（含两自动清单正常断言全类），源码/TRX绑定focused-final-df85788aed8e4af08636d074ed7b6b29。生成只同步6项新真实测试引用及指纹，不改变686能力/78档案，也不把导出记完成；完整门禁仍待通过。
+
+- 全量展示边界补缺：最终全规则6150项中仅3项失败，其中AbsoluteDefensePublishesTheBranchOfItsExactSelectedStackTargetAcrossRestore的attack旧夹具没有Field攻方/PendingDefense且期望无效根；身份校验按设计失败，不放宽引擎。按真实交战迁移此分支、保留resolved/SceneId/branch/V2与active无效分支，并核对唯一defense权威事件原根绑定。另2自动生成文档指纹随新增具名证据待刷新；原TRX及失败现场保留，不记完整门禁通过。
+
+- 根因：佣兵部队直接写BlockedByResponse，绝对防御/空城直接无效根进攻；缺少defense权威事件，地主的胁迫及狮心王理查附加弃牌无法消费。旧测试仅锁单卡挡住，没有同时验证抵挡时机消费者。
+- 共享修复：三种效果抵挡绑定原战斗/根进攻/进攻者/目标身份，完成响应后建立defense事件；地主响应与狮心王额外弃牌均走已有消费者。已付佣兵弃牌、绝防/空城费用不因后续抵挡失效退还；响应被无效不建抵挡事实；原战斗失效/V2恢复不得绑定下次进攻。
+- 同型扫描：response-block、response-negate且mode:block、empty-city-block现代及旧费用续程；独立效果无效仍按原流程，普通军团抵挡/支援不改。涉及PromptsAndSetup、AuthorityEvents、S1ExtendedEffects、MoraleReturns；新增CounterBlockAuthorityRegressionTests及原MercenaryHandBlockLifecycleProfileTests扩展。首轮漏掉MoraleReturns旧V2费用续程，关键复核实际找到根Negated旁路及缺CombatId情形，Main停止Batch并补兼容回归，不能称首轮已覆盖全部出口。
+- 子任务14项统一通过后修正空城测试未自动跳过同批手牌抵挡的夹具，再单项通过；Main随后在最终共用源码统一复跑117/117，覆盖新增12项与相邻反击/可用性/V2，失败/跳过0。另3项旧相邻回归来自AtomicReviewBatch5/CombatTimeline/NewSystems，不在117筛选，明确纳入全规则及后续具名复验，不能冒称117已包含原15全部。TRX在artifacts/card-recurrence-20261003/focused-results，监督回执cache/sg4/test-evidence/test-c57717074d8d4dc1853bfdfaad288973。完整门禁/部署待完成。
+- 阿喀琉斯报告单独核对：45b65e及此前d165与当前的远程额外伤害计算一致；新增RestoredRangedAttackProjectsExtraDamageRatherThanAnAchillesTroopsBuff真实攻击/V2/双方快照锁4000进攻造成5000伤害、7000→2000，事件无正向兵力修正。未复现增兵，不冒称修复不存在的代码根因、不能据此自动关闭原报告。
+- 最终补缺：旧费用续程改DeclaredResponseTimingTarget；显式CombatId=null检查点恢复后，在仍匹配原根/攻方/目标时以根StackItemId生成稳定身份并持久化。地主/理查、根移除不退款、权威排队后攻方离场和嵌套原根均有守卫；原嵌套断言根Negated改为根不无效+defense绑定，不删除wrapper/legacy/root-removed场景。子任务35/35；Main完整具名合集216/216，失败/跳过0，source-binding与TRX在artifacts/card-recurrence-20261003/focused-final-1dff2068484945c797f6ff60657e8f3f。关键复核确认原阻断解除，最终完整门禁仍待完成。
+
+## EFFECT-20261003-THOR-GRANTED-ENTRY｜授予登场冲锋绕过响应窗口
+
+- 完整门禁补缺：此前“无授予旧路径保留”描述对Actions/GM实际不成立，完整Batch及独立AtomicReviewBatch6LA红灯7失败/3通过证明普通嬴政先见stack-response而非s2-yingzheng-enter-cost。已将两入口共批条件限定为真实Thor/Grail补充候选存在，无补充恢复原QueueOrPush公共声明；不弱化旧测试。新增OrdinaryPrintedEntryWithoutThorKeepsItsPreStackDeclarationRoute。最终子50/50、Main227/227、失败/跳过0；红灯cache/ed3/test-evidence/test-d296330ea7e24c658b67072ce6417d31，绿灯test-b2fa91ea887c47c1ae2f03ec9cc94d68及Main源码绑定focused-final-b538a988c1a04186bd05c561f6a05419。完整Batch/干净Release及部署仍待最终回执。
+
+- 根因与真实红灯：索尔授权后军团真实playCard落位直接通过ResolveEntryContinuousEffects写HasCharge，不产生独立enter项，落穴没有可响应对象。子任务修前2项中1项真实失败，回执cache/ed3/test-evidence/test-06da57c5125046f39a66610ae34e534a。
+- 修复：授予效果来源为登场军团，单独enter候选与印刷enter同批排序；合法结算才赋冲锋。落穴/绝防无效、来源离场不赋；不重复支付该军团印刷enter费用，不重放落位动作；无授予的旧公共登场路径保留。
+- 同类入口扫描：真实手牌打牌、晋升、non-hand-entry、CompleteEffectLegionEntry及GM；私区效果生成军团仍经唯一CompleteEffectLegionEntry，不建第二套流程。全军出击/武运在天原即时赋冲锋语义不改。Data标记仅由引擎构造，公共候选资格在专用准备前执行；Negated在ResolveCardEffect之前处理，旧V2缺标记不会误走授予结算。
+- 验证：索尔6项红绿，登场/腐秽/美狄亚最终34/34；Main最终117/117，失败/跳过0。公共触发、运行能力映射、324卡原子审计零遗留通过，最终完整Batch/Release尚待完成。
+- 未复现项如实记录：腐秽自然翻灾、V2、前后排、18张反击逐卡费用/盖伏投影一致；美狄亚真实手牌/效果登场、含自身2000及持续兵力、严格小于/等于/大于、拒绝/无效/空牌库/V2全部过。两项只补回归、不臆改正确引擎、不声称已找到玩家原现场根因；没有原录像阻断。
+
+## LOCAL-20261003-TEST-STORAGE｜测试夹具累积、活动预算漏计及未闭合清理风险
+
+- 根因：历史测试各自创建临时SQLite库，没有统一进程关闭后回收责任；旧总量门禁混合活动源码、热构建与受保护事故数据。旧清理仅依据年龄/不完整清单，不能证明可删归属。
+- 本地修复：测试监督入口保存本次TRX计数及自有GUID根，测试失败/跳过/空运行/缺证据/联接/锁定均保留，全部通过才删除自有临时树；规则、平台、Release及CI入口统一。真实宿主测试链接进两个项目，TEMP/TMP/TMPDIR统一，不修改生产SQLite池。
+- 独立复核补缺：活动源码排除了node_modules而无独立计量，现测候选依赖或已有共享联接的单一真实目标220MiB预算；测试增加普通目录和共享联接超限正反例。未知普通源码联接继续拒绝，依赖计量不授权删除。
+- 完整运行新发现：短路径Batch规则6102/6102、平台408/408均通过且失败/跳过0；平台测试结束后VBCSCompiler仍持有自有TEMP内的xunit分析器，三次有界清理失败，因此该Batch整体失败，不能冒称通过。现场及TRX在cache/sg3的retained回执保留。监督入口随后在testhost参数分隔符前强制UseSharedCompilation=false，禁止本次运行启动长期共享编译服务；不杀其他进程、不反写生产。8项生命周期合成专项包含参数位置防回滚断言，已通过；真实运行及最终完整门禁仍待验收。
+- 清理保护：正式/回退/测试/待发/最近2份并集；保留包、旧完整清单、归档与卡图哈希先验再逐项重验；成功阶段必须非空且全部显式true，失败/未知/PINNED不删。旧部署暂存残缺/孤立卡图均留存。
+- 验证：生命周期8项及隔离、活动审计11项、清理/发布门禁专项通过。首轮部署测试夹具长路径失败、第二轮实际测试清理锁失败均保存且不算通过；最终批次及提交级发布状态以回执为准。本条没有线上业务写入或部署。
+
 ## EFFECT-20261003-COUNTER-RESPONSE-LIFECYCLE｜反击战术合法发动后旧响应资格再次出现
 
 - 05:16发布回执：完整Batch及干净Release规则6101/平台407、专项104和独立复核通过后，45b65e47已一次正式上线并核验身份；维护已解除，测试服未再次部署。没有人工重演所有实战场景或批量关闭后台Bug；只将命名回归及部署身份视为证据。发布中F2内存异常和同候选数据保留恢复另记F2专项，不隐藏异常或冒称全程绿色。

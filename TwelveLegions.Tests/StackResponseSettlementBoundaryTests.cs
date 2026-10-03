@@ -5,6 +5,216 @@ namespace TwelveLegions.Tests;
 
 public sealed partial class StackResponseChoiceRegressionTests
 {
+    [Fact]
+    public void RestoredLegacyEmptyCityMoralePaymentDeclaresDefenseWithoutNegatingTheAttackRoot()
+    {
+        var game = Create();
+        var root = AddEffect(game, "legacy-empty-city-root", "opponent-attack");
+        root.Negated = false;
+        game.State.Players[0].Field[0][0] = Card(root.SourceCardId, root.SourceInstanceId, 0, troops: 6000);
+        game.State.PendingDefense = new L12PendingDefense
+        {
+            CombatId = null,
+            AttackerPlayer = 0,
+            AttackerInstanceId = root.SourceInstanceId,
+            Target = new L12AttackTarget("master"),
+            Stage = L12CombatStage.DefenderAttackTiming,
+        };
+        var emptyCity = Counter(game, 0, "S01-0120");
+        var response = new L12StackItem
+        {
+            StackItemId = "legacy-empty-city-response",
+            Controller = 1,
+            SourceInstanceId = emptyCity.InstanceId,
+            SourceCardId = emptyCity.CardId,
+            SourceName = emptyCity.Name,
+            SourceSnapshot = emptyCity,
+            Trigger = "reaction",
+            Text = "空城计旧V2返还士气续段",
+        };
+        response.Targets.Add(root.StackItemId);
+        game.State.EffectStack.Add(response);
+        var morale = new L12MoraleCard { CardId = "S01-01C1", InstanceId = "legacy-empty-city-cost" };
+        var spareMorale = new L12MoraleCard
+        {
+            CardId = "S01-01C1", InstanceId = "legacy-empty-city-spare", Tapped = true,
+        };
+        game.State.Players[1].Morale.Clear();
+        game.State.Players[1].Morale.AddRange([morale, spareMorale]);
+        game.State.IsResolvingStack = true;
+        var began = Assert.IsType<bool>(typeof(L12GameEngine)
+            .GetMethod("BeginEffectMoraleReturn", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(game, [response, 1, "empty-city-block", null, false]));
+        Assert.True(began);
+
+        game = Restore(game);
+        var restoredRoot = Assert.Single(game.State.EffectStack,
+            item => item.StackItemId == root.StackItemId);
+        var restoredResponse = Assert.Single(game.State.EffectStack,
+            item => item.StackItemId == response.StackItemId);
+        Assert.DoesNotContain("authorityTarget", restoredResponse.Data.Keys);
+        Resolve(game, morale.InstanceId);
+
+        Assert.False(restoredRoot.Negated);
+        Assert.DoesNotContain(game.State.Players[1].Morale, card => card.InstanceId == morale.InstanceId);
+        Assert.Contains(game.State.Players[1].Morale, card => card.InstanceId == spareMorale.InstanceId);
+        var stabilizedCombatId = Assert.IsType<string>(game.State.PendingDefense?.CombatId);
+        Assert.StartsWith("combat-legacy-", stabilizedCombatId, StringComparison.Ordinal);
+        Assert.Contains(game.State.AuthorityEvents, authority => authority.Type == "defense"
+            && authority.Data.GetValueOrDefault("effectBlock") == "true"
+            && authority.Data.GetValueOrDefault("effectBlockCombatId") == stabilizedCombatId
+            && authority.Data.GetValueOrDefault("effectBlockAttackStackItemId") == root.StackItemId);
+    }
+
+    [Theory]
+    [InlineData("landlord")]
+    [InlineData("richard")]
+    public void RestoredLegacyEmptyCityMoralePaymentReachesDefenseCostConsumers(string consumer)
+    {
+        var game = Create();
+        var root = AddEffect(game, $"legacy-empty-city-{consumer}-root", "opponent-attack");
+        root.Negated = false;
+        game.State.Players[0].Field[0][0] = Card(root.SourceCardId, root.SourceInstanceId, 0, troops: 6000);
+        game.State.PendingDefense = new L12PendingDefense
+        {
+            CombatId = $"legacy-empty-city-{consumer}-combat",
+            AttackerPlayer = 0,
+            AttackerInstanceId = root.SourceInstanceId,
+            Target = new L12AttackTarget("master"),
+            Stage = L12CombatStage.DefenderAttackTiming,
+            RichardDefenseTaxActive = consumer == "richard",
+        };
+        var emptyCity = Counter(game, 0, "S01-0120");
+        L12CardInstance? landlord = null;
+        if (consumer == "landlord")
+        {
+            landlord = Card("S02-0015", "legacy-empty-city-landlord", 0);
+            landlord.Hidden = true;
+            landlord.SetRound = 0;
+            game.State.Players[0].Field[1][0] = landlord;
+        }
+        var extra = Card("S01-0003", $"legacy-empty-city-{consumer}-extra", 1);
+        game.State.Players[1].Hand.Add(extra);
+        var response = new L12StackItem
+        {
+            StackItemId = $"legacy-empty-city-{consumer}-response",
+            Controller = 1,
+            SourceInstanceId = emptyCity.InstanceId,
+            SourceCardId = emptyCity.CardId,
+            SourceName = emptyCity.Name,
+            SourceSnapshot = emptyCity,
+            Trigger = "reaction",
+            Text = "空城计旧V2返还士气续段",
+        };
+        response.Targets.Add(root.StackItemId);
+        game.State.EffectStack.Add(response);
+        var morale = new L12MoraleCard
+        {
+            CardId = "S01-01C1",
+            InstanceId = $"legacy-empty-city-{consumer}-cost",
+        };
+        var spareMorale = new L12MoraleCard
+        {
+            CardId = "S01-01C1",
+            InstanceId = $"legacy-empty-city-{consumer}-spare",
+            Tapped = true,
+        };
+        game.State.Players[1].Morale.Clear();
+        game.State.Players[1].Morale.AddRange([morale, spareMorale]);
+        game.State.IsResolvingStack = true;
+        Assert.True(Assert.IsType<bool>(typeof(L12GameEngine)
+            .GetMethod("BeginEffectMoraleReturn", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(game, [response, 1, "empty-city-block", null, false])));
+
+        game = Restore(game);
+        Resolve(game, morale.InstanceId);
+        L12Prompt? consumerPrompt = null;
+        for (var step = 0; step < 40 && game.State.PendingPrompts.Count > 0; step++)
+        {
+            var prompt = Assert.Single(game.State.PendingPrompts);
+            if (consumer == "landlord" && landlord is not null
+                && prompt.Kind == "response" && prompt.ValidChoices.Contains(landlord.InstanceId))
+            {
+                Resolve(game, landlord.InstanceId);
+                continue;
+            }
+            if (prompt.Data.GetValueOrDefault("action") == (consumer == "landlord"
+                    ? "s2-landlord-extra-discard" : "s2-richard-defense-extra-discard"))
+            {
+                consumerPrompt = prompt;
+                break;
+            }
+            Resolve(game, "pass");
+        }
+        Assert.NotNull(consumerPrompt);
+        Assert.Contains(extra.InstanceId, consumerPrompt!.ValidChoices);
+        Resolve(game, extra.InstanceId);
+
+        Assert.DoesNotContain(game.State.Players[1].Morale, card => card.InstanceId == morale.InstanceId);
+        Assert.Contains(game.State.Players[1].Morale, card => card.InstanceId == spareMorale.InstanceId);
+        Assert.Contains(game.State.Players[1].Graveyard, card => card.InstanceId == extra.InstanceId);
+        Assert.Contains(game.State.AuthorityEvents, authority => authority.Type == "defense"
+            && authority.Data.GetValueOrDefault("effectBlock") == "true");
+    }
+
+    [Fact]
+    public void RestoredLegacyEmptyCityPaysItsCostButFailsWhenTheDeclaredAttackRootIsGone()
+    {
+        var game = Create();
+        var root = AddEffect(game, "legacy-empty-city-missing-root", "opponent-attack");
+        root.Negated = false;
+        game.State.PendingDefense = new L12PendingDefense
+        {
+            CombatId = "legacy-empty-city-missing-combat",
+            AttackerPlayer = 0,
+            AttackerInstanceId = root.SourceInstanceId,
+            Target = new L12AttackTarget("master"),
+            Stage = L12CombatStage.DefenderAttackTiming,
+        };
+        var emptyCity = Counter(game, 0, "S01-0120");
+        var response = new L12StackItem
+        {
+            StackItemId = "legacy-empty-city-missing-response",
+            Controller = 1,
+            SourceInstanceId = emptyCity.InstanceId,
+            SourceCardId = emptyCity.CardId,
+            SourceName = emptyCity.Name,
+            SourceSnapshot = emptyCity,
+            Trigger = "reaction",
+            Text = "空城计旧V2返还士气续段",
+        };
+        response.Targets.Add(root.StackItemId);
+        game.State.EffectStack.Add(response);
+        var morale = new L12MoraleCard
+        {
+            CardId = "S01-01C1",
+            InstanceId = "legacy-empty-city-missing-cost",
+        };
+        var spareMorale = new L12MoraleCard
+        {
+            CardId = "S01-01C1",
+            InstanceId = "legacy-empty-city-missing-spare",
+            Tapped = true,
+        };
+        game.State.Players[1].Morale.Clear();
+        game.State.Players[1].Morale.AddRange([morale, spareMorale]);
+        game.State.IsResolvingStack = true;
+        Assert.True(Assert.IsType<bool>(typeof(L12GameEngine)
+            .GetMethod("BeginEffectMoraleReturn", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(game, [response, 1, "empty-city-block", null, false])));
+        game.State.EffectStack.Remove(root);
+
+        game = Restore(game);
+        Resolve(game, morale.InstanceId);
+
+        Assert.DoesNotContain(game.State.Players[1].Morale, card => card.InstanceId == morale.InstanceId);
+        Assert.Contains(game.State.Players[1].Morale, card => card.InstanceId == spareMorale.InstanceId);
+        Assert.DoesNotContain(game.State.AuthorityEvents, authority => authority.Type == "defense"
+            && authority.Data.GetValueOrDefault("effectBlock") == "true");
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("原进攻已离开堆叠", StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData("S02-0017", 0)]
     [InlineData("S02-0017", 1)]
@@ -181,8 +391,11 @@ public sealed partial class StackResponseChoiceRegressionTests
             root.Negated = false;
             game.State.PendingDefense = new L12PendingDefense
             {
+                CombatId = $"nested-{cardId}-{outcome}",
                 AttackerPlayer = 0, AttackerInstanceId = root.SourceInstanceId,
                 Target = new L12AttackTarget("master"),
+                Stage = L12CombatStage.DefenderAttackTiming,
+                DefenderAttackTimingOpened = true,
             };
             game.State.Players[1].Morale.Clear();
             game.State.Players[1].Morale.Add(new L12MoraleCard { CardId = "S01-01C1", InstanceId = "nested-cost" });
@@ -223,7 +436,13 @@ public sealed partial class StackResponseChoiceRegressionTests
             && entry.Cards.Any(card => card.CardId == cardId)).OrderBy(entry => entry.EffectSegmentIndex).ToArray();
         Assert.NotEmpty(results);
         Assert.Equal(outcome == "root-removed" ? "failed" : "resolved", results[0].EffectResultStatus);
-        if (cardId == "S01-0120" && restoredRoot is not null) Assert.True(restoredRoot.Negated);
+        if (cardId == "S01-0120" && restoredRoot is not null)
+        {
+            Assert.False(restoredRoot.Negated);
+            Assert.Contains(game.State.AuthorityEvents, authority => authority.Type == "defense"
+                && authority.Data.GetValueOrDefault("effectBlock") == "true"
+                && authority.Data.GetValueOrDefault("effectBlockAttackStackItemId") == root.StackItemId);
+        }
         if (cardId == "S02-0016")
         {
             Assert.Equal(outcome == "root-removed" ? 6000 : 3000, game.State.Players[0].Field[0][0]!.Troops);

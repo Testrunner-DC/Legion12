@@ -2284,7 +2284,8 @@ public sealed partial class L12GameEngine
     }
 
     private bool PrepareTriggerCandidateForDeclaration(L12TriggerCandidate candidate)
-        => PrepareOpponentHandDiscardTriggerCandidate(candidate)
+        => candidate.Data.GetValueOrDefault(ThorGrantedEntryCharge) == "true"
+            || PrepareOpponentHandDiscardTriggerCandidate(candidate)
             && PrepareAttackPublicTriggerCandidate(candidate)
             && PrepareBatch6JAEnterCandidate(candidate)
             && PrepareSimpleCardStateTriggerCandidate(candidate)

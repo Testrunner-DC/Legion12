@@ -197,7 +197,23 @@ public sealed partial class L12GameEngine
         if (command.TriggerEffects)
         {
             var trigger = card.CardType is "legion" or "artifact" ? "enter" : "play";
-            if (HasImmediateEffect(card, trigger))
+            var thorEntryCandidate = card.CardType == "legion"
+                ? BuildThorGrantedEntryChargeCandidate(command.TargetPlayer, card)
+                : null;
+            var grailEntryCandidate = card.CardType == "legion"
+                ? BuildS2GrailRoundTableEntryCandidate(command.TargetPlayer, card)
+                : null;
+            if (card.CardType == "legion"
+                && (thorEntryCandidate is not null || grailEntryCandidate is not null))
+            {
+                var candidates = new List<L12TriggerCandidate>();
+                if (HasImmediateEffect(card, trigger))
+                    candidates.Add(CreateTriggerCandidate(command.TargetPlayer, card, trigger, "【登场时】效果"));
+                if (thorEntryCandidate is not null) candidates.Add(thorEntryCandidate);
+                if (grailEntryCandidate is not null) candidates.Add(grailEntryCandidate);
+                if (candidates.Count > 0) QueueTriggerCandidates(candidates);
+            }
+            else if (HasImmediateEffect(card, trigger))
                 QueueOrPushTriggeredEffect(command.TargetPlayer, card, trigger,
                     trigger == "enter" ? "【登场时】效果" : "战术效果");
             else if (player.Resolving.Remove(card))
@@ -205,7 +221,6 @@ public sealed partial class L12GameEngine
                 ResetCardForPrivateZone(card);
                 player.Graveyard.Add(card);
             }
-            if (card.CardType == "legion") QueueS2GrailRoundTableEntry(command.TargetPlayer, card);
         }
         else if (player.Resolving.Remove(card))
         {
