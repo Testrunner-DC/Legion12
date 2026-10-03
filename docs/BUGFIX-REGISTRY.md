@@ -5326,9 +5326,11 @@
 
 - 前置整批完整Release6152规则/435平台、失败跳过0，UI354/双构建/制品并精确Git读回39b89700完成；以下待Release表述为过程历史。未部署，不据本地验收关闭线上反馈。E2之后Main移动16/6复验维持原边界。
 
-## E2-20261003-ACTION-HIERARCHY｜当前操作者与选择层级（产品改进，本地验收）
+## E2-20261003-ACTION-HIERARCHY｜当前操作者与选择层级（已验收同步195dcbb0，未部署）
 
 - 范围：既有权威prompt/controlled-player、合法目标集合及paymentStatus事实只调整展示；突出操作者/目标/已选对象，降低无关格位边框，去重复标题，不新增结算或玩法判断。对手有阻塞选择时不再呈现普通结束回合；GM控制与只读观察文案分别按真实操作者和中性视角。
+
+- 最终：e7c2ab4e纳入195dcbb0完整干净Release规则6152/平台435失败跳过0、双前端/制品与精确Git同步通过；Main最终带五源哈希浏览器e2-action-main-bound-final-20261003-1806实际10尺寸/10交互、动画144+30、移动16/6保持。以下待完整门禁描述为过程历史；计时文字裁切另项未修，不虚称全量PASS，不据Git结果关闭线上反馈。
 - 扫描：GameActions阶段分支、GameBoard三类inline目标/空位/费用及移动说明、PromptOverlay选项/最小化/只读、PlayerMat targetable/available/payment/response共享显示消费者；未改命令payload、私有投影、计时/动画所有者或布局列。
 - 回归：test-e2-action-hierarchy与实际浏览器10尺寸/10操作、几何delta/collision0；Main移动居中16/6复跑。证据artifacts/e2-action-main-review-20261003-1756；既有无障碍/等大按钮/投降返回/日志等保护保留。完整门禁与同步待完成，未部署。
 
