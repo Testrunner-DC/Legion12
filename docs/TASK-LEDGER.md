@@ -1,12 +1,13 @@
 # 十二军团任务台账
 
-## MAIN-20261003-OSIRIS-DISASTER-PRIORITY｜用户明确裁定（本地验收完成，待干净Release/同步，未部署）
+## MAIN-20261003-OSIRIS-DISASTER-PRIORITY｜用户明确裁定（已验收推送，未部署）
 
 - 用户确认奥西里斯展示同步及“黄金的理想乡（勘误收录）”；原首段准确替换，不添加“回合”，保留双人/多人后段和原三产品，采用原勘误详情组件。图鉴筛选、1920宽屏详情/弹框及390手机可滚动勘误详情通过，证据artifacts/osiris-errata-main-20261003；修正一次测试常量的旧后段误抄，未改真实卡面后段。卡图请求在该离线文字夹具中阻断，不能以截图卡背称新卡图验收。
 - 伤害规则：普通增益→血戒等替换→天灾最后生效。百鬼＋血戒有/无强攻均3，旧仅百鬼2点覆盖。本批P0/P1通过同一权威进攻出口实现，普通与贯穿共用，抵挡/主宰效果/中立直接伤害不冒领进攻加伤。Main独立审查后将子租约增加Models的唯一nullable声明分量0/1；不改StateFormatVersion，旧V2null保持原声明整值语义而非差值猜测。子四文件已冻结/释放；Main独立146/146专项与实际目录17+7生成闭集回归通过，324卡/686段/78档案不变。完整Batch进行中；Main负责数据/显示/能力ID迁移/最终验收/Git，构建串行，不发布后台规则、不部署、不改维护。
 - 最新计時批2ebf796ec613882a750304889900a85e2542496c已在20:25:53完成干净Release：规则6152/平台435失败跳过0、UI354/卡图324+42/双前端/包通过，origin/main精确读回；最终证据deploy/verification-evidence/2ebf796e…/20261003T121326Z-32cc0cd63bdf47ca817534a4f279037d，包SHA1ebc38ad…618ac，已向原专项回执暂停。下方待Release为历史；本轮部署0。
 - 完整Batch首检发现旧反射签名/P1目录冻结指纹三项阻断，Main保留DamageMaster原6参数签名、同核心增加进攻末位分量入口；只改黄金夹具abilityCatalog哈希，其余12字段保持。扩大233/233专项通过，原失败/中止证据保留，最终完整Batch重跑中，尚未推送本批或部署。
 - 最新本地验收已完成：Batch规则6170/6170、平台435/435失败跳过0，两份实际TRX为primary/test-evidence/test-bd1cfaafc9b4484ea0334ca873ed18c9与test-2f6bc7caff694315a4349cfd8658beb3；前端随后因新玩家账本分类cards阻断，Main仅改既有card-effects分类并续跑前端/账本Batch，exit0、UI354/卡图324+42/双构建通过。两段日志分别osiris-priority-batch-final-20261003.log、osiris-priority-batch-frontend-completion-20261003.log；不改规则/平台源，保留首轮失败。现在提交源冻结候选后完整干净Release，仍未推送/部署本批。
+- 最终完成：应用4e96ee7a6efe26a373cfa9811184b672a3469100于21:40:53完整干净Release通过，规则6170/平台435失败跳过0、UI354/卡图324+42/双前端/发布包通过；success timings与两TRX独立读回，包SHA cfcd8e76…3c1cb2一致，origin/main精确同一提交。证据deploy/verification-evidence/4e96ee7a…/20261003T132826Z-264b9f06d063462e8a9aa75b3082f2f6，最终完整exit0日志osiris-priority-release-20261003.log。没有部署、后台发布、Bug关闭或维护操作；之后纯文档回执不改变应用及发布包绑定，以上待门禁/未推送为历史。
 
 ## MAIN-20261003-RULE-CONFIRMATION｜裁定核对与赛事通则草案（本地文档已整理，未发布）
 
