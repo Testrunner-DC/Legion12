@@ -797,9 +797,19 @@ public sealed partial class L12GameEngine
         return false;
     }
 
-    private int AdjustAnderstorpRingDamage(L12PlayerState player, int amount)
-        => State.ActivePlayer != player.PlayerIndex && player.Relic?.CardId == "S02-0305"
-            && player.MasterDamageTakenThisTurn == 0 ? 2 : amount;
+    private int AdjustAnderstorpRingDamage(L12PlayerState player, int amount,
+        int declaredDisasterMasterDamageBonus = 0)
+    {
+        if (State.ActivePlayer == player.PlayerIndex || player.Relic?.CardId != "S02-0305"
+            || player.MasterDamageTakenThisTurn != 0)
+            return amount;
+
+        const int replacementDamage = 2;
+        // 百鬼夜行已经包含在确认伤害中。血戒仍尝试替换为2，但不能借此减小含天灾影响的整笔伤害。
+        return declaredDisasterMasterDamageBonus > 0 && replacementDamage < amount
+            ? amount
+            : replacementDamage;
+    }
 
     private L12TriggerCandidate? BuildAnderstorpRingDrawCandidate(int playerIndex)
     {

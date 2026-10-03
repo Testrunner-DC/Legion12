@@ -2340,29 +2340,29 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     }
 
     private int ResolveMasterDamageAmount(int playerIndex, int amount, int? sourcePlayer,
-        bool neutralSource, L12StackItem? declaredSourceItem = null, int finalAttackDamageBonus = 0)
+        bool neutralSource, L12StackItem? declaredSourceItem = null,
+        int declaredDisasterMasterDamageBonus = 0)
     {
         amount = ApplyOutgoingMasterDamageOverride(playerIndex, amount, sourcePlayer, neutralSource,
             declaredSourceItem);
         // 中立天灾伤害不受玩家卡牌的伤害替换影响。
-        if (!neutralSource) amount = AdjustAnderstorpRingDamage(State.Players[playerIndex], amount);
-        amount = Math.Max(0, amount);
-        // 进攻的天灾增益在普通增益和伤害替换之后生效，但不能把0点伤害重新变为正数。
-        if (amount > 0) amount += Math.Max(0, finalAttackDamageBonus);
-        return amount;
+        if (!neutralSource)
+            amount = AdjustAnderstorpRingDamage(State.Players[playerIndex], amount,
+                Math.Clamp(declaredDisasterMasterDamageBonus, 0, 1));
+        return Math.Max(0, amount);
     }
 
     private void DamageMaster(int playerIndex, int amount, string source, int? sourcePlayer = null,
         bool neutralSource = false, bool combatDamage = false)
-        => DamageMasterWithFinalAttackBonus(playerIndex, amount, source, sourcePlayer,
+        => DamageMasterWithDeclaredDisasterBonus(playerIndex, amount, source, sourcePlayer,
             neutralSource, combatDamage, 0);
 
-    private void DamageMasterWithFinalAttackBonus(int playerIndex, int amount, string source,
-        int? sourcePlayer, bool neutralSource, bool combatDamage, int finalAttackDamageBonus)
+    private void DamageMasterWithDeclaredDisasterBonus(int playerIndex, int amount, string source,
+        int? sourcePlayer, bool neutralSource, bool combatDamage, int declaredDisasterMasterDamageBonus)
     {
         var player = State.Players[playerIndex];
         amount = ResolveMasterDamageAmount(playerIndex, amount, sourcePlayer, neutralSource,
-            finalAttackDamageBonus: finalAttackDamageBonus);
+            declaredDisasterMasterDamageBonus: declaredDisasterMasterDamageBonus);
         player.Hp = Math.Max(0, player.Hp - amount);
         player.MasterDamageTakenThisTurn += Math.Max(0, amount);
         TrackMasterDamageFact(playerIndex, amount, sourcePlayer, neutralSource, combatDamage);

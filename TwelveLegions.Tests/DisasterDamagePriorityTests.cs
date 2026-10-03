@@ -10,13 +10,32 @@ public sealed class DisasterDamagePriorityTests
 {
     private static readonly L12Catalog Catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
 
+    [Fact]
+    public void RingAndNightParadeWithoutStrongAttackSettlesAtTwo()
+    {
+        var game = Create(83014);
+        var attacker = Card("S01-0001", "priority-ring-night-parade-attacker", 0);
+        game.State.Players[0].Field[0][0] = attacker;
+        game.State.Players[1].Relic = Card("S02-0305", "priority-ring-night-parade-ring", 1);
+        game.State.ActiveDisaster = Card("S01-DS02", "priority-ring-night-parade", -1);
+        var hpBefore = game.State.Players[1].Hp;
+
+        DeclareMasterAttack(game, attacker);
+        Assert.Equal(2, Assert.IsType<L12PendingDefense>(game.State.PendingDefense).MasterDamage);
+        SettleCombat(game);
+
+        Assert.Equal(hpBefore - 2, game.State.Players[1].Hp);
+        Assert.Equal(2, game.State.Players[1].MasterDamageTakenThisTurn);
+    }
+
     [Theory]
-    [InlineData(true, false, true, 2, 3)]
+    [InlineData(true, false, true, 2, 2)]
     [InlineData(true, true, true, 3, 3)]
     [InlineData(false, true, true, 3, 3)]
     [InlineData(false, false, true, 2, 2)]
     [InlineData(true, false, false, 1, 2)]
-    public void FinalDisasterBonusAppliesAfterOrdinaryDamageAndRingReplacement(bool hasRing,
+    [InlineData(true, true, false, 2, 2)]
+    public void RingReplacementCannotReduceConfirmedDamageThatContainsNightParade(bool hasRing,
         bool hasStrongAttack, bool hasDisasterLevel, int expectedPreview, int expectedDamage)
     {
         var game = Create(83001);
@@ -31,7 +50,7 @@ public sealed class DisasterDamagePriorityTests
         DeclareMasterAttack(game, attacker);
         var pending = Assert.IsType<L12PendingDefense>(game.State.PendingDefense);
         Assert.Equal(expectedPreview, pending.MasterDamage);
-        Assert.Equal(hasDisasterLevel ? 1 : 0, pending.DeclaredFinalDisasterMasterDamageBonus);
+        Assert.Equal(hasDisasterLevel ? 1 : 0, pending.DeclaredDisasterMasterDamageBonus);
         SettleCombat(game);
 
         Assert.Equal(hpBefore - expectedDamage, game.State.Players[1].Hp);
@@ -44,7 +63,7 @@ public sealed class DisasterDamagePriorityTests
     }
 
     [Fact]
-    public void ResponseTimingStrongGrantKeepsOnlyTheDeclaredFinalDisasterComponent()
+    public void ResponseTimingStrongGrantKeepsDeclaredNightParadeInfluenceInTheConfirmedTotal()
     {
         var game = Create(83002);
         var attacker = Card("S01-0001", "response-strong-attacker", 0);
@@ -66,7 +85,7 @@ public sealed class DisasterDamagePriorityTests
     }
 
     [Fact]
-    public void GawainAttackTimingIncrementKeepsOnlyTheDeclaredFinalDisasterComponent()
+    public void GawainAttackTimingIncrementCannotBeReducedWhenConfirmedTotalContainsNightParade()
     {
         var game = Create(83003);
         var attacker = Card("S02-0607", "gawain-priority-attacker", 0);
@@ -88,16 +107,17 @@ public sealed class DisasterDamagePriorityTests
         Assert.Equal(4, Assert.IsType<L12PendingDefense>(game.State.PendingDefense).MasterDamage);
         SettleCombat(game);
 
-        Assert.Equal(hpBefore - 3, game.State.Players[1].Hp);
-        Assert.Equal(3, game.State.Players[1].MasterDamageTakenThisTurn);
+        Assert.Equal(hpBefore - 4, game.State.Players[1].Hp);
+        Assert.Equal(4, game.State.Players[1].MasterDamageTakenThisTurn);
     }
 
     [Fact]
-    public void RingOnlyReplacesTheFirstDamageBeforeEachDeclaredFinalBonus()
+    public void RejectedRingReductionStillCountsAsTheFirstDamage()
     {
         var game = Create(83004);
         var first = Card("S01-0001", "priority-first-attacker", 0);
-        var second = Card("S01-0001", "priority-second-attacker", 0);
+        first.HasStrongAttack = true;
+        var second = Card("S01-0002", "priority-second-attacker", 0);
         game.State.Players[0].Field[0][0] = first;
         game.State.Players[0].Field[0][1] = second;
         game.State.Players[1].Relic = Card("S02-0305", "priority-first-only-ring", 1);
@@ -105,25 +125,46 @@ public sealed class DisasterDamagePriorityTests
         var hpBefore = game.State.Players[1].Hp;
 
         DeclareMasterAttack(game, first);
-        Assert.Equal(2, Assert.IsType<L12PendingDefense>(game.State.PendingDefense).MasterDamage);
+        Assert.Equal(3, Assert.IsType<L12PendingDefense>(game.State.PendingDefense).MasterDamage);
         SettleCombat(game);
         Assert.Equal(hpBefore - 3, game.State.Players[1].Hp);
         Assert.Equal(3, game.State.Players[1].MasterDamageTakenThisTurn);
 
         DeclareMasterAttack(game, second);
-        Assert.Equal(2, Assert.IsType<L12PendingDefense>(game.State.PendingDefense).MasterDamage);
+        Assert.Equal(1, Assert.IsType<L12PendingDefense>(game.State.PendingDefense).MasterDamage);
         SettleCombat(game);
 
-        Assert.Equal(hpBefore - 5, game.State.Players[1].Hp);
-        Assert.Equal(5, game.State.Players[1].MasterDamageTakenThisTurn);
+        Assert.Equal(hpBefore - 4, game.State.Players[1].Hp);
+        Assert.Equal(4, game.State.Players[1].MasterDamageTakenThisTurn);
         Assert.Contains(game.State.Events, entry => entry.Type == "damage"
             && entry.Text.Contains("失去 3 点血量", StringComparison.Ordinal));
         Assert.Contains(game.State.Events, entry => entry.Type == "damage"
-            && entry.Text.Contains("失去 2 点血量", StringComparison.Ordinal));
+            && entry.Text.Contains("失去 1 点血量", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void PiercingUsesTheSameFinalPriorityAndKeepsAttackTriggerSuppression()
+    public void RingStillReplacesOrdinaryThreeWithoutNightParade()
+    {
+        var game = Create(83015);
+        var attacker = Card("S01-0002", "priority-ordinary-three-attacker", 0);
+        attacker.MasterAttackDamageBonus = 2;
+        attacker.MasterAttackDamageBonusUntilTurn = game.State.TurnSerial;
+        game.State.Players[0].Field[0][0] = attacker;
+        game.State.Players[1].Relic = Card("S02-0305", "priority-ordinary-three-ring", 1);
+        var hpBefore = game.State.Players[1].Hp;
+
+        DeclareMasterAttack(game, attacker);
+        var pending = Assert.IsType<L12PendingDefense>(game.State.PendingDefense);
+        Assert.Equal(3, pending.MasterDamage);
+        Assert.Equal(0, pending.DeclaredDisasterMasterDamageBonus);
+        SettleCombat(game);
+
+        Assert.Equal(hpBefore - 2, game.State.Players[1].Hp);
+        Assert.Equal(2, game.State.Players[1].MasterDamageTakenThisTurn);
+    }
+
+    [Fact]
+    public void PiercingUsesTheSameReplacementPriorityAndKeepsAttackTriggerSuppression()
     {
         var game = Create(83005);
         var attacker = Card("S02-0611", "priority-piercing-attacker", 0);
@@ -145,7 +186,7 @@ public sealed class DisasterDamagePriorityTests
         Assert.Single(game.State.Events, entry => entry.Type == "piercing");
         SettleCombat(game);
 
-        Assert.Equal(hpBefore - 3, game.State.Players[1].Hp);
+        Assert.Equal(hpBefore - 2, game.State.Players[1].Hp);
         Assert.Single(game.State.Events, entry => entry.Type == "piercing");
     }
 
@@ -180,14 +221,14 @@ public sealed class DisasterDamagePriorityTests
 
         DeclareMasterAttack(game, second);
         SettleCombat(game);
-        Assert.Equal(hpBefore - 3, game.State.Players[1].Hp);
-        Assert.Equal(3, game.State.Players[1].MasterDamageTakenThisTurn);
+        Assert.Equal(hpBefore - 2, game.State.Players[1].Hp);
+        Assert.Equal(2, game.State.Players[1].MasterDamageTakenThisTurn);
     }
 
     [Theory]
-    [InlineData(true, 2, 3)]
+    [InlineData(true, 2, 2)]
     [InlineData(false, 1, 2)]
-    public void DeclaredFinalBonusSurvivesV2RestoreWithoutUsingTheCurrentDisaster(bool declaredWithBonus,
+    public void DeclaredDisasterInfluenceSurvivesV2RestoreWithoutUsingTheCurrentDisaster(bool declaredWithBonus,
         int expectedPreview, int expectedDamage)
     {
         var game = Create(83007);
@@ -203,7 +244,9 @@ public sealed class DisasterDamagePriorityTests
         var declaredPending = Assert.IsType<L12PendingDefense>(game.State.PendingDefense);
         Assert.Equal(expectedPreview, declaredPending.MasterDamage);
         Assert.Equal(declaredWithBonus ? 1 : 0,
-            declaredPending.DeclaredFinalDisasterMasterDamageBonus);
+            declaredPending.DeclaredDisasterMasterDamageBonus);
+        Assert.Contains($"\"DeclaredDisasterMasterDamageBonus\":{(declaredWithBonus ? 1 : 0)}",
+            game.SerializeFullState(), StringComparison.Ordinal);
         game.State.ActiveDisaster = declaredWithBonus
             ? null
             : Card("S01-DS02", "priority-restore-later-night-parade", -1);
@@ -212,13 +255,13 @@ public sealed class DisasterDamagePriorityTests
         var restoredPending = Assert.IsType<L12PendingDefense>(game.State.PendingDefense);
         Assert.Equal(expectedPreview, restoredPending.MasterDamage);
         Assert.Equal(declaredWithBonus ? 1 : 0,
-            restoredPending.DeclaredFinalDisasterMasterDamageBonus);
+            restoredPending.DeclaredDisasterMasterDamageBonus);
         SettleCombat(game);
         Assert.Equal(hpBefore - expectedDamage, game.State.Players[1].Hp);
     }
 
     [Fact]
-    public void ExplicitZeroFinalComponentPreventsAttachedStrongAttackFromBecomingDisasterDamageAfterRestore()
+    public void ExplicitZeroDisasterComponentDoesNotConfuseAttachedStrongAttackAfterRestore()
     {
         var game = Create(83012);
         var attacker = Card("S01-0001", "priority-attached-strong-attacker", 0);
@@ -231,7 +274,7 @@ public sealed class DisasterDamagePriorityTests
         DeclareMasterAttack(game, attacker);
         var pending = Assert.IsType<L12PendingDefense>(game.State.PendingDefense);
         Assert.Equal(2, pending.MasterDamage);
-        Assert.Equal(0, pending.DeclaredFinalDisasterMasterDamageBonus);
+        Assert.Equal(0, pending.DeclaredDisasterMasterDamageBonus);
 
         Assert.True(attacker.AttachedCards.Remove(attachedStrongAttack));
         game.State.Players[0].Graveyard.Add(attachedStrongAttack);
@@ -239,17 +282,18 @@ public sealed class DisasterDamagePriorityTests
 
         pending = Assert.IsType<L12PendingDefense>(game.State.PendingDefense);
         Assert.Equal(2, pending.MasterDamage);
-        Assert.Equal(0, pending.DeclaredFinalDisasterMasterDamageBonus);
+        Assert.Equal(0, pending.DeclaredDisasterMasterDamageBonus);
         Assert.Empty(Assert.IsType<L12CardInstance>(game.State.Players[0].Field[0][0]).AttachedCards);
         SettleCombat(game);
         Assert.Equal(hpBefore - 2, game.State.Players[1].Hp);
     }
 
     [Fact]
-    public void LegacyV2WithoutExplicitFinalComponentKeepsPreviouslyDeclaredTotalSemantics()
+    public void LegacyV2WithoutExplicitDisasterComponentKeepsPreviouslyDeclaredTotalSemantics()
     {
         var game = Create(83013);
         var attacker = Card("S01-0001", "priority-legacy-attacker", 0);
+        attacker.HasStrongAttack = true;
         game.State.Players[0].Field[0][0] = attacker;
         game.State.Players[1].Relic = Card("S02-0305", "priority-legacy-ring", 1);
         game.State.ActiveDisaster = Card("S01-DS02", "priority-legacy-night-parade", -1);
@@ -258,16 +302,65 @@ public sealed class DisasterDamagePriorityTests
         DeclareMasterAttack(game, attacker);
         var document = JsonNode.Parse(game.SerializeFullState())!.AsObject();
         Assert.True(document["PendingDefense"]!.AsObject()
-            .Remove("DeclaredFinalDisasterMasterDamageBonus"));
+            .Remove("DeclaredDisasterMasterDamageBonus"));
         game = Restore(game, document.ToJsonString());
 
         var pending = Assert.IsType<L12PendingDefense>(game.State.PendingDefense);
-        Assert.Null(pending.DeclaredFinalDisasterMasterDamageBonus);
-        Assert.Equal(2, pending.MasterDamage);
-        Assert.DoesNotContain("DeclaredFinalDisasterMasterDamageBonus", game.SerializeFullState(),
+        Assert.Null(pending.DeclaredDisasterMasterDamageBonus);
+        Assert.Equal(3, pending.MasterDamage);
+        Assert.DoesNotContain("DeclaredDisasterMasterDamageBonus", game.SerializeFullState(),
             StringComparison.Ordinal);
         SettleCombat(game);
         Assert.Equal(hpBefore - 2, game.State.Players[1].Hp);
+    }
+
+    [Fact]
+    public void UndeployedFinalFieldIsIgnoredAndCannotReviveTheSupersededPriority()
+    {
+        var game = Create(83016);
+        var attacker = Card("S01-0001", "priority-unknown-old-field-attacker", 0);
+        attacker.HasStrongAttack = true;
+        game.State.Players[0].Field[0][0] = attacker;
+        game.State.Players[1].Relic = Card("S02-0305", "priority-unknown-old-field-ring", 1);
+        game.State.ActiveDisaster = Card("S01-DS02", "priority-unknown-old-field-night-parade", -1);
+        var hpBefore = game.State.Players[1].Hp;
+
+        DeclareMasterAttack(game, attacker);
+        var document = JsonNode.Parse(game.SerializeFullState())!.AsObject();
+        var pendingDocument = document["PendingDefense"]!.AsObject();
+        Assert.True(pendingDocument.Remove("DeclaredDisasterMasterDamageBonus"));
+        pendingDocument["DeclaredFinalDisasterMasterDamageBonus"] = 1;
+        game = Restore(game, document.ToJsonString());
+
+        var pending = Assert.IsType<L12PendingDefense>(game.State.PendingDefense);
+        Assert.Null(pending.DeclaredDisasterMasterDamageBonus);
+        Assert.Equal(3, pending.MasterDamage);
+        var restored = game.SerializeFullState();
+        Assert.DoesNotContain("DeclaredDisasterMasterDamageBonus", restored, StringComparison.Ordinal);
+        Assert.DoesNotContain("DeclaredFinalDisasterMasterDamageBonus", restored, StringComparison.Ordinal);
+        SettleCombat(game);
+        Assert.Equal(hpBefore - 2, game.State.Players[1].Hp);
+    }
+
+    [Fact]
+    public void RestoringSettledHistoricalHpAndDamageEventDoesNotRecalculateTheFact()
+    {
+        var game = Create(83017);
+        game.State.Players[1].Hp = 7;
+        game.State.Players[1].MasterDamageTakenThisTurn = 3;
+        var historical = new L12ActionEvent(++game.State.EventSequence, "damage", 1,
+            "历史已结算事实：主宰失去 3 点血量", []);
+        game.State.Events.Add(historical);
+        game.State.LastAction = historical;
+
+        game = Restore(game);
+
+        Assert.Equal(7, game.State.Players[1].Hp);
+        Assert.Equal(3, game.State.Players[1].MasterDamageTakenThisTurn);
+        var restored = Assert.Single(game.State.Events,
+            entry => entry.Sequence == historical.Sequence && entry.Type == "damage");
+        Assert.Equal(historical.Text, restored.Text);
+        Assert.Null(game.State.PendingDefense);
     }
 
     [Fact]
@@ -305,19 +398,19 @@ public sealed class DisasterDamagePriorityTests
             Assert.True(attack.Accepted, attack.Error);
             Assert.Equal(2, Assert.IsType<L12PendingDefense>(game.State.PendingDefense).MasterDamage);
             await SettleCombatAsync(game, ApplyAsync);
-            Assert.Equal(hpBefore - 3, game.State.Players[1].Hp);
+            Assert.Equal(hpBefore - 2, game.State.Players[1].Hp);
 
             var duplicate = await ApplyAsync(1, new L12Command("resolveDefense", CardInstanceIds: []),
                 "priority-duplicate-defense");
             Assert.False(duplicate.Accepted);
-            Assert.Equal(hpBefore - 3, game.State.Players[1].Hp);
+            Assert.Equal(hpBefore - 2, game.State.Players[1].Hp);
 
             var recovery = Assert.IsType<L12JournalRecoveryState>(
                 await recorder.LoadJournalEngineAsync(game.State.MatchId));
             Assert.Equal(sequence, recovery.CommandSequence);
             Assert.Equal(game.ComputeStateHash(), recovery.Engine.ComputeStateHash());
-            Assert.Equal(hpBefore - 3, recovery.Engine.State.Players[1].Hp);
-            Assert.Equal(3, recovery.Engine.State.Players[1].MasterDamageTakenThisTurn);
+            Assert.Equal(hpBefore - 2, recovery.Engine.State.Players[1].Hp);
+            Assert.Equal(2, recovery.Engine.State.Players[1].MasterDamageTakenThisTurn);
         }
         finally
         {
@@ -327,7 +420,7 @@ public sealed class DisasterDamagePriorityTests
     }
 
     [Fact]
-    public void FinalAttackBonusDoesNotLeakIntoNonLethalNeutralOrZeroDamage()
+    public void DeclaredDisasterInfluenceDoesNotLeakIntoNonLethalNeutralOrZeroDamage()
     {
         var nonLethal = Create(83009);
         nonLethal.State.Players[1].Hp = 10;

@@ -12,8 +12,8 @@
     },
     {
       "category": "card-effects",
-      "text": "百鬼夜行的军团进攻加伤在普通增益和安德华拉诺特的伤害替换之后生效；天灾等级军团受到血戒替换后再加1，伤害为3，普通及贯穿进攻使用相同顺序。",
-      "paths": ["服务端WebSocket/TwelveLegions/L12Actions.cs", "服务端WebSocket/TwelveLegions/L12GameEngine.cs", "服务端WebSocket/TwelveLegions/Models.cs"]
+      "text": "安德华拉诺特按确认后的伤害进行替换：仅强攻或仅百鬼夜行加伤时为2点；两者同时生效时保留3点，不让血戒削弱无法规避的天灾影响。普通及贯穿进攻使用相同规则。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12Actions.cs", "服务端WebSocket/TwelveLegions/L12GameEngine.cs", "服务端WebSocket/TwelveLegions/L12S2RemainingEffects.cs", "服务端WebSocket/TwelveLegions/Models.cs", "opcgpro-vue/src/l12/data/officialFaq.ts"]
     }
   ]
 }

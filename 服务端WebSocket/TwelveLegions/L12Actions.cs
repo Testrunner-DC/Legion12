@@ -910,7 +910,7 @@ public sealed partial class L12GameEngine
             SureHit = attacker.HasSureHit
                 || (attackTarget is not null && HasActiveSureHitKeyword(attacker)),
             MasterDamage = masterDamage.Total,
-            DeclaredFinalDisasterMasterDamageBonus = masterDamage.FinalDisasterBonus,
+            DeclaredDisasterMasterDamageBonus = masterDamage.DisasterBonus,
             TemporaryAttackerTroopsBonus = temporaryAttackerTroopsBonus,
         };
         State.Phase = L12Phase.Defense;
@@ -1037,7 +1037,7 @@ public sealed partial class L12GameEngine
     private static bool CanAttackFromRow(L12CardInstance card, int row)
         => row == 0 || (row == 1 && HasRangeInPosition(card, row));
 
-    private int CalculateMasterAttackDamageBeforeFinalDisasterBonus(L12CardInstance attacker)
+    private int CalculateMasterAttackDamageBeforeDisasterBonus(L12CardInstance attacker)
     {
         var damage = 1 + (L12StructuredCardSemantics.HasEffectiveStrongAttack(attacker) ? 1 : 0);
         if (attacker.CardId == "S02-0607" && attacker.GawainMasterDamageBonusUntilTurn == State.TurnSerial)
@@ -1047,22 +1047,22 @@ public sealed partial class L12GameEngine
         return damage;
     }
 
-    private int CalculateMasterAttackFinalDisasterBonus(L12CardInstance attacker)
+    private int CalculateMasterAttackDisasterBonus(L12CardInstance attacker)
         => L12ActiveDisasterRules.DisasterLegionMasterDamageBonus(State.ActiveDisaster?.CardId)
            && attacker.DisasterLevel > 0
             ? 1
             : 0;
 
-    private (int Total, int FinalDisasterBonus) CalculateMasterAttackDamage(L12CardInstance attacker)
+    private (int Total, int DisasterBonus) CalculateMasterAttackDamage(L12CardInstance attacker)
     {
-        var finalDisasterBonus = CalculateMasterAttackFinalDisasterBonus(attacker);
-        return (CalculateMasterAttackDamageBeforeFinalDisasterBonus(attacker) + finalDisasterBonus,
-            finalDisasterBonus);
+        var disasterBonus = CalculateMasterAttackDisasterBonus(attacker);
+        return (CalculateMasterAttackDamageBeforeDisasterBonus(attacker) + disasterBonus,
+            disasterBonus);
     }
 
-    private static int ResolveDeclaredMasterAttackFinalDisasterBonus(L12PendingDefense pending)
-        // 旧 V2 的 null 表示旧规则已经声明的整值；不得用新规则重算历史事实。
-        => pending.DeclaredFinalDisasterMasterDamageBonus is { } declaredBonus
+    private static int ResolveDeclaredMasterAttackDisasterBonus(L12PendingDefense pending)
+        // 旧 V2 的 null 表示既有规则已经声明的整值；不得用当前天灾状态重算历史事实。
+        => pending.DeclaredDisasterMasterDamageBonus is { } declaredBonus
             ? Math.Clamp(declaredBonus, 0, 1)
             : 0;
 
@@ -1255,11 +1255,10 @@ public sealed partial class L12GameEngine
             var masterHpBefore = defender.Hp;
             if (cards.Count == 0)
             {
-                var finalDisasterBonus = ResolveDeclaredMasterAttackFinalDisasterBonus(pending);
-                var damageBeforeFinalDisasterBonus = Math.Max(0, pending.MasterDamage - finalDisasterBonus);
-                DamageMasterWithFinalAttackBonus(playerIndex, damageBeforeFinalDisasterBonus, $"{attacker.Name}的进攻",
+                var disasterBonus = ResolveDeclaredMasterAttackDisasterBonus(pending);
+                DamageMasterWithDeclaredDisasterBonus(playerIndex, pending.MasterDamage, $"{attacker.Name}的进攻",
                     pending.AttackerPlayer, neutralSource: false, combatDamage: true,
-                    finalAttackDamageBonus: finalDisasterBonus);
+                    declaredDisasterMasterDamageBonus: disasterBonus);
                 if (L12VerifiedAtomicPrograms.Find(attacker.CardId, "after-damage") is not null
                     && State.Phase != L12Phase.GameOver)
                     QueueTriggerCandidates([
@@ -1490,7 +1489,7 @@ public sealed partial class L12GameEngine
             Stage = L12CombatStage.DefenderAttackTiming,
             SureHit = attacker.HasSureHit,
             MasterDamage = masterDamage.Total,
-            DeclaredFinalDisasterMasterDamageBonus = masterDamage.FinalDisasterBonus,
+            DeclaredDisasterMasterDamageBonus = masterDamage.DisasterBonus,
             // 贯穿卡文只排除本次【进攻时】效果；防守方响应、抵挡、伤害和【进攻后】时间线仍照常推进。
             SuppressAttackTriggers = true,
         };

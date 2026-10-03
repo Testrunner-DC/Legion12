@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
+import ts from 'typescript'
 
 const read = path => {
   const url = new URL(path, import.meta.url)
@@ -11,6 +12,22 @@ const webLookup = JSON.parse(read('../public/data/l12/cards.lookup.json'))
 const webS1ById = new Map(webS1.map(card => [card.id, card]))
 const lookupByCardNo = new Map(webLookup.map(card => [card.cardNo, card]))
 const lookupExemptS1Ids = new Set(['S01-00C1', 'S01-01C1', 'S01-02C1', 'S01-03C1', 'S01-03M2', 'S01-04C1'])
+// 读取实际导出的问答数据，防止重新导入历史工作表时恢复已撤回的裁定。
+// 编译后取值不依赖TS接口、换行或export声明的字符串格式。
+const faqModule = ts.transpileModule(read('../src/l12/data/officialFaq.ts'), {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+}).outputText
+const { QA_ENTRIES } = await import(`data:text/javascript;base64,${Buffer.from(faqModule).toString('base64')}`)
+const damageRulings = QA_ENTRIES.filter(entry => entry.id === 51)
+const damageRuling = damageRulings[0]?.answer ?? ''
+if (damageRulings.length !== 1
+  || !damageRuling.includes('确认总伤害后')
+  || !damageRuling.includes('天灾影响无法被规避')
+  || !damageRuling.includes('仅强攻或仅百鬼夜行加伤，伤害为2')
+  || !damageRuling.includes('强攻和百鬼夜行同时生效，伤害为3')
+  || /最后应用天灾|替换为2→百鬼夜行\+1/.test(damageRuling)) {
+  throw new Error('FAQ51必须保留最新2/2/3裁定，不得恢复已撤回的天灾末位加伤解释')
+}
 // 用户2026-10-03确认：只改奥西里斯首段，三个目录不得同时回退为旧触发式文本。
 const osirisEffect = '我方 若圣物区存在5张名字包含<卡诺匹斯>的圣物，可将此主宰替换<伊西斯>登场。\n双人模式：此主宰登场即可获得游戏胜利。\n多人模式：主宰增加2点血量，并将墓地1张【太阳城】军团活跃登场。<陵墓守卫>兵力+1000。'
 if (s1.find(card => card.id === 'S01-02M2')?.effect !== osirisEffect) throw new Error('奥西里斯勘误首段及原有模式后段不一致')
