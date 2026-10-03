@@ -7,6 +7,12 @@ export interface CardErrataRecord {
 
 export const CARD_ERRATA: readonly CardErrataRecord[] = [
   {
+    id: 'S01-02M2-golden-ideal-effect',
+    cardId: 'S01-02M2',
+    sourceProduct: '黄金的理想乡',
+    previousEffect: '我方 圣物区存在5张名字包含<卡诺匹斯>的圣物时：可将此主宰替换<伊西斯>登场。\n双人模式：此主宰登场即可获得游戏胜利。\n多人模式：主宰增加2点血量，并将墓地1张【太阳城】军团活跃登场。<陵墓守卫>兵力+1000。',
+  },
+  {
     id: 'S02-05M1-ST05-effect',
     cardId: 'S02-05M1',
     sourceProduct: 'ST05|奥林匹斯阵营预组',

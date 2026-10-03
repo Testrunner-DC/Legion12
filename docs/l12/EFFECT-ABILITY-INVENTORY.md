@@ -5,7 +5,7 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`b14e8c94932cd906b0dec43325642fb05ee03fa2ca6adf2f707ce336aa630236`。
+内容指纹：`e9d5463bd544e34c773cf25861b62b50fc74d41801e7d1bed68dfaf6ff5d76cd`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
@@ -947,7 +947,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-02M1:ability:static:68187ab0edb25d9c | TwelveLegions.Tests.IsisSetupLifecycleProfileTests.IsisSetupCreatesExactlyOneOsirisInItsOwnersGraveyardAcrossRestore / S01-02M1 | normal, presentation-consumers, reconnect |
 | S01-02M1:ability:static:68187ab0edb25d9c | TwelveLegions.Tests.PipelineLifecycleProfileTests.IsisSetupSegmentBindsToTheSharedSetupOutlet / S01-02M1 | authoritative-consumer |
 | S01-02M1:ability:static:53475d8f080332f1 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-02M1 | authoritative-consumer, per-card-branch |
-| S01-02M2:ability:static:f3398615ac233d89 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-02M2 | authoritative-consumer, per-card-branch |
+| S01-02M2:ability:static:9144b69a84fc2635 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-02M2 | authoritative-consumer, per-card-branch |
 | S01-02M3:ability:static:705baec08fc6bc02 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-02M3 | authoritative-consumer, per-card-branch |
 | S01-02M3:ability:static:3a86c87f975d5851 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-02M3 | authoritative-consumer, per-card-plan |
 | S01-02M3:ability:static:c339139cc1c9b00c | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-02M3 | authoritative-consumer, per-card-plan |
@@ -1837,7 +1837,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-02D1 众神之乡 #4 | S01-02D1:ability:setup:281db2829152b981 | setup/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.add-morale → resolution:legacy.resolve | 1 | 主神开场即可追加2张额外士气。 |
 | S01-02M1 伊西斯 #1 | S01-02M1:ability:static:68187ab0edb25d9c | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.move-zone | 2 | 游戏开始时，将&lt;复苏的奥西里斯&gt;置入墓地 |
 | S01-02M1 伊西斯 #2 | S01-02M1:ability:static:53475d8f080332f1 | static/continuous | shared-rule-owner | 我方回合 可弃置我方战场3张&lt;陵墓守卫&gt; | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → cost:cost.discard → resolution:operation.draw → resolution:special.domain → resolution:legacy.resolve | 0 | 我方回合 可弃置我方战场3张&lt;陵墓守卫&gt;：将墓地1张名字包含&lt;卡诺匹斯&gt;的圣物置入圣物区。以上操作完成后，可选择抽取1张牌，或主宰增加1点血量 |
-| S01-02M2 复苏的奥西里斯 #1 | S01-02M2:ability:static:f3398615ac233d89 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → resolution:operation.modify-troops → resolution:operation.move-zone → resolution:operation.ready → resolution:special.domain → resolution:legacy.resolve | 0 | 我方 圣物区存在5张名字包含&lt;卡诺匹斯&gt;的圣物时：可将此主宰替换&lt;伊西斯&gt;登场。双人模式：此主宰登场即可获得游戏胜利。多人模式：主宰增加2点血量，并将墓地1张【太阳城】军团活跃登场。&lt;陵墓守卫&gt;兵力+1000 |
+| S01-02M2 复苏的奥西里斯 #1 | S01-02M2:ability:static:9144b69a84fc2635 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → resolution:operation.modify-troops → resolution:operation.move-zone → resolution:operation.ready → resolution:special.domain → resolution:legacy.resolve | 0 | 我方 若圣物区存在5张名字包含&lt;卡诺匹斯&gt;的圣物，可将此主宰替换&lt;伊西斯&gt;登场。双人模式：此主宰登场即可获得游戏胜利。多人模式：主宰增加2点血量，并将墓地1张【太阳城】军团活跃登场。&lt;陵墓守卫&gt;兵力+1000 |
 | S01-02M3 梅杰德 #1 | S01-02M3:ability:static:705baec08fc6bc02 | static/replacement | shared-rule-owner | 我方 回合1次 可消耗1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → cost:cost.pay-morale → resolution:operation.modify-troops → resolution:operation.rest → duration:duration.apply → resolution:special.domain → resolution:legacy.resolve | 2 | 我方 回合1次 可消耗1士气：选择对方1张军团本回合兵力-1000。若额外休整我方1张&lt;陵墓守卫&gt;，则选择的军团本回合兵力-3000作为代替 |
 | S01-02M3 梅杰德 #2 | S01-02M3:ability:static:3a86c87f975d5851 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:legacy.resolve | 0 | 对方 回合1次 我方主宰因对方进攻或效果 |
 | S01-02M3 梅杰德 #3 | S01-02M3:ability:static:c339139cc1c9b00c | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.damage-master → resolution:operation.move-zone → resolution:operation.ready → resolution:special.domain → resolution:legacy.resolve | 0 | 受到伤害时：可将我方墓地1张&lt;陵墓守卫&gt;活跃登场 |

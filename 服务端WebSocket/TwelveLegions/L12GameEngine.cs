@@ -2339,14 +2339,30 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         return 2;
     }
 
+    private int ResolveMasterDamageAmount(int playerIndex, int amount, int? sourcePlayer,
+        bool neutralSource, L12StackItem? declaredSourceItem = null, int finalAttackDamageBonus = 0)
+    {
+        amount = ApplyOutgoingMasterDamageOverride(playerIndex, amount, sourcePlayer, neutralSource,
+            declaredSourceItem);
+        // 中立天灾伤害不受玩家卡牌的伤害替换影响。
+        if (!neutralSource) amount = AdjustAnderstorpRingDamage(State.Players[playerIndex], amount);
+        amount = Math.Max(0, amount);
+        // 进攻的天灾增益在普通增益和伤害替换之后生效，但不能把0点伤害重新变为正数。
+        if (amount > 0) amount += Math.Max(0, finalAttackDamageBonus);
+        return amount;
+    }
+
     private void DamageMaster(int playerIndex, int amount, string source, int? sourcePlayer = null,
         bool neutralSource = false, bool combatDamage = false)
+        => DamageMasterWithFinalAttackBonus(playerIndex, amount, source, sourcePlayer,
+            neutralSource, combatDamage, 0);
+
+    private void DamageMasterWithFinalAttackBonus(int playerIndex, int amount, string source,
+        int? sourcePlayer, bool neutralSource, bool combatDamage, int finalAttackDamageBonus)
     {
         var player = State.Players[playerIndex];
-        amount = ApplyOutgoingMasterDamageOverride(playerIndex, amount, sourcePlayer, neutralSource);
-        // 中立天灾伤害不受玩家卡牌的伤害替换影响。
-        if (!neutralSource) amount = AdjustAnderstorpRingDamage(player, amount);
-        amount = Math.Max(0, amount);
+        amount = ResolveMasterDamageAmount(playerIndex, amount, sourcePlayer, neutralSource,
+            finalAttackDamageBonus: finalAttackDamageBonus);
         player.Hp = Math.Max(0, player.Hp - amount);
         player.MasterDamageTakenThisTurn += Math.Max(0, amount);
         TrackMasterDamageFact(playerIndex, amount, sourcePlayer, neutralSource, combatDamage);
@@ -2387,10 +2403,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         bool fromDisaster = false)
     {
         var player = State.Players[playerIndex];
-        amount = ApplyOutgoingMasterDamageOverride(playerIndex, amount, sourcePlayer, neutralSource,
+        amount = ResolveMasterDamageAmount(playerIndex, amount, sourcePlayer, neutralSource,
             declaredSourceItem);
-        if (!neutralSource) amount = AdjustAnderstorpRingDamage(player, amount);
-        amount = Math.Max(0, amount);
         // 非致命伤害只决定“整次数值能否结算”，不能把原本的伤害值缩小后再造成。
         // 例如平阳昭公主把杨戬的1点非致命伤害替换为2时，2血主宰不能因此改受1点。
         var actual = amount < player.Hp ? amount : 0;

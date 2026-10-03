@@ -436,6 +436,12 @@ public sealed class L12PendingDefense
     public bool AttackNoLoss { get; set; }
     public bool SureHit { get; set; }
     public int MasterDamage { get; set; } = 1;
+    /// <summary>
+    /// 本次进攻声明时已计入 MasterDamage、但须在普通增益及伤害替换后结算的天灾分量。
+    /// null 仅表示来自尚未保存此字段的旧 V2 检查点；新声明显式保存0或1。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? DeclaredFinalDisasterMasterDamageBonus { get; set; }
     /// <summary>理查的独立抵挡费用段成功结算后，才对本次进攻生效。</summary>
     public bool RichardDefenseTaxActive { get; set; }
     public int TemporaryAttackerTroopsBonus { get; set; }

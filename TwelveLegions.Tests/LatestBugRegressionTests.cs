@@ -1061,6 +1061,39 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    public void OsirisErrataChangesOnlyItsConditionSentenceAndKeepsManualVictory()
+    {
+        const string approved = "我方 若圣物区存在5张名字包含<卡诺匹斯>的圣物，可将此主宰替换<伊西斯>登场。";
+        Assert.Equal(approved + "\n双人模式：此主宰登场即可获得游戏胜利。\n多人模式：主宰增加2点血量，并将墓地1张【太阳城】军团活跃登场。<陵墓守卫>兵力+1000。",
+            Catalog.Cards["S01-02M2"].Effect);
+        var abilities = (List<L12AbilityView>)typeof(L12GameEngine)
+            .GetMethod("GetS1FactionAbilities", BindingFlags.Static | BindingFlags.NonPublic)!
+            .Invoke(null, ["S01-02M2"])!;
+        Assert.Equal(approved, Assert.Single(abilities).Label);
+        var game = CreateWithFirstMaster("S01-02M1", 64083);
+        var osiris = PrepareIsisVictory(game);
+        _ = game.SnapshotFor(0);
+        Assert.Null(game.State.Winner);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "special-victory");
+        var restored = RestoreV2(game);
+        Assert.Null(restored.State.Winner);
+        Assert.True(restored.Handle(0, new L12Command("activateAbility", osiris.InstanceId, Ability: "isisVictory")).Accepted);
+        Assert.Equal(0, restored.State.Winner);
+        Assert.Single(restored.State.Events, entry => entry.Type == "special-victory");
+    }
+
+    [Fact]
+    public void OsirisErrataDoesNotRemoveTheFiveCanopicCondition()
+    {
+        var game = CreateWithFirstMaster("S01-02M1", 64084);
+        var osiris = PrepareIsisVictory(game);
+        game.State.Players[0].SpecialZones.CanopicProgress.RemoveAt(4);
+        Assert.False(game.Handle(0, new L12Command("activateAbility", osiris.InstanceId, Ability: "isisVictory")).Accepted);
+        Assert.Null(game.State.Winner);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "special-victory");
+    }
+
+    [Fact]
     public void IsisAndOsirisVictorySourcesPublishTheSameSingleCanonicalEvent()
     {
         foreach (var activateFromMaster in new[] { true, false })

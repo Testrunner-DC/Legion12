@@ -11,6 +11,13 @@ const webLookup = JSON.parse(read('../public/data/l12/cards.lookup.json'))
 const webS1ById = new Map(webS1.map(card => [card.id, card]))
 const lookupByCardNo = new Map(webLookup.map(card => [card.cardNo, card]))
 const lookupExemptS1Ids = new Set(['S01-00C1', 'S01-01C1', 'S01-02C1', 'S01-03C1', 'S01-03M2', 'S01-04C1'])
+// 用户2026-10-03确认：只改奥西里斯首段，三个目录不得同时回退为旧触发式文本。
+const osirisEffect = '我方 若圣物区存在5张名字包含<卡诺匹斯>的圣物，可将此主宰替换<伊西斯>登场。\n双人模式：此主宰登场即可获得游戏胜利。\n多人模式：主宰增加2点血量，并将墓地1张【太阳城】军团活跃登场。<陵墓守卫>兵力+1000。'
+if (s1.find(card => card.id === 'S01-02M2')?.effect !== osirisEffect) throw new Error('奥西里斯勘误首段及原有模式后段不一致')
+const osirisProduct = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/card-product-inclusions.json')).cards.find(card => card.cardId === 'S01-02M2')
+if (JSON.stringify(osirisProduct?.products) !== JSON.stringify(['第1季|天御', '第1季|天御·再临', '第1季|典藏版', '黄金的理想乡'])) throw new Error('奥西里斯原收录及黄金的理想乡勘误归属不一致')
+const errata = read('../src/l12/data/cardErrata.ts')
+if (!errata.includes("cardId: 'S01-02M2'") || !errata.includes("sourceProduct: '黄金的理想乡'")) throw new Error('奥西里斯勘误记录缺失')
 if (s1.length !== webS1.length) throw new Error('S1服务端与图鉴卡牌数量不一致')
 for (const card of s1) {
   const webCard = webS1ById.get(card.id)
@@ -164,7 +171,7 @@ const contracts = [
   [read('../src/l12/site/deckShare.ts').includes('resolveCardAssetUrls') && read('../src/l12/site/deckShare.ts').includes('for (const url of candidates)'), 'Canvas 牌库图必须逐个尝试 resolver 候选且单图失败可回落'],
   [serviceWorker.includes("caches.delete('l12-images-v1')") && !serviceWorker.includes("request.destination !== 'image'"), '旧广域图片 Service Worker 必须退役并只清理自身缓存'],
   [generator.includes("baseUrl = (args.get('--base-url') || '/card-assets'") && generator.includes('expectedPlayableCardCount = 324') && generator.includes('expectedPresentationCardCount = 42'), '生成器必须默认同源内容寻址路径并严格区分324张可玩卡与42张展示版本'],
-  [productInclusions.cards?.length === 359 && new Set(productInclusions.cards.map(card => card.cardId)).size === 359 && productInclusions.products?.length === 13, '收录产品目录必须保持359个唯一实体编号和13项产品'],
+  [productInclusions.cards?.length === 359 && new Set(productInclusions.cards.map(card => card.cardId)).size === 359 && productInclusions.products?.length === 14 && new Set(productInclusions.products).size === 14 && productInclusions.products.includes('黄金的理想乡'), '收录产品目录必须保持359个唯一实体编号及含黄金的理想乡的14项唯一产品'],
   [productInclusions.cards.find(card => card.cardId === 'S01-0002')?.products.includes('第2季|伟大试炼'), '佣兵部队必须收录于第2季|伟大试炼'],
   [starterMoraleVersions.every(([id, product]) => productInclusions.cards.find(card => card.cardId === id)?.products.includes(product)), '六张st后缀士气必须分别映射到对应阵营预组，且不改写无后缀默认士气'],
   [starterMoraleVersions.every(([id]) => !productInclusions.cards.some(card => card.cardId === id.slice(0, -2))), '六张st后缀预组士气必须与无st后缀的默认士气保持独立实体编号'],

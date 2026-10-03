@@ -891,7 +891,7 @@ public sealed partial class L12GameEngine
             attacker.Troops += attacker.AttackOnlyTroopsBonus;
             AddEvent("effect", playerIndex, $"〈{attacker.Name}〉本次进攻兵力+{attacker.AttackOnlyTroopsBonus}", attacker);
         }
-        var damage = CalculateMasterAttackDamage(attacker);
+        var masterDamage = CalculateMasterAttackDamage(attacker);
         var kagutsuchiCandidate = BuildStarterKagutsuchiCandidate(playerIndex, attacker);
         var hasPrintedAttackerAttackTiming = HasImmediateEffect(attacker, "attack");
         var hasAttackerAttackTiming = hasPrintedAttackerAttackTiming || kagutsuchiCandidate is not null;
@@ -909,7 +909,8 @@ public sealed partial class L12GameEngine
             AttackNoLoss = attackNoLoss,
             SureHit = attacker.HasSureHit
                 || (attackTarget is not null && HasActiveSureHitKeyword(attacker)),
-            MasterDamage = damage,
+            MasterDamage = masterDamage.Total,
+            DeclaredFinalDisasterMasterDamageBonus = masterDamage.FinalDisasterBonus,
             TemporaryAttackerTroopsBonus = temporaryAttackerTroopsBonus,
         };
         State.Phase = L12Phase.Defense;
@@ -1036,18 +1037,34 @@ public sealed partial class L12GameEngine
     private static bool CanAttackFromRow(L12CardInstance card, int row)
         => row == 0 || (row == 1 && HasRangeInPosition(card, row));
 
-    private int CalculateMasterAttackDamage(L12CardInstance attacker)
+    private int CalculateMasterAttackDamageBeforeFinalDisasterBonus(L12CardInstance attacker)
     {
         var damage = 1 + (L12StructuredCardSemantics.HasEffectiveStrongAttack(attacker) ? 1 : 0);
         if (attacker.CardId == "S02-0607" && attacker.GawainMasterDamageBonusUntilTurn == State.TurnSerial)
             damage += attacker.GawainMasterDamageBonus;
         if (attacker.MasterAttackDamageBonusUntilTurn == State.TurnSerial)
             damage += attacker.MasterAttackDamageBonus;
-        if (L12ActiveDisasterRules.DisasterLegionMasterDamageBonus(State.ActiveDisaster?.CardId)
-            && attacker.DisasterLevel > 0)
-            damage++;
         return damage;
     }
+
+    private int CalculateMasterAttackFinalDisasterBonus(L12CardInstance attacker)
+        => L12ActiveDisasterRules.DisasterLegionMasterDamageBonus(State.ActiveDisaster?.CardId)
+           && attacker.DisasterLevel > 0
+            ? 1
+            : 0;
+
+    private (int Total, int FinalDisasterBonus) CalculateMasterAttackDamage(L12CardInstance attacker)
+    {
+        var finalDisasterBonus = CalculateMasterAttackFinalDisasterBonus(attacker);
+        return (CalculateMasterAttackDamageBeforeFinalDisasterBonus(attacker) + finalDisasterBonus,
+            finalDisasterBonus);
+    }
+
+    private static int ResolveDeclaredMasterAttackFinalDisasterBonus(L12PendingDefense pending)
+        // 旧 V2 的 null 表示旧规则已经声明的整值；不得用新规则重算历史事实。
+        => pending.DeclaredFinalDisasterMasterDamageBonus is { } declaredBonus
+            ? Math.Clamp(declaredBonus, 0, 1)
+            : 0;
 
     private bool CanAttackMasterTarget(int playerIndex, L12CardInstance attacker, int row,
         L12PlayerState defender, out string error)
@@ -1238,8 +1255,11 @@ public sealed partial class L12GameEngine
             var masterHpBefore = defender.Hp;
             if (cards.Count == 0)
             {
-                DamageMaster(playerIndex, pending.MasterDamage, $"{attacker.Name}的进攻", pending.AttackerPlayer,
-                    combatDamage: true);
+                var finalDisasterBonus = ResolveDeclaredMasterAttackFinalDisasterBonus(pending);
+                var damageBeforeFinalDisasterBonus = Math.Max(0, pending.MasterDamage - finalDisasterBonus);
+                DamageMasterWithFinalAttackBonus(playerIndex, damageBeforeFinalDisasterBonus, $"{attacker.Name}的进攻",
+                    pending.AttackerPlayer, neutralSource: false, combatDamage: true,
+                    finalAttackDamageBonus: finalDisasterBonus);
                 if (L12VerifiedAtomicPrograms.Find(attacker.CardId, "after-damage") is not null
                     && State.Phase != L12Phase.GameOver)
                     QueueTriggerCandidates([
@@ -1253,12 +1273,13 @@ public sealed partial class L12GameEngine
                 ResetCardForPrivateZone(card);
                 defender.Graveyard.Add(card);
             }
+            var actualMasterDamage = Math.Max(0, masterHpBefore - defender.Hp);
             AddPlayerCombatEvent("defense", playerIndex, cards.Count == 0
-                ? $"{defender.Name} 的主宰受到 {pending.MasterDamage} 点伤害"
+                ? $"{defender.Name} 的主宰受到 {actualMasterDamage} 点伤害"
                 : $"{defender.Name} 弃置 {cards.Count} 张军团抵挡",
                 new(pending.CombatId, "defense", cards.Count == 0 ? "unblocked" : "blocked",
                     null, pending.AttackerInstanceId, pending.Target.InstanceId,
-                    MasterDamage: cards.Count == 0 ? Math.Max(0, masterHpBefore - defender.Hp) : null), cards.ToArray());
+                    MasterDamage: cards.Count == 0 ? actualMasterDamage : null), cards.ToArray());
             AdvanceCombatTimelineIfIdle();
             return CommandResult.Ok();
         }
@@ -1459,6 +1480,7 @@ public sealed partial class L12GameEngine
         }
         if (State.PendingDefense is { } parentCombat)
             State.SuspendedCombatContexts.Add(parentCombat);
+        var masterDamage = CalculateMasterAttackDamage(attacker);
         State.PendingDefense = new L12PendingDefense
         {
             CombatId = $"combat-{State.EventSequence + 1}",
@@ -1467,7 +1489,8 @@ public sealed partial class L12GameEngine
             Target = new L12AttackTarget("master"),
             Stage = L12CombatStage.DefenderAttackTiming,
             SureHit = attacker.HasSureHit,
-            MasterDamage = CalculateMasterAttackDamage(attacker),
+            MasterDamage = masterDamage.Total,
+            DeclaredFinalDisasterMasterDamageBonus = masterDamage.FinalDisasterBonus,
             // 贯穿卡文只排除本次【进攻时】效果；防守方响应、抵挡、伤害和【进攻后】时间线仍照常推进。
             SuppressAttackTriggers = true,
         };

@@ -1714,7 +1714,7 @@ internal static class EffectLifecycleProfiles
         ("S01-0417:ability:static:f10ff922d718f82e", "可消耗1士气"),
         ("S01-0004:ability:active:6f9f6988e1ea4be0", "击杀此军团"),
         ("S01-02M1:ability:static:53475d8f080332f1", "卡诺匹斯"),
-        ("S01-02M2:ability:static:f3398615ac233d89", "可将此主宰替换"),
+        ("S01-02M2:ability:static:9144b69a84fc2635", "可将此主宰替换"),
         ("S02-01M1:ability:active:4834e3b50d036f27", "将此主宰作为【斗士】军团"),
         ("S02-0301:ability:active:61c655977499e4be", "将此军团活跃登场"),
         ("S02-03M1:ability:active:54e6f9c40764f804", "血量不高于3"),
