@@ -62,6 +62,22 @@ export function entryEffectContinuationTransaction(event: ActionEvent, ownsEntry
   return ownsEntryMovement(transactionKey) ? transactionKey : null
 }
 
+/**
+ * A terminal effect keeps its text but drops the second full-card reveal only
+ * after every referenced authority fact has actually started a presentation.
+ * Missing, malformed, legacy, or partly unclaimed references retain the
+ * existing full-card fallback; this function never guesses from card identity
+ * or neighbouring event sequences.
+ */
+export function effectResultPresentationFactContinuation(event: ActionEvent,
+  ownsPresentationFact: (sequence: number) => boolean) {
+  if (event.type !== 'effect-result') return null
+  const sequences = [...new Set((event.playerPresentationFactSequences ?? [])
+    .filter(sequence => Number.isSafeInteger(sequence) && sequence > 0))]
+  if (sequences.length === 0 || sequences.length !== (event.playerPresentationFactSequences?.length ?? 0)) return null
+  return sequences.every(ownsPresentationFact) ? sequences : null
+}
+
 export function movementCardsForEvent(event: ActionEvent) {
   if (event.type === 'move' || event.type === 'attach' || event.type === 'mill') return event.cards ?? []
   return (event.cards ?? []).slice(0, 1)
@@ -280,6 +296,7 @@ export type CardStateTransitionClaim = {
   toTapped: boolean
   revision: number
   transactionKey: string
+  presentationFactSequence?: number
   attackSequence?: number
   attackTargetInstanceId?: string
   attackTargetPlayerIndex?: number
@@ -314,25 +331,47 @@ export function claimCardStateTransitions(state: CardStateClaimState, revision: 
   // One revision is one authority transaction. Replaced objects, duplicate
   // envelopes, or a stale snapshot must not mutate the accepted visual state.
   if (revision <= state.revision) return []
-  const attacks = new Map<string, ActionEvent>()
-  for (const event of events) {
+  const freshEvents = events.filter(event => event.sequence > state.lastEventSequence)
+    .sort((left, right) => left.sequence - right.sequence)
+  const pendingAttacks = new Map<string, ActionEvent>()
+  const decorateAttack = (change: Pick<CardStateTransitionClaim, 'instanceId' | 'fromTapped' | 'toTapped'>,
+    attack = pendingAttacks.get(change.instanceId)) => (
+    !change.fromTapped && change.toTapped && attack ? {
+      attackSequence: attack.sequence,
+      attackTargetInstanceId: attack.cards?.[1]?.instanceId,
+      attackTargetPlayerIndex: attack.playerIndex === undefined
+        ? undefined : 1 - attack.playerIndex,
+    } : {})
+  const cursor = new Map(state.states)
+  const explicitChanges: CardStateTransitionClaim[] = []
+  for (const event of freshEvents) {
     const attackerId = event.cards?.[0]?.instanceId
-    if (event.sequence > state.lastEventSequence && event.type === 'attack' && attackerId)
-      attacks.set(attackerId, event)
+    if (event.type === 'attack' && attackerId) pendingAttacks.set(attackerId, event)
+    const fact = event.playerCardStateTransition
+    if (!fact || !fact.instanceId || fact.fromTapped === fact.toTapped) continue
+    const current = cursor.get(fact.instanceId)
+    if (!current || current.tapped !== fact.fromTapped) continue
+    const change = {
+      instanceId: fact.instanceId,
+      fromTapped: fact.fromTapped,
+      toTapped: fact.toTapped,
+      revision,
+      presentationFactSequence: event.sequence,
+      transactionKey: `${event.sequence}:${fact.instanceId}:${fact.fromTapped ? 'rested' : 'active'}>${fact.toTapped ? 'rested' : 'active'}`,
+    }
+    const attack = !change.fromTapped && change.toTapped ? pendingAttacks.get(change.instanceId) : undefined
+    explicitChanges.push({ ...change, ...decorateAttack(change, attack) })
+    if (attack || change.fromTapped || !change.toTapped) pendingAttacks.delete(change.instanceId)
+    cursor.set(fact.instanceId, { instanceId: fact.instanceId, tapped: fact.toTapped })
   }
-  const changes = changedTappedStates(state.states, states).map(change => ({
+  const fallbackChanges = changedTappedStates(cursor, states).map(change => ({
     ...change,
     revision,
     transactionKey: `${revision}:${change.instanceId}:${change.fromTapped ? 'rested' : 'active'}>${change.toTapped ? 'rested' : 'active'}`,
-    ...(!change.fromTapped && change.toTapped && attacks.get(change.instanceId) ? {
-      attackSequence: attacks.get(change.instanceId)!.sequence,
-      attackTargetInstanceId: attacks.get(change.instanceId)!.cards?.[1]?.instanceId,
-      attackTargetPlayerIndex: attacks.get(change.instanceId)!.playerIndex === undefined
-        ? undefined : 1 - attacks.get(change.instanceId)!.playerIndex!,
-    } : {}),
+    ...decorateAttack(change),
   }))
   resetCardStateClaimState(state, revision, states, Math.max(state.lastEventSequence, highestEventSequence))
-  return changes
+  return [...explicitChanges, ...fallbackChanges]
 }
 
 export function collectVisualFieldState(players: PlayerView[]) {

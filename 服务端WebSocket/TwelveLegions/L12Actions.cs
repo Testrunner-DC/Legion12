@@ -844,6 +844,8 @@ public sealed partial class L12GameEngine
                         attacker.InstanceId, attackTarget?.InstanceId,
                         committedAttackerTroops, committedDefenderTroops),
                     attackTarget is null ? [attacker] : [attacker, attackTarget]);
+                AttachPlayerCardStateTransitionToLastEvent("attack-ended", attacker,
+                    fromTapped: false, toTapped: true);
                 return CommandResult.Ok();
             }
         }
@@ -925,6 +927,8 @@ public sealed partial class L12GameEngine
                 new(State.PendingDefense.CombatId, "attack", "declared", null,
                     attacker.InstanceId, attackTarget.InstanceId, attacker.CurrentTroops, attackTarget.CurrentTroops),
                 attacker, attackTarget);
+        AttachPlayerCardStateTransitionToLastEvent("attack", attacker,
+            fromTapped: false, toTapped: true);
         if (hasAttackerAttackTiming)
         {
             if (kagutsuchiCandidate is not null)

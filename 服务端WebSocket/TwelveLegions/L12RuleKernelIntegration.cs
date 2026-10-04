@@ -1739,7 +1739,7 @@ public sealed partial class L12GameEngine
             RecordTargetSettlementFailure(item, slotChoice,
                 "已声明的我方活跃登场位置失效；主动休整与已返还士气不恢复");
         else if (!TrySummonFromAnyPrivateZone(player, item.Controller, revive.InstanceId,
-                     slotChoice, tapped: false))
+                     slotChoice, tapped: false, presentationOwner: item))
             RecordTargetSettlementFailure(item, reviveId,
                 "所选【天廷】军团或登场位置在最终区域事务中失效；主动休整与已返还士气不恢复");
         FinishStackItem(item);
@@ -2316,6 +2316,7 @@ public sealed partial class L12GameEngine
             SourceSnapshot = candidate.SourceSnapshot,
         };
         foreach (var pair in candidate.Data) item.Data[pair.Key] = pair.Value;
+        ImportPaidCardStatePresentationFacts(item, candidate.Data);
         if (State.IsResolvingStack) State.DeferredEffectStack.Add(item);
         else State.EffectStack.Add(item);
         RevealSetReactionSourceWhenStacked(candidate);

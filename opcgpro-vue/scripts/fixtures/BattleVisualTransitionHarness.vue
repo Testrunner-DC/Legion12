@@ -32,9 +32,9 @@ const millCards = [
   card('mill-card-3', '磨牌三', 'S01-04M1', false, faceUrl('S01-04M1')),
 ]
 const duplicateCard = card('duplicate-discard', '佣兵部队', 'S01-04M2', false, faceUrl('S01-04M2'))
-const pharaohFestival = { ...card('pharaoh-festival', '法老王的庆典', 'S01-0222'), cardType: 'tactic' }
-const festivalHandCard = card('festival-hand-card', '陵墓守卫', 'S01-0212')
-const festivalGraveCard = card('festival-grave-card', '卡诺匹斯罐 一', 'S01-0208')
+const pharaohFestival = { ...card('pharaoh-festival', '法老王的庆典', 'S01-0222', false, faceUrl('S01-0222')), cardType: 'tactic' }
+const festivalHandCard = card('festival-hand-card', '陵墓守卫', 'S01-0212', false, faceUrl('S01-0212'))
+const festivalGraveCard = card('festival-grave-card', '卡诺匹斯罐 一', 'S01-0208', false, faceUrl('S01-0208'))
 const finn = card('finn-optional-ready', '芬恩', 'S02-0610', true)
 const nuada = { ...card('nuada-source', '银臂努阿达', 'ST06-M1'), cardType: 'master' }
 const restedDefender = card('rested-defender', '休整守军', 'S01-01M1', true, faceUrl('S01-01M1'))
@@ -150,6 +150,23 @@ const api = {
   },
   attackRestedTarget() { swapper.tapped = true; publishBatch([{ type:'attack', playerIndex:0, text:'攻击休整守军', cards:[swapper, restedDefender] }]) },
   attackActiveTarget() { swapper.tapped = true; publishBatch([{ type:'attack', playerIndex:0, text:'攻击活跃守军', cards:[swapper, activeDefender] }]) },
+  beginAttackRestHandoff() {
+    const current = game.players[0].field.flat().find(item => item?.instanceId === mover.instanceId)
+    if (!current) return
+    current.tapped = true
+    publish({
+      type:'attack', playerIndex:0, text:'侍从骑士进攻并立即休整', cards:[current, activeDefender],
+      playerCardStateTransition:{ instanceId:current.instanceId, fromTapped:false, toTapped:true },
+    })
+  },
+  returnDuringAttackRest() {
+    const current = game.players[0].field.flat().find(item => item?.instanceId === mover.instanceId)
+    if (!current) return
+    replaceField(game.players[0].field.map(row => row.map(item => item?.instanceId === current.instanceId ? null : item)))
+    game.players[0].hand = [...(game.players[0].hand ?? []), current]
+    game.players[0].handCount = game.players[0].hand.length
+    publish({ type:'return', playerIndex:0, text:'侍从骑士在进攻结算后返回手牌', cards:[current] })
+  },
   reconnectWithHistoricalReady() {
     l12State.status = 'connecting'
     l12State.recoveryPhase = 'snapshot-received'
@@ -237,6 +254,8 @@ const api = {
       triggeredEntrant.tapped = true
       game.players[1].specialZones.runes += 1
       publishBatch([
+        { type:'state', playerIndex:1, text:'加拉哈德转为休整', cards:[triggeredEntrant],
+          playerCardStateTransition:{ instanceId:triggeredEntrant.instanceId, fromTapped:false, toTapped:true } },
         { type:'effect-result', playerIndex:1, text:'加拉哈德发动试炼并进入休整', effectText:'进行试炼。', effectSceneId:'galahad-entry-trial', effectResultStatus:'resolved', playerLogGroupId, playerLogTiming:'enter', cards:[triggeredEntrant] },
         { type:'effect-result', playerIndex:1, text:'安格斯因推进试炼获得1符文', effectText:'获得1符文。', effectSceneId:'angus-trial-rune', effectResultStatus:'resolved', playerLogGroupId:'effect:angus-trial-rune', playerLogTiming:'trial', cards:[angus] },
       ])

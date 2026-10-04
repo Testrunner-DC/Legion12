@@ -319,7 +319,13 @@ public sealed partial class L12GameEngine
                 $"{card.Name}本回合无法因效果转为活跃");
             return;
         }
-        if (card is not null) card.Tapped = false;
+        if (card is not null)
+        {
+            card.Tapped = false;
+            RegisterPresentationFact(item, AddPlayerCardStateTransitionEvent(
+                authorityEvent.ActorPlayer, card, fromTapped: true, toTapped: false,
+                $"〈{card.Name}〉因效果转为活跃"));
+        }
         if (morale is not null) morale.Tapped = false;
         if (card is not null && item.Data.GetValueOrDefault("lockTrialCardUntilTurnEnd") == "true")
             player.UsedAbilities.Add($"trial-card-lock:{card.InstanceId}:{State.TurnSerial}");

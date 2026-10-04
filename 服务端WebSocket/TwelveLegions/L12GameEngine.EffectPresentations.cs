@@ -105,7 +105,9 @@ public sealed partial class L12GameEngine
         // Successful legacy effects already have public outcome events.  Unsuccessful effects
         // still need one authoritative terminal fact so the player log can explain why the
         // declared action produced no result.
-        if ((configured is null || configured.Flow is null) && resultStatus == "resolved") return;
+        if ((configured is null || configured.Flow is null) && resultStatus == "resolved"
+            && (!State.PresentationFactProtocolEnabled
+                || item.PresentationFactSequences is not { Count: > 0 })) return;
         item.Data["effectResultPublished"] = "true";
         item.Data["effectResultStatus"] = resultStatus;
         var effectText = State.EffectPresentationSnapshot?.FirstOrDefault(scene =>
@@ -148,6 +150,7 @@ public sealed partial class L12GameEngine
                 ?? new L12EffectEventMetadata(null, null, null, null, null, null, null, resultStatus),
             item.Data.GetValueOrDefault("playerLogGroupId"),
             item.Data.GetValueOrDefault("playerLogTiming") ?? item.Trigger, null, semantic, source);
+        AttachPresentationFactsToLastEvent(item);
     }
 
     /// <summary>

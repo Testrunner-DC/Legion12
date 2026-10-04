@@ -108,6 +108,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         State = new L12GameState
         {
             StateFormatVersion = stateFormatVersion,
+            PresentationFactProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
             MatchId = matchId,
             RoomCode = roomCode,
             Seed = seed,
@@ -417,10 +418,16 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             .Where(actionEvent => L12RecipientVisibility.CanSeeActionEvent(actionEvent, viewer, visibility.PrivateHandEvents))
             .Select(actionEvent => FilterDisasterEvent(actionEvent, viewer, visibility.AllDisasters, visibility.PrivateHandEvents))
             .ToArray();
+        var recipientEvents = recentEvents.ToDictionary(actionEvent => actionEvent.Sequence);
+        recentEvents = recentEvents
+            .Select(actionEvent => L12RecipientVisibility.ProjectPresentationFactReferences(actionEvent, recipientEvents))
+            .ToArray();
         var lastAction = State.LastAction is null
             || !L12RecipientVisibility.CanSeeActionEvent(State.LastAction, viewer, visibility.PrivateHandEvents)
             ? null
             : FilterDisasterEvent(State.LastAction, viewer, visibility.AllDisasters, visibility.PrivateHandEvents);
+        if (lastAction is not null)
+            lastAction = L12RecipientVisibility.ProjectPresentationFactReferences(lastAction, recipientEvents);
 
         var displayOnlyCards = spectator && visibility.BothHands;
         return new L12GameSnapshot(
@@ -2438,8 +2445,76 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         AddEvent("heal", playerIndex, $"{player.Name} 的主宰因{source}增加 {actual} 点血量");
     }
 
-    private void AddEvent(string type, int? playerIndex, string text, params L12CardInstance[] cards)
-        => AddEventCore(type, playerIndex, text, null, cards);
+    private long AddEvent(string type, int? playerIndex, string text, params L12CardInstance[] cards)
+    {
+        AddEventCore(type, playerIndex, text, null, cards);
+        return State.EventSequence;
+    }
+
+    private void AttachPlayerCardStateTransitionToLastEvent(string expectedType,
+        L12CardInstance card, bool fromTapped, bool toTapped)
+    {
+        if (!State.PresentationFactProtocolEnabled
+            || fromTapped == toTapped
+            || State.LastAction is null
+            || State.LastAction.Type != expectedType
+            || State.LastAction.Cards.Count(candidate => candidate.InstanceId == card.InstanceId
+                && !candidate.Hidden && !string.IsNullOrWhiteSpace(candidate.Name)) != 1)
+            return;
+        var updated = State.LastAction with
+        {
+            PlayerCardStateTransition = new(card.InstanceId, fromTapped, toTapped),
+        };
+        State.LastAction = updated;
+        if (State.Events.Count > 0 && State.Events[^1].Sequence == updated.Sequence)
+            State.Events[^1] = updated;
+        if (_unpersistedEvents.Count > 0 && _unpersistedEvents[^1].Sequence == updated.Sequence)
+            _unpersistedEvents[^1] = updated;
+    }
+
+    private long AddPlayerCardStateTransitionEvent(int playerIndex, L12CardInstance card,
+        bool fromTapped, bool toTapped, string text)
+    {
+        if (!State.PresentationFactProtocolEnabled
+            || fromTapped == toTapped
+            || card.Tapped != toTapped
+            || card.Hidden
+            || string.IsNullOrWhiteSpace(card.InstanceId)
+            || string.IsNullOrWhiteSpace(card.Name))
+            return 0;
+        AddEvent("state", playerIndex, text, card);
+        AttachPlayerCardStateTransitionToLastEvent("state", card, fromTapped, toTapped);
+        return State.EventSequence;
+    }
+
+    private void RegisterPresentationFact(L12StackItem item, long sequence)
+    {
+        if (!State.PresentationFactProtocolEnabled || sequence <= 0) return;
+        item.PresentationFactSequences ??= [];
+        if (!item.PresentationFactSequences.Contains(sequence))
+            item.PresentationFactSequences.Add(sequence);
+    }
+
+    private void AttachPresentationFactsToLastEvent(L12StackItem item)
+    {
+        if (!State.PresentationFactProtocolEnabled
+            || item.PresentationFactSequences is not { Count: > 0 }
+            || State.LastAction is null) return;
+        AttachPresentationFactSequencesToLastEvent(item.PresentationFactSequences);
+    }
+
+    private void AttachPresentationFactSequencesToLastEvent(IEnumerable<long> sequences)
+    {
+        if (!State.PresentationFactProtocolEnabled || State.LastAction is null) return;
+        var facts = sequences.Where(sequence => sequence > 0).Distinct().Order().ToArray();
+        if (facts.Length == 0) return;
+        var updated = State.LastAction with { PlayerPresentationFactSequences = facts };
+        State.LastAction = updated;
+        if (State.Events.Count > 0 && State.Events[^1].Sequence == updated.Sequence)
+            State.Events[^1] = updated;
+        if (_unpersistedEvents.Count > 0 && _unpersistedEvents[^1].Sequence == updated.Sequence)
+            _unpersistedEvents[^1] = updated;
+    }
 
     private void AddPlayerLogEvent(string type, int? playerIndex, string text,
         string? playerLogGroupId, string? playerLogTiming = null, string? playerLogDecisionLabel = null,

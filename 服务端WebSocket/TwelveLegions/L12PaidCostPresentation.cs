@@ -22,7 +22,46 @@ public sealed partial class L12GameEngine
     }
 
     internal const string PaidCostSummaryDataKey = "paidCostSummary";
+    private const string PaidCardStateFactSequencesDataKey = "paidCardStateFactSequences";
+    private const string PaidCardStateFactInstanceIdsDataKey = "paidCardStateFactInstanceIds";
     private const string CompositePaidCostReceiptPrefix = "compositePaidCostReceipt:";
+
+    private static long[] PaidCardStateFactSequences(IReadOnlyDictionary<string, string> data)
+        => data.GetValueOrDefault(PaidCardStateFactSequencesDataKey, string.Empty)
+            .Split('|', StringSplitOptions.RemoveEmptyEntries)
+            .Select(value => long.TryParse(value, out var sequence) ? sequence : 0)
+            .Where(sequence => sequence > 0)
+            .Distinct()
+            .Order()
+            .ToArray();
+
+    private static void RecordPaidCardStateFacts(IDictionary<string, string> data,
+        IEnumerable<(string InstanceId, long Sequence)> facts)
+    {
+        var committed = facts.Where(fact => fact.Sequence > 0
+                && !string.IsNullOrWhiteSpace(fact.InstanceId)).ToArray();
+        if (committed.Length == 0) return;
+        var sequences = (data.TryGetValue(PaidCardStateFactSequencesDataKey, out var currentSequences)
+                ? currentSequences : string.Empty)
+            .Split('|', StringSplitOptions.RemoveEmptyEntries)
+            .Select(value => long.TryParse(value, out var sequence) ? sequence : 0)
+            .Where(sequence => sequence > 0)
+            .Concat(committed.Select(fact => fact.Sequence)).Distinct().Order().ToArray();
+        data[PaidCardStateFactSequencesDataKey] = string.Join('|', sequences);
+        var instanceIds = (data.TryGetValue(PaidCardStateFactInstanceIdsDataKey, out var currentInstanceIds)
+                ? currentInstanceIds : string.Empty)
+            .Split('|', StringSplitOptions.RemoveEmptyEntries)
+            .Concat(committed.Select(fact => fact.InstanceId))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        data[PaidCardStateFactInstanceIdsDataKey] = string.Join('|', instanceIds);
+    }
+
+    private void ImportPaidCardStatePresentationFacts(L12StackItem item,
+        IReadOnlyDictionary<string, string> data)
+    {
+        foreach (var sequence in PaidCardStateFactSequences(data))
+            RegisterPresentationFact(item, sequence);
+    }
 
     // The identity belongs to the committed segment, not to its Chinese summary. Two
     // separate segments can really pay the same amount and both must remain in history.
@@ -149,7 +188,6 @@ public sealed partial class L12GameEngine
     private void AddActivePaidCostPresentation(int controller, L12CardInstance source,
         Dictionary<string, string> data)
     {
-        if (data.ContainsKey(PaidCostSummaryDataKey)) return;
         var before = _activePaidCostSnapshot;
         if (before is null || before.Controller != controller
             || !before.SourceInstanceId.Equals(source.InstanceId, StringComparison.OrdinalIgnoreCase)) return;
@@ -173,8 +211,7 @@ public sealed partial class L12GameEngine
 
     private void AddTriggeredPaidCostPresentation(L12TriggerCandidate candidate)
     {
-        if (candidate.Data.ContainsKey(PaidCostSummaryDataKey)
-            || !_triggerPaidCostSnapshots.TryGetValue(candidate.CandidateId, out var before)) return;
+        if (!_triggerPaidCostSnapshots.TryGetValue(candidate.CandidateId, out var before)) return;
         var source = FindAuthoritativeCard(candidate.SourceInstanceId)
             ?? candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
         // 触发声明完成器只允许在入栈前执行 Cost；若来源在这段边界内转为休整，该变化必为已支付费用。
@@ -194,6 +231,46 @@ public sealed partial class L12GameEngine
         var currentField = CostFieldCards(player).GroupBy(card => card.InstanceId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.Last(), StringComparer.OrdinalIgnoreCase);
         var summaries = new List<string>();
+
+        if (State.PresentationFactProtocolEnabled)
+        {
+            var emittedInstanceIds = data.GetValueOrDefault(PaidCardStateFactInstanceIdsDataKey, string.Empty)
+                .Split('|', StringSplitOptions.RemoveEmptyEntries)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var stateFacts = new List<(string InstanceId, long Sequence)>();
+            var paymentUsesMasterZone = source.CardType is "master" or "divinity"
+                || source.InstanceId.Equals($"master-{before.Controller}", StringComparison.OrdinalIgnoreCase);
+            var paymentSourceNowTapped = paymentUsesMasterZone ? player.MasterTapped
+                : currentField.GetValueOrDefault(source.InstanceId)?.Tapped
+                  ?? (player.Relic?.InstanceId == source.InstanceId ? player.Relic.Tapped
+                      : player.ExtraRelics.FirstOrDefault(card => card.InstanceId == source.InstanceId)?.Tapped)
+                  ?? source.Tapped;
+            if (sourceRestIsCost && !before.SourceTapped && paymentSourceNowTapped
+                && !emittedInstanceIds.Contains(source.InstanceId))
+            {
+                var authoritativeSource = FindAuthoritativeCard(source.InstanceId) ?? source;
+                stateFacts.Add((authoritativeSource.InstanceId,
+                    AddPlayerCardStateTransitionEvent(before.Controller, authoritativeSource,
+                        fromTapped: false, toTapped: true, $"〈{before.SourceName}〉支付费用并转为休整")));
+            }
+            foreach (var pair in before.Field.Where(pair => pair.Key != source.InstanceId
+                         && !pair.Value.Tapped
+                         && currentField.GetValueOrDefault(pair.Key) is { Tapped: true }
+                         && !emittedInstanceIds.Contains(pair.Key)))
+            {
+                var paidCard = currentField[pair.Key];
+                stateFacts.Add((paidCard.InstanceId,
+                    AddPlayerCardStateTransitionEvent(before.Controller, paidCard,
+                        fromTapped: false, toTapped: true, $"〈{paidCard.Name}〉支付费用并转为休整")));
+            }
+            RecordPaidCardStateFacts(data, stateFacts);
+        }
+
+        // The state facts above are independently idempotent per paid card.  The
+        // pre-existing summary remains the legacy receipt boundary: callers that
+        // already recorded an exact public Cost description must not have that
+        // string recomputed or augmented here (especially restored V0/V1 games).
+        if (data.ContainsKey(PaidCostSummaryDataKey)) return;
 
         var damage = Math.Max(0, before.Hp - player.Hp);
         if (damage > 0) summaries.Add($"对我方主宰造成{damage}点伤害");

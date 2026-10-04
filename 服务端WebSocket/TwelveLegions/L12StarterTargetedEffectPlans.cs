@@ -422,7 +422,7 @@ public sealed partial class L12GameEngine
             case "snake-charmer-summon":
             case "penelope-summon":
                 _ = TrySummonFromAnyPrivateZone(player, item.Controller, One("entryCard") ?? string.Empty,
-                    One("entrySlot") ?? string.Empty, tapped: false);
+                    One("entrySlot") ?? string.Empty, tapped: false, presentationOwner: item);
                 break;
             case "khufu-debuff":
             case "george-debuff":

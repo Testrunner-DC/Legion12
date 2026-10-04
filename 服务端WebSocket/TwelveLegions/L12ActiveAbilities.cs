@@ -230,6 +230,8 @@ public sealed partial class L12GameEngine
             };
             if (prompt.Data.TryGetValue(PaidCostSummaryDataKey, out var paidCostSummary))
                 data[PaidCostSummaryDataKey] = paidCostSummary;
+            foreach (var key in new[] { PaidCardStateFactSequencesDataKey, PaidCardStateFactInstanceIdsDataKey })
+                if (prompt.Data.TryGetValue(key, out var paidStateFacts)) data[key] = paidStateFacts;
             SetResponsePresentationTargets(data, [targetId]);
             CaptureResponsePublicTargetSnapshot(data, [targetId]);
             PushEffect(prompt.PlayerIndex, flipSource, "active",

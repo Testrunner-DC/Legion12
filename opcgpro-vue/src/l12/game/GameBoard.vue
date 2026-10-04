@@ -17,7 +17,7 @@ import BattleUtilityDock from './BattleUtilityDock.vue'
 import ActionPresentationLayer from './ActionPresentationLayer.vue'
 import ZoneMovementPresentationLayer from './ZoneMovementPresentationLayer.vue'
 import CardStateTransitionLayer from './CardStateTransitionLayer.vue'
-import { cardEffectPresentationCards, entryEffectContinuationTransaction, isCardEffectPresentationEvent } from './visualTransitionProjection'
+import { cardEffectPresentationCards, effectResultPresentationFactContinuation, entryEffectContinuationTransaction, isCardEffectPresentationEvent } from './visualTransitionProjection'
 import { effectResultPresentationText } from './effectResultPresentation'
 import CombatMotionPresentationLayer from './CombatMotionPresentationLayer.vue'
 import GraveyardOverlay from './GraveyardOverlay.vue'
@@ -174,7 +174,7 @@ type PublicRevealPresentation = {
   sequence: number
   cards: Card[]
   text: string
-  kind: 'full-card' | 'entry-continuation'
+  kind: 'full-card' | 'entry-continuation' | 'fact-continuation'
   transactionKey?: string
 }
 type PublicRevealQueueItem = {
@@ -207,11 +207,53 @@ let publicRevealTimer: ReturnType<typeof setTimeout> | null = null
 let diceRollTimer: ReturnType<typeof setInterval> | null = null
 let diceSettleTimer: ReturnType<typeof setTimeout> | null = null
 let diceHideTimer: ReturnType<typeof setTimeout> | null = null
+let presentationEpoch = 0
+function resetCardPresentations() {
+  presentationEpoch++
+  if (hiddenRevealTimer) clearTimeout(hiddenRevealTimer)
+  if (publicRevealTimer) clearTimeout(publicRevealTimer)
+  if (diceRollTimer) clearInterval(diceRollTimer)
+  if (diceSettleTimer) clearTimeout(diceSettleTimer)
+  if (diceHideTimer) clearTimeout(diceHideTimer)
+  hiddenRevealTimer = null
+  publicRevealTimer = null
+  diceRollTimer = null
+  diceSettleTimer = null
+  diceHideTimer = null
+  hiddenRevealCard.value = null
+  publicReveal.value = null
+  diceReveal.value = null
+  publicRevealRelease?.()
+  publicRevealRelease = null
+  publicRevealWaitingReservation?.cancel()
+  publicRevealWaitingReservation = null
+  publicRevealWaiting = false
+  for (const item of publicRevealQueue) item.reservation.cancel()
+  publicRevealQueue.length = 0
+  diceRevealQueue.length = 0
+  cardPresentationCoordinator.reset()
+  const baseline = Math.max(0, ...(props.game.recentEvents ?? []).map(event => event.sequence))
+  lastHiddenRevealSequence.value = baseline
+  lastPublicRevealSequence.value = baseline
+  lastDiceSequence.value = baseline
+}
 const replayCardPresentationBusy = computed(() => Boolean(props.replayPlaybackSpeed && (
   hiddenRevealCard.value || publicReveal.value || replayZonePresentationBusy.value || replaySequencePresentationBusy.value || replayCombatPresentationBusy.value
 )))
 const synchronizingAuthoritySnapshot = computed(() => !props.replayPlaybackSpeed
   && l12State.status === 'connecting' && l12State.recoveryPhase !== 'snapshot-acknowledged')
+let presentationBoundaryMatchId = props.game.matchId
+let presentationBoundaryRevision = props.game.revision
+watch(() => [props.game.matchId, props.game.revision, synchronizingAuthoritySnapshot.value,
+  props.replayPlaybackSpeed] as const, ([matchId, revision, synchronizing, playbackSpeed]) => {
+  const resetFacts = matchId !== presentationBoundaryMatchId || synchronizing
+    || Boolean(playbackSpeed && revision < presentationBoundaryRevision)
+  if (resetFacts) {
+    resetCardPresentations()
+  }
+  presentationBoundaryMatchId = matchId
+  presentationBoundaryRevision = revision
+}, { flush: 'sync' })
 watch(replayCardPresentationBusy, busy => emit('replayPresentationChange', busy), { immediate: true })
 
 function cardRevealDuration() {
@@ -679,24 +721,33 @@ async function showNextPublicReveal() {
   if (publicReveal.value || publicRevealWaiting || !publicRevealQueue.length || modalPresentationPaused.value) return
   const next = publicRevealQueue.shift()
   if (!next) return
+  const epoch = presentationEpoch
   publicRevealWaiting = true
   publicRevealWaitingReservation = next.reservation
   next.reservation.setPaused(modalPresentationPaused.value)
   const release = await next.reservation.waitUntilGranted()
+  if (epoch !== presentationEpoch) {
+    release()
+    return
+  }
   publicRevealWaiting = false
   publicRevealWaitingReservation = null
   publicRevealRelease = release
   const entryTransactionKey = entryEffectContinuationTransaction(next.event,
     cardPresentationCoordinator.ownsEntryMovementTransaction)
+  const presentationFacts = effectResultPresentationFactContinuation(next.event,
+    cardPresentationCoordinator.ownsPresentationFact)
+  const continuation = Boolean(entryTransactionKey || presentationFacts)
   publicReveal.value = {
     sequence: next.sequence,
-    cards: entryTransactionKey ? [] : next.cards,
+    cards: continuation ? [] : next.cards,
     text: next.text,
-    kind: entryTransactionKey ? 'entry-continuation' : 'full-card',
-    transactionKey: entryTransactionKey ?? undefined,
+    kind: presentationFacts ? 'fact-continuation' : entryTransactionKey ? 'entry-continuation' : 'full-card',
+    transactionKey: presentationFacts ? `facts:${presentationFacts.join(',')}` : entryTransactionKey ?? undefined,
   }
   if (publicRevealTimer) clearTimeout(publicRevealTimer)
   publicRevealTimer = setTimeout(() => {
+    if (epoch !== presentationEpoch) return
     publicReveal.value = null
     publicRevealTimer = null
     publicRevealRelease?.()
@@ -907,18 +958,7 @@ onMounted(() => {
   lastDiceSequence.value = lastHiddenRevealSequence.value
 })
 onBeforeUnmount(() => {
-  if (hiddenRevealTimer) clearTimeout(hiddenRevealTimer)
-  if (publicRevealTimer) clearTimeout(publicRevealTimer)
-  if (diceRollTimer) clearInterval(diceRollTimer)
-  if (diceSettleTimer) clearTimeout(diceSettleTimer)
-  if (diceHideTimer) clearTimeout(diceHideTimer)
-  publicRevealRelease?.()
-  publicRevealRelease = null
-  publicRevealWaitingReservation?.cancel()
-  publicRevealWaitingReservation = null
-  for (const item of publicRevealQueue) item.reservation.cancel()
-  publicRevealQueue.length = 0
-  cardPresentationCoordinator.reset()
+  resetCardPresentations()
   emit('replayPresentationChange', false)
 })
 
@@ -1394,12 +1434,14 @@ function statusTexts(card: Card) {
             <ZoneMovementPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
               :players="game.players" :prompts="game.prompts ?? []" :revision="game.revision"
               :synchronizing="synchronizingAuthoritySnapshot"
+              :paused="modalPresentationPaused"
               :viewer-player-index="game.you" :playback-speed="replayPlaybackSpeed"
               :sequence-coordinator="cardPresentationCoordinator"
               @busy-change="replayZonePresentationBusy = $event" />
             <CardStateTransitionLayer :players="game.players" :events="game.recentEvents ?? []" :match-id="game.matchId" :revision="game.revision"
               :synchronizing="synchronizingAuthoritySnapshot"
-              :playback-speed="replayPlaybackSpeed" />
+              :paused="modalPresentationPaused"
+              :playback-speed="replayPlaybackSpeed" :sequence-coordinator="cardPresentationCoordinator" />
             <CombatMotionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
               :playback-speed="replayPlaybackSpeed" @busy-change="replayCombatPresentationBusy = $event" />
             <Teleport :to="landscapeTeleportTarget()">

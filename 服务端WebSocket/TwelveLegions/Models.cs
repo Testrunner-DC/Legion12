@@ -560,6 +560,12 @@ public sealed class L12StackItem
     public bool Negated { get; set; }
     public List<string> Targets { get; } = [];
     public Dictionary<string, string> Data { get; } = [];
+    /// <summary>
+    /// 本效果结算期间实际产生、并可由表现层消费的公开事实事件序号。
+    /// 只保存既有 ActionEvent.Sequence，不引入第二套序号。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<long>? PresentationFactSequences { get; set; }
 }
 
 public sealed class L12PendingActivation
@@ -840,6 +846,12 @@ public sealed record L12PlayerSelectedTargets(
 /// <summary>已结算的公开天灾值变化；旧事件缺失时不得从文字或当前状态补算。</summary>
 public sealed record L12PlayerDisasterValue(int? Before = null, int? After = null);
 
+/// <summary>一笔已完成的公开卡牌横置状态事实；同修订可按事件序号保留多次真实变化。</summary>
+public sealed record L12PlayerCardStateTransition(
+    string InstanceId,
+    bool FromTapped,
+    bool ToTapped);
+
 public sealed record L12ActionEvent(
     long Sequence,
     string Type,
@@ -885,6 +897,10 @@ public sealed record L12ActionEvent(
     public L12PlayerSelectedTargets? PlayerSelectedTargets { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public L12PlayerDisasterValue? PlayerDisasterValue { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12PlayerCardStateTransition? PlayerCardStateTransition { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long[]? PlayerPresentationFactSequences { get; init; }
 }
 
 public sealed class L12GameState
@@ -892,6 +908,12 @@ public sealed class L12GameState
     /// <summary>0 表示历史全事件哈希；2 表示有界表现窗口 + 独立完整事件日志。</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public int StateFormatVersion { get; init; }
+    /// <summary>
+    /// 新建 V2 对局显式启用表现事实引用。旧 V2 检查点缺省为 false，
+    /// 其 Journal 重放不会生成新字段，因而保持历史 state_hash。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool PresentationFactProtocolEnabled { get; init; }
     public required string MatchId { get; init; }
     public required string RoomCode { get; init; }
     public required int Seed { get; init; }

@@ -11,7 +11,14 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const output = process.env.L12_BATTLE_VISUAL_OUT || path.join(root, 'artifacts', 'battle-visual-transitions')
 fs.rmSync(output, { recursive: true, force: true })
 fs.mkdirSync(output, { recursive: true })
-const harnessFaceIds = ['S01-01M1', 'S01-01M2', 'S01-02M1', 'S01-02M3', 'S01-03M1', 'S01-03M2', 'S01-04M1', 'S01-04M2']
+const harnessFaceIds = ['S01-01M1', 'S01-01M2', 'S01-02M1', 'S01-02M3', 'S01-03M1', 'S01-03M2', 'S01-04M1', 'S01-04M2', 'S02-06M2']
+const galahadFacePath = process.env.L12_VISUAL_GALAHAD_FACE
+if (!galahadFacePath || !fs.existsSync(galahadFacePath)) {
+  throw new Error('L12_VISUAL_GALAHAD_FACE must point to the real S02-0604 card face; the fixture must not substitute another card')
+}
+const galahadFace = fs.readFileSync(galahadFacePath)
+// These explicit synthetic fixtures test transaction identity/order only, not art.
+const syntheticFestivalFaceIds = ['S01-0222', 'S01-0212', 'S01-0208']
 const harnessFaceRedirects = new Map(harnessFaceIds.map(cardId => [
   `/api/site/media/visual-transition/${cardId}.png`,
   `/assets/l12/special/master/${cardId}.png`,
@@ -22,6 +29,17 @@ const harnessPlugin = {
   name: 'battle-visual-transition-harness',
   configureServer(server) {
     server.middlewares.use((request, response, next) => {
+      const syntheticId = syntheticFestivalFaceIds.find(id => request.url?.split('?')[0] === `/api/site/media/visual-transition/${id}.png`)
+      if (syntheticId) {
+        response.setHeader('Content-Type', 'image/svg+xml')
+        response.end(`<svg xmlns="http://www.w3.org/2000/svg" width="250" height="350"><rect width="250" height="350" fill="#17464d"/><text x="20" y="175" fill="white">fixture ${syntheticId}</text></svg>`)
+        return
+      }
+      if (request.url?.split('?')[0] === '/api/site/media/visual-transition/S02-0604.png') {
+        response.setHeader('Content-Type', 'image/png')
+        response.end(galahadFace)
+        return
+      }
       const target = harnessFaceRedirects.get(request.url?.split('?')[0] ?? '')
       if (!target) return next()
       response.statusCode = 302
@@ -38,7 +56,8 @@ const harnessPlugin = {
 const server = await createServer({ root, cacheDir:path.join(output,'vite-cache'), plugins: [harnessPlugin],
   server: { host: '127.0.0.1', port: 0 }, logLevel: 'error' })
 let browser
-const report = { assertions: 0, screenshots: [], errors: [], profiles: [], entryVisualEvidence: [] }
+const report = { assertions: 0, screenshots: [], errors: [], profiles: [], entryVisualEvidence: [],
+  assetLimits:{ syntheticFestivalFaceIds, purpose:'transaction identity/count, not card-art acceptance', galahadFacePath } }
 function ok(value, message) { assert.ok(value, message); report.assertions += 1 }
 async function shot(page, name) { const file = path.join(output, `${name}.png`); await page.screenshot({ path: file }); report.screenshots.push(file) }
 async function elementShot(page, locator, name) {
@@ -81,6 +100,13 @@ async function expectAuthorityFaceFlight(page, profile, instanceId, cardId, labe
     instanceId, { timeout:1800 })
   const movement = page.locator(selector)
   ok(await movement.count() === 1, `${profile}: ${label} must use the event-card renderer instead of cloning final DOM`)
+  // The renderer intentionally creates a hidden preparation node before decode.
+  // Assert the decoded, visible frame rather than racing the node insertion.
+  await page.waitForFunction(id => {
+    const node = document.querySelector(`.zone-card-movement[data-movement-instance-id="${id}"]`)
+    const image = node?.querySelector('img')
+    return node?.classList.contains('movement-ready') && image?.complete && image.naturalWidth > 0
+  }, instanceId, { timeout:2200 })
   ok(await movement.locator('.moving-card').isVisible(), `${profile}: ${label} face must be visibly rendered`)
   const source = await movement.locator('img').getAttribute('src')
   ok(source?.includes(`/api/site/media/visual-transition/${cardId}.png`), `${profile}: ${label} must use its corresponding authority face asset`)

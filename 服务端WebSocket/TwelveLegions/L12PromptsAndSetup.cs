@@ -1731,6 +1731,7 @@ public sealed partial class L12GameEngine
         if (targets is not null) item.Targets.AddRange(targets);
         if (data is not null)
             foreach (var pair in data) item.Data[pair.Key] = pair.Value;
+        if (data is not null) ImportPaidCardStatePresentationFacts(item, data);
         item.Data.TryAdd("playerLogGroupId", item.StackItemId);
         item.Data.TryAdd("playerLogTiming", trigger);
         FreezeAndRecordPublicResponseTargets(item, source);
@@ -2350,11 +2351,13 @@ public sealed partial class L12GameEngine
         player.Field[0][slot] = response;
         AddEvent("cost", playerIndex, $"{response.Name} 从手牌休整登场于前排，支付响应费用", response);
         AddEvent("enter", playerIndex, $"{response.Name} 从手牌休整登场于前排，完成冒号前费用", response);
+        var entryPresentationSequence = State.EventSequence;
         CompleteEffectLegionEntry(playerIndex, response, "hand");
-        CommitPuppetResponse(playerIndex, response, target.StackItemId, slotChoice);
+        CommitPuppetResponse(playerIndex, response, target.StackItemId, slotChoice, entryPresentationSequence);
     }
 
-    private void CommitPuppetResponse(int playerIndex, L12CardInstance response, string targetStackId, string slotChoice)
+    private void CommitPuppetResponse(int playerIndex, L12CardInstance response, string targetStackId, string slotChoice,
+        long entryPresentationSequence)
     {
         var item = new L12StackItem
         {
@@ -2366,6 +2369,7 @@ public sealed partial class L12GameEngine
             Trigger = "response-retarget-master",
             Text = "将本次进攻目标改为此军团",
         };
+        RegisterPresentationFact(item, entryPresentationSequence);
         item.Targets.Add(targetStackId);
         item.Data["slot"] = slotChoice;
         State.EffectStack.Add(item);
@@ -2412,7 +2416,8 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[playerIndex];
         if (!player.Hand.Any(card => card.InstanceId == response.InstanceId)) return;
-        MoveHandToGrave(player, response.InstanceId, causedByEffect: false, response);
+        if (!MoveHandToGraveWithPresentationSequence(player, response.InstanceId, causedByEffect: false, response,
+                out var discardPresentationSequence)) return;
         var item = new L12StackItem
         {
             StackItemId = $"stack-{++State.StackSequence}",
@@ -2424,6 +2429,7 @@ public sealed partial class L12GameEngine
             Text = "弃置此军团，抵挡本次进攻",
             SourceSnapshot = CaptureLastKnownSourceSnapshot(response),
         };
+        RegisterPresentationFact(item, discardPresentationSequence);
         item.Targets.Add(targetStackId);
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{playerIndex + 1} 号玩家发动〈佣兵部队〉抵挡进攻", response);

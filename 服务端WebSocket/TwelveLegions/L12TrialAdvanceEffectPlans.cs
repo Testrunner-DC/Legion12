@@ -197,7 +197,10 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[playerIndex];
         source.Tapped = true;
+        var stateFact = AddPlayerCardStateTransitionEvent(playerIndex, source,
+            fromTapped: false, toTapped: true, $"〈{source.Name}〉休整并发动试炼");
         AddEvent("trial-action", playerIndex, $"〈{source.Name}〉休整并发动试炼", source);
+        AttachPresentationFactSequencesToLastEvent([stateFact]);
         if (source.CardId == TrialAdvanceFinnCardId)
         {
             if (AdvanceTrialWithoutAngusTrigger(playerIndex, source.TrialValue, source))

@@ -54,8 +54,13 @@ if ($slotValidation -lt 0 -or $uniqueValidation -lt 0 -or $firstRemoval -lt 0 -o
     throw 'Private-zone summon validation must finish before any source removal or battlefield assignment.'
 }
 
-Assert-Contains $s1 '=> _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, instanceId, slotChoice, tapped);' `
-    'Every legacy private-zone summon caller must inherit the shared Try transaction.'
+if ($s1 -notmatch '=>\s*_\s*=\s*TrySummonFromAnyPrivateZone\(player,\s*player\.PlayerIndex,\s*instanceId,\s*slotChoice,\s*tapped,\s*presentationOwner\);') {
+    throw 'Every private-zone summon adapter must inherit the shared Try transaction and preserve its presentation owner.'
+}
+Assert-Contains $tryBody 'if (!TrySummonFromAnyPrivateZone(sourceOwner, destinationPlayerIndex,' `
+    'The presentation-owner overload must call the shared validated zone transaction.'
+Assert-Contains $tryBody 'RegisterPresentationFact(presentationOwner, sequence)' `
+    'Successful summons must bind the actual movement sequence to their presentation owner.'
 if ($s1.IndexOf('player.Field[row][slot] = card;', [StringComparison]::Ordinal) -ge 0) {
     throw 'The old unchecked private-zone battlefield assignment returned.'
 }

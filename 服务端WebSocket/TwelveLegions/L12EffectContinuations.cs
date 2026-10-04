@@ -446,7 +446,8 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == item.Data["revealed"]);
         if (card is null) { FinishStackItem(item); return; }
-        if (!TrySummonFromAnyPrivateZone(player, item.Controller, card.InstanceId, slotChoice, tapped: false))
+        if (!TrySummonFromAnyPrivateZone(player, item.Controller, card.InstanceId, slotChoice,
+                tapped: false, presentationOwner: item))
             RecordPromptContinuationFailure(item, "李靖已声明的登场位置已失效；展示卡保留在原区域", card);
         FinishStackItem(item);
     }

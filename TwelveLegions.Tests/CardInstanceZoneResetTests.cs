@@ -207,8 +207,24 @@ public sealed class CardInstanceZoneResetTests
         player.Library.Add(legion);
         player.UsedAbilities.Add("active:dirty-private-legion:old");
 
-        Assert.True((bool)Invoke(game, "TrySummonFromAnyPrivateZone", player, 0,
-            legion.InstanceId, "0:0", false)!);
+        var owner = new L12StackItem
+        {
+            StackItemId = "zone-reset-summon-owner",
+            Controller = player.PlayerIndex,
+            SourceInstanceId = legion.InstanceId,
+            SourceCardId = legion.CardId,
+            SourceName = legion.Name,
+            Trigger = "active",
+            Text = string.Empty,
+        };
+        var summon = typeof(L12GameEngine).GetMethod("TrySummonFromAnyPrivateZone", PrivateInstance,
+            null, [typeof(L12PlayerState), typeof(int), typeof(string), typeof(string), typeof(bool),
+                typeof(L12StackItem)], null);
+        Assert.NotNull(summon);
+        Assert.True((bool)summon.Invoke(game, [player, 0, legion.InstanceId, "0:0", false, owner])!);
+        Assert.Equal([Assert.Single(game.State.Events, entry => entry.Type == "put"
+            && entry.Cards.Any(card => card.InstanceId == legion.InstanceId)).Sequence],
+            owner.PresentationFactSequences);
 
         Assert.Same(legion, player.Field[0][0]);
         AssertReset(legion);

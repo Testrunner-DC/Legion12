@@ -248,6 +248,9 @@ public sealed partial class L12GameEngine
         else
         {
             target.Tapped = true;
+            RegisterPresentationFact(item, AddPlayerCardStateTransitionEvent(
+                targetPlayer.PlayerIndex, target, fromTapped: false, toTapped: true,
+                spec.EventText));
             AddEvent("effect", item.Controller, spec.EventText, source, target);
         }
         FinishStackItem(item);

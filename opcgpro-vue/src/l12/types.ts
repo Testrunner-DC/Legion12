@@ -26,7 +26,15 @@ export interface ActionEvent {
   playerTroopsModifier?: PlayerTroopsModifier
   playerSelectedTargets?: PlayerSelectedTargets
   playerDisasterValue?: PlayerDisasterValue
+  playerCardStateTransition?: PlayerCardStateTransition
+  playerPresentationFactSequences?: number[]
   cards?: Card[]
+}
+
+export interface PlayerCardStateTransition {
+  instanceId: string
+  fromTapped: boolean
+  toTapped: boolean
 }
 
 export interface PlayerBattlefieldMovementFact {

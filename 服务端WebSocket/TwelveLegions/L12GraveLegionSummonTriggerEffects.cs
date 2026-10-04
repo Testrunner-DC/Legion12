@@ -68,7 +68,8 @@ public sealed partial class L12GameEngine
             return true;
         }
 
-        _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, target.InstanceId, slot, tapped: false);
+        _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, target.InstanceId, slot,
+            tapped: false, presentationOwner: item);
         FinishStackItem(item);
         return true;
     }

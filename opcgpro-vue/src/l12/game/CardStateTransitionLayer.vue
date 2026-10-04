@@ -5,6 +5,7 @@ import { landscapeTeleportElement, settleElementGeometry, viewportLayoutRect } f
 import type { ActionEvent, PlayerView } from '../types'
 import { acquireAuthoritativeCardVisibility } from './authoritativeCardVisibility'
 import { claimCardStateTransitions, collectVisualFieldState, createCardStateClaimState, resetCardStateClaimState } from './visualTransitionProjection'
+import type { PresentationReservation, PresentationSequenceCoordinator } from './presentationSequenceCoordinator'
 
 type Transition = {
   key: string
@@ -16,6 +17,9 @@ type Transition = {
   attackSequence?: number
   attackTargetInstanceId?: string
   attackTargetPlayerIndex?: number
+  presentationFactSequence?: number
+  presentationReservation?: PresentationReservation
+  presentationRelease?: () => void
 }
 
 const props = withDefaults(defineProps<{
@@ -26,6 +30,7 @@ const props = withDefaults(defineProps<{
   synchronizing?: boolean
   paused?: boolean
   playbackSpeed?: number | null
+  sequenceCoordinator: PresentationSequenceCoordinator
 }>(), { synchronizing: false, paused: false, playbackSpeed: null })
 
 const active = ref<Transition | null>(null)
@@ -36,6 +41,8 @@ let animation: Animation | null = null
 let releaseTargetVisibility: (() => void) | null = null
 let finalizing = false
 let activeGeneration = 0
+let starting: Transition | null = null
+let activePreparation: AbortController | null = null
 
 function cardElement(instanceId: string) {
   return document.querySelector(`[data-l12-game-stage] [data-card-instance-id="${CSS.escape(instanceId)}"]`)
@@ -58,6 +65,64 @@ function revealTarget() {
   releaseTargetVisibility = null
 }
 
+function stateFaceIsDecoded(root: ParentNode) {
+  const images = [...root.querySelectorAll('img')]
+  return images.length === 0 || images.every(image => image.complete && image.naturalWidth > 0)
+}
+
+function waitForDecodedStateImage(image: HTMLImageElement, signal: AbortSignal, timeoutMs = 1800) {
+  return new Promise<boolean>(resolve => {
+    let settled = false
+    const finish = (ready: boolean) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      signal.removeEventListener('abort', aborted)
+      image.removeEventListener('load', inspect)
+      image.removeEventListener('error', failed)
+      resolve(ready)
+    }
+    const aborted = () => finish(false)
+    const failed = () => finish(false)
+    const inspect = () => {
+      if (!image.complete) return
+      if (image.naturalWidth <= 0) { finish(false); return }
+      if (typeof image.decode !== 'function') { finish(true); return }
+      void image.decode().then(() => finish(image.complete && image.naturalWidth > 0), failed)
+    }
+    const timeout = setTimeout(failed, timeoutMs)
+    signal.addEventListener('abort', aborted, { once:true })
+    image.addEventListener('load', inspect, { once:true })
+    image.addEventListener('error', failed, { once:true })
+    if (signal.aborted) aborted()
+    else inspect()
+  })
+}
+
+async function waitForDecodedStateFace(root: ParentNode, signal: AbortSignal) {
+  const images = [...root.querySelectorAll('img')]
+  return images.length === 0
+    || (await Promise.all(images.map(image => waitForDecodedStateImage(image, signal)))).every(Boolean)
+}
+
+function waitUntilUnpaused(signal: AbortSignal) {
+  if (!props.paused) return Promise.resolve(true)
+  return new Promise<boolean>(resolve => {
+    let settled = false
+    const finish = (ready: boolean) => {
+      if (settled) return
+      settled = true
+      stop()
+      signal.removeEventListener('abort', aborted)
+      resolve(ready)
+    }
+    const aborted = () => finish(false)
+    const stop = watch(() => props.paused, paused => { if (!paused) finish(true) })
+    signal.addEventListener('abort', aborted, { once:true })
+    if (signal.aborted) aborted()
+  })
+}
+
 function finalizeActive(generation: number, advance: boolean) {
   if (generation !== activeGeneration || finalizing) return
   finalizing = true
@@ -65,6 +130,9 @@ function finalizeActive(generation: number, advance: boolean) {
   // cancelling it. A late completion can therefore never finalize or advance
   // a newer queued transition.
   activeGeneration += 1
+  const preparation = activePreparation
+  activePreparation = null
+  preparation?.abort()
   const currentAnimation = animation
   animation = null
   if (currentAnimation) {
@@ -78,6 +146,7 @@ function finalizeActive(generation: number, advance: boolean) {
   revealTarget()
   wrapper?.remove()
   wrapper = null
+  active.value?.presentationRelease?.()
   active.value = null
   finalizing = false
   if (advance) showNext()
@@ -88,19 +157,26 @@ function cancelActive() {
   finalizeActive(activeGeneration, false)
 }
 
-function showNext() {
-  if (active.value || props.paused || !queue.length) return
-  const transition = queue.shift()
-  if (!transition) return
+function beginTransition(transition: Transition) {
   const generation = ++activeGeneration
   active.value = transition
-  void nextTick(() => {
+  const preparation = new AbortController()
+  activePreparation?.abort()
+  activePreparation = preparation
+  void nextTick(async () => {
     if (generation !== activeGeneration || active.value?.key !== transition.key) return
     const finalize = (advance: boolean) => finalizeActive(generation, advance)
-    const target = cardElement(transition.instanceId)
-    if (!(target instanceof HTMLElement)) { finalize(true); return }
-    releaseTargetVisibility = acquireAuthoritativeCardVisibility(target)
     try {
+      if (!await waitForDecodedStateFace(transition.sourceGhost, preparation.signal)) {
+        if (generation === activeGeneration && active.value?.key === transition.key) finalize(true)
+        return
+      }
+      if (!await waitUntilUnpaused(preparation.signal)
+          || generation !== activeGeneration || active.value?.key !== transition.key) return
+      if (activePreparation === preparation) activePreparation = null
+      const target = cardElement(transition.instanceId)
+      if (!(target instanceof HTMLElement)) { finalize(true); return }
+      releaseTargetVisibility = acquireAuthoritativeCardVisibility(target)
       const sourceRect = transition.sourceRect
       // The ghost owns the visible state turn. Finish the covered authority
       // node's transition and settle animation without waiting on CSS timers.
@@ -171,6 +247,9 @@ function showNext() {
       const settled = animation.finished
       animation.onfinish = () => finalize(true)
       animation.oncancel = () => finalize(false)
+      if (!wrapper.isConnected || !stateFaceIsDecoded(wrapper)) { finalize(true); return }
+      if (transition.presentationFactSequence !== undefined)
+        props.sequenceCoordinator.registerPresentationFact(transition.presentationFactSequence)
       void settled.then(() => finalize(true), () => finalize(false))
     } catch {
       finalize(true)
@@ -178,8 +257,36 @@ function showNext() {
   })
 }
 
+function showNext() {
+  if (active.value || starting || props.paused || !queue.length) return
+  const transition = queue.shift()
+  if (!transition) return
+  if (!transition.presentationReservation) {
+    beginTransition(transition)
+    return
+  }
+  starting = transition
+  transition.presentationReservation.setPaused(props.paused)
+  void transition.presentationReservation.waitUntilGranted().then(release => {
+    if (starting !== transition) {
+      release()
+      return
+    }
+    starting = null
+    transition.presentationRelease = release
+    beginTransition(transition)
+  })
+}
+
+function cancelQueuedTransitions() {
+  starting?.presentationReservation?.cancel()
+  starting = null
+  for (const transition of queue) transition.presentationReservation?.cancel()
+  queue.length = 0
+}
+
 watch(() => props.matchId, () => {
-  cancelActive(); queue.length = 0
+  cancelActive(); cancelQueuedTransitions()
   resetCardStateClaimState(stateClaims, props.revision, collectVisualFieldState(props.players),
     Math.max(0, ...props.events.map(event => event.sequence)))
 }, { flush: 'sync', immediate: true })
@@ -188,14 +295,16 @@ watch(() => [props.revision, props.synchronizing, collectVisualFieldState(props.
   // Recovery snapshots and backward replay seeks establish a new visual
   // baseline. Historical state must never be backfilled as live motion.
   if (synchronizing || (props.playbackSpeed && revision < stateClaims.revision)) {
-    cancelActive(); queue.length = 0
+    cancelActive(); cancelQueuedTransitions()
     resetCardStateClaimState(stateClaims, revision, next,
       Math.max(0, ...props.events.map(event => event.sequence)))
     return
   }
   for (const change of claimCardStateTransitions(stateClaims, revision, next, props.events)) {
     const instanceId = change.instanceId
-    if (active.value?.key === change.transactionKey || queue.some(item => item.key === change.transactionKey)) continue
+    const transitionKey = `${props.matchId}:${change.transactionKey}`
+    if (active.value?.key === transitionKey || starting?.key === transitionKey
+      || queue.some(item => item.key === transitionKey)) continue
     const source = cardElement(instanceId)
     if (!(source instanceof HTMLElement)) continue
     const sourceRect = viewportLayoutRect(source)
@@ -206,7 +315,7 @@ watch(() => [props.revision, props.synchronizing, collectVisualFieldState(props.
     const sourceGhost = source.cloneNode(true) as HTMLElement
     sourceGhost.style.visibility = 'visible'
     queue.push({
-      key: `${props.matchId}:${change.transactionKey}`,
+      key: transitionKey,
       instanceId,
       fromTapped: change.fromTapped,
       toTapped: change.toTapped,
@@ -215,6 +324,9 @@ watch(() => [props.revision, props.synchronizing, collectVisualFieldState(props.
       attackSequence: change.attackSequence,
       attackTargetInstanceId: change.attackTargetInstanceId,
       attackTargetPlayerIndex: change.attackTargetPlayerIndex,
+      presentationFactSequence: change.presentationFactSequence,
+      presentationReservation: change.presentationFactSequence === undefined
+        ? undefined : props.sequenceCoordinator.reserve(change.presentationFactSequence, 20),
     })
   }
   showNext()
@@ -222,11 +334,13 @@ watch(() => [props.revision, props.synchronizing, collectVisualFieldState(props.
 
 watch(() => props.paused, paused => {
   // 已经开始的展示让位给阻塞弹框，不重排也不重播；尚未开始的仍保留顺序。
-  if (paused && active.value) cancelActive()
+  if (paused && active.value && animation) cancelActive()
+  starting?.presentationReservation?.setPaused(paused)
+  for (const transition of queue) transition.presentationReservation?.setPaused(paused)
   if (!paused) showNext()
 })
 
-onBeforeUnmount(() => { cancelActive(); queue.length = 0 })
+onBeforeUnmount(() => { cancelActive(); cancelQueuedTransitions() })
 </script>
 
 <template><span class="card-state-transition-layer" data-ui-contract="authoritative-card-state-transition" aria-hidden="true" /></template>

@@ -142,7 +142,8 @@ public sealed partial class L12GameEngine
                     var slots = new[] { PublicTriggerDeclared(item, "entrySlot1"), PublicTriggerDeclared(item, "entrySlot2") };
                     for (var index = 0; index < declaredGuards.Length; index++)
                         if (EmptySlots(player).Contains(slots[index], StringComparer.OrdinalIgnoreCase))
-                            SummonFromAnyPrivateZone(player, declaredGuards[index], slots[index], tapped: false);
+                            SummonFromAnyPrivateZone(player, declaredGuards[index], slots[index],
+                                tapped: false, presentationOwner: item);
                     FinishStackItem(item); return true;
                 }
                 FinishStackItem(item); return true;
@@ -152,7 +153,7 @@ public sealed partial class L12GameEngine
                 {
                     _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex,
                         PublicTriggerDeclared(item, "entryCard"), PublicTriggerDeclared(item, "entrySlot"),
-                        tapped: true);
+                        tapped: true, presentationOwner: item);
                     FinishStackItem(item); return true;
                 }
                 FinishStackItem(item); return true;
@@ -218,7 +219,7 @@ public sealed partial class L12GameEngine
                 {
                     _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex,
                         PublicTriggerDeclared(item, "entryCard"), PublicTriggerDeclared(item, "entrySlot"),
-                        tapped: false);
+                        tapped: false, presentationOwner: item);
                     FinishStackItem(item); return true;
                 }
                 FinishStackItem(item); return true;
@@ -346,7 +347,8 @@ public sealed partial class L12GameEngine
                     && player.Graveyard.Any(candidate => candidate.InstanceId == targetId && candidate.CardType == "legion"
                         && L12StructuredCardRules.CurrentCostAtMost(candidate, 5) && L12StructuredCardRules.HasFaction(player, candidate, "asgard"))
                     && EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
-                    SummonFromAnyPrivateZone(player, targetId, slot, false);
+                    SummonFromAnyPrivateZone(player, targetId, slot,
+                        tapped: false, presentationOwner: item);
                 FinishStackItem(item);
                 return true;
             }
@@ -434,7 +436,8 @@ public sealed partial class L12GameEngine
                         if (owner.Graveyard.Any(candidate => candidate.InstanceId == guardIds[index]
                                 && candidate.CardId == "S01-0212")
                             && EmptySlots(owner).Contains(slots[index], StringComparer.OrdinalIgnoreCase))
-                            SummonFromAnyPrivateZone(owner, guardIds[index], slots[index], tapped: true);
+                            SummonFromAnyPrivateZone(owner, guardIds[index], slots[index],
+                                tapped: true, presentationOwner: item);
                         else
                             AddEvent("effect-cancelled", item.Controller,
                                 "陵墓构造体已声明的守卫或所有者位置失效；仅取消该对象", card);
@@ -469,7 +472,8 @@ public sealed partial class L12GameEngine
             case "尼托克丽丝":
             {
                 _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex,
-                    PublicTriggerDeclared(item, "entryCard"), PublicTriggerDeclared(item, "entrySlot"), tapped: false);
+                    PublicTriggerDeclared(item, "entryCard"), PublicTriggerDeclared(item, "entrySlot"),
+                    tapped: false, presentationOwner: item);
                 FinishStackItem(item); return true;
             }
             case "传奇的拉格纳":
@@ -507,7 +511,7 @@ public sealed partial class L12GameEngine
                             RecordTargetSettlementFailure(item, declaredBjornSlot,
                                 "勇士比约恩已声明的休整登场位置不再为空；已支付的主宰伤害与墓地费用不返还");
                         else if (!TrySummonFromAnyPrivateZone(player, player.PlayerIndex, card.InstanceId,
-                                     declaredBjornSlot, tapped: true))
+                                     declaredBjornSlot, tapped: true, presentationOwner: item))
                             RecordTargetSettlementFailure(item, card.InstanceId,
                                 "勇士比约恩已离开可登场区域或位置在最终区域事务中失效；已支付的主宰伤害与墓地费用不返还");
                     }
@@ -531,7 +535,8 @@ public sealed partial class L12GameEngine
                 {
                     var selected = erikDeclared.Split('|', StringSplitOptions.RemoveEmptyEntries);
                     if (selected.Length == 2)
-                        _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, selected[0], selected[1], tapped: false);
+                        _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, selected[0], selected[1],
+                            tapped: false, presentationOwner: item);
                     FinishStackItem(item); return true;
                 }
                 SummonAsgardFromGrave(item, 3); return true;
@@ -666,7 +671,8 @@ public sealed partial class L12GameEngine
             case "festival-hand": ContinuePharaohFestivalHand(item, chosen[0]); return true;
             case "festival-grave": ContinuePharaohFestivalGrave(item, chosen[0]); return true;
             case "festival-bottom-order": CompletePharaohFestivalOrder(item, command.BottomCardInstanceIds ?? chosen); return true;
-            case "faction-summon-slot": SummonFromAnyPrivateZone(player, item.Data["faction-summon"], chosen[0], false); FinishStackItem(item); return true;
+            case "faction-summon-slot": SummonFromAnyPrivateZone(player, item.Data["faction-summon"], chosen[0],
+                tapped: false, presentationOwner: item); FinishStackItem(item); return true;
             case "death-cycle-discard": MoveHandToGrave(player, chosen[0], causedByEffect: true,
                 FindSource(item) ?? item.SourceSnapshot); FinishStackItem(item); return true;
             case "recover-asgard": if (chosen[0] != "skip") MoveGraveToHand(player, chosen[0], item); FinishStackItem(item); return true;
@@ -1299,7 +1305,8 @@ public sealed partial class L12GameEngine
                          || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
                     RecordTargetSettlementFailure(item, slot,
                         "已声明的活跃登场位置不再为空；主动休整与士气费用不返还");
-                else if (!TrySummonFromAnyPrivateZone(player, item.Controller, guard.InstanceId, slot, tapped: false))
+                else if (!TrySummonFromAnyPrivateZone(player, item.Controller, guard.InstanceId, slot,
+                             tapped: false, presentationOwner: item))
                     RecordTargetSettlementFailure(item, guardId,
                         "所选〈陵墓守卫〉或登场位置在最终区域事务中失效；主动休整与士气费用不返还");
                 FinishStackItem(item);
@@ -1320,7 +1327,8 @@ public sealed partial class L12GameEngine
                 else if (!EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
                     RecordTargetSettlementFailure(item, slot,
                         "太阳城阵营效果已声明的登场位置不再为空；已支付士气不返还");
-                else if (!TrySummonFromAnyPrivateZone(player, item.Controller, guard.InstanceId, slot, tapped: false))
+                else if (!TrySummonFromAnyPrivateZone(player, item.Controller, guard.InstanceId, slot,
+                             tapped: false, presentationOwner: item))
                     RecordTargetSettlementFailure(item, guardId,
                         "太阳城阵营效果所选〈陵墓守卫〉或位置在最终区域事务中失效；已支付士气不返还");
                 FinishStackItem(item);
@@ -1345,7 +1353,8 @@ public sealed partial class L12GameEngine
                 DamageMaster(item.Controller, 1, "阿尔维达主动效果");
                 if (State.Phase == L12Phase.GameOver) return true;
                 if (declared.Length == 3 && ParseEffectEntryBattlefieldChoice(declared[1]) == item.Controller)
-                    SummonFromAnyPrivateZone(player, declared[0], declared[2], tapped: false);
+                    SummonFromAnyPrivateZone(player, declared[0], declared[2],
+                        tapped: false, presentationOwner: item);
                 FinishStackItem(item);
                 return true;
             }
@@ -1740,7 +1749,8 @@ public sealed partial class L12GameEngine
             FinishStackItem(item);
             return;
         }
-        SummonFromAnyPrivateZone(player, guardId, destination, tapped: false);
+        SummonFromAnyPrivateZone(player, guardId, destination,
+            tapped: false, presentationOwner: item);
         FinishStackItem(item);
     }
 
@@ -1771,7 +1781,8 @@ public sealed partial class L12GameEngine
     {
         var queue = item.Data.GetValueOrDefault("summon-queue", string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).ToList();
         if (queue.Count == 0) { FinishStackItem(item); return; }
-        SummonFromAnyPrivateZone(State.Players[item.Controller], queue[0], slotChoice, item.Data.GetValueOrDefault("summon-tapped") == "true");
+        SummonFromAnyPrivateZone(State.Players[item.Controller], queue[0], slotChoice,
+            item.Data.GetValueOrDefault("summon-tapped") == "true", item);
         queue.RemoveAt(0);
         item.Data["summon-queue"] = string.Join('|', queue);
         PromptNextQueuedSummon(item);
@@ -2058,8 +2069,20 @@ public sealed partial class L12GameEngine
                 new Dictionary<string, string> { ["action"] = action }, narrative));
 
     private bool TrySummonFromAnyPrivateZone(L12PlayerState sourceOwner, int destinationPlayerIndex,
-        string instanceId, string slotChoice, bool tapped)
+        string instanceId, string slotChoice, bool tapped, L12StackItem presentationOwner)
     {
+        if (!TrySummonFromAnyPrivateZone(sourceOwner, destinationPlayerIndex,
+                instanceId, slotChoice, tapped, out var presentationFactSequence))
+            return false;
+        if (presentationFactSequence is { } sequence)
+            RegisterPresentationFact(presentationOwner, sequence);
+        return true;
+    }
+
+    private bool TrySummonFromAnyPrivateZone(L12PlayerState sourceOwner, int destinationPlayerIndex,
+        string instanceId, string slotChoice, bool tapped, out long? presentationFactSequence)
+    {
+        presentationFactSequence = null;
         if (destinationPlayerIndex < 0 || destinationPlayerIndex >= State.Players.Length)
         {
             AddEvent("effect-cancelled", sourceOwner.PlayerIndex, "声明的登场战场已失效；仅取消本次登场");
@@ -2110,12 +2133,15 @@ public sealed partial class L12GameEngine
                 card, sourceOwner.PlayerIndex, destinationPlayerIndex, row, slot);
         else
             AddEvent("put", destinationPlayerIndex, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
+        presentationFactSequence = State.EventSequence;
         CompleteEffectLegionEntry(destinationPlayerIndex, card,
             fromHand ? "hand" : fromLibrary ? "library" : "graveyard");
         return true;
     }
 
-    private void SummonFromAnyPrivateZone(L12PlayerState player, string instanceId, string slotChoice, bool tapped)
-        => _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, instanceId, slotChoice, tapped);
+    private void SummonFromAnyPrivateZone(L12PlayerState player, string instanceId, string slotChoice,
+        bool tapped, L12StackItem presentationOwner)
+        => _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, instanceId, slotChoice,
+            tapped, presentationOwner);
 
 }

@@ -555,7 +555,7 @@ public sealed partial class L12GameEngine
                 if (!string.IsNullOrWhiteSpace(declaredScarab))
                 {
                     _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, declaredScarab,
-                        PublicTriggerDeclared(item, "entrySlot"), tapped: false);
+                        PublicTriggerDeclared(item, "entrySlot"), tapped: false, presentationOwner: item);
                     FinishStackItem(item); return true;
                 }
                 FinishStackItem(item); return true;
@@ -883,7 +883,8 @@ public sealed partial class L12GameEngine
         var summon = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == summonId
             && IsDesertHandSummonCandidate(player, candidate, discardCount, item.SourceInstanceId));
         if (discardIds.Length > 3 || summon is null || slotChoice is null
-            || !TrySummonFromAnyPrivateZone(player, item.Controller, summon.InstanceId, slotChoice, tapped: false))
+            || !TrySummonFromAnyPrivateZone(player, item.Controller, summon.InstanceId, slotChoice,
+                tapped: false, presentationOwner: item))
         {
             RecordTargetSettlementFailure(item, summonId,
                 "沙漠君临已选择的手牌军团或登场位置已失效；登场失败，已弃置费用不恢复");
@@ -986,7 +987,8 @@ public sealed partial class L12GameEngine
             case "亚瑟王":
             {
                 _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex,
-                    PublicTriggerDeclared(item, "entryCard"), PublicTriggerDeclared(item, "entrySlot"), tapped: false);
+                    PublicTriggerDeclared(item, "entryCard"), PublicTriggerDeclared(item, "entrySlot"),
+                    tapped: false, presentationOwner: item);
                 FinishStackItem(item); return true;
             }
             case "忒修斯":
@@ -1030,7 +1032,7 @@ public sealed partial class L12GameEngine
                 if (!string.IsNullOrWhiteSpace(declaredGuard))
                 {
                     _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, declaredGuard,
-                        PublicTriggerDeclared(item, "entrySlot"), tapped: false);
+                        PublicTriggerDeclared(item, "entrySlot"), tapped: false, presentationOwner: item);
                     FinishStackItem(item); return true;
                 }
                 FinishStackItem(item); return true;
@@ -1414,7 +1416,8 @@ public sealed partial class L12GameEngine
             FinishStackItem(item);
             return;
         }
-        SummonFromAnyPrivateZone(player, scarabId, destination, tapped: false);
+        SummonFromAnyPrivateZone(player, scarabId, destination,
+            tapped: false, presentationOwner: item);
         FinishStackItem(item);
     }
 
@@ -2006,7 +2009,7 @@ public sealed partial class L12GameEngine
                 RecordTargetSettlementFailure(item, slot,
                     "已声明的活跃登场位置不再为空；主动休整费用不返还");
             else if (!TrySummonFromAnyPrivateZone(player, player.PlayerIndex, scarab.InstanceId,
-                         slot, tapped: false))
+                         slot, tapped: false, presentationOwner: item))
                 RecordTargetSettlementFailure(item, reviveId,
                     "所选〈增殖的甲虫〉或登场位置在最终区域事务中失效；主动休整费用不返还");
             FinishStackItem(item);
@@ -2341,7 +2344,7 @@ public sealed partial class L12GameEngine
                 var sanadaId = item.Data.GetValueOrDefault("takeda-sanada");
                 var summoned = !string.IsNullOrWhiteSpace(sanadaId)
                     && TrySummonFromAnyPrivateZone(player, player.PlayerIndex, sanadaId,
-                        chosen[0], tapped: false);
+                        chosen[0], tapped: false, presentationOwner: item);
                 if (!summoned)
                 {
                     FinishStackItem(item);
@@ -2427,7 +2430,7 @@ public sealed partial class L12GameEngine
             case "s2-robin-summon-squire":
                 if (chosen[0] == "skip") { FinishStackItem(item); return true; }
                 _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, chosen[0],
-                    PublicTriggerDeclared(item, "entrySlot"), tapped: false);
+                    PublicTriggerDeclared(item, "entrySlot"), tapped: false, presentationOwner: item);
                 FinishStackItem(item);
                 return true;
             case "s2-claudia-debuff":

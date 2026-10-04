@@ -21,7 +21,7 @@ public sealed class EffectReadyMutationGuardTests
         var expected = new[]
         {
             "L12GmCommands.cs|attacker.Tapped = false;",
-            "L12AuthorityEvents.cs|if (card is not null) card.Tapped = false;",
+            "L12AuthorityEvents.cs|card.Tapped = false;",
             "L12AuthorityEvents.cs|if (morale is not null) morale.Tapped = false;",
             "L12GameEngine.cs|card.Tapped = false;",
             "L12GameEngine.cs|card.Tapped = false;",
@@ -39,6 +39,9 @@ public sealed class EffectReadyMutationGuardTests
             .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
 
         Assert.Equal(expected.OrderBy(pair => pair.Key), actual.OrderBy(pair => pair.Key));
+        var authoritySource = File.ReadAllText(Path.Combine(server, "L12AuthorityEvents.cs"));
+        Assert.Contains("RegisterPresentationFact(item, AddPlayerCardStateTransitionEvent(", authoritySource);
+        Assert.Contains("authorityEvent.ActorPlayer, card, fromTapped: true, toTapped: false", authoritySource);
     }
 
     private static string SourceRoot([CallerFilePath] string sourcePath = "")

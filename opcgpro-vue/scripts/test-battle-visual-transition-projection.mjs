@@ -48,6 +48,19 @@ assert.equal(model.entryEffectContinuationTransaction({ ...entryResult, cards:[t
 assert.equal(model.entryEffectContinuationTransaction({ ...entryResult, playerLogGroupId:'play:later-entry' }, ownsEntry), null, 'a later real entry group is independent')
 assert.equal(model.entryEffectContinuationTransaction({ ...entryResult, cards:[{ ...sourceCard, hidden:true }] }, ownsEntry), null, 'hidden sources retain their existing presentation boundary')
 assert.equal(model.entryEffectContinuationTransaction({ ...entryResult, playerLogTiming:'active' }, ownsEntry), null, 'an already-field active effect remains a full-card presentation')
+const factResult = { ...entryResult, playerPresentationFactSequences:[19] }
+assert.deepEqual(model.effectResultPresentationFactContinuation(factResult, sequence => sequence === 19), [19],
+  'a result becomes a text-only continuation only after its exact authority fact is visibly owned')
+assert.equal(model.effectResultPresentationFactContinuation(factResult, () => false), null,
+  'an unclaimed fact retains the full-card fallback')
+assert.equal(model.effectResultPresentationFactContinuation({ ...factResult, playerPresentationFactSequences:[] }, () => true), null,
+  'an empty reference list cannot suppress a card')
+assert.equal(model.effectResultPresentationFactContinuation({ ...factResult, playerPresentationFactSequences:[19, 20] }, sequence => sequence === 19), null,
+  'partial ownership cannot suppress a multi-fact result')
+assert.equal(model.effectResultPresentationFactContinuation({ ...factResult, playerPresentationFactSequences:[19, 19] }, () => true), null,
+  'malformed duplicate references fail safe instead of changing presentation')
+assert.equal(model.effectResultPresentationFactContinuation({ ...factResult, type:'effect-trigger' }, () => true), null,
+  'non-terminal presentation events do not borrow result fact references')
 assert.equal(model.entryMovementTransactionKey({ ...entryPlay, cards:[{ ...sourceCard, cardType:'artifact' }] }, 'hand', 'relic', 'cursor'), null, 'artifact hand-to-relic movement never owns a battlefield entry continuation')
 assert.equal(model.entryMovementTransactionKey({ ...entryPlay, cards:[{ ...sourceCard, cardType:'master' }] }, 'hand', 'field', 'cursor'), null, 'master movement never owns a legion entry continuation')
 assert.equal(model.entryMovementTransactionKey({ ...entryPlay, cards:[{ ...sourceCard, cardType:'' }] }, 'hand', 'field', 'cursor'), null, 'missing card type keeps the existing full-card effect presentation')
@@ -165,6 +178,61 @@ model.resetCardStateClaimState(attackStateClaims, 50, after, 110)
 assert.deepEqual(model.claimCardStateTransitions(attackStateClaims, 51, before, [{ ...attackEvent, sequence:110 }]).map(change => change.attackSequence),
   [undefined], 'a historical attack at the reconnect baseline cannot bind to a later real ready transaction')
 
+const directAttackFactClaims = model.createCardStateClaimState()
+model.resetCardStateClaimState(directAttackFactClaims, 52, before, 100)
+const directAttackFact = { ...attackEvent, playerCardStateTransition:{ instanceId:'same', fromTapped:false, toTapped:true } }
+const [directAttackRest] = model.claimCardStateTransitions(directAttackFactClaims, 53, after, [directAttackFact])
+assert.equal(directAttackRest.transactionKey, '101:same:active>rested',
+  'an attack-bound state fact uses the existing attack event identity')
+assert.equal(directAttackRest.attackSequence, 101,
+  'the attack event can own and decorate its own active-to-rested fact')
+assert.equal(directAttackRest.presentationFactSequence, 101,
+  'the direct attack fact exposes the same authority sequence to the presentation coordinator')
+assert.deepEqual(model.claimCardStateTransitions(directAttackFactClaims, 53, after, [directAttackFact]), [],
+  'retransmitting the attack-bound fact in the same revision cannot replay it')
+
+const thunderAbortFactClaims = model.createCardStateClaimState()
+model.resetCardStateClaimState(thunderAbortFactClaims, 54, before, 200)
+const thunderAbortFact = { ...directAttackFact, sequence:201, type:'attack-ended' }
+const [thunderAbortRest] = model.claimCardStateTransitions(thunderAbortFactClaims, 55, after, [thunderAbortFact])
+assert.equal(thunderAbortRest.transactionKey, '201:same:active>rested',
+  'a thunder abort owns one rest transaction on the actual attack-ended event')
+assert.equal(thunderAbortRest.attackSequence, undefined,
+  'attack-ended never invents a lunge transaction when no attack event was published')
+assert.equal(thunderAbortRest.presentationFactSequence, 201,
+  'the thunder abort exposes only the attack-ended authority identity')
+assert.deepEqual(model.claimCardStateTransitions(thunderAbortFactClaims, 55, after, [thunderAbortFact]), [],
+  'retransmitting the thunder abort fact cannot replay the rest animation')
+
+const sameRevisionStateClaims = model.createCardStateClaimState()
+model.resetCardStateClaimState(sameRevisionStateClaims, 60, before, 300)
+const restFact = { ...event, sequence:301, type:'state', playerCardStateTransition:{ instanceId:'same', fromTapped:false, toTapped:true } }
+const readyFact = { ...event, sequence:302, type:'state', playerCardStateTransition:{ instanceId:'same', fromTapped:true, toTapped:false } }
+const sameRevisionStateChanges = model.claimCardStateTransitions(sameRevisionStateClaims, 61, before, [readyFact, restFact])
+assert.deepEqual(sameRevisionStateChanges.map(change => change.transactionKey),
+  ['301:same:active>rested', '302:same:rested>active'],
+  'ordered explicit facts preserve two real state transitions even when the final snapshot equals the baseline')
+assert.deepEqual(sameRevisionStateChanges.map(change => change.presentationFactSequence), [301, 302],
+  'each state transition carries its own existing authority event identity')
+assert.deepEqual(model.claimCardStateTransitions(sameRevisionStateClaims, 61, before, [restFact, readyFact]), [],
+  'same-revision delivery cannot replay explicit state facts')
+const orderedAttackStateClaims = model.createCardStateClaimState()
+model.resetCardStateClaimState(orderedAttackStateClaims, 62, before, 300)
+const laterAttack = { ...attackEvent, sequence:303 }
+const laterAttackRest = { ...restFact, sequence:304 }
+const orderedAttackChanges = model.claimCardStateTransitions(orderedAttackStateClaims, 63, after,
+  [laterAttackRest, laterAttack, readyFact, restFact])
+assert.deepEqual(orderedAttackChanges.map(change => change.transactionKey),
+  ['301:same:active>rested', '302:same:rested>active', '304:same:active>rested'],
+  'same-revision rest-ready-attack-rest facts preserve their exact authority order')
+assert.deepEqual(orderedAttackChanges.map(change => change.attackSequence), [undefined, undefined, 303],
+  'a later attack binds only its following rest fact and never retroactively turns an earlier rest into a lunge')
+const staleExplicitStateClaims = model.createCardStateClaimState()
+model.resetCardStateClaimState(staleExplicitStateClaims, 70, before, 400)
+assert.deepEqual(model.claimCardStateTransitions(staleExplicitStateClaims, 71, after,
+  [{ ...restFact, sequence:399 }]).map(change => change.transactionKey), ['71:same:active>rested'],
+  'an event at the recovery watermark is ignored and the current snapshot uses the legacy fallback once')
+
 const transactionClaims = model.createMovementClaimState()
 const handZones = new Map([['entrant', 'hand'], ['second-entrant', 'hand']])
 model.resetMovementClaimState(transactionClaims, 9, 40, handZones)
@@ -224,4 +292,4 @@ assert.deepEqual([...interleavedBatch.cursor.entries()].sort(), [['other-unit', 
 model.finalizeMovementTransactionBatch(interleavedClaims, interleavedBatch, new Map([['returning-unit', 'field'], ['other-unit', 'field']]))
 assert.equal(interleavedClaims.zoneRevision, 81, 'finalization commits the batch revision only after ordered claims finish')
 
-console.log('Battle visual transition projection passed: 74/74 assertions')
+console.log('Battle visual transition projection passed: 92/92 assertions')

@@ -31,6 +31,7 @@ type Movement = {
   disasterReveal?: boolean
   caption?: string
   attachment?: boolean
+  entryTransactionKey?: string
   presentationRelease?: () => void
 }
 
@@ -54,6 +55,11 @@ const queue: Movement[] = []
 const movementClaims = createMovementClaimState()
 let timer: ReturnType<typeof setTimeout> | null = null
 let preparationCount = 0
+let viewportGeneration = 0
+let activePreparationToken = 0
+type PreparationBatch = { generation: number; controller: AbortController }
+const pendingPreparationBatches = new Set<PreparationBatch>()
+const activeEventFaceReady = ref(false)
 const preparedImageUrls = new Map<string, string>()
 const sourceZoneHints = new Map<string, Zone>()
 const pendingReservations = new Set<PresentationReservation>()
@@ -74,34 +80,177 @@ function notifyBusy() {
   emit('busyChange', Boolean(active.value || queue.length || preparationCount))
 }
 
+function beginPreparationBatch(generation: number) {
+  const batch: PreparationBatch = { generation, controller: new AbortController() }
+  pendingPreparationBatches.add(batch)
+  preparationCount = pendingPreparationBatches.size
+  notifyBusy()
+  return batch
+}
+
+function finishPreparationBatch(batch: PreparationBatch | null) {
+  if (!batch || !pendingPreparationBatches.delete(batch)) return
+  batch.controller.abort()
+  preparationCount = pendingPreparationBatches.size
+  notifyBusy()
+}
+
+function cancelPreparationBatches() {
+  for (const batch of pendingPreparationBatches) batch.controller.abort()
+  pendingPreparationBatches.clear()
+  preparationCount = 0
+}
+
 function replayDuration(standardMs: number, liveMinimumMs: number, replayMinimumMs = liveMinimumMs) {
   if (!props.playbackSpeed) return l12AnimationDuration(standardMs, liveMinimumMs)
   return Math.max(replayMinimumMs, Math.round(l12AnimationDuration(standardMs, replayMinimumMs) / props.playbackSpeed))
 }
 
-function waitForImage(url: string) {
+function waitForBoundedResult<T>(promise: Promise<T>, signal: AbortSignal, timeoutMs: number) {
+  return new Promise<T | undefined>(resolve => {
+    let settled = false
+    const finish = (value: T | undefined) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      signal.removeEventListener('abort', aborted)
+      resolve(value)
+    }
+    const aborted = () => finish(undefined)
+    const timeout = setTimeout(aborted, timeoutMs)
+    signal.addEventListener('abort', aborted, { once:true })
+    if (signal.aborted) aborted()
+    else void promise.then(value => finish(value), () => finish(undefined))
+  })
+}
+
+function waitForImage(url: string, signal: AbortSignal, timeoutMs = 1800) {
   return new Promise<boolean>(resolve => {
+    let settled = false
     const image = new Image()
     image.decoding = 'async'
-    image.onload = () => resolve(true)
-    image.onerror = () => resolve(false)
+    const finish = (ready: boolean) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      signal.removeEventListener('abort', aborted)
+      image.onload = null
+      image.onerror = null
+      if (!ready) image.src = ''
+      resolve(ready)
+    }
+    const aborted = () => finish(false)
+    const timeout = setTimeout(aborted, timeoutMs)
+    signal.addEventListener('abort', aborted, { once:true })
+    image.onload = () => finish(true)
+    image.onerror = () => finish(false)
+    if (signal.aborted) {
+      aborted()
+      return
+    }
     image.src = url
   })
 }
 
-async function prepareMovementImage(card: Card) {
+async function prepareMovementImage(card: Card, parentSignal: AbortSignal) {
   const key = `${card.cardId}\n${card.imageUrl ?? ''}`
   const cached = preparedImageUrls.get(key)
   if (cached) return cached
-  const candidates = (await resolveCardAssetUrls(card.cardId, card.imageUrl, 'board'))
-    .filter(url => url !== CARD_IMAGE_PLACEHOLDER)
-  for (const url of candidates) {
-    if (!await waitForImage(url)) continue
-    preparedImageUrls.set(key, url)
-    return url
+  if (parentSignal.aborted) return CARD_IMAGE_PLACEHOLDER
+  const controller = new AbortController()
+  const cancel = () => controller.abort()
+  parentSignal.addEventListener('abort', cancel, { once:true })
+  const overallTimeout = setTimeout(cancel, 4200)
+  try {
+    // Manifest fetches are shared and cannot be aborted here. Bound the await,
+    // then fall back to the authority-provided URL while the late promise is
+    // ignored. The generation signal prevents late work from caching a face.
+    const resolved = await waitForBoundedResult(
+      resolveCardAssetUrls(card.cardId, card.imageUrl, 'board'), controller.signal, 1800)
+    if (controller.signal.aborted) return CARD_IMAGE_PLACEHOLDER
+    const direct = card.imageUrl && card.imageUrl !== CARD_IMAGE_PLACEHOLDER ? [card.imageUrl] : []
+    const candidates = [...new Set([...(resolved ?? []), ...direct])]
+      .filter(url => url !== CARD_IMAGE_PLACEHOLDER)
+    for (const url of candidates) {
+      if (!await waitForImage(url, controller.signal)) continue
+      if (controller.signal.aborted || parentSignal.aborted) return CARD_IMAGE_PLACEHOLDER
+      preparedImageUrls.set(key, url)
+      return url
+    }
+    // The placeholder is a confirmed last resort here, never an unresolved first frame.
+    return CARD_IMAGE_PLACEHOLDER
+  } finally {
+    clearTimeout(overallTimeout)
+    parentSignal.removeEventListener('abort', cancel)
+    controller.abort()
   }
-  // The placeholder is a confirmed last resort here, never an unresolved first frame.
-  return CARD_IMAGE_PLACEHOLDER
+}
+
+function waitForReservationGrant(reservation: PresentationReservation, signal: AbortSignal) {
+  return new Promise<(() => void) | null>(resolve => {
+    let settled = false
+    const finish = (release: (() => void) | null) => {
+      if (settled) {
+        release?.()
+        return
+      }
+      settled = true
+      signal.removeEventListener('abort', aborted)
+      resolve(release)
+    }
+    const aborted = () => finish(null)
+    signal.addEventListener('abort', aborted, { once:true })
+    if (signal.aborted) aborted()
+    else void reservation.waitUntilGranted().then(release => {
+      if (signal.aborted) {
+        release()
+        finish(null)
+      } else finish(release)
+    })
+  })
+}
+
+function cancelPendingBatchReservations(reservations: PresentationReservation[]) {
+  for (const reservation of reservations) {
+    if (!pendingReservations.has(reservation)) continue
+    reservation.cancel()
+    pendingReservations.delete(reservation)
+  }
+}
+
+function waitForDecodedImage(image: HTMLImageElement, timeoutMs = 1800) {
+  return new Promise<boolean>(resolve => {
+    let settled = false
+    const finish = (ready: boolean) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      image.removeEventListener('load', decode)
+      image.removeEventListener('error', failed)
+      resolve(ready)
+    }
+    const failed = () => finish(false)
+    const decode = () => {
+      if (!image.complete || image.naturalWidth <= 0) {
+        if (image.complete) finish(false)
+        return
+      }
+      if (typeof image.decode !== 'function') {
+        finish(true)
+        return
+      }
+      void image.decode().then(() => finish(image.complete && image.naturalWidth > 0), failed)
+    }
+    const timeout = setTimeout(failed, timeoutMs)
+    image.addEventListener('load', decode, { once:true })
+    image.addEventListener('error', failed, { once:true })
+    decode()
+  })
+}
+
+async function waitForDecodedMovementFace(root: ParentNode) {
+  const images = [...root.querySelectorAll('img')]
+  return images.length === 0 || (await Promise.all(images.map(image => waitForDecodedImage(image)))).every(Boolean)
 }
 
 function textSource(text: string): Zone {
@@ -297,105 +446,151 @@ function showNext() {
   if (active.value || props.paused || queue.length === 0) return
   active.value = queue.shift() ?? null
   if (!active.value) return
+  const movement = active.value
+  activeEventFaceReady.value = false
+  const presentationKey = movement.key
+  const presentationSequence = movement.sequence
+  const presentationGeneration = viewportGeneration
+  const preparationToken = ++activePreparationToken
+  const ownsActivePresentation = () => active.value?.key === presentationKey
+    && viewportGeneration === presentationGeneration
+    && activePreparationToken === preparationToken
+  const registerStartedPresentation = (movement: Movement) => {
+    if (movement.entryTransactionKey)
+      props.sequenceCoordinator.registerEntryMovementTransaction(movement.entryTransactionKey)
+    props.sequenceCoordinator.registerPresentationFact(presentationSequence)
+  }
   notifyBusy()
-  const destination = destinationElement(active.value)
-  if (destination instanceof HTMLElement) {
+  const coverDestination = () => {
+    if (!ownsActivePresentation()) return false
+    const destination = destinationElement(movement)
+    if (!(destination instanceof HTMLElement)) return true
     releaseTargetVisibility = acquireAuthoritativeCardVisibility(destination)
     // The flight owns the visible transform. If a preceding state change left
     // this authority node mid-motion, finish it while covered for handoff.
     try {
       settleElementGeometry(destination)
+      return true
     } catch {
       revealTarget()
+      return false
     }
   }
   const finish = () => {
-    if (!active.value) return
+    if (!ownsActivePresentation()) return
+    activePreparationToken++
     if (timer) clearTimeout(timer)
     activeGhostAnimation?.cancel()
     activeGhostAnimation = null
     activeGhostWrapper?.remove()
     activeGhostWrapper = null
     revealTarget()
-    const release = active.value.presentationRelease
+    const release = movement.presentationRelease
     active.value = null
+    activeEventFaceReady.value = false
     timer = null
     release?.()
     showNext()
     notifyBusy()
   }
   try {
-    if (active.value.sourceGhost) {
-    const source = active.value.fromRect
-    const target = active.value.toRect
-    const wrapper = document.createElement('div')
-    wrapper.className = 'l12-zone-flight-ghost'
-    wrapper.dataset.movementKey = active.value.key
-    wrapper.dataset.movementInstanceId = active.value.card?.instanceId ?? ''
-    wrapper.dataset.movementFrom = active.value.from
-    wrapper.dataset.movementTo = active.value.to
-    wrapper.dataset.movementFromX = `${source.x}`
-    wrapper.dataset.movementFromY = `${source.y}`
-    wrapper.dataset.movementToX = `${target.x}`
-    wrapper.dataset.movementToY = `${target.y}`
-    Object.assign(wrapper.style, {
-      position: 'fixed', left: `${source.x - source.width / 2}px`, top: `${source.y - source.height / 2}px`,
-      width: `${source.width}px`, height: `${source.height}px`, zIndex: '902', pointerEvents: 'none',
-      // Translation is center-to-center. Keep rotation and scale on that same
-      // invariant center or a rested card's quarter turn shifts the endpoint.
-      transformOrigin: 'center', willChange: 'transform, opacity', filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))',
-    })
-    const ghost = active.value.sourceGhost
-    ghost.classList.remove('tapped', 'selected')
-    Object.assign(ghost.style, { width: '100%', height: '100%', margin: '0', transform: 'none', transition: 'none', pointerEvents: 'none' })
-    ghost.removeAttribute('id')
-    ghost.removeAttribute('data-card-instance-id')
-    ghost.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'))
-    ghost.querySelectorAll('[data-card-instance-id]').forEach(node => node.removeAttribute('data-card-instance-id'))
-    wrapper.appendChild(ghost)
-    if (active.value.caption) {
-      const caption = document.createElement('span')
-      caption.className = 'l12-zone-flight-caption'
-      caption.textContent = active.value.caption
-      Object.assign(caption.style, {
-        position: 'absolute', left: '50%', bottom: 'calc(100% + 7px)', transform: 'translateX(-50%)',
-        width: 'max-content', maxWidth: '240px', padding: '3px 7px', border: '1px solid #8cc6d2',
-        background: 'rgba(7,16,20,.94)', color: '#eef6f5', fontSize: '12px', lineHeight: '1.35',
-        whiteSpace: 'normal', textAlign: 'center', overflowWrap: 'anywhere',
+    const ghost = movement.sourceGhost
+    if (ghost) {
+      const source = movement.fromRect
+      const target = movement.toRect
+      const wrapper = document.createElement('div')
+      wrapper.className = 'l12-zone-flight-ghost'
+      wrapper.dataset.movementKey = movement.key
+      wrapper.dataset.movementInstanceId = movement.card?.instanceId ?? ''
+      wrapper.dataset.movementFrom = movement.from
+      wrapper.dataset.movementTo = movement.to
+      wrapper.dataset.movementFromX = `${source.x}`
+      wrapper.dataset.movementFromY = `${source.y}`
+      wrapper.dataset.movementToX = `${target.x}`
+      wrapper.dataset.movementToY = `${target.y}`
+      Object.assign(wrapper.style, {
+        position: 'fixed', left: `${source.x - source.width / 2}px`, top: `${source.y - source.height / 2}px`,
+        width: `${source.width}px`, height: `${source.height}px`, zIndex: '902', pointerEvents: 'none',
+        visibility: 'hidden',
+        // Translation is center-to-center. Keep rotation and scale on that same
+        // invariant center or a rested card's quarter turn shifts the endpoint.
+        transformOrigin: 'center', willChange: 'transform, opacity', filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))',
       })
-      wrapper.appendChild(caption)
-    }
-    landscapeTeleportElement()?.appendChild(wrapper)
-    activeGhostWrapper = wrapper
-    const dx = target.x - source.x
-    const dy = target.y - source.y
-    const scaleX = Math.max(.45, Math.min(1.8, target.width / Math.max(1, source.width)))
-    const scaleY = Math.max(.45, Math.min(1.8, target.height / Math.max(1, source.height)))
-    const lift = -Math.min(40, Math.hypot(dx, dy) * .08)
-    const tilt = Math.max(-3, Math.min(3, dx * .01))
-    const duration = movementDuration(active.value)
-    activeGhostAnimation = wrapper.animate([
-      { transform: `translate3d(0,0,0) scale(1) rotate(${active.value.fromRotation ?? 0}deg)`, opacity: 1 },
-      { transform: `translate3d(${dx / 2}px,${dy / 2 + lift}px,0) scale(${(1 + scaleX) / 2},${(1 + scaleY) / 2}) rotate(${((active.value.fromRotation ?? 0) + (active.value.toRotation ?? 0)) / 2 + tilt}deg)`, opacity: 1, offset: .5 },
-      { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX * 1.04},${scaleY * 1.04}) rotate(${active.value.toRotation ?? 0}deg)`, opacity: 1, offset: .85 },
-      { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX},${scaleY}) rotate(${active.value.toRotation ?? 0}deg)`, opacity: 1 },
-    ], { duration, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' })
-    activeGhostAnimation.onfinish = finish
-    activeGhostAnimation.oncancel = () => {
-      activeGhostWrapper?.remove()
-      activeGhostWrapper = null
-    }
-      timer = setTimeout(finish, duration + replayDuration(80, 20))
+      ghost.classList.remove('tapped', 'selected')
+      Object.assign(ghost.style, { width: '100%', height: '100%', margin: '0', transform: 'none', transition: 'none', visibility: 'visible', pointerEvents: 'none' })
+      ghost.removeAttribute('id')
+      ghost.removeAttribute('data-card-instance-id')
+      ghost.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'))
+      ghost.querySelectorAll('[data-card-instance-id]').forEach(node => node.removeAttribute('data-card-instance-id'))
+      wrapper.appendChild(ghost)
+      if (movement.caption) {
+        const caption = document.createElement('span')
+        caption.className = 'l12-zone-flight-caption'
+        caption.textContent = movement.caption
+        Object.assign(caption.style, {
+          position: 'absolute', left: '50%', bottom: 'calc(100% + 7px)', transform: 'translateX(-50%)',
+          width: 'max-content', maxWidth: '240px', padding: '3px 7px', border: '1px solid #8cc6d2',
+          background: 'rgba(7,16,20,.94)', color: '#eef6f5', fontSize: '12px', lineHeight: '1.35',
+          whiteSpace: 'normal', textAlign: 'center', overflowWrap: 'anywhere',
+        })
+        wrapper.appendChild(caption)
+      }
+      landscapeTeleportElement()?.appendChild(wrapper)
+      activeGhostWrapper = wrapper
+      void waitForDecodedMovementFace(wrapper).then(decoded => {
+        if (!ownsActivePresentation()) return
+        if (!decoded || !coverDestination()) {
+          finish()
+          return
+        }
+        wrapper.style.visibility = 'visible'
+        const dx = target.x - source.x
+        const dy = target.y - source.y
+        const scaleX = Math.max(.45, Math.min(1.8, target.width / Math.max(1, source.width)))
+        const scaleY = Math.max(.45, Math.min(1.8, target.height / Math.max(1, source.height)))
+        const lift = -Math.min(40, Math.hypot(dx, dy) * .08)
+        const tilt = Math.max(-3, Math.min(3, dx * .01))
+        const duration = movementDuration(movement)
+        activeGhostAnimation = wrapper.animate([
+          { transform: `translate3d(0,0,0) scale(1) rotate(${movement.fromRotation ?? 0}deg)`, opacity: 1 },
+          { transform: `translate3d(${dx / 2}px,${dy / 2 + lift}px,0) scale(${(1 + scaleX) / 2},${(1 + scaleY) / 2}) rotate(${((movement.fromRotation ?? 0) + (movement.toRotation ?? 0)) / 2 + tilt}deg)`, opacity: 1, offset: .5 },
+          { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX * 1.04},${scaleY * 1.04}) rotate(${movement.toRotation ?? 0}deg)`, opacity: 1, offset: .85 },
+          { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX},${scaleY}) rotate(${movement.toRotation ?? 0}deg)`, opacity: 1 },
+        ], { duration, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' })
+        registerStartedPresentation(movement)
+        activeGhostAnimation.onfinish = finish
+        activeGhostAnimation.oncancel = () => {
+          activeGhostWrapper?.remove()
+          activeGhostWrapper = null
+        }
+        timer = setTimeout(finish, duration + replayDuration(80, 20))
+      }).catch(() => finish())
       return
     }
     const duration = movementDuration(active.value)
-    timer = setTimeout(finish, duration + replayDuration(20, 10))
+    void nextTick(async () => {
+      if (active.value?.key !== presentationKey) return
+      const escapedKey = CSS.escape(presentationKey)
+      const root = document.querySelector(`[data-movement-key="${escapedKey}"]`)
+      if (!root || !await waitForDecodedMovementFace(root) || !ownsActivePresentation()) {
+        if (ownsActivePresentation()) finish()
+        return
+      }
+      if (!coverDestination()) {
+        finish()
+        return
+      }
+      activeEventFaceReady.value = true
+      registerStartedPresentation(active.value)
+      timer = setTimeout(finish, duration + replayDuration(20, 10))
+    }).catch(() => finish())
   } catch {
     finish()
   }
 }
 
 function cancelActiveMovement() {
+  activePreparationToken++
   if (timer) clearTimeout(timer)
   timer = null
   activeGhostAnimation?.cancel()
@@ -405,13 +600,13 @@ function cancelActiveMovement() {
   revealTarget()
   const release = active.value?.presentationRelease
   active.value = null
+  activeEventFaceReady.value = false
   release?.()
   notifyBusy()
 }
-
-let viewportGeneration = 0
 function reset() {
   viewportGeneration++
+  cancelPreparationBatches()
   cancelActiveMovement()
   for (const movement of queue) movement.presentationRelease?.()
   queue.length = 0
@@ -421,6 +616,7 @@ function reset() {
   for (const reservation of pendingReservations) reservation.cancel()
   pendingReservations.clear()
   props.sequenceCoordinator.clearEntryMovementTransactions()
+  props.sequenceCoordinator.clearPresentationFacts()
   for (const [instanceId, zone] of collectKnownCardZones(props.players)) sourceZoneHints.set(instanceId, zone)
   for (const [instanceId, zone] of collectPromptSourceZoneHints(props.prompts)) sourceZoneHints.set(instanceId, zone)
   notifyBusy()
@@ -465,7 +661,7 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
           ? 'play-contract'
           : draft.sourceEvidence
         const entryTransactionKey = entryMovementTransactionKey(event, draft.from, draft.to, entrySourceEvidence)
-        if (entryTransactionKey) props.sequenceCoordinator.registerEntryMovementTransaction(entryTransactionKey)
+        draft.entryTransactionKey = entryTransactionKey ?? undefined
         drafts.push({ event, cardIndex, draft })
       }
     }
@@ -479,11 +675,8 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
   })
   reservationCount.value += reservations.length
   const hasMovement = drafts.length > 0
-  if (hasMovement) {
-    preparationCount++
-    notifyBusy()
-  }
   const generation = viewportGeneration
+  const preparation = hasMovement ? beginPreparationBatch(generation) : null
   const starts = drafts.map(({ draft }) => {
     // A disaster is revealed from its dedicated deck/active-disaster anchor,
     // not cloned from the newly visible session thumbnail.  Using that
@@ -502,70 +695,92 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
       rotation: elementRotation(source),
     }
   })
-  await nextTick()
-  if (generation !== viewportGeneration) {
-    for (const reservation of reservations) {
-      reservation.cancel()
-      pendingReservations.delete(reservation)
-    }
-    if (hasMovement) preparationCount--
-    notifyBusy()
-    return
-  }
-  for (const [index, { draft }] of drafts.entries()) {
-    const destination = destinationElement(draft)
-    // An attach event may contain host and source in either order. Only cards that
-    // actually became attached receive a movement; the host keeps its stable DOM.
-    if (draft.attachment && !destination) {
-      reservations[index]?.cancel()
-      if (reservations[index]) pendingReservations.delete(reservations[index]!)
-      continue
-    }
-    // Keep the exact transaction-normalized from/to identity accepted above.
-    // Re-deriving it after nextTick would read the final snapshot and collapse
-    // a same-revision field→grave→field chain back into field→field.
-    const movement = starts[index] ? {
-      ...draft,
-      fromRect: starts[index]!.rect,
-      toRect: elementRect(destination)
-        ?? resolveRect(draft.to, draft.playerIndex, draft.disasterReveal ? undefined : draft.card?.instanceId),
-    } : null
-    if (movement) movement.sourceGhost = starts[index]?.ghost
-    if (movement) {
-      movement.fromRotation = starts[index]?.rotation ?? 0
-      movement.toRotation = elementRotation(destination)
-    }
-    if (movement && !movement.sourceGhost && !movement.concealed && movement.card) {
-      movement.preparedImageUrl = await prepareMovementImage(movement.card)
-    }
-    if (generation !== viewportGeneration) {
-      for (const reservation of reservations.slice(index)) {
+  try {
+    await nextTick()
+    if (generation !== viewportGeneration || preparation?.controller.signal.aborted) {
+      for (const reservation of reservations) {
         reservation.cancel()
         pendingReservations.delete(reservation)
       }
-      if (hasMovement) preparationCount--
-      notifyBusy()
       return
     }
-    if (movement) {
-      const reservation = reservations[index]!
-      const release = await reservation.waitUntilGranted()
-      pendingReservations.delete(reservation)
-      if (generation !== viewportGeneration) release()
-      else {
-        movement.presentationRelease = release
-        queue.push(movement)
-        showNext()
+    for (const [index, { draft }] of drafts.entries()) {
+      const destination = destinationElement(draft)
+    // An attach event may contain host and source in either order. Only cards that
+    // actually became attached receive a movement; the host keeps its stable DOM.
+      if (draft.attachment && !destination) {
+        reservations[index]?.cancel()
+        if (reservations[index]) pendingReservations.delete(reservations[index]!)
+        continue
       }
-    } else {
-      reservations[index]?.cancel()
-      if (reservations[index]) pendingReservations.delete(reservations[index]!)
+    // Keep the exact transaction-normalized from/to identity accepted above.
+    // Re-deriving it after nextTick would read the final snapshot and collapse
+    // a same-revision field→grave→field chain back into field→field.
+      const movement = starts[index] ? {
+        ...draft,
+        fromRect: starts[index]!.rect,
+        toRect: elementRect(destination)
+          ?? resolveRect(draft.to, draft.playerIndex, draft.disasterReveal ? undefined : draft.card?.instanceId),
+      } : null
+      if (movement) movement.sourceGhost = starts[index]?.ghost
+      if (movement) {
+        movement.fromRotation = starts[index]?.rotation ?? 0
+        movement.toRotation = elementRotation(destination)
+      }
+      if (movement && !movement.sourceGhost && !movement.concealed && movement.card && preparation) {
+        movement.preparedImageUrl = await prepareMovementImage(movement.card, preparation.controller.signal)
+        if (generation !== viewportGeneration || preparation.controller.signal.aborted) {
+          for (const reservation of reservations.slice(index)) {
+            reservation.cancel()
+            pendingReservations.delete(reservation)
+          }
+          return
+        }
+      // A public face that failed back to the official card back is not a
+      // successfully presented authority fact. Keep the settled authority
+      // card visible and let the later result use its conservative fallback.
+        if (movement.preparedImageUrl === CARD_IMAGE_PLACEHOLDER) {
+          reservations[index]?.cancel()
+          if (reservations[index]) pendingReservations.delete(reservations[index]!)
+          if (movement.card.instanceId) sourceZoneHints.delete(movement.card.instanceId)
+          continue
+        }
+      }
+      if (generation !== viewportGeneration || preparation?.controller.signal.aborted) {
+        for (const reservation of reservations.slice(index)) {
+          reservation.cancel()
+          pendingReservations.delete(reservation)
+        }
+        return
+      }
+      if (movement && preparation) {
+        const reservation = reservations[index]!
+        const release = await waitForReservationGrant(reservation, preparation.controller.signal)
+        pendingReservations.delete(reservation)
+        if (!release) {
+          reservation.cancel()
+          return
+        }
+        if (generation !== viewportGeneration) release()
+        else {
+          movement.presentationRelease = release
+          queue.push(movement)
+          showNext()
+        }
+      } else {
+        reservations[index]?.cancel()
+        if (reservations[index]) pendingReservations.delete(reservations[index]!)
+      }
+      if (movement?.card?.instanceId) sourceZoneHints.delete(movement.card.instanceId)
     }
-    if (movement?.card?.instanceId) sourceZoneHints.delete(movement.card.instanceId)
+  } finally {
+    // Only reservations still owned by this preparation batch are pending.
+    // Granted movements were removed before being handed to active/queue and
+    // retain their normal presentation release callback.
+    cancelPendingBatchReservations(reservations)
+    finishPreparationBatch(preparation)
+    showNext()
   }
-  if (hasMovement) preparationCount--
-  notifyBusy()
-  showNext()
 }, { immediate: true })
 watch(() => props.paused, paused => {
   // An animation that has already become visible must yield to a newly opened
@@ -581,7 +796,8 @@ onBeforeUnmount(() => { reset(); emit('busyChange', false) })
   <span class="zone-movement-presentation-layer" data-ui-contract="zone-movement-reservation-ledger"
     :data-movement-reservation-count="reservationCount" aria-hidden="true" />
   <Teleport :to="landscapeTeleportTarget()">
-    <div v-if="active && !active.sourceGhost" :key="active.key" class="zone-card-movement" :style="motionStyle"
+    <div v-if="active && !active.sourceGhost" :key="active.key" class="zone-card-movement"
+      :class="{ 'movement-ready': activeEventFaceReady }" :style="motionStyle"
       data-ui-contract="authoritative-zone-card-movement" :data-movement-key="active.key"
       :data-movement-instance-id="active.card?.instanceId" :data-movement-from="active.from" :data-movement-to="active.to"
       :data-movement-from-x="active.fromRect.x" :data-movement-from-y="active.fromRect.y"
@@ -605,6 +821,7 @@ onBeforeUnmount(() => { reset(); emit('busyChange', false) })
 <style scoped>
 .zone-movement-presentation-layer{display:none!important}
 .zone-card-movement{position:fixed;z-index:2147482988;left:0;top:0;width:0;height:0;pointer-events:none}.moving-card{position:absolute;width:72px;height:101px;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0);animation:l12-zone-card-flight var(--move-duration,.44s) var(--l12-ease-standard) both;filter:drop-shadow(0 8px 10px rgba(0,0,0,.72));will-change:transform,opacity}.moving-card>img,.moving-card :deep(.l12-card-image){width:100%;height:100%;object-fit:contain}.moving-card.concealed>img{object-fit:cover;border:1px solid #d6c488}
+.zone-card-movement:not(.movement-ready) .moving-card{visibility:hidden;animation-play-state:paused}.zone-card-movement.movement-ready .moving-card{visibility:visible;animation-play-state:running}
 .moving-card.covered:not(.concealed){filter:grayscale(.45) brightness(.72) drop-shadow(0 12px 14px #000)}
 .movement-caption{position:absolute;z-index:2;left:50%;bottom:calc(100% + 7px);width:max-content;max-width:240px;transform:translateX(-50%);padding:3px 7px;border:1px solid #8cc6d2;background:rgba(7,16,20,.94);color:#eef6f5;font-size:12px;line-height:1.35;text-align:center;white-space:normal;overflow-wrap:anywhere}
 .disaster-reveal-card{position:relative;display:block;width:100%;height:100%;perspective:800px;transform-style:preserve-3d}.disaster-reveal-card>img{position:absolute;inset:0;width:100%;height:100%;backface-visibility:hidden}.disaster-reveal-back{object-fit:cover;animation:l12-disaster-card-back var(--move-duration,.44s) ease-in both}.disaster-reveal-front{animation:l12-disaster-card-front var(--move-duration,.44s) ease-out both}

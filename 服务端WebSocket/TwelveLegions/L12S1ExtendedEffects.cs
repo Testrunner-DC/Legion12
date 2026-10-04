@@ -124,7 +124,11 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             case "无名的渗透者":
+                var infiltratorWasTapped = card.Tapped;
                 card.Tapped = true;
+                RegisterPresentationFact(item, AddPlayerCardStateTransitionEvent(
+                    item.Controller, card, fromTapped: infiltratorWasTapped, toTapped: true,
+                    "无名的渗透者因登场效果转为休整"));
                 card.CannotAttack = true;
                 card.CannotSupport = true;
                 AddEvent("effect", item.Controller, "无名的渗透者休整登场，且不可进攻或支援", card);
@@ -868,7 +872,12 @@ public sealed partial class L12GameEngine
 
     private bool MoveHandToGrave(L12PlayerState player, string instanceId, bool causedByEffect,
         L12CardInstance? source = null)
+        => MoveHandToGraveWithPresentationSequence(player, instanceId, causedByEffect, source, out _);
+
+    private bool MoveHandToGraveWithPresentationSequence(L12PlayerState player, string instanceId, bool causedByEffect,
+        L12CardInstance? source, out long discardPresentationSequence)
     {
+        discardPresentationSequence = 0;
         var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == instanceId);
         if (card is null) return false;
         player.Hand.Remove(card);
@@ -881,6 +890,7 @@ public sealed partial class L12GameEngine
             && (authoritativeSource.CardType == "master" || authoritativeSource.CardId == player.MasterId))
             player.HandDiscardedByMasterThisTurn = true;
         AddEvent("discard", player.PlayerIndex, $"{player.Name}弃置{card.Name}", card);
+        discardPresentationSequence = State.EventSequence;
         NotifyCardDiscarded(player, card, "hand", causedByEffect);
         return true;
     }
@@ -1242,7 +1252,8 @@ public sealed partial class L12GameEngine
                     && player.Graveyard.Any(card => card.InstanceId == declaredGuard && card.CardId == "S01-0212")
                     && EmptySlots(player).Contains(PublicTriggerDeclared(item, "entrySlot"), StringComparer.OrdinalIgnoreCase))
                 {
-                    SummonFromAnyPrivateZone(player, declaredGuard, PublicTriggerDeclared(item, "entrySlot"), false);
+                    SummonFromAnyPrivateZone(player, declaredGuard, PublicTriggerDeclared(item, "entrySlot"),
+                        tapped: false, presentationOwner: item);
                     FinishStackItem(item); return;
                 }
                 if (item.Data.ContainsKey("declared:entryCard")) { FinishStackItem(item); return; }
@@ -1273,7 +1284,8 @@ public sealed partial class L12GameEngine
                         && EffectEntryBattlefieldChoices(item.Controller, card).Contains(battlefield))
                     && EmptySlots(State.Players[battlefield]).Contains(slot, StringComparer.OrdinalIgnoreCase);
                 if (valid)
-                    _ = TrySummonFromAnyPrivateZone(player, battlefield, plannedGuard, slot, false);
+                    _ = TrySummonFromAnyPrivateZone(player, battlefield, plannedGuard, slot,
+                        tapped: false, presentationOwner: item);
                 else
                     RecordTargetSettlementFailure(item, plannedGuard,
                         "所选陵墓守卫、战场或登场位置不再合法");

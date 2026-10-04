@@ -339,7 +339,10 @@ public sealed partial class L12GameEngine
             case "thorHammerRevive" when source?.CardId == "S02-0301":
             {
                 if (player.Graveyard.Contains(source) && EmptySlots(player).Contains(item.Data.GetValueOrDefault("slot")))
-                    SummonFromAnyPrivateZone(player, source.InstanceId, item.Data["slot"], tapped: false);
+                {
+                    _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, source.InstanceId,
+                        item.Data["slot"], tapped: false, presentationOwner: item);
+                }
                 FinishStackItem(item);
                 return true;
             }
@@ -441,7 +444,7 @@ public sealed partial class L12GameEngine
                     var slot = CompositeDeclared(item, "entrySlot").SingleOrDefault();
                     if (string.IsNullOrWhiteSpace(entry) || string.IsNullOrWhiteSpace(slot)
                         || !TrySummonFromAnyPrivateZone(player, item.Controller, entry, slot,
-                            tapped: false))
+                            tapped: false, presentationOwner: item))
                         AddEvent("effect-cancelled", item.Controller,
                             "诸神巅选择的军团或位置已失效；该军团不登场，已支付神力不恢复");
                     FinishStackItem(item);
@@ -482,7 +485,8 @@ public sealed partial class L12GameEngine
                          || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
                     RecordTargetSettlementFailure(item, slot,
                         "已声明的活跃登场位置不再为空；主动休整、士气与弃牌费用不返还");
-                else if (!TrySummonFromAnyPrivateZone(player, item.Controller, revive.InstanceId, slot, tapped: false))
+                else if (!TrySummonFromAnyPrivateZone(player, item.Controller, revive.InstanceId, slot,
+                             tapped: false, presentationOwner: item))
                     RecordTargetSettlementFailure(item, reviveId,
                         "所选军团或登场位置在最终区域事务中失效；主动休整、士气与弃牌费用不返还");
                 FinishStackItem(item);

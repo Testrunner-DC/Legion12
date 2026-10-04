@@ -132,7 +132,8 @@ public sealed partial class L12GameEngine
                 AddEvent("counter-displaced", activation.Controller,
                     $"{reason}打出军团并将自己覆盖的反击战术〈{displacedCounter.Name}〉置入墓地", displacedCounter);
             }
-            if (!TrySummonFromAnyPrivateZone(player, activation.Controller, card.InstanceId, declaredSlot, tapped: false))
+            if (!TrySummonFromAnyPrivateZone(player, activation.Controller, card.InstanceId, declaredSlot,
+                    tapped: false, presentationOwner: parent))
             {
                 AbortEffectGeneratedFreePlay(activation, $"{reason}的登场事务失效；未生成重复实例");
                 return;

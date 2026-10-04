@@ -89,7 +89,24 @@ public sealed class AtomicReviewBatch6ERegressionTests
         var method = typeof(L12GameEngine).GetMethod("SummonFromAnyPrivateZone",
             BindingFlags.Instance | BindingFlags.NonPublic);
         Assert.NotNull(method);
-        method.Invoke(game, [player, instanceId, slot, tapped]);
+        var owner = new L12StackItem
+        {
+            StackItemId = "batch6e-summon-owner",
+            Controller = player.PlayerIndex,
+            SourceInstanceId = instanceId,
+            SourceCardId = "test-private-zone-summon",
+            SourceName = "区域事务测试",
+            Trigger = "active",
+            Text = string.Empty,
+        };
+        var beforeSequence = game.State.EventSequence;
+        method.Invoke(game, [player, instanceId, slot, tapped, owner]);
+        var puts = game.State.Events.Where(entry => entry.Sequence > beforeSequence
+            && entry.Type == "put" && entry.Cards.Any(card => card.InstanceId == instanceId)).ToArray();
+        if (game.State.PresentationFactProtocolEnabled && puts.Length > 0)
+            Assert.Equal([Assert.Single(puts).Sequence], owner.PresentationFactSequences);
+        else
+            Assert.Null(owner.PresentationFactSequences);
     }
 
     private static int CountInstance(L12GameEngine game, string instanceId)

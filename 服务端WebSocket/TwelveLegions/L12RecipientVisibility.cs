@@ -116,6 +116,71 @@ internal static class L12RecipientVisibility
             ? actionEvent : actionEvent with { PlayerDisasterValue = null };
     }
 
+    private static L12ActionEvent ProjectCardStateTransitionEvent(L12ActionEvent actionEvent)
+    {
+        var fact = actionEvent.PlayerCardStateTransition;
+        if (fact is null) return actionEvent;
+        var matches = actionEvent.Cards.Where(card => card.InstanceId == fact.InstanceId)
+            .Take(2).ToArray();
+        var valid = actionEvent.Type is "state" or "attack" or "attack-ended"
+            && !string.IsNullOrWhiteSpace(fact.InstanceId)
+            && fact.FromTapped != fact.ToTapped
+            && matches.Length == 1
+            && !matches[0].Hidden
+            && !string.IsNullOrWhiteSpace(matches[0].Name)
+            && matches[0].Tapped == fact.ToTapped;
+        return valid ? actionEvent : actionEvent with { PlayerCardStateTransition = null };
+    }
+
+    private static bool IsValidPresentationFact(L12ActionEvent actionEvent)
+    {
+        var visibleCards = actionEvent.Cards
+            .Where(card => !card.Hidden && !string.IsNullOrWhiteSpace(card.Name))
+            .ToArray();
+        if (actionEvent.Type is "put" or "enter" or "discard")
+            return visibleCards.Length == 1 && !string.IsNullOrWhiteSpace(visibleCards[0].InstanceId);
+
+        var state = actionEvent.PlayerCardStateTransition;
+        if (state is not null)
+            return actionEvent.Type is "state" or "attack" or "attack-ended"
+                && state.FromTapped != state.ToTapped
+                && !string.IsNullOrWhiteSpace(state.InstanceId)
+                && visibleCards.Count(card => card.InstanceId == state.InstanceId
+                    && card.Tapped == state.ToTapped) == 1;
+
+        var movements = actionEvent.PlayerBattlefieldMovement?.Facts;
+        return actionEvent.Type is "move" or "faction-effect"
+            && movements is { Length: > 0 }
+            && movements.All(fact => fact.InstanceId is { Length: > 0 } id
+                && visibleCards.Count(card => card.InstanceId == id) == 1
+                && fact.BattlefieldPlayerIndex is >= 0 and <= 1
+                && fact.FromRow is >= 0 and <= 1 && fact.ToRow is >= 0 and <= 1
+                && fact.FromSlot is >= 0 and <= 2 && fact.ToSlot is >= 0 and <= 2
+                && (fact.FromRow != fact.ToRow || fact.FromSlot != fact.ToSlot));
+    }
+
+    /// <summary>
+    /// Presentation references are a recipient contract, not authority-only
+    /// bookkeeping. Call this only after the recent-event window has been
+    /// visibility-projected for that recipient. Every reference must resolve to
+    /// one event in that exact delivered window and still expose a validated
+    /// movement/state fact; otherwise the result keeps its conservative full-card
+    /// fallback by receiving no references.
+    /// </summary>
+    internal static L12ActionEvent ProjectPresentationFactReferences(L12ActionEvent actionEvent,
+        IReadOnlyDictionary<long, L12ActionEvent> recipientEvents)
+    {
+        var references = actionEvent.PlayerPresentationFactSequences;
+        if (references is null) return actionEvent;
+        var distinct = references.Where(sequence => sequence > 0).Distinct().ToArray();
+        var valid = actionEvent.Type == "effect-result"
+            && distinct.Length > 0
+            && distinct.Length == references.Length
+            && distinct.All(sequence => recipientEvents.TryGetValue(sequence, out var fact)
+                && IsValidPresentationFact(fact));
+        return valid ? actionEvent : actionEvent with { PlayerPresentationFactSequences = null };
+    }
+
     private static L12ActionEvent ProjectSelectedTargetsEvent(L12ActionEvent actionEvent)
     {
         var selected = actionEvent.PlayerSelectedTargets;
@@ -174,9 +239,9 @@ internal static class L12RecipientVisibility
             return CanSeeActionEvent(actionEvent, viewer, revealAllHands)
                 ? actionEvent with { Type = actionEvent.Type["private-trigger-".Length..] }
                 : new L12ActionEvent(actionEvent.Sequence, "private", null, string.Empty, []);
-        actionEvent = ProjectSelectedTargetsEvent(ProjectDisasterValueEvent(ProjectTroopsModifierEvent(ProjectPublicPlacementEvent(
+        actionEvent = ProjectSelectedTargetsEvent(ProjectCardStateTransitionEvent(ProjectDisasterValueEvent(ProjectTroopsModifierEvent(ProjectPublicPlacementEvent(
             ProjectBattlefieldMovementEvent(ProjectCombatEvent(
-                L12TrialProgressVisibility.PublicEvent(actionEvent)))))));
+                L12TrialProgressVisibility.PublicEvent(actionEvent))))))));
         if (actionEvent.Type == "private-return")
             return revealAllHands || actionEvent.PlayerIndex == viewer
                 ? actionEvent with { Type = "return" }

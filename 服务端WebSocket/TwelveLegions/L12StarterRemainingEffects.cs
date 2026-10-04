@@ -508,8 +508,10 @@ public sealed partial class L12GameEngine
                 }
                 break;
             case "horusRevive":
-                _ = TrySummonFromAnyPrivateZone(player, item.Controller, values.ElementAtOrDefault(values.Length - 2) ?? string.Empty,
-                    values.ElementAtOrDefault(values.Length - 1) ?? string.Empty, tapped: true);
+                _ = TrySummonFromAnyPrivateZone(player, item.Controller,
+                    values.ElementAtOrDefault(values.Length - 2) ?? string.Empty,
+                    values.ElementAtOrDefault(values.Length - 1) ?? string.Empty,
+                    tapped: true, presentationOwner: item);
                 break;
             case "sifCycle":
                 if (!Draw(player, 1))
@@ -1306,7 +1308,7 @@ public sealed partial class L12GameEngine
                 else if (!slotIsOpen)
                     RecordTargetSettlementFailure(item, slotChoice, "已声明的休整登场位置不再为空");
                 else if (!TrySummonFromAnyPrivateZone(player, item.Controller, entry.InstanceId,
-                             slotChoice!, tapped: true))
+                             slotChoice!, tapped: true, presentationOwner: item))
                     RecordTargetSettlementFailure(item, entryId,
                         "所选军团或休整登场位置在最终区域事务中失效");
                 FinishStackItem(item);
@@ -1361,7 +1363,8 @@ public sealed partial class L12GameEngine
             {
                 var targetId = StarterDeclaredOne(item, "entryCard");
                 if (targetId is not null && TrySummonFromAnyPrivateZone(player, item.Controller, targetId,
-                        StarterDeclaredOne(item, "entrySlot") ?? string.Empty, tapped: false))
+                        StarterDeclaredOne(item, "entrySlot") ?? string.Empty,
+                        tapped: false, presentationOwner: item))
                 {
                     var summoned = FindOnField(player, targetId, out _, out _);
                     if (summoned is not null)
