@@ -64,10 +64,12 @@
    primary/hover styles without turning normal buttons into fixed-size cards. */
 @layer l12-ui-states{
   :is(.ui-state-scope,.ui-dialog) :is(button,input,select,textarea,a[href],summary,[tabindex='0']):focus-visible,
+  .ui-state-control:focus-visible,
   .ui-button:focus-visible{
     outline:var(--l12-ui-focus-width) solid var(--l12-ui-info)!important;outline-offset:2px!important;
   }
   :is(.ui-state-scope,.ui-dialog) :is(button,input,select,textarea):disabled,
+  .ui-state-control:disabled,
   .ui-button:disabled{
     background:var(--l12-ui-disabled-bg)!important;color:var(--l12-ui-disabled-text)!important;
     border-color:var(--l12-ui-line-strong)!important;opacity:1!important;cursor:not-allowed!important;box-shadow:none!important;filter:none!important;

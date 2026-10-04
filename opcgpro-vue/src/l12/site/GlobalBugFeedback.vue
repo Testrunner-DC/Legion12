@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { captureBugClientDiagnostic, l12State } from '@/l12/net'
 import { platformState, submitBug } from '@/l12/platform'
 import { landscapeTeleportTarget } from '@/l12/mobileViewport'
+import { usesSiteUiStates } from './siteUiStateScope'
 
 const route = useRoute()
 const open = ref(false)
@@ -40,10 +41,10 @@ async function submit() {
 </script>
 
 <template>
-  <button class="bug-feedback-trigger" type="button" @click="open = true">反馈 Bug</button>
+  <button class="bug-feedback-trigger" :class="{ 'ui-state-control': usesSiteUiStates(route.meta) }" type="button" @click="open = true">反馈 Bug</button>
   <Teleport :to="landscapeTeleportTarget()">
     <div v-if="open" class="bug-feedback-mask" @click.self="open = false">
-      <section class="bug-feedback-dialog" role="dialog" aria-modal="true" aria-label="反馈 Bug">
+      <section class="bug-feedback-dialog" :class="{ 'ui-state-scope': usesSiteUiStates(route.meta) }" role="dialog" aria-modal="true" aria-label="反馈 Bug">
         <header><div><small>BUG REPORT</small><h2>反馈 Bug</h2></div><button @click="open = false">×</button></header>
         <p>Bug提交和优化建议可分别填写，任意一项有内容即可提交。页面、房间、对局、版本与时间会自动附带。</p>
         <label>Bug提交<textarea v-model="form.bugDescription" maxlength="5000" rows="6" placeholder="描述大厅或对局中触发Bug的操作和实际现象；提及卡牌的时候请勿使用俗称，最好使用卡牌编号（例：S01-0001）……提交时会自动附带当前页面信息。"/></label>
@@ -57,6 +58,6 @@ async function submit() {
 </template>
 
 <style scoped>
-.bug-feedback-trigger{position:fixed;z-index:1900;right:16px;bottom:16px;padding:10px 16px;border:1px solid #d2b861;background:#221c0d;color:#f6df91;box-shadow:0 8px 28px #000;font:900 14px 'Microsoft YaHei','微软雅黑',sans-serif}.bug-feedback-mask{position:fixed;z-index:5000;inset:0;display:grid;place-items:center;padding:20px;background:rgba(1,4,7,.78);backdrop-filter:blur(8px)}.bug-feedback-dialog{width:min(560px,95vw);padding:22px;border:1px solid #687277;background:#101820;color:#f3f0e8;box-shadow:0 30px 90px #000;font-family:'Microsoft YaHei','微软雅黑',sans-serif}.bug-feedback-dialog header{display:flex;align-items:center;justify-content:space-between}.bug-feedback-dialog small{color:#d5b85e;font:900 14px monospace;letter-spacing:.18em}.bug-feedback-dialog h2{margin:4px 0;font-size:24px}.bug-feedback-dialog header button{width:34px;height:34px;border:1px solid #515d64;background:#080d11;color:#fff;font-size:20px}.bug-feedback-dialog>p{color:#89959b;font-size:14px;line-height:1.7}.bug-feedback-dialog label{display:block;margin-top:15px;color:#c7ccca;font-size:14px;font-weight:900}.bug-feedback-dialog input,.bug-feedback-dialog textarea{box-sizing:border-box;width:100%;margin-top:7px;padding:12px;border:1px solid #46535b;background:#070d12;color:#fff;font:700 14px 'Microsoft YaHei','微软雅黑';outline:none;resize:vertical}.bug-feedback-dialog input:focus,.bug-feedback-dialog textarea:focus{border-color:#56bec5}.bug-context{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}.bug-context span{padding:4px 7px;background:#172129;color:#88959a;font-size:14px}.bug-message{color:#e5c76d!important;font-weight:900}.bug-feedback-dialog footer{display:flex;justify-content:center;gap:10px;margin-top:18px}.bug-feedback-dialog footer button{min-width:120px;padding:11px;border:1px solid #5b676d;background:#121b22;color:#fff;font-weight:900}.bug-feedback-dialog footer .submit{border-color:#d8ba62;background:#d8ba62;color:#111}
+.bug-feedback-trigger{position:fixed;z-index:1900;right:16px;bottom:16px;padding:10px 16px;border:1px solid #d2b861;background:#221c0d;color:#f6df91;box-shadow:0 8px 28px #000;font:900 14px 'Microsoft YaHei','微软雅黑',sans-serif}.bug-feedback-mask{position:fixed;z-index:5000;inset:0;display:grid;grid-template-columns:minmax(0,1fr);place-items:center;padding:20px;background:rgba(1,4,7,.78);backdrop-filter:blur(8px)}.bug-feedback-dialog{box-sizing:border-box;width:min(560px,95vw);max-width:100%;min-width:0;max-height:calc(100dvh - 40px);overflow:auto;padding:22px;border:1px solid #687277;background:#101820;color:#f3f0e8;box-shadow:0 30px 90px #000;font-family:'Microsoft YaHei','微软雅黑',sans-serif}.bug-feedback-dialog header{display:flex;align-items:center;justify-content:space-between}.bug-feedback-dialog small{color:#d5b85e;font:900 14px monospace;letter-spacing:.18em}.bug-feedback-dialog h2{margin:4px 0;font-size:24px}.bug-feedback-dialog header button{width:34px;height:34px;border:1px solid #515d64;background:#080d11;color:#fff;font-size:20px}.bug-feedback-dialog>p{color:#89959b;font-size:14px;line-height:1.7}.bug-feedback-dialog label{display:block;margin-top:15px;color:#c7ccca;font-size:14px;font-weight:900}.bug-feedback-dialog input,.bug-feedback-dialog textarea{box-sizing:border-box;width:100%;margin-top:7px;padding:12px;border:1px solid #46535b;background:#070d12;color:#fff;font:700 14px 'Microsoft YaHei','微软雅黑';outline:none;resize:vertical}.bug-feedback-dialog input:focus,.bug-feedback-dialog textarea:focus{border-color:#56bec5}.bug-context{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}.bug-context span{padding:4px 7px;background:#172129;color:#88959a;font-size:14px}.bug-message{color:#e5c76d!important;font-weight:900}.bug-feedback-dialog footer{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:18px}.bug-feedback-dialog footer button{min-width:120px;padding:11px;border:1px solid #5b676d;background:#121b22;color:#fff;font-weight:900}.bug-feedback-dialog footer .submit{border-color:#d8ba62;background:#d8ba62;color:#111}
 @media(max-width:760px),(max-height:520px){.bug-feedback-trigger{display:none}.bug-feedback-dialog{padding:17px}}
 </style>

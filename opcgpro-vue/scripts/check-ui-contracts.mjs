@@ -3,6 +3,8 @@ import { normalizeArticleBlockIds, serializeArticleBody } from '../src/l12/site/
 import { maintenanceCountdown } from '../src/l12/site/maintenanceCountdown.ts'
 import { hasInvitationTemplate } from './vue-semantic-contract.mjs'
 import './test-a3-site-shell-contract.mjs'
+import { hasProfileAuthTemplate, hasProfileStatusNoticeBeforeRank } from './profile-auth-template-contract.mjs'
+import './test-a3-profile-auth-template-contract.mjs'
 
 // Git 在 Windows 工作区可能检出 CRLF；契约按语义比较换行，不改写被检查的源文件。
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
@@ -114,7 +116,6 @@ const officialHome = read('../src/l12/site/OfficialHomePage.vue')
 const newsPage = read('../src/l12/site/NewsPage.vue')
 const homeContent = read('../src/l12/site/homeContent.ts')
 const profilePage = read('../src/l12/site/ProfilePage.vue')
-const profileAuthForm = profilePage.match(/<form class="account-form auth-form"[\s\S]*?<\/form>/)?.[0] ?? ''
 const recoveryPage = read('../src/l12/site/AccountRecoveryPage.vue')
 const ruleCenter = read('../src/l12/site/RuleCenterPage.vue')
 const platform = read('../src/l12/platform.ts')
@@ -1373,11 +1374,7 @@ const contracts = [
     && l12ServerSources.includes('WilsonInterval') && l12ServerSources.includes('ReadStratifiedComparisonsAsync')
     && l12ServerSources.includes('not-estimated'), '单卡分析必须复用参赛方聚合与目标卡事实，并使用分层对照；未修正样本依赖不得伪造差值置信区间'],
   [profilePage.includes('class="admin-button"') && profilePage.includes('⚙ 管理后台') && profilePage.includes('反馈 Bug 和建议') && profilePage.includes('本赛季排位') && !profilePage.includes('自设卡背'), '个人中心须以按钮提供管理后台入口并整合反馈与排位资料，且不得出现未规划的自设卡背功能'],
-  [profileAuthForm.includes('@submit.prevent="submitAuth"') && profileAuthForm.includes('type="submit"')
-    && (profileAuthForm.match(/\brequired\b/g)?.length ?? 0) === 2
-    && profileAuthForm.includes(':disabled="authBusy || !auth.username.trim() || !auth.password"')
-    && profileAuthForm.includes('v-if="authNotice"') && profileAuthForm.includes('role="alert"')
-    && profileAuthForm.includes('aria-live="assertive"') && profilePage.includes("if (authBusy.value) return")
+  [hasProfileAuthTemplate(profilePage) && profilePage.includes("if (authBusy.value) return")
     && profilePage.includes("authMode.value === 'login' ? '登录中…' : '正在建立账号…'"), '个人中心登录/注册必须使用语义表单，支持回车且空字段不可提交；请求中须禁用并以同步忙碌门禁阻止快速重复提交，结果须在表单旁无障碍播报'],
   [profilePage.includes('error instanceof PlatformRequestError') && profilePage.includes('error.status === 403')
     && profilePage.includes('error.status === 401 || error.status === 429')
@@ -1390,10 +1387,7 @@ const contracts = [
     && profilePage.includes('账号已登录，但后续数据同步失败')
     && platform.includes('authState.verified = true') && platform.includes("localStorage.setItem('l12-auth-token', token)")
     && app.includes('if (token && verified) startAutomaticConnection()'), '登录成功必须先提交权威账号与令牌再启动全站WebSocket；后续牌库或资料同步失败不得把已成功认证伪装成登录失败'],
-  [profilePage.includes('<UiNotice v-if="notice" class="notice" role="status" aria-live="polite" aria-atomic="true">')
-    && profilePage.indexOf('<UiNotice v-if="notice" class="notice"') >= 0
-    && profilePage.indexOf('class="rank-overview"') >= 0
-    && profilePage.indexOf('<UiNotice v-if="notice" class="notice"') < profilePage.indexOf('class="rank-overview"')
+  [hasProfileStatusNoticeBeforeRank(profilePage)
     && profilePage.includes('.notice{position:fixed;') && profilePage.includes('z-index:90;'), '个人中心的称号、改密、邮箱与会话操作必须共用当前视口可见的状态播报，不得再把唯一反馈放到整页内容末尾'],
   [friendsPage.includes("tab === 'blocked'") && friendsPage.includes('refreshFriendResource()')
     && friendsPage.includes('l12State.presence') && friendsPage.includes('selectedPresence?.canInvite')

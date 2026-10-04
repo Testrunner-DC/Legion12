@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-05-global-dialog-states",
+  "date": "2026-10-05",
+  "audience": "players",
+  "title": "弹框操作与窄屏反馈",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "改善普通页面好友申请、排位处理通知与反馈弹框的键盘焦点和禁用状态；窄屏反馈弹框可上下滚动，提交按钮不再被挤出可视区。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/FriendRequestNotifications.vue",
+        "opcgpro-vue/src/l12/site/RankedIntegrityNotice.vue",
+        "opcgpro-vue/src/l12/site/GlobalBugFeedback.vue",
+        "opcgpro-vue/src/l12/site/uiSystem.css"
+      ]
+    }
+  ]
+}

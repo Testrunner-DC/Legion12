@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## UI 20261005 反馈弹框窄屏包含与外置状态范围
+
+- 用户明确批准最小修复。六尺寸真实消费者专项最初在320px因旧弹框content-box、网格最小内容宽度及两个120px页脚按钮导致横溢，短屏提交按钮亦被挤出可视区；原失败证据留在D盘e1-global-states-red及green的1至6轮目录，不用夹具前置失败冒称产品问题。只补边框盒模型、单列网格minmax收缩、max-width/min-width、可视区最大高度与内部滚动、页脚自然换行。原字段、maxlength、submit/diagnostic、蒙版z-index5000及画布几何未变。
+- 搜索实际App级GlobalBugFeedback、FriendRequestNotifications、RankedIntegrityNotice及全部Teleport同族；三个消费者原在SiteShell外，普通页面状态层不能继承。按既有usesSiteUiStates(route.meta)限定接入，反馈触发按钮仅自身焦点/禁用状态；对战/观战/沙盒/编辑器不接普通站点状态，不以ui-dialog重新设置几何。
+- [实际消费者报告](D:/GPT/Legion12/artifacts/e1-global-states-green-20261005-7/report.json)六尺寸295项/18图通过，SHA256 8c1bd97680c876a9964d55a55f5a3044d9a48171f62ea2c63f09aee6d6809239；Main核对7生产源及前后稳定、真实外写0。首次提交用实际Playwright点击，disabled下的DOM点击仅负向防重验证。48条AST反例禁止静态状态类、重复属性、扩展对象和未知v-bind绕过路由隔离；接既有组件常规门禁。旧Shell204/30图及编辑器415/23源复验通过，原语义/请求锁保持。最终Batch/Release/Git另记，不据专项称已上线。
+- 本专项挂载实际三个消费者，但不是完整App/棋盘几何或真实iOS测试。原反馈pending期间关闭并重开可能让旧完成清新草稿，是独立复核发现的未改旧风险，仍待具名复现/方案批准，不宣称已修；不扩大本次几何授权。
+
 ## UI-20261004-SITE-STATES｜普通页面与外置弹框状态接入
 
 - 全站站点 Teleport 搜索发现普通页面主内容和六类 body 弹框没有参加已有状态层，旧 danger disabled 可覆盖共同禁用样式。仅普通 SiteShell 内容/导航/通知及账号、异画登记、称号规则、资讯图片、大厅规则、构筑快照补状态范围；immersive/landscapeCanvas 和动态战场 Teleport 排除，未更改权限、事件、字体或弹框几何。

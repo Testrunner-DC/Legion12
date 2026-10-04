@@ -1,5 +1,13 @@
 # E1 基础状态与 D3 统计口径验收
 
+## 2026年10月5日 App 外置消费者接入
+
+实际GlobalBugFeedback、FriendRequestNotifications和RankedIntegrityNotice在SiteShell之外，不能继承页面状态层。本片只在普通路由接已有状态样式，对战、回放、沙盒、编辑器继续排除；通知角色、请求/忙碌锁、表单与画布未改。反馈触发按钮仅接自身状态，用户另明确批准反馈弹框窄屏最小包含修复，页脚提交通过内部纵向滚动可达。
+
+[新实际消费者专项](D:/GPT/Legion12/artifacts/e1-global-states-green-20261005-7/report.json)六尺寸295项、18图通过，7生产源前后及当前一致，真实外写0；焦点、禁用、防重、嵌套申诉表单及路由往返均有实际控件断言。它没有挂载完整App或实测游戏几何，不将路由类排除当作棋盘可用性证明。独立复核补48个AST正反例，禁止静态状态类、重复同名属性和扩展对象绕过路由策略，原8路由/8外置组件/21组件保护保持。
+
+[原Shell复验](D:/GPT/Legion12/artifacts/e1-site-states-regression-20261005-1/report.json)204项、30图通过，9当前源匹配；[编辑器复验](D:/GPT/Legion12/artifacts/e4-global-states-regression-20261005-1/report.json)415项、23当前源匹配。最终Batch/干净Release及同步另记，本轮不部署、不改维护。E1仍不是1700库存候选的全站迁移完成；反馈pending关闭/重开旧请求清草稿风险尚待独立方案，不把本次disabled检查称为该风险通过。
+
 ## 2026年10月4日 普通路由与外置弹框状态接入
 
 用户批准推进 E1 剩余工作。普通 SiteShell 内容、导航与站点通知接入已有的禁用、键盘焦点和输入校验状态层；主内容明确排除 immersive 和 landscapeCanvas。六个站点组件的 Teleport 弹框补状态类，含后台账号、异画登记、称号规则、资讯图片、大厅规则和构筑快照。未改事件、权限、字号或尺寸，也没有用 ui-dialog 改造旧弹框几何。对战、回放、沙盒和编辑器继续使用原画布策略。

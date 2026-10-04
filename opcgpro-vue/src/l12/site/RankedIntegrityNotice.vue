@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { platformState } from '../platform'
 import { integrityApi, integrityLabel, type IntegrityNotification } from '../rankedIntegrity'
 import RankedAppealForm from './RankedAppealForm.vue'
 import { landscapeTeleportTarget } from '../mobileViewport'
+import { usesSiteUiStates } from './siteUiStateScope'
+const route = useRoute()
 const items = ref<IntegrityNotification[]>([])
 const current = computed(() => items.value[0])
 const busy = ref(false); const error = ref(''); const appealing = ref(false)
@@ -42,7 +45,7 @@ onMounted(() => { void refresh(); window.addEventListener('l12-resource-rankedIn
 onBeforeUnmount(() => { generation++; window.removeEventListener('l12-resource-rankedIntegrity', changed); window.removeEventListener('l12-integrity-changed', changed) })
 </script>
 <template>
-  <Teleport :to="landscapeTeleportTarget()"><section v-if="current" class="integrity-notice" role="dialog" aria-modal="false" aria-labelledby="integrity-notice-title" data-ui-contract="ranked-integrity-result-notice">
+  <Teleport :to="landscapeTeleportTarget()"><section v-if="current" class="integrity-notice" :class="{ 'ui-state-scope': usesSiteUiStates(route.meta) }" role="dialog" aria-modal="false" aria-labelledby="integrity-notice-title" data-ui-contract="ranked-integrity-result-notice">
     <h2 id="integrity-notice-title">排位处理结果 <small v-if="items.length > 1">另有 {{ items.length - 1 }} 条</small></h2>
     <strong>{{ integrityLabel(current.outcome) }}</strong><time>{{ new Date(current.decidedAt).toLocaleString() }}</time>
     <p>{{ current.reason }}</p>

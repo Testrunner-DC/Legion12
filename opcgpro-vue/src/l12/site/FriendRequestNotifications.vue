@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { friendApi, platformState } from '../platform'
 import { friendResource, refreshFriendResource, resetFriendResource } from '../friendResource'
 import { playL12FriendRequestSound, primeL12ActionAudio } from '../game/useL12ActionAudio'
 import { landscapeTeleportTarget } from '../mobileViewport'
+import { usesSiteUiStates } from './siteUiStateScope'
 
+const route = useRoute()
 const requests = computed(() => friendResource.requests.filter(item => item.direction === 'incoming')
   .sort((a, b) => a.createdAt.localeCompare(b.createdAt)))
 const current = computed(() => requests.value[0])
@@ -59,7 +62,7 @@ onBeforeUnmount(() => {
 })
 </script>
 <template>
-  <Teleport :to="landscapeTeleportTarget()"><section v-if="current" class="friend-request-dialog" role="dialog" aria-modal="false" aria-labelledby="friend-request-title" aria-live="polite">
+  <Teleport :to="landscapeTeleportTarget()"><section v-if="current" class="friend-request-dialog" :class="{ 'ui-state-scope': usesSiteUiStates(route.meta) }" role="dialog" aria-modal="false" aria-labelledby="friend-request-title" aria-live="polite">
     <h2 id="friend-request-title">好友申请 <small v-if="requests.length > 1">{{ requests.length }}条待处理</small></h2>
     <p><b>{{ current.username }}</b> 希望添加你为好友。</p>
     <p v-if="notice" role="alert">{{ notice }}</p>
