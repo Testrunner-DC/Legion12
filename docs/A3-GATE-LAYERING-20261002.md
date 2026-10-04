@@ -1,5 +1,7 @@
 # A3：发布门禁去重与布局证据分层（2026-10-02）
 
+本轮Profile两模板族随应用8a21b064完成最终Batch及10月5日01:34:14干净Release，规则6216/平台442失败跳过0，UI354/Profile51+44、原邀请17/Prompt30及双前端/包通过；GitHub精确读回，不部署。原CSS/权限/权威保护保持，452组库存未全迁。实际结果索引D盘four-scope-continuation-receipt-20261005.md；下方“门禁待”保留为当时过程状态。
+
 ## 2026年10月5日 Profile 模板合同迁移
 
 第三个有界族只改三脚本，不改Profile产品：认证合同用Vue和表达式AST核验同一真实form、两required凭据、submit.prevent、所有隐式或关联提交入口的busy/空值锁，以及同一实际错误提示的播报属性，51正反例通过。共用状态提示要求真实唯一profile-page、UiNotice.notice和rank-overview，在同一页面渲染树内前者先于后者；44正反例通过，允许透明template、class/属性顺序和表达式空白等价，禁止注释/脚本/样式、错宿主、rank嵌套和属性覆盖冒充。

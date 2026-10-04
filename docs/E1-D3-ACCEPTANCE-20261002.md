@@ -1,5 +1,7 @@
 # E1 基础状态与 D3 统计口径验收
 
+本片应用8a21b064已在10月5日01:34:14完成干净Release，规则6216/平台442失败跳过0及前端/制品通过，Git精确同步；01:37:10两服版本未变，本轮未部署。另[179节点静态复核](D:/GPT/Legion12/artifacts/e1-remaining-scope-review-20261005/report.json)和90源SHA已Main读回，多数是已有范围或刻意画布排除，不重复修改蒙版。32个ArticleBlockEditor节点无实际消费者证明，赛季总结/抽屉关闭蒙版需验证。实际390px延迟请求已复现反馈旧完成清新草稿，[RED](D:/GPT/Legion12/artifacts/e1-feedback-pending-reopen-red-20261005/report.json)保持源绑定，修复独立待用户批准，不能称E1全站已收口。详细完整回执见D盘four-scope-continuation-receipt-20261005.md。
+
 ## 2026年10月5日 App 外置消费者接入
 
 实际GlobalBugFeedback、FriendRequestNotifications和RankedIntegrityNotice在SiteShell之外，不能继承页面状态层。本片只在普通路由接已有状态样式，对战、回放、沙盒、编辑器继续排除；通知角色、请求/忙碌锁、表单与画布未改。反馈触发按钮仅接自身状态，用户另明确批准反馈弹框窄屏最小包含修复，页脚提交通过内部纵向滚动可达。
