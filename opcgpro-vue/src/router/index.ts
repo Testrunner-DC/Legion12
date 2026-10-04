@@ -59,7 +59,7 @@ export const router = createRouter({
     { path: '/battle/records/replay/json', name: 'json-replay', component: () => import('@/l12/ReplayPage.vue'), meta: { immersive: true, replay: true, requiresAccount: true } },
     { path: '/battle/records/replay/:matchId', name: 'match-replay', component: () => import('@/l12/ReplayPage.vue'), meta: { immersive: true, replay: true, requiresAccount: true } },
     { path: '/sandbox', name: 'sandbox', component: () => import('@/l12/site/SandboxPage.vue'), meta: { landscapeCanvas: true } },
-    { path: '/deck-editor', component: () => import('@/l12/L12DeckEditor.vue'), meta: { immersive: true, landscapeCanvas: true } },
+    { path: '/deck-editor', component: () => import('@/l12/L12DeckEditor.vue'), meta: { immersive: true, landscapeCanvas: true, editorAdaptiveCanvas: true } },
     { path: '/game', component: () => import('@/l12/GamePage.vue'), meta: { immersive: true, landscapeCanvas: true } },
     { path: '/lobby', redirect: '/battle' },
     { path: '/tournaments', redirect: '/battle/tournaments' },

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-04-editor-portrait",
+  "date": "2026-10-04",
+  "audience": "players",
+  "title": "手机竖屏牌库编辑",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "牌库编辑器支持手机竖屏操作；卡池、牌表、统计和起手可切换，已保存牌库在可滚动弹框中选择。切换横竖屏保留编辑内容，桌面三栏布局保持；公开内容选卡显示完整卡图，选择后继续编辑当前行。",
+      "paths": [
+        "opcgpro-vue/src/App.vue",
+        "opcgpro-vue/src/router/index.ts",
+        "opcgpro-vue/src/l12/deckEditorViewport.ts",
+        "opcgpro-vue/src/l12/L12DeckEditor.vue",
+        "opcgpro-vue/src/l12/site/PublicDeckContentEditor.vue"
+      ]
+    }
+  ]
+}

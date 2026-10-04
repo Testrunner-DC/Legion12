@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { DeckCard } from '@/l12/decks'
 import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
 import { platformState, publicDeckApi, type PublicDeckGuide, type PublicDeckMatchup } from '@/l12/platform'
 import { useActionGate } from '@/l12/useActionGate'
 
 const props = defineProps<{ publicationId: string; catalog: DeckCard[] }>()
-const emit = defineEmits<{ saved: [message: string] }>()
+const emit = defineEmits<{ saved: [message: string]; dialogChange: [open: boolean] }>()
 const { isPending, run } = useActionGate()
 const guide = ref<PublicDeckGuide>(emptyGuide())
 const matchups = ref<PublicDeckMatchup[]>([])
@@ -15,9 +15,37 @@ const error = ref('')
 const revision = ref(0)
 const updatedAt = ref('')
 const matchupPickerIndex = ref<number | null>(null)
+const contentRoot = ref<HTMLElement | null>(null)
+let contentEpoch = 0
+let pickerReturnFocus: HTMLElement | null = null
+const pickerDialog = () => document.querySelector<HTMLElement>('.single-card-picker[aria-label="选择对方主宰"]')
+watch(matchupPickerIndex, async (index, previous) => {
+  const open = index !== null
+  if (open && previous === null) pickerReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  emit('dialogChange', open)
+  await nextTick()
+  if (open) pickerDialog()?.querySelector<HTMLElement>('button[aria-label="关闭"]')?.focus({ preventScroll: true })
+  else if (pickerReturnFocus?.isConnected) pickerReturnFocus.focus({ preventScroll: true })
+  else contentRoot.value?.querySelectorAll<HTMLElement>('.card-picker-trigger')[previous ?? 0]?.focus({ preventScroll: true })
+})
+function handlePickerKey(event: KeyboardEvent) {
+  if (matchupPickerIndex.value === null) return
+  if (event.key === 'Escape') { event.preventDefault(); matchupPickerIndex.value = null; return }
+  if (event.key !== 'Tab') return
+  const dialog = pickerDialog()
+  const focusable = [...(dialog?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),[tabindex="0"]') ?? [])]
+    .filter(element => element.getClientRects().length > 0)
+  const first = focusable[0], last = focusable[focusable.length - 1]
+  if (!first || !last) { event.preventDefault(); return }
+  if (!dialog?.contains(document.activeElement) || event.shiftKey && document.activeElement === first || !event.shiftKey && document.activeElement === last) {
+    event.preventDefault(); (event.shiftKey ? last : first).focus({ preventScroll: true })
+  }
+}
+onMounted(() => window.addEventListener('keydown', handlePickerKey))
+onBeforeUnmount(() => { contentEpoch++; window.removeEventListener('keydown', handlePickerKey); emit('dialogChange', false) })
 const homeCities = computed(() => props.catalog.filter(card => card.cardType === 'master'))
 const matchupPickerItems = computed<SingleCardPickerItem[]>(() => homeCities.value.map(card => ({
-  id: card.id, cardId: card.id, number: card.number, name: card.nameZh, nameZh: card.nameZh, cardType: card.cardType,
+  id: card.id, cardId: card.id, cardImageId: card.id, number: card.number, name: card.nameZh, nameZh: card.nameZh, cardType: card.cardType,
   faction: card.faction, product: card.product, imageUrl: card.imageUrl,
 })))
 const actionKey = computed(() => `public-deck:${platformState.account?.id ?? 'anonymous'}:${props.publicationId}`)
@@ -27,20 +55,28 @@ function emptyGuide(): PublicDeckGuide {
 }
 
 async function loadContent() {
+  const epoch = ++contentEpoch, publicationId = props.publicationId, accountId = platformState.account?.id
+  const current = () => epoch === contentEpoch && publicationId === props.publicationId && accountId === platformState.account?.id
+  matchupPickerIndex.value = null
+  guide.value = emptyGuide()
+  matchups.value = []
+  revision.value = 0
+  updatedAt.value = ''
   if (!props.publicationId) return
   loading.value = true
   error.value = ''
   try {
-    const entry = await publicDeckApi.get(props.publicationId)
-    if (entry.ownerId !== platformState.account?.id) throw new Error('只有公开牌库作者可以编辑这些内容')
+    const entry = await publicDeckApi.get(publicationId)
+    if (!current()) return
+    if (entry.ownerId !== accountId) throw new Error('只有公开牌库作者可以编辑这些内容')
     guide.value = { ...(entry.details?.guide ?? emptyGuide()) }
     matchups.value = (entry.details?.matchups ?? []).map(item => ({ ...item }))
     revision.value = entry.details?.contentRevision ?? 0
     updatedAt.value = entry.details?.contentUpdatedAt ?? ''
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : '公开内容加载失败'
+    if (current()) error.value = cause instanceof Error ? cause.message : '公开内容加载失败'
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
 }
 
@@ -63,10 +99,12 @@ function matchupMasterName(cardId: string) {
 async function saveContent() {
   if (!props.publicationId || isPending(actionKey.value)) return
   const accountId = platformState.account?.id
+  const publicationId = props.publicationId, epoch = contentEpoch
+  const current = () => accountId === platformState.account?.id && publicationId === props.publicationId && epoch === contentEpoch
   await run(actionKey.value, async () => {
     try {
-      const details = await publicDeckApi.updateContent(props.publicationId, guide.value, matchups.value)
-      if (accountId !== platformState.account?.id) return
+      const details = await publicDeckApi.updateContent(publicationId, { ...guide.value }, matchups.value.map(item => ({ ...item })))
+      if (!current()) return
       guide.value = { ...details.guide }
       matchups.value = details.matchups.map(item => ({ ...item }))
       revision.value = details.contentRevision
@@ -74,7 +112,7 @@ async function saveContent() {
       error.value = ''
       emit('saved', '指南和对局建议已保存，可返回公开详情查看')
     } catch (cause) {
-      if (accountId === platformState.account?.id)
+      if (current())
         error.value = cause instanceof Error ? cause.message : '公开内容保存失败'
     }
   })
@@ -84,11 +122,11 @@ function formatTime(value: string) {
   return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '尚未保存内容'
 }
 
-watch(() => props.publicationId, loadContent, { immediate: true })
+watch(() => [props.publicationId, platformState.account?.id], loadContent, { immediate: true })
 </script>
 
 <template>
-  <section class="public-content-editor grand-panel" data-editor-workspace="public-content">
+  <section ref="contentRoot" class="public-content-editor grand-panel" data-editor-workspace="public-content">
     <header>
       <div><p class="kicker">公开内容</p><h2>公开牌库内容</h2><p>编辑公开详情中的指南和对局建议；构筑版本仍由“更新公开牌库”保存。</p></div>
       <div class="content-status"><b>修订 {{ revision }}</b><small>{{ formatTime(updatedAt) }}</small></div>
@@ -108,7 +146,7 @@ watch(() => props.publicationId, loadContent, { immediate: true })
       </section>
       <section class="content-block">
         <header><div><h3>对局建议</h3><p>按对方主宰分别填写；完全留空的内容不会出现在公开详情中。</p></div><button type="button" @click="addMatchup">添加主宰</button></header>
-        <article v-for="(row,index) in matchups" :key="`${row.opponentMasterId}-${index}`" class="matchup-row">
+        <article v-for="(row,index) in matchups" :key="index" class="matchup-row">
           <label>对方主宰<button type="button" class="card-picker-trigger" @click="matchupPickerIndex = index">{{ matchupMasterName(row.opponentMasterId) }}</button></label>
           <label>对局思路<textarea v-model="row.notes" rows="3" maxlength="800"/></label>
           <label>关键牌<textarea v-model="row.keyCards" rows="2" maxlength="800"/></label>

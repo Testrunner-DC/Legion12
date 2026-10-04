@@ -10,11 +10,14 @@ import RankedIntegrityNotice from '@/l12/site/RankedIntegrityNotice.vue'
 import { applyAudioPreferences, audioPreferences, l12MusicOutputVolume, syncAudioStore } from '@/l12/audioPreferences'
 import { BackgroundMusicController } from '@/l12/backgroundMusic'
 import { useLandscapeViewport } from '@/l12/mobileViewport'
+import { deckEditorPortrait, useDeckEditorViewport } from '@/l12/deckEditorViewport'
 import '@/l12/mobileViewport.css'
 
 const route = useRoute()
 const immersive = computed(() => route.meta.immersive === true)
-const landscapeExperience = computed(() => route.meta.landscapeCanvas === true)
+const adaptiveEditor = computed(() => route.meta.editorAdaptiveCanvas === true)
+useDeckEditorViewport(adaptiveEditor)
+const landscapeExperience = computed(() => route.meta.landscapeCanvas === true && !(adaptiveEditor.value && deckEditorPortrait.value))
 useLandscapeViewport(landscapeExperience)
 const lockedViewport = 'width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover'
 const readableViewport = 'width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover'
@@ -88,14 +91,11 @@ watch(() => [platformState.token, authState.verified] as const, ([token, verifie
 
 <template>
   <div id="l12-landscape-teleports" />
-  <div v-if="landscapeExperience" class="l12-landscape-surface" data-l12-landscape-canvas>
+  <!-- One route host: an editor resize never destroys its state or draft. -->
+  <div :class="landscapeExperience ? 'l12-landscape-surface' : 'l12-route-surface'" :data-l12-landscape-canvas="landscapeExperience ? '' : undefined">
     <router-view v-if="immersive" v-slot="{ Component, route: viewRoute }"><Transition name="page-fade" mode="out-in"><component :is="Component" :key="viewRoute.path" /></Transition></router-view>
     <SiteShell v-else><router-view v-slot="{ Component, route: viewRoute }"><Transition name="page-slide"><component :is="Component" :key="viewRoute.path" /></Transition></router-view></SiteShell>
   </div>
-  <template v-else>
-    <router-view v-if="immersive" v-slot="{ Component, route: viewRoute }"><Transition name="page-fade" mode="out-in"><component :is="Component" :key="viewRoute.path" /></Transition></router-view>
-    <SiteShell v-else><router-view v-slot="{ Component, route: viewRoute }"><Transition name="page-slide"><component :is="Component" :key="viewRoute.path" /></Transition></router-view></SiteShell>
-  </template>
   <GlobalBugFeedback />
   <FriendRequestNotifications />
   <RankedIntegrityNotice />

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import DeckProfile from './DeckProfile.vue'
@@ -18,6 +18,7 @@ import PublicDeckContentEditor from './site/PublicDeckContentEditor.vue'
 import { matchesPublishedDeckReference, publicDeckRouteReference } from './site/publicDeckEntry'
 import { deckEditorReturnTarget } from './site/deckEditorNavigation'
 import { clearDeckEditorDraft, draftOwner, readDeckEditorDraft, writeDeckEditorDraft, type DeckEditorDraft } from './site/deckEditorDraft'
+import { deckEditorPortrait } from './deckEditorViewport'
 
 const router = useRouter()
 const route = useRoute()
@@ -61,6 +62,21 @@ const localDraft = ref<DeckEditorDraft | null>(null)
 const restoredLocalDraft = ref(false)
 const hasUnsavedChanges = computed(() => editorContentRevision.value !== persistedContentRevision.value)
 const ownedAlternateArts = ref<AlternateArt[]>([])
+let ownedArtRequest = 0
+let editorAccountEpoch = 0
+let editorDocumentEpoch = 0
+const editorContext = () => ({ accountId: platformState.account?.id, accountEpoch: editorAccountEpoch, documentEpoch: editorDocumentEpoch })
+const isCurrentEditorContext = (context: ReturnType<typeof editorContext>) => context.accountId === platformState.account?.id
+  && context.accountEpoch === editorAccountEpoch && context.documentEpoch === editorDocumentEpoch
+async function refreshOwnedAlternateArts() {
+  const accountId = platformState.account?.id, request = ++ownedArtRequest
+  ownedAlternateArts.value = []
+  if (!accountId) return
+  try {
+    const arts = await alternateArtApi.mine()
+    if (request === ownedArtRequest && platformState.account?.id === accountId) ownedAlternateArts.value = arts
+  } catch { /* Failed grant reads stay empty, never another account's list. */ }
+}
 const alternateArtSelections = ref<Record<string, string>>({})
 const alternateArtCopies = ref<Record<string, string[]>>({})
 const operationsRestrictions = ref<OperationsCardRestriction[]>([])
@@ -71,6 +87,35 @@ const mobileSavedDecksOpen = ref(false)
 const poolSelectorOpen = ref(false)
 const secondaryActionsOpen = ref(false)
 const detailCollapsed = ref(false)
+const publicPickerOpen = ref(false)
+const editorScrollContainer = ref<HTMLElement | null>(null)
+const portraitScrollPositions = new Map<string, number>()
+let scrollRestoreGeneration = 0
+watch(() => `${mobilePane.value}:${workspace.value}`, async (key, previousKey) => {
+  if (!deckEditorPortrait.value || !editorScrollContainer.value) return
+  portraitScrollPositions.set(previousKey, editorScrollContainer.value.scrollTop)
+  const generation = ++scrollRestoreGeneration
+  await nextTick()
+  if (generation === scrollRestoreGeneration && deckEditorPortrait.value)
+    editorScrollContainer.value?.scrollTo({ top: portraitScrollPositions.get(key) ?? 0, behavior: 'instant' })
+}, { flush: 'pre' })
+const editorModalOpen = computed(() => mobileDetailOpen.value || mobileSavedDecksOpen.value || !!pendingDeleteName.value || !!deckImageUrl.value || publicPickerOpen.value)
+let editorModalReturnFocus: HTMLElement | null = null
+watch(editorModalOpen, async (open, previousOpen) => {
+  if (open && !previousOpen) editorModalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  await nextTick()
+  if (open) {
+    const mask = document.querySelector<HTMLElement>('.deck-builder-shell .builder-modal-mask')
+    const initial = mask?.querySelector<HTMLElement>('[data-initial-focus]:not(:disabled)')
+      ?? mask?.querySelector<HTMLElement>('button:not(:disabled)')
+    initial?.focus({ preventScroll: true })
+  }
+  else {
+    const restore = editorModalReturnFocus?.isConnected && editorModalReturnFocus.getClientRects().length
+      ? editorModalReturnFocus : document.querySelector<HTMLElement>('.deck-builder-shell .more-actions-trigger')
+    restore?.focus({ preventScroll: true })
+  }
+})
 const openingHandIds = ref<string[]>([])
 type DeckSection = 'master' | 'main' | 'morale' | 'extra' | 'bench'
 const SECTION_STORAGE_KEY = 'l12-deck-editor-sections-v1'
@@ -91,18 +136,19 @@ const typeLabels: Record<string, string> = {
 }
 
 onMounted(async () => {
+  const loadingAccountEpoch = editorAccountEpoch
   try {
-    const [loadedCatalog, loadedDecks, arts] = await Promise.all([
+    const [loadedCatalog, loadedDecks] = await Promise.all([
       loadDeckCatalog(),
       ensureOfficialPrebuiltDecks(),
-      platformState.account ? alternateArtApi.mine().catch(() => [] as AlternateArt[]) : Promise.resolve([] as AlternateArt[]),
+      refreshOwnedAlternateArts(),
     ])
     catalog.value = loadedCatalog
-    savedDecks.value = loadedDecks
-    ownedAlternateArts.value = arts
+    savedDecks.value = loadingAccountEpoch === editorAccountEpoch ? loadedDecks : loadSavedDecks()
     void getEffectiveOperationsPolicy().then(policy => {
       operationsRestrictions.value = policy.cardRestrictions
     }).catch(() => undefined)
+    if (loadingAccountEpoch !== editorAccountEpoch) { selected.value = mainCards.value[0] ?? null; refreshLocalDraft(); return }
     const requestedPublicationCode = publicationCode.value
     const requested = typeof router.currentRoute.value.query.deck === 'string' ? router.currentRoute.value.query.deck : ''
     const requestedId = typeof router.currentRoute.value.query.deckId === 'string'
@@ -295,11 +341,12 @@ function publicDeckUrl(reference = publicationCode.value) {
 }
 async function resolvePublishedDeck() {
   if ((!publicationId.value && !publicationCode.value) || !publicationVersion.value) return null
+  const context = editorContext()
   try {
     const published = publicationCode.value
       ? await publicDeckApi.get(publicationCode.value)
       : (await publicDeckApi.list()).find(item => item.id === publicationId.value) ?? null
-    if (!published || !matchesPublishedDeckReference(currentDeck(), published, platformState.account?.id)) return null
+    if (!isCurrentEditorContext(context) || !published || !matchesPublishedDeckReference(currentDeck(), published, platformState.account?.id)) return null
     publicationId.value = published.id
     publicationCode.value = publicDeckRouteReference(published)
     return published
@@ -330,9 +377,26 @@ function chooseMobileSavedDeck(deck: SavedL12Deck) {
 }
 
 function closeEditorDialogOnEscape(event: KeyboardEvent) {
-  if (event.key !== 'Escape' || !mobileSavedDecksOpen.value) return
+  if (event.key === 'Tab' && editorModalOpen.value) {
+    const mask = document.querySelector<HTMLElement>('.deck-builder-shell .builder-modal-mask')
+    if (!mask) return // The public-content picker owns its Teleport focus ring.
+    const focusable = [...(mask?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]') ?? [])]
+      .filter(element => element.getClientRects().length > 0)
+    const first = focusable[0], last = focusable[focusable.length - 1]
+    if (!first || !last) { event.preventDefault(); return }
+    if (first && last && (!mask?.contains(document.activeElement) || event.shiftKey && document.activeElement === first || !event.shiftKey && document.activeElement === last)) {
+      event.preventDefault()
+      ;(event.shiftKey ? last : first).focus({ preventScroll: true })
+    }
+    return
+  }
+  if (event.key !== 'Escape') return
   event.stopPropagation()
   mobileSavedDecksOpen.value = false
+  mobileDetailOpen.value = false
+  secondaryActionsOpen.value = false
+  if (!deletingDeck.value) closePendingDelete()
+  if (deckImageUrl.value) closeDeckImage()
 }
 
 onMounted(() => window.addEventListener('keydown', closeEditorDialogOnEscape))
@@ -467,6 +531,7 @@ function removeAppearance(entry: PoolCardAppearance) {
 }
 
 function newDeck() {
+  editorDocumentEpoch++
   publicationVersion.value = null
   publicationId.value = ''
   publicationCode.value = ''
@@ -616,8 +681,10 @@ async function onSave() {
   deckMutationBusy.value = true
   const deck = currentDeck()
   const requestedRevision = editorContentRevision.value
+  const context = editorContext()
   try {
     const saved = await saveDeck(deck)
+    if (!isCurrentEditorContext(context)) return
     savedDecks.value = loadSavedDecks()
     const editorUnchanged = editorContentRevision.value === requestedRevision
     activeDeckName.value = saved.name
@@ -632,7 +699,7 @@ async function onSave() {
       notice.value = `已保存〈${saved.name}〉，可在房间中选择`
     }
   } catch (error) {
-    notice.value = `牌库保存失败：${mutationError(error, '请稍后重试')}`
+    if (isCurrentEditorContext(context)) notice.value = `牌库保存失败：${mutationError(error, '请稍后重试')}`
   } finally {
     deckMutationBusy.value = false
   }
@@ -651,9 +718,11 @@ async function onSaveAs() {
   const deck = { ...currentDeck(), id: undefined, revision: undefined,
     name, publicationId: null, publicationVersion: null }
   const requestedRevision = editorContentRevision.value
+  const context = editorContext()
   deckMutationBusy.value = true
   try {
     const saved = await saveDeck(deck)
+    if (!isCurrentEditorContext(context)) return
     savedDecks.value = loadSavedDecks()
     if (editorContentRevision.value === requestedRevision) {
       publicationId.value = ''
@@ -668,7 +737,7 @@ async function onSaveAs() {
       notice.value = `已另存为〈${saved.name}〉`
     }
   } catch (error) {
-    notice.value = `牌库另存失败：${mutationError(error, '请稍后重试')}`
+    if (isCurrentEditorContext(context)) notice.value = `牌库另存失败：${mutationError(error, '请稍后重试')}`
   } finally {
     deckMutationBusy.value = false
   }
@@ -681,13 +750,17 @@ async function publishCurrentDeck() {
   deckMutationBusy.value = true
   const requestedRevision = editorContentRevision.value
   const publishedId = publicationId.value
+  const context = editorContext()
   try {
     const deck = currentDeck()
     const saved = await saveDeck(deck)
+    if (!isCurrentEditorContext(context)) return
     savedDecks.value = loadSavedDecks()
     const result = await publicDeckApi.publish(saved, publishedId || undefined)
+    if (!isCurrentEditorContext(context)) return
     const published = await saveDeck({ ...saved, publicationId: result.deck.publicationId,
       publicationVersion: result.deck.publicationVersion })
+    if (!isCurrentEditorContext(context)) return
     savedDecks.value = loadSavedDecks()
     activeDeckName.value = published.name
     activeDeckId.value = published.id ?? null
@@ -703,13 +776,14 @@ async function publishCurrentDeck() {
       notice.value = publishedId ? `已更新公开牌库〈${saved.name}〉` : `已公开〈${saved.name}〉，后续可从此处更新公开版本`
     }
   } catch (error) {
-    notice.value = error instanceof Error ? error.message : '公开牌库失败'
+    if (isCurrentEditorContext(context)) notice.value = error instanceof Error ? error.message : '公开牌库失败'
   } finally {
     deckMutationBusy.value = false
   }
 }
 
 function loadDeck(deck: SavedL12Deck, preservePublication = false) {
+  editorDocumentEpoch++
   if (!preservePublication || deck.publicationId) publicationId.value = deck.publicationId || ''
   publicationCode.value = ''
   publicationVersion.value = deck.publicationVersion ?? null
@@ -771,16 +845,18 @@ async function confirmDelete() {
   const deck = pendingDeleteDeck.value
   if (!deck || deletingDeck.value || deckMutationBusy.value) return
   const deletingActiveDeck = deck.id ? activeDeckId.value === deck.id : activeDeckName.value === deck.name
+  const context = editorContext()
   if (deletingActiveDeck && !confirmDiscardChanges()) return
   deletingDeck.value = true
   try {
     await deleteDeck(deck)
+    if (!isCurrentEditorContext(context)) return
     savedDecks.value = loadSavedDecks()
     if (deletingActiveDeck) newDeck()
     notice.value = `已删除〈${deck.name}〉`
     closePendingDelete()
   } catch (error) {
-    notice.value = `删除〈${deck.name}〉失败：${mutationError(error, '请稍后重试')}`
+    if (isCurrentEditorContext(context)) notice.value = `删除〈${deck.name}〉失败：${mutationError(error, '请稍后重试')}`
   } finally {
     deletingDeck.value = false
   }
@@ -809,19 +885,22 @@ async function generateDeckImage() {
   if (validation.value) { notice.value = validation.value; return }
   generatingDeckImage.value = true
   closeDeckImage()
+  const context = editorContext()
   try {
     const deck = currentDeck()
     const publicUrl = await verifiedPublicDeckUrl()
     const presentationDeck = publicUrl
       ? { ...deck, alternateArtSelections: {}, alternateArtCopies: {} }
       : deck
-    deckImageBlob.value = await createDeckImageBlob(presentationDeck, catalog.value, {
+    const imageBlob = await createDeckImageBlob(presentationDeck, catalog.value, {
       publicUrl,
       alternateArts: publicUrl ? [] : ownedAlternateArts.value,
     })
+    if (!isCurrentEditorContext(context)) return
+    deckImageBlob.value = imageBlob
     deckImageUrl.value = URL.createObjectURL(deckImageBlob.value)
   } catch (error) {
-    notice.value = error instanceof Error ? error.message : '牌库图生成失败'
+    if (isCurrentEditorContext(context)) notice.value = error instanceof Error ? error.message : '牌库图生成失败'
   } finally {
     generatingDeckImage.value = false
   }
@@ -833,6 +912,8 @@ async function saveGeneratedDeckImage() {
 }
 
 onBeforeUnmount(() => {
+  editorAccountEpoch++
+  ownedArtRequest++
   window.removeEventListener('keydown', closeEditorDialogOnEscape)
   window.removeEventListener('beforeunload', warnBeforeUnload)
   closeDeckImage()
@@ -840,7 +921,9 @@ onBeforeUnmount(() => {
 onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
 
 watch(() => platformState.account?.id, (current, previous) => {
-  if (current === previous || loading.value) return
+  if (current === previous) return
+  editorAccountEpoch++
+  void refreshOwnedAlternateArts()
   let preserveError = ''
   if (hasUnsavedChanges.value) {
     try {
@@ -849,6 +932,9 @@ watch(() => platformState.account?.id, (current, previous) => {
         new Date().toISOString(), activeDeckId.value, activeDeckRevision.value)
     } catch (error) { preserveError = mutationError(error, '浏览器存储不可用') }
   }
+  mobileDetailOpen.value = mobileSavedDecksOpen.value = false
+  closePendingDelete()
+  closeDeckImage()
   newDeck()
   savedDecks.value = loadSavedDecks()
   refreshLocalDraft()
@@ -857,7 +943,7 @@ watch(() => platformState.account?.id, (current, previous) => {
 </script>
 
 <template>
-  <div class="deck-builder-shell">
+  <div class="deck-builder-shell" :class="{ 'portrait-editor': deckEditorPortrait, 'editor-modal-open': editorModalOpen }">
     <header class="deck-builder-topbar">
       <button class="back-button" @click="router.push(returnTo)">← 返回上一级</button>
       <div><small>DECK EDITOR</small><h1>牌库编辑器</h1></div>
@@ -865,7 +951,7 @@ watch(() => platformState.account?.id, (current, previous) => {
       <div class="deck-total" :class="{ valid: !validation }"><b>{{ countSummary.label }}</b><span>/ 40–50<span v-if="uncountedCards">（括号内不计构筑）</span></span></div>
       <div class="deck-file-actions">
         <button class="primary" :disabled="!!validation || deckMutationBusy || deletingDeck" @click="onSave">{{ deckMutationBusy ? '保存中…' : '保存牌库' }}</button>
-        <button class="more-actions-trigger" @click="secondaryActionsOpen = !secondaryActionsOpen">更多操作</button>
+        <button class="more-actions-trigger" :aria-expanded="secondaryActionsOpen" @click="secondaryActionsOpen = !secondaryActionsOpen">更多操作</button>
         <div class="secondary-actions" :class="{ open: secondaryActionsOpen }">
           <button @click="requestNewDeck">新建牌库</button>
           <button @click="saveLocalDraft">暂存草稿</button>
@@ -888,7 +974,7 @@ watch(() => platformState.account?.id, (current, previous) => {
     </nav>
 
     <main v-if="loading" class="deck-loading">正在载入卡牌数据…</main>
-    <main v-else class="deck-builder-grid" :class="{ 'detail-collapsed': detailCollapsed }" :data-mobile-pane="mobilePane">
+    <main v-else ref="editorScrollContainer" class="deck-builder-grid" :class="{ 'detail-collapsed': detailCollapsed }" :data-mobile-pane="mobilePane">
       <div class="deck-side-column">
       <aside class="deck-detail-panel grand-panel" :class="{ collapsed: detailCollapsed }">
         <header class="detail-panel-heading"><div><p class="kicker">卡牌信息</p><h2>卡牌详情</h2></div><div class="detail-panel-actions"><button class="mobile-saved-decks-side-trigger" aria-haspopup="dialog" aria-controls="mobile-saved-decks-dialog" @click="mobileSavedDecksOpen = true">选择牌库</button><button @click="detailCollapsed = !detailCollapsed">{{ detailCollapsed ? '展开' : '收起' }}</button></div></header>
@@ -949,7 +1035,7 @@ watch(() => platformState.account?.id, (current, previous) => {
         </section>
         <div v-if="catalogTab === 'master'" class="deck-card-grid">
           <article v-for="master in masters" :key="master.id" class="deck-card" :class="{ chosen: master.id === masterId }" @click="selectCard(master)">
-            <button class="card-image" @dblclick.stop="chooseMaster(master.id)"><CardImage :card-id="master.id" :legacy-url="master.imageUrl" :alt="master.nameZh" intent="thumb" fit="cover"/></button>
+            <button class="card-image" @dblclick.stop="chooseMaster(master.id)"><CardImage :card-id="master.id" :legacy-url="master.imageUrl" :alt="master.nameZh" intent="thumb" :fit="deckEditorPortrait ? 'contain' : 'cover'"/></button>
             <div><b>{{ master.nameZh }}</b><small>{{ master.number }} · {{ factionLabels[master.faction] }}</small></div>
             <button class="choose-special" @click.stop="chooseMaster(master.id)">{{ master.id === masterId ? '已选择' : '选择主宰' }}</button>
           </article>
@@ -957,7 +1043,7 @@ watch(() => platformState.account?.id, (current, previous) => {
         <div v-else-if="catalogTab === 'main'" class="deck-card-grid">
           <article v-for="entry in filtered" :key="entry.key" class="deck-card" :data-card-id="entry.card.id" :data-appearance-id="entry.art?.id || 'original'" :class="{ chosen: appearanceCount(entry), 'alternate-art-card': entry.art, 'landscape-thumbnail': isHorizontalCardType(entry.card.cardType), invalid: entryIssue(entry.card, counts[entry.card.id] || 0) }" @click="selectCard(entry.card)">
             <button class="card-image" @dblclick.stop="addAppearance(entry)">
-              <CardImage :card-id="entry.art ? (entry.art.cardImageId || entry.art.id) : entry.card.id" :legacy-url="entry.art && !entry.art.builtIn ? (entry.art.thumbnailUrl || entry.art.imageUrl) : entry.card.imageUrl" :alt="entry.art?.displayName || entry.card.nameZh" intent="thumb" :fit="isHorizontalCardType(entry.card.cardType) ? 'contain' : 'cover'"/>
+              <CardImage :card-id="entry.art ? (entry.art.cardImageId || entry.art.id) : entry.card.id" :legacy-url="entry.art && !entry.art.builtIn ? (entry.art.thumbnailUrl || entry.art.imageUrl) : entry.card.imageUrl" :alt="entry.art?.displayName || entry.card.nameZh" intent="thumb" :fit="deckEditorPortrait || isHorizontalCardType(entry.card.cardType) ? 'contain' : 'cover'"/>
               <b v-if="appearanceCount(entry)" class="copy-count">×{{ appearanceCount(entry) }}</b>
             </button>
             <div><b>{{ entry.card.nameZh }}<em v-if="entry.art">异画</em></b><small>{{ entry.art?.artCode || entry.card.number }} · {{ cardTypeLabel(entry.card.cardType, entry.card.isCounterTactic) }}</small><span v-if="entryIssue(entry.card, counts[entry.card.id] || 0)" class="entry-issue">{{ entryIssue(entry.card, counts[entry.card.id] || 0) }}</span></div>
@@ -976,7 +1062,7 @@ watch(() => platformState.account?.id, (current, previous) => {
             <button class="choose-special" @click.stop="toggleTrial(trial)">{{ specialIds.includes(trial.id) ? '移出额外区' : '加入额外区' }}</button>
           </article>
           <article v-for="card in automaticExtraCards" :key="card.id" class="deck-card chosen" @click="selectCard(card)">
-            <button class="card-image"><CardImage :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb" fit="cover"/></button>
+            <button class="card-image"><CardImage :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb" :fit="deckEditorPortrait ? 'contain' : 'cover'"/></button>
             <div><b>{{ card.nameZh }}</b><small>{{ card.number }} · 主宰专属</small></div><button class="choose-special" disabled>自动配置</button>
           </article>
           <p v-if="!availableTrials.length && !automaticExtraCards.length" class="empty-extra">当前主宰没有可配置的额外卡牌。</p>
@@ -997,11 +1083,12 @@ watch(() => platformState.account?.id, (current, previous) => {
         <header><div><p class="kicker">起手试抽</p><h2>当前构筑试抽</h2><p>从当前 {{ totalCards }} 张主牌中等概率、不放回抽取 6 张；按抽取顺序完整展示，不修改牌库或生成对局记录。</p></div><button @click="redrawOpeningHand">重新试抽</button></header>
         <div class="editor-opening-hand"><article v-for="(copy,index) in openingHand" :key="copy.key" @click="selectCard(copy.card)"><CardImage :card-id="copy.cardImageId" :legacy-url="copy.legacyUrl" :alt="`${copy.card.nameZh} · ${copy.label}`" intent="thumb" fit="contain"/><b>{{ copy.card.nameZh }}</b><small>{{ copy.card.number }} · {{ copy.label }}</small><em>{{ openingHandMeta(copy,index) }}</em></article><p v-if="!openingHand.length">当前主牌为空，先返回卡池加入卡牌。</p></div>
       </section>
-      <PublicDeckContentEditor v-if="publicationCode" v-show="workspace === 'content'" :publication-id="publicationCode" :catalog="catalog" @saved="notice = $event"/>
+      <PublicDeckContentEditor v-if="publicationCode" v-show="workspace === 'content'" :publication-id="publicationCode" :catalog="catalog" @saved="notice = $event" @dialog-change="publicPickerOpen = $event"/>
       </div>
 
       <aside class="deck-list grand-panel">
         <header class="deck-list-header"><DeckProfile compact :master-id="selectedMaster?.id" :fallback-url="selectedMaster?.imageUrl" :name="selectedMaster?.nameZh || '未选择主宰'" context="当前牌表" :meta="selectedMaster ? `${factionLabels[selectedMaster.faction]} · 士气 ${moraleIds.length} 张` : '先从牌库选择主宰'"/><b>{{ countSummary.label }}</b></header>
+        <p v-if="validation && deckEditorPortrait" class="portrait-deck-issue">{{ validation }}</p>
         <div class="deck-sections">
           <section class="deck-zone" data-deck-section="master"><header><button @click="toggleSection('master')"><span>主宰</span><b>{{ selectedMaster ? '1/1' : '0/1' }}</b><i>{{ collapsedSections.master ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.master" class="deck-zone-body"><article v-if="selectedMaster" class="deck-entry-row" @click="selectCard(selectedMaster)"><CardImage class="deck-entry-banner" :card-id="selectedMaster.id" :legacy-url="selectedMaster.imageUrl" :alt="selectedMaster.nameZh" intent="thumb" fit="cover" native-orientation/><span>主</span><div><b>{{ selectedMaster.nameZh }}</b><small>{{ factionLabels[selectedMaster.faction] }}</small></div><strong>×1</strong></article><p v-else>请从卡池选择主宰。</p></div></section>
           <section class="deck-zone" data-deck-section="main"><header><button @click="toggleSection('main')"><span>主牌库</span><b>{{ totalCards }}/40–50</b><i>{{ collapsedSections.main ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.main" class="deck-zone-body"><template v-for="entry in entries" :key="entry.card.id"><article class="deck-entry-row" :class="{ invalid: entryIssue(entry.card, entry.count) }" @click="selectCard(entry.card)"><CardImage class="deck-entry-banner" :card-id="entry.card.id" :legacy-url="entry.card.imageUrl" :alt="entry.card.nameZh" intent="thumb" fit="cover" native-orientation object-position="center 28%"/><span>{{ entry.card.cost ?? '—' }}</span><div><b>{{ entry.card.nameZh }}</b><small>{{ entry.card.number }}</small><em v-if="entryIssue(entry.card, entry.count)">{{ entryIssue(entry.card, entry.count) }}</em></div><strong>×{{ originalAppearanceCount(entry.card,entry.count) }}</strong><button aria-label="增加一张" :disabled="entry.count >= allowedCopies(entry.card) || (!doesNotCountTowardMainDeck(entry.card) && totalCards >= 50)" @click.stop="add(entry.card)">＋</button><button aria-label="减少一张" @click.stop="remove(entry.card.id)">−</button></article><article v-for="group in alternateAppearanceGroups(entry.card,entry.count)" :key="group.presentation.key" class="deck-entry-row alternate-art-banner" @click="selectCard(entry.card)"><CardImage class="deck-entry-banner" :card-id="group.presentation.cardImageId" :legacy-url="group.presentation.legacyUrl" :alt="group.presentation.art?.displayName || entry.card.nameZh" intent="thumb" fit="cover" native-orientation object-position="center 28%"/><span>异</span><div><b>{{ group.presentation.art?.displayName || entry.card.nameZh }}</b><small>{{ group.presentation.art?.artCode || entry.card.number }}</small></div><strong>×{{ group.count }}</strong></article></template><p v-if="!entries.length">从卡池加入卡牌，或从备选区移回主牌。</p></div></section>
@@ -1013,7 +1100,17 @@ watch(() => platformState.account?.id, (current, previous) => {
       </aside>
     </main>
     <div v-if="mobileDetailOpen && selected" class="builder-modal-mask mobile-card-detail-mask" @click.self="mobileDetailOpen = false">
-      <section class="mobile-card-detail" role="dialog" aria-modal="true" aria-label="卡牌详情"><header><b>{{ selected.nameZh }}</b><button aria-label="关闭卡牌详情" @click="mobileDetailOpen = false">×</button></header><CardDetailContent :card="selected" :show-catalog-only="false"/></section>
+      <section class="mobile-card-detail" role="dialog" aria-modal="true" aria-label="卡牌详情">
+        <header><b>{{ selected.nameZh }}</b><button aria-label="关闭卡牌详情" @click="mobileDetailOpen = false">×</button></header>
+        <CardDetailContent :card="selected" :show-catalog-only="false"/>
+        <label v-if="selectedAlternateArts.length && !MAIN_DECK_TYPES.has(selected.cardType)" class="alternate-art-selector">
+          <span>对局卡图</span>
+          <select :value="alternateArtSelections[selected.id] ?? ''" @change="selectAlternateArt(selected!.id, ($event.target as HTMLSelectElement).value)">
+            <option value="">使用原始卡图</option>
+            <option v-for="art in selectedAlternateArts" :key="art.id" :value="art.id">{{ art.artCode }} · {{ art.displayName }}</option>
+          </select>
+        </label>
+      </section>
     </div>
     <div v-if="mobileSavedDecksOpen" class="builder-modal-mask mobile-saved-decks-mask" @click.self="mobileSavedDecksOpen = false">
       <section id="mobile-saved-decks-dialog" class="mobile-saved-decks-dialog" role="dialog" aria-modal="true" aria-labelledby="mobile-saved-decks-title">
@@ -1032,7 +1129,7 @@ watch(() => platformState.account?.id, (current, previous) => {
       <section class="delete-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-deck-title">
         <h2 id="delete-deck-title">删除〈{{ pendingDeleteName }}〉？</h2>
         <p>牌库删除后不可找回</p>
-        <footer><button class="danger" :disabled="deletingDeck" @click="confirmDelete">{{ deletingDeck ? '删除中…' : '继续删除' }}</button><button :disabled="deletingDeck" @click="closePendingDelete">取消</button></footer>
+        <footer><button class="danger" :disabled="deletingDeck" @click="confirmDelete">{{ deletingDeck ? '删除中…' : '继续删除' }}</button><button data-initial-focus :disabled="deletingDeck" @click="closePendingDelete">取消</button></footer>
       </section>
     </div>
     <div v-if="deckImageUrl" class="builder-modal-mask" @click.self="closeDeckImage">
@@ -1097,4 +1194,42 @@ watch(() => platformState.account?.id, (current, previous) => {
 @media(max-width:1180px) and (min-width:821px){.deck-builder-grid.detail-collapsed{grid-template-columns:48px minmax(420px,1fr) 260px}.catalog-filter-bar{grid-template-columns:repeat(4,minmax(0,1fr))}.catalog-filter-bar .filter-search{grid-column:span 2}}
 @media(max-width:820px){.deck-builder-topbar{align-items:center}.deck-builder-topbar>label{display:grid!important;order:4;width:100%}.deck-builder-topbar>label input{box-sizing:border-box;width:100%}.deck-file-actions{grid-template-columns:repeat(3,minmax(0,1fr))}.more-actions-trigger{display:block}.secondary-actions{display:none}.secondary-actions.open{position:absolute;z-index:80;right:0;top:calc(100% + 5px);display:grid;width:min(250px,86vw);gap:5px;padding:8px;border:1px solid #65716e;background:#0d1416;box-shadow:0 18px 50px #000}.secondary-actions.open button{min-height:44px}.catalog-filter-bar{grid-template-columns:repeat(2,minmax(0,1fr));max-height:none;overflow:visible}.catalog-filter-bar .filter-search{grid-column:1/-1}.editor-opening-hand{grid-template-columns:repeat(2,minmax(0,1fr))}.saved-deck-options{grid-template-columns:1fr}.mobile-saved-decks-nav-trigger{display:block}.mobile-saved-decks-mask{padding:max(10px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left))}.mobile-saved-decks-dialog{width:min(92vw,620px);height:min(78dvh,680px)}.mobile-saved-decks-list{padding-inline:10px}.mobile-saved-decks-list>button{grid-template-columns:minmax(0,1fr)}.mobile-saved-decks-list>button>span{min-height:36px;border-top:1px solid #3e4a48;border-left:0}}
 @media(max-height:520px) and (min-width:821px) and (max-width:900px){.catalog-filter-bar{grid-template-columns:repeat(4,minmax(76px,1fr));max-height:none;overflow:visible}.editor-opening-hand{grid-template-columns:repeat(3,minmax(120px,1fr))}}
+/* Natural portrait is explicitly editor-only. Legacy logical landscape and
+   desktop three-column geometry remain under their existing selectors. */
+.portrait-editor{position:fixed;inset:auto;top:var(--l12-editor-visible-top,0px);left:var(--l12-editor-visible-left,0px);width:var(--l12-editor-visible-width,100vw);height:var(--l12-editor-visible-height,100dvh);box-sizing:border-box;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);overflow:hidden}
+.portrait-editor .deck-builder-topbar{display:grid;grid-template-columns:minmax(0,1fr) auto;flex:none;min-height:0;max-height:none;overflow:visible;padding:8px;gap:6px}
+.portrait-editor .deck-builder-topbar>div:nth-child(2){display:none}
+.portrait-editor .back-button{justify-self:start;min-height:36px;padding:5px 8px}
+.portrait-editor .deck-total{display:flex;grid-column:2;grid-row:1;align-items:baseline;gap:4px;min-width:0}
+.portrait-editor .deck-total b{font-size:22px}.portrait-editor .deck-total span{font-size:12px}
+.portrait-editor .deck-builder-topbar>label{grid-column:1;order:initial;width:auto;font-size:12px;min-width:0}
+.portrait-editor .deck-builder-topbar>label input{width:100%;min-width:0;min-height:40px;font-size:16px}
+.portrait-editor .deck-file-actions{grid-column:2;grid-row:2;order:initial;display:grid!important;width:auto;grid-template-columns:1fr!important;gap:4px;align-self:end}
+.portrait-editor .deck-file-actions>.primary{min-height:40px}.portrait-editor .more-actions-trigger{display:block;min-height:32px;padding:4px 8px}
+.portrait-editor .secondary-actions{display:none}.portrait-editor .secondary-actions.open{display:grid;position:absolute;right:0;top:calc(100% + 5px);width:min(250px,calc(100vw - 24px));max-height:calc(var(--l12-editor-visible-height,100dvh) - 145px);overflow:auto;overscroll-behavior:contain;z-index:80}
+.portrait-editor .deck-mobile-nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));flex:none;padding:4px 8px;gap:4px}.portrait-editor .deck-mobile-nav button{min-height:38px}.portrait-editor .mobile-saved-decks-nav-trigger{display:block}
+.portrait-editor .deck-operation-notice{flex:none;max-height:52px;overflow:auto;margin:0;padding:5px 8px;font-size:12px;overflow-wrap:anywhere}
+.portrait-editor .deck-builder-grid,.portrait-editor .deck-builder-grid.detail-collapsed{display:block;flex:1;min-height:0;min-width:0;overflow:auto;padding:8px;overscroll-behavior:contain}
+.portrait-editor .deck-side-column{display:none}.portrait-editor .deck-center-column{min-height:0}.portrait-editor .deck-catalog,.portrait-editor .deck-list,.portrait-editor .deck-insight-panel,.portrait-editor .deck-sections{min-height:0;max-height:none;overflow:visible}
+.portrait-editor .deck-builder-grid[data-mobile-pane="deck"] .deck-center-column,.portrait-editor .deck-builder-grid[data-mobile-pane="pool"] .deck-list,.portrait-editor .deck-builder-grid[data-mobile-pane="insights"] .deck-list{display:none}
+.portrait-editor .deck-builder-grid[data-mobile-pane="pool"] .workspace-tabs{display:none}.portrait-editor .deck-builder-grid[data-mobile-pane="insights"] .deck-catalog{display:none}.portrait-editor .deck-builder-grid[data-mobile-pane="insights"] .workspace-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.portrait-editor .deck-builder-grid[data-mobile-pane="insights"] .workspace-tabs button:first-child{display:none}
+.portrait-editor .catalog-filter-bar{display:grid;position:static;grid-template-columns:repeat(2,minmax(0,1fr));max-height:none;padding:8px;margin-bottom:8px;overflow:visible;box-shadow:none}.portrait-editor .catalog-filter-bar .filter-search{grid-column:1/-1}.portrait-editor .catalog-filter-bar input{font-size:16px}
+.portrait-editor .catalog-filter-bar .product-filter-control{grid-column:auto}.portrait-editor .product-filter-control .product-filter{width:min(300px,calc(100vw - 52px));box-sizing:border-box}
+.portrait-editor .deck-card-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;max-height:none;overflow:visible;gap:8px;align-items:start}
+.portrait-editor .deck-card .card-image{width:100%;height:auto;aspect-ratio:5/7}.portrait-editor .deck-card .card-image :deep(.l12-card-image){width:100%;height:100%;object-fit:contain}
+.portrait-editor .pool-count-controls button,.portrait-editor .add-to-bench,.portrait-editor .choose-special{min-height:40px}.portrait-editor .deck-entry-row button{min-width:36px;min-height:40px}
+.portrait-editor .stats-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.portrait-editor .stats-columns{grid-template-columns:1fr}.portrait-editor .editor-opening-hand{grid-template-columns:repeat(2,minmax(0,1fr))}
+.portrait-editor .builder-modal-mask{box-sizing:border-box;inset:auto;top:var(--l12-editor-visible-top,0px);left:var(--l12-editor-visible-left,0px);width:var(--l12-editor-visible-width,100vw);height:var(--l12-editor-visible-height,100dvh);padding:max(12px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left));overflow:hidden}
+.portrait-editor .mobile-card-detail{box-sizing:border-box;width:100%;max-height:100%;overscroll-behavior:contain}.portrait-editor .mobile-saved-decks-dialog{width:100%;height:min(680px,100%);max-height:100%}
+.portrait-editor .mobile-saved-decks-list>button{grid-template-columns:minmax(0,1fr)}.portrait-editor .mobile-saved-decks-list>button>span{min-height:36px;border-top:1px solid #3e4a48;border-left:0}
+.portrait-editor .delete-confirm-dialog,.portrait-editor .deck-image-dialog{box-sizing:border-box;width:100%;max-height:100%;overflow:auto}.portrait-editor .delete-confirm-dialog footer,.portrait-editor .deck-image-dialog footer{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.portrait-editor .delete-confirm-dialog button,.portrait-editor .deck-image-dialog button{min-width:0}
+.portrait-editor.editor-modal-open .deck-builder-grid{overflow:hidden;touch-action:none}.portrait-deck-issue{color:#f09199;margin:5px 0;font-size:13px}
+@media(min-width:600px){.portrait-editor .deck-mobile-nav{grid-template-columns:repeat(4,minmax(0,1fr))}.portrait-editor .deck-card-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}.portrait-editor .catalog-filter-bar{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(min-width:600px){html[data-l12-card-size="small"] .portrait-editor .deck-card-grid{grid-template-columns:repeat(4,minmax(0,1fr))!important}html[data-l12-card-size="large"] .portrait-editor .deck-card-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+:global(html[data-l12-editor-portrait="true"] .single-card-picker-mask){box-sizing:border-box;inset:auto;top:var(--l12-editor-visible-top,0px);left:var(--l12-editor-visible-left,0px);width:var(--l12-editor-visible-width,100vw);height:var(--l12-editor-visible-height,100dvh);padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left))}
+:global(html[data-l12-editor-portrait="true"] .single-card-picker){width:100%;height:100%;max-height:100%;min-height:0}
+:global(html[data-l12-editor-portrait="true"] .single-card-filters){display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;padding:6px;overflow-x:visible;min-width:0}
+:global(html[data-l12-editor-portrait="true"] .single-card-filters :is(input,select)){box-sizing:border-box;min-width:0!important;width:100%!important;min-height:44px!important;flex:initial!important}
+:global(html[data-l12-editor-portrait="true"] .single-card-filters select){height:44px!important}
+:global(html[data-l12-editor-portrait="true"] .single-card-filters input){grid-column:1/-1}
 </style>
