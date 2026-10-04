@@ -49,6 +49,33 @@ let browser
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms))
 function check(value,message){if(!value)throw Error(message)}
 async function task(result,name,action){try{result.tasks.push({name,passed:true,value:await action()})}catch(error){if(error.code==='E4_UNSUPPORTED_CAPABILITY'){result.tasks.push({name,passed:null,status:'not-verified',error:error.message});report.skipped.push({profile:result.name,name,error:error.message});report.limitations.push(error.message)}else{result.tasks.push({name,passed:false,error:error.message});report.failures.push({profile:result.name,name,error:error.message})}}}
+async function hitTap(locator) {
+ await locator.scrollIntoViewIfNeeded()
+ check(await locator.evaluate(n=>{const r=n.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return !!hit&&(hit===n||n.contains(hit))}),'Visible navigation button is covered at its touch point')
+ await locator.tap()
+}
+async function navigationSweep() {
+ report.navigation=[]
+ for(const [width,height] of [[320,568],[390,844],[768,1024],[667,375],[844,390],[1366,768]])for(const features of [false,true]) {
+  const {page,context}=await open(width,height,'medium',features),r={name:'navigation-'+width+'x'+height+'-'+(features?'published':'private'),tasks:[]};report.navigation.push(r)
+  const mobile=await page.locator('.deck-mobile-nav button').first().isVisible()
+  const outer=(name)=>page.locator('.deck-mobile-nav button').filter({hasText:name})
+  const inner=(name)=>page.locator('.workspace-tabs button').filter({hasText:new RegExp('^'+name+'$')})
+  const insights=()=>mobile?outer('统计 / 起手'):inner('统计')
+  await task(r,'pool-to-stats-has-real-touch-target-and-result',async()=>{await hitTap(insights());check(await page.locator('[data-editor-workspace="stats"]').isVisible(),'Stats button accepted touch but did not reveal statistics');return {mobileNavigation:mobile}})
+  await task(r,'stats-to-opening-hand-and-redraw',async()=>{await hitTap(inner('起手'));await hitTap(page.getByRole('button',{name:'重新试抽',exact:true}));check(await page.locator('[data-editor-workspace="hand"]').isVisible(),'Opening hand tab did not reveal content');check(await page.locator('.editor-opening-hand article').count()===6,'Opening hand must show six copies')})
+  await task(r,'deep-scroll-and-inner-tab-round-trip',async()=>{const grid=page.locator('.deck-builder-grid');await grid.evaluate(n=>n.scrollTo(0,n.scrollHeight));await hitTap(inner('统计'));check(await page.locator('[data-editor-workspace="stats"]').isVisible(),'Scrolled statistics tab has no result');await hitTap(inner('起手'));check(await page.locator('[data-editor-workspace="hand"]').isVisible(),'Scrolled opening tab has no result')})
+  if(mobile)await task(r,'deck-list-to-insights-retains-real-hand-tab',async()=>{await hitTap(outer(/^牌表/));check(await page.locator('.deck-list').isVisible(),'Deck list button has no result');await hitTap(insights());check(await page.locator('[data-editor-workspace="hand"]').isVisible(),'Returning to insights lost selected hand workspace')})
+  if(features) {
+   await task(r,'published-content-to-insights-restores-statistics',async()=>{await hitTap(mobile?outer('公开内容'):inner('公开内容'));await page.locator('.public-content-editor textarea').first().fill('页签切换保留指南');await page.locator('.public-content-editor textarea').first().blur();await hitTap(insights());check(await page.locator('[data-editor-workspace="stats"]').isVisible(),'Published content kept active after touching statistics/opening entry');check(!await page.locator('.public-content-editor').isVisible(),'Public content remained visible under statistics entry')})
+   if(mobile)await task(r,'published-content-via-deck-list-to-insights',async()=>{await hitTap(outer('公开内容'));await hitTap(outer(/^牌表/));await hitTap(insights());check(await page.locator('[data-editor-workspace="stats"]').isVisible(),'Deck-list round trip retained unrelated public workspace')})
+   await task(r,'return-to-public-content-retains-unsaved-guide',async()=>{await hitTap(mobile?outer('公开内容'):inner('公开内容'));check(await page.locator('.public-content-editor textarea').first().inputValue()==='页签切换保留指南','Navigation lost unsaved public guide');await hitTap(insights())})
+  }
+  await task(r,'close-saved-dialog-does-not-block-tab-touch',async()=>{const triggers=page.locator('.mobile-saved-decks-nav-trigger,.mobile-saved-decks-side-trigger');if(!await triggers.first().isVisible()&&!await triggers.last().isVisible())return {desktopInlineSavedList:true};await hitTap(inner('统计'));await hitTap(await visible(page,'.mobile-saved-decks-nav-trigger,.mobile-saved-decks-side-trigger'));await page.getByRole('button',{name:'关闭已保存牌库',exact:true}).tap();check(!await page.locator('.builder-modal-mask').count(),'Closed dialog left a click-blocking mask');await hitTap(insights());check(await page.locator('[data-editor-workspace="stats"]').isVisible(),'Dialog close left statistics entry unresponsive')})
+  await task(r,'repeated-touch-navigation-finishes-on-selected-pane',async()=>{for(let i=0;i<3;i++){await hitTap(mobile?outer(/^牌库$/):inner('牌库'));await hitTap(insights());check(await page.locator('[data-editor-workspace="stats"]').isVisible(),'Repeated touches failed to activate statistics');await hitTap(inner('起手'));check(await page.locator('[data-editor-workspace="hand"]').isVisible(),'Repeated touches failed to activate opening hand')}return {roundTrips:3}})
+  await shot(page,r.name+'-hand');await context.close()
+ }
+}
 async function geometry(page){return page.evaluate(()=>{
  const rect=n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}}
  const grid=document.querySelector('.deck-builder-grid'),input=document.querySelector('.deck-builder-topbar input')
@@ -112,6 +139,10 @@ async function accountRaces(){
 }
 try{
  await server.listen();browser=await chromium.launch({headless:true,channel:'msedge'})
+ await navigationSweep()
+ if(process.env.L12_E4_NAV_ONLY==='1') {
+  if(report.failures.length)throw Error('Navigation sweep failed; see named failing tasks')
+ } else {
  const sizes=process.env.L12_E4_QUICK==='1'?[[320,568],[390,844],[768,1024],[844,390],[1920,1080]]:[[320,568],[360,640],[390,844],[430,932],[768,1024],[667,375],[844,390],[1024,768],[1366,768],[1920,1080],[820,1000],[821,1000]]
  for(const [width,height] of sizes)for(const cardSize of (process.env.L12_E4_QUICK==='1'?['medium']:['small','medium','large'])){
   const {page,context}=await open(width,height,cardSize),result={name:width+'x'+height+'-'+cardSize,tasks:[],initial:await geometry(page)};report.profiles.push(result)
@@ -191,7 +222,8 @@ try{
   await task(r,'empty-deck-draft-not-cloud-valid',async()=>{await more(page);page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'新建牌库',exact:true}).tap();check(await page.getByRole('button',{name:'保存牌库',exact:true}).isDisabled(),'Empty deck can cloud-save');await more(page);check(await page.getByRole('button',{name:'公开牌库',exact:true}).isDisabled(),'Empty deck can publish');await page.getByRole('button',{name:'暂存草稿',exact:true}).tap();const draft=await page.evaluate(()=>JSON.parse(localStorage.getItem('l12:deck-editor-draft:v1:account%3Ae4-acceptance')));check(draft.deck.cardIds.length===0,'Empty local draft did not save');return {localIncompleteDraft:true,cloudBlocked:true}})
   await context.close()
  }
+ }
 }catch(error){report.fatal=error.stack;report.failures.push({fatal:error.message})}
 finally{
- report.sourceAfter=fingerprints();report.sourcesStable=JSON.stringify(report.sourceBefore)===JSON.stringify(report.sourceAfter);report.completedAt=new Date().toISOString();report.external=[...new Set(report.external)];report.summary={profiles:report.profiles.length,passed:report.profiles.concat(report.keyboards,report.resize,report.extras,report.accounts,report.routeHosts).flatMap(r=>r.tasks).filter(t=>t.passed).length,failed:report.failures.length,notVerified:report.skipped.length,pageErrors:report.errors.length,apiWrites:report.apiWrites.length,localStubWrites:report.localStubWrites.length,localTelemetryRequests:report.localTelemetryRequests.length,sourcesStable:report.sourcesStable};fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify({out,summary:report.summary,fatal:report.fatal||null},null,2));await browser?.close();await server.close();if(report.failures.length||report.errors.length||report.apiWrites.length||!report.sourcesStable)process.exitCode=1
+ report.sourceAfter=fingerprints();report.sourcesStable=JSON.stringify(report.sourceBefore)===JSON.stringify(report.sourceAfter);report.completedAt=new Date().toISOString();report.external=[...new Set(report.external)];report.summary={profiles:report.profiles.length,navigationProfiles:report.navigation?.length??0,passed:report.profiles.concat(report.keyboards,report.resize,report.extras,report.accounts,report.routeHosts,report.navigation??[]).flatMap(r=>r.tasks).filter(t=>t.passed).length,failed:report.failures.length,notVerified:report.skipped.length,pageErrors:report.errors.length,apiWrites:report.apiWrites.length,localStubWrites:report.localStubWrites.length,localTelemetryRequests:report.localTelemetryRequests.length,sourcesStable:report.sourcesStable};fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify({out,summary:report.summary,fatal:report.fatal||null},null,2));await browser?.close();await server.close();if(report.failures.length||report.errors.length||report.apiWrites.length||!report.sourcesStable)process.exitCode=1
 }

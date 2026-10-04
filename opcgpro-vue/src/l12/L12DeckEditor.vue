@@ -359,7 +359,7 @@ async function verifiedPublicDeckUrl() {
 function setMobilePane(next: 'pool' | 'deck' | 'insights') {
   mobilePane.value = next
   if (next === 'pool') workspace.value = 'gallery'
-  if (next === 'insights' && workspace.value === 'gallery') workspace.value = 'stats'
+  if (next === 'insights' && workspace.value !== 'stats' && workspace.value !== 'hand') setWorkspace('stats')
 }
 function redrawOpeningHand() {
   openingHandIds.value = samplePublicDeckOpeningHand(eligibleMainDeckCopies.value.map(copy => copy.key))

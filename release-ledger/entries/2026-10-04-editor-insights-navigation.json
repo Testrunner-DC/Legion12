@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-04-editor-insights-navigation",
+  "date": "2026-10-04",
+  "audience": "players",
+  "title": "手机牌库编辑页签切换",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "修复手机牌库编辑器从公开内容返回统计与起手时点击无反应的问题；原统计或起手页的选择继续保留。",
+      "paths": ["opcgpro-vue/src/l12/L12DeckEditor.vue"]
+    }
+  ]
+}
