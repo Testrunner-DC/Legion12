@@ -1613,6 +1613,9 @@ public sealed partial class L12GameEngine
     internal bool HasTimedRankedSetupDecision(int playerIndex)
     {
         if (playerIndex is < 0 or > 1) return false;
+        if (State.Phase == L12Phase.Initiative)
+            return State.PendingPrompts.Any(prompt => prompt.PlayerIndex == playerIndex
+                && prompt.Continuation == "setup-initiative");
         if (State.Phase == L12Phase.Mulligan)
             return !State.Players[playerIndex].MulliganDone;
         if (State.Phase != L12Phase.DisasterPreparation) return false;
@@ -1629,6 +1632,22 @@ public sealed partial class L12GameEngine
             // An empty selection means that every original card remains in hand.
             command = new L12Command("mulligan", CardInstanceIds: [],
                 Destination: RankedSetupTimeoutDestination);
+            return true;
+        }
+
+        if (State.Phase == L12Phase.Initiative)
+        {
+            var initiativePrompt = State.PendingPrompts
+                .Where(candidate => candidate.PlayerIndex == playerIndex
+                    && candidate.Continuation == "setup-initiative")
+                .OrderBy(candidate => candidate.PromptId, StringComparer.Ordinal)
+                .FirstOrDefault();
+            var initiativeChoice = initiativePrompt?.ValidChoices
+                .OrderBy(choice => choice, StringComparer.Ordinal)
+                .FirstOrDefault();
+            if (initiativePrompt is null || initiativeChoice is null) return false;
+            command = new L12Command("resolvePrompt", CardInstanceIds: [initiativeChoice],
+                PromptId: initiativePrompt.PromptId, Destination: RankedSetupTimeoutDestination);
             return true;
         }
 

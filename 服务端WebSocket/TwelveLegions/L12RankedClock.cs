@@ -193,6 +193,7 @@ public sealed partial class L12RoomManager
     private static TimeSpan SetupDecisionLimit(L12GameEngine game, L12RankedTimeControlConfig timeControl)
         => TimeSpan.FromSeconds(game.State.Phase switch
         {
+            L12Phase.Initiative => timeControl.DisasterDecisionSeconds,
             L12Phase.DisasterPreparation => timeControl.DisasterDecisionSeconds,
             L12Phase.Mulligan => timeControl.MulliganDecisionSeconds,
             _ => 0,
