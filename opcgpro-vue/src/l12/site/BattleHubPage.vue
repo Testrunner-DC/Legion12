@@ -326,14 +326,14 @@ async function copyRoomCode() {
       @cancel="deckSelectorOpen = false" @confirm="confirmDeckSelection"/>
     <Teleport to="body">
       <div v-if="pendingFaction" class="ranked-rules-backdrop" @click.self="!factionSaving && (pendingFaction = null)">
-        <section class="ranked-rules-modal" role="dialog" aria-modal="true" aria-labelledby="faction-confirm-title" @keydown.esc="!factionSaving && (pendingFaction = null)">
+        <section class="ranked-rules-modal ui-state-scope" role="dialog" aria-modal="true" aria-labelledby="faction-confirm-title" @keydown.esc="!factionSaving && (pendingFaction = null)">
           <header><h2 id="faction-confirm-title">确认改为{{ pendingFactionName }}？</h2></header>
           <div class="ranked-rules-scroll"><p class="faction-reset-warning">七曜值将清零，定级进度和本赛季战绩将重新开始。此操作不会因返回页面而撤销。</p><p>取消将保留当前派系及全部现有进度。</p></div>
           <footer><button autofocus :disabled="factionSaving" @click="pendingFaction = null">取消，保留当前派系</button><button :disabled="factionSaving" @click="submitFaction(pendingFaction!)">{{ factionSaving ? '正在更改…' : '确认清零并更改' }}</button></footer>
         </section>
       </div>
       <div v-if="rankedRulesOpen" class="ranked-rules-backdrop" @click.self="rankedRulesOpen = false">
-        <section class="ranked-rules-modal" role="dialog" aria-modal="true" aria-label="排位规则">
+        <section class="ranked-rules-modal ui-state-scope" role="dialog" aria-modal="true" aria-label="排位规则">
           <header><div><small>RANKED RULES</small><h2>排位规则</h2><p>{{ operationsPolicy?.season.name || '当前赛季' }}</p></div><button type="button" @click="rankedRulesOpen = false">×</button></header>
           <div class="ranked-rules-scroll">
             <article><h3>七曜值</h3><p>完成 {{ ranked?.config.placementMatches || 5 }} 场定级赛后进入段位。胜负结算只显示自己的七曜值与段位变化；连胜、对手强度、段位保护与分差修正均由服务器权威计算。</p></article>

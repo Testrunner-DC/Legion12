@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { usesSiteUiStates } from './siteUiStateScope'
 import { useRoute, useRouter } from 'vue-router'
 import { cancelFriendInvitation, inviteFriend, l12State, resolveFriendInvitation, spectateRoom } from '@/l12/net'
 import { alternateArtApi, friendApi, login, platformState, register, telemetryApi, type AlternateArtGrantNotification, type PlatformPresence } from '@/l12/platform'
@@ -623,6 +624,7 @@ const battleNav = [
   { to: '/battle/records', icon: 'records', label: '对局' },
 ]
 const nav = computed(() => route.meta.section === 'battle' ? battleNav : mainNav)
+const siteUiStates = computed(() => usesSiteUiStates(route.meta))
 const accountGate = computed(() => route.meta.requiresAccount === true && !platformState.account)
 const authMode = ref<'login' | 'register'>('login')
 const auth = reactive({ username: '', password: '' })
@@ -797,13 +799,13 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="site-shell" data-l12-ui-system="site-v1">
-    <header class="site-mobile-head">
+    <header class="site-mobile-head ui-state-scope">
       <router-link class="mobile-brand" to="/" title="返回主页"><img :src="siteBrandIcon" alt="十二军团"/></router-link>
       <button ref="mobileMenuButton" :aria-expanded="mobileOpen" aria-controls="site-mobile-drawer" :aria-label="mobileOpen ? '关闭导航' : '打开导航'" @click="toggleMobileNav">{{ mobileOpen ? '×' : '☰' }}</button>
     </header>
 
     <button v-if="mobileOpen" class="site-drawer-backdrop" type="button" aria-label="关闭导航" @click="closeMobileNav()"/>
-    <aside id="site-mobile-drawer" ref="mobileDrawer" class="site-sidebar" :class="{ open: mobileOpen }" :role="mobileOpen ? 'dialog' : undefined" :aria-modal="mobileOpen ? 'true' : undefined">
+    <aside id="site-mobile-drawer" ref="mobileDrawer" class="site-sidebar ui-state-scope" :class="{ open: mobileOpen }" :role="mobileOpen ? 'dialog' : undefined" :aria-modal="mobileOpen ? 'true' : undefined">
       <router-link class="site-brand" to="/" title="十二军团官方网站">
         <img :src="siteBrandIcon" alt="十二军团"/>
       </router-link>
@@ -824,9 +826,9 @@ onBeforeUnmount(() => {
       </div>
     </aside>
 
-    <main class="site-content"><MaintenanceTicker v-if="route.meta.section === 'battle'"/><slot /></main>
+    <main class="site-content" :class="{ 'ui-state-scope': siteUiStates }"><MaintenanceTicker v-if="route.meta.section === 'battle'"/><slot /></main>
 
-    <div v-if="modal" class="site-modal-mask" @click.self="modal = null">
+    <div v-if="modal" class="site-modal-mask ui-state-scope" @click.self="modal = null">
       <L12SettingsModal v-if="modal === 'settings'" @close="modal = null"/>
 
       <section v-else-if="modal === 'updates'" class="site-modal update-modal">
@@ -862,7 +864,7 @@ onBeforeUnmount(() => {
       </section>
     </div>
 
-    <div v-if="accountGate" class="site-modal-mask account-gate">
+    <div v-if="accountGate" class="site-modal-mask account-gate ui-state-scope">
       <section class="site-modal auth-modal">
         <header><div><small>BATTLE ACCOUNT</small><h2>登录后进入对战</h2></div><button title="返回主页" @click="router.push('/')">×</button></header>
         <p>对战、赛事、好友、排行榜和个人对局记录使用同一账号身份。</p>
@@ -876,7 +878,7 @@ onBeforeUnmount(() => {
       </section>
     </div>
 
-    <div v-if="currentAlternateArtNotification" class="site-modal-mask alternate-art-notification-mask">
+    <div v-if="currentAlternateArtNotification" class="site-modal-mask alternate-art-notification-mask ui-state-scope">
       <section class="site-modal alternate-art-notification" role="dialog" aria-modal="true" aria-labelledby="alternate-art-notification-title">
         <header><div><h2 id="alternate-art-notification-title">获得异画！</h2></div></header>
         <div class="alternate-art-reward"><CardImage :card-id="currentAlternateArtNotification.cardImageId || currentAlternateArtNotification.baseCardId" :legacy-url="currentAlternateArtNotification.builtIn ? undefined : (currentAlternateArtNotification.imageUrl || currentAlternateArtNotification.thumbnailUrl)" :alt="currentAlternateArtNotification.displayName" intent="detail"/><div><p>恭喜你获得〈{{ currentAlternateArtNotification.displayName }} {{ currentAlternateArtNotification.artCode }}〉</p><p v-if="currentAlternateArtNotification.reason.trim()" class="alternate-art-reason">{{ currentAlternateArtNotification.reason }}</p></div></div>
@@ -886,7 +888,7 @@ onBeforeUnmount(() => {
 
     <SeasonSummaryNotice :suspended="Boolean(currentAlternateArtNotification)"/>
 
-    <div v-if="l12State.friendInvitation || l12State.outgoingFriendInvitation" class="invitation-stack">
+    <div v-if="l12State.friendInvitation || l12State.outgoingFriendInvitation" class="invitation-stack ui-state-scope">
       <div v-if="l12State.outgoingFriendInvitation" class="outgoing-invitation-gate" :class="{ minimized: outgoingInvitationMinimized }">
         <button v-if="outgoingInvitationMinimized" class="invitation-minimized" @click="outgoingInvitationMinimized = false">已发送对战邀请 · 展开</button>
         <section v-else class="site-modal invitation-modal outgoing-invitation-modal" role="status" aria-label="已发送好友对战邀请">

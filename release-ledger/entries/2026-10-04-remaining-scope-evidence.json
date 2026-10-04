@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-04-remaining-scope-evidence",
+  "date": "2026-10-04",
+  "audience": "internal",
+  "reason": "历史模板合同改为结构校验并保留权限和几何保护，补普通路由状态与编辑器源绑定回归；记录合成容量和真实环境未验证范围，不改变规则或存储实现。",
+  "paths": [
+    "opcgpro-vue/scripts/check-ui-contracts.mjs",
+    "opcgpro-vue/scripts/test-ui-primitives.mjs",
+    "opcgpro-vue/scripts/test-a3-site-shell-contract.mjs",
+    "opcgpro-vue/scripts/check-l12-prompt-presentation.mjs",
+    "opcgpro-vue/scripts/prompt-template-contract.mjs",
+    "opcgpro-vue/scripts/test-a3-prompt-template-contract.mjs",
+    "opcgpro-vue/scripts/vue-semantic-contract.mjs",
+    "opcgpro-vue/scripts/test-site-ui-state-scope.mjs",
+    "opcgpro-vue/scripts/verify-site-ui-state-scope.mjs",
+    "opcgpro-vue/scripts/verify-deck-editor-portrait.mjs",
+    "docs/A3-GATE-LAYERING-20261002.md",
+    "docs/E1-D3-ACCEPTANCE-20261002.md",
+    "docs/F2-CONTROLLED-ENABLE-20261002.md",
+    "docs/l12/E4-PORTRAIT-DECK-EDITOR-LOCAL-ACCEPTANCE-20261004.md",
+    "docs/TASK-LEDGER.md",
+    "docs/HANDOFF.md",
+    "docs/BUGFIX-REGISTRY.md"
+  ]
+}

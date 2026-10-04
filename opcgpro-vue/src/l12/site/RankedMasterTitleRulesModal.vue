@@ -10,7 +10,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', closeOnEscape))
 <template>
   <Teleport to="body">
     <div v-if="modelValue" class="master-title-rules-backdrop" @click.self="emit('update:modelValue', false)">
-      <section class="master-title-rules-modal" role="dialog" aria-modal="true" aria-labelledby="master-title-rules-heading">
+      <section class="master-title-rules-modal ui-state-scope" role="dialog" aria-modal="true" aria-labelledby="master-title-rules-heading">
         <header>
           <div><small>STRONGEST MASTER TITLE</small><h2 id="master-title-rules-heading">“最强”称号规则</h2></div>
           <button type="button" aria-label="关闭最强主宰称号规则" @click="emit('update:modelValue', false)">×</button>

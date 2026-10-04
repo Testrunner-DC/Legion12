@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import './test-library-placement-recovery.mjs'
 import './test-prompt-player-copy.mjs'
+import './test-a3-prompt-template-contract.mjs'
+import { promptFooterContract } from './prompt-template-contract.mjs'
 import {readFileSync} from 'node:fs'
 const source=readFileSync(new URL('../src/l12/game/PromptOverlay.vue',import.meta.url),'utf8')
 const playerCopy=readFileSync(new URL('../src/l12/game/promptPlayerCopy.ts',import.meta.url),'utf8')
@@ -36,12 +38,11 @@ assert(source.includes('.prompt-choices.effect-option-list{display:grid;width:10
 assert(source.includes('height:auto;min-height:82px!important;max-height:none;overflow:visible'), 'Equal options must grow together without clipping consequences')
 assert(source.includes('displayedChoices.value.filter(id => !isDeclineChoice(id))'))
 assert(source.includes("if (p.data?.choiceMode === 'instant' || isPureEffectDecision.value) { resolveChoice(id); return }"),'Pure two-choice effect decisions must submit in one click')
-assert(source.includes('<footer v-if="!isPureEffectDecision" class="prompt-action-footer" data-ui-contract="equal-action-group">'),'Pure effect decisions must omit the redundant footer')
-const footerStart=source.indexOf('<footer v-if="!isPureEffectDecision" class="prompt-action-footer" data-ui-contract="equal-action-group">')
-const footer=source.slice(footerStart,source.indexOf('</footer>',footerStart))
-assert(footer.indexOf('v-for="choice in supplementalChoices"')<footer.indexOf('prompt-confirm-choice'),'Decline must precede confirm in the same footer')
-assert(footer.includes(':disabled="l12State.pendingAction"'))
-assert(!source.includes('class="prompt-supplemental-choices"'),'Do not restore the extra decline-only row')
+const footerContract=promptFooterContract(source)
+assert(footerContract.root,'Pure effect decisions must omit the redundant footer')
+assert(footerContract.ordered,'Decline must precede confirm in the same footer')
+assert(footerContract.pending,'Every footer action must retain its pending-action lock')
+assert(footerContract.noExtraDeclineRow,'Do not restore the extra decline-only row')
 assert(source.includes('.prompt-action-footer>.prompt-footer-choice,.prompt-action-footer>.prompt-confirm-choice'))
 assert(source.includes('.prompt-action-footer>button{box-sizing:border-box;width:132px;min-width:132px;max-width:132px;height:48px;min-height:48px;max-height:48px'))
 for(const field of ['promptId','activationId','sourceInstanceId','sourceCardId','step','createdRevision','controller'])

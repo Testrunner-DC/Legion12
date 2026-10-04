@@ -56,7 +56,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onZoomKeydown))
       </figure>
     </template>
     <Teleport to="body">
-      <div v-if="zoomUrl" class="article-image-zoom" role="dialog" aria-modal="true" aria-label="查看完整图片" @click.self="closeZoom">
+      <div v-if="zoomUrl" class="article-image-zoom ui-state-scope" role="dialog" aria-modal="true" aria-label="查看完整图片" @click.self="closeZoom">
         <img class="article-image-zoom__img" :src="zoomUrl" :alt="zoomAlt">
         <button type="button" class="article-image-zoom__close" aria-label="关闭图片预览" @click="closeZoom">×</button>
       </div>

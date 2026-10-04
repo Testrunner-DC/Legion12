@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { normalizeArticleBlockIds, serializeArticleBody } from '../src/l12/site/articleBlocks.ts'
 import { maintenanceCountdown } from '../src/l12/site/maintenanceCountdown.ts'
+import { hasInvitationTemplate } from './vue-semantic-contract.mjs'
+import './test-a3-site-shell-contract.mjs'
 
 // Git 在 Windows 工作区可能检出 CRLF；契约按语义比较换行，不改写被检查的源文件。
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
@@ -957,9 +959,9 @@ const contracts = [
   [prompt.includes('const displayCardIds = computed') && prompt.includes('if (displayCardIds.value.length) return displayCardIds.value')
     && prompt.includes('displayCardIds.value.length > 0') && prompt.includes('if (!p || !p.validChoices.includes(id)) return')
     && prompt.includes('v-for="choice in supplementalChoices"') && prompt.includes('@focus="focusChoice(choice)"'), '通用选项弹框必须把 displayCardIds 作为仅供查看的卡牌行，可打开卡牌详情但不得把展示牌误作合法选择，确认项保留在统一页脚'],
-  [shell.includes('class="invitation-gate"') && !shell.includes('class="site-modal-mask invitation-gate"')
+  [hasInvitationTemplate(shell)
     && shell.includes('aria-modal="false"') && shell.includes('invitationMinimized')
-    && shell.includes('class="invitation-stack"') && shell.includes('position:fixed;z-index:160;right:18px;bottom:18px')
+    && shell.includes('position:fixed;z-index:160;right:18px;bottom:18px')
     && l12Net.includes("message.type === 'friendInvitationResolved' || message.type === 'friendInvitationRevoked'")
     && l12Net.includes('l12State.friendInvitation?.invitationId === message.invitationId')
     && l12Net.includes('l12State.outgoingFriendInvitation?.invitationId === message.invitationId')
