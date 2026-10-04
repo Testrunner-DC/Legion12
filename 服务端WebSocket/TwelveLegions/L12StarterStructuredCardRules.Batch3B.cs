@@ -6,7 +6,7 @@ namespace TwelveLegions.Server;
 /// </summary>
 public static partial class L12StructuredCardRules
 {
-    internal const string StarterTakedaShingenCardId = "S01-0403";
+    internal const string StarterTakedaShingenCardId = "S02-0401";
 
     internal static string? StarterHandPlayPlanId(string cardId) => cardId switch
     {

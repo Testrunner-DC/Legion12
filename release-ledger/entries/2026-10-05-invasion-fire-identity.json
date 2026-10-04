@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-05-invasion-fire-identity",
+  "date": "2026-10-05",
+  "audience": "players",
+  "title": "侵略如火减费修复",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "侵略如火现在正确根据武田信玄是否在我方战场判定从手牌打出费用减少1；上杉谦信不再被误认为武田信玄，武田信玄离场后减费也会正确结束。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12StarterStructuredCardRules.Batch3B.cs"]
+    }
+  ]
+}

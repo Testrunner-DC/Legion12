@@ -1327,7 +1327,7 @@ internal static class EffectLifecycleProfiles
         "S02-0611:ability:continuous:5745356459e85080",
         "S02-0612:ability:continuous:064a0a1c5382575c",
         "ST03-02:ability:continuous:057a02a660ebfae1",
-        "ST04-10:ability:continuous:2a1c905931cd7b32",
+        "ST04-10:ability:continuous:4a22e589b1849359",
         "ST06-01:ability:continuous:3ced1d4d38141877",
     ];
 

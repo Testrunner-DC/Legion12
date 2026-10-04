@@ -5,7 +5,7 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`e9d5463bd544e34c773cf25861b62b50fc74d41801e7d1bed68dfaf6ff5d76cd`。
+内容指纹：`f9713ac26f2a9b8f1e10ef773b325aa00dc91a378ce6881a3a15a5f94bd0bf4b`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
@@ -1642,8 +1642,8 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | ST04-07:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST04-07 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
 | ST04-07:ability:continuous:8f395636980d57ca | TwelveLegions.Tests.CombatTimelineRegressionTests.CooperativeSupportMayJoinTheDirectRearSupportWithoutReplacingIt / ST04-07 | normal, presentation-consumers, reconnect |
 | ST04-07:ability:continuous:8f395636980d57ca | TwelveLegions.Tests.PipelineLifecycleProfileTests.CooperativeSupportSegmentBindsToTheSharedSupportValidation / ST04-07 | authoritative-consumer, row-condition-current |
-| ST04-10:ability:continuous:2a1c905931cd7b32 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.DiscountedSnapshotCostSurvivesReconnectAndIsTheAuthoritativePayment / ST04-10 | duplicate-submit, normal, presentation-consumers, reconnect |
-| ST04-10:ability:continuous:2a1c905931cd7b32 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / ST04-10 | condition-false, source-still-in-hand |
+| ST04-10:ability:continuous:4a22e589b1849359 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.DiscountedSnapshotCostSurvivesReconnectAndIsTheAuthoritativePayment / ST04-10 | duplicate-submit, normal, presentation-consumers, reconnect |
+| ST04-10:ability:continuous:4a22e589b1849359 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / ST04-10 | condition-false, source-still-in-hand |
 | ST04-C1:ability:static:d9cac21fb706e3c8 | TwelveLegions.Tests.AtomicReviewBatch3RegressionTests.GaotianyuanChosenMoverLeavingTheFieldIsFailedNotCancelled / ST04-C1 | target-invalidated |
 | ST04-C1:ability:static:d9cac21fb706e3c8 | TwelveLegions.Tests.AtomicReviewBatch3RegressionTests.GaotianyuanDrawsBeforeChoosingOptionalMoveTargetAndSlot / ST04-C1 | normal, presentation-consumers, single-candidate-choice |
 | ST04-C1:ability:static:d9cac21fb706e3c8 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / ST04-C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
@@ -2334,7 +2334,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | ST04-07 木下藤吉郎 #1 | ST04-07:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
 | ST04-07 木下藤吉郎 #2 | ST04-07:ability:continuous:8f395636980d57ca | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.keyword → resolution:legacy.resolve | 0 | 「位于后排」获得协防。（可支援我方任意前排军团，可联合支援） |
 | ST04-09 野猪王 #1 | ST04-09:ability:enter:c3d7bde060b4a77f | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.set-state | 1 | 登场时 本回合可进攻对方主宰。 |
-| ST04-10 侵略如火 #1 | ST04-10:ability:continuous:2a1c905931cd7b32 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → continuous:operation.set-state → resolution:operation.composite-flow | 0 | 若我方战场存在&lt;武田信玄&gt;，此战术从手牌打出的费用-1。 |
+| ST04-10 侵略如火 #1 | ST04-10:ability:continuous:4a22e589b1849359 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → continuous:operation.set-state → resolution:operation.composite-flow | 0 | 若我方战场存在&lt;武田信玄&gt;，此战术从手牌打出的费用-1。 |
 | ST04-10 侵略如火 #2 | ST04-10:ability:play:b17a4a336dbbbe35 | play/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → continuous:operation.keyword → resolution:operation.composite-flow | 2 | 将此战术叠放至我方1张【高天原】军团下方，被叠放的军团获得强攻。（进攻对主宰造成额外1点伤害。） |
 | ST04-C1 士气·高天原 #1 | ST04-C1:ability:static:d9cac21fb706e3c8 | static/continuous | shared-rule-owner | 我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.pay-morale → resolution:operation.draw → resolution:operation.ready → resolution:operation.move | 0 | 我方 回合1次 可消耗2士气：抽取1张牌。随后可选择我方1张活跃的军团进行1格位移。 |
 | ST04-M1 迦具土 #1 | ST04-M1:ability:legion-attack-timing:30752d1d1028362e | legion-attack-timing/triggered | composite-definition | 回合1次 我方军团进攻/被进攻时，可消耗1士气或弃置1张手牌 | trigger:trigger.observe → condition:control.optional → target:selection.mode → cost:cost.pay-morale → cost:cost.discard → resolution:operation.modify-troops → resolution:operation.composite-flow | 3 | 回合1次 我方军团进攻/被进攻时，可消耗1士气或弃置1张手牌：该军团本回合兵力+2000。 |

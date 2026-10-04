@@ -16,7 +16,7 @@ public sealed class StructuredHandCostLifecycleProfileTests
     [L12AbilityEvidence("S02-0611:ability:continuous:5745356459e85080", "condition-false", "source-still-in-hand")]
     [L12AbilityEvidence("S02-0612:ability:continuous:064a0a1c5382575c", "condition-false", "source-still-in-hand")]
     [L12AbilityEvidence("ST03-02:ability:continuous:057a02a660ebfae1", "condition-false", "source-still-in-hand")]
-    [L12AbilityEvidence("ST04-10:ability:continuous:2a1c905931cd7b32", "condition-false", "source-still-in-hand")]
+    [L12AbilityEvidence("ST04-10:ability:continuous:4a22e589b1849359", "condition-false", "source-still-in-hand")]
     [L12AbilityEvidence("ST06-01:ability:continuous:3ced1d4d38141877", "condition-false", "source-still-in-hand")]
     public void StructuredHandCostFamilyIsClosedOverTheSharedConsumer()
     {
@@ -61,7 +61,7 @@ public sealed class StructuredHandCostLifecycleProfileTests
 
     [Theory]
     [InlineData("ST03-02", "", 1)]
-    [InlineData("ST04-10", "S01-0403", 1)]
+    [InlineData("ST04-10", "S02-0401", 1)]
     [InlineData("ST06-01", "S02-0618", 2)]
     [InlineData("S02-0611", "S02-0612", 2)]
     [InlineData("S02-0612", "S02-0611", 2)]
@@ -165,7 +165,7 @@ public sealed class StructuredHandCostLifecycleProfileTests
     [L12AbilityEvidence("S02-0611:ability:continuous:5745356459e85080", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
     [L12AbilityEvidence("S02-0612:ability:continuous:064a0a1c5382575c", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
     [L12AbilityEvidence("ST03-02:ability:continuous:057a02a660ebfae1", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
-    [L12AbilityEvidence("ST04-10:ability:continuous:2a1c905931cd7b32", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("ST04-10:ability:continuous:4a22e589b1849359", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
     [L12AbilityEvidence("ST06-01:ability:continuous:3ced1d4d38141877", "normal", "duplicate-submit", "reconnect", "presentation-consumers")]
     public void DiscountedSnapshotCostSurvivesReconnectAndIsTheAuthoritativePayment(string cardId)
     {
@@ -200,7 +200,7 @@ public sealed class StructuredHandCostLifecycleProfileTests
         {
             var prompt = Assert.Single(game.State.PendingPrompts);
             var targetId = Assert.Single(prompt.ValidChoices,
-                choice => choice == "required-s01-0403");
+                choice => choice == "required-s02-0401");
             var targetResult = game.Handle(prompt.PlayerIndex,
                 new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: targetId));
             Assert.True(targetResult.Accepted, targetResult.Error);
@@ -241,7 +241,7 @@ public sealed class StructuredHandCostLifecycleProfileTests
                 player.Hp = 7;
                 break;
             case "ST04-10":
-                player.Field[0][0] = Card("S01-0403", "required-s01-0403");
+                player.Field[0][0] = Card("S02-0401", "required-s02-0401");
                 break;
             case "ST06-01":
                 player.Field[0][0] = Card("S02-0618", "required-s02-0618");
