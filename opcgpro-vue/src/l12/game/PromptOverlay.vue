@@ -480,23 +480,29 @@ function refreshCardStrips() {
 }
 let cardStripDrag: { element: HTMLElement; pointerId: number; startX: number; startScroll: number; moved: boolean } | null = null
 function onCardStripPointerDown(event: PointerEvent) {
-  if (!props.mobileLayout || event.button !== 0) return
+  // Touch is owned by native scrolling in landscape, or by the rotated
+  // choice-body gesture below. Pointer dragging remains mouse/pen-only.
+  if (!props.mobileLayout || event.button !== 0 || event.pointerType === 'touch'
+    || event.target instanceof Element && event.target.closest('[draggable="true"]')) return
   const element = cardStripEventTarget(event)
   if (!element || element.scrollWidth <= element.clientWidth + 2) return
   // Do not capture a simple tap: pointer capture retargets the eventual click
   // to the strip and makes the card itself impossible to select. Capture only
   // after the gesture has crossed the drag threshold.
-  cardStripDrag = { element, pointerId:event.pointerId, startX:event.clientX, startScroll:element.scrollLeft, moved:false }
+  cardStripDrag = { element, pointerId:event.pointerId,
+    startX: document.documentElement.dataset.l12Rotated === 'true' ? event.clientY : event.clientX,
+    startScroll:element.scrollLeft, moved:false }
 }
 function onCardStripPointerMove(event: PointerEvent) {
   if (!cardStripDrag || cardStripDrag.pointerId !== event.pointerId) return
-  if (!cardStripDrag.moved && Math.abs(event.clientX - cardStripDrag.startX) < 5) return
+  const position = document.documentElement.dataset.l12Rotated === 'true' ? event.clientY : event.clientX
+  if (!cardStripDrag.moved && Math.abs(position - cardStripDrag.startX) < 5) return
   if (!cardStripDrag.moved) {
     cardStripDrag.moved = true
     cardStripDrag.element.setPointerCapture?.(event.pointerId)
   }
   event.preventDefault()
-  cardStripDrag.element.scrollLeft = cardStripDrag.startScroll - (event.clientX - cardStripDrag.startX)
+  cardStripDrag.element.scrollLeft = cardStripDrag.startScroll - (position - cardStripDrag.startX)
   updateCardStripEdges(cardStripDrag.element)
 }
 function endCardStripPointer(event: PointerEvent) {
@@ -505,30 +511,65 @@ function endCardStripPointer(event: PointerEvent) {
   updateCardStripEdges(cardStripDrag.element)
   cardStripDrag = null
 }
-let rotatedBodyTouch: { identifier: number; startX: number; startScroll: number; element: HTMLElement } | null = null
+let rotatedBodyTouch: {
+  identifier: number; startX: number; startY: number; bodyScroll: number; body: HTMLElement
+  horizontal: HTMLElement | null; horizontalScroll: number; axis: 'vertical' | 'horizontal' | null
+} | null = null
 function onChoiceBodyTouchStart(event: TouchEvent) {
   if (!props.mobileLayout || document.documentElement.dataset.l12Rotated !== 'true'
     || event.target instanceof Element && event.target.closest(
-      '.prompt-card-strip,.placement-workspace,.all-placement-workspace,.disaster-preparation-history,.response-target-list')) return
+      '.placement-workspace,.all-placement-workspace,.response-target-list')) return
   const touch = event.changedTouches[0]
-  const element = event.currentTarget
-  if (touch && element instanceof HTMLElement)
-    rotatedBodyTouch = { identifier: touch.identifier, startX: touch.clientX, startScroll: element.scrollTop, element }
+  const body = event.currentTarget
+  if (!touch || !(body instanceof HTMLElement) || event.touches.length !== 1) return
+  const target = event.target instanceof Element ? event.target : null
+  const horizontal = target?.closest<HTMLElement>('.prompt-card-strip:not(.placement-row):not(.all-placement-row),.disaster-preparation-history > section > div') ?? null
+  rotatedBodyTouch = {
+    identifier: touch.identifier, startX: touch.clientX, startY: touch.clientY,
+    bodyScroll: body.scrollTop, body,
+    horizontal: horizontal && horizontal.scrollWidth > horizontal.clientWidth + 2 ? horizontal : null,
+    horizontalScroll: horizontal?.scrollLeft ?? 0, axis: null,
+  }
 }
 function onChoiceBodyTouchMove(event: TouchEvent) {
-  if (!rotatedBodyTouch) return
+  if (!rotatedBodyTouch || event.touches.length !== 1) return
   const touch = Array.from(event.touches).find(candidate => candidate.identifier === rotatedBodyTouch?.identifier)
   if (!touch) return
-  const delta = touch.clientX - rotatedBodyTouch.startX
-  if (Math.abs(delta) < 4) return
-  event.preventDefault()
-  rotatedBodyTouch.element.scrollTop = rotatedBodyTouch.startScroll + delta
+  // The canvas is rotated 90 degrees: physical X is logical vertical,
+  // physical Y is logical horizontal. Lock one owner after a real drag so a
+  // diagonal swipe cannot scroll both the body and its nested card row.
+  const vertical = touch.clientX - rotatedBodyTouch.startX
+  const horizontal = touch.clientY - rotatedBodyTouch.startY
+  if (!rotatedBodyTouch.axis) {
+    if (Math.max(Math.abs(vertical), Math.abs(horizontal)) < 6) return
+    if (Math.abs(vertical) < 12 && Math.abs(vertical) * 1.15 < Math.abs(horizontal)) {
+      if (!rotatedBodyTouch.horizontal) return
+      rotatedBodyTouch.axis = 'horizontal'
+    } else if (Math.abs(horizontal) < 12 || Math.abs(vertical) >= Math.abs(horizontal) * 1.15) {
+      rotatedBodyTouch.axis = 'vertical'
+    } else if (Math.max(Math.abs(vertical), Math.abs(horizontal)) >= 12) {
+      rotatedBodyTouch.axis = rotatedBodyTouch.horizontal && Math.abs(horizontal) > Math.abs(vertical)
+        ? 'horizontal' : 'vertical'
+    } else return
+  }
+  if (event.cancelable) event.preventDefault()
+  if (rotatedBodyTouch.axis === 'vertical')
+    rotatedBodyTouch.body.scrollTop = rotatedBodyTouch.bodyScroll + vertical
+  else if (rotatedBodyTouch.horizontal) {
+    rotatedBodyTouch.horizontal.scrollLeft = rotatedBodyTouch.horizontalScroll - horizontal
+    updateCardStripEdges(rotatedBodyTouch.horizontal)
+  }
 }
 function onChoiceBodyTouchEnd(event: TouchEvent) {
   if (rotatedBodyTouch && Array.from(event.changedTouches).some(touch => touch.identifier === rotatedBodyTouch?.identifier))
     rotatedBodyTouch = null
 }
-watch(() => `${visible.value}:${minimized.value}:${displayedChoices.value.length}`, refreshCardStrips, { immediate: true })
+watch(() => `${prompt.value?.promptId ?? ''}:${visible.value}:${minimized.value}:${displayedChoices.value.length}`, () => {
+  rotatedBodyTouch = null
+  cardStripDrag = null
+  refreshCardStrips()
+}, { immediate: true })
+onBeforeUnmount(() => { rotatedBodyTouch = null; cardStripDrag = null })
 const primaryChoices = computed(() => (hasCardChoices.value || (isEffectDecision.value && !isPureEffectDecision.value))
   ? displayedChoices.value.filter(id => !isDeclineChoice(id)) : displayedChoices.value)
 const supplementalChoices = computed(() => currentChoices.value
@@ -1083,6 +1124,36 @@ function kindLabel() {
 .initiative-race img{width:58px;height:58px;object-fit:cover;border:2px solid #666;border-radius:2px}
 .l12-prompt-overlay,.l12-prompt-overlay.minimized{z-index:3000!important}
 .l12-prompt-overlay.mobile-safe-overlay{inset:var(--l12-viewport-top,0px) auto auto var(--l12-viewport-left,0px)!important;width:var(--l12-viewport-width,100vw)!important;height:var(--l12-viewport-height,100vh)!important;padding:8px!important;overflow:hidden}.l12-prompt-overlay.mobile-safe-overlay .prompt-panel,.l12-prompt-overlay.mobile-safe-overlay .waiting-panel{box-sizing:border-box;max-width:100%!important;max-height:100%;overflow:auto}.l12-prompt-overlay.mobile-safe-overlay .prompt-panel{padding:12px}.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip{position:relative;max-height:54vh;overflow-x:auto;overflow-y:hidden;overscroll-behavior-inline:contain;scroll-behavior:smooth;scrollbar-width:none;touch-action:pan-x}.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip::-webkit-scrollbar{display:none}.l12-prompt-overlay.mobile-safe-overlay.minimized{inset:auto calc(var(--l12-viewport-left,0px) + 8px) calc(var(--l12-viewport-top,0px) + 8px) auto!important;width:auto!important;height:auto!important;padding:0!important}
+/* Natural landscape belongs to the browser. Rotated candidate/history rows
+   belong to the single touch owner above; neither direction may be stolen by
+   the old pan-x rule. Keep placement workspaces' drag behavior unchanged. */
+:global(html[data-l12-mobile="true"][data-l12-viewport] .l12-prompt-overlay.mobile-safe-overlay .prompt-choice-panel .prompt-card-strip:not(.placement-row):not(.all-placement-row)),
+:global(html[data-l12-mobile="true"][data-l12-viewport] .l12-prompt-overlay.mobile-safe-overlay .disaster-preparation-history > section > div){touch-action:auto!important}
+:global(html[data-l12-mobile="true"][data-l12-viewport][data-l12-rotated="true"] .l12-prompt-overlay.mobile-safe-overlay .prompt-choice-panel .prompt-card-strip:not(.placement-row):not(.all-placement-row)),
+:global(html[data-l12-mobile="true"][data-l12-viewport][data-l12-rotated="true"] .l12-prompt-overlay.mobile-safe-overlay .disaster-preparation-history > section > div){touch-action:none!important}
+/* Only battle choice dialogs grow with the available logical canvas. Keep
+   their text/options in proportion while the footer remains a real touch
+   target after the optional 90-degree canvas transform. */
+:global(html[data-l12-mobile="true"][data-l12-viewport] .l12-prompt-overlay.mobile-safe-overlay .prompt-panel.prompt-choice-panel){
+  --l12-dialog-copy:clamp(14px,calc(var(--l12-viewport-width)*.021),16px);
+  --l12-dialog-title:clamp(14px,calc(var(--l12-viewport-width)*.022),17px);
+  --l12-dialog-action-w:clamp(72px,calc(var(--l12-viewport-width)*.14),104px);
+  --l12-dialog-card-w:clamp(110px,calc(var(--l12-mobile-dialog-width)*.30),160px);
+  --l12-dialog-card-h:clamp(160px,calc(var(--l12-mobile-dialog-height)*.75),220px);
+}
+:global(html[data-l12-mobile="true"][data-l12-viewport] .l12-prompt-overlay.mobile-safe-overlay .prompt-panel.prompt-choice-panel > header .prompt-minimize){left:auto!important;right:0!important}
+:global(html[data-l12-mobile="true"][data-l12-viewport="landscape"] #l12-landscape-teleports .l12-prompt-overlay.mobile-safe-overlay:not(.minimized) .prompt-panel.prompt-choice-panel){
+  height:min(calc(var(--l12-viewport-height) - 16px),calc(var(--l12-mobile-dialog-height)*1.2))!important;
+  max-height:min(calc(var(--l12-viewport-height) - 16px),calc(var(--l12-mobile-dialog-height)*1.2))!important;
+}
+:global(html[data-l12-mobile="true"][data-l12-viewport] .l12-prompt-overlay.mobile-safe-overlay .prompt-panel.prompt-choice-panel .prompt-card-candidate:not(.size-featured)){
+  grid-template-columns:minmax(0,1fr)!important;justify-items:stretch!important;
+}
+:global(html[data-l12-mobile="true"][data-l12-viewport] .l12-prompt-overlay.mobile-safe-overlay .prompt-panel.prompt-choice-panel .prompt-card-candidate:not(.size-featured) .l12-card-image){
+  width:100%!important;height:100%!important;max-width:100%;max-height:100%;aspect-ratio:auto!important;
+}
+:global(html[data-l12-mobile="true"][data-l12-viewport] .l12-prompt-overlay.mobile-safe-overlay .prompt-panel.prompt-choice-panel .prompt-card-candidate:not(.size-featured) .l12-card-image__img){object-fit:contain!important}
+:global(html[data-l12-mobile="true"][data-l12-viewport] .l12-prompt-overlay.mobile-safe-overlay .prompt-panel.prompt-choice-panel .prompt-card-candidate__name){width:100%!important;min-width:0}
 /* Center short candidate groups without hiding the start of overflowing rows. */
 .prompt-choices.prompt-card-strip{justify-content:safe center}
 .prompt-choices.effect-option-list{display:grid;width:100%;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));grid-auto-rows:1fr;align-items:stretch;justify-content:center}

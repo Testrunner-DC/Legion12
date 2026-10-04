@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-05-mobile-choice-gestures",
+  "date": "2026-10-05",
+  "audience": "players",
+  "title": "移动端对战选择操作",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "移动端天灾选择弹框中，从卡图、卡名和历史卡牌开始滑动也能正确滚动；横滑卡牌、纵滑内容互不抢占。选择区域随可用空间调整，同排选项保持等高，卡名和确认按钮可读、可点，排序拖放保持原有操作。",
+      "paths": ["opcgpro-vue/src/l12/game/PromptOverlay.vue"]
+    }
+  ]
+}
