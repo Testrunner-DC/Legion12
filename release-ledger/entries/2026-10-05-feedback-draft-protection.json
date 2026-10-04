@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-05-feedback-draft-protection",
+  "date": "2026-10-05",
+  "audience": "players",
+  "title": "反馈草稿保护",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "提交反馈后关闭并重新打开弹框，或继续修改内容，旧提交结果不会清空新草稿。反馈会保留提交当时的页面和对局信息，切换账号后不会误提交原账号的内容。",
+      "paths": ["opcgpro-vue/src/l12/site/GlobalBugFeedback.vue"]
+    }
+  ]
+}

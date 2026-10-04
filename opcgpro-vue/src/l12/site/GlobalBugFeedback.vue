@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { captureBugClientDiagnostic, l12State } from '@/l12/net'
 import { platformState, submitBug } from '@/l12/platform'
@@ -11,32 +11,65 @@ const open = ref(false)
 const busy = ref(false)
 const message = ref('')
 const form = reactive({ bugDescription: '', suggestion: '' })
+let mounted = true
+let requestId = 0
+let draftRevision = 0
+let dialogEpoch = 0
+let identityEpoch = 0
+watch(() => [form.bugDescription, form.suggestion], () => { draftRevision++ }, { flush: 'sync' })
+watch(open, () => { dialogEpoch++; message.value = '' }, { flush: 'sync' })
+watch(() => [platformState.account?.id, platformState.token], (current, previous) => {
+  identityEpoch++
+  message.value = ''
+  if (current[0] !== previous[0]) {
+    form.bugDescription = ''
+    form.suggestion = ''
+  }
+}, { flush: 'sync' })
 function openFeedback() { open.value = true }
 onMounted(() => window.addEventListener('l12-open-bug-feedback', openFeedback))
-onBeforeUnmount(() => window.removeEventListener('l12-open-bug-feedback', openFeedback))
+onBeforeUnmount(() => {
+  mounted = false
+  window.removeEventListener('l12-open-bug-feedback', openFeedback)
+})
 
 async function submit() {
+  if (busy.value || !mounted) return
   const bugDescription = form.bugDescription.trim()
   const suggestion = form.suggestion.trim()
   if (!bugDescription && !suggestion) { message.value = 'Bug提交或优化建议至少填写一项'; return }
+  const currentRequest = ++requestId
+  const submittedDraft = draftRevision
+  const submittedDialog = dialogEpoch
+  const submittedIdentity = identityEpoch
+  const context = { page: route.path, roomCode: l12State.room?.roomCode, matchId: l12State.game?.matchId }
+  const sameIdentity = () => mounted && submittedIdentity === identityEpoch
+  const ownsDraft = () => sameIdentity() && currentRequest === requestId && open.value
+    && submittedDialog === dialogEpoch && submittedDraft === draftRevision
   busy.value = true
   message.value = ''
   try {
-    const clientDiagnostic = await captureBugClientDiagnostic(route.path)
+    const diagnostic = await captureBugClientDiagnostic(context.page)
+    // Diagnostics may finish after logout or component disposal. Never post the old draft as a new user.
+    if (!sameIdentity()) return
+    const clientDiagnostic = { ...diagnostic, roomCode: context.roomCode, matchId: context.matchId }
     const report = await submitBug({
       title: bugDescription && suggestion ? 'Bug与优化建议' : bugDescription ? 'Bug提交' : '优化建议',
       description: [bugDescription ? `【Bug提交】\n${bugDescription}` : '', suggestion ? `【优化建议】\n${suggestion}` : ''].filter(Boolean).join('\n\n'),
-      page: route.path,
-      roomCode: l12State.room?.roomCode,
-      matchId: l12State.game?.matchId,
+      ...context,
       version: String(import.meta.env.VITE_APP_VERSION || 'dev'),
       clientDiagnostic,
     })
-    message.value = `已提交：${report.id}`
-    form.bugDescription = ''
-    form.suggestion = ''
-  } catch (error) { message.value = error instanceof Error ? error.message : '提交失败' }
-  finally { busy.value = false }
+    if (ownsDraft()) {
+      form.bugDescription = ''
+      form.suggestion = ''
+      message.value = `已提交：${report.id}`
+    }
+  } catch (error) {
+    if (ownsDraft()) message.value = error instanceof Error ? error.message : '提交失败'
+  } finally {
+    if (mounted && currentRequest === requestId) busy.value = false
+  }
 }
 </script>
 

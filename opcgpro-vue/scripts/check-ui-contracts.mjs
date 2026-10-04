@@ -5,6 +5,7 @@ import { hasInvitationTemplate } from './vue-semantic-contract.mjs'
 import './test-a3-site-shell-contract.mjs'
 import { hasProfileAuthTemplate, hasProfileStatusNoticeBeforeRank } from './profile-auth-template-contract.mjs'
 import './test-a3-profile-auth-template-contract.mjs'
+import { usesWhitelistedBugDiagnostic } from './test-feedback-draft-lifecycle.mjs'
 
 // Git 在 Windows 工作区可能检出 CRLF；契约按语义比较换行，不改写被检查的源文件。
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
@@ -1465,7 +1466,7 @@ const contracts = [
     && gameReentry.includes("route.path !== '/game'") && gameReentry.includes('loaded.afterEach(')
     && gameReentry.includes('snapshot.game?.matchId !== exitMatchId')
     && l12Net.includes('createGameReentryController(') && !app.includes("router.push('/game')"), '断线恢复必须通过单一协调器在快照确认后对账路由，尊重主动退出，并记录连接代次、心跳、Pong与关闭原因'],
-  [globalBugFeedback.includes('captureBugClientDiagnostic(route.path)')
+  [usesWhitelistedBugDiagnostic
     && !globalBugFeedback.includes('navigator.userAgent')
     && platform.includes('clientDiagnostic?: BugClientConnectionDiagnostic')
     && adminPage.includes('item.clientVersion') && adminPage.includes('item.serverVersion')

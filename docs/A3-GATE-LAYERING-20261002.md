@@ -1,5 +1,9 @@
 # A3：发布门禁去重与布局证据分层（2026-10-02）
 
+## 2026年10月5日 反馈诊断合同的实际执行替代
+
+旧合同强制`captureBugClientDiagnostic(route.path)`源码字串；反馈在await前冻结原页面为context.page后误报。只替换这一谓词为实际Vue组件script执行结果：AST验证仍导入唯一白名单导出器、诊断接收原路由、仅透传既有白名单键，不追加原始状态/身份字段；保留禁止userAgent、后台三版本展示和其他权限保护。15场景144断言与26浏览器组合150项通过，独立复核补足令牌更新及诊断期间账号A→B→A；新回归由既有check-ui-contracts模块执行一次，不另加package重复执行。原HEAD负向在程序重复提交场景失败，不称真实disabled按钮失效。354原合同通过；最终Batch/Release另记。仅一个合同迁移，不等于全历史452组收口。
+
 本轮Profile两模板族随应用8a21b064完成最终Batch及10月5日01:34:14干净Release，规则6216/平台442失败跳过0，UI354/Profile51+44、原邀请17/Prompt30及双前端/包通过；GitHub精确读回，不部署。原CSS/权限/权威保护保持，452组库存未全迁。实际结果索引D盘four-scope-continuation-receipt-20261005.md；下方“门禁待”保留为当时过程状态。
 
 ## 2026年10月5日 Profile 模板合同迁移
