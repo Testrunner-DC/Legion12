@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { TournamentSummary } from '@/l12/platform'
+import type { TournamentSummary, PublicTournamentSummary } from '@/l12/platform'
 import { tournamentFormatText, tournamentStatusText, tournamentViewerRoleText } from '@/l12/tournamentLabels'
 
-defineProps<{ items: TournamentSummary[]; loading: boolean }>()
+defineProps<{ items: Array<TournamentSummary | PublicTournamentSummary>; loading: boolean }>()
 defineEmits<{ open: [code: string] }>()
 
 const displayTime = (value?: string) => value ? new Date(value).toLocaleString('zh-CN') : '时间待定'
@@ -10,11 +10,11 @@ const displayTime = (value?: string) => value ? new Date(value).toLocaleString('
 
 <template>
   <div v-if="loading" class="empty" role="status" aria-live="polite"><strong>正在加载赛事</strong><span>正在同步最新报名与赛程状态…</span></div>
-  <div v-else-if="!items.length" class="empty"><strong>这里暂时没有赛事</strong><span>可以调整筛选条件，或创建一场新的赛事。</span></div>
+  <div v-else-if="!items.length" class="empty"><strong>这里暂时没有赛事</strong><span>可以调整筛选条件，或稍后再来查看。</span></div>
   <div v-else class="summary-grid">
-    <button v-for="item in items" :key="item.id" class="summary-card" type="button" @click="$emit('open', item.code)">
-      <span class="summary-top"><span><small>{{ item.code }}</small><b>{{ item.name }}</b></span><i v-if="item.requiresAction">需要处理</i></span>
-      <span class="summary-tags"><em>{{ tournamentStatusText(item.status) }}</em><em>{{ tournamentFormatText(item.format) }}</em><em class="role">{{ tournamentViewerRoleText(item.viewerRole) }}</em></span>
+    <button v-for="item in items" :key="item.code" class="summary-card" type="button" @click="$emit('open', item.code)">
+      <span class="summary-top"><span><small>{{ item.code }}</small><b>{{ item.name }}</b></span><i v-if="'requiresAction' in item && item.requiresAction">需要处理</i></span>
+      <span class="summary-tags"><em>{{ tournamentStatusText(item.status) }}</em><em>{{ tournamentFormatText(item.format) }}</em><em v-if="'viewerRole' in item" class="role">{{ tournamentViewerRoleText(item.viewerRole) }}</em></span>
       <span class="summary-facts"><span><small>计划时间</small><b>{{ displayTime(item.startAt) }}</b></span><span><small>主办者</small><b>{{ item.organizerName }}</b></span><span><small>席位</small><b>{{ item.counts.active }}/{{ item.maxPlayers }} 人<span v-if="item.counts.waitlisted"> · 候补 {{ item.counts.waitlisted }}</span></b></span></span>
       <span class="open-cue">查看赛事 <b aria-hidden="true">→</b></span>
     </button>

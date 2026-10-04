@@ -33,7 +33,8 @@ const [viewportCss, viewportTs, battleLayout, mobileDialogLayout, app, archive, 
   read('src/l12/site/RankingsPage.vue'),
   Promise.all([
     read('src/l12/site/TournamentHubPage.vue'),
-    read('src/l12/site/TournamentDetailPage.vue'),
+    read('src/l12/site/TournamentAccountDetail.vue'),
+    read('src/l12/site/TournamentPublicDetail.vue'),
     read('src/l12/site/AdminTournamentWorkbench.vue'),
   ]).then(parts => parts.join('\n')),
   read('src/l12/site/AccountRecoveryPage.vue'),
@@ -48,7 +49,7 @@ const promptCardCandidate = await read('src/l12/game/PromptCardCandidate.vue')
 const masterMatchupMatrix = await read('src/l12/site/MasterMatchupMatrix.vue')
 const [tournamentHub, tournamentDetail, tournamentWizard, tournamentJudge, tournamentManagement, tournamentSummary] = await Promise.all([
   read('src/l12/site/TournamentHubPage.vue'),
-  read('src/l12/site/TournamentDetailPage.vue'),
+  Promise.all([read('src/l12/site/TournamentAccountDetail.vue'), read('src/l12/site/TournamentPublicDetail.vue')]).then(parts => parts.join('\n')),
   read('src/l12/site/TournamentCreateWizard.vue'),
   read('src/l12/site/TournamentJudgeDesk.vue'),
   read('src/l12/site/TournamentManagementPanel.vue'),

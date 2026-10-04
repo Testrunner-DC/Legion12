@@ -239,6 +239,7 @@ public sealed record L12TournamentCreatePayload(
 public sealed record L12TournamentRegistrationPayload(string? DeckName = null, string? DeckCode = null);
 public sealed record L12TournamentPreCheckInPayload(string DeckName, string DeckCode, string? DeckId = null);
 public sealed record L12TournamentStaffPayload(IReadOnlyList<string> RefereeAccountIds);
+public sealed record L12TournamentVisibilityPayload(string Visibility, string RegistrationVisibility);
 public sealed record L12TournamentCheckInPayload(string? AccountId, bool Ready);
 public sealed record L12TournamentRemoveParticipantPayload(string AccountId, bool BanRegistration, string Reason);
 public sealed record L12TournamentRegistrationBanPayload(string AccountId, bool Banned, string Reason);
@@ -651,6 +652,31 @@ public sealed partial class L12PlatformStore
                 string.Equals(item.Code, normalized, StringComparison.OrdinalIgnoreCase));
             // code 可见赛事不进入公开列表；持有稳定分享码本身即是读取详情与报名入口。
             return row is null ? null : ToView(row, viewer);
+        }
+    }
+
+    public L12TournamentView SetTournamentVisibility(L12AccountView actor, string tournamentId,
+        L12TournamentVisibilityPayload payload, long expectedVersion,
+        L12AdminAuditContext context, bool apply)
+    {
+        lock (_gate)
+        {
+            var row = RequireTournament(tournamentId, expectedVersion);
+            // 公开链接撤回是投影权限变更，不推进赛事生命周期；已结束赛事也必须能够撤回。
+            RequireActiveTournamentAccount(actor);
+            if (row.OrganizerAccountId != actor.Id
+                && !L12Authorization.HasPermission(actor, L12Permission.TournamentsManage))
+                throw new L12TournamentScopeException("仅赛事主办者或全局赛事管理员可执行该操作");
+            var visibility = Allowed(payload.Visibility, "可见性", "public", "code");
+            var registrationVisibility = Allowed(payload.RegistrationVisibility, "报名名单可见性",
+                "public", "staff");
+            if (row.Visibility == visibility && row.RegistrationVisibility == registrationVisibility)
+                return ToView(row, actor);
+            return Mutate(actor, row, "visibility-set", tournamentId, context, apply, working =>
+            {
+                working.Visibility = visibility;
+                working.RegistrationVisibility = registrationVisibility;
+            });
         }
     }
 
@@ -2037,10 +2063,10 @@ public sealed partial class L12PlatformStore
         var staff = row.RefereeAccountIds.Select(AccountById).Where(item => item is not null)
             .Select(item => new L12TournamentStaffView(item!.Id, PublicUsername(item))).ToArray();
         var configuredStaff = IsConfiguredStaff(row, viewer.Id) || CanGloballyAccessTournaments(viewer);
+        var participantIdentitiesRestricted = row.RegistrationVisibility == "staff" && !configuredStaff;
         var canViewAllDecks = configuredStaff || row.Rules.DeckVisibility == "always"
             || row.Rules.DeckVisibility == "after" && row.Status == "completed";
-        var visibleParticipantRows = row.Status == "registration" && row.RegistrationVisibility == "staff"
-            && !configuredStaff
+        var visibleParticipantRows = participantIdentitiesRestricted
             ? row.Participants.Where(item => item.AccountId == viewer.Id)
             : row.Participants.AsEnumerable();
         var participants = visibleParticipantRows.Select(item =>
@@ -2063,7 +2089,9 @@ public sealed partial class L12PlatformStore
         }).ToArray();
         var bracket = row.Rounds.Where(round => round.Stage == "elimination")
             .Select((round, index) => new L12TournamentBracketRoundView(index + 1,
-                round.Matches.OrderBy(match => match.Table).Select(match =>
+                round.Matches.Where(match => !participantIdentitiesRestricted
+                        || match.PlayerAAccountId == viewer.Id || match.PlayerBAccountId == viewer.Id)
+                    .OrderBy(match => match.Table).Select(match =>
                 {
                     var a = AccountById(match.PlayerAAccountId);
                     var b = match.PlayerBAccountId is null ? null : AccountById(match.PlayerBAccountId);
@@ -2102,10 +2130,13 @@ public sealed partial class L12PlatformStore
             NormalizeRankedTimeControl(row.TimeControl), row.UsesLegacyRoundClock, counts,
             visiblePendingTransfer, visibleTransferHistory, participants,
             row.Rounds.OrderBy(round => round.Number).Select(round => ToView(round, row, viewer, configuredStaff,
-                    row.Visibility == "public" && row.Status is "completed" or "canceled"))
+                    row.Visibility == "public" && row.Status is "completed" or "canceled",
+                    participantIdentitiesRestricted))
                 .ToArray(), row.Version, row.LegacySourceId is not null, row.CreatedAt, row.UpdatedAt, row.CompletedAt,
             row.SwissRounds, row.CutSize, row.RegistrationVisibility, row.LateGraceMinutes,
-            row.FinalSwissStandings.Select(ToStandingView).ToArray(), bracket,
+            (participantIdentitiesRestricted
+                ? row.FinalSwissStandings.Where(item => item.AccountId == viewer.Id)
+                : row.FinalSwissStandings).Select(ToStandingView).ToArray(), bracket,
             row.Phase, row.RegistrationOpen, row.CanceledAt, row.CancellationReason,
             row.Postponements.OrderByDescending(item => item.CreatedAt).Select(item =>
             {
@@ -2130,10 +2161,10 @@ public sealed partial class L12PlatformStore
     }
 
     private L12TournamentRoundView ToView(TournamentRoundRow row, TournamentRow tournament,
-        L12AccountView viewer, bool configuredStaff, bool publicArchive)
+        L12AccountView viewer, bool configuredStaff, bool publicArchive, bool participantIdentitiesRestricted)
         => new(row.Id, row.Number, row.Status, row.Paused, row.StartedAt, row.PausedAt, row.TotalPausedSeconds,
-            row.Matches.Where(match => configuredStaff || publicArchive || match.PlayerAAccountId == viewer.Id
-                    || match.PlayerBAccountId == viewer.Id)
+            row.Matches.Where(match => configuredStaff || !participantIdentitiesRestricted && publicArchive
+                    || match.PlayerAAccountId == viewer.Id || match.PlayerBAccountId == viewer.Id)
                 .OrderBy(match => match.Table).Select(match =>
             {
                 var a = AccountById(match.PlayerAAccountId);
@@ -2156,7 +2187,9 @@ public sealed partial class L12PlatformStore
                         item.RecordedMatchId, item.ActorId, item.Detail, item.CreatedAt)).ToArray(),
                     match.Paused, match.PauseReason, match.PausedAt, match.TotalPausedSeconds);
             }).ToArray(), row.Stage, row.StandingsCapturedAt,
-            row.Standings.Select(ToStandingView).ToArray(), row.PairingFailure);
+            (participantIdentitiesRestricted
+                ? row.Standings.Where(item => item.AccountId == viewer.Id)
+                : row.Standings).Select(ToStandingView).ToArray(), row.PairingFailure);
 
     private L12TournamentStandingView ToStandingView(TournamentStandingRow row)
         => new(row.RoundNumber, row.Rank, row.AccountId, AccountById(row.AccountId) is { } account

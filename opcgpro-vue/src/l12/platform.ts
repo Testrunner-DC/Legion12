@@ -835,6 +835,34 @@ export interface TournamentSummary {
 export interface TournamentSummaryPage {
   platformVersion: number; items: TournamentSummary[]; page: number; pageSize: number; total: number; totalPages: number
 }
+// Anonymous DTOs deliberately cannot express account IDs, credentials, deck snapshots or staff data.
+export interface PublicTournamentCounts { registered: number; checkedIn: number; active: number; waitlisted: number }
+export interface PublicTournamentSummary {
+  code: string; name: string; organizerName: string; status: TournamentStatus; format: Tournament['format']; phase: string
+  maxPlayers: number; startAt?: string; roundMinutes: number; checkInMinutes: number; counts: PublicTournamentCounts
+}
+export interface PublicTournamentPage {
+  items: PublicTournamentSummary[]; page: number; pageSize: number; total: number; totalPages: number
+}
+export interface PublicTournamentStanding {
+  roundNumber: number; rank: number; name: string; wins: number; losses: number; draws: number; byes: number
+  opponentScore: number; opponentsOpponentScore: number
+}
+export interface PublicTournamentMatch {
+  table: number; playerAName?: string; playerBName?: string; status: TournamentMatch['status']; result?: string
+  startedAt?: string; deadline?: string
+}
+export interface PublicTournamentRules {
+  ruleset: string; disasterMode: TournamentDisasterMode; banList: string; disasterCardIds: string[]
+  cardRestrictions: Array<Pick<OperationsCardRestriction, 'cardId' | 'maxCopies' | 'masterId'>>; deckVisibility: TournamentDeckVisibility; swissRounds: number
+  cutSize?: number; lateGraceMinutes: number; timeControl: RankedTimeControlConfig
+}
+export interface PublicTournamentDetail extends PublicTournamentSummary {
+  description: string; registrationVisibility: 'public' | 'staff'; registrationOpen: boolean; rules: PublicTournamentRules
+  participants: Array<{ name: string; status: string }>
+  rounds: Array<{ number: number; stage: 'swiss' | 'elimination'; status: TournamentRoundStatus; startedAt?: string; matches: PublicTournamentMatch[]; standings: PublicTournamentStanding[] }>
+  finalStandings: PublicTournamentStanding[]
+}
 export interface TournamentStartCheck {
   canStart: boolean; blockers: string[]; warnings: string[]; eligiblePlayers: number; waitlistedPlayers: number; openJudgeCases: number
 }
@@ -987,7 +1015,9 @@ export async function platformRequest<T>(path: string, init: PlatformRequestInit
     || path === '/api/auth/email/capability'
     || path === '/api/auth/email/verify' || path === '/api/auth/password/forgot'
     || path === '/api/auth/password/reset'
-  const requestToken = anonymousCredentialRequest ? '' : platformState.token
+  // Public projections are identity-independent, even while an administrator browses.
+  const anonymousPublicRead = safeRead && path.startsWith('/api/public/')
+  const requestToken = anonymousCredentialRequest || anonymousPublicRead ? '' : platformState.token
   const requestSessionVersion = platformSessionVersion
   const headerKey = Array.from(new Headers(fetchInit.headers).entries())
     .filter(([name]) => name.toLowerCase() !== 'x-correlation-id')
@@ -1019,11 +1049,13 @@ export async function platformRequest<T>(path: string, init: PlatformRequestInit
         if (requestToken && platformState.token !== requestToken)
           throw new PlatformRequestError('账号已切换，已忽略旧请求', 0, 'stale_session', '')
         const headers = new Headers(fetchInit.headers)
+        if (anonymousPublicRead) headers.delete('Authorization')
         if (!(fetchInit.body instanceof FormData)) headers.set('Content-Type', 'application/json')
         headers.set('X-Correlation-ID', globalThis.crypto?.randomUUID?.()
           ?? `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`)
         if (requestToken) headers.set('Authorization', `Bearer ${requestToken}`)
-        const response = await fetch(`${apiBase()}${path}`, { ...fetchInit, signal, headers })
+        const response = await fetch(`${apiBase()}${path}`, { ...fetchInit, signal, headers,
+          ...(anonymousPublicRead ? { credentials: 'omit' as const, cache: 'no-store' as const } : {}) })
         const payload = responseType === 'blob' && response.ok
           ? await response.blob() : await response.json().catch(() => ({}))
         if (requestToken && platformState.token !== requestToken)
@@ -1613,6 +1645,15 @@ export const siteContentApi = {
   categories: (kind?: SiteContentKind) => platformRequest<SiteCategory[]>(`/api/site/categories${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`),
 }
 
+export const publicTournamentApi = {
+  summaries: (query: { section?: 'discover' | 'history'; format?: string; search?: string; page?: number; pageSize?: number; startFrom?: string; startTo?: string } = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
+    return platformRequest<PublicTournamentPage>(`/api/public/tournaments/summaries${params.size ? `?${params}` : ''}`)
+  },
+  getByCode: (code: string) => platformRequest<PublicTournamentDetail>(`/api/public/tournaments/code/${encodeURIComponent(code)}`),
+}
+
 export const tournamentApi = {
   list: (query: { status?: string; search?: string; mine?: boolean } = {}) => {
     const params = new URLSearchParams()
@@ -1621,6 +1662,9 @@ export const tournamentApi = {
   },
   get: (id: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}`),
   getByCode: (code: string) => platformRequest<Tournament>(`/api/tournaments/code/${encodeURIComponent(code)}`),
+  setVisibility: (id: string, expectedVersion: number, visibility: Tournament['visibility'], registrationVisibility: Tournament['registrationVisibility'], reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/visibility`, {
+    method: 'PUT', body: JSON.stringify(commandBody('tournament-visibility', { expectedVersion, visibility, registrationVisibility, reason })),
+  }),
   summaries: (query: { section?: string; format?: string; search?: string; page?: number; pageSize?: number; startFrom?: string; startTo?: string } = {}) => {
     const params = new URLSearchParams()
     Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })

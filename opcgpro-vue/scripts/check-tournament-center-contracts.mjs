@@ -4,7 +4,7 @@ import ts from 'typescript'
 
 const root = process.cwd()
 const read = file => fs.readFileSync(path.join(root, file), 'utf8')
-const detail = read('src/l12/site/TournamentDetailPage.vue')
+const detail = read('src/l12/site/TournamentAccountDetail.vue')
 const management = read('src/l12/site/TournamentManagementPanel.vue')
 const judge = read('src/l12/site/TournamentJudgeDesk.vue')
 const summary = read('src/l12/site/TournamentSummaryList.vue')
@@ -109,3 +109,4 @@ if (failed.length) {
   process.exit(1)
 }
 console.log(`Tournament center contracts passed: ${checks.length}/${checks.length}`)
+await import('./test-public-browsing.mjs')

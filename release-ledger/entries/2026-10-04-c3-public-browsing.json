@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-04-c3-public-browsing",
+  "date": "2026-10-04",
+  "audience": "players",
+  "title": "赛事与排行榜公开浏览",
+  "changes": [
+    {
+      "category": "tournaments",
+      "text": "无需登录即可查看公开赛事的赛程与成绩；报名和工作人员操作仍需登录，主办者可调整公开范围。",
+      "paths": ["opcgpro-vue/src/router/index.ts", "opcgpro-vue/src/l12/platform.ts", "opcgpro-vue/src/l12/site/TournamentHubPage.vue", "opcgpro-vue/src/l12/site/TournamentDetailPage.vue", "opcgpro-vue/src/l12/site/TournamentAccountDetail.vue", "opcgpro-vue/src/l12/site/TournamentPublicDetail.vue", "opcgpro-vue/src/l12/site/TournamentSummaryList.vue", "opcgpro-vue/src/l12/site/TournamentManagementPanel.vue", "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicBrowsing.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs", "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"]
+    },
+    { "category": "ranking", "text": "排行榜支持未登录浏览，近7天、近30天和本赛季的统计范围保持不变。", "paths": ["opcgpro-vue/src/router/index.ts"] }
+  ]
+}

@@ -122,7 +122,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             context.Response.Headers.AccessControlExposeHeaders =
                 $"{L12CorrelationIds.HeaderName}, X-Command-ID, X-Idempotent-Replay, ETag, Retry-After, RateLimit-Limit, RateLimit-Remaining, Server-Timing";
             if (HttpMethods.IsOptions(context.Request.Method)) { context.Response.StatusCode = StatusCodes.Status204NoContent; return; }
-            var restrictedAccount = context.Request.Path.StartsWithSegments("/api")
+            var anonymousPublicTournamentRead = HttpMethods.IsGet(context.Request.Method)
+                && context.Request.Path.StartsWithSegments("/api/public/tournaments");
+            if (anonymousPublicTournamentRead || HttpMethods.IsGet(context.Request.Method)
+                    && context.Request.Path.StartsWithSegments("/api/rankings"))
+                context.Response.Headers.CacheControl = "no-store";
+            var restrictedAccount = !anonymousPublicTournamentRead
+                && context.Request.Path.StartsWithSegments("/api")
                 ? _platform.Authenticate(context.Request.Headers.Authorization) : null;
             var rate = trafficGuard.Acquire(context.Request,
                 context.Connection.RemoteIpAddress?.ToString() ?? "unknown", restrictedAccount?.Id);
@@ -144,7 +150,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 || context.Request.Path == "/api/auth/change-password"
                 || context.Request.Path == "/api/auth/change-username"
                 || context.Request.Path == "/api/auth/mfa/capability"
-                || context.Request.Path.StartsWithSegments("/api/auth/sessions");
+                || context.Request.Path.StartsWithSegments("/api/auth/sessions")
+                || anonymousPublicTournamentRead;
             if (restrictedAccount is { MustChangeUsername: true } && !accountRecoveryPathAllowed)
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
@@ -159,7 +166,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     "必须先修改管理员设置的临时密码", correlationId));
                 return;
             }
-            var featureId = context.Request.Path.StartsWithSegments("/api/public-decks") ? "publicDecks"
+            var featureId = context.Request.Path.StartsWithSegments("/api/public/tournaments") ? "tournaments"
+                : context.Request.Path.StartsWithSegments("/api/public-decks") ? "publicDecks"
                 : context.Request.Path.StartsWithSegments("/api/tournaments") ? "tournaments"
                 : null;
             if (featureId is not null && !_platform.CaptureOperationsPolicy().IsFeatureEnabled(featureId))
@@ -1426,6 +1434,27 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var published = target is null ? null : _platform.RecordPublishedDeckView(target.Id, account?.Id);
             return published is null ? Results.NotFound() : Results.Ok(published);
         });
+        _app.MapGet("/api/public/tournaments/summaries", (HttpRequest request, string? section, string? format,
+            string? search, int? page, int? pageSize, DateTimeOffset? startFrom, DateTimeOffset? startTo) =>
+        {
+            try
+            {
+                return Results.Ok(_platform.PublicTournamentSummaries(section, format, search,
+                    page ?? 1, pageSize ?? 24, startFrom, startTo));
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "invalid_public_tournament_query", error.Message,
+                    StatusCodes.Status400BadRequest);
+            }
+        });
+        _app.MapGet("/api/public/tournaments/code/{code}", (HttpRequest request, string code) =>
+        {
+            var result = _platform.PublicTournamentByCode(code);
+            return result is null
+                ? ApiError(request, "tournament_not_found", "赛事不存在", StatusCodes.Status404NotFound)
+                : Results.Ok(result);
+        });
         _app.MapGet("/api/tournaments", (HttpRequest request, string? status, string? search, bool? mine) =>
         {
             if (!TryAuthorize(request, L12Permission.TournamentsRead, out var authenticated, out var failure))
@@ -1609,6 +1638,23 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 (current, apply) => _platform.SetTournamentStaff(current.Actor, current.Payload.TournamentId,
                     current.Payload.Staff, expected,
                     current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
+        _app.MapPut("/api/tournaments/{id}/visibility", (HttpRequest request, string id,
+            TournamentVisibilityRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentsManage;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentVisibilityPayload(body.Visibility ?? string.Empty,
+                body.RegistrationVisibility ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "tournament.visibility.set", $"tournament:{id}/visibility", payload, key, expected,
+                body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.SetTournamentVisibility(current.Actor, id, current.Payload,
+                    expected, current.AuditContext, apply));
             return TournamentCommandResponse(request, command, outcome, id);
         });
         _app.MapPost("/api/tournaments/{id}/participants/remove", (HttpRequest request, string id,
@@ -5396,6 +5442,8 @@ public sealed record TournamentOrganizerTransferDecisionRequest(string? RequestI
 public sealed record TournamentActionRequest(string? IdempotencyKey = null, long? ExpectedVersion = null,
     bool DryRun = false, string? Reason = null);
 public sealed record TournamentStaffRequest(IReadOnlyList<string>? RefereeAccountIds,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
+public sealed record TournamentVisibilityRequest(string? Visibility, string? RegistrationVisibility,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
 public sealed record TournamentCheckInRequest(string? AccountId, bool Ready,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);

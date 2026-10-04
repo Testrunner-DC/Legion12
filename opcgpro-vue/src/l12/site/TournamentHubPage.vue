@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { tournamentApi, type TournamentCareer, type TournamentSummaryPage } from '@/l12/platform'
+import { authState, platformState, publicTournamentApi, tournamentApi, type TournamentCareer, type TournamentSummaryPage, type TournamentSummary, type PublicTournamentSummary } from '@/l12/platform'
 import { tournamentFormatText, tournamentStatusText } from '@/l12/tournamentLabels'
 import TournamentCreateWizard from './TournamentCreateWizard.vue'
 import TournamentSummaryList from './TournamentSummaryList.vue'
@@ -10,25 +10,39 @@ import { tournamentHubSection, type TournamentHubSection as Section } from './to
 const route = useRoute(); const router = useRouter()
 const section = ref<Section>(tournamentHubSection(route.query.section)); const search = ref(''); const format = ref(''); const timeRange = ref('')
 const loading = ref(false); const notice = ref(''); const page = ref(1)
-const result = ref<TournamentSummaryPage>({ platformVersion: 0, items: [], page: 1, pageSize: 24, total: 0, totalPages: 0 })
+const emptyResult = () => ({ platformVersion: 0, items: [], page: 1, pageSize: 24, total: 0, totalPages: 0 })
+const result = ref<Omit<TournamentSummaryPage, 'items'> & { items: Array<TournamentSummary | PublicTournamentSummary> }>(emptyResult())
+const identity = computed(() => authState.verified && platformState.account && !platformState.account.mustChangePassword && !platformState.account.mustChangeUsername ? platformState.token : '')
+const sectionOptions = computed(() => identity.value ? [['discover','发现赛事'],['mine','我的赛事'],['history','历史赛事'],['host','主办管理']] as const : [['discover','发现赛事'],['history','历史赛事']] as const)
 const career = ref<TournamentCareer | null>(null)
 const careerPage = ref(1)
 let searchTimer: number | undefined
+let generation = 0; let careerGeneration = 0; let disposed = false
 const onResource = () => { void load() }
 const onVisibility = () => { if (document.visibilityState === 'visible') void load() }
 
 async function load() {
+  const current = ++generation; const requestedIdentity = identity.value
+  if (!requestedIdentity && section.value !== 'discover' && section.value !== 'history') { login(section.value); return }
   if (section.value === 'create') return
   loading.value = true; notice.value = ''
-  try { const now = new Date(); const days = Number(timeRange.value); result.value = await tournamentApi.summaries({ section: section.value, search: search.value.trim(), format: format.value, page: page.value, pageSize: 24, startFrom: days ? now.toISOString() : undefined, startTo: days ? new Date(now.getTime() + days * 86_400_000).toISOString() : undefined }) }
-  catch (error) { notice.value = error instanceof Error ? error.message : '赛事加载失败' }
-  finally { loading.value = false }
+  try {
+    const now = new Date(); const days = Number(timeRange.value)
+    const query = { search: search.value.trim(), format: format.value, page: page.value, pageSize: 24, startFrom: days ? now.toISOString() : undefined, startTo: days ? new Date(now.getTime() + days * 86_400_000).toISOString() : undefined }
+    const value = requestedIdentity ? await tournamentApi.summaries({ ...query, section: section.value }) : { platformVersion: 0, ...await publicTournamentApi.summaries({ ...query, section: section.value as 'discover' | 'history' }) }
+    if (!disposed && current === generation && requestedIdentity === identity.value) result.value = value
+  } catch (error) { if (!disposed && current === generation) notice.value = error instanceof Error ? error.message : '赛事加载失败' }
+  finally { if (!disposed && current === generation) loading.value = false }
 }
 async function loadCareer() {
-  try { career.value = await tournamentApi.career({ page: careerPage.value, pageSize: 12 }) }
-  catch (error) { notice.value = error instanceof Error ? error.message : '赛事履历加载失败' }
+  const current = ++careerGeneration; const requestedIdentity = identity.value
+  if (!requestedIdentity || section.value !== 'mine') return
+  try { const value = await tournamentApi.career({ page: careerPage.value, pageSize: 12 }); if (!disposed && current === careerGeneration && requestedIdentity === identity.value) career.value = value }
+  catch (error) { if (!disposed && current === careerGeneration) notice.value = error instanceof Error ? error.message : '赛事履历加载失败' }
 }
+function login(value: Section = section.value) { void router.push({ name: 'me', query: { redirect: router.resolve({ path: '/battle/tournaments', query: { ...route.query, section: value } }).fullPath } }) }
 function switchSection(value: Section) {
+  if (!identity.value && value !== 'discover' && value !== 'history') { login(value); return }
   section.value = value; page.value = 1
   const { code: _code, ...query } = route.query
   void router.replace({ query: { ...query, section: value } })
@@ -38,7 +52,12 @@ watch(() => route.query.section, value => {
   const next = tournamentHubSection(value)
   if (section.value !== next) { section.value = next; page.value = 1 }
 })
-watch([section, format, timeRange, page], load)
+watch([section, format, timeRange, page], () => { void load(); if (section.value === 'mine') void loadCareer() })
+watch(identity, () => {
+  ++generation; ++careerGeneration; result.value = emptyResult(); career.value = null; notice.value = ''; loading.value = false
+  if (!identity.value && section.value !== 'discover' && section.value !== 'history') { section.value = 'discover'; void router.replace({ query: { ...route.query, section: 'discover' } }) }
+  void load(); void loadCareer()
+}, { flush: 'sync' })
 watch(careerPage, loadCareer)
 watch(search, () => { window.clearTimeout(searchTimer); searchTimer = window.setTimeout(() => { page.value = 1; void load() }, 250) })
 onMounted(async () => {
@@ -46,17 +65,17 @@ onMounted(async () => {
   if (typeof route.query.code === 'string' && route.query.code) { open(route.query.code); return }
   await Promise.all([load(), loadCareer()])
 })
-onBeforeUnmount(() => { window.removeEventListener('l12-resource-tournaments', onResource); document.removeEventListener('visibilitychange', onVisibility); window.clearTimeout(searchTimer) })
+onBeforeUnmount(() => { disposed = true; ++generation; ++careerGeneration; window.removeEventListener('l12-resource-tournaments', onResource); document.removeEventListener('visibilitychange', onVisibility); window.clearTimeout(searchTimer) })
 </script>
 
 <template>
   <main class="hub-page">
     <header class="page-head">
       <div><small>TOURNAMENT CENTER</small><h1>赛事中心</h1><p>发现赛事、跟进自己的下一步，或创建并运营一场赛事。</p></div>
-      <button class="primary create-button" type="button" @click="switchSection('create')">创建赛事</button>
+      <button class="primary create-button" type="button" @click="switchSection('create')">{{ identity ? '创建赛事' : '登录举办赛事' }}</button>
     </header>
-    <nav class="section-tabs" aria-label="赛事分类"><button v-for="item in ([['discover','发现赛事'],['mine','我的赛事'],['history','历史赛事'],['host','主办管理']] as const)" :key="item[0]" :class="{active: section === item[0]}" :aria-current="section === item[0] ? 'page' : undefined" @click="switchSection(item[0])">{{ item[1] }}</button></nav>
-    <section v-if="section === 'create'" class="panel create-panel"><TournamentCreateWizard :platform-version="result.platformVersion" @created="value => open(value.code)" /></section>
+    <nav class="section-tabs" :class="{ 'public-tabs': !identity }" aria-label="赛事分类"><button v-for="item in sectionOptions" :key="item[0]" :class="{active: section === item[0]}" :aria-current="section === item[0] ? 'page' : undefined" @click="switchSection(item[0])">{{ item[1] }}</button></nav>
+    <section v-if="section === 'create' && identity" class="panel create-panel"><TournamentCreateWizard :platform-version="result.platformVersion" @created="value => open(value.code)" /></section>
     <template v-else>
       <template v-if="section === 'mine' && career">
         <section class="career" aria-label="赛事生涯概览"><article><small>参赛</small><b>{{ career.participated }}</b><span>累计赛事</span></article><article><small>主办</small><b>{{ career.organized }}</b><span>运营赛事</span></article><article><small>执裁</small><b>{{ career.refereed }}</b><span>裁判记录</span></article><article><small>总战绩</small><b>{{ career.wins }}胜 {{ career.losses }}负 {{ career.draws }}平</b><span>已完成对局</span></article></section>
@@ -76,3 +95,4 @@ onBeforeUnmount(() => { window.removeEventListener('l12-resource-tournaments', o
 @media(max-width:700px){.hub-page{padding:18px 10px calc(42px + env(safe-area-inset-bottom));gap:12px}.page-head{align-items:flex-start;flex-direction:column;padding-bottom:14px}.page-head h1{font-size:28px}.create-button{width:100%;min-height:44px}.section-tabs{grid-template-columns:1fr 1fr}.section-tabs button,.hub-page button{min-height:44px}.toolbar input{min-height:48px}.toolbar select{height:48px;min-height:48px!important}.panel{padding:14px;box-shadow:none}.career{display:flex;gap:7px;overflow-x:auto;scroll-snap-type:x proximity}.career article{min-width:122px;min-height:82px;scroll-snap-align:start}.career-history>header,.filter-heading{align-items:flex-start}.career-history>button{grid-template-columns:1fr;padding:12px}.career-history>button>span{min-width:0}.career-name{grid-template-columns:1fr auto!important}.toolbar{grid-template-columns:1fr 1fr}.search-field{grid-column:1/-1}.pager{justify-content:space-between}.pager button{min-width:88px}}
 @media(max-width:390px){.toolbar{grid-template-columns:1fr}.search-field{grid-column:auto}.career-history>header>span{display:none}}
 </style>
+<style scoped>.section-tabs.public-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}</style>

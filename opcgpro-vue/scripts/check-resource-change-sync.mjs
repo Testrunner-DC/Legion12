@@ -104,7 +104,8 @@ assert.ok(source('opcgpro-vue/src/l12/net.ts').includes("60_000"), 'offline fall
 const resourceSyncServer = source('服务端WebSocket/TwelveLegions/L12WebSocketServer.ResourceSync.cs')
 const tournamentPages = [
   source('opcgpro-vue/src/l12/site/TournamentHubPage.vue'),
-  source('opcgpro-vue/src/l12/site/TournamentDetailPage.vue'),
+  source('opcgpro-vue/src/l12/site/TournamentAccountDetail.vue'),
+  source('opcgpro-vue/src/l12/site/TournamentPublicDetail.vue'),
   source('opcgpro-vue/src/l12/site/AdminTournamentWorkbench.vue'),
 ].join('\n')
 assert.ok(resourceSyncServer.includes('[TournamentsResource]'), 'server snapshot must expose the tournament revision')
