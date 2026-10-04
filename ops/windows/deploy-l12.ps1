@@ -5,6 +5,9 @@ param(
     [string]$IdentityFile = "",
     [string]$ArtifactManifest = "",
     [string]$CacheRoot = "",
+    # Optional per-batch cutoff. Applies again at each native operation,
+    # including actual upload and cutover after lengthy local preflight.
+    [Nullable[DateTimeOffset]]$DeploymentDeadline = $null,
     [ValidateSet("/opt", "/www/legion12")]
     [string]$ServerArtifactRoot = "/www/legion12",
     [switch]$DryRun,
@@ -20,10 +23,18 @@ Set-StrictMode -Version Latest
 function Invoke-External {
     param(
         [Parameter(Mandatory = $true, Position = 0)][string]$Executable,
+        [switch]$NoRetry,
         [Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments
     )
     $maxAttempts = if ($Executable -in @("ssh", "scp")) { 3 } else { 1 }
+    # A transport failure after cutover is ambiguous: the server may already
+    # have switched and started the new service. Inspect its receipt and live
+    # state instead of invoking the mutating transaction a second time.
+    if ($NoRetry) { $maxAttempts = 1 }
     for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        if ($null -ne $DeploymentDeadline -and [DateTimeOffset]::UtcNow -ge $DeploymentDeadline) {
+            throw "本批发布截止时间已到；停止执行后续命令，不开始上传或正式切换。"
+        }
         & $Executable @Arguments
         $exitCode = $LASTEXITCODE
         if ($exitCode -eq 0) { return }
@@ -255,7 +266,7 @@ try {
     }
     else {
         Write-Host "[L12 部署] 启用主页与资讯分享信息路由..."
-        Invoke-External ssh @sshOptions $Server "/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease - - - $cardAssetsHash $cardAssetsSha $cardAssetsPath '$ServerArtifactRoot' && sed -i 's/\r$//' '$remoteSharePageActivator' && chmod 0755 '$remoteSharePageActivator' && '$remoteSharePageActivator' '$remoteSharePageSnippet' && rm -f '$remoteSharePageActivator' && rmdir '$remoteToolDir/ops/server' '$remoteToolDir/ops' '$remoteToolDir' && curl -fsS --connect-timeout 5 --max-time 10 https://legion-12.com/ | grep -Fq 'og:title'"
+        Invoke-External -NoRetry ssh @sshOptions $Server "/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease - - - $cardAssetsHash $cardAssetsSha $cardAssetsPath '$ServerArtifactRoot' && sed -i 's/\r$//' '$remoteSharePageActivator' && chmod 0755 '$remoteSharePageActivator' && '$remoteSharePageActivator' '$remoteSharePageSnippet' && rm -f '$remoteSharePageActivator' && rmdir '$remoteToolDir/ops/server' '$remoteToolDir/ops' '$remoteToolDir' && curl -fsS --connect-timeout 5 --max-time 10 https://legion-12.com/ | grep -Fq 'og:title'"
         Write-Host "[L12 部署] 发布成功：https://legion-12.com/"
     }
 }

@@ -89,6 +89,8 @@ $fixtureRoot = Join-Path $fixtureBasePath "l12-deploy-behavior-$([Guid]::NewGuid
 New-Item -ItemType Directory -Path $fixtureRoot -Force | Out-Null
 
 try {
+    & (Join-Path $PSScriptRoot 'test-l12-deploy-retry-policy.ps1')
+    if (-not $?) { throw 'Deployment retry behavior regression failed.' }
     . $targetHelper
 
     $serverDeploySource = Get-Content -LiteralPath $serverDeploy -Raw
