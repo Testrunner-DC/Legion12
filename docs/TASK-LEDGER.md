@@ -2,6 +2,11 @@
 
 ## MAIN-20261005-0600-0830｜四阶段续办与正式发布（用户已授权，实施中）
 
+- **A3/E1 赛事提示下一片已验收、同步中**：P4 普通页面状态保护延伸，P0—P3 产品无变更。子租约已冻结，Main独立审查/专项：只迁1旧字串谓词，新增5组17语义，39旧组保留、44赛事组与22公开浏览通过。真实SiteShell/Detail四尺寸101断言/12图、七产品/原夹具SHA前后一致；r1 focus-visible夹具错误保留，r3通过。精确四脚本前端域Batch退出0、架构/62内核源码、UI354/反馈144/卡图324+42/类型/双构建通过；不重复未变后端6218/442，引用5e3873e9完整绑定证据，不称新HEAD完整Release。验收文档A3-E1-TOURNAMENT-NOTICE-ACCEPTANCE-20261005.md。没有新玩家行为/更新日志条目、两服部署或Bug关闭；A3全历史/E1全站/E4真机/F2长期等仍未全部完成。
+
+- **10:12 实际结果：未部署，维护解除已独立核验**：10:01回访到达时部署截止已过；没有production-release.json，正式实际c85819f0，候选5e3873e9完整验收与Git同步保持，不擅自超时部署。10:08维护解除脚本完成scheduled-plan-ended、配置87→88、其余八分区不变、会话撤销，随后空DateTimeOffset字段报错，maintenance-release.json completed=false保留。Main独立只读复核版本88、预约/即时均false、健康ok、WS正常、服务active、无部署围栏/活动部署，会话另行撤销；独立回执D盘release-20261005-0600-0830/maintenance-independent-readback.json，不伪改原失败回执。实际解除晚于08:30，未冒称按时；调度缺席原因未知。过期l12已暂停；新部署待新授权，剩余已授权本地工作继续。
+- **A3/E1 下一片租约已分配**：HEAD5e3873e9/产品干净基线；子代理仅check-tournament-center-contracts.mjs与新tournament-notice-template-contract.mjs、test-a3-tournament-notice-template-contract.mjs，最多5组17语义，仅management组件存在谓词可计旧迁移，其余新增保真保护。Main并行维护证据/文档和真实SiteShell消费者夹具；最多两写入者，构建串行。产品SFC、权限/身份/mutate/CSS不改；E4真机及F2真实环境/预算缺口保留。
+
 - **03:55 追加工具验收完成，接续干净Release**：正确三路径数组Batch-r3退出0，实际Invoke-External六场景与41服务器失败场景通过；最终切换NoRetry，安全连接保留有限退避，每次实际命令前可选07:30截止重检。只读复核发现的本批回执写失败锁泄漏也以嵌套finally修正，两D盘执行器解析/Plan-only通过，未Apply。四个有界产品提交已保存、未推送；Main另提交工具/共用证据，完整Release通过才同步。无两服部署或维护改变，成功发布核验后立即解除并继续剩余已授权工作。
 
 - **完整产品Batch已通过**：规则6218/6218、平台442/442失败跳过0，Main实读两个success监督receipt（6eadf539/64fa713d）及完整console；类型、UI354、反馈实际144、路由/卡图324+42、双环境前端构建均过。不能冒称监督清理掉的原TRX仍在；干净Release将另存发布证据。本次追加工具安全补丁仅最终正式SSH关闭255自动重试，其余连接退避保留，实际函数4反例通过并接原41场景，三路径Batch-r2进行中；r1外部PS数组被拼成一字符串，未触发工具门禁，明确不计它通过。产品源已冻结，追加工具不更改后端/前端行为。

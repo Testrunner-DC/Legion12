@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import ts from 'typescript'
+import { tournamentNoticeGroups, tournamentNoticeTemplateContract } from './tournament-notice-template-contract.mjs'
 
 const root = process.cwd()
 const read = file => fs.readFileSync(path.join(root, file), 'utf8')
@@ -38,6 +39,9 @@ const loadTypeScriptModule = async source => {
 }
 const createPolicyModule = await loadTypeScriptModule(createPolicy)
 const roomLoadingModule = await loadTypeScriptModule(roomLoadingState)
+const noticeTemplateContract = tournamentNoticeTemplateContract(detail, judge)
+const noticeTemplateChecks = tournamentNoticeGroups(noticeTemplateContract)
+  .map(([name, predicates]) => [`tournament notice: ${name}`, predicates.every(Boolean)])
 const throwsWith = (work, expected) => {
   try { work(); return false } catch (error) { return String(error?.message || error).includes(expected) }
 }
@@ -72,7 +76,8 @@ const checks = [
   ['creation progress and ranked timing stay visibly structured', wizard.includes('class="stepper"') && wizard.includes('RANKED TIME CONTROL') && wizard.includes('与排位一致的五项计时') && wizard.includes('报名时无需提交，赛前签到时锁定')],
   ['detail separates organizer and judge capabilities', detail.includes('const canOrganize') && detail.includes('const canJudge') && !detail.includes('const canManage')],
   ['participant moderation is organizer-only', detail.includes('v-if="canOrganize && person.accountId !== tournament.organizerAccountId"')],
-  ['management is an extracted component', detail.includes('<TournamentManagementPanel') && management.includes('赛事生命周期')],
+  ['management is an extracted component', noticeTemplateContract.accountManagementComponent && management.includes('赛事生命周期')],
+  ...noticeTemplateChecks,
   ['referee cannot open organizer management', detail.includes('const canViewManage = computed(() => canOrganize.value')],
   ['judge calls only list the current player matches', judge.includes('const myMatches = computed') && judge.includes('match.playerAAccountId === accountId.value')],
   ['appeal is limited to table players', judge.includes('const canAppeal =') && judge.includes('v-if="canAppeal(item)"')],
@@ -109,4 +114,5 @@ if (failed.length) {
   process.exit(1)
 }
 console.log(`Tournament center contracts passed: ${checks.length}/${checks.length}`)
+await import('./test-a3-tournament-notice-template-contract.mjs')
 await import('./test-public-browsing.mjs')
