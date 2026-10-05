@@ -6,6 +6,8 @@ import './test-a3-site-shell-contract.mjs'
 import { hasProfileAuthTemplate, hasProfileStatusNoticeBeforeRank } from './profile-auth-template-contract.mjs'
 import './test-a3-profile-auth-template-contract.mjs'
 import { usesWhitelistedBugDiagnostic } from './test-feedback-draft-lifecycle.mjs'
+import { hasMasterTitleBrandImage } from './ranked-brand-template-contract.mjs'
+import './test-a3-ranked-brand-template-contract.mjs'
 
 // Git 在 Windows 工作区可能检出 CRLF；契约按语义比较换行，不改写被检查的源文件。
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
@@ -408,7 +410,7 @@ const contracts = [
     && profilePage.includes("import RankedIdentityBadge from '@/l12/RankedIdentityBadge.vue'") && profilePage.includes(':variant="profileTitleVariant(title)"')
     && rankedIdentityBadge.includes("variant?: 'tier' | 'faction-title' | 'master-title'") && rankedIdentityBadge.includes('--ranked-tier-badge-font-size: 15px;') && rankedIdentityBadge.includes('--ranked-title-badge-font-size: 15px;')
     && rankedIdentityBadge.includes('faction-order') && rankedIdentityBadge.includes('faction-chaos') && rankedIdentityBadge.includes('faction-fate')
-    && rankedIdentityBadge.includes("const siteBrandIcon = '/favicon.png'") && rankedIdentityBadge.includes('class="identity-brand-logo"') && rankedIdentityBadge.includes("props.variant === 'faction-title' ? '◆'")
+    && rankedIdentityBadge.includes("const siteBrandIcon = '/favicon.png'") && hasMasterTitleBrandImage(rankedIdentityBadge) && rankedIdentityBadge.includes("props.variant === 'faction-title' ? '◆'")
     && rankedIdentityBadge.includes('linear-gradient(135deg, #b47716 0%, #6f3d08 48%, #3a1d02 100%)')
     && rankedIdentityBadge.includes('color: inherit !important;') && rankedIdentityBadge.includes('max-width: none;') && rankedIdentityBadge.includes('text-overflow: clip;'), '排行榜、个人页和对战摘要必须复用同一排位身份徽章；对战摘要按全服名次、段位、派系段位称号、主宰称号分字段显示，缺失项不伪造占位'],
   [adminIntegrity.includes('data-ui-contract="ranked-integrity-review"') && adminIntegrity.includes('不自动扣减七曜') && adminIntegrity.includes('建议人工核对'), '防刷分信号必须只进入管理员人工复核，不得自动惩罚正常重复对局'],

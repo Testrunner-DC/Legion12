@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-05-mobile-navigation-focus",
+  "date": "2026-10-05",
+  "audience": "players",
+  "title": "移动端导航操作",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "用键盘打开移动端导航时，焦点会进入可用的导航链接，不再停留在菜单按钮；关闭后仍返回菜单按钮。",
+      "paths": ["opcgpro-vue/src/l12/site/SiteShell.vue"]
+    }
+  ]
+}

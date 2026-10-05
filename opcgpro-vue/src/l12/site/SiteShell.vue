@@ -709,7 +709,11 @@ watch(mobileOpen, async open => {
     bodyOverflowBeforeDrawer = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     await nextTick()
-    mobileDrawer.value?.querySelector<HTMLElement>('a,button')?.focus()
+    const firstAction = Array.from(mobileDrawer.value?.querySelectorAll<HTMLElement>('a[href],button:not(:disabled)') ?? [])
+      .find(element => element.tabIndex >= 0 && element.getClientRects().length > 0
+        && getComputedStyle(element).visibility === 'visible'
+        && element.getAttribute('aria-disabled') !== 'true' && !element.closest('[hidden],[inert]'))
+    firstAction?.focus()
   } else {
     document.body.style.overflow = bodyOverflowBeforeDrawer
   }

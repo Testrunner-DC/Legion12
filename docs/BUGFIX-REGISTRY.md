@@ -1,5 +1,21 @@
 # Legion12 Bug 修复记录
 
+## UI-20261005-DRAWER-FOCUS｜已批准，本地专项通过，未部署
+
+- 用户在本轮明确批准最小方案，随后仅SiteShell初始焦点候选过滤改动：真实可见、有正向tabIndex的a[href]/未disabled按钮，排除aria-disabled、hidden/inert祖先。布局/CSS、Escape、关闭焦点恢复、路由及卸载清理均未改。Shell最终SHA0D1B8F5A41C5D09516F6E60EB2BD7F19AE46ABA7BF7BA68CB7D426ACEA43EFA2。
+- 六尺寸最终真实消费者107/107、12图通过，报告D:/GPT/Legion12/artifacts/site-summary-drawer-20261005-green-final-r2/report.json（SHA602CA2D860B714C7811525F146B0FEDC7F7CABF5BF9076381FAA89C78AE24915）。额外负例排除hidden、aria-disabled、负tabindex及inert；中间hidden属性被作者display覆盖而有矩形的失败证据保留，补语义隐藏排除后通过。npm verify:site-summary-drawer保留可复跑浏览器回归，不强迫没有Edge的CI安装浏览器，既有普通门禁不削弱。
+- 新玩家日志进入持续账本；完整最终门禁/同步/部署另记，未关闭线上Bug。下面待批准文字保留为修改前复现与提出方案的历史。
+
+- E1真实SiteShell消费者六尺寸矩阵103检查中99通过、4项初始焦点失败，报告D:/GPT/Legion12/artifacts/site-summary-drawer-20261005-r3/report.json；320×568、390×844、568×320、700×700均复现。打开移动抽屉后焦点仍在菜单按钮，因为watch(mobileOpen)选择的第一个a/button是被移动CSS隐藏的site-brand。701×700和1366×768为普通侧栏，不误判成移动弹框。诊断阶段未修改SiteShell或样式。
+- 拟议最小修复：仅选择抽屉中可见且可用的链接/按钮作为初始焦点；保留原布局、Escape关闭、触发按钮焦点恢复、路由关闭和卸载滚动锁清理。已向用户请求批准，未批准前不实现；不以该项阻断无关A3/队列整理。不是全站焦点陷阱改造授权。
+- 同族搜索真实SiteShell mobileDrawer、SeasonSummaryNotice及既有赛季通知竞态脚本。赛季总结长内容/内部滚动/确认恢复，导航Escape/路由/卸载其他检查通过；六组既有账号切换/迟到读取/交错确认/同ID防重竞态独立通过。不把整体含4失败的矩阵写成通过，不冒称真实iOS/输入法/非零安全区已验收。
+
+## QUEUE-20261005-CONTINUATION｜只读续采，未自动修复或关闭
+
+- 10:40:50+08正式c85819f0、maintenance=false；851唯一反馈，new579/resolved186/closed86。较原850净增就绪提示建议1，7条new→closed为采样间隔外部变化；本轮Bug状态写入0。Main独立数目/差异/报告SHA与旧manifest核验，新目录权限继承原受限范围，专用会话finally注销200。
+- f86b94b7、95711ff5、bffccc61、70f1075b对应5e3873e9已验收但未正式部署的四报告，不重写相同补丁，不提前resolved。7d82522f宫廷魔术师后排与81b7f6a6莫德雷德/陵墓构造体仅为疑似复发；原休整类测试和PlainLegion三守卫回归不是新报告原场景，需原状态或确定性组合复验。9ca9d447先核卡名/连续段裁定，d3546604属未批准产品建议；eb387e8f/59d1f619先定位缺图展示层，不凭关键词归同根。
+- 完整原文保存在受限D盘报告，不提交个人数据到Git；公共摘要D:/GPT/Legion12/artifacts/bug-queue-triage-20261005-continuation/bug-queue-summary-public.md。报告不提供任何批量关闭授权，后续仍遵守具名原场景回归及实际部署核验。
+
 ## OPS-20261005-ONE-CUTOVER｜不确定SSH返回不得重复正式切换
 
 - 本批用户明确授权唯一正式部署，正常发布准备的独立只读复核发现标准Invoke-External对全部SSH255自动重试，包括最终服务器切换及启动新服务的复合命令。远端已执行而返回丢失时，本地不能据255判断未执行，local批次回执也挡不住同一工具内重试。
