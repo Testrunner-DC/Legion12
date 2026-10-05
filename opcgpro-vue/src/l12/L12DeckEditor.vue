@@ -1196,6 +1196,13 @@ watch(() => platformState.account?.id, (current, previous) => {
 @media(max-height:520px) and (min-width:821px) and (max-width:900px){.catalog-filter-bar{grid-template-columns:repeat(4,minmax(76px,1fr));max-height:none;overflow:visible}.editor-opening-hand{grid-template-columns:repeat(3,minmax(120px,1fr))}}
 /* Natural portrait is explicitly editor-only. Legacy logical landscape and
    desktop three-column geometry remain under their existing selectors. */
+/* Short/narrow landscape must scroll filters and cards as one owner. Keeping
+   a second shrinking card-grid scroller lets the filters consume its viewport. */
+@media(max-width:1180px),(max-height:640px){
+  .deck-builder-shell:not(.portrait-editor) .deck-center-column>.deck-catalog.grand-panel{min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
+  .deck-builder-shell:not(.portrait-editor) .deck-catalog>.catalog-filter-bar{flex:none;max-height:none;overflow:visible}
+  .deck-builder-shell:not(.portrait-editor) .deck-catalog>.deck-card-grid{flex:none;max-height:none;overflow:visible}
+}
 .portrait-editor{position:fixed;inset:auto;top:var(--l12-editor-visible-top,0px);left:var(--l12-editor-visible-left,0px);width:var(--l12-editor-visible-width,100vw);height:var(--l12-editor-visible-height,100dvh);box-sizing:border-box;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);overflow:hidden}
 .portrait-editor .deck-builder-topbar{display:grid;grid-template-columns:minmax(0,1fr) auto;flex:none;min-height:0;max-height:none;overflow:visible;padding:8px;gap:6px}
 .portrait-editor .deck-builder-topbar>div:nth-child(2){display:none}

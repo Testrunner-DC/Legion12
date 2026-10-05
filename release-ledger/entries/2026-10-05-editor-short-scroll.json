@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-05-editor-short-scroll",
+  "date": "2026-10-05",
+  "audience": "players",
+  "title": "牌库编辑器选牌滚动",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "窄屏和短屏牌库编辑器中，筛选区与卡池可以一起上下滚动，不再因筛选区占满高度而无法选牌。",
+      "paths": ["opcgpro-vue/src/l12/L12DeckEditor.vue"]
+    }
+  ]
+}
