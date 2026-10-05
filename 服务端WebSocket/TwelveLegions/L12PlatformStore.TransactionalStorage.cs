@@ -308,9 +308,11 @@ public sealed partial class L12PlatformStore
             StorageFailureInjector?.Invoke("after-audit-append");
             StorageFailureInjector?.Invoke("before-commit");
             var rollbackSnapshot = SerializeRollbackState(_data);
+            var sessionActivity = PrepareCommittedSessionActivity(_data, rollbackSnapshot);
             StorageFailureInjector?.Invoke("after-rollback-serialize");
             transaction.Commit();
             _lastCommittedSnapshot = rollbackSnapshot;
+            PublishCommittedSessionActivity(sessionActivity);
             _storageIssue = null;
         }
         catch (L12PrivateDeckMutationConflictException)
@@ -368,9 +370,12 @@ public sealed partial class L12PlatformStore
             StorageFailureInjector?.Invoke("after-conflict-snapshot-read");
             HydrateDeckDomain(connection, latest, transaction);
             MergeIndependentAudit(connection, latest, transaction);
+            var rollbackSnapshot = SerializeRollbackState(latest);
+            var sessionActivity = PrepareCommittedSessionActivity(latest, rollbackSnapshot);
             transaction.Commit();
             _data = latest;
-            _lastCommittedSnapshot = SerializeRollbackState(_data);
+            _lastCommittedSnapshot = rollbackSnapshot;
+            PublishCommittedSessionActivity(sessionActivity);
             _storageIssue = null;
         }
         catch (Exception refreshError)
@@ -380,6 +385,8 @@ public sealed partial class L12PlatformStore
             _storageWritable = false;
             _storageMode = "unavailable";
             _databaseIntegrityValid = false;
+            // A healthy old rollback cache is not proof of the latest database authority.
+            PublishCommittedSessionActivity(UnavailableSessionActivity);
             RestoreLastCommittedSnapshot();
             _storageIssue = $"平台保存冲突后数据库刷新失败：{refreshError.Message}";
             throw new L12PlatformStorageRefreshException(_storageIssue, refreshError);
@@ -401,6 +408,7 @@ public sealed partial class L12PlatformStore
                     _storageIssue ?? "事务存储处于只读回退模式");
 
             var previous = _data;
+            var sessionAuthorityRequiresRefresh = true;
             try
             {
                 using var connection = OpenDatabase(_databasePath, readOnly: false);
@@ -412,6 +420,9 @@ public sealed partial class L12PlatformStore
                     throw new InvalidDataException("SQLite 平台快照校验和不匹配");
 
                 var latest = DeserializeDataAndValidate(stored.Json);
+                var committedSessionActivity = Volatile.Read(ref _committedSessionActivity);
+                sessionAuthorityRequiresRefresh = !committedSessionActivity.Available
+                    || committedSessionActivity.Revision != latest.Version;
                 // The new platform revision and normalized decks must be read from
                 // the same database generation, even for a no-op claim/preview.
                 HydrateDeckDomain(connection, latest, transaction);
@@ -419,8 +430,11 @@ public sealed partial class L12PlatformStore
                 var mutation = action(connection, transaction);
                 if (!mutation.Changed)
                 {
+                    var unchangedRollbackSnapshot = SerializeRollbackState(_data);
+                    var unchangedSessionActivity = PrepareCommittedSessionActivity(_data, unchangedRollbackSnapshot);
                     transaction.Rollback();
-                    _lastCommittedSnapshot = SerializeRollbackState(_data);
+                    _lastCommittedSnapshot = unchangedRollbackSnapshot;
+                    PublishCommittedSessionActivity(unchangedSessionActivity);
                     _storageIssue = null;
                     return mutation.Result;
                 }
@@ -436,9 +450,11 @@ public sealed partial class L12PlatformStore
                 mutation.BeforeCommit?.Invoke(_data.Version);
                 StorageFailureInjector?.Invoke("before-season-finalization-commit");
                 var rollbackSnapshot = SerializeRollbackState(_data);
+                var sessionActivity = PrepareCommittedSessionActivity(_data, rollbackSnapshot);
                 StorageFailureInjector?.Invoke("after-season-rollback-serialize");
                 transaction.Commit();
                 _lastCommittedSnapshot = rollbackSnapshot;
+                PublishCommittedSessionActivity(sessionActivity);
                 _storageIssue = null;
                 try
                 {
@@ -455,16 +471,19 @@ public sealed partial class L12PlatformStore
             catch (L12OperationsConfigException)
             {
                 _data = previous;
+                if (sessionAuthorityRequiresRefresh) PublishCommittedSessionActivity(UnavailableSessionActivity);
                 throw;
             }
             catch (L12PlatformStorageUnavailableException)
             {
                 _data = previous;
+                if (sessionAuthorityRequiresRefresh) PublishCommittedSessionActivity(UnavailableSessionActivity);
                 throw;
             }
             catch (Exception error)
             {
                 _data = previous;
+                if (sessionAuthorityRequiresRefresh) PublishCommittedSessionActivity(UnavailableSessionActivity);
                 _storageIssue = $"赛季结算事务提交失败：{error.Message}";
                 throw new L12PlatformStorageUnavailableException(_storageIssue, error);
             }
@@ -487,8 +506,11 @@ public sealed partial class L12PlatformStore
         var mirrorJson = JsonSerializer.Serialize(data, PlatformMirrorJsonOptions);
         UpsertSnapshot(connection, transaction, snapshotJson, Sha256(snapshotJson), Sha256(mirrorJson), data);
         AppendIndependentAudit(connection, transaction, data.AdminAudit);
+        var rollbackSnapshot = SerializeRollbackState(data);
+        var sessionActivity = PrepareCommittedSessionActivity(data, rollbackSnapshot);
         transaction.Commit();
-        _lastCommittedSnapshot = SerializeRollbackState(data);
+        _lastCommittedSnapshot = rollbackSnapshot;
+        PublishCommittedSessionActivity(sessionActivity);
         try
         {
             WriteFallbackMirror(mirrorJson);
@@ -1053,6 +1075,7 @@ public sealed partial class L12PlatformStore
 
     private void RestoreLastCommittedSnapshot()
     {
+        var sessionActivityWasAvailable = Volatile.Read(ref _committedSessionActivity).Available;
         try
         {
             var snapshot = _lastCommittedSnapshot;
@@ -1063,7 +1086,10 @@ public sealed partial class L12PlatformStore
             using var compressed = new GZipStream(bytes, CompressionMode.Decompress);
             var restored = JsonSerializer.Deserialize<DataFile>(compressed, PlatformSnapshotJsonOptions)
                 ?? throw new InvalidDataException("完整回滚缓存为空");
-            _data = NormalizeDeserializedData(restored);
+            restored = NormalizeDeserializedData(restored);
+            var sessionActivity = SessionActivityForRollback(restored, snapshot);
+            _data = restored;
+            PublishCommittedSessionActivity(sessionActivity);
             // Complete committed generation: normal rollback must not hydrate it
             // again from a potentially newer SQLite generation.
         }
@@ -1085,13 +1111,17 @@ public sealed partial class L12PlatformStore
                 ValidateRecoveredDeckDomain(connection, transaction, restored);
                 MergeIndependentAudit(connection, restored, transaction);
                 var replacement = SerializeRollbackState(restored);
+                var sessionActivity = sessionActivityWasAvailable
+                    ? PrepareCommittedSessionActivity(restored, replacement) : UnavailableSessionActivity;
                 transaction.Commit();
                 _data = restored;
                 _lastCommittedSnapshot = replacement;
+                PublishCommittedSessionActivity(sessionActivity);
             }
             catch (Exception databaseError)
             {
                 _rollbackViewUnavailable = true;
+                PublishCommittedSessionActivity(UnavailableSessionActivity);
                 _storageWritable = false;
                 _storageMode = "unavailable";
                 _storageIssue = "完整回滚缓存恢复失败";

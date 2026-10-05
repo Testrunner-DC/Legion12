@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## PLATFORM-20261006-COMMITTED-SESSION-ACTIVITY｜平台保存连带会话阻塞／提前注销通知（已批准，本地专项通过）
+
+- 原断连报告与现有对局保障计划对齐。本地真实外层管理事务及30秒故障屏障复现两条独立风险：IsSessionActive持平台全域_gate，另一次保存会令查询等待约30秒；嵌套禁用调用在真实外层提交前发送SessionsRevoked，提交失败后内存／SQLite会话仍有效却已经发通知。不是已证明原线上事故的唯一根因；不据此关闭原断连报告。
+- 同类扫描：IsSessionActive／NotifySessionsRevoked所有调用、ExecuteAdminTransaction全部嵌套出口、PersistTransactionalData／RefreshTransactionalStateAfterConflict／ExecuteSeasonFinalizationStorageMutation／PersistInitialSnapshot／RestoreLastCommittedSnapshot。覆盖自行撤销、撤其他／全部会话、管理撤销、禁用／删除／重设密码、当前会话例外、四会话保留及到期。HTTP身份权限继续即时读，不将角色缓存进活跃索引；字符串Ordinal、disabled/deleted/revoked/ExpiresAt约束保留。
+- 修复：新FrozenDictionary索引只消费已提交事实，与现有完整回滚缓存同代绑定；准备分配／校验均在提交前，提交后仅原子发布。普通失败复用上一提交代，冲突刷新或赛季读取无法证明新权威时关闭该谓词，不从旧缓存再开放已可能撤销的会话。外层通知仅持锁线程可排队，嵌套失败只截自己的尾；最终写入事实过滤仍active ID，提交成功后锁外发出，subscriber失败／重入不反转提交。
+- 红绿与错误边界：原独立4场景RED有强源／DLL绑定；新独立4场景GREEN查询0.3964／0.0016ms、提交前通知0／成功1／失败0且内存与重启SQLite一致。新40用例覆盖故障前／后索引构建、外层登录未提交、refresh失败健康旧缓存、no-op同／新代、不可验证权威、cache／DB损坏、mirror失败、初始化／只读回退、通知重入及真实revoke→season no-op组合。首轮4个错误账号名令未进入存储路径，仅修夹具后完整平台482通过，失败跳过0；首轮证据保留，不删断言、不筛除失败。
+- 当前树真实WS／双房间仍复现其他30秒阻塞，用户已批准限定本地修复与验收，由C1／C2独立暂存实施，不冒称C0已完成动作／心跳／全房隔离。完整Batch平台482／482失败跳过0已通过；最终门禁、源码及同包独立验收须以D盘live-match-c0-20261006/acceptance.json实际生成为准，干净Release／同步待；生产写入、部署、维护和线上resolved均0。防回滚：不能再以未提交_data判会话有效，也不能在Persist真正成功前发送退出通知；回滚失败或新权威无法验证不得恢复旧会话开放。
+
 ## EFFECT-20261006-PROMETHEUS-PRIVATE-PREVIEW｜查看范围误用选择范围（完整Batch通过，Release／同步接续）
 
 - 原反馈8d630b27：普罗米修斯查看顶三张时只展示可选奥林匹斯卡。精确正式c858及94候选实际引擎各4组（双方／恢复）均复现；本人私密元数据已有三张，对手不含未选牌，不是全局卡池资源缺失。用户批准仅分离“可看”与“可选”。

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-06-committed-session-activity",
+  "date": "2026-10-06",
+  "audience": "players",
+  "title": "对战连接保障",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "减少资料保存造成的登录状态检查等待；保存失败不会误通知仍有效的连接下线。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.AdminControlPlane.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.SessionActivity.cs"
+      ]
+    }
+  ]
+}

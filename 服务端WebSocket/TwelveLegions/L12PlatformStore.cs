@@ -492,6 +492,7 @@ public sealed partial class L12PlatformStore
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         _databasePath = PlatformDatabasePath(path);
         _data = LoadTransactionalState();
+        PublishCommittedSessionActivity(PrepareCommittedSessionActivity(_data, _lastCommittedSnapshot));
         EnsureRootAdmin();
         EnsureUsernameModeration();
         EnsureUsernameChangeState();
@@ -590,14 +591,7 @@ public sealed partial class L12PlatformStore
     }
 
     public bool IsSessionActive(string sessionId)
-    {
-        lock (_gate)
-        {
-            var now = DateTimeOffset.UtcNow;
-            return _data.Sessions.Any(row => row.Id == sessionId && row.RevokedAt is null && row.ExpiresAt > now
-                && _data.Accounts.Any(account => account.Id == row.AccountId && !account.Disabled && !account.Deleted));
-        }
-    }
+        => ReadCommittedSessionActivity(sessionId);
 
     public bool AccountExists(string accountId)
     {
@@ -1828,8 +1822,7 @@ public sealed partial class L12PlatformStore
     private void NotifySessionsRevoked(IReadOnlyList<string> sessionIds)
     {
         if (sessionIds.Count == 0) return;
-        try { SessionsRevoked?.Invoke(sessionIds); }
-        catch { }
+        if (!DeferSessionRevocations(sessionIds)) DispatchCommittedSessionRevocations(sessionIds);
     }
 
     private void PruneSessions(DateTimeOffset now)

@@ -1,5 +1,14 @@
 # 十二军团任务台账
 
+## MAIN-20261006-LIVE-MATCH-C0｜已批准，会话提交隔离本地专项通过，最终门禁接续
+
+- 用户批准限定本地实施：会话检查使用已提交轻量索引；注销通知只在真实提交成功后发出。后续用户要求普罗米修斯批完成后全力推进完整对局保障方案，允许多子任务；不自动扩展部署、维护、资源或线上Bug写入授权。前批已实际完整验收同步cbe5ede5，最终回执D盘prometheus-main-acceptance-20261006/acceptance.json。
+- 本批拥有三平台源L12PlatformStore／TransactionalStorage／AdminControlPlane、新增SessionActivity helper与CommittedSessionActivityTests。以既有SQLite提交和完整压缩回滚缓存引用绑定索引，普通失败保留上一已提交事实；冲突／赛季权威刷新无法验证时失败关闭，旧健康缓存不能证明最新会话仍有效。HTTP新鲜权限、WS代际、schema与Journal均不改。通知队列只由持有外层事务的线程追加、失败截断；成功后按最终提交事实过滤、脱离锁逐订阅者发送，重入或订阅者异常不能回滚提交。
+- Main实读四暂存文件后集成。40具名拟议用例已实际运行；首轮完整平台478通过／4失败／跳过0，4失败均因conflictprobe／readonlyfail超过既有11可见字符上限，注册提前返回未进入故障路径；只缩短夹具名称，业务断言和产品实现不变。第二轮完整平台482通过／失败跳过0，D盘cache/primary/test-evidence/test-b36aec9205d44627b5c0d6b6ce913882/receipt.json持久存在，成功TRX已按治理清理；首轮失败库、TRX及日志保留。
+- Main独立实际C0屏障／外层事务4场景GREEN：成功／失败保存被受控卡在提交前时查询0.3964／0.0016ms，原对应RED约30秒；提交前通知0，成功后1、失败0，内存／重启数据库会话一致。binding在D盘live-match-c0-20261006/green-debug-20261006-023939，未冒称正式包或WS容量。
+- Main另用真实服务器／ClientWebSocket／两排位房在当前冻结C0树实跑：同连接syncState后的pong约30015ms；一个房间持Gate时健康房1秒内和释放前均未耐久结算，释放后仅一条authorityConclusion、双方结算有据。原批checkpoint故障[1,1]不变、重试共同[3,3]通过。D盘live-match-isolation-red-20261006-runs/main-current-20261006-023711含9源前后绑定、DLL及完整结果；退出2是实际RED，不是验收通过。旧二进制首跑与第二次夹具glob编译失败分开保留。两个后续根因已获用户限定本地修复与验收批准；C1／C2独立暂存实施，不部署、不改维护。
+- 扩展P2／P3已提交身份投影和提交通知边界，保留P0／P1、原持久化回退、去重和隔离保护。Main完整Batch已实际通过，完整平台482／482、失败跳过0，日志live-match-c0-20261006/batch-20261006-024600.log；干净Release／Git待。共享构建串行、最多两个写入者。监测核心三文件独立暂存，不混入C0。总顺序和全部未验证范围见LIVE-MATCH-AVAILABILITY-PROGRESS-20261006.md，独立最终验收回执计划为D盘live-match-c0-20261006/acceptance.json，生成前不能预称完成。
+
 ## MAIN-20261006-PROMETHEUS-PRIVATE-PREVIEW｜完整Batch通过，干净Release／同步接续，未部署
 
 - 用户明确批准：普罗米修斯实际查看的顶三张均可看，仍只可选择合法奥林匹斯卡；未选牌不能泄露给对手，保留原必选、取消边界及恢复。基线为已同步的 `a2870066f58112042e14a5757202a6e415d5c102`；子租约仅 `L12S2FactionEffects.cs` 与新增 `PrometheusPrivatePreviewRegressionTests.cs`，不改共享 Prompt 或前端产品。

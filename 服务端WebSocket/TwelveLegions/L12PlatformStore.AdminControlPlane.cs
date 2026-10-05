@@ -127,20 +127,25 @@ public sealed partial class L12PlatformStore
 
     internal T ExecuteAdminTransaction<T>(Func<T> action)
     {
+        IReadOnlyList<string> committedRevocations = [];
+        T result;
         lock (_gate)
         {
             var outer = _adminTransactionDepth == 0;
             var snapshot = JsonSerializer.Serialize(_data);
+            var committedAtEntry = Volatile.Read(ref _committedSessionActivity);
+            var revocationCountAtEntry = _pendingSessionRevocations.Count;
             var saveRequestedAtEntry = _adminTransactionSaveRequested;
             var businessChangedAtEntry = _adminTransactionBusinessChanged;
             if (outer)
             {
                 _adminTransactionSaveRequested = false;
                 _adminTransactionBusinessChanged = false;
+                _pendingSessionRevocations.Clear();
+                revocationCountAtEntry = 0;
             }
 
             _adminTransactionDepth++;
-            T result;
             try
             {
                 result = action();
@@ -148,9 +153,17 @@ public sealed partial class L12PlatformStore
             catch
             {
                 _adminTransactionDepth--;
-                _data = JsonSerializer.Deserialize<DataFile>(snapshot) ?? new DataFile();
-                _adminTransactionSaveRequested = outer ? false : saveRequestedAtEntry;
-                _adminTransactionBusinessChanged = outer ? false : businessChangedAtEntry;
+                try
+                {
+                    if (ReferenceEquals(Volatile.Read(ref _committedSessionActivity), committedAtEntry))
+                        _data = JsonSerializer.Deserialize<DataFile>(snapshot) ?? new DataFile();
+                }
+                finally
+                {
+                    _adminTransactionSaveRequested = outer ? false : saveRequestedAtEntry;
+                    _adminTransactionBusinessChanged = outer ? false : businessChangedAtEntry;
+                    TrimPendingSessionRevocations(revocationCountAtEntry);
+                }
                 throw;
             }
 
@@ -158,8 +171,12 @@ public sealed partial class L12PlatformStore
             if (!outer) return result;
             try
             {
-                if (_adminTransactionSaveRequested) PersistData(_adminTransactionBusinessChanged);
-                return result;
+                var preparedRevocations = PreparePendingSessionRevocations();
+                if (_adminTransactionSaveRequested)
+                {
+                    PersistData(_adminTransactionBusinessChanged);
+                    committedRevocations = preparedRevocations;
+                }
             }
             catch (L12PlatformStorageUnavailableException error) when (
                 error is L12SeasonFinalizationStaleWriteException or L12PlatformStorageConflictException
@@ -171,15 +188,19 @@ public sealed partial class L12PlatformStore
             }
             catch
             {
-                _data = JsonSerializer.Deserialize<DataFile>(snapshot) ?? new DataFile();
+                if (ReferenceEquals(Volatile.Read(ref _committedSessionActivity), committedAtEntry))
+                    _data = JsonSerializer.Deserialize<DataFile>(snapshot) ?? new DataFile();
                 throw;
             }
             finally
             {
                 _adminTransactionSaveRequested = false;
                 _adminTransactionBusinessChanged = false;
+                _pendingSessionRevocations.Clear();
             }
         }
+        DispatchCommittedSessionRevocations(committedRevocations);
+        return result;
     }
 
     internal L12StoredAdminCommand? FindAdminCommand(string actorId, string idempotencyKey)
