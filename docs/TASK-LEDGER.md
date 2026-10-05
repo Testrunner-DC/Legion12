@@ -1,5 +1,15 @@
 # 十二军团任务台账
 
+## MAIN-20261006-PROMETHEUS-PRIVATE-PREVIEW｜完整Batch通过，干净Release／同步接续，未部署
+
+- 用户明确批准：普罗米修斯实际查看的顶三张均可看，仍只可选择合法奥林匹斯卡；未选牌不能泄露给对手，保留原必选、取消边界及恢复。基线为已同步的 `a2870066f58112042e14a5757202a6e415d5c102`；子租约仅 `L12S2FactionEffects.cs` 与新增 `PrometheusPrivatePreviewRegressionTests.cs`，不改共享 Prompt 或前端产品。
+- 两侧真实 RED 已复现：新增具名预览测试0通过／2失败，实际仅eligible，期望top三张；原TRX保留。产品补丁仅一行displayCardIds；原ValidChoices／required-add／费用／私密边界／顺序不变。子Focused实际运行完整Debug规则6477／6477失败跳过0，持久receipt.json存在，成功TRX已按治理清理，不引用不存在文件。
+- Main实际引擎78检查／4场景／10次原生V2恢复通过；实际PromptOverlay／PromptCardCandidate／网络动作函数372检查／12场景／24图通过，含双方、恢复、宽屏与横竖窄屏、非合法牌鼠标／键盘只查看不提交、合法一次提交、对手无私密候选。完整绑定D盘prometheus-main-acceptance-20261006/focused-20261006-015254/binding.json。卡图用合成清单和图形，不称资源准确性／完整战场／真实iOS；本地Vite开发连接单列，游戏WS与外部API为0。初始夹具加载／克隆等失败保留。
+- 全池同族扫描保留；山河社稷图命中分支仅独立未复现线索，不扩改。A3规则中心整族暂存完成，6新语义谓词／3组／精确7历史子谓词／36专项通过，尚未集成。两代码写入者及串行构建上限保持。
+- A3/E1上批已实际完整Release并精确同步a2870066，不能替代本批Batch／Release。C0的合成30秒阻塞及失败前注销通知RED已获用户限定本地实施批准，五源码暂存边界见live-match-c0-staging-20261006；不认定原断连唯一根因，不冒称全部房间和心跳隔离。本轮不部署、不改维护、不写线上Bug状态。
+- Main实际完整Batch规则6477／6477、失败跳过0，10分41秒，日志batch-20261006-015530.log与治理receipt.json可读。干净Release／Git接续；最终唯一实际回执D盘同目录acceptance.json，未生成前不预称完成。
+- 用户最新优先级：本批后全力推进D盘规范工作区的《LIVE-MATCH-AVAILABILITY-PLAN.md》，允许多子任务并行；A3未集成暂存稿保留让位。C0限定实施与同连接ping／跨房时钟真实协议RED准备互不重叠，最多两写入者、共享构建串行。P1／P2／P3保留唯一命令、接收者裁剪、代际、JournalV2／去重／outbox及失败恢复；其他根因先实际取证再取得独立批准，资源／目录／部署另明确授权。规划250人／88场、325人／115场和4小时验收仍未完成，不用单片修复冒称容量已达标。
+
 ## MAIN-20261005-PARALLEL-UI-CLOSEOUT｜实施与独立专项完成，最终同步中，未部署
 
 - 10月6日合并前端域 Batch 已实际退出0（48.88秒）；日志 `D:/GPT/Legion12/artifacts/a3-e1-parallel-closeout-20261006/batch-20261006-002218.log`。A3 最终51个正反例及原三门禁通过，保留期限24断言不变；E1 六尺寸731项／24图、60几何文案检查点一致，Main新增14个状态合同正反例接入原门禁。UI354／反馈144／卡图324+42／类型及双环境前端通过；产品后端未变，不能把此 Batch 称作完整后端 Release。

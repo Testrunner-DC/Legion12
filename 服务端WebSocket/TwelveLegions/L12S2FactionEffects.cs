@@ -1930,6 +1930,7 @@ public sealed partial class L12GameEngine
             {
                 ["action"] = "s2-prometheus-pick",
                 ["choiceMode"] = "required-add",
+                ["displayCardIds"] = string.Join('|', top.Select(card => card.InstanceId)),
             };
             foreach (var card in top) AddPromptCardData(data, card);
             CreatePrompt(item.Controller, "optional-card", "普罗米修斯：查看牌库顶部3张牌，选择1张【奥林匹斯】卡牌加入手牌",

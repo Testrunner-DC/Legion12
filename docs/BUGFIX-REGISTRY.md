@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## EFFECT-20261006-PROMETHEUS-PRIVATE-PREVIEW｜查看范围误用选择范围（完整Batch通过，Release／同步接续）
+
+- 原反馈8d630b27：普罗米修斯查看顶三张时只展示可选奥林匹斯卡。精确正式c858及94候选实际引擎各4组（双方／恢复）均复现；本人私密元数据已有三张，对手不含未选牌，不是全局卡池资源缺失。用户批准仅分离“可看”与“可选”。
+- 原因：s2-prometheus-pick仅传合法ValidChoices；共用展示按合法选择推导displayCardIds，未明确这次私密查看的全量范围。补丁在该data中显式写入本次实际top实例顺序，仍只以原ValidChoices选择、仍required-add；不改全局默认展示或隐私投影，不新增无条件跳过。
+- 真正RED：PrometheusControllerSeesAllThreeInspectedCardsButCanChooseOnlyOlympus的controller0／1均失败，期望三实例、实际只有eligible；TRX位于D盘prometheus-private-preview-20261006/red。新增少于三、零／多合法、戒指有效阵营、非法／skip／cancel、选择后公开仅所选、V2恢复／重复读取及无效/拒绝场景。子完整Debug6477通过失败跳过0，持久receipt存在，成功TRX已治理清理；Main独立78检查／4场景／10恢复及实际组件372检查／12场景／24图通过，绑定focused-20261006-015254/binding.json。合成卡图不代表正式资源／真机验收，初始夹具错误保留。
+- 同型查询：Library.Take／displayCardIds／AddPromptCardData和IsLibraryInspectionChoiceAction闭集。野外扎营、花魁、法老庆典、共享派系顶搜（伊瓦尔／众神之乡／柏拉图）、武运在天、符文之力、特勒马科斯已有全量展示。山河社稷图命中分支是未复现的独立线索，规则公开语义不同，未扩改；此前卡图显示压力关闭并非本分支选择范围验证。保持P0—P4、费用、原顺序和隐藏身份。
+- 修改仅L12S2FactionEffects.cs与新增PrometheusPrivatePreviewRegressionTests.cs。Main完整Batch规则6477／6477失败跳过0，干净Release／Git接续，最终事实见D盘同目录acceptance.json实际生成后的绑定；未部署、维护写入0，原报告不能标线上resolved。防回滚重点：显示集合不得再等于合法选择集合，也不得把本人的未选牌展示给对手。
+
 ## EFFECT-20261005-RESPONSE-LIMU｜真实效果响应资格与李牧整项无效（已批准，本地）
 
 - 授权与现象：迦具土防守效果已发动时，进攻方伏击只剩放弃；精确正式c858实际程序集8组合全部失败，覆盖双方、两费用与恢复。用户明确伏击可在裸进攻时单独发动，也可响应任何对方已发动卡牌效果；同一时点回合玩家先开始、双方放弃才结束；无可能发动仍跳过窗口。用户同时撤销李牧展示／抽牌独立段规则，印刷整项初始被无效就全部停止。

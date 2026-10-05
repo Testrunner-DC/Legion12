@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-06-prometheus-private-preview",
+  "date": "2026-10-06",
+  "audience": "players",
+  "title": "普罗米修斯查看修正",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "普罗米修斯查看牌库顶部三张牌时可查看全部三张，仍只能选择合法的奥林匹斯卡加入手牌；未选牌保持对对手不可见。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs"]
+    }
+  ]
+}
