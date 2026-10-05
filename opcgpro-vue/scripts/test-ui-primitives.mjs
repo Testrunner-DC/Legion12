@@ -4,6 +4,7 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 import { createServer } from 'vite'
 import './test-site-ui-state-scope.mjs'
+import './test-e1-ranking-state-contract.mjs'
 
 const root=path.resolve(import.meta.dirname,'..')
 const require=createRequire(import.meta.url)

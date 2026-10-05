@@ -207,7 +207,7 @@ onBeforeUnmount(() => {
   <div class="ranking-page">
     <header class="page-head">
       <div><small>RANKED · {{ headingScope }}</small><h1>排行榜</h1><p>{{ tab === 'players' ? range === 'season' ? '玩家榜依据当前赛季的七曜值排名。' : '场次、战绩、擅长主宰与七曜净变化按所选时段；派系、段位、称号为当前赛季。' : tab === 'history' ? '历史荣誉只显示已正式结算赛季。' : '主宰与对阵按所选范围统计；近7天和近30天可跨赛季。' }}</p></div>
-      <div class="page-actions"><button v-if="tab !== 'history' && hasAnalytics" type="button" aria-haspopup="dialog" @click="statisticsDialog?.showModal()">统计口径</button><button :disabled="loading" @click="load">{{ loading ? '读取中…' : '刷新数据' }}</button></div>
+      <div class="page-actions"><button v-if="tab !== 'history' && hasAnalytics" type="button" aria-haspopup="dialog" @click="statisticsDialog?.showModal()">统计口径</button><button :disabled="loading" :aria-busy="loading || undefined" @click="load">{{ loading ? '读取中…' : '刷新数据' }}</button></div>
     </header>
 
     <p v-if="rangeLimited && tab !== 'history'" class="error" role="alert">本时间范围对局过多，暂无法显示完整排行。请切换本赛季。</p>
@@ -219,8 +219,8 @@ onBeforeUnmount(() => {
     </section>
 
     <section class="toolbar">
-      <div class="tabs"><button :class="{ active: tab === 'players' }" @click="tab = 'players'">玩家榜</button><button :class="{ active: tab === 'masters' }" @click="tab = 'masters'">主宰榜</button><button :class="{ active: tab === 'matchups' }" @click="tab = 'matchups'">对阵一览</button><button :class="{ active: tab === 'history' }" @click="tab = 'history'">历史荣誉</button></div>
-      <div class="ranges"><button v-for="item in ranges" :key="item.id" :class="{ active: range === item.id }" :disabled="tab === 'history'" @click="range = item.id">{{ item.name }}</button></div>
+      <div class="tabs"><button :class="{ active: tab === 'players' }" :aria-pressed="tab === 'players'" @click="tab = 'players'">玩家榜</button><button :class="{ active: tab === 'masters' }" :aria-pressed="tab === 'masters'" @click="tab = 'masters'">主宰榜</button><button :class="{ active: tab === 'matchups' }" :aria-pressed="tab === 'matchups'" @click="tab = 'matchups'">对阵一览</button><button :class="{ active: tab === 'history' }" :aria-pressed="tab === 'history'" @click="tab = 'history'">历史荣誉</button></div>
+      <div class="ranges"><button v-for="item in ranges" :key="item.id" :class="{ active: range === item.id }" :aria-pressed="range === item.id" :disabled="tab === 'history'" @click="range = item.id">{{ item.name }}</button></div>
       <button class="master-title-rules-button" type="button" @click="masterTitleRulesOpen = true">最强称号规则</button>
       <label v-if="tab === 'masters'" class="master-sort">主宰排序
         <select v-model="masterSort">
@@ -236,8 +236,8 @@ onBeforeUnmount(() => {
       <div class="ranking-statistics-body"><StatisticsScope :summary="statisticsWindow" :sample="statisticsSample"/><ul><li v-for="item in statisticsScopeItems" :key="item">{{ item }}</li></ul></div>
     </dialog>
 
-    <nav v-if="tab === 'players'" class="faction-filter"><button v-for="item in filters" :key="item.id" :class="{ active: faction === item.id }" @click="faction = item.id">{{ item.name }}</button></nav>
-    <p v-if="error" class="error">{{ error }}</p>
+    <nav v-if="tab === 'players'" class="faction-filter"><button v-for="item in filters" :key="item.id" :class="{ active: faction === item.id }" :aria-pressed="faction === item.id" @click="faction = item.id">{{ item.name }}</button></nav>
+    <p v-if="error" class="error" role="alert" aria-live="assertive">{{ error }}</p>
 
     <section v-if="rangeLimited && tab !== 'history'" class="rank-panel empty">当前范围无法提供完整排行</section>
     <section v-else-if="tab === 'players'" class="rank-panel player-table">

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { replayEntryTemplateContract } from './replay-entry-template-contract.mjs'
+import './test-a3-replay-entry-template-contract.mjs'
 
 const source = readFileSync(fileURLToPath(new URL('../src/l12/MatchRecords.vue', import.meta.url)), 'utf8')
 const replayPage = readFileSync(fileURLToPath(new URL('../src/l12/ReplayPage.vue', import.meta.url)), 'utf8')
@@ -10,6 +12,7 @@ const zonePresentation = readFileSync(fileURLToPath(new URL('../src/l12/game/Zon
 const combatPresentation = readFileSync(fileURLToPath(new URL('../src/l12/game/CombatMotionPresentationLayer.vue', import.meta.url)), 'utf8')
 const battleUtility = readFileSync(fileURLToPath(new URL('../src/l12/game/BattleUtilityDock.vue', import.meta.url)), 'utf8')
 const mobileViewport = readFileSync(fileURLToPath(new URL('../src/l12/mobileViewport.css', import.meta.url)), 'utf8')
+const replayTemplate = replayEntryTemplateContract({ matchRecords: source, replayPage, gameBoard })
 
 assert.match(source,
   /selected\.value\?\.endedUtc\s*&&\s*selected\.value\.commandCount\s*>\s*0/,
@@ -17,13 +20,10 @@ assert.match(source,
 assert.match(source,
   /selected\.value\?\.endedUtc\s*&&\s*selected\.value\.commandCount\s*>\s*0/,
   'route navigation must not bypass the zero-command replay guard')
-assert.equal((source.match(/:disabled="!canUseSelectedReplay"/g) ?? []).length, 2,
-  'both playback and JSON export must be disabled when replay payload is unavailable')
-assert.match(source, /selected\.commandCount === 0[^]*回放载荷已清理/,
-  'retained match summaries must explain why playback is unavailable')
-assert.match(source, /<h1>对局回放<\/h1>/, 'replay history must use the player-facing title')
-assert.match(source, /仅保存7天内最近10场回放，历史回放文件可能随版本更新失效。/,
-  'replay history must explain the retention and compatibility window')
+assert.equal(replayTemplate.recordsHeaderAndImport, true,
+  'replay history must keep its real title, retention note and JSON import entry')
+assert.equal(replayTemplate.recordsReplayAvailability, true,
+  'playback and JSON export must share the unavailable guard and explain cleaned payloads')
 assert.match(source, /const detail = parseReplayPayload[^]*rememberImportedReplay\(detail\)[^]*router\.push\(\{ name: 'json-replay' \}\)/,
   'opening a JSON replay must navigate directly into playback')
 assert.doesNotMatch(source, /imported-record|consumeImportedReplay|selectedSummary\.deck[01]/,
@@ -36,8 +36,8 @@ assert.match(replayModel, /deckName:\s*'',\s*faction:/,
   'all replay board states must hide deck names')
 assert.doesNotMatch(replayPage, /source:\s*['"]json['"]/,
   'returning from a JSON replay must not add it to the replay history')
-assert.match(replayPage, /:replay-playback-speed="playbackSpeed"[^]*@replay-presentation-change="replayPresentationBusy = \$event"/,
-  'replay speed and presentation completion must be connected to the board')
+assert.equal(replayTemplate.replayBoardBinding, true,
+  'replay speed and presentation completion must be connected to the unique read-only board')
 assert.doesNotMatch(replayPage, /setInterval|clearInterval/,
   'automatic replay must not advance on an interval that can overrun card presentation')
 assert.match(replayPage, /if \(replayPresentationBusy\.value\)[^]*setTimeout[^]*return[^]*selectedStep\.value = target/,
@@ -54,7 +54,7 @@ assert.match(mobileViewport, /--l12-battle-fixed-controls-z:5100/,
   'desktop protected controls must stay above full-screen battle dialogs')
 assert.match(mobileViewport, /--l12-battle-fixed-controls-z:2147483632/,
   'mobile protected controls must stay above safe-canvas masks')
-assert.match(replayPage, /import \{ isMobileDeviceExperience, landscapeTeleportTarget \}[^]*<Teleport v-if="!mobileReplayBlocked" :to="landscapeTeleportTarget\(\)">[^]*class="replay-controls"/,
+assert.equal(replayTemplate.replayControlTeleport, true,
   'replay controls must share the dedicated overlay host with teleported board presentation layers')
 assert.doesNotMatch(replayPage, /:deep\(\.(?:prompt-overlay|battle-modal-mask|picker-mask|master-overlay|faction-effect-overlay)\)/,
   'replay must not use scoped descendant selectors that cannot reach teleported overlays')

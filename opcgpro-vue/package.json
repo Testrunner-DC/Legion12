@@ -7,6 +7,7 @@
     "dev": "vite --configLoader runner",
     "verify:season-dual-config": "node scripts/verify-season-dual-config.mjs",
     "verify:site-summary-drawer": "node scripts/verify-site-summary-drawer-consumers.mjs",
+    "verify:e1-ranking-states": "node scripts/verify-e1-ranking-states.mjs",
     "test:battle-log-engine": "node --experimental-strip-types scripts/test-battle-log-engine-integration.mjs",
     "check:performance-architecture": "node scripts/check-performance-architecture.mjs && node scripts/test-performance-architecture-lock.mjs && node scripts/check-resource-change-sync.mjs && node scripts/check-platform-request-reliability.mjs && node scripts/check-action-gate.mjs && node scripts/check-http-traffic-guard.mjs && node scripts/check-performance-observability.mjs && node scripts/test-performance-snapshot.mjs",
     "check:deck-sync": "node scripts/test-deck-editor-viewport.mjs && node scripts/test-deck-editor-workspace.mjs && node scripts/test-deck-sync-authority.mjs && node scripts/test-public-deck-hands.mjs && node scripts/test-deck-short-codes.mjs && node --experimental-strip-types scripts/test-deck-editor-navigation.mjs && node --experimental-strip-types scripts/test-deck-editor-draft.mjs && node scripts/check-deck-editor-reference-flow.mjs && node scripts/check-deck-ui-closeout.mjs && node scripts/check-deck-acceptance-corrections.mjs && node scripts/check-deck-final-closeout.mjs && node scripts/check-public-deck-version-statistics.mjs && node scripts/test-deck-share-qr.mjs",
