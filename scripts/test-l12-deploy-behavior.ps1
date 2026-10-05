@@ -87,6 +87,7 @@ else {
 $fixtureBasePath = $fixtureBasePath.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
 $fixtureRoot = Join-Path $fixtureBasePath "l12-deploy-behavior-$([Guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory -Path $fixtureRoot -Force | Out-Null
+$suitePassed = $false
 
 try {
     & (Join-Path $PSScriptRoot 'test-l12-deploy-retry-policy.ps1')
@@ -250,11 +251,13 @@ try {
             [string]$ExternalMountSource = "",
             [string]$ExternalMountOptions = "",
             [string]$ExternalFstabTarget = "",
+            [long]$SystemAvailableBytes = 0,
             [long]$ExternalAvailableBytes = 0,
             [long]$BackupMaxBytes = 0,
             [switch]$FailBackup,
             [switch]$FailBackupValidation,
             [switch]$FailBackupSha,
+            [ValidateSet("", "rejected", "timeout", "invalid-json", "wrong-sha")][string]$RuntimeProofFault = "",
             [switch]$WriteOnStart,
             [switch]$DisabledService,
             [switch]$PreexistingBlock,
@@ -271,7 +274,9 @@ try {
 
         $script:serverScenarioCount += 1
 
-        $root = Join-Path $fixtureRoot "l12-deploy-behavior-$Name"
+        # The outer owned root already supplies the required safety prefix.
+        # Avoid a second copy of it so native Windows tar fixture paths stay bounded.
+        $root = Join-Path $fixtureRoot $Name
         $active = Join-Path $root "opt\legion12-test"
         $runtime = Join-Path $root "opt\legion12-runtime"
         $externalMount = Join-Path $root "www"
@@ -313,6 +318,8 @@ try {
         Write-Utf8NoBom (Join-Path $active "opcgpro-vue\dist\assets\Page-old.css") ".old{display:block}"
         Write-Utf8NoBom (Join-Path $active "scripts\ws-smoke.mjs") "// old"
         Write-Utf8NoBom (Join-Path $runtime "authoritative-before.txt") "preserve"
+        New-Item -ItemType Directory -Path (Join-Path $root "usr\local\libexec") -Force | Out-Null
+        Write-Utf8NoBom (Join-Path $root "usr\local\libexec\verify-legion12-runtime-backup.py") "# Synthetic command-boundary fixture; real SQLite cases run separately."
         Write-Utf8NoBom (Join-Path $root "etc\legion12-test.env") "fixture=1`n"
         if ($PreexistingBlock) {
             Write-Utf8NoBom (Join-Path $root "opt\legion12-deployment\deployment-blocked.txt") "manual-reconciliation-required`n"
@@ -553,7 +560,22 @@ exit 0
 '@ | Out-Null
         New-FakeCommand $fakeBin "timeout" @'
 printf 'timeout %s\n' "$*" >> "$L12_TEST_COMMAND_LOG"
+if [ "${2:-}" = "python3" ]; then
+  [ "${L12_TEST_RUNTIME_PROOF_FAULT:-}" = "timeout" ] && exit 124
+  shift
+  exec "$@"
+fi
 exit 0
+'@ | Out-Null
+        New-FakeCommand $fakeBin "python3" @'
+printf 'runtime-proof\n' >> "$L12_TEST_COMMAND_LOG"
+case "${L12_TEST_RUNTIME_PROOF_FAULT:-}" in
+  rejected) exit 1 ;;
+  invalid-json) printf 'invalid-proof'; exit 0 ;;
+esac
+sha="$5"
+if [ "${L12_TEST_RUNTIME_PROOF_FAULT:-}" = "wrong-sha" ]; then sha="wrong"; fi
+printf '{"schema":1,"verified":true,"databases":2,"sqliteQuickCheck":"ok","schemaAnchorsVerified":true,"latestDatabaseAndWalEqualBackup":true,"persistentFactMutations":0,"checkpointOrRepairPerformed":false,"backupSha256":"%s","databaseWalFingerprintSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}\n' "$sha"
 '@ | Out-Null
         New-FakeCommand $fakeBin "flock" "exit 0`n" | Out-Null
         New-FakeCommand $fakeBin "id" @'
@@ -648,8 +670,10 @@ exec "$L12_TEST_REAL_TAR" "$@"
             L12_TEST_FAIL_BACKUP = $(if ($FailBackup) { "1" } else { "0" })
             L12_TEST_FAIL_BACKUP_VALIDATION = $(if ($FailBackupValidation) { "1" } else { "0" })
             L12_TEST_FAIL_BACKUP_SHA = $(if ($FailBackupSha) { "1" } else { "0" })
+            L12_TEST_RUNTIME_PROOF_FAULT = $RuntimeProofFault
             L12_TEST_WRITE_ON_START = $(if ($WriteOnStart) { "1" } else { "0" })
             L12_TEST_SERVICE_ENABLED = $(if ($DisabledService) { "0" } else { "1" })
+            L12_DEPLOY_TEST_SYSTEM_AVAILABLE_BYTES = $(if ($SystemAvailableBytes -gt 0) { [string]$SystemAvailableBytes } else { "" })
             L12_DEPLOY_TEST_EXTERNAL_MOUNT_TARGET = $(if ([string]::IsNullOrEmpty($ExternalMountTarget)) { $externalMountPosix } else { $ExternalMountTarget })
             L12_DEPLOY_TEST_EXTERNAL_MOUNT_SOURCE = $(if ([string]::IsNullOrEmpty($ExternalMountSource)) { "test-external-device" } else { $ExternalMountSource })
             L12_DEPLOY_TEST_EXTERNAL_MOUNT_OPTIONS = $(if ([string]::IsNullOrEmpty($ExternalMountOptions)) { "rw,relatime" } else { $ExternalMountOptions })
@@ -679,6 +703,7 @@ exec "$L12_TEST_REAL_TAR" "$@"
                 [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, "Process")
             }
         }
+        Write-Utf8NoBom (Join-Path $root "scenario-output.log") $result.Output
         [pscustomobject]@{
             Name = $Name
             Root = $root
@@ -886,6 +911,17 @@ exec "$L12_TEST_REAL_TAR" "$@"
     Assert-True ($serverInvalidRoot.Output.Contains("只允许 /opt 或 /www/legion12")) "服务器制品根拒绝没有明确固定白名单。"
     Assert-True ([string]::IsNullOrEmpty($serverInvalidRoot.Commands)) "非法服务器制品根在拒绝前执行了系统命令。"
 
+    $lowSystemCapacity = Invoke-ServerScenario -Name "system-below-10gib-fail-closed" `
+        -ArtifactRoot "/www/legion12" -SystemAvailableBytes ([long](10GB - 1))
+    Assert-True ($lowSystemCapacity.ExitCode -ne 0) "系统盘低于 10 GiB 时发布意外成功。"
+    Assert-True ($lowSystemCapacity.Output.Contains("不足 10 GiB")) "系统盘容量拒绝原因不明确。"
+    Assert-True (-not $lowSystemCapacity.Commands.Contains("systemctl stop")) "系统盘容量拒绝发生在停服之后。"
+    Assert-True ((Get-Content -LiteralPath (Join-Path $lowSystemCapacity.Root "opt\legion12-runtime\authoritative-before.txt") -Raw) -eq "preserve") `
+        "系统盘容量拒绝改动了权威 runtime。"
+    Assert-RootBackupsPreserved $lowSystemCapacity
+    Assert-True ($lowSystemCapacity.Output.Contains("release=") -and $lowSystemCapacity.Output.Contains("runtime=") -and `
+        $lowSystemCapacity.Output.Contains("systemMinimumBytes=10737418240")) "系统盘固定路径容量报告缺失。"
+
     $externalSuccess = Invoke-ServerScenario -Name "external-success" -ArtifactRoot "/www/legion12"
     Assert-True ($externalSuccess.ExitCode -eq 0) "外置制品路径发布失败：$($externalSuccess.Output)"
     Assert-True (Test-Path -LiteralPath $externalSuccess.ExpectedRelease -PathType Container) "外置 release 未落到固定独立盘目录。"
@@ -898,6 +934,9 @@ exec "$L12_TEST_REAL_TAR" "$@"
     $externalBackupSha = Assert-BackupReceipt $externalSuccess
     Assert-True ($externalInfo.Contains("部署前运行数据快照SHA256：$externalBackupSha")) "外置发布元数据与最终备份 SHA256 不一致。"
     Assert-RootBackupsPreserved $externalSuccess
+    Assert-True ($externalSuccess.Output.Contains("policyFloorBytes=4294967296") -and `
+        $externalSuccess.Output.Contains("uploadPrepareBytes=15032385536") -and $externalSuccess.Output.Contains("postPlanReserveBytes=8589934592")) `
+        "数据盘报告没有同时保留 4 GiB 政策下限、14 GiB 上传门和 8 GiB 余量。"
     $externalRootPosix = ConvertTo-MsysPath $externalSuccess.ExternalArtifactRoot
     $externalStageParentPosix = "$externalRootPosix/staging"
     $externalReleaseParentPosix = "$externalRootPosix/releases"
@@ -1100,6 +1139,18 @@ exec "$L12_TEST_REAL_TAR" "$@"
     }
     Assert-True ($backupFailures[3].Output.Contains("超过 4 GiB 硬上限")) "外置备份超上限没有明确 fail-closed。"
 
+    foreach ($proofFault in @("rejected", "timeout", "invalid-json", "wrong-sha")) {
+        $proofFailure = Invoke-ServerScenario -Name "stopped-runtime-proof-$proofFault" -ArtifactRoot "/www/legion12" -RuntimeProofFault $proofFault
+        Assert-True ($proofFailure.ExitCode -ne 0) "停服数据库证明错误被接受：$proofFault"
+        Assert-True ($proofFailure.Commands.Contains("systemctl stop") -and $proofFailure.Commands.Contains("timeout 120 python3")) "证明拒绝没有到达停服备份后边界。"
+        Assert-True ($proofFailure.Output.Contains("上一版本已恢复并通过")) "证明失败后原服务未经过身份核验。"
+        Assert-True (-not (Test-Path -LiteralPath $proofFailure.ExpectedRelease)) "证明失败后仍安装候选版本。"
+        Assert-True (([regex]::Matches($proofFailure.Commands, 'systemctl start')).Count -eq 1) "证明失败后服务启动次数错误。"
+        Assert-BaseStatePreserved $proofFailure
+        Assert-RootBackupsPreserved $proofFailure
+        $null = Assert-BackupReceipt $proofFailure
+    }
+
     $externalPostLaunchFailure = Invoke-ServerScenario -Name "external-post-launch-failure" `
         -ArtifactRoot "/www/legion12" -LocalCommitOverride $commitA -WriteOnStart
     Assert-True ($externalPostLaunchFailure.ExitCode -ne 0) "外置发布后身份错误被判定成功。"
@@ -1143,9 +1194,10 @@ exec "$L12_TEST_REAL_TAR" "$@"
     Assert-True (-not $unverifiedLocalRecovery.Output.Contains("上一版本已恢复并通过")) "本机身份失败后仍误报回滚成功。"
 
     Write-Host "[L12 deploy behavior] $serverScenarioCount isolated server scenarios passed: default/external paths, mount and capacity gates, atomic backup ownership, exact identity, and fail-closed recovery."
+    $suitePassed = $true
 }
 finally {
-    if (Test-Path -LiteralPath $fixtureRoot) {
+    if ($suitePassed -and (Test-Path -LiteralPath $fixtureRoot)) {
         $resolvedFixture = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $fixtureRoot).Path)
         if (-not $resolvedFixture.StartsWith($fixtureBasePath, [StringComparison]::OrdinalIgnoreCase) -or
             -not (Split-Path $resolvedFixture -Leaf).StartsWith("l12-deploy-behavior-", [StringComparison]::Ordinal)) {
@@ -1153,4 +1205,5 @@ finally {
         }
         Remove-Item -LiteralPath $resolvedFixture -Recurse -Force
     }
+    elseif (Test-Path -LiteralPath $fixtureRoot) { Write-Host "[L12 deploy behavior] Failed synthetic evidence retained: $fixtureRoot" }
 }

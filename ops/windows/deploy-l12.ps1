@@ -87,6 +87,7 @@ $cacheInitializer = Join-Path $PSScriptRoot "Initialize-L12BuildEnvironment.ps1"
 $resolvedCacheRoot = & $cacheInitializer -CacheRoot $CacheRoot | Select-Object -Last 1
 $serverScript = Join-Path $repoRoot "ops\server\deploy-l12-release.sh"
 $serverHealthVerifier = Join-Path $repoRoot "ops\server\verify-l12-health.mjs"
+$serverRuntimeVerifier = Join-Path $repoRoot "ops\server\verify-l12-runtime-backup.py"
 $sharePageActivator = Join-Path $repoRoot "ops\server\activate-l12-share-pages.sh"
 $sharePageSnippet = Join-Path $repoRoot "ops\server\nginx-l12-share-pages.conf"
 $webAssetsActivator = Join-Path $repoRoot "ops\server\activate-l12-web-assets.sh"
@@ -199,6 +200,7 @@ try {
     $remoteToolBundle = "/tmp/l12-deploy-tools-$commit.tar"
     $remoteBootstrap = "$remoteToolDir/ops/server/deploy-l12-release.sh"
     $remoteHealthVerifier = "$remoteToolDir/ops/server/verify-l12-health.mjs"
+    $remoteRuntimeVerifier = "$remoteToolDir/ops/server/verify-l12-runtime-backup.py"
     $remoteSharePageActivator = "$remoteToolDir/ops/server/activate-l12-share-pages.sh"
     $remoteSharePageSnippet = "$remoteToolDir/ops/server/nginx-l12-share-pages.conf"
     $remoteWebAssetsActivator = "$remoteToolDir/ops/server/activate-l12-web-assets.sh"
@@ -210,12 +212,13 @@ try {
     Invoke-External tar -cf $toolBundle `
         "ops/server/deploy-l12-release.sh" `
         "ops/server/verify-l12-health.mjs" `
+        "ops/server/verify-l12-runtime-backup.py" `
         "ops/server/activate-l12-share-pages.sh" `
         "ops/server/nginx-l12-share-pages.conf" `
         "ops/server/activate-l12-web-assets.sh" `
         "ops/server/nginx-l12-web-assets.conf"
     Invoke-External scp @sshOptions $toolBundle "${Server}:$remoteToolBundle"
-    Invoke-External ssh @sshOptions $Server "install -d -m 0700 '$remoteToolDir' && tar -xf '$remoteToolBundle' -C '$remoteToolDir' && rm -f '$remoteToolBundle' && sed -i 's/\r$//' '$remoteBootstrap' '$remoteWebAssetsActivator' && install -m 0755 '$remoteBootstrap' /usr/local/sbin/deploy-legion12-release && install -d -m 0755 /usr/local/libexec && install -m 0755 '$remoteHealthVerifier' /usr/local/libexec/verify-legion12-health.mjs && chmod 0755 '$remoteWebAssetsActivator' && '$remoteWebAssetsActivator' '$remoteWebAssetsSnippet' && rm -f '$remoteBootstrap' '$remoteHealthVerifier' '$remoteWebAssetsActivator' && /usr/local/sbin/deploy-legion12-release prepare-storage '$ServerArtifactRoot'"
+    Invoke-External ssh @sshOptions $Server "install -d -m 0700 '$remoteToolDir' && tar -xf '$remoteToolBundle' -C '$remoteToolDir' && rm -f '$remoteToolBundle' && sed -i 's/\r$//' '$remoteBootstrap' '$remoteWebAssetsActivator' && install -m 0755 '$remoteBootstrap' /usr/local/sbin/deploy-legion12-release && install -d -m 0755 /usr/local/libexec && install -m 0755 '$remoteHealthVerifier' /usr/local/libexec/verify-legion12-health.mjs && install -m 0644 '$remoteRuntimeVerifier' /usr/local/libexec/verify-legion12-runtime-backup.py && chmod 0755 '$remoteWebAssetsActivator' && '$remoteWebAssetsActivator' '$remoteWebAssetsSnippet' && rm -f '$remoteBootstrap' '$remoteHealthVerifier' '$remoteRuntimeVerifier' '$remoteWebAssetsActivator' && /usr/local/sbin/deploy-legion12-release prepare-storage '$ServerArtifactRoot'"
 
     Write-Host "[L12 部署] 上传预构建运行包..."
     Invoke-External scp @sshOptions $releaseArchive "${Server}:$remoteRelease"

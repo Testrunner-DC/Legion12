@@ -28,6 +28,7 @@ readonly runtime_dir="${test_root}/opt/legion12-runtime"
 readonly sandbox_fence="${runtime_dir}/.maintenance-sandbox-drain"
 readonly deployment_dir="${test_root}/opt/legion12-deployment"
 readonly failure_dir="${deployment_dir}/failures"
+readonly runtime_verifier="${test_root}/usr/local/libexec/verify-legion12-runtime-backup.py"
 readonly service_name="legion12-test.service"
 readonly public_host="legion-12.com"
 readonly lock_file="${test_root}/run/lock/legion12-deploy.lock"
@@ -58,6 +59,8 @@ else
   readonly static_web_assets_dir="$default_static_web_assets_dir"
   readonly stage_parent="${test_root}/opt"
 fi
+readonly system_min_available_bytes=$((10 * 1024 * 1024 * 1024))
+readonly external_policy_floor_bytes=$((4 * 1024 * 1024 * 1024))
 readonly external_prepare_min_bytes=$((14 * 1024 * 1024 * 1024))
 readonly external_backup_max_bytes=$((4 * 1024 * 1024 * 1024))
 readonly external_reserve_bytes=$((8 * 1024 * 1024 * 1024))
@@ -119,6 +122,29 @@ assert_existing_directories_plain() {
   return 0
 }
 
+system_available_bytes() {
+  local available
+  if [[ -n "$test_root" ]]; then
+    available="${L12_DEPLOY_TEST_SYSTEM_AVAILABLE_BYTES:-$((20 * 1024 * 1024 * 1024))}"
+  else
+    require_command df || return 1
+    available="$(df -B1 --output=avail / | awk 'NR == 2 { gsub(/[[:space:]]/, "", $1); print $1 }')" \
+      || { fail "无法读取系统盘可用容量"; return 1; }
+  fi
+  [[ "$available" =~ ^[0-9]+$ ]] || { fail "无法读取系统盘可用容量"; return 1; }
+  printf '%s\n' "$available"
+}
+
+validate_system_capacity() {
+  local available
+  available="$(system_available_bytes)" || return 1
+  log "固定路径容量报告：release=${releases_dir}; runtime=${runtime_dir}; backup=${runtime_backup_dir}; systemAvailableBytes=${available}; systemMinimumBytes=${system_min_available_bytes}"
+  if (( available < system_min_available_bytes )); then
+    fail "系统盘可用容量不足 10 GiB；停止发布，不清理 runtime、快照或事故证据"
+    return 1
+  fi
+}
+
 external_available_bytes() {
   local available
   if [[ -n "$test_root" ]]; then
@@ -134,6 +160,7 @@ external_available_bytes() {
     fail "无法读取外置制品盘可用容量"
     return 1
   fi
+  log "数据盘容量报告：root=${artifact_root}; availableBytes=${available}; policyFloorBytes=${external_policy_floor_bytes}; uploadPrepareBytes=${external_prepare_min_bytes}; postPlanReserveBytes=${external_reserve_bytes}" >&2
   printf '%s\n' "$available"
   return 0
 }
@@ -187,8 +214,10 @@ validate_external_prepare_capacity() {
 }
 
 prepare_storage_paths() {
+  validate_system_capacity || return 1
   if [[ "$external_artifact_mode" == "1" ]]; then
     if ! validate_external_mount; then return 1; fi
+    # 14 GiB and the later 8 GiB residual plan remain stronger than the named 4 GiB policy floor.
     if ! validate_external_prepare_capacity; then return 1; fi
     if ! assert_existing_directories_plain \
       "$artifact_root" "$incoming_dir" "$runtime_backup_dir" "$static_card_assets_dir" "$static_web_assets_dir" "$stage_parent" "$releases_dir"; then return 1; fi
@@ -438,12 +467,13 @@ assert_deployment_unblocked() {
 
 self_test() {
   test "$(id -u)" -eq 0 || fail "必须以 root 身份执行"
-  for command_name in id flock sha256sum tar curl systemctl nginx runuser node find readlink ln mv install cmp awk grep tr chmod chown sort timeout date seq head stat dirname basename; do
+  for command_name in id flock python3 sha256sum tar curl systemctl nginx runuser node find readlink ln mv install cmp awk grep tr chmod chown sort timeout date seq head stat dirname basename; do
     require_command "$command_name"
   done
   test -e "$active_dir" || fail "当前部署入口不存在：${active_dir}"
   test -f "$environment_file" || fail "管理员环境配置不存在"
   test -f "$health_verifier" || fail "缺少提交身份校验器：${health_verifier}"
+  [[ -f "$runtime_verifier" && ! -L "$runtime_verifier" && -r "$runtime_verifier" ]] || fail "缺少普通只读停服数据库校验器"
   [[ "$health_attempts" =~ ^[1-9][0-9]*$ ]] || fail "健康检查重试次数无效"
   [[ "$health_delay_seconds" =~ ^[0-9]+([.][0-9]+)?$ ]] || fail "健康检查间隔无效"
   id "$service_user" >/dev/null 2>&1 || fail "找不到服务账号：${service_user}"
@@ -1249,6 +1279,23 @@ block_sandbox_creation
 chown -R "${service_user}:${service_user}" "$runtime_dir"
 chmod 0750 "$runtime_dir"
 backup_runtime
+failure_stage="verify-stopped-runtime-backup"
+if runtime_proof="$(timeout 120 python3 -B "$runtime_verifier" "$runtime_dir" "$runtime_backup" "$runtime_backup_sha256")"; then
+  : # Conditional assignment prevents inherited ERR from recovering twice in a subshell.
+else
+  fail "停服数据库与备份证明失败或超时，拒绝切换版本"
+fi
+printf '%s' "$runtime_proof" | node -e '
+let body="";process.stdin.on("data",chunk=>body+=chunk);process.stdin.on("end",()=>{
+  try { const proof=JSON.parse(body);
+    if(proof.schema!==1||proof.verified!==true||proof.databases!==2||proof.sqliteQuickCheck!=="ok"
+      ||proof.schemaAnchorsVerified!==true||proof.latestDatabaseAndWalEqualBackup!==true
+      ||proof.persistentFactMutations!==0||proof.checkpointOrRepairPerformed!==false
+      ||proof.backupSha256!==process.argv[1]
+      ||!/^[a-f0-9]{64}$/.test(proof.databaseWalFingerprintSha256||"")) process.exit(2);
+  } catch { process.exit(2); }
+});' "$runtime_backup_sha256"
+log "停服最新数据库、WAL与备份只读校验通过；未执行修复或数据回退"
 ln -s "$runtime_dir" "${stage_dir}/publish/runtime"
 
 failure_stage="configure-runtime-boundary"
@@ -1322,6 +1369,7 @@ Legion12 正式服
 共享运行数据：${runtime_dir}
 部署前运行数据快照：${runtime_backup}
 部署前运行数据快照SHA256：${runtime_backup_sha256}
+停服数据库与快照验证：${runtime_proof}
 旧版 /cards 卡图：已退役
 内容寻址优化卡图版本：${card_assets_hash}
 域名：${public_host}

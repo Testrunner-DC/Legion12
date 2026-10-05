@@ -26,6 +26,10 @@ readonly service_name="legion12-testrun.service"
 readonly service_user="legion12"
 readonly web_user="www-data"
 readonly lock_file="${test_root}/run/lock/legion12-testrun-deploy.lock"
+readonly program_budget_bytes=$((512 * 1024 * 1024))
+readonly data_budget_bytes=$((256 * 1024 * 1024))
+readonly temporary_budget_bytes=$((128 * 1024 * 1024))
+readonly total_budget_bytes=$((1024 * 1024 * 1024))
 readonly prune_runtime_backups_enabled="${L12_TESTRUN_PRUNE_RUNTIME_BACKUPS:-0}"
 readonly runtime_backup_keep_groups="${L12_TESTRUN_RUNTIME_BACKUP_KEEP_GROUPS:-2}"
 [[ "$prune_runtime_backups_enabled" =~ ^[01]$ ]] \
@@ -167,16 +171,176 @@ prune_web_assets() {
   rm -f -- "$keep_file"
 }
 
+archive_unpacked_bytes() {
+  local archive="$1" total
+  total="$(tar --numeric-owner -tvzf "$archive" | awk '{ total += $3 } END { printf "%.0f", total }')" \
+    || { fail "cannot calculate unpacked archive bytes"; return 1; }
+  [[ "$total" =~ ^[0-9]+$ ]] || { fail "cannot calculate unpacked archive bytes"; return 1; }
+  printf '%s\n' "$total"
+}
+
+release_layout_bytes() {
+  local archive="$1"
+  python3 - "$archive" <<'PY'
+import tarfile
+import sys
+
+archive = sys.argv[1]
+files = {}
+members = {}
+with tarfile.open(archive, "r:gz") as bundle:
+    for member in bundle.getmembers():
+        name = member.name
+        while name.startswith("./"):
+            name = name[2:]
+        name = name.rstrip("/")
+        members[name] = member
+        if member.isfile():
+            files[name] = member.size
+    manifest_name = "opcgpro-vue/testrun-shared-files.txt"
+    member = members[manifest_name]
+    raw_manifest = bundle.extractfile(member).read().decode("utf-8", "strict")
+
+release_logical = sum(files.values())
+production_prefix = "opcgpro-vue/dist/assets/"
+testrun_prefix = "opcgpro-vue/dist-testrun/assets/"
+production_web = sum(size for name, size in files.items() if name.startswith(production_prefix))
+testrun_web = sum(size for name, size in files.items() if name.startswith(testrun_prefix))
+hydrate_logical = 0
+seen = set()
+for raw in raw_manifest.splitlines():
+    relative = raw.rstrip("\r")
+    if (not relative or relative.startswith("/") or "\\" in relative
+            or "//" in relative or relative in (".", "..")
+            or "/./" in f"/{relative}/" or "/../" in f"/{relative}/"):
+        raise SystemExit("unsafe testrun shared-file path in budget projection")
+    if relative in seen:
+        raise SystemExit("duplicate testrun shared-file path in budget projection")
+    seen.add(relative)
+    source = "opcgpro-vue/dist/" + relative
+    target = "opcgpro-vue/dist-testrun/" + relative
+    if source not in files or target in files:
+        raise SystemExit("testrun shared-file layout differs from hydrate contract")
+    hydrate_logical += files[source]
+
+# The budget is deliberately logical, not allocated blocks. The hydrate target
+# is counted again even though ln creates a hard link, and both compatibility
+# prefixes are counted because install_web_assets_tree copies each path.
+new_web_cache_logical = production_web + testrun_web + hydrate_logical
+print(release_logical + hydrate_logical, hydrate_logical, new_web_cache_logical)
+PY
+}
+
+missing_web_cache_bytes() {
+  local source_root="$1" public_prefix="$2"
+  python3 - "$source_root" "$static_web_assets_dir" "$public_prefix" <<'PY'
+import filecmp
+import os
+import stat
+import sys
+
+source_root, cache_root, public_prefix = sys.argv[1:]
+if not os.path.isdir(source_root) or os.path.islink(source_root):
+    raise SystemExit("previous web asset root is unsafe")
+prefix_parts = public_prefix.split("/")
+if (not prefix_parts or any(not part or part in (".", "..") for part in prefix_parts)):
+    raise SystemExit("previous web cache prefix is unsafe")
+
+def fail_walk(error):
+    raise error
+
+total = 0
+saw_file = False
+for directory, dirnames, filenames in os.walk(source_root, topdown=True, followlinks=False, onerror=fail_walk):
+    for name in list(dirnames) + list(filenames):
+        entry = os.path.join(directory, name)
+        mode = os.lstat(entry).st_mode
+        if stat.S_ISLNK(mode) or not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
+            raise SystemExit("previous web assets contain a link or special file")
+    for name in filenames:
+        source = os.path.join(directory, name)
+        relative = os.path.relpath(source, source_root)
+        components = relative.split(os.sep)
+        if (any(not part or part in (".", "..") or "\\" in part
+                or any(ord(character) < 32 or ord(character) == 127 for character in part)
+                for part in components)):
+            raise SystemExit("previous web asset path is invalid")
+        saw_file = True
+        target = os.path.join(cache_root, *prefix_parts, *components)
+        if os.path.lexists(target):
+            if os.path.islink(target) or not os.path.isfile(target):
+                raise SystemExit("previous web cache target is unsafe")
+            if not filecmp.cmp(source, target, shallow=False):
+                raise SystemExit("previous web cache target conflicts")
+        else:
+            total += os.stat(source, follow_symlinks=False).st_size
+if not saw_file:
+    raise SystemExit("previous web asset root is empty")
+print(total)
+PY
+}
+
 tree_bytes() {
-  local root file total=0 size
+  local root subtotal total=0
   for root in "$@"; do
     [[ -d "$root" && ! -L "$root" ]] || continue
-    while IFS= read -r -d '' file; do
-      size="$(stat -c '%s' "$file")" || return 1
-      total=$((total + size))
-    done < <(find "$root" -type f -print0)
+    subtotal="$(find "$root" -type f -printf '%s\n' | awk '{ total += $1 } END { printf "%.0f", total + 0 }')" \
+      || { fail "cannot enumerate logical bytes under ${root}"; return 1; }
+    [[ "$subtotal" =~ ^[0-9]+$ ]] || { fail "logical-byte scan returned an invalid size for ${root}"; return 1; }
+    total=$((total + subtotal))
   done
   printf '%s' "$total"
+}
+
+testrun_program_bytes() {
+  if [[ -n "$test_root" && -n "${L12_TESTRUN_DEPLOY_TEST_PROGRAM_BYTES:-}" ]]; then
+    printf '%s' "$L12_TESTRUN_DEPLOY_TEST_PROGRAM_BYTES"
+  else
+    tree_bytes "$releases_dir" "$static_card_assets_dir" "$static_web_assets_dir"
+  fi
+}
+
+testrun_data_bytes() {
+  if [[ -n "$test_root" && -n "${L12_TESTRUN_DEPLOY_TEST_DATA_BYTES:-}" ]]; then
+    printf '%s' "$L12_TESTRUN_DEPLOY_TEST_DATA_BYTES"
+  else
+    tree_bytes "$runtime_dir" "$backup_dir" "$failure_dir"
+  fi
+}
+
+testrun_temporary_bytes() {
+  if [[ -n "$test_root" && -n "${L12_TESTRUN_DEPLOY_TEST_TEMP_BYTES:-}" ]]; then
+    printf '%s' "$L12_TESTRUN_DEPLOY_TEST_TEMP_BYTES"
+    return
+  fi
+  local -a roots=("$incoming_dir")
+  local candidate
+  while IFS= read -r -d '' candidate; do roots+=("$candidate"); done \
+    < <(find "${test_root}/opt" -mindepth 1 -maxdepth 1 -type d \
+      \( -name 'legion12-testrun-staging-*' -o -name 'legion12-testrun-card-assets-staging-*' \) -print0)
+  tree_bytes "${roots[@]}"
+}
+
+validate_testrun_storage_budget() {
+  local release_growth="$1" card_growth="$2" previous_web_growth="$3" new_web_growth="$4" runtime_backup_growth="$5"
+  local program data temporary program_after data_after temporary_peak total_peak value
+  program="$(testrun_program_bytes)" || return 1
+  data="$(testrun_data_bytes)" || return 1
+  temporary="$(testrun_temporary_bytes)" || return 1
+  for value in "$program" "$data" "$temporary" "$release_growth" "$card_growth" "$previous_web_growth" "$new_web_growth" "$runtime_backup_growth"; do
+    [[ "$value" =~ ^[0-9]+$ ]] || { fail "testrun storage report contains a non-numeric size"; return 1; }
+  done
+  program_after=$((program + release_growth + card_growth + previous_web_growth + new_web_growth))
+  data_after=$((data + runtime_backup_growth))
+  temporary_peak=$((temporary + release_growth + card_growth))
+  total_peak=$((program + data + temporary + release_growth + card_growth + previous_web_growth + new_web_growth + runtime_backup_growth))
+  log "fixed-path storage report: program=${releases_dir},${static_card_assets_dir},${static_web_assets_dir}; data=${runtime_dir},${backup_dir},${failure_dir}; temporary=${incoming_dir},managed-staging"
+  log "storage projection bytes: releaseLogical=${release_growth}; previousWebMissing=${previous_web_growth}; newWebTwoPrefixes=${new_web_growth}; runtimeBackupAllowance=${runtime_backup_growth}"
+  log "storage budget bytes: programAfter=${program_after}/${program_budget_bytes}; dataAfter=${data_after}/${data_budget_bytes}; temporaryPeak=${temporary_peak}/${temporary_budget_bytes}; totalPeak=${total_peak}/${total_budget_bytes}; accounting=logical"
+  if (( program_after > program_budget_bytes )); then fail "testrun program budget exceeds 512 MiB; no cleanup was attempted"; return 1; fi
+  if (( data_after > data_budget_bytes )); then fail "testrun data budget exceeds 256 MiB; runtime and evidence were retained"; return 1; fi
+  if (( temporary_peak > temporary_budget_bytes )); then fail "testrun temporary budget exceeds 128 MiB; incoming and evidence were retained"; return 1; fi
+  if (( total_peak > total_budget_bytes )); then fail "testrun total storage budget exceeds 1 GiB; no cleanup was attempted"; return 1; fi
 }
 
 assert_cleanup_root() {
@@ -195,9 +359,48 @@ assert_cleanup_child() {
   [[ "$parent" == "$root" || "$parent" == "${root}/"* ]] || return 1
 }
 
+load_failure_records() {
+  failure_records=()
+  if [[ ! -e "$failure_dir" && ! -L "$failure_dir" ]]; then return 0; fi
+  assert_cleanup_root "$failure_dir" || { log "storage cleanup refused: failure receipt root is unsafe or unreadable"; return 1; }
+  local listing row kind record name failed_commit
+  listing="$(find "$failure_dir" -mindepth 1 -maxdepth 1 -printf '%y:%p\n' | sort)" \
+    || { log "storage cleanup refused: failure receipt enumeration failed"; return 1; }
+  while IFS= read -r row || [[ -n "$row" ]]; do
+    [[ -n "$row" ]] || continue
+    kind="${row%%:*}"
+    record="${row#*:}"
+    name="$(basename "$record")" || return 1
+    if [[ "$kind" != "f" || ! "$name" =~ ^deploy-[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z[.]txt$ || ! -f "$record" || -L "$record" || ! -r "$record" ]]; then
+      log "storage cleanup refused: failure receipt is partial, unsafe, or unowned: ${record}"
+      return 1
+    fi
+    failed_commit="$(awk -F= '
+      BEGIN { required = "status failedCommit failureStage disposition previousCommit previousTarget runtime runtimeBackup recordedAt" }
+      {
+        if (NF != 2 || $1 !~ /^(status|failedCommit|failureStage|disposition|previousCommit|previousTarget|runtime|runtimeBackup|recordedAt)$/) bad = 1
+        count[$1] += 1
+        value[$1] = $2
+      }
+      END {
+        required_count = split(required, keys, " ")
+        if (NR != required_count || bad) exit 42
+        for (receipt_index = 1; receipt_index <= required_count; receipt_index += 1) if (count[keys[receipt_index]] != 1) exit 42
+        if (value["status"] != "failed" || length(value["failedCommit"]) != 40 || value["failedCommit"] !~ /^[0-9a-f]+$/) exit 42
+        if (value["failureStage"] == "" || value["disposition"] == "" || length(value["previousCommit"]) != 40 || value["previousCommit"] !~ /^[0-9a-f]+$/) exit 42
+        if (value["previousTarget"] == "" || value["runtime"] == "" || value["recordedAt"] == "") exit 42
+        print value["failedCommit"]
+      }
+    ' "$record")" || { log "storage cleanup refused: failure receipt is incomplete or cannot be parsed exactly once: ${record}"; return 1; }
+    failure_records+=("$record")
+  done <<< "$listing"
+}
+
 select_retained_releases() {
-  local active_target="$1" row candidate marker commit
+  local active_target="$1" row candidate marker commit pin record grep_status failure_protected uncertain=0
   local rollback_count=0
+  local -a failure_records
+  load_failure_records || return 1
   retained_releases=("$active_target")
   assert_cleanup_child "$active_target" "$releases_dir" || return 1
   [[ -d "$active_target" ]] || return 1
@@ -205,21 +408,53 @@ select_retained_releases() {
   for row in "${release_rows[@]}"; do
     candidate="${row#*:}"
     [[ "$candidate" == "$active_target" ]] && continue
+    pin="${candidate}/.PINNED"
+    if [[ -e "$pin" || -L "$pin" ]]; then
+      if [[ -f "$pin" && ! -L "$pin" ]]; then
+        retained_releases+=("$candidate")
+        log "storage cleanup retained explicitly PINNED release: ${candidate}"
+        continue
+      fi
+      log "storage cleanup refused: PINNED marker is unsafe: ${candidate}"
+      uncertain=1
+      continue
+    fi
     marker="${candidate}/.deployment-commit"
     if ! assert_cleanup_child "$candidate" "$releases_dir" || [[ ! -f "$marker" || -L "$marker" ]]; then
-      log "storage cleanup kept unverified release: ${candidate}"
+      log "storage cleanup refused: release may be incomplete or ownership is unknown: ${candidate}"
+      uncertain=1
       continue
     fi
     commit="$(tr -d '\r\n' < "$marker")"
     if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
-      log "storage cleanup kept release with invalid identity: ${candidate}"
+      log "storage cleanup refused: release identity is invalid: ${candidate}"
+      uncertain=1
       continue
     fi
-    if (( rollback_count < 2 )); then
+    failure_protected=0
+    for record in "${failure_records[@]}"; do
+      if grep -Fqx "failedCommit=${commit}" "$record"; then
+        failure_protected=1
+        break
+      else
+        grep_status=$?
+        if [[ "$grep_status" -ne 1 ]]; then
+          log "storage cleanup refused: failure receipt read failed during ownership match: ${record}"
+          uncertain=1
+          break
+        fi
+      fi
+    done
+    (( uncertain == 0 )) || continue
+    if (( failure_protected == 1 )); then
+      retained_releases+=("$candidate")
+      log "storage cleanup retained failed release evidence: ${candidate}"
+    elif (( rollback_count < 1 )); then
       retained_releases+=("$candidate")
       rollback_count=$((rollback_count + 1))
     fi
   done
+  (( uncertain == 0 )) || return 1
   log "storage cleanup retained releases: ${retained_releases[*]}"
 }
 
@@ -665,6 +900,41 @@ mkdir -p "$incoming_dir" "$releases_dir" "$static_card_assets_dir" "$static_web_
 [[ -f "$release_archive" && ! -L "$release_archive" ]] || fail "release archive is missing or unsafe"
 [[ "$(sha256sum "$release_archive" | awk '{print $1}')" == "$release_sha256" ]] || fail "release archive SHA256 differs"
 validate_archive "$release_archive" release
+layout="$(release_layout_bytes "$release_archive")" || fail "release layout budget projection failed"
+read -r release_unpacked_bytes hydrate_logical_bytes new_web_cache_bytes <<< "$layout"
+for value in "$release_unpacked_bytes" "$hydrate_logical_bytes" "$new_web_cache_bytes"; do
+  [[ "$value" =~ ^[0-9]+$ ]] || fail "release layout budget projection is invalid"
+done
+card_unpacked_bytes=0
+budget_card_target="${static_card_assets_dir}/${card_assets_hash}"
+if [[ ! -d "$budget_card_target" || -L "$budget_card_target" ]]; then
+  [[ ! -e "$budget_card_target" && ! -L "$budget_card_target" ]] || fail "card asset target is not a regular directory"
+  [[ "$card_assets_archive" != "-" && -f "$card_assets_archive" && ! -L "$card_assets_archive" ]] || fail "card asset cache is absent and no safe archive was supplied"
+  [[ "$(sha256sum "$card_assets_archive" | awk '{print $1}')" == "$card_assets_sha256" ]] || fail "card asset archive SHA256 differs"
+  validate_archive "$card_assets_archive" card-assets
+  card_unpacked_bytes="$(archive_unpacked_bytes "$card_assets_archive")"
+fi
+budget_previous_target="$(readlink -f "$active_dir")" || fail "cannot resolve previous testrun release for storage projection"
+[[ "$budget_previous_target" == "${releases_dir}/"* && "$budget_previous_target" != "$releases_dir" ]] \
+  || fail "previous testrun release escapes the managed release root"
+previous_web_cache_bytes=0
+for projection in "opcgpro-vue/dist/assets:assets" "opcgpro-vue/dist-testrun/assets:testrun/assets"; do
+  source_relative="${projection%%:*}"
+  public_prefix="${projection#*:}"
+  missing_bytes="$(missing_web_cache_bytes "${budget_previous_target}/${source_relative}" "$public_prefix")" \
+    || fail "previous compatibility web cache projection failed"
+  previous_web_cache_bytes=$((previous_web_cache_bytes + missing_bytes))
+done
+runtime_logical_bytes="$(tree_bytes "$runtime_dir")" || fail "cannot measure testrun runtime for backup projection"
+runtime_backup_allowance=$((runtime_logical_bytes + 16 * 1024 * 1024))
+if [[ -n "$test_root" ]]; then
+  release_unpacked_bytes="${L12_TESTRUN_DEPLOY_TEST_RELEASE_LOGICAL_BYTES:-$release_unpacked_bytes}"
+  previous_web_cache_bytes="${L12_TESTRUN_DEPLOY_TEST_PREVIOUS_WEB_BYTES:-$previous_web_cache_bytes}"
+  new_web_cache_bytes="${L12_TESTRUN_DEPLOY_TEST_NEW_WEB_BYTES:-$new_web_cache_bytes}"
+  runtime_backup_allowance="${L12_TESTRUN_DEPLOY_TEST_RUNTIME_BACKUP_BYTES:-$runtime_backup_allowance}"
+fi
+validate_testrun_storage_budget "$release_unpacked_bytes" "$card_unpacked_bytes" \
+  "$previous_web_cache_bytes" "$new_web_cache_bytes" "$runtime_backup_allowance"
 
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 short_commit="${commit:0:12}"

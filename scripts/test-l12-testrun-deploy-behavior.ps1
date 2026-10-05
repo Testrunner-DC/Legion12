@@ -66,8 +66,17 @@ $base = if ([string]::IsNullOrWhiteSpace($FixtureBase)) { [IO.Path]::GetTempPath
 $base = [IO.Path]::GetFullPath($base).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
 $fixture = Join-Path $base "l12-testrun-deploy-behavior-$([Guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory -Path $fixture -Force | Out-Null
+$suitePassed = $false
 
 try {
+    $logicalProbe = Join-Path $fixture "logical-hardlink-probe"
+    New-Item -ItemType Directory -Path $logicalProbe -Force | Out-Null
+    $logicalSource = Join-Path $logicalProbe "source.bin"
+    $logicalLink = Join-Path $logicalProbe "hydrated.bin"
+    [IO.File]::WriteAllBytes($logicalSource, [byte[]]::new(4096))
+    New-Item -ItemType HardLink -Path $logicalLink -Target $logicalSource | Out-Null
+    $logicalBytes = (Get-ChildItem -LiteralPath $logicalProbe -File | Measure-Object -Property Length -Sum).Sum
+    Assert-True ($logicalBytes -eq 8192) "Logical accounting did not count a hydrated hard-link pathname again."
     $bootstrapSource = Get-Content -LiteralPath $bootstrap -Raw
     $dailySource = Get-Content -LiteralPath $serverDeploy -Raw
     $windowsSource = Get-Content -LiteralPath $windowsDeploy -Raw
@@ -81,7 +90,23 @@ try {
     foreach ($contract in @(
         'failure_stage="post-success-storage-cleanup"',
         'converge_testrun_storage "$release_dir"',
-        'rollback_count < 2',
+        'rollback_count < 1',
+        'program_budget_bytes=$((512 * 1024 * 1024))',
+        'data_budget_bytes=$((256 * 1024 * 1024))',
+        'temporary_budget_bytes=$((128 * 1024 * 1024))',
+        'total_budget_bytes=$((1024 * 1024 * 1024))',
+        'storage cleanup retained explicitly PINNED release:',
+        'storage cleanup retained failed release evidence:',
+        'storage cleanup refused: release may be incomplete or ownership is unknown:',
+        '(( uncertain == 0 )) || return 1',
+        'newWebTwoPrefixes=${new_web_growth}',
+        'accounting=logical',
+        'release_logical + hydrate_logical',
+        'production_web + testrun_web + hydrate_logical',
+        'storage cleanup refused: failure receipt enumeration failed',
+        'storage cleanup refused: failure receipt is partial, unsafe, or unowned:',
+        'storage cleanup refused: failure receipt is incomplete or cannot be parsed exactly once:',
+        'storage cleanup refused: failure receipt read failed during ownership match:',
         'L12_TESTRUN_PRUNE_RUNTIME_BACKUPS:-0',
         'runtime_backup_checksum="${runtime_backup}.sha256"',
         'storage cleanup retained releases:',
@@ -222,6 +247,14 @@ node -e "const fs=require('node:fs'),crypto=require('node:crypto');const p=proce
 '@
     New-FakeCommand $fakeBin "tar" 'exec "$L12_TEST_TAR" "$@"'
     New-FakeCommand $fakeBin "install" 'if [ "${1:-}" = "-m" ]; then shift 2; fi; if [ "$#" -eq 2 ]; then cp "$1" "$2"; fi; exit 0'
+    New-FakeCommand $fakeBin "find" @'
+if [ "${L12_TEST_FAILURE_FIND_STATUS:-0}" != "0" ] && [ "${1:-}" = "$L12_TEST_FAILURE_DIR" ] && [ "${2:-}" = "-mindepth" ]; then exit "$L12_TEST_FAILURE_FIND_STATUS"; fi
+exec /usr/bin/find "$@"
+'@
+    New-FakeCommand $fakeBin "grep" @'
+if [ "${L12_TEST_FAILURE_GREP_STATUS:-0}" != "0" ] && [ "${1:-}" = "-Fqx" ]; then exit "$L12_TEST_FAILURE_GREP_STATUS"; fi
+exec /usr/bin/grep "$@"
+'@
     New-FakeCommand $fakeBin "systemctl" @'
 printf 'systemctl %s\n' "$*" >> "$L12_TEST_COMMAND_LOG"
 case "${1:-}" in
@@ -268,12 +301,51 @@ exit 0
         L12_TEST_COMMAND_LOG = (ConvertTo-MsysPath $commandLog); L12_TEST_SERVICE_STATE = (ConvertTo-MsysPath (Join-Path $root "service.state"))
         L12_TEST_ACTIVE = "$rootPosix/opt/legion12-testrun"; L12_TEST_NEW_COMMIT = $commitB
         L12_TEST_FORCE_NEW_HEALTH_OK = "0"
+        L12_TESTRUN_DEPLOY_TEST_PROGRAM_BYTES = ""
+        L12_TESTRUN_DEPLOY_TEST_DATA_BYTES = ""
+        L12_TESTRUN_DEPLOY_TEST_TEMP_BYTES = ""
+        L12_TESTRUN_DEPLOY_TEST_RELEASE_LOGICAL_BYTES = ""
+        L12_TESTRUN_DEPLOY_TEST_PREVIOUS_WEB_BYTES = ""
+        L12_TESTRUN_DEPLOY_TEST_NEW_WEB_BYTES = ""
+        L12_TESTRUN_DEPLOY_TEST_RUNTIME_BACKUP_BYTES = ""
+        L12_TEST_FAILURE_DIR = "$rootPosix/opt/legion12-testrun-deployment/failures"
+        L12_TEST_FAILURE_FIND_STATUS = "0"
+        L12_TEST_FAILURE_GREP_STATUS = "0"
     }
     $saved = @{}
     foreach ($entry in $environment.GetEnumerator()) { $saved[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key, "Process"); [Environment]::SetEnvironmentVariable($entry.Key, [string]$entry.Value, "Process") }
     try {
         $archiveServerPath = "$rootPosix/opt/legion12-testrun-deployment/incoming/l12-testrun-release-$commitB.tar.gz"
         $launcher = 'export PATH="$L12_TEST_FAKE_BIN:/usr/bin:/bin:$L12_TEST_NODE_DIR"; /usr/bin/sh "$1" "${@:2}"'
+        foreach ($budgetFault in @(
+            @{ Name = "program-over-512mib"; Values = @{ L12_TESTRUN_DEPLOY_TEST_PROGRAM_BYTES = [string](512MB + 1) }; Reason = "program budget exceeds 512 MiB" },
+            @{ Name = "data-over-256mib"; Values = @{ L12_TESTRUN_DEPLOY_TEST_DATA_BYTES = [string](256MB + 1) }; Reason = "data budget exceeds 256 MiB" },
+            @{ Name = "temporary-over-128mib"; Values = @{ L12_TESTRUN_DEPLOY_TEST_TEMP_BYTES = [string](128MB + 1) }; Reason = "temporary budget exceeds 128 MiB" },
+            @{ Name = "near-512mib-new-two-prefix-web"; Values = @{
+                L12_TESTRUN_DEPLOY_TEST_PROGRAM_BYTES = [string](512MB - 1); L12_TESTRUN_DEPLOY_TEST_RELEASE_LOGICAL_BYTES = "0"
+                L12_TESTRUN_DEPLOY_TEST_PREVIOUS_WEB_BYTES = "0"; L12_TESTRUN_DEPLOY_TEST_NEW_WEB_BYTES = "2"; L12_TESTRUN_DEPLOY_TEST_RUNTIME_BACKUP_BYTES = "0"
+            }; Reason = "program budget exceeds 512 MiB" },
+            @{ Name = "previous-web-cache-missing"; Values = @{
+                L12_TESTRUN_DEPLOY_TEST_PROGRAM_BYTES = [string](512MB - 1); L12_TESTRUN_DEPLOY_TEST_RELEASE_LOGICAL_BYTES = "0"
+                L12_TESTRUN_DEPLOY_TEST_PREVIOUS_WEB_BYTES = "2"; L12_TESTRUN_DEPLOY_TEST_NEW_WEB_BYTES = "0"; L12_TESTRUN_DEPLOY_TEST_RUNTIME_BACKUP_BYTES = "0"
+            }; Reason = "program budget exceeds 512 MiB" },
+            @{ Name = "hydrated-hardlink-logical-byte"; Values = @{
+                L12_TESTRUN_DEPLOY_TEST_PROGRAM_BYTES = [string](512MB - 1); L12_TESTRUN_DEPLOY_TEST_RELEASE_LOGICAL_BYTES = "2"
+                L12_TESTRUN_DEPLOY_TEST_PREVIOUS_WEB_BYTES = "0"; L12_TESTRUN_DEPLOY_TEST_NEW_WEB_BYTES = "0"; L12_TESTRUN_DEPLOY_TEST_RUNTIME_BACKUP_BYTES = "0"
+            }; Reason = "program budget exceeds 512 MiB" }
+        )) {
+            foreach ($entry in $budgetFault.Values.GetEnumerator()) { [Environment]::SetEnvironmentVariable($entry.Key, [string]$entry.Value, "Process") }
+            try {
+                $fault = Invoke-NativeCapture $shell @("-c", $launcher, $budgetFault.Name, (ConvertTo-MsysPath $serverDeploy), "deploy", $commitB, (Get-FileHash (Join-Path $incoming "l12-testrun-release-$commitB.tar.gz") -Algorithm SHA256).Hash.ToLowerInvariant(), $archiveServerPath, $assetHash, "-", "-")
+            }
+            finally { foreach ($entry in $budgetFault.Values.GetEnumerator()) { [Environment]::SetEnvironmentVariable($entry.Key, "", "Process") } }
+            Assert-True ($fault.ExitCode -ne 0 -and $fault.Output.Contains($budgetFault.Reason)) "$($budgetFault.Name) did not fail closed: $($fault.Output)"
+            $faultCommands = if (Test-Path -LiteralPath $commandLog) { Get-Content -LiteralPath $commandLog -Raw } else { "" }
+            Assert-True (-not $faultCommands.Contains("systemctl stop")) "$($budgetFault.Name) reached service stop."
+            Assert-True ((Get-Content -LiteralPath (Join-Path $runtime "sentinel.txt") -Raw) -eq "preserve") "$($budgetFault.Name) changed testrun runtime."
+            Assert-True (Test-Path -LiteralPath (Join-Path $incoming "l12-testrun-release-$commitB.tar.gz") -PathType Leaf) "$($budgetFault.Name) deleted incoming evidence."
+            if (Test-Path -LiteralPath $commandLog) { Remove-Item -LiteralPath $commandLog -Force }
+        }
         $rollback = Invoke-NativeCapture $shell @("-c", $launcher, "testrun-test", (ConvertTo-MsysPath $serverDeploy), "deploy", $commitB, (Get-FileHash (Join-Path $incoming "l12-testrun-release-$commitB.tar.gz") -Algorithm SHA256).Hash.ToLowerInvariant(), $archiveServerPath, $assetHash, "-", "-")
     }
     finally { foreach ($entry in $saved.GetEnumerator()) { [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, "Process") } }
@@ -304,6 +376,14 @@ exit 0
     Write-Utf8NoBom (Join-Path $expiredRelease "opcgpro-vue\dist\assets\expired.js") "expired"
     Write-Utf8NoBom (Join-Path $expiredRelease "opcgpro-vue\dist-testrun\assets\expired.js") "expired"
     (Get-Item -LiteralPath $expiredRelease).LastWriteTimeUtc = [DateTime]::UtcNow.AddDays(-10)
+    $pinnedCommit = "5" * 40
+    $pinnedRelease = Join-Path $releaseBase "$pinnedCommit-pinned"
+    New-Item -ItemType Directory -Path (Join-Path $pinnedRelease "opcgpro-vue\dist\assets"), (Join-Path $pinnedRelease "opcgpro-vue\dist-testrun\assets") -Force | Out-Null
+    Write-Utf8NoBom (Join-Path $pinnedRelease ".deployment-commit") "$pinnedCommit`n"
+    Write-Utf8NoBom (Join-Path $pinnedRelease ".PINNED") "operator evidence hold`n"
+    Write-Utf8NoBom (Join-Path $pinnedRelease "opcgpro-vue\dist\assets\pinned.js") "pinned"
+    Write-Utf8NoBom (Join-Path $pinnedRelease "opcgpro-vue\dist-testrun\assets\pinned.js") "pinned"
+    (Get-Item -LiteralPath $pinnedRelease).LastWriteTimeUtc = [DateTime]::UtcNow.AddDays(-20)
     $runtimeBackups = Join-Path $root "opt\legion12-testrun-deployment\runtime-backups"
     $seededBackup = Join-Path $runtimeBackups "runtime-before-seeded-old.tar.gz"
     Write-Utf8NoBom $seededBackup "snapshot"
@@ -331,8 +411,11 @@ exit 0
     finally { foreach ($entry in $successSaved.GetEnumerator()) { [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, "Process") } }
     Assert-True ($successDeploy.ExitCode -eq 0) "Successful storage-convergence fixture failed: $($successDeploy.Output)"
     Assert-True ((Get-Content -LiteralPath (Join-Path $root "opt\legion12-testrun") -Raw).Contains($commitC)) "Successful deploy did not activate the expected commit."
-    Assert-True (@(Get-ChildItem -LiteralPath $releaseBase -Directory).Count -eq 3) "Release retention did not converge to current plus two rollback releases."
-    Assert-True (-not (Test-Path -LiteralPath $expiredRelease)) "Release outside the current + two rollback boundary was retained."
+    Assert-True (@(Get-ChildItem -LiteralPath $releaseBase -Directory).Count -eq 4) "Release retention did not converge to current + one rollback + failed/PINNED evidence."
+    Assert-True (-not (Test-Path -LiteralPath $expiredRelease)) "Ordinary release outside current + one rollback was retained."
+    Assert-True (Test-Path -LiteralPath $pinnedRelease -PathType Container) "Explicitly PINNED release evidence was deleted."
+    Assert-True ($successDeploy.Output.Contains("retained failed release evidence") -and $successDeploy.Output.Contains("retained explicitly PINNED release")) `
+        "Protected release reasons were not reported."
     Assert-True (Test-Path -LiteralPath $seededBackup -PathType Leaf) "Default-off runtime snapshot policy deleted a snapshot."
     Assert-True (Test-Path -LiteralPath "$seededBackup.sha256" -PathType Leaf) "Default-off runtime snapshot policy deleted a checksum sidecar."
     Assert-True (-not (Test-Path -LiteralPath $consumedIncoming)) "Proven consumed incoming artifact was retained."
@@ -361,18 +444,93 @@ exit 0
     }
     finally { foreach ($entry in $repeatSaved.GetEnumerator()) { [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, "Process") } }
     Assert-True ($repeatDeploy.ExitCode -eq 0) "Repeated storage-convergence run was not idempotent: $($repeatDeploy.Output)"
-    Assert-True (@(Get-ChildItem -LiteralPath $releaseBase -Directory).Count -eq 3) "Repeated cleanup did not preserve the same three-release boundary."
+    Assert-True (@(Get-ChildItem -LiteralPath $releaseBase -Directory).Count -eq 4) "Repeated cleanup did not preserve current + one rollback + protected evidence."
     Assert-True ($null -ne (Get-ChildItem -LiteralPath $releaseBase -Directory | Where-Object Name -Like "$commitC-*" | Select-Object -First 1)) "Repeated cleanup removed the immediately previous release."
+    Assert-True (Test-Path -LiteralPath $pinnedRelease -PathType Container) "Repeated cleanup deleted PINNED evidence."
     Assert-True (Test-Path -LiteralPath $unprovenIncoming -PathType Leaf) "Repeated cleanup deleted an unproven incoming artifact."
 
+    $failureDirectory = Join-Path $root "opt\legion12-testrun-deployment\failures"
+    $cleanupProbeCommit = "6" * 40
+    $cleanupProbeRelease = Join-Path $releaseBase "$cleanupProbeCommit-cleanup-probe"
+    New-Item -ItemType Directory -Path (Join-Path $cleanupProbeRelease "opcgpro-vue\dist\assets"), (Join-Path $cleanupProbeRelease "opcgpro-vue\dist-testrun\assets") -Force | Out-Null
+    Write-Utf8NoBom (Join-Path $cleanupProbeRelease ".deployment-commit") "$cleanupProbeCommit`n"
+    (Get-Item -LiteralPath $cleanupProbeRelease).LastWriteTimeUtc = [DateTime]::UtcNow.AddDays(-30)
+
+    $findFailureCommit = "7" * 40
+    Write-Utf8NoBom (Join-Path $releaseRoot ".deployment-commit") "$findFailureCommit`n"
+    $findFailureArchive = Join-Path $incoming "l12-testrun-release-$findFailureCommit.tar.gz"
+    & $tar -czf $findFailureArchive -C $releaseRoot .
+    $findFailureEnvironment = $environment.Clone()
+    $findFailureEnvironment["L12_TEST_NEW_COMMIT"] = $findFailureCommit
+    $findFailureEnvironment["L12_TEST_FORCE_NEW_HEALTH_OK"] = "1"
+    $findFailureEnvironment["L12_TEST_FAILURE_FIND_STATUS"] = "2"
+    $findFailureSaved = @{}
+    foreach ($entry in $findFailureEnvironment.GetEnumerator()) { $findFailureSaved[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key, "Process"); [Environment]::SetEnvironmentVariable($entry.Key, [string]$entry.Value, "Process") }
+    try {
+        $findFailureServerPath = "$rootPosix/opt/legion12-testrun-deployment/incoming/l12-testrun-release-$findFailureCommit.tar.gz"
+        $findFailureDeploy = Invoke-NativeCapture $shell @("-c", $launcher, "failure-receipt-find-error", (ConvertTo-MsysPath $serverDeploy), "deploy", $findFailureCommit, (Get-FileHash $findFailureArchive -Algorithm SHA256).Hash.ToLowerInvariant(), $findFailureServerPath, $assetHash, "-", "-")
+    }
+    finally { foreach ($entry in $findFailureSaved.GetEnumerator()) { [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, "Process") } }
+    Assert-True ($findFailureDeploy.ExitCode -eq 0) "Failure-receipt find error should skip cleanup after verified activation: $($findFailureDeploy.Output)"
+    Assert-True ($findFailureDeploy.Output.Contains("failure receipt enumeration failed") -and $findFailureDeploy.Output.Contains("post-deploy storage cleanup skipped")) "find status was not propagated to whole-pass cleanup refusal."
+    Assert-True (Test-Path -LiteralPath $cleanupProbeRelease -PathType Container) "find failure pruned ordinary release evidence."
+
+    $grepFailureCommit = "8" * 40
+    Write-Utf8NoBom (Join-Path $releaseRoot ".deployment-commit") "$grepFailureCommit`n"
+    $grepFailureArchive = Join-Path $incoming "l12-testrun-release-$grepFailureCommit.tar.gz"
+    & $tar -czf $grepFailureArchive -C $releaseRoot .
+    $grepFailureEnvironment = $environment.Clone()
+    $grepFailureEnvironment["L12_TEST_NEW_COMMIT"] = $grepFailureCommit
+    $grepFailureEnvironment["L12_TEST_FORCE_NEW_HEALTH_OK"] = "1"
+    $grepFailureEnvironment["L12_TEST_FAILURE_GREP_STATUS"] = "2"
+    $grepFailureSaved = @{}
+    foreach ($entry in $grepFailureEnvironment.GetEnumerator()) { $grepFailureSaved[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key, "Process"); [Environment]::SetEnvironmentVariable($entry.Key, [string]$entry.Value, "Process") }
+    try {
+        $grepFailureServerPath = "$rootPosix/opt/legion12-testrun-deployment/incoming/l12-testrun-release-$grepFailureCommit.tar.gz"
+        $grepFailureDeploy = Invoke-NativeCapture $shell @("-c", $launcher, "failure-receipt-grep-error", (ConvertTo-MsysPath $serverDeploy), "deploy", $grepFailureCommit, (Get-FileHash $grepFailureArchive -Algorithm SHA256).Hash.ToLowerInvariant(), $grepFailureServerPath, $assetHash, "-", "-")
+    }
+    finally { foreach ($entry in $grepFailureSaved.GetEnumerator()) { [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, "Process") } }
+    Assert-True ($grepFailureDeploy.ExitCode -eq 0) "Failure-receipt grep error should skip cleanup after verified activation: $($grepFailureDeploy.Output)"
+    Assert-True ($grepFailureDeploy.Output.Contains("failure receipt read failed during ownership match") -and $grepFailureDeploy.Output.Contains("post-deploy storage cleanup skipped")) "grep exit 2 was treated as an ordinary nonmatch."
+    Assert-True (Test-Path -LiteralPath $cleanupProbeRelease -PathType Container) "grep error pruned ordinary release evidence."
+
+    $unknownRelease = Join-Path $releaseBase "unknown-release-in-progress"
+    $unsafeFailureEntry = Join-Path $failureDirectory "deploy-$('a' * 12)-20261006T000000Z.txt"
+    New-Item -ItemType Directory -Path $unknownRelease -Force | Out-Null
+    New-Item -ItemType Directory -Path $unsafeFailureEntry -Force | Out-Null
+    Write-Utf8NoBom (Join-Path $unknownRelease "partial.txt") "writer ownership is not proved"
+    $commitE = "9" * 40
+    Write-Utf8NoBom (Join-Path $releaseRoot ".deployment-commit") "$commitE`n"
+    $unknownArchive = Join-Path $incoming "l12-testrun-release-$commitE.tar.gz"
+    & $tar -czf $unknownArchive -C $releaseRoot .
+    $unknownEnvironment = $environment.Clone()
+    $unknownEnvironment["L12_TEST_NEW_COMMIT"] = $commitE
+    $unknownEnvironment["L12_TEST_FORCE_NEW_HEALTH_OK"] = "1"
+    $unknownSaved = @{}
+    foreach ($entry in $unknownEnvironment.GetEnumerator()) { $unknownSaved[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key, "Process"); [Environment]::SetEnvironmentVariable($entry.Key, [string]$entry.Value, "Process") }
+    try {
+        $unknownArchiveServerPath = "$rootPosix/opt/legion12-testrun-deployment/incoming/l12-testrun-release-$commitE.tar.gz"
+        $unknownDeploy = Invoke-NativeCapture $shell @("-c", $launcher, "unknown-release-cleanup-refusal", (ConvertTo-MsysPath $serverDeploy), "deploy", $commitE, (Get-FileHash $unknownArchive -Algorithm SHA256).Hash.ToLowerInvariant(), $unknownArchiveServerPath, $assetHash, "-", "-")
+    }
+    finally { foreach ($entry in $unknownSaved.GetEnumerator()) { [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, "Process") } }
+    Assert-True ($unknownDeploy.ExitCode -eq 0) "Unknown-release evidence should skip cleanup without invalidating the verified release: $($unknownDeploy.Output)"
+    Assert-True ($unknownDeploy.Output.Contains("post-deploy storage cleanup skipped: release retention cannot be proven")) "Unknown release did not refuse the whole cleanup pass."
+    Assert-True ($unknownDeploy.Output.Contains("failure receipt is partial, unsafe, or unowned")) "Unsafe failure receipt was treated as an absent failure."
+    Assert-True (Test-Path -LiteralPath $unsafeFailureEntry -PathType Container) "Unsafe failure receipt evidence was deleted."
+    Assert-True (Test-Path -LiteralPath $unknownRelease -PathType Container) "Unknown/in-progress release evidence was deleted."
+    Assert-True (Test-Path -LiteralPath $pinnedRelease -PathType Container) "Unknown-release refusal deleted PINNED evidence."
+    Assert-True ($null -ne (Get-ChildItem -LiteralPath $releaseBase -Directory | Where-Object Name -Like "$commitC-*" | Select-Object -First 1)) "Unknown-release refusal pruned an older release despite uncertain ownership."
+
     Write-Host "[L12 testrun deploy behavior] isolation, target pinning, rollback safety, and post-success storage convergence passed."
+    $suitePassed = $true
 }
 finally {
-    if (Test-Path -LiteralPath $fixture) {
+    if ($suitePassed -and (Test-Path -LiteralPath $fixture)) {
         $resolved = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $fixture).Path)
         if (-not $resolved.StartsWith($base, [StringComparison]::OrdinalIgnoreCase) -or -not (Split-Path $resolved -Leaf).StartsWith('l12-testrun-deploy-behavior-', [StringComparison]::Ordinal)) {
             throw "Refusing to remove an unmanaged fixture: $resolved"
         }
         Remove-Item -LiteralPath $resolved -Recurse -Force
     }
+    elseif (Test-Path -LiteralPath $fixture) { Write-Host "[L12 testrun deploy behavior] Failed synthetic evidence retained: $fixture" }
 }

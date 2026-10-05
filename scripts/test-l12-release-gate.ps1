@@ -138,6 +138,19 @@ foreach ($case in @(
     Assert-True ($plan.Output.Contains("Atomic runtime zero-legacy audit") -eq $case.Audit) "Card-effect audit selection mismatch for $($case.Path)"
 }
 
+foreach ($case in @(
+    @{ Path = 'ops/server/verify-l12-runtime-backup.py'; Production = $true; Testrun = $false },
+    @{ Path = 'scripts/test-l12-runtime-backup.py'; Production = $true; Testrun = $false },
+    @{ Path = 'ops/server/deploy-l12-testrun-release.sh'; Production = $false; Testrun = $true },
+    @{ Path = 'scripts/test-l12-testrun-deploy-behavior.ps1'; Production = $false; Testrun = $true }
+)) {
+    $plan = Invoke-ChildPowerShell -ScriptPath $changeGateScript -Arguments @('-Level','Batch','-DryRun','-ChangedPaths',$case.Path)
+    Assert-True ($plan.ExitCode -eq 0) "Deployment source selection failed: $($case.Path)"
+    Assert-True ($plan.Output.Contains('Stopped SQLite/WAL snapshot proof regressions') -eq $case.Production) "Runtime proof selection mismatch: $($case.Path)"
+    Assert-True ($plan.Output.Contains('Test release storage budget and protected evidence behavior') -eq $case.Testrun) "Test deployment budget selection mismatch: $($case.Path)"
+    Assert-True (-not $plan.Output.Contains('L12 full rule tests') -and -not $plan.Output.Contains('Platform persistence release gate')) "Ops-only change should not masquerade as gameplay implementation: $($case.Path)"
+}
+
 $verifySource = Get-Content -LiteralPath $verifyScript -Raw
 $deploySource = Get-Content -LiteralPath $deployScript -Raw
 $changeGateSource = Get-Content -LiteralPath $changeGateScript -Raw
